@@ -3,9 +3,12 @@ import { Schema } from "effect"
 import { CommitSha, ServiceName } from "@maple/domain/http"
 import type { Release, ReleaseTimelineBucket } from "@/api/warehouse/releases"
 import {
+	attributeIssues,
 	deriveReleaseImpacts,
 	groupReleases,
 	lastBucketShares,
+	liveVersions,
+	releaseHeadline,
 	releaseDayLabel,
 	releaseFacetCounts,
 	shortReleaseLabel,
@@ -257,5 +260,92 @@ describe("labels", () => {
 		const at = "2026-09-04T23:30:00Z"
 		expect(releaseDayLabel(at, now, "Asia/Tokyo")).toBe("Today")
 		expect(releaseDayLabel(at, now, "UTC")).toBe("Yesterday")
+	})
+})
+
+describe("releaseHeadline", () => {
+	it("picks the flagged service over the busiest one", () => {
+		const rows = [
+			release({
+				commitSha: SHA_B,
+				serviceName: API,
+				firstSeen: "2026-09-05T10:00:00.000Z",
+				spanCount: 9000,
+			}),
+			release({ commitSha: SHA_A, serviceName: API, spanCount: 9000 }),
+			release({
+				commitSha: SHA_B,
+				serviceName: WEB,
+				firstSeen: "2026-09-05T10:00:00.000Z",
+				errorCount: 80,
+			}),
+			release({ commitSha: SHA_A, serviceName: WEB }),
+		]
+		const [newest] = groupReleases(deriveReleaseImpacts(rows, []))
+		expect(newest && releaseHeadline(newest).serviceName).toBe("web")
+	})
+})
+
+describe("attributeIssues", () => {
+	const rows = [
+		release({ commitSha: SHA_B, serviceName: API, firstSeen: "2026-09-05T10:00:00.000Z" }),
+		release({ commitSha: SHA_A, serviceName: API, firstSeen: "2026-09-05T09:00:00.000Z" }),
+	]
+	const impacts = deriveReleaseImpacts(rows, [])
+
+	it("credits the version that was newest when the issue appeared", () => {
+		const counts = attributeIssues(impacts, [
+			{ serviceName: "api", firstSeenAt: "2026-09-05T09:30:00.000Z", lastRegressedAt: null },
+			{ serviceName: "api", firstSeenAt: "2026-09-05T10:02:00.000Z", lastRegressedAt: null },
+			{ serviceName: "api", firstSeenAt: "2026-09-05T09:58:00.000Z", lastRegressedAt: null },
+		])
+		expect(counts.get(SHA_A)).toEqual({ fresh: 1, regressed: 0 })
+		expect(counts.get(SHA_B)).toEqual({ fresh: 2, regressed: 0 })
+	})
+
+	it("counts a regression at its regression time, and skips other services", () => {
+		const counts = attributeIssues(impacts, [
+			{
+				serviceName: "api",
+				firstSeenAt: "2026-08-01T00:00:00.000Z",
+				lastRegressedAt: "2026-09-05T10:30:00.000Z",
+			},
+			{ serviceName: "web", firstSeenAt: "2026-09-05T10:30:00.000Z", lastRegressedAt: null },
+		])
+		expect(counts.get(SHA_B)).toEqual({ fresh: 0, regressed: 1 })
+		expect(counts.size).toBe(1)
+	})
+})
+
+describe("liveVersions", () => {
+	const DB = svc("db-sync")
+	const rows = [
+		release({ commitSha: SHA_C, serviceName: API, firstSeen: "2026-09-05T11:00:00.000Z" }),
+		release({ commitSha: SHA_C, serviceName: WEB, firstSeen: "2026-09-05T11:00:00.000Z" }),
+		release({ commitSha: SHA_B, serviceName: API, firstSeen: "2026-09-05T10:00:00.000Z" }),
+		release({ commitSha: SHA_B, serviceName: WEB, firstSeen: "2026-09-05T10:00:00.000Z" }),
+		release({ commitSha: SHA_A, serviceName: API, firstSeen: "2026-09-05T09:00:00.000Z" }),
+		release({ commitSha: SHA_A, serviceName: WEB, firstSeen: "2026-09-05T09:00:00.000Z" }),
+		release({ commitSha: SHA_A, serviceName: DB, firstSeen: "2026-09-05T09:00:00.000Z" }),
+	]
+	const last = "2026-09-05T12:00:00.000Z"
+	const timeline = [
+		bucket(last, API, SHA_C, 100),
+		bucket(last, WEB, SHA_C, 100),
+		bucket(last, DB, SHA_A, 100),
+	]
+	const groups = groupReleases(deriveReleaseImpacts(rows, timeline))
+
+	it("reports a service stuck on an older co-deployed commit as behind", () => {
+		const live = liveVersions(timeline, groups)
+		expect(live[0]).toMatchObject({ serviceName: "db-sync", commitSha: SHA_A, behind: 2 })
+		expect(live.find((v) => v.serviceName === "api")).toMatchObject({ commitSha: SHA_C, behind: 0 })
+	})
+
+	it("never calls an independently deployed service behind", () => {
+		const solo = [release({ commitSha: SHA_A, serviceName: DB })]
+		const soloTimeline = [bucket(last, DB, SHA_A, 10)]
+		const live = liveVersions(soloTimeline, groupReleases(deriveReleaseImpacts([...solo], soloTimeline)))
+		expect(live).toEqual([{ serviceName: "db-sync", commitSha: SHA_A, share: 1, behind: 0 }])
 	})
 })

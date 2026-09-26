@@ -313,3 +313,118 @@ export function releaseDayLabel(iso: string, nowMs: number, timeZone: string): s
 	if (dayDiff === 1) return "Yesterday"
 	return date.toLocaleDateString(undefined, { timeZone, weekday: "short", month: "short", day: "numeric" })
 }
+
+/**
+ * The service whose figures stand for a multi-service release in the list:
+ * worst health first, then the largest error-rate jump, then the busiest.
+ */
+export function releaseHeadline(group: ReleaseGroup): ReleaseServiceImpact {
+	const rank = (impact: ReleaseServiceImpact) => RELEASE_HEALTH_ORDER.indexOf(impact.health)
+	return group.services.reduce((best, impact) => {
+		if (rank(impact) !== rank(best)) return rank(impact) < rank(best) ? impact : best
+		if ((impact.errorRatio ?? 0) !== (best.errorRatio ?? 0))
+			return (impact.errorRatio ?? 0) > (best.errorRatio ?? 0) ? impact : best
+		return impact.spanCount > best.spanCount ? impact : best
+	})
+}
+
+/**
+ * Slack between a version's first span and an issue it introduced: the
+ * rollup's first-seen is bucket-floored, and an error can land a beat early.
+ */
+export const NEW_ISSUE_SLACK_MS = 5 * 60 * 1000
+
+export interface ReleaseIssueCounts {
+	fresh: number
+	regressed: number
+}
+
+export interface IntroducedIssue {
+	readonly serviceName: string
+	readonly firstSeenAt: string
+	readonly lastRegressedAt: string | null
+}
+
+/**
+ * Credit each issue to the release of its service that was newest when the
+ * issue first appeared, or last regressed. Keyed by commit sha.
+ */
+export function attributeIssues(
+	impacts: ReadonlyArray<ReleaseServiceImpact>,
+	issues: ReadonlyArray<IntroducedIssue>,
+): Map<string, ReleaseIssueCounts> {
+	const byService = new Map<string, ReleaseServiceImpact[]>()
+	for (const impact of impacts) {
+		const list = byService.get(impact.serviceName)
+		if (list === undefined) byService.set(impact.serviceName, [impact])
+		else list.push(impact)
+	}
+	const counts = new Map<string, ReleaseIssueCounts>()
+	for (const issue of issues) {
+		const firstMs = Date.parse(issue.firstSeenAt)
+		const regressedMs = issue.lastRegressedAt === null ? Number.NaN : Date.parse(issue.lastRegressedAt)
+		const regressed = Number.isFinite(regressedMs) && regressedMs > firstMs
+		const atMs = regressed ? regressedMs : firstMs
+		if (!Number.isFinite(atMs)) continue
+		let owner: ReleaseServiceImpact | undefined
+		for (const impact of byService.get(issue.serviceName) ?? []) {
+			const startMs = Date.parse(impact.firstSeen) - NEW_ISSUE_SLACK_MS
+			if (startMs <= atMs && (owner === undefined || impact.firstSeen > owner.firstSeen)) owner = impact
+		}
+		if (owner === undefined) continue
+		const entry = counts.get(owner.commitSha) ?? { fresh: 0, regressed: 0 }
+		if (regressed) entry.regressed += 1
+		else entry.fresh += 1
+		counts.set(owner.commitSha, entry)
+	}
+	return counts
+}
+
+export interface LiveVersion {
+	serviceName: string
+	commitSha: string
+	/** Share of the service's last bucket this version carried. */
+	share: number
+	/**
+	 * Newer releases that reached services this one normally ships with, but
+	 * not this one. Zero for a service that never co-deploys with another.
+	 */
+	behind: number
+}
+
+/** What each service is serving right now, and how far it trails its siblings. */
+export function liveVersions(
+	timeline: ReadonlyArray<ReleaseTimelineBucket>,
+	groups: ReadonlyArray<ReleaseGroup>,
+): LiveVersion[] {
+	const shares = lastBucketShares(timeline)
+	const live = new Map<string, { commitSha: string; share: number }>()
+	for (const [key, share] of shares) {
+		const split = key.lastIndexOf(" ")
+		const serviceName = key.slice(0, split)
+		const commitSha = key.slice(split + 1)
+		const current = live.get(serviceName)
+		if (current === undefined || share > current.share) live.set(serviceName, { commitSha, share })
+	}
+	const groupBySha = new Map(groups.map((group) => [group.commitSha, group]))
+	const result: LiveVersion[] = []
+	for (const [serviceName, { commitSha, share }] of live) {
+		const liveGroup = groupBySha.get(commitSha)
+		const siblings = new Set(
+			(liveGroup?.services ?? [])
+				.map((impact) => impact.serviceName)
+				.filter((name) => name !== serviceName),
+		)
+		const behind =
+			liveGroup === undefined || siblings.size === 0
+				? 0
+				: groups.filter(
+						(group) =>
+							group.firstSeen > liveGroup.firstSeen &&
+							!group.services.some((impact) => impact.serviceName === serviceName) &&
+							group.services.some((impact) => siblings.has(impact.serviceName)),
+					).length
+		result.push({ serviceName, commitSha, share, behind })
+	}
+	return result.toSorted((a, b) => b.behind - a.behind || a.serviceName.localeCompare(b.serviceName))
+}

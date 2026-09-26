@@ -12,16 +12,10 @@ import { Result, useAtomValue } from "@/lib/effect-atom"
 import { retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { errorIssueFromV2 } from "@/lib/services/error-issues"
 import type { ReleaseErrorFingerprint } from "@/api/warehouse/releases"
+import { NEW_ISSUE_SLACK_MS } from "./release-model"
 
 /** The v2 list takes one page of fingerprints; the rest of a very noisy version stays on /errors. */
 const FINGERPRINT_LIMIT = 50
-
-/**
- * Slack between a version's first span and an issue's first occurrence: the
- * rollup's first-seen is bucket-floored, and the error event can land a beat
- * before the entry-point span that carried it.
- */
-const NEW_ISSUE_SLACK_MS = 5 * 60 * 1000
 
 /** The two timestamps the split reads; the panel passes whole issue documents. */
 export interface ReleaseIssueDates {
