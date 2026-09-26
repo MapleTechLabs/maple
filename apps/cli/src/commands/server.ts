@@ -91,6 +91,7 @@ import {
 	startedBeforeWrite,
 	validateHost,
 } from "./server-args"
+import { DEFAULT_LOCAL_PORT } from "../lib/local-address"
 
 /**
  * A refused command whose precondition simply wasn't met: the server is already
@@ -499,9 +500,12 @@ const host = Flag.String("host").pipe(
 	Flag.withDefault(resolveBindHost(process.env.MAPLE_LOCAL_BIND_HOST)),
 )
 
-const checkpointPort = Flag.Int("port").pipe(
-	Flag.withDescription("Port of the running `maple start` server to checkpoint"),
-	Flag.withDefault(4318),
+const checkpointPort = Flag.optional(
+	Flag.Int("port").pipe(
+		Flag.withDescription(
+			"Port of the running `maple start` server to checkpoint (default: the port that server recorded for this data dir, else 4318)",
+		),
+	),
 )
 
 const checkpointHost = Flag.String("host").pipe(
@@ -1700,10 +1704,27 @@ export const checkpoint = Command.make("checkpoint", {
 	Command.withHandler(
 		Effect.fnUntraced(function* (a) {
 			const dataDir = resolve(Option.getOrUndefined(a.dataDir) ?? defaultDataDir())
+			// Without --port, target the server this store's discovery file names, so a
+			// store started on a non-default port is checkpointed without repeating it.
+			const discovered = Option.isSome(a.port)
+				? Option.none<URL>()
+				: Option.flatMap(yield* readDiscovery(dataDir), (found) =>
+						isProcessAlive(found.pid) && URL.canParse(found.url)
+							? Option.some(new URL(found.url))
+							: Option.none(),
+					)
 			const result = yield* createCheckpoint({
 				dataDir,
-				host: connectionHostForBindHost(a.host),
-				port: a.port,
+				host: Option.match(discovered, {
+					onNone: () => connectionHostForBindHost(a.host),
+					onSome: (url) => url.hostname.replace(/^\[(.*)\]$/, "$1"),
+				}),
+				port: Option.getOrElse(a.port, () =>
+					Option.match(discovered, {
+						onNone: () => DEFAULT_LOCAL_PORT,
+						onSome: (url) => Number(url.port || DEFAULT_LOCAL_PORT),
+					}),
+				),
 			})
 			// Status on stderr like every lifecycle command; stdout is reserved for
 			// machine output (`--format json`).
