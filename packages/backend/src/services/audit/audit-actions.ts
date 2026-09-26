@@ -97,6 +97,8 @@ export const AuditResources = {
 	 * end-user data. Recorded by the auth layers from the `AuditedRead` annotation.
 	 */
 	session_replay: { verbs: ["read"] },
+	/** Org-singleton shared Slack channel; the invited email is in `metadata`. */
+	support_channel: { verbs: ["created", "invite_sent"] },
 	/**
 	 * Reads of traces, logs, metrics and error events (`read`, from the
 	 * `AuditedRead` annotation on the endpoint) and every raw SQL statement run

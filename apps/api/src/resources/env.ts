@@ -83,6 +83,9 @@ export const apiConfiguredEnv = (stage: MapleStage, region: MapleRegion, domains
 		// Billing details (company name, address, tax IDs) are written to the Stripe
 		// customer Autumn links; Autumn itself has no API for them.
 		optionalSecret("STRIPE_SECRET_KEY"),
+		// Shared customer support channels, created in Maple's own Slack workspace.
+		optionalSecret("MAPLE_SUPPORT_SLACK_BOT_TOKEN"),
+		optionalPlain("MAPLE_SUPPORT_SLACK_TEAM_USER_IDS"),
 		optionalSecret("SD_INTERNAL_TOKEN"),
 		optionalSecret("INTERNAL_SERVICE_TOKEN"),
 		optionalPlain("HAZEL_API_BASE_URL"),

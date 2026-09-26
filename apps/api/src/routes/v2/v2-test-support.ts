@@ -23,6 +23,7 @@ import { PlanetScaleService } from "@maple/backend/services/integrations/PlanetS
 import { ScrapeTargetsService } from "@maple/backend/services/integrations/ScrapeTargetsService"
 import { ChatWorkspaceService } from "@maple/backend/services/integrations/ChatWorkspaceService"
 import { OnboardingChecklistService } from "@maple/backend/services/org/OnboardingChecklistService"
+import { SupportChannelService } from "@maple/backend/services/support/SupportChannelService"
 import { SetupAuditService } from "@maple/backend/services/org/SetupAuditService"
 import { SignalPresenceService } from "@maple/backend/services/org/SignalPresenceService"
 import { ApiV2RateLimiter } from "@maple/backend/services/auth/ApiV2RateLimiter"
@@ -43,6 +44,7 @@ import { HttpV2AnomaliesLive } from "./anomalies.http"
 import { HttpV2InvestigationsLive } from "./investigations.http"
 import { HttpV2MobileDevicesLive } from "./mobile-devices.http"
 import { HttpV2OnboardingChecklistLive } from "./onboarding-checklist.http"
+import { HttpV2SupportChannelLive } from "./support-channel.http"
 import { HttpV2OrganizationLive } from "./organization.http"
 import { HttpV2InstrumentationRecommendationsLive } from "./recommendations.http"
 import { HttpV2AuditLogLive } from "./audit-log.http"
@@ -156,6 +158,15 @@ const v2GroupLayersExceptOnboardingChecklist = (chatWorkspace: Layer.Layer<ChatW
 		HttpV2EnvironmentsLive,
 		HttpV2WidgetSummaryLive,
 		HttpV2WidgetCredentialsLive,
+		// Talks to Slack; only its own service test exercises it.
+		HttpV2SupportChannelLive.pipe(
+			Layer.provide(
+				Layer.succeed(SupportChannelService, {
+					retrieve: () => Effect.succeed({ status: "unavailable" }),
+					invite: () => Effect.die("support channels are not exercised by v2 route harnesses"),
+				}),
+			),
+		),
 		// The share group's own dependencies are satisfied here rather than by every
 		// harness: most v2 route tests never touch the share endpoints, and threading
 		// inert services through two dozen call sites to register a group they never

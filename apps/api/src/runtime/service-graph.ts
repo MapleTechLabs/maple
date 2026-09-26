@@ -50,6 +50,7 @@ import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { DemoService } from "@maple/backend/services/org/DemoService"
 import { IngestAttributeMappingService } from "@maple/backend/services/org/IngestAttributeMappingService"
 import { OnboardingChecklistService } from "@maple/backend/services/org/OnboardingChecklistService"
+import { SupportChannelService } from "@maple/backend/services/support/SupportChannelService"
 import { OnboardingService } from "@maple/backend/services/org/OnboardingService"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
 import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
@@ -84,6 +85,7 @@ export const HttpServicesLive = Layer.mergeAll(
 	HazelOAuthService.layer,
 	OnboardingService.layer,
 	OnboardingChecklistService.layer,
+	SupportChannelService.layer,
 	OrgIngestKeysService.layer,
 	OrgClickHouseSettingsService.layer,
 	TinybirdOrgTokenService.layer,

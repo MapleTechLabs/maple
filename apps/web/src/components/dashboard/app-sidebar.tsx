@@ -1,10 +1,11 @@
-import { memo, useMemo } from "react"
+import { memo, useMemo, useState } from "react"
 import { Link, useRouterState } from "@tanstack/react-router"
 import { useUser, useClerk } from "@clerk/clerk-react"
 import {
 	CircleQuestionIcon,
 	DiscordIcon,
 	EnvelopeIcon,
+	SlackIcon,
 	GearIcon,
 	GridSquareCirclePlusIcon,
 	KeyboardIcon,
@@ -25,6 +26,7 @@ import {
 } from "@/components/dashboard/nav-items"
 import { openCommandPalette, showKeyboardShortcuts } from "@/components/command-palette/global-shortcuts"
 import { OrgSwitcher } from "@/components/dashboard/org-switcher"
+import { SupportChannelDialog } from "@/components/support/support-channel-dialog"
 import { UserAvatar, userInitials } from "@/components/dashboard/user-avatar"
 import { ThemeToggle } from "@/components/dashboard/theme-toggle"
 import {
@@ -607,48 +609,61 @@ function SettingsRow({ currentPath }: { currentPath: string }) {
 
 /** Support stops scrolling away by leaving SidebarContent entirely. */
 function SupportMenu() {
+	const [slackOpen, setSlackOpen] = useState(false)
 	return (
-		<DropdownMenu>
-			<DropdownMenuTrigger
-				render={
-					<SidebarMenuButton
-						className="size-8 w-8 shrink-0 justify-center p-0 group-data-[collapsible=icon]:w-full"
-						tooltip="Support"
-					/>
-				}
-			>
-				<CircleQuestionIcon size={16} />
-				<span className="sr-only">Support</span>
-			</DropdownMenuTrigger>
-			<DropdownMenuContent align="end" side="top" sideOffset={4}>
-				<DropdownMenuGroup>
-					<DropdownMenuItem
-						render={
-							<a
-								aria-label="Community Discord"
-								href="https://discord.gg/BnXjKuwJqP"
-								rel="noopener noreferrer"
-								target="_blank"
-							/>
-						}
-					>
-						<DiscordIcon size={16} />
-						Community Discord
-					</DropdownMenuItem>
-					<DropdownMenuItem
-						render={<a aria-label="Email Support" href="mailto:support@maple.dev" />}
-					>
-						<EnvelopeIcon size={16} />
-						Email Support
-					</DropdownMenuItem>
-					<DropdownMenuItem onClick={showKeyboardShortcuts}>
-						<KeyboardIcon size={16} />
-						Keyboard shortcuts
-						<DropdownMenuShortcut>?</DropdownMenuShortcut>
-					</DropdownMenuItem>
-				</DropdownMenuGroup>
-			</DropdownMenuContent>
-		</DropdownMenu>
+		<>
+			<DropdownMenu>
+				<DropdownMenuTrigger
+					render={
+						<SidebarMenuButton
+							className="size-8 w-8 shrink-0 justify-center p-0 group-data-[collapsible=icon]:w-full"
+							tooltip="Support"
+						/>
+					}
+				>
+					<CircleQuestionIcon size={16} />
+					<span className="sr-only">Support</span>
+				</DropdownMenuTrigger>
+				<DropdownMenuContent align="end" side="top" sideOffset={4}>
+					<DropdownMenuGroup>
+						{/* The channel is created in Maple's Slack for a Clerk org; self-hosted has neither. */}
+						{isClerkAuthEnabled ? (
+							<DropdownMenuItem onClick={() => setSlackOpen(true)}>
+								<SlackIcon size={16} />
+								Shared Slack channel
+							</DropdownMenuItem>
+						) : null}
+						<DropdownMenuItem
+							render={
+								<a
+									aria-label="Community Discord"
+									href="https://discord.gg/BnXjKuwJqP"
+									rel="noopener noreferrer"
+									target="_blank"
+								/>
+							}
+						>
+							<DiscordIcon size={16} />
+							Community Discord
+						</DropdownMenuItem>
+						<DropdownMenuItem
+							render={<a aria-label="Email Support" href="mailto:support@maple.dev" />}
+						>
+							<EnvelopeIcon size={16} />
+							Email Support
+						</DropdownMenuItem>
+						<DropdownMenuItem onClick={showKeyboardShortcuts}>
+							<KeyboardIcon size={16} />
+							Keyboard shortcuts
+							<DropdownMenuShortcut>?</DropdownMenuShortcut>
+						</DropdownMenuItem>
+					</DropdownMenuGroup>
+				</DropdownMenuContent>
+			</DropdownMenu>
+			{isClerkAuthEnabled ? (
+				<SupportChannelDialog open={slackOpen} onOpenChange={setSlackOpen} />
+			) : null}
+		</>
 	)
 }
 
