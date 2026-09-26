@@ -19,5 +19,3 @@ export function useTimeWindow(range: string | undefined) {
 
 	return { bounds, anchorMs, advance }
 }
-
-export type TimeWindow = ReturnType<typeof useTimeWindow>

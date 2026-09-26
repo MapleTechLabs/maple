@@ -31,7 +31,8 @@ export function pivotSeries(
 	const seriesNames = [...new Set(points.map((point) => point.series))]
 	const byBucket = new Map<number, ChartRow>()
 	for (const bucket of timeline) {
-		const row: ChartRow = { bucket }
+		const row: ChartRow = {}
+		row.bucket = bucket
 		if (fill === "zero") for (const name of seriesNames) row[name] = 0
 		byBucket.set(toEpochMs(bucket), row)
 	}

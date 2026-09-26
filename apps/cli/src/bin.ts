@@ -87,31 +87,31 @@ if (checkpointProbeDataDir !== undefined) {
 		// Holds the help page back until we know whether it was asked for (see lib/help.ts).
 		Effect.provideService(CliOutput.Formatter, help.formatter),
 		Effect.provideService(Console.Console, help.console),
-		// The recovery sits *inside* the span: applied outside it, a gracefully
-		// handled archive error still closed the root span as Error.
-		Effect.catchTag("@maple/cli/ArchiveError", (error) =>
-			Effect.sync(() => {
-				process.stderr.write(archiveErrorMessage(error))
-				process.exitCode = 1
-			}),
-		),
-		// `Command.runWith` renders help and then re-fails with the same error, so
-		// `maple --help` recorded as an error span. Only the exit code is left to
-		// honour: 0 for a bare group command, 1 when parsing failed. The tag is
-		// "ShowHelp"; `~effect/cli/CliError/ShowHelp` is the schema identifier.
-		Effect.catchTag("ShowHelp", (error) =>
-			annotateOutcome(error._tag).pipe(
-				Effect.andThen(
-					Effect.sync(() => {
-						if (error.errors.length > 0) {
-							help.discard()
-							process.stderr.write(usageHint(error.commandPath))
-						}
-						process.exitCode = Runtime.getErrorExitCode(error)
-					}),
+		Effect.catchTags({
+			// The recovery sits *inside* the span: applied outside it, a gracefully
+			// handled archive error still closed the root span as Error.
+			"@maple/cli/ArchiveError": (error) =>
+				Effect.sync(() => {
+					process.stderr.write(archiveErrorMessage(error))
+					process.exitCode = 1
+				}),
+			// `Command.runWith` renders help and then re-fails with the same error, so
+			// `maple --help` recorded as an error span. Only the exit code is left to
+			// honour: 0 for a bare group command, 1 when parsing failed. The tag is
+			// "ShowHelp"; `~effect/cli/CliError/ShowHelp` is the schema identifier.
+			ShowHelp: (error) =>
+				annotateOutcome(error._tag).pipe(
+					Effect.andThen(
+						Effect.sync(() => {
+							if (error.errors.length > 0) {
+								help.discard()
+								process.stderr.write(usageHint(error.commandPath))
+							}
+							process.exitCode = Runtime.getErrorExitCode(error)
+						}),
+					),
 				),
-			),
-		),
+		}),
 		// Expected outcomes, recovered inside the span for the same reason: a
 		// refused precondition, no backend, a bad `--since`, a trace that is not
 		// there. They are the CLI behaving correctly, and closing the root span

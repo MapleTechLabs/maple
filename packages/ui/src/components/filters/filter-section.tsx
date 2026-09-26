@@ -569,8 +569,6 @@ export function SingleCheckboxFilter({
 			<Checkbox
 				id={`filter-${title}`}
 				checked={checked}
-				// The `<Label htmlFor>` below does not name Base UI's role=checkbox element.
-				aria-label={title}
 				onCheckedChange={(val) => onChange(val === true)}
 			/>
 			<Label

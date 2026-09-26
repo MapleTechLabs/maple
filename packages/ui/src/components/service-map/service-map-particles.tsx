@@ -1,7 +1,9 @@
 import { createContext, useContext, useRef } from "react"
+import { Option } from "effect"
 import { useStoreApi } from "@xyflow/react"
 import { useMediaQuery } from "../../hooks/use-media-query"
 import { useMountEffect } from "../../hooks/use-mount-effect"
+import { trySync } from "../../lib/try-sync"
 
 /**
  * Canvas particle layer for the service map.
@@ -158,13 +160,9 @@ function getCachedPath(cache: Map<string, CachedPath>, pathString: string): Cach
 	if (!entry) {
 		const el = document.createElementNS(SVG_NS, "path")
 		el.setAttribute("d", pathString)
-		let length = 0
-		try {
-			length = el.getTotalLength()
-		} catch {
-			return null
-		}
-		if (length <= 0) return null
+		// getTotalLength throws on a path the browser can't parse.
+		const length = Option.getOrNull(trySync(() => el.getTotalLength()))
+		if (length === null || length <= 0) return null
 
 		// SVGPathElement#getPointAtLength is relatively expensive. Sample it only
 		// when edge geometry changes, then linearly interpolate this compact lookup

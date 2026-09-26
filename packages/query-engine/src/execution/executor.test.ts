@@ -192,7 +192,8 @@ describe("makeWarehouseExecutor span instrumentation", () => {
 									status: 500,
 									code: "60",
 									type: "UNKNOWN_TABLE",
-									message: "Code: 60. DB::Exception: Unknown table spans_missing (UNKNOWN_TABLE)",
+									message:
+										"Code: 60. DB::Exception: Unknown table spans_missing (UNKNOWN_TABLE)",
 								}),
 							),
 						insert: () => Effect.void,
@@ -296,17 +297,18 @@ describe("makeWarehouseExecutor span instrumentation", () => {
 			let attempts = 0
 			const executor = makeWarehouseExecutor({
 				...makeDeps([]),
-				createClient: () => Effect.succeed({
-					sql: () =>
-						Effect.try({
-							try: () => {
-								attempts += 1
-								throw new Error("HTTP status 503 service temporarily unavailable")
-							},
-							catch: warehouseDriverFailure,
-						}),
-					insert: () => Effect.void,
-				}),
+				createClient: () =>
+					Effect.succeed({
+						sql: () =>
+							Effect.try({
+								try: () => {
+									attempts += 1
+									throw new Error("HTTP status 503 service temporarily unavailable")
+								},
+								catch: warehouseDriverFailure,
+							}),
+						insert: () => Effect.void,
+					}),
 			})
 
 			const exit = yield* executor
@@ -330,17 +332,18 @@ const makeRecordingDeps = (
 	resolved: { config: ResolvedWarehouseConfig; clientCacheKey: string },
 	sqls: Array<string>,
 ): WarehouseExecutorDeps => ({
-	createClient: () => Effect.succeed({
-		sql: (statement) =>
-			Effect.try({
-				try: () => {
-					sqls.push(statement.text)
-					return { data: [] }
-				},
-				catch: warehouseDriverFailure,
-			}),
-		insert: () => Effect.void,
-	}),
+	createClient: () =>
+		Effect.succeed({
+			sql: (statement) =>
+				Effect.try({
+					try: () => {
+						sqls.push(statement.text)
+						return { data: [] }
+					},
+					catch: warehouseDriverFailure,
+				}),
+			insert: () => Effect.void,
+		}),
 	resolveRoute: (_tenant, purpose) =>
 		Effect.succeed({
 			source: "managed" as const,
@@ -379,10 +382,11 @@ describe("makeWarehouseExecutor compiled-query defaults", () => {
 	it.effect("reports the caller's context as pipeName when row decode fails", () =>
 		Effect.gen(function* () {
 			const badRowDeps: WarehouseExecutorDeps = {
-				createClient: () => Effect.succeed({
-					sql: () => Effect.succeed({ data: [{ c: "not-a-number" }] }),
-					insert: () => Effect.void,
-				}),
+				createClient: () =>
+					Effect.succeed({
+						sql: () => Effect.succeed({ data: [{ c: "not-a-number" }] }),
+						insert: () => Effect.void,
+					}),
 				resolveRoute: () =>
 					Effect.succeed({
 						source: "managed" as const,
@@ -574,38 +578,39 @@ describe("makeWarehouseExecutor capability-aware compilation", () => {
 			const sqls: string[] = []
 			let metadataQueries = 0
 			const executor = makeWarehouseExecutor({
-				createClient: () => Effect.succeed({
-					sql: (statement) =>
-						Effect.try({
-							try: () => {
-								const sql = statement.text
-								sqls.push(sql)
-								if (sql.includes("SELECT version()")) {
-									metadataQueries += 1
-									return { data: [{ version: "26.2.1" }] }
-								}
-								if (sql.includes("system.data_skipping_indices")) {
-									return {
-										data: [
-											{
-												table: "logs",
-												name: "idx_lower_body_text",
-												type: "text",
-												expression: "lower(Body)",
-											},
-										],
+				createClient: () =>
+					Effect.succeed({
+						sql: (statement) =>
+							Effect.try({
+								try: () => {
+									const sql = statement.text
+									sqls.push(sql)
+									if (sql.includes("SELECT version()")) {
+										metadataQueries += 1
+										return { data: [{ version: "26.2.1" }] }
 									}
-								}
-								if (sql.includes("system.settings")) {
-									return { data: [{ name: "enable_full_text_index", value: "0" }] }
-								}
-								if (sql.includes("system.")) return { data: [] }
-								return { data: [] }
-							},
-							catch: warehouseDriverFailure,
-						}),
-					insert: () => Effect.void,
-				}),
+									if (sql.includes("system.data_skipping_indices")) {
+										return {
+											data: [
+												{
+													table: "logs",
+													name: "idx_lower_body_text",
+													type: "text",
+													expression: "lower(Body)",
+												},
+											],
+										}
+									}
+									if (sql.includes("system.settings")) {
+										return { data: [{ name: "enable_full_text_index", value: "0" }] }
+									}
+									if (sql.includes("system.")) return { data: [] }
+									return { data: [] }
+								},
+								catch: warehouseDriverFailure,
+							}),
+						insert: () => Effect.void,
+					}),
 				resolveRoute: () =>
 					Effect.succeed({
 						source: "org-byo" as const,
@@ -648,26 +653,27 @@ describe("makeWarehouseExecutor capability-aware compilation", () => {
 				releaseVersionQuery = resolve
 			})
 			const executor = makeWarehouseExecutor({
-				createClient: () => Effect.succeed({
-					sql: (statement) =>
-						Effect.tryPromise({
-							try: async () => {
-								const sql = statement.text
-								if (sql.includes("SELECT version()")) {
-									versionQueries += 1
-									signalVersionQueryStarted?.()
-									await versionQueryGate
-									return { data: [{ version: "26.2.1" }] }
-								}
-								if (sql.includes("system.settings")) {
-									return { data: [{ name: "enable_full_text_index", value: "0" }] }
-								}
-								return { data: [] }
-							},
-							catch: warehouseDriverFailure,
-						}),
-					insert: () => Effect.void,
-				}),
+				createClient: () =>
+					Effect.succeed({
+						sql: (statement) =>
+							Effect.tryPromise({
+								try: async () => {
+									const sql = statement.text
+									if (sql.includes("SELECT version()")) {
+										versionQueries += 1
+										signalVersionQueryStarted?.()
+										await versionQueryGate
+										return { data: [{ version: "26.2.1" }] }
+									}
+									if (sql.includes("system.settings")) {
+										return { data: [{ name: "enable_full_text_index", value: "0" }] }
+									}
+									return { data: [] }
+								},
+								catch: warehouseDriverFailure,
+							}),
+						insert: () => Effect.void,
+					}),
 				resolveRoute: () =>
 					Effect.succeed({
 						source: "org-byo" as const,
@@ -812,21 +818,22 @@ describe("makeWarehouseExecutor capability-aware compilation", () => {
 		Effect.gen(function* () {
 			const executed: string[] = []
 			const executor = makeWarehouseExecutor({
-				createClient: () => Effect.succeed({
-					sql: (statement) =>
-						Effect.try({
-							try: () => {
-								const sql = statement.text
-								if (sql.includes("system.") || sql.includes("SELECT version()")) {
-									throw new Error("ACCESS_DENIED")
-								}
-								executed.push(sql)
-								return { data: [] }
-							},
-							catch: warehouseDriverFailure,
-						}),
-					insert: () => Effect.void,
-				}),
+				createClient: () =>
+					Effect.succeed({
+						sql: (statement) =>
+							Effect.try({
+								try: () => {
+									const sql = statement.text
+									if (sql.includes("system.") || sql.includes("SELECT version()")) {
+										throw new Error("ACCESS_DENIED")
+									}
+									executed.push(sql)
+									return { data: [] }
+								},
+								catch: warehouseDriverFailure,
+							}),
+						insert: () => Effect.void,
+					}),
 				resolveRoute: () =>
 					Effect.succeed({
 						source: "org-byo" as const,
@@ -860,21 +867,22 @@ describe("makeWarehouseExecutor capability-aware compilation", () => {
 		Effect.gen(function* () {
 			const sqls: string[] = []
 			const executor = makeWarehouseExecutor({
-				createClient: () => Effect.succeed({
-					sql: (statement) =>
-						Effect.try({
-							try: () => {
-								const sql = statement.text
-								sqls.push(sql)
-								// A probe here would be a bug: Tinybird answers `403` for
-								// `system.columns` / `system.data_skipping_indices`, so any
-								// live inspection collapses to the conservative plan.
-								return { data: [] }
-							},
-							catch: warehouseDriverFailure,
-						}),
-					insert: () => Effect.void,
-				}),
+				createClient: () =>
+					Effect.succeed({
+						sql: (statement) =>
+							Effect.try({
+								try: () => {
+									const sql = statement.text
+									sqls.push(sql)
+									// A probe here would be a bug: Tinybird answers `403` for
+									// `system.columns` / `system.data_skipping_indices`, so any
+									// live inspection collapses to the conservative plan.
+									return { data: [] }
+								},
+								catch: warehouseDriverFailure,
+							}),
+						insert: () => Effect.void,
+					}),
 				resolveRoute: () =>
 					Effect.succeed({
 						source: "managed" as const,
@@ -913,18 +921,19 @@ describe("makeWarehouseExecutor capability-aware compilation", () => {
 		Effect.gen(function* () {
 			const executed: string[] = []
 			const executor = makeWarehouseExecutor({
-				createClient: () => Effect.succeed({
-					sql: (statement) =>
-						Effect.suspend(() => {
-							const sql = statement.text
-							if (sql.includes("SELECT version()") || sql.includes("system.")) {
-								return Effect.never
-							}
-							executed.push(sql)
-							return Effect.succeed({ data: [] })
-						}),
-					insert: () => Effect.void,
-				}),
+				createClient: () =>
+					Effect.succeed({
+						sql: (statement) =>
+							Effect.suspend(() => {
+								const sql = statement.text
+								if (sql.includes("SELECT version()") || sql.includes("system.")) {
+									return Effect.never
+								}
+								executed.push(sql)
+								return Effect.succeed({ data: [] })
+							}),
+						insert: () => Effect.void,
+					}),
 				resolveRoute: () =>
 					Effect.succeed({
 						source: "org-byo" as const,
@@ -969,34 +978,36 @@ describe("makeWarehouseExecutor capability-aware compilation", () => {
 		Effect.gen(function* () {
 			const sqls: string[] = []
 			const executor = makeWarehouseExecutor({
-				createClient: () => Effect.succeed({
-					sql: (statement) =>
-						Effect.try({
-							try: () => {
-								const sql = statement.text
-								sqls.push(sql)
-								if (sql.includes("SELECT version()")) return { data: [{ version: "26.2.1" }] }
-								if (sql.includes("system.data_skipping_indices")) {
-									return {
-										data: [
-											{
-												table: "logs",
-												name: "idx_lower_body_text",
-												type: "text",
-												expression: "lower(Body)",
-											},
-										],
+				createClient: () =>
+					Effect.succeed({
+						sql: (statement) =>
+							Effect.try({
+								try: () => {
+									const sql = statement.text
+									sqls.push(sql)
+									if (sql.includes("SELECT version()"))
+										return { data: [{ version: "26.2.1" }] }
+									if (sql.includes("system.data_skipping_indices")) {
+										return {
+											data: [
+												{
+													table: "logs",
+													name: "idx_lower_body_text",
+													type: "text",
+													expression: "lower(Body)",
+												},
+											],
+										}
 									}
-								}
-								if (sql.includes("system.settings")) {
-									return { data: [{ name: "enable_full_text_index", value: "0" }] }
-								}
-								return { data: [] }
-							},
-							catch: warehouseDriverFailure,
-						}),
-					insert: () => Effect.void,
-				}),
+									if (sql.includes("system.settings")) {
+										return { data: [{ name: "enable_full_text_index", value: "0" }] }
+									}
+									return { data: [] }
+								},
+								catch: warehouseDriverFailure,
+							}),
+						insert: () => Effect.void,
+					}),
 				resolveRoute: () =>
 					Effect.succeed({
 						source: "org-byo" as const,
@@ -1068,19 +1079,20 @@ describe("makeWarehouseExecutor raw response limits", () => {
 		Effect.gen(function* () {
 			const executor = makeWarehouseExecutor({
 				...makeDeps([]),
-				createClient: () => Effect.succeed({
-					sql: () =>
-						Effect.try({
-							try: () => {
-								throw new WarehouseResponseLimitError({
-									kind: "bytes",
-									message: "raw response too large",
-								})
-							},
-							catch: warehouseDriverFailure,
-						}),
-					insert: () => Effect.void,
-				}),
+				createClient: () =>
+					Effect.succeed({
+						sql: () =>
+							Effect.try({
+								try: () => {
+									throw new WarehouseResponseLimitError({
+										kind: "bytes",
+										message: "raw response too large",
+									})
+								},
+								catch: warehouseDriverFailure,
+							}),
+						insert: () => Effect.void,
+					}),
 			})
 			const error = yield* Effect.flip(
 				executor.rawSqlQuery(tenant, "SELECT 1 WHERE OrgId = 'org_test'"),
@@ -1097,19 +1109,20 @@ describe("makeWarehouseExecutor raw response limits", () => {
 			// validation error the way the raw path does above.
 			const executor = makeWarehouseExecutor({
 				...makeDeps([]),
-				createClient: () => Effect.succeed({
-					sql: () =>
-						Effect.try({
-							try: () => {
-								throw new WarehouseResponseLimitError({
-									kind: "bytes",
-									message: "response too large",
-								})
-							},
-							catch: warehouseDriverFailure,
-						}),
-					insert: () => Effect.void,
-				}),
+				createClient: () =>
+					Effect.succeed({
+						sql: () =>
+							Effect.try({
+								try: () => {
+									throw new WarehouseResponseLimitError({
+										kind: "bytes",
+										message: "response too large",
+									})
+								},
+								catch: warehouseDriverFailure,
+							}),
+						insert: () => Effect.void,
+					}),
 			})
 			const error = yield* Effect.flip(
 				executor.compiledQueryBounded(tenant, compiled, {
@@ -1130,20 +1143,21 @@ describe("makeWarehouseExecutor raw response limits", () => {
 			let attempts = 0
 			const executor = makeWarehouseExecutor({
 				...makeDeps([]),
-				createClient: () => Effect.succeed({
-					sql: () =>
-						Effect.try({
-							try: () => {
-								attempts++
-								throw new WarehouseResponseLimitError({
-									kind: "bytes",
-									message: "response too large",
-								})
-							},
-							catch: warehouseDriverFailure,
-						}),
-					insert: () => Effect.void,
-				}),
+				createClient: () =>
+					Effect.succeed({
+						sql: () =>
+							Effect.try({
+								try: () => {
+									attempts++
+									throw new WarehouseResponseLimitError({
+										kind: "bytes",
+										message: "response too large",
+									})
+								},
+								catch: warehouseDriverFailure,
+							}),
+						insert: () => Effect.void,
+					}),
 			})
 			yield* Effect.flip(
 				executor.compiledQueryBounded(tenant, compiled, {
@@ -1160,17 +1174,18 @@ describe("makeWarehouseExecutor raw response limits", () => {
 			let seen: unknown
 			const executor = makeWarehouseExecutor({
 				...makeDeps([]),
-				createClient: () => Effect.succeed({
-					sql: (_statement, options?: unknown) =>
-						Effect.try({
-							try: () => {
-								seen = options
-								return { data: [] }
-							},
-							catch: warehouseDriverFailure,
-						}),
-					insert: () => Effect.void,
-				}),
+				createClient: () =>
+					Effect.succeed({
+						sql: (_statement, options?: unknown) =>
+							Effect.try({
+								try: () => {
+									seen = options
+									return { data: [] }
+								},
+								catch: warehouseDriverFailure,
+							}),
+						insert: () => Effect.void,
+					}),
 			})
 			yield* executor.compiledQueryBounded(tenant, compiled, {
 				context: "test",
@@ -1191,24 +1206,24 @@ describe("makeWarehouseExecutor client cache partitions", () => {
 			const executor = makeWarehouseExecutor({
 				createClient: () =>
 					Effect.sync(() => {
-					const clientId = ++nextClientId
-					return {
-						sql: () =>
-							Effect.try({
-								try: () => {
-									calls.push({ clientId, operation: "sql" })
-									return { data: [] }
-								},
-								catch: warehouseDriverFailure,
-							}),
-						insert: () =>
-							Effect.try({
-								try: () => {
-									calls.push({ clientId, operation: "insert" })
-								},
-								catch: WarehouseDriverError.fromUnknown,
-							}),
-					}
+						const clientId = ++nextClientId
+						return {
+							sql: () =>
+								Effect.try({
+									try: () => {
+										calls.push({ clientId, operation: "sql" })
+										return { data: [] }
+									},
+									catch: warehouseDriverFailure,
+								}),
+							insert: () =>
+								Effect.try({
+									try: () => {
+										calls.push({ clientId, operation: "insert" })
+									},
+									catch: WarehouseDriverError.fromUnknown,
+								}),
+						}
 					}),
 				resolveRoute: (_tenant, purpose) =>
 					Effect.succeed({
@@ -1243,10 +1258,11 @@ describe("makeWarehouseExecutor client cache partitions", () => {
 // execution queue (the failure mode behind the 03:00–05:00 timeout storm, where
 // queries rode the ambient ~30s Worker fetch limit despite a server-side budget).
 const makeHangingDeps = (): WarehouseExecutorDeps => ({
-	createClient: () => Effect.succeed({
-		sql: () => Effect.never,
-		insert: () => Effect.void,
-	}),
+	createClient: () =>
+		Effect.succeed({
+			sql: () => Effect.never,
+			insert: () => Effect.void,
+		}),
 	resolveRoute: () =>
 		Effect.succeed({
 			source: "managed" as const,
@@ -1259,14 +1275,15 @@ const makeHangingDeps = (): WarehouseExecutorDeps => ({
 // so a test can prove the client-timeout is NON-transient — i.e. the query is
 // attempted exactly once and the timeout is not fed back into the retry loop.
 const makeCountingHangingDeps = (counter: { count: number }): WarehouseExecutorDeps => ({
-	createClient: () => Effect.succeed({
-		sql: () =>
-			Effect.suspend(() => {
-				counter.count += 1
-				return Effect.never
-			}),
-		insert: () => Effect.void,
-	}),
+	createClient: () =>
+		Effect.succeed({
+			sql: () =>
+				Effect.suspend(() => {
+					counter.count += 1
+					return Effect.never
+				}),
+			insert: () => Effect.void,
+		}),
 	resolveRoute: () =>
 		Effect.succeed({
 			source: "managed" as const,
@@ -1352,20 +1369,21 @@ describe("makeWarehouseExecutor credential-rotation self-heal", () => {
 		readonly attempts: { count: number }
 		readonly invalidations: { count: number }
 	}): WarehouseExecutorDeps => ({
-		createClient: () => Effect.succeed({
-			sql: () =>
-				Effect.try({
-					try: () => {
-						options.attempts.count += 1
-						if (options.attempts.count <= options.failures) {
-							throw new Error("Code: 516. DB::Exception: default: Authentication failed")
-						}
-						return { data: [{ c: 1 }] }
-					},
-					catch: warehouseDriverFailure,
-				}),
-			insert: () => Effect.void,
-		}),
+		createClient: () =>
+			Effect.succeed({
+				sql: () =>
+					Effect.try({
+						try: () => {
+							options.attempts.count += 1
+							if (options.attempts.count <= options.failures) {
+								throw new Error("Code: 516. DB::Exception: default: Authentication failed")
+							}
+							return { data: [{ c: 1 }] }
+						},
+						catch: warehouseDriverFailure,
+					}),
+				insert: () => Effect.void,
+			}),
 		resolveRoute: () =>
 			Effect.succeed({
 				source: "org-byo" as const,

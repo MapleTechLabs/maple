@@ -55,16 +55,14 @@ export const probeLocal = (
 ): Effect.Effect<ProbeResult> => {
 	const base = baseUrl.replace(/\/$/, "")
 	const get = (route: string) =>
-		client
-			.execute(HttpClientRequest.get(`${base}${route}`))
-			.pipe(
-				Effect.flatMap((response) =>
-					Effect.map(response.text.pipe(Effect.orElseSucceed(() => "")), (body) => ({
-						status: response.status,
-						body,
-					})),
-				),
-			)
+		client.execute(HttpClientRequest.get(`${base}${route}`)).pipe(
+			Effect.flatMap((response) =>
+				Effect.map(response.text.pipe(Effect.orElseSucceed(() => "")), (body) => ({
+					status: response.status,
+					body,
+				})),
+			),
+		)
 	const ok = (status: number) => status >= 200 && status < 300
 	const legacyHealth = get("/health").pipe(
 		Effect.map(
@@ -95,7 +93,8 @@ export const SERVER_DISCOVERY_FILE = path.join(MAPLE_DIR, "maple-server.json")
 const ServerDiscovery = Schema.Struct({ pid: Schema.Number, url: Schema.String })
 const decodeServerDiscovery = Schema.decodeUnknownOption(Schema.fromJsonString(ServerDiscovery))
 
-const errorCode = (cause: unknown): unknown => (Predicate.hasProperty(cause, "code") ? cause.code : undefined)
+const errorCode = (cause: unknown): string | undefined =>
+	Predicate.hasProperty(cause, "code") && Predicate.isString(cause.code) ? cause.code : undefined
 
 /** Signal 0 checks existence; EPERM means it exists under another user. */
 const pidAlive = (pid: number): Effect.Effect<boolean> =>

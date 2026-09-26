@@ -73,7 +73,7 @@ const CONTENT_SECURITY_POLICY = [
 	"frame-ancestors 'none'",
 ].join("; ")
 
-const SECURITY_HEADERS: Readonly<Record<string, string>> = {
+const SECURITY_HEADERS = {
 	"content-security-policy": CONTENT_SECURITY_POLICY,
 	"x-content-type-options": "nosniff",
 	"x-frame-options": "DENY",
@@ -81,7 +81,7 @@ const SECURITY_HEADERS: Readonly<Record<string, string>> = {
 	"cross-origin-opener-policy": "same-origin",
 	"permissions-policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
 	"strict-transport-security": "max-age=31536000",
-}
+} as const satisfies Readonly<Record<string, string>>
 
 const withSecurityHeaders = (response: Response): Response => {
 	// Asset responses can be immutable; copy before setting headers.

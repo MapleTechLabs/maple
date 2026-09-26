@@ -520,7 +520,11 @@ WHERE name = 'enable_full_text_index'`,
 			resolved.clientCacheKey,
 			resolved.config,
 			yield* Clock.currentTimeMillis,
-		).pipe(Effect.mapError((error) => mapWarehouseError(pipe, error, execution === "raw" ? "caller" : "maple")))
+		).pipe(
+			Effect.mapError((error) =>
+				mapWarehouseError(pipe, error, execution === "raw" ? "caller" : "maple"),
+			),
+		)
 		const attemptTimeoutMs = clientTimeoutMs(options?.profile, settings?.maxExecutionTime)
 		const retryAttempts = yield* Ref.make(0)
 		// A caller-supplied budget wins: a trusted query that knows its own response

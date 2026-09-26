@@ -32,7 +32,7 @@ export function RefreshButton({
 }) {
 	const queryClient = useQueryClient()
 	const hasNewData = useNewDataSince(since)
-	const onRefresh = useCallback((): Promise<unknown> => {
+	const onRefresh = useCallback((): Promise<void> => {
 		if (advance?.()) return Promise.resolve()
 		return queryClient.invalidateQueries({ queryKey: ["local"], refetchType: "active" })
 	}, [advance, queryClient])

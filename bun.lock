@@ -347,7 +347,6 @@
         "d3-shape": "^3.2.0",
         "date-fns": "^4.4.0",
         "effect": "catalog:effect",
-        "elkjs": "^0.11.1",
         "fuse.js": "^7.4.2",
         "motion": "^12.40.0",
         "react": "catalog:react",

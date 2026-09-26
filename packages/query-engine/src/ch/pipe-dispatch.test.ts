@@ -111,8 +111,10 @@ describe("compilePipeQuery", () => {
 	for (const pipe of ["list_traces", "span_search"]) {
 		describe(`${pipe} has_error`, () => {
 			const sqlFor = (hasError?: unknown) =>
-				compilePipeQuery(pipe, hasError === undefined ? baseParams() : { ...baseParams(), has_error: hasError })
-					?.sql ?? ""
+				compilePipeQuery(
+					pipe,
+					hasError === undefined ? baseParams() : { ...baseParams(), has_error: hasError },
+				)?.sql ?? ""
 			const statusFilters = (sql: string) => sql.match(/StatusCode (=|!=) 'Error'/g) ?? []
 
 			it("applies no status filter when has_error is absent", () => {

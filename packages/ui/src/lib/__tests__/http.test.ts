@@ -334,7 +334,11 @@ describe("getHttpInfo", () => {
 
 	it("falls back to the span name for a non-HTTP stored kind", () => {
 		expect(
-			getHttpInfo({ spanName: "http.client GET", spanKind: "Internal", spanAttributes: { "url.path": "/x" } }),
+			getHttpInfo({
+				spanName: "http.client GET",
+				spanKind: "Internal",
+				spanAttributes: { "url.path": "/x" },
+			}),
 		).toMatchObject({ kind: "client" })
 	})
 })

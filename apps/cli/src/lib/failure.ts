@@ -19,20 +19,25 @@ export interface FailureReport {
 const READ_ONLY_PREFIX = "read-only query endpoint: "
 const DEBUG_HINT = "rerun with --debug to see the query and the full error"
 
-const tagOf = (u: unknown): string | undefined =>
-	Predicate.hasProperty(u, "_tag") && typeof u._tag === "string" ? u._tag : undefined
-
-const field = (u: unknown, key: string): unknown => (Predicate.hasProperty(u, key) ? u[key] : undefined)
-
-const stringField = (u: unknown, key: string): string | undefined => {
-	const value = field(u, key)
-	return typeof value === "string" ? value : undefined
+/** A link in a failure's cause chain that names itself with a string `_tag`. */
+export interface TaggedLink {
+	readonly _tag: string
 }
 
-const numberField = (u: unknown, key: string): number | undefined => {
-	const value = field(u, key)
-	return typeof value === "number" ? value : undefined
+const isTaggedLink = (u: unknown): u is TaggedLink =>
+	Predicate.hasProperty(u, "_tag") && typeof u._tag === "string"
+
+const tagOf = (u: unknown): string | undefined => (isTaggedLink(u) ? u._tag : undefined)
+
+const field = <A>(u: unknown, key: string, refine: Predicate.Refinement<unknown, A>): A | undefined => {
+	if (!Predicate.hasProperty(u, key)) return undefined
+	const value = u[key]
+	return refine(value) ? value : undefined
 }
+
+const stringField = (u: unknown, key: string): string | undefined => field(u, key, Predicate.isString)
+
+const numberField = (u: unknown, key: string): number | undefined => field(u, key, Predicate.isNumber)
 
 /** The error and every `cause` below it, bounded against cycles. */
 export const causeChain = (error: unknown): ReadonlyArray<unknown> => {
@@ -45,8 +50,10 @@ export const causeChain = (error: unknown): ReadonlyArray<unknown> => {
 	return chain
 }
 
-export const findInChain = (error: unknown, tag: string): unknown =>
-	causeChain(error).find((link) => tagOf(link) === tag)
+export const findInChain = (error: unknown, tag: string): TaggedLink | undefined =>
+	causeChain(error)
+		.filter(isTaggedLink)
+		.find((link) => link._tag === tag)
 
 /** The reason `/local/query` gave for refusing a write, if that is what failed. */
 export const readOnlyRejection = (error: unknown): string | undefined => {

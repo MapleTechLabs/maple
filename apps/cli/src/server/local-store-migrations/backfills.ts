@@ -5,7 +5,7 @@ import { Schema } from "effect"
 import { applyRawTelemetryRetentionFloor } from "../chdb"
 import { decodeRowCounts } from "../chdb-rows"
 import { customStep, LocalMigrationStepError } from "./step-executor"
-import { strictDecoder, UnsignedDecimal } from "./journal-codecs"
+import { UnsignedDecimal } from "./journal-codecs"
 
 /** v10 -> v11: the SELECT of `product_events_mv` in the v11 snapshot (migration 0021). */
 const PRODUCT_EVENTS_PROJECTION_SQL = `OrgId,
@@ -127,7 +127,7 @@ const ErrorRollupProgress = Schema.Struct({ backfilledErrorEvents: UnsignedDecim
 
 /** v1 -> v2: the only step whose progress is a backfill total rather than an installed flag. */
 export const errorRollupBackfill = customStep({
-	decodeProgress: strictDecoder(ErrorRollupProgress),
+	progress: ErrorRollupProgress,
 	apply: (db, state) => {
 		if (state.retentionDays !== undefined) applyRawTelemetryRetentionFloor(db, state.retentionDays)
 		db.exec(ERROR_ROLLUP_BACKFILL_SQL)

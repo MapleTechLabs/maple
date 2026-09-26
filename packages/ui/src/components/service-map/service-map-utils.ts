@@ -681,8 +681,9 @@ function computeLayers(
 
 	const layerGroups = new Map<number, string[]>()
 	for (const [id, layer] of layerMap) {
-		if (!layerGroups.has(layer)) layerGroups.set(layer, [])
-		layerGroups.get(layer)!.push(id)
+		const group = layerGroups.get(layer)
+		if (group) group.push(id)
+		else layerGroups.set(layer, [id])
 	}
 	for (const group of layerGroups.values()) {
 		group.sort()
@@ -730,12 +731,16 @@ function computeLayers(
 	for (let sweep = 0; sweep < 2; sweep++) {
 		// Left-to-right: order by neighbors in previous layer
 		for (let li = 1; li < layerIndices.length; li++) {
-			barySort(layerGroups.get(layerIndices[li])!, (id) => reverseAdj.get(id) ?? [])
+			const group = layerGroups.get(layerIndices[li])
+			if (!group) continue
+			barySort(group, (id) => reverseAdj.get(id) ?? [])
 			updatePositions()
 		}
 		// Right-to-left: order by neighbors in next layer
 		for (let li = layerIndices.length - 2; li >= 0; li--) {
-			barySort(layerGroups.get(layerIndices[li])!, (id) => adjacency.get(id) ?? [])
+			const group = layerGroups.get(layerIndices[li])
+			if (!group) continue
+			barySort(group, (id) => adjacency.get(id) ?? [])
 			updatePositions()
 		}
 	}
@@ -861,9 +866,9 @@ export function computeFlatPositions(
 			rank.set(comp, priorCentroidY(comp, previous) ?? Number.POSITIVE_INFINITY)
 		}
 		const traversalOrder = new Map(connectedComponents.map((c, i) => [c, i]))
-		connectedComponents.sort(
-			(a, b) => rank.get(a)! - rank.get(b)! || traversalOrder.get(a)! - traversalOrder.get(b)!,
-		)
+		const rankOf = (c: string[]) => rank.get(c) ?? Number.POSITIVE_INFINITY
+		const orderOf = (c: string[]) => traversalOrder.get(c) ?? 0
+		connectedComponents.sort((a, b) => rankOf(a) - rankOf(b) || orderOf(a) - orderOf(b))
 	}
 
 	let currentYOffset = 0
@@ -1007,22 +1012,25 @@ export function computeNodePositions(
 	const laneOrder = Array.from(lanes.keys()).sort()
 	if (previous) {
 		const rank = new Map<string, number>()
-		for (const ns of laneOrder) {
+		for (const [ns, laneNodes] of lanes) {
 			rank.set(
 				ns,
 				priorCentroidY(
-					lanes.get(ns)!.map((n) => n.id),
+					laneNodes.map((n) => n.id),
 					previous,
 				) ?? Number.POSITIVE_INFINITY,
 			)
 		}
-		laneOrder.sort((a, b) => rank.get(a)! - rank.get(b)! || a.localeCompare(b))
+		const rankOf = (ns: string) => rank.get(ns) ?? Number.POSITIVE_INFINITY
+		laneOrder.sort((a, b) => rankOf(a) - rankOf(b) || a.localeCompare(b))
 	}
 
 	let yOffset = 0
 	for (const ns of laneOrder) {
+		const laneNodes = lanes.get(ns)
+		if (!laneNodes) continue
 		const laneTop = yOffset + NS_LABEL_HEIGHT + NS_PADDING_Y
-		const laneHeight = placeLane(lanes.get(ns)!, laneTop)
+		const laneHeight = placeLane(laneNodes, laneTop)
 		yOffset = laneTop + laneHeight + NS_PADDING_Y + NS_CLUSTER_GAP
 	}
 

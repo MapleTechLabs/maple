@@ -58,7 +58,8 @@ const makeExecutor = (
 			opts.window !== undefined &&
 			String(params.start_time) <= opts.window.start &&
 			String(params.end_time) >= opts.window.end
-		const data: ReadonlyArray<Record<string, unknown>> = pipe === "span_hierarchy" && inWindow ? [spanRow] : []
+		const data: ReadonlyArray<Record<string, unknown>> =
+			pipe === "span_hierarchy" && inWindow ? [spanRow] : []
 		return Effect.succeed({ data: data as ReadonlyArray<never> })
 	},
 })
@@ -78,7 +79,9 @@ describe("inspectTrace", () => {
 		Effect.gen(function* () {
 			const captured: Captured = { pipeCalls: [], probes: [] }
 			const result = yield* run(
-				makeExecutor(captured, { window: { start: "2026-04-09 12:00:00", end: "2026-04-09 12:00:00" } }),
+				makeExecutor(captured, {
+					window: { start: "2026-04-09 12:00:00", end: "2026-04-09 12:00:00" },
+				}),
 			)
 			assert.strictEqual(result.spanCount, 1)
 			assert.lengthOf(captured.probes, 0)

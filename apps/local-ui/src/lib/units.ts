@@ -2,12 +2,13 @@
 // them to words a reader recognizes and to the shared chart formatter's units.
 
 import { Schema } from "effect"
+import { lookup } from "./lookup"
 
 export const MetricTypeSchema = Schema.Literals(["sum", "gauge", "histogram", "exponential_histogram"])
 export type MetricType = Schema.Schema.Type<typeof MetricTypeSchema>
 export const isMetricType = Schema.is(MetricTypeSchema)
 
-const UNIT_WORDS: Record<string, string> = {
+const UNIT_WORDS = {
 	By: "bytes",
 	KBy: "kilobytes",
 	MBy: "megabytes",
@@ -27,7 +28,7 @@ const UNIT_WORDS: Record<string, string> = {
 	Cel: "°C",
 	Hz: "Hz",
 	"%": "%",
-}
+} as const satisfies Record<string, string>
 
 /** A dimensionless `1` is a ratio: a percentage when the name says so, otherwise a plain count. */
 function isRatioName(metricName: string): boolean {
@@ -41,7 +42,7 @@ function isRatioName(metricName: string): boolean {
 export function humanizeUnit(unit: string, metricName = ""): string {
 	const trimmed = unit.trim()
 	if (trimmed === "" || trimmed === "1") return trimmed === "1" && isRatioName(metricName) ? "%" : ""
-	const known = UNIT_WORDS[trimmed]
+	const known = lookup(UNIT_WORDS, trimmed)
 	if (known) return known
 	const annotation = trimmed.match(/^\{(.+)\}$/)
 	if (annotation) return annotation[1].endsWith("s") ? annotation[1] : `${annotation[1]}s`

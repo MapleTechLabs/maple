@@ -135,7 +135,9 @@ export interface WarehouseExecutorDeps {
 	 * validates its endpoint and captures its HTTP client, and a refusal surfaces
 	 * as a `config`-reason driver error rather than a per-query surprise.
 	 */
-	readonly createClient: (config: ResolvedWarehouseConfig) => Effect.Effect<WarehouseSqlClient, WarehouseDriverError>
+	readonly createClient: (
+		config: ResolvedWarehouseConfig,
+	) => Effect.Effect<WarehouseSqlClient, WarehouseDriverError>
 	readonly resolveRoute: WarehouseRouteResolver
 	/**
 	 * Drop whatever the host caches to answer `resolveRoute` for this tenant, and

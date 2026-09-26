@@ -30,7 +30,13 @@ import { ServiceMapBackground } from "./service-map-background"
 import { ServiceMapControls } from "./service-map-controls"
 import { applyDeclutter, type DeclutterFocus, type DeclutterState } from "./service-map-declutter"
 import { ServiceMapEdge } from "./service-map-edge"
-import { layoutServiceMapWithElk, type ElkLayoutResult, type PreviousPositions } from "./service-map-elk"
+import {
+	layoutServiceMapWithElk,
+	toLayoutFailure,
+	type ElkLayoutResult,
+	type PreviousPositions,
+	type ServiceMapLayoutFailure,
+} from "./service-map-elk"
 import { upsertSnapshot, type ServiceMapLayout, type ServiceMapViewPrefs } from "./service-map-layout-state"
 import { ServiceMapLoading } from "./service-map-loading"
 import { ServiceMapMiniMap } from "./service-map-minimap"
@@ -88,7 +94,7 @@ const FALLBACK_NODE_WIDTH = 220
 const FALLBACK_NODE_HEIGHT = 70
 
 /** Receives layout-engine failures (`event` names the failure); must be referentially stable. */
-export type ServiceMapLayoutReporter = (event: string, error: unknown) => void
+export type ServiceMapLayoutReporter = (event: string, failure: ServiceMapLayoutFailure) => void
 
 export interface ServiceMapDetailPanelContext {
 	/** The selected node id: a service name, or a `db:` / `nsagg:` synthetic id. */
@@ -292,7 +298,7 @@ function createElkLayoutStore(
 			})
 			.catch((error) => {
 				clearTimeout(graceTimer)
-				onError?.("service_map.elk_layout_failed", error)
+				onError?.("service_map.elk_layout_failed", toLayoutFailure(error))
 				publish(ELK_FALLBACK)
 			})
 	}
@@ -541,7 +547,9 @@ export function ServiceMapFlowCanvas({
 	const renderedEdges = useMemo(() => {
 		if (declutter.dimmedEdgeIds.size === 0) return effectiveEdges
 		return effectiveEdges.map((edge) =>
-			declutter.dimmedEdgeIds.has(edge.id) ? { ...edge, data: { ...edge.data!, dimmed: true } } : edge,
+			declutter.dimmedEdgeIds.has(edge.id) && edge.data
+				? { ...edge, data: { ...edge.data, dimmed: true } }
+				: edge,
 		)
 	}, [effectiveEdges, declutter.dimmedEdgeIds])
 
@@ -644,7 +652,7 @@ export function ServiceMapFlowCanvas({
 					upsertSnapshot(prev, layoutSignature, (snap) => {
 						const positions = { ...snap.positions }
 						for (const c of dragEnds) {
-							positions[c.id] = { x: c.position!.x, y: c.position!.y }
+							if (c.position) positions[c.id] = { x: c.position.x, y: c.position.y }
 						}
 						return { ...snap, positions }
 					}),
@@ -892,10 +900,14 @@ export function ServiceMapFlowCanvas({
 									selectedId: selectedServiceId,
 									onSelect: (id) => {
 										if (id && isNsAggregateId(id)) {
-											const ns = decodeURIComponent(id.slice(NS_AGGREGATE_PREFIX.length))
+											const ns = decodeURIComponent(
+												id.slice(NS_AGGREGATE_PREFIX.length),
+											)
 											setViewPrefs((prev) => ({
 												...prev,
-												collapsedNamespaces: prev.collapsedNamespaces.filter((n) => n !== ns),
+												collapsedNamespaces: prev.collapsedNamespaces.filter(
+													(n) => n !== ns,
+												),
 											}))
 										} else setSelectedServiceId(id)
 									},
@@ -954,7 +966,8 @@ export function ServiceMapFlowCanvas({
 								selectedId: selectedServiceId,
 								colorMode,
 								onClose: () => setSelectedServiceId(null),
-								onFocus: () => setFocus({ serviceId: selectedServiceId, hops: 1, mode: "dim" }),
+								onFocus: () =>
+									setFocus({ serviceId: selectedServiceId, hops: 1, mode: "dim" }),
 							})}
 						</ResizablePanel>
 					</>

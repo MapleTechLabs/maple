@@ -17,6 +17,7 @@ const errorRows = [
 		sampleMessage: "Database query failed | column Foo",
 		count: 42,
 		affectedServicesCount: 2,
+		serviceNames: ["api", "checkout"],
 		firstSeen: "2026-09-24 10:00:00",
 		lastSeen: "2026-09-24 11:00:00",
 	},

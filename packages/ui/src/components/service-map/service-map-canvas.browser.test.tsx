@@ -58,8 +58,12 @@ function Harness({
 describe("ServiceMapFlowCanvas", () => {
 	it("lays out and renders the service nodes", async () => {
 		const { container } = render(<Harness />)
-		await waitFor(() => expect(container.querySelector("[data-elk-status]")).not.toBeNull(), { timeout: 8000 })
-		await waitFor(() => expect(container.querySelectorAll(".react-flow__node-serviceNode")).toHaveLength(2))
+		await waitFor(() => expect(container.querySelector("[data-elk-status]")).not.toBeNull(), {
+			timeout: 8000,
+		})
+		await waitFor(() =>
+			expect(container.querySelectorAll(".react-flow__node-serviceNode")).toHaveLength(2),
+		)
 		expect(container.textContent).toContain("api")
 		expect(container.textContent).toContain("auth")
 	})
@@ -73,7 +77,9 @@ describe("ServiceMapFlowCanvas", () => {
 		const { container, findByText } = render(
 			<Harness renderDetailPanel={({ selectedId }) => <p>panel for {selectedId}</p>} />,
 		)
-		await waitFor(() => expect(container.querySelector('[data-id="auth"]')).not.toBeNull(), { timeout: 8000 })
+		await waitFor(() => expect(container.querySelector('[data-id="auth"]')).not.toBeNull(), {
+			timeout: 8000,
+		})
 		const node = container.querySelector('[data-id="auth"]')
 		expect(node).not.toBeNull()
 		if (node) fireEvent.click(node)

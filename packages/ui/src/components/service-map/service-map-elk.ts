@@ -13,8 +13,23 @@ import {
 
 export type { PreviousPositions }
 
+/** A layout-engine failure; `Error` satisfies it, so thrown errors pass through as-is. */
+export interface ServiceMapLayoutFailure {
+	readonly name: string
+	readonly message: string
+}
+
+/** BOUNDARY: normalizes whatever the layout engine threw or rejected with. */
+export function toLayoutFailure(thrown: unknown): ServiceMapLayoutFailure {
+	if (thrown instanceof Error) return thrown
+	// Still an `Error`, so reporters that branch on `instanceof Error` keep the message.
+	const failure = new Error(String(thrown))
+	failure.name = "UnknownError"
+	return failure
+}
+
 /** Sink for degraded-path warnings (worker unavailable, worker layout failed). */
-export type ElkWarningReporter = (event: string, error: unknown) => void
+export type ElkWarningReporter = (event: string, failure: ServiceMapLayoutFailure) => void
 
 // ELK runs inside a dedicated web worker (elk-api + elk-worker) so laying out a
 // large graph never blocks the main thread. The worker is a singleton reused
@@ -47,7 +62,7 @@ function getElk(onWarning: ElkWarningReporter | undefined): Promise<ELK> {
 	if (workerBroken) return getMainThreadElk()
 	if (!workerElk) {
 		workerElk = createWorkerElk().catch((error) => {
-			onWarning?.("service_map.elk_worker_unavailable", error)
+			onWarning?.("service_map.elk_worker_unavailable", toLayoutFailure(error))
 			workerBroken = true
 			return getMainThreadElk()
 		})
@@ -129,9 +144,11 @@ export function buildElkGraph(
 
 	const children: ElkNode[] = []
 	for (const ns of Array.from(lanes.keys()).sort()) {
+		const laneNodes = lanes.get(ns)
+		if (!laneNodes) continue
 		children.push({
 			id: `${ELK_CONTAINER_PREFIX}${ns}`,
-			children: lanes.get(ns)!.map(toElkNode),
+			children: laneNodes.map(toElkNode),
 			layoutOptions: {
 				// Reserve room at the top for the namespace label chip.
 				"elk.padding": `[top=${NS_LABEL_HEIGHT + NS_PADDING_Y},left=${NS_PADDING_X},bottom=${NS_PADDING_Y},right=${NS_PADDING_X}]`,
@@ -240,19 +257,16 @@ export async function layoutServiceMapWithElk(
 ): Promise<ElkLayoutResult> {
 	const graph = buildElkGraph(nodes, edges, config, previous)
 
-	let result: ElkNode
-	try {
-		const elk = await getElk(onWarning)
-		result = await elk.layout(graph)
-	} catch (error) {
-		// A failure on the worker path (e.g. the worker chunk 404s at runtime)
-		// demotes to the main-thread build and retries once.
-		if (workerBroken) throw error
-		onWarning?.("service_map.elk_worker_layout_failed", error)
-		workerBroken = true
-		const elk = await getMainThreadElk()
-		result = await elk.layout(graph)
-	}
+	const result: ElkNode = await getElk(onWarning)
+		.then((elk) => elk.layout(graph))
+		.catch((error) => {
+			// A failure on the worker path (e.g. the worker chunk 404s at runtime)
+			// demotes to the main-thread build and retries once.
+			if (workerBroken) return Promise.reject(error)
+			onWarning?.("service_map.elk_worker_layout_failed", toLayoutFailure(error))
+			workerBroken = true
+			return getMainThreadElk().then((elk) => elk.layout(graph))
+		})
 
 	const positions = new Map<string, { x: number; y: number }>()
 

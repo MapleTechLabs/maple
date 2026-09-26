@@ -142,6 +142,13 @@ export function ErrorsView() {
 	)
 }
 
+/** The current view's params, plus the error span to focus when the trace has one. */
+function traceLinkParams(query: URLSearchParams, errorSpanId: string): URLSearchParams {
+	const params = new URLSearchParams(Object.fromEntries(query))
+	if (errorSpanId) params.set("spanId", errorSpanId)
+	return params
+}
+
 function ErrorTypeCard({
 	row,
 	filters,
@@ -239,10 +246,7 @@ function ErrorTypeCard({
 									<a
 										href={hrefFor(
 											`/traces/${encodeURIComponent(trace.traceId)}`,
-											new URLSearchParams({
-												...Object.fromEntries(query),
-												...(trace.errorSpanId ? { spanId: trace.errorSpanId } : {}),
-											}),
+											traceLinkParams(query, trace.errorSpanId),
 										)}
 										className="flex w-full items-center gap-3 py-2 text-left text-xs text-muted-foreground transition-colors hover:text-foreground"
 									>

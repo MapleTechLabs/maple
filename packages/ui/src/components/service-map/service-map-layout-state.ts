@@ -52,4 +52,7 @@ export interface ServiceMapViewPrefs {
 	collapsedNamespaces: ReadonlyArray<string>
 }
 
-export const DEFAULT_SERVICE_MAP_VIEW_PREFS: ServiceMapViewPrefs = { minTrafficPct: 0, collapsedNamespaces: [] }
+export const DEFAULT_SERVICE_MAP_VIEW_PREFS: ServiceMapViewPrefs = {
+	minTrafficPct: 0,
+	collapsedNamespaces: [],
+}

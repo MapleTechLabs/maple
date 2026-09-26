@@ -112,7 +112,8 @@ function collapseNamespaces(
 	if (members.size === 0) return { nodes, edges, memberToAggregate }
 
 	for (const ns of Array.from(members.keys()).sort()) {
-		const group = members.get(ns)!
+		const group = members.get(ns)
+		if (!group) continue
 		let throughput = 0
 		let tracedThroughput = 0
 		let errorWeighted = 0
@@ -159,12 +160,15 @@ function collapseNamespaces(
 		}
 		// Intra-namespace traffic disappears inside the aggregate.
 		if (source === target) continue
+		// Merging needs edge metrics; service-map edges always carry data.
+		const data = edge.data
+		if (!data) continue
 		const id = edgeIdFor(source, target)
 		const existing = merged.get(id)
-		if (existing) {
-			existing.data = mergeEdgeData(existing.data!, edge.data!)
+		if (existing?.data) {
+			existing.data = mergeEdgeData(existing.data, data)
 		} else {
-			merged.set(id, { ...edge, id, source, target, data: { ...edge.data! } })
+			merged.set(id, { ...edge, id, source, target, data: { ...data } })
 		}
 	}
 	// Remapped ids always contain a synthetic `nsagg:` endpoint, which never
@@ -202,8 +206,8 @@ function bfsNeighborhood(
 	let head = 0
 	while (head < queue.length) {
 		const current = queue[head++]
-		const d = depth.get(current)!
-		if (d >= hops) continue
+		const d = depth.get(current)
+		if (d === undefined || d >= hops) continue
 		for (const neighbor of adjacency.get(current) ?? []) {
 			if (!depth.has(neighbor)) {
 				depth.set(neighbor, d + 1)

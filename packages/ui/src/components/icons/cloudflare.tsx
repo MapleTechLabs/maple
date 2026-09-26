@@ -35,7 +35,12 @@ interface CloudflareBrandIconProps extends IconProps {
  * The Cloudflare mark in brand orange by default (the convention for brand marks,
  * see `clickhouse.tsx`), so `className`/`color` cannot tint it.
  */
-function CloudflareBrandIcon({ size = 24, className, monochrome = false, ...props }: CloudflareBrandIconProps) {
+function CloudflareBrandIcon({
+	size = 24,
+	className,
+	monochrome = false,
+	...props
+}: CloudflareBrandIconProps) {
 	return (
 		<svg
 			xmlns="http://www.w3.org/2000/svg"

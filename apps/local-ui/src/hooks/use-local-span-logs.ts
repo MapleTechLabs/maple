@@ -28,7 +28,9 @@ export function useLocalSpanLogs(
 								? boundsForRange(WIDEST_RANGE)
 								: {
 										startTime: toClickHouseDateTime(startMs - HOUR_MS),
-										endTime: toClickHouseDateTime(startMs + Math.max(0, spanDurationMs) + HOUR_MS),
+										endTime: toClickHouseDateTime(
+											startMs + Math.max(0, spanDurationMs) + HOUR_MS,
+										),
 									}
 						const compiled = CH.compile(
 							CH.logsListQuery({ traceId, spanId, limit: 100 }),

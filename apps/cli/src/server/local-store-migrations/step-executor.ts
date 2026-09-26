@@ -17,6 +17,7 @@ import {
 	expectedManifest,
 	RAW_TABLES,
 	rawRowCounts,
+	strictDecoder,
 	UnsignedDecimal,
 } from "./journal-codecs"
 
@@ -134,22 +135,29 @@ export interface StepState {
 	readonly [group: string]: unknown
 }
 
+/** Journaled step progress: `INSTALLED`, or the flat record a custom step's schema decodes. */
+export type StepProgress = { readonly [field: string]: string | number | boolean }
+
 /** The escape hatch: runs inside the bootstrapped target session and owns its own progress. */
 export interface StepCustom {
-	readonly decodeProgress: (value: unknown) => unknown
-	readonly apply: (db: Chdb, state: StepState) => unknown
-	readonly verify: (db: Chdb, state: StepState, progress: unknown) => void
+	/** Strictly decodes the journaled progress; `apply` returns the same shape. */
+	readonly progress: Schema.Codec<StepProgress, unknown>
+	readonly apply: (db: Chdb, state: StepState) => StepProgress
+	readonly verify: (db: Chdb, state: StepState, progress: StepProgress) => void
 }
 
-export const customStep = <Progress>(custom: {
-	readonly decodeProgress: (value: unknown) => Progress
+export const customStep = <Progress extends StepProgress>(custom: {
+	readonly progress: Schema.Codec<Progress, unknown>
 	readonly apply: (db: Chdb, state: StepState) => Progress
 	readonly verify: (db: Chdb, state: StepState, progress: Progress) => void
-}): StepCustom => ({
-	decodeProgress: custom.decodeProgress,
-	apply: custom.apply,
-	verify: (db, state, progress) => custom.verify(db, state, custom.decodeProgress(progress)),
-})
+}): StepCustom => {
+	const decodeProgress = strictDecoder(custom.progress)
+	return {
+		progress: custom.progress,
+		apply: custom.apply,
+		verify: (db, state, progress) => custom.verify(db, state, decodeProgress(progress)),
+	}
+}
 
 export interface StepSpec {
 	readonly id: string
@@ -178,7 +186,7 @@ const isCount = (value: unknown): value is string => typeof value === "string" &
 const INSTALLED = Object.freeze({ installed: true })
 
 /** Compile one table row into the coordinator's module interface. */
-export const stepModule = (spec: StepSpec): LocalStoreMigrationModule<StepState, unknown> => {
+export const stepModule = (spec: StepSpec): LocalStoreMigrationModule<StepState, StepProgress> => {
 	const source = localSchemaSnapshot(spec.from)
 	const target = localSchemaSnapshot(spec.to)
 	const label = `v${spec.from} -> v${spec.to}`
@@ -249,9 +257,10 @@ export const stepModule = (spec: StepSpec): LocalStoreMigrationModule<StepState,
 		return makeState(rawRows, counts, retentionDays)
 	}
 
-	const decodeProgress = (value: unknown): unknown => {
+	const decodeCustomProgress = spec.custom === undefined ? undefined : strictDecoder(spec.custom.progress)
+	const decodeProgress = (value: unknown): StepProgress | undefined => {
 		if (value === undefined) return undefined
-		if (spec.custom !== undefined) return spec.custom.decodeProgress(value)
+		if (decodeCustomProgress !== undefined) return decodeCustomProgress(value)
 		if (
 			!isRecord(value) ||
 			Object.keys(value).some((key) => key !== "installed") ||

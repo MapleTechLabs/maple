@@ -32,7 +32,7 @@ interface SignalCopy {
 	readonly source: ReactNode
 }
 
-const SIGNAL_COPY: Record<TelemetrySignal, SignalCopy> = {
+const SIGNAL_COPY = {
 	traces: {
 		noun: "traces",
 		icon: NetworkNodesIcon,
@@ -61,7 +61,7 @@ const SIGNAL_COPY: Record<TelemetrySignal, SignalCopy> = {
 			</>
 		),
 	},
-}
+} satisfies Record<TelemetrySignal, SignalCopy>
 
 export interface SignalEmptyStateProps {
 	readonly signal: TelemetrySignal
