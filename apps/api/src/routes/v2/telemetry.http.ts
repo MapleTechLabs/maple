@@ -1230,7 +1230,7 @@ export const HttpV2ServicesLive = HttpApiBuilder.group(MapleApiV2, "services", (
 				.handle("overview", ({ params, query }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						// The series read raw traces (or the minutely tier), so the window
+						// The series can fall back to raw spans (sub-minute buckets), so the window
 						// takes the timeseries range cap rather than the catalog's annual one.
 						const window = yield* parseWindow(query.start_time, query.end_time, {
 							maxSeconds: MAX_QUERY_RANGE_SECONDS,
@@ -1258,6 +1258,10 @@ export const HttpV2ServicesLive = HttpApiBuilder.group(MapleApiV2, "services", (
 									bucketSeconds,
 									filters: {
 										serviceName: params.name,
+										// Entry spans, the same population as the summary. It is also
+										// what routes the read to the minutely/hourly rollups: without
+										// it every span of the service is scanned raw (23s+ on a busy one).
+										rootSpansOnly: true,
 										...(query.deployment_environment
 											? { environments: [query.deployment_environment] }
 											: undefined),

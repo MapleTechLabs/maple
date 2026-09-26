@@ -747,6 +747,32 @@ describe("v2 telemetry reads over HTTP", () => {
 		await harness.dispose()
 	})
 
+	// Regression: without `rootSpansOnly` the overview series skipped the
+	// service-overview rollups and scanned every raw span of the service, which
+	// took 23s+ for a busy service on the phone's service detail screen.
+	it("reads the overview series from entry spans", async () => {
+		const observedFilters: Array<Record<string, unknown> | undefined> = []
+		const queryEngine: QueryEngineServiceApi = {
+			...queryEngineStub,
+			execute: (tenant, request) => {
+				observedFilters.push(request.query.filters)
+				return queryEngineStub.execute(tenant, request)
+			},
+		}
+		const harness = makeHarness(warehouseStub, queryEngine)
+		const key = await harness.bootstrapKey()
+		const response = await harness.request(
+			"GET",
+			`/v2/services/api/overview?${windowQuery}&bucket_seconds=120&deployment_environment=production`,
+			key.secret,
+		)
+		expect(response.status, JSON.stringify(response.body)).toBe(200)
+		expect(observedFilters).toEqual([
+			{ serviceName: "api", rootSpansOnly: true, environments: ["production"] },
+		])
+		await harness.dispose()
+	})
+
 	it("enforces signal query windows, bucket budgets, and breakdown narrowing", async () => {
 		const harness = makeHarness()
 		const key = await harness.bootstrapKey(["traces:read"])
