@@ -15,6 +15,8 @@ const SlackResponse = Schema.Struct({
 	ok: Schema.Boolean,
 	error: Schema.optionalKey(Schema.String),
 	channel: Schema.optionalKey(Schema.Struct({ id: Schema.String, name: Schema.String })),
+	channels: Schema.optionalKey(Schema.Array(Schema.Struct({ id: Schema.String, name: Schema.String }))),
+	response_metadata: Schema.optionalKey(Schema.Struct({ next_cursor: Schema.optionalKey(Schema.String) })),
 })
 type SlackResponse = Schema.Schema.Type<typeof SlackResponse>
 const decodeSlackResponse = Schema.decodeUnknownEffect(SlackResponse)
@@ -30,6 +32,10 @@ export type SupportSlackMethod =
 	| "conversations.invite"
 	| "conversations.inviteShared"
 	| "chat.postMessage"
+	| "users.conversations"
+
+/** Form fields; Slack takes every Web API argument as a string, lists comma-separated. */
+export type SupportSlackArgs = Readonly<Record<string, string | boolean | number>>
 
 export interface SupportSlackClientApi {
 	/** False when this deployment has no bot token; every call then fails as unavailable. */
@@ -38,7 +44,7 @@ export interface SupportSlackClientApi {
 	readonly teamUserIds: ReadonlyArray<string>
 	readonly call: (
 		method: SupportSlackMethod,
-		body: Record<string, unknown>,
+		args: SupportSlackArgs,
 	) => Effect.Effect<SlackResponse, SupportSlackRefusedError | SupportChannelUnavailableError>
 }
 
@@ -67,7 +73,7 @@ export class SupportSlackClient extends Context.Service<SupportSlackClient, Supp
 
 			const call = Effect.fn("SupportSlackClient.call", { kind: "client" })(function* (
 				method: SupportSlackMethod,
-				body: Record<string, unknown>,
+				args: SupportSlackArgs,
 			) {
 				yield* Effect.annotateCurrentSpan({ "peer.service": "slack", "slack.method": method })
 				if (Option.isNone(token)) {
@@ -80,7 +86,10 @@ export class SupportSlackClient extends Context.Service<SupportSlackClient, Supp
 					.execute(
 						HttpClientRequest.post(`${SLACK_API_BASE}/${method}`).pipe(
 							HttpClientRequest.bearerToken(token.value),
-							HttpClientRequest.bodyJsonUnsafe(body),
+							// Form-encoded: the one body shape every Web API method accepts.
+							HttpClientRequest.bodyUrlParams(
+								Object.entries(args).map(([key, value]) => [key, String(value)] as const),
+							),
 						),
 					)
 					.pipe(Effect.mapError(unavailable(method)))

@@ -24,6 +24,22 @@ const CREATE_TIMEOUT_MS = 60 * 1000
 /** `name_taken` retries before giving up; each adds a numeric suffix. */
 const MAX_NAME_ATTEMPTS = 5
 
+/** Pages of the bot's own channels to search when adopting one; 200 per page. */
+const MAX_CHANNEL_PAGES = 10
+
+/** `users.conversations` arguments; `cursor` only after the first page. */
+type UsersConversationsArgs = {
+	types: string
+	exclude_archived: boolean
+	limit: number
+	cursor?: string
+}
+
+interface SlackChannelRef {
+	readonly id: string
+	readonly name: string
+}
+
 export type SupportChannelView =
 	| { readonly status: "unavailable" }
 	| { readonly status: "not_created" }
@@ -175,6 +191,43 @@ const make = Effect.gen(function* () {
 			)
 			.pipe(Effect.ignore)
 
+	/**
+	 * A channel the bot made that no org has recorded: left behind when a create timed out after
+	 * Slack accepted it, or a request died before saving. Nobody was invited to it and nothing was
+	 * posted, so it is safe to adopt instead of stepping to a suffixed name.
+	 */
+	const findUnrecordedChannel = Effect.fn("SupportChannelService.findUnrecordedChannel")(function* (
+		name: string,
+	) {
+		let cursor = ""
+		for (let page = 0; page < MAX_CHANNEL_PAGES; page++) {
+			const args: UsersConversationsArgs = {
+				types: "private_channel",
+				exclude_archived: true,
+				limit: 200,
+			}
+			if (cursor !== "") args.cursor = cursor
+			const response = yield* slack.call("users.conversations", args)
+			const match = response.channels?.find((channel) => channel.name === name)
+			if (match !== undefined) {
+				const recorded = yield* database
+					.execute((db) =>
+						db
+							.select({ orgId: orgSupportChannels.orgId })
+							.from(orgSupportChannels)
+							.where(eq(orgSupportChannels.slackChannelId, match.id)),
+					)
+					.pipe(Effect.mapError(persistenceError("findUnrecordedChannel")))
+				return recorded.length === 0
+					? Option.some<SlackChannelRef>(match)
+					: Option.none<SlackChannelRef>()
+			}
+			cursor = response.response_metadata?.next_cursor ?? ""
+			if (cursor === "") break
+		}
+		return Option.none<SlackChannelRef>()
+	})
+
 	/** `conversations.create`, stepping past names another channel already holds. */
 	const createSlackChannel = Effect.fn("SupportChannelService.createSlackChannel")(function* (
 		orgId: OrgId,
@@ -189,7 +242,14 @@ const make = Effect.gen(function* () {
 				Effect.map(Option.some),
 				Effect.catchTag("@maple/backend/support/SupportSlackRefusedError", (refused) =>
 					refused.error === "name_taken"
-						? Effect.succeedNone
+						? findUnrecordedChannel(name).pipe(
+								Effect.catchTag("@maple/backend/support/SupportSlackRefusedError", () =>
+									Effect.succeed(Option.none<SlackChannelRef>()),
+								),
+								Effect.map((adopted) =>
+									Option.map(adopted, (channel) => ({ ok: true, channel })),
+								),
+							)
 						: Effect.fail(
 								new SupportChannelUnavailableError({
 									message: refused.message,

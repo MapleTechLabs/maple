@@ -27,6 +27,8 @@ const die = () => Effect.die(new Error("not exercised by this test"))
 interface World {
 	configured: boolean
 	inviteFails: boolean
+	/** Private channels the bot is in, as `users.conversations` reports them. */
+	botChannels: Array<{ id: string; name: string }>
 	/** Runs while Slack is "creating", to stage a concurrent takeover. */
 	duringCreate: (() => Promise<void>) | null
 	takenNames: Set<string>
@@ -37,6 +39,7 @@ const freshWorld = (): World => ({
 	configured: true,
 	inviteFails: false,
 	duringCreate: null,
+	botChannels: [],
 	takenNames: new Set(),
 	calls: [],
 })
@@ -67,6 +70,9 @@ const stubs = (world: World) =>
 						return Effect.promise(() => hook?.() ?? Promise.resolve()).pipe(
 							Effect.as({ ok: true, channel: { id: `C_${name}`, name } }),
 						)
+					}
+					if (method === "users.conversations") {
+						return Effect.succeed({ ok: true, channels: world.botChannels })
 					}
 					if (method === "conversations.inviteShared" && world.inviteFails) {
 						return Effect.fail(
@@ -186,6 +192,37 @@ describe("SupportChannelService", () => {
 			assert.isFalse(retry.created)
 			assert.strictEqual(retry.channel.channelId, first.channel.channelId)
 			assert.deepStrictEqual(methods(world), ["conversations.inviteShared"])
+		}).pipe(Effect.provide(makeLayer(world, testDb)))
+	})
+
+	it.effect("adopts a channel an earlier attempt made but never recorded", () => {
+		const world = freshWorld()
+		// Slack accepted an earlier create that timed out on our side.
+		world.takenNames.add("maple-acme-inc")
+		world.botChannels = [{ id: "C_orphan", name: "maple-acme-inc" }]
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const result = yield* invite(tenant)
+			assert.strictEqual(result.channel.channelId, "C_orphan")
+			assert.strictEqual(result.channel.channelName, "maple-acme-inc")
+		}).pipe(Effect.provide(makeLayer(world, testDb)))
+	})
+
+	it.effect("never adopts a channel another org has recorded", () => {
+		const world = freshWorld()
+		world.takenNames.add("maple-acme-inc")
+		world.botChannels = [{ id: "C_other", name: "maple-acme-inc" }]
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					`INSERT INTO org_support_channels (org_id, slack_channel_id, slack_channel_name, created_by_user_id, created_at, updated_at)
+					 VALUES ('org_other_acme', 'C_other', 'maple-acme-inc', 'user_other', now(), now())`,
+				),
+			)
+			const result = yield* invite(tenant)
+			assert.strictEqual(result.channel.channelName, "maple-acme-inc-2")
 		}).pipe(Effect.provide(makeLayer(world, testDb)))
 	})
 

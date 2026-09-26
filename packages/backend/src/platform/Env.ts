@@ -83,7 +83,7 @@ export interface EnvConfig {
 	readonly STRIPE_API_URL: string
 	/**
 	 * Bot token in Maple's OWN Slack workspace, for creating customers' shared support channels
-	 * (scopes `groups:write`, `conversations.connect:write`, `chat:write`). Unset → the dashboard
+	 * (scopes `groups:write`, `groups:read`, `conversations.connect:write`, `chat:write`). Unset → the dashboard
 	 * reports the feature unavailable. Unrelated to the chat connector's per-workspace tokens.
 	 */
 	readonly MAPLE_SUPPORT_SLACK_BOT_TOKEN: Option.Option<Redacted.Redacted<string>>
