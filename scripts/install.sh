@@ -8,8 +8,9 @@
 #  works too.)
 #
 # Downloads the platform bundle from the latest GitHub release, verifies its
-# checksum, and installs the 2-file bundle (`maple` + `libchdb.so`) into
-# ~/.maple/bin, then puts `maple` on your PATH.
+# checksum (and the release signature over it, when an OpenSSL 3 is available),
+# and installs the 2-file bundle (`maple` + `libchdb.so`) into ~/.maple/bin,
+# then puts `maple` on your PATH.
 #
 # Already installed? `maple update` upgrades in place (same artifact, atomic
 # swap) — re-running this installer is only needed for a first install.
@@ -26,11 +27,22 @@
 #   MAPLE_INSTALL_DIR    bundle directory      (default: ~/.maple/bin)
 #   MAPLE_BIN_DIR        where `maple` is linked onto PATH (default: first
 #                        writable of /usr/local/bin, ~/.local/bin)
-#   MAPLE_SKIP_CHECKSUM  set to 1 to skip SHA-256 verification (not recommended)
+#   MAPLE_SKIP_CHECKSUM  set to 1 to skip SHA-256 and signature verification (not recommended)
+#   MAPLE_SKIP_SIGNATURE set to 1 to skip only the release signature check (not recommended)
 set -eu
 
 REPO="MapleTechLabs/maple"
 INSTALL_DIR="${MAPLE_INSTALL_DIR:-$HOME/.maple/bin}"
+
+# Base64 SPKI of the Ed25519 release key: MAPLE_RELEASE_PUBLIC_KEY in
+# apps/cli/src/core/release-signature.ts (a test keeps them equal). Empty until
+# the key is provisioned, and then signatures are not checked.
+release_public_key=""
+
+# RFC 8032 test vector 2 (message "r"). An openssl must verify it before its
+# verdict on a real signature counts: LibreSSL (macOS) and FIPS builds cannot.
+ed25519_probe_key="MCowBQYDK2VwAyEAPUAXw+hDiVqStwqnTRt+vJyYLM8uxJaMwM1V8Sr0Zgw="
+ed25519_probe_sig="kqAJqfDUyrhyDoILX2QlQKKye1QWUD+Ps3YiI+vbadoIWsHkPhWZbkWPNhPQ8R2MOHsurrQwKu6wDSkWErsMAA=="
 
 say() { printf '%s\n' "$*"; }
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
@@ -71,6 +83,56 @@ download() {
 		printf '%s\n' "$_msg" >&2
 		curl -fsSL "$_url" -o "$_dest"
 	fi
+}
+
+# ed25519_verify OPENSSL SPKI_B64 DATA_FILE SIG_B64_FILE: exit 0 iff the base64
+# signature in SIG_B64_FILE is valid over DATA_FILE's exact bytes.
+ed25519_verify() {
+	printf '%s\n' '-----BEGIN PUBLIC KEY-----' "$2" '-----END PUBLIC KEY-----' >"$tmp/ed25519.pem"
+	"$1" base64 -d -A -in "$4" -out "$tmp/ed25519.sig" >/dev/null 2>&1 || return 1
+	"$1" pkeyutl -verify -pubin -inkey "$tmp/ed25519.pem" -rawin \
+		-in "$3" -sigfile "$tmp/ed25519.sig" >/dev/null 2>&1
+}
+
+# Print the first openssl that passes the Ed25519 self-test. Homebrew's
+# openssl@3 is keg-only, so its usual prefixes are tried after PATH.
+find_ed25519_openssl() {
+	printf 'r' >"$tmp/probe.msg"
+	printf '%s\n' "$ed25519_probe_sig" >"$tmp/probe.sig"
+	for _ossl in openssl /opt/homebrew/opt/openssl@3/bin/openssl /usr/local/opt/openssl@3/bin/openssl; do
+		case "$_ossl" in
+			/*) [ -x "$_ossl" ] || continue ;;
+			*) command -v "$_ossl" >/dev/null 2>&1 || continue ;;
+		esac
+		if ed25519_verify "$_ossl" "$ed25519_probe_key" "$tmp/probe.msg" "$tmp/probe.sig"; then
+			printf '%s\n' "$_ossl"
+			return 0
+		fi
+	done
+	return 1
+}
+
+# Authenticate $tmp/bundle.sha256 before its checksum is trusted. The signed
+# manifest must name this exact bundle, so one signed for another version or
+# platform cannot vouch for this download.
+verify_signature() {
+	[ -n "$release_public_key" ] || return 0
+	if [ "${MAPLE_SKIP_SIGNATURE:-0}" = "1" ]; then
+		say "Skipping signature verification (MAPLE_SKIP_SIGNATURE=1)."
+		return 0
+	fi
+	if ! ossl="$(find_ed25519_openssl)"; then
+		say "note: release signature not checked (needs OpenSSL 3); to verify by hand see https://github.com/$REPO/blob/main/docs/local-mode.md#release-signing"
+		return 0
+	fi
+	curl -fsSL "${url}.sha256.sig" -o "$tmp/bundle.sha256.sig" \
+		|| die "could not fetch the release signature (${url}.sha256.sig). Set MAPLE_SKIP_SIGNATURE=1 to install without it."
+	ed25519_verify "$ossl" "$release_public_key" "$tmp/bundle.sha256" "$tmp/bundle.sha256.sig" \
+		|| die "release signature is invalid for ${name}.tar.gz; refusing to install. Set MAPLE_SKIP_SIGNATURE=1 to override."
+	signed_name="$(awk 'NR == 1 { print $2 }' "$tmp/bundle.sha256")"
+	[ "${signed_name#\*}" = "${name}.tar.gz" ] \
+		|| die "the signed checksum is for '${signed_name}', not ${name}.tar.gz; refusing to install."
+	say "Signature verified."
 }
 
 need curl
@@ -129,7 +191,8 @@ if [ "${MAPLE_SKIP_CHECKSUM:-0}" = "1" ]; then
 else
 	curl -fsSL "${url}.sha256" -o "$tmp/bundle.sha256" \
 		|| die "could not fetch checksum (${url}.sha256). Set MAPLE_SKIP_CHECKSUM=1 to bypass."
-	expected="$(awk '{print $1}' "$tmp/bundle.sha256")"
+	verify_signature
+	expected="$(awk 'NR == 1 {print $1}' "$tmp/bundle.sha256")"
 	if command -v shasum >/dev/null 2>&1; then
 		actual="$(shasum -a 256 "$tmp/bundle.tar.gz" | awk '{print $1}')"
 	else

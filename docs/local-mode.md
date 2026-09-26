@@ -502,3 +502,64 @@ tricks are needed.
 ```bash
 scripts/build-local-binary.sh               # full 2-file bundle into ./dist
 ```
+
+## Release signing
+
+A `.sha256` published next to a bundle only proves the download is intact: the
+same workflow uploads both to the same GitHub release, so anyone who can publish
+a release or replace its assets can ship a matching checksum. Each release
+therefore also carries `<bundle>.tar.gz.sha256.sig`, an Ed25519 signature over
+the exact `.sha256` bytes made with a key that exists only as the
+`MAPLE_RELEASE_SIGNING_KEY` Actions secret, while every binary embeds the public
+half. The signed line names its bundle (`<hash>  maple-<tag>-<target>.tar.gz`),
+so a signature from another version or platform cannot vouch for a different
+download. Signing does not help if the build itself is compromised or the key
+leaks, so each tarball also gets a GitHub build-provenance attestation as an
+independent check.
+
+How it is checked (`scripts/sign-local-release.ts` signs,
+`apps/cli/src/core/release-signature.ts` verifies):
+
+- **`maple update`** fetches the `.sha256` and `.sig` before the bundle,
+  verifies the signature against `MAPLE_RELEASE_PUBLIC_KEY`, and only then
+  trusts the checksum. A missing or invalid signature stops the update.
+- **The installer** verifies when it finds an OpenSSL that passes an Ed25519
+  self-test (OpenSSL 3 on PATH, or Homebrew's keg-only `openssl@3`). macOS
+  ships LibreSSL, which cannot, so there it prints a one-line note and relies
+  on the checksum.
+- **Before the key is provisioned** (`MAPLE_RELEASE_PUBLIC_KEY` is empty),
+  nothing is checked: `maple update` prints a one-line notice and the workflow
+  publishes unsigned with a warning.
+
+Escape hatches, for a release you trust that predates signing or lost its
+`.sig`: `maple update --insecure-skip-signature` (the SHA-256 checksum is still
+checked) and `MAPLE_SKIP_SIGNATURE=1` for the installer. Pinning a pre-signing
+release with `maple update --tag` needs the flag.
+
+To verify a bundle by hand:
+
+```bash
+gh attestation verify maple-<tag>-<target>.tar.gz --repo MapleTechLabs/maple
+# or, with OpenSSL 3 and the key from release-signature.ts:
+printf '%s\n' '-----BEGIN PUBLIC KEY-----' '<MAPLE_RELEASE_PUBLIC_KEY>' '-----END PUBLIC KEY-----' > maple-release.pem
+openssl base64 -d -A -in maple-<tag>-<target>.tar.gz.sha256.sig -out maple.sig
+openssl pkeyutl -verify -pubin -inkey maple-release.pem -rawin \
+  -in maple-<tag>-<target>.tar.gz.sha256 -sigfile maple.sig
+shasum -a 256 -c maple-<tag>-<target>.tar.gz.sha256
+```
+
+Provisioning the key (once, on a trusted machine):
+
+1. `bun scripts/generate-release-signing-key.ts ~/maple-release-signing.pem`
+   writes the private key (mode `0600`) and prints the public key.
+2. `gh secret set MAPLE_RELEASE_SIGNING_KEY < ~/maple-release-signing.pem`.
+3. Paste the public key into `MAPLE_RELEASE_PUBLIC_KEY` in
+   `apps/cli/src/core/release-signature.ts` and `release_public_key` in
+   `scripts/install.sh` (a test keeps them equal), and merge.
+4. Store the private key in a password manager and delete the file.
+
+From the first tag whose checkout embeds the key, a publishing run fails unless
+the secret is set and matches it. Binaries released before that only check
+checksums, so the update onto the first key-embedding release is itself
+unverified. Losing or leaking the key means shipping a new one; binaries that
+embed the old key then need `--insecure-skip-signature` or a fresh install once.

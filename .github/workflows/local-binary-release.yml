@@ -14,6 +14,11 @@ name: Local Binary Release
 # separate aggregation step — so a slow or queued runner can never block the
 # other platforms from appearing on the release.
 #
+# Each bundle ships `<bundle>.sha256` (`<hash>  <bundle file>`), an Ed25519
+# signature over it (`.sha256.sig`, checked by `maple update` and install.sh),
+# and a GitHub build-provenance attestation. See docs/local-mode.md
+# "Release signing".
+#
 # Triggers:
 #   - push a `v*` tag       → build + publish each platform's bundle as it finishes
 #   - workflow_dispatch     → build + upload artifacts (no release unless `tag` input given)
@@ -41,6 +46,10 @@ jobs:
         name: Build ${{ matrix.target }}
         runs-on: ${{ matrix.runner }}
         timeout-minutes: 60
+        permissions:
+            contents: write # create the release and upload assets
+            id-token: write # OIDC identity for the build-provenance attestation
+            attestations: write # store that attestation
         strategy:
             fail-fast: false
             matrix:
@@ -136,23 +145,45 @@ jobs:
                     echo "::warning::'maple --help' smoke check did not exit cleanly on $target"
                   tarball="$RUNNER_TEMP/${name}.tar.gz"
                   tar -C "$RUNNER_TEMP" -czf "$tarball" "$name"
+                  # `<hash>  <file>` (sha256sum format), run beside the tarball so
+                  # the name is bare. The signature covers this line, so it binds
+                  # the hash to this exact version and target. Older clients read
+                  # only the first field.
                   if command -v shasum >/dev/null 2>&1; then
-                    shasum -a 256 "$tarball" | awk '{print $1}' > "${tarball}.sha256"
+                    ( cd "$RUNNER_TEMP" && shasum -a 256 "${name}.tar.gz" ) > "${tarball}.sha256"
                   else
-                    sha256sum "$tarball" | awk '{print $1}' > "${tarball}.sha256"
+                    ( cd "$RUNNER_TEMP" && sha256sum "${name}.tar.gz" ) > "${tarball}.sha256"
                   fi
                   echo "tarball=$tarball" >> "$GITHUB_OUTPUT"
                   echo "name=$name" >> "$GITHUB_OUTPUT"
+
+            - name: Sign checksum manifest
+              # Writes <tarball>.sha256.sig. Without the secret this warns and
+              # skips, except on a publishing run once MAPLE_RELEASE_PUBLIC_KEY is
+              # embedded, where it fails rather than ship a release every binary
+              # rejects. The key is scoped to this step only.
+              env:
+                  MAPLE_RELEASE_SIGNING_KEY: ${{ secrets.MAPLE_RELEASE_SIGNING_KEY }}
+                  MAPLE_RELEASE_SIGNING_REQUIRED: ${{ (startsWith(github.ref, 'refs/tags/') || github.event.inputs.tag != '') && '1' || '0' }}
+              run: bun scripts/sign-local-release.ts "${{ steps.package.outputs.tarball }}.sha256"
 
             - name: Upload build artifact
               uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
               with:
                   name: ${{ steps.package.outputs.name }}
+                  # The glob picks up the .sig when one was written.
                   path: |
                       ${{ steps.package.outputs.tarball }}
-                      ${{ steps.package.outputs.tarball }}.sha256
+                      ${{ steps.package.outputs.tarball }}.sha256*
                   if-no-files-found: error
                   retention-days: 7
+
+            - name: Attest build provenance
+              # Verify with: gh attestation verify <bundle>.tar.gz --repo MapleTechLabs/maple
+              if: ${{ startsWith(github.ref, 'refs/tags/') || github.event.inputs.tag != '' }}
+              uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+              with:
+                  subject-path: ${{ steps.package.outputs.tarball }}
 
             - name: Publish to release
               # Each platform publishes its own tarball as soon as it's built — no
@@ -177,14 +208,21 @@ jobs:
                   # may race here; ignore the "already exists" error.
                   # Write notes to a file using printf so we avoid heredoc indentation
                   # issues inside a YAML literal block scalar.
-                  printf '%s\n\n%s\n```\n%s\n```\n\n%s\n' \
+                  printf '%s\n\n%s\n```\n%s\n```\n\n%s\n\n%s\n' \
                     'Local Maple (`maple start`) bundles.' \
                     '**Install (macOS / Linux):**' \
                     'curl -fsSL https://maple.dev/cli/install | sh' \
                     'Or download a bundle below. Each archive contains `maple` + `libchdb.so` — keep both in the same directory. macOS: run `xattr -dr com.apple.quarantine maple libchdb.so` after extracting.' \
+                    'Verify a downloaded bundle with `gh attestation verify <bundle>.tar.gz --repo MapleTechLabs/maple`. The `.sha256.sig` files are Ed25519 signatures over the `.sha256` files, checked by `maple update` and the installer.' \
                     > "$RUNNER_TEMP/release-notes.md"
                   gh release create "$TAG" --repo "$REPO" \
                     --title "$TAG" \
                     --notes-file "$RUNNER_TEMP/release-notes.md" 2>/dev/null || true
-                  gh release upload "$TAG" "$tarball" "${tarball}.sha256" \
-                    --repo "$REPO" --clobber
+                  # Verification assets first: once the tarball is visible, its
+                  # checksum and signature already are.
+                  verify_assets=("${tarball}.sha256")
+                  if [ -f "${tarball}.sha256.sig" ]; then
+                    verify_assets+=("${tarball}.sha256.sig")
+                  fi
+                  gh release upload "$TAG" "${verify_assets[@]}" --repo "$REPO" --clobber
+                  gh release upload "$TAG" "$tarball" --repo "$REPO" --clobber
