@@ -372,3 +372,82 @@ describe("VcsCommitService.resolveCommitDetails", () => {
 		}).pipe(Effect.provide(commitLayer(testDb, layer)))
 	})
 })
+
+describe("VcsCommitService.resolveCommitRanges", () => {
+	// Five commits on one repo, a..e, committed at 1000..5000.
+	const SHAS = ["a", "b", "c", "d", "e"].map((c) => c.repeat(40))
+	const seedHistory = (repo: VcsRepo, orgId: OrgId) =>
+		Effect.gen(function* () {
+			yield* seed(repo, orgId, [{ externalRepoId: "7", name: "repo" }])
+			const r = expectSome(yield* repo.resolveRepository(orgId, "github", "7"))
+			yield* repo.upsertCommits(
+				r,
+				SHAS.map((sha, index) => ({
+					sha,
+					message: `commit ${index}`,
+					authorName: null,
+					authorEmail: null,
+					authorLogin: null,
+					authorAvatarUrl: null,
+					authoredAt: null,
+					committedAt: (index + 1) * 1000,
+					htmlUrl: `https://github.com/octo/repo/commit/${sha}`,
+				})),
+			)
+		})
+
+	it.effect("lists what shipped after the base up to the head, newest first", () => {
+		const testDb = createTestDb(trackedDbs)
+		const { layer, calls } = routedHttp(() => false)
+		return Effect.gen(function* () {
+			const svc = yield* VcsCommitService
+			const repo = yield* VcsRepository
+			const orgId = asOrgId("org_test")
+			yield* seedHistory(repo, orgId)
+
+			const [wide, narrow] = yield* svc.resolveCommitRanges(
+				orgId,
+				[
+					{ base: SHAS[0]!, head: SHAS[4]! },
+					{ base: SHAS[2]!, head: SHAS[3]! },
+				],
+				{ limit: 2 },
+			)
+			assert.strictEqual(wide!.status, "resolved")
+			assert.strictEqual(wide!.totalCount, 4)
+			assert.deepStrictEqual(
+				wide!.commits.map((c) => c.sha),
+				[SHAS[4], SHAS[3]],
+			)
+			assert.strictEqual(wide!.repoFullName, "octo/repo")
+			assert.strictEqual(narrow!.totalCount, 1)
+			assert.strictEqual(narrow!.commits[0]!.sha, SHAS[3])
+			assert.strictEqual(calls.commitGets, 0)
+		}).pipe(Effect.provide(commitLayer(testDb, layer)))
+	})
+
+	it.effect("reads unavailable for an unknown end or a backwards range", () => {
+		const testDb = createTestDb(trackedDbs)
+		const { layer } = routedHttp(() => false)
+		return Effect.gen(function* () {
+			const svc = yield* VcsCommitService
+			const repo = yield* VcsRepository
+			const orgId = asOrgId("org_test")
+			yield* seedHistory(repo, orgId)
+
+			const results = yield* svc.resolveCommitRanges(
+				orgId,
+				[
+					{ base: "f".repeat(40), head: SHAS[4]! },
+					{ base: SHAS[4]!, head: SHAS[0]! },
+					{ base: "v1.2.0", head: SHAS[1]! },
+				],
+				{ limit: 10 },
+			)
+			assert.deepStrictEqual(
+				results.map((r) => r.status),
+				["unavailable", "unavailable", "unavailable"],
+			)
+		}).pipe(Effect.provide(commitLayer(testDb, layer)))
+	})
+})

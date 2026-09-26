@@ -436,3 +436,18 @@ export function liveVersions(
 	}
 	return result.toSorted((a, b) => b.behind - a.behind || a.serviceName.localeCompare(b.serviceName))
 }
+
+/**
+ * The commit a release replaced, for its changeset: the predecessor most of its
+ * services agree on. Undefined when none of them has one in the window.
+ */
+export function previousSha(group: ReleaseGroup): string | undefined {
+	const votes = new Map<string, number>()
+	for (const impact of group.services) {
+		const sha = impact.baseline?.commitSha
+		if (sha !== undefined) votes.set(sha, (votes.get(sha) ?? 0) + 1)
+	}
+	let best: string | undefined
+	for (const [sha, count] of votes) if (best === undefined || count > (votes.get(best) ?? 0)) best = sha
+	return best
+}

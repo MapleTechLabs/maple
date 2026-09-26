@@ -40,6 +40,7 @@ import {
 } from "@/components/vcs/commit-sha-hover-card"
 import { ReleaseComparison, ReleaseVersionsRail } from "@/components/releases/release-detail-panels"
 import { ReleaseIssuesPanel } from "@/components/releases/release-issues-panel"
+import { ReleaseChangeset } from "@/components/releases/release-changeset"
 import { ReleaseHealthPill, releaseHealthFigure } from "@/components/releases/release-health"
 import { deriveReleaseImpacts, shortReleaseLabel } from "@/components/releases/release-model"
 
@@ -462,6 +463,8 @@ function ReleaseBody({
 					timeSearch={timeSearch}
 				/>
 			</div>
+
+			<ReleaseChangeset base={impact.baseline?.commitSha} head={commitSha} />
 
 			<div className="flex items-center justify-between gap-3">
 				<Tabs

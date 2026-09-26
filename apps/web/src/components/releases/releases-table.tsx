@@ -5,7 +5,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { formatErrorRate, formatLatency } from "@maple/ui/lib/format"
 import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
-import type { VcsCommitDetailResponse } from "@maple/domain/http"
+import type { VcsCommitDetailResponse, VcsCommitRangeResponse } from "@maple/domain/http"
 
 import { ChevronRightIcon } from "@/components/icons"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
@@ -20,9 +20,11 @@ import {
 	firstLine,
 	isResolvableSha,
 } from "@/components/vcs/commit-sha-hover-card"
+import { CommitCount, ResolvedCommitRanges } from "./release-changeset"
 import { ReleaseHealthPill, releaseHealthFigure } from "./release-health"
 import {
 	releaseDayLabel,
+	previousSha,
 	releaseHeadline,
 	shortReleaseLabel,
 	type ReleaseGroup,
@@ -154,10 +156,11 @@ interface ReleaseTitleProps {
 	commit: VcsCommitDetailResponse | undefined
 	health: ReleaseServiceImpact["health"]
 	figure: string | undefined
+	range: VcsCommitRangeResponse | undefined
 }
 
 /** Message-first title: subject · pill, with sha · author demoted underneath. */
-function ReleaseTitle({ commitSha, commit, health, figure }: ReleaseTitleProps) {
+function ReleaseTitle({ commitSha, commit, health, figure, range }: ReleaseTitleProps) {
 	const resolvable = isResolvableSha(commitSha)
 	const author = commit?.authorLogin ?? commit?.authorName ?? undefined
 	return (
@@ -186,6 +189,7 @@ function ReleaseTitle({ commitSha, commit, health, figure }: ReleaseTitleProps) 
 					{commit ? <span className="font-mono">{shortReleaseLabel(commitSha)}</span> : null}
 					{author ? <span className="truncate">{author}</span> : null}
 					{!commit && !resolvable ? <span>deployment reference</span> : null}
+					<CommitCount range={range} />
 				</div>
 			</div>
 		</div>
@@ -210,11 +214,26 @@ export function ReleasesTable(props: ReleasesTableProps) {
 		() => commitsQueryKey(props.groups.slice(0, COMMIT_RESOLVE_LIMIT).map((group) => group.commitSha)),
 		[props.groups],
 	)
-	if (shasKey === "") return <ReleasesTableRows {...props} commits={EMPTY_COMMITS} />
+	const ranges = useMemo(
+		() =>
+			props.groups.slice(0, COMMIT_RESOLVE_LIMIT).flatMap((group) => {
+				const base = previousSha(group)
+				return base === undefined ? [] : [{ base, head: group.commitSha }]
+			}),
+		[props.groups],
+	)
 	return (
-		<ResolvedCommits shasKey={shasKey}>
-			{(commits) => <ReleasesTableRows {...props} commits={commits} />}
-		</ResolvedCommits>
+		<ResolvedCommitRanges ranges={ranges}>
+			{(resolvedRanges) =>
+				shasKey === "" ? (
+					<ReleasesTableRows {...props} commits={EMPTY_COMMITS} ranges={resolvedRanges} />
+				) : (
+					<ResolvedCommits shasKey={shasKey}>
+						{(commits) => <ReleasesTableRows {...props} commits={commits} ranges={resolvedRanges} />}
+					</ResolvedCommits>
+				)
+			}
+		</ResolvedCommitRanges>
 	)
 }
 
@@ -225,7 +244,11 @@ function ReleasesTableRows({
 	environments,
 	waiting,
 	commits,
-}: ReleasesTableProps & { commits: ReadonlyMap<string, VcsCommitDetailResponse> }) {
+	ranges,
+}: ReleasesTableProps & {
+	commits: ReadonlyMap<string, VcsCommitDetailResponse>
+	ranges: ReadonlyMap<string, VcsCommitRangeResponse>
+}) {
 	const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set())
 	const nowMs = Date.now()
 	const { effectiveTimezone } = useTimezonePreference()
@@ -306,6 +329,7 @@ function ReleasesTableRows({
 													commit={commits.get(group.commitSha)}
 													health={group.health}
 													figure={releaseHealthFigure(worst)}
+													range={ranges.get(group.commitSha)}
 												/>
 											</Link>
 										</div>

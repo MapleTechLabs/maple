@@ -8,6 +8,7 @@ import {
 	groupReleases,
 	lastBucketShares,
 	liveVersions,
+	previousSha,
 	releaseHeadline,
 	releaseDayLabel,
 	releaseFacetCounts,
@@ -359,5 +360,21 @@ describe("liveVersions", () => {
 		const soloTimeline = [bucket(last, DB, SHA_A, 10)]
 		const live = liveVersions(soloTimeline, groupReleases(deriveReleaseImpacts([...solo], soloTimeline)))
 		expect(live).toEqual([{ serviceName: "db-sync", commitSha: SHA_A, share: 1, behind: 0 }])
+	})
+})
+
+describe("previousSha", () => {
+	it("takes the predecessor most services agree on", () => {
+		const rows = [
+			release({ commitSha: SHA_C, serviceName: API, firstSeen: "2026-09-05T11:00:00.000Z" }),
+			release({ commitSha: SHA_C, serviceName: WEB, firstSeen: "2026-09-05T11:00:00.000Z" }),
+			release({ commitSha: SHA_C, serviceName: svc("db"), firstSeen: "2026-09-05T11:00:00.000Z" }),
+			release({ commitSha: SHA_B, serviceName: API, firstSeen: "2026-09-05T10:00:00.000Z" }),
+			release({ commitSha: SHA_B, serviceName: WEB, firstSeen: "2026-09-05T10:00:00.000Z" }),
+			release({ commitSha: SHA_A, serviceName: svc("db"), firstSeen: "2026-09-05T09:00:00.000Z" }),
+		]
+		const [newest, , oldest] = groupReleases(deriveReleaseImpacts(rows, []))
+		expect(newest && previousSha(newest)).toBe(SHA_B)
+		expect(oldest && previousSha(oldest)).toBeUndefined()
 	})
 })

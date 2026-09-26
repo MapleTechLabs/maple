@@ -835,6 +835,30 @@ export class VcsCommitDetailsResponse extends Schema.Class<VcsCommitDetailsRespo
 /** Upper bound on SHAs per bulk commit lookup — one page of a list view. */
 export const VCS_COMMIT_DETAILS_MAX_SHAS = 50
 
+/** Upper bound on `base..head` pairs per commit-range lookup, and on commits listed per range. */
+export const VCS_COMMIT_RANGES_MAX = 50
+export const VCS_COMMIT_RANGE_COMMITS_MAX = 100
+
+/**
+ * What shipped between two deploys: the stored commits after `base` up to and
+ * including `head` on one repo's tracked branch. `unavailable` when either end is
+ * not a stored commit of the same repo (a short sha, a tag, an untracked branch).
+ */
+export class VcsCommitRangeResponse extends Schema.Class<VcsCommitRangeResponse>("VcsCommitRangeResponse")({
+	base: Schema.String,
+	head: Schema.String,
+	status: Schema.Literals(["resolved", "unavailable"]),
+	repoFullName: Schema.String,
+	totalCount: Schema.Number,
+	commits: Schema.Array(VcsCommitDetailResponse),
+	/** True when `totalCount` is a lower bound. */
+	truncated: Schema.Boolean,
+}) {}
+
+export class VcsCommitRangesResponse extends Schema.Class<VcsCommitRangesResponse>("VcsCommitRangesResponse")({
+	ranges: Schema.Array(VcsCommitRangeResponse),
+}) {}
+
 export class IntegrationsForbiddenError extends HttpTaggedError<IntegrationsForbiddenError>()(
 	"@maple/http/errors/IntegrationsForbiddenError",
 	{
@@ -1225,6 +1249,22 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 			}),
 			success: VcsCommitDetailsResponse,
 			error: [IntegrationsNotConnectedError, IntegrationsUpstreamError, IntegrationsPersistenceError],
+		}),
+	)
+	.add(
+		// `ranges` is `base..head` pairs, comma-separated, answered in request order.
+		// Raw strings like `shas` above: an unresolvable end reads `unavailable`.
+		HttpApiEndpoint.get("vcsCommitRanges", "/vcs/commit-ranges", {
+			query: Schema.Struct({
+				ranges: Schema.String.check(Schema.isMinLength(1)),
+				limit: Schema.optional(
+					Schema.FiniteFromString.check(
+						Schema.isBetween({ minimum: 0, maximum: VCS_COMMIT_RANGE_COMMITS_MAX }),
+					),
+				),
+			}),
+			success: VcsCommitRangesResponse,
+			error: [IntegrationsPersistenceError],
 		}),
 	)
 	.add(

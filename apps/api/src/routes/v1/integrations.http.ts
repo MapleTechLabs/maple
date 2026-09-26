@@ -31,9 +31,12 @@ import {
 	RoleName,
 	UserId,
 	VCS_COMMIT_DETAILS_MAX_SHAS,
+	VCS_COMMIT_RANGES_MAX,
 	VcsCommitDetailResponse,
 	VCS_PULL_REQUESTS_DEFAULT_LIMIT,
 	VcsCommitDetailsResponse,
+	VcsCommitRangeResponse,
+	VcsCommitRangesResponse,
 	VcsPullRequestsResponse,
 	validateIntegrationReturnPath,
 } from "@maple/domain/http"
@@ -623,6 +626,30 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleApi, "integrations
 						const details = yield* vcsCommits.resolveCommitDetails(tenant.orgId, shas)
 						return new VcsCommitDetailsResponse({
 							commits: details.map((detail) => new VcsCommitDetailResponse(detail)),
+						})
+					}),
+				)
+				.handle("vcsCommitRanges", ({ query }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const ranges = query.ranges
+							.split(",")
+							.flatMap((pair) => {
+								const [base, head] = pair.trim().split("..")
+								return base && head ? [{ base, head }] : []
+							})
+							.slice(0, VCS_COMMIT_RANGES_MAX)
+						const results = yield* vcsCommits.resolveCommitRanges(tenant.orgId, ranges, {
+							limit: query.limit ?? 20,
+						})
+						return new VcsCommitRangesResponse({
+							ranges: results.map(
+								(range) =>
+									new VcsCommitRangeResponse({
+										...range,
+										commits: range.commits.map((detail) => new VcsCommitDetailResponse(detail)),
+									}),
+							),
 						})
 					}),
 				)

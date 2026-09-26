@@ -34,7 +34,7 @@ import {
 	vcsRepositories,
 	type VcsRepositoryRow,
 } from "@maple/db"
-import { and, desc, eq, inArray, sql } from "drizzle-orm"
+import { and, desc, eq, gt, inArray, lte, sql } from "drizzle-orm"
 import { Array as Arr, Clock, Context, Effect, Layer, Option, Schema } from "effect"
 import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { dateToMs, msToDate } from "@maple/backend/platform/time"
@@ -711,6 +711,34 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 			return yield* Effect.forEach(rows, (row) => decodeOne("vcs_commits", row.commit, rowToCommit))
 		})
 
+		// A repo's commits in (afterMs, untilMs], newest first. A repo stores only its
+		// tracked branch, so this is what shipped between two deploys of it.
+		const listCommitsInWindow = Effect.fn("VcsRepository.listCommitsInWindow")(function* (
+			orgId: OrgId,
+			repositoryId: VcsRepositoryId,
+			window: { readonly afterMs: number; readonly untilMs: number; readonly limit: number },
+		) {
+			const rows = yield* database
+				.execute((db) =>
+					db
+						.select({ commit: vcsCommits })
+						.from(vcsCommits)
+						.innerJoin(vcsRepositories, eq(vcsCommits.repositoryId, vcsRepositories.id))
+						.where(
+							and(
+								eq(vcsCommits.orgId, orgId),
+								eq(vcsCommits.repositoryId, repositoryId),
+								gt(vcsCommits.committedAt, msToDate(window.afterMs)),
+								lte(vcsCommits.committedAt, msToDate(window.untilMs)),
+							),
+						)
+						.orderBy(desc(vcsCommits.committedAt))
+						.limit(window.limit),
+				)
+				.pipe(Effect.mapError(toPersistenceError))
+			return yield* Effect.forEach(rows, (row) => decodeOne("vcs_commits", row.commit, rowToCommit))
+		})
+
 		// Bulk upsert a repo's branches from a provider listing — just the picker's
 		// list of names. `isDefault` is a display hint derived here (the provider is
 		// oblivious to it) by matching the repo's `defaultBranch`. Which branch is
@@ -1113,6 +1141,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 			upsertCommits,
 			findCommitBySha,
 			findCommitsByShas,
+			listCommitsInWindow,
 			upsertBranches,
 			getOrCreateBranch,
 			listBranchesByRepository,

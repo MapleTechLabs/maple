@@ -87,7 +87,31 @@ export interface VcsCommitServiceApi {
 		orgId: OrgId,
 		shas: ReadonlyArray<string>,
 	) => Effect.Effect<ReadonlyArray<VcsCommitDetail>, IntegrationsPersistenceError>
+	/**
+	 * The commits between two deploys, from stored commits only: both ends must be
+	 * stored in the same repo, otherwise the range reads `unavailable`.
+	 */
+	readonly resolveCommitRanges: (
+		orgId: OrgId,
+		ranges: ReadonlyArray<{ readonly base: string; readonly head: string }>,
+		opts: { readonly limit: number },
+	) => Effect.Effect<ReadonlyArray<VcsCommitRangeDetail>, IntegrationsPersistenceError>
 }
+
+export interface VcsCommitRangeDetail {
+	readonly base: string
+	readonly head: string
+	readonly status: "resolved" | "unavailable"
+	readonly repoFullName: string
+	/** Commits after `base` up to and including `head`. A lower bound when `truncated`. */
+	readonly totalCount: number
+	/** Newest first, at most the requested limit. */
+	readonly commits: ReadonlyArray<VcsCommitDetail>
+	readonly truncated: boolean
+}
+
+/** Rows read per repo for one batch of ranges; a week of busy deploys fits well inside. */
+const RANGE_WINDOW_LIMIT = 1000
 
 /**
  * How many unknown SHAs we probe against providers for one bulk request. Stored
@@ -412,7 +436,96 @@ export class VcsCommitService extends Context.Service<VcsCommitService, VcsCommi
 				return [...details, ...Arr.getSomes(probed)]
 			})
 
-			return { resolveCommitDetail, resolveCommitDetails } satisfies VcsCommitServiceApi
+			const resolveCommitRanges = Effect.fn("VcsCommitService.resolveCommitRanges")(function* (
+				orgId: OrgId,
+				ranges: ReadonlyArray<{ readonly base: string; readonly head: string }>,
+				opts: { readonly limit: number },
+			) {
+				yield* Effect.annotateCurrentSpan({ orgId, "vcs.commit_range.requested": ranges.length })
+				const shas = Arr.getSomes(
+					yield* Effect.forEach(
+						Arr.dedupe(ranges.flatMap((range) => [range.base, range.head])),
+						(raw) => decodeSha(raw).pipe(Effect.option),
+					),
+				)
+				const stored = yield* asPersistence(repo.findCommitsByShas(orgId, shas))
+				const bySha = new Map(stored.map((commit) => [commit.sha as string, commit]))
+
+				const unavailable = (range: { readonly base: string; readonly head: string }) =>
+					({
+						base: range.base,
+						head: range.head,
+						status: "unavailable",
+						repoFullName: "",
+						totalCount: 0,
+						commits: [],
+						truncated: false,
+					}) satisfies VcsCommitRangeDetail
+
+				// Only ranges whose ends share a repo and run forwards can be answered.
+				const answerable = ranges.flatMap((range) => {
+					const base = bySha.get(range.base)
+					const head = bySha.get(range.head)
+					if (base === undefined || head === undefined) return []
+					if (base.repositoryId !== head.repositoryId || base.committedAt > head.committedAt) return []
+					return [{ range, base, head }]
+				})
+				const repoIds = Arr.dedupe(answerable.map((entry) => entry.head.repositoryId))
+				const repositories = yield* asPersistence(repo.getRepositoriesByIds(orgId, repoIds))
+				const repoNameById = new Map(repositories.map((r) => [r.id as string, r.fullName]))
+
+				// One read per repo spanning every range in it, sliced in memory.
+				const windows = yield* Effect.forEach(
+					repoIds,
+					(repositoryId) => {
+						const inRepo = answerable.filter((entry) => entry.head.repositoryId === repositoryId)
+						const afterMs = Math.min(...inRepo.map((entry) => entry.base.committedAt))
+						const untilMs = Math.max(...inRepo.map((entry) => entry.head.committedAt))
+						return asPersistence(
+							repo.listCommitsInWindow(orgId, repositoryId, {
+								afterMs,
+								untilMs,
+								limit: RANGE_WINDOW_LIMIT,
+							}),
+						).pipe(Effect.map((commits) => [repositoryId as string, commits] as const))
+					},
+					{ concurrency: 4 },
+				)
+				const commitsByRepo = new Map(windows)
+
+				return ranges.map((range): VcsCommitRangeDetail => {
+					const entry = answerable.find((candidate) => candidate.range === range)
+					if (entry === undefined) return unavailable(range)
+					const window = commitsByRepo.get(entry.head.repositoryId) ?? []
+					const inRange = window.filter(
+						(commit) =>
+							commit.committedAt > entry.base.committedAt &&
+							commit.committedAt <= entry.head.committedAt &&
+							commit.sha !== entry.base.sha,
+					)
+					const oldest = window.at(-1)
+					const truncated =
+						window.length >= RANGE_WINDOW_LIMIT &&
+						oldest !== undefined &&
+						oldest.committedAt > entry.base.committedAt
+					const repoFullName = repoNameById.get(entry.head.repositoryId) ?? ""
+					return {
+						base: range.base,
+						head: range.head,
+						status: "resolved",
+						repoFullName,
+						totalCount: inRange.length,
+						commits: inRange.slice(0, opts.limit).map((commit) => detailFromCommit(commit, repoFullName)),
+						truncated,
+					}
+				})
+			})
+
+			return {
+				resolveCommitDetail,
+				resolveCommitDetails,
+				resolveCommitRanges,
+			} satisfies VcsCommitServiceApi
 		}),
 	},
 ) {
