@@ -1,0 +1,171 @@
+---
+// Language/framework switcher for docs pages. Children are `<LanguageTab id>`
+// panels holding ordinary markdown, so code blocks keep their highlighting and
+// copy buttons. The pick is remembered and shared by every group on the site.
+// Without JavaScript the first panel shows and the rest stay hidden.
+import LanguageLogo from "./LanguageLogo.astro";
+import { LANGUAGE_IDS, type LanguageId } from "../../lib/docs-languages";
+
+interface Tab {
+    id: string;
+    label: string;
+}
+
+interface Props {
+    tabs: Tab[];
+    label?: string;
+}
+
+const { tabs, label = "Language" } = Astro.props;
+const isLanguage = (id: string): id is LanguageId => (LANGUAGE_IDS as readonly string[]).includes(id);
+---
+
+<div class="lt" data-lang-tabs>
+    <div class="lt__rail" role="tablist" aria-label={label}>
+        {tabs.map((tab, index) => (
+            <button
+                type="button"
+                role="tab"
+                class="lt__tab"
+                data-lang-trigger={tab.id}
+                aria-selected={index === 0 ? "true" : "false"}
+                tabindex={index === 0 ? 0 : -1}
+            >
+                {isLanguage(tab.id) ? (
+                    <LanguageLogo id={tab.id} class="lt__icon" />
+                ) : (
+                    <svg class="lt__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <rect x="2.5" y="4.5" width="19" height="15" rx="2.5" />
+                        <polyline points="6.5 9.5 9.5 12 6.5 14.5" />
+                        <line x1="12.5" y1="14.5" x2="16.5" y2="14.5" />
+                    </svg>
+                )}
+                <span>{tab.label}</span>
+            </button>
+        ))}
+    </div>
+    <div class="lt__panels">
+        <slot />
+    </div>
+</div>
+
+<style>
+    .lt {
+        margin: 16px 0 24px;
+    }
+    .lt__rail {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-bottom: 12px;
+    }
+    .lt__tab {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        height: 32px;
+        padding: 0 11px 0 9px;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        background: transparent;
+        color: var(--muted-foreground);
+        font: inherit;
+        font-size: 13px;
+        cursor: pointer;
+        transition: color 150ms ease, background-color 150ms ease, border-color 150ms ease;
+    }
+    .lt__tab:hover {
+        color: var(--foreground);
+        border-color: color-mix(in oklab, var(--muted-foreground) 50%, transparent);
+    }
+    .lt__tab[aria-selected="true"] {
+        color: var(--foreground);
+        background: var(--bg-elevated);
+        border-color: color-mix(in oklab, var(--muted-foreground) 50%, transparent);
+    }
+    .lt__tab:focus-visible {
+        outline: 2px solid var(--primary);
+        outline-offset: 2px;
+    }
+    .lt__tab :global(.lt__icon) {
+        width: 15px;
+        height: 15px;
+        flex: none;
+    }
+    /* Before the script runs (or without it), only the first panel shows. */
+    .lt:not([data-ready]) .lt__panels > :global([data-lang-panel]:not(:first-child)) {
+        display: none;
+    }
+</style>
+
+<script>
+    const STORAGE_KEY = "maple-docs-language";
+    const roots = Array.from(document.querySelectorAll<HTMLElement>("[data-lang-tabs]"));
+
+    const readStored = () => {
+        try {
+            return localStorage.getItem(STORAGE_KEY);
+        } catch {
+            return null;
+        }
+    };
+    const writeStored = (id: string) => {
+        try {
+            localStorage.setItem(STORAGE_KEY, id);
+        } catch {
+            // Storage blocked: the choice just isn't remembered.
+        }
+    };
+
+    const triggersOf = (root: HTMLElement) => Array.from(root.querySelectorAll<HTMLElement>("[data-lang-trigger]"));
+
+    // A group without the requested id keeps its current tab.
+    const activate = (root: HTMLElement, id: string) => {
+        const triggers = triggersOf(root);
+        if (!triggers.some((t) => t.dataset.langTrigger === id)) return false;
+        for (const t of triggers) {
+            const on = t.dataset.langTrigger === id;
+            t.setAttribute("aria-selected", on ? "true" : "false");
+            t.tabIndex = on ? 0 : -1;
+        }
+        for (const panel of root.querySelectorAll<HTMLElement>("[data-lang-panel]")) {
+            panel.hidden = panel.dataset.langPanel !== id;
+        }
+        return true;
+    };
+
+    const select = (id: string) => {
+        writeStored(id);
+        for (const root of roots) activate(root, id);
+    };
+
+    const stored = readStored();
+    for (const root of roots) {
+        const first = triggersOf(root)[0]?.dataset.langTrigger;
+        if (!(stored && activate(root, stored)) && first) activate(root, first);
+        root.dataset.ready = "";
+
+        root.addEventListener("click", (event) => {
+            const trigger = (event.target as HTMLElement | null)?.closest<HTMLElement>("[data-lang-trigger]");
+            if (!trigger?.dataset.langTrigger) return;
+            // Keep the clicked tab under the pointer when other groups above it change height.
+            const top = trigger.getBoundingClientRect().top;
+            select(trigger.dataset.langTrigger);
+            window.scrollBy(0, trigger.getBoundingClientRect().top - top);
+        });
+
+        root.addEventListener("keydown", (event) => {
+            const triggers = triggersOf(root);
+            const index = triggers.indexOf(event.target as HTMLElement);
+            if (index === -1) return;
+            const step = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
+            if (!step) return;
+            event.preventDefault();
+            const next = triggers[(index + step + triggers.length) % triggers.length];
+            if (next?.dataset.langTrigger) {
+                select(next.dataset.langTrigger);
+                next.focus();
+            }
+        });
+    }
+</script>
