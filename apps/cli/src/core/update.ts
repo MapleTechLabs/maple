@@ -2,8 +2,8 @@
 //   • `maybeNotifyUpdate` — a throttled, non-blocking startup check (run from
 //     bin.ts) that prints a one-line "update available" notice on stderr.
 //   • `performUpdate` — downloads the latest (or pinned) GitHub release bundle,
-//     verifies its sha256, and atomically swaps the running binary in place
-//     (driven by `maple update`, see commands/update.ts).
+//     verifies its signed sha256 manifest (release-signature.ts), and atomically
+//     swaps the running binary in place (driven by `maple update`, see commands/update.ts).
 //
 // We mirror scripts/install.sh's conventions (target triples, release URLs,
 // 2-file bundle, checksum, macOS quarantine clear) rather than shelling out to
@@ -25,6 +25,7 @@ import { dirname, join } from "node:path"
 import { amber, bold, dim, green } from "../lib/style"
 import { MAPLE_VERSION } from "../version"
 import { MapleConfig } from "./config"
+import { releaseChecksum, releaseVerificationFailure, type ReleaseSignatureStatus } from "./release-signature"
 
 /** A `maple update` / version-check failure. The message is shown to the user
  *  and the process exits non-zero (handled by the CLI runtime, like ServerError). */
@@ -212,21 +213,25 @@ const downloadTo = (
 		}),
 	)
 
-const fetchText = (
+/** GET a small release asset as text; `None` on 404 so the caller decides
+ *  whether a missing asset (an unsigned release's `.sig`) is fatal. */
+const fetchTextIfPresent = (
 	url: string,
 	timeout: Duration.Input = CHECKSUM_TIMEOUT,
-): Effect.Effect<string, UpdateError, HttpClient.HttpClient> =>
+): Effect.Effect<Option.Option<string>, UpdateError, HttpClient.HttpClient> =>
 	Effect.gen(function* () {
 		const client = yield* HttpClient.HttpClient
 		const response = yield* client
 			.execute(HttpClientRequest.get(url, { headers: { "User-Agent": "maple-cli" } }))
 			.pipe(Effect.mapError((error) => toUpdateError("checksum request failed", error)))
+		if (response.status === 404) return Option.none<string>()
 		if (response.status < 200 || response.status >= 300) {
 			return yield* new UpdateError({ message: `could not fetch ${url} (${response.status})` })
 		}
-		return yield* response.text.pipe(
+		const text = yield* response.text.pipe(
 			Effect.mapError((error) => toUpdateError("checksum response read failed", error)),
 		)
+		return Option.some(text)
 	}).pipe(
 		Effect.timeoutOrElse({
 			duration: timeout,
@@ -234,6 +239,18 @@ const fetchText = (
 				Effect.fail(new UpdateError({ message: "checksum request timed out after 30 seconds" })),
 		}),
 	)
+
+const fetchText = (
+	url: string,
+	timeout: Duration.Input = CHECKSUM_TIMEOUT,
+): Effect.Effect<string, UpdateError, HttpClient.HttpClient> =>
+	Effect.gen(function* () {
+		const text = yield* fetchTextIfPresent(url, timeout)
+		if (Option.isNone(text)) {
+			return yield* new UpdateError({ message: `could not fetch ${url} (404)` })
+		}
+		return text.value
+	})
 
 const sha256File = (path: string): Effect.Effect<string, UpdateError> =>
 	Effect.tryPromise({
@@ -338,11 +355,13 @@ const swapBundlePair = (
 export interface UpdateResult {
 	readonly tag: string
 	readonly installDir: string
+	readonly signature: ReleaseSignatureStatus
 }
 
-/** Download, verify, and atomically install a release bundle in place. */
+/** Download, verify, and atomically install a release bundle in place.
+ *  `skipSignature` is `--insecure-skip-signature`: the checksum is still checked. */
 export const performUpdate = (
-	opts: { tag?: string } = {},
+	opts: { tag?: string; skipSignature?: boolean } = {},
 ): Effect.Effect<UpdateResult, UpdateError, HttpClient.HttpClient | ChildProcessSpawner | FileSystem> =>
 	Effect.gen(function* () {
 		const fs = yield* FileSystem
@@ -378,7 +397,7 @@ export const performUpdate = (
 			}
 		}).pipe(Effect.ignore)
 
-		yield* Effect.scoped(
+		const signature = yield* Effect.scoped(
 			Effect.gen(function* () {
 				yield* Effect.addFinalizer(() =>
 					fs.remove(tmpDir, { recursive: true, force: true }).pipe(Effect.ignore),
@@ -389,16 +408,30 @@ export const performUpdate = (
 					.makeDirectory(tmpDir, { recursive: true })
 					.pipe(Effect.mapError((e) => mapFsError(e, installDir)))
 
+				// Authenticate the manifest before trusting its checksum, and before
+				// spending the bundle download on a release that would be rejected.
+				// The manifest is ASCII, so its re-encoded text is the signed bytes.
+				const manifest = yield* fetchText(`${url}.sha256`)
+				const sig = opts.skipSignature
+					? Option.none<string>()
+					: yield* fetchTextIfPresent(`${url}.sha256.sig`)
+				const checksum = yield* releaseChecksum({
+					manifest: new TextEncoder().encode(manifest),
+					signature: Option.getOrUndefined(sig),
+					bundleName: `${name}.tar.gz`,
+					skipSignature: opts.skipSignature === true,
+				}).pipe(
+					Effect.mapError(
+						(e) => new UpdateError({ message: releaseVerificationFailure(e, `${name}.tar.gz`) }),
+					),
+				)
+
 				const tarball = join(tmpDir, "bundle.tar.gz")
 				yield* downloadTo(url, tarball)
-
-				const expected = yield* fetchText(`${url}.sha256`).pipe(
-					Effect.map((t) => t.trim().split(/\s+/)[0]),
-				)
 				const actual = yield* sha256File(tarball)
-				if (expected !== actual) {
+				if (checksum.sha256 !== actual) {
 					return yield* new UpdateError({
-						message: `checksum mismatch for ${name} (expected ${expected}, got ${actual})`,
+						message: `checksum mismatch for ${name} (expected ${checksum.sha256}, got ${actual})`,
 					})
 				}
 
@@ -412,10 +445,11 @@ export const performUpdate = (
 				if (process.platform === "darwin") {
 					yield* clearQuarantine([join(installDir, "maple"), join(installDir, "libchdb.so")])
 				}
+				return checksum.signature
 			}),
 		)
 
-		return { tag, installDir }
+		return { tag, installDir, signature }
 	})
 
 const NOTIFY_SKIP_FLAGS = new Set(["--version", "-v", "--help", "-h"])
@@ -474,4 +508,11 @@ export const maybeNotifyUpdate: Effect.Effect<void, never, MapleConfig | HttpCli
 	},
 )
 
-export const __testables = { downloadTo, extractTar, fetchText, mapFsError, swapBundlePair }
+export const __testables = {
+	downloadTo,
+	extractTar,
+	fetchText,
+	fetchTextIfPresent,
+	mapFsError,
+	swapBundlePair,
+}
