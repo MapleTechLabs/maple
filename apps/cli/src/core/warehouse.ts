@@ -4,11 +4,11 @@ import { WarehouseExecutor, type SqlQueryOptions } from "@maple/query-engine/obs
 import { WarehouseConfigError } from "@maple/domain/http/warehouse-errors"
 import type { WarehouseQueryName } from "@maple/domain/warehouse-queries"
 import { Mode, ModeError } from "./mode"
-import { makeLocalWarehouseExecutorApi } from "./executor"
+import { LOCAL_ORG_ID, makeLocalWarehouseExecutorApi } from "./executor"
 
 /**
  * Provides `WarehouseExecutor` whose concrete backend (local chDB vs remote
- * warehouse) is resolved lazily, on first query — NOT at layer-build time.
+ * warehouse) is resolved lazily, on first query, NOT at layer-build time.
  *
  * This matters because `Command.run`'s requirement union includes
  * WarehouseExecutor even for commands that never query (login/logout/whoami).
@@ -17,9 +17,9 @@ import { makeLocalWarehouseExecutorApi } from "./executor"
  * layer always-constructible, while `Effect.cached` resolves the mode at most
  * once per process.
  *
- * Note: `orgId` is intentionally empty. No CLI command reads `executor.orgId`
- * (the local executor injects "local" and the remote server injects the tenant
- * org), so it is never used on this path.
+ * `orgId` is the local tenant: remote mode never reaches this executor, and
+ * query-engine helpers that compile their own queries (the trace-time probe in
+ * `inspectTrace`) scope them by `executor.orgId`.
  */
 export const WarehouseExecutorFromMode = Layer.effect(
 	WarehouseExecutor,
@@ -42,25 +42,21 @@ export const WarehouseExecutorFromMode = Layer.effect(
 							Effect.fail(
 								new ModeError({
 									message:
-										"Remote mode does not use the warehouse executor — this operation is missing its v2 dispatch.",
+										"Remote mode does not use the warehouse executor; this operation is missing its v2 dispatch.",
 								}),
 							),
 				),
 				// `WarehouseExecutor`'s error channel is the domain warehouse union, so
 				// a mode failure has to travel as one. It rides in `cause` rather than
-				// being flattened into the message: `bin.ts` recovers "No Maple backend
-				// found" as an expected outcome, and deciding that by testing the
-				// carrier's tag is a real check. The previous discriminator was
-				// `pipeName === "mode"` — a string compare against a field that
-				// otherwise holds a query name, so any query that happened to be
-				// called "mode" would have been silently recovered as an Ok outcome.
+				// being flattened into the message: `lib/failure.ts` finds the
+				// `ModeError` in the cause chain and reports it with its hint.
 				Effect.mapError(
 					(cause) => new WarehouseConfigError({ message: cause.message, pipeName: "mode", cause }),
 				),
 			),
 		)
 		return WarehouseExecutor.of({
-			orgId: "",
+			orgId: LOCAL_ORG_ID,
 			query: <T>(pipe: string, params: Record<string, unknown>, options?: SqlQueryOptions) =>
 				getExecutor.pipe(
 					Effect.flatMap((executor) =>

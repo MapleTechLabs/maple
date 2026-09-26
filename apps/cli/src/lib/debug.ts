@@ -5,7 +5,7 @@
 
 import { dim, gray } from "./style"
 
-const debugEnabled = (): boolean =>
+export const debugEnabled = (): boolean =>
 	(typeof process !== "undefined" && Array.isArray(process.argv) && process.argv.includes("--debug")) ||
 	process.env.MAPLE_DEBUG === "1"
 
@@ -15,3 +15,7 @@ export const debugLog = (label: string, detail?: string): void => {
 	process.stderr.write(`${gray("[debug]")} ${label}\n`)
 	if (detail) process.stderr.write(`${dim(detail)}\n`)
 }
+
+/** Whether warehouse diagnostics should reach stderr: `--debug` or an explicit `--log-level`. */
+export const verboseLogging = (): boolean =>
+	debugEnabled() || process.argv.some((arg) => arg === "--log-level" || arg.startsWith("--log-level="))

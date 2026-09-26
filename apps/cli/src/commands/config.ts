@@ -4,7 +4,7 @@ import { Console, Effect } from "effect"
 import { MapleConfig } from "../core/config"
 
 /**
- * `maple use <local|remote|auto>` — pin the default backend (persisted in
+ * `maple use <local|remote|auto>`: pin the default backend (persisted in
  * `~/.maple/config.json`), so commands stop auto-detecting. `auto` clears the
  * pin and restores auto-detect (stored token → remote, else probe local).
  */
@@ -20,7 +20,7 @@ export const use = Command.make("use", {
 			if (a.mode === "auto") {
 				yield* config.clearDefaultMode()
 				yield* Console.log(
-					"Default mode cleared — Maple will auto-detect (use --local/--remote to override).",
+					"Default mode cleared; Maple will auto-detect (use --local/--remote to override).",
 				)
 				return
 			}

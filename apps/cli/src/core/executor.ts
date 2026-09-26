@@ -11,7 +11,8 @@ import type { WarehouseExecutorApi } from "@maple/query-engine/observability"
 import { executeLocalQuery, type LocalQueryError } from "@maple/query-engine/local"
 import { debugLog } from "../lib/debug"
 
-const LOCAL_ORG_ID = Schema.decodeUnknownSync(OrgId)("local")
+/** The single tenant every local store is written under. */
+export const LOCAL_ORG_ID = Schema.decodeUnknownSync(OrgId)("local")
 const LOCAL_USER_ID = Schema.decodeUnknownSync(UserId)("local")
 const LOCAL_TENANT = { orgId: LOCAL_ORG_ID, userId: LOCAL_USER_ID, authMode: "local" as const }
 
@@ -50,7 +51,9 @@ const localChdbClient = (baseUrl: string, http: HttpClient.HttpClient): Warehous
 				Effect.mapError(localDriverError),
 				Effect.ensuring(
 					Clock.currentTimeMillis.pipe(
-						Effect.map((nowMs) => debugLog(`local query · ${nowMs - startedAtMs}ms`, statement.text)),
+						Effect.map((nowMs) =>
+							debugLog(`local query · ${nowMs - startedAtMs}ms`, statement.text),
+						),
 					),
 				),
 			)
@@ -61,21 +64,21 @@ const localChdbClient = (baseUrl: string, http: HttpClient.HttpClient): Warehous
 		Effect.fail(
 			new WarehouseDriverError({
 				reason: "config",
-				message: "local mode is read-only through the warehouse executor — ingest via OTLP",
+				message: "local mode is read-only through the warehouse executor; ingest via OTLP",
 			}),
 		),
 })
 
 /**
  * A `WarehouseExecutor` backed by the local Maple binary's `/local/query`
- * endpoint — the REAL `makeWarehouseExecutor` from `@maple/query-engine`
+ * endpoint: the REAL `makeWarehouseExecutor` from `@maple/query-engine`
  * (spans, error classification, OrgId scoping) with a chDB client and a
  * constant single-tenant route injected. The `chdb` backend dialect strips the
  * trailing `FORMAT` (the local server owns the output format) and skips
  * Tinybird's restricted-settings policy.
  *
- * This makes every `@maple/query-engine/observability` function — which only
- * depends on a `WarehouseExecutor` — work unchanged against local mode, with
+ * This makes every `@maple/query-engine/observability` function, which only
+ * depends on a `WarehouseExecutor`, work unchanged against local mode, with
  * the same `warehouse.backend="chdb"` span contract as the cloud.
  *
  * Captures the ambient `HttpClient` once; the executor's own client cache then
@@ -86,6 +89,8 @@ export const makeLocalWarehouseExecutorApi = (
 ): Effect.Effect<WarehouseExecutorApi, never, HttpClient.HttpClient> =>
 	Effect.map(HttpClient.HttpClient, (http) =>
 		makeWarehouseExecutor({
+			// One CLI process, one caller: share the capability probe across its queries.
+			coalesceCapabilityProbes: true,
 			createClient: () => Effect.succeed(localChdbClient(baseUrl, warehouseHttpClient(http))),
 			resolveRoute: () =>
 				Effect.succeed({
