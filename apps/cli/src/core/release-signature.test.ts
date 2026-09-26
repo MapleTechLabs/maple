@@ -78,7 +78,7 @@ describe("verifyReleaseManifest", () => {
 		)
 		ok(badSig._tag === "@maple/cli/ReleaseSignatureInvalid" && badSig.reason === "malformed-signature")
 
-		const rsa = generateKeyPairSync("rsa", { modulusLength: 1024 })
+		const rsa = generateKeyPairSync("rsa", { modulusLength: 2048 })
 			.publicKey.export({ format: "der", type: "spki" })
 			.toString("base64")
 		for (const publicKey of ["garbage", rsa]) {
@@ -271,7 +271,7 @@ describe("scripts/sign-local-release.ts", () => {
 			Effect.flip(signReleaseManifest({ ...signing, manifest: new TextEncoder().encode(`${HASH}\n`) })),
 		)
 		ok(bare.message.includes("must name its bundle"))
-		const rsaPem = generateKeyPairSync("rsa", { modulusLength: 1024 })
+		const rsaPem = generateKeyPairSync("rsa", { modulusLength: 2048 })
 			.privateKey.export({ format: "pem", type: "pkcs8" })
 			.toString()
 		const rsa = await Effect.runPromise(
