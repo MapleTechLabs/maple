@@ -65,7 +65,7 @@ interface DeltaProps {
 	tone?: "error" | "warn"
 }
 
-/** "1.24% vs 0.30%" — the live figure, then the rest of the service beside it. */
+/** "1.24% vs 0.30%": the live figure, then the version it replaced beside it. */
 function Delta({ value, baseline, format, tone }: DeltaProps) {
 	return (
 		<span className="inline-flex items-baseline gap-1.5 font-mono text-xs tabular-nums">
@@ -78,10 +78,7 @@ function Delta({ value, baseline, format, tone }: DeltaProps) {
 				{format(value)}
 			</span>
 			{baseline !== undefined ? (
-				<span
-					className="text-[10px] text-muted-foreground/70"
-					title="Every other version of this service in this window"
-				>
+				<span className="text-[10px] text-muted-foreground/70" title="The version this one replaced">
 					vs {format(baseline)}
 				</span>
 			) : null}
@@ -163,7 +160,7 @@ interface ReleasesTableProps {
 
 /**
  * Grouped by commit with expandable per-service children, day headers instead
- * of a date column, and deltas against the rest of each service.
+ * of a date column, and deltas against the version each one replaced.
  */
 export function ReleasesTable(props: ReleasesTableProps) {
 	const shasKey = useMemo(

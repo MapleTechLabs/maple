@@ -48,8 +48,7 @@ const ratioChange = (value: number, baseline: number | undefined): number | unde
 				: 0
 
 /**
- * This version against every other version of the same service in the same
- * window. Rows are the golden signals the charts below draw; the change column
+ * This version against the one it replaced on the same service. Rows are the golden signals the charts below draw; the change column
  * is the figure the health band was derived from.
  */
 export function ReleaseComparison({ impact }: { impact: ReleaseServiceImpact }) {
@@ -109,26 +108,26 @@ export function ReleaseComparison({ impact }: { impact: ReleaseServiceImpact }) 
 		},
 	]
 
-	const baselineLabel =
-		baseline === undefined
-			? "no other version"
-			: baseline.versions === 1
-				? "1 other version"
-				: `${baseline.versions} other versions`
-
 	return (
 		<SectionCard
-			title="This version vs. the rest of the service"
+			title="This version vs. the previous one"
 			action={
-				<span className="text-[11px] text-muted-foreground/70" title="Same window, split by version">
-					{baselineLabel}
-				</span>
+				baseline === undefined ? (
+					<span className="text-[11px] text-muted-foreground/70">no previous version</span>
+				) : (
+					<CommitShaHoverCard
+						sha={baseline.commitSha}
+						className="font-mono text-[11px] text-muted-foreground"
+					>
+						replaced {shortReleaseLabel(baseline.commitSha)}
+					</CommitShaHoverCard>
+				)
 			}
 		>
 			{baseline === undefined ? (
 				<div className="px-4 py-6 text-center text-xs text-muted-foreground">
-					Only one version of this service reported in the window, so there is nothing to compare
-					against. Widen the time range to include the previous version.
+					This is the oldest version of the service in the window, so there is nothing to compare
+					against. Widen the time range to include the version it replaced.
 				</div>
 			) : (
 				<table className="w-full text-xs">
@@ -140,7 +139,11 @@ export function ReleaseComparison({ impact }: { impact: ReleaseServiceImpact }) 
 									{shortReleaseLabel(impact.commitSha)}
 								</span>
 							</th>
-							<th className="px-2 py-1.5 text-right font-medium">Others</th>
+							<th className="px-2 py-1.5 text-right font-medium">
+								<span className="font-mono normal-case tracking-normal">
+									{shortReleaseLabel(baseline.commitSha)}
+								</span>
+							</th>
 							<th className="px-4 py-1.5 text-right font-medium">Change</th>
 						</tr>
 					</thead>

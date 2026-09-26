@@ -15,6 +15,7 @@ const sha = Schema.decodeUnknownSync(CommitSha)
 const svc = Schema.decodeUnknownSync(ServiceName)
 const SHA_A = sha("a".repeat(40))
 const SHA_B = sha("b".repeat(40))
+const SHA_C = sha("c".repeat(40))
 const API = svc("api")
 const WEB = svc("web")
 
@@ -42,7 +43,7 @@ function bucket(
 }
 
 describe("deriveReleaseImpacts", () => {
-	it("flags a version that errors twice as often as the rest of its service", () => {
+	it("flags a version that errors twice as often as the one it replaced", () => {
 		const rows = [
 			release({
 				commitSha: SHA_B,
@@ -56,8 +57,37 @@ describe("deriveReleaseImpacts", () => {
 		expect(newer?.health).toBe("regressed")
 		expect(newer?.errorRatio).toBeCloseTo(40 / 3, 3)
 		expect(newer?.isNewest).toBe(true)
+		expect(newer?.baseline?.commitSha).toBe(SHA_A)
 		expect(older?.health).toBe("healthy")
-		expect(older?.baseline?.versions).toBe(1)
+		expect(older?.baseline).toBeUndefined()
+	})
+
+	it("compares against the previous version only, not every older one", () => {
+		const rows = [
+			release({
+				commitSha: SHA_C,
+				serviceName: API,
+				firstSeen: "2026-09-05T11:00:00.000Z",
+				errorCount: 3,
+			}),
+			release({
+				commitSha: SHA_B,
+				serviceName: API,
+				firstSeen: "2026-09-05T10:00:00.000Z",
+				errorCount: 3,
+			}),
+			release({
+				commitSha: SHA_A,
+				serviceName: API,
+				firstSeen: "2026-09-05T09:00:00.000Z",
+				errorCount: 400,
+			}),
+		]
+		const [newest, middle] = deriveReleaseImpacts(rows, [])
+		expect(newest?.baseline?.commitSha).toBe(SHA_B)
+		expect(newest?.errorRatio).toBeCloseTo(1, 3)
+		expect(newest?.health).toBe("healthy")
+		expect(middle?.baseline?.commitSha).toBe(SHA_A)
 	})
 
 	it("withholds the comparison below the span floor", () => {
@@ -119,7 +149,7 @@ describe("deriveReleaseImpacts", () => {
 		expect(newer?.health).toBe("healthy")
 	})
 
-	it("has no baseline for the only version of a service", () => {
+	it("has no baseline for the oldest version of a service", () => {
 		const [only] = deriveReleaseImpacts([release({ commitSha: SHA_A, serviceName: API })], [])
 		expect(only?.baseline).toBeUndefined()
 		expect(only?.health).toBe("healthy")
