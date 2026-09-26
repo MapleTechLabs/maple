@@ -176,22 +176,6 @@ function WebAnalyticsPage() {
 						<DashboardLayout.Sticky>
 							<DashboardLayout.Header>
 								<div className="flex flex-wrap items-center gap-2">
-									<Tabs value={activeTab} onValueChange={onTabChange}>
-										<TabsList variant="default" className="h-7 gap-0 p-0.5">
-											<TabsTrigger
-												value="overview"
-												className="h-6 px-2.5 text-xs font-medium"
-											>
-												Overview
-											</TabsTrigger>
-											<TabsTrigger
-												value="ai"
-												className="h-6 px-2.5 text-xs font-medium"
-											>
-												AI
-											</TabsTrigger>
-										</TabsList>
-									</Tabs>
 									{/* Ahead of the range controls, because it is the one number
 									    on the page they do not govern: "right now" is its own
 									    window, and the filters still narrow it. */}
@@ -229,6 +213,14 @@ function WebAnalyticsPage() {
 									/>
 								</div>
 							</DashboardLayout.Header>
+							{/* A page-width tab bar, same as Alerts: a pill beside the time
+							    controls read as one more filter and was easy to miss. */}
+							<Tabs value={activeTab} onValueChange={onTabChange}>
+								<TabsList variant="underline">
+									<TabsTrigger value="overview">Overview</TabsTrigger>
+									<TabsTrigger value="ai">AI traffic</TabsTrigger>
+								</TabsList>
+							</Tabs>
 						</DashboardLayout.Sticky>
 						<DashboardLayout.Scroll>
 							<div className="space-y-6">
