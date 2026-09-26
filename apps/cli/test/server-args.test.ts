@@ -10,6 +10,7 @@ import {
 	ingestedSince,
 	mapleCommand,
 	parseElapsedSeconds,
+	prettyPath,
 	shellWord,
 	startedBeforeWrite,
 	hostedDashboardUrl,
@@ -239,5 +240,15 @@ describe("checkpoint refresh skip", () => {
 		strictEqual(ingestedSince(999, 1_000), false)
 		strictEqual(ingestedSince(1_000, 1_000), true)
 		strictEqual(ingestedSince(undefined, 1_000), true) // status unknown: take it
+	})
+})
+
+describe("prettyPath", () => {
+	it("collapses the home directory only at a path boundary", () => {
+		strictEqual(prettyPath("/home/bob", "/home/bob"), "~")
+		strictEqual(prettyPath("/home/bob/.maple/data", "/home/bob"), "~/.maple/data")
+		// A sibling that merely shares the prefix names a different directory.
+		strictEqual(prettyPath("/home/bobby/data", "/home/bob"), "/home/bobby/data")
+		strictEqual(prettyPath("/rootfs/maple", "/root"), "/rootfs/maple")
 	})
 })

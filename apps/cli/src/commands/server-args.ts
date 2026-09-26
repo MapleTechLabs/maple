@@ -1,6 +1,6 @@
 import { Schema } from "effect"
 import { homedir } from "node:os"
-import { join, resolve } from "node:path"
+import { join, resolve, sep } from "node:path"
 import { DEFAULT_LOCAL_PORT, normalizeHost, resolveBindHost } from "../lib/local-address"
 
 export type DirtyStorePolicy = "wipe" | "fail" | "restore-checkpoint"
@@ -20,11 +20,13 @@ export {
 
 export const defaultDataDir = (): string => join(homedir(), ".maple", "data")
 
-/** Collapse the home directory to `~` for tidy paths. */
-export const prettyPath = (p: string): string => {
-	const home = homedir()
-	return p.startsWith(home) ? `~${p.slice(home.length)}` : p
-}
+/**
+ * Collapse the home directory to `~` for tidy paths. Only at a path boundary:
+ * `/home/bobby` under `HOME=/home/bob` must stay as is, because the result is
+ * pasted into destructive recovery hints.
+ */
+export const prettyPath = (p: string, home: string = homedir()): string =>
+	p === home || p.startsWith(`${home}${sep}`) ? `~${p.slice(home.length)}` : p
 
 /** Quote a value for a pasteable shell command; plain words stay bare. */
 export const shellWord = (value: string): string =>
