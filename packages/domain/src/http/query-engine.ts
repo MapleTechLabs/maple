@@ -1804,7 +1804,7 @@ export class WebAnalyticsAiCrawlersRequest extends Schema.Class<WebAnalyticsAiCr
 	endTime: TinybirdDateTime,
 	host: Schema.optional(Schema.String),
 	pagePath: Schema.optional(Schema.String),
-	pagesLimit: Schema.optional(Schema.Number),
+	pagesLimit: Schema.optional(RowLimit),
 }) {}
 
 export class WebAnalyticsAiCrawlersResponse extends Schema.Class<WebAnalyticsAiCrawlersResponse>(
