@@ -53,7 +53,7 @@
 		"@tanstack/charts": "catalog:charts",
 		"@tanstack/charts-scales": "catalog:charts",
 		"@tanstack/react-db": "0.3.5",
-		"@tanstack/react-hotkeys": "0.10.0",
+		"@tanstack/react-hotkeys": "0.12.0",
 		"@tanstack/react-router": "^1.170.40",
 		"@tanstack/react-table": "^9.2.4",
 		"@tanstack/react-virtual": "^3.14.13",

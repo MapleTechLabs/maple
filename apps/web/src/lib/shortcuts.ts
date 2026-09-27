@@ -205,7 +205,8 @@ export function comboDisplayTokens(
 				? LINUX_MODIFIER_LABELS
 				: WINDOWS_MODIFIER_LABELS
 	const tokens = parsed.modifiers.map((modifier) => modifierLabels[modifier])
-	tokens.push(keyToken(parsed.key, platform))
+	// The registry binds logical keys; a physical-code binding shows its raw code name.
+	tokens.push(keyToken(parsed.code === undefined ? parsed.key : parsed.code, platform))
 	return tokens
 }
 
