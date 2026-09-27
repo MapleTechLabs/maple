@@ -274,6 +274,32 @@ describe("SessionsList low-signal runs", () => {
 		expect(onReachEnd).not.toHaveBeenCalled()
 	})
 
+	it("asks before loading more when a long list ends in a folded run", () => {
+		const engaged = Array.from({ length: 30 }, (_, index) => ({ ...session, sessionId: `s-${index}` }))
+		const view = render(
+			<SessionsList
+				sessions={[...engaged, bot("bot-1"), bot("bot-2")]}
+				collapseLowSignal
+				hasMore
+				onReachEnd={vi.fn()}
+			/>,
+		)
+		expect(view.getByRole("button", { name: "Load more sessions" })).toBeTruthy()
+	})
+
+	it("keeps auto-loading a long list that ends in a session", () => {
+		const engaged = Array.from({ length: 30 }, (_, index) => ({ ...session, sessionId: `s-${index}` }))
+		const view = render(
+			<SessionsList
+				sessions={[bot("bot-1"), bot("bot-2"), ...engaged]}
+				collapseLowSignal
+				hasMore
+				onReachEnd={vi.fn()}
+			/>,
+		)
+		expect(view.queryByRole("button", { name: "Load more sessions" })).toBeNull()
+	})
+
 	it("shows every row when collapsing is off", () => {
 		const view = render(<SessionsList sessions={sessions} />)
 		expect(view.queryByText("2 low-signal sessions")).toBeNull()

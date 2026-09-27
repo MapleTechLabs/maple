@@ -168,10 +168,14 @@ export function SessionsList({
 		nowMs: effectiveNowMs,
 	})
 	// Folded runs can leave a page of sessions only a few rows tall, which keeps the
-	// auto-loading sentinel in view and pulls every page with no scrolling. Until
-	// the rendered rows are tall enough that reaching the end takes a scroll, ask.
+	// auto-loading sentinel in view and pulls every page with no scrolling. Ask
+	// instead until the rows are tall enough that reaching the end takes a scroll,
+	// and whenever the list ends in a folded run: the next page may only extend
+	// that run, leaving the sentinel exactly where it was.
 	const hidesSessions = items.some((item) => item.kind === "quiet" && !item.expanded)
-	const manualLoadMore = hidesSessions && items.length < AUTO_LOAD_MIN_ROWS
+	const lastItem = items.at(-1)
+	const endsInFoldedRun = lastItem?.kind === "quiet" && !lastItem.expanded
+	const manualLoadMore = hidesSessions && (items.length < AUTO_LOAD_MIN_ROWS || endsInFoldedRun)
 	const toggleRun = (key: string) =>
 		setExpanded((previous) => {
 			const next = new Set(previous)
