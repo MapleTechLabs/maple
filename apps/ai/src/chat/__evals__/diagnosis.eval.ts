@@ -16,7 +16,7 @@
  * Gated like every other eval: skips without `OPENROUTER_API_KEY`, runs under
  * `bun run eval`, never as part of `bun run test`.
  */
-import { generateObject, jsonSchema } from "ai"
+import { generateText, jsonSchema, Output } from "ai"
 import { describe, it } from "vitest"
 import { describeEval, type TaskResult } from "vitest-evals"
 import { INVESTIGATE_SYSTEM_PROMPT } from "../prompts"
@@ -105,11 +105,11 @@ const REPORT_SCHEMA = jsonSchema<ReportModel>({
 
 const diagnoseTask = async (input: string): Promise<TaskResult> => {
 	const fixture = fixtureFor(input)
-	const result = await generateObject({
+	const result = await generateText({
 		model: createEvalModel(),
 		temperature: 0,
-		schema: REPORT_SCHEMA,
-		system: INVESTIGATE_SYSTEM_PROMPT,
+		output: Output.object({ schema: REPORT_SCHEMA }),
+		instructions: INVESTIGATE_SYSTEM_PROMPT,
 		prompt: [
 			"Your tool calls have already run. This is everything they returned:",
 			"",
@@ -120,7 +120,7 @@ const diagnoseTask = async (input: string): Promise<TaskResult> => {
 			"Produce the diagnosis you would submit.",
 		].join("\n"),
 	})
-	return { result: JSON.stringify(result.object) }
+	return { result: JSON.stringify(result.output) }
 }
 
 const parse = <T>(output: string | undefined): T => JSON.parse(output ?? "{}") as T

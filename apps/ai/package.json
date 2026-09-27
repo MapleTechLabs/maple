@@ -29,12 +29,12 @@
 		"effect-agent": "0.1.0-beta.144"
 	},
 	"devDependencies": {
-		"@ai-sdk/openai-compatible": "^2.0.79",
+		"@ai-sdk/openai-compatible": "^3.0.57",
 		"@cloudflare/workers-types": "catalog:alchemy",
 		"@effect/language-service": "catalog:effect",
 		"@effect/vitest": "catalog:effect",
 		"@types/node": "catalog:tooling",
-		"ai": "^6.0.293",
+		"ai": "^7.0.118",
 		"gpt-tokenizer": "^3.4.0",
 		"typescript": "catalog:tooling",
 		"vitest": "catalog:",
