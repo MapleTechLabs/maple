@@ -1,6 +1,6 @@
 // TEST-SEAM: This focused test replaces process-global modules that have no instance-level injection seam.
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { LogAttributeChip } from "./log-attribute-chip"
 
@@ -49,6 +49,22 @@ async function hoverOut(element: Element) {
 		vi.advanceTimersByTime(PAST_CLOSE_DELAY)
 	})
 }
+
+// The chip is driven only by synthetic events on a fake clock, but the browser's real
+// cursor still hit-tests. A chip laid out under it gets a trusted `pointerover` on
+// Chromium's own schedule, which can land between `hoverOut`'s leave and its advance and
+// re-arm the open timer. `fireEvent` dispatches directly, so it is unaffected by this.
+let realPointerSeal: HTMLStyleElement
+
+beforeAll(() => {
+	realPointerSeal = document.createElement("style")
+	realPointerSeal.textContent = "*, *::before, *::after { pointer-events: none !important; }"
+	document.head.append(realPointerSeal)
+})
+
+afterAll(() => {
+	realPointerSeal.remove()
+})
 
 let writeText: ReturnType<typeof vi.fn>
 
