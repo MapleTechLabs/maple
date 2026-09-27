@@ -92,7 +92,7 @@
 		"@types/three": "^0.181.0",
 		"@vitejs/plugin-react": "^6.1.1",
 		"@vitest/browser-playwright": "catalog:",
-		"dialkit": "1.4.3",
+		"dialkit": "2.0.2",
 		"playwright": "catalog:",
 		"typescript": "catalog:tooling",
 		"vite": "catalog:",
