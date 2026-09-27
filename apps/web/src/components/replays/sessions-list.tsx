@@ -163,6 +163,8 @@ export function SessionsList({
 		expanded,
 		nowMs: effectiveNowMs,
 	})
+	const lastItem = items.at(-1)
+	const endsInFoldedRun = lastItem?.kind === "quiet" && !lastItem.expanded
 	const toggleRun = (key: string) =>
 		setExpanded((previous) => {
 			const next = new Set(previous)
@@ -244,7 +246,21 @@ export function SessionsList({
 				})}
 			</div>
 
-			{hasMore && <SessionsSentinel onReachEnd={onReachEnd} loadingMore={loadingMore} />}
+			{/* A folded run is one short row however many sessions it holds, so an
+			    auto-loading sentinel after it stays in view and pulls every page. */}
+			{hasMore &&
+				(endsInFoldedRun ? (
+					<button
+						type="button"
+						onClick={() => onReachEnd?.()}
+						disabled={loadingMore}
+						className="w-full py-3 text-sm text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+					>
+						Load more sessions
+					</button>
+				) : (
+					<SessionsSentinel onReachEnd={onReachEnd} loadingMore={loadingMore} />
+				))}
 
 			{isCapped && (
 				<p className="py-3 text-sm text-muted-foreground">
@@ -288,9 +304,11 @@ interface SessionListRowProps {
 }
 
 /**
- * One session. The whole row opens the replay through a stretched button behind
- * the content, so the org and tag pills can sit on top as their own filter buttons
- * without nesting a button in a button.
+ * One session. A stretched button behind the content opens the replay for keyboard
+ * users and clicks in the gaps; the columns sit above it (positioned, later in the
+ * DOM) so their `title` tooltips still get the hover, and a click on them bubbles
+ * to the row. The org and tag pills are their own filter buttons, never nested in
+ * the row's button.
  */
 function SessionListRow({
 	session,
@@ -316,8 +334,13 @@ function SessionListRow({
 
 	return (
 		<div
+			onClick={(event) => {
+				// The stretched button and the filter pills handle their own clicks.
+				if (event.target instanceof Element && event.target.closest("button")) return
+				onOpen()
+			}}
 			className={cn(
-				"group relative flex w-full items-center gap-3 border-b border-border px-3 transition-colors hover:bg-accent/40 @2xl:gap-4",
+				"group relative flex w-full cursor-pointer items-center gap-3 border-b border-border px-3 transition-colors hover:bg-accent/40 @2xl:gap-4",
 				lowSignal ? "py-1.5" : "py-2.5",
 			)}
 		>
@@ -333,7 +356,7 @@ function SessionListRow({
 
 			{/* User: name, then email or entry page. Below @2xl the other columns
 			    stack underneath it. */}
-			<div className="pointer-events-none min-w-0 flex-1 overflow-hidden">
+			<div className="relative min-w-0 flex-1 overflow-hidden">
 				<div className="flex items-center gap-2">
 					<span
 						className={cn(
@@ -367,7 +390,7 @@ function SessionListRow({
 				</div>
 			</div>
 
-			<div className={cn(COLUMNS.org, "pointer-events-none min-w-0 items-center")}>
+			<div className={cn(COLUMNS.org, "relative min-w-0 items-center")}>
 				{session.groupName ? (
 					<OrgButton name={session.groupName} onFilter={onFilterGroup} />
 				) : (
@@ -375,14 +398,14 @@ function SessionListRow({
 				)}
 			</div>
 
-			<div className={cn(COLUMNS.tags, "pointer-events-none flex-wrap items-center gap-1")}>
+			<div className={cn(COLUMNS.tags, "relative flex-wrap items-center gap-1")}>
 				<SessionTags tags={session.tags} onFilter={onFilterTag} />
 			</div>
 
 			<div
 				className={cn(
 					COLUMNS.activity,
-					"pointer-events-none items-baseline gap-2 overflow-hidden whitespace-nowrap",
+					"relative items-baseline gap-2 overflow-hidden whitespace-nowrap",
 				)}
 			>
 				<span
@@ -407,7 +430,7 @@ function SessionListRow({
 				</span>
 			</div>
 
-			<div className={cn(COLUMNS.device, "pointer-events-none items-center gap-2.5")}>
+			<div className={cn(COLUMNS.device, "relative items-center gap-2.5")}>
 				<span
 					className="shrink-0"
 					title={`${session.browserName || "Unknown"}${session.osName ? ` · ${session.osName}` : ""}`}
@@ -422,11 +445,11 @@ function SessionListRow({
 				)}
 			</div>
 
-			<div className={cn(COLUMNS.signals, "pointer-events-none items-center gap-1.5 overflow-hidden")}>
+			<div className={cn(COLUMNS.signals, "relative items-center gap-1.5 overflow-hidden")}>
 				<SessionBadges session={session} />
 			</div>
 
-			<div className={cn(COLUMNS.time, "pointer-events-none items-center")}>
+			<div className={cn(COLUMNS.time, "relative items-center")}>
 				<span
 					className="whitespace-nowrap text-xs text-muted-foreground"
 					title={absoluteTs(session.startTime, timeZone)}
@@ -446,7 +469,7 @@ function OrgButton({ name, onFilter }: { name: string; onFilter?: (groupName: st
 			type="button"
 			onClick={() => onFilter(name)}
 			title={`Only sessions from ${name}`}
-			className={cn(className, "pointer-events-auto relative rounded hover:underline")}
+			className={cn(className, "rounded hover:underline")}
 		>
 			{name}
 		</button>
@@ -480,10 +503,7 @@ function SessionTags({
 						type="button"
 						onClick={() => onFilter(tag)}
 						title={`${SESSION_TAG_DESCRIPTIONS[tag]}. Click to filter.`}
-						className={cn(
-							className,
-							"pointer-events-auto relative hover:ring-1 hover:ring-border",
-						)}
+						className={cn(className, "hover:ring-1 hover:ring-border")}
 					>
 						{SESSION_TAG_LABELS[tag]}
 					</button>

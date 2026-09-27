@@ -248,6 +248,22 @@ describe("SessionsList low-signal runs", () => {
 		expect(view.getAllByText("Bot")).toHaveLength(4)
 	})
 
+	// A folded run is one short row, so an auto-loading sentinel after it would
+	// stay in view and pull every page without the user scrolling.
+	it("asks before loading more when the list ends in a folded run", () => {
+		const onReachEnd = vi.fn()
+		const view = render(
+			<SessionsList
+				sessions={[session, bot("bot-1"), bot("bot-2")]}
+				collapseLowSignal
+				hasMore
+				onReachEnd={onReachEnd}
+			/>,
+		)
+		fireEvent.click(view.getByRole("button", { name: "Load more sessions" }))
+		expect(onReachEnd).toHaveBeenCalledOnce()
+	})
+
 	it("shows every row when collapsing is off", () => {
 		const view = render(<SessionsList sessions={sessions} />)
 		expect(view.queryByText("2 low-signal sessions")).toBeNull()

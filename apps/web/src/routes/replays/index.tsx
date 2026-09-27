@@ -176,8 +176,11 @@ function ReplaysPage() {
 	// toggling either surface keeps the other in sync.
 	const selectedTags = sessionTagsFromSearch(search.tags) ?? []
 	const engagedOnly = selectedTags.includes("engaged")
-	const engagedSessions =
-		facets?.tags.find((tag) => tag.name === "engaged")?.count ?? (facets ? 0 : undefined)
+	// Tier counts are taken without the selected tier (they answer "what would ticking
+	// this give"), so once engaged is selected the list itself is the count.
+	const engagedSessions = engagedOnly
+		? totalSessions
+		: (facets?.tags.find((tag) => tag.name === "engaged")?.count ?? (facets ? 0 : undefined))
 	// A tier filter already decided what to show; folding its rows would hide the answer.
 	const collapseLowSignal = !selectedTags.some(isQualityTier)
 
