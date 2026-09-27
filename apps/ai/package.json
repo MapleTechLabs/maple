@@ -8,7 +8,6 @@
 		"eval:widgets": "bun run scripts/grade-widget-eval.ts",
 		"review:local": "bun --env-file=../../.env.local scripts/pr-review-local.ts",
 		"review:eval": "bun --env-file=../../.env.local scripts/pr-review-eval.ts",
-		"session:eval": "bun --env-file=../../.env.local scripts/session-classify-eval.ts",
 		"mcp:docs": "bun run scripts/generate-dashboard-skill.ts",
 		"measure-tokens": "bun run scripts/measure-token-cost.ts",
 		"test": "vitest run",
