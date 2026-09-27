@@ -882,7 +882,7 @@
         "d3-scale": "^4.0.2",
         "d3-shape": "^3.2.0",
         "effect": "catalog:effect",
-        "elkjs": "^0.11.1",
+        "elkjs": "^0.12.0",
         "react-day-picker": "^10.0.1",
         "react-resizable-panels": "^4.14.1",
         "tailwind-merge": "catalog:tailwind",
@@ -2935,7 +2935,7 @@
 
     "electron-to-chromium": ["electron-to-chromium@1.5.439", "", {}, "sha512-qu6QIPXhsb+CRcAiTMNjR4A1y/7tCYKkKjr5CZXRVih6qkDf79peZ2BpEU3qoDBNCRrcy3Mra3X9nG5oruuA7Q=="],
 
-    "elkjs": ["elkjs@0.11.1", "", {}, "sha512-zxxR9k+rx5ktMwT/FwyLdPCrq7xN6e4VGGHH8hA01vVYKjTFik7nHOxBnAYtrgYUB1RpAiLvA1/U2YraWxyKKg=="],
+    "elkjs": ["elkjs@0.12.0", "", {}, "sha512-YZcKynxVxYoKIOEpywEPwCFdg+BTbxQRNf3pbwdDCvc8O3kQD8bmIwSxKU1eOTVc4Xo+VG9Te+575mlfvOrhEQ=="],
 
     "email-comb": ["email-comb@7.4.4", "", { "dependencies": { "array-pull-all-with-glob": "^7.2.5", "codsen-utils": "^1.10.3", "html-crush": "^6.3.4", "html-entity-codec": "^1.1.0", "ranges-apply": "^7.2.6", "ranges-push": "^7.3.3", "regex-empty-conditional-comments": "^3.2.3", "string-extract-class-names": "^8.4.1", "string-left-right": "^6.2.5", "string-match-left-right": "^9.2.6", "string-range-expander": "^4.2.6", "string-uglify": "^3.2.2" } }, "sha512-sfQOJI+ZoNegJ+XoZWfdmXff2+iA0vu79aw6N1E88CnCpm7F5E5GKh9pmPIaLnDgg2NIvc2Xug+YsamN/YwtSA=="],
 
