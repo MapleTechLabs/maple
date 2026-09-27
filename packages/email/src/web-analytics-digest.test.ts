@@ -38,14 +38,14 @@ describe("deriveWebAnalyticsHeadline", () => {
 		const { headline, standout, subject } = deriveWebAnalyticsHeadline(webAnalyticsDigestProps)
 		expect(headline).toBe("12.5K visitors this week, up 18.2% on last week.")
 		expect(standout).toBe("ChatGPT sent 410 visits.")
-		expect(subject).toBe("Acme Corp · 12.5K visitors this week (↑ 18.2%)")
+		expect(subject).toBe("Acme Corp · Web analytics · 12.5K visitors (↑ 18.2%)")
 	})
 
 	it("falls back to the top page and stays quiet about an unquantified trend", () => {
 		const { headline, standout, subject } = deriveWebAnalyticsHeadline(quietWebAnalyticsDigestProps)
 		expect(headline).toBe("84 visitors this week, about the same as last week.")
 		expect(standout).toBe("Top page: / (150 views).")
-		expect(subject).toBe("Tiny Blog · 84 visitors this week")
+		expect(subject).toBe("Tiny Blog · Web analytics · 84 visitors")
 	})
 })
 

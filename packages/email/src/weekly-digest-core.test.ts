@@ -173,4 +173,10 @@ describe("deriveDigestStatus", () => {
 		expect(unscoped.subject).not.toContain("[")
 		expect(scoped.subject).not.toBe(unscoped.subject)
 	})
+
+	it("leads the subject with the org name and names the email", () => {
+		const { subject } = deriveDigestStatus(healthyDigestProps)
+		expect(subject.startsWith(`${healthyDigestProps.orgName} · Weekly digest · `)).toBe(true)
+		expect(subject).not.toContain("—")
+	})
 })

@@ -174,7 +174,7 @@ export function deriveWebAnalyticsHeadline(props: WebAnalyticsDigestProps): WebA
 		visitors.delta.kind === "pct" && Math.abs(visitors.delta.value) >= 0.05
 			? ` (${deltaArrow(visitors.delta.value)} ${fmtDeltaAbs(visitors.delta.value)})`
 			: ""
-	const subject = `${props.orgName} · ${count} this week${subjectTrend}`
+	const subject = `${props.orgName} · Web analytics · ${count}${subjectTrend}`
 
 	return { headline, standout, subject }
 }
