@@ -8,7 +8,9 @@ import { useLiveClock } from "@/hooks/use-live-clock"
 import { usePageScrollMargin } from "@/hooks/use-page-scroll-margin"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { formatTimestampInTimezone } from "@/lib/timezone-format"
+import type { SessionTag } from "@maple/domain/query-engine"
 import { browserIconFor, deviceIconFor } from "./session-icons"
+import { SESSION_TAG_DESCRIPTIONS, SESSION_TAG_LABELS, noiseTierOf } from "./session-tags"
 import {
 	formatSessionDuration,
 	gradientFor,
@@ -44,6 +46,8 @@ export interface SessionRow {
 	/** `"false"` when the SDK recorded no rrweb chunks for this session. `""` on
 	 *  sessions written before the marker existed — unknown, so no badge. */
 	readonly recorded: string
+	/** Rule-based tags; see `SESSION_TAGS`. */
+	readonly tags: ReadonlyArray<SessionTag>
 }
 
 function absoluteTs(startTime: string, timeZone: string): string {
@@ -178,6 +182,7 @@ export function SessionsList({
 					const isActive = isSessionLive(session, effectiveNowMs)
 					const durationMs = sessionDurationMs(session)
 					const isUnrecorded = session.recorded === "false"
+					const noiseTier = noiseTierOf(session.tags)
 					const hasErrors = session.errorCount > 0
 					const BrowserIcon = browserIconFor(session.browserName)
 					const DeviceIcon = deviceIconFor(session.deviceType)
@@ -234,6 +239,7 @@ export function SessionsList({
 											{id.label}
 										</span>
 										{isActive && <LivePill />}
+										{noiseTier !== undefined && <TierPill tag={noiseTier} />}
 										{/* On phones the right-hand lanes are gone, so the timestamp
 										    anchors the top-right corner of the stacked row. */}
 										<span
@@ -382,6 +388,19 @@ function SessionBadges({ session }: { session: SessionRow }) {
 				</span>
 			)}
 		</>
+	)
+}
+
+// Only the noise tiers get a pill: an engaged session is the default reading, and a
+// badge on every row would stop meaning anything.
+function TierPill({ tag }: { tag: SessionTag }) {
+	return (
+		<span
+			className="inline-flex shrink-0 items-center rounded-full bg-muted px-1.5 py-px text-[10px] font-medium text-muted-foreground"
+			title={SESSION_TAG_DESCRIPTIONS[tag]}
+		>
+			{SESSION_TAG_LABELS[tag]}
+		</span>
 	)
 }
 

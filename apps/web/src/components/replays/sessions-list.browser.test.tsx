@@ -29,6 +29,7 @@ const session: SessionRow = {
 	errorCount: 0,
 	traceCount: 1,
 	recorded: "true",
+	tags: ["engaged"],
 }
 
 class MockIntersectionObserver {

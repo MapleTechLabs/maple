@@ -1,5 +1,6 @@
 import { Clock, Effect, Schema, type Types } from "effect"
 import { ReplaysFacetsRequest, SessionId, SessionTraceSummariesRequest, TraceId } from "@maple/domain/http"
+import { SessionTag } from "@maple/domain/query-engine"
 import { MapleInternalAtomClient } from "@/lib/services/common/internal-atom-client"
 import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
 import {
@@ -39,6 +40,8 @@ const ListReplaysInput = Schema.Struct({
 	search: Schema.optional(Schema.String),
 	/** Exact page path the session navigated to at any point. */
 	pagePath: Schema.optional(Schema.String),
+	/** Sessions carrying every one of these tags. */
+	tags: Schema.optional(Schema.Array(SessionTag)),
 	cursor: Schema.optional(Schema.String),
 	// Session-time range filters (ms) — duration is the stored wall-clock time,
 	// activeTime is computed server-side from session_events gaps.
@@ -83,6 +86,7 @@ export const listReplays = Effect.fn("SessionReplays.listReplays")(function* ({
 			if (input.hasErrors !== undefined) payload.has_errors = input.hasErrors
 			if (input.search !== undefined) payload.search = input.search
 			if (input.pagePath !== undefined) payload.page_path = input.pagePath
+			if (input.tags !== undefined && input.tags.length > 0) payload.tags = input.tags
 			if (input.cursor !== undefined) payload.cursor = input.cursor
 			if (input.durationMinMs !== undefined) payload.duration_min_ms = input.durationMinMs
 			if (input.durationMaxMs !== undefined) payload.duration_max_ms = input.durationMaxMs
@@ -114,6 +118,7 @@ const ReplaysFacetsInput = Schema.Struct({
 	hasErrors: Schema.optional(Schema.Boolean),
 	search: Schema.optional(Schema.String),
 	pagePath: Schema.optional(Schema.String),
+	tags: Schema.optional(Schema.Array(SessionTag)),
 })
 export type ReplaysFacetsInput = Schema.Schema.Type<typeof ReplaysFacetsInput>
 
@@ -142,6 +147,7 @@ export const getReplaysFacets = Effect.fn("SessionReplays.facets")(function* ({
 					hasErrors: input.hasErrors,
 					search: input.search,
 					pagePath: input.pagePath,
+					tags: input.tags,
 				}),
 			})
 		}),
@@ -153,6 +159,7 @@ export const getReplaysFacets = Effect.fn("SessionReplays.facets")(function* ({
 		devices: result.devices,
 		groups: result.groups,
 		pages: result.pages,
+		tags: result.tags,
 		errorCount: result.errorCount,
 		totalSessions: result.totalSessions,
 		liveSessions: result.liveSessions,

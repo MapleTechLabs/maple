@@ -3929,7 +3929,7 @@ SELECT
         LIMIT 40
         FORMAT JSON
 
--- builder:session-replays:sessionReplaysFacetsQuery:default  [779fa2ec]
+-- builder:session-replays:sessionReplaysFacetsQuery:default  [b22f75dd]
 SELECT
           ServiceName AS name,
           uniq(SessionId) AS count,
@@ -4016,6 +4016,22 @@ SELECT
         LIMIT 200
 UNION ALL
 SELECT
+          arrayJoin(arrayFilter(tag -> tag != '', [quality, if(signedIn = 1, 'signed_in', ''), if(newVisitor = 1, 'new_visitor', '')])) AS name,
+          count() AS count,
+          'tag' AS facetType
+        FROM (SELECT
+          SessionId AS sessionId,
+          multiIf(multiSearchAnyCaseInsensitive(argMax(UserAgent, Version), ['GPTBot', 'OAI-SearchBot', 'ChatGPT-User', 'ClaudeBot', 'Claude-User', 'PerplexityBot', 'Google-Extended', 'Applebot-Extended', 'meta-externalagent', 'meta-webindexer', 'Bytespider', 'CCBot', 'Amazonbot', 'DuckAssistBot', 'Googlebot', 'GoogleOther', 'AdsBot-Google', 'Google-Read-Aloud', 'bingbot', 'YandexBot', 'Baiduspider', 'DuckDuckBot', 'Applebot', 'Sogou', 'SeznamBot', 'AhrefsSiteAudit', 'AhrefsBot', 'SemrushBot', 'DataForSeoBot', 'DotBot', 'MJ12bot', 'Barkrowler', 'Screaming Frog', 'facebookexternalhit', 'Twitterbot', 'LinkedInBot', 'Slackbot', 'Discordbot', 'TelegramBot', 'Pinterest', 'HubSpot Crawler', 'Stripebot', 'UptimeRobot', 'Pingdom', 'StatusCake', 'Headless', 'bot/', 'bot\x3B', 'bot)', 'crawler', 'spider', '+http']), 'bot', (coalesce(argMax(DurationMs, Version), dateDiff('millisecond', argMax(StartTime, Version), coalesce(argMax(LastActivityAt, Version), argMax(StartTime, Version)))) < 5000 AND argMax(ClickCount, Version) = 0), 'bounce', ((argMax(PageViews, Version) <= 1 AND argMax(ClickCount, Version) = 0) AND argMax(ErrorCount, Version) = 0), 'idle', (((argMax(PageViews, Version) <= 1 AND argMax(ClickCount, Version) <= 2) AND argMax(ErrorCount, Version) = 0) AND coalesce(argMax(DurationMs, Version), dateDiff('millisecond', argMax(StartTime, Version), coalesce(argMax(LastActivityAt, Version), argMax(StartTime, Version)))) < 30000), 'glance', 'engaged') AS quality,
+          if(argMax(UserId, Version) != '', 1, 0) AS signedIn,
+          argMax(VisitorIsNew, Version) AS newVisitor
+        FROM session_replays
+        WHERE OrgId = 'org_sql_catalog'
+          AND StartTime >= '2026-01-01 10:30:00'
+          AND StartTime <= '2026-01-03 14:15:00'
+        GROUP BY sessionId) AS t
+        GROUP BY name
+UNION ALL
+SELECT
           toString(toUInt64(round(pow(2, floor(log2(greatest(DurationMs, 1000) / 1000) * 2) / 2) * 1000))) AS name,
           uniq(SessionId) AS count,
           'durationBucket' AS facetType
@@ -4076,7 +4092,7 @@ SELECT
           AND ErrorCount > 0
 FORMAT JSON
 
--- builder:session-replays:sessionReplaysFacetsQuery:identity-filtered  [a8b7429b]
+-- builder:session-replays:sessionReplaysFacetsQuery:identity-filtered  [e54d21e1]
 SELECT
           ServiceName AS name,
           uniq(SessionId) AS count,
@@ -4174,6 +4190,24 @@ SELECT
         LIMIT 200
 UNION ALL
 SELECT
+          arrayJoin(arrayFilter(tag -> tag != '', [quality, if(signedIn = 1, 'signed_in', ''), if(newVisitor = 1, 'new_visitor', '')])) AS name,
+          count() AS count,
+          'tag' AS facetType
+        FROM (SELECT
+          SessionId AS sessionId,
+          multiIf(multiSearchAnyCaseInsensitive(argMax(UserAgent, Version), ['GPTBot', 'OAI-SearchBot', 'ChatGPT-User', 'ClaudeBot', 'Claude-User', 'PerplexityBot', 'Google-Extended', 'Applebot-Extended', 'meta-externalagent', 'meta-webindexer', 'Bytespider', 'CCBot', 'Amazonbot', 'DuckAssistBot', 'Googlebot', 'GoogleOther', 'AdsBot-Google', 'Google-Read-Aloud', 'bingbot', 'YandexBot', 'Baiduspider', 'DuckDuckBot', 'Applebot', 'Sogou', 'SeznamBot', 'AhrefsSiteAudit', 'AhrefsBot', 'SemrushBot', 'DataForSeoBot', 'DotBot', 'MJ12bot', 'Barkrowler', 'Screaming Frog', 'facebookexternalhit', 'Twitterbot', 'LinkedInBot', 'Slackbot', 'Discordbot', 'TelegramBot', 'Pinterest', 'HubSpot Crawler', 'Stripebot', 'UptimeRobot', 'Pingdom', 'StatusCake', 'Headless', 'bot/', 'bot\x3B', 'bot)', 'crawler', 'spider', '+http']), 'bot', (coalesce(argMax(DurationMs, Version), dateDiff('millisecond', argMax(StartTime, Version), coalesce(argMax(LastActivityAt, Version), argMax(StartTime, Version)))) < 5000 AND argMax(ClickCount, Version) = 0), 'bounce', ((argMax(PageViews, Version) <= 1 AND argMax(ClickCount, Version) = 0) AND argMax(ErrorCount, Version) = 0), 'idle', (((argMax(PageViews, Version) <= 1 AND argMax(ClickCount, Version) <= 2) AND argMax(ErrorCount, Version) = 0) AND coalesce(argMax(DurationMs, Version), dateDiff('millisecond', argMax(StartTime, Version), coalesce(argMax(LastActivityAt, Version), argMax(StartTime, Version)))) < 30000), 'glance', 'engaged') AS quality,
+          if(argMax(UserId, Version) != '', 1, 0) AS signedIn,
+          argMax(VisitorIsNew, Version) AS newVisitor
+        FROM session_replays
+        WHERE OrgId = 'org_sql_catalog'
+          AND StartTime >= '2026-01-01 10:30:00'
+          AND StartTime <= '2026-01-03 14:15:00'
+          AND GroupName = 'Acme Inc'
+          AND (UserName ILIKE '%ada%' OR UserEmail ILIKE '%ada%')
+        GROUP BY sessionId) AS t
+        GROUP BY name
+UNION ALL
+SELECT
           toString(toUInt64(round(pow(2, floor(log2(greatest(DurationMs, 1000) / 1000) * 2) / 2) * 1000))) AS name,
           uniq(SessionId) AS count,
           'durationBucket' AS facetType
@@ -4246,7 +4280,7 @@ SELECT
           AND ErrorCount > 0
 FORMAT JSON
 
--- builder:session-replays:sessionReplaysFacetsQuery:page-visited  [e0e1c243]
+-- builder:session-replays:sessionReplaysFacetsQuery:page-visited  [62ffbe75]
 SELECT
           ServiceName AS name,
           uniq(SessionId) AS count,
@@ -4373,6 +4407,30 @@ SELECT
         LIMIT 200
 UNION ALL
 SELECT
+          arrayJoin(arrayFilter(tag -> tag != '', [quality, if(signedIn = 1, 'signed_in', ''), if(newVisitor = 1, 'new_visitor', '')])) AS name,
+          count() AS count,
+          'tag' AS facetType
+        FROM (SELECT
+          SessionId AS sessionId,
+          multiIf(multiSearchAnyCaseInsensitive(argMax(UserAgent, Version), ['GPTBot', 'OAI-SearchBot', 'ChatGPT-User', 'ClaudeBot', 'Claude-User', 'PerplexityBot', 'Google-Extended', 'Applebot-Extended', 'meta-externalagent', 'meta-webindexer', 'Bytespider', 'CCBot', 'Amazonbot', 'DuckAssistBot', 'Googlebot', 'GoogleOther', 'AdsBot-Google', 'Google-Read-Aloud', 'bingbot', 'YandexBot', 'Baiduspider', 'DuckDuckBot', 'Applebot', 'Sogou', 'SeznamBot', 'AhrefsSiteAudit', 'AhrefsBot', 'SemrushBot', 'DataForSeoBot', 'DotBot', 'MJ12bot', 'Barkrowler', 'Screaming Frog', 'facebookexternalhit', 'Twitterbot', 'LinkedInBot', 'Slackbot', 'Discordbot', 'TelegramBot', 'Pinterest', 'HubSpot Crawler', 'Stripebot', 'UptimeRobot', 'Pingdom', 'StatusCake', 'Headless', 'bot/', 'bot\x3B', 'bot)', 'crawler', 'spider', '+http']), 'bot', (coalesce(argMax(DurationMs, Version), dateDiff('millisecond', argMax(StartTime, Version), coalesce(argMax(LastActivityAt, Version), argMax(StartTime, Version)))) < 5000 AND argMax(ClickCount, Version) = 0), 'bounce', ((argMax(PageViews, Version) <= 1 AND argMax(ClickCount, Version) = 0) AND argMax(ErrorCount, Version) = 0), 'idle', (((argMax(PageViews, Version) <= 1 AND argMax(ClickCount, Version) <= 2) AND argMax(ErrorCount, Version) = 0) AND coalesce(argMax(DurationMs, Version), dateDiff('millisecond', argMax(StartTime, Version), coalesce(argMax(LastActivityAt, Version), argMax(StartTime, Version)))) < 30000), 'glance', 'engaged') AS quality,
+          if(argMax(UserId, Version) != '', 1, 0) AS signedIn,
+          argMax(VisitorIsNew, Version) AS newVisitor
+        FROM session_replays
+        WHERE OrgId = 'org_sql_catalog'
+          AND StartTime >= '2026-01-01 10:30:00'
+          AND StartTime <= '2026-01-03 14:15:00'
+          AND SessionId IN (SELECT
+          SessionId AS SessionId
+        FROM product_events
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND Kind = 'navigation'
+          AND PagePath = '/pricing')
+        GROUP BY sessionId) AS t
+        GROUP BY name
+UNION ALL
+SELECT
           toString(toUInt64(round(pow(2, floor(log2(greatest(DurationMs, 1000) / 1000) * 2) / 2) * 1000))) AS name,
           uniq(SessionId) AS count,
           'durationBucket' AS facetType
@@ -4481,7 +4539,326 @@ SELECT
           AND ErrorCount > 0
 FORMAT JSON
 
--- builder:session-replays:sessionReplaysListQuery:default  [3639783b]
+-- builder:session-replays:sessionReplaysFacetsQuery:tagged  [9e084a5d]
+SELECT
+          ServiceName AS name,
+          uniq(SessionId) AS count,
+          'service' AS facetType
+        FROM session_replays
+        WHERE OrgId = 'org_sql_catalog'
+          AND StartTime >= '2026-01-01 10:30:00'
+          AND StartTime <= '2026-01-03 14:15:00'
+          AND SessionId IN (SELECT
+          sessionId AS SessionId
+        FROM (SELECT
+          SessionId AS sessionId,
+          multiIf(multiSearchAnyCaseInsensitive(argMax(UserAgent, Version), ['GPTBot', 'OAI-SearchBot', 'ChatGPT-User', 'ClaudeBot', 'Claude-User', 'PerplexityBot', 'Google-Extended', 'Applebot-Extended', 'meta-externalagent', 'meta-webindexer', 'Bytespider', 'CCBot', 'Amazonbot', 'DuckAssistBot', 'Googlebot', 'GoogleOther', 'AdsBot-Google', 'Google-Read-Aloud', 'bingbot', 'YandexBot', 'Baiduspider', 'DuckDuckBot', 'Applebot', 'Sogou', 'SeznamBot', 'AhrefsSiteAudit', 'AhrefsBot', 'SemrushBot', 'DataForSeoBot', 'DotBot', 'MJ12bot', 'Barkrowler', 'Screaming Frog', 'facebookexternalhit', 'Twitterbot', 'LinkedInBot', 'Slackbot', 'Discordbot', 'TelegramBot', 'Pinterest', 'HubSpot Crawler', 'Stripebot', 'UptimeRobot', 'Pingdom', 'StatusCake', 'Headless', 'bot/', 'bot\x3B', 'bot)', 'crawler', 'spider', '+http']), 'bot', (coalesce(argMax(DurationMs, Version), dateDiff('millisecond', argMax(StartTime, Version), coalesce(argMax(LastActivityAt, Version), argMax(StartTime, Version)))) < 5000 AND argMax(ClickCount, Version) = 0), 'bounce', ((argMax(PageViews, Version) <= 1 AND argMax(ClickCount, Version) = 0) AND argMax(ErrorCount, Version) = 0), 'idle', (((argMax(PageViews, Version) <= 1 AND argMax(ClickCount, Version) <= 2) AND argMax(ErrorCount, Version) = 0) AND coalesce(argMax(DurationMs, Version), dateDiff('millisecond', argMax(StartTime, Version), coalesce(argMax(LastActivityAt, Version), argMax(StartTime, Version)))) < 30000), 'glance', 'engaged') AS quality,
+          if(argMax(UserId, Version) != '', 1, 0) AS signedIn,
+          argMax(VisitorIsNew, Version) AS newVisitor
+        FROM session_replays
+        WHERE OrgId = 'org_sql_catalog'
+          AND StartTime >= '2026-01-01 10:30:00'
+          AND StartTime <= '2026-01-03 14:15:00'
+        GROUP BY sessionId) AS t
+        WHERE quality = 'engaged')
+          AND ServiceName != ''
+        GROUP BY name
+        ORDER BY count DESC
+        LIMIT 50
+UNION ALL
+SELECT
+          BrowserName AS name,
+          uniq(SessionId) AS count,
+          'browser' AS facetType
+        FROM session_replays
+        WHERE OrgId = 'org_sql_catalog'
+          AND StartTime >= '2026-01-01 10:30:00'
+          AND StartTime <= '2026-01-03 14:15:00'
+          AND SessionId IN (SELECT
+          sessionId AS SessionId
+        FROM (SELECT
+          SessionId AS sessionId,
+          multiIf(multiSearchAnyCaseInsensitive(argMax(UserAgent, Version), ['GPTBot', 'OAI-SearchBot', 'ChatGPT-User', 'ClaudeBot', 'Claude-User', 'PerplexityBot', 'Google-Extended', 'Applebot-Extended', 'meta-externalagent', 'meta-webindexer', 'Bytespider', 'CCBot', 'Amazonbot', 'DuckAssistBot', 'Googlebot', 'GoogleOther', 'AdsBot-Google', 'Google-Read-Aloud', 'bingbot', 'YandexBot', 'Baiduspider', 'DuckDuckBot', 'Applebot', 'Sogou', 'SeznamBot', 'AhrefsSiteAudit', 'AhrefsBot', 'SemrushBot', 'DataForSeoBot', 'DotBot', 'MJ12bot', 'Barkrowler', 'Screaming Frog', 'facebookexternalhit', 'Twitterbot', 'LinkedInBot', 'Slackbot', 'Discordbot', 'TelegramBot', 'Pinterest', 'HubSpot Crawler', 'Stripebot', 'UptimeRobot', 'Pingdom', 'StatusCake', 'Headless', 'bot/', 'bot\x3B', 'bot)', 'crawler', 'spider', '+http']), 'bot', (coalesce(argMax(DurationMs, Version), dateDiff('millisecond', argMax(StartTime, Version), coalesce(argMax(LastActivityAt, Version), argMax(StartTime, Version)))) < 5000 AND argMax(ClickCount, Version) = 0), 'bounce', ((argMax(PageViews, Version) <= 1 AND argMax(ClickCount, Version) = 0) AND argMax(ErrorCount, Version) = 0), 'idle', (((argMax(PageViews, Version) <= 1 AND argMax(ClickCount, Version) <= 2) AND argMax(ErrorCount, Version) = 0) AND coalesce(argMax(DurationMs, Version), dateDiff('millisecond', argMax(StartTime, Version), coalesce(argMax(LastActivityAt, Version), argMax(StartTime, Version)))) < 30000), 'glance', 'engaged') AS quality,
+          if(argMax(UserId, Version) != '', 1, 0) AS signedIn,
+          argMax(VisitorIsNew, Version) AS newVisitor
+        FROM session_replays
+        WHERE OrgId = 'org_sql_catalog'
+          AND StartTime >= '2026-01-01 10:30:00'
+          AND StartTime <= '2026-01-03 14:15:00'
+        GROUP BY sessionId) AS t
+        WHERE quality = 'engaged')
+          AND BrowserName != ''
+        GROUP BY name
+        ORDER BY count DESC
+        LIMIT 50
+UNION ALL
+SELECT
+          Country AS name,
+          uniq(SessionId) AS count,
+          'country' AS facetType
+        FROM session_replays
+        WHERE OrgId = 'org_sql_catalog'
+          AND StartTime >= '2026-01-01 10:30:00'
+          AND StartTime <= '2026-01-03 14:15:00'
+          AND SessionId IN (SELECT
+          sessionId AS SessionId
+        FROM (SELECT
+          SessionId AS sessionId,
+          multiIf(multiSearchAnyCaseInsensitive(argMax(UserAgent, Version), ['GPTBot', 'OAI-SearchBot', 'ChatGPT-User', 'ClaudeBot', 'Claude-User', 'PerplexityBot', 'Google-Extended', 'Applebot-Extended', 'meta-externalagent', 'meta-webindexer', 'Bytespider', 'CCBot', 'Amazonbot', 'DuckAssistBot', 'Googlebot', 'GoogleOther', 'AdsBot-Google', 'Google-Read-Aloud', 'bingbot', 'YandexBot', 'Baiduspider', 'DuckDuckBot', 'Applebot', 'Sogou', 'SeznamBot', 'AhrefsSiteAudit', 'AhrefsBot', 'SemrushBot', 'DataForSeoBot', 'DotBot', 'MJ12bot', 'Barkrowler', 'Screaming Frog', 'facebookexternalhit', 'Twitterbot', 'LinkedInBot', 'Slackbot', 'Discordbot', 'TelegramBot', 'Pinterest', 'HubSpot Crawler', 'Stripebot', 'UptimeRobot', 'Pingdom', 'StatusCake', 'Headless', 'bot/', 'bot\x3B', 'bot)', 'crawler', 'spider', '+http']), 'bot', (coalesce(argMax(DurationMs, Version), dateDiff('millisecond', argMax(StartTime, Version), coalesce(argMax(LastActivityAt, Version), argMax(StartTime, Version)))) < 5000 AND argMax(ClickCount, Version) = 0), 'bounce', ((argMax(PageViews, Version) <= 1 AND argMax(ClickCount, Version) = 0) AND argMax(ErrorCount, Version) = 0), 'idle', (((argMax(PageViews, Version) <= 1 AND argMax(ClickCount, Version) <= 2) AND argMax(ErrorCount, Version) = 0) AND coalesce(argMax(DurationMs, Version), dateDiff('millisecond', argMax(StartTime, Version), coalesce(argMax(LastActivityAt, Version), argMax(StartTime, Version)))) < 30000), 'glance', 'engaged') AS quality,
+          if(argMax(UserId, Version) != '', 1, 0) AS signedIn,
+          argMax(VisitorIsNew, Version) AS newVisitor
+        FROM session_replays
+        WHERE OrgId = 'org_sql_catalog'
+          AND StartTime >= '2026-01-01 10:30:00'
+          AND StartTime <= '2026-01-03 14:15:00'
+        GROUP BY sessionId) AS t
+        WHERE quality = 'engaged')
+          AND Country != ''
+        GROUP BY name
+        ORDER BY count DESC
+        LIMIT 50
+UNION ALL
+SELECT
+          DeviceType AS name,
+          uniq(SessionId) AS count,
+          'device' AS facetType
+        FROM session_replays
+        WHERE OrgId = 'org_sql_catalog'
+          AND StartTime >= '2026-01-01 10:30:00'
+          AND StartTime <= '2026-01-03 14:15:00'
+          AND SessionId IN (SELECT
+          sessionId AS SessionId
+        FROM (SELECT
+          SessionId AS sessionId,
+          multiIf(multiSearchAnyCaseInsensitive(argMax(UserAgent, Version), ['GPTBot', 'OAI-SearchBot', 'ChatGPT-User', 'ClaudeBot', 'Claude-User', 'PerplexityBot', 'Google-Extended', 'Applebot-Extended', 'meta-externalagent', 'meta-webindexer', 'Bytespider', 'CCBot', 'Amazonbot', 'DuckAssistBot', 'Googlebot', 'GoogleOther', 'AdsBot-Google', 'Google-Read-Aloud', 'bingbot', 'YandexBot', 'Baiduspider', 'DuckDuckBot', 'Applebot', 'Sogou', 'SeznamBot', 'AhrefsSiteAudit', 'AhrefsBot', 'SemrushBot', 'DataForSeoBot', 'DotBot', 'MJ12bot', 'Barkrowler', 'Screaming Frog', 'facebookexternalhit', 'Twitterbot', 'LinkedInBot', 'Slackbot', 'Discordbot', 'TelegramBot', 'Pinterest', 'HubSpot Crawler', 'Stripebot', 'UptimeRobot', 'Pingdom', 'StatusCake', 'Headless', 'bot/', 'bot\x3B', 'bot)', 'crawler', 'spider', '+http']), 'bot', (coalesce(argMax(DurationMs, Version), dateDiff('millisecond', argMax(StartTime, Version), coalesce(argMax(LastActivityAt, Version), argMax(StartTime, Version)))) < 5000 AND argMax(ClickCount, Version) = 0), 'bounce', ((argMax(PageViews, Version) <= 1 AND argMax(ClickCount, Version) = 0) AND argMax(ErrorCount, Version) = 0), 'idle', (((argMax(PageViews, Version) <= 1 AND argMax(ClickCount, Version) <= 2) AND argMax(ErrorCount, Version) = 0) AND coalesce(argMax(DurationMs, Version), dateDiff('millisecond', argMax(StartTime, Version), coalesce(argMax(LastActivityAt, Version), argMax(StartTime, Version)))) < 30000), 'glance', 'engaged') AS quality,
+          if(argMax(UserId, Version) != '', 1, 0) AS signedIn,
+          argMax(VisitorIsNew, Version) AS newVisitor
+        FROM session_replays
+        WHERE OrgId = 'org_sql_catalog'
+          AND StartTime >= '2026-01-01 10:30:00'
+          AND StartTime <= '2026-01-03 14:15:00'
+        GROUP BY sessionId) AS t
+        WHERE quality = 'engaged')
+          AND DeviceType != ''
+        GROUP BY name
+        ORDER BY count DESC
+        LIMIT 50
+UNION ALL
+SELECT
+          GroupName AS name,
+          uniq(SessionId) AS count,
+          'group' AS facetType
+        FROM session_replays
+        WHERE OrgId = 'org_sql_catalog'
+          AND StartTime >= '2026-01-01 10:30:00'
+          AND StartTime <= '2026-01-03 14:15:00'
+          AND SessionId IN (SELECT
+          sessionId AS SessionId
+        FROM (SELECT
+          SessionId AS sessionId,
+          multiIf(multiSearchAnyCaseInsensitive(argMax(UserAgent, Version), ['GPTBot', 'OAI-SearchBot', 'ChatGPT-User', 'ClaudeBot', 'Claude-User', 'PerplexityBot', 'Google-Extended', 'Applebot-Extended', 'meta-externalagent', 'meta-webindexer', 'Bytespider', 'CCBot', 'Amazonbot', 'DuckAssistBot', 'Googlebot', 'GoogleOther', 'AdsBot-Google', 'Google-Read-Aloud', 'bingbot', 'YandexBot', 'Baiduspider', 'DuckDuckBot', 'Applebot', 'Sogou', 'SeznamBot', 'AhrefsSiteAudit', 'AhrefsBot', 'SemrushBot', 'DataForSeoBot', 'DotBot', 'MJ12bot', 'Barkrowler', 'Screaming Frog', 'facebookexternalhit', 'Twitterbot', 'LinkedInBot', 'Slackbot', 'Discordbot', 'TelegramBot', 'Pinterest', 'HubSpot Crawler', 'Stripebot', 'UptimeRobot', 'Pingdom', 'StatusCake', 'Headless', 'bot/', 'bot\x3B', 'bot)', 'crawler', 'spider', '+http']), 'bot', (coalesce(argMax(DurationMs, Version), dateDiff('millisecond', argMax(StartTime, Version), coalesce(argMax(LastActivityAt, Version), argMax(StartTime, Version)))) < 5000 AND argMax(ClickCount, Version) = 0), 'bounce', ((argMax(PageViews, Version) <= 1 AND argMax(ClickCount, Version) = 0) AND argMax(ErrorCount, Version) = 0), 'idle', (((argMax(PageViews, Version) <= 1 AND argMax(ClickCount, Version) <= 2) AND argMax(ErrorCount, Version) = 0) AND coalesce(argMax(DurationMs, Version), dateDiff('millisecond', argMax(StartTime, Version), coalesce(argMax(LastActivityAt, Version), argMax(StartTime, Version)))) < 30000), 'glance', 'engaged') AS quality,
+          if(argMax(UserId, Version) != '', 1, 0) AS signedIn,
+          argMax(VisitorIsNew, Version) AS newVisitor
+        FROM session_replays
+        WHERE OrgId = 'org_sql_catalog'
+          AND StartTime >= '2026-01-01 10:30:00'
+          AND StartTime <= '2026-01-03 14:15:00'
+        GROUP BY sessionId) AS t
+        WHERE quality = 'engaged')
+          AND GroupName != ''
+        GROUP BY name
+        ORDER BY count DESC
+        LIMIT 50
+UNION ALL
+SELECT
+          PagePath AS name,
+          uniq(SessionId) AS count,
+          'page' AS facetType
+        FROM product_events
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND Kind = 'navigation'
+          AND PagePath != ''
+          AND SessionId IN (SELECT
+          SessionId AS SessionId
+        FROM session_replays
+        WHERE OrgId = 'org_sql_catalog'
+          AND StartTime >= '2026-01-01 10:30:00'
+          AND StartTime <= '2026-01-03 14:15:00'
+          AND SessionId IN (SELECT
+          sessionId AS SessionId
+        FROM (SELECT
+          SessionId AS sessionId,
+          multiIf(multiSearchAnyCaseInsensitive(argMax(UserAgent, Version), ['GPTBot', 'OAI-SearchBot', 'ChatGPT-User', 'ClaudeBot', 'Claude-User', 'PerplexityBot', 'Google-Extended', 'Applebot-Extended', 'meta-externalagent', 'meta-webindexer', 'Bytespider', 'CCBot', 'Amazonbot', 'DuckAssistBot', 'Googlebot', 'GoogleOther', 'AdsBot-Google', 'Google-Read-Aloud', 'bingbot', 'YandexBot', 'Baiduspider', 'DuckDuckBot', 'Applebot', 'Sogou', 'SeznamBot', 'AhrefsSiteAudit', 'AhrefsBot', 'SemrushBot', 'DataForSeoBot', 'DotBot', 'MJ12bot', 'Barkrowler', 'Screaming Frog', 'facebookexternalhit', 'Twitterbot', 'LinkedInBot', 'Slackbot', 'Discordbot', 'TelegramBot', 'Pinterest', 'HubSpot Crawler', 'Stripebot', 'UptimeRobot', 'Pingdom', 'StatusCake', 'Headless', 'bot/', 'bot\x3B', 'bot)', 'crawler', 'spider', '+http']), 'bot', (coalesce(argMax(DurationMs, Version), dateDiff('millisecond', argMax(StartTime, Version), coalesce(argMax(LastActivityAt, Version), argMax(StartTime, Version)))) < 5000 AND argMax(ClickCount, Version) = 0), 'bounce', ((argMax(PageViews, Version) <= 1 AND argMax(ClickCount, Version) = 0) AND argMax(ErrorCount, Version) = 0), 'idle', (((argMax(PageViews, Version) <= 1 AND argMax(ClickCount, Version) <= 2) AND argMax(ErrorCount, Version) = 0) AND coalesce(argMax(DurationMs, Version), dateDiff('millisecond', argMax(StartTime, Version), coalesce(argMax(LastActivityAt, Version), argMax(StartTime, Version)))) < 30000), 'glance', 'engaged') AS quality,
+          if(argMax(UserId, Version) != '', 1, 0) AS signedIn,
+          argMax(VisitorIsNew, Version) AS newVisitor
+        FROM session_replays
+        WHERE OrgId = 'org_sql_catalog'
+          AND StartTime >= '2026-01-01 10:30:00'
+          AND StartTime <= '2026-01-03 14:15:00'
+        GROUP BY sessionId) AS t
+        WHERE quality = 'engaged'))
+        GROUP BY name
+        ORDER BY count DESC
+        LIMIT 200
+UNION ALL
+SELECT
+          arrayJoin(arrayFilter(tag -> tag != '', [quality, if(signedIn = 1, 'signed_in', ''), if(newVisitor = 1, 'new_visitor', '')])) AS name,
+          count() AS count,
+          'tag' AS facetType
+        FROM (SELECT
+          SessionId AS sessionId,
+          multiIf(multiSearchAnyCaseInsensitive(argMax(UserAgent, Version), ['GPTBot', 'OAI-SearchBot', 'ChatGPT-User', 'ClaudeBot', 'Claude-User', 'PerplexityBot', 'Google-Extended', 'Applebot-Extended', 'meta-externalagent', 'meta-webindexer', 'Bytespider', 'CCBot', 'Amazonbot', 'DuckAssistBot', 'Googlebot', 'GoogleOther', 'AdsBot-Google', 'Google-Read-Aloud', 'bingbot', 'YandexBot', 'Baiduspider', 'DuckDuckBot', 'Applebot', 'Sogou', 'SeznamBot', 'AhrefsSiteAudit', 'AhrefsBot', 'SemrushBot', 'DataForSeoBot', 'DotBot', 'MJ12bot', 'Barkrowler', 'Screaming Frog', 'facebookexternalhit', 'Twitterbot', 'LinkedInBot', 'Slackbot', 'Discordbot', 'TelegramBot', 'Pinterest', 'HubSpot Crawler', 'Stripebot', 'UptimeRobot', 'Pingdom', 'StatusCake', 'Headless', 'bot/', 'bot\x3B', 'bot)', 'crawler', 'spider', '+http']), 'bot', (coalesce(argMax(DurationMs, Version), dateDiff('millisecond', argMax(StartTime, Version), coalesce(argMax(LastActivityAt, Version), argMax(StartTime, Version)))) < 5000 AND argMax(ClickCount, Version) = 0), 'bounce', ((argMax(PageViews, Version) <= 1 AND argMax(ClickCount, Version) = 0) AND argMax(ErrorCount, Version) = 0), 'idle', (((argMax(PageViews, Version) <= 1 AND argMax(ClickCount, Version) <= 2) AND argMax(ErrorCount, Version) = 0) AND coalesce(argMax(DurationMs, Version), dateDiff('millisecond', argMax(StartTime, Version), coalesce(argMax(LastActivityAt, Version), argMax(StartTime, Version)))) < 30000), 'glance', 'engaged') AS quality,
+          if(argMax(UserId, Version) != '', 1, 0) AS signedIn,
+          argMax(VisitorIsNew, Version) AS newVisitor
+        FROM session_replays
+        WHERE OrgId = 'org_sql_catalog'
+          AND StartTime >= '2026-01-01 10:30:00'
+          AND StartTime <= '2026-01-03 14:15:00'
+        GROUP BY sessionId) AS t
+        GROUP BY name
+UNION ALL
+SELECT
+          toString(toUInt64(round(pow(2, floor(log2(greatest(DurationMs, 1000) / 1000) * 2) / 2) * 1000))) AS name,
+          uniq(SessionId) AS count,
+          'durationBucket' AS facetType
+        FROM session_replays
+        WHERE OrgId = 'org_sql_catalog'
+          AND StartTime >= '2026-01-01 10:30:00'
+          AND StartTime <= '2026-01-03 14:15:00'
+          AND SessionId IN (SELECT
+          sessionId AS SessionId
+        FROM (SELECT
+          SessionId AS sessionId,
+          multiIf(multiSearchAnyCaseInsensitive(argMax(UserAgent, Version), ['GPTBot', 'OAI-SearchBot', 'ChatGPT-User', 'ClaudeBot', 'Claude-User', 'PerplexityBot', 'Google-Extended', 'Applebot-Extended', 'meta-externalagent', 'meta-webindexer', 'Bytespider', 'CCBot', 'Amazonbot', 'DuckAssistBot', 'Googlebot', 'GoogleOther', 'AdsBot-Google', 'Google-Read-Aloud', 'bingbot', 'YandexBot', 'Baiduspider', 'DuckDuckBot', 'Applebot', 'Sogou', 'SeznamBot', 'AhrefsSiteAudit', 'AhrefsBot', 'SemrushBot', 'DataForSeoBot', 'DotBot', 'MJ12bot', 'Barkrowler', 'Screaming Frog', 'facebookexternalhit', 'Twitterbot', 'LinkedInBot', 'Slackbot', 'Discordbot', 'TelegramBot', 'Pinterest', 'HubSpot Crawler', 'Stripebot', 'UptimeRobot', 'Pingdom', 'StatusCake', 'Headless', 'bot/', 'bot\x3B', 'bot)', 'crawler', 'spider', '+http']), 'bot', (coalesce(argMax(DurationMs, Version), dateDiff('millisecond', argMax(StartTime, Version), coalesce(argMax(LastActivityAt, Version), argMax(StartTime, Version)))) < 5000 AND argMax(ClickCount, Version) = 0), 'bounce', ((argMax(PageViews, Version) <= 1 AND argMax(ClickCount, Version) = 0) AND argMax(ErrorCount, Version) = 0), 'idle', (((argMax(PageViews, Version) <= 1 AND argMax(ClickCount, Version) <= 2) AND argMax(ErrorCount, Version) = 0) AND coalesce(argMax(DurationMs, Version), dateDiff('millisecond', argMax(StartTime, Version), coalesce(argMax(LastActivityAt, Version), argMax(StartTime, Version)))) < 30000), 'glance', 'engaged') AS quality,
+          if(argMax(UserId, Version) != '', 1, 0) AS signedIn,
+          argMax(VisitorIsNew, Version) AS newVisitor
+        FROM session_replays
+        WHERE OrgId = 'org_sql_catalog'
+          AND StartTime >= '2026-01-01 10:30:00'
+          AND StartTime <= '2026-01-03 14:15:00'
+        GROUP BY sessionId) AS t
+        WHERE quality = 'engaged')
+          AND DurationMs > 0
+        GROUP BY name
+        LIMIT 40
+UNION ALL
+SELECT
+          'p50' AS name,
+          toUInt64(ifNull(ifNotFinite(round(quantile(0.5)(assumeNotNull(DurationMs))), 0), 0)) AS count,
+          'durationStat' AS facetType
+        FROM session_replays
+        WHERE OrgId = 'org_sql_catalog'
+          AND StartTime >= '2026-01-01 10:30:00'
+          AND StartTime <= '2026-01-03 14:15:00'
+          AND SessionId IN (SELECT
+          sessionId AS SessionId
+        FROM (SELECT
+          SessionId AS sessionId,
+          multiIf(multiSearchAnyCaseInsensitive(argMax(UserAgent, Version), ['GPTBot', 'OAI-SearchBot', 'ChatGPT-User', 'ClaudeBot', 'Claude-User', 'PerplexityBot', 'Google-Extended', 'Applebot-Extended', 'meta-externalagent', 'meta-webindexer', 'Bytespider', 'CCBot', 'Amazonbot', 'DuckAssistBot', 'Googlebot', 'GoogleOther', 'AdsBot-Google', 'Google-Read-Aloud', 'bingbot', 'YandexBot', 'Baiduspider', 'DuckDuckBot', 'Applebot', 'Sogou', 'SeznamBot', 'AhrefsSiteAudit', 'AhrefsBot', 'SemrushBot', 'DataForSeoBot', 'DotBot', 'MJ12bot', 'Barkrowler', 'Screaming Frog', 'facebookexternalhit', 'Twitterbot', 'LinkedInBot', 'Slackbot', 'Discordbot', 'TelegramBot', 'Pinterest', 'HubSpot Crawler', 'Stripebot', 'UptimeRobot', 'Pingdom', 'StatusCake', 'Headless', 'bot/', 'bot\x3B', 'bot)', 'crawler', 'spider', '+http']), 'bot', (coalesce(argMax(DurationMs, Version), dateDiff('millisecond', argMax(StartTime, Version), coalesce(argMax(LastActivityAt, Version), argMax(StartTime, Version)))) < 5000 AND argMax(ClickCount, Version) = 0), 'bounce', ((argMax(PageViews, Version) <= 1 AND argMax(ClickCount, Version) = 0) AND argMax(ErrorCount, Version) = 0), 'idle', (((argMax(PageViews, Version) <= 1 AND argMax(ClickCount, Version) <= 2) AND argMax(ErrorCount, Version) = 0) AND coalesce(argMax(DurationMs, Version), dateDiff('millisecond', argMax(StartTime, Version), coalesce(argMax(LastActivityAt, Version), argMax(StartTime, Version)))) < 30000), 'glance', 'engaged') AS quality,
+          if(argMax(UserId, Version) != '', 1, 0) AS signedIn,
+          argMax(VisitorIsNew, Version) AS newVisitor
+        FROM session_replays
+        WHERE OrgId = 'org_sql_catalog'
+          AND StartTime >= '2026-01-01 10:30:00'
+          AND StartTime <= '2026-01-03 14:15:00'
+        GROUP BY sessionId) AS t
+        WHERE quality = 'engaged')
+          AND DurationMs > 0
+UNION ALL
+SELECT
+          'p95' AS name,
+          toUInt64(ifNull(ifNotFinite(round(quantile(0.95)(assumeNotNull(DurationMs))), 0), 0)) AS count,
+          'durationStat' AS facetType
+        FROM session_replays
+        WHERE OrgId = 'org_sql_catalog'
+          AND StartTime >= '2026-01-01 10:30:00'
+          AND StartTime <= '2026-01-03 14:15:00'
+          AND SessionId IN (SELECT
+          sessionId AS SessionId
+        FROM (SELECT
+          SessionId AS sessionId,
+          multiIf(multiSearchAnyCaseInsensitive(argMax(UserAgent, Version), ['GPTBot', 'OAI-SearchBot', 'ChatGPT-User', 'ClaudeBot', 'Claude-User', 'PerplexityBot', 'Google-Extended', 'Applebot-Extended', 'meta-externalagent', 'meta-webindexer', 'Bytespider', 'CCBot', 'Amazonbot', 'DuckAssistBot', 'Googlebot', 'GoogleOther', 'AdsBot-Google', 'Google-Read-Aloud', 'bingbot', 'YandexBot', 'Baiduspider', 'DuckDuckBot', 'Applebot', 'Sogou', 'SeznamBot', 'AhrefsSiteAudit', 'AhrefsBot', 'SemrushBot', 'DataForSeoBot', 'DotBot', 'MJ12bot', 'Barkrowler', 'Screaming Frog', 'facebookexternalhit', 'Twitterbot', 'LinkedInBot', 'Slackbot', 'Discordbot', 'TelegramBot', 'Pinterest', 'HubSpot Crawler', 'Stripebot', 'UptimeRobot', 'Pingdom', 'StatusCake', 'Headless', 'bot/', 'bot\x3B', 'bot)', 'crawler', 'spider', '+http']), 'bot', (coalesce(argMax(DurationMs, Version), dateDiff('millisecond', argMax(StartTime, Version), coalesce(argMax(LastActivityAt, Version), argMax(StartTime, Version)))) < 5000 AND argMax(ClickCount, Version) = 0), 'bounce', ((argMax(PageViews, Version) <= 1 AND argMax(ClickCount, Version) = 0) AND argMax(ErrorCount, Version) = 0), 'idle', (((argMax(PageViews, Version) <= 1 AND argMax(ClickCount, Version) <= 2) AND argMax(ErrorCount, Version) = 0) AND coalesce(argMax(DurationMs, Version), dateDiff('millisecond', argMax(StartTime, Version), coalesce(argMax(LastActivityAt, Version), argMax(StartTime, Version)))) < 30000), 'glance', 'engaged') AS quality,
+          if(argMax(UserId, Version) != '', 1, 0) AS signedIn,
+          argMax(VisitorIsNew, Version) AS newVisitor
+        FROM session_replays
+        WHERE OrgId = 'org_sql_catalog'
+          AND StartTime >= '2026-01-01 10:30:00'
+          AND StartTime <= '2026-01-03 14:15:00'
+        GROUP BY sessionId) AS t
+        WHERE quality = 'engaged')
+          AND DurationMs > 0
+UNION ALL
+SELECT
+          'total' AS name,
+          uniq(SessionId) AS count,
+          'total' AS facetType
+        FROM session_replays
+        WHERE OrgId = 'org_sql_catalog'
+          AND StartTime >= '2026-01-01 10:30:00'
+          AND StartTime <= '2026-01-03 14:15:00'
+          AND SessionId IN (SELECT
+          sessionId AS SessionId
+        FROM (SELECT
+          SessionId AS sessionId,
+          multiIf(multiSearchAnyCaseInsensitive(argMax(UserAgent, Version), ['GPTBot', 'OAI-SearchBot', 'ChatGPT-User', 'ClaudeBot', 'Claude-User', 'PerplexityBot', 'Google-Extended', 'Applebot-Extended', 'meta-externalagent', 'meta-webindexer', 'Bytespider', 'CCBot', 'Amazonbot', 'DuckAssistBot', 'Googlebot', 'GoogleOther', 'AdsBot-Google', 'Google-Read-Aloud', 'bingbot', 'YandexBot', 'Baiduspider', 'DuckDuckBot', 'Applebot', 'Sogou', 'SeznamBot', 'AhrefsSiteAudit', 'AhrefsBot', 'SemrushBot', 'DataForSeoBot', 'DotBot', 'MJ12bot', 'Barkrowler', 'Screaming Frog', 'facebookexternalhit', 'Twitterbot', 'LinkedInBot', 'Slackbot', 'Discordbot', 'TelegramBot', 'Pinterest', 'HubSpot Crawler', 'Stripebot', 'UptimeRobot', 'Pingdom', 'StatusCake', 'Headless', 'bot/', 'bot\x3B', 'bot)', 'crawler', 'spider', '+http']), 'bot', (coalesce(argMax(DurationMs, Version), dateDiff('millisecond', argMax(StartTime, Version), coalesce(argMax(LastActivityAt, Version), argMax(StartTime, Version)))) < 5000 AND argMax(ClickCount, Version) = 0), 'bounce', ((argMax(PageViews, Version) <= 1 AND argMax(ClickCount, Version) = 0) AND argMax(ErrorCount, Version) = 0), 'idle', (((argMax(PageViews, Version) <= 1 AND argMax(ClickCount, Version) <= 2) AND argMax(ErrorCount, Version) = 0) AND coalesce(argMax(DurationMs, Version), dateDiff('millisecond', argMax(StartTime, Version), coalesce(argMax(LastActivityAt, Version), argMax(StartTime, Version)))) < 30000), 'glance', 'engaged') AS quality,
+          if(argMax(UserId, Version) != '', 1, 0) AS signedIn,
+          argMax(VisitorIsNew, Version) AS newVisitor
+        FROM session_replays
+        WHERE OrgId = 'org_sql_catalog'
+          AND StartTime >= '2026-01-01 10:30:00'
+          AND StartTime <= '2026-01-03 14:15:00'
+        GROUP BY sessionId) AS t
+        WHERE quality = 'engaged')
+UNION ALL
+SELECT
+          'live' AS name,
+          uniqIf(SessionId, (Status = 'active' AND coalesce(LastActivityAt, StartTime) >= toDateTime('2026-01-03 14:15:00') - INTERVAL 300 SECOND)) AS count,
+          'live' AS facetType
+        FROM session_replays
+        WHERE OrgId = 'org_sql_catalog'
+          AND StartTime >= '2026-01-01 10:30:00'
+          AND StartTime <= '2026-01-03 14:15:00'
+          AND SessionId IN (SELECT
+          sessionId AS SessionId
+        FROM (SELECT
+          SessionId AS sessionId,
+          multiIf(multiSearchAnyCaseInsensitive(argMax(UserAgent, Version), ['GPTBot', 'OAI-SearchBot', 'ChatGPT-User', 'ClaudeBot', 'Claude-User', 'PerplexityBot', 'Google-Extended', 'Applebot-Extended', 'meta-externalagent', 'meta-webindexer', 'Bytespider', 'CCBot', 'Amazonbot', 'DuckAssistBot', 'Googlebot', 'GoogleOther', 'AdsBot-Google', 'Google-Read-Aloud', 'bingbot', 'YandexBot', 'Baiduspider', 'DuckDuckBot', 'Applebot', 'Sogou', 'SeznamBot', 'AhrefsSiteAudit', 'AhrefsBot', 'SemrushBot', 'DataForSeoBot', 'DotBot', 'MJ12bot', 'Barkrowler', 'Screaming Frog', 'facebookexternalhit', 'Twitterbot', 'LinkedInBot', 'Slackbot', 'Discordbot', 'TelegramBot', 'Pinterest', 'HubSpot Crawler', 'Stripebot', 'UptimeRobot', 'Pingdom', 'StatusCake', 'Headless', 'bot/', 'bot\x3B', 'bot)', 'crawler', 'spider', '+http']), 'bot', (coalesce(argMax(DurationMs, Version), dateDiff('millisecond', argMax(StartTime, Version), coalesce(argMax(LastActivityAt, Version), argMax(StartTime, Version)))) < 5000 AND argMax(ClickCount, Version) = 0), 'bounce', ((argMax(PageViews, Version) <= 1 AND argMax(ClickCount, Version) = 0) AND argMax(ErrorCount, Version) = 0), 'idle', (((argMax(PageViews, Version) <= 1 AND argMax(ClickCount, Version) <= 2) AND argMax(ErrorCount, Version) = 0) AND coalesce(argMax(DurationMs, Version), dateDiff('millisecond', argMax(StartTime, Version), coalesce(argMax(LastActivityAt, Version), argMax(StartTime, Version)))) < 30000), 'glance', 'engaged') AS quality,
+          if(argMax(UserId, Version) != '', 1, 0) AS signedIn,
+          argMax(VisitorIsNew, Version) AS newVisitor
+        FROM session_replays
+        WHERE OrgId = 'org_sql_catalog'
+          AND StartTime >= '2026-01-01 10:30:00'
+          AND StartTime <= '2026-01-03 14:15:00'
+        GROUP BY sessionId) AS t
+        WHERE quality = 'engaged')
+UNION ALL
+SELECT
+          'error' AS name,
+          uniq(SessionId) AS count,
+          'error' AS facetType
+        FROM session_replays
+        WHERE OrgId = 'org_sql_catalog'
+          AND StartTime >= '2026-01-01 10:30:00'
+          AND StartTime <= '2026-01-03 14:15:00'
+          AND SessionId IN (SELECT
+          sessionId AS SessionId
+        FROM (SELECT
+          SessionId AS sessionId,
+          multiIf(multiSearchAnyCaseInsensitive(argMax(UserAgent, Version), ['GPTBot', 'OAI-SearchBot', 'ChatGPT-User', 'ClaudeBot', 'Claude-User', 'PerplexityBot', 'Google-Extended', 'Applebot-Extended', 'meta-externalagent', 'meta-webindexer', 'Bytespider', 'CCBot', 'Amazonbot', 'DuckAssistBot', 'Googlebot', 'GoogleOther', 'AdsBot-Google', 'Google-Read-Aloud', 'bingbot', 'YandexBot', 'Baiduspider', 'DuckDuckBot', 'Applebot', 'Sogou', 'SeznamBot', 'AhrefsSiteAudit', 'AhrefsBot', 'SemrushBot', 'DataForSeoBot', 'DotBot', 'MJ12bot', 'Barkrowler', 'Screaming Frog', 'facebookexternalhit', 'Twitterbot', 'LinkedInBot', 'Slackbot', 'Discordbot', 'TelegramBot', 'Pinterest', 'HubSpot Crawler', 'Stripebot', 'UptimeRobot', 'Pingdom', 'StatusCake', 'Headless', 'bot/', 'bot\x3B', 'bot)', 'crawler', 'spider', '+http']), 'bot', (coalesce(argMax(DurationMs, Version), dateDiff('millisecond', argMax(StartTime, Version), coalesce(argMax(LastActivityAt, Version), argMax(StartTime, Version)))) < 5000 AND argMax(ClickCount, Version) = 0), 'bounce', ((argMax(PageViews, Version) <= 1 AND argMax(ClickCount, Version) = 0) AND argMax(ErrorCount, Version) = 0), 'idle', (((argMax(PageViews, Version) <= 1 AND argMax(ClickCount, Version) <= 2) AND argMax(ErrorCount, Version) = 0) AND coalesce(argMax(DurationMs, Version), dateDiff('millisecond', argMax(StartTime, Version), coalesce(argMax(LastActivityAt, Version), argMax(StartTime, Version)))) < 30000), 'glance', 'engaged') AS quality,
+          if(argMax(UserId, Version) != '', 1, 0) AS signedIn,
+          argMax(VisitorIsNew, Version) AS newVisitor
+        FROM session_replays
+        WHERE OrgId = 'org_sql_catalog'
+          AND StartTime >= '2026-01-01 10:30:00'
+          AND StartTime <= '2026-01-03 14:15:00'
+        GROUP BY sessionId) AS t
+        WHERE quality = 'engaged')
+          AND ErrorCount > 0
+FORMAT JSON
+
+-- builder:session-replays:sessionReplaysListQuery:default  [69a2ce1d]
 SELECT
           SessionId AS sessionId,
           argMax(StartTime, Version) AS startTime,
@@ -4507,7 +4884,9 @@ SELECT
           argMax(ClickCount, Version) AS clickCount,
           argMax(ErrorCount, Version) AS errorCount,
           length(argMax(TraceIds, Version)) AS traceCount,
-          argMax(ResourceAttributes['maple.session.recorded'], Version) AS recorded
+          argMax(ResourceAttributes['maple.session.recorded'], Version) AS recorded,
+          multiIf(multiSearchAnyCaseInsensitive(argMax(UserAgent, Version), ['GPTBot', 'OAI-SearchBot', 'ChatGPT-User', 'ClaudeBot', 'Claude-User', 'PerplexityBot', 'Google-Extended', 'Applebot-Extended', 'meta-externalagent', 'meta-webindexer', 'Bytespider', 'CCBot', 'Amazonbot', 'DuckAssistBot', 'Googlebot', 'GoogleOther', 'AdsBot-Google', 'Google-Read-Aloud', 'bingbot', 'YandexBot', 'Baiduspider', 'DuckDuckBot', 'Applebot', 'Sogou', 'SeznamBot', 'AhrefsSiteAudit', 'AhrefsBot', 'SemrushBot', 'DataForSeoBot', 'DotBot', 'MJ12bot', 'Barkrowler', 'Screaming Frog', 'facebookexternalhit', 'Twitterbot', 'LinkedInBot', 'Slackbot', 'Discordbot', 'TelegramBot', 'Pinterest', 'HubSpot Crawler', 'Stripebot', 'UptimeRobot', 'Pingdom', 'StatusCake', 'Headless', 'bot/', 'bot\x3B', 'bot)', 'crawler', 'spider', '+http']), 'bot', (coalesce(argMax(DurationMs, Version), dateDiff('millisecond', argMax(StartTime, Version), coalesce(argMax(LastActivityAt, Version), argMax(StartTime, Version)))) < 5000 AND argMax(ClickCount, Version) = 0), 'bounce', ((argMax(PageViews, Version) <= 1 AND argMax(ClickCount, Version) = 0) AND argMax(ErrorCount, Version) = 0), 'idle', (((argMax(PageViews, Version) <= 1 AND argMax(ClickCount, Version) <= 2) AND argMax(ErrorCount, Version) = 0) AND coalesce(argMax(DurationMs, Version), dateDiff('millisecond', argMax(StartTime, Version), coalesce(argMax(LastActivityAt, Version), argMax(StartTime, Version)))) < 30000), 'glance', 'engaged') AS quality,
+          argMax(VisitorIsNew, Version) AS visitorIsNew
         FROM session_replays
         WHERE OrgId = 'org_sql_catalog'
           AND StartTime >= '2026-01-01 10:30:00'
@@ -4518,7 +4897,7 @@ SELECT
         OFFSET 0
         FORMAT JSON
 
--- builder:session-replays:sessionReplaysListQuery:filtered  [6f408bce]
+-- builder:session-replays:sessionReplaysListQuery:filtered  [78196418]
 SELECT
           s.sessionId AS sessionId,
           s.startTime AS startTime,
@@ -4544,7 +4923,9 @@ SELECT
           s.clickCount AS clickCount,
           s.errorCount AS errorCount,
           s.traceCount AS traceCount,
-          s.recorded AS recorded
+          s.recorded AS recorded,
+          s.quality AS quality,
+          s.visitorIsNew AS visitorIsNew
         FROM (SELECT
           SessionId AS sessionId,
           argMax(StartTime, Version) AS startTime,
@@ -4570,7 +4951,9 @@ SELECT
           argMax(ClickCount, Version) AS clickCount,
           argMax(ErrorCount, Version) AS errorCount,
           length(argMax(TraceIds, Version)) AS traceCount,
-          argMax(ResourceAttributes['maple.session.recorded'], Version) AS recorded
+          argMax(ResourceAttributes['maple.session.recorded'], Version) AS recorded,
+          multiIf(multiSearchAnyCaseInsensitive(argMax(UserAgent, Version), ['GPTBot', 'OAI-SearchBot', 'ChatGPT-User', 'ClaudeBot', 'Claude-User', 'PerplexityBot', 'Google-Extended', 'Applebot-Extended', 'meta-externalagent', 'meta-webindexer', 'Bytespider', 'CCBot', 'Amazonbot', 'DuckAssistBot', 'Googlebot', 'GoogleOther', 'AdsBot-Google', 'Google-Read-Aloud', 'bingbot', 'YandexBot', 'Baiduspider', 'DuckDuckBot', 'Applebot', 'Sogou', 'SeznamBot', 'AhrefsSiteAudit', 'AhrefsBot', 'SemrushBot', 'DataForSeoBot', 'DotBot', 'MJ12bot', 'Barkrowler', 'Screaming Frog', 'facebookexternalhit', 'Twitterbot', 'LinkedInBot', 'Slackbot', 'Discordbot', 'TelegramBot', 'Pinterest', 'HubSpot Crawler', 'Stripebot', 'UptimeRobot', 'Pingdom', 'StatusCake', 'Headless', 'bot/', 'bot\x3B', 'bot)', 'crawler', 'spider', '+http']), 'bot', (coalesce(argMax(DurationMs, Version), dateDiff('millisecond', argMax(StartTime, Version), coalesce(argMax(LastActivityAt, Version), argMax(StartTime, Version)))) < 5000 AND argMax(ClickCount, Version) = 0), 'bounce', ((argMax(PageViews, Version) <= 1 AND argMax(ClickCount, Version) = 0) AND argMax(ErrorCount, Version) = 0), 'idle', (((argMax(PageViews, Version) <= 1 AND argMax(ClickCount, Version) <= 2) AND argMax(ErrorCount, Version) = 0) AND coalesce(argMax(DurationMs, Version), dateDiff('millisecond', argMax(StartTime, Version), coalesce(argMax(LastActivityAt, Version), argMax(StartTime, Version)))) < 30000), 'glance', 'engaged') AS quality,
+          argMax(VisitorIsNew, Version) AS visitorIsNew
         FROM session_replays
         WHERE OrgId = 'org_sql_catalog'
           AND StartTime >= '2026-01-01 10:30:00'
@@ -4601,7 +4984,7 @@ SELECT
         OFFSET 0
         FORMAT JSON
 
--- builder:session-replays:sessionReplaysListQuery:page-visited  [b1544b86]
+-- builder:session-replays:sessionReplaysListQuery:page-visited  [fafb2e94]
 SELECT
           SessionId AS sessionId,
           argMax(StartTime, Version) AS startTime,
@@ -4627,7 +5010,9 @@ SELECT
           argMax(ClickCount, Version) AS clickCount,
           argMax(ErrorCount, Version) AS errorCount,
           length(argMax(TraceIds, Version)) AS traceCount,
-          argMax(ResourceAttributes['maple.session.recorded'], Version) AS recorded
+          argMax(ResourceAttributes['maple.session.recorded'], Version) AS recorded,
+          multiIf(multiSearchAnyCaseInsensitive(argMax(UserAgent, Version), ['GPTBot', 'OAI-SearchBot', 'ChatGPT-User', 'ClaudeBot', 'Claude-User', 'PerplexityBot', 'Google-Extended', 'Applebot-Extended', 'meta-externalagent', 'meta-webindexer', 'Bytespider', 'CCBot', 'Amazonbot', 'DuckAssistBot', 'Googlebot', 'GoogleOther', 'AdsBot-Google', 'Google-Read-Aloud', 'bingbot', 'YandexBot', 'Baiduspider', 'DuckDuckBot', 'Applebot', 'Sogou', 'SeznamBot', 'AhrefsSiteAudit', 'AhrefsBot', 'SemrushBot', 'DataForSeoBot', 'DotBot', 'MJ12bot', 'Barkrowler', 'Screaming Frog', 'facebookexternalhit', 'Twitterbot', 'LinkedInBot', 'Slackbot', 'Discordbot', 'TelegramBot', 'Pinterest', 'HubSpot Crawler', 'Stripebot', 'UptimeRobot', 'Pingdom', 'StatusCake', 'Headless', 'bot/', 'bot\x3B', 'bot)', 'crawler', 'spider', '+http']), 'bot', (coalesce(argMax(DurationMs, Version), dateDiff('millisecond', argMax(StartTime, Version), coalesce(argMax(LastActivityAt, Version), argMax(StartTime, Version)))) < 5000 AND argMax(ClickCount, Version) = 0), 'bounce', ((argMax(PageViews, Version) <= 1 AND argMax(ClickCount, Version) = 0) AND argMax(ErrorCount, Version) = 0), 'idle', (((argMax(PageViews, Version) <= 1 AND argMax(ClickCount, Version) <= 2) AND argMax(ErrorCount, Version) = 0) AND coalesce(argMax(DurationMs, Version), dateDiff('millisecond', argMax(StartTime, Version), coalesce(argMax(LastActivityAt, Version), argMax(StartTime, Version)))) < 30000), 'glance', 'engaged') AS quality,
+          argMax(VisitorIsNew, Version) AS visitorIsNew
         FROM session_replays
         WHERE OrgId = 'org_sql_catalog'
           AND StartTime >= '2026-01-01 10:30:00'
@@ -4640,6 +5025,59 @@ SELECT
           AND Timestamp <= '2026-01-03 14:15:00'
           AND Kind = 'navigation'
           AND PagePath = '/pricing')
+        GROUP BY sessionId
+        ORDER BY startTime DESC, sessionId DESC
+        LIMIT 50
+        OFFSET 0
+        FORMAT JSON
+
+-- builder:session-replays:sessionReplaysListQuery:tagged  [6f91e3ed]
+SELECT
+          SessionId AS sessionId,
+          argMax(StartTime, Version) AS startTime,
+          argMax(EndTime, Version) AS endTime,
+          argMax(DurationMs, Version) AS durationMs,
+          argMax(Status, Version) AS status,
+          argMax(LastActivityAt, Version) AS lastActivityAt,
+          argMax(UserId, Version) AS userId,
+          argMax(UserName, Version) AS userName,
+          argMax(UserEmail, Version) AS userEmail,
+          argMax(GroupId, Version) AS groupId,
+          argMax(GroupName, Version) AS groupName,
+          argMax(VisitorId, Version) AS visitorId,
+          argMax(UtmSource, Version) AS utmSource,
+          argMax(EntryPath, Version) AS entryPath,
+          argMax(UrlInitial, Version) AS urlInitial,
+          argMax(BrowserName, Version) AS browserName,
+          argMax(OsName, Version) AS osName,
+          argMax(DeviceType, Version) AS deviceType,
+          argMax(Country, Version) AS country,
+          argMax(ServiceName, Version) AS serviceName,
+          argMax(PageViews, Version) AS pageViews,
+          argMax(ClickCount, Version) AS clickCount,
+          argMax(ErrorCount, Version) AS errorCount,
+          length(argMax(TraceIds, Version)) AS traceCount,
+          argMax(ResourceAttributes['maple.session.recorded'], Version) AS recorded,
+          multiIf(multiSearchAnyCaseInsensitive(argMax(UserAgent, Version), ['GPTBot', 'OAI-SearchBot', 'ChatGPT-User', 'ClaudeBot', 'Claude-User', 'PerplexityBot', 'Google-Extended', 'Applebot-Extended', 'meta-externalagent', 'meta-webindexer', 'Bytespider', 'CCBot', 'Amazonbot', 'DuckAssistBot', 'Googlebot', 'GoogleOther', 'AdsBot-Google', 'Google-Read-Aloud', 'bingbot', 'YandexBot', 'Baiduspider', 'DuckDuckBot', 'Applebot', 'Sogou', 'SeznamBot', 'AhrefsSiteAudit', 'AhrefsBot', 'SemrushBot', 'DataForSeoBot', 'DotBot', 'MJ12bot', 'Barkrowler', 'Screaming Frog', 'facebookexternalhit', 'Twitterbot', 'LinkedInBot', 'Slackbot', 'Discordbot', 'TelegramBot', 'Pinterest', 'HubSpot Crawler', 'Stripebot', 'UptimeRobot', 'Pingdom', 'StatusCake', 'Headless', 'bot/', 'bot\x3B', 'bot)', 'crawler', 'spider', '+http']), 'bot', (coalesce(argMax(DurationMs, Version), dateDiff('millisecond', argMax(StartTime, Version), coalesce(argMax(LastActivityAt, Version), argMax(StartTime, Version)))) < 5000 AND argMax(ClickCount, Version) = 0), 'bounce', ((argMax(PageViews, Version) <= 1 AND argMax(ClickCount, Version) = 0) AND argMax(ErrorCount, Version) = 0), 'idle', (((argMax(PageViews, Version) <= 1 AND argMax(ClickCount, Version) <= 2) AND argMax(ErrorCount, Version) = 0) AND coalesce(argMax(DurationMs, Version), dateDiff('millisecond', argMax(StartTime, Version), coalesce(argMax(LastActivityAt, Version), argMax(StartTime, Version)))) < 30000), 'glance', 'engaged') AS quality,
+          argMax(VisitorIsNew, Version) AS visitorIsNew
+        FROM session_replays
+        WHERE OrgId = 'org_sql_catalog'
+          AND StartTime >= '2026-01-01 10:30:00'
+          AND StartTime <= '2026-01-03 14:15:00'
+          AND SessionId IN (SELECT
+          sessionId AS SessionId
+        FROM (SELECT
+          SessionId AS sessionId,
+          multiIf(multiSearchAnyCaseInsensitive(argMax(UserAgent, Version), ['GPTBot', 'OAI-SearchBot', 'ChatGPT-User', 'ClaudeBot', 'Claude-User', 'PerplexityBot', 'Google-Extended', 'Applebot-Extended', 'meta-externalagent', 'meta-webindexer', 'Bytespider', 'CCBot', 'Amazonbot', 'DuckAssistBot', 'Googlebot', 'GoogleOther', 'AdsBot-Google', 'Google-Read-Aloud', 'bingbot', 'YandexBot', 'Baiduspider', 'DuckDuckBot', 'Applebot', 'Sogou', 'SeznamBot', 'AhrefsSiteAudit', 'AhrefsBot', 'SemrushBot', 'DataForSeoBot', 'DotBot', 'MJ12bot', 'Barkrowler', 'Screaming Frog', 'facebookexternalhit', 'Twitterbot', 'LinkedInBot', 'Slackbot', 'Discordbot', 'TelegramBot', 'Pinterest', 'HubSpot Crawler', 'Stripebot', 'UptimeRobot', 'Pingdom', 'StatusCake', 'Headless', 'bot/', 'bot\x3B', 'bot)', 'crawler', 'spider', '+http']), 'bot', (coalesce(argMax(DurationMs, Version), dateDiff('millisecond', argMax(StartTime, Version), coalesce(argMax(LastActivityAt, Version), argMax(StartTime, Version)))) < 5000 AND argMax(ClickCount, Version) = 0), 'bounce', ((argMax(PageViews, Version) <= 1 AND argMax(ClickCount, Version) = 0) AND argMax(ErrorCount, Version) = 0), 'idle', (((argMax(PageViews, Version) <= 1 AND argMax(ClickCount, Version) <= 2) AND argMax(ErrorCount, Version) = 0) AND coalesce(argMax(DurationMs, Version), dateDiff('millisecond', argMax(StartTime, Version), coalesce(argMax(LastActivityAt, Version), argMax(StartTime, Version)))) < 30000), 'glance', 'engaged') AS quality,
+          if(argMax(UserId, Version) != '', 1, 0) AS signedIn,
+          argMax(VisitorIsNew, Version) AS newVisitor
+        FROM session_replays
+        WHERE OrgId = 'org_sql_catalog'
+          AND StartTime >= '2026-01-01 10:30:00'
+          AND StartTime <= '2026-01-03 14:15:00'
+        GROUP BY sessionId) AS t
+        WHERE quality = 'engaged'
+          AND signedIn = 1)
         GROUP BY sessionId
         ORDER BY startTime DESC, sessionId DESC
         LIMIT 50

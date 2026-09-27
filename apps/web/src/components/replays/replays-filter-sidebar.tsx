@@ -10,6 +10,13 @@ import {
 import { MagnifierIcon, XmarkIcon } from "@/components/icons"
 import { browserIconFor, deviceIconFor } from "@/components/replays/session-icons"
 import {
+	SESSION_TAG_DESCRIPTIONS,
+	SESSION_TAG_LABELS,
+	SESSION_TAG_ORDER,
+	asSessionTag,
+	sessionTagsFromSearch,
+} from "@/components/replays/session-tags"
+import {
 	InputGroup,
 	InputGroupAddon,
 	InputGroupButton,
@@ -49,6 +56,8 @@ interface ReplaysFacets {
 	readonly groups: ReadonlyArray<ReplaysFacetItem>
 	/** Page paths visited anywhere in a session, by sessions that reached them. */
 	readonly pages: ReadonlyArray<ReplaysFacetItem>
+	/** Sessions per rule-based tag; tags with no sessions are absent. */
+	readonly tags: ReadonlyArray<ReplaysFacetItem>
 	readonly errorCount: number
 	/** Session-length distribution: `name` is the bucket floor in ms. */
 	readonly durationBuckets: ReadonlyArray<ReplaysFacetItem>
@@ -92,6 +101,25 @@ function withSelected(options: ReadonlyArray<ReplaysFacetItem>, selected?: strin
 	return list
 }
 
+// Every tag in a fixed order, counts filled from the facet. The facet ignores the
+// tag filter itself, so each count reads as "sessions you would get by adding it".
+function tagOptions(counts: ReadonlyArray<ReplaysFacetItem>): FilterOption[] {
+	return SESSION_TAG_ORDER.map((tag) => ({
+		name: tag,
+		count: counts.find((item) => item.name === tag)?.count ?? 0,
+	})).filter((option) => option.count > 0)
+}
+
+const tagLabel = (name: string) => {
+	const tag = asSessionTag(name)
+	return tag === undefined ? name : SESSION_TAG_LABELS[tag]
+}
+
+const tagDescription = (name: string) => {
+	const tag = asSessionTag(name)
+	return tag === undefined ? undefined : SESSION_TAG_DESCRIPTIONS[tag]
+}
+
 interface ReplaysFilterSidebarProps {
 	facetsResult: Result.Result<ReplaysFacets, unknown>
 }
@@ -109,6 +137,11 @@ export function ReplaysFilterSidebar({ facetsResult }: ReplaysFilterSidebarProps
 		navigate({
 			search: (prev) => ({ ...prev, [key]: values.at(-1) ?? undefined }),
 		})
+	}
+
+	// Tags combine: a session must carry every selected one.
+	const setTags = (values: string[]) => {
+		navigate({ search: (prev) => ({ ...prev, tags: values.length > 0 ? values : undefined }) })
 	}
 
 	const setUserId = (value: string | undefined) => {
@@ -148,6 +181,7 @@ export function ReplaysFilterSidebar({ facetsResult }: ReplaysFilterSidebarProps
 		!!search.user ||
 		!!search.group ||
 		!!search.page ||
+		(search.tags?.length ?? 0) > 0 ||
 		search.hasErrors === true ||
 		search.durationMin != null ||
 		search.durationMax != null ||
@@ -164,6 +198,11 @@ export function ReplaysFilterSidebar({ facetsResult }: ReplaysFilterSidebarProps
 			const devices = withSelected(facets.devices, search.deviceType)
 			const groups = withSelected(facets.groups, search.group)
 			const pages = withSelected(facets.pages, search.page)
+			const selectedTags = sessionTagsFromSearch(search.tags) ?? []
+			const tags = tagOptions(facets.tags)
+			for (const tag of selectedTags) {
+				if (!tags.some((option) => option.name === tag)) tags.unshift({ name: tag, count: 0 })
+			}
 
 			const hasFacets =
 				services.length > 0 ||
@@ -172,6 +211,7 @@ export function ReplaysFilterSidebar({ facetsResult }: ReplaysFilterSidebarProps
 				devices.length > 0 ||
 				groups.length > 0 ||
 				pages.length > 0 ||
+				tags.length > 0 ||
 				facets.errorCount > 0
 
 			return (
@@ -189,6 +229,17 @@ export function ReplaysFilterSidebar({ facetsResult }: ReplaysFilterSidebarProps
 						    that exact filter, with the same facet count, as a one-click chip. Two
 						    controls for one boolean in the same viewport is not redundancy, it is a
 						    question about whether they agree. */}
+						{/* The cheapest cut through the noise: "Engaged" alone drops bots,
+						    bounces, idle tabs and glances, usually most of a window. */}
+						<FilterSection
+							title="Session type"
+							options={tags}
+							selected={selectedTags}
+							onChange={setTags}
+							getOptionLabel={tagLabel}
+							getOptionDescription={tagDescription}
+						/>
+
 						<RangeFilterSection
 							title="Session length"
 							unit="s"

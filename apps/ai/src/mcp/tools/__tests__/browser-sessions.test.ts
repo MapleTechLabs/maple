@@ -46,6 +46,7 @@ const replayRow = {
 	resourceAttributes: "{}",
 	version: 1,
 	recorded: "true",
+	quality: "engaged",
 	visitorIsNew: 0,
 	userTraits: "{}",
 	referrer: "",
@@ -146,6 +147,20 @@ describe("search_sessions", () => {
 		expect(text).toMatch(
 			/Next page: `search_sessions start_time="[^"]+" end_time="[^"]+" service="web" limit=1 offset=1`/,
 		)
+	})
+
+	it("tags every row and carries a tag filter into the next page", async () => {
+		const result = await call("search_sessions", { tags: ["engaged", "signed_in"], limit: 1 })
+		const output = Schema.decodeUnknownSync(SearchSessionsOutput)(result.structuredContent)
+		expect(output.sessions[0]?.tags).toEqual(["engaged", "signed_in"])
+		expect(output.filters).toEqual({ tags: ["engaged", "signed_in"] })
+		expect(markdown(result)).toContain("| engaged signed_in |")
+	})
+
+	it("rejects a tag outside the vocabulary", async () => {
+		const bad = await call("search_sessions", { tags: ["frustrated"] })
+		expect(bad.isError).toBe(true)
+		expect(markdown(bad)).toContain("Invalid parameters for `search_sessions`")
 	})
 })
 

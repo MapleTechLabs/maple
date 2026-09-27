@@ -24,6 +24,7 @@ import type {
 	V2SessionTranscriptEvent,
 } from "@maple/domain/http/v2"
 import { CH, formatWarehouseDateTime } from "@maple/query-engine"
+import { sessionTagsOf } from "@maple/domain/query-engine"
 import { Effect, Layer, Option, Schema } from "effect"
 import { decodeKeysetCursor, encodeKeysetCursor } from "@/routes/v2/keyset-cursor"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
@@ -151,6 +152,7 @@ const HttpV2SessionReplaysGroup = HttpApiBuilder.group(MapleApiV2, "sessionRepla
 							...(payload.page_path !== undefined
 								? { pagePath: payload.page_path }
 								: undefined),
+							...(payload.tags !== undefined ? { tags: payload.tags } : undefined),
 							...(payload.duration_min_ms !== undefined
 								? {
 										durationMinMs: payload.duration_min_ms,
@@ -220,6 +222,7 @@ const HttpV2SessionReplaysGroup = HttpApiBuilder.group(MapleApiV2, "sessionRepla
 								error_count: row.errorCount,
 								// `length()` is UInt64 — ClickHouse JSON-quotes it as a string.
 								trace_count: Number(row.traceCount),
+								tags: sessionTagsOf(row),
 							}),
 						),
 						has_more: hasMore,

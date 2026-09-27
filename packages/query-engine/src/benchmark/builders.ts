@@ -621,6 +621,14 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		compile: () => CH.compileUnsafe(CH.sessionReplaysListQuery({ pagePath: "/pricing" }), window),
 	},
 	{
+		// The tag semi-join: every requested tag, decided over the window's finalized rows.
+		module: "session-replays",
+		name: "sessionReplaysListQuery",
+		label: "tagged",
+		compile: () =>
+			CH.compileUnsafe(CH.sessionReplaysListQuery({ tags: ["engaged", "signed_in"] }), window),
+	},
+	{
 		module: "session-replays",
 		name: "sessionReplaysFacetsQuery",
 		label: "default",
@@ -644,6 +652,13 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		name: "sessionReplaysFacetsQuery",
 		label: "page-visited",
 		compile: () => CH.compileUnionUnsafe(CH.sessionReplaysFacetsQuery({ pagePath: "/pricing" }), window),
+	},
+	{
+		// Selected tags narrow every other branch and are excluded from the tag branch.
+		module: "session-replays",
+		name: "sessionReplaysFacetsQuery",
+		label: "tagged",
+		compile: () => CH.compileUnionUnsafe(CH.sessionReplaysFacetsQuery({ tags: ["engaged"] }), window),
 	},
 	{
 		module: "session-replays",

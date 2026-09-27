@@ -1,6 +1,7 @@
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
 import { Schema } from "effect"
 import { SessionId, TraceId } from "../../primitives"
+import { SessionTag } from "../../session-tags"
 import { AuditedRead } from "../audit-log"
 import { AuthorizationV2 } from "./auth"
 import { wireExample, ListOf, ListQuery, Timestamp } from "./envelopes"
@@ -72,6 +73,10 @@ export const V2SessionReplayListItem = Schema.Struct({
 	recorded: Schema.NullOr(Schema.Boolean).annotate({
 		description: "Whether recording was enabled; null for sessions without a recording marker.",
 	}),
+	tags: Schema.Array(SessionTag).annotate({
+		description:
+			"Rule-based tags: exactly one quality tier (`bot`, `bounce`, `idle`, `glance` or `engaged`), plus `signed_in` and `new_visitor` when they apply.",
+	}),
 }).annotate({
 	identifier: "SessionReplayListItem",
 	title: "Session replay",
@@ -104,6 +109,7 @@ export const V2SessionReplayListItem = Schema.Struct({
 			error_count: 1,
 			trace_count: 12,
 			recorded: true,
+			tags: ["engaged", "signed_in"],
 		}),
 	],
 })
@@ -351,6 +357,12 @@ export const V2SessionReplaySearchParams = Schema.Struct({
 		Schema.String.annotate({
 			description:
 				"Only sessions that navigated to this exact page path (pathname only, no query string or fragment) at any point, not just on entry.",
+		}),
+	),
+	tags: Schema.optionalKey(
+		Schema.Array(SessionTag).annotate({
+			description:
+				"Only sessions carrying every one of these tags. `engaged` alone hides bots, bounces, idle tabs and glances.",
 		}),
 	),
 	duration_min_ms: Schema.optionalKey(

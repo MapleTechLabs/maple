@@ -772,3 +772,11 @@ export const WEB_ANALYTICS_UNSET = "(none)"
  * forever when a tab dies without sending its unload row.
  */
 export const SESSION_LIVE_WINDOW_SECONDS = 300
+
+export {
+	SESSION_QUALITY_TAGS,
+	SESSION_TAG_THRESHOLDS,
+	SESSION_TAGS,
+	SessionTag,
+	sessionTagsOf,
+} from "./session-tags"

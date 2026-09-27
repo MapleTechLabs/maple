@@ -1019,6 +1019,7 @@ describe("v2 replay migration parity", () => {
 			errorCount: 0,
 			traceCount: 1,
 			recorded: "",
+			quality: "engaged",
 			version: 1,
 			userAgent: "test",
 			traceIds: [TRACE_ID],
@@ -1085,6 +1086,8 @@ describe("v2 replay migration parity", () => {
 				false,
 				true,
 			])
+			// Anonymous, first visit: the quality tier plus `new_visitor`, no `signed_in`.
+			expect(search.body.data[0].tags).toEqual(["engaged", "new_visitor"])
 			expect(search.body.data[0]).toMatchObject({
 				visitor_id: "visitor-shared",
 				utm_source: "newsletter",

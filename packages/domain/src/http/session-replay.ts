@@ -1,7 +1,7 @@
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
 import { Schema } from "effect"
 import { SessionId, TraceId, UserId } from "../primitives"
-import { TinybirdDateTime } from "../query-engine"
+import { SessionTag, TinybirdDateTime } from "../query-engine"
 import { AuditedRead } from "./audit-log"
 import { Authorization, SessionAuthorization } from "./current-tenant"
 import { QueryEngineExecutionError, QueryEngineTimeoutError } from "./query-engine"
@@ -131,6 +131,8 @@ export class ReplaysFacetsRequest extends Schema.Class<ReplaysFacetsRequest>("Re
 	hasErrors: Schema.optional(Schema.Boolean),
 	search: Schema.optional(Schema.String),
 	pagePath: Schema.optional(Schema.String),
+	/** Required tags; the tag facet itself ignores them so every tag keeps its count. */
+	tags: Schema.optional(Schema.Array(SessionTag)),
 }) {}
 
 export const ReplayFacetItem = Schema.Struct({
@@ -148,6 +150,8 @@ export class ReplaysFacetsResponse extends Schema.Class<ReplaysFacetsResponse>("
 	groups: Schema.Array(ReplayFacetItem),
 	/** Page paths visited, by sessions that reached them (top 200). */
 	pages: Schema.Array(ReplayFacetItem),
+	/** Sessions per rule-based tag (see `SESSION_TAGS`); tags with no sessions are absent. */
+	tags: Schema.Array(ReplayFacetItem),
 	/** Distinct sessions with at least one recorded error, within the current filter. */
 	errorCount: Schema.Number,
 	/** Every session in the window under the current filters — the header's own

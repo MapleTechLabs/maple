@@ -8,7 +8,7 @@ import { SessionsList } from "@/components/replays/sessions-list"
 import { ActiveUserFilter } from "@/components/replays/active-user-filter"
 import { ReplaysFilterSidebar } from "@/components/replays/replays-filter-sidebar"
 import { ReplaysToolbar } from "@/components/replays/replays-toolbar"
-import { BooleanFromStringParam, NumberFromStringParam } from "@/lib/search-params"
+import { BooleanFromStringParam, NumberFromStringParam, OptionalStringArrayParam } from "@/lib/search-params"
 import { replaysFilterInputs } from "@/components/replays/replays-filter-inputs"
 import { REPLAYS_PAGE_SIZE, useInfiniteReplays } from "@/hooks/use-infinite-replays"
 import { Result } from "@/lib/effect-atom"
@@ -50,6 +50,8 @@ const replaysSearchSchema = Schema.Struct({
 	q: Schema.optional(Schema.String),
 	/** Page path visited anywhere in the session, from the sidebar facet. */
 	page: Schema.optional(Schema.String),
+	/** Rule-based session tags, all required (see `SESSION_TAGS`). */
+	tags: OptionalStringArrayParam,
 	...TimeRangeSearchFields,
 })
 
@@ -93,6 +95,7 @@ function ReplaysPage() {
 			search.hasErrors,
 			search.q,
 			search.page,
+			search.tags,
 			search.durationMin,
 			search.durationMax,
 			search.activeMin,
@@ -139,6 +142,7 @@ function ReplaysPage() {
 		search.hasErrors,
 		search.q,
 		search.page,
+		search.tags?.length ? search.tags : undefined,
 		search.durationMin,
 		search.durationMax,
 		search.activeMin,

@@ -94,4 +94,13 @@ describe("replaysFilterInputs", () => {
 		expect(inputs.durationMinMs).toBeUndefined()
 		expect(inputs.activeTimeMaxMs).toBeUndefined()
 	})
+
+	it("keeps only known tags, and treats none left as no tag filter", () => {
+		expect(replaysFilterInputs({ tags: ["engaged", "frustrated", "signed_in"] }).tags).toEqual([
+			"engaged",
+			"signed_in",
+		])
+		expect(replaysFilterInputs({ tags: ["frustrated"] }).tags).toBeUndefined()
+		expect(replaysFilterInputs({ tags: [] }).tags).toBeUndefined()
+	})
 })
