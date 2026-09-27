@@ -27,7 +27,11 @@ function VendorMark({ id, active }: { id: BrandMarkId; active: boolean }) {
 			fill="currentColor"
 			aria-hidden="true"
 		>
-			<path d={mark.path} />
+			{mark.layers && !active ? (
+				mark.layers.map((layer) => <path key={layer.fill} d={layer.path} fill={layer.fill} />)
+			) : (
+				<path d={mark.path} />
+			)}
 			{mark.overlay && (
 				<path d={mark.overlay.path} fill={mark.overlay.fill} fillRule={mark.overlay.fillRule} />
 			)}

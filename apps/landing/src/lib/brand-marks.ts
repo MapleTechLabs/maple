@@ -20,6 +20,9 @@ export interface BrandMark {
 	viewBox?: string
 	/** A second path in a fixed colour, painted over the mark (a white glyph on a brand-coloured tile). */
 	overlay?: { path: string; fill: string; fillRule?: "evenodd" }
+	/** A multicolour mark, painted instead of `path` wherever the mark shows in
+	 * colour. `path` stays the whole mark for one-colour contexts. */
+	layers?: readonly { path: string; fill: string }[]
 }
 
 export const BRAND_MARKS = {
@@ -195,11 +198,29 @@ export const BRAND_MARKS = {
 		path: "m.7792 10.7479-.7654 6.6384a2.0957 2.0957 0 0 0 .696 1.8122l1.8965 1.672c.6494.5725 1.658.0145 1.5185-.84L2.6039 10.705c-.1723-1.056-1.7022-1.02-1.8247.0429Zm12.3733 8.714L8.63 6.431c-.5023-1.4472-2.6082-1.3845-3.0203.0898l-1.376 4.9234c-.156.559-.216.8822.0005 1.4212h.5225l1.8993 6.0694c.294.7324.9017 1.3009 1.6611 1.5538l2.8315.9435c1.2417.4137 2.4268-.7513 2.004-1.97zm10.6297-1.0332L15.7907 3.4433c-.6971-1.3072-2.5779-1.2727-3.227.0589l-1.9652 3.9555c-.2375.487-.1274.6608.07.9435.1585.2268.526.2447.6758.012.147-.2287.488-.2076.6058.0375l5.1379 10.687a2.735 2.735 0 0 0 2.1416 1.6016l2.7183.3476c1.4628.1924 2.5299-1.3539 1.8343-2.6582z",
 	},
 	honeycomb: {
-		// The four hexagons from honeycomb.io's own header lockup, in one colour.
+		// The four hexagons from honeycomb.io's own header lockup.
 		name: "Honeycomb",
 		hex: "#F96E10",
 		path: "M26.0654 32.7012L30.4387 40.3482L26.0654 48H17.3706L13.002 40.3482L17.3706 32.7012H26.0654ZM26.0654 14.24L30.4387 21.8871L26.0654 29.5388H17.3706L13.002 21.8871L17.3706 14.24H26.0654ZM10.6741 24.7906L14.2369 31.1154L10.6741 37.4495H3.56276L0 31.1154L3.56276 24.7906H10.6741ZM44.9918 0L50.647 10.0141L44.9918 20.0424H33.6249L27.9697 10.0141L33.6249 0H44.9918Z",
 		viewBox: "0 0 51 48",
+		layers: [
+			{
+				path: "M44.9918 0L50.647 10.0141L44.9918 20.0424H33.6249L27.9697 10.0141L33.6249 0H44.9918Z",
+				fill: "#0298EC",
+			},
+			{
+				path: "M26.0654 14.24L30.4387 21.8871L26.0654 29.5388H17.3706L13.002 21.8871L17.3706 14.24H26.0654Z",
+				fill: "#64BA00",
+			},
+			{
+				path: "M10.6741 24.7906L14.2369 31.1154L10.6741 37.4495H3.56276L0 31.1154L3.56276 24.7906H10.6741Z",
+				fill: "#F96E10",
+			},
+			{
+				path: "M26.0654 32.7012L30.4387 40.3482L26.0654 48H17.3706L13.002 40.3482L17.3706 32.7012H26.0654Z",
+				fill: "#FFB000",
+			},
+		],
 	},
 } as const satisfies Record<string, BrandMark>
 
