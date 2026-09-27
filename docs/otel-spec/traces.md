@@ -25,11 +25,10 @@ Stable sections are locked against breaking change.
 >       `Error` (§[Status](#set-status)).
 >     - The 5 `SpanKind` values drive our service-map/flamegraph parent-child inference
 >       (§[SpanKind](#spankind)).
->
->   Maple stores span status as title-case `"Ok"`/`"Error"`/`"Unset"` strings (CLAUDE.md,
->   "Span status codes"). That matches the spec's enum spelling. The OTLP wire encoding uses a
->   different uppercase enum (`STATUS_CODE_OK` / `STATUS_CODE_ERROR` / `STATUS_CODE_UNSET`); the
->   ingest/collector mapping layer is the one place that translation must stay correct.
+>     - Maple stores span status as title-case `"Ok"`/`"Error"`/`"Unset"` strings (CLAUDE.md,
+>       "Span status codes"). That matches the spec's enum spelling. The OTLP wire encoding uses a
+>       different uppercase enum (`STATUS_CODE_OK` / `STATUS_CODE_ERROR` / `STATUS_CODE_UNSET`);
+>       the ingest/collector mapping layer is the one place that translation must stay correct.
 > - **As a self-instrumented emitter:** our own services configure `BatchSpanProcessor` knobs,
 >   samplers (`OTEL_TRACES_SAMPLER` / `_ARG`), and span limits via the env vars in
 >   §[Span Limits](#span-limits) and §[Span Processor](#span-processor-sdk). The
