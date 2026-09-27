@@ -575,7 +575,7 @@
       "dependencies": {
         "@maple/domain": "workspace:*",
         "@maple/eventing-core": "workspace:*",
-        "@typeonce/effect-machine": "0.24.0",
+        "@typeonce/effect-machine": "0.38.1",
         "effect": "catalog:effect",
       },
       "devDependencies": {
@@ -2197,7 +2197,7 @@
 
     "@tybys/wasm-util": ["@tybys/wasm-util@0.10.4", "", { "dependencies": { "tslib": "^2.4.0" } }, "sha512-W3c4gRigFS0T/Ma4qIYF3GDAc5AQdHb1yL5znJT1Zv1YaD9Kitx656wBjvr19qbiosmZT8lWDM5BEMynUqX65A=="],
 
-    "@typeonce/effect-machine": ["@typeonce/effect-machine@0.24.0", "", { "peerDependencies": { "effect": "4.0.0-rc.111" } }, "sha512-MHhO3qtGhGv+OjkU5gPEXU2t3Mjz3yN5bcwBTIM+sAiYJPYjWQD7TA3Ek2L0m1TZtngmgyTYEzLUkCW7HCMw3w=="],
+    "@typeonce/effect-machine": ["@typeonce/effect-machine@0.38.1", "", { "peerDependencies": { "effect": "4.0.0-rc.117" } }, "sha512-i3c6rHboUt83+SiiHGZ1VdZlMQcwfaJSezUuyh9ls74S6H/zj7kp7CRC6D6DAucx4L05yTLfqg20mrpyBdGT3w=="],
 
     "@types/aria-query": ["@types/aria-query@5.0.4", "", {}, "sha512-rfT93uj5s0PRL7EzccGMs3brplhcrghnDoV26NqKhCAS1hVo+WdNsPvE/yb6ilfr5hi2MEk6d5EWJTKdxg8jVw=="],
 
