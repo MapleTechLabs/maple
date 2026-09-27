@@ -50,6 +50,7 @@ const {
 							<th class="text-left font-medium px-4 py-3 border-b border-border">SigNoz</th>
 							<th class="text-left font-medium px-4 py-3 border-b border-border">Axiom</th>
 							<th class="text-left font-medium px-4 py-3 border-b border-border">Better Stack</th>
+							<th class="text-left font-medium px-4 py-3 border-b border-border">Honeycomb</th>
 						</tr>
 					</thead>
 					<tbody>
@@ -57,6 +58,7 @@ const {
 							<td class="px-4 py-3 border-b border-border text-fg-muted">{m.bill_row_per_host()}</td>
 							<td class="px-4 py-3 border-b border-border bg-primary/8 text-primary font-medium">{m.bill_v_none()}</td>
 							<td class="px-4 py-3 border-b border-border text-foreground">$15+ / host / mo</td>
+							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_none()}</td>
 							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_none()}</td>
 							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_none()}</td>
 							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_none()}</td>
@@ -74,6 +76,7 @@ const {
 							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_none()}</td>
 							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_none()}</td>
 							<td class="px-4 py-3 border-b border-border text-foreground">$29–34 / on-call responder / mo</td>
+							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_none()}</td>
 						</tr>
 						<tr>
 							<td class="px-4 py-3 border-b border-border text-fg-muted">{m.bill_row_ingest()}</td>
@@ -85,6 +88,7 @@ const {
 							<td class="px-4 py-3 border-b border-border text-foreground">$0.30 / GB · $0.10 / M samples</td>
 							<td class="px-4 py-3 border-b border-border text-foreground">$0.12 / GB + $0.20 / GB-hr</td>
 							<td class="px-4 py-3 border-b border-border text-foreground">$0.10 / GB + $0.05 / GB-mo stored (EU)</td>
+							<td class="px-4 py-3 border-b border-border text-foreground">$3.00 / M events (spans, logs)</td>
 						</tr>
 						<tr>
 							<td class="px-4 py-3 border-b border-border text-fg-muted">{m.bill_row_retention()}</td>
@@ -96,6 +100,7 @@ const {
 							<td class="px-4 py-3 border-b border-border text-foreground">15d logs/traces · 1mo metrics</td>
 							<td class="px-4 py-3 border-b border-border text-foreground">Configurable · from $0.03 / GB stored</td>
 							<td class="px-4 py-3 border-b border-border text-foreground">30d in bundles · billed per GB-mo stored</td>
+							<td class="px-4 py-3 border-b border-border text-foreground">60d events and metrics</td>
 						</tr>
 						<tr>
 							<td class="px-4 py-3 border-b border-border text-fg-muted">{m.bill_row_otel()}</td>
@@ -103,6 +108,7 @@ const {
 							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_yes()}</td>
 							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_yes()}</td>
 							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_yes()}</td>
+							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_native()}</td>
 							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_native()}</td>
 							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_native()}</td>
 							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_native()}</td>
@@ -118,6 +124,7 @@ const {
 							<td class="px-4 py-3 border-b border-border text-foreground">MIT + commercial ee/</td>
 							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_proprietary()}</td>
 							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_proprietary()}</td>
+							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_proprietary()}</td>
 						</tr>
 						<tr>
 							<td class="px-4 py-3 border-b border-border text-fg-muted">{m.bill_row_selfhost()}</td>
@@ -129,10 +136,12 @@ const {
 							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_supported()}</td>
 							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_no()}</td>
 							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_no()}</td>
+							<td class="px-4 py-3 border-b border-border text-foreground">Enterprise, own AWS account</td>
 						</tr>
 						<tr>
 							<td class="px-4 py-3 text-fg-muted">{m.bill_row_mcp()}</td>
 							<td class="px-4 py-3 bg-primary/8 text-primary font-medium">{m.bill_v_hosted()}</td>
+							<td class="px-4 py-3 text-foreground">{m.bill_v_yes()}</td>
 							<td class="px-4 py-3 text-foreground">{m.bill_v_yes()}</td>
 							<td class="px-4 py-3 text-foreground">{m.bill_v_yes()}</td>
 							<td class="px-4 py-3 text-foreground">{m.bill_v_yes()}</td>
@@ -174,6 +183,9 @@ const {
 			</a>
 			<a href="/compare/better-stack" class="text-fg-muted hover:text-fg border-b border-border hover:border-foreground pb-px transition-colors">
 				{m.bill_link_vs_better_stack()}
+			</a>
+			<a href="/compare/honeycomb" class="text-fg-muted hover:text-fg border-b border-border hover:border-foreground pb-px transition-colors">
+				{m.bill_link_vs_honeycomb()}
 			</a>
 		</div>}
 	</div>

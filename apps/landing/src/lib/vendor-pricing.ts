@@ -21,6 +21,7 @@ export type Vendor =
 	| "signoz"
 	| "axiom"
 	| "better-stack"
+	| "honeycomb"
 
 /** Month the list prices were last checked against the vendors' pages. */
 export const PRICES_VERIFIED = "2026-09"
@@ -278,6 +279,22 @@ export const vendorConfigs = {
 				step: 50,
 				default: 100,
 				unit: "GB/mo",
+			},
+		],
+	},
+	honeycomb: {
+		name: "Honeycomb",
+		sliders: [
+			{ key: "spans", label: "Spans / mo", min: 10, max: 5000, step: 10, default: 100, unit: "M" },
+			{ key: "logs", label: "Log records / mo", min: 10, max: 5000, step: 10, default: 100, unit: "M" },
+			{
+				key: "metricPoints",
+				label: "Metric data points / mo",
+				min: 10,
+				max: 20000,
+				step: 50,
+				default: 500,
+				unit: "M",
 			},
 		],
 	},
@@ -572,6 +589,43 @@ const betterStack = (values: Record<string, number>): Estimate => {
 	}
 }
 
+const honeycomb = (values: Record<string, number>): Estimate => {
+	// Honeycomb's 2026 Pro rate: $3.00 per million events, from $150 for 50M
+	// up to 750M, with metric data points included at five per event (250M
+	// with the 50M tier). Every span and log record is one event. Free covers
+	// 20M events and 100M data points. Pro is sold in four fixed tiers; this
+	// prices the exact volume instead of rounding up to the next tier, and past
+	// 750M (Enterprise, unpublished) it keeps the Pro rate. Both favor Honeycomb.
+	const RATE = 3
+	const events = values.spans + values.logs
+	if (events <= 20 && values.metricPoints <= 100) {
+		return {
+			total: 0,
+			breakdown: [{ label: "Free plan", value: 0, detail: "Up to 20M events and 100M data points" }],
+		}
+	}
+	const eventTier = Math.max(50, events)
+	const eventCost = eventTier * RATE
+	const metricCost = Math.max(0, values.metricPoints / 5 - eventTier) * RATE
+
+	return {
+		total: eventCost + metricCost,
+		breakdown: [
+			{
+				label: "Events",
+				value: eventCost,
+				detail: `${events}M spans + logs × $3.00/M${events < 50 ? " ($150 minimum)" : ""}${events > 750 ? " (Enterprise above 750M)" : ""}`,
+			},
+			{
+				label: "Metrics",
+				value: metricCost,
+				detail: `${values.metricPoints}M data points (5 per event included)`,
+			},
+			{ label: "Team members", value: 0, detail: "Unlimited seats" },
+		],
+	}
+}
+
 /** What the vendor charges for `values`, the slider state of `vendorConfigs[vendor]`. */
 export const estimateVendor = (vendor: Vendor, values: Record<string, number>): Estimate => {
 	if (vendor === "datadog") return datadog(values)
@@ -581,6 +635,7 @@ export const estimateVendor = (vendor: Vendor, values: Record<string, number>): 
 	if (vendor === "signoz") return signoz(values)
 	if (vendor === "axiom") return axiom(values)
 	if (vendor === "better-stack") return betterStack(values)
+	if (vendor === "honeycomb") return honeycomb(values)
 	return newRelic(values)
 }
 
@@ -623,8 +678,8 @@ export const estimateMaple = (vendor: Vendor, values: Record<string, number>): E
 		logsGB = values.logVolume
 		tracesGB = values.traceVolume
 		metricsGB = values.metricSamples * 0.1
-	} else if (vendor === "dash0") {
-		// Dash0 bills per item; convert counts to decoded OTLP volume at
+	} else if (vendor === "dash0" || vendor === "honeycomb") {
+		// Both bill per item; convert counts to decoded OTLP volume at
 		// ~1 KB per span and per log record, ~0.1 KB per metric data point.
 		tracesGB = values.spans * 1
 		logsGB = values.logs * 1
@@ -671,6 +726,8 @@ export const vendorCaveat = {
 	signoz: "SigNoz is modeled on the Teams plan at default retention: logs and traces $0.30/GB at 15 days, metrics $0.10 per million samples at one month, and the $49 base fee with $49 of usage included. Longer retention raises both rates and is not modeled, which favors SigNoz. The Maple estimate converts metric samples at 0.1 KB per data point.",
 	"better-stack":
 		"Better Stack is modeled on pay-as-you-go in its Europe region, its cheapest: logs and traces at $0.10/GB ingested plus $0.05/GB a month retained for 30 days, metrics at $0.50/GB a month retained, less the free tier. US rates are 50% higher and not modeled, which favors Better Stack. Bundles, query boost, Responder licenses for on-call and uptime, and the SSO and audit log add-ons are not modeled. Better Stack meters metrics by uncompressed stored size, mapped one to one onto Maple's decoded OTLP bytes.",
+	honeycomb:
+		"Honeycomb is modeled on the 2026 Pro rate, $3.00 per million events from $150 for 50M, with metric data points included at five per event. Pro is sold in four fixed tiers up to 750M and the estimate prices the exact volume instead of the next tier up; span events and links, which Honeycomb also counts as events, are not modeled. Both favor Honeycomb. Legacy Pro plans at $1.30 per million run until December 31, 2026. The Maple estimate converts at 1 KB per span or log record and 0.1 KB per metric data point; wide events shift the ratio toward Honeycomb.",
 } satisfies Record<Vendor, string>
 
 export const MAPLE_PRICING_NOTE =

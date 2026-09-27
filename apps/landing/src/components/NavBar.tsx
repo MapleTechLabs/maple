@@ -149,6 +149,11 @@ export function NavBarInner({ locale = "en", stars, signedIn }: NavBarProps & { 
 			label: () => m.nav_vs_better_stack(),
 			desc: () => m.nav_desc_vs_better_stack(),
 		},
+		{
+			href: l("/compare/honeycomb"),
+			label: () => m.nav_vs_honeycomb(),
+			desc: () => m.nav_desc_vs_honeycomb(),
+		},
 	]
 
 	const mobileGroups: { title: string; links: MenuLink[] }[] = [
