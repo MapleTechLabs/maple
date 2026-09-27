@@ -26,7 +26,7 @@
 	"dependencies": {
 		"@effect/sql-pg": "4.0.0-rc.117",
 		"@effect/sql-pglite": "4.0.0-rc.117",
-		"@electric-sql/pglite": "^0.5.6",
+		"@electric-sql/pglite": "^0.5.8",
 		"@maple/domain": "workspace:*",
 		"drizzle-orm": "1.0.0-rc.5-5935859",
 		"effect": "catalog:effect",

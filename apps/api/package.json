@@ -42,11 +42,11 @@
 	"devDependencies": {
 		"@cloudflare/workers-types": "catalog:alchemy",
 		"@effect/language-service": "catalog:effect",
-		"@electric-sql/pglite": "^0.5.6",
+		"@electric-sql/pglite": "^0.5.8",
 		"@types/node": "catalog:tooling",
-		"atmn": "^1.1.17",
+		"atmn": "^1.1.25",
 		"typescript": "catalog:tooling",
 		"vitest": "catalog:",
-		"wrangler": "^4.118.0"
+		"wrangler": "^4.142.0"
 	}
 }
