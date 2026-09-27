@@ -700,18 +700,33 @@ describe("session tags", () => {
 		expect(sql).toContain("durationMs >= 1000")
 	})
 
-	it("counts sessions per tag in the facets, excluding the tag filter from its own branch", () => {
-		const { sql } = compileUnionUnsafe(sessionReplaysFacetsQuery({ tags: ["engaged"] }), params)
+	it("counts sessions per tag in one facet branch", () => {
+		const { sql } = compileUnionUnsafe(sessionReplaysFacetsQuery({}), params)
 		const tagBranch = sql.split("UNION ALL").find((branch) => branch.includes("'tag' AS facetType"))
-		expect(tagBranch).toBeDefined()
 		expect(tagBranch).toContain(
 			"arrayJoin(arrayFilter(tag -> tag != '', [quality, if(signedIn = 1, 'signed_in', ''), if(newVisitor = 1, 'new_visitor', '')])) AS name",
 		)
+	})
+
+	it("narrows every other facet branch by the selected tags, but not the tag branch", () => {
+		const { sql } = compileUnionUnsafe(sessionReplaysFacetsQuery({ tags: ["engaged"] }), params)
+		const branches = sql.split("UNION ALL")
+		const tagBranch = branches.find((branch) => branch.includes("'tag' AS facetType"))
 		expect(tagBranch).not.toContain("WHERE quality = 'engaged'")
 		// Every other branch, including the hand-written error one, is narrowed by it.
-		const narrowed = sql
-			.split("UNION ALL")
-			.filter((branch) => branch.includes("WHERE quality = 'engaged'"))
-		expect(narrowed.length).toBe(sql.split("UNION ALL").length - 1)
+		const narrowed = branches.filter((branch) => branch.includes("WHERE quality = 'engaged'"))
+		expect(narrowed.length).toBe(branches.length - 1)
+	})
+
+	it("counts each tag under the other selected tags, so a count is what ticking it returns", () => {
+		const { sql } = compileUnionUnsafe(sessionReplaysFacetsQuery({ tags: ["bot", "signed_in"] }), params)
+		const tagBranch = sql.split("UNION ALL").find((branch) => branch.includes("'tag' AS facetType"))
+		// A tier is counted under the selected traits only: ticking a tier replaces the tier.
+		expect(tagBranch).toContain("if((quality != '' AND signedIn = 1), quality, '')")
+		// A trait is counted under the selected tier and the other selected traits.
+		expect(tagBranch).toContain("if((signedIn = 1 AND quality = 'bot'), 'signed_in', '')")
+		expect(tagBranch).toContain(
+			"if(((newVisitor = 1 AND quality = 'bot') AND signedIn = 1), 'new_visitor', '')",
+		)
 	})
 })

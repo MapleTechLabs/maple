@@ -59,7 +59,7 @@ export function registerSearchSessionsTool(server: McpToolRegistrar) {
 			has_errors: P.optionalFlag("Only sessions with at least one recorded error"),
 			tags: P.optionalOneOfList(
 				SESSION_TAGS,
-				"Only sessions carrying every one of these tags. Quality tiers (exactly one per session): bot, bounce (<5s, no clicks), idle (one page, no clicks), glance (one page, <=2 clicks, <30s), engaged (everything else). Traits: signed_in, new_visitor.",
+				"Only sessions carrying every one of these tags, so pass at most one quality tier. Quality tiers (exactly one per session): bot, bounce (<5s, no clicks), idle (one page, no clicks), glance (one page, <=2 clicks, <30s), engaged (everything else). Traits: signed_in, new_visitor.",
 			),
 			duration_min_ms: P.optionalNumber("Only sessions at least this long (ms)"),
 			duration_max_ms: P.optionalNumber("Only sessions at most this long (ms)"),

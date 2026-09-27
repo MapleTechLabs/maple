@@ -4539,7 +4539,7 @@ SELECT
           AND ErrorCount > 0
 FORMAT JSON
 
--- builder:session-replays:sessionReplaysFacetsQuery:tagged  [9e084a5d]
+-- builder:session-replays:sessionReplaysFacetsQuery:tagged  [139da92f]
 SELECT
           ServiceName AS name,
           uniq(SessionId) AS count,
@@ -4704,7 +4704,7 @@ SELECT
         LIMIT 200
 UNION ALL
 SELECT
-          arrayJoin(arrayFilter(tag -> tag != '', [quality, if(signedIn = 1, 'signed_in', ''), if(newVisitor = 1, 'new_visitor', '')])) AS name,
+          arrayJoin(arrayFilter(tag -> tag != '', [quality, if((signedIn = 1 AND quality = 'engaged'), 'signed_in', ''), if((newVisitor = 1 AND quality = 'engaged'), 'new_visitor', '')])) AS name,
           count() AS count,
           'tag' AS facetType
         FROM (SELECT

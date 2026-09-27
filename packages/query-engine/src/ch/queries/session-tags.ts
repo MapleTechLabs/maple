@@ -8,7 +8,7 @@
 import * as CH from "@maple-dev/effect-clickhouse/expr"
 import * as T from "@maple-dev/effect-clickhouse/types"
 import { from, fromQuery, type ColumnAccessor } from "@maple-dev/effect-clickhouse"
-import { SESSION_TAG_THRESHOLDS, type SessionTag } from "@maple/domain/query-engine"
+import { SESSION_QUALITY_TAGS, SESSION_TAG_THRESHOLDS, type SessionTag } from "@maple/domain/query-engine"
 import { SessionReplays } from "../tables"
 import { isBotCond } from "../user-agent"
 
@@ -94,17 +94,39 @@ export function taggedSessionIds(tags: ReadonlyArray<SessionTag>, where: Replays
 		.where(($) => tags.map((tag) => tagCondition($, tag)))
 }
 
-/** Sessions per tag, as a facet branch: one row per tag, `name` being the tag. */
-export function sessionTagFacet(where: ReplaysWhere) {
+const isQualityTag = (tag: SessionTag) => SESSION_QUALITY_TAGS.some((quality) => quality === tag)
+
+/**
+ * Sessions per tag, as a facet branch: one row per tag, `name` being the tag.
+ *
+ * Each count is what ticking that tag would return: it is counted under the other
+ * selected tags. Tiers replace one another in the sidebar, so a tier is counted
+ * under the selected traits only; a trait under the selected tier and other traits.
+ */
+export function sessionTagFacet(where: ReplaysWhere, selected: ReadonlyArray<SessionTag> = []) {
+	const under = ($: TagFacts, own: CH.Condition, context: ReadonlyArray<SessionTag>) =>
+		context.reduce((cond, tag) => cond.and(tagCondition($, tag)), own)
+	const traitsOnly = selected.filter((tag) => !isQualityTag(tag))
+	const othersThan = (trait: SessionTag) => selected.filter((tag) => tag !== trait)
 	return fromQuery(sessionTagFactsQuery(where), "t")
 		.select(($) => ({
 			name: CH.arrayJoin<string>(
 				CH.arrayFilter(
 					"tag -> tag != ''",
 					CH.arrayOf(
-						$.quality,
-						CH.if_($.signedIn.eq(1), CH.lit("signed_in"), CH.lit("")),
-						CH.if_($.newVisitor.eq(1), CH.lit("new_visitor"), CH.lit("")),
+						traitsOnly.length === 0
+							? $.quality
+							: CH.if_(under($, $.quality.neq(""), traitsOnly), $.quality, CH.lit("")),
+						CH.if_(
+							under($, $.signedIn.eq(1), othersThan("signed_in")),
+							CH.lit("signed_in"),
+							CH.lit(""),
+						),
+						CH.if_(
+							under($, $.newVisitor.eq(1), othersThan("new_visitor")),
+							CH.lit("new_visitor"),
+							CH.lit(""),
+						),
 					),
 				),
 			),

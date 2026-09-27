@@ -750,7 +750,7 @@ export function sessionReplaysFacetsQuery(
 		// blank option.
 		makeFacet("group", ($) => $.GroupName),
 		pageFacet,
-		sessionTagFacet(($) => baseWhere($, "tag")),
+		sessionTagFacet(($) => baseWhere($, "tag"), opts.tags),
 		durationHistogram,
 		durationStat("p50", 0.5),
 		durationStat("p95", 0.95),

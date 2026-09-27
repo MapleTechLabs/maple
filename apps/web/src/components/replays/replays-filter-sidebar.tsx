@@ -14,6 +14,7 @@ import {
 	SESSION_TAG_LABELS,
 	SESSION_TAG_ORDER,
 	asSessionTag,
+	nextTagSelection,
 	sessionTagsFromSearch,
 } from "@/components/replays/session-tags"
 import {
@@ -101,8 +102,8 @@ function withSelected(options: ReadonlyArray<ReplaysFacetItem>, selected?: strin
 	return list
 }
 
-// Every tag in a fixed order, counts filled from the facet. The facet ignores the
-// tag filter itself, so each count reads as "sessions you would get by adding it".
+// Every tag in a fixed order, counts filled from the facet. Each count is taken
+// under the other selected tags, so it reads as "sessions you would get by ticking it".
 function tagOptions(counts: ReadonlyArray<ReplaysFacetItem>): FilterOption[] {
 	return SESSION_TAG_ORDER.map((tag) => ({
 		name: tag,
@@ -139,9 +140,11 @@ export function ReplaysFilterSidebar({ facetsResult }: ReplaysFilterSidebarProps
 		})
 	}
 
-	// Tags combine: a session must carry every selected one.
+	// Traits combine with a tier; ticking a tier replaces the previous one, since a
+	// session has exactly one and two would match nothing.
 	const setTags = (values: string[]) => {
-		navigate({ search: (prev) => ({ ...prev, tags: values.length > 0 ? values : undefined }) })
+		const next = nextTagSelection(sessionTagsFromSearch(search.tags) ?? [], values)
+		navigate({ search: (prev) => ({ ...prev, tags: next.length > 0 ? next : undefined }) })
 	}
 
 	const setUserId = (value: string | undefined) => {

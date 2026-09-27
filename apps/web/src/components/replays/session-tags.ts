@@ -45,6 +45,21 @@ export const sessionTagsFromSearch = (
 	return valid.length > 0 ? valid : undefined
 }
 
+const isQualityTier = (tag: SessionTag) => SESSION_QUALITY_TAGS.some((quality) => quality === tag)
+
+/**
+ * The selection after a checkbox change. A newly ticked tier drops any other tier,
+ * because every session has exactly one and two tiers together match nothing.
+ */
+export const nextTagSelection = (
+	previous: ReadonlyArray<SessionTag>,
+	values: ReadonlyArray<string>,
+): Array<SessionTag> => {
+	const next = sessionTagsFromSearch(values) ?? []
+	const addedTier = next.find((tag) => isQualityTier(tag) && !previous.includes(tag))
+	return addedTier === undefined ? next : next.filter((tag) => !isQualityTier(tag) || tag === addedTier)
+}
+
 /** The quality tier worth flagging on a row: everything but `engaged`. */
 export const noiseTierOf = (tags: ReadonlyArray<SessionTag>): SessionTag | undefined =>
-	tags.find((tag) => tag !== "engaged" && SESSION_QUALITY_TAGS.some((quality) => quality === tag))
+	tags.find((tag) => tag !== "engaged" && isQualityTier(tag))
