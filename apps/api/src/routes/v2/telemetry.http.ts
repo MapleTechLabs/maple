@@ -866,20 +866,19 @@ export const HttpV2MetricsLive = HttpApiBuilder.group(MapleApiV2, "metrics", (ha
 									context: "v2ListMetrics",
 								})
 								.pipe(
-									Effect.map(
-										(rows): ReadonlyArray<V2Metric> =>
-											rows.map((row) => ({
-												object: "metric",
-												name: decodeMetricName(row.metricName),
-												type: row.metricType,
-												service_name: row.serviceName,
-												description: row.metricDescription,
-												unit: row.metricUnit,
-												is_monotonic: Number(row.isMonotonic) !== 0,
-												data_point_count: Number(row.dataPointCount),
-												first_seen: chToIso(row.firstSeen),
-												last_seen: chToIso(row.lastSeen),
-											})),
+									Effect.map((rows): ReadonlyArray<V2Metric> =>
+										rows.map((row) => ({
+											object: "metric",
+											name: decodeMetricName(row.metricName),
+											type: row.metricType,
+											service_name: row.serviceName,
+											description: row.metricDescription,
+											unit: row.metricUnit,
+											is_monotonic: Number(row.isMonotonic) !== 0,
+											data_point_count: Number(row.dataPointCount),
+											first_seen: chToIso(row.firstSeen),
+											last_seen: chToIso(row.lastSeen),
+										})),
 									),
 								)
 						}),

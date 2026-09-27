@@ -93,7 +93,9 @@ export const timezonePreferenceAtom = Atom.kvs({
  */
 export function getEffectiveTimezone(): string {
 	try {
-		return resolveEffectiveTimezone(normalizeStoredTimezoneValue(localStorage.getItem(TIMEZONE_STORAGE_KEY)))
+		return resolveEffectiveTimezone(
+			normalizeStoredTimezoneValue(localStorage.getItem(TIMEZONE_STORAGE_KEY)),
+		)
 	} catch {
 		return getBrowserTimeZone()
 	}

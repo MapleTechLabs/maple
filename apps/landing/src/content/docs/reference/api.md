@@ -8,14 +8,14 @@ navLabel: "REST API"
 
 The Maple API is the HTTP interface to your Maple organization. It covers dashboards, alert rules and destinations, error issues, scrape targets, ingest and API keys, and read access to traces, logs, metrics, services and session replays. The dashboard uses the same endpoints.
 
-|                           |                                                                                                                 |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| Base URL (US)             | `https://api.maple.dev/v2`                                                                                      |
-| Base URL (EU)             | `https://api.eu.maple.dev/v2`                                                                                   |
+|                           |                                                                                                                           |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Base URL (US)             | `https://api.maple.dev/v2`                                                                                                |
+| Base URL (EU)             | `https://api.eu.maple.dev/v2`                                                                                             |
 | Interactive reference     | [api.maple.dev/v2/docs](https://api.maple.dev/v2/docs) (EU: [api.eu.maple.dev/v2/docs](https://api.eu.maple.dev/v2/docs)) |
-| OpenAPI 3.1 specification | [maple.dev/openapi.json](/openapi.json) (also [api.maple.dev/openapi.json](https://api.maple.dev/openapi.json)) |
-| MCP server for AI agents  | [Maple MCP server](/docs/reference/mcp)                                                                         |
-| Auth                      | `Authorization: Bearer maple_ak_…`                                                                              |
+| OpenAPI 3.1 specification | [maple.dev/openapi.json](/openapi.json) (also [api.maple.dev/openapi.json](https://api.maple.dev/openapi.json))           |
+| MCP server for AI agents  | [Maple MCP server](/docs/reference/mcp)                                                                                   |
+| Auth                      | `Authorization: Bearer maple_ak_…`                                                                                        |
 
 Use the base URL of your organization's [region](/docs/reference/regions). A key created in one region does not work in the other.
 
@@ -36,26 +36,26 @@ Keys belong to one organization. [Authentication](/docs/reference/authentication
 
 Each row is one scope family. The [interactive reference](https://api.maple.dev/v2/docs) documents every operation.
 
-| Family | Endpoints |
-| --- | --- |
-| `api_keys` | List, create, get, revoke and roll API keys |
-| `ingest_keys` | Read the organization's public and private ingest keys, and roll either one |
-| `organization` | The current organization |
-| `audit_log` | The organization's audit log |
-| `dashboards` | Dashboards, templates, version history and restore, public share links, Perses import |
-| `alerts` | Alert rules (with test and preview), rule checks, destinations, incidents and deliveries |
-| `error_issues` | Error issues and per-service issue counts |
-| `traces` | Search traces, time series and breakdowns, one trace, one span |
-| `logs` | Search logs, time series and breakdowns, one log record |
-| `metrics` | List metrics, time series and breakdowns |
-| `services` | Services, one service, and a service overview |
-| `service_map` | Service dependency edges |
-| `environments` | Deployment environments seen in your data |
-| `session_replays` | Search replays, the replays for a trace, one replay's manifest, events and transcript |
-| `scrape_targets` | Prometheus scrape targets, their checks, and a test probe |
-| `attribute_mappings` | Attribute mappings |
-| `instrumentation` | Instrumentation recommendations, the setup audit, and which signals each service sends |
-| `integrations` | Chat connectors and the PlanetScale integration |
+| Family               | Endpoints                                                                                |
+| -------------------- | ---------------------------------------------------------------------------------------- |
+| `api_keys`           | List, create, get, revoke and roll API keys                                              |
+| `ingest_keys`        | Read the organization's public and private ingest keys, and roll either one              |
+| `organization`       | The current organization                                                                 |
+| `audit_log`          | The organization's audit log                                                             |
+| `dashboards`         | Dashboards, templates, version history and restore, public share links, Perses import    |
+| `alerts`             | Alert rules (with test and preview), rule checks, destinations, incidents and deliveries |
+| `error_issues`       | Error issues and per-service issue counts                                                |
+| `traces`             | Search traces, time series and breakdowns, one trace, one span                           |
+| `logs`               | Search logs, time series and breakdowns, one log record                                  |
+| `metrics`            | List metrics, time series and breakdowns                                                 |
+| `services`           | Services, one service, and a service overview                                            |
+| `service_map`        | Service dependency edges                                                                 |
+| `environments`       | Deployment environments seen in your data                                                |
+| `session_replays`    | Search replays, the replays for a trace, one replay's manifest, events and transcript    |
+| `scrape_targets`     | Prometheus scrape targets, their checks, and a test probe                                |
+| `attribute_mappings` | Attribute mappings                                                                       |
+| `instrumentation`    | Instrumentation recommendations, the setup audit, and which signals each service sends   |
+| `integrations`       | Chat connectors and the PlanetScale integration                                          |
 
 ## Conventions
 
@@ -92,14 +92,14 @@ Every failure, including an unknown route, returns a JSON envelope with the same
 }
 ```
 
-| Field | Meaning |
-| --- | --- |
-| `_tag` | The exact failure. Branch on this. The OpenAPI spec lists the tags each operation can return |
-| `type` | The status family: `invalid_request_error` (400), `authentication_error` (401), `payment_error` (402), `permission_error` (403), `not_found_error` (404), `conflict_error` (409), `rate_limit_error` (429) or `api_error` (5xx) |
-| `code` | A short category for display |
-| `title`, `message` | Human-readable text, safe to show to users |
-| `retryable` | `true` when the same request can succeed later. The response then also carries `Retry-After` |
-| `recovery` | What the client should do: `none`, `fix_request`, `reauthenticate`, `request_access`, `reconnect`, `refresh`, `retry` or `contact_support` |
+| Field              | Meaning                                                                                                                                                                                                                         |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `_tag`             | The exact failure. Branch on this. The OpenAPI spec lists the tags each operation can return                                                                                                                                    |
+| `type`             | The status family: `invalid_request_error` (400), `authentication_error` (401), `payment_error` (402), `permission_error` (403), `not_found_error` (404), `conflict_error` (409), `rate_limit_error` (429) or `api_error` (5xx) |
+| `code`             | A short category for display                                                                                                                                                                                                    |
+| `title`, `message` | Human-readable text, safe to show to users                                                                                                                                                                                      |
+| `retryable`        | `true` when the same request can succeed later. The response then also carries `Retry-After`                                                                                                                                    |
+| `recovery`         | What the client should do: `none`, `fix_request`, `reauthenticate`, `request_access`, `reconnect`, `refresh`, `retry` or `contact_support`                                                                                      |
 
 Stack traces and upstream error messages are never included.
 

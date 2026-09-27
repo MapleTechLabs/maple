@@ -79,21 +79,21 @@ If you already run a Collector on the host for application telemetry, add the `h
 
 ## What the Hosts page shows
 
-| Metric                          | Where it appears                                               |
-| ------------------------------- | -------------------------------------------------------------- |
-| `system.cpu.utilization`        | CPU in **Usage**, **Avg CPU** card, fleet grid, CPU chart      |
+| Metric                          | Where it appears                                                |
+| ------------------------------- | --------------------------------------------------------------- |
+| `system.cpu.utilization`        | CPU in **Usage**, **Avg CPU** card, fleet grid, CPU chart       |
 | `system.memory.utilization`     | MEM in **Usage**, **Avg memory** card, fleet grid, Memory chart |
 | `system.filesystem.utilization` | DSK in **Usage**, fleet grid, Filesystem chart (per mountpoint) |
-| `system.cpu.load_average.15m`   | **Load 15m** column and chart                                  |
-| `system.network.io`             | Network chart (per device, in and out)                         |
+| `system.cpu.load_average.15m`   | **Load 15m** column and chart                                   |
+| `system.network.io`             | Network chart (per device, in and out)                          |
 
 The list shows each host's **Status**, **Usage** (CPU, memory and disk), **Load 15m** and **Last seen**. With four or more hosts, a fleet grid shows them side by side. Filter by name, or by status:
 
-| Status | Meaning                                             |
-| ------ | --------------------------------------------------- |
-| Active | Last report less than 1 minute ago.                 |
-| Idle   | Last report between 1 and 5 minutes ago.            |
-| Ended  | No report for 5 minutes or more.                    |
+| Status | Meaning                                  |
+| ------ | ---------------------------------------- |
+| Active | Last report less than 1 minute ago.      |
+| Idle   | Last report between 1 and 5 minutes ago. |
+| Ended  | No report for 5 minutes or more.         |
 
 Click a host to open its detail page: **CPU**, **Memory**, **Filesystem**, **Network** and **Load 15m** charts, and the host's `host.name`, `os.type`, `host.arch`, `cloud.provider`, `cloud.region`, and first and last seen times.
 

@@ -467,7 +467,8 @@ export class VcsCommitService extends Context.Service<VcsCommitService, VcsCommi
 					const base = bySha.get(range.base)
 					const head = bySha.get(range.head)
 					if (base === undefined || head === undefined) return []
-					if (base.repositoryId !== head.repositoryId || base.committedAt > head.committedAt) return []
+					if (base.repositoryId !== head.repositoryId || base.committedAt > head.committedAt)
+						return []
 					return [{ range, base, head }]
 				})
 				const repoIds = Arr.dedupe(answerable.map((entry) => entry.head.repositoryId))
@@ -515,7 +516,9 @@ export class VcsCommitService extends Context.Service<VcsCommitService, VcsCommi
 						status: "resolved",
 						repoFullName,
 						totalCount: inRange.length,
-						commits: inRange.slice(0, opts.limit).map((commit) => detailFromCommit(commit, repoFullName)),
+						commits: inRange
+							.slice(0, opts.limit)
+							.map((commit) => detailFromCommit(commit, repoFullName)),
 						truncated,
 					}
 				})

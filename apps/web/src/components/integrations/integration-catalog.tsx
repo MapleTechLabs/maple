@@ -259,9 +259,8 @@ export function useIntegrationStatuses(): Partial<Record<IntegrationId, CardStat
 	)
 
 	const cloudflare: CardStatus | null = Result.builder(cloudflareAccountResult)
-		.onSuccess(
-			(status): CardStatus =>
-				status.connected ? { label: "Connected", variant: "success" } : NOT_CONNECTED,
+		.onSuccess((status): CardStatus =>
+			status.connected ? { label: "Connected", variant: "success" } : NOT_CONNECTED,
 		)
 		.onInitial(() => null)
 		.orElse(() => STATUS_UNAVAILABLE)
@@ -297,9 +296,8 @@ export function useIntegrationStatuses(): Partial<Record<IntegrationId, CardStat
 		.orElse(() => STATUS_UNAVAILABLE)
 
 	const hazel: CardStatus | null = Result.builder(hazelResult)
-		.onSuccess(
-			(status): CardStatus =>
-				status.connected ? { label: "Connected", variant: "success" } : NOT_CONNECTED,
+		.onSuccess((status): CardStatus =>
+			status.connected ? { label: "Connected", variant: "success" } : NOT_CONNECTED,
 		)
 		.onInitial(() => null)
 		.orElse(() => STATUS_UNAVAILABLE)
@@ -592,20 +590,19 @@ export function useIntegrationOverviews(): Record<IntegrationId, IntegrationOver
 		.orElse(() => UNAVAILABLE)
 
 	const hazel: IntegrationOverview = Result.builder(hazelResult)
-		.onSuccess(
-			(status): IntegrationOverview =>
-				status.connected
-					? {
-							kind: "connected",
-							health: "healthy",
-							stateLabel: "Healthy",
-							context: status.externalUserEmail,
-							stat: "Alert delivery ready",
-							// Hazel has no sync loop — deliveries are push-per-alert.
-							lastSyncLabel: null,
-							issue: null,
-						}
-					: CONNECT,
+		.onSuccess((status): IntegrationOverview =>
+			status.connected
+				? {
+						kind: "connected",
+						health: "healthy",
+						stateLabel: "Healthy",
+						context: status.externalUserEmail,
+						stat: "Alert delivery ready",
+						// Hazel has no sync loop — deliveries are push-per-alert.
+						lastSyncLabel: null,
+						issue: null,
+					}
+				: CONNECT,
 		)
 		.onInitial(() => null)
 		.orElse(() => UNAVAILABLE)

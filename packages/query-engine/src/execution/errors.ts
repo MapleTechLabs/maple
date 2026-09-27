@@ -32,7 +32,8 @@ export const warehouseFailureAttributes = (error: {
 	readonly upstreamStatus?: number | undefined
 }): Record<string, string> => {
 	const statusCode =
-		error.clickhouseCode ?? (error.upstreamStatus === undefined ? undefined : String(error.upstreamStatus))
+		error.clickhouseCode ??
+		(error.upstreamStatus === undefined ? undefined : String(error.upstreamStatus))
 	return {
 		"error.type": error.clickhouseType ?? error.clickhouseCode ?? error._tag,
 		...(statusCode === undefined ? undefined : { "db.response.status_code": statusCode }),

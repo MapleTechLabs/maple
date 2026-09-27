@@ -647,7 +647,9 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleApi, "integrations
 								(range) =>
 									new VcsCommitRangeResponse({
 										...range,
-										commits: range.commits.map((detail) => new VcsCommitDetailResponse(detail)),
+										commits: range.commits.map(
+											(detail) => new VcsCommitDetailResponse(detail),
+										),
 									}),
 							),
 						})

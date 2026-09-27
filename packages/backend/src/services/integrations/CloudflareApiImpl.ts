@@ -160,12 +160,10 @@ const collectBounded = <T, E, R>(stream: Stream.Stream<T, E, R>, max: number) =>
 	stream.pipe(
 		Stream.take(max + 1),
 		Stream.runCollect,
-		Effect.map(
-			(collected): BoundedListing<T> => ({
-				items: collected.slice(0, max),
-				truncated: collected.length > max,
-			}),
-		),
+		Effect.map((collected): BoundedListing<T> => ({
+			items: collected.slice(0, max),
+			truncated: collected.length > max,
+		})),
 	)
 
 /**

@@ -11,11 +11,7 @@ import {
 	WIDGET_SUMMARY_SERVICE_LIMIT,
 	WIDGET_SUMMARY_THROUGHPUT_WINDOW_SECONDS,
 } from "@maple/domain/http/v2"
-import {
-	CH,
-	formatWarehouseDateTime,
-	QueryEngineExecuteRequest,
-} from "@maple/query-engine"
+import { CH, formatWarehouseDateTime, QueryEngineExecuteRequest } from "@maple/query-engine"
 import { computeBucketSeconds } from "@maple/query-engine/runtime"
 import { Effect, Schema } from "effect"
 import { ErrorIssueReadModelsService } from "@maple/backend/services/errors/ErrorIssueReadModelsService"
@@ -145,7 +141,9 @@ export const HttpV2WidgetSummaryLive = HttpApiBuilder.group(MapleApiV2, "widgetS
 							// where the public parameter is one value.
 							filters: {
 								rootSpansOnly: true,
-								...(deploymentEnv === undefined ? undefined : { environments: [deploymentEnv] }),
+								...(deploymentEnv === undefined
+									? undefined
+									: { environments: [deploymentEnv] }),
 							},
 							...(groupByService
 								? { groupBy: ["service"], seriesLimit: WIDGET_SUMMARY_SERIES_LIMIT }

@@ -143,16 +143,14 @@ export function registerSourceCodeTools(server: McpToolRegistrar) {
 						},
 					}
 				: undefined),
-			blocks: output.matches.flatMap(
-				(match): Array<DocBlock> => [
-					doc.heading(match.path),
-					doc.fields([
-						["Blob", `\`${match.sha}\``],
-						["URL", match.htmlUrl],
-					]),
-					...match.snippets.map((snippet) => doc.code("", snippet)),
-				],
-			),
+			blocks: output.matches.flatMap((match): Array<DocBlock> => [
+				doc.heading(match.path),
+				doc.fields([
+					["Blob", `\`${match.sha}\``],
+					["URL", match.htmlUrl],
+				]),
+				...match.snippets.map((snippet) => doc.code("", snippet)),
+			]),
 			next: output.matches
 				.slice(0, 3)
 				.map((match) =>

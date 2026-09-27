@@ -63,7 +63,9 @@ export function ReleaseDeployOverview({
 	}, [result, commitSha])
 
 	if (Result.isFailure(result)) {
-		return <QueryErrorState error={result.cause} titleOverride="Failed to load release" onRetry={refresh} />
+		return (
+			<QueryErrorState error={result.cause} titleOverride="Failed to load release" onRetry={refresh} />
+		)
 	}
 	if (derived === undefined) {
 		return (
@@ -117,7 +119,9 @@ function DeploySummary({ group }: { group: ReleaseGroup }) {
 				{services === 1 ? "service" : "services"}
 			</span>
 			<span>
-				<span className="font-medium tabular-nums text-foreground">{formatNumber(group.spanCount)}</span>{" "}
+				<span className="font-medium tabular-nums text-foreground">
+					{formatNumber(group.spanCount)}
+				</span>{" "}
 				requests
 			</span>
 			{flagged > 0 ? (
@@ -146,7 +150,10 @@ function BeforeAfter({
 				<span className="text-[10px] text-muted-foreground/70">{format(before)} →</span>
 			) : null}
 			<span
-				className={cn(tone === "error" && "text-severity-error", tone === "warn" && "text-severity-warn")}
+				className={cn(
+					tone === "error" && "text-severity-error",
+					tone === "warn" && "text-severity-warn",
+				)}
 			>
 				{format(after)}
 			</span>
@@ -170,7 +177,11 @@ function DeployServices({
 	return (
 		<SectionCard
 			title="Services"
-			action={<span className="text-[11px] text-muted-foreground/70">against the version each replaced</span>}
+			action={
+				<span className="text-[11px] text-muted-foreground/70">
+					against the version each replaced
+				</span>
+			}
 		>
 			<table className="w-full text-xs">
 				<thead>
@@ -233,7 +244,9 @@ function DeployServiceRow({
 			<td className="px-2 py-1.5 font-mono text-[11px] text-muted-foreground">
 				{impact.baseline ? shortReleaseLabel(impact.baseline.commitSha) : "-"}
 			</td>
-			<td className="px-2 py-1.5 text-right font-mono tabular-nums">{formatNumber(impact.spanCount)}</td>
+			<td className="px-2 py-1.5 text-right font-mono tabular-nums">
+				{formatNumber(impact.spanCount)}
+			</td>
 			<td className="px-2 py-1.5">
 				<BeforeAfter
 					before={impact.baseline?.errorRate}

@@ -98,7 +98,10 @@ const customers = defineCollection({
 		author: z.string().default("Maple Team"),
 		authorRole: z.string().optional(),
 		// Headline numbers for the stat strip on the card and the story page.
-		highlights: z.array(z.object({ value: z.string(), label: z.string() })).max(4).default([]),
+		highlights: z
+			.array(z.object({ value: z.string(), label: z.string() }))
+			.max(4)
+			.default([]),
 		cover: z.string().optional(),
 		coverAlt: z.string().optional(),
 		featured: z.boolean().default(false),

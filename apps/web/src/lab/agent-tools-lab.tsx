@@ -82,10 +82,7 @@ export function AgentToolsLab() {
 		return { sessions: all.allSessions, tools: all.tools.length }
 	}, [nowMs, cells])
 
-	const overview = useMemo(
-		() => buildToolAnalyticsFixture(search, nowMs, cells),
-		[search, nowMs, cells],
-	)
+	const overview = useMemo(() => buildToolAnalyticsFixture(search, nowMs, cells), [search, nowMs, cells])
 	const detail = useMemo(
 		() => buildToolDetailFixture(detailTool, search, nowMs, cells),
 		[detailTool, search, nowMs, cells],
@@ -115,7 +112,12 @@ export function AgentToolsLab() {
 		<div className="flex flex-col gap-4 p-6">
 			<div className="flex flex-wrap items-center gap-2">
 				{VIEWS.map((option) => (
-					<button key={option} type="button" onClick={() => setView(option)} className={toggleClass(view === option)}>
+					<button
+						key={option}
+						type="button"
+						onClick={() => setView(option)}
+						className={toggleClass(view === option)}
+					>
 						{option}
 					</button>
 				))}
@@ -139,7 +141,11 @@ export function AgentToolsLab() {
 								type="button"
 								onClick={() => {
 									setDetailTool(tool)
-									onSearchChange({ error: undefined, session: undefined, variant: undefined })
+									onSearchChange({
+										error: undefined,
+										session: undefined,
+										variant: undefined,
+									})
 								}}
 								className={toggleClass(detailTool === tool)}
 							>
@@ -217,10 +223,20 @@ export function AgentToolsLab() {
 									onStep={(offset) => {
 										const next = prepared.rows[openIndex + offset]
 										if (next !== undefined) {
-											onSearchChange({ error: next.fingerprint, session: undefined, variant: undefined })
+											onSearchChange({
+												error: next.fingerprint,
+												session: undefined,
+												variant: undefined,
+											})
 										}
 									}}
-									onClose={() => onSearchChange({ error: undefined, session: undefined, variant: undefined })}
+									onClose={() =>
+										onSearchChange({
+											error: undefined,
+											session: undefined,
+											variant: undefined,
+										})
+									}
 								/>
 							)
 						}

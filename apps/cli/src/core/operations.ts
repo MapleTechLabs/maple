@@ -113,12 +113,10 @@ const dispatch = <A, E, R, E2, R2>(
 	remote: (client: MapleV2Client) => Effect.Effect<A, E2, R2>,
 	pipeName: string,
 ) =>
-	Effect.flatMap(
-		backend,
-		(b): Effect.Effect<A, E | LocalServerUnreachableError | RemoteError, R | R2> =>
-			b._tag === "local"
-				? local.pipe(quietUnlessVerbose, Effect.mapError(localServerFailure(b.baseUrl)))
-				: Effect.mapError(remote(b.client), toWarehouseError(pipeName)),
+	Effect.flatMap(backend, (b): Effect.Effect<A, E | LocalServerUnreachableError | RemoteError, R | R2> =>
+		b._tag === "local"
+			? local.pipe(quietUnlessVerbose, Effect.mapError(localServerFailure(b.baseUrl)))
+			: Effect.mapError(remote(b.client), toWarehouseError(pipeName)),
 	)
 
 /** Pipes whose compiled query filters on the `deployment_env` param. */
@@ -433,9 +431,10 @@ export const listMetrics = (p: { range: Range; service?: string; search?: string
 				limit: p.limit ?? 100,
 			})
 			// chDB returns the flag as 0/1; remote mode already returns a boolean.
-			return result.data.map(
-				(m): ListMetricsOutput => ({ ...m, isMonotonic: asBoolean(m.isMonotonic) }),
-			)
+			return result.data.map((m): ListMetricsOutput => ({
+				...m,
+				isMonotonic: asBoolean(m.isMonotonic),
+			}))
 		}),
 		(client) => Remote.listMetrics(client, p),
 		"list_metrics",

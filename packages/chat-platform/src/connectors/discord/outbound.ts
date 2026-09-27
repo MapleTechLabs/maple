@@ -460,13 +460,11 @@ export const discordOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCred
 				return Arr.sort(
 					channels.filter((channel) => POSTABLE_CHANNEL_TYPES.has(channel.type)),
 					byPosition,
-				).map(
-					(channel): ChatDestination => ({
-						id: channel.id,
-						name: channel.name ?? channel.id,
-						private: false,
-					}),
-				)
+				).map((channel): ChatDestination => ({
+					id: channel.id,
+					name: channel.name ?? channel.id,
+					private: false,
+				}))
 			}),
 
 			/**

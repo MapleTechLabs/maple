@@ -34,13 +34,7 @@ opentelemetry-otlp = { version = "0.32", default-features = false, features = [
 	"logs",
 	"metrics",
 ] }
-opentelemetry-proto = { version = "0.32", features = [
-	"gen-tonic",
-	"trace",
-	"logs",
-	"metrics",
-	"with-serde",
-] }
+opentelemetry-proto = { version = "0.32", features = ["gen-tonic", "trace", "logs", "metrics", "with-serde"] }
 prost = "0.14.3"
 crc32fast = "1.5"
 dashmap = "6.1"

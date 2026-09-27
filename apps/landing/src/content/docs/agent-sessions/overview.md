@@ -119,12 +119,12 @@ export OTEL_LOG_ASSISTANT_RESPONSES=1  # the assistant's replies, on the assista
 
 What each span becomes:
 
-| Claude Code span                                                 | In Agent Sessions                                                                                                                           |
-| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `claude_code.interaction`                                        | A turn, titled with the prompt when `OTEL_LOG_USER_PROMPTS=1`.                                                                              |
+| Claude Code span                                                 | In Agent Sessions                                                                                                                                                 |
+| ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `claude_code.interaction`                                        | A turn, titled with the prompt when `OTEL_LOG_USER_PROMPTS=1`.                                                                                                    |
 | `claude_code.llm_request`                                        | A model call: model, the four token buckets (Anthropic's input count excludes the cache buckets, and Maple counts it that way), TTFT, finish reason and failures. |
-| `claude_code.tool`                                               | A tool call, with the command or file path as its arguments and, for Read, Bash, Edit and Write, the `tool.output` content as its result.                                   |
-| `claude_code.tool.execution`, `claude_code.tool.blocked_on_user` | Shown in the trace as part of their tool call rather than as calls of their own. A failed run marks the tool call failed, with its error.   |
+| `claude_code.tool`                                               | A tool call, with the command or file path as its arguments and, for Read, Bash, Edit and Write, the `tool.output` content as its result.                         |
+| `claude_code.tool.execution`, `claude_code.tool.blocked_on_user` | Shown in the trace as part of their tool call rather than as calls of their own. A failed run marks the tool call failed, with its error.                         |
 
 Cost and the assistant's reply text are only on Claude Code's log events (`api_request`, `assistant_response`), not on its spans. They are stored and searchable under Logs; the session views read spans, so cost reads as unpriced there for now.
 

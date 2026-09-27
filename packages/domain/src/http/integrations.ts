@@ -855,9 +855,11 @@ export class VcsCommitRangeResponse extends Schema.Class<VcsCommitRangeResponse>
 	truncated: Schema.Boolean,
 }) {}
 
-export class VcsCommitRangesResponse extends Schema.Class<VcsCommitRangesResponse>("VcsCommitRangesResponse")({
-	ranges: Schema.Array(VcsCommitRangeResponse),
-}) {}
+export class VcsCommitRangesResponse extends Schema.Class<VcsCommitRangesResponse>("VcsCommitRangesResponse")(
+	{
+		ranges: Schema.Array(VcsCommitRangeResponse),
+	},
+) {}
 
 export class IntegrationsForbiddenError extends HttpTaggedError<IntegrationsForbiddenError>()(
 	"@maple/http/errors/IntegrationsForbiddenError",

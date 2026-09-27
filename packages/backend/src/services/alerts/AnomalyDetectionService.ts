@@ -1077,13 +1077,11 @@ const make: Effect.Effect<
 						context: "anomalyErrorSpikeBaseline",
 					})
 					.pipe(Effect.mapError(makePersistenceError))
-				return rows.map(
-					(r): ErrorSpikeBaselineEntry => ({
-						fingerprintHash: String(r.fingerprintHash ?? ""),
-						deploymentEnv: String(r.deploymentEnv ?? ""),
-						totalCount: Number(r.totalCount ?? 0),
-					}),
-				)
+				return rows.map((r): ErrorSpikeBaselineEntry => ({
+					fingerprintHash: String(r.fingerprintHash ?? ""),
+					deploymentEnv: String(r.deploymentEnv ?? ""),
+					totalCount: Number(r.totalCount ?? 0),
+				}))
 			}),
 		)
 

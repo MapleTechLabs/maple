@@ -187,16 +187,14 @@ export function CommitMarkersOverlay({ markers, plotRect, xScale }: CommitMarker
 			// Dashes-only mode: no label merging — every marker keeps its own dash and
 			// hover card (a zero-width "box" makes the card anchor sit on the dash).
 			return {
-				groups: positioned.map(
-					(p): LabelGroup => ({
-						key: p.marker.bucket,
-						dashXs: [p.x],
-						label: p.marker.label,
-						commits: [...p.marker.commits],
-						boxLeft: p.x,
-						boxWidth: 0,
-					}),
-				),
+				groups: positioned.map((p): LabelGroup => ({
+					key: p.marker.bucket,
+					dashXs: [p.x],
+					label: p.marker.label,
+					commits: [...p.marker.commits],
+					boxLeft: p.x,
+					boxWidth: 0,
+				})),
 				labeled: false,
 			}
 		}

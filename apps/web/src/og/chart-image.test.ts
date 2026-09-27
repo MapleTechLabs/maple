@@ -1,7 +1,15 @@
 import { describe, expect, it } from "vitest"
 import { PLOT_HEIGHT, PLOT_PAD, PLOT_WIDTH, type ChartPoint } from "@maple/widgets/chart/static-chart"
 import type { Node } from "@takumi-rs/helpers"
-import { chartCard, rankedCard, AXIS_WIDTH, CHART_CARD_WIDTH, legendRows, xAxisRow, yAxisGutter } from "./chart-card"
+import {
+	chartCard,
+	rankedCard,
+	AXIS_WIDTH,
+	CHART_CARD_WIDTH,
+	legendRows,
+	xAxisRow,
+	yAxisGutter,
+} from "./chart-card"
 import { chartRequestFromPath } from "./chart-image"
 import { ogIdFromPath } from "./share-links"
 
@@ -129,9 +137,7 @@ describe("axis placement", () => {
 		readonly color?: string
 	}
 	const placed = (node: Node): ReadonlyArray<Placed> =>
-		(
-			(node as { children?: ReadonlyArray<Record<string, unknown>> }).children ?? []
-		).map((child) => {
+		((node as { children?: ReadonlyArray<Record<string, unknown>> }).children ?? []).map((child) => {
 			const inner = (child.children as ReadonlyArray<Record<string, unknown>>)[0] ?? {}
 			return {
 				style: (child.style ?? {}) as Placed["style"],

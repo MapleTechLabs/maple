@@ -168,29 +168,27 @@ export const errorDetail = Effect.fn("Observability.errorDetail")(function* (inp
 		error: pipe(Arr.head(traces), Option.map(identityOf), Option.getOrUndefined),
 		traces: pipe(
 			traces,
-			Arr.map(
-				(t, i): ErrorDetailTrace => ({
-					traceId: t.traceId,
-					rootSpanName: t.rootSpanName,
-					// No `Number(...)` / `String(...)`: the row already decoded through
-					// the compiled query's schema, which is what coerces the wire form.
-					durationMs: t.durationMicros / 1000,
-					spanCount: t.spanCount,
-					services: t.services,
-					startTime: t.startTime,
-					errorMessage: t.errorMessage ?? "",
-					errorSpan: errorSpanOf(t),
-					logs: pipe(
-						logsResults[i]?.data ?? [],
-						Arr.take(5),
-						Arr.map((l) => ({
-							timestamp: String(l.timestamp),
-							severityText: l.severityText || "INFO",
-							body: l.body,
-						})),
-					),
-				}),
-			),
+			Arr.map((t, i): ErrorDetailTrace => ({
+				traceId: t.traceId,
+				rootSpanName: t.rootSpanName,
+				// No `Number(...)` / `String(...)`: the row already decoded through
+				// the compiled query's schema, which is what coerces the wire form.
+				durationMs: t.durationMicros / 1000,
+				spanCount: t.spanCount,
+				services: t.services,
+				startTime: t.startTime,
+				errorMessage: t.errorMessage ?? "",
+				errorSpan: errorSpanOf(t),
+				logs: pipe(
+					logsResults[i]?.data ?? [],
+					Arr.take(5),
+					Arr.map((l) => ({
+						timestamp: String(l.timestamp),
+						severityText: l.severityText || "INFO",
+						body: l.body,
+					})),
+				),
+			})),
 		),
 		timeseries,
 	}

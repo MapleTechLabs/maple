@@ -266,11 +266,14 @@ describe("span classification SQL", () => {
 		["cost", 4],
 		["inputTokens", 5],
 		["reasoningTokens", 9],
-	] as const)("sums the netted claims: every unkeyed one, and the largest per response id (%s)", (measure, element) => {
-		expect(sql(sessionUsageSum("netted", measure))).toBe(
-			`arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), ${element})) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.${element}), arrayFilter(n -> n.1 != '', netted)))))`,
-		)
-	})
+	] as const)(
+		"sums the netted claims: every unkeyed one, and the largest per response id (%s)",
+		(measure, element) => {
+			expect(sql(sessionUsageSum("netted", measure))).toBe(
+				`arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), ${element})) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.${element}), arrayFilter(n -> n.1 != '', netted)))))`,
+			)
+		},
+	)
 
 	it("counts the model calls the same way, off the netted flag", () => {
 		expect(sql(sessionLlmCalls("netted"))).toBe(

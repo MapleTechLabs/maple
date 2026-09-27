@@ -244,19 +244,18 @@ export const HttpV2ScrapeTargetsLive = HttpApiBuilder.group(MapleApiV2, "scrapeT
 								offset,
 							})
 							.pipe(
-								Effect.map(
-									(rows): ReadonlyArray<V2ScrapeTargetCheck> =>
-										rows.map((row) => ({
-											object: "scrape_target.check" as const,
-											timestamp: timestamp(new Date(row.checkedAt).toISOString()),
-											success: row.error === null,
-											sub_target_key: row.subTargetKey === "" ? null : row.subTargetKey,
-											duration_seconds:
-												row.durationMs === null ? null : row.durationMs / 1000,
-											samples_scraped: row.samplesScraped,
-											samples_post_metric_relabeling: row.samplesPostRelabel,
-											message: row.error,
-										})),
+								Effect.map((rows): ReadonlyArray<V2ScrapeTargetCheck> =>
+									rows.map((row) => ({
+										object: "scrape_target.check" as const,
+										timestamp: timestamp(new Date(row.checkedAt).toISOString()),
+										success: row.error === null,
+										sub_target_key: row.subTargetKey === "" ? null : row.subTargetKey,
+										duration_seconds:
+											row.durationMs === null ? null : row.durationMs / 1000,
+										samples_scraped: row.samplesScraped,
+										samples_post_metric_relabeling: row.samplesPostRelabel,
+										message: row.error,
+									})),
 								),
 							),
 					)

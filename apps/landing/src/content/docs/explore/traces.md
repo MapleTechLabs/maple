@@ -35,18 +35,18 @@ Click a row to open the trace in a side sheet. Use **Previous trace** and **Next
 
 ### Sidebar facets
 
-| Facet                      | What it does                                                                                     |
-| -------------------------- | ------------------------------------------------------------------------------------------------ |
-| **Has Error**              | Only traces with an error span.                                                                  |
+| Facet                      | What it does                                                                                                                                       |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Has Error**              | Only traces with an error span.                                                                                                                    |
 | **Root Traces Only**       | Lists one row per trace, keyed on its entry span (a root span, or a Server or Consumer span). On by default. Turn it off to list individual spans. |
-| **Hide Single-Span Noise** | Hides single-span traces that are not entry points, such as orphaned client spans. On by default, shown while **Root Traces Only** is on. |
-| **Environment**            | Filter by `deployment.environment`.                                                              |
-| **Namespace**              | Filter by `service.namespace`.                                                                   |
-| **Service**                | Filter by `service.name`.                                                                        |
-| **Root Span**              | Filter by root span name.                                                                        |
-| **Duration**               | A minimum and maximum duration range.                                                            |
-| **HTTP Method**            | Filter by request method.                                                                        |
-| **Status Code**            | Filter by HTTP response status code.                                                             |
+| **Hide Single-Span Noise** | Hides single-span traces that are not entry points, such as orphaned client spans. On by default, shown while **Root Traces Only** is on.          |
+| **Environment**            | Filter by `deployment.environment`.                                                                                                                |
+| **Namespace**              | Filter by `service.namespace`.                                                                                                                     |
+| **Service**                | Filter by `service.name`.                                                                                                                          |
+| **Root Span**              | Filter by root span name.                                                                                                                          |
+| **Duration**               | A minimum and maximum duration range.                                                                                                              |
+| **HTTP Method**            | Filter by request method.                                                                                                                          |
+| **Status Code**            | Filter by HTTP response status code.                                                                                                               |
 
 Every value facet can include or exclude a value.
 
@@ -60,12 +60,12 @@ service.name = "checkout" AND attr.http.route != "/health"
 
 Join clauses with `AND`. Supported keys and operators:
 
-| Key                                                                  | Operators                                                          |
-| -------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| `service.name`, `span.name`, `deployment.environment`, `service.namespace` | `=`, `!=`, `contains`                                              |
-| `http.method`, `http.status_code`                                    | `=`, `!=`                                                          |
-| `has_error`, `root_only`, `min_duration_ms`, `max_duration_ms`       | `=`                                                                |
-| `attr.<key>` (span attribute), `resource.<key>` (resource attribute) | `=`, `!=`, `contains`, `!contains`, `exists`, `!exists`, `>`, `>=`, `<`, `<=` |
+| Key                                                                        | Operators                                                                     |
+| -------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `service.name`, `span.name`, `deployment.environment`, `service.namespace` | `=`, `!=`, `contains`                                                         |
+| `http.method`, `http.status_code`                                          | `=`, `!=`                                                                     |
+| `has_error`, `root_only`, `min_duration_ms`, `max_duration_ms`             | `=`                                                                           |
+| `attr.<key>` (span attribute), `resource.<key>` (resource attribute)       | `=`, `!=`, `contains`, `!contains`, `exists`, `!exists`, `>`, `>=`, `<`, `<=` |
 
 You can use up to 5 filters per attribute map (span or resource). The dialog shows a warning for any clause the list cannot apply.
 

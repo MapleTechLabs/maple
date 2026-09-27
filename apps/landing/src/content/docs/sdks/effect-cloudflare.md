@@ -58,14 +58,14 @@ A flush fails when the request throws (for example a network error) or the inges
 
 `make()` accepts the [common options](/docs/sdks/effect#configuration-reference) marked for Cloudflare (`serviceName`, `region`, `endpoint`, `ingestKey`, `serviceVersion`, `serviceNamespace`, `environment`, `repositoryUrl`, `attributes`), plus these:
 
-| Option                        | Type                    | Default       | Description                                                                                        |
-| ----------------------------- | ----------------------- | ------------- | -------------------------------------------------------------------------------------------------- |
-| `excludeLogSpans`             | `boolean`               | `false`       | Skip Effect log spans in OTLP log attributes                                                       |
-| `dropSpanNames`               | `ReadonlyArray<string>` | none          | Drop spans whose name starts with any prefix in this list                                          |
+| Option                        | Type                    | Default       | Description                                                                                            |
+| ----------------------------- | ----------------------- | ------------- | ------------------------------------------------------------------------------------------------------ |
+| `excludeLogSpans`             | `boolean`               | `false`       | Skip Effect log spans in OTLP log attributes                                                           |
+| `dropSpanNames`               | `ReadonlyArray<string>` | none          | Drop spans whose name starts with any prefix in this list                                              |
 | `anticipatedErrorIdentifiers` | `ReadonlyArray<string>` | none          | `_tag` / `Error.name` values of expected 4xx failures. Spans export as `Ok`, with no `exception` event |
-| `tracesPath`                  | `string`                | `/v1/traces`  | OTLP traces path appended to `endpoint`                                                            |
-| `logsPath`                    | `string`                | `/v1/logs`    | OTLP logs path appended to `endpoint`                                                              |
-| `metricsPath`                 | `string`                | `/v1/metrics` | OTLP metrics path appended to `endpoint`                                                           |
+| `tracesPath`                  | `string`                | `/v1/traces`  | OTLP traces path appended to `endpoint`                                                                |
+| `logsPath`                    | `string`                | `/v1/logs`    | OTLP logs path appended to `endpoint`                                                                  |
+| `metricsPath`                 | `string`                | `/v1/metrics` | OTLP metrics path appended to `endpoint`                                                               |
 
 `anticipatedErrorIdentifiers` keeps expected rejections (a 404, a 401) visible as traces without counting them as errors. A span still exports as `Error` if its cause contains any defect.
 

@@ -118,12 +118,12 @@ right answer and which tier a query should read.
 
 Every stored table is partitioned by date and carries a TTL, tiered by how raw the data is:
 
-| Retention     | Tables                                                                                                                                                                                                    |
-| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Retention     | Tables                                                                                                                                                                                                         |
+| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **30 days**   | `traces`, `trace_detail_spans`, `logs`, `service_map_spans`, `service_map_children`, `service_overview_spans`, `trace_list_mv`, `ai_trace_index`, `session_events`, `session_replay_events`, `session_replays` |
-| **90 days**   | `error_events`, `error_events_by_time`, `error_fingerprints_minutely`, `metrics_*`, `attribute_*_hourly`, `metric_catalog`, `*_minutely` rollups, `span_metrics_calls_hourly`                                |
-| **365 days**  | the other hourly rollups (`*_hourly`), `service_usage`, `alert_checks`, `product_events`, `identity_links`                                                                                                 |
-| **2190 days** | `audit_log`                                                                                                                                                                                               |
+| **90 days**   | `error_events`, `error_events_by_time`, `error_fingerprints_minutely`, `metrics_*`, `attribute_*_hourly`, `metric_catalog`, `*_minutely` rollups, `span_metrics_calls_hourly`                                  |
+| **365 days**  | the other hourly rollups (`*_hourly`), `service_usage`, `alert_checks`, `product_events`, `identity_links`                                                                                                     |
+| **2190 days** | `audit_log`                                                                                                                                                                                                    |
 
 Adjust by writing a follow-up migration if your retention requirements differ.
 

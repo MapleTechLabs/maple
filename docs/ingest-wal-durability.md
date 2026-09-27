@@ -133,16 +133,16 @@ only redistribute the same IO.
 
 ## Metrics
 
-| Metric                              | Read it for                                                         |
-| ----------------------------------- | ------------------------------------------------------------------- |
-| `ingest_wal_shard_bytes`            | Bytes a lane holds on disk, exported prefix included                |
-| `ingest_wal_shard_full_total`       | Appends rejected because a lane hit its cap: customer-visible 429s  |
-| `ingest_wal_segments_sealed_total`  | Segment rotation rate                                               |
-| `ingest_wal_reclaimed_bytes_total`  | Bytes freed by deleting exported segments                           |
-| `ingest_wal_shipped_bytes_total`    | Bytes that reached the bucket                                       |
-| `ingest_wal_ship_outcomes_total`    | `outcome=exported_first` (healthy), `queue_full`, `failed`          |
-| `ingest_wal_frames_recovered_total` | Frames claimed from a dead task; non-zero means a task died dirty   |
-| `ingest_wal_commit_bytes`           | Per-append size; the `ingest.wal_commit` span carries the latency   |
+| Metric                              | Read it for                                                        |
+| ----------------------------------- | ------------------------------------------------------------------ |
+| `ingest_wal_shard_bytes`            | Bytes a lane holds on disk, exported prefix included               |
+| `ingest_wal_shard_full_total`       | Appends rejected because a lane hit its cap: customer-visible 429s |
+| `ingest_wal_segments_sealed_total`  | Segment rotation rate                                              |
+| `ingest_wal_reclaimed_bytes_total`  | Bytes freed by deleting exported segments                          |
+| `ingest_wal_shipped_bytes_total`    | Bytes that reached the bucket                                      |
+| `ingest_wal_ship_outcomes_total`    | `outcome=exported_first` (healthy), `queue_full`, `failed`         |
+| `ingest_wal_frames_recovered_total` | Frames claimed from a dead task; non-zero means a task died dirty  |
+| `ingest_wal_commit_bytes`           | Per-append size; the `ingest.wal_commit` span carries the latency  |
 
 `queue_full` means the object store cannot keep up with segment rotation, and those segments stay
 local-only. Sustained non-zero is the signal that the durability tier is not actually covering the

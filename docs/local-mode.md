@@ -159,7 +159,7 @@ the server. It talks to the embedded ClickHouse engine **directly via
 | Concern              | Where                          | How                                                                                                                                                                                                                                                                                                                                                                  |
 | -------------------- | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | CLI commands         | `apps/cli/src/commands`        | `maple services`, `traces`, `errors`, … run against **either** the local server **or** a remote workspace. `apps/cli/src/core/operations.ts` picks the path per [mode](#local-vs-remote-mode).                                                                                                                                                                       |
-| `maple start` server | `apps/cli/src/server/serve.ts` | A `Bun.serve` hosting OTLP/HTTP ingest (`POST /v1/{traces,logs,metrics}`), the query API (`POST /local/query`), and the bundled SPA, all on one port.                                                                                                                                                                                                               |
+| `maple start` server | `apps/cli/src/server/serve.ts` | A `Bun.serve` hosting OTLP/HTTP ingest (`POST /v1/{traces,logs,metrics}`), the query API (`POST /local/query`), and the bundled SPA, all on one port.                                                                                                                                                                                                                |
 | Embedded ClickHouse  | `apps/cli/src/server/chdb.ts`  | `dlopen`s `libchdb` via `bun:ffi` (the `chdb_*` accessor C API) and holds a single connection for the process.                                                                                                                                                                                                                                                       |
 | OTLP → rows          | `apps/cli/src/server/otlp/`    | Decodes OTLP protobuf/JSON (protobufjs) and encodes each signal to per-table NDJSON, matching the generated `local-inserts.json` schema exactly. Ported from the production Rust encoders so row shapes can't diverge.                                                                                                                                               |
 | UI (SPA)             | `apps/local-ui` (Vite + React) | Hooks compile queries with `CH.compile(...)` and POST to `/local/query`. The same build is deployed to `local.maple.dev` (the default) **and** inlined into the binary as the `--offline` fallback (see [release bundle](#release-bundle)); it picks its query base URL from `window.location` at runtime (see [Where the UI comes from](#where-the-ui-comes-from)). |
@@ -203,11 +203,11 @@ Stores created with a non-`data` name before this rule adopt their old files onc
     - `wipe`: discard the live telemetry, keep and pin the checkpoints, and
       bootstrap fresh.
 
-  Live telemetry since the last checkpoint is **not recoverable** after an
-  unclean kill of chDB. `maple start` refreshes a checkpoint every 30 minutes by
-  default (`--checkpoint-interval`, `off` to disable), skips a tick when nothing
-  was ingested since its last checkpoint, and backs off after repeated failures.
-  `maple checkpoint` creates one on demand.
+    Live telemetry since the last checkpoint is **not recoverable** after an
+    unclean kill of chDB. `maple start` refreshes a checkpoint every 30 minutes by
+    default (`--checkpoint-interval`, `off` to disable), skips a tick when nothing
+    was ingested since its last checkpoint, and backs off after repeated failures.
+    `maple checkpoint` creates one on demand.
 
 The PID file is claimed before any destructive recovery step, so two concurrent
 `maple start` runs can never wipe or restore each other's store. `maple stop`

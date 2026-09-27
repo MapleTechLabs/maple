@@ -12,4 +12,6 @@ import { HttpClient } from "effect/unstable/http"
  * provided around each request rather than at construction.
  */
 export const warehouseHttpClient = (http: HttpClient.HttpClient): HttpClient.HttpClient =>
-	HttpClient.transform(http, (effect) => Effect.provideService(effect, HttpClient.TracerDisabledWhen, constTrue))
+	HttpClient.transform(http, (effect) =>
+		Effect.provideService(effect, HttpClient.TracerDisabledWhen, constTrue),
+	)

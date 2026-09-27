@@ -62,7 +62,9 @@ const SESSION_TOO_LARGE_TAG = "@maple/http/ai-sessions/AiSessionTooLargeError"
 /** The two reads, injectable so a test can stand in fakes for both. */
 export interface SessionSpansReads {
 	/** The first page — an atom, so the page keeps its skeleton/retention semantics. */
-	readonly firstPageAtom: (input: AiSessionSpansInput) => Atom.Atom<Result.Result<AiSessionSpansPage, QueryAtomFailure>>
+	readonly firstPageAtom: (
+		input: AiSessionSpansInput,
+	) => Atom.Atom<Result.Result<AiSessionSpansPage, QueryAtomFailure>>
 	/** Every page past the first. */
 	readonly fetchPage: (data: AiSessionSpansInput) => Promise<AiSessionSpansPage>
 }
@@ -140,7 +142,8 @@ export function useSessionSpans(
 	const update = React.useCallback(
 		(forKey: string, change: (previous: Loaded) => Loaded) =>
 			setStored((previous) => {
-				const current = previous.key === forKey ? previous : key === forKey ? nothingLoaded(forKey) : undefined
+				const current =
+					previous.key === forKey ? previous : key === forKey ? nothingLoaded(forKey) : undefined
 				return current === undefined ? previous : change(current)
 			}),
 		[key],
@@ -168,7 +171,10 @@ export function useSessionSpans(
 		const setStatus = (status: Loaded["status"]) => update(key, (previous) => ({ ...previous, status }))
 
 		/** Fetches pages of one scope from `cursor` until the read ends. False if it stopped short. */
-		const drain = async (scope: AiSessionSpanScope, from: AiSessionSpanCursor | undefined): Promise<boolean> => {
+		const drain = async (
+			scope: AiSessionSpanScope,
+			from: AiSessionSpanCursor | undefined,
+		): Promise<boolean> => {
 			let cursor: AiSessionSpanCursor | undefined = from
 			let limit = PAGE_SIZE
 			while (cursor !== undefined) {
@@ -226,13 +232,17 @@ export function useSessionSpans(
 	}, [firstPage, loaded.pages, loaded.appPages])
 
 	const retry = React.useCallback(
-		() => update(key, (previous) => (previous.status === "failed" ? { ...previous, attempt: previous.attempt + 1 } : previous)),
+		() =>
+			update(key, (previous) =>
+				previous.status === "failed" ? { ...previous, attempt: previous.attempt + 1 } : previous,
+			),
 		[key, update],
 	)
 
 	const progress = React.useMemo<SessionLoadProgress | undefined>(() => {
 		if (firstCursor === undefined) return undefined
-		const agentDone = loaded.pages.length > 0 && loaded.pages[loaded.pages.length - 1]!.nextCursor === undefined
+		const agentDone =
+			loaded.pages.length > 0 && loaded.pages[loaded.pages.length - 1]!.nextCursor === undefined
 		const phase: SessionLoadProgress["phase"] =
 			loaded.status === "failed"
 				? "failed"

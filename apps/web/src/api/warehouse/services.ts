@@ -169,17 +169,15 @@ const getServiceHealthSnapshotEffect = Effect.fn("QueryEngine.getServiceHealthSn
 			.filter(
 				(row) => scope.memberServices === null || scope.memberServices.has(String(row.serviceName)),
 			)
-			.map(
-				(row): ServiceHealthSnapshot => ({
-					serviceName: String(row.serviceName),
-					environment: row.environment || "unknown",
-					requestCount: row.requestCount,
-					errorCount: row.errorCount,
-					errorRate: row.requestCount > 0 ? row.errorCount / row.requestCount : 0,
-					p95LatencyMs: row.p95LatencyMs,
-					throughput: row.requestCount / durationSeconds,
-				}),
-			),
+			.map((row): ServiceHealthSnapshot => ({
+				serviceName: String(row.serviceName),
+				environment: row.environment || "unknown",
+				requestCount: row.requestCount,
+				errorCount: row.errorCount,
+				errorRate: row.requestCount > 0 ? row.errorCount / row.requestCount : 0,
+				p95LatencyMs: row.p95LatencyMs,
+				throughput: row.requestCount / durationSeconds,
+			})),
 	}
 })
 

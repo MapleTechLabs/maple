@@ -26,16 +26,16 @@ The badge left of the time range counts visitors active in the last few minutes.
 
 ### Headline metrics
 
-| Metric          | What it counts                                                                          |
-| --------------- | --------------------------------------------------------------------------------------- |
+| Metric          | What it counts                                                                                      |
+| --------------- | --------------------------------------------------------------------------------------------------- |
 | Unique visitors | Distinct browsers, by visitor id. If some sessions have no visitor id, the tile says what share do. |
-| Sessions        | Browser sessions in the window.                                                          |
-| Page views      | Page views across every session.                                                         |
-| Pages / session | Page views divided by sessions.                                                          |
-| Bounce rate     | Share of sessions that bounced, over sessions that report a visitor id.                  |
-| Avg. session    | Average duration of sessions that ended.                                                 |
-| New visitors    | Sessions that were a visitor's first ever.                                               |
-| Returning       | Sessions from visitors seen before this window.                                          |
+| Sessions        | Browser sessions in the window.                                                                     |
+| Page views      | Page views across every session.                                                                    |
+| Pages / session | Page views divided by sessions.                                                                     |
+| Bounce rate     | Share of sessions that bounced, over sessions that report a visitor id.                             |
+| Avg. session    | Average duration of sessions that ended.                                                            |
+| New visitors    | Sessions that were a visitor's first ever.                                                          |
+| Returning       | Sessions from visitors seen before this window.                                                     |
 
 Pick a metric to chart it over the window.
 
@@ -61,14 +61,14 @@ When the **Event** filter names an event that annotated spans also produce, a **
 
 ## What each part needs
 
-| To see                                      | You need                                                                                   |
-| ------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| Sessions, page views, pages, devices        | The browser SDK initialized on the page.                                                    |
-| Unique, new and returning visitors, bounce rate | The persistent visitor id. It is on by default. It is off when `privacy.persistVisitorId` is `false`, when consent is required and not granted, or when the browser sends Global Privacy Control. |
-| One visitor across `example.com` and `app.example.com` | `privacy.crossSubdomainCookie` left on (the default) and the SDK on both sites.  |
-| Events                                      | `MapleBrowser.track(name, props)` calls.                                                    |
-| UTM source, medium and campaign             | `utm_source`, `utm_medium` and `utm_campaign` on the landing URL.                          |
-| Countries                                   | Country is resolved at the ingest gateway. When it is not available the tab says so, and it is never backfilled. |
+| To see                                                 | You need                                                                                                                                                                                          |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Sessions, page views, pages, devices                   | The browser SDK initialized on the page.                                                                                                                                                          |
+| Unique, new and returning visitors, bounce rate        | The persistent visitor id. It is on by default. It is off when `privacy.persistVisitorId` is `false`, when consent is required and not granted, or when the browser sends Global Privacy Control. |
+| One visitor across `example.com` and `app.example.com` | `privacy.crossSubdomainCookie` left on (the default) and the SDK on both sites.                                                                                                                   |
+| Events                                                 | `MapleBrowser.track(name, props)` calls.                                                                                                                                                          |
+| UTM source, medium and campaign                        | `utm_source`, `utm_medium` and `utm_campaign` on the landing URL.                                                                                                                                 |
+| Countries                                              | Country is resolved at the ingest gateway. When it is not available the tab says so, and it is never backfilled.                                                                                  |
 
 See [Consent](/docs/session-replay/browser-sdk#consent) for how the SDK handles consent and privacy signals.
 

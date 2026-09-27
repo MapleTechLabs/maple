@@ -229,7 +229,9 @@ export function ReleasesTable(props: ReleasesTableProps) {
 					<ReleasesTableRows {...props} commits={EMPTY_COMMITS} ranges={resolvedRanges} />
 				) : (
 					<ResolvedCommits shasKey={shasKey}>
-						{(commits) => <ReleasesTableRows {...props} commits={commits} ranges={resolvedRanges} />}
+						{(commits) => (
+							<ReleasesTableRows {...props} commits={commits} ranges={resolvedRanges} />
+						)}
 					</ResolvedCommits>
 				)
 			}

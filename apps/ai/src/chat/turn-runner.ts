@@ -282,22 +282,21 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 	let progressWrites: Promise<void> = Promise.resolve()
 	const writeProgress = (record: InvestigationProgress | undefined) => {
 		if (record === undefined || investigationId === undefined) return
-		progressWrites = progressWrites.then(
-			(): Promise<void> =>
-				runtime
-					.runPromise(
-						InvestigationService.pipe(
-							Effect.flatMap((service) =>
-								service.recordProgress(tenant.orgId, investigationId, record),
-							),
-							Effect.catch((error) =>
-								Effect.logWarning("Could not record investigation progress").pipe(
-									Effect.annotateLogs({ investigationId, error: error.message }),
-								),
+		progressWrites = progressWrites.then((): Promise<void> =>
+			runtime
+				.runPromise(
+					InvestigationService.pipe(
+						Effect.flatMap((service) =>
+							service.recordProgress(tenant.orgId, investigationId, record),
+						),
+						Effect.catch((error) =>
+							Effect.logWarning("Could not record investigation progress").pipe(
+								Effect.annotateLogs({ investigationId, error: error.message }),
 							),
 						),
-					)
-					.catch(() => undefined),
+					),
+				)
+				.catch(() => undefined),
 		)
 	}
 

@@ -18,10 +18,10 @@ There are three ways agents fit in:
 
 Open **Settings → MCP** in Maple. It shows the endpoint for your organization's region and a ready-made configuration for Claude Code, Cursor, Windsurf and other clients.
 
-| Region | Endpoint |
-| --- | --- |
-| US | `https://api.maple.dev/mcp` |
-| EU | `https://api.eu.maple.dev/mcp` |
+| Region | Endpoint                       |
+| ------ | ------------------------------ |
+| US     | `https://api.maple.dev/mcp`    |
+| EU     | `https://api.eu.maple.dev/mcp` |
 
 **With OAuth (recommended).** Add the endpoint URL to your client. On first use it opens Maple in your browser, you pick a workspace and approve access. No key to copy or rotate.
 
@@ -60,7 +60,7 @@ For Cursor, add this to `.cursor/mcp.json`:
 
 Treat the key like a password. Keep it out of files you commit.
 
-To check the connection, ask your agent: *"List my services in Maple."* It should answer with your services and their error rates.
+To check the connection, ask your agent: _"List my services in Maple."_ It should answer with your services and their error rates.
 
 ## What to ask
 
@@ -124,7 +124,7 @@ Install them together with the per-language guides they read:
 bunx skills add MapleTechLabs/maple/skills --skill '*'
 ```
 
-Then ask: *"Set up Maple in this repo. My ingest endpoint is https://ingest.maple.dev and my ingest key is maple_pk_…"* or *"Audit my Maple instrumentation."* EU organizations give `https://ingest.eu.maple.dev`. With the MCP server connected, the agent can confirm the first traces arrived and run `audit_setup` and `get_instrumentation_recommendations` against your live data.
+Then ask: _"Set up Maple in this repo. My ingest endpoint is https://ingest.maple.dev and my ingest key is maple_pk\_…"_ or _"Audit my Maple instrumentation."_ EU organizations give `https://ingest.eu.maple.dev`. With the MCP server connected, the agent can confirm the first traces arrived and run `audit_setup` and `get_instrumentation_recommendations` against your live data.
 
 ## Stay in control
 
@@ -142,7 +142,7 @@ The [`maple` CLI](/docs/reference/cli) outputs JSON by default, so an agent with
 - **`401 Unauthorized`.** The key was revoked, or the endpoint is in the wrong region. EU organizations use `api.eu.maple.dev`.
 - **Empty results.** Check the time window and the service name. Ask the agent to run `list_services` first to see what Maple has.
 - **Source code tools return nothing.** They need the [GitHub App](/docs/integrations/github) installed with access to that repository.
-- **The agent guesses instead of querying.** Tell it to use Maple: *"Use the maple MCP tools to check."*
+- **The agent guesses instead of querying.** Tell it to use Maple: _"Use the maple MCP tools to check."_
 
 ## Related
 

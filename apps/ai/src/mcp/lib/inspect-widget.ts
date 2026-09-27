@@ -205,22 +205,20 @@ function statsToData(stats: QueryStats): InspectChartQueryStats {
 		seriesCount: stats.seriesCount,
 		...(stats.firstBucket !== undefined ? { firstBucket: stats.firstBucket } : undefined),
 		...(stats.lastBucket !== undefined ? { lastBucket: stats.lastBucket } : undefined),
-		seriesStats: stats.seriesStats.map(
-			(s): InspectChartSeriesStat => ({
-				name: s.name,
-				min: s.min,
-				max: s.max,
-				avg: s.avg,
-				validCount: s.validCount,
-				nullCount: s.nullCount,
-				zeroCount: s.zeroCount,
-				negativeCount: s.negativeCount,
-				samples: s.samples.map((sample) => ({
-					...(sample.bucket !== undefined ? { bucket: sample.bucket } : undefined),
-					value: sample.value,
-				})),
-			}),
-		),
+		seriesStats: stats.seriesStats.map((s): InspectChartSeriesStat => ({
+			name: s.name,
+			min: s.min,
+			max: s.max,
+			avg: s.avg,
+			validCount: s.validCount,
+			nullCount: s.nullCount,
+			zeroCount: s.zeroCount,
+			negativeCount: s.negativeCount,
+			samples: s.samples.map((sample) => ({
+				...(sample.bucket !== undefined ? { bucket: sample.bucket } : undefined),
+				value: sample.value,
+			})),
+		})),
 	}
 }
 

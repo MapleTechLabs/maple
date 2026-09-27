@@ -37,13 +37,11 @@ const classify = (response: HttpClientResponse.HttpClientResponse) =>
 		}
 		return yield* decodeStatus(response).pipe(
 			Effect.map((status): StatusProbe => ({ _tag: "Ok", status })),
-			Effect.orElseSucceed(
-				(): StatusProbe => ({
-					_tag: "Rejected",
-					status: response.status,
-					detail: "The status response was not the expected JSON.",
-				}),
-			),
+			Effect.orElseSucceed((): StatusProbe => ({
+				_tag: "Rejected",
+				status: response.status,
+				detail: "The status response was not the expected JSON.",
+			})),
 		)
 	})
 

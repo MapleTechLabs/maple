@@ -73,10 +73,10 @@ See [SQL reference](/docs/reference/sql).
 
 ## API and MCP rate limits
 
-| Surface                          | Limit                               | Over the limit                      |
-| -------------------------------- | ----------------------------------- | ----------------------------------- |
-| [Maple API](/docs/reference/api) (`/v2`)   | 600 requests per 60 seconds per key | `429`, `Retry-After: 60`            |
-| [MCP server](/docs/reference/mcp) requests | 120 per 10 seconds per key or user  | `429`, `Retry-After: 10`            |
-| API list pages                   | `limit` 1 to 100, default 20        | `400`                               |
+| Surface                                    | Limit                               | Over the limit           |
+| ------------------------------------------ | ----------------------------------- | ------------------------ |
+| [Maple API](/docs/reference/api) (`/v2`)   | 600 requests per 60 seconds per key | `429`, `Retry-After: 60` |
+| [MCP server](/docs/reference/mcp) requests | 120 per 10 seconds per key or user  | `429`, `Retry-After: 10` |
+| API list pages                             | `limit` 1 to 100, default 20        | `400`                    |
 
 Rate limits are counted per edge location, so treat them as approximate rather than an exact global budget.

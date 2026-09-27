@@ -130,7 +130,9 @@ export function McpToolsList() {
 							<dt>
 								<code className="font-mono text-xs font-medium">{tool.name}</code>
 							</dt>
-							<dd className="text-muted-foreground text-xs leading-relaxed">{tool.description}</dd>
+							<dd className="text-muted-foreground text-xs leading-relaxed">
+								{tool.description}
+							</dd>
 						</div>
 					))}
 				</dl>

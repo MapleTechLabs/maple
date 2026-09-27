@@ -27,24 +27,24 @@ there is no per-org routing anywhere, because each instance knows exactly one re
 
 ## What "never leaves the EU" touches
 
-| System | Today | EU instance |
-| --- | --- | --- |
-| Ingest gateway + OTel collector | ECS us-east-1 | ECS eu-central-1 |
-| Tinybird | `maple_us`, us-east-1 | `maple_eu`, AWS eu-central-1 |
-| Postgres | PlanetScale `maple`, US, dashboard Hyperdrive configs | PlanetScale `maple-eu`, eu-central, roles and Hyperdrive configs declared by the deploy |
-| Electric | ECS us-east-1 | ECS eu-central-1, in the EU ingest VPC |
-| api / ai / alerting / electric-sync / web Workers | placement us-east-1 | placement eu-central-1 (best effort, see risks) |
-| `ChatSession` Durable Object | no jurisdiction | `jurisdiction: "eu"` |
-| Replay blobs | R2, non-jurisdictional | R2, `jurisdiction: "eu"` |
-| Queues, Workflows | no jurisdiction control | see risks |
-| Clerk | one US instance | same instance, `app.eu.maple.dev` as a satellite domain |
-| AI features | OpenRouter, Workers AI | OpenRouter EU in-region endpoint (`eu.openrouter.ai`) |
-| Maple self-telemetry | US internal org | EU internal org, in `maple_eu` |
-| Repository sandbox (`apps/sandbox`) | prd Worker, US | per instance, EU Worker |
-| Landing, billing | shared | shared, no customer data |
-| GitHub App, chat connector apps | US apps | EU apps of their own, see Phase 0 step 8 |
-| OAuth clients (Cloudflare, PlanetScale, Hazel) | US redirect URIs | same clients, EU redirect URIs added |
-| Scraper (Railway) | US service | EU service of its own |
+| System                                            | Today                                                 | EU instance                                                                             |
+| ------------------------------------------------- | ----------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| Ingest gateway + OTel collector                   | ECS us-east-1                                         | ECS eu-central-1                                                                        |
+| Tinybird                                          | `maple_us`, us-east-1                                 | `maple_eu`, AWS eu-central-1                                                            |
+| Postgres                                          | PlanetScale `maple`, US, dashboard Hyperdrive configs | PlanetScale `maple-eu`, eu-central, roles and Hyperdrive configs declared by the deploy |
+| Electric                                          | ECS us-east-1                                         | ECS eu-central-1, in the EU ingest VPC                                                  |
+| api / ai / alerting / electric-sync / web Workers | placement us-east-1                                   | placement eu-central-1 (best effort, see risks)                                         |
+| `ChatSession` Durable Object                      | no jurisdiction                                       | `jurisdiction: "eu"`                                                                    |
+| Replay blobs                                      | R2, non-jurisdictional                                | R2, `jurisdiction: "eu"`                                                                |
+| Queues, Workflows                                 | no jurisdiction control                               | see risks                                                                               |
+| Clerk                                             | one US instance                                       | same instance, `app.eu.maple.dev` as a satellite domain                                 |
+| AI features                                       | OpenRouter, Workers AI                                | OpenRouter EU in-region endpoint (`eu.openrouter.ai`)                                   |
+| Maple self-telemetry                              | US internal org                                       | EU internal org, in `maple_eu`                                                          |
+| Repository sandbox (`apps/sandbox`)               | prd Worker, US                                        | per instance, EU Worker                                                                 |
+| Landing, billing                                  | shared                                                | shared, no customer data                                                                |
+| GitHub App, chat connector apps                   | US apps                                               | EU apps of their own, see Phase 0 step 8                                                |
+| OAuth clients (Cloudflare, PlanetScale, Hazel)    | US redirect URIs                                      | same clients, EU redirect URIs added                                                    |
+| Scraper (Railway)                                 | US service                                            | EU service of its own                                                                   |
 
 The landing site stays one site. Billing metadata is not customer telemetry. The GitHub App was
 first listed here as shared, which does not work: an App has one webhook URL and one post-install

@@ -206,7 +206,10 @@ export function ReleasesTimeline({
 	const visible = lanes.slice(0, MAX_LANES)
 	const hidden = lanes.length - visible.length
 	const { effectiveTimezone } = useTimezonePreference()
-	const labels = useMemo(() => axisLabels(startMs, endMs, effectiveTimezone), [startMs, endMs, effectiveTimezone])
+	const labels = useMemo(
+		() => axisLabels(startMs, endMs, effectiveTimezone),
+		[startMs, endMs, effectiveTimezone],
+	)
 
 	return (
 		<div className="flex flex-col rounded-md border bg-card">

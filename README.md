@@ -65,18 +65,18 @@ claude mcp add --transport http maple https://api.maple.dev/mcp
 
 ## Repository layout
 
-| Path | What lives there |
-| --- | --- |
-| `apps/web` | Dashboard (TanStack Start, React 19, Vite) |
-| `apps/api` | Effect HTTP API, auth and OAuth |
-| `apps/ai` | MCP server, chat agent and investigations |
-| `apps/ingest` | OTLP ingest gateway: key auth, org enrichment, forwarding |
-| `apps/alerting` | Alert evaluation worker |
-| `apps/cli`, `apps/local-ui` | The `maple` CLI and the local-mode dashboard |
-| `apps/landing` | [maple.dev](https://maple.dev) and the docs |
-| `apps/ios` | Native SwiftUI app |
-| `packages/*` | Shared Maple code: `domain`, `query-engine`, `backend`, `db`, `ui`, SDKs |
-| `lib/*` | Standalone libraries with no Maple knowledge |
+| Path                        | What lives there                                                         |
+| --------------------------- | ------------------------------------------------------------------------ |
+| `apps/web`                  | Dashboard (TanStack Start, React 19, Vite)                               |
+| `apps/api`                  | Effect HTTP API, auth and OAuth                                          |
+| `apps/ai`                   | MCP server, chat agent and investigations                                |
+| `apps/ingest`               | OTLP ingest gateway: key auth, org enrichment, forwarding                |
+| `apps/alerting`             | Alert evaluation worker                                                  |
+| `apps/cli`, `apps/local-ui` | The `maple` CLI and the local-mode dashboard                             |
+| `apps/landing`              | [maple.dev](https://maple.dev) and the docs                              |
+| `apps/ios`                  | Native SwiftUI app                                                       |
+| `packages/*`                | Shared Maple code: `domain`, `query-engine`, `backend`, `db`, `ui`, SDKs |
+| `lib/*`                     | Standalone libraries with no Maple knowledge                             |
 
 ## Development
 

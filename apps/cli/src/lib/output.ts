@@ -180,18 +180,16 @@ export const autoTable = (
 	const keys: Array<string> = []
 	for (const row of flat) for (const k of Object.keys(row)) if (!keys.includes(k)) keys.push(k)
 	const raw = options?.raw === true
-	const columns = keys.map(
-		(key): Column<Record<string, unknown>> => ({
-			header: raw ? key : headerFor(key),
-			cell: (row) => {
-				const v = row[key]
-				if (!raw) return formatByKey(key, v)
-				return v === null || v === undefined ? "" : typeof v === "string" ? v : JSON.stringify(v)
-			},
-			align: flat.some((row) => typeof row[key] === "number") ? "right" : "left",
-			maxWidth: options?.maxWidth ?? 80,
-		}),
-	)
+	const columns = keys.map((key): Column<Record<string, unknown>> => ({
+		header: raw ? key : headerFor(key),
+		cell: (row) => {
+			const v = row[key]
+			if (!raw) return formatByKey(key, v)
+			return v === null || v === undefined ? "" : typeof v === "string" ? v : JSON.stringify(v)
+		},
+		align: flat.some((row) => typeof row[key] === "number") ? "right" : "left",
+		maxWidth: options?.maxWidth ?? 80,
+	}))
 	return renderTable(columns, flat)
 }
 

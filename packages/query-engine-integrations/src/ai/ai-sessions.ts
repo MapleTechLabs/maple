@@ -770,8 +770,7 @@ export function aiSessionPageQuery(opts: AiSessionPageOpts = {}) {
 	])
 	// A String order, and a correct one: the literal is fixed-width
 	// `YYYY-MM-DD hh:mm:ss.nnnnnnnnn`, so it sorts as the instant does.
-	const ranked =
-		sortsOnSession(order) && !filtersOnUsage ? paged(sessions.orderBy(...order)) : sessions
+	const ranked = sortsOnSession(order) && !filtersOnUsage ? paged(sessions.orderBy(...order)) : sessions
 
 	const netted = fromQuery(ranked, "ranked_sessions").select(($) => ({
 		...carry($),
@@ -841,7 +840,8 @@ export function aiSessionDetailsQuery(opts: AiSessionDetailsOpts) {
 	// its page is empty — see `AiSessionDetailsOpts`.
 	if (opts.sessionIds.length === 0) {
 		throw new QueryBuilderDefect({
-			message: "aiSessionDetailsQuery needs the page's session ids; an empty page has nothing to detail",
+			message:
+				"aiSessionDetailsQuery needs the page's session ids; an empty page has nothing to detail",
 		})
 	}
 	// The page's traces, keyed as the page keyed them — read twice below, once
@@ -945,8 +945,7 @@ const NANOS_PER_MS = 1_000_000n
 const warehouseNanos = (literal: string): bigint => {
 	const [datetime = "", fraction = ""] = literal.split(".")
 	return (
-		BigInt(Date.parse(`${datetime.replace(" ", "T")}Z`)) * NANOS_PER_MS +
-		BigInt(fraction.padEnd(9, "0"))
+		BigInt(Date.parse(`${datetime.replace(" ", "T")}Z`)) * NANOS_PER_MS + BigInt(fraction.padEnd(9, "0"))
 	)
 }
 
@@ -986,7 +985,7 @@ export function aiSessionDetailsSlices(
 	const pad = BigInt(FAN_OUT_PAD_SECONDS) * NANOS_PER_SECOND
 	const end = warehouseNanos(fanOutEnd) + pad
 	const slices: Array<AiSessionDetailsSlice> = []
-	for (let at = warehouseNanos(fanOutStart) - pad; at <= end; ) {
+	for (let at = warehouseNanos(fanOutStart) - pad; at <= end;) {
 		const midnight = nextUtcMidnight(at)
 		slices.push({
 			spansStart: warehouseDateTime(at),
@@ -1616,15 +1615,15 @@ const summaryMeasures_ = ($: SpanColumns) => {
 	const model = attr([...aiFieldSourceKeys("responseModel"), ...aiFieldSourceKeys("requestModel")])
 	const toolName = field("toolName")
 	const agentName = field("agentName")
-	const isLlmCall = operation
-		.in_(...AI_INFERENCE_OPERATIONS)
-		.or(
-			operation
-				.notIn(...AI_RETRIEVAL_OPERATIONS, ...AI_TOOL_OPERATIONS, ...AI_AGENT_OPERATIONS)
-				.and(model.neq(""))
-				.and(toolName.eq("")),
-		)
-	const isToolCall = operation.in_(...AI_TOOL_OPERATIONS).or(operation.eq("").and(isAi).and(toolName.neq("")))
+	const isLlmCall = operation.in_(...AI_INFERENCE_OPERATIONS).or(
+		operation
+			.notIn(...AI_RETRIEVAL_OPERATIONS, ...AI_TOOL_OPERATIONS, ...AI_AGENT_OPERATIONS)
+			.and(model.neq(""))
+			.and(toolName.eq("")),
+	)
+	const isToolCall = operation
+		.in_(...AI_TOOL_OPERATIONS)
+		.or(operation.eq("").and(isAi).and(toolName.neq("")))
 	// The list query's error rule, so the summary and the list badge agree.
 	const failed = $.StatusCode.eq("Error").or(
 		isAi.and(

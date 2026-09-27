@@ -37,21 +37,21 @@ A destination carries one signal, so create two: one for traces and one for logs
 1. In the Cloudflare dashboard, open **Workers & Pages → Observability**, then the **Destinations** tab.
 2. Click **Add destination** and fill in:
 
-   | Field              | Value                                                   |
-   | ------------------ | ------------------------------------------------------- |
-   | Destination name   | `maple-traces`                                          |
-   | Destination type   | Traces                                                  |
-   | OTLP endpoint      | `https://ingest.maple.dev/v1/traces`                    |
-   | Custom headers     | `Authorization`: `Bearer YOUR_INGEST_KEY`               |
+    | Field            | Value                                     |
+    | ---------------- | ----------------------------------------- |
+    | Destination name | `maple-traces`                            |
+    | Destination type | Traces                                    |
+    | OTLP endpoint    | `https://ingest.maple.dev/v1/traces`      |
+    | Custom headers   | `Authorization`: `Bearer YOUR_INGEST_KEY` |
 
 3. Save, then add a second destination for logs:
 
-   | Field              | Value                                                   |
-   | ------------------ | ------------------------------------------------------- |
-   | Destination name   | `maple-logs`                                            |
-   | Destination type   | Logs                                                    |
-   | OTLP endpoint      | `https://ingest.maple.dev/v1/logs`                      |
-   | Custom headers     | `Authorization`: `Bearer YOUR_INGEST_KEY`               |
+    | Field            | Value                                     |
+    | ---------------- | ----------------------------------------- |
+    | Destination name | `maple-logs`                              |
+    | Destination type | Logs                                      |
+    | OTLP endpoint    | `https://ingest.maple.dev/v1/logs`        |
+    | Custom headers   | `Authorization`: `Bearer YOUR_INGEST_KEY` |
 
 The endpoint is the full signal URL, not the base URL. Use `https://ingest.eu.maple.dev/v1/traces` and `https://ingest.eu.maple.dev/v1/logs` for EU organizations.
 
@@ -67,13 +67,13 @@ Add an `observability` block to the Worker's Wrangler config. The names must mat
 	"observability": {
 		"traces": {
 			"enabled": true,
-			"destinations": ["maple-traces"]
+			"destinations": ["maple-traces"],
 		},
 		"logs": {
 			"enabled": true,
-			"destinations": ["maple-logs"]
-		}
-	}
+			"destinations": ["maple-logs"],
+		},
+	},
 }
 ```
 

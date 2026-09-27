@@ -67,19 +67,8 @@
 
 import * as CH from "@maple-dev/effect-clickhouse/expr"
 import * as T from "@maple-dev/effect-clickhouse/types"
-import {
-	from,
-	fromQuery,
-	inSubquery,
-	param,
-	unionAll,
-	type CHUnionQuery,
-} from "@maple-dev/effect-clickhouse"
-import {
-	AI_TOOLS_BREAKDOWN_MAX,
-	AI_TOOLS_OTHER_SERIES_KEY,
-	type AiToolsPeriod,
-} from "@maple/domain/http"
+import { from, fromQuery, inSubquery, param, unionAll, type CHUnionQuery } from "@maple-dev/effect-clickhouse"
+import { AI_TOOLS_BREAKDOWN_MAX, AI_TOOLS_OTHER_SERIES_KEY, type AiToolsPeriod } from "@maple/domain/http"
 import type { AiGenAiField } from "@maple/domain/gen-ai"
 import { Array as Arr, Schema } from "effect"
 import type { CompiledQueryRowSchema } from "@maple-dev/effect-clickhouse"
@@ -373,8 +362,7 @@ const measures = ($: ToolCallColumns) => ({
 export type AiToolsSeriesKind = "tool" | "model" | "none"
 
 export const aiToolsSeriesKind = (opts: AiToolsFilterOpts): AiToolsSeriesKind =>
-	opts.split ??
-	(opts.tool !== undefined && opts.model === undefined ? "model" : "tool")
+	opts.split ?? (opts.tool !== undefined && opts.model === undefined ? "model" : "tool")
 
 /**
  * The expression a bucket is split by, or `undefined` for `none` — one series
@@ -427,27 +415,29 @@ const topSeriesKeys = (opts: AiToolsFilterOpts, key: ($: ToolCallColumns) => CH.
  */
 export function aiToolsSeriesQuery(opts: AiToolsFilterOpts = {}) {
 	const key = seriesKeyColumn(opts)
-	return fromQuery(toolCalls(opts, "current", seriesParentModelNeeded(opts)), "tool_calls")
-		.select(($) => ({
-			bucket: isoBucket($.ts),
-			// `none` still projects the column, so the response shape does not
-			// depend on the split. `''` is the only honest key for a series that
-			// is not keyed by anything.
-			seriesKey:
-				key === undefined
-					? CH.lit("")
-					: CH.if_(
-							inSubquery(key($), topSeriesKeys(opts, key)),
-							key($),
-							CH.lit(AI_TOOLS_OTHER_SERIES_KEY),
-						),
-			...measures($),
-		}))
-		.groupBy("bucket", "seriesKey")
-		// Oldest first, and the busiest series first inside a bucket — the order
-		// a stacked chart draws in.
-		.orderBy(["bucket", "asc"], ["calls", "desc"], ["seriesKey", "asc"])
-		.format("JSON")
+	return (
+		fromQuery(toolCalls(opts, "current", seriesParentModelNeeded(opts)), "tool_calls")
+			.select(($) => ({
+				bucket: isoBucket($.ts),
+				// `none` still projects the column, so the response shape does not
+				// depend on the split. `''` is the only honest key for a series that
+				// is not keyed by anything.
+				seriesKey:
+					key === undefined
+						? CH.lit("")
+						: CH.if_(
+								inSubquery(key($), topSeriesKeys(opts, key)),
+								key($),
+								CH.lit(AI_TOOLS_OTHER_SERIES_KEY),
+							),
+				...measures($),
+			}))
+			.groupBy("bucket", "seriesKey")
+			// Oldest first, and the busiest series first inside a bucket — the order
+			// a stacked chart draws in.
+			.orderBy(["bucket", "asc"], ["calls", "desc"], ["seriesKey", "asc"])
+			.format("JSON")
+	)
 }
 
 /** A datetime aggregate as `''` where the aggregate saw no rows at all. Only
@@ -737,26 +727,28 @@ export function aiToolErrorsQuery(opts: AiToolErrorsOpts = {}) {
 		fingerprint: $.fingerprint,
 		newerCalls: CH.rawExpr("row_number() OVER (ORDER BY ts DESC, spanId DESC) - 1", T.uint64),
 	}))
-	return fromQuery(numbered, "numbered_tool_calls")
-		.select(($) => ({
-			fingerprint: $.fingerprint,
-			errorType: CH.argMax($.callErrorType, $.ts),
-			message: CH.argMax($.failureMessage, $.ts),
-			calls: CH.count(),
-			sessions: CH.uniqExact($.sessionKey),
-			variants: CH.uniqExact($.failureMessage),
-			firstSeen: CH.toString_(CH.min_($.ts)),
-			lastSeen: CH.toString_(CH.max_($.ts)),
-			callsSince: CH.min_($.newerCalls),
-			trend: CH.rawExpr("sumMap(map(bucket, toUInt64(1)))", T.map(T.string, T.uint64)),
-		}))
-		// Above the numbering, never inside it: a failure is numbered among every
-		// call of the tool, and filtering first would number it among failures.
-		.where(($) => [$.isError.eq(1)])
-		.groupBy("fingerprint")
-		.orderBy(["calls", "desc"], ["fingerprint", "asc"])
-		.limit(opts.limit ?? AI_TOOL_ERRORS_LIMIT)
-		.format("JSON")
+	return (
+		fromQuery(numbered, "numbered_tool_calls")
+			.select(($) => ({
+				fingerprint: $.fingerprint,
+				errorType: CH.argMax($.callErrorType, $.ts),
+				message: CH.argMax($.failureMessage, $.ts),
+				calls: CH.count(),
+				sessions: CH.uniqExact($.sessionKey),
+				variants: CH.uniqExact($.failureMessage),
+				firstSeen: CH.toString_(CH.min_($.ts)),
+				lastSeen: CH.toString_(CH.max_($.ts)),
+				callsSince: CH.min_($.newerCalls),
+				trend: CH.rawExpr("sumMap(map(bucket, toUInt64(1)))", T.map(T.string, T.uint64)),
+			}))
+			// Above the numbering, never inside it: a failure is numbered among every
+			// call of the tool, and filtering first would number it among failures.
+			.where(($) => [$.isError.eq(1)])
+			.groupBy("fingerprint")
+			.orderBy(["calls", "desc"], ["fingerprint", "asc"])
+			.limit(opts.limit ?? AI_TOOL_ERRORS_LIMIT)
+			.format("JSON")
+	)
 }
 
 /** The modal's sessions list: which sessions hit this group, and how often. */
@@ -769,15 +761,14 @@ export interface AiToolErrorSessionsOutput {
 	readonly lastSeen: string
 }
 
-export const aiToolErrorSessionsRowSchema: CompiledQueryRowSchema<AiToolErrorSessionsOutput> =
-	Schema.Struct({
-		sessionId: Schema.String,
-		vendorId: Schema.String,
-		agentName: Schema.String,
-		service: Schema.String,
-		hits: CHNumber,
-		lastSeen: Schema.String,
-	})
+export const aiToolErrorSessionsRowSchema: CompiledQueryRowSchema<AiToolErrorSessionsOutput> = Schema.Struct({
+	sessionId: Schema.String,
+	vendorId: Schema.String,
+	agentName: Schema.String,
+	service: Schema.String,
+	hits: CHNumber,
+	lastSeen: Schema.String,
+})
 
 export function aiToolErrorSessionsQuery(opts: AiToolErrorsOpts = {}) {
 	return failingToolCalls(opts)
@@ -803,12 +794,11 @@ export interface AiToolErrorVariantsOutput {
 	readonly lastSeen: string
 }
 
-export const aiToolErrorVariantsRowSchema: CompiledQueryRowSchema<AiToolErrorVariantsOutput> =
-	Schema.Struct({
-		message: Schema.String,
-		calls: CHNumber,
-		lastSeen: Schema.String,
-	})
+export const aiToolErrorVariantsRowSchema: CompiledQueryRowSchema<AiToolErrorVariantsOutput> = Schema.Struct({
+	message: Schema.String,
+	calls: CHNumber,
+	lastSeen: Schema.String,
+})
 
 export function aiToolErrorVariantsQuery(opts: AiToolErrorsOpts = {}) {
 	return failingToolCalls(opts)
@@ -895,35 +885,37 @@ export const aiToolErrorOccurrencesRowSchema: CompiledQueryRowSchema<AiToolError
 
 export function aiToolErrorOccurrencesQuery(opts: AiToolErrorsOpts = {}) {
 	const before = opts.before
-	return failingToolCalls(opts, true)
-		.select(($) => ({
-			timestamp: CH.toString_($.ts),
-			traceId: $.traceId,
-			spanId: $.spanId,
-			sessionId: $.sessionKey,
-			vendorId: $.vendor,
-			agentName: $.agent,
-			model: $.modelName,
-			service: $.service,
-			errorType: $.errorType,
-			message: $.failureMessage,
-			durationNs: $.durationNs,
-		}))
-		.where(($) => [
-			groupFilter(opts, $),
-			CH.when(opts.session, (session) => $.sessionKey.eq(session)),
-			opts.variant === undefined ? undefined : $.failureMessage.eq(opts.variant),
-			// The previous page's last row. The timestamp is the warehouse literal at
-			// nanosecond precision, which with the span id makes the position unique.
-			before === undefined
-				? undefined
-				: $.ts.lt(before.timestamp).or($.ts.eq(before.timestamp).and($.spanId.lt(before.spanId))),
-		])
-		// Newest first: a modal opened from a failing tool is asking what is
-		// happening now, and `spanId` breaks the ties agent spans routinely have.
-		.orderBy(["timestamp", "desc"], ["spanId", "desc"])
-		.limit(opts.limit ?? AI_TOOL_OCCURRENCES_LIMIT)
-		.format("JSON")
+	return (
+		failingToolCalls(opts, true)
+			.select(($) => ({
+				timestamp: CH.toString_($.ts),
+				traceId: $.traceId,
+				spanId: $.spanId,
+				sessionId: $.sessionKey,
+				vendorId: $.vendor,
+				agentName: $.agent,
+				model: $.modelName,
+				service: $.service,
+				errorType: $.errorType,
+				message: $.failureMessage,
+				durationNs: $.durationNs,
+			}))
+			.where(($) => [
+				groupFilter(opts, $),
+				CH.when(opts.session, (session) => $.sessionKey.eq(session)),
+				opts.variant === undefined ? undefined : $.failureMessage.eq(opts.variant),
+				// The previous page's last row. The timestamp is the warehouse literal at
+				// nanosecond precision, which with the span id makes the position unique.
+				before === undefined
+					? undefined
+					: $.ts.lt(before.timestamp).or($.ts.eq(before.timestamp).and($.spanId.lt(before.spanId))),
+			])
+			// Newest first: a modal opened from a failing tool is asking what is
+			// happening now, and `spanId` breaks the ties agent spans routinely have.
+			.orderBy(["timestamp", "desc"], ["spanId", "desc"])
+			.limit(opts.limit ?? AI_TOOL_OCCURRENCES_LIMIT)
+			.format("JSON")
+	)
 }
 
 /** One call {@link aiToolErrorPayloadsQuery} reads the payloads of, as
@@ -945,16 +937,15 @@ export interface AiToolErrorPayloadsOutput {
 	readonly resultBytes: number
 }
 
-export const aiToolErrorPayloadsRowSchema: CompiledQueryRowSchema<AiToolErrorPayloadsOutput> =
-	Schema.Struct({
-		traceId: Schema.String,
-		spanId: Schema.String,
-		statusCode: Schema.String,
-		arguments: Schema.String,
-		argumentsBytes: CHNumber,
-		result: Schema.String,
-		resultBytes: CHNumber,
-	})
+export const aiToolErrorPayloadsRowSchema: CompiledQueryRowSchema<AiToolErrorPayloadsOutput> = Schema.Struct({
+	traceId: Schema.String,
+	spanId: Schema.String,
+	statusCode: Schema.String,
+	arguments: Schema.String,
+	argumentsBytes: CHNumber,
+	result: Schema.String,
+	resultBytes: CHNumber,
+})
 
 /** A span row's `(TraceId, SpanId)`, for the payload read's tuple `IN`. Raw
  *  because the DSL has no tuple; qualified because the occurrences' own keys are

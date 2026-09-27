@@ -16,12 +16,12 @@ Maple Local is the full product running on your machine, free, for local develop
 
 ## What you get
 
-| Surface | What it is |
-| --- | --- |
-| **OTLP/HTTP ingest** | `POST /v1/{traces,logs,metrics}` on port `4318`, protobuf or JSON, gzip optional. Any OTel SDK works unchanged. |
-| **Dashboard** | The same Maple UI, either auto-updating from `local.maple.dev` or bundled in the binary for offline use. |
-| **CLI** | `maple services`, `maple traces`, `maple errors` and the other query commands in the [CLI reference](/docs/reference/cli), printing JSON you can pipe into `jq` or an agent. |
-| **Raw SQL** | `maple query "<sql>"` against the embedded store when the typed commands don't cover it. |
+| Surface              | What it is                                                                                                                                                                   |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **OTLP/HTTP ingest** | `POST /v1/{traces,logs,metrics}` on port `4318`, protobuf or JSON, gzip optional. Any OTel SDK works unchanged.                                                              |
+| **Dashboard**        | The same Maple UI, either auto-updating from `local.maple.dev` or bundled in the binary for offline use.                                                                     |
+| **CLI**              | `maple services`, `maple traces`, `maple errors` and the other query commands in the [CLI reference](/docs/reference/cli), printing JSON you can pipe into `jq` or an agent. |
+| **Raw SQL**          | `maple query "<sql>"` against the embedded store when the typed commands don't cover it.                                                                                     |
 
 Data lives in `~/.maple/data` and survives restarts. See [Your data](#your-data) for retention and restore points.
 
@@ -45,13 +45,13 @@ maple start -d         # …detached; logs to ~/.maple/maple.log, stop with `map
 
 The flags you are likely to touch:
 
-| Flag | Default | Use it when |
-| --- | --- | --- |
-| `--port <int>` | `4318` | Something else already listens on 4318 |
-| `--data-dir <path>` | `~/.maple/data` | You want a second, separate store |
-| `--offline` | off | You have no internet, or want the UI same-origin |
-| `--background`, `-d` | off | You want it out of the way; `maple stop` ends it |
-| `--reset` | off | A new binary refuses an old store; wipes live data, keeps checkpoints |
+| Flag                 | Default         | Use it when                                                           |
+| -------------------- | --------------- | --------------------------------------------------------------------- |
+| `--port <int>`       | `4318`          | Something else already listens on 4318                                |
+| `--data-dir <path>`  | `~/.maple/data` | You want a second, separate store                                     |
+| `--offline`          | off             | You have no internet, or want the UI same-origin                      |
+| `--background`, `-d` | off             | You want it out of the way; `maple stop` ends it                      |
+| `--reset`            | off             | A new binary refuses an old store; wipes live data, keeps checkpoints |
 
 Everything else, including bind and advertise hosts, checkpoint cadence and recovery policy, is in the [CLI reference](/docs/reference/cli#maple-start).
 
@@ -72,12 +72,12 @@ For custom spans, log correlation and framework auto-instrumentation, follow the
 
 The banner links to the dashboard. There are two ways to serve it:
 
-| | Default (`local.maple.dev`) | `--offline` |
-| --- | --- | --- |
-| Where the UI comes from | Hosted, always the latest build | Bundled inside the binary |
-| Talks to your data over | Loopback, from a public origin | Same origin |
-| Needs internet | Yes, to load the page | No |
-| Browser prompt | Chrome asks once to "access devices on your local network" | None |
+|                         | Default (`local.maple.dev`)                                | `--offline`               |
+| ----------------------- | ---------------------------------------------------------- | ------------------------- |
+| Where the UI comes from | Hosted, always the latest build                            | Bundled inside the binary |
+| Talks to your data over | Loopback, from a public origin                             | Same origin               |
+| Needs internet          | Yes, to load the page                                      | No                        |
+| Browser prompt          | Chrome asks once to "access devices on your local network" | None                      |
 
 Both read the same local store. Pick `--offline` when you are on a plane, behind a strict proxy, or would rather not see the prompt.
 
@@ -120,11 +120,11 @@ Most query commands share the same filters: `--since` (`30m`, `1h`, `24h`, `7d`)
 
 Your telemetry and query results stay on your machine. These calls go out by default:
 
-| Call | When | Turn it off |
-| --- | --- | --- |
-| The CLI's own traces and metrics, sent to `https://ingest.maple.dev` with an ingest key built into the binary | Every command, and every request `maple start` handles | `MAPLE_TELEMETRY=off` |
-| Release check against the GitHub releases API | At most once per 24 hours, only in an interactive terminal | `MAPLE_NO_UPDATE_CHECK=1` (Homebrew installs set it) |
-| The dashboard page from `local.maple.dev` | When you open the dashboard | `maple start --offline` |
+| Call                                                                                                          | When                                                       | Turn it off                                          |
+| ------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- | ---------------------------------------------------- |
+| The CLI's own traces and metrics, sent to `https://ingest.maple.dev` with an ingest key built into the binary | Every command, and every request `maple start` handles     | `MAPLE_TELEMETRY=off`                                |
+| Release check against the GitHub releases API                                                                 | At most once per 24 hours, only in an interactive terminal | `MAPLE_NO_UPDATE_CHECK=1` (Homebrew installs set it) |
+| The dashboard page from `local.maple.dev`                                                                     | When you open the dashboard                                | `maple start --offline`                              |
 
 The CLI's own telemetry describes the CLI, not your data. It reports the service name `maple-cli`, the command, its duration and errors. For each OTLP request `maple start` handles it records the signal, the body size and the number of items, never the payload. For each `/local/query` request it records only the timing and whether it succeeded. SQL text, filter values and error messages are never exported, and the CLI's own logs are not sent at all. `MAPLE_INGEST_KEY`, `MAPLE_ENDPOINT` and `MAPLE_ENVIRONMENT` redirect or relabel this export; see [Environment variables](/docs/reference/cli#environment-variables).
 

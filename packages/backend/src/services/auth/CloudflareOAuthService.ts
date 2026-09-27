@@ -380,16 +380,13 @@ export class CloudflareOAuthService extends Context.Service<
 				connectedAt: dateToMs(row.createdAt),
 				// `Arr.map` carries the non-emptiness through, so the connected branch keeps its
 				// at-least-one-account guarantee.
-				accounts: Arr.map(
-					grantedAccountsOfRow(row),
-					(account): CloudflareConnectedAccount => ({
-						accountId: account.id,
-						accountName: account.name,
-						connectedByUserId: row.connectedByUserId,
-						scope: row.scope,
-						revoked: row.revokedAt != null,
-					}),
-				),
+				accounts: Arr.map(grantedAccountsOfRow(row), (account): CloudflareConnectedAccount => ({
+					accountId: account.id,
+					accountName: account.name,
+					connectedByUserId: row.connectedByUserId,
+					scope: row.scope,
+					revoked: row.revokedAt != null,
+				})),
 			} satisfies CloudflareConnectionStatus
 		})
 

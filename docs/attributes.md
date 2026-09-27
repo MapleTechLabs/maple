@@ -89,12 +89,12 @@ Filtering on these scans a small column instead of doing a per-row map lookup. T
 
 `http.status_code` / `http.response.status_code` renders as a colored badge in the trace list (`HttpStatusBadge` in [traces-table.tsx](../apps/web/src/components/traces/traces-table.tsx)):
 
-| Status range | Tone                          |
-| ------------ | ----------------------------- |
-| 5xx          | Error (red)                   |
-| 4xx          | Warn (amber)                  |
-| 3xx          | Chart color (`chart-p50`)     |
-| 1xx–2xx      | Info (blue)                   |
+| Status range | Tone                      |
+| ------------ | ------------------------- |
+| 5xx          | Error (red)               |
+| 4xx          | Warn (amber)              |
+| 3xx          | Chart color (`chart-p50`) |
+| 1xx–2xx      | Info (blue)               |
 
 In log chips the same value scores 95 (top of the chips, just below `exception.*`). See [Attribute prominence](#appendix-attribute-prominence-scoring).
 
@@ -147,11 +147,11 @@ Keep `service.name` spelling consistent across deployments of the same service. 
 
 Besides the service map, these drive the log chips and the AI error-debug prompt context. The current semconv name and its legacy spelling score the same.
 
-| Attribute                            | What Maple does with it                                                                               |
-| ------------------------------------ | ----------------------------------------------------------------------------------------------------- |
-| `db.system.name`, `db.system`        | Scored 70 in log chips; toned `info`; database identity for service map DB nodes.                     |
-| `db.query.text`, `db.statement`      | Scored 70; rendered in span detail; included as context in the error-debug prompt.                    |
-| `db.operation.name`, `db.operation`  | Scored 70 (e.g. `"SELECT"`, `"INSERT"`).                                                              |
+| Attribute                           | What Maple does with it                                                            |
+| ----------------------------------- | ---------------------------------------------------------------------------------- |
+| `db.system.name`, `db.system`       | Scored 70 in log chips; toned `info`; database identity for service map DB nodes.  |
+| `db.query.text`, `db.statement`     | Scored 70; rendered in span detail; included as context in the error-debug prompt. |
+| `db.operation.name`, `db.operation` | Scored 70 (e.g. `"SELECT"`, `"INSERT"`).                                           |
 
 Source: `scoreKey` in [log-attributes.ts](../packages/ui/src/lib/log-attributes.ts).
 
@@ -188,11 +188,11 @@ If the message runs past 3 lines or 160 characters, the banner collapses by defa
 
 For gRPC and other RPC frameworks.
 
-| Attribute              | What Maple does with it                                                  |
-| ---------------------- | ------------------------------------------------------------------------ |
-| `rpc.service`          | Scored 68 in log chips; toned `info`.                                    |
-| `rpc.method`           | Scored 68; toned `info`.                                                 |
-| `rpc.grpc.status_code` | Scored 90 (just below HTTP status). Non-zero values are toned `error`.   |
+| Attribute              | What Maple does with it                                                |
+| ---------------------- | ---------------------------------------------------------------------- |
+| `rpc.service`          | Scored 68 in log chips; toned `info`.                                  |
+| `rpc.method`           | Scored 68; toned `info`.                                               |
+| `rpc.grpc.status_code` | Scored 90 (just below HTTP status). Non-zero values are toned `error`. |
 
 Source: [log-attributes.ts](../packages/ui/src/lib/log-attributes.ts).
 
@@ -200,9 +200,9 @@ Source: [log-attributes.ts](../packages/ui/src/lib/log-attributes.ts).
 
 Promotes user and customer context into the log chips so it's visible at a glance on every log row.
 
-| Attribute                                             | What Maple does with it                          |
-| ----------------------------------------------------- | ------------------------------------------------ |
-| `user.id`, `enduser.id`, `customer.id`, `customer_id` | All scored 66 in log chips (equal priority).     |
+| Attribute                                             | What Maple does with it                      |
+| ----------------------------------------------------- | -------------------------------------------- |
+| `user.id`, `enduser.id`, `customer.id`, `customer_id` | All scored 66 in log chips (equal priority). |
 
 Source: [log-attributes.ts](../packages/ui/src/lib/log-attributes.ts).
 
@@ -329,24 +329,24 @@ The data is still queryable. You can filter or group by these in the search bar;
 
 Each log row shows its non-pinned attributes as chips, sorted by score (ties break alphabetically). Higher score = more prominent. Source: `scoreKey` in [log-attributes.ts](../packages/ui/src/lib/log-attributes.ts).
 
-| Score | Attributes                                                                       |
-| ----- | -------------------------------------------------------------------------------- |
-| 100   | `error`, `exception`, `exception.*` (anything)                                   |
-| 95    | `http.status_code`, `http.response.status_code`                                  |
-| 90    | `rpc.grpc.status_code`                                                           |
-| 80    | `http.method`, `http.request.method`                                             |
-| 70    | `db.system(.name)`, `db.statement`, `db.query.text`, `db.operation(.name)`       |
-| 68    | `rpc.service`, `rpc.method`                                                      |
-| 66    | `user.id`, `enduser.id`, `customer.id`, `customer_id`                            |
-| 60    | `duration_ms`, `latency_ms`, `http.duration`                                     |
-| 55    | `http.url`, `http.route`, `url.path`                                             |
-| 40    | Other `http.*`, `url.*`                                                          |
-| 38    | Other `db.*`                                                                     |
-| 36    | Other `rpc.*`                                                                    |
-| 34    | `messaging.*`                                                                    |
-| 32    | Other `user.*`, `enduser.*`                                                      |
-| 25    | Anything with a dot (`namespace.key`)                                            |
-| 20    | Bare keys (no namespace)                                                         |
+| Score | Attributes                                                                 |
+| ----- | -------------------------------------------------------------------------- |
+| 100   | `error`, `exception`, `exception.*` (anything)                             |
+| 95    | `http.status_code`, `http.response.status_code`                            |
+| 90    | `rpc.grpc.status_code`                                                     |
+| 80    | `http.method`, `http.request.method`                                       |
+| 70    | `db.system(.name)`, `db.statement`, `db.query.text`, `db.operation(.name)` |
+| 68    | `rpc.service`, `rpc.method`                                                |
+| 66    | `user.id`, `enduser.id`, `customer.id`, `customer_id`                      |
+| 60    | `duration_ms`, `latency_ms`, `http.duration`                               |
+| 55    | `http.url`, `http.route`, `url.path`                                       |
+| 40    | Other `http.*`, `url.*`                                                    |
+| 38    | Other `db.*`                                                               |
+| 36    | Other `rpc.*`                                                              |
+| 34    | `messaging.*`                                                              |
+| 32    | Other `user.*`, `enduser.*`                                                |
+| 25    | Anything with a dot (`namespace.key`)                                      |
+| 20    | Bare keys (no namespace)                                                   |
 
 Resource attributes appear in chips only if they're in the `PROMOTED_RESOURCE_KEYS` set (deployment env in both spellings, k8s pod/namespace, cloud region), and they score 10 lower than the same key as a log attribute.
 

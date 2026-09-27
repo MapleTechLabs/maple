@@ -633,16 +633,14 @@ function LiveBreakdown({
 				)
 			}
 			const attributed = data.rows.reduce((sum, row) => sum + row.requests, 0)
-			const rows = data.rows.map(
-				(row): CloudflareBreakdownTotal => ({
-					key: row.key,
-					requests: row.requests,
-					errors5xx: 0,
-					bytes: row.bytes,
-					errorRate: row.errorRate,
-					share: attributed > 0 ? row.requests / attributed : 0,
-				}),
-			)
+			const rows = data.rows.map((row): CloudflareBreakdownTotal => ({
+				key: row.key,
+				requests: row.requests,
+				errors5xx: 0,
+				bytes: row.bytes,
+				errorRate: row.errorRate,
+				share: attributed > 0 ? row.requests / attributed : 0,
+			}))
 
 			return (
 				<div className={cn("transition-opacity", r.waiting && "opacity-60")}>

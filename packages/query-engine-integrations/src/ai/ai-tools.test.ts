@@ -52,11 +52,13 @@ const errorSelection = { tool: "search_traces" } as const
 
 /** The two-step model attribution, as it compiles — the parent model call's
  *  model, else the trace's. A tool row never carries one itself. */
-const MODEL_EXPR = "if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel)"
+const MODEL_EXPR =
+	"if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel)"
 
 /** The sessions list's key, resolved per trace — the same expression
  *  `aiSessionPageQuery` groups on, so a row here links to a row there. */
-const SESSION_KEY = "if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId)"
+const SESSION_KEY =
+	"if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId)"
 
 const decodeRows = <T>(compiled: CompiledQuery<T>, rows: ReadonlyArray<Record<string, unknown>>) =>
 	Effect.runSync(compiled.decodeRows(rows))
@@ -117,7 +119,9 @@ describe("tool call population", () => {
 		// filter: the tool calls and the trace facts. A model filter adds the
 		// parent-model level, and the series a second copy for its top-N ranking.
 		expect(orgPredicateCount(compileUnsafe(aiToolsBreakdownsQuery(), params).sql)).toBe(2)
-		expect(orgPredicateCount(compileUnsafe(aiToolsBreakdownsQuery({ model: "gpt-5" }), params).sql)).toBe(3)
+		expect(orgPredicateCount(compileUnsafe(aiToolsBreakdownsQuery({ model: "gpt-5" }), params).sql)).toBe(
+			3,
+		)
 		expect(compileUnsafe(aiToolsBreakdownsQuery(), params).tenantScope).toBe("single-tenant")
 		expect(compileUnionUnsafe(aiToolsTotalsQuery(), totalsParams).tenantScope).toBe("single-tenant")
 		for (const compiled of [
@@ -185,7 +189,12 @@ describe("tool call population", () => {
 
 	it("applies the selection where each half of it can be applied", () => {
 		const { sql } = compileUnsafe(
-			aiToolsSeriesQuery({ tool: "search_traces", model: "gpt-5", service: "agent", env: "production" }),
+			aiToolsSeriesQuery({
+				tool: "search_traces",
+				model: "gpt-5",
+				service: "agent",
+				env: "production",
+			}),
 			params,
 		)
 
@@ -253,7 +262,9 @@ describe("aiToolsSeriesQuery", () => {
 		expect(aiToolsSeriesKind({ tool: "search_traces", model: "gpt-5" })).toBe("tool")
 
 		expect(compileUnsafe(aiToolsSeriesQuery(), params).sql).toContain("if(toolName IN (SELECT")
-		expect(compileUnsafe(aiToolsSeriesQuery({ tool: "t" }), params).sql).toContain("if(modelName IN (SELECT")
+		expect(compileUnsafe(aiToolsSeriesQuery({ tool: "t" }), params).sql).toContain(
+			"if(modelName IN (SELECT",
+		)
 	})
 
 	it("buckets by the caller's interval and folds the long tail into one key", () => {
@@ -329,10 +340,7 @@ describe("aiToolsTotalsQuery", () => {
 
 		// The overview's default is unchanged, and the branches keep their order
 		// whatever order the caller lists them in.
-		const listed = compileUnionUnsafe(
-			aiToolsTotalsQuery({}, ["window", "current"]),
-			totalsParams,
-		).sql
+		const listed = compileUnionUnsafe(aiToolsTotalsQuery({}, ["window", "current"]), totalsParams).sql
 		expect(listed.indexOf("'current' AS period")).toBeLessThan(listed.indexOf("'window' AS period"))
 		expect(listed).not.toContain("'previous' AS period")
 	})

@@ -279,10 +279,7 @@ export function ToolsTable({
 	waiting,
 }: ToolsTableProps) {
 	const { effectiveTimezone } = useTimezonePreference()
-	const prepared = useMemo(
-		() => rows.map((row) => ({ ...row, errorRate: errorRate(row) })),
-		[rows],
-	)
+	const prepared = useMemo(() => rows.map((row) => ({ ...row, errorRate: errorRate(row) })), [rows])
 	const maxErrorRate = useMemo(
 		() => prepared.reduce((max, row) => Math.max(max, row.errorRate), 0),
 		[prepared],
@@ -427,7 +424,9 @@ export function ToolsTable({
 												"size-2 shrink-0 rounded-[2px]",
 												color === undefined && "bg-muted-foreground/50",
 											)}
-											style={color === undefined ? undefined : { backgroundColor: color }}
+											style={
+												color === undefined ? undefined : { backgroundColor: color }
+											}
 										/>
 										<span
 											className={cn(
@@ -446,9 +445,17 @@ export function ToolsTable({
 									<span className="w-[76px] shrink-0 text-right font-mono text-[12.5px] tabular-nums text-foreground">
 										{formatToolCount(row.calls)}
 									</span>
-									{duration(row.p50, percentile === "p50", "hidden @min-[900px]/panel:block")}
+									{duration(
+										row.p50,
+										percentile === "p50",
+										"hidden @min-[900px]/panel:block",
+									)}
 									{duration(row.p90, percentile === "p90")}
-									{duration(row.p95, percentile === "p95", "hidden @min-[900px]/panel:block")}
+									{duration(
+										row.p95,
+										percentile === "p95",
+										"hidden @min-[900px]/panel:block",
+									)}
 									<ShareCell
 										ratio={row.errorRate}
 										max={maxErrorRate}

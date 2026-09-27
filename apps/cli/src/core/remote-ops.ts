@@ -55,17 +55,15 @@ export const listServices = (
 			},
 		}),
 		(list) =>
-			list.data.map(
-				(s): ServiceSummary => ({
-					name: s.name,
-					throughput: s.throughput,
-					errorCount: s.error_count,
-					errorRate: s.error_rate,
-					p50Ms: s.p50_latency_ms,
-					p95Ms: s.p95_latency_ms,
-					p99Ms: s.p99_latency_ms,
-				}),
-			),
+			list.data.map((s): ServiceSummary => ({
+				name: s.name,
+				throughput: s.throughput,
+				errorCount: s.error_count,
+				errorRate: s.error_rate,
+				p50Ms: s.p50_latency_ms,
+				p95Ms: s.p95_latency_ms,
+				p99Ms: s.p99_latency_ms,
+			})),
 	)
 
 export const serviceMap = (
@@ -81,16 +79,14 @@ export const serviceMap = (
 			},
 		}),
 		(map) =>
-			map.edges.map(
-				(e): ServiceEdge => ({
-					sourceService: e.source_service,
-					targetService: e.target_service,
-					callCount: e.call_count,
-					errorCount: e.error_count,
-					avgDurationMs: e.avg_duration_ms,
-					maxDurationMs: e.max_duration_ms,
-				}),
-			),
+			map.edges.map((e): ServiceEdge => ({
+				sourceService: e.source_service,
+				targetService: e.target_service,
+				callCount: e.call_count,
+				errorCount: e.error_count,
+				avgDurationMs: e.avg_duration_ms,
+				maxDurationMs: e.max_duration_ms,
+			})),
 	)
 
 export const searchTraces = (
@@ -148,20 +144,18 @@ export const searchTraces = (
 			// Every row is a root span, so the span fields describe the root. v2
 			// search carries no attribute maps or span id; those are only available
 			// per-span via `GET /v2/traces/:id`.
-			spans: list.data.map(
-				(t): SpanResult => ({
-					traceId: t.id,
-					spanId: null,
-					spanName: t.root_span_name,
-					serviceName: t.root_service_name,
-					durationMs: t.duration_ms,
-					statusCode: t.root_status_code,
-					statusMessage: "",
-					attributes: {},
-					resourceAttributes: {},
-					timestamp: t.start_time,
-				}),
-			),
+			spans: list.data.map((t): SpanResult => ({
+				traceId: t.id,
+				spanId: null,
+				spanName: t.root_span_name,
+				serviceName: t.root_service_name,
+				durationMs: t.duration_ms,
+				statusCode: t.root_status_code,
+				statusMessage: "",
+				attributes: {},
+				resourceAttributes: {},
+				timestamp: t.start_time,
+			})),
 			pagination: { offset: 0, limit, hasMore: list.has_more },
 		}),
 	)
@@ -389,19 +383,17 @@ export const listMetrics = (
 			},
 		}),
 		(list) =>
-			list.data.map(
-				(m): ListMetricsOutput => ({
-					metricName: m.name,
-					metricType: m.type,
-					serviceName: m.service_name,
-					metricDescription: m.description,
-					metricUnit: m.unit,
-					dataPointCount: m.data_point_count,
-					firstSeen: m.first_seen,
-					lastSeen: m.last_seen,
-					isMonotonic: m.is_monotonic,
-				}),
-			),
+			list.data.map((m): ListMetricsOutput => ({
+				metricName: m.name,
+				metricType: m.type,
+				serviceName: m.service_name,
+				metricDescription: m.description,
+				metricUnit: m.unit,
+				dataPointCount: m.data_point_count,
+				firstSeen: m.first_seen,
+				lastSeen: m.last_seen,
+				isMonotonic: m.is_monotonic,
+			})),
 	)
 
 /**

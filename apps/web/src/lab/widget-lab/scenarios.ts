@@ -365,19 +365,17 @@ const latencyThresholds = [
 ]
 
 export const chartScenarios: ChartScenario[] = [
-	...chartRegistry.map(
-		(entry): ChartScenario => ({
-			label: entry.name,
+	...chartRegistry.map((entry): ChartScenario => ({
+		label: entry.name,
+		chartId: entry.id,
+		chartName: entry.name,
+		category: entry.category,
+		dataState: ready(entry.sampleData),
+		display: {
+			title: entry.name,
 			chartId: entry.id,
-			chartName: entry.name,
-			category: entry.category,
-			dataState: ready(entry.sampleData),
-			display: {
-				title: entry.name,
-				chartId: entry.id,
-			},
-		}),
-	),
+		},
+	})),
 	{
 		label: "Line + thresholds",
 		chartId: "query-builder-line",
@@ -1650,13 +1648,11 @@ export const heatmapScenarios: WidgetScenario[] = [
 		dataState: ready(denseHeatmap),
 		display: { title: "Latency × hour" },
 	},
-	...HEATMAP_COLOR_SCALES.map(
-		(scale): WidgetScenario => ({
-			label: `Dense — ${scale}`,
-			dataState: ready(denseHeatmap),
-			display: { title: `Latency × hour (${scale})`, heatmap: { colorScale: scale } },
-		}),
-	),
+	...HEATMAP_COLOR_SCALES.map((scale): WidgetScenario => ({
+		label: `Dense — ${scale}`,
+		dataState: ready(denseHeatmap),
+		display: { title: `Latency × hour (${scale})`, heatmap: { colorScale: scale } },
+	})),
 	{
 		label: "Sparse — viridis",
 		dataState: ready(sparseHeatmap),

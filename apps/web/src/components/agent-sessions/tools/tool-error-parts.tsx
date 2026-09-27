@@ -77,7 +77,13 @@ const lineTokens = (tokens: ReadonlyArray<ErrorTextToken>) =>
  * shrinks. The text before it gives way first; the text after it only takes
  * what is left over.
  */
-export function ErrorTextLine({ tokens, className }: { tokens: ReadonlyArray<ErrorTextToken>; className?: string }) {
+export function ErrorTextLine({
+	tokens,
+	className,
+}: {
+	tokens: ReadonlyArray<ErrorTextToken>
+	className?: string
+}) {
 	const pathIndex = tokens.findIndex((token) => token.kind === "path")
 	if (pathIndex < 0) {
 		return <span className={cn("min-w-0 truncate whitespace-pre", className)}>{lineTokens(tokens)}</span>
@@ -87,7 +93,9 @@ export function ErrorTextLine({ tokens, className }: { tokens: ReadonlyArray<Err
 	return (
 		<span className={cn("flex min-w-0 items-baseline", className)}>
 			<span className="min-w-0 truncate whitespace-pre">{lineTokens(tokens.slice(0, atIndex))}</span>
-			<span className="shrink-0 whitespace-pre">{lineTokens(tokens.slice(atIndex, pathIndex + 1))}</span>
+			<span className="shrink-0 whitespace-pre">
+				{lineTokens(tokens.slice(atIndex, pathIndex + 1))}
+			</span>
 			{tail.length > 0 ? (
 				<span className="min-w-0 flex-[1_1_0] truncate whitespace-pre">{lineTokens(tail)}</span>
 			) : null}
@@ -101,7 +109,13 @@ function HeadingToken({ token }: { token: ErrorTextToken }) {
 		case "value":
 			return <>{token.text}</>
 		case "mask":
-			return <MaskChip label={token.label} raw={token.raw} className="border border-border bg-transparent text-[15px] leading-5" />
+			return (
+				<MaskChip
+					label={token.label}
+					raw={token.raw}
+					className="border border-border bg-transparent text-[15px] leading-5"
+				/>
+			)
 		case "at":
 			return <span className="font-normal text-muted-foreground"> at </span>
 		case "break":
@@ -191,7 +205,17 @@ export function TrendBars({
 			{counts.map((count, index) => {
 				const x = index * (bar + gap)
 				if (count === 0) {
-					return <rect key={index} x={x} y={height - 2} width={bar} height={2} rx={1} fill="var(--input)" />
+					return (
+						<rect
+							key={index}
+							x={x}
+							y={height - 2}
+							width={bar}
+							height={2}
+							rx={1}
+							fill="var(--input)"
+						/>
+					)
 				}
 				const barHeight = Math.max(3, Math.round((count / max) * height))
 				return (
@@ -275,11 +299,16 @@ export function FailureStatusLine({
 					`· ${formatToolCount(status.callsSince)} call${status.callsSince === 1 ? "" : "s"} since`,
 				]
 			: status.kind === "quiet"
-				? [`No calls since ${scope === "tool" ? dateTime(status.since, timeZone) : shortDate(status.since, timeZone)}`, undefined]
+				? [
+						`No calls since ${scope === "tool" ? dateTime(status.since, timeZone) : shortDate(status.since, timeZone)}`,
+						undefined,
+					]
 				: scope === "tool"
 					? [
 							`Last failure ${formatRelativeTimeOrDate(status.lastSeen, undefined, timeZone)}`,
-							calls > 0 ? `· ${formatErrorRate(failures / calls)} of ${formatToolCount(calls)} calls` : undefined,
+							calls > 0
+								? `· ${formatErrorRate(failures / calls)} of ${formatToolCount(calls)} calls`
+								: undefined,
 						]
 					: [
 							"Still happening",

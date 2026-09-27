@@ -382,12 +382,10 @@ export const getPlanetScaleBranchStats = Effect.fn("QueryEngine.getPlanetScaleBr
 	)
 
 	return {
-		branches: result.data.map(
-			(row): PlanetScaleBranchStat => ({
-				...transformPlanetScaleStat(row),
-				branch: String(row.branch ?? ""),
-			}),
-		),
+		branches: result.data.map((row): PlanetScaleBranchStat => ({
+			...transformPlanetScaleStat(row),
+			branch: String(row.branch ?? ""),
+		})),
 	}
 })
 

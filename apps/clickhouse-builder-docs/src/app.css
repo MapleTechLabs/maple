@@ -4,6 +4,6 @@
 @import "fumapress/css/preset.css";
 
 @theme {
-  --font-mono: "JetBrains Mono", monospace;
-  --default-font-family: "Geist", sans-serif;
+	--font-mono: "JetBrains Mono", monospace;
+	--default-font-family: "Geist", sans-serif;
 }

@@ -13,7 +13,10 @@ import {
 const slackUrl = (channelId: string) =>
 	`https://slack.com/app_redirect?channel=${encodeURIComponent(channelId)}`
 
-export const toV2SupportChannel = (view: SupportChannelView, invitedEmail: string | null): V2SupportChannel =>
+export const toV2SupportChannel = (
+	view: SupportChannelView,
+	invitedEmail: string | null,
+): V2SupportChannel =>
 	view.status === "active"
 		? {
 				object: "support_channel",

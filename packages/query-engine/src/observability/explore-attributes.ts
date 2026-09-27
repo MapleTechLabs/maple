@@ -52,13 +52,11 @@ export const exploreAttributeKeys = Effect.fn("Observability.exploreAttributeKey
 		)
 		return pipe(
 			result.data,
-			Arr.map(
-				(d): AttributeKeyResult => ({
-					key: `${d.facetType}:${d.name}`,
-					count: Number(d.count),
-					facetType: d.facetType,
-				}),
-			),
+			Arr.map((d): AttributeKeyResult => ({
+				key: `${d.facetType}:${d.name}`,
+				count: Number(d.count),
+				facetType: d.facetType,
+			})),
 			Arr.sort(byCountDesc),
 			Arr.take(input.limit ?? 50),
 		)

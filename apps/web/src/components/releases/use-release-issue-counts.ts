@@ -2,7 +2,12 @@ import { useMemo } from "react"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { errorIssueFromV2 } from "@/lib/services/error-issues"
-import { attributeIssues, countIssues, type ReleaseIssueCounts, type ReleaseServiceImpact } from "./release-model"
+import {
+	attributeIssues,
+	countIssues,
+	type ReleaseIssueCounts,
+	type ReleaseServiceImpact,
+} from "./release-model"
 
 /** One page of the v2 list; a window that introduced more says so rather than paging. */
 const ISSUE_LIMIT = 100

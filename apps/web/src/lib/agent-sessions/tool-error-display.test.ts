@@ -43,7 +43,9 @@ const render = (tokens: ReadonlyArray<ErrorTextToken>): string =>
 				case "break":
 					return " ⏎ "
 				case "path":
-					return token.parts.map((part) => (part.kind === "key" ? part.text : `{${part.label}}`)).join("")
+					return token.parts
+						.map((part) => (part.kind === "key" ? part.text : `{${part.label}}`))
+						.join("")
 			}
 		})
 		.join("")
@@ -74,9 +76,9 @@ describe("unwrapToolErrorText", () => {
 describe("commonErrorPrefix", () => {
 	it("hoists the shared prefix up to its last colon", () => {
 		expect(commonErrorPrefix([EXPECTED_ARRAY, MISSING_NESTED, MISSING_ROOT])).toBe("Invalid tool input: ")
-		expect(commonErrorPrefix([GROUP_BY, "Tool failed: `group_by=attribute` requires `attribute_key`."])).toBe(
-			"Tool failed: ",
-		)
+		expect(
+			commonErrorPrefix([GROUP_BY, "Tool failed: `group_by=attribute` requires `attribute_key`."]),
+		).toBe("Tool failed: ")
 	})
 
 	it("hoists nothing for one group, no shared colon, or a row it would empty", () => {
@@ -88,7 +90,9 @@ describe("commonErrorPrefix", () => {
 
 describe("errorTextTokens", () => {
 	it("picks out the error path, with an array index as a placeholder", () => {
-		expect(render(errorTextTokens("Expected array\n  at [\"evidence\"]"))).toBe('Expected array at ["evidence"]')
+		expect(render(errorTextTokens('Expected array\n  at ["evidence"]'))).toBe(
+			'Expected array at ["evidence"]',
+		)
 		expect(render(errorTextTokens('Missing key\n  at ["evidence"][2]["traceIds"]'))).toBe(
 			'Missing key at ["evidence"]{[*]}["traceIds"]',
 		)
@@ -151,9 +155,9 @@ describe("whatsWrong", () => {
 			subject: "evidence",
 			text: "is a string that contains a JSON array. The schema expects the array itself — it was sent quoted.",
 		})
-		expect(whatsWrong('Expected object | null\n  at ["report"]', { report: '{"scope": 1}' })?.subject).toBe(
-			"report",
-		)
+		expect(
+			whatsWrong('Expected object | null\n  at ["report"]', { report: '{"scope": 1}' })?.subject,
+		).toBe("report")
 	})
 
 	it("names the object a required key is missing from", () => {
@@ -180,9 +184,15 @@ describe("whatsWrong", () => {
 
 describe("variantDifferences", () => {
 	it("picks out the index a group's variants differ by, inside their path", () => {
-		const texts = [0, 1, 2].map((index) => `Invalid tool input: Missing key\n  at ["evidence"][${index}]["traceIds"]`)
+		const texts = [0, 1, 2].map(
+			(index) => `Invalid tool input: Missing key\n  at ["evidence"][${index}]["traceIds"]`,
+		)
 		expect(variantDifferences(texts)).toEqual(
-			[0, 1, 2].map((index) => ({ before: '["evidence"]', middle: `[${index}]`, after: '["traceIds"]' })),
+			[0, 1, 2].map((index) => ({
+				before: '["evidence"]',
+				middle: `[${index}]`,
+				after: '["traceIds"]',
+			})),
 		)
 	})
 
@@ -238,23 +248,37 @@ describe("failureStatus", () => {
 	it("calls a failure stopped once the calls since would have repeated it", () => {
 		// 387 of 979 calls failed; 281 calls since would have held ~111 of them.
 		expect(
-			failureStatus({ lastSeen: now - 4 * DAY, callsSince: 281, failures: 387, calls: 979, nowMs: now }),
+			failureStatus({
+				lastSeen: now - 4 * DAY,
+				callsSince: 281,
+				failures: 387,
+				calls: 979,
+				nowMs: now,
+			}),
 		).toEqual({ kind: "stopped", since: now - 4 * DAY, callsSince: 281 })
 	})
 
 	it("keeps a rare failure ongoing through a quiet stretch too short to mean anything", () => {
 		// 14 of 1,785 calls: 40 calls since would have held under one.
 		expect(
-			failureStatus({ lastSeen: now - 22 * 3_600_000, callsSince: 40, failures: 14, calls: 1_785, nowMs: now })
+			failureStatus({
+				lastSeen: now - 22 * 3_600_000,
+				callsSince: 40,
+				failures: 14,
+				calls: 1_785,
+				nowMs: now,
+			}).kind,
+		).toBe("ongoing")
+		expect(
+			failureStatus({ lastSeen: now - 60_000, callsSince: 900, failures: 1, calls: 1_000, nowMs: now })
 				.kind,
 		).toBe("ongoing")
-		expect(failureStatus({ lastSeen: now - 60_000, callsSince: 900, failures: 1, calls: 1_000, nowMs: now }).kind).toBe(
-			"ongoing",
-		)
 	})
 
 	it("reads a tool nobody has called since as quiet, not fixed", () => {
-		expect(failureStatus({ lastSeen: now - 2 * DAY, callsSince: 0, failures: 4, calls: 4, nowMs: now })).toEqual({
+		expect(
+			failureStatus({ lastSeen: now - 2 * DAY, callsSince: 0, failures: 4, calls: 4, nowMs: now }),
+		).toEqual({
 			kind: "quiet",
 			since: now - 2 * DAY,
 		})

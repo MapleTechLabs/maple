@@ -118,38 +118,36 @@ const createClickHouseSqlClient = (
 		Effect.mapError(
 			(error) => new WarehouseDriverError({ reason: "config", message: error.message, cause: error }),
 		),
-		Effect.map(
-			(client): WarehouseSqlClient => ({
-				// `wireFormat: "out-of-band"` for every ClickHouse-protocol backend: the
-				// executor has already stripped any FORMAT clause and the client appends
-				// its own.
-				// Trusted queries pass no limits, so the client's 16 MiB `maxRowBytes`
-				// default still applies: it bounds the buffer a single unfinished row can
-				// take and is far above anything a Maple query returns.
-				sql: (statement, options) =>
-					client
-						.query({
-							sql: statement.text,
-							...(options?.responseLimits ? { limits: options.responseLimits } : undefined),
-						})
-						.pipe(
-							Effect.map(({ data }) => ({ data })),
-							Effect.mapError(clickHouseDriverError),
-						),
-				insert: () =>
-					// ClickHouse is READ-ONLY for Maple: the managed CLICKHOUSE_URL endpoint is
-					// a query gateway that rejects inserts ("Only SELECT or DESCRIBE queries are
-					// supported. Got: InsertQuery"), and a BYO org override is a read concern.
-					// All ingest goes to Tinybird's Events API (see resolveIngestConfig), so this
-					// must never be reached — fail loudly instead of silently 500'ing.
-					Effect.fail(
-						new WarehouseDriverError({
-							reason: "config",
-							message: "ClickHouse is read-only for Maple — ingest must use Tinybird",
-						}),
+		Effect.map((client): WarehouseSqlClient => ({
+			// `wireFormat: "out-of-band"` for every ClickHouse-protocol backend: the
+			// executor has already stripped any FORMAT clause and the client appends
+			// its own.
+			// Trusted queries pass no limits, so the client's 16 MiB `maxRowBytes`
+			// default still applies: it bounds the buffer a single unfinished row can
+			// take and is far above anything a Maple query returns.
+			sql: (statement, options) =>
+				client
+					.query({
+						sql: statement.text,
+						...(options?.responseLimits ? { limits: options.responseLimits } : undefined),
+					})
+					.pipe(
+						Effect.map(({ data }) => ({ data })),
+						Effect.mapError(clickHouseDriverError),
 					),
-			}),
-		),
+			insert: () =>
+				// ClickHouse is READ-ONLY for Maple: the managed CLICKHOUSE_URL endpoint is
+				// a query gateway that rejects inserts ("Only SELECT or DESCRIBE queries are
+				// supported. Got: InsertQuery"), and a BYO org override is a read concern.
+				// All ingest goes to Tinybird's Events API (see resolveIngestConfig), so this
+				// must never be reached — fail loudly instead of silently 500'ing.
+				Effect.fail(
+					new WarehouseDriverError({
+						reason: "config",
+						message: "ClickHouse is read-only for Maple — ingest must use Tinybird",
+					}),
+				),
+		})),
 	)
 
 // Tinybird's `/v0/sql` speaks plain HTTP: POST the SQL as text with a bearer

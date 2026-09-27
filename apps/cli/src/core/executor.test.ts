@@ -17,7 +17,8 @@ const httpWith = (request: typeof fetch) =>
 	FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.Fetch, request)))
 
 const stubFetch = (handler: (url: string, init?: RequestInit) => Response): typeof fetch =>
-	(async (input: string | URL | Request, init?: RequestInit) => handler(String(input), init)) as typeof fetch
+	(async (input: string | URL | Request, init?: RequestInit) =>
+		handler(String(input), init)) as typeof fetch
 
 // The Effect HttpClient hands fetch a `Uint8Array` body, so decode rather than stringify.
 const bodyText = (body: RequestInit["body"]) =>
@@ -139,6 +140,5 @@ describe("makeLocalWarehouseExecutorApi", () => {
 				yield* Fiber.interrupt(fiber)
 				expect(signal.aborted).toBe(true)
 			}),
-		),
-	)
+		))
 })

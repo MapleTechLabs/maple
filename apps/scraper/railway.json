@@ -3,12 +3,7 @@
 	"build": {
 		"builder": "DOCKERFILE",
 		"dockerfilePath": "apps/scraper/Dockerfile",
-		"watchPatterns": [
-			"apps/scraper/**",
-			"packages/domain/**",
-			"packages/effect-sdk/**",
-			"bun.lock"
-		]
+		"watchPatterns": ["apps/scraper/**", "packages/domain/**", "packages/effect-sdk/**", "bun.lock"]
 	},
 	"deploy": {
 		"healthcheckPath": "/health",

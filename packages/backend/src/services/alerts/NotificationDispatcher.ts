@@ -262,14 +262,12 @@ const make: Effect.Effect<
 				return {
 					delivered: 0,
 					failed: destinationIds.length,
-					destinations: destinationIds.map(
-						(destinationId): NotificationDestinationResult => ({
-							destinationId,
-							destinationName: null,
-							status: "failed",
-							error: "destination_lookup_failed",
-						}),
-					),
+					destinations: destinationIds.map((destinationId): NotificationDestinationResult => ({
+						destinationId,
+						destinationName: null,
+						status: "failed",
+						error: "destination_lookup_failed",
+					})),
 				}
 			}
 
@@ -295,14 +293,12 @@ const make: Effect.Effect<
 						})
 					}
 					return dispatchOne(row, context).pipe(
-						Effect.map(
-							(): NotificationDestinationResult => ({
-								destinationId: row.id,
-								destinationName: row.name,
-								status: "delivered",
-								error: null,
-							}),
-						),
+						Effect.map((): NotificationDestinationResult => ({
+							destinationId: row.id,
+							destinationName: row.name,
+							status: "delivered",
+							error: null,
+						})),
 						Effect.tapError((error) =>
 							Effect.logError("NotificationDispatcher: delivery failed").pipe(
 								Effect.annotateLogs({

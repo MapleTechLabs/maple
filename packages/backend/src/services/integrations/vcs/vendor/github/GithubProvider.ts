@@ -804,18 +804,17 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 
 			const fetchRepositories = (installation: VcsInstallation) =>
 				client.listInstallationRepositories(installation.externalInstallationId).pipe(
-					Effect.map(
-						(repos): ReadonlyArray<RepoUpsertInput> =>
-							repos.map((r) => ({
-								externalRepoId: String(r.id),
-								owner: r.owner.login,
-								name: r.name,
-								fullName: r.full_name,
-								defaultBranch: r.default_branch ?? "main",
-								htmlUrl: r.html_url,
-								isPrivate: r.private,
-								isArchived: r.archived ?? false,
-							})),
+					Effect.map((repos): ReadonlyArray<RepoUpsertInput> =>
+						repos.map((r) => ({
+							externalRepoId: String(r.id),
+							owner: r.owner.login,
+							name: r.name,
+							fullName: r.full_name,
+							defaultBranch: r.default_branch ?? "main",
+							htmlUrl: r.html_url,
+							isPrivate: r.private,
+							isArchived: r.archived ?? false,
+						})),
 					),
 					Effect.mapError(toVcsError),
 				)
@@ -1032,16 +1031,14 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					.listPullRequestFiles(installation.externalInstallationId, repo.owner, repo.name, number)
 					.pipe(
 						Effect.map((files) =>
-							files.map(
-								(file): PullRequestFile => ({
-									path: file.filename,
-									previousPath: file.previous_filename ?? null,
-									status: normalizeFileStatus(file.status),
-									additions: file.additions,
-									deletions: file.deletions,
-									patch: file.patch ?? null,
-								}),
-							),
+							files.map((file): PullRequestFile => ({
+								path: file.filename,
+								previousPath: file.previous_filename ?? null,
+								status: normalizeFileStatus(file.status),
+								additions: file.additions,
+								deletions: file.deletions,
+								patch: file.patch ?? null,
+							})),
 						),
 						Effect.mapError(toVcsError),
 					)
@@ -1055,27 +1052,23 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					.listReviewThreads(installation.externalInstallationId, repo.owner, repo.name, number)
 					.pipe(
 						Effect.map((threads) =>
-							threads.map(
-								(thread): PullRequestReviewThread => ({
-									id: thread.id,
-									isResolved: thread.isResolved,
-									comments: thread.comments.nodes.map((comment) => {
-										const count = (content: string) =>
-											comment.reactionGroups?.find((group) => group.content === content)
-												?.reactors.totalCount ?? 0
-										return {
-											commentId:
-												comment.databaseId === null
-													? null
-													: String(comment.databaseId),
-											author: comment.author?.login ?? "(deleted user)",
-											body: comment.body,
-											thumbsUp: count("THUMBS_UP"),
-											thumbsDown: count("THUMBS_DOWN"),
-										}
-									}),
+							threads.map((thread): PullRequestReviewThread => ({
+								id: thread.id,
+								isResolved: thread.isResolved,
+								comments: thread.comments.nodes.map((comment) => {
+									const count = (content: string) =>
+										comment.reactionGroups?.find((group) => group.content === content)
+											?.reactors.totalCount ?? 0
+									return {
+										commentId:
+											comment.databaseId === null ? null : String(comment.databaseId),
+										author: comment.author?.login ?? "(deleted user)",
+										body: comment.body,
+										thumbsUp: count("THUMBS_UP"),
+										thumbsDown: count("THUMBS_DOWN"),
+									}
 								}),
-							),
+							})),
 						),
 						Effect.mapError(toVcsError),
 					)
@@ -1247,26 +1240,24 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 				client
 					.getPullRequestContext(installation.externalInstallationId, repo.owner, repo.name, number)
 					.pipe(
-						Effect.map(
-							(raw): PullRequestContext => ({
-								commits: raw.commits.map((commit) => ({
-									sha: commit.sha,
-									message: commit.commit.message,
-								})),
-								comments: raw.comments.map((comment) => ({
-									author: comment.user?.login ?? "(deleted user)",
-									path: comment.path ?? null,
-									line: comment.line ?? null,
-									body: comment.body ?? "",
-								})),
-								checks: raw.checks.map((check) => ({
-									name: check.name,
-									status: check.status,
-									conclusion: check.conclusion,
-									title: check.output?.title ?? null,
-								})),
-							}),
-						),
+						Effect.map((raw): PullRequestContext => ({
+							commits: raw.commits.map((commit) => ({
+								sha: commit.sha,
+								message: commit.commit.message,
+							})),
+							comments: raw.comments.map((comment) => ({
+								author: comment.user?.login ?? "(deleted user)",
+								path: comment.path ?? null,
+								line: comment.line ?? null,
+								body: comment.body ?? "",
+							})),
+							checks: raw.checks.map((check) => ({
+								name: check.name,
+								status: check.status,
+								conclusion: check.conclusion,
+								title: check.output?.title ?? null,
+							})),
+						})),
 						Effect.mapError(toVcsError),
 					)
 

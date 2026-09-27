@@ -52,5 +52,9 @@ export interface Contributor {
 
 export const CONTRIBUTORS = {
 	makisuo: { name: "Makisuo", github: "Makisuo", avatar: "/changelog/contributors/makisuo.png" },
-	jeremyfunk: { name: "JeremyFunk", github: "JeremyFunk", avatar: "/changelog/contributors/jeremyfunk.png" },
+	jeremyfunk: {
+		name: "JeremyFunk",
+		github: "JeremyFunk",
+		avatar: "/changelog/contributors/jeremyfunk.png",
+	},
 } satisfies Record<ContributorId, Contributor>

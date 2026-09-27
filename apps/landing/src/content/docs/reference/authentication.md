@@ -7,23 +7,23 @@ order: 4
 
 Maple uses two kinds of credential. **Ingest keys** send telemetry. **API keys** read and change your organization through the REST API and the MCP server. An ingest key cannot read anything, and an API key cannot send telemetry.
 
-| Credential | Prefix | Where you get it | What it can do | Safe to ship in client code? |
-| --- | --- | --- | --- | --- |
-| Public ingest key | `maple_pk_` | **Settings → Ingestion** | Send telemetry | Yes |
-| Private ingest key | `maple_sk_` | **Settings → Ingestion** | Send telemetry | No |
-| API key | `maple_ak_` | **Settings → API Keys** | REST API and MCP server, limited by its scopes | No |
-| MCP key | `maple_ak_` | **Settings → MCP** | MCP server only | No |
-| OAuth token | | Issued to an MCP client when you sign in | MCP server only | No |
+| Credential         | Prefix      | Where you get it                         | What it can do                                 | Safe to ship in client code? |
+| ------------------ | ----------- | ---------------------------------------- | ---------------------------------------------- | ---------------------------- |
+| Public ingest key  | `maple_pk_` | **Settings → Ingestion**                 | Send telemetry                                 | Yes                          |
+| Private ingest key | `maple_sk_` | **Settings → Ingestion**                 | Send telemetry                                 | No                           |
+| API key            | `maple_ak_` | **Settings → API Keys**                  | REST API and MCP server, limited by its scopes | No                           |
+| MCP key            | `maple_ak_` | **Settings → MCP**                       | MCP server only                                | No                           |
+| OAuth token        |             | Issued to an MCP client when you sign in | MCP server only                                | No                           |
 
 Every credential belongs to one organization in one [region](/docs/reference/regions). A credential from the US region is rejected by the EU region, and the other way round.
 
 ## Which endpoint accepts what
 
-| Endpoint | Accepts |
-| --- | --- |
+| Endpoint                                | Accepts                                                                               |
+| --------------------------------------- | ------------------------------------------------------------------------------------- |
 | Ingest, `https://ingest.maple.dev/v1/*` | Public or private ingest key, as `Authorization: Bearer …` or `x-maple-ingest-key: …` |
-| REST API, `https://api.maple.dev/v2/*` | API key, or a dashboard session token, as `Authorization: Bearer …` |
-| MCP server, `https://api.maple.dev/mcp` | API key, MCP key or OAuth token, as `Authorization: Bearer …` |
+| REST API, `https://api.maple.dev/v2/*`  | API key, or a dashboard session token, as `Authorization: Bearer …`                   |
+| MCP server, `https://api.maple.dev/mcp` | API key, MCP key or OAuth token, as `Authorization: Bearer …`                         |
 
 Use the EU hosts (`ingest.eu.maple.dev`, `api.eu.maple.dev`) for an EU organization.
 
@@ -46,11 +46,11 @@ The literal key `MAPLE_TEST` is accepted and returns `200`, but the data is disc
 
 Create API keys under **Settings → API Keys**, or with `POST /v2/api_keys`. When you create one you choose:
 
-| Field | Options |
-| --- | --- |
-| **Name** and **Description** | Free text, to tell keys apart |
-| **Expiration** | Never, 7 days, 30 days, 90 days or 1 year |
-| **Access** | **Full access**, or **Restricted** to a set of scopes |
+| Field                        | Options                                               |
+| ---------------------------- | ----------------------------------------------------- |
+| **Name** and **Description** | Free text, to tell keys apart                         |
+| **Expiration**               | Never, 7 days, 30 days, 90 days or 1 year             |
+| **Access**                   | **Full access**, or **Restricted** to a set of scopes |
 
 The key is shown once, when it is created. Store it then; Maple keeps only a hash. You can revoke a key or roll it (issue a new secret and revoke the old one) from the same page or with `POST /v2/api_keys/{id}/roll`.
 

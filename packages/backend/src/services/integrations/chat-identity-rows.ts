@@ -46,15 +46,13 @@ const readRow = (row: {
 	createdAt: Date
 }) =>
 	decodeStored(row).pipe(
-		Effect.map(
-			(stored): ChatIdentityLink => ({
-				id: stored.id,
-				userId: stored.userId,
-				externalUserId: stored.externalUserId,
-				displayName: row.displayName,
-				createdAtMs: dateToMs(row.createdAt),
-			}),
-		),
+		Effect.map((stored): ChatIdentityLink => ({
+			id: stored.id,
+			userId: stored.userId,
+			externalUserId: stored.externalUserId,
+			displayName: row.displayName,
+			createdAtMs: dateToMs(row.createdAt),
+		})),
 		Effect.mapError((error) => unreadable(`Stored chat identity is unreadable: ${error.message}`)),
 	)
 

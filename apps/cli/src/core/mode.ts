@@ -65,8 +65,8 @@ export const probeLocal = (
 		)
 	const ok = (status: number) => status >= 200 && status < 300
 	const legacyHealth = get("/health").pipe(
-		Effect.map(
-			({ status, body }): ProbeResult => (ok(status) && body.trim() === "OK" ? "maple" : "foreign"),
+		Effect.map(({ status, body }): ProbeResult =>
+			ok(status) && body.trim() === "OK" ? "maple" : "foreign",
 		),
 	)
 	return get("/local/status").pipe(

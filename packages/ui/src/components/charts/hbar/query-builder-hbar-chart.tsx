@@ -72,14 +72,12 @@ export function QueryBuilderHbarChart({ data, className, unit }: QueryBuilderHba
 		const total = rows.reduce((acc, row) => acc + row.value, 0)
 		if (max <= 0) return [] as Bar[]
 		const colors = resolveSeriesColors(rows.map((row) => row.name))
-		return rows.map(
-			(row): Bar => ({
-				...row,
-				color: colors.get(row.name) ?? "",
-				widthPct: Math.max(BAR_MIN_PCT, row.value / max),
-				pctOfTotal: total > 0 ? row.value / total : 0,
-			}),
-		)
+		return rows.map((row): Bar => ({
+			...row,
+			color: colors.get(row.name) ?? "",
+			widthPct: Math.max(BAR_MIN_PCT, row.value / max),
+			pctOfTotal: total > 0 ? row.value / total : 0,
+		}))
 	}, [source, valueField])
 
 	// A list longer than the card scrolls inside it — rows never spill out of

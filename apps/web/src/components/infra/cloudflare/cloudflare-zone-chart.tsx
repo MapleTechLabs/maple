@@ -141,10 +141,11 @@ export function CloudflareZoneChart({
 	// label point scale this replaced folded a 24h window onto itself.
 	const { effectiveTimezone } = useTimezonePreference()
 	const axis = useMemo(
-		() => makeBucketAxis(
-			data.map((point) => point.bucket),
-			effectiveTimezone,
-		),
+		() =>
+			makeBucketAxis(
+				data.map((point) => point.bucket),
+				effectiveTimezone,
+			),
 		[data, effectiveTimezone],
 	)
 

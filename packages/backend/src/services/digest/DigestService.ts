@@ -846,12 +846,10 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 			// A caller with no subscription yet previews the whole org.
 			const scope = userId
 				? yield* getSubscription(orgId, userId).pipe(
-						Effect.map(
-							(sub): DigestScope => ({
-								environments: sub.environments,
-								namespaces: sub.namespaces,
-							}),
-						),
+						Effect.map((sub): DigestScope => ({
+							environments: sub.environments,
+							namespaces: sub.namespaces,
+						})),
 						Effect.orElseSucceed(() => UNSCOPED),
 					)
 				: UNSCOPED

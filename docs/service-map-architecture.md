@@ -92,12 +92,12 @@ merge loop inside that function. Its input interface is now twelve optional fiel
 
 Each layer independently re-decides four things, and each is a chance to drift:
 
-| Concern           | Owned by                                     | Should be                           |
-| ----------------- | -------------------------------------------- | ----------------------------------- |
-| window boundary   | `rollup-splice` ✅                           | done, enforced by the catalog gate  |
-| fan-out + caching | a hand-written `Effect.all` per handler      | one runner over declared layers     |
-| wire shape        | `Schema.Record(String, Unknown)` passthrough | typed rows                          |
-| client merge      | a new prop + a new loop                      | one contribution point              |
+| Concern           | Owned by                                     | Should be                          |
+| ----------------- | -------------------------------------------- | ---------------------------------- |
+| window boundary   | `rollup-splice` ✅                           | done, enforced by the catalog gate |
+| fan-out + caching | a hand-written `Effect.all` per handler      | one runner over declared layers    |
+| wire shape        | `Schema.Record(String, Unknown)` passthrough | typed rows                         |
+| client merge      | a new prop + a new loop                      | one contribution point             |
 
 The direction, not yet built:
 

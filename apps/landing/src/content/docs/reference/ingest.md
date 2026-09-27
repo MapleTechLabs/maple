@@ -7,14 +7,14 @@ order: 6
 
 Every signal reaches Maple through one OTLP/HTTP gateway. Any OpenTelemetry SDK or Collector that can export OTLP over HTTP works without a Maple-specific exporter.
 
-|              |                                                                |
-| ------------ | -------------------------------------------------------------- |
+|              |                                                                                     |
+| ------------ | ----------------------------------------------------------------------------------- |
 | Base URL     | `https://ingest.maple.dev`, or your [region's](/docs/reference/regions) ingest host |
-| Protocol     | OTLP over HTTP, `POST`                                         |
-| Auth         | `Authorization: Bearer maple_pk_…` (or `maple_sk_…`)           |
-| Encodings    | Protobuf (recommended) or JSON, optionally gzip                |
-| Max body     | 20 MiB per request, measured on the compressed body            |
-| Request time | 30 seconds per request                                         |
+| Protocol     | OTLP over HTTP, `POST`                                                              |
+| Auth         | `Authorization: Bearer maple_pk_…` (or `maple_sk_…`)                                |
+| Encodings    | Protobuf (recommended) or JSON, optionally gzip                                     |
+| Max body     | 20 MiB per request, measured on the compressed body                                 |
+| Request time | 30 seconds per request                                                              |
 
 ## Endpoints
 
@@ -83,36 +83,36 @@ Errors carry a JSON body with the same envelope as the [Maple API](/docs/referen
 }
 ```
 
-| Field | Meaning |
-| --- | --- |
-| `_tag` | The exact failure, stable across releases. Branch on this |
-| `type` | The status family: `invalid_request_error`, `authentication_error`, `payment_error`, `rate_limit_error` or `api_error` (5xx) |
-| `code` | The short code in the table below |
-| `title`, `message` | Human-readable text |
-| `retryable` | Whether resending the same batch can succeed |
-| `recovery` | `fix_request`, `reauthenticate`, `retry` or `contact_support` |
-| `retry_after_seconds` | Present when a retry makes sense. The same value is in the `Retry-After` header |
+| Field                 | Meaning                                                                                                                      |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `_tag`                | The exact failure, stable across releases. Branch on this                                                                    |
+| `type`                | The status family: `invalid_request_error`, `authentication_error`, `payment_error`, `rate_limit_error` or `api_error` (5xx) |
+| `code`                | The short code in the table below                                                                                            |
+| `title`, `message`    | Human-readable text                                                                                                          |
+| `retryable`           | Whether resending the same batch can succeed                                                                                 |
+| `recovery`            | `fix_request`, `reauthenticate`, `retry` or `contact_support`                                                                |
+| `retry_after_seconds` | Present when a retry makes sense. The same value is in the `Retry-After` header                                              |
 
 Checks run roughly in the order below, so a request fails on the first one it trips.
 
-| Status | `code` | `_tag` | Cause | Retry? |
-| --- | --- | --- | --- | --- |
-| `200` | | | Accepted and durably queued | |
-| `401` | `ingest_unauthorized` | `@maple/ingest/Unauthorized` | Missing, malformed or unknown ingest key | No. Fix the key |
-| `429` | `ingest_rate_limited` | `@maple/ingest/RateLimited` | More than 1,000 requests in flight for your organization | Yes, after 1 s |
-| `413` | `ingest_payload_too_large` | `@maple/ingest/PayloadTooLarge` | Body over 20 MiB | No. Send smaller batches |
-| `415` | `ingest_unsupported_media_type` | `@maple/ingest/UnsupportedMediaType` | Unknown `Content-Type` or `Content-Encoding` | No. Fix the exporter config |
-| `400` | `ingest_bad_request` | `@maple/ingest/BadRequest` | Invalid gzip, a body that is not valid OTLP, or a malformed product event, session event or replay header | No |
-| `400` | `ingest_replay_body_not_gzip` | `@maple/ingest/ReplayBodyNotGzip` | A session replay chunk that is not a gzip stream | No |
-| `402` | `ingest_plan_limit_reached` | `@maple/ingest/PlanLimitReached` | No active subscription, or the plan's limit is reached | No. Check **Settings → Billing** |
-| `429` | `ingest_queue_throttled` | `@maple/ingest/OrgQueueThrottled` | Your organization's ingest queue is full. Nothing was written | Yes, after 1 s |
-| `429` | `ingest_export_lane_full` | `@maple/ingest/ExportLaneBackpressure` | The write path for your organization is backed up. Nothing was written | Yes, after 2 s |
-| `503` | `ingest_unavailable` | `@maple/ingest/ServiceUnavailable` | Key lookup or another dependency is temporarily unavailable | Yes, after 5 s |
-| `503` | `ingest_queue_unavailable` | `@maple/ingest/QueueUnavailable` | The batch could not be written to the durable queue. Nothing was written | Yes, after 5 s |
-| `503` | `ingest_collector_unavailable` | `@maple/ingest/CollectorUnavailable` | An upstream collector failed or its response could not be read | Yes, after 5 s |
-| `503` | `ingest_request_timeout` | `@maple/ingest/RequestTimeout` | The request took longer than 30 seconds | Yes, after 5 s |
-| `503` | `ingest_encode_failed` | `@maple/ingest/PayloadEncodeFailed` | The batch could not be encoded for storage. Resending the same batch fails the same way | No. Contact support |
-| `500` | `ingest_internal_error` | `@maple/ingest/InternalError` | Unexpected gateway error | No. Contact support |
+| Status | `code`                          | `_tag`                                 | Cause                                                                                                     | Retry?                           |
+| ------ | ------------------------------- | -------------------------------------- | --------------------------------------------------------------------------------------------------------- | -------------------------------- |
+| `200`  |                                 |                                        | Accepted and durably queued                                                                               |                                  |
+| `401`  | `ingest_unauthorized`           | `@maple/ingest/Unauthorized`           | Missing, malformed or unknown ingest key                                                                  | No. Fix the key                  |
+| `429`  | `ingest_rate_limited`           | `@maple/ingest/RateLimited`            | More than 1,000 requests in flight for your organization                                                  | Yes, after 1 s                   |
+| `413`  | `ingest_payload_too_large`      | `@maple/ingest/PayloadTooLarge`        | Body over 20 MiB                                                                                          | No. Send smaller batches         |
+| `415`  | `ingest_unsupported_media_type` | `@maple/ingest/UnsupportedMediaType`   | Unknown `Content-Type` or `Content-Encoding`                                                              | No. Fix the exporter config      |
+| `400`  | `ingest_bad_request`            | `@maple/ingest/BadRequest`             | Invalid gzip, a body that is not valid OTLP, or a malformed product event, session event or replay header | No                               |
+| `400`  | `ingest_replay_body_not_gzip`   | `@maple/ingest/ReplayBodyNotGzip`      | A session replay chunk that is not a gzip stream                                                          | No                               |
+| `402`  | `ingest_plan_limit_reached`     | `@maple/ingest/PlanLimitReached`       | No active subscription, or the plan's limit is reached                                                    | No. Check **Settings → Billing** |
+| `429`  | `ingest_queue_throttled`        | `@maple/ingest/OrgQueueThrottled`      | Your organization's ingest queue is full. Nothing was written                                             | Yes, after 1 s                   |
+| `429`  | `ingest_export_lane_full`       | `@maple/ingest/ExportLaneBackpressure` | The write path for your organization is backed up. Nothing was written                                    | Yes, after 2 s                   |
+| `503`  | `ingest_unavailable`            | `@maple/ingest/ServiceUnavailable`     | Key lookup or another dependency is temporarily unavailable                                               | Yes, after 5 s                   |
+| `503`  | `ingest_queue_unavailable`      | `@maple/ingest/QueueUnavailable`       | The batch could not be written to the durable queue. Nothing was written                                  | Yes, after 5 s                   |
+| `503`  | `ingest_collector_unavailable`  | `@maple/ingest/CollectorUnavailable`   | An upstream collector failed or its response could not be read                                            | Yes, after 5 s                   |
+| `503`  | `ingest_request_timeout`        | `@maple/ingest/RequestTimeout`         | The request took longer than 30 seconds                                                                   | Yes, after 5 s                   |
+| `503`  | `ingest_encode_failed`          | `@maple/ingest/PayloadEncodeFailed`    | The batch could not be encoded for storage. Resending the same batch fails the same way                   | No. Contact support              |
+| `500`  | `ingest_internal_error`         | `@maple/ingest/InternalError`          | Unexpected gateway error                                                                                  | No. Contact support              |
 
 OpenTelemetry SDKs and the Collector already retry `429` and `503` with backoff, and drop on other `4xx` codes. That is the right behavior for every code above except `ingest_encode_failed`, which an exporter retries even though it cannot succeed.
 

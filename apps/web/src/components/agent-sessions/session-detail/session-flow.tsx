@@ -220,38 +220,36 @@ export function SessionFlow({
 					selectable: false,
 					connectable: false,
 				},
-				...lane.nodes.map(
-					(node): Node => ({
-						id: node.key,
-						type: "step",
-						position: { x: node.x, y: node.y },
-						width: NODE_WIDTH,
-						height: NODE_HEIGHT,
-						// Declared, not measured: with the dimensions and handle spots
-						// known up front (every card is the same box), xyflow can draw
-						// the edges on the very first frame instead of waiting for a
-						// ResizeObserver pass — which also never comes under jsdom.
-						handles: STEP_HANDLES,
-						data: {
-							node,
-							selected: selectedSpanId === node.span.spanId,
-							focused: focusedId === node.span.spanId,
-							onSelect: (spanId: string) => {
-								setFocusedId(spanId)
-								onSelectSpan(selectedSpanId === spanId ? undefined : spanId)
-							},
-						} satisfies StepData,
-						draggable: false,
-						selectable: false,
-						connectable: false,
-						/*
-						 * Load-bearing, from `investigations/flow`: xyflow derives
-						 * pointer-events from selectable/draggable/click handlers and sets
-						 * `none` when all are off — which would make the card's button inert.
-						 */
-						style: { pointerEvents: "all" },
-					}),
-				),
+				...lane.nodes.map((node): Node => ({
+					id: node.key,
+					type: "step",
+					position: { x: node.x, y: node.y },
+					width: NODE_WIDTH,
+					height: NODE_HEIGHT,
+					// Declared, not measured: with the dimensions and handle spots
+					// known up front (every card is the same box), xyflow can draw
+					// the edges on the very first frame instead of waiting for a
+					// ResizeObserver pass — which also never comes under jsdom.
+					handles: STEP_HANDLES,
+					data: {
+						node,
+						selected: selectedSpanId === node.span.spanId,
+						focused: focusedId === node.span.spanId,
+						onSelect: (spanId: string) => {
+							setFocusedId(spanId)
+							onSelectSpan(selectedSpanId === spanId ? undefined : spanId)
+						},
+					} satisfies StepData,
+					draggable: false,
+					selectable: false,
+					connectable: false,
+					/*
+					 * Load-bearing, from `investigations/flow`: xyflow derives
+					 * pointer-events from selectable/draggable/click handlers and sets
+					 * `none` when all are off — which would make the card's button inert.
+					 */
+					style: { pointerEvents: "all" },
+				})),
 			]),
 		[lanes, selectedSpanId, focusedId, setFocusedId, onSelectSpan],
 	)
@@ -267,25 +265,23 @@ export function SessionFlow({
 	const flowEdges = useMemo<Edge[]>(
 		() =>
 			lanes.flatMap((lane) =>
-				lane.edges.map(
-					([from, to]): Edge => ({
-						id: `${from.key}->${to.key}`,
-						source: from.key,
-						target: to.key,
-						type: "step",
-						focusable: false,
-						// Dotted, not solid: a hairline in `--border` disappeared against
-						// the card borders it runs between. Round caps on a 2px stroke
-						// give round dots — legible at the zoom the canvas opens at,
-						// and still quiet enough to stay behind the cards.
-						style: {
-							stroke: "var(--muted-foreground)",
-							strokeWidth: 2,
-							strokeLinecap: "round",
-							strokeDasharray: "0.5 5",
-						},
-					}),
-				),
+				lane.edges.map(([from, to]): Edge => ({
+					id: `${from.key}->${to.key}`,
+					source: from.key,
+					target: to.key,
+					type: "step",
+					focusable: false,
+					// Dotted, not solid: a hairline in `--border` disappeared against
+					// the card borders it runs between. Round caps on a 2px stroke
+					// give round dots — legible at the zoom the canvas opens at,
+					// and still quiet enough to stay behind the cards.
+					style: {
+						stroke: "var(--muted-foreground)",
+						strokeWidth: 2,
+						strokeLinecap: "round",
+						strokeDasharray: "0.5 5",
+					},
+				})),
 			),
 		[lanes],
 	)

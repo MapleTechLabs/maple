@@ -52,9 +52,7 @@ describe("mapWarehouseError", () => {
 
 			// Tinybird's /v0/sql returns the text without a structured type field.
 			it("classifies NO_COMMON_TYPE from the message alone", () => {
-				expect(classify("p", noCommonType, "maple")).toBeInstanceOf(
-					WarehouseMalformedQueryError,
-				)
+				expect(classify("p", noCommonType, "maple")).toBeInstanceOf(WarehouseMalformedQueryError)
 			})
 
 			it("classifies an illegal argument type", () => {
@@ -117,9 +115,7 @@ describe("mapWarehouseError", () => {
 			})
 
 			it("defaults to caller authorship, the conservative reading", () => {
-				expect(classify("p", { message: noCommonType })).toBeInstanceOf(
-					WarehouseInvalidSqlError,
-				)
+				expect(classify("p", { message: noCommonType })).toBeInstanceOf(WarehouseInvalidSqlError)
 			})
 		})
 
@@ -200,9 +196,9 @@ describe("mapWarehouseError", () => {
 		// testify that the warehouse is pointed somewhere wrong; the same complaint
 		// about SQL the caller wrote is a typo in their query.
 		it("classifies an unknown-database ClickHouse type in Maple-authored SQL", () => {
-			expect(
-				classify("p", { message: "x", type: "UNKNOWN_DATABASE" }, "maple"),
-			).toBeInstanceOf(WarehouseConfigError)
+			expect(classify("p", { message: "x", type: "UNKNOWN_DATABASE" }, "maple")).toBeInstanceOf(
+				WarehouseConfigError,
+			)
 		})
 
 		it("classifies an unknown-database message in Maple-authored SQL", () => {
@@ -226,9 +222,7 @@ describe("mapWarehouseError", () => {
 		it("still reads a missing datasource and a bad URL as configuration", () => {
 			// Neither names a table the caller chose, so both stay config errors
 			// regardless of who wrote the SQL.
-			expect(classify("p", "Resource 'product_events' not found")).toBeInstanceOf(
-				WarehouseConfigError,
-			)
+			expect(classify("p", "Resource 'product_events' not found")).toBeInstanceOf(WarehouseConfigError)
 			expect(classify("p", "Invalid URL")).toBeInstanceOf(WarehouseConfigError)
 			expect(classify("p", { message: "x", type: "UNKNOWN_SETTING" })).toBeInstanceOf(
 				WarehouseConfigError,
@@ -244,9 +238,7 @@ describe("mapWarehouseError", () => {
 		})
 
 		it("classifies a response-parse message", () => {
-			expect(classify("p", "Failed to parse ClickHouse response")).toBeInstanceOf(
-				WarehouseClientError,
-			)
+			expect(classify("p", "Failed to parse ClickHouse response")).toBeInstanceOf(WarehouseClientError)
 		})
 	})
 
@@ -254,18 +246,14 @@ describe("mapWarehouseError", () => {
 	// `"maple"` explicitly: it is only diagnosable from SQL we generated.
 	describe("schema_drift", () => {
 		it("classifies the unknown-identifier ClickHouse type", () => {
-			expect(
-				classify("p", { message: "x", type: "UNKNOWN_IDENTIFIER" }, "maple"),
-			).toBeInstanceOf(WarehouseSchemaDriftError)
+			expect(classify("p", { message: "x", type: "UNKNOWN_IDENTIFIER" }, "maple")).toBeInstanceOf(
+				WarehouseSchemaDriftError,
+			)
 		})
 
 		it("classifies an unknown-identifier message", () => {
 			expect(
-				classify(
-					"p",
-					"Unknown expression or function identifier 'SampleRate' in scope",
-					"maple",
-				),
+				classify("p", "Unknown expression or function identifier 'SampleRate' in scope", "maple"),
 			).toBeInstanceOf(WarehouseSchemaDriftError)
 		})
 	})
@@ -348,8 +336,9 @@ describe("toWarehouseQueryError", () => {
 })
 
 describe("mapWarehouseError on structured driver errors", () => {
-	const driver = (fields: Omit<ConstructorParameters<typeof WarehouseDriverError>[0], "message"> & { message?: string }) =>
-		new WarehouseDriverError({ message: "boom", ...fields })
+	const driver = (
+		fields: Omit<ConstructorParameters<typeof WarehouseDriverError>[0], "message"> & { message?: string },
+	) => new WarehouseDriverError({ message: "boom", ...fields })
 
 	it("reads the HTTP status from the driver error instead of the message", () => {
 		const mapped = mapWarehouseError("p", driver({ reason: "server", status: 503 }))
@@ -375,9 +364,9 @@ describe("mapWarehouseError on structured driver errors", () => {
 	})
 
 	it("treats a transport failure as upstream regardless of its message", () => {
-		expect(mapWarehouseError("p", driver({ reason: "transport", message: "socket hang up" }))).toBeInstanceOf(
-			WarehouseUpstreamError,
-		)
+		expect(
+			mapWarehouseError("p", driver({ reason: "transport", message: "socket hang up" })),
+		).toBeInstanceOf(WarehouseUpstreamError)
 	})
 
 	it("treats an undecodable response as a client failure", () => {
@@ -410,7 +399,9 @@ describe("WarehouseDriverError.fromUnknown", () => {
 	})
 
 	it("marks a SyntaxError as a protocol failure", () => {
-		expect(WarehouseDriverError.fromUnknown(new SyntaxError("Unexpected token <")).reason).toBe("protocol")
+		expect(WarehouseDriverError.fromUnknown(new SyntaxError("Unexpected token <")).reason).toBe(
+			"protocol",
+		)
 	})
 
 	it("returns an existing driver error unchanged", () => {

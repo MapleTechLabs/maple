@@ -12,11 +12,11 @@ DDL snapshot, `local-schema.sql` for the embedded chDB engine, and the Rust inse
 
 ## The tier ladder
 
-| Tier         | Grain                      | TTL  | Answers                                                                                                  |
-| ------------ | -------------------------- | ---- | -------------------------------------------------------------------------------------------------------- |
-| **raw**      | one row per span/log/point | 30d  | "show me this exact trace / these log lines", or anything needing attributes, span names, or an id|
-| **minutely** | pre-aggregated per minute  | 90d  | sub-hour timeseries and alert evaluation, where a per-span scan is the only alternative                  |
-| **hourly**   | pre-aggregated per hour    | 365d | dashboards and trends over days-to-a-year                                                                |
+| Tier         | Grain                      | TTL  | Answers                                                                                            |
+| ------------ | -------------------------- | ---- | -------------------------------------------------------------------------------------------------- |
+| **raw**      | one row per span/log/point | 30d  | "show me this exact trace / these log lines", or anything needing attributes, span names, or an id |
+| **minutely** | pre-aggregated per minute  | 90d  | sub-hour timeseries and alert evaluation, where a per-span scan is the only alternative            |
+| **hourly**   | pre-aggregated per hour    | 365d | dashboards and trends over days-to-a-year                                                          |
 
 **A query must read the coarsest tier that can answer it.** The routing guards
 (`canUseAnnualServiceOverview`, `canUseTracesAggregatesMv`, `canUseServiceOverviewMv`,

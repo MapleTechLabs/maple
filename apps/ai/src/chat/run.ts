@@ -280,13 +280,11 @@ export const runChatTurn = (input: ChatRunInput) => {
 						)
 			}),
 		),
-		Effect.map(
-			(): ChatRunOutcome => ({
-				autonomous: completion?.autonomous ?? false,
-				submitted: completion?.submitted() ?? false,
-				compactions,
-			}),
-		),
+		Effect.map((): ChatRunOutcome => ({
+			autonomous: completion?.autonomous ?? false,
+			submitted: completion?.submitted() ?? false,
+			compactions,
+		})),
 		// One provide, so the run's services share a lifetime. `ChatSession` is the history owner,
 		// which is why the engine's lives only for this provide. A run is an entry point: the Durable Object
 		// invocation owns this scope and nothing outside it composes these layers. The model's own

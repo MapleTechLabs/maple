@@ -138,7 +138,10 @@ export const make = (
 					url.searchParams.set(key, String(value))
 				const request = HttpClientRequest.post(url).pipe(
 					HttpClientRequest.setHeader("authorization", authorization),
-					HttpClientRequest.bodyText(`${options.sql}\nFORMAT JSONEachRow`, "text/plain; charset=utf-8"),
+					HttpClientRequest.bodyText(
+						`${options.sql}\nFORMAT JSONEachRow`,
+						"text/plain; charset=utf-8",
+					),
 				)
 				// The scope spans body consumption, not just response headers. Never follow
 				// redirects with database credentials, including with FetchHttpClient defaults.
@@ -164,7 +167,9 @@ export const make = (
 				}
 				const body = response.stream.pipe(
 					Stream.catchTag("HttpClientError", (error) =>
-						error.reason._tag === "EmptyBodyError" ? Stream.empty : Stream.fail(transportError(error, id)),
+						error.reason._tag === "EmptyBodyError"
+							? Stream.empty
+							: Stream.fail(transportError(error, id)),
 					),
 				)
 				const exceptionCode = response.headers["x-clickhouse-exception-code"]
@@ -190,7 +195,10 @@ export const make = (
 			query: (options) =>
 				Effect.scoped(
 					Effect.flatMap(openWithId(options), (query) =>
-						Effect.map(Stream.runCollect(query.rows), (data) => ({ data, queryId: query.queryId })),
+						Effect.map(Stream.runCollect(query.rows), (data) => ({
+							data,
+							queryId: query.queryId,
+						})),
 					),
 				),
 		}

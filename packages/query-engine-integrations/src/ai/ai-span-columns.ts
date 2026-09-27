@@ -149,7 +149,11 @@ export function reportingSpanIdsExpr(reporters: string): Expr<unknown> {
  * is what a page read paid for before it touched a row — seven copies of the
  * netting, three times each, were most of the read.
  */
-export function nettedReportersExpr(reporters: string, childClaims: string, reportingIds: string): Expr<unknown> {
+export function nettedReportersExpr(
+	reporters: string,
+	childClaims: string,
+	reportingIds: string,
+): Expr<unknown> {
 	// Where the reporter's own children sit in the parallel arrays: zero, and
 	// so a zero claim, for a reporter no reporter names as its parent.
 	const position = `indexOf(tupleElement(${childClaims}, 1), r.1)`

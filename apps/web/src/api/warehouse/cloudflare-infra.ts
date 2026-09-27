@@ -282,31 +282,25 @@ export const getCloudflareZoneDetail = Effect.fn("QueryEngine.getCloudflareZoneD
 		}),
 	)
 	return {
-		statusBuckets: result.statusBuckets.map(
-			(row): CloudflareZoneStatusBucket => ({
-				bucket: String(row.bucket ?? ""),
-				statusClass: String(row.statusClass ?? "unknown"),
-				requests: Number(row.requests ?? 0),
-			}),
-		),
-		cacheBuckets: result.cacheBuckets.map(
-			(row): CloudflareZoneCacheBucket => ({
-				bucket: String(row.bucket ?? ""),
-				cacheStatus: String(row.cacheStatus ?? "unknown"),
-				requests: Number(row.requests ?? 0),
-			}),
-		),
-		latencyBuckets: result.latencyBuckets.map(
-			(row): CloudflareZoneLatencyBucket => ({
-				bucket: String(row.bucket ?? ""),
-				ttfbP50Ms: Number(row.ttfbP50Ms ?? 0),
-				ttfbP95Ms: Number(row.ttfbP95Ms ?? 0),
-				ttfbP99Ms: Number(row.ttfbP99Ms ?? 0),
-				originP50Ms: Number(row.originP50Ms ?? 0),
-				originP95Ms: Number(row.originP95Ms ?? 0),
-				originP99Ms: Number(row.originP99Ms ?? 0),
-			}),
-		),
+		statusBuckets: result.statusBuckets.map((row): CloudflareZoneStatusBucket => ({
+			bucket: String(row.bucket ?? ""),
+			statusClass: String(row.statusClass ?? "unknown"),
+			requests: Number(row.requests ?? 0),
+		})),
+		cacheBuckets: result.cacheBuckets.map((row): CloudflareZoneCacheBucket => ({
+			bucket: String(row.bucket ?? ""),
+			cacheStatus: String(row.cacheStatus ?? "unknown"),
+			requests: Number(row.requests ?? 0),
+		})),
+		latencyBuckets: result.latencyBuckets.map((row): CloudflareZoneLatencyBucket => ({
+			bucket: String(row.bucket ?? ""),
+			ttfbP50Ms: Number(row.ttfbP50Ms ?? 0),
+			ttfbP95Ms: Number(row.ttfbP95Ms ?? 0),
+			ttfbP99Ms: Number(row.ttfbP99Ms ?? 0),
+			originP50Ms: Number(row.originP50Ms ?? 0),
+			originP95Ms: Number(row.originP95Ms ?? 0),
+			originP99Ms: Number(row.originP99Ms ?? 0),
+		})),
 		ignoredFilters: result.ignoredFilters,
 		/** Always every active dimension filter — latency gauges carry only `quantile`. */
 		latencyIgnoredFilters: result.latencyIgnoredFilters,
@@ -389,22 +383,18 @@ export const getCloudflareZoneSecurity = Effect.fn("QueryEngine.getCloudflareZon
 		}),
 	)
 	return {
-		buckets: result.buckets.map(
-			(row): CloudflareZoneFirewallBucket => ({
-				bucket: String(row.bucket ?? ""),
-				action: String(row.action ?? "unknown"),
-				events: Number(row.events ?? 0),
-			}),
-		),
-		top: result.top.map(
-			(row): CloudflareZoneFirewallTopRow => ({
-				source: String(row.source ?? "unknown"),
-				action: String(row.action ?? "unknown"),
-				ruleId: String(row.ruleId ?? "unknown"),
-				host: String(row.host ?? "unknown"),
-				events: Number(row.events ?? 0),
-			}),
-		),
+		buckets: result.buckets.map((row): CloudflareZoneFirewallBucket => ({
+			bucket: String(row.bucket ?? ""),
+			action: String(row.action ?? "unknown"),
+			events: Number(row.events ?? 0),
+		})),
+		top: result.top.map((row): CloudflareZoneFirewallTopRow => ({
+			source: String(row.source ?? "unknown"),
+			action: String(row.action ?? "unknown"),
+			ruleId: String(row.ruleId ?? "unknown"),
+			host: String(row.host ?? "unknown"),
+			events: Number(row.events ?? 0),
+		})),
 		ignoredFilters: result.ignoredFilters,
 	}
 })
@@ -443,20 +433,16 @@ export const getCloudflareZoneDns = Effect.fn("QueryEngine.getCloudflareZoneDns"
 		}),
 	)
 	return {
-		buckets: result.buckets.map(
-			(row): CloudflareZoneDnsBucket => ({
-				bucket: String(row.bucket ?? ""),
-				responseCode: String(row.responseCode ?? "unknown"),
-				queries: Number(row.queries ?? 0),
-			}),
-		),
-		names: result.names.map(
-			(row): CloudflareZoneDnsName => ({
-				queryName: String(row.queryName ?? "unknown"),
-				queries: Number(row.queries ?? 0),
-				nxdomain: Number(row.nxdomain ?? 0),
-			}),
-		),
+		buckets: result.buckets.map((row): CloudflareZoneDnsBucket => ({
+			bucket: String(row.bucket ?? ""),
+			responseCode: String(row.responseCode ?? "unknown"),
+			queries: Number(row.queries ?? 0),
+		})),
+		names: result.names.map((row): CloudflareZoneDnsName => ({
+			queryName: String(row.queryName ?? "unknown"),
+			queries: Number(row.queries ?? 0),
+			nxdomain: Number(row.nxdomain ?? 0),
+		})),
 		ignoredFilters: result.ignoredFilters,
 	}
 })
@@ -622,20 +608,16 @@ export const getCloudflareZoneBreakdown = Effect.fn("QueryEngine.getCloudflareZo
 	}))
 	const attributed = rows.reduce((sum, row) => sum + row.requests, 0)
 	const breakdown: CloudflareZoneBreakdown = {
-		totals: rows.map(
-			(row): CloudflareBreakdownTotal => ({
-				...row,
-				errorRate: ratio(row.errors5xx, row.requests),
-				share: ratio(row.requests, attributed),
-			}),
-		),
-		buckets: result.buckets.map(
-			(row): CloudflareBreakdownBucket => ({
-				bucket: String(row.bucket ?? ""),
-				key: String(row.key ?? ""),
-				requests: Number(row.requests ?? 0),
-			}),
-		),
+		totals: rows.map((row): CloudflareBreakdownTotal => ({
+			...row,
+			errorRate: ratio(row.errors5xx, row.requests),
+			share: ratio(row.requests, attributed),
+		})),
+		buckets: result.buckets.map((row): CloudflareBreakdownBucket => ({
+			bucket: String(row.bucket ?? ""),
+			key: String(row.key ?? ""),
+			requests: Number(row.requests ?? 0),
+		})),
 		unattributed: result.unattributed,
 		coverage: ratio(attributed, attributed + result.unattributed),
 		coverageStart: result.coverageStart,
@@ -736,14 +718,12 @@ export const getCloudflareTopTraffic = Effect.fn("Integrations.getCloudflareTopT
 	)
 	return {
 		unavailableReason: result.unavailableReason,
-		rows: result.rows.map(
-			(row): CloudflareTopTrafficEntry => ({
-				key: row.key,
-				requests: row.requests,
-				bytes: row.bytes,
-				errors5xx: row.errors5xx,
-				errorRate: ratio(row.errors5xx, row.requests),
-			}),
-		),
+		rows: result.rows.map((row): CloudflareTopTrafficEntry => ({
+			key: row.key,
+			requests: row.requests,
+			bytes: row.bytes,
+			errors5xx: row.errors5xx,
+			errorRate: ratio(row.errors5xx, row.requests),
+		})),
 	}
 })

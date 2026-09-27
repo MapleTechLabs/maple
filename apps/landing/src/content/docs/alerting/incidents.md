@@ -13,11 +13,11 @@ A rule that evaluates several groups (several services, or a **Group by**) keeps
 
 Maple checks every enabled rule once a minute. Each check is **breached**, **healthy** or **skipped** (too few samples, or no data).
 
-| Step       | When it happens                                                                                                  | Notification |
-| ---------- | ---------------------------------------------------------------------------------------------------------------- | ------------ |
-| Open       | The rule breaches on **Breaches to fire** consecutive checks.                                                     | `trigger`    |
-| Renotify   | The incident is still breaching and **Renotify (min)** minutes have passed since the last notification.          | `renotify`   |
-| Resolve    | The rule is healthy on **Healthy to resolve** consecutive checks.                                                 | `resolve`    |
+| Step     | When it happens                                                                                         | Notification |
+| -------- | ------------------------------------------------------------------------------------------------------- | ------------ |
+| Open     | The rule breaches on **Breaches to fire** consecutive checks.                                           | `trigger`    |
+| Renotify | The incident is still breaching and **Renotify (min)** minutes have passed since the last notification. | `renotify`   |
+| Resolve  | The rule is healthy on **Healthy to resolve** consecutive checks.                                       | `resolve`    |
 
 Skipped checks do not move the incident either way. The breach and healthy counters keep their values until the next check that has enough data.
 
@@ -33,12 +33,12 @@ A breach can stop appearing because the problem is fixed, or because the service
 
 If Maple cannot confirm the traffic, the incident stays open and shows **Waiting on data** in place of its current value. Hovering the badge shows why:
 
-| Situation                                                                  | Resolves                                                     |
-| -------------------------------------------------------------------------- | ------------------------------------------------------------ |
-| The service stopped reporting.                                             | When telemetry returns, or after 6 hours.                    |
-| Traffic fell below half of its usual level.                                | When data returns, or after 3 windows (at least 30 minutes). |
-| Raw span counts fell while sample-weighted counts did not (sampling changed). | When the signal settles, or after 6 hours.                |
-| Maple could not verify telemetry for the service.                          | On the next successful check.                                |
+| Situation                                                                     | Resolves                                                     |
+| ----------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| The service stopped reporting.                                                | When telemetry returns, or after 6 hours.                    |
+| Traffic fell below half of its usual level.                                   | When data returns, or after 3 windows (at least 30 minutes). |
+| Raw span counts fell while sample-weighted counts did not (sampling changed). | When the signal settles, or after 6 hours.                   |
+| Maple could not verify telemetry for the service.                             | On the next successful check.                                |
 
 If the breach reappears while the incident is waiting, it goes back to firing. If the time limit passes without a breach, Maple resolves the incident and says so in the resolve reason.
 

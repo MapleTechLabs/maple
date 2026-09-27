@@ -141,7 +141,7 @@ The chart bundles the OpenTelemetry Operator and an `Instrumentation/maple-defau
 | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | EKS standard, GKE Standard, AKS | Works out of the box.                                                                                                                                                               |
 | EKS Fargate                     | The DaemonSet can't run on Fargate nodes. Keep one EC2 node for the agent, and set `presets.fargateMetrics.enabled=true` so per-pod CPU/memory is scraped via the API-server proxy. |
-| GKE Autopilot                   | Only annotate your own namespaces. Mutating webhooks are rejected on Google-managed namespaces.                                                                                      |
+| GKE Autopilot                   | Only annotate your own namespaces. Mutating webhooks are rejected on Google-managed namespaces.                                                                                     |
 | k3s / kind / k0s                | Works with auto-generated webhook certs (no cert-manager needed).                                                                                                                   |
 | Service mesh (Linkerd, Istio)   | Sidecars rewrite source IPs, but the `k8s.pod.uid` / `(name, namespace)` association keys ride inside the OTLP payload and rescue the workload join. No mesh-side config needed.    |
 

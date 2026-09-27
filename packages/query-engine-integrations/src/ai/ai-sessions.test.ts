@@ -368,10 +368,14 @@ describe("aiSessionPageQuery", () => {
 		// The session's reporters, every trace's flattened, so a gateway's mirror
 		// trace of a call is in hand next to the app's own span of it — and the
 		// two lookups the netting makes, taken off them once per session.
-		expect(sessions).toContain("arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000) AS reporters")
+		expect(sessions).toContain(
+			"arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000) AS reporters",
+		)
 		expect(sessions).toContain("arrayReduce('sumMap', arrayMap(c -> [c.2], reporters)")
 		expect(sessions).toContain(") AS childClaims")
-		expect(sessions).toContain("tupleElement(arrayFilter(p -> p.3 > 0 OR p.4 > 0, reporters), 1) AS reportingIds")
+		expect(sessions).toContain(
+			"tupleElement(arrayFilter(p -> p.3 > 0 OR p.4 > 0, reporters), 1) AS reportingIds",
+		)
 		expect(sessions).toContain(
 			"intDiv(max(traceAgentEndNanos) - toUnixTimestamp64Nano(min(traceAgentStart)), 1000000) AS agentDurationMs",
 		)
@@ -497,7 +501,9 @@ describe("aiSessionPageQuery", () => {
 		expect(byCost.split("ORDER BY").length - 1).toBe(1)
 		// A session-level sort ranks and cuts the page before the netting.
 		const byDuration = compileUnsafe(aiSessionPageQuery({ sortBy: "durationMs" }), params).sql
-		expect(byDuration.split("ORDER BY agentDurationMs DESC, agentStart DESC, sessionId ASC").length - 1).toBe(2)
+		expect(
+			byDuration.split("ORDER BY agentDurationMs DESC, agentStart DESC, sessionId ASC").length - 1,
+		).toBe(2)
 		expect(byDuration.indexOf("LIMIT 50")).toBeLessThan(byDuration.indexOf(") AS ranked_sessions"))
 		expect(compileUnsafe(aiSessionPageQuery({ sortBy: "errorSpanCount" }), params).sql).toContain(
 			"ORDER BY errorAgentSpans DESC, agentStart DESC, sessionId ASC",
@@ -1379,7 +1385,12 @@ describe("aiSessionSummaryQuery", () => {
 	it("reads usage across every vendor spelling, per call and in total", () => {
 		const { sql } = compileUnsafe(aiSessionSummaryQuery(), summaryParams)
 
-		for (const key of ["gen_ai.usage.input_tokens", "gen_ai.usage.prompt_tokens", "ai.usage.inputTokens", "llm.token_count.prompt"]) {
+		for (const key of [
+			"gen_ai.usage.input_tokens",
+			"gen_ai.usage.prompt_tokens",
+			"ai.usage.inputTokens",
+			"llm.token_count.prompt",
+		]) {
 			expect(sql, key).toContain(`SpanAttributes['${key}']`)
 		}
 		expect(sql).toContain("AS inputTokens")
@@ -1406,7 +1417,9 @@ describe("aiSessionSummaryQuery", () => {
 	it("guards every usage sum against a non-finite attribute", () => {
 		const { sql } = compileUnsafe(aiSessionSummaryQuery(), summaryParams)
 		for (const alias of ["inputTokens", "llmInputTokens", "cost", "llmCost"]) {
-			expect(sql, alias).toMatch(new RegExp(`ifNotFinite\\(sum(If)?\\(toFloat64OrZero\\([^\\n]*, 0\\) AS ${alias},`))
+			expect(sql, alias).toMatch(
+				new RegExp(`ifNotFinite\\(sum(If)?\\(toFloat64OrZero\\([^\\n]*, 0\\) AS ${alias},`),
+			)
 		}
 	})
 
@@ -1455,6 +1468,12 @@ describe("aiSessionSummaryQuery", () => {
 			},
 		])
 
-		expect(row).toMatchObject({ spanCount: 12, durationMs: 1000, inputTokens: 300, cost: 0.0123, models: ["gpt-5"] })
+		expect(row).toMatchObject({
+			spanCount: 12,
+			durationMs: 1000,
+			inputTokens: 300,
+			cost: 0.0123,
+			models: ["gpt-5"],
+		})
 	})
 })
