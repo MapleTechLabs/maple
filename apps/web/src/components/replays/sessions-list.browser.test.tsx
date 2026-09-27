@@ -264,6 +264,16 @@ describe("SessionsList low-signal runs", () => {
 		expect(onReachEnd).toHaveBeenCalledOnce()
 	})
 
+	it("asks before loading more when folding leaves the list short, whatever the last row", () => {
+		const onReachEnd = vi.fn()
+		const noise = Array.from({ length: 49 }, (_, index) => bot(`bot-${index}`))
+		const view = render(
+			<SessionsList sessions={[...noise, session]} collapseLowSignal hasMore onReachEnd={onReachEnd} />,
+		)
+		expect(view.getByRole("button", { name: "Load more sessions" })).toBeTruthy()
+		expect(onReachEnd).not.toHaveBeenCalled()
+	})
+
 	it("shows every row when collapsing is off", () => {
 		const view = render(<SessionsList sessions={sessions} />)
 		expect(view.queryByText("2 low-signal sessions")).toBeNull()

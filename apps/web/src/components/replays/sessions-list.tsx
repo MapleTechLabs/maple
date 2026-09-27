@@ -76,6 +76,10 @@ const COLUMNS = {
 	time: "hidden w-24 shrink-0 justify-end @2xl:flex",
 } as const
 
+/** Rendered rows (~65px each) past which the sentinel sits below any viewport plus
+ *  its 400px root margin, so it only fires once the user scrolls. */
+const AUTO_LOAD_MIN_ROWS = 25
+
 interface SessionsListProps {
 	sessions: ReadonlyArray<SessionRow>
 	/** Fetch the next page — invoked when the bottom sentinel scrolls into view. */
@@ -163,8 +167,11 @@ export function SessionsList({
 		expanded,
 		nowMs: effectiveNowMs,
 	})
-	const lastItem = items.at(-1)
-	const endsInFoldedRun = lastItem?.kind === "quiet" && !lastItem.expanded
+	// Folded runs can leave a page of sessions only a few rows tall, which keeps the
+	// auto-loading sentinel in view and pulls every page with no scrolling. Until
+	// the rendered rows are tall enough that reaching the end takes a scroll, ask.
+	const hidesSessions = items.some((item) => item.kind === "quiet" && !item.expanded)
+	const manualLoadMore = hidesSessions && items.length < AUTO_LOAD_MIN_ROWS
 	const toggleRun = (key: string) =>
 		setExpanded((previous) => {
 			const next = new Set(previous)
@@ -246,10 +253,8 @@ export function SessionsList({
 				})}
 			</div>
 
-			{/* A folded run is one short row however many sessions it holds, so an
-			    auto-loading sentinel after it stays in view and pulls every page. */}
 			{hasMore &&
-				(endsInFoldedRun ? (
+				(manualLoadMore ? (
 					<button
 						type="button"
 						onClick={() => onReachEnd?.()}
