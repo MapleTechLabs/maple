@@ -19,7 +19,7 @@
 		"@base-ui/react": "catalog:ui",
 		"@maple/domain": "workspace:*",
 		"@maple/query-engine": "workspace:*",
-		"@shadcn/react": "^0.2.1",
+		"@shadcn/react": "^0.3.1",
 		"@tanstack/charts": "catalog:charts",
 		"@tanstack/charts-scales": "catalog:charts",
 		"@tanstack/react-virtual": "^3.14.13",
@@ -29,7 +29,7 @@
 		"d3-scale": "^4.0.2",
 		"d3-shape": "^3.2.0",
 		"effect": "catalog:effect",
-		"elkjs": "^0.11.1",
+		"elkjs": "^0.12.0",
 		"react-day-picker": "^10.0.1",
 		"react-resizable-panels": "^4.14.1",
 		"tailwind-merge": "catalog:tailwind"

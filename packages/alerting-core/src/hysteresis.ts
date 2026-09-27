@@ -31,24 +31,28 @@ export type HysteresisConfig = Schema.Schema.Type<typeof HysteresisConfig>
  * with `>=`. That keeps open/resolve behaviour identical while letting a
  * steady-state tick recognise its state as unchanged and skip the row upsert.
  */
-export const HysteresisStates = Machine.states({
-	Clear: Schema.TaggedStruct("Clear", {
-		consecutiveHealthy: Schema.Number,
-		/** Set only while a post-resolve cooldown is still running. */
-		cooldownUntilMs: Schema.NullOr(Schema.Number),
-	}),
-	Breaching: Schema.TaggedStruct("Breaching", {
-		consecutiveBreaches: Schema.Number,
-		cooldownUntilMs: Schema.NullOr(Schema.Number),
-	}),
-	Open: Schema.TaggedStruct("Open", {
-		consecutiveBreaches: Schema.Number,
-		consecutiveHealthy: Schema.Number,
-	}),
+export const HysteresisStates = Machine.state({
+	states: {
+		Clear: Schema.TaggedStruct("Clear", {
+			consecutiveHealthy: Schema.Number,
+			/** Set only while a post-resolve cooldown is still running. */
+			cooldownUntilMs: Schema.NullOr(Schema.Number),
+		}),
+		Breaching: Schema.TaggedStruct("Breaching", {
+			consecutiveBreaches: Schema.Number,
+			cooldownUntilMs: Schema.NullOr(Schema.Number),
+		}),
+		Open: Schema.TaggedStruct("Open", {
+			consecutiveBreaches: Schema.Number,
+			consecutiveHealthy: Schema.Number,
+		}),
+	},
 })
 
+const targets = Machine.targets(HysteresisStates)
+
 /** One evaluated window, in the order the scheduler saw it. */
-export const HysteresisEvent = Machine.events(
+export const HysteresisEvent = Machine.eventsFromSchemas(
 	Schema.TaggedUnion({
 		Breached: { nowMs: Schema.Number, config: HysteresisConfig },
 		Recovered: { nowMs: Schema.Number, config: HysteresisConfig },
@@ -57,21 +61,12 @@ export const HysteresisEvent = Machine.events(
 	}),
 )
 
-export const HysteresisEmit = Machine.emittedEvents(
+export const HysteresisEmit = Machine.emittedEventsFromSchemas(
 	Schema.TaggedUnion({
 		IncidentOpened: { atMs: Schema.Number },
 		IncidentResolved: { atMs: Schema.Number },
 	}),
 )
-
-const definition = Machine.make({
-	id: "IncidentHysteresis",
-	states: HysteresisStates.states,
-	events: HysteresisEvent,
-	emittedEvents: HysteresisEmit,
-	initial: (to) =>
-		to.Clear().resolve(({ target }) => target.from({ consecutiveHealthy: 0, cooldownUntilMs: null })),
-})
 
 /** Whether a cooldown recorded at `untilMs` is still suppressing re-opens at `nowMs`. */
 const cooling = (untilMs: number | null, nowMs: number): boolean => untilMs !== null && nowMs < untilMs
@@ -80,51 +75,66 @@ const cooling = (untilMs: number | null, nowMs: number): boolean => untilMs !== 
 const carryCooldown = (untilMs: number | null, nowMs: number): number | null =>
 	cooling(untilMs, nowMs) ? untilMs : null
 
-export const IncidentHysteresis = definition.handle({
-	Clear: {
-		on: {
-			Breached: (to) =>
-				to
-					.branches({
-						breaching: { target: to.full.Breaching(), title: "still below the open threshold" },
-						opened: { target: to.full.Open(), title: "threshold met" },
-					})
-					.resolve(({ state, event, select }, enqueue) => {
+export const IncidentHysteresis = Machine.make({
+	id: "IncidentHysteresis",
+	root: HysteresisStates,
+	events: HysteresisEvent,
+	emittedEvents: HysteresisEmit,
+	branches: {
+		breach: {
+			breaching: { target: targets.root.Breaching },
+			opened: { target: targets.root.Open },
+		},
+		recover: {
+			open: { target: targets.root.Open },
+			resolved: { target: targets.root.Clear },
+		},
+	},
+}).handle({
+	initial: {
+		target: targets.root.Clear,
+		data: () => ({ consecutiveHealthy: 0, cooldownUntilMs: null }),
+	},
+	states: {
+		Clear: {
+			on: {
+				Breached: {
+					branches: "breach",
+					resolve: ({ state, event, select }, enqueue) => {
 						const consecutiveBreaches = Math.min(1, event.config.breachesToOpen)
 						if (
 							consecutiveBreaches >= event.config.breachesToOpen &&
 							!cooling(state.cooldownUntilMs, event.nowMs)
 						) {
 							enqueue.emit(HysteresisEmit.IncidentOpened({ atMs: event.nowMs }))
-							return select.opened.from({ consecutiveBreaches, consecutiveHealthy: 0 })
+							return select.opened({ data: { consecutiveBreaches, consecutiveHealthy: 0 } })
 						}
-						return select.breaching.from({
-							consecutiveBreaches,
-							cooldownUntilMs: carryCooldown(state.cooldownUntilMs, event.nowMs),
+						return select.breaching({
+							data: {
+								consecutiveBreaches,
+								cooldownUntilMs: carryCooldown(state.cooldownUntilMs, event.nowMs),
+							},
 						})
-					}),
-			Recovered: (to) =>
-				to.full.Clear().resolve(({ state, event, target }) =>
-					target.from({
+					},
+				},
+				Recovered: {
+					update: targets.root.Clear,
+					data: ({ state, event }) => ({
 						consecutiveHealthy: Math.min(
 							state.consecutiveHealthy + 1,
 							event.config.healthyToResolve,
 						),
 						cooldownUntilMs: carryCooldown(state.cooldownUntilMs, event.nowMs),
 					}),
-				),
-			Skipped: (to) => to.none,
+				},
+				Skipped: { none: true },
+			},
 		},
-	},
-	Breaching: {
-		on: {
-			Breached: (to) =>
-				to
-					.branches({
-						breaching: { target: to.full.Breaching(), title: "still below the open threshold" },
-						opened: { target: to.full.Open(), title: "threshold met" },
-					})
-					.resolve(({ state, event, select }, enqueue) => {
+		Breaching: {
+			on: {
+				Breached: {
+					branches: "breach",
+					resolve: ({ state, event, select }, enqueue) => {
 						const consecutiveBreaches = Math.min(
 							state.consecutiveBreaches + 1,
 							event.config.breachesToOpen,
@@ -134,42 +144,41 @@ export const IncidentHysteresis = definition.handle({
 							!cooling(state.cooldownUntilMs, event.nowMs)
 						) {
 							enqueue.emit(HysteresisEmit.IncidentOpened({ atMs: event.nowMs }))
-							return select.opened.from({ consecutiveBreaches, consecutiveHealthy: 0 })
+							return select.opened({ data: { consecutiveBreaches, consecutiveHealthy: 0 } })
 						}
-						return select.breaching.from({
-							consecutiveBreaches,
-							cooldownUntilMs: carryCooldown(state.cooldownUntilMs, event.nowMs),
+						return select.breaching({
+							data: {
+								consecutiveBreaches,
+								cooldownUntilMs: carryCooldown(state.cooldownUntilMs, event.nowMs),
+							},
 						})
-					}),
-			Recovered: (to) =>
-				to.full.Clear().resolve(({ state, event, target }) =>
-					target.from({
+					},
+				},
+				Recovered: {
+					target: targets.root.Clear,
+					data: ({ state, event }) => ({
 						consecutiveHealthy: Math.min(1, event.config.healthyToResolve),
 						cooldownUntilMs: carryCooldown(state.cooldownUntilMs, event.nowMs),
 					}),
-				),
-			Skipped: (to) => to.none,
+				},
+				Skipped: { none: true },
+			},
 		},
-	},
-	Open: {
-		on: {
-			Breached: (to) =>
-				to.full.Open().resolve(({ state, event, target }) =>
-					target.from({
+		Open: {
+			on: {
+				Breached: {
+					update: targets.root.Open,
+					data: ({ state, event }) => ({
 						consecutiveBreaches: Math.min(
 							state.consecutiveBreaches + 1,
 							event.config.breachesToOpen,
 						),
 						consecutiveHealthy: 0,
 					}),
-				),
-			Recovered: (to) =>
-				to
-					.branches({
-						open: { target: to.full.Open(), title: "not healthy for long enough yet" },
-						resolved: { target: to.full.Clear(), title: "recovery confirmed" },
-					})
-					.resolve(({ state, event, select }, enqueue) => {
+				},
+				Recovered: {
+					branches: "recover",
+					resolve: ({ state, event, select }, enqueue) => {
 						const consecutiveHealthy = Math.min(
 							state.consecutiveHealthy + 1,
 							event.config.healthyToResolve,
@@ -178,16 +187,22 @@ export const IncidentHysteresis = definition.handle({
 							// A healthy window clears the breach run even while the incident
 							// stands: the run that opened it is over, and a later re-breach
 							// starts counting from one.
-							return select.open.from({ consecutiveBreaches: 0, consecutiveHealthy })
+							return select.open({ data: { consecutiveBreaches: 0, consecutiveHealthy } })
 						}
 						enqueue.emit(HysteresisEmit.IncidentResolved({ atMs: event.nowMs }))
-						return select.resolved.from({
-							consecutiveHealthy,
-							cooldownUntilMs:
-								event.config.cooldownMs > 0 ? event.nowMs + event.config.cooldownMs : null,
+						return select.resolved({
+							data: {
+								consecutiveHealthy,
+								cooldownUntilMs:
+									event.config.cooldownMs > 0
+										? event.nowMs + event.config.cooldownMs
+										: null,
+							},
 						})
-					}),
-			Skipped: (to) => to.none,
+					},
+				},
+				Skipped: { none: true },
+			},
 		},
 	},
 })
@@ -260,14 +275,19 @@ const snapshotFrom = (
 						cooldownUntilMs,
 					},
 				}
-	return Machine.decodeSnapshot(IncidentHysteresis, { _tag: "MachineSnapshot", active: [active] })
+	// The encoded form lists the root node ahead of its active child.
+	return Machine.decodeSnapshot(IncidentHysteresis, {
+		_tag: "MachineSnapshot",
+		version: 2,
+		active: [{ path: "" }, active],
+	})
 }
 
 /** The counters a snapshot implies, in the columns the rows actually have. */
 export const countersOf = (
 	snapshot: HysteresisSnapshot,
 ): { readonly consecutiveBreaches: number; readonly consecutiveHealthy: number } => {
-	const value = snapshot.value
+	const value = snapshot.state.value
 	switch (value._tag) {
 		case "Clear":
 			return { consecutiveBreaches: 0, consecutiveHealthy: value.consecutiveHealthy }
