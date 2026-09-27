@@ -495,7 +495,7 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 							if (claimedSubs.length === 0) return []
 
 							const props = yield* generateData(orgId)
-							// Only orgs that run the browser SDK (or get crawled) hear from us.
+							// Only orgs whose browser SDK reported visits hear from us.
 							if (!hasWebAnalyticsContent(props)) return []
 
 							const html = yield* render(props)

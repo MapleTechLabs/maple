@@ -50,21 +50,30 @@ describe("deriveWebAnalyticsHeadline", () => {
 })
 
 describe("hasWebAnalyticsContent", () => {
-	it("is true for crawler-only traffic", () => {
+	const noBrowserData = {
+		...quietWebAnalyticsDigestProps,
+		summary: {
+			...quietWebAnalyticsDigestProps.summary,
+			visitors: { value: 0, delta: { kind: "none" } },
+			pageViews: { value: 0, delta: { kind: "none" } },
+		},
+	} satisfies typeof quietWebAnalyticsDigestProps
+
+	it("is false without browser SDK data, even when AI crawlers hit the site", () => {
+		// Crawler fetches are server spans: they exist without the browser SDK.
 		expect(
 			hasWebAnalyticsContent({
-				...quietWebAnalyticsDigestProps,
-				summary: {
-					...quietWebAnalyticsDigestProps.summary,
-					visitors: { value: 0, delta: { kind: "none" } },
-					pageViews: { value: 0, delta: { kind: "none" } },
-				},
+				...noBrowserData,
 				ai: {
 					referrals: { sessions: 0, delta: { kind: "none" }, byProduct: [] },
-					crawlers: { requests: 5, delta: { kind: "new" }, byCrawler: [] },
+					crawlers: { requests: 5_000, delta: { kind: "new" }, byCrawler: [] },
 				},
 			}),
-		).toBe(true)
+		).toBe(false)
+	})
+
+	it("is true once the browser SDK reports visits", () => {
+		expect(hasWebAnalyticsContent(quietWebAnalyticsDigestProps)).toBe(true)
 	})
 })
 

@@ -273,8 +273,8 @@ export function NotificationsSection() {
 					<div>
 						<p className="text-sm font-medium">Web analytics</p>
 						<p className="text-muted-foreground text-xs">
-							Weekly overview of visitors, top pages and AI traffic. Only sent when your sites
-							have data.
+							Weekly overview of visitors, top pages and AI traffic. Only sent once the browser
+							SDK is reporting visits.
 						</p>
 					</div>
 				</div>

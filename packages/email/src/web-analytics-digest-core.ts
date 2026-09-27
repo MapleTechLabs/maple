@@ -179,12 +179,15 @@ export function deriveWebAnalyticsHeadline(props: WebAnalyticsDigestProps): WebA
 	return { headline, standout, subject }
 }
 
-/** True when there is anything worth emailing about. */
+/**
+ * True when the browser SDK reported visits this week. Every figure here but the
+ * crawler card comes from the SDK's sessions and page views, so an org that never
+ * installed it gets no email, even when AI crawlers (server spans) hit its site.
+ */
 export function hasWebAnalyticsContent(props: WebAnalyticsDigestProps): boolean {
 	return (
 		props.summary.visitors.value > 0 ||
 		props.summary.pageViews.value > 0 ||
-		props.ai.referrals.sessions > 0 ||
-		(props.ai.crawlers?.requests ?? 0) > 0
+		props.ai.referrals.sessions > 0
 	)
 }
