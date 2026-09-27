@@ -23,6 +23,7 @@ import { DashboardPersistenceService } from "@maple/backend/services/dashboards/
 import { SharedDashboardService } from "@maple/backend/services/dashboards/SharedDashboardService"
 import { DashboardWidgetDataService } from "@maple/backend/services/dashboards/DashboardWidgetDataService"
 import { DigestService } from "@maple/backend/services/digest/DigestService"
+import { WebAnalyticsDigestService } from "@maple/backend/services/digest/WebAnalyticsDigestService"
 import { AiTriageService } from "@maple/backend/services/errors/AiTriageService"
 import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
 import { ErrorIssueReadModelsService } from "@maple/backend/services/errors/ErrorIssueReadModelsService"
@@ -126,6 +127,7 @@ export const HttpServicesLive = Layer.mergeAll(
 	SetupAuditService.layer,
 	SignalPresenceService.layer,
 	DigestService.layer,
+	WebAnalyticsDigestService.layer,
 	DemoService.layer,
 	GithubConnectService.layer,
 	VcsCommitService.layer,

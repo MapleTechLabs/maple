@@ -9,6 +9,7 @@ import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
 import { AnomalyDetectionService } from "@maple/backend/services/alerts/AnomalyDetectionService"
 import { CloudflareAnalyticsService } from "@maple/backend/services/integrations/CloudflareAnalyticsService"
 import { DigestService } from "@maple/backend/services/digest/DigestService"
+import { WebAnalyticsDigestService } from "@maple/backend/services/digest/WebAnalyticsDigestService"
 import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
 import { Env } from "@maple/backend/platform/Env"
 import { ErrorsService } from "@maple/backend/services/errors/ErrorsService"
@@ -40,6 +41,7 @@ export const buildLayer = (env: AlertingWorkerEnv) =>
 		CloudflareAnalyticsService.layer,
 		PlanetScaleService.layer,
 		DigestService.layer,
+		WebAnalyticsDigestService.layer,
 		ErrorsService.layer,
 		FixVerificationTickService.layer,
 		EscalationService.layer,
@@ -159,7 +161,7 @@ const escalationTick = makeTick(
 			: undefined,
 )
 
-const digestTick = makeTick(
+const opsDigestTick = makeTick(
 	DigestService.use((digest) => digest.runDigestTick()),
 	"digest",
 	(result) => ({
@@ -168,6 +170,20 @@ const digestTick = makeTick(
 		skipped: result.skipped,
 	}),
 )
+
+const webAnalyticsDigestTick = makeTick(
+	WebAnalyticsDigestService.use((digest) => digest.runTick()),
+	"web_analytics_digest",
+	(result) => ({
+		sentCount: result.sentCount,
+		errorCount: result.errorCount,
+		skipped: result.skipped,
+	}),
+)
+
+// Sequential: the ops digest tick runs the daily Clerk member sweep that seeds
+// the subscriber rows both emails read.
+const digestTick = Effect.andThen(opsDigestTick, webAnalyticsDigestTick)
 
 // The onboarding drip moved to maple-portal (`camp_onboarding`), which owns the
 // sequence, its send log and its suppression list. `org_onboarding_state` stays
@@ -285,6 +301,7 @@ type ScheduledServices =
 	| AnomalyDetectionService
 	| CloudflareAnalyticsService
 	| DigestService
+	| WebAnalyticsDigestService
 	| ErrorsService
 	| EscalationService
 	| FixVerificationTickService
