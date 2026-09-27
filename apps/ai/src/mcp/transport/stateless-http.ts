@@ -281,7 +281,7 @@ export const layerStatelessMcpHttp = (options: {
 						const client = clients.get(targetClientId)
 						return client ? client.end : Effect.void
 					},
-					clientIds: Effect.sync(() => clientIds),
+					clientIds: Effect.succeed(clientIds),
 					initialMessage: Effect.succeedNone,
 					supportsAck: false,
 					supportsTransferables: false,
