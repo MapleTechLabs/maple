@@ -19,7 +19,7 @@
 		"@base-ui/react": "catalog:ui",
 		"@maple/domain": "workspace:*",
 		"@maple/query-engine": "workspace:*",
-		"@shadcn/react": "^0.2.1",
+		"@shadcn/react": "^0.3.1",
 		"@tanstack/charts": "catalog:charts",
 		"@tanstack/charts-scales": "catalog:charts",
 		"@tanstack/react-virtual": "^3.14.13",
