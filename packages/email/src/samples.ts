@@ -472,8 +472,9 @@ export const webAnalyticsDigestProps: WebAnalyticsDigestProps = {
 		},
 	},
 	baseUrl: "https://app.maple.dev",
-	analyticsUrl: "https://app.maple.dev/analytics?timePreset=7d",
-	aiUrl: "https://app.maple.dev/analytics?timePreset=7d&tab=ai",
+	analyticsUrl:
+		"https://app.maple.dev/analytics?startTime=2026-09-21+00%3A00%3A00&endTime=2026-09-27+23%3A59%3A59",
+	aiUrl: "https://app.maple.dev/analytics?startTime=2026-09-21+00%3A00%3A00&endTime=2026-09-27+23%3A59%3A59&tab=ai",
 	unsubscribeUrl: "https://app.maple.dev/settings/notifications",
 }
 

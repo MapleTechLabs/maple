@@ -163,12 +163,23 @@ export function NotificationsSection() {
 		}
 	}
 
+	/**
+	 * The email HTML carries org data (page paths, referrers, names), so it never
+	 * runs on the app's origin: it renders in a sandboxed iframe with no scripts
+	 * and an opaque origin. Popups stay allowed so the email's links still open.
+	 */
 	function openPreview(html: string) {
 		const win = window.open("", "_blank")
-		if (win) {
-			win.document.write(html)
-			win.document.close()
-		}
+		if (!win) return
+		win.opener = null
+		const doc = win.document
+		doc.title = "Email preview"
+		doc.body.style.margin = "0"
+		const frame = doc.createElement("iframe")
+		frame.setAttribute("sandbox", "allow-popups allow-popups-to-escape-sandbox")
+		frame.srcdoc = html
+		frame.style.cssText = "border:0;width:100vw;height:100vh;display:block"
+		doc.body.append(frame)
 	}
 
 	async function handlePreview() {

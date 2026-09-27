@@ -33,7 +33,10 @@ import { EmailService } from "@maple/backend/platform/EmailService"
 import { Env } from "@maple/backend/platform/Env"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
-import { isMissingProductEvents } from "@maple/backend/services/warehouse/missing-table"
+import {
+	isMissingAiCrawlerRequests,
+	isMissingProductEvents,
+} from "@maple/backend/services/warehouse/missing-table"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import {
 	isOrgWarehouseQuarantined,
@@ -239,13 +242,15 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 					{ concurrency: 2 },
 				).pipe(
 					Effect.map(([cur, prev]) => ({ cur, prev })),
-					Effect.catchCause((cause) =>
-						Cause.hasInterruptsOnly(cause)
-							? Effect.interrupt
-							: Effect.logWarning("AI crawler stats unavailable for web analytics digest").pipe(
-									Effect.annotateLogs({ orgId, error: summarizeCause(cause) }),
-									Effect.as(null),
-								),
+					// Only a missing table drops the card. Any other failure fails the
+					// org, like the rest of the queries, rather than sending a week with
+					// crawler figures silently missing.
+					Effect.catch((error) =>
+						isMissingAiCrawlerRequests(error)
+							? Effect.logInfo(
+									"ai_crawler_requests absent; sending without crawler stats",
+								).pipe(Effect.annotateLogs({ orgId }), Effect.as(null))
+							: Effect.fail(error),
 					),
 				)
 
@@ -280,6 +285,14 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 						(row) => [`${row.host}${row.pagePath}`, Number(row.pageViews) || 0] as const,
 					),
 				)
+				// Last week's list is capped, so a page missing from a FULL list may
+				// just have ranked lower: its baseline is unknown, not zero.
+				const prevPagesTruncated = prevPages.length >= PREVIOUS_PAGES_LIMIT
+				const pageDelta = (key: string, views: number): Delta => {
+					const previousViews = prevViewsByPage.get(key)
+					if (previousViews !== undefined) return computeDelta(views, previousViews)
+					return prevPagesTruncated ? { kind: "none" } : computeDelta(views, 0)
+				}
 				const pageLabel = pageLabels(curPages.map((row) => ({ host: row.host, path: row.pagePath })))
 				const topPages = withShares(
 					curPages.map((row) => {
@@ -288,10 +301,7 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 							icon: null,
 							label: pageLabel({ host: row.host, path: row.pagePath }),
 							value: views,
-							delta: computeDelta(
-								views,
-								prevViewsByPage.get(`${row.host}${row.pagePath}`) ?? 0,
-							),
+							delta: pageDelta(`${row.host}${row.pagePath}`, views),
 						}
 					}),
 					curPageViews,
@@ -364,7 +374,13 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 						day: "numeric",
 						timeZone: "UTC",
 					})
-				const analyticsUrl = `${env.MAPLE_APP_BASE_URL}/analytics?timePreset=7d`
+				// The exact week the email reports, not the `7d` preset: that one ends
+				// now and would drop the email's first day for today's partial one.
+				const weekRange = new URLSearchParams({
+					startTime: current.startTime,
+					endTime: current.endTime,
+				})
+				const analyticsUrl = `${env.MAPLE_APP_BASE_URL}/analytics?${weekRange.toString()}`
 
 				const props: WebAnalyticsDigestProps = {
 					orgName: yield* resolveOrgName(env, orgId),
