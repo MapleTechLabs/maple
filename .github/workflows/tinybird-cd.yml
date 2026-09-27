@@ -65,7 +65,7 @@ jobs:
                     exit 0
                   fi
                   # `tinybird deploy` has NO --host flag (verified against the pinned
-                  # @tinybirdco/sdk 0.0.78: it exits `unknown option '--host'`). The
+                  # @tinybirdco/sdk 0.0.84: it exits `unknown option '--host'`). The
                   # host comes from the config file's `baseUrl`, and the CLI resolves
                   # config files in priority order, `tinybird.config.json` ahead of
                   # `tinybird.json` — so writing one here overrides the repo default
