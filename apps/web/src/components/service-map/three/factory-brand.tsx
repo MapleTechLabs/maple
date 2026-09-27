@@ -13,7 +13,7 @@ function BadgeMark({ path, size, color }: { path: string; size: number; color: s
 			`<svg xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="${path}" /></svg>`,
 		)
 		const mark = new THREE.ShapeGeometry(
-			svg.paths.flatMap((path) => SVGLoader.createShapes(path)),
+			svg.paths.flatMap((path) => path.toShapes()),
 			8,
 		)
 		mark.computeBoundingBox()
