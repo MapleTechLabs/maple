@@ -10,7 +10,9 @@ interface ReplaysToolbarProps {
 	/** `hasErrors` URL filter state — the chip toggles it. */
 	errorsOnly: boolean
 	onToggleErrorsOnly: () => void
-	/** "Engaged >30s" preset state (`activeMin === 30`) — the chip toggles it. */
+	/** Facet count behind the "engaged" tier chip; hidden until known. */
+	engagedSessions?: number
+	/** Whether the `engaged` session tag is selected — the chip toggles it. */
 	engagedOnly: boolean
 	onToggleEngagedOnly: () => void
 	/** Dim the chips while the list is refetching. */
@@ -20,7 +22,8 @@ interface ReplaysToolbarProps {
 /**
  * Search + one-click triage chips. The session/live totals live in the page
  * header; this row answers "what should I watch first" — errored sessions and
- * engaged sessions are each one click away.
+ * engaged sessions (everything but bots, bounces, idle tabs and glances) are each
+ * one click away.
  */
 export function ReplaysToolbar({
 	query,
@@ -28,6 +31,7 @@ export function ReplaysToolbar({
 	errorSessions,
 	errorsOnly,
 	onToggleErrorsOnly,
+	engagedSessions,
 	engagedOnly,
 	onToggleEngagedOnly,
 	waiting = false,
@@ -72,15 +76,24 @@ export function ReplaysToolbar({
 					type="button"
 					onClick={onToggleEngagedOnly}
 					aria-pressed={engagedOnly}
-					title="Sessions with more than 30s of active time"
+					title={
+						engagedOnly ? "Show every session type" : "Hide bots, bounces, idle tabs and glances"
+					}
 					className={cn(
-						"inline-flex h-7 items-center rounded-full border px-3 text-xs font-medium transition-colors",
+						"inline-flex h-7 items-center gap-1.5 rounded-full border px-3 text-xs font-medium transition-colors",
 						engagedOnly
-							? "border-primary bg-accent text-accent-foreground"
-							: "border-border text-muted-foreground hover:bg-muted hover:text-foreground",
+							? "border-emerald-600 bg-emerald-600 text-white"
+							: "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/15 dark:text-emerald-400",
 					)}
 				>
-					Engaged &gt;30s
+					<span
+						className={cn("size-1.5 rounded-full", engagedOnly ? "bg-white" : "bg-emerald-500")}
+						aria-hidden
+					/>
+					{engagedSessions !== undefined && (
+						<span className="tabular-nums">{engagedSessions.toLocaleString()}</span>
+					)}
+					engaged
 				</button>
 			</div>
 		</div>

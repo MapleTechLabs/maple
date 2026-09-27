@@ -55,6 +55,7 @@ import { Route as LabLoadersRouteImport } from './routes/lab/loaders'
 import { Route as LabNodesRouteImport } from './routes/lab/nodes'
 import { Route as LabOnboardingRouteImport } from './routes/lab/onboarding'
 import { Route as LabQueryBuilderRouteImport } from './routes/lab/query-builder'
+import { Route as LabReplaysRouteImport } from './routes/lab/replays'
 import { Route as LabServiceMap3dRouteImport } from './routes/lab/service-map-3d'
 import { Route as LabTimeRangeRouteImport } from './routes/lab/time-range'
 import { Route as LabTimelineRouteImport } from './routes/lab/timeline'
@@ -331,6 +332,11 @@ const LabOnboardingRoute = LabOnboardingRouteImport.update({
 const LabQueryBuilderRoute = LabQueryBuilderRouteImport.update({
   id: '/query-builder',
   path: '/query-builder',
+  getParentRoute: () => LabRouteRoute,
+} as any)
+const LabReplaysRoute = LabReplaysRouteImport.update({
+  id: '/replays',
+  path: '/replays',
   getParentRoute: () => LabRouteRoute,
 } as any)
 const LabServiceMap3dRoute = LabServiceMap3dRouteImport.update({
@@ -620,6 +626,7 @@ export interface FileRoutesByFullPath {
   '/lab/nodes': typeof LabNodesRoute
   '/lab/onboarding': typeof LabOnboardingRoute
   '/lab/query-builder': typeof LabQueryBuilderRoute
+  '/lab/replays': typeof LabReplaysRoute
   '/lab/service-map-3d': typeof LabServiceMap3dRoute
   '/lab/time-range': typeof LabTimeRangeRoute
   '/lab/timeline': typeof LabTimelineRoute
@@ -714,6 +721,7 @@ export interface FileRoutesByTo {
   '/lab/nodes': typeof LabNodesRoute
   '/lab/onboarding': typeof LabOnboardingRoute
   '/lab/query-builder': typeof LabQueryBuilderRoute
+  '/lab/replays': typeof LabReplaysRoute
   '/lab/service-map-3d': typeof LabServiceMap3dRoute
   '/lab/time-range': typeof LabTimeRangeRoute
   '/lab/timeline': typeof LabTimelineRoute
@@ -810,6 +818,7 @@ export interface FileRoutesById {
   '/lab/nodes': typeof LabNodesRoute
   '/lab/onboarding': typeof LabOnboardingRoute
   '/lab/query-builder': typeof LabQueryBuilderRoute
+  '/lab/replays': typeof LabReplaysRoute
   '/lab/service-map-3d': typeof LabServiceMap3dRoute
   '/lab/time-range': typeof LabTimeRangeRoute
   '/lab/timeline': typeof LabTimelineRoute
@@ -907,6 +916,7 @@ export interface FileRouteTypes {
     | '/lab/nodes'
     | '/lab/onboarding'
     | '/lab/query-builder'
+    | '/lab/replays'
     | '/lab/service-map-3d'
     | '/lab/time-range'
     | '/lab/timeline'
@@ -1001,6 +1011,7 @@ export interface FileRouteTypes {
     | '/lab/nodes'
     | '/lab/onboarding'
     | '/lab/query-builder'
+    | '/lab/replays'
     | '/lab/service-map-3d'
     | '/lab/time-range'
     | '/lab/timeline'
@@ -1096,6 +1107,7 @@ export interface FileRouteTypes {
     | '/lab/nodes'
     | '/lab/onboarding'
     | '/lab/query-builder'
+    | '/lab/replays'
     | '/lab/service-map-3d'
     | '/lab/time-range'
     | '/lab/timeline'
@@ -1550,6 +1562,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LabQueryBuilderRouteImport
       parentRoute: typeof LabRouteRoute
     }
+    '/lab/replays': {
+      id: '/lab/replays'
+      path: '/replays'
+      fullPath: '/lab/replays'
+      preLoaderRoute: typeof LabReplaysRouteImport
+      parentRoute: typeof LabRouteRoute
+    }
     '/lab/service-map-3d': {
       id: '/lab/service-map-3d'
       path: '/service-map-3d'
@@ -1894,6 +1913,7 @@ interface LabRouteRouteChildren {
   LabNodesRoute: typeof LabNodesRoute
   LabOnboardingRoute: typeof LabOnboardingRoute
   LabQueryBuilderRoute: typeof LabQueryBuilderRoute
+  LabReplaysRoute: typeof LabReplaysRoute
   LabServiceMap3dRoute: typeof LabServiceMap3dRoute
   LabTimeRangeRoute: typeof LabTimeRangeRoute
   LabTimelineRoute: typeof LabTimelineRoute
@@ -1921,6 +1941,7 @@ const LabRouteRouteChildren: LabRouteRouteChildren = {
   LabNodesRoute: LabNodesRoute,
   LabOnboardingRoute: LabOnboardingRoute,
   LabQueryBuilderRoute: LabQueryBuilderRoute,
+  LabReplaysRoute: LabReplaysRoute,
   LabServiceMap3dRoute: LabServiceMap3dRoute,
   LabTimeRangeRoute: LabTimeRangeRoute,
   LabTimelineRoute: LabTimelineRoute,

@@ -11,6 +11,7 @@ import { MagnifierIcon, XmarkIcon } from "@/components/icons"
 import { browserIconFor, deviceIconFor } from "@/components/replays/session-icons"
 import {
 	SESSION_TAG_DESCRIPTIONS,
+	SESSION_TAG_DOTS,
 	SESSION_TAG_LABELS,
 	SESSION_TAG_ORDER,
 	asSessionTag,
@@ -88,7 +89,7 @@ function sessionLengthPresets(p50Ms: number, p95Ms: number): RangePreset[] {
 // to avoid. Static thresholds, named for what they mean.
 const ACTIVE_TIME_PRESETS: RangePreset[] = [
 	{ key: "idle", label: "Idle", value: "<5s", max: 5 },
-	{ key: "engaged", label: "Engaged", value: ">30s", min: 30 },
+	{ key: "active", label: "Active", value: ">30s", min: 30 },
 ]
 
 // The facet branches exclude their own dimension server-side, so a selected
@@ -114,6 +115,13 @@ function tagOptions(counts: ReadonlyArray<ReplaysFacetItem>): FilterOption[] {
 const tagLabel = (name: string) => {
 	const tag = asSessionTag(name)
 	return tag === undefined ? name : SESSION_TAG_LABELS[tag]
+}
+
+// The same colour the tag's pill has in the list, so the two read as one vocabulary.
+const tagDot = (name: string) => {
+	const tag = asSessionTag(name)
+	if (tag === undefined) return undefined
+	return <span aria-hidden className={cn("size-2 shrink-0 rounded-full", SESSION_TAG_DOTS[tag])} />
 }
 
 const tagDescription = (name: string) => {
@@ -241,6 +249,7 @@ export function ReplaysFilterSidebar({ facetsResult }: ReplaysFilterSidebarProps
 							onChange={setTags}
 							getOptionLabel={tagLabel}
 							getOptionDescription={tagDescription}
+							renderOptionIcon={tagDot}
 						/>
 
 						<RangeFilterSection

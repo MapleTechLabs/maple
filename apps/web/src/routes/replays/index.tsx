@@ -10,6 +10,7 @@ import { ReplaysFilterSidebar } from "@/components/replays/replays-filter-sideba
 import { ReplaysToolbar } from "@/components/replays/replays-toolbar"
 import { BooleanFromStringParam, NumberFromStringParam, OptionalStringArrayParam } from "@/lib/search-params"
 import { replaysFilterInputs } from "@/components/replays/replays-filter-inputs"
+import { isQualityTier, nextTagSelection, sessionTagsFromSearch } from "@/components/replays/session-tags"
 import { REPLAYS_PAGE_SIZE, useInfiniteReplays } from "@/hooks/use-infinite-replays"
 import { Result } from "@/lib/effect-atom"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
@@ -171,9 +172,14 @@ function ReplaysPage() {
 	const totalSessions = facets?.totalSessions
 	const liveSessions = facets?.liveSessions
 	const durationP95 = facets?.durationP95
-	// "Engaged" chip mirrors the sidebar preset exactly (activeMin=30, no max), so
+	// The "Engaged" chip is the sidebar's Session type checkbox of the same name, so
 	// toggling either surface keeps the other in sync.
-	const engagedOnly = search.activeMin === 30 && search.activeMax == null
+	const selectedTags = sessionTagsFromSearch(search.tags) ?? []
+	const engagedOnly = selectedTags.includes("engaged")
+	const engagedSessions =
+		facets?.tags.find((tag) => tag.name === "engaged")?.count ?? (facets ? 0 : undefined)
+	// A tier filter already decided what to show; folding its rows would hide the answer.
+	const collapseLowSignal = !selectedTags.some(isQualityTier)
 
 	const headerActions = (
 		<div className="flex flex-wrap items-center gap-2">
@@ -232,15 +238,14 @@ function ReplaysPage() {
 					search: (prev) => ({ ...prev, hasErrors: prev.hasErrors ? undefined : true }),
 				})
 			}
+			engagedSessions={engagedSessions}
 			engagedOnly={engagedOnly}
-			onToggleEngagedOnly={() =>
-				navigate({
-					search: (prev) =>
-						engagedOnly
-							? { ...prev, activeMin: undefined }
-							: { ...prev, activeMin: 30, activeMax: undefined },
-				})
-			}
+			onToggleEngagedOnly={() => {
+				const next = engagedOnly
+					? selectedTags.filter((tag) => tag !== "engaged")
+					: nextTagSelection(selectedTags, [...selectedTags, "engaged"])
+				navigate({ search: (prev) => ({ ...prev, tags: next.length > 0 ? next : undefined }) })
+			}}
 			waiting={firstPageResult.waiting}
 		/>
 	)
@@ -285,7 +290,6 @@ function ReplaysPage() {
 									<div className="divide-y divide-border">
 										{Array.from({ length: 8 }).map((_, i) => (
 											<div key={i} className="flex items-center gap-3 py-2.5">
-												<Skeleton className="size-8 shrink-0 rounded-full" />
 												<div className="flex-1 space-y-1.5">
 													<Skeleton className="h-3.5 w-48" />
 													<Skeleton className="h-3 w-64" />
@@ -311,6 +315,17 @@ function ReplaysPage() {
 										durationP95={durationP95}
 										filtered={hasActiveFilters}
 										onClearFilters={handleClearFilters}
+										collapseLowSignal={collapseLowSignal}
+										onFilterTag={(tag) => {
+											const next = nextTagSelection(selectedTags, [
+												...selectedTags,
+												tag,
+											])
+											navigate({ search: (prev) => ({ ...prev, tags: next }) })
+										}}
+										onFilterGroup={(group) =>
+											navigate({ search: (prev) => ({ ...prev, group }) })
+										}
 									/>
 								))
 								.render()}

@@ -29,6 +29,29 @@ export const SESSION_TAG_DESCRIPTIONS = {
 	new_visitor: "First visit from this browser",
 } satisfies Record<SessionTag, string>
 
+/** Pill colours: green for the sessions worth opening, a hue per noise tier so a
+ *  run of them reads at a glance, and blue/pink for the visitor traits. */
+export const SESSION_TAG_STYLES = {
+	engaged: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+	glance: "bg-sky-500/10 text-sky-600 dark:text-sky-400",
+	idle: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+	bounce: "bg-orange-500/10 text-orange-600 dark:text-orange-400",
+	bot: "bg-violet-500/15 text-violet-600 dark:text-violet-300",
+	signed_in: "bg-blue-500/10 text-blue-600 dark:text-blue-400",
+	new_visitor: "bg-fuchsia-500/10 text-fuchsia-600 dark:text-fuchsia-400",
+} satisfies Record<SessionTag, string>
+
+/** Dot colour per tag, for places too small for a pill. */
+export const SESSION_TAG_DOTS = {
+	engaged: "bg-emerald-500",
+	glance: "bg-sky-500",
+	idle: "bg-amber-500",
+	bounce: "bg-orange-500",
+	bot: "bg-violet-500",
+	signed_in: "bg-blue-500",
+	new_visitor: "bg-fuchsia-500",
+} satisfies Record<SessionTag, string>
+
 /** Display order: the tier you most likely want first, then the traits. */
 export const SESSION_TAG_ORDER: ReadonlyArray<SessionTag> = SESSION_TAGS
 
@@ -45,7 +68,7 @@ export const sessionTagsFromSearch = (
 	return valid.length > 0 ? valid : undefined
 }
 
-const isQualityTier = (tag: SessionTag) => SESSION_QUALITY_TAGS.some((quality) => quality === tag)
+export const isQualityTier = (tag: SessionTag) => SESSION_QUALITY_TAGS.some((quality) => quality === tag)
 
 /**
  * The selection after a checkbox change. A newly ticked tier drops any other tier,
