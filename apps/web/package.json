@@ -52,7 +52,7 @@
 		"@takumi-rs/wasm": "2.9.2",
 		"@tanstack/charts": "catalog:charts",
 		"@tanstack/charts-scales": "catalog:charts",
-		"@tanstack/react-db": "0.3.5",
+		"@tanstack/react-db": "0.4.1",
 		"@tanstack/react-hotkeys": "0.10.0",
 		"@tanstack/react-router": "^1.170.40",
 		"@tanstack/react-table": "^9.2.4",
