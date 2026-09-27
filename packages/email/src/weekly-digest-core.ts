@@ -309,9 +309,9 @@ export function deriveDigestStatus(props: WeeklyDigestProps): DigestStatus {
 	if (level === "healthy") {
 		subject = `${brand} · ${fmtNum(reqs)} requests, ${errDir}`
 	} else if (level === "watch") {
-		subject = `⚠️ ${brand} · error rate ${fmtErrRate(overallErrRate)}`
+		subject = `${brand} · Heads up: error rate ${fmtErrRate(overallErrRate)}`
 	} else {
-		subject = `\u{1f6a8} ${brand} · error rate ${fmtErrRate(overallErrRate)}, needs attention`
+		subject = `${brand} · Action needed: error rate ${fmtErrRate(overallErrRate)}`
 	}
 
 	return { level, label, headline, biggestMover, subject }
