@@ -1,6 +1,12 @@
 {
 	"$schema": "./node_modules/@effect/tsgo/oxlint-schema.json",
-	"extends": ["./.oxlintrc.json", "./node_modules/@effect/tsgo/oxlint-presets/recommended.json"],
+	"extends": [
+		"./.oxlintrc.json",
+		"./node_modules/@effect/tsgo/oxlint-presets/recommended.json",
+		// @effect/tsgo 0.4x moved the host-global rules (console, Date, fetch, process.env, ...) out of
+		// `recommended` into this opt-in preset; the test overrides below depend on them staying on.
+		"./node_modules/@effect/tsgo/oxlint-presets/effect-native.json"
+	],
 	"plugins": ["eslint", "unicorn", "typescript", "oxc", "react", "jsx-a11y", "effecttsgo"],
 	"jsPlugins": ["./scripts/oxlint-plugins/maple.mjs"],
 	"options": {
@@ -30,6 +36,9 @@
 		"effecttsgo/return-effect-in-gen": "error",
 		"effecttsgo/run-effect-inside-effect": "error",
 		"effecttsgo/service-not-as-class": "warn",
+		// New in the effect-native preset: flags every sync decode, ~1k hits mostly in tests and non-Effect
+		// boundaries. `schema-sync-in-effect` already covers the case that matters.
+		"effecttsgo/schema-sync": "off",
 		"effecttsgo/strict-effect-provide": "error",
 		"effecttsgo/sync-to-succeed": "error",
 		"effecttsgo/unnecessary-effect-gen": "error",
