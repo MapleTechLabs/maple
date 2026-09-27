@@ -383,10 +383,19 @@ function SessionListRow({
 				>
 					{secondary}
 				</div>
-				<div className="mt-1.5 flex flex-wrap items-center gap-1.5 @2xl:hidden">
+				{/* Tags and signals get their own columns at @2xl, the org only at @3xl,
+				    so the org stays in this stacked line through the band between. */}
+				<div
+					className={cn(
+						"mt-1.5 flex flex-wrap items-center gap-1.5",
+						session.groupName ? "@3xl:hidden" : "@2xl:hidden",
+					)}
+				>
 					{session.groupName && <OrgButton name={session.groupName} onFilter={onFilterGroup} />}
-					<SessionTags tags={session.tags} onFilter={onFilterTag} />
-					<SessionBadges session={session} />
+					<div className="contents @2xl:hidden">
+						<SessionTags tags={session.tags} onFilter={onFilterTag} />
+						<SessionBadges session={session} />
+					</div>
 				</div>
 			</div>
 
