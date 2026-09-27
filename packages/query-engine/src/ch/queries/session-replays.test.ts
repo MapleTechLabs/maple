@@ -656,6 +656,7 @@ describe("page visited filter", () => {
 
 describe("session tags", () => {
 	const params = { ...baseParams, ...WINDOW }
+	const flat = (sql: string) => sql.replace(/\s+/g, " ")
 
 	it("puts the quality tier and new-visitor flag on every list row", () => {
 		const { sql } = compileUnsafe(sessionReplaysListQuery({}), params)
@@ -701,7 +702,7 @@ describe("session tags", () => {
 	})
 
 	it("counts sessions per tag in one facet branch", () => {
-		const { sql } = compileUnionUnsafe(sessionReplaysFacetsQuery({}), params)
+		const sql = flat(compileUnionUnsafe(sessionReplaysFacetsQuery({}), params).sql)
 		const tagBranch = sql.split("UNION ALL").find((branch) => branch.includes("'tag' AS facetType"))
 		expect(tagBranch).toContain(
 			"arrayJoin(arrayFilter(tag -> tag != '', [quality, if(signedIn = 1, 'signed_in', ''), if(newVisitor = 1, 'new_visitor', '')])) AS name",
@@ -709,7 +710,7 @@ describe("session tags", () => {
 	})
 
 	it("narrows every other facet branch by the selected tags, but not the tag branch", () => {
-		const { sql } = compileUnionUnsafe(sessionReplaysFacetsQuery({ tags: ["engaged"] }), params)
+		const sql = flat(compileUnionUnsafe(sessionReplaysFacetsQuery({ tags: ["engaged"] }), params).sql)
 		const branches = sql.split("UNION ALL")
 		const tagBranch = branches.find((branch) => branch.includes("'tag' AS facetType"))
 		expect(tagBranch).not.toContain("WHERE quality = 'engaged'")
@@ -719,7 +720,9 @@ describe("session tags", () => {
 	})
 
 	it("counts each tag under the other selected tags, so a count is what ticking it returns", () => {
-		const { sql } = compileUnionUnsafe(sessionReplaysFacetsQuery({ tags: ["bot", "signed_in"] }), params)
+		const sql = flat(
+			compileUnionUnsafe(sessionReplaysFacetsQuery({ tags: ["bot", "signed_in"] }), params).sql,
+		)
 		const tagBranch = sql.split("UNION ALL").find((branch) => branch.includes("'tag' AS facetType"))
 		// A tier is counted under the selected traits only: ticking a tier replaces the tier.
 		expect(tagBranch).toContain("if((quality != '' AND signedIn = 1), quality, '')")
