@@ -105,14 +105,12 @@ jobs:
               # bakes the resolved tag into `maple --version`.
               env:
                   MAPLE_BUILD_VERSION: ${{ steps.version.outputs.version }}
-                  # `packages/effect-sdk` emits its .d.mts with `dts: { eager: true }`,
-                  # which is required for correctness (see its tsdown.config.ts), not a
-                  # tuning knob — and eager emission is memory-hungry. Node sizes its
-                  # default old-space from host RAM, so the 7 GB macos-14 runner picked a
-                  # heap that the growing type surface outgrew: v0.0.15 OOM'd there
-                  # ("Ineffective mark-compacts near heap limit") while both 16 GB Linux
-                  # runners passed. Pin a heap large enough for every runner instead of
-                  # inheriting the host-derived default.
+                  # Added when `packages/effect-sdk` emitted its .d.mts in-process on
+                  # TypeScript 6: Node sizes its default old-space from host RAM, and
+                  # v0.0.15 OOM'd on the 7 GB macos-14 runner ("Ineffective
+                  # mark-compacts near heap limit") while both 16 GB Linux runners
+                  # passed. Types now come from a native TypeScript 7 child process;
+                  # keep the pin until a release confirms that runner no longer needs it.
                   NODE_OPTIONS: --max-old-space-size=5120
               run: scripts/build-local-binary.sh
 

@@ -47,7 +47,7 @@
 	"devDependencies": {
 		"@inlang/paraglide-js": "^2.25.4",
 		"@types/d3-scale": "^4.0.9",
-		"typescript": "^6.0.3",
+		"typescript": "catalog:tooling",
 		"vitest": "catalog:"
 	}
 }

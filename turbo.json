@@ -34,6 +34,20 @@
 			"env": ["VITE_*", "PUBLIC_*", "MAPLE_OTEL_PUBLIC_INGEST_KEY", "PORTLESS_URL"],
 			"outputs": ["dist/**", ".output/**"]
 		},
+		// The SDKs emit types through a tsconfig in packages/ (see their
+		// tsdown.config.ts), which the default package-scoped inputs miss.
+		"@maple-dev/browser#build": {
+			"dependsOn": ["^build"],
+			"inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/packages/tsconfig.browser.dts.json"],
+			"env": ["VITE_*", "PUBLIC_*"],
+			"outputs": ["dist/**", ".output/**"]
+		},
+		"@maple-dev/effect-sdk#build": {
+			"dependsOn": ["^build"],
+			"inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/packages/tsconfig.effect-sdk.dts.json"],
+			"env": ["VITE_*", "PUBLIC_*"],
+			"outputs": ["dist/**", ".output/**"]
+		},
 		// `cargo build --release` writes to target/, not dist/, so the generic
 		// outputs cached nothing and every unfiltered `turbo build` recompiled it.
 		"@maple/ingest#build": {

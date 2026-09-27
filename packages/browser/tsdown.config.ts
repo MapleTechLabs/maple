@@ -5,12 +5,10 @@ export default defineConfig({
 		index: "./src/index.ts",
 	},
 	format: "esm",
-	// `eager` is required, not a tuning knob: the entry re-exports types that
-	// originate in `@maple/browser-session` (a private, source-consumed workspace
-	// package). The plugin's lazy path resolves that package to a declaration
-	// file it synthesized without those exports and fails with
-	// "Export 'IdentifyInput' is not defined". Eager emission resolves them from
-	// source. Same reason as packages/effect-sdk/tsdown.config.ts.
-	dts: { eager: true },
+	// Types are emitted by tsgo in one pass rooted at the tsconfig's directory,
+	// and it skips files reached through node_modules. The bundled types come
+	// from `@maple/browser-session`, so this tsconfig sits in packages/ and lists
+	// that package's sources as roots. Same as packages/effect-sdk.
+	dts: { tsconfig: "../tsconfig.browser.dts.json" },
 	outDir: "dist",
 })
