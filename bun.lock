@@ -251,7 +251,7 @@
         "effect": "catalog:effect",
         "react": "catalog:react",
         "react-dom": "catalog:react",
-        "sugar-high": "^1.3.0",
+        "sugar-high": "^2.5.0",
       },
       "devDependencies": {
         "@tailwindcss/vite": "catalog:tailwind",
@@ -354,7 +354,7 @@
         "react-dom": "catalog:react",
         "react-grid-layout": "^2.2.4",
         "streamdown": "^2.6.0",
-        "sugar-high": "^1.3.0",
+        "sugar-high": "^2.5.0",
         "tailwindcss": "catalog:tailwind",
         "three": "^0.181.2",
         "tw-animate-css": "catalog:tailwind",
@@ -4025,7 +4025,7 @@
 
     "subsume": ["subsume@4.0.0", "", { "dependencies": { "escape-string-regexp": "^5.0.0", "unique-string": "^3.0.0" } }, "sha512-BWnYJElmHbYZ/zKevy+TG+SsyoFCmRPDHJbR1MzLxkPOv1Jp/4hGhVUtP98s+wZBsBsHwCXvPTP0x287/WMjGg=="],
 
-    "sugar-high": ["sugar-high@1.3.0", "", {}, "sha512-/harylV2L7swuV8319SXHiXj8yJOCGNcVcKJXk9WpWNXoHfqD9uAZ1KAUDGcZXSNNeGMT0rnDYAwEk6zXte1sw=="],
+    "sugar-high": ["sugar-high@2.5.0", "", { "peerDependencies": { "gpu-lexer": ">=0.0.2" }, "optionalPeers": ["gpu-lexer"] }, "sha512-SPusUAqHpkpAxwGO6bVRegBq/Y6ZYkkZFR18VeH02pqk/l9hHJnc7MQf5Quyo54UQj1jU8u5zUDvj5zBJbA0rQ=="],
 
     "supports-color": ["supports-color@8.1.1", "", { "dependencies": { "has-flag": "^4.0.0" } }, "sha512-MpUEN2OodtUzxvKQl72cUF7RQ5EiHsGvSsVG0ia9c5RbWGL2CI4C7EpPS8UTBIplnlzZiNuV56w+FuNxy3ty2Q=="],
 

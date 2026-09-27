@@ -70,7 +70,7 @@
 		"react-dom": "catalog:react",
 		"react-grid-layout": "^2.2.4",
 		"streamdown": "^2.6.0",
-		"sugar-high": "^1.3.0",
+		"sugar-high": "^2.5.0",
 		"tailwindcss": "catalog:tailwind",
 		"three": "^0.181.2",
 		"tw-animate-css": "catalog:tailwind",
