@@ -1,5 +1,5 @@
 ---
-title: "Frontend tracing with OpenTelemetry: follow one click from the browser to the database"
+title: "Frontend tracing with OpenTelemetry: follow one click from the browser to your API"
 description: "Your backend traces start when the request reaches your server. Here's how to trace the part before that: browser spans, route navigations and loaders, frontend errors, and session replay, all in the same trace as your API."
 date: 2026-09-28
 author: "Jeremy Funk"
@@ -15,7 +15,7 @@ Everything before that is invisible from the backend: the route change, the load
 
 <FrontendTrace />
 
-This guide covers tracing that part. We'll set up browser tracing, connect it to your backend traces, instrument route navigations and data loaders in a TanStack Router app, and catch the errors your framework swallows. The examples use Maple's browser SDK, but everything underneath is OpenTelemetry, and the problems in the first half apply whichever backend you send spans to.
+This guide covers tracing that part. We'll set up browser tracing, connect it to your backend traces, trace route navigations and data loading, and catch the errors your framework swallows. The setup here works with any framework, and there's a [follow-up guide for each popular one](#framework-guides). The examples use Maple's browser SDK, but everything underneath is OpenTelemetry, and the problems in the first half apply whichever backend you send spans to.
 
 ## What frontend observability covers
 
@@ -108,66 +108,58 @@ Your backend has to be instrumented with OpenTelemetry too. Every OpenTelemetry 
 
 One thing to expect in the waterfall: browser and server clocks disagree. The browser's timestamps come from the user's machine, so a server span can appear to start a few milliseconds before the fetch that caused it. It gets worse with laptops, because the browser's high-resolution clock pauses while the machine sleeps, and a tab that was asleep can report timestamps that are minutes off. The durations are right; the offsets between the two sides are approximate.
 
-## Step 3: trace route navigations and data loaders
+## Step 3: give every navigation its own span
 
 After step 2 you have `fetch` spans, but each one is its own trace. A navigation that fires three requests shows up as three unrelated traces, and nothing tells you they belonged to one click.
 
-The fix is a span per navigation that the loader and fetch spans nest under. In a TanStack Router app, the router emits lifecycle events you can subscribe to: `onBeforeNavigate` when a navigation starts, and `onResolved` once every loader has finished and the new route is committed.
+The fix is a span per navigation that the data-loading and fetch spans nest under. Every router can tell you when a navigation starts and when the new route is ready, so the tracing code itself doesn't need to know which router you use. Here's the helper the framework guides below build on:
 
 ```ts
 // src/tracing.ts
-import { context, type Span, SpanStatusCode, trace } from "@opentelemetry/api"
-import { type AnyRouter, isNotFound, isRedirect } from "@tanstack/react-router"
+import { context, propagation, type Span, SpanStatusCode, trace } from "@opentelemetry/api"
 
 const tracer = trace.getTracer("acme-web")
 
 let navigation: { span: Span; kind: "pageload" | "navigate" } | undefined
+let firstLoad = true
 
-export function traceNavigations(router: AnyRouter) {
-	// The router also emits navigation events while rendering on the server
-	if (typeof window === "undefined") return
+/** Call when the router starts a navigation. */
+export function startNavigation(path: string) {
+	// A click before the last navigation finished replaces it
+	navigation?.span.setAttribute("app.navigation.interrupted", true)
+	navigation?.span.end()
 
-	router.subscribe("onBeforeNavigate", ({ fromLocation, toLocation, hrefChanged }) => {
-		// router.invalidate() reruns loaders without going anywhere
-		if (fromLocation && !hrefChanged) return
+	const kind = firstLoad ? "pageload" : "navigate"
+	// Only the first page load belongs to the server's trace, if there was one
+	const parent = firstLoad ? serverContext() : context.active()
+	firstLoad = false
 
-		// A click before the last navigation finished replaces it
-		navigation?.span.setAttribute("app.navigation.interrupted", true)
-		navigation?.span.end()
-
-		const kind = fromLocation ? "navigate" : "pageload"
-		const span = tracer.startSpan(kind, { attributes: { "url.path": toLocation.pathname } })
-		navigation = { span, kind }
-	})
-
-	router.subscribe("onResolved", () => {
-		if (!navigation) return
-		// Name the span after the route template, not the concrete URL
-		const leaf = router.state.matches.at(-1)
-		if (leaf) navigation.span.updateName(`${navigation.kind} ${leaf.fullPath}`)
-		navigation.span.end()
-		navigation = undefined
-	})
+	navigation = { kind, span: tracer.startSpan(kind, { attributes: { "url.path": path } }, parent) }
 }
-```
 
-The `updateName` call matters more than it looks. A span name is what every view groups by, so `navigate /projects/$projectId` gives you one row with a real p95, while `navigate /projects/8f2a-4c11` gives you one row per project that never aggregates. The concrete path is still there as the `url.path` attribute when you need to find one specific navigation.
+/** Call when the new route is ready. `route` is its template, like `/projects/:id`. */
+export function endNavigation(route?: string) {
+	if (!navigation) return
+	if (route) navigation.span.updateName(`${navigation.kind} ${route}`)
+	navigation.span.end()
+	navigation = undefined
+}
 
-Loaders get their own span, parented to the current navigation:
-
-```ts
-// src/tracing.ts, continued
 const recorded = new WeakSet<object>()
 
-export function traced<T>(name: string, fn: () => Promise<T>): Promise<T> {
+/** Run `fn` in a span under the current navigation. */
+export function traced<T>(
+	name: string,
+	fn: () => Promise<T>,
+	isFailure: (error: unknown) => boolean = () => true,
+): Promise<T> {
 	const parent = navigation ? trace.setSpan(context.active(), navigation.span) : context.active()
 
 	return tracer.startActiveSpan(name, {}, parent, async (span) => {
 		try {
 			return await fn()
 		} catch (error) {
-			// redirect() and notFound() are thrown, but they aren't failures
-			if (!isRedirect(error) && !isNotFound(error)) {
+			if (isFailure(error)) {
 				span.recordException(error instanceof Error ? error : String(error))
 				span.setStatus({ code: SpanStatusCode.ERROR })
 				if (typeof error === "object" && error !== null) recorded.add(error)
@@ -179,133 +171,97 @@ export function traced<T>(name: string, fn: () => Promise<T>): Promise<T> {
 	})
 }
 
+/** Whether `traced` already recorded this error on a span. */
 export const alreadyRecorded = (error: unknown) =>
 	typeof error === "object" && error !== null && recorded.has(error)
+
+/** The trace the server rendered this page under, sent in a `Server-Timing` header. */
+function serverContext() {
+	if (typeof performance === "undefined") return context.active()
+	const [page] = performance.getEntriesByType("navigation") as PerformanceNavigationTiming[]
+	const traceparent = page?.serverTiming?.find((entry) => entry.name === "traceparent")?.description
+	return traceparent ? propagation.extract(context.active(), { traceparent }) : context.active()
+}
 ```
 
-```ts
-// src/routes/projects.$projectId.tsx
-import { createFileRoute } from "@tanstack/react-router"
-import { traced } from "../tracing"
+It does four things:
 
-export const Route = createFileRoute("/projects/$projectId")({
-	loader: ({ params }) => traced("loader /projects/$projectId", () => fetchProject(params.projectId)),
+- `startNavigation` opens a `pageload` span for the first route and a `navigate` span for every one after it. If the user clicks again before the last navigation finished, the old span ends and is marked as interrupted.
+- `endNavigation` renames the span after the route template and ends it.
+- `traced` wraps data loading in a child span of the current navigation, and marks it as failed when it throws.
+- `serverContext` joins the first page load to the server's trace, if the page was server-rendered. More on that in step 5. In a client-only app it does nothing.
+
+The rename in `endNavigation` matters more than it looks. A span name is what every view groups by, so `navigate /projects/:id` gives you one row with a real p95, while `navigate /projects/8f2a-4c11` gives you one row per project that never aggregates. The concrete path is still there as the `url.path` attribute when you need to find one specific navigation.
+
+### The `await` problem
+
+Here's where the missing async context from earlier comes back. `traced` makes its span active only until the first `await`. A `fetch()` called before that point nests under it. A `fetch()` called after it starts a new trace:
+
+```ts
+// Both requests nest under the span
+traced("load project", () => Promise.all([fetchProject(id), fetchMembers(id)]))
+
+// The second request loses its parent
+traced("load project", async () => {
+	const project = await fetchProject(id)
+	const members = await fetchMembers(project.id) // new trace
+	return { project, members }
 })
 ```
 
-Here's where the missing async context from earlier comes back. `startActiveSpan` makes the loader span active only until the first `await`. A `fetch()` called before that point nests under the loader. A `fetch()` called after it starts a new trace:
-
-```ts
-// Both requests nest under the loader span
-loader: ({ params }) =>
-	traced("loader /projects/$projectId", () =>
-		Promise.all([fetchProject(params.projectId), fetchMembers(params.projectId)]),
-	)
-
-// The second request loses its parent
-loader: ({ params }) =>
-	traced("loader /projects/$projectId", async () => {
-		const project = await fetchProject(params.projectId)
-		const members = await fetchMembers(project.id) // new trace
-		return { project, members }
-	})
-```
-
-If a request really does depend on the previous one, capture the context up front with `const ctx = context.active()` and call it as `context.with(ctx, () => fetchMembers(project.id))`. But look at the loader first. Sequential awaits in a loader are a request waterfall, and that's often exactly the slowness you were trying to find. The trace at the top of this guide is one: three healthy API calls, made one after another.
-
-Two more things to know. Loaders also run when TanStack Router preloads a route on hover. There's no navigation in progress then, so those loader spans show up as their own traces, and that's accurate. And the same pattern works in React Router, Vue Router, or anything else that tells you when a navigation starts and ends; only the event names change.
+If a request really does depend on the previous one, capture the context up front with `const ctx = context.active()` and call it as `context.with(ctx, () => fetchMembers(project.id))`. But look at the code first. Sequential awaits while loading a page are a request waterfall, and that's often exactly the slowness you were trying to find. The trace at the top of this guide is one: three healthy API calls, made one after another.
 
 ## Step 4: report the errors your framework catches
 
-The SDK's global handlers see errors that nothing caught. TanStack Router wraps every route in an error boundary, so an exception thrown while rendering a route never gets that far. Report it from the router's `defaultOnCatch`:
+The SDK's global handlers only see errors that nothing caught. Most frameworks catch rendering and data-loading errors themselves, so they can show an error page instead of a blank screen. Those errors never reach `window.onerror`.
+
+Every framework has one place where those errors end up: a React error boundary, Vue's `app.config.errorHandler`, Angular's `ErrorHandler`, SvelteKit's `handleError` hook. Report from there:
 
 ```ts
-// src/router.tsx
 import { MapleBrowser } from "@maple-dev/browser"
-import { createRouter } from "@tanstack/react-router"
-import { routeTree } from "./routeTree.gen"
-import { alreadyRecorded, traceNavigations } from "./tracing"
+import { alreadyRecorded } from "./tracing"
 
-export const router = createRouter({
-	routeTree,
-	defaultOnCatch: (error) => {
-		// Loader errors are already on the loader span
-		if (!alreadyRecorded(error)) MapleBrowser.captureException(error, { name: "react.render_error" })
-	},
-})
-
-traceNavigations(router)
-```
-
-The `alreadyRecorded` check is there because a loader that throws ends up in the same error boundary. Without it, one failed loader would show up as two errors.
-
-If you use React error boundaries of your own, do the same in their `componentDidCatch`. `captureException` records each error object once, so reporting and rethrowing is safe.
-
-## Step 5: trace server-side rendering (TanStack Start)
-
-If you use TanStack Start, the first page load is rendered on the server, and that render is part of what the user waits for. Tracing it closes the last gap: a slow first load could be a slow loader on the server, a slow render, or slow JavaScript in the browser, and without server spans you can only see the last one.
-
-It also helps anyone debugging with an AI agent. An agent that can see "the server render of `/projects/$projectId` took 900ms, 700ms of it in one loader" has something concrete to fix; an agent that only sees a slow page load has to guess.
-
-Start with the OpenTelemetry Node SDK on the server, set up as in the [Node.js guide](/docs/guides/instrumentation-nodejs) and imported before anything else in your server entry. That gives you a span for every incoming request, plus spans for database and HTTP calls your loaders make. Then add a span around the render itself in `src/server.ts`:
-
-```ts
-// src/server.ts
-import "./instrumentation" // starts the OpenTelemetry Node SDK; must load first
-import { context, propagation, trace } from "@opentelemetry/api"
-import { createStartHandler, defaultStreamHandler, defineHandlerCallback } from "@tanstack/react-start/server"
-import { createServerEntry } from "@tanstack/react-start/server-entry"
-
-const tracer = trace.getTracer("acme-web")
-
-const handler = defineHandlerCallback((ctx) => {
-	// Loaders have already run by now, so the matched route is known
-	const leaf = ctx.router.state.matches.at(-1)
-
-	return tracer.startActiveSpan(`ssr ${leaf?.fullPath ?? "unknown"}`, async (span) => {
-		// Hand this trace to the browser so its pageload span can join it
-		const carrier: Record<string, string> = {}
-		propagation.inject(context.active(), carrier)
-		if (carrier.traceparent) {
-			ctx.responseHeaders.append("server-timing", `traceparent;desc="${carrier.traceparent}"`)
-		}
-
-		try {
-			return await defaultStreamHandler(ctx)
-		} finally {
-			span.end()
-		}
-	})
-})
-
-export default createServerEntry({ fetch: createStartHandler(handler) })
-```
-
-The `traced()` helper from step 3 works on the server as well, and it works better there: Node has `AsyncLocalStorage`, so fetches after an `await` keep their parent. Your loader spans show up under the request span without any changes.
-
-The `server-timing` header connects the two halves of a page load. The server writes its trace context into the response, and the browser reads it back from the Navigation Timing API to parent its `pageload` span:
-
-```ts
-// src/tracing.ts
-function serverContext() {
-	const [page] = performance.getEntriesByType("navigation") as PerformanceNavigationTiming[]
-	const traceparent = page?.serverTiming.find((entry) => entry.name === "traceparent")?.description
-	return traceparent ? propagation.extract(context.active(), { traceparent }) : context.active()
+function reportCaughtError(error: unknown) {
+	// Errors thrown inside traced() are already on their span
+	if (!alreadyRecorded(error)) MapleBrowser.captureException(error)
 }
-
-// in onBeforeNavigate, parent only the first page load to the server
-const span = tracer.startSpan(
-	kind,
-	{ attributes: { "url.path": toLocation.pathname } },
-	kind === "pageload" ? serverContext() : context.active(),
-)
 ```
+
+The `alreadyRecorded` check is there because a data loader that throws often ends up in the same error handler. Without it, one failed loader would show up as two errors. `captureException` itself also records each error object only once, so reporting and rethrowing is safe.
+
+## Step 5: trace server-side rendering
+
+If your framework renders the first page on the server, that render is part of what the user waits for. Tracing it closes the last gap: a slow first load could be a slow data fetch on the server, a slow render, or slow JavaScript in the browser, and without server spans you can only see the last one.
+
+It also helps anyone debugging with an AI agent. An agent that can see "the server render of `/projects/:id` took 900ms, 700ms of it in one query" has something concrete to fix. An agent that only sees a slow page load has to guess.
+
+Server rendering happens in Node (or another server runtime), so the server side is ordinary backend tracing: start the OpenTelemetry Node SDK as in the [Node.js guide](/docs/guides/instrumentation-nodejs), and add a span around the render. Node has `AsyncLocalStorage`, so the `await` problem from step 3 doesn't exist there.
+
+The interesting part is connecting the server's trace to the browser's. The server writes its trace context into a `Server-Timing` response header:
+
+```http
+Server-Timing: traceparent;desc="00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+```
+
+The browser can read it back from the Navigation Timing API, and `serverContext()` in the helper above uses it to parent the `pageload` span. The first page load then shows up as one trace, from the server receiving the request to the browser finishing the first route.
 
 You'll often see this done with a `<meta name="traceparent">` tag instead, which is what OpenTelemetry's document-load instrumentation reads. Both work. The header keeps it out of the rendered HTML, so the server and client versions of your `<head>` can't disagree during hydration.
 
-Two caveats. Only parent the `pageload` span this way; later navigations are new work and belong in their own traces, and attaching minutes of browsing to one server request makes that trace meaningless. And if a CDN caches your HTML, it caches the header too, so every visitor would join the same old trace. Skip the header on cached responses.
+Two caveats:
 
-One more thing to know about the `ssr` span: `defaultStreamHandler` returns as soon as React starts streaming, so the span measures the time to the first byte of HTML, not the time to the last. That's usually the number you want.
+- Only parent the `pageload` span this way. Later navigations are new work and belong in their own traces, and attaching minutes of browsing to one server request makes that trace meaningless.
+- If a CDN caches your HTML, it caches the header too, so every visitor would join the same old trace. Skip the header on cached responses.
+
+## Framework guides
+
+Steps 3 to 5 look different in every framework: where navigations start and end, what data loading looks like, where caught errors go, and how the server render is exposed. Each guide wires the helper above into one framework:
+
+- [TanStack Router and TanStack Start](/blog/frontend-tracing-tanstack)
+- [React Router](/blog/frontend-tracing-react-router)
+- [Next.js](/blog/frontend-tracing-nextjs)
+- [Vue and Vue Router](/blog/frontend-tracing-vue)
+- [SvelteKit](/blog/frontend-tracing-sveltekit)
+- [Angular](/blog/frontend-tracing-angular)
 
 ## What this setup doesn't cover
 
@@ -331,9 +287,9 @@ Yes. OpenTelemetry's JavaScript SDK has a web tracer and instrumentations for `f
 
 Almost always one of three things: the API's origin isn't in `propagateTraceHeaderCorsUrls`, the API's CORS preflight doesn't allow the `traceparent` header, or the backend isn't instrumented to read it. Check the request headers in your browser's network tab first. If there's no `traceparent`, it's the frontend config; if it's there, it's the backend.
 
-### How do I trace React Router or TanStack Router navigations?
+### How do I trace route changes in a single-page app?
 
-Subscribe to the router's navigation events. Start a span when a navigation begins, rename it to the matched route template, and end it when the router has resolved. Wrap loaders in child spans so the requests they make nest under the navigation.
+Hook into your router's navigation events. Start a span when a navigation begins, rename it to the matched route template, and end it when the new route is ready. Wrap data loading in child spans so the requests it makes nest under the navigation. The [framework guides](#framework-guides) show where those hooks are in each router.
 
 ## Next steps
 
