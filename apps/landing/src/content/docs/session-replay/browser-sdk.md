@@ -206,7 +206,7 @@ try {
 }
 ```
 
-The same error object is recorded once, even if your code reports it and then rethrows it. `captureException` accepts any thrown value: strings and plain objects are turned into an `Error`. Calls before `init()` do nothing.
+The same error object is recorded once, even if your code reports it and then rethrows it, or [`traced`](#navigation-and-data-loading-spans) already recorded it. `captureException` accepts any thrown value: strings and plain objects are turned into an `Error`. Calls before `init()` do nothing.
 
 A cross-origin script that throws shows up in the browser as a bare "Script error." with no details, and the SDK skips it. Add the `crossorigin` attribute to the script tag to get the real error.
 
@@ -227,6 +227,31 @@ MapleBrowser.init({
 Your API must also allow the header in its CORS configuration. Add `traceparent` to `Access-Control-Allow-Headers` in the preflight response. Without it, the browser blocks the request.
 
 Your backend must be instrumented with OpenTelemetry and read `traceparent`, which every OpenTelemetry HTTP server instrumentation does.
+
+## Navigation and data-loading spans
+
+Three calls turn one click into one trace: a navigation span, the data-loading spans under it, the `fetch()` spans those make, and the backend spans behind them. Call them from your router's hooks. The [frontend guides](/docs/frontend) show where for each framework.
+
+```ts
+// the router starts a navigation
+MapleBrowser.startNavigation(location.pathname)
+
+// a route's data loading
+const project = await MapleBrowser.traced("loader /projects/:id", () => fetchProject(id), {
+	isFailure: (error) => !isRedirect(error), // control-flow throws aren't failures
+})
+
+// the new route is ready: pass its template, not the concrete URL
+MapleBrowser.endNavigation("/projects/:id")
+```
+
+- `startNavigation(path)` opens a `pageload` span on the first call and a `navigate` span on every later one, with the path as `url.path`. A navigation still open is ended with `app.navigation.interrupted: true`. The page load joins the server render's trace when the document response has a `Server-Timing: traceparent;desc="…"` entry or the page a `<meta name="traceparent">` tag.
+- `endNavigation(route?)` renames the span to `navigate <route>` (or `pageload <route>`) and ends it. It does nothing when no navigation is open.
+- `traced(name, fn, options?)` runs `fn` in a span under the open navigation and returns its result unchanged. A throw is recorded on the span, marks it `Error`, and is rethrown; `isFailure` returning `false` leaves the span `Ok`. An error `traced` recorded isn't reported again by `captureException` or the global handlers.
+
+The browser has no async context: only requests `fn` starts before its first `await` nest under its span. Start independent requests together, with `Promise.all`.
+
+All three do nothing on the server, before `init()`, with tracing disabled or before consent is granted; `traced` then only runs `fn`. A page load that happened before consent isn't traced later: the next navigation is a `navigate` span. Leaving the page or calling `shutdown()` ends an open navigation as interrupted, so it still exports.
 
 ## Custom events
 

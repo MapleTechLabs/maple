@@ -126,6 +126,7 @@ const toolLabels: Record<string, string> = {
 	// misc
 	run_sql: "Run SQL",
 	register_agent: "Register Agent",
+	send_maple_feedback: "Send Feedback",
 	get_event: "Get Event",
 } satisfies Record<string, string>
 
@@ -187,6 +188,7 @@ const toolIcons: Record<string, IconComponent> = {
 	get_agent_tools_overview: ChartBarTrendUpIcon,
 	get_agent_tool_error: FireIcon,
 	register_agent: IdBadgeIcon,
+	send_maple_feedback: ChatBubbleSparkleIcon,
 	get_event: CircleInfoIcon,
 } satisfies Record<string, IconComponent>
 

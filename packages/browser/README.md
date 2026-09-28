@@ -138,6 +138,31 @@ MapleBrowser.init({
 })
 ```
 
+## Navigations and data loading
+
+Call these from your router's hooks to make one click one trace: a navigation
+span, the data-loading spans under it, and the `fetch` spans they start.
+[maple.dev/docs/frontend](https://maple.dev/docs/frontend) shows where for each
+framework.
+
+```ts
+MapleBrowser.startNavigation(location.pathname) // a navigation starts
+const data = await MapleBrowser.traced("loader /projects/:id", () => load(id), {
+	isFailure: (error) => !isRedirect(error), // redirects aren't failures
+})
+MapleBrowser.endNavigation("/projects/:id") // the route is ready: its template
+```
+
+- The first `startNavigation` opens a `pageload` span, joined to the server
+  render's trace from a `Server-Timing: traceparent;desc="…"` entry or a
+  `<meta name="traceparent">` tag; later calls open `navigate` spans, and end
+  one still open as `app.navigation.interrupted`.
+- `traced` returns `fn`'s result and rethrows its error unchanged. Only requests
+  started before `fn`'s first `await` nest under its span. An error it recorded
+  isn't reported again by `captureException` or the global handlers.
+- All three are no-ops on the server, before `init()`, with tracing disabled or
+  without consent (`traced` then only runs `fn`).
+
 ## Linking a marketing site to your app
 
 The visitor id lives in localStorage **and** a cookie scoped to your registered

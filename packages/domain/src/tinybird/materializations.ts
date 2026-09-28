@@ -29,6 +29,7 @@ import {
 	aiCrawlerRequests,
 	traceDetailSpans,
 	traceListMv,
+	traceFacetsHourly,
 	attributeKeysHourly,
 	attributeValuesHourly,
 	tracesAggregatesHourly,
@@ -1167,6 +1168,36 @@ export const traceListMvMv = defineMaterializedView("trace_list_mv_mv", {
           ResourceAttributes['service.namespace'] AS ServiceNamespace
         FROM traces
         WHERE ParentSpanId = ''
+      `,
+		}),
+	],
+})
+
+/** Cascaded off `trace_list_mv`, so it groups by the values the trace list filters on. */
+export const traceFacetsHourlyMv = defineMaterializedView("trace_facets_hourly_mv", {
+	description:
+		"Rolls trace_list_mv up hourly by the traces sidebar facet dimensions, with root-span counts and duration state.",
+	datasource: traceFacetsHourly,
+	nodes: [
+		node({
+			name: "trace_facets_hourly_mv_node",
+			sql: `
+        SELECT
+          OrgId,
+          toStartOfHour(Timestamp) AS Hour,
+          ServiceName,
+          SpanName,
+          HttpMethod,
+          HttpStatusCode,
+          DeploymentEnv,
+          ServiceNamespace,
+          HasError,
+          count() AS TraceCount,
+          min(Duration) AS DurationMin,
+          max(Duration) AS DurationMax,
+          quantilesTDigestState(0.5, 0.95)(Duration) AS DurationQuantiles
+        FROM trace_list_mv
+        GROUP BY OrgId, Hour, ServiceName, SpanName, HttpMethod, HttpStatusCode, DeploymentEnv, ServiceNamespace, HasError
       `,
 		}),
 	],

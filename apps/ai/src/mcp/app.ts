@@ -1,4 +1,5 @@
 import { MAPLE_MCP_SERVER_VERSION } from "@maple/domain/mcp-manifest"
+import { MAPLE_MCP_SERVER_INSTRUCTIONS } from "./server-instructions"
 import { McpProtocol } from "effect/unstable/ai"
 import { RpcSerialization } from "effect/unstable/rpc"
 import { Cause, Effect, Layer } from "effect"
@@ -200,6 +201,7 @@ const McpHttpLive = statelessMcpServerLayer({
 	name: "maple-observability",
 	// Kept equal to the public `server.json` manifest (`@maple/domain/mcp-manifest`).
 	version: MAPLE_MCP_SERVER_VERSION,
+	instructions: MAPLE_MCP_SERVER_INSTRUCTIONS,
 	protocols: MCP_PROTOCOLS,
 }).pipe(Layer.provide(McpTransportLive))
 

@@ -10,7 +10,7 @@
 // Error. That is the shape `error_events_mv` fingerprints on, so these arrive in
 // error tracking beside server-side errors rather than in a separate silo.
 import { scrubUrl } from "@maple/browser-session"
-import { SpanKind, SpanStatusCode } from "@opentelemetry/api"
+import { type Span, SpanKind, SpanStatusCode } from "@opentelemetry/api"
 import { mapleTracer } from "./tracing"
 import { SDK_NAME, SDK_VERSION } from "./version"
 
@@ -55,12 +55,24 @@ export function resetReportedErrorsForTests(): void {
 }
 
 /**
- * Record `error` on a one-off span. The error is claimed only when the span is
- * recording: before `init()` the tracer is a no-op, and claiming it then would
- * swallow the same error reported again once tracing is live.
+ * Mark `span` as failed by `error`. The exception event goes on the first span
+ * that records this error object; a later one (an outer `traced`, say) only
+ * takes the Error status, so one error stays one issue. The error is claimed
+ * only when the span is recording: before `init()` the tracer is a no-op, and
+ * claiming it then would swallow the same error reported again once tracing is
+ * live.
  */
-function recordException(error: unknown, options: CaptureExceptionOptions): void {
+export function recordFailure(span: Span, error: unknown): void {
 	const normalized = asError(error)
+	if (!alreadyReported(error)) {
+		if (span.isRecording() && typeof error === "object" && error !== null) reported.add(error)
+		span.recordException(normalized)
+	}
+	span.setStatus({ code: SpanStatusCode.ERROR, message: normalized.message })
+}
+
+/** Record `error` on a one-off span. */
+function recordException(error: unknown, options: CaptureExceptionOptions): void {
 	const span = mapleTracer(SDK_NAME, SDK_VERSION).startSpan(options.name ?? "exception", {
 		kind: SpanKind.INTERNAL,
 		attributes: {
@@ -68,9 +80,7 @@ function recordException(error: unknown, options: CaptureExceptionOptions): void
 			...options.attributes,
 		},
 	})
-	if (span.isRecording() && typeof error === "object" && error !== null) reported.add(error)
-	span.recordException(normalized)
-	span.setStatus({ code: SpanStatusCode.ERROR, message: normalized.message })
+	recordFailure(span, error)
 	span.end()
 }
 

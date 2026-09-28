@@ -11,6 +11,7 @@ import {
 	errorTickBootstrapIssuesQuery,
 	errorTickIssuesQuery,
 	errorFingerprintsQuery,
+	tracesDurationStatsQuery,
 	tracesFacetsQuery,
 } from "./errors"
 
@@ -483,8 +484,8 @@ describe("tracesFacetsQuery", () => {
 	it("compiles UNION ALL with 7 facet dimensions", () => {
 		const q = tracesFacetsQuery({})
 		const { sql } = compileUnionUnsafe(q, baseParams)
-		const unionCount = (sql.match(/UNION ALL/g) || []).length
-		expect(unionCount).toBe(6) // 7 queries = 6 UNION ALL
+		// 7 facet branches, each splicing a raw edge with the hourly interior.
+		expect(sql.match(/UNION ALL/g)).toHaveLength(6 + 7)
 		expect(sql).toContain("'service' AS facetType")
 		expect(sql).toContain("'spanName' AS facetType")
 		expect(sql).toContain("'httpMethod' AS facetType")
@@ -546,7 +547,8 @@ describe("tracesFacetsQuery", () => {
 	it("compiles only the requested branch when facet is set", () => {
 		const q = tracesFacetsQuery({ facet: "service" })
 		const { sql } = compileUnionUnsafe(q, baseParams)
-		expect(sql).not.toContain("UNION ALL")
+		// The only UNION left is the branch's own two tiers.
+		expect(sql.match(/UNION ALL/g)).toHaveLength(1)
 		expect(sql).toContain("'service' AS facetType")
 		expect(sql).not.toContain("'spanName' AS facetType")
 		expect(sql).not.toContain("'errorCount' AS facetType")
@@ -558,9 +560,45 @@ describe("tracesFacetsQuery", () => {
 	it("keeps the non-service branch empty-value guard when facet-scoped", () => {
 		const q = tracesFacetsQuery({ facet: "deploymentEnv" })
 		const { sql } = compileUnionUnsafe(q, baseParams)
-		expect(sql).not.toContain("UNION ALL")
+		expect(sql.match(/UNION ALL/g)).toHaveLength(1)
 		expect(sql).toContain("'deploymentEnv' AS facetType")
-		expect(sql).toContain("DeploymentEnv != ''")
+		// On both tiers.
+		expect(sql.match(/DeploymentEnv != ''/g)).toHaveLength(2)
 		expect(sql).toContain("LIMIT 20")
+	})
+})
+
+describe("trace facets rollup routing", () => {
+	it("reads whole hours from trace_facets_hourly and the partial ends from trace_list_mv", () => {
+		const filters = { serviceNames: ["api", "web"], hasError: true, deploymentEnvs: ["production"] }
+		for (const sql of [
+			compileUnionUnsafe(tracesFacetsQuery({ ...filters, facet: "spanName" }), baseParams).sql,
+			compileUnsafe(tracesDurationStatsQuery(filters), baseParams).sql,
+		]) {
+			expect(sql).toContain("FROM trace_facets_hourly")
+			expect(sql).toContain("FROM trace_list_mv")
+			// Every filter reaches both tiers.
+			expect(sql.match(/ServiceName IN \('api', 'web'\)/g)).toHaveLength(2)
+			expect(sql.match(/HasError = 1/g)).toHaveLength(2)
+			expect(sql.match(/DeploymentEnv = 'production'/g)).toHaveLength(2)
+		}
+	})
+
+	it("reads only trace_list_mv, for the whole window, when the rollup cannot answer", () => {
+		for (const opts of [
+			{ rawOnly: true },
+			{ minDurationMs: 100 },
+			{ maxDurationMs: 100 },
+			{ attributeFilterKey: "http.route", attributeFilterValue: "/users" },
+			{ resourceFilterKey: "host.name", resourceFilterValue: "web-1" },
+		]) {
+			const facets = compileUnionUnsafe(tracesFacetsQuery(opts), baseParams).sql
+			expect(facets, JSON.stringify(opts)).not.toContain("trace_facets_hourly")
+			expect(facets, JSON.stringify(opts)).not.toContain("INTERVAL 1 HOUR")
+			expect(facets.match(/UNION ALL/g), JSON.stringify(opts)).toHaveLength(6)
+		}
+		const stats = compileUnsafe(tracesDurationStatsQuery({ rawOnly: true }), baseParams).sql
+		expect(stats).not.toContain("trace_facets_hourly")
+		expect(stats).not.toContain("INTERVAL 1 HOUR")
 	})
 })
