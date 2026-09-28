@@ -158,7 +158,7 @@ The source-code tools only return results for repositories the organization's Gi
 
 | Tool              | Access | What it does                                                                                            |
 | ----------------- | ------ | ------------------------------------------------------------------------------------------------------- |
-| `submit_feedback` | write  | Tell the Maple team about a bug, a missing capability or a misleading doc: its kind, the agent, and why |
+| `send_maple_feedback` | write  | Tell the Maple team about a bug, a missing capability or a misleading doc: its kind, the agent, and why |
 
 The same feedback can be sent over the REST API with `POST /v2/agent_feedback`.
 

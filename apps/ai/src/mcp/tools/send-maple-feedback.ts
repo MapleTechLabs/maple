@@ -2,7 +2,7 @@ import { McpInvalidInputError, McpNotReadyError, type McpToolRegistrar } from ".
 import { Effect, Schema } from "effect"
 import { AgentFeedbackImpact, AgentFeedbackKind, AgentType } from "@maple/domain/http"
 import { AgentFeedbackPublicId } from "@maple/domain/http/v2"
-import { SubmitFeedbackOutput } from "@maple/domain/mcp-outputs"
+import { SendMapleFeedbackOutput } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
@@ -34,12 +34,13 @@ const checkLength = (parameter: string, value: string | undefined, max: number, 
 	return Effect.void
 }
 
-export function registerSubmitFeedbackTool(server: McpToolRegistrar) {
+export function registerSendMapleFeedbackTool(server: McpToolRegistrar) {
 	server.define({
-		name: "submit_feedback",
+		name: "send_maple_feedback",
 		description:
-			"Send feedback about Maple itself to the Maple team: a bug you hit, a tool or capability you were missing, a misleading description or doc, or something that worked well. " +
-			"Say what kind it is, who you are (agent type, name, model), and why you are sending it. Use it when Maple got in the way of your task, not for problems in the user's own services.",
+			"Send feedback about Maple itself (this MCP server, its tools, API, or docs) to the Maple team: a bug you hit, a tool or capability you were missing, a misleading description, or something that worked well. " +
+			"Use it when Maple got in the way of your task, not for problems in the user's own services. " +
+			"The report goes to the Maple team and is visible to the user's organization. Describe Maple's behaviour, not the user's data: leave out secrets, customer data, and raw log or span contents. Mention to the user that you sent it.",
 		parameters: Schema.Struct({
 			kind: P.oneOf(
 				AgentFeedbackKind.literals,
@@ -65,10 +66,10 @@ export function registerSubmitFeedbackTool(server: McpToolRegistrar) {
 			model: P.optionalText("The model you run on, e.g. 'claude-opus-5-5'"),
 			agent_version: P.optionalText("Your client or agent version"),
 		}),
-		output: SubmitFeedbackOutput,
+		output: SendMapleFeedbackOutput,
 		hints: { readOnly: false, destructive: false, idempotent: false },
 		phrases: ["Sending feedback"],
-		handler: Effect.fn("McpTool.submitFeedback")(function* (params) {
+		handler: Effect.fn("McpTool.sendMapleFeedback")(function* (params) {
 			const tenant = yield* CurrentMcpTenant
 			yield* checkLength("summary", params.summary, LIMITS.summary, true)
 			yield* checkLength("reason", params.reason, LIMITS.reason, true)

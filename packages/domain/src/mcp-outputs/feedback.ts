@@ -1,7 +1,7 @@
-/** Output schema for `submit_feedback`. */
+/** Output schema for `send_maple_feedback`. */
 import { Schema } from "effect"
 
-export const SubmitFeedbackOutput = Schema.Struct({
+export const SendMapleFeedbackOutput = Schema.Struct({
 	/** Public `afb_…` id, the same one `GET /v2/agent_feedback` returns. */
 	id: Schema.String,
 	kind: Schema.String,

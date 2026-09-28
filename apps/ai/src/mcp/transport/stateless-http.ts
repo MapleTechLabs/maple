@@ -306,6 +306,7 @@ export const layerStatelessMcpHttp = (options: {
 export const statelessMcpServerLayer = (options: {
 	readonly name: string
 	readonly version: string
+	readonly instructions?: string | undefined
 	readonly protocols: readonly [McpProtocol.ProtocolAdapter, ...Array<McpProtocol.ProtocolAdapter>]
 }) =>
 	Layer.effectDiscard(Effect.forkScoped(Effect.updateContext(McpServer.run(options), omitRouter))).pipe(

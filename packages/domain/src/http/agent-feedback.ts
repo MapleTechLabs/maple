@@ -2,7 +2,7 @@ import { Schema } from "effect"
 import { HttpTaggedError } from "./error-policy"
 
 /**
- * Feedback about Maple from an agent: the v2 `agent_feedback` resource and the `submit_feedback`
+ * Feedback about Maple from an agent: the v2 `agent_feedback` resource and the `send_maple_feedback`
  * MCP tool write the same row through `AgentFeedbackService`.
  */
 

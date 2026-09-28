@@ -30,5 +30,5 @@ export const MUTATING_TOOL_NAMES: ReadonlySet<string> = new Set([
 	"link_pull_request",
 	"register_agent",
 	// feedback
-	"submit_feedback",
+	"send_maple_feedback",
 ])

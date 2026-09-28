@@ -83,7 +83,7 @@ const MutationPayload = Schema.Union([
 		Schema.Struct({ issueId: Schema.String, repoFullName: Schema.String, number: Schema.Number }),
 	),
 	Payload("register_agent", Schema.Struct({ agentName: Schema.NullOr(Schema.String) })),
-	Payload("submit_feedback", Schema.Struct({ kind: Schema.String })),
+	Payload("send_maple_feedback", Schema.Struct({ kind: Schema.String })),
 	Payload("update_error_notification_policy", Schema.Struct({ enabled: Schema.Boolean })),
 ])
 type MutationPayload = typeof MutationPayload.Type
@@ -188,7 +188,7 @@ const describe = (output: MutationPayload, app: string): Described => {
 						: `I registered the agent "${output.data.agentName}".`,
 				url: null,
 			}
-		case "submit_feedback":
+		case "send_maple_feedback":
 			return { text: "I sent feedback to the Maple team.", url: null }
 		case "update_error_notification_policy":
 			return {
