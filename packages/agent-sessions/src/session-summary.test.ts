@@ -136,6 +136,16 @@ describe("buildSessionSummary — time", () => {
 		expect(segment(summary.agentTime.segments, "ttft")).toBe(3_600)
 		expect(segment(summary.agentTime.segments, "inference")).toBe(1_242)
 	})
+
+	it("still charges a model call a tool made inside another call", () => {
+		const summary = summarize([
+			llmSpan({ spanId: "outer", startMs: 0, durationMs: 10 * SECOND }),
+			toolSpan({ spanId: "tool", parentSpanId: "outer", startMs: SECOND, durationMs: 4 * SECOND }),
+			llmSpan({ spanId: "inner", parentSpanId: "tool", startMs: 2 * SECOND, durationMs: 2 * SECOND }),
+		])
+
+		expect(segment(summary.agentTime.segments, "inference")).toBe(12 * SECOND)
+	})
 })
 
 describe("buildSessionSummary — failed", () => {
