@@ -229,7 +229,20 @@ const unwrapOutputMessages = (value: unknown): unknown => {
 	return [{ role: "assistant", parts }]
 }
 
+/** A LangChain `ToolMessage` serialised whole as the tool result
+ *  (`{ type: "tool", data: { type: "tool", content, tool_call_id, … } }`):
+ *  what the tool returned is `data.content`. */
+const unwrapToolMessage = (value: unknown): unknown =>
+	isRecord(value) &&
+	value.type === "tool" &&
+	isRecord(value.data) &&
+	value.data.type === "tool" &&
+	value.data.content !== undefined
+		? value.data.content
+		: value
+
 const genAiRefine = (values: MutableAiGenAiValues, ctx: AiRefineContext): void => {
+	if (values.toolCallResult !== undefined) values.toolCallResult = unwrapToolMessage(values.toolCallResult)
 	if (values.inputMessages !== undefined) values.inputMessages = unwrapMessages(values.inputMessages)
 	if (values.outputMessages !== undefined)
 		values.outputMessages = unwrapOutputMessages(values.outputMessages)

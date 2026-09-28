@@ -346,6 +346,26 @@ describe("value normalisation", () => {
 		expect(mapped.genAi.responseFinishReasons).toEqual(["tool_call", "stop"])
 	})
 
+	it("unwraps a LangChain ToolMessage tool result to what the tool returned", () => {
+		// An OpenInference LangChain tool span's dual-written result.
+		const mapped = mapAiSpan(
+			row({
+				"gen_ai.tool.name": "get_weather",
+				"gen_ai.tool.call.result":
+					'{"type": "tool", "data": {"content": "{\\"city\\": \\"Berlin\\", \\"temperature_c\\": 21, \\"condition\\": \\"partly cloudy\\"}", "additional_kwargs": {}, "response_metadata": {}, "type": "tool", "name": "get_weather", "id": null, "tool_call_id": "call_zORApUOSWyMXFIrtijncLEqV", "artifact": null, "status": "success"}}',
+			}),
+		)
+		expect(mapped.genAi.toolCallResult).toBe(
+			'{"city": "Berlin", "temperature_c": 21, "condition": "partly cloudy"}',
+		)
+
+		// Any other object carrying a `type` stays whole.
+		expect(
+			mapAiSpan(row({ "gen_ai.tool.call.result": '{"type":"tool","data":{"rows":3}}' })).genAi
+				.toolCallResult,
+		).toEqual({ type: "tool", data: { rows: 3 } })
+	})
+
 	it("reads finish reasons off the output messages when the span has none of its own", () => {
 		// A Strands `chat` span: the reason sits only on the output message.
 		const strands = mapAiSpan(
