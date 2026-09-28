@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest"
 import { buildSessionChecks, type SessionCheck } from "./session-checks"
 import { buildSessionSummary } from "./session-summary"
 import { buildSessionTurns } from "./session-turns"
-import { agentSpan, llmSpan, toolSpan } from "./span-test-support"
+import { agentSpan, llmSpan, makeSpan, toolSpan } from "./span-test-support"
 
 const SECOND = 1000
 const MINUTE = 60 * SECOND
@@ -484,6 +484,40 @@ describe("buildSessionChecks", () => {
 		}
 		const report = checks([...request(0), ...request(1)])
 		expect(byId(report, "provider").headline).toBe("All 2 model calls were answered first time")
+	})
+
+	// Google ADK reports each call twice: `call_llm` (no operation, a model)
+	// over `generate_content`, both with the same usage. The cache check read
+	// "over 15 calls" for a session of 8.
+	it("judges the prompt cache once per model call when a wrapper repeats the usage", () => {
+		const usage = (i: number): AiSessionGenAiValues => ({
+			requestModel: "openrouter/openai/gpt-4o-mini",
+			usageInputTokens: 2_000,
+			usageCacheReadInputTokens: i === 0 ? 0 : 1_536,
+			usageOutputTokens: 32,
+		})
+		const report = checks([
+			agentSpan({ spanId: "a1", startMs: 0, durationMs: MINUTE, agentName: "assistant" }),
+			...[0, 1, 2, 3, 4].flatMap((i) => [
+				makeSpan({
+					spanId: `call-${i}`,
+					parentSpanId: "a1",
+					spanName: "call_llm",
+					startMs: (i + 1) * SECOND,
+					durationMs: 2 * SECOND,
+					genAi: usage(i),
+				}),
+				llmSpan({
+					spanId: `gen-${i}`,
+					parentSpanId: `call-${i}`,
+					spanName: "generate_content",
+					startMs: (i + 1) * SECOND,
+					durationMs: 2 * SECOND,
+					genAi: { operationName: "generate_content", ...usage(i) },
+				}),
+			]),
+		])
+		expect(byId(report, "prompt-cache").headline).toBe("Cache hit rate 77% over 4 calls")
 	})
 
 	// The one rule behind red and amber, pinned per kind: a class that needs a

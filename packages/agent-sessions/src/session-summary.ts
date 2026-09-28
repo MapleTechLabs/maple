@@ -582,6 +582,14 @@ function countedLlmCalls(
 	return [...unkeyed, ...byResponse.values()].sort((a, b) => spanStartMs(a) - spanStartMs(b))
 }
 
+/** The spans `work.llmCalls` counts, in start order: for a reading that needs
+ *  one span per model call rather than every observation of it. */
+export function sessionLlmCalls(spans: readonly AiSessionSpan[]): readonly AiSessionSpan[] {
+	const byId = new Map(spans.map((span) => [span.spanId, span]))
+	const usage = countableUsageSpans(spans, byId)
+	return countedLlmCalls(spans, byId, usage.bySpan, usage.costs)
+}
+
 /**
  * Each reporter charged to the NEAREST ancestor that also reports, so a
  * two-level roll-up subtracts each figure once rather than at every level.

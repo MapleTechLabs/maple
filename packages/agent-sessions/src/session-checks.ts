@@ -21,6 +21,7 @@ import {
 	type SessionVerdict,
 } from "./session-findings"
 import {
+	sessionLlmCalls,
 	spanTokenBuckets,
 	type SessionFailureKind,
 	type SessionSummary,
@@ -152,7 +153,9 @@ export function buildSessionChecks(
 		...otherErrorsCheck(errors.filter((finding) => finding.tool === undefined)),
 		repetitionCheck(of("repetition"), summary, coverage),
 		stallCheck(of("stall")),
-		promptCacheCheck(llmCalls),
+		// Per call, so a model call its framework also rolled up (ADK `call_llm` over
+		// `generate_content`) is judged once.
+		promptCacheCheck(sessionLlmCalls(spans)),
 	].sort(
 		(a, b) =>
 			STATUS_RANK[a.status] - STATUS_RANK[b.status] ||
