@@ -141,7 +141,7 @@ Keep whatever the hook already does (logging, other vendors, fallback UI). `init
 
 ## Hard rules
 
-- Never modify files outside the project root. Never commit, push, or open PRs.
+- Never modify files outside the project root. Don't commit, push, or open PRs unless the user asks you to.
 - Never put a private key in browser code.
 - Never send `traceparent` to third-party origins.
 - Never remove an existing observability vendor unless asked.
