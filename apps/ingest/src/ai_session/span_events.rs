@@ -8,17 +8,30 @@
 //!
 //! The per-message events of the OTel GenAI conventions before v1.37
 //! (`gen_ai.{system,user,assistant,tool}.message`, `gen_ai.choice`) are what
-//! Strands emits by default. LlamaIndex's own instrumentation
+//! Strands emits by default. From v1.37 the conventions carry the same content
+//! as `gen_ai.input.messages` / `gen_ai.output.messages` /
+//! `gen_ai.system_instructions` on a `gen_ai.client.inference.operation.details`
+//! event, which Strands emits under `gen_ai_latest_experimental` unless
+//! `gen_ai_span_attributes_only` puts them on the span itself; those are copied
+//! as they are. LlamaIndex's own instrumentation
 //! (`llama-index-observability-otel`) puts a model call's input in the
 //! `messages` of an `LLMChatStartEvent`; its reply is not recorded at all.
 //! Content recorded as OTLP log records (Semantic Kernel, Google ADK, Claude
 //! Code's replies) is another signal, in another request, and is not joined
 //! here.
 
+use opentelemetry_proto::tonic::common::v1::KeyValue;
 use opentelemetry_proto::tonic::trace::v1::Span;
 use serde_json::{json, Value};
 
 use super::claude_code::{has, owned, text};
+
+/// The content keys a `gen_ai.client.inference.operation.details` event carries.
+const DETAILS_KEYS: [&str; 3] = [
+    "gen_ai.system_instructions",
+    "gen_ai.input.messages",
+    "gen_ai.output.messages",
+];
 
 /// Restate one stamped span's content events as `gen_ai.*` attributes.
 pub(super) fn restate(span: &mut Span) {
@@ -34,6 +47,7 @@ pub(super) fn restate(span: &mut Span) {
     let mut output = Vec::new();
     let mut arguments = None;
     let mut result = None;
+    let mut details = Vec::new();
     for event in &span.events {
         let attrs = &event.attributes;
         match (event.name.as_str(), tool_call) {
@@ -60,23 +74,33 @@ pub(super) fn restate(span: &mut Span) {
                     text(attrs, "messages").map_or_else(Vec::new, |m| llamaindex_messages(&m)),
                 );
             }
+            ("gen_ai.client.inference.operation.details", _) => details.extend(
+                DETAILS_KEYS
+                    .into_iter()
+                    .filter_map(|key| Some((key, text(attrs, key)?))),
+            ),
             _ => {}
         }
     }
     let json_array =
         |values: Vec<Value>| (!values.is_empty()).then(|| Value::Array(values).to_string());
-    let mut added = Vec::new();
-    for (key, value) in [
+    let mut added: Vec<KeyValue> = Vec::new();
+    let restated = [
         ("gen_ai.system_instructions", system.and_then(json_array)),
         ("gen_ai.input.messages", json_array(input)),
         ("gen_ai.output.messages", json_array(output)),
         ("gen_ai.tool.call.arguments", arguments),
         ("gen_ai.tool.call.result", result),
-    ] {
-        if let Some(value) = value {
-            if !has(&span.attributes, key) {
-                added.push(owned(key, value));
-            }
+    ];
+    // The first value per key wins: Strands' event-loop cycle follows its input
+    // with a second `gen_ai.input.messages` holding only the tool results.
+    let candidates = restated
+        .into_iter()
+        .filter_map(|(key, value)| Some((key, value?)))
+        .chain(details);
+    for (key, value) in candidates {
+        if !has(&span.attributes, key) && !has(&added, key) {
+            added.push(owned(key, value));
         }
     }
     span.attributes.extend(added);
@@ -110,6 +134,11 @@ fn block_part((kind, value): (String, Value)) -> Value {
             "type": "tool_call_response",
             "id": value["toolUseId"],
             "response": value["content"],
+        }),
+        "interruptResponse" => json!({
+            "type": "interrupt_response",
+            "id": value["interruptId"],
+            "response": value["response"],
         }),
         _ => json!({ "type": kind, "content": value }),
     }
@@ -428,5 +457,75 @@ mod tests {
             ))
         );
         assert_eq!(value(&spans[0], "gen_ai.output.messages"), None);
+    }
+
+    // Strands under `gen_ai_latest_experimental` without
+    // `gen_ai_span_attributes_only` (strands 1.50 `tracer.py` `_add_event`).
+    #[test]
+    fn operation_details_events_are_copied_onto_the_span() {
+        let spans = stamped(
+            "strands.telemetry.tracer",
+            vec![span(
+                "execute_event_loop_cycle",
+                &[("gen_ai.operation.name", "execute_event_loop_cycle")],
+                &[
+                    (
+                        "gen_ai.client.inference.operation.details",
+                        &[(
+                            "gen_ai.system_instructions",
+                            r#"[{"type": "text", "content": "Be brief."}]"#,
+                        )],
+                    ),
+                    (
+                        "gen_ai.client.inference.operation.details",
+                        &[(
+                            "gen_ai.input.messages",
+                            r#"[{"role": "user", "parts": [{"type": "interrupt_response", "id": "v1:1", "response": "yes"}]}]"#,
+                        )],
+                    ),
+                    (
+                        "gen_ai.client.inference.operation.details",
+                        &[(
+                            "gen_ai.input.messages",
+                            r#"[{"role": "user", "parts": [{"type": "tool_call_response", "id": "call_1", "response": []}]}]"#,
+                        )],
+                    ),
+                ],
+            )],
+        );
+        assert_eq!(
+            value(&spans[0], "gen_ai.system_instructions"),
+            Some(r#"[{"type": "text", "content": "Be brief."}]"#)
+        );
+        assert_eq!(
+            value(&spans[0], "gen_ai.input.messages"),
+            Some(
+                r#"[{"role": "user", "parts": [{"type": "interrupt_response", "id": "v1:1", "response": "yes"}]}]"#
+            )
+        );
+    }
+
+    #[test]
+    fn strands_interrupt_response_blocks_map_like_strands_does() {
+        let spans = stamped(
+            "strands.telemetry.tracer",
+            vec![span(
+                "chat",
+                &[("gen_ai.operation.name", "chat")],
+                &[(
+                    "gen_ai.user.message",
+                    &[(
+                        "content",
+                        r#"[{"interruptResponse": {"interruptId": "v1:1", "response": "yes"}}]"#,
+                    )],
+                )],
+            )],
+        );
+        assert_eq!(
+            value(&spans[0], "gen_ai.input.messages"),
+            Some(
+                r#"[{"parts":[{"id":"v1:1","response":"yes","type":"interrupt_response"}],"role":"user"}]"#
+            )
+        );
     }
 }
