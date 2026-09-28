@@ -26,8 +26,10 @@ Use your public key from **Settings → Ingestion**. Without one, the agent uses
 ## Install the browser SDK
 
 ```bash
-npm install @maple-dev/browser
+npm install @maple-dev/browser @opentelemetry/api
 ```
+
+`@opentelemetry/api` is for the tracing helper below. The SDK already depends on it, but strict package managers like pnpm only resolve packages you list yourself.
 
 Put `maple.ts` (the `MapleBrowser.init` call) and `tracing.ts` (the helper below) in `src/lib/`, so every file can import them from `$lib`. `import.meta.env.VITE_*` works as it does in any Vite app; if you prefer SvelteKit's own env modules, read the key from `$env/static/public` with a `PUBLIC_` prefix instead.
 

@@ -26,8 +26,10 @@ Use your public key from **Settings → Ingestion**. Without one, the agent uses
 ## Install the browser SDK
 
 ```bash
-npm install @maple-dev/browser
+npm install @maple-dev/browser @opentelemetry/api
 ```
+
+`@opentelemetry/api` is for the tracing helper below. The SDK already depends on it, but strict package managers like pnpm only resolve packages you list yourself.
 
 Initialize the SDK in its own file and import it first in `src/main.ts`, so it's running before Angular creates anything:
 
@@ -257,19 +259,24 @@ export function provideRouterTracing() {
 				return
 			}
 
+			// A same-URL navigation has no NavigationStart, but it still supersedes a pending one
+			if (event instanceof NavigationSkipped) {
+				endNavigation()
+				return
+			}
+
 			const ended =
-				event instanceof NavigationEnd ||
-				event instanceof NavigationCancel ||
-				event instanceof NavigationError ||
-				event instanceof NavigationSkipped
+				event instanceof NavigationEnd || event instanceof NavigationCancel || event instanceof NavigationError
 			// Only the latest navigation owns the span
 			if (!ended || event.id !== current) return
 
-			if (event instanceof NavigationCancel && event.code === NavigationCancellationCode.Redirect) {
-				redirecting = true
+			if (event instanceof NavigationCancel) {
+				if (event.code === NavigationCancellationCode.Redirect) redirecting = true
+				// Otherwise the next NavigationStart ends it as interrupted
+				else if (event.code !== NavigationCancellationCode.SupersededByNewNavigation) endNavigation()
 			} else if (event instanceof NavigationEnd) {
 				endNavigation(routeTemplate(router.routerState.snapshot.root))
-			} else if (event instanceof NavigationError && event.target) {
+			} else if (event.target) {
 				endNavigation(routeTemplate(event.target.root))
 			} else {
 				endNavigation()
@@ -319,9 +326,11 @@ export const appConfig: ApplicationConfig = {
 Some details that are easy to get wrong:
 
 - **Build the span name from `routeConfig.path`, not from the URL.** Angular has no single "full path" property, so `routeTemplate` walks the activated routes from the root and joins their configured paths. Nested routes like `{ path: "projects", children: [{ path: ":id" }] }` come out as `/projects/:id`, and your not-found route is `/**`.
-- **Redirects from guards and resolvers are two navigations.** A guard that returns a `UrlTree`, or a resolver that returns a `RedirectCommand`, cancels the navigation with the code `Redirect` and immediately starts a new one. The `redirecting` flag keeps both in one span, named after the route the user lands on. A `redirectTo` in the route config doesn't cancel anything; it's resolved while matching.
-- **Every event carries the navigation's `id`.** When the user clicks a second link before the first finished loading, the first navigation is cancelled before the second one starts. The id check makes sure a late event from an old navigation never ends the new span.
-- **Query-only changes are full navigations.** Going from `/projects/42` to `/projects/42?tab=members` gets its own short `navigate /projects/:id` span. By default, resolvers only rerun when path or matrix params change. Navigating to the URL you're already on emits `NavigationSkipped` without a `NavigationStart`, so it creates no span.
+- **Redirects from guards and resolvers are two navigations.** A guard that returns a `UrlTree`, or a resolver that returns a `RedirectCommand`, cancels the navigation with the code `Redirect` and immediately starts a new one. The `redirecting` flag keeps both in one span, named after the route the user lands on: a click on `/old` that a guard sends to `/projects/1` is one `navigate /projects/:id` span with `url.path` set to `/old`. A `redirectTo` in the route config doesn't cancel anything; it's resolved while matching. With SSR, a full page load of a redirecting URL is an HTTP 302 from the server, and the `pageload` span joins the render of the page it lands on.
+- **Every event carries the navigation's `id`.** The id check makes sure a late event from an old navigation never ends the new span.
+- **A second click interrupts the first navigation.** When the user clicks a link before the previous navigation finished loading, Angular cancels the old one with the code `SupersededByNewNavigation` just before the new `NavigationStart`. The handler leaves that span open, so `startNavigation` ends it with `app.navigation.interrupted` set. The old span keeps the bare name `navigate`, since its route never activated, and its resolver span can outlive it: Angular doesn't stop a running resolver, it ignores the result.
+- **Query-only changes, fragments and back/forward are full navigations.** Going from `/projects/42` to `/projects/42?tab=members`, following a `routerLink` with a `fragment`, or pressing the back button each gets its own `navigate` span named after the route. By default, resolvers only rerun when path or matrix params change, so a query-only change is a short span with nothing under it.
+- **Navigating to the URL you're already on emits `NavigationSkipped`** without a `NavigationStart`, so it creates no span. It still replaces a navigation that was pending, which is why the handler ends the open span on `NavigationSkipped`.
 - **The platform check matters with SSR.** App initializers also run during the server render, where the helper's module-level navigation state would be shared between requests.
 
 ## Trace Angular route resolvers
@@ -342,7 +351,7 @@ export const projectResolver: ResolveFn<[Project, Member[]]> = (route) => {
 	const http = inject(HttpClient)
 	const id = route.paramMap.get("id")
 
-	return resolverSpan("resolve /projects/:id", () =>
+	return resolverSpan("loader /projects/:id", () =>
 		Promise.all([
 			firstValueFrom(http.get<Project>(`/api/projects/${id}`)),
 			firstValueFrom(http.get<Member[]>(`/api/projects/${id}/members`)),
@@ -354,6 +363,40 @@ export const projectResolver: ResolveFn<[Project, Member[]]> = (route) => {
 The helper works with promises, so `firstValueFrom` turns each `HttpClient` observable into one. This also nests correctly: `firstValueFrom` subscribes right away, and Angular's fetch backend calls `fetch()` synchronously during that subscribe, while the resolver span is still active. Sequential `await`s are a different story. Only requests started before the first `await` nest under the span; see [the await problem](#the-await-problem).
 
 The `isFailure` check in `resolverSpan` is for redirects. A resolver usually redirects by returning a `RedirectCommand`, which `traced` treats as a normal result. The router also accepts a thrown one, handy from inside a helper function, so a thrown `RedirectCommand` doesn't mark the span as failed either.
+
+A missing record is a redirect too. Catch the 404 inside the function you pass to `resolverSpan` and return a `RedirectCommand` to your not-found route:
+
+```ts
+// src/app/projects/project.resolver.ts
+import { HttpClient, HttpErrorResponse } from "@angular/common/http"
+import { inject } from "@angular/core"
+import { RedirectCommand, type ResolveFn, Router } from "@angular/router"
+import { firstValueFrom } from "rxjs"
+import { resolverSpan } from "../router-tracing"
+import type { Member, Project } from "./project"
+
+export const projectResolver: ResolveFn<[Project, Member[]]> = (route) => {
+	const http = inject(HttpClient)
+	const router = inject(Router)
+	const id = route.paramMap.get("id")
+
+	return resolverSpan("loader /projects/:id", async () => {
+		try {
+			return await Promise.all([
+				firstValueFrom(http.get<Project>(`/api/projects/${id}`)),
+				firstValueFrom(http.get<Member[]>(`/api/projects/${id}/members`)),
+			])
+		} catch (error) {
+			if (error instanceof HttpErrorResponse && error.status === 404) {
+				return new RedirectCommand(router.parseUrl("/not-found"), { skipLocationChange: true })
+			}
+			throw error
+		}
+	})
+}
+```
+
+The loader span stays Ok and the navigation span is named after the not-found route, `navigate /not-found`, with the requested path in `url.path`. The `fetch` span for the 404 is still marked `Error`, as OpenTelemetry marks every 4xx client span, but Maple doesn't open an issue for it. A URL no route matches lands on your `**` route: `navigate /**`.
 
 One thing the waterfall will show you: the router runs the resolvers of nested routes one level at a time. A parent route's resolvers finish before its child's start, and only the resolvers within one route run in parallel. If a layout resolver and a page resolver don't depend on each other, that's a waterfall you can remove by moving both into one route's `resolve` map.
 
@@ -380,7 +423,7 @@ export class MapleErrorHandler extends ErrorHandler {
 }
 ```
 
-The app config above already provides it. The `alreadyRecorded` check is for resolvers: a resolver that throws fails the navigation, and `RouterLink` passes the same error object to this handler. Without the check, one failed resolver would show up as two errors.
+The app config above already provides it. A `(click)` handler that throws is reported once, as an `angular.error` span; it never becomes a `browser.uncaught_error`, since the error doesn't reach `window.onerror`. The `alreadyRecorded` check is for resolvers: a resolver that throws fails the navigation, and `RouterLink` passes the same error object to this handler. Without the check, one failed resolver would show up as two errors.
 
 `provideBrowserGlobalErrorListeners()`, which new CLI projects include, sends uncaught errors and unhandled rejections to the `ErrorHandler` too. Those also reach the SDK's own global handlers, but you still get one issue per error: `captureException` records each error object once, whichever handler sees it first.
 
@@ -391,7 +434,9 @@ Two cases to watch for:
 
 ## Trace server rendering with @angular/ssr
 
-With `@angular/ssr`, the first page load starts on your Node server. Start the OpenTelemetry Node SDK as in the [Node.js guide](/docs/guides/instrumentation-nodejs), preloaded with `node --import ./tracing.mjs dist/acme-web/server/server.mjs` so it runs before the server bundle. That gives you a span for every incoming request.
+With `@angular/ssr`, the first page load starts on your Node server. Start the OpenTelemetry Node SDK as in the [Node.js guide](/docs/guides/instrumentation-nodejs), in a plain JavaScript file like `telemetry.mjs` at the project root, preloaded with `node --import ./telemetry.mjs dist/acme-web/server/server.mjs` so it runs before the server bundle. That gives you a span for every incoming request.
+
+The Angular CLI bundles Express into `server.mjs`, so the Express instrumentation has nothing to patch. The HTTP instrumentation still creates a server span per request (named after the method, like `GET`), and the undici instrumentation traces the `HttpClient` requests your resolvers make during the render. Those two are the instrumentations that matter here.
 
 Then replace the render middleware at the bottom of the generated `src/server.ts` with one that wraps the render in a span and hands its trace to the browser in a `Server-Timing` header:
 
@@ -437,9 +482,11 @@ A few things to know about the `ssr` span:
 - **It has a fixed name.** Express doesn't know which Angular route matched, so `url.path` carries the path, and the browser's `pageload /projects/:id` span in the same trace carries the template.
 - **`handle()` resolves once the app is stable**, after the server-side navigation, its resolvers, and pending `HttpClient` requests. The span also covers writing the HTML out, since it ends after `writeResponseToNodeResponse`.
 - **Resolvers nest under it on the server.** `resolverSpan` works there too, and Node's `AsyncLocalStorage` keeps the request's context across `await`s, so server-side resolver spans need no changes.
+- **`ErrorHandler` runs on the server too.** `MapleErrorHandler` is part of the app config, and `captureException` records into the server's trace during the render. A component that throws while rendering is reported twice on a full page load: once in the `ssr` trace and once when the browser hydrates.
+- **A resolver that throws during the render gets no page.** `handle()` resolves `null`, Express answers with its own 404, and the browser never starts Angular, so there's no `pageload` span. The error is on the server's resolver span.
 - **The browser's first resolvers look suspiciously fast.** `provideClientHydration()` replays the `HttpClient` GET requests made during the server render (except ones with auth headers or credentials), so the browser's first resolver spans have no fetch spans under them. The real requests are in the same trace, under the `ssr` span.
 
-If a CDN caches your HTML, skip the `server-timing` header on those responses, or every visitor's page load will join the same old trace.
+If a CDN caches your HTML, skip the `server-timing` header on those responses, or every visitor's page load will join the same old trace. `@angular/ssr` sets no `ETag` on rendered pages, so a reload always gets a fresh render and a new trace.
 
 ## Angular-specific gotchas
 

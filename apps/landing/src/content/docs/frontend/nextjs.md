@@ -28,8 +28,10 @@ Use your public key from **Settings → Ingestion**. Without one, the agent uses
 ## Install the browser SDK
 
 ```bash
-npm install @maple-dev/browser
+npm install @maple-dev/browser @opentelemetry/api
 ```
+
+`@opentelemetry/api` is for the tracing helper below. The SDK already depends on it, but strict package managers like pnpm only resolve packages you list yourself.
 
 Next.js has a file for this. `instrumentation-client.ts` runs after the HTML loads and before React hydrates, so the SDK is running before any of your components do. It's available from Next.js 15.3, and it goes next to `instrumentation.ts`:
 

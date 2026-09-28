@@ -28,8 +28,10 @@ Use your public key from **Settings → Ingestion**. Without one, the agent uses
 ## Install the browser SDK
 
 ```bash
-npm install @maple-dev/browser
+npm install @maple-dev/browser @opentelemetry/api
 ```
+
+`@opentelemetry/api` is for the tracing helper below. The SDK already depends on it, but strict package managers like pnpm only resolve packages you list yourself.
 
 ```ts
 // src/maple.ts

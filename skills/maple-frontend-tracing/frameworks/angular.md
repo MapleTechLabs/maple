@@ -55,19 +55,24 @@ export function provideRouterTracing() {
 				return
 			}
 
+			// A same-URL navigation has no NavigationStart, but it still supersedes a pending one
+			if (event instanceof NavigationSkipped) {
+				endNavigation()
+				return
+			}
+
 			const ended =
-				event instanceof NavigationEnd ||
-				event instanceof NavigationCancel ||
-				event instanceof NavigationError ||
-				event instanceof NavigationSkipped
+				event instanceof NavigationEnd || event instanceof NavigationCancel || event instanceof NavigationError
 			// Only the latest navigation owns the span
 			if (!ended || event.id !== current) return
 
-			if (event instanceof NavigationCancel && event.code === NavigationCancellationCode.Redirect) {
-				redirecting = true
+			if (event instanceof NavigationCancel) {
+				if (event.code === NavigationCancellationCode.Redirect) redirecting = true
+				// Otherwise the next NavigationStart ends it as interrupted
+				else if (event.code !== NavigationCancellationCode.SupersededByNewNavigation) endNavigation()
 			} else if (event instanceof NavigationEnd) {
 				endNavigation(routeTemplate(router.routerState.snapshot.root))
-			} else if (event instanceof NavigationError && event.target) {
+			} else if (event.target) {
 				endNavigation(routeTemplate(event.target.root))
 			} else {
 				endNavigation()
@@ -92,8 +97,10 @@ export const resolverSpan = <T>(name: string, fn: () => Promise<T>) =>
 
 Add `provideRouterTracing()` to the app config `providers` (or the root NgModule's `providers`), next to `provideRouter`. `provideAppInitializer` needs Angular 19+; on older versions use an `APP_INITIALIZER` factory provider.
 
-- Guard `UrlTree` / `RedirectCommand` redirects: `NavigationCancel` with code `Redirect`, then a new `NavigationStart`; the `redirecting` flag keeps one span. Config `redirectTo` doesn't cancel.
-- Same-URL navigation emits `NavigationSkipped` with no start. Query-only changes are navigations but don't rerun resolvers by default.
+- Guard `UrlTree` / `RedirectCommand` redirects: `NavigationCancel` with code `Redirect`, then a new `NavigationStart`; the `redirecting` flag keeps one span, named after the target (`/old` → `navigate /projects/:id`, `url.path` `/old`). Config `redirectTo` doesn't cancel. With SSR, a full load of a redirecting URL is an HTTP 302, and the `pageload` joins the target page's render.
+- A click during a pending navigation cancels it with code `SupersededByNewNavigation` before the new `NavigationStart`. Don't end it there: `startNavigation` ends it as a bare `navigate` span with `app.navigation.interrupted: true`. If the click was on the current URL, only `NavigationSkipped` follows, which ends it.
+- Same-URL navigation emits `NavigationSkipped` with no start (no span). Query-only changes, `routerLink` fragments and back/forward are navigations: a `navigate <template>` span each, resolvers rerun only when path params change (by default).
+- Not-found: the `**` route's template is `/**`. A resolver returning a `RedirectCommand` to a not-found route names the span after that route (`navigate /not-found`) with the requested `url.path`.
 
 ## Resolvers
 
@@ -103,7 +110,7 @@ export const projectResolver: ResolveFn<[Project, Member[]]> = (route) => {
 	const http = inject(HttpClient)
 	const id = route.paramMap.get("id")
 
-	return resolverSpan("resolve /projects/:id", () =>
+	return resolverSpan("loader /projects/:id", () =>
 		Promise.all([
 			firstValueFrom(http.get<Project>(`/api/projects/${id}`)),
 			firstValueFrom(http.get<Member[]>(`/api/projects/${id}/members`)),
@@ -113,6 +120,8 @@ export const projectResolver: ResolveFn<[Project, Member[]]> = (route) => {
 ```
 
 - `firstValueFrom` subscribes immediately and the fetch backend calls `fetch()` synchronously, so requests nest under the span.
+- API 404 → not-found page: catch the `HttpErrorResponse` inside the function and `return new RedirectCommand(router.parseUrl("/not-found"), { skipLocationChange: true })` (inject `Router` before the span). The loader span stays Ok; the 404 `fetch` span is Error (4xx rule).
+- A superseded navigation's resolver keeps running (Angular ignores its result), so its span can outlive the interrupted navigation span.
 - Nested routes' resolvers run level by level (parent before child).
 - Data loaded in components (`httpResource`, `ngOnInit`) runs after `NavigationEnd`: separate traces. Don't wrap those; mention it in the hand-off if the app relies on it.
 
@@ -131,13 +140,17 @@ export class MapleErrorHandler extends ErrorHandler {
 }
 ```
 
-Provide it with `{ provide: ErrorHandler, useClass: MapleErrorHandler }`. If the app already has a custom `ErrorHandler`, add the capture call to it instead. If it implements `onViewError` (`@boundary` blocks, Angular 22), report there too. A `withNavigationErrorHandler` that returns a `RedirectCommand` hides errors from `ErrorHandler`: report inside it.
+Provide it with `{ provide: ErrorHandler, useClass: MapleErrorHandler }`. Template listener errors land here, so a throwing `(click)` handler gives one `angular.error` span, not `browser.uncaught_error`. Keep `provideBrowserGlobalErrorListeners()`: errors it forwards are still reported once. If the app already has a custom `ErrorHandler`, add the capture call to it instead. If it implements `onViewError` (`@boundary` blocks, Angular 22), report there too. A `withNavigationErrorHandler` that returns a `RedirectCommand` hides errors from `ErrorHandler`: report inside it.
 
 ## SSR (@angular/ssr)
 
-Start the Node SDK per `maple-nodejs-style`, preloaded with `node --import ./tracing.mjs dist/<project>/server/server.mjs`. Wrap the render middleware at the bottom of `src/server.ts`:
+Start the Node SDK per `maple-nodejs-style` (bootstrap snippet in https://github.com/MapleTechLabs/maple/tree/main/skills/maple-nodejs-style if that skill isn't installed) in a plain-JS `telemetry.mjs` at the project root, and run the server with `node --import ./telemetry.mjs dist/<project>/server/server.mjs`. The CLI bundles Express into `server.mjs`, so Express instrumentation can't patch it: `@opentelemetry/instrumentation-http` (server spans, named `GET`) and `@opentelemetry/instrumentation-undici` (server-side `HttpClient` requests) are the ones that apply. Wrap the render middleware at the bottom of `src/server.ts`:
 
 ```ts
+import { context, propagation, trace } from "@opentelemetry/api"
+
+const tracer = trace.getTracer("acme-ssr")
+
 app.use((req, res, next) => {
 	tracer.startActiveSpan("ssr", { attributes: { "url.path": req.path } }, async (span) => {
 		try {
@@ -161,5 +174,9 @@ app.use((req, res, next) => {
 ```
 
 - The span name is fixed (Express doesn't know the Angular route); the browser's `pageload <template>` span carries the template.
+- Resolver spans run on the server too and nest under `ssr` with their fetch spans (Node keeps async context).
+- `MapleErrorHandler` also runs on the server, and `captureException` records into the `ssr` trace there. A render error on a full page load is reported twice: once by the server render, once by hydration.
+- A resolver that throws during SSR makes `handle()` resolve `null`: Express answers 404, no app HTML, no `pageload`. The error is on the server's resolver span.
+- Rendered HTML has no `ETag`, so reloads get a new trace.
 - `provideClientHydration()` replays SSR GET requests, so first-load resolver spans in the browser have no fetch children.
 - Don't install `ZoneContextManager`: new apps are zoneless, and the fetch backend runs outside the zone anyway.
