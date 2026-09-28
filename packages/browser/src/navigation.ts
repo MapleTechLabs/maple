@@ -10,8 +10,15 @@
 // app that registered its provider first owns that). Without a live provider
 // (before `init()`, after `shutdown()`, tracing disabled, consent not yet
 // granted, or on a server) nothing is spanned and `traced` only runs `fn`.
-import { scrubUrl } from "@maple/browser-session"
-import { type Context, context, type Span, type SpanContext, trace } from "@opentelemetry/api"
+import { hasConsent, scrubUrl } from "@maple/browser-session"
+import {
+	type Context,
+	context,
+	isSpanContextValid,
+	type Span,
+	type SpanContext,
+	trace,
+} from "@opentelemetry/api"
 import { recordFailure } from "./errors"
 import { liveMapleTracer } from "./tracing"
 import { SDK_NAME, SDK_VERSION } from "./version"
@@ -46,7 +53,15 @@ let firstLoad = true
  */
 let documentLoad = true
 
-const tracer = () => liveMapleTracer(SDK_NAME, SDK_VERSION)
+/** Spans `traced` opened, which a nested `traced` may parent to instead of the navigation. */
+const tracedSpans = new WeakSet<Span>()
+
+/**
+ * Maple's tracer, while tracing is live and consent is given. A consent revoke
+ * leaves the provider up but drops what it spans: an error recorded then would
+ * be claimed without ever being exported.
+ */
+const tracer = () => (hasConsent() ? liveMapleTracer(SDK_NAME, SDK_VERSION) : undefined)
 
 /** End the open navigation as interrupted: something other than its route finishing ended it. */
 function interruptNavigation(): void {
@@ -66,11 +81,16 @@ export function startNavigation(path: string): void {
 	if (!live) return
 	const parent = (joinServer ? serverContext() : undefined) ?? context.active()
 	navigation = { kind, span: live.startSpan(kind, { attributes: { "url.path": scrubUrl(path) } }, parent) }
+	// A page left mid-navigation still exports it. Capture phase, so this runs
+	// before the provider's own `pagehide` flush (at the target, capture
+	// listeners run first). Registering the same listener again is a no-op.
+	window.addEventListener("pagehide", interruptNavigation, { capture: true })
 }
 
 export function endNavigation(route?: string): void {
 	if (!navigation) return
-	if (route) navigation.span.updateName(`${navigation.kind} ${route}`)
+	// A template by contract, but redacted like a URL in case it is a concrete one
+	if (route) navigation.span.updateName(`${navigation.kind} ${scrubUrl(route)}`)
 	navigation.span.end()
 	navigation = undefined
 }
@@ -82,6 +102,7 @@ export async function traced<T>(name: string, fn: () => Promise<T>, options: Tra
 	// before its first `await` are children of the span. The browser has no
 	// async context: anything after that `await` is not.
 	return live.startActiveSpan(name, {}, parentContext(), async (span) => {
+		tracedSpans.add(span)
 		try {
 			return await fn()
 		} catch (error) {
@@ -94,17 +115,13 @@ export async function traced<T>(name: string, fn: () => Promise<T>, options: Tra
 }
 
 /**
- * The open navigation, unless the active span is already in its trace: a
- * `traced` inside another `traced` nests under that one.
+ * The open navigation, unless a `traced` span is active: a `traced` inside
+ * another `traced` nests under that one.
  */
 function parentContext(): Context {
 	const active = context.active()
-	if (
-		!navigation ||
-		trace.getSpan(active)?.spanContext().traceId === navigation.span.spanContext().traceId
-	) {
-		return active
-	}
+	const activeSpan = trace.getSpan(active)
+	if (!navigation || (activeSpan && tracedSpans.has(activeSpan))) return active
 	return trace.setSpan(active, navigation.span)
 }
 
@@ -155,6 +172,12 @@ function parseTraceparent(value: string | undefined): SpanContext | undefined {
 	const match = value?.trim().match(TRACEPARENT)
 	// Version ff is invalid; version 00 has exactly four fields
 	if (!match || match[1] === "ff" || (match[1] === "00" && match[5] !== undefined)) return undefined
-	// All-zero ids are well-formed but invalid: the SDK starts a new trace for those
-	return { traceId: match[2], spanId: match[3], traceFlags: Number.parseInt(match[4], 16), isRemote: true }
+	const spanContext = {
+		traceId: match[2],
+		spanId: match[3],
+		traceFlags: Number.parseInt(match[4], 16),
+		isRemote: true,
+	}
+	// All-zero ids are well-formed but invalid; rejecting them lets the meta tag stand in
+	return isSpanContextValid(spanContext) ? spanContext : undefined
 }

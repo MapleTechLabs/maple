@@ -251,7 +251,7 @@ MapleBrowser.endNavigation("/projects/:id")
 
 The browser has no async context: only requests `fn` starts before its first `await` nest under its span. Start independent requests together, with `Promise.all`.
 
-All three do nothing on the server, before `init()`, with tracing disabled or before consent is granted; `traced` then only runs `fn`. A page load that happened before consent isn't traced later: the next navigation is a `navigate` span. `shutdown()` ends an open navigation.
+All three do nothing on the server, before `init()`, with tracing disabled or before consent is granted; `traced` then only runs `fn`. A page load that happened before consent isn't traced later: the next navigation is a `navigate` span. Leaving the page or calling `shutdown()` ends an open navigation as interrupted, so it still exports.
 
 ## Custom events
 

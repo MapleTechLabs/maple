@@ -173,6 +173,28 @@ describe("startNavigation / endNavigation", () => {
 		expect(named("pageload /reset/:token").attributes["url.path"]).toBe("/reset/:token?token=REDACTED")
 	})
 
+	it("redacts a concrete URL passed as the route", async () => {
+		start()
+		MapleBrowser.startNavigation("/a")
+		MapleBrowser.endNavigation("/login?token=abc")
+		await stop()
+
+		expect(exported.map((span) => span.name)).toEqual(["pageload /login?token=REDACTED"])
+	})
+
+	it("ends and exports a navigation still open when the page is left", async () => {
+		start()
+		MapleBrowser.startNavigation("/checkout")
+		window.dispatchEvent(new Event("pagehide"))
+
+		// Exported by the page-exit flush itself, not by shutdown
+		await vi.waitFor(() => expect(exported.map((span) => span.name)).toEqual(["pageload"]))
+		expect(named("pageload").attributes["app.navigation.interrupted"]).toBe(true)
+		expect(() => MapleBrowser.endNavigation("/checkout")).not.toThrow()
+		await stop()
+		expect(exported).toHaveLength(1)
+	})
+
 	it("stamps session.id and user.id like every other span", async () => {
 		MapleBrowser.identify("user_1")
 		const { sessionId } = start()
@@ -219,6 +241,17 @@ describe("pageload parent", () => {
 
 		expect(named("pageload /a").spanContext().traceId).toBe(headerTrace)
 		expect(parentOf(named("pageload /a"))).toBe("2222222222222222")
+	})
+
+	it("falls back to the meta tag when the Server-Timing entry has an all-zero trace id", async () => {
+		stubServerTiming(`00-${"0".repeat(32)}-${SERVER_SPAN_ID}-01`)
+		setMeta(SERVER_TRACEPARENT)
+		start()
+		MapleBrowser.startNavigation("/a")
+		MapleBrowser.endNavigation("/a")
+		await stop()
+
+		expect(named("pageload /a").spanContext().traceId).toBe(SERVER_TRACE_ID)
 	})
 
 	it("falls back to the meta tag when the Server-Timing entry is malformed", async () => {
@@ -577,6 +610,26 @@ describe("without live tracing", () => {
 		// click, not the page load, and does not join the server render's trace
 		expect(exported.map((span) => span.name)).toEqual(["loader /b", "navigate /b"])
 		expect(named("navigate /b").spanContext().traceId).not.toBe(SERVER_TRACE_ID)
+	})
+
+	it("spans and claims nothing while consent is revoked", async () => {
+		start({ privacy: { requireConsent: true } })
+		MapleBrowser.setConsent(true)
+		MapleBrowser.setConsent(false)
+		const error = new Error("while revoked")
+		await expect(
+			MapleBrowser.traced("loader", async () => {
+				throw error
+			}),
+		).rejects.toBe(error)
+
+		MapleBrowser.setConsent(true)
+		await new Promise((resolve) => setTimeout(resolve, 20))
+		// Nothing was exported for it, so it is still reportable
+		MapleBrowser.captureException(error)
+		await stop()
+
+		expect(exported.map((span) => span.name)).toEqual(["exception"])
 	})
 
 	it("is a no-op after shutdown", async () => {

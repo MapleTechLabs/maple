@@ -74,7 +74,7 @@ describe("on the server", () => {
 		// The page load is still to come in the browser: the server calls above
 		// neither consumed it nor left a span open
 		const shutdown = setupTracing(CONFIG)
-		vi.stubGlobal("window", {})
+		vi.stubGlobal("window", { addEventListener: () => {} })
 		vi.stubGlobal("document", { querySelector: () => null })
 		MapleBrowser.endNavigation("/stale")
 		MapleBrowser.startNavigation("/a")
