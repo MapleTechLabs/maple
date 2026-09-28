@@ -70,7 +70,7 @@ MapleBrowser.init({
 
 ## Step 4: Navigation and data-loading spans
 
-Copy `tracing.ts` from this skill's directory **verbatim** into the app (for example `src/lib/tracing.ts`). It is the one helper this setup needs, because the current navigation has to be shared between router callbacks and loaders. Don't add further wrappers.
+Copy `tracing.ts` from this skill's directory **verbatim** into the app, where the framework reference puts it (otherwise `src/tracing.ts`). It is the one helper this setup needs, because the current navigation has to be shared between router callbacks and loaders. Don't add further wrappers.
 
 Its API:
 

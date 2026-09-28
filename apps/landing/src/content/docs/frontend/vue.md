@@ -230,15 +230,17 @@ export function traceRouter(router: Router) {
 Call it right after creating the router. Guards run in the order they were added, so adding these first puts your own guards inside the span:
 
 ```ts
-// src/router.ts
+// src/router/index.ts
 import { createRouter, createWebHistory } from "vue-router"
-import { traceRouter } from "./router-tracing"
+import { traceRouter } from "../router-tracing"
 import { routes } from "./routes"
 
-export const router = createRouter({ history: createWebHistory(), routes })
+const router = createRouter({ history: createWebHistory(import.meta.env.BASE_URL), routes })
 
 // Before any other guard, so the navigation span covers them too
 traceRouter(router)
+
+export default router
 ```
 
 The first navigation starts when `app.use(router)` installs the router, and `startNavigation` turns it into the `pageload` span without any check for `START_LOCATION`. That span starts when your bundle runs, so it doesn't include downloading the HTML and JavaScript.
@@ -251,11 +253,13 @@ Why `nextTick`? `afterEach` runs as soon as the navigation is confirmed, before 
 - **Redirects stay in one span.** When a guard returns a different location, Vue Router runs the guards again for the new target and sets `to.redirectedFrom`. `beforeEach` sees the same origin and keeps the open span, so a redirect to the login page is one `navigate /login` span with the original path in `url.path`. The same check covers a `redirect` declared on a route record, which skips the guards for the original location.
 - **Aborted navigations end normally.** A guard that returns `false` ends the span, named after the route the user tried to reach.
 - **Cancelled and duplicated navigations are skipped.** A cancelled navigation was replaced by a newer one, and `startNavigation` already ended its span as interrupted. A duplicated one was a click on a link to the current page, which runs no guards.
-- **Query and hash changes are navigations.** A search page that syncs its filters to the URL gets a span per change. If that's noise, return early in `beforeEach` when `from !== START_LOCATION && to.path === from.path`. The first check matters, because `START_LOCATION.path` is `/`.
+- **Interrupted navigations keep a plain name.** A navigation that is still loading its route chunk or waiting on a guard when the next click comes in ends as `navigate`, with no template, because its route never resolved. Most Vue navigations resolve at once, though, and it's the page's data loading that outlives them. That load span keeps running in the old trace, which is what happened.
+- **Query and hash changes are navigations.** A search page that syncs its filters to the URL gets a span per change, and so does a plain `<a href="#section">` link, because the router sees the browser's `popstate`. If that's noise, return early in `beforeEach` when `from !== START_LOCATION && to.path === from.path`. The first check matters, because `START_LOCATION.path` is `/`.
+- **Back and forward are navigations too.** They run the same guards, so each step is a `navigate` span, and the page loads its data again unless it's in `<KeepAlive>`.
 
 ## Trace data loading in Vue components
 
-Vue Router doesn't load data for you. Most Vue apps fetch in the page component, in `setup` or a watcher on the route params, and that code runs before the navigation span ends. Wrap it in `traced`:
+Vue Router doesn't load data for you. Most Vue apps fetch in the page component, in `setup`, `onMounted` or a watcher on the route params, and that code runs before the navigation span ends. Wrap it in `traced`, and name the span `loader` plus the route template, like the other framework guides:
 
 ```vue
 <!-- src/pages/ProjectPage.vue -->
@@ -271,7 +275,7 @@ const project = ref<Project>()
 watch(
 	() => route.params.id as string,
 	async (id) => {
-		project.value = await traced("load project", () => fetchProject(id))
+		project.value = await traced("loader /projects/:id", () => fetchProject(id))
 	},
 	{ immediate: true },
 )
@@ -303,7 +307,7 @@ watch(
 
 		const aborted = () => controller.signal.aborted
 		try {
-			project.value = await traced("load project", () => fetchProject(id, controller.signal), () => !aborted())
+			project.value = await traced("loader /projects/:id", () => fetchProject(id, controller.signal), () => !aborted())
 		} catch (error) {
 			if (!aborted()) throw error
 		}
@@ -313,6 +317,29 @@ watch(
 ```
 
 The aborted fetch rejects with an `AbortError`. The third argument keeps it from marking the span as failed, and the `catch` keeps it away from Vue's error handler.
+
+### Not-found pages
+
+Vue Router has no not-found error either. A common pattern is to load the data, and on a 404 replace the route with the catch-all route while keeping the URL. Throw your own error class for the 404, and use the third argument to keep it from counting as a failure:
+
+```ts
+// Thrown by your API client on a 404
+class NotFoundError extends Error {}
+
+try {
+	project.value = await traced("loader /projects/:id", () => fetchProject(id), (error) => !(error instanceof NotFoundError))
+} catch (error) {
+	if (!(error instanceof NotFoundError)) throw error
+	await router.replace({
+		name: "not-found",
+		params: { pathMatch: route.path.substring(1).split("/") },
+		query: route.query,
+		hash: route.hash,
+	})
+}
+```
+
+The replace is a second navigation, so it gets its own trace, named after the catch-all route: `navigate /:pathMatch(.*)*`. The `fetch` span that got the 404 is still marked as an error, like every client request with a 4xx status.
 
 ## Report errors with app.config.errorHandler
 
@@ -326,7 +353,7 @@ import "./maple" // first, before anything renders
 import { MapleBrowser } from "@maple-dev/browser"
 import { createApp } from "vue"
 import App from "./App.vue"
-import { router } from "./router"
+import router from "./router"
 import { alreadyRecorded } from "./tracing"
 
 const app = createApp(App)
@@ -380,6 +407,8 @@ export default defineNuxtPlugin((nuxtApp) => {
 
 Nuxt calls `vue:error` from its root component's `errorCaptured` hook for every component error, and keeps logging them to the console, so there's no need to set `app.config.errorHandler`.
 
+A page whose template throws during a client-side navigation renders twice, once when it mounts and again when `<NuxtPage>` updates it, and each render throws a new error. You get two `vue.error` spans for it. On a direct page load, the same error happens during the server render instead: Nuxt shows its 500 page, and the client plugin never sees it.
+
 For data, wrap the function you pass to `useAsyncData`:
 
 ```ts
@@ -388,11 +417,11 @@ import { traced } from "~/tracing"
 
 const route = useRoute()
 const { data: project } = await useAsyncData(`project-${route.params.id}`, () =>
-	traced("load project", () => $fetch(`/api/projects/${route.params.id}`)),
+	traced("loader /projects/:id()", () => $fetch(`/api/projects/${route.params.id}`)),
 )
 ```
 
-During the server render the same call nests under the incoming request's span instead.
+During the server render the same call nests under the incoming request's span instead, and the browser doesn't run it again when it hydrates. If the function throws, `useAsyncData` puts the error in its `error` ref rather than passing it to `vue:error`, so the error is reported once, on the `loader` span.
 
 ### Link the Nuxt server render to the browser
 
@@ -400,6 +429,15 @@ Start the OpenTelemetry Node SDK with the setup file from the [Node.js guide](/d
 
 ```bash
 node --import ./instrumentation.mjs .output/server/index.mjs
+```
+
+Nuxt's server build is an ES module, and OpenTelemetry can only patch `node:http` for ES modules through its loader hook. Without it there's no request span, and no trace context to send to the browser. Register the hook in `instrumentation.mjs`, before the SDK starts:
+
+```js
+// instrumentation.mjs, before sdk.start()
+import { register } from "node:module"
+
+register("@opentelemetry/instrumentation/hook.mjs", import.meta.url)
 ```
 
 That gives you a span for every incoming request, including the pages Nuxt renders. To join the browser's `pageload` span to it, add a Nitro plugin that writes the trace context into the `Server-Timing` header:
@@ -421,7 +459,23 @@ export default defineNitroPlugin((nitroApp) => {
 })
 ```
 
-Nitro calls `render:response` for every page Nuxt renders, before the headers are sent. On the browser side, `serverContext()` in the helper reads the header, and the `pageload` span joins the server's trace.
+Nitro calls `render:response` for every page Nuxt renders, before the headers are sent, and the request span is the active one there. Static files under `/_nuxt/` don't go through it, so they don't get the header. On the browser side, `serverContext()` in the helper reads the header, and the `pageload` span joins the server's trace.
+
+The request span is named after the HTTP method, like `GET`. Nuxt renders a page in several steps, with no single call to wrap in a span of its own, so name the request span after the page's route instead, from a server-only plugin:
+
+```ts
+// app/plugins/ssr-span.server.ts
+// defineNuxtPlugin and useRouter are auto-imported
+import { trace } from "@opentelemetry/api"
+
+export default defineNuxtPlugin(() => {
+	useRouter().afterEach((to) => {
+		trace.getActiveSpan()?.updateName(`ssr ${to.matched.at(-1)?.path ?? to.path}`)
+	})
+})
+```
+
+A page load then reads as one trace: `ssr /projects/:id()`, the `loader` span and its requests from the server render, and the browser's `pageload /projects/:id()` under it.
 
 A few Nuxt details:
 
