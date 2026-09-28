@@ -683,6 +683,255 @@ SELECT
         LIMIT 1
         FORMAT JSON
 
+-- builder:errors:tracesDurationStatsQuery:rollup  [b8a8d457]
+SELECT
+          minIf(durationMin, traceCount > 0) / 1000000 AS minDurationMs,
+          maxIf(durationMax, traceCount > 0) / 1000000 AS maxDurationMs,
+          ifNull(ifNotFinite(arrayElement(quantilesTDigestMerge(0.5, 0.95)(durationQuantiles), 1) / 1000000, 0), 0) AS p50DurationMs,
+          ifNull(ifNotFinite(arrayElement(quantilesTDigestMerge(0.5, 0.95)(durationQuantiles), 2) / 1000000, 0), 0) AS p95DurationMs
+        FROM (
+SELECT
+          count() AS traceCount,
+          min(Duration) AS durationMin,
+          max(Duration) AS durationMax,
+          quantilesTDigestState(0.5, 0.95)(Duration) AS durationQuantiles
+        FROM trace_list_mv
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND ServiceName = 'api'
+          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+UNION ALL
+SELECT
+          sum(TraceCount) AS traceCount,
+          min(DurationMin) AS durationMin,
+          max(DurationMax) AS durationMax,
+          quantilesTDigestMergeState(0.5, 0.95)(DurationQuantiles) AS durationQuantiles
+        FROM trace_facets_hourly
+        WHERE OrgId = 'org_sql_catalog'
+          AND Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND ServiceName = 'api'
+) AS duration_tiers
+        FORMAT JSON
+
+-- builder:errors:tracesFacetsQuery:rollup  [39248faa]
+SELECT
+          name AS name,
+          sum(count) AS count,
+          'service' AS facetType
+        FROM (
+SELECT
+          ServiceName AS name,
+          count() AS count
+        FROM trace_list_mv
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND ServiceName = 'api'
+          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+        GROUP BY name
+UNION ALL
+SELECT
+          ServiceName AS name,
+          sum(TraceCount) AS count
+        FROM trace_facets_hourly
+        WHERE OrgId = 'org_sql_catalog'
+          AND Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND ServiceName = 'api'
+        GROUP BY name
+) AS service_tiers
+        GROUP BY name
+        ORDER BY count DESC
+        LIMIT 50
+UNION ALL
+SELECT
+          name AS name,
+          sum(count) AS count,
+          'spanName' AS facetType
+        FROM (
+SELECT
+          SpanName AS name,
+          count() AS count
+        FROM trace_list_mv
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND ServiceName = 'api'
+          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND SpanName != ''
+        GROUP BY name
+UNION ALL
+SELECT
+          SpanName AS name,
+          sum(TraceCount) AS count
+        FROM trace_facets_hourly
+        WHERE OrgId = 'org_sql_catalog'
+          AND Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND ServiceName = 'api'
+          AND SpanName != ''
+        GROUP BY name
+) AS spanName_tiers
+        GROUP BY name
+        ORDER BY count DESC
+        LIMIT 20
+UNION ALL
+SELECT
+          name AS name,
+          sum(count) AS count,
+          'httpMethod' AS facetType
+        FROM (
+SELECT
+          HttpMethod AS name,
+          count() AS count
+        FROM trace_list_mv
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND ServiceName = 'api'
+          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND HttpMethod != ''
+        GROUP BY name
+UNION ALL
+SELECT
+          HttpMethod AS name,
+          sum(TraceCount) AS count
+        FROM trace_facets_hourly
+        WHERE OrgId = 'org_sql_catalog'
+          AND Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND ServiceName = 'api'
+          AND HttpMethod != ''
+        GROUP BY name
+) AS httpMethod_tiers
+        GROUP BY name
+        ORDER BY count DESC
+        LIMIT 20
+UNION ALL
+SELECT
+          name AS name,
+          sum(count) AS count,
+          'httpStatus' AS facetType
+        FROM (
+SELECT
+          HttpStatusCode AS name,
+          count() AS count
+        FROM trace_list_mv
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND ServiceName = 'api'
+          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND HttpStatusCode != ''
+        GROUP BY name
+UNION ALL
+SELECT
+          HttpStatusCode AS name,
+          sum(TraceCount) AS count
+        FROM trace_facets_hourly
+        WHERE OrgId = 'org_sql_catalog'
+          AND Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND ServiceName = 'api'
+          AND HttpStatusCode != ''
+        GROUP BY name
+) AS httpStatus_tiers
+        GROUP BY name
+        ORDER BY count DESC
+        LIMIT 20
+UNION ALL
+SELECT
+          name AS name,
+          sum(count) AS count,
+          'deploymentEnv' AS facetType
+        FROM (
+SELECT
+          DeploymentEnv AS name,
+          count() AS count
+        FROM trace_list_mv
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND ServiceName = 'api'
+          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND DeploymentEnv != ''
+        GROUP BY name
+UNION ALL
+SELECT
+          DeploymentEnv AS name,
+          sum(TraceCount) AS count
+        FROM trace_facets_hourly
+        WHERE OrgId = 'org_sql_catalog'
+          AND Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND ServiceName = 'api'
+          AND DeploymentEnv != ''
+        GROUP BY name
+) AS deploymentEnv_tiers
+        GROUP BY name
+        ORDER BY count DESC
+        LIMIT 20
+UNION ALL
+SELECT
+          name AS name,
+          sum(count) AS count,
+          'serviceNamespace' AS facetType
+        FROM (
+SELECT
+          ServiceNamespace AS name,
+          count() AS count
+        FROM trace_list_mv
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND ServiceName = 'api'
+          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND ServiceNamespace != ''
+        GROUP BY name
+UNION ALL
+SELECT
+          ServiceNamespace AS name,
+          sum(TraceCount) AS count
+        FROM trace_facets_hourly
+        WHERE OrgId = 'org_sql_catalog'
+          AND Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND ServiceName = 'api'
+          AND ServiceNamespace != ''
+        GROUP BY name
+) AS serviceNamespace_tiers
+        GROUP BY name
+        ORDER BY count DESC
+        LIMIT 20
+UNION ALL
+SELECT
+          'error' AS name,
+          sum(count) AS count,
+          'errorCount' AS facetType
+        FROM (
+SELECT
+          count() AS count
+        FROM trace_list_mv
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND ServiceName = 'api'
+          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND HasError = 1
+UNION ALL
+SELECT
+          sum(TraceCount) AS count
+        FROM trace_facets_hourly
+        WHERE OrgId = 'org_sql_catalog'
+          AND Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND ServiceName = 'api'
+          AND HasError = 1
+) AS errorCount_tiers
+FORMAT JSON
+
 -- builder:infra:hostGaugeTimeseriesQuery:default  [7d9ca740]
 SELECT
           toStartOfInterval(TimeUnix, INTERVAL 300 SECOND) AS bucket,
@@ -10349,7 +10598,7 @@ SELECT
         LIMIT 20
         FORMAT JSON
 
--- pipe:traces_duration_stats:default:baseline  [05b1bc71]
+-- pipe:traces_duration_stats:default:baseline  [379189b9]
 SELECT
           minIf(durationMin, traceCount > 0) / 1000000 AS minDurationMs,
           maxIf(durationMax, traceCount > 0) / 1000000 AS maxDurationMs,
@@ -10365,637 +10614,10 @@ SELECT
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
-          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
-UNION ALL
-SELECT
-          sum(TraceCount) AS traceCount,
-          min(DurationMin) AS durationMin,
-          max(DurationMax) AS durationMax,
-          quantilesTDigestMergeState(0.5, 0.95)(DurationQuantiles) AS durationQuantiles
-        FROM trace_facets_hourly
-        WHERE OrgId = 'org_sql_catalog'
-          AND Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
-          AND Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
 ) AS duration_tiers
         FORMAT JSON
 
--- pipe:traces_duration_stats:duration-bounded:baseline  [711880b8]
-SELECT
-          min(Duration) / 1000000 AS minDurationMs,
-          max(Duration) / 1000000 AS maxDurationMs,
-          ifNull(ifNotFinite(quantile(0.5)(Duration) / 1000000, 0), 0) AS p50DurationMs,
-          ifNull(ifNotFinite(quantile(0.95)(Duration) / 1000000, 0), 0) AS p95DurationMs
-        FROM trace_list_mv
-        WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= '2026-01-01 10:30:00'
-          AND Timestamp <= '2026-01-03 14:15:00'
-          AND Duration >= 100000000
-        FORMAT JSON
-
--- pipe:traces_facets:attribute-filtered:baseline  [952a9803]
-SELECT
-          ServiceName AS name,
-          count() AS count,
-          'service' AS facetType
-        FROM trace_list_mv
-        WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= '2026-01-01 10:30:00'
-          AND Timestamp <= '2026-01-03 14:15:00'
-          AND EXISTS (SELECT
-          1 AS _
-        FROM traces AS t_attr
-        WHERE t_attr.TraceId = TraceId
-          AND t_attr.OrgId = 'org_sql_catalog'
-          AND t_attr.Timestamp >= '2026-01-01 10:30:00'
-          AND t_attr.Timestamp <= '2026-01-03 14:15:00'
-          AND positionCaseInsensitive(t_attr.SpanAttributes['http.method'], 'GE') > 0)
-          AND EXISTS (SELECT
-          1 AS _
-        FROM traces AS t_res
-        WHERE t_res.TraceId = TraceId
-          AND t_res.OrgId = 'org_sql_catalog'
-          AND t_res.Timestamp >= '2026-01-01 10:30:00'
-          AND t_res.Timestamp <= '2026-01-03 14:15:00'
-          AND t_res.ResourceAttributes['host.name'] = 'web')
-        GROUP BY name
-        ORDER BY count DESC
-        LIMIT 50
-UNION ALL
-SELECT
-          SpanName AS name,
-          count() AS count,
-          'spanName' AS facetType
-        FROM trace_list_mv
-        WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= '2026-01-01 10:30:00'
-          AND Timestamp <= '2026-01-03 14:15:00'
-          AND EXISTS (SELECT
-          1 AS _
-        FROM traces AS t_attr
-        WHERE t_attr.TraceId = TraceId
-          AND t_attr.OrgId = 'org_sql_catalog'
-          AND t_attr.Timestamp >= '2026-01-01 10:30:00'
-          AND t_attr.Timestamp <= '2026-01-03 14:15:00'
-          AND positionCaseInsensitive(t_attr.SpanAttributes['http.method'], 'GE') > 0)
-          AND EXISTS (SELECT
-          1 AS _
-        FROM traces AS t_res
-        WHERE t_res.TraceId = TraceId
-          AND t_res.OrgId = 'org_sql_catalog'
-          AND t_res.Timestamp >= '2026-01-01 10:30:00'
-          AND t_res.Timestamp <= '2026-01-03 14:15:00'
-          AND t_res.ResourceAttributes['host.name'] = 'web')
-          AND SpanName != ''
-        GROUP BY name
-        ORDER BY count DESC
-        LIMIT 20
-UNION ALL
-SELECT
-          HttpMethod AS name,
-          count() AS count,
-          'httpMethod' AS facetType
-        FROM trace_list_mv
-        WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= '2026-01-01 10:30:00'
-          AND Timestamp <= '2026-01-03 14:15:00'
-          AND EXISTS (SELECT
-          1 AS _
-        FROM traces AS t_attr
-        WHERE t_attr.TraceId = TraceId
-          AND t_attr.OrgId = 'org_sql_catalog'
-          AND t_attr.Timestamp >= '2026-01-01 10:30:00'
-          AND t_attr.Timestamp <= '2026-01-03 14:15:00'
-          AND positionCaseInsensitive(t_attr.SpanAttributes['http.method'], 'GE') > 0)
-          AND EXISTS (SELECT
-          1 AS _
-        FROM traces AS t_res
-        WHERE t_res.TraceId = TraceId
-          AND t_res.OrgId = 'org_sql_catalog'
-          AND t_res.Timestamp >= '2026-01-01 10:30:00'
-          AND t_res.Timestamp <= '2026-01-03 14:15:00'
-          AND t_res.ResourceAttributes['host.name'] = 'web')
-          AND HttpMethod != ''
-        GROUP BY name
-        ORDER BY count DESC
-        LIMIT 20
-UNION ALL
-SELECT
-          HttpStatusCode AS name,
-          count() AS count,
-          'httpStatus' AS facetType
-        FROM trace_list_mv
-        WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= '2026-01-01 10:30:00'
-          AND Timestamp <= '2026-01-03 14:15:00'
-          AND EXISTS (SELECT
-          1 AS _
-        FROM traces AS t_attr
-        WHERE t_attr.TraceId = TraceId
-          AND t_attr.OrgId = 'org_sql_catalog'
-          AND t_attr.Timestamp >= '2026-01-01 10:30:00'
-          AND t_attr.Timestamp <= '2026-01-03 14:15:00'
-          AND positionCaseInsensitive(t_attr.SpanAttributes['http.method'], 'GE') > 0)
-          AND EXISTS (SELECT
-          1 AS _
-        FROM traces AS t_res
-        WHERE t_res.TraceId = TraceId
-          AND t_res.OrgId = 'org_sql_catalog'
-          AND t_res.Timestamp >= '2026-01-01 10:30:00'
-          AND t_res.Timestamp <= '2026-01-03 14:15:00'
-          AND t_res.ResourceAttributes['host.name'] = 'web')
-          AND HttpStatusCode != ''
-        GROUP BY name
-        ORDER BY count DESC
-        LIMIT 20
-UNION ALL
-SELECT
-          DeploymentEnv AS name,
-          count() AS count,
-          'deploymentEnv' AS facetType
-        FROM trace_list_mv
-        WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= '2026-01-01 10:30:00'
-          AND Timestamp <= '2026-01-03 14:15:00'
-          AND EXISTS (SELECT
-          1 AS _
-        FROM traces AS t_attr
-        WHERE t_attr.TraceId = TraceId
-          AND t_attr.OrgId = 'org_sql_catalog'
-          AND t_attr.Timestamp >= '2026-01-01 10:30:00'
-          AND t_attr.Timestamp <= '2026-01-03 14:15:00'
-          AND positionCaseInsensitive(t_attr.SpanAttributes['http.method'], 'GE') > 0)
-          AND EXISTS (SELECT
-          1 AS _
-        FROM traces AS t_res
-        WHERE t_res.TraceId = TraceId
-          AND t_res.OrgId = 'org_sql_catalog'
-          AND t_res.Timestamp >= '2026-01-01 10:30:00'
-          AND t_res.Timestamp <= '2026-01-03 14:15:00'
-          AND t_res.ResourceAttributes['host.name'] = 'web')
-          AND DeploymentEnv != ''
-        GROUP BY name
-        ORDER BY count DESC
-        LIMIT 20
-UNION ALL
-SELECT
-          ServiceNamespace AS name,
-          count() AS count,
-          'serviceNamespace' AS facetType
-        FROM trace_list_mv
-        WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= '2026-01-01 10:30:00'
-          AND Timestamp <= '2026-01-03 14:15:00'
-          AND EXISTS (SELECT
-          1 AS _
-        FROM traces AS t_attr
-        WHERE t_attr.TraceId = TraceId
-          AND t_attr.OrgId = 'org_sql_catalog'
-          AND t_attr.Timestamp >= '2026-01-01 10:30:00'
-          AND t_attr.Timestamp <= '2026-01-03 14:15:00'
-          AND positionCaseInsensitive(t_attr.SpanAttributes['http.method'], 'GE') > 0)
-          AND EXISTS (SELECT
-          1 AS _
-        FROM traces AS t_res
-        WHERE t_res.TraceId = TraceId
-          AND t_res.OrgId = 'org_sql_catalog'
-          AND t_res.Timestamp >= '2026-01-01 10:30:00'
-          AND t_res.Timestamp <= '2026-01-03 14:15:00'
-          AND t_res.ResourceAttributes['host.name'] = 'web')
-          AND ServiceNamespace != ''
-        GROUP BY name
-        ORDER BY count DESC
-        LIMIT 20
-UNION ALL
-SELECT
-          'error' AS name,
-          count() AS count,
-          'errorCount' AS facetType
-        FROM trace_list_mv
-        WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= '2026-01-01 10:30:00'
-          AND Timestamp <= '2026-01-03 14:15:00'
-          AND EXISTS (SELECT
-          1 AS _
-        FROM traces AS t_attr
-        WHERE t_attr.TraceId = TraceId
-          AND t_attr.OrgId = 'org_sql_catalog'
-          AND t_attr.Timestamp >= '2026-01-01 10:30:00'
-          AND t_attr.Timestamp <= '2026-01-03 14:15:00'
-          AND positionCaseInsensitive(t_attr.SpanAttributes['http.method'], 'GE') > 0)
-          AND EXISTS (SELECT
-          1 AS _
-        FROM traces AS t_res
-        WHERE t_res.TraceId = TraceId
-          AND t_res.OrgId = 'org_sql_catalog'
-          AND t_res.Timestamp >= '2026-01-01 10:30:00'
-          AND t_res.Timestamp <= '2026-01-03 14:15:00'
-          AND t_res.ResourceAttributes['host.name'] = 'web')
-          AND HasError = 1
-FORMAT JSON
-
--- pipe:traces_facets:attribute-filtered:bloom  [952a9803]
-SELECT
-          ServiceName AS name,
-          count() AS count,
-          'service' AS facetType
-        FROM trace_list_mv
-        WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= '2026-01-01 10:30:00'
-          AND Timestamp <= '2026-01-03 14:15:00'
-          AND EXISTS (SELECT
-          1 AS _
-        FROM traces AS t_attr
-        WHERE t_attr.TraceId = TraceId
-          AND t_attr.OrgId = 'org_sql_catalog'
-          AND t_attr.Timestamp >= '2026-01-01 10:30:00'
-          AND t_attr.Timestamp <= '2026-01-03 14:15:00'
-          AND positionCaseInsensitive(t_attr.SpanAttributes['http.method'], 'GE') > 0)
-          AND EXISTS (SELECT
-          1 AS _
-        FROM traces AS t_res
-        WHERE t_res.TraceId = TraceId
-          AND t_res.OrgId = 'org_sql_catalog'
-          AND t_res.Timestamp >= '2026-01-01 10:30:00'
-          AND t_res.Timestamp <= '2026-01-03 14:15:00'
-          AND t_res.ResourceAttributes['host.name'] = 'web')
-        GROUP BY name
-        ORDER BY count DESC
-        LIMIT 50
-UNION ALL
-SELECT
-          SpanName AS name,
-          count() AS count,
-          'spanName' AS facetType
-        FROM trace_list_mv
-        WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= '2026-01-01 10:30:00'
-          AND Timestamp <= '2026-01-03 14:15:00'
-          AND EXISTS (SELECT
-          1 AS _
-        FROM traces AS t_attr
-        WHERE t_attr.TraceId = TraceId
-          AND t_attr.OrgId = 'org_sql_catalog'
-          AND t_attr.Timestamp >= '2026-01-01 10:30:00'
-          AND t_attr.Timestamp <= '2026-01-03 14:15:00'
-          AND positionCaseInsensitive(t_attr.SpanAttributes['http.method'], 'GE') > 0)
-          AND EXISTS (SELECT
-          1 AS _
-        FROM traces AS t_res
-        WHERE t_res.TraceId = TraceId
-          AND t_res.OrgId = 'org_sql_catalog'
-          AND t_res.Timestamp >= '2026-01-01 10:30:00'
-          AND t_res.Timestamp <= '2026-01-03 14:15:00'
-          AND t_res.ResourceAttributes['host.name'] = 'web')
-          AND SpanName != ''
-        GROUP BY name
-        ORDER BY count DESC
-        LIMIT 20
-UNION ALL
-SELECT
-          HttpMethod AS name,
-          count() AS count,
-          'httpMethod' AS facetType
-        FROM trace_list_mv
-        WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= '2026-01-01 10:30:00'
-          AND Timestamp <= '2026-01-03 14:15:00'
-          AND EXISTS (SELECT
-          1 AS _
-        FROM traces AS t_attr
-        WHERE t_attr.TraceId = TraceId
-          AND t_attr.OrgId = 'org_sql_catalog'
-          AND t_attr.Timestamp >= '2026-01-01 10:30:00'
-          AND t_attr.Timestamp <= '2026-01-03 14:15:00'
-          AND positionCaseInsensitive(t_attr.SpanAttributes['http.method'], 'GE') > 0)
-          AND EXISTS (SELECT
-          1 AS _
-        FROM traces AS t_res
-        WHERE t_res.TraceId = TraceId
-          AND t_res.OrgId = 'org_sql_catalog'
-          AND t_res.Timestamp >= '2026-01-01 10:30:00'
-          AND t_res.Timestamp <= '2026-01-03 14:15:00'
-          AND t_res.ResourceAttributes['host.name'] = 'web')
-          AND HttpMethod != ''
-        GROUP BY name
-        ORDER BY count DESC
-        LIMIT 20
-UNION ALL
-SELECT
-          HttpStatusCode AS name,
-          count() AS count,
-          'httpStatus' AS facetType
-        FROM trace_list_mv
-        WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= '2026-01-01 10:30:00'
-          AND Timestamp <= '2026-01-03 14:15:00'
-          AND EXISTS (SELECT
-          1 AS _
-        FROM traces AS t_attr
-        WHERE t_attr.TraceId = TraceId
-          AND t_attr.OrgId = 'org_sql_catalog'
-          AND t_attr.Timestamp >= '2026-01-01 10:30:00'
-          AND t_attr.Timestamp <= '2026-01-03 14:15:00'
-          AND positionCaseInsensitive(t_attr.SpanAttributes['http.method'], 'GE') > 0)
-          AND EXISTS (SELECT
-          1 AS _
-        FROM traces AS t_res
-        WHERE t_res.TraceId = TraceId
-          AND t_res.OrgId = 'org_sql_catalog'
-          AND t_res.Timestamp >= '2026-01-01 10:30:00'
-          AND t_res.Timestamp <= '2026-01-03 14:15:00'
-          AND t_res.ResourceAttributes['host.name'] = 'web')
-          AND HttpStatusCode != ''
-        GROUP BY name
-        ORDER BY count DESC
-        LIMIT 20
-UNION ALL
-SELECT
-          DeploymentEnv AS name,
-          count() AS count,
-          'deploymentEnv' AS facetType
-        FROM trace_list_mv
-        WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= '2026-01-01 10:30:00'
-          AND Timestamp <= '2026-01-03 14:15:00'
-          AND EXISTS (SELECT
-          1 AS _
-        FROM traces AS t_attr
-        WHERE t_attr.TraceId = TraceId
-          AND t_attr.OrgId = 'org_sql_catalog'
-          AND t_attr.Timestamp >= '2026-01-01 10:30:00'
-          AND t_attr.Timestamp <= '2026-01-03 14:15:00'
-          AND positionCaseInsensitive(t_attr.SpanAttributes['http.method'], 'GE') > 0)
-          AND EXISTS (SELECT
-          1 AS _
-        FROM traces AS t_res
-        WHERE t_res.TraceId = TraceId
-          AND t_res.OrgId = 'org_sql_catalog'
-          AND t_res.Timestamp >= '2026-01-01 10:30:00'
-          AND t_res.Timestamp <= '2026-01-03 14:15:00'
-          AND t_res.ResourceAttributes['host.name'] = 'web')
-          AND DeploymentEnv != ''
-        GROUP BY name
-        ORDER BY count DESC
-        LIMIT 20
-UNION ALL
-SELECT
-          ServiceNamespace AS name,
-          count() AS count,
-          'serviceNamespace' AS facetType
-        FROM trace_list_mv
-        WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= '2026-01-01 10:30:00'
-          AND Timestamp <= '2026-01-03 14:15:00'
-          AND EXISTS (SELECT
-          1 AS _
-        FROM traces AS t_attr
-        WHERE t_attr.TraceId = TraceId
-          AND t_attr.OrgId = 'org_sql_catalog'
-          AND t_attr.Timestamp >= '2026-01-01 10:30:00'
-          AND t_attr.Timestamp <= '2026-01-03 14:15:00'
-          AND positionCaseInsensitive(t_attr.SpanAttributes['http.method'], 'GE') > 0)
-          AND EXISTS (SELECT
-          1 AS _
-        FROM traces AS t_res
-        WHERE t_res.TraceId = TraceId
-          AND t_res.OrgId = 'org_sql_catalog'
-          AND t_res.Timestamp >= '2026-01-01 10:30:00'
-          AND t_res.Timestamp <= '2026-01-03 14:15:00'
-          AND t_res.ResourceAttributes['host.name'] = 'web')
-          AND ServiceNamespace != ''
-        GROUP BY name
-        ORDER BY count DESC
-        LIMIT 20
-UNION ALL
-SELECT
-          'error' AS name,
-          count() AS count,
-          'errorCount' AS facetType
-        FROM trace_list_mv
-        WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= '2026-01-01 10:30:00'
-          AND Timestamp <= '2026-01-03 14:15:00'
-          AND EXISTS (SELECT
-          1 AS _
-        FROM traces AS t_attr
-        WHERE t_attr.TraceId = TraceId
-          AND t_attr.OrgId = 'org_sql_catalog'
-          AND t_attr.Timestamp >= '2026-01-01 10:30:00'
-          AND t_attr.Timestamp <= '2026-01-03 14:15:00'
-          AND positionCaseInsensitive(t_attr.SpanAttributes['http.method'], 'GE') > 0)
-          AND EXISTS (SELECT
-          1 AS _
-        FROM traces AS t_res
-        WHERE t_res.TraceId = TraceId
-          AND t_res.OrgId = 'org_sql_catalog'
-          AND t_res.Timestamp >= '2026-01-01 10:30:00'
-          AND t_res.Timestamp <= '2026-01-03 14:15:00'
-          AND t_res.ResourceAttributes['host.name'] = 'web')
-          AND HasError = 1
-FORMAT JSON
-
--- pipe:traces_facets:attribute-filtered:text  [952a9803]
-SELECT
-          ServiceName AS name,
-          count() AS count,
-          'service' AS facetType
-        FROM trace_list_mv
-        WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= '2026-01-01 10:30:00'
-          AND Timestamp <= '2026-01-03 14:15:00'
-          AND EXISTS (SELECT
-          1 AS _
-        FROM traces AS t_attr
-        WHERE t_attr.TraceId = TraceId
-          AND t_attr.OrgId = 'org_sql_catalog'
-          AND t_attr.Timestamp >= '2026-01-01 10:30:00'
-          AND t_attr.Timestamp <= '2026-01-03 14:15:00'
-          AND positionCaseInsensitive(t_attr.SpanAttributes['http.method'], 'GE') > 0)
-          AND EXISTS (SELECT
-          1 AS _
-        FROM traces AS t_res
-        WHERE t_res.TraceId = TraceId
-          AND t_res.OrgId = 'org_sql_catalog'
-          AND t_res.Timestamp >= '2026-01-01 10:30:00'
-          AND t_res.Timestamp <= '2026-01-03 14:15:00'
-          AND t_res.ResourceAttributes['host.name'] = 'web')
-        GROUP BY name
-        ORDER BY count DESC
-        LIMIT 50
-UNION ALL
-SELECT
-          SpanName AS name,
-          count() AS count,
-          'spanName' AS facetType
-        FROM trace_list_mv
-        WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= '2026-01-01 10:30:00'
-          AND Timestamp <= '2026-01-03 14:15:00'
-          AND EXISTS (SELECT
-          1 AS _
-        FROM traces AS t_attr
-        WHERE t_attr.TraceId = TraceId
-          AND t_attr.OrgId = 'org_sql_catalog'
-          AND t_attr.Timestamp >= '2026-01-01 10:30:00'
-          AND t_attr.Timestamp <= '2026-01-03 14:15:00'
-          AND positionCaseInsensitive(t_attr.SpanAttributes['http.method'], 'GE') > 0)
-          AND EXISTS (SELECT
-          1 AS _
-        FROM traces AS t_res
-        WHERE t_res.TraceId = TraceId
-          AND t_res.OrgId = 'org_sql_catalog'
-          AND t_res.Timestamp >= '2026-01-01 10:30:00'
-          AND t_res.Timestamp <= '2026-01-03 14:15:00'
-          AND t_res.ResourceAttributes['host.name'] = 'web')
-          AND SpanName != ''
-        GROUP BY name
-        ORDER BY count DESC
-        LIMIT 20
-UNION ALL
-SELECT
-          HttpMethod AS name,
-          count() AS count,
-          'httpMethod' AS facetType
-        FROM trace_list_mv
-        WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= '2026-01-01 10:30:00'
-          AND Timestamp <= '2026-01-03 14:15:00'
-          AND EXISTS (SELECT
-          1 AS _
-        FROM traces AS t_attr
-        WHERE t_attr.TraceId = TraceId
-          AND t_attr.OrgId = 'org_sql_catalog'
-          AND t_attr.Timestamp >= '2026-01-01 10:30:00'
-          AND t_attr.Timestamp <= '2026-01-03 14:15:00'
-          AND positionCaseInsensitive(t_attr.SpanAttributes['http.method'], 'GE') > 0)
-          AND EXISTS (SELECT
-          1 AS _
-        FROM traces AS t_res
-        WHERE t_res.TraceId = TraceId
-          AND t_res.OrgId = 'org_sql_catalog'
-          AND t_res.Timestamp >= '2026-01-01 10:30:00'
-          AND t_res.Timestamp <= '2026-01-03 14:15:00'
-          AND t_res.ResourceAttributes['host.name'] = 'web')
-          AND HttpMethod != ''
-        GROUP BY name
-        ORDER BY count DESC
-        LIMIT 20
-UNION ALL
-SELECT
-          HttpStatusCode AS name,
-          count() AS count,
-          'httpStatus' AS facetType
-        FROM trace_list_mv
-        WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= '2026-01-01 10:30:00'
-          AND Timestamp <= '2026-01-03 14:15:00'
-          AND EXISTS (SELECT
-          1 AS _
-        FROM traces AS t_attr
-        WHERE t_attr.TraceId = TraceId
-          AND t_attr.OrgId = 'org_sql_catalog'
-          AND t_attr.Timestamp >= '2026-01-01 10:30:00'
-          AND t_attr.Timestamp <= '2026-01-03 14:15:00'
-          AND positionCaseInsensitive(t_attr.SpanAttributes['http.method'], 'GE') > 0)
-          AND EXISTS (SELECT
-          1 AS _
-        FROM traces AS t_res
-        WHERE t_res.TraceId = TraceId
-          AND t_res.OrgId = 'org_sql_catalog'
-          AND t_res.Timestamp >= '2026-01-01 10:30:00'
-          AND t_res.Timestamp <= '2026-01-03 14:15:00'
-          AND t_res.ResourceAttributes['host.name'] = 'web')
-          AND HttpStatusCode != ''
-        GROUP BY name
-        ORDER BY count DESC
-        LIMIT 20
-UNION ALL
-SELECT
-          DeploymentEnv AS name,
-          count() AS count,
-          'deploymentEnv' AS facetType
-        FROM trace_list_mv
-        WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= '2026-01-01 10:30:00'
-          AND Timestamp <= '2026-01-03 14:15:00'
-          AND EXISTS (SELECT
-          1 AS _
-        FROM traces AS t_attr
-        WHERE t_attr.TraceId = TraceId
-          AND t_attr.OrgId = 'org_sql_catalog'
-          AND t_attr.Timestamp >= '2026-01-01 10:30:00'
-          AND t_attr.Timestamp <= '2026-01-03 14:15:00'
-          AND positionCaseInsensitive(t_attr.SpanAttributes['http.method'], 'GE') > 0)
-          AND EXISTS (SELECT
-          1 AS _
-        FROM traces AS t_res
-        WHERE t_res.TraceId = TraceId
-          AND t_res.OrgId = 'org_sql_catalog'
-          AND t_res.Timestamp >= '2026-01-01 10:30:00'
-          AND t_res.Timestamp <= '2026-01-03 14:15:00'
-          AND t_res.ResourceAttributes['host.name'] = 'web')
-          AND DeploymentEnv != ''
-        GROUP BY name
-        ORDER BY count DESC
-        LIMIT 20
-UNION ALL
-SELECT
-          ServiceNamespace AS name,
-          count() AS count,
-          'serviceNamespace' AS facetType
-        FROM trace_list_mv
-        WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= '2026-01-01 10:30:00'
-          AND Timestamp <= '2026-01-03 14:15:00'
-          AND EXISTS (SELECT
-          1 AS _
-        FROM traces AS t_attr
-        WHERE t_attr.TraceId = TraceId
-          AND t_attr.OrgId = 'org_sql_catalog'
-          AND t_attr.Timestamp >= '2026-01-01 10:30:00'
-          AND t_attr.Timestamp <= '2026-01-03 14:15:00'
-          AND positionCaseInsensitive(t_attr.SpanAttributes['http.method'], 'GE') > 0)
-          AND EXISTS (SELECT
-          1 AS _
-        FROM traces AS t_res
-        WHERE t_res.TraceId = TraceId
-          AND t_res.OrgId = 'org_sql_catalog'
-          AND t_res.Timestamp >= '2026-01-01 10:30:00'
-          AND t_res.Timestamp <= '2026-01-03 14:15:00'
-          AND t_res.ResourceAttributes['host.name'] = 'web')
-          AND ServiceNamespace != ''
-        GROUP BY name
-        ORDER BY count DESC
-        LIMIT 20
-UNION ALL
-SELECT
-          'error' AS name,
-          count() AS count,
-          'errorCount' AS facetType
-        FROM trace_list_mv
-        WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= '2026-01-01 10:30:00'
-          AND Timestamp <= '2026-01-03 14:15:00'
-          AND EXISTS (SELECT
-          1 AS _
-        FROM traces AS t_attr
-        WHERE t_attr.TraceId = TraceId
-          AND t_attr.OrgId = 'org_sql_catalog'
-          AND t_attr.Timestamp >= '2026-01-01 10:30:00'
-          AND t_attr.Timestamp <= '2026-01-03 14:15:00'
-          AND positionCaseInsensitive(t_attr.SpanAttributes['http.method'], 'GE') > 0)
-          AND EXISTS (SELECT
-          1 AS _
-        FROM traces AS t_res
-        WHERE t_res.TraceId = TraceId
-          AND t_res.OrgId = 'org_sql_catalog'
-          AND t_res.Timestamp >= '2026-01-01 10:30:00'
-          AND t_res.Timestamp <= '2026-01-03 14:15:00'
-          AND t_res.ResourceAttributes['host.name'] = 'web')
-          AND HasError = 1
-FORMAT JSON
-
--- pipe:traces_facets:default:baseline  [2008761a]
+-- pipe:traces_facets:attribute-filtered:baseline  [2e8577ae]
 SELECT
           name AS name,
           sum(count) AS count,
@@ -11008,16 +10630,22 @@ SELECT
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
-          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
-        GROUP BY name
-UNION ALL
-SELECT
-          ServiceName AS name,
-          sum(TraceCount) AS count
-        FROM trace_facets_hourly
-        WHERE OrgId = 'org_sql_catalog'
-          AND Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
-          AND Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND EXISTS (SELECT
+          1 AS _
+        FROM traces AS t_attr
+        WHERE t_attr.TraceId = TraceId
+          AND t_attr.OrgId = 'org_sql_catalog'
+          AND t_attr.Timestamp >= '2026-01-01 10:30:00'
+          AND t_attr.Timestamp <= '2026-01-03 14:15:00'
+          AND positionCaseInsensitive(t_attr.SpanAttributes['http.method'], 'GE') > 0)
+          AND EXISTS (SELECT
+          1 AS _
+        FROM traces AS t_res
+        WHERE t_res.TraceId = TraceId
+          AND t_res.OrgId = 'org_sql_catalog'
+          AND t_res.Timestamp >= '2026-01-01 10:30:00'
+          AND t_res.Timestamp <= '2026-01-03 14:15:00'
+          AND t_res.ResourceAttributes['host.name'] = 'web')
         GROUP BY name
 ) AS service_tiers
         GROUP BY name
@@ -11036,17 +10664,22 @@ SELECT
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
-          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
-          AND SpanName != ''
-        GROUP BY name
-UNION ALL
-SELECT
-          SpanName AS name,
-          sum(TraceCount) AS count
-        FROM trace_facets_hourly
-        WHERE OrgId = 'org_sql_catalog'
-          AND Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
-          AND Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND EXISTS (SELECT
+          1 AS _
+        FROM traces AS t_attr
+        WHERE t_attr.TraceId = TraceId
+          AND t_attr.OrgId = 'org_sql_catalog'
+          AND t_attr.Timestamp >= '2026-01-01 10:30:00'
+          AND t_attr.Timestamp <= '2026-01-03 14:15:00'
+          AND positionCaseInsensitive(t_attr.SpanAttributes['http.method'], 'GE') > 0)
+          AND EXISTS (SELECT
+          1 AS _
+        FROM traces AS t_res
+        WHERE t_res.TraceId = TraceId
+          AND t_res.OrgId = 'org_sql_catalog'
+          AND t_res.Timestamp >= '2026-01-01 10:30:00'
+          AND t_res.Timestamp <= '2026-01-03 14:15:00'
+          AND t_res.ResourceAttributes['host.name'] = 'web')
           AND SpanName != ''
         GROUP BY name
 ) AS spanName_tiers
@@ -11066,17 +10699,22 @@ SELECT
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
-          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
-          AND HttpMethod != ''
-        GROUP BY name
-UNION ALL
-SELECT
-          HttpMethod AS name,
-          sum(TraceCount) AS count
-        FROM trace_facets_hourly
-        WHERE OrgId = 'org_sql_catalog'
-          AND Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
-          AND Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND EXISTS (SELECT
+          1 AS _
+        FROM traces AS t_attr
+        WHERE t_attr.TraceId = TraceId
+          AND t_attr.OrgId = 'org_sql_catalog'
+          AND t_attr.Timestamp >= '2026-01-01 10:30:00'
+          AND t_attr.Timestamp <= '2026-01-03 14:15:00'
+          AND positionCaseInsensitive(t_attr.SpanAttributes['http.method'], 'GE') > 0)
+          AND EXISTS (SELECT
+          1 AS _
+        FROM traces AS t_res
+        WHERE t_res.TraceId = TraceId
+          AND t_res.OrgId = 'org_sql_catalog'
+          AND t_res.Timestamp >= '2026-01-01 10:30:00'
+          AND t_res.Timestamp <= '2026-01-03 14:15:00'
+          AND t_res.ResourceAttributes['host.name'] = 'web')
           AND HttpMethod != ''
         GROUP BY name
 ) AS httpMethod_tiers
@@ -11096,17 +10734,22 @@ SELECT
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
-          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
-          AND HttpStatusCode != ''
-        GROUP BY name
-UNION ALL
-SELECT
-          HttpStatusCode AS name,
-          sum(TraceCount) AS count
-        FROM trace_facets_hourly
-        WHERE OrgId = 'org_sql_catalog'
-          AND Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
-          AND Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND EXISTS (SELECT
+          1 AS _
+        FROM traces AS t_attr
+        WHERE t_attr.TraceId = TraceId
+          AND t_attr.OrgId = 'org_sql_catalog'
+          AND t_attr.Timestamp >= '2026-01-01 10:30:00'
+          AND t_attr.Timestamp <= '2026-01-03 14:15:00'
+          AND positionCaseInsensitive(t_attr.SpanAttributes['http.method'], 'GE') > 0)
+          AND EXISTS (SELECT
+          1 AS _
+        FROM traces AS t_res
+        WHERE t_res.TraceId = TraceId
+          AND t_res.OrgId = 'org_sql_catalog'
+          AND t_res.Timestamp >= '2026-01-01 10:30:00'
+          AND t_res.Timestamp <= '2026-01-03 14:15:00'
+          AND t_res.ResourceAttributes['host.name'] = 'web')
           AND HttpStatusCode != ''
         GROUP BY name
 ) AS httpStatus_tiers
@@ -11126,17 +10769,22 @@ SELECT
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
-          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
-          AND DeploymentEnv != ''
-        GROUP BY name
-UNION ALL
-SELECT
-          DeploymentEnv AS name,
-          sum(TraceCount) AS count
-        FROM trace_facets_hourly
-        WHERE OrgId = 'org_sql_catalog'
-          AND Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
-          AND Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND EXISTS (SELECT
+          1 AS _
+        FROM traces AS t_attr
+        WHERE t_attr.TraceId = TraceId
+          AND t_attr.OrgId = 'org_sql_catalog'
+          AND t_attr.Timestamp >= '2026-01-01 10:30:00'
+          AND t_attr.Timestamp <= '2026-01-03 14:15:00'
+          AND positionCaseInsensitive(t_attr.SpanAttributes['http.method'], 'GE') > 0)
+          AND EXISTS (SELECT
+          1 AS _
+        FROM traces AS t_res
+        WHERE t_res.TraceId = TraceId
+          AND t_res.OrgId = 'org_sql_catalog'
+          AND t_res.Timestamp >= '2026-01-01 10:30:00'
+          AND t_res.Timestamp <= '2026-01-03 14:15:00'
+          AND t_res.ResourceAttributes['host.name'] = 'web')
           AND DeploymentEnv != ''
         GROUP BY name
 ) AS deploymentEnv_tiers
@@ -11156,17 +10804,22 @@ SELECT
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
-          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
-          AND ServiceNamespace != ''
-        GROUP BY name
-UNION ALL
-SELECT
-          ServiceNamespace AS name,
-          sum(TraceCount) AS count
-        FROM trace_facets_hourly
-        WHERE OrgId = 'org_sql_catalog'
-          AND Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
-          AND Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND EXISTS (SELECT
+          1 AS _
+        FROM traces AS t_attr
+        WHERE t_attr.TraceId = TraceId
+          AND t_attr.OrgId = 'org_sql_catalog'
+          AND t_attr.Timestamp >= '2026-01-01 10:30:00'
+          AND t_attr.Timestamp <= '2026-01-03 14:15:00'
+          AND positionCaseInsensitive(t_attr.SpanAttributes['http.method'], 'GE') > 0)
+          AND EXISTS (SELECT
+          1 AS _
+        FROM traces AS t_res
+        WHERE t_res.TraceId = TraceId
+          AND t_res.OrgId = 'org_sql_catalog'
+          AND t_res.Timestamp >= '2026-01-01 10:30:00'
+          AND t_res.Timestamp <= '2026-01-03 14:15:00'
+          AND t_res.ResourceAttributes['host.name'] = 'web')
           AND ServiceNamespace != ''
         GROUP BY name
 ) AS serviceNamespace_tiers
@@ -11185,20 +10838,27 @@ SELECT
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
-          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
-          AND HasError = 1
-UNION ALL
-SELECT
-          sum(TraceCount) AS count
-        FROM trace_facets_hourly
-        WHERE OrgId = 'org_sql_catalog'
-          AND Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
-          AND Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND EXISTS (SELECT
+          1 AS _
+        FROM traces AS t_attr
+        WHERE t_attr.TraceId = TraceId
+          AND t_attr.OrgId = 'org_sql_catalog'
+          AND t_attr.Timestamp >= '2026-01-01 10:30:00'
+          AND t_attr.Timestamp <= '2026-01-03 14:15:00'
+          AND positionCaseInsensitive(t_attr.SpanAttributes['http.method'], 'GE') > 0)
+          AND EXISTS (SELECT
+          1 AS _
+        FROM traces AS t_res
+        WHERE t_res.TraceId = TraceId
+          AND t_res.OrgId = 'org_sql_catalog'
+          AND t_res.Timestamp >= '2026-01-01 10:30:00'
+          AND t_res.Timestamp <= '2026-01-03 14:15:00'
+          AND t_res.ResourceAttributes['host.name'] = 'web')
           AND HasError = 1
 ) AS errorCount_tiers
 FORMAT JSON
 
--- pipe:traces_facets:default:bloom  [2008761a]
+-- pipe:traces_facets:attribute-filtered:bloom  [2e8577ae]
 SELECT
           name AS name,
           sum(count) AS count,
@@ -11211,16 +10871,22 @@ SELECT
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
-          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
-        GROUP BY name
-UNION ALL
-SELECT
-          ServiceName AS name,
-          sum(TraceCount) AS count
-        FROM trace_facets_hourly
-        WHERE OrgId = 'org_sql_catalog'
-          AND Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
-          AND Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND EXISTS (SELECT
+          1 AS _
+        FROM traces AS t_attr
+        WHERE t_attr.TraceId = TraceId
+          AND t_attr.OrgId = 'org_sql_catalog'
+          AND t_attr.Timestamp >= '2026-01-01 10:30:00'
+          AND t_attr.Timestamp <= '2026-01-03 14:15:00'
+          AND positionCaseInsensitive(t_attr.SpanAttributes['http.method'], 'GE') > 0)
+          AND EXISTS (SELECT
+          1 AS _
+        FROM traces AS t_res
+        WHERE t_res.TraceId = TraceId
+          AND t_res.OrgId = 'org_sql_catalog'
+          AND t_res.Timestamp >= '2026-01-01 10:30:00'
+          AND t_res.Timestamp <= '2026-01-03 14:15:00'
+          AND t_res.ResourceAttributes['host.name'] = 'web')
         GROUP BY name
 ) AS service_tiers
         GROUP BY name
@@ -11239,17 +10905,22 @@ SELECT
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
-          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
-          AND SpanName != ''
-        GROUP BY name
-UNION ALL
-SELECT
-          SpanName AS name,
-          sum(TraceCount) AS count
-        FROM trace_facets_hourly
-        WHERE OrgId = 'org_sql_catalog'
-          AND Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
-          AND Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND EXISTS (SELECT
+          1 AS _
+        FROM traces AS t_attr
+        WHERE t_attr.TraceId = TraceId
+          AND t_attr.OrgId = 'org_sql_catalog'
+          AND t_attr.Timestamp >= '2026-01-01 10:30:00'
+          AND t_attr.Timestamp <= '2026-01-03 14:15:00'
+          AND positionCaseInsensitive(t_attr.SpanAttributes['http.method'], 'GE') > 0)
+          AND EXISTS (SELECT
+          1 AS _
+        FROM traces AS t_res
+        WHERE t_res.TraceId = TraceId
+          AND t_res.OrgId = 'org_sql_catalog'
+          AND t_res.Timestamp >= '2026-01-01 10:30:00'
+          AND t_res.Timestamp <= '2026-01-03 14:15:00'
+          AND t_res.ResourceAttributes['host.name'] = 'web')
           AND SpanName != ''
         GROUP BY name
 ) AS spanName_tiers
@@ -11269,17 +10940,22 @@ SELECT
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
-          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
-          AND HttpMethod != ''
-        GROUP BY name
-UNION ALL
-SELECT
-          HttpMethod AS name,
-          sum(TraceCount) AS count
-        FROM trace_facets_hourly
-        WHERE OrgId = 'org_sql_catalog'
-          AND Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
-          AND Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND EXISTS (SELECT
+          1 AS _
+        FROM traces AS t_attr
+        WHERE t_attr.TraceId = TraceId
+          AND t_attr.OrgId = 'org_sql_catalog'
+          AND t_attr.Timestamp >= '2026-01-01 10:30:00'
+          AND t_attr.Timestamp <= '2026-01-03 14:15:00'
+          AND positionCaseInsensitive(t_attr.SpanAttributes['http.method'], 'GE') > 0)
+          AND EXISTS (SELECT
+          1 AS _
+        FROM traces AS t_res
+        WHERE t_res.TraceId = TraceId
+          AND t_res.OrgId = 'org_sql_catalog'
+          AND t_res.Timestamp >= '2026-01-01 10:30:00'
+          AND t_res.Timestamp <= '2026-01-03 14:15:00'
+          AND t_res.ResourceAttributes['host.name'] = 'web')
           AND HttpMethod != ''
         GROUP BY name
 ) AS httpMethod_tiers
@@ -11299,17 +10975,22 @@ SELECT
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
-          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
-          AND HttpStatusCode != ''
-        GROUP BY name
-UNION ALL
-SELECT
-          HttpStatusCode AS name,
-          sum(TraceCount) AS count
-        FROM trace_facets_hourly
-        WHERE OrgId = 'org_sql_catalog'
-          AND Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
-          AND Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND EXISTS (SELECT
+          1 AS _
+        FROM traces AS t_attr
+        WHERE t_attr.TraceId = TraceId
+          AND t_attr.OrgId = 'org_sql_catalog'
+          AND t_attr.Timestamp >= '2026-01-01 10:30:00'
+          AND t_attr.Timestamp <= '2026-01-03 14:15:00'
+          AND positionCaseInsensitive(t_attr.SpanAttributes['http.method'], 'GE') > 0)
+          AND EXISTS (SELECT
+          1 AS _
+        FROM traces AS t_res
+        WHERE t_res.TraceId = TraceId
+          AND t_res.OrgId = 'org_sql_catalog'
+          AND t_res.Timestamp >= '2026-01-01 10:30:00'
+          AND t_res.Timestamp <= '2026-01-03 14:15:00'
+          AND t_res.ResourceAttributes['host.name'] = 'web')
           AND HttpStatusCode != ''
         GROUP BY name
 ) AS httpStatus_tiers
@@ -11329,17 +11010,22 @@ SELECT
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
-          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
-          AND DeploymentEnv != ''
-        GROUP BY name
-UNION ALL
-SELECT
-          DeploymentEnv AS name,
-          sum(TraceCount) AS count
-        FROM trace_facets_hourly
-        WHERE OrgId = 'org_sql_catalog'
-          AND Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
-          AND Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND EXISTS (SELECT
+          1 AS _
+        FROM traces AS t_attr
+        WHERE t_attr.TraceId = TraceId
+          AND t_attr.OrgId = 'org_sql_catalog'
+          AND t_attr.Timestamp >= '2026-01-01 10:30:00'
+          AND t_attr.Timestamp <= '2026-01-03 14:15:00'
+          AND positionCaseInsensitive(t_attr.SpanAttributes['http.method'], 'GE') > 0)
+          AND EXISTS (SELECT
+          1 AS _
+        FROM traces AS t_res
+        WHERE t_res.TraceId = TraceId
+          AND t_res.OrgId = 'org_sql_catalog'
+          AND t_res.Timestamp >= '2026-01-01 10:30:00'
+          AND t_res.Timestamp <= '2026-01-03 14:15:00'
+          AND t_res.ResourceAttributes['host.name'] = 'web')
           AND DeploymentEnv != ''
         GROUP BY name
 ) AS deploymentEnv_tiers
@@ -11359,17 +11045,22 @@ SELECT
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
-          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
-          AND ServiceNamespace != ''
-        GROUP BY name
-UNION ALL
-SELECT
-          ServiceNamespace AS name,
-          sum(TraceCount) AS count
-        FROM trace_facets_hourly
-        WHERE OrgId = 'org_sql_catalog'
-          AND Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
-          AND Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND EXISTS (SELECT
+          1 AS _
+        FROM traces AS t_attr
+        WHERE t_attr.TraceId = TraceId
+          AND t_attr.OrgId = 'org_sql_catalog'
+          AND t_attr.Timestamp >= '2026-01-01 10:30:00'
+          AND t_attr.Timestamp <= '2026-01-03 14:15:00'
+          AND positionCaseInsensitive(t_attr.SpanAttributes['http.method'], 'GE') > 0)
+          AND EXISTS (SELECT
+          1 AS _
+        FROM traces AS t_res
+        WHERE t_res.TraceId = TraceId
+          AND t_res.OrgId = 'org_sql_catalog'
+          AND t_res.Timestamp >= '2026-01-01 10:30:00'
+          AND t_res.Timestamp <= '2026-01-03 14:15:00'
+          AND t_res.ResourceAttributes['host.name'] = 'web')
           AND ServiceNamespace != ''
         GROUP BY name
 ) AS serviceNamespace_tiers
@@ -11388,20 +11079,27 @@ SELECT
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
-          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
-          AND HasError = 1
-UNION ALL
-SELECT
-          sum(TraceCount) AS count
-        FROM trace_facets_hourly
-        WHERE OrgId = 'org_sql_catalog'
-          AND Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
-          AND Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND EXISTS (SELECT
+          1 AS _
+        FROM traces AS t_attr
+        WHERE t_attr.TraceId = TraceId
+          AND t_attr.OrgId = 'org_sql_catalog'
+          AND t_attr.Timestamp >= '2026-01-01 10:30:00'
+          AND t_attr.Timestamp <= '2026-01-03 14:15:00'
+          AND positionCaseInsensitive(t_attr.SpanAttributes['http.method'], 'GE') > 0)
+          AND EXISTS (SELECT
+          1 AS _
+        FROM traces AS t_res
+        WHERE t_res.TraceId = TraceId
+          AND t_res.OrgId = 'org_sql_catalog'
+          AND t_res.Timestamp >= '2026-01-01 10:30:00'
+          AND t_res.Timestamp <= '2026-01-03 14:15:00'
+          AND t_res.ResourceAttributes['host.name'] = 'web')
           AND HasError = 1
 ) AS errorCount_tiers
 FORMAT JSON
 
--- pipe:traces_facets:default:text  [2008761a]
+-- pipe:traces_facets:attribute-filtered:text  [2e8577ae]
 SELECT
           name AS name,
           sum(count) AS count,
@@ -11414,16 +11112,22 @@ SELECT
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
-          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
-        GROUP BY name
-UNION ALL
-SELECT
-          ServiceName AS name,
-          sum(TraceCount) AS count
-        FROM trace_facets_hourly
-        WHERE OrgId = 'org_sql_catalog'
-          AND Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
-          AND Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND EXISTS (SELECT
+          1 AS _
+        FROM traces AS t_attr
+        WHERE t_attr.TraceId = TraceId
+          AND t_attr.OrgId = 'org_sql_catalog'
+          AND t_attr.Timestamp >= '2026-01-01 10:30:00'
+          AND t_attr.Timestamp <= '2026-01-03 14:15:00'
+          AND positionCaseInsensitive(t_attr.SpanAttributes['http.method'], 'GE') > 0)
+          AND EXISTS (SELECT
+          1 AS _
+        FROM traces AS t_res
+        WHERE t_res.TraceId = TraceId
+          AND t_res.OrgId = 'org_sql_catalog'
+          AND t_res.Timestamp >= '2026-01-01 10:30:00'
+          AND t_res.Timestamp <= '2026-01-03 14:15:00'
+          AND t_res.ResourceAttributes['host.name'] = 'web')
         GROUP BY name
 ) AS service_tiers
         GROUP BY name
@@ -11442,17 +11146,22 @@ SELECT
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
-          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
-          AND SpanName != ''
-        GROUP BY name
-UNION ALL
-SELECT
-          SpanName AS name,
-          sum(TraceCount) AS count
-        FROM trace_facets_hourly
-        WHERE OrgId = 'org_sql_catalog'
-          AND Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
-          AND Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND EXISTS (SELECT
+          1 AS _
+        FROM traces AS t_attr
+        WHERE t_attr.TraceId = TraceId
+          AND t_attr.OrgId = 'org_sql_catalog'
+          AND t_attr.Timestamp >= '2026-01-01 10:30:00'
+          AND t_attr.Timestamp <= '2026-01-03 14:15:00'
+          AND positionCaseInsensitive(t_attr.SpanAttributes['http.method'], 'GE') > 0)
+          AND EXISTS (SELECT
+          1 AS _
+        FROM traces AS t_res
+        WHERE t_res.TraceId = TraceId
+          AND t_res.OrgId = 'org_sql_catalog'
+          AND t_res.Timestamp >= '2026-01-01 10:30:00'
+          AND t_res.Timestamp <= '2026-01-03 14:15:00'
+          AND t_res.ResourceAttributes['host.name'] = 'web')
           AND SpanName != ''
         GROUP BY name
 ) AS spanName_tiers
@@ -11472,17 +11181,22 @@ SELECT
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
-          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
-          AND HttpMethod != ''
-        GROUP BY name
-UNION ALL
-SELECT
-          HttpMethod AS name,
-          sum(TraceCount) AS count
-        FROM trace_facets_hourly
-        WHERE OrgId = 'org_sql_catalog'
-          AND Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
-          AND Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND EXISTS (SELECT
+          1 AS _
+        FROM traces AS t_attr
+        WHERE t_attr.TraceId = TraceId
+          AND t_attr.OrgId = 'org_sql_catalog'
+          AND t_attr.Timestamp >= '2026-01-01 10:30:00'
+          AND t_attr.Timestamp <= '2026-01-03 14:15:00'
+          AND positionCaseInsensitive(t_attr.SpanAttributes['http.method'], 'GE') > 0)
+          AND EXISTS (SELECT
+          1 AS _
+        FROM traces AS t_res
+        WHERE t_res.TraceId = TraceId
+          AND t_res.OrgId = 'org_sql_catalog'
+          AND t_res.Timestamp >= '2026-01-01 10:30:00'
+          AND t_res.Timestamp <= '2026-01-03 14:15:00'
+          AND t_res.ResourceAttributes['host.name'] = 'web')
           AND HttpMethod != ''
         GROUP BY name
 ) AS httpMethod_tiers
@@ -11502,17 +11216,22 @@ SELECT
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
-          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
-          AND HttpStatusCode != ''
-        GROUP BY name
-UNION ALL
-SELECT
-          HttpStatusCode AS name,
-          sum(TraceCount) AS count
-        FROM trace_facets_hourly
-        WHERE OrgId = 'org_sql_catalog'
-          AND Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
-          AND Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND EXISTS (SELECT
+          1 AS _
+        FROM traces AS t_attr
+        WHERE t_attr.TraceId = TraceId
+          AND t_attr.OrgId = 'org_sql_catalog'
+          AND t_attr.Timestamp >= '2026-01-01 10:30:00'
+          AND t_attr.Timestamp <= '2026-01-03 14:15:00'
+          AND positionCaseInsensitive(t_attr.SpanAttributes['http.method'], 'GE') > 0)
+          AND EXISTS (SELECT
+          1 AS _
+        FROM traces AS t_res
+        WHERE t_res.TraceId = TraceId
+          AND t_res.OrgId = 'org_sql_catalog'
+          AND t_res.Timestamp >= '2026-01-01 10:30:00'
+          AND t_res.Timestamp <= '2026-01-03 14:15:00'
+          AND t_res.ResourceAttributes['host.name'] = 'web')
           AND HttpStatusCode != ''
         GROUP BY name
 ) AS httpStatus_tiers
@@ -11532,17 +11251,22 @@ SELECT
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
-          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
-          AND DeploymentEnv != ''
-        GROUP BY name
-UNION ALL
-SELECT
-          DeploymentEnv AS name,
-          sum(TraceCount) AS count
-        FROM trace_facets_hourly
-        WHERE OrgId = 'org_sql_catalog'
-          AND Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
-          AND Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND EXISTS (SELECT
+          1 AS _
+        FROM traces AS t_attr
+        WHERE t_attr.TraceId = TraceId
+          AND t_attr.OrgId = 'org_sql_catalog'
+          AND t_attr.Timestamp >= '2026-01-01 10:30:00'
+          AND t_attr.Timestamp <= '2026-01-03 14:15:00'
+          AND positionCaseInsensitive(t_attr.SpanAttributes['http.method'], 'GE') > 0)
+          AND EXISTS (SELECT
+          1 AS _
+        FROM traces AS t_res
+        WHERE t_res.TraceId = TraceId
+          AND t_res.OrgId = 'org_sql_catalog'
+          AND t_res.Timestamp >= '2026-01-01 10:30:00'
+          AND t_res.Timestamp <= '2026-01-03 14:15:00'
+          AND t_res.ResourceAttributes['host.name'] = 'web')
           AND DeploymentEnv != ''
         GROUP BY name
 ) AS deploymentEnv_tiers
@@ -11562,17 +11286,22 @@ SELECT
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
-          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
-          AND ServiceNamespace != ''
-        GROUP BY name
-UNION ALL
-SELECT
-          ServiceNamespace AS name,
-          sum(TraceCount) AS count
-        FROM trace_facets_hourly
-        WHERE OrgId = 'org_sql_catalog'
-          AND Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
-          AND Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND EXISTS (SELECT
+          1 AS _
+        FROM traces AS t_attr
+        WHERE t_attr.TraceId = TraceId
+          AND t_attr.OrgId = 'org_sql_catalog'
+          AND t_attr.Timestamp >= '2026-01-01 10:30:00'
+          AND t_attr.Timestamp <= '2026-01-03 14:15:00'
+          AND positionCaseInsensitive(t_attr.SpanAttributes['http.method'], 'GE') > 0)
+          AND EXISTS (SELECT
+          1 AS _
+        FROM traces AS t_res
+        WHERE t_res.TraceId = TraceId
+          AND t_res.OrgId = 'org_sql_catalog'
+          AND t_res.Timestamp >= '2026-01-01 10:30:00'
+          AND t_res.Timestamp <= '2026-01-03 14:15:00'
+          AND t_res.ResourceAttributes['host.name'] = 'web')
           AND ServiceNamespace != ''
         GROUP BY name
 ) AS serviceNamespace_tiers
@@ -11591,347 +11320,411 @@ SELECT
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
-          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
-          AND HasError = 1
-UNION ALL
-SELECT
-          sum(TraceCount) AS count
-        FROM trace_facets_hourly
-        WHERE OrgId = 'org_sql_catalog'
-          AND Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
-          AND Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND EXISTS (SELECT
+          1 AS _
+        FROM traces AS t_attr
+        WHERE t_attr.TraceId = TraceId
+          AND t_attr.OrgId = 'org_sql_catalog'
+          AND t_attr.Timestamp >= '2026-01-01 10:30:00'
+          AND t_attr.Timestamp <= '2026-01-03 14:15:00'
+          AND positionCaseInsensitive(t_attr.SpanAttributes['http.method'], 'GE') > 0)
+          AND EXISTS (SELECT
+          1 AS _
+        FROM traces AS t_res
+        WHERE t_res.TraceId = TraceId
+          AND t_res.OrgId = 'org_sql_catalog'
+          AND t_res.Timestamp >= '2026-01-01 10:30:00'
+          AND t_res.Timestamp <= '2026-01-03 14:15:00'
+          AND t_res.ResourceAttributes['host.name'] = 'web')
           AND HasError = 1
 ) AS errorCount_tiers
 FORMAT JSON
 
--- pipe:traces_facets:duration-bounded:baseline  [1e990ddf]
+-- pipe:traces_facets:default:baseline  [a8566199]
+SELECT
+          name AS name,
+          sum(count) AS count,
+          'service' AS facetType
+        FROM (
 SELECT
           ServiceName AS name,
-          count() AS count,
-          'service' AS facetType
+          count() AS count
         FROM trace_list_mv
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
-          AND ServiceName = 'api'
-          AND Duration >= 100000000
-          AND Duration <= 5000000000
+        GROUP BY name
+) AS service_tiers
         GROUP BY name
         ORDER BY count DESC
         LIMIT 50
 UNION ALL
 SELECT
-          SpanName AS name,
-          count() AS count,
+          name AS name,
+          sum(count) AS count,
           'spanName' AS facetType
+        FROM (
+SELECT
+          SpanName AS name,
+          count() AS count
         FROM trace_list_mv
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
-          AND ServiceName = 'api'
-          AND Duration >= 100000000
-          AND Duration <= 5000000000
           AND SpanName != ''
         GROUP BY name
+) AS spanName_tiers
+        GROUP BY name
         ORDER BY count DESC
         LIMIT 20
 UNION ALL
+SELECT
+          name AS name,
+          sum(count) AS count,
+          'httpMethod' AS facetType
+        FROM (
 SELECT
           HttpMethod AS name,
-          count() AS count,
-          'httpMethod' AS facetType
+          count() AS count
         FROM trace_list_mv
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
-          AND ServiceName = 'api'
-          AND Duration >= 100000000
-          AND Duration <= 5000000000
           AND HttpMethod != ''
         GROUP BY name
+) AS httpMethod_tiers
+        GROUP BY name
         ORDER BY count DESC
         LIMIT 20
 UNION ALL
+SELECT
+          name AS name,
+          sum(count) AS count,
+          'httpStatus' AS facetType
+        FROM (
 SELECT
           HttpStatusCode AS name,
-          count() AS count,
-          'httpStatus' AS facetType
+          count() AS count
         FROM trace_list_mv
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
-          AND ServiceName = 'api'
-          AND Duration >= 100000000
-          AND Duration <= 5000000000
           AND HttpStatusCode != ''
         GROUP BY name
-        ORDER BY count DESC
-        LIMIT 20
-UNION ALL
-SELECT
-          DeploymentEnv AS name,
-          count() AS count,
-          'deploymentEnv' AS facetType
-        FROM trace_list_mv
-        WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= '2026-01-01 10:30:00'
-          AND Timestamp <= '2026-01-03 14:15:00'
-          AND ServiceName = 'api'
-          AND Duration >= 100000000
-          AND Duration <= 5000000000
-          AND DeploymentEnv != ''
+) AS httpStatus_tiers
         GROUP BY name
         ORDER BY count DESC
         LIMIT 20
 UNION ALL
 SELECT
-          ServiceNamespace AS name,
-          count() AS count,
-          'serviceNamespace' AS facetType
+          name AS name,
+          sum(count) AS count,
+          'deploymentEnv' AS facetType
+        FROM (
+SELECT
+          DeploymentEnv AS name,
+          count() AS count
         FROM trace_list_mv
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
-          AND ServiceName = 'api'
-          AND Duration >= 100000000
-          AND Duration <= 5000000000
+          AND DeploymentEnv != ''
+        GROUP BY name
+) AS deploymentEnv_tiers
+        GROUP BY name
+        ORDER BY count DESC
+        LIMIT 20
+UNION ALL
+SELECT
+          name AS name,
+          sum(count) AS count,
+          'serviceNamespace' AS facetType
+        FROM (
+SELECT
+          ServiceNamespace AS name,
+          count() AS count
+        FROM trace_list_mv
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
           AND ServiceNamespace != ''
+        GROUP BY name
+) AS serviceNamespace_tiers
         GROUP BY name
         ORDER BY count DESC
         LIMIT 20
 UNION ALL
 SELECT
           'error' AS name,
-          count() AS count,
+          sum(count) AS count,
           'errorCount' AS facetType
+        FROM (
+SELECT
+          count() AS count
         FROM trace_list_mv
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
-          AND ServiceName = 'api'
-          AND Duration >= 100000000
-          AND Duration <= 5000000000
           AND HasError = 1
+) AS errorCount_tiers
 FORMAT JSON
 
--- pipe:traces_facets:duration-bounded:bloom  [1e990ddf]
+-- pipe:traces_facets:default:bloom  [a8566199]
+SELECT
+          name AS name,
+          sum(count) AS count,
+          'service' AS facetType
+        FROM (
 SELECT
           ServiceName AS name,
-          count() AS count,
-          'service' AS facetType
+          count() AS count
         FROM trace_list_mv
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
-          AND ServiceName = 'api'
-          AND Duration >= 100000000
-          AND Duration <= 5000000000
+        GROUP BY name
+) AS service_tiers
         GROUP BY name
         ORDER BY count DESC
         LIMIT 50
 UNION ALL
 SELECT
-          SpanName AS name,
-          count() AS count,
+          name AS name,
+          sum(count) AS count,
           'spanName' AS facetType
+        FROM (
+SELECT
+          SpanName AS name,
+          count() AS count
         FROM trace_list_mv
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
-          AND ServiceName = 'api'
-          AND Duration >= 100000000
-          AND Duration <= 5000000000
           AND SpanName != ''
         GROUP BY name
+) AS spanName_tiers
+        GROUP BY name
         ORDER BY count DESC
         LIMIT 20
 UNION ALL
+SELECT
+          name AS name,
+          sum(count) AS count,
+          'httpMethod' AS facetType
+        FROM (
 SELECT
           HttpMethod AS name,
-          count() AS count,
-          'httpMethod' AS facetType
+          count() AS count
         FROM trace_list_mv
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
-          AND ServiceName = 'api'
-          AND Duration >= 100000000
-          AND Duration <= 5000000000
           AND HttpMethod != ''
         GROUP BY name
+) AS httpMethod_tiers
+        GROUP BY name
         ORDER BY count DESC
         LIMIT 20
 UNION ALL
+SELECT
+          name AS name,
+          sum(count) AS count,
+          'httpStatus' AS facetType
+        FROM (
 SELECT
           HttpStatusCode AS name,
-          count() AS count,
-          'httpStatus' AS facetType
+          count() AS count
         FROM trace_list_mv
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
-          AND ServiceName = 'api'
-          AND Duration >= 100000000
-          AND Duration <= 5000000000
           AND HttpStatusCode != ''
         GROUP BY name
-        ORDER BY count DESC
-        LIMIT 20
-UNION ALL
-SELECT
-          DeploymentEnv AS name,
-          count() AS count,
-          'deploymentEnv' AS facetType
-        FROM trace_list_mv
-        WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= '2026-01-01 10:30:00'
-          AND Timestamp <= '2026-01-03 14:15:00'
-          AND ServiceName = 'api'
-          AND Duration >= 100000000
-          AND Duration <= 5000000000
-          AND DeploymentEnv != ''
+) AS httpStatus_tiers
         GROUP BY name
         ORDER BY count DESC
         LIMIT 20
 UNION ALL
 SELECT
-          ServiceNamespace AS name,
-          count() AS count,
-          'serviceNamespace' AS facetType
+          name AS name,
+          sum(count) AS count,
+          'deploymentEnv' AS facetType
+        FROM (
+SELECT
+          DeploymentEnv AS name,
+          count() AS count
         FROM trace_list_mv
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
-          AND ServiceName = 'api'
-          AND Duration >= 100000000
-          AND Duration <= 5000000000
+          AND DeploymentEnv != ''
+        GROUP BY name
+) AS deploymentEnv_tiers
+        GROUP BY name
+        ORDER BY count DESC
+        LIMIT 20
+UNION ALL
+SELECT
+          name AS name,
+          sum(count) AS count,
+          'serviceNamespace' AS facetType
+        FROM (
+SELECT
+          ServiceNamespace AS name,
+          count() AS count
+        FROM trace_list_mv
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
           AND ServiceNamespace != ''
+        GROUP BY name
+) AS serviceNamespace_tiers
         GROUP BY name
         ORDER BY count DESC
         LIMIT 20
 UNION ALL
 SELECT
           'error' AS name,
-          count() AS count,
+          sum(count) AS count,
           'errorCount' AS facetType
+        FROM (
+SELECT
+          count() AS count
         FROM trace_list_mv
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
-          AND ServiceName = 'api'
-          AND Duration >= 100000000
-          AND Duration <= 5000000000
           AND HasError = 1
+) AS errorCount_tiers
 FORMAT JSON
 
--- pipe:traces_facets:duration-bounded:text  [1e990ddf]
+-- pipe:traces_facets:default:text  [a8566199]
+SELECT
+          name AS name,
+          sum(count) AS count,
+          'service' AS facetType
+        FROM (
 SELECT
           ServiceName AS name,
-          count() AS count,
-          'service' AS facetType
+          count() AS count
         FROM trace_list_mv
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
-          AND ServiceName = 'api'
-          AND Duration >= 100000000
-          AND Duration <= 5000000000
+        GROUP BY name
+) AS service_tiers
         GROUP BY name
         ORDER BY count DESC
         LIMIT 50
 UNION ALL
 SELECT
-          SpanName AS name,
-          count() AS count,
+          name AS name,
+          sum(count) AS count,
           'spanName' AS facetType
+        FROM (
+SELECT
+          SpanName AS name,
+          count() AS count
         FROM trace_list_mv
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
-          AND ServiceName = 'api'
-          AND Duration >= 100000000
-          AND Duration <= 5000000000
           AND SpanName != ''
         GROUP BY name
+) AS spanName_tiers
+        GROUP BY name
         ORDER BY count DESC
         LIMIT 20
 UNION ALL
+SELECT
+          name AS name,
+          sum(count) AS count,
+          'httpMethod' AS facetType
+        FROM (
 SELECT
           HttpMethod AS name,
-          count() AS count,
-          'httpMethod' AS facetType
+          count() AS count
         FROM trace_list_mv
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
-          AND ServiceName = 'api'
-          AND Duration >= 100000000
-          AND Duration <= 5000000000
           AND HttpMethod != ''
         GROUP BY name
+) AS httpMethod_tiers
+        GROUP BY name
         ORDER BY count DESC
         LIMIT 20
 UNION ALL
+SELECT
+          name AS name,
+          sum(count) AS count,
+          'httpStatus' AS facetType
+        FROM (
 SELECT
           HttpStatusCode AS name,
-          count() AS count,
-          'httpStatus' AS facetType
+          count() AS count
         FROM trace_list_mv
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
-          AND ServiceName = 'api'
-          AND Duration >= 100000000
-          AND Duration <= 5000000000
           AND HttpStatusCode != ''
         GROUP BY name
-        ORDER BY count DESC
-        LIMIT 20
-UNION ALL
-SELECT
-          DeploymentEnv AS name,
-          count() AS count,
-          'deploymentEnv' AS facetType
-        FROM trace_list_mv
-        WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= '2026-01-01 10:30:00'
-          AND Timestamp <= '2026-01-03 14:15:00'
-          AND ServiceName = 'api'
-          AND Duration >= 100000000
-          AND Duration <= 5000000000
-          AND DeploymentEnv != ''
+) AS httpStatus_tiers
         GROUP BY name
         ORDER BY count DESC
         LIMIT 20
 UNION ALL
 SELECT
-          ServiceNamespace AS name,
-          count() AS count,
-          'serviceNamespace' AS facetType
+          name AS name,
+          sum(count) AS count,
+          'deploymentEnv' AS facetType
+        FROM (
+SELECT
+          DeploymentEnv AS name,
+          count() AS count
         FROM trace_list_mv
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
-          AND ServiceName = 'api'
-          AND Duration >= 100000000
-          AND Duration <= 5000000000
+          AND DeploymentEnv != ''
+        GROUP BY name
+) AS deploymentEnv_tiers
+        GROUP BY name
+        ORDER BY count DESC
+        LIMIT 20
+UNION ALL
+SELECT
+          name AS name,
+          sum(count) AS count,
+          'serviceNamespace' AS facetType
+        FROM (
+SELECT
+          ServiceNamespace AS name,
+          count() AS count
+        FROM trace_list_mv
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
           AND ServiceNamespace != ''
+        GROUP BY name
+) AS serviceNamespace_tiers
         GROUP BY name
         ORDER BY count DESC
         LIMIT 20
 UNION ALL
 SELECT
           'error' AS name,
-          count() AS count,
+          sum(count) AS count,
           'errorCount' AS facetType
+        FROM (
+SELECT
+          count() AS count
         FROM trace_list_mv
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
-          AND ServiceName = 'api'
-          AND Duration >= 100000000
-          AND Duration <= 5000000000
           AND HasError = 1
+) AS errorCount_tiers
 FORMAT JSON
 
 -- spec:attribute-keys-logs:baseline  [f2e10453]

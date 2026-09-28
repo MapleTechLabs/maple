@@ -257,6 +257,8 @@ export function compilePipeQuery(
 				eraseType(
 					compile(
 						tracesDurationStatsQuery({
+							// The pipe surface has no missing-table retry, so it keeps the raw read.
+							rawOnly: true,
 							serviceName: str("service"),
 							spanName: str("span_name"),
 							hasError,
@@ -281,6 +283,8 @@ export function compilePipeQuery(
 				eraseType(
 					compileUnion(
 						tracesFacetsQuery({
+							// The pipe surface has no missing-table retry, so it keeps the raw read.
+							rawOnly: true,
 							serviceName: str("service"),
 							spanName: str("span_name"),
 							hasError,

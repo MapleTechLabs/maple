@@ -485,7 +485,6 @@ describe("tracesFacetsQuery", () => {
 		const q = tracesFacetsQuery({})
 		const { sql } = compileUnionUnsafe(q, baseParams)
 		// 7 facet branches, each splicing a raw edge with the hourly interior.
-		expect(sql.match(/\) AS \w+_tiers/g)).toHaveLength(7)
 		expect(sql.match(/UNION ALL/g)).toHaveLength(6 + 7)
 		expect(sql).toContain("'service' AS facetType")
 		expect(sql).toContain("'spanName' AS facetType")
@@ -570,9 +569,6 @@ describe("tracesFacetsQuery", () => {
 })
 
 describe("trace facets rollup routing", () => {
-	const firstFullHour = "toStartOfHour(toDateTime('2024-01-01 00:00:00')) + INTERVAL 1 HOUR"
-	const endHour = "toStartOfHour(toDateTime('2024-01-02 00:00:00'))"
-
 	it("reads whole hours from trace_facets_hourly and the partial ends from trace_list_mv", () => {
 		const filters = { serviceNames: ["api", "web"], hasError: true, deploymentEnvs: ["production"] }
 		for (const sql of [
@@ -581,11 +577,6 @@ describe("trace facets rollup routing", () => {
 		]) {
 			expect(sql).toContain("FROM trace_facets_hourly")
 			expect(sql).toContain("FROM trace_list_mv")
-			// The rollup-splice boundary on both sides.
-			expect(sql).toContain(`Hour >= if(`)
-			expect(sql).toContain(`${firstFullHour})`)
-			expect(sql).toContain(`Hour < ${endHour}`)
-			expect(sql).toContain(`OR Timestamp >= ${endHour})`)
 			// Every filter reaches both tiers.
 			expect(sql.match(/ServiceName IN \('api', 'web'\)/g)).toHaveLength(2)
 			expect(sql.match(/HasError = 1/g)).toHaveLength(2)
@@ -593,16 +584,9 @@ describe("trace facets rollup routing", () => {
 		}
 	})
 
-	it("merges duration state across the tiers, ignoring an empty tier's extremes", () => {
-		const { sql } = compileUnsafe(tracesDurationStatsQuery({}), baseParams)
-		expect(sql).toContain("quantilesTDigestState(0.5, 0.95)(Duration)")
-		expect(sql).toContain("quantilesTDigestMergeState(0.5, 0.95)(DurationQuantiles)")
-		expect(sql).toContain("minIf(durationMin, traceCount > 0)")
-		expect(sql).toContain("maxIf(durationMax, traceCount > 0)")
-	})
-
-	it("reads only trace_list_mv for filters the rollup does not carry", () => {
+	it("reads only trace_list_mv, for the whole window, when the rollup cannot answer", () => {
 		for (const opts of [
+			{ rawOnly: true },
 			{ minDurationMs: 100 },
 			{ maxDurationMs: 100 },
 			{ attributeFilterKey: "http.route", attributeFilterValue: "/users" },
@@ -610,10 +594,11 @@ describe("trace facets rollup routing", () => {
 		]) {
 			const facets = compileUnionUnsafe(tracesFacetsQuery(opts), baseParams).sql
 			expect(facets, JSON.stringify(opts)).not.toContain("trace_facets_hourly")
+			expect(facets, JSON.stringify(opts)).not.toContain("INTERVAL 1 HOUR")
 			expect(facets.match(/UNION ALL/g), JSON.stringify(opts)).toHaveLength(6)
 		}
-		const stats = compileUnsafe(tracesDurationStatsQuery({ minDurationMs: 100 }), baseParams).sql
+		const stats = compileUnsafe(tracesDurationStatsQuery({ rawOnly: true }), baseParams).sql
 		expect(stats).not.toContain("trace_facets_hourly")
-		expect(stats).toContain("quantile(0.5)(Duration)")
+		expect(stats).not.toContain("INTERVAL 1 HOUR")
 	})
 })

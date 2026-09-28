@@ -538,11 +538,10 @@ export function traceTimeProbeQuery(opts: { traceId: string; narrowByTime?: bool
 
 // Traces duration stats and facets
 //
-// Both count root spans from `trace_list_mv` over the page's window. That table
-// holds ~14M root spans a day for a busy org, so past about a day a scan of it
-// exceeds the discovery budget. When the filters are ones `trace_facets_hourly`
-// carries, its whole hours answer the interior of the window and
-// `trace_list_mv` only the partial hour at each end (`rollup-splice`).
+// Both count root spans over the window. When `trace_facets_hourly` carries the
+// filters, its whole hours answer the interior and `trace_list_mv` only the
+// partial hour at each end (`rollup-splice`); otherwise `trace_list_mv` answers
+// the whole window through the same union.
 
 export interface TracesDurationStatsOpts {
 	serviceName?: string
@@ -570,6 +569,8 @@ export interface TracesDurationStatsOpts {
 		deploymentEnv?: "contains"
 		serviceNamespace?: "contains"
 	}
+	/** Read only `trace_list_mv`: for clusters that have not applied migration 0034. */
+	rawOnly?: boolean
 }
 
 /** The facet dimensions, spelled the same on `trace_list_mv` and `trace_facets_hourly`. */
@@ -613,10 +614,29 @@ function traceFacetDimensionConditions(
 	]
 }
 
-function traceListWindowConditions(
-	$: ColumnAccessor<typeof TraceListMv.columns>,
-	opts: TracesDurationStatsOpts,
-) {
+/**
+ * Whether `trace_facets_hourly` can answer the whole-hour interior. It keeps the
+ * facet dimensions and nothing finer, so a duration bound or an attribute
+ * filter, which each need the individual root span, reads `trace_list_mv` for
+ * the whole window.
+ */
+export function canUseTraceFacetsRollup(
+	opts: TracesDurationStatsOpts & {
+		readonly attributeFilterKey?: string
+		readonly resourceFilterKey?: string
+	},
+): boolean {
+	return (
+		!opts.rawOnly &&
+		opts.minDurationMs == null &&
+		opts.maxDurationMs == null &&
+		!opts.attributeFilterKey &&
+		!opts.resourceFilterKey
+	)
+}
+
+/** `trace_list_mv` rows in the window, narrowed to the partial end hours when the rollup has the rest. */
+function traceListWindowConditions($: ColumnAccessor<typeof TraceListMv.columns>, opts: TracesFacetsOpts) {
 	return [
 		$.OrgId.eq(param.string("orgId")),
 		$.Timestamp.gte(param.dateTimeSeconds("startTime")),
@@ -624,6 +644,7 @@ function traceListWindowConditions(
 		...traceFacetDimensionConditions($, opts),
 		CH.when(opts.minDurationMs, (v: number) => $.Duration.gte(v * 1000000)),
 		CH.when(opts.maxDurationMs, (v: number) => $.Duration.lte(v * 1000000)),
+		CH.whenTrue(canUseTraceFacetsRollup(opts), () => edgeCondition("Timestamp")),
 	]
 }
 
@@ -638,24 +659,13 @@ function traceFacetsHourlyInteriorConditions(
 	]
 }
 
-/**
- * Whether `trace_facets_hourly` can answer the whole-hour interior. It keeps the
- * facet dimensions and nothing finer, so a duration bound or an attribute
- * filter, which each need the individual root span, reads `trace_list_mv` for
- * the whole window.
- */
-export function canUseTraceFacetsRollup(opts: {
-	readonly minDurationMs?: number
-	readonly maxDurationMs?: number
-	readonly attributeFilterKey?: string
-	readonly resourceFilterKey?: string
-}): boolean {
-	return (
-		opts.minDurationMs == null &&
-		opts.maxDurationMs == null &&
-		!opts.attributeFilterKey &&
-		!opts.resourceFilterKey
-	)
+/** The raw tier, plus the hourly interior when the rollup can answer it. */
+function traceFacetTiers<Output extends Record<string, unknown>>(
+	opts: TracesFacetsOpts,
+	raw: CHQuery<ColumnDefs, Output, {}>,
+	hourly: () => CHQuery<ColumnDefs, Output, {}>,
+): CHUnionQuery<Output> {
+	return canUseTraceFacetsRollup(opts) ? unionAll(raw, hourly()) : unionAll(raw)
 }
 
 export interface TracesDurationStatsOutput {
@@ -668,44 +678,32 @@ export interface TracesDurationStatsOutput {
 export function tracesDurationStatsQuery(
 	opts: TracesDurationStatsOpts,
 ): CHQuery<ColumnDefs, TracesDurationStatsOutput, {}> {
-	if (!canUseTraceFacetsRollup(opts)) {
-		return from(TraceListMv)
-			.select(($) => ({
-				minDurationMs: CH.min_($.Duration).div(1000000),
-				maxDurationMs: CH.max_($.Duration).div(1000000),
-				p50DurationMs: finiteOrZero(CH.quantile(0.5)($.Duration).div(1000000)),
-				p95DurationMs: finiteOrZero(CH.quantile(0.95)($.Duration).div(1000000)),
-			}))
-			.where(($) => traceListWindowConditions($, opts))
-			.format("JSON")
-	}
-
 	// Each tier reports its row count beside its extremes: an aggregate over an
 	// empty tier returns 0 rather than nothing, and that 0 must not win the
 	// outer `min`. The t-digest states merge across tiers; an empty one is inert.
-	const rawEdges = from(TraceListMv)
+	const raw = from(TraceListMv)
 		.select(($) => ({
 			traceCount: CH.count(),
 			durationMin: CH.min_($.Duration),
 			durationMax: CH.max_($.Duration),
 			durationQuantiles: CH.rawExpr("quantilesTDigestState(0.5, 0.95)(Duration)", T.string),
 		}))
-		.where(($) => [...traceListWindowConditions($, opts), edgeCondition("Timestamp")])
-
-	const hourlyInterior = from(TraceFacetsHourly)
-		.select(($) => ({
-			traceCount: CH.sum($.TraceCount),
-			durationMin: CH.min_($.DurationMin),
-			durationMax: CH.max_($.DurationMax),
-			durationQuantiles: CH.rawExpr(
-				"quantilesTDigestMergeState(0.5, 0.95)(DurationQuantiles)",
-				T.string,
-			),
-		}))
-		.where(($) => traceFacetsHourlyInteriorConditions($, opts))
+		.where(($) => traceListWindowConditions($, opts))
+	const hourly = () =>
+		from(TraceFacetsHourly)
+			.select(($) => ({
+				traceCount: CH.sum($.TraceCount),
+				durationMin: CH.min_($.DurationMin),
+				durationMax: CH.max_($.DurationMax),
+				durationQuantiles: CH.rawExpr(
+					"quantilesTDigestMergeState(0.5, 0.95)(DurationQuantiles)",
+					T.string,
+				),
+			}))
+			.where(($) => traceFacetsHourlyInteriorConditions($, opts))
 
 	const quantiles = "quantilesTDigestMerge(0.5, 0.95)(durationQuantiles)"
-	return fromUnion(unionAll(rawEdges, hourlyInterior), "duration_tiers")
+	return fromUnion(traceFacetTiers(opts, raw, hourly), "duration_tiers")
 		.select(() => ({
 			minDurationMs: CH.rawExpr("minIf(durationMin, traceCount > 0) / 1000000", T.float64),
 			maxDurationMs: CH.rawExpr("maxIf(durationMax, traceCount > 0) / 1000000", T.float64),
@@ -803,9 +801,6 @@ export function tracesFacetsQuery(opts: TracesFacetsOpts): CHUnionQuery<TracesFa
 		return conditions
 	}
 
-	const useRollup = canUseTraceFacetsRollup(opts)
-	type FacetBranch = CHQuery<ColumnDefs, TracesFacetsOutput, any>
-
 	// `colName` is a real column of both tiers, so the accessor already knows how
 	// it decodes — naming it as a `dynamicColumn` threw that away and cost every
 	// facet branch its row schema.
@@ -814,36 +809,20 @@ export function tracesFacetsQuery(opts: TracesFacetsOpts): CHUnionQuery<TracesFa
 		facetType: string,
 		dropEmpty: boolean,
 		limit = 50,
-	): FacetBranch => {
-		if (!useRollup) {
-			return from(TraceListMv)
-				.select(($) => ({
-					name: $[colName],
-					count: CH.count(),
-					facetType: CH.lit(facetType),
-				}))
-				.where(($) => [...rawWhere($), CH.whenTrue(dropEmpty, () => $[colName].neq(""))])
-				.groupBy("name")
-				.orderBy(["count", "desc"])
-				.limit(limit)
-		}
-
-		const rawEdges = from(TraceListMv)
+	) => {
+		const raw = from(TraceListMv)
 			.select(($) => ({ name: $[colName], count: CH.count() }))
-			.where(($) => [
-				...rawWhere($),
-				edgeCondition("Timestamp"),
-				CH.whenTrue(dropEmpty, () => $[colName].neq("")),
-			])
+			.where(($) => [...rawWhere($), CH.whenTrue(dropEmpty, () => $[colName].neq(""))])
 			.groupBy("name")
-		const hourlyInterior = from(TraceFacetsHourly)
-			.select(($) => ({ name: $[colName], count: CH.sum($.TraceCount) }))
-			.where(($) => [
-				...traceFacetsHourlyInteriorConditions($, opts),
-				CH.whenTrue(dropEmpty, () => $[colName].neq("")),
-			])
-			.groupBy("name")
-		return fromUnion(unionAll(rawEdges, hourlyInterior), `${facetType}_tiers`)
+		const hourly = () =>
+			from(TraceFacetsHourly)
+				.select(($) => ({ name: $[colName], count: CH.sum($.TraceCount) }))
+				.where(($) => [
+					...traceFacetsHourlyInteriorConditions($, opts),
+					CH.whenTrue(dropEmpty, () => $[colName].neq("")),
+				])
+				.groupBy("name")
+		return fromUnion(traceFacetTiers(opts, raw, hourly), `${facetType}_tiers`)
 			.select(($) => ({
 				name: $.name,
 				count: CH.sum($.count),
@@ -854,24 +833,15 @@ export function tracesFacetsQuery(opts: TracesFacetsOpts): CHUnionQuery<TracesFa
 			.limit(limit)
 	}
 
-	const errorCountQuery = (): FacetBranch => {
-		if (!useRollup) {
-			return from(TraceListMv)
-				.select(() => ({
-					name: CH.lit("error"),
-					count: CH.count(),
-					facetType: CH.lit("errorCount"),
-				}))
-				.where(($) => [...rawWhere($), $.HasError.eq(1)])
-		}
-
-		const rawEdges = from(TraceListMv)
+	const errorCountQuery = () => {
+		const raw = from(TraceListMv)
 			.select(() => ({ count: CH.count() }))
-			.where(($) => [...rawWhere($), edgeCondition("Timestamp"), $.HasError.eq(1)])
-		const hourlyInterior = from(TraceFacetsHourly)
-			.select(($) => ({ count: CH.sum($.TraceCount) }))
-			.where(($) => [...traceFacetsHourlyInteriorConditions($, opts), $.HasError.eq(1)])
-		return fromUnion(unionAll(rawEdges, hourlyInterior), "errorCount_tiers").select(($) => ({
+			.where(($) => [...rawWhere($), $.HasError.eq(1)])
+		const hourly = () =>
+			from(TraceFacetsHourly)
+				.select(($) => ({ count: CH.sum($.TraceCount) }))
+				.where(($) => [...traceFacetsHourlyInteriorConditions($, opts), $.HasError.eq(1)])
+		return fromUnion(traceFacetTiers(opts, raw, hourly), "errorCount_tiers").select(($) => ({
 			name: CH.lit("error"),
 			count: CH.sum($.count),
 			facetType: CH.lit("errorCount"),
@@ -885,7 +855,7 @@ export function tracesFacetsQuery(opts: TracesFacetsOpts): CHUnionQuery<TracesFa
 		httpStatus: () => makeFacetQuery("HttpStatusCode", "httpStatus", true, 20),
 		deploymentEnv: () => makeFacetQuery("DeploymentEnv", "deploymentEnv", true, 20),
 		serviceNamespace: () => makeFacetQuery("ServiceNamespace", "serviceNamespace", true, 20),
-	} satisfies Record<TracesFacetDimension, () => FacetBranch>
+	} satisfies Record<TracesFacetDimension, () => ReturnType<typeof makeFacetQuery>>
 
 	if (opts.facet) {
 		return unionAll(facetBranches[opts.facet]()).format("JSON")

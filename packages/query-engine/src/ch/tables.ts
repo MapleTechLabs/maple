@@ -203,9 +203,6 @@ export const TraceFacetsHourly = table("trace_facets_hourly", {
 	TraceCount: T.uint64,
 	DurationMin: T.uint64,
 	DurationMax: T.uint64,
-	// AggregateFunction(quantilesTDigest(0.5, 0.95), UInt64) — opaque state, only
-	// ever touched via raw `...MergeState`/`...Merge` exprs.
-	DurationQuantiles: T.string,
 })
 
 export const Logs = table("logs", {

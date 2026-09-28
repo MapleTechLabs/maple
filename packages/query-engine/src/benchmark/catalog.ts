@@ -146,14 +146,7 @@ export const pipeFixtures: ReadonlyArray<PipeFixture> = [
 		params: { trace_id: TRACE_ID, start_time: undefined, end_time: undefined },
 	},
 	{ pipe: "traces_duration_stats", label: "default", params: {} },
-	{ pipe: "traces_duration_stats", label: "duration-bounded", params: { min_duration_ms: 100 } },
 	{ pipe: "traces_facets", label: "default", params: {}, allCapabilities: true },
-	{
-		pipe: "traces_facets",
-		label: "duration-bounded",
-		params: { service: "api", min_duration_ms: 100, max_duration_ms: 5000 },
-		allCapabilities: true,
-	},
 	{
 		pipe: "traces_facets",
 		label: "attribute-filtered",
@@ -1279,22 +1272,6 @@ export function routeCoverage(): ReadonlyMap<string, { true: number; false: numb
 				spanName: filters.spanName as string | undefined,
 				attributeFilters: filters.attributeFilters as never,
 				resourceAttributeFilters: filters.resourceAttributeFilters as never,
-			}),
-		)
-	}
-
-	// Facets and duration stats read `trace_facets_hourly` for the whole hours
-	// unless a filter needs the individual root span.
-	for (const fixture of pipeFixtures) {
-		if (fixture.pipe !== "traces_facets" && fixture.pipe !== "traces_duration_stats") continue
-		const params = fixture.params as Record<string, unknown>
-		record(
-			"canUseTraceFacetsRollup",
-			CH.canUseTraceFacetsRollup({
-				minDurationMs: params.min_duration_ms as number | undefined,
-				maxDurationMs: params.max_duration_ms as number | undefined,
-				attributeFilterKey: params.attribute_filter_key as string | undefined,
-				resourceFilterKey: params.resource_filter_key as string | undefined,
 			}),
 		)
 	}

@@ -4,7 +4,7 @@ import { TestClock } from "effect/testing"
 import { Deferred, Effect, Exit, Fiber, Option, Schema } from "effect"
 import { strict as nodeAssert } from "node:assert"
 import { MetricName, OrgId, ServiceName, UserId } from "@maple/domain"
-import { RawSqlValidationError, WarehouseUpstreamError } from "@maple/domain/http"
+import { RawSqlValidationError, WarehouseConfigError, WarehouseUpstreamError } from "@maple/domain/http"
 import {
 	baselineWarehouseCapabilities,
 	type QueryEngineEvaluateRequest,
@@ -289,6 +289,49 @@ describe("makeQueryEngineExecute", () => {
 				kind: "count",
 				source: "logs",
 				data: { total: 42 },
+			})
+		}),
+	)
+
+	it.effect("reads trace_list_mv when the cluster lacks trace_facets_hourly", () =>
+		Effect.gen(function* () {
+			const queries: Array<string> = []
+			const execute = makeQueryEngineExecute(
+				makeTinybirdStub({
+					sqlQuery: (_tenant, sql) => {
+						queries.push(sql)
+						return sql.includes("trace_facets_hourly")
+							? Effect.fail(
+									new WarehouseConfigError({
+										message: "Unknown table expression identifier 'trace_facets_hourly'",
+										pipeName: "tracesDurationStats",
+										clickhouseType: "UNKNOWN_TABLE",
+									}),
+								)
+							: Effect.succeed([
+									{
+										minDurationMs: 1,
+										maxDurationMs: 9,
+										p50DurationMs: 4,
+										p95DurationMs: 8,
+									},
+								])
+					},
+				}),
+			)
+
+			const response = yield* execute(tenant, {
+				startTime: "2026-01-01 00:00:00",
+				endTime: "2026-01-08 00:00:00",
+				query: { kind: "stats", source: "traces" },
+			})
+
+			assert.strictEqual(queries.length, 2)
+			assert.ok(!queries[1]!.includes("trace_facets_hourly"))
+			assert.deepStrictEqual(response.result, {
+				kind: "stats",
+				source: "traces",
+				data: { minDurationMs: 1, maxDurationMs: 9, p50DurationMs: 4, p95DurationMs: 8 },
 			})
 		}),
 	)
