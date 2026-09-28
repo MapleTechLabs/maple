@@ -812,12 +812,15 @@ function modelUsage(
  * The tool calls the session made, in start order, a call paused for a human
  * counted once. The interrupted call leaves a tool span that recorded no
  * result and did not fail, and the resumed turn opens another under the same
- * `gen_ai.tool.call.id` that carries the result (Strands, Mastra, Google
- * ADK) — so the paused copy is dropped when a later copy with a result
- * exists. OpenAI Agents stamps no call id on its tool spans, so its copies
- * still count twice. Nothing else is merged: two calls that merely share an id
- * (parallel lanes, a provider numbering its calls per turn) both carry
- * results, and a session captured without payloads keeps every span.
+ * `gen_ai.tool.call.id` that carries the result on its attributes (Strands)
+ * — so the paused copy is dropped when a later copy with a result exists.
+ * Not covered, and still counted twice: Google ADK (the outcome is only in
+ * `gcp.vertex.agent.tool_response`, and the paused copy's confirmation
+ * request reads as a result), Strands versions that record results in span
+ * events, and OpenAI Agents (no call id). Nothing else is merged: two calls
+ * that merely share an id (parallel lanes, a provider numbering its calls per
+ * turn) both carry results, and a session captured without payloads keeps
+ * every span.
  */
 function countedToolCalls(ordered: readonly AiSessionSpan[]): readonly AiSessionSpan[] {
 	const tools = ordered.filter((span) => classifyAiSpan(span) === "tool")
