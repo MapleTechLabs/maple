@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest"
 import type { AiSessionSpan } from "@maple/domain/http"
 
 import { agentSpan, llmSpan, makeSpan, toolSpan, userMessages } from "./span-test-support"
+import { buildSessionSummary } from "./session-summary"
 import { buildSessionTurns, classifyAiSpan, isLlmCall, spanTtftMs } from "./session-turns"
 
 const SECOND = 1000
@@ -168,6 +169,61 @@ describe("buildSessionTurns", () => {
 		expect(turns.every((turn) => turn.spans.length > 0)).toBe(true)
 		expect(turns.map((turn) => turn.index)).toEqual([1])
 		expect(Number.isFinite(turns[0]!.startMs)).toBe(true)
+	})
+
+	// Microsoft Agent Framework workflows: `workflow.build` is a one-span trace
+	// of its own, read as an agent root by its name, ahead of `workflow.run`.
+	// It became an empty turn 1 with no label, and the session lost its title.
+	it("folds an anchor that opened no work into the turn after it", () => {
+		const maf = {
+			vendorId: "microsoft_agent_framework",
+			sessionId: "wf-1",
+			genAi: { conversationId: "wf-1" },
+		}
+		const spans = [
+			makeSpan({
+				...maf,
+				spanId: "build",
+				traceId: "trace-build",
+				spanName: "workflow.build",
+				startMs: 0,
+				durationMs: 2,
+			}),
+			makeSpan({
+				...maf,
+				spanId: "run",
+				traceId: "trace-run",
+				spanName: "workflow.run",
+				startMs: 50,
+				durationMs: 10 * SECOND,
+			}),
+			agentSpan({
+				...maf,
+				spanId: "orchestrator",
+				parentSpanId: "run",
+				traceId: "trace-run",
+				startMs: 60,
+				durationMs: 4 * SECOND,
+			}),
+			llmSpan({
+				...maf,
+				spanId: "chat",
+				parentSpanId: "orchestrator",
+				traceId: "trace-run",
+				startMs: 70,
+				durationMs: 4 * SECOND,
+				genAi: {
+					conversationId: "wf-1",
+					inputMessages: userMessages("Produce a mini briefing about Amsterdam"),
+				},
+			}),
+		]
+		const turns = buildSessionTurns(spans)
+
+		expect(turns).toHaveLength(1)
+		expect(turns[0]!.spans.map((span) => span.spanId)).toEqual(["build", "run", "orchestrator", "chat"])
+		expect(turns[0]!.label).toBe("Produce a mini briefing about Amsterdam")
+		expect(buildSessionSummary({ spans, turns }).title).toBe("Produce a mini briefing about Amsterdam")
 	})
 
 	it("falls back to root agent invocations when no conversation id exists", () => {

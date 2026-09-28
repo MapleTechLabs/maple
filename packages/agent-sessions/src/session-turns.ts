@@ -163,6 +163,8 @@ export interface SessionTurn {
 	readonly traceIds: readonly string[]
 }
 
+const WORK_CATEGORIES: ReadonlySet<AiSpanCategory> = new Set(["inference", "tool"])
+
 interface TurnAnchor {
 	readonly span: AiSessionSpan
 	readonly kind: TurnAnchorKind
@@ -216,6 +218,28 @@ export function buildSessionTurns(spans: readonly AiSessionSpan[]): readonly Ses
 	for (const { span, startMs } of ordered) {
 		while (cursor + 1 < anchors.length && anchorStarts[cursor + 1] <= startMs) cursor++
 		buckets[turnOf(span) ?? cursor].push(span)
+	}
+
+	// On rules 2 and 3 the boundary is a guess, and an anchor that opened no
+	// work — no model or tool call, no prompt, nothing failed — is not a turn:
+	// Microsoft Agent Framework's one-span `workflow.build` trace ahead of its
+	// `workflow.run` became an empty turn 1 that also took the session's title.
+	// Its spans join the next turn, as spans before the first anchor join turn 1;
+	// the cursor filled the buckets in start order, so they stay in it. A session
+	// with no work anywhere keeps its anchors.
+	const opened = (bucket: readonly AiSessionSpan[]) =>
+		bucket.some(
+			(span) =>
+				WORK_CATEGORIES.has(classifyAiSpan(span)) ||
+				spanFailed(span) ||
+				lastUserMessageText(span.genAi.inputMessages) !== undefined,
+		)
+	if (anchors[0]?.kind !== "conversation" && buckets.some(opened)) {
+		for (let i = 0; i < buckets.length - 1; i++) {
+			if (opened(buckets[i])) continue
+			buckets[i + 1] = [...buckets[i], ...buckets[i + 1]]
+			buckets[i] = []
+		}
 	}
 
 	// A turn with no spans has no start, no end and nothing to draw. Rule 1 can no
