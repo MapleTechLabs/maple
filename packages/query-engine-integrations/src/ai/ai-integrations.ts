@@ -147,7 +147,7 @@ const decodeAttribute = (type: AiFieldDef["type"], raw: string): unknown => {
  * Mastra's (`gen_ai.usage.reasoning_tokens`) and Pydantic AI's
  * (`gen_ai.usage.details.reasoning_tokens`), both seen in their exports.
  */
-const GENAI_LEGACY_ALIASES = {
+const GENAI_DEFAULT_ALIASES = {
 	usageInputTokens: ["gen_ai.usage.prompt_tokens"],
 	usageOutputTokens: ["gen_ai.usage.completion_tokens"],
 	usageReasoningOutputTokens: [
@@ -191,7 +191,7 @@ const genAiSources = {} as Record<AiGenAiField, readonly string[]>
 for (const [field, def] of Object.entries(AI_GENAI_FIELDS)) {
 	genAiSources[field as AiGenAiField] = [def.key]
 }
-for (const [field, aliases] of Object.entries(GENAI_LEGACY_ALIASES)) {
+for (const [field, aliases] of Object.entries(GENAI_DEFAULT_ALIASES)) {
 	genAiSources[field as AiGenAiField] = [...genAiSources[field as AiGenAiField], ...aliases]
 }
 

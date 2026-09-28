@@ -209,7 +209,7 @@ describe("legacy aliases", () => {
 	]
 
 	for (const [key, value, field, expected] of cases) {
-		it(`reads the deprecated ${key} into ${field}`, () => {
+		it(`reads ${key} into ${field}`, () => {
 			expect(mapAiSpan(row({ [key]: value })).genAi[field]).toEqual(expected)
 		})
 	}
@@ -224,7 +224,7 @@ describe("legacy aliases", () => {
 
 	it("prefers the canonical cache_creation key over the cache_write spelling", () => {
 		// Pins the alias ordering that protects rows materialized under the
-		// Anthropic-era key: reordering GENAI_LEGACY_ALIASES must fail here.
+		// Anthropic-era key: reordering GENAI_DEFAULT_ALIASES must fail here.
 		const mapped = mapAiSpan(
 			row({
 				"gen_ai.usage.cache_creation.input_tokens": "106",
