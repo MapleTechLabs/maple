@@ -2,6 +2,7 @@ import { type IdentifyInput, setConsent, type TrackProps, track } from "@maple/b
 import type { MapleBrowserConfig } from "./config"
 import { type CaptureExceptionOptions, captureException } from "./errors"
 import { identify, init, type MapleBrowserHandle } from "./init"
+import { endNavigation, startNavigation, type TracedOptions, traced } from "./navigation"
 
 export type {
 	IdentifyInput,
@@ -13,6 +14,7 @@ export type {
 export type { MapleBrowserConfig } from "./config"
 export type { CaptureExceptionOptions } from "./errors"
 export type { MapleBrowserHandle } from "./init"
+export type { TracedOptions } from "./navigation"
 
 /** The `MapleBrowser` namespace object. */
 export interface MapleBrowserApi {
@@ -41,6 +43,36 @@ export interface MapleBrowserApi {
 	captureException: (error: unknown, options?: CaptureExceptionOptions) => void
 	/** Grant or revoke consent when `privacy.requireConsent` is on. */
 	setConsent: (granted: boolean) => void
+	/**
+	 * Call when the router starts a navigation, with the concrete path. The
+	 * first call opens a `pageload` span, joined to the server render's trace
+	 * when the document response carried a `Server-Timing: traceparent;desc="…"`
+	 * entry or the page a `<meta name="traceparent">` tag. Later calls open
+	 * `navigate` spans. A navigation still open is ended with
+	 * `app.navigation.interrupted: true`. Spans nothing until tracing is live
+	 * (after `init()`, with consent), but the first call in the page still
+	 * counts as the page load. No-op on the server.
+	 */
+	startNavigation: (path: string) => void
+	/**
+	 * Call when the new route is ready. `route` is its template, like
+	 * `/projects/:id` (never the concrete URL): the span is renamed, like
+	 * `navigate /projects/:id`, and ended. No-op when no navigation is open.
+	 */
+	endNavigation: (route?: string) => void
+	/**
+	 * Run route-level data loading in a span under the open navigation (or the
+	 * active context when none is open), named like `loader /projects/:id`.
+	 * Requests `fn` starts before its first `await` are children of the span;
+	 * the browser has no async context, so later ones are not.
+	 *
+	 * A throw is recorded on the span and marks it Error, unless
+	 * `options.isFailure` returns `false` for it (redirects, not-found). An
+	 * error recorded here is not reported again by `captureException` or the
+	 * global handlers. `fn`'s result and error pass through unchanged; without
+	 * live tracing, `fn` just runs.
+	 */
+	traced: <T>(name: string, fn: () => Promise<T>, options?: TracedOptions) => Promise<T>
 }
 
 /**
@@ -61,4 +93,13 @@ export interface MapleBrowserApi {
  * MapleBrowser.track("checkout_completed", { plan: "pro", seats: 5 })
  * ```
  */
-export const MapleBrowser: MapleBrowserApi = { init, identify, track, captureException, setConsent }
+export const MapleBrowser: MapleBrowserApi = {
+	init,
+	identify,
+	track,
+	captureException,
+	setConsent,
+	startNavigation,
+	endNavigation,
+	traced,
+}
