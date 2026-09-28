@@ -38,7 +38,7 @@ Browser code takes the **public** ingest key (`maple_pk_…`) only. It is write-
 
 ## Step 2: Install and initialize the browser SDK
 
-Install `@maple-dev/browser` with the project's package manager. Initialize it once, before the app renders, at the place the framework reference names:
+Install `@maple-dev/browser` and `@opentelemetry/api` with the project's package manager. `tracing.ts` imports `@opentelemetry/api`, which is only a transitive dependency of the SDK, and strict package managers (pnpm) won't resolve it. Initialize it once, before the app renders, at the place the framework reference names:
 
 ```ts
 import { MapleBrowser } from "@maple-dev/browser"
@@ -118,10 +118,11 @@ Keep whatever the hook already does (logging, other vendors, fallback UI).
 ## Step 7: Verify
 
 1. Run the project's typecheck and build for the frontend. A build broken by your changes is a failure; fix it.
-2. Start the dev server and load a page, then navigate to another route:
+2. Start the production build (or the dev server, if the framework behaves the same in both) and load a page, then navigate to another route:
 	- requests to `https://ingest(.eu).maple.dev/v1/traces` return 200 (a 401 means wrong key or wrong region);
 	- API requests carry a `traceparent` header, and cross-origin ones pass their CORS preflight;
-	- with SSR, the document response has a `server-timing` header containing `traceparent`.
+	- with SSR, the document response has a `server-timing` header containing `traceparent`;
+	- throw from one route's data loading and from one event handler: each error appears on exactly one span (the loader span, or one `browser.uncaught_error`), never twice and never zero times. Check the `/v1/traces` request bodies in the network tab.
 3. With a real key and the Maple MCP tools available, wait a minute, then `search_traces` for the frontend's `serviceName` and `inspect_trace` a `navigate …` trace: it should contain the loader span, `fetch` spans and the backend's spans. With `MAPLE_TEST`, nothing is stored; say so instead.
 
 ## Step 8: Hand-off

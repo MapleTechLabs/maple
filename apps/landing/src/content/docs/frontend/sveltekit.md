@@ -84,10 +84,10 @@ Browser and server clocks disagree, so a server span can appear to start slightl
 
 ## Add the tracing helper
 
-Out of the box, every `fetch()` is its own trace, so a navigation that makes three requests shows up as three unrelated traces. The fix is a span per navigation, with the data-loading and `fetch` spans nested under it. Add this helper as `src/tracing.ts`; the rest of this guide connects it to SvelteKit:
+Out of the box, every `fetch()` is its own trace, so a navigation that makes three requests shows up as three unrelated traces. The fix is a span per navigation, with the data-loading and `fetch` spans nested under it. Add this helper as `src/lib/tracing.ts`; the rest of this guide connects it to SvelteKit:
 
 ```ts
-// src/tracing.ts
+// src/lib/tracing.ts
 import { context, propagation, type Span, SpanStatusCode, trace } from "@opentelemetry/api"
 
 const tracer = trace.getTracer("acme-web")
@@ -231,7 +231,9 @@ The edge cases are where SvelteKit differs from other routers:
 - **A click during a pending navigation doesn't fire `beforeNavigate` again.** SvelteKit skips the callbacks while a navigation is in progress. The first navigation is aborted and its `complete` promise rejects, but the second one is still loading, so the `navigating.type` check keeps the span open. You get one span covering both clicks, named after the route the user ended up on, with `url.path` from the first click.
 - **Cancelled navigations end right away.** When a page calls `cancel()` (to guard unsaved changes, say), `complete` rejects and nothing else is loading. The span ends with the plain name `navigate`.
 - **Redirects stay in one span.** A `load` function that throws `redirect()` starts a new navigation internally, but without calling `beforeNavigate`. The span covers both routes and is named after the destination.
-- **Hash links don't navigate.** A click on `#section` on the same page is handled without a navigation, so no hook fires and there's no span. Query-string changes like `?tab=2` are real navigations and do.
+- **Back and forward are navigations.** Both hooks fire, so each gets a `navigate` span, and the page's universal `load` functions run again under it.
+- **Hash links don't navigate.** A click on `#section` on the same page is handled without a navigation, so no hook fires and there's no span. Query-string changes like `?tab=2` are real navigations and do, but only `load` functions that read `url.searchParams` run again.
+- **Unknown routes reload the page.** A link to a path that matches no route makes SvelteKit load a new document. Its span is a plain `pageload`, since there's no route id to name it after.
 - **`invalidate()`, `invalidateAll()`, and shallow routing** (`pushState` and `replaceState` from `$app/navigation`) don't fire either hook. Load functions rerun by `invalidate` show up as their own traces.
 
 ## Trace universal load functions
@@ -260,7 +262,7 @@ import { loadSpan } from "$lib/load-span"
 import type { PageLoad } from "./$types"
 
 export const load: PageLoad = async ({ fetch, params, route }) =>
-	loadSpan(`load ${route.id}`, async () => {
+	loadSpan(`loader ${route.id}`, async () => {
 		// Start both requests before the first await, so both nest under the span
 		const [project, members] = await Promise.all([
 			fetch(`/api/projects/${params.id}`),
@@ -276,11 +278,12 @@ export const load: PageLoad = async ({ fetch, params, route }) =>
 
 The [`await` problem](#the-await-problem) applies here too: only requests started before the first `await` nest under the span. That's why the example starts both with `Promise.all`.
 
-Three things to know about load spans:
+Four things to know about load spans:
 
 - **On the first page load, the load span is nearly empty.** Load functions run again in the browser during hydration, but their `fetch` calls are answered from responses the server inlined into the HTML. There are no network requests, so the span lasts about 0ms. The real requests are in the server half of the trace.
-- **Preloading moves loads before the click.** The default `app.html` sets `data-sveltekit-preload-data="hover"`, so load functions often run when the user hovers a link. There's no navigation yet, so those load spans become their own traces, and the navigation after the click is short because the data is cached.
-- **Server `load` functions show up anyway.** `+page.server.ts` runs on the server, and the browser fetches its result from a `__data.json` URL. That request carries `traceparent`, and SvelteKit reads it, so the server's `sveltekit.load` span lands under the navigation.
+- **Preloading moves loads before the click.** The default `app.html` sets `data-sveltekit-preload-data="hover"`, so load functions often run when the user hovers a link. There's no navigation yet, so those load spans and their fetches become their own traces. The `navigate` span after the click has no children and lasts a few milliseconds, because the data is already there.
+- **Server `load` functions get their own trace.** `+page.server.ts` runs on the server, and the browser fetches its result from a `__data.json` URL. SvelteKit starts that request outside any `load` span, so its `fetch` span, and the server's `sveltekit.load` span behind it, form a separate trace next to the navigation.
+- **A 404 from your API isn't a failure.** When a load calls `error(404)` after a 404 response, the navigation and load spans stay OK. The `fetch` span for the 404 itself is marked as an error, as OpenTelemetry does for any 4xx response to a client request.
 
 ## Report errors from SvelteKit's handleError hook
 
@@ -308,31 +311,34 @@ export const handleError: HandleClientError = ({ error, status }) => {
 
 The 404 check is there because a link to a route that doesn't exist also reaches `handleError`, and you probably don't want every mistyped URL as an issue.
 
-Errors thrown while a component renders don't go through `handleError` by default. When one escapes to the window, the SDK's global handlers record it. SvelteKit has an experimental `kit.experimental.handleRenderingErrors` option that wraps components in `<svelte:boundary>` and sends those errors through `handleError` too.
+Errors thrown while a component renders don't go through `handleError` by default. In the browser they escape to the window, and the SDK's global handlers record them once as `browser.uncaught_error`. SvelteKit has an experimental `handleRenderingErrors` option that wraps components in `<svelte:boundary>`, renders your `+error.svelte` page in place of the broken component, and sends those errors through `handleError` too, where they're reported as `sveltekit.client_error`.
 
-On the server you don't need a `handleError` for tracing. With SvelteKit's tracing on, an unexpected error is recorded on the `load` or `handle` span it was thrown in.
+On the server, SvelteKit's tracing records an unexpected error on the `load` or `handle` span it was thrown in, so a server `handleError` would record those twice. Errors thrown while rendering on the server are the gap: the response is a 500 and the server span is marked as an error, but no span records the exception itself.
 
 ## Server-side tracing with SvelteKit's built-in OpenTelemetry
 
-Since version 2.31, SvelteKit can emit OpenTelemetry spans for the server side of a request. Both switches are under `experimental`, which means they can change in any release:
+Since version 2.31, SvelteKit can emit OpenTelemetry spans for the server side of a request. Both switches are under `experimental`, which means they can change in any release. Projects created with `sv create` on SvelteKit 2.62 or later keep their SvelteKit options in `vite.config.ts`, passed to the `sveltekit()` plugin, with no `kit` key:
 
-```js
-// svelte.config.js
+```ts
+// vite.config.ts
 import adapter from "@sveltejs/adapter-node"
+import { sveltekit } from "@sveltejs/kit/vite"
+import { defineConfig } from "vite"
 
-/** @type {import('@sveltejs/kit').Config} */
-const config = {
-	kit: {
-		adapter: adapter(),
-		experimental: {
-			tracing: { server: true },
-			instrumentation: { server: true },
-		},
-	},
-}
-
-export default config
+export default defineConfig({
+	plugins: [
+		sveltekit({
+			adapter: adapter(),
+			experimental: {
+				tracing: { server: true },
+				instrumentation: { server: true },
+			},
+		}),
+	],
+})
 ```
+
+If your project has a `svelte.config.js` instead, put the same `experimental` object under `kit` there. SvelteKit ignores `svelte.config.js` when options are passed to the plugin.
 
 `tracing.server` turns on the spans. `instrumentation.server` makes SvelteKit load `src/instrumentation.server.ts` before your app code, which is where the OpenTelemetry Node SDK starts:
 
@@ -357,15 +363,24 @@ const sdk = new NodeSDK({
 		url: `${MAPLE_ENDPOINT}/v1/traces`,
 		headers: { authorization: `Bearer ${MAPLE_KEY}` },
 	}),
-	instrumentations: [getNodeAutoInstrumentations()],
+	instrumentations: [
+		getNodeAutoInstrumentations({
+			// Hashed JS and CSS files: otherwise one trace per asset on every page load
+			"@opentelemetry/instrumentation-http": {
+				ignoreIncomingRequestHook: (request) => request.url?.startsWith("/_app/immutable/") ?? false,
+			},
+		}),
+	],
 })
 
 sdk.start()
 ```
 
-The [Node.js guide](/docs/guides/instrumentation-nodejs) covers logs and metrics too, if you want them from the server. Install `@opentelemetry/api`, `@opentelemetry/sdk-node`, `@opentelemetry/auto-instrumentations-node`, `@opentelemetry/exporter-trace-otlp-proto`, and `import-in-the-middle`.
+The [Node.js guide](/docs/guides/instrumentation-nodejs) covers logs and metrics too, if you want them from the server. Install `@opentelemetry/api`, `@opentelemetry/sdk-node`, `@opentelemetry/auto-instrumentations-node`, `@opentelemetry/exporter-trace-otlp-proto`, and `import-in-the-middle` as `dependencies`, not `devDependencies`: `adapter-node` bundles devDependencies into the build and only leaves `dependencies` as imports, which is what the instrumentation needs to patch them.
 
-Every request then gets a `sveltekit.handle.root` span with the route in `http.route`, a `sveltekit.resolve` span for rendering, and a `sveltekit.load` span per `load` function. SvelteKit also reads an incoming `traceparent`, which is what connects the `__data.json` requests above. One thing to know when you query these: every load span has the same name, and `sveltekit.load.node_id` tells you which file it came from.
+The `/_app/immutable/` filter matches SvelteKit's default `appDir`. Without it, the HTTP instrumentation starts a trace for every script and stylesheet the browser downloads.
+
+Every request then gets an HTTP server span with a `sveltekit.handle.root` span under it, which has the route in `http.route`, a `sveltekit.resolve` span for rendering, and a `sveltekit.load` span per `load` function. SvelteKit also reads an incoming `traceparent`, which is what connects the browser's `__data.json` requests to the server's spans. One thing to know when you query these: every load span has the same name, and `sveltekit.load.node_id` tells you which file it came from.
 
 ### Hand the server's trace to the browser
 
@@ -423,7 +438,7 @@ Yes, on the server. Since SvelteKit 2.31, `kit.experimental.tracing.server` emit
 
 ### Why are my SvelteKit load spans not connected to the navigation?
 
-Usually because the load ran during a preload, when the user hovered a link, or because of `invalidate()`. Neither has a navigation to attach to. The other cause is a `fetch` after an `await` inside the load, which loses its parent span.
+Usually because the load ran during a preload, when the user hovered a link, or because of `invalidate()`. Neither has a navigation to attach to. Server `load` functions in `+page.server.ts` are always in their own trace, since the browser requests their data outside any span. The other cause is a `fetch` after an `await` inside the load, which loses its parent span.
 
 ### Does this work with a SvelteKit SPA or adapter-static?
 
