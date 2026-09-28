@@ -1071,7 +1071,7 @@ export const traceFacetsHourly = defineDatasource("trace_facets_hourly", {
 		DurationQuantiles: t.aggregateFunction("quantilesTDigest(0.5, 0.95)", t.uint64()),
 	},
 	engine: engine.aggregatingMergeTree({
-		partitionKey: "toYYYYMM(Hour)",
+		partitionKey: "toDate(Hour)",
 		sortingKey: [
 			"OrgId",
 			"Hour",

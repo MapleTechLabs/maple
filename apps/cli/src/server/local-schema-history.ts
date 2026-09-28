@@ -301,6 +301,19 @@ export const LOCAL_SCHEMA_HISTORY: ReadonlyArray<LocalSchemaHistoryEntry> = Obje
 		manifestDigest: "09eeccdbd568e6d550b739bb05e074dedb399720902b35577d4eb963c48b0a53",
 		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
 	}),
+	Object.freeze({
+		// v25 partitions trace_facets_hourly by day (Tinybird rejects a TTL shorter
+		// than the partition period); the rollup is recreated and rebuilt.
+		//
+		// projectRevision is carried forward deliberately: it is a hardcoded
+		// constant that no longer tracks the generator's header, and the identity
+		// this gate compares is the fingerprint/digest pair.
+		version: 25,
+		fingerprint: "bfaed79bcf2423f5",
+		digest: "bfaed79bcf2423f532b582ab321d4b5f55410853cb381cad1df7041e0663f941",
+		manifestDigest: "005ad815cff50e1c642dfc696cf423d7d9a3c7ee58b8cdcd4ad647bf35ab1297",
+		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
+	}),
 ] as const)
 
 /** Immutable SQLite control DDL identities, checked by clickhouse:schema:check. */
