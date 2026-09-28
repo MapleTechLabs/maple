@@ -25,12 +25,12 @@ export function withMapleProxy(proxy?: ProxyFunction): ProxyFunction {
 		const traceparent = activeTraceparent()
 		const response = await proxy?.(request, event)
 		if (!traceparent || (response && !rendersHere(response, request))) return response
-		// A traceparent the request already carries stays, and the render joins it on
+		// A traceparent the render already receives stays, and the render joins it on
 		// its own. A client navigation's RSC request carries the browser's (replacing
 		// it would cut the render off from the `fetch` span that made it) and needs
 		// nothing back. A page load can carry one a load balancer added, whose trace
 		// the middleware span is in too: the browser still joins through the header.
-		const carried = request.headers.has("traceparent")
+		const carried = renderReceivesTraceparent(response, request)
 		if (carried && request.headers.get("sec-fetch-dest") !== "document") return response
 		const result =
 			response ?? NextResponse.next(carried ? undefined : withTraceparent(request, traceparent))
@@ -38,6 +38,14 @@ export function withMapleProxy(proxy?: ProxyFunction): ProxyFunction {
 		result.headers.append("server-timing", serverTimingEntry(traceparent))
 		return result
 	}
+}
+
+/** The request's own `traceparent` reaches the render, unless your proxy's `next({ request })` left it out. */
+function renderReceivesTraceparent(response: ProxyResult, request: NextRequest): boolean {
+	const overridden = response?.headers.get(OVERRIDE_HEADERS)
+	return typeof overridden === "string"
+		? overridden.split(",").includes("traceparent")
+		: request.headers.has("traceparent")
 }
 
 /** `next()` options that add `traceparent` to the request headers the render sees. */

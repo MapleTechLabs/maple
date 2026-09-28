@@ -118,6 +118,19 @@ describe("withMapleProxy", () => {
 			})
 		})
 
+		it("forwards its own when the proxy's request headers leave the incoming traceparent out", async () => {
+			await inMiddlewareSpan(async (traceparent) => {
+				const request = pageRequest({
+					traceparent: BROWSER_TRACEPARENT,
+					"sec-fetch-dest": "document",
+				})
+				const own = NextResponse.next({ request: { headers: new Headers({ "x-tenant": "acme" }) } })
+				expect(await withMapleProxy(() => own)(request, event)).toBe(own)
+				expect(renderHeaders(request, own)).toEqual({ "x-tenant": "acme", traceparent })
+				expect(own.headers.get("server-timing")).toBe(`traceparent;desc="${traceparent}"`)
+			})
+		})
+
 		it("does nothing when no span is active", async () => {
 			expect(await withMapleProxy()(pageRequest(), event)).toBeUndefined()
 		})
