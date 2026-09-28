@@ -21,6 +21,12 @@ import {
 } from "./step-executor"
 import type { StateDispositionEntry } from "../local-store-migration-module"
 
+/** Rebuilds the facet rollup from every retained root span; the truncate makes a resumed step converge. */
+const TRACE_FACETS_HOURLY_BACKFILL = [
+	"TRUNCATE TABLE IF EXISTS trace_facets_hourly",
+	"INSERT INTO trace_facets_hourly (OrgId, Hour, ServiceName, SpanName, HttpMethod, HttpStatusCode, DeploymentEnv, ServiceNamespace, HasError, TraceCount, DurationMin, DurationMax, DurationQuantiles) SELECT OrgId, toStartOfHour(Timestamp) AS Hour, ServiceName, SpanName, HttpMethod, HttpStatusCode, DeploymentEnv, ServiceNamespace, HasError, count() AS TraceCount, min(Duration) AS DurationMin, max(Duration) AS DurationMax, quantilesTDigestState(0.5, 0.95)(Duration) AS DurationQuantiles FROM trace_list_mv GROUP BY OrgId, Hour, ServiceName, SpanName, HttpMethod, HttpStatusCode, DeploymentEnv, ServiceNamespace, HasError",
+] as const
+
 /** Existing rollup rows keep what the old view bodies wrote and age out with their TTL. */
 const ERROR_RETENTION = {
 	preservationInterval: "error retention horizon",
@@ -1054,19 +1060,13 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 	},
 	{
 		// Both objects are new; the backfill rolls up the root spans already retained.
-		// A resumed step re-runs afterBootstrap on the staged target, hence the truncate.
 		id: "local-0023-to-0024-trace-facets-hourly",
 		from: 23,
 		to: 24,
 		description:
 			"Create trace_facets_hourly and its materialized view, backfilled from trace_list_mv, so the traces sidebar facets read an hourly rollup",
 		clonedBefore: "any DDL runs",
-		afterBootstrap: [
-			backfill(
-				"TRUNCATE TABLE IF EXISTS trace_facets_hourly",
-				"INSERT INTO trace_facets_hourly (OrgId, Hour, ServiceName, SpanName, HttpMethod, HttpStatusCode, DeploymentEnv, ServiceNamespace, HasError, TraceCount, DurationMin, DurationMax, DurationQuantiles) SELECT OrgId, toStartOfHour(Timestamp) AS Hour, ServiceName, SpanName, HttpMethod, HttpStatusCode, DeploymentEnv, ServiceNamespace, HasError, count() AS TraceCount, min(Duration) AS DurationMin, max(Duration) AS DurationMax, quantilesTDigestState(0.5, 0.95)(Duration) AS DurationQuantiles FROM trace_list_mv GROUP BY OrgId, Hour, ServiceName, SpanName, HttpMethod, HttpStatusCode, DeploymentEnv, ServiceNamespace, HasError",
-			),
-		],
+		afterBootstrap: [backfill(...TRACE_FACETS_HOURLY_BACKFILL)],
 		plan: [
 			[
 				"create-trace-facets-hourly",
@@ -1074,6 +1074,34 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 			],
 		],
 		verifies: "Verify the v24 physical schema and the retained raw telemetry counts",
+		dispositions: [
+			{
+				name: "trace_facets_hourly",
+				classification: "derived",
+				disposition: "rebuild-within-retention-horizon",
+				guarantee: "Rebuilt from every root span trace_list_mv retains; both keep 30 days.",
+				preservationInterval: "source retention horizon",
+				sourceRetentionDays: 30,
+				targetRetentionDays: 30,
+			},
+		],
+	},
+	{
+		// Partitioning cannot be altered in place, so the rollup is recreated and rebuilt.
+		id: "local-0024-to-0025-trace-facets-hourly-daily-partition",
+		from: 24,
+		to: 25,
+		description: "Recreate trace_facets_hourly partitioned by day and rebuild it from trace_list_mv",
+		clonedBefore: "any DDL runs",
+		beforeBootstrap: [dropViews("trace_facets_hourly_mv"), dropTables("trace_facets_hourly")],
+		afterBootstrap: [backfill(...TRACE_FACETS_HOURLY_BACKFILL)],
+		plan: [
+			[
+				"recreate-trace-facets-hourly",
+				"Drop trace_facets_hourly and its view, recreate both partitioned by day, and backfill from trace_list_mv",
+			],
+		],
+		verifies: "Verify the v25 physical schema and the retained raw telemetry counts",
 		dispositions: [
 			{
 				name: "trace_facets_hourly",
