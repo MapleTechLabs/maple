@@ -118,17 +118,21 @@ Keep whatever the hook already does (logging, other vendors, fallback UI).
 ## Step 7: Verify
 
 1. Run the project's typecheck and build for the frontend. A build broken by your changes is a failure; fix it.
-2. Start the production build (or the dev server, if the framework behaves the same in both) and load a page, then navigate to another route:
+2. Start the production build (or the dev server, if the framework behaves the same in both) and check the network tab:
 	- requests to `https://ingest(.eu).maple.dev/v1/traces` return 200 (a 401 means wrong key or wrong region);
 	- API requests carry a `traceparent` header, and cross-origin ones pass their CORS preflight;
-	- with SSR, the document response has a `server-timing` header containing `traceparent`;
-	- throw from one route's data loading and from one event handler: each error appears on exactly one span (the loader span, or one `browser.uncaught_error`), never twice and never zero times. Check the `/v1/traces` request bodies in the network tab.
-3. With a real key and the Maple MCP tools available, wait a minute, then `search_traces` for the frontend's `serviceName` and `inspect_trace` a `navigate …` trace: it should contain the loader span, `fetch` spans and the backend's spans. With `MAPLE_TEST`, nothing is stored; say so instead.
+	- with SSR, the document response has a `server-timing` header containing `traceparent`.
+3. Check the span shapes in the JSON bodies of the `/v1/traces` requests. This works with `MAPLE_TEST` too:
+	- a reload gives one `pageload <template>` span, never a bare `pageload`, and it is exported even when the page's render throws;
+	- one click gives exactly one `navigate <template>` span; its `loader …` spans have its `spanId` as `parentSpanId`, and the `fetch` spans sit under those. Repeat for a param-only change (`/items/1` to `/items/2`);
+	- a route whose data loading throws gives exactly one span with an `exception` event, and no `browser.unhandled_rejection` for the same error. An event handler that throws gives exactly one `browser.uncaught_error`.
+4. With a real key and the Maple MCP tools available, wait a minute, then `search_traces` for the frontend's `serviceName` and `inspect_trace` a `navigate …` trace: it should contain the loader span, `fetch` spans and the backend's spans. With `MAPLE_TEST`, nothing is stored; say so instead.
 
 ## Step 8: Hand-off
 
 3 to 7 bullets: packages installed, files created or changed, which APIs got `traceparent` (and any CORS change), which framework hooks were wired, and what you could not verify. Also tell the user:
 
+- `fetch` spans for 4xx responses are marked `Error` (OpenTelemetry's rule for client spans). Maple doesn't open error issues for 4xx spans without exception data, so an expected 404 doesn't create an issue.
 - Session replay is on, with all inputs masked (`replay: { enabled: false }` turns it off), and the SDK keeps a persistent visitor id in localStorage and a cookie (`privacy: { persistVisitorId: false }` turns it off). Both matter for their privacy and cookie notices.
 - If `MAPLE_TEST` is inline: copy the public key from Settings → Ingestion (`<dashboard>/settings?tab=ingestion`) and search-replace `MAPLE_TEST`.
 
