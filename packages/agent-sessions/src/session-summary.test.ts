@@ -1394,6 +1394,26 @@ describe("per-model cost, tools and failure groups", () => {
 		])
 	})
 
+	it("keeps two calls that share an id when both returned, and every call captured without payloads", () => {
+		const lane = (spanId: string, traceId: string, startMs: number, result?: string) =>
+			toolSpan({
+				spanId,
+				traceId,
+				toolName: "run_sql",
+				startMs,
+				durationMs: 10,
+				genAi: { toolCallId: "toolu_1", toolCallResult: result },
+			})
+		const summary = summarize([
+			lane("lane-a", "trace-a", 0, "3 rows"),
+			lane("lane-b", "trace-b", 1_000, "0 rows"),
+			lane("bare-1", "trace-c", 2_000),
+			lane("bare-2", "trace-d", 3_000),
+		])
+
+		expect(summary.work.toolCalls).toBe(4)
+	})
+
 	// Busiest first, with what each cost alongside it: how often the agent
 	// reached for a tool is the ledger's own order.
 	it("orders tools by how often they were called, and totals what they cost", () => {

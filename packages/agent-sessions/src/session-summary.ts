@@ -790,22 +790,27 @@ function modelUsage(
 }
 
 /**
- * The tool calls the session made, each counted once, in start order. A
- * framework that pauses a call for a human opens its tool span twice under one
- * `gen_ai.tool.call.id` — the paused copy and the resumed one, in two traces
- * (Strands, OpenAI Agents, Mastra, Google ADK) — so spans sharing an id are one
- * call, the last to start standing for it. Spans without an id count as they are.
+ * The tool calls the session made, in start order, a call paused for a human
+ * counted once. The interrupted call leaves a tool span that recorded no
+ * result and did not fail, and the resumed turn opens another under the same
+ * `gen_ai.tool.call.id` that carries the result (Strands, OpenAI Agents,
+ * Mastra, Google ADK) — so the paused copy is dropped when a later copy with
+ * a result exists. Nothing else is merged: two calls that merely share an id
+ * (parallel lanes, a provider numbering its calls per turn) both carry
+ * results, and a session captured without payloads keeps every span.
  */
 function countedToolCalls(ordered: readonly AiSessionSpan[]): readonly AiSessionSpan[] {
-	const unkeyed: AiSessionSpan[] = []
-	const byCallId = new Map<string, AiSessionSpan>()
-	for (const span of ordered) {
-		if (classifyAiSpan(span) !== "tool") continue
+	const tools = ordered.filter((span) => classifyAiSpan(span) === "tool")
+	const recorded = (span: AiSessionSpan) => (span.genAi.toolCallResult ?? undefined) !== undefined
+	const resumedAt = new Map<string, number>()
+	for (const span of tools) {
 		const callId = span.genAi.toolCallId
-		if (callId === undefined || callId === "") unkeyed.push(span)
-		else byCallId.set(callId, span)
+		if (callId !== undefined && callId !== "" && recorded(span)) resumedAt.set(callId, spanStartMs(span))
 	}
-	return [...unkeyed, ...byCallId.values()].sort((a, b) => spanStartMs(a) - spanStartMs(b))
+	return tools.filter((span) => {
+		const resumed = resumedAt.get(span.genAi.toolCallId ?? "")
+		return resumed === undefined || resumed <= spanStartMs(span) || recorded(span) || spanFailed(span)
+	})
 }
 
 /**
