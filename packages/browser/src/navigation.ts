@@ -24,14 +24,8 @@ import { liveMapleTracer } from "./tracing"
 import { SDK_NAME, SDK_VERSION } from "./version"
 
 export interface TracedOptions {
-	/**
-	 * Whether a thrown value is a failure. Return `false` for the framework's
-	 * control-flow throws (redirects, not-found): the span then stays Ok and the
-	 * value is not recorded. Default: every throw is a failure.
-	 *
-	 * BOUNDARY: a thrown value is unparsed by definition, so it arrives here as
-	 * `unknown` for the app to narrow.
-	 */
+	/** Return `false` for throws that aren't errors, like redirects or not-found. Default: every throw is an error. */
+	// BOUNDARY: a thrown value is unparsed by definition; the app narrows it.
 	readonly isFailure?: ((error: unknown) => boolean) | undefined
 }
 

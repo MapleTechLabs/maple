@@ -43,34 +43,13 @@ export interface MapleBrowserApi {
 	captureException: (error: unknown, options?: CaptureExceptionOptions) => void
 	/** Grant or revoke consent when `privacy.requireConsent` is on. */
 	setConsent: (granted: boolean) => void
-	/**
-	 * Call when the router starts a navigation, with the concrete path. The
-	 * first call opens a `pageload` span, joined to the server render's trace
-	 * when the document response carried a `Server-Timing: traceparent;desc="…"`
-	 * entry or the page a `<meta name="traceparent">` tag. Later calls open
-	 * `navigate` spans. A navigation still open is ended with
-	 * `app.navigation.interrupted: true`. Spans nothing until tracing is live
-	 * (after `init()`, with consent), but the first call in the page still
-	 * counts as the page load. No-op on the server.
-	 */
+	/** Call when a route change starts, with the new path. The first call in a page is the page load. */
 	startNavigation: (path: string) => void
-	/**
-	 * Call when the new route is ready. `route` is its template, like
-	 * `/projects/:id` (never the concrete URL): the span is renamed, like
-	 * `navigate /projects/:id`, and ended. No-op when no navigation is open.
-	 */
+	/** Call when the new route is ready, with its route pattern (`/projects/:id`), not the URL. */
 	endNavigation: (route?: string) => void
 	/**
-	 * Run route-level data loading in a span under the open navigation (or the
-	 * active context when none is open), named like `loader /projects/:id`.
-	 * Requests `fn` starts before its first `await` are children of the span;
-	 * the browser has no async context, so later ones are not.
-	 *
-	 * A throw is recorded on the span and marks it Error, unless
-	 * `options.isFailure` returns `false` for it (redirects, not-found). An
-	 * error recorded here is not reported again by `captureException` or the
-	 * global handlers. `fn`'s result and error pass through unchanged; without
-	 * live tracing, `fn` just runs.
+	 * Run data loading, like a route loader, in a span under the current navigation.
+	 * Errors are recorded once and rethrown. Only requests started before `fn`'s first `await` nest under the span.
 	 */
 	traced: <T>(name: string, fn: () => Promise<T>, options?: TracedOptions) => Promise<T>
 }
