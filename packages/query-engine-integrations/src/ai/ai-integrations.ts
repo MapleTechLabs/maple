@@ -174,6 +174,9 @@ const GENAI_LEGACY_ALIASES = {
 	providerName: ["gen_ai.system"],
 	requestSeed: ["gen_ai.openai.request.seed"],
 	responseFinishReasons: ["gen_ai.response.finish_reason"],
+	// The semconv's metric name, which Pydantic AI and the Vercel AI SDK v7 also
+	// write as a span attribute — in seconds, like the catalog's key.
+	responseTimeToFirstChunk: ["gen_ai.client.operation.time_to_first_chunk"],
 } satisfies AiSources
 
 // SAFETY: `Object.entries` erases the key/value correlation, so the accumulator

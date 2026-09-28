@@ -297,6 +297,40 @@ describe("maple", () => {
 	})
 })
 
+describe("time to first token", () => {
+	it("reads the seconds-valued client key for every vendor", () => {
+		// Pydantic AI's chat span, vendor `pydantic_ai`.
+		const mapped = mapAiSpan(
+			row("pydantic_ai", { "gen_ai.client.operation.time_to_first_chunk": "0.735740500036627" }),
+		)
+
+		expect(mapped.genAi.responseTimeToFirstChunk).toBe(0.735740500036627)
+	})
+
+	it("converts OpenRouter's and Strands' millisecond keys to seconds", () => {
+		const openRouter = mapAiSpan(
+			row("openrouter", { "trace.metadata.openrouter.first_token_ms": "3784" }),
+		)
+		const strands = mapAiSpan(row("strands", { "gen_ai.server.time_to_first_token": "1127" }))
+
+		expect(openRouter.genAi.responseTimeToFirstChunk).toBe(3.784)
+		expect(strands.genAi.responseTimeToFirstChunk).toBe(1.127)
+	})
+
+	it("keeps a seconds-valued key over a millisecond one, and reads the millisecond key only for its vendor", () => {
+		const both = mapAiSpan(
+			row("strands", {
+				"gen_ai.response.time_to_first_chunk": "0.5",
+				"gen_ai.server.time_to_first_token": "1127",
+			}),
+		)
+		const otherVendor = mapAiSpan(row("pydantic_ai", { "gen_ai.server.time_to_first_token": "1127" }))
+
+		expect(both.genAi.responseTimeToFirstChunk).toBe(0.5)
+		expect(otherVendor.genAi.responseTimeToFirstChunk).toBeUndefined()
+	})
+})
+
 describe("the vendor merge only ever adds keys", () => {
 	it("maps a legacy-only span identically under every vendor", () => {
 		// A vendor's dialect keys are appended to the default's list, so an

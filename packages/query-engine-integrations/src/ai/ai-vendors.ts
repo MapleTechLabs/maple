@@ -1,9 +1,9 @@
 // Per-vendor overrides, keyed by the `maple_ai.vendor.id` the ingest gateway
 // stamped on the span.
 //
-// Five entries cover four dialects: the default GenAI integration already
-// reads canonical `gen_ai.*`, which is what most detected vendors emit, so an
-// override is only worth writing for a framework with a different dialect. Each
+// The default GenAI integration already reads canonical `gen_ai.*`, which is
+// what most detected vendors emit, so an override is only worth writing for a
+// framework with a different dialect, or a key whose unit differs. Each
 // list holds that dialect's keys alone — the default's canonical and legacy
 // keys are appended by the merge in `ai-integrations.ts` and keep priority.
 // Keys that could not be verified against the emitting source were dropped
@@ -25,11 +25,9 @@ import { MAPLE_NATIVE_TURN_ID_ATTR, type MutableAiGenAiValues } from "@maple/dom
  * `ai.generateText.doGenerate`, not a `gen_ai.operation.name` value), and
  * `ai.response.msToFirstChunk` (milliseconds, where
  * `gen_ai.response.time_to_first_chunk` is seconds — silently mixing units is
- * worse than not having the field).
- *
- * `gen_ai.client.operation.time_to_first_chunk` is where AI SDK v7 puts TTFT
- * — already in seconds, so unlike `msToFirstChunk` it aliases cleanly onto
- * the catalog's `responseTimeToFirstChunk`.
+ * worse than not having the field). The v7 SDK's
+ * `gen_ai.client.operation.time_to_first_chunk` is in seconds and read by the
+ * default integration.
  */
 const vercelAiSdkIntegration: AiIntegration = {
 	id: "vercel_ai_sdk",
@@ -50,7 +48,6 @@ const vercelAiSdkIntegration: AiIntegration = {
 			"ai.usage.reasoningTokens",
 			"ai.usage.outputTokenDetails.reasoningTokens",
 		],
-		responseTimeToFirstChunk: ["gen_ai.client.operation.time_to_first_chunk"],
 		inputMessages: ["ai.prompt.messages", "ai.prompt"],
 		toolName: ["ai.toolCall.name"],
 		toolCallId: ["ai.toolCall.id"],
@@ -151,6 +148,21 @@ const mapleIntegration: AiIntegration = {
 }
 
 /**
+ * A dialect that reports time to first token in MILLISECONDS under its own key,
+ * lifted into the catalog's `responseTimeToFirstChunk`, which is seconds. A
+ * refine rather than an alias because the unit differs.
+ */
+const msTimeToFirstChunk = (id: string, key: string): AiIntegration => ({
+	id,
+	refine: (values: MutableAiGenAiValues, ctx: AiRefineContext) => {
+		if (values.responseTimeToFirstChunk !== undefined) return
+		const ms = Number(ctx.attributes[key])
+		if (Number.isFinite(ms) && ms > 0) values.responseTimeToFirstChunk = ms / 1000
+	},
+	refineKeys: [key],
+})
+
+/**
  * Vendor id → override. Every id the gateway can stamp that is NOT in here maps
  * through the default GenAI integration, which is the right answer for the
  * frameworks that emit canonical `gen_ai.*`.
@@ -161,4 +173,8 @@ export const AI_VENDOR_INTEGRATIONS = {
 	"unknown:openinference": openInferenceIntegration,
 	eve: eveIntegration,
 	maple: mapleIntegration,
+	// OpenRouter Broadcast: the gateway's own clock, request in to first token out.
+	openrouter: msTimeToFirstChunk("openrouter", "trace.metadata.openrouter.first_token_ms"),
+	// Strands fills this semconv-named key from the model's `timeToFirstByteMs`.
+	strands: msTimeToFirstChunk("strands", "gen_ai.server.time_to_first_token"),
 } as const satisfies Record<string, AiIntegration>
