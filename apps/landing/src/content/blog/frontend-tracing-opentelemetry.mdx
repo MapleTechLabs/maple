@@ -180,7 +180,8 @@ export function traced<T>(
 			return await fn()
 		} catch (error) {
 			if (isFailure(error)) {
-				span.recordException(error instanceof Error ? error : String(error))
+				// Some libraries throw error-like objects that aren't Error instances
+				span.recordException(error instanceof Error ? error : String((error as { message?: unknown })?.message ?? error))
 				span.setStatus({ code: SpanStatusCode.ERROR })
 				if (typeof error === "object" && error !== null) recorded.add(error)
 			}
@@ -271,6 +272,7 @@ Two caveats:
 
 - Only parent the `pageload` span this way. Later navigations are new work and belong in their own traces, and attaching minutes of browsing to one server request makes that trace meaningless.
 - If a CDN caches your HTML, it caches the header too, so every visitor would join the same old trace. Skip the header on cached responses.
+- The browser cache has the same problem. If your framework sends an `ETag` with HTML pages, a reload gets a 304 without your header, and the browser reuses the one it cached with the page. Drop the `ETag` on responses that carry the header.
 
 ## Framework guides
 

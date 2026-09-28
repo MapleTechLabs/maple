@@ -42,7 +42,8 @@ export function traced<T>(
 			return await fn()
 		} catch (error) {
 			if (isFailure(error)) {
-				span.recordException(error instanceof Error ? error : String(error))
+				// Some libraries throw error-like objects that aren't Error instances
+				span.recordException(error instanceof Error ? error : String((error as { message?: unknown })?.message ?? error))
 				span.setStatus({ code: SpanStatusCode.ERROR })
 				if (typeof error === "object" && error !== null) recorded.add(error)
 			}

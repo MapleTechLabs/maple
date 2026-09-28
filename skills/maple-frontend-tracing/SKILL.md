@@ -58,7 +58,7 @@ MapleBrowser.init({
 
 - `serviceName`: distinct from the backend's, usually `<app>-web`.
 - `init()` is a no-op on the server, so importing it from code that also runs during SSR is safe.
-- The SDK instruments **`fetch` only**, not `XMLHttpRequest`. Find the app's HTTP client. `ky`, `ofetch`, `redaxios` and plain `fetch` are covered. axios uses XHR in browsers unless created with `adapter: "fetch"`; Angular's `HttpClient` uses XHR unless `provideHttpClient(withFetch())`. Switch those clients to fetch where it's a one-line change; otherwise register `XMLHttpRequestInstrumentation` from `@opentelemetry/instrumentation-xml-http-request` with the same `propagateTraceHeaderCorsUrls`.
+- The SDK instruments **`fetch` only**, not `XMLHttpRequest`. Find the app's HTTP client. `ky`, `ofetch`, `redaxios` and plain `fetch` are covered. axios uses XHR in browsers unless created with `adapter: "fetch"`; Angular's `HttpClient` uses fetch by default from Angular 22, and XHR in Angular 21 and older unless `provideHttpClient(withFetch())`. Switch those clients to fetch where it's a one-line change; otherwise register `XMLHttpRequestInstrumentation` from `@opentelemetry/instrumentation-xml-http-request` with the same `propagateTraceHeaderCorsUrls`.
 - If another tracer already instruments `fetch` (for example `@maple-dev/effect-sdk/client`), set `tracing.instrumentFetch: false`.
 - Keep existing error and RUM vendors (Sentry, Datadog, LogRocket…). If another tool on the page also reports global errors to Maple, set `tracing.captureErrors: false` so errors aren't counted twice.
 
@@ -113,7 +113,7 @@ Keep whatever the hook already does (logging, other vendors, fallback UI).
 	```
 
 	`tracing.ts` reads it back from the Navigation Timing API and parents the browser's `pageload` span to it. Only the page load joins the server trace; later navigations are their own traces.
-4. Don't send the header on responses a CDN caches, or every visitor joins the same trace.
+4. Don't send the header on responses a CDN caches, or every visitor joins the same trace. If the framework sets an `ETag` on HTML, delete it on responses that carry the header: a 304 revalidation reuses the cached header and joins an old trace.
 
 ## Step 7: Verify
 

@@ -1,0 +1,300 @@
+---
+title: "Tracing Vue, Vue Router, and Nuxt with OpenTelemetry"
+description: "Trace every Vue Router navigation, the data your pages load, and the errors Vue catches as one OpenTelemetry trace, plus the server render in Nuxt."
+date: 2026-09-28
+author: "Jeremy Funk"
+category: "guides"
+draft: true
+---
+
+Vue Router tells you exactly when a navigation starts and when it's confirmed. Most Vue apps load their data after that point, inside the new page's `setup`, and that's the one thing to design around when tracing a Vue app. By the end of this guide, a click on a link produces one trace with a span for the navigation, a span for each piece of data the new page loads, and the fetches and backend spans behind them. In Nuxt, the first page load also includes the server render.
+
+This is part of the [frontend tracing guide](/blog/frontend-tracing-opentelemetry). It assumes you've done steps 1 and 2 there (the browser SDK is installed and `traceparent` reaches your API), and that you've added the `src/tracing.ts` helper from step 3. The code below is for Vue 3.5 and works the same with Vue Router 4 and 5.
+
+## Quick setup with a coding agent
+
+If you'd rather have your coding agent do this, copy the prompt below into Claude Code, Codex, Cursor, or any agent that can run shell commands. It installs the [maple-frontend-tracing](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-frontend-tracing) skill, which contains every step of this guide and the general setup it builds on, and the agent picks it up from there.
+
+```text
+Set up Maple frontend tracing in this project.
+
+Install the skill with `npx skills add MapleTechLabs/maple/skills --skill maple-frontend-tracing -y`, then follow it. This app uses Vue with Vue Router (or Nuxt).
+
+My Maple public ingest key is maple_pk_... and my organization is in the US region.
+```
+
+Replace the key with your public key from **Settings → Ingestion**, or leave it out: the agent then uses a placeholder you can swap later. EU organizations should say EU region.
+
+## Trace Vue Router navigations with beforeEach and afterEach
+
+Three router hooks cover the life of a navigation:
+
+- `router.beforeEach` runs when a navigation starts, before lazy-loaded route components are fetched.
+- `router.afterEach` runs when it's over, with a `failure` argument if it didn't complete.
+- `router.onError` runs instead of `afterEach` when a guard throws or a route component fails to load.
+
+```ts
+// src/router-tracing.ts
+import { MapleBrowser } from "@maple-dev/browser"
+import { nextTick } from "vue"
+import { isNavigationFailure, NavigationFailureType, type Router } from "vue-router"
+import { alreadyRecorded, endNavigation, startNavigation } from "./tracing"
+
+export function traceRouter(router: Router) {
+	// The location that started the navigation in progress
+	let current: object | undefined
+
+	router.beforeEach((to) => {
+		// A redirect runs the guards again for its target. Keep it in the open span
+		const origin = to.redirectedFrom ?? to
+		if (origin === current) return
+		current = origin
+		startNavigation(to.path)
+	})
+
+	router.afterEach((to, _from, failure) => {
+		// Cancelled: a newer navigation already replaced this one. Duplicated: nothing happened
+		if (isNavigationFailure(failure, NavigationFailureType.cancelled | NavigationFailureType.duplicated)) return
+
+		const navigation = current
+		// Wait for Vue to render the new route, so fetches started in setup nest under the span
+		nextTick(() => {
+			if (current === navigation) endNavigation(to.matched.at(-1)?.path)
+		})
+	})
+
+	// Errors thrown in guards and failed route chunk loads end up here, and afterEach never runs
+	router.onError((error, to) => {
+		endNavigation(to.matched.at(-1)?.path)
+		if (!alreadyRecorded(error)) MapleBrowser.captureException(error, { name: "vue_router.error" })
+	})
+}
+```
+
+Call it right after creating the router. Guards run in the order they were added, so adding these first puts your own guards inside the span:
+
+```ts
+// src/router.ts
+import { createRouter, createWebHistory } from "vue-router"
+import { traceRouter } from "./router-tracing"
+import { routes } from "./routes"
+
+export const router = createRouter({ history: createWebHistory(), routes })
+
+// Before any other guard, so the navigation span covers them too
+traceRouter(router)
+```
+
+The first navigation starts when `app.use(router)` installs the router, and `startNavigation` turns it into the `pageload` span without any check for `START_LOCATION`. That span starts when your bundle runs, so it doesn't include downloading the HTML and JavaScript.
+
+Why `nextTick`? `afterEach` runs as soon as the navigation is confirmed, before Vue has rendered the new route. `nextTick` resolves after that render, when the new page's `setup`, its immediate watchers, and its `onMounted` hooks have run, so anything they start lands inside the span. The `current === navigation` check skips the end if another navigation started in the meantime.
+
+### Route templates, redirects, and failed navigations
+
+- **The span name comes from `to.matched.at(-1)?.path`.** That's the deepest matched route's full path, parents included, with params as placeholders: `/projects/:id`, not `/projects/8f2a`.
+- **Redirects stay in one span.** When a guard returns a different location, Vue Router runs the guards again for the new target and sets `to.redirectedFrom`. `beforeEach` sees the same origin and keeps the open span, so a redirect to the login page is one `navigate /login` span with the original path in `url.path`. The same check covers a `redirect` declared on a route record, which skips the guards for the original location.
+- **Aborted navigations end normally.** A guard that returns `false` ends the span, named after the route the user tried to reach.
+- **Cancelled and duplicated navigations are skipped.** A cancelled navigation was replaced by a newer one, and `startNavigation` already ended its span as interrupted. A duplicated one was a click on a link to the current page, which runs no guards.
+- **Query and hash changes are navigations.** A search page that syncs its filters to the URL gets a span per change. If that's noise, return early in `beforeEach` when `from !== START_LOCATION && to.path === from.path`. The first check matters, because `START_LOCATION.path` is `/`.
+
+## Trace data loading in Vue components
+
+Vue Router doesn't load data for you. Most Vue apps fetch in the page component, in `setup` or a watcher on the route params, and that code runs before the navigation span ends. Wrap it in `traced`:
+
+```vue
+<!-- src/pages/ProjectPage.vue -->
+<script setup lang="ts">
+import { ref, watch } from "vue"
+import { useRoute } from "vue-router"
+import { type Project, fetchProject } from "../api"
+import { traced } from "../tracing"
+
+const route = useRoute()
+const project = ref<Project>()
+
+watch(
+	() => route.params.id as string,
+	async (id) => {
+		project.value = await traced("load project", () => fetchProject(id))
+	},
+	{ immediate: true },
+)
+</script>
+
+<template>
+	<h1>{{ project?.name }}</h1>
+</template>
+```
+
+`immediate: true` runs the watcher during `setup`, so the first load nests under the navigation. Going from `/projects/1` to `/projects/2` reuses the component, and the watcher fires again while that navigation renders.
+
+The load span usually ends after its parent: the navigation span stops when the new page rendered, the load span when the data arrived. That's what the user saw, a page and then its content. As always, only requests started before the first `await` nest under the span ([here's why](/blog/frontend-tracing-opentelemetry#the-await-problem)).
+
+If you'd rather have the navigation wait for the data, fetch in a `beforeResolve` guard or the page's `beforeRouteEnter`. Those run inside the navigation, and `traced` works there unchanged. Vue Router 5 also has data loaders that do this (`defineBasicLoader` in `vue-router/experimental`), but they're experimental, and their `reroute()` redirects by throwing, which `traced` would record as a failure.
+
+### Aborted requests aren't failures
+
+Vue Router guards redirect by returning a location, not by throwing, so the default `isFailure` is right for router code. Where the third argument does matter is aborted requests. If the id changes again before the first request finished, you usually want to cancel it:
+
+```ts
+// The watcher from above, with `onWatcherCleanup` imported from "vue"
+watch(
+	() => route.params.id as string,
+	async (id) => {
+		const controller = new AbortController()
+		// Runs when the id changes again, or the page unmounts, before this request finished
+		onWatcherCleanup(() => controller.abort())
+
+		const aborted = () => controller.signal.aborted
+		try {
+			project.value = await traced("load project", () => fetchProject(id, controller.signal), () => !aborted())
+		} catch (error) {
+			if (!aborted()) throw error
+		}
+	},
+	{ immediate: true },
+)
+```
+
+The aborted fetch rejects with an `AbortError`. The third argument keeps it from marking the span as failed, and the `catch` keeps it away from Vue's error handler.
+
+## Report errors with app.config.errorHandler
+
+Vue catches errors thrown in components, watchers, lifecycle hooks, and event handlers, and passes them to `app.config.errorHandler`. Without one, development builds rethrow the error, so the SDK's global handlers see it.
+
+Production builds only log it with `console.error`. That's how you end up with error reporting that works on your machine and reports nothing in production. Set the handler:
+
+```ts
+// src/main.ts
+import "./maple" // first, before anything renders
+import { MapleBrowser } from "@maple-dev/browser"
+import { createApp } from "vue"
+import App from "./App.vue"
+import { router } from "./router"
+import { alreadyRecorded } from "./tracing"
+
+const app = createApp(App)
+
+app.config.errorHandler = (error, _instance, info) => {
+	// Setting a handler turns off Vue's own logging, so keep it
+	console.error(error)
+	// Errors thrown inside traced() are already on their span
+	if (!alreadyRecorded(error)) {
+		MapleBrowser.captureException(error, { name: "vue.error", attributes: { "vue.error.info": info } })
+	}
+}
+
+app.use(router)
+app.mount("#app")
+```
+
+- A failed `load project` records the error on its span and rethrows, and Vue passes the rejected watcher to `errorHandler`. The `alreadyRecorded` check keeps that from becoming two errors.
+- `info` says where the error was thrown: `render function` or `watcher callback` in development, a link like `https://vuejs.org/error-reference/#runtime-1` in production.
+- An `errorCaptured` hook that returns `false` stops the error before it reaches `errorHandler`. Report it from that hook instead.
+- Errors in navigation guards never reach `errorHandler`, which is why `traceRouter` reports them from `router.onError`.
+
+## Tracing Nuxt: client plugin, vue:error, and the server-timing header
+
+Nuxt runs on Vue Router, so `traceRouter` works unchanged. What's different is where the code goes. Nuxt has no `main.ts`, so the SDK, the router hooks, and error reporting go in a client-only plugin. Put `tracing.ts` and `router-tracing.ts` in `app/`:
+
+```ts
+// app/plugins/tracing.client.ts
+// defineNuxtPlugin, useRouter and useRuntimeConfig are auto-imported
+import { MapleBrowser } from "@maple-dev/browser"
+import { traceRouter } from "../router-tracing"
+import { alreadyRecorded } from "../tracing"
+
+export default defineNuxtPlugin((nuxtApp) => {
+	MapleBrowser.init({
+		// runtimeConfig.public.mapleIngestKey in nuxt.config, set with NUXT_PUBLIC_MAPLE_INGEST_KEY
+		ingestKey: useRuntimeConfig().public.mapleIngestKey as string,
+		serviceName: "acme-web",
+	})
+
+	traceRouter(useRouter())
+
+	// Nuxt calls this for every error a component throws
+	nuxtApp.hook("vue:error", (error, _instance, info) => {
+		if (!alreadyRecorded(error)) {
+			MapleBrowser.captureException(error, { name: "vue.error", attributes: { "vue.error.info": info } })
+		}
+	})
+})
+```
+
+Nuxt calls `vue:error` from its root component's `errorCaptured` hook for every component error, and keeps logging them to the console, so there's no need to set `app.config.errorHandler`.
+
+For data, wrap the function you pass to `useAsyncData`:
+
+```ts
+// In a page's <script setup>. useRoute, useAsyncData and $fetch are auto-imported
+import { traced } from "~/tracing"
+
+const route = useRoute()
+const { data: project } = await useAsyncData(`project-${route.params.id}`, () =>
+	traced("load project", () => $fetch(`/api/projects/${route.params.id}`)),
+)
+```
+
+During the server render the same call nests under the incoming request's span instead.
+
+### Link the Nuxt server render to the browser
+
+Start the OpenTelemetry Node SDK with the setup file from the [Node.js guide](/docs/guides/instrumentation-nodejs), loaded in front of Nuxt's server build:
+
+```bash
+node --import ./instrumentation.mjs .output/server/index.mjs
+```
+
+That gives you a span for every incoming request, including the pages Nuxt renders. To join the browser's `pageload` span to it, add a Nitro plugin that writes the trace context into the `Server-Timing` header:
+
+```ts
+// server/plugins/traceparent.ts
+// defineNitroPlugin is auto-imported
+import { context, propagation } from "@opentelemetry/api"
+
+export default defineNitroPlugin((nitroApp) => {
+	nitroApp.hooks.hook("render:response", (response) => {
+		// The HTTP instrumentation's request span is the active one here
+		const carrier: Record<string, string> = {}
+		propagation.inject(context.active(), carrier)
+		if (carrier.traceparent) {
+			response.headers = { ...response.headers, "server-timing": `traceparent;desc="${carrier.traceparent}"` }
+		}
+	})
+})
+```
+
+Nitro calls `render:response` for every page Nuxt renders, before the headers are sent. On the browser side, `serverContext()` in the helper reads the header, and the `pageload` span joins the server's trace.
+
+A few Nuxt details:
+
+- **Route templates look different.** `pages/projects/[id].vue` becomes `/projects/:id()`, so the span is `navigate /projects/:id()`.
+- **Route middleware isn't in the span.** Nuxt runs it in its own `beforeEach`, which is added before any plugin's.
+- **The `pageload` span is short.** The first page's data is fetched during the server render and sent along in the payload, so that time shows up on the server side.
+- **Your own API routes skip the network during the server render.** Nitro runs a `$fetch("/api/...")` handler in-process, so there's no HTTP span, and the `traced` span around it is the only record of its duration.
+- **Cached pages share one trace.** If a CDN or a Nitro route rule like `swr` or `isr` caches the HTML, it caches the header too. Skip it on those routes.
+
+## Vue-specific gotchas
+
+- **axios uses `XMLHttpRequest` in the browser by default,** and only `fetch` is instrumented. Set `adapter: "fetch"` (axios 1.7 and later), or register OpenTelemetry's XHR instrumentation.
+- **Route chunks that fail to load go to `router.onError`.** After a deploy, open tabs can ask for chunk files that no longer exist. Downloading a lazy route's chunk counts toward the navigation span, but has no span of its own, since a dynamic `import()` isn't a `fetch`.
+- **Pages in `<KeepAlive>` don't rerun `setup`.** Going back to a cached page gives you a navigation span with no load span. Nothing was loaded, so that's accurate.
+
+## FAQ
+
+### Does Vue have built-in OpenTelemetry support?
+
+No. Neither Vue nor Vue Router creates spans. Recent Nuxt versions have an experimental `tracingChannel` option that publishes render and data-fetching events on Node's diagnostics channels, but it doesn't create OpenTelemetry spans by itself. The router hooks used here are stable public API in both Vue Router 4 and 5.
+
+### Why aren't my Vue component's requests in the navigation trace?
+
+Usually one of three reasons. The request isn't inside `traced`, and the helper only parents spans started inside it. The request comes after an `await`, which loses the parent in the browser. Or it starts after the render, for example in a `setTimeout`, when the navigation span has already ended.
+
+## Next steps
+
+- [Frontend tracing with OpenTelemetry](/blog/frontend-tracing-opentelemetry): the helper, the problems, and the setup this guide builds on.
+- [Browser SDK reference](/docs/session-replay/browser-sdk): consent, masking, and URL redaction.
+- [Session replays](/docs/session-replay/replays): jump from a trace to the recording of the session that produced it.
+- [Errors and issues](/docs/errors/overview): how the errors reported from `errorHandler` and `router.onError` are grouped.
+- [Node.js guide](/docs/guides/instrumentation-nodejs): the server half of a Nuxt trace.

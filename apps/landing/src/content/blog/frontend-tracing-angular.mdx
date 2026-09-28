@@ -1,0 +1,330 @@
+---
+title: "Tracing Angular Router, HttpClient, and SSR with OpenTelemetry"
+description: "Trace every Angular Router navigation, resolver, and HttpClient request as one OpenTelemetry trace, linked to your backend, your server render, and session replay."
+date: 2026-09-28
+author: "Jeremy Funk"
+category: "guides"
+draft: true
+---
+
+Angular's router reports every step of a navigation on one observable, `Router.events`, so you don't need to patch anything to see when a navigation starts, redirects, fails, or finishes. By the end of this guide, a click on a `routerLink` produces one trace with a span for the navigation, a span per resolver, the `HttpClient` requests those resolvers made, and the backend spans behind them. With `@angular/ssr`, the first page load also includes the server render.
+
+This is part of the [frontend tracing guide](/blog/frontend-tracing-opentelemetry). It assumes you've done steps 1 and 2 there (the browser SDK is installed and `traceparent` reaches your API), and that you've added the `src/tracing.ts` helper from step 3. The code below was checked against Angular 22 with standalone APIs.
+
+## Quick setup with a coding agent
+
+If you'd rather have your coding agent do this, copy the prompt below into Claude Code, Codex, Cursor, or any agent that can run shell commands. It installs the [maple-frontend-tracing](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-frontend-tracing) skill, which contains every step of this guide and the general setup it builds on, and the agent picks it up from there.
+
+```text
+Set up Maple frontend tracing in this project.
+
+Install the skill with `npx skills add MapleTechLabs/maple/skills --skill maple-frontend-tracing -y`, then follow it. This app uses Angular.
+
+My Maple public ingest key is maple_pk_... and my organization is in the US region.
+```
+
+Replace the key with your public key from **Settings → Ingestion**, or leave it out: the agent then uses a placeholder you can swap later. EU organizations should say EU region.
+
+## Check that HttpClient uses fetch
+
+Start here, because it decides whether you see any network spans at all. The browser SDK instruments `fetch`, not `XMLHttpRequest`, and `HttpClient` can use either.
+
+Since Angular 22, `provideHttpClient()` uses `fetch` by default. On Angular 21 and older, the default is `XMLHttpRequest`, so every `HttpClient` request is invisible to the SDK: no span, and no `traceparent` header for your backend. Switch it to `fetch`:
+
+```ts
+// src/app/app.config.ts (Angular 21 and older)
+import { provideHttpClient, withFetch } from "@angular/common/http"
+import type { ApplicationConfig } from "@angular/core"
+
+export const appConfig: ApplicationConfig = {
+	providers: [
+		// Angular 21 and older default to XMLHttpRequest, which the SDK doesn't trace
+		provideHttpClient(withFetch()),
+	],
+}
+```
+
+On Angular 22, the same goes for `withXhr()`: if you added it for upload progress events, those requests aren't traced.
+
+## Initialize the SDK before bootstrapApplication
+
+Initialize the SDK in its own file and import it first in `src/main.ts`, so it's running before Angular creates anything:
+
+```ts
+// src/maple.ts
+import { isDevMode } from "@angular/core"
+import { MapleBrowser } from "@maple-dev/browser"
+
+MapleBrowser.init({
+	ingestKey: "maple_pk_...", // public key, safe to ship in the bundle
+	serviceName: "acme-web",
+	environment: isDevMode() ? "development" : "production",
+})
+```
+
+```ts
+// src/main.ts
+import "./maple" // first, so the SDK is running before Angular bootstraps
+import { bootstrapApplication } from "@angular/platform-browser"
+import { App } from "./app/app"
+import { appConfig } from "./app/app.config"
+
+bootstrapApplication(App, appConfig).catch((err) => console.error(err))
+```
+
+The Angular CLI has no `import.meta.env`, so the hub's example doesn't carry over as is. The key is public, so a literal is fine, or use the CLI's `define` option. With `@angular/ssr`, `main.ts` is the browser entry only, so this never runs on the server.
+
+## Trace Angular Router navigations
+
+Every navigation emits a `NavigationStart`. When it's over, it emits `NavigationEnd` if the new route's components were created, `NavigationCancel` if a guard said no, something redirected, or a newer navigation replaced it, and `NavigationError` if something threw. Subscribe to them in an app initializer, which runs before the router starts the first navigation:
+
+```ts
+// src/app/router-tracing.ts
+import { isPlatformBrowser } from "@angular/common"
+import { inject, PLATFORM_ID, provideAppInitializer } from "@angular/core"
+import {
+	type ActivatedRouteSnapshot,
+	NavigationCancel,
+	NavigationCancellationCode,
+	NavigationEnd,
+	NavigationError,
+	NavigationSkipped,
+	NavigationStart,
+	RedirectCommand,
+	Router,
+} from "@angular/router"
+import { endNavigation, startNavigation, traced } from "../tracing"
+
+export function provideRouterTracing() {
+	// Runs before the router starts the first navigation
+	return provideAppInitializer(() => {
+		// The server render gets its own span, see below
+		if (!isPlatformBrowser(inject(PLATFORM_ID))) return
+
+		const router = inject(Router)
+		let current: number | undefined
+		let redirecting = false
+
+		router.events.subscribe((event) => {
+			if (event instanceof NavigationStart) {
+				current = event.id
+				// A redirect cancels the navigation and starts a new one: keep both in one span
+				if (redirecting) {
+					redirecting = false
+					return
+				}
+				startNavigation(event.url.split(/[?#]/)[0])
+				return
+			}
+
+			const ended =
+				event instanceof NavigationEnd ||
+				event instanceof NavigationCancel ||
+				event instanceof NavigationError ||
+				event instanceof NavigationSkipped
+			// Only the latest navigation owns the span
+			if (!ended || event.id !== current) return
+
+			if (event instanceof NavigationCancel && event.code === NavigationCancellationCode.Redirect) {
+				redirecting = true
+			} else if (event instanceof NavigationEnd) {
+				endNavigation(routeTemplate(router.routerState.snapshot.root))
+			} else if (event instanceof NavigationError && event.target) {
+				endNavigation(routeTemplate(event.target.root))
+			} else {
+				endNavigation()
+			}
+		})
+	})
+}
+
+/** The matched route's template, like `/projects/:id`. */
+function routeTemplate(root: ActivatedRouteSnapshot) {
+	const segments: string[] = []
+	for (let route: ActivatedRouteSnapshot | null = root; route; route = route.firstChild) {
+		// Layout routes and `children` wrappers have an empty path
+		if (route.routeConfig?.path) segments.push(route.routeConfig.path)
+	}
+	return `/${segments.join("/")}`
+}
+
+export const resolverSpan = <T>(name: string, fn: () => Promise<T>) =>
+	traced(name, fn, (error) => !(error instanceof RedirectCommand))
+```
+
+Register it next to the router:
+
+```ts
+// src/app/app.config.ts
+import { provideHttpClient } from "@angular/common/http"
+import { type ApplicationConfig, ErrorHandler, provideBrowserGlobalErrorListeners } from "@angular/core"
+import { provideRouter } from "@angular/router"
+import { routes } from "./app.routes"
+import { MapleErrorHandler } from "./error-handler"
+import { provideRouterTracing } from "./router-tracing"
+
+export const appConfig: ApplicationConfig = {
+	providers: [
+		provideBrowserGlobalErrorListeners(),
+		provideRouter(routes),
+		provideHttpClient(),
+		provideRouterTracing(),
+		{ provide: ErrorHandler, useClass: MapleErrorHandler },
+	],
+}
+```
+
+`MapleErrorHandler` comes up in the errors section below.
+
+Some details that are easy to get wrong:
+
+- **Build the span name from `routeConfig.path`, not from the URL.** Angular has no single "full path" property, so `routeTemplate` walks the activated routes from the root and joins their configured paths. Nested routes like `{ path: "projects", children: [{ path: ":id" }] }` come out as `/projects/:id`, and your not-found route is `/**`.
+- **Redirects from guards and resolvers are two navigations.** A guard that returns a `UrlTree`, or a resolver that returns a `RedirectCommand`, cancels the navigation with the code `Redirect` and immediately starts a new one. The `redirecting` flag keeps both in one span, named after the route the user lands on. A `redirectTo` in the route config doesn't cancel anything; it's resolved while matching.
+- **Every event carries the navigation's `id`.** When the user clicks a second link before the first finished loading, the first navigation is cancelled before the second one starts. The id check makes sure a late event from an old navigation never ends the new span.
+- **Query-only changes are full navigations.** Going from `/projects/42` to `/projects/42?tab=members` gets its own short `navigate /projects/:id` span. By default, resolvers only rerun when path or matrix params change. Navigating to the URL you're already on emits `NavigationSkipped` without a `NavigationStart`, so it creates no span.
+- **The platform check matters with SSR.** App initializers also run during the server render, where the helper's module-level navigation state would be shared between requests.
+
+## Trace Angular route resolvers
+
+Resolvers are Angular's data loading step: the router waits for them before it activates the route, so their time is navigation time. `resolverSpan` from the previous section wraps one in a span under the current navigation:
+
+```ts
+// src/app/projects/project.resolver.ts
+import { HttpClient } from "@angular/common/http"
+import { inject } from "@angular/core"
+import type { ResolveFn } from "@angular/router"
+import { firstValueFrom } from "rxjs"
+import { resolverSpan } from "../router-tracing"
+import type { Member, Project } from "./project"
+
+export const projectResolver: ResolveFn<[Project, Member[]]> = (route) => {
+	// inject() only works synchronously, before the first await
+	const http = inject(HttpClient)
+	const id = route.paramMap.get("id")
+
+	return resolverSpan("resolve /projects/:id", () =>
+		Promise.all([
+			firstValueFrom(http.get<Project>(`/api/projects/${id}`)),
+			firstValueFrom(http.get<Member[]>(`/api/projects/${id}/members`)),
+		]),
+	)
+}
+```
+
+The helper works with promises, so `firstValueFrom` turns each `HttpClient` observable into one. This also nests correctly: `firstValueFrom` subscribes right away, and Angular's fetch backend calls `fetch()` synchronously during that subscribe, while the resolver span is still active. Sequential `await`s are a different story. Only requests started before the first `await` nest under the span; the [main guide explains why](/blog/frontend-tracing-opentelemetry#the-await-problem).
+
+The `isFailure` check in `resolverSpan` is for redirects. A resolver usually redirects by returning a `RedirectCommand`, which `traced` treats as a normal result. The router also accepts a thrown one, handy from inside a helper function, so a thrown `RedirectCommand` doesn't mark the span as failed either.
+
+One thing the waterfall will show you: the router runs the resolvers of nested routes one level at a time. A parent route's resolvers finish before its child's start, and only the resolvers within one route run in parallel. If a layout resolver and a page resolver don't depend on each other, that's a waterfall you can remove by moving both into one route's `resolve` map.
+
+## Report errors caught by Angular's ErrorHandler
+
+Angular catches errors thrown in templates, lifecycle hooks, and template event listeners, and hands them to the `ErrorHandler` service. That's why a broken `(click)` handler logs `ERROR` in the console instead of reaching `window.onerror`, where the SDK would see it. `RouterLink` does the same with a failed navigation.
+
+Replace the default handler with one that reports first:
+
+```ts
+// src/app/error-handler.ts
+import { ErrorHandler, Injectable } from "@angular/core"
+import { MapleBrowser } from "@maple-dev/browser"
+import { alreadyRecorded } from "../tracing"
+
+@Injectable()
+export class MapleErrorHandler extends ErrorHandler {
+	override handleError(error: unknown) {
+		// Resolver errors are already on their resolver span
+		if (!alreadyRecorded(error)) MapleBrowser.captureException(error, { name: "angular.error" })
+		// Keep Angular's console output
+		super.handleError(error)
+	}
+}
+```
+
+The app config above already provides it. The `alreadyRecorded` check is for resolvers: a resolver that throws fails the navigation, and `RouterLink` passes the same error object to this handler. Without the check, one failed resolver would show up as two errors.
+
+`provideBrowserGlobalErrorListeners()`, which new CLI projects include, sends uncaught errors and unhandled rejections to the `ErrorHandler` too. Those also reach the SDK's own global handlers, but you still get one issue per error: `captureException` records each error object once, whichever handler sees it first.
+
+Two cases to watch for:
+
+- **`withNavigationErrorHandler` can hide errors.** If your handler returns a `RedirectCommand` to show an error page, the navigation becomes a redirect and the error never reaches `ErrorHandler`. Errors from `resolverSpan` are still on their span; report anything else from inside that handler.
+- **`onViewError` replaces `handleError` for `@boundary` blocks.** Angular 22's `ErrorHandler` has an optional `onViewError` method. If you implement it, Angular calls it instead of `handleError` for errors caught by a `@boundary` block, so report from there too. The handler above doesn't implement it, so those errors land in `handleError`.
+
+## Trace server rendering with @angular/ssr
+
+With `@angular/ssr`, the first page load starts on your Node server. Start the OpenTelemetry Node SDK as in the [Node.js guide](/docs/guides/instrumentation-nodejs), preloaded with `node --import ./tracing.mjs dist/acme-web/server/server.mjs` so it runs before the server bundle. That gives you a span for every incoming request.
+
+Then replace the render middleware at the bottom of the generated `src/server.ts` with one that wraps the render in a span and hands its trace to the browser in a `Server-Timing` header:
+
+```ts
+// src/server.ts
+import { AngularNodeAppEngine, writeResponseToNodeResponse } from "@angular/ssr/node"
+import { context, propagation, trace } from "@opentelemetry/api"
+import express from "express"
+
+const tracer = trace.getTracer("acme-web")
+const app = express()
+const angularApp = new AngularNodeAppEngine()
+
+// ...express.static() and your API routes, as generated
+
+app.use((req, res, next) => {
+	tracer.startActiveSpan("ssr", { attributes: { "url.path": req.path } }, async (span) => {
+		try {
+			const response = await angularApp.handle(req)
+			if (!response) return next()
+
+			// Hand this trace to the browser so its pageload span can join it
+			const carrier: Record<string, string> = {}
+			propagation.inject(context.active(), carrier)
+			if (carrier["traceparent"]) {
+				response.headers.append("server-timing", `traceparent;desc="${carrier["traceparent"]}"`)
+			}
+
+			await writeResponseToNodeResponse(response, res)
+		} catch (error) {
+			next(error)
+		} finally {
+			span.end()
+		}
+	})
+})
+```
+
+On the browser side there's nothing to add. `startNavigation` reads the header through `serverContext()` and parents the `pageload` span to the server render, so the first load is one trace from the incoming request to the first `NavigationEnd` in the browser.
+
+A few things to know about the `ssr` span:
+
+- **It has a fixed name.** Express doesn't know which Angular route matched, so `url.path` carries the path, and the browser's `pageload /projects/:id` span in the same trace carries the template.
+- **`handle()` resolves once the app is stable**, after the server-side navigation, its resolvers, and pending `HttpClient` requests. The span also covers writing the HTML out, since it ends after `writeResponseToNodeResponse`.
+- **Resolvers nest under it on the server.** `resolverSpan` works there too, and Node's `AsyncLocalStorage` keeps the request's context across `await`s, so server-side resolver spans need no changes.
+- **The browser's first resolvers look suspiciously fast.** `provideClientHydration()` replays the `HttpClient` GET requests made during the server render (except ones with auth headers or credentials), so the browser's first resolver spans have no fetch spans under them. The real requests are in the same trace, under the `ssr` span.
+
+If a CDN caches your HTML, skip the `server-timing` header on those responses, or every visitor's page load will join the same old trace.
+
+## Angular-specific gotchas
+
+- **`ZoneContextManager` doesn't help here.** It's OpenTelemetry's answer to losing context after `await`, and it needs zone.js. New Angular apps are zoneless by default. And even with zone.js, Angular's fetch backend calls `fetch()` inside `NgZone.runOutsideAngular`, which leaves the zone that holds the active span. I tested it: the context is gone by the time the request starts.
+- **Data loaded in components starts its own traces.** `httpResource` and requests in `ngOnInit` run after the component is created, which is after `NavigationEnd`. They're fetch spans without a parent. If they're part of what the user waits for, a resolver puts them in the navigation.
+- **Lazy routes show up as gaps.** Loading a `loadComponent` or `loadChildren` chunk happens inside the navigation span, but dynamic `import()` isn't a `fetch`, so there's no child span. A gap at the start of a navigation with nothing under it is often a chunk download.
+- **`HttpErrorResponse` isn't an `Error`.** When a resolver's request fails, the resolver span records its message, and the fetch span under it has the status code and URL.
+
+## FAQ
+
+### Does Angular have built-in OpenTelemetry support?
+
+No, Angular 22 doesn't ship an OpenTelemetry integration. Everything in this guide uses public APIs: `Router.events`, resolvers, `ErrorHandler`, and `AngularNodeAppEngine`.
+
+### Why don't my Angular HttpClient requests show up as spans?
+
+On Angular 21 and older, `HttpClient` uses `XMLHttpRequest` unless you add `withFetch()`, and the browser SDK only instruments `fetch`. On Angular 22, check for `withXhr()`. If the requests show up but aren't connected to your backend, it's the cross-origin setup from step 2 of the [main guide](/blog/frontend-tracing-opentelemetry).
+
+### Does this work with NgModule-based Angular apps?
+
+Yes. Add `provideRouterTracing()` and the `ErrorHandler` provider to your root module's `providers`, which accept the same providers, and import `./maple` before calling `bootstrapModule`.
+
+## Next steps
+
+- [Frontend tracing with OpenTelemetry](/blog/frontend-tracing-opentelemetry): the helper, the problems, and the setup this guide builds on.
+- [Browser SDK reference](/docs/session-replay/browser-sdk): consent, masking, and URL redaction.
+- [Session replays](/docs/session-replay/replays): jump from a trace to the recording of the session that produced it.
+- [Errors and issues](/docs/errors/overview): how the errors reported from `ErrorHandler` are grouped.
