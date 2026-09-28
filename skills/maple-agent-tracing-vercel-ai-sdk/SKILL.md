@@ -1,0 +1,237 @@
+---
+name: maple-agent-tracing-vercel-ai-sdk
+description: "Trace Vercel AI SDK agents with Maple: register the AI SDK's OpenTelemetry integration, export to Maple, and stamp a conversation id so each chat is one Agent Session with transcript, tool calls, sub-agents and tokens. Covers generateText, streamText, ToolLoopAgent, Node.js and Next.js. Triggers on 'trace my vercel ai sdk agent', 'add Maple to vercel ai sdk', 'agent sessions for vercel ai sdk', 'OpenTelemetry for vercel ai sdk', 'trace my ai sdk app'."
+---
+
+# Maple agent tracing: Vercel AI SDK
+
+Human guide with the reasoning: https://maple.dev/docs/agent-tracing/vercel-ai-sdk
+
+## Goal
+
+One conversation = one Maple Agent Session, one turn per `generate()`/`stream()` call, with the transcript, every model call (model, tokens, TTFT), every tool call (name, args, result, failures), and a lane per sub-agent.
+
+How it works: AI SDK 7 emits GenAI-semconv spans through `@ai-sdk/otel` (`invoke_agent <model>` → `step <n>` → `chat <model>` + `execute_tool <tool>`) on tracer `gen_ai`, once `registerTelemetry(new OpenTelemetry())` has run. Content is on by default. Maple detects the AI SDK by `ai.*` attributes on the `gen_ai`/`ai` scope and groups sessions by `gen_ai.conversation.id`, which the AI SDK never sets. You add it with `enrichSpan` from `runtimeContext`.
+
+Known gaps (tell the user, don't try to fix): cost shows as "unpriced" (AI SDK emits no cost; Maple never prices tokens); on AI SDK 5/6 the final assistant reply is missing from transcripts.
+
+## Step 0: Detect
+
+- `ai` version in `package.json` / lockfile:
+  - `>= 7`: this skill. Upgrade to `^7.0.106` or newer if older (earlier 7.x leave spans open when a stream errors mid-read). Node.js >= 22 required.
+  - `5.x` / `6.x`: ask the user whether to upgrade to 7 (recommended; `npx @ai-sdk/codemod v7`). If not, go to "AI SDK 5/6" at the end.
+- Mastra (`@mastra/core`) or another framework built on `ai`: stop, use that framework's skill instead.
+- Existing OpenTelemetry: search for `NodeSDK`, `NodeTracerProvider`, `registerOTel`, `@vercel/otel`, `Sentry.init`, `@langfuse/otel`, `LangfuseSpanProcessor`, `braintrust`, `registerTelemetry(`, `experimental_telemetry`, `telemetry:`.
+  - An SDK/provider already exists: reuse it. Add one Maple exporting span processor to it. Never start a second SDK.
+  - `registerTelemetry(...)` already exists: extend that call's `OpenTelemetry` options; never call it twice (it appends, so every span is emitted twice).
+  - `LegacyOpenTelemetry` registered: replace it with `OpenTelemetry` unless the user says another backend depends on the legacy format. Never register both.
+- Next.js app (`next` dependency, `instrumentation.ts`): use Step 2b.
+- Find every AI SDK call site: `generateText(`, `streamText(`, `new ToolLoopAgent(`, `createAgentUIStreamResponse(`, `agent.generate(`, `agent.stream(`. Find each one's conversation id (chat id, thread id, `useChat` request body `id`).
+
+## Step 1: Key and region
+
+- US endpoint `https://ingest.maple.dev`, EU endpoint `https://ingest.eu.maple.dev`. Header `Authorization=Bearer <key>`.
+- Key in the user's prompt: use it. No key: use the literal `MAPLE_TEST` (ingest accepts and discards it) and tell the user to replace it with their key from Settings → Ingestion.
+- Private `maple_sk_` keys never go in browser code. Ingest keys are write-only.
+- Follow the repo's existing secret/env convention (e.g. `MAPLE_INGEST_KEY` or `OTEL_EXPORTER_OTLP_*` in `.env`). If there is none, inlining the ingest key is acceptable.
+
+## Step 2a: Install and init (Node.js)
+
+```bash
+npm install ai@^7.0.106 @ai-sdk/otel @opentelemetry/api @opentelemetry/sdk-node \
+  @opentelemetry/sdk-trace-base @opentelemetry/exporter-trace-otlp-proto @opentelemetry/resources
+```
+
+Use the repo's package manager. Env (or the repo's equivalent):
+
+```bash
+OTEL_EXPORTER_OTLP_ENDPOINT=https://ingest.maple.dev
+OTEL_EXPORTER_OTLP_HEADERS=Authorization=Bearer <key>
+OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+```
+
+Create `instrumentation.ts` (adapt service name/environment; to inline instead of env, pass `{ url: "https://ingest.maple.dev/v1/traces", headers: { authorization: "Bearer <key>" } }` to `OTLPTraceExporter`):
+
+```ts
+import { OpenTelemetry } from "@ai-sdk/otel"
+import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto"
+import { resourceFromAttributes } from "@opentelemetry/resources"
+import { NodeSDK } from "@opentelemetry/sdk-node"
+import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-base"
+import { registerTelemetry } from "ai"
+
+export const spanProcessor = new BatchSpanProcessor(new OTLPTraceExporter())
+
+export const sdk = new NodeSDK({
+	resource: resourceFromAttributes({
+		"service.name": "support-agent",
+		"deployment.environment.name": process.env.NODE_ENV ?? "development",
+	}),
+	spanProcessors: [spanProcessor],
+})
+sdk.start()
+
+registerTelemetry(
+	new OpenTelemetry({
+		usage: true,
+		runtimeContext: true,
+		enrichSpan: ({ runtimeContext }) =>
+			typeof runtimeContext?.conversationId === "string"
+				? { "gen_ai.conversation.id": runtimeContext.conversationId }
+				: undefined,
+	}),
+)
+```
+
+- `import "./instrumentation"` as the FIRST line of every entry point (server, worker, CLI). `registerTelemetry` must run before the first AI SDK call.
+- `usage: true` + `runtimeContext: true` are required, not optional: they put `ai.*` keys on `invoke_agent`/`chat` spans, which is how Maple labels the vendor "Vercel AI SDK", picks the AI SDK token convention and reads TTFT.
+- Do not pass `tracer:` to `OpenTelemetry` unless reusing a provider requires it; if you must, use `provider.getTracer("gen_ai")`. Other scope names break detection.
+- Existing provider: add `spanProcessor` to it (`spanProcessors: [..., spanProcessor]` or the provider's add method) instead of creating `NodeSDK`.
+
+## Step 2b: Install and init (Next.js)
+
+`npm install ai@^7.0.106 @ai-sdk/otel @vercel/otel @opentelemetry/api`. In `instrumentation.ts` (root, or `src/` if the app uses `src/`), inside `register()`:
+
+```ts
+import { OpenTelemetry } from "@ai-sdk/otel"
+import { OTLPHttpProtoTraceExporter, registerOTel } from "@vercel/otel"
+import { registerTelemetry } from "ai"
+
+export function register() {
+	registerOTel({
+		serviceName: "support-chat",
+		traceExporter: new OTLPHttpProtoTraceExporter({
+			url: "https://ingest.maple.dev/v1/traces",
+			headers: { authorization: `Bearer ${process.env.MAPLE_INGEST_KEY}` },
+		}),
+	})
+	registerTelemetry(
+		new OpenTelemetry({
+			usage: true,
+			runtimeContext: true,
+			enrichSpan: ({ runtimeContext }) =>
+				typeof runtimeContext?.conversationId === "string"
+					? { "gen_ai.conversation.id": runtimeContext.conversationId }
+					: undefined,
+		}),
+	)
+}
+```
+
+- An existing `registerOTel` call: keep it, add the Maple exporter (or `OTEL_EXPORTER_OTLP_*` env vars if it has no `traceExporter`), add `registerTelemetry` next to it.
+- Sentry in the same app: it must use `skipOpenTelemetrySetup: true`, or spans duplicate.
+- `@vercel/otel` force-ends every still-open span of a trace when its root span ends. Read AI SDK streams inside the request (return them as the response); never consume them in `after()` or other post-response work, or the `chat`/`invoke_agent` spans lose output and tokens.
+- Next.js 13.4/14: `experimental: { instrumentationHook: true }` in `next.config`.
+
+## Step 3: Conversation id (session)
+
+Every AI SDK call site that belongs to a conversation must pass `runtimeContext: { conversationId }` AND `telemetry.includeRuntimeContext: { conversationId: true }`. Without the include, `enrichSpan` gets `{}`.
+
+generateText / streamText:
+
+```ts
+streamText({
+	model,
+	messages,
+	runtimeContext: { conversationId: chatId },
+	telemetry: { functionId: "support_agent", includeRuntimeContext: { conversationId: true } },
+})
+```
+
+If `runtimeContext` already exists, add `conversationId` to it and to `includeRuntimeContext`; keep other keys excluded (they may hold secrets).
+
+ToolLoopAgent (`generate`/`stream` take no per-call `runtimeContext`): add a call option.
+
+```ts
+new ToolLoopAgent({
+	// ...existing settings
+	callOptionsSchema: z.object({ conversationId: z.string() }),
+	prepareCall: ({ options, ...rest }) => ({
+		...rest,
+		runtimeContext: { conversationId: options.conversationId },
+	}),
+	telemetry: { functionId: "support_agent", includeRuntimeContext: { conversationId: true } },
+})
+await assistant.generate({ messages, options: { conversationId: chatId } })
+```
+
+- Agent already has `callOptionsSchema`/`prepareCall`: extend both; keep their existing return values and merge `runtimeContext`.
+- `useChat` routes: the request body has `id` (the chat id). Use it: `createAgentUIStreamResponse({ agent, uiMessages: messages, options: { conversationId: id } })`, or `runtimeContext: { conversationId: id }` on `streamText`.
+- Id must be stable per conversation and unique across conversations. Never a module constant, never `Date.now()` per call, never a per-process id. If the app has no id for a conversation, create one where the conversation is created and persist it with it.
+- Tool approvals (`toolApproval: { <tool>: "user-approval" }` on the call or agent; `needsApproval` on `tool()` is deprecated in 7): the resume after the `tool-approval-response` is a second `generate`/`stream` call and a second trace. Pass the same id. Maple shows it as a second turn.
+- Background jobs with no conversation: one id per job run.
+
+## Step 4: Content
+
+- On by default. Do not set `recordInputs`/`recordOutputs` unless the user asks for privacy; if they do, set them per call/agent in `telemetry` and tell them the transcript will be empty for those calls.
+- Never set `OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT` / `OTEL_SPAN_ATTRIBUTE_VALUE_LENGTH_LIMIT`: truncated JSON is dropped by Maple.
+- Calls that send images/PDFs: warn the user they are recorded as base64 on every step; suggest `recordInputs: false` on those calls if payloads are large.
+
+## Step 5: Tools, errors, sub-agents
+
+- Set a distinct `telemetry.functionId` on EVERY agent/call (snake_case agent name). It becomes `gen_ai.agent.name`; `ToolLoopAgent.id` is not exported.
+- Tool failures must throw from `execute`. If a tool returns `{ error }` / `{ ok: false }` for real failures, change it to throw (ask the user first if the model relies on the payload). An always-throwing `execute` needs an explicit return type (`Promise<string>`) or it infers `never`.
+- Sub-agents as tools: `execute: async ({ task }) => (await worker.generate({ prompt: task })).text`. The worker needs its own `functionId`; it does not need the conversation id (one span per trace carries it). Separate top-level calls in a pipeline (e.g. a summary agent after the orchestrator) are separate traces: each needs the conversation id.
+- Don't pass `telemetry.integrations` on a call unless it includes the `OpenTelemetry` instance: it replaces the global integrations for that call.
+
+## Step 6: Flush
+
+- Scripts/CLIs: `await sdk.shutdown()` in a `finally` at the end.
+- Serverless handlers (Lambda, Cloud Run jobs, queue consumers, cron, Vercel Workflow steps): `await spanProcessor.forceFlush()` in a `finally` per invocation.
+- Next.js on Vercel: `@vercel/otel` flushes per request via `waitUntil`; nothing to add in route handlers. Work outside a request needs an explicit flush.
+- Streams: read every stream to the end (`for await (const c of result.textStream)` / `await result.consumeStream()` / return it as the response) before flushing. An unread stream never ends its spans.
+
+## Step 7: Verify
+
+Run one real conversation: 2+ turns with the same id, one streamed, one tool call; plus a second conversation. Then check (via Maple MCP `list_agent_sessions` / `get_agent_session`, or the Agent Sessions page, ~30 s after the run):
+
+- One session per conversation (id = your `conversationId`), not `trace:<id>` sessions; the second conversation is a separate session.
+- Framework shows **Vercel AI SDK**, not Unidentified.
+- Turns = number of `generate`/`stream` calls (an approval pause + resume = 2 turns); each has `invoke_agent <model>`, `step <n>`, `chat <model>`, `execute_tool <tool>` spans in one trace.
+- Transcript shows user messages, assistant replies and tool calls; turn labels are the user's messages.
+- Every `chat` span has input and output tokens, including the streamed turn; the streamed `chat` span has TTFT.
+- Tool calls have name, arguments, result; a throwing tool is counted as failed with its message; successful tools are not failed.
+- Sub-agents show as their own lanes named after their `functionId`.
+- No attribute contains the provider API key or `Bearer `.
+- Cost shows as unpriced (expected).
+- The process exited cleanly and no turn is missing (flush ran).
+
+## AI SDK 5/6 (only if the user won't upgrade)
+
+- Tracing is per call: `experimental_telemetry: { isEnabled: true, functionId: "<agent>", metadata: { conversationId } }` on every call. Spans: `ai.generateText`/`ai.streamText`, `.doGenerate`/`.doStream`, `ai.toolCall`, tracer `ai`. Provider setup as in Step 2a without `registerTelemetry`/`@ai-sdk/otel`.
+- Copy the id to `gen_ai.conversation.id` with a span processor placed before the exporting one:
+
+```ts
+import type { Context } from "@opentelemetry/api"
+import type { ReadableSpan, Span, SpanProcessor } from "@opentelemetry/sdk-trace-base"
+
+export class ConversationIdProcessor implements SpanProcessor {
+	onStart(span: Span, _parentContext: Context) {
+		const id = span.attributes["ai.telemetry.metadata.conversationId"]
+		if (typeof id === "string") span.setAttribute("gen_ai.conversation.id", id)
+	}
+	onEnd(_span: ReadableSpan) {}
+	forceFlush() {
+		return Promise.resolve()
+	}
+	shutdown() {
+		return Promise.resolve()
+	}
+}
+// spanProcessors: [new ConversationIdProcessor(), spanProcessor]
+```
+
+- Tell the user: final assistant replies won't show in the transcript (recorded only as plain `ai.response.text`); upgrading to 7 fixes it.
+
+## Do not
+
+- Do not use `experimental_telemetry: { isEnabled: true }` as the v7 setup; without `registerTelemetry` there are zero spans.
+- Do not call `registerTelemetry` twice or register `LegacyOpenTelemetry` alongside `OpenTelemetry` (duplicate spans, double tokens).
+- Do not start a second OpenTelemetry SDK next to an existing one; add a span processor.
+- Do not rely on `runtimeContext` alone: Maple does not read `ai.settings.context.*` keys as a session id. The `enrichSpan` → `gen_ai.conversation.id` step is required.
+- Do not use `telemetry.metadata` (removed in v7) or `ToolLoopAgent({ id })` for agent names.
+- Do not stamp `maple_ai.session.id` on AI SDK spans: it re-vendors them and loses AI SDK decoding.
+- Do not add a second AI SDK tracer that also exports to Maple (Langfuse/Braintrust/Sentry AI integrations, OpenLLMetry/OpenInference AI SDK processors): every model call gets recorded twice.
+- Do not return error payloads from failing tools; throw.
+- Do not set attribute length limits.
+- Do not use a gRPC exporter; Maple ingest is OTLP over HTTP.
