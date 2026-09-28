@@ -21,6 +21,7 @@ import { gzipSync } from "node:zlib"
 
 /** Ceilings in gzipped KB. Raise deliberately, with the reason in the commit. */
 const BUDGET = {
+	/** 38 since 2026-09: navigation spans took it to ~37.3 kB; see `firstParty`. */
 	eager: 38,
 	lazy: 68,
 	/**

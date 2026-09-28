@@ -33,7 +33,7 @@ vi.mock("@opentelemetry/exporter-trace-otlp-http", () => ({
 
 const { MapleBrowser } = await import("./index")
 const { resetReportedErrorsForTests } = await import("./errors")
-const { resetNavigation } = await import("./navigation")
+const { resetNavigationForTests } = await import("./navigation")
 
 type InitConfig = Parameters<typeof MapleBrowser.init>[0]
 
@@ -105,8 +105,8 @@ afterEach(async () => {
 	resetConsentForTests()
 	resetReportedErrorsForTests()
 	resetUrlSanitizersForTests()
-	// A test that navigates without live tracing consumes the page load
-	resetNavigation()
+	// Each test is a fresh document: a test that navigates consumes its page load
+	resetNavigationForTests()
 	MapleBrowser.identify(undefined)
 	for (const meta of document.querySelectorAll('meta[name="traceparent"]')) meta.remove()
 	trace.disable()
@@ -287,6 +287,35 @@ describe("traced", () => {
 		const loader = named("loader /projects/:id")
 		expect(loader.spanContext().traceId).toBe(navigate.spanContext().traceId)
 		expect(parentOf(loader)).toBe(navigate.spanContext().spanId)
+	})
+
+	it("nests a traced call inside another under that one, not the navigation", async () => {
+		start()
+		MapleBrowser.startNavigation("/a")
+		await MapleBrowser.traced("outer", () => MapleBrowser.traced("inner", async () => undefined))
+		// Started after outer's first await: outer is no longer active
+		await MapleBrowser.traced("later", async () => undefined)
+		MapleBrowser.endNavigation("/a")
+		await stop()
+
+		const pageload = named("pageload /a").spanContext().spanId
+		expect(parentOf(named("outer"))).toBe(pageload)
+		expect(parentOf(named("inner"))).toBe(named("outer").spanContext().spanId)
+		expect(parentOf(named("later"))).toBe(pageload)
+	})
+
+	it("nests under the open navigation, not an unrelated active span", async () => {
+		start()
+		MapleBrowser.startNavigation("/a")
+		const unrelated = trace.getTracer("host").startSpan("host click")
+		await context.with(trace.setSpan(context.active(), unrelated), () =>
+			MapleBrowser.traced("loader /a", async () => undefined),
+		)
+		unrelated.end()
+		MapleBrowser.endNavigation("/a")
+		await stop()
+
+		expect(parentOf(named("loader /a"))).toBe(named("pageload /a").spanContext().spanId)
 	})
 
 	it("nests under the active context when no navigation is open", async () => {
@@ -560,6 +589,7 @@ describe("without live tracing", () => {
 
 describe("shutdown", () => {
 	it("ends the open navigation so it exports, and a re-init starts with a page load", async () => {
+		setMeta(SERVER_TRACEPARENT)
 		start()
 		MapleBrowser.startNavigation("/a")
 		await stop()
@@ -575,6 +605,9 @@ describe("shutdown", () => {
 		MapleBrowser.endNavigation("/b")
 		await stop()
 		expect(exported.map((span) => span.name)).toEqual(["pageload /b"])
+		// Long past the server render: only the document's own page load joins it
+		expect(parentOf(named("pageload /b"))).toBeUndefined()
+		expect(named("pageload /b").spanContext().traceId).not.toBe(SERVER_TRACE_ID)
 	})
 })
 

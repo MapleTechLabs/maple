@@ -34,11 +34,17 @@ export interface TracedOptions {
  */
 let navigation: { readonly span: Span; readonly kind: "pageload" | "navigate" } | undefined
 /**
- * Whether the document's first navigation is still to come. Consumed even when
- * nothing is spanned (tracing not live yet, consent pending): a later click is
- * not the page load and must not join the server render's trace.
+ * Whether the next navigation is a `pageload`: the first since the document
+ * loaded, or since `shutdown()`. Consumed even when nothing is spanned
+ * (tracing not live yet, consent pending): a later click is not the page load.
  */
 let firstLoad = true
+/**
+ * Whether the document's own page load is still to come. Unlike `firstLoad`,
+ * never reset: a `pageload` after `shutdown()` and a new `init()` is long past
+ * the server render, and must not join its trace.
+ */
+let documentLoad = true
 
 const tracer = () => liveMapleTracer(SDK_NAME, SDK_VERSION)
 
@@ -53,10 +59,12 @@ export function startNavigation(path: string): void {
 	if (typeof window === "undefined") return
 	interruptNavigation()
 	const kind = firstLoad ? "pageload" : "navigate"
+	const joinServer = documentLoad
 	firstLoad = false
+	documentLoad = false
 	const live = tracer()
 	if (!live) return
-	const parent = (kind === "pageload" ? serverContext() : undefined) ?? context.active()
+	const parent = (joinServer ? serverContext() : undefined) ?? context.active()
 	navigation = { kind, span: live.startSpan(kind, { attributes: { "url.path": scrubUrl(path) } }, parent) }
 }
 
@@ -70,11 +78,10 @@ export function endNavigation(route?: string): void {
 export async function traced<T>(name: string, fn: () => Promise<T>, options: TracedOptions = {}): Promise<T> {
 	const live = tracer()
 	if (!live) return fn()
-	const parent = navigation ? trace.setSpan(context.active(), navigation.span) : context.active()
 	// `fn` runs synchronously inside the span's context, so requests it starts
 	// before its first `await` are children of the span. The browser has no
 	// async context: anything after that `await` is not.
-	return live.startActiveSpan(name, {}, parent, async (span) => {
+	return live.startActiveSpan(name, {}, parentContext(), async (span) => {
 		try {
 			return await fn()
 		} catch (error) {
@@ -84,6 +91,21 @@ export async function traced<T>(name: string, fn: () => Promise<T>, options: Tra
 			span.end()
 		}
 	})
+}
+
+/**
+ * The open navigation, unless the active span is already in its trace: a
+ * `traced` inside another `traced` nests under that one.
+ */
+function parentContext(): Context {
+	const active = context.active()
+	if (
+		!navigation ||
+		trace.getSpan(active)?.spanContext().traceId === navigation.span.spanContext().traceId
+	) {
+		return active
+	}
+	return trace.setSpan(active, navigation.span)
 }
 
 /** `isFailure` is the app's code: if it throws, the original error still propagates. */
@@ -102,6 +124,12 @@ function isFailure(options: TracedOptions, error: unknown): boolean {
 export function resetNavigation(): void {
 	interruptNavigation()
 	firstLoad = true
+}
+
+/** Test seam: as if the document had just loaded. */
+export function resetNavigationForTests(): void {
+	resetNavigation()
+	documentLoad = true
 }
 
 /**
