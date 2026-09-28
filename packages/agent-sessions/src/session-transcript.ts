@@ -40,6 +40,7 @@ import {
 	type SpanMessage,
 	type SpanMessagePart,
 } from "./span-detail"
+import { rawFailureText } from "./failure-text"
 import { countTurnUsage, type SessionTurnUsage } from "./session-summary"
 
 /* -------------------------------------------------------------------------- */
@@ -1297,12 +1298,15 @@ function toolArgsText(span: AiSessionSpan): string | undefined {
 }
 
 /** A tool span's captured result. The session-wide index only fills an absence:
- *  a later call's echoed response never overrides the span's own report. */
+ *  a later call's echoed response never overrides the span's own report. A
+ *  failed span that recorded no result still says why it failed (its status
+ *  message), which is the result the call produced. */
 function toolResultText(span: AiSessionSpan, context: TurnContext): string | undefined {
 	const own = span.genAi.toolCallResult ?? undefined
 	if (own !== undefined) return jsonText(own)
 	const id = span.genAi.toolCallId
-	return id === undefined ? undefined : toolResultFor(context.input.toolResults, span.traceId, id)
+	const echoed = id === undefined ? undefined : toolResultFor(context.input.toolResults, span.traceId, id)
+	return echoed ?? (spanFailed(span) ? rawFailureText(span) : undefined)
 }
 
 /* -------------------------------------------------------------------------- */

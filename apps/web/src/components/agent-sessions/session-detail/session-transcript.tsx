@@ -954,7 +954,9 @@ function ToolBlock({
 						missingResultNote={
 							row.fromMessageOnly
 								? "not captured — this call is known only from the message that made it. Whether it ran is unknown."
-								: "not captured — the span carries no result attribute and no later message echoes this call id. Whether it succeeded is unknown."
+								: row.failed
+									? "not captured — the span failed without recording a result or an error message."
+									: "not captured — the span carries no result attribute and no later message echoes this call id. Whether it succeeded is unknown."
 						}
 						keyPrefix={row.key}
 						openRows={openRows}
