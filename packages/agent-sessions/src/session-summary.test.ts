@@ -114,6 +114,28 @@ describe("buildSessionSummary — time", () => {
 		expect(summary.agentTime.segments.map((entry) => entry.kind)).toEqual(["inference", "tool"])
 		expect(summary.agentTime.totalMs).toBe(7 * SECOND)
 	})
+
+	// OpenRouter Broadcast nests a `provider attempt` and a `generation` span,
+	// both op `chat`, under each `LLM Generation`: summing all three read 204.8s
+	// of agent time in a 125.5s session.
+	it("charges a model call observed at several levels once, at the outermost", () => {
+		const summary = summarize([
+			llmSpan({ spanId: "root", spanName: "LLM Generation", startMs: 0, durationMs: 4_842 }),
+			llmSpan({ spanId: "attempt", parentSpanId: "root", startMs: 184, durationMs: 2_019 }),
+			llmSpan({
+				spanId: "generation",
+				parentSpanId: "root",
+				startMs: 200,
+				durationMs: 4_402,
+				ttftSeconds: 3.6,
+			}),
+		])
+
+		expect(summary.agentTime.totalMs).toBe(4_842)
+		// The TTFT only the nested span reported still splits the call.
+		expect(segment(summary.agentTime.segments, "ttft")).toBe(3_600)
+		expect(segment(summary.agentTime.segments, "inference")).toBe(1_242)
+	})
 })
 
 describe("buildSessionSummary — failed", () => {

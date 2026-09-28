@@ -356,29 +356,51 @@ export function findIdleGaps(spans: readonly AiSessionSpan[]): readonly IdleGap[
  * A TTFT splits its own span: the wait is not inference, and a session whose
  * time is mostly first-token latency is a different session from one that is
  * mostly generation. Agent and non-AI spans contribute nothing — an agent span
- * covers its children, and adding it would count the same work twice.
+ * covers its children, and adding it would count the same work twice. For the
+ * same reason an inference span inside another is the same model call observed
+ * twice (OpenRouter's `LLM Generation` over its `generation`, ADK's `call_llm`
+ * over `generate_content`): the outermost carries the time, and lends its TTFT
+ * from the level that reported one.
  */
 export function computeAgentTime(spans: readonly AiSessionSpan[]): SessionAgentTime {
 	const totals = new Map<AgentTimeKind, number>()
 	const add = (kind: AgentTimeKind, ms: number) => {
 		if (ms > 0) totals.set(kind, (totals.get(kind) ?? 0) + ms)
 	}
+	const byId = new Map(spans.map((span) => [span.spanId, span]))
+	const outermostCall = (span: AiSessionSpan): AiSessionSpan => {
+		let call = span
+		const seen = new Set<string>([span.spanId])
+		let parent = byId.get(span.parentSpanId)
+		while (parent !== undefined && !seen.has(parent.spanId)) {
+			seen.add(parent.spanId)
+			if (classifyAiSpan(parent) === "inference") call = parent
+			parent = byId.get(parent.parentSpanId)
+		}
+		return call
+	}
 
+	const calls: AiSessionSpan[] = []
+	const nestedTtftMs = new Map<string, number>()
 	for (const span of spans) {
-		const spanStart = spanStartMs(span)
-		const spanEnd = spanEndMs(span)
 		const category = classifyAiSpan(span)
-		if (category !== "tool" && category !== "inference") continue
-		if (category === "tool") {
-			add("tool", spanEnd - spanStart)
+		if (category === "tool") add("tool", span.durationMs)
+		if (category !== "inference") continue
+		const call = outermostCall(span)
+		if (call === span) {
+			calls.push(span)
 			continue
 		}
 		const ttftMs = spanTtftMs(span)
+		if (ttftMs !== undefined && !nestedTtftMs.has(call.spanId)) nestedTtftMs.set(call.spanId, ttftMs)
+	}
+	for (const call of calls) {
+		const ttftMs = spanTtftMs(call) ?? nestedTtftMs.get(call.spanId)
 		// A TTFT longer than the span itself is instrumentation disagreeing with
 		// itself; the span's own duration is the one both classes must fit in.
-		const ttft = ttftMs === undefined ? 0 : Math.min(ttftMs, spanEnd - spanStart)
+		const ttft = ttftMs === undefined ? 0 : Math.min(ttftMs, call.durationMs)
 		add("ttft", ttft)
-		add("inference", spanEnd - spanStart - ttft)
+		add("inference", call.durationMs - ttft)
 	}
 
 	const segments = AGENT_TIME_KIND_ORDER.map((kind) => ({ kind, ms: totals.get(kind) ?? 0 })).filter(
