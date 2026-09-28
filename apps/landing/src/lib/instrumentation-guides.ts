@@ -61,6 +61,12 @@ export const FRONTEND_GUIDES: readonly GuideCard[] = [
 		icon: { mark: "angular" },
 	},
 	{
+		name: "Astro",
+		hint: "Page loads, view transitions, islands",
+		href: "/docs/frontend/astro",
+		icon: { mark: "astro" },
+	},
+	{
 		name: "Other frameworks",
 		hint: "Any router, SPA or multi-page app",
 		href: "/docs/frontend/other",

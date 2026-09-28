@@ -21,7 +21,8 @@ Read the `package.json` of each web frontend in the repo, then read **only** the
 | `vue-router`, `nuxt` | `frameworks/vue.md` |
 | `@sveltejs/kit` | `frameworks/sveltekit.md` |
 | `@angular/router` | `frameworks/angular.md` |
-| anything else (Solid, Qwik, Astro islands, plain SPA, hand-rolled router) | `frameworks/other.md` |
+| `astro` | `frameworks/astro.md` |
+| anything else (Solid, Qwik, plain SPA, hand-rolled router) | `frameworks/other.md` |
 
 The steps below are the same for every framework. The reference tells you where each one goes. If the references are not next to this file, read them from https://github.com/MapleTechLabs/maple/tree/main/skills/maple-frontend-tracing.
 
@@ -102,8 +103,8 @@ Keep whatever the hook already does (logging, other vendors, fallback UI).
 
 ## Step 6: Server-side rendering (only if the app renders on the server)
 
-1. The server needs OpenTelemetry like any backend: follow `maple-nodejs-style` (or `maple-nextjs-style` for Next.js) for the SDK bootstrap and inline key.
-2. Add a span around the render, named `ssr <template>`, unless the framework already creates one (the reference says).
+1. The server needs OpenTelemetry like any backend: follow `maple-nodejs-style` (or `maple-nextjs-style` for Next.js) for the SDK bootstrap and inline key. If that skill isn't installed, install it with `npx skills add MapleTechLabs/maple/skills --skill maple-nodejs-style -y`, or read it at https://github.com/MapleTechLabs/maple/tree/main/skills/maple-nodejs-style.
+2. Add a span around the render, named `ssr <template>`, unless the framework already creates one (the reference says). If the framework loads data before it calls your render hook, open the span (or a request span) where the request arrives, so the server's loaders run inside it; otherwise every request's loaders become separate traces.
 3. From inside that span's context, append the trace context to the response:
 
 	```ts

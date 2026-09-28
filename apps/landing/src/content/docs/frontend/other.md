@@ -2,7 +2,7 @@
 title: "Frontend tracing for other frameworks"
 description: "Trace navigations, data loading and caught errors in any browser app with OpenTelemetry, whatever router it uses, and link them to your backend and server render."
 group: "Frontend"
-order: 7
+order: 8
 navLabel: "Other frameworks"
 icon: "javascript"
 ---

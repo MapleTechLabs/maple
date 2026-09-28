@@ -183,33 +183,52 @@ When a request depends on an earlier one, capture the context before the first `
 
 ## Trace TanStack Router navigations
 
-The router emits lifecycle events you can subscribe to with `router.subscribe`. Two of them are enough:
+The router emits lifecycle events you can subscribe to with `router.subscribe`. Three of them are enough:
 
 - `onBeforeNavigate` fires when a navigation starts, before any loader runs.
 - `onResolved` fires once every loader has finished and the new route is committed.
+- `onRendered` fires after the new route rendered. It is also the only event TanStack Start emits when it hydrates a server-rendered page.
 
 ```ts
 // src/router-tracing.ts
-import { type AnyRouter, isNotFound, isRedirect } from "@tanstack/react-router"
+import { type AnyRouter, isNotFound, isRedirect, rootRouteId } from "@tanstack/react-router"
 import { endNavigation, startNavigation, traced } from "./tracing"
 
 export function traceRouter(router: AnyRouter) {
 	// The router also emits these events while rendering on the server
 	if (typeof window === "undefined") return
 
-	router.subscribe("onBeforeNavigate", ({ fromLocation, toLocation, hrefChanged }) => {
-		// router.invalidate() reruns loaders without going anywhere
-		if (fromLocation && !hrefChanged) return
+	// The first page load. TanStack Start hydrates a server-rendered page without onBeforeNavigate or onResolved
+	startNavigation(window.location.pathname)
+	// History index of the navigation in flight
+	let pending: number | undefined
+
+	router.subscribe("onBeforeNavigate", ({ fromLocation, toLocation }) => {
+		// No fromLocation: the first load, already open. Same path and search: a hash link or router.invalidate()
+		if (!fromLocation || (fromLocation.pathname === toLocation.pathname && fromLocation.searchStr === toLocation.searchStr)) return
+		// redirect() replaces the history entry of the navigation it came from: keep that span
+		if (toLocation.state.__TSR_index === pending) return
+		pending = toLocation.state.__TSR_index
 		startNavigation(toLocation.pathname)
 	})
 
-	router.subscribe("onResolved", () => {
-		endNavigation(router.state.matches.at(-1)?.fullPath)
-	})
+	const end = () => {
+		pending = undefined
+		endNavigation(routeTemplate(router))
+	}
+	router.subscribe("onResolved", end)
+	// Hydration emits only onRendered
+	router.subscribe("onRendered", end)
+}
+
+/** The matched route's template, like `/projects/$id`. Only the root matched: a URL no route handles */
+export function routeTemplate(router: AnyRouter) {
+	const leaf = router.state.matches.at(-1)
+	return leaf?.routeId === rootRouteId ? "not-found" : leaf?.fullPath
 }
 ```
 
-Call it once, right after you create the router:
+Call it once, right after you create the router. In TanStack Start, `src/router.tsx` exports a `getRouter()` function, which also runs on the server for every request; the `window` check makes that a no-op:
 
 ```ts
 // src/router.tsx
@@ -217,16 +236,22 @@ import { createRouter } from "@tanstack/react-router"
 import { routeTree } from "./routeTree.gen"
 import { traceRouter } from "./router-tracing"
 
-export const router = createRouter({ routeTree })
-
-traceRouter(router)
+export function getRouter() {
+	const router = createRouter({ routeTree })
+	traceRouter(router)
+	return router
+}
 ```
+
+In a client-only TanStack Router app that exports `const router = createRouter(...)`, call `traceRouter(router)` right after it.
 
 A few details that are easy to get wrong:
 
-- **Name spans with `fullPath`, not `routeId`.** Both are templates, but `routeId` includes pathless layouts and route groups (`/_authed/(app)/projects/$projectId`). `fullPath` is the URL the user sees, with the dynamic parts left as `$projectId`.
+- **Name spans with `fullPath`, not `routeId`.** Both are templates, but `routeId` includes pathless layouts and route groups (`/_authed/(app)/projects/$projectId`). `fullPath` is the URL the user sees, with the dynamic parts left as `$projectId`. When no route matches the URL, only the root route is left, and its `fullPath` is `/`. `routeTemplate` names that case `not-found`, so 404 pages don't count as visits to your home page.
+- **The first page load has to be opened by hand.** When TanStack Start hydrates a server-rendered page, the router already has its data and emits neither `onBeforeNavigate` nor `onResolved`, so `traceRouter` opens the `pageload` span as soon as the router exists and ends it on `onRendered`. In a client-only app, the first `router.load()` does emit `onBeforeNavigate`, without a `fromLocation`; the listener skips it because the span is already open.
 - **Interrupted navigations never resolve.** If the user clicks a second link before the first finishes loading, TanStack Router abandons the first one and never emits `onResolved` for it. `startNavigation` handles this by ending the previous span when a new one starts.
-- **Redirects stay in one span.** A loader that throws `redirect()` doesn't start a new navigation event, so the span covers both routes and gets named after the one the user lands on.
+- **Redirects stay in one span.** A `redirect()` thrown from `beforeLoad` or a loader starts a second navigation that replaces the current history entry. The `__TSR_index` check recognizes it, so the span covers both routes, keeps the original `url.path`, and gets named after the route the user lands on.
+- **Search changes are navigations, hash links aren't.** Going from `/projects/1` to `/projects/1?tab=members` makes a `navigate /projects/$projectId` span, with a loader span only if the route's `loaderDeps` read the search. A link to `#section` on the same page makes no span. Back and forward are navigations.
 
 ## Trace route loaders
 
@@ -251,11 +276,15 @@ export const Route = createFileRoute("/projects/$projectId")({
 })
 ```
 
+Wrap `beforeLoad` the same way if it does I/O or can throw.
+
 TanStack Router runs the loaders of nested routes in parallel, so a layout loader and a page loader show up as sibling spans under the navigation. If they overlap in the waterfall, that's working as intended. If the page loader starts only after the layout loader ends, something is making it wait.
 
 Watch out for sequential `await`s inside a loader: only requests started before the first `await` nest under the loader span. [The await problem](#the-await-problem) explains why, and how to pass the context along when a request really does depend on the previous one.
 
-Loaders also run when TanStack Router preloads a route, for example when the user hovers a link with `preload="intent"`. There's no navigation in progress then, so those loader spans become their own traces. That's accurate: the work happened before the click. If the user then clicks, the navigation span is often very short, because the data is already cached.
+A loader that turns an API 404 into `throw notFound()` leaves its span Ok, since `loaderSpan` doesn't count `notFound()` as a failure. The `fetch` span that got the 404 is still marked as an error, like every 4xx client span.
+
+Loaders also run when TanStack Router preloads a route, for example when the user hovers a link with `preload="intent"`. There's no navigation in progress then, so those loader spans become their own traces. That's accurate: the work happened before the click. If the user then clicks, the router renders the preloaded data right away and reloads it in the background, so the navigation span is very short and can end before its loader span does.
 
 ## Report errors caught by TanStack Router
 
@@ -271,67 +300,85 @@ import { routeTree } from "./routeTree.gen"
 import { traceRouter } from "./router-tracing"
 import { alreadyRecorded } from "./tracing"
 
-export const router = createRouter({
-	routeTree,
-	defaultOnCatch: (error) => {
-		// Loader errors are already on their loader span
-		if (!alreadyRecorded(error)) MapleBrowser.captureException(error, { name: "react.render_error" })
-	},
-})
-
-traceRouter(router)
+export function getRouter() {
+	const router = createRouter({
+		routeTree,
+		defaultOnCatch: (error) => {
+			// Loader errors are already on their loader span, in the browser or, for the first page load, on the server
+			if (alreadyRecorded(error) || router.state.matches.some((match) => match.error === error)) return
+			MapleBrowser.captureException(error, { name: "react.render_error" })
+		},
+	})
+	traceRouter(router)
+	return router
+}
 ```
 
-A loader that throws ends up in the same boundary, which is what the `alreadyRecorded` check is for: the error is recorded once, on the loader span, where it has the navigation around it.
+A loader that throws ends up in the same boundary, and both checks keep it from being reported twice. `alreadyRecorded` matches errors from loaders that ran in the browser. The `matches` check covers a loader that failed during server rendering: the server recorded it on its own loader span, and the browser only receives a copy of the error, which `alreadyRecorded` can't recognize. That check also skips errors from `beforeLoad`, which is one more reason to wrap a `beforeLoad` that can throw.
+
+What's left are render errors. Each one is reported once, as a `react.render_error` span.
 
 ## Trace server rendering in TanStack Start
 
-TanStack Start renders the first page on the server, which means the first page load has a server half you can trace too. Start the OpenTelemetry Node SDK as in the [Node.js guide](/docs/guides/instrumentation-nodejs) and import it before anything else in your server entry. That gives you a span for every incoming request and for the database and HTTP calls your loaders make on the server.
+TanStack Start renders the first page on the server, which means the first page load has a server half you can trace too. Start the OpenTelemetry Node SDK as in the [Node.js guide](/docs/guides/instrumentation-nodejs), in a `src/instrumentation.ts` file, and import it before anything else in your server entry. If your server process already loads the SDK with `node --import`, skip that import. That gives you spans for the HTTP calls your loaders make on the server.
 
-Then add a span around the render, and hand its trace context to the browser in a `Server-Timing` header:
+The Start scaffold doesn't include a server entry, so create `src/server.ts`. TanStack Start uses it instead of its default one. It opens a span for every request, names it after the route once the route is known, and hands its trace context to the browser in a `Server-Timing` header:
 
 ```ts
 // src/server.ts
 import "./instrumentation" // starts the OpenTelemetry Node SDK; must load first
-import { context, propagation, trace } from "@opentelemetry/api"
+import { context, propagation, SpanKind, trace } from "@opentelemetry/api"
 import { createStartHandler, defaultStreamHandler, defineHandlerCallback } from "@tanstack/react-start/server"
 import { createServerEntry } from "@tanstack/react-start/server-entry"
+import { routeTemplate } from "./router-tracing"
 
 const tracer = trace.getTracer("acme-web")
 
 const handler = defineHandlerCallback((ctx) => {
 	// Loaders have already run by now, so the matched route is known
-	const leaf = ctx.router.state.matches.at(-1)
+	trace.getActiveSpan()?.updateName(`ssr ${routeTemplate(ctx.router)}`)
 
-	return tracer.startActiveSpan(`ssr ${leaf?.fullPath ?? "unknown"}`, async (span) => {
-		// Hand this trace to the browser so its pageload span can join it
-		const carrier: Record<string, string> = {}
-		propagation.inject(context.active(), carrier)
-		if (carrier.traceparent) {
-			ctx.responseHeaders.append("server-timing", `traceparent;desc="${carrier.traceparent}"`)
-		}
-
-		try {
-			return await defaultStreamHandler(ctx)
-		} finally {
-			span.end()
-		}
-	})
+	// Hand this trace to the browser so its pageload span can join it
+	const carrier: Record<string, string> = {}
+	propagation.inject(context.active(), carrier)
+	if (carrier.traceparent) {
+		ctx.responseHeaders.append("server-timing", `traceparent;desc="${carrier.traceparent}"`)
+	}
+	return defaultStreamHandler(ctx)
 })
 
-export default createServerEntry({ fetch: createStartHandler(handler) })
+const startHandler = createStartHandler(handler)
+
+export default createServerEntry({
+	// One span per request, so the server loaders and the render share a trace
+	fetch: (request, opts) =>
+		tracer.startActiveSpan(
+			request.method,
+			{ kind: SpanKind.SERVER, attributes: { "url.path": new URL(request.url).pathname } },
+			async (span) => {
+				try {
+					return await startHandler(request, opts)
+				} finally {
+					span.end()
+				}
+			},
+		),
+})
 ```
 
-On the browser side there's nothing to add. `startNavigation` reads the header through `serverContext()` and parents the `pageload` span to the server render, so the first page load becomes one trace from the incoming request to the first route resolving in the browser.
+If your app already has a `src/server.ts`, keep its handler and wrap it the same way.
 
-`loaderSpan` works on the server too, and better than in the browser: Node has `AsyncLocalStorage`, so fetches after an `await` keep their parent. Server-side loader spans show up under the request span without any changes.
+On the browser side there's nothing to add. `startNavigation` reads the header through `serverContext()` and parents the `pageload` span to the `ssr` span, so the first page load becomes one trace: the request, the loaders that ran on the server, their fetches and your backend's spans, and the page load in the browser.
 
-Two things to know about the `ssr` span:
+`loaderSpan` works on the server too, and better than in the browser: Node has `AsyncLocalStorage`, so fetches after an `await` keep their parent. Server-side fetches get spans from OpenTelemetry's undici instrumentation, which the Node.js guide's auto-instrumentations include.
 
-- It starts after the loaders have run, because the handler callback only runs once the router has loaded. The loaders are its siblings under the request span, not its children.
+A few things to know about the `ssr` span:
+
+- It has to be opened in the `fetch` wrapper. The router runs the loaders before it calls the handler callback, so a span opened inside the callback would leave every loader in a trace of its own. The HTTP server instrumentation doesn't help here either: a server entry is imported after the server is already listening (as with `vite preview`), too late to be instrumented.
+- Requests that don't render a page, like server functions and redirects, keep the HTTP method as their span name and get no `server-timing` header.
 - `defaultStreamHandler` returns as soon as React starts streaming, so the span measures the time to the first byte of HTML, not the time to the last.
 
-If your pages are cached by a CDN, skip the `server-timing` header on those responses, or every visitor's page load will join the same old trace.
+If your pages are cached by a CDN, skip the `server-timing` header on those responses, or every visitor's page load will join the same old trace. TanStack Start doesn't set an `ETag` on HTML, so a browser revalidation can't reuse an old header.
 
 ## What this setup doesn't cover
 
@@ -345,7 +392,7 @@ If your pages are cached by a CDN, skip the `server-timing` header on those resp
 
 ### Does TanStack Router have built-in OpenTelemetry support?
 
-No, not today. The TanStack Start docs have an observability page with examples, and first-class OpenTelemetry support is on their roadmap. The router events used here are part of the stable public API, so this setup doesn't depend on internals.
+No, not today. The TanStack Start docs have an observability page with examples, and first-class OpenTelemetry support is on their roadmap. This setup uses the router's public events, plus the history index TanStack Router keeps in `location.state.__TSR_index` to recognize redirects.
 
 ### Why are my TanStack Router loader spans not connected to the navigation?
 
