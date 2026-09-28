@@ -206,7 +206,7 @@ There's no matching event for the end. That comes from React instead: a client c
 // src/app/navigation-tracing.tsx
 "use client"
 
-import { useParams, usePathname, useSearchParams } from "next/navigation"
+import { useParams, usePathname, useSearchParams, useSelectedLayoutSegments } from "next/navigation"
 import { useEffect } from "react"
 import { endNavigation, startNavigation } from "../tracing"
 
@@ -225,11 +225,13 @@ export function NavigationTracing() {
 	const pathname = usePathname()
 	const search = useSearchParams().toString()
 	const params = useParams()
+	// URLs no route matches render Next.js's built-in `/_not-found` route
+	const unmatched = useSelectedLayoutSegments()[0] === "/_not-found"
 
 	useEffect(() => {
 		committed = urlKey(pathname, search)
-		endNavigation(routeTemplate(pathname, params))
-	}, [pathname, search, params])
+		endNavigation(unmatched ? "/_not-found" : routeTemplate(pathname, params))
+	}, [pathname, search, params, unmatched])
 
 	return null
 }
@@ -282,6 +284,7 @@ The re-export at the bottom of `instrumentation-client.ts` hands `onRouterTransi
 - **The route template is rebuilt from the params.** Next.js doesn't expose the matched route pattern on the client, so `routeTemplate` replaces each value from `useParams()` with its name. `/projects/8f2a` becomes `/projects/[id]`, and the catch-all `/docs/a/b` becomes `/docs/[...slug]`.
 - **Hash links are skipped.** Next.js calls `onRouterTransitionStart` for a link to `#pricing` too, but nothing renders, so the span would never end. The `committed` check skips any navigation to the pathname and query already on screen.
 - **Query changes are navigations.** Going from `?tab=1` to `?tab=2` makes Next.js fetch new Server Component data, so it gets a span. That's why the component reads `useSearchParams()`, and that hook is why it's inside `<Suspense>`: Next.js fails the build when a statically rendered page calls it outside one.
+- **Unmatched URLs are named `/_not-found`.** A URL that no route matches has no params to replace, so without the `unmatched` check every mistyped URL would become its own span name. A `<Link>` to such a URL makes Next.js reload the page, so the `navigate` span is dropped with the old document and the new document reports `pageload /_not-found`. A route that calls `notFound()` keeps its own template, like `navigate /projects/[id]`.
 - **Redirects produce two spans.** When a Server Component calls `redirect()` during a client navigation, Next.js renders the redirect first and then starts a second navigation. You'll see `navigate /old` followed by `navigate /new`.
 - **The span ends at the commit, not when all data has arrived.** If the route has a `loading.tsx`, the loading state is committed first, and the span ends when the skeleton appears. Content that streams into Suspense boundaries afterwards isn't part of it.
 
@@ -291,50 +294,68 @@ In the App Router, most data loading happens in Server Components, so it's serve
 
 That request doesn't nest under the `navigate` span. Next.js makes it from inside its router, where your code can't wrap it, and without async context in the browser the navigation span can't reach it on its own. So a click gives you two traces that overlap in time and share a session id: the `navigate` span for what the user waited for, and the `GET ...?_rsc=` trace with the server work behind it.
 
-Two more things to expect in the trace list:
+Three more things to expect in the trace list:
 
 - **Prefetches are traced too.** `<Link>` prefetches routes as they scroll into view, and each prefetch is its own `GET ...?_rsc=` trace. That's real work your server did, just before the click.
+- **A link to a missing page gives a failed span.** Its prefetch returns 404, and OpenTelemetry marks client spans with a 4xx status as errors. The span has no exception and nothing in your app failed.
 - **Some navigations take a few milliseconds.** A navigation to a prefetched static route often makes no request at all. That's the prefetch working.
 
-Next.js's spans cover the render and `fetch()`, but not database queries or SDK calls. Wrap those with `traced` from the helper. On the server there's no navigation in progress, so `traced` parents to the active span, which is Next.js's render span. Node has `AsyncLocalStorage`, so requests after an `await` keep their parent too.
+### Propagate to your APIs from the server
 
-`redirect()` and `notFound()` work by throwing, and they aren't failures. Next.js's `unstable_rethrow` rethrows exactly the errors it uses for control flow, including the ones it throws internally while prerendering, so it makes a good `isFailure` check:
+When a Server Component calls an API on another origin, Next.js's `fetch` span only sends `traceparent` if `@vercel/otel` is told to. By default it propagates to your own Vercel deployment URLs and nothing else, so your API's spans end up in separate traces. List your first-party APIs in `instrumentation.ts`:
+
+```ts
+// src/instrumentation.ts
+import { OTLPHttpProtoTraceExporter, registerOTel } from "@vercel/otel"
+
+export function register() {
+	registerOTel({
+		serviceName: "acme-next",
+		traceExporter: new OTLPHttpProtoTraceExporter({
+			url: "https://ingest.maple.dev/v1/traces",
+			headers: { authorization: `Bearer ${process.env.MAPLE_INGEST_KEY}` },
+		}),
+		instrumentationConfig: {
+			fetch: { propagateContextUrls: [/^https:\/\/api\.acme\.com\//] },
+		},
+	})
+}
+```
+
+The same rule as in the browser applies: only your own APIs, never third parties.
+
+### Database and SDK calls
+
+Next.js's spans cover the render and `fetch()`, but not database queries or SDK calls. Wrap those with `traced` from the helper to time them. On the server there's no navigation in progress, so `traced` parents to the active span, which is Next.js's render span. Node has `AsyncLocalStorage`, so requests after an `await` keep their parent too.
+
+When a Server Component throws, Next.js records the exception on its render span and marks it as an error. If the data span recorded the same error, it would count twice, so pass an `isFailure` that always returns `false`. That also keeps `redirect()` and `notFound()`, which work by throwing, from showing up as failures:
 
 ```ts
 // src/data-span.ts
-import { unstable_rethrow } from "next/navigation"
 import { traced } from "./tracing"
 
-// redirect(), notFound() and Next.js's own rendering signals are thrown, but aren't failures
-const isFailure = (error: unknown) => {
-	try {
-		unstable_rethrow(error)
-		return true
-	} catch {
-		return false
-	}
-}
-
-export const dataSpan = <T>(name: string, fn: () => Promise<T>) => traced(name, fn, isFailure)
+// Next.js records errors thrown from Server Components on its render span, and
+// redirect() / notFound() are thrown too: the data span only times the call
+export const dataSpan = <T>(name: string, fn: () => Promise<T>) => traced(name, fn, () => false)
 ```
 
 ```tsx
 // src/app/projects/[id]/page.tsx
 import { notFound } from "next/navigation"
 import { dataSpan } from "../../../data-span"
+import { db } from "../../../db"
 
 export default async function ProjectPage({ params }: { params: Promise<{ id: string }> }) {
 	const { id } = await params
 
-	const project = await dataSpan("load project", async () => {
-		const res = await fetch(`https://api.acme.com/projects/${id}`)
-		if (res.status === 404) notFound()
-		return (await res.json()) as { name: string }
-	})
+	const project = await dataSpan("load project", () => db.project.findUnique({ where: { id } }))
+	if (!project) notFound()
 
 	return <h1>{project.name}</h1>
 }
 ```
+
+If the query throws, the trace shows the `load project` span with its duration and the render span above it with the exception.
 
 ## Trace client-side data fetching
 
@@ -383,7 +404,7 @@ import { MapleBrowser } from "@maple-dev/browser"
 import { useEffect } from "react"
 import { alreadyRecorded } from "../tracing"
 
-export default function ErrorPage({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
+export default function ErrorPage({ error, retry }: { error: Error & { digest?: string }; retry: () => void }) {
 	useEffect(() => {
 		// Server errors arrive with a digest and without their message.
 		// Next.js already recorded the real error on its server span.
@@ -394,7 +415,7 @@ export default function ErrorPage({ error, reset }: { error: Error & { digest?: 
 	return (
 		<main>
 			<h2>Something went wrong</h2>
-			<button onClick={reset}>Try again</button>
+			<button onClick={retry}>Try again</button>
 		</main>
 	)
 }
@@ -403,6 +424,8 @@ export default function ErrorPage({ error, reset }: { error: Error & { digest?: 
 The `digest` check is the Next.js-specific part. In production, an error thrown in a Server Component reaches the browser as a generic React error, with the message removed and a `digest` added. Reporting that from the browser would group every server error into one meaningless issue.
 
 You don't lose anything by skipping it. Next.js records the original exception, message and stack included, on its own server span (`render route (app) /projects/[id]`, or `RSC GET /projects/[id]` on a client navigation) and marks it as an error, so it's already on the Errors page. For the same reason you don't need the `onRequestError` hook in `instrumentation.ts`: with OpenTelemetry set up, it would record every server error a second time.
+
+A client component that throws on every render shows up twice on a full page load: once on the server render span, where it turned the response into a 500, and once from `error.tsx`, when the browser renders the component again and it throws again. Those are two executions of the bug, not one error reported twice. After a client navigation, only the browser one happens.
 
 Errors thrown in the root layout skip `error.tsx` and go to `global-error.tsx`, which replaces the whole document:
 
@@ -464,13 +487,15 @@ Requests that already have a `traceparent` are skipped. Those are the RSC reques
 
 This works with `next start` on Node. Next.js only reads the incoming `traceparent` when no span is active yet, so on a platform that starts its own server span first, or that runs the proxy separately from your app, the render may not join. After deploying, open one page load in Maple and check that the `pageload` span shares a trace with the server spans.
 
-If it doesn't, Next.js has an experimental option that does the injection itself. `experimental.clientTraceMetadata: ["traceparent"]` in `next.config.ts` renders a `<meta name="traceparent">` tag with the render's trace context into every dynamically rendered page. The helper's `serverContext()` reads that tag when there's no header, so you can use it instead of the proxy.
+The proxy runs on every request it matches, including prerendered pages and `304` revalidations, so each response gets a fresh header. That changes if a shared cache such as a CDN sits in front of `next start`: Next.js sends prerendered HTML with a long `s-maxage`, the cache would store the header, and every visitor would join the same trace. In that setup, leave prerendered routes out of the matcher or use the option below.
+
+If the page load doesn't join, Next.js has an experimental option that does the injection itself. `experimental.clientTraceMetadata: ["traceparent"]` in `next.config.ts` renders a `<meta name="traceparent">` tag with the render's trace context into every dynamically rendered page. The helper's `serverContext()` reads that tag when there's no header, so you can use it instead of the proxy.
 
 ## Next.js-specific gotchas
 
 - **The pageload span measures hydration, not the full load.** It starts when `instrumentation-client.ts` runs and ends after the first commit. The time before that is in the server spans and the browser's navigation timing.
 - **Development doubles effects.** React Strict Mode runs effects twice in `next dev`. The second `endNavigation` finds nothing open and does nothing, so traces look the same, but the dev server's timings are nothing like production.
-- **Static pages have no render to join.** A prerendered page's `pageload` span still joins the proxy's trace, but there's no render span under it, because nothing rendered.
+- **Static pages have no render to join.** With the proxy, a prerendered page's `pageload` span still joins the proxy's trace, but there's no render span under it, because nothing rendered. With `clientTraceMetadata`, prerendered pages get no `<meta>` tag, and their `pageload` span is its own trace.
 
 ## What this setup doesn't cover
 
