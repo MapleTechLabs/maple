@@ -507,6 +507,26 @@ describe("buildSessionChecks", () => {
 		expect(byId(report, "provider").headline).toBe("All 2 model calls were answered first time")
 	})
 
+	// Strands TS writes its finish reasons camelCase (`maxTokens`), which the
+	// lowercased match against `max_tokens` never caught.
+	it("reads a cut-off reply whatever the finish reason's spelling", () => {
+		for (const reason of ["maxTokens", "MAX_TOKENS", "max_tokens"]) {
+			const report = checks([
+				agentSpan({ spanId: "a1", startMs: 0, durationMs: 10 * SECOND }),
+				llmSpan({
+					spanId: "l1",
+					parentSpanId: "a1",
+					startMs: SECOND,
+					durationMs: SECOND,
+					genAi: { requestMaxTokens: 600, responseFinishReasons: [reason] },
+				}),
+			])
+			const replyLength = byId(report, "reply-length")
+			expect(replyLength.status).toBe("warning")
+			expect(replyLength.headline).toMatch(/^1 reply hit the output token limit \(max_tokens 600\)/)
+		}
+	})
+
 	// Google ADK reports each call twice: `call_llm` (no operation, a model)
 	// over `generate_content`, both with the same usage. The cache check read
 	// "over 15 calls" for a session of 8.

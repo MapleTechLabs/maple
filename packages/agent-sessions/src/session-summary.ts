@@ -241,7 +241,7 @@ export interface SessionSummary {
 const RATE_LIMIT_PATTERN = /\b429\b|rate.?limit|too.many.requests|resource.exhausted|overloaded/i
 const CONTEXT_EXCEEDED_PATTERN =
 	/context.{0,16}(length|window|limit)|maximum.context|prompt is too long|too many tokens/i
-const REFUSAL_FINISH_REASONS = new Set(["refusal", "content_filter"])
+const REFUSAL_FINISH_REASONS = new Set(["refusal", "contentfilter"])
 
 export function buildSessionSummary({
 	spans,
@@ -881,9 +881,19 @@ function failureSignal(span: AiSessionSpan): string | undefined {
 }
 
 function refusalSignal(span: AiSessionSpan): string | undefined {
+	return finishReasonsIn(span, REFUSAL_FINISH_REASONS)
+}
+
+/**
+ * The span's finish reasons that are one of `keys`, lowercased and joined — or
+ * `undefined`. Matched without case or separators, since vendors spell one
+ * reason `max_tokens`, `MAX_TOKENS` and `maxTokens` (Strands TS); `keys` are
+ * written that way too.
+ */
+export function finishReasonsIn(span: AiSessionSpan, keys: ReadonlySet<string>): string | undefined {
 	const reasons = (span.genAi.responseFinishReasons ?? [])
 		.map((reason) => reason.toLowerCase())
-		.filter((reason) => REFUSAL_FINISH_REASONS.has(reason))
+		.filter((reason) => keys.has(reason.replace(/[^a-z0-9]/g, "")))
 	return reasons.length === 0 ? undefined : reasons.join(",")
 }
 
