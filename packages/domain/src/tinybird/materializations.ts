@@ -1173,12 +1173,7 @@ export const traceListMvMv = defineMaterializedView("trace_list_mv_mv", {
 	],
 })
 
-/**
- * Cascading hourly rollup of `trace_list_mv` for the traces sidebar facets. It
- * consumes the root-span insert stream `trace_list_mv_mv` already produced, so
- * its dimensions are the trace list's exact values rather than a fourth copy of
- * the span-name rewrite.
- */
+/** Cascaded off `trace_list_mv`, so it groups by the values the trace list filters on. */
 export const traceFacetsHourlyMv = defineMaterializedView("trace_facets_hourly_mv", {
 	description:
 		"Rolls trace_list_mv up hourly by the traces sidebar facet dimensions, with root-span counts and duration state.",

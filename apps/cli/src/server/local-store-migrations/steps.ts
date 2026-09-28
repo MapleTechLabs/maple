@@ -1053,17 +1053,22 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 		],
 	},
 	{
-		// Both objects are new, so the bootstrap's IF NOT EXISTS CREATEs are the whole edge.
+		// Both objects are new; the backfill rolls up the root spans already retained.
 		id: "local-0023-to-0024-trace-facets-hourly",
 		from: 23,
 		to: 24,
 		description:
-			"Create trace_facets_hourly and its materialized view so the traces sidebar facets read an hourly rollup instead of scanning trace_list_mv",
+			"Create trace_facets_hourly and its materialized view, backfilled from trace_list_mv, so the traces sidebar facets read an hourly rollup",
 		clonedBefore: "any DDL runs",
+		afterBootstrap: [
+			backfill(
+				"INSERT INTO trace_facets_hourly (OrgId, Hour, ServiceName, SpanName, HttpMethod, HttpStatusCode, DeploymentEnv, ServiceNamespace, HasError, TraceCount, DurationMin, DurationMax, DurationQuantiles) SELECT OrgId, toStartOfHour(Timestamp) AS Hour, ServiceName, SpanName, HttpMethod, HttpStatusCode, DeploymentEnv, ServiceNamespace, HasError, count() AS TraceCount, min(Duration) AS DurationMin, max(Duration) AS DurationMax, quantilesTDigestState(0.5, 0.95)(Duration) AS DurationQuantiles FROM trace_list_mv GROUP BY OrgId, Hour, ServiceName, SpanName, HttpMethod, HttpStatusCode, DeploymentEnv, ServiceNamespace, HasError",
+			),
+		],
 		plan: [
 			[
 				"create-trace-facets-hourly",
-				"Create trace_facets_hourly and trace_facets_hourly_mv via the v24 bootstrap (both new, IF NOT EXISTS)",
+				"Create trace_facets_hourly and trace_facets_hourly_mv via the v24 bootstrap and backfill the rollup from trace_list_mv",
 			],
 		],
 		verifies: "Verify the v24 physical schema and the retained raw telemetry counts",
@@ -1072,9 +1077,8 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 				name: "trace_facets_hourly",
 				classification: "derived",
 				disposition: "rebuild-within-retention-horizon",
-				guarantee:
-					"The rollup accrues for root spans ingested after the migration; older ones stay in trace_list_mv until they age out.",
-				preservationInterval: "from the migration forward",
+				guarantee: "Rebuilt from every root span trace_list_mv retains; both keep 30 days.",
+				preservationInterval: "source retention horizon",
 				sourceRetentionDays: 30,
 				targetRetentionDays: 30,
 			},
