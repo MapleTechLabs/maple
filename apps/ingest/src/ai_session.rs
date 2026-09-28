@@ -251,7 +251,7 @@ struct ScopeFacts {
     flue: bool,
     google_adk: bool,
     haystack: bool,
-    langsmith: bool,
+    langchain: bool,
     litellm: bool,
     llamaindex: bool,
     mastra: bool,
@@ -288,6 +288,8 @@ const SCOPE_NAMES: &[&str] = &[
     "llamaindex.opentelemetry.tracer",
     "@mastra/otel-exporter",
     "agent_framework",
+    "Experimental.Microsoft.Agents.AI",
+    "@arizeai/openinference-instrumentation-openai-agents",
     "agent_runtime ",
     "openrouter",
     "crewai.telemetry",
@@ -323,15 +325,20 @@ fn scope_facts(scope_name: &str, resource: &ResourceFacts) -> ScopeFacts {
         "@flue/opentelemetry" => facts.flue = true,
         "gcp.vertex.agent" => facts.google_adk = true,
         "haystack" => facts.haystack = true,
-        "langsmith" => facts.langsmith = true,
+        "langsmith" | "openinference.instrumentation.langchain" => facts.langchain = true,
         "litellm" => facts.litellm = true,
-        "llamaindex.opentelemetry.tracer" => facts.llamaindex = true,
+        "llamaindex.opentelemetry.tracer" | "openinference.instrumentation.llama_index" => {
+            facts.llamaindex = true;
+        }
         "@mastra/otel-exporter" => facts.mastra = true,
         "openinference.instrumentation.agno" => facts.agno = true,
-        "agent_framework" => facts.agent_framework = true,
+        // The second name is the .NET build's ActivitySource.
+        "agent_framework" | "Experimental.Microsoft.Agents.AI" => facts.agent_framework = true,
         // Exact equality, never starts_with: "openinference.instrumentation.
-        // openai" is a string prefix of the agents scope.
-        "openinference.instrumentation.openai_agents" => facts.openai_agents = true,
+        // openai" is a string prefix of the agents scope. The `@arizeai/` name
+        // is the TypeScript instrumentor of the same SDK.
+        "openinference.instrumentation.openai_agents"
+        | "@arizeai/openinference-instrumentation-openai-agents" => facts.openai_agents = true,
         "openinference.instrumentation.openai" => facts.openinference_openai = true,
         "openrouter" => facts.openrouter = true,
         "openinference.instrumentation.crewai" | "crewai.telemetry" => facts.crewai = true,
@@ -359,7 +366,7 @@ fn scope_facts(scope_name: &str, resource: &ResourceFacts) -> ScopeFacts {
         || facts.flue
         || facts.google_adk
         || facts.haystack
-        || facts.langsmith
+        || facts.langchain
         || facts.litellm
         || facts.llamaindex
         || facts.mastra
@@ -872,7 +879,12 @@ static VENDORS: &[Vendor] = &[
     Vendor {
         id: "langchain",
         detect: detect_langchain,
-        session_keys: &["langsmith.metadata.thread_id"],
+        // LangSmith's thread, then OpenInference's session keys.
+        session_keys: &[
+            "langsmith.metadata.thread_id",
+            "session.id",
+            "gen_ai.conversation.id",
+        ],
     },
     Vendor {
         id: "litellm",
@@ -887,7 +899,8 @@ static VENDORS: &[Vendor] = &[
     Vendor {
         id: "llamaindex",
         detect: detect_llamaindex,
-        session_keys: CONVERSATION_ID_ONLY,
+        // `session.id` is OpenInference's; the native package has no session key.
+        session_keys: &["session.id", "gen_ai.conversation.id"],
     },
     Vendor {
         id: "mastra",
@@ -1083,7 +1096,7 @@ fn detect_haystack(c: &Ctx) -> bool {
 fn detect_langchain(c: &Ctx) -> bool {
     // langgraph deliberately folds in here; the LangSmith dialect is not
     // span-locally separable.
-    c.scope.langsmith || c.ev.langsmith || c.ev.gen_ai_system == "langchain"
+    c.scope.langchain || c.ev.langsmith || c.ev.gen_ai_system == "langchain"
 }
 
 fn detect_litellm(c: &Ctx) -> bool {
@@ -1185,6 +1198,11 @@ fn detect_strands(c: &Ctx) -> bool {
         || c.ev.gen_ai_system == "strands-agents"
         || c.ev.gen_ai_provider_name == "strands-agents"
         || (c.ev.event_loop && c.ev.has_gen_ai_operation_name)
+        // The TypeScript SDK names its tracer and its provider after the
+        // service, so a custom `service.name` replaces "strands-agents".
+        || (c.scope.matches_service_name
+            && (c.ev.gen_ai_provider_name == c.resource.service_name
+                || c.ev.gen_ai_system == c.resource.service_name))
 }
 
 fn detect_effect_ai(c: &Ctx) -> bool {
@@ -1824,7 +1842,7 @@ mod tests {
     fn crewai_refuses_foreign_openinference_scopes() {
         assert_eq!(
             classify(
-                "openinference.instrumentation.langchain",
+                "openinference.instrumentation.bedrock",
                 "Crew.kickoff",
                 &[("crew_key", "x"), ("openinference.span.kind", "AGENT")],
                 &[],
@@ -1840,6 +1858,115 @@ mod tests {
             &[],
             "crewai",
             Some("c-2"),
+        );
+    }
+
+    #[test]
+    fn instrumentor_scopes_name_their_framework() {
+        // Scope, span name and keys as the docs_langchain_a, docs_llamaindex_a,
+        // docs_microsoft-agent-framework_net and docs_openai-agents_ts captures
+        // send them; each used to land in an `unknown:*` bucket.
+        let cases: &[VendorCase] = &[
+            (
+                "openinference.instrumentation.langchain",
+                "ChatOpenAI",
+                &[
+                    ("openinference.span.kind", "LLM"),
+                    ("gen_ai.operation.name", "chat"),
+                    ("session.id", "lc-1"),
+                ],
+                "langchain",
+                "lc-1",
+            ),
+            (
+                "openinference.instrumentation.langchain",
+                "model",
+                &[
+                    ("openinference.span.kind", "CHAIN"),
+                    ("gen_ai.conversation.id", "lc-2"),
+                ],
+                "langchain",
+                "lc-2",
+            ),
+            (
+                "openinference.instrumentation.llama_index",
+                "FunctionAgent.run",
+                &[("openinference.span.kind", "CHAIN"), ("session.id", "li-1")],
+                "llamaindex",
+                "li-1",
+            ),
+            (
+                "Experimental.Microsoft.Agents.AI",
+                "invoke_agent support_agent(a769803e5c1e4bf48bdc12453718304b)",
+                &[
+                    ("gen_ai.operation.name", "invoke_agent"),
+                    ("gen_ai.conversation.id", "maf-1"),
+                ],
+                "microsoft_agent_framework",
+                "maf-1",
+            ),
+            (
+                "@arizeai/openinference-instrumentation-openai-agents",
+                "Agent workflow",
+                &[
+                    ("openinference.span.kind", "CHAIN"),
+                    ("gen_ai.conversation.id", "oa-1"),
+                ],
+                "openai_agents_sdk",
+                "oa-1",
+            ),
+        ];
+        for (scope_name, span_name, span_attrs, vendor, session_id) in cases {
+            classified(
+                scope_name,
+                span_name,
+                span_attrs,
+                &[],
+                vendor,
+                Some(session_id),
+            );
+        }
+    }
+
+    #[test]
+    fn strands_typescript_is_detected_under_a_custom_service_name() {
+        // docs_strands_ts: tracer and provider are both named after the service.
+        let resource = [("service.name", "docs-verify-strands-ts")];
+        classified(
+            "docs-verify-strands-ts",
+            "invoke_agent support_agent",
+            &[
+                ("gen_ai.operation.name", "invoke_agent"),
+                ("gen_ai.provider.name", "docs-verify-strands-ts"),
+                ("session.id", "st-ts"),
+            ],
+            &resource,
+            "strands",
+            Some("st-ts"),
+        );
+        // Older semconv: the same value on `gen_ai.system`.
+        classified(
+            "docs-verify-strands-ts",
+            "chat",
+            &[
+                ("gen_ai.operation.name", "chat"),
+                ("gen_ai.system", "docs-verify-strands-ts"),
+            ],
+            &resource,
+            "strands",
+            None,
+        );
+        // A real provider name under the service's own tracer is not Strands.
+        classified(
+            "docs-verify-strands-ts",
+            "chat",
+            &[
+                ("gen_ai.operation.name", "chat"),
+                ("gen_ai.provider.name", "openai"),
+            ],
+            &resource,
+            "unknown:genai",
+            None,
         );
     }
 
