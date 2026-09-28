@@ -655,9 +655,8 @@ function promptCacheCheck(llmCalls: readonly AiSessionSpan[]): SessionCheck {
 			"No model call wrote to the prompt cache: the prompts are below the model's cacheable minimum, or caching is off.",
 		)
 	}
-	// The first call of a session cannot hit a cache nothing has written yet.
-	const calls = reporting
-		.slice(1)
+	// The first cacheable call cannot hit a cache nothing has written yet.
+	const cacheable = reporting
 		.map(spanTokenBuckets)
 		.filter((buckets) => buckets !== undefined)
 		.map((buckets) => ({
@@ -665,11 +664,12 @@ function promptCacheCheck(llmCalls: readonly AiSessionSpan[]): SessionCheck {
 			prompt: buckets.input + buckets.cacheRead + buckets.cacheWrite,
 		}))
 		.filter((call) => call.prompt >= CACHE_MIN_PROMPT_TOKENS)
+	const calls = cacheable.slice(1)
 	if (calls.length < CACHE_MIN_CALLS) {
 		return check(
 			identity,
 			"skipped",
-			`Only ${plural(calls.length, "model call")} after the first had a prompt of ${CACHE_MIN_PROMPT_TOKENS} tokens or more, the smallest a provider caches; at least ${CACHE_MIN_CALLS} are needed to judge the prompt cache.`,
+			`Only ${plural(cacheable.length, "model call")} had a prompt of ${CACHE_MIN_PROMPT_TOKENS} tokens or more, the smallest a provider caches; at least ${CACHE_MIN_CALLS + 1} are needed to judge the prompt cache.`,
 		)
 	}
 	const rate =

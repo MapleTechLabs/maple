@@ -422,7 +422,7 @@ describe("buildSessionChecks", () => {
 		)
 		expect(short.status).toBe("skipped")
 		expect(short.headline).toBe(
-			"Only 0 model calls after the first had a prompt of 1024 tokens or more, the smallest a provider caches; at least 3 are needed to judge the prompt cache.",
+			"Only 0 model calls had a prompt of 1024 tokens or more, the smallest a provider caches; at least 4 are needed to judge the prompt cache.",
 		)
 
 		const neverWritten = byId(
@@ -443,6 +443,18 @@ describe("buildSessionChecks", () => {
 		)
 		expect(missed.status).toBe("warning")
 		expect(missed.headline).toBe("Cache hit rate 0% over 4 calls; 4 missed the cache")
+
+		// A short opening call (a title, a router) is not the one that wrote the
+		// cache: the first long call is, and it is not a miss.
+		const shortFirst = byId(
+			session((i) =>
+				i === 0
+					? { usageInputTokens: 300, usageCacheReadInputTokens: 0 }
+					: { usageInputTokens: 2_000, usageCacheReadInputTokens: i === 1 ? 0 : 1_000 },
+			),
+			"prompt-cache",
+		)
+		expect(shortFirst.headline).toBe("Cache hit rate 50% over 3 calls")
 	})
 
 	// OpenRouter Broadcast: every request is a `chat` root carrying the usage
