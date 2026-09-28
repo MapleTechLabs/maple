@@ -128,7 +128,8 @@ const decodeAttribute = (type: AiFieldDef["type"], raw: string): unknown => {
 }
 
 /**
- * Deprecated and obsoleted keys the default integration still reads, per field.
+ * Deprecated and obsoleted keys the default integration still reads, per field,
+ * and the keys of other dialects any vendor's span can carry (each commented).
  *
  * `gen_ai.prompt` / `gen_ai.completion` were obsoleted with "no replacement"
  * rather than renamed, so mapping them onto the message fields is a pragmatic

@@ -169,8 +169,9 @@ export const GENAI_PROVIDER_USAGE_CONVENTIONS: ReadonlyMap<string, GenAiUsageCon
 ])
 
 /**
- * Vendors that re-normalise usage before emitting it, whichever provider ran
- * the call — so the vendor, not the provider, decides.
+ * Emitters whose convention holds whichever provider ran the call — they
+ * re-normalise usage, pass a provider's raw figures through, or name a provider
+ * they did not take the figures from — so the vendor, not the provider, decides.
  */
 export const GENAI_VENDOR_USAGE_CONVENTIONS: ReadonlyMap<string, GenAiUsageConvention> = new Map([
 	// The Vercel AI SDK emits `gen_ai.usage.input_tokens` as
@@ -205,9 +206,8 @@ export const GENAI_DEFAULT_USAGE_CONVENTION: GenAiUsageConvention = NESTED
 
 /**
  * The convention a span's usage was reported under. The vendor is asked first
- * — a framework that re-summed the buckets before emitting them has
- * overwritten whatever its provider's own API said — then the provider, then
- * the default.
+ * — the emitter, not the provider's own API, decides what its figures contain —
+ * then the provider, then the default.
  */
 export const genAiUsageConvention = (
 	vendorId: string | undefined,

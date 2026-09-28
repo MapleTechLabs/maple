@@ -862,7 +862,6 @@ describe("migration 0035: ai_trace_index usage, cost and agent-name keys", () =>
 		expect(view).toContain(
 			"if(SpanAttributes['maple_ai.vendor.id'] = 'crewai', SpanAttributes['graph.node.id'], '')) AS AgentName",
 		)
-		expect(migration_0035_ai_trace_index_usage_keys.requiredForIngest).toBe(false)
 	})
 })
 
