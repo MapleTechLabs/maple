@@ -398,6 +398,102 @@ const TOOL_FAILURE_ORG_SPANS: ReadonlyArray<SeedSpan> = [
 	TOOL_SUCCESS_SPAN,
 ]
 
+// One model or agent span per emitter under a fourth org, each carrying the
+// dialect migration 0035 taught the view: the usage convention keyed on the
+// emitter, and the usage, cost and agent-name keys only some frameworks write.
+const EMITTER_ORG_ID = "org_ai_trace_index_e2e_emitters"
+
+const emitterSpan = (
+	spanId: string,
+	offsetMs: number,
+	vendorId: string,
+	attrs: Readonly<Record<string, string>>,
+): SeedSpan => ({
+	traceId: "aitraceindexe2e000000000000000009",
+	spanId,
+	name: "emitter span",
+	ms: BASE_MS + 300_000 + offsetMs,
+	service: "agent-service",
+	status: "Ok",
+	attrs: { [MAPLE_AI_VENDOR_ID_ATTR]: vendorId, ...attrs },
+})
+
+const chat = { "gen_ai.operation.name": "chat" }
+// `opentelemetry-instrumentation-genai-anthropic`: the prompt figure holds the
+// cache write, as the semconv's Anthropic mapping has it.
+const GENAI_ANTHROPIC_SPAN = emitterSpan("span-emitter-1", 0, "unknown:genai", {
+	...chat,
+	"gen_ai.provider.name": "anthropic",
+	"gen_ai.usage.input_tokens": "7911",
+	"gen_ai.usage.cache_write.input_tokens": "7581",
+	"gen_ai.usage.output_tokens": "40",
+})
+// Claude Code passes the Messages API figures through: the prompt excludes both
+// cache buckets.
+const CLAUDE_CODE_SPAN = emitterSpan("span-emitter-2", 1_000, "claude_agent_sdk", {
+	...chat,
+	"gen_ai.system": "anthropic",
+	"gen_ai.usage.input_tokens": "100",
+	"gen_ai.usage.cache_read.input_tokens": "900",
+	"gen_ai.usage.cache_creation.input_tokens": "100",
+	"gen_ai.usage.output_tokens": "100",
+})
+// OpenRouter Broadcast names the upstream as the provider but reports its own
+// cache-inclusive usage, the cache write under its own spelling.
+const OPENROUTER_CLAUDE_SPAN = emitterSpan("span-emitter-3", 2_000, "openrouter", {
+	...chat,
+	"gen_ai.provider.name": "anthropic",
+	"gen_ai.usage.input_tokens": "4804",
+	"gen_ai.usage.input_tokens.cached": "4324",
+	"gen_ai.usage.input_tokens.cache_write": "100",
+	"gen_ai.usage.output_tokens": "50",
+	"gen_ai.usage.total_cost": "0.0012",
+})
+const PYDANTIC_AI_SPAN = emitterSpan("span-emitter-4", 3_000, "pydantic_ai", {
+	...chat,
+	"gen_ai.provider.name": "openrouter",
+	"gen_ai.usage.input_tokens": "133",
+	"gen_ai.usage.output_tokens": "46",
+	"gen_ai.usage.details.reasoning_tokens": "6",
+	"operation.cost": "0.00004755",
+})
+const MASTRA_SPAN = emitterSpan("span-emitter-5", 4_000, "mastra", {
+	...chat,
+	"gen_ai.usage.input_tokens": "10",
+	"gen_ai.usage.output_tokens": "60",
+	"gen_ai.usage.reasoning_tokens": "20",
+})
+const LITELLM_SPAN = emitterSpan("span-emitter-6", 5_000, "litellm", {
+	...chat,
+	"gen_ai.usage.input_tokens": "10",
+	"gen_ai.usage.output_tokens": "5",
+	"litellm.cost.total": "0.00002895",
+})
+const LANGSMITH_SPAN = emitterSpan("span-emitter-7", 6_000, "langchain", {
+	"langsmith.metadata.lc_agent_name": "assistant",
+})
+// CrewAI's role key names the agent; Agno's same key holds an opaque id.
+const CREWAI_AGENT_SPAN = emitterSpan("span-emitter-8", 7_000, "crewai", {
+	"openinference.span.kind": "AGENT",
+	"graph.node.id": "weather_worker",
+})
+const AGNO_AGENT_SPAN = emitterSpan("span-emitter-9", 8_000, "agno", {
+	"openinference.span.kind": "AGENT",
+	"graph.node.id": "c8bddb16e7b7e3cc",
+})
+
+const EMITTER_ORG_SPANS: ReadonlyArray<SeedSpan> = [
+	GENAI_ANTHROPIC_SPAN,
+	CLAUDE_CODE_SPAN,
+	OPENROUTER_CLAUDE_SPAN,
+	PYDANTIC_AI_SPAN,
+	MASTRA_SPAN,
+	LITELLM_SPAN,
+	LANGSMITH_SPAN,
+	CREWAI_AGENT_SPAN,
+	AGNO_AGENT_SPAN,
+]
+
 const chMap = (attrs: Readonly<Record<string, string>>): string =>
 	`map(${Object.entries(attrs)
 		.flatMap(([key, value]) => [quote(key), quote(value)])
@@ -408,6 +504,7 @@ const seed = async (): Promise<void> => {
 		...SEED_SPANS.map((span) => [ORG_ID, span] as const),
 		[FOREIGN_ORG_ID, FOREIGN_SPAN] as const,
 		...TOOL_FAILURE_ORG_SPANS.map((span) => [TOOL_FAILURE_ORG_ID, span] as const),
+		...EMITTER_ORG_SPANS.map((span) => [EMITTER_ORG_ID, span] as const),
 	]
 		.map(
 			([orgId, span]) =>
@@ -604,6 +701,41 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 			}),
 			// A result, but no failure: nothing carried.
 			indexRow(TOOL_FAILURE_ORG_ID, TOOL_SUCCESS_SPAN, { ToolName: "submit_findings", IsToolCall: 1 }),
+			// Migration 0035. A spec-conformant Anthropic emitter nests the cache
+			// in the prompt: 330 uncached + 7,581 written, not 7,911 + 7,581.
+			indexRow(EMITTER_ORG_ID, GENAI_ANTHROPIC_SPAN, {
+				IsLlmCall: 1,
+				Tokens: 7951,
+				buckets: [330, 0, 7581, 40, 0],
+			}),
+			// Claude Code alone keeps Anthropic's excludes-cache rule.
+			indexRow(EMITTER_ORG_ID, CLAUDE_CODE_SPAN, {
+				IsLlmCall: 1,
+				Tokens: 1200,
+				buckets: [100, 900, 100, 100, 0],
+			}),
+			indexRow(EMITTER_ORG_ID, OPENROUTER_CLAUDE_SPAN, {
+				IsLlmCall: 1,
+				Tokens: 4854,
+				Cost: 0.0012,
+				buckets: [380, 4324, 100, 50, 0],
+			}),
+			indexRow(EMITTER_ORG_ID, PYDANTIC_AI_SPAN, {
+				IsLlmCall: 1,
+				Tokens: 179,
+				Cost: 0.00004755,
+				buckets: [133, 0, 0, 40, 6],
+			}),
+			indexRow(EMITTER_ORG_ID, MASTRA_SPAN, { IsLlmCall: 1, Tokens: 70, buckets: [10, 0, 0, 40, 20] }),
+			indexRow(EMITTER_ORG_ID, LITELLM_SPAN, {
+				IsLlmCall: 1,
+				Tokens: 15,
+				Cost: 0.00002895,
+				buckets: [10, 0, 0, 5, 0],
+			}),
+			indexRow(EMITTER_ORG_ID, LANGSMITH_SPAN, { AgentName: "assistant" }),
+			indexRow(EMITTER_ORG_ID, CREWAI_AGENT_SPAN, { AgentName: "weather_worker" }),
+			indexRow(EMITTER_ORG_ID, AGNO_AGENT_SPAN),
 		])
 	})
 

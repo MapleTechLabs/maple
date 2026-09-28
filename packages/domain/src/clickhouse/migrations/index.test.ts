@@ -39,6 +39,7 @@ import { migration_0031_ai_trace_index_list_columns } from "./0031_ai_trace_inde
 import { migration_0032_ai_trace_index_tool_detail_columns } from "./0032_ai_trace_index_tool_detail_columns"
 import { migration_0033_ai_crawler_requests } from "./0033_ai_crawler_requests"
 import { migration_0034_trace_facets_hourly, traceFacetsHourlyBackfill } from "./0034_trace_facets_hourly"
+import { migration_0035_ai_trace_index_usage_keys } from "./0035_ai_trace_index_usage_keys"
 import { latestSnapshotStatements } from "../../generated/clickhouse-schema"
 import { clickHouseSchemaVersion, latestMigrationVersion, migrations } from "./index"
 
@@ -56,10 +57,10 @@ describe("ClickHouse migrations", () => {
 	it("keeps migrations ordered by version", () => {
 		expect(migrations.map((m) => m.version)).toEqual([
 			1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27,
-			28, 29, 30, 31, 32, 33, 34,
+			28, 29, 30, 31, 32, 33, 34, 35,
 		])
-		expect(migrations.at(-1)).toBe(migration_0034_trace_facets_hourly)
-		expect(latestMigrationVersion).toBe(34)
+		expect(migrations.at(-1)).toBe(migration_0035_ai_trace_index_usage_keys)
+		expect(latestMigrationVersion).toBe(35)
 		// 0010 and 0014-0020 are read-path only and skipped by the ingest-gating
 		// version; 0021 is not — the gateway writes `session_events`' new identity
 		// columns and `product_events` directly, so a BYO-CH org must apply it
@@ -96,6 +97,8 @@ describe("ClickHouse migrations", () => {
 		expect(migration_0033_ai_crawler_requests.requiredForIngest).toBe(false)
 		// 0034 adds the MV-populated trace_facets_hourly.
 		expect(migration_0034_trace_facets_hourly.requiredForIngest).toBe(false)
+		// 0035 only recreates the MV-populated ai_trace_index's view.
+		expect(migration_0035_ai_trace_index_usage_keys.requiredForIngest).toBe(false)
 	})
 
 	it("recreates both error-events MVs with the span-attribute exception fallback", () => {
@@ -830,6 +833,36 @@ describe("migration 0031 — ai_trace_index list columns", () => {
 	it("does not backfill and does not gate ingest", () => {
 		expect(migration.requiredForIngest).toBe(false)
 		expect(migration.statements.some(isBackfill)).toBe(false)
+	})
+})
+
+describe("migration 0035: ai_trace_index usage, cost and agent-name keys", () => {
+	it("recreates the view in the emitter's DDL, with no column added and no backfill", () => {
+		const [drop, view, ...rest] = migration_0035_ai_trace_index_usage_keys.statements
+		expect(rest).toEqual([])
+		// An MV's SELECT is frozen at creation, so the 0032 view is dropped first.
+		expect(drop).toBe("DROP VIEW IF EXISTS ai_trace_index_mv")
+		expect(latestSnapshotStatements).toContain(view)
+		// The emitter decides the usage convention: Claude Code keeps Anthropic's
+		// excludes-cache rule, an `anthropic` provider no longer does.
+		expect(view).toContain(
+			"SpanAttributes['maple_ai.vendor.id'] IN ('claude_agent_sdk'), toFloat64OrZero(",
+		)
+		expect(view).not.toContain("'anthropic'")
+		for (const key of [
+			"gen_ai.usage.reasoning_tokens",
+			"gen_ai.usage.details.reasoning_tokens",
+			"gen_ai.usage.input_tokens.cache_write",
+			"litellm.cost.total",
+			"operation.cost",
+			"langsmith.metadata.lc_agent_name",
+		]) {
+			expect(view).toContain(`SpanAttributes['${key}']`)
+		}
+		expect(view).toContain(
+			"if(SpanAttributes['maple_ai.vendor.id'] = 'crewai', SpanAttributes['graph.node.id'], '')) AS AgentName",
+		)
+		expect(migration_0035_ai_trace_index_usage_keys.requiredForIngest).toBe(false)
 	})
 })
 
