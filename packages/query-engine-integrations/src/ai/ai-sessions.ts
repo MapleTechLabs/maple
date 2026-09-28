@@ -148,7 +148,6 @@ import {
 import {
 	AI_AGENT_OPERATIONS,
 	AI_INFERENCE_OPERATIONS,
-	AI_PROMPT_VARIABLE_PREFIX,
 	AI_RETRIEVAL_OPERATIONS,
 	AI_TOOL_OPERATIONS,
 	MAPLE_AI_SESSION_ID_ATTR,
@@ -157,7 +156,7 @@ import {
 	MAPLE_NATIVE_TURN_ID_ATTR,
 	type AiGenAiField,
 } from "@maple/domain/gen-ai"
-import { aiFieldSourceKeys, aiSpanAttributeKeys } from "./ai-integrations"
+import { aiFieldSourceKeys, aiSpanAttributeKeys, aiSpanAttributePrefixes } from "./ai-integrations"
 import {
 	childClaimsExpr,
 	MAX_USAGE_REPORTERS_PER_TRACE,
@@ -1353,7 +1352,10 @@ const spanProjection = ($: ColumnAccessor<typeof TraceDetailSpans.columns>) => (
 	// `ResourceAttributes` — which the mapper deliberately ignores, see
 	// `mapAiSpan` — was another 60% on top. Neither is read any more.
 	spanAttributes: mapFilterKeys($.SpanAttributes, (key) =>
-		key.in_(...aiSpanAttributeKeys).or(key.like(`${AI_PROMPT_VARIABLE_PREFIX}%`)),
+		aiSpanAttributePrefixes.reduce(
+			(matched, prefix) => matched.or(key.like(`${prefix}%`)),
+			key.in_(...aiSpanAttributeKeys),
+		),
 	),
 })
 
@@ -1364,7 +1366,8 @@ const spanProjection = ($: ColumnAccessor<typeof TraceDetailSpans.columns>) => (
  * string serves every session.
  *
  * The attribute map is projected down to the keys the integration layer reads
- * (`aiSpanAttributeKeys`); everything else on the span stays in the warehouse.
+ * (`aiSpanAttributeKeys`, `aiSpanAttributePrefixes`); everything else on the
+ * span stays in the warehouse.
  * Even so, a content-heavy vendor puts whole prompts in `gen_ai.input.messages`,
  * so callers should still expect megabyte-scale payloads at the default limit.
  *

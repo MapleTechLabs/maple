@@ -63,3 +63,62 @@ export const isMessageList = (value: unknown): value is readonly Record<string, 
 	Array.isArray(value) &&
 	value.length > 0 &&
 	value.every((entry) => isRecord(entry) && typeof entry.role === "string")
+
+/** The records under a node's integer keys, in index order. */
+const indexed = (value: unknown): readonly Record<string, unknown>[] =>
+	isRecord(value)
+		? Object.keys(value)
+				.filter((key) => /^\d+$/.test(key))
+				.sort((a, b) => Number(a) - Number(b))
+				.map((key) => value[key])
+				.filter(isRecord)
+		: []
+
+/**
+ * OpenInference's flattened message list, rebuilt as OpenAI chat messages:
+ * `<prefix>0.message.role`, `….contents.1.message_content.text`,
+ * `….tool_calls.0.tool_call.function.name`, `….tool_call_id`. Every Python
+ * instrumentor writes messages only in this form. `undefined` when the span
+ * carries none.
+ */
+export const flattenedMessages = (
+	attributes: Record<string, string>,
+	prefix: string,
+): readonly Record<string, unknown>[] | undefined => {
+	// Null-prototype nodes: the path segments come from untrusted keys.
+	const root: Record<string, unknown> = Object.create(null)
+	for (const [key, value] of Object.entries(attributes)) {
+		if (!key.startsWith(prefix) || value === "") continue
+		const path = key.slice(prefix.length).split(".")
+		let node = root
+		for (const segment of path.slice(0, -1)) {
+			const next = node[segment]
+			if (isRecord(next)) {
+				node = next
+			} else {
+				const created: Record<string, unknown> = Object.create(null)
+				node[segment] = created
+				node = created
+			}
+		}
+		node[path[path.length - 1] ?? ""] = value
+	}
+	const messages = indexed(root).map((entry) => {
+		const { contents, tool_calls: toolCalls, ...message } = isRecord(entry.message) ? entry.message : {}
+		const parts = indexed(contents).map((content) => content.message_content)
+		if (parts.length > 0) message.content = parts
+		const calls = indexed(toolCalls).map((call) => call.tool_call)
+		if (calls.length > 0) message.tool_calls = calls
+		return message
+	})
+	return messages.length > 0 ? messages : undefined
+}
+
+/** A message field read the OpenInference way: the value when it is a message
+ *  list, else the flattened keys, else the value as captured where the span
+ *  is a model call. */
+export const openInferenceMessages = (
+	value: unknown,
+	flattened: readonly Record<string, unknown>[] | undefined,
+	modelCall: boolean,
+): unknown => (isMessageList(value) ? value : (flattened ?? (modelCall ? value : undefined)))

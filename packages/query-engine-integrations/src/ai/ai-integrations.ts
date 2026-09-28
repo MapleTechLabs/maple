@@ -60,6 +60,8 @@ export interface AiIntegration {
 	 * so a key missing here is a key `refine` never sees.
 	 */
 	readonly refineKeys?: readonly string[]
+	/** Key prefixes `refine` reads, for a family with no fixed keys. */
+	readonly refinePrefixes?: readonly string[]
 }
 
 /** An integration carrying a source list for every catalog field. */
@@ -287,6 +289,15 @@ export const aiSpanAttributeKeys: readonly string[] = [
 			Object.values(integration.sources).flat(),
 		),
 		...Object.values(AI_VENDOR_INTEGRATIONS).flatMap((vendor) => vendor.refineKeys ?? []),
+	]),
+]
+
+/** Key prefixes the mapper reads besides `aiSpanAttributeKeys`: templated
+ *  families whose keys carry a name or an index. */
+export const aiSpanAttributePrefixes: readonly string[] = [
+	...new Set([
+		AI_PROMPT_VARIABLE_PREFIX,
+		...Object.values(AI_VENDOR_INTEGRATIONS).flatMap((vendor) => vendor.refinePrefixes ?? []),
 	]),
 ]
 

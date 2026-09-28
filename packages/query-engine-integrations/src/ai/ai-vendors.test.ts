@@ -166,6 +166,63 @@ describe("openinference", () => {
 		expect(real.genAi.toolCallArguments).toEqual({ city: "Paris" })
 	})
 
+	it("rebuilds the flattened llm.*_messages keys every Python instrumentor writes", () => {
+		// Trimmed from a smolagents `OpenAIModel.generate` span, whose `input.value`
+		// is a Python repr. The flattened keys win over it.
+		const mapped = mapAiSpan(
+			row("smolagents", {
+				"openinference.span.kind": "LLM",
+				"input.value": "{'messages': [ChatMessage(role=<MessageRole.USER: 'user'>, ...)]}",
+				"llm.input_messages.0.message.role": "system",
+				"llm.input_messages.0.message.contents.0.message_content.type": "text",
+				"llm.input_messages.0.message.contents.0.message_content.text":
+					"You are an expert assistant.",
+				"llm.input_messages.1.message.role": "user",
+				"llm.input_messages.1.message.contents.0.message_content.type": "text",
+				"llm.input_messages.1.message.contents.0.message_content.text": "New task:\nWhat is 17 * 23?",
+				"llm.input_messages.2.message.role": "tool",
+				"llm.input_messages.2.message.tool_call_id": "call_d16tV0btWCxROGExXHu2d1nl",
+				"llm.input_messages.2.message.content": "391",
+				"llm.input_messages.10.message.role": "user",
+				"llm.input_messages.10.message.content": "the eleventh message sorts last",
+				"llm.output_messages.0.message.role": "assistant",
+				"llm.output_messages.0.message.tool_calls.0.tool_call.id": "call_Mx0pfPCI8tppc9j4qopqc08x",
+				"llm.output_messages.0.message.tool_calls.0.tool_call.function.name": "final_answer",
+				"llm.output_messages.0.message.tool_calls.0.tool_call.function.arguments": '{"answer":"391"}',
+			}),
+		)
+
+		expect(mapped.genAi.inputMessages).toEqual([
+			{ role: "system", content: [{ type: "text", text: "You are an expert assistant." }] },
+			{ role: "user", content: [{ type: "text", text: "New task:\nWhat is 17 * 23?" }] },
+			{ role: "tool", tool_call_id: "call_d16tV0btWCxROGExXHu2d1nl", content: "391" },
+			{ role: "user", content: "the eleventh message sorts last" },
+		])
+		expect(mapped.genAi.outputMessages).toEqual([
+			{
+				role: "assistant",
+				tool_calls: [
+					{
+						id: "call_Mx0pfPCI8tppc9j4qopqc08x",
+						function: { name: "final_answer", arguments: '{"answer":"391"}' },
+					},
+				],
+			},
+		])
+
+		// The GenAI dual-write, where present, still wins.
+		const dual = mapAiSpan(
+			row("smolagents", {
+				"gen_ai.input.messages": '[{"role":"user","parts":[{"type":"text","content":"canonical"}]}]',
+				"llm.input_messages.0.message.role": "user",
+				"llm.input_messages.0.message.content": "dialect",
+			}),
+		)
+		expect(dual.genAi.inputMessages).toEqual([
+			{ role: "user", parts: [{ type: "text", content: "canonical" }] },
+		])
+	})
+
 	it("does not read an agent run's input and output as messages", () => {
 		// The smolagents `CodeAgent.run` turn anchor: `input.value` is the run's
 		// arguments and `output.value` its final answer. Read as messages, the
@@ -273,20 +330,18 @@ describe("openinference", () => {
 	it("appends its dialect keys to the default's list rather than replacing it", () => {
 		// The dialect key is read when it is the only one present, and the
 		// canonical key still wins when the span carries both.
-		const dialect = mapAiSpan(
-			row("openinference-openai", { "llm.output_messages": '[{"role":"assistant","from":"dialect"}]' }),
-		)
+		const dialect = mapAiSpan(row("openinference-openai", { "llm.model_name": "gpt-5-dialect" }))
 
-		expect(dialect.genAi.outputMessages).toEqual([{ role: "assistant", from: "dialect" }])
+		expect(dialect.genAi.requestModel).toBe("gpt-5-dialect")
 
 		const both = mapAiSpan(
 			row("openinference-openai", {
-				"gen_ai.output.messages": '[{"role":"assistant","from":"canonical"}]',
-				"llm.output_messages": '[{"role":"assistant","from":"dialect"}]',
+				"gen_ai.request.model": "gpt-5-canonical",
+				"llm.model_name": "gpt-5-dialect",
 			}),
 		)
 
-		expect(both.genAi.outputMessages).toEqual([{ role: "assistant", from: "canonical" }])
+		expect(both.genAi.requestModel).toBe("gpt-5-canonical")
 	})
 
 	it("still reads the default's legacy aliases it did not supersede", () => {
@@ -343,7 +398,6 @@ describe("openinference", () => {
 				"openinference.span.kind": "LLM",
 				"output.value":
 					'[{"id":"gen-1790615485-YqcVFoU6RoZ0rxtOIcgJ","object":"chat.completion","model":"openai/gpt-4o-mini","choices":[{"index":0,"finish_reason":"tool_calls","message":{"role":"assistant","content":null,"refusal":null,"tool_calls":[{"type":"function","index":0,"id":"call_S2ZCSLmFSJRp7QxaBw8DoCgT","function":{"name":"get_weather","arguments":"{\\"city\\":\\"Berlin\\"}"}}]}}]}]',
-				"llm.output_messages.0.message.role": "assistant",
 				"llm.finish_reason": "tool_calls",
 			}),
 		)

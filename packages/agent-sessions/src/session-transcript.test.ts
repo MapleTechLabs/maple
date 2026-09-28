@@ -1293,6 +1293,26 @@ describe("buildTranscript — what counts as a captured reply", () => {
 		expect(tools[0]!.fromMessageOnly).toBe(false)
 	})
 
+	// OpenInference records the call id in the model's output but not on the tool
+	// span it opens, so the id matches nothing and the name is again all there is.
+	it("drops a message-only tool call whose id no tool span recorded", () => {
+		const spans = outputOnly(
+			[{ type: "tool_call", id: "call_S2ZCSLmFSJRp7QxaBw8DoCgT", name: "get_weather", arguments: {} }],
+			[
+				toolSpan({
+					spanId: "t1",
+					parentSpanId: "agent",
+					startMs: 2 * SECOND,
+					durationMs: SECOND,
+					toolName: "get_weather",
+				}),
+			],
+		)
+		const tools = findRows(transcript(spans), "tool")
+		expect(tools).toHaveLength(1)
+		expect(tools[0]!.fromMessageOnly).toBe(false)
+	})
+
 	it("keeps the message-only row when no span could be the same call", () => {
 		const spans = outputOnly([{ type: "tool_call", name: "web_search", arguments: { q: "x" } }])
 		const tools = findRows(transcript(spans), "tool")

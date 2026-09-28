@@ -1013,8 +1013,11 @@ describe("aiSessionSpansQuery", () => {
 		expect(sql).toContain("TraceId IN (SELECT")
 		expect(sql).toContain("FROM traces")
 		expect(sql).toContain("Duration / 1000000 AS durationMs")
-		expect(sql).toContain("mapFilter((k, v) -> (k IN ('maple_ai.session.id', ")
-		expect(sql).toContain("OR k LIKE 'gen_ai.prompt.variable.%'), SpanAttributes) AS spanAttributes")
+		expect(sql).toContain("mapFilter((k, v) -> (((k IN ('maple_ai.session.id', ")
+		expect(sql).toContain("OR k LIKE 'gen_ai.prompt.variable.%')")
+		expect(sql).toContain(
+			"OR k LIKE 'llm.input_messages.%') OR k LIKE 'llm.output_messages.%'), SpanAttributes) AS spanAttributes",
+		)
 		expect(sql).not.toContain("ResourceAttributes")
 		expect(sql).toContain("ORDER BY timestamp ASC")
 		expect(sql).toContain("LIMIT 2000")

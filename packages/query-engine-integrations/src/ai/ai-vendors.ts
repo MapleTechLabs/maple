@@ -10,7 +10,13 @@
 // rather than guessed: a wrong key never matches, so it is invisible.
 
 import type { AiIntegration, AiRefineContext } from "./ai-integrations"
-import { isMessageList, unwrapMessages, unwrapOutputMessages, unwrapToolMessage } from "./ai-messages"
+import {
+	flattenedMessages,
+	openInferenceMessages,
+	unwrapMessages,
+	unwrapOutputMessages,
+	unwrapToolMessage,
+} from "./ai-messages"
 import { MAPLE_NATIVE_TURN_ID_ATTR, type MutableAiGenAiValues } from "@maple/domain/gen-ai"
 
 /**
@@ -93,6 +99,10 @@ const OPENINFERENCE_SPAN_KIND_OPERATIONS = new Map([
  * The integration id is the DIALECT, not the vendor stamp, so every stamp
  * reports the same integration.
  */
+/** The flattened message families; see `flattenedMessages`. */
+const OI_INPUT_MESSAGES = "llm.input_messages."
+const OI_OUTPUT_MESSAGES = "llm.output_messages."
+
 const openInferenceIntegration: AiIntegration = {
 	id: "openinference",
 	sources: {
@@ -104,8 +114,6 @@ const openInferenceIntegration: AiIntegration = {
 		usageReasoningOutputTokens: ["llm.token_count.completion_details.reasoning"],
 		usageCost: ["llm.cost.total"],
 		responseFinishReasons: ["llm.finish_reason"],
-		inputMessages: ["llm.input_messages"],
-		outputMessages: ["llm.output_messages"],
 		toolName: ["tool.name"],
 		toolDescription: ["tool.description"],
 		toolDefinitions: ["llm.tools"],
@@ -121,19 +129,28 @@ const openInferenceIntegration: AiIntegration = {
 		}
 
 		// `input.value` / `output.value` are whatever the span's function took and
-		// returned. On a model call (or a span naming no kind) that is the request
-		// and the reply; on any other kind it is a message list only when it
-		// unwraps to one — an agent run's `{"task": …}` is not the user speaking.
+		// returned, and the flattened `llm.*_messages.N` keys are the messages
+		// the instrumentor extracted. The value wins when it is a message list
+		// (it is the exact capture), the flattened keys when it is not (Python
+		// instrumentors write reprs there), and the bare value only on a model
+		// call: an agent run's `{"task": …}` is not the user speaking.
+		const modelCall = kind === "" || kind === "LLM"
 		const input = ctx.read("inputMessages", "input.value")
 		const output = ctx.read("outputMessages", "output.value")
-		const readsAsMessages = (value: unknown): boolean =>
-			value !== undefined && (kind === "" || kind === "LLM" || isMessageList(value))
-		const inputMessages = unwrapMessages(input)
-		if (values.inputMessages === undefined && readsAsMessages(inputMessages)) {
+		const inputMessages = openInferenceMessages(
+			unwrapMessages(input),
+			flattenedMessages(ctx.attributes, OI_INPUT_MESSAGES),
+			modelCall,
+		)
+		if (values.inputMessages === undefined && inputMessages !== undefined) {
 			values.inputMessages = inputMessages
 		}
-		const outputMessages = unwrapOutputMessages(output)
-		if (values.outputMessages === undefined && readsAsMessages(outputMessages)) {
+		const outputMessages = openInferenceMessages(
+			unwrapOutputMessages(output),
+			flattenedMessages(ctx.attributes, OI_OUTPUT_MESSAGES),
+			modelCall,
+		)
+		if (values.outputMessages === undefined && outputMessages !== undefined) {
 			values.outputMessages = outputMessages
 		}
 
@@ -152,6 +169,7 @@ const openInferenceIntegration: AiIntegration = {
 		}
 	},
 	refineKeys: ["openinference.span.kind", "tool.parameters", "input.value", "output.value"],
+	refinePrefixes: [OI_INPUT_MESSAGES, OI_OUTPUT_MESSAGES],
 }
 
 /**
