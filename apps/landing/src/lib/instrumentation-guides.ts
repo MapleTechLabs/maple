@@ -26,7 +26,7 @@ export interface GuideSection {
 export const FRONTEND_GUIDES: readonly GuideCard[] = [
 	{
 		name: "TanStack Router & Start",
-		hint: "Router events, loaders, SSR",
+		hint: "Router events, loaders, TanStack Start SSR",
 		href: "/docs/frontend/tanstack",
 		icon: { mark: "tanstack" },
 	},
