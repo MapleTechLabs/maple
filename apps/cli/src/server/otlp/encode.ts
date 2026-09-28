@@ -244,15 +244,26 @@ export function anyValueString(value: AnyValue | undefined | null): string {
 	if (value.bytesValue !== undefined) {
 		return bytesText(value.bytesValue)
 	}
-	if (value.arrayValue !== undefined) {
-		const values = (value.arrayValue.values ?? []).map(anyValueString)
-		return JSON.stringify(values)
-	}
-	if (value.kvlistValue !== undefined) {
-		const attrs = attrMap(value.kvlistValue.values ?? [])
-		return JSON.stringify(attrs)
+	if (value.arrayValue !== undefined || value.kvlistValue !== undefined) {
+		return JSON.stringify(anyValueJson(value))
 	}
 	return ""
+}
+
+/**
+ * Port of Rust `any_value_json`: an array or map as JSON, scalars in their
+ * string form, nested arrays and maps kept as JSON.
+ */
+function anyValueJson(value: AnyValue | undefined): unknown {
+	if (value?.arrayValue !== undefined) {
+		return (value.arrayValue.values ?? []).map(anyValueJson)
+	}
+	if (value?.kvlistValue !== undefined) {
+		return Object.fromEntries(
+			(value.kvlistValue.values ?? []).map((kv) => [kv.key ?? "", anyValueJson(kv.value)]),
+		)
+	}
+	return anyValueString(value)
 }
 
 /**

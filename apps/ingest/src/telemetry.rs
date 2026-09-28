@@ -4021,17 +4021,34 @@ fn any_value_string(value: &AnyValue) -> String {
         Some(any_value::Value::BytesValue(value)) => {
             std::str::from_utf8(value).map_or_else(|_| bytes_hex(value), str::to_owned)
         }
-        Some(any_value::Value::ArrayValue(value)) => {
-            let values: Vec<String> = value.values.iter().map(any_value_string).collect();
-            serde_json::to_string(&values).unwrap_or_default()
-        }
-        Some(any_value::Value::KvlistValue(value)) => {
-            let attrs = attr_map(&value.values);
-            serde_json::to_string(&attrs).unwrap_or_default()
+        Some(any_value::Value::ArrayValue(_) | any_value::Value::KvlistValue(_)) => {
+            serde_json::to_string(&any_value_json(value)).unwrap_or_default()
         }
         // String-table references (OTLP 1.9 experimental encoding) cannot be resolved
         // without the sender's dictionary, which the gateway does not accept yet.
         Some(any_value::Value::StringValueStrindex(_)) | None => String::new(),
+    }
+}
+
+/// An array or map as JSON. Scalars keep their string form, as flat arrays and
+/// maps always have, but a nested array or map stays JSON instead of becoming
+/// a string of escaped JSON (structured `gen_ai.input.messages`).
+fn any_value_json(value: &AnyValue) -> Value {
+    match value.value.as_ref() {
+        Some(any_value::Value::ArrayValue(array)) => {
+            Value::Array(array.values.iter().map(any_value_json).collect())
+        }
+        Some(any_value::Value::KvlistValue(kvlist)) => Value::Object(
+            kvlist
+                .values
+                .iter()
+                .map(|kv| {
+                    let value = kv.value.as_ref().map_or(Value::from(""), any_value_json);
+                    (kv.key.clone(), value)
+                })
+                .collect(),
+        ),
+        _ => Value::String(any_value_string(value)),
     }
 }
 
@@ -4129,7 +4146,7 @@ mod tests {
     use axum::routing::post;
     use axum::Router;
     use flate2::read::GzDecoder;
-    use opentelemetry_proto::tonic::common::v1::InstrumentationScope;
+    use opentelemetry_proto::tonic::common::v1::{ArrayValue, InstrumentationScope, KeyValueList};
     use opentelemetry_proto::tonic::metrics::v1::{
         exponential_histogram_data_point, metric, AggregationTemporality, ExponentialHistogram,
         ExponentialHistogramDataPoint, Gauge, Histogram, HistogramDataPoint, Metric, Sum,
@@ -4447,6 +4464,54 @@ mod tests {
             r#"{"messages":[{"content":"Hi"}]}"#
         );
         assert_eq!(any_value_string(&bytes(&[0xff, 0xfe, 0x01])), "fffe01");
+    }
+
+    #[test]
+    fn structured_attributes_stay_json_when_nested() {
+        let any = |value: any_value::Value| AnyValue { value: Some(value) };
+        let text = |value: &str| any(any_value::Value::StringValue(value.to_owned()));
+        let array =
+            |values: Vec<AnyValue>| any(any_value::Value::ArrayValue(ArrayValue { values }));
+        let map = |pairs: Vec<(&str, AnyValue)>| {
+            any(any_value::Value::KvlistValue(KeyValueList {
+                values: pairs
+                    .into_iter()
+                    .map(|(key, value)| KeyValue {
+                        key: key.to_owned(),
+                        key_strindex: 0,
+                        value: Some(value),
+                    })
+                    .collect(),
+            }))
+        };
+        // Flat arrays and maps are unchanged: scalars as strings.
+        assert_eq!(
+            any_value_string(&array(vec![
+                text("stop"),
+                any(any_value::Value::IntValue(1))
+            ])),
+            r#"["stop","1"]"#
+        );
+        assert_eq!(
+            any_value_string(&map(vec![("n", any(any_value::Value::BoolValue(true)))])),
+            r#"{"n":"true"}"#
+        );
+        // Structured messages decode as the JSON a reader expects, not as an
+        // array of escaped JSON strings.
+        let messages = array(vec![map(vec![
+            ("role", text("user")),
+            (
+                "parts",
+                array(vec![map(vec![
+                    ("type", text("text")),
+                    ("content", text("hi")),
+                ])]),
+            ),
+        ])]);
+        assert_eq!(
+            any_value_string(&messages),
+            r#"[{"parts":[{"content":"hi","type":"text"}],"role":"user"}]"#
+        );
     }
 
     #[test]

@@ -260,6 +260,24 @@ describe("value-level spot checks", () => {
 		expect(anyValueString({ bytesValue: btoa('{"messages":[]}') })).toBe('{"messages":[]}')
 		expect(anyValueString({ bytesValue: btoa("\xff\xfe\x01") })).toBe("fffe01")
 	})
+
+	it("keeps nested arrays and maps as JSON", () => {
+		expect(anyValueString({ kvlistValue: { values: [{ key: "n", value: { boolValue: true } }] } })).toBe(
+			'{"n":"true"}',
+		)
+		const part = { kvlistValue: { values: [{ key: "type", value: { stringValue: "text" } }] } }
+		const message = {
+			kvlistValue: {
+				values: [
+					{ key: "role", value: { stringValue: "user" } },
+					{ key: "parts", value: { arrayValue: { values: [part] } } },
+				],
+			},
+		}
+		expect(anyValueString({ arrayValue: { values: [message] } })).toBe(
+			'[{"role":"user","parts":[{"type":"text"}]}]',
+		)
+	})
 })
 
 describe("OTLP/JSON hex ids", () => {
