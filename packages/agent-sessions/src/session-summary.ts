@@ -621,19 +621,23 @@ function chargeToNearestReporter<T>(
  * wrapper that sums its children's cost onto itself keeps only what it claims
  * above them. Every span that reported a cost has an entry, a fully rolled-up
  * wrapper's being zero — so an empty map means nothing reported at all, which
- * is the difference between "free" and "not measured".
+ * is the difference between "free" and "not measured". A zero cost is an
+ * entry but not a reporter, as a zero usage is not, and as the list's
+ * `Cost > 0` has it: charged a child's cost, it would net to nothing and
+ * leave the wrapper above both keeping its roll-up.
  */
 function costBySpan(
 	spans: readonly AiSessionSpan[],
 	byId: ReadonlyMap<string, AiSessionSpan>,
 ): ReadonlyMap<string, number> {
+	const bySpan = new Map<string, number>()
 	const reported = new Map<string, number>()
 	for (const span of spans) {
 		const cost = span.genAi.usageCost
-		if (cost !== undefined && cost >= 0) reported.set(span.spanId, cost)
+		if (cost === 0) bySpan.set(span.spanId, 0)
+		if (cost !== undefined && cost > 0) reported.set(span.spanId, cost)
 	}
 
-	const bySpan = new Map<string, number>()
 	for (const [spanId, { own, beneath }] of chargeToNearestReporter(byId, reported)) {
 		bySpan.set(spanId, Math.max(0, own - beneath.reduce((sum, c) => sum + c, 0)))
 	}

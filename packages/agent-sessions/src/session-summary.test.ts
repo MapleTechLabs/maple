@@ -1309,6 +1309,57 @@ describe("per-model cost, tools and failure groups", () => {
 		expect(summary.cost).toBeCloseTo(0.3)
 	})
 
+	it("nets a sub-agent's cost through its tool span, and past a zero-cost wrapper", () => {
+		// The orchestrator prices the whole run; the worker it delegates to via a
+		// tool stamps a zero cost of its own over the call it made. The list nets
+		// the same way (`Cost > 0` reporters, climbing past the tool span).
+		const summary = summarize([
+			agentSpan({
+				spanId: "orchestrator",
+				startMs: 0,
+				durationMs: 4 * SECOND,
+				genAi: { usageCost: 0.004 },
+			}),
+			llmSpan({
+				spanId: "own-call",
+				parentSpanId: "orchestrator",
+				startMs: 0,
+				durationMs: SECOND,
+				genAi: { usageCost: 0.003 },
+			}),
+			toolSpan({
+				spanId: "delegate",
+				parentSpanId: "orchestrator",
+				startMs: SECOND,
+				durationMs: 2 * SECOND,
+			}),
+			agentSpan({
+				spanId: "worker",
+				parentSpanId: "delegate",
+				startMs: SECOND,
+				durationMs: 2 * SECOND,
+				genAi: { usageCost: 0 },
+			}),
+			llmSpan({
+				spanId: "worker-call",
+				parentSpanId: "worker",
+				startMs: SECOND,
+				durationMs: SECOND,
+				genAi: { usageCost: 0.001 },
+			}),
+		])
+
+		expect(summary.cost).toBeCloseTo(0.004, 9)
+	})
+
+	it("reads a zero cost as free, not as unmeasured", () => {
+		const summary = summarize([
+			llmSpan({ spanId: "free", startMs: 0, durationMs: SECOND, genAi: { usageCost: 0 } }),
+		])
+
+		expect(summary.cost).toBe(0)
+	})
+
 	// Busiest first, with what each cost alongside it: how often the agent
 	// reached for a tool is the ledger's own order.
 	it("orders tools by how often they were called, and totals what they cost", () => {
