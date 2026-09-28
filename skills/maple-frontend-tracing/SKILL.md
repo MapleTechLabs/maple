@@ -16,7 +16,7 @@ Read the `package.json` of each web frontend in the repo, then read **only** the
 | Dependency | Reference |
 | --- | --- |
 | `@tanstack/react-router`, `@tanstack/react-start` | `frameworks/tanstack.md` |
-| `react-router` (v7), `react-router-dom` | `frameworks/react-router.md` |
+| `react-router` (v7, v8), `react-router-dom` | `frameworks/react-router.md` |
 | `next` | `frameworks/nextjs.md` |
 | `vue-router`, `nuxt` | `frameworks/vue.md` |
 | `@sveltejs/kit` | `frameworks/sveltekit.md` |

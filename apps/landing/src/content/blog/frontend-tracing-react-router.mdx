@@ -1,0 +1,363 @@
+---
+title: "Tracing React Router with OpenTelemetry"
+description: "Trace every React Router navigation, loader, and action as one OpenTelemetry trace, using the router's own instrumentation API, and link framework mode's server render to the browser."
+date: 2026-09-28
+author: "Jeremy Funk"
+category: "guides"
+draft: true
+---
+
+React Router knows exactly when a navigation starts, which loaders it runs, and when the new route is ready. Since 7.15 it also has a stable instrumentation API that wraps every loader and action in one place. By the end of this guide, a click produces one trace: a span for the navigation, a span per loader and action, the fetches those loaders made, and the backend spans behind them. In framework mode, the first page load also includes the server render.
+
+This is part of the [frontend tracing guide](/blog/frontend-tracing-opentelemetry). It assumes you've done steps 1 and 2 there (the browser SDK is installed and `traceparent` reaches your API), and that you've added the `src/tracing.ts` helper from step 3. The code uses APIs that are stable in React Router 7.15 and later, and was checked against 8.4.
+
+## Quick setup with a coding agent
+
+If you'd rather have your coding agent do this, copy the prompt below into Claude Code, Codex, Cursor, or any agent that can run shell commands. It installs the [maple-frontend-tracing](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-frontend-tracing) skill, which contains every step of this guide and the general setup it builds on, and the agent picks it up from there.
+
+```text
+Set up Maple frontend tracing in this project.
+
+Install the skill with `npx skills add MapleTechLabs/maple/skills --skill maple-frontend-tracing -y`, then follow it. This app uses React Router.
+
+My Maple public ingest key is maple_pk_... and my organization is in the US region.
+```
+
+Replace the key with your public key from **Settings → Ingestion**, or leave it out: the agent then uses a placeholder you can swap later. EU organizations should say EU region.
+
+## Which React Router mode you're using
+
+- **Data mode** (`createBrowserRouter` and `RouterProvider`) is the main path here. You create the router object, so you can subscribe to it.
+- **Framework mode** (the Vite plugin, formerly Remix) uses the same instrumentation API, but creates the router for you. It has [its own section](#react-router-framework-mode-entryclient-and-server-rendering), including server rendering.
+- **Declarative mode** (`<BrowserRouter>`) has no loaders and no navigation state, so there's no start event to measure from. If you want navigation spans, move to `createBrowserRouter`; `createRoutesFromElements` lets you keep your `<Route>` JSX.
+
+## Trace React Router navigations with `router.subscribe`
+
+A data router calls your subscriber on every state change. `state.navigation.state` is `"idle"` when nothing is happening, `"loading"` or `"submitting"` while a navigation runs its loaders or action, and `"idle"` again once the new route is committed. That's your start and end:
+
+```ts
+// src/router-tracing.ts
+import type { DataRouteMatch, DataRouter } from "react-router"
+import { endNavigation, startNavigation } from "./tracing"
+
+/** Adds the leading slash that framework mode's patterns leave off. */
+export const routePattern = (pattern: string) => `/${pattern}`.replace(/\/+/g, "/")
+
+// Each route's path is relative to its parent. Layout and index routes have none.
+const matchedPattern = (matches: DataRouteMatch[]) =>
+	routePattern(matches.map((match) => match.route.path).filter(Boolean).join("/"))
+
+export function traceNavigations(router: DataRouter) {
+	// The first route's loaders may still be running
+	let loading = !router.state.initialized
+	let pathname = router.state.location.pathname
+	if (!loading) endNavigation(matchedPattern(router.state.matches))
+
+	router.subscribe((state) => {
+		if (state.navigation.state !== "idle") {
+			// A redirect or a second click while loading continues the same span
+			if (!loading) startNavigation(state.navigation.location.pathname)
+			loading = true
+			return
+		}
+
+		// Fetcher loads, revalidations, and hash changes aren't navigations
+		if (!loading && state.location.pathname === pathname) return
+		// Routes without loaders go straight to the new location
+		if (!loading) startNavigation(state.location.pathname)
+
+		endNavigation(matchedPattern(state.matches))
+		loading = false
+		pathname = state.location.pathname
+	})
+}
+```
+
+The span name comes from `state.matches`. Each route's `path` is relative to its parent, and layout and index routes have none, so joining the matched paths gives you `/projects/:projectId`, the low-cardinality name the main guide asks for.
+
+A few cases worth knowing:
+
+- **The first page load is already running** when you subscribe, because `createBrowserRouter` starts the first route's loaders immediately. The next section starts the `pageload` span earlier; `traceNavigations` ends it once `router.state.initialized` turns true.
+- **Redirects and interrupted navigations are one span.** A loader that throws `redirect()` keeps the router in `"loading"`, and so does a second click. The span is named after the route the user ended up on, and `url.path` keeps the path they started from.
+- **Routes without loaders never enter `"loading"`**, so their span starts and ends in the same callback. It has no duration, but it still counts the view.
+- **Back and forward buttons and search param changes** are traced like any other navigation. Hash changes run nothing and are skipped.
+
+## Trace loaders and actions with React Router's instrumentation API
+
+Loaders are where most of the time in a navigation goes. React Router's `instrumentations` option lets you wrap every route's loader and action in one place, and the helper's `traced` does the span work:
+
+```ts
+// src/router-tracing.ts, continued
+import type { ClientInstrumentation, InstrumentationHandlerResult, InstrumentRouteFunction } from "react-router"
+import { traced } from "./tracing"
+
+async function handlerSpan(name: string, handler: () => Promise<InstrumentationHandlerResult>) {
+	try {
+		await traced(name, async () => {
+			const result = await handler()
+			if (result.status === "error") throw result.error
+		})
+	} catch {
+		// Only the span needs the error; React Router rethrows it to your app itself
+	}
+}
+
+export const traceRouteHandlers: InstrumentRouteFunction = (route) => {
+	route.instrument({
+		loader: (handler) => handlerSpan(`loader ${route.id}`, handler),
+		action: (handler) => handlerSpan(`action ${route.id}`, handler),
+	})
+}
+
+export const tracing: ClientInstrumentation = {
+	// Runs once, when the router is created and before it loads the first route
+	router: () => startNavigation(window.location.pathname),
+	route: traceRouteHandlers,
+}
+```
+
+Pass it to the router, and call `traceNavigations` right after:
+
+```tsx
+// src/router.tsx
+import { createBrowserRouter } from "react-router"
+import { traceNavigations, tracing } from "./router-tracing"
+import { fetchMembers, fetchProject, ProjectPage, RootLayout } from "./app"
+
+export const router = createBrowserRouter(
+	[
+		{
+			id: "root",
+			path: "/",
+			Component: RootLayout,
+			children: [
+				{
+					// Loader spans are named after the route id, so give routes a readable one
+					id: "project",
+					path: "projects/:projectId",
+					loader: ({ params }) => Promise.all([fetchProject(params.projectId!), fetchMembers(params.projectId!)]),
+					Component: ProjectPage,
+				},
+			],
+		},
+	],
+	{ instrumentations: [tracing] },
+)
+
+traceNavigations(router)
+```
+
+The instrumented handler never throws. It resolves to `{ status, error }`, and React Router passes the loader's real result or error to your app on its own. So `handlerSpan` rethrows the error into `traced`, which records it on the span, and then swallows it.
+
+React Router also decides what counts as a failure: only a thrown `Error`. A thrown `redirect()`, `data()`, or `Response` is reported as success, which is right for redirects and 404s, so `traced` doesn't need its `isFailure` argument here. The flip side is that `throw data("...", { status: 500 })` won't mark the span as failed. Throw an `Error` for real failures.
+
+In data mode, route ids default to their position in the tree, like `0-1`, so give your routes an `id`.
+
+Nested routes' loaders run in parallel and show up as sibling spans. Only requests started before a loader's first `await` nest under its span; the [main guide explains why](/blog/frontend-tracing-opentelemetry#the-await-problem). Loaders called by a fetcher (`useFetcher().load()`) run outside any navigation, so they start their own traces.
+
+## Report errors caught by React Router with `onError`
+
+React Router catches every loader, action, and render error to show your `ErrorBoundary`, which keeps them away from the browser SDK's global handlers. `RouterProvider` takes an `onError` callback that gets each of those errors once, with the route pattern:
+
+```ts
+// src/router-tracing.ts, continued
+import { MapleBrowser } from "@maple-dev/browser"
+import { type ClientOnErrorFunction, isRouteErrorResponse } from "react-router"
+import { alreadyRecorded } from "./tracing"
+
+export const reportRouteError: ClientOnErrorFunction = (error, { pattern }) => {
+	// Thrown responses, like a 404 from a loader, are expected
+	if (isRouteErrorResponse(error)) return
+	// Loader and action errors are already on their span
+	if (alreadyRecorded(error)) return
+	MapleBrowser.captureException(error, {
+		name: "react_router.error",
+		attributes: { "app.route": routePattern(pattern) },
+	})
+}
+```
+
+```tsx
+// src/main.tsx
+import "./maple" // first, before anything renders
+import { createRoot } from "react-dom/client"
+import { RouterProvider } from "react-router/dom"
+import { router } from "./router"
+import { reportRouteError } from "./router-tracing"
+
+createRoot(document.getElementById("root")!).render(<RouterProvider router={router} onError={reportRouteError} />)
+```
+
+This beats reporting from inside an `ErrorBoundary`, which can render more than once for the same error. Loader errors reach `onError` too, so the `alreadyRecorded` check keeps them to one report, on the loader span.
+
+## React Router framework mode: entry.client and server rendering
+
+Framework mode uses the same `instrumentations` and `onError`, passed to `HydratedRouter` in `app/entry.client.tsx`. Run `npx react-router reveal` first if you don't have the entry files yet:
+
+```tsx
+// app/entry.client.tsx
+import "./maple"
+import { startTransition, StrictMode } from "react"
+import { hydrateRoot } from "react-dom/client"
+import { HydratedRouter } from "react-router/dom"
+import { reportRouteError, tracing } from "./router-tracing"
+
+startTransition(() => {
+	hydrateRoot(
+		document,
+		<StrictMode>
+			<HydratedRouter instrumentations={[tracing]} onError={reportRouteError} />
+		</StrictMode>,
+	)
+})
+```
+
+The catch is that `HydratedRouter` creates the router itself, so there's nothing to subscribe to. The closest official hook is the `navigate` instrumentation, which wraps each call to the router's `navigate` and reports the matched pattern. Keep `routePattern`, `traceRouteHandlers`, and `reportRouteError` from above in `app/router-tracing.ts`, drop `traceNavigations`, and replace `tracing`:
+
+```ts
+// app/router-tracing.ts
+import type { ClientInstrumentation } from "react-router"
+import { endNavigation, startNavigation } from "./tracing"
+
+let latest = 0
+
+export const tracing: ClientInstrumentation = {
+	router({ instrument }) {
+		startNavigation(window.location.pathname)
+
+		instrument({
+			navigate: async (navigate, { to }) => {
+				// navigate(-1) is a history navigation, like the back button
+				if (typeof to === "number") return
+				const id = ++latest
+				// `to` is what the link passed: `/projects/1`, or a relative path like `edit`
+				startNavigation(to)
+				const { meta } = await navigate()
+				// A newer navigation has already replaced this one
+				if (id === latest) endNavigation(meta && routePattern(meta.pattern))
+			},
+		})
+	},
+	route: traceRouteHandlers,
+}
+```
+
+With server rendering, the loaders for the first page already ran on the server, so the `pageload` span ends once the page hydrates:
+
+```tsx
+// app/root.tsx
+import { useEffect } from "react"
+import { Outlet } from "react-router"
+import { endNavigation } from "./tracing"
+
+export default function App() {
+	// The server already ran the loaders, so the first page is ready once it hydrates
+	useEffect(() => endNavigation(), [])
+	return <Outlet />
+}
+```
+
+I'll be upfront: framework mode's client side has gaps that data mode doesn't.
+
+- **Back and forward buttons aren't traced.** They go through the browser's history, not `navigate`, so there's no navigation span and their loaders start their own traces.
+- **Server loader requests are separate traces.** React Router fetches server loader data in one `.data` request per navigation, and starts it after an `await`. That's the [`await` problem](/blog/frontend-tracing-opentelemetry#the-await-problem) inside React Router itself: the request and the server spans behind it land in their own trace. The loader span under your navigation still shows how long the browser waited.
+- **Redirected navigations are named after the route that was clicked**, not the one the user landed on.
+- **Hash-only links** produce a short span named just `navigate`, since there's no pattern for them.
+
+### Trace the server render and link it to the pageload
+
+Start the OpenTelemetry Node SDK as in the [Node.js guide](/docs/guides/instrumentation-nodejs), loaded before the server build (for example with Node's `--import` flag). That gives you a span for every incoming request and for the database and HTTP calls your loaders make.
+
+The server entry takes its own `instrumentations` export. Add a span per request, named after the matched pattern, and reuse `traceRouteHandlers` for server loaders:
+
+```ts
+// app/entry.server.tsx: add to the file that `react-router reveal` generates
+import { context, propagation, SpanStatusCode, trace } from "@opentelemetry/api"
+import type { HandleErrorFunction, ServerInstrumentation } from "react-router"
+import { routePattern, traceRouteHandlers } from "./router-tracing"
+import { alreadyRecorded } from "./tracing"
+
+const tracer = trace.getTracer("acme-web")
+
+export const instrumentations: ServerInstrumentation[] = [
+	{
+		handler: ({ instrument }) =>
+			instrument({
+				// Page requests, and the .data requests of client-side navigations
+				request: (handle, { request }) =>
+					tracer.startActiveSpan(request.method, async (span) => {
+						const { meta, statusCode } = await handle()
+						if (meta) span.updateName(`${request.method} ${routePattern(meta.pattern)}`)
+						span.setAttribute("http.response.status_code", statusCode)
+						if (statusCode >= 500) span.setStatus({ code: SpanStatusCode.ERROR })
+						span.end()
+					}),
+			}),
+		// Loader and action spans on the server, the same as in the browser
+		route: traceRouteHandlers,
+	},
+]
+
+export const handleError: HandleErrorFunction = (error, { request }) => {
+	// Aborted requests aren't failures, and loader errors are already on their span
+	if (request.signal.aborted || alreadyRecorded(error)) return
+	trace.getActiveSpan()?.recordException(error instanceof Error ? error : String(error))
+	console.error(error)
+}
+```
+
+Then hand the trace to the browser at the top of the generated `handleRequest`, which renders the page:
+
+```tsx
+export default function handleRequest(
+	request: Request,
+	responseStatusCode: number,
+	responseHeaders: Headers,
+	routerContext: EntryContext,
+	loadContext: RouterContextProvider,
+) {
+	// Hand this trace to the browser so its pageload span can join it
+	const carrier: Record<string, string> = {}
+	propagation.inject(context.active(), carrier)
+	if (carrier.traceparent) {
+		responseHeaders.append("server-timing", `traceparent;desc="${carrier.traceparent}"`)
+	}
+
+	// ...the rest of the generated handleRequest, unchanged
+```
+
+`handleRequest` runs inside the request span, so `context.active()` is that span. The browser needs nothing more: `startNavigation` reads the header through `serverContext()` and parents the `pageload` span to the server request, so the first page load is one trace from the request arriving to the page hydrating.
+
+Some things to know about the server side:
+
+- **The request span nests under the Node SDK's HTTP span**, which only knows the URL. The React Router span adds the route pattern and the loader spans.
+- **It ends when the response starts streaming**, because the default entry resolves the response once React's shell is ready. It measures time to first byte, not the full stream.
+- **Defining `handleError` replaces React Router's default logging**, which is why it calls `console.error` itself.
+- **Cached HTML shares one trace.** If a CDN caches your pages, skip the `server-timing` header on those responses.
+
+## React Router tracing gotchas
+
+- **Framework mode patterns have no leading slash.** The root route's path is empty, so `pattern` is `projects/:projectId`. `routePattern` adds the slash so browser and server spans get the same names.
+- **Older versions use `unstable_` names.** `instrumentations` was `unstable_instrumentations` from 7.9.5 until 7.15, and `onError` was `unstable_onError` until 7.11. Before 7.9.5, wrap loaders with `traced` by hand.
+- **A throwing instrumentation doesn't break your app.** React Router catches and logs the error, then runs the loader anyway.
+
+## FAQ
+
+### Does React Router have built-in OpenTelemetry support?
+
+Not directly. Since 7.15 it has a stable, vendor-neutral instrumentation API with hooks around navigations, fetcher calls, loaders, actions, middleware, and server requests. It doesn't create spans or export anything, so you plug your own tracer in, as this guide does.
+
+### Why are my React Router loader spans not connected to the navigation?
+
+Usually one of three things: the loader ran for a fetcher, so there was no navigation; you're in framework mode and the user pressed back or forward; or the loader made its request after an `await`. Start requests before the first `await`, for example with `Promise.all`.
+
+### Can I trace navigations with `<BrowserRouter>`?
+
+Only partly. Declarative mode has no loaders and no navigation state, so you can record that a route rendered, but not how long the navigation took. `createBrowserRouter` with `createRoutesFromElements` keeps your route components and gives you everything in this guide.
+
+## Next steps
+
+- [Frontend tracing with OpenTelemetry](/blog/frontend-tracing-opentelemetry): the helper, the problems, and the setup this guide builds on.
+- [Browser SDK reference](/docs/session-replay/browser-sdk): consent, masking, and URL redaction.
+- [Session replays](/docs/session-replay/replays): jump from a trace to the recording of the session that produced it.
+- [Errors and issues](/docs/errors/overview): how the errors you report from `onError` are grouped.
