@@ -209,13 +209,13 @@ fn json_object(attrs: &[KeyValue], keys: &[(&str, &str)]) -> Option<String> {
     (!object.is_empty()).then(|| serde_json::Value::Object(object).to_string())
 }
 
-fn has(attrs: &[KeyValue], key: &str) -> bool {
+pub(super) fn has(attrs: &[KeyValue], key: &str) -> bool {
     attrs.iter().any(|attr| attr.key == key)
 }
 
 /// The first non-empty scalar value under `key`, as text: token counts arrive
 /// as ints, and the warehouse Map stores every value as a string anyway.
-fn text(attrs: &[KeyValue], key: &str) -> Option<String> {
+pub(super) fn text(attrs: &[KeyValue], key: &str) -> Option<String> {
     attrs.iter().filter(|attr| attr.key == key).find_map(scalar)
 }
 
@@ -230,7 +230,7 @@ fn scalar(attr: &KeyValue) -> Option<String> {
     (!text.is_empty()).then_some(text)
 }
 
-fn owned(key: &str, value: String) -> KeyValue {
+pub(super) fn owned(key: &str, value: String) -> KeyValue {
     KeyValue {
         key: key.to_owned(),
         key_strindex: 0,
