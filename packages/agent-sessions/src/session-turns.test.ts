@@ -455,6 +455,25 @@ describe("classifyAiSpan", () => {
 
 		expect(classifyAiSpan(httpSpan)).toBe("other")
 	})
+
+	it("classifies an unstamped span as other, whatever gen_ai keys it echoes", () => {
+		// LiteLLM proxy's FastAPI server span (trace-capture `docs_litellm_proxy`):
+		// only `gen_ai.request.model` and http.*, which the gateway does not stamp,
+		// so the list never counted it — and the page counted it as a model call
+		// (9 LLM calls against the list's 6).
+		const proxyServerSpan = makeSpan({
+			spanId: "a",
+			startMs: 0,
+			durationMs: 1,
+			spanName: "POST /chat/completions",
+			spanKind: "Server",
+			genAi: { requestModel: "gpt-4o-mini" },
+		})
+
+		expect(proxyServerSpan.isAiSpan).toBe(true)
+		expect(classifyAiSpan(proxyServerSpan)).toBe("other")
+		expect(isLlmCall(proxyServerSpan)).toBe(false)
+	})
 })
 
 describe("isLlmCall", () => {
@@ -467,6 +486,7 @@ describe("isLlmCall", () => {
 			spanId: "a",
 			startMs: 0,
 			durationMs: 1,
+			vendorId: "vercel_ai_sdk",
 			genAi: { operationName: "generate_text", responseModel: "gpt-5" },
 		})
 

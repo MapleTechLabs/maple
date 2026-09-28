@@ -73,9 +73,12 @@ export function classifyAiSpan(span: AiSessionSpan): AiSpanCategory {
 		if (TOOL_OPS.has(operation)) return "tool"
 		if (AGENT_OPS.has(operation)) return "agent"
 	}
-	// Spans with no AI signal at all are the app's own HTTP/DB work, sharing the
-	// agent's traces. They are rendered, muted, and never colored as agent work.
-	if (!span.isAiSpan) return "other"
+	// Spans the ingest gateway did not stamp are the app's own HTTP/DB work,
+	// sharing the agent's traces. They are rendered, muted, and never colored as
+	// agent work — even with a stray gen_ai key: LiteLLM proxy's FastAPI server
+	// span carries the requested model, and the list's index, which holds only
+	// stamped spans, never counts it.
+	if (span.vendorId === undefined) return "other"
 
 	// `gen_ai.operation.name` is optional and plenty of instrumentations skip it.
 	// A tool name or a model is the next best evidence, then the few framework

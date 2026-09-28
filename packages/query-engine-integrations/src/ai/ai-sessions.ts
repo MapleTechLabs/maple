@@ -1590,8 +1590,9 @@ const SUMMARY_ARRAY_CAP = 50
  *
  * Every attribute is read the way `mapAiSpan` reads it: the first non-empty
  * value across that field's source keys. An "llm call" and a "tool call" are
- * the page's `classifyAiSpan` reduced to what an aggregation can see —
- * operation name, model, tool name and the framework call span names.
+ * the page's `classifyAiSpan` reduced to what an aggregation can see — the
+ * operation name, then, on a span the gateway stamped, the tool name, the model
+ * and the framework call span names.
  *
  * Usage is summed twice: over every span, and over the model-call spans alone.
  * A framework that reports usage per call AND rolls it up onto the agent span
@@ -1620,6 +1621,7 @@ const summaryMeasures_ = ($: SpanColumns) => {
 	const isLlmCall = operation.in_(...AI_INFERENCE_OPERATIONS).or(
 		operation
 			.notIn(...AI_RETRIEVAL_OPERATIONS, ...AI_TOOL_OPERATIONS, ...AI_AGENT_OPERATIONS)
+			.and(isAi)
 			.and(model.neq("").or($.SpanName.in_(...AI_INFERENCE_SPAN_NAMES)))
 			.and(toolName.eq("")),
 	)

@@ -1406,6 +1406,15 @@ describe("aiSessionSummaryQuery", () => {
 		expect(sql).not.toContain("lower(SpanName)")
 	})
 
+	it("counts a model call off its model only on a span the gateway stamped", () => {
+		// LiteLLM proxy's FastAPI server span echoes `gen_ai.request.model` and is
+		// not stamped: the list's index never holds it, so the summary skips it too.
+		const { sql } = compileUnsafe(aiSessionSummaryQuery(), summaryParams)
+		expect(sql).toContain(
+			"'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step') AND SpanAttributes['maple_ai.vendor.id'] != '')",
+		)
+	})
+
 	it("is org-scoped on both levels", () => {
 		const { sql } = compileUnsafe(aiSessionSummaryQuery(), summaryParams)
 		expect(orgPredicateCount(sql)).toBe(2)
