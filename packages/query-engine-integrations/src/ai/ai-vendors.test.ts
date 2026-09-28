@@ -166,6 +166,48 @@ describe("openinference", () => {
 		expect(real.genAi.toolCallArguments).toEqual({ city: "Paris" })
 	})
 
+	it("does not read an agent run's input and output as messages", () => {
+		// The smolagents `CodeAgent.run` turn anchor: `input.value` is the run's
+		// arguments and `output.value` its final answer. Read as messages, the
+		// arguments became the turn's user row.
+		const mapped = mapAiSpan(
+			row("smolagents", {
+				"openinference.span.kind": "AGENT",
+				"gen_ai.agent.name": "assistant",
+				"input.value":
+					'{"task": "Hi! Briefly introduce yourself.", "stream": false, "reset": false, "images": null, "additional_args": null, "max_steps": null, "return_full_result": null}',
+				"output.value": "Hello! I am an AI assistant designed to help you with a variety of tasks.",
+			}),
+		)
+		expect(mapped.genAi.inputMessages).toBeUndefined()
+		expect(mapped.genAi.outputMessages).toBeUndefined()
+
+		// A chain whose input IS a message list (LangChain's `{messages}`) keeps it.
+		const chain = mapAiSpan(
+			row("unknown:openinference", {
+				"openinference.span.kind": "CHAIN",
+				"input.value": '{"messages": [{"role": "user", "content": "Hi"}]}',
+			}),
+		)
+		expect(chain.genAi.inputMessages).toEqual([{ role: "user", content: "Hi" }])
+	})
+
+	it("reads a tool span's input and output as its arguments and result", () => {
+		// An agno tool span without the GenAI dual-write.
+		const mapped = mapAiSpan(
+			row("agno", {
+				"openinference.span.kind": "TOOL",
+				"tool.name": "calculate",
+				"input.value": '{"expression": "17 * 23"}',
+				"output.value": "391",
+			}),
+		)
+		expect(mapped.genAi.toolCallArguments).toEqual({ expression: "17 * 23" })
+		expect(mapped.genAi.toolCallResult).toBe("391")
+		expect(mapped.genAi.inputMessages).toBeUndefined()
+		expect(mapped.genAi.outputMessages).toBeUndefined()
+	})
+
 	it("decodes a framework's OpenInference span without the GenAI dual-write", () => {
 		// Trimmed from an agno `OpenRouter.invoke` LLM span, OpenInference keys only.
 		const mapped = mapAiSpan(

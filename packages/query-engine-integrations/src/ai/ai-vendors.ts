@@ -10,6 +10,7 @@
 // rather than guessed: a wrong key never matches, so it is invisible.
 
 import type { AiIntegration, AiRefineContext } from "./ai-integrations"
+import { isMessageList, unwrapMessages, unwrapOutputMessages, unwrapToolMessage } from "./ai-messages"
 import { MAPLE_NATIVE_TURN_ID_ATTR, type MutableAiGenAiValues } from "@maple/domain/gen-ai"
 
 /**
@@ -82,10 +83,12 @@ const OPENINFERENCE_SPAN_KIND_OPERATIONS = new Map([
  * OpenInference — the dialect Arize's instrumentors emit. Registered under
  * `openinference-openai` (the gateway's id for the OpenAI instrumentor),
  * `unknown:openinference` (its generic bucket for any other OpenInference
- * scope) and every framework id the gateway stamps from an
- * `openinference.instrumentation.<framework>` scope, because the dialect is
- * identical; only the detection path differs. A framework's native spans
- * carry none of these keys, so the entry costs them nothing.
+ * scope) and the framework ids an `openinference.instrumentation.<framework>`
+ * scope is stamped with (agno, crewai, dspy, openai_agents_sdk, smolagents;
+ * langchain and llamaindex once the gateway fingerprints those scopes),
+ * because the dialect is identical; only the detection path differs. A
+ * framework's native spans carry none of these keys, so the entry costs them
+ * nothing.
  *
  * The integration id is the DIALECT, not the vendor stamp, so every stamp
  * reports the same integration.
@@ -101,8 +104,8 @@ const openInferenceIntegration: AiIntegration = {
 		usageReasoningOutputTokens: ["llm.token_count.completion_details.reasoning"],
 		usageCost: ["llm.cost.total"],
 		responseFinishReasons: ["llm.finish_reason"],
-		inputMessages: ["llm.input_messages", "input.value"],
-		outputMessages: ["llm.output_messages", "output.value"],
+		inputMessages: ["llm.input_messages"],
+		outputMessages: ["llm.output_messages"],
 		toolName: ["tool.name"],
 		toolDescription: ["tool.description"],
 		toolDefinitions: ["llm.tools"],
@@ -111,26 +114,44 @@ const openInferenceIntegration: AiIntegration = {
 		// `openinference.span.kind` is the dialect's operation classifier, but it
 		// is an enum of a different vocabulary rather than a differently named
 		// `gen_ai.operation.name`, so translating it is a refine, not an alias.
+		const kind = ctx.attributes["openinference.span.kind"] ?? ""
 		if (values.operationName === undefined) {
-			const operation = OPENINFERENCE_SPAN_KIND_OPERATIONS.get(
-				ctx.attributes["openinference.span.kind"] ?? "",
-			)
+			const operation = OPENINFERENCE_SPAN_KIND_OPERATIONS.get(kind)
 			if (operation !== undefined) values.operationName = operation
 		}
 
-		// The GenAI dual-write copies the tool's parameter schema into
-		// `gen_ai.tool.call.arguments`; the call's own arguments are `input.value`.
+		// `input.value` / `output.value` are whatever the span's function took and
+		// returned. On a model call (or a span naming no kind) that is the request
+		// and the reply; on any other kind it is a message list only when it
+		// unwraps to one — an agent run's `{"task": …}` is not the user speaking.
+		const input = ctx.read("inputMessages", "input.value")
+		const output = ctx.read("outputMessages", "output.value")
+		const readsAsMessages = (value: unknown): boolean =>
+			value !== undefined && (kind === "" || kind === "LLM" || isMessageList(value))
+		const inputMessages = unwrapMessages(input)
+		if (values.inputMessages === undefined && readsAsMessages(inputMessages)) {
+			values.inputMessages = inputMessages
+		}
+		const outputMessages = unwrapOutputMessages(output)
+		if (values.outputMessages === undefined && readsAsMessages(outputMessages)) {
+			values.outputMessages = outputMessages
+		}
+
+		// On a tool they are its arguments and result. The GenAI dual-write also
+		// copies the tool's parameter schema into `gen_ai.tool.call.arguments`,
+		// which the real arguments replace.
+		if (kind !== "TOOL") return
 		const schema = ctx.attributes["tool.parameters"]
-		if (
-			schema !== undefined &&
-			schema !== "" &&
-			schema === ctx.attributes["gen_ai.tool.call.arguments"]
-		) {
-			const args = ctx.read("toolCallArguments", "input.value")
-			if (args !== undefined) values.toolCallArguments = args
+		const schemaAsArguments =
+			schema !== undefined && schema !== "" && schema === ctx.attributes["gen_ai.tool.call.arguments"]
+		if ((values.toolCallArguments === undefined || schemaAsArguments) && input !== undefined) {
+			values.toolCallArguments = input
+		}
+		if (values.toolCallResult === undefined && output !== undefined) {
+			values.toolCallResult = unwrapToolMessage(output)
 		}
 	},
-	refineKeys: ["openinference.span.kind", "tool.parameters"],
+	refineKeys: ["openinference.span.kind", "tool.parameters", "input.value", "output.value"],
 }
 
 /**
