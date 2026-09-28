@@ -192,17 +192,7 @@ export function setupTracing(config: ResolvedConfig): () => Promise<void> {
 	// Both events are needed: `visibilitychange → hidden` is the only reliable
 	// one on mobile, `pagehide` covers desktop tab close and navigation. Flushing
 	// twice is harmless — the second finds an empty queue.
-	//
-	// Fetch spans need a push first: the fetch instrumentation ends each one
-	// 300ms after its response (waiting on resource timing), so a fetch that
-	// settled just before a navigation is still open when this flush runs, and
-	// the page is gone before its timer fires. End those at their real response
-	// time here. Their resource-timing network events are the price; the
-	// instrumentation's own late `end()` is then ignored.
-	const settledFetches = new Map<ApiSpan, number>()
 	const onExit = (): void => {
-		for (const [span, endTime] of settledFetches) span.end(endTime)
-		settledFetches.clear()
 		void provider.forceFlush().catch(() => {
 			// Best-effort on the way out; never throw into the host app.
 		})
@@ -210,10 +200,23 @@ export function setupTracing(config: ResolvedConfig): () => Promise<void> {
 	const onVisibilityChange = (): void => {
 		if (document.visibilityState === "hidden") onExit()
 	}
+	// Fetch spans need a push first on the way out: the fetch instrumentation
+	// ends each one 300ms after its response (waiting on resource timing), so a
+	// fetch that settled just before a navigation is still open when the flush
+	// runs, and the page is gone before its timer fires. `pagehide` ends those at
+	// their real response time, dropping their resource-timing network events.
+	// Only `pagehide`, which every navigation fires: a page merely hidden (a
+	// tab switch) lives on, and its timer would then hit an ended span.
+	const settledFetches = new Map<ApiSpan, number>()
+	const onPageHide = (): void => {
+		for (const [span, endTime] of settledFetches) span.end(endTime)
+		settledFetches.clear()
+		onExit()
+	}
 	const canListen = typeof document !== "undefined" && typeof document.addEventListener === "function"
 	if (canListen) {
 		document.addEventListener("visibilitychange", onVisibilityChange)
-		window.addEventListener("pagehide", onExit)
+		window.addEventListener("pagehide", onPageHide)
 	}
 
 	const unregisterInstrumentations = config.tracingInstrumentFetch
@@ -245,7 +248,7 @@ export function setupTracing(config: ResolvedConfig): () => Promise<void> {
 	return async () => {
 		if (canListen) {
 			document.removeEventListener("visibilitychange", onVisibilityChange)
-			window.removeEventListener("pagehide", onExit)
+			window.removeEventListener("pagehide", onPageHide)
 		}
 		unregisterInstrumentations?.()
 		if (mapleProvider === provider) mapleProvider = undefined

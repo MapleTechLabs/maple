@@ -183,22 +183,46 @@ describe("setupTracing unload flush", () => {
 		// The fetch instrumentation ends its span 300ms after the response; a
 		// navigation inside that window used to flush before the span existed.
 		vi.useFakeTimers({ toFake: ["setTimeout"] })
+		// `vi.waitFor` advances fake timers by its interval on every poll; 0 keeps
+		// the instrumentation's 300ms timer parked until this test runs it.
+		const poll = { interval: 0 }
 		shutdown = setupTracing({ ...CONFIG, tracingInstrumentFetch: true })
 		const url = URL.createObjectURL(new Blob(["ok"]))
 
 		await (await fetch(url)).text()
 		// The instrumentation has settled the response and parked the span's end.
-		await vi.waitFor(() => expect(vi.getTimerCount()).toBe(1))
+		await vi.waitFor(() => expect(vi.getTimerCount()).toBe(1), poll)
 
 		window.dispatchEvent(new Event("pagehide"))
-		await vi.waitFor(() => expect(exported).toHaveLength(1))
+		await vi.waitFor(() => expect(exported).toHaveLength(1), poll)
 		expect(exported[0]?.attributes["url.full"]).toBe(url)
 
 		// The instrumentation's own late end() must not export the span twice.
 		vi.runAllTimers()
+		vi.useRealTimers()
 		window.dispatchEvent(new Event("pagehide"))
-		await Promise.resolve()
+		await new Promise((resolve) => setTimeout(resolve, 20))
 		expect(exported).toHaveLength(1)
+		URL.revokeObjectURL(url)
+	})
+
+	it("leaves a settled fetch span to the instrumentation when the page is only hidden", async () => {
+		// A hidden page (tab switch) lives on: ending the span early would leave
+		// the instrumentation's timer writing to an ended span.
+		vi.useFakeTimers({ toFake: ["setTimeout"] })
+		const poll = { interval: 0 }
+		shutdown = setupTracing({ ...CONFIG, tracingInstrumentFetch: true })
+		const url = URL.createObjectURL(new Blob(["ok"]))
+
+		await (await fetch(url)).text()
+		await vi.waitFor(() => expect(vi.getTimerCount()).toBe(1), poll)
+
+		vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden")
+		document.dispatchEvent(new Event("visibilitychange"))
+		vi.useRealTimers()
+		await new Promise((resolve) => setTimeout(resolve, 20))
+		expect(exported).toHaveLength(0)
+		URL.revokeObjectURL(url)
 	})
 
 	it("removes its listeners on shutdown", async () => {
