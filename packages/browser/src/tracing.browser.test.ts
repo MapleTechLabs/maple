@@ -1,5 +1,7 @@
 // TEST-SEAM: This focused test replaces process-global modules that have no instance-level injection seam.
 import {
+	diag,
+	DiagLogLevel,
 	INVALID_SPAN_CONTEXT,
 	type Span as ApiSpan,
 	trace,
@@ -104,6 +106,8 @@ describe("setupTracing unload flush", () => {
 
 	afterEach(async () => {
 		vi.useRealTimers()
+		vi.restoreAllMocks()
+		diag.disable()
 		await shutdown?.()
 		shutdown = undefined
 		exported.length = 0
@@ -196,13 +200,29 @@ describe("setupTracing unload flush", () => {
 		window.dispatchEvent(new Event("pagehide"))
 		await vi.waitFor(() => expect(exported).toHaveLength(1), poll)
 		expect(exported[0]?.attributes["url.full"]).toBe(url)
+		URL.revokeObjectURL(url)
+	})
 
-		// The instrumentation's own late end() must not export the span twice.
+	it("does not end a fetch span the instrumentation already ended", async () => {
+		const errors: string[] = []
+		const noop = (): void => {}
+		diag.setLogger(
+			{ error: (message) => errors.push(message), warn: noop, info: noop, debug: noop, verbose: noop },
+			DiagLogLevel.ERROR,
+		)
+		vi.useFakeTimers({ toFake: ["setTimeout"] })
+		const poll = { interval: 0 }
+		shutdown = setupTracing({ ...CONFIG, tracingInstrumentFetch: true })
+		const url = URL.createObjectURL(new Blob(["ok"]))
+
+		await (await fetch(url)).text()
+		await vi.waitFor(() => expect(vi.getTimerCount()).toBe(1), poll)
+		// The instrumentation's timer ends the span; no later fetch prunes it.
 		vi.runAllTimers()
-		vi.useRealTimers()
+
 		window.dispatchEvent(new Event("pagehide"))
-		await new Promise((resolve) => setTimeout(resolve, 20))
-		expect(exported).toHaveLength(1)
+		await vi.waitFor(() => expect(exported).toHaveLength(1), poll)
+		expect(errors).toEqual([])
 		URL.revokeObjectURL(url)
 	})
 

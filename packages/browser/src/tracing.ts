@@ -206,10 +206,15 @@ export function setupTracing(config: ResolvedConfig): () => Promise<void> {
 	// runs, and the page is gone before its timer fires. `pagehide` ends those at
 	// their real response time, dropping their resource-timing network events.
 	// Only `pagehide`, which every navigation fires: a page merely hidden (a
-	// tab switch) lives on, and its timer would then hit an ended span.
+	// tab switch) lives on, and its timer would then hit an ended span. A page
+	// entering the bfcache fires it too; ending there is still right, since it
+	// may never be restored.
 	const settledFetches = new Map<ApiSpan, number>()
 	const onPageHide = (): void => {
-		for (const [span, endTime] of settledFetches) span.end(endTime)
+		for (const [span, endTime] of settledFetches) {
+			// Entries are only pruned on the next fetch, so some already ended.
+			if (span.isRecording()) span.end(endTime)
+		}
 		settledFetches.clear()
 		onExit()
 	}
