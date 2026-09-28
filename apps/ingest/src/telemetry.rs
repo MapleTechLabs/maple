@@ -4017,10 +4017,18 @@ fn any_value_string(value: &AnyValue) -> String {
         Some(any_value::Value::IntValue(value)) => value.to_string(),
         Some(any_value::Value::DoubleValue(value)) => value.to_string(),
         // Text sent as bytes (LangSmith's prompt and completion) stays
-        // readable; only binary content is hex.
-        Some(any_value::Value::BytesValue(value)) => {
-            std::str::from_utf8(value).map_or_else(|_| bytes_hex(value), str::to_owned)
-        }
+        // readable. Binary is hex, including binary that happens to be valid
+        // UTF-8: a control character other than whitespace marks it.
+        Some(any_value::Value::BytesValue(value)) => match std::str::from_utf8(value) {
+            Ok(text)
+                if !text
+                    .chars()
+                    .any(|c| c.is_control() && !matches!(c, '\t' | '\n' | '\r')) =>
+            {
+                text.to_owned()
+            }
+            _ => bytes_hex(value),
+        },
         Some(any_value::Value::ArrayValue(_) | any_value::Value::KvlistValue(_)) => {
             serde_json::to_string(&any_value_json(value)).unwrap_or_default()
         }
@@ -4464,6 +4472,12 @@ mod tests {
             r#"{"messages":[{"content":"Hi"}]}"#
         );
         assert_eq!(any_value_string(&bytes(&[0xff, 0xfe, 0x01])), "fffe01");
+        // Valid UTF-8 that is really binary stays hex (all zero stays "").
+        assert_eq!(any_value_string(&bytes(&[0x01, 0x02, 0x7f])), "01027f");
+        assert_eq!(any_value_string(&bytes(&[0; 4])), "");
+        assert_eq!(any_value_string(&bytes(b"a\tb\r\nc")), "a\tb\r\nc");
+        // A leading BOM is kept, as the local-mode port keeps it.
+        assert_eq!(any_value_string(&bytes(b"\xef\xbb\xbfa")), "\u{feff}a");
     }
 
     #[test]
