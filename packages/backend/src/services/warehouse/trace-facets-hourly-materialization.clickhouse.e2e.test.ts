@@ -9,6 +9,8 @@
 
 import { afterAll, assert, beforeAll, describe, it } from "@effect/vitest"
 import { migrations, renderStatementFull } from "@maple/domain/clickhouse"
+import * as CH from "@maple/query-engine/ch"
+import { normalizeSqlForClickHouseClient } from "@maple/query-engine/execution"
 import {
 	applyRealMigrations,
 	clickhouseE2eEnabled,
@@ -98,6 +100,15 @@ const BATCH_1: ReadonlyArray<SeedSpan> = [
 // holds two partial rows for that group until a merge, and reads must sum them.
 const BATCH_2: ReadonlyArray<SeedSpan> = [
 	{
+		traceId: "t6",
+		name: "http.server GET",
+		ms: BASE_MS + HOUR_MS + 120_000,
+		service: "api",
+		durationNs: 7_000_000,
+		attrs: { "http.method": "GET", "http.route": "/users", "http.status_code": "200" },
+		resource: PROD,
+	},
+	{
 		traceId: "t5",
 		name: "http.server GET",
 		ms: BASE_MS + 240_000,
@@ -130,7 +141,7 @@ const insert = async (spans: ReadonlyArray<SeedSpan>): Promise<void> => {
 }
 
 const runJson = async (sql: string): Promise<ReadonlyArray<Record<string, unknown>>> => {
-	const body = await clickhouseExec(`${sql} FORMAT JSON`, database, {
+	const body = await clickhouseExec(sql.includes("FORMAT JSON") ? sql : `${sql} FORMAT JSON`, database, {
 		output_format_json_quote_64bit_integers: "0",
 	})
 	return (JSON.parse(body) as { readonly data?: ReadonlyArray<Record<string, unknown>> }).data ?? []
@@ -192,6 +203,37 @@ describe.skipIf(!clickhouseE2eEnabled)("trace_facets_hourly materialization", ()
 			durationMin: 1_000_000,
 			durationMax: 9_000_000,
 		})
+	})
+
+	// Starts mid-hour, after t1: the first hour is a raw edge that must drop t1,
+	// the second a whole hour the rollup answers, and the end a partial hour.
+	it("answers the sidebar facets and duration stats identically from the splice and from trace_list_mv", async () => {
+		const window = {
+			orgId: ORG_ID,
+			startTime: chDateTime(BASE_MS + 90_000).slice(0, 19),
+			endTime: chDateTime(BASE_MS + 2 * HOUR_MS + 600_000).slice(0, 19),
+		}
+		const run = async (sql: string) => runJson(normalizeSqlForClickHouseClient(sql))
+		const byFacet = (rows: ReadonlyArray<Record<string, unknown>>) =>
+			[...rows].sort((a, b) => `${a.facetType}:${a.name}`.localeCompare(`${b.facetType}:${b.name}`))
+
+		// `minDurationMs: 0` filters nothing and forces the trace_list_mv-only route.
+		const spliced = CH.compileUnionUnsafe(CH.tracesFacetsQuery({}), window).sql
+		const raw = CH.compileUnionUnsafe(CH.tracesFacetsQuery({ minDurationMs: 0 }), window).sql
+		assert.include(spliced, "trace_facets_hourly")
+		assert.notInclude(raw, "trace_facets_hourly")
+
+		const splicedRows = byFacet(await run(spliced))
+		assert.deepStrictEqual(splicedRows, byFacet(await run(raw)))
+		assert.deepInclude(splicedRows, { name: "GET /users", count: 3, facetType: "spanName" })
+
+		const [splicedStats] = await run(CH.compileUnsafe(CH.tracesDurationStatsQuery({}), window).sql)
+		const [rawStats] = await run(
+			CH.compileUnsafe(CH.tracesDurationStatsQuery({ minDurationMs: 0 }), window).sql,
+		)
+		assert.strictEqual(splicedStats!.minDurationMs, rawStats!.minDurationMs)
+		assert.strictEqual(splicedStats!.maxDurationMs, rawStats!.maxDurationMs)
+		assert.isAbove(Number(splicedStats!.p50DurationMs), 0)
 	})
 
 	it("reproduces the same rollup from migration 0034's backfill", async () => {

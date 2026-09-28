@@ -1332,8 +1332,8 @@ describe("converted queries", () => {
 		})
 		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("positionCaseInsensitive(ServiceName, 'api') > 0")
-		expect(sql).toContain("quantile(0.5)(Duration)")
-		expect(sql).toContain("FROM trace_list_mv") // tracesDurationStats always uses MV directly
+		expect(sql).toContain("quantilesTDigestMergeState(0.5, 0.95)(DurationQuantiles)")
+		expect(sql).toContain("FROM trace_facets_hourly")
 	})
 
 	it("spanHierarchyQuery projects only the trimmed tree attribute keys", () => {

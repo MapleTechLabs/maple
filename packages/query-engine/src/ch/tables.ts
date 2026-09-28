@@ -190,6 +190,24 @@ export const TraceListMv = table("trace_list_mv", {
 	TraceState: T.string,
 })
 
+export const TraceFacetsHourly = table("trace_facets_hourly", {
+	OrgId: orgId,
+	Hour: dateTime,
+	ServiceName: T.string,
+	SpanName: T.string,
+	HttpMethod: T.string,
+	HttpStatusCode: T.string,
+	DeploymentEnv: T.string,
+	ServiceNamespace: T.string,
+	HasError: T.uint8,
+	TraceCount: T.uint64,
+	DurationMin: T.uint64,
+	DurationMax: T.uint64,
+	// AggregateFunction(quantilesTDigest(0.5, 0.95), UInt64) — opaque state, only
+	// ever touched via raw `...MergeState`/`...Merge` exprs.
+	DurationQuantiles: T.string,
+})
+
 export const Logs = table("logs", {
 	OrgId: orgId,
 	Timestamp: dateTime64,
