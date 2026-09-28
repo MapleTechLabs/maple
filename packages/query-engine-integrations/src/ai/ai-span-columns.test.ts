@@ -173,7 +173,7 @@ describe("span classification SQL", () => {
 		// re-summing vendors and the OpenAI-shaped providers, and sit beside it
 		// for Anthropic; the default nests.
 		expect(text).toContain(
-			"multiIf(SpanAttributes['maple_ai.vendor.id'] IN ('vercel_ai_sdk', 'maple'), greatest(",
+			"multiIf(SpanAttributes['maple_ai.vendor.id'] IN ('vercel_ai_sdk', 'maple', 'openrouter'), greatest(",
 		)
 		expect(text).toContain(
 			"IN ('openai', 'gcp.gemini', 'gemini', 'gcp.vertex_ai', 'vertex_ai', 'openrouter'), greatest(",

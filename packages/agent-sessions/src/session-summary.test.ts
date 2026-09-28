@@ -363,6 +363,22 @@ describe("buildSessionSummary — cache accounting", () => {
 		expect(summary.tokens.total).toBe(1100)
 	})
 
+	it("takes OpenRouter Broadcast as inclusive even where it names Anthropic as the provider", () => {
+		// Broadcast stamps the upstream (`anthropic`) as the provider but reports
+		// OpenRouter's own OpenAI-shaped usage, whose prompt contains the cache.
+		const summary = summarize([
+			llmSpan({
+				spanId: "a",
+				startMs: 0,
+				durationMs: SECOND,
+				vendorId: "openrouter",
+				genAi: { providerName: "anthropic", ...CACHED_USAGE },
+			}),
+		])
+
+		expect(summary.tokens.total).toBe(1100)
+	})
+
 	it("carves the reasoning out of the completion for OpenAI, which counts it inside", () => {
 		// `completion_tokens` contains `completion_tokens_details.reasoning_tokens`:
 		// 100 visible + 900 reasoning is a 1000-token completion, not 1900.

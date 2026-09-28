@@ -183,6 +183,11 @@ export const GENAI_VENDOR_USAGE_CONVENTIONS: ReadonlyMap<string, GenAiUsageConve
 	// it here keeps totals right the day a direct anthropic/bedrock provider is
 	// wired.
 	["maple", NESTED],
+	// OpenRouter Broadcast reports OpenAI-shaped usage whichever upstream served
+	// the call, but stamps that upstream as the provider: a Claude call arrives as
+	// `gen_ai.provider.name=anthropic` with a prompt figure that already holds its
+	// cache reads (a 4,804-token prompt, 4,324 of it cached, priced as 4,804).
+	["openrouter", NESTED],
 ])
 
 /** What most of the field does, and the side that errs toward the smaller
