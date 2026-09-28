@@ -965,9 +965,13 @@ static VENDORS: &[Vendor] = &[
     Vendor {
         id: "vercel_ai_sdk",
         detect: detect_vercel_ai_sdk,
+        // An app's `runtimeContext` lands under `ai.settings.context.<key>`;
+        // its ids rank below an explicit conversation id.
         session_keys: &[
             "ai.settings.context.eve.session.id",
             "gen_ai.conversation.id",
+            "ai.settings.context.sessionId",
+            "ai.settings.context.conversationId",
         ],
     },
 ];
@@ -1224,7 +1228,9 @@ fn detect_spring_ai(c: &Ctx) -> bool {
 }
 
 fn detect_vercel_ai_sdk(c: &Ctx) -> bool {
-    (c.scope.vercel_ai && c.ev.ai)
+    // The v7 tracer ("gen_ai") writes `ai.*` keys only when the app opts into
+    // them, so an operation name inside its scope is enough.
+    (c.scope.vercel_ai && (c.ev.ai || c.ev.has_gen_ai_operation_name))
         || c.ev.gen_ai_operation_name == "agent_step"
         || c.ev.gen_ai_execute_tool_duration
 }
@@ -1821,6 +1827,70 @@ mod tests {
             &[("ai.model.id", "gpt-5")],
             &[],
             "vercel_ai_sdk",
+            None,
+        );
+    }
+
+    #[test]
+    fn vercel_v7_spans_without_ai_keys_and_runtime_context_sessions() {
+        // docs_vercel-ai-sdk_a: without `usage: true` the v7 tracer's chat,
+        // invoke_agent and execute_tool spans carry no `ai.*` key at all.
+        for (span_name, op) in [
+            ("chat openai/gpt-4o-mini", "chat"),
+            ("invoke_agent openai/gpt-4o-mini", "invoke_agent"),
+            ("execute_tool get_weather", "execute_tool"),
+        ] {
+            classified(
+                "gen_ai",
+                span_name,
+                &[("gen_ai.operation.name", op)],
+                &[],
+                "vercel_ai_sdk",
+                None,
+            );
+        }
+        classified(
+            "gen_ai",
+            "invoke_agent openai/gpt-4o-mini",
+            &[
+                ("gen_ai.operation.name", "invoke_agent"),
+                ("ai.settings.context.sessionId", "v-1"),
+            ],
+            &[],
+            "vercel_ai_sdk",
+            Some("v-1"),
+        );
+        classified(
+            "gen_ai",
+            "step 1",
+            &[
+                ("gen_ai.operation.name", "agent_step"),
+                ("ai.settings.context.conversationId", "v-2"),
+            ],
+            &[],
+            "vercel_ai_sdk",
+            Some("v-2"),
+        );
+        // An explicit conversation id outranks the runtime context.
+        classified(
+            "gen_ai",
+            "invoke_agent openai/gpt-4o-mini",
+            &[
+                ("gen_ai.operation.name", "invoke_agent"),
+                ("ai.settings.context.sessionId", "v-1"),
+                ("gen_ai.conversation.id", "conv-1"),
+            ],
+            &[],
+            "vercel_ai_sdk",
+            Some("conv-1"),
+        );
+        // Another tracer's generic span is still unidentified.
+        classified(
+            "my-service",
+            "chat gpt-5",
+            &[("gen_ai.operation.name", "chat")],
+            &[],
+            "unknown:genai",
             None,
         );
     }
