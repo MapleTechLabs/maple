@@ -15,7 +15,7 @@ Mechanism:
 - Both: YOU add the `invoke_agent` span (with `gen_ai.conversation.id`) and `execute_tool` spans. Instrumentations can't see turns, conversations or your tools.
 - Maple files these spans under vendor `unknown:genai` (UI: "Unidentified") and reads `gen_ai.conversation.id` as the session key. Everything else is read in full.
 
-## Step 0: detect
+## Step 0: Detect
 
 1. Confirm there is NO agent framework: `openai-agents`/`@openai/agents`, `langchain*`, `langgraph`, `pydantic-ai*`, `crewai`, `llama-index*`, `ai` (Vercel), `@mastra/core`, `google-adk`, `strands-agents`, `smolagents`, `agno`, `dspy`, `haystack-ai`, `agent-framework`, `litellm`. If one is present, stop and use that framework's skill (`npx skills add MapleTechLabs/maple/skills --skill maple-agent-tracing -y` routes). Instrumenting the provider SDK under a framework double-records every call.
 2. Language and SDK versions:
@@ -26,7 +26,7 @@ Mechanism:
 4. Other instrumentations of the same SDK → duplicate model-call spans. Look for: `opentelemetry-instrumentation-openai` / `-anthropic` (OpenLLMetry, NOT the official ones), `opentelemetry-instrumentation-openai-v2` (deprecated), `openinference-instrumentation-*`, `@arizeai/openinference-*`, `@traceloop/*`, `logfire.instrument_openai/anthropic`, Sentry OpenAI/Anthropic integrations, `langfuse.openai`. Keep exactly one; ask before removing one that serves something else.
 5. Find: every model call site, the agent loop(s), the tool dispatch, where the conversation/thread id lives per request, any agent that calls another agent (sub-agent), any streaming call.
 
-## Step 1: key and region
+## Step 1: Key and region
 
 - US: `https://ingest.maple.dev`. EU: `https://ingest.eu.maple.dev`.
 - Header: `Authorization=Bearer <key>`.
@@ -44,7 +44,7 @@ OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
 OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=SPAN_ONLY
 ```
 
-## Step 2: install + init + helper
+## Step 2: Install + init + helper
 
 Read the reference for the service's language and apply it exactly:
 
@@ -56,7 +56,7 @@ Rules for both:
 - Set a real `service.name` (never `unknown_service`).
 - Do not set `OTEL_SEMCONV_STABILITY_OPT_IN`; the 1.x GenAI packages don't need it.
 
-## Step 3: session id (required)
+## Step 3: Session id (required)
 
 - Wrap each user turn (the whole model/tool loop) in `agent_span(<agent_name>, conversation_id)` / `agentSpan(...)`. It sets `gen_ai.operation.name=invoke_agent`, `gen_ai.agent.name`, `gen_ai.conversation.id`.
 - `conversation_id` = the app's stable conversation/thread/ticket id from the request. Same for every turn of one conversation, different across conversations. No `uuid4()` per request, no process-wide constant, no module-level default.
@@ -65,14 +65,14 @@ Rules for both:
 - OpenAI Responses API with `conversation=`: the instrumentation also stamps `gen_ai.conversation.id=conv_...` on the model span. Pass that same id to `agent_span`.
 - Do not add `session.id` or `maple_ai.session.id`: Maple reads `gen_ai.conversation.id` for these spans.
 
-## Step 4: content
+## Step 4: Content
 
 - `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=SPAN_ONLY` puts `gen_ai.input.messages`, `gen_ai.output.messages`, `gen_ai.system_instructions`, `gen_ai.tool.definitions` on span attributes. The helpers read the same variable for tool args/results (and, in TS, messages).
 - Values: `NO_CONTENT` (default, empty transcript), `SPAN_ONLY` (use), `EVENT_ONLY` (logs only, Maple shows nothing), `SPAN_AND_EVENT` (also works; duplicates into logs). Legacy `true` = events: wrong.
 - User wants content off → leave it unset in that environment; tell them the transcript will be empty but sessions, turns, tools, tokens and failures remain.
 - Redaction → in app code before the call, or an OTel Collector `redaction`/`transform` processor. Never lower `OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT` / `OTEL_SPAN_ATTRIBUTE_VALUE_LENGTH_LIMIT` (truncated JSON is dropped).
 
-## Step 5: tools, errors, sub-agents
+## Step 5: Tools, errors, sub-agents
 
 1. Route every tool execution through `run_tool(call_id, name, arguments_json, fn)` / `runTool(...)`, passing the model's tool call id. It catches the exception, marks the span failed (status ERROR + `error.type` + recorded exception) and returns `{"error": ...}` to the model.
    - If the existing loop already catches tool exceptions, move the catch into `run_tool` (or set status + `error.type` where it catches). A caught, unmarked failure shows as success.
@@ -81,19 +81,19 @@ Rules for both:
 2. Sub-agent (an agent run inside a tool): call it via `run_tool`, and inside wrap its loop in `agent_span("<distinct_name>")` WITHOUT a conversation id (it's in the caller's trace). Every agent gets a unique `gen_ai.agent.name`; same names merge lanes.
 3. Parallel tools: `asyncio.gather` / `Promise.all` keep context. `ThreadPoolExecutor`: submit `contextvars.copy_context().run(fn, ...)`, or tool spans become orphan traces.
 
-## Step 6: tokens, streaming, cost
+## Step 6: Tokens, streaming, cost
 
 - OpenAI Chat Completions streaming: ALWAYS pass `stream_options={"include_usage": True}` (Python) or use the helper's `onText` path (TS sets it). Otherwise the streamed call has 0 tokens. The final usage chunk has empty `choices`; skip it when reading text (`if chunk.choices`).
 - Anthropic / Gemini streams include usage; nothing to add.
 - No Python instrumentation emits cost; Maple doesn't price tokens → sessions show "unpriced". The TS helper copies OpenRouter's `usage.cost` (USD) to `gen_ai.usage.cost`; direct OpenAI sends none. Don't add pricing tables.
 - Claude/Gemini models via OpenRouter's OpenAI-compatible endpoint with the `openai` SDK → spans say `gen_ai.provider.name=openai` with OpenAI-shaped usage. Correct; don't override it.
 
-## Step 7: flush
+## Step 7: Flush
 
 - Python: the provider flushes at normal interpreter exit. Add `provider.force_flush()` after each turn in Lambda/Cloud Functions/Cloud Run jobs, notebooks, Celery/RQ tasks, and anything ending in `os._exit`. Scripts/CLIs: `provider.shutdown()` in `finally`.
 - TypeScript: `await sdk.shutdown()` before a CLI/script exits. Serverless: `await spanProcessor.forceFlush()` before returning (or in `waitUntil` after a streamed response).
 
-## Step 8: verify
+## Step 8: Verify
 
 Run one real conversation: 3+ user messages with the same id, one tool call, one streamed message if the app streams, one failing tool if you can trigger it, one sub-agent call if the app delegates; then a second conversation with a different id. Flush. In Maple → Agent Sessions (filter by service; allow ~30 s):
 

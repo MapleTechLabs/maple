@@ -11,7 +11,7 @@ Human guide with the reasoning: https://maple.dev/docs/agent-tracing/strands
 
 Mechanism: Strands' native OTel tracer (scope `strands.telemetry.tracer`, `gen_ai.provider.name=strands-agents`). No extra instrumentation package. Maple reads `session.id` as the session key for Python Strands, and reads span ATTRIBUTES only (never span events).
 
-## Step 0: detect
+## Step 0: Detect
 
 1. Language and version.
    - Python: `python -c "from importlib.metadata import version; print(version('strands-agents'))"` or read `pyproject.toml` / `uv.lock` / `requirements*.txt`. Need >= 1.54 (tested 1.57.1): span-attribute content needs 1.48, tool args/results 1.51, Maple-readable cache token names 1.54. Older → upgrade; do not work around it.
@@ -23,7 +23,7 @@ Mechanism: Strands' native OTel tracer (scope `strands.telemetry.tracer`, `gen_a
 3. Find: every `Agent(` construction (and whether it is module-level/shared), every place the agent is invoked, where the chat/thread/conversation id lives in the request, every `session_manager=`, every `.as_tool(`, `Swarm(`, `GraphBuilder(` / `Graph(`.
 4. Other instrumentors on the same model calls (OpenLIT, OpenLLMetry `Traceloop.init`, OpenInference, `opentelemetry-instrumentation-openai*`, botocore/Bedrock GenAI instrumentation) → they double-trace model calls. Keep Strands' spans; ask before removing the others if they serve something else.
 
-## Step 1: key and region
+## Step 1: Key and region
 
 - US: `https://ingest.maple.dev`. EU: `https://ingest.eu.maple.dev`.
 - Header: `Authorization=Bearer <key>`.
@@ -32,7 +32,7 @@ Mechanism: Strands' native OTel tracer (scope `strands.telemetry.tracer`, `gen_a
 - Never put a private `maple_sk_` key in browser code.
 - Follow the repo's secret/env convention (`.env`, settings module, secret manager, container env) if it has one. Otherwise inline is acceptable: ingest keys are write-only.
 
-## Step 2: install + init
+## Step 2: Install + init
 
 Python. Add with the repo's package manager, keeping existing extras (`openai`, `anthropic`, `litellm`, ...):
 
@@ -80,7 +80,7 @@ import { setupTracer } from "@strands-agents/sdk/telemetry"
 export const provider = setupTracer({ exporters: { otlp: true } }) // before the first Agent; reads OTEL_EXPORTER_OTLP_*
 ```
 
-## Step 3: session id
+## Step 3: Session id
 
 Python: pass the conversation id as `session.id` in `trace_attributes` on the agent that handles the turn. `gen_ai.conversation.id` is ignored for Python Strands; don't rely on it.
 
@@ -123,13 +123,13 @@ const agent = new Agent({
 - TS: construct the agent PER REQUEST (restore history with the repo's `SessionManager` storage). The TS `invoke_agent` span always carries the agent instance's accumulated usage (no `gen_ai_use_latest_invocation_tokens`), so a reused agent re-reports every earlier turn and Maple's totals inflate.
 - TS stamps `traceAttributes` on `invoke_agent` only (not chat/tool spans). That is enough.
 
-## Step 4: content
+## Step 4: Content
 
 - Content capture is ON by default; Step 2's tokens only move it onto attributes. Nothing else to enable.
 - Redaction, only if the user asks or the repo handles regulated data: append `gen_ai_unredacted_attributes=<allowlist>` to `OTEL_SEMCONV_STABILITY_OPT_IN`. `;`-separated, single trailing `*` only. Covered keys: `gen_ai.input.messages`, `gen_ai.output.messages`, `gen_ai.system_instructions`, `gen_ai.tool.call.arguments`, `gen_ai.tool.call.result`. Empty list (`gen_ai_unredacted_attributes=`) redacts all to `[REDACTED]`. Example keeping replies only: `...,gen_ai_unredacted_attributes=gen_ai.output.*;gen_ai.tool.call.result`.
 - Not redactable: `gen_ai.tool.description`, `gen_ai.tool.json_schema`, `trace_attributes` values.
 
-## Step 5: tools, errors, sub-agents
+## Step 5: Tools, errors, sub-agents
 
 - Nothing to add for tool failures: a raising `@tool` (or one returning `{"status": "error"}`) gets span status ERROR with the exception message and `gen_ai.tool.status=error`. Do not catch exceptions inside tools just to return friendly text; that hides the failure unless you return `status: "error"`.
 - Sub-agents: `sub.as_tool(description=...)` nests `invoke_agent <sub>` under `execute_tool <sub>`; Maple shows a delegation lane. Give each sub-agent a distinct `name`.
@@ -137,7 +137,7 @@ const agent = new Agent({
 - Interrupt/resume (HITL): the resume is a new trace in the same session (same `trace_attributes`). Interrupted tool spans appear twice with the same `gen_ai.tool.call.id` (first ends OK with no result, second has the real outcome); Maple counts both as tool calls. Expected, framework-level; do not try to filter spans.
 - TS: failed Graph nodes end with status OK (upstream bug harness-sdk#4166). Tool failures are fine.
 
-## Step 6: flush
+## Step 6: Flush
 
 - Long-running server: nothing.
 - Script / CLI / job / notebook / test: in `finally`:
@@ -151,7 +151,7 @@ telemetry.tracer_provider.shutdown()
 - Existing provider (Step 0): flush that provider instead.
 - TS: `await provider.forceFlush(); await provider.shutdown()` before exit. `setupTracer`'s own `beforeExit` flush does not run after `process.exit()`.
 
-## Step 7: verify
+## Step 7: Verify
 
 Run one short conversation (2-3 messages, one tool call; plus a failing tool if easy) with the real key, flush, then check in Maple → Agent Sessions (`https://app.maple.dev/agent-sessions`, EU `app.eu.maple.dev`), or via the Maple MCP (`list_agent_sessions`, `get_agent_session`):
 

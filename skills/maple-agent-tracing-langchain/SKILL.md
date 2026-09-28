@@ -11,7 +11,7 @@ Human guide with the reasoning: https://maple.dev/docs/agent-tracing/langchain
 
 Mechanism: `openinference-instrumentation-langchain` (scope `openinference.instrumentation.langchain`) with `TraceConfig(enable_genai_semconv=True)`, which dual-writes `gen_ai.*` (incl. `gen_ai.conversation.id` from run metadata `session_id` > `conversation_id` > `thread_id`, and `gen_ai.input/output.messages` in `{role, parts}` form). Maple classifies these as generic GenAI (framework facet "Unidentified") and reads `gen_ai.conversation.id` as the session key. This beats LangSmith's OTel export for Maple: readable transcript, interrupts not marked ERROR, no middleware noise spans, normal flush. Python only; LangChain.js/LangGraph.js are not covered (tell the user and stop).
 
-## Step 0: detect
+## Step 0: Detect
 
 1. Versions: `python -c "import langchain, langgraph, langchain_core; print(langchain.__version__, langchain_core.__version__)"` and `pip show langgraph` (or read `pyproject.toml` / `uv.lock` / `requirements*.txt`). Tested: langchain 1.4.2, langgraph 1.2.12, langchain-core 1.6.5, langchain-openai 1.6.6, Python 3.12. Python must be >= 3.10.
 2. Existing OTel setup. Search for `TracerProvider(`, `set_tracer_provider`, `logfire.configure`, `sentry_sdk.init`, `opentelemetry-instrument`, `Traceloop.init`, `LangChainInstrumentor`, `OpenAIInstrumentor`, `LANGSMITH_OTEL_ENABLED`, `LANGSMITH_TRACING_MODE`.
@@ -21,7 +21,7 @@ Mechanism: `openinference-instrumentation-langchain` (scope `openinference.instr
 3. Find: every `create_agent(`, `create_react_agent(`, `StateGraph(`/`.compile(`, every `.invoke(`/`.ainvoke(`/`.stream(`/`.astream(`/`Command(resume=` call on an agent/graph/chain, where the app's chat/thread id lives, every `ChatOpenAI(` (note `base_url`), and every tool that invokes another agent.
 4. LangGraph Server (`langgraph.json` present): `import tracing` at the top of the module(s) `langgraph.json`'s `graphs` points to (the dir holding `tracing.py` must be in `dependencies`); `OTEL_*` env goes in the server env file/container. Server threads already carry `configurable.thread_id`: one Maple session per thread, no code.
 
-## Step 1: key and region
+## Step 1: Key and region
 
 - US: `https://ingest.maple.dev`. EU: `https://ingest.eu.maple.dev`.
 - Header: `Authorization=Bearer <key>`.
@@ -41,7 +41,7 @@ OTEL_EXPORTER_OTLP_HEADERS=Authorization=Bearer <key>
 
 If you pass `OTLPSpanExporter(endpoint=...)` in code, it must end in `/v1/traces` (used verbatim).
 
-## Step 2: install + init
+## Step 2: Install + init
 
 Add with the repo's package manager (uv/poetry/pip):
 
@@ -99,7 +99,7 @@ LangChainInstrumentor().instrument(
 - Set a real `service.name` (never `unknown_service`).
 - Streaming with `ChatOpenAI(base_url=...)` or `OPENAI_BASE_URL` set: add `stream_usage=True` to the `ChatOpenAI(...)` constructor. ChatOpenAI only requests streamed usage from api.openai.com; servers that don't send it unasked (vLLM, many gateways) give streamed calls no tokens. OpenRouter sends it anyway; set it regardless.
 
-## Step 3: session id (required)
+## Step 3: Session id (required)
 
 Pass the app's conversation id as `thread_id` on EVERY agent/graph call, including streams and HITL resumes:
 
@@ -120,13 +120,13 @@ agent.invoke(Command(resume={"decisions": [{"type": "approve"}]}), {"configurabl
 - The id must be stable per conversation and unique across conversations: no constants, no `uuid4()` per request. No id in the app → ask where the conversation boundary is; single-shot script → one uuid per conversation, reused.
 - Do not set `session.id`/`gen_ai.conversation.id`/`maple_ai.session.id` by hand.
 
-## Step 4: content
+## Step 4: Content
 
 - On by default: `gen_ai.input.messages` / `gen_ai.output.messages` (system prompt included as the first input message) on chat model spans; `gen_ai.tool.call.result` on tool spans. Maple's transcript needs these.
 - User wants content off → `TraceConfig(enable_genai_semconv=True, hide_inputs=True, hide_outputs=True)` (or `OPENINFERENCE_HIDE_INPUTS=true` / `OPENINFERENCE_HIDE_OUTPUTS=true`). The gen_ai copies are built from masked values, so they're empty too. Tell them the transcript will be empty; turns, tools, tokens and failures remain.
 - Narrower: `hide_input_text`, `hide_output_text`. Pattern redaction → OTel Collector `redaction` processor.
 
-## Step 5: tools, errors, sub-agents
+## Step 5: Tools, errors, sub-agents
 
 1. Tool exceptions mark the tool span ERROR with the message automatically. `create_agent` re-raises them and aborts the run; if the app should continue, add (ask the user if behaviour changes matter):
 
@@ -163,14 +163,14 @@ def ask_weather_worker(city: str) -> str:
 4. Never put "agent" in a tool name (`ask_weather_agent`): OpenInference then marks the span AGENT, and it stops counting as a tool call.
 5. Python 3.10 + async: pass the node's `config` to nested `ainvoke()` calls. Own thread pools: `from langchain_core.runnables.config import ContextThreadPoolExecutor`.
 
-## Step 6: flush
+## Step 6: Flush
 
 - `BatchSpanProcessor` exports every 5 s; the SDK flushes at normal interpreter exit. Long-running servers (incl. LangGraph Server) need nothing.
 - AWS Lambda / Cloud Functions / Cloud Run jobs: `provider.force_flush()` in a `finally` in the handler.
 - Scripts, CLIs, one-shot jobs: `provider.shutdown()` at the end (`finally`).
 - Celery/RQ workers, notebooks: `provider.force_flush()` after each task/cell that runs an agent.
 
-## Step 7: verify
+## Step 7: Verify
 
 Run one real conversation: 2+ messages with the same id, at least one tool call, one streamed message if the app streams, a sub-agent call if the app delegates. Then check (Maple → Agent Sessions, filter by service name; wait up to ~1 min):
 

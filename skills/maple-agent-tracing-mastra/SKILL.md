@@ -13,7 +13,7 @@ Mechanism: Mastra's own tracing (`@mastra/observability`) converted to OTel GenA
 
 Mastra 1.71 has three export gaps that a small span processor (Step 2) fixes; it is required in every setup: the `chat` span has no input messages (empty prompt side of the transcript), sub-agents get their own thread id (turn split, wrong session), and step spans carry the raw provider HTTP response (headers with cookies, full reply body) as `mastra.metadata.headers` / `mastra.metadata.body`, which `hideOutput` does not hide.
 
-## Step 0: detect
+## Step 0: Detect
 
 1. Versions: read `package.json` / lockfile for `@mastra/core`, `@mastra/observability`, `@mastra/otel-exporter`, `@mastra/memory`.
    - Need `@mastra/core` 1.x (written against 1.71) and Node >= 22.13. Mastra 0.x uses a different telemetry API: tell the user to upgrade; do not work around it.
@@ -26,7 +26,7 @@ Mastra 1.71 has three export gaps that a small span processor (Step 2) fixes; it
 4. Find: every `generate(` / `stream(` / `network(` call and where the chat/thread id lives in the request; every `new Agent(` (need `id` + `name`); every Agent with an `agents:` property (supervisor); every `createWorkflow` / `run.start(` / `createStep` that calls an agent; tools created with `createTool`.
 5. Other tracers of the same model calls (OpenLLMetry `Traceloop.init`, OpenInference AI SDK instrumentation, Vercel AI SDK `experimental_telemetry` on the underlying model) → they double-trace. Keep Mastra's; ask before removing the others if they serve something else.
 
-## Step 1: key and region
+## Step 1: Key and region
 
 - US: `https://ingest.maple.dev`. EU: `https://ingest.eu.maple.dev`.
 - Header: `Authorization: Bearer <key>` (passed as a headers object in code; no `%20` encoding).
@@ -36,7 +36,7 @@ Mastra 1.71 has three export gaps that a small span processor (Step 2) fixes; it
 - Follow the repo's secret/env convention (`.env`, config module, secret manager) if it has one, e.g. `process.env.MAPLE_INGEST_KEY`. Otherwise inline is acceptable: ingest keys are write-only.
 - OtelExporter's `custom` provider reads NO env vars (`OTEL_EXPORTER_OTLP_*` are ignored). Endpoint, protocol and headers must be passed in code.
 
-## Step 2: install + init
+## Step 2: Install + init
 
 ```bash
 npm install @mastra/observability@latest @mastra/otel-exporter@latest
@@ -120,7 +120,7 @@ export const mastra = new Mastra({
 - Agents and workflows must be registered on this `Mastra` instance and called through it (`mastra.getAgent(...)`, `mastra.getWorkflow(...)`), or called with a `tracingContext` from a traced parent. An `Agent` used standalone has no observability.
 - Debugging delivery: `logLevel: "debug"` on OtelExporter prints `Export completed: N spans sent successfully` / `Export FAILED: ...`. Remove it afterwards.
 
-## Step 3: session id (conversation id)
+## Step 3: Session id (conversation id)
 
 Agents: pass the app's conversation id as the memory thread on EVERY call of a conversation:
 
@@ -147,7 +147,7 @@ await run.start({ inputData, tracingOptions: { metadata: { threadId: conversatio
 
 HITL resumes (`approveToolCallGenerate` / `declineToolCallGenerate` / `approveToolCall` / `declineToolCall`): pass the same `memory` again.
 
-## Step 4: content
+## Step 4: Content
 
 - On by default: `gen_ai.output.messages` on `chat` spans, tool args/results on `execute_tool`. `gen_ai.input.messages` on `chat` spans (with the system prompt as the first message) only exists because of `mapleSpanProcessor`; without it the transcript has replies but no prompts. Tool calls inside earlier history are summarized by Mastra as `[tool: <name>]` text; the full calls are on the `execute_tool` spans.
 - `gen_ai.system_instructions` on `invoke_agent` is plain text, which Maple does not decode; the system prompt shows through the system message in the `chat` input instead.
@@ -155,7 +155,7 @@ HITL resumes (`approveToolCallGenerate` / `declineToolCallGenerate` / `approveTo
 - `SensitiveDataFilter` is auto-applied (redacts values under keys like password/token/apiKey/authorization/secret). Do not disable it (`sensitiveDataFilter: false`) unless the user asks.
 - Serialization caps: 128 KiB/string, 50 items/array, 50 keys/object, depth 8. If agents keep > ~40 messages of history (`lastMessages` > 40 or custom history), add `serializationOptions: { maxArrayLength: 200 }` to the config, or the newest messages are cut from the transcript.
 
-## Step 5: tools, errors, sub-agents
+## Step 5: Tools, errors, sub-agents
 
 - Tools: `createTool({ id, description, inputSchema, execute })`. Span name `execute_tool <id>`, `gen_ai.tool.name` = id. Give tools real ids.
 - Failures must throw (`throw new Error("...")`). Thrown → span status ERROR with the message as status message, `error.type=unknown`, plus an `exception` event. Returning `{ error }` = counted as success in Maple. If a tool swallows errors into a return value and the user wants failures visible, rethrow.
@@ -165,7 +165,7 @@ HITL resumes (`approveToolCallGenerate` / `declineToolCallGenerate` / `approveTo
 
 - Workflow steps that call an agent: pass `tracingContext` from the step's `execute` args into `agent.generate(prompt, { tracingContext })`, or the agent starts a separate trace.
 
-## Step 6: flush
+## Step 6: Flush
 
 Batch interval is 5 s. Anything that can exit sooner must flush.
 
@@ -173,7 +173,7 @@ Batch interval is 5 s. Anything that can exit sooner must flush.
 - Serverless / per-request handlers (Next.js route handlers, Vercel, Lambda, Workers): `await mastra.observability.flush()` in a `finally` at the end of each request; keep the instance. For streamed responses, flush after the stream completes (`after()`, `ctx.waitUntil()`, stream `onFinish`), not when the handler returns.
 - Long-running servers: nothing needed; optionally call `mastra.shutdown()` on SIGTERM.
 
-## Step 7: verify
+## Step 7: Verify
 
 Run one conversation: 2+ user messages with the same thread id (one streamed), at least one tool call, and a second conversation with a different thread id. If the project has a supervisor or workflow, run it once. Flush. Then check (Maple UI Agent Sessions, or debug log + Maple MCP `list_agent_sessions` filtered by service):
 

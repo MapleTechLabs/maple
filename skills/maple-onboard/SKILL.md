@@ -131,6 +131,8 @@ Get the meter once at module level, create instruments at module level, incremen
 
 If the project calls OpenAI / Anthropic / Google / any LLM provider, follow `maple-onboarding-style` "LLM calls": provider instrumentation (OpenInference) where it exists, `maple_ai.session.id` on each turn so Agent Sessions can group a conversation, and `gen_ai.usage.cost` only when the provider reports a billed cost. Maple does not price tokens.
 
+If the service runs an agent framework (Vercel AI SDK, OpenAI Agents SDK, LangChain/LangGraph, Mastra, Pydantic AI, CrewAI, Google ADK and others) or routes calls through OpenRouter or LiteLLM, use the `maple-agent-tracing` skill for that service instead: it installs a per-framework skill with the switches each framework needs for sessions, transcripts, tool failures and token counts.
+
 ## Step 4: Verify the app still works and telemetry arrives
 
 Per service:

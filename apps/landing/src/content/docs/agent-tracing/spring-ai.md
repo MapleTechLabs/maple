@@ -9,7 +9,9 @@ icon: "spring"
 
 Spring AI instruments itself with Micrometer Observations. Add Spring Boot's OpenTelemetry starter and every `ChatClient` call becomes a `spring_ai chat_client` span, with a `chat <model>` span per model call and an `execute_tool <name>` span per tool call. The model spans follow the OpenTelemetry GenAI conventions (model, token counts, cache tokens, finish reasons, response id), and Maple recognizes all of it as Spring AI without a separate instrumentation library.
 
-Four defaults work against you. Spring Boot samples 10% of traces, so nine turns out of ten never arrive. Prompts and replies are never written to spans: `log-prompt` and `log-completion` send them to the application log. A tool that throws ends its span as a success, because Spring AI hands the error message back to the model. And the advisor spans (`tool _calling `, `message_chat_memory`) have names Maple reads as extra tool and model calls. This guide fixes all four with a handful of properties and one configuration class. It covers Spring AI 2.0 (tested on 2.0.1) on Spring Boot 4.1 (4.1.1) and Java 21, with notes for Spring AI 1.1 on Boot 3.5.
+Four defaults work against you. Spring Boot samples 10% of traces, so nine turns out of ten never arrive. Prompts and replies are never written to spans: `log-prompt` and `log-completion` send them to the application log. A tool that throws ends its span as a success, because Spring AI hands the error message back to the model. And the advisor spans (`tool _calling `, `message_chat_memory`) have names Maple reads as extra tool and model calls. This guide fixes all four with a handful of properties and one configuration class.
+
+This guide covers Spring AI 2.0 (tested on 2.0.1) on Spring Boot 4.1 (4.1.1) and Java 21, with notes for Spring AI 1.1 on Boot 3.5.
 
 ## Quick setup with a coding agent
 

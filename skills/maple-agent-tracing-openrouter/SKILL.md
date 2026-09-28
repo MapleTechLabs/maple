@@ -15,7 +15,7 @@ You cannot change the OpenRouter dashboard. Your job: (1) edit the app's OpenRou
 
 What Broadcast cannot give (tell the user, don't try to fix it here): tool spans, tool failures, agent names / sub-agent lanes. Those need the app's framework instrumentation (router skill `maple-agent-tracing`). Content arrives as wrapped JSON (`{"messages":[...]}`, `{"completion":...}`), which Maple shows as a raw JSON block, without turn labels.
 
-## Step 0: detect
+## Step 0: Detect
 
 1. Find every OpenRouter call site: `openrouter.ai` base URLs (`https://openrouter.ai/api/v1`, `https://eu.openrouter.ai/api/v1`), `OPENROUTER_API_KEY`, `@openrouter/ai-sdk-provider`, `@openrouter/sdk`, the `openrouter` PyPI package, `openai` clients with an OpenRouter `baseURL` / `base_url`, LiteLLM `openrouter/` models, framework model classes pointed at OpenRouter.
 2. Find where the conversation id lives per request: chat thread id, conversation id, session id, agent run id. It must be per conversation, never a process constant or a per-client default.
@@ -24,7 +24,7 @@ What Broadcast cannot give (tell the user, don't try to fix it here): tool spans
    - No → Step 2 only (Broadcast-only). Mention that the app's framework skill adds tool spans and agent structure.
 4. Which endpoint region the app calls (`openrouter.ai` vs `eu.openrouter.ai`), for the destination's data regions.
 
-## Step 1: key and region (for the destination headers)
+## Step 1: Key and region (for the destination headers)
 
 - US: `https://ingest.maple.dev`. EU: `https://ingest.eu.maple.dev`.
 - Header: `Authorization=Bearer <key>`.
@@ -33,7 +33,7 @@ What Broadcast cannot give (tell the user, don't try to fix it here): tool spans
 - Never put a private `maple_sk_` key in browser code. The key here goes into OpenRouter's dashboard, not the repo.
 - If the app also exports its own OTel to Maple, follow the repo's existing secret/env convention for that exporter. Ingest keys are write-only, so inline is acceptable if there is none.
 
-## Step 2: send `session_id` on every OpenRouter request
+## Step 2: Send `session_id` on every OpenRouter request
 
 Same id for every request of one conversation, new id per conversation, max 256 characters. If the app also has framework instrumentation, use the SAME value as the framework's conversation/session id (a trace with two different ids is assigned to the lexically larger one, silently).
 
@@ -64,7 +64,7 @@ Other clients: find the framework's extra-body or per-request-headers option and
 
 Optional: `user` (<= 128 chars) is forwarded as `user.id`. Maple does not use it for sessions. Never put emails/names in `user`, `session_id` or `trace` metadata: Privacy Mode does not strip them.
 
-## Step 3: nest Broadcast under the app's own traces (only if the app exports OTel to Maple)
+## Step 3: Nest Broadcast under the app's own traces (only if the app exports OTel to Maple)
 
 Without this, every model call is recorded twice (app span + Broadcast trace) and Broadcast-only turns split one per model call. Put the active span's W3C ids in `trace.trace_id` (32 hex) and `trace.parent_span_id` (16 hex).
 
@@ -109,21 +109,21 @@ This parents to the span current at the call site (turn/agent span), so the app'
 
 Don't set `trace_name` / `span_name` / `generation_name` unless the user asks: `span_name` creates an extra intermediate span.
 
-## Step 4: content
+## Step 4: Content
 
 Broadcast includes prompts and completions by default (`gen_ai.prompt`, `gen_ai.completion` on `LLM Generation`). The completion object has also been seen echoing the request body (tool definitions, `user`, `session_id`, `trace`). Nothing to change in code. If the user must keep content out of Maple: tell them to enable **Privacy Mode** on the destination (tokens, cost, timing and metadata still arrive).
 
-## Step 5: tools, errors, sub-agents
+## Step 5: Tools, errors, sub-agents
 
 - Broadcast has no tool spans and no agent names. Don't add fake tool spans. Point the user to their framework's skill for tools/lanes.
 - Provider fallbacks show as `provider attempt N: <provider>` children; a failed attempt followed by a successful one is a retry and not counted as a failure.
 - A call where every provider failed: `LLM Generation` status Error, message `Provider returned error`, counted as `provider_error`. On this path OpenRouter drops the `trace` object, so it's its own trace (still in the right session via `session.id`).
 
-## Step 6: flush
+## Step 6: Flush
 
 Broadcast needs none: OpenRouter exports from its servers after each request. Delivery lag is about a minute. If the app exports its own spans, keep/ensure its normal shutdown flush (`sdk.shutdown()`, `provider.force_flush()`), otherwise nested Broadcast spans point at a missing parent.
 
-## Step 7: hand the user the dashboard settings
+## Step 7: Hand the user the dashboard settings
 
 Print these, filled in (you cannot apply them):
 
@@ -138,7 +138,7 @@ Print these, filled in (you cannot apply them):
    - Leave **Additional generation metadata → Cost** off; Maple reads `gen_ai.usage.total_cost`, which is sent anyway.
 3. Click **Test Connection**; it only saves if the test passes. The test creates a sessionless `openrouter-connection-test` trace (`trace:0000…0001` in Maple); ignore it.
 
-## Step 8: verify
+## Step 8: Verify
 
 Run one conversation (3+ turns, one with a tool call) with a fixed `session_id`, then a second conversation. Wait about a minute. In Maple → Agent Sessions (`https://app.maple.dev/agent-sessions`, EU `app.eu.maple.dev`), filter service `openrouter` (plus the app's service if nested). Check:
 

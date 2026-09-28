@@ -11,7 +11,7 @@ Human guide with the reasoning: https://maple.dev/docs/agent-tracing/pydantic-ai
 
 Mechanism: Pydantic AI's native OTel instrumentation (scope `pydantic-ai`, GenAI semconv on span attributes). No extra instrumentation package. Maple reads `gen_ai.conversation.id` as the session key for this framework.
 
-## Step 0: detect
+## Step 0: Detect
 
 1. Pydantic AI version: `python -c "import pydantic_ai; print(pydantic_ai.__version__)"` (or read `pyproject.toml` / `uv.lock` / `requirements*.txt`).
    - Need 2.x (tested 2.51.0). 1.x has no `conversation_id=`: tell the user to upgrade; do not work around it.
@@ -23,7 +23,7 @@ Mechanism: Pydantic AI's native OTel instrumentation (scope `pydantic-ai`, GenAI
 3. Find: every `agent.run(` / `run_sync(` / `run_stream(` / `iter(` call, where the chat/thread id lives in the request, every `Agent(` construction, and every tool that calls another agent's `run()`.
 4. Other instrumentors on the same model client (`logfire.instrument_openai`, `OpenAIInstrumentor`, OpenLLMetry `Traceloop.init`) → they double-trace model calls. Keep Pydantic AI's; ask before removing the others if they serve something else.
 
-## Step 1: key and region
+## Step 1: Key and region
 
 - US: `https://ingest.maple.dev`. EU: `https://ingest.eu.maple.dev`.
 - Header: `Authorization=Bearer <key>`.
@@ -40,7 +40,7 @@ OTEL_EXPORTER_OTLP_HEADERS=Authorization=Bearer <key>
 OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
 ```
 
-## Step 2a: install + init (plain OpenTelemetry, default)
+## Step 2a: Install + init (plain OpenTelemetry, default)
 
 Add with the repo's package manager (uv/poetry/pip):
 
@@ -111,7 +111,7 @@ logfire.instrument_pydantic_ai()
 - Default scrubbing replaces tool args/results containing `session`, `auth`, `password`, `cookie`, `secret`, `api key`... with `[Scrubbed due to '<word>']`. `gen_ai.conversation.id` and message attributes are exempt. If the project already has a scrubbing config, merge the callback into it instead of replacing it.
 - Do not also call `Agent.instrument_all(...)` with another provider.
 
-## Step 3: session id (required)
+## Step 3: Session id (required)
 
 Pydantic AI resolves `gen_ai.conversation.id` per run as: explicit `conversation_id=` > id on the last message of `message_history` > fresh UUID7. Pass it explicitly on EVERY run call, from the app's chat/thread/conversation id:
 
@@ -130,14 +130,14 @@ async with agent.run_stream(text, conversation_id=chat_id, message_history=histo
 - No id available in the app → ask the user where the conversation boundary is; if it's a single-shot script, generate one uuid per conversation (not per run) and reuse it.
 - Streaming: keep the `async with` open until the stream is consumed (in FastAPI, inside the generator passed to `StreamingResponse`), or the `invoke_agent` span ends early.
 
-## Step 4: content
+## Step 4: Content
 
 - Content is on by default (`include_content=True`): `gen_ai.input.messages`, `gen_ai.output.messages`, `gen_ai.system_instructions` on `chat` spans; tool args/results on `execute_tool` spans. Maple's transcript needs these.
 - Always set `include_binary_content=False` (base64 media repeats in every later `chat` span).
 - User wants content off → `include_content=False` globally, or per agent: `Agent(..., capabilities=[Instrumentation(settings=InstrumentationSettings(include_content=False))])` (`from pydantic_ai.capabilities import Instrumentation`; omit `tracer_provider` to use the global one). Tell them the transcript keeps roles but no text.
 - Logfire scrubbing does not redact message content. For pattern redaction of prompts, recommend an OTel Collector `redaction`/`transform` processor.
 
-## Step 5: tools, errors, sub-agents
+## Step 5: Tools, errors, sub-agents
 
 1. Name every agent: `Agent(..., name="support")`. Unnamed agents become `agent` and share one lane.
 2. Tool failures the model should see: `raise ToolFailed("message")` (`from pydantic_ai import ToolFailed`, >= 2.16). Span ERROR, message recorded as `gen_ai.tool.call.result`, run continues, no retry budget used.
@@ -161,7 +161,7 @@ async def research_weather(ctx: RunContext[None], city: str) -> str:
    Without `conversation_id=ctx.conversation_id` each delegate mints a UUID7, so one trace carries several ids and Maple may file the trace under the wrong session or split the turn.
 4. Sequential pipelines of top-level runs (orchestrator run, then summary run): pass the same `conversation_id=` to each; each run is its own trace/turn in the same session.
 
-## Step 6: flush
+## Step 6: Flush
 
 - The SDK flushes at normal interpreter exit. Add an explicit flush where that doesn't happen:
   - AWS Lambda / Cloud Functions / Cloud Run jobs: `trace.get_tracer_provider().force_flush()` in a `finally` in the handler.
@@ -169,7 +169,7 @@ async def research_weather(ctx: RunContext[None], city: str) -> str:
   - Celery/RQ/multiprocessing workers, notebooks: `force_flush()` after each task/cell that runs an agent.
   - Logfire: `logfire.force_flush()` / `logfire.shutdown()`.
 
-## Step 7: verify
+## Step 7: Verify
 
 Run one real conversation: 2+ messages with the same id, at least one tool call, one streamed message if the app streams, and a sub-agent call if the app delegates. Then check (Maple → Agent Sessions, filter by the service name; wait ~30 s):
 

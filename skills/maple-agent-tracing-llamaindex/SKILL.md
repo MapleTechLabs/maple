@@ -11,7 +11,7 @@ Human guide with the reasoning: https://maple.dev/docs/agent-tracing/llamaindex
 
 Mechanism: `openinference-instrumentation-llama-index` (scope `openinference.instrumentation.llama_index`) with `TraceConfig(enable_genai_semconv=True)`, which dual-writes `gen_ai.*` on span attributes. Maple reads `gen_ai.conversation.id` as the session key. The `LlamaIndexForMaple` processor below stamps `llamaindex.instrumentor` so Maple labels the framework LlamaIndex (without it: "Unidentified").
 
-## Step 0: detect
+## Step 0: Detect
 
 1. Versions: `python -c "import llama_index.core as c; print(c.__version__)"` (or `pyproject.toml` / `uv.lock` / `requirements*.txt`).
    - Need llama-index-core >= 0.14.19 (tested 0.14.25). Older: the instrumentor logs `DependencyConflict` and does nothing. Tell the user to upgrade.
@@ -24,7 +24,7 @@ Mechanism: `openinference-instrumentation-llama-index` (scope `openinference.ins
 4. Find: every `agent.run(` / `workflow.run(` / `AgentWorkflow(` call, where the chat/thread id lives in the request, every `FunctionAgent(`/`ReActAgent(`/`CodeActAgent(` construction, every tool that runs another agent, every `ctx.wait_for_event(` (HITL).
 5. LLM class: `OpenAILike`/`OpenRouter` need `is_function_calling_model=True` or tools silently never run (no tool spans). Check it's set.
 
-## Step 1: key and region
+## Step 1: Key and region
 
 - US: `https://ingest.maple.dev`. EU: `https://ingest.eu.maple.dev`.
 - Header: `Authorization=Bearer <key>`.
@@ -45,7 +45,7 @@ OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
 
 If you pass `OTLPSpanExporter(endpoint=...)` in code, it must end in `/v1/traces` (no auto-append).
 
-## Step 2: install + init
+## Step 2: Install + init
 
 Add with the repo's package manager (uv/poetry/pip):
 
@@ -125,7 +125,7 @@ LlamaIndexInstrumentor().instrument(
 - The exporter MUST be added through `LlamaIndexForMaple`, never directly: without it every model call counts 2-3x in Maple (`_prepare_chat_with_tools` + nested same-name `astream_chat`/`achat` spans, all OpenInference kind LLM) and every tool call 3x (`call_tool` / `aggregate_tool_results` step spans are classified as tools by name).
 - No `service.name` default is acceptable: set `OTEL_SERVICE_NAME` (never `unknown_service`).
 
-## Step 3: session id (required)
+## Step 3: Session id (required)
 
 Nothing in LlamaIndex sets a conversation id; `Context` and `llamaindex.run_id` never reach Maple as one. Wrap every `agent.run(...)` / `workflow.run(...)` CALL in `using_session(<app conversation id>)`; add `instrument_tags` with the agent name in the same `with`:
 
@@ -156,13 +156,13 @@ async def handle_message(conversation_id: str, text: str):
 - HITL: keep `handler.ctx.send_event(HumanResponseEvent(...))` on the same handler; the resumed step stays in the same trace and session.
 - Do not use `session.id`/`maple_ai.session.id` attributes of your own; `using_session` + `enable_genai_semconv` already writes `session.id` and `gen_ai.conversation.id`.
 
-## Step 4: content
+## Step 4: Content
 
 - On by default: `gen_ai.input.messages` (system + history + tool results), `gen_ai.output.messages` (incl. tool_call parts), tool results. Maple's transcript needs them.
 - User wants content off → `TraceConfig(enable_genai_semconv=True, hide_inputs=True, hide_outputs=True)` (or `hide_input_text`/`hide_output_text` to keep structure). Env equivalents `OPENINFERENCE_HIDE_*`. Tell them the transcript will be empty.
 - Pattern redaction (emails, cards): recommend an OTel Collector `redaction` processor.
 
-## Step 5: tools, errors, sub-agents
+## Step 5: Tools, errors, sub-agents
 
 1. Give every agent a `name=` and wrap each agent's `run()` in `instrument_tags({"gen_ai.agent.name": agent.name})` (the processor copies it onto every span). No tag = no agent facet, no lanes.
 2. Multi-agent via custom `Workflow`: run the whole workflow inside `using_session(...)`; inside steps call sub-agents like this:
@@ -181,7 +181,7 @@ async def run_agent(agent: FunctionAgent, message: str) -> str:
 6. HITL (`ctx.wait_for_event`): the first, suspended `FunctionTool.acall` ends ERROR `WaitingForEvent: ...`; the processor drops it. Nothing to add.
 7. Known, unfixable here: `gen_ai.tool.call.arguments` = the tool's parameter schema (OpenInference GenAI mapping bug); no `gen_ai.tool.call.id` on tool spans. Real args are in the transcript's tool_call parts.
 
-## Step 6: tokens, cost, streaming
+## Step 6: Tokens, cost, streaming
 
 - Tokens come from the provider response on the model span. `FunctionAgent` streams by default; OpenAI-API streams only include usage when asked. For `OpenAI`/`OpenAILike` models not on OpenRouter add:
 
@@ -193,14 +193,14 @@ llm = OpenAI(model="gpt-4o-mini", additional_kwargs={"stream_options": {"include
 - Streamed model spans end when the stream is handed back (~1 ms), so their duration is not model latency. If the app never streams tokens to users, `FunctionAgent(..., streaming=False)` gives real model-span durations. Ask before changing it.
 - Cost: never recorded. Sessions show "unpriced". Do not add pricing code. OpenRouter users can add OpenRouter Broadcast for cost.
 
-## Step 7: flush
+## Step 7: Flush
 
 - `BatchSpanProcessor` exports every 5 s; the provider flushes at normal interpreter exit.
 - Scripts/CLIs/one-shot jobs: `provider.shutdown()` in a `finally` at the end.
 - Serverless handlers, Celery/RQ tasks, notebooks: `provider.force_flush()` in a `finally` after each run (`from tracing import provider`).
 - FastAPI/long-running servers: nothing extra; optionally `provider.shutdown()` in the lifespan shutdown.
 
-## Step 8: verify
+## Step 8: Verify
 
 Run one real conversation: 2+ messages with the same id, at least one tool call, a failing tool if one exists, and a sub-agent run if the app delegates. Then check (Maple → Agent Sessions, filter by service name; wait ~30-60 s):
 

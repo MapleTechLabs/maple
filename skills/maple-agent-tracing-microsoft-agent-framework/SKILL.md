@@ -9,7 +9,7 @@ Goal: one user conversation = one Maple Agent Session, with a transcript, every 
 
 The framework emits the spans itself. You add: an OTLP/HTTP exporter, content capture, a `gen_ai.conversation.id` span processor (the framework never sets one for local-history sessions), and a flush.
 
-## Step 0: detect
+## Step 0: Detect
 
 - Python MAF: `agent-framework`, `agent-framework-core` in `pyproject.toml` / `requirements*.txt` / `uv.lock`. Check the installed version (`python -c "import agent_framework; print(agent_framework.__version__)"`). Target ≥ 1.19.0; upgrade if older (1.13 lacks the `otlp_*` arguments used below).
 - .NET MAF: `Microsoft.Agents.AI` in `*.csproj`. Target ≥ 1.22.0.
@@ -17,14 +17,14 @@ The framework emits the spans itself. You add: an OTLP/HTTP exporter, content ca
 - Existing OpenTelemetry: search for `TracerProvider(`, `set_tracer_provider`, `configure_azure_monitor`, `logfire.configure`, `configure_otel_providers`, `AddOpenTelemetry(`, `Sdk.CreateTracerProviderBuilder`. If a provider exists, add Maple's exporter and the conversation processor to it; do not create a second provider and do not call `configure_otel_providers()`.
 - Find every place a user message is handled (HTTP route, queue consumer, CLI loop) and what identifies the conversation there (chat id, thread id, `AgentSession`). You need it in Step 3.
 
-## Step 1: key and region
+## Step 1: Key and region
 
 - US endpoint `https://ingest.maple.dev`, EU `https://ingest.eu.maple.dev`. Header `Authorization=Bearer <key>`. Protocol `http/protobuf`.
 - Key in the user's prompt: use it. No key: use the literal `MAPLE_TEST` (ingest accepts and discards it) and tell the user to replace it with their key from Settings → Ingestion.
 - Never put a private `maple_sk_` key in browser code.
 - Follow the repo's existing secret/env convention (`.env`, settings class, user-secrets). If there is none, inlining the ingest key is acceptable: ingest keys are write-only.
 
-## Step 2: install and init
+## Step 2: Install and init
 
 ### Python MAF
 
@@ -132,7 +132,7 @@ sealed class ConversationIdProcessor : BaseProcessor<Activity>
 - Workflows: `.WithOpenTelemetry()` on the `WorkflowBuilder` (source `Microsoft.Agents.AI.Workflows`, matched by the wildcard).
 - In a hosted app, put the same sources, processor and exporter in `builder.Services.AddOpenTelemetry().WithTracing(...)`.
 
-## Step 3: conversation id
+## Step 3: Conversation id
 
 Wrap every request/turn so all spans of that turn start inside `conversation(<id>)`:
 
@@ -149,20 +149,20 @@ async def handle_message(session: AgentSession, text: str) -> str:
 - Build workflows (`WorkflowBuilder(...).build()`, `SequentialBuilder`, `ConcurrentBuilder`, ...) inside the `with`. `build()` always emits a separate one-span `workflow.build` trace: inside the `with` it joins the session; outside it becomes a stray one-span session. Executors (fan-out included) inherit the id.
 - .NET: `ConversationIdProcessor.Current.Value = chatId;` in the request handler before `RunAsync`/`RunStreamingAsync`.
 
-## Step 4: content
+## Step 4: Content
 
 - Python: `enable_sensitive_data=True` (or `ENABLE_SENSITIVE_DATA=true`). .NET: `EnableSensitiveData = true` (or `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true`).
 - If the process sets `OTEL_SEMCONV_STABILITY_OPT_IN`, it must include `gen_ai_latest_experimental` (e.g. `http,gen_ai_latest_experimental`); otherwise MAF moves content off the spans into log events Maple doesn't read.
 - `enable_message_events=False`: otherwise every message is also exported as OTLP log records (duplicate payload).
 - If the user wants no prompt content stored, leave sensitive data off and tell them the transcript and tool arguments/results will be empty.
 
-## Step 5: tools, errors, sub-agents
+## Step 5: Tools, errors, sub-agents
 
 - Give every `Agent` a distinct `name` (Maple lanes key on `gen_ai.agent.name`; unnamed agents get a UUID).
 - Tool failures: raising from the tool function is enough; MAF sets ERROR + `error.type` on `execute_tool`. Do not catch and return an error string from the tool body (that hides the failure).
 - Sub-agents: prefer `worker.as_tool()` in the orchestrator's `tools=[...]`, or MAF workflows/orchestrations. Do not also instrument the provider SDK (e.g. OpenInference/OpenLLMetry OpenAI instrumentors): that double-counts every call.
 
-## Step 6: flush
+## Step 6: Flush
 
 Scripts, CLIs, notebooks, tests, serverless:
 
@@ -219,7 +219,7 @@ trace.set_tracer_provider(provider)
 - Flush with `provider.shutdown()` in `finally`.
 - .NET SK: same env vars (or `AppContext` switches `Microsoft.SemanticKernel.Experimental.GenAI.EnableOTelDiagnostics[Sensitive]`), `AddSource("Microsoft.SemanticKernel*")`, same `ConversationIdProcessor`. Shows as "Unidentified" framework in Maple.
 
-## Step 7: verify
+## Step 7: Verify
 
 Run one real conversation (2-3 turns, one tool call; a second conversation if cheap). With a real key, open Agent Sessions (`https://app.maple.dev/agent-sessions`, EU `app.eu.maple.dev`) after ~1 minute. With `MAPLE_TEST`, check the spans locally instead (add `ConsoleSpanExporter` temporarily, or point the endpoint at a local collector). Check:
 

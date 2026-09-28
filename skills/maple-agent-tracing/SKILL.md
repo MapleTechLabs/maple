@@ -25,7 +25,8 @@ Then read the installed `SKILL.md` and follow it. If `npx skills` is unavailable
 | --- | --- |
 | `@mastra/core` | `maple-agent-tracing-mastra` |
 | `@openai/agents`, `openai-agents` | `maple-agent-tracing-openai-agents` |
-| `@langchain/langgraph`, `langchain`, `@langchain/core`, `langgraph`, `langchain-core` | `maple-agent-tracing-langchain` |
+| `langchain`, `langgraph`, `langchain-core` (Python) | `maple-agent-tracing-langchain` |
+| LangChain.js / LangGraph.js (`@langchain/core`, `@langchain/langgraph`) | None yet: tell the user it isn't covered. Offer `maple-agent-tracing-opentelemetry` only if they want hand-written spans. |
 | `@anthropic-ai/claude-agent-sdk`, `claude-agent-sdk`, or the `claude` CLI itself | `maple-agent-tracing-claude-agent-sdk` |
 | `ai` (Vercel AI SDK) | `maple-agent-tracing-vercel-ai-sdk` |
 | `pydantic-ai`, `pydantic-ai-slim` | `maple-agent-tracing-pydantic-ai` |
@@ -37,14 +38,14 @@ Then read the installed `SKILL.md` and follow it. If `npx skills` is unavailable
 | `agno` | `maple-agent-tracing-agno` |
 | `dspy` | `maple-agent-tracing-dspy` |
 | `haystack-ai` | `maple-agent-tracing-haystack` |
-| `agent-framework`, `Microsoft.Agents.AI`, `semantic-kernel`, `Microsoft.SemanticKernel` | `maple-agent-tracing-microsoft-agent-framework` |
+| `agent-framework`, `agent-framework-core`, `Microsoft.Agents.AI`, `semantic-kernel`, `Microsoft.SemanticKernel` | `maple-agent-tracing-microsoft-agent-framework` |
 | `spring-ai-*` (Maven/Gradle) | `maple-agent-tracing-spring-ai` |
 | `litellm` (SDK or proxy) | `maple-agent-tracing-litellm` |
 | Requests go through OpenRouter (`openrouter.ai` base URL) and the user wants gateway-side traces | `maple-agent-tracing-openrouter` |
 | Only a provider SDK: `openai`, `@anthropic-ai/sdk`, `anthropic`, `google-genai`, `@google/genai` | `maple-agent-tracing-provider-sdks` |
 | Anything else, a hand-rolled agent loop, or another language | `maple-agent-tracing-opentelemetry` |
 
-Order matters: a framework row wins over the provider-SDK row, because frameworks depend on provider SDKs and instrumenting both records every model call twice. Mastra and LangChain JS depend on `ai` or `openai` too; match the framework first.
+Order matters: a framework row wins over the provider-SDK row, because frameworks depend on provider SDKs and instrumenting both records every model call twice. Mastra depends on `ai` and LangChain.js on `openai` too; match the framework first, and don't route a LangChain.js service to the provider-SDK skill.
 
 ## Step 3: Hand-off
 

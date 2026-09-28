@@ -11,7 +11,7 @@ Human guide with the reasoning: https://maple.dev/docs/agent-tracing/opentelemet
 
 Mechanism: you write the spans. Maple classifies a span only by `gen_ai.operation.name`, groups a trace by `gen_ai.conversation.id`, and reads content only from span attributes holding JSON strings. Hand-written spans show as framework "Unidentified" (vendor `unknown:genai`); that is expected.
 
-## Step 0: detect
+## Step 0: Detect
 
 1. Language and entry points (web server, workers, scripts, serverless handlers).
 2. Is a supported framework the real agent runtime? (`@mastra/core`, `ai`, `@openai/agents`/`openai-agents`, `langchain`/`langgraph`, `pydantic-ai`, `crewai`, `google-adk`, `llama-index`, `strands-agents`, `smolagents`, `agno`, `dspy`, `haystack-ai`, `agent-framework`, Spring AI, `litellm`, Claude Agent SDK). If yes, stop and use `maple-agent-tracing-<framework>` instead; use this skill only for the parts that framework doesn't cover, or for the `maple_ai.session.id` wrapper (Step 4).
@@ -19,7 +19,7 @@ Mechanism: you write the spans. Maple classifies a span only by `gen_ai.operatio
 4. Existing GenAI auto-instrumentation on the model client (`@opentelemetry/instrumentation-openai`, `opentelemetry-instrumentation-openai-v2`, OpenLLMetry `Traceloop.init`, OpenInference `OpenAIInstrumentor`, `logfire.instrument_openai`). Pick one source of `chat` spans: either keep that instrumentation (then see `maple-agent-tracing-provider-sdks`) or remove it and write `chat` spans here. Both = every model call twice.
 5. Find in the code: the agent loop (where one user message is handled), every model call site, every tool dispatch, sub-agent calls, and where the conversation/chat/thread id lives in the request.
 
-## Step 1: key and region
+## Step 1: Key and region
 
 - US: `https://ingest.maple.dev`. EU: `https://ingest.eu.maple.dev`.
 - Header: `Authorization=Bearer <key>`.
@@ -36,7 +36,7 @@ OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
 
 The exporters append `/v1/traces`. If an SDK rejects the space in the header, use `Bearer%20<key>`.
 
-## Step 2: install + init
+## Step 2: Install + init
 
 Read the reference for the language and adapt it:
 - TypeScript/Node: `references/typescript.md`
@@ -48,7 +48,7 @@ Rules:
 - Name the tracer after the app (e.g. `support-agent`). Never `openrouter`, `langsmith`, `litellm`, `haystack`, `ai`, `gen_ai`: Maple fingerprints frameworks by scope name and would read a different session key.
 - Keep the project's loop structure; add spans around its existing calls. Use the reference's complete loop only when there is no loop yet.
 
-## Step 3: the three spans (exact keys)
+## Step 3: The three spans (exact keys)
 
 `invoke_agent` (kind INTERNAL, name `invoke_agent <agent>`), around one agent run; for a user turn it is the trace root:
 - `gen_ai.operation.name`=`invoke_agent`, `gen_ai.agent.name`, `gen_ai.conversation.id` (Step 4)
@@ -67,7 +67,7 @@ Message JSON (`input.messages`/`output.messages`): array of `{role, parts}`; par
 
 `provider.name` = the API actually called: `openai`, `anthropic`, `gcp.gemini`, `gcp.vertex_ai`, `aws.bedrock`, `azure.ai.openai`, `mistral_ai`, `groq`, `x_ai`, `deepseek`, or `openrouter` for OpenRouter.
 
-## Step 4: session id (required)
+## Step 4: Session id (required)
 
 - Set `gen_ai.conversation.id` on the turn's `invoke_agent` span from the app's conversation/chat/thread id. Same value for every message of a conversation; different across conversations. One classified span per trace is enough; every span in the trace joins.
 - Never: `uuid4()`/`randomUUID()` per request, the trace id, a module-level constant, a per-process default. No real id (single-shot script) → generate one per conversation, not per message, and reuse it.
@@ -79,7 +79,7 @@ Escape hatch, only when a framework's spans carry a session key Maple ignores fo
 - Use the same value the framework would use for the session.
 - Not needed for hand-written spans: use `gen_ai.conversation.id`.
 
-## Step 5: content
+## Step 5: Content
 
 - Content = `gen_ai.system_instructions`, `gen_ai.input.messages`, `gen_ai.output.messages` (chat), `gen_ai.tool.call.arguments`, `gen_ai.tool.call.result` (execute_tool). On span attributes only: span events, log records, and indexed keys (`gen_ai.prompt.0.content`, `llm.input_messages.0.*`) are not read.
 - Do not set `OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT` / `OTEL_SPAN_ATTRIBUTE_VALUE_LENGTH_LIMIT`; if the platform sets one, unset it. Truncated JSON is dropped whole. To cap size, drop the oldest messages whole before serializing.
@@ -87,7 +87,7 @@ Escape hatch, only when a framework's spans carry a session key Maple ignores fo
 - User wants no content → skip those five attributes (everything else still works; transcript empty). Wants redaction → redact inside `toSemconv`/`to_semconv` before serializing, or an OTel Collector `redaction`/`transform` processor.
 - Never put API keys or `Authorization` headers in any attribute.
 
-## Step 6: tools, errors, sub-agents
+## Step 6: Tools, errors, sub-agents
 
 - Tool failure: set status ERROR with the error message as description, set `error.type` (exception class or error code), no `gen_ai.tool.call.result`, then return the error to the model as the tool result so the loop continues. Keep the message specific: Maple groups failures by it.
 - Tools that return `{"error": ...}` instead of raising: mark the span failed the same way when you detect it.
@@ -96,7 +96,7 @@ Escape hatch, only when a framework's spans carry a session key Maple ignores fo
 - Sub-agent: call its loop inside the delegating tool's `execute_tool` span, so `execute_tool ask_x` → `invoke_agent x` → its `chat`/`execute_tool`. Distinct `gen_ai.agent.name` per agent (lanes need it).
 - Parallel tools: start each `execute_tool` span inside the turn's context (Node `Promise.all` keeps it; Python threads need `contextvars.copy_context().run`).
 
-## Step 7: tokens and cost
+## Step 7: Tokens and cost
 
 - Usage on `chat` spans only, never cumulative totals on `invoke_agent`.
 - Keys: `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`, `gen_ai.usage.cache_read.input_tokens`, `gen_ai.usage.cache_write.input_tokens`, `gen_ai.usage.reasoning.output_tokens` (ints). Not read: `total_tokens`, `reasoning_tokens`, `cache_read_input_tokens`.
@@ -106,13 +106,13 @@ Escape hatch, only when a framework's spans carry a session key Maple ignores fo
 - Cost: `gen_ai.usage.cost` (double, USD) on `chat` spans. OpenRouter returns `usage.cost` → copy it. Other providers return none → compute only if the project has a price table; otherwise leave it (Maple shows "unpriced"; it never prices tokens).
 - `gen_ai.response.id` always (dedupes against gateway mirrors such as OpenRouter Broadcast).
 
-## Step 8: flush
+## Step 8: Flush
 
 - Node script/CLI: `await provider.shutdown()` in `finally`. Serverless: `await provider.forceFlush()` before returning (inside `waitUntil`/`after()` if available).
 - Python script: `provider.shutdown()` in `finally`. Lambda: `force_flush()` in `finally`. Notebooks/workers: `force_flush()` per cell/task.
 - Go: `defer tp.Shutdown(context.Background())` in `main`.
 
-## Step 9: verify
+## Step 9: Verify
 
 Run one real conversation: 2+ messages with the same id, one streamed reply if the app streams, one tool call, one failing tool if one exists, one sub-agent call if the app delegates; then a second conversation. Wait ~30 s; Maple → Agent Sessions, filter by service name. Check:
 

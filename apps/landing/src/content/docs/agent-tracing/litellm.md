@@ -282,7 +282,7 @@ async def stream_agent(agent: Agent, conversation_id: str, messages: list):
         messages.append({"role": "assistant", "content": text})
 ```
 
-Cost shows as unpriced by default. LiteLLM prices every call, but the v2 logger writes the price to `litellm.cost.total` (and v1 buries it in the `hidden_params` JSON), and Maple reads cost only from `gen_ai.usage.cost` and never prices tokens itself.
+Cost shows as unpriced by default. LiteLLM prices every call, but the v2 logger writes the price to `litellm.cost.total` (and v1 buries it in the `hidden_params` JSON), and Maple reads cost only from `gen_ai.usage.cost`, `gen_ai.usage.total_cost` or `llm.cost.total`, and never prices tokens itself.
 
 To get cost into Maple, add up LiteLLM's price for every call of a turn, sub-agents included, and put the total on the outermost `invoke_agent` span. Only the outermost one: Maple subtracts a sub-agent's reported cost from the agent above it, on the assumption that the parent's figure already includes it, so a per-agent total on every level undercounts the orchestrator. Replace `agent_span` in `agent.py`:
 

@@ -36,7 +36,7 @@ Use your key from **Settings → Ingestion**. Without one, the agent uses a plac
 	</>
 ))}
 
-If you use a gateway like OpenRouter or LiteLLM **and** a framework, pick one of the two for model calls. Instrumenting both records every call twice; Maple dedupes calls that share a response id, but the framework guide is the one that gives you turns, tools and sub-agents.
+If you use a gateway like OpenRouter or LiteLLM **and** a framework, pick one of the two for model calls. Instrumenting both records every call twice. Maple can merge the two copies only when both carry the same response id, and many frameworks don't record one, so treat the framework guide as the source of truth: it's the one that gives you turns, tools and sub-agents. The [OpenRouter guide](/docs/agent-tracing/openrouter) covers the one setup where both work together.
 
 ## What every guide sets up
 
