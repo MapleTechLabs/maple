@@ -11,6 +11,7 @@
 
 import type { AiIntegration, AiRefineContext } from "./ai-integrations"
 import { MAPLE_NATIVE_TURN_ID_ATTR, type MutableAiGenAiValues } from "@maple/domain/gen-ai"
+import { CREWAI_AGENT_NAME_KEY } from "@maple/domain/tinybird/gen-ai-columns"
 
 /**
  * Vercel AI SDK — the `ai.*` dialect.
@@ -148,6 +149,21 @@ const mapleIntegration: AiIntegration = {
 }
 
 /**
+ * CrewAI — OpenInference, whose agent spans name the agent's role only in
+ * `graph.node.id` unless the GenAI dual-write is on. A vendor-gated refine
+ * rather than an alias, because Agno's spans carry an opaque id under that key.
+ */
+const crewAiIntegration: AiIntegration = {
+	id: "crewai",
+	refine: (values: MutableAiGenAiValues, ctx: AiRefineContext) => {
+		if (values.agentName !== undefined) return
+		const role = ctx.attributes[CREWAI_AGENT_NAME_KEY]
+		if (role !== undefined && role.trim() !== "") values.agentName = role
+	},
+	refineKeys: [CREWAI_AGENT_NAME_KEY],
+}
+
+/**
  * A dialect that reports time to first token in MILLISECONDS under its own key,
  * lifted into the catalog's `responseTimeToFirstChunk`, which is seconds. A
  * refine rather than an alias because the unit differs.
@@ -173,6 +189,7 @@ export const AI_VENDOR_INTEGRATIONS = {
 	"unknown:openinference": openInferenceIntegration,
 	eve: eveIntegration,
 	maple: mapleIntegration,
+	crewai: crewAiIntegration,
 	// OpenRouter Broadcast: the gateway's own clock, request in to first token out.
 	openrouter: msTimeToFirstChunk("openrouter", "trace.metadata.openrouter.first_token_ms"),
 	// Strands fills this semconv-named key from the model's `timeToFirstByteMs`.

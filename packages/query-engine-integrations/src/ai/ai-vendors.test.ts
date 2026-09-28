@@ -297,6 +297,21 @@ describe("maple", () => {
 	})
 })
 
+describe("crewai", () => {
+	it("names the agent by its role when the span carries no gen_ai.agent.name", () => {
+		// A CrewAI agent span without the GenAI dual-write: the role is only here.
+		const bare = mapAiSpan(
+			row("crewai", { "openinference.span.kind": "AGENT", "graph.node.id": "weather_worker" }),
+		)
+		const dual = mapAiSpan(
+			row("crewai", { "gen_ai.agent.name": "summary", "graph.node.id": "summary_agent" }),
+		)
+
+		expect(bare.genAi.agentName).toBe("weather_worker")
+		expect(dual.genAi.agentName).toBe("summary")
+	})
+})
+
 describe("time to first token", () => {
 	it("reads the seconds-valued client key for every vendor", () => {
 		// Pydantic AI's chat span, vendor `pydantic_ai`.

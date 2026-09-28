@@ -128,8 +128,20 @@ export function genAiModelExpr(spanAttributes: MapColumnLike): Expr<string> {
 	return firstNonEmptyAttr(spanAttributes, GENAI_MODEL_KEYS)
 }
 
+/** CrewAI's OpenInference spans name the agent's role here, and without the
+ *  GenAI dual-write nowhere else. Agno's carry an opaque node id under the same
+ *  key, so it is read for `crewai` spans alone. */
+export const CREWAI_AGENT_NAME_KEY = "graph.node.id"
+
 export function genAiAgentNameExpr(spanAttributes: MapColumnLike): Expr<string> {
-	return firstNonEmptyAttr(spanAttributes, GENAI_AGENT_NAME_KEYS)
+	return CH.coalesce(
+		...GENAI_AGENT_NAME_KEYS.map((key) => CH.nullIf(spanAttributes.get(key), "")),
+		CH.if_(
+			spanAttributes.get(MAPLE_AI_VENDOR_ID_ATTR).eq("crewai"),
+			spanAttributes.get(CREWAI_AGENT_NAME_KEY),
+			CH.lit(""),
+		),
+	)
 }
 
 export function genAiToolNameExpr(spanAttributes: MapColumnLike): Expr<string> {

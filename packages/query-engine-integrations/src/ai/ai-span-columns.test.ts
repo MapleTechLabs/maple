@@ -3,6 +3,7 @@ import * as CH from "@maple-dev/effect-clickhouse/expr"
 import * as T from "@maple-dev/effect-clickhouse/types"
 import { compile } from "@maple-dev/effect-clickhouse/sql"
 import {
+	CREWAI_AGENT_NAME_KEY,
 	GENAI_AGENT_NAME_KEYS,
 	GENAI_COST_KEYS,
 	GENAI_MODEL_KEYS,
@@ -15,6 +16,7 @@ import {
 	GENAI_TOOL_NAME_KEYS,
 	GENAI_USAGE_KEYS,
 	OPENINFERENCE_KIND_OPERATIONS,
+	genAiAgentNameExpr,
 	genAiIsErrorCond,
 	genAiIsLlmCallCond,
 	genAiIsToolCallCond,
@@ -26,7 +28,7 @@ import {
 	type AiGenAiField,
 	type MutableAiGenAiValues,
 } from "@maple/domain/gen-ai"
-import { LEGACY_SYSTEM_VALUES, genAiIntegration, resolveAiIntegration } from "./ai-integrations"
+import { LEGACY_SYSTEM_VALUES, genAiIntegration, mapAiSpan, resolveAiIntegration } from "./ai-integrations"
 import { AI_VENDOR_INTEGRATIONS } from "./ai-vendors"
 import {
 	childClaimsExpr,
@@ -72,6 +74,28 @@ describe("GenAI column key lists match the integration layer", () => {
 		for (const key of GENAI_TOOL_NAME_KEYS) expect(decodedKeys("toolName")).toContain(key)
 		for (const key of GENAI_RESPONSE_ID_KEYS) expect(decodedKeys("responseId")).toContain(key)
 		for (const key of decodedKeys("responseId")) expect(GENAI_RESPONSE_ID_KEYS).toContain(key)
+	})
+
+	it("reads CrewAI's role key as the agent name for crewai spans alone, as its refine does", () => {
+		expect(sql(genAiAgentNameExpr(attrs))).toContain(
+			"if(SpanAttributes['maple_ai.vendor.id'] = 'crewai', SpanAttributes['graph.node.id'], ''))",
+		)
+		const refined = (vendorId: string) =>
+			mapAiSpan({
+				traceId: "t",
+				spanId: "s",
+				parentSpanId: "",
+				spanName: "orchestrator.plan._execute_core",
+				spanKind: "Internal",
+				serviceName: "crew",
+				timestamp: "2026-09-28 10:00:00.000000000",
+				durationMs: 1,
+				statusCode: "Unset",
+				statusMessage: "",
+				spanAttributes: { "maple_ai.vendor.id": vendorId, [CREWAI_AGENT_NAME_KEY]: "orchestrator" },
+			}).genAi.agentName
+		expect(refined("crewai")).toBe("orchestrator")
+		expect(refined("agno")).toBeUndefined()
 	})
 
 	// Both directions, in both lists: the tool detail page groups its failures by
