@@ -255,6 +255,11 @@ describe("value-level spot checks", () => {
 			'["a","1"]',
 		)
 	})
+
+	it("decodes bytes attributes as text when they are valid UTF-8", () => {
+		expect(anyValueString({ bytesValue: btoa('{"messages":[]}') })).toBe('{"messages":[]}')
+		expect(anyValueString({ bytesValue: btoa("\xff\xfe\x01") })).toBe("fffe01")
+	})
 })
 
 describe("OTLP/JSON hex ids", () => {

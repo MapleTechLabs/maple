@@ -4016,7 +4016,11 @@ fn any_value_string(value: &AnyValue) -> String {
         Some(any_value::Value::BoolValue(value)) => value.to_string(),
         Some(any_value::Value::IntValue(value)) => value.to_string(),
         Some(any_value::Value::DoubleValue(value)) => value.to_string(),
-        Some(any_value::Value::BytesValue(value)) => bytes_hex(value),
+        // Text sent as bytes (LangSmith's prompt and completion) stays
+        // readable; only binary content is hex.
+        Some(any_value::Value::BytesValue(value)) => {
+            std::str::from_utf8(value).map_or_else(|_| bytes_hex(value), str::to_owned)
+        }
         Some(any_value::Value::ArrayValue(value)) => {
             let values: Vec<String> = value.values.iter().map(any_value_string).collect();
             serde_json::to_string(&values).unwrap_or_default()
@@ -4430,6 +4434,19 @@ mod tests {
         assert_eq!(bytes_hex(&[]), "");
         assert_eq!(bytes_hex(&[0; 8]), "");
         assert_eq!(bytes_hex(&[0xab, 0xcd]), "abcd");
+    }
+
+    #[test]
+    fn bytes_attributes_decode_as_text_when_valid_utf8() {
+        let bytes = |value: &[u8]| AnyValue {
+            value: Some(any_value::Value::BytesValue(value.to_vec())),
+        };
+        // docs_langchain_ls: LangSmith sends `gen_ai.prompt` as UTF-8 JSON bytes.
+        assert_eq!(
+            any_value_string(&bytes(br#"{"messages":[{"content":"Hi"}]}"#)),
+            r#"{"messages":[{"content":"Hi"}]}"#
+        );
+        assert_eq!(any_value_string(&bytes(&[0xff, 0xfe, 0x01])), "fffe01");
     }
 
     #[test]

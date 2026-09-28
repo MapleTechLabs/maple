@@ -60,6 +60,21 @@ export function bytesHex(b64: string | undefined): string {
 	return hexFromBytes(base64ToBytes(b64))
 }
 
+const UTF8 = new TextDecoder("utf-8", { fatal: true })
+
+/**
+ * Port of the Rust `BytesValue` arm of `any_value_string`: the bytes as text
+ * when they are valid UTF-8, else {@link bytesHex}.
+ */
+function bytesText(b64: string): string {
+	const bytes = base64ToBytes(b64)
+	try {
+		return UTF8.decode(bytes)
+	} catch {
+		return hexFromBytes(bytes)
+	}
+}
+
 /** Lowercase hex for `bytes`, or `""` when it is empty or all zero. */
 function hexFromBytes(bytes: Uint8Array): string {
 	if (bytes.length === 0) {
@@ -227,7 +242,7 @@ export function anyValueString(value: AnyValue | undefined | null): string {
 		return parsed === undefined ? String(value.doubleValue) : formatDouble(parsed)
 	}
 	if (value.bytesValue !== undefined) {
-		return bytesHex(value.bytesValue)
+		return bytesText(value.bytesValue)
 	}
 	if (value.arrayValue !== undefined) {
 		const values = (value.arrayValue.values ?? []).map(anyValueString)
