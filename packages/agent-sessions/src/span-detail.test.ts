@@ -139,6 +139,44 @@ describe("spanMessages", () => {
 		expect(spanToolCalls(span).map((c) => c.name)).toEqual(["get_weather"])
 	})
 
+	it("reads a streamed Google ADK reply as its aggregate, not its chunks", () => {
+		// A `generate_content` span of a streamed turn: one message per chunk with
+		// an empty finish reason, then the aggregate that finished.
+		const chunk = (content: string) => ({
+			role: "assistant",
+			parts: [{ content, type: "text" }],
+			finish_reason: "",
+		})
+		const span = llmSpan({
+			spanId: "l1",
+			startMs: 0,
+			durationMs: 1000,
+			genAi: {
+				outputMessages: [
+					...["The", " capital", " of", " France", " is", " Paris", "."].map(chunk),
+					{
+						role: "assistant",
+						parts: [{ content: "The capital of France is Paris.", type: "text" }],
+						finish_reason: "stop",
+					},
+				],
+			},
+		})
+
+		expect(spanMessages(span).map((message) => message.parts)).toEqual([
+			[{ kind: "text", text: "The capital of France is Paris." }],
+		])
+
+		// Chunks with no aggregate behind them are all the reply there is.
+		const unfinished = llmSpan({
+			spanId: "l2",
+			startMs: 0,
+			durationMs: 1000,
+			genAi: { outputMessages: [chunk("The"), chunk(" capital")] },
+		})
+		expect(spanMessages(unfinished)).toHaveLength(2)
+	})
+
 	it("captures nothing when nothing was captured — the ordinary case", () => {
 		const span = llmSpan({ spanId: "l1", startMs: 0, durationMs: 1000 })
 		expect(spanMessages(span)).toEqual([])

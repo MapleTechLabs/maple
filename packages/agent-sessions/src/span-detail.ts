@@ -305,7 +305,7 @@ function parseMessages(value: unknown, origin: SpanMessage["origin"]): readonly 
 	}
 
 	const messages: SpanMessage[] = []
-	for (const entry of value) {
+	for (const entry of origin === "output" ? withoutStreamedChunks(value) : value) {
 		if (!isRecord(entry)) {
 			messages.push({
 				role: origin === "output" ? "assistant" : "user",
@@ -325,6 +325,17 @@ function parseMessages(value: unknown, origin: SpanMessage["origin"]): readonly 
 		messages.push({ role, origin, parts })
 	}
 	return messages
+}
+
+/**
+ * Google ADK records a streamed reply as every chunk, each with an empty
+ * `finish_reason`, followed by the aggregate that finished. The chunks repeat
+ * the aggregate piecewise, so they are dropped whenever a finished message is
+ * there to stand for them.
+ */
+function withoutStreamedChunks(entries: readonly unknown[]): readonly unknown[] {
+	const finished = entries.filter((entry) => !(isRecord(entry) && entry.finish_reason === ""))
+	return finished.length > 0 ? finished : entries
 }
 
 function messageParts(message: Record<string, unknown>): readonly SpanMessagePart[] {
