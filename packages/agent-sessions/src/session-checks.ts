@@ -44,6 +44,11 @@ const CACHE_MIN_CALLS = 3
 /** The smallest prompt OpenAI, Anthropic or Gemini will cache: a shorter one
  *  cannot hit the cache, so missing it says nothing about the prefix. */
 const CACHE_MIN_PROMPT_TOKENS = 1024
+/** The largest Claude minimum (Haiku 4.5, Opus 4.5). Anthropic writes as soon
+ *  as a prompt qualifies, so a Claude call that neither wrote nor read the
+ *  cache under it may just have been too short; one above it missed. Only
+ *  Claude's zero says this: other providers stamp a zero write on every call. */
+const CLAUDE_CACHE_MIN_PROMPT_TOKENS = 4096
 /** A headline names this many findings before it counts the rest. */
 const HEADLINE_MAX_CLAUSES = 3
 
@@ -618,16 +623,9 @@ function stallCheck(findings: readonly SessionFinding[]): SessionCheck {
 	)
 }
 
-/**
- * A Claude call that neither wrote nor read the cache: its prompt was below the
- * model's minimum (up to 4,096 tokens), or it never asked. Anthropic writes as
- * soon as a prompt qualifies, so this says nothing about the prefix. Only
- * Claude's zero means this: other providers stamp a zero write on every call.
- */
-const uncachedClaudeCall = (span: AiSessionSpan): boolean =>
-	(span.genAi.providerName === "anthropic" || /claude/i.test(spanModel(span) ?? "")) &&
-	(span.genAi.usageCacheCreationInputTokens ?? 0) === 0 &&
-	(span.genAi.usageCacheReadInputTokens ?? 0) === 0
+/** Claude, by provider or through any gateway by model. */
+const isClaude = (span: AiSessionSpan): boolean =>
+	span.genAi.providerName === "anthropic" || /claude/i.test(spanModel(span) ?? "")
 
 const reportsCache = (span: AiSessionSpan): boolean =>
 	span.genAi.usageCacheReadInputTokens !== undefined ||
@@ -662,15 +660,14 @@ function promptCacheCheck(llmCalls: readonly AiSessionSpan[]): SessionCheck {
 		)
 	}
 	// The first cacheable call cannot hit a cache nothing has written yet.
-	const cacheable = reporting
-		.filter((span) => !uncachedClaudeCall(span))
-		.map(spanTokenBuckets)
-		.filter((buckets) => buckets !== undefined)
-		.map((buckets) => ({
-			read: buckets.cacheRead,
-			prompt: buckets.input + buckets.cacheRead + buckets.cacheWrite,
-		}))
-		.filter((call) => call.prompt >= CACHE_MIN_PROMPT_TOKENS)
+	const cacheable = reporting.flatMap((span) => {
+		const buckets = spanTokenBuckets(span)
+		if (buckets === undefined) return []
+		const prompt = buckets.input + buckets.cacheRead + buckets.cacheWrite
+		const uncachedClaude = isClaude(span) && buckets.cacheRead + buckets.cacheWrite === 0
+		const minimum = uncachedClaude ? CLAUDE_CACHE_MIN_PROMPT_TOKENS : CACHE_MIN_PROMPT_TOKENS
+		return prompt >= minimum ? [{ read: buckets.cacheRead, prompt }] : []
+	})
 	const calls = cacheable.slice(1)
 	if (calls.length < CACHE_MIN_CALLS) {
 		return check(

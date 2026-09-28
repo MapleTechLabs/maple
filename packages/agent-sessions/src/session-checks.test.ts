@@ -365,10 +365,12 @@ describe("buildSessionChecks", () => {
 				parentSpanId: "a1",
 				startMs,
 				durationMs: SECOND,
-				model: "gpt-5",
+				model: "claude-opus-5",
 				genAi: {
 					conversationId: "t1",
 					// Inclusive of the cache read, as the default convention counts it.
+					// No write reported: a Claude prompt this long that read nothing
+					// missed the cache, rather than being too short to cache.
 					usageInputTokens: 10_000,
 					usageCacheReadInputTokens: cacheRead,
 					usageOutputTokens: 100,
