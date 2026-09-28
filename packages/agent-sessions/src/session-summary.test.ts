@@ -220,11 +220,11 @@ describe("buildSessionSummary — tokens and models", () => {
 		expect(summary.tokens.output).toBe(30)
 	})
 
-	it("keeps what a roll-up reported above the children that reported", () => {
+	it("keeps what a model-call roll-up reported above the children that reported", () => {
 		const summary = summarize([
-			// Three model calls under one agent span, and the middle one carries no
-			// usage at all — its tokens survive as the agent span's excess.
-			agentSpan({
+			// An SDK's `generateText` over three steps, and the middle one carries
+			// no usage at all — its tokens survive as the wrapper's excess.
+			llmSpan({
 				spanId: "agent",
 				startMs: 0,
 				durationMs: 10 * SECOND,
@@ -310,6 +310,106 @@ describe("buildSessionSummary — tokens and models", () => {
 		// 340 was reported as 680: the chats, and the agent's roll-up of them again.
 		expect(summary.tokens.total).toBe(340)
 		expect(summary.work.llmCalls).toBe(2)
+	})
+
+	it("counts nothing of an agent span whose calls reported, however much more it claims", () => {
+		// smolagents `run(reset=False)` (capture cap_a_v1, session a1): each run
+		// span reports the conversation so far, so its excess over its own calls
+		// is every earlier turn's calls again. The calls sum to 7675 in / 136 out.
+		const turns = [
+			{ run: [1022, 45], calls: [[1022, 45]] },
+			{ run: [2178, 65], calls: [[1156, 20]] },
+			{
+				run: [4751, 106],
+				calls: [
+					[1244, 14],
+					[1329, 27],
+				],
+			},
+			{
+				run: [7675, 136],
+				calls: [
+					[1430, 16],
+					[1494, 14],
+				],
+			},
+		]
+		const summary = summarize(
+			turns.flatMap(({ run, calls }, turn) => [
+				agentSpan({
+					spanId: `run-${turn}`,
+					traceId: `trace-${turn}`,
+					spanName: "assistant.run",
+					startMs: turn * 10 * SECOND,
+					durationMs: 5 * SECOND,
+					genAi: { usageInputTokens: run[0], usageOutputTokens: run[1] },
+				}),
+				...calls.flatMap(([input, output], step) => [
+					makeSpan({
+						spanId: `step-${turn}-${step}`,
+						traceId: `trace-${turn}`,
+						parentSpanId: `run-${turn}`,
+						spanName: `Step ${step + 1}`,
+						startMs: turn * 10 * SECOND + step * SECOND,
+						durationMs: SECOND,
+						vendorId: "smolagents",
+					}),
+					llmSpan({
+						spanId: `call-${turn}-${step}`,
+						traceId: `trace-${turn}`,
+						parentSpanId: `step-${turn}-${step}`,
+						startMs: turn * 10 * SECOND + step * SECOND,
+						durationMs: SECOND,
+						genAi: { usageInputTokens: input, usageOutputTokens: output },
+					}),
+				]),
+			]),
+		)
+
+		// 15978 before: the calls, and each run's cumulative excess again.
+		expect(summary.tokens.total).toBe(7811)
+	})
+
+	it("counts nothing of a reused Strands agent's accumulated usage over its own calls", () => {
+		// Strands with one Agent across requests (capture strands_user, scenario a):
+		// each `invoke_agent` reports the agent's accumulated usage, through the
+		// event-loop span, over the one chat it ran.
+		const turns = [
+			{ agent: [204, 44], chat: [204, 44] },
+			{ agent: [473, 122], chat: [269, 78] },
+			{ agent: [838, 193], chat: [365, 71] },
+		]
+		const summary = summarize(
+			turns.flatMap(({ agent, chat }, turn) => [
+				agentSpan({
+					spanId: `agent-${turn}`,
+					traceId: `trace-${turn}`,
+					startMs: turn * 10 * SECOND,
+					durationMs: 5 * SECOND,
+					genAi: { usageInputTokens: agent[0], usageOutputTokens: agent[1] },
+				}),
+				makeSpan({
+					spanId: `cycle-${turn}`,
+					traceId: `trace-${turn}`,
+					parentSpanId: `agent-${turn}`,
+					spanName: "execute_event_loop_cycle",
+					startMs: turn * 10 * SECOND,
+					durationMs: SECOND,
+					vendorId: "strands",
+					genAi: { operationName: "execute_event_loop_cycle" },
+				}),
+				llmSpan({
+					spanId: `chat-${turn}`,
+					traceId: `trace-${turn}`,
+					parentSpanId: `cycle-${turn}`,
+					startMs: turn * 10 * SECOND,
+					durationMs: SECOND,
+					genAi: { usageInputTokens: chat[0], usageOutputTokens: chat[1] },
+				}),
+			]),
+		)
+
+		expect(summary.tokens.total).toBe(204 + 44 + 269 + 78 + 365 + 71)
 	})
 
 	it("groups models by the one that answered, busiest first", () => {
@@ -583,7 +683,7 @@ describe("buildSessionSummary — cache accounting", () => {
 			// (unnamed). Both are normalised before the subtraction, so the child's
 			// uncached 60 comes off the wrapper's uncached 300 — and the session
 			// total equals the wrapper's own claim of 300 + 100 + 30.
-			agentSpan({
+			llmSpan({
 				spanId: "agent",
 				startMs: 0,
 				durationMs: 10 * SECOND,

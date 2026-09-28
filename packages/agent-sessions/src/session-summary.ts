@@ -472,10 +472,16 @@ interface CountableUsage {
  *
  * Several frameworks stamp `gen_ai.usage.*` on the model span AND sum it onto
  * the agent span that wraps it. Counting the deepest reporter keeps the session
- * total equal to what was actually billed. The wrapper is not dropped outright,
- * though: it keeps whatever it reported ABOVE the sum of the reporters beneath
- * it — zero for a clean roll-up, and the missing call's usage when one of its
- * children reported none.
+ * total equal to what was actually billed.
+ *
+ * A model-call wrapper (an SDK's `generateText` over its `doGenerate`, a
+ * gateway's generation over its attempts) keeps whatever it reported ABOVE the
+ * sum of the reporters beneath it — zero for a clean roll-up, and the missing
+ * call's usage when one of its children reported none. Any other wrapper (an
+ * agent, a workflow) keeps nothing once a reporter sits beneath it: agents
+ * that live across turns report the conversation so far (smolagents
+ * `run(reset=False)`, a reused Strands agent), so their excess is earlier
+ * turns' calls counted again. See {@link keptClaim}.
  */
 function countableUsageSpans(
 	spans: readonly AiSessionSpan[],
@@ -494,7 +500,7 @@ function countableUsageSpans(
 	let rolledUp = false
 	for (const [spanId, { own, beneath }] of chargeToNearestReporter(byId, reported)) {
 		if (beneath.length > 0) rolledUp = true
-		const tokens = excessTokens(own, sumTokens(beneath))
+		const tokens = keptClaim(byId, spanId, beneath) ? excessTokens(own, sumTokens(beneath)) : EMPTY_TOKENS
 		if (tokens.total > 0) bySpan.set(spanId, tokens)
 	}
 	const collapsed = collapseObservations(bySpan, costBySpan(spans, byId), byId)
@@ -640,9 +646,22 @@ function costBySpan(
 	}
 
 	for (const [spanId, { own, beneath }] of chargeToNearestReporter(byId, reported)) {
-		bySpan.set(spanId, Math.max(0, own - beneath.reduce((sum, c) => sum + c, 0)))
+		const excess = Math.max(0, own - beneath.reduce((sum, c) => sum + c, 0))
+		bySpan.set(spanId, keptClaim(byId, spanId, beneath) ? excess : 0)
 	}
 	return bySpan
+}
+
+/** Whether a reporter keeps its claim above the reporters charged to it: a
+ *  leaf does, a model-call wrapper does, any other wrapper does not — see
+ *  `countableUsageSpans`. */
+function keptClaim(
+	byId: ReadonlyMap<string, AiSessionSpan>,
+	spanId: string,
+	beneath: readonly unknown[],
+): boolean {
+	const span = byId.get(spanId)
+	return beneath.length === 0 || (span !== undefined && isLlmCall(span))
 }
 
 function sumCosts(costs: Iterable<number>): number {

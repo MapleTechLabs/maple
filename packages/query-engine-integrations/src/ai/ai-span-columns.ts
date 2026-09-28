@@ -190,8 +190,13 @@ export function reporterSpanIdsExpr(reporters: string): Expr<unknown> {
  * {@link reporterSpanIdsExpr}. Columns, not aliases of the same level: an
  * alias expands inside the lambda and is evaluated there, once per reporter.
  *
- * A claim is the reporter's own less what the reporters charged to it
- * already claimed, floored at zero (a clean roll-up nets to nothing). `counts`
+ * A model call's claim is its own less what the reporters charged to it
+ * already claimed, floored at zero (a clean roll-up nets to nothing, the
+ * missing call's usage survives). Any other reporter — an agent, a workflow —
+ * claims nothing of a measure once a reporter of that measure is charged to
+ * it: agents living across turns report the conversation so far, so their
+ * excess is earlier turns' calls again (`countableUsageSpans` in
+ * `session-summary.ts`, the same rule). `counts`
  * is whether the reporter is a model call at its deepest account: a call that
  * reported usage counts by its netted claim, one that reported none counts
  * unless an ancestor reported or its parent is a model call — a failed call
@@ -211,20 +216,26 @@ export function nettedReportersExpr(
 	// Where the claims charged to the reporter sit in the parallel arrays: zero,
 	// and so a zero claim, for a reporter nothing is charged to.
 	const position = `indexOf(tupleElement(${childClaims}, 1), r.1)`
-	const netted = (element: number, childElement: number) =>
-		`greatest(0., r.${element} - arrayElement(tupleElement(${childClaims}, ${childElement}), ${position}))`
+	const charged = (childElement: number) =>
+		`arrayElement(tupleElement(${childClaims}, ${childElement}), ${position})`
+	const excess = (element: number, childElement: number) =>
+		`greatest(0., r.${element} - ${charged(childElement)})`
+	// The tokens charged (child element 2) decide for every token bucket, the
+	// cost charged (3) for the cost.
 	const claims = [
-		[3, 2],
-		[4, 3],
-		[7, 4],
-		[8, 5],
-		[9, 6],
-		[10, 7],
-		[11, 8],
+		[3, 2, 2],
+		[4, 3, 3],
+		[7, 4, 2],
+		[8, 5, 2],
+		[9, 6, 2],
+		[10, 7, 2],
+		[11, 8, 2],
 	] as const
-	const counts = `r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), ${netted(3, 2)} > 0 OR ${netted(4, 3)} > 0, NOT has(${reporterIds}, r.12) AND NOT has(${reporterIds}, r.13) AND NOT has(${reporterIds}, r.2))`
+	const claim = (element: number, childElement: number, measure: number) =>
+		`if(r.6 = 0 AND ${charged(measure)} > 0, 0., ${excess(element, childElement)})`
+	const counts = `r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), ${excess(3, 2)} > 0 OR ${excess(4, 3)} > 0, NOT has(${reporterIds}, r.12) AND NOT has(${reporterIds}, r.13) AND NOT has(${reporterIds}, r.2))`
 	return CH.untypedExpr(
-		`arrayMap(r -> tuple(r.5, ${counts}, ${claims.map(([element, childElement]) => netted(element, childElement)).join(", ")}), ${reporters})`,
+		`arrayMap(r -> tuple(r.5, ${counts}, ${claims.map(([element, childElement, measure]) => claim(element, childElement, measure)).join(", ")}), ${reporters})`,
 	)
 }
 

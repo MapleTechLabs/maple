@@ -251,7 +251,7 @@ describe("span classification SQL", () => {
 
 	it("nets every claim in one pass: children off their parent, a call at its deepest account", () => {
 		const text = sql(nettedReportersExpr("reporters", "childClaims", "reporterIds"))
-		const childClaim = (element: number) =>
+		const charged = (element: number) =>
 			`arrayElement(tupleElement(childClaims, ${element}), indexOf(tupleElement(childClaims, 1), r.1))`
 
 		expect(text).toMatch(/^arrayMap\(r -> tuple\(r\.5, /)
@@ -259,19 +259,23 @@ describe("span classification SQL", () => {
 		// A reporting call counts by its netted claim; a non-reporting one by
 		// having no reporting ancestor and no model call for a parent.
 		expect(text).toContain(
-			`r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), greatest(0., r.3 - ${childClaim(2)}) > 0 OR greatest(0., r.4 - ${childClaim(3)}) > 0, NOT has(reporterIds, r.12) AND NOT has(reporterIds, r.13) AND NOT has(reporterIds, r.2))`,
+			`r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), greatest(0., r.3 - ${charged(2)}) > 0 OR greatest(0., r.4 - ${charged(3)}) > 0, NOT has(reporterIds, r.12) AND NOT has(reporterIds, r.13) AND NOT has(reporterIds, r.2))`,
 		)
-		// Tokens, cost and the five buckets, each less its children's, floored at zero.
-		for (const [element, child] of [
-			[3, 2],
-			[4, 3],
-			[7, 4],
-			[8, 5],
-			[9, 6],
-			[10, 7],
-			[11, 8],
+		// Tokens, cost and the five buckets, each less its children's, floored at
+		// zero — and nothing at all for a reporter that is not a model call once
+		// that measure was charged to it (tokens decide the buckets).
+		for (const [element, child, measure] of [
+			[3, 2, 2],
+			[4, 3, 3],
+			[7, 4, 2],
+			[8, 5, 2],
+			[9, 6, 2],
+			[10, 7, 2],
+			[11, 8, 2],
 		] as const) {
-			expect(text).toContain(`greatest(0., r.${element} - ${childClaim(child)})`)
+			expect(text).toContain(
+				`if(r.6 = 0 AND ${charged(measure)} > 0, 0., greatest(0., r.${element} - ${charged(child)}))`,
+			)
 		}
 		// One lambda over the reporters, and none inside it searching them again.
 		expect(text.split("->").length - 1).toBe(1)
