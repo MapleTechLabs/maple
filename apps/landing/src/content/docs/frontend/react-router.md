@@ -237,6 +237,7 @@ A few cases worth knowing:
 - **Redirects and interrupted navigations are one span.** A loader that throws `redirect()` keeps the router in `"loading"`, and so does a second click. The span is named after the route the user ended up on, and `url.path` keeps the path they started from.
 - **Routes without loaders never enter `"loading"`**, so their span starts and ends in the same callback. It has no duration, but it still counts the view.
 - **Back and forward buttons and search param changes** are traced like any other navigation. Hash changes run nothing and are skipped.
+- **A URL that matches no route** only matches the root route, so its span is named `navigate /`, like the home page. `url.path` keeps the URL that was requested.
 
 ## Trace loaders and actions with React Router's instrumentation API
 
@@ -368,12 +369,19 @@ startTransition(() => {
 })
 ```
 
-The catch is that `HydratedRouter` creates the router itself, so there's nothing to subscribe to. The closest official hook is the `navigate` instrumentation, which wraps each call to the router's `navigate` and reports the matched pattern. Keep `routePattern`, `traceRouteHandlers`, and `reportRouteError` from above in `app/router-tracing.ts`, drop `traceNavigations`, and replace `tracing`:
+The catch is that `HydratedRouter` creates the router itself, so there's nothing to subscribe to. The closest official hook is the `navigate` instrumentation, which wraps each call to the router's `navigate` and reports the matched pattern. In framework mode, the helper, `maple.ts` and `router-tracing.ts` live in `app/`. Keep `routePattern`, `traceRouteHandlers`, and `reportRouteError` from above in `app/router-tracing.ts`, drop `traceNavigations`, and replace `tracing`:
 
 ```ts
 // app/router-tracing.ts
 import type { ClientInstrumentation } from "react-router"
 import { endNavigation, startNavigation } from "./tracing"
+
+// Route ids to their paths, for naming the pageload span
+const routePaths = new Map<string, string | undefined>()
+
+/** The template of the matched routes, from `useMatches()`. */
+export const matchesPattern = (matches: { id: string }[]) =>
+	routePattern(matches.map((match) => routePaths.get(match.id)).filter(Boolean).join("/"))
 
 let latest = 0
 
@@ -383,33 +391,38 @@ export const tracing: ClientInstrumentation = {
 
 		instrument({
 			navigate: async (navigate, { to }) => {
-				// navigate(-1) is a history navigation, like the back button
-				if (typeof to === "number") return
+				// navigate(-1) is a history navigation, like the back button; hash links run nothing
+				if (typeof to === "number" || to.startsWith("#")) return
 				const id = ++latest
-				// `to` is what the link passed: `/projects/1`, or a relative path like `edit`
-				startNavigation(to)
+				// `to` can carry a query string, or be relative, like `edit`
+				startNavigation(new URL(to, window.location.href).pathname)
 				const { meta } = await navigate()
 				// A newer navigation has already replaced this one
 				if (id === latest) endNavigation(meta && routePattern(meta.pattern))
 			},
 		})
 	},
-	route: traceRouteHandlers,
+	route(route) {
+		routePaths.set(route.id, route.path)
+		traceRouteHandlers(route)
+	},
 }
 ```
 
-With server rendering, the loaders for the first page already ran on the server, so the `pageload` span ends once the page hydrates:
+With server rendering, the loaders for the first page already ran on the server, so the `pageload` span ends once the page hydrates. End it in the root route's `Layout`, not in `App`: `Layout` also wraps the root `ErrorBoundary`, so 404 and error pages end the span too. `routePaths` maps the matched route ids to their paths, which gives the span its template:
 
 ```tsx
 // app/root.tsx
 import { useEffect } from "react"
-import { Outlet } from "react-router"
+import { useMatches } from "react-router"
+import { matchesPattern } from "./router-tracing"
 import { endNavigation } from "./tracing"
 
-export default function App() {
+export function Layout({ children }: { children: React.ReactNode }) {
+	const matches = useMatches()
 	// The server already ran the loaders, so the first page is ready once it hydrates
-	useEffect(() => endNavigation(), [])
-	return <Outlet />
+	useEffect(() => endNavigation(matchesPattern(matches)), [])
+	// ...the rest of the generated Layout, unchanged
 }
 ```
 
@@ -418,18 +431,26 @@ Framework mode's client side has gaps that data mode doesn't:
 - **Back and forward buttons aren't traced.** They go through the browser's history, not `navigate`, so there's no navigation span and their loaders start their own traces.
 - **Server loader requests are separate traces.** React Router fetches server loader data in one `.data` request per navigation, and starts it after an `await`. That's the [`await` problem](#the-await-problem) inside React Router itself: the request and the server spans behind it land in their own trace. The loader span under your navigation still shows how long the browser waited.
 - **Redirected navigations are named after the route that was clicked**, not the one the user landed on.
-- **Hash-only links** produce a short span named just `navigate`, since there's no pattern for them.
+- **Client loaders that run on hydration are usually their own trace.** A route with only a `clientLoader`, or with `clientLoader.hydrate`, loads its data after the page hydrates, which is after the `pageload` span ended.
+- **A URL that matches no route is named after the root route**, `navigate /` or `pageload /`. The server span's 404 `http.response.status_code` tells it apart from the home page.
+- **Every route gets a `loader` span**, even routes without a loader, because React Router loads the route's module and styles through it. Those spans show the time spent downloading code.
 
 ### Trace the server render and link it to the pageload
 
-Start the OpenTelemetry Node SDK as in the [Node.js guide](/docs/guides/instrumentation-nodejs), loaded before the server build (for example with Node's `--import` flag). That gives you a span for every incoming request and for the database and HTTP calls your loaders make.
+Start the OpenTelemetry Node SDK as in the [Node.js guide](/docs/guides/instrumentation-nodejs), loaded before the server build with Node's `--import` flag:
+
+```json
+"start": "NODE_OPTIONS='--import ./instrumentation.server.mjs' react-router-serve ./build/server/index.js"
+```
+
+That gives you a span for every incoming request and for the database and HTTP calls your loaders make. The HTTP server span also reads the `traceparent` header, so a `.data` request's server spans join the browser request that made it.
 
 The server entry takes its own `instrumentations` export. Add a span per request, named after the matched pattern, and reuse `traceRouteHandlers` for server loaders:
 
 ```ts
 // app/entry.server.tsx: add to the file that `react-router reveal` generates
 import { context, propagation, SpanStatusCode, trace } from "@opentelemetry/api"
-import type { HandleErrorFunction, ServerInstrumentation } from "react-router"
+import { type HandleErrorFunction, isRouteErrorResponse, type ServerInstrumentation } from "react-router"
 import { routePattern, traceRouteHandlers } from "./router-tracing"
 import { alreadyRecorded } from "./tracing"
 
@@ -454,11 +475,14 @@ export const instrumentations: ServerInstrumentation[] = [
 	},
 ]
 
+// Render errors during a page request reach neither onError nor a loader span
 export const handleError: HandleErrorFunction = (error, { request }) => {
-	// Aborted requests aren't failures, and loader errors are already on their span
-	if (request.signal.aborted || alreadyRecorded(error)) return
-	trace.getActiveSpan()?.recordException(error instanceof Error ? error : String(error))
+	// Aborted requests aren't failures
+	if (request.signal.aborted) return
 	console.error(error)
+	// Thrown responses, like a 404, are expected, and loader errors are already on their span
+	if (isRouteErrorResponse(error) || alreadyRecorded(error)) return
+	trace.getActiveSpan()?.recordException(error instanceof Error ? error : String(error))
 }
 ```
 
@@ -488,7 +512,8 @@ Some things to know about the server side:
 
 - **The request span nests under the Node SDK's HTTP span**, which only knows the URL. The React Router span adds the route pattern and the loader spans.
 - **It ends when the response starts streaming**, because the default entry resolves the response once React's shell is ready. It measures time to first byte, not the full stream.
-- **Defining `handleError` replaces React Router's default logging**, which is why it calls `console.error` itself.
+- **Defining `handleError` replaces React Router's default logging**, which is why it calls `console.error` itself. React Router also calls it for URLs that match no route, with a 404 response, so the `isRouteErrorResponse` check keeps those off the error list.
+- **Only page responses carry the header.** `.data` requests and static assets don't go through `handleRequest`.
 - **Cached HTML shares one trace.** If a CDN caches your pages, skip the `server-timing` header on those responses.
 
 ## React Router tracing gotchas

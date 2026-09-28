@@ -127,6 +127,7 @@ Keep whatever the hook already does (logging, other vendors, fallback UI).
 	- a reload gives one `pageload <template>` span, never a bare `pageload`, and it is exported even when the page's render throws;
 	- one click gives exactly one `navigate <template>` span; its `loader …` spans have its `spanId` as `parentSpanId`, and the `fetch` spans sit under those. Repeat for a param-only change (`/items/1` to `/items/2`);
 	- a route whose data loading throws gives exactly one span with an `exception` event, and no `browser.unhandled_rejection` for the same error. An event handler that throws gives exactly one `browser.uncaught_error`.
+	- with SSR, load a route whose render throws directly (not by client navigation): exactly one `exception` event, on a server span. A URL that matches no route produces no `exception` event and no Error span other than a 4xx `fetch`.
 4. With a real key and the Maple MCP tools available, wait a minute, then `search_traces` for the frontend's `serviceName` and `inspect_trace` a `navigate …` trace: it should contain the loader span, `fetch` spans and the backend's spans. With `MAPLE_TEST`, nothing is stored; say so instead.
 
 ## Step 8: Hand-off
