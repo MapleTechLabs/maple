@@ -49,7 +49,7 @@ const tracedSpans = new WeakSet<Span>()
 const tracer = () => (hasConsent() ? liveMapleTracer(SDK_NAME, SDK_VERSION) : undefined)
 
 /** End the open navigation as interrupted: something other than its route finishing ended it. */
-function interruptNavigation(): void {
+export function interruptNavigation(): void {
 	navigation?.span.setAttribute("app.navigation.interrupted", true)
 	navigation?.span.end()
 	navigation = undefined

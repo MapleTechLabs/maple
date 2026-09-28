@@ -12,7 +12,7 @@ import { useParams, usePathname, useSearchParams, useSelectedLayoutSegments } fr
 // oxlint-disable-next-line maple/no-react-use-effect
 import { createElement, type ReactElement, Suspense, useEffect } from "react"
 import { captureException } from "../errors"
-import { endNavigation, startNavigation } from "../navigation"
+import { endNavigation, interruptNavigation, startNavigation } from "../navigation"
 import { routeTemplate, urlKey } from "./route"
 
 /** Pathname and query of the route React last committed. */
@@ -21,9 +21,11 @@ let committed: string | undefined
 /** Re-export from `instrumentation-client.ts`: starts a span for each App Router navigation. */
 export function onRouterTransitionStart(url: string): void {
 	const target = new URL(url, location.href)
-	// Hash-only changes and links to the current URL don't render a new route
-	if (urlKey(target.pathname, target.search) === committed) return
-	startNavigation(target.pathname)
+	// Hash-only changes and links to the current URL don't render a new route, and
+	// the effect that ends a navigation won't run: one still in flight, like a
+	// click away and straight back, is abandoned
+	if (urlKey(target.pathname, target.search) === committed) interruptNavigation()
+	else startNavigation(target.pathname)
 }
 
 function NavigationEnd(): null {

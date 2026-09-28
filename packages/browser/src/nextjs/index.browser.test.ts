@@ -130,6 +130,20 @@ describe("MapleNavigation and onRouterTransitionStart", () => {
 		expect(names()).toEqual(["pageload /projects/[id]"])
 	})
 
+	it("ends a navigation abandoned by a link back to the route on screen", async () => {
+		await pageLoad("/projects/1", { id: "1" })
+		onRouterTransitionStart("/slow")
+		// Back to the route on screen before /slow commits: nothing renders again
+		onRouterTransitionStart("/projects/1")
+		// Ended now: it no longer parents what runs next
+		await MapleBrowser.traced("query members", async () => undefined)
+		await stop()
+
+		expect(names()).toEqual(["pageload /projects/[id]", "navigate", "query members"])
+		expect(exported[1]?.attributes["app.navigation.interrupted"]).toBe(true)
+		expect(exported[2]?.parentSpanContext).toBeUndefined()
+	})
+
 	it("traces a query change, which renders the route again", async () => {
 		await pageLoad("/projects/1", { id: "1" })
 		onRouterTransitionStart("/projects/1?tab=members")
