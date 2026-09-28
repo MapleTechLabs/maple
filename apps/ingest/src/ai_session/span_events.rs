@@ -8,9 +8,12 @@
 //!
 //! The per-message events of the OTel GenAI conventions before v1.37
 //! (`gen_ai.{system,user,assistant,tool}.message`, `gen_ai.choice`) are what
-//! Strands emits by default. Content recorded as OTLP log records (Semantic
-//! Kernel, Google ADK, Claude Code's replies) is another signal, in another
-//! request, and is not joined here.
+//! Strands emits by default. LlamaIndex's own instrumentation
+//! (`llama-index-observability-otel`) puts a model call's input in the
+//! `messages` of an `LLMChatStartEvent`; its reply is not recorded at all.
+//! Content recorded as OTLP log records (Semantic Kernel, Google ADK, Claude
+//! Code's replies) is another signal, in another request, and is not joined
+//! here.
 
 use opentelemetry_proto::tonic::trace::v1::Span;
 use serde_json::{json, Value};
@@ -51,6 +54,11 @@ pub(super) fn restate(span: &mut Span) {
                     }
                     output.push(entry);
                 }
+            }
+            ("LLMChatStartEvent", _) => {
+                input.extend(
+                    text(attrs, "messages").map_or_else(Vec::new, |m| llamaindex_messages(&m)),
+                );
             }
             _ => {}
         }
@@ -105,6 +113,41 @@ fn block_part((kind, value): (String, Value)) -> Value {
         }),
         _ => json!({ "type": kind, "content": value }),
     }
+}
+
+/// LlamaIndex `ChatMessage`s (`[{role, blocks: [{block_type, …}], additional_kwargs}]`)
+/// as GenAI messages. A `tool` message answers the call its `tool_call_id` names.
+fn llamaindex_messages(messages: &str) -> Vec<Value> {
+    serde_json::from_str::<Vec<Value>>(messages)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|message| {
+            let call_id = &message["additional_kwargs"]["tool_call_id"];
+            let parts: Vec<Value> = message["blocks"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|block| match block["block_type"].as_str() {
+                    // An assistant message that only calls tools carries an empty text block.
+                    Some("text") if block["text"] == "" => None,
+                    Some("text") if !call_id.is_null() => Some(json!({
+                        "type": "tool_call_response",
+                        "id": call_id,
+                        "response": block["text"],
+                    })),
+                    Some("text") => Some(json!({ "type": "text", "content": block["text"] })),
+                    Some("tool_call") => Some(json!({
+                        "type": "tool_call",
+                        "id": block["tool_call_id"],
+                        "name": block["tool_name"],
+                        "arguments": block["tool_kwargs"],
+                    })),
+                    _ => Some(json!({ "type": block["block_type"], "content": block })),
+                })
+                .collect();
+            json!({ "role": message["role"], "parts": parts })
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -348,5 +391,42 @@ mod tests {
             .collect();
         assert_eq!(inputs.len(), 1);
         assert_eq!(value(&spans[0], "gen_ai.input.messages"), Some("[]"));
+    }
+
+    // `llama-index-observability-otel`, trimmed from the `llamaindex_user` capture.
+    #[test]
+    fn llamaindex_chat_start_messages_become_gen_ai_input() {
+        let messages = concat!(
+            r#"[{"role": "system", "additional_kwargs": {}, "blocks": [{"block_type": "text", "text": "You are a helpful assistant with tools."}]}, "#,
+            r#"{"role": "user", "additional_kwargs": {}, "blocks": [{"block_type": "text", "text": "What's the weather in Berlin right now?"}]}, "#,
+            r#"{"role": "assistant", "additional_kwargs": {"tool_calls": [{"index": 0, "id": "call_7P", "function": {"arguments": "{\"city\":\"Berlin\"}", "name": "get_weather"}, "type": "function"}]}, "#,
+            r#""blocks": [{"block_type": "text", "text": ""}, {"block_type": "tool_call", "tool_call_id": "call_7P", "tool_name": "get_weather", "tool_kwargs": "{\"city\":\"Berlin\"}"}]}, "#,
+            r#"{"role": "tool", "additional_kwargs": {"tool_call_id": "call_7P"}, "blocks": [{"block_type": "text", "text": "{'city': 'Berlin', 'temperature_c': 21}"}]}]"#,
+        );
+        let spans = stamped(
+            "llamaindex.opentelemetry.tracer",
+            vec![span(
+                "OpenRouter.astream_chat",
+                &[("llamaindex.run_id", "P4blFQR8Sx")],
+                &[(
+                    "LLMChatStartEvent",
+                    &[
+                        ("messages", messages),
+                        ("model_dict.model_name", "openai/gpt-4o-mini"),
+                        ("class_name", "LLMChatStartEvent"),
+                    ],
+                )],
+            )],
+        );
+        assert_eq!(
+            value(&spans[0], "gen_ai.input.messages"),
+            Some(concat!(
+                r#"[{"parts":[{"content":"You are a helpful assistant with tools.","type":"text"}],"role":"system"},"#,
+                r#"{"parts":[{"content":"What's the weather in Berlin right now?","type":"text"}],"role":"user"},"#,
+                r#"{"parts":[{"arguments":"{\"city\":\"Berlin\"}","id":"call_7P","name":"get_weather","type":"tool_call"}],"role":"assistant"},"#,
+                r#"{"parts":[{"id":"call_7P","response":"{'city': 'Berlin', 'temperature_c': 21}","type":"tool_call_response"}],"role":"tool"}]"#,
+            ))
+        );
+        assert_eq!(value(&spans[0], "gen_ai.output.messages"), None);
     }
 }
