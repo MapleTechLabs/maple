@@ -30,6 +30,9 @@ export interface EncodedBatch {
 
 type AttrMap = Record<string, string>
 
+/** An attribute value as JSON: scalars in their string form, arrays and maps nested. */
+type AttrJson = string | readonly AttrJson[] | { readonly [key: string]: AttrJson }
+
 export interface AnyValue {
 	stringValue?: string
 	boolValue?: boolean
@@ -254,7 +257,7 @@ export function anyValueString(value: AnyValue | undefined | null): string {
  * Port of Rust `any_value_json`: an array or map as JSON, scalars in their
  * string form, nested arrays and maps kept as JSON.
  */
-function anyValueJson(value: AnyValue | undefined): unknown {
+function anyValueJson(value: AnyValue | undefined): AttrJson {
 	if (value?.arrayValue !== undefined) {
 		return (value.arrayValue.values ?? []).map(anyValueJson)
 	}
