@@ -1627,7 +1627,12 @@ const summaryMeasures_ = ($: SpanColumns) => {
 	)
 	const isToolCall = operation.in_(...AI_TOOL_OPERATIONS).or(
 		operation
-			.eq("")
+			.notIn(
+				...AI_INFERENCE_OPERATIONS,
+				...AI_RETRIEVAL_OPERATIONS,
+				...AI_TOOL_OPERATIONS,
+				...AI_AGENT_OPERATIONS,
+			)
 			.and(isAi)
 			.and(toolName.neq("").or(model.eq("").and($.SpanName.in_(...AI_TOOL_SPAN_NAMES)))),
 	)

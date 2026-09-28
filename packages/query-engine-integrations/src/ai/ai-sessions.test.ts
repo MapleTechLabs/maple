@@ -1406,6 +1406,16 @@ describe("aiSessionSummaryQuery", () => {
 		expect(sql).not.toContain("lower(SpanName)")
 	})
 
+	it("counts a tool call off its tool name under any operation the convention does not name", () => {
+		// The page, the index and the model-call rule all fall back past an
+		// unknown operation (LangSmith's `chain`, Spring AI's `framework`), not
+		// only past an absent one.
+		const { sql } = compileUnsafe(aiSessionSummaryQuery(), summaryParams)
+		expect(sql).toContain(
+			"NOT IN ('chat', 'generate_content', 'text_completion', 'fetch_response', 'embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step') AND SpanAttributes['maple_ai.vendor.id'] != '') AND (coalesce(nullIf(SpanAttributes['gen_ai.tool.name']",
+		)
+	})
+
 	it("counts a model call off its model only on a span the gateway stamped", () => {
 		// LiteLLM proxy's FastAPI server span echoes `gen_ai.request.model` and is
 		// not stamped: the list's index never holds it, so the summary skips it too.
