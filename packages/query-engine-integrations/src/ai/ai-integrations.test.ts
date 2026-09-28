@@ -189,11 +189,14 @@ describe("legacy aliases", () => {
 		["gen_ai.system", "anthropic", "providerName", "anthropic"],
 		["gen_ai.openai.request.seed", "7", "requestSeed", 7],
 		["gen_ai.response.finish_reason", "stop", "responseFinishReasons", ["stop"]],
-		// Not in the deprecation table: the sub-key spelling OpenRouter actually
-		// emits. Both confirmed present in the warehouse — unlike the plausible
-		// `gen_ai.usage.reasoning_tokens`, which is not, and so is not mapped.
+		// Not in the deprecation table: the sub-key spellings OpenRouter actually
+		// emits, confirmed present in the warehouse or in its Broadcast docs.
 		["gen_ai.usage.output_tokens.reasoning", "704", "usageReasoningOutputTokens", 704],
 		["gen_ai.usage.input_tokens.cached", "2048", "usageCacheReadInputTokens", 2048],
+		["gen_ai.usage.input_tokens.cache_write", "11058", "usageCacheCreationInputTokens", 11058],
+		// Mastra's and Pydantic AI's reasoning spellings, from their exports.
+		["gen_ai.usage.reasoning_tokens", "320", "usageReasoningOutputTokens", 320],
+		["gen_ai.usage.details.reasoning_tokens", "128", "usageReasoningOutputTokens", 128],
 		// The registry spelling, not a deprecation: semconv says `cache_write`
 		// where the catalog's primary keeps the Anthropic-era `cache_creation`.
 		["gen_ai.usage.cache_write.input_tokens", "512", "usageCacheCreationInputTokens", 512],

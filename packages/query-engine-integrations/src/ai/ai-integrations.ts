@@ -141,19 +141,28 @@ const decodeAttribute = (type: AiFieldDef["type"], raw: string): unknown => {
  * calls `gen_ai.usage.reasoning.output_tokens`,
  * `gen_ai.usage.cache_read.input_tokens` and `gen_ai.usage.cost` (total_cost is
  * USD, the sum of the input_cost/output_cost keys beside it). All three were
- * confirmed against the warehouse; the plausible-looking
- * `gen_ai.usage.reasoning_tokens` was NOT, so it is deliberately not listed.
+ * confirmed against the warehouse, as was OpenRouter's documented
+ * `gen_ai.usage.input_tokens.cache_write`. The other reasoning spellings are
+ * Mastra's (`gen_ai.usage.reasoning_tokens`) and Pydantic AI's
+ * (`gen_ai.usage.details.reasoning_tokens`), both seen in their exports.
  */
 const GENAI_LEGACY_ALIASES = {
 	usageInputTokens: ["gen_ai.usage.prompt_tokens"],
 	usageOutputTokens: ["gen_ai.usage.completion_tokens"],
-	usageReasoningOutputTokens: ["gen_ai.usage.output_tokens.reasoning"],
+	usageReasoningOutputTokens: [
+		"gen_ai.usage.output_tokens.reasoning",
+		"gen_ai.usage.reasoning_tokens",
+		"gen_ai.usage.details.reasoning_tokens",
+	],
 	usageCacheReadInputTokens: ["gen_ai.usage.input_tokens.cached"],
 	// Not legacy but the *registry* spelling: semconv names the bucket
 	// `cache_write` while the catalog's primary key keeps the `cache_creation`
 	// spelling Anthropic-era emitters (and Maple's own rows before this alias)
 	// used. Both must decode; Maple's agents emit the semconv form.
-	usageCacheCreationInputTokens: ["gen_ai.usage.cache_write.input_tokens"],
+	usageCacheCreationInputTokens: [
+		"gen_ai.usage.cache_write.input_tokens",
+		"gen_ai.usage.input_tokens.cache_write",
+	],
 	usageCost: ["gen_ai.usage.total_cost"],
 	inputMessages: ["gen_ai.prompt"],
 	outputMessages: ["gen_ai.completion"],

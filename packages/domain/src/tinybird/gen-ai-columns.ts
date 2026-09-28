@@ -377,6 +377,7 @@ export const GENAI_USAGE_KEYS = {
 	cacheWrite: [
 		"gen_ai.usage.cache_creation.input_tokens",
 		"gen_ai.usage.cache_write.input_tokens",
+		"gen_ai.usage.input_tokens.cache_write",
 		"ai.usage.inputTokenDetails.cacheWriteTokens",
 	],
 	output: [
@@ -389,6 +390,8 @@ export const GENAI_USAGE_KEYS = {
 	reasoning: [
 		"gen_ai.usage.reasoning.output_tokens",
 		"gen_ai.usage.output_tokens.reasoning",
+		"gen_ai.usage.reasoning_tokens",
+		"gen_ai.usage.details.reasoning_tokens",
 		"ai.usage.reasoningTokens",
 		"ai.usage.outputTokenDetails.reasoningTokens",
 		"llm.token_count.completion_details.reasoning",
