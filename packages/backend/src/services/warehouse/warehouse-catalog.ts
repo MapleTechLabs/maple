@@ -45,6 +45,11 @@ const TABLE_NOTES: Record<string, ReadonlyArray<string>> = {
 		"Scanners borrow crawler user agents and mostly get 404s: count pages actually read with `HttpStatus < 400` (0 means the span carried no status).",
 		"Sorting key: `(OrgId, Timestamp, TraceId)`; filled forward by its MV from migration 0033, never backfilled.",
 	],
+	trace_facets_hourly: [
+		"Hourly root-span (one per trace) counts by `ServiceName`, `SpanName`, `HttpMethod`, `HttpStatusCode`, `DeploymentEnv`, `ServiceNamespace` and `HasError`. ALWAYS prefer this over `trace_list_mv` for trace counts or top-N of those dimensions over day-plus windows.",
+		"Time column is `Hour`; count with `sum(TraceCount)`. `DurationMin`/`DurationMax` are NANOSECONDS (`min`/`max` them); percentiles via `quantilesTDigestMerge(0.5, 0.95)(DurationQuantiles)`.",
+		"Sorting key: `(OrgId, Hour, ServiceName, SpanName, …)`.",
+	],
 	service_overview_spans: [
 		"Pre-materialized projection of entry-point spans only (Server/Consumer kinds + root spans). Use for per-service request count, error rate, p50/p95/p99 latency.",
 		"`Duration` is NANOSECONDS — divide by 1e6 for ms.",

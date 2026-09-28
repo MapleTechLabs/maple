@@ -116,6 +116,7 @@ describe("materialized projection order", () => {
 			["service_overview_hourly", "service_overview_hourly_mv"],
 			["service_operations_hourly", "service_operations_hourly_mv"],
 			["trace_list_mv", "trace_list_mv_mv"],
+			["trace_facets_hourly", "trace_facets_hourly_mv"],
 			["logs_aggregates_hourly", "logs_aggregates_hourly_mv"],
 			["error_events_by_time", "error_events_by_time_mv"],
 			["error_fingerprints_minutely", "error_fingerprints_minutely_mv"],

@@ -1052,5 +1052,33 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 			},
 		],
 	},
+	{
+		// Both objects are new, so the bootstrap's IF NOT EXISTS CREATEs are the whole edge.
+		id: "local-0023-to-0024-trace-facets-hourly",
+		from: 23,
+		to: 24,
+		description:
+			"Create trace_facets_hourly and its materialized view so the traces sidebar facets read an hourly rollup instead of scanning trace_list_mv",
+		clonedBefore: "any DDL runs",
+		plan: [
+			[
+				"create-trace-facets-hourly",
+				"Create trace_facets_hourly and trace_facets_hourly_mv via the v24 bootstrap (both new, IF NOT EXISTS)",
+			],
+		],
+		verifies: "Verify the v24 physical schema and the retained raw telemetry counts",
+		dispositions: [
+			{
+				name: "trace_facets_hourly",
+				classification: "derived",
+				disposition: "rebuild-within-retention-horizon",
+				guarantee:
+					"The rollup accrues for root spans ingested after the migration; older ones stay in trace_list_mv until they age out.",
+				preservationInterval: "from the migration forward",
+				sourceRetentionDays: 30,
+				targetRetentionDays: 30,
+			},
+		],
+	},
 	// local-schema:bump appends the next step above this line.
 ]

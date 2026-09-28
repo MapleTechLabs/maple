@@ -1046,6 +1046,59 @@ export const traceListMv = defineDatasource("trace_list_mv", {
 export type TraceListMvRow = InferRow<typeof traceListMv>
 
 /**
+ * Hourly rollup of `trace_list_mv` over the traces sidebar's facet dimensions,
+ * for `tracesFacetsQuery` and `tracesDurationStatsQuery`.
+ *
+ * Those queries count root spans per facet value over the page's window. On
+ * `trace_list_mv` that is a scan of every root span in the window (~14M/day
+ * for a busy org), and past about a day it exceeds the 5s discovery budget.
+ * The dimensions collapse to a few hundred combinations per org-hour, so the
+ * same answer is a read of a few thousand rows here.
+ *
+ * Every dimension is in the sorting key: on an AggregatingMergeTree a non-key
+ * column merges rows together and sums across the values you meant to keep
+ * apart. Cascaded off `trace_list_mv`, so the span-name rewrite and the HTTP
+ * semconv coalescing are the ones the trace list already filters on.
+ */
+export const traceFacetsHourly = defineDatasource("trace_facets_hourly", {
+	description:
+		"Hourly root-span counts and duration state per service, span name, HTTP method/status, environment, namespace and error flag. Traces sidebar facets. Populated by materialized view from trace_list_mv.",
+	jsonPaths: false,
+	schema: {
+		OrgId: t.string().lowCardinality(),
+		Hour: t.dateTime(),
+		ServiceName: t.string().lowCardinality(),
+		SpanName: t.string(),
+		HttpMethod: t.string().lowCardinality(),
+		HttpStatusCode: t.string().lowCardinality(),
+		DeploymentEnv: t.string().lowCardinality(),
+		ServiceNamespace: t.string().lowCardinality(),
+		HasError: t.uint8(),
+		TraceCount: t.simpleAggregateFunction("sum", t.uint64()),
+		DurationMin: t.simpleAggregateFunction("min", t.uint64()),
+		DurationMax: t.simpleAggregateFunction("max", t.uint64()),
+		DurationQuantiles: t.aggregateFunction("quantilesTDigest(0.5, 0.95)", t.uint64()),
+	},
+	engine: engine.aggregatingMergeTree({
+		partitionKey: "toYYYYMM(Hour)",
+		sortingKey: [
+			"OrgId",
+			"Hour",
+			"ServiceName",
+			"SpanName",
+			"HttpMethod",
+			"HttpStatusCode",
+			"DeploymentEnv",
+			"ServiceNamespace",
+			"HasError",
+		],
+		ttl: "toDate(Hour) + INTERVAL 30 DAY",
+	}),
+})
+
+export type TraceFacetsHourlyRow = InferRow<typeof traceFacetsHourly>
+
+/**
  * All spans for a given trace, re-sorted by TraceId for fast detail lookups.
  * Populated by materialized view, not direct ingestion.
  * Sorting key (OrgId, TraceId, SpanId) enables O(log N) primary-key lookup
