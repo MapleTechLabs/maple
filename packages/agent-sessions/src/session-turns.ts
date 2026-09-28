@@ -491,10 +491,11 @@ function messageText(value: unknown): string | undefined {
 /** The message's first non-empty line, collapsed to one line's worth of text —
  *  or the line after it, when the first is a lead-in. */
 function proseLine(value: string): string | undefined {
-	const lines = value
-		.split("\n")
-		.map((line) => line.trim().replace(/\s+/g, " "))
-		.filter((line) => line.length > 0)
+	const lines: string[] = []
+	for (const rawLine of value.split("\n")) {
+		const line = rawLine.trim().replace(/\s+/g, " ")
+		if (line.length > 0 && lines.push(line) === 2) break
+	}
 	const [first, second] = lines
 	if (first === undefined) return undefined
 	const line = second !== undefined && isLeadIn(first) ? second : first
