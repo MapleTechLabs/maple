@@ -1113,8 +1113,9 @@ fn detect_openrouter(c: &Ctx) -> bool {
     // OpenRouter's own OTLP export (scope and service.name are both
     // "openrouter"). Its `session.id` span attribute echoes the caller-supplied
     // session tag, so calls tagged by a framework the gateway also stamps join
-    // that framework's session.
-    c.scope.openrouter
+    // that framework's session. Every generation, attempt and moderation span
+    // names its operation; the dashboard's "Test Connection" span is bare.
+    c.scope.openrouter && c.ev.has_gen_ai_operation_name
 }
 
 fn detect_llamaindex(c: &Ctx) -> bool {
@@ -1798,6 +1799,27 @@ mod tests {
         assert_eq!(
             attr_value(tool, "gen_ai.tool.call.result").as_deref(),
             Some(r#"{"error":"Syntax error"}"#)
+        );
+    }
+
+    #[test]
+    fn openrouter_connection_test_span_is_not_ai() {
+        // capture `openrouter`: one attribute-less span per "Test Connection"
+        // click, all on trace id 0...01, which became a junk session.
+        assert!(classify(
+            "openrouter",
+            "openrouter-connection-test",
+            &[],
+            &[("service.name", "openrouter")]
+        )
+        .is_none());
+        classified(
+            "openrouter",
+            "provider attempt 1: OpenAI",
+            &[("gen_ai.operation.name", "chat")],
+            &[("service.name", "openrouter")],
+            "openrouter",
+            None,
         );
     }
 
