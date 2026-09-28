@@ -1,4 +1,4 @@
-import { McpInvalidInputError, McpUnavailableError, type McpToolRegistrar } from "./types"
+import { McpInvalidInputError, McpNotReadyError, type McpToolRegistrar } from "./types"
 import { Effect, Schema } from "effect"
 import { AgentFeedbackImpact, AgentFeedbackKind, AgentType } from "@maple/domain/http"
 import { AgentFeedbackPublicId } from "@maple/domain/http/v2"
@@ -7,6 +7,8 @@ import { CurrentMcpTenant } from "../lib/query-warehouse"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
+import { auditAttribution } from "@maple/backend/services/audit/audit-access"
+import { CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
 import { AgentFeedbackService } from "@maple/backend/services/feedback/AgentFeedbackService"
 
 const encodePublicId = Schema.encodeSync(AgentFeedbackPublicId)
@@ -59,9 +61,7 @@ export function registerSubmitFeedbackTool(server: McpToolRegistrar) {
 				AgentType.literals,
 				"coding_agent (Claude Code, Cursor, Codex), chat_assistant, autonomous_agent, ci, or other",
 			),
-			agent_name: P.optionalText(
-				"Your client or agent name, e.g. 'claude-code'. Defaults to the MCP client name from the handshake",
-			),
+			agent_name: P.optionalText("Your client or agent name, e.g. 'claude-code'"),
 			model: P.optionalText("The model you run on, e.g. 'claude-opus-5-5'"),
 			agent_version: P.optionalText("Your client or agent version"),
 		}),
@@ -89,7 +89,7 @@ export function registerSubmitFeedbackTool(server: McpToolRegistrar) {
 					relatedTo: params.related_to,
 					agent: {
 						type: params.agent_type,
-						name: params.agent_name ?? tenant.mcpClientName?.slice(0, LIMITS.label),
+						name: params.agent_name,
 						model: params.model,
 						version: params.agent_version,
 					},
@@ -99,18 +99,19 @@ export function registerSubmitFeedbackTool(server: McpToolRegistrar) {
 					Effect.catchTag(
 						"@maple/http/errors/AgentFeedbackPersistenceError",
 						() =>
-							new McpUnavailableError({
-								message: "Feedback could not be saved right now. Retry in a few seconds.",
-								capability: "agent_feedback",
+							new McpNotReadyError({
+								message: "Feedback could not be saved right now.",
+								retryAfterSeconds: 5,
 							}),
 					),
 				)
 
+			// Same attribution as the executor's `mcp_tool.called` entry: a pinned agent,
+			// an autonomous turn or a chat connector is the actor, not the key's user.
 			const audit = yield* AuditLogService
 			yield* audit.record({
 				orgId: tenant.orgId,
-				actor: { type: "user", userId: tenant.userId },
-				source: "mcp",
+				...auditAttribution(tenant, yield* CurrentAuditActor),
 				action: "agent_feedback.submitted",
 				resourceId: feedback.id,
 				metadata: { kind: feedback.kind, agent_type: feedback.agent.type },

@@ -25,7 +25,7 @@ export const agentFeedback = pgTable(
 		relatedTo: text("related_to"),
 		/** `coding_agent`, `chat_assistant`, `autonomous_agent`, `ci`, `other`. */
 		agentType: text("agent_type").notNull(),
-		/** The client, e.g. `claude-code`, `cursor`. Falls back to the MCP handshake's client name. */
+		/** The client, e.g. `claude-code`, `cursor`, as the agent reported it. */
 		agentName: text("agent_name"),
 		agentModel: text("agent_model"),
 		agentVersion: text("agent_version"),
