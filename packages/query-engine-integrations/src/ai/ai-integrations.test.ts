@@ -274,6 +274,42 @@ describe("legacy aliases", () => {
 		})
 		expect(mapped.isAiSpan).toBe(true)
 	})
+
+	it("unwraps the OpenRouter Broadcast message envelopes", () => {
+		// Trimmed from a Broadcast `LLM Generation` span: the request as
+		// `{messages}`, the reply as `{completion, reasoning}` beside the request.
+		const mapped = mapAiSpan(
+			row({
+				"maple_ai.vendor.id": "openrouter",
+				"gen_ai.prompt":
+					'{"messages":[{"role":"system","content":[{"type":"text","text":"You are Maple AI"}]},{"role":"user","content":"test"}]}',
+				"gen_ai.completion":
+					'{"completion":"Received — Maple AI is responding.","reasoning":"**Responding to a test message**","rawRequest":{"model":"openai/gpt-5.6-luna","stream":true}}',
+			}),
+		)
+
+		expect(mapped.genAi.inputMessages).toEqual([
+			{ role: "system", content: [{ type: "text", text: "You are Maple AI" }] },
+			{ role: "user", content: "test" },
+		])
+		expect(mapped.genAi.outputMessages).toEqual([
+			{
+				role: "assistant",
+				parts: [
+					{ type: "reasoning", content: "**Responding to a test message**" },
+					{ type: "text", content: "Received — Maple AI is responding." },
+				],
+			},
+		])
+
+		// A reply that only called tools has an empty completion.
+		const toolsOnly = mapAiSpan(
+			row({ "gen_ai.completion": '{"completion":"","reasoning":"**Exploring MCP commands**"}' }),
+		)
+		expect(toolsOnly.genAi.outputMessages).toEqual([
+			{ role: "assistant", parts: [{ type: "reasoning", content: "**Exploring MCP commands**" }] },
+		])
+	})
 })
 
 describe("value normalisation", () => {

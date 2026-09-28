@@ -151,8 +151,8 @@ describe("openinference", () => {
 			usageOutputTokens: 38,
 			usageCacheReadInputTokens: 4924,
 			usageReasoningOutputTokens: 12,
-			inputMessages: { messages: [{ role: "user" }] },
-			outputMessages: { messages: [{ role: "assistant" }] },
+			inputMessages: [{ role: "user" }],
+			outputMessages: [{ role: "assistant" }],
 			toolName: "search",
 			toolDescription: "search the docs",
 		})

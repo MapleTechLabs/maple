@@ -190,7 +190,34 @@ export const LEGACY_SYSTEM_VALUES: ReadonlyMap<string, string> = new Map([
 	["xai", "x_ai"],
 ])
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+	typeof value === "object" && value !== null && !Array.isArray(value)
+
+/**
+ * Envelopes a message list arrives in, unwrapped so every reader walks the
+ * documented array: OpenRouter Broadcast sends the request as `{ messages }`
+ * and the reply as `{ completion, reasoning }`, and OpenInference's
+ * `input.value` is often the whole request body around `messages`.
+ */
+const unwrapMessages = (value: unknown): unknown =>
+	isRecord(value) && Array.isArray(value.messages) ? value.messages : value
+
+const unwrapOutputMessages = (value: unknown): unknown => {
+	if (!isRecord(value) || typeof value.completion !== "string") return unwrapMessages(value)
+	const parts = [
+		...(typeof value.reasoning === "string" && value.reasoning !== ""
+			? [{ type: "reasoning", content: value.reasoning }]
+			: []),
+		...(value.completion === "" ? [] : [{ type: "text", content: value.completion }]),
+	]
+	return [{ role: "assistant", parts }]
+}
+
 const genAiRefine = (values: MutableAiGenAiValues, ctx: AiRefineContext): void => {
+	if (values.inputMessages !== undefined) values.inputMessages = unwrapMessages(values.inputMessages)
+	if (values.outputMessages !== undefined)
+		values.outputMessages = unwrapOutputMessages(values.outputMessages)
+
 	// Gated on the canonical key being absent: a span that emits
 	// `gen_ai.provider.name` is already speaking the new vocabulary, and its
 	// values pass through even when they collide with an old enum member.
