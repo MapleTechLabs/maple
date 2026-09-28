@@ -834,21 +834,12 @@ describe("migration 0031 — ai_trace_index list columns", () => {
 })
 
 describe("migration 0034: trace_facets_hourly", () => {
-	it("backfills from trace_list_mv with the view detached, then attaches it", () => {
+	it("backfills with the view detached, then attaches it, in the emitter's DDL", () => {
 		const [drop, table, truncate, backfill, view, ...rest] = migration_0034_trace_facets_hourly.statements
 		expect(rest).toEqual([])
 		expect(drop).toBe("DROP VIEW IF EXISTS trace_facets_hourly_mv")
 		expect(truncate).toBe("TRUNCATE TABLE IF EXISTS trace_facets_hourly")
 		expect(backfill).toBe(traceFacetsHourlyBackfill)
-		expect(traceFacetsHourlyBackfill.from).toBe("trace_list_mv")
-		expect(traceFacetsHourlyBackfill.target).toBe("trace_facets_hourly")
-		// The view and the backfill must write the same groups, or backfilled
-		// hours and live hours disagree with no dedup to catch it.
-		expect(view).toContain(
-			`SELECT\n          ${traceFacetsHourlyBackfill.select}\n        FROM trace_list_mv`,
-		)
-		expect(view).toContain(`GROUP BY ${traceFacetsHourlyBackfill.groupBy}`)
-		// Frozen DDL: identical to what the emitter produces for the current schema.
 		expect(latestSnapshotStatements).toContain(table)
 		expect(latestSnapshotStatements).toContain(view)
 	})

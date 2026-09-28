@@ -876,7 +876,7 @@ CREATE TABLE IF NOT EXISTS trace_facets_hourly (
 ENGINE = AggregatingMergeTree
 PARTITION BY toYYYYMM(Hour)
 ORDER BY (OrgId, Hour, ServiceName, SpanName, HttpMethod, HttpStatusCode, DeploymentEnv, ServiceNamespace, HasError)
-TTL toDate(Hour) + INTERVAL 30 DAY;
+TTL Hour + INTERVAL 30 DAY;
 
 CREATE TABLE IF NOT EXISTS trace_list_mv (
     OrgId LowCardinality(String),

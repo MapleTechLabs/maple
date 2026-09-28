@@ -1046,19 +1046,10 @@ export const traceListMv = defineDatasource("trace_list_mv", {
 export type TraceListMvRow = InferRow<typeof traceListMv>
 
 /**
- * Hourly rollup of `trace_list_mv` over the traces sidebar's facet dimensions,
- * for `tracesFacetsQuery` and `tracesDurationStatsQuery`.
- *
- * Those queries count root spans per facet value over the page's window. On
- * `trace_list_mv` that is a scan of every root span in the window (~14M/day
- * for a busy org), and past about a day it exceeds the 5s discovery budget.
- * The dimensions collapse to a few hundred combinations per org-hour, so the
- * same answer is a read of a few thousand rows here.
- *
- * Every dimension is in the sorting key: on an AggregatingMergeTree a non-key
- * column merges rows together and sums across the values you meant to keep
- * apart. Cascaded off `trace_list_mv`, so the span-name rewrite and the HTTP
- * semconv coalescing are the ones the trace list already filters on.
+ * Hourly rollup of `trace_list_mv` for the traces sidebar facets and duration
+ * stats. Scanning `trace_list_mv` itself (~14M root spans/day for a busy org)
+ * exceeds the 5s discovery budget past about a day; the facet dimensions
+ * collapse to a few hundred rows per org-hour.
  */
 export const traceFacetsHourly = defineDatasource("trace_facets_hourly", {
 	description:
@@ -1092,7 +1083,7 @@ export const traceFacetsHourly = defineDatasource("trace_facets_hourly", {
 			"ServiceNamespace",
 			"HasError",
 		],
-		ttl: "toDate(Hour) + INTERVAL 30 DAY",
+		ttl: "Hour + INTERVAL 30 DAY",
 	}),
 })
 

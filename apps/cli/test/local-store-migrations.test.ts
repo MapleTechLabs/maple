@@ -93,8 +93,8 @@ const [v10ToV11ProductEventsModule] = localStoreMigrations.filter(
 
 describe("current local schema identity", () => {
 	it("matches the generated v24 revision and keeps the issue-297 identity frozen", () => {
-		expect(SCHEMA_FINGERPRINT).toBe("b59c68cd72efa658")
-		expect(SCHEMA_DIGEST).toBe("b59c68cd72efa658d9c5cf602aac7b6cba32947db3d939c03f407c03865be778")
+		expect(SCHEMA_FINGERPRINT).toBe("35f37b2e3c43d610")
+		expect(SCHEMA_DIGEST).toBe("35f37b2e3c43d61046bc05f477b4e16c4f0f2ddb2c9100dc5298699014b5a047")
 		expect(ISSUE_297_TARGET_SCHEMA_PROJECT_REVISION).toBe(
 			"506bc745f7a7eca202ec905a6403a6815e86413faf0cd3cbbf73881023edce91",
 		)
@@ -170,7 +170,8 @@ describe("current local schema identity", () => {
 		// differs solely through those definitions. v9 removes `error_spans` and
 		// its view; v11 replaces `web_events` with `product_events` and adds
 		// `identity_links`; v17 adds `audit_log`, which local mode creates but
-		// never writes; v23 adds `ai_crawler_requests` and its view; v24 adds `trace_facets_hourly` and its view. Asserted as an exact set difference rather than a
+		// never writes; v23 adds `ai_crawler_requests` and its view; v24 adds
+		// `trace_facets_hourly` and its view. Asserted as an exact set difference rather than a
 		// relaxed check, so a future edge still cannot add or drop an object
 		// unnoticed.
 		expect([...v5Names].filter((name) => !currentNames.has(name))).toEqual([
