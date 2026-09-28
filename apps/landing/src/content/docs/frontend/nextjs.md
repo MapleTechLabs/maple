@@ -182,21 +182,32 @@ Span names use the route template, like `navigate /projects/:id`, never the conc
 
 ### The await problem
 
-Browsers have no equivalent of Node's `AsyncLocalStorage`, so OpenTelemetry's web context manager only tracks the active span synchronously. Inside `traced`, a `fetch()` called before the first `await` nests under the span. A `fetch()` called after it starts a new trace:
+In the browser, a span only stays active until the first `await` inside it. A request that starts after an `await` loses its parent and shows up as a separate trace.
 
 ```ts
-// Both requests nest under the span
-traced("load project", () => Promise.all([fetchProject(id), fetchMembers(id)]))
-
-// The second request loses its parent
+// ❌ fetchMembers starts after an await, so it becomes its own trace
 traced("load project", async () => {
 	const project = await fetchProject(id)
-	const members = await fetchMembers(project.id) // new trace
+	const members = await fetchMembers(project.id)
 	return { project, members }
 })
 ```
 
-When a request depends on an earlier one, capture the context before the first `await` with `const ctx = context.active()`, and make the request with `context.with(ctx, () => fetchMembers(project.id))`. Sequential awaits while loading a page are also a request waterfall, so check whether the requests can run in parallel first.
+```ts
+// ✅ Save the context before the first await, and run later requests inside it
+import { context } from "@opentelemetry/api"
+
+traced("load project", async () => {
+	const ctx = context.active()
+	const project = await fetchProject(id)
+	const members = await context.with(ctx, () => fetchMembers(project.id))
+	return { project, members }
+})
+```
+
+If the requests don't depend on each other, start them together with `Promise.all` instead. Both nest under the span, and the page stops waiting on one request before starting the next.
+
+This happens because browsers have no equivalent of Node's `AsyncLocalStorage`, which is what carries the active span across `await` on the server.
 
 ## Trace App Router navigations
 
