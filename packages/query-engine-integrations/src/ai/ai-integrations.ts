@@ -172,6 +172,9 @@ const GENAI_LEGACY_ALIASES = {
 	inputMessages: ["gen_ai.prompt"],
 	outputMessages: ["gen_ai.completion"],
 	providerName: ["gen_ai.system"],
+	// LangSmith's OTel export names the LangChain agent that ran every span of
+	// its run here, and carries no `gen_ai.agent.name`.
+	agentName: ["langsmith.metadata.lc_agent_name"],
 	requestSeed: ["gen_ai.openai.request.seed"],
 	responseFinishReasons: ["gen_ai.response.finish_reason"],
 	// The semconv's metric name, which Pydantic AI and the Vercel AI SDK v7 also

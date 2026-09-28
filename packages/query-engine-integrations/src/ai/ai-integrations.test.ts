@@ -201,6 +201,8 @@ describe("legacy aliases", () => {
 		// where the catalog's primary keeps the Anthropic-era `cache_creation`.
 		["gen_ai.usage.cache_write.input_tokens", "512", "usageCacheCreationInputTokens", 512],
 		["gen_ai.usage.total_cost", "0.00130795", "usageCost", 0.00130795],
+		// LangSmith's OTel export: the LangChain agent's name, on every span of its run.
+		["langsmith.metadata.lc_agent_name", "assistant", "agentName", "assistant"],
 	]
 
 	for (const [key, value, field, expected] of cases) {

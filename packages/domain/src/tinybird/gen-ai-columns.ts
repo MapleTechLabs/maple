@@ -101,8 +101,13 @@ export const GENAI_MODEL_KEYS = [
 /** The agent that owns the span. `ai.telemetry.functionId` is the name an app
  *  gave a traced Vercel AI SDK call — the only agent identity an older-SDK span
  *  has, and in production the same value the sibling `invoke_agent` span puts in
- *  `gen_ai.agent.name`. */
-export const GENAI_AGENT_NAME_KEYS = ["gen_ai.agent.name", "ai.telemetry.functionId"] as const
+ *  `gen_ai.agent.name`. `langsmith.metadata.lc_agent_name` is the LangChain
+ *  agent LangSmith's OTel export names on every span of its run. */
+export const GENAI_AGENT_NAME_KEYS = [
+	"gen_ai.agent.name",
+	"ai.telemetry.functionId",
+	"langsmith.metadata.lc_agent_name",
+] as const
 
 /** The tool an `execute_tool` span ran. */
 export const GENAI_TOOL_NAME_KEYS = ["gen_ai.tool.name", "ai.toolCall.name", "tool.name"] as const
