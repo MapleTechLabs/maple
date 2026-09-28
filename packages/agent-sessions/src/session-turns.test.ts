@@ -226,6 +226,21 @@ describe("buildSessionTurns", () => {
 		expect(buildSessionSummary({ spans, turns }).title).toBe("Produce a mini briefing about Amsterdam")
 	})
 
+	// A pause after it says the invocation stood on its own: folding it would
+	// read the pause as a stall inside the next turn.
+	it("keeps a workless anchor followed by a pause as its own turn", () => {
+		const turns = buildSessionTurns([
+			agentSpan({ spanId: "quiet", startMs: 0, durationMs: SECOND }),
+			agentSpan({ spanId: "busy", startMs: 60 * SECOND, durationMs: 10 * SECOND }),
+			llmSpan({ spanId: "chat", parentSpanId: "busy", startMs: 61 * SECOND, durationMs: SECOND }),
+		])
+
+		expect(turns.map((turn) => turn.spans.map((span) => span.spanId))).toEqual([
+			["quiet"],
+			["busy", "chat"],
+		])
+	})
+
 	it("falls back to root agent invocations when no conversation id exists", () => {
 		const turns = buildSessionTurns([
 			agentSpan({ spanId: "agent-1", startMs: 0, durationMs: 10 * SECOND }),

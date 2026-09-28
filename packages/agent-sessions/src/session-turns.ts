@@ -164,6 +164,9 @@ export interface SessionTurn {
 }
 
 const WORK_CATEGORIES: ReadonlySet<AiSpanCategory> = new Set(["inference", "tool"])
+/** How soon before the next turn a workless anchor must end to be its setup:
+ *  the pause the session summary starts calling idle. */
+const SETUP_LEAD_MAX_MS = 5_000
 
 interface TurnAnchor {
 	readonly span: AiSessionSpan
@@ -221,12 +224,13 @@ export function buildSessionTurns(spans: readonly AiSessionSpan[]): readonly Ses
 	}
 
 	// On rules 2 and 3 the boundary is a guess, and an anchor that opened no
-	// work — no model or tool call, no prompt, nothing failed — is not a turn:
-	// Microsoft Agent Framework's one-span `workflow.build` trace ahead of its
-	// `workflow.run` became an empty turn 1 that also took the session's title.
-	// Its spans join the next turn, as spans before the first anchor join turn 1;
-	// the cursor filled the buckets in start order, so they stay in it. A session
-	// with no work anywhere keeps its anchors.
+	// work — no model or tool call, no prompt, nothing failed — right before the
+	// next turn is that turn's setup: Microsoft Agent Framework's one-span
+	// `workflow.build` trace ahead of its `workflow.run` became an empty turn 1
+	// that also took the session's title. Its spans join the next turn, as spans
+	// before the first anchor join turn 1; the cursor filled the buckets in start
+	// order, so they stay in it. One followed by a pause is left alone, and a
+	// session with no work anywhere keeps its anchors.
 	const opened = (bucket: readonly AiSessionSpan[]) =>
 		bucket.some(
 			(span) =>
@@ -236,8 +240,16 @@ export function buildSessionTurns(spans: readonly AiSessionSpan[]): readonly Ses
 		)
 	if (anchors[0]?.kind !== "conversation" && buckets.some(opened)) {
 		for (let i = 0; i < buckets.length - 1; i++) {
-			if (opened(buckets[i])) continue
-			buckets[i + 1] = [...buckets[i], ...buckets[i + 1]]
+			const bucket = buckets[i]
+			const next = buckets[i + 1]
+			if (opened(bucket)) continue
+			const endMs = bucket.reduce(
+				(max, span) => Math.max(max, spanEndMs(span)),
+				Number.NEGATIVE_INFINITY,
+			)
+			if (next[0] !== undefined && spanStartMs(next[0]) - endMs > SETUP_LEAD_MAX_MS) continue
+			for (const span of next) bucket.push(span)
+			buckets[i + 1] = bucket
 			buckets[i] = []
 		}
 	}
