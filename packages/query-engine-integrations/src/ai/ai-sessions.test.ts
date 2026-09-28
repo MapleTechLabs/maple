@@ -1380,6 +1380,10 @@ describe("aiSessionSummaryQuery", () => {
 		expect(sql).toContain(
 			"coalesce(nullIf(SpanAttributes['maple_ai.turn.id'], ''), nullIf(SpanAttributes['gen_ai.conversation.id'], ''), nullIf(SpanAttributes['eve.turn.id'], ''), '')",
 		)
+		// And the CrewAI role the crewai refine lifts into the agent name.
+		expect(sql).toContain(
+			"if(SpanAttributes['maple_ai.vendor.id'] = 'crewai', SpanAttributes['graph.node.id'], '')",
+		)
 	})
 
 	it("reads usage across every vendor spelling, per call and in total", () => {

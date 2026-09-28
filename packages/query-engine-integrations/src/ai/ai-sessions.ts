@@ -157,6 +157,7 @@ import {
 	MAPLE_NATIVE_TURN_ID_ATTR,
 	type AiGenAiField,
 } from "@maple/domain/gen-ai"
+import { CREWAI_AGENT_NAME_KEY } from "@maple/domain/tinybird/gen-ai-columns"
 import { aiFieldSourceKeys, aiSpanAttributeKeys } from "./ai-integrations"
 import {
 	childClaimsExpr,
@@ -1614,7 +1615,11 @@ const summaryMeasures_ = ($: SpanColumns) => {
 	// Response model first, request model second — `spanModel` on the page.
 	const model = attr([...aiFieldSourceKeys("responseModel"), ...aiFieldSourceKeys("requestModel")])
 	const toolName = field("toolName")
-	const agentName = field("agentName")
+	// What `crewAiIntegration` lifts into the field, under the index's vendor gate.
+	const agentName = CH.coalesce(
+		CH.nullIf(field("agentName"), ""),
+		CH.if_(vendorId.eq("crewai"), $.SpanAttributes.get(CREWAI_AGENT_NAME_KEY), CH.lit("")),
+	)
 	const isLlmCall = operation.in_(...AI_INFERENCE_OPERATIONS).or(
 		operation
 			.notIn(...AI_RETRIEVAL_OPERATIONS, ...AI_TOOL_OPERATIONS, ...AI_AGENT_OPERATIONS)
