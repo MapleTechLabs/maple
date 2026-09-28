@@ -1222,9 +1222,12 @@ fn detect_effect_ai(c: &Ctx) -> bool {
 }
 
 fn detect_spring_ai(c: &Ctx) -> bool {
+    // A model starter's chat span carries only `gen_ai.*`, with its own
+    // provider as `gen_ai.system`; the Boot scope is shared with the HTTP
+    // spans, which have no operation name.
     c.ev.spring_ai
         || c.ev.gen_ai_system == "spring_ai"
-        || (c.scope.spring_boot && c.ev.gen_ai_system == "openai")
+        || (c.scope.spring_boot && c.ev.has_gen_ai_operation_name)
 }
 
 fn detect_vercel_ai_sdk(c: &Ctx) -> bool {
@@ -2084,7 +2087,30 @@ mod tests {
     }
 
     #[test]
-    fn spring_ai_boot_scope_needs_the_openai_system() {
+    fn spring_ai_chat_spans_of_any_model_starter() {
+        // docs_spring-ai_a: a chat call without tools has no `spring.ai.*`
+        // key. The Anthropic starter writes `gen_ai.system=anthropic`.
+        for system in ["openai", "anthropic"] {
+            classified(
+                "org.springframework.boot",
+                "chat claude-haiku-4.5",
+                &[("gen_ai.operation.name", "chat"), ("gen_ai.system", system)],
+                &[],
+                "spring_ai",
+                None,
+            );
+        }
+        assert!(classify(
+            "org.springframework.boot",
+            "POST",
+            &[("http.request.method", "POST")],
+            &[]
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn spring_ai_chat_client_carries_the_conversation_id() {
         classified(
             "org.springframework.boot",
             "chat",
