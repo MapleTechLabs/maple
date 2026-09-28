@@ -488,6 +488,11 @@ function messageText(value: unknown): string | undefined {
 	return undefined
 }
 
+/** A framework's own heading over the prompt, which names what follows rather
+ *  than saying it: smolagents opens every task with "New task:". Matched
+ *  literally, since a user's "Fix this:" over pasted code is the prompt. */
+const LEAD_IN = /^new task:$/i
+
 /** The message's first non-empty line, collapsed to one line's worth of text —
  *  or the line after it, when the first is a lead-in. */
 function proseLine(value: string): string | undefined {
@@ -498,14 +503,8 @@ function proseLine(value: string): string | undefined {
 	}
 	const [first, second] = lines
 	if (first === undefined) return undefined
-	const line = second !== undefined && isLeadIn(first) ? second : first
+	const line = second !== undefined && LEAD_IN.test(first) ? second : first
 	return line.length > MAX_LABEL_LENGTH ? `${line.slice(0, MAX_LABEL_LENGTH - 1)}…` : line
-}
-
-/** A short line ending in a colon names what follows rather than saying it:
- *  smolagents opens every task with "New task:". */
-function isLeadIn(line: string): boolean {
-	return line.endsWith(":") && line.split(" ").length <= 3
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

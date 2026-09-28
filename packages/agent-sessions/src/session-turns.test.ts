@@ -597,13 +597,11 @@ describe("turn labels", () => {
 
 	// smolagents sends every task as "New task:\n<task>", so every turn and the
 	// session title read "New task:".
-	it("reads past a short lead-in ending in a colon", () => {
+	it("reads past smolagents' lead-in", () => {
 		expect(labelFor([{ role: "user", content: "New task:\nWhat is 17 * 23?" }])).toBe("What is 17 * 23?")
 		expect(labelFor([{ role: "user", content: "New task:" }])).toBe("New task:")
-		// A sentence that ends in a colon is the prompt itself.
-		expect(labelFor([{ role: "user", content: "Rename these files to kebab case:\na.ts" }])).toBe(
-			"Rename these files to kebab case:",
-		)
+		// A user's own line ending in a colon is the prompt itself.
+		expect(labelFor([{ role: "user", content: "Fix this:\n```ts" }])).toBe("Fix this:")
 	})
 
 	// Vendors write "User" as readily as "user", and the transcript's own row
