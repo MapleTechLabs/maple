@@ -11,7 +11,9 @@ import FrontendTrace from "../../components/blog/demos/FrontendTrace.astro"
 
 A user tells you the project page is slow. You open your API dashboard, and `GET /api/projects/{id}` has a p95 of 120ms. Both of those are true, and your backend traces can't explain the gap, because they start when the request reaches your server.
 
-Everything before that is invisible from the backend: the route change, the loader that fired three requests one after another, the network, the render. That's often where the time goes.
+Everything before that is invisible from the backend: the route change, the loader that fired three requests one after another, the network, the render. That's often where the time goes. Here's what the same complaint looks like once the browser is traced too:
+
+<FrontendTrace />
 
 This guide covers tracing that part. We'll set up browser tracing, connect it to your backend traces, instrument route navigations and data loaders in a TanStack Router app, and catch the errors your framework swallows. The examples use Maple's browser SDK, but everything underneath is OpenTelemetry, and the problems in the first half apply whichever backend you send spans to.
 
@@ -81,9 +83,7 @@ The ingest key is a public key, so it's safe in browser code. It can only write 
 
 ## Step 2: connect browser traces to backend traces
 
-This is the step that makes frontend tracing worth doing. Once the browser's `fetch` span sends a `traceparent` header and your backend reads it, the browser and backend spans land in one trace:
-
-<FrontendTrace />
+This is the step that makes frontend tracing worth doing. Once the browser's `fetch` span sends a `traceparent` header and your backend reads it, the browser and backend spans land in one trace, like the one at the top of this guide.
 
 For requests to the same origin as the page, the header is sent automatically. If your API lives on another origin, list it:
 
@@ -106,7 +106,7 @@ Only list your own APIs. Sending `traceparent` to a third party leaks your trace
 
 Your backend has to be instrumented with OpenTelemetry too. Every OpenTelemetry HTTP server instrumentation reads `traceparent` out of the box. If you haven't set one up yet, the [Node.js guide](/docs/guides/instrumentation-nodejs) covers it.
 
-One thing to expect in the waterfall: browser and server clocks disagree. The browser's timestamps come from the user's machine, so a server span can appear to start a few milliseconds before the fetch that caused it. The durations are right; the offsets between the two sides are approximate.
+One thing to expect in the waterfall: browser and server clocks disagree. The browser's timestamps come from the user's machine, so a server span can appear to start a few milliseconds before the fetch that caused it. It gets worse with laptops, because the browser's high-resolution clock pauses while the machine sleeps, and a tab that was asleep can report timestamps that are minutes off. The durations are right; the offsets between the two sides are approximate.
 
 ## Step 3: trace route navigations and data loaders
 
@@ -124,6 +124,9 @@ const tracer = trace.getTracer("acme-web")
 let navigation: { span: Span; kind: "pageload" | "navigate" } | undefined
 
 export function traceNavigations(router: AnyRouter) {
+	// The router also emits navigation events while rendering on the server
+	if (typeof window === "undefined") return
+
 	router.subscribe("onBeforeNavigate", ({ fromLocation, toLocation, hrefChanged }) => {
 		// router.invalidate() reruns loaders without going anywhere
 		if (fromLocation && !hrefChanged) return
@@ -208,7 +211,7 @@ loader: ({ params }) =>
 	})
 ```
 
-If a request really does depend on the previous one, capture the context up front and pass it back in with `context.with(ctx, () => fetchMembers(project.id))`. But look at the loader first. Two sequential awaits in a loader is a request waterfall, and it's often exactly the slowness you were trying to find.
+If a request really does depend on the previous one, capture the context up front with `const ctx = context.active()` and call it as `context.with(ctx, () => fetchMembers(project.id))`. But look at the loader first. Sequential awaits in a loader are a request waterfall, and that's often exactly the slowness you were trying to find. The trace at the top of this guide is one: three healthy API calls, made one after another.
 
 Two more things to know. Loaders also run when TanStack Router preloads a route on hover. There's no navigation in progress then, so those loader spans show up as their own traces, and that's accurate. And the same pattern works in React Router, Vue Router, or anything else that tells you when a navigation starts and ends; only the event names change.
 
@@ -240,7 +243,69 @@ If you use React error boundaries of your own, do the same in their `componentDi
 
 ## Step 5: trace server-side rendering (TanStack Start)
 
-TODO(research): SSR section.
+If you use TanStack Start, the first page load is rendered on the server, and that render is part of what the user waits for. Tracing it closes the last gap: a slow first load could be a slow loader on the server, a slow render, or slow JavaScript in the browser, and without server spans you can only see the last one.
+
+It also helps anyone debugging with an AI agent. An agent that can see "the server render of `/projects/$projectId` took 900ms, 700ms of it in one loader" has something concrete to fix; an agent that only sees a slow page load has to guess.
+
+Start with the OpenTelemetry Node SDK on the server, set up as in the [Node.js guide](/docs/guides/instrumentation-nodejs) and imported before anything else in your server entry. That gives you a span for every incoming request, plus spans for database and HTTP calls your loaders make. Then add a span around the render itself in `src/server.ts`:
+
+```ts
+// src/server.ts
+import "./instrumentation" // starts the OpenTelemetry Node SDK; must load first
+import { context, propagation, trace } from "@opentelemetry/api"
+import { createStartHandler, defaultStreamHandler, defineHandlerCallback } from "@tanstack/react-start/server"
+import { createServerEntry } from "@tanstack/react-start/server-entry"
+
+const tracer = trace.getTracer("acme-web")
+
+const handler = defineHandlerCallback((ctx) => {
+	// Loaders have already run by now, so the matched route is known
+	const leaf = ctx.router.state.matches.at(-1)
+
+	return tracer.startActiveSpan(`ssr ${leaf?.fullPath ?? "unknown"}`, async (span) => {
+		// Hand this trace to the browser so its pageload span can join it
+		const carrier: Record<string, string> = {}
+		propagation.inject(context.active(), carrier)
+		if (carrier.traceparent) {
+			ctx.responseHeaders.append("server-timing", `traceparent;desc="${carrier.traceparent}"`)
+		}
+
+		try {
+			return await defaultStreamHandler(ctx)
+		} finally {
+			span.end()
+		}
+	})
+})
+
+export default createServerEntry({ fetch: createStartHandler(handler) })
+```
+
+The `traced()` helper from step 3 works on the server as well, and it works better there: Node has `AsyncLocalStorage`, so fetches after an `await` keep their parent. Your loader spans show up under the request span without any changes.
+
+The `server-timing` header connects the two halves of a page load. The server writes its trace context into the response, and the browser reads it back from the Navigation Timing API to parent its `pageload` span:
+
+```ts
+// src/tracing.ts
+function serverContext() {
+	const [page] = performance.getEntriesByType("navigation") as PerformanceNavigationTiming[]
+	const traceparent = page?.serverTiming.find((entry) => entry.name === "traceparent")?.description
+	return traceparent ? propagation.extract(context.active(), { traceparent }) : context.active()
+}
+
+// in onBeforeNavigate, parent only the first page load to the server
+const span = tracer.startSpan(
+	kind,
+	{ attributes: { "url.path": toLocation.pathname } },
+	kind === "pageload" ? serverContext() : context.active(),
+)
+```
+
+You'll often see this done with a `<meta name="traceparent">` tag instead, which is what OpenTelemetry's document-load instrumentation reads. Both work. The header keeps it out of the rendered HTML, so the server and client versions of your `<head>` can't disagree during hydration.
+
+Two caveats. Only parent the `pageload` span this way; later navigations are new work and belong in their own traces, and attaching minutes of browsing to one server request makes that trace meaningless. And if a CDN caches your HTML, it caches the header too, so every visitor would join the same old trace. Skip the header on cached responses.
+
+One more thing to know about the `ssr` span: `defaultStreamHandler` returns as soon as React starts streaming, so the span measures the time to the first byte of HTML, not the time to the last. That's usually the number you want.
 
 ## What this setup doesn't cover
 
@@ -260,7 +325,7 @@ Collecting traces, errors, session replays, and performance metrics from the cod
 
 ### Can OpenTelemetry trace a browser application?
 
-Yes. OpenTelemetry's JavaScript SDK has a web tracer and instrumentations for `fetch`, `XMLHttpRequest`, and document load. Browser support is younger than the server SDKs, and the biggest gap is async context: the default context manager loses the active span after an `await`.
+Yes. OpenTelemetry's JavaScript SDK has a web tracer and instrumentations for `fetch`, `XMLHttpRequest`, and document load. Browser support is still marked experimental, and the biggest gap is async context: the default context manager loses the active span after an `await`. A dedicated browser SIG is working on sessions, navigation events, and Web Vitals conventions.
 
 ### Why are my browser and backend spans in separate traces?
 

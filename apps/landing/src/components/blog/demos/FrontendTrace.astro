@@ -1,7 +1,7 @@
 ---
 /**
  * FrontendTrace — one client-side navigation traced end to end: the router
- * span, the loader, the fetch it makes, and the backend spans that joined the
+ * span, the loader, the fetches it makes, and the backend spans that joined the
  * same trace through `traceparent`. Static; styles follow TraceComparison.
  */
 
@@ -14,16 +14,18 @@ interface SpanRow {
 	note?: string;
 }
 
-const TOTAL_MS = 820;
+const TOTAL_MS = 840;
 const INDENT_PX = 14;
 
 const rows: SpanRow[] = [
-	{ service: "acme-web", op: "navigate /projects/$projectId", startMs: 0, durationMs: 820, depth: 0 },
-	{ service: "acme-web", op: "loader /projects/$projectId", startMs: 6, durationMs: 634, depth: 1 },
-	{ service: "acme-web", op: "GET", startMs: 14, durationMs: 612, depth: 2 },
-	{ service: "acme-api", op: "GET /api/projects/{id}", startMs: 62, durationMs: 518, depth: 3 },
-	{ service: "postgres", op: "SELECT projects", startMs: 70, durationMs: 11, depth: 4 },
-	{ service: "postgres", op: "SELECT project_members", startMs: 88, durationMs: 471, depth: 4, note: "the slow part" },
+	{ service: "acme-web", op: "navigate /projects/$projectId", startMs: 0, durationMs: 840, depth: 0 },
+	{ service: "acme-web", op: "loader /projects/$projectId", startMs: 4, durationMs: 590, depth: 1 },
+	{ service: "acme-web", op: "GET", startMs: 10, durationMs: 180, depth: 2 },
+	{ service: "acme-api", op: "GET /api/projects/{id}", startMs: 52, durationMs: 118, depth: 3 },
+	{ service: "acme-web", op: "GET", startMs: 196, durationMs: 190, depth: 2 },
+	{ service: "acme-api", op: "GET /api/projects/{id}/members", startMs: 240, durationMs: 122, depth: 3 },
+	{ service: "acme-web", op: "GET", startMs: 392, durationMs: 196, depth: 2 },
+	{ service: "acme-api", op: "GET /api/projects/{id}/activity", startMs: 436, durationMs: 124, depth: 3, note: "one after another" },
 ];
 
 const orderedServices = Array.from(new Set(rows.map((r) => r.service)));
@@ -36,7 +38,7 @@ function serviceColor(name: string): string {
 <figure class="ftrace">
 	<div class="ftrace__frame">
 		<div class="ftrace__head">
-			<span class="ftrace__title">One click on a project link · 820ms · browser to database</span>
+			<span class="ftrace__title">One click on a project link · 840ms · browser to API</span>
 		</div>
 		<div class="ftrace__panel">
 			<div class="ftrace__scroll">
@@ -67,14 +69,14 @@ function serviceColor(name: string): string {
 				</div>
 			</div>
 			<p class="ftrace__note">
-				The fetch took 612ms and the API spent 518ms of it, so about 90ms was network. The last 180ms after the
-				loader is React rendering the page.
+				Each API call takes about 120ms, so the backend looks healthy. The loader makes three of them one after
+				another, each with about 60ms of network on top, and React needs another 250ms to render the result.
 			</p>
 		</div>
 	</div>
 	<figcaption class="ftrace__cap">
-		The first three rows come from the browser, the rest from the backend. They share a trace because the fetch
-		sent a <code>traceparent</code> header.
+		The <code>acme-web</code> rows come from the browser, the <code>acme-api</code> rows from the backend. They are
+		one trace because every fetch sent a <code>traceparent</code> header.
 	</figcaption>
 </figure>
 
