@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Effect, Schema } from "effect"
+import { Effect, Layer, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { OrgId, UserId } from "@maple/domain/http"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
@@ -13,7 +13,9 @@ const OTHER_ORG = Schema.decodeUnknownSync(OrgId)("org_other")
 const USER = Schema.decodeUnknownSync(UserId)("user_feedback")
 
 const provide = <A, E>(effect: Effect.Effect<A, E, AgentFeedbackService>) =>
-	effect.pipe(Effect.provide(AgentFeedbackService.layer), Effect.provide(createTestDb(trackedDbs).layer))
+	effect.pipe(
+		Effect.provide(AgentFeedbackService.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer))),
+	)
 
 describe("AgentFeedbackService", () => {
 	it.effect("stores the kind, agent and reason, and normalizes blank optionals to null", () =>

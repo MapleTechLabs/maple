@@ -20,6 +20,7 @@ import {
 } from "@maple/domain/organization-regions"
 import {
 	actors,
+	agentFeedback,
 	alertDeliveryEvents,
 	alertDestinations,
 	alertIncidents,
@@ -85,6 +86,7 @@ const toProviderError = (error: unknown) =>
 	})
 
 const ORG_SCOPED_TABLES = [
+	agentFeedback,
 	dashboardVersions,
 	dashboards,
 	alertDeliveryEvents,
