@@ -175,6 +175,20 @@ describe("spanMessages", () => {
 			genAi: { outputMessages: [chunk("The"), chunk(" capital")] },
 		})
 		expect(spanMessages(unfinished)).toHaveLength(2)
+
+		// A message that names no finish reason is not an aggregate either.
+		const unmarked = llmSpan({
+			spanId: "l3",
+			startMs: 0,
+			durationMs: 1000,
+			genAi: {
+				outputMessages: [
+					chunk("The"),
+					{ role: "assistant", parts: [{ type: "text", content: "x" }] },
+				],
+			},
+		})
+		expect(spanMessages(unmarked)).toHaveLength(2)
 	})
 
 	it("captures nothing when nothing was captured — the ordinary case", () => {

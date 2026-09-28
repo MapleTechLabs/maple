@@ -334,8 +334,10 @@ function parseMessages(value: unknown, origin: SpanMessage["origin"]): readonly 
  * there to stand for them.
  */
 function withoutStreamedChunks(entries: readonly unknown[]): readonly unknown[] {
-	const finished = entries.filter((entry) => !(isRecord(entry) && entry.finish_reason === ""))
-	return finished.length > 0 ? finished : entries
+	const aggregated = entries.some(
+		(entry) => isRecord(entry) && typeof entry.finish_reason === "string" && entry.finish_reason !== "",
+	)
+	return aggregated ? entries.filter((entry) => !(isRecord(entry) && entry.finish_reason === "")) : entries
 }
 
 function messageParts(message: Record<string, unknown>): readonly SpanMessagePart[] {
