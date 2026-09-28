@@ -15,7 +15,13 @@ Everything before that is invisible from the backend: the route change, the load
 
 <FrontendTrace />
 
-This guide covers tracing that part. We'll set up browser tracing, connect it to your backend traces, trace route navigations and data loading, and catch the errors your framework swallows. The setup here works with any framework, and there's a [follow-up guide for each popular one](#framework-guides). The examples use Maple's browser SDK, but everything underneath is OpenTelemetry, and the problems in the first half apply whichever backend you send spans to.
+This guide shows how to trace that part. Where to start depends on what you want:
+
+- **Let your coding agent set it up:** copy the [prompt below](#quick-setup-with-a-coding-agent).
+- **TanStack, React Router, Next.js, Vue, SvelteKit, or Angular:** do steps 1 to 3 here, then continue with your [framework guide](#framework-guides).
+- **Any other framework:** follow all the steps on this page.
+
+The examples use Maple's browser SDK, but everything underneath is OpenTelemetry.
 
 ## Quick setup with a coding agent
 
