@@ -147,13 +147,13 @@ describe("value decoding", () => {
 		expect(mapped.genAi.toolCallId).toBe("call_uKgzomwVJhP3bYZ0fxvwUe86")
 	})
 
-	it("yields no field for malformed JSON rather than throwing", () => {
+	it("keeps malformed JSON as its raw text rather than throwing", () => {
 		// One truncated attribute must not cost the caller the rest of the span.
 		const mapped = mapAiSpan(
 			row({ "gen_ai.tool.call.arguments": '{"emoji":', "gen_ai.tool.name": "add_reaction" }),
 		)
 
-		expect(mapped.genAi.toolCallArguments).toBeUndefined()
+		expect(mapped.genAi.toolCallArguments).toBe('{"emoji":')
 		expect(mapped.genAi.toolName).toBe("add_reaction")
 	})
 
@@ -162,12 +162,35 @@ describe("value decoding", () => {
 		expect(mapAiSpan(row({ "gen_ai.request.model": "   " })).genAi.requestModel).toBeUndefined()
 	})
 
-	it("keeps only objects and arrays for a JSON field", () => {
-		// `"null"`, `"0"` and `"false"` all parse cleanly into values that would
-		// reach the UI where a message list belongs.
+	it("treats JSON null as not captured", () => {
 		expect(mapAiSpan(row({ "gen_ai.input.messages": "null" })).genAi.inputMessages).toBeUndefined()
-		expect(mapAiSpan(row({ "gen_ai.input.messages": "0" })).genAi.inputMessages).toBeUndefined()
-		expect(mapAiSpan(row({ "gen_ai.input.messages": "false" })).genAi.inputMessages).toBeUndefined()
+	})
+
+	it("keeps plain-text values of a JSON field as their text", () => {
+		// Real values from the verification captures: an OpenAI Agents tool that
+		// returns a string, one that returns a number, and Mastra's system prompt.
+		// The convention types tool payloads as any value, so none is malformed.
+		const tool = mapAiSpan(
+			row({
+				"gen_ai.tool.name": "delete_file",
+				"gen_ai.tool.call.arguments": '{"path":"/tmp/scratch-notes.txt"}',
+				"gen_ai.tool.call.result": "deleted /tmp/scratch-notes.txt",
+			}),
+		)
+		expect(tool.genAi.toolCallArguments).toEqual({ path: "/tmp/scratch-notes.txt" })
+		expect(tool.genAi.toolCallResult).toBe("deleted /tmp/scratch-notes.txt")
+
+		expect(mapAiSpan(row({ "gen_ai.tool.call.result": "391" })).genAi.toolCallResult).toBe("391")
+		expect(mapAiSpan(row({ "gen_ai.tool.call.arguments": '"Berlin"' })).genAi.toolCallArguments).toBe(
+			"Berlin",
+		)
+		expect(
+			mapAiSpan(
+				row({
+					"gen_ai.system_instructions": "You are a concise assistant. Use tools when relevant.",
+				}),
+			).genAi.systemInstructions,
+		).toBe("You are a concise assistant. Use tools when relevant.")
 	})
 
 	it("falls through to the next alias when the first key does not decode", () => {

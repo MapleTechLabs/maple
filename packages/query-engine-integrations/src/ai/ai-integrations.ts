@@ -111,10 +111,15 @@ const decodeAttribute = (type: AiFieldDef["type"], raw: string): unknown => {
 		case "stringArray":
 			return decodeStringArray(raw)
 		case "json": {
-			// Objects and arrays only: `"null"`, `"0"` and `"false"` parse cleanly
-			// into values that would reach the UI where a message list belongs.
+			// The convention types tool arguments and results as any value, and
+			// emitters put plain text in these slots (a tool's string return, an
+			// error message, a bare system prompt). Anything that is not a JSON
+			// object or array is kept as its text; JSON `null` is the one value
+			// that means nothing was captured.
 			const parsed = parseJson(raw)
-			return parsed !== null && typeof parsed === "object" ? parsed : undefined
+			if (parsed === null) return undefined
+			if (typeof parsed === "object" || typeof parsed === "string") return parsed
+			return raw
 		}
 		default: {
 			// A field type added to the catalog without a case here would otherwise
