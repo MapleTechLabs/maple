@@ -441,6 +441,7 @@ struct SpanEvidence<'a> {
     coding_agent: bool,
     logfire_json_schema: bool,
     gen_ai_agent_call_id: bool,
+    gen_ai_event_start_time: bool,
     operation_cost: bool,
     model_request_parameters: bool,
     sk_available_functions: bool,
@@ -613,6 +614,7 @@ fn absorb_key<'a>(ev: &mut SpanEvidence<'a>, attr: &'a KeyValue, b0: u8) {
                         }
                     }
                     "agent.call.id" => ev.gen_ai_agent_call_id = true,
+                    "event.start_time" => ev.gen_ai_event_start_time = true,
                     "execute_tool.duration" => ev.gen_ai_execute_tool_duration = true,
                     _ if rest.starts_with("aggregated_usage.") => {
                         ev.gen_ai_aggregated_usage = true;
@@ -1204,8 +1206,11 @@ fn detect_strands(c: &Ctx) -> bool {
         || c.ev.gen_ai_provider_name == "strands-agents"
         || (c.ev.event_loop && c.ev.has_gen_ai_operation_name)
         // The TypeScript SDK names its tracer and its provider after the
-        // service, so a custom `service.name` replaces "strands-agents".
-        || (c.scope.matches_service_name
+        // service, so a custom `service.name` replaces "strands-agents". Its
+        // non-semconv `gen_ai.event.start_time` tells it from an app that
+        // names its own tracer and provider the same way.
+        || (c.ev.gen_ai_event_start_time
+            && c.scope.matches_service_name
             && (c.ev.gen_ai_provider_name == c.resource.service_name
                 || c.ev.gen_ai_system == c.resource.service_name))
 }
@@ -2039,8 +2044,10 @@ mod tests {
 
     #[test]
     fn strands_typescript_is_detected_under_a_custom_service_name() {
-        // docs_strands_ts: tracer and provider are both named after the service.
+        // docs_strands_ts: tracer and provider are both named after the
+        // service, and every span carries `gen_ai.event.start_time`.
         let resource = [("service.name", "docs-verify-strands-ts")];
+        let start = ("gen_ai.event.start_time", "2026-09-28T10:00:00Z");
         classified(
             "docs-verify-strands-ts",
             "invoke_agent support_agent",
@@ -2048,6 +2055,7 @@ mod tests {
                 ("gen_ai.operation.name", "invoke_agent"),
                 ("gen_ai.provider.name", "docs-verify-strands-ts"),
                 ("session.id", "st-ts"),
+                start,
             ],
             &resource,
             "strands",
@@ -2060,6 +2068,7 @@ mod tests {
             &[
                 ("gen_ai.operation.name", "chat"),
                 ("gen_ai.system", "docs-verify-strands-ts"),
+                start,
             ],
             &resource,
             "strands",
@@ -2072,8 +2081,22 @@ mod tests {
             &[
                 ("gen_ai.operation.name", "chat"),
                 ("gen_ai.provider.name", "openai"),
+                start,
             ],
             &resource,
+            "unknown:genai",
+            None,
+        );
+        // Nor is an app that names tracer and provider after its service but
+        // lacks the Strands key.
+        classified(
+            "my-agent",
+            "chat",
+            &[
+                ("gen_ai.operation.name", "chat"),
+                ("gen_ai.provider.name", "my-agent"),
+            ],
+            &[("service.name", "my-agent")],
             "unknown:genai",
             None,
         );
