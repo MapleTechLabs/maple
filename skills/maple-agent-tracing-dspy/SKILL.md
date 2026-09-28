@@ -241,8 +241,9 @@ Run one conversation of 2-3 messages with the same conversation id (one using a 
 - Model calls named `LM.__call__`, each with model, input and output tokens, and cost where DSPy knows the price. The LLM call count equals the real number of model calls (not double).
 - If the app streams: the streamed turn is in the same session and its `LM.__call__` spans have tokens.
 - Transcript non-empty (DSPy's `[[ ## field ## ]]` prompt format is expected).
-- Tool calls named `<tool>.__call__` with `gen_ai.tool.name`, arguments and results. `finish.__call__` (ReAct's end-of-loop tool) is expected.
-- A tool that raised is counted as failed; no successful tool or model call is marked failed.
+- Tool calls named `<tool>.__call__` with `gen_ai.tool.name`, arguments and results. `finish.__call__` (ReAct's end-of-loop tool) is expected and counts as a tool call.
+- A tool that raised is counted as failed (session check **Tool availability** fails with the exception); no successful tool or model call is marked failed.
+- A **Prompt cache** warning on a short test conversation is expected: the callback records the provider's cached input tokens (0 counts), and providers only cache long prompts (OpenAI from 1,024 tokens, Anthropic only with cache markers).
 - Worker modules appear as separate agents/lanes; with `dspy.Parallel`, all workers are in the same trace as the orchestrator, none orphaned.
 - The process exited cleanly and the last turn is present (flush ran).
 

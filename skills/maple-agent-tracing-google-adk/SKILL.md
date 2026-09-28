@@ -157,7 +157,7 @@ Run one conversation of 2-3 turns with the same session id, one turn calling a t
 
 Without a real key (`MAPLE_TEST`), verify locally: temporarily add `SimpleSpanProcessor(ConsoleSpanExporter())` to the provider, run one turn, and confirm `generate_content` spans have `gen_ai.conversation.id`, `gen_ai.input.messages`, `gen_ai.output.messages`, `gen_ai.usage.input_tokens`; `execute_tool` spans have `gen_ai.tool.call.arguments`. Remove the console exporter afterwards.
 
-Tell the user about the known gaps: cost is unpriced; the model is the requested id, not the served one, and there is no `gen_ai.response.id`; with `StreamingMode.SSE` the transcript shows the streamed chunks and then the full reply (ADK records each chunk).
+Tell the user about the known gaps: cost is unpriced; the model is the requested id, not the served one, and there is no `gen_ai.response.id`; with `StreamingMode.SSE` the transcript shows the streamed chunks and then the full reply (ADK records each chunk); session check headlines (provider errors, prompt cache) count `call_llm` and `generate_content` separately, so they show twice the LLM call count (tokens and LLM calls are netted correctly).
 
 ## Do not
 

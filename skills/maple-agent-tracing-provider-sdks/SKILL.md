@@ -114,7 +114,7 @@ Local check without Maple: temporarily add `SimpleSpanProcessor(ConsoleSpanExpor
 ## Known limitations (tell the user, don't work around)
 
 - Framework facet shows "Unidentified".
-- Python Anthropic with prompt caching: the instrumentation reports `input_tokens` = raw + cache reads + cache writes, Maple treats Anthropic input as excluding cache → both cache buckets counted twice in totals.
+- Python Anthropic with prompt caching: the instrumentation reports `input_tokens` = raw + cache reads + cache writes, Maple treats Anthropic input as excluding cache → both cache buckets counted twice in totals (verified in Maple: 3-turn session, 40,239 real tokens shown as 78,144).
 - Python: no cost (unpriced).
 - Anthropic instrumentation 1.2b0 records no time to first chunk for `messages.stream()`.
 - Gemini path (Python instrumentation, TS mapping) not yet run end to end against a live model; OpenAI and Anthropic paths are verified.

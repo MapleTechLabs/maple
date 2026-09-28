@@ -194,6 +194,7 @@ def stream_message(conversation_id: str, text: str, history: str, send) -> None:
 Run one real conversation (2-3 messages, same conversation id, at least one tool call), and one message in a second conversation. If the user gave no key (`MAPLE_TEST`), you can't see results in Maple; say so and list what they should check. Otherwise check in Maple **Agent Sessions** (`https://app.maple.dev/agent-sessions`, EU `app.eu.maple.dev`), filtered to the service name:
 
 - Exactly one session per conversation id (two here), not one per message and no `trace:<id>` sessions.
+- Framework shows CrewAI in the session list (model spans themselves are tagged `openinference-openai`; that's fine).
 - One turn per kickoff; each turn's root span is `<crew name>.kickoff` (or `<flow name>.kickoff`, or your `invoke_agent` wrapper when streaming). No empty extra turns.
 - Transcript is non-empty (system message from role/goal/backstory, `Current Task: …`, replies).
 - Model calls (`ChatCompletion` for the OpenAI instrumentor) have a model and non-zero input/output tokens, including streamed calls. Each call appears once.

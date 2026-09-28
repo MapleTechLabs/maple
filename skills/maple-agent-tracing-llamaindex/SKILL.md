@@ -190,7 +190,7 @@ llm = OpenAI(model="gpt-4o-mini", additional_kwargs={"stream_options": {"include
 ```
 
   (LlamaIndex strips it from non-streaming requests.) OpenRouter sends usage without it.
-- Streamed model spans end when the stream is handed back (~1 ms), so their duration is not model latency. If the app never streams tokens to users, `FunctionAgent(..., streaming=False)` gives real model-span durations. Ask before changing it.
+- Streamed model spans end when the stream is handed back (~1 ms), so their duration is not model latency (Maple's session inference time totals a few ms; `FunctionAgent` streams by default, so this is every call). If the app never streams tokens to users, `FunctionAgent(..., streaming=False)` gives real model-span durations. Ask before changing it.
 - Cost: never recorded. Sessions show "unpriced". Do not add pricing code. OpenRouter users can add OpenRouter Broadcast for cost.
 
 ## Step 7: Flush

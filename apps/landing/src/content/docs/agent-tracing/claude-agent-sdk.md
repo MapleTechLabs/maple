@@ -293,6 +293,8 @@ What you don't get is a lane per sub-agent. Maple opens a lane for each distinct
 
 Each `claude_code.llm_request` span carries `input_tokens`, `output_tokens`, `cache_read_tokens` and `cache_creation_tokens`, plus `ttft_ms` and the stop reason. Maple maps them to its token buckets and time to first token. Anthropic's `input_tokens` excludes both cache buckets, and Maple counts it that way, so total input is the sum of the three. The CLI always streams and still records usage, so there is no streaming gap to work around.
 
+Claude Code reports the cache buckets on every call, even when they're zero. If your prompts are shorter than the model's minimum cacheable length (a short custom `systemPrompt` often is), nothing is cached and the session's **Prompt cache** check warns with a 0% hit rate. That warning is accurate, not a tracing problem.
+
 Maple doesn't show cost for these sessions. Maple never prices tokens itself, and Claude Code puts cost only on the `api_request` log event (`cost_usd`) and the `claude_code.cost.usage` metric, never on a span. Sessions read as **unpriced**.
 
 To track spend anyway, keep the logs and metrics exporters on. The `claude_code.api_request` records are searchable under **Logs** with their `cost_usd` and `session.id`, and `claude_code.cost.usage` can go on a dashboard. Both are Claude Code's client-side estimate at list price, unless your organization sets `modelPricing` in managed settings. In an SDK app, the result message's `total_cost_usd` is the same estimate for one `query()`.

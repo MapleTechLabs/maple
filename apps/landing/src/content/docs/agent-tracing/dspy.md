@@ -314,11 +314,14 @@ Run one conversation of two or three messages through `handle_message` with the 
 - **One session** for the conversation, framework **DSPy**, with one turn per call to your module. Each turn's trace starts at `ChatAssistant.forward` (your module's class name), titled with the question you asked.
 - **Model calls** named `LM.__call__`, each with a model, input and output tokens. Every model call sits under `Predict.forward`, `Predict(StringSignature).forward` and `ChatAdapter.__call__` spans; those are DSPy's steps, not extra calls.
 - **The transcript**: the messages DSPy sent, in its `[[ ## field ## ]]` format, and the replies.
-- **Tool calls** named `get_weather.__call__` and `finish.__call__`, with arguments and results.
+- **Tool calls** named `get_weather.__call__` and `finish.__call__`, with arguments and results. `finish` is ReAct's end-of-loop tool and counts as a tool call, so a turn that used one tool shows two.
 - **Agents**: one per module class you wrote, with a lane for each worker module.
 - **Cost** per call where DSPy has a price for the model.
+- **Checks**: a tool that raised fails the session's **Tool availability** check, with the exception as its headline.
 
 A second conversation with a different id is a second session. If a turn is missing, check that the process flushed.
+
+Expect a **Prompt cache** warning on a short test conversation. OpenRouter reports cached input tokens even when they're zero, so Maple judges the cache hit rate, and providers only cache long prompts (OpenAI from 1,024 tokens; Anthropic models only with explicit cache markers). In our test the prompts peaked at 870 tokens and none were cached.
 
 ## Troubleshooting
 

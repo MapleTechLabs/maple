@@ -120,7 +120,8 @@ class MapleSpan(OpenTelemetrySpan):
             self._span.set_attribute("error.type", "ToolInvocationError")
         if self._content:
             attribute = "gen_ai.tool.call.arguments" if key.endswith(".input") else "gen_ai.tool.call.result"
-            self._span.set_attribute(attribute, json.dumps(value, default=str))
+            # Tool results arrive as strings: write them as-is, so a JSON result stays a JSON object
+            self._span.set_attribute(attribute, value if isinstance(value, str) else json.dumps(value, default=str))
 
 
 class MapleHaystackTracer(OpenTelemetryTracer):
@@ -204,6 +205,7 @@ history = [m for m in result["assistant"]["messages"] if not m.is_from("system")
 ## Step 4: Content
 
 - Default `MapleHaystackTracer(..., content=True)` writes `gen_ai.input.messages`, `gen_ai.output.messages`, `gen_ai.system_instructions`, `gen_ai.tool.call.arguments`/`.result`, plus Haystack's own `haystack.*` content tags.
+- Maple shows a tool span's `gen_ai.tool.call.result` only when it is a JSON object/array. Plain-text tool results still appear in the transcript (as the next model call's tool message) but not on the tool call row. Don't change tools for this; mention it if the user's tools return strings.
 - `content=False` keeps model, tokens, cost, finish reason, tool names and failures; drops messages, tool args/results, `haystack.*` content tags and the ungated `haystack.pipeline.input_data` tag. Use it if the user asks for no prompts/PII in telemetry. The failed tool's status message still quotes its arguments (Haystack's `Failed to invoke Tool ... with parameters {...}`); if arguments can hold PII, redact them in `_tool()` before `set_status`.
 - `HAYSTACK_CONTENT_TRACING_ENABLED` is irrelevant with this tracer; don't add it.
 

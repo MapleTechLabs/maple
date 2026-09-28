@@ -222,7 +222,8 @@ Avoid wrapping agents in `AgentTool`. It runs the sub-agent in a new in-memory s
 `generate_content` spans carry `gen_ai.usage.input_tokens` and `gen_ai.usage.output_tokens`, plus `gen_ai.usage.cache_read.input_tokens` and `gen_ai.usage.reasoning.output_tokens` when the model reports them. ADK counts cached tokens inside the input and thinking tokens inside the output, which is how Maple adds them up.
 
 - Streamed turns (`RunConfig(streaming_mode=StreamingMode.SSE)`) report usage too. `LiteLlm` requests it with `stream_options.include_usage`.
-- The `call_llm` span above each `generate_content` repeats the same usage. Maple nets a parent's usage against its children, so each call is counted once.
+- The `call_llm` span above each `generate_content` repeats the same usage. Maple nets a parent's usage against its children, so tokens and the LLM call count cover each call once.
+- The session checks don't net yet. Headlines such as "All 16 model calls were answered first time" count the `call_llm` and `generate_content` spans of each call separately, so they show twice the LLM call count.
 - ADK doesn't record cost, and Maple doesn't price tokens, so ADK sessions show as **unpriced**. LiteLLM computes a cost, but it never reaches ADK's spans.
 
 ## Flush spans before a short-lived process exits
@@ -255,7 +256,7 @@ In a long-running server, call `provider.shutdown()` from your shutdown hook (Fa
 
 Run one conversation of two or three turns, one of which calls a tool, then open **Agent Sessions** in Maple. Spans leave the process within 5 seconds and usually show up within a minute. You should see:
 
-- **One session per ADK session id**, with the framework shown as **Google ADK** and one turn per `run_async()` call.
+- **One session per ADK session id**, with the framework shown as **Google ADK** and one turn per `run_async()` call. The `run_async()` that sends a confirmation is a turn of its own, labeled with the original request.
 - **A transcript** on the session page: the user messages, the assistant replies, and each tool call with its arguments and result.
 - **LLM calls and tokens** for each `generate_content {model}` span, with the model from `gen_ai.request.model` (for LiteLLM, the full id such as `openrouter/openai/gpt-4o-mini`).
 - **Tool calls** named after your functions, with failed ones counted as errors.

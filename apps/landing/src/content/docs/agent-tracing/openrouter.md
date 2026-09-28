@@ -208,7 +208,7 @@ For tools and agent structure, instrument the app with its framework guide from 
 Model failures do show up. Each request's trace has an `LLM Generation` root and a `provider attempt N: <provider>` child per upstream provider OpenRouter tried:
 
 - A failed attempt that OpenRouter recovered from by falling back to another provider is a retry. Maple does not count it as a failure.
-- If every attempt fails, `LLM Generation` has status Error with the message `Provider returned error`, and Maple counts it as a `provider_error` in the session.
+- If every attempt fails, `LLM Generation` has status Error with the message `Provider returned error`, and Maple counts it as a `provider_error` in the session. Such a call carries no token usage, and Maple then counts the root and each failed attempt as separate model calls, so one failed request with one attempt shows as two LLM calls.
 
 On that error path, OpenRouter currently drops the `trace` object, so the failed call lands in its own trace. It keeps `session.id`, so it still joins the right session.
 
@@ -237,6 +237,8 @@ Not read by Maple:
 
 `gen_ai.provider.name` is the model's author (`openai`, `anthropic`), not the provider that served the request. That one is in `trace.metadata.openrouter.provider_name` (for example `Amazon Bedrock`).
 
+One known gap for Claude models: OpenRouter's input count includes cached tokens for every model, but Maple reads an `anthropic` input count as excluding them, so cache reads are counted twice in Claude sessions' token totals. In our test, a Claude session with 26,730 input tokens (4,248 of them cached) showed 32,573 total tokens instead of 28,325. Cost is unaffected, because it comes from OpenRouter's charge.
+
 ## Short-lived processes
 
 Broadcast needs no flush. OpenRouter sends traces from its own servers after each request completes, so a script, a serverless function or a CLI that exits right after the response loses nothing.
@@ -250,10 +252,10 @@ If your app also exports its own spans, those still need the usual flush on exit
 Run one conversation of three or more turns, with a tool call, sending the same `session_id` on every request. Wait about a minute, then open **Agent Sessions** in Maple and filter by service `openrouter`.
 
 - **One session for the conversation**, named by your `session_id`, with vendor **OpenRouter**. A second conversation is a second session.
-- **Model calls.** Each call has an `LLM Generation` span with one or more `provider attempt N: <provider>` children, and sometimes `generation` or `moderation` children. Only `LLM Generation` counts as a model call.
+- **Model calls.** Each call has an `LLM Generation` span with one or more `provider attempt N: <provider>` children, and sometimes `generation` or `moderation` children. Only `LLM Generation` counts as a model call, except on a request where every provider attempt failed (see above).
 - **Tokens and cost** on the session and per model, with cost in USD.
 - **Transcript**: each call's prompt and completion as a JSON block, unless Privacy Mode is on.
-- **Turns**: one per trace. Broadcast-only, that's one per model call. Nested under your own traces, it's one per turn of your agent.
+- **Turns**: one per trace. Broadcast-only, that's one per model call, listed as unlabeled segments (Segment 1, Segment 2, ...). Nested under your own traces, it's one per turn of your agent.
 - **Tools**: none from Broadcast. Tool spans come from your app's instrumentation.
 
 The service name on Broadcast spans is always `openrouter`, and there is no environment attribute. Custom keys in the `trace` object arrive as `trace.metadata.<key>` attributes, which you can search in [Traces](/docs/explore/traces) but which don't set Maple's environment or service.
@@ -263,7 +265,7 @@ The service name on Broadcast spans is always `openrouter`, and there is no envi
 - **Test Connection fails.** The endpoint must be the full `https://ingest.maple.dev/v1/traces` URL and the headers valid JSON with `"Authorization": "Bearer YOUR_INGEST_KEY"`. EU organizations use `ingest.eu.maple.dev`.
 - **Test Connection passes but nothing arrives.** Check the destination's API key filter and data regions against the key and endpoint your app actually uses, and that **Enable Broadcast** is on for the account or organization your app's key belongs to. A placeholder key such as `MAPLE_TEST` passes the test, but Maple discards everything it sends.
 - **Every call is its own session, named `trace:<id>`.** The request has no `session_id`. Check the outgoing body, not just your code: a wrapper or framework may drop unknown fields.
-- **A session named `trace:00000000000000000000000000000001` with one span.** That's the `openrouter-connection-test` span from **Test Connection**. Ignore it.
+- **A session named `trace:00000000000000000000000000000001` with no model calls.** That's the `openrouter-connection-test` span from **Test Connection**. Every test reuses that trace id, so the session gains a span per click. Ignore it.
 - **A session with an `openai/gpt-4-turbo` call you never made, trace name `Test Trace - OpenRouter Observability`.** OpenRouter's sample trace from the destination settings, with sample tokens and cost.
 - **Tokens or LLM calls are about double what you expect.** Your app's instrumentation and Broadcast both report the call, in different traces and without a shared response id. Nest Broadcast with `trace.trace_id` and `trace.parent_span_id`, or filter that service's API key out of the destination.
 - **Broadcast spans show up as a separate trace despite `trace.trace_id`.** The id isn't W3C hex, or the call failed: on the all-providers-failed path OpenRouter drops the `trace` object.

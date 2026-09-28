@@ -270,7 +270,8 @@ Call `provider.shutdown()` instead when the process is about to exit and won't t
 Run one conversation of two or three messages through `handle_message` with the same conversation id, including one that uses a tool, then open **Agent Sessions** in Maple. You should see:
 
 - **One session** for the conversation, with one turn per `kickoff()`. Each turn's trace starts at `support.kickoff` (your crew's name), or `support_flow.kickoff` for a flow named `support_flow`.
-- **The transcript**: the system message built from the agent's role, goal and backstory, `Current Task: …` with your message, and the model's replies.
+- **Framework: CrewAI** in the session list.
+- **The transcript**: the system message built from the agent's role, goal and backstory, `Current Task: …` with your message, and the model's replies. Turns are labeled `Current Task: <your message>`.
 - **Model calls** named `ChatCompletion` (from the OpenAI instrumentor), each with a model and input and output tokens.
 - **Tool calls** named `get_weather.run` and `calculate.run`, with results.
 - **Agents**: one lane per role, from `assistant.reply._execute_core` and its siblings.

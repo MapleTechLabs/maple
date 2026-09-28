@@ -263,7 +263,7 @@ with conversation(session.session_id):
 
 Workflows (`WorkflowBuilder`, or the `SequentialBuilder`, `ConcurrentBuilder`, `HandoffBuilder` and `MagenticBuilder` orchestrations) trace each executor as `executor.process <id>` with the agent's `invoke_agent` span inside it. Fan-in is recorded as span links, not parent-child, so parallel workers appear as siblings under `workflow.run`. The executors run as `asyncio` tasks and inherit the conversation id from the block.
 
-Build the workflow inside the `conversation()` block too. `WorkflowBuilder.build()` emits its own one-span `workflow.build` trace. Inside the block it joins the session as a short extra trace with no model calls; built once at import time, it becomes a one-span session of its own.
+Build the workflow inside the `conversation()` block too. `WorkflowBuilder.build()` emits its own one-span `workflow.build` trace. Inside the block it joins the session as a short extra trace with no model calls. Maple shows it as an empty first turn with no label or agent, the real run is turn 2, and the session has no title. Built once at import time, it becomes a one-span session of its own instead.
 
 Tools that need approval (`@tool(approval_mode="always_require")`) end the run with a pending request. The resume is a new `agent.run()` and a new trace; with the processor in place, it joins the same session. A rejected call emits no `execute_tool` span at all; the rejection only appears in the next `chat` span's input messages.
 
@@ -367,7 +367,7 @@ Run one conversation of two or three turns, one of which calls a tool. Sessions 
 
 - **One session per conversation**, labeled **Microsoft Agent Framework** (or **Semantic Kernel**) for Python, whose id is your conversation id, not `trace:…`. A second conversation is a second session.
 - **One turn per `agent.run()`**, each rooted at `invoke_agent support_agent` with `chat gpt-4o-mini` and `execute_tool get_weather` spans under it. An approval resume is its own turn in the same session. In .NET the root is `invoke_agent support_agent(<agent id>)`.
-- **A transcript** with the system instructions, your messages and the replies, labeled by the first line of each user message.
+- **A transcript** with the system instructions, your messages and the replies, labeled by the first line of each user message. Semantic Kernel shows only each turn's message and the agent's reply, with tool calls as tool spans.
 - **Tool calls** with arguments and results, and failed tools counted under **Tool errors**.
 - **Tokens** on every model call, including streamed ones. Cost shows as unpriced.
 - For multi-agent runs, a lane per agent name.

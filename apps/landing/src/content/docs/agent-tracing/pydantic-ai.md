@@ -204,7 +204,7 @@ def fetch_transport_data(city: str) -> dict:
 
 Returning an error payload keeps the span green, and Maple counts the call as a success.
 
-Approval-gated tools (`requires_approval=True`) pause the run without a tool span. The call only gets an `execute_tool` span when the resumed run executes it, so pass the same `conversation_id=` to the run that sends `DeferredToolResults`.
+Approval-gated tools (`requires_approval=True`) pause the run without a tool span. The call only gets an `execute_tool` span when the resumed run executes it, so pass the same `conversation_id=` to the run that sends `DeferredToolResults`. Maple then shows the paused run and the resumed run as two turns of the same session, both labeled with the original request.
 
 ### Sub-agents: pass the conversation id down
 

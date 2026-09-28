@@ -245,6 +245,8 @@ Approvals leave one artifact. The model call that asks for the tool is exported 
 
 Mastra's multi-agent idiom is a supervisor: an agent with an `agents` property calls each sub-agent through a tool named `agent-<key>`. Each delegation runs the sub-agent inside the supervisor's trace, under that tool span. Give every agent a `name`; it becomes `gen_ai.agent.name`, and Maple draws one lane per agent name. An `execute_tool agent-weather_worker` span whose only child is `invoke_agent weather_worker` shows as a delegation, with the tool's arguments and result as the lane's input and output.
 
+The `agent-<key>` calls also count as tool calls in the session's totals, next to the sub-agents' own tools. A sub-agent's prompt in the transcript starts with the supervisor's instructions and the user's original message, then the delegated task: Mastra passes the supervisor's conversation along to each sub-agent.
+
 ```ts
 export const orchestrator = new Agent({
 	id: "orchestrator",
@@ -276,7 +278,7 @@ Steps in `.parallel([...])` run concurrently, and their lanes overlap in time in
 
 ## Tokens and cost
 
-The `chat` span of each model call carries `gen_ai.usage.input_tokens` and `gen_ai.usage.output_tokens`, plus `gen_ai.usage.cache_read.input_tokens` and `gen_ai.usage.cache_creation.input_tokens` when the provider reports caching. Only that span carries usage, so the enclosing agent, step and generation spans add nothing to the total.
+The `chat` span of each model call carries `gen_ai.usage.input_tokens` and `gen_ai.usage.output_tokens`, plus `gen_ai.usage.cache_read.input_tokens` and `gen_ai.usage.cache_creation.input_tokens` when the provider reports caching. The input count includes the cached tokens; Maple shows the cached part separately and counts it once. Only that span carries usage, so the enclosing agent, step and generation spans add nothing to the total.
 
 Reasoning tokens are exported as `gen_ai.usage.reasoning_tokens`, a key Maple doesn't read. They're still inside the output token count, so totals are right; only the reasoning breakdown is missing.
 
@@ -324,7 +326,7 @@ Run one conversation with at least two messages and a tool call, then open **Age
 - one turn per `generate()` or `stream()` call, labeled with the user's message, and a transcript with the prompts, replies and tool calls;
 - `invoke_agent <agent name>` spans for runs, `chat <model>` spans for model calls, and `execute_tool <tool id>` spans for tool calls, with `agent_step` and `model_generation` spans in between;
 - `invoke_workflow <workflow id>` as the turn for workflow runs;
-- a lane per sub-agent, named after its `name`;
+- a lane per sub-agent, named after its `name`, with each `agent-<key>` delegation counted as a tool call;
 - token counts on every model call, including streamed ones, except one 0-token call per tool approval;
 - failed tool calls marked as failed, with the thrown message;
 - cost shown as unpriced.

@@ -136,7 +136,7 @@ Print these, filled in (you cannot apply them):
    - Data regions: include Europe if the app calls `eu.openrouter.ai`.
    - Privacy Mode: off unless content must not leave OpenRouter.
    - Leave **Additional generation metadata → Cost** off; Maple reads `gen_ai.usage.total_cost`, which is sent anyway.
-3. Click **Test Connection**; it only saves if the test passes. The test creates a sessionless `openrouter-connection-test` trace (`trace:0000…0001` in Maple); ignore it.
+3. Click **Test Connection**; it only saves if the test passes. The test creates a sessionless `openrouter-connection-test` trace (`trace:0000…0001` in Maple, 0 model calls, one span per test click); ignore it.
 
 ## Step 8: Verify
 
@@ -151,7 +151,7 @@ Run one conversation (3+ turns, one with a tool call) with a fixed `session_id`,
 - Tool counts from Broadcast are 0 (expected). Tool spans only come from app instrumentation.
 - No attribute contains `sk-or-`, `Bearer ` or `maple_sk_`.
 
-Tell the user: cost is shown (OpenRouter's charge); cache writes, TTFT, environment, tool calls and agent lanes are not available from Broadcast; transcript is raw JSON.
+Tell the user: cost is shown (OpenRouter's charge); cache writes, TTFT, environment, tool calls and agent lanes are not available from Broadcast; transcript is raw JSON and Broadcast-only turns are unlabeled segments. Claude models (`gen_ai.provider.name=anthropic`): Maple applies Anthropic's input-excludes-cache rule to OpenRouter's cache-inclusive input, so cache reads count twice in token totals (cost unaffected).
 
 ## Do not
 

@@ -135,7 +135,9 @@ If you skip it, every `invoke()` shows up in **Agent Sessions** as its own one-t
 
 ## Record prompts, responses and tool calls
 
-Content capture is on by default. Every chat model span carries the full message list sent to the model and the reply, as `gen_ai.input.messages` and `gen_ai.output.messages` in `{role, parts}` form, and Maple renders them as the session transcript, with the user's message as the turn's label. The system prompt is the first input message. Tool spans carry the tool's result in `gen_ai.tool.call.result`.
+Content capture is on by default. Every chat model span carries the full message list sent to the model and the reply, as `gen_ai.input.messages` and `gen_ai.output.messages` in `{role, parts}` form, and Maple renders them as the session transcript. The system prompt is the first input message. Tool spans carry the tool's result in `gen_ai.tool.call.result`, as LangChain's serialized `ToolMessage`, so the result reads as a small JSON object with the output under `data.content`.
+
+Turn labels are the one part that goes wrong. Maple labels a turn with the user message on the first span of the turn that has messages, and in a `create_agent` graph that's the `model` node's span, where the instrumentor records only the thread's first message. With a checkpointer, every turn of a conversation is labeled with its opening message. The transcript inside each turn still starts with the right message.
 
 With a checkpointer, every model span repeats the thread's whole history, so a long conversation gets large. Maple has no per-attribute limit, and ingest accepts requests up to 20 MiB.
 
@@ -151,7 +153,7 @@ config = TraceConfig(enable_genai_semconv=True, hide_inputs=True, hide_outputs=T
 
 Each tool call is a span named after the tool, with `gen_ai.operation.name` `execute_tool`, `gen_ai.tool.name`, `gen_ai.tool.description` and the result. The arguments aren't on the tool span, and neither is `gen_ai.tool.call.id`, because the instrumentor doesn't record them there. The arguments are still in the transcript, in the model's tool call just before.
 
-A tool that raises is marked failed without extra code: its span ends with status `ERROR` and the exception as the status message, for example `RuntimeError('transport data service unavailable (503)')`, and Maple counts it on the session and on the tool's page.
+A tool that raises is marked failed without extra code: its span ends with status `ERROR` and the exception plus its traceback as the status message, starting with `RuntimeError('transport data service unavailable (503)')`, and Maple counts it on the session and on the tool's page.
 
 What happens to the run next is up to LangChain. `create_agent` re-raises any exception from a tool by default, so one broken tool fails the whole `invoke()`. To hand the error to the model and keep going, add a `wrap_tool_call` middleware:
 
@@ -256,7 +258,7 @@ Run one conversation of two or three messages through `handle_message` with the 
 
 - **One session** for the conversation, with one turn per `invoke()`. A second conversation with a different id is a second session.
 - **Framework: Unidentified.** Maple recognizes LangChain by LangSmith's exporter, and the OpenInference spans read as generic GenAI spans. Everything else on the session page works.
-- **The transcript**: your messages as turn labels, the model's replies, and its tool calls.
+- **The transcript**: your messages, the model's replies, and its tool calls. Every turn's label repeats the conversation's first message (see [Record prompts, responses and tool calls](#record-prompts-responses-and-tool-calls)); the second conversation's single turn is labeled correctly.
 - **Agents**: `assistant`, plus one lane per sub-agent in `AGENT_NAMES`. Each turn's trace starts at the agent span, with `model` and `tools` node spans below it.
 - **Model calls** named `ChatOpenAI` (or `ChatAnthropic`, and so on), each with a model, input and output tokens, including streamed ones.
 - **Tool calls** named after your tools, like `get_weather`, with results, and a failing tool marked failed with its message.

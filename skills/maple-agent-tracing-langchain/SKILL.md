@@ -176,7 +176,7 @@ Run one real conversation: 2+ messages with the same id, at least one tool call,
 
 - [ ] Exactly one session per conversation, id = the `thread_id` you passed. A second conversation is a different session.
 - [ ] Framework shows **Unidentified** (expected for this path).
-- [ ] One turn per `invoke()`; transcript shows user messages as turn labels, assistant replies, tool calls (not a raw JSON blob).
+- [ ] One turn per `invoke()`; transcript shows each turn's user message, assistant replies, tool calls (not a raw JSON blob). Turn labels all repeat the conversation's first message: expected, see Known gaps.
 - [ ] Each turn trace starts at the agent span (`name=`), with `model`/`tools` node spans, `ChatOpenAI` (or other chat model class) spans and tool spans named after the tools, all in one trace.
 - [ ] Tool call count = the tools the model actually called (a higher count means a tool node is missing from `STEP_NAMES`).
 - [ ] Every chat model span has input and output tokens, including the streamed one.
@@ -185,7 +185,7 @@ Run one real conversation: 2+ messages with the same id, at least one tool call,
 - [ ] Cost shows "unpriced" (expected: nothing records cost).
 - [ ] No attribute contains an API key or `Bearer ` token.
 
-Known gaps (not setup bugs, don't try to fix): tool spans have no `gen_ai.tool.call.id` or arguments (arguments are in the model's tool call in the transcript); chat model spans have no `gen_ai.response.id`.
+Known gaps (not setup bugs, don't try to fix): tool spans have no `gen_ai.tool.call.id` or arguments (arguments are in the model's tool call in the transcript); tool results are LangChain's serialized `ToolMessage` JSON (output under `data.content`); chat model spans have no `gen_ai.response.id`; with a checkpointer every turn's label is the thread's first user message (Maple takes it from the `model` node span, where the instrumentor records only the first message; the transcript inside each turn is right).
 
 Local check without Maple: add `SimpleSpanProcessor(ConsoleSpanExporter())` temporarily and confirm `gen_ai.conversation.id` is identical on every span of every turn of one conversation.
 

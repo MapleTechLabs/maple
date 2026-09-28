@@ -203,9 +203,11 @@ The `invoke_agent` span also carries usage, and this is where counts go wrong:
 
 A per-request agent (as in the session example above) never accumulates across turns, which is another reason to create agents per request.
 
+One Maple issue remains even with a correct setup: the **Agent Sessions** list currently shows about twice the real tokens for Strands sessions, in Python and TypeScript. The list only recognizes a roll-up whose model calls sit directly below it, and Strands puts an `execute_event_loop_cycle` span in between. The session's own page shows the right totals, the sum of the `chat` spans.
+
 Strands doesn't emit cost, so Maple shows sessions as unpriced. Maple never prices tokens itself.
 
-Two more gaps: Strands records time to first token as `gen_ai.server.time_to_first_token` in milliseconds, which Maple doesn't read, and `chat` spans carry no `gen_ai.response.id`. The missing response id means Maple can't recognize the same call reported twice, so don't also enable a gateway export such as OpenRouter Broadcast for the same traffic.
+More gaps: Strands records time to first token as `gen_ai.server.time_to_first_token` in milliseconds, which Maple doesn't read, and `chat` spans carry no `gen_ai.response.id`. The finish reason is only inside the output messages, so Maple's reply-length check shows as skipped. The missing response id means Maple can't recognize the same call reported twice, so don't also enable a gateway export such as OpenRouter Broadcast for the same traffic.
 
 ## Flush before short-lived processes exit
 
@@ -282,7 +284,7 @@ Run one conversation of two or three messages, including one that calls a tool, 
 - **One session per conversation id**, with the framework shown as Strands Agents and one turn per `agent(...)` call. A list of one-turn sessions means `session.id` is missing.
 - **The transcript**: each user message, the assistant's replies and the tool calls with their arguments and results.
 - **Spans named** `invoke_agent support_agent` (your agent's `name`), `execute_event_loop_cycle`, `chat` and `execute_tool get_weather`.
-- **Tokens** on every model call, including streamed ones, and the model id you passed (for example `gpt-4o-mini`, or a Bedrock id such as `us.anthropic.claude-sonnet-4-5-20250929-v1:0`).
+- **Tokens** on every model call, including streamed ones (the session page has the right total; the list currently shows about twice that), and the model id you passed (for example `gpt-4o-mini`, or a Bedrock id such as `us.anthropic.claude-sonnet-4-5-20250929-v1:0`).
 - **Sub-agents** as separate lanes named after each agent, with failed tool calls counted under the tool's name.
 - **Cost** shown as unpriced.
 
@@ -291,7 +293,7 @@ Run one conversation of two or three messages, including one that calls a tool, 
 - **Transcript is empty, but tokens and tools show up.** Content is still in span events. Add `gen_ai_span_attributes_only` (and `gen_ai_latest_experimental`) to `OTEL_SEMCONV_STABILITY_OPT_IN`, make sure it's set before the first `Agent` is created, and upgrade to 1.48 or newer.
 - **Every message is its own session.** No `session.id` on the trace. Pass `trace_attributes={"session.id": conversation_id}` to the agent, or to the `Swarm` / `Graph` that runs it. Setting only the session manager's `session_id` isn't enough.
 - **Two users' messages land in one session.** A shared `Agent` instance carries one `trace_attributes` dict for everyone. Create the agent per request.
-- **Token totals look several times too high.** The `invoke_agent` span reports the agent's lifetime usage. Add `gen_ai_use_latest_invocation_tokens`, or create the agent per request.
+- **Token totals look several times too high.** The `invoke_agent` span reports the agent's lifetime usage. Add `gen_ai_use_latest_invocation_tokens`, or create the agent per request. If only the sessions list shows about twice the session page's total, that's the known list issue from [Tokens, cost and the agent-level roll-up](#tokens-cost-and-the-agent-level-roll-up); trust the session page.
 - **Cache tokens are zero with prompt caching on.** Versions before 1.54 use `cache_read_input_tokens`, which Maple doesn't read. Upgrade.
 - **Every sub-agent is called "Strands Agents".** The agents have no `name`. Set `Agent(name=...)` on each one.
 - **Graph session splits from the rest of the conversation.** `GraphBuilder.build()` drops trace attributes. Set `graph.trace_attributes` after building.

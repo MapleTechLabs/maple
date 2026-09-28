@@ -196,6 +196,8 @@ OpenInference's own switches (`TraceConfig(hide_inputs=True, hide_outputs=True)`
 
 Each function tool call is a span named after the tool, with `gen_ai.operation.name` `execute_tool`, `gen_ai.tool.name`, the tool's description, its arguments (with `MapleSpanFixes`) and its result in `gen_ai.tool.call.result`.
 
+Maple shows that result on the tool span only when it's JSON, as it is for a tool that returns a dict or a list. A plain-text result shows as not captured there: a tool that returns a string, an agent called as a tool, a handoff, or a failed tool's error text. The transcript still shows it, as the tool message the model received on its next call.
+
 A tool that raises is marked failed without extra code. The SDK catches the exception, sends the model `An error occurred while running the tool. Please try again. Error: ...` as the tool result, and records the error on its span. The bridge turns that into status `ERROR` with a message like `Error running tool (non-fatal): {'tool_name': 'fetch_transport_data', 'error': 'transport data service unavailable (503)'}`, and Maple counts the call as failed on the session and on the tool's page. A tool that returns an error string instead of raising counts as a success.
 
 Every agent the run enters gets a span named after it, with `gen_ai.agent.name`, and Maple opens a lane for each agent whose name differs from its caller's. Give every `Agent` a distinct `name`. The spans in between are the bridge's bookkeeping: a `CHAIN` span named after the workflow per `Runner.run`, and a `turn` span per step of the agent loop.
@@ -259,7 +261,7 @@ Run one conversation of two or three messages through `handle_message` with the 
 - **One session** for the conversation, framework **OpenAI Agents SDK**, with one turn per `Runner.run`. Each turn's trace starts at a span named after your `workflow_name`.
 - **The transcript**: the agent's instructions as the system message, your messages, the model's replies (streamed ones included) and its tool calls.
 - **Model calls** named `generation` (Chat Completions) or `response` (Responses API), as many as the app made, each with a model and input and output tokens, streamed turns included.
-- **Tool calls** named after your tools, such as `get_weather`, with arguments and results. A tool that raised is marked failed.
+- **Tool calls** named after your tools, such as `get_weather`, with arguments, and results where the tool returned JSON. A tool that raised is marked failed, and the session's verdict names it under **Tool availability**.
 - **Agents**: one lane per agent name, such as `assistant`, plus sub-agents and handoff targets.
 - **Cost**: unpriced.
 
@@ -267,7 +269,7 @@ A second conversation with a different id is a second session. If a turn is miss
 
 ## TypeScript (`@openai/agents`)
 
-The same bridge exists for the TypeScript SDK as `@arizeai/openinference-instrumentation-openai-agents`. We ran it with `@openai/agents` 0.18 and bridge 0.2.15, and it works with Maple with three differences. Maple doesn't identify it as the OpenAI Agents SDK, so the framework shows as **Unidentified**. The TypeScript bridge has no GenAI dual-write: the transcript is built from the OpenInference `input.value` and `output.value` JSON, so model replies show as the raw API response, tool calls have no separate arguments and result fields, and there's no `gen_ai.agent.name` for lanes. And the session id has to be `gen_ai.conversation.id`, because Maple doesn't read `session.id` for unidentified OpenInference spans:
+The same bridge exists for the TypeScript SDK as `@arizeai/openinference-instrumentation-openai-agents`. We ran it with `@openai/agents` 0.18 and bridge 0.2.15, and it works with Maple with three differences. Maple doesn't identify it as the OpenAI Agents SDK, so the framework shows as **Unidentified**. The TypeScript bridge has no GenAI dual-write, so the transcript is built from the OpenInference `input.value` and `output.value` JSON. Inputs render as messages, but `output.value` is the raw API response, which Maple can't read yet. Each model call's reply and the tool calls it asked for are missing from that call; an earlier reply only appears as history in the next call's input, so the last reply of every turn is missing. Tool spans show their input and output as messages but have no arguments and result fields, and there's no `gen_ai.agent.name`, so no agent lanes. And the session id has to be `gen_ai.conversation.id`, because Maple doesn't read `session.id` for unidentified OpenInference spans:
 
 ```ts
 import * as agents from "@openai/agents"

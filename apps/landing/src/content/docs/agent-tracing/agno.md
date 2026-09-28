@@ -252,6 +252,8 @@ Reasoning tokens are not broken out into their own attribute, so Maple can't sho
 
 Cost appears when the model provider returns a price with the response. OpenRouter does, and the instrumentor records it as `llm.cost.total` in USD. Maple never prices tokens itself, so calls to providers that don't return a cost, such as OpenAI or Anthropic called directly, show as unpriced.
 
+For now, only the **Agent Sessions** list shows that cost. The session's own page doesn't read `llm.cost.total` yet and shows the cost as not reported. Tokens, models and call counts match on both.
+
 ## Flush before short-lived processes exit
 
 `BatchSpanProcessor` exports every 5 seconds. A long-running server needs nothing extra: the SDK flushes on normal shutdown. Scripts, CLIs, notebooks, queue workers and serverless handlers need an explicit flush, or the last spans are lost:
@@ -278,7 +280,7 @@ Run one conversation of two or three turns with the same `session_id`, including
 - **Model calls** named after the Agno model class (`OpenRouter.invoke`, `OpenAIChat.ainvoke`, `Claude.invoke_stream`), with the model id (`openai/gpt-4o-mini`) as the model.
 - **Tool calls** named after your functions, with arguments and results, and failed ones marked.
 - **Agents** named after your `Agent(name=...)` and `Team(name=...)`, with a lane per team member.
-- **Tokens** on every model call, and a cost if your provider returns one.
+- **Tokens** on every model call, and a cost in the sessions list if your provider returns one. The session page shows cost as not reported for Agno.
 
 A human-in-the-loop approval shows up as two turns in the same session: the run that paused (`support_agent.run`) and the resumed run (`support_agent.continue_run`), each in its own trace.
 

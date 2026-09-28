@@ -125,7 +125,7 @@ async def call_model(conversation_id: str, messages: list, tools: list | None):
 ```
 
 - Alternative session carrier: body `metadata: {"session_id": ...}` (`extra_body={"metadata": {...}}`), verified.
-- Resulting tree per request: `invoke_agent` → `POST /chat/completions` (proxy FastAPI server span) → `chat <model>` + `auth /chat/completions`. Known Maple limitation: the `auth /chat/completions` span is counted as an extra LLM call (litellm scope + "chat" in the name), so LLM call counts double on the proxy path; tokens, cost, transcript and sessions are correct. Tell the user; nothing to fix app-side.
+- Resulting tree per request: `invoke_agent` → `POST /chat/completions` (proxy FastAPI server span) → `chat <model>` + `auth /chat/completions`. Known Maple limitation: the `auth /chat/completions` span is counted as an extra LLM call (litellm scope + "chat" in the name), so LLM call counts double on the proxy path in the sessions list; the session detail page also counts the FastAPI `POST /chat/completions` span (it carries `gen_ai.request.model`), so it shows 3x. Tokens, cost, transcript and sessions are correct. Tell the user; nothing to fix app-side.
 - Never also instrument the app's OpenAI client when the proxy traces: double LLM calls and tokens. Pick gateway OR in-app.
 - Do not set `OTEL_IGNORE_CONTEXT_PROPAGATION=true` on the proxy.
 
@@ -267,7 +267,7 @@ Run one real conversation: 2+ messages with the same id, one tool call, one stre
 - [ ] Cost: unpriced, or (Step 6) `gen_ai.usage.cost` only on top-level `invoke_agent` spans, equal to the sum of the turn's `litellm.cost.total`.
 - [ ] Last call of a script run present (flush worked).
 - [ ] No attribute contains an API key, `Bearer ` or `sk-`.
-- [ ] Proxy path: `chat` spans (service `litellm-proxy`) sit in the app's trace under `invoke_agent` → `POST /chat/completions`, carrying the session id. LLM call count shows 2x (auth spans, known).
+- [ ] Proxy path: `chat` spans (service `litellm-proxy`) sit in the app's trace under `invoke_agent` → `POST /chat/completions`, carrying the session id. LLM call count shows 2x in the list, 3x on the session page (auth + FastAPI spans, known).
 
 Local check without Maple: temporarily add `SimpleSpanProcessor(ConsoleSpanExporter())` to the provider and confirm `gen_ai.conversation.id` on every `chat` span and the parent ids.
 

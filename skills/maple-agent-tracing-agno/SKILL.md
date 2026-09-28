@@ -164,7 +164,7 @@ Run one real conversation: 2-3 turns with the same `session_id` including one to
 - [ ] Model calls (`<ModelClass>.invoke|ainvoke|invoke_stream|ainvoke_stream`) show the model id and non-zero input/output tokens, including streamed turns.
 - [ ] Each tool call appears once with its real name; a raised tool error is marked failed and nothing else is. Structured results render as JSON (not a Python repr).
 - [ ] Teams: one lane per named member; the team run and all member spans are in one trace, same session; a run started after a team run is NOT inside the team's trace (else see Step 5 context leak).
-- [ ] Cost shown if the provider returns it (OpenRouter does); otherwise "unpriced" is expected.
+- [ ] Cost shown in the Agent Sessions list if the provider returns it (OpenRouter does); otherwise "unpriced" is expected. The session detail page shows cost as not reported for Agno even then (it doesn't read `llm.cost.total` yet); tell the user, don't try to fix it.
 - [ ] No span attribute contains the model provider API key or `Bearer`.
 
 Raw span check (optional, e.g. with a console exporter in a scratch run): run spans `<agent_name>.run` have `session.id` + `gen_ai.operation.name=invoke_agent` + `gen_ai.agent.name`; model spans have `gen_ai.operation.name=chat`, `gen_ai.input.messages`, `gen_ai.usage.input_tokens`; tool spans have `gen_ai.operation.name=execute_tool`.

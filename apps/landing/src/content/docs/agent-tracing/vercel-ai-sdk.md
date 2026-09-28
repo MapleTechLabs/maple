@@ -291,7 +291,9 @@ A pipeline of separate top-level calls (an orchestrator, then a summary agent) p
 
 Each `chat` span carries `gen_ai.usage.input_tokens` and `gen_ai.usage.output_tokens`, plus `gen_ai.usage.cache_read.input_tokens` and `gen_ai.usage.cache_creation.input_tokens` when the provider reports caching. With `usage: true`, reasoning tokens are added as `ai.usage.outputTokenDetails.reasoningTokens`. Maple reads all of them.
 
-The `invoke_agent` span repeats the call's total. Maple counts each model call once: a span's usage is netted against the usage its descendants already reported, so the total isn't doubled, and a sub-agent's tokens stay on the sub-agent's spans.
+The `invoke_agent` span repeats the total of its own `chat` spans, two levels up (`invoke_agent` → `step` → `chat`). Maple doesn't net that repeat out yet, so a session's token total, in the session list and on the session page, is twice what the model calls used. The token counts on each `chat` span and the per-model breakdown on the session page are correct. Use those until this is fixed.
+
+A sub-agent's tokens stay on the sub-agent's spans: the orchestrator's `invoke_agent` repeats only its own model calls, not the workers'.
 
 Streaming needs nothing extra. The AI SDK normalizes provider usage, so `streamText` and `agent.stream()` calls have token counts too, and the streamed `chat` span records time to first chunk, which Maple shows as TTFT.
 
@@ -378,7 +380,7 @@ Run one conversation with at least two messages and a tool call, then open **Age
 - one turn per `generate()` or `stream()` call, each labeled with the user's message, and a transcript with the prompts, replies and tool calls;
 - per turn, an `invoke_agent <model id>` span, a `step <n>` span per loop iteration, a `chat <model id>` span per model request and an `execute_tool <tool name>` span per tool call;
 - the agent name from `functionId` in the agent filter, and a lane per sub-agent;
-- token counts on every model call, including streamed ones, and TTFT on streamed calls;
+- token counts on every model call, including streamed ones, and TTFT on streamed calls (the session's token total reads double; see [Tokens and cost](#tokens-and-cost));
 - failed tool calls marked as failed, with the error message;
 - cost shown as unpriced.
 
@@ -389,6 +391,7 @@ Span names carry the model id, not the agent name, so two agents on the same mod
 - **No AI spans at all.** `registerTelemetry()` was never called, or ran in a module that isn't loaded. AI SDK 7 emits nothing without it, and `experimental_telemetry: { isEnabled: true }` alone does nothing. Import `@ai-sdk/otel` and register `new OpenTelemetry()` at startup.
 - **Every message is its own session.** No `gen_ai.conversation.id` on the spans. Check all three parts: `enrichSpan` on the integration, `runtimeContext: { conversationId }` on the call (or `prepareCall` for an agent), and `includeRuntimeContext: { conversationId: true }`. Without the last one, `enrichSpan` receives an empty object.
 - **Sessions show framework "Unidentified".** The spans carry no `ai.*` attributes. Set `usage: true` and `runtimeContext: true` on `new OpenTelemetry()`, and don't pass a custom `tracer` with another name.
+- **The session's token total is twice the sum of its model calls.** Expected for now: Maple counts the total on each `invoke_agent` span on top of its `chat` spans. The per-call counts and the per-model breakdown are correct. If the spans themselves are duplicated, see the next item.
 - **Every span shows up twice.** `registerTelemetry()` ran twice, both `OpenTelemetry` and `LegacyOpenTelemetry` are registered, or a second OpenTelemetry SDK exports the same spans (Sentry without `skipOpenTelemetrySetup: true` next to `@vercel/otel`, for example). Register one integration and one exporter.
 - **One call has no spans while others do.** It passes `telemetry.integrations`, which replaces the globally registered integrations for that call. Add the `OpenTelemetry` instance to that list, or remove the option.
 - **Nothing arrives from a script or function.** The process ended before the batch was exported. Call `sdk.shutdown()` or `spanProcessor.forceFlush()` in a `finally`.

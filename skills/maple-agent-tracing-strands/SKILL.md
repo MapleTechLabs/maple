@@ -160,7 +160,8 @@ Run one short conversation (2-3 messages, one tool call; plus a failing tool if 
 - One turn per agent call, with the user's message as the turn label.
 - Transcript shows user messages, replies, tool calls with args and results. Empty transcript → `gen_ai_span_attributes_only` missing or set after the first `Agent(`.
 - Spans: `invoke_agent <name>` → `execute_event_loop_cycle` → `chat` / `execute_tool <tool>`; model id on `chat` spans.
-- Input/output tokens on every `chat` span, including streamed turns. Session total ≈ sum of `chat` spans, not several times more.
+- Input/output tokens on every `chat` span, including streamed turns. Session total on the session detail page ≈ sum of `chat` spans, not several times more. The Agent Sessions LIST currently shows ~2x for Strands (Python and TS) even when setup is correct (Maple nets roll-ups only one level deep; `execute_event_loop_cycle` sits between `invoke_agent` and `chat`). Tell the user; don't try to fix it in their code.
+- "Reply length" check shows skipped (finish reason only inside output messages). Expected.
 - Failed tool counted as failed; successful tools not.
 - Sub-agents in separate lanes with their own names.
 - Cost shows "unpriced" (Strands emits no cost). Expected.

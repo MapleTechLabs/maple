@@ -201,7 +201,7 @@ Then in Maple → Agent Sessions (`https://app.maple.dev/agent-sessions`, EU `ap
 - Tool calls listed by real name (`mcp__<server>__<tool>`, `Bash`, ...), args for Bash/file tools, results when `OTEL_LOG_TOOL_CONTENT=1`.
 - A tool that threw is marked failed; successful tools are not.
 - Sub-agent model/tool calls appear under the `Agent` tool call in the same trace, and no turn is titled `<task-notification>` (if one is, see background sub-agents in Step 5).
-- Expected and not bugs: cost "unpriced"; no assistant text; no sub-agent lanes.
+- Expected and not bugs: cost "unpriced"; no assistant text; no sub-agent lanes; a "Prompt cache" warning with 0% hit rate when prompts are below the model's minimum cacheable length (Claude Code reports zero cache buckets explicitly).
 
 If spans exist but the turn nests under an unrelated trace, an inherited `TRACEPARENT` survived: fix the env stripping.
 

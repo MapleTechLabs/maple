@@ -13,7 +13,7 @@ One conversation = one Maple Agent Session, one turn per `generate()`/`stream()`
 
 How it works: AI SDK 7 emits GenAI-semconv spans through `@ai-sdk/otel` (`invoke_agent <model>` → `step <n>` → `chat <model>` + `execute_tool <tool>`) on tracer `gen_ai`, once `registerTelemetry(new OpenTelemetry())` has run. Content is on by default. Maple detects the AI SDK by `ai.*` attributes on the `gen_ai`/`ai` scope and groups sessions by `gen_ai.conversation.id`, which the AI SDK never sets. You add it with `enrichSpan` from `runtimeContext`.
 
-Known gaps (tell the user, don't try to fix): cost shows as "unpriced" (AI SDK emits no cost; Maple never prices tokens); on AI SDK 5/6 the final assistant reply is missing from transcripts.
+Known gaps (tell the user, don't try to fix): cost shows as "unpriced" (AI SDK emits no cost; Maple never prices tokens); the session token total (list and detail page) is 2x the real usage, because Maple doesn't net the `invoke_agent` total against its `chat` spans two levels down (per-`chat` counts and the per-model breakdown are correct); on AI SDK 5/6 the final assistant reply is missing from transcripts.
 
 ## Step 0: Detect
 
@@ -189,7 +189,7 @@ Run one real conversation: 2+ turns with the same id, one streamed, one tool cal
 - Framework shows **Vercel AI SDK**, not Unidentified.
 - Turns = number of `generate`/`stream` calls (an approval pause + resume = 2 turns); each has `invoke_agent <model>`, `step <n>`, `chat <model>`, `execute_tool <tool>` spans in one trace.
 - Transcript shows user messages, assistant replies and tool calls; turn labels are the user's messages.
-- Every `chat` span has input and output tokens, including the streamed turn; the streamed `chat` span has TTFT.
+- Every `chat` span has input and output tokens, including the streamed turn; the streamed `chat` span has TTFT. The session token total is 2x the sum of the `chat` spans (known Maple gap, not a setup error; don't try to fix it); the per-model breakdown matches the `chat` spans.
 - Tool calls have name, arguments, result; a throwing tool is counted as failed with its message; successful tools are not failed.
 - Sub-agents show as their own lanes named after their `functionId`.
 - No attribute contains the provider API key or `Bearer `.

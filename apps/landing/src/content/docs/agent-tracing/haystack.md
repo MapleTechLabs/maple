@@ -135,7 +135,8 @@ class MapleSpan(OpenTelemetrySpan):
             self._span.set_attribute("error.type", "ToolInvocationError")
         if self._content:
             attribute = "gen_ai.tool.call.arguments" if key.endswith(".input") else "gen_ai.tool.call.result"
-            self._span.set_attribute(attribute, json.dumps(value, default=str))
+            # Tool results arrive as strings: write them as-is, so a JSON result stays a JSON object
+            self._span.set_attribute(attribute, value if isinstance(value, str) else json.dumps(value, default=str))
 
 
 class MapleHaystackTracer(OpenTelemetryTracer):
@@ -256,6 +257,8 @@ With the default `content=True`, the tracer writes:
 - Haystack's own `haystack.*.input`/`.output` tags, as before.
 
 Maple builds the transcript and the turn labels from the `gen_ai.*` messages. The `haystack.*` blobs only show up in the raw span attributes.
+
+Maple currently shows a tool span's result only when it is a JSON object or array. A tool that returns plain text, like `"Sunny, 21°C"`, still has its result in the transcript, as the tool result the next model call receives, but its tool call row shows no result. Return a dict from tools whose results you want on the tool pages.
 
 `HAYSTACK_CONTENT_TRACING_ENABLED` has no effect with this tracer: `MapleHaystackTracer` decides on its own. Without the tracer, that variable is read once, at the first `import haystack`, and setting it any later silently records nothing.
 

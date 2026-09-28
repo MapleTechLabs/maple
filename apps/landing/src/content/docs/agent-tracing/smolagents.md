@@ -166,7 +166,7 @@ When a `ToolCallingAgent` model asks for several tools or managed agents in one 
 
 `CodeAgent` calls tools from the Python code the model writes, run by `LocalPythonExecutor` in your process. Those calls produce the same tool spans; positional arguments are recorded as a JSON array, like `["Berlin"]`. With a remote executor (`executor_type="e2b"`, `"docker"`, `"modal"` and others), the code and its tool calls run outside your process, so there are no tool spans, only the model and step spans.
 
-Two gaps remain in what Maple can show for smolagents tools. Tool spans have no `gen_ai.tool.call.id`, because smolagents doesn't pass the model's tool call id to the tool, so Maple can't link a tool span to the exact call in the model's reply. And the step's failure and the tool's failure are both on the trace, so a session with one broken tool has two failed spans.
+Two gaps remain in what Maple can show for smolagents tools. Tool spans have no `gen_ai.tool.call.id`, because smolagents doesn't pass the model's tool call id to the tool, so Maple can't link a tool span to the exact call in the model's reply. And the step's failure and the tool's failure are both on the trace, so a session with one broken tool has two failed spans. Maple counts one failed tool call, and reports the failed `Step` span separately as an "Other errors" warning with the `AgentToolExecutionError` message.
 
 ## Tokens and cost
 
@@ -201,10 +201,10 @@ Call `provider.shutdown()` instead of `force_flush()` when the process is about 
 
 Run one conversation of two or three messages through `handle_message` with the same conversation id, including one that uses a tool, then open **Agent Sessions** in Maple. You should see:
 
-- **One session** for the conversation, framework **smolagents**, with one turn per `agent.run()`. Turn traces start at `assistant.run` (your agent's name).
+- **One session** for the conversation, framework **smolagents**, with one turn per `agent.run()`. Turn traces start at `assistant.run` (your agent's name). Every turn, and the session title, is labeled `New task:`, not with your message: Maple labels a turn with the first line of its user message, and smolagents puts `New task:` on that line.
 - **The transcript**: your messages and the model's replies. smolagents sends each task to the model as `New task:` followed by your text, and tool results come back as `tool-response` messages.
 - **Model calls** named `OpenAIModel.generate` (or `LiteLLMModel.generate`, `InferenceClientModel.generate`), each with a model, input and output tokens.
-- **Tool calls** named `execute_tool get_weather` and `execute_tool final_answer`, with arguments and results.
+- **Tool calls** named `execute_tool get_weather` and `execute_tool final_answer`, with arguments and results. The tool-call count includes one `final_answer` per agent run, managed agents included.
 - **Agents**: `assistant`, plus one lane per managed agent if you use them.
 - **Cost**: unpriced.
 

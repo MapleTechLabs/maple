@@ -392,7 +392,7 @@ Don't add an OpenAI client instrumentor (OpenInference, OpenLLMetry, `openteleme
 
 Each request then shows up in your app's trace as `invoke_agent` → `POST /chat/completions` (the proxy's server span) → `chat gpt-4o-mini`, next to an `auth /chat/completions` span for the proxy's key check. Depending on its setup, the proxy adds more housekeeping spans (database, Redis, guardrails).
 
-Maple currently counts each `auth /chat/completions` span as an extra LLM call, because it comes from LiteLLM and its name contains "chat". On the proxy path the LLM call count in Agent Sessions is double the real number. Tokens, cost, the transcript and the session grouping are not affected.
+Maple currently counts each `auth /chat/completions` span as an extra LLM call, because it comes from LiteLLM and its name contains "chat". On the proxy path the LLM call count in the sessions list is double the real number. The session page also counts the proxy's `POST /chat/completions` server span, which carries `gen_ai.request.model`, so it shows three times the real number. Tokens, cost, the transcript and the session grouping are not affected.
 
 ## Short-lived processes
 
@@ -449,7 +449,7 @@ Run one conversation with at least two messages and a tool call, then open **Age
 - **The last call of a script or Lambda is missing.** The process ended before LiteLLM's logging queue ran. Await `flush_tracing()` before the loop ends.
 - **Every model call appears twice.** Two loggers (the v2 instance plus `"otel"` in `litellm.callbacks`), or the proxy and an in-app OpenAI instrumentor both tracing the same call. Keep one.
 - **Proxy spans land in their own traces, apart from the app's agent span.** The request carried no `traceparent`. Inject it with `propagate.inject(headers)` inside the agent span, and don't set `OTEL_IGNORE_CONTEXT_PROPAGATION` on the proxy.
-- **The LLM call count is twice what the app made, on the proxy path only.** Maple counts the proxy's `auth /chat/completions` spans as calls. Token and cost totals are correct.
+- **The LLM call count is twice what the app made (three times on the session page), on the proxy path only.** Maple counts the proxy's `auth /chat/completions` spans as calls, and the session page also counts its `POST /chat/completions` server span. Token and cost totals are correct.
 - **A model call shows an empty reply in the transcript.** That call only requested tools. The tool calls appear as their own rows from your `execute_tool` spans.
 - **Session cost is lower than LiteLLM's spend.** Sub-agents report their own `gen_ai.usage.cost` and Maple subtracts it from the parent agent's. Report cost only on the outermost agent span, as in the cost section.
 - **Nothing arrives from the proxy.** It is still on the default `console` exporter because no endpoint reached it. Check that `OTEL_EXPORTER_OTLP_ENDPOINT` is set in the proxy's environment, not only in your app's.

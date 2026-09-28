@@ -141,7 +141,7 @@ def handle_message(conversation_id: str, text: str) -> str:
 - smolagents prompts the model to retry after every tool error until `max_steps`, then asks for an answer without tools (hallucination risk). If a tool can fail permanently, suggest a `step_callbacks` hook that tells the model to stop after the first failure; don't add it unasked.
 - Managed agents appear as `<name>.run` spans under the manager's `Step N` span; the processor names their lanes. Parallel tool/agent calls (`max_tool_threads`) keep context; nothing to do.
 - `CodeAgent` with `executor_type` other than local (`e2b`, `docker`, `modal`, ...) runs tools outside the process: no tool spans. Tell the user; nothing to fix in tracing.
-- Known, not fixable here: no `gen_ai.tool.call.id` on tool spans; a failed tool also marks its `Step N` span ERROR.
+- Known, not fixable here: no `gen_ai.tool.call.id` on tool spans; a failed tool also marks its `Step N` span ERROR (Maple: toolErrorCount 1, plus an "Other errors" warning for the Step span).
 
 ## Step 6: Flush
 
@@ -155,10 +155,10 @@ Run one real conversation (2-3 messages, same conversation id, at least one tool
 
 - Exactly one session per conversation id (two here), not one per message. Framework shows **smolagents**.
 - The first conversation has one turn per `agent.run()`; each turn's root span is `<agent name>.run`.
-- Transcript is non-empty (user text appears after `New task:`; tool results as `tool-response` messages).
+- Transcript is non-empty (user text appears after `New task:`; tool results as `tool-response` messages). Turn labels and the session title read `New task:` (Maple uses the user message's first line). Expected; tell the user.
 - Model calls `OpenAIModel.generate` (or `<ModelClass>.generate[_stream]`) have a model and non-zero input/output tokens, including streamed calls.
 - Session token totals equal the sum of the model calls (not 2x, not growing faster each turn).
-- Tool calls are `execute_tool <tool name>` with JSON arguments (the actual call's, not a schema) and results. `execute_tool final_answer` at the end of each turn is expected.
+- Tool calls are `execute_tool <tool name>` with JSON arguments (the actual call's, not a schema) and results. `execute_tool final_answer` at the end of each turn is expected, and Maple's tool-call count includes one per agent run (managed agents too).
 - A tool that raised is counted as failed; tools that returned are not.
 - Managed agents (if any) each have their own lane named after the agent.
 - Cost shows as unpriced (smolagents records no cost). Expected.
