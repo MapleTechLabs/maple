@@ -1232,9 +1232,9 @@ fn detect_spring_ai(c: &Ctx) -> bool {
 
 fn detect_vercel_ai_sdk(c: &Ctx) -> bool {
     // The v7 tracer ("gen_ai") writes `ai.*` keys only when the app opts into
-    // them, so an operation name inside its scope is enough.
+    // them, so an operation name inside its scope is enough. Its `agent_step`
+    // op is no evidence elsewhere: other emitters use it for their own steps.
     (c.scope.vercel_ai && (c.ev.ai || c.ev.has_gen_ai_operation_name))
-        || c.ev.gen_ai_operation_name == "agent_step"
         || c.ev.gen_ai_execute_tool_duration
 }
 
@@ -1892,6 +1892,20 @@ mod tests {
             "my-service",
             "chat gpt-5",
             &[("gen_ai.operation.name", "chat")],
+            &[],
+            "unknown:genai",
+            None,
+        );
+    }
+
+    #[test]
+    fn agent_step_outside_the_vercel_scope_is_not_vercel() {
+        // A LangGraph node a processor stamped as a step; it used to claim
+        // the whole span for the Vercel AI SDK.
+        classified(
+            "my-service",
+            "tools",
+            &[("gen_ai.operation.name", "agent_step")],
             &[],
             "unknown:genai",
             None,
