@@ -378,9 +378,7 @@ describe("aiSessionPageQuery", () => {
 		expect(sessions).toContain("usageReporters))), 1, 2000) AS reporters")
 		expect(sessions).toContain("arrayReduce('sumMap', arrayMap(c -> [c.12], reporters)")
 		expect(sessions).toContain(") AS childClaims")
-		expect(sessions).toContain(
-			"tupleElement(arrayFilter(p -> p.3 > 0 OR p.4 > 0, reporters), 1) AS reportingIds",
-		)
+		expect(sessions).toContain("tupleElement(reporters, 1) AS reporterIds")
 		expect(sessions).toContain(
 			"intDiv(max(traceAgentEndNanos) - toUnixTimestamp64Nano(min(traceAgentStart)), 1000000) AS agentDurationMs",
 		)

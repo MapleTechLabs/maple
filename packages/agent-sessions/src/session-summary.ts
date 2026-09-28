@@ -542,9 +542,10 @@ function collapseObservations(
 /**
  * The model calls the session made, each counted once. A model span counts
  * when it is the deepest account of its call: it reported usage its children
- * do not already cover, or it reported none and neither did any span above it
- * — so a failed call still counts, while a gateway's provider attempt under
- * the call that reports (OpenRouter's `provider attempt N`) and an SDK's
+ * do not already cover, or it reported none, nor did any span above it, and
+ * its parent is not a model call — so a failed call still counts once, while
+ * a gateway's provider attempt under its generation (OpenRouter's `provider
+ * attempt N`, whether or not the generation reported) and an SDK's
  * `generateText` over its `doGenerate` do not. Calls sharing a response id
  * are one call, represented by the observation whose usage claim was kept so
  * the per-model table finds its tokens.
@@ -564,6 +565,7 @@ function countedLlmCalls(
 		if (reportsUsage(span)) return claimed(span)
 		const seen = new Set<string>([span.spanId])
 		let parent = byId.get(span.parentSpanId)
+		if (parent !== undefined && isLlmCall(parent)) return false
 		while (parent !== undefined && !seen.has(parent.spanId)) {
 			if (reportsUsage(parent)) return false
 			seen.add(parent.spanId)

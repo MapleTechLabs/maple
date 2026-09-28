@@ -550,6 +550,33 @@ describe("buildSessionSummary — cache accounting", () => {
 		expect(summary.tokens.total).toBe(22)
 	})
 
+	it("counts a gateway request whose every attempt failed once, not once per attempt", () => {
+		// OpenRouter Broadcast, trace 83d675eb…: the generation and its one
+		// provider attempt both failed with op `chat` and no usage.
+		const openrouter = { vendorId: "openrouter", statusCode: "Error" } as const
+		const summary = summarize([
+			llmSpan({
+				...openrouter,
+				spanId: "generation",
+				spanName: "LLM Generation",
+				startMs: 0,
+				durationMs: 118,
+				genAi: { requestModel: "openai/gpt-4o-mini", responseId: "gen-1785983234" },
+			}),
+			llmSpan({
+				...openrouter,
+				spanId: "attempt",
+				parentSpanId: "generation",
+				spanName: "provider attempt 1: OpenAI",
+				startMs: 10,
+				durationMs: 100,
+				genAi: { responseId: "gen-1785983234:attempt-0" },
+			}),
+		])
+
+		expect(summary.work.llmCalls).toBe(1)
+	})
+
 	it("subtracts a roll-up's children bucket by bucket, in normalised buckets", () => {
 		const summary = summarize([
 			// The wrapper reports exclusively (Anthropic), the child inclusively

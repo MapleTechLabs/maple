@@ -31,7 +31,7 @@ import { AI_VENDOR_INTEGRATIONS } from "./ai-vendors"
 import {
 	childClaimsExpr,
 	nettedReportersExpr,
-	reportingSpanIdsExpr,
+	reporterSpanIdsExpr,
 	sessionLlmCalls,
 	sessionReportersExpr,
 	sessionUsageSum,
@@ -243,22 +243,20 @@ describe("span classification SQL", () => {
 		expect(sql(childClaimsExpr("reporters"))).toBe(
 			"arrayReduce('sumMap', arrayMap(c -> [c.12], reporters), arrayMap(c -> [c.3], reporters), arrayMap(c -> [c.4], reporters), arrayMap(c -> [c.7], reporters), arrayMap(c -> [c.8], reporters), arrayMap(c -> [c.9], reporters), arrayMap(c -> [c.10], reporters), arrayMap(c -> [c.11], reporters))",
 		)
-		expect(sql(reportingSpanIdsExpr("reporters"))).toBe(
-			"tupleElement(arrayFilter(p -> p.3 > 0 OR p.4 > 0, reporters), 1)",
-		)
+		expect(sql(reporterSpanIdsExpr("reporters"))).toBe("tupleElement(reporters, 1)")
 	})
 
 	it("nets every claim in one pass: children off their parent, a call at its deepest account", () => {
-		const text = sql(nettedReportersExpr("reporters", "childClaims", "reportingIds"))
+		const text = sql(nettedReportersExpr("reporters", "childClaims", "reporterIds"))
 		const childClaim = (element: number) =>
 			`arrayElement(tupleElement(childClaims, ${element}), indexOf(tupleElement(childClaims, 1), r.1))`
 
 		expect(text).toMatch(/^arrayMap\(r -> tuple\(r\.5, /)
 		expect(text).toMatch(/, reporters\)$/)
 		// A reporting call counts by its netted claim; a non-reporting one by
-		// having no reporting ancestor.
+		// having no reporting ancestor and no model call for a parent.
 		expect(text).toContain(
-			`r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), greatest(0., r.3 - ${childClaim(2)}) > 0 OR greatest(0., r.4 - ${childClaim(3)}) > 0, NOT has(reportingIds, r.12))`,
+			`r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), greatest(0., r.3 - ${childClaim(2)}) > 0 OR greatest(0., r.4 - ${childClaim(3)}) > 0, NOT has(reporterIds, r.12) AND NOT has(reporterIds, r.2))`,
 		)
 		// Tokens, cost and the five buckets, each less its children's, floored at zero.
 		for (const [element, child] of [

@@ -14,9 +14,9 @@
 // - A sub-step of a call: a gateway records its provider attempts as model
 //   spans under the model span (OpenRouter's `provider attempt N`), and an SDK
 //   wraps `doGenerate` in `generateText`. A model span that reports no usage
-//   while its parent does, or whose reported usage its children already
-//   account for, is the same call seen again, not another call —
-//   {@link sessionLlmCalls}.
+//   while an ancestor does or while its parent is a model span, or whose
+//   reported usage its children already account for, is the same call seen
+//   again, not another call — {@link sessionLlmCalls}.
 // - A second observation: a gateway that forwards its own trace of the call
 //   (OpenRouter Broadcast, Helicone, …) lands it in the same session as a
 //   separate trace, so the parent/child netting cannot see it. The provider's
@@ -163,11 +163,11 @@ export function childClaimsExpr(reporters: string): Expr<unknown> {
 	return CH.untypedExpr(`arrayReduce('sumMap', ${[12, 3, 4, 7, 8, 9, 10, 11].map(column).join(", ")})`)
 }
 
-/** The span ids of the reporters that reported usage — what a model call
- *  that reported none is counted against, by the reporter it is charged to.
+/** The span ids of the reporters — the spans that reported usage and the
+ *  model calls — which a model call that reported none is counted against.
  *  Same column as above. */
-export function reportingSpanIdsExpr(reporters: string): Expr<unknown> {
-	return CH.untypedExpr(`tupleElement(arrayFilter(p -> p.3 > 0 OR p.4 > 0, ${reporters}), 1)`)
+export function reporterSpanIdsExpr(reporters: string): Expr<unknown> {
+	return CH.untypedExpr(`tupleElement(${reporters}, 1)`)
 }
 
 /**
@@ -175,15 +175,16 @@ export function reportingSpanIdsExpr(reporters: string): Expr<unknown> {
  * cacheRead, cacheWrite, output, reasoning)` per reporter of the session,
  * elements 1–9 — off the three columns the session level selects:
  * {@link sessionReportersExpr}, {@link childClaimsExpr} and
- * {@link reportingSpanIdsExpr}. Columns, not aliases of the same level: an
+ * {@link reporterSpanIdsExpr}. Columns, not aliases of the same level: an
  * alias expands inside the lambda and is evaluated there, once per reporter.
  *
  * A claim is the reporter's own less what the reporters charged to it
  * already claimed, floored at zero (a clean roll-up nets to nothing). `counts`
  * is whether the reporter is a model call at its deepest account: a call that
  * reported usage counts by its netted claim, one that reported none counts
- * unless an ancestor reported — a failed call still counts, a gateway's
- * provider attempt under the call that reports does not.
+ * unless an ancestor reported or its parent is a model call — a failed call
+ * still counts once, a gateway's provider attempt under its generation does
+ * not, whether or not the generation reported.
  *
  * One lambda over the reporters, netting the seven measures at once. This
  * expression is analysed once per query, and the analysis of a lambda body
@@ -193,7 +194,7 @@ export function reportingSpanIdsExpr(reporters: string): Expr<unknown> {
 export function nettedReportersExpr(
 	reporters: string,
 	childClaims: string,
-	reportingIds: string,
+	reporterIds: string,
 ): Expr<unknown> {
 	// Where the claims charged to the reporter sit in the parallel arrays: zero,
 	// and so a zero claim, for a reporter nothing is charged to.
@@ -209,7 +210,7 @@ export function nettedReportersExpr(
 		[10, 7],
 		[11, 8],
 	] as const
-	const counts = `r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), ${netted(3, 2)} > 0 OR ${netted(4, 3)} > 0, NOT has(${reportingIds}, r.12))`
+	const counts = `r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), ${netted(3, 2)} > 0 OR ${netted(4, 3)} > 0, NOT has(${reporterIds}, r.12) AND NOT has(${reporterIds}, r.2))`
 	return CH.untypedExpr(
 		`arrayMap(r -> tuple(r.5, ${counts}, ${claims.map(([element, childElement]) => netted(element, childElement)).join(", ")}), ${reporters})`,
 	)
