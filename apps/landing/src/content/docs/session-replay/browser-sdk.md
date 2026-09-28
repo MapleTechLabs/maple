@@ -251,7 +251,94 @@ MapleBrowser.endNavigation("/projects/:id")
 
 The browser has no async context: only requests `fn` starts before its first `await` nest under its span. Start independent requests together, with `Promise.all`.
 
-All three do nothing on the server, before `init()`, with tracing disabled or before consent is granted; `traced` then only runs `fn`. A page load that happened before consent isn't traced later: the next navigation is a `navigate` span. Leaving the page or calling `shutdown()` ends an open navigation as interrupted, so it still exports.
+In the browser, all three do nothing before `init()`, with tracing disabled or before consent is granted; `traced` then only runs `fn`. A page load that happened before consent isn't traced later: the next navigation is a `navigate` span. Leaving the page or calling `shutdown()` ends an open navigation as interrupted, so it still exports.
+
+On the server, `startNavigation` and `endNavigation` do nothing, and `traced` works like the server version below.
+
+## Server-side data loading
+
+`@maple-dev/browser/server` is for server code: Server Components, SSR loaders and resolvers, and your framework's response hook. It depends only on `@opentelemetry/api`, so it runs in Node, edge runtimes and Workers.
+
+```ts
+import { serverTiming, traced } from "@maple-dev/browser/server"
+
+// a span under the active server span, like the request or render span
+const project = await traced("db.query project", () => db.project.find(id))
+
+// in the hook that sets response headers for rendered pages
+const value = serverTiming()
+if (value) headers.append("server-timing", value)
+```
+
+- `traced(name, fn, options?)` runs `fn` in a span from the global tracer your server registered (`@vercel/otel`, the OpenTelemetry Node SDK), under the active span. The server keeps the parent across `await`, so requests `fn` makes after an `await` nest under it too. It takes the same `isFailure` option as the browser version, and records an error once per trace. Without server OpenTelemetry it only runs `fn`.
+- `serverTiming()` returns the `Server-Timing` value for the active span, `traceparent;desc="00-…"`, or `undefined` when no span is active. Sent on the HTML response, it joins the browser's `pageload` span to the server's trace. Leave it off responses a shared cache stores, or every visitor joins the same trace.
+
+## Next.js integration
+
+`@maple-dev/browser/nextjs` connects the App Router (Next.js 15.3 or later) to the navigation spans, and `@maple-dev/browser/nextjs/server` joins the first page load to the server render. Start and end the spans:
+
+```ts
+// src/instrumentation-client.ts
+import { MapleBrowser } from "@maple-dev/browser"
+
+MapleBrowser.init({ ingestKey: "maple_pk_...", serviceName: "acme-web" })
+
+// Next.js only reports client-side navigations, so the page load starts here
+MapleBrowser.startNavigation(location.pathname)
+
+export { onRouterTransitionStart } from "@maple-dev/browser/nextjs"
+```
+
+```tsx
+// src/app/layout.tsx
+import { MapleNavigation } from "@maple-dev/browser/nextjs"
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+	return (
+		<html lang="en">
+			<body>
+				<MapleNavigation />
+				{children}
+			</body>
+		</html>
+	)
+}
+```
+
+Report what your error boundaries catch, in `error.tsx` and `global-error.tsx`:
+
+```tsx
+// src/app/error.tsx
+"use client"
+
+import { reportNextError } from "@maple-dev/browser/nextjs"
+import { useEffect } from "react"
+
+export default function ErrorPage({ error }: { error: Error & { digest?: string } }) {
+	useEffect(() => reportNextError(error), [error])
+	return <h2>Something went wrong</h2>
+}
+```
+
+And pass the server's trace to the render and the browser from `proxy.ts` (`middleware.ts` before Next.js 16):
+
+```ts
+// src/proxy.ts
+import { withMapleProxy } from "@maple-dev/browser/nextjs/server"
+
+export const proxy = withMapleProxy() // or withMapleProxy(yourProxy) to keep your own logic
+
+export const config = {
+	matcher: ["/((?!api|_next/static|_next/image|favicon.ico).*)"],
+}
+```
+
+- Spans are named after the route template, like `navigate /projects/[id]`, rebuilt from `useParams()`. A URL no route matches is named `/_not-found`.
+- Render `<MapleNavigation />` once, in the root layout, above `{children}`. It ends the span when the new route commits, so a route with `loading.tsx` ends it when the skeleton appears.
+- Hash links and links to the URL on screen start no span. A query change is a navigation.
+- `reportNextError` skips errors with a `digest`. Those are Server Component errors with the message stripped, which Next.js already recorded on its server span. It also skips errors `traced` already recorded.
+- `withMapleProxy` skips requests that already carry a `traceparent`, which are client navigations, and only changes responses that go on to a render in your app. Redirects and responses your proxy builds itself pass through unchanged.
+- Server Components can time database and SDK calls with `traced` from `@maple-dev/browser/server`. Pass `isFailure: () => false`: Next.js records an error thrown from a Server Component on its render span, and `redirect()` and `notFound()` work by throwing.
 
 ## Custom events
 
@@ -424,6 +511,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 }
 ```
 
+For navigation spans, error boundaries and joining the page load to the server render, see [Next.js integration](#nextjs-integration).
+
 ## Verify
 
 Load a page with the SDK installed, click around for a few seconds, then leave the tab.
@@ -444,7 +533,7 @@ Load a page with the SDK installed, click around for a few seconds, then leave t
 ## Notes
 
 - Replay recordings are stored as compressed blobs. Only small, queryable metadata is indexed, and playback streams the blobs through signed URLs.
-- The SDK is browser-only and best-effort. Telemetry network failures never surface to your application.
+- The SDK is best-effort. Telemetry network failures never surface to your application. It records in the browser; the `/server` entries only add spans to the OpenTelemetry setup your server already has.
 
 ## Next steps
 

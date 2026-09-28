@@ -32,7 +32,7 @@ vi.mock("@opentelemetry/exporter-trace-otlp-http", () => ({
 }))
 
 const { MapleBrowser } = await import("./index")
-const { resetReportedErrorsForTests } = await import("./errors")
+const { resetReportedErrorsForTests } = await import("./failures")
 const { resetNavigationForTests } = await import("./navigation")
 
 type InitConfig = Parameters<typeof MapleBrowser.init>[0]

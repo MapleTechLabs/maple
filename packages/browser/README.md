@@ -160,8 +160,91 @@ MapleBrowser.endNavigation("/projects/:id") // the route is ready: its template
 - `traced` returns `fn`'s result and rethrows its error unchanged. Only requests
   started before `fn`'s first `await` nest under its span. An error it recorded
   isn't reported again by `captureException` or the global handlers.
-- All three are no-ops on the server, before `init()`, with tracing disabled or
+- In the browser, all three are no-ops before `init()`, with tracing disabled or
   without consent (`traced` then only runs `fn`).
+- On the server, `startNavigation` and `endNavigation` do nothing, and `traced`
+  spans through the server's own OpenTelemetry setup (see below).
+
+## Server-side data loading
+
+`@maple-dev/browser/server` depends on `@opentelemetry/api` only, so it runs in
+Node, edge runtimes and Workers:
+
+```ts
+import { serverTiming, traced } from "@maple-dev/browser/server"
+
+// A Server Component, SSR loader or resolver: a span under the active server span
+const project = await traced("db.query project", () => db.project.find(id))
+
+// Your framework's response hook: joins the browser's page load to this trace
+const value = serverTiming()
+if (value) headers.append("server-timing", value)
+```
+
+- `traced` spans through the global tracer the server registered (`@vercel/otel`,
+  the Node SDK), so it nests under the request span and keeps its parent across
+  `await`. An error is recorded once per trace. Without server OpenTelemetry it
+  only runs `fn`. `MapleBrowser.traced` does the same when there is no `window`.
+- `serverTiming()` returns `traceparent;desc="00-…"` for the active span, or
+  `undefined` when none is active.
+
+## Next.js
+
+`@maple-dev/browser/nextjs` wires the App Router (Next.js 15.3+) to the
+navigation spans:
+
+```ts
+// src/instrumentation-client.ts
+import { MapleBrowser } from "@maple-dev/browser"
+
+MapleBrowser.init({ ingestKey: "maple_pk_...", serviceName: "acme-web" })
+MapleBrowser.startNavigation(location.pathname) // the page load
+export { onRouterTransitionStart } from "@maple-dev/browser/nextjs"
+```
+
+```tsx
+// src/app/layout.tsx: render it once, above {children}
+import { MapleNavigation } from "@maple-dev/browser/nextjs"
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+	return (
+		<html lang="en">
+			<body>
+				<MapleNavigation />
+				{children}
+			</body>
+		</html>
+	)
+}
+```
+
+```tsx
+// src/app/error.tsx (and global-error.tsx)
+"use client"
+import { reportNextError } from "@maple-dev/browser/nextjs"
+import { useEffect } from "react"
+
+export default function ErrorPage({ error }: { error: Error & { digest?: string } }) {
+	useEffect(() => reportNextError(error), [error])
+	return <h2>Something went wrong</h2>
+}
+```
+
+```ts
+// src/proxy.ts (middleware.ts before Next.js 16): joins the page load to the render
+import { withMapleProxy } from "@maple-dev/browser/nextjs/server"
+
+export const proxy = withMapleProxy() // or withMapleProxy(yourProxy)
+export const config = { matcher: ["/((?!api|_next/static|_next/image|favicon.ico).*)"] }
+```
+
+- Spans are named after the route, like `navigate /projects/[id]`; a URL no
+  route matches is `/_not-found`. Hash links start no span.
+- `reportNextError` skips server errors (they arrive with a `digest`, and Next.js
+  already recorded them on its server span) and errors `traced` recorded.
+- `withMapleProxy` leaves requests that already carry a `traceparent` (client
+  navigations) alone, and only touches responses that go on to a render in this
+  app: your redirects and responses pass through unchanged.
 
 ## Linking a marketing site to your app
 

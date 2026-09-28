@@ -100,6 +100,8 @@
 			"entry": ["src/drain/index.ts"]
 		},
 		"packages/browser": {
+			// One source module per `exports` subpath; the built `dist/` names don't map back to them.
+			"entry": ["src/index.ts", "src/server.ts", "src/nextjs/index.ts", "src/nextjs/server.ts"],
 			"ignoreDependencies": ["rrweb"]
 		}
 	},
