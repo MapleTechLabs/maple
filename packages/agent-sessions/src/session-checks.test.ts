@@ -527,6 +527,43 @@ describe("buildSessionChecks", () => {
 		}
 	})
 
+	// The app's own span reports no cache fields; its gateway's mirror, in a
+	// trace of its own with the same response id, does. The call is counted
+	// once, and judged by the observation that measured the cache.
+	it("judges the prompt cache off a gateway mirror when the counted span has none", () => {
+		const report = checks(
+			[0, 1, 2, 3, 4].flatMap((i) => [
+				llmSpan({
+					spanId: `app-${i}`,
+					traceId: `trace-app-${i}`,
+					startMs: i * MINUTE,
+					durationMs: 2 * SECOND,
+					genAi: {
+						providerName: "openai",
+						usageInputTokens: 2_000,
+						usageOutputTokens: 50,
+						responseId: `gen-${i}`,
+					},
+				}),
+				llmSpan({
+					spanId: `mirror-${i}`,
+					traceId: `trace-gateway-${i}`,
+					spanName: "LLM Generation",
+					startMs: i * MINUTE + 10,
+					durationMs: 2 * SECOND,
+					genAi: {
+						providerName: "openai",
+						usageInputTokens: 2_000,
+						usageCacheReadInputTokens: i === 0 ? 0 : 1_500,
+						usageOutputTokens: 50,
+						responseId: `gen-${i}`,
+					},
+				}),
+			]),
+		)
+		expect(byId(report, "prompt-cache").headline).toBe("Cache hit rate 75% over 4 calls")
+	})
+
 	// Google ADK reports each call twice: `call_llm` (no operation, a model)
 	// over `generate_content`, both with the same usage. The cache check read
 	// "over 15 calls" for a session of 8.

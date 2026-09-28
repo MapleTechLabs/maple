@@ -153,9 +153,7 @@ export function buildSessionChecks(
 		...otherErrorsCheck(errors.filter((finding) => finding.tool === undefined)),
 		repetitionCheck(of("repetition"), summary, coverage),
 		stallCheck(of("stall")),
-		// Per call, so a model call its framework also rolled up (ADK `call_llm` over
-		// `generate_content`) is judged once.
-		promptCacheCheck(sessionLlmCalls(spans)),
+		promptCacheCheck(cacheObservations(spans)),
 	].sort(
 		(a, b) =>
 			STATUS_RANK[a.status] - STATUS_RANK[b.status] ||
@@ -619,13 +617,31 @@ function stallCheck(findings: readonly SessionFinding[]): SessionCheck {
 	)
 }
 
+const reportsCache = (span: AiSessionSpan): boolean =>
+	span.genAi.usageCacheReadInputTokens !== undefined ||
+	span.genAi.usageCacheCreationInputTokens !== undefined
+
+/**
+ * One span per model call, so a call its framework also rolled up (ADK
+ * `call_llm` over `generate_content`) is judged once — and, when the span
+ * counted for it reported no cache usage, another observation of the same
+ * response that did (an app span beside its gateway's mirror).
+ */
+function cacheObservations(spans: readonly AiSessionSpan[]): readonly AiSessionSpan[] {
+	const byResponse = new Map<string, AiSessionSpan>()
+	for (const span of spans) {
+		const responseId = span.genAi.responseId
+		if (responseId !== undefined && responseId !== "" && reportsCache(span))
+			byResponse.set(responseId, span)
+	}
+	return sessionLlmCalls(spans).map((call) =>
+		reportsCache(call) ? call : (byResponse.get(call.genAi.responseId ?? "") ?? call),
+	)
+}
+
 function promptCacheCheck(llmCalls: readonly AiSessionSpan[]): SessionCheck {
 	const identity: CheckIdentity = { id: "prompt-cache", name: "Prompt cache", fixArea: "prompt" }
-	const reporting = llmCalls.filter(
-		(span) =>
-			span.genAi.usageCacheReadInputTokens !== undefined ||
-			span.genAi.usageCacheCreationInputTokens !== undefined,
-	)
+	const reporting = llmCalls.filter(reportsCache)
 	if (reporting.length === 0) {
 		return check(
 			identity,
