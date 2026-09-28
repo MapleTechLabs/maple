@@ -4,6 +4,7 @@ description: "Trace every React Router navigation, loader and action as one Open
 group: "Frontend"
 order: 2
 navLabel: "React Router"
+icon: "reactrouter"
 ---
 
 React Router knows when a navigation starts, which loaders it runs, and when the new route is ready, and since 7.15 it has a stable instrumentation API that wraps every loader and action in one place. This guide turns that into one trace per click: a span for the navigation, a span per loader and action, the fetches those loaders made, and the backend spans behind them. In framework mode, the first page load also includes the server render. The code uses APIs that are stable in React Router 7.15 and later, and was checked against 8.4.

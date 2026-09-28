@@ -1,5 +1,6 @@
 import { defineCollection, reference, z } from "astro:content"
 import { glob } from "astro/loaders"
+import { BRAND_MARKS, type BrandMarkId } from "./lib/brand-marks"
 import { LANGUAGE_IDS } from "./lib/docs-languages"
 import { CHANGELOG_CATEGORIES, CONTRIBUTOR_IDS } from "./lib/changelog-meta"
 
@@ -28,6 +29,9 @@ const docs = defineCollection({
 		// ("Node.js" for "Node.js Instrumentation").
 		navLabel: z.string().optional(),
 		sdk: z.enum(LANGUAGE_IDS).optional(),
+		// Brand mark on the sidebar row, for guides that aren't a language (`sdk`),
+		// like the frontend framework guides.
+		icon: z.enum(Object.keys(BRAND_MARKS) as [BrandMarkId, ...BrandMarkId[]]).optional(),
 	}),
 })
 

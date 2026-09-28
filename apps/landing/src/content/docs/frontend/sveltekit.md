@@ -4,6 +4,7 @@ description: "Trace SvelteKit navigations, load functions and errors in the brow
 group: "Frontend"
 order: 5
 navLabel: "SvelteKit"
+icon: "svelte"
 ---
 
 SvelteKit has its own OpenTelemetry tracing, but only for the server: it records spans for the `handle` hook, `load` functions and form actions while rendering, and nothing once the page is in the browser. This guide adds the browser half. A click on a link produces one trace with a span for the navigation, a span per `load` function, the fetches they made, and the backend spans behind them, and the first page load starts at SvelteKit's server render. The code was checked against SvelteKit 2.70 and Svelte 5.57.

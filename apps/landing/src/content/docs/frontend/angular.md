@@ -4,6 +4,7 @@ description: "Trace every Angular Router navigation, resolver and HttpClient req
 group: "Frontend"
 order: 6
 navLabel: "Angular"
+icon: "angular"
 ---
 
 Angular's router reports every step of a navigation on one observable, `Router.events`, so you can see when a navigation starts, redirects, fails or finishes without patching anything. This guide turns a click on a `routerLink` into one trace with a span for the navigation, a span per resolver, the `HttpClient` requests those resolvers made, and the backend spans behind them. With `@angular/ssr`, the first page load also includes the server render. The code was checked against Angular 22 with standalone APIs.

@@ -4,6 +4,7 @@ description: "Trace App Router navigations, client data fetching and error bound
 group: "Frontend"
 order: 3
 navLabel: "Next.js"
+icon: "nextjs"
 ---
 
 Next.js already traces its server: with `@vercel/otel` in `instrumentation.ts`, every request gets spans for the render and every server-side `fetch()`. What it can't see is the browser: how long a click took to show the new page, which requests client components made, and which errors your error boundaries caught. This guide adds that half. The first page load becomes one trace from the incoming request to the page hydrating, and every later click gets a `navigate` span named after the route, like `navigate /projects/[id]`.

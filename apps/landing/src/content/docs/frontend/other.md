@@ -4,6 +4,7 @@ description: "Trace navigations, data loading and caught errors in any browser a
 group: "Frontend"
 order: 7
 navLabel: "Other frameworks"
+icon: "javascript"
 ---
 
 Use this guide when your frontend has no guide of its own: Solid, Qwik, Preact, Astro, Remix v2, Ember, Lit, a hand-rolled router, or a multi-page app. The setup is the same everywhere. What changes is where each piece plugs in, and this page shows how to find those places in your framework's API.

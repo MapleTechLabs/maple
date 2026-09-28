@@ -4,6 +4,7 @@ description: "Trace every Vue Router navigation, the data your pages load and th
 group: "Frontend"
 order: 4
 navLabel: "Vue & Nuxt"
+icon: "vue"
 ---
 
 Vue Router tells you exactly when a navigation starts and when it's confirmed. Most Vue apps load their data after that point, inside the new page's `setup`, and that's the one thing to design around when tracing a Vue app. This guide turns a click into one trace with a span for the navigation, a span for each piece of data the new page loads, and the fetches and backend spans behind them. In Nuxt, the first page load also includes the server render. The code is for Vue 3.5 and works the same with Vue Router 4 and 5.

@@ -4,6 +4,7 @@ description: "Trace every TanStack Router navigation, loader and server render a
 group: "Frontend"
 order: 1
 navLabel: "TanStack"
+icon: "tanstack"
 ---
 
 TanStack Router tells you a lot about a navigation before it renders anything: which route matched, which loaders ran, and whether one of them redirected. This guide turns that into one trace per click, with a span for the navigation, a span per loader, the fetches those loaders made, and the backend spans behind them. With TanStack Start, the first page load also includes the server render.
