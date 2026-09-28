@@ -359,6 +359,10 @@ describe("aiSessionPageQuery", () => {
 		expect(traces).toContain(
 			"groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageReporters",
 		)
+		// And the trace's way up, so a claim climbs past spans that reported nothing.
+		expect(traces).toContain(
+			"CAST(groupArray(2000)(tuple(SpanId, if((Tokens > 0 OR Cost > 0), SpanId, ParentSpanId))), 'Map(String, String)') AS usageLinks",
+		)
 		expect(traces).toContain(
 			"max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceAgentEndNanos",
 		)
@@ -369,9 +373,10 @@ describe("aiSessionPageQuery", () => {
 		// trace of a call is in hand next to the app's own span of it — and the
 		// two lookups the netting makes, taken off them once per session.
 		expect(sessions).toContain(
-			"arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000) AS reporters",
+			"arraySlice(arrayFlatten(groupArray(arrayMap(r -> tupleConcat(r, tuple(usageLinks[",
 		)
-		expect(sessions).toContain("arrayReduce('sumMap', arrayMap(c -> [c.2], reporters)")
+		expect(sessions).toContain("usageReporters))), 1, 2000) AS reporters")
+		expect(sessions).toContain("arrayReduce('sumMap', arrayMap(c -> [c.12], reporters)")
 		expect(sessions).toContain(") AS childClaims")
 		expect(sessions).toContain(
 			"tupleElement(arrayFilter(p -> p.3 > 0 OR p.4 > 0, reporters), 1) AS reportingIds",

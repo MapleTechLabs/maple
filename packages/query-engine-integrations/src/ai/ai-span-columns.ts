@@ -1,6 +1,4 @@
-// The session's usage and model calls, counted by the detail page's rules —
-// one level deep, which is the shape every roll-up in production has, where
-// the page walks the whole ancestry.
+// The session's usage and model calls, counted by the detail page's rules.
 //
 // `ai_trace_index` carries every GenAI span's tokens and cost (migration
 // 0026, `@maple/domain/tinybird/gen-ai-columns`) and, since 0029, the
@@ -10,8 +8,9 @@
 //   model span AND sum it onto the agent span that wraps it.
 //   `countableUsageSpans` in `@maple/agent-sessions`' `session-summary.ts`
 //   charges each reporter to its nearest reporting ancestor and keeps only the
-//   excess; {@link sessionUsageSum} is that rule in SQL, one level deep, which
-//   is the shape every roll-up in production has.
+//   excess; {@link sessionUsageSum} is that rule in SQL, over the trace's
+//   index rows ({@link usageLinksExpr}): Strands puts an event-loop span
+//   between the agent and its calls, the Vercel AI SDK a step span.
 // - A sub-step of a call: a gateway records its provider attempts as model
 //   spans under the model span (OpenRouter's `provider attempt N`), and an SDK
 //   wraps `doGenerate` in `generateText`. A model span that reports no usage
@@ -95,23 +94,64 @@ export function usageReportersExpr($: {
 }
 
 /**
- * Every reporter of the session — the per-trace arrays, flattened and capped
- * again — selected as a column of the session level, so the netting one level
- * up reads a name rather than repeating the aggregate.
+ * One trace's way up: each index row's span id mapped to itself when it
+ * reported usage, and to its parent when it did not. Following it from a
+ * reporter's parent climbs past the spans that reported nothing (an event
+ * loop, a step, a chain) and stops at the nearest ancestor that did — or at
+ * `''` above the root, or at a parent outside the index, whose ancestry the
+ * index cannot see.
  *
- * `reporters` is the column {@link usageReportersExpr} was selected as.
+ * Raw SQL for the same reason as {@link usageReportersExpr}.
  */
-export function sessionReportersExpr(reporters: string): Expr<unknown> {
+export function usageLinksExpr($: {
+	readonly SpanId: Expr<string>
+	readonly ParentSpanId: Expr<string>
+	readonly Tokens: Expr<number>
+	readonly Cost: Expr<number>
+}): Expr<unknown> {
+	const next = CH.if_($.Tokens.gt(0).or($.Cost.gt(0)), $.SpanId, $.ParentSpanId)
+	const link = CH.compileFnCall<unknown>("tuple", $.SpanId, next)
 	return CH.untypedExpr(
-		`arraySlice(arrayFlatten(groupArray(${reporters})), 1, ${MAX_USAGE_REPORTERS_PER_TRACE})`,
+		`CAST(groupArray(${MAX_USAGE_REPORTERS_PER_TRACE})(${compile(link.toFragment())}), 'Map(String, String)')`,
 	)
 }
 
 /**
- * What the reporters' children already claimed, per parent — `(ParentSpanId,
- * tokens, cost, input, cacheRead, cacheWrite, output, reasoning)` as eight
- * parallel arrays, elements 1–8, one entry per span that some reporter names
- * as its parent — off the column {@link sessionReportersExpr} was selected
+ * How many spans that reported nothing a claim climbs past on its way to the
+ * reporter it is charged to. The shapes seen are one (Strands' event loop,
+ * the Vercel AI SDK's step, smolagents' `Step N`) and two (a Strands
+ * sub-agent: its tool span, then the event loop); a deeper chain is charged
+ * to where the climb stopped, which no reporter is, so its claim is counted
+ * in full.
+ */
+const USAGE_LINK_HOPS = 8
+
+/**
+ * Every reporter of the session — the per-trace arrays, flattened and capped
+ * again — selected as a column of the session level, so the netting one level
+ * up reads a name rather than repeating the aggregate. Each reporter gains a
+ * twelfth element on the way: the nearest ancestor that reported usage, off
+ * its own trace's links ({@link usageLinksExpr}), `''` where there is none.
+ *
+ * `reporters` and `links` are the columns {@link usageReportersExpr} and
+ * {@link usageLinksExpr} were selected as, one level down: a lambda reading a
+ * column of its own level would evaluate that aggregate once per reporter.
+ */
+export function sessionReportersExpr(reporters: string, links: string): Expr<unknown> {
+	const claimParent = Array.from({ length: USAGE_LINK_HOPS }).reduce<string>(
+		(spanId) => `${links}[${spanId}]`,
+		"r.2",
+	)
+	return CH.untypedExpr(
+		`arraySlice(arrayFlatten(groupArray(arrayMap(r -> tupleConcat(r, tuple(${claimParent})), ${reporters}))), 1, ${MAX_USAGE_REPORTERS_PER_TRACE})`,
+	)
+}
+
+/**
+ * What the reporters' children already claimed, per reporter charged — `(span
+ * id, tokens, cost, input, cacheRead, cacheWrite, output, reasoning)` as eight
+ * parallel arrays, elements 1–8, one entry per span that some reporter is
+ * charged to — off the column {@link sessionReportersExpr} was selected
  * as. One `sumMap` over the reporters rather than a search of them per
  * reporter: a lambda captures a column by copying it once per element, so a
  * per-reporter search of the reporters costs the square of their count in
@@ -120,11 +160,12 @@ export function sessionReportersExpr(reporters: string): Expr<unknown> {
  */
 export function childClaimsExpr(reporters: string): Expr<unknown> {
 	const column = (element: number) => `arrayMap(c -> [c.${element}], ${reporters})`
-	return CH.untypedExpr(`arrayReduce('sumMap', ${[2, 3, 4, 7, 8, 9, 10, 11].map(column).join(", ")})`)
+	return CH.untypedExpr(`arrayReduce('sumMap', ${[12, 3, 4, 7, 8, 9, 10, 11].map(column).join(", ")})`)
 }
 
 /** The span ids of the reporters that reported usage — what a model call
- *  that reported none is counted against. Same column as above. */
+ *  that reported none is counted against, by the reporter it is charged to.
+ *  Same column as above. */
 export function reportingSpanIdsExpr(reporters: string): Expr<unknown> {
 	return CH.untypedExpr(`tupleElement(arrayFilter(p -> p.3 > 0 OR p.4 > 0, ${reporters}), 1)`)
 }
@@ -137,11 +178,11 @@ export function reportingSpanIdsExpr(reporters: string): Expr<unknown> {
  * {@link reportingSpanIdsExpr}. Columns, not aliases of the same level: an
  * alias expands inside the lambda and is evaluated there, once per reporter.
  *
- * A claim is the reporter's own less what its reporting children already
- * claimed, floored at zero (a clean roll-up nets to nothing). `counts` is
- * whether the reporter is a model call at its deepest account: a call that
+ * A claim is the reporter's own less what the reporters charged to it
+ * already claimed, floored at zero (a clean roll-up nets to nothing). `counts`
+ * is whether the reporter is a model call at its deepest account: a call that
  * reported usage counts by its netted claim, one that reported none counts
- * unless its parent reported — a failed call still counts, a gateway's
+ * unless an ancestor reported — a failed call still counts, a gateway's
  * provider attempt under the call that reports does not.
  *
  * One lambda over the reporters, netting the seven measures at once. This
@@ -154,8 +195,8 @@ export function nettedReportersExpr(
 	childClaims: string,
 	reportingIds: string,
 ): Expr<unknown> {
-	// Where the reporter's own children sit in the parallel arrays: zero, and
-	// so a zero claim, for a reporter no reporter names as its parent.
+	// Where the claims charged to the reporter sit in the parallel arrays: zero,
+	// and so a zero claim, for a reporter nothing is charged to.
 	const position = `indexOf(tupleElement(${childClaims}, 1), r.1)`
 	const netted = (element: number, childElement: number) =>
 		`greatest(0., r.${element} - arrayElement(tupleElement(${childClaims}, ${childElement}), ${position}))`
@@ -168,7 +209,7 @@ export function nettedReportersExpr(
 		[10, 7],
 		[11, 8],
 	] as const
-	const counts = `r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), ${netted(3, 2)} > 0 OR ${netted(4, 3)} > 0, NOT has(${reportingIds}, r.2))`
+	const counts = `r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), ${netted(3, 2)} > 0 OR ${netted(4, 3)} > 0, NOT has(${reportingIds}, r.12))`
 	return CH.untypedExpr(
 		`arrayMap(r -> tuple(r.5, ${counts}, ${claims.map(([element, childElement]) => netted(element, childElement)).join(", ")}), ${reporters})`,
 	)

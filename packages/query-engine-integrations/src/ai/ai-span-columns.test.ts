@@ -35,6 +35,7 @@ import {
 	sessionLlmCalls,
 	sessionReportersExpr,
 	sessionUsageSum,
+	usageLinksExpr,
 	usageReportersExpr,
 } from "./ai-span-columns"
 
@@ -219,14 +220,28 @@ describe("span classification SQL", () => {
 		)
 	})
 
-	it("collects the session's reporters once, and the two lookups the netting makes off them", () => {
-		expect(sql(sessionReportersExpr("usageReporters"))).toBe(
-			"arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)",
+	it("maps each of a trace's spans to itself when it reported, else to its parent", () => {
+		const links = usageLinksExpr({
+			SpanId: CH.dynamicColumn<string>("SpanId", T.string),
+			ParentSpanId: CH.dynamicColumn<string>("ParentSpanId", T.string),
+			Tokens: CH.dynamicColumn<number>("Tokens", T.float64),
+			Cost: CH.dynamicColumn<number>("Cost", T.float64),
+		})
+		expect(sql(links)).toBe(
+			"CAST(groupArray(2000)(tuple(SpanId, if((Tokens > 0 OR Cost > 0), SpanId, ParentSpanId))), 'Map(String, String)')",
 		)
-		// What the children already claimed, per parent: one sumMap over the
-		// reporters, not a search of them per reporter.
+	})
+
+	it("collects the session's reporters once, and the two lookups the netting makes off them", () => {
+		// Each reporter carries the nearest ancestor that reported as element 12,
+		// climbed off its trace's links past the spans that reported nothing.
+		expect(sql(sessionReportersExpr("usageReporters", "usageLinks"))).toBe(
+			`arraySlice(arrayFlatten(groupArray(arrayMap(r -> tupleConcat(r, tuple(${"usageLinks[".repeat(8)}r.2${"]".repeat(8)})), usageReporters))), 1, 2000)`,
+		)
+		// What the reporters charged to each one already claimed: one sumMap
+		// over the reporters, not a search of them per reporter.
 		expect(sql(childClaimsExpr("reporters"))).toBe(
-			"arrayReduce('sumMap', arrayMap(c -> [c.2], reporters), arrayMap(c -> [c.3], reporters), arrayMap(c -> [c.4], reporters), arrayMap(c -> [c.7], reporters), arrayMap(c -> [c.8], reporters), arrayMap(c -> [c.9], reporters), arrayMap(c -> [c.10], reporters), arrayMap(c -> [c.11], reporters))",
+			"arrayReduce('sumMap', arrayMap(c -> [c.12], reporters), arrayMap(c -> [c.3], reporters), arrayMap(c -> [c.4], reporters), arrayMap(c -> [c.7], reporters), arrayMap(c -> [c.8], reporters), arrayMap(c -> [c.9], reporters), arrayMap(c -> [c.10], reporters), arrayMap(c -> [c.11], reporters))",
 		)
 		expect(sql(reportingSpanIdsExpr("reporters"))).toBe(
 			"tupleElement(arrayFilter(p -> p.3 > 0 OR p.4 > 0, reporters), 1)",
@@ -241,9 +256,9 @@ describe("span classification SQL", () => {
 		expect(text).toMatch(/^arrayMap\(r -> tuple\(r\.5, /)
 		expect(text).toMatch(/, reporters\)$/)
 		// A reporting call counts by its netted claim; a non-reporting one by
-		// having no reporting parent.
+		// having no reporting ancestor.
 		expect(text).toContain(
-			`r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), greatest(0., r.3 - ${childClaim(2)}) > 0 OR greatest(0., r.4 - ${childClaim(3)}) > 0, NOT has(reportingIds, r.2))`,
+			`r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), greatest(0., r.3 - ${childClaim(2)}) > 0 OR greatest(0., r.4 - ${childClaim(3)}) > 0, NOT has(reportingIds, r.12))`,
 		)
 		// Tokens, cost and the five buckets, each less its children's, floored at zero.
 		for (const [element, child] of [
