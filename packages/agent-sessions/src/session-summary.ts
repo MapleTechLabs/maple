@@ -357,10 +357,10 @@ export function findIdleGaps(spans: readonly AiSessionSpan[]): readonly IdleGap[
  * time is mostly first-token latency is a different session from one that is
  * mostly generation. Agent and non-AI spans contribute nothing — an agent span
  * covers its children, and adding it would count the same work twice. For the
- * same reason an inference span inside another is the same model call observed
- * twice (OpenRouter's `LLM Generation` over its `generation`, ADK's `call_llm`
- * over `generate_content`): the outermost carries the time, and lends its TTFT
- * from the level that reported one.
+ * same reason an inference span inside another is charged nothing: its time is
+ * already inside the outer span's (OpenRouter's `LLM Generation` over its
+ * `generation`, ADK's `call_llm` over `generate_content`). The outermost
+ * carries the time, and borrows a TTFT from a nested span when it reported none.
  */
 export function computeAgentTime(spans: readonly AiSessionSpan[]): SessionAgentTime {
 	const totals = new Map<AgentTimeKind, number>()
