@@ -71,6 +71,8 @@ describe("GenAI column key lists match the integration layer", () => {
 
 	it("agent and tool names, and the response id the session dedupes on", () => {
 		for (const key of GENAI_AGENT_NAME_KEYS) expect(decodedKeys("agentName")).toContain(key)
+		// In the same order, so a span carrying two of them is named alike on both pages.
+		expect(resolveAiIntegration("vercel_ai_sdk").sources.agentName).toEqual([...GENAI_AGENT_NAME_KEYS])
 		for (const key of GENAI_TOOL_NAME_KEYS) expect(decodedKeys("toolName")).toContain(key)
 		for (const key of GENAI_RESPONSE_ID_KEYS) expect(decodedKeys("responseId")).toContain(key)
 		for (const key of decodedKeys("responseId")) expect(GENAI_RESPONSE_ID_KEYS).toContain(key)
