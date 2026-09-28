@@ -265,6 +265,53 @@ describe("buildSessionSummary — tokens and models", () => {
 		expect(summary.tokens.input).toBe(300)
 	})
 
+	it("does not let a zero-usage step between the agent and its calls absorb them", () => {
+		// Vercel AI SDK, `usage: true` (capture docs_vercel-ai-sdk_a2): every span
+		// carries `ai.usage.outputTokenDetails.reasoningTokens="0"`, the `step`
+		// spans nothing else. The agent span restates its two chats.
+		const vercel = { vendorId: "vercel_ai_sdk" } as const
+		const summary = summarize([
+			agentSpan({
+				...vercel,
+				spanId: "invoke",
+				startMs: 0,
+				durationMs: 5 * SECOND,
+				genAi: { usageInputTokens: 312, usageOutputTokens: 28, usageReasoningOutputTokens: 0 },
+			}),
+			...[1, 2].map((step) =>
+				makeSpan({
+					...vercel,
+					spanId: `step-${step}`,
+					parentSpanId: "invoke",
+					spanName: `step ${step}`,
+					startMs: step * SECOND,
+					durationMs: SECOND,
+					genAi: { operationName: "agent_step", usageReasoningOutputTokens: 0 },
+				}),
+			),
+			llmSpan({
+				...vercel,
+				spanId: "chat-1",
+				parentSpanId: "step-1",
+				startMs: SECOND,
+				durationMs: SECOND,
+				genAi: { usageInputTokens: 137, usageOutputTokens: 14, usageReasoningOutputTokens: 0 },
+			}),
+			llmSpan({
+				...vercel,
+				spanId: "chat-2",
+				parentSpanId: "step-2",
+				startMs: 2 * SECOND,
+				durationMs: SECOND,
+				genAi: { usageInputTokens: 175, usageOutputTokens: 14, usageReasoningOutputTokens: 0 },
+			}),
+		])
+
+		// 340 was reported as 680: the chats, and the agent's roll-up of them again.
+		expect(summary.tokens.total).toBe(340)
+		expect(summary.work.llmCalls).toBe(2)
+	})
+
 	it("groups models by the one that answered, busiest first", () => {
 		const summary = summarize([
 			llmSpan({ spanId: "a", startMs: 0, durationMs: SECOND, model: "claude-haiku-4-5" }),

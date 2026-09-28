@@ -480,10 +480,13 @@ function countableUsageSpans(
 	spans: readonly AiSessionSpan[],
 	byId: ReadonlyMap<string, AiSessionSpan>,
 ): CountableUsage {
+	// A span whose usage reads zero throughout is not a reporter: a Vercel AI SDK
+	// `step` stamps only `reasoningTokens="0"`, and as a reporter it would absorb
+	// its chat's usage and leave the agent span above both keeping its roll-up.
 	const reported = new Map<string, SessionTokenTotals>()
 	for (const span of spans) {
 		const tokens = spanTokenBuckets(span)
-		if (tokens !== undefined) reported.set(span.spanId, tokens)
+		if (tokens !== undefined && tokens.total > 0) reported.set(span.spanId, tokens)
 	}
 
 	const bySpan = new Map<string, SessionTokenTotals>()
