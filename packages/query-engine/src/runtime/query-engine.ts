@@ -1263,40 +1263,58 @@ export interface QueryEngineExecuteOptions {
 }
 
 /**
- * A ClickHouse cluster that has not applied a rollup's migration answers any
- * read of it with `UNKNOWN_TABLE`, and the table name is always in the message.
- * Matching the name rather than the error tag keeps this working across every
- * layer the warehouse error is re-wrapped by on its way here.
+ * A ClickHouse cluster that has not applied migration 0015 answers any read of
+ * `service_overview_minutely` with `UNKNOWN_TABLE`, and the table name is always
+ * in the message. Matching the name rather than the error tag keeps this working
+ * across every layer the warehouse error is re-wrapped by on its way here.
  */
-const isMissingRollup =
-	(table: RegExp) =>
-	(error: unknown): boolean => {
-		if (typeof error !== "object" || error === null) return false
-		const candidate = error as { readonly clickhouseType?: unknown; readonly message?: unknown }
-		if (typeof candidate.message === "string" && table.test(candidate.message)) return true
-		return candidate.clickhouseType === "UNKNOWN_TABLE"
+const isMissingServiceOverviewMinutely = (error: unknown): boolean => {
+	if (typeof error !== "object" || error === null) return false
+	const candidate = error as { readonly clickhouseType?: unknown; readonly message?: unknown }
+	if (typeof candidate.message === "string" && /service_overview_minutely/i.test(candidate.message)) {
+		return true
 	}
+	return candidate.clickhouseType === "UNKNOWN_TABLE"
+}
 
-/** Migration 0015. */
-const isMissingServiceOverviewMinutely = isMissingRollup(/service_overview_minutely/i)
+/**
+ * The missing-table config error naming the rollup. A timeout or memory error
+ * on the rollup read also names it, and must surface rather than retry against
+ * the heavier raw table.
+ */
+const isMissingTraceFacetsRollup = (error: unknown): boolean => {
+	if (typeof error !== "object" || error === null) return false
+	const candidate = error as { readonly _tag?: unknown; readonly message?: unknown }
+	return (
+		candidate._tag === "@maple/http/errors/WarehouseConfigError" &&
+		typeof candidate.message === "string" &&
+		/trace_facets_hourly/i.test(candidate.message)
+	)
+}
 
 /**
  * `trace_facets_hourly` ships in a `requiredForIngest: false` migration (0034),
  * so a BYO cluster may not have it yet; the sidebar then reads `trace_list_mv`.
+ * Only a read that actually included the rollup can be missing it.
  */
 const withTraceFacetsFallback = <A, E, R>(
 	orgId: string,
+	usesRollup: boolean,
 	run: (rawOnly: boolean) => Effect.Effect<A, E, R>,
 ): Effect.Effect<A, E, R> =>
-	run(false).pipe(
-		Effect.catch((error) =>
-			isMissingRollup(/trace_facets_hourly/i)(error)
-				? Effect.logWarning(
-						"trace_facets_hourly is absent on this cluster; reading trace_list_mv. Apply ClickHouse schema to restore the fast path.",
-					).pipe(Effect.annotateLogs({ orgId }), Effect.andThen(run(true)))
-				: Effect.fail(error),
-		),
-	)
+	usesRollup
+		? run(false).pipe(
+				Effect.catchIf(isMissingTraceFacetsRollup, () =>
+					Effect.gen(function* () {
+						yield* Effect.logWarning(
+							"trace_facets_hourly is absent on this cluster; reading trace_list_mv. Apply ClickHouse schema to restore the fast path.",
+						).pipe(Effect.annotateLogs({ orgId }))
+						yield* Effect.annotateCurrentSpan("query.rollup.fallback", true)
+						return yield* run(true)
+					}),
+				),
+			)
+		: run(true)
 
 export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEngineWarehouse<T>) =>
 	Effect.fn("QueryEngineService.execute")(function* (
@@ -2025,15 +2043,18 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 					request.query.filters as Record<string, unknown> | undefined,
 				)
 				const facet = request.query.facet
-				const rows = yield* withTraceFacetsFallback(tenant.orgId, (rawOnly) =>
-					executeCHUnionQuery(
-						warehouse,
-						tenant,
-						CH.tracesFacetsQuery({ ...opts, facet, rawOnly }),
-						baseParams,
-						facet ? `tracesFacets:${facet}` : "tracesFacets",
-						"discovery",
-					),
+				const rows = yield* withTraceFacetsFallback(
+					tenant.orgId,
+					CH.canUseTraceFacetsRollup(opts),
+					(rawOnly) =>
+						executeCHUnionQuery(
+							warehouse,
+							tenant,
+							CH.tracesFacetsQuery({ ...opts, facet, rawOnly }),
+							baseParams,
+							facet ? `tracesFacets:${facet}` : "tracesFacets",
+							"discovery",
+						),
 				)
 				return new QueryEngineExecuteResponse({
 					result: {
@@ -2153,14 +2174,17 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 			const opts = extractTracesDurationStatsOpts(
 				request.query.filters as Record<string, unknown> | undefined,
 			)
-			const rows = yield* withTraceFacetsFallback(tenant.orgId, (rawOnly) =>
-				executeCHQuery(
-					warehouse,
-					tenant,
-					CH.tracesDurationStatsQuery({ ...opts, rawOnly }),
-					{ orgId: tenant.orgId, startTime: request.startTime, endTime: request.endTime },
-					"tracesDurationStats",
-				),
+			const rows = yield* withTraceFacetsFallback(
+				tenant.orgId,
+				CH.canUseTraceFacetsRollup(opts),
+				(rawOnly) =>
+					executeCHQuery(
+						warehouse,
+						tenant,
+						CH.tracesDurationStatsQuery({ ...opts, rawOnly }),
+						{ orgId: tenant.orgId, startTime: request.startTime, endTime: request.endTime },
+						"tracesDurationStats",
+					),
 			)
 			const row = rows[0]
 			return new QueryEngineExecuteResponse({

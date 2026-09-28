@@ -61,6 +61,8 @@ const BATCH_2: ReadonlyArray<SeedSpan> = [
 	root("t6", BASE_MS + HOUR_MS + 120_000, "api", 80_000_000),
 	root("t7", BASE_MS + 2 * HOUR_MS + 300_000, "api", 4_000_000),
 	root("t8", BASE_MS + 2 * HOUR_MS + 900_000, "api", 6_000_000),
+	// The only failing staging root inside a whole hour: proves filters reach the hourly tier.
+	root("t9", BASE_MS + HOUR_MS + 180_000, "worker", 30_000_000, { status: "Error", env: "staging" }),
 ]
 
 const insert = async (spans: ReadonlyArray<SeedSpan>): Promise<void> => {
@@ -122,7 +124,7 @@ describe.skipIf(!clickhouseE2eEnabled)("trace_facets_hourly materialization", ()
 		const expected = await fromTraceList()
 		assert.strictEqual(
 			expected.reduce((total, row) => total + Number(row.traces), 0),
-			8,
+			9,
 		)
 		assert.deepStrictEqual(await fromRollup(), expected)
 
@@ -142,27 +144,32 @@ describe.skipIf(!clickhouseE2eEnabled)("trace_facets_hourly materialization", ()
 		const byFacet = (rows: ReadonlyArray<Record<string, unknown>>) =>
 			[...rows].sort((a, b) => `${a.facetType}:${a.name}`.localeCompare(`${b.facetType}:${b.name}`))
 
-		for (const [startMs, endMs] of [
-			[BASE_MS + 90_000, BASE_MS + 2 * HOUR_MS + 600_000],
-			[BASE_MS + HOUR_MS, BASE_MS + 2 * HOUR_MS],
+		for (const [filters, longestMs] of [
+			[{}, 80],
+			[{ hasError: true, deploymentEnvs: ["staging"] }, 30],
 		] as const) {
-			const window = { orgId: ORG_ID, startTime: chDateTime(startMs), endTime: chDateTime(endMs) }
-			const facets = (rawOnly: boolean) =>
-				CH.compileUnionUnsafe(CH.tracesFacetsQuery({ rawOnly }), window).sql
-			const stats = (rawOnly: boolean) =>
-				CH.compileUnsafe(CH.tracesDurationStatsQuery({ rawOnly }), window).sql
-			assert.include(facets(false), "trace_facets_hourly")
-			assert.notInclude(facets(true), "trace_facets_hourly")
-			assert.notInclude(stats(true), "trace_facets_hourly")
+			for (const [startMs, endMs] of [
+				[BASE_MS + 90_000, BASE_MS + 2 * HOUR_MS + 600_000],
+				[BASE_MS + HOUR_MS, BASE_MS + 2 * HOUR_MS],
+			] as const) {
+				const window = { orgId: ORG_ID, startTime: chDateTime(startMs), endTime: chDateTime(endMs) }
+				const facets = (rawOnly: boolean) =>
+					CH.compileUnionUnsafe(CH.tracesFacetsQuery({ ...filters, rawOnly }), window).sql
+				const stats = (rawOnly: boolean) =>
+					CH.compileUnsafe(CH.tracesDurationStatsQuery({ ...filters, rawOnly }), window).sql
+				assert.include(facets(false), "trace_facets_hourly")
+				assert.notInclude(facets(true), "trace_facets_hourly")
+				assert.notInclude(stats(true), "trace_facets_hourly")
 
-			assert.deepStrictEqual(byFacet(await run(facets(false))), byFacet(await run(facets(true))))
-			const [spliced] = await run(stats(false))
-			const [raw] = await run(stats(true))
-			assert.strictEqual(spliced!.minDurationMs, raw!.minDurationMs)
-			assert.strictEqual(spliced!.maxDurationMs, 80)
-			assert.strictEqual(raw!.maxDurationMs, 80)
-			for (const key of ["p50DurationMs", "p95DurationMs"]) {
-				assert.closeTo(Number(spliced![key]), Number(raw![key]), Number(raw![key]) * 0.01)
+				assert.deepStrictEqual(byFacet(await run(facets(false))), byFacet(await run(facets(true))))
+				const [spliced] = await run(stats(false))
+				const [raw] = await run(stats(true))
+				assert.strictEqual(spliced!.minDurationMs, raw!.minDurationMs)
+				assert.strictEqual(spliced!.maxDurationMs, longestMs)
+				assert.strictEqual(raw!.maxDurationMs, longestMs)
+				for (const key of ["p50DurationMs", "p95DurationMs"]) {
+					assert.closeTo(Number(spliced![key]), Number(raw![key]), Number(raw![key]) * 0.01)
+				}
 			}
 		}
 	})

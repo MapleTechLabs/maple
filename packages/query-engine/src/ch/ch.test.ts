@@ -1331,7 +1331,8 @@ describe("converted queries", () => {
 			matchModes: { serviceName: "contains" },
 		})
 		const { sql } = compileUnsafe(q, baseParams)
-		expect(sql).toContain("positionCaseInsensitive(ServiceName, 'api') > 0")
+		// On both tiers: the trace_list_mv edges and the hourly interior.
+		expect(sql.match(/positionCaseInsensitive\(ServiceName, 'api'\) > 0/g)).toHaveLength(2)
 	})
 
 	it("spanHierarchyQuery projects only the trimmed tree attribute keys", () => {
