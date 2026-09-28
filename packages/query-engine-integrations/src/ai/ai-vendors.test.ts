@@ -223,6 +223,48 @@ describe("openinference", () => {
 
 		expect(mapped.genAi.operationName).toBe("chat")
 	})
+
+	it("decodes the chat.completion array OpenInference TS writes to output.value", () => {
+		// Trimmed from an OpenInference TS `generation` span that asked for a tool.
+		const mapped = mapAiSpan(
+			row("unknown:openinference", {
+				"openinference.span.kind": "LLM",
+				"output.value":
+					'[{"id":"gen-1790615485-YqcVFoU6RoZ0rxtOIcgJ","object":"chat.completion","model":"openai/gpt-4o-mini","choices":[{"index":0,"finish_reason":"tool_calls","message":{"role":"assistant","content":null,"refusal":null,"tool_calls":[{"type":"function","index":0,"id":"call_S2ZCSLmFSJRp7QxaBw8DoCgT","function":{"name":"get_weather","arguments":"{\\"city\\":\\"Berlin\\"}"}}]}}]}]',
+				"llm.output_messages.0.message.role": "assistant",
+				"llm.finish_reason": "tool_calls",
+			}),
+		)
+
+		expect(mapped.genAi.outputMessages).toEqual([
+			{
+				role: "assistant",
+				content: null,
+				refusal: null,
+				tool_calls: [
+					{
+						type: "function",
+						index: 0,
+						id: "call_S2ZCSLmFSJRp7QxaBw8DoCgT",
+						function: { name: "get_weather", arguments: '{"city":"Berlin"}' },
+					},
+				],
+				finish_reason: "tool_calls",
+			},
+		])
+		expect(mapped.genAi.responseFinishReasons).toEqual(["tool_call"])
+
+		// A lone object too: OpenRouter's test generation sends one as `gen_ai.completion`.
+		const lone = mapAiSpan(
+			row("openrouter", {
+				"gen_ai.completion":
+					'{"id":"chatcmpl-test123","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"The capital of France is Paris."},"finish_reason":"stop"}]}',
+			}),
+		)
+		expect(lone.genAi.outputMessages).toEqual([
+			{ role: "assistant", content: "The capital of France is Paris.", finish_reason: "stop" },
+		])
+	})
 })
 
 describe("eve", () => {

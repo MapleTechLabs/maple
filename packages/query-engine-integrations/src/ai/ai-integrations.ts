@@ -202,7 +202,23 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const unwrapMessages = (value: unknown): unknown =>
 	isRecord(value) && Array.isArray(value.messages) ? value.messages : value
 
+const completionChoices = (value: unknown): readonly unknown[] | undefined =>
+	isRecord(value) && Array.isArray(value.choices) ? value.choices : undefined
+
 const unwrapOutputMessages = (value: unknown): unknown => {
+	// OpenAI `chat.completion` objects, alone or in an array (OpenInference's
+	// `output.value`): the reply is each choice's message, and the choice's
+	// finish reason goes where the convention keeps it, on the message.
+	const choices = (Array.isArray(value) ? value : [value]).map(completionChoices)
+	if (choices.length > 0 && choices.every((entry) => entry !== undefined)) {
+		return choices
+			.flat()
+			.flatMap((choice) =>
+				isRecord(choice) && isRecord(choice.message)
+					? [{ ...choice.message, finish_reason: choice.finish_reason }]
+					: [],
+			)
+	}
 	if (!isRecord(value) || typeof value.completion !== "string") return unwrapMessages(value)
 	const parts = [
 		...(typeof value.reasoning === "string" && value.reasoning !== ""

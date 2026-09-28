@@ -97,6 +97,7 @@ const openInferenceIntegration: AiIntegration = {
 		usageCacheReadInputTokens: ["llm.token_count.prompt_details.cache_read"],
 		usageReasoningOutputTokens: ["llm.token_count.completion_details.reasoning"],
 		usageCost: ["llm.cost.total"],
+		responseFinishReasons: ["llm.finish_reason"],
 		inputMessages: ["llm.input_messages", "input.value"],
 		outputMessages: ["llm.output_messages", "output.value"],
 		toolName: ["tool.name"],
