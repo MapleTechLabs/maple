@@ -464,14 +464,23 @@ function messageText(value: unknown): string | undefined {
 	return undefined
 }
 
-/** The message's first non-empty line, collapsed to one line's worth of text. */
+/** The message's first non-empty line, collapsed to one line's worth of text —
+ *  or the line after it, when the first is a lead-in. */
 function proseLine(value: string): string | undefined {
-	for (const rawLine of value.split("\n")) {
-		const line = rawLine.trim().replace(/\s+/g, " ")
-		if (line.length === 0) continue
-		return line.length > MAX_LABEL_LENGTH ? `${line.slice(0, MAX_LABEL_LENGTH - 1)}…` : line
-	}
-	return undefined
+	const lines = value
+		.split("\n")
+		.map((line) => line.trim().replace(/\s+/g, " "))
+		.filter((line) => line.length > 0)
+	const [first, second] = lines
+	if (first === undefined) return undefined
+	const line = second !== undefined && isLeadIn(first) ? second : first
+	return line.length > MAX_LABEL_LENGTH ? `${line.slice(0, MAX_LABEL_LENGTH - 1)}…` : line
+}
+
+/** A short line ending in a colon names what follows rather than saying it:
+ *  smolagents opens every task with "New task:". */
+function isLeadIn(line: string): boolean {
+	return line.endsWith(":") && line.split(" ").length <= 3
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
