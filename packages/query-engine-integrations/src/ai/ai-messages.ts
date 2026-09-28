@@ -22,16 +22,19 @@ const completionChoices = (value: unknown): readonly unknown[] | undefined =>
 export const unwrapOutputMessages = (value: unknown): unknown => {
 	// OpenAI `chat.completion` objects, alone or in an array (OpenInference's
 	// `output.value`): the reply is each choice's message, and the choice's
-	// finish reason goes where the convention keeps it, on the message.
+	// finish reason goes where the convention keeps it, on the message. Choices
+	// carrying no message (a streamed chunk's `delta`, an empty `choices`)
+	// leave the capture as it was rather than empty it.
 	const choices = (Array.isArray(value) ? value : [value]).map(completionChoices)
 	if (choices.length > 0 && choices.every((entry) => entry !== undefined)) {
-		return choices
+		const messages = choices
 			.flat()
 			.flatMap((choice) =>
 				isRecord(choice) && isRecord(choice.message)
 					? [{ ...choice.message, finish_reason: choice.finish_reason }]
 					: [],
 			)
+		if (messages.length > 0) return messages
 	}
 	// One bare message (smolagents' `output.value`) is a one-message reply.
 	if (isRecord(value) && typeof value.role === "string") return [value]

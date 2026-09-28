@@ -430,6 +430,18 @@ describe("openinference", () => {
 		expect(lone.genAi.outputMessages).toEqual([
 			{ role: "assistant", content: "The capital of France is Paris.", finish_reason: "stop" },
 		])
+
+		// Choices with no message (a streamed chunk's delta) keep the capture whole.
+		const chunk = mapAiSpan(
+			row("openrouter", {
+				"gen_ai.completion":
+					'{"object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"Par"},"finish_reason":null}]}',
+			}),
+		)
+		expect(chunk.genAi.outputMessages).toEqual({
+			object: "chat.completion.chunk",
+			choices: [{ index: 0, delta: { content: "Par" }, finish_reason: null }],
+		})
 	})
 })
 
