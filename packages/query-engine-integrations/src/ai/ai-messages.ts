@@ -108,7 +108,11 @@ export const flattenedMessages = (
 	}
 	const messages = indexed(root).map((entry) => {
 		const { contents, tool_calls: toolCalls, ...message } = isRecord(entry.message) ? entry.message : {}
-		const parts = indexed(contents).map((content) => content.message_content)
+		// A content part with nothing in it (llamaindex writes `text = ""` beside
+		// its tool calls) is no part at all.
+		const parts = indexed(contents)
+			.map((content) => content.message_content)
+			.filter((part) => isRecord(part) && Object.keys(part).some((key) => key !== "type"))
 		if (parts.length > 0) message.content = parts
 		const calls = indexed(toolCalls).map((call) => call.tool_call)
 		if (calls.length > 0) message.tool_calls = calls

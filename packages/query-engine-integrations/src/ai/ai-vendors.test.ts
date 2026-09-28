@@ -210,6 +210,21 @@ describe("openinference", () => {
 			},
 		])
 
+		// llamaindex writes an empty text part beside its tool calls; it is no part.
+		const empty = mapAiSpan(
+			row("llamaindex", {
+				"openinference.span.kind": "LLM",
+				"llm.output_messages.0.message.role": "assistant",
+				"llm.output_messages.0.message.contents.0.message_content.type": "text",
+				"llm.output_messages.0.message.contents.0.message_content.text": "",
+				"llm.output_messages.0.message.tool_calls.0.tool_call.id": "call_1",
+				"llm.output_messages.0.message.tool_calls.0.tool_call.function.name": "get_weather",
+			}),
+		)
+		expect(empty.genAi.outputMessages).toEqual([
+			{ role: "assistant", tool_calls: [{ id: "call_1", function: { name: "get_weather" } }] },
+		])
+
 		// The GenAI dual-write, where present, still wins.
 		const dual = mapAiSpan(
 			row("smolagents", {
