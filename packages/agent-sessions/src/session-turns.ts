@@ -401,12 +401,15 @@ function findAnchors(ordered: readonly AiSessionSpan[]): readonly TurnAnchor[] {
  *
  * The anchor is asked first — on a `chat`-shaped span `gen_ai.input.messages`
  * is the whole history sent to the model, so a descendant several turns deep
- * still carries turn 1's opening prompt.
+ * still carries turn 1's opening prompt. Model calls come next: the history a
+ * model was sent ends on the turn's prompt, while a framework's own node span
+ * may carry only what the thread started with (LangGraph's `model` node under a
+ * checkpointer holds the thread's first message on every turn).
  */
 function turnLabel(anchor: AiSessionSpan, turnSpans: readonly AiSessionSpan[]): string | undefined {
 	const fromAnchor = lastUserMessageText(anchor.genAi.inputMessages)
 	if (fromAnchor !== undefined) return fromAnchor
-	for (const span of turnSpans) {
+	for (const span of [...turnSpans.filter(isLlmCall), ...turnSpans]) {
 		const text = lastUserMessageText(span.genAi.inputMessages)
 		if (text !== undefined) return text
 	}

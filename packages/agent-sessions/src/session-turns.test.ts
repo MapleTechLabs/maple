@@ -298,6 +298,49 @@ describe("buildSessionTurns", () => {
 		expect(turns[0]!.label).toBe("deploy the worker")
 	})
 
+	// LangGraph with a checkpointer, through the OpenInference dual-write: the
+	// `model` node (a CHAIN span, no operation) starts before its model call and
+	// carries only the thread's FIRST message, so every turn read turn 1's prompt.
+	it("labels from a model call before a framework span that started earlier", () => {
+		const turn = (n: number, prompts: readonly string[]) => {
+			const at = n * 60 * SECOND
+			return [
+				agentSpan({
+					spanId: `assistant-${n}`,
+					startMs: at,
+					durationMs: 2 * SECOND,
+					agentName: "assistant",
+				}),
+				makeSpan({
+					spanId: `model-${n}`,
+					parentSpanId: `assistant-${n}`,
+					spanName: "model",
+					startMs: at + 10,
+					durationMs: SECOND,
+					vendorId: "unknown:openinference",
+					genAi: { inputMessages: userMessages(prompts[0]!) },
+				}),
+				llmSpan({
+					spanId: `chat-${n}`,
+					parentSpanId: `model-${n}`,
+					spanName: "ChatOpenAI",
+					startMs: at + 12,
+					durationMs: SECOND,
+					genAi: { inputMessages: userMessages(...prompts) },
+				}),
+			]
+		}
+		const turns = buildSessionTurns([
+			...turn(0, ["Hi! Briefly introduce yourself."]),
+			...turn(1, ["Hi! Briefly introduce yourself.", "What's the weather in Berlin?"]),
+		])
+
+		expect(turns.map((t) => t.label)).toEqual([
+			"Hi! Briefly introduce yourself.",
+			"What's the weather in Berlin?",
+		])
+	})
+
 	it("has no label when message content was not captured", () => {
 		const turns = buildSessionTurns([agentSpan({ spanId: "agent", startMs: 0, durationMs: SECOND })])
 
