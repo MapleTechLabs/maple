@@ -398,7 +398,13 @@ export const GENAI_USAGE_KEYS = {
 	],
 } as const
 
-export const GENAI_COST_KEYS = ["gen_ai.usage.cost", "gen_ai.usage.total_cost", "llm.cost.total"] as const
+export const GENAI_COST_KEYS = [
+	"gen_ai.usage.cost",
+	"gen_ai.usage.total_cost",
+	"llm.cost.total",
+	"litellm.cost.total",
+	"operation.cost",
+] as const
 
 /** The provider that served the call, which decides the usage convention: the
  *  semconv key, its pre-rename spelling, then the Vercel AI SDK and

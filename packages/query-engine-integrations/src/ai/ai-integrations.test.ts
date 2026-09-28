@@ -264,6 +264,11 @@ describe("cost keys", () => {
 
 		expect(mapped.genAi.usageCost).toBe(0.0042)
 	})
+
+	it("reads LiteLLM's and Pydantic AI's own price for the call", () => {
+		expect(mapAiSpan(row({ "litellm.cost.total": "2.895e-05" })).genAi.usageCost).toBe(2.895e-5)
+		expect(mapAiSpan(row({ "operation.cost": "4.755e-05" })).genAi.usageCost).toBe(4.755e-5)
+	})
 })
 
 describe("value normalisation", () => {

@@ -163,10 +163,12 @@ const GENAI_LEGACY_ALIASES = {
 		"gen_ai.usage.cache_write.input_tokens",
 		"gen_ai.usage.input_tokens.cache_write",
 	],
-	// OpenInference's key. Instrumentations that price calls themselves each
-	// name the figure their own way, and every vendor's span can carry any of
-	// them — the list's `Cost` column reads them all.
-	usageCost: ["gen_ai.usage.total_cost", "llm.cost.total"],
+	// OpenInference's, LiteLLM's and Pydantic AI's (Logfire's) keys.
+	// Instrumentations that price calls themselves each name the figure their
+	// own way, and every vendor's span can carry any of them — the list's `Cost`
+	// column reads them all. Each is the instrumentation's own price for the
+	// call, as `gen_ai.usage.cost` is.
+	usageCost: ["gen_ai.usage.total_cost", "llm.cost.total", "litellm.cost.total", "operation.cost"],
 	inputMessages: ["gen_ai.prompt"],
 	outputMessages: ["gen_ai.completion"],
 	providerName: ["gen_ai.system"],
