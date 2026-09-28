@@ -245,6 +245,17 @@ const genAiRefine = (values: MutableAiGenAiValues, ctx: AiRefineContext): void =
 		if (canonical !== undefined) values.providerName = canonical
 	}
 
+	// The convention also keeps a finish reason on each output message, and some
+	// emitters (Strands) put it only there.
+	if (values.responseFinishReasons === undefined && Array.isArray(values.outputMessages)) {
+		const reasons = values.outputMessages.flatMap((message) =>
+			isRecord(message) && typeof message.finish_reason === "string" && message.finish_reason !== ""
+				? [message.finish_reason]
+				: [],
+		)
+		if (reasons.length > 0) values.responseFinishReasons = reasons
+	}
+
 	// The finish reason was singularised in place, so this is a value fix rather
 	// than a key alias and applies whichever key it arrived on.
 	if (values.responseFinishReasons !== undefined) {

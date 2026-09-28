@@ -345,6 +345,31 @@ describe("value normalisation", () => {
 
 		expect(mapped.genAi.responseFinishReasons).toEqual(["tool_call", "stop"])
 	})
+
+	it("reads finish reasons off the output messages when the span has none of its own", () => {
+		// A Strands `chat` span: the reason sits only on the output message.
+		const strands = mapAiSpan(
+			row({
+				"gen_ai.output.messages":
+					'[{"role": "assistant", "parts": [{"type": "tool_call", "name": "get_weather", "id": "call_A3DZfiI43bAI2CSBuQ5qtpqh", "arguments": {"city": "Berlin"}}], "finish_reason": "tool_use"}]',
+			}),
+		)
+		expect(strands.genAi.responseFinishReasons).toEqual(["tool_use"])
+
+		// The span's own attribute wins; a streamed chunk's empty reason is no reason.
+		const both = mapAiSpan(
+			row({
+				"gen_ai.response.finish_reasons": '["stop"]',
+				"gen_ai.output.messages": '[{"role":"assistant","parts":[],"finish_reason":"length"}]',
+			}),
+		)
+		expect(both.genAi.responseFinishReasons).toEqual(["stop"])
+		expect(
+			mapAiSpan(
+				row({ "gen_ai.output.messages": '[{"role":"assistant","parts":[],"finish_reason":""}]' }),
+			).genAi.responseFinishReasons,
+		).toBeUndefined()
+	})
 })
 
 describe("prompt variables", () => {
