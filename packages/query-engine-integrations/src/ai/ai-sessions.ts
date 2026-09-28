@@ -557,7 +557,8 @@ const indexTraces = (opts: AiSessionFilterOpts, bounds: IndexBounds) => {
 				// Usage AND model calls travel as reporters: both are counted one level
 				// up, where every trace of the session is in hand — see `ai-span-columns`.
 				usageReporters: usageReportersExpr($),
-				usageLinks: usageLinksExpr($),
+				tokenLinks: usageLinksExpr($, $.Tokens),
+				costLinks: usageLinksExpr($, $.Cost),
 			}
 		})
 		.where(($) => [
@@ -652,7 +653,7 @@ const indexSessions = (opts: AiSessionFilterOpts) =>
 			// The usage, still as reporters: netted one level up, summed two —
 			// with the two lookups the netting makes taken off the reporters here,
 			// once per session, rather than once per reporter inside the netting.
-			reporters: sessionReportersExpr("usageReporters", "usageLinks"),
+			reporters: sessionReportersExpr("usageReporters", "tokenLinks", "costLinks"),
 			childClaims: childClaimsExpr("reporters"),
 			reporterIds: reporterSpanIdsExpr("reporters"),
 		}))

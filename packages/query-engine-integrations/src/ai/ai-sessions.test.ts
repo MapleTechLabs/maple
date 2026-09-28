@@ -361,7 +361,10 @@ describe("aiSessionPageQuery", () => {
 		)
 		// And the trace's way up, so a claim climbs past spans that reported nothing.
 		expect(traces).toContain(
-			"CAST(groupArray(2000)(tuple(SpanId, if((Tokens > 0 OR Cost > 0), SpanId, ParentSpanId))), 'Map(String, String)') AS usageLinks",
+			"CAST(groupArray(2000)(tuple(SpanId, if(Tokens > 0, SpanId, ParentSpanId))), 'Map(String, String)') AS tokenLinks",
+		)
+		expect(traces).toContain(
+			"CAST(groupArray(2000)(tuple(SpanId, if(Cost > 0, SpanId, ParentSpanId))), 'Map(String, String)') AS costLinks",
 		)
 		expect(traces).toContain(
 			"max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceAgentEndNanos",
@@ -373,10 +376,9 @@ describe("aiSessionPageQuery", () => {
 		// trace of a call is in hand next to the app's own span of it — and the
 		// two lookups the netting makes, taken off them once per session.
 		expect(sessions).toContain(
-			"arraySlice(arrayFlatten(groupArray(arrayMap(r -> tupleConcat(r, tuple(usageLinks[",
+			"arraySlice(arrayFlatten(groupArray(arrayMap(r -> tupleConcat(r, tuple(tokenLinks[tokenLinks[tokenLinks[tokenLinks[r.2]]]], costLinks[costLinks[costLinks[costLinks[r.2]]]])), usageReporters))), 1, 2000) AS reporters",
 		)
-		expect(sessions).toContain("usageReporters))), 1, 2000) AS reporters")
-		expect(sessions).toContain("arrayReduce('sumMap', arrayMap(c -> [c.12], reporters)")
+		expect(sessions).toContain("arrayReduce('sumMap', arrayMap(c -> [c.12, c.13], reporters)")
 		expect(sessions).toContain(") AS childClaims")
 		expect(sessions).toContain("tupleElement(reporters, 1) AS reporterIds")
 		expect(sessions).toContain(

@@ -94,56 +94,64 @@ export function usageReportersExpr($: {
 }
 
 /**
- * One trace's way up: each index row's span id mapped to itself when it
- * reported usage, and to its parent when it did not. Following it from a
- * reporter's parent climbs past the spans that reported nothing (an event
- * loop, a step, a chain) and stops at the nearest ancestor that did — or at
- * `''` above the root, or at a parent outside the index, whose ancestry the
- * index cannot see.
+ * One trace's way up for one measure: each index row's span id mapped to
+ * itself where it reported the measure (`reported > 0`), else to its parent.
+ * Following it from a reporter's parent climbs past the spans that reported
+ * none of it (an event loop, a step, a chain, a wrapper that priced but did
+ * not count) and stops at the nearest ancestor that did — or at `''` above
+ * the root, or at a parent outside the index, whose ancestry the index cannot
+ * see. Tokens and cost each get their own, because the session page charges
+ * each measure to its own nearest reporter.
  *
  * Raw SQL for the same reason as {@link usageReportersExpr}.
  */
-export function usageLinksExpr($: {
-	readonly SpanId: Expr<string>
-	readonly ParentSpanId: Expr<string>
-	readonly Tokens: Expr<number>
-	readonly Cost: Expr<number>
-}): Expr<unknown> {
-	const next = CH.if_($.Tokens.gt(0).or($.Cost.gt(0)), $.SpanId, $.ParentSpanId)
-	const link = CH.compileFnCall<unknown>("tuple", $.SpanId, next)
+export function usageLinksExpr(
+	$: { readonly SpanId: Expr<string>; readonly ParentSpanId: Expr<string> },
+	reported: Expr<number>,
+): Expr<unknown> {
+	const link = CH.compileFnCall<unknown>(
+		"tuple",
+		$.SpanId,
+		CH.if_(reported.gt(0), $.SpanId, $.ParentSpanId),
+	)
 	return CH.untypedExpr(
 		`CAST(groupArray(${MAX_USAGE_REPORTERS_PER_TRACE})(${compile(link.toFragment())}), 'Map(String, String)')`,
 	)
 }
 
 /**
- * How many spans that reported nothing a claim climbs past on its way to the
- * reporter it is charged to. The shapes seen are one (Strands' event loop,
- * the Vercel AI SDK's step, smolagents' `Step N`) and two (a Strands
- * sub-agent: its tool span, then the event loop); a deeper chain is charged
- * to where the climb stopped, which no reporter is, so its claim is counted
- * in full.
+ * How many links a claim follows to the reporter it is charged to — past up
+ * to three spans that reported nothing. The shapes seen climb past one
+ * (Strands' event loop, the Vercel AI SDK's step, smolagents' `Step N`) and
+ * two (a Strands sub-agent: its tool span, then the event loop). A deeper
+ * chain is charged to where the climb stopped, which no reporter is, so its
+ * claim is counted in full. Each link is a lookup in a map the lambda
+ * captures per reporter, which is what the list read pays for this.
  */
-const USAGE_LINK_HOPS = 8
+const USAGE_LINK_HOPS = 4
 
 /**
  * Every reporter of the session — the per-trace arrays, flattened and capped
  * again — selected as a column of the session level, so the netting one level
- * up reads a name rather than repeating the aggregate. Each reporter gains a
- * twelfth element on the way: the nearest ancestor that reported usage, off
- * its own trace's links ({@link usageLinksExpr}), `''` where there is none.
+ * up reads a name rather than repeating the aggregate. Each reporter gains
+ * two elements on the way, off its own trace's links ({@link usageLinksExpr}):
+ * the nearest ancestor that reported tokens (12) and the nearest that
+ * reported a cost (13), `''` where there is none.
  *
- * `reporters` and `links` are the columns {@link usageReportersExpr} and
- * {@link usageLinksExpr} were selected as, one level down: a lambda reading a
- * column of its own level would evaluate that aggregate once per reporter.
+ * `reporters`, `tokenLinks` and `costLinks` are the columns
+ * {@link usageReportersExpr} and {@link usageLinksExpr} were selected as, one
+ * level down: a lambda reading a column of its own level would evaluate that
+ * aggregate once per reporter.
  */
-export function sessionReportersExpr(reporters: string, links: string): Expr<unknown> {
-	const claimParent = Array.from({ length: USAGE_LINK_HOPS }).reduce<string>(
-		(spanId) => `${links}[${spanId}]`,
-		"r.2",
-	)
+export function sessionReportersExpr(
+	reporters: string,
+	tokenLinks: string,
+	costLinks: string,
+): Expr<unknown> {
+	const climb = (links: string) =>
+		Array.from({ length: USAGE_LINK_HOPS }).reduce<string>((spanId) => `${links}[${spanId}]`, "r.2")
 	return CH.untypedExpr(
-		`arraySlice(arrayFlatten(groupArray(arrayMap(r -> tupleConcat(r, tuple(${claimParent})), ${reporters}))), 1, ${MAX_USAGE_REPORTERS_PER_TRACE})`,
+		`arraySlice(arrayFlatten(groupArray(arrayMap(r -> tupleConcat(r, tuple(${climb(tokenLinks)}, ${climb(costLinks)})), ${reporters}))), 1, ${MAX_USAGE_REPORTERS_PER_TRACE})`,
 	)
 }
 
@@ -152,15 +160,19 @@ export function sessionReportersExpr(reporters: string, links: string): Expr<unk
  * id, tokens, cost, input, cacheRead, cacheWrite, output, reasoning)` as eight
  * parallel arrays, elements 1–8, one entry per span that some reporter is
  * charged to — off the column {@link sessionReportersExpr} was selected
- * as. One `sumMap` over the reporters rather than a search of them per
+ * as. Each reporter enters twice: its tokens under the ancestor it charges
+ * tokens to, its cost under the one it charges cost to, the other measure
+ * zero. One `sumMap` over the reporters rather than a search of them per
  * reporter: a lambda captures a column by copying it once per element, so a
  * per-reporter search of the reporters costs the square of their count in
  * memory — measured in production, past the read's ceiling on a cost sort —
  * while this costs the reporters once and the netting a lookup by position.
  */
 export function childClaimsExpr(reporters: string): Expr<unknown> {
-	const column = (element: number) => `arrayMap(c -> [c.${element}], ${reporters})`
-	return CH.untypedExpr(`arrayReduce('sumMap', ${[12, 3, 4, 7, 8, 9, 10, 11].map(column).join(", ")})`)
+	const tokens = (element: number) => `arrayMap(c -> [c.${element}, 0.], ${reporters})`
+	return CH.untypedExpr(
+		`arrayReduce('sumMap', arrayMap(c -> [c.12, c.13], ${reporters}), ${tokens(3)}, arrayMap(c -> [0., c.4], ${reporters}), ${[7, 8, 9, 10, 11].map(tokens).join(", ")})`,
+	)
 }
 
 /** The span ids of the reporters — the spans that reported usage and the
@@ -210,7 +222,7 @@ export function nettedReportersExpr(
 		[10, 7],
 		[11, 8],
 	] as const
-	const counts = `r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), ${netted(3, 2)} > 0 OR ${netted(4, 3)} > 0, NOT has(${reporterIds}, r.12) AND NOT has(${reporterIds}, r.2))`
+	const counts = `r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), ${netted(3, 2)} > 0 OR ${netted(4, 3)} > 0, NOT has(${reporterIds}, r.12) AND NOT has(${reporterIds}, r.13) AND NOT has(${reporterIds}, r.2))`
 	return CH.untypedExpr(
 		`arrayMap(r -> tuple(r.5, ${counts}, ${claims.map(([element, childElement]) => netted(element, childElement)).join(", ")}), ${reporters})`,
 	)
