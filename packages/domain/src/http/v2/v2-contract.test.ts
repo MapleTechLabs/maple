@@ -7,7 +7,7 @@ import { V2AlertRule, V2AlertRuleMutationResponse } from "./alert-rules"
 import { V2ApiKey, V2ApiKeyMutationResponse, V2ApiKeyWithSecret } from "./api-keys"
 import { V2DashboardMutation } from "./dashboards"
 import { V2ErrorIssue, V2ErrorIssueDetail } from "./error-issues"
-import { AuthorizationV2, requiredScopeForRoute, scopeAllows, V2Scope } from "./auth"
+import { AuthorizationV2, isScopeExemptRoute, requiredScopeForRoute, scopeAllows, V2Scope } from "./auth"
 import {
 	V2PlanetScaleIntegration,
 	V2PlanetScaleMetricsTokenRequest,
@@ -882,5 +882,15 @@ describe("timestamps", () => {
 		)
 		expect(() => Schema.decodeUnknownSync(Timestamp)("not-a-date")).toThrow()
 		expect(() => Schema.decodeUnknownSync(Timestamp)("2026-07-15T12:34:56+02:00")).toThrow()
+	})
+})
+
+describe("isScopeExemptRoute", () => {
+	it("exempts only sending and listing agent feedback", () => {
+		expect(isScopeExemptRoute("POST", "/v2/agent_feedback")).toBe(true)
+		expect(isScopeExemptRoute("POST", "/v2/agent_feedback/")).toBe(true)
+		expect(isScopeExemptRoute("GET", "/v2/agent_feedback")).toBe(true)
+		expect(isScopeExemptRoute("DELETE", "/v2/agent_feedback")).toBe(false)
+		expect(isScopeExemptRoute("POST", "/v2/api_keys")).toBe(false)
 	})
 })

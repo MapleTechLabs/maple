@@ -24,6 +24,7 @@ import { RecommendationIssueService } from "@maple/backend/services/errors/Recom
 import { PullRequestLookupLive } from "@maple/backend/services/errors/pull-request-lookup-live"
 
 import { SetupAuditService } from "@maple/backend/services/org/SetupAuditService"
+import { AgentFeedbackService } from "@maple/backend/services/feedback/AgentFeedbackService"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 
 // BOUNDARY: This module owns unparsed external values and narrows them before domain use.
@@ -238,6 +239,7 @@ const MAX_PREPARED_REPOSITORIES = 3
  * accidentally execute a raw handler without CurrentMcpTenant.
  */
 const McpRuntimeServicesLive = Layer.mergeAll(
+	AgentFeedbackService.layer,
 	AlertReadModelsService.layer,
 	AlertRulesService.layer,
 	AlertsService.layer,

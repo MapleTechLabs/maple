@@ -2,6 +2,7 @@ import { HttpRouter, HttpServerRequest } from "effect/unstable/http"
 import { CurrentTenant, RoleName } from "@maple/domain/http"
 import {
 	AuthorizationV2,
+	isScopeExemptRoute,
 	requiredScopeForRoute,
 	scopeAllows,
 	V2InsufficientScope,
@@ -178,7 +179,10 @@ export const ApiAuthorizationV2Layer = Layer.effect(
 								}),
 							)
 						}
-						if (!scopeAllows(resolved.scopes, required)) {
+						if (
+							!isScopeExemptRoute(request.method, route.path) &&
+							!scopeAllows(resolved.scopes, required)
+						) {
 							const message = `This API key does not have the "${required.family}:${required.access}" scope required for this request.`
 							yield* recordDenied(message)
 							return yield* Effect.fail(V2InsufficientScope.make(message))

@@ -122,7 +122,7 @@ v2 accepts the same credentials as v1: API keys (`maple_ak_…`) and dashboard s
 
 - Grammar: `<family>:read`, `<family>:write`, or `*`. The family is the first path segment under `/v2` (`api_keys`, `dashboards`, `alerts`, `error_issues`, `traces`, …).
 - Enforcement is mechanical: `GET`/`HEAD` and explicitly declared read-only query POSTs (such as session-replay search, trace lookup, and alert preview) require `<family>:read`; mutations require `<family>:write`. `write` implies `read`.
-- Keys with no scopes (all pre-v2 keys) have full access. Session tokens are never scope-checked. The dashboard's authorization comes from org roles, like Stripe's own dashboard.
+- Keys with no scopes (all pre-v2 keys) have full access. `POST` and `GET /v2/agent_feedback` are scope-exempt: any key of the org can send and list feedback (`isScopeExemptRoute` in `auth.ts`). Session tokens are never scope-checked. The dashboard's authorization comes from org roles, like Stripe's own dashboard.
 - Failing the check returns `permission_error` / `insufficient_scope`.
 
 Implementation: `packages/domain/src/http/v2/auth.ts` + `packages/backend/src/services/auth/ApiAuthorizationV2Layer.ts`; scopes are stored on `api_keys.scopes` (jsonb).
@@ -174,6 +174,7 @@ Implemented in phases; the pilot (`api_keys`) ships first and proves every conve
 | `integrations/planetscale` ✅        | status + connect/organizations/`select_organization`/`metrics_token`/disconnect + databases/`webhook_config`/`query_insights`/`events`       | `PlanetScaleConnectionService`, `PlanetScaleOAuthService`, `PlanetScaleService` |
 | `session_replays` ✅                 | `search`/retrieve + events/transcript/`for_trace` (reduced; `facets`/`trace-summaries` deferred)                                             | `sessionReplays`                                                                |
 | `mobile_devices` ✅                  | list (mine) / `PUT …/{token}` register-or-refresh / `DELETE …/{token}`; per user, per org; drives push fan-out                               | `MobileDevicesService`                                                          |
+| `agent_feedback` ✅                  | create/list; feedback about Maple from agents: `kind`, `agent` (type/name/model/version), `reason`, optional `impact`/`details`/`related_to` | `AgentFeedbackService`                                                          |
 | `organization` 🟡                    | retrieve (GET only shipped); update settings (incl. ClickHouse BYOC) + delete deferred                                                       | `organizations`, `orgClickHouseSettings`                                        |
 | `traces` ✅                          | search/timeseries/breakdown + direct trace/span reads                                                                                        | `queryEngine`, `observability`                                                  |
 | `logs` ✅                            | search/timeseries/breakdown + direct log reads                                                                                               | `queryEngine`                                                                   |
