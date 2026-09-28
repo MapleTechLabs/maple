@@ -131,7 +131,7 @@ logger.emit({
 
 ## Client side
 
-The browser half of the app uses `@maple-dev/browser` from a client component rendered in the root layout. `init()` is a no-op during server rendering, so module scope is safe.
+The browser half of the app uses `@maple-dev/browser` from a client component rendered in the root layout. `init()` is a no-op during server rendering, so module scope is safe. On Next.js 15.3+, `instrumentation-client.ts` is the better place (it runs before hydration); for navigation spans and linking the page load to the server render, see `maple-frontend-tracing` (`frameworks/nextjs.md`).
 
 ```tsx
 // app/maple.tsx

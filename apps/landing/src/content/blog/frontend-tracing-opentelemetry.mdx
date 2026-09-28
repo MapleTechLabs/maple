@@ -196,11 +196,13 @@ export function traced<T>(
 export const alreadyRecorded = (error: unknown) =>
 	typeof error === "object" && error !== null && recorded.has(error)
 
-/** The trace the server rendered this page under, sent in a `Server-Timing` header. */
+/** The trace the server rendered this page under, from a `Server-Timing` header or a `<meta>` tag. */
 function serverContext() {
-	if (typeof performance === "undefined") return context.active()
+	if (typeof document === "undefined") return context.active()
 	const [page] = performance.getEntriesByType("navigation") as PerformanceNavigationTiming[]
-	const traceparent = page?.serverTiming?.find((entry) => entry.name === "traceparent")?.description
+	const traceparent =
+		page?.serverTiming?.find((entry) => entry.name === "traceparent")?.description ||
+		document.querySelector<HTMLMetaElement>('meta[name="traceparent"]')?.content
 	return traceparent ? propagation.extract(context.active(), { traceparent }) : context.active()
 }
 ```
@@ -210,7 +212,7 @@ It does four things:
 - `startNavigation` opens a `pageload` span for the first route and a `navigate` span for every one after it. If the user clicks again before the last navigation finished, the old span ends and is marked as interrupted.
 - `endNavigation` renames the span after the route template and ends it.
 - `traced` wraps data loading in a child span of the current navigation, and marks it as failed when it throws.
-- `serverContext` joins the first page load to the server's trace, if the page was server-rendered. More on that in step 5. In a client-only app it does nothing.
+- `serverContext` joins the first page load to the server's trace, if the page was server-rendered and the server sent its trace context. More on that in step 5. In a client-only app it does nothing.
 
 The rename in `endNavigation` matters more than it looks. A span name is what every view groups by, so `navigate /projects/:id` gives you one row with a real p95, while `navigate /projects/8f2a-4c11` gives you one row per project that never aggregates. The concrete path is still there as the `url.path` attribute when you need to find one specific navigation.
 
@@ -266,7 +268,7 @@ Server-Timing: traceparent;desc="00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba
 
 The browser can read it back from the Navigation Timing API, and `serverContext()` in the helper above uses it to parent the `pageload` span. The first page load then shows up as one trace, from the server receiving the request to the browser finishing the first route.
 
-You'll often see this done with a `<meta name="traceparent">` tag instead, which is what OpenTelemetry's document-load instrumentation reads. Both work. The header keeps it out of the rendered HTML, so the server and client versions of your `<head>` can't disagree during hydration.
+You'll often see this done with a `<meta name="traceparent">` tag instead, which is what OpenTelemetry's document-load instrumentation reads, and what some frameworks can render for you. `serverContext()` reads either. If you're adding it yourself, prefer the header: it keeps the value out of the rendered HTML, so the server and client versions of your `<head>` can't disagree during hydration.
 
 Two caveats:
 

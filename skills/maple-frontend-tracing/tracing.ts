@@ -58,10 +58,12 @@ export function traced<T>(
 export const alreadyRecorded = (error: unknown) =>
 	typeof error === "object" && error !== null && recorded.has(error)
 
-/** The trace the server rendered this page under, sent in a `Server-Timing` header. */
+/** The trace the server rendered this page under, from a `Server-Timing` header or a `<meta>` tag. */
 function serverContext() {
-	if (typeof performance === "undefined") return context.active()
+	if (typeof document === "undefined") return context.active()
 	const [page] = performance.getEntriesByType("navigation") as PerformanceNavigationTiming[]
-	const traceparent = page?.serverTiming?.find((entry) => entry.name === "traceparent")?.description
+	const traceparent =
+		page?.serverTiming?.find((entry) => entry.name === "traceparent")?.description ||
+		document.querySelector<HTMLMetaElement>('meta[name="traceparent"]')?.content
 	return traceparent ? propagation.extract(context.active(), { traceparent }) : context.active()
 }
