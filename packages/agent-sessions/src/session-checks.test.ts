@@ -427,6 +427,7 @@ describe("buildSessionChecks", () => {
 
 		const neverWritten = byId(
 			session((i) => ({
+				providerName: "anthropic",
 				usageInputTokens: 1_227 + 200 * i,
 				usageCacheReadInputTokens: 0,
 				usageCacheCreationInputTokens: 0,
@@ -434,15 +435,23 @@ describe("buildSessionChecks", () => {
 			"prompt-cache",
 		)
 		expect(neverWritten.status).toBe("skipped")
-		expect(neverWritten.headline).toMatch(/^No model call wrote to the prompt cache/)
+		expect(neverWritten.headline).toMatch(/^No Anthropic model call wrote to the prompt cache/)
 
-		// Long enough and reporting no write bucket (OpenAI): a miss is a miss.
-		const missed = byId(
-			session(() => ({ usageInputTokens: 5_000, usageCacheReadInputTokens: 0 })),
-			"prompt-cache",
-		)
-		expect(missed.status).toBe("warning")
-		expect(missed.headline).toBe("Cache hit rate 0% over 4 calls; 4 missed the cache")
+		// Long enough on OpenAI: a miss is a miss, whether or not the emitter
+		// reported a write bucket (most stamp a zero one on every call).
+		for (const write of [undefined, 0]) {
+			const missed = byId(
+				session(() => ({
+					providerName: "openai",
+					usageInputTokens: 2_000,
+					usageCacheReadInputTokens: 0,
+					usageCacheCreationInputTokens: write,
+				})),
+				"prompt-cache",
+			)
+			expect(missed.status).toBe("warning")
+			expect(missed.headline).toBe("Cache hit rate 0% over 4 calls; 4 missed the cache")
+		}
 
 		// A short opening call (a title, a router) is not the one that wrote the
 		// cache: the first long call is, and it is not a miss.

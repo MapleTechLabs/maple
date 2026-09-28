@@ -633,18 +633,13 @@ function promptCacheCheck(llmCalls: readonly AiSessionSpan[]): SessionCheck {
 			"No model call reported cache usage, so the prompt cache could not be checked.",
 		)
 	}
-	if (reporting.length <= CACHE_MIN_CALLS) {
-		return check(
-			identity,
-			"skipped",
-			`Only ${plural(reporting.length, "model call")} reported cache usage; at least ${CACHE_MIN_CALLS + 1} are needed to judge the prompt cache.`,
-		)
-	}
-	// A provider that reports cache writes (Anthropic) writes on the first call
-	// whose prompt is long enough for the model; none ever writing means no
-	// prompt reached that model's minimum, or caching was never requested.
+	// Anthropic writes the cache on the first call whose prompt reaches the
+	// model's minimum, so calls that never wrote or read it had nothing
+	// cacheable, or never asked. Other providers stamp a zero write bucket on
+	// every call whatever happened, so only Anthropic's zero says this.
 	const neverCached = reporting.every(
 		(span) =>
+			span.genAi.providerName === "anthropic" &&
 			span.genAi.usageCacheCreationInputTokens === 0 &&
 			(span.genAi.usageCacheReadInputTokens ?? 0) === 0,
 	)
@@ -652,7 +647,7 @@ function promptCacheCheck(llmCalls: readonly AiSessionSpan[]): SessionCheck {
 		return check(
 			identity,
 			"skipped",
-			"No model call wrote to the prompt cache: the prompts are below the model's cacheable minimum, or caching is off.",
+			"No Anthropic model call wrote to the prompt cache: the prompts are below the model's cacheable minimum, or caching is off.",
 		)
 	}
 	// The first cacheable call cannot hit a cache nothing has written yet.
