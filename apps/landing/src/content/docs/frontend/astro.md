@@ -215,9 +215,9 @@ const { title } = Astro.props
 </html>
 ```
 
-Without `<ClientRouter />`, that's all you need. Each link loads a new document, the script runs once per document, and each page load becomes a `pageload` span that ends at the window `load` event.
+Without `<ClientRouter />`, that's all you need. Each link loads a new document, the script runs once per document, and each page load becomes a `pageload` span that ends at the window `load` event. Back and forward load the document again and get a new `pageload` span, unless the browser restores the page from its back/forward cache. A restored page runs no script, so it records no span.
 
-Keep the `<script>` a plain one, with no `is:inline` and no attributes. Astro then bundles it as a module, resolves its imports, and includes it once per page even if the layout renders twice. If your app has several base layouts, move the `<script>` into a small component, like `src/components/Tracing.astro`, and render that from each layout. Two separate scripts would each call `startNavigation`, and the second would end the first as interrupted.
+Keep the `<script>` a plain one, with no `is:inline` and no attributes. Astro then bundles it as a module, resolves its imports, and includes it once per page even if the layout renders twice. If your app has several base layouts, move the `<script>` into a small component, like `src/components/Tracing.astro`, and render that from each layout. Two separate scripts would each call `startNavigation`, and the second would end the first as interrupted. If your pages don't share a layout, as in the `minimal` starter where each page writes its own `<html>`, render that component in every page's `<head>` and add `data-route={Astro.routePattern}` to every page's `<html>`.
 
 ### Name spans after the route
 
@@ -296,11 +296,12 @@ Two kinds of requests don't join the page's trace:
 
 ## Report errors from islands
 
-Astro has no client-side error hook of its own: the page is HTML, and the JavaScript on it belongs to islands and scripts. Three kinds of errors need covering:
+Astro has no client-side error hook of its own: the page is HTML, and the JavaScript on it belongs to islands and scripts. Four kinds of errors need covering:
 
 - **Uncaught errors reach the SDK by themselves.** An error thrown in a script or an event handler, or a React island that throws while rendering with no error boundary around it, reaches `window.onerror`. The SDK records it as `browser.uncaught_error`.
 - **Islands whose code fails to load.** When an island's JavaScript can't be fetched, often a chunk that a new deploy removed, Astro retries once, catches the error, and logs it. Since Astro 6.3 it also dispatches an `astro:hydration-error` event, which the layout script can report.
 - **Errors your island framework catches.** Each framework's error boundary stops errors from reaching the SDK. Report from the boundary.
+- **Island data loading that fails.** A rejected request or load function that nothing catches reaches the SDK as `browser.unhandled_rejection`. If the island catches the error to show an error state, the SDK never sees it, so call `MapleBrowser.captureException(error)` in that `catch`. There's no `loader` span in an Astro setup, so this error span is the only record of the failure.
 
 For the `astro:hydration-error` event, add a listener to the layout's script:
 
@@ -453,6 +454,8 @@ Three details matter for Astro:
 	`/_astro/` is the default `build.assets` directory; use your value if you changed it.
 - Install the OpenTelemetry packages as `dependencies`. The preload file isn't part of Astro's build, so they have to be installed where the server runs.
 
+Prerendered pages and files from `public/` that the adapter serves still get an HTTP server span each, in a trace of their own. Their `pageload` spans don't join those traces, because the files carry no `server-timing` header.
+
 **Cloudflare adapter (`@astrojs/cloudflare`).** Export the Worker's traces with [Workers Observability](/docs/guides/instrumentation-cloudflare-workers). The Workers runtime records the spans itself, but your code can't read their trace ids yet, and no OpenTelemetry SDK is registered in the Worker, so the middleware would find no trace context to send. Leave it out: the `pageload` span starts its own trace, and the Worker's request shows up as a separate trace in Maple.
 
 For any other adapter, see [Instrument your application](/docs/instrumentation) for its runtime, and keep the middleware only if an OpenTelemetry SDK runs in the same process.
@@ -526,6 +529,7 @@ Together with `src/maple.ts`, `src/tracing.ts`, `src/middleware.ts` and the prel
 - **Hidden tabs abort view transitions.** In Chromium, a `<ClientRouter />` navigation that finishes while the tab is in the background can't run its view transition, and the browser rejects it with `InvalidStateError: Transition was aborted because of invalid state`. Astro doesn't handle that rejection, so the SDK records it as `browser.unhandled_rejection`. The navigation itself completes.
 - **Test with a production build.** `astro dev` doesn't bundle scripts the same way, and the middleware needs the OpenTelemetry SDK that only the start command preloads. Run `astro build`, then the adapter's start command, or `astro preview` for a static site.
 - **Node 26 warns about `module.register()`.** The ES module hook still works.
+- **Interrupted navigations need a slow page response.** To see a `navigate` span end as interrupted, use `<ClientRouter />` and click away from a page whose response is slow, like an on-demand page with slow frontmatter. A slow request in an island doesn't hold the navigation open, and without `<ClientRouter />` there's no navigation span to interrupt.
 
 ## What this setup doesn't cover
 
