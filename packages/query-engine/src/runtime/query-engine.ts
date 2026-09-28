@@ -238,6 +238,14 @@ export const msToTinybirdDateTime = (ms: number): string => {
 
 const CACHE_SNAP_S = 15
 const TRACE_SERVICE_PARTITION_BUFFER_MS = 24 * 60 * 60 * 1000
+// Same ±1h pad `traceListQuery` puts around the window, here around the page.
+const TRACE_LIST_PAGE_BUFFER_MS = 60 * 60 * 1000
+/**
+ * Up to a day, the one-shot `traceListQuery` probes at most three daily
+ * partitions in stage 2, so a second round trip would only add latency.
+ */
+const TRACE_LIST_SINGLE_PASS_MAX_SECONDS = 24 * 60 * 60
+const TRACE_LIST_PAGE_SLICE_MS = MAX_LIST_RANGE_SECONDS * 1000
 
 // Re-exported so `@maple/query-engine/runtime` consumers keep one import site;
 // the definition is in the driver-free `../group-key` because the query-set merge
@@ -609,17 +617,36 @@ const validateListQuery = Effect.fn("QueryEngineService.validateListQuery")(func
 	range: TimeRangeBounds,
 ): Effect.fn.Return<void, QueryEngineValidationError> {
 	if (request.query.kind !== "list") return
+	if (range.rangeSeconds <= MAX_LIST_RANGE_SECONDS || isWideTraceList(request.query)) return
 
-	if (range.rangeSeconds > MAX_LIST_RANGE_SECONDS) {
-		return yield* new QueryEngineValidationError({
-			message: "List query time range too large",
-			details: [
-				`List queries support a maximum range of ${formatRangeSeconds(MAX_LIST_RANGE_SECONDS)}`,
-				"Narrow the time range or use a timeseries/breakdown query for wider ranges",
-			],
-		})
-	}
+	return yield* new QueryEngineValidationError({
+		message: "List query time range too large",
+		details: [
+			`List queries support a maximum range of ${formatRangeSeconds(MAX_LIST_RANGE_SECONDS)}`,
+			...(request.query.source === "traces"
+				? [
+						"Trace lists go wider only when sorted by time, grouped by trace, and without resource or custom attribute filters",
+					]
+				: []),
+			"Narrow the time range or use a timeseries/breakdown query for wider ranges",
+		],
+	})
 })
+
+/**
+ * A grouped trace list whose page is a read-in-order walk of `trace_list_mv`
+ * (sorted by time, MV-expressible filters) stays cheap over any window the
+ * engine accepts: stage 1 reads week slices only until the page is full, and
+ * stage 2 is bounded by the page (`executeTraceListByPage`). Sorting by
+ * duration has to rank the whole window and scatters the page across days, so
+ * it keeps the list ceiling, as does the raw-`traces` fallback, which scans the
+ * window.
+ */
+function isWideTraceList(query: QuerySpec): boolean {
+	if (query.source !== "traces" || query.kind !== "list") return false
+	if (!query.groupByTrace || query.sortBy === "durationMs") return false
+	return CH.canUseTraceListMvStage1(extractTracesOpts(query.filters as Record<string, unknown>))
+}
 
 /**
  * Whether the query carries a filter narrow enough to keep ClickHouse from
@@ -941,6 +968,76 @@ const executeCHQuery = Effect.fnUntraced(function* <
 	// lowering — which is exactly what the executor treats it as.
 	const compiled = CH.compile(query, params)
 	return yield* annotateWarehouseError(warehouse.compiledQuery(tenant, compiled, options), context)
+})
+
+/**
+ * The grouped trace list in two round trips: page the roots, then aggregate only
+ * that page in `trace_detail_spans`, bounded by the page's own root timestamps
+ * ±1h. The one-shot `traceListQuery` bounds stage 2 by the requested window, and
+ * each cold daily partition it probes costs ~0.5–3s — a 30-day window times out
+ * even though the newest page usually sits inside one or two of them.
+ *
+ * Stage 1 walks the window in `MAX_LIST_RANGE_SECONDS` slices from the sorted
+ * end and stops once it holds `offset + limit` roots. Even read-in-order, one
+ * `trace_list_mv` scan opens a stream per part in the window: on prod 14 days
+ * fit in 512MB and 21 did not. A full first slice (the common case) makes this
+ * one page query; a sparse filter pays one query per slice.
+ */
+const executeTraceListByPage = Effect.fnUntraced(function* <T extends QueryTenant>(
+	warehouse: QueryEngineWarehouse<T>,
+	tenant: T,
+	listOpts: (capabilities: WarehouseCapabilities) => CH.TraceListOpts,
+	paging: { readonly limit: number; readonly offset: number; readonly newestFirst: boolean },
+	window: { readonly orgId: string; readonly startTime: string; readonly endTime: string },
+) {
+	const startMs = parseWarehouseDateTime(window.startTime)
+	const endMs = parseWarehouseDateTime(window.endTime)
+	const wanted = paging.offset + paging.limit
+	const roots: Array<CH.TraceListPageOutput> = []
+
+	// Slices share no second: `trace_list_mv` Timestamps are whole seconds and
+	// both bounds are inclusive, so the next slice starts one second past this one.
+	let edge = paging.newestFirst ? endMs : startMs
+	while (roots.length < wanted && startMs <= edge && edge <= endMs) {
+		const sliceStart = paging.newestFirst ? Math.max(startMs, edge - TRACE_LIST_PAGE_SLICE_MS) : edge
+		const sliceEnd = paging.newestFirst ? edge : Math.min(endMs, edge + TRACE_LIST_PAGE_SLICE_MS)
+		edge = paging.newestFirst ? sliceStart - 1000 : sliceEnd + 1000
+
+		const slice = yield* executeCHQuery(
+			warehouse,
+			tenant,
+			(capabilities) =>
+				CH.traceListPageQuery({ ...listOpts(capabilities), limit: wanted - roots.length, offset: 0 }),
+			{
+				orgId: window.orgId,
+				startTime: formatWarehouseDateTime(sliceStart),
+				endTime: formatWarehouseDateTime(sliceEnd),
+			},
+			"traceListPage",
+			"list",
+		)
+		roots.push(...slice)
+	}
+
+	const page = roots.slice(paging.offset, wanted)
+	if (page.length === 0) return []
+
+	const pageTimes = page.map((row) => parseWarehouseDateTime(String(row.ts)))
+	const rows = yield* executeCHQuery(
+		warehouse,
+		tenant,
+		CH.traceListByTraceIdsQuery({ traceIds: page.map((row) => String(row.traceId)) }),
+		{
+			orgId: window.orgId,
+			startTime: formatWarehouseDateTime(Math.min(...pageTimes) - TRACE_LIST_PAGE_BUFFER_MS),
+			endTime: formatWarehouseDateTime(Math.max(...pageTimes) + TRACE_LIST_PAGE_BUFFER_MS),
+		},
+		"traceList",
+		"list",
+	)
+
+	const byTraceId = new Map(rows.map((row) => [String(row.traceId), row] as const))
+	return page.flatMap((row) => byTraceId.get(String(row.traceId)) ?? [])
 })
 
 type MetricsTimeseriesSpec = Extract<QuerySpec, { readonly source: "metrics"; readonly kind: "timeseries" }>
@@ -1778,28 +1875,43 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 			const requestedColumns = (tracesQuery as { columns?: readonly string[] }).columns
 
 			if (tracesQuery.groupByTrace) {
-				const rows = yield* executeCHQuery(
-					warehouse,
-					tenant,
-					(capabilities) =>
-						CH.traceListQuery({
-							...opts,
-							// Stage 1 pins `ParentSpanId = ''` itself; the broader
-							// entry-point predicate would only widen the OR for nothing.
-							// (`rootOnly` compiles via `whenTrue`, so `false` = no clause.)
-							rootOnly: false,
-							attributeIndexMode: attributeIndexMode(capabilities, "traces"),
-							// The root-only predicate is as selective as the clamp's
-							// "indexed filter" tier, so grouped pages keep the 200 cap.
-							limit: Math.min(tracesQuery.limit ?? 25, 200),
-							offset: tracesQuery.offset,
-							sortBy: tracesQuery.sortBy,
-							sortDir: tracesQuery.sortDir,
-						}),
-					{ orgId: tenant.orgId, startTime: request.startTime, endTime: request.endTime },
-					"traceList",
-					"list",
-				)
+				// The root-only predicate is as selective as the clamp's
+				// "indexed filter" tier, so grouped pages keep the 200 cap.
+				const limit = Math.min(tracesQuery.limit ?? 25, 200)
+				const listOpts = (capabilities: WarehouseCapabilities): CH.TraceListOpts => ({
+					...opts,
+					// Stage 1 pins `ParentSpanId = ''` itself; the broader
+					// entry-point predicate would only widen the OR for nothing.
+					// (`rootOnly` compiles via `whenTrue`, so `false` = no clause.)
+					rootOnly: false,
+					attributeIndexMode: attributeIndexMode(capabilities, "traces"),
+					limit,
+					offset: tracesQuery.offset,
+					sortBy: tracesQuery.sortBy,
+					sortDir: tracesQuery.sortDir,
+				})
+				const window = { orgId: tenant.orgId, startTime: request.startTime, endTime: request.endTime }
+				const rows =
+					range.rangeSeconds <= TRACE_LIST_SINGLE_PASS_MAX_SECONDS
+						? yield* executeCHQuery(
+								warehouse,
+								tenant,
+								(capabilities) => CH.traceListQuery(listOpts(capabilities)),
+								window,
+								"traceList",
+								"list",
+							)
+						: yield* executeTraceListByPage(
+								warehouse,
+								tenant,
+								listOpts,
+								{
+									limit,
+									offset: tracesQuery.offset ?? 0,
+									newestFirst: tracesQuery.sortDir !== "asc",
+								},
+								window,
+							)
 
 				return new QueryEngineExecuteResponse({
 					result: {

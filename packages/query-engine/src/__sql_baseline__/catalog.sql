@@ -5425,6 +5425,47 @@ SELECT
           AND Timestamp <= '2026-01-03 14:15:00'
 FORMAT JSON
 
+-- builder:traces:traceListByTraceIdsQuery:wide-window-aggregate  [5d834d78]
+SELECT
+          TraceId AS traceId,
+          argMin(Timestamp, (if(ParentSpanId = '', 0, 1), Timestamp)) AS startTime,
+          toDateTime(argMin(Timestamp, (if(ParentSpanId = '', 0, 1), Timestamp))) AS startSecond,
+          fromUnixTimestamp64Nano(max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration))) AS endTime,
+          intDiv(max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) - min(toUnixTimestamp64Nano(Timestamp)), 1000) AS durationMicros,
+          intDiv(argMin(Duration, (if(ParentSpanId = '', 0, 1), Timestamp)), 1000) AS rootDurationMicros,
+          count() AS spanCount,
+          arrayDistinct(arrayPushFront(arraySort(groupUniqArray(ServiceName)), argMin(ServiceName, (if(ParentSpanId = '', 0, 1), Timestamp)))) AS services,
+          argMin(SpanName, (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanName,
+          argMin(SpanKind, (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanKind,
+          argMin(StatusCode, (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanStatusCode,
+          argMin(SpanAttributes['http.method'], (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpMethod,
+          argMin(SpanAttributes['http.route'], (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpRoute,
+          argMin(SpanAttributes['http.status_code'], (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpStatusCode,
+          argMin(toJSONString(map('http.method', SpanAttributes['http.method'], 'http.request.method', SpanAttributes['http.request.method'], 'http.route', SpanAttributes['http.route'], 'http.target', SpanAttributes['http.target'], 'http.status_code', SpanAttributes['http.status_code'], 'http.response.status_code', SpanAttributes['http.response.status_code'], 'http.url', SpanAttributes['http.url'], 'url.full', SpanAttributes['url.full'], 'url.path', SpanAttributes['url.path'], 'server.address', SpanAttributes['server.address'], 'net.peer.name', SpanAttributes['net.peer.name'], 'screen.name', SpanAttributes['screen.name'])), (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanAttributes,
+          if(argMin(StatusCode, (if(ParentSpanId = '', 0, 1), Timestamp)) = 'Error', 1, 0) AS hasError
+        FROM trace_detail_spans
+        WHERE OrgId = 'org_sql_catalog'
+          AND TraceId IN ('0af7651916cd43dd8448eb211c80319c', '4bf92f3577b34da6a3ce929d0e0e4736')
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+        GROUP BY traceId
+        LIMIT 2
+        FORMAT JSON
+
+-- builder:traces:traceListPageQuery:wide-window-page  [00be4b4e]
+SELECT
+          TraceId AS traceId,
+          Timestamp AS ts,
+          Duration AS d
+        FROM trace_list_mv
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND ServiceName = 'api'
+        ORDER BY ts DESC, traceId DESC
+        LIMIT 50
+        FORMAT JSON
+
 -- builder:traces:traceServicesByTraceIdsQuery:page-enrichment  [4e5e4b4b]
 SELECT
           TraceId AS traceId,
@@ -13538,7 +13579,7 @@ SELECT
           if(argMin(StatusCode, (if(ParentSpanId = '', 0, 1), Timestamp)) = 'Error', 1, 0) AS hasError
         FROM trace_detail_spans
         WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND Timestamp >= subtractHours(toDateTime('2026-01-03 10:30:00'), 1)
           AND Timestamp <= addHours(toDateTime('2026-01-03 14:15:00'), 1)
           AND TraceId IN (SELECT traceId FROM (SELECT
           TraceId AS traceId,
@@ -13546,7 +13587,7 @@ SELECT
           Duration AS d
         FROM traces
         WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp >= '2026-01-03 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
           AND ServiceName = 'api'
           AND coalesce(nullIf(ResourceAttributes['deployment.environment.name'], ''), ResourceAttributes['deployment.environment']) IN ('production')
@@ -13579,7 +13620,7 @@ SELECT
           if(argMin(StatusCode, (if(ParentSpanId = '', 0, 1), Timestamp)) = 'Error', 1, 0) AS hasError
         FROM trace_detail_spans
         WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND Timestamp >= subtractHours(toDateTime('2026-01-03 10:30:00'), 1)
           AND Timestamp <= addHours(toDateTime('2026-01-03 14:15:00'), 1)
           AND TraceId IN (SELECT traceId FROM (SELECT
           TraceId AS traceId,
@@ -13587,7 +13628,7 @@ SELECT
           Duration AS d
         FROM traces
         WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp >= '2026-01-03 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
           AND ServiceName = 'api'
           AND coalesce(nullIf(ResourceAttributes['deployment.environment.name'], ''), ResourceAttributes['deployment.environment']) IN ('production')
@@ -13620,7 +13661,7 @@ SELECT
           if(argMin(StatusCode, (if(ParentSpanId = '', 0, 1), Timestamp)) = 'Error', 1, 0) AS hasError
         FROM trace_detail_spans
         WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND Timestamp >= subtractHours(toDateTime('2026-01-03 10:30:00'), 1)
           AND Timestamp <= addHours(toDateTime('2026-01-03 14:15:00'), 1)
           AND TraceId IN (SELECT traceId FROM (SELECT
           TraceId AS traceId,
@@ -13628,7 +13669,7 @@ SELECT
           Duration AS d
         FROM traces
         WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp >= '2026-01-03 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
           AND ServiceName = 'api'
           AND coalesce(nullIf(ResourceAttributes['deployment.environment.name'], ''), ResourceAttributes['deployment.environment']) IN ('production')
@@ -13661,7 +13702,7 @@ SELECT
           if(argMin(StatusCode, (if(ParentSpanId = '', 0, 1), Timestamp)) = 'Error', 1, 0) AS hasError
         FROM trace_detail_spans
         WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND Timestamp >= subtractHours(toDateTime('2026-01-03 10:30:00'), 1)
           AND Timestamp <= addHours(toDateTime('2026-01-03 14:15:00'), 1)
           AND TraceId IN (SELECT traceId FROM (SELECT
           TraceId AS traceId,
@@ -13669,7 +13710,7 @@ SELECT
           Duration AS d
         FROM trace_list_mv
         WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp >= '2026-01-03 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
           AND ServiceName = 'api'
           AND DeploymentEnv = 'production'
@@ -13701,7 +13742,7 @@ SELECT
           if(argMin(StatusCode, (if(ParentSpanId = '', 0, 1), Timestamp)) = 'Error', 1, 0) AS hasError
         FROM trace_detail_spans
         WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND Timestamp >= subtractHours(toDateTime('2026-01-03 10:30:00'), 1)
           AND Timestamp <= addHours(toDateTime('2026-01-03 14:15:00'), 1)
           AND TraceId IN (SELECT traceId FROM (SELECT
           TraceId AS traceId,
@@ -13709,7 +13750,7 @@ SELECT
           Duration AS d
         FROM trace_list_mv
         WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp >= '2026-01-03 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
           AND ServiceName = 'api'
           AND DeploymentEnv = 'production'
@@ -13740,7 +13781,7 @@ SELECT
           if(argMin(StatusCode, (if(ParentSpanId = '', 0, 1), Timestamp)) = 'Error', 1, 0) AS hasError
         FROM trace_detail_spans
         WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND Timestamp >= subtractHours(toDateTime('2026-01-03 10:30:00'), 1)
           AND Timestamp <= addHours(toDateTime('2026-01-03 14:15:00'), 1)
           AND TraceId IN (SELECT traceId FROM (SELECT
           TraceId AS traceId,
@@ -13748,7 +13789,7 @@ SELECT
           Duration AS d
         FROM trace_list_mv
         WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp >= '2026-01-03 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
           AND ServiceName = 'api'
           AND DeploymentEnv = 'production'
@@ -13779,7 +13820,7 @@ SELECT
           if(argMin(StatusCode, (if(ParentSpanId = '', 0, 1), Timestamp)) = 'Error', 1, 0) AS hasError
         FROM trace_detail_spans
         WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND Timestamp >= subtractHours(toDateTime('2026-01-03 10:30:00'), 1)
           AND Timestamp <= addHours(toDateTime('2026-01-03 14:15:00'), 1)
           AND TraceId IN (SELECT traceId FROM (SELECT
           TraceId AS traceId,
@@ -13787,7 +13828,7 @@ SELECT
           Duration AS d
         FROM trace_list_mv
         WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp >= '2026-01-03 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
           AND ServiceName = 'api'
           AND DeploymentEnv = 'production'

@@ -1055,6 +1055,115 @@ describe("makeQueryEngineExecute", () => {
 		}),
 	)
 
+	describe("30-day trace list", () => {
+		const aggregateRow = (traceId: string, startTime: string) => ({
+			traceId,
+			startTime,
+			startSecond: startTime,
+			endTime: startTime,
+			durationMicros: 1000,
+			rootDurationMicros: 1000,
+			spanCount: 3,
+			services: ["gateway"],
+			rootSpanName: "GET /checkout",
+			rootSpanKind: "Server",
+			rootSpanStatusCode: "Ok",
+			rootHttpMethod: "",
+			rootHttpRoute: "",
+			rootHttpStatusCode: "",
+			rootSpanAttributes: "{}",
+			hasError: 0,
+		})
+		const window = { startTime: "2026-01-01 00:00:00", endTime: "2026-01-31 00:00:00" }
+
+		/** Serves two roots from the newest week only, and aggregates them out of order. */
+		const makeExecute = (receivedSql: string[]) =>
+			makeQueryEngineExecute(
+				makeTinybirdStub({
+					sqlQuery: (_tenant: unknown, sql: unknown) => {
+						receivedSql.push(String(sql))
+						if (String(sql).includes("FROM trace_detail_spans")) {
+							return Effect.succeed([
+								aggregateRow("t-old", "2026-01-29 22:00:00"),
+								aggregateRow("t-new", "2026-01-30 09:00:00"),
+							])
+						}
+						return Effect.succeed(
+							String(sql).includes("Timestamp <= '2026-01-31 00:00:00'")
+								? [
+										{ traceId: "t-new", ts: "2026-01-30 09:00:00", d: 1000 },
+										{ traceId: "t-old", ts: "2026-01-29 22:00:00", d: 1000 },
+									]
+								: [],
+						)
+					},
+				}),
+			)
+
+		it.effect("pages the newest week only, then aggregates within the page's own bounds", () =>
+			Effect.gen(function* () {
+				const receivedSql: string[] = []
+				const response = yield* makeExecute(receivedSql)(tenant, {
+					...window,
+					query: { kind: "list", source: "traces", groupByTrace: true, limit: 2, filters: {} },
+				})
+
+				assert.strictEqual(response.result.kind, "list")
+				assert.deepStrictEqual(
+					response.result.data.map((row) => row.traceId),
+					["t-new", "t-old"],
+				)
+				assert.strictEqual(receivedSql.length, 2)
+				assert.include(receivedSql[0] ?? "", "FROM trace_list_mv")
+				assert.include(receivedSql[0] ?? "", "Timestamp >= '2026-01-24 00:00:00'")
+				const aggregateSql = receivedSql[1] ?? ""
+				assert.include(aggregateSql, "TraceId IN ('t-new', 't-old')")
+				assert.include(aggregateSql, "Timestamp >= '2026-01-29 21:00:00'")
+				assert.include(aggregateSql, "Timestamp <= '2026-01-30 10:00:00'")
+			}),
+		)
+
+		it.effect("walks back week by week, without overlap, until the page fills or the window ends", () =>
+			Effect.gen(function* () {
+				const receivedSql: string[] = []
+				const response = yield* makeExecute(receivedSql)(tenant, {
+					...window,
+					query: { kind: "list", source: "traces", groupByTrace: true, limit: 50, filters: {} },
+				})
+
+				assert.strictEqual(response.result.data.length, 2)
+				const pageSql = receivedSql.filter((sql) => sql.includes("FROM trace_list_mv"))
+				assert.strictEqual(pageSql.length, 5)
+				// The second slice asks only for what the first left missing.
+				assert.include(pageSql[1] ?? "", "LIMIT 48")
+				assert.include(pageSql[1] ?? "", "Timestamp <= '2026-01-23 23:59:59'")
+				assert.include(pageSql[4] ?? "", "Timestamp >= '2026-01-01 00:00:00'")
+				assert.include(pageSql[4] ?? "", "Timestamp <= '2026-01-02 23:59:56'")
+			}),
+		)
+	})
+
+	it.effect("keeps the 7-day ceiling for trace lists that must rank or scan the whole window", () =>
+		Effect.gen(function* () {
+			const execute = makeQueryEngineExecute(makeTinybirdStub())
+			const window = { startTime: "2026-01-01 00:00:00", endTime: "2026-01-31 00:00:00" }
+
+			for (const query of [
+				{ kind: "list", source: "traces", groupByTrace: true, sortBy: "durationMs", filters: {} },
+				{
+					kind: "list",
+					source: "traces",
+					groupByTrace: true,
+					filters: { attributeFilters: [{ key: "user.id", value: "u1", mode: "equals" }] },
+				},
+				{ kind: "list", source: "traces", filters: {} },
+			] as const) {
+				const exit = yield* execute(tenant, { ...window, query }).pipe(Effect.exit)
+				assert.strictEqual(getFailure(exit)?.message, "List query time range too large")
+			}
+		}),
+	)
+
 	it.effect("rejects breakdown queries beyond a 30-day range", () =>
 		Effect.gen(function* () {
 			const execute = makeQueryEngineExecute(
