@@ -17,6 +17,20 @@ Everything before that is invisible from the backend: the route change, the load
 
 This guide covers tracing that part. We'll set up browser tracing, connect it to your backend traces, trace route navigations and data loading, and catch the errors your framework swallows. The setup here works with any framework, and there's a [follow-up guide for each popular one](#framework-guides). The examples use Maple's browser SDK, but everything underneath is OpenTelemetry, and the problems in the first half apply whichever backend you send spans to.
 
+## Quick setup with a coding agent
+
+If you'd rather have your coding agent do this, copy the prompt below into Claude Code, Codex, Cursor, or any agent that can run shell commands. It installs the [maple-frontend-tracing](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-frontend-tracing) skill, which contains every step of this guide plus a reference for each framework, and the agent picks it up from there.
+
+```text
+Set up Maple frontend tracing in this project.
+
+Install the skill with `npx skills add MapleTechLabs/maple/skills --skill maple-frontend-tracing -y`, then follow it.
+
+My Maple public ingest key is maple_pk_... and my organization is in the US region.
+```
+
+Replace the key with your public key from **Settings → Ingestion**, or leave it out: the agent then uses a placeholder you can swap later. EU organizations should say EU region.
+
 ## What frontend observability covers
 
 Frontend observability is the same idea as backend observability, pointed at the code running in your users' browsers. In practice it's four signals:

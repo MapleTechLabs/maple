@@ -11,6 +11,20 @@ TanStack Router tells you a lot about a navigation before it renders anything: w
 
 This is part of the [frontend tracing guide](/blog/frontend-tracing-opentelemetry). It assumes you've done steps 1 and 2 there (the browser SDK is installed and `traceparent` reaches your API), and that you've added the `src/tracing.ts` helper from step 3. Everything below plugs the router into that helper.
 
+## Quick setup with a coding agent
+
+If you'd rather have your coding agent do this, copy the prompt below into Claude Code, Codex, Cursor, or any agent that can run shell commands. It installs the [maple-frontend-tracing](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-frontend-tracing) skill, which contains every step of this guide and the general setup it builds on, and the agent picks it up from there.
+
+```text
+Set up Maple frontend tracing in this project.
+
+Install the skill with `npx skills add MapleTechLabs/maple/skills --skill maple-frontend-tracing -y`, then follow it. This app uses TanStack Router (and TanStack Start, if it renders on the server).
+
+My Maple public ingest key is maple_pk_... and my organization is in the US region.
+```
+
+Replace the key with your public key from **Settings → Ingestion**, or leave it out: the agent then uses a placeholder you can swap later. EU organizations should say EU region.
+
 ## Trace TanStack Router navigations
 
 The router emits lifecycle events you can subscribe to with `router.subscribe`. Two of them are enough:
