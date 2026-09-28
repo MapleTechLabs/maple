@@ -28,6 +28,7 @@ import type { ReplaySessionHandle } from "@maple/browser-session/replay"
 import { trace } from "@opentelemetry/api"
 import { type MapleBrowserConfig, type ResolvedConfig, resolveConfig } from "./config"
 import { setupErrorCapture } from "./errors"
+import { resetNavigation } from "./navigation"
 import { setupTracing } from "./tracing"
 import { SDK_NAME, SDK_VERSION } from "./version"
 
@@ -221,6 +222,8 @@ export function init(rawConfig: MapleBrowserConfig): MapleBrowserHandle {
 			await stopRuntime(true)
 			stopErrorCapture?.()
 			stopErrorCapture = undefined
+			// Before the provider shuts down, so an open navigation exports with it
+			resetNavigation()
 			await shutdownTracing?.()
 			shutdownTracing = undefined
 			setActiveTraceIdProvider(() => undefined)

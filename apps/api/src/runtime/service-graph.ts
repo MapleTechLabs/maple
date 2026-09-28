@@ -58,6 +58,7 @@ import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService
 import { OrganizationService } from "@maple/backend/services/org/OrganizationService"
 import { LiveActivitiesService } from "@maple/backend/services/push/LiveActivitiesService"
 import { MobileDevicesService } from "@maple/backend/services/push/MobileDevicesService"
+import { AgentFeedbackService } from "@maple/backend/services/feedback/AgentFeedbackService"
 import { SetupAuditService } from "@maple/backend/services/org/SetupAuditService"
 import { SignalPresenceService } from "@maple/backend/services/org/SignalPresenceService"
 import { ProductEventsService } from "@maple/backend/services/product-events/ProductEventsService"
@@ -92,6 +93,7 @@ export const HttpServicesLive = Layer.mergeAll(
 	TinybirdOrgTokenService.layer,
 	OrganizationService.layer,
 	MobileDevicesService.layer,
+	AgentFeedbackService.layer,
 	LiveActivitiesService.layer,
 	PlanetScaleWebhookQueue.layer,
 	ScrapeTargetsService.layer,
