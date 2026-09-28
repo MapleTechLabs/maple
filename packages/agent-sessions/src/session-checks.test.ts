@@ -562,6 +562,23 @@ describe("buildSessionChecks", () => {
 		}
 	})
 
+	// Vercel AI SDK's `ai.response.finishReason` is kebab-case: a
+	// `content-filter` refusal read as passed.
+	it("reads a filtered reply whatever the finish reason's spelling", () => {
+		const report = checks([
+			agentSpan({ spanId: "a1", startMs: 0, durationMs: 10 * SECOND }),
+			llmSpan({
+				spanId: "l1",
+				parentSpanId: "a1",
+				startMs: SECOND,
+				durationMs: SECOND,
+				genAi: { responseFinishReasons: ["content-filter"] },
+			}),
+		])
+		expect(byId(report, "refusals").status).not.toBe("passed")
+		expect(byId(report, "refusals").headline).toMatch(/^1 reply was refused or filtered/)
+	})
+
 	// The app's own span reports no cache fields; its gateway's mirror, in a
 	// trace of its own with the same response id, does. The call is counted
 	// once, and judged by the observation that measured the cache.
