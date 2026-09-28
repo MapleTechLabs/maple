@@ -30,6 +30,7 @@ import {
 import {
 	classifyAiSpan,
 	isLlmCall,
+	spanModel,
 	spanStartMs,
 	type SessionTurn,
 	type TurnAnchorKind,
@@ -617,6 +618,17 @@ function stallCheck(findings: readonly SessionFinding[]): SessionCheck {
 	)
 }
 
+/**
+ * A Claude call that neither wrote nor read the cache: its prompt was below the
+ * model's minimum (up to 4,096 tokens), or it never asked. Anthropic writes as
+ * soon as a prompt qualifies, so this says nothing about the prefix. Only
+ * Claude's zero means this: other providers stamp a zero write on every call.
+ */
+const uncachedClaudeCall = (span: AiSessionSpan): boolean =>
+	(span.genAi.providerName === "anthropic" || /claude/i.test(spanModel(span) ?? "")) &&
+	(span.genAi.usageCacheCreationInputTokens ?? 0) === 0 &&
+	(span.genAi.usageCacheReadInputTokens ?? 0) === 0
+
 const reportsCache = (span: AiSessionSpan): boolean =>
 	span.genAi.usageCacheReadInputTokens !== undefined ||
 	span.genAi.usageCacheCreationInputTokens !== undefined
@@ -649,25 +661,9 @@ function promptCacheCheck(llmCalls: readonly AiSessionSpan[]): SessionCheck {
 			"No model call reported cache usage, so the prompt cache could not be checked.",
 		)
 	}
-	// Anthropic writes the cache on the first call whose prompt reaches the
-	// model's minimum, so calls that never wrote or read it had nothing
-	// cacheable, or never asked. Other providers stamp a zero write bucket on
-	// every call whatever happened, so only Anthropic's zero says this.
-	const neverCached = reporting.every(
-		(span) =>
-			span.genAi.providerName === "anthropic" &&
-			span.genAi.usageCacheCreationInputTokens === 0 &&
-			(span.genAi.usageCacheReadInputTokens ?? 0) === 0,
-	)
-	if (neverCached) {
-		return check(
-			identity,
-			"skipped",
-			"No Anthropic model call wrote to the prompt cache: the prompts are below the model's cacheable minimum, or caching is off.",
-		)
-	}
 	// The first cacheable call cannot hit a cache nothing has written yet.
 	const cacheable = reporting
+		.filter((span) => !uncachedClaudeCall(span))
 		.map(spanTokenBuckets)
 		.filter((buckets) => buckets !== undefined)
 		.map((buckets) => ({
@@ -680,7 +676,7 @@ function promptCacheCheck(llmCalls: readonly AiSessionSpan[]): SessionCheck {
 		return check(
 			identity,
 			"skipped",
-			`Only ${plural(cacheable.length, "model call")} had a prompt of ${CACHE_MIN_PROMPT_TOKENS} tokens or more, the smallest a provider caches; at least ${CACHE_MIN_CALLS + 1} are needed to judge the prompt cache.`,
+			`Only ${plural(cacheable.length, "model call")} had a prompt long enough to cache; at least ${CACHE_MIN_CALLS + 1} are needed to judge the prompt cache.`,
 		)
 	}
 	const rate =

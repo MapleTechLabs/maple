@@ -365,7 +365,7 @@ describe("buildSessionChecks", () => {
 				parentSpanId: "a1",
 				startMs,
 				durationMs: SECOND,
-				model: "claude-opus-5",
+				model: "gpt-5",
 				genAi: {
 					conversationId: "t1",
 					// Inclusive of the cache read, as the default convention counts it.
@@ -422,20 +422,55 @@ describe("buildSessionChecks", () => {
 		)
 		expect(short.status).toBe("skipped")
 		expect(short.headline).toBe(
-			"Only 0 model calls had a prompt of 1024 tokens or more, the smallest a provider caches; at least 4 are needed to judge the prompt cache.",
+			"Only 0 model calls had a prompt long enough to cache; at least 4 are needed to judge the prompt cache.",
 		)
 
-		const neverWritten = byId(
-			session((i) => ({
-				providerName: "anthropic",
-				usageInputTokens: 1_227 + 200 * i,
-				usageCacheReadInputTokens: 0,
+		// Claude calls that neither wrote nor read the cache were below the
+		// model's minimum (Haiku 4.5: 4,096): Claude Agent SDK, flue through
+		// OpenRouter (write stamped 0), OpenRouter Broadcast (write key absent).
+		for (const claude of [
+			{ providerName: "anthropic", requestModel: "claude-haiku-4-5", usageCacheCreationInputTokens: 0 },
+			{
+				providerName: "openrouter",
+				requestModel: "anthropic/claude-haiku-4.5",
 				usageCacheCreationInputTokens: 0,
-			})),
+			},
+			{ providerName: "anthropic", requestModel: "claude-sonnet-4.5" },
+		]) {
+			const neverWritten = byId(
+				session((i) => ({
+					...claude,
+					usageInputTokens: 1_227 + 200 * i,
+					usageCacheReadInputTokens: 0,
+				})),
+				"prompt-cache",
+			)
+			expect(neverWritten.status).toBe("skipped")
+		}
+
+		// Per call: a session mixing uncached Claude calls with OpenAI misses is
+		// judged on the OpenAI calls.
+		const mixed = byId(
+			session((i) =>
+				i % 2 === 0
+					? {
+							providerName: "openai",
+							requestModel: "gpt-4o-mini",
+							usageInputTokens: 2_000,
+							usageCacheReadInputTokens: 0,
+						}
+					: {
+							providerName: "openrouter",
+							requestModel: "anthropic/claude-haiku-4.5",
+							usageInputTokens: 1_300,
+							usageCacheReadInputTokens: 0,
+							usageCacheCreationInputTokens: 0,
+						},
+			),
 			"prompt-cache",
 		)
-		expect(neverWritten.status).toBe("skipped")
-		expect(neverWritten.headline).toMatch(/^No Anthropic model call wrote to the prompt cache/)
+		expect(mixed.status).toBe("skipped")
+		expect(mixed.headline).toMatch(/^Only 3 model calls had a prompt long enough to cache/)
 
 		// Long enough on OpenAI: a miss is a miss, whether or not the emitter
 		// reported a write bucket (most stamp a zero one on every call).
