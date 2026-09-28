@@ -104,6 +104,15 @@ export const AI_AGENT_OPERATIONS = [
 	"agent_step",
 ] as const
 /**
+ * Span names that mark a model or tool call on their own, for the frameworks
+ * whose calls carry no operation, model or tool name: Haystack's agent loop and
+ * Effect AI's toolkit. Exact names only — a substring rule ("chat", "tool" in
+ * the name) read LangGraph's `tools` node, DSPy's `ChatAdapter.__call__` and
+ * LiteLLM proxy's `auth /chat/completions` as calls.
+ */
+export const AI_INFERENCE_SPAN_NAMES = ["haystack.agent.step.llm"] as const
+export const AI_TOOL_SPAN_NAMES = ["haystack.agent.step.tool", "Toolkit.handle"] as const
+/**
  * Count of whole oldest messages dropped from `gen_ai.input.messages` to fit
  * the emitter's attribute budget. Write-only diagnostics: nothing decodes it,
  * it is visible in raw span attributes.

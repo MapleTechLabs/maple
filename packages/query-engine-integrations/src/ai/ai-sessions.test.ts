@@ -1399,6 +1399,13 @@ describe("aiSessionSummaryQuery", () => {
 		expect(sql).toContain("NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent'")
 	})
 
+	it("counts a call off the framework call span names the page reads, and no other name", () => {
+		const { sql } = compileUnsafe(aiSessionSummaryQuery(), summaryParams)
+		expect(sql).toContain("SpanName IN ('haystack.agent.step.llm')")
+		expect(sql).toContain("SpanName IN ('haystack.agent.step.tool', 'Toolkit.handle')")
+		expect(sql).not.toContain("lower(SpanName)")
+	})
+
 	it("is org-scoped on both levels", () => {
 		const { sql } = compileUnsafe(aiSessionSummaryQuery(), summaryParams)
 		expect(orgPredicateCount(sql)).toBe(2)

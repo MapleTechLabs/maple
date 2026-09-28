@@ -1114,5 +1114,32 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 			},
 		],
 	},
+	{
+		id: "local-0025-to-0026-ai-trace-index-call-classification",
+		from: 25,
+		to: 26,
+		description:
+			"Recreate ai_trace_index_mv so IsLlmCall and IsToolCall read a call from its tool name, its model or an exact framework span name",
+		clonedBefore: "any DDL runs",
+		beforeBootstrap: [dropViews("ai_trace_index_mv")],
+		plan: [
+			[
+				"rebuild-ai-trace-index-view",
+				"Rebuild ai_trace_index_mv so a span name that merely mentions a call no longer flags one",
+			],
+		],
+		verifies: "Verify the v26 physical schema and the retained raw telemetry counts",
+		dispositions: [
+			AI_TRACE_INDEX_SOURCE,
+			{
+				name: "ai_trace_index",
+				classification: "derived",
+				disposition: "rebuild-within-retention-horizon",
+				guarantee:
+					"Existing rows are preserved untouched with their v25 IsLlmCall and IsToolCall; the rebuilt view applies the new rule to spans materialized after the migration and the gap closes as the retention window rolls.",
+				...AI_TRACE_INDEX_FORWARD,
+			},
+		],
+	},
 	// local-schema:bump appends the next step above this line.
 ]

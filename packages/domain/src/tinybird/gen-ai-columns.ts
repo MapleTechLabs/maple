@@ -25,6 +25,8 @@ import { compile } from "@maple-dev/effect-clickhouse/sql"
 import * as T from "@maple-dev/effect-clickhouse/types"
 import { applyRedactions, chRedactChain, MSG_TEXT_REDACTIONS } from "./fingerprint"
 import {
+	AI_INFERENCE_SPAN_NAMES,
+	AI_TOOL_SPAN_NAMES,
 	GENAI_DEFAULT_USAGE_CONVENTION,
 	GENAI_PROVIDER_USAGE_CONVENTIONS,
 	GENAI_VENDOR_USAGE_CONVENTIONS,
@@ -181,53 +183,33 @@ export function genAiOperationExpr(attrs: MapColumnLike): Expr<string> {
 	)
 }
 
-/**
- * `classifyAiSpan`'s span-name fallback, for a span whose operation is absent
- * or one the convention does not name (`generate_text`): tool, then agent,
- * then inference — in that order, because the first rule that fires wins in
- * the client too.
- */
-const nameLooks = (name: Expr<string>, needles: readonly [string, ...string[]]): Condition => {
-	const lowered = CH.lower_(name)
-	const [first, ...rest] = needles
-	return rest.reduce((cond, needle) => cond.or(lowered.like(`%${needle}%`)), lowered.like(`%${first}%`))
-}
-
 /** A model turn — what the list counts as an "LLM call". Embeddings and
  *  retrieval are inference time but not calls, exactly as `isLlmCall` says.
- *  Every span the index holds is vendor-stamped, so the client's "is an AI
- *  span" guard on the name rules is already met. */
+ *  A span whose operation is absent or one the convention does not name
+ *  (`generate_text`) falls to `classifyAiSpan`'s evidence rules, in its order:
+ *  a tool name, then a model or a framework's model-call span name. Every span
+ *  the index holds is vendor-stamped, so the client's "is an AI span" guard on
+ *  those rules is already met. */
 export function genAiIsLlmCallCond($: Pick<GenAiSpanColumnsLike, "SpanName" | "SpanAttributes">): Condition {
 	const attrs = $.SpanAttributes
 	const op = genAiOperationExpr(attrs)
 	const byOperation = CH.inList(op, INFERENCE_OPS)
-	const byName = CH.notInList(op, KNOWN_OPS)
-		.and(
-			CH.not(
-				genAiToolNameExpr(attrs)
-					.neq("")
-					.or(nameLooks($.SpanName, ["tool"])),
-			),
-		)
-		.and(CH.not(nameLooks($.SpanName, ["agent", "workflow"])))
-		.and(
-			genAiModelExpr(attrs)
-				.neq("")
-				.or(nameLooks($.SpanName, ["chat", "completion"])),
-		)
-	return byOperation.or(byName)
+	const byEvidence = CH.notInList(op, KNOWN_OPS)
+		.and(genAiToolNameExpr(attrs).eq(""))
+		.and(genAiModelExpr(attrs).neq("").or(CH.inList($.SpanName, AI_INFERENCE_SPAN_NAMES)))
+	return byOperation.or(byEvidence)
 }
 
 export function genAiIsToolCallCond($: Pick<GenAiSpanColumnsLike, "SpanName" | "SpanAttributes">): Condition {
 	const attrs = $.SpanAttributes
 	const op = genAiOperationExpr(attrs)
 	const byOperation = CH.inList(op, TOOL_OPS)
-	const byName = CH.notInList(op, KNOWN_OPS).and(
+	const byEvidence = CH.notInList(op, KNOWN_OPS).and(
 		genAiToolNameExpr(attrs)
 			.neq("")
-			.or(nameLooks($.SpanName, ["tool"])),
+			.or(genAiModelExpr(attrs).eq("").and(CH.inList($.SpanName, AI_TOOL_SPAN_NAMES))),
 	)
-	return byOperation.or(byName)
+	return byOperation.or(byEvidence)
 }
 
 // Failure

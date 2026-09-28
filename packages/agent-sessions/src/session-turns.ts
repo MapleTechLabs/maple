@@ -14,8 +14,10 @@
 import {
 	AI_AGENT_OPERATIONS,
 	AI_INFERENCE_OPERATIONS,
+	AI_INFERENCE_SPAN_NAMES,
 	AI_RETRIEVAL_OPERATIONS,
 	AI_TOOL_OPERATIONS,
+	AI_TOOL_SPAN_NAMES,
 } from "@maple/domain/gen-ai"
 import type { AiSessionSpan } from "@maple/domain/http"
 import { parseWarehouseDateTime } from "@maple/query-engine"
@@ -29,7 +31,7 @@ export type AiSpanCategory = "agent" | "inference" | "tool" | "other"
 
 // The operation vocabulary is shared with the server-side session summary
 // (`@maple/domain/gen-ai`), so an "llm call" is the same span in both places.
-// An unknown value falls through to the span-name rules below rather than
+// An unknown value falls through to the evidence rules below rather than
 // being rejected.
 const INFERENCE_OPS: ReadonlySet<string> = new Set(AI_INFERENCE_OPERATIONS)
 /** Inference-shaped work that is not a chat completion: counted as inference
@@ -37,6 +39,8 @@ const INFERENCE_OPS: ReadonlySet<string> = new Set(AI_INFERENCE_OPERATIONS)
 const RETRIEVAL_OPS: ReadonlySet<string> = new Set(AI_RETRIEVAL_OPERATIONS)
 const TOOL_OPS: ReadonlySet<string> = new Set(AI_TOOL_OPERATIONS)
 const AGENT_OPS: ReadonlySet<string> = new Set(AI_AGENT_OPERATIONS)
+const INFERENCE_SPAN_NAMES: ReadonlySet<string> = new Set(AI_INFERENCE_SPAN_NAMES)
+const TOOL_SPAN_NAMES: ReadonlySet<string> = new Set(AI_TOOL_SPAN_NAMES)
 
 /** Every operation name the four sets above recognise. A span name conventionally
  *  leads with one ("execute_tool read_file", "chat gpt-5"), so a view that wants
@@ -74,14 +78,11 @@ export function classifyAiSpan(span: AiSessionSpan): AiSpanCategory {
 	if (!span.isAiSpan) return "other"
 
 	// `gen_ai.operation.name` is optional and plenty of instrumentations skip it.
-	// The span name is the next best evidence: by convention it leads with the
-	// operation ("execute_tool read_file", "chat gpt-5").
-	const name = span.spanName.toLowerCase()
-	if (span.genAi.toolName !== undefined || name.includes("tool")) return "tool"
-	if (name.includes("agent") || name.includes("workflow")) return "agent"
-	if (spanModel(span) !== undefined || name.includes("chat") || name.includes("completion")) {
-		return "inference"
-	}
+	// A tool name or a model is the next best evidence, then the few framework
+	// span names that mark a call on their own (`AI_INFERENCE_SPAN_NAMES`).
+	if (span.genAi.toolName !== undefined) return "tool"
+	if (spanModel(span) !== undefined || INFERENCE_SPAN_NAMES.has(span.spanName)) return "inference"
+	if (TOOL_SPAN_NAMES.has(span.spanName)) return "tool"
 	// An AI span we can't place is still the agent's own work, not the app's.
 	return "agent"
 }

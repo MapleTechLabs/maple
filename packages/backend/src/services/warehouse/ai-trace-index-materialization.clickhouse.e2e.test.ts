@@ -266,8 +266,8 @@ const AGENT_TURN_2_SPAN: SeedSpan = {
 // `Timestamp <= '{fanOutEnd}'` has to admit the row it was measured from. A
 // millisecond dropped anywhere in that round trip erases this session.
 //
-// Vercel AI SDK dialect with no operation name: classified by the span-name
-// rules, identified by `ai.model.id`, measured by `ai.usage.*`, and in the
+// Vercel AI SDK dialect with no operation name: classified as a model call by
+// its `ai.model.id`, measured by `ai.usage.*`, and in the
 // environment under the DEPRECATED semconv spelling.
 const SESSIONLESS_SPAN: SeedSpan = {
 	traceId: SESSIONLESS_TRACE,
@@ -571,8 +571,8 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 			indexRow(ORG_ID, AGENT_SDK_SPAN),
 			indexRow(ORG_ID, AGENT_TURN_2_SPAN, { AgentName: "critic-agent" }),
 			// The Vercel AI SDK dialect resolves to the same columns, the deprecated
-			// environment spelling still resolves, and the name rules classify a
-			// span with no operation name as the model call it is.
+			// environment spelling still resolves, and its model classifies a span
+			// with no operation name as the model call it is.
 			indexRow(ORG_ID, SESSIONLESS_SPAN, {
 				DeploymentEnv: "staging",
 				Model: "gpt-5",

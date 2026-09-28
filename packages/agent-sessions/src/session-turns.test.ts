@@ -392,17 +392,56 @@ describe("classifyAiSpan", () => {
 		expect(classifyAiSpan(vercelStep)).toBe("agent")
 	})
 
-	it("falls back to the span name when the operation is not recorded", () => {
-		// A name-only AI span is one the ingest gateway stamped from its scope: a
-		// vendor id, no decoded gen_ai attributes.
-		const named = (spanName: string) =>
+	it("falls back to a tool name, then a model, when the operation is not recorded", () => {
+		const unlabelled = (genAi: AiSessionSpan["genAi"]) =>
 			classifyAiSpan(
-				makeSpan({ spanId: "a", startMs: 0, durationMs: 1, spanName, vendorId: "vercel_ai_sdk" }),
+				makeSpan({
+					spanId: "a",
+					startMs: 0,
+					durationMs: 1,
+					spanName: "step",
+					vendorId: "vercel_ai_sdk",
+					genAi,
+				}),
 			)
 
-		expect(named("ai.toolCall")).toBe("tool")
-		expect(named("workflow.run")).toBe("agent")
-		expect(named("chat gpt-5")).toBe("inference")
+		expect(unlabelled({ toolName: "get_weather" })).toBe("tool")
+		expect(unlabelled({ requestModel: "gpt-5" })).toBe("inference")
+		expect(unlabelled({ conversationId: "c-1" })).toBe("agent")
+	})
+
+	it("reads a call from the span name only for the frameworks whose calls carry nothing else", () => {
+		// A name-only AI span is one the ingest gateway stamped from its scope: a
+		// vendor id, no operation, model or tool name. Names from the replayed
+		// captures (trace-capture `haystack_agents`, `effect_ai_agents`).
+		const named = (spanName: string, vendorId: string) =>
+			classifyAiSpan(makeSpan({ spanId: "a", startMs: 0, durationMs: 1, spanName, vendorId }))
+
+		expect(named("haystack.agent.step.llm", "haystack")).toBe("inference")
+		expect(named("haystack.agent.step.tool", "haystack")).toBe("tool")
+		expect(named("haystack.agent.step", "haystack")).toBe("agent")
+		expect(named("Toolkit.handle", "effect_ai")).toBe("tool")
+		// Effect's wrapper over the `LanguageModel.generateText` call, which
+		// carries the operation itself: counted, the call counted twice.
+		expect(named("Chat.generateText", "effect_ai")).toBe("agent")
+	})
+
+	it("does not read a call from a span name that merely mentions one", () => {
+		// Each of these was counted as a model or tool call by a substring rule;
+		// all are framework steps around the real call (trace-capture
+		// `langgraph_agents`, `llamaindex_agents`, `dspy_agents`,
+		// `spring_ai_agents`, `openai_agents_sdk_agents`, `docs_litellm_proxy`).
+		const named = (spanName: string, vendorId: string) =>
+			classifyAiSpan(makeSpan({ spanId: "a", startMs: 0, durationMs: 1, spanName, vendorId }))
+
+		expect(named("tools", "langchain")).toBe("agent")
+		expect(named("ChatPromptTemplate", "langchain")).toBe("agent")
+		expect(named("BaseWorkflowAgent.call_tool", "llamaindex")).toBe("agent")
+		expect(named("BaseWorkflowAgent.aggregate_tool_results", "llamaindex")).toBe("agent")
+		expect(named("ChatAdapter.__call__", "dspy")).toBe("agent")
+		expect(named("spring_ai chat_client", "spring_ai")).toBe("agent")
+		expect(named("support chat", "openai_agents_sdk")).toBe("agent")
+		expect(named("auth /chat/completions", "litellm")).toBe("agent")
 	})
 
 	it("classifies a span with no AI signal as other, whatever it is called", () => {

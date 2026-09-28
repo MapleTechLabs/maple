@@ -148,9 +148,11 @@ import {
 import {
 	AI_AGENT_OPERATIONS,
 	AI_INFERENCE_OPERATIONS,
+	AI_INFERENCE_SPAN_NAMES,
 	AI_PROMPT_VARIABLE_PREFIX,
 	AI_RETRIEVAL_OPERATIONS,
 	AI_TOOL_OPERATIONS,
+	AI_TOOL_SPAN_NAMES,
 	MAPLE_AI_SESSION_ID_ATTR,
 	MAPLE_AI_TRACE_SESSION_PREFIX,
 	MAPLE_AI_VENDOR_ID_ATTR,
@@ -1589,7 +1591,7 @@ const SUMMARY_ARRAY_CAP = 50
  * Every attribute is read the way `mapAiSpan` reads it: the first non-empty
  * value across that field's source keys. An "llm call" and a "tool call" are
  * the page's `classifyAiSpan` reduced to what an aggregation can see —
- * operation name, model, tool name — without the span-name heuristics.
+ * operation name, model, tool name and the framework call span names.
  *
  * Usage is summed twice: over every span, and over the model-call spans alone.
  * A framework that reports usage per call AND rolls it up onto the agent span
@@ -1618,12 +1620,15 @@ const summaryMeasures_ = ($: SpanColumns) => {
 	const isLlmCall = operation.in_(...AI_INFERENCE_OPERATIONS).or(
 		operation
 			.notIn(...AI_RETRIEVAL_OPERATIONS, ...AI_TOOL_OPERATIONS, ...AI_AGENT_OPERATIONS)
-			.and(model.neq(""))
+			.and(model.neq("").or($.SpanName.in_(...AI_INFERENCE_SPAN_NAMES)))
 			.and(toolName.eq("")),
 	)
-	const isToolCall = operation
-		.in_(...AI_TOOL_OPERATIONS)
-		.or(operation.eq("").and(isAi).and(toolName.neq("")))
+	const isToolCall = operation.in_(...AI_TOOL_OPERATIONS).or(
+		operation
+			.eq("")
+			.and(isAi)
+			.and(toolName.neq("").or(model.eq("").and($.SpanName.in_(...AI_TOOL_SPAN_NAMES)))),
+	)
 	// The list query's error rule, so the summary and the list badge agree.
 	const failed = $.StatusCode.eq("Error").or(
 		isAi.and(

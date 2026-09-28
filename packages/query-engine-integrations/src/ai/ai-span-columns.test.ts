@@ -146,25 +146,31 @@ describe("span classification SQL", () => {
 		)
 	})
 
-	it("counts a model turn by operation, or by name only for an unclassified agent span", () => {
+	it("counts a model turn by operation, else by a model or a framework's model-call span name", () => {
 		const text = sql(genAiIsLlmCallCond(columns))
 		expect(text).toContain("IN ('chat', 'generate_content', 'text_completion', 'fetch_response')")
-		// The name rules apply only where the operation is absent or unknown to
-		// the convention, only to vendor-stamped spans, and only after the tool
-		// and agent rules have declined — the client's order.
+		// The evidence rules apply only where the operation is absent or unknown
+		// to the convention, only to vendor-stamped spans, and only after the tool
+		// rule has declined — the client's order.
 		expect(text).toContain(
 			"NOT IN ('chat', 'generate_content', 'text_completion', 'fetch_response', 'embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step')",
 		)
-		expect(text).toContain("NOT ((coalesce(nullIf(SpanAttributes['gen_ai.tool.name'], '')")
-		expect(text).toContain("lower(SpanName) LIKE '%tool%'")
-		expect(text).toContain("NOT ((lower(SpanName) LIKE '%agent%' OR lower(SpanName) LIKE '%workflow%'))")
-		expect(text).toContain("lower(SpanName) LIKE '%chat%' OR lower(SpanName) LIKE '%completion%'")
+		expect(text).toContain("SpanAttributes['tool.name']) = ''")
+		expect(text).toContain(
+			"SpanAttributes['llm.model_name']) != '' OR SpanName IN ('haystack.agent.step.llm')",
+		)
+		// Exact names only: a substring rule read `tools` and `ChatAdapter` as calls.
+		expect(text).not.toContain("LIKE")
 	})
 
-	it("counts a tool call by operation, or by a tool name / tool-ish span name", () => {
+	it("counts a tool call by operation, else by a tool name or a framework's tool-call span name", () => {
 		const text = sql(genAiIsToolCallCond(columns))
 		expect(text).toContain("IN ('execute_tool')")
-		expect(text).toContain("SpanAttributes['tool.name']) != '' OR lower(SpanName) LIKE '%tool%'")
+		expect(text).toContain(
+			"SpanAttributes['tool.name']) != '' OR (coalesce(nullIf(SpanAttributes['gen_ai.response.model'], '')",
+		)
+		expect(text).toContain("SpanName IN ('haystack.agent.step.tool', 'Toolkit.handle')")
+		expect(text).not.toContain("LIKE")
 	})
 
 	it("sums the token buckets under the reporter's convention, each coalesced canonical-first", () => {
