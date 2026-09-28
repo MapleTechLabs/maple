@@ -1360,6 +1360,40 @@ describe("per-model cost, tools and failure groups", () => {
 		expect(summary.cost).toBe(0)
 	})
 
+	it("counts a call paused for a human and resumed once, as its resumed copy", () => {
+		// Strands HITL (capture docs_strands_a1): the interrupted `delete_file`
+		// span ends Ok with no result, and the resumed turn's trace opens it
+		// again under the same call id.
+		const callId = "call_ltoPrLQIg3ZHWkyFnBIOE65u"
+		const summary = summarize([
+			toolSpan({
+				spanId: "paused",
+				traceId: "trace-pause",
+				toolName: "delete_file",
+				startMs: 0,
+				durationMs: 0.4,
+				genAi: { toolCallId: callId },
+			}),
+			toolSpan({
+				spanId: "resumed",
+				traceId: "trace-resume",
+				toolName: "delete_file",
+				startMs: 52,
+				durationMs: 1,
+				genAi: { toolCallId: callId, toolCallResult: "deleted /tmp/scratch-notes.txt" },
+			}),
+			toolSpan({ spanId: "other", toolName: "get_weather", startMs: 100, durationMs: 1 }),
+		])
+
+		expect(summary.work.toolCalls).toBe(2)
+		expect(
+			summary.tools.map((tool) => [tool.name, tool.calls, tool.events.map((event) => event.spanId)]),
+		).toEqual([
+			["delete_file", 1, ["resumed"]],
+			["get_weather", 1, ["other"]],
+		])
+	})
+
 	// Busiest first, with what each cost alongside it: how often the agent
 	// reached for a tool is the ledger's own order.
 	it("orders tools by how often they were called, and totals what they cost", () => {

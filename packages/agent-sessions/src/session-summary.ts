@@ -266,6 +266,7 @@ export function buildSessionSummary({
 
 	const usage = countableUsageSpans(ordered, byId)
 	const calls = countedLlmCalls(ordered, byId, usage.bySpan, usage.costs)
+	const toolCalls = countedToolCalls(ordered)
 	// The counts and the breakdown are two readings of this one list.
 	const events = failureEvents(ordered)
 
@@ -289,11 +290,11 @@ export function buildSessionSummary({
 		work: {
 			turns: turns.length,
 			llmCalls: calls.length,
-			toolCalls: ordered.filter((span) => classifyAiSpan(span) === "tool").length,
+			toolCalls: toolCalls.length,
 		},
 		failures: countFailures(events),
 		failureGroups: groupFailures(events),
-		tools: toolUsage(ordered, turns),
+		tools: toolUsage(toolCalls, turns),
 		spanCount: ordered.length,
 		traceCount: new Set(ordered.map((span) => span.traceId)).size,
 	}
@@ -789,13 +790,32 @@ function modelUsage(
 }
 
 /**
+ * The tool calls the session made, each counted once, in start order. A
+ * framework that pauses a call for a human opens its tool span twice under one
+ * `gen_ai.tool.call.id` — the paused copy and the resumed one, in two traces
+ * (Strands, OpenAI Agents, Mastra, Google ADK) — so spans sharing an id are one
+ * call, the last to start standing for it. Spans without an id count as they are.
+ */
+function countedToolCalls(ordered: readonly AiSessionSpan[]): readonly AiSessionSpan[] {
+	const unkeyed: AiSessionSpan[] = []
+	const byCallId = new Map<string, AiSessionSpan>()
+	for (const span of ordered) {
+		if (classifyAiSpan(span) !== "tool") continue
+		const callId = span.genAi.toolCallId
+		if (callId === undefined || callId === "") unkeyed.push(span)
+		else byCallId.set(callId, span)
+	}
+	return [...unkeyed, ...byCallId.values()].sort((a, b) => spanStartMs(a) - spanStartMs(b))
+}
+
+/**
  * Tools by how often the session called them. Named by `gen_ai.tool.name` where
  * the instrumentation stamped one and by the span name otherwise, so a
  * framework that skips the attribute still gets a histogram rather than
  * disappearing from a column whose total says 63.
  */
 function toolUsage(
-	spans: readonly AiSessionSpan[],
+	calls: readonly AiSessionSpan[],
 	turns: readonly SessionTurn[],
 ): readonly SessionToolUsage[] {
 	const turnIndexBySpan = new Map<string, number>()
@@ -804,8 +824,7 @@ function toolUsage(
 	}
 
 	const byName = new Map<string, { description: string | undefined; events: SessionToolCall[] }>()
-	for (const span of spans) {
-		if (classifyAiSpan(span) !== "tool") continue
+	for (const span of calls) {
 		const name = span.genAi.toolName ?? span.spanName
 		const entry = byName.get(name) ?? { description: undefined, events: [] }
 		// The first stamped description speaks for the tool: emitters send the
