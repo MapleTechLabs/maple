@@ -163,7 +163,10 @@ const GENAI_LEGACY_ALIASES = {
 		"gen_ai.usage.cache_write.input_tokens",
 		"gen_ai.usage.input_tokens.cache_write",
 	],
-	usageCost: ["gen_ai.usage.total_cost"],
+	// OpenInference's key. Instrumentations that price calls themselves each
+	// name the figure their own way, and every vendor's span can carry any of
+	// them — the list's `Cost` column reads them all.
+	usageCost: ["gen_ai.usage.total_cost", "llm.cost.total"],
 	inputMessages: ["gen_ai.prompt"],
 	outputMessages: ["gen_ai.completion"],
 	providerName: ["gen_ai.system"],

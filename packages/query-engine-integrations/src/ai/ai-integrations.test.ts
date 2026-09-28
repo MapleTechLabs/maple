@@ -256,6 +256,16 @@ describe("legacy aliases", () => {
 	})
 })
 
+describe("cost keys", () => {
+	// The list's `Cost` column reads every one of these for every vendor, so the
+	// detail page must too, or a session is priced on one page and not the other.
+	it("reads OpenInference's llm.cost.total whatever vendor stamped the span", () => {
+		const mapped = mapAiSpan(row({ "maple_ai.vendor.id": "agno", "llm.cost.total": "0.0042" }))
+
+		expect(mapped.genAi.usageCost).toBe(0.0042)
+	})
+})
+
 describe("value normalisation", () => {
 	// The `gen_ai.system` enum members that were renamed with the attribute.
 	const renames: ReadonlyArray<readonly [string, string]> = [
