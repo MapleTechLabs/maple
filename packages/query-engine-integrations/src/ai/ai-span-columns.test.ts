@@ -133,6 +133,7 @@ describe("GenAI column key lists match the integration layer", () => {
 			integration.refine?.(values, {
 				attributes: { "openinference.span.kind": kind },
 				row: {} as never,
+				read: () => undefined,
 			})
 			expect(values.operationName, kind).toBe(operation)
 		}

@@ -33,6 +33,9 @@ export interface AiRefineContext {
 	readonly row: AiSessionSpansOutput
 	/** The span's own attributes — the map the source key lists read. */
 	readonly attributes: Record<string, string>
+	/** One attribute decoded the way the mapper decodes `field`; `undefined`
+	 *  when the key is absent or its value does not decode. */
+	readonly read: (field: AiGenAiField, key: string) => unknown
 }
 
 /** Field → source attribute keys, tried in order; the first value that decodes wins. */
@@ -397,12 +400,13 @@ export const mapAiSpan = (row: AiSessionSpansOutput): AiAgentSpan => {
 	// driven by the same catalog entry as the field it is written under, so the
 	// value matches the field by construction.
 	const genAi = {} as MutableAiGenAiValues & Record<string, unknown>
+	const read = (field: AiGenAiField, key: string): unknown => {
+		const raw = readAttribute(attributes, key)
+		return raw === undefined ? undefined : decodeAttribute(AI_GENAI_FIELDS[field].type, raw)
+	}
 	for (const [field, keys] of Object.entries(integration.sources)) {
-		const def = AI_GENAI_FIELDS[field as AiGenAiField]
 		for (const key of keys) {
-			const raw = readAttribute(attributes, key)
-			if (raw === undefined) continue
-			const value = decodeAttribute(def.type, raw)
+			const value = read(field as AiGenAiField, key)
 			// A key that carries an undecodable value does not consume the
 			// field: the next alias still gets its turn.
 			if (value === undefined) continue
@@ -410,7 +414,7 @@ export const mapAiSpan = (row: AiSessionSpansOutput): AiAgentSpan => {
 			break
 		}
 	}
-	integration.refine?.(genAi, { row, attributes })
+	integration.refine?.(genAi, { row, attributes, read })
 
 	const promptVariables = collectPromptVariables(attributes)
 	const sessionId = readAttribute(attributes, MAPLE_AI_SESSION_ID_ATTR)

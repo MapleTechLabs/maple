@@ -111,13 +111,26 @@ const openInferenceIntegration: AiIntegration = {
 		// `openinference.span.kind` is the dialect's operation classifier, but it
 		// is an enum of a different vocabulary rather than a differently named
 		// `gen_ai.operation.name`, so translating it is a refine, not an alias.
-		if (values.operationName !== undefined) return
-		const operation = OPENINFERENCE_SPAN_KIND_OPERATIONS.get(
-			ctx.attributes["openinference.span.kind"] ?? "",
-		)
-		if (operation !== undefined) values.operationName = operation
+		if (values.operationName === undefined) {
+			const operation = OPENINFERENCE_SPAN_KIND_OPERATIONS.get(
+				ctx.attributes["openinference.span.kind"] ?? "",
+			)
+			if (operation !== undefined) values.operationName = operation
+		}
+
+		// The GenAI dual-write copies the tool's parameter schema into
+		// `gen_ai.tool.call.arguments`; the call's own arguments are `input.value`.
+		const schema = ctx.attributes["tool.parameters"]
+		if (
+			schema !== undefined &&
+			schema !== "" &&
+			schema === ctx.attributes["gen_ai.tool.call.arguments"]
+		) {
+			const args = ctx.read("toolCallArguments", "input.value")
+			if (args !== undefined) values.toolCallArguments = args
+		}
 	},
-	refineKeys: ["openinference.span.kind"],
+	refineKeys: ["openinference.span.kind", "tool.parameters"],
 }
 
 /**

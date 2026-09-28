@@ -138,6 +138,34 @@ describe("openinference", () => {
 		}
 	})
 
+	it("reads the real arguments when the dual-write put the tool's schema there", () => {
+		// A crewai `get_weather.run` TOOL span: OpenInference's GenAI dual-write
+		// copies `tool.parameters` into `gen_ai.tool.call.arguments`.
+		const schema =
+			'{"properties": {"city": {"title": "City", "type": "string"}}, "required": ["city"], "title": "Get_Weather", "type": "object"}'
+		const mapped = mapAiSpan(
+			row("crewai", {
+				"openinference.span.kind": "TOOL",
+				"input.value": '{"city": "Berlin"}',
+				"tool.name": "get_weather",
+				"tool.parameters": schema,
+				"gen_ai.tool.name": "get_weather",
+				"gen_ai.tool.call.arguments": schema,
+			}),
+		)
+		expect(mapped.genAi.toolCallArguments).toEqual({ city: "Berlin" })
+
+		// Real arguments that merely differ from the schema are left alone.
+		const real = mapAiSpan(
+			row("openai_agents_sdk", {
+				"input.value": '{"city":"Berlin"}',
+				"tool.parameters": schema,
+				"gen_ai.tool.call.arguments": '{"city":"Paris"}',
+			}),
+		)
+		expect(real.genAi.toolCallArguments).toEqual({ city: "Paris" })
+	})
+
 	it("decodes a framework's OpenInference span without the GenAI dual-write", () => {
 		// Trimmed from an agno `OpenRouter.invoke` LLM span, OpenInference keys only.
 		const mapped = mapAiSpan(
