@@ -1,0 +1,227 @@
+---
+/**
+ * FrontendTrace — one client-side navigation traced end to end: the router
+ * span, the loader, the fetch it makes, and the backend spans that joined the
+ * same trace through `traceparent`. Static; styles follow TraceComparison.
+ */
+
+interface SpanRow {
+	service: string;
+	op: string;
+	startMs: number;
+	durationMs: number;
+	depth: number;
+	note?: string;
+}
+
+const TOTAL_MS = 820;
+const INDENT_PX = 14;
+
+const rows: SpanRow[] = [
+	{ service: "acme-web", op: "navigate /projects/$projectId", startMs: 0, durationMs: 820, depth: 0 },
+	{ service: "acme-web", op: "loader /projects/$projectId", startMs: 6, durationMs: 634, depth: 1 },
+	{ service: "acme-web", op: "GET", startMs: 14, durationMs: 612, depth: 2 },
+	{ service: "acme-api", op: "GET /api/projects/{id}", startMs: 62, durationMs: 518, depth: 3 },
+	{ service: "postgres", op: "SELECT projects", startMs: 70, durationMs: 11, depth: 4 },
+	{ service: "postgres", op: "SELECT project_members", startMs: 88, durationMs: 471, depth: 4, note: "the slow part" },
+];
+
+const orderedServices = Array.from(new Set(rows.map((r) => r.service)));
+function serviceColor(name: string): string {
+	const idx = (orderedServices.indexOf(name) % 16) + 1;
+	return `var(--service-${idx})`;
+}
+---
+
+<figure class="ftrace">
+	<div class="ftrace__frame">
+		<div class="ftrace__head">
+			<span class="ftrace__title">One click on a project link · 820ms · browser to database</span>
+		</div>
+		<div class="ftrace__panel">
+			<div class="ftrace__scroll">
+				<div class="ftrace__grid">
+					{rows.map((r, i) => {
+						const startPct = (r.startMs / TOTAL_MS) * 100;
+						const widthPct = (r.durationMs / TOTAL_MS) * 100;
+						return (
+							<div class="ftrace__row" style={`--i:${i}`}>
+								<span class="ftrace__svc" style={`padding-left:${r.depth * INDENT_PX + 4}px`}>
+									{Array.from({ length: r.depth }).map((_, d) => (
+										<span class="ftrace__connector" style={`left:${d * INDENT_PX + 4}px`} aria-hidden="true" />
+									))}
+									{r.service}
+								</span>
+								<span class="ftrace__op">{r.op}</span>
+								<span class="ftrace__track">
+									<span
+										class="ftrace__bar"
+										style={`left:${startPct}%; width:${widthPct}%; --service-color:${serviceColor(r.service)};`}
+									/>
+									{r.note && <span class="ftrace__slowest">{r.note}</span>}
+								</span>
+								<span class="ftrace__dur">{r.durationMs}ms</span>
+							</div>
+						);
+					})}
+				</div>
+			</div>
+			<p class="ftrace__note">
+				The fetch took 612ms and the API spent 518ms of it, so about 90ms was network. The last 180ms after the
+				loader is React rendering the page.
+			</p>
+		</div>
+	</div>
+	<figcaption class="ftrace__cap">
+		The first three rows come from the browser, the rest from the backend. They share a trace because the fetch
+		sent a <code>traceparent</code> header.
+	</figcaption>
+</figure>
+
+<style>
+	.ftrace {
+		margin: 40px 0;
+	}
+
+	.ftrace__frame {
+		border: 1px solid var(--border);
+		border-radius: 10px;
+		overflow: hidden;
+		background: color-mix(in oklab, var(--bg-elevated) 30%, transparent);
+	}
+
+	.ftrace__head {
+		display: flex;
+		align-items: center;
+		padding: 9px 14px;
+		background: var(--bg-elevated);
+		border-bottom: 1px solid var(--border);
+	}
+	.ftrace__title {
+		font-family: var(--font-mono);
+		font-size: 10px;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		color: var(--muted-foreground);
+	}
+
+	.ftrace__panel {
+		padding: 10px 6px 0;
+	}
+
+	.ftrace__scroll {
+		overflow-x: auto;
+	}
+	.ftrace__grid {
+		min-width: 660px;
+	}
+
+	/* ── Waterfall rows ─────────────────────────────────────── */
+	.ftrace__row {
+		display: grid;
+		grid-template-columns: 14ch minmax(22ch, 30ch) minmax(0, 1fr) 6.5ch;
+		align-items: center;
+		gap: 12px;
+		padding: 6px 10px;
+		border-bottom: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
+	}
+	.ftrace__row:last-child {
+		border-bottom: none;
+	}
+	.ftrace__svc {
+		position: relative;
+		font-family: var(--font-mono);
+		font-size: 12px;
+		color: var(--foreground);
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.ftrace__connector {
+		position: absolute;
+		top: -7px;
+		bottom: -7px;
+		width: 1px;
+		background: color-mix(in oklab, var(--border) 70%, transparent);
+		pointer-events: none;
+	}
+	.ftrace__row:last-child .ftrace__connector {
+		bottom: 50%;
+	}
+	.ftrace__op {
+		font-family: var(--font-mono);
+		font-size: 12px;
+		color: var(--muted-foreground);
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.ftrace__track {
+		position: relative;
+		height: 8px;
+		background: color-mix(in oklab, var(--bg-elevated) 80%, transparent);
+		border-radius: 2px;
+	}
+	.ftrace__bar {
+		position: absolute;
+		top: 0;
+		bottom: 0;
+		background: var(--service-color, var(--primary));
+		border-radius: 2px;
+		transform-origin: left center;
+		animation: ftrace-grow 460ms cubic-bezier(0.22, 1, 0.36, 1) both;
+		animation-delay: calc(var(--i, 0) * 28ms);
+	}
+	.ftrace__slowest {
+		position: absolute;
+		right: 0;
+		top: 12px;
+		font-family: var(--font-mono);
+		font-size: 10px;
+		letter-spacing: 0.04em;
+		text-transform: uppercase;
+		color: var(--primary);
+		white-space: nowrap;
+	}
+	.ftrace__row:has(.ftrace__slowest) {
+		padding-bottom: 22px;
+	}
+	.ftrace__dur {
+		font-family: var(--font-mono);
+		font-size: 11.5px;
+		color: var(--muted-foreground);
+		text-align: right;
+		font-variant-numeric: tabular-nums;
+	}
+
+	.ftrace__note {
+		margin: 10px 8px 0;
+		padding: 8px 10px 12px;
+		font-size: 13px;
+		line-height: 1.6;
+		color: var(--muted-foreground);
+		border-top: 1px dashed color-mix(in oklab, var(--border) 80%, transparent);
+	}
+
+	.ftrace__cap {
+		font-family: var(--font-mono);
+		font-size: 12px;
+		color: var(--muted-foreground);
+		margin-top: 10px;
+	}
+
+	@keyframes ftrace-grow {
+		from {
+			transform: scaleX(0);
+		}
+		to {
+			transform: scaleX(1);
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.ftrace__bar {
+			animation: none;
+		}
+	}
+</style>
