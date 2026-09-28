@@ -147,14 +147,15 @@ describe("buildSessionSummary — failed", () => {
 
 describe("buildSessionSummary — tokens and models", () => {
 	it("reports the five usage buckets, disjoint, summed across the spans", () => {
-		// Anthropic: the prompt excludes the cache buckets, the completion
-		// includes the thinking — so `input` is taken as reported and the
-		// reasoning comes out of `output`.
+		// Claude Code's raw Anthropic figures: the prompt excludes the cache
+		// buckets, the completion includes the thinking — so `input` is taken as
+		// reported and the reasoning comes out of `output`.
 		const summary = summarize([
 			llmSpan({
 				spanId: "a",
 				startMs: 0,
 				durationMs: SECOND,
+				vendorId: "claude_agent_sdk",
 				genAi: {
 					providerName: "anthropic",
 					usageInputTokens: 100,
@@ -168,6 +169,7 @@ describe("buildSessionSummary — tokens and models", () => {
 				spanId: "b",
 				startMs: 2 * SECOND,
 				durationMs: SECOND,
+				vendorId: "claude_agent_sdk",
 				genAi: {
 					providerName: "anthropic",
 					usageInputTokens: 10,
@@ -307,17 +309,39 @@ describe("buildSessionSummary — cache accounting", () => {
 		usageOutputTokens: 100,
 	} as const
 
-	it("adds the cache buckets for Anthropic, which bills them beside the prompt", () => {
+	it("adds the cache buckets for Claude Code, which passes Anthropic's raw figures through", () => {
 		const summary = summarize([
 			llmSpan({
 				spanId: "a",
 				startMs: 0,
 				durationMs: SECOND,
+				vendorId: "claude_agent_sdk",
 				genAi: { providerName: "anthropic", ...CACHED_USAGE },
 			}),
 		])
 
 		expect(summary.tokens.total).toBe(2100)
+	})
+
+	it("takes a spec-conformant Anthropic instrumentation as inclusive", () => {
+		// `opentelemetry-instrumentation-genai-anthropic`'s first call of a cached
+		// prompt: 330 uncached + 7,581 written to the cache, reported as 7,911.
+		const summary = summarize([
+			llmSpan({
+				spanId: "a",
+				startMs: 0,
+				durationMs: SECOND,
+				vendorId: "unknown:genai",
+				genAi: {
+					providerName: "anthropic",
+					usageInputTokens: 7911,
+					usageCacheCreationInputTokens: 7581,
+					usageOutputTokens: 40,
+				},
+			}),
+		])
+
+		expect(summary.tokens).toMatchObject({ input: 330, cacheWrite: 7581, total: 7951 })
 	})
 
 	it("carves the cache out of the prompt for OpenAI, whose prompt count contains it", () => {
@@ -521,7 +545,7 @@ describe("buildSessionSummary — cache accounting", () => {
 
 	it("subtracts a roll-up's children bucket by bucket, in normalised buckets", () => {
 		const summary = summarize([
-			// The wrapper reports exclusively (Anthropic), the child inclusively
+			// The wrapper reports exclusively (Claude Code), the child inclusively
 			// (unnamed). Both are normalised before the subtraction, so the child's
 			// uncached 60 comes off the wrapper's uncached 300 — and the session
 			// total equals the wrapper's own claim of 300 + 100 + 30.
@@ -529,6 +553,7 @@ describe("buildSessionSummary — cache accounting", () => {
 				spanId: "agent",
 				startMs: 0,
 				durationMs: 10 * SECOND,
+				vendorId: "claude_agent_sdk",
 				genAi: {
 					providerName: "anthropic",
 					usageInputTokens: 300,

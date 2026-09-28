@@ -103,8 +103,8 @@ pub(super) fn normalize(span: &mut Span) {
             LLM_REQUEST => {
                 add("gen_ai.operation.name", Some("chat".to_owned()));
                 // Anthropic's convention: `input_tokens` excludes both cache
-                // buckets. `gen_ai.system=anthropic` on the same span is what
-                // tells every reader so (`GENAI_PROVIDER_USAGE_CONVENTIONS`).
+                // buckets. The vendor stamp is what tells every reader so
+                // (`claude_agent_sdk` in `GENAI_VENDOR_USAGE_CONVENTIONS`).
                 add("gen_ai.usage.input_tokens", text(attrs, "input_tokens"));
                 add("gen_ai.usage.output_tokens", text(attrs, "output_tokens"));
                 add(

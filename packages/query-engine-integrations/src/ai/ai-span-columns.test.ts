@@ -171,19 +171,22 @@ describe("span classification SQL", () => {
 		const text = sql(genAiTokensExpr(attrs))
 		// The prompt half: the cache buckets nest in the prompt figure for the
 		// re-summing vendors and the OpenAI-shaped providers, and sit beside it
-		// for Anthropic; the default nests.
+		// for Claude Code's raw Anthropic figures; the default nests — an
+		// `anthropic` provider included, as the semconv has it.
 		expect(text).toContain(
 			"multiIf(SpanAttributes['maple_ai.vendor.id'] IN ('vercel_ai_sdk', 'maple', 'openrouter'), greatest(",
 		)
 		expect(text).toContain(
-			"IN ('openai', 'gcp.gemini', 'gemini', 'gcp.vertex_ai', 'vertex_ai', 'openrouter'), greatest(",
+			"SpanAttributes['maple_ai.vendor.id'] IN ('claude_agent_sdk'), toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens']",
 		)
 		expect(text).toContain(
-			"IN ('anthropic'), toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens']",
+			"IN ('openai', 'gcp.gemini', 'gemini', 'gcp.vertex_ai', 'vertex_ai', 'openrouter'), greatest(",
 		)
-		// The completion half: reasoning nests for Anthropic and the OpenAI-shaped
-		// providers, and sits beside the completion for Gemini.
-		expect(text).toContain("IN ('anthropic', 'openai', 'openrouter'), greatest(")
+		expect(text).not.toContain("'anthropic'")
+		// The completion half: reasoning nests for Claude Code and the
+		// OpenAI-shaped providers, and sits beside the completion for Gemini.
+		expect(text).toContain("IN ('vercel_ai_sdk', 'maple', 'openrouter', 'claude_agent_sdk'), greatest(")
+		expect(text).toContain("IN ('openai', 'openrouter'), greatest(")
 		expect(text).toContain(
 			"IN ('gcp.gemini', 'gemini', 'gcp.vertex_ai', 'vertex_ai'), toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.output_tokens']",
 		)

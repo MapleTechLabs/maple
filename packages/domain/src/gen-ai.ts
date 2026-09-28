@@ -133,6 +133,12 @@ export const MAPLE_GENAI_MODEL_DURATION_MS_ATTR = "maple_ai.model_duration_ms"
 // `ai_trace_index` — resolve the reporter's convention here first and carve
 // the contained buckets back out, so `input` always means the uncached prompt,
 // `output` the visible completion, and a total is always the plain sum.
+//
+// What decides is the EMITTER, not the provider's raw API: the semconv has an
+// instrumentation fold Anthropic's cache buckets into
+// `gen_ai.usage.input_tokens`, and the spec-conformant ones do (Pydantic AI,
+// `opentelemetry-instrumentation-genai-anthropic`). Only an emitter that passes
+// the raw Messages API figures through needs Anthropic's excludes-cache rule.
 
 export interface GenAiUsageConvention {
 	/** The prompt figure already contains the cache-read and cache-write buckets. */
@@ -144,14 +150,13 @@ export interface GenAiUsageConvention {
 const NESTED: GenAiUsageConvention = { inputIncludesCache: true, outputIncludesReasoning: true }
 
 /**
- * `gen_ai.provider.name` → the convention that provider's raw API reports
- * under. Only providers whose wire shape was checked are listed; anything else
- * takes {@link GENAI_DEFAULT_USAGE_CONVENTION}.
+ * `gen_ai.provider.name` → the convention that provider's figures arrive under
+ * when no vendor entry settles it. Only providers whose wire shape was checked
+ * are listed; anything else takes {@link GENAI_DEFAULT_USAGE_CONVENTION}.
+ * `anthropic` is deliberately absent: the semconv's Anthropic mapping has the
+ * instrumentation add the cache buckets to `input_tokens`, so the default holds.
  */
 export const GENAI_PROVIDER_USAGE_CONVENTIONS: ReadonlyMap<string, GenAiUsageConvention> = new Map([
-	// Messages API: `input_tokens` excludes both cache buckets and is billed
-	// beside them; `output_tokens` includes the thinking tokens.
-	["anthropic", { inputIncludesCache: false, outputIncludesReasoning: true }],
 	["openai", NESTED],
 	// `promptTokenCount` contains `cachedContentTokenCount`, but
 	// `candidatesTokenCount` excludes `thoughtsTokenCount` — the total is the
@@ -188,6 +193,10 @@ export const GENAI_VENDOR_USAGE_CONVENTIONS: ReadonlyMap<string, GenAiUsageConve
 	// `gen_ai.provider.name=anthropic` with a prompt figure that already holds its
 	// cache reads (a 4,804-token prompt, 4,324 of it cached, priced as 4,804).
 	["openrouter", NESTED],
+	// Claude Code's `claude_code.llm_request` carries the Messages API usage
+	// verbatim, restated as `gen_ai.usage.*` at ingest: `input_tokens` excludes
+	// both cache buckets, `output_tokens` includes the thinking tokens.
+	["claude_agent_sdk", { inputIncludesCache: false, outputIncludesReasoning: true }],
 ])
 
 /** What most of the field does, and the side that errs toward the smaller

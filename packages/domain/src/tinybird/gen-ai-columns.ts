@@ -471,7 +471,8 @@ const byConvention = (
  * `greatest(input, cacheRead + cacheWrite)` where the prompt figure already
  * contains the cache buckets (OpenAI, OpenRouter, Gemini, every vendor that
  * re-sums) and `input + cacheRead + cacheWrite` where it excludes them
- * (Anthropic); the completion the same against the reasoning bucket.
+ * (Claude Code's raw Anthropic figures); the completion the same against the
+ * reasoning bucket.
  * `toFloat64OrZero` rather than a UInt64 parse: a dialect that writes `1234.0`
  * still counts, and the sums never approach 2^53.
  */
