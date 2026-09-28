@@ -7,7 +7,7 @@ description: "Trace a web frontend with Maple: install @maple-dev/browser, link 
 
 The goal: **one click is one trace**. A navigation span, the data-loading spans under it, the `fetch` spans they make, and the backend spans behind those. The first page load joins the server render's trace. Errors the framework catches are reported. Session replay links to the traces through a shared `session.id`.
 
-The human-readable version of this skill is the guide at https://maple.dev/blog/frontend-tracing-opentelemetry. Read it if you need the reasoning behind a step.
+The human-readable version of this skill is the guide at https://maple.dev/docs/frontend. Read it if you need the reasoning behind a step.
 
 ## Step 0: Detect the framework and read its reference
 

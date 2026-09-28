@@ -1,19 +1,16 @@
 ---
-title: "Tracing SvelteKit with OpenTelemetry, from the server render to the browser"
-description: "Trace SvelteKit navigations, load functions, and errors in the browser, and connect them to SvelteKit's built-in server-side OpenTelemetry spans in one trace."
-date: 2026-09-28
-author: "Jeremy Funk"
-category: "guides"
-draft: true
+title: "Frontend tracing for SvelteKit"
+description: "Trace SvelteKit navigations, load functions and errors in the browser, and connect them to SvelteKit's built-in server-side OpenTelemetry spans in one trace."
+group: "Frontend"
+order: 5
+navLabel: "SvelteKit"
 ---
 
-SvelteKit ships its own OpenTelemetry tracing, but only for the server half. It records spans for the `handle` hook, `load` functions, and form actions while rendering, and nothing once the page is in the browser. By the end of this guide, a click on a link produces one trace with a span for the navigation, a span per `load` function, the fetches they made, and the backend spans behind them. The first page load goes one step further and starts at SvelteKit's server render.
-
-This is part of the [frontend tracing guide](/blog/frontend-tracing-opentelemetry). It assumes you've done steps 1 and 2 there (the browser SDK is installed and `traceparent` reaches your API), and that you've added the `tracing.ts` helper from step 3. The code below was checked against SvelteKit 2.70 and Svelte 5.57.
+SvelteKit has its own OpenTelemetry tracing, but only for the server: it records spans for the `handle` hook, `load` functions and form actions while rendering, and nothing once the page is in the browser. This guide adds the browser half. A click on a link produces one trace with a span for the navigation, a span per `load` function, the fetches they made, and the backend spans behind them, and the first page load starts at SvelteKit's server render. The code was checked against SvelteKit 2.70 and Svelte 5.57.
 
 ## Quick setup with a coding agent
 
-If you'd rather have your coding agent do this, copy the prompt below into Claude Code, Codex, Cursor, or any agent that can run shell commands. It installs the [maple-frontend-tracing](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-frontend-tracing) skill, which contains every step of this guide and the general setup it builds on, and the agent picks it up from there.
+Copy this prompt into Claude Code, Codex, Cursor or another agent that can run shell commands. It installs the [maple-frontend-tracing](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-frontend-tracing) skill, which contains every step of this guide.
 
 ```text
 Set up Maple frontend tracing in this project.
@@ -23,11 +20,15 @@ Install the skill with `npx skills add MapleTechLabs/maple/skills --skill maple-
 My Maple public ingest key is maple_pk_... and my organization is in the US region.
 ```
 
-Replace the key with your public key from **Settings → Ingestion**, or leave it out: the agent then uses a placeholder you can swap later. EU organizations should say EU region.
+Use your public key from **Settings → Ingestion**. Without one, the agent uses a placeholder you can replace later. EU organizations should say EU region.
 
-## Where the SDK goes in a SvelteKit app
+## Install the browser SDK
 
-Put `maple.ts` and `tracing.ts` from the main guide in `src/lib/`, so every file can import them from `$lib`. `import.meta.env.VITE_*` works as it does in any Vite app; if you prefer SvelteKit's own env modules, read the key from `$env/static/public` with a `PUBLIC_` prefix instead.
+```bash
+npm install @maple-dev/browser
+```
+
+Put `maple.ts` (the `MapleBrowser.init` call) and `tracing.ts` (the helper below) in `src/lib/`, so every file can import them from `$lib`. `import.meta.env.VITE_*` works as it does in any Vite app; if you prefer SvelteKit's own env modules, read the key from `$env/static/public` with a `PUBLIC_` prefix instead.
 
 SvelteKit's entry point in the browser is `src/hooks.client.ts`. Import the SDK there, and use the `init` hook to open the `pageload` span:
 
@@ -44,6 +45,144 @@ export const init: ClientInit = () => {
 ```
 
 The first load needs this because SvelteKit's `beforeNavigate` doesn't fire for it. `afterNavigate` does, which is where the span ends.
+
+`init()` sets up:
+
+- a span for every `fetch()` call;
+- error spans for uncaught errors and unhandled promise rejections, which show up on the [Errors](/docs/errors/overview) page;
+- session replay, with the same `session.id` on every span and replay event, so a trace links to the recording of the session that produced it;
+- export every 2 seconds, plus a flush when the tab is hidden or closed, so the spans from the last moments of a visit aren't lost;
+- redaction of credential-looking query parameters (`token`, `code`, `password` and similar) in every URL it sends.
+
+Use the public ingest key (`maple_pk_…`) from **Settings → Ingestion**. It can only write telemetry, so it's safe in browser code. For an EU organization, add `region: "eu"`. Every option is in the [Browser SDK reference](/docs/session-replay/browser-sdk).
+
+## Connect browser traces to your backend
+
+Each `fetch()` span sends a W3C `traceparent` header, and your backend's span joins the same trace. For requests to the page's own origin this happens automatically. For an API on another origin, list it:
+
+```ts
+MapleBrowser.init({
+	// ...
+	tracing: {
+		propagateTraceHeaderCorsUrls: [/^https:\/\/api\.acme\.com\//],
+	},
+})
+```
+
+Then allow the header in the API's CORS configuration. Without it, the browser blocks the request after the preflight:
+
+```http
+Access-Control-Allow-Headers: content-type, authorization, traceparent, tracestate
+```
+
+Only list your own APIs. Sending `traceparent` to third parties leaks your trace ids, and many of them reject the preflight.
+
+Your backend needs OpenTelemetry to read the header; every OpenTelemetry HTTP server instrumentation does. See [Instrument your application](/docs/instrumentation) for your backend's language or framework.
+
+Browser and server clocks disagree, so a server span can appear to start slightly before the `fetch` that caused it, and a laptop that slept can be minutes off. Durations are accurate; the offsets between browser and server spans are approximate.
+
+## Add the tracing helper
+
+Out of the box, every `fetch()` is its own trace, so a navigation that makes three requests shows up as three unrelated traces. The fix is a span per navigation, with the data-loading and `fetch` spans nested under it. Add this helper as `src/tracing.ts`; the rest of this guide connects it to SvelteKit:
+
+```ts
+// src/tracing.ts
+import { context, propagation, type Span, SpanStatusCode, trace } from "@opentelemetry/api"
+
+const tracer = trace.getTracer("acme-web")
+
+let navigation: { span: Span; kind: "pageload" | "navigate" } | undefined
+let firstLoad = true
+
+/** Call when the router starts a navigation. */
+export function startNavigation(path: string) {
+	// A click before the last navigation finished replaces it
+	navigation?.span.setAttribute("app.navigation.interrupted", true)
+	navigation?.span.end()
+
+	const kind = firstLoad ? "pageload" : "navigate"
+	// Only the first page load belongs to the server's trace, if there was one
+	const parent = firstLoad ? serverContext() : context.active()
+	firstLoad = false
+
+	navigation = { kind, span: tracer.startSpan(kind, { attributes: { "url.path": path } }, parent) }
+}
+
+/** Call when the new route is ready. `route` is its template, like `/projects/:id`. */
+export function endNavigation(route?: string) {
+	if (!navigation) return
+	if (route) navigation.span.updateName(`${navigation.kind} ${route}`)
+	navigation.span.end()
+	navigation = undefined
+}
+
+const recorded = new WeakSet<object>()
+
+/** Run `fn` in a span under the current navigation. */
+export function traced<T>(
+	name: string,
+	fn: () => Promise<T>,
+	isFailure: (error: unknown) => boolean = () => true,
+): Promise<T> {
+	const parent = navigation ? trace.setSpan(context.active(), navigation.span) : context.active()
+
+	return tracer.startActiveSpan(name, {}, parent, async (span) => {
+		try {
+			return await fn()
+		} catch (error) {
+			if (isFailure(error)) {
+				// Some libraries throw error-like objects that aren't Error instances
+				span.recordException(error instanceof Error ? error : String((error as { message?: unknown })?.message ?? error))
+				span.setStatus({ code: SpanStatusCode.ERROR })
+				if (typeof error === "object" && error !== null) recorded.add(error)
+			}
+			throw error
+		} finally {
+			span.end()
+		}
+	})
+}
+
+/** Whether `traced` already recorded this error on a span. */
+export const alreadyRecorded = (error: unknown) =>
+	typeof error === "object" && error !== null && recorded.has(error)
+
+/** The trace the server rendered this page under, from a `Server-Timing` header or a `<meta>` tag. */
+function serverContext() {
+	if (typeof document === "undefined") return context.active()
+	const [page] = performance.getEntriesByType("navigation") as PerformanceNavigationTiming[]
+	const traceparent =
+		page?.serverTiming?.find((entry) => entry.name === "traceparent")?.description ||
+		document.querySelector<HTMLMetaElement>('meta[name="traceparent"]')?.content
+	return traceparent ? propagation.extract(context.active(), { traceparent }) : context.active()
+}
+```
+
+- `startNavigation(path)` opens a `pageload` span for the first route and a `navigate` span for each one after it. If a navigation starts before the previous one ended, the previous span ends and is marked `app.navigation.interrupted`.
+- `endNavigation(route)` names the span after the route template and ends it.
+- `traced(name, fn, isFailure)` runs data loading in a child span of the current navigation, and marks the span failed when `fn` throws, unless `isFailure` returns `false`.
+- `alreadyRecorded(error)` tells you whether `traced` already recorded an error, so it isn't reported twice.
+- `serverContext()` joins the first page load to the server's trace when the server sent its trace context, in a `Server-Timing` header or a `<meta name="traceparent">` tag. In a client-only app it does nothing.
+
+Span names use the route template, like `navigate /projects/:id`, never the concrete URL. Maple groups by span name, so a template gives you one row with a real p95, while concrete URLs give you one row per project. The concrete path is still on the span as `url.path`.
+
+### The await problem
+
+Browsers have no equivalent of Node's `AsyncLocalStorage`, so OpenTelemetry's web context manager only tracks the active span synchronously. Inside `traced`, a `fetch()` called before the first `await` nests under the span. A `fetch()` called after it starts a new trace:
+
+```ts
+// Both requests nest under the span
+traced("load project", () => Promise.all([fetchProject(id), fetchMembers(id)]))
+
+// The second request loses its parent
+traced("load project", async () => {
+	const project = await fetchProject(id)
+	const members = await fetchMembers(project.id) // new trace
+	return { project, members }
+})
+```
+
+When a request depends on an earlier one, capture the context before the first `await` with `const ctx = context.active()`, and make the request with `context.with(ctx, () => fetchMembers(project.id))`. Sequential awaits while loading a page are also a request waterfall, so check whether the requests can run in parallel first.
 
 ## Trace SvelteKit navigations with beforeNavigate and afterNavigate
 
@@ -84,9 +223,9 @@ Both must be called while a component initializes, and they stay active while it
 {@render children()}
 ```
 
-The span name comes from the route id, which is the file-system path of the route: `/projects/[id]`, not `/projects/8f2a-4c11`. It includes route groups, so a page in `src/routes/(app)/projects/[id]` is named `/(app)/projects/[id]`. I left the groups in on purpose. SvelteKit puts the same string in the `http.route` attribute of its server spans, so browser and server spans group under the same name.
+The span name comes from the route id, which is the file-system path of the route: `/projects/[id]`, not `/projects/8f2a-4c11`. It includes route groups, so a page in `src/routes/(app)/projects/[id]` is named `/(app)/projects/[id]`. Keep the groups: SvelteKit puts the same string in the `http.route` attribute of its server spans, so browser and server spans group under the same name.
 
-The edge cases are where SvelteKit differs from other routers, and I found most of them by reading the router source:
+The edge cases are where SvelteKit differs from other routers:
 
 - **A click during a pending navigation doesn't fire `beforeNavigate` again.** SvelteKit skips the callbacks while a navigation is in progress. The first navigation is aborted and its `complete` promise rejects, but the second one is still loading, so the `navigating.type` check keeps the span open. You get one span covering both clicks, named after the route the user ended up on, with `url.path` from the first click.
 - **Cancelled navigations end right away.** When a page calls `cancel()` (to guard unsaved changes, say), `complete` rejects and nothing else is loading. The span ends with the plain name `navigate`.
@@ -134,9 +273,9 @@ export const load: PageLoad = async ({ fetch, params, route }) =>
 
 `route.id` gives the span the same template the navigation uses. Use the `fetch` that SvelteKit passes to `load`: it calls `window.fetch` when the request is made, so it goes through the SDK's instrumentation and carries `traceparent`.
 
-The [`await` problem from the main guide](/blog/frontend-tracing-opentelemetry#the-await-problem) applies here too: only requests started before the first `await` nest under the span. That's why the example starts both with `Promise.all`.
+The [`await` problem](#the-await-problem) applies here too: only requests started before the first `await` nest under the span. That's why the example starts both with `Promise.all`.
 
-Three things about load spans that surprised me:
+Three things to know about load spans:
 
 - **On the first page load, the load span is nearly empty.** Load functions run again in the browser during hydration, but their `fetch` calls are answered from responses the server inlined into the HTML. There are no network requests, so the span lasts about 0ms. The real requests are in the server half of the trace.
 - **Preloading moves loads before the click.** The default `app.html` sets `data-sveltekit-preload-data="hover"`, so load functions often run when the user hovers a link. There's no navigation yet, so those load spans become their own traces, and the navigation after the click is short because the data is cached.
@@ -257,15 +396,23 @@ export const handle: Handle = async ({ event, resolve }) => {
 
 The browser side needs nothing more. `startNavigation` reads the header through `serverContext()`, and the `pageload` span becomes a child of `sveltekit.handle.root`.
 
-The `etag` line took me a while to find. SvelteKit adds an `ETag` to every page it renders without streaming, and answers a matching `If-None-Match` with a 304 that doesn't include your `server-timing` header. The browser then reuses the header it cached with the page, and a reload joins the trace of an earlier visit. Dropping the `ETag` costs you those 304s on HTML, which are rare for pages that render per request anyway. For the same reason, skip the header on responses a CDN caches.
+About the `etag` line: SvelteKit adds an `ETag` to every page it renders without streaming, and answers a matching `If-None-Match` with a 304 that doesn't include your `server-timing` header. The browser then reuses the header it cached with the page, and a reload joins the trace of an earlier visit. Dropping the `ETag` costs you those 304s on HTML, which are rare for pages that render per request anyway. For the same reason, skip the header on responses a CDN caches.
 
 ## SvelteKit tracing gotchas
 
 - **Put the navigation hooks in the root layout.** In a nested layout, they miss every navigation outside it, and stop when the layout unmounts.
-- **Keep typed `load` functions `async`.** With `export const load: PageLoad`, a non-async arrow that returns `loadSpan(...)` left `data` typed as `{}` in my setup. The `async` version infers the real type.
+- **Keep typed `load` functions `async`.** With `export const load: PageLoad`, a non-async arrow that returns `loadSpan(...)` can leave `data` typed as `{}`. The `async` version infers the real type.
 - **Check your adapter.** `instrumentation.server.ts` only runs first if the adapter supports it. `adapter-node` does; check the docs of any other.
 - **Measure the overhead.** SvelteKit's docs point out that tracing has a cost, and a span per `load` adds up on busy pages.
 - **Node 26 warns about `module.register()`.** The ES module hook still works. `import-in-the-middle` also ships a synchronous `register-hooks.mjs` entry for newer Node versions.
+
+## What this setup doesn't cover
+
+- **`XMLHttpRequest`.** Only `fetch` is instrumented. Clients built on XHR, like axios by default, need `adapter: "fetch"` or OpenTelemetry's `XMLHttpRequestInstrumentation`.
+- **Web Vitals.** The SDK doesn't record LCP, INP or CLS.
+- **Readable stack traces.** Errors are grouped without bundle hashes and line numbers, so one bug stays one issue across deploys, but stacks show minified names.
+- **Ad blockers.** Some block telemetry requests. If that matters for your users, point `endpoint` at a proxy on your own domain.
+- **Trace sampling.** `replay.sampleRate` samples session recordings; browser traces are all sent.
 
 ## FAQ
 
@@ -283,8 +430,8 @@ Yes. Everything before the server section works without a server. Without a `ser
 
 ## Next steps
 
-- [Frontend tracing with OpenTelemetry](/blog/frontend-tracing-opentelemetry): the helper, the problems, and the setup this guide builds on.
-- [Browser SDK reference](/docs/session-replay/browser-sdk): consent, masking, and URL redaction.
-- [Session replays](/docs/session-replay/replays): jump from a trace to the recording of the session that produced it.
-- [Errors and issues](/docs/errors/overview): how the errors from `handleError` are grouped.
-- [Node.js instrumentation](/docs/guides/instrumentation-nodejs): exporter settings for the server half.
+- [Frontend tracing overview](/docs/frontend): every framework guide.
+- [Browser SDK reference](/docs/session-replay/browser-sdk): consent, masking and URL redaction.
+- [Session replays](/docs/session-replay/replays): open the recording behind a trace.
+- [Errors and issues](/docs/errors/overview): how reported errors are grouped into issues.
+- [Instrument your application](/docs/instrumentation): backend guides, so browser traces continue into your services.

@@ -1,0 +1,63 @@
+---
+title: "Frontend tracing"
+description: "Trace what happens in the browser before a request reaches your backend: route navigations, data loading, caught errors and the first page load, in the same OpenTelemetry trace as your API."
+group: "Frontend"
+order: 0
+navLabel: "Overview"
+---
+
+import FrontendTrace from "../../components/docs/FrontendTrace.astro"
+import GuideGrid from "../../components/docs/GuideGrid.astro"
+import { FRONTEND_GUIDES } from "../../lib/instrumentation-guides"
+
+Backend traces start when a request reaches your server. Everything before that, the route change, the loader that fires three requests one after another, the network and the render, is invisible from the backend, and it's often where a slow page spends its time.
+
+Frontend tracing covers that part. Each click becomes one trace: a span for the navigation, spans for the data it loads, the `fetch` calls those make, and your backend's spans behind them. Here's one navigation where every API call is fast and the page is still slow:
+
+<FrontendTrace />
+
+## Choose your framework
+
+Each guide is self-contained: it installs the [browser SDK](/docs/session-replay/browser-sdk), connects browser traces to your backend, and wires navigation, data-loading and error reporting into that framework's own hooks.
+
+<GuideGrid cards={FRONTEND_GUIDES} />
+
+## Quick setup with a coding agent
+
+Copy this prompt into Claude Code, Codex, Cursor or another agent that can run shell commands. It installs the [maple-frontend-tracing](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-frontend-tracing) skill, which detects your framework and follows the matching guide.
+
+```text
+Set up Maple frontend tracing in this project.
+
+Install the skill with `npx skills add MapleTechLabs/maple/skills --skill maple-frontend-tracing -y`, then follow it.
+
+My Maple public ingest key is maple_pk_... and my organization is in the US region.
+```
+
+Use your public key from **Settings → Ingestion**. Without one, the agent uses a placeholder you can replace later. EU organizations should say EU region.
+
+## What you get
+
+- **Navigation traces.** A `pageload` span for the first route and a `navigate` span for each one after it, named after the route template, like `navigate /projects/:id`.
+- **Data-loading spans.** Loaders, `load` functions or resolvers as children of the navigation, with the requests they make under them.
+- **Backend spans in the same trace.** Browser requests carry a `traceparent` header, so your API's spans join the click that caused them.
+- **Caught errors.** Errors your framework's error boundaries catch are reported, not only the ones that reach `window.onerror`, and grouped on the [Errors](/docs/errors/overview) page.
+- **The first page load, end to end.** With server rendering, the browser's `pageload` span joins the server render's trace.
+- **Session replay.** Every span carries the session id, so a trace links to the [recording](/docs/session-replay/replays) of what the user saw.
+
+## Why browser tracing is different
+
+If you've instrumented a backend service, most of this will look familiar. A few things are different, and each guide handles them:
+
+- **No async context.** On the server, Node's `AsyncLocalStorage` carries the active span across `await`. Browsers have nothing equivalent yet, so a `fetch()` after an `await` loses its parent and starts a new trace unless you pass the context along.
+- **Cross-origin requests don't carry trace context by default.** The browser only adds `traceparent` to requests you opt in, and your API's CORS preflight has to allow the header.
+- **Tabs close without warning.** Spans are exported in batches, so the SDK flushes when the tab is hidden or closed. Mobile browsers often never fire `unload`.
+- **Single-page apps have one page load.** Every route change after the first is JavaScript, and nothing traces it unless you hook into the router.
+- **Frameworks catch errors before you see them.** Error boundaries show a fallback instead of a blank page, which means those errors never reach a global error handler.
+- **The data is noisier and more sensitive.** Browser extensions throw errors into your page, ad blockers block telemetry requests, URLs carry tokens, and stack traces are minified.
+
+## Related
+
+- [Browser SDK reference](/docs/session-replay/browser-sdk): every option, including consent, masking and URL redaction.
+- [Instrument your application](/docs/instrumentation): backend guides, so browser traces continue into your services.
+- [Session replays](/docs/session-replay/replays): open the recording behind a trace.

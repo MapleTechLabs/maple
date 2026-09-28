@@ -1,6 +1,6 @@
 # TanStack Router and TanStack Start
 
-Written against `@tanstack/react-router` 1.170 and `@tanstack/react-start` 1.168. Human version: https://maple.dev/blog/frontend-tracing-tanstack
+Written against `@tanstack/react-router` 1.170 and `@tanstack/react-start` 1.168. Human version: https://maple.dev/docs/frontend/tanstack
 
 ## Init
 

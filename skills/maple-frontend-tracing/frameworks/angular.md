@@ -1,6 +1,6 @@
 # Angular
 
-Written against Angular 22 (standalone APIs), rxjs 7.8. Human version: https://maple.dev/blog/frontend-tracing-angular
+Written against Angular 22 (standalone APIs), rxjs 7.8. Human version: https://maple.dev/docs/frontend/angular
 
 ## HttpClient must use fetch (check first)
 

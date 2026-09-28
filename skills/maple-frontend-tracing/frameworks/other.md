@@ -1,5 +1,7 @@
 # Other frameworks
 
+Human version: https://maple.dev/docs/frontend/other
+
 For any frontend without its own reference: Solid/SolidStart, Qwik, Preact, Astro, Remix v2, Ember, Lit, a hand-rolled router, or a multi-page app. The steps in `SKILL.md` stay the same. This file is how to find where each one goes. Read the framework's installed types (`node_modules/<pkg>/**/*.d.ts`) to confirm every hook before using it.
 
 ## 1. Init

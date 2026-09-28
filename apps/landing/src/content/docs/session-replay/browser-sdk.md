@@ -423,6 +423,7 @@ Load a page with the SDK installed, click around for a few seconds, then leave t
 
 ## Next steps
 
+- [Frontend tracing](/docs/frontend): navigation, data-loading and error spans for your framework, linked to your backend.
 - [Replays](/docs/session-replay/replays): find and play back sessions.
 - [Product events](/docs/product-events/overview): funnels on `track()` and server-side events.
 - [Web analytics](/docs/product-events/web-analytics): visitors, pages and referrers from the same SDK.

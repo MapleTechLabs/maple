@@ -22,6 +22,52 @@ export interface GuideSection {
 	cards: GuideCard[]
 }
 
+/** Framework guides on /docs/frontend, also listed in the frontend section below. */
+export const FRONTEND_GUIDES: readonly GuideCard[] = [
+	{
+		name: "TanStack Router & Start",
+		hint: "Router events, loaders, SSR",
+		href: "/docs/frontend/tanstack",
+		icon: { mark: "tanstack" },
+	},
+	{
+		name: "React Router",
+		hint: "Instrumentation API, data and framework mode",
+		href: "/docs/frontend/react-router",
+		icon: { mark: "reactrouter" },
+	},
+	{
+		name: "Next.js",
+		hint: "App Router navigations, error.tsx, first load",
+		href: "/docs/frontend/nextjs",
+		icon: { mark: "nextjs" },
+	},
+	{
+		name: "Vue & Nuxt",
+		hint: "Vue Router guards, errorHandler, Nitro",
+		href: "/docs/frontend/vue",
+		icon: { mark: "vue" },
+	},
+	{
+		name: "SvelteKit",
+		hint: "Navigation hooks, load, built-in server tracing",
+		href: "/docs/frontend/sveltekit",
+		icon: { mark: "svelte" },
+	},
+	{
+		name: "Angular",
+		hint: "Router events, resolvers, ErrorHandler, SSR",
+		href: "/docs/frontend/angular",
+		icon: { mark: "angular" },
+	},
+	{
+		name: "Other frameworks",
+		hint: "Any router, SPA or multi-page app",
+		href: "/docs/frontend/other",
+		icon: { mark: "javascript" },
+	},
+]
+
 const lang = (id: LanguageId, hint?: string, href?: string): GuideCard => {
 	const l = languageById(id)
 	return { name: l.name, hint: hint ?? l.hint, href: href ?? `/docs/${l.slug}`, icon: { lang: id } }
@@ -50,8 +96,8 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
 			},
 			{
 				name: "Browser",
-				hint: "Traces, web vitals, session replay",
-				href: "/docs/session-replay/browser-sdk",
+				hint: "Traces, errors, session replay",
+				href: "/docs/frontend",
 				icon: { mark: "javascript" },
 			},
 		],
@@ -116,16 +162,11 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
 		title: "Frontend & product analytics",
 		chip: "Frontend",
 		cards: [
+			...FRONTEND_GUIDES,
 			{
 				name: "Browser SDK",
-				hint: "Session replay, sessions, web vitals",
+				hint: "Every option: sessions, replay, consent",
 				href: "/docs/session-replay/browser-sdk",
-				icon: { mark: "javascript" },
-			},
-			{
-				name: "React, Vite & Next.js",
-				hint: "Mount the browser SDK once at app boot",
-				href: "/docs/session-replay/browser-sdk#framework-examples",
 				icon: { mark: "javascript" },
 			},
 			lang("effect", "Effect SDK in the browser", "/docs/sdks/effect-client"),

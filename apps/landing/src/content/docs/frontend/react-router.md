@@ -1,19 +1,16 @@
 ---
-title: "Tracing React Router with OpenTelemetry"
-description: "Trace every React Router navigation, loader, and action as one OpenTelemetry trace, using the router's own instrumentation API, and link framework mode's server render to the browser."
-date: 2026-09-28
-author: "Jeremy Funk"
-category: "guides"
-draft: true
+title: "Frontend tracing for React Router"
+description: "Trace every React Router navigation, loader and action as one OpenTelemetry trace with the router's instrumentation API, and link framework mode's server render to the browser."
+group: "Frontend"
+order: 2
+navLabel: "React Router"
 ---
 
-React Router knows exactly when a navigation starts, which loaders it runs, and when the new route is ready. Since 7.15 it also has a stable instrumentation API that wraps every loader and action in one place. By the end of this guide, a click produces one trace: a span for the navigation, a span per loader and action, the fetches those loaders made, and the backend spans behind them. In framework mode, the first page load also includes the server render.
-
-This is part of the [frontend tracing guide](/blog/frontend-tracing-opentelemetry). It assumes you've done steps 1 and 2 there (the browser SDK is installed and `traceparent` reaches your API), and that you've added the `src/tracing.ts` helper from step 3. The code uses APIs that are stable in React Router 7.15 and later, and was checked against 8.4.
+React Router knows when a navigation starts, which loaders it runs, and when the new route is ready, and since 7.15 it has a stable instrumentation API that wraps every loader and action in one place. This guide turns that into one trace per click: a span for the navigation, a span per loader and action, the fetches those loaders made, and the backend spans behind them. In framework mode, the first page load also includes the server render. The code uses APIs that are stable in React Router 7.15 and later, and was checked against 8.4.
 
 ## Quick setup with a coding agent
 
-If you'd rather have your coding agent do this, copy the prompt below into Claude Code, Codex, Cursor, or any agent that can run shell commands. It installs the [maple-frontend-tracing](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-frontend-tracing) skill, which contains every step of this guide and the general setup it builds on, and the agent picks it up from there.
+Copy this prompt into Claude Code, Codex, Cursor or another agent that can run shell commands. It installs the [maple-frontend-tracing](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-frontend-tracing) skill, which contains every step of this guide.
 
 ```text
 Set up Maple frontend tracing in this project.
@@ -23,7 +20,165 @@ Install the skill with `npx skills add MapleTechLabs/maple/skills --skill maple-
 My Maple public ingest key is maple_pk_... and my organization is in the US region.
 ```
 
-Replace the key with your public key from **Settings → Ingestion**, or leave it out: the agent then uses a placeholder you can swap later. EU organizations should say EU region.
+Use your public key from **Settings → Ingestion**. Without one, the agent uses a placeholder you can replace later. EU organizations should say EU region.
+
+## Install the browser SDK
+
+```bash
+npm install @maple-dev/browser
+```
+
+```ts
+// src/maple.ts
+import { MapleBrowser } from "@maple-dev/browser"
+
+MapleBrowser.init({
+	ingestKey: import.meta.env.VITE_MAPLE_INGEST_KEY, // public key, maple_pk_...
+	serviceName: "acme-web",
+	serviceVersion: import.meta.env.VITE_COMMIT_SHA,
+	environment: import.meta.env.MODE,
+})
+```
+
+Import `./maple` first in your client entry: `src/main.tsx` in data mode, `app/entry.client.tsx` in framework mode.
+
+`init()` sets up:
+
+- a span for every `fetch()` call;
+- error spans for uncaught errors and unhandled promise rejections, which show up on the [Errors](/docs/errors/overview) page;
+- session replay, with the same `session.id` on every span and replay event, so a trace links to the recording of the session that produced it;
+- export every 2 seconds, plus a flush when the tab is hidden or closed, so the spans from the last moments of a visit aren't lost;
+- redaction of credential-looking query parameters (`token`, `code`, `password` and similar) in every URL it sends.
+
+Use the public ingest key (`maple_pk_…`) from **Settings → Ingestion**. It can only write telemetry, so it's safe in browser code. For an EU organization, add `region: "eu"`. Every option is in the [Browser SDK reference](/docs/session-replay/browser-sdk).
+
+## Connect browser traces to your backend
+
+Each `fetch()` span sends a W3C `traceparent` header, and your backend's span joins the same trace. For requests to the page's own origin this happens automatically. For an API on another origin, list it:
+
+```ts
+MapleBrowser.init({
+	// ...
+	tracing: {
+		propagateTraceHeaderCorsUrls: [/^https:\/\/api\.acme\.com\//],
+	},
+})
+```
+
+Then allow the header in the API's CORS configuration. Without it, the browser blocks the request after the preflight:
+
+```http
+Access-Control-Allow-Headers: content-type, authorization, traceparent, tracestate
+```
+
+Only list your own APIs. Sending `traceparent` to third parties leaks your trace ids, and many of them reject the preflight.
+
+Your backend needs OpenTelemetry to read the header; every OpenTelemetry HTTP server instrumentation does. See [Instrument your application](/docs/instrumentation) for your backend's language or framework.
+
+Browser and server clocks disagree, so a server span can appear to start slightly before the `fetch` that caused it, and a laptop that slept can be minutes off. Durations are accurate; the offsets between browser and server spans are approximate.
+
+## Add the tracing helper
+
+Out of the box, every `fetch()` is its own trace, so a navigation that makes three requests shows up as three unrelated traces. The fix is a span per navigation, with the data-loading and `fetch` spans nested under it. Add this helper as `src/tracing.ts`; the rest of this guide connects it to React Router:
+
+```ts
+// src/tracing.ts
+import { context, propagation, type Span, SpanStatusCode, trace } from "@opentelemetry/api"
+
+const tracer = trace.getTracer("acme-web")
+
+let navigation: { span: Span; kind: "pageload" | "navigate" } | undefined
+let firstLoad = true
+
+/** Call when the router starts a navigation. */
+export function startNavigation(path: string) {
+	// A click before the last navigation finished replaces it
+	navigation?.span.setAttribute("app.navigation.interrupted", true)
+	navigation?.span.end()
+
+	const kind = firstLoad ? "pageload" : "navigate"
+	// Only the first page load belongs to the server's trace, if there was one
+	const parent = firstLoad ? serverContext() : context.active()
+	firstLoad = false
+
+	navigation = { kind, span: tracer.startSpan(kind, { attributes: { "url.path": path } }, parent) }
+}
+
+/** Call when the new route is ready. `route` is its template, like `/projects/:id`. */
+export function endNavigation(route?: string) {
+	if (!navigation) return
+	if (route) navigation.span.updateName(`${navigation.kind} ${route}`)
+	navigation.span.end()
+	navigation = undefined
+}
+
+const recorded = new WeakSet<object>()
+
+/** Run `fn` in a span under the current navigation. */
+export function traced<T>(
+	name: string,
+	fn: () => Promise<T>,
+	isFailure: (error: unknown) => boolean = () => true,
+): Promise<T> {
+	const parent = navigation ? trace.setSpan(context.active(), navigation.span) : context.active()
+
+	return tracer.startActiveSpan(name, {}, parent, async (span) => {
+		try {
+			return await fn()
+		} catch (error) {
+			if (isFailure(error)) {
+				// Some libraries throw error-like objects that aren't Error instances
+				span.recordException(error instanceof Error ? error : String((error as { message?: unknown })?.message ?? error))
+				span.setStatus({ code: SpanStatusCode.ERROR })
+				if (typeof error === "object" && error !== null) recorded.add(error)
+			}
+			throw error
+		} finally {
+			span.end()
+		}
+	})
+}
+
+/** Whether `traced` already recorded this error on a span. */
+export const alreadyRecorded = (error: unknown) =>
+	typeof error === "object" && error !== null && recorded.has(error)
+
+/** The trace the server rendered this page under, from a `Server-Timing` header or a `<meta>` tag. */
+function serverContext() {
+	if (typeof document === "undefined") return context.active()
+	const [page] = performance.getEntriesByType("navigation") as PerformanceNavigationTiming[]
+	const traceparent =
+		page?.serverTiming?.find((entry) => entry.name === "traceparent")?.description ||
+		document.querySelector<HTMLMetaElement>('meta[name="traceparent"]')?.content
+	return traceparent ? propagation.extract(context.active(), { traceparent }) : context.active()
+}
+```
+
+- `startNavigation(path)` opens a `pageload` span for the first route and a `navigate` span for each one after it. If a navigation starts before the previous one ended, the previous span ends and is marked `app.navigation.interrupted`.
+- `endNavigation(route)` names the span after the route template and ends it.
+- `traced(name, fn, isFailure)` runs data loading in a child span of the current navigation, and marks the span failed when `fn` throws, unless `isFailure` returns `false`.
+- `alreadyRecorded(error)` tells you whether `traced` already recorded an error, so it isn't reported twice.
+- `serverContext()` joins the first page load to the server's trace when the server sent its trace context, in a `Server-Timing` header or a `<meta name="traceparent">` tag. In a client-only app it does nothing.
+
+Span names use the route template, like `navigate /projects/:id`, never the concrete URL. Maple groups by span name, so a template gives you one row with a real p95, while concrete URLs give you one row per project. The concrete path is still on the span as `url.path`.
+
+### The await problem
+
+Browsers have no equivalent of Node's `AsyncLocalStorage`, so OpenTelemetry's web context manager only tracks the active span synchronously. Inside `traced`, a `fetch()` called before the first `await` nests under the span. A `fetch()` called after it starts a new trace:
+
+```ts
+// Both requests nest under the span
+traced("load project", () => Promise.all([fetchProject(id), fetchMembers(id)]))
+
+// The second request loses its parent
+traced("load project", async () => {
+	const project = await fetchProject(id)
+	const members = await fetchMembers(project.id) // new trace
+	return { project, members }
+})
+```
+
+When a request depends on an earlier one, capture the context before the first `await` with `const ctx = context.active()`, and make the request with `context.with(ctx, () => fetchMembers(project.id))`. Sequential awaits while loading a page are also a request waterfall, so check whether the requests can run in parallel first.
 
 ## Which React Router mode you're using
 
@@ -73,7 +228,7 @@ export function traceNavigations(router: DataRouter) {
 }
 ```
 
-The span name comes from `state.matches`. Each route's `path` is relative to its parent, and layout and index routes have none, so joining the matched paths gives you `/projects/:projectId`, the low-cardinality name the main guide asks for.
+The span name comes from `state.matches`. Each route's `path` is relative to its parent, and layout and index routes have none, so joining the matched paths gives you `/projects/:projectId`, a route template rather than a concrete URL.
 
 A few cases worth knowing:
 
@@ -153,7 +308,7 @@ React Router also decides what counts as a failure: only a thrown `Error`. A thr
 
 In data mode, route ids default to their position in the tree, like `0-1`, so give your routes an `id`.
 
-Nested routes' loaders run in parallel and show up as sibling spans. Only requests started before a loader's first `await` nest under its span; the [main guide explains why](/blog/frontend-tracing-opentelemetry#the-await-problem). Loaders called by a fetcher (`useFetcher().load()`) run outside any navigation, so they start their own traces.
+Nested routes' loaders run in parallel and show up as sibling spans. Only requests started before a loader's first `await` nest under its span; see [the await problem](#the-await-problem). Loaders called by a fetcher (`useFetcher().load()`) run outside any navigation, so they start their own traces.
 
 ## Report errors caught by React Router with `onError`
 
@@ -257,10 +412,10 @@ export default function App() {
 }
 ```
 
-I'll be upfront: framework mode's client side has gaps that data mode doesn't.
+Framework mode's client side has gaps that data mode doesn't:
 
 - **Back and forward buttons aren't traced.** They go through the browser's history, not `navigate`, so there's no navigation span and their loaders start their own traces.
-- **Server loader requests are separate traces.** React Router fetches server loader data in one `.data` request per navigation, and starts it after an `await`. That's the [`await` problem](/blog/frontend-tracing-opentelemetry#the-await-problem) inside React Router itself: the request and the server spans behind it land in their own trace. The loader span under your navigation still shows how long the browser waited.
+- **Server loader requests are separate traces.** React Router fetches server loader data in one `.data` request per navigation, and starts it after an `await`. That's the [`await` problem](#the-await-problem) inside React Router itself: the request and the server spans behind it land in their own trace. The loader span under your navigation still shows how long the browser waited.
 - **Redirected navigations are named after the route that was clicked**, not the one the user landed on.
 - **Hash-only links** produce a short span named just `navigate`, since there's no pattern for them.
 
@@ -341,6 +496,14 @@ Some things to know about the server side:
 - **Older versions use `unstable_` names.** `instrumentations` was `unstable_instrumentations` from 7.9.5 until 7.15, and `onError` was `unstable_onError` until 7.11. Before 7.9.5, wrap loaders with `traced` by hand.
 - **A throwing instrumentation doesn't break your app.** React Router catches and logs the error, then runs the loader anyway.
 
+## What this setup doesn't cover
+
+- **`XMLHttpRequest`.** Only `fetch` is instrumented. Clients built on XHR, like axios by default, need `adapter: "fetch"` or OpenTelemetry's `XMLHttpRequestInstrumentation`.
+- **Web Vitals.** The SDK doesn't record LCP, INP or CLS.
+- **Readable stack traces.** Errors are grouped without bundle hashes and line numbers, so one bug stays one issue across deploys, but stacks show minified names.
+- **Ad blockers.** Some block telemetry requests. If that matters for your users, point `endpoint` at a proxy on your own domain.
+- **Trace sampling.** `replay.sampleRate` samples session recordings; browser traces are all sent.
+
 ## FAQ
 
 ### Does React Router have built-in OpenTelemetry support?
@@ -357,7 +520,8 @@ Only partly. Declarative mode has no loaders and no navigation state, so you can
 
 ## Next steps
 
-- [Frontend tracing with OpenTelemetry](/blog/frontend-tracing-opentelemetry): the helper, the problems, and the setup this guide builds on.
-- [Browser SDK reference](/docs/session-replay/browser-sdk): consent, masking, and URL redaction.
-- [Session replays](/docs/session-replay/replays): jump from a trace to the recording of the session that produced it.
-- [Errors and issues](/docs/errors/overview): how the errors you report from `onError` are grouped.
+- [Frontend tracing overview](/docs/frontend): every framework guide.
+- [Browser SDK reference](/docs/session-replay/browser-sdk): consent, masking and URL redaction.
+- [Session replays](/docs/session-replay/replays): open the recording behind a trace.
+- [Errors and issues](/docs/errors/overview): how reported errors are grouped into issues.
+- [Instrument your application](/docs/instrumentation): backend guides, so browser traces continue into your services.

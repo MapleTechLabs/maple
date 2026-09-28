@@ -117,7 +117,7 @@ Open-source skills teach a coding agent how to set up OpenTelemetry for Maple:
 
 - [maple-onboard](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-onboard) instruments every app and service in a repository: traces, logs and metrics, using the native OpenTelemetry SDK for each language.
 - [maple-audit](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-audit) reviews an existing setup, reports gaps per service (missing service map edges, missing `service.version`, errors without exceptions) and fixes them.
-- [maple-frontend-tracing](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-frontend-tracing) traces a web frontend end to end: route navigations, data loading, caught errors, and the link to your backend and server render. It has a reference for each major framework. See the [frontend tracing guide](/blog/frontend-tracing-opentelemetry).
+- [maple-frontend-tracing](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-frontend-tracing) traces a web frontend end to end: route navigations, data loading, caught errors, and the link to your backend and server render. It has a reference for each major framework. See [Frontend tracing](/docs/frontend).
 
 Install them together with the per-language guides they read:
 

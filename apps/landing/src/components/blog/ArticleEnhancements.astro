@@ -1,8 +1,7 @@
 ---
 /**
  * Long-form article behavior shared by blog posts and customer stories:
- * heading permalinks, the reading-progress bar, the copy-link button and copy
- * buttons on code blocks.
+ * heading permalinks, the reading-progress bar and the copy-link button.
  * Expects the page's `[data-read-progress]`, `[data-copy-link]` and
  * `.docs-content` markup. The outline's scroll spy lives in TableOfContents.
  */
@@ -53,30 +52,4 @@
             });
         });
     })();
-</script>
-
-<script>
-    // Copy buttons on code blocks, the same enhancement the docs pages get.
-    import { bindCopyButtons } from "../../lib/copy-to-clipboard";
-
-    const content = document.querySelector(".docs-content");
-    if (content) {
-        for (const pre of content.querySelectorAll<HTMLPreElement>("pre")) {
-            const code = pre.querySelector("code");
-            if (!code) continue;
-            pre.dataset.copy = code.textContent ?? "";
-            const button = document.createElement("button");
-            button.type = "button";
-            button.className = "code-copy";
-            button.textContent = "copy";
-            button.setAttribute("aria-label", "Copy code");
-            pre.appendChild(button);
-        }
-        bindCopyButtons({
-            root: content,
-            hostSelector: "pre[data-copy]",
-            buttonSelector: ".code-copy",
-            track: { event: "blog_snippet_copied", key: "snippet" },
-        });
-    }
 </script>

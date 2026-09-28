@@ -1,6 +1,6 @@
 # Next.js (App Router)
 
-Written against Next.js 16.3, React 19.3, `@vercel/otel` 2.1. Human version: https://maple.dev/blog/frontend-tracing-nextjs
+Written against Next.js 16.3, React 19.3, `@vercel/otel` 2.1. Human version: https://maple.dev/docs/frontend/nextjs
 
 The server side (`instrumentation.ts` + `@vercel/otel`) is `maple-nextjs-style`. Set it up first if missing; Next.js already creates spans for requests, rendering, route handlers and server `fetch()`. This file is the browser half.
 

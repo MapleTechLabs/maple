@@ -1,6 +1,6 @@
 # React Router (v7 and v8)
 
-Written against react-router 8.4 (APIs stable since 7.15). Human version: https://maple.dev/blog/frontend-tracing-react-router
+Written against react-router 8.4 (APIs stable since 7.15). Human version: https://maple.dev/docs/frontend/react-router
 
 Version check: `instrumentations` was `unstable_instrumentations` from 7.9.5 to 7.15; `onError` was `unstable_onError` before 7.11. Below 7.9.5, wrap loaders with `traced` by hand. Imports come from `react-router` (and `react-router/dom` for `RouterProvider` / `HydratedRouter`); v6 apps using `react-router-dom` should be told the instrumentation API needs an upgrade.
 

@@ -1,6 +1,6 @@
 # SvelteKit
 
-Written against `@sveltejs/kit` 2.70 and `svelte` 5.57. Human version: https://maple.dev/blog/frontend-tracing-sveltekit
+Written against `@sveltejs/kit` 2.70 and `svelte` 5.57. Human version: https://maple.dev/docs/frontend/sveltekit
 
 Put `maple.ts` (the `MapleBrowser.init` call) and `tracing.ts` in `src/lib/`.
 

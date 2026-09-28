@@ -1,6 +1,6 @@
 # Vue, Vue Router and Nuxt
 
-Written against Vue 3.5, Vue Router 4.6 and 5.3, Nuxt 4.5. Human version: https://maple.dev/blog/frontend-tracing-vue
+Written against Vue 3.5, Vue Router 4.6 and 5.3, Nuxt 4.5. Human version: https://maple.dev/docs/frontend/vue
 
 ## Navigations
 

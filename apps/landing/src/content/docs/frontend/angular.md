@@ -1,19 +1,16 @@
 ---
-title: "Tracing Angular Router, HttpClient, and SSR with OpenTelemetry"
-description: "Trace every Angular Router navigation, resolver, and HttpClient request as one OpenTelemetry trace, linked to your backend, your server render, and session replay."
-date: 2026-09-28
-author: "Jeremy Funk"
-category: "guides"
-draft: true
+title: "Frontend tracing for Angular"
+description: "Trace every Angular Router navigation, resolver and HttpClient request as one OpenTelemetry trace, linked to your backend, your server render and session replay."
+group: "Frontend"
+order: 6
+navLabel: "Angular"
 ---
 
-Angular's router reports every step of a navigation on one observable, `Router.events`, so you don't need to patch anything to see when a navigation starts, redirects, fails, or finishes. By the end of this guide, a click on a `routerLink` produces one trace with a span for the navigation, a span per resolver, the `HttpClient` requests those resolvers made, and the backend spans behind them. With `@angular/ssr`, the first page load also includes the server render.
-
-This is part of the [frontend tracing guide](/blog/frontend-tracing-opentelemetry). It assumes you've done steps 1 and 2 there (the browser SDK is installed and `traceparent` reaches your API), and that you've added the `src/tracing.ts` helper from step 3. The code below was checked against Angular 22 with standalone APIs.
+Angular's router reports every step of a navigation on one observable, `Router.events`, so you can see when a navigation starts, redirects, fails or finishes without patching anything. This guide turns a click on a `routerLink` into one trace with a span for the navigation, a span per resolver, the `HttpClient` requests those resolvers made, and the backend spans behind them. With `@angular/ssr`, the first page load also includes the server render. The code was checked against Angular 22 with standalone APIs.
 
 ## Quick setup with a coding agent
 
-If you'd rather have your coding agent do this, copy the prompt below into Claude Code, Codex, Cursor, or any agent that can run shell commands. It installs the [maple-frontend-tracing](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-frontend-tracing) skill, which contains every step of this guide and the general setup it builds on, and the agent picks it up from there.
+Copy this prompt into Claude Code, Codex, Cursor or another agent that can run shell commands. It installs the [maple-frontend-tracing](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-frontend-tracing) skill, which contains every step of this guide.
 
 ```text
 Set up Maple frontend tracing in this project.
@@ -23,30 +20,13 @@ Install the skill with `npx skills add MapleTechLabs/maple/skills --skill maple-
 My Maple public ingest key is maple_pk_... and my organization is in the US region.
 ```
 
-Replace the key with your public key from **Settings → Ingestion**, or leave it out: the agent then uses a placeholder you can swap later. EU organizations should say EU region.
+Use your public key from **Settings → Ingestion**. Without one, the agent uses a placeholder you can replace later. EU organizations should say EU region.
 
-## Check that HttpClient uses fetch
+## Install the browser SDK
 
-Start here, because it decides whether you see any network spans at all. The browser SDK instruments `fetch`, not `XMLHttpRequest`, and `HttpClient` can use either.
-
-Since Angular 22, `provideHttpClient()` uses `fetch` by default. On Angular 21 and older, the default is `XMLHttpRequest`, so every `HttpClient` request is invisible to the SDK: no span, and no `traceparent` header for your backend. Switch it to `fetch`:
-
-```ts
-// src/app/app.config.ts (Angular 21 and older)
-import { provideHttpClient, withFetch } from "@angular/common/http"
-import type { ApplicationConfig } from "@angular/core"
-
-export const appConfig: ApplicationConfig = {
-	providers: [
-		// Angular 21 and older default to XMLHttpRequest, which the SDK doesn't trace
-		provideHttpClient(withFetch()),
-	],
-}
+```bash
+npm install @maple-dev/browser
 ```
-
-On Angular 22, the same goes for `withXhr()`: if you added it for upload progress events, those requests aren't traced.
-
-## Initialize the SDK before bootstrapApplication
 
 Initialize the SDK in its own file and import it first in `src/main.ts`, so it's running before Angular creates anything:
 
@@ -72,7 +52,166 @@ import { appConfig } from "./app/app.config"
 bootstrapApplication(App, appConfig).catch((err) => console.error(err))
 ```
 
-The Angular CLI has no `import.meta.env`, so the hub's example doesn't carry over as is. The key is public, so a literal is fine, or use the CLI's `define` option. With `@angular/ssr`, `main.ts` is the browser entry only, so this never runs on the server.
+The Angular CLI has no `import.meta.env`, so this file doesn't use it. The key is public, so a literal is fine, or use the CLI's `define` option. With `@angular/ssr`, `main.ts` is the browser entry only, so this never runs on the server.
+
+### Make sure HttpClient uses fetch
+
+Start here, because it decides whether you see any network spans at all. The browser SDK instruments `fetch`, not `XMLHttpRequest`, and `HttpClient` can use either.
+
+Since Angular 22, `provideHttpClient()` uses `fetch` by default. On Angular 21 and older, the default is `XMLHttpRequest`, so every `HttpClient` request is invisible to the SDK: no span, and no `traceparent` header for your backend. Switch it to `fetch`:
+
+```ts
+// src/app/app.config.ts (Angular 21 and older)
+import { provideHttpClient, withFetch } from "@angular/common/http"
+import type { ApplicationConfig } from "@angular/core"
+
+export const appConfig: ApplicationConfig = {
+	providers: [
+		// Angular 21 and older default to XMLHttpRequest, which the SDK doesn't trace
+		provideHttpClient(withFetch()),
+	],
+}
+```
+
+On Angular 22, the same goes for `withXhr()`: if you added it for upload progress events, those requests aren't traced.
+
+`init()` sets up:
+
+- a span for every `fetch()` call;
+- error spans for uncaught errors and unhandled promise rejections, which show up on the [Errors](/docs/errors/overview) page;
+- session replay, with the same `session.id` on every span and replay event, so a trace links to the recording of the session that produced it;
+- export every 2 seconds, plus a flush when the tab is hidden or closed, so the spans from the last moments of a visit aren't lost;
+- redaction of credential-looking query parameters (`token`, `code`, `password` and similar) in every URL it sends.
+
+Use the public ingest key (`maple_pk_…`) from **Settings → Ingestion**. It can only write telemetry, so it's safe in browser code. For an EU organization, add `region: "eu"`. Every option is in the [Browser SDK reference](/docs/session-replay/browser-sdk).
+
+## Connect browser traces to your backend
+
+Each `fetch()` span sends a W3C `traceparent` header, and your backend's span joins the same trace. For requests to the page's own origin this happens automatically. For an API on another origin, list it:
+
+```ts
+MapleBrowser.init({
+	// ...
+	tracing: {
+		propagateTraceHeaderCorsUrls: [/^https:\/\/api\.acme\.com\//],
+	},
+})
+```
+
+Then allow the header in the API's CORS configuration. Without it, the browser blocks the request after the preflight:
+
+```http
+Access-Control-Allow-Headers: content-type, authorization, traceparent, tracestate
+```
+
+Only list your own APIs. Sending `traceparent` to third parties leaks your trace ids, and many of them reject the preflight.
+
+Your backend needs OpenTelemetry to read the header; every OpenTelemetry HTTP server instrumentation does. See [Instrument your application](/docs/instrumentation) for your backend's language or framework.
+
+Browser and server clocks disagree, so a server span can appear to start slightly before the `fetch` that caused it, and a laptop that slept can be minutes off. Durations are accurate; the offsets between browser and server spans are approximate.
+
+## Add the tracing helper
+
+Out of the box, every `fetch()` is its own trace, so a navigation that makes three requests shows up as three unrelated traces. The fix is a span per navigation, with the data-loading and `fetch` spans nested under it. Add this helper as `src/tracing.ts`; the rest of this guide connects it to the Angular Router:
+
+```ts
+// src/tracing.ts
+import { context, propagation, type Span, SpanStatusCode, trace } from "@opentelemetry/api"
+
+const tracer = trace.getTracer("acme-web")
+
+let navigation: { span: Span; kind: "pageload" | "navigate" } | undefined
+let firstLoad = true
+
+/** Call when the router starts a navigation. */
+export function startNavigation(path: string) {
+	// A click before the last navigation finished replaces it
+	navigation?.span.setAttribute("app.navigation.interrupted", true)
+	navigation?.span.end()
+
+	const kind = firstLoad ? "pageload" : "navigate"
+	// Only the first page load belongs to the server's trace, if there was one
+	const parent = firstLoad ? serverContext() : context.active()
+	firstLoad = false
+
+	navigation = { kind, span: tracer.startSpan(kind, { attributes: { "url.path": path } }, parent) }
+}
+
+/** Call when the new route is ready. `route` is its template, like `/projects/:id`. */
+export function endNavigation(route?: string) {
+	if (!navigation) return
+	if (route) navigation.span.updateName(`${navigation.kind} ${route}`)
+	navigation.span.end()
+	navigation = undefined
+}
+
+const recorded = new WeakSet<object>()
+
+/** Run `fn` in a span under the current navigation. */
+export function traced<T>(
+	name: string,
+	fn: () => Promise<T>,
+	isFailure: (error: unknown) => boolean = () => true,
+): Promise<T> {
+	const parent = navigation ? trace.setSpan(context.active(), navigation.span) : context.active()
+
+	return tracer.startActiveSpan(name, {}, parent, async (span) => {
+		try {
+			return await fn()
+		} catch (error) {
+			if (isFailure(error)) {
+				// Some libraries throw error-like objects that aren't Error instances
+				span.recordException(error instanceof Error ? error : String((error as { message?: unknown })?.message ?? error))
+				span.setStatus({ code: SpanStatusCode.ERROR })
+				if (typeof error === "object" && error !== null) recorded.add(error)
+			}
+			throw error
+		} finally {
+			span.end()
+		}
+	})
+}
+
+/** Whether `traced` already recorded this error on a span. */
+export const alreadyRecorded = (error: unknown) =>
+	typeof error === "object" && error !== null && recorded.has(error)
+
+/** The trace the server rendered this page under, from a `Server-Timing` header or a `<meta>` tag. */
+function serverContext() {
+	if (typeof document === "undefined") return context.active()
+	const [page] = performance.getEntriesByType("navigation") as PerformanceNavigationTiming[]
+	const traceparent =
+		page?.serverTiming?.find((entry) => entry.name === "traceparent")?.description ||
+		document.querySelector<HTMLMetaElement>('meta[name="traceparent"]')?.content
+	return traceparent ? propagation.extract(context.active(), { traceparent }) : context.active()
+}
+```
+
+- `startNavigation(path)` opens a `pageload` span for the first route and a `navigate` span for each one after it. If a navigation starts before the previous one ended, the previous span ends and is marked `app.navigation.interrupted`.
+- `endNavigation(route)` names the span after the route template and ends it.
+- `traced(name, fn, isFailure)` runs data loading in a child span of the current navigation, and marks the span failed when `fn` throws, unless `isFailure` returns `false`.
+- `alreadyRecorded(error)` tells you whether `traced` already recorded an error, so it isn't reported twice.
+- `serverContext()` joins the first page load to the server's trace when the server sent its trace context, in a `Server-Timing` header or a `<meta name="traceparent">` tag. In a client-only app it does nothing.
+
+Span names use the route template, like `navigate /projects/:id`, never the concrete URL. Maple groups by span name, so a template gives you one row with a real p95, while concrete URLs give you one row per project. The concrete path is still on the span as `url.path`.
+
+### The await problem
+
+Browsers have no equivalent of Node's `AsyncLocalStorage`, so OpenTelemetry's web context manager only tracks the active span synchronously. Inside `traced`, a `fetch()` called before the first `await` nests under the span. A `fetch()` called after it starts a new trace:
+
+```ts
+// Both requests nest under the span
+traced("load project", () => Promise.all([fetchProject(id), fetchMembers(id)]))
+
+// The second request loses its parent
+traced("load project", async () => {
+	const project = await fetchProject(id)
+	const members = await fetchMembers(project.id) // new trace
+	return { project, members }
+})
+```
+
+When a request depends on an earlier one, capture the context before the first `await` with `const ctx = context.active()`, and make the request with `context.with(ctx, () => fetchMembers(project.id))`. Sequential awaits while loading a page are also a request waterfall, so check whether the requests can run in parallel first.
 
 ## Trace Angular Router navigations
 
@@ -211,7 +350,7 @@ export const projectResolver: ResolveFn<[Project, Member[]]> = (route) => {
 }
 ```
 
-The helper works with promises, so `firstValueFrom` turns each `HttpClient` observable into one. This also nests correctly: `firstValueFrom` subscribes right away, and Angular's fetch backend calls `fetch()` synchronously during that subscribe, while the resolver span is still active. Sequential `await`s are a different story. Only requests started before the first `await` nest under the span; the [main guide explains why](/blog/frontend-tracing-opentelemetry#the-await-problem).
+The helper works with promises, so `firstValueFrom` turns each `HttpClient` observable into one. This also nests correctly: `firstValueFrom` subscribes right away, and Angular's fetch backend calls `fetch()` synchronously during that subscribe, while the resolver span is still active. Sequential `await`s are a different story. Only requests started before the first `await` nest under the span; see [the await problem](#the-await-problem).
 
 The `isFailure` check in `resolverSpan` is for redirects. A resolver usually redirects by returning a `RedirectCommand`, which `traced` treats as a normal result. The router also accepts a thrown one, handy from inside a helper function, so a thrown `RedirectCommand` doesn't mark the span as failed either.
 
@@ -303,10 +442,18 @@ If a CDN caches your HTML, skip the `server-timing` header on those responses, o
 
 ## Angular-specific gotchas
 
-- **`ZoneContextManager` doesn't help here.** It's OpenTelemetry's answer to losing context after `await`, and it needs zone.js. New Angular apps are zoneless by default. And even with zone.js, Angular's fetch backend calls `fetch()` inside `NgZone.runOutsideAngular`, which leaves the zone that holds the active span. I tested it: the context is gone by the time the request starts.
+- **`ZoneContextManager` doesn't help here.** It's OpenTelemetry's answer to losing context after `await`, and it needs zone.js. New Angular apps are zoneless by default. And even with zone.js, Angular's fetch backend calls `fetch()` inside `NgZone.runOutsideAngular`, which leaves the zone that holds the active span. The context is gone by the time the request starts.
 - **Data loaded in components starts its own traces.** `httpResource` and requests in `ngOnInit` run after the component is created, which is after `NavigationEnd`. They're fetch spans without a parent. If they're part of what the user waits for, a resolver puts them in the navigation.
 - **Lazy routes show up as gaps.** Loading a `loadComponent` or `loadChildren` chunk happens inside the navigation span, but dynamic `import()` isn't a `fetch`, so there's no child span. A gap at the start of a navigation with nothing under it is often a chunk download.
 - **`HttpErrorResponse` isn't an `Error`.** When a resolver's request fails, the resolver span records its message, and the fetch span under it has the status code and URL.
+
+## What this setup doesn't cover
+
+- **`XMLHttpRequest`.** Only `fetch` is instrumented. Clients built on XHR, like axios by default, need `adapter: "fetch"` or OpenTelemetry's `XMLHttpRequestInstrumentation`.
+- **Web Vitals.** The SDK doesn't record LCP, INP or CLS.
+- **Readable stack traces.** Errors are grouped without bundle hashes and line numbers, so one bug stays one issue across deploys, but stacks show minified names.
+- **Ad blockers.** Some block telemetry requests. If that matters for your users, point `endpoint` at a proxy on your own domain.
+- **Trace sampling.** `replay.sampleRate` samples session recordings; browser traces are all sent.
 
 ## FAQ
 
@@ -316,7 +463,7 @@ No, Angular 22 doesn't ship an OpenTelemetry integration. Everything in this gui
 
 ### Why don't my Angular HttpClient requests show up as spans?
 
-On Angular 21 and older, `HttpClient` uses `XMLHttpRequest` unless you add `withFetch()`, and the browser SDK only instruments `fetch`. On Angular 22, check for `withXhr()`. If the requests show up but aren't connected to your backend, it's the cross-origin setup from step 2 of the [main guide](/blog/frontend-tracing-opentelemetry).
+On Angular 21 and older, `HttpClient` uses `XMLHttpRequest` unless you add `withFetch()`, and the browser SDK only instruments `fetch`. On Angular 22, check for `withXhr()`. If the requests show up but aren't connected to your backend, check the [cross-origin setup](#connect-browser-traces-to-your-backend).
 
 ### Does this work with NgModule-based Angular apps?
 
@@ -324,7 +471,8 @@ Yes. Add `provideRouterTracing()` and the `ErrorHandler` provider to your root m
 
 ## Next steps
 
-- [Frontend tracing with OpenTelemetry](/blog/frontend-tracing-opentelemetry): the helper, the problems, and the setup this guide builds on.
-- [Browser SDK reference](/docs/session-replay/browser-sdk): consent, masking, and URL redaction.
-- [Session replays](/docs/session-replay/replays): jump from a trace to the recording of the session that produced it.
-- [Errors and issues](/docs/errors/overview): how the errors reported from `ErrorHandler` are grouped.
+- [Frontend tracing overview](/docs/frontend): every framework guide.
+- [Browser SDK reference](/docs/session-replay/browser-sdk): consent, masking and URL redaction.
+- [Session replays](/docs/session-replay/replays): open the recording behind a trace.
+- [Errors and issues](/docs/errors/overview): how reported errors are grouped into issues.
+- [Instrument your application](/docs/instrumentation): backend guides, so browser traces continue into your services.
