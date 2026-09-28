@@ -1,3 +1,4 @@
+import type { AiSessionGenAiValues } from "@maple/domain/http"
 import { describe, expect, it } from "vitest"
 
 import { buildSessionChecks, type SessionCheck } from "./session-checks"
@@ -395,6 +396,53 @@ describe("buildSessionChecks", () => {
 		expect(byId(warm, "prompt-cache").headline).toBe("Cache hit rate 87% over 3 calls")
 
 		expect(byId(checks(firstTurn()), "prompt-cache").status).toBe("skipped")
+	})
+
+	// Short test conversations (DSPy peaked at 870 tokens; Claude Agent SDK on
+	// Haiku 4.5 sent 1.2K–2.3K against a 4,096-token minimum) cannot be cached,
+	// so reading them as misses warned "0% ... missed the cache" on every one.
+	it("skips the prompt cache when no prompt could have been cached", () => {
+		const call = (spanId: string, startMs: number, genAi: AiSessionGenAiValues) =>
+			llmSpan({
+				spanId,
+				parentSpanId: "a1",
+				startMs,
+				durationMs: SECOND,
+				genAi: { conversationId: "t1", usageOutputTokens: 50, ...genAi },
+			})
+		const session = (genAi: (i: number) => AiSessionGenAiValues) =>
+			checks([
+				agentSpan({ spanId: "a1", startMs: 0, durationMs: MINUTE, genAi: { conversationId: "t1" } }),
+				...[0, 1, 2, 3, 4].map((i) => call(`c${i}`, (i + 1) * SECOND, genAi(i))),
+			])
+
+		const short = byId(
+			session((i) => ({ usageInputTokens: 700 + 40 * i, usageCacheReadInputTokens: 0 })),
+			"prompt-cache",
+		)
+		expect(short.status).toBe("skipped")
+		expect(short.headline).toBe(
+			"Only 0 model calls after the first had a prompt of 1024 tokens or more, the smallest a provider caches; at least 3 are needed to judge the prompt cache.",
+		)
+
+		const neverWritten = byId(
+			session((i) => ({
+				usageInputTokens: 1_227 + 200 * i,
+				usageCacheReadInputTokens: 0,
+				usageCacheCreationInputTokens: 0,
+			})),
+			"prompt-cache",
+		)
+		expect(neverWritten.status).toBe("skipped")
+		expect(neverWritten.headline).toMatch(/^No model call wrote to the prompt cache/)
+
+		// Long enough and reporting no write bucket (OpenAI): a miss is a miss.
+		const missed = byId(
+			session(() => ({ usageInputTokens: 5_000, usageCacheReadInputTokens: 0 })),
+			"prompt-cache",
+		)
+		expect(missed.status).toBe("warning")
+		expect(missed.headline).toBe("Cache hit rate 0% over 4 calls; 4 missed the cache")
 	})
 
 	// The one rule behind red and amber, pinned per kind: a class that needs a

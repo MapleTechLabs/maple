@@ -39,6 +39,9 @@ import {
 const CACHE_HIT_MIN_RATE = 0.5
 /** Fewer calls than this say nothing about the cache either way. */
 const CACHE_MIN_CALLS = 3
+/** The smallest prompt OpenAI, Anthropic or Gemini will cache: a shorter one
+ *  cannot hit the cache, so missing it says nothing about the prefix. */
+const CACHE_MIN_PROMPT_TOKENS = 1024
 /** A headline names this many findings before it counts the rest. */
 const HEADLINE_MAX_CLAUSES = 3
 
@@ -627,6 +630,28 @@ function promptCacheCheck(llmCalls: readonly AiSessionSpan[]): SessionCheck {
 			"No model call reported cache usage, so the prompt cache could not be checked.",
 		)
 	}
+	if (reporting.length <= CACHE_MIN_CALLS) {
+		return check(
+			identity,
+			"skipped",
+			`Only ${plural(reporting.length, "model call")} reported cache usage; at least ${CACHE_MIN_CALLS + 1} are needed to judge the prompt cache.`,
+		)
+	}
+	// A provider that reports cache writes (Anthropic) writes on the first call
+	// whose prompt is long enough for the model; none ever writing means no
+	// prompt reached that model's minimum, or caching was never requested.
+	const neverCached = reporting.every(
+		(span) =>
+			span.genAi.usageCacheCreationInputTokens === 0 &&
+			(span.genAi.usageCacheReadInputTokens ?? 0) === 0,
+	)
+	if (neverCached) {
+		return check(
+			identity,
+			"skipped",
+			"No model call wrote to the prompt cache: the prompts are below the model's cacheable minimum, or caching is off.",
+		)
+	}
 	// The first call of a session cannot hit a cache nothing has written yet.
 	const calls = reporting
 		.slice(1)
@@ -636,12 +661,12 @@ function promptCacheCheck(llmCalls: readonly AiSessionSpan[]): SessionCheck {
 			read: buckets.cacheRead,
 			prompt: buckets.input + buckets.cacheRead + buckets.cacheWrite,
 		}))
-		.filter((call) => call.prompt > 0)
+		.filter((call) => call.prompt >= CACHE_MIN_PROMPT_TOKENS)
 	if (calls.length < CACHE_MIN_CALLS) {
 		return check(
 			identity,
 			"skipped",
-			`Only ${plural(reporting.length, "model call")} reported cache usage; at least ${CACHE_MIN_CALLS + 1} are needed to judge the prompt cache.`,
+			`Only ${plural(calls.length, "model call")} after the first had a prompt of ${CACHE_MIN_PROMPT_TOKENS} tokens or more, the smallest a provider caches; at least ${CACHE_MIN_CALLS} are needed to judge the prompt cache.`,
 		)
 	}
 	const rate =
