@@ -155,7 +155,8 @@ const GENAI_LEGACY_ALIASES = {
 		"gen_ai.usage.reasoning_tokens",
 		"gen_ai.usage.details.reasoning_tokens",
 	],
-	usageCacheReadInputTokens: ["gen_ai.usage.input_tokens.cached"],
+	// Older Strands releases write both cache buckets as `…_input_tokens`.
+	usageCacheReadInputTokens: ["gen_ai.usage.input_tokens.cached", "gen_ai.usage.cache_read_input_tokens"],
 	// Not legacy but the *registry* spelling: semconv names the bucket
 	// `cache_write` while the catalog's primary key keeps the `cache_creation`
 	// spelling Anthropic-era emitters (and Maple's own rows before this alias)
@@ -163,6 +164,7 @@ const GENAI_LEGACY_ALIASES = {
 	usageCacheCreationInputTokens: [
 		"gen_ai.usage.cache_write.input_tokens",
 		"gen_ai.usage.input_tokens.cache_write",
+		"gen_ai.usage.cache_write_input_tokens",
 	],
 	// OpenInference's, LiteLLM's and Pydantic AI's (Logfire's) keys.
 	// Instrumentations that price calls themselves each name the figure their

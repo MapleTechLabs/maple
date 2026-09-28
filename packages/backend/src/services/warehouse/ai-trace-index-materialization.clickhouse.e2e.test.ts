@@ -482,6 +482,15 @@ const AGNO_AGENT_SPAN = emitterSpan("span-emitter-9", 8_000, "agno", {
 	"graph.node.id": "c8bddb16e7b7e3cc",
 })
 
+// Older Strands releases spell both cache buckets `…_input_tokens`.
+const STRANDS_SPAN = emitterSpan("span-emitter-10", 9_000, "strands", {
+	...chat,
+	"gen_ai.usage.input_tokens": "1000",
+	"gen_ai.usage.cache_read_input_tokens": "900",
+	"gen_ai.usage.cache_write_input_tokens": "100",
+	"gen_ai.usage.output_tokens": "100",
+})
+
 const EMITTER_ORG_SPANS: ReadonlyArray<SeedSpan> = [
 	GENAI_ANTHROPIC_SPAN,
 	CLAUDE_CODE_SPAN,
@@ -492,6 +501,7 @@ const EMITTER_ORG_SPANS: ReadonlyArray<SeedSpan> = [
 	LANGSMITH_SPAN,
 	CREWAI_AGENT_SPAN,
 	AGNO_AGENT_SPAN,
+	STRANDS_SPAN,
 ]
 
 const chMap = (attrs: Readonly<Record<string, string>>): string =>
@@ -736,6 +746,11 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 			indexRow(EMITTER_ORG_ID, LANGSMITH_SPAN, { AgentName: "assistant" }),
 			indexRow(EMITTER_ORG_ID, CREWAI_AGENT_SPAN, { AgentName: "weather_worker" }),
 			indexRow(EMITTER_ORG_ID, AGNO_AGENT_SPAN),
+			indexRow(EMITTER_ORG_ID, STRANDS_SPAN, {
+				IsLlmCall: 1,
+				Tokens: 1100,
+				buckets: [0, 900, 100, 100, 0],
+			}),
 		])
 	})
 

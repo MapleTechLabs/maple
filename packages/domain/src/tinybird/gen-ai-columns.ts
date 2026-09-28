@@ -388,6 +388,7 @@ export const GENAI_USAGE_KEYS = {
 	cacheRead: [
 		"gen_ai.usage.cache_read.input_tokens",
 		"gen_ai.usage.input_tokens.cached",
+		"gen_ai.usage.cache_read_input_tokens",
 		"ai.usage.cachedInputTokens",
 		"ai.usage.inputTokenDetails.cacheReadTokens",
 		"llm.token_count.prompt_details.cache_read",
@@ -396,6 +397,7 @@ export const GENAI_USAGE_KEYS = {
 		"gen_ai.usage.cache_creation.input_tokens",
 		"gen_ai.usage.cache_write.input_tokens",
 		"gen_ai.usage.input_tokens.cache_write",
+		"gen_ai.usage.cache_write_input_tokens",
 		"ai.usage.inputTokenDetails.cacheWriteTokens",
 	],
 	output: [

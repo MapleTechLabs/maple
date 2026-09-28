@@ -853,6 +853,8 @@ describe("migration 0035: ai_trace_index usage, cost and agent-name keys", () =>
 			"gen_ai.usage.reasoning_tokens",
 			"gen_ai.usage.details.reasoning_tokens",
 			"gen_ai.usage.input_tokens.cache_write",
+			"gen_ai.usage.cache_read_input_tokens",
+			"gen_ai.usage.cache_write_input_tokens",
 			"litellm.cost.total",
 			"operation.cost",
 			"langsmith.metadata.lc_agent_name",

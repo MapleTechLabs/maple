@@ -194,6 +194,9 @@ describe("legacy aliases", () => {
 		["gen_ai.usage.output_tokens.reasoning", "704", "usageReasoningOutputTokens", 704],
 		["gen_ai.usage.input_tokens.cached", "2048", "usageCacheReadInputTokens", 2048],
 		["gen_ai.usage.input_tokens.cache_write", "11058", "usageCacheCreationInputTokens", 11058],
+		// Older Strands releases' cache spellings.
+		["gen_ai.usage.cache_read_input_tokens", "900", "usageCacheReadInputTokens", 900],
+		["gen_ai.usage.cache_write_input_tokens", "100", "usageCacheCreationInputTokens", 100],
 		// Mastra's and Pydantic AI's reasoning spellings, from their exports.
 		["gen_ai.usage.reasoning_tokens", "320", "usageReasoningOutputTokens", 320],
 		["gen_ai.usage.details.reasoning_tokens", "128", "usageReasoningOutputTokens", 128],
