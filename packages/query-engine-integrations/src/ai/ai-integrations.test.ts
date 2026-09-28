@@ -346,6 +346,25 @@ describe("value normalisation", () => {
 		expect(mapped.genAi.responseFinishReasons).toEqual(["tool_call", "stop"])
 	})
 
+	it("reads one bare OpenAI message as a one-message reply", () => {
+		// A smolagents `OpenAIModel.generate` output: one message, content null,
+		// the reply entirely in `tool_calls`.
+		const message = {
+			role: "assistant",
+			content: null,
+			tool_calls: [
+				{
+					function: { arguments: '{"answer":"391"}', name: "final_answer", description: null },
+					id: "call_Mx0pfPCI8tppc9j4qopqc08x",
+					type: "function",
+				},
+			],
+		}
+		const mapped = mapAiSpan(row({ "gen_ai.output.messages": JSON.stringify(message) }))
+
+		expect(mapped.genAi.outputMessages).toEqual([message])
+	})
+
 	it("unwraps a LangChain ToolMessage tool result to what the tool returned", () => {
 		// An OpenInference LangChain tool span's dual-written result.
 		const mapped = mapAiSpan(

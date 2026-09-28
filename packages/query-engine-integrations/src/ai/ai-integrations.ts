@@ -222,6 +222,8 @@ const unwrapOutputMessages = (value: unknown): unknown => {
 					: [],
 			)
 	}
+	// One bare message (smolagents' `output.value`) is a one-message reply.
+	if (isRecord(value) && typeof value.role === "string") return [value]
 	if (!isRecord(value) || typeof value.completion !== "string") return unwrapMessages(value)
 	const parts = [
 		...(typeof value.reasoning === "string" && value.reasoning !== ""
