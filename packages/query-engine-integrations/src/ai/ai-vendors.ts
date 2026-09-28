@@ -1,7 +1,7 @@
 // Per-vendor overrides, keyed by the `maple_ai.vendor.id` the ingest gateway
 // stamped on the span.
 //
-// Five entries cover four dialects: the default GenAI integration already
+// Four dialects cover every entry: the default GenAI integration already
 // reads canonical `gen_ai.*`, which is what most detected vendors emit, so an
 // override is only worth writing for a framework with a different dialect. Each
 // list holds that dialect's keys alone — the default's canonical and legacy
@@ -79,13 +79,16 @@ const OPENINFERENCE_SPAN_KIND_OPERATIONS = new Map([
 ])
 
 /**
- * OpenInference — the dialect Arize's instrumentors emit. Registered under both
- * `openinference-openai` (the gateway's id for the OpenAI instrumentor) and
+ * OpenInference — the dialect Arize's instrumentors emit. Registered under
+ * `openinference-openai` (the gateway's id for the OpenAI instrumentor),
  * `unknown:openinference` (its generic bucket for any other OpenInference
- * scope), because the dialect is identical; only the detection path differs.
+ * scope) and every framework id the gateway stamps from an
+ * `openinference.instrumentation.<framework>` scope, because the dialect is
+ * identical; only the detection path differs. A framework's native spans
+ * carry none of these keys, so the entry costs them nothing.
  *
- * The integration id is the DIALECT, not the vendor stamp, so both stamps
- * report the same integration.
+ * The integration id is the DIALECT, not the vendor stamp, so every stamp
+ * reports the same integration.
  */
 const openInferenceIntegration: AiIntegration = {
 	id: "openinference",
@@ -161,6 +164,13 @@ export const AI_VENDOR_INTEGRATIONS = {
 	vercel_ai_sdk: vercelAiSdkIntegration,
 	"openinference-openai": openInferenceIntegration,
 	"unknown:openinference": openInferenceIntegration,
+	agno: openInferenceIntegration,
+	crewai: openInferenceIntegration,
+	dspy: openInferenceIntegration,
+	langchain: openInferenceIntegration,
+	llamaindex: openInferenceIntegration,
+	openai_agents_sdk: openInferenceIntegration,
+	smolagents: openInferenceIntegration,
 	eve: eveIntegration,
 	maple: mapleIntegration,
 } as const satisfies Record<string, AiIntegration>

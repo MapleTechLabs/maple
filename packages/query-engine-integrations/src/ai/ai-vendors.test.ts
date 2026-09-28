@@ -118,14 +118,56 @@ describe("vercel_ai_sdk", () => {
 })
 
 describe("openinference", () => {
-	it("is registered under both vendor ids the gateway can stamp", () => {
-		// Same dialect, two detection paths: the OpenAI instrumentor by name, and
-		// the generic bucket for any other `openinference.instrumentation.*` scope.
-		expect(AI_VENDOR_INTEGRATIONS["openinference-openai"]).toBe(
-			AI_VENDOR_INTEGRATIONS["unknown:openinference"],
+	it("is registered under every vendor id the gateway stamps from an OpenInference scope", () => {
+		// Same dialect, several detection paths: the OpenAI instrumentor by name,
+		// the framework instrumentors by their scope, and the generic bucket for
+		// any other `openinference.instrumentation.*` scope.
+		for (const vendorId of [
+			"openinference-openai",
+			"unknown:openinference",
+			"agno",
+			"crewai",
+			"dspy",
+			"langchain",
+			"llamaindex",
+			"openai_agents_sdk",
+			"smolagents",
+		] as const) {
+			expect(AI_VENDOR_INTEGRATIONS[vendorId].id).toBe("openinference")
+			expect(resolveAiIntegration(vendorId).id).toBe("openinference")
+		}
+	})
+
+	it("decodes a framework's OpenInference span without the GenAI dual-write", () => {
+		// Trimmed from an agno `OpenRouter.invoke` LLM span, OpenInference keys only.
+		const mapped = mapAiSpan(
+			row("agno", {
+				"openinference.span.kind": "LLM",
+				"llm.model_name": "openai/gpt-4o-mini",
+				"llm.token_count.prompt": "171",
+				"llm.token_count.completion": "46",
+				"llm.cost.total": "5.325e-05",
+				"input.value":
+					'{"messages": [{"id": "9b4bbc03-0b5a-4f0f-9383-1ad696468e2e", "content": "Hi! Briefly introduce yourself.", "role": "user"}]}',
+				"output.value": '[{"role": "assistant", "content": "Hello! I am an AI assistant."}]',
+			}),
 		)
-		expect(resolveAiIntegration("unknown:openinference").id).toBe("openinference")
-		expect(resolveAiIntegration("openinference-openai").id).toBe("openinference")
+
+		expect(mapped.genAi).toMatchObject({
+			operationName: "chat",
+			requestModel: "openai/gpt-4o-mini",
+			usageInputTokens: 171,
+			usageOutputTokens: 46,
+			usageCost: 5.325e-5,
+			inputMessages: [
+				{
+					id: "9b4bbc03-0b5a-4f0f-9383-1ad696468e2e",
+					content: "Hi! Briefly introduce yourself.",
+					role: "user",
+				},
+			],
+			outputMessages: [{ role: "assistant", content: "Hello! I am an AI assistant." }],
+		})
 	})
 
 	it("maps the llm.* dialect", () => {
