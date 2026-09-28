@@ -445,6 +445,47 @@ describe("buildSessionChecks", () => {
 		expect(missed.headline).toBe("Cache hit rate 0% over 4 calls; 4 missed the cache")
 	})
 
+	// OpenRouter Broadcast: every request is a `chat` root carrying the usage
+	// plus a `provider attempt N` and a `generation` child, all op `chat`. The
+	// headline read "All 48 model calls" for a session of 16.
+	it("counts model calls in the provider headline once per call, not per chat span", () => {
+		const request = (n: number) => {
+			const traceId = `trace-${n}`
+			const root = `gen-${n}`
+			const at = n * MINUTE
+			return [
+				llmSpan({
+					spanId: root,
+					traceId,
+					spanName: "LLM Generation",
+					startMs: at,
+					durationMs: 4_842,
+					genAi: { usageInputTokens: 58_797, usageOutputTokens: 220, responseId: `gen-${n}` },
+				}),
+				llmSpan({
+					spanId: `${root}-attempt`,
+					parentSpanId: root,
+					traceId,
+					spanName: "provider attempt 1: OpenAI",
+					startMs: at + 184,
+					durationMs: 2_019,
+					genAi: { responseId: `gen-${n}:attempt-0` },
+				}),
+				llmSpan({
+					spanId: `${root}-generation`,
+					parentSpanId: root,
+					traceId,
+					spanName: "generation",
+					startMs: at + 200,
+					durationMs: 4_402,
+					genAi: { responseId: `gen-${n}:generation` },
+				}),
+			]
+		}
+		const report = checks([...request(0), ...request(1)])
+		expect(byId(report, "provider").headline).toBe("All 2 model calls were answered first time")
+	})
+
 	// The one rule behind red and amber, pinned per kind: a class that needs a
 	// fix stays red when survived; everything else survived is amber.
 	it("keeps a survived context overflow red and a survived provider error amber", () => {

@@ -138,7 +138,7 @@ export function buildSessionChecks(
 		...completionCheck(of("incomplete")),
 		contextWindowCheck(of("contextExceeded"), llmCalls),
 		rateLimitCheck(of("rateLimited")),
-		providerCheck(of("providerError"), of("providerRetry"), llmCalls.length),
+		providerCheck(of("providerError"), of("providerRetry"), summary.work.llmCalls),
 		refusalCheck(of("refusal")),
 		replyLengthCheck(of("truncation"), llmCalls),
 		structuredOutputCheck(of("invalidOutput")),
