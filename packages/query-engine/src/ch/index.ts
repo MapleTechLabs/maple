@@ -334,6 +334,7 @@ export {
 	spanDetailQuery,
 	traceTimeProbeQuery,
 	tracesDurationStatsQuery,
+	canUseTraceFacetsRollup,
 	tracesFacetsQuery,
 	errorsFacetsQuery,
 	errorsSummaryQuery,

@@ -7,7 +7,14 @@ import {
 	scrubUrl,
 	sdkHint,
 } from "@maple/browser-session"
-import { context, propagation, ProxyTracerProvider, type Tracer, trace } from "@opentelemetry/api"
+import {
+	context,
+	propagation,
+	ProxyTracerProvider,
+	type Span as ApiSpan,
+	type Tracer,
+	trace,
+} from "@opentelemetry/api"
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http"
 import { registerInstrumentations } from "@opentelemetry/instrumentation"
 import { FetchInstrumentation } from "@opentelemetry/instrumentation-fetch"
@@ -198,10 +205,28 @@ export function setupTracing(config: ResolvedConfig): () => Promise<void> {
 	const onVisibilityChange = (): void => {
 		if (document.visibilityState === "hidden") onExit()
 	}
+	// Fetch spans need a push first on the way out: the fetch instrumentation
+	// ends each one 300ms after its response (waiting on resource timing), so a
+	// fetch that settled just before a navigation is still open when the flush
+	// runs, and the page is gone before its timer fires. `pagehide` ends those at
+	// their real response time, dropping their resource-timing network events.
+	// Only `pagehide`, which every navigation fires: a page merely hidden (a
+	// tab switch) lives on, and its timer would then hit an ended span. A page
+	// entering the bfcache fires it too; ending there is still right, since it
+	// may never be restored.
+	const settledFetches = new Map<ApiSpan, number>()
+	const onPageHide = (): void => {
+		for (const [span, endTime] of settledFetches) {
+			// Entries are only pruned on the next fetch, so some already ended.
+			if (span.isRecording()) span.end(endTime)
+		}
+		settledFetches.clear()
+		onExit()
+	}
 	const canListen = typeof document !== "undefined" && typeof document.addEventListener === "function"
 	if (canListen) {
 		document.addEventListener("visibilitychange", onVisibilityChange)
-		window.addEventListener("pagehide", onExit)
+		window.addEventListener("pagehide", onPageHide)
 	}
 
 	const unregisterInstrumentations = config.tracingInstrumentFetch
@@ -216,6 +241,15 @@ export function setupTracing(config: ResolvedConfig): () => Promise<void> {
 						// `traceparent` goes to same-origin requests only, unless the app
 						// lists the cross-origin APIs that accept it.
 						propagateTraceHeaderCorsUrls: [...config.propagateTraceHeaderCorsUrls],
+						// Runs as the response settles, right before the instrumentation
+						// schedules the span's deferred end. Pruning here keeps the map to
+						// spans still waiting on that timer.
+						applyCustomAttributesOnSpan: (span) => {
+							for (const settled of settledFetches.keys()) {
+								if (!settled.isRecording()) settledFetches.delete(settled)
+							}
+							settledFetches.set(span, Date.now())
+						},
 					}),
 				],
 			})
@@ -224,7 +258,7 @@ export function setupTracing(config: ResolvedConfig): () => Promise<void> {
 	return async () => {
 		if (canListen) {
 			document.removeEventListener("visibilitychange", onVisibilityChange)
-			window.removeEventListener("pagehide", onExit)
+			window.removeEventListener("pagehide", onPageHide)
 		}
 		unregisterInstrumentations?.()
 		if (mapleProvider === provider) mapleProvider = undefined
