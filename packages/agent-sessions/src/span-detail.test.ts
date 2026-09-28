@@ -86,6 +86,59 @@ describe("spanMessages", () => {
 		expect(spanMessages(span)[0]!.parts).toEqual([{ kind: "text", text: '{"type":"image","media":"…"}' }])
 	})
 
+	it("reads OpenAI-format tool calls and tool messages", () => {
+		// Trimmed from a LiteLLM `chat` span: the assistant message that only
+		// calls a tool has `content: null` (output) or no content (history).
+		const call = {
+			index: 0,
+			function: { arguments: '{"city":"Berlin"}', name: "get_weather" },
+			id: "call_PnF57J0QOIKUlzQKpqwxV8tl",
+			type: "function",
+		}
+		const span = llmSpan({
+			spanId: "l1",
+			startMs: 0,
+			durationMs: 1000,
+			genAi: {
+				inputMessages: [
+					{ role: "user", content: "What's the weather in Berlin?" },
+					{ role: "assistant", tool_calls: [call], provider_specific_fields: { reasoning: null } },
+					{
+						role: "tool",
+						tool_call_id: "call_PnF57J0QOIKUlzQKpqwxV8tl",
+						content: '{"city": "Berlin", "temperature_c": 21, "condition": "partly cloudy"}',
+					},
+				],
+				outputMessages: [
+					{ content: null, role: "assistant", tool_calls: [call], function_call: null },
+				],
+			},
+		})
+
+		const toolCall = {
+			kind: "tool_call",
+			id: "call_PnF57J0QOIKUlzQKpqwxV8tl",
+			name: "get_weather",
+			argumentsText: '{"city":"Berlin"}',
+		}
+		expect(spanMessages(span).map((message) => [message.role, message.parts])).toEqual([
+			["user", [{ kind: "text", text: "What's the weather in Berlin?" }]],
+			["assistant", [toolCall]],
+			[
+				"tool",
+				[
+					{
+						kind: "tool_result",
+						id: "call_PnF57J0QOIKUlzQKpqwxV8tl",
+						resultText: '{"city": "Berlin", "temperature_c": 21, "condition": "partly cloudy"}',
+					},
+				],
+			],
+			["assistant", [toolCall]],
+		])
+		expect(spanToolCalls(span).map((c) => c.name)).toEqual(["get_weather"])
+	})
+
 	it("captures nothing when nothing was captured — the ordinary case", () => {
 		const span = llmSpan({ spanId: "l1", startMs: 0, durationMs: 1000 })
 		expect(spanMessages(span)).toEqual([])
