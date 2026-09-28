@@ -250,8 +250,8 @@ describe("traced with server OpenTelemetry", () => {
 		expect(named("outer").status.code).toBe(SpanStatusCode.ERROR)
 	})
 
-	it("records the same error object again in another request's trace", async () => {
-		// A module-level error thrown by every request that hits it
+	it("records an error object shared by requests on the first only", async () => {
+		// A memoized promise's rejection, which every request awaiting it rethrows
 		const shared = new Error("service unavailable")
 		const fail = () =>
 			request(() =>
@@ -259,9 +259,10 @@ describe("traced with server OpenTelemetry", () => {
 					throw shared
 				}),
 			).catch(() => undefined)
-		await fail()
-		await fail()
-		expect(exceptionEvents()).toHaveLength(2)
+		await Promise.all([fail(), fail()])
+		expect(exceptionEvents()).toHaveLength(1)
+		// Both spans still fail
+		expect(spans().filter((span) => span.status.code === SpanStatusCode.ERROR)).toHaveLength(2)
 	})
 
 	it("is not reported again by captureException in the same process", async () => {

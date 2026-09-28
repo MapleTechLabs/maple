@@ -21,9 +21,7 @@ export function routeTemplate(pathname: string, params: RouteParams): string {
 		if (!value?.length) continue
 		const parts: readonly string[] = typeof value === "string" ? [value] : value
 		const matchesAt = (at: number) =>
-			parts.every(
-				(part, i) => segments[at + i] === part || segments[at + i] === encodeURIComponent(part),
-			)
+			parts.every((part, i) => segments[at + i] === part || decode(segments[at + i]) === part)
 		let at = end - parts.length
 		while (at > 0 && !matchesAt(at)) at--
 		// Index 0 is the empty segment before the leading `/`
@@ -32,4 +30,14 @@ export function routeTemplate(pathname: string, params: RouteParams): string {
 		end = at
 	}
 	return segments.join("/")
+}
+
+/** A path segment as the param value it carries: raw, fully or partly percent-encoded. */
+function decode(segment: string | undefined): string | undefined {
+	try {
+		return segment && decodeURIComponent(segment)
+	} catch {
+		// A malformed escape, like a bare `%`: no param value decodes from it
+		return segment
+	}
 }

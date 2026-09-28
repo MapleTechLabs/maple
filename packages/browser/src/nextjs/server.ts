@@ -7,7 +7,7 @@
 // browser in `Server-Timing`, which the `pageload` span reads. Depends on
 // `@opentelemetry/api` and `next/server` only: safe in the edge runtime.
 import { type NextFetchEvent, type NextRequest, NextResponse } from "next/server"
-import { activeTraceparent } from "../traceparent"
+import { activeTraceparent, serverTimingEntry } from "../traceparent"
 
 type ProxyResult = Response | null | undefined | void
 type ProxyFunction = (request: NextRequest, event: NextFetchEvent) => ProxyResult | Promise<ProxyResult>
@@ -22,17 +22,29 @@ const REQUEST_HEADER = "x-middleware-request-"
  */
 export function withMapleProxy(proxy?: ProxyFunction): ProxyFunction {
 	return async (request, event) => {
-		// Client navigations already carry the browser's traceparent: replacing it
-		// would cut the render off from the browser `fetch` span that made it
-		const traceparent = request.headers.has("traceparent") ? undefined : activeTraceparent()
+		const traceparent = activeTraceparent()
 		const response = await proxy?.(request, event)
-		if (!traceparent) return response
-		const result = response ?? NextResponse.next()
-		if (!rendersHere(result, request)) return response
-		forwardToRender(result, request, traceparent)
-		result.headers.append("server-timing", `traceparent;desc="${traceparent}"`)
+		if (!traceparent || (response && !rendersHere(response, request))) return response
+		// A traceparent the request already carries stays, and the render joins it on
+		// its own. A client navigation's RSC request carries the browser's (replacing
+		// it would cut the render off from the `fetch` span that made it) and needs
+		// nothing back. A page load can carry one a load balancer added, whose trace
+		// the middleware span is in too: the browser still joins through the header.
+		const carried = request.headers.has("traceparent")
+		if (carried && request.headers.get("sec-fetch-dest") !== "document") return response
+		const result =
+			response ?? NextResponse.next(carried ? undefined : withTraceparent(request, traceparent))
+		if (response && !carried) forwardToRender(response, request, traceparent)
+		result.headers.append("server-timing", serverTimingEntry(traceparent))
 		return result
 	}
+}
+
+/** `next()` options that add `traceparent` to the request headers the render sees. */
+function withTraceparent(request: NextRequest, traceparent: string) {
+	const headers = new Headers(request.headers)
+	headers.set("traceparent", traceparent)
+	return { request: { headers } }
 }
 
 /**
@@ -46,11 +58,14 @@ function rendersHere(response: Response, request: NextRequest): boolean {
 	return rewrite !== null && new URL(rewrite, request.url).origin === new URL(request.url).origin
 }
 
-/** Add `traceparent` to the request headers the render sees, keeping the ones your proxy set. */
+/**
+ * `withTraceparent` for a response your proxy made, keeping the request headers
+ * it set: the headers `NextResponse.next({ request: { headers } })` writes,
+ * extended the way Next.js extends them with its own router headers.
+ */
 function forwardToRender(response: Response, request: NextRequest, traceparent: string): void {
 	const overridden = response.headers.get(OVERRIDE_HEADERS)
-	// Without the list, the render sees the request's own headers: list them all,
-	// as `NextResponse.next({ request: { headers } })` does
+	// Without the list, the render sees the request's own headers: list them all
 	const names = overridden === null ? [...request.headers.keys()] : overridden.split(",")
 	if (overridden === null) {
 		for (const [name, value] of request.headers) response.headers.set(REQUEST_HEADER + name, value)

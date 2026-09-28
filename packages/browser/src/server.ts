@@ -7,7 +7,7 @@
 // runtimes and Workers. Without server OpenTelemetry, both do nothing.
 import { trace } from "@opentelemetry/api"
 import { runTraced, type TracedOptions } from "./failures"
-import { activeTraceparent } from "./traceparent"
+import { activeTraceparent, serverTimingEntry } from "./traceparent"
 import { SDK_NAME, SDK_VERSION } from "./version"
 
 export type { TracedOptions } from "./failures"
@@ -29,5 +29,5 @@ export function traced<T>(name: string, fn: () => Promise<T>, options: TracedOpt
  */
 export function serverTiming(): string | undefined {
 	const traceparent = activeTraceparent()
-	return traceparent && `traceparent;desc="${traceparent}"`
+	return traceparent && serverTimingEntry(traceparent)
 }

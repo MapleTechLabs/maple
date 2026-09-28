@@ -28,38 +28,41 @@ const asError = (value: unknown): Error => {
 }
 
 /**
- * Errors already recorded, by identity, with the trace each was last recorded
- * in. Module-level so the global handlers, `captureException` and `traced`
- * share it: a framework boundary that reports an error and then rethrows it
- * would otherwise produce two issues for one crash.
+ * Errors already recorded, by identity. Module-level so the global handlers,
+ * `captureException` and `traced` share it: a framework boundary that reports
+ * an error and then rethrows it would otherwise produce two issues for one
+ * crash.
+ *
+ * Once per error object, on a server too, where this outlives requests. Per
+ * trace would record an error again whenever it crosses into another trace, and
+ * the browser loses the trace at every `await`. The cost is an error object
+ * shared by many requests, like a memoized promise's rejection, recorded by
+ * `traced` on the first only; the framework's own spans still record the rest.
  */
-let recorded = new WeakMap<object, string>()
+let reported = new WeakSet<object>()
 
 const isObject = (value: unknown): value is object => typeof value === "object" && value !== null
 
 /** Whether this exact error object was already recorded. */
-export const alreadyReported = (error: unknown): boolean => isObject(error) && recorded.has(error)
+export const alreadyReported = (error: unknown): boolean => isObject(error) && reported.has(error)
 
 /** Test seam. */
 export function resetReportedErrorsForTests(): void {
-	recorded = new WeakMap()
+	reported = new WeakSet()
 }
 
 /**
  * Mark `span` as failed by `error`. The exception event goes on the first span
- * in a trace that records this error object; a later one (an outer `traced`,
- * say) only takes the Error status, so one error stays one issue. Per trace,
- * not per process: a server shares module state across requests, and an error
- * object thrown again in another request is another failure. The error is
- * claimed only when the span is recording: before `init()` the tracer is a
- * no-op, and claiming it then would swallow the same error reported again once
- * tracing is live.
+ * that records this error object; a later one (an outer `traced`, say) only
+ * takes the Error status, so one error stays one issue. The error is claimed
+ * only when the span is recording: before `init()` the tracer is a no-op, and
+ * claiming it then would swallow the same error reported again once tracing is
+ * live.
  */
 export function recordFailure(span: Span, error: unknown): void {
 	const normalized = asError(error)
-	const traceId = span.spanContext().traceId
-	if (!isObject(error) || recorded.get(error) !== traceId) {
-		if (span.isRecording() && isObject(error)) recorded.set(error, traceId)
+	if (!alreadyReported(error)) {
+		if (span.isRecording() && isObject(error)) reported.add(error)
 		span.recordException(normalized)
 	}
 	span.setStatus({ code: SpanStatusCode.ERROR, message: normalized.message })

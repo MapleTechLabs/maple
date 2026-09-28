@@ -167,6 +167,17 @@ describe("MapleNavigation and onRouterTransitionStart", () => {
 		expect(exported[1]?.attributes["app.navigation.interrupted"]).toBe(true)
 	})
 
+	it("does not end a navigation in flight when the same route commits again", async () => {
+		await pageLoad("/projects/1", { id: "1" })
+		onRouterTransitionStart("/settings")
+		// A server action revalidates the page on screen: a new params object, same route
+		await commit("/projects/1", { id: "1" })
+		await commit("/settings")
+		await stop()
+
+		expect(names()).toEqual(["pageload /projects/[id]", "navigate /settings"])
+	})
+
 	it("does not end a navigation in flight when it renders again for the same route", async () => {
 		await pageLoad("/projects/1", { id: "1" })
 		onRouterTransitionStart("/projects/2")

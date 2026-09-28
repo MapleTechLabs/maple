@@ -32,13 +32,17 @@ function NavigationEnd(): null {
 	const params = useParams()
 	// URLs no route matches render Next.js's built-in `/_not-found` route: without
 	// this, every mistyped URL would become its own span name
-	const unmatched = useSelectedLayoutSegments()[0] === "/_not-found"
+	const route =
+		useSelectedLayoutSegments()[0] === "/_not-found" ? "/_not-found" : routeTemplate(pathname, params)
 
-	// The commit is the signal itself: effects run once the new route is on screen
+	// The commit is the signal itself: effects run once the new route is on screen.
+	// Keyed on strings: `useParams()` returns a new object when the same route
+	// commits again (`router.refresh()`, a server action revalidating), which must
+	// not end a navigation to another route still in flight.
 	useEffect(() => {
 		committed = urlKey(pathname, search)
-		endNavigation(unmatched ? "/_not-found" : routeTemplate(pathname, params))
-	}, [pathname, search, params, unmatched])
+		endNavigation(route)
+	}, [pathname, search, route])
 
 	return null
 }

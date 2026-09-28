@@ -27,6 +27,8 @@ describe("routeTemplate", () => {
 		["a percent-encoded path", "/projects/caf%C3%A9", { id: "café" }, "/projects/[id]"],
 		["an encoded slash", "/files/a%2Fb", { name: "a/b" }, "/files/[name]"],
 		["a decoded path", "/projects/café", { id: "café" }, "/projects/[id]"],
+		["a partly encoded path", "/users/a%20b@x.com", { email: "a b@x.com" }, "/users/[email]"],
+		["a malformed escape", "/files/100%", { name: "100%" }, "/files/[name]"],
 		["a trailing slash", "/projects/1/", { id: "1" }, "/projects/[id]/"],
 		["a param the path doesn't contain", "/projects/1", { id: "1", tab: "members" }, "/projects/[id]"],
 	])("handles %s", (_, pathname, params, expected) => {

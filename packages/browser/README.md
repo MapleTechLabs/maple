@@ -183,7 +183,7 @@ if (value) headers.append("server-timing", value)
 
 - `traced` spans through the global tracer the server registered (`@vercel/otel`,
   the Node SDK), so it nests under the request span and keeps its parent across
-  `await`. An error is recorded once per trace. Without server OpenTelemetry it
+  `await`. An error is recorded once, like in the browser. Without server OpenTelemetry it
   only runs `fn`. `MapleBrowser.traced` does the same when there is no `window`.
 - `serverTiming()` returns `traceparent;desc="00-…"` for the active span, or
   `undefined` when none is active.
@@ -242,9 +242,12 @@ export const config = { matcher: ["/((?!api|_next/static|_next/image|favicon.ico
   route matches is `/_not-found`. Hash links start no span.
 - `reportNextError` skips server errors (they arrive with a `digest`, and Next.js
   already recorded them on its server span) and errors `traced` recorded.
-- `withMapleProxy` leaves requests that already carry a `traceparent` (client
-  navigations) alone, and only touches responses that go on to a render in this
-  app: your redirects and responses pass through unchanged.
+- `withMapleProxy` keeps a `traceparent` the request already carries (client
+  navigations), and only touches responses that go on to a render in this app:
+  your redirects and responses pass through unchanged. Leave prerendered pages a
+  shared cache (CDN) stores out of the matcher, or every visitor joins one trace.
+- The browser follows the server's sampling decision: a page load under an
+  unsampled server trace isn't recorded.
 
 ## Linking a marketing site to your app
 

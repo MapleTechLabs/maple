@@ -270,8 +270,8 @@ const value = serverTiming()
 if (value) headers.append("server-timing", value)
 ```
 
-- `traced(name, fn, options?)` runs `fn` in a span from the global tracer your server registered (`@vercel/otel`, the OpenTelemetry Node SDK), under the active span. The server keeps the parent across `await`, so requests `fn` makes after an `await` nest under it too. It takes the same `isFailure` option as the browser version, and records an error once per trace. Without server OpenTelemetry it only runs `fn`.
-- `serverTiming()` returns the `Server-Timing` value for the active span, `traceparent;desc="00-…"`, or `undefined` when no span is active. Sent on the HTML response, it joins the browser's `pageload` span to the server's trace. Leave it off responses a shared cache stores, or every visitor joins the same trace.
+- `traced(name, fn, options?)` runs `fn` in a span from the global tracer your server registered (`@vercel/otel`, the OpenTelemetry Node SDK), under the active span. The server keeps the parent across `await`, so requests `fn` makes after an `await` nest under it too. It takes the same `isFailure` option as the browser version, and records an error once. Without server OpenTelemetry it only runs `fn`.
+- `serverTiming()` returns the `Server-Timing` value for the active span, `traceparent;desc="00-…"`, or `undefined` when no span is active. Sent on the HTML response, it joins the browser's `pageload` span to the server's trace. Leave it off responses a shared cache stores, or every visitor joins the same trace. The browser follows the server's sampling decision: a page load under an unsampled server trace isn't recorded.
 
 ## Next.js integration
 
@@ -337,7 +337,7 @@ export const config = {
 - Render `<MapleNavigation />` once, in the root layout, above `{children}`. It ends the span when the new route commits, so a route with `loading.tsx` ends it when the skeleton appears.
 - Hash links and links to the URL on screen start no span. A query change is a navigation.
 - `reportNextError` skips errors with a `digest`. Those are Server Component errors with the message stripped, which Next.js already recorded on its server span. It also skips errors `traced` already recorded.
-- `withMapleProxy` skips requests that already carry a `traceparent`, which are client navigations, and only changes responses that go on to a render in your app. Redirects and responses your proxy builds itself pass through unchanged.
+- `withMapleProxy` keeps a `traceparent` the request already carries, as client navigations do, and only changes responses that go on to a render in your app. Redirects and responses your proxy builds itself pass through unchanged. If a shared cache such as a CDN stores prerendered pages, leave them out of the matcher, or every visitor joins the same trace.
 - Server Components can time database and SDK calls with `traced` from `@maple-dev/browser/server`. Pass `isFailure: () => false`: Next.js records an error thrown from a Server Component on its render span, and `redirect()` and `notFound()` work by throwing.
 
 ## Custom events

@@ -88,13 +88,33 @@ describe("withMapleProxy", () => {
 			})
 		})
 
-		it("leaves requests that already carry a traceparent alone", async () => {
-			const own = NextResponse.next()
+		it("leaves a client navigation's request, which carries the browser's traceparent, alone", async () => {
 			await inMiddlewareSpan(async () => {
-				const request = pageRequest({ traceparent: BROWSER_TRACEPARENT })
+				const request = pageRequest({ traceparent: BROWSER_TRACEPARENT, "sec-fetch-dest": "empty" })
 				expect(await withMapleProxy()(request, event)).toBeUndefined()
+				const own = NextResponse.next()
 				expect(await withMapleProxy(() => own)(request, event)).toBe(own)
+				expect(own.headers.has("x-middleware-override-headers")).toBe(false)
 				expect(own.headers.has("server-timing")).toBe(false)
+			})
+		})
+
+		it("keeps a traceparent a load balancer added to a page load, and still tells the browser", async () => {
+			await inMiddlewareSpan(async (traceparent) => {
+				const request = pageRequest({
+					traceparent: BROWSER_TRACEPARENT,
+					"sec-fetch-dest": "document",
+				})
+				const created = await withMapleProxy()(request, event)
+				if (!created) throw new Error("expected a response")
+				expect(created.headers.get("x-middleware-next")).toBe("1")
+				expect(created.headers.has("x-middleware-override-headers")).toBe(false)
+				expect(created.headers.get("server-timing")).toBe(`traceparent;desc="${traceparent}"`)
+
+				const own = NextResponse.next()
+				expect(await withMapleProxy(() => own)(request, event)).toBe(own)
+				expect(own.headers.has("x-middleware-override-headers")).toBe(false)
+				expect(own.headers.get("server-timing")).toBe(`traceparent;desc="${traceparent}"`)
 			})
 		})
 

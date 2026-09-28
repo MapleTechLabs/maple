@@ -26,3 +26,6 @@ export function activeTraceparent(): string | undefined {
 	const flags = (spanContext.traceFlags & 0xff).toString(16).padStart(2, "0")
 	return `00-${spanContext.traceId}-${spanContext.spanId}-${flags}`
 }
+
+/** The `Server-Timing` entry the browser's `pageload` span reads its parent from. */
+export const serverTimingEntry = (traceparent: string): string => `traceparent;desc="${traceparent}"`
