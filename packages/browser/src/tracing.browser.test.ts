@@ -103,6 +103,7 @@ describe("setupTracing unload flush", () => {
 	let shutdown: (() => Promise<void>) | undefined
 
 	afterEach(async () => {
+		vi.useRealTimers()
 		await shutdown?.()
 		shutdown = undefined
 		exported.length = 0
@@ -176,6 +177,28 @@ describe("setupTracing unload flush", () => {
 
 		expect(trace.getTracer("host").startSpan("still-host")).toBeDefined()
 		expect(hostTracer.startSpan).toHaveBeenCalledWith("still-host")
+	})
+
+	it("exports a fetch span that settled just before pagehide", async () => {
+		// The fetch instrumentation ends its span 300ms after the response; a
+		// navigation inside that window used to flush before the span existed.
+		vi.useFakeTimers({ toFake: ["setTimeout"] })
+		shutdown = setupTracing({ ...CONFIG, tracingInstrumentFetch: true })
+		const url = URL.createObjectURL(new Blob(["ok"]))
+
+		await (await fetch(url)).text()
+		// The instrumentation has settled the response and parked the span's end.
+		await vi.waitFor(() => expect(vi.getTimerCount()).toBe(1))
+
+		window.dispatchEvent(new Event("pagehide"))
+		await vi.waitFor(() => expect(exported).toHaveLength(1))
+		expect(exported[0]?.attributes["url.full"]).toBe(url)
+
+		// The instrumentation's own late end() must not export the span twice.
+		vi.runAllTimers()
+		window.dispatchEvent(new Event("pagehide"))
+		await Promise.resolve()
+		expect(exported).toHaveLength(1)
 	})
 
 	it("removes its listeners on shutdown", async () => {

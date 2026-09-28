@@ -7,7 +7,14 @@ import {
 	scrubUrl,
 	sdkHint,
 } from "@maple/browser-session"
-import { context, propagation, ProxyTracerProvider, type Tracer, trace } from "@opentelemetry/api"
+import {
+	context,
+	propagation,
+	ProxyTracerProvider,
+	type Span as ApiSpan,
+	type Tracer,
+	trace,
+} from "@opentelemetry/api"
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http"
 import { registerInstrumentations } from "@opentelemetry/instrumentation"
 import { FetchInstrumentation } from "@opentelemetry/instrumentation-fetch"
@@ -185,7 +192,17 @@ export function setupTracing(config: ResolvedConfig): () => Promise<void> {
 	// Both events are needed: `visibilitychange → hidden` is the only reliable
 	// one on mobile, `pagehide` covers desktop tab close and navigation. Flushing
 	// twice is harmless — the second finds an empty queue.
+	//
+	// Fetch spans need a push first: the fetch instrumentation ends each one
+	// 300ms after its response (waiting on resource timing), so a fetch that
+	// settled just before a navigation is still open when this flush runs, and
+	// the page is gone before its timer fires. End those at their real response
+	// time here. Their resource-timing network events are the price; the
+	// instrumentation's own late `end()` is then ignored.
+	const settledFetches = new Map<ApiSpan, number>()
 	const onExit = (): void => {
+		for (const [span, endTime] of settledFetches) span.end(endTime)
+		settledFetches.clear()
 		void provider.forceFlush().catch(() => {
 			// Best-effort on the way out; never throw into the host app.
 		})
@@ -211,6 +228,15 @@ export function setupTracing(config: ResolvedConfig): () => Promise<void> {
 						// `traceparent` goes to same-origin requests only, unless the app
 						// lists the cross-origin APIs that accept it.
 						propagateTraceHeaderCorsUrls: [...config.propagateTraceHeaderCorsUrls],
+						// Runs as the response settles, right before the instrumentation
+						// schedules the span's deferred end. Pruning here keeps the map to
+						// spans still waiting on that timer.
+						applyCustomAttributesOnSpan: (span) => {
+							for (const settled of settledFetches.keys()) {
+								if (!settled.isRecording()) settledFetches.delete(settled)
+							}
+							settledFetches.set(span, Date.now())
+						},
 					}),
 				],
 			})
