@@ -39,13 +39,9 @@ Keep the existing `spring-ai-bom` import and model starter. Add:
   <groupId>org.springframework.boot</groupId>
   <artifactId>spring-boot-starter-opentelemetry</artifactId>
 </dependency>
-<dependency>
-  <groupId>org.springframework.boot</groupId>
-  <artifactId>spring-boot-starter-actuator</artifactId>
-</dependency>
 ```
 
-Gradle: `implementation("org.springframework.boot:spring-boot-starter-opentelemetry")` and `...:spring-boot-starter-actuator`.
+Gradle: `implementation("org.springframework.boot:spring-boot-starter-opentelemetry")`. Actuator is not needed on Boot 4 (verified); keep it if the app already has it.
 
 ### 2b. Properties
 
@@ -63,13 +59,12 @@ management.otlp.metrics.export.url=https://ingest.maple.dev/v1/metrics
 management.otlp.metrics.export.headers.Authorization=Bearer ${MAPLE_INGEST_KEY}
 
 maple.ai.capture-content=true
-spring.ai.openai.chat.stream-options.include-usage=true
 ```
 
 - The endpoint property takes the FULL URL including `/v1/traces` (Boot does not append it).
 - `management.tracing.sampling.probability=1.0` is REQUIRED. Default is `0.1`: 90% of turns silently missing.
 - The starter also exports metrics, to `localhost:4318` by default. Either point them at Maple (above) or set `management.otlp.metrics.export.enabled=false`. Never leave the default.
-- `include-usage` only for the OpenAI starter (and OpenAI-compatible gateways): without it streamed calls report no tokens. Per call alternative: `OpenAiChatOptions.builder().streamUsage(true)`.
+- Streamed tokens: Spring AI 2.0's OpenAI model requests usage on streams by default. If the app sets ANY `spring.ai.openai.chat.stream-options.*` property, also set `spring.ai.openai.chat.stream-options.include-usage=true` (once stream options exist, unset means false and streamed turns report no tokens).
 - Boot 4.1+ also maps `OTEL_EXPORTER_OTLP_ENDPOINT` (base URL, Boot appends `/v1/traces`), `OTEL_EXPORTER_OTLP_HEADERS`, `OTEL_SERVICE_NAME`, `OTEL_RESOURCE_ATTRIBUTES`. Use them if the repo configures via env; keep the sampling property.
 - Do NOT set `management.opentelemetry.tracing.limits.max-attribute-value-length`: truncated JSON content no longer parses and Maple drops it.
 - Leave `spring.ai.chat.observations.log-prompt/log-completion` and `spring.ai.chat.client.observations.*` as they are. They only log; they never put content on spans.
@@ -77,15 +72,20 @@ spring.ai.openai.chat.stream-options.include-usage=true
 
 ### 2c. OTel Java agent present
 
-The agent does not convert Micrometer Observations into spans, so Steps 2a-2b are still required. With both:
-- add `-Dotel.instrumentation.openai-java.enabled=false` (the agent instruments the OpenAI Java SDK under Spring AI 2.0's OpenAI starter: duplicate `chat` spans);
-- add `management.observations.enable.http.server.requests=false` (duplicate server spans);
-- point the agent's `OTEL_EXPORTER_OTLP_*` at Maple too.
-Tell the user this combination is untested by Maple; recommend removing the agent for this service if nothing else needs it.
+The agent does not turn Micrometer Observations into spans, so Steps 2a-2b and 3 are still required. But agent + starter as-is is BROKEN: Boot's SDK and the agent don't share context, so every Spring AI span becomes its own trace (no hierarchy, model calls split from their session). Verified with agent 2.31.1. Either remove the agent for this service, or hand Micrometer the agent's `OpenTelemetry` (add ONLY while the agent is attached; without it `GlobalOpenTelemetry.get()` is a no-op and nothing is traced):
+
+```java
+@Bean
+io.opentelemetry.api.OpenTelemetry openTelemetry() {
+	return io.opentelemetry.api.GlobalOpenTelemetry.get();
+}
+```
+
+Then the agent exports everything: set `OTEL_EXPORTER_OTLP_ENDPOINT=https://ingest.maple.dev`, `OTEL_EXPORTER_OTLP_HEADERS=Authorization=Bearer <key>`, `OTEL_SERVICE_NAME`, `OTEL_RESOURCE_ATTRIBUTES=deployment.environment.name=<env>` for the agent. Boot's `management.opentelemetry.*` export and sampling properties no longer apply (agent default sampler records everything). Also add `-Dotel.instrumentation.openai-java.enabled=false` as a precaution (no duplicate `chat` spans seen with Spring AI 2.0.1, but the agent ships OpenAI SDK instrumentation). HTTP client spans appear twice (Boot + agent); they are not AI spans and don't affect sessions.
 
 ### 2d. Spring AI 1.1 on Boot 3.5
 
-- Deps: `io.micrometer:micrometer-tracing-bridge-otel` + `io.opentelemetry:opentelemetry-exporter-otlp` + actuator (no `spring-boot-starter-opentelemetry`).
+- Deps: `io.micrometer:micrometer-tracing-bridge-otel` + `io.opentelemetry:opentelemetry-exporter-otlp` + `spring-boot-starter-actuator` (required on Boot 3.5; no `spring-boot-starter-opentelemetry`).
 - Properties: `management.otlp.tracing.endpoint=https://ingest.maple.dev/v1/traces`, `management.otlp.tracing.headers.Authorization=Bearer ...`; sampling property unchanged. Stream usage: `spring.ai.openai.chat.options.stream-usage=true`.
 - Step 3 class: replace `tools.jackson.databind.json.JsonMapper.shared().writeValueAsString(...)` with a Jackson 2 `com.fasterxml.jackson.databind.ObjectMapper` (wrap the checked `JsonProcessingException`), and delete the two `getToolCallId()` lines (not in 1.1).
 
@@ -103,7 +103,6 @@ import java.util.Map;
 import io.micrometer.common.KeyValue;
 import io.micrometer.observation.Observation;
 import io.micrometer.observation.ObservationFilter;
-import io.micrometer.observation.ObservationPredicate;
 import io.micrometer.observation.ObservationRegistry;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -127,13 +126,6 @@ public class MapleAiObservationConfig {
 	/** Agent name for a ChatClient: `.defaultAdvisors(a -> a.param(AGENT_NAME, "support_agent"))`. */
 	public static final String AGENT_NAME = "gen_ai.agent.name";
 
-	// Advisor spans carry nothing Maple reads, and their names ("tool _calling ",
-	// "message_chat_memory") would be counted as extra tool and LLM calls.
-	@Bean
-	ObservationPredicate skipAdvisorObservations() {
-		return (name, context) -> !(context instanceof AdvisorObservationContext);
-	}
-
 	@Bean
 	ObservationFilter mapleGenAiAttributes(@Value("${maple.ai.capture-content:false}") boolean captureContent) {
 		return context -> {
@@ -143,6 +135,11 @@ public class MapleAiObservationConfig {
 				if (client.getRequest().context().get(AGENT_NAME) instanceof String agent) {
 					client.addLowCardinalityKeyValue(KeyValue.of("gen_ai.agent.name", agent));
 				}
+			}
+			else if (context instanceof AdvisorObservationContext advisor) {
+				// Advisor span names ("tool _calling ", "message_chat_memory") would be
+				// counted as extra tool and LLM calls. A neutral name keeps them as plumbing.
+				advisor.setContextualName("spring_ai advisor");
 			}
 			else if (context instanceof ToolCallingObservationContext tool) {
 				tool.addLowCardinalityKeyValue(KeyValue.of("gen_ai.tool.name", tool.getToolDefinition().name()));
@@ -204,7 +201,9 @@ public class MapleAiObservationConfig {
 }
 ```
 
-Kotlin project: translate one to one (e.g. `ObservationPredicate { _, context -> context !is AdvisorObservationContext }`), same beans, same keys.
+Kotlin project: translate one to one (e.g. `ObservationFilter { context -> ...; context }`), same beans, same keys.
+
+Do NOT drop advisor observations with an `ObservationPredicate` instead of renaming them: on `.stream()` calls Spring AI takes the model span's parent from the Reactor context, which then holds the skipped (no-op) advisor observation, so the streamed `chat` span becomes its own trace outside the session (verified).
 
 ## Step 4: Session id (one conversation = one session)
 
@@ -229,7 +228,7 @@ Maple reads ONLY `spring.ai.chat.client.conversation.id` for Spring AI, on the `
 ## Step 6: Flush
 
 - Web app: nothing. Boot shuts down the `SdkTracerProvider` on context close, which flushes.
-- `CommandLineRunner` / batch: let `run()` return or use `SpringApplication.exit(context)`. `System.exit()` is fine (shutdown hook); `Runtime.halt()` / SIGKILL lose the last batch.
+- `CommandLineRunner` / batch: exit explicitly with `System.exit(SpringApplication.exit(SpringApplication.run(App.class, args)))` in `main`. If `main` just returns, the OpenAI starter's HTTP client keeps non-daemon threads alive ~60 s; the context (and the final span flush) only closes after that (verified). `Runtime.halt()` / SIGKILL lose the last batch.
 - Serverless (Spring Cloud Function on Lambda etc.): inject `io.opentelemetry.sdk.trace.SdkTracerProvider` and call `tracerProvider.forceFlush().join(10, TimeUnit.SECONDS)` at the end of EVERY invocation; never shut it down.
 - Batch delay is 5 s; wait before checking Maple.
 
@@ -241,7 +240,7 @@ Run one real conversation: 2-3 turns with the same conversation id including one
 - [ ] The two conversations are two different sessions.
 - [ ] Framework shows **Spring AI**.
 - [ ] Every turn arrived (count = number of top-level `ChatClient` calls). Missing turns = sampling property not applied.
-- [ ] Spans: `spring_ai chat_client` (agent, with your agent name), `chat <model>`, `execute_tool <tool>`. NO `tool _calling `, `call`, `message_chat_memory` spans (else the predicate bean isn't loaded).
+- [ ] Spans: `spring_ai chat_client` (agent, with your agent name), `chat <model>`, `execute_tool <tool>`. Advisor spans are named `spring_ai advisor`; NO spans named `tool _calling `, `call`, `stream`, `message_chat_memory` (else the filter isn't loaded).
 - [ ] LLM call count = number of `chat <model>` spans (not doubled); tool call count = number of real tool invocations.
 - [ ] Transcript shows user messages, replies, tool calls with arguments and results (else `maple.ai.capture-content` isn't `true` or the class isn't scanned).
 - [ ] Input and output tokens on every model call, including the streamed one.
@@ -257,6 +256,7 @@ Run one real conversation: 2-3 turns with the same conversation id including one
 - Do not stamp `maple_ai.session.id` on Spring AI spans; the conversation id param is the supported path.
 - Do not put a constant or per-request conversation id on calls.
 - Do not register a second `ToolExecutionExceptionProcessor` next to an existing one (ambiguous bean).
-- Do not run the OTel Java agent's OpenAI instrumentation alongside Spring AI (duplicate `chat` spans).
+- Do not attach the OTel Java agent next to the starter without the `GlobalOpenTelemetry` bean from Step 2c (every span becomes its own trace).
 - Do not set an attribute length limit (breaks content JSON).
+- Do not use an `ObservationPredicate` to drop Spring AI observations (breaks the streamed turn's trace).
 - Do not use this skill for LangChain4j; use the generic OpenTelemetry GenAI guide: https://maple.dev/docs/agent-tracing/opentelemetry

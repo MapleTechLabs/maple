@@ -9,7 +9,9 @@ icon: "googleadk"
 
 Google's Agent Development Kit (ADK) creates OpenTelemetry spans itself, with no instrumentation package: one span per run, per agent, per model call and per tool call, under the instrumentation scope `gcp.vertex.agent`. Every span carries the ADK session id as `gen_ai.conversation.id`, so a multi-turn chat groups into one Maple session without any extra code.
 
-What goes wrong by default is the transcript. ADK writes prompts, replies and tool payloads into its own `gcp.vertex.agent.llm_request`, `llm_response`, `tool_call_args` and `tool_response` attributes, which Maple doesn't read, so the session shows models and tokens next to an empty conversation. Two environment variables switch ADK to the OpenTelemetry GenAI message format that Maple renders. The other trap: with a plain `Runner`, nothing exports at all until you register a tracer provider yourself. This guide covers ADK for Python 2.10 and later. ADK for Go and Kotlin emit the same span names, but their setup isn't covered here.
+What goes wrong by default is the transcript. ADK writes prompts, replies and tool payloads into its own `gcp.vertex.agent.llm_request`, `llm_response`, `tool_call_args` and `tool_response` attributes, which Maple doesn't read, so the session shows models and tokens next to an empty conversation. Two environment variables switch ADK to the OpenTelemetry GenAI message format that Maple renders. The other trap: with a plain `Runner`, nothing exports at all until you register a tracer provider yourself.
+
+This guide covers ADK for Python 2.10 and later. ADK for Go and Kotlin emit the same span names, but their setup isn't covered here.
 
 ## Quick setup with a coding agent
 

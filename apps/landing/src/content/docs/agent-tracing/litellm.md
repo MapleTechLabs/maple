@@ -7,9 +7,9 @@ navLabel: "LiteLLM"
 icon: "litellm"
 ---
 
-LiteLLM traces model calls, and only model calls. Its OpenTelemetry logger writes one span per `acompletion()`, with the model, the provider, token counts and the prompt and reply. LiteLLM has no agent loop, no tool executor and no notion of a conversation, so the loop around those calls is your code, and the agent and tool spans have to come from your code too. This guide shows the 60 lines of Python that add them.
+LiteLLM traces model calls, and only model calls. Its OpenTelemetry logger writes one span per `acompletion()`, with the model, the provider, token counts and the prompt and reply. LiteLLM has no agent loop, no tool executor and no notion of a conversation, so the loop around those calls is your code, and the agent and tool spans have to come from your code too. This guide shows the Python that adds them.
 
-Two defaults go wrong for Maple. The default (v1) logger has no conversation id at all, so every model call lands in its own one-call session, and when your code already has a span open, v1 writes its attributes onto that span after it has ended and they are dropped. LiteLLM's newer v2 logger fixes both and turns `litellm_session_id` into `gen_ai.conversation.id`, but it is off by default, only traces the async API, and in LiteLLM 1.103 it silently disables itself on OpenTelemetry 1.44 or newer.
+Two defaults go wrong for Maple. The default (v1) logger has no conversation id at all, so every model call lands in its own one-call session, and when your code already has a span open, v1 writes its attributes onto that span after it has ended and they are dropped. LiteLLM's newer v2 logger fixes both and turns `litellm_session_id` into `gen_ai.conversation.id`, but it is off by default, only traces the async API, and in LiteLLM 1.103 it can't load on OpenTelemetry 1.44 or newer.
 
 This guide covers the LiteLLM Python SDK and the self-hosted LiteLLM Proxy. It was tested with `litellm` 1.103.0 and the OpenTelemetry Python SDK 1.43.0 on Python 3.12.
 
@@ -44,7 +44,7 @@ Install LiteLLM with the OpenTelemetry SDK and the OTLP/HTTP exporter:
 pip install "litellm==1.103.0" "opentelemetry-sdk==1.43.0" "opentelemetry-exporter-otlp-proto-http==1.43.0"
 ```
 
-Keep OpenTelemetry below 1.44 on LiteLLM 1.103. OpenTelemetry 1.44 removed the Events API that LiteLLM's v2 logger imports, and LiteLLM catches the import error, logs `Error initializing custom logger: No module named 'opentelemetry._events'` once, and exports nothing ([BerriAI/litellm#41990](https://github.com/BerriAI/litellm/issues/41990)). The fix is merged and ships in LiteLLM 1.104; from that release on you can drop the pin.
+Keep OpenTelemetry below 1.44 on LiteLLM 1.103, the latest stable release as of September 2026. OpenTelemetry 1.44 removed the Events API that LiteLLM's v2 logger imports ([BerriAI/litellm#41990](https://github.com/BerriAI/litellm/issues/41990)). Importing `OpenTelemetryV2` as below then fails with `ModuleNotFoundError: No module named 'opentelemetry._events'`. The `callbacks: ["otel"]` form the proxy uses is worse: LiteLLM catches the error, logs `Error initializing custom logger` and keeps serving requests without exporting anything. The fix is merged, and the 1.104.0rc1 release candidate traces correctly with OpenTelemetry 1.45. Drop the pin once 1.104 is out.
 
 Point the exporter at Maple with the standard OpenTelemetry variables:
 
@@ -100,6 +100,8 @@ Each `acompletion()` becomes a `chat <model>` span. To get turns, sub-agents and
 
 ```py
 # agent.py
+import asyncio
+import inspect
 import json
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -115,7 +117,7 @@ class Agent:
     name: str
     model: str
     instructions: str
-    tools: dict = field(default_factory=dict)  # tool name -> function
+    tools: dict = field(default_factory=dict)  # tool name -> function (sync or async)
     schemas: list = field(default_factory=list)  # OpenAI-style tool definitions
 
 
@@ -127,7 +129,7 @@ def agent_span(name: str):
         yield span
 
 
-def run_tool(agent: Agent, call) -> str:
+async def run_tool(agent: Agent, call) -> str:
     name = call.function.name
     with tracer.start_as_current_span(f"execute_tool {name}") as span:
         span.set_attribute("gen_ai.operation.name", "execute_tool")
@@ -136,6 +138,8 @@ def run_tool(agent: Agent, call) -> str:
         span.set_attribute("gen_ai.tool.call.arguments", call.function.arguments)
         try:
             result = agent.tools[name](**json.loads(call.function.arguments or "{}"))
+            if inspect.isawaitable(result):
+                result = await result
         except Exception as exc:
             # The model gets the error as the tool result; the span is marked failed.
             span.set_status(StatusCode.ERROR, str(exc))
@@ -159,8 +163,10 @@ async def run_agent(agent: Agent, conversation_id: str, messages: list) -> str:
             messages.append(message.model_dump(exclude_none=True))
             if not message.tool_calls:
                 return message.content or ""
-            for call in message.tool_calls:
-                messages.append({"role": "tool", "tool_call_id": call.id, "content": run_tool(agent, call)})
+            # Parallel tool calls run concurrently; each keeps the agent span as its parent.
+            results = await asyncio.gather(*(run_tool(agent, call) for call in message.tool_calls))
+            for call, output in zip(message.tool_calls, results):
+                messages.append({"role": "tool", "tool_call_id": call.id, "content": output})
 ```
 
 The v2 logger only traces the async API. `litellm.completion()` and the other sync calls produce no span at all, because the logger closes spans in its async success callback. Use `acompletion()`. If your code is sync throughout, see the troubleshooting entry on sync code.
@@ -192,6 +198,8 @@ Leave `gen_ai.conversation.id` off your own `invoke_agent` span. Maple labels a 
 
 The v2 logger records no content by default. `capture_message_content="span_only"` in `tracing.py` turns it on, and each `chat` span then carries `gen_ai.input.messages` and `gen_ai.output.messages` as JSON in the OpenAI chat format: the system prompt, the history, tool calls and tool results. Maple builds the transcript from those attributes. The environment variable `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=span_only` does the same when LiteLLM builds the config itself, as the proxy does.
 
+One gap in the transcript today: Maple doesn't read the OpenAI `tool_calls` field inside these messages. A model call whose reply is only a tool request shows no reply text, and the tool call itself appears once, from your `execute_tool` span, with its arguments and result. Without the `execute_tool` spans below, tool calls would be missing from the transcript entirely.
+
 Don't use `event_only`. It moves content to OpenTelemetry log events, which Maple doesn't read, and the transcript is empty.
 
 To keep prompts out of Maple, set `capture_message_content="no_content"` and remove the `gen_ai.tool.call.arguments` and `gen_ai.tool.call.result` lines from `run_tool`. Sessions keep their turns, models, tool names, tokens and errors, and the transcript is empty.
@@ -206,27 +214,48 @@ Each tool call is an `execute_tool <tool name>` span with the tool name, the mod
 
 A failed model call needs nothing from you. LiteLLM marks its `chat` span ERROR and sets `error.type` to the exception class, for example `RateLimitError`.
 
-For several agents, give each its own `name`. It becomes `gen_ai.agent.name` on its `invoke_agent` span, and Maple draws one lane per agent name. Run the workers inside an outer agent span so the whole run is one trace, and pass the same conversation id to every call:
+For several agents, give each its own `name`. It becomes `gen_ai.agent.name` on its `invoke_agent` span, and Maple draws one lane per agent name. The simplest orchestrator is an agent whose tools are the other agents: each tool function calls `run_agent` with the same conversation id, so the whole run is one trace in one session:
 
 ```py
-import asyncio
+from agent import Agent, run_agent
 
-from agent import Agent, agent_span, run_agent
+# weather_worker, budget_worker, transport_worker and summary are Agent(...) instances
+WORKERS = (weather_worker, budget_worker, transport_worker, summary)
 
-# weather_worker, transport_worker and summary are Agent(...) instances with their own tools and models
+
+def delegate(worker: Agent, conversation_id: str):
+    async def call(task: str) -> str:
+        return await run_agent(worker, conversation_id, [{"role": "user", "content": task}])
+
+    return call
 
 
-async def briefing(conversation_id: str, city: str) -> str:
-    with agent_span("orchestrator"):
-        weather, transport = await asyncio.gather(
-            run_agent(weather_worker, conversation_id, [{"role": "user", "content": f"Weather in {city}?"}]),
-            run_agent(transport_worker, conversation_id, [{"role": "user", "content": f"Transport in {city}?"}]),
-        )
-        notes = f"Weather: {weather}\nTransport: {transport}"
-        return await run_agent(summary, conversation_id, [{"role": "user", "content": notes}])
+def task_tool(name: str) -> dict:
+    return {
+        "type": "function",
+        "function": {
+            "name": name,
+            "description": f"Delegate a task to the {name} agent.",
+            "parameters": {"type": "object", "properties": {"task": {"type": "string"}}, "required": ["task"]},
+        },
+    }
+
+
+async def briefing(conversation_id: str, request: str) -> str:
+    orchestrator = Agent(
+        "orchestrator",
+        "openrouter/openai/gpt-4o-mini",
+        "Call weather_worker, budget_worker and transport_worker in parallel, "
+        "then call summary once with their results, then reply with the summary.",
+        {w.name: delegate(w, conversation_id) for w in WORKERS},
+        [task_tool(w.name) for w in WORKERS],
+    )
+    return await run_agent(orchestrator, conversation_id, [{"role": "user", "content": request}])
 ```
 
-`asyncio.gather` keeps the OpenTelemetry context, so the parallel workers are siblings under `invoke_agent orchestrator` and overlap in time. If a worker delegates through a tool call instead, call `run_agent` inside that tool's function. An `execute_tool` span whose only child is an `invoke_agent` span shows as a delegation, with the tool's arguments and result as the lane's input and output.
+Each delegation is an `execute_tool weather_worker` span whose only child is `invoke_agent weather_worker`, which Maple shows as a sub-agent lane with the tool's arguments and result as the lane's input and output. When the model requests several workers in one reply, `asyncio.gather` in `run_agent` runs them in parallel, and they overlap in time as siblings under `invoke_agent orchestrator`.
+
+If your code calls the workers directly instead of through the model, wrap those calls in `with agent_span("orchestrator"):` so they still share one trace. `asyncio.gather` keeps the OpenTelemetry context, so workers started with it nest correctly. Thread pools don't: wrap work sent to `run_in_executor` or a `ThreadPoolExecutor` with `contextvars.copy_context().run`.
 
 ## Tokens and cost
 
@@ -253,30 +282,55 @@ async def stream_agent(agent: Agent, conversation_id: str, messages: list):
         messages.append({"role": "assistant", "content": text})
 ```
 
-Cost shows as unpriced by default. LiteLLM prices every call, but the v2 logger writes the price to `litellm.cost.total` (and v1 buries it in the `hidden_params` JSON), and Maple reads cost only from `gen_ai.usage.cost` and never prices tokens itself. To get cost into Maple, add up LiteLLM's price per agent run and put it on the `invoke_agent` span:
+Cost shows as unpriced by default. LiteLLM prices every call, but the v2 logger writes the price to `litellm.cost.total` (and v1 buries it in the `hidden_params` JSON), and Maple reads cost only from `gen_ai.usage.cost` and never prices tokens itself.
+
+To get cost into Maple, add up LiteLLM's price for every call of a turn, sub-agents included, and put the total on the outermost `invoke_agent` span. Only the outermost one: Maple subtracts a sub-agent's reported cost from the agent above it, on the assumption that the parent's figure already includes it, so a per-agent total on every level undercounts the orchestrator. Replace `agent_span` in `agent.py`:
 
 ```py
-async def run_agent(agent: Agent, conversation_id: str, messages: list) -> str:
-    with agent_span(agent.name) as span:
-        cost = 0.0
-        while True:
-            response = await litellm.acompletion(
-                model=agent.model,
-                messages=[{"role": "system", "content": agent.instructions}, *messages],
-                tools=agent.schemas or None,
-                litellm_session_id=conversation_id,
-            )
-            cost += response._hidden_params.get("response_cost") or 0.0
-            message = response.choices[0].message
-            messages.append(message.model_dump(exclude_none=True))
-            if not message.tool_calls:
-                span.set_attribute("gen_ai.usage.cost", cost)
-                return message.content or ""
-            for call in message.tool_calls:
-                messages.append({"role": "tool", "tool_call_id": call.id, "content": run_tool(agent, call)})
+from contextvars import ContextVar
+
+# LiteLLM's price for every model call of the current turn, sub-agents included.
+turn_costs: ContextVar[list | None] = ContextVar("turn_costs", default=None)
+
+
+@contextmanager
+def agent_span(name: str):
+    with tracer.start_as_current_span(f"invoke_agent {name}") as span:
+        span.set_attribute("gen_ai.operation.name", "invoke_agent")
+        span.set_attribute("gen_ai.agent.name", name)
+        if turn_costs.get() is not None:  # a sub-agent: the outermost agent reports the cost
+            yield span
+            return
+        costs: list[float] = []
+        token = turn_costs.set(costs)
+        try:
+            yield span
+        finally:
+            turn_costs.reset(token)
+            span.set_attribute("gen_ai.usage.cost", sum(costs))
 ```
 
-The session total is then correct, but the cost sits on the agent, not on each model call, so the per-model breakdown stays unpriced. For a stream, the price is on the last chunk's `usage.cost`.
+Then record each call's price. In `run_agent`, right after `acompletion` returns:
+
+```py
+            turn_costs.get().append(response._hidden_params.get("response_cost") or 0.0)
+```
+
+A stream carries its price on the last chunk's `usage.cost`. In `stream_agent`, keep it while you consume the stream and record it once at the end:
+
+```py
+        text, cost = "", 0.0
+        async for chunk in stream:
+            if getattr(chunk, "usage", None) is not None:  # the last chunk carries usage and cost
+                cost = getattr(chunk.usage, "cost", None) or cost
+            delta = chunk.choices[0].delta.content if chunk.choices else None
+            if delta:
+                text += delta
+                yield delta
+        turn_costs.get().append(cost)
+```
+
+The session and turn totals are then exact. The cost sits on the agent rather than on each model call, so the per-model breakdown stays unpriced.
 
 ## Trace at the LiteLLM Proxy
 
@@ -305,7 +359,13 @@ OTEL_ENVIRONMENT_NAME=production
 OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=span_only
 ```
 
-The official `ghcr.io/berriai/litellm` image ships OpenTelemetry 1.28 and the FastAPI instrumentation, so the 1.44 problem above doesn't apply to it. A pip-installed proxy needs `opentelemetry-sdk`, `opentelemetry-exporter-otlp-proto-http` and `opentelemetry-instrumentation-fastapi` (1.43.0 and 0.64b0 with LiteLLM 1.103).
+The official `ghcr.io/berriai/litellm` image ships OpenTelemetry 1.28 and the FastAPI instrumentation, so the 1.44 problem above doesn't apply to it. A pip-installed proxy needs the same pin plus the FastAPI instrumentation, which is what continues your app's trace:
+
+```bash
+pip install "litellm[proxy]==1.103.0" "opentelemetry-sdk==1.43.0" \
+  "opentelemetry-exporter-otlp-proto-http==1.43.0" "opentelemetry-instrumentation-fastapi==0.64b0"
+litellm --config config.yaml
+```
 
 In your app, keep `agent_span` and `run_tool` from above, drop the LiteLLM logger from `tracing.py`, and send two headers with every request: `traceparent`, so the proxy's spans join the app's trace under the agent span, and `x-litellm-session-id`, which the proxy turns into `gen_ai.conversation.id`:
 
@@ -330,7 +390,9 @@ async def call_model(conversation_id: str, messages: list, tools: list | None):
 
 Don't add an OpenAI client instrumentor (OpenInference, OpenLLMetry, `opentelemetry-instrumentation-openai-v2`) to the app on top of this. The app's span and the proxy's span describe the same call, and Maple can't always tell them apart, so LLM call counts and tokens double. If you can't configure the proxy, do the opposite: leave its OpenTelemetry off and instrument the client in the app.
 
-The proxy also emits its own housekeeping spans (database, Redis, guardrails) in the same trace. They carry no model or tokens, and appear in the trace view next to the `chat` span.
+Each request then shows up in your app's trace as `invoke_agent` → `POST /chat/completions` (the proxy's server span) → `chat gpt-4o-mini`, next to an `auth /chat/completions` span for the proxy's key check. Depending on its setup, the proxy adds more housekeeping spans (database, Redis, guardrails).
+
+Maple currently counts each `auth /chat/completions` span as an extra LLM call, because it comes from LiteLLM and its name contains "chat". On the proxy path the LLM call count in Agent Sessions is double the real number. Tokens, cost, the transcript and the session grouping are not affected.
 
 ## Short-lived processes
 
@@ -368,16 +430,16 @@ Call `flush_tracing()` at the end of every Lambda or Cloud Run job invocation, a
 Run one conversation with at least two messages and a tool call, then open **Agent Sessions** in Maple. Spans take a few seconds to arrive. You should see:
 
 - one session per conversation, with the id you passed as `litellm_session_id`, and framework **LiteLLM**;
-- one turn per `invoke_agent` span, labeled with the user's message, and a transcript with the prompts, replies and tool calls;
+- one turn per top-level `invoke_agent` span, labeled with the user's message, and a transcript with the prompts, replies and tool calls;
 - `invoke_agent <agent name>` spans from your code, `chat <model>` spans from LiteLLM inside them, and `execute_tool <tool>` spans for tool calls;
 - a lane per agent name for multi-agent runs, all in the caller's session;
 - input and output tokens on every `chat` span, including streamed ones;
 - failed tool calls marked as failed, with the error as the result;
-- cost shown as unpriced, or the per-run total if you added `gen_ai.usage.cost`.
+- cost shown as unpriced, or the turn totals if you added `gen_ai.usage.cost`.
 
 ## Troubleshooting
 
-- **No LiteLLM spans at all, and the log shows `No module named 'opentelemetry._events'`.** LiteLLM 1.103 with OpenTelemetry 1.44 or newer. Pin `opentelemetry-sdk` and the exporter to 1.43.0, or upgrade to LiteLLM 1.104.
+- **`ModuleNotFoundError: No module named 'opentelemetry._events'` at startup, or no LiteLLM spans and a logged `Error initializing custom logger`.** LiteLLM 1.103 with OpenTelemetry 1.44 or newer. Pin `opentelemetry-sdk` and the exporter to 1.43.0, or upgrade to LiteLLM 1.104 once it's released.
 - **Your spans arrive but no `chat` spans.** The code calls the sync `litellm.completion()`, which the v2 logger doesn't trace. Switch to `acompletion()`.
 - **Spans named `litellm_request` and `raw_gen_ai_request`, and each call is its own session.** That is the v1 logger: `litellm.callbacks = ["otel"]` without the v2 instance. Use the `OpenTelemetryV2` setup above.
 - **Model, tokens and prompts missing, and the SDK logs `Setting attribute on ended span`.** Also v1: with a span already open it writes onto that span instead of creating its own. If you must stay on v1 for sync code, set `USE_OTEL_LITELLM_REQUEST_SPAN=true` and `OTEL_SEMCONV_STABILITY_OPT_IN=gen_ai_latest_experimental`, and put `gen_ai.conversation.id` on your `invoke_agent` span, since v1 can't carry it. The framework then shows as **Unidentified**.
@@ -387,6 +449,9 @@ Run one conversation with at least two messages and a tool call, then open **Age
 - **The last call of a script or Lambda is missing.** The process ended before LiteLLM's logging queue ran. Await `flush_tracing()` before the loop ends.
 - **Every model call appears twice.** Two loggers (the v2 instance plus `"otel"` in `litellm.callbacks`), or the proxy and an in-app OpenAI instrumentor both tracing the same call. Keep one.
 - **Proxy spans land in their own traces, apart from the app's agent span.** The request carried no `traceparent`. Inject it with `propagate.inject(headers)` inside the agent span, and don't set `OTEL_IGNORE_CONTEXT_PROPAGATION` on the proxy.
+- **The LLM call count is twice what the app made, on the proxy path only.** Maple counts the proxy's `auth /chat/completions` spans as calls. Token and cost totals are correct.
+- **A model call shows an empty reply in the transcript.** That call only requested tools. The tool calls appear as their own rows from your `execute_tool` spans.
+- **Session cost is lower than LiteLLM's spend.** Sub-agents report their own `gen_ai.usage.cost` and Maple subtracts it from the parent agent's. Report cost only on the outermost agent span, as in the cost section.
 - **Nothing arrives from the proxy.** It is still on the default `console` exporter because no endpoint reached it. Check that `OTEL_EXPORTER_OTLP_ENDPOINT` is set in the proxy's environment, not only in your app's.
 
 ## Related

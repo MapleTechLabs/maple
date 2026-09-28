@@ -9,7 +9,9 @@ icon: "python"
 
 DSPy has no OpenTelemetry code of its own. Spans come from OpenInference's `openinference-instrumentation-dspy`, which patches `Module.__call__`, `Predict.forward`, the adapters, `LM.__call__` and `Tool.__call__`. That gives you the shape of a program (which module called which predictor, which tool ran, what the model was sent), but no token counts, no tool names and no conversation id.
 
-The usual fix for the missing tokens, adding `openinference-instrumentation-litellm`, stopped working in DSPy 3.4. Most models now run on DSPy's own `lm15` engine instead of LiteLLM, so the LiteLLM instrumentor records nothing: in our test, a call to `openrouter/openai/gpt-4o-mini` produced zero LiteLLM spans. This guide fills the gaps with a DSPy callback instead, which works on both engines. It covers DSPy 3.4 with `openinference-instrumentation-dspy` 0.1.45 on Python 3.10 or later, for `dspy.ReAct` agents and your own `dspy.Module` programs.
+The usual fix for the missing tokens, adding `openinference-instrumentation-litellm`, stopped working in DSPy 3.4. Most models now run on DSPy's own `lm15` engine instead of LiteLLM, so the LiteLLM instrumentor records nothing: in our test, a call to `openrouter/openai/gpt-4o-mini` produced zero LiteLLM spans. This guide fills the gaps with a DSPy callback instead, which works on both engines.
+
+This guide covers DSPy 3.4 with `openinference-instrumentation-dspy` 0.1.45 on Python 3.10 or later, for `dspy.ReAct` agents and your own `dspy.Module` programs.
 
 ## Quick setup with a coding agent
 

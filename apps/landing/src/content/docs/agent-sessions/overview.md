@@ -94,14 +94,14 @@ Failures are grouped by what went wrong: Maple fingerprints the failed result (o
 You don't need this to use Agent Sessions, but it explains what the framework guides ask you to configure.
 
 1. **Maple recognizes AI spans at ingest.** A span counts if it carries `gen_ai.operation.name` (the OpenTelemetry GenAI conventions) or matches the fingerprint of a framework Maple knows: Vercel AI SDK, OpenAI Agents SDK, LangChain and LangGraph, Mastra, Pydantic AI, CrewAI, Google ADK, Strands, Claude Code, Spring AI and others. Traces with no AI span don't appear.
-2. **It reads the session id that framework uses.** For most frameworks that's `gen_ai.conversation.id`; a few use `session.id`, LangGraph uses its thread id. One span per trace is enough. A trace without one becomes a session of its own, which is why "every message is its own session" is the most common setup problem.
+2. **It reads the session id that framework uses.** For most frameworks that's `gen_ai.conversation.id`; several, including CrewAI, DSPy and Strands, use `session.id`. One span per trace is enough. A trace without one becomes a session of its own, which is why "every message is its own session" is the most common setup problem.
 3. **It splits the session into turns**, normally one per trace, and decodes each model call's model, tokens and content, and each tool call's name, arguments and result.
 4. **It counts tokens once.** Providers disagree on whether cached and reasoning tokens are included in the input and output counts. Maple resolves that per provider, and when a framework records usage on both an agent span and the model calls inside it, Maple keeps the model calls' numbers.
 
 Two limits are worth knowing up front:
 
 - **Maple reads span attributes.** Prompts and replies that a framework writes only to span events or OpenTelemetry logs are still stored (on the span, or under [Logs](/docs/explore/logs)), but they don't show up in the transcript. The framework guides say where each framework puts its content and how to move it onto spans when that's possible.
-- **Maple shows cost your instrumentation reports; it doesn't price tokens itself.** Cost appears when spans carry `gen_ai.usage.cost` (or OpenInference's `llm.cost.total`). OpenRouter and some instrumentations send it. Otherwise the session shows tokens and reads as unpriced.
+- **Maple shows cost your instrumentation reports; it doesn't price tokens itself.** Cost appears when spans carry `gen_ai.usage.cost`, `gen_ai.usage.total_cost` or OpenInference's `llm.cost.total`. OpenRouter and some instrumentations send it. Otherwise the session shows tokens and reads as unpriced.
 
 A session view loads up to 2,000 spans. Longer sessions show the first 2,000 and say they were cut.
 

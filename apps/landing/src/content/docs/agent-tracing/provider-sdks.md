@@ -11,7 +11,7 @@ If your agent is your own loop around `client.chat.completions.create`, `client.
 
 Without them, every model call is its own trace, and Maple files every trace without a conversation id as its own session. A four-message chat with two tool calls shows up as six one-call sessions, with no tool calls and nothing tying them together. The second surprise is that the instrumentations record no prompts or replies until you turn content capture on.
 
-This guide covers Python 3.10+ with `openai` 3.x, `anthropic` 1.x and `google-genai` 2.x, and TypeScript on Node.js with `openai` 7.x (the same pattern works for `@anthropic-ai/sdk` and `@google/genai`). If you use an agent framework on top of these SDKs, such as the OpenAI Agents SDK, LangChain or Pydantic AI, use [that framework's guide](/docs/agent-tracing) instead.
+This guide covers Python 3.10+ with `openai` 3.x, `anthropic` 1.x and `google-genai` 2.x, and TypeScript on Node.js with `openai` 7.x (the same pattern works for `@anthropic-ai/sdk` and `@google/genai`). We ran the OpenAI and Anthropic paths end to end (Python `openai` 3.20.0 and `anthropic` 1.8.0 with the 1.2b0 instrumentations, TypeScript `openai` 7.23.0). The Gemini path follows the instrumentation's documentation and hasn't been run against a live Gemini model yet. If you use an agent framework on top of these SDKs, such as the OpenAI Agents SDK, LangChain or Pydantic AI, use [that framework's guide](/docs/agent-tracing) instead.
 
 ## Quick setup with a coding agent
 
@@ -281,6 +281,9 @@ export function tracedChat(client: OpenAI, params: ChatParams, onText?: (delta: 
 				"gen_ai.usage.cache_read.input_tokens": completion.usage.prompt_tokens_details?.cached_tokens ?? 0,
 				"gen_ai.usage.reasoning.output_tokens": completion.usage.completion_tokens_details?.reasoning_tokens ?? 0,
 			})
+			// OpenRouter adds the call's price in USD to usage. Other providers don't send one.
+			const cost = (completion.usage as { cost?: number }).cost
+			if (cost !== undefined) span.setAttribute("gen_ai.usage.cost", cost)
 		}
 		if (captureContent) {
 			const output = completion.choices.map((c) => ({ ...toGenAiMessage(c.message), finish_reason: c.finish_reason }))
@@ -429,9 +432,11 @@ stream = client.chat.completions.create(
 reply = "".join(chunk.choices[0].delta.content or "" for chunk in stream if chunk.choices)
 ```
 
-Without `stream_options`, the streamed call shows 0 tokens in Maple. Anthropic and Gemini always send usage on a stream. The Python instrumentations also record time to first chunk on streamed calls, which Maple shows per model call.
+Without `stream_options`, the streamed call shows 0 tokens in Maple. Anthropic and Gemini always send usage on a stream. The Python OpenAI instrumentation and the TypeScript helper also record time to first chunk on streamed calls, which Maple shows per model call. The Anthropic instrumentation (1.2b0) doesn't record it for `messages.stream()`.
 
-None of these instrumentations record cost, and Maple doesn't price tokens itself, so sessions show as **unpriced**. In the TypeScript helper you own the span: if your gateway returns the cost (OpenRouter puts it in `usage.cost`), set it as `gen_ai.usage.cost` in USD.
+If you call Claude or Gemini models through OpenRouter's OpenAI-compatible endpoint with the `openai` SDK, the spans say `gen_ai.provider.name=openai`. That is correct: the usage arrives in OpenAI's shape, and Maple does the arithmetic for that shape.
+
+None of the Python instrumentations record cost, and Maple doesn't price tokens itself, so those sessions show as **unpriced**. In TypeScript you own the span: the helper copies OpenRouter's `usage.cost` (USD, sent on streamed calls too) to `gen_ai.usage.cost`, which Maple reads as the call's cost. Called directly, OpenAI sends no cost and the session stays unpriced.
 
 ## Short-lived processes
 
@@ -449,7 +454,7 @@ Run one conversation of two or three messages with at least one tool call, flush
 - **Model calls** named `chat <model>` for OpenAI and Anthropic (`chat gpt-4o-mini`) or `generate_content <model>` for Gemini, with input and output tokens.
 - **Tool calls** named `execute_tool get_weather` with their arguments and results, and a failing tool counted as a tool error.
 - **A transcript** with the user messages, the replies and the tool calls between them.
-- **Cost** shown as unpriced.
+- **Cost** shown as unpriced, except for TypeScript calls through OpenRouter, where the helper records OpenRouter's price.
 
 ## Troubleshooting
 
@@ -458,12 +463,13 @@ Run one conversation of two or three messages with at least one tool call, flush
 - **Turns show models and tokens but the transcript is empty.** Content capture is off, or set to `EVENT_ONLY` or `true`. Set `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=SPAN_ONLY` in the process that makes the calls.
 - **No model spans in Python, only yours.** The instrumentor wasn't installed or `instrument()` ran after the first request. Check that `tracing` is imported first, and that you installed `opentelemetry-instrumentation-genai-openai`, not `opentelemetry-instrumentation-openai`.
 - **Every model call appears twice.** Two instrumentations wrap the same SDK: the GenAI package plus OpenLLMetry, OpenInference, the deprecated `openai-v2` package, `logfire.instrument_openai()`, Sentry's OpenAI integration or a framework's own tracing. `opentelemetry-instrument` loads every instrumentation package that's installed, so uninstall the extras rather than just not calling them.
-- **Twin traces for every call when you use OpenRouter.** OpenRouter Broadcast is also exporting the same calls. Keep one source; see the [OpenRouter guide](/docs/agent-tracing/openrouter).
+- **Twin traces for every call when you use OpenRouter.** OpenRouter Broadcast is also exporting the same calls. Keep one source, or nest Broadcast under your spans as the [OpenRouter guide](/docs/agent-tracing/openrouter#join-broadcast-to-your-own-traces) shows.
 - **The streamed turn has 0 tokens.** Add `stream_options={"include_usage": True}` (OpenAI Chat Completions).
 - **A failing tool shows as successful.** The tool's exception was caught outside `run_tool`. Let `run_tool` catch it, or set the span status and `error.type` where you catch it.
 - **Sub-agent calls land in the orchestrator's lane.** The sub-agent's `agent_span` has the same name as the orchestrator's, or it was never wrapped. Give each agent its own name.
 - **Two conversation ids in one trace.** With the OpenAI Responses API and a `conversation` parameter, the instrumentation also sets `gen_ai.conversation.id` to that `conv_...` id. Pass the same id to `agent_span`, or Maple picks one of the two and can split the turn.
-- **Cached Anthropic calls show more input tokens than you were billed for (Python).** The Anthropic GenAI instrumentation reports input tokens including cached ones, while Maple reads Anthropic's figure as excluding them, so cache reads count twice in the totals. Calls without prompt caching are unaffected.
+- **Cached Anthropic calls show more input tokens than you were billed for (Python).** The Anthropic GenAI instrumentation reports `gen_ai.usage.input_tokens` as the raw input plus cache reads plus cache writes (a call that sent 330 new tokens and wrote 7,581 to the cache reports 7,911), while Maple reads Anthropic's figure as excluding the cache and adds both buckets again. Calls without prompt caching are unaffected.
+- **Using the Anthropic SDK through OpenRouter.** Point it at `https://openrouter.ai/api` (no `/v1`): `Anthropic(base_url="https://openrouter.ai/api", api_key=OPENROUTER_API_KEY)`. OpenRouter accepts the key as `api_key` or `auth_token`. Model ids are OpenRouter's, such as `anthropic/claude-haiku-4.5`, and the spans say `gen_ai.provider.name=anthropic`.
 - **Nothing arrives, and the exporter logs 401.** The key or region is wrong. EU keys only work with `ingest.eu.maple.dev`.
 
 ## Related

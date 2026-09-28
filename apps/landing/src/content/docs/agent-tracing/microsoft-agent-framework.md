@@ -1,6 +1,6 @@
 ---
 title: "Trace Microsoft Agent Framework and Semantic Kernel agents with OpenTelemetry"
-description: "Send Microsoft Agent Framework and Semantic Kernel traces to Maple so each conversation becomes one agent session with its transcript, tool calls, tokens and failures, in Python and .NET."
+description: "Send Microsoft Agent Framework and Semantic Kernel traces to Maple so each conversation becomes one Agent Session with its transcript, tool calls, tokens and failures, in Python and .NET."
 group: "AI Agents"
 order: 30
 navLabel: "Microsoft Agent Framework"
@@ -9,7 +9,9 @@ icon: "dotnet"
 
 Microsoft Agent Framework (MAF) ships its own OpenTelemetry instrumentation in Python and .NET. Every `agent.run()` produces an `invoke_agent` span, a `chat` span per model call and an `execute_tool` span per tool call, using the current GenAI semantic conventions, with tokens (including cache and reasoning buckets) and, once you switch content capture on, the full prompts and replies as span attributes. Workflows add `workflow.run`, `executor.process` and `edge_group.process` spans.
 
-What it doesn't emit is a conversation id. MAF only sets `gen_ai.conversation.id` when the model provider stores the conversation server side, so with Chat Completions, OpenRouter or any local chat history, every turn arrives as its own one-turn session. This guide adds the id with a 15-line span processor. It covers `agent-framework` 1.19 (Python), `Microsoft.Agents.AI` 1.22 (.NET), and Semantic Kernel 1.44 (Python), the framework MAF replaces, which has its own section below.
+What it doesn't emit is a conversation id. MAF only sets `gen_ai.conversation.id` when the model provider stores the conversation server side, so with Chat Completions, OpenRouter or any local chat history, every turn arrives as its own one-turn session. This guide adds the id with a 15-line span processor.
+
+This guide covers `agent-framework` 1.19 (Python), `Microsoft.Agents.AI` 1.22 (.NET), and Semantic Kernel 1.44 (Python), the framework MAF replaces, which has its own section below.
 
 ## Quick setup with a coding agent
 
@@ -364,7 +366,7 @@ In .NET, SK reads the same variables, or the `AppContext` switches `Microsoft.Se
 Run one conversation of two or three turns, one of which calls a tool. Sessions appear in **Agent Sessions** within about a minute. You should see:
 
 - **One session per conversation**, labeled **Microsoft Agent Framework** (or **Semantic Kernel**) for Python, whose id is your conversation id, not `trace:…`. A second conversation is a second session.
-- **One turn per `agent.run()`**, each rooted at `invoke_agent support_agent` with `chat gpt-4o-mini` and `execute_tool get_weather` spans under it.
+- **One turn per `agent.run()`**, each rooted at `invoke_agent support_agent` with `chat gpt-4o-mini` and `execute_tool get_weather` spans under it. An approval resume is its own turn in the same session. In .NET the root is `invoke_agent support_agent(<agent id>)`.
 - **A transcript** with the system instructions, your messages and the replies, labeled by the first line of each user message.
 - **Tool calls** with arguments and results, and failed tools counted under **Tool errors**.
 - **Tokens** on every model call, including streamed ones. Cost shows as unpriced.
@@ -381,7 +383,9 @@ Run one conversation of two or three turns, one of which calls a tool. Sessions 
 - **The agent forgets earlier turns after adding tracing.** You passed `conversation_id` as a chat option, which disables the in-memory history. Remove it and use the processor.
 - **Every message part is one character.** `Message("user", text)` iterates a bare string; pass a list: `Message("user", [text])`.
 - **OpenRouter rejects the second turn with a `previous_response_id` error.** `OpenAIChatClient` is the Responses API client. Use `OpenAIChatCompletionClient` for OpenRouter and other Chat Completions endpoints.
+- **A WARN log "Ignored an approval response ... did not match the active approval occurrence identity", but the tool ran.** Seen on every approval resume with `to_function_approval_response()` in 1.19. The `execute_tool` span shows the approved call ran once; the log is noise.
 - **.NET: no spans at all.** `AddSource` doesn't match the default `Experimental.` prefix. Use `AddSource("*Microsoft.Agents.AI*")`.
+- **.NET: tools named like `_Main_g_GetWeather_0_3`.** The tool is a local function in a top-level `Program.cs`. Pass `name:` to `AIFunctionFactory.Create`.
 - **Semantic Kernel: `AutoFunctionInvocationLoop` spans but no `chat` or `invoke_agent`.** The `SEMANTICKERNEL_EXPERIMENTAL_GENAI_*` variables were set after `semantic_kernel` was imported.
 - **Semantic Kernel: an orchestration shows as many small sessions or traces.** Wrap the run in your own span and `conversation()` and start the runtime inside it.
 

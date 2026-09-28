@@ -136,12 +136,12 @@ def handle_message(conversation_id: str, text: str, history: str) -> str:
 ```
 
 - Wrap EVERY kickoff call site in `with using_session(<conversation id>):`. Use the app's stored conversation/chat/thread id. Never a fresh UUID per request, never a constant.
-- Conversational flows: `with using_session(sid): flow.handle_turn(text, session_id=sid)`. Use the same id for both.
+- Conversational flows: `with using_session(sid): flow.handle_turn(text, session_id=sid)`. Use the same id for both. Give the flow class a `name = "<snake_name>"` attribute: unnamed flows produce `Flow_<uuid>.kickoff` roots (then `Flow_<session id>` from the second turn).
 - Batch/one-shot crews (no chat): one id per run/job is correct; still wrap the kickoff so the run is a named session instead of `trace:<id>`.
 - Give every `Crew` a `name=` (otherwise the root span is `Crew_<uuid>.kickoff`) and every `Task` a `name=`. Put the user's message FIRST in the task description: Maple labels turns with the first line of `Current Task: …`.
 - Do not change the app's own history handling beyond that; CrewAI has no chat memory, so the app already passes history somehow.
 - `akickoff()` is NOT instrumented (no crew/agent spans, each model/tool call becomes its own trace). Replace `await crew.akickoff(...)` with `await crew.kickoff_async(...)` (same result, runs instrumented `kickoff` in a thread). Same for `Agent.akickoff` -> `Agent.kickoff` in a thread. Tell the user why.
-- `Crew(stream=True)` runs the crew twice (a stub `kickoff` span + the real one in a second trace). Wrap each streamed turn:
+- `Crew(stream=True)` calls `kickoff` twice (an empty stub `kickoff` span + the real one in a second trace). Wrap each streamed turn:
 
 ```py
 from opentelemetry import trace
@@ -162,6 +162,7 @@ def stream_message(conversation_id: str, text: str, history: str, send) -> None:
 ```
 
   Iterate INSIDE the `with`. `LLM(stream=True)` alone (no `Crew(stream=True)`) needs no wrapper.
+- Tool approvals via `@before_tool_call` + `context.request_human_input(...)` need nothing: the hook runs inside the kickoff before the tool span starts (approved call = one tool span; blocked call = no tool span, model gets `Tool execution blocked by hook`).
 - `flow.resume(...)` after `@human_feedback` is not instrumented: wrap it the same way (`using_session` with the same id + the wrapper span).
 - Your own spans (plain OTel tracer) don't get `session.id` automatically; give them `attributes=dict(get_attributes_from_context())` (from `openinference.instrumentation`) if you add any beyond the wrapper above.
 
@@ -169,6 +170,7 @@ def stream_message(conversation_id: str, text: str, history: str, send) -> None:
 
 - On by default: model spans carry the messages CrewAI sent (system = role/goal/backstory, user = `Current Task: …` + context) and the reply; agent spans the task and output; tool spans arguments and results. Leave it on unless the user or repo says prompts are sensitive.
 - To turn off: `TraceConfig(enable_genai_semconv=True, hide_inputs=True, hide_outputs=True)` passed to every instrumentor (or `OPENINFERENCE_HIDE_INPUTS=true` / `OPENINFERENCE_HIDE_OUTPUTS=true`). Narrower: `hide_input_text`, `hide_output_text`.
+- The hide switches do NOT cover `crew_tasks` (task descriptions, i.e. the user's message), `crew_inputs`, `crew_agents` on the `<crew>.kickoff` span, or `flow_inputs` on a flow's kickoff span. If prompts must never leave the infrastructure, tell the user to delete those attributes in an OpenTelemetry Collector (`attributes` processor, `action: delete`).
 - Agent roles, task names and tool names are span names and always recorded. Don't put PII in them.
 - Do NOT set `share_crew=True` to get content; it only adds data to CrewAI's analytics.
 
@@ -192,7 +194,7 @@ def stream_message(conversation_id: str, text: str, history: str, send) -> None:
 Run one real conversation (2-3 messages, same conversation id, at least one tool call), and one message in a second conversation. If the user gave no key (`MAPLE_TEST`), you can't see results in Maple; say so and list what they should check. Otherwise check in Maple **Agent Sessions** (`https://app.maple.dev/agent-sessions`, EU `app.eu.maple.dev`), filtered to the service name:
 
 - Exactly one session per conversation id (two here), not one per message and no `trace:<id>` sessions.
-- One turn per kickoff; each turn's root span is `<crew name>.kickoff` (or `<FlowName>.kickoff`, or your `invoke_agent` wrapper when streaming). No empty extra turns.
+- One turn per kickoff; each turn's root span is `<crew name>.kickoff` (or `<flow name>.kickoff`, or your `invoke_agent` wrapper when streaming). No empty extra turns.
 - Transcript is non-empty (system message from role/goal/backstory, `Current Task: …`, replies).
 - Model calls (`ChatCompletion` for the OpenAI instrumentor) have a model and non-zero input/output tokens, including streamed calls. Each call appears once.
 - Tool calls `<tool>.run` with results; a tool that raised is counted as failed and nothing else is.

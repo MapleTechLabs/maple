@@ -1,6 +1,6 @@
 # TypeScript reference (Node.js 20+)
 
-Tested pattern: OpenTelemetry JS SDK 2.11 (`@opentelemetry/sdk-trace-node`, `sdk-trace-base`, `resources` 2.11; `exporter-trace-otlp-proto` 0.222; `api` 1.9), `openai` 7.23 against an OpenAI-compatible Chat Completions API (OpenRouter here).
+Tested pattern: OpenTelemetry JS SDK 2.11 (`@opentelemetry/sdk-trace-node`, `sdk-trace-base`, `resources` 2.11; `exporter-trace-otlp-proto` 0.222; `api` 1.9), `openai` 7.23 against an OpenAI-compatible Chat Completions API (OpenRouter here), Node.js 26, run with `tsx`.
 
 This is a complete loop. If the project already has a loop, keep its structure and copy only the span code: `invoke_agent` around one agent run, `chat` around each model call, `execute_tool` around each tool call, `toSemconv` for messages.
 
@@ -273,6 +273,8 @@ try {
 	await provider.shutdown()
 }
 ```
+
+ESM (`"type": "module"`) for top-level `await`. Run with `npx tsx main.ts` or the project's bundler/tsc; plain `node main.ts` fails on the extensionless `./tracing` import.
 
 ## Sub-agent (delegation through a tool)
 

@@ -11,7 +11,7 @@ If your agent is a loop you wrote yourself, runs on a framework without OpenTele
 
 What goes wrong is the detail. The GenAI conventions are still in Development status and have renamed attributes several times, and a span that looks right can still arrive with an empty transcript: messages sent as plain text, content put in span events, a JSON string cut off by an attribute length limit, or a fresh conversation id on every request.
 
-This guide lists the exact keys and value formats Maple reads, with full examples in TypeScript and Python and a shorter one in Go. It follows the conventions in [`semantic-conventions-genai`](https://github.com/open-telemetry/semantic-conventions-genai) as of September 2026. The code was written against the OpenTelemetry JS SDK 2.11, Python SDK 1.45 and Go SDK 1.46, with the OpenAI SDK 7.23 for JavaScript and 3.20 for Python.
+This guide lists the exact keys and value formats Maple reads, with full examples in TypeScript and Python and a shorter one in Go. It follows the conventions in [`semantic-conventions-genai`](https://github.com/open-telemetry/semantic-conventions-genai) as of September 2026. The TypeScript and Python examples were run against OpenRouter with the OpenTelemetry JS SDK 2.11 (OTLP exporter 0.222) on Node.js 26 and the Python SDK 1.45 on Python 3.14, using the OpenAI SDK 7.23 and 3.20. The Go example targets the Go SDK 1.46 and was not compiled for this guide.
 
 If you use a framework, check the [framework guides](/docs/agent-tracing) first. Most of them emit these spans for you.
 
@@ -409,6 +409,8 @@ try {
 }
 ```
 
+Run it with `npx tsx main.ts` or your bundler. The files are ES modules (`"type": "module"` in `package.json`) for the top-level `await`, and use extensionless imports, which Node's built-in type stripping doesn't resolve.
+
 ## Instrument the agent loop in Python
 
 The same loop with the OpenAI Python SDK:
@@ -724,7 +726,7 @@ func Chat(ctx context.Context, model string, input []Message, call func(context.
 }
 ```
 
-An `execute_tool` span follows the same pattern with the attributes from the table. Rust (`opentelemetry` crate), Ruby (`opentelemetry-sdk`), Elixir (`opentelemetry_api`), Java and .NET follow the same pattern: set the attributes from the tables above as strings, ints, doubles and string arrays, and serialize every message and tool payload to a JSON string first.
+This snippet was not compiled for this guide; run `go vet ./...` after adding it. An `execute_tool` span follows the same pattern with the attributes from the table. Rust (`opentelemetry` crate), Ruby (`opentelemetry-sdk`), Elixir (`opentelemetry_api`), Java and .NET follow the same pattern: set the attributes from the tables above as strings, ints, doubles and string arrays, and serialize every message and tool payload to a JSON string first.
 
 ## Group turns into one session
 
@@ -740,7 +742,7 @@ A few things break grouping:
 
 ### When a framework's session key isn't read: `maple_ai.session.id`
 
-Some frameworks write their session id under a key Maple doesn't read for that framework, for example OpenInference's `session.id` from LangChain or LlamaIndex instrumentation, or the Vercel AI SDK's `runtimeContext`. The fix is a wrapper span of your own around each turn, carrying Maple's own session key:
+Some frameworks write their session id under a key Maple doesn't read for that framework, for example OpenInference's `session.id` from LangChain or LlamaIndex instrumentation, or the Vercel AI SDK's `runtimeContext`. The framework guides fix those three without a wrapper. For anything they don't cover, add a wrapper span of your own around each turn, carrying Maple's own session key:
 
 ```ts
 // chatId comes from your request; frameworkAgent is the framework's agent
@@ -829,9 +831,9 @@ Providers disagree on whether input includes cached tokens, so Maple interprets 
 | `gcp.gemini`, `gcp.vertex_ai` | `promptTokenCount`, including cache | `candidatesTokenCount`, excluding thoughts |
 | `openai`, `openrouter`, anything else | `prompt_tokens`, including cache | includes reasoning |
 
-The Anthropic row differs from the spec, which asks for the inclusive total on every provider. If you send Anthropic's input as `input_tokens + cache_read + cache_write`, Maple counts cached tokens twice. A call to Claude through OpenRouter's OpenAI-compatible API uses `openrouter`, and OpenAI-shaped numbers.
+The Anthropic row differs from the spec, which asks for the inclusive total on every provider. If you send Anthropic's input as `input_tokens + cache_read + cache_write`, Maple counts cached tokens twice. A call to Claude through OpenRouter's OpenAI-compatible API uses `openrouter`, and OpenAI-shaped numbers: in our test, a cached Claude Haiku 4.5 call reported 11,076 `prompt_tokens` with 11,058 of them in `cached_tokens`, so nothing is counted twice. OpenRouter also reports `prompt_tokens_details.cache_write_tokens`; copy it to `gen_ai.usage.cache_write.input_tokens` if you want cache writes shown separately.
 
-Streaming needs `stream_options: { include_usage: true }` on OpenAI's API, or the stream carries no usage. The usage arrives in the last chunk, which has no choices. OpenRouter always sends usage.
+Streaming needs `stream_options: { include_usage: true }` on OpenAI's API, or the stream carries no usage. OpenAI sends it in an extra last chunk with no choices. OpenRouter always sends usage and cost, on the chunk that carries the finish reason. Read `chunk.usage` before skipping chunks without choices, as the examples do, and both work.
 
 Maple never prices tokens. A session shows cost only when `chat` spans carry `gen_ai.usage.cost` in USD (`gen_ai.usage.total_cost` also works); otherwise it's shown as unpriced. OpenRouter returns the cost in `usage.cost`, which the examples copy. OpenAI and Anthropic don't return a cost, so compute it from your own price table or leave it out.
 

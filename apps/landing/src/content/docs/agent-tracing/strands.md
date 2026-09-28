@@ -9,7 +9,9 @@ icon: "strands"
 
 Strands Agents ships its own OpenTelemetry tracer. Every `agent(...)` call becomes one trace with an `invoke_agent` span, an `execute_event_loop_cycle` span per reasoning step, a `chat` span per model call and an `execute_tool` span per tool call. Maple recognizes these spans as Strands without any extra instrumentation library.
 
-The catch is where Strands puts the conversation. By default, prompts, replies and tool results are written as span events, and Maple reads span attributes only, so the transcript comes out empty even though tokens and tool calls show up. One environment variable fixes it. This guide covers the Python SDK (`strands-agents` 1.54 or newer, tested on 1.57.1) and notes where the TypeScript SDK (`@strands-agents/sdk` 1.19) differs.
+The catch is where Strands puts the conversation. By default, prompts, replies and tool results are written as span events, and Maple reads span attributes only, so the transcript comes out empty even though tokens and tool calls show up. One environment variable fixes it.
+
+This guide covers the Python SDK (`strands-agents` 1.54 or newer, tested on 1.57.1) and notes where the TypeScript SDK (`@strands-agents/sdk` 1.19) differs.
 
 ## Quick setup with a coding agent
 

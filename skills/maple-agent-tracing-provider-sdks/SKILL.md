@@ -85,7 +85,8 @@ Rules for both:
 
 - OpenAI Chat Completions streaming: ALWAYS pass `stream_options={"include_usage": True}` (Python) or use the helper's `onText` path (TS sets it). Otherwise the streamed call has 0 tokens. The final usage chunk has empty `choices`; skip it when reading text (`if chunk.choices`).
 - Anthropic / Gemini streams include usage; nothing to add.
-- No instrumentation emits cost; Maple doesn't price tokens → sessions show "unpriced". Only if the user asks and the gateway returns cost (OpenRouter `usage.cost`): in the TS helper set `gen_ai.usage.cost` (USD) on the chat span. Don't add pricing tables.
+- No Python instrumentation emits cost; Maple doesn't price tokens → sessions show "unpriced". The TS helper copies OpenRouter's `usage.cost` (USD) to `gen_ai.usage.cost`; direct OpenAI sends none. Don't add pricing tables.
+- Claude/Gemini models via OpenRouter's OpenAI-compatible endpoint with the `openai` SDK → spans say `gen_ai.provider.name=openai` with OpenAI-shaped usage. Correct; don't override it.
 
 ## Step 7: flush
 
@@ -105,7 +106,7 @@ Run one real conversation: 3+ user messages with the same id, one tool call, one
 - [ ] Tool spans have the real tool name, call id, arguments and result.
 - [ ] The failing tool is marked failed with its message; successful tools are not.
 - [ ] Sub-agents appear as separate lanes under their own names, inside the caller's session.
-- [ ] Cost shows "unpriced" unless you set `gen_ai.usage.cost`.
+- [ ] Cost shows "unpriced", except TS calls through OpenRouter (helper records `usage.cost`).
 - [ ] No attribute contains an API key, `Bearer `, `sk-` or `maple_sk_`.
 
 Local check without Maple: temporarily add `SimpleSpanProcessor(ConsoleSpanExporter())` and confirm the `invoke_agent` span has `gen_ai.conversation.id` and the model spans have `gen_ai.input.messages` and `gen_ai.usage.*`.
@@ -113,8 +114,10 @@ Local check without Maple: temporarily add `SimpleSpanProcessor(ConsoleSpanExpor
 ## Known limitations (tell the user, don't work around)
 
 - Framework facet shows "Unidentified".
-- Python Anthropic with prompt caching: the instrumentation reports `input_tokens` including cache, Maple treats Anthropic input as excluding cache → cache-read tokens counted twice in totals.
-- No cost.
+- Python Anthropic with prompt caching: the instrumentation reports `input_tokens` = raw + cache reads + cache writes, Maple treats Anthropic input as excluding cache → both cache buckets counted twice in totals.
+- Python: no cost (unpriced).
+- Anthropic instrumentation 1.2b0 records no time to first chunk for `messages.stream()`.
+- Gemini path (Python instrumentation, TS mapping) not yet run end to end against a live model; OpenAI and Anthropic paths are verified.
 
 ## Do not
 

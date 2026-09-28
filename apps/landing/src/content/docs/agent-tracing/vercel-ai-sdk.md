@@ -18,7 +18,7 @@ It covers AI SDK 7 (`ai` 7.0.106 or newer) on Node.js 22 or newer, in a plain No
 Copy this prompt into Claude Code, Codex, Cursor or another agent that can run shell commands. It installs the [maple-agent-tracing-vercel-ai-sdk](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-agent-tracing-vercel-ai-sdk) skill, which contains every step of this guide.
 
 ```text
-Set up Maple agent tracing for Vercel AI SDK in this project.
+Set up Maple agent tracing for the Vercel AI SDK in this project.
 
 Install the skill with `npx skills add MapleTechLabs/maple/skills --skill maple-agent-tracing-vercel-ai-sdk -y`, then follow it.
 

@@ -128,6 +128,7 @@ sealed class ConversationIdProcessor : BaseProcessor<Activity>
 
 - Default source names carry an `Experimental.` prefix; `AddSource("Microsoft.Agents.AI.*")` matches nothing. Keep the leading `*`.
 - `UseOpenTelemetry()` on the agent (1.22) also instruments its chat client. Do not add a second `UseOpenTelemetry()` on the `IChatClient`.
+- Name every tool: `AIFunctionFactory.Create(GetWeather, name: "get_weather")`. Without `name:`, a local function in top-level `Program.cs` is exported as `_Main_g_GetWeather_0_3`.
 - Workflows: `.WithOpenTelemetry()` on the `WorkflowBuilder` (source `Microsoft.Agents.AI.Workflows`, matched by the wildcard).
 - In a hosted app, put the same sources, processor and exporter in `builder.Services.AddOpenTelemetry().WithTracing(...)`.
 
@@ -144,8 +145,8 @@ async def handle_message(session: AgentSession, text: str) -> str:
 
 - Id: the app's chat/thread id, or `AgentSession.session_id` (create sessions with `agent.create_session(session_id=chat_id)` when the app has an id). Must be stable across all turns of one conversation and differ between conversations.
 - Streaming: the whole `async for update in agent.run(..., stream=True)` loop goes inside the `with`.
-- Approval resumes (`request.to_function_approval_response(...)` passed back to `agent.run`) and workflow runs go inside the same `with`.
-- Build workflows (`WorkflowBuilder(...).build()`, `SequentialBuilder`, `ConcurrentBuilder`, ...) inside the `with`; a build outside it emits a stray `workflow.build` trace with no id.
+- Approval resumes (`request.to_function_approval_response(...)` passed back to `agent.run`) and workflow runs go inside the same `with`. 1.19 logs a WARN "Ignored an approval response ... did not match" on each resume even though the tool runs; ignore it if the `execute_tool` span is there once.
+- Build workflows (`WorkflowBuilder(...).build()`, `SequentialBuilder`, `ConcurrentBuilder`, ...) inside the `with`. `build()` always emits a separate one-span `workflow.build` trace: inside the `with` it joins the session; outside it becomes a stray one-span session. Executors (fan-out included) inherit the id.
 - .NET: `ConversationIdProcessor.Current.Value = chatId;` in the request handler before `RunAsync`/`RunStreamingAsync`.
 
 ## Step 4: content
@@ -224,7 +225,7 @@ Run one real conversation (2-3 turns, one tool call; a second conversation if ch
 
 - Spans arrive and the process exits cleanly (flush ran); `service.name` is yours, not `agent_framework` / `unknown_service`.
 - Every span of every turn in one conversation has the same `gen_ai.conversation.id`; a second conversation has a different one. In Maple: one session per conversation, not `trace:<id>` sessions.
-- Each turn: `invoke_agent <name>` root with `chat <model>` and `execute_tool <tool>` descendants in the same trace (streamed turn included).
+- Each turn: `invoke_agent <name>` root (.NET: `invoke_agent <name>(<agent id>)`) with `chat <model>` and `execute_tool <tool>` descendants in the same trace (streamed turn included).
 - `chat` spans: `gen_ai.request.model`, `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens` (also on the streamed turn), `gen_ai.input.messages` / `gen_ai.output.messages` as JSON arrays of `{role, parts}` (Python MAF; SK: on `invoke_agent` only).
 - `execute_tool`: real tool name, `gen_ai.tool.call.arguments` and `gen_ai.tool.call.result`; a raising tool has ERROR status + `error.type`, successful ones don't.
 - Sub-agents have distinct `gen_ai.agent.name`s.

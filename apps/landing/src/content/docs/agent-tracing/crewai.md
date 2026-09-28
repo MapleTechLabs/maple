@@ -9,7 +9,9 @@ icon: "crewai"
 
 CrewAI sends nothing to your OpenTelemetry backend on its own. Its built-in telemetry is anonymous usage analytics that goes to CrewAI on a private tracer provider, and its OpenTelemetry export is a CrewAI AMP feature. The traces come from OpenInference: `openinference-instrumentation-crewai` records crews, flows, tasks and tools, and a second instrumentor for the SDK CrewAI calls records the model calls, prompts and tokens.
 
-Most broken CrewAI traces are missing that second instrumentor. With only the CrewAI one, you get agent and tool spans with no model, no tokens and no transcript. The other gap is the conversation: CrewAI has no chat thread, so every `kickoff()` is its own trace with nothing linking it to the previous message. This guide covers CrewAI 1.15 with `openinference-instrumentation-crewai` 1.1.18 and `openinference-instrumentation-openai` 0.1.61, on Python 3.10 to 3.13.
+Most broken CrewAI traces are missing that second instrumentor. With only the CrewAI one, you get agent and tool spans with no model, no tokens and no transcript. The other gap is the conversation: CrewAI has no chat thread, so every `kickoff()` is its own trace with nothing linking it to the previous message.
+
+This guide covers CrewAI 1.15 with `openinference-instrumentation-crewai` 1.1.18 and `openinference-instrumentation-openai` 0.1.61, on Python 3.10 to 3.13.
 
 ## Quick setup with a coding agent
 
@@ -147,14 +149,26 @@ Give the crew a `name`. An unnamed crew's root span is `Crew_<uuid>.kickoff`, a 
 
 If you skip `using_session`, every message shows up in **Agent Sessions** as its own one-turn session named after its trace id. Setting `gen_ai.conversation.id` on your own spans doesn't help, because Maple reads `session.id` for CrewAI.
 
-`using_session` also works for conversational flows, where CrewAI's own session id is the flow's `state.id`. Use the same value for both:
+`using_session` also works for conversational flows, where CrewAI's own session id is the flow's `state.id`. Use the same value for both, and give the flow a `name`:
 
 ```py
-with using_session(conversation_id):
-    reply = support_flow.handle_turn(text, session_id=conversation_id)
+from crewai.flow import ConversationConfig, ConversationState, Flow
+
+
+@ConversationConfig(llm=llm, system_prompt="You are a concise assistant.")
+class SupportFlow(Flow[ConversationState]):
+    name = "support_flow"
+
+
+support_flow = SupportFlow()
+
+
+def handle_turn(conversation_id: str, text: str) -> str:
+    with using_session(conversation_id):
+        return support_flow.handle_turn(text, session_id=conversation_id)
 ```
 
-Each `handle_turn` runs one `kickoff()`, so each message is a trace under the flow's `<FlowName>.kickoff` span.
+Each `handle_turn` runs one `kickoff()`, so each message is a trace under a `support_flow.kickoff` span, with `support_flow.route_conversation` and `support_flow.converse_turn` below it. Without `name`, the root is `Flow_<uuid>.kickoff`, and the name changes to `Flow_<conversation id>` after the first turn.
 
 ### Async kickoffs
 
@@ -162,7 +176,7 @@ Use `kickoff()` or `await crew.kickoff_async()`. Don't use `await crew.akickoff(
 
 ### Streaming
 
-`Crew(stream=True)` returns a `CrewStreamingOutput` right away and runs the crew again in a thread once you iterate it. The instrumentor records both calls, so each streamed message produces two traces: an empty `support.kickoff` and the real one. Wrap the turn in one span of your own so both land in one trace and one turn:
+`Crew(stream=True)` returns a `CrewStreamingOutput` right away and calls `kickoff()` again in a thread once you iterate it. The instrumentor records both calls, so each streamed message produces two traces: an empty `support.kickoff` and the real one. Wrap the turn in one span of your own so both land in one trace and one turn:
 
 ```py
 from opentelemetry import trace
@@ -196,6 +210,8 @@ config = TraceConfig(enable_genai_semconv=True, hide_inputs=True, hide_outputs=T
 
 `hide_inputs` drops the input messages and replaces `input.value` with `__REDACTED__`, and `hide_outputs` does the same for outputs. The session keeps its turns, model and tool calls, tokens and failures, with an empty transcript. `hide_input_text` and `hide_output_text` keep the message structure but redact the text. Each switch also has an `OPENINFERENCE_HIDE_*` environment variable.
 
+The switches don't cover everything. The crew's `<crew>.kickoff` span always records `crew_tasks` (every task description, which is where the user's message goes in the example above), `crew_inputs` (the `kickoff(inputs=...)` values) and `crew_agents` (roles, goals and backstories). A flow's kickoff span records `flow_inputs` the same way. If prompts must never leave your infrastructure, delete those attributes in an OpenTelemetry Collector with an `attributes` processor before the data reaches Maple.
+
 Agent roles, task names and tool names are always recorded, because they're span names. CrewAI's analytics, if you leave them on, also collect roles and tool names, so keep personal data out of both.
 
 ## Tools, errors and agents
@@ -208,11 +224,25 @@ Each task is an agent span named `<role>.<task name>._execute_core`, with `gen_a
 
 In a hierarchical crew (`process=Process.hierarchical`), CrewAI adds a manager agent called `Crew Manager` that delegates with the `Delegate work to coworker` and `Ask question to coworker` tools. The delegated work runs through `Agent.execute_task`, which the instrumentor doesn't patch, so the coworker's model calls appear inside the delegation's tool span with no agent span of their own and no lane. The manager's own task is an agent span like any other.
 
-In a flow, `<FlowName>.kickoff` is the root and each `@start`, `@listen` and `@router` method is a `<FlowName>.<method>` span, with any crew or `Agent.kickoff()` it runs nested inside. A flow paused by `@human_feedback` and continued with `flow.resume(...)` continues in a new request, and `resume()` isn't patched, so wrap it in `using_session` with the same id and a span of your own, like the streaming wrapper above.
+Tool approvals with CrewAI's `@before_tool_call` hook need no tracing changes. The hook runs inside the `kickoff()`, before the tool span starts, so the approval stays in the turn's trace and an approved call is one tool span:
+
+```py
+from crewai.hooks import before_tool_call
+
+
+@before_tool_call(tools=["delete_file"])
+def approve_delete(context):
+    answer = context.request_human_input(prompt=f"Allow delete_file({context.tool_input})?")
+    return None if answer.strip().lower() == "approve" else False
+```
+
+A blocked call has no tool span at all: the model gets `Tool execution blocked by hook` as the result, and the refusal shows only in the next model call's input.
+
+In a flow, `<flow name>.kickoff` is the root and each `@start`, `@listen` and `@router` method is a `<flow name>.<method>` span, with any crew or `Agent.kickoff()` it runs nested inside. A flow paused by `@human_feedback` and continued with `flow.resume(...)` continues in a new request, and `resume()` isn't patched, so wrap it in `using_session` with the same id and a span of your own, like the streaming wrapper above.
 
 ## Tokens and cost
 
-Every model call carries input and output tokens from the provider's reply, as `gen_ai.usage.input_tokens` and `gen_ai.usage.output_tokens` plus the OpenInference `llm.token_count.*` originals, along with cached and reasoning tokens when the provider reports them. Crew and agent spans carry no usage of their own, so nothing is counted twice. The model is the one the provider returned, such as `openai/gpt-4o-mini` behind OpenRouter.
+Every model call carries input and output tokens from the provider's reply, as `gen_ai.usage.input_tokens` and `gen_ai.usage.output_tokens` plus the OpenInference `llm.token_count.*` originals, along with cached and reasoning tokens when the provider reports them. Crew and agent spans carry no usage of their own, so nothing is counted twice. The model is the one the provider returned, such as `openai/gpt-4o-mini` or `anthropic/claude-haiku-4.5` behind OpenRouter. The provider is the SDK the call went through, so every model behind OpenRouter shows as `openai`.
 
 Streamed calls keep their token counts: CrewAI's OpenAI provider requests `stream_options={"include_usage": True}` whenever it streams.
 
@@ -239,7 +269,7 @@ Call `provider.shutdown()` instead when the process is about to exit and won't t
 
 Run one conversation of two or three messages through `handle_message` with the same conversation id, including one that uses a tool, then open **Agent Sessions** in Maple. You should see:
 
-- **One session** for the conversation, with one turn per `kickoff()`. Each turn's trace starts at `support.kickoff` (your crew's name), or `<FlowName>.kickoff` for a flow.
+- **One session** for the conversation, with one turn per `kickoff()`. Each turn's trace starts at `support.kickoff` (your crew's name), or `support_flow.kickoff` for a flow named `support_flow`.
 - **The transcript**: the system message built from the agent's role, goal and backstory, `Current Task: …` with your message, and the model's replies.
 - **Model calls** named `ChatCompletion` (from the OpenAI instrumentor), each with a model and input and output tokens.
 - **Tool calls** named `get_weather.run` and `calculate.run`, with results.
@@ -255,10 +285,12 @@ A second conversation with a different id is a second session. If a turn is miss
 - **Exports fail with 404.** `OTLPSpanExporter(endpoint=...)` doesn't append `/v1/traces`. Use `OTEL_EXPORTER_OTLP_ENDPOINT` with the base URL, or pass the full path.
 - **One session per message.** The kickoff isn't inside `using_session(...)`, or the id changes per request. Wrap every `kickoff()` and use the stored conversation id.
 - **Every model call and tool call is its own trace.** The crew runs with `akickoff()`. Use `kickoff()` or `kickoff_async()`.
-- **An empty extra turn for each streamed message.** `Crew(stream=True)` runs the crew twice. Wrap the turn in one span, as in [Streaming](#streaming).
+- **An empty extra turn for each streamed message.** `Crew(stream=True)` calls `kickoff()` twice. Wrap the turn in one span, as in [Streaming](#streaming).
 - **Agent and tool spans have no details on the session page.** The GenAI dual-write is off. Pass `TraceConfig(enable_genai_semconv=True)` to both instrumentors.
 - **All agents in one lane.** `CrewAIAgentNames` isn't on the provider, or it was added to a different provider than the one passed to `instrument()`.
 - **Tool arguments show the tool's input schema.** The dual-write copies `tool.parameters`, which is the schema, into `gen_ai.tool.call.arguments`. The call's actual arguments are in the tool span's `input.value`. This is an OpenInference mapping bug with no workaround in the span processor, because the arguments are set after the span starts.
+- **Flow turns are named `Flow_<uuid>.kickoff`.** The flow class has no `name`. Set `name = "support_flow"` on the class.
+- **Prompts still visible with `hide_inputs=True`.** They're in the crew span's `crew_tasks` and `crew_inputs` attributes, which the switches don't cover. Delete them in a Collector.
 - **A delegated coworker has no lane.** Hierarchical delegation runs the coworker through `Agent.execute_task`, which isn't instrumented. Its model calls are inside the `Delegate work to coworker` tool span.
 - **Every model call appears twice.** Two model-layer instrumentors cover the same call, for example LiteLLM's and OpenAI's with a LiteLLM model that calls the `openai` SDK, or `litellm.callbacks=["otel"]` next to an OpenInference instrumentor. Keep one.
 - **The process hangs at exit asking about traces.** CrewAI's first-run trace prompt. Set `CREWAI_TRACING_ENABLED=false`.

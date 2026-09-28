@@ -101,7 +101,8 @@ Escape hatch, only when a framework's spans carry a session key Maple ignores fo
 - Usage on `chat` spans only, never cumulative totals on `invoke_agent`.
 - Keys: `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`, `gen_ai.usage.cache_read.input_tokens`, `gen_ai.usage.cache_write.input_tokens`, `gen_ai.usage.reasoning.output_tokens` (ints). Not read: `total_tokens`, `reasoning_tokens`, `cache_read_input_tokens`.
 - Copy the provider's raw numbers. Maple interprets by `gen_ai.provider.name`: `anthropic` → input EXCLUDES cache (send Anthropic's raw `input_tokens`, NOT input+cache as the spec says, or cache is double counted); `gcp.gemini`/`gcp.vertex_ai` → input includes cache, output excludes thoughts (raw Gemini counts); `openai`/`openrouter`/other → input includes cache, output includes reasoning (OpenAI shape).
-- Streaming OpenAI-compatible: `stream_options: {include_usage: true}`; usage is on the last chunk (empty `choices`). OpenRouter always sends usage.
+- Streaming OpenAI-compatible: `stream_options: {include_usage: true}`. OpenAI sends usage in an extra last chunk with empty `choices`; OpenRouter always sends usage + `cost` on the chunk carrying `finish_reason`. Read `chunk.usage` before skipping chunks without choices.
+- OpenRouter (Claude included): `prompt_tokens` already includes `cached_tokens` → provider `openrouter`, copy as is. Optional: `prompt_tokens_details.cache_write_tokens` → `gen_ai.usage.cache_write.input_tokens`.
 - Cost: `gen_ai.usage.cost` (double, USD) on `chat` spans. OpenRouter returns `usage.cost` → copy it. Other providers return none → compute only if the project has a price table; otherwise leave it (Maple shows "unpriced"; it never prices tokens).
 - `gen_ai.response.id` always (dedupes against gateway mirrors such as OpenRouter Broadcast).
 

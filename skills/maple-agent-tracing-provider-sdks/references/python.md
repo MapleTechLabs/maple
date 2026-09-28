@@ -139,7 +139,9 @@ with agent_span("support_agent", conversation_id):
         ]})
 ```
 
-`client.messages.stream(...)` is instrumented too; usage arrives without extra options.
+`client.messages.stream(...)` is instrumented too (`with client.messages.stream(**kw) as s: response = s.get_final_message()`); usage arrives without extra options.
+
+Anthropic SDK through OpenRouter: `anthropic.Anthropic(base_url="https://openrouter.ai/api", api_key=OPENROUTER_API_KEY)` (no `/v1`; `auth_token=` also works), model ids like `anthropic/claude-haiku-4.5`. Spans say `gen_ai.provider.name=anthropic`.
 
 ## Gemini
 

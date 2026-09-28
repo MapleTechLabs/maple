@@ -9,14 +9,16 @@ icon: "openai"
 
 The OpenAI Agents SDK traces every run out of the box, but not with OpenTelemetry. Its tracing pipeline builds its own traces and spans (agent, generation, function, handoff, guardrail) and uploads them to the OpenAI dashboard. To get them into Maple you swap that uploader for OpenInference's `openinference-instrumentation-openai-agents`, which turns each SDK span into an OpenTelemetry span as it ends.
 
-The SDK's own way to tie the traces of one chat together, `group_id`, never reaches OpenTelemetry. The bridge drops it, so a ten-message conversation shows up in Maple as ten one-turn sessions until you wrap each run in OpenInference's `using_session`. A few more defaults need changing: the bridge writes OpenInference attributes that Maple's session page doesn't decode for this framework, and streamed calls to any provider other than OpenAI lose their tokens and their reply. This guide covers `openai-agents` 0.22 with `openinference-instrumentation-openai-agents` 2.5 on Python 3.10 to 3.14. TypeScript (`@openai/agents`) works with less detail; see [TypeScript](#typescript-openaiagents).
+The SDK's own way to tie the traces of one chat together, `group_id`, never reaches OpenTelemetry. The bridge drops it, so a ten-message conversation shows up in Maple as ten one-turn sessions until you wrap each run in OpenInference's `using_session`. A few more defaults need changing: the bridge writes OpenInference attributes that Maple's session page doesn't decode for this framework, and streamed calls to any provider other than OpenAI lose their tokens and their reply.
+
+This guide covers `openai-agents` 0.22 with `openinference-instrumentation-openai-agents` 2.5 on Python 3.10 to 3.14. TypeScript (`@openai/agents`) works with less detail; see [TypeScript](#typescript-openaiagents).
 
 ## Quick setup with a coding agent
 
 Copy this prompt into Claude Code, Codex, Cursor or another agent that can run shell commands. It installs the [maple-agent-tracing-openai-agents](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-agent-tracing-openai-agents) skill, which contains every step of this guide.
 
 ```text
-Set up Maple agent tracing for OpenAI Agents SDK in this project.
+Set up Maple agent tracing for the OpenAI Agents SDK in this project.
 
 Install the skill with `npx skills add MapleTechLabs/maple/skills --skill maple-agent-tracing-openai-agents -y`, then follow it.
 
@@ -231,7 +233,7 @@ Model spans are named `generation` on the Chat Completions path and `response` o
 
 The SDK also totals usage per run and per turn, but the bridge doesn't export those totals, so nothing is counted twice.
 
-Maple shows cost only when a span carries one, and neither the SDK nor the bridge records cost. Sessions show as **unpriced**, with token counts. If you route through OpenRouter, its [Broadcast traces](/docs/agent-tracing/openrouter) carry the cost of each call.
+Maple shows cost only when a span carries one, and neither the SDK nor the bridge records cost. Sessions show as **unpriced**, with token counts. If you route through OpenRouter, its [Broadcast traces](/docs/agent-tracing/openrouter) carry the cost of each call. Chat Completions model spans have no `gen_ai.response.id`, so nest the Broadcast spans under them as described in [Join Broadcast to your own traces](/docs/agent-tracing/openrouter#join-broadcast-to-your-own-traces), or each call is counted twice.
 
 Don't add `openinference-instrumentation-openai` next to the Agents bridge. It patches the `openai` client the SDK calls, so every model call gets a second model span under the `generation` span. The same goes for Logfire's `instrument_openai_agents()`, Langfuse's or Traceloop's Agents instrumentation, and the OpenTelemetry project's `opentelemetry-instrumentation-genai-openai-agents`: pick one.
 

@@ -7,9 +7,11 @@ navLabel: "LangChain & LangGraph"
 icon: "langchain"
 ---
 
-LangChain and LangGraph report every run through their callback system: each graph node, chat model call and tool call starts and ends a run. Two libraries turn those runs into OpenTelemetry spans. OpenInference's `openinference-instrumentation-langchain` adds its own callback handler, and LangSmith's SDK can export its runs over OTLP instead of to smith.langchain.com. Both work with Maple, and this guide uses OpenInference with its GenAI dual-write, because that's the one that gives Maple a transcript it can render.
+LangChain and LangGraph report every run through their callback system: each graph node, chat model call and tool call starts and ends a run. Two libraries turn those runs into OpenTelemetry spans. OpenInference's `openinference-instrumentation-langchain` adds its own callback handler, and LangSmith's SDK can export its runs over OTLP instead of to smith.langchain.com. Both can export to Maple. This guide uses OpenInference with its GenAI dual-write, because that's the one that gives Maple a transcript it can render.
 
-The default that goes wrong is the conversation. Every `invoke()` of an agent or graph is a new trace, so a chat of ten messages arrives as ten traces, and nothing links them until you pass a `thread_id`. The same `thread_id` a LangGraph checkpointer already needs is the one Maple groups sessions by. This guide covers Python: LangChain 1.4 (`create_agent`) and LangGraph 1.2 (`StateGraph`) with `openinference-instrumentation-langchain` 0.1.76, on Python 3.10 or later.
+The default that goes wrong is the conversation. Every `invoke()` of an agent or graph is a new trace, so a chat of ten messages arrives as ten traces, and nothing links them until you pass a `thread_id`. The same `thread_id` a LangGraph checkpointer already needs is the one Maple groups sessions by.
+
+This guide covers Python: LangChain 1.4 (`create_agent`) and LangGraph 1.2 (`StateGraph`) with `openinference-instrumentation-langchain` 0.1.76, on Python 3.10 or later.
 
 ## Quick setup with a coding agent
 
@@ -59,10 +61,12 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
 # The name= you gave create_agent(), and graph nodes that act as agents
 AGENT_NAMES = {"assistant"}
+# LangGraph's tool node and prompt templates: steps, not tool or model calls
+STEP_NAMES = {"tools", "ChatPromptTemplate"}
 
 
 class AgentSpans(SpanProcessor):
-    """Marks your agents' spans as agent invocations, so Maple can name them and give each a lane."""
+    """Names your agents' spans for Maple (one lane per agent) and keeps graph steps out of the tool and model counts."""
 
     def on_start(self, span, parent_context=None):
         if span.instrumentation_scope.name != "openinference.instrumentation.langchain":
@@ -70,6 +74,8 @@ class AgentSpans(SpanProcessor):
         if span.name in AGENT_NAMES:
             span.set_attribute("gen_ai.operation.name", "invoke_agent")
             span.set_attribute("gen_ai.agent.name", span.name)
+        elif span.name in STEP_NAMES:
+            span.set_attribute("gen_ai.operation.name", "invoke_workflow")
 
 
 provider = TracerProvider()  # reads OTEL_SERVICE_NAME and OTEL_RESOURCE_ATTRIBUTES
@@ -86,13 +92,13 @@ LangChainInstrumentor().instrument(
 What each part does:
 
 - **`enable_genai_semconv=True`** makes the instrumentor write `gen_ai.operation.name`, `gen_ai.input.messages`, `gen_ai.output.messages`, `gen_ai.usage.*`, `gen_ai.tool.*` and `gen_ai.conversation.id` next to its OpenInference attributes when each span ends. Without it, Maple reads the spans as generic OpenInference: the transcript is a raw JSON blob and the `thread_id` is ignored, so every turn is its own session. `OPENINFERENCE_ENABLE_GENAI_SEMCONV=true` does the same, as long as it's set before `TraceConfig` is built.
-- **`AgentSpans`** fills the one thing the instrumentor leaves out. It names agent spans only by the word "agent": a `create_agent(name="support_agent")` span becomes an agent, `name="assistant"` stays a plain chain, and neither gets `gen_ai.agent.name`, which Maple needs to name agents and open a lane per sub-agent. The processor runs at span start, and the dual-write never overwrites a key that's already set.
+- **`AgentSpans`** fills two gaps in how the spans are labeled. The instrumentor names agent spans only by the word "agent": a `create_agent(name="support_agent")` span becomes an agent, `name="assistant"` stays a plain chain, and neither gets `gen_ai.agent.name`, which Maple needs to name agents and open a lane per sub-agent. And a span with no operation is classified by its name, so LangGraph's `tools` node would count as one more tool call and a `ChatPromptTemplate` as one more model call. Marking them `invoke_workflow` keeps both out of the counts. The processor runs at span start, and the dual-write never overwrites a key that's already set.
 
 The instrumentor hooks LangChain's callback manager, so import order doesn't matter, as long as `instrument()` runs before the first `invoke()`. It traces every LangChain runnable in the process: agents, graphs, chains, chat models, tools and retrievers.
 
 If the app already has a `TracerProvider` (from `opentelemetry-instrument`, Logfire or Sentry), don't create a second one. Add `AgentSpans()` and the OTLP exporter to the existing provider and pass that provider to `instrument()`.
 
-LangSmith keeps working next to this. With `LANGSMITH_TRACING=true` and a LangSmith key, runs still go to smith.langchain.com over LangSmith's own API, and nothing is sent twice to Maple. Don't also set `LANGSMITH_OTEL_ENABLED`, which would add a second copy of every span to your provider (see [the LangSmith exporter](#langsmiths-opentelemetry-exporter-instead) below).
+LangSmith keeps working next to this. With `LANGSMITH_TRACING=true` and a LangSmith key, runs still go to smith.langchain.com over LangSmith's own API, and nothing is sent twice to Maple. Don't also set `LANGSMITH_OTEL_ENABLED`, which would add a second copy of every span to your provider (see [why not LangSmith's exporter](#why-not-langsmiths-opentelemetry-exporter) below).
 
 ## Group a conversation into one session with thread_id
 
@@ -191,17 +197,17 @@ The worker's run nests under the tool span and inherits the orchestrator's `thre
 
 Don't put "agent" in a tool's name. The instrumentor names a span of any kind an agent when its name contains the word, so a tool called `ask_weather_agent` loses its tool kind and Maple doesn't count it as a tool call.
 
-Two gaps remain in what Maple shows for LangGraph tools. LangGraph runs tools inside a node, named `tools` in `create_agent` and wherever you add a `ToolNode` under that name, and Maple currently counts that node's span as an extra, unnamed tool call, because its name contains "tool". So a turn with one tool call shows two. The real tool calls are the ones with a name. The missing `gen_ai.tool.call.id` means Maple matches tool spans to the model's calls by name, which works unless one reply calls the same tool twice.
+LangGraph runs tools inside a node, named `tools` in `create_agent` and usually in a `StateGraph` with a `ToolNode` too. Without an operation, Maple would count that node's span as a tool call because its name contains "tool", which is why `STEP_NAMES` lists it. If your tool node has another name with "tool" in it, like `run_tools`, add that name.
+
+The missing `gen_ai.tool.call.id` means Maple matches tool spans to the model's calls by name, which works unless one reply calls the same tool twice.
 
 ## Tokens and cost
 
 Every chat model span carries input and output tokens from LangChain's `usage_metadata`, as `gen_ai.usage.input_tokens` and `gen_ai.usage.output_tokens` next to the OpenInference `llm.token_count.*` originals. The model is the one you configured, in `gen_ai.request.model`, and the provider comes from the LangChain integration: `ChatOpenAI` is `openai`, even for an Anthropic model behind OpenRouter or another OpenAI-compatible gateway.
 
-Streaming is where tokens go missing. `ChatOpenAI` only asks for usage on streamed responses (`stream_options.include_usage`) when it talks to api.openai.com. With a `base_url`, or `OPENAI_BASE_URL` set, it doesn't, and every streamed call arrives with no token counts. Set `stream_usage=True` on the model, as in the example above.
+Streaming is where tokens go missing. `ChatOpenAI` only asks for usage on streamed responses (`stream_options.include_usage`) when it talks to api.openai.com. With a `base_url`, or `OPENAI_BASE_URL` set, it doesn't, and a server that only reports streamed usage when asked, such as vLLM, sends none. OpenRouter includes usage either way. Set `stream_usage=True` on the model, as in the example above, so it doesn't depend on the server.
 
 Maple shows cost only when a span carries one, and neither LangChain nor the instrumentor records cost. Sessions show as **unpriced**, with token counts.
-
-A `ChatPromptTemplate` in a chain produces a span named `ChatPromptTemplate`, and Maple currently counts it as a model call because the name contains "chat". It has no model or tokens, so totals are right, but the call count is one too high per template. `create_agent` and LangGraph nodes that call a model directly don't use templates.
 
 Don't add `openinference-instrumentation-openai`, `-anthropic` or OpenLLMetry's LangChain instrumentor next to this one. Each wraps the same model request again, and every call gets a second model span with its own tokens.
 
@@ -224,51 +230,21 @@ Context survives LangGraph's parallel nodes, `ainvoke`, and agents called from i
 
 ## LangGraph Server deployments
 
-On LangGraph's Agent Server (`langgraph dev` or a self-hosted server), the server imports the module that defines your graph, the one `langgraph.json` points to. Import `tracing` at the top of that module and set the `OTEL_*` variables in the server's environment (the `env` file in `langgraph.json`, or the container). The server is long-running, so `BatchSpanProcessor` exports on its own schedule and no flush is needed.
+On LangGraph's Agent Server (`langgraph dev` or a self-hosted server), the server imports the module that defines your graph, the one `langgraph.json` points to. Import `tracing` at the top of that module and set the `OTEL_*` variables in the server's environment (the `env` file in `langgraph.json`, or the container). The server is long-running, so `BatchSpanProcessor` exports on its own schedule and no flush is needed. We checked this with `langgraph dev` (langgraph-api 0.10.3).
 
-Every run on a server thread already carries that thread's id as `configurable.thread_id`, so each LangGraph thread becomes one Maple session with no extra code.
+Every run on a server thread already carries that thread's id as `configurable.thread_id`, so each LangGraph thread becomes one Maple session with no extra code. If `tracing.py` lives outside the graph's directory, list its directory in `dependencies` in `langgraph.json` so the server can import it.
 
-## LangSmith's OpenTelemetry exporter instead
+## Why not LangSmith's OpenTelemetry exporter
 
-LangSmith's SDK can write its runs as OTLP spans (`LANGSMITH_OTEL_ENABLED`). Maple recognizes those spans and labels them **LangChain**, and reads the session from `langsmith.metadata.thread_id`, the same `configurable.thread_id`. It's the only path that shows the framework name, and it records `gen_ai.tool.call.id`. It gives Maple less to work with everywhere else:
+LangSmith's SDK can write its runs as OTLP spans (`LANGSMITH_OTEL_ENABLED` with `LANGSMITH_OTEL_ONLY`, no LangSmith account needed). Maple recognizes those spans, labels them **LangChain**, and reads the session from `langsmith.metadata.thread_id`, the same `configurable.thread_id`. Sessions, token counts and `gen_ai.tool.call.id` all arrive. We ran the same chat through it with `langsmith` 0.14.1, and the session page is worse on every other count:
 
-- The prompt and completion are LangChain's serialized objects (`{"lc":1,"type":"constructor",...}`) in `gen_ai.prompt` and `gen_ai.completion`, so the transcript is one raw JSON blob per model call, with no turn labels.
-- An interrupt marks the interrupted node's span `ERROR`, with `GraphInterrupt(...)` as an `exception` event, so human-in-the-loop pauses read as failures.
-- Middleware wrappers such as `HumanInTheLoopMiddleware.wrap_tool_call` get their own spans, and Maple counts them as extra tool calls. A failing tool's error passes through the ones inside your error handler, so one failure counts more than once.
-- Prompt templates get `gen_ai.operation.name` `chat`, and `gen_ai.system` is guessed from the model name: `anthropic/claude-haiku-4.5` through OpenRouter reads as `anthropic`.
-- There are no agent names. `create_agent`'s name is only in `langsmith.metadata.lc_agent_name`, which Maple doesn't read, and the `AgentSpans` trick doesn't work because LangSmith overwrites `gen_ai.operation.name` after the span starts.
+- The prompt and completion are sent as byte attributes holding LangChain's serialized objects. Maple stores bytes as hex, so the transcript is unreadable and turns have no labels.
+- An interrupt marks the interrupted node's span `ERROR`, with `GraphInterrupt(...)` as an `exception` event, so every human-in-the-loop pause reads as a failure.
+- Middleware wrappers such as `HumanInTheLoopMiddleware.wrap_tool_call` get their own spans, and Maple counts them, and the `tools` node, as extra tool calls. A tool the model called once shows up to three times.
+- There are no agent names. `create_agent`'s name is only in `langsmith.metadata.lc_agent_name`, which Maple doesn't read, and a start-time processor can't fix it, because LangSmith sets `gen_ai.operation.name` after the span starts.
+- Flushing takes two steps: `wait_for_all_tracers()` from `langchain_core.tracers.langchain`, then `provider.force_flush()`. The provider alone exports nothing, because LangSmith converts runs to spans on a background thread.
 
-If you want it anyway, set the variables and the provider before anything imports LangChain. LangSmith looks for a global provider when its client is created, and if there isn't one it builds its own, pointed at smith.langchain.com:
-
-```py
-import os
-
-os.environ["LANGSMITH_TRACING"] = "true"
-os.environ["LANGSMITH_OTEL_ENABLED"] = "true"
-os.environ["LANGSMITH_OTEL_ONLY"] = "true"  # OTLP only, no LangSmith account or key needed
-
-from opentelemetry import trace
-from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor
-
-provider = TracerProvider()
-provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
-trace.set_tracer_provider(provider)
-
-# Only now import langchain, langgraph and your agents
-```
-
-Install `langsmith[otel]>=0.14`. Flushing takes two steps, because LangSmith converts runs to spans on a background thread and the provider has nothing to export until it's done. `provider.force_flush()` on its own exports nothing:
-
-```py
-from langchain_core.tracers.langchain import wait_for_all_tracers
-
-wait_for_all_tracers()
-provider.force_flush()
-```
-
-Don't combine it with the OpenInference instrumentor; you'd get every run twice.
+If `LANGSMITH_OTEL_ENABLED` or `LANGSMITH_TRACING_MODE=otel` is already set in your app, remove it when you add the OpenInference setup, or every run arrives twice.
 
 ## LangChain.js and LangGraph.js
 
@@ -293,11 +269,11 @@ If a turn is missing, check that the process flushed.
 - **No spans at all.** `instrument()` never ran, or ran with a different provider than the one exporting. Import `tracing` first, pass `tracer_provider=provider`, and look for `OTLPSpanExporter` errors in the logs.
 - **Exports fail with 404.** `OTLPSpanExporter(endpoint=...)` doesn't append `/v1/traces`. Use `OTEL_EXPORTER_OTLP_ENDPOINT` with the base URL, or pass the full path.
 - **One session per message.** No `thread_id` reached the run, or it changes per request. Pass `{"configurable": {"thread_id": conversation_id}}` to every `invoke()`, `stream()` and resume, or `{"metadata": {"thread_id": ...}}` for plain chains.
-- **Sessions work but the session page is a JSON blob, or tokens show only in the list.** The GenAI dual-write is off. Pass `TraceConfig(enable_genai_semconv=True)`.
+- **One session per message and a raw JSON transcript, even with a `thread_id`.** The GenAI dual-write is off, so Maple only sees OpenInference's `session.id`, which it doesn't read for these spans. Pass `TraceConfig(enable_genai_semconv=True)`.
 - **Streamed replies have no tokens.** `ChatOpenAI` with a custom `base_url` doesn't request streamed usage. Set `stream_usage=True`.
 - **One failing tool ends the whole run.** `create_agent` re-raises tool exceptions. Add the `wrap_tool_call` middleware, or `handle_tool_errors=True` on your `ToolNode`.
 - **A tool shows up as an agent, not a tool call.** Its name contains "agent". Rename it.
-- **Twice as many tool calls as the agent made.** The `tools` node span is counted as a tool call, as described above. It's a known gap in how Maple classifies LangGraph node spans.
+- **More tool calls than the agent made.** A graph node whose name contains "tool" is counted as a tool call. Add its name to `STEP_NAMES`.
 - **Every model call appears twice.** A provider instrumentor or `LANGSMITH_OTEL_ENABLED` is also active. Keep one.
 - **No lanes for sub-agents.** Their names aren't in `AGENT_NAMES`, or two agents share a name.
 - **Turns split into several traces on Python 3.10.** Pass `config` to nested async calls, or upgrade to Python 3.11.

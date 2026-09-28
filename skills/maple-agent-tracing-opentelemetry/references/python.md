@@ -1,6 +1,6 @@
 # Python reference (3.10+)
 
-Tested pattern: `opentelemetry-sdk` 1.45, `opentelemetry-exporter-otlp-proto-http` 1.45, `openai` 3.20 against an OpenAI-compatible Chat Completions API (OpenRouter here).
+Tested pattern: `opentelemetry-sdk` 1.45, `opentelemetry-exporter-otlp-proto-http` 1.45, `openai` 3.20 against an OpenAI-compatible Chat Completions API (OpenRouter here), Python 3.14.
 
 This is a complete loop. If the project already has a loop, keep its structure and copy only the span code: `invoke_agent` around one agent run, `chat` around each model call, `execute_tool` around each tool call, `to_semconv` for messages.
 

@@ -9,7 +9,9 @@ icon: "agno"
 
 Agno's tracing is built on OpenInference. The `openinference-instrumentation-agno` package wraps every agent and team run, every model call and every tool call, and Agno's own `setup_tracing()` uses the same instrumentor. The catch is where `setup_tracing()` sends the spans: into your AgentOS database, not to an OpenTelemetry endpoint. To get them into Maple you install the instrumentor yourself with an OTLP exporter.
 
-The thing that goes wrong by default is the session id. Agno always stamps `session.id` on the run span, but when you don't pass `session_id=`, it generates one and keeps it on the `Agent` instance. A chat server with one module-level agent then puts every user's conversation into the same Maple session. This guide covers Agno 3.0 (tested with 3.0.11) and `openinference-instrumentation-agno` 1.0.10 on Python 3.10 to 3.14.
+The thing that goes wrong by default is the session id. Agno always stamps `session.id` on the run span, but when you don't pass `session_id=`, it generates one and keeps it on the `Agent` instance. A chat server with one module-level agent then puts every user's conversation into the same Maple session.
+
+This guide covers Agno 3.0 (tested with 3.0.11) and `openinference-instrumentation-agno` 1.0.10 on Python 3.10 to 3.14.
 
 ## Quick setup with a coding agent
 

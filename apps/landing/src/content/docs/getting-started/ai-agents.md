@@ -113,10 +113,11 @@ When no tool fits, `describe_warehouse_tables` lists the tables and columns, and
 
 ## Instrument with a coding agent
 
-Two open-source skills teach a coding agent how to set up OpenTelemetry for Maple:
+Open-source skills teach a coding agent how to set up OpenTelemetry for Maple:
 
 - [maple-onboard](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-onboard) instruments every app and service in a repository: traces, logs and metrics, using the native OpenTelemetry SDK for each language.
 - [maple-audit](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-audit) reviews an existing setup, reports gaps per service (missing service map edges, missing `service.version`, errors without exceptions) and fixes them.
+- [maple-agent-tracing](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-agent-tracing) traces an AI agent so each conversation shows up as one [Agent Session](/docs/agent-sessions/overview). It detects the framework and installs a skill for that framework only. See [Trace your AI agent](/docs/agent-tracing).
 
 Install them together with the per-language guides they read:
 

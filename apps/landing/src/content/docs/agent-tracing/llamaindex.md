@@ -9,7 +9,9 @@ icon: "llamaindex"
 
 LlamaIndex reports what it does through its own instrumentation dispatcher: every agent run, workflow step, model call and tool call opens a dispatcher span and fires events. Two packages turn those into OpenTelemetry spans. LlamaIndex's own `llama-index-observability-otel` copies the span tree but puts the payload in span events, and it loses the model's reply and token usage on every streamed call. OpenInference's `openinference-instrumentation-llama-index` writes model, tokens, messages and tool results as span attributes, which is what Maple reads. Use the OpenInference one.
 
-It needs four adjustments before a chat looks right in Maple. The instrumentor writes OpenInference attribute names unless you turn on its GenAI output, it never sets a conversation id, it doesn't record agent names, and it opens two or three "LLM" spans for every model call, so Maple would count each call two or three times. This guide covers all four for llama-index-core 0.14.25 with `openinference-instrumentation-llama-index` 4.5.2 on Python 3.10 or later, using `FunctionAgent`, `AgentWorkflow` and custom `Workflow` classes.
+It needs four adjustments before a chat looks right in Maple. The instrumentor writes OpenInference attribute names unless you turn on its GenAI output, it never sets a conversation id, it doesn't record agent names, and it opens extra spans around every model and tool call, so Maple would count each model call two or three times and each tool call three times.
+
+This guide covers all four for llama-index-core 0.14.25 with `openinference-instrumentation-llama-index` 4.5.2 on Python 3.10 or later, using `FunctionAgent`, `AgentWorkflow` and custom `Workflow` classes.
 
 ## Quick setup with a coding agent
 
@@ -72,17 +74,22 @@ LLM_METHODS = (".chat", ".achat", ".stream_chat", ".astream_chat",
 
 
 class LlamaIndexForMaple(SpanProcessor):
-    """Sits in front of the exporter: one span per model call, agent names, no false HITL failures."""
+    """Sits in front of the exporter: one span per model and tool call, agent names, no false HITL failures."""
 
     def __init__(self, exporter_processor: SpanProcessor):
         self._next = exporter_processor
         self._open_llm_spans = {}
 
     def on_start(self, span, parent_context=None):
+        # Maple labels a span "LlamaIndex" by a llamaindex.* key; OpenInference writes none
+        span.set_attribute("llamaindex.instrumentor", "openinference")
         # instrument_tags({"gen_ai.agent.name": ...}) becomes an attribute, so sub-agents get lanes
         agent_name = active_instrument_tags.get().get("gen_ai.agent.name")
         if agent_name:
             span.set_attribute("gen_ai.agent.name", agent_name)
+        if span.name.endswith((".call_tool", ".aggregate_tool_results")):
+            # agent workflow steps around the tool span; by name alone Maple would count them as tool calls
+            span.set_attribute("gen_ai.operation.name", "invoke_workflow")
         if span.name.endswith(LLM_METHODS):
             self._open_llm_spans[span.context.span_id] = span
         self._next.on_start(span, parent_context)
@@ -119,10 +126,10 @@ LlamaIndexInstrumentor().instrument(
 What each part does:
 
 - **`enable_genai_semconv=True`** makes the instrumentor write `gen_ai.operation.name`, `gen_ai.input.messages`, `gen_ai.output.messages`, `gen_ai.usage.*`, `gen_ai.tool.*` and `gen_ai.conversation.id` next to its OpenInference attributes when each span ends. Without it, Maple can count tokens but the session page has no transcript. `OPENINFERENCE_ENABLE_GENAI_SEMCONV=true` does the same, but only if it's set before `TraceConfig` is built.
-- **`LlamaIndexForMaple`** wraps the exporting processor and fixes what the instrumentor gets wrong for LlamaIndex. The next sections explain each fix.
+- **`LlamaIndexForMaple`** wraps the exporting processor and fixes what the instrumentor gets wrong for LlamaIndex. The next sections explain each fix. It also stamps `llamaindex.instrumentor` on every span, because Maple recognises LlamaIndex by a `llamaindex.*` attribute and the OpenInference spans carry none. Without it the sessions still work but show the framework as "Unidentified".
 - **One `TracerProvider`.** If the app already has one (from `opentelemetry-instrument`, Logfire or Sentry), don't create a second. Add `LlamaIndexForMaple(BatchSpanProcessor(OTLPSpanExporter()))` to the existing provider and pass that provider to `instrument()`.
 
-### Why each model call opens three spans
+### Why each model and tool call opens three spans
 
 LlamaIndex's dispatcher wraps every method that implements an abstract base method, and the instrumentor marks every span on an LLM object as kind `LLM`. A single `FunctionAgent` step with an OpenAI-compatible model (`OpenRouter`, `OpenAILike` and the others built on it) produces:
 
@@ -133,9 +140,19 @@ BaseWorkflowAgent.run_agent_step
     └── OpenRouter.astream_chat           kind LLM, OpenAI's method: messages, usage
 ```
 
-Maple counts every inference span without usage from a reporting ancestor as a model call, so this one call would count three times. A class that implements the call itself, such as `OpenAI`, produces two spans, the helper and the call. Tokens are not doubled, since only the innermost span carries usage.
+Maple counts every inference span without usage from a reporting ancestor as a model call, so this one call would count three times; in a test run, three model calls counted as nine. A class that implements the call itself, such as `OpenAI`, produces two spans, the helper and the call. Tokens are not doubled, since only the innermost span carries usage.
 
 `LlamaIndexForMaple` drops the `_prepare_chat_with_tools` helper, copies the inner span's attributes onto its same-named parent and drops the inner span, leaving one `OpenRouter.astream_chat` span per call with the messages and usage. It only merges spans with identical names that nest directly, so a chat engine's `CondensePlusContextChatEngine.chat` calling `OpenAI.chat` is left alone.
+
+Tool calls have the same problem one level up:
+
+```text
+BaseWorkflowAgent.call_tool                 kind CHAIN, workflow step
+└── FunctionTool.acall                      kind TOOL, the tool call
+BaseWorkflowAgent.aggregate_tool_results    kind CHAIN, workflow step
+```
+
+The two step spans have no GenAI operation, and Maple classifies such spans by name, so "tool" in the name makes each of them a tool call. `LlamaIndexForMaple` marks them `gen_ai.operation.name=invoke_workflow`, which Maple reads as agent work, leaving `FunctionTool.acall` as the only tool call.
 
 ## Group a conversation into one session
 
@@ -228,11 +245,11 @@ class Briefing(Workflow):
         ctx.send_event(WeatherTask(city=ev.city))
         ctx.send_event(TransportTask(city=ev.city))
 
-    @step(num_workers=2)
+    @step
     async def weather(self, ev: WeatherTask) -> WorkerDone:
         return WorkerDone(text=await run_agent(weather_worker, f"Weather in {ev.city}?"))
 
-    @step(num_workers=2)
+    @step
     async def transport(self, ev: TransportTask) -> WorkerDone:
         return WorkerDone(text=await run_agent(transport_worker, f"Transport in {ev.city}?"))
 
@@ -244,11 +261,11 @@ class Briefing(Workflow):
         return StopEvent(result=await run_agent(summary_agent, "\n\n".join(d.text for d in done)))
 ```
 
-Run the whole workflow inside `using_session(conversation_id)`. The workflow is one trace: `Briefing.run` at the root, one span per step, and each worker's `FunctionAgent.run` under its step with its own `gen_ai.agent.name`. Maple opens a lane for every agent span whose name differs from its caller's. Parallel steps (`num_workers`) stay in the same trace and keep the session and agent tags.
+Run the whole workflow inside `using_session(conversation_id)`. The workflow is one trace: `Briefing.run` at the root, one span per step, and each worker's `FunctionAgent.run` under its step with its own `gen_ai.agent.name`. Maple opens a lane for every agent span whose name differs from its caller's. `weather` and `transport` run concurrently because `plan` sends both events at once; parallel steps, including `@step(num_workers=N)`, stay in the same trace and keep the session and agent tags.
 
 The same works for agents called as tools: put `instrument_tags` inside the tool function around the sub-agent's `run()`. The tool span with one `FunctionAgent.run` child then shows as a delegation, with the tool's arguments and result as the lane's input and output.
 
-`AgentWorkflow` handoffs are different. The whole multi-agent run is one `AgentWorkflow.run` span, and LlamaIndex switches the active agent inside it without a span per agent, so there is nothing to tag. Handoffs show as one agent in Maple. If you need lanes, run each agent as its own `FunctionAgent.run()` from a workflow step or a tool, as above.
+`AgentWorkflow` handoffs are different. The whole multi-agent run is one `AgentWorkflow.run` span, and LlamaIndex switches the active agent inside it without a span per agent, so there is nothing to tag. Every span carries the tag you put around `run()`, the handoff itself is a `handoff` tool call, and the run shows as one agent in Maple. If you need lanes, run each agent as its own `FunctionAgent.run()` from a workflow step or a tool, as above.
 
 ## Tokens and cost
 
@@ -266,7 +283,7 @@ LlamaIndex strips the option from non-streaming requests, so it's safe to set on
 
 The provider comes from the model class: `OpenRouter` and every `OpenAILike` model report `openai`, even for an Anthropic model behind OpenRouter.
 
-Maple shows cost only when a span carries one, and neither LlamaIndex nor the instrumentor records cost. Sessions show as **unpriced**, with token counts. If you route through OpenRouter, its [Broadcast traces](/docs/agent-tracing/openrouter) carry the cost of each call, and Maple joins them to the same session.
+Maple shows cost only when a span carries one, and neither LlamaIndex nor the instrumentor records cost. Sessions show as **unpriced**, with token counts. If you route through OpenRouter, its [Broadcast traces](/docs/agent-tracing/openrouter) carry the cost of each call, and Maple joins them to the same session. These model spans have no `gen_ai.response.id`, so nest the Broadcast spans under them as described in [Join Broadcast to your own traces](/docs/agent-tracing/openrouter#join-broadcast-to-your-own-traces), or each call is counted twice.
 
 Don't add `openinference-instrumentation-openai` (or another provider instrumentor) next to the LlamaIndex one. It wraps the same HTTP call and gives every model call a second span with its own usage.
 
@@ -290,10 +307,10 @@ Call `provider.shutdown()` instead when the process is about to exit and won't t
 Run one conversation of two or three messages through `handle_message` with the same conversation id, including one that uses a tool, then open **Agent Sessions** in Maple. You should see:
 
 - **One session** for the conversation, with one turn per `agent.run()`. Each turn's trace starts at `FunctionAgent.run` (or `AgentWorkflow.run`, or your workflow class's `.run`).
-- **Framework: Unidentified.** Maple doesn't recognise the OpenInference LlamaIndex scope as LlamaIndex yet, so the session is filed under the generic GenAI bucket. Everything else on this list still works.
+- **Framework: LlamaIndex**, from the `llamaindex.instrumentor` attribute `LlamaIndexForMaple` adds.
 - **The transcript**: your messages, the model's replies and the tool calls it made.
 - **Model calls** named after your model class and method, for example `OpenRouter.astream_chat` or `OpenAI.achat`, one per call, each with a model and input and output tokens.
-- **Tool calls** named `FunctionTool.acall`, with the tool's name and result.
+- **Tool calls** named `FunctionTool.acall`, one per call, with the tool's name and result. `BaseWorkflowAgent.call_tool` and `aggregate_tool_results` are agent steps, not tool calls.
 - **Agents**: `assistant`, plus one lane per tagged sub-agent.
 - **Cost**: unpriced.
 
@@ -306,7 +323,8 @@ A second conversation with a different id is a second session. If a turn is miss
 - **Exports fail with 404.** `OTLPSpanExporter(endpoint=...)` doesn't append `/v1/traces`. Use `OTEL_EXPORTER_OTLP_ENDPOINT` with the base URL, or pass the full path.
 - **Tokens in the list, empty session page.** The GenAI output is off. Pass `TraceConfig(enable_genai_semconv=True)`.
 - **One session per message.** `agent.run()` isn't inside `using_session(...)`, or the id changes per request. `Context` and `llamaindex.run_id` are not session ids.
-- **Each model call counted two or three times.** `LlamaIndexForMaple` isn't in front of the exporter. Add the exporter through it, not directly with `add_span_processor(BatchSpanProcessor(...))`.
+- **Each model or tool call counted two or three times.** `LlamaIndexForMaple` isn't in front of the exporter. Add the exporter through it, not directly with `add_span_processor(BatchSpanProcessor(...))`.
+- **Framework shows "Unidentified".** The spans lack a `llamaindex.*` attribute: `LlamaIndexForMaple` is missing, or it's an older copy without the `llamaindex.instrumentor` line.
 - **Model calls take 1 ms.** Streamed model spans end when LlamaIndex hands back the stream, not when the last token arrives, so their duration isn't the model's latency. The enclosing `BaseWorkflowAgent.run_agent_step` span has the real time. If you don't stream tokens to users, `FunctionAgent(..., streaming=False)` records model spans with their full duration.
 - **No tokens on streamed calls.** The provider didn't send usage on the stream. Add `stream_options={"include_usage": True}` through `additional_kwargs`.
 - **Tool arguments show the tool's schema.** A known gap in the instrumentor's GenAI output; see [Tools, errors and sub-agents](#tools-errors-and-sub-agents).

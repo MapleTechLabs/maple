@@ -9,7 +9,9 @@ icon: "huggingface"
 
 smolagents has no OpenTelemetry code of its own. Every span comes from OpenInference's `openinference-instrumentation-smolagents`, which patches `MultiStepAgent.run`, each agent step, every model's `generate` and `Tool.__call__`. By default those spans use OpenInference attribute names (`llm.input_messages.0.message.role`, `llm.token_count.prompt`), and every `agent.run()` starts a new trace with no conversation id.
 
-Two defaults have to change for Maple. Maple's session page reads the OpenTelemetry GenAI attributes (`gen_ai.*`) for smolagents, not OpenInference's own, so without the instrumentor's GenAI dual-write the session list shows token counts and the session page shows no transcript. And without `using_session(...)` around each run, a ten-message chat becomes ten one-turn sessions. This guide covers smolagents 1.26 with `openinference-instrumentation-smolagents` 0.1.40 on Python 3.10 or later, for both `ToolCallingAgent` and `CodeAgent`.
+Two defaults have to change for Maple. Maple's session page reads the OpenTelemetry GenAI attributes (`gen_ai.*`) for smolagents, not OpenInference's own, so without the instrumentor's GenAI dual-write the session list shows token counts and the session page shows no transcript. And without `using_session(...)` around each run, a ten-message chat becomes ten one-turn sessions.
+
+This guide covers smolagents 1.26 with `openinference-instrumentation-smolagents` 0.1.40 on Python 3.10 or later, for both `ToolCallingAgent` and `CodeAgent`.
 
 ## Quick setup with a coding agent
 

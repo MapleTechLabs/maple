@@ -9,7 +9,9 @@ icon: "openrouter"
 
 OpenRouter Broadcast exports a trace for every request that goes through your OpenRouter account. You configure it once in the OpenRouter dashboard, with no SDK and no code in your app. Each trace carries the model, the provider that served it, input, output, cached and reasoning tokens, the cost OpenRouter charged you, and the prompt and completion. Maple reads all of it and shows these traces under **Agent Sessions** as vendor **OpenRouter**.
 
-Out of the box, though, every model call is its own trace and its own session. Broadcast only knows what is in the request body. Unless your code sends a `session_id`, a ten-turn conversation shows up as thirty one-call "sessions". This guide covers the dashboard setup, the two request fields that fix the grouping (`session_id` and `trace`), and what Broadcast can't see: your tools and your agent structure. Code samples use the `openai` SDK (npm 7.23, PyPI 3.20), `@openrouter/ai-sdk-provider` 3.1 for the Vercel AI SDK, and `@openrouter/sdk` 1.3.
+Out of the box, though, every model call is its own trace and its own session. Broadcast only knows what is in the request body. Unless your code sends a `session_id`, a ten-turn conversation shows up as thirty one-call "sessions".
+
+This guide covers the dashboard setup, the two request fields that fix the grouping (`session_id` and `trace`), and what Broadcast can't see: your tools and your agent structure. Code samples use the `openai` SDK (npm 7.23, PyPI 3.20), `@openrouter/ai-sdk-provider` 3.1 for the Vercel AI SDK, and `@openrouter/sdk` 1.3.
 
 ## Quick setup with a coding agent
 
@@ -42,7 +44,7 @@ The agent can change your code, but not your OpenRouter dashboard. It finishes b
 4. Set **Headers** to a JSON object with your Maple ingest key:
 
    ```json
-   { "Authorization": "Bearer maple_pk_your_key" }
+   { "Authorization": "Bearer YOUR_INGEST_KEY" }
    ```
 
 5. Leave the sampling rate at 1.0 and Privacy Mode off for now (see [privacy](#prompts-completions-and-privacy-mode) below).
@@ -258,7 +260,7 @@ The service name on Broadcast spans is always `openrouter`, and there is no envi
 
 ## Troubleshooting
 
-- **Test Connection fails.** The endpoint must be the full `https://ingest.maple.dev/v1/traces` URL and the headers valid JSON with `"Authorization": "Bearer <key>"`. EU organizations use `ingest.eu.maple.dev`.
+- **Test Connection fails.** The endpoint must be the full `https://ingest.maple.dev/v1/traces` URL and the headers valid JSON with `"Authorization": "Bearer YOUR_INGEST_KEY"`. EU organizations use `ingest.eu.maple.dev`.
 - **Test Connection passes but nothing arrives.** Check the destination's API key filter and data regions against the key and endpoint your app actually uses, and that **Enable Broadcast** is on for the account or organization your app's key belongs to. A placeholder key such as `MAPLE_TEST` passes the test, but Maple discards everything it sends.
 - **Every call is its own session, named `trace:<id>`.** The request has no `session_id`. Check the outgoing body, not just your code: a wrapper or framework may drop unknown fields.
 - **A session named `trace:00000000000000000000000000000001` with one span.** That's the `openrouter-connection-test` span from **Test Connection**. Ignore it.

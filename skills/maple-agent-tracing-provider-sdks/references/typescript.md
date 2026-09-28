@@ -125,6 +125,9 @@ export function tracedChat(client: OpenAI, params: ChatParams, onText?: (delta: 
 					"gen_ai.usage.reasoning.output_tokens":
 						completion.usage.completion_tokens_details?.reasoning_tokens ?? 0,
 				})
+				// OpenRouter adds the call's price in USD to usage. Other providers don't send one.
+				const cost = (completion.usage as { cost?: number }).cost
+				if (cost !== undefined) span.setAttribute("gen_ai.usage.cost", cost)
 			}
 			if (captureContent) {
 				const output = completion.choices.map((c) => ({

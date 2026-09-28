@@ -9,7 +9,7 @@ Goal: every conversation = one Maple Agent Session. Each `agent.run()` / `workfl
 
 Human guide with the reasoning: https://maple.dev/docs/agent-tracing/llamaindex
 
-Mechanism: `openinference-instrumentation-llama-index` (scope `openinference.instrumentation.llama_index`) with `TraceConfig(enable_genai_semconv=True)`, which dual-writes `gen_ai.*` on span attributes. Maple reads `gen_ai.conversation.id` as the session key for these spans. Maple files them under "Unidentified" framework (generic GenAI/OpenInference buckets); that is expected.
+Mechanism: `openinference-instrumentation-llama-index` (scope `openinference.instrumentation.llama_index`) with `TraceConfig(enable_genai_semconv=True)`, which dual-writes `gen_ai.*` on span attributes. Maple reads `gen_ai.conversation.id` as the session key. The `LlamaIndexForMaple` processor below stamps `llamaindex.instrumentor` so Maple labels the framework LlamaIndex (without it: "Unidentified").
 
 ## Step 0: detect
 
@@ -71,17 +71,22 @@ LLM_METHODS = (".chat", ".achat", ".stream_chat", ".astream_chat",
 
 
 class LlamaIndexForMaple(SpanProcessor):
-    """Sits in front of the exporter: one span per model call, agent names, no false HITL failures."""
+    """Sits in front of the exporter: one span per model and tool call, agent names, no false HITL failures."""
 
     def __init__(self, exporter_processor: SpanProcessor):
         self._next = exporter_processor
         self._open_llm_spans = {}
 
     def on_start(self, span, parent_context=None):
+        # Maple labels a span "LlamaIndex" by a llamaindex.* key; OpenInference writes none
+        span.set_attribute("llamaindex.instrumentor", "openinference")
         # instrument_tags({"gen_ai.agent.name": ...}) becomes an attribute, so sub-agents get lanes
         agent_name = active_instrument_tags.get().get("gen_ai.agent.name")
         if agent_name:
             span.set_attribute("gen_ai.agent.name", agent_name)
+        if span.name.endswith((".call_tool", ".aggregate_tool_results")):
+            # agent workflow steps around the tool span; by name alone Maple would count them as tool calls
+            span.set_attribute("gen_ai.operation.name", "invoke_workflow")
         if span.name.endswith(LLM_METHODS):
             self._open_llm_spans[span.context.span_id] = span
         self._next.on_start(span, parent_context)
@@ -117,7 +122,7 @@ LlamaIndexInstrumentor().instrument(
 
 - Import `tracing` first in the entry point (app module, `main.py`, worker). `instrument()` must run before the first `agent.run()`.
 - Existing provider: skip `TracerProvider()`/`set_tracer_provider`; call `existing.add_span_processor(LlamaIndexForMaple(BatchSpanProcessor(OTLPSpanExporter())))` and pass `tracer_provider=existing`.
-- The exporter MUST be added through `LlamaIndexForMaple`, never directly: without it every model call counts 2-3x in Maple (`_prepare_chat_with_tools` + nested same-name `astream_chat`/`achat` spans, all OpenInference kind LLM).
+- The exporter MUST be added through `LlamaIndexForMaple`, never directly: without it every model call counts 2-3x in Maple (`_prepare_chat_with_tools` + nested same-name `astream_chat`/`achat` spans, all OpenInference kind LLM) and every tool call 3x (`call_tool` / `aggregate_tool_results` step spans are classified as tools by name).
 - No `service.name` default is acceptable: set `OTEL_SERVICE_NAME` (never `unknown_service`).
 
 ## Step 3: session id (required)
@@ -169,9 +174,9 @@ async def run_agent(agent: FunctionAgent, message: str) -> str:
     return str(await handler)
 ```
 
-   Parallel fan-out (`ctx.send_event` + `@step(num_workers=N)` + `ctx.collect_events`) stays in one trace with the session and agent tags.
+   Parallel fan-out (several `ctx.send_event` calls to separate steps or to a `@step(num_workers=N)`, joined with `ctx.collect_events`) stays in one trace with the session and agent tags.
 3. Agents-as-tools: put the same `instrument_tags` block inside the tool function around the sub-agent's `run()`.
-4. `AgentWorkflow` handoffs: one `AgentWorkflow.run` span, no per-agent spans, so no lanes. Tag the call with the root agent's name. If the user needs lanes, suggest running agents via workflow steps or tools (ask first; it changes app behavior).
+4. `AgentWorkflow` handoffs: one `AgentWorkflow.run` span, no per-agent spans, so no lanes; every span carries the root agent's tag and the handoff is a `handoff` tool call. Tag the call with the root agent's name. If the user needs lanes, suggest running agents via workflow steps or tools (ask first; it changes app behavior).
 5. Tool failures: a tool that raises → `FunctionTool.acall` status ERROR with the exception message (Maple counts it). Tools that `return "Error: ..."` look successful: convert to `raise` only where the user agrees.
 6. HITL (`ctx.wait_for_event`): the first, suspended `FunctionTool.acall` ends ERROR `WaitingForEvent: ...`; the processor drops it. Nothing to add.
 7. Known, unfixable here: `gen_ai.tool.call.arguments` = the tool's parameter schema (OpenInference GenAI mapping bug); no `gen_ai.tool.call.id` on tool spans. Real args are in the transcript's tool_call parts.
@@ -201,11 +206,11 @@ Run one real conversation: 2+ messages with the same id, at least one tool call,
 
 - [ ] Exactly one session per conversation, id = the id you passed. A second conversation is a second session. Not `trace:<id>` sessions.
 - [ ] One turn per `run()`; each trace roots at `FunctionAgent.run` / `AgentWorkflow.run` / `<YourWorkflow>.run`.
-- [ ] Framework shows "Unidentified" (expected for OpenInference LlamaIndex spans).
+- [ ] Framework shows "LlamaIndex" ("Unidentified" = `llamaindex.instrumentor` missing: processor not installed or an old copy).
 - [ ] Transcript shows user messages, assistant replies and tool calls.
 - [ ] LLM call count ≈ real number of model calls (one `<ModelClass>.astream_chat`/`.achat` span per call; no `_prepare_chat_with_tools` spans exported).
 - [ ] Every model span has a model and input/output tokens, including streamed calls.
-- [ ] Tool spans `FunctionTool.acall` carry `gen_ai.tool.name` (real tool name) and a result; model and tool spans sit under the turn's agent span in the same trace.
+- [ ] Tool call count = real tool calls (only `FunctionTool.acall`; `call_tool`/`aggregate_tool_results` carry `gen_ai.operation.name=invoke_workflow`). Tool spans carry `gen_ai.tool.name` (real tool name) and a result; model and tool spans sit under the turn's agent span in the same trace.
 - [ ] A failing tool is failed with its message; successful and HITL-approved tools are not.
 - [ ] Sub-agents appear as separate lanes with their names, under the caller's session.
 - [ ] Cost shows "unpriced".

@@ -244,7 +244,7 @@ The `invoke_agent` span reports the run's own total under `gen_ai.aggregated_usa
 
 Streaming needs nothing extra. Pydantic AI requests usage on OpenAI-compatible streams (`stream_options.include_usage`), so streamed calls have token counts too. The streamed `chat` span also records time to first chunk, under a key Maple doesn't read yet.
 
-Cost shows as unpriced. Pydantic AI prices each call and writes the result to `operation.cost` on the `chat` span, but Maple reads cost only from `gen_ai.usage.cost` and never prices tokens itself. Tokens, models and call counts are complete.
+Cost shows as unpriced. Pydantic AI prices each call and writes the result to `operation.cost` on the `chat` span, but Maple reads cost only from `gen_ai.usage.cost`, `gen_ai.usage.total_cost` or `llm.cost.total`, and never prices tokens itself. Tokens, models and call counts are complete.
 
 ## Short-lived processes
 
