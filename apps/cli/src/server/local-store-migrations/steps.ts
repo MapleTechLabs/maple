@@ -1063,7 +1063,7 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 		clonedBefore: "any DDL runs",
 		afterBootstrap: [
 			backfill(
-				"TRUNCATE TABLE trace_facets_hourly",
+				"TRUNCATE TABLE IF EXISTS trace_facets_hourly",
 				"INSERT INTO trace_facets_hourly (OrgId, Hour, ServiceName, SpanName, HttpMethod, HttpStatusCode, DeploymentEnv, ServiceNamespace, HasError, TraceCount, DurationMin, DurationMax, DurationQuantiles) SELECT OrgId, toStartOfHour(Timestamp) AS Hour, ServiceName, SpanName, HttpMethod, HttpStatusCode, DeploymentEnv, ServiceNamespace, HasError, count() AS TraceCount, min(Duration) AS DurationMin, max(Duration) AS DurationMax, quantilesTDigestState(0.5, 0.95)(Duration) AS DurationQuantiles FROM trace_list_mv GROUP BY OrgId, Hour, ServiceName, SpanName, HttpMethod, HttpStatusCode, DeploymentEnv, ServiceNamespace, HasError",
 			),
 		],
