@@ -33,8 +33,6 @@ Your ingest key is in **Settings → Ingestion**.
 npm install ai@^7.0.106 @ai-sdk/otel @opentelemetry/sdk-node
 ```
 
-`@ai-sdk/otel` creates the spans and the OpenTelemetry Node SDK exports them. `@opentelemetry/api` comes with it as a peer dependency.
-
 ## Point the exporter at Maple
 
 ```bash
