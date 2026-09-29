@@ -1115,18 +1115,21 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 		],
 	},
 	{
+		// TODO(v25 -> v26): what changes, and what is NOT backfilled. Fill beforeBootstrap
+		// with the ADD COLUMN / view drops an IF NOT EXISTS bootstrap cannot do, then the
+		// plan line and dispositions. The v26 physical verify fails an unfinished row.
 		// Only the view's SELECT changes; existing index rows keep their v25 values.
 		id: "local-0025-to-0026-ai-trace-index-usage-keys",
 		from: 25,
 		to: 26,
 		description:
-			"Recreate ai_trace_index_mv so Tokens, Cost and AgentName read the emitter's usage convention and the added usage, cost and agent-name keys",
+			"Recreate ai_trace_index_mv so Tokens, Cost and AgentName read the canonical keys the ingest gateway restates",
 		clonedBefore: "any DDL runs",
 		beforeBootstrap: [dropViews("ai_trace_index_mv")],
 		plan: [
 			[
 				"rebuild-ai-trace-index-view",
-				"Rebuild ai_trace_index_mv so Tokens, Cost and AgentName read the emitter's usage convention and the added keys",
+				"Rebuild ai_trace_index_mv so Tokens, Cost and AgentName read the canonical usage, cost and agent-name keys",
 			],
 		],
 		verifies: "Verify the v26 physical schema and the retained raw telemetry counts",
@@ -1137,7 +1140,7 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 				classification: "derived",
 				disposition: "rebuild-within-retention-horizon",
 				guarantee:
-					"Existing rows are preserved untouched with their v25 Tokens, Cost and AgentName; the rebuilt view reads the new rules for spans materialized after the migration and the gap closes as the retention window rolls.",
+					"Existing rows are preserved untouched with their v25 Tokens, Cost and AgentName; the rebuilt view reads the canonical keys for spans materialized after the migration and the gap closes as the retention window rolls.",
 				...AI_TRACE_INDEX_FORWARD,
 			},
 		],

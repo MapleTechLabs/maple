@@ -837,33 +837,27 @@ describe("migration 0031 — ai_trace_index list columns", () => {
 })
 
 describe("migration 0035: ai_trace_index usage, cost and agent-name keys", () => {
-	it("recreates the view in the emitter's DDL, with no column added and no backfill", () => {
+	it("recreates the view reading one canonical key per fact, with no column added and no backfill", () => {
 		const [drop, view, ...rest] = migration_0035_ai_trace_index_usage_keys.statements
 		expect(rest).toEqual([])
 		// An MV's SELECT is frozen at creation, so the 0032 view is dropped first.
 		expect(drop).toBe("DROP VIEW IF EXISTS ai_trace_index_mv")
 		expect(latestSnapshotStatements).toContain(view)
-		// The emitter decides the usage convention: Claude Code keeps Anthropic's
-		// excludes-cache rule, an `anthropic` provider no longer does.
-		expect(view).toContain(
-			"SpanAttributes['maple_ai.vendor.id'] IN ('claude_agent_sdk'), toFloat64OrZero(",
-		)
-		expect(view).not.toContain("'anthropic'")
+		// The ingest gateway restates every spelling and the usage convention, so
+		// the view has neither alias lists nor vendor/provider branches.
+		expect(view).toContain("toFloat64OrZero(SpanAttributes['gen_ai.usage.cost']) AS Cost")
+		expect(view).toContain("SpanAttributes['gen_ai.agent.name'] AS AgentName")
 		for (const key of [
-			"gen_ai.usage.reasoning_tokens",
-			"gen_ai.usage.details.reasoning_tokens",
-			"gen_ai.usage.input_tokens.cache_write",
-			"gen_ai.usage.cache_read_input_tokens",
-			"gen_ai.usage.cache_write_input_tokens",
-			"litellm.cost.total",
-			"operation.cost",
-			"langsmith.metadata.lc_agent_name",
+			"gen_ai.usage.prompt_tokens",
+			"ai.usage.inputTokens",
+			"llm.cost.total",
+			"graph.node.id",
 		]) {
-			expect(view).toContain(`SpanAttributes['${key}']`)
+			expect(view).not.toContain(`SpanAttributes['${key}']`)
 		}
-		expect(view).toContain(
-			"if(SpanAttributes['maple_ai.vendor.id'] = 'crewai', SpanAttributes['graph.node.id'], '')) AS AgentName",
-		)
+		expect(view).not.toContain("'claude_agent_sdk'")
+		expect(view).not.toContain("gen_ai.provider.name")
+		expect(migration_0035_ai_trace_index_usage_keys.requiredForIngest).toBe(false)
 	})
 })
 

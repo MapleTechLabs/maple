@@ -315,17 +315,17 @@ export const LOCAL_SCHEMA_HISTORY: ReadonlyArray<LocalSchemaHistoryEntry> = Obje
 		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
 	}),
 	Object.freeze({
-		// v26: ai_trace_index_mv reads the emitter's usage convention and the
-		// added usage, cost and agent-name keys (migration 0035). No row moves;
+		// v26: ai_trace_index_mv reads the canonical usage, cost and agent-name
+		// keys the ingest gateway restates (migration 0035). No row moves;
 		// existing index rows keep their v25 values, nothing is backfilled.
 		//
 		// projectRevision is carried forward deliberately: it is a hardcoded
 		// constant that no longer tracks the generator's header, and the identity
 		// this gate compares is the fingerprint/digest pair.
 		version: 26,
-		fingerprint: "3029d71ce0d0b9a9",
-		digest: "3029d71ce0d0b9a9a33ad5bffa650c34b84cbff5433154b09b6cc531e16b8419",
-		manifestDigest: "f3860d39dc22891bd3167f462a487a2207da55653c70f3f3396c283e36211c7c",
+		fingerprint: "b69b1fd7e90748bb",
+		digest: "b69b1fd7e90748bbf674eed7769e7b11dbadfc0390d6eb6f2817487046cada46",
+		manifestDigest: "d8e71ee66075c80de475b63da0fe1ecd2e8070a4e0be643fde85c6bd73d4f998",
 		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
 	}),
 ] as const)
