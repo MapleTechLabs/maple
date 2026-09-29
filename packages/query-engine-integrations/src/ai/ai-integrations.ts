@@ -19,6 +19,7 @@ import {
 	AI_GENAI_FIELDS,
 	AI_PROMPT_VARIABLE_PREFIX,
 	MAPLE_AI_SESSION_ID_ATTR,
+	MAPLE_AI_STAMP_ATTRS,
 	MAPLE_AI_VENDOR_ID_ATTR,
 	MAPLE_AI_VENDOR_VERSION_ATTR,
 	type AiAgentSpan,
@@ -285,6 +286,7 @@ export const aiSpanAttributeKeys: readonly string[] = [
 		MAPLE_AI_SESSION_ID_ATTR,
 		MAPLE_AI_VENDOR_ID_ATTR,
 		MAPLE_AI_VENDOR_VERSION_ATTR,
+		MAPLE_AI_STAMP_ATTRS.agentName,
 		...[genAiIntegration, ...resolvedIntegrations.values()].flatMap((integration) =>
 			Object.values(integration.sources).flat(),
 		),
@@ -376,6 +378,10 @@ export const mapAiSpan = (row: AiSessionSpansOutput): AiAgentSpan => {
 		}
 	}
 	integration.refine?.(genAi, { row, attributes, read })
+	// The agent the ingest gateway named, which the list and its facets show: it
+	// reads names no dialect key carries (OpenAI Agents' graph node).
+	const stampedAgent = readAttribute(attributes, MAPLE_AI_STAMP_ATTRS.agentName)
+	if (stampedAgent !== undefined) genAi.agentName = stampedAgent
 
 	const promptVariables = collectPromptVariables(attributes)
 	const sessionId = readAttribute(attributes, MAPLE_AI_SESSION_ID_ATTR)
