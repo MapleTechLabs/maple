@@ -2,7 +2,6 @@ import { type IdentifyInput, setConsent, type TrackProps, track } from "@maple/b
 import type { MapleBrowserConfig } from "./config"
 import { type CaptureExceptionOptions, captureException } from "./errors"
 import { identify, init, type MapleBrowserHandle } from "./init"
-import { type FeedbackInput, sendFeedback } from "./feedback"
 import { type MapleLogger, logger } from "./logger"
 import { endNavigation, startNavigation, type TracedOptions, traced } from "./navigation"
 
@@ -20,7 +19,6 @@ export type { HttpStatusRange } from "./http-status"
 export type { MapleBrowserHandle } from "./init"
 export type { LogAttributeValue } from "./logs"
 export type { MapleLogger } from "./logger"
-export type { FeedbackInput } from "./feedback"
 export type { TracedOptions } from "./navigation"
 
 /** The `MapleBrowser` namespace object. */
@@ -64,13 +62,6 @@ export interface MapleBrowserApi {
 	 * span and the session. Safe before `init`: records queue until it runs.
 	 */
 	logger: MapleLogger
-	/**
-	 * Send end-user feedback, linked to the session, its replay, and the last
-	 * error the user hit. Headless: call it from your own form. Also keeps a
-	 * buffered replay (`replay.onErrorSampleRate`). Returns false when nothing
-	 * was sent (empty message, no consent).
-	 */
-	sendFeedback: (input: FeedbackInput) => boolean
 }
 
 /**
@@ -101,5 +92,4 @@ export const MapleBrowser: MapleBrowserApi = {
 	endNavigation,
 	traced,
 	logger,
-	sendFeedback,
 }
