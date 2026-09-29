@@ -340,6 +340,55 @@ export const config = {
 - `withMapleProxy` keeps a `traceparent` the request already carries, as client navigations do, and only changes responses that go on to a render in your app. Redirects and responses your proxy builds itself pass through unchanged. If a shared cache such as a CDN stores prerendered pages, leave them out of the matcher, or every visitor joins the same trace.
 - Server Components can time database and SDK calls with `traced` from `@maple-dev/browser/server`. Pass `isFailure: () => false`: Next.js records an error thrown from a Server Component on its render span, and `redirect()` and `notFound()` work by throwing.
 
+## Astro integration
+
+`@maple-dev/browser/astro` traces page loads, `<ClientRouter />` navigations and pages rendered on demand (Astro 5 or later), with nothing to add to your layouts. Add the integration:
+
+```js
+// astro.config.mjs
+import maple from "@maple-dev/browser/astro"
+import { defineConfig } from "astro/config"
+
+export default defineConfig({
+	integrations: [maple()],
+})
+```
+
+And initialize the SDK from a `<script>` in the `<head>` of the layout every page renders. Astro only exposes `PUBLIC_` variables to browser code:
+
+```astro
+<script>
+	import { MapleBrowser } from "@maple-dev/browser"
+
+	MapleBrowser.init({
+		ingestKey: import.meta.env.PUBLIC_MAPLE_INGEST_KEY,
+		serviceName: "acme-web",
+	})
+</script>
+```
+
+- Spans are named after the page's route, `Astro.routePattern`, like `pageload /blog/[slug]` or `navigate /projects/[id]`. The integration's middleware writes it on each page's `<html data-route>`, at build time for prerendered pages.
+- Without `<ClientRouter />`, each page load is a `pageload` span that ends at the window's `load` event. With it, each navigation is a `navigate` span, with a `load page` span and the request for the next page under it. A second click ends the first as interrupted. A link that falls back to a full page load, like one to a PDF, keeps the generic name `navigate`, and the new page gets its own `pageload`. Hash links on the same page start no span.
+- An island whose code fails to load is reported as `astro.hydration_error` (Astro 6.3 or later).
+- A page rendered on demand runs in an `ssr <route>` span, and its HTML response carries `Server-Timing`, so the page load joins the server's trace. That needs OpenTelemetry running in the server process, like the Node SDK preloaded with `node --import` for `@astrojs/node`. Responses other visitors may get from a cache don't carry it: pages Astro's route cache stores, and responses with `Cache-Control: public` or `s-maxage`, or with `CDN-Cache-Control`.
+- `MapleBrowser.init` stays in your own script: its options can hold functions and `import.meta.env` values, so the integration doesn't take them.
+
+To wire it without the integration, export the middleware from `src/middleware.ts` (first in `sequence()` if you have your own), and trace navigations from the script that calls `init`:
+
+```ts
+// src/middleware.ts
+export { onRequest } from "@maple-dev/browser/astro/middleware"
+```
+
+```astro
+<script>
+	import "../maple" // your MapleBrowser.init() call
+	import { traceAstroNavigation } from "@maple-dev/browser/astro/client"
+
+	traceAstroNavigation()
+</script>
+```
+
 ## Custom events
 
 `track(name, props)` records a product event against the current session. It appears inline in the session transcript next to the clicks and network calls around it, and counts as a [product event](/docs/product-events/overview).

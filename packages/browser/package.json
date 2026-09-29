@@ -42,6 +42,18 @@
 		"./nextjs/server": {
 			"types": "./dist/nextjs-server.d.mts",
 			"import": "./dist/nextjs-server.mjs"
+		},
+		"./astro": {
+			"types": "./dist/astro.d.mts",
+			"import": "./dist/astro.mjs"
+		},
+		"./astro/client": {
+			"types": "./dist/astro-client.d.mts",
+			"import": "./dist/astro-client.mjs"
+		},
+		"./astro/middleware": {
+			"types": "./dist/astro-middleware.d.mts",
+			"import": "./dist/astro-middleware.mjs"
 		}
 	},
 	"publishConfig": {
@@ -70,6 +82,7 @@
 		"@types/react": "catalog:react",
 		"@types/react-dom": "catalog:react",
 		"@vitest/browser-playwright": "catalog:",
+		"astro": "^7.3.5",
 		"next": "^16.3.6",
 		"playwright": "catalog:",
 		"react": "catalog:react",
@@ -79,10 +92,14 @@
 		"vitest": "catalog:"
 	},
 	"peerDependencies": {
+		"astro": "*",
 		"next": "*",
 		"react": "*"
 	},
 	"peerDependenciesMeta": {
+		"astro": {
+			"optional": true
+		},
 		"next": {
 			"optional": true
 		},
