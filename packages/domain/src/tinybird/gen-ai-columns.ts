@@ -40,13 +40,13 @@ const leftUTF8 = (value: Expr<string>, chars: number): Expr<string> =>
  * group as often as the type is — but a framework that puts a stack trace there
  * would otherwise make the index as wide as the raw span.
  */
-export const GENAI_STATUS_MESSAGE_MAX = 400
+const GENAI_STATUS_MESSAGE_MAX = 400
 
 /** How much of a failure's text is redacted and hashed: no longer than the
  *  status message the index carries, nor the failed tool call's result the
  *  gateway cuts, so a fingerprint is a function of its row's own
  *  `FailedToolCallResult` and `StatusMessage`. */
-export const GENAI_ERROR_FINGERPRINT_CHARS = 400
+const GENAI_ERROR_FINGERPRINT_CHARS = 400
 
 const statusMessage = leftUTF8(CH.dynamicColumn<string>("StatusMessage"), GENAI_STATUS_MESSAGE_MAX)
 const failedToolCallResult = attr(MAPLE_AI_STAMP_ATTRS.toolErrorResult)

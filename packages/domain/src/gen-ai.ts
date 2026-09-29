@@ -129,12 +129,11 @@ export const MAPLE_GENAI_MODEL_DURATION_MS_ATTR = "maple_ai.model_duration_ms"
  *   presence is what says the gateway decided the rest; a span ingested
  *   before it did carries none, and its readers keep their op/name rules and
  *   usage conventions for it until it ages out of the 30-day TTL.
- * - `toolCall`, `error`, `toolPaused`: `"1"` where they hold, absent otherwise.
- *   `toolPaused` marks a tool call's copy that recorded no outcome — no result
- *   or only Google ADK's confirmation request — which a call paused for a
- *   human's approval leaves behind.
- * - `model`, `agentName`, `toolName`, `toolCallId`, `responseId`: the first
- *   non-empty value across the dialects' keys; `responseId` on model calls.
+ * - `toolCall`, `error`: `"1"` where they hold, absent otherwise.
+ * - `model`, `agentName`, `toolName`, `responseId`: the first non-empty value
+ *   across the dialects' keys; `responseId` on model calls.
+ * - The gateway also stamps `maple_ai.tool.call_id` and `maple_ai.tool.paused`
+ *   (a tool call's copy that recorded no outcome), which nothing reads yet.
  * - `toolDescription` (on tool calls) and `toolErrorResult` (a failed tool
  *   call's result), cut by the gateway.
  * - The usage buckets, on the model call alone: `inputTokens` the uncached
@@ -148,11 +147,9 @@ export const MAPLE_AI_STAMP_ATTRS = {
 	llmCall: "maple_ai.llm_call",
 	toolCall: "maple_ai.tool_call",
 	error: "maple_ai.error",
-	toolPaused: "maple_ai.tool.paused",
 	model: "maple_ai.model",
 	agentName: "maple_ai.agent.name",
 	toolName: "maple_ai.tool.name",
-	toolCallId: "maple_ai.tool.call_id",
 	responseId: "maple_ai.response.id",
 	toolDescription: "maple_ai.tool.description",
 	toolErrorResult: "maple_ai.tool.error_result",
@@ -195,7 +192,7 @@ const NESTED: GenAiUsageConvention = { inputIncludesCache: true, outputIncludesR
  * under. Only providers whose wire shape was checked are listed; anything else
  * takes {@link GENAI_DEFAULT_USAGE_CONVENTION}.
  */
-export const GENAI_PROVIDER_USAGE_CONVENTIONS: ReadonlyMap<string, GenAiUsageConvention> = new Map([
+const GENAI_PROVIDER_USAGE_CONVENTIONS: ReadonlyMap<string, GenAiUsageConvention> = new Map([
 	// Messages API: `input_tokens` excludes both cache buckets and is billed
 	// beside them; `output_tokens` includes the thinking tokens.
 	["anthropic", { inputIncludesCache: false, outputIncludesReasoning: true }],
@@ -214,7 +211,7 @@ export const GENAI_PROVIDER_USAGE_CONVENTIONS: ReadonlyMap<string, GenAiUsageCon
  * Vendors that re-normalise usage before emitting it, whichever provider ran
  * the call — so the vendor, not the provider, decides.
  */
-export const GENAI_VENDOR_USAGE_CONVENTIONS: ReadonlyMap<string, GenAiUsageConvention> = new Map([
+const GENAI_VENDOR_USAGE_CONVENTIONS: ReadonlyMap<string, GenAiUsageConvention> = new Map([
 	// The Vercel AI SDK emits `gen_ai.usage.input_tokens` as
 	// `usage.inputTokens.total` and the output as `outputTokens.total`, and its
 	// providers build both totals as the sum of their parts (`@ai-sdk/anthropic`
@@ -234,7 +231,7 @@ export const GENAI_VENDOR_USAGE_CONVENTIONS: ReadonlyMap<string, GenAiUsageConve
 
 /** What most of the field does, and the side that errs toward the smaller
  *  number rather than inventing tokens. */
-export const GENAI_DEFAULT_USAGE_CONVENTION: GenAiUsageConvention = NESTED
+const GENAI_DEFAULT_USAGE_CONVENTION: GenAiUsageConvention = NESTED
 
 /**
  * The convention a span's usage was reported under. The vendor is asked first

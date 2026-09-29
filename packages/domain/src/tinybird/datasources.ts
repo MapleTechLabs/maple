@@ -1140,7 +1140,7 @@ export type TraceDetailSpansRow = InferRow<typeof traceDetailSpans>
  * The columns are what its readers need — the trace-id set, the grouping key,
  * the agent-span bounds that tell the fan-out which hours to read, the filter
  * dimensions the sidebar offers (service, environment, and the span's model,
- * agent and tool coalesced across dialects), and the per-span measures the
+ * agent and tool as stamped by the ingest gateway), and the per-span measures the
  * page ranks and filters on: whether the span is a model call, a tool call, a
  * failure, and the tokens and cost it reported, with `SpanId`/`ParentSpanId`
  * so a wrapper's roll-up of its children's usage can be taken off it. Every

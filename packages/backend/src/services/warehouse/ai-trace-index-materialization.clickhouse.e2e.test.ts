@@ -996,8 +996,8 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 	it("measures each session off the index the way the detail page does", async () => {
 		const [sessionless, session] = await rankPage()
 
-		// Name-classified inference: no operation name, but a model and no
-		// tool/agent words in the span name.
+		// The gateway's model call: a legacy-scope `doGenerate` with no
+		// operation name.
 		assert.deepStrictEqual(
 			[sessionless!.models, sessionless!.agentNames, sessionless!.llmCalls, sessionless!.toolCalls],
 			[["gpt-5"], [], 1, 0],
