@@ -2,9 +2,9 @@ import { AsyncLocalStorageContextManager } from "@opentelemetry/context-async-ho
 import { context, trace } from "@opentelemetry/api"
 import { BasicTracerProvider, InMemorySpanExporter, SimpleSpanProcessor } from "@opentelemetry/sdk-trace-base"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
-import { createApp, h } from "vue"
+import { h } from "vue"
 import { createMemoryHistory, createRouter } from "vue-router"
-import { mapleNitroPlugin, mapleSsrPlugin } from "./index"
+import { mapleNitroPlugin, nameSsrSpan } from "./index"
 
 const exporter = new InMemorySpanExporter()
 
@@ -77,8 +77,8 @@ describe("mapleNitroPlugin", () => {
 	})
 })
 
-describe("mapleSsrPlugin", () => {
-	/** The server render's router, with the plugin installed, as Nuxt sets them up. */
+describe("nameSsrSpan", () => {
+	/** The server render's router, with the request span named after it. */
 	function serverRouter() {
 		const router = createRouter({
 			history: createMemoryHistory(),
@@ -87,8 +87,7 @@ describe("mapleSsrPlugin", () => {
 				{ path: "/projects/:id()", component: { render: () => h("p") } },
 			],
 		})
-		const vueApp = createApp({ render: () => null }).use(router)
-		mapleSsrPlugin({ vueApp })
+		nameSsrSpan(router)
 		return router
 	}
 

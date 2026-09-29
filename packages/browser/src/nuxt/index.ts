@@ -7,7 +7,6 @@
 // `pageload` span reads. The browser side is `@maple-dev/browser/vue`. Depends
 // on `@opentelemetry/api` only, like `@maple-dev/browser/server`.
 import { trace } from "@opentelemetry/api"
-import type { App } from "vue"
 import type { Router } from "vue-router"
 import { serverTiming } from "../server"
 
@@ -19,11 +18,6 @@ interface NitroApp {
 			fn: (response: { headers?: Record<string, string> | undefined }) => void,
 		): void
 	}
-}
-
-/** The part of Nuxt's `NuxtApp` this uses. */
-interface NuxtApp {
-	readonly vueApp: App
 }
 
 /**
@@ -44,11 +38,10 @@ export function mapleNitroPlugin(nitroApp: NitroApp): void {
 }
 
 /**
- * `export default defineNuxtPlugin(mapleSsrPlugin)` in `app/plugins/*.server.ts`: names the
- * request span after the page's route, `ssr /projects/:id()`.
+ * `export default defineNuxtPlugin(() => nameSsrSpan(useRouter()))` in `app/plugins/*.server.ts`:
+ * names the request span after the page's route, `ssr /projects/:id()`.
  */
-export function mapleSsrPlugin(nuxtApp: NuxtApp): void {
-	const router: Router = nuxtApp.vueApp.config.globalProperties.$router
+export function nameSsrSpan(router: Router): void {
 	router.afterEach((to) => {
 		// A URL no route matches keeps the request span's own name, not the concrete path
 		const route = to.matched.at(-1)?.path
