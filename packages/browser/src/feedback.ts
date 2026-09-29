@@ -50,6 +50,9 @@ export function sendFeedback(input: FeedbackInput): boolean {
 	if (!message || !hasConsent()) return false
 	const email = captureEmail ? input.email?.trim() : undefined
 	const name = input.name?.trim()
+	// Keep a buffered replay first: the trigger marks the session recorded synchronously, so
+	// `has_replay` then reflects the minute this feedback just kept.
+	keepReplay()
 	const recorded = typeof window === "undefined" ? false : getSession().replaySampled === true
 	emitLog({
 		eventName: "maple.user_feedback",
@@ -65,7 +68,5 @@ export function sendFeedback(input: FeedbackInput): boolean {
 			"maple.feedback.has_replay": recorded,
 		},
 	})
-	// Feedback is a user saying something went wrong: worth the buffered minute, like an error.
-	keepReplay()
 	return true
 }
