@@ -261,21 +261,6 @@ A matching request span gets status `Error`, `error.type` set to the status code
 
 The SDK keeps the last 50 clicks, inputs, navigations and console lines in memory. Nothing is sent until an error is recorded. Then the trail is sent as OpenTelemetry log records linked to the error, so you see what the user did right before it on the error's trace. Each breadcrumb is sent once. Clicks and inputs are recorded as a short selector (`button#save`), never with input values. Turn it off with `breadcrumbs: false`.
 
-### User feedback
-
-Send what a user tells you from your own feedback form:
-
-```ts
-MapleBrowser.sendFeedback({
-	message: form.message,
-	email: form.email, // dropped when privacy.captureUserEmail is false
-	name: form.name,
-	attributes: { "feedback.category": "bug" },
-})
-```
-
-Feedback is sent as a `maple.user_feedback` log event with the session id and, when the user hit an error earlier on the page, a link to that error's trace. It also keeps a buffered replay (see [Replay on error](#replay-on-error)). It returns `false` when nothing was sent (an empty message, or no consent).
-
 ## Connect browser and backend traces
 
 For a request to the same origin as the page, the `fetch()` span sends a W3C `traceparent` header, and your backend's span joins the same trace. For a request to another origin, such as `https://api.example.com` from `https://app.example.com`, the header is not sent unless you list the URL:
@@ -464,7 +449,7 @@ A value outside `0` to `1` is clamped, with a console warning.
 
 ### Replay on error
 
-`replay.onErrorSampleRate` covers the sessions `replay.sampleRate` leaves out. Those sessions record into memory only, keeping roughly the last minute, and upload nothing. When an error is recorded (or the user sends feedback), the buffered minute is uploaded and the rest of the session is recorded normally, including its later page loads.
+`replay.onErrorSampleRate` covers the sessions `replay.sampleRate` leaves out. Those sessions record into memory only, keeping roughly the last minute, and upload nothing. When an error is recorded, the buffered minute is uploaded and the rest of the session is recorded normally, including its later page loads.
 
 ```ts
 replay: { sampleRate: 0.05, onErrorSampleRate: 1 } // 5% of sessions, plus every session with an error
