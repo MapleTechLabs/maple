@@ -146,7 +146,8 @@ export function setupErrorCapture(): () => void {
 				},
 			},
 			"window.onerror",
-			event.filename,
+			// A thrown Error carries its own frames; anything else only has the event's filename.
+			event.error instanceof Error ? undefined : event.filename || undefined,
 		)
 	}
 
