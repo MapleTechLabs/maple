@@ -10,7 +10,7 @@
 // app that registered its provider first owns that). Without a live provider
 // (before `init()`, after `shutdown()`, tracing disabled, consent not yet
 // granted, or on a server) nothing is spanned and `traced` only runs `fn`.
-import { hasConsent, scrubUrl } from "@maple/browser-session"
+import { consentAllowedSince, hasConsent, scrubUrl } from "@maple/browser-session"
 import {
 	type Context,
 	context,
@@ -87,8 +87,9 @@ export function startNavigation(path: string): void {
 	const live = tracer()
 	if (!live) return
 	const parent = (joinServer ? serverContext() : undefined) ?? context.active()
-	// The document's page load began at navigation start, not when the app's JS got here.
-	const startTime = joinServer ? performance.timeOrigin : undefined
+	// The document's page load began at navigation start, not when the app's JS got here,
+	// but never before a consent grant: the exporter drops anything that began earlier.
+	const startTime = joinServer ? Math.max(performance.timeOrigin, consentAllowedSince()) : undefined
 	const span = live.startSpan(kind, { startTime, attributes: { "url.path": scrubUrl(path) } }, parent)
 	navigation = { kind, span }
 	if (joinServer) {
