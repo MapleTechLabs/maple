@@ -42,6 +42,14 @@
 		"./nextjs/server": {
 			"types": "./dist/nextjs-server.d.mts",
 			"import": "./dist/nextjs-server.mjs"
+		},
+		"./angular": {
+			"types": "./dist/angular.d.mts",
+			"import": "./dist/angular.mjs"
+		},
+		"./angular/server": {
+			"types": "./dist/angular-server.d.mts",
+			"import": "./dist/angular-server.mjs"
 		}
 	},
 	"publishConfig": {
@@ -65,6 +73,11 @@
 		"rrweb": "^2.0.0-alpha.18"
 	},
 	"devDependencies": {
+		"@angular/common": "^22.2.0",
+		"@angular/compiler": "^22.2.0",
+		"@angular/core": "^22.2.0",
+		"@angular/platform-browser": "^22.2.0",
+		"@angular/router": "^22.2.0",
 		"@maple/browser-session": "workspace:*",
 		"@opentelemetry/context-async-hooks": "^2.11.0",
 		"@types/react": "catalog:react",
@@ -74,15 +87,29 @@
 		"playwright": "catalog:",
 		"react": "catalog:react",
 		"react-dom": "catalog:react",
+		"rxjs": "^7.8.2",
 		"tsdown": "^0.23.0",
 		"typescript": "catalog:tooling",
-		"vitest": "catalog:"
+		"vitest": "catalog:",
+		"zone.js": "~0.16.0"
 	},
 	"peerDependencies": {
+		"@angular/common": "*",
+		"@angular/core": "*",
+		"@angular/router": "*",
 		"next": "*",
 		"react": "*"
 	},
 	"peerDependenciesMeta": {
+		"@angular/common": {
+			"optional": true
+		},
+		"@angular/core": {
+			"optional": true
+		},
+		"@angular/router": {
+			"optional": true
+		},
 		"next": {
 			"optional": true
 		},

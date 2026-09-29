@@ -249,6 +249,57 @@ export const config = { matcher: ["/((?!api|_next/static|_next/image|favicon.ico
 - The browser follows the server's sampling decision: a page load under an
   unsampled server trace isn't recorded.
 
+## Angular
+
+`@maple-dev/browser/angular` wires the Angular Router (Angular 19+) to the
+navigation spans. Plain functions and an undecorated class: no Angular compiler
+step needed.
+
+```ts
+// src/app/app.config.ts
+import { MapleErrorHandler, provideMapleTracing } from "@maple-dev/browser/angular"
+
+export const appConfig: ApplicationConfig = {
+	providers: [
+		provideRouter(routes),
+		provideMapleTracing(),
+		{ provide: ErrorHandler, useClass: MapleErrorHandler },
+	],
+}
+```
+
+```ts
+// a resolver: its data loading in a span under the navigation
+export const projectResolver: ResolveFn<Project> = (route) => {
+	const http = inject(HttpClient) // before the first await
+	return tracedResolver("loader /projects/:id", () =>
+		firstValueFrom(http.get<Project>(`/api/projects/${route.paramMap.get("id")}`)),
+	)
+}
+```
+
+```ts
+// src/server.ts (@angular/ssr): the render in an `ssr` span, joined by the page load
+import { tracedRender } from "@maple-dev/browser/angular/server"
+
+app.use((req, res, next) => {
+	tracedRender(req, () => angularApp.handle(req))
+		.then((response) => (response ? writeResponseToNodeResponse(response, res) : next()))
+		.catch(next)
+})
+```
+
+- Spans are named after the matched routes' paths, like `navigate /projects/:id`
+  (`/**` for the wildcard route). A guard or resolver redirect stays in one span,
+  named after where it lands; a navigation replaced by another ends as interrupted.
+- `tracedResolver` doesn't count a thrown `RedirectCommand` as an error.
+- `MapleErrorHandler` reports as `angular.error`, skips errors a resolver already
+  recorded, and still logs like Angular's own handler. With your own
+  `ErrorHandler`, call `reportAngularError(error)` from it instead.
+- `provideMapleTracing()` does nothing on the server. `/angular/server` depends
+  on `@opentelemetry/api` only. Leave pages a shared cache (CDN) stores out of
+  `tracedRender`, or every visitor joins one trace.
+
 ## Linking a marketing site to your app
 
 The visitor id lives in localStorage **and** a cookie scoped to your registered
