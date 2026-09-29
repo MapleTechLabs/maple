@@ -608,6 +608,19 @@ describe("isLlmCall", () => {
 		expect(classifyAiSpan(embedding)).toBe("inference")
 		expect(isLlmCall(embedding)).toBe(false)
 	})
+
+	it("reads a memory operation as agent work, even when it names a model", () => {
+		const memory = makeSpan({
+			spanId: "a",
+			startMs: 0,
+			durationMs: 1,
+			spanName: "search_memory chat-history",
+			genAi: { operationName: "search_memory", requestModel: "text-embedding-3-small" },
+		})
+
+		expect(classifyAiSpan(memory)).toBe("agent")
+		expect(isLlmCall(memory)).toBe(false)
+	})
 })
 
 describe("the ingest gateway's verdicts", () => {

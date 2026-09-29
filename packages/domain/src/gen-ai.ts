@@ -84,7 +84,7 @@ export const MAPLE_NATIVE_TURN_ID_ATTR = "maple_ai.turn.id"
 
 // `gen_ai.operation.name` is an open set. These group the semantic convention's
 // operation names — plus `agent_step`, which the Vercel AI SDK emits and
-// production data carries — into the four readings the product distinguishes.
+// production data carries — into the five readings the product distinguishes.
 // Shared between the session summary query and the web's span classifier so an
 // "llm call" is the same span on the server and on the page.
 export const AI_INFERENCE_OPERATIONS = [
@@ -102,6 +102,19 @@ export const AI_AGENT_OPERATIONS = [
 	"invoke_workflow",
 	"plan",
 	"agent_step",
+] as const
+/** The convention's memory-store operations: the agent's own bookkeeping, never
+ *  a model turn or a tool call. The ingest gateway decides this for the spans it
+ *  stamps (`KNOWN_OPS` in `apps/ingest/src/ai_session/usage.rs`); the span
+ *  classifier reads it for the spans ingested before. */
+export const AI_MEMORY_OPERATIONS = [
+	"search_memory",
+	"create_memory",
+	"update_memory",
+	"upsert_memory",
+	"delete_memory",
+	"create_memory_store",
+	"delete_memory_store",
 ] as const
 /**
  * Count of whole oldest messages dropped from `gen_ai.input.messages` to fit
