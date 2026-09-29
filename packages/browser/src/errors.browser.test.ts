@@ -2,6 +2,7 @@ import { assert, beforeEach, describe, it } from "vitest"
 import { SpanStatusCode, trace } from "@opentelemetry/api"
 import { BasicTracerProvider, InMemorySpanExporter, SimpleSpanProcessor } from "@opentelemetry/sdk-trace-base"
 import type { ReadableSpan } from "@opentelemetry/sdk-trace-base"
+import { configureErrorFilters } from "./error-filters"
 import { captureException, resetReportedErrorsForTests, setupErrorCapture } from "./errors"
 
 const exporter = new InMemorySpanExporter()
@@ -15,6 +16,7 @@ const exceptionEventOf = (span: ReadableSpan) => span.events.find((event) => eve
 
 beforeEach(() => {
 	exporter.reset()
+	configureErrorFilters(undefined)
 })
 
 describe("captureException", () => {
@@ -121,5 +123,39 @@ describe("setupErrorCapture", () => {
 		window.dispatchEvent(new ErrorEvent("error", { message: "Script error.", filename: "" }))
 		assert.strictEqual(exporter.getFinishedSpans().length, 0)
 		stop()
+	})
+})
+
+describe("filters and linked errors", () => {
+	it("drops what the app filters out before any span exists", () => {
+		configureErrorFilters({ ignore: ["ChunkLoadError"] })
+		const chunk = new Error("Loading chunk 3 failed")
+		chunk.name = "ChunkLoadError"
+		captureException(chunk)
+		captureException(new Error("kept"))
+
+		assert.deepEqual(
+			exporter
+				.getFinishedSpans()
+				.map((span) => exceptionEventOf(span)?.attributes?.["exception.message"]),
+			["kept"],
+		)
+	})
+
+	it("drops an uncaught error thrown from a browser extension", () => {
+		const stop = setupErrorCapture()
+		const error = new Error("injected")
+		error.stack = "Error: injected\n    at run (chrome-extension://abc/content.js:1:1)"
+		window.dispatchEvent(new ErrorEvent("error", { error, message: error.message }))
+		stop()
+		assert.strictEqual(exporter.getFinishedSpans().length, 0)
+	})
+
+	it("records the cause chain in exception.stacktrace", () => {
+		captureException(new Error("save failed", { cause: new TypeError("network down") }))
+		const stacktrace = exceptionEventOf(exporter.getFinishedSpans()[0]!)?.attributes?.[
+			"exception.stacktrace"
+		]
+		assert.include(String(stacktrace), "Caused by: TypeError: network down")
 	})
 })

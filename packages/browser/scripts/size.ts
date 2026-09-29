@@ -24,11 +24,12 @@ import { gzipSync } from "node:zlib"
 /** Ceilings in gzipped KB. Raise deliberately, with the reason in the commit. */
 const BUDGET = {
 	/**
-	 * 41 since 2026-09: per-session trace sampling and the `logger` queue added
-	 * ~2.4 kB (~1.2 kB code, the rest chunk-split overhead now that a second
-	 * chunk shares the OTel core). Was 38 for navigation spans.
+	 * 42 since 2026-09: error filters and cause chains (~0.8 kB). 41 before that:
+	 * per-session trace sampling and the `logger` queue added ~2.4 kB (~1.2 kB
+	 * code, the rest chunk-split overhead now that a second chunk shares the OTel
+	 * core). Was 38 for navigation spans.
 	 */
-	eager: 41,
+	eager: 42,
 	/** Every page load, after `init()`: the OTel logs SDK and exporter. */
 	deferred: 8,
 	lazy: 68,
@@ -55,9 +56,10 @@ const BUDGET = {
 	 * into their own bundle, so for them this is a move rather than a cost.
 	 *
 	 * 16 since 2026-09: the session sampler (~0.7 kB) and the `logger` queue
-	 * (~0.5 kB), both needed before the deferred chunk lands.
+	 * (~0.5 kB), both needed before the deferred chunk lands. 17 for error
+	 * filters and cause chains (~0.8 kB), which run on the capture path.
 	 */
-	firstParty: 16,
+	firstParty: 17,
 }
 
 /** How close to a ceiling counts as worth warning about. */

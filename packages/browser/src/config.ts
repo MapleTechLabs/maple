@@ -7,6 +7,7 @@ import {
 	resolveIngestEndpoint,
 	warnIfKeylessMapleIngest,
 } from "@maple/browser-session"
+import type { ErrorFilterOptions } from "./error-filters"
 
 /** Public configuration for `MapleBrowser.init`. */
 export interface MapleBrowserConfig {
@@ -74,6 +75,8 @@ export interface MapleBrowserConfig {
 		 */
 		readonly sampleRate?: number
 	}
+	/** Which captured errors to drop before they are reported. See `ErrorFilterOptions`. */
+	readonly errors?: ErrorFilterOptions
 	readonly replay?: {
 		/** Default true. */
 		readonly enabled?: boolean
@@ -138,6 +141,7 @@ export interface ResolvedConfig {
 	readonly tracingCaptureErrors: boolean
 	readonly propagateTraceHeaderCorsUrls: ReadonlyArray<string | RegExp>
 	readonly tracingSampleRate: number
+	readonly errorFilters: ErrorFilterOptions
 	readonly replayEnabled: boolean
 	readonly replaySampleRate: number
 	readonly maskAllInputs: boolean
@@ -201,6 +205,7 @@ export function resolveConfig(config: MapleBrowserConfig): ResolvedConfig {
 		tracingCaptureErrors: config.tracing?.captureErrors ?? true,
 		propagateTraceHeaderCorsUrls: config.tracing?.propagateTraceHeaderCorsUrls ?? [],
 		tracingSampleRate: resolveSampleRate("tracing.sampleRate", config.tracing?.sampleRate),
+		errorFilters: config.errors ?? {},
 		replayEnabled: config.replay?.enabled ?? true,
 		replaySampleRate: resolveSampleRate("replay.sampleRate", config.replay?.sampleRate),
 		maskAllInputs: config.privacy?.maskAllInputs ?? true,

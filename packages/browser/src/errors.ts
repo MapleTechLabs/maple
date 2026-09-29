@@ -11,6 +11,8 @@
 // error tracking beside server-side errors rather than in a separate silo.
 import { scrubUrl } from "@maple/browser-session"
 import { context, type Span, SpanKind, SpanStatusCode } from "@opentelemetry/api"
+import { exceptionOf } from "./error-causes"
+import { type ErrorSource, shouldCapture } from "./error-filters"
 import { keepContext } from "./sampling"
 import { mapleTracer } from "./tracing"
 import { SDK_NAME, SDK_VERSION } from "./version"
@@ -67,13 +69,22 @@ export function recordFailure(span: Span, error: unknown): void {
 	const normalized = asError(error)
 	if (!alreadyReported(error)) {
 		if (span.isRecording() && typeof error === "object" && error !== null) reported.add(error)
-		span.recordException(normalized)
+		span.recordException(exceptionOf(normalized))
 	}
 	span.setStatus({ code: SpanStatusCode.ERROR, message: normalized.message })
 }
 
-/** Record `error` on a one-off span, exported whatever the session's trace sampling. */
-function recordException(error: unknown, options: CaptureExceptionOptions): void {
+/**
+ * Record `error` on a one-off span, exported whatever the session's trace
+ * sampling, unless the app's error filters drop it.
+ */
+function recordException(
+	error: unknown,
+	options: CaptureExceptionOptions,
+	source: ErrorSource,
+	filename?: string,
+): void {
+	if (!shouldCapture(asError(error), { source, originalError: error }, filename)) return
 	const span = mapleTracer(SDK_NAME, SDK_VERSION).startSpan(
 		options.name ?? "exception",
 		{
@@ -96,7 +107,7 @@ function recordException(error: unknown, options: CaptureExceptionOptions): void
  */
 export function captureException(error: unknown, options: CaptureExceptionOptions = {}): void {
 	if (alreadyReported(error)) return
-	recordException(error, options)
+	recordException(error, options, "captureException")
 }
 
 /**
@@ -120,26 +131,35 @@ export function setupErrorCapture(): () => void {
 		const error: unknown =
 			event.error ?? (event.message && event.filename ? new Error(event.message) : undefined)
 		if (error === undefined || alreadyReported(error)) return
-		recordException(error, {
-			name: "browser.uncaught_error",
-			attributes: {
-				"maple.exception.source": "window.onerror",
-				// `code.file.path` / `code.line.number` since semconv v1.34.0. Nothing
-				// reads the names they replaced, so they are dropped rather than
-				// dual-emitted — carrying both would put four near-identical rows on
-				// every uncaught error in the attribute list.
-				...(event.filename ? { "code.file.path": event.filename } : undefined),
-				...(event.lineno ? { "code.line.number": event.lineno } : undefined),
+		recordException(
+			error,
+			{
+				name: "browser.uncaught_error",
+				attributes: {
+					"maple.exception.source": "window.onerror",
+					// `code.file.path` / `code.line.number` since semconv v1.34.0. Nothing
+					// reads the names they replaced, so they are dropped rather than
+					// dual-emitted — carrying both would put four near-identical rows on
+					// every uncaught error in the attribute list.
+					...(event.filename ? { "code.file.path": event.filename } : undefined),
+					...(event.lineno ? { "code.line.number": event.lineno } : undefined),
+				},
 			},
-		})
+			"window.onerror",
+			event.filename,
+		)
 	}
 
 	const onUnhandledRejection = (event: PromiseRejectionEvent): void => {
 		if (alreadyReported(event.reason)) return
-		recordException(event.reason, {
-			name: "browser.unhandled_rejection",
-			attributes: { "maple.exception.source": "unhandledrejection" },
-		})
+		recordException(
+			event.reason,
+			{
+				name: "browser.unhandled_rejection",
+				attributes: { "maple.exception.source": "unhandledrejection" },
+			},
+			"unhandledrejection",
+		)
 	}
 
 	window.addEventListener("error", onError)

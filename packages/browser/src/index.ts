@@ -13,6 +13,7 @@ export type {
 	TraitValue,
 } from "@maple/browser-session"
 export type { MapleBrowserConfig } from "./config"
+export type { ErrorFilterHint, ErrorFilterOptions, ErrorSource } from "./error-filters"
 export type { CaptureExceptionOptions } from "./errors"
 export type { MapleBrowserHandle } from "./init"
 export type { LogAttributeValue } from "./logs"

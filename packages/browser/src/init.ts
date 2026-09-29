@@ -27,6 +27,7 @@ import {
 import type { ReplaySessionHandle } from "@maple/browser-session/replay"
 import { trace } from "@opentelemetry/api"
 import { type MapleBrowserConfig, type ResolvedConfig, resolveConfig } from "./config"
+import { configureErrorFilters } from "./error-filters"
 import { setupErrorCapture } from "./errors"
 import { setLogIdentity } from "./logs"
 import { resetNavigation } from "./navigation"
@@ -81,6 +82,7 @@ export function init(rawConfig: MapleBrowserConfig): MapleBrowserHandle {
 	pendingIdentity = undefined
 	activeConfig = config
 	configurePrivacy(config)
+	configureErrorFilters(config.errorFilters)
 	if (!hasConsent()) clearPendingEvents()
 	setActiveTraceIdProvider(() => trace.getActiveSpan()?.spanContext().traceId)
 
@@ -236,6 +238,7 @@ export function init(rawConfig: MapleBrowserConfig): MapleBrowserHandle {
 			await stopRuntime(true)
 			stopErrorCapture?.()
 			stopErrorCapture = undefined
+			configureErrorFilters(undefined)
 			// Before the provider shuts down, so an open navigation exports with it
 			resetNavigation()
 			await deferredPending
