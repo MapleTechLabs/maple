@@ -441,15 +441,36 @@ function findAnchors(ordered: readonly AiSessionSpan[]): readonly TurnAnchor[] {
  * model was sent ends on the turn's prompt, while a framework's own node span
  * may carry only what the thread started with (LangGraph's `model` node under a
  * checkpointer holds the thread's first message on every turn).
+ *
+ * An anchor whose prompt is an earlier user message of the first model call's
+ * history is stale, and that call's newest prompt wins: OpenInference's
+ * LangChain instrumentor records only the first message of a chain's input, so
+ * a thread that re-sends its history (checkpointer state, or messages the
+ * caller carries) puts turn 1's prompt on every agent root. A model call whose
+ * history does not hold the anchor's prompt (a title or routing call) leaves
+ * the anchor standing.
  */
 function turnLabel(anchor: AiSessionSpan, turnSpans: readonly AiSessionSpan[]): string | undefined {
+	let modelPrompts: readonly string[] = []
+	for (const span of turnSpans) {
+		if (!isLlmCall(span)) continue
+		modelPrompts = userMessageTexts(span.genAi.inputMessages)
+		if (modelPrompts.length > 0) break
+	}
 	const fromAnchor = lastUserMessageText(anchor.genAi.inputMessages)
-	if (fromAnchor !== undefined) return fromAnchor
-	for (const span of [...turnSpans.filter(isLlmCall), ...turnSpans]) {
+	if (fromAnchor !== undefined && !modelPrompts.slice(0, -1).includes(fromAnchor)) return fromAnchor
+	const fromModel = modelPrompts.at(-1)
+	if (fromModel !== undefined) return fromModel
+	for (const span of turnSpans) {
 		const text = lastUserMessageText(span.genAi.inputMessages)
 		if (text !== undefined) return text
 	}
 	return undefined
+}
+
+/** Every user message with readable text in a captured history, oldest first. */
+function userMessageTexts(value: unknown): readonly string[] {
+	return Array.isArray(value) ? value.flatMap((entry) => lastUserMessageText([entry]) ?? []) : []
 }
 
 /** Longest turn label the page will render before eliding — a captured prompt

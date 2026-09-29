@@ -2,7 +2,14 @@ import { describe, expect, it } from "vitest"
 
 import type { AiSessionSpan } from "@maple/domain/http"
 
-import { agentSpan, llmSpan, makeSpan, toolSpan, userMessages } from "./span-test-support"
+import {
+	agentSpan,
+	langGraphThreadSpans,
+	llmSpan,
+	makeSpan,
+	toolSpan,
+	userMessages,
+} from "./span-test-support"
 import { buildSessionSummary } from "./session-summary"
 import { buildSessionTurns, classifyAiSpan, isLlmCall, spanTtftMs } from "./session-turns"
 
@@ -410,6 +417,40 @@ describe("buildSessionTurns", () => {
 			"Hi! Briefly introduce yourself.",
 			"What's the weather in Berlin?",
 		])
+	})
+
+	it("labels a LangGraph thread turn by its model call when the agent root holds turn 1's prompt", () => {
+		const prompts = [
+			"Hi! What's the etiquette for proposing a meeting across timezones?",
+			"What is the current local date and time in Tokyo?",
+			"And what is it right now in Europe/Berlin?",
+		]
+		const spans = langGraphThreadSpans(prompts)
+		const turns = buildSessionTurns(spans)
+
+		expect(turns.map((turn) => turn.label)).toEqual(prompts)
+		expect(buildSessionSummary({ spans, turns }).title).toBe(prompts[0])
+	})
+
+	it("keeps the agent root's prompt over a model call that was asked something else", () => {
+		const turn = (n: number, prompt: string) => [
+			agentSpan({
+				spanId: `agent-${n}`,
+				startMs: n * 60 * SECOND,
+				durationMs: 2 * SECOND,
+				genAi: { inputMessages: userMessages(prompt) },
+			}),
+			llmSpan({
+				spanId: `title-${n}`,
+				parentSpanId: `agent-${n}`,
+				startMs: n * 60 * SECOND + 10,
+				durationMs: SECOND,
+				genAi: { inputMessages: userMessages(`Write a short title for: ${prompt}`) },
+			}),
+		]
+		const turns = buildSessionTurns([...turn(0, "retry the deploy"), ...turn(1, "retry the deploy")])
+
+		expect(turns.map((t) => t.label)).toEqual(["retry the deploy", "retry the deploy"])
 	})
 
 	it("has no label when message content was not captured", () => {

@@ -25,6 +25,7 @@ import type { AiSessionSpan } from "@maple/domain/http"
 import {
 	classifyAiSpan,
 	isLlmCall,
+	lastUserMessageText,
 	spanEndMs,
 	spanFailed,
 	spanModel,
@@ -678,8 +679,13 @@ function walkLane(
 			// Its captured prompt is the one thing it says that the header does
 			// not: an emitter that records the user's message on the turn span
 			// (Claude Code's `interaction`) and never on the model calls under it
-			// would otherwise have no user row at all.
-			rows.push(...userRows(scope.context.messagesOf(span), span, scope))
+			// would otherwise have no user row at all. A prompt that is not the
+			// turn's label is an earlier turn's (see `turnLabel`), and the model
+			// call below carries the real one.
+			const prompt = lastUserMessageText(span.genAi.inputMessages)
+			if (prompt === undefined || prompt === scope.context.turn.label) {
+				rows.push(...userRows(scope.context.messagesOf(span), span, scope))
+			}
 			const inner = walkLane(children.get(span.spanId) ?? [], children, scope)
 			rows.push(...inner.rows)
 			addWork(counts, inner.counts)

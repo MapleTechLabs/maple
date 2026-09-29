@@ -13,7 +13,7 @@ import {
 	type TranscriptRow,
 } from "./session-transcript"
 import { sessionToolResults } from "./span-detail"
-import { agentSpan, llmSpan, makeSpan, toolSpan, T0 } from "./span-test-support"
+import { agentSpan, langGraphThreadSpans, llmSpan, makeSpan, toolSpan, T0 } from "./span-test-support"
 
 const SECOND = 1000
 
@@ -146,6 +146,13 @@ describe("buildTranscript — turn shape", () => {
 		// The note is the capture banner: the model call itself captured nothing.
 		expect(kinds(rows)).toEqual(["note", "turn", "user", "structure", "tool"])
 		expect(findRow(rows, "user").text).toBe("fix the flaky test")
+	})
+
+	it("opens each LangGraph thread turn with the model call's prompt, not the agent root's stale one", () => {
+		const prompts = ["opening question", "second question", "third question"]
+		const users = transcript(langGraphThreadSpans(prompts)).filter((row) => row.kind === "user")
+
+		expect(users.map((row) => row.text)).toEqual(prompts)
 	})
 
 	// A conversation-id partition can anchor a turn on the model call that opened
