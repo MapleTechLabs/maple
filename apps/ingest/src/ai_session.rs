@@ -24,7 +24,10 @@
 //!
 //! One vendor's dialect is restated as well as stamped: Claude Code's native
 //! keys become the `gen_ai.*` keys every reader keys on, and the phases of its
-//! tool calls are left unstamped — see `ai_session/claude_code.rs`.
+//! tool calls are left unstamped — see `ai_session/claude_code.rs`. Every
+//! stamped span then has its usage, cost, time to first token and agent name
+//! restated under one canonical key each, with one meaning — see
+//! `ai_session/canonical.rs`.
 //!
 //! Detection is ordered first-match over the vendor predicates below; the
 //! session ID is the first non-empty session-granularity attribute for the
@@ -59,6 +62,7 @@ use opentelemetry_proto::tonic::collector::trace::v1::ExportTraceServiceRequest;
 use opentelemetry_proto::tonic::common::v1::{any_value, AnyValue, KeyValue};
 use opentelemetry_proto::tonic::trace::v1::span::Event;
 
+mod canonical;
 mod claude_code;
 
 pub const ATTR_NAMESPACE: &str = "maple_ai.";
@@ -159,6 +163,7 @@ pub fn stamp_trace_request(request: &mut ExportTraceServiceRequest) {
                     }
                     claude_code::normalize(span);
                 }
+                canonical::normalize(span, classification.vendor);
                 // One reserve, not up to three doubling reallocs that each
                 // copy every existing KeyValue.
                 span.attributes.reserve(3);
@@ -1661,7 +1666,8 @@ mod tests {
         let llm = &spans[1].attributes;
         for (key, value) in [
             ("gen_ai.operation.name", "chat"),
-            ("gen_ai.usage.input_tokens", "2"),
+            // Anthropic's raw figure, with both cache buckets folded in.
+            ("gen_ai.usage.input_tokens", "118065"),
             ("gen_ai.usage.cache_read.input_tokens", "114514"),
             ("gen_ai.usage.cache_creation.input_tokens", "3549"),
             ("gen_ai.response.time_to_first_chunk", "0.934"),
