@@ -340,6 +340,61 @@ export const config = {
 - `withMapleProxy` keeps a `traceparent` the request already carries, as client navigations do, and only changes responses that go on to a render in your app. Redirects and responses your proxy builds itself pass through unchanged. If a shared cache such as a CDN stores prerendered pages, leave them out of the matcher, or every visitor joins the same trace.
 - Server Components can time database and SDK calls with `traced` from `@maple-dev/browser/server`. Pass `isFailure: () => false`: Next.js records an error thrown from a Server Component on its render span, and `redirect()` and `notFound()` work by throwing.
 
+## TanStack Router integration
+
+`@maple-dev/browser/tanstack` connects TanStack Router to the navigation spans, and `@maple-dev/browser/tanstack/server` joins the first page load to the TanStack Start server render. Wire up the router where you create it. In TanStack Start that is `getRouter()`, which also runs on the server:
+
+```ts
+// src/router.tsx
+import { reportRouterError, traceRouter } from "@maple-dev/browser/tanstack"
+import { createRouter } from "@tanstack/react-router"
+import { routeTree } from "./routeTree.gen"
+
+export function getRouter() {
+	const router = createRouter({
+		routeTree,
+		defaultOnCatch: (error) => reportRouterError(router, error),
+	})
+	traceRouter(router)
+	return router
+}
+```
+
+Call `init()` before the router is created: import the module that calls it first in `src/main.tsx`, or at the top of `src/routes/__root.tsx` in TanStack Start. Then wrap each loader, and any `beforeLoad` that does I/O or can throw:
+
+```ts
+// src/routes/projects.$projectId.tsx
+import { tracedLoader } from "@maple-dev/browser/tanstack"
+
+export const Route = createFileRoute("/projects/$projectId")({
+	loader: ({ params }) =>
+		tracedLoader("loader /projects/$projectId", () =>
+			Promise.all([fetchProject(params.projectId), fetchMembers(params.projectId)]),
+		),
+})
+```
+
+In TanStack Start, trace the server render from `src/server.ts`, which Start uses instead of its default server entry. Load your server's OpenTelemetry setup first:
+
+```ts
+// src/server.ts
+import "./instrumentation"
+import { traceRender, traceRequests } from "@maple-dev/browser/tanstack/server"
+import { createStartHandler, defaultStreamHandler } from "@tanstack/react-start/server"
+import { createServerEntry } from "@tanstack/react-start/server-entry"
+
+export default createServerEntry({
+	fetch: traceRequests(createStartHandler(traceRender(defaultStreamHandler))),
+})
+```
+
+- Spans are named after the route's `fullPath`, like `navigate /projects/$projectId`, without pathless layouts or route groups. A URL no route matches is named `not-found`.
+- `traceRouter` opens the page load right away and ends it when the route renders, which also covers a hydrated TanStack Start page. It does nothing on the server.
+- A `redirect()` stays in the span of the navigation it came from: the span keeps the original `url.path` and is named after the route the user lands on. A navigation the next one interrupts ends as interrupted. A search change and back or forward are navigations; hash links and `router.invalidate()` start no span.
+- `tracedLoader` doesn't count `redirect()` and `notFound()` as failures. On the server it nests under the request and keeps its parent across `await`. Preloads, like `preload="intent"`, run loaders with no navigation to join, so their spans are separate traces.
+- `reportRouterError` reports what a route's error boundary caught as a `react.render_error` span, once. It skips loader errors, which the loader's span already recorded, in the browser or on the server, so an unwrapped loader's errors aren't reported. TanStack Router only calls `defaultOnCatch` for routes with an `errorComponent`, or with `defaultErrorComponent` set, and a route's own `onCatch` replaces it.
+- `traceRequests` opens a server span per request, so a page's loaders and its render share a trace. A request that carries a `traceparent`, like a server function called from the browser, joins that trace. `traceRender` names the span `ssr /projects/$projectId` and sends the `Server-Timing` header the `pageload` span joins. Requests that don't render a page, like redirects and server functions, keep the HTTP method as their name and get no header. The span ends when the HTML starts streaming. If a shared cache such as a CDN stores your pages, don't send the header on them, or every visitor joins the same trace.
+
 ## Custom events
 
 `track(name, props)` records a product event against the current session. It appears inline in the session transcript next to the clicks and network calls around it, and counts as a [product event](/docs/product-events/overview).

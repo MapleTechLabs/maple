@@ -654,6 +654,7 @@
       "devDependencies": {
         "@maple/browser-session": "workspace:*",
         "@opentelemetry/context-async-hooks": "^2.11.0",
+        "@tanstack/react-router": "^1.170.40",
         "@types/react": "catalog:react",
         "@types/react-dom": "catalog:react",
         "@vitest/browser-playwright": "catalog:",
@@ -666,10 +667,12 @@
         "vitest": "catalog:",
       },
       "peerDependencies": {
+        "@tanstack/react-router": "*",
         "next": "*",
         "react": "*",
       },
       "optionalPeers": [
+        "@tanstack/react-router",
         "next",
         "react",
       ],
