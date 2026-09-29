@@ -13,7 +13,9 @@ const errorWith = (message: string, stack?: string, name = "Error"): Error => {
 	error.stack = stack
 	return error
 }
-const hint = { source: "captureException", originalError: undefined } as const
+/** As the SDK calls it for a thrown Error: the error is its own original. */
+const check = (error: Error, frameUrl?: string): boolean =>
+	shouldCapture(error, { source: "captureException", originalError: error }, frameUrl)
 
 afterEach(() => configureErrorFilters(undefined))
 
@@ -42,35 +44,49 @@ describe("shouldCapture", () => {
 			"boom",
 			"Error: boom\n    at x (chrome-extension://abcdef/content.js:1:1)",
 		)
-		expect(shouldCapture(extension, hint)).toBe(false)
-		expect(shouldCapture(errorWith("boom"), hint, "moz-extension://abc/script.js")).toBe(false)
-		expect(shouldCapture(errorWith("ResizeObserver loop limit exceeded"), hint)).toBe(false)
-		expect(shouldCapture(errorWith("boom", V8_STACK), hint)).toBe(true)
+		expect(check(extension)).toBe(false)
+		expect(check(errorWith("boom"), "moz-extension://abc/script.js")).toBe(false)
+		expect(check(errorWith("ResizeObserver loop limit exceeded"))).toBe(false)
+		expect(check(errorWith("boom", V8_STACK))).toBe(true)
 	})
 
 	it("keeps them when the default filters are turned off", () => {
 		configureErrorFilters({ defaultFilters: false })
-		expect(shouldCapture(errorWith("ResizeObserver loop limit exceeded"), hint)).toBe(true)
+		expect(check(errorWith("ResizeObserver loop limit exceeded"))).toBe(true)
 	})
 
 	it("drops errors whose Name: message matches ignore", () => {
 		configureErrorFilters({ ignore: ["ChunkLoadError", /^AbortError: /] })
-		expect(shouldCapture(errorWith("Loading chunk 7 failed", undefined, "ChunkLoadError"), hint)).toBe(
-			false,
+		expect(check(errorWith("Loading chunk 7 failed", undefined, "ChunkLoadError"))).toBe(false)
+		expect(check(errorWith("aborted", undefined, "AbortError"))).toBe(false)
+		expect(check(errorWith("aborted"))).toBe(true)
+	})
+
+	it("judges URL lists only on frames the page's own error carries", () => {
+		configureErrorFilters({ allowUrls: [/^https:\/\/app\.test\//] })
+		// A string rejection wrapped in an Error: its stack is this SDK's, not the page's.
+		const wrapped = errorWith(
+			"rejected",
+			"Error: rejected\n    at asError (https://cdn.test/maple.js:1:1)",
 		)
-		expect(shouldCapture(errorWith("aborted", undefined, "AbortError"), hint)).toBe(false)
-		expect(shouldCapture(errorWith("aborted"), hint)).toBe(true)
+		expect(shouldCapture(wrapped, { source: "unhandledrejection", originalError: "rejected" })).toBe(true)
+		// window.onerror's filename is the frame when no Error was thrown.
+		expect(
+			shouldCapture(
+				wrapped,
+				{ source: "window.onerror", originalError: wrapped },
+				"https://other.test/x.js",
+			),
+		).toBe(false)
 	})
 
 	it("matches allowUrls and denyUrls against the top frame only", () => {
 		configureErrorFilters({ denyUrls: ["cdn.test"] })
-		expect(shouldCapture(errorWith("x", V8_STACK), hint)).toBe(true)
+		expect(check(errorWith("x", V8_STACK))).toBe(true)
 		configureErrorFilters({ allowUrls: [/^https:\/\/app\.test\//] })
-		expect(shouldCapture(errorWith("x", V8_STACK), hint)).toBe(true)
-		expect(shouldCapture(errorWith("x", "Error: x\n    at f (https://widget.test/w.js:1:1)"), hint)).toBe(
-			false,
-		)
-		expect(shouldCapture(errorWith("no frames"), hint)).toBe(true)
+		expect(check(errorWith("x", V8_STACK))).toBe(true)
+		expect(check(errorWith("x", "Error: x\n    at f (https://widget.test/w.js:1:1)"))).toBe(false)
+		expect(check(errorWith("no frames"))).toBe(true)
 	})
 
 	it("lets beforeCapture drop an error, and keeps it when the hook throws", () => {
@@ -90,6 +106,6 @@ describe("shouldCapture", () => {
 				throw new Error("hook bug")
 			},
 		})
-		expect(shouldCapture(errorWith("keep me"), hint)).toBe(true)
+		expect(check(errorWith("keep me"))).toBe(true)
 	})
 })

@@ -60,10 +60,15 @@ export function configureErrorFilters(next: ErrorFilterOptions | undefined): voi
 	options = next ?? {}
 }
 
-/** Whether `error` should be reported. `filename` stands in for a missing stack (`window.onerror`). */
-export function shouldCapture(error: Error, hint: ErrorFilterHint, filename?: string): boolean {
+/**
+ * Whether `error` should be reported. `frameUrl`, when given, is the top frame's
+ * script URL (`window.onerror`'s filename). Otherwise only a thrown `Error` has
+ * frames of its own: the stack of an `Error` wrapped around anything else points
+ * at this SDK, so no URL list applies to it.
+ */
+export function shouldCapture(error: Error, hint: ErrorFilterHint, frameUrl?: string): boolean {
 	const text = `${error.name}: ${error.message}`
-	const topUrl = frameUrls(error.stack)[0] ?? filename
+	const topUrl = frameUrl ?? (hint.originalError instanceof Error ? frameUrls(error.stack)[0] : undefined)
 	if (options.defaultFilters !== false) {
 		if (matches(error.message, BENIGN_MESSAGES)) return false
 		if (topUrl && EXTENSION_URL.test(topUrl)) return false
