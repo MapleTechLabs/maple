@@ -207,6 +207,7 @@ export function startRecording(config: IngestConfig, sessionId: string): Recorde
 		// rrweb has no `maskAllText` flag; selecting all elements masks every text node.
 		...(config.maskAllText ? { maskTextSelector: "*" } : undefined),
 		checkoutEveryNms: CHECKOUT_EVERY_MS,
+		...canvasOptions(config),
 	})
 
 	// The periodic flush yields to idle time so it never competes with an
@@ -258,6 +259,16 @@ export function startRecording(config: IngestConfig, sessionId: string): Recorde
 		},
 		flush,
 		getClickCount: () => clickCount,
+	}
+}
+
+/** rrweb options for `<canvas>` capture: sampled frames as WebP, off unless asked for. */
+function canvasOptions(config: IngestConfig) {
+	if (!config.canvasFps || config.canvasFps <= 0) return undefined
+	return {
+		recordCanvas: true,
+		sampling: { canvas: config.canvasFps },
+		dataURLOptions: { type: "image/webp", quality: 0.6 },
 	}
 }
 
@@ -327,6 +338,7 @@ export function startBufferedRecording(config: IngestConfig, sessionId: string):
 		blockSelector: BLOCK_SELECTOR,
 		...(config.maskAllText ? { maskTextSelector: "*" } : undefined),
 		checkoutEveryNms: BUFFER_CHECKOUT_MS,
+		...canvasOptions(config),
 	})
 
 	return {

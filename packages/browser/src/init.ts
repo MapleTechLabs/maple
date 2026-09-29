@@ -184,6 +184,8 @@ export function init(rawConfig: MapleBrowserConfig): MapleBrowserHandle {
 					maskAllInputs: config.maskAllInputs,
 					maskAllText: config.maskAllText,
 					mode: replayMode,
+					canvasFps: config.canvasFps,
+					networkBodies: config.networkBodies,
 				})
 			})
 			.catch(() => {

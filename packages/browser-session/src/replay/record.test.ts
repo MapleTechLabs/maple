@@ -10,9 +10,11 @@ let emitRef: EmitFn | undefined
 const takeFullSnapshot = vi.fn()
 const stopFn = vi.fn()
 
+let recordOptions: Record<string, unknown> | undefined
 vi.mock("rrweb", () => {
-	const record = (options: { emit: EmitFn }) => {
+	const record = (options: { emit: EmitFn } & Record<string, unknown>) => {
 		emitRef = options.emit
+		recordOptions = options
 		return stopFn
 	}
 	record.takeFullSnapshot = takeFullSnapshot
@@ -260,5 +262,14 @@ describe("startBufferedRecording", () => {
 		await recorder.drain()
 		expect(posted).toEqual([])
 		expect(stopFn).toHaveBeenCalled()
+	})
+})
+
+describe("canvas capture", () => {
+	it("is off by default and samples frames at canvasFps when asked", () => {
+		startRecording(CONFIG, "session-1").stop()
+		expect(recordOptions?.recordCanvas).toBeUndefined()
+		startBufferedRecording({ ...CONFIG, canvasFps: 2 }, "session-1").stop()
+		expect(recordOptions).toMatchObject({ recordCanvas: true, sampling: { canvas: 2 } })
 	})
 })

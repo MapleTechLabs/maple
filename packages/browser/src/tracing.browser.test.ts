@@ -45,6 +45,9 @@ const CONFIG = {
 	replayEnabled: false,
 	replaySampleRate: 0,
 	replayOnErrorSampleRate: 0,
+	canvasFps: undefined,
+	networkBodies: undefined,
+	captureHeaders: { request: [], response: [] },
 	maskAllInputs: true,
 	maskAllText: false,
 	persistVisitorId: true,
@@ -230,6 +233,30 @@ describe("setupTracing unload flush", () => {
 		window.dispatchEvent(new Event("pagehide"))
 		await vi.waitFor(() => expect(exported).toHaveLength(1), poll)
 		expect(exported[0]?.attributes["url.full"] ?? exported[0]?.attributes["http.url"]).toBe(url)
+		URL.revokeObjectURL(url)
+	})
+
+	it("records allowlisted headers as semconv attributes, never credentials", async () => {
+		vi.useFakeTimers({ toFake: ["setTimeout"] })
+		const poll = { interval: 0 }
+		shutdown = setupTracing({
+			...CONFIG,
+			tracingInstrumentFetch: true,
+			captureHeaders: { request: ["x-request-id"], response: ["content-type"] },
+		})
+		const url = URL.createObjectURL(new Blob(["ok"], { type: "text/plain" }))
+
+		await (
+			await fetch(url, { headers: { "x-request-id": "req-1", authorization: "Bearer secret" } })
+		).text()
+		await vi.waitFor(() => expect(vi.getTimerCount()).toBe(1), poll)
+		window.dispatchEvent(new Event("pagehide"))
+		await vi.waitFor(() => expect(exported).toHaveLength(1), poll)
+
+		const attributes = exported[0]?.attributes ?? {}
+		expect(attributes["http.request.header.x-request-id"]).toEqual(["req-1"])
+		expect(attributes["http.response.header.content-type"]).toEqual(["text/plain"])
+		expect(Object.keys(attributes).some((key) => key.includes("authorization"))).toBe(false)
 		URL.revokeObjectURL(url)
 	})
 

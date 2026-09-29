@@ -119,4 +119,18 @@ describe("resolveConfig", () => {
 		expect(warn).toHaveBeenCalledTimes(2)
 		warn.mockRestore()
 	})
+
+	it("drops credential headers from captureHeaders, lowercased", () => {
+		const config = resolveConfig({
+			ingestKey: "k",
+			serviceName: "s",
+			tracing: {
+				captureHeaders: {
+					request: ["Authorization", "X-Request-Id"],
+					response: ["Set-Cookie", "X-Cache"],
+				},
+			},
+		})
+		expect(config.captureHeaders).toEqual({ request: ["x-request-id"], response: ["x-cache"] })
+	})
 })

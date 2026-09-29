@@ -14,7 +14,7 @@ import {
 	startBufferedRecording,
 	startRecording,
 } from "../replay/record"
-import { postSessionMeta, type IngestConfig } from "../platform/transport"
+import { type IngestConfig, type NetworkBodyOptions, postSessionMeta } from "../platform/transport"
 import { type SessionLifecycleHandle, type SessionLifecycleOptions, startSessionLifecycle } from "./lifecycle"
 import { markReplayTriggered } from "./session"
 import { getObservedTraceIds, publishSessionSink } from "./sink"
@@ -28,6 +28,10 @@ export interface ReplaySessionOptions extends SessionLifecycleOptions {
 	readonly sdk: string
 	readonly maskAllInputs: boolean
 	readonly maskAllText: boolean
+	/** Record `<canvas>` content at this many frames per second. Off when unset or 0. */
+	readonly canvasFps?: number | undefined
+	/** Keep request and response bodies of these URLs on replay network events. */
+	readonly networkBodies?: NetworkBodyOptions | undefined
 	/** Notifies consumers that the session id used for span linking changed. */
 	readonly onSessionChange?: ((sessionId: string) => void) | undefined
 	/**
@@ -65,6 +69,8 @@ export function startReplaySession(options: ReplaySessionOptions): ReplaySession
 		maskAllInputs: options.maskAllInputs,
 		maskAllText: options.maskAllText,
 		getIdentity: options.getIdentity,
+		canvasFps: options.canvasFps,
+		networkBodies: options.networkBodies,
 	}
 
 	let recorder: Recorder | undefined

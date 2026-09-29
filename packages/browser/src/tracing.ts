@@ -25,6 +25,7 @@ import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-base"
 import { WebTracerProvider } from "@opentelemetry/sdk-trace-web"
 import { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION } from "@opentelemetry/semantic-conventions"
 import type { ResolvedConfig } from "./config"
+import { setHeaderAttributes } from "./http-headers"
 import { HttpStatusExporter } from "./http-status"
 import { OfflineSpanExporter } from "./offline"
 import { SessionSampler } from "./sampling"
@@ -256,11 +257,40 @@ export function setupTracing(config: ResolvedConfig): () => Promise<void> {
 		// `traceparent` goes to same-origin requests only, unless the app lists
 		// the cross-origin APIs that accept it.
 		propagateTraceHeaderCorsUrls: [...config.propagateTraceHeaderCorsUrls],
-		applyCustomAttributesOnSpan: noteSettled,
 	}
+	const headers = config.captureHeaders
 	const instrumentations = [
-		...(config.tracingInstrumentFetch ? [new FetchInstrumentation(requestOptions)] : []),
-		...(config.tracingInstrumentXhr ? [new XMLHttpRequestInstrumentation(requestOptions)] : []),
+		...(config.tracingInstrumentFetch
+			? [
+					new FetchInstrumentation({
+						...requestOptions,
+						applyCustomAttributesOnSpan: (span, request, result) => {
+							noteSettled(span)
+							const sent =
+								request instanceof Request ? request.headers : new Headers(request.headers)
+							setHeaderAttributes(span, "request", headers.request, (name) => sent.get(name))
+							if (result instanceof Response) {
+								setHeaderAttributes(span, "response", headers.response, (name) =>
+									result.headers.get(name),
+								)
+							}
+						},
+					}),
+				]
+			: []),
+		...(config.tracingInstrumentXhr
+			? [
+					new XMLHttpRequestInstrumentation({
+						...requestOptions,
+						applyCustomAttributesOnSpan: (span, xhr) => {
+							noteSettled(span)
+							setHeaderAttributes(span, "response", headers.response, (name) =>
+								xhr.getResponseHeader(name),
+							)
+						},
+					}),
+				]
+			: []),
 	]
 	const unregisterInstrumentations =
 		instrumentations.length > 0

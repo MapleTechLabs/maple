@@ -31,7 +31,10 @@ export function startEventCapture(config: IngestConfig, sessionId: string): Even
 	const sink: SessionEventSink = startEventSink(config, sessionId)
 	const emit = sink.emit
 
-	const uninstall = [installConsoleCapture(emit), installNetworkCapture(emit, sink.ignoreUrl)]
+	const uninstall = [
+		installConsoleCapture(emit),
+		installNetworkCapture(emit, sink.ignoreUrl, config.maskAllText ? undefined : config.networkBodies),
+	]
 
 	return {
 		// Only the capture listeners stop here — the sink outlives them, so

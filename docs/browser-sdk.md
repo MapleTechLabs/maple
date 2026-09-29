@@ -63,6 +63,9 @@ Every field accepted by `MapleBrowser.init`:
 | `errors`                               | `ErrorFilterOptions`      | see [Filtering errors](#filtering-errors) | Drop captured errors by message, script URL, or a `beforeCapture` hook.                                                                                                                                                                                   |
 | `replay.enabled`                       | `boolean`                 | `true`                                    | Enable rrweb session recording.                                                                                                                                                                                                                           |
 | `replay.sampleRate`                    | `number`                  | `1`                                       | Fraction of sessions to record, `0` to `1`. Out-of-range values are clamped with a warning. See [Sampling](#sampling).                                                                                                                                    |
+| `tracing.captureHeaders`               | `{ request?, response? }` | none                                      | Header names recorded on `fetch`/XHR spans as `http.request.header.<name>` / `http.response.header.<name>`. See [Request and response detail](#request-and-response-detail).                                                                              |
+| `replay.canvasFps`                     | `number`                  | off                                       | Record `<canvas>` content at this many frames per second.                                                                                                                                                                                                 |
+| `replay.networkBodies`                 | `{ urls, maxLength? }`    | none                                      | Keep text request/response bodies of these URLs on replay network events.                                                                                                                                                                                 |
 | `replay.onErrorSampleRate`             | `number`                  | `0`                                       | Fraction of the sessions not recorded that buffer the last minute in memory and keep it only if an error happens. See [Sampling](#sampling).                                                                                                              |
 | `transport.offline`                    | `boolean`                 | `false`                                   | Keep span and log batches that could not be sent in IndexedDB for up to 24 hours and send them later. See [Offline](#offline).                                                                                                                            |
 | `privacy.maskAllInputs`                | `boolean`                 | `true`                                    | Mask all `<input>` values in the recording.                                                                                                                                                                                                               |
@@ -514,6 +517,40 @@ MapleBrowser.init({
 Sampled traces carry the W3C `tracestate` threshold (`ot=th:…`), so Maple weights each one by the
 inverse of the rate and request counts stay realistic. A trace joined from a server-rendered
 `traceparent` follows the server's decision instead.
+
+## Request and response detail
+
+Headers go on the spans, as the HTTP semantic conventions define them. List the ones you want:
+
+```ts
+MapleBrowser.init({
+	// ...
+	tracing: { captureHeaders: { request: ["x-request-id"], response: ["x-cache", "server-timing"] } },
+})
+```
+
+Each becomes a string-array attribute, e.g. `http.response.header.x-cache: ["HIT"]`.
+`authorization`, `proxy-authorization`, `cookie` and `set-cookie` are never recorded, even when
+listed. XHR spans get response headers only (the browser does not expose an XHR's request headers),
+and a cross-origin response only exposes the headers its server lists in
+`Access-Control-Expose-Headers`.
+
+Bodies have no semantic-convention attribute, so they stay on the session replay's network events,
+and only for the URLs you list:
+
+```ts
+replay: { networkBodies: { urls: [/^https:\/\/api\.example\.com\/checkout/], maxLength: 10_000 } }
+```
+
+Only text and JSON bodies are kept, each cut to `maxLength` characters. The response is read from a
+clone in the background, so your code gets it untouched and unwaited. Nothing is captured with
+`privacy.maskAllText`. Bodies can hold personal data: list only endpoints whose payloads you are
+allowed to record.
+
+### Canvas
+
+`replay: { canvasFps: 2 }` records `<canvas>` content (charts, maps, games) as WebP frames at up to
+that rate. It costs CPU and upload size, so it is off by default.
 
 ## Offline
 

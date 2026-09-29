@@ -8,6 +8,7 @@ import {
 	warnIfKeylessMapleIngest,
 } from "@maple/browser-session"
 import type { ErrorFilterOptions } from "./error-filters"
+import { type HeaderCapture, resolveHeaderCapture } from "./http-headers"
 
 export type ConsoleLevel = "debug" | "log" | "info" | "warn" | "error"
 
@@ -81,6 +82,16 @@ export interface MapleBrowserConfig {
 		 * always exported.
 		 */
 		readonly sampleRate?: number
+		/**
+		 * Request and response headers to record on `fetch`/XHR spans, as
+		 * `http.request.header.<name>` / `http.response.header.<name>`, e.g.
+		 * `{ response: ["x-request-id", "x-cache"] }`. `authorization`, `cookie`
+		 * and `set-cookie` are never recorded. XHR spans get response headers only.
+		 */
+		readonly captureHeaders?: {
+			readonly request?: ReadonlyArray<string>
+			readonly response?: ReadonlyArray<string>
+		}
 	}
 	/**
 	 * Report Core Web Vitals (LCP, CLS, INP, FCP, TTFB) as `browser.web_vital`
@@ -123,6 +134,18 @@ export interface MapleBrowserConfig {
 		 * error happens. 0–1, default 0.
 		 */
 		readonly onErrorSampleRate?: number
+		/** Record `<canvas>` content at this many frames per second, e.g. 2. Off by default: it is heavy. */
+		readonly canvasFps?: number
+		/**
+		 * Keep request and response bodies (text and JSON only, cut to
+		 * `maxLength`, default 10,000 characters) on the replay's network events
+		 * for these URLs. Nothing is captured for other URLs, or with
+		 * `privacy.maskAllText`.
+		 */
+		readonly networkBodies?: {
+			readonly urls: ReadonlyArray<string | RegExp>
+			readonly maxLength?: number
+		}
 	}
 	readonly privacy?: {
 		/** Mask all `<input>` values. Default true. */
@@ -193,6 +216,11 @@ export interface ResolvedConfig {
 	readonly replayEnabled: boolean
 	readonly replaySampleRate: number
 	readonly replayOnErrorSampleRate: number
+	readonly canvasFps: number | undefined
+	readonly networkBodies:
+		| { readonly urls: ReadonlyArray<string | RegExp>; readonly maxLength: number }
+		| undefined
+	readonly captureHeaders: HeaderCapture
 	readonly maskAllInputs: boolean
 	readonly maskAllText: boolean
 	readonly persistVisitorId: boolean
@@ -264,6 +292,14 @@ export function resolveConfig(config: MapleBrowserConfig): ResolvedConfig {
 		offlineQueue: config.transport?.offline ?? false,
 		replayEnabled: config.replay?.enabled ?? true,
 		replaySampleRate: resolveSampleRate("replay.sampleRate", config.replay?.sampleRate),
+		canvasFps: config.replay?.canvasFps,
+		networkBodies: config.replay?.networkBodies?.urls.length
+			? {
+					urls: config.replay.networkBodies.urls,
+					maxLength: config.replay.networkBodies.maxLength ?? 10_000,
+				}
+			: undefined,
+		captureHeaders: resolveHeaderCapture(config.tracing?.captureHeaders),
 		replayOnErrorSampleRate:
 			config.replay?.onErrorSampleRate === undefined
 				? 0
