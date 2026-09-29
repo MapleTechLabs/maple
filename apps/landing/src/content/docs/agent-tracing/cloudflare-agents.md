@@ -33,6 +33,14 @@ Your ingest key is in **Settings → Ingestion**. If your organization is in the
 npm install ai@^7.0.106 @ai-sdk/otel @opentelemetry/api @opentelemetry/sdk-trace-base @opentelemetry/exporter-trace-otlp-http @opentelemetry/resources @opentelemetry/context-async-hooks
 ```
 
+What each package does:
+
+- `ai` and `@ai-sdk/otel`: record each turn, model call and tool call.
+- `@opentelemetry/sdk-trace-base`: collects those records and sends them in batches.
+- `@opentelemetry/exporter-trace-otlp-http`: delivers them to Maple.
+- `@opentelemetry/resources`: puts your service name on them.
+- `@opentelemetry/api` and `@opentelemetry/context-async-hooks`: keep agents that a tool calls in the same conversation.
+
 ## Store the ingest key
 
 Save the key as a secret so it isn't in your Wrangler config:
