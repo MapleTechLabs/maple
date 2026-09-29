@@ -789,6 +789,132 @@ const aggregateOnly = [
 	}),
 ]
 
+describe("buildSessionSummary — the gateway's model calls and usage buckets", () => {
+	it("reads a model call's buckets over its reported figures", () => {
+		// OpenRouter Broadcast labels the call `anthropic`, but its 5021-token
+		// prompt contains the 4248 cached: the convention table read 9532.
+		const summary = summarize([
+			llmSpan({
+				spanId: "a",
+				startMs: 0,
+				durationMs: SECOND,
+				vendorId: "openrouter",
+				genAi: {
+					providerName: "anthropic",
+					usageInputTokens: 5021,
+					usageCacheReadInputTokens: 4248,
+					usageOutputTokens: 263,
+					usageReasoningOutputTokens: 37,
+					usageCost: 0.0027,
+					mapleLlmCall: 1,
+					mapleUsageInputTokens: 773,
+					mapleUsageCacheReadTokens: 4248,
+					mapleUsageOutputTokens: 226,
+					mapleUsageReasoningTokens: 37,
+					mapleUsageCost: 0.0027,
+				},
+			}),
+		])
+
+		expect(summary.tokens).toEqual({
+			input: 773,
+			cacheRead: 4248,
+			cacheWrite: 0,
+			output: 226,
+			reasoning: 37,
+			total: 5284,
+		})
+		expect(summary.cost).toBe(0.0027)
+	})
+
+	it("counts nothing of a wrapper the gateway said is not the call", () => {
+		// Google ADK's `call_llm` restates its `generate_content` child and reads
+		// as a model call by name; netted, the pair counted as two calls wherever
+		// the wrapper claimed a token more than the child.
+		const summary = summarize([
+			makeSpan({
+				spanId: "call_llm",
+				spanName: "call_llm",
+				startMs: 0,
+				durationMs: 2 * SECOND,
+				vendorId: "google_adk",
+				genAi: {
+					requestModel: "gemini-2.5-flash",
+					usageInputTokens: 177,
+					usageOutputTokens: 32,
+					usageCost: 0.001,
+					mapleLlmCall: 0,
+				},
+			}),
+			llmSpan({
+				spanId: "generate_content",
+				parentSpanId: "call_llm",
+				startMs: 0,
+				durationMs: SECOND,
+				vendorId: "google_adk",
+				genAi: {
+					usageInputTokens: 177,
+					usageOutputTokens: 32,
+					mapleLlmCall: 1,
+					mapleUsageInputTokens: 177,
+					mapleUsageOutputTokens: 32,
+				},
+			}),
+		])
+
+		expect(summary.tokens.total).toBe(209)
+		expect(summary.work.llmCalls).toBe(1)
+		// The gateway priced nothing, so neither did the session.
+		expect(summary.cost).toBeUndefined()
+	})
+
+	it("counts a model call that reported no usage", () => {
+		const summary = summarize([
+			llmSpan({
+				spanId: "failed",
+				startMs: 0,
+				durationMs: SECOND,
+				statusCode: "Error",
+				genAi: { mapleLlmCall: 1 },
+			}),
+		])
+
+		expect(summary.work.llmCalls).toBe(1)
+		expect(summary.tokens.total).toBe(0)
+	})
+
+	it("reads a span without the gateway's verdict the way it was reported", () => {
+		const summary = summarize([
+			// Ingested before the gateway classified spans: netted as before.
+			agentSpan({
+				spanId: "old-agent",
+				traceId: "old",
+				startMs: 0,
+				durationMs: 2 * SECOND,
+				genAi: { usageInputTokens: 100, usageOutputTokens: 10 },
+			}),
+			llmSpan({
+				spanId: "old-call",
+				traceId: "old",
+				parentSpanId: "old-agent",
+				startMs: 0,
+				durationMs: SECOND,
+				genAi: { usageInputTokens: 100, usageOutputTokens: 10 },
+			}),
+			llmSpan({
+				spanId: "new-call",
+				traceId: "new",
+				startMs: 5 * SECOND,
+				durationMs: SECOND,
+				genAi: { mapleLlmCall: 1, mapleUsageInputTokens: 50, mapleUsageOutputTokens: 5 },
+			}),
+		])
+
+		expect(summary.tokens.total).toBe(165)
+		expect(summary.work.llmCalls).toBe(2)
+	})
+})
+
 describe("buildSessionSummary — token reporting", () => {
 	it("is none when nothing reported usage", () => {
 		const summary = summarize([

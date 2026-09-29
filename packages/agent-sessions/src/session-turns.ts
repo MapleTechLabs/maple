@@ -68,6 +68,9 @@ export function spanModel(span: AiSessionSpan): string | undefined {
 }
 
 export function classifyAiSpan(span: AiSessionSpan): AiSpanCategory {
+	// The ingest gateway's verdict, where it gave one (`MAPLE_AI_LLM_CALL_ATTR`).
+	const llmCall = span.genAi.mapleLlmCall
+	if (llmCall === 1) return "inference"
 	const operation = span.genAi.operationName
 	if (operation !== undefined) {
 		if (INFERENCE_OPS.has(operation) || RETRIEVAL_OPS.has(operation)) return "inference"
@@ -89,7 +92,13 @@ export function classifyAiSpan(span: AiSessionSpan): AiSpanCategory {
 		return "tool"
 	}
 	if (name.includes("agent") || name.includes("workflow")) return "agent"
-	if (spanModel(span) !== undefined || name.includes("chat") || name.includes("completion")) {
+	// A span the gateway said is not a model call is not one for naming a model
+	// or a chat: a Spring AI `chat_client`, a DSPy `ChatAdapter`, ADK's
+	// `call_llm` over its `generate_content`.
+	if (
+		llmCall === undefined &&
+		(spanModel(span) !== undefined || name.includes("chat") || name.includes("completion"))
+	) {
 		return "inference"
 	}
 	// An AI span we can't place is still the agent's own work, not the app's.
@@ -102,12 +111,15 @@ export function classifyAiSpan(span: AiSessionSpan): AiSpanCategory {
  * time, but counting them here would make the calls-per-turn ratio (the agent's
  * loop depth) meaningless.
  *
- * Everything else `classifyAiSpan` reads as inference counts, including the
- * open-set operation names vendors invent (`generate_text`): matching only the
+ * The ingest gateway's verdict decides where it gave one
+ * (`MAPLE_AI_LLM_CALL_ATTR`). For a span ingested before it did, everything
+ * else `classifyAiSpan` reads as inference counts, including the open-set
+ * operation names vendors invent (`generate_text`): matching only the
  * documented four would color a span as inference and then leave it out of the
  * call count, the model rows and the token column.
  */
 export function isLlmCall(span: AiSessionSpan): boolean {
+	if (span.genAi.mapleLlmCall !== undefined) return span.genAi.mapleLlmCall === 1
 	const operation = span.genAi.operationName
 	if (operation !== undefined && RETRIEVAL_OPS.has(operation)) return false
 	return classifyAiSpan(span) === "inference"

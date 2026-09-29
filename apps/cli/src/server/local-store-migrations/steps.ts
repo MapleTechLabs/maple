@@ -1169,5 +1169,34 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 			},
 		],
 	},
+	{
+		// TODO(v27 -> v28): what changes, and what is NOT backfilled. Fill beforeBootstrap
+		// with the ADD COLUMN / view drops an IF NOT EXISTS bootstrap cannot do, then the
+		// plan line and dispositions. The v28 physical verify fails an unfinished row.
+		id: "local-0027-to-0028-ai-trace-index-gateway-usage",
+		from: 27,
+		to: 28,
+		description: "Recreate ai_trace_index_mv to read the gateway's usage buckets and llm-call marker",
+		clonedBefore: "the views are replaced",
+		beforeBootstrap: [dropViews("ai_trace_index_mv")],
+		plan: [
+			[
+				"rebuild-ai-trace-index-view",
+				"Drop and recreate ai_trace_index_mv reading the gateway's usage buckets and llm-call marker",
+			],
+		],
+		verifies: "Verify the v28 physical schema and the retained raw telemetry counts",
+		dispositions: [
+			AI_TRACE_INDEX_SOURCE,
+			{
+				name: "ai_trace_index",
+				classification: "derived",
+				disposition: "preserve-exact",
+				guarantee:
+					"Existing rows are preserved untouched with the usage and IsLlmCall the old rules gave them; spans materialized after the migration read the gateway's buckets and marker, and the index converges as the retention window rolls.",
+				...AI_TRACE_INDEX_FORWARD,
+			},
+		],
+	},
 	// local-schema:bump appends the next step above this line.
 ]

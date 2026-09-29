@@ -151,6 +151,7 @@ import {
 	AI_MEMORY_OPERATIONS,
 	AI_RETRIEVAL_OPERATIONS,
 	AI_TOOL_OPERATIONS,
+	MAPLE_AI_LLM_CALL_ATTR,
 	MAPLE_AI_SESSION_ID_ATTR,
 	MAPLE_AI_TRACE_SESSION_PREFIX,
 	MAPLE_AI_VENDOR_ID_ATTR,
@@ -1622,6 +1623,14 @@ const SUMMARY_ARRAY_CAP = 50
  * when there are any (`per-call`) and the plain sum otherwise (`roll-up`),
  * which is the deepest-reporter rule the page applies, at turn granularity.
  *
+ * A span the ingest gateway classified (`MAPLE_AI_LLM_CALL_ATTR`) is read by
+ * the gateway's verdict and buckets (`MAPLE_AI_USAGE_ATTRS`) instead: it is an
+ * LLM call when the gateway said so, and only then carries usage, so a
+ * session of such spans is always per-call. Its `input` is the prompt not read
+ * from cache (uncached plus cache write) and its `output` the completion
+ * (visible plus reasoning), so its three add up to its total. The rules above
+ * are for spans ingested before the gateway classified them.
+ *
  * Every Float64 aggregate is guarded with `ifNotFinite`: `toFloat64OrZero`
  * parses `nan` and `inf` successfully, one such attribute would poison the
  * whole sum, and `CHNumber` refuses to decode it.
@@ -1640,7 +1649,9 @@ const summaryMeasures_ = ($: SpanColumns) => {
 	const model = attr([...aiFieldSourceKeys("responseModel"), ...aiFieldSourceKeys("requestModel")])
 	const toolName = field("toolName")
 	const agentName = field("agentName")
-	const isLlmCall = operation.in_(...AI_INFERENCE_OPERATIONS).or(
+	const marker = $.SpanAttributes.get(MAPLE_AI_LLM_CALL_ATTR)
+	const classified = marker.neq("")
+	const looksLikeLlmCall = operation.in_(...AI_INFERENCE_OPERATIONS).or(
 		operation
 			.notIn(
 				...AI_RETRIEVAL_OPERATIONS,
@@ -1651,6 +1662,7 @@ const summaryMeasures_ = ($: SpanColumns) => {
 			.and(model.neq(""))
 			.and(toolName.eq("")),
 	)
+	const isLlmCall = marker.eq("1").or(marker.eq("").and(looksLikeLlmCall))
 	const isToolCall = operation
 		.in_(...AI_TOOL_OPERATIONS)
 		.or(operation.eq("").and(isAi).and(toolName.neq("")))
@@ -1670,10 +1682,18 @@ const summaryMeasures_ = ($: SpanColumns) => {
 		// What `eveIntegration` lifts into the field.
 		"eve.turn.id",
 	])
-	const inputTokens = number("usageInputTokens")
-	const outputTokens = number("usageOutputTokens")
-	const cacheReadTokens = number("usageCacheReadInputTokens")
-	const cost = number("usageCost")
+	const byGateway = <T>(gateway: CH.Expr<T>, reported: CH.Expr<T>) => CH.if_(classified, gateway, reported)
+	const inputTokens = byGateway(
+		number("mapleUsageInputTokens").add(number("mapleUsageCacheWriteTokens")),
+		number("usageInputTokens"),
+	)
+	const outputTokens = byGateway(
+		number("mapleUsageOutputTokens").add(number("mapleUsageReasoningTokens")),
+		number("usageOutputTokens"),
+	)
+	const cacheReadTokens = byGateway(number("mapleUsageCacheReadTokens"), number("usageCacheReadInputTokens"))
+	const costField = byGateway(field("mapleUsageCost"), field("usageCost"))
+	const cost = CH.toFloat64OrZero(costField)
 
 	const finite = (expr: CH.Expr<number>) => CH.ifNotFinite(expr, 0)
 
@@ -1702,7 +1722,7 @@ const summaryMeasures_ = ($: SpanColumns) => {
 		llmCacheReadTokens: finite(CH.sumIf(cacheReadTokens, isLlmCall)),
 		// Spans that reported a cost at all: zero means "not measured", which the
 		// page distinguishes from "free".
-		costReporters: CH.countIf(field("usageCost").neq("")),
+		costReporters: CH.countIf(costField.neq("")),
 		cost: finite(CH.sum(cost)),
 		llmCost: finite(CH.sumIf(cost, isLlmCall)),
 		models: CH.groupUniqArrayIf(SUMMARY_ARRAY_CAP)(model, isLlmCall.and(model.neq(""))),

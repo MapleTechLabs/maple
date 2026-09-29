@@ -130,6 +130,40 @@ export const MAPLE_GENAI_INPUT_MESSAGES_DROPPED_ATTR = "maple_ai.input_messages_
  */
 export const MAPLE_GENAI_MODEL_DURATION_MS_ATTR = "maple_ai.model_duration_ms"
 
+/**
+ * Whether a span is a model call, as the ingest gateway decided it
+ * (`apps/ingest/src/ai_session/usage.rs`): `"1"` on the model call — with or
+ * without usage, so a failed call still counts — and `"0"` on every other span
+ * it stamps. The key being present is what says the gateway classified the
+ * span; a span ingested before it did carries none, and the readers fall back
+ * to their op/name heuristics for it until it ages out of the 30-day TTL.
+ */
+export const MAPLE_AI_LLM_CALL_ATTR = "maple_ai.llm_call"
+
+/**
+ * A model call's usage as five disjoint token buckets and its cost, which the
+ * ingest gateway stamps on the span that IS the model call
+ * (`apps/ingest/src/ai_session/usage.rs`): `input` is the uncached prompt,
+ * `output` the visible completion, and a span's total is the plain sum of the
+ * five. Agent, step and workflow wrappers carry none, so a session's usage is
+ * the sum over its spans with no roll-up to net out. Gateway-owned: stripped
+ * from customer input with the rest of the namespace.
+ *
+ * A span the gateway classified ({@link MAPLE_AI_LLM_CALL_ATTR} present)
+ * reports exactly these, whatever `gen_ai.usage.*` roll-up it also carries. A
+ * span ingested before the gateway classified spans carries `gen_ai.usage.*`
+ * only; the readers fall back to the usage conventions below for it until it
+ * ages out of the 30-day TTL.
+ */
+export const MAPLE_AI_USAGE_ATTRS = {
+	input: "maple_ai.usage.input_tokens",
+	cacheRead: "maple_ai.usage.cache_read_tokens",
+	cacheWrite: "maple_ai.usage.cache_write_tokens",
+	output: "maple_ai.usage.output_tokens",
+	reasoning: "maple_ai.usage.reasoning_tokens",
+	cost: "maple_ai.usage.cost",
+} as const
+
 // Usage conventions — which of a reporter's token figures already contain
 // which others.
 //
@@ -139,11 +173,13 @@ export const MAPLE_GENAI_MODEL_DURATION_MS_ATTR = "maple_ai.model_duration_ms"
 // Anthropic's `input_tokens` EXCLUDES `cache_read_input_tokens` and
 // `cache_creation_input_tokens`; Gemini's `candidatesTokenCount` EXCLUDES
 // `thoughtsTokenCount`. A total that adds the five as if they were disjoint
-// bills a cache-heavy or reasoning-heavy call nearly twice. Both readers of
-// usage — `spanTokenBuckets` in the web app and `genAiTokensExpr` behind
-// `ai_trace_index` — resolve the reporter's convention here first and carve
-// the contained buckets back out, so `input` always means the uncached prompt,
-// `output` the visible completion, and a total is always the plain sum.
+// bills a cache-heavy or reasoning-heavy call nearly twice. The ingest gateway
+// now settles this per emitter and stamps disjoint buckets
+// (`MAPLE_AI_USAGE_ATTRS`); `spanTokenBuckets` still resolves the reporter's
+// convention here for spans ingested before it did, and carves the contained
+// buckets back out, so `input` always means the uncached prompt, `output` the
+// visible completion, and a total is always the plain sum. Remove once those
+// spans have aged out of the 30-day TTL.
 
 export interface GenAiUsageConvention {
 	/** The prompt figure already contains the cache-read and cache-write buckets. */
@@ -266,6 +302,15 @@ export const AI_GENAI_FIELDS = {
 	// none. Instrumentations that price calls themselves (OpenLLMetry,
 	// OpenInference, Logfire) each use their own key; this is OpenLLMetry's.
 	usageCost: { key: "gen_ai.usage.cost", type: "number" },
+	// The gateway's model-call verdict and disjoint buckets — see
+	// `MAPLE_AI_LLM_CALL_ATTR` and `MAPLE_AI_USAGE_ATTRS`.
+	mapleLlmCall: { key: MAPLE_AI_LLM_CALL_ATTR, type: "number" },
+	mapleUsageInputTokens: { key: MAPLE_AI_USAGE_ATTRS.input, type: "number" },
+	mapleUsageCacheReadTokens: { key: MAPLE_AI_USAGE_ATTRS.cacheRead, type: "number" },
+	mapleUsageCacheWriteTokens: { key: MAPLE_AI_USAGE_ATTRS.cacheWrite, type: "number" },
+	mapleUsageOutputTokens: { key: MAPLE_AI_USAGE_ATTRS.output, type: "number" },
+	mapleUsageReasoningTokens: { key: MAPLE_AI_USAGE_ATTRS.reasoning, type: "number" },
+	mapleUsageCost: { key: MAPLE_AI_USAGE_ATTRS.cost, type: "number" },
 
 	// conversation
 	conversationId: { key: "gen_ai.conversation.id", type: "string" },

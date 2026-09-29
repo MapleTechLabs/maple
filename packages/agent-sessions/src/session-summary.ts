@@ -5,11 +5,12 @@
 // parallel would otherwise report 180% of itself. Tokens are counted at the
 // deepest span that reports them, because frameworks that also roll usage up to
 // the agent span would otherwise double the bill. And token buckets are
-// normalised to be disjoint at the point they are read off a span: a provider
-// that counts cached tokens inside its prompt figure, or reasoning inside its
-// completion figure, has them carved back out (see `genAiUsageConvention`), so
-// `input` always means the uncached prompt, `output` the visible completion,
-// and a total is always the plain sum of the buckets.
+// disjoint: the ingest gateway stamps them so on the model call
+// (`MAPLE_AI_USAGE_ATTRS`), and a span ingested before it did has its
+// provider's nested figures carved back out where it is read (see
+// `genAiUsageConvention`), so `input` always means the uncached prompt,
+// `output` the visible completion, and a total is always the plain sum of the
+// buckets.
 
 import { genAiUsageConvention } from "@maple/domain/gen-ai"
 import type { AiSessionSpan } from "@maple/domain/http"
@@ -431,19 +432,52 @@ const EMPTY_TOKENS: SessionTokenTotals = {
 }
 
 /**
- * The five `gen_ai.usage.*` buckets a span reports, normalised to disjoint
- * buckets — or nothing when it reports none. A reporter whose prompt figure
- * already contains its cache buckets, or whose completion figure contains its
- * reasoning, has them carved back out (`genAiUsageConvention` says which), so
- * `input` is always the uncached prompt, `output` the visible completion, and
- * the total is always the sum, whichever convention the reporter billed under.
- * `ai_trace_index`'s `Tokens` column reaches the same sum at insert
- * (`genAiTokensExpr`), which is what keeps the list's usage equal to the
- * detail page's. Exported so the waterfall and the flow split a span's usage
- * the same way the header does rather than re-deriving the prompt/completion
- * halves.
+ * A span's usage as five disjoint buckets, or nothing when it reports none:
+ * `input` the uncached prompt, `output` the visible completion, the total
+ * their sum. On a span the ingest gateway classified
+ * (`MAPLE_AI_LLM_CALL_ATTR`), the buckets it stamped (`MAPLE_AI_USAGE_ATTRS`),
+ * which only a model call carries — an agent or workflow wrapper repeating its
+ * calls' `gen_ai.usage.*` reports nothing. These are the figures
+ * `ai_trace_index` sums, which is what keeps the list's usage equal to the
+ * detail page's. On a span ingested before the gateway classified spans, its
+ * own `gen_ai.usage.*` under its reporter's convention, netted by
+ * `countableUsageSpans`. Exported so the waterfall and the flow split a span's
+ * usage the same way the header does rather than re-deriving the
+ * prompt/completion halves.
  */
 export function spanTokenBuckets(span: AiSessionSpan): SessionTokenTotals | undefined {
+	return span.genAi.mapleLlmCall === undefined ? reportedTokenBuckets(span) : gatewayTokenBuckets(span)
+}
+
+/** The buckets the ingest gateway stamped on a model call, if it did. */
+function gatewayTokenBuckets(span: AiSessionSpan): SessionTokenTotals | undefined {
+	const { mapleUsageInputTokens, mapleUsageCacheReadTokens, mapleUsageCacheWriteTokens } = span.genAi
+	const { mapleUsageOutputTokens, mapleUsageReasoningTokens } = span.genAi
+	if (
+		mapleUsageInputTokens === undefined &&
+		mapleUsageCacheReadTokens === undefined &&
+		mapleUsageCacheWriteTokens === undefined &&
+		mapleUsageOutputTokens === undefined &&
+		mapleUsageReasoningTokens === undefined
+	) {
+		return undefined
+	}
+	return tokenTotals({
+		input: mapleUsageInputTokens ?? 0,
+		cacheRead: mapleUsageCacheReadTokens ?? 0,
+		cacheWrite: mapleUsageCacheWriteTokens ?? 0,
+		output: mapleUsageOutputTokens ?? 0,
+		reasoning: mapleUsageReasoningTokens ?? 0,
+	})
+}
+
+/**
+ * The five `gen_ai.usage.*` buckets as the emitter reported them, normalised
+ * to disjoint buckets: a reporter whose prompt figure already contains its
+ * cache buckets, or whose completion figure contains its reasoning, has them
+ * carved back out (`genAiUsageConvention` says which).
+ */
+function reportedTokenBuckets(span: AiSessionSpan): SessionTokenTotals | undefined {
 	const { usageInputTokens, usageCacheReadInputTokens, usageCacheCreationInputTokens } = span.genAi
 	const { usageOutputTokens, usageReasoningOutputTokens } = span.genAi
 	if (
@@ -473,6 +507,13 @@ export function spanTokenBuckets(span: AiSessionSpan): SessionTokenTotals | unde
 		output: convention.outputIncludesReasoning ? Math.max(0, reportedOutput - reasoning) : reportedOutput,
 		reasoning,
 	})
+}
+
+/** What a span reported it cost, read the way {@link spanTokenBuckets} reads
+ *  its tokens: the gateway's figure on a span it classified, else the
+ *  emitter's own. */
+export function spanCost(span: AiSessionSpan): number | undefined {
+	return span.genAi.mapleLlmCall === undefined ? span.genAi.usageCost : span.genAi.mapleUsageCost
 }
 
 /** The five disjoint buckets plus their sum. */
@@ -590,7 +631,7 @@ function countedLlmCalls(
 	costsBySpan: ReadonlyMap<string, number>,
 ): readonly AiSessionSpan[] {
 	const reportsUsage = (span: AiSessionSpan) =>
-		(spanTokenBuckets(span)?.total ?? 0) > 0 || (span.genAi.usageCost ?? 0) > 0
+		(spanTokenBuckets(span)?.total ?? 0) > 0 || (spanCost(span) ?? 0) > 0
 	const claimed = (span: AiSessionSpan) =>
 		tokensBySpan.has(span.spanId) || (costsBySpan.get(span.spanId) ?? 0) > 0
 	const deepest = spans.filter((span) => {
@@ -674,7 +715,7 @@ function costBySpan(
 	const bySpan = new Map<string, number>()
 	const reported = new Map<string, number>()
 	for (const span of spans) {
-		const cost = span.genAi.usageCost
+		const cost = spanCost(span)
 		if (cost === 0) bySpan.set(span.spanId, 0)
 		if (cost !== undefined && cost > 0) reported.set(span.spanId, cost)
 	}
@@ -1286,7 +1327,7 @@ export function callMetaParts(span: AiSessionSpan, options?: CallMetaOptions): r
 
 	const buckets = options?.usage === false ? undefined : spanTokenBuckets(span)
 	if (buckets !== undefined && buckets.total > 0) parts.push(tokenFlowLabel(buckets))
-	const cost = options?.usage === false ? undefined : span.genAi.usageCost
+	const cost = options?.usage === false ? undefined : spanCost(span)
 	if (cost !== undefined) parts.push(formatCost(cost))
 	const ttftMs = spanTtftMs(span)
 	if (ttftMs !== undefined) parts.push(`ttft ${formatDuration(ttftMs)}`)

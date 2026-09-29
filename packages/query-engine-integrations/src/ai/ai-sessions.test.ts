@@ -1436,10 +1436,20 @@ describe("aiSessionSummaryQuery", () => {
 	it("guards every usage sum against a non-finite attribute", () => {
 		const { sql } = compileUnsafe(aiSessionSummaryQuery(), summaryParams)
 		for (const alias of ["inputTokens", "llmInputTokens", "cost", "llmCost"]) {
-			expect(sql, alias).toMatch(
-				new RegExp(`ifNotFinite\\(sum(If)?\\(toFloat64OrZero\\([^\\n]*, 0\\) AS ${alias},`),
-			)
+			expect(sql, alias).toMatch(new RegExp(`ifNotFinite\\(sum(If)?\\([^\\n]*, 0\\) AS ${alias},`))
 		}
+	})
+
+	it("reads a span the gateway classified by its verdict and buckets", () => {
+		const { sql } = compileUnsafe(aiSessionSummaryQuery(), summaryParams)
+		// The gateway's prompt not read from cache, else the reported prompt.
+		expect(sql).toContain(
+			"if(SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(SpanAttributes['maple_ai.usage.input_tokens'], ''), '')) + toFloat64OrZero(coalesce(nullIf(SpanAttributes['maple_ai.usage.cache_write_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens'], '')",
+		)
+		// A model call by the gateway's verdict, else by the op/model rules.
+		expect(sql).toContain(
+			"countIf((SpanAttributes['maple_ai.llm_call'] = '1' OR (SpanAttributes['maple_ai.llm_call'] = '' AND ",
+		)
 	})
 
 	it("reads the whole session's measures ungrouped, under the same detection", () => {

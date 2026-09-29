@@ -35,6 +35,7 @@ import { migration_0033_ai_crawler_requests } from "./0033_ai_crawler_requests"
 import { migration_0034_trace_facets_hourly } from "./0034_trace_facets_hourly"
 import { migration_0035_ai_trace_index_unknown_operation_tools } from "./0035_ai_trace_index_unknown_operation_tools"
 import { migration_0036_ai_trace_index_memory_operations } from "./0036_ai_trace_index_memory_operations"
+import { migration_0037_ai_trace_index_gateway_usage } from "./0037_ai_trace_index_gateway_usage"
 
 /**
  * A migration statement is either a raw SQL string (structural DDL) or a
@@ -102,6 +103,7 @@ export const migrations: ReadonlyArray<ClickHouseMigration> = [
 	migration_0034_trace_facets_hourly,
 	migration_0035_ai_trace_index_unknown_operation_tools,
 	migration_0036_ai_trace_index_memory_operations,
+	migration_0037_ai_trace_index_gateway_usage,
 ] as const
 
 /** Highest migration `version` bundled — i.e. the schema level a fully-applied

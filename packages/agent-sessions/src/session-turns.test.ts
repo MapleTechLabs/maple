@@ -610,6 +610,46 @@ describe("isLlmCall", () => {
 		expect(classifyAiSpan(memory)).toBe("agent")
 		expect(isLlmCall(memory)).toBe(false)
 	})
+
+	it("takes the ingest gateway's verdict over the op and name rules", () => {
+		// Each reads as a model call by its name or model alone.
+		const notCalls = [
+			// Spring AI's ChatClient facade over the chat model.
+			{ spanName: "spring_ai chat_client", operationName: "framework" },
+			// LangSmith's OTel export of a prompt template step.
+			{ spanName: "ChatPromptTemplate", operationName: "chain" },
+			// DSPy's adapter formatting the LM call (OpenInference `CHAIN`).
+			{ spanName: "ChatAdapter.__call__" },
+			// Google ADK's wrapper over its `generate_content` call.
+			{ spanName: "call_llm", requestModel: "gemini-2.5-flash" },
+		]
+		for (const { spanName, ...genAi } of notCalls) {
+			const span = makeSpan({ spanId: "a", startMs: 0, durationMs: 1, spanName, vendorId: "x", genAi })
+			expect(isLlmCall(span), spanName).toBe(true)
+			const classified = makeSpan({
+				spanId: "a",
+				startMs: 0,
+				durationMs: 1,
+				spanName,
+				vendorId: "x",
+				genAi: { ...genAi, mapleLlmCall: 0 },
+			})
+			expect(classifyAiSpan(classified), spanName).toBe("agent")
+			expect(isLlmCall(classified), spanName).toBe(false)
+		}
+
+		// A call whose op the convention does not know (Semantic Kernel).
+		const call = makeSpan({
+			spanId: "a",
+			startMs: 0,
+			durationMs: 1,
+			spanName: "chat.completions gpt-4o-mini",
+			vendorId: "semantic_kernel",
+			genAi: { operationName: "chat.completions", mapleLlmCall: 1 },
+		})
+		expect(classifyAiSpan(call)).toBe("inference")
+		expect(isLlmCall(call)).toBe(true)
+	})
 })
 
 describe("spanTtftMs", () => {

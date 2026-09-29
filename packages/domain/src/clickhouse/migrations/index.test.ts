@@ -41,6 +41,7 @@ import { migration_0033_ai_crawler_requests } from "./0033_ai_crawler_requests"
 import { migration_0034_trace_facets_hourly, traceFacetsHourlyBackfill } from "./0034_trace_facets_hourly"
 import { migration_0035_ai_trace_index_unknown_operation_tools } from "./0035_ai_trace_index_unknown_operation_tools"
 import { migration_0036_ai_trace_index_memory_operations } from "./0036_ai_trace_index_memory_operations"
+import { migration_0037_ai_trace_index_gateway_usage } from "./0037_ai_trace_index_gateway_usage"
 import { latestSnapshotStatements } from "../../generated/clickhouse-schema"
 import { clickHouseSchemaVersion, latestMigrationVersion, migrations } from "./index"
 
@@ -58,10 +59,10 @@ describe("ClickHouse migrations", () => {
 	it("keeps migrations ordered by version", () => {
 		expect(migrations.map((m) => m.version)).toEqual([
 			1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27,
-			28, 29, 30, 31, 32, 33, 34, 35, 36,
+			28, 29, 30, 31, 32, 33, 34, 35, 36, 37,
 		])
-		expect(migrations.at(-1)).toBe(migration_0036_ai_trace_index_memory_operations)
-		expect(latestMigrationVersion).toBe(36)
+		expect(migrations.at(-1)).toBe(migration_0037_ai_trace_index_gateway_usage)
+		expect(latestMigrationVersion).toBe(37)
 		// 0010 and 0014-0020 are read-path only and skipped by the ingest-gating
 		// version; 0021 is not — the gateway writes `session_events`' new identity
 		// columns and `product_events` directly, so a BYO-CH org must apply it
@@ -102,6 +103,8 @@ describe("ClickHouse migrations", () => {
 		expect(migration_0035_ai_trace_index_unknown_operation_tools.requiredForIngest).toBe(false)
 		// 0036 only recreates the MV-populated ai_trace_index's view.
 		expect(migration_0036_ai_trace_index_memory_operations.requiredForIngest).toBe(false)
+		// 0037 only recreates the MV-populated ai_trace_index's view.
+		expect(migration_0037_ai_trace_index_gateway_usage.requiredForIngest).toBe(false)
 	})
 
 	it("recreates both error-events MVs with the span-attribute exception fallback", () => {
@@ -956,5 +959,22 @@ describe("migration 0036 — ai_trace_index memory operations", () => {
 		expect(create).toContain(
 			"'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store')",
 		)
+	})
+})
+
+describe("migration 0037 — ai_trace_index reads the gateway's usage and model calls", () => {
+	it("recreates the view on the gateway's buckets and llm-call marker", () => {
+		const [drop, create, ...rest] = migration_0037_ai_trace_index_gateway_usage.statements as ReadonlyArray<string>
+		expect(rest).toEqual([])
+		expect(drop).toBe("DROP VIEW IF EXISTS ai_trace_index_mv")
+		expect(create).toMatch(/^CREATE MATERIALIZED VIEW IF NOT EXISTS ai_trace_index_mv TO ai_trace_index AS/)
+		expect(create).toContain("toFloat64OrZero(SpanAttributes['maple_ai.usage.input_tokens']) AS InputTokens")
+		expect(create).toContain("toFloat64OrZero(SpanAttributes['maple_ai.usage.cost']) AS Cost")
+		expect(create).toContain("SpanAttributes['maple_ai.llm_call'] = '1' OR (SpanAttributes['maple_ai.llm_call'] = ''")
+		// No per-provider convention is left in the view.
+		expect(create).not.toContain("greatest(")
+		expect(create).not.toContain("gen_ai.usage.")
+		// The view is the latest snapshot's, verbatim.
+		expect(latestSnapshotStatements).toContain(create)
 	})
 })

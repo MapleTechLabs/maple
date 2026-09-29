@@ -13,9 +13,9 @@
 // The key lists mirror the sources the integrations layer decodes (its default
 // `gen_ai.*` keys plus the Vercel AI SDK and OpenInference dialects), and the
 // classification rules transcribe `classifyAiSpan`/`isLlmCall`
-// (`packages/agent-sessions/src/session-turns.ts`) and `spanTokenBuckets`
-// (`session-summary.ts`) — so a session's "12 calls · $0.40" in the list agrees
-// with its own overview. `ai-span-columns.test.ts` in the integrations package
+// (`packages/agent-sessions/src/session-turns.ts`), and the usage is the
+// gateway's buckets `spanTokenBuckets` (`session-summary.ts`) reads too — so a
+// session's "12 calls · $0.40" in the list agrees with its own overview. `ai-span-columns.test.ts` in the integrations package
 // pins every key list to that layer's own alias tables, so a key added on one
 // side cannot drift silently.
 
@@ -24,14 +24,7 @@ import * as CH from "@maple-dev/effect-clickhouse/expr"
 import { compile } from "@maple-dev/effect-clickhouse/sql"
 import * as T from "@maple-dev/effect-clickhouse/types"
 import { applyRedactions, chRedactChain, MSG_TEXT_REDACTIONS } from "./fingerprint"
-import {
-	AI_MEMORY_OPERATIONS,
-	GENAI_DEFAULT_USAGE_CONVENTION,
-	GENAI_PROVIDER_USAGE_CONVENTIONS,
-	GENAI_VENDOR_USAGE_CONVENTIONS,
-	MAPLE_AI_VENDOR_ID_ATTR,
-	type GenAiUsageConvention,
-} from "../gen-ai"
+import { AI_MEMORY_OPERATIONS, MAPLE_AI_LLM_CALL_ATTR, MAPLE_AI_USAGE_ATTRS } from "../gen-ai"
 
 /** A `$.SpanAttributes`-shaped accessor: the builder's own, or the bare-column
  *  stand-in the SQL text below is compiled from. */
@@ -207,11 +200,20 @@ const looksLikeToolCond = (
 		.neq("")
 		.or(op.eq("").and(nameLooks($.SpanName, ["tool"])))
 
-/** A model turn — what the list counts as an "LLM call". Embeddings and
- *  retrieval are inference time but not calls, exactly as `isLlmCall` says.
- *  Every span the index holds is vendor-stamped, so the client's "is an AI
- *  span" guard on the name rules is already met. */
+/** A model turn — what the list counts as an "LLM call": the gateway's
+ *  verdict (`MAPLE_AI_LLM_CALL_ATTR`) where it gave one, else the op/name
+ *  rules for a span ingested before it did. Embeddings and retrieval are
+ *  inference time but not calls, exactly as `isLlmCall` says. Every span the
+ *  index holds is vendor-stamped, so the client's "is an AI span" guard on the
+ *  name rules is already met. */
 export function genAiIsLlmCallCond($: Pick<GenAiSpanColumnsLike, "SpanName" | "SpanAttributes">): Condition {
+	const attrs = $.SpanAttributes
+	const marker = attrs.get(MAPLE_AI_LLM_CALL_ATTR)
+	return marker.eq("1").or(marker.eq("").and(genAiLooksLikeLlmCallCond($)))
+}
+
+/** The op/name rules for a span the gateway did not classify. */
+function genAiLooksLikeLlmCallCond($: Pick<GenAiSpanColumnsLike, "SpanName" | "SpanAttributes">): Condition {
 	const attrs = $.SpanAttributes
 	const op = genAiOperationExpr(attrs)
 	const byOperation = CH.inList(op, INFERENCE_OPS)
@@ -358,167 +360,41 @@ export const genAiErrorFingerprintText = (row: {
 		MSG_TEXT_REDACTIONS,
 	)
 
-// Usage — the five token buckets `spanTokenBuckets` sums, each under its
-// canonical key, its legacy `gen_ai.*` alias, and the Vercel AI SDK and
-// OpenInference spellings. Canonical first: a span carrying both spellings is
-// read the way the integration layer reads it.
+// Usage — the five disjoint token buckets and the cost the ingest gateway
+// stamps on the span that is the model call (`MAPLE_AI_USAGE_ATTRS`). The
+// gateway already settled each emitter's convention and left wrappers without
+// buckets, so the view only reads them. Spans ingested before the gateway wrote
+// them were materialized under the old per-provider conventions and keep those
+// values until the 30-day TTL ages them out.
 
-export const GENAI_USAGE_KEYS = {
-	input: [
-		"gen_ai.usage.input_tokens",
-		"gen_ai.usage.prompt_tokens",
-		"ai.usage.inputTokens",
-		"ai.usage.promptTokens",
-		"llm.token_count.prompt",
-	],
-	cacheRead: [
-		"gen_ai.usage.cache_read.input_tokens",
-		"gen_ai.usage.input_tokens.cached",
-		"ai.usage.cachedInputTokens",
-		"ai.usage.inputTokenDetails.cacheReadTokens",
-		"llm.token_count.prompt_details.cache_read",
-	],
-	cacheWrite: [
-		"gen_ai.usage.cache_creation.input_tokens",
-		"gen_ai.usage.cache_write.input_tokens",
-		"ai.usage.inputTokenDetails.cacheWriteTokens",
-	],
-	output: [
-		"gen_ai.usage.output_tokens",
-		"gen_ai.usage.completion_tokens",
-		"ai.usage.outputTokens",
-		"ai.usage.completionTokens",
-		"llm.token_count.completion",
-	],
-	reasoning: [
-		"gen_ai.usage.reasoning.output_tokens",
-		"gen_ai.usage.output_tokens.reasoning",
-		"ai.usage.reasoningTokens",
-		"ai.usage.outputTokenDetails.reasoningTokens",
-		"llm.token_count.completion_details.reasoning",
-	],
-} as const
-
-export const GENAI_COST_KEYS = ["gen_ai.usage.cost", "gen_ai.usage.total_cost", "llm.cost.total"] as const
-
-/** The provider that served the call, which decides the usage convention: the
- *  semconv key, its pre-rename spelling, then the Vercel AI SDK and
- *  OpenInference dialects — the sources the integration layer decodes
- *  `providerName` from. */
-export const GENAI_PROVIDER_NAME_KEYS = [
-	"gen_ai.provider.name",
-	"gen_ai.system",
-	"ai.model.provider",
-	"llm.provider",
-	"llm.system",
-] as const
-
-/** Pre-rename `gen_ai.system` spellings of the providers the convention table
- *  names. The read side canonicalises them before its lookup
- *  (`LEGACY_SYSTEM_VALUES` in `ai-integrations.ts`); the view has to match
- *  them as written. */
-export const GENAI_PROVIDER_LEGACY_VALUES = [
-	["gcp.gemini", "gemini"],
-	["gcp.vertex_ai", "vertex_ai"],
-] as const
-
-export function genAiProviderNameExpr(attrs: MapColumnLike): Expr<string> {
-	return firstNonEmptyAttr(attrs, GENAI_PROVIDER_NAME_KEYS)
-}
-
-const tokenBucket = (attrs: MapColumnLike, keys: ReadonlyArray<string>): Expr<number> =>
-	CH.toFloat64OrZero(firstNonEmptyAttr(attrs, keys))
-
-const greatest = (a: Expr<number>, b: Expr<number>): Expr<number> =>
-	CH.compileFnCall<number>("greatest", a, b)
+const usageAttr = (attrs: MapColumnLike, key: string): Expr<number> =>
+	CH.toFloat64OrZero(attrs.get(key))
 
 /**
- * `nested` where the span's convention says the containing figure already
- * holds the contained bucket, `apart` where it reports them separately —
- * `genAiUsageConvention` as a `multiIf`: the vendor's verdict first, then the
- * provider's under its current and its legacy spelling, then the default.
- */
-const byConvention = (
-	attrs: MapColumnLike,
-	axis: keyof GenAiUsageConvention,
-	nested: Expr<number>,
-	apart: Expr<number>,
-): Expr<number> => {
-	const branches: Array<[Condition, Expr<number>]> = []
-	const split = (
-		column: Expr<string>,
-		table: ReadonlyMap<string, GenAiUsageConvention>,
-		spellings: (name: string) => ReadonlyArray<string>,
-	) => {
-		const names = (holds: boolean) =>
-			[...table]
-				.filter(([, convention]) => convention[axis] === holds)
-				.flatMap(([name]) => spellings(name))
-		const yes = names(true)
-		const no = names(false)
-		if (yes.length > 0) branches.push([CH.inList(column, yes), nested])
-		if (no.length > 0) branches.push([CH.inList(column, no), apart])
-	}
-	split(attrs.get(MAPLE_AI_VENDOR_ID_ATTR), GENAI_VENDOR_USAGE_CONVENTIONS, (name) => [name])
-	split(genAiProviderNameExpr(attrs), GENAI_PROVIDER_USAGE_CONVENTIONS, (name) => [
-		name,
-		...GENAI_PROVIDER_LEGACY_VALUES.filter(([canonical]) => canonical === name).map(
-			([, legacy]) => legacy,
-		),
-	])
-	return CH.multiIf(branches, GENAI_DEFAULT_USAGE_CONVENTION[axis] ? nested : apart)
-}
-
-/**
- * Every token the span reported, with the buckets its convention nests carved
- * back out — the sum `spanTokenBuckets` reaches. The prompt is
- * `greatest(input, cacheRead + cacheWrite)` where the prompt figure already
- * contains the cache buckets (OpenAI, OpenRouter, Gemini, every vendor that
- * re-sums) and `input + cacheRead + cacheWrite` where it excludes them
- * (Anthropic); the completion the same against the reasoning bucket.
- * `toFloat64OrZero` rather than a UInt64 parse: a dialect that writes `1234.0`
- * still counts, and the sums never approach 2^53.
- */
-export function genAiTokensExpr(attrs: MapColumnLike): Expr<number> {
-	const bucket = (name: keyof typeof GENAI_USAGE_KEYS) => tokenBucket(attrs, GENAI_USAGE_KEYS[name])
-	const input = bucket("input")
-	const cache = bucket("cacheRead").add(bucket("cacheWrite"))
-	const output = bucket("output")
-	const reasoning = bucket("reasoning")
-	return byConvention(attrs, "inputIncludesCache", greatest(input, cache), input.add(cache)).add(
-		byConvention(attrs, "outputIncludesReasoning", greatest(output, reasoning), output.add(reasoning)),
-	)
-}
-
-/**
- * The five buckets as disjoint figures under the reporter's convention —
- * `input` the uncached prompt, `output` the visible completion, each clamped
- * at zero like the detail page clamps them — whose sum is `genAiTokensExpr`.
- * The index carries them as their own columns since migration 0031; a
- * raw-table read of the same split compiles the same expressions.
+ * The span's five buckets. `toFloat64OrZero` rather than a UInt64 parse, like
+ * every other numeric attribute the index reads; an absent bucket reads 0.
  */
 export function genAiUsageBucketsExpr(
 	attrs: MapColumnLike,
-): Readonly<Record<keyof typeof GENAI_USAGE_KEYS, Expr<number>>> {
-	const bucket = (name: keyof typeof GENAI_USAGE_KEYS) => tokenBucket(attrs, GENAI_USAGE_KEYS[name])
-	const floor = (expr: Expr<number>) => CH.compileFnCall<number>("greatest", CH.lit(0), expr)
-	const input = bucket("input")
-	const cacheRead = bucket("cacheRead")
-	const cacheWrite = bucket("cacheWrite")
-	const output = bucket("output")
-	const reasoning = bucket("reasoning")
+): Readonly<Record<Exclude<keyof typeof MAPLE_AI_USAGE_ATTRS, "cost">, Expr<number>>> {
 	return {
-		input: byConvention(attrs, "inputIncludesCache", floor(input.sub(cacheRead).sub(cacheWrite)), input),
-		cacheRead,
-		cacheWrite,
-		output: byConvention(attrs, "outputIncludesReasoning", floor(output.sub(reasoning)), output),
-		reasoning,
+		input: usageAttr(attrs, MAPLE_AI_USAGE_ATTRS.input),
+		cacheRead: usageAttr(attrs, MAPLE_AI_USAGE_ATTRS.cacheRead),
+		cacheWrite: usageAttr(attrs, MAPLE_AI_USAGE_ATTRS.cacheWrite),
+		output: usageAttr(attrs, MAPLE_AI_USAGE_ATTRS.output),
+		reasoning: usageAttr(attrs, MAPLE_AI_USAGE_ATTRS.reasoning),
 	}
+}
+
+/** Every token the span's model call used: the plain sum of its buckets. */
+export function genAiTokensExpr(attrs: MapColumnLike): Expr<number> {
+	const { input, cacheRead, cacheWrite, output, reasoning } = genAiUsageBucketsExpr(attrs)
+	return input.add(cacheRead).add(cacheWrite).add(output).add(reasoning)
 }
 
 /** USD as the instrumentation priced the call; 0 where nothing did. */
 export function genAiCostExpr(attrs: MapColumnLike): Expr<number> {
-	return CH.toFloat64OrZero(firstNonEmptyAttr(attrs, GENAI_COST_KEYS))
+	return usageAttr(attrs, MAPLE_AI_USAGE_ATTRS.cost)
 }
 
 /** A flag column: `1` where the condition holds. */

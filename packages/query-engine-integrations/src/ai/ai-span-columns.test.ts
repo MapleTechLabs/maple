@@ -4,16 +4,12 @@ import * as T from "@maple-dev/effect-clickhouse/types"
 import { compile } from "@maple-dev/effect-clickhouse/sql"
 import {
 	GENAI_AGENT_NAME_KEYS,
-	GENAI_COST_KEYS,
 	GENAI_MODEL_KEYS,
-	GENAI_PROVIDER_LEGACY_VALUES,
-	GENAI_PROVIDER_NAME_KEYS,
 	GENAI_RESPONSE_ID_KEYS,
 	GENAI_ERROR_TYPE_KEYS,
 	GENAI_TOOL_CALL_RESULT_KEYS,
 	GENAI_TOOL_DESCRIPTION_KEYS,
 	GENAI_TOOL_NAME_KEYS,
-	GENAI_USAGE_KEYS,
 	OPENINFERENCE_KIND_OPERATIONS,
 	genAiIsErrorCond,
 	genAiIsLlmCallCond,
@@ -21,12 +17,8 @@ import {
 	genAiOperationExpr,
 	genAiTokensExpr,
 } from "@maple/domain/tinybird/gen-ai-columns"
-import {
-	GENAI_PROVIDER_USAGE_CONVENTIONS,
-	type AiGenAiField,
-	type MutableAiGenAiValues,
-} from "@maple/domain/gen-ai"
-import { LEGACY_SYSTEM_VALUES, genAiIntegration, resolveAiIntegration } from "./ai-integrations"
+import { MAPLE_AI_USAGE_ATTRS, type AiGenAiField, type MutableAiGenAiValues } from "@maple/domain/gen-ai"
+import { genAiIntegration, resolveAiIntegration } from "./ai-integrations"
 import { AI_VENDOR_INTEGRATIONS } from "./ai-vendors"
 import {
 	childClaimsExpr,
@@ -87,46 +79,6 @@ describe("GenAI column key lists match the integration layer", () => {
 		expect([...GENAI_TOOL_DESCRIPTION_KEYS]).toEqual([...decodedKeys("toolDescription")])
 	})
 
-	it("every usage bucket and the cost, bucket for bucket", () => {
-		const fields = {
-			input: "usageInputTokens",
-			cacheRead: "usageCacheReadInputTokens",
-			cacheWrite: "usageCacheCreationInputTokens",
-			output: "usageOutputTokens",
-			reasoning: "usageReasoningOutputTokens",
-		} as const
-		for (const [bucket, field] of Object.entries(fields)) {
-			const decoded = decodedKeys(field)
-			for (const key of GENAI_USAGE_KEYS[bucket as keyof typeof GENAI_USAGE_KEYS]) {
-				expect(decoded, `${bucket}: ${key}`).toContain(key)
-			}
-			// And the other way: the list reads every key the detail page decodes,
-			// so a session's tokens cannot be counted on one page and not the other.
-			for (const key of decoded) {
-				expect(
-					GENAI_USAGE_KEYS[bucket as keyof typeof GENAI_USAGE_KEYS],
-					`${bucket}: ${key}`,
-				).toContain(key)
-			}
-		}
-		for (const key of GENAI_COST_KEYS) expect(decodedKeys("usageCost")).toContain(key)
-		for (const key of decodedKeys("usageCost")) expect(GENAI_COST_KEYS).toContain(key)
-	})
-
-	it("the provider that decides the usage convention, and its legacy spellings", () => {
-		for (const key of GENAI_PROVIDER_NAME_KEYS) expect(decodedKeys("providerName")).toContain(key)
-		for (const key of decodedKeys("providerName")) expect(GENAI_PROVIDER_NAME_KEYS).toContain(key)
-		// The view matches the pre-rename `gen_ai.system` values the read side
-		// canonicalises, for every provider the convention table names.
-		for (const [canonical, legacy] of GENAI_PROVIDER_LEGACY_VALUES) {
-			expect(LEGACY_SYSTEM_VALUES.get(legacy)).toBe(canonical)
-		}
-		for (const [legacy, canonical] of LEGACY_SYSTEM_VALUES) {
-			if (!GENAI_PROVIDER_USAGE_CONVENTIONS.has(canonical)) continue
-			expect(GENAI_PROVIDER_LEGACY_VALUES.map(([, value]) => value)).toContain(legacy)
-		}
-	})
-
 	it("translates the OpenInference span kinds the integration refines", () => {
 		const integration = resolveAiIntegration("openinference-openai")
 		for (const [kind, operation] of OPENINFERENCE_KIND_OPERATIONS) {
@@ -174,29 +126,23 @@ describe("span classification SQL", () => {
 		expect(text).toContain("'retrieval', '')) = '' AND lower(SpanName) LIKE '%tool%'))")
 	})
 
-	it("sums the token buckets under the reporter's convention, each coalesced canonical-first", () => {
-		const text = sql(genAiTokensExpr(attrs))
-		// The prompt half: the cache buckets nest in the prompt figure for the
-		// re-summing vendors and the OpenAI-shaped providers, and sit beside it
-		// for Anthropic; the default nests.
-		expect(text).toContain(
-			"multiIf(SpanAttributes['maple_ai.vendor.id'] IN ('vercel_ai_sdk', 'maple'), greatest(",
+	it("sums the gateway's usage buckets, and decodes them on the detail page too", () => {
+		expect(sql(genAiTokensExpr(attrs))).toBe(
+			"toFloat64OrZero(SpanAttributes['maple_ai.usage.input_tokens']) + toFloat64OrZero(SpanAttributes['maple_ai.usage.cache_read_tokens']) + toFloat64OrZero(SpanAttributes['maple_ai.usage.cache_write_tokens']) + toFloat64OrZero(SpanAttributes['maple_ai.usage.output_tokens']) + toFloat64OrZero(SpanAttributes['maple_ai.usage.reasoning_tokens'])",
 		)
-		expect(text).toContain(
-			"IN ('openai', 'gcp.gemini', 'gemini', 'gcp.vertex_ai', 'vertex_ai', 'openrouter'), greatest(",
-		)
-		expect(text).toContain(
-			"IN ('anthropic'), toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens']",
-		)
-		// The completion half: reasoning nests for Anthropic and the OpenAI-shaped
-		// providers, and sits beside the completion for Gemini.
-		expect(text).toContain("IN ('anthropic', 'openai', 'openrouter'), greatest(")
-		expect(text).toContain(
-			"IN ('gcp.gemini', 'gemini', 'gcp.vertex_ai', 'vertex_ai'), toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.output_tokens']",
-		)
-		// Every bucket is read canonical-first, down to the OpenInference spelling.
-		expect(text).toContain("coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens'], '')")
-		expect(text).toContain("SpanAttributes['llm.token_count.completion_details.reasoning']))")
+		// The page reads the same keys the view does, so a span's buckets are one
+		// fact on both.
+		const fields = {
+			input: "mapleUsageInputTokens",
+			cacheRead: "mapleUsageCacheReadTokens",
+			cacheWrite: "mapleUsageCacheWriteTokens",
+			output: "mapleUsageOutputTokens",
+			reasoning: "mapleUsageReasoningTokens",
+			cost: "mapleUsageCost",
+		} as const
+		for (const [bucket, field] of Object.entries(fields)) {
+			expect([...decodedKeys(field)]).toEqual([MAPLE_AI_USAGE_ATTRS[bucket as keyof typeof fields]])
+		}
 	})
 
 	it("flags a failure by status or by a declared failure attribute", () => {
