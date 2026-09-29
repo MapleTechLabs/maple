@@ -441,8 +441,15 @@ function findAnchors(ordered: readonly AiSessionSpan[]): readonly TurnAnchor[] {
 		}
 		return false
 	}
+	// A memory operation is agent work, but bookkeeping around a turn rather than
+	// the start of one: as an anchor, a lookup ahead of the agent run would open a
+	// turn of its own.
 	const agentRoots = ordered.filter(
-		(span) => span.isAiSpan && classifyAiSpan(span) === "agent" && !underAiSpan(span),
+		(span) =>
+			span.isAiSpan &&
+			classifyAiSpan(span) === "agent" &&
+			!MEMORY_OPS.has(span.genAi.operationName ?? "") &&
+			!underAiSpan(span),
 	)
 	if (agentRoots.length > 0) {
 		return agentRoots.map((span) => ({
