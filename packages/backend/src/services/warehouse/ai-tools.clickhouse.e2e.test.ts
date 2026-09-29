@@ -96,6 +96,9 @@ const TRACE_IDS_AT_1 = missingKey('["evidence"][1]["traceIds"]')
 const LOG_PATTERNS_AT_0 = missingKey('["evidence"][0]["logPatterns"]')
 /** A failure that says why in its status message alone. */
 const REFUSED = "sandbox refused the command"
+/** `flaky_tool`'s parameter schema. */
+const FLAKY_SCHEMA =
+	'{"properties": {"retries": {"type": "integer"}}, "required": ["retries"], "type": "object"}'
 
 interface SeedSpan {
 	readonly traceId: string
@@ -280,10 +283,17 @@ const SEED_SPANS: ReadonlyArray<SeedSpan> = [
 		durationNs: 8_000_000,
 		status: "Error",
 		statusMessage: "upstream returned 503",
+		// An OpenInference tool span whose GenAI dual-write copied the parameter
+		// schema into the arguments slot: the payload read shows `input.value`,
+		// as the session page does.
 		attrs: agentSpan({
+			[MAPLE_AI_VENDOR_ID_ATTR]: "openai_agents_sdk",
+			"openinference.span.kind": "TOOL",
 			"gen_ai.operation.name": "execute_tool",
 			"gen_ai.tool.name": "flaky_tool",
-			"gen_ai.tool.call.arguments": '{"retries":1}',
+			"tool.parameters": FLAKY_SCHEMA,
+			"gen_ai.tool.call.arguments": FLAKY_SCHEMA,
+			"input.value": '{"retries":1}',
 			"gen_ai.tool.call.result": '{"error":"503"}',
 			...aiGatewayStamps({
 				toolCall: true,
@@ -825,13 +835,15 @@ describe.skipIf(!clickhouseE2eEnabled)("agent tools reads", () => {
 		)
 		assert.isFalse(payloads.sql.includes(flakyWindow.startTime))
 		assert.deepStrictEqual(
-			Effect.runSync(payloads.decodeRows(await runJson(payloads.sql))).map((row) => ({
-				spanId: row.spanId,
-				statusCode: row.statusCode,
-				arguments: row.arguments,
-				argumentsBytes: row.argumentsBytes,
-				resultBytes: row.resultBytes,
-			})),
+			Effect.runSync(payloads.decodeRows(await runJson(payloads.sql)))
+				.map(Integrations.aiToolErrorPayload)
+				.map((row) => ({
+					spanId: row.spanId,
+					statusCode: row.statusCode,
+					arguments: row.arguments,
+					argumentsBytes: row.argumentsBytes,
+					resultBytes: row.resultBytes,
+				})),
 			[
 				{
 					spanId: "tools-flaky-1",
@@ -870,7 +882,9 @@ describe.skipIf(!clickhouseE2eEnabled)("agent tools reads", () => {
 			{ orgId: ORG_ID, ...slice },
 			{ rowSchema: Integrations.aiToolErrorPayloadsRowSchema },
 		)
-		const rows = Effect.runSync(payloads.decodeRows(await runJson(payloads.sql)))
+		const rows = Effect.runSync(payloads.decodeRows(await runJson(payloads.sql))).map(
+			Integrations.aiToolErrorPayload,
+		)
 		assert.deepStrictEqual(
 			[...rows]
 				.sort((a, b) => a.spanId.localeCompare(b.spanId))

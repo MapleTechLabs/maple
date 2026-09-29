@@ -749,7 +749,11 @@ export const readAiToolErrorSamples = Effect.fn("aiSessions.toolErrorSamples")(f
 				),
 				{ profile: "list", context: "aiToolsErrorPayloads" },
 			)
-	const payloadBySpan = new Map(payloads.map((row) => [`${row.traceId}:${row.spanId}`, row] as const))
+	const payloadBySpan = new Map(
+		payloads.map(
+			(row) => [`${row.traceId}:${row.spanId}`, Integrations.aiToolErrorPayload(row)] as const,
+		),
+	)
 	return new AiToolErrorSamplesResponse({
 		...(nextCursor !== undefined && { nextCursor }),
 		occurrences: occurrences.map((row) => {

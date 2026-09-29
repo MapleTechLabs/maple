@@ -1337,6 +1337,23 @@ export const aiSessionSpansRowSchema: CompiledQueryRowSchema<AiSessionSpansOutpu
 	spanAttributes: Schema.Record(Schema.String, Schema.String),
 })
 
+/**
+ * A span's attribute map cut down to what `mapAiSpan` reads. Measured on
+ * production's largest sessions, the whole map is dominated by keys the mapper
+ * never touches (`db.query.text` alone was half of one session's bytes), and
+ * `ResourceAttributes` — which the mapper deliberately ignores, see
+ * `mapAiSpan` — was another 60% on top. Neither is read any more.
+ */
+export const aiSpanAttributes = (
+	attributes: CH.Expr<Record<string, string>>,
+): CH.Expr<Record<string, string>> =>
+	mapFilterKeys(attributes, (key) =>
+		aiSpanAttributePrefixes.reduce(
+			(matched, prefix) => matched.or(key.like(`${prefix}%`)),
+			key.in_(...aiSpanAttributeKeys),
+		),
+	)
+
 /** Shared by both span reads, so a session keyed by id and one keyed by trace
  *  cannot drift apart in shape — {@link aiSessionSpansRowSchema} decodes both. */
 const spanProjection = ($: ColumnAccessor<typeof TraceDetailSpans.columns>) => ({
@@ -1350,17 +1367,7 @@ const spanProjection = ($: ColumnAccessor<typeof TraceDetailSpans.columns>) => (
 	statusCode: $.StatusCode,
 	statusMessage: $.StatusMessage,
 	timestamp: CH.toString_($.Timestamp),
-	// The map cut down to what `mapAiSpan` reads. Measured on production's
-	// largest sessions, the whole map is dominated by keys the mapper never
-	// touches (`db.query.text` alone was half of one session's bytes), and
-	// `ResourceAttributes` — which the mapper deliberately ignores, see
-	// `mapAiSpan` — was another 60% on top. Neither is read any more.
-	spanAttributes: mapFilterKeys($.SpanAttributes, (key) =>
-		aiSpanAttributePrefixes.reduce(
-			(matched, prefix) => matched.or(key.like(`${prefix}%`)),
-			key.in_(...aiSpanAttributeKeys),
-		),
-	),
+	spanAttributes: aiSpanAttributes($.SpanAttributes),
 })
 
 /**

@@ -1668,10 +1668,11 @@ describe("POST /internal/ai-sessions/tools/error-samples", () => {
 										traceId: occurrence.traceId,
 										spanId: occurrence.spanId,
 										statusCode: "Ok",
-										arguments: "{}",
-										argumentsBytes: 2,
-										result: occurrence.message,
-										resultBytes: 58,
+										spanAttributes: {
+											"maple_ai.vendor.id": "maple",
+											"gen_ai.tool.call.arguments": "{}",
+											"gen_ai.tool.call.result": occurrence.message,
+										},
 									},
 								],
 					)
@@ -1708,7 +1709,7 @@ describe("POST /internal/ai-sessions/tools/error-samples", () => {
 						arguments: "{}",
 						argumentsBytes: 2,
 						result: occurrence.message,
-						resultBytes: 58,
+						resultBytes: occurrence.message.length,
 					},
 				],
 			})

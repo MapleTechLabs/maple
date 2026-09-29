@@ -69,14 +69,13 @@ import * as CH from "@maple-dev/effect-clickhouse/expr"
 import * as T from "@maple-dev/effect-clickhouse/types"
 import { from, fromQuery, inSubquery, param, unionAll, type CHUnionQuery } from "@maple-dev/effect-clickhouse"
 import { AI_TOOLS_BREAKDOWN_MAX, AI_TOOLS_OTHER_SERIES_KEY, type AiToolsPeriod } from "@maple/domain/http"
-import type { AiGenAiField } from "@maple/domain/gen-ai"
 import { Array as Arr, Schema } from "effect"
 import type { CompiledQueryRowSchema } from "@maple-dev/effect-clickhouse"
 import { AiTraceIndex, TraceDetailSpans } from "@maple/query-engine/ch/tables"
-import { finiteOrZero, isoBucket, leftUTF8 } from "@maple/query-engine/ch/format"
+import { finiteOrZero, isoBucket } from "@maple/query-engine/ch/format"
 import { CHNumber } from "@maple/query-engine/ch/schema"
-import { aiFieldSourceKeys } from "./ai-integrations"
-import { SESSION_ORDER_SENTINEL, orderTuple, sessionKey } from "./ai-sessions"
+import { aiToolCallPayload } from "./ai-integrations"
+import { SESSION_ORDER_SENTINEL, aiSpanAttributes, orderTuple, sessionKey } from "./ai-sessions"
 
 /**
  * The page's selection, as every read here takes it.
@@ -926,43 +925,25 @@ export interface AiToolErrorCallKey {
 	readonly spanId: string
 }
 
-export interface AiToolErrorPayloadsOutput {
+export interface AiToolErrorPayloadsRow {
 	readonly traceId: string
 	readonly spanId: string
 	readonly statusCode: string
-	/** Truncated to {@link AI_TOOL_ERROR_PAYLOAD_MAX}; `*Bytes` is the true size. */
-	readonly arguments: string
-	readonly argumentsBytes: number
-	readonly result: string
-	readonly resultBytes: number
+	readonly spanAttributes: Record<string, string>
 }
 
-export const aiToolErrorPayloadsRowSchema: CompiledQueryRowSchema<AiToolErrorPayloadsOutput> = Schema.Struct({
+export const aiToolErrorPayloadsRowSchema: CompiledQueryRowSchema<AiToolErrorPayloadsRow> = Schema.Struct({
 	traceId: Schema.String,
 	spanId: Schema.String,
 	statusCode: Schema.String,
-	arguments: Schema.String,
-	argumentsBytes: CHNumber,
-	result: Schema.String,
-	resultBytes: CHNumber,
+	// A Map column arrives as a JSON object under FORMAT JSON.
+	spanAttributes: Schema.Record(Schema.String, Schema.String),
 })
 
 /** A span row's `(TraceId, SpanId)`, for the payload read's tuple `IN`. Raw
  *  because the DSL has no tuple; qualified because the occurrences' own keys are
  *  literals of the same shape. */
 const traceSpanKey = CH.rawExpr("(trace_detail_spans.TraceId, trace_detail_spans.SpanId)", T.string)
-
-type SpanAccessor = {
-	readonly SpanAttributes: CH.Expr<Record<string, string>>
-}
-
-/** `coalesce(nullIf(a, ''), …, '')` — the first source key of a field that has
- *  a value, across every vendor dialect the integrations declare. */
-const spanField = ($: SpanAccessor, field: AiGenAiField): CH.Expr<string> =>
-	CH.coalesce(
-		...aiFieldSourceKeys(field).map((key) => CH.nullIf(CH.mapGet($.SpanAttributes, key), "")),
-		CH.lit(""),
-	)
 
 /**
  * The modal's right pane, step two: what each of those calls was called with and
@@ -975,24 +956,22 @@ const spanField = ($: SpanAccessor, field: AiGenAiField): CH.Expr<string> =>
  * are exact and unpadded: the index copies `Timestamp` from the span verbatim,
  * so the call is inside its own bounds by construction, and a pad would only buy
  * partitions.
+ *
+ * It returns the span's attributes as the session page reads them, not the
+ * payloads: which attribute holds the arguments is a per-vendor decision the
+ * integrations make in TypeScript ({@link aiToolErrorPayload}), so the modal
+ * and the session page decode a tool span one way: an OpenInference tool shows
+ * its `input.value`, not the parameter schema its GenAI dual-write copied into
+ * `gen_ai.tool.call.arguments`.
  */
 export function aiToolErrorPayloadsQuery(calls: Arr.NonEmptyReadonlyArray<AiToolErrorCallKey>) {
 	return from(TraceDetailSpans)
-		.select(($) => {
-			const args = spanField($, "toolCallArguments")
-			const result = spanField($, "toolCallResult")
-			return {
-				traceId: $.TraceId,
-				spanId: $.SpanId,
-				statusCode: $.StatusCode,
-				// Characters, not bytes: `left` cuts mid-codepoint on any payload
-				// holding one. `length` stays byte-based — it reports a size.
-				arguments: leftUTF8(args, CH.lit(AI_TOOL_ERROR_PAYLOAD_MAX)),
-				argumentsBytes: CH.length_(args),
-				result: leftUTF8(result, CH.lit(AI_TOOL_ERROR_PAYLOAD_MAX)),
-				resultBytes: CH.length_(result),
-			}
-		})
+		.select(($) => ({
+			traceId: $.TraceId,
+			spanId: $.SpanId,
+			statusCode: $.StatusCode,
+			spanAttributes: aiSpanAttributes($.SpanAttributes),
+		}))
 		.where(($) => [
 			$.OrgId.eq(param.string("orgId")),
 			$.Timestamp.gte(param.dateTimeString("sliceStart")),
@@ -1005,6 +984,47 @@ export function aiToolErrorPayloadsQuery(calls: Arr.NonEmptyReadonlyArray<AiTool
 			),
 		])
 		.format("JSON")
+}
+
+export interface AiToolErrorPayloadsOutput {
+	readonly traceId: string
+	readonly spanId: string
+	readonly statusCode: string
+	/** Truncated to {@link AI_TOOL_ERROR_PAYLOAD_MAX}; `*Bytes` is the true size. */
+	readonly arguments: string
+	readonly argumentsBytes: number
+	readonly result: string
+	readonly resultBytes: number
+}
+
+const utf8 = new TextEncoder()
+
+/** Decoded payloads are re-serialised for display; a string is already the text. */
+const payloadText = (value: unknown): string =>
+	value === undefined ? "" : typeof value === "string" ? value : JSON.stringify(value)
+
+/** Characters, not UTF-16 units: a cut never splits a codepoint. */
+const truncatePayload = (text: string): string =>
+	text.length <= AI_TOOL_ERROR_PAYLOAD_MAX
+		? text
+		: Array.from(text).slice(0, AI_TOOL_ERROR_PAYLOAD_MAX).join("")
+
+/** One {@link aiToolErrorPayloadsQuery} row as the modal shows it: the payloads
+ *  the session page decodes for the same span, cut to
+ *  {@link AI_TOOL_ERROR_PAYLOAD_MAX} characters beside their size in bytes. */
+export const aiToolErrorPayload = (row: AiToolErrorPayloadsRow): AiToolErrorPayloadsOutput => {
+	const payload = aiToolCallPayload(row.spanAttributes)
+	const args = payloadText(payload.arguments)
+	const result = payloadText(payload.result)
+	return {
+		traceId: row.traceId,
+		spanId: row.spanId,
+		statusCode: row.statusCode,
+		arguments: truncatePayload(args),
+		argumentsBytes: utf8.encode(args).length,
+		result: truncatePayload(result),
+		resultBytes: utf8.encode(result).length,
+	}
 }
 
 /** The bounds one {@link aiToolErrorPayloadsQuery} is read over: the earliest

@@ -32,7 +32,6 @@ import { AI_VENDOR_INTEGRATIONS } from "./ai-vendors"
 import { isRecord, unwrapMessages, unwrapOutputMessages, unwrapToolMessage } from "./ai-messages"
 
 export interface AiRefineContext {
-	readonly row: AiSessionSpansOutput
 	/** The span's own attributes — the map the source key lists read. */
 	readonly attributes: Record<string, string>
 	/** One attribute decoded the way the mapper decodes `field`; `undefined`
@@ -348,16 +347,13 @@ export const AI_NON_SIGNAL_FIELDS: ReadonlySet<AiGenAiField> = new Set([...AI_CO
 const hasAiSignal = (values: MutableAiGenAiValues): boolean =>
 	Object.keys(values).some((field) => !AI_NON_SIGNAL_FIELDS.has(field as AiGenAiField))
 
-export const mapAiSpan = (row: AiSessionSpansOutput): AiAgentSpan => {
-	// Span attributes only, envelope and source keys alike. The gateway strips
-	// `maple_ai.*` from span attributes before stamping its own verdict, so a
-	// span-level value is authoritative — and it does not touch resource
-	// attributes, where one forged `gen_ai.*` or `maple_ai.*` key would mark
-	// every span in the service as an AI span.
-	const attributes = row.spanAttributes
-	const vendorId = readAttribute(attributes, MAPLE_AI_VENDOR_ID_ATTR)
+/** Every catalog field of one span, through the integration its vendor stamp
+ *  selects: the source keys in order, then the refine hooks. */
+const decodeGenAi = (
+	attributes: Record<string, string>,
+	vendorId: string | undefined,
+): MutableAiGenAiValues => {
 	const integration = resolveAiIntegration(vendorId)
-
 	// SAFETY: the catalog correlates each field with its value type, but a loop
 	// over the field union cannot carry that correlation. `decodeAttribute` is
 	// driven by the same catalog entry as the field it is written under, so the
@@ -377,11 +373,38 @@ export const mapAiSpan = (row: AiSessionSpansOutput): AiAgentSpan => {
 			break
 		}
 	}
-	integration.refine?.(genAi, { row, attributes, read })
+	integration.refine?.(genAi, { attributes, read })
 	// The agent the ingest gateway named, which the list and its facets show: it
 	// reads names no dialect key carries (OpenAI Agents' graph node).
 	const stampedAgent = readAttribute(attributes, MAPLE_AI_STAMP_ATTRS.agentName)
 	if (stampedAgent !== undefined) genAi.agentName = stampedAgent
+	return genAi
+}
+
+/**
+ * What a tool call was called with and what came back, decoded exactly as the
+ * session page decodes the span — so a view that reads one tool span on its
+ * own shows the payload the transcript shows: an OpenInference span's real
+ * `input.value` rather than the parameter schema its GenAI dual-write copied
+ * into `gen_ai.tool.call.arguments`, a LangChain `ToolMessage` unwrapped to
+ * its content. `undefined` where the span captured none.
+ */
+export const aiToolCallPayload = (
+	attributes: Record<string, string>,
+): { readonly arguments: unknown; readonly result: unknown } => {
+	const genAi = decodeGenAi(attributes, readAttribute(attributes, MAPLE_AI_VENDOR_ID_ATTR))
+	return { arguments: genAi.toolCallArguments, result: genAi.toolCallResult }
+}
+
+export const mapAiSpan = (row: AiSessionSpansOutput): AiAgentSpan => {
+	// Span attributes only, envelope and source keys alike. The gateway strips
+	// `maple_ai.*` from span attributes before stamping its own verdict, so a
+	// span-level value is authoritative — and it does not touch resource
+	// attributes, where one forged `gen_ai.*` or `maple_ai.*` key would mark
+	// every span in the service as an AI span.
+	const attributes = row.spanAttributes
+	const vendorId = readAttribute(attributes, MAPLE_AI_VENDOR_ID_ATTR)
+	const genAi = decodeGenAi(attributes, vendorId)
 
 	const promptVariables = collectPromptVariables(attributes)
 	const sessionId = readAttribute(attributes, MAPLE_AI_SESSION_ID_ATTR)

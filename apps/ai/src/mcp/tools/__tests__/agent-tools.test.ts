@@ -127,10 +127,10 @@ const variantRows = [
 
 const breakdownPairRows = [{ model: "claude-sonnet-4", service: "api", calls: 9 }]
 
-// Exactly what the read returns for a payload it cut: `AI_TOOL_ERROR_PAYLOAD_MAX`
-// characters, with the row reporting the true size the span carried.
-const LONG_ARGUMENTS = `{"query":"${"x".repeat(AI_TOOL_ERROR_PAYLOAD_MAX - 12)}"}`
+// Arguments longer than the read keeps: it cuts them to `AI_TOOL_ERROR_PAYLOAD_MAX`
+// characters and reports the true size the span carried.
 const LONG_ARGUMENTS_BYTES = 12_000
+const LONG_ARGUMENTS = `{"query":"${"x".repeat(LONG_ARGUMENTS_BYTES - 12)}"}`
 
 /** The payload rows below are joined to these by trace and span id. */
 const occurrence = (ids: [string, string], sessionId: string, timestamp: string, durationNs: number) => ({
@@ -153,20 +153,14 @@ const occurrenceRows = [
 ]
 
 /** `statusCode` is Title case on the wire, like every other Maple span status. */
-const payload = (ids: [string, string], args: string, argumentsBytes: number) => ({
+const payload = (ids: [string, string], args: string, result = "TimeoutError: upstream timed out") => ({
 	traceId: ids[0].repeat(32),
 	spanId: ids[1].repeat(16),
 	statusCode: "Error",
-	arguments: args,
-	argumentsBytes,
-	result: "TimeoutError: upstream timed out",
-	resultBytes: 32,
+	spanAttributes: { "gen_ai.tool.call.arguments": args, "gen_ai.tool.call.result": result },
 })
 
-const payloadRows = [
-	payload(["a", "b"], LONG_ARGUMENTS, LONG_ARGUMENTS_BYTES),
-	payload(["c", "d"], `{"query":"short"}`, 17),
-]
+const payloadRows = [payload(["a", "b"], LONG_ARGUMENTS), payload(["c", "d"], `{"query":"short"}`)]
 
 /** The payload read, answering with rows of the test's own shape. */
 const payloadsAre = (rows: ReadonlyArray<unknown>): FixtureRule[] => [
@@ -478,18 +472,14 @@ describe("get_agent_tool_error rendering", () => {
 	})
 
 	it("tells a payload the span left empty from one it never carried", async () => {
-		const rows = payloadRows.map((row) => ({ ...row, arguments: "", argumentsBytes: 0 }))
+		const rows = [payload(["a", "b"], ""), payload(["c", "d"], "")]
 		const rendered = await renderWith(payloadsAre(rows), ERROR_DETAIL, GROUP)
 		expect(rendered).toContain("(empty)")
 		expect(rendered).not.toContain("(not available: the span was not retained)")
 	})
 
 	it("fences a sample payload that carries a code fence of its own", async () => {
-		const rows = payloadRows.map((row) => ({
-			...row,
-			result: FENCED_RESULT,
-			resultBytes: FENCED_RESULT.length,
-		}))
+		const rows = [payload(["a", "b"], "{}", FENCED_RESULT), payload(["c", "d"], "{}", FENCED_RESULT)]
 		const rendered = await renderWith(payloadsAre(rows), ERROR_DETAIL, GROUP)
 		// One backtick longer than the longest run inside the payload, which is
 		// left intact.
