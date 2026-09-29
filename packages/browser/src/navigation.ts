@@ -18,6 +18,7 @@ import {
 	type Span,
 	type SpanContext,
 	trace,
+	type Tracer,
 } from "@opentelemetry/api"
 import { recordFailure } from "./errors"
 import { liveMapleTracer } from "./tracing"
@@ -47,6 +48,18 @@ let firstLoad = true
  */
 let documentLoad = true
 
+type PageloadListener = (tracer: Tracer, pageload: Span) => void
+/** Set by the deferred chunk, which spans the document's own load under `pageload`. */
+let pageloadListener: PageloadListener | undefined
+/** A document page load that began before the deferred chunk landed. */
+let pendingPageload: { readonly tracer: Tracer; readonly span: Span } | undefined
+
+export function onDocumentPageload(listener: PageloadListener | undefined): void {
+	pageloadListener = listener
+	if (listener && pendingPageload) listener(pendingPageload.tracer, pendingPageload.span)
+	pendingPageload = undefined
+}
+
 /** Spans `traced` opened, which a nested `traced` may parent to instead of the navigation. */
 const tracedSpans = new WeakSet<Span>()
 
@@ -74,7 +87,14 @@ export function startNavigation(path: string): void {
 	const live = tracer()
 	if (!live) return
 	const parent = (joinServer ? serverContext() : undefined) ?? context.active()
-	navigation = { kind, span: live.startSpan(kind, { attributes: { "url.path": scrubUrl(path) } }, parent) }
+	// The document's page load began at navigation start, not when the app's JS got here.
+	const startTime = joinServer ? performance.timeOrigin : undefined
+	const span = live.startSpan(kind, { startTime, attributes: { "url.path": scrubUrl(path) } }, parent)
+	navigation = { kind, span }
+	if (joinServer) {
+		if (pageloadListener) pageloadListener(live, span)
+		else pendingPageload = { tracer: live, span }
+	}
 	// A page left mid-navigation still exports it. Capture phase, so this runs
 	// before the provider's own `pagehide` flush (at the target, capture
 	// listeners run first). Registering the same listener again is a no-op.
@@ -135,6 +155,7 @@ function isFailure(options: TracedOptions, error: unknown): boolean {
 export function resetNavigation(): void {
 	interruptNavigation()
 	firstLoad = true
+	pendingPageload = undefined
 }
 
 /** Test seam: as if the document had just loaded. */

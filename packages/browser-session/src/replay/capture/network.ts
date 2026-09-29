@@ -61,12 +61,15 @@ export function installNetworkCapture(emit: Emit, ignoreUrl: (url: string) => bo
 		) {
 			;(this as XhrMeta).__mapleMethod = String(method).toUpperCase()
 			;(this as XhrMeta).__mapleUrl = typeof url === "string" ? url : url.href
-			return origOpen.apply(this, [method, url, ...rest] as never)
+			// Some XHR instrumentations start their span in `open`, not `send`.
+			const call = withStartedTraceId(() => origOpen.apply(this, [method, url, ...rest] as never))
+			;(this as XhrMeta).__mapleTraceId = call.traceId
+			return call.result
 		}
 		XHR.prototype.send = function (this: XMLHttpRequest, ...args: unknown[]) {
 			const meta = this as XhrMeta
 			const start = performance.now()
-			let traceId = activeTraceId()
+			let traceId = meta.__mapleTraceId ?? activeTraceId()
 			this.addEventListener("loadend", () => {
 				record(meta.__mapleUrl ?? "", meta.__mapleMethod ?? "GET", this.status, start, traceId)
 			})
@@ -86,6 +89,7 @@ export function installNetworkCapture(emit: Emit, ignoreUrl: (url: string) => bo
 interface XhrMeta extends XMLHttpRequest {
 	__mapleMethod?: string
 	__mapleUrl?: string
+	__mapleTraceId?: string | undefined
 }
 
 function requestUrl(input: RequestInfo | URL): string {

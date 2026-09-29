@@ -54,6 +54,7 @@ const CONFIG = {
 	respectDoNotTrack: false,
 	propagateTraceHeaderCorsUrls: [],
 	tracingSampleRate: 1,
+	tracingInstrumentXhr: false,
 	errorFilters: {},
 	sanitizeUrl: undefined,
 }
@@ -202,6 +203,26 @@ describe("setupTracing unload flush", () => {
 		window.dispatchEvent(new Event("pagehide"))
 		await vi.waitFor(() => expect(exported).toHaveLength(1), poll)
 		expect(exported[0]?.attributes["url.full"]).toBe(url)
+		URL.revokeObjectURL(url)
+	})
+
+	it("spans an XMLHttpRequest and ends it on pagehide like a fetch", async () => {
+		vi.useFakeTimers({ toFake: ["setTimeout"] })
+		const poll = { interval: 0 }
+		shutdown = setupTracing({ ...CONFIG, tracingInstrumentXhr: true })
+		const url = URL.createObjectURL(new Blob(["ok"]))
+
+		const xhr = new XMLHttpRequest()
+		xhr.open("GET", url)
+		await new Promise<void>((resolve) => {
+			xhr.addEventListener("loadend", () => resolve())
+			xhr.send()
+		})
+		await vi.waitFor(() => expect(vi.getTimerCount()).toBeGreaterThan(0), poll)
+
+		window.dispatchEvent(new Event("pagehide"))
+		await vi.waitFor(() => expect(exported).toHaveLength(1), poll)
+		expect(exported[0]?.attributes["url.full"] ?? exported[0]?.attributes["http.url"]).toBe(url)
 		URL.revokeObjectURL(url)
 	})
 

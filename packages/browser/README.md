@@ -172,6 +172,10 @@ MapleBrowser.endNavigation("/projects/:id") // the route is ready: its template
   render's trace from a `Server-Timing: traceparent;desc="…"` entry or a
   `<meta name="traceparent">` tag; later calls open `navigate` spans, and end
   one still open as `app.navigation.interrupted`.
+- The document's `pageload` starts at navigation start, and gets child spans
+  from the Navigation Timing entry once the page has loaded: `documentFetch`
+  (with `dns`, `connect`, `request` and `response` under it), `domProcessing`
+  and `loadEvent`.
 - `traced` returns `fn`'s result and rethrows its error unchanged. Only requests
   started before `fn`'s first `await` nest under its span. An error it recorded
   isn't reported again by `captureException` or the global handlers.

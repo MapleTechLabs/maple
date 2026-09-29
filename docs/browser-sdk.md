@@ -25,7 +25,7 @@ MapleBrowser.init({
 
 That call:
 
-- starts OTel browser tracing, auto-instrumenting `fetch` and exporting to Maple's ingest (`POST /v1/traces`);
+- starts OTel browser tracing, auto-instrumenting `fetch` and `XMLHttpRequest` and exporting to Maple's ingest (`POST /v1/traces`);
 - captures uncaught errors and unhandled promise rejections as error spans (see [Errors](#errors));
 - records the session with rrweb, chunks events into ~5s / 100KB windows, gzips them with the native `CompressionStream`, and uploads them to `POST /v1/sessionReplays/blob`;
 - writes session metadata to `POST /v1/sessionReplays/meta`: an `active` row at start, a heartbeat every 60s, and an `ended` row on page hide, which includes the trace ids observed during the session.
@@ -51,6 +51,7 @@ Every field accepted by `MapleBrowser.init`:
 | `userId`                               | `string`                  | none                                      | **Deprecated**, use `user`. User id attached to the replay session and future browser spans.                                                                                                                                                              |
 | `tracing.enabled`                      | `boolean`                 | `true`                                    | Enable OTel browser tracing.                                                                                                                                                                                                                              |
 | `tracing.instrumentFetch`              | `boolean`                 | `true`                                    | Auto-instrument `fetch()` to create network spans. Set `false` when another tracer (e.g. the Effect client SDK) already instruments requests. Its spans feed the session through the published sink, and turning this off avoids duplicate network spans. |
+| `tracing.instrumentXhr`                | `boolean`                 | `true`                                    | Auto-instrument `XMLHttpRequest` (axios and older clients) like `fetch`.                                                                                                                                                                                  |
 | `tracing.captureErrors`                | `boolean`                 | `true`                                    | Record uncaught errors and unhandled rejections as error spans. See [Errors](#errors).                                                                                                                                                                    |
 | `tracing.propagateTraceHeaderCorsUrls` | `Array<string \| RegExp>` | `[]`                                      | Cross-origin URLs whose `fetch()` requests carry the `traceparent` header. See [Tracing across origins](#tracing-across-origins).                                                                                                                         |
 | `tracing.sampleRate`                   | `number`                  | `1`                                       | Fraction of sessions whose traces are exported, `0` to `1`. Decided per session; error spans are always exported. See [Sampling](#sampling).                                                                                                              |
@@ -286,9 +287,23 @@ to `exception.stacktrace` as `Caused by:` blocks after the error's own frames. I
 fingerprinted on the top frames, so adding a cause does not split an existing issue unless the
 error's own stack has fewer than three frames.
 
+## Page load timing
+
+When your router calls `MapleBrowser.startNavigation` (see the package README), the first call opens
+a `pageload` span that starts at the browser's navigation start, not when your JavaScript got to
+run. Once the page has loaded, the SDK adds child spans from the Navigation Timing entry:
+
+| Span            | Covers                                                                      |
+| --------------- | --------------------------------------------------------------------------- |
+| `documentFetch` | fetching the HTML, with `dns`, `connect`, `request` and `response` under it |
+| `domProcessing` | the response end until the DOM is complete                                  |
+| `loadEvent`     | the page's `load` handlers                                                  |
+
+Phases that didn't happen (a reused connection has no `dns` or `connect`) are skipped.
+
 ## Tracing across origins
 
-`fetch` spans send the W3C `traceparent` header to same-origin requests only. When your API lives
+`fetch` and `XMLHttpRequest` spans send the W3C `traceparent` header to same-origin requests only. When your API lives
 on another origin, list it so browser and backend spans join one trace, and allow the `traceparent`
 header in the API's CORS policy:
 

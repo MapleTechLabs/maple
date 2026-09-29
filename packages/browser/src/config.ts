@@ -56,6 +56,11 @@ export interface MapleBrowserConfig {
 		 */
 		readonly instrumentFetch?: boolean
 		/**
+		 * Auto-instrument `XMLHttpRequest` (axios and older clients) the same way.
+		 * Default true. Turn it off for the same reason as `instrumentFetch`.
+		 */
+		readonly instrumentXhr?: boolean
+		/**
 		 * Capture uncaught errors and unhandled promise rejections as error
 		 * spans. Default true. Turn off only when another tracker already owns
 		 * the page's global error handlers, or the same crash lands twice.
@@ -138,6 +143,7 @@ export interface ResolvedConfig {
 	identity: ResolvedIdentity | undefined
 	readonly tracingEnabled: boolean
 	readonly tracingInstrumentFetch: boolean
+	readonly tracingInstrumentXhr: boolean
 	readonly tracingCaptureErrors: boolean
 	readonly propagateTraceHeaderCorsUrls: ReadonlyArray<string | RegExp>
 	readonly tracingSampleRate: number
@@ -202,6 +208,7 @@ export function resolveConfig(config: MapleBrowserConfig): ResolvedConfig {
 		identity: resolveIdentity(config),
 		tracingEnabled: config.tracing?.enabled ?? true,
 		tracingInstrumentFetch: config.tracing?.instrumentFetch ?? true,
+		tracingInstrumentXhr: config.tracing?.instrumentXhr ?? true,
 		tracingCaptureErrors: config.tracing?.captureErrors ?? true,
 		propagateTraceHeaderCorsUrls: config.tracing?.propagateTraceHeaderCorsUrls ?? [],
 		tracingSampleRate: resolveSampleRate("tracing.sampleRate", config.tracing?.sampleRate),

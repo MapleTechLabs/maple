@@ -24,13 +24,15 @@ import { gzipSync } from "node:zlib"
 /** Ceilings in gzipped KB. Raise deliberately, with the reason in the commit. */
 const BUDGET = {
 	/**
-	 * 42 since 2026-09: error filters and cause chains (~0.8 kB). 41 before that:
+	 * 43 since 2026-09: XHR spans and the HTTP status policy, which must patch
+	 * before the app's first request (~1.5 kB). Document timing went to the
+	 * deferred chunk instead. 42: error filters and cause chains. 41 before that:
 	 * per-session trace sampling and the `logger` queue added ~2.4 kB (~1.2 kB
 	 * code, the rest chunk-split overhead now that a second chunk shares the OTel
 	 * core). Was 38 for navigation spans.
 	 */
-	eager: 42,
-	/** Every page load, after `init()`: the OTel logs SDK and exporter. */
+	eager: 43,
+	/** Every page load, after `init()`: the OTel logs SDK and exporter, document timing. */
 	deferred: 8,
 	lazy: 68,
 	/**

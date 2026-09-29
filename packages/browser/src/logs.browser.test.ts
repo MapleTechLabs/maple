@@ -37,6 +37,18 @@ const BASE: InitConfig = {
 	tracing: { instrumentFetch: false },
 }
 
+/** Document timing spans (`documentFetch`, `dns`, ...) are covered by their own tests. */
+const TIMING_SPANS = new Set([
+	"documentFetch",
+	"dns",
+	"connect",
+	"request",
+	"response",
+	"domProcessing",
+	"loadEvent",
+])
+const spanNames = () => exportedSpans.filter((span) => !TIMING_SPANS.has(span.name)).map((span) => span.name)
+
 let handle: ReturnType<typeof MapleBrowser.init> | undefined
 const stop = async (): Promise<void> => {
 	await handle?.shutdown()
@@ -122,7 +134,7 @@ describe("tracing.sampleRate", () => {
 		MapleBrowser.captureException(error)
 		await stop()
 
-		expect(exportedSpans.map((span) => span.name)).toEqual(["exception"])
+		expect(spanNames()).toEqual(["exception"])
 		expect(exportedSpans[0]?.parentSpanContext).toBeUndefined()
 	})
 
@@ -131,7 +143,7 @@ describe("tracing.sampleRate", () => {
 		MapleBrowser.startNavigation("/a")
 		MapleBrowser.endNavigation("/a")
 		await stop()
-		expect(exportedSpans.map((span) => span.name)).toEqual(["pageload /a"])
+		expect(spanNames()).toEqual(["pageload /a"])
 		expect(exportedSpans[0]?.spanContext().traceState).toBeUndefined()
 	})
 })

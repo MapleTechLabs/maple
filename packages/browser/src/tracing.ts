@@ -18,12 +18,14 @@ import {
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http"
 import { registerInstrumentations } from "@opentelemetry/instrumentation"
 import { FetchInstrumentation } from "@opentelemetry/instrumentation-fetch"
+import { XMLHttpRequestInstrumentation } from "@opentelemetry/instrumentation-xml-http-request"
 import { resourceFromAttributes } from "@opentelemetry/resources"
 import type { ReadableSpan, Span, SpanExporter, SpanProcessor } from "@opentelemetry/sdk-trace-base"
 import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-base"
 import { WebTracerProvider } from "@opentelemetry/sdk-trace-web"
 import { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION } from "@opentelemetry/semantic-conventions"
 import type { ResolvedConfig } from "./config"
+import { HttpStatusExporter } from "./http-status"
 import { SessionSampler } from "./sampling"
 import { SDK_NAME, SDK_VERSION } from "./version"
 
@@ -163,12 +165,14 @@ export function resourceAttributes(config: ResolvedConfig): Record<string, strin
  */
 export function setupTracing(config: ResolvedConfig): () => Promise<void> {
 	const exporter = new ConsentSpanExporter(
-		new OTLPTraceExporter({
-			url: `${config.endpoint}/v1/traces`,
-			// The same auth + `x-maple-sdk` headers as every session write; a page
-			// cannot set `user-agent`, so ingest reads the SDK from the latter.
-			headers: ingestHeaders({ ingestKey: config.ingestKey, sdk: sdkHint(SDK_NAME, SDK_VERSION) }),
-		}),
+		new HttpStatusExporter(
+			new OTLPTraceExporter({
+				url: `${config.endpoint}/v1/traces`,
+				// The same auth + `x-maple-sdk` headers as every session write; a page
+				// cannot set `user-agent`, so ingest reads the SDK from the latter.
+				headers: ingestHeaders({ ingestKey: config.ingestKey, sdk: sdkHint(SDK_NAME, SDK_VERSION) }),
+			}),
+		),
 	)
 
 	const provider = new WebTracerProvider({
@@ -211,8 +215,8 @@ export function setupTracing(config: ResolvedConfig): () => Promise<void> {
 	const onVisibilityChange = (): void => {
 		if (document.visibilityState === "hidden") onExit()
 	}
-	// Fetch spans need a push first on the way out: the fetch instrumentation
-	// ends each one 300ms after its response (waiting on resource timing), so a
+	// Fetch and XHR spans need a push first on the way out: both instrumentations
+	// end each one 300ms after its response (waiting on resource timing), so a
 	// fetch that settled just before a navigation is still open when the flush
 	// runs, and the page is gone before its timer fires. `pagehide` ends those at
 	// their real response time, dropping their resource-timing network events.
@@ -220,14 +224,22 @@ export function setupTracing(config: ResolvedConfig): () => Promise<void> {
 	// tab switch) lives on, and its timer would then hit an ended span. A page
 	// entering the bfcache fires it too; ending there is still right, since it
 	// may never be restored.
-	const settledFetches = new Map<ApiSpan, number>()
+	const settledRequests = new Map<ApiSpan, number>()
 	const onPageHide = (): void => {
-		for (const [span, endTime] of settledFetches) {
-			// Entries are only pruned on the next fetch, so some already ended.
+		for (const [span, endTime] of settledRequests) {
+			// Entries are only pruned on the next request, so some already ended.
 			if (span.isRecording()) span.end(endTime)
 		}
-		settledFetches.clear()
+		settledRequests.clear()
 		onExit()
+	}
+	// Runs as the response settles, right before the instrumentation schedules
+	// the span's deferred end. Pruning here keeps the map to spans still waiting.
+	const noteSettled = (span: ApiSpan): void => {
+		for (const settled of settledRequests.keys()) {
+			if (!settled.isRecording()) settledRequests.delete(settled)
+		}
+		settledRequests.set(span, Date.now())
 	}
 	const canListen = typeof document !== "undefined" && typeof document.addEventListener === "function"
 	if (canListen) {
@@ -235,31 +247,27 @@ export function setupTracing(config: ResolvedConfig): () => Promise<void> {
 		window.addEventListener("pagehide", onPageHide)
 	}
 
-	const unregisterInstrumentations = config.tracingInstrumentFetch
-		? registerInstrumentations({
-				// Explicit, not the global: a host app that registered its own provider
-				// first owns the global, and these spans would otherwise go to it.
-				tracerProvider: provider,
-				instrumentations: [
-					new FetchInstrumentation({
-						// Maple's own ingest calls are not traced at all.
-						ignoreUrls: [new RegExp(`${escapeRegExp(config.endpoint)}/v1/`)],
-						// `traceparent` goes to same-origin requests only, unless the app
-						// lists the cross-origin APIs that accept it.
-						propagateTraceHeaderCorsUrls: [...config.propagateTraceHeaderCorsUrls],
-						// Runs as the response settles, right before the instrumentation
-						// schedules the span's deferred end. Pruning here keeps the map to
-						// spans still waiting on that timer.
-						applyCustomAttributesOnSpan: (span) => {
-							for (const settled of settledFetches.keys()) {
-								if (!settled.isRecording()) settledFetches.delete(settled)
-							}
-							settledFetches.set(span, Date.now())
-						},
-					}),
-				],
-			})
-		: undefined
+	const requestOptions = {
+		// Maple's own ingest calls are not traced at all.
+		ignoreUrls: [new RegExp(`${escapeRegExp(config.endpoint)}/v1/`)],
+		// `traceparent` goes to same-origin requests only, unless the app lists
+		// the cross-origin APIs that accept it.
+		propagateTraceHeaderCorsUrls: [...config.propagateTraceHeaderCorsUrls],
+		applyCustomAttributesOnSpan: noteSettled,
+	}
+	const instrumentations = [
+		...(config.tracingInstrumentFetch ? [new FetchInstrumentation(requestOptions)] : []),
+		...(config.tracingInstrumentXhr ? [new XMLHttpRequestInstrumentation(requestOptions)] : []),
+	]
+	const unregisterInstrumentations =
+		instrumentations.length > 0
+			? registerInstrumentations({
+					// Explicit, not the global: a host app that registered its own provider
+					// first owns the global, and these spans would otherwise go to it.
+					tracerProvider: provider,
+					instrumentations,
+				})
+			: undefined
 
 	return async () => {
 		if (canListen) {

@@ -45,6 +45,7 @@ const CONFIG = {
 	respectDoNotTrack: false,
 	propagateTraceHeaderCorsUrls: [],
 	tracingSampleRate: 1,
+	tracingInstrumentXhr: false,
 	errorFilters: {},
 	sanitizeUrl: undefined,
 }
