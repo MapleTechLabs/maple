@@ -1,5 +1,5 @@
 /**
- * Migration 0039 — `ai_trace_index_mv` projects the ingest gateway's stamps.
+ * Migration 0035 — `ai_trace_index_mv` projects the ingest gateway's stamps.
  *
  * The view used to decide every GenAI fact itself, at insert: which span is a
  * model call or a tool call (operation lists, span-name needles), whether it
@@ -23,14 +23,14 @@
  *
  * `requiredForIngest: false` — the gateway writes `traces`, never this table.
  *
- * Numbered 0039 because 0035-0038 are claimed by open pull requests; renumber
- * at merge time.
+ * This view replaces the in-flight view changes of other pull requests, which
+ * rebase onto it and drop their own migrations of this view.
  *
  * The CREATE statement below is the verbatim DDL as the schema emitter produced
- * it at v39. Frozen history: never re-derive it from a later snapshot.
+ * it at v35. Frozen history: never re-derive it from a later snapshot.
  */
-export const migration_0039_ai_trace_index_gateway_stamps = {
-	version: 39,
+export const migration_0035_ai_trace_index_gateway_stamps = {
+	version: 35,
 	description: "Recreate ai_trace_index_mv as a projection of the ingest gateway's maple_ai.* stamps",
 	requiredForIngest: false,
 	statements: [

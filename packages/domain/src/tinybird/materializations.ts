@@ -1032,10 +1032,10 @@ export const traceDetailSpansMv = defineMaterializedView("trace_detail_spans_mv"
  *
  * Every other GenAI column is a projection of the facts the gateway decided
  * for the span and stamped on it (`MAPLE_AI_STAMP_ATTRS`, SQL from
- * `gen-ai-columns.ts`) since migration 0039: the view holds no vendor rule,
+ * `gen-ai-columns.ts`) since migration 0035: the view holds no vendor rule,
  * and a dialect is taught to the gateway instead. Rows materialized before it
  * keep the values the view's own rules gave them until the 30-day TTL. Before
- * 0039 the view coalesced the dialects and classified the span itself.
+ * 0035 the view coalesced the dialects and classified the span itself.
  * Migration 0026 added the columns; rows materialized before
  * it carry `''`/0 throughout, which the facets drop, the filters never match
  * and the sums count as nothing. Migration 0027 changed `Tokens` to count a

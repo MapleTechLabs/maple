@@ -1171,7 +1171,7 @@ export const aiTraceIndex = defineDatasource("ai_trace_index", {
 		VendorId: t.string().lowCardinality(),
 		ServiceName: t.string().lowCardinality(),
 		// Migration 0026 — the sidebar's other facet dimensions, and the per-span
-		// measures the page ranks and filters on. Since 0039 the GenAI ones project a
+		// measures the page ranks and filters on. Since 0035 the GenAI ones project a
 		// fact the ingest gateway stamped (`gen-ai-columns.ts`).
 		DeploymentEnv: t.string().lowCardinality(),
 		Model: t.string().lowCardinality(),
