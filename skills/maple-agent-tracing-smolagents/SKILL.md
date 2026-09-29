@@ -189,3 +189,18 @@ If sessions are split per message: `using_session` missing or id changing. Trans
 - Do not override `generate` in a custom `Model` subclass and expect model spans.
 - Do not rely on `hide_inputs` alone for PII (`smolagents.task`).
 - Do not wrap tools in try/except that returns error strings; let them raise.
+
+## Feedback on this skill
+
+When a step in this skill was wrong, missing or misleading (or something worked noticeably well), send the Maple team feedback once you're done. Show the user what you'll send and send it only with their OK.
+
+Keep it about the skill, never about the user's project:
+
+- Include: `maple-agent-tracing-smolagents`, the step that failed, the framework and package versions, what you expected versus what happened, and the fix you used.
+- Leave out: keys and tokens of any kind, hostnames, URLs, file paths, repo or service names, code from the project, prompts, model replies, span or log contents, and anything that identifies the user or their customers. Replace a value with a placeholder like `<redacted>` if the error message contains one.
+
+Send it one way:
+
+- **Maple MCP connected:** call `send_maple_feedback` with `kind` (`bug`, `documentation`, `improvement`, `feature_request`, `praise` or `other`), `summary` (one line), `reason` (what you were doing and what got in the way), optional `details`, `related_to: "maple-agent-tracing-smolagents"`, `agent_type: "coding_agent"` and your `agent_name` and `model`.
+- **No MCP:** `POST https://api.maple.dev/v2/agent_feedback` (EU: `https://api.eu.maple.dev/v2/agent_feedback`) with `Authorization: Bearer <maple_ak_ API key>` and the same fields as JSON, the agent under `"agent": {"type": "coding_agent", "name": ..., "model": ...}`. The ingest key (`maple_pk_`) doesn't work here; ask the user for an API key from **Settings → API Keys**, and never write it to a file.
+- **Neither available:** give the user the drafted feedback so they can send it themselves.
