@@ -1193,7 +1193,7 @@ export const aiTraceIndex = defineDatasource("ai_trace_index", {
 		ResponseId: t.string(),
 		// Migration 0031 — the last facts the Agent Sessions list read off the
 		// raw spans: the vendor's version beside its id, and the five disjoint
-		// buckets `Tokens` is the sum of (`genAiUsageBucketsExpr`), so a row
+		// buckets `Tokens` is the sum of (the gateway's `maple_ai.usage.*`), so a row
 		// renders from one index query instead of a fan-out over
 		// `trace_detail_spans`. '' / 0 on rows materialized before it.
 		VendorVersion: t.string().lowCardinality(),
