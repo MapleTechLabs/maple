@@ -14,6 +14,6 @@ const gatewaySource = ["facts.rs", "usage.rs"]
 
 describe("MAPLE_AI_STAMP_ATTRS", () => {
 	it.each(Object.values(MAPLE_AI_STAMP_ATTRS))("is written by the ingest gateway: %s", (key) => {
-		expect(gatewaySource).toContain(`"${key}"`)
+		expect(gatewaySource).toContain(`&str = "${key}";`)
 	})
 })
