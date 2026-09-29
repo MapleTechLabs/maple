@@ -22,6 +22,31 @@ vi.mock("@opentelemetry/exporter-trace-otlp-http", () => ({
 const { MapleBrowser } = await import("../index")
 const { onLongFrame } = await import("./perf")
 
+class ScriptTimingStub {
+	constructor(
+		private readonly values: {
+			duration: number
+			invoker: string
+			sourceURL: string
+			sourceFunctionName: string
+		},
+	) {}
+	get duration(): number {
+		return this.values.duration
+	}
+	get invoker(): string {
+		return this.values.invoker
+	}
+	get sourceURL(): string {
+		return this.values.sourceURL
+	}
+	get sourceFunctionName(): string {
+		return this.values.sourceFunctionName
+	}
+}
+const scriptTiming = (duration: number, invoker: string, sourceURL: string, sourceFunctionName = "") =>
+	new ScriptTimingStub({ duration, invoker, sourceURL, sourceFunctionName })
+
 const busy = (ms: number): void => {
 	const until = performance.now() + ms
 	while (performance.now() < until) {
@@ -106,14 +131,10 @@ describe("long frames", () => {
 			duration: 180,
 			toJSON: () => ({}),
 			blockingDuration: 130,
+			// Real PerformanceScriptTiming fields are prototype getters, not own properties.
 			scripts: [
-				{ duration: 20, invoker: "a", sourceURL: "https://app.test/a.js" },
-				{
-					duration: 150,
-					invoker: "BUTTON#save.onclick",
-					sourceURL: "https://app.test/checkout.js?token=x",
-					sourceFunctionName: "submit",
-				},
+				scriptTiming(20, "a", "https://app.test/a.js"),
+				scriptTiming(150, "BUTTON#save.onclick", "https://app.test/checkout.js?token=x", "submit"),
 			],
 		}
 		onLongFrame(entry)

@@ -10,6 +10,9 @@ import {
 import type { ErrorFilterOptions } from "./error-filters"
 import { type HeaderCapture, resolveHeaderCapture } from "./http-headers"
 
+/** Ingest keeps 1,024 bytes of a session-event attribute; this leaves room for the cut marker. */
+const MAX_BODY_LENGTH = 1_000
+
 export type ConsoleLevel = "debug" | "log" | "info" | "warn" | "error"
 
 /** Public configuration for `MapleBrowser.init`. */
@@ -88,6 +91,10 @@ export interface MapleBrowserConfig {
 		 * `{ response: ["x-request-id", "x-cache"] }`. `authorization`, `cookie`
 		 * and `set-cookie` are never recorded. XHR spans get response headers only.
 		 */
+		readonly captureHeaders?: {
+			readonly request?: ReadonlyArray<string>
+			readonly response?: ReadonlyArray<string>
+		}
 		/**
 		 * Span main-thread frames of 100ms or more (`longAnimationFrame`, with the
 		 * script that ran longest; `longtask` where that API is missing). Default false.
@@ -95,10 +102,6 @@ export interface MapleBrowserConfig {
 		readonly longFrames?: boolean
 		/** Span interactions of 200ms or more (`interaction click`, ...), split into input delay, processing and presentation. Default false. */
 		readonly slowInteractions?: boolean
-		readonly captureHeaders?: {
-			readonly request?: ReadonlyArray<string>
-			readonly response?: ReadonlyArray<string>
-		}
 	}
 	/**
 	 * Report Core Web Vitals (LCP, CLS, INP, FCP, TTFB) as `browser.web_vital`
@@ -147,9 +150,10 @@ export interface MapleBrowserConfig {
 		 */
 		readonly canvasFps?: number
 		/**
-		 * Keep request and response bodies (text and JSON only, cut to
-		 * `maxLength`, default 10,000 characters) on the replay's network events
-		 * for these URLs. Nothing is captured for other URLs, or with
+		 * Keep request and response bodies (text and JSON only) on the replay's
+		 * network events for these URLs, cut to `maxLength` characters. Ingest
+		 * keeps at most 1,024 bytes of each, so `maxLength` is capped at 1,000
+		 * (the default). Nothing is captured for other URLs, or with
 		 * `privacy.maskAllText`.
 		 */
 		readonly networkBodies?: {
@@ -308,7 +312,10 @@ export function resolveConfig(config: MapleBrowserConfig): ResolvedConfig {
 		networkBodies: config.replay?.networkBodies?.urls.length
 			? {
 					urls: config.replay.networkBodies.urls,
-					maxLength: config.replay.networkBodies.maxLength ?? 10_000,
+					maxLength: Math.min(
+						MAX_BODY_LENGTH,
+						config.replay.networkBodies.maxLength ?? MAX_BODY_LENGTH,
+					),
 				}
 			: undefined,
 		captureHeaders: resolveHeaderCapture(config.tracing?.captureHeaders),
