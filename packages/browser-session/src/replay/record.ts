@@ -273,7 +273,10 @@ function canvasOptions(config: IngestConfig) {
 	}
 }
 
-/** Buffer mode checks out often, so the retained window stays near a minute. */
+/**
+ * Buffer mode checks out often, so the retained window stays near a minute. A
+ * checkout is a full DOM snapshot, so it is skipped while hidden or when nothing changed.
+ */
 const BUFFER_CHECKOUT_MS = 30_000
 
 interface Segment {
@@ -300,6 +303,8 @@ export function startBufferedRecording(config: IngestConfig, sessionId: string):
 	let bytes = 0
 	let clickCount = 0
 	let stopped = false
+	/** Incremental events since the last snapshot: an idle page needs no new one. */
+	let changedSinceSnapshot = 0
 
 	const stopRecord = record({
 		emit: (event: unknown) => {
@@ -325,6 +330,9 @@ export function startBufferedRecording(config: IngestConfig, sessionId: string):
 			if (e.type === META) {
 				segments.push({ parts: [], bytes: 0, first: e.timestamp, last: e.timestamp })
 				while (segments.length > 2) bytes -= segments.shift()?.bytes ?? 0
+				changedSinceSnapshot = 0
+			} else if (e.type === INCREMENTAL) {
+				changedSinceSnapshot++
 			}
 			const segment = segments.at(-1)
 			// Nothing to play back before the first snapshot.
@@ -338,9 +346,14 @@ export function startBufferedRecording(config: IngestConfig, sessionId: string):
 		maskAllInputs: config.maskAllInputs,
 		blockSelector: BLOCK_SELECTOR,
 		...(config.maskAllText ? { maskTextSelector: "*" } : undefined),
-		checkoutEveryNms: BUFFER_CHECKOUT_MS,
 		...canvasOptions(config),
 	})
+
+	const checkoutTimer = setInterval(() => {
+		if (stopped || changedSinceSnapshot === 0) return
+		if (typeof document !== "undefined" && document.visibilityState === "hidden") return
+		record.takeFullSnapshot(true)
+	}, BUFFER_CHECKOUT_MS)
 
 	return {
 		drain: async (keepalive = false) => {
@@ -368,6 +381,7 @@ export function startBufferedRecording(config: IngestConfig, sessionId: string):
 		},
 		stop: () => {
 			stopped = true
+			clearInterval(checkoutTimer)
 			segments = []
 			bytes = 0
 			stopRecord?.()

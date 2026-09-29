@@ -153,10 +153,8 @@ function parseSessionRecord(raw: string): SessionRecord | undefined {
 		if (typeof value.replayBuffered !== "boolean") return undefined
 		record.replayBuffered = value.replayBuffered
 	}
-	if (value.replayTrigger !== undefined) {
-		if (value.replayTrigger !== "error") return undefined
-		record.replayTrigger = value.replayTrigger
-	}
+	// An unknown trigger (from a newer SDK) is dropped, not fatal: rejecting the record would split the session.
+	if (value.replayTrigger === "error") record.replayTrigger = value.replayTrigger
 	if (value.utm !== undefined) {
 		if (!isStringRecord(value.utm)) return undefined
 		record.utm = value.utm
@@ -658,8 +656,12 @@ export function markReplayTriggered(sessionId: string): void {
  * minted by idle rotation mid-page inherits that page's mode rather than
  * rolling again, and later loads of it honour the same answer.
  */
-export function adoptReplayDecision(sessionId: string, recorded: boolean): void {
+export function adoptReplayDecision(sessionId: string, recorded: boolean, buffered?: boolean): void {
 	const record = readRecord()
 	if (!record || record.id !== sessionId || record.replaySampled !== undefined) return
-	writeRecord({ ...record, replaySampled: recorded })
+	writeRecord({
+		...record,
+		replaySampled: recorded,
+		...(buffered !== undefined && !recorded ? { replayBuffered: buffered } : undefined),
+	})
 }

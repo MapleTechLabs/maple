@@ -105,4 +105,16 @@ describe("errors.captureHttpStatus", () => {
 		)
 		expect(notFound.status.code).toBe(SpanStatusCode.UNSET)
 	})
+
+	it("keeps a network failure an error and describes it like a status error", () => {
+		const failed = finish((s) => {
+			s.setAttribute("http.request.method", "POST")
+			s.setAttribute("url.full", "https://api.test/orders?id=7")
+			s.setAttribute("http.response.status_code", 0)
+			s.setAttribute("error.type", "TypeError")
+			s.setStatus({ code: SpanStatusCode.ERROR, message: "Failed to fetch" })
+		})
+		expect(failed.status.code).toBe(SpanStatusCode.ERROR)
+		expect(failed.attributes["error.message"]).toBe("POST https://api.test/orders -> TypeError")
+	})
 })

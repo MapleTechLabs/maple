@@ -102,6 +102,25 @@ describe("breadcrumbs", () => {
 		expect(clicks.map((log) => log.attributes["maple.breadcrumb.target"])).toEqual(["button#first"])
 	})
 
+	it("keeps one crumb per field while typing, so keystrokes don't evict the trail", async () => {
+		await init(BASE)
+		clickButton("compose")
+		const field = document.createElement("textarea")
+		field.id = "message"
+		document.body.append(field)
+		for (const text of ["h", "he", "hel", "hell", "hello"]) {
+			field.value = text
+			field.dispatchEvent(new Event("input", { bubbles: true }))
+		}
+		MapleBrowser.captureException(new Error("send failed"))
+		await stop()
+
+		const types = exportedLogs
+			.map((log) => log.attributes["maple.breadcrumb.type"])
+			.filter((type) => type === "click" || type === "input")
+		expect(types).toEqual(["click", "input"])
+	})
+
 	it("keeps nothing with breadcrumbs off", async () => {
 		await init({ ...BASE, breadcrumbs: false })
 		clickButton("save")

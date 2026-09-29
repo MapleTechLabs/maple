@@ -20,7 +20,7 @@ import {
 	trace,
 	type Tracer,
 } from "@opentelemetry/api"
-import { captureException, recordFailure } from "./errors"
+import { captureException, passesErrorFilters, recordFailure } from "./errors"
 import { liveMapleTracer } from "./tracing"
 import { SDK_NAME, SDK_VERSION } from "./version"
 
@@ -34,11 +34,14 @@ export interface TracedOptions {
  * The navigation in flight. Only ever set in a browser: a server shares module
  * state across requests.
  */
-let navigation: { readonly span: Span; readonly kind: "pageload" | "navigate" } | undefined
+let navigation:
+	| { readonly span: Span; readonly kind: "pageload" | "navigate"; readonly startedAt: number }
+	| undefined
 /**
  * Whether the next navigation is a `pageload`: the first since the document
- * loaded, or since `shutdown()`. Consumed even when nothing is spanned
- * (tracing not live yet, consent pending): a later click is not the page load.
+ * loaded, or since `shutdown()`. Consumed even when nothing is spanned (tracing
+ * not live yet, consent pending): a later click is not the page load. Router
+ * adapters must therefore be attached after `init()`.
  */
 let firstLoad = true
 /**
@@ -75,6 +78,11 @@ export function openNavigationSpan(): Span | undefined {
 	return navigation?.span
 }
 
+/** The open navigation span, if it had already started at `epochMs`: a child must not begin before its parent. */
+export function navigationSpanAt(epochMs: number): Span | undefined {
+	return navigation && navigation.startedAt <= epochMs ? navigation.span : undefined
+}
+
 /** End the open navigation as interrupted: something other than its route finishing ended it. */
 function interruptNavigation(): void {
 	navigation?.span.setAttribute("app.navigation.interrupted", true)
@@ -96,7 +104,7 @@ export function startNavigation(path: string): void {
 	// but never before a consent grant: the exporter drops anything that began earlier.
 	const startTime = joinServer ? Math.max(performance.timeOrigin, consentAllowedSince()) : undefined
 	const span = live.startSpan(kind, { startTime, attributes: { "url.path": scrubUrl(path) } }, parent)
-	navigation = { kind, span }
+	navigation = { kind, span, startedAt: startTime ?? Date.now() }
 	if (joinServer) {
 		if (pageloadListener) pageloadListener(live, span)
 		else pendingPageload = { tracer: live, span }
@@ -126,7 +134,8 @@ export async function traced<T>(name: string, fn: () => Promise<T>, options: Tra
 		try {
 			return await fn()
 		} catch (error) {
-			if (isFailure(options, error)) {
+			// The same filters as the global handlers: a dropped error is no failure here either.
+			if (isFailure(options, error) && passesErrorFilters(error)) {
 				// An unsampled span drops what it records: report the failure on its own, which is always kept.
 				if (span.isRecording()) recordFailure(span, error)
 				else captureException(error, { name })

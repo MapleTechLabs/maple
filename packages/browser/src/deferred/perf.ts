@@ -3,7 +3,7 @@
 // presentation). Opt-in; nested under the open navigation when there is one.
 import { hasConsent, scrubUrl, selectorOf } from "@maple/browser-session"
 import { context, trace } from "@opentelemetry/api"
-import { openNavigationSpan } from "../navigation"
+import { navigationSpanAt } from "../navigation"
 import { liveMapleTracer } from "../tracing"
 import { SDK_NAME, SDK_VERSION } from "../version"
 
@@ -34,7 +34,8 @@ function span(
 ): void {
 	const tracer = hasConsent() ? liveMapleTracer(SDK_NAME, SDK_VERSION) : undefined
 	if (!tracer) return
-	const navigation = openNavigationSpan()
+	// Buffered entries can predate the open navigation: those stay roots.
+	const navigation = navigationSpanAt(epoch(start))
 	const parent = navigation ? trace.setSpan(context.active(), navigation) : context.active()
 	tracer.startSpan(name, { startTime: epoch(start), attributes }, parent).end(epoch(start + duration))
 }
@@ -144,7 +145,7 @@ export function startPerf(options: PerfOptions): () => void {
 					// once, named after the event whose handlers ran longest.
 					const byInteraction = new Map<number, PerformanceEventTiming>()
 					for (const entry of entries) {
-						if (!(entry instanceof PerformanceEventTiming) || entry.interactionId === 0) continue
+						if (!(entry instanceof PerformanceEventTiming) || !entry.interactionId) continue
 						if (entry.duration < SLOW_INTERACTION_MS || seen.has(entry.interactionId)) continue
 						const best = byInteraction.get(entry.interactionId)
 						if (!best || processingOf(entry) > processingOf(best))

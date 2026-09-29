@@ -4,13 +4,14 @@ import { BasicTracerProvider, InMemorySpanExporter, SimpleSpanProcessor } from "
 import type { ReadableSpan } from "@opentelemetry/sdk-trace-base"
 import { configureErrorFilters } from "./error-filters"
 import { captureException, resetReportedErrorsForTests, setupErrorCapture } from "./errors"
+import { setMapleProviderForTests } from "./tracing"
 
 const exporter = new InMemorySpanExporter()
 
 const provider = new BasicTracerProvider({
 	spanProcessors: [new SimpleSpanProcessor(exporter)],
 })
-trace.setGlobalTracerProvider(provider)
+setMapleProviderForTests(provider)
 
 const exceptionEventOf = (span: ReadableSpan) => span.events.find((event) => event.name === "exception")
 
@@ -58,12 +59,25 @@ describe("captureException", () => {
 	it("still records an error reported before tracing was live", () => {
 		resetReportedErrorsForTests()
 		const error = new Error("early")
-		trace.disable()
+		setMapleProviderForTests(undefined)
 		captureException(error)
-		trace.setGlobalTracerProvider(provider)
+		setMapleProviderForTests(provider)
 		captureException(error)
 
 		assert.strictEqual(exporter.getFinishedSpans().length, 1)
+	})
+
+	it("never records into a host app's global provider before init", () => {
+		const hostExporter = new InMemorySpanExporter()
+		trace.setGlobalTracerProvider(
+			new BasicTracerProvider({ spanProcessors: [new SimpleSpanProcessor(hostExporter)] }),
+		)
+		setMapleProviderForTests(undefined)
+		captureException(new Error("before init"))
+		setMapleProviderForTests(provider)
+		trace.disable()
+
+		assert.strictEqual(hostExporter.getFinishedSpans().length, 0)
 	})
 
 	it("carries a custom name and caller attributes", () => {

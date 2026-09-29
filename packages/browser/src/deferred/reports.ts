@@ -98,6 +98,7 @@ export function startReports(options: ReportOptions): () => void {
 		})
 	}
 
+	const stops: Array<() => void> = []
 	if (typeof ReportingObserver === "function") {
 		const types = [
 			...(options.csp ? ["csp-violation"] : []),
@@ -115,19 +116,23 @@ export function startReports(options: ReportOptions): () => void {
 			{ types, buffered: true },
 		)
 		observer.observe()
-		return () => observer.disconnect()
+		stops.push(() => observer.disconnect())
 	}
-	if (!options.csp) return () => {}
-	// No ReportingObserver: CSP violations still fire as a DOM event.
-	const onViolation = (event: SecurityPolicyViolationEvent): void =>
-		csp({
-			effectiveDirective: event.effectiveDirective,
-			blockedURL: event.blockedURI || undefined,
-			disposition: event.disposition,
-			sourceFile: event.sourceFile,
-			lineNumber: event.lineNumber,
-			columnNumber: event.columnNumber,
-		})
-	document.addEventListener("securitypolicyviolation", onViolation)
-	return () => document.removeEventListener("securitypolicyviolation", onViolation)
+	if (options.csp) {
+		// Also the DOM event: not every ReportingObserver delivers `csp-violation`. `once` dedupes the two paths.
+		const onViolation = (event: SecurityPolicyViolationEvent): void =>
+			csp({
+				effectiveDirective: event.effectiveDirective,
+				blockedURL: event.blockedURI || undefined,
+				disposition: event.disposition,
+				sourceFile: event.sourceFile,
+				lineNumber: event.lineNumber,
+				columnNumber: event.columnNumber,
+			})
+		document.addEventListener("securitypolicyviolation", onViolation)
+		stops.push(() => document.removeEventListener("securitypolicyviolation", onViolation))
+	}
+	return () => {
+		for (const stop of stops) stop()
+	}
 }

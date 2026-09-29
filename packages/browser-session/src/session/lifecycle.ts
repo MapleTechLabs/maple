@@ -64,6 +64,8 @@ export interface SessionLifecycleHooks {
 	 * A function when it can change mid-run: a buffered session becomes recorded when an error happens.
 	 */
 	readonly recorded: boolean | (() => boolean)
+	/** Whether this page buffers replay for errors, so a session minted by rotation keeps that decision. */
+	readonly buffered?: (() => boolean) | undefined
 	/** POST one metadata row. Best-effort — must never throw. */
 	readonly post: (row: Record<string, unknown>, keepalive: boolean) => void
 	/**
@@ -223,7 +225,7 @@ export function startSessionLifecycle(
 		const record = liveRecord()
 		// A session minted by idle rotation mid-page has no sampling decision yet;
 		// it takes this page's mode so its later loads agree with it.
-		adoptReplayDecision(record.id, isRecorded())
+		adoptReplayDecision(record.id, isRecorded(), hooks.buffered?.())
 		rebaseCounts(record)
 		hooks.onStart?.(record)
 		post("active", false)

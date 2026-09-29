@@ -263,6 +263,20 @@ describe("startBufferedRecording", () => {
 		expect(posted).toEqual([])
 		expect(stopFn).toHaveBeenCalled()
 	})
+
+	it("takes a checkout snapshot only when the page changed since the last one", () => {
+		vi.useFakeTimers()
+		takeFullSnapshot.mockClear()
+		const recorder = startBufferedRecording(CONFIG, "session-1")
+		snapshot(1_000)
+		vi.advanceTimersByTime(30_000)
+		expect(takeFullSnapshot).not.toHaveBeenCalled()
+		emitRef!(incremental(1_500))
+		vi.advanceTimersByTime(30_000)
+		expect(takeFullSnapshot).toHaveBeenCalledWith(true)
+		recorder.stop()
+		vi.useRealTimers()
+	})
 })
 
 describe("canvas capture", () => {

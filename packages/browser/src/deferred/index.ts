@@ -30,20 +30,17 @@ export function startDeferred(config: ResolvedConfig): () => Promise<void> {
 	const stopPerf = startPerf({ longFrames: config.longFrames, slowInteractions: config.slowInteractions })
 	const offline = config.offlineQueue ? startOfflineQueue(config) : undefined
 	attachSpanStash(offline?.stashSpans)
-	const stops = [
-		startLogs(config, offline?.stashLogs),
-		async () => {
-			stopVitals()
-			onDocumentPageload(undefined)
-			stopErrorListener()
-			stopBreadcrumbs()
-			stopReports()
-			attachSpanStash(undefined)
-			offline?.stop()
-			stopPerf()
-		},
-	]
+	const stopLogs = startLogs(config, offline?.stashLogs)
 	return async () => {
-		await Promise.all(stops.map((stop) => stop()))
+		stopVitals()
+		onDocumentPageload(undefined)
+		stopErrorListener()
+		stopBreadcrumbs()
+		stopReports()
+		stopPerf()
+		// The logs' last flush may fail into the offline queue, so it closes after them.
+		await stopLogs()
+		attachSpanStash(undefined)
+		offline?.stop()
 	}
 }

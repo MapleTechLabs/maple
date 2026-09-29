@@ -33,7 +33,13 @@ export function startEventCapture(config: IngestConfig, sessionId: string): Even
 
 	const uninstall = [
 		installConsoleCapture(emit),
-		installNetworkCapture(emit, sink.ignoreUrl, config.maskAllText ? undefined : config.networkBodies),
+		installNetworkCapture(
+			emit,
+			sink.ignoreUrl,
+			config.maskAllText || !config.networkBodies
+				? undefined
+				: { ...config.networkBodies, requestBodies: !config.maskAllInputs },
+		),
 	]
 
 	return {

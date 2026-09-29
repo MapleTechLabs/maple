@@ -84,6 +84,44 @@ describe("installNetworkCapture", () => {
 		}
 	})
 
+	it("matches the full URL, never reads event streams, and keeps request bodies only when asked", async () => {
+		const realFetch = window.fetch
+		let streamed = false
+		window.fetch = async (input) =>
+			String(input).includes("events")
+				? new Response(
+						new ReadableStream({
+							start() {
+								streamed = true
+							},
+						}),
+						{ headers: { "content-type": "text/event-stream" } },
+					)
+				: new Response("ok", { headers: { "content-type": "text/plain" } })
+		try {
+			const events: SessionEvent[] = []
+			uninstall = installNetworkCapture(
+				(event) => events.push(event),
+				() => false,
+				{ urls: [new RegExp(`^${location.origin}/api/`)], maxLength: 100, requestBodies: false },
+			)
+			await fetch("/api/login", { method: "POST", body: "password=hunter2" })
+			await fetch("/api/events")
+			await vi.waitFor(() => expect(events.filter((event) => event.type === "network")).toHaveLength(2))
+
+			const byUrl = (part: string) => events.find((event) => event.net?.url.includes(part))
+			const login = byUrl("login")
+			const stream = byUrl("events")
+			expect(login?.attrs).toEqual({ "response.body": "ok" })
+			expect(stream?.attrs).toBeUndefined()
+			expect(streamed).toBe(true)
+		} finally {
+			uninstall?.()
+			uninstall = undefined
+			window.fetch = realFetch
+		}
+	})
+
 	it("reads only as much of a large body as it keeps", async () => {
 		const realFetch = window.fetch
 		let pulled = 0

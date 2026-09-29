@@ -126,7 +126,8 @@ export function instrumentReactRouter(router: ReactRouterLike): () => void {
 	return router.subscribe((state) => {
 		const target = state.navigation.location?.pathname
 		if (state.navigation.state !== "idle" && target !== undefined) {
-			if (!open || target !== pathname) start(target)
+			// Same path means a search-only change or a revalidation: not a navigation.
+			if (target !== pathname) start(target)
 			pathname = target
 			return
 		}

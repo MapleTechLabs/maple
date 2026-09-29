@@ -22,7 +22,7 @@ const inRanges = (status: number, ranges: ReadonlyArray<HttpStatusRange>): boole
 	)
 
 /** `GET https://api.example.com/users/42 -> 500`, without the query: ids are redacted by the issue fingerprint. */
-function failureMessage(span: ReadableSpan, status: number): string {
+function failureMessage(span: ReadableSpan, status: number | string): string {
 	const method = span.attributes["http.request.method"] ?? span.attributes["http.method"] ?? "GET"
 	const url = String(span.attributes["url.full"] ?? span.attributes["http.url"] ?? "").replace(
 		/[?#].*$/,
@@ -82,6 +82,21 @@ export class HttpStatusExporter implements SpanExporter {
 					"error.message": failureMessage(span, status),
 				},
 			)
+		}
+		const errorType = span.attributes["error.type"]
+		if (
+			span.kind === SpanKind.CLIENT &&
+			span.status.code === SpanStatusCode.ERROR &&
+			typeof errorType === "string" &&
+			!HTTP_STATUS.test(errorType) &&
+			span.attributes["error.message"] === undefined &&
+			!span.events.some((event) => event.name === "exception")
+		) {
+			// A network failure (`TypeError`, `error`, `timeout`): the same message shape as a status error.
+			return withStatus(span, span.status, {
+				...span.attributes,
+				"error.message": failureMessage(span, errorType),
+			})
 		}
 		if (!isStatusOnlyError(span)) return span
 		const { "error.type": _errorType, ...attributes } = span.attributes

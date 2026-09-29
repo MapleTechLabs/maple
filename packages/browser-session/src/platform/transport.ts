@@ -30,6 +30,8 @@ export interface NetworkBodyOptions {
 	readonly urls: ReadonlyArray<string | RegExp>
 	/** Each body is cut to this many characters. */
 	readonly maxLength: number
+	/** Keep request bodies too. Off while inputs are masked: a form POST carries what was typed. */
+	readonly requestBodies?: boolean | undefined
 }
 
 /**

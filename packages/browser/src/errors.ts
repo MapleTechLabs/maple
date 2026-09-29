@@ -9,12 +9,12 @@
 // Each error becomes a one-off span carrying an `exception` event and status
 // Error. That is the shape `error_events_mv` fingerprints on, so these arrive in
 // error tracking beside server-side errors rather than in a separate silo.
-import { scrubUrl } from "@maple/browser-session"
+import { hasConsent, scrubUrl } from "@maple/browser-session"
 import { context, type Span, type SpanContext, SpanKind, SpanStatusCode } from "@opentelemetry/api"
 import { exceptionOf } from "./error-causes"
 import { type ErrorSource, shouldCapture } from "./error-filters"
 import { keepContext } from "./sampling"
-import { mapleTracer } from "./tracing"
+import { liveMapleTracer } from "./tracing"
 import { SDK_NAME, SDK_VERSION } from "./version"
 
 export interface CaptureExceptionOptions {
@@ -72,14 +72,15 @@ export function resetReportedErrorsForTests(): void {
  * takes the Error status, so one error stays one issue. The error is claimed
  * only when the span is recording: before `init()` the tracer is a no-op, and
  * claiming it then would swallow the same error reported again once tracing is
- * live.
+ * live. Without consent the span is never exported, so the error is not claimed either.
  */
 export function recordFailure(span: Span, error: unknown): void {
 	const normalized = asError(error)
 	if (!alreadyReported(error)) {
-		if (span.isRecording() && typeof error === "object" && error !== null) reported.add(error)
+		const exported = span.isRecording() && hasConsent()
+		if (exported && typeof error === "object" && error !== null) reported.add(error)
 		span.recordException(exceptionOf(normalized))
-		if (span.isRecording()) {
+		if (exported) {
 			for (const listener of errorListeners) {
 				// A listener must never turn one error into another.
 				try {
@@ -101,8 +102,11 @@ function recordException(
 	source: ErrorSource,
 	filename?: string,
 ): void {
-	if (!shouldCapture(asError(error), { source, originalError: error }, filename)) return
-	const span = mapleTracer(SDK_NAME, SDK_VERSION).startSpan(
+	if (!hasConsent() || !shouldCapture(asError(error), { source, originalError: error }, filename)) return
+	// Maple's own provider only: before `init()` the global one may be the host app's.
+	const tracer = liveMapleTracer(SDK_NAME, SDK_VERSION)
+	if (!tracer) return
+	const span = tracer.startSpan(
 		options.name ?? "exception",
 		{
 			kind: SpanKind.INTERNAL,
@@ -118,13 +122,17 @@ function recordException(
 }
 
 /**
- * Record an error that no span was watching. Safe before `init()`: without a
- * registered provider the OTel API hands back a no-op tracer and this does
- * nothing. Reporting the same error object twice records it once.
+ * Record an error that no span was watching. Safe before `init()`, where it
+ * does nothing. Reporting the same error object twice records it once.
  */
 export function captureException(error: unknown, options: CaptureExceptionOptions = {}): void {
 	if (alreadyReported(error)) return
 	recordException(error, options, "captureException")
+}
+
+/** Whether the app's error filters keep `error`, for failures recorded on an existing span. */
+export function passesErrorFilters(error: unknown): boolean {
+	return shouldCapture(asError(error), { source: "captureException", originalError: error })
 }
 
 /**

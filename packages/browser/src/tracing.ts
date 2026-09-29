@@ -12,7 +12,9 @@ import {
 	propagation,
 	ProxyTracerProvider,
 	type Span as ApiSpan,
+	SpanStatusCode,
 	type Tracer,
+	type TracerProvider,
 	trace,
 } from "@opentelemetry/api"
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http"
@@ -25,7 +27,7 @@ import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-base"
 import { WebTracerProvider } from "@opentelemetry/sdk-trace-web"
 import { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION } from "@opentelemetry/semantic-conventions"
 import type { ResolvedConfig } from "./config"
-import { setHeaderAttributes } from "./http-headers"
+import { responseHeaders, setHeaderAttributes } from "./http-headers"
 import { HttpStatusExporter } from "./http-status"
 import { OfflineSpanExporter } from "./offline"
 import { SessionSampler } from "./sampling"
@@ -109,20 +111,20 @@ class ConsentSpanExporter implements SpanExporter {
 const EXPORT_INTERVAL_MS = 2_000
 
 /**
- * The provider this SDK registered, while it is live. `captureException` spans
- * through it directly: the global provider may belong to the host app, which
- * registered first and so kept the global.
+ * The provider this SDK registered, while it is live. Everything Maple spans
+ * goes through it directly: the global provider may belong to the host app,
+ * which registered first and so kept the global.
  */
-let mapleProvider: WebTracerProvider | undefined
-
-/** A tracer on Maple's provider when tracing is live, otherwise the global one. */
-export function mapleTracer(name: string, version: string): Tracer {
-	return (mapleProvider ?? trace.getTracerProvider()).getTracer(name, version)
-}
+let mapleProvider: TracerProvider | undefined
 
 /** A tracer on Maple's provider while tracing is live, with no global fallback. */
 export function liveMapleTracer(name: string, version: string): Tracer | undefined {
 	return mapleProvider?.getTracer(name, version)
+}
+
+/** Test seam: stand in for the provider `init()` registers. */
+export function setMapleProviderForTests(provider: TracerProvider | undefined): void {
+	mapleProvider = provider
 }
 
 /** Resource attributes shared by every signal this SDK exports. */
@@ -273,6 +275,10 @@ export function setupTracing(config: ResolvedConfig): () => Promise<void> {
 								setHeaderAttributes(span, "response", headers.response, (name) =>
 									result.headers.get(name),
 								)
+							} else if (result instanceof Error && result.name !== "AbortError") {
+								// A rejected fetch (offline, DNS, CORS) ends with status 0 and no error; XHR marks its own.
+								span.setStatus({ code: SpanStatusCode.ERROR, message: result.message })
+								span.setAttribute("error.type", result.name)
 							}
 						},
 					}),
@@ -284,8 +290,11 @@ export function setupTracing(config: ResolvedConfig): () => Promise<void> {
 						...requestOptions,
 						applyCustomAttributesOnSpan: (span, xhr) => {
 							noteSettled(span)
+							if (headers.response.length === 0) return
+							// One read of the exposed headers: asking for an unexposed one by name logs a console error.
+							const exposed = responseHeaders(xhr.getAllResponseHeaders())
 							setHeaderAttributes(span, "response", headers.response, (name) =>
-								xhr.getResponseHeader(name),
+								exposed.get(name),
 							)
 						},
 					}),

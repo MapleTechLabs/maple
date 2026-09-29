@@ -53,8 +53,8 @@ Every field accepted by `MapleBrowser.init`:
 | `tracing.instrumentFetch`              | `boolean`                 | `true`                                    | Auto-instrument `fetch()` to create network spans. Set `false` when another tracer (e.g. the Effect client SDK) already instruments requests. Its spans feed the session through the published sink, and turning this off avoids duplicate network spans. |
 | `tracing.instrumentXhr`                | `boolean`                 | `true`                                    | Auto-instrument `XMLHttpRequest` (axios and older clients) like `fetch`.                                                                                                                                                                                  |
 | `tracing.captureErrors`                | `boolean`                 | `true`                                    | Record uncaught errors and unhandled rejections as error spans. See [Errors](#errors).                                                                                                                                                                    |
-| `tracing.propagateTraceHeaderCorsUrls` | `Array<string \| RegExp>` | `[]`                                      | Cross-origin URLs whose `fetch()` requests carry the `traceparent` header. See [Tracing across origins](#tracing-across-origins).                                                                                                                         |
-| `tracing.sampleRate`                   | `number`                  | `1`                                       | Fraction of sessions whose traces are exported, `0` to `1`. Decided per session; error spans are always exported. See [Sampling](#sampling).                                                                                                              |
+| `tracing.propagateTraceHeaderCorsUrls` | `Array<string \| RegExp>` | `[]`                                      | Cross-origin URLs whose `fetch()` and XHR requests carry the `traceparent` header. See [Tracing across origins](#tracing-across-origins).                                                                                                                 |
+| `tracing.sampleRate`                   | `number`                  | `1`                                       | Fraction of sessions whose traces are exported, `0` to `1`. Decided per session; reported errors are always exported. See [Sampling](#sampling).                                                                                                          |
 | `webVitals`                            | `boolean`                 | `true`                                    | Report Core Web Vitals as `browser.web_vital` log events. See [Web Vitals](#web-vitals).                                                                                                                                                                  |
 | `breadcrumbs`                          | `boolean`                 | `true`                                    | Keep the last clicks, inputs, navigations and console lines, and export them with the next error. See [Breadcrumbs](#breadcrumbs).                                                                                                                        |
 | `logs.captureConsole`                  | `ConsoleLevel[]`          | `[]`                                      | Console levels exported as OTel logs as they happen, e.g. `["warn", "error"]`.                                                                                                                                                                            |
@@ -123,8 +123,8 @@ session**. Sessions are never shared across them. When `sessionStorage` is unava
 some private-browsing modes), the SDK falls back to an in-memory record for the life of the
 page.
 
-SPA route changes do **not** start a new session. The SDK tracks no router events, so
-client-side navigation stays within the same session. Session boundaries are purely
+SPA route changes do **not** start a new session: navigation spans (see
+[React integration](#react-integration)) stay within it. Session boundaries are purely
 time-based (see below).
 
 ### Rotation
@@ -308,7 +308,8 @@ MapleBrowser.init({
 A matching span gets status `Error`, `error.type` set to the status code (per the HTTP semantic
 conventions) and `error.message` like `POST https://api.example.com/users/42 -> 503`, without the
 query string. Issues group by status and request, with ids in the path redacted. Network failures
-(no response at all) are always errors.
+(no response at all: offline, DNS, CORS, a timeout) are always errors, with `error.type` set to
+what failed (`TypeError` for `fetch`, `error` or `timeout` for XHR). An aborted request is not.
 
 ### Breadcrumbs
 
@@ -467,7 +468,7 @@ To record only a fraction of sessions, set `replay.sampleRate` between `0` and `
 
 `replay.onErrorSampleRate` covers the sessions `replay.sampleRate` leaves out. Those sessions run
 the recorder into memory only, keeping roughly the last minute (the segments since the
-second-to-last full snapshot, taken every 30s). Nothing is uploaded. When an error is recorded (an
+second-to-last full snapshot, taken every 30s while the page is visible and changing). Nothing is uploaded. When an error is recorded (an
 uncaught error, an unhandled rejection or `captureException`, after [filters](#filtering-errors)),
 the buffered minute is uploaded and the rest of the session is recorded normally, including its
 later page loads. The session is marked `maple.session.replay_trigger: "error"`, and its replay starts
@@ -485,7 +486,9 @@ memory.
 
 `tracing.sampleRate` does the same for traces. The decision is made once per session (a hash of
 `session.id`), so a sampled session keeps every one of its traces and its replay never links to a
-dropped one. Spans that record an error are always exported, whatever the rate.
+dropped one. Errors reported as their own spans (uncaught errors, unhandled rejections and
+`captureException`) are always exported, whatever the rate; request spans of an unsampled session
+are not, including ones `errors.captureHttpStatus` would have marked.
 
 ```ts
 MapleBrowser.init({
@@ -548,10 +551,12 @@ replay: {
 }
 ```
 
-Only text and JSON bodies are kept, each cut to `maxLength` characters (at most and by default 1,000: ingest stores up to 1 KB per body). The response is read from a
-clone in the background, only as far as `maxLength`, so your code gets it untouched and unwaited. Nothing is captured with
-`privacy.maskAllText`. Bodies can hold personal data: list only endpoints whose payloads you are
-allowed to record.
+Patterns match the full URL, so a relative `fetch("/api/checkout")` is matched as
+`https://your.app/api/checkout`. Only text and JSON bodies are kept, each cut to `maxLength` characters (at most and by default 1,000: ingest stores up to 1 KB per body). The response is read from a
+clone in the background, only as far as `maxLength` and for at most 5 seconds, so your code gets it untouched and unwaited;
+event streams (`text/event-stream`) are never read. Nothing is captured with `privacy.maskAllText`, and
+request bodies only with `privacy.maskAllInputs: false`, since a form POST carries what was typed. Bodies
+can hold personal data: list only endpoints whose payloads you are allowed to record.
 
 ### Canvas
 
@@ -565,7 +570,8 @@ The OTLP exporters already retry a failed export a few times (about 10 seconds i
 `transport: { offline: true }`, a batch that still fails (the browser is offline, or ingest is
 down) is kept in IndexedDB, as the same OTLP JSON the exporter sends, and sent again when the
 browser fires `online` and on the next page load. Batches older than 24 hours are dropped, and at
-most 100 are kept. Revoking consent clears the queue. Where IndexedDB is unavailable (some private
+most 100 are kept. Revoking consent clears the queue, in every tab; with `privacy.requireConsent`,
+batches from an earlier page are still sent once consent is granted again, unless it was revoked in between. Where IndexedDB is unavailable (some private
 windows), nothing is kept.
 
 ## Framework examples
@@ -644,7 +650,8 @@ createRoot(document.getElementById("root")!, {
   the leaf route's full path (`navigate /projects/$projectId`). Search-only changes are not
   navigations.
 
-Both adapters return an unsubscribe. Don't also call `startNavigation`/`endNavigation` yourself.
+Both adapters return an unsubscribe. Attach them after `MapleBrowser.init`, or the page load is
+missed, and don't also call `startNavigation`/`endNavigation` yourself.
 
 ## Notes
 

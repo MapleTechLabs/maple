@@ -2,13 +2,7 @@
 // the exporters send, and sent again when the browser is back online or on the
 // next page load. Best-effort: a private window or blocked storage just means
 // nothing is kept.
-import {
-	consentAllowedSince,
-	hasConsent,
-	ingestHeaders,
-	onConsentChange,
-	sdkHint,
-} from "@maple/browser-session"
+import { hasConsent, ingestHeaders, onConsentChange, sdkHint } from "@maple/browser-session"
 import { JsonLogsSerializer, JsonTraceSerializer } from "@opentelemetry/otlp-transformer"
 import type { ReadableLogRecord } from "@opentelemetry/sdk-logs"
 import type { ReadableSpan } from "@opentelemetry/sdk-trace-base"
@@ -49,11 +43,33 @@ const settle = <T>(request: IDBRequest<T>): Promise<T> =>
 
 function openDb(): Promise<IDBDatabase | undefined> {
 	if (typeof indexedDB === "undefined") return Promise.resolve(undefined)
-	const request = indexedDB.open(DB_NAME, 1)
-	request.onupgradeneeded = () => {
-		request.result.createObjectStore(STORE, { keyPath: "id", autoIncrement: true })
+	try {
+		const request = indexedDB.open(DB_NAME, 1)
+		request.onupgradeneeded = () => {
+			request.result.createObjectStore(STORE, { keyPath: "id", autoIncrement: true })
+		}
+		return settle(request).catch(() => undefined)
+	} catch {
+		// Opaque origins (sandboxed iframes, `data:` pages) throw synchronously.
+		return Promise.resolve(undefined)
 	}
-	return settle(request).catch(() => undefined)
+}
+
+/** When consent was last withdrawn, in any tab of this origin. Persisted: the in-memory grant time resets every load. */
+const REVOKED_AT_KEY = "maple-offline-revoked-at"
+
+function readRevokedAt(): number {
+	try {
+		return Number(localStorage.getItem(REVOKED_AT_KEY)) || 0
+	} catch {
+		return 0
+	}
+}
+
+function writeRevokedAt(at: number): void {
+	try {
+		localStorage.setItem(REVOKED_AT_KEY, String(at))
+	} catch {}
 }
 
 export interface OfflineQueue {
@@ -87,9 +103,10 @@ export function startOfflineQueue(config: ResolvedConfig): OfflineQueue {
 	const drain = async (): Promise<void> => {
 		const read = await store("readonly")
 		const stored = read ? (await settle(read.getAll())).filter(isStoredBatch) : []
+		const revokedAt = readRevokedAt()
 		for (const batch of stored) {
-			// Expired, or captured before the current consent grant (a revoke this queue never saw): drop it.
-			if (Date.now() - batch.createdAt <= MAX_AGE_MS && batch.createdAt >= consentAllowedSince()) {
+			// Expired, or captured before consent was last withdrawn (a revoke this queue never saw): drop it.
+			if (Date.now() - batch.createdAt <= MAX_AGE_MS && batch.createdAt > revokedAt) {
 				const response = await fetch(`${config.endpoint}/v1/${batch.signal}`, {
 					method: "POST",
 					headers,
@@ -136,23 +153,30 @@ export function startOfflineQueue(config: ResolvedConfig): OfflineQueue {
 	window.addEventListener("online", onOnline)
 	// Withdrawn consent also withdraws what was kept for later.
 	const stopConsent = onConsentChange((allowed) => {
-		if (!allowed) void clear().catch(() => {})
+		if (allowed) return
+		writeRevokedAt(Date.now())
+		void clear().catch(() => {})
 	})
 	void resend()
 
+	/** Writes in flight: `stop` closes the database only after them, so a stash made on the way out lands. */
+	let writes: Promise<void> = Promise.resolve()
+	const stash = (signal: Signal, body: Uint8Array | undefined): void => {
+		writes = writes.then(() => add(signal, body)).catch(() => {})
+	}
+
 	return {
 		stashSpans: (spans) => {
-			if (spans.length > 0)
-				void add("traces", JsonTraceSerializer.serializeRequest(spans)).catch(() => {})
+			if (spans.length > 0) stash("traces", JsonTraceSerializer.serializeRequest(spans))
 		},
 		stashLogs: (logs) => {
-			if (logs.length > 0) void add("logs", JsonLogsSerializer.serializeRequest(logs)).catch(() => {})
+			if (logs.length > 0) stash("logs", JsonLogsSerializer.serializeRequest(logs))
 		},
 		resend,
 		stop: () => {
 			window.removeEventListener("online", onOnline)
 			stopConsent()
-			void db.then((opened) => opened?.close())
+			void writes.then(() => db).then((opened) => opened?.close())
 		},
 	}
 }

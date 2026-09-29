@@ -65,7 +65,7 @@ Every field accepted by `MapleBrowser.init`:
 | `tracing.enabled`                      | `boolean`                 | `true`        | Enable OpenTelemetry browser tracing.                                                                                                                                      |
 | `tracing.instrumentFetch`              | `boolean`                 | `true`        | Create spans for `fetch()` calls. Set `false` when another tracer (such as the Effect client SDK) already instruments requests, to avoid duplicate network spans.          |
 | `tracing.captureErrors`                | `boolean`                 | `true`        | Record uncaught errors and unhandled promise rejections as error spans. Turn it off only when another tool owns the page's global error handlers.                          |
-| `tracing.propagateTraceHeaderCorsUrls` | `Array<string \| RegExp>` | `[]`          | Cross-origin URLs whose `fetch()` requests carry the `traceparent` header. See [Connect browser and backend traces](#connect-browser-and-backend-traces).                  |
+| `tracing.propagateTraceHeaderCorsUrls` | `Array<string \| RegExp>` | `[]`          | Cross-origin URLs whose `fetch()` and XHR requests carry the `traceparent` header. See [Connect browser and backend traces](#connect-browser-and-backend-traces).          |
 | `replay.enabled`                       | `boolean`                 | `true`        | Enable session recording.                                                                                                                                                  |
 | `replay.sampleRate`                    | `number`                  | `1`           | Fraction of sessions to record, `0` to `1`. See [Sampling](#sampling).                                                                                                     |
 | `privacy.maskAllInputs`                | `boolean`                 | `true`        | Mask all `<input>` values in the recording.                                                                                                                                |
@@ -106,7 +106,7 @@ Every span and replay event the SDK emits carries one **`session.id`** (a `crypt
 
 The session is stored in `sessionStorage` under the key `maple.session`, so it **survives reloads within a tab**. `sessionStorage` is per tab, so **each tab or window gets its own session**. When `sessionStorage` is unavailable (for example in some private-browsing modes), the SDK keeps the session in memory for the life of the page.
 
-Client-side route changes in a single-page app do **not** start a new session. The SDK tracks no router events. Session boundaries are purely time-based.
+Client-side route changes in a single-page app do **not** start a new session. Session boundaries are purely time-based.
 
 ### Rotation
 

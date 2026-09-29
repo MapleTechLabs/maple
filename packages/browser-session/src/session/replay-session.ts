@@ -100,6 +100,7 @@ export function startReplaySession(options: ReplaySessionOptions): ReplaySession
 		{
 			// Recorded from the start, or from the moment a buffered session is triggered.
 			recorded: () => triggered,
+			buffered: () => buffering,
 			post: (row, keepalive) => {
 				void postSessionMeta(engineConfig, row, keepalive)
 			},

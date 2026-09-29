@@ -4,6 +4,22 @@ import type { NetworkBodyOptions } from "../../platform/transport"
 
 /** Only text is worth keeping; a body that is an image or a stream is not read. */
 const TEXT_CONTENT = /^(text\/|application\/(json|xml|x-www-form-urlencoded|[\w.+-]+\+(json|xml)))/i
+/** Text, but never finished: reading a clone would hold the connection open after the app cancels. */
+const STREAMING_CONTENT = /^text\/event-stream/i
+/** A slow body is given up on rather than kept in memory for as long as it trickles. */
+const BODY_READ_TIMEOUT_MS = 5_000
+
+const isReadableText = (contentType: string): boolean =>
+	TEXT_CONTENT.test(contentType) && !STREAMING_CONTENT.test(contentType)
+
+/** Patterns match the full URL, as documented: a relative `fetch("/api")` is resolved against the page. */
+const absoluteUrl = (url: string): string => {
+	try {
+		return new URL(url, location.href).href
+	} catch {
+		return url
+	}
+}
 
 const matchesUrl = (url: string, patterns: ReadonlyArray<string | RegExp>): boolean =>
 	patterns.some((pattern) => {
@@ -27,12 +43,15 @@ export function installNetworkCapture(
 	ignoreUrl: (url: string) => boolean,
 	bodies?: NetworkBodyOptions,
 ): () => void {
-	const wantsBody = (url: string): boolean => bodies !== undefined && matchesUrl(url, bodies.urls)
+	const wantsBody = (url: string): boolean =>
+		bodies !== undefined && matchesUrl(absoluteUrl(url), bodies.urls)
 	const bodyAttrs = (
 		request: string | undefined,
 		response: string | undefined,
 	): Record<string, string> => ({
-		...(request && bodies ? { "request.body": cut(request, bodies.maxLength) } : undefined),
+		...(request && bodies?.requestBodies !== false
+			? { "request.body": cut(request, bodies?.maxLength ?? 0) }
+			: undefined),
 		...(response && bodies ? { "response.body": cut(response, bodies.maxLength) } : undefined),
 	})
 	const origFetch = typeof window !== "undefined" ? window.fetch : undefined
@@ -59,7 +78,7 @@ export function installNetworkCapture(
 				const done = performance.now()
 				const contentType = res.headers.get("content-type") ?? ""
 				void (
-					TEXT_CONTENT.test(contentType)
+					isReadableText(contentType)
 						? readPrefix(res.clone(), bodies?.maxLength ?? 0)
 						: Promise.resolve(undefined)
 				)
@@ -154,18 +173,37 @@ async function readPrefix(response: Response, maxLength: number): Promise<string
 	if (!reader) return undefined
 	const decoder = new TextDecoder()
 	let text = ""
+	const deadline = Date.now() + BODY_READ_TIMEOUT_MS
 	while (text.length <= maxLength) {
-		const { done, value } = await reader.read()
-		if (done) return text + decoder.decode()
-		text += decoder.decode(value, { stream: true })
+		const remaining = deadline - Date.now()
+		const chunk = remaining > 0 ? await readWithin(reader, remaining) : undefined
+		if (!chunk) {
+			// Timed out: keep what arrived and release the connection.
+			void reader.cancel().catch(() => {})
+			return text || undefined
+		}
+		if (chunk.done) return text + decoder.decode()
+		text += decoder.decode(chunk.value, { stream: true })
 	}
 	void reader.cancel().catch(() => {})
 	return text
 }
 
+/** One read, or `undefined` if nothing arrives within `ms`. */
+function readWithin(
+	reader: ReadableStreamDefaultReader<Uint8Array>,
+	ms: number,
+): Promise<ReadableStreamReadResult<Uint8Array> | undefined> {
+	let timer: ReturnType<typeof setTimeout> | undefined
+	const timeout = new Promise<undefined>((resolve) => {
+		timer = setTimeout(() => resolve(undefined), ms)
+	})
+	return Promise.race([reader.read(), timeout]).finally(() => clearTimeout(timer))
+}
+
 /** A text or JSON XHR response, as text; the browser already holds it, so this only slices. */
 function xhrResponseText(xhr: XMLHttpRequest): string | undefined {
-	if (!TEXT_CONTENT.test(xhr.getResponseHeader("content-type") ?? "")) return undefined
+	if (!isReadableText(xhr.getResponseHeader("content-type") ?? "")) return undefined
 	if (xhr.responseType === "" || xhr.responseType === "text") return xhr.responseText
 	if (xhr.responseType === "json") {
 		try {

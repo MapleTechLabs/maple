@@ -170,6 +170,21 @@ describe("instrumentReactRouter", () => {
 		await stop()
 		expect(spanNames()).toEqual(["pageload /", "navigate /projects/:id"])
 	})
+
+	it("does not span a search-only change or a revalidation of the same path", async () => {
+		const router = fakeReactRouter({
+			initialized: true,
+			location: { pathname: "/" },
+			navigation: idle,
+			matches: [{ route: { path: "/" } }],
+		})
+		const unsubscribe = instrumentReactRouter(router)
+		router.set({ navigation: { state: "loading", location: { pathname: "/" } } })
+		router.set({ navigation: idle })
+		unsubscribe()
+		await stop()
+		expect(spanNames()).toEqual(["pageload /"])
+	})
 })
 
 type TanStackEvent = { toLocation: { pathname: string }; pathChanged: boolean }

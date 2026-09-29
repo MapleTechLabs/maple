@@ -13,7 +13,9 @@ function linkedErrors(error: Error): unknown[] {
 	while (queue.length > 0 && linked.length < MAX_LINKED) {
 		const current = queue.shift()
 		const next: unknown[] = []
-		if (current instanceof AggregateError) next.push(...current.errors)
+		// Guarded: `AggregateError` is missing on older engines, and a bare reference would throw.
+		if (typeof AggregateError === "function" && current instanceof AggregateError)
+			next.push(...current.errors)
 		if (current instanceof Error && current.cause !== undefined) next.push(current.cause)
 		for (const candidate of next) {
 			if (seen.has(candidate) || linked.length >= MAX_LINKED) continue
@@ -32,8 +34,17 @@ function framesOf(error: Error): string {
 	return stack.startsWith(header) ? stack.slice(header.length).replace(/^\n/, "") : stack
 }
 
+/** A null-prototype object or a throwing `toString` must not break the error path. */
+function render(value: unknown): string {
+	try {
+		return String(value)
+	} catch {
+		return Object.prototype.toString.call(value)
+	}
+}
+
 function describe(value: unknown): string {
-	if (!(value instanceof Error)) return `Caused by: ${String(value)}`
+	if (!(value instanceof Error)) return `Caused by: ${render(value)}`
 	const frames = framesOf(value)
 	const header = `Caused by: ${value.name}: ${value.message}`
 	return frames ? `${header}\n${frames}` : header

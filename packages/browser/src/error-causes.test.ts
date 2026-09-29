@@ -49,6 +49,17 @@ describe("stackWithCauses", () => {
 		expect(stackWithCauses(deep)?.match(/Caused by/g)).toHaveLength(5)
 	})
 
+	it("never throws on a cause that cannot be turned into a string", () => {
+		const hostile = Object.create(null)
+		const throwing = {
+			toString() {
+				throw new Error("nope")
+			},
+		}
+		expect(stackWithCauses(new Error("a", { cause: hostile }))).toContain("Caused by: [object Object]")
+		expect(stackWithCauses(new Error("b", { cause: throwing }))).toContain("Caused by: [object Object]")
+	})
+
 	it("keeps a DOMException-style code, which OTel uses as exception.type", () => {
 		const error = Object.assign(new Error("gone", { cause: new Error("why") }), { code: 20 })
 		expect(exceptionOf(error)).toMatchObject({ code: 20, name: "Error", message: "gone" })

@@ -455,6 +455,28 @@ describe("claimReplayMode", () => {
 		expect(claimReplayMode(0, 1)).toBe("record")
 		expect(peekSession()?.replayTrigger).toBe("error")
 	})
+
+	it("keeps a record whose trigger a newer SDK wrote, instead of starting a new session", () => {
+		const now = Date.now()
+		storage.setItem(
+			STORAGE_KEY,
+			JSON.stringify({
+				id: "newer",
+				startedAt: now,
+				lastActivityAt: now,
+				chunkSeq: 0,
+				replayTrigger: "manual",
+			}),
+		)
+		expect(getSession().id).toBe("newer")
+		expect(peekSession()?.replayTrigger).toBeUndefined()
+	})
+
+	it("pins a rotated session to buffering when the page buffers", () => {
+		const session = getSession()
+		adoptReplayDecision(session.id, false, true)
+		expect(claimReplayMode(0, 0)).toBe("buffer")
+	})
 })
 
 describe("quota exhaustion", () => {

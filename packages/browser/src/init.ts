@@ -252,10 +252,11 @@ export function init(rawConfig: MapleBrowserConfig): MapleBrowserHandle {
 			// Before the provider shuts down, so an open navigation exports with it
 			resetNavigation()
 			await deferredPending
-			await stopDeferred?.()
-			stopDeferred = undefined
+			// Tracing first: its last flush may fail into the offline queue, which the deferred stop closes.
 			await shutdownTracing?.()
 			shutdownTracing = undefined
+			await stopDeferred?.()
+			stopDeferred = undefined
 			setActiveTraceIdProvider(() => undefined)
 			active = undefined
 			activeConfig = undefined

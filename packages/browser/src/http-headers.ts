@@ -3,7 +3,13 @@
 import type { Span } from "@opentelemetry/api"
 
 /** Never recorded, even when listed: they carry credentials. */
-const CREDENTIAL_HEADERS = new Set(["authorization", "proxy-authorization", "cookie", "set-cookie"])
+const CREDENTIAL_HEADERS = new Set([
+	"authorization",
+	"proxy-authorization",
+	"cookie",
+	"set-cookie",
+	"x-api-key",
+])
 
 export interface HeaderCapture {
 	readonly request: ReadonlyArray<string>
@@ -16,6 +22,16 @@ export function resolveHeaderCapture(
 	const clean = (names: ReadonlyArray<string> | undefined) =>
 		(names ?? []).map((name) => name.toLowerCase()).filter((name) => !CREDENTIAL_HEADERS.has(name))
 	return { request: clean(raw?.request), response: clean(raw?.response) }
+}
+
+/** `getAllResponseHeaders()` text as a lower-cased map: only the headers CORS exposes are in it. */
+export function responseHeaders(raw: string): Map<string, string> {
+	const headers = new Map<string, string>()
+	for (const line of raw.split(/\r?\n/)) {
+		const colon = line.indexOf(":")
+		if (colon > 0) headers.set(line.slice(0, colon).trim().toLowerCase(), line.slice(colon + 1).trim())
+	}
+	return headers
 }
 
 /** Stamp the listed headers that `read` finds. Cross-origin responses expose only CORS-safelisted headers unless the server lists more in `Access-Control-Expose-Headers`. */
