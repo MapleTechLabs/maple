@@ -249,6 +249,56 @@ export const config = { matcher: ["/((?!api|_next/static|_next/image|favicon.ico
 - The browser follows the server's sampling decision: a page load under an
   unsampled server trace isn't recorded.
 
+## TanStack Router
+
+`@maple-dev/browser/tanstack` wires TanStack Router to the navigation spans, and
+`@maple-dev/browser/tanstack/server` joins the page load to the TanStack Start
+render:
+
+```ts
+// src/router.tsx: after init(). Start calls getRouter() on the server too
+import { reportRouterError, traceRouter } from "@maple-dev/browser/tanstack"
+
+export function getRouter() {
+	const router = createRouter({
+		routeTree,
+		defaultOnCatch: (error) => reportRouterError(router, error),
+	})
+	traceRouter(router)
+	return router
+}
+```
+
+```ts
+// Each loader, and any beforeLoad that does I/O or can throw
+import { tracedLoader } from "@maple-dev/browser/tanstack"
+
+export const Route = createFileRoute("/projects/$projectId")({
+	loader: ({ params }) => tracedLoader("loader /projects/$projectId", () => fetchProject(params.projectId)),
+})
+```
+
+```ts
+// src/server.ts (TanStack Start), after your server's OpenTelemetry setup
+import { traceRender, traceRequests } from "@maple-dev/browser/tanstack/server"
+import { createStartHandler, defaultStreamHandler } from "@tanstack/react-start/server"
+import { createServerEntry } from "@tanstack/react-start/server-entry"
+
+export default createServerEntry({
+	fetch: traceRequests(createStartHandler(traceRender(defaultStreamHandler))),
+})
+```
+
+- Spans are named after the route's `fullPath`, like `navigate /projects/$projectId`;
+  a URL no route matches is `not-found`. Hash links start no span. A `redirect()`
+  stays in the span of the navigation it came from.
+- `tracedLoader` doesn't count `redirect()` and `notFound()` as failures.
+- `reportRouterError` skips loader errors, which their loader span recorded (on
+  the server for the page load). TanStack Router only calls `defaultOnCatch` for
+  routes with an `errorComponent` or with `defaultErrorComponent` set.
+- `traceRequests` opens a span per request (joining a `traceparent` the request
+  carries), and `traceRender` names it `ssr <route>` and sends `Server-Timing`.
+
 ## Linking a marketing site to your app
 
 The visitor id lives in localStorage **and** a cookie scoped to your registered
