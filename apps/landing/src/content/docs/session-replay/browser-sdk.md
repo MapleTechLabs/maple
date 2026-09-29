@@ -320,10 +320,14 @@ They are stored as `http.request.header.<name>` and `http.response.header.<name>
 Request and response bodies can be kept in the session replay's network events, for the URLs you list only:
 
 ```ts
-replay: { networkBodies: { urls: [/^https:\/\/api\.example\.com\/checkout/], maxLength: 10_000 } }
+replay: {
+	networkBodies: {
+		urls: [/^https:\/\/api\.example\.com\/checkout/]
+	}
+}
 ```
 
-Only text and JSON bodies are kept, cut to `maxLength` characters, and nothing is kept with `privacy.maskAllText`. Bodies can contain personal data, so list only endpoints whose payloads you are allowed to record.
+Only text and JSON bodies are kept, cut to `maxLength` characters (1,000 by default, which is also the most Maple stores), and nothing is kept with `privacy.maskAllText`. Bodies can contain personal data, so list only endpoints whose payloads you are allowed to record.
 
 ## Browser reports
 
