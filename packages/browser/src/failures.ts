@@ -68,6 +68,13 @@ export function recordFailure(span: Span, error: unknown): void {
 	span.setStatus({ code: SpanStatusCode.ERROR, message: normalized.message })
 }
 
+/** `recordFailure`'s exception event alone, for a span whose status follows something else, like a response's. */
+export function recordExceptionOnce(span: Span, error: unknown): void {
+	if (alreadyReported(error)) return
+	if (span.isRecording() && isObject(error)) reported.add(error)
+	span.recordException(asError(error))
+}
+
 /** Run `fn` as `span`'s work: its result or error passes through unchanged, and the span ends either way. */
 export async function runTraced<T>(span: Span, fn: () => Promise<T>, options: TracedOptions): Promise<T> {
 	try {
