@@ -126,7 +126,7 @@ Local check without Maple: temporarily add `SimpleSpanProcessor(ConsoleSpanExpor
 - Empty transcript → capture unset, `EVENT_ONLY` or legacy `true`; set `SPAN_ONLY` in the process that makes the calls.
 - No Python model spans → `.instrument()` ran after the first request, or the OpenLLMetry package (`opentelemetry-instrumentation-openai`) was installed instead of `-genai-openai`.
 - Duplicate model spans → second instrumentation on the same SDK. `opentelemetry-instrument` loads every installed instrumentation package, so uninstall extras rather than just not calling them.
-- Twin traces per call with OpenRouter → OpenRouter Broadcast also exports the calls; keep one source or nest Broadcast under the app's spans (https://maple.dev/docs/agent-tracing/openrouter#join-broadcast-to-your-own-traces).
+- Twin traces per call with OpenRouter → OpenRouter Broadcast also exports the calls; keep one source or nest Broadcast under the app's spans (https://maple.dev/docs/agent-tracing/openrouter#nest-broadcast-under-your-own-traces).
 - Streamed turn has 0 tokens → missing `stream_options.include_usage`.
 - Failing tool shown as success → exception caught outside `run_tool` without status/`error.type`.
 - Sub-agent calls in the orchestrator's lane → same `gen_ai.agent.name`, or never wrapped.

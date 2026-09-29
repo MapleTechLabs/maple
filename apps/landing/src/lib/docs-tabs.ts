@@ -48,8 +48,27 @@ const select = (key: string, id: string) => {
 	for (const root of roots) if (root.dataset.langTabs === key) activate(root, id)
 }
 
+// A link like `?lang=typescript` (the cards on /docs/agent-tracing) opens the
+// language groups on that tab when the page has one, and it becomes the
+// remembered choice. The param is then dropped, so a reload keeps later picks.
+const LANGUAGE_KEY = "maple-docs-language"
+const url = new URL(location.href)
+const requested = url.searchParams.get("lang")
+const linked = roots.some(
+	(root) =>
+		root.dataset.langTabs === LANGUAGE_KEY && triggersOf(root).some((t) => t.dataset.langTrigger === requested),
+)
+	? requested
+	: null
+if (linked) {
+	writeStored(LANGUAGE_KEY, linked)
+	url.searchParams.delete("lang")
+	history.replaceState(history.state, "", url)
+}
+
 for (const root of roots) {
-	const stored = readStored(root.dataset.langTabs ?? "")
+	const key = root.dataset.langTabs ?? ""
+	const stored = (key === LANGUAGE_KEY && linked) || readStored(key)
 	const first = triggersOf(root)[0]?.dataset.langTrigger
 	if (!(stored && activate(root, stored)) && first) activate(root, first)
 	root.dataset.ready = ""

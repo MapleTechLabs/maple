@@ -26,12 +26,14 @@ Then read the installed `SKILL.md` and follow it. If `npx skills` is unavailable
 | `@mastra/core` | `maple-agent-tracing-mastra` |
 | `@openai/agents`, `openai-agents` | `maple-agent-tracing-openai-agents` |
 | `langchain`, `langgraph`, `langchain-core` (Python) | `maple-agent-tracing-langchain` |
-| LangChain.js / LangGraph.js (`@langchain/core`, `@langchain/langgraph`) | None yet: tell the user it isn't covered. Offer `maple-agent-tracing-opentelemetry` only if they want hand-written spans. |
+| LangChain.js / LangGraph.js (`langchain`, `@langchain/core`, `@langchain/langgraph`) | `maple-agent-tracing-langchain` (TypeScript: `references/typescript.md`) |
 | `@anthropic-ai/claude-agent-sdk`, `claude-agent-sdk`, or the `claude` CLI itself | `maple-agent-tracing-claude-agent-sdk` |
+| `agents`, `@cloudflare/ai-chat` (Cloudflare Agents SDK, or the AI SDK inside a Worker / Durable Object) | `maple-agent-tracing-cloudflare-agents` |
 | `ai` (Vercel AI SDK) | `maple-agent-tracing-vercel-ai-sdk` |
+| `genkit`, `@genkit-ai/*` (TypeScript) | `maple-agent-tracing-genkit` |
 | `pydantic-ai`, `pydantic-ai-slim` | `maple-agent-tracing-pydantic-ai` |
 | `crewai` | `maple-agent-tracing-crewai` |
-| `google-adk` | `maple-agent-tracing-google-adk` |
+| `google-adk`, `@google/adk` | `maple-agent-tracing-google-adk` |
 | `llama-index`, `llama-index-core` | `maple-agent-tracing-llamaindex` |
 | `strands-agents`, `@strands-agents/sdk` | `maple-agent-tracing-strands` |
 | `smolagents` | `maple-agent-tracing-smolagents` |

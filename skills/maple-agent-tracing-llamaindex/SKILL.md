@@ -224,7 +224,7 @@ More details (from the human guide, for edge cases):
 - Tool spans: `FunctionTool.acall` (kind TOOL, `execute_tool`), result is LlamaIndex `ToolOutput` JSON with `raw_input`/`raw_output` (real args are in `raw_input`). On failure the `call_tool` step stays OK because `FunctionAgent` hands the error to the model.
 - Agents-as-tools: a tool span with one `FunctionAgent.run` child shows as a delegation; tool args/result become the lane's input/output. Maple opens a lane for every agent span whose name differs from its caller's.
 - Provider: `OpenRouter` and every `OpenAILike` report `openai`, even for Anthropic models. No response model name or `gen_ai.response.id` recorded.
-- OpenRouter Broadcast for cost: because model spans lack `gen_ai.response.id`, nest Broadcast spans under them (https://maple.dev/docs/agent-tracing/openrouter#join-broadcast-to-your-own-traces) or each call counts twice.
+- OpenRouter Broadcast for cost: because model spans lack `gen_ai.response.id`, nest Broadcast spans under them (https://maple.dev/docs/agent-tracing/openrouter#nest-broadcast-under-your-own-traces) or each call counts twice.
 - With a persistent `Context` every model span repeats the whole chat. Maple has no per-attribute limit; ingest accepts requests up to 20 MiB.
 - Streaming query engines on llama-index-core 0.14.25: the model call of a `StreamingResponse` runs after the query span ended, so it lands in a separate trace. Fix pending in OpenInference PR #3841 (https://github.com/Arize-ai/openinference/pull/3841); until released, pin `llama-index-core<0.14.25` if the app traces streaming query engines. Agents unaffected.
 

@@ -1,0 +1,170 @@
+---
+name: maple-agent-tracing-genkit
+description: "Trace Genkit (TypeScript/Node.js) agents with Maple: export Genkit's OpenTelemetry spans to Maple, map its genkit:* attributes to the GenAI conventions with a span processor, and stamp a conversation id so each chat is one Agent Session with transcript, tool calls and tokens. Covers flows, ai.generate, generateStream and beta defineAgent chats. Triggers on 'trace my genkit agent', 'add Maple to genkit', 'agent sessions for genkit', 'OpenTelemetry for genkit', 'firebase genkit tracing'."
+---
+
+# Maple agent tracing: Genkit
+
+Human guide with the reasoning: https://maple.dev/docs/agent-tracing/genkit
+
+## Goal
+
+One conversation = one Maple Agent Session, one turn per flow run, with the transcript, every model call (model, tokens) and every tool call (name, args, result, failures).
+
+How it works: Genkit JS traces every action on tracer `genkit-tracer` through the global `@opentelemetry/api`, but only with its own attributes (`genkit:type`, `genkit:name`, `genkit:metadata:subtype`, `genkit:input`, `genkit:output`, `genkit:isRoot`, `genkit:path`, `genkit:state`). It emits no `gen_ai.*` keys (the GenAI semconv instrumentation `genkit_otel` exists for Dart only). Agent Sessions ignores spans without `gen_ai.operation.name`, so a span processor (`GenkitForMaple`) copies the Genkit attributes to GenAI ones in `onEnd` (Genkit only sets input/output when the span ends). Maple groups sessions by `gen_ai.conversation.id`, which the app sets per flow through `setCustomMetadataAttribute("conversationId", id)` (becomes `genkit:metadata:conversationId` on the flow span).
+
+Span tree per flow run:
+
+```text
+supportChat            genkit:metadata:subtype=flow, genkit:isRoot=true  -> invoke_agent
+└── generate           genkit:type=util (one nested generate per tool-loop step, left unmapped)
+    ├── googleai/gemini-2.5-flash   subtype=model  -> chat
+    ├── getWeather                  subtype=tool   -> execute_tool
+    └── generate
+        └── googleai/gemini-2.5-flash   subtype=model  -> chat
+```
+
+Beta agents (`ai.defineAgent()` / `defineCustomAgent` / `definePromptAgent` from `genkit/beta`): root span has subtype `agent` and `genkit:metadata:agent:sessionId` (Genkit's session id), which the processor uses as the conversation id. Under it: `runTurn-<n>` (flowStep), `render` (promptTemplate), `generate`, model, tool spans. One trace per `chat.send()`.
+
+Known gaps (tell the user, don't try to fix): framework shows **Unidentified** (Maple has no Genkit vendor detection; spans land in the generic GenAI bucket); cost shows as unpriced; `gen_ai.provider.name` is the Genkit plugin prefix (`googleai`, `vertexai`, `openai`, `anthropic`...) rather than the semconv value (`gcp.gemini`...), which is only a label in Maple; media parts are left out of transcripts; `execute_tool` spans have no `gen_ai.tool.call.id` (Genkit doesn't put the call ref on the tool span; the transcript still pairs calls and results through the ids in the model messages when the model plugin sets `ref`).
+
+## Step 0: Detect
+
+- `genkit` version in `package.json` / lockfile: need `>= 1.22` (`disableGenkitOTelInitialization` was added in 1.22). Older: upgrade Genkit first. Node.js >= 20. Tested with genkit 1.42.0 on Node.js 26.
+- Go or Python Genkit: stop; this skill covers TypeScript/JavaScript only. Tell the user.
+- Existing OpenTelemetry: search for `NodeSDK`, `NodeTracerProvider`, `registerOTel`, `@vercel/otel`, `Sentry.init`, `enableTelemetry(`, `enableFirebaseTelemetry(`, `enableGoogleCloudTelemetry(`, `ENABLE_FIREBASE_MONITORING`.
+  - An SDK/provider already exists: reuse it. Add `GenkitForMaple` and one Maple exporting processor to it. Never start a second SDK.
+  - `enableTelemetry({...})` from `genkit/tracing` with custom processors: remove it. Genkit's `enableTelemetry` builds its own bundled `@opentelemetry/sdk-node` 0.52 / `sdk-trace-base` 1.25, and current (2.x) exporters crash inside it (`Cannot read properties of undefined (reading 'name')` on `instrumentationScope`). Don't pass Maple's exporter there.
+  - `enableFirebaseTelemetry()` / `enableGoogleCloudTelemetry()` / `ENABLE_FIREBASE_MONITORING=true`: `disableGenkitOTelInitialization()` makes these no-ops (they go through `enableTelemetry`). Ask the user whether Google Cloud trace export may stop. If they need both, stop and tell them; don't wire two SDKs.
+- Find every flow (`ai.defineFlow(`), direct `ai.generate(` / `ai.generateStream(` / `prompt(` call site, beta agents (`defineAgent(`, `.chat(`), and how the app deploys (plain Node server, Express `startFlowServer`/`expressHandler`, Next.js `@genkit-ai/next`, Cloud Functions for Firebase `onCallGenkit`, Cloud Run). Find each conversation's id (chat id, thread id, session row).
+
+## Step 1: Key and region
+
+- US endpoint `https://ingest.maple.dev`, EU endpoint `https://ingest.eu.maple.dev`. Header `Authorization=Bearer <key>`.
+- Key in the user's prompt: use it. No key: use the literal `MAPLE_TEST` (ingest accepts and discards it) and tell the user to replace it with their key from Settings → Ingestion.
+- Private `maple_sk_` keys never go in browser code. Ingest keys are write-only.
+- Follow the repo's existing secret/env convention (`.env`, Firebase `defineSecret`, Secret Manager). If there is none, inlining the ingest key is acceptable.
+
+## Step 2: Install
+
+```bash
+npm install genkit @opentelemetry/sdk-node @opentelemetry/sdk-trace-base @opentelemetry/exporter-trace-otlp-proto
+```
+
+Use the repo's package manager. `@opentelemetry/api` arrives as a peer; add it explicitly only if the package manager doesn't install peers. Env (or the repo's equivalent):
+
+```bash
+OTEL_SERVICE_NAME=support-agent
+OTEL_RESOURCE_ATTRIBUTES=deployment.environment.name=production
+OTEL_EXPORTER_OTLP_ENDPOINT=https://ingest.maple.dev
+OTEL_EXPORTER_OTLP_HEADERS=Authorization=Bearer <key>
+```
+
+Inlining instead of env: `new OTLPTraceExporter({ url: "https://ingest.maple.dev/v1/traces", headers: { authorization: "Bearer <key>" } })` (the full `/v1/traces` path is needed when passing `url`).
+
+## Step 3: The span processor
+
+Create `genkit-for-maple.ts` next to the entry point. Copy it verbatim from the human guide ("Add the span processor"): https://maple.dev/docs/agent-tracing/genkit. It maps:
+
+| Genkit span (`genkit:metadata:subtype`) | Adds |
+| --- | --- |
+| `flow`, `agent` | `gen_ai.operation.name=invoke_agent`, `gen_ai.agent.name=<genkit:name>`, `gen_ai.conversation.id` from `genkit:metadata:conversationId` or `genkit:metadata:agent:sessionId` |
+| `model` | `chat`, `gen_ai.provider.name` (prefix before `/`), `gen_ai.request.model` (rest), `gen_ai.input.messages` / `gen_ai.system_instructions` from `genkit:input.messages`, `gen_ai.output.messages` + `gen_ai.response.finish_reasons` from `genkit:output`, `gen_ai.usage.input_tokens` / `output_tokens` from `genkit:output.usage` |
+| `tool` | `execute_tool`, `gen_ai.tool.name`, `gen_ai.tool.call.arguments` (= `genkit:input`), `gen_ai.tool.call.result` (= `genkit:output`, bare values wrapped as `{"result": ...}`) |
+
+Message conversion: role `model` → `assistant`; parts `{text}` → `text`, `{reasoning}` → `reasoning`, `{toolRequest:{name,ref,input}}` → `tool_call`, `{toolResponse:{name,ref,output}}` → `tool_call_response`; `media`, `data`, `custom` parts are dropped.
+
+Notes:
+- It mutates `span.attributes` in `onEnd`. That works because the exporting processor reads the same object; list `GenkitForMaple` BEFORE the exporting processor (required with `SimpleSpanProcessor`, which exports inside `onEnd`).
+- Optional, only if the user asks for cache/reasoning token detail: `output.usage.cachedContentTokens` → `gen_ai.usage.cache_read.input_tokens`, `output.usage.thoughtsTokens` → `gen_ai.usage.reasoning.output_tokens`. Keep `input_tokens` as Genkit reports it.
+- Optional provider label mapping (`googleai` → `gcp.gemini`, `vertexai` → `gcp.vertex_ai`): cosmetic, skip unless asked.
+- Leave `genkit:*` attributes in place; they are what the Genkit Developer UI and Google Cloud views read.
+- Typecheck the file with the repo's `tsc` (it passes `strict`).
+
+## Step 4: Start OpenTelemetry
+
+Create `instrumentation.ts` (copy from the guide, "Start OpenTelemetry"):
+
+```ts
+import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto"
+import { NodeSDK } from "@opentelemetry/sdk-node"
+import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-base"
+import { disableGenkitOTelInitialization } from "genkit/tracing"
+import { GenkitForMaple } from "./genkit-for-maple"
+
+export const spanProcessor = new BatchSpanProcessor(new OTLPTraceExporter())
+export const sdk = new NodeSDK({ spanProcessors: [new GenkitForMaple(), spanProcessor] })
+
+if (process.env.GENKIT_ENV !== "dev") {
+	disableGenkitOTelInitialization()
+	sdk.start()
+}
+```
+
+- `import "./instrumentation"` as the FIRST line of every entry point (server, worker, CLI, Cloud Function index). It must run before Genkit's first span: otherwise Genkit's own SDK registers the global tracer provider first and Maple's never receives spans. Adjust the import extension/style to the repo (ESM `.js` suffix, `tsx`, bundler).
+- Why `disableGenkitOTelInitialization()`: without it Genkit lazily starts a second, bundled NodeSDK on its first span. With Maple's SDK started first that second one mostly loses the global registration race, but it's two SDKs; disable it.
+- `GENKIT_ENV=dev` is set by `genkit start` (Developer UI). Genkit's own SDK then ships traces to the Developer UI's telemetry server; Maple's SDK can't feed it (Genkit's `TraceServerExporter` reads 1.x span fields). So in dev: Developer UI traces, nothing to Maple. If the user wants Maple in dev too, drop the `if` and tell them the Developer UI trace view goes empty.
+- Existing provider/SDK: add `new GenkitForMaple()` and the Maple `BatchSpanProcessor` to its span processors (before any exporting processor for GenkitForMaple), keep `disableGenkitOTelInitialization()`, don't create `NodeSDK`.
+- Next.js with `@vercel/otel`: pass `spanProcessors: [new GenkitForMaple(), new BatchSpanProcessor(new OTLPTraceExporter({ url, headers }))]` to `registerOTel` and call `disableGenkitOTelInitialization()` in `register()`. Untested; verify spans arrive.
+- `NodeSDK()` with `spanProcessors` doesn't build exporters from `OTEL_TRACES_EXPORTER`; the explicit `OTLPTraceExporter` still reads `OTEL_EXPORTER_OTLP_ENDPOINT` / `HEADERS`. It also starts OTLP metric and log exporters from env (default `otlp`); set `OTEL_METRICS_EXPORTER=none` / `OTEL_LOGS_EXPORTER=none` if the repo doesn't want them.
+
+Genkit starts a NEW TRACE for every root Genkit action (it passes `root: true`), even inside an HTTP server span. That's fine for Maple (one trace per turn). If the user wants flows nested under their HTTP spans, `disableOTelRootSpanDetection()` from `genkit/tracing` changes it; not needed for Agent Sessions.
+
+## Step 5: Conversation id (session)
+
+Every turn must run inside a flow (or a beta agent). In each flow that handles a conversation, call at the start:
+
+```ts
+import { setCustomMetadataAttribute } from "genkit/tracing"
+
+setCustomMetadataAttribute("conversationId", chatId)
+```
+
+- It writes to the CURRENT Genkit action, so call it directly in the flow body, not inside a tool or a nested `ai.run()` step. It throws outside any Genkit action.
+- `ai.generate()` called outside a flow (e.g. straight from an Express route): wrap the call in a flow (`ai.defineFlow`) and call the flow from the route. Without a flow there is no `invoke_agent` span and no session id; each call becomes its own `trace:<id>` session.
+- Id: stable per conversation, unique across conversations. Never a module constant, `Date.now()` per call or a per-process id. If the app has no id, create one when the conversation is created and persist it with it.
+- Flows exposed via `startFlowServer` / `expressHandler` / `onCallGenkit` / `appRoute`: the client must send the chat id in the flow input; add it to `inputSchema` if missing.
+- Beta agents (`defineAgent` etc.): nothing to add; `genkit:metadata:agent:sessionId` is used.
+- The flow name is the agent name in Maple (`gen_ai.agent.name`). Give each distinct agent its own flow name.
+- Sub-agents: a flow called from inside another flow or a tool also becomes an `invoke_agent` span named after that flow (expected to show as a sub-agent lane; not verified in Maple). Don't set the conversation id on inner flows.
+- Don't set `gen_ai.conversation.id` or `maple_ai.session.id` on spans yourself; the processor does it.
+
+## Step 6: Content, errors, flush
+
+- Content: Genkit always records `genkit:input` / `genkit:output` (full prompts, replies, tool args/results). There is no Genkit switch. If the user needs content kept out of Maple, delete `genkit:input`/`genkit:output` in the processor after mapping and skip the message/argument/result attributes; tell them transcripts will be empty.
+- Never set `OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT` / `OTEL_SPAN_ATTRIBUTE_VALUE_LENGTH_LIMIT`: a truncated `genkit:input` makes `JSON.parse` in the processor throw inside `span.end()`, and truncated message JSON is dropped by Maple.
+- Tool failures: a tool that throws ends with status `ERROR` (Maple counts it failed) and aborts the whole `generate` / flow (Genkit doesn't feed the error back to the model). Don't change tool error behavior for tracing; tools that return `{ error }` payloads show as successful, which is accurate to what the model saw.
+- Streaming (`ai.generateStream`, `flow.stream()`): model spans end with the full output and usage; read the stream to the end before flushing.
+- Flush:
+  - Scripts/CLIs: `await sdk.shutdown()` in a `finally`.
+  - Long-running servers (Cloud Run, plain Node): `process.on("SIGTERM", () => sdk.shutdown())`. Genkit's own SDK did this; Maple's doesn't by default.
+  - Serverless handlers you control: `await spanProcessor.forceFlush()` after the flow returns (the flow span ends when the flow returns, so flushing inside the flow misses it).
+  - Cloud Functions for Firebase `onCallGenkit(flow)`: you can't hook after the flow; the instance may be throttled after the response, so the last batch can be delayed or lost. Tell the user; if it matters, wrap with `onCall` and call the flow then `forceFlush()` before returning. Untested.
+
+## Step 7: Verify
+
+Run one conversation with 2+ turns under the same id, one tool call, plus a second conversation. Then check (Maple MCP `list_agent_sessions` / `get_agent_session`, or the Agent Sessions page, ~30 s after the run):
+
+- One session per conversation (id = your conversation id), not `trace:<id>` sessions; the second conversation is separate.
+- Framework shows **Unidentified** (expected).
+- Turns = number of flow runs; each trace has `invoke_agent` (flow name) → `generate` → model (`chat`) and tool (`execute_tool`) spans.
+- Transcript shows user messages, assistant replies, tool calls with arguments and results; turn labels are the user's messages.
+- Every model span has input and output tokens (if the model plugin reports usage).
+- A throwing tool is failed; successful tools are not.
+- No attribute contains the provider API key or `Bearer `.
+- Under `genkit start`, the Developer UI still shows traces (and nothing reaches Maple).
+- The process exited cleanly and no turn is missing (flush ran).
+
+Local check without Maple: point `OTEL_EXPORTER_OTLP_ENDPOINT` at a small HTTP server and swap in `@opentelemetry/exporter-trace-otlp-http` with `OTEL_EXPORTER_OTLP_PROTOCOL=http/json` to read the spans as JSON; confirm `gen_ai.operation.name` on flow/model/tool spans and `gen_ai.conversation.id` equal across turns.
+
+## Do not
+
+- Do not pass Maple's exporter or processors to Genkit's `enableTelemetry()`; it crashes with current OpenTelemetry packages.
+- Do not skip `GenkitForMaple`: raw Genkit spans reach Maple Traces but never Agent Sessions.
+- Do not start a second OpenTelemetry SDK next to an existing one; add the processors.
+- Do not import `instrumentation.ts` after Genkit has run anything.
+- Do not call `setCustomMetadataAttribute("conversationId", ...)` inside tools or nested flows, or outside a Genkit action.
+- Do not stamp `maple_ai.session.id` on Genkit spans.
+- Do not add a second GenAI tracer that also exports to Maple (OpenLLMetry/OpenInference Google GenAI or OpenAI instrumentations for the same calls): model calls get recorded twice.
+- Do not set attribute length limits.
+- Do not use a gRPC exporter; Maple ingest is OTLP over HTTP.

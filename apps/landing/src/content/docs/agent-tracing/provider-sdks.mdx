@@ -7,6 +7,9 @@ navLabel: "OpenAI, Anthropic & Gemini SDKs"
 icon: "openai"
 ---
 
+import LanguageTabs from "../../../components/docs/LanguageTabs.astro"
+import LanguageTab from "../../../components/docs/LanguageTab.astro"
+
 Use this guide when your agent is your own loop around `client.chat.completions.create`, `client.messages.create` or `client.models.generate_content`. An instrumentation library records each model call, and you add the turn and tool spans and put the conversation id on the turn span. If you use an agent framework on top of these SDKs, use [that framework's guide](/docs/agent-tracing) instead.
 
 ## Quick setup with a coding agent
@@ -34,7 +37,10 @@ export OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT="SPAN_ONLY"
 
 For an EU organization, use `https://ingest.eu.maple.dev`. `SPAN_ONLY` records prompts and replies for the transcript. Leave it unset to keep content out of Maple. `EVENT_ONLY` or `true` leaves the transcript empty.
 
-## Python: install the GenAI instrumentation
+## Set up tracing
+
+<LanguageTabs label="Language" tabs={[{ id: "python", label: "Python" }, { id: "typescript", label: "TypeScript" }]}>
+<LanguageTab id="python">
 
 Install the `genai` packages below, not `opentelemetry-instrumentation-openai` or `opentelemetry-instrumentation-openai-v2`.
 
@@ -65,90 +71,8 @@ OpenAIInstrumentor().instrument()
 
 Import `tracing` first in your entry point. If your app already has a `TracerProvider` (Sentry, Logfire, Datadog), add the `BatchSpanProcessor` to it instead.
 
-## Python: wrap each turn and tool call
-
-Wrap each turn in an `invoke_agent` span that carries `gen_ai.conversation.id`. Use the id your app already stores for the conversation (thread id, ticket id), not a new UUID per request.
-
-```py
-# agent_tracing.py
-import json
-import os
-from contextlib import contextmanager
-
-from opentelemetry import trace
-from opentelemetry.trace import Status, StatusCode
-
-tracer = trace.get_tracer("support-agent")
-
-CAPTURE_CONTENT = os.environ.get(
-    "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", ""
-).upper() in ("SPAN_ONLY", "SPAN_AND_EVENT")
-
-
-@contextmanager
-def agent_span(agent_name: str, conversation_id: str | None = None):
-    attributes = {"gen_ai.operation.name": "invoke_agent", "gen_ai.agent.name": agent_name}
-    if conversation_id:
-        attributes["gen_ai.conversation.id"] = conversation_id
-    with tracer.start_as_current_span(f"invoke_agent {agent_name}", attributes=attributes) as span:
-        yield span
-
-
-def run_tool(call_id: str, name: str, arguments: str, tool) -> str:
-    with tracer.start_as_current_span(
-        f"execute_tool {name}",
-        attributes={
-            "gen_ai.operation.name": "execute_tool",
-            "gen_ai.tool.name": name,
-            "gen_ai.tool.call.id": call_id,
-        },
-    ) as span:
-        if CAPTURE_CONTENT:
-            span.set_attribute("gen_ai.tool.call.arguments", arguments)
-        try:
-            result = json.dumps(tool(**json.loads(arguments)))
-        except Exception as exc:
-            span.record_exception(exc)
-            span.set_status(Status(StatusCode.ERROR, str(exc)))
-            span.set_attribute("error.type", type(exc).__qualname__)
-            result = json.dumps({"error": str(exc)})
-        if CAPTURE_CONTENT:
-            span.set_attribute("gen_ai.tool.call.result", result)
-        return result
-```
-
-In your loop, the tracing is the `with agent_span(...)` line and the `run_tool(...)` call:
-
-```py
-# agent.py
-import tracing  # noqa: F401  (first import)
-from openai import OpenAI
-
-from agent_tracing import agent_span, run_tool
-
-client = OpenAI()
-MODEL = "gpt-4o-mini"
-# get_weather, fetch_transport_data and TOOL_SCHEMAS are your own tools and their JSON schemas.
-TOOLS = {"get_weather": get_weather, "fetch_transport_data": fetch_transport_data}
-
-
-def chat_turn(conversation_id: str, history: list, user_text: str) -> str:
-    with agent_span("support_agent", conversation_id):
-        history.append({"role": "user", "content": user_text})
-        while True:
-            response = client.chat.completions.create(model=MODEL, messages=history, tools=TOOL_SCHEMAS)
-            message = response.choices[0].message
-            history.append(message.model_dump(include={"role", "content", "tool_calls"}, exclude_none=True))
-            if not message.tool_calls:
-                return message.content
-            for call in message.tool_calls:
-                result = run_tool(call.id, call.function.name, call.function.arguments, TOOLS[call.function.name])
-                history.append({"role": "tool", "tool_call_id": call.id, "content": result})
-```
-
-With Anthropic, run each `tool_use` block with `run_tool(block.id, block.name, json.dumps(block.input), ...)`. With Gemini's automatic function calling, the instrumentation records the tool spans itself, so wrap the turn in `agent_span` and skip `run_tool`.
-
-## TypeScript: set up the exporter and helper
+</LanguageTab>
+<LanguageTab id="typescript">
 
 No OpenTelemetry instrumentation works for `openai` 7 in TypeScript, so this helper records the turn, each tool call and each model call.
 
@@ -288,7 +212,97 @@ function markFailed(span: Span, error: unknown) {
 }
 ```
 
-## TypeScript: wrap each turn
+</LanguageTab>
+</LanguageTabs>
+
+## Wrap each turn and tool call
+
+<LanguageTabs label="Language" tabs={[{ id: "python", label: "Python" }, { id: "typescript", label: "TypeScript" }]}>
+<LanguageTab id="python">
+
+Wrap each turn in an `invoke_agent` span that carries `gen_ai.conversation.id`. Use the id your app already stores for the conversation (thread id, ticket id), not a new UUID per request.
+
+```py
+# agent_tracing.py
+import json
+import os
+from contextlib import contextmanager
+
+from opentelemetry import trace
+from opentelemetry.trace import Status, StatusCode
+
+tracer = trace.get_tracer("support-agent")
+
+CAPTURE_CONTENT = os.environ.get(
+    "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", ""
+).upper() in ("SPAN_ONLY", "SPAN_AND_EVENT")
+
+
+@contextmanager
+def agent_span(agent_name: str, conversation_id: str | None = None):
+    attributes = {"gen_ai.operation.name": "invoke_agent", "gen_ai.agent.name": agent_name}
+    if conversation_id:
+        attributes["gen_ai.conversation.id"] = conversation_id
+    with tracer.start_as_current_span(f"invoke_agent {agent_name}", attributes=attributes) as span:
+        yield span
+
+
+def run_tool(call_id: str, name: str, arguments: str, tool) -> str:
+    with tracer.start_as_current_span(
+        f"execute_tool {name}",
+        attributes={
+            "gen_ai.operation.name": "execute_tool",
+            "gen_ai.tool.name": name,
+            "gen_ai.tool.call.id": call_id,
+        },
+    ) as span:
+        if CAPTURE_CONTENT:
+            span.set_attribute("gen_ai.tool.call.arguments", arguments)
+        try:
+            result = json.dumps(tool(**json.loads(arguments)))
+        except Exception as exc:
+            span.record_exception(exc)
+            span.set_status(Status(StatusCode.ERROR, str(exc)))
+            span.set_attribute("error.type", type(exc).__qualname__)
+            result = json.dumps({"error": str(exc)})
+        if CAPTURE_CONTENT:
+            span.set_attribute("gen_ai.tool.call.result", result)
+        return result
+```
+
+In your loop, the tracing is the `with agent_span(...)` line and the `run_tool(...)` call:
+
+```py
+# agent.py
+import tracing  # noqa: F401  (first import)
+from openai import OpenAI
+
+from agent_tracing import agent_span, run_tool
+
+client = OpenAI()
+MODEL = "gpt-4o-mini"
+# get_weather, fetch_transport_data and TOOL_SCHEMAS are your own tools and their JSON schemas.
+TOOLS = {"get_weather": get_weather, "fetch_transport_data": fetch_transport_data}
+
+
+def chat_turn(conversation_id: str, history: list, user_text: str) -> str:
+    with agent_span("support_agent", conversation_id):
+        history.append({"role": "user", "content": user_text})
+        while True:
+            response = client.chat.completions.create(model=MODEL, messages=history, tools=TOOL_SCHEMAS)
+            message = response.choices[0].message
+            history.append(message.model_dump(include={"role", "content", "tool_calls"}, exclude_none=True))
+            if not message.tool_calls:
+                return message.content
+            for call in message.tool_calls:
+                result = run_tool(call.id, call.function.name, call.function.arguments, TOOLS[call.function.name])
+                history.append({"role": "tool", "tool_call_id": call.id, "content": result})
+```
+
+With Anthropic, run each `tool_use` block with `run_tool(block.id, block.name, json.dumps(block.input), ...)`. With Gemini's automatic function calling, the instrumentation records the tool spans itself, so wrap the turn in `agent_span` and skip `run_tool`.
+
+</LanguageTab>
+<LanguageTab id="typescript">
 
 Pass the conversation id your app already stores to `agentSpan`, and route model and tool calls through `tracedChat` and `runTool`:
 
@@ -326,6 +340,9 @@ export function chatTurn(
 ```
 
 For `@anthropic-ai/sdk` or `@google/genai`, copy `tracedChat` and map that SDK's response fields. The [skill's TypeScript reference](https://github.com/MapleTechLabs/maple/blob/main/skills/maple-agent-tracing-provider-sdks/references/typescript.md) has the attribute table.
+
+</LanguageTab>
+</LanguageTabs>
 
 ## Sub-agents, streaming and cost
 

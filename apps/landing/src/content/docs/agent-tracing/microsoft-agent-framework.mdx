@@ -7,6 +7,9 @@ navLabel: "Microsoft Agent Framework"
 icon: "dotnet"
 ---
 
+import LanguageTabs from "../../../components/docs/LanguageTabs.astro"
+import LanguageTab from "../../../components/docs/LanguageTab.astro"
+
 Microsoft Agent Framework (MAF) emits OpenTelemetry spans in Python and .NET. You point them at Maple and add a short span processor that sets the conversation id, or every turn shows up as its own session.
 
 ## Quick setup with a coding agent
@@ -23,7 +26,10 @@ My Maple ingest key is maple_pk_... and my organization is in the US region.
 
 Your ingest key is in **Settings → Ingestion**. If your organization is in the EU region, change `US` to `EU` in the prompt.
 
-## Export traces from Python
+## Export traces
+
+<LanguageTabs label="Language" tabs={[{ id: "python", label: "Python" }, { id: "csharp", label: ".NET" }]}>
+<LanguageTab id="python">
 
 Install MAF with the OTLP/HTTP exporter:
 
@@ -58,7 +64,8 @@ Keep `otlp_protocol="http/protobuf"`. MAF defaults to gRPC, which Maple doesn't 
 
 If your app already has a `TracerProvider`, don't call `configure_otel_providers()`. Add Maple's exporter and `ConversationIdProcessor` to your provider, then call `enable_instrumentation(enable_sensitive_data=True, enable_message_events=False)` from `agent_framework.observability`.
 
-## Export traces from .NET
+</LanguageTab>
+<LanguageTab id="csharp">
 
 ```bash
 dotnet add package Microsoft.Agents.AI --version 1.22.0
@@ -104,9 +111,17 @@ AIAgent agent = openAi.GetChatClient("gpt-4o-mini").AsIChatClient()
 
 Keep the leading `*` in `AddSource` (the source names start with `Experimental.`), `/v1/traces` in the endpoint, and the `HttpProtobuf` line. Pass each tool a `name`, or local functions show up under compiler-generated names.
 
+</LanguageTab>
+</LanguageTabs>
+
 ## Group each conversation into one session
 
-Maple groups turns into a session by `gen_ai.conversation.id`. This processor sets it on every span started inside a `conversation()` block:
+Maple groups turns into a session by `gen_ai.conversation.id`.
+
+<LanguageTabs label="Language" tabs={[{ id: "python", label: "Python" }, { id: "csharp", label: ".NET" }]}>
+<LanguageTab id="python">
+
+This processor sets it on every span started inside a `conversation()` block:
 
 ```py
 # maple_tracing.py
@@ -151,6 +166,9 @@ async def handle_message(agent: Agent, session: AgentSession, text: str) -> str:
 
 When streaming, keep the whole `async for` loop inside the block. Don't pass the `conversation_id` chat option instead; it turns off MAF's in-memory history.
 
+</LanguageTab>
+<LanguageTab id="csharp">
+
 In .NET, use an `Activity` processor with an `AsyncLocal` and set it before `RunAsync`:
 
 ```csharp
@@ -174,9 +192,17 @@ ConversationIdProcessor.Current.Value = chatId; // once per request, before RunA
 var response = await agent.RunAsync(userMessage, session);
 ```
 
+</LanguageTab>
+</LanguageTabs>
+
 ## Flush before a script exits
 
-Scripts, CLIs and notebooks that exit without flushing lose their last turns. Shut the providers down in a `finally`:
+Scripts, CLIs and notebooks that exit without flushing lose their last turns.
+
+<LanguageTabs label="Language" tabs={[{ id: "python", label: "Python" }, { id: "csharp", label: ".NET" }]}>
+<LanguageTab id="python">
+
+Shut the providers down in a `finally`:
 
 ```py
 from opentelemetry import _logs, metrics, trace
@@ -193,7 +219,15 @@ finally:
     shutdown_telemetry()
 ```
 
-In a serverless handler, call `trace.get_tracer_provider().force_flush()` before returning. In .NET, `using var tracerProvider` flushes when `Main` ends.
+In a serverless handler, call `trace.get_tracer_provider().force_flush()` before returning.
+
+</LanguageTab>
+<LanguageTab id="csharp">
+
+In .NET, `using var tracerProvider` flushes when `Main` ends.
+
+</LanguageTab>
+</LanguageTabs>
 
 ## Semantic Kernel
 

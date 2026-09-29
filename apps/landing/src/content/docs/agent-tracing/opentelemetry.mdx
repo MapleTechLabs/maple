@@ -7,6 +7,9 @@ navLabel: "Any language (OTel GenAI)"
 icon: "opentelemetry"
 ---
 
+import LanguageTabs from "../../../components/docs/LanguageTabs.astro"
+import LanguageTab from "../../../components/docs/LanguageTab.astro"
+
 Use this guide when no other guide covers your agent, for example a hand-written agent loop. You write the agent spans yourself with any OpenTelemetry SDK. Maple needs three kinds: an `invoke_agent` span per user turn, a `chat` span per model call and an `execute_tool` span per tool call.
 
 Tested with the OpenTelemetry JS SDK 2.11 on Node.js 26 and the Python SDK 1.45 on Python 3.14, against the [GenAI conventions](https://github.com/open-telemetry/semantic-conventions-genai) as of September 2026.
@@ -97,6 +100,9 @@ export OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"
 
 For an EU organization, use `https://ingest.eu.maple.dev`. The exporters append `/v1/traces` themselves.
 
+<LanguageTabs label="Language" tabs={[{ id: "typescript", label: "TypeScript" }, { id: "python", label: "Python" }]}>
+<LanguageTab id="typescript">
+
 TypeScript (Node.js 20 or newer):
 
 ```bash
@@ -122,6 +128,9 @@ export const provider = new NodeTracerProvider({
 provider.register()
 ```
 
+</LanguageTab>
+<LanguageTab id="python">
+
 Python (3.10 or newer):
 
 ```bash
@@ -145,6 +154,9 @@ provider = TracerProvider(
 provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
 trace.set_tracer_provider(provider)
 ```
+
+</LanguageTab>
+</LanguageTabs>
 
 If your app already has a `TracerProvider` (Sentry, Datadog, `opentelemetry-instrument`, `NodeSDK`), add the `BatchSpanProcessor` to it instead of creating a second one.
 

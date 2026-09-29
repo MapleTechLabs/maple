@@ -7,6 +7,9 @@ navLabel: "Claude Agent SDK & Claude Code"
 icon: "claude"
 ---
 
+import LanguageTabs from "../../../components/docs/LanguageTabs.astro"
+import LanguageTab from "../../../components/docs/LanguageTab.astro"
+
 The Claude Agent SDK and Claude Code export OpenTelemetry spans for each turn, model request and tool call once you set a few environment variables. There is nothing to install.
 
 Spans only exist with `CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1`, and in the SDK every `query()` starts a new session unless you resume the conversation's session id.
@@ -35,7 +38,8 @@ The snippets below drop any inherited `TRACEPARENT`, which Claude Code's Bash to
 
 Never set an exporter to `console` in an SDK app. It breaks the SDK's message stream.
 
-### TypeScript Agent SDK
+<LanguageTabs label="Language" tabs={[{ id: "typescript", label: "TypeScript" }, { id: "python", label: "Python" }]}>
+<LanguageTab id="typescript">
 
 ```bash
 npm install @anthropic-ai/claude-agent-sdk zod
@@ -70,7 +74,8 @@ export const mapleEnv: Record<string, string | undefined> = {
 }
 ```
 
-### Python Agent SDK
+</LanguageTab>
+<LanguageTab id="python">
 
 ```bash
 pip install claude-agent-sdk
@@ -104,6 +109,9 @@ MAPLE_ENV = {
     "OTEL_LOG_TOOL_CONTENT": "1",
 }
 ```
+
+</LanguageTab>
+</LanguageTabs>
 
 Pass the env on every `query()` call, as in the next section. Or set the same variables in your Dockerfile or deployment manifest and skip `env`, as long as no `TRACEPARENT` is set there.
 
@@ -139,6 +147,9 @@ A chat backend that calls `query()` once per message without resuming gets one M
 
 Store a UUID with each conversation. Pass it as `sessionId` on the first turn and as `resume` on every turn after:
 
+<LanguageTabs label="Language" tabs={[{ id: "typescript", label: "TypeScript" }, { id: "python", label: "Python" }]}>
+<LanguageTab id="typescript">
+
 ```ts
 import { randomUUID } from "node:crypto"
 import { query } from "@anthropic-ai/claude-agent-sdk"
@@ -160,6 +171,9 @@ export async function reply(conversation: Conversation, text: string) {
 }
 ```
 
+</LanguageTab>
+<LanguageTab id="python">
+
 ```py
 import uuid
 from claude_agent_sdk import ClaudeAgentOptions, ResultMessage, query
@@ -176,6 +190,9 @@ async def reply(conversation: dict, text: str) -> str | None:
             return message.result
     return None
 ```
+
+</LanguageTab>
+</LanguageTabs>
 
 `resume` reads the earlier turns from `~/.claude/projects/` on the same machine. If messages can land on different hosts, use the SDK's [`sessionStore`](https://code.claude.com/docs/en/agent-sdk/session-storage) option. A Python `ClaudeSDKClient`, or a TypeScript `query()` fed an async iterable, keeps one session for all its turns and needs none of this.
 

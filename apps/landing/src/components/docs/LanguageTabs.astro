@@ -2,11 +2,13 @@
 // Language/framework switcher for docs pages. Children are `<LanguageTab id>`
 // panels holding ordinary markdown, so code blocks keep their highlighting and
 // copy buttons. The pick is remembered and shared by every group on the site.
-// Without JavaScript the first panel shows and the rest stay hidden. Styles live
-// in global.css and behavior in lib/docs-tabs.ts, shared with the package-manager
-// switchers remark-install-tabs.mjs renders.
+// Without JavaScript the first panel shows and the rest stay hidden; a `filter`
+// group (a list per language, as on /docs/agent-tracing) shows every panel and
+// hides the rail instead. Styles live in global.css and behavior in
+// lib/docs-tabs.ts, shared with the package-manager switchers
+// remark-install-tabs.mjs renders.
 import LanguageLogo from "./LanguageLogo.astro";
-import { LANGUAGE_IDS, type LanguageId } from "../../lib/docs-languages";
+import { LOGO_IDS, type LogoId } from "../../lib/docs-languages";
 
 interface Tab {
     id: string;
@@ -16,13 +18,14 @@ interface Tab {
 interface Props {
     tabs: Tab[];
     label?: string;
+    filter?: boolean;
 }
 
-const { tabs, label = "Language" } = Astro.props;
-const isLanguage = (id: string): id is LanguageId => (LANGUAGE_IDS as readonly string[]).includes(id);
+const { tabs, label = "Language", filter = false } = Astro.props;
+const hasLogo = (id: string): id is LogoId => (LOGO_IDS as readonly string[]).includes(id);
 ---
 
-<div class="lt" data-lang-tabs="maple-docs-language">
+<div class:list={["lt", filter && "lt--filter"]} data-lang-tabs="maple-docs-language">
     <div class="lt__rail" role="tablist" aria-label={label}>
         {tabs.map((tab, index) => (
             <button
@@ -33,7 +36,7 @@ const isLanguage = (id: string): id is LanguageId => (LANGUAGE_IDS as readonly s
                 aria-selected={index === 0 ? "true" : "false"}
                 tabindex={index === 0 ? 0 : -1}
             >
-                {isLanguage(tab.id) ? (
+                {hasLogo(tab.id) ? (
                     <LanguageLogo id={tab.id} class="lt__icon" />
                 ) : (
                     <svg class="lt__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">

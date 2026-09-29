@@ -1,18 +1,21 @@
 ---
 name: maple-agent-tracing-langchain
-description: "Trace LangChain and LangGraph agents with Maple: export OpenInference LangChain spans with the GenAI dual-write so each thread is one Maple Agent Session with transcript, tool calls, sub-agent lanes and tokens. Triggers on 'trace my langchain agent', 'trace my langgraph agent', 'add Maple to langchain', 'add Maple to langgraph', 'agent sessions for langchain', 'OpenTelemetry for langgraph'."
+description: "Trace LangChain and LangGraph agents (Python, and LangChain.js / LangGraph.js in TypeScript) with Maple: export OpenInference LangChain spans with GenAI attributes so each thread is one Maple Agent Session with transcript, tool calls, sub-agent lanes and tokens. Triggers on 'trace my langchain agent', 'trace my langgraph agent', 'add Maple to langchain', 'add Maple to langgraph', 'agent sessions for langchain', 'OpenTelemetry for langgraph', 'trace langchain.js', 'trace langgraph.js', 'createAgent tracing'."
 ---
 
-# Maple agent tracing: LangChain & LangGraph (Python)
+# Maple agent tracing: LangChain & LangGraph (Python and TypeScript)
 
 Goal: every conversation = one Maple Agent Session. Each `invoke()`/`stream()` = one turn (one trace) with a readable transcript, chat model spans with tokens, tool spans with names/results, failed tools marked failed, sub-agents in their own lanes.
 
 Human guide with the reasoning: https://maple.dev/docs/agent-tracing/langchain
 
-Mechanism: `openinference-instrumentation-langchain` (scope `openinference.instrumentation.langchain`) with `TraceConfig(enable_genai_semconv=True)`, which dual-writes `gen_ai.*` (incl. `gen_ai.conversation.id` from run metadata `session_id` > `conversation_id` > `thread_id`, and `gen_ai.input/output.messages` in `{role, parts}` form). Maple classifies these as generic GenAI (framework facet "Unidentified") and reads `gen_ai.conversation.id` as the session key. This beats LangSmith's OTel export for Maple: readable transcript, interrupts not marked ERROR, no middleware noise spans, normal flush. Python only; LangChain.js/LangGraph.js are not covered (tell the user and stop).
+Mechanism: `openinference-instrumentation-langchain` (scope `openinference.instrumentation.langchain`) with `TraceConfig(enable_genai_semconv=True)`, which dual-writes `gen_ai.*` (incl. `gen_ai.conversation.id` from run metadata `session_id` > `conversation_id` > `thread_id`, and `gen_ai.input/output.messages` in `{role, parts}` form). Maple classifies these as generic GenAI (framework facet "Unidentified") and reads `gen_ai.conversation.id` as the session key. This beats LangSmith's OTel export for Maple: readable transcript, interrupts not marked ERROR, no middleware noise spans, normal flush.
+
+**TypeScript / JavaScript (LangChain.js, LangGraph.js):** the JS instrumentor has no GenAI dual-write, so the setup adds a small span processor. Do Step 1 below for the key and region, then follow [references/typescript.md](references/typescript.md) instead of Steps 2-7. A repo with both Python and TS agents gets both setups.
 
 ## Step 0: Detect
 
+0. Language: `package.json` depending on `langchain`, `@langchain/core` or `@langchain/langgraph` → TypeScript, see [references/typescript.md](references/typescript.md) (after Step 1). Python files importing `langchain`/`langgraph` → continue here.
 1. Versions: `python -c "import langchain, langgraph, langchain_core; print(langchain.__version__, langchain_core.__version__)"` and `pip show langgraph` (or read `pyproject.toml` / `uv.lock` / `requirements*.txt`). Tested: langchain 1.4.2, langgraph 1.2.12, langchain-core 1.6.5, langchain-openai 1.6.6, Python 3.12. Python must be >= 3.10.
 2. Existing OTel setup. Search for `TracerProvider(`, `set_tracer_provider`, `logfire.configure`, `sentry_sdk.init`, `opentelemetry-instrument`, `Traceloop.init`, `LangChainInstrumentor`, `OpenAIInstrumentor`, `LANGSMITH_OTEL_ENABLED`, `LANGSMITH_TRACING_MODE`.
    - A `TracerProvider` exists → add the processors from Step 2 to it; do NOT create a second provider.
@@ -197,7 +200,7 @@ More details (from the human guide, for edge cases):
 - HITL: the pause ends the turn's trace; the resume is a new trace, so an approved action shows as two turns in one session (shared `thread_id` is what joins them).
 - LangGraph Server verified with `langgraph dev` (langgraph-api 0.10.3).
 - LangSmith OTel export (`LANGSMITH_OTEL_ENABLED` + `LANGSMITH_OTEL_ONLY`, tested langsmith 0.14.1): Maple labels it "LangChain" and reads `langsmith.metadata.thread_id`, but prompts/completions arrive as byte attributes (hex, unreadable transcript, no turn labels), interrupts are marked ERROR, middleware wrappers and the `tools` node count as extra tool calls, agent names only in `langsmith.metadata.lc_agent_name` (unread; LangSmith sets `gen_ai.operation.name` after start so a start-time processor can't fix it), and flush needs `wait_for_all_tracers()` (`langchain_core.tracers.langchain`) then `provider.force_flush()`. Don't recommend it.
-- LangChain.js/LangGraph.js: LangSmith JS OTel mode is experimental (`initializeOTEL()` deprecated) and the JS OpenInference instrumentor has no GenAI dual-write, so Maple ignores its `session.id` (one session per trace).
+- LangChain.js/LangGraph.js: covered in [references/typescript.md](references/typescript.md) (OpenInference JS + a `GenAiSpans` processor, since the JS instrumentor has no GenAI dual-write).
 
 Local check without Maple: add `SimpleSpanProcessor(ConsoleSpanExporter())` temporarily and confirm `gen_ai.conversation.id` is identical on every span of every turn of one conversation.
 

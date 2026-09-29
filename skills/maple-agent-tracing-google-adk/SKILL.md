@@ -1,13 +1,15 @@
 ---
 name: maple-agent-tracing-google-adk
-description: "Trace Google ADK (Agent Development Kit, Python) agents with Maple: register an OTLP tracer provider, switch ADK to GenAI message attributes so Maple shows the transcript, and keep one session per ADK session id. Triggers on 'trace my ADK agent', 'add Maple to Google ADK', 'agent sessions for Google ADK', 'OpenTelemetry for google-adk'."
+description: "Trace Google ADK (Agent Development Kit) agents with Maple, in Python (google-adk) and TypeScript (@google/adk): register an OTLP tracer provider, get the transcript and tool calls into the GenAI attributes Maple reads (env switches + a plugin in Python, a span processor in TypeScript), and keep one session per ADK session id. Triggers on 'trace my ADK agent', 'add Maple to Google ADK', 'add Maple to @google/adk', 'agent sessions for Google ADK', 'OpenTelemetry for google-adk'."
 ---
 
-# Maple agent tracing: Google ADK (Python)
+# Maple agent tracing: Google ADK (Python and TypeScript)
 
 Goal: one conversation = one ADK session id = one Maple Agent Session, with the transcript (user, assistant, tool calls and results), model calls, tool calls with arguments/results, failures, and tokens. Reasoning for every step: https://maple.dev/docs/agent-tracing/google-adk
 
 ADK emits its own OTel spans (scope `gcp.vertex.agent`): `invocation` > `invoke_agent {agent}` > `call_llm` > `generate_content {model}`, plus `execute_tool {tool}`. No instrumentation package is needed. You add: a tracer provider (Runner apps only), the env vars below, one plugin, one span processor.
+
+**TypeScript (`@google/adk` in `package.json`): follow [references/typescript.md](references/typescript.md) instead of Steps 0-7 below.** Step 1 (key and region) applies to both. ADK for TypeScript records content differently (Gemini-shaped JSON on `gcp.vertex.agent.*` attributes, no `generate_content` span), so the Python env switches and plugin do not apply there.
 
 ## Step 0: Detect versions and existing setup
 
@@ -161,7 +163,7 @@ Tell the user about the known gaps: cost is unpriced; the model is the requested
 
 ## Reference notes
 
-- Scope: ADK for Python. ADK for Go and Kotlin emit the same span names; their provider setup is not covered.
+- Scope: ADK for Python here, ADK for TypeScript in references/typescript.md. ADK for Go and Kotlin emit the same span names; their provider setup is not covered.
 - Expected trace per turn:
 
   ```text

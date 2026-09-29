@@ -7,6 +7,9 @@ navLabel: "OpenRouter"
 icon: "openrouter"
 ---
 
+import LanguageTabs from "../../../components/docs/LanguageTabs.astro"
+import LanguageTab from "../../../components/docs/LanguageTab.astro"
+
 OpenRouter Broadcast sends a trace of every request on your OpenRouter account to Maple, with tokens, cost, prompt and completion. You set it up once in the OpenRouter dashboard, then add a `session_id` to your requests. Without it, every model call is its own session.
 
 ## Quick setup with a coding agent
@@ -46,6 +49,9 @@ Leave the sampling rate at 1.0, since a lower rate drops whole conversations. Le
 
 Send a `session_id` field in the request body (or an `x-session-id` header). Use the same id on every request of a conversation, such as your chat thread id, and a new one for each conversation.
 
+<LanguageTabs label="Language" tabs={[{ id: "typescript", label: "TypeScript" }, { id: "python", label: "Python" }]}>
+<LanguageTab id="typescript">
+
 With the `openai` SDK in TypeScript, the field isn't in the types, so it needs a `@ts-expect-error`:
 
 ```ts
@@ -64,6 +70,24 @@ const completion = await client.chat.completions.create({
 })
 ```
 
+With the Vercel AI SDK, pass it under `providerOptions.openrouter`:
+
+```ts
+import { createOpenRouter } from "@openrouter/ai-sdk-provider"
+import { streamText } from "ai"
+
+const openrouter = createOpenRouter({ apiKey: process.env.OPENROUTER_API_KEY })
+
+const result = streamText({
+	model: openrouter("openai/gpt-4o-mini"),
+	messages,
+	providerOptions: { openrouter: { session_id: conversationId } },
+})
+```
+
+</LanguageTab>
+<LanguageTab id="python">
+
 In Python, use `extra_body`:
 
 ```py
@@ -80,26 +104,17 @@ completion = client.chat.completions.create(
 )
 ```
 
-With the Vercel AI SDK, pass it under `providerOptions.openrouter`:
-
-```ts
-import { createOpenRouter } from "@openrouter/ai-sdk-provider"
-import { streamText } from "ai"
-
-const openrouter = createOpenRouter({ apiKey: process.env.OPENROUTER_API_KEY })
-
-const result = streamText({
-	model: openrouter("openai/gpt-4o-mini"),
-	messages,
-	providerOptions: { openrouter: { session_id: conversationId } },
-})
-```
+</LanguageTab>
+</LanguageTabs>
 
 OpenRouter's own SDKs have a typed field: `sessionId` in `@openrouter/sdk` and `session_id=` in the `openrouter` Python package.
 
 ## Nest Broadcast under your own traces
 
 Skip this if OpenRouter is your only source of traces. If your app also sends its own traces to Maple, every model call is recorded twice. Pass the active span's ids in the `trace` field so OpenRouter places its spans inside your trace.
+
+<LanguageTabs label="Language" tabs={[{ id: "typescript", label: "TypeScript" }, { id: "python", label: "Python" }]}>
+<LanguageTab id="typescript">
 
 In TypeScript, wrap `fetch` and pass it to the client (`new OpenAI({ baseURL, apiKey, fetch: openRouterFetch })` or `createOpenRouter({ apiKey, fetch: openRouterFetch })`):
 
@@ -116,6 +131,9 @@ export const openRouterFetch: typeof fetch = (input, init) => {
 	return fetch(input, init)
 }
 ```
+
+</LanguageTab>
+<LanguageTab id="python">
 
 In Python, build the body next to `session_id`:
 
@@ -136,6 +154,9 @@ def openrouter_extra_body(conversation_id: str) -> dict:
 
 client.chat.completions.create(model=model, messages=messages, extra_body=openrouter_extra_body(conversation_id))
 ```
+
+</LanguageTab>
+</LanguageTabs>
 
 Use the same value for `session_id` as your framework's conversation id.
 
