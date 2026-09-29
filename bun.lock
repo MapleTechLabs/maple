@@ -653,6 +653,7 @@
         "@opentelemetry/sdk-trace-web": "^2.10.0",
         "@opentelemetry/semantic-conventions": "^1.43.0",
         "rrweb": "^2.0.0-alpha.18",
+        "web-vitals": "^6.2.2",
       },
       "devDependencies": {
         "@maple/browser-session": "workspace:*",

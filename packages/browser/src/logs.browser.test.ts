@@ -35,6 +35,8 @@ const BASE: InitConfig = {
 	endpoint: "https://ingest.test",
 	replay: { enabled: false },
 	tracing: { instrumentFetch: false },
+	// Covered in web-vitals.browser.test.ts; vitals report once per page and would leak across tests.
+	webVitals: false,
 }
 
 /** Document timing spans (`documentFetch`, `dns`, ...) are covered by their own tests. */

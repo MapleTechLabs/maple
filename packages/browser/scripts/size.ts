@@ -32,8 +32,11 @@ const BUDGET = {
 	 * core). Was 38 for navigation spans.
 	 */
 	eager: 43,
-	/** Every page load, after `init()`: the OTel logs SDK and exporter, document timing. */
-	deferred: 8,
+	/**
+	 * Every page load, after `init()`: the OTel logs SDK and exporter, document
+	 * timing, and `web-vitals` (~3.3 kB, 8 -> 12).
+	 */
+	deferred: 12,
 	lazy: 68,
 	/**
 	 * Our own eager code, with OpenTelemetry and rrweb left external.

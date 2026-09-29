@@ -74,7 +74,7 @@ Bundled, minified and gzipped, as your bundler would ship it:
 | ---------------- | ------- | --------------------------------------------------------- |
 | **eager**        | ~40 kB  | every page load, before any sampling decision             |
 | ↳ our code alone | ~16 kB  | the marginal cost if your app already ships OpenTelemetry |
-| **deferred**     | ~5 kB   | the OTel logs SDK, fetched right after `init()`           |
+| **deferred**     | ~9 kB   | logs SDK, Web Vitals, document timing, after `init()`     |
 | **lazy**         | ~61 kB  | rrweb — downloaded only by sessions sampled into replay   |
 
 The eager figure is ~90% OpenTelemetry. If your app already uses the OTel web
@@ -127,6 +127,12 @@ Calls before `init()` are queued.
 ```ts
 MapleBrowser.logger.info("checkout started", { "cart.items": 3 })
 ```
+
+## Web Vitals
+
+LCP, CLS, INP, FCP and TTFB are reported as `browser.web_vital` OpenTelemetry log events
+(browser semantic conventions), linked to the `pageload` span and the session. Opt out with
+`webVitals: false`.
 
 ## Trace sampling
 

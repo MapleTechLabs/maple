@@ -55,6 +55,7 @@ Every field accepted by `MapleBrowser.init`:
 | `tracing.captureErrors`                | `boolean`                 | `true`                                    | Record uncaught errors and unhandled rejections as error spans. See [Errors](#errors).                                                                                                                                                                    |
 | `tracing.propagateTraceHeaderCorsUrls` | `Array<string \| RegExp>` | `[]`                                      | Cross-origin URLs whose `fetch()` requests carry the `traceparent` header. See [Tracing across origins](#tracing-across-origins).                                                                                                                         |
 | `tracing.sampleRate`                   | `number`                  | `1`                                       | Fraction of sessions whose traces are exported, `0` to `1`. Decided per session; error spans are always exported. See [Sampling](#sampling).                                                                                                              |
+| `webVitals`                            | `boolean`                 | `true`                                    | Report Core Web Vitals as `browser.web_vital` log events. See [Web Vitals](#web-vitals).                                                                                                                                                                  |
 | `errors`                               | `ErrorFilterOptions`      | see [Filtering errors](#filtering-errors) | Drop captured errors by message, script URL, or a `beforeCapture` hook.                                                                                                                                                                                   |
 | `replay.enabled`                       | `boolean`                 | `true`                                    | Enable rrweb session recording.                                                                                                                                                                                                                           |
 | `replay.sampleRate`                    | `number`                  | `1`                                       | Fraction of sessions to record, `0` to `1`. Out-of-range values are clamped with a warning. See [Sampling](#sampling).                                                                                                                                    |
@@ -300,6 +301,25 @@ run. Once the page has loaded, the SDK adds child spans from the Navigation Timi
 | `loadEvent`     | the page's `load` handlers                                                  |
 
 Phases that didn't happen (a reused connection has no `dns` or `connect`) are skipped.
+
+## Web Vitals
+
+LCP, CLS, INP, FCP and TTFB are reported with the `web-vitals` library, each as an OpenTelemetry
+log-based event named `browser.web_vital`, following the browser semantic conventions:
+
+| Attribute                           | Example                          |
+| ----------------------------------- | -------------------------------- |
+| `browser.web_vital.name`            | `lcp`                            |
+| `browser.web_vital.value`           | `1830.4` (ms; CLS is unitless)   |
+| `browser.web_vital.delta`           | `1830.4`                         |
+| `browser.web_vital.id`              | `v5-1727600000000-1234567890123` |
+| `browser.web_vital.rating`          | `good`                           |
+| `browser.web_vital.navigation_type` | `navigate`                       |
+| `url.path`                          | `/projects/42`                   |
+
+Each event carries `session.id` and is linked to the page's `pageload` span when your router calls
+`startNavigation`. CLS, INP and LCP settle when the page is hidden, so they arrive then. Turn them off
+with `webVitals: false`.
 
 ## Tracing across origins
 

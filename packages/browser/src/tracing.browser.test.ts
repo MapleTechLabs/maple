@@ -56,6 +56,7 @@ const CONFIG = {
 	tracingSampleRate: 1,
 	tracingInstrumentXhr: false,
 	errorFilters: {},
+	webVitals: false,
 	sanitizeUrl: undefined,
 }
 

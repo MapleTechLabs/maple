@@ -80,6 +80,11 @@ export interface MapleBrowserConfig {
 		 */
 		readonly sampleRate?: number
 	}
+	/**
+	 * Report Core Web Vitals (LCP, CLS, INP, FCP, TTFB) as `browser.web_vital`
+	 * log events. Default true.
+	 */
+	readonly webVitals?: boolean
 	/** Which captured errors to drop before they are reported. See `ErrorFilterOptions`. */
 	readonly errors?: ErrorFilterOptions
 	readonly replay?: {
@@ -148,6 +153,7 @@ export interface ResolvedConfig {
 	readonly propagateTraceHeaderCorsUrls: ReadonlyArray<string | RegExp>
 	readonly tracingSampleRate: number
 	readonly errorFilters: ErrorFilterOptions
+	readonly webVitals: boolean
 	readonly replayEnabled: boolean
 	readonly replaySampleRate: number
 	readonly maskAllInputs: boolean
@@ -213,6 +219,7 @@ export function resolveConfig(config: MapleBrowserConfig): ResolvedConfig {
 		propagateTraceHeaderCorsUrls: config.tracing?.propagateTraceHeaderCorsUrls ?? [],
 		tracingSampleRate: resolveSampleRate("tracing.sampleRate", config.tracing?.sampleRate),
 		errorFilters: config.errors ?? {},
+		webVitals: config.webVitals ?? true,
 		replayEnabled: config.replay?.enabled ?? true,
 		replaySampleRate: resolveSampleRate("replay.sampleRate", config.replay?.sampleRate),
 		maskAllInputs: config.privacy?.maskAllInputs ?? true,
