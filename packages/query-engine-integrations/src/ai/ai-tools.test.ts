@@ -114,6 +114,17 @@ describe("tool call population", () => {
 		expect(sql).toContain("uniqExact(sessionKey) AS sessions")
 	})
 
+	it("counts the sessions list's population in the window's Sessions tile", () => {
+		const { sql } = compileUnionUnsafe(aiToolsTotalsQuery({}, ["window"]), totalsParams)
+
+		// The same per-trace rule the list applies, or the tile counts sessions
+		// the list does not show.
+		expect(sql).toContain(
+			"HAVING countIf((((SessionId != '' OR IsLlmCall = 1) OR IsToolCall = 1) OR AgentName != '')) > 0",
+		)
+		expect(sql).toContain(") AS window_traces")
+	})
+
 	it("scopes every level that reads the table to the org", () => {
 		// Two reads of `ai_trace_index` per aggregation level without a model
 		// filter: the tool calls and the trace facts. A model filter adds the
