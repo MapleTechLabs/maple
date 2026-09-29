@@ -20,7 +20,6 @@ import { Effect } from "effect"
 import { compileUnionUnsafe, compileUnsafe } from "@maple-dev/effect-clickhouse"
 import {
 	MAPLE_AI_SESSION_ID_ATTR,
-	MAPLE_AI_STAMP_ATTRS,
 	MAPLE_AI_TRACE_SESSION_PREFIX,
 	MAPLE_AI_VENDOR_ID_ATTR,
 	MAPLE_AI_VENDOR_VERSION_ATTR,
@@ -30,6 +29,7 @@ import * as Integrations from "@maple/query-engine-integrations"
 import type { AiSessionPageOpts } from "@maple/query-engine-integrations"
 import { normalizeSqlForClickHouseClient } from "@maple/query-engine/execution"
 import {
+	aiGatewayStamps,
 	applyRealMigrations,
 	clickhouseE2eEnabled,
 	clickhouseExec,
@@ -89,59 +89,6 @@ interface SeedSpan {
 
 const PRODUCTION = { "deployment.environment.name": "production" }
 
-/**
- * What the ingest gateway stamps on a span it classifies
- * (`apps/ingest/src/ai_session/facts.rs`, `usage.rs`), spelled out per seed as
- * the gateway would have written it: the view reads these and nothing else.
- * The seeds keep their dialect attributes so the detail reads below see whole
- * spans. `usage` is input, cache read, cache write, output, reasoning; a zero
- * bucket is left out, as the gateway leaves it out.
- */
-const gateway = (facts: {
-	readonly llmCall?: boolean
-	readonly toolCall?: boolean
-	readonly error?: boolean
-	readonly model?: string
-	readonly agentName?: string
-	readonly toolName?: string
-	readonly responseId?: string
-	readonly toolDescription?: string
-	readonly toolErrorResult?: string
-	readonly toolCallId?: string
-	readonly toolPaused?: boolean
-	readonly usage?: readonly [number, number, number, number, number]
-	readonly cost?: string
-}): Readonly<Record<string, string>> => {
-	const usage = [
-		MAPLE_AI_STAMP_ATTRS.inputTokens,
-		MAPLE_AI_STAMP_ATTRS.cacheReadTokens,
-		MAPLE_AI_STAMP_ATTRS.cacheWriteTokens,
-		MAPLE_AI_STAMP_ATTRS.outputTokens,
-		MAPLE_AI_STAMP_ATTRS.reasoningTokens,
-	].map((key, index): readonly [string, string | undefined] => {
-		const count = facts.usage?.[index] ?? 0
-		return [key, count > 0 ? String(count) : undefined]
-	})
-	const entries: ReadonlyArray<readonly [string, string | undefined]> = [
-		[MAPLE_AI_STAMP_ATTRS.llmCall, facts.llmCall ? "1" : "0"],
-		[MAPLE_AI_STAMP_ATTRS.model, facts.model],
-		[MAPLE_AI_STAMP_ATTRS.agentName, facts.agentName],
-		[MAPLE_AI_STAMP_ATTRS.toolName, facts.toolName],
-		[MAPLE_AI_STAMP_ATTRS.responseId, facts.responseId],
-		[MAPLE_AI_STAMP_ATTRS.toolDescription, facts.toolDescription],
-		[MAPLE_AI_STAMP_ATTRS.toolErrorResult, facts.toolErrorResult],
-		[MAPLE_AI_STAMP_ATTRS.toolCallId, facts.toolCallId],
-		[MAPLE_AI_STAMP_ATTRS.cost, facts.cost],
-		[MAPLE_AI_STAMP_ATTRS.toolCall, facts.toolCall ? "1" : undefined],
-		[MAPLE_AI_STAMP_ATTRS.error, facts.error ? "1" : undefined],
-		[MAPLE_AI_STAMP_ATTRS.toolPaused, facts.toolPaused ? "1" : undefined],
-		...usage,
-	]
-	return Object.fromEntries(
-		entries.filter((entry): entry is readonly [string, string] => entry[1] !== undefined),
-	)
-}
-
 // The turn-owning span of the eve session: the only one of its trace that
 // carries the session key, which is why resolution is per-TRACE. It names the
 // agent, and it ROLLS UP the usage of the chat call beneath it, bucket for
@@ -167,7 +114,7 @@ const AGENT_TURN_SPAN: SeedSpan = {
 		"gen_ai.usage.output_tokens": "50",
 		"gen_ai.usage.reasoning.output_tokens": "10",
 		"gen_ai.usage.cost": "0.02",
-		...gateway({ agentName: "slack-agent" }),
+		...aiGatewayStamps({ agentName: "slack-agent" }),
 	},
 	resource: PRODUCTION,
 }
@@ -197,7 +144,7 @@ const AGENT_CHAT_SPAN: SeedSpan = {
 		"gen_ai.usage.output_tokens": "50",
 		"gen_ai.usage.reasoning.output_tokens": "10",
 		"gen_ai.usage.cost": "0.02",
-		...gateway({
+		...aiGatewayStamps({
 			llmCall: true,
 			model: "claude-sonnet-5-20260101",
 			responseId: "gen-e2e-1",
@@ -233,7 +180,7 @@ const MIRROR_CALL_SPAN: SeedSpan = {
 		"gen_ai.usage.output_tokens": "50",
 		"gen_ai.usage.output_tokens.reasoning": "10",
 		"gen_ai.usage.total_cost": "0.03",
-		...gateway({
+		...aiGatewayStamps({
 			llmCall: true,
 			model: "claude-sonnet-5-20260101",
 			responseId: "gen-e2e-1",
@@ -258,7 +205,7 @@ const MIRROR_ATTEMPT_SPAN: SeedSpan = {
 		[MAPLE_AI_VENDOR_ID_ATTR]: "openrouter",
 		"gen_ai.operation.name": "chat",
 		"gen_ai.response.id": "gen-e2e-1:attempt-0",
-		...gateway({ llmCall: true, responseId: "gen-e2e-1:attempt-0" }),
+		...aiGatewayStamps({ llmCall: true, responseId: "gen-e2e-1:attempt-0" }),
 	},
 }
 
@@ -281,7 +228,7 @@ const AGENT_TOOL_SPAN: SeedSpan = {
 		"gen_ai.tool.name": "search_traces",
 		"error.type": "TimeoutError",
 		"gen_ai.tool.description": "Search traces by attribute.",
-		...gateway({
+		...aiGatewayStamps({
 			toolCall: true,
 			error: true,
 			toolName: "search_traces",
@@ -305,7 +252,7 @@ const AGENT_SDK_SPAN: SeedSpan = {
 	attrs: {
 		[MAPLE_AI_VENDOR_ID_ATTR]: "vercel_ai_sdk",
 		[MAPLE_AI_VENDOR_VERSION_ATTR]: "5",
-		...gateway({}),
+		...aiGatewayStamps({}),
 	},
 }
 
@@ -339,7 +286,7 @@ const AGENT_TURN_2_SPAN: SeedSpan = {
 		[MAPLE_AI_VENDOR_ID_ATTR]: "eve",
 		[MAPLE_AI_SESSION_ID_ATTR]: SESSION_ID,
 		"gen_ai.agent.name": "critic-agent",
-		...gateway({ agentName: "critic-agent" }),
+		...aiGatewayStamps({ agentName: "critic-agent" }),
 	},
 }
 
@@ -366,7 +313,7 @@ const SESSIONLESS_SPAN: SeedSpan = {
 		// The SDK re-sums the prompt, so the 4 cached are inside the 10.
 		"ai.usage.cachedInputTokens": "4",
 		"ai.usage.completionTokens": "5",
-		...gateway({ llmCall: true, error: true, model: "gpt-5", usage: [6, 4, 0, 5, 0] }),
+		...aiGatewayStamps({ llmCall: true, error: true, model: "gpt-5", usage: [6, 4, 0, 5, 0] }),
 	},
 	resource: { "deployment.environment": "staging" },
 }
@@ -394,7 +341,7 @@ const EARLY_TURN_SPAN: SeedSpan = {
 	attrs: {
 		[MAPLE_AI_VENDOR_ID_ATTR]: "eve",
 		[MAPLE_AI_SESSION_ID_ATTR]: SESSION_ID,
-		...gateway({}),
+		...aiGatewayStamps({}),
 	},
 }
 
@@ -421,7 +368,7 @@ const FOREIGN_SPAN: SeedSpan = {
 	ms: BASE_MS + 180_000,
 	service: "agent-service",
 	status: "Ok",
-	attrs: { [MAPLE_AI_VENDOR_ID_ATTR]: "eve", ...gateway({}) },
+	attrs: { [MAPLE_AI_VENDOR_ID_ATTR]: "eve", ...aiGatewayStamps({}) },
 }
 
 // One tool's calls under a third org, so no session read above sees them. The
@@ -450,7 +397,7 @@ const toolCallSpan = (
 		[MAPLE_AI_VENDOR_ID_ATTR]: "eve",
 		"gen_ai.operation.name": "execute_tool",
 		"gen_ai.tool.name": "submit_findings",
-		...gateway({ toolCall: true, toolName: "submit_findings" }),
+		...aiGatewayStamps({ toolCall: true, toolName: "submit_findings" }),
 		...fields.attrs,
 	},
 })
@@ -460,7 +407,7 @@ const MISSING_KEY_0_SPAN = toolCallSpan("span-tool-failure-1", 0, {
 	attrs: {
 		"error.type": "tool_error",
 		"gen_ai.tool.call.result": missingKeyResult(0),
-		...gateway({
+		...aiGatewayStamps({
 			toolCall: true,
 			error: true,
 			toolName: "submit_findings",
@@ -473,7 +420,7 @@ const MISSING_KEY_1_SPAN = toolCallSpan("span-tool-failure-2", 1_000, {
 	attrs: {
 		"error.type": "tool_error",
 		"gen_ai.tool.call.result": missingKeyResult(1),
-		...gateway({
+		...aiGatewayStamps({
 			toolCall: true,
 			error: true,
 			toolName: "submit_findings",
@@ -486,7 +433,7 @@ const MISSING_KEY_1_SPAN = toolCallSpan("span-tool-failure-2", 1_000, {
 const STATUS_ONLY_FAILURE_SPAN = toolCallSpan("span-tool-failure-3", 2_000, {
 	status: "Error",
 	statusMessage: "effect-agent.execute_tool: Tool execution reached a failed terminal state",
-	attrs: gateway({ toolCall: true, error: true, toolName: "submit_findings" }),
+	attrs: aiGatewayStamps({ toolCall: true, error: true, toolName: "submit_findings" }),
 })
 // The copy a call paused for a human's approval leaves: no failure and no
 // result. The approved run executes it again under the same id.
@@ -495,7 +442,7 @@ const TOOL_PAUSED_SPAN = toolCallSpan("span-tool-paused-1", 2_500, {
 	status: "Unset",
 	attrs: {
 		"gen_ai.tool.call.id": TOOL_CALL_ID,
-		...gateway({
+		...aiGatewayStamps({
 			toolCall: true,
 			toolName: "submit_findings",
 			toolCallId: TOOL_CALL_ID,
@@ -510,7 +457,7 @@ const TOOL_SUCCESS_SPAN = toolCallSpan("span-tool-success-1", 3_000, {
 	attrs: {
 		"gen_ai.tool.call.id": TOOL_CALL_ID,
 		"gen_ai.tool.call.result": JSON.stringify({ result: "3 findings recorded" }),
-		...gateway({ toolCall: true, toolName: "submit_findings", toolCallId: TOOL_CALL_ID }),
+		...aiGatewayStamps({ toolCall: true, toolName: "submit_findings", toolCallId: TOOL_CALL_ID }),
 	},
 })
 
@@ -554,7 +501,7 @@ const strandsTurn = (turn: number, agent: [number, number], chat: [number, numbe
 				"gen_ai.agent.name": "assistant",
 				"gen_ai.usage.input_tokens": String(agent[0]),
 				"gen_ai.usage.output_tokens": String(agent[1]),
-				...gateway({ agentName: "assistant" }),
+				...aiGatewayStamps({ agentName: "assistant" }),
 			},
 		},
 		{
@@ -565,7 +512,11 @@ const strandsTurn = (turn: number, agent: [number, number], chat: [number, numbe
 			ms: BASE_MS + 400_000 + turn * 10_000 + 1,
 			service: "strands-service",
 			status: "Ok",
-			attrs: { ...strands, "gen_ai.operation.name": "execute_event_loop_cycle", ...gateway({}) },
+			attrs: {
+				...strands,
+				"gen_ai.operation.name": "execute_event_loop_cycle",
+				...aiGatewayStamps({}),
+			},
 		},
 		{
 			traceId,
@@ -581,7 +532,11 @@ const strandsTurn = (turn: number, agent: [number, number], chat: [number, numbe
 				"gen_ai.request.model": "gpt-4o-mini",
 				"gen_ai.usage.input_tokens": String(chat[0]),
 				"gen_ai.usage.output_tokens": String(chat[1]),
-				...gateway({ llmCall: true, model: "gpt-4o-mini", usage: [chat[0], 0, 0, chat[1], 0] }),
+				...aiGatewayStamps({
+					llmCall: true,
+					model: "gpt-4o-mini",
+					usage: [chat[0], 0, 0, chat[1], 0],
+				}),
 			},
 		},
 	]
@@ -602,7 +557,7 @@ const NETTING_ORG_SPANS: ReadonlyArray<SeedSpan> = [
 			"gen_ai.operation.name": "chat",
 			"gen_ai.request.model": "openai/gpt-4o-mini",
 			"gen_ai.response.id": "gen-e2e-failed",
-			...gateway({
+			...aiGatewayStamps({
 				llmCall: true,
 				error: true,
 				model: "openai/gpt-4o-mini",
@@ -622,7 +577,7 @@ const NETTING_ORG_SPANS: ReadonlyArray<SeedSpan> = [
 			[MAPLE_AI_VENDOR_ID_ATTR]: "openrouter",
 			"gen_ai.operation.name": "chat",
 			"gen_ai.response.id": "gen-e2e-failed:attempt-0",
-			...gateway({ llmCall: true, error: true, responseId: "gen-e2e-failed:attempt-0" }),
+			...aiGatewayStamps({ llmCall: true, error: true, responseId: "gen-e2e-failed:attempt-0" }),
 		},
 	},
 ]
