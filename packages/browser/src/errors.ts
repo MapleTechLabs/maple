@@ -10,7 +10,8 @@
 // Error. That is the shape `error_events_mv` fingerprints on, so these arrive in
 // error tracking beside server-side errors rather than in a separate silo.
 import { scrubUrl } from "@maple/browser-session"
-import { type Span, SpanKind, SpanStatusCode } from "@opentelemetry/api"
+import { SpanKind } from "@opentelemetry/api"
+import { alreadyReported, recordFailure } from "./failures"
 import { mapleTracer } from "./tracing"
 import { SDK_NAME, SDK_VERSION } from "./version"
 
@@ -19,56 +20,6 @@ export interface CaptureExceptionOptions {
 	readonly name?: string | undefined
 	/** Extra span attributes. */
 	readonly attributes?: Record<string, string | number | boolean> | undefined
-}
-
-const asError = (value: unknown): Error => {
-	if (value instanceof Error) return value
-	if (typeof value === "string") return new Error(value)
-	if (typeof value === "object" && value !== null) {
-		const message = (value as { readonly message?: unknown }).message
-		if (typeof message === "string") return new Error(message)
-	}
-	// A rejected promise can carry literally anything. `String` keeps a number or
-	// a boolean legible; an unrenderable object still produces one grouped issue
-	// rather than throwing inside the error handler.
-	try {
-		return new Error(String(value))
-	} catch {
-		return new Error("Unknown error")
-	}
-}
-
-/**
- * Errors already reported, by identity. Module-level so the global handlers and
- * `captureException` share it: a framework boundary that reports an error and
- * then rethrows it would otherwise produce two issues for one crash.
- */
-let reported = new WeakSet<object>()
-
-/** Whether this exact error object was already recorded. */
-const alreadyReported = (error: unknown): boolean =>
-	typeof error === "object" && error !== null && reported.has(error)
-
-/** Test seam. */
-export function resetReportedErrorsForTests(): void {
-	reported = new WeakSet()
-}
-
-/**
- * Mark `span` as failed by `error`. The exception event goes on the first span
- * that records this error object; a later one (an outer `traced`, say) only
- * takes the Error status, so one error stays one issue. The error is claimed
- * only when the span is recording: before `init()` the tracer is a no-op, and
- * claiming it then would swallow the same error reported again once tracing is
- * live.
- */
-export function recordFailure(span: Span, error: unknown): void {
-	const normalized = asError(error)
-	if (!alreadyReported(error)) {
-		if (span.isRecording() && typeof error === "object" && error !== null) reported.add(error)
-		span.recordException(normalized)
-	}
-	span.setStatus({ code: SpanStatusCode.ERROR, message: normalized.message })
 }
 
 /** Record `error` on a one-off span. */

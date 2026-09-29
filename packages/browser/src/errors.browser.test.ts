@@ -2,7 +2,8 @@ import { assert, beforeEach, describe, it } from "vitest"
 import { SpanStatusCode, trace } from "@opentelemetry/api"
 import { BasicTracerProvider, InMemorySpanExporter, SimpleSpanProcessor } from "@opentelemetry/sdk-trace-base"
 import type { ReadableSpan } from "@opentelemetry/sdk-trace-base"
-import { captureException, resetReportedErrorsForTests, setupErrorCapture } from "./errors"
+import { captureException, setupErrorCapture } from "./errors"
+import { resetReportedErrorsForTests } from "./failures"
 
 const exporter = new InMemorySpanExporter()
 

@@ -30,6 +30,18 @@
 		".": {
 			"types": "./dist/index.d.mts",
 			"import": "./dist/index.mjs"
+		},
+		"./server": {
+			"types": "./dist/server.d.mts",
+			"import": "./dist/server.mjs"
+		},
+		"./nextjs": {
+			"types": "./dist/nextjs.d.mts",
+			"import": "./dist/nextjs.mjs"
+		},
+		"./nextjs/server": {
+			"types": "./dist/nextjs-server.d.mts",
+			"import": "./dist/nextjs-server.mjs"
 		}
 	},
 	"publishConfig": {
@@ -54,10 +66,28 @@
 	},
 	"devDependencies": {
 		"@maple/browser-session": "workspace:*",
+		"@opentelemetry/context-async-hooks": "^2.11.0",
+		"@types/react": "catalog:react",
+		"@types/react-dom": "catalog:react",
 		"@vitest/browser-playwright": "catalog:",
+		"next": "^16.3.6",
 		"playwright": "catalog:",
+		"react": "catalog:react",
+		"react-dom": "catalog:react",
 		"tsdown": "^0.23.0",
 		"typescript": "catalog:tooling",
 		"vitest": "catalog:"
+	},
+	"peerDependencies": {
+		"next": "*",
+		"react": "*"
+	},
+	"peerDependenciesMeta": {
+		"next": {
+			"optional": true
+		},
+		"react": {
+			"optional": true
+		}
 	}
 }

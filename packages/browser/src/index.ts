@@ -1,8 +1,9 @@
 import { type IdentifyInput, setConsent, type TrackProps, track } from "@maple/browser-session"
 import type { MapleBrowserConfig } from "./config"
 import { type CaptureExceptionOptions, captureException } from "./errors"
+import type { TracedOptions } from "./failures"
 import { identify, init, type MapleBrowserHandle } from "./init"
-import { endNavigation, startNavigation, type TracedOptions, traced } from "./navigation"
+import { endNavigation, startNavigation, traced } from "./navigation"
 
 export type {
 	IdentifyInput,
@@ -14,7 +15,7 @@ export type {
 export type { MapleBrowserConfig } from "./config"
 export type { CaptureExceptionOptions } from "./errors"
 export type { MapleBrowserHandle } from "./init"
-export type { TracedOptions } from "./navigation"
+export type { TracedOptions } from "./failures"
 
 /** The `MapleBrowser` namespace object. */
 export interface MapleBrowserApi {
@@ -50,6 +51,7 @@ export interface MapleBrowserApi {
 	/**
 	 * Run data loading, like a route loader, in a span under the current navigation.
 	 * Errors are recorded once and rethrown. Only requests started before `fn`'s first `await` nest under the span.
+	 * On the server, spans under the active server span through the global tracer.
 	 */
 	traced: <T>(name: string, fn: () => Promise<T>, options?: TracedOptions) => Promise<T>
 }
