@@ -96,7 +96,7 @@ const failureResult = (text: string, category: string): McpToolResult => ({
  */
 export const withFeedbackHint = (text: string, name: string, surface: McpToolSurface): string =>
 	surface === "mcp" && name !== "send_maple_feedback"
-		? `${text}\nIf this looks like a bug in Maple rather than in your call, report it with \`send_maple_feedback\`.`
+		? `${text}\nIf this looks like a bug in Maple rather than in your call, offer the user to report it with \`send_maple_feedback\`.`
 		: text
 
 /** Raw dispatcher. Executable handlers stay private so callers cannot omit the request tenant. */

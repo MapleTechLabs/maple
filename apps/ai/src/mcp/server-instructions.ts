@@ -4,5 +4,5 @@
  */
 export const MAPLE_MCP_SERVER_INSTRUCTIONS = [
 	"Maple is an OpenTelemetry observability platform. These tools read and manage the user's traces, logs, metrics, errors, alerts and dashboards. The `maple://instructions` resource has the detailed usage guide.",
-	"If Maple itself gets in your way (a tool errors in a way that looks like Maple's fault, returns something wrong, is missing a capability you needed, or its description misled you), report it with `send_maple_feedback`: say what kind of feedback it is, which agent you are, and why. Describe Maple's behaviour, not the user's data, and tell the user you sent it.",
+	"If Maple itself gets in your way (a tool errors in a way that looks like Maple's fault, returns something wrong, is missing a capability you needed, or its description misled you), offer the user to report it with `send_maple_feedback`: show them a one-line summary and send it once they agree, or right away if their instructions already allow it. Describe Maple's behaviour, not the user's data.",
 ].join("\n\n")

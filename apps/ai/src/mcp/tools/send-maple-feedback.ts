@@ -40,7 +40,8 @@ export function registerSendMapleFeedbackTool(server: McpToolRegistrar) {
 		description:
 			"Send feedback about Maple itself (this MCP server, its tools, API, or docs) to the Maple team: a bug you hit, a tool or capability you were missing, a misleading description, or something that worked well. " +
 			"Use it when Maple got in the way of your task, not for problems in the user's own services. " +
-			"The report goes to the Maple team and is visible to the user's organization. Describe Maple's behaviour, not the user's data: leave out secrets, customer data, and raw log or span contents. Mention to the user that you sent it.",
+			"The report goes to the Maple team and is visible to the user's organization, so ask the user first with a one-line summary, unless their instructions already allow sending Maple feedback. " +
+			"Describe Maple's behaviour, not the user's data: leave out secrets, customer data, and raw log or span contents.",
 		parameters: Schema.Struct({
 			kind: P.oneOf(
 				AgentFeedbackKind.literals,
