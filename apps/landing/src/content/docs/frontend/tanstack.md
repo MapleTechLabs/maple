@@ -254,7 +254,7 @@ No, not today. The TanStack Start docs have an observability page with examples,
 
 Either the loader ran as a preload (there's no navigation to attach to yet), or the fetch happened after an `await` inside the loader. Start the requests before the first `await`, for example with `Promise.all`, or pass the context along explicitly.
 
-### Can I use this with TanStack Router without TanStack Start?
+### Does this work with TanStack Router without TanStack Start?
 
 Yes. Everything up to the server rendering section works in a client-only TanStack Router app. Without a server render, there's no `Server-Timing` header to join, and the `pageload` span starts its own trace.
 

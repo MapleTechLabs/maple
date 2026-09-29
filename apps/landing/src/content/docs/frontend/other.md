@@ -7,7 +7,7 @@ navLabel: "Other frameworks"
 icon: "javascript"
 ---
 
-Use this guide when your frontend has no guide of its own: Solid, Qwik, Preact, Astro, Remix v2, Ember, Lit, a hand-rolled router, or a multi-page app. The setup is the same everywhere. What changes is where each piece plugs in, and this page shows how to find those places in your framework's API.
+Use this guide when your frontend has no guide of its own: Solid, Qwik, Preact, Remix v2, Ember, Lit, a hand-rolled router, or a multi-page app. The setup is the same everywhere. What changes is where each piece plugs in, and this page shows how to find those places in your framework's API.
 
 By the end, a click produces one trace with a span for the navigation, spans for the data it loads, the fetches those make, and the backend spans behind them.
 
@@ -45,7 +45,7 @@ MapleBrowser.init({
 })
 ```
 
-Import `./maple` first in the module that runs first in the browser: the client entry (`main.ts`, `index.tsx`, `entry-client.tsx`, `client.ts`), or a `<script>` in the base layout for server-first frameworks like Astro. It must run before the app renders and before other code that wraps `fetch`.
+Import `./maple` first in the module that runs first in the browser: the client entry (`main.ts`, `index.tsx`, `entry-client.tsx`, `client.ts`), or a `<script>` in the base layout for server-first frameworks and multi-page apps. It must run before the app renders and before other code that wraps `fetch`.
 
 `init()` sets up:
 

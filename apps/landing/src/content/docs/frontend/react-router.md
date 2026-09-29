@@ -316,7 +316,7 @@ Not directly. Since 7.15 it has a stable, vendor-neutral instrumentation API wit
 
 Usually one of three things: the loader ran for a fetcher, so there was no navigation; you're in framework mode and the user pressed back or forward; or the loader made its request after an `await`. Start requests before the first `await`, for example with `Promise.all`.
 
-### Can I trace navigations with `<BrowserRouter>`?
+### Does navigation tracing work with `<BrowserRouter>`?
 
 Only partly. Declarative mode has no loaders and no navigation state, so you can record that a route rendered, but not how long the navigation took. `createBrowserRouter` with `createRoutesFromElements` keeps your route components and gives you everything in this guide.
 
