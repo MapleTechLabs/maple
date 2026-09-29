@@ -5,6 +5,7 @@ import { defineConfig } from "astro/config"
 import { transformerNotationDiff, transformerNotationHighlight } from "@shikijs/transformers"
 import { unified } from "@astrojs/markdown-remark"
 import rehypeTableWrap from "./src/lib/rehype-table-wrap.mjs"
+import remarkInstallTabs from "./src/lib/remark-install-tabs.mjs"
 import { codeTheme } from "./src/lib/code-theme.mjs"
 import mdx from "@astrojs/mdx"
 import { paraglideVitePlugin } from "@inlang/paraglide-js"
@@ -99,7 +100,8 @@ export default defineConfig({
 	markdown: {
 		// Stay on the remark pipeline: Sätteri doesn't run the Shiki transformers
 		// configured below. Revisit when the transformer story lands there.
-		processor: unified({ rehypePlugins: [rehypeTableWrap] }),
+		// MDX inherits these plugins.
+		processor: unified({ remarkPlugins: [remarkInstallTabs], rehypePlugins: [rehypeTableWrap] }),
 		shikiConfig: {
 			theme: codeTheme,
 			wrap: true,

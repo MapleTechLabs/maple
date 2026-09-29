@@ -213,8 +213,9 @@ The `ghcr.io/berriai/litellm` image works as is. A pip-installed proxy needs the
 ```bash
 pip install "litellm[proxy]==1.103.0" "opentelemetry-sdk==1.43.0" \
   "opentelemetry-exporter-otlp-proto-http==1.43.0" "opentelemetry-instrumentation-fastapi==0.64b0"
-litellm --config config.yaml
 ```
+
+Then start it with `litellm --config config.yaml`.
 
 In your app, keep `agent_span` and `run_tool`, drop the LiteLLM logger from `tracing.py`, and send `traceparent` and `x-litellm-session-id` with every request:
 
