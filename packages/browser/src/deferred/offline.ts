@@ -83,33 +83,48 @@ export function startOfflineQueue(config: ResolvedConfig): OfflineQueue {
 			await settle(batches.delete(key))
 	}
 
-	let resending = false
-	const resend = async (): Promise<void> => {
-		if (resending || !hasConsent() || (typeof navigator !== "undefined" && navigator.onLine === false))
-			return
-		resending = true
+	/** Send what is stored, oldest first. Stops at the first failure, keeping the rest. */
+	const drain = async (): Promise<void> => {
+		const read = await store("readonly")
+		const stored = read ? (await settle(read.getAll())).filter(isStoredBatch) : []
+		for (const batch of stored) {
+			// Expired, or captured before the current consent grant (a revoke this queue never saw): drop it.
+			if (Date.now() - batch.createdAt <= MAX_AGE_MS && batch.createdAt >= consentAllowedSince()) {
+				const response = await fetch(`${config.endpoint}/v1/${batch.signal}`, {
+					method: "POST",
+					headers,
+					body: new Uint8Array(batch.body),
+				}).catch(() => undefined)
+				// Offline again, or ingest is down: keep the rest for next time.
+				if (!response || response.status >= 500 || response.status === 429) return
+			}
+			const write = await store("readwrite")
+			if (write) await settle(write.delete(batch.id))
+		}
+	}
+
+	/** The resend in flight: a second call joins it rather than returning before it is done. */
+	let inflight: Promise<void> | undefined
+	const run = async (): Promise<void> => {
 		try {
-			const read = await store("readonly")
-			const stored = read ? (await settle(read.getAll())).filter(isStoredBatch) : []
-			for (const batch of stored) {
-				// Expired, or captured before the current consent grant (a revoke this queue never saw): drop it.
-				if (Date.now() - batch.createdAt <= MAX_AGE_MS && batch.createdAt >= consentAllowedSince()) {
-					const response = await fetch(`${config.endpoint}/v1/${batch.signal}`, {
-						method: "POST",
-						headers,
-						body: new Uint8Array(batch.body),
-					}).catch(() => undefined)
-					// Offline again, or ingest is down: keep the rest for next time.
-					if (!response || response.status >= 500 || response.status === 429) return
-				}
-				const write = await store("readwrite")
-				if (write) await settle(write.delete(batch.id))
+			// The store is shared by every tab of the origin: tabs drain it in turn, and a
+			// later one finds what an earlier one sent already deleted.
+			if (typeof navigator !== "undefined" && navigator.locks) {
+				await navigator.locks.request(`${DB_NAME}-resend`, () => drain())
+			} else {
+				await drain()
 			}
 		} catch {
 			// Storage went away mid-resend; the batches stay for the next attempt.
-		} finally {
-			resending = false
 		}
+	}
+	const resend = (): Promise<void> => {
+		if (!hasConsent() || (typeof navigator !== "undefined" && navigator.onLine === false))
+			return Promise.resolve()
+		inflight ??= run().finally(() => {
+			inflight = undefined
+		})
+		return inflight
 	}
 
 	const clear = async (): Promise<void> => {

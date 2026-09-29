@@ -52,7 +52,12 @@ export function frameUrls(stack: string | undefined): string[] {
 }
 
 const matches = (value: string, patterns: ReadonlyArray<string | RegExp>): boolean =>
-	patterns.some((pattern) => (typeof pattern === "string" ? value.includes(pattern) : pattern.test(value)))
+	patterns.some((pattern) => {
+		if (typeof pattern === "string") return value.includes(pattern)
+		// A `g`/`y` regex is stateful: `test` advances `lastIndex`, so reset it first.
+		pattern.lastIndex = 0
+		return pattern.test(value)
+	})
 
 let options: ErrorFilterOptions = {}
 

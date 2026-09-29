@@ -541,10 +541,14 @@ Bodies have no semantic-convention attribute, so they stay on the session replay
 and only for the URLs you list:
 
 ```ts
-replay: { networkBodies: { urls: [/^https:\/\/api\.example\.com\/checkout/], maxLength: 10_000 } }
+replay: {
+	networkBodies: {
+		urls: [/^https:\/\/api\.example\.com\/checkout/]
+	}
+}
 ```
 
-Only text and JSON bodies are kept, each cut to `maxLength` characters. The response is read from a
+Only text and JSON bodies are kept, each cut to `maxLength` characters (at most and by default 1,000: ingest stores up to 1 KB per body). The response is read from a
 clone in the background, only as far as `maxLength`, so your code gets it untouched and unwaited. Nothing is captured with
 `privacy.maskAllText`. Bodies can hold personal data: list only endpoints whose payloads you are
 allowed to record.

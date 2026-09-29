@@ -10,6 +10,9 @@ import {
 import type { ErrorFilterOptions } from "./error-filters"
 import { type HeaderCapture, resolveHeaderCapture } from "./http-headers"
 
+/** Ingest keeps 1,024 bytes of a session-event attribute; this leaves room for the cut marker. */
+const MAX_BODY_LENGTH = 1_000
+
 export type ConsoleLevel = "debug" | "log" | "info" | "warn" | "error"
 
 /** Public configuration for `MapleBrowser.init`. */
@@ -147,9 +150,10 @@ export interface MapleBrowserConfig {
 		 */
 		readonly canvasFps?: number
 		/**
-		 * Keep request and response bodies (text and JSON only, cut to
-		 * `maxLength`, default 10,000 characters) on the replay's network events
-		 * for these URLs. Nothing is captured for other URLs, or with
+		 * Keep request and response bodies (text and JSON only) on the replay's
+		 * network events for these URLs, cut to `maxLength` characters. Ingest
+		 * keeps at most 1,024 bytes of each, so `maxLength` is capped at 1,000
+		 * (the default). Nothing is captured for other URLs, or with
 		 * `privacy.maskAllText`.
 		 */
 		readonly networkBodies?: {
@@ -308,7 +312,10 @@ export function resolveConfig(config: MapleBrowserConfig): ResolvedConfig {
 		networkBodies: config.replay?.networkBodies?.urls.length
 			? {
 					urls: config.replay.networkBodies.urls,
-					maxLength: config.replay.networkBodies.maxLength ?? 10_000,
+					maxLength: Math.min(
+						MAX_BODY_LENGTH,
+						config.replay.networkBodies.maxLength ?? MAX_BODY_LENGTH,
+					),
 				}
 			: undefined,
 		captureHeaders: resolveHeaderCapture(config.tracing?.captureHeaders),
