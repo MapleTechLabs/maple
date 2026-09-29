@@ -6,6 +6,8 @@ export default defineConfig({
 		server: "./src/server.ts",
 		nextjs: "./src/nextjs/index.ts",
 		"nextjs-server": "./src/nextjs/server.ts",
+		"react-router": "./src/react-router/index.ts",
+		"react-router-server": "./src/react-router/server.ts",
 	},
 	format: "esm",
 	// Types are emitted by tsgo in one pass rooted at the tsconfig's directory,

@@ -340,6 +340,81 @@ export const config = {
 - `withMapleProxy` keeps a `traceparent` the request already carries, as client navigations do, and only changes responses that go on to a render in your app. Redirects and responses your proxy builds itself pass through unchanged. If a shared cache such as a CDN stores prerendered pages, leave them out of the matcher, or every visitor joins the same trace.
 - Server Components can time database and SDK calls with `traced` from `@maple-dev/browser/server`. Pass `isFailure: () => false`: Next.js records an error thrown from a Server Component on its render span, and `redirect()` and `notFound()` work by throwing.
 
+## React Router integration
+
+`@maple-dev/browser/react-router` connects React Router 7.15 or later to the navigation spans, with a span for every loader and action, and `@maple-dev/browser/react-router/server` traces framework mode's server render. In data mode, pass the instrumentation to the router you create, and subscribe to it right after:
+
+```tsx
+// src/main.tsx
+import {
+	dataRouterInstrumentation,
+	reportRouteError,
+	traceNavigations,
+} from "@maple-dev/browser/react-router"
+import { createBrowserRouter } from "react-router"
+import { RouterProvider } from "react-router/dom"
+
+const router = createBrowserRouter(routes, { instrumentations: [dataRouterInstrumentation] })
+traceNavigations(router)
+
+createRoot(document.getElementById("root")!).render(
+	<RouterProvider router={router} onError={reportRouteError} />,
+)
+```
+
+In framework mode, React Router creates the router, so pass the framework instrumentation to `HydratedRouter`, and end the page load in the root route's `Layout`, which also wraps the root `ErrorBoundary`:
+
+```tsx
+// app/entry.client.tsx
+import { frameworkInstrumentation, reportRouteError } from "@maple-dev/browser/react-router"
+
+startTransition(() => {
+	hydrateRoot(
+		document,
+		<HydratedRouter instrumentations={[frameworkInstrumentation]} onError={reportRouteError} />,
+	)
+})
+```
+
+```tsx
+// app/root.tsx
+import { useMaplePageload } from "@maple-dev/browser/react-router"
+
+export function Layout({ children }: { children: React.ReactNode }) {
+	useMaplePageload()
+	// ...the rest of the generated Layout
+}
+```
+
+Then trace the server render and hand its trace to the page load, in `app/entry.server.tsx`:
+
+```tsx
+// app/entry.server.tsx
+import { serverInstrumentation } from "@maple-dev/browser/react-router/server"
+import { serverTiming } from "@maple-dev/browser/server"
+
+export { handleError } from "@maple-dev/browser/react-router/server"
+export const instrumentations = [serverInstrumentation]
+
+export default function handleRequest(
+	request: Request,
+	responseStatusCode: number,
+	responseHeaders: Headers /* , ... */,
+) {
+	const timing = serverTiming()
+	if (timing) responseHeaders.append("server-timing", timing)
+	// ...the rest of the generated handleRequest
+}
+```
+
+- Spans are named after the route pattern, like `navigate /projects/:id`, and loader and action spans after the route id, like `loader routes/project`. In data mode, route ids default to positions like `0-1`, so give routes with loaders an `id`. A URL no route matches is named after the root route, `/`.
+- In data mode, a redirect or a click while loaders run continues the same span, named after the route the user lands on. In framework mode, the next click ends the earlier span as interrupted, a redirected navigation is named after the route that was clicked, and back and forward aren't traced.
+- Hash changes, revalidations and fetcher loads start no span. Only a thrown `Error` fails a loader span: `redirect()`, `data()` and thrown responses don't.
+- `reportRouteError` skips thrown responses, like a loader's 404, and errors a loader span already recorded. If you have your own `onError`, call it from there.
+- `handleError` logs like React Router's default and records render errors on the request span, which fails with the 500. If you have your own `handleError`, call it from there instead of logging.
+- `serverInstrumentation` needs the server's OpenTelemetry setup, like the Node SDK loaded with `--import`. The request span nests under its HTTP span and is active while `handleRequest` runs.
+- Framework mode names navigations and server requests after the route since React Router 8.1. Earlier versions don't report the matched pattern, so those spans keep their plain names.
+
 ## Custom events
 
 `track(name, props)` records a product event against the current session. It appears inline in the session transcript next to the clicks and network calls around it, and counts as a [product event](/docs/product-events/overview).
@@ -472,6 +547,8 @@ import { App } from "./App"
 
 createRoot(document.getElementById("root")!).render(<App />)
 ```
+
+With React Router, see [React Router integration](#react-router-integration) for navigation and loader spans. In framework mode, import `./maple` first in `app/entry.client.tsx`.
 
 ### Next.js
 

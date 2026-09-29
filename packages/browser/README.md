@@ -249,6 +249,76 @@ export const config = { matcher: ["/((?!api|_next/static|_next/image|favicon.ico
 - The browser follows the server's sampling decision: a page load under an
   unsampled server trace isn't recorded.
 
+## React Router
+
+`@maple-dev/browser/react-router` wires React Router 7.15+ to the navigation
+spans, with a span per loader and action. Data mode (`createBrowserRouter`):
+
+```tsx
+import {
+	dataRouterInstrumentation,
+	reportRouteError,
+	traceNavigations,
+} from "@maple-dev/browser/react-router"
+
+const router = createBrowserRouter(routes, { instrumentations: [dataRouterInstrumentation] })
+traceNavigations(router)
+
+createRoot(root).render(<RouterProvider router={router} onError={reportRouteError} />)
+```
+
+Framework mode:
+
+```tsx
+// app/entry.client.tsx
+import { frameworkInstrumentation, reportRouteError } from "@maple-dev/browser/react-router"
+
+hydrateRoot(
+	document,
+	<HydratedRouter instrumentations={[frameworkInstrumentation]} onError={reportRouteError} />,
+)
+```
+
+```tsx
+// app/root.tsx: ends the page load once the page hydrates
+import { useMaplePageload } from "@maple-dev/browser/react-router"
+
+export function Layout({ children }: { children: React.ReactNode }) {
+	useMaplePageload()
+	// ...
+}
+```
+
+```tsx
+// app/entry.server.tsx
+import { serverInstrumentation } from "@maple-dev/browser/react-router/server"
+import { serverTiming } from "@maple-dev/browser/server"
+
+export { handleError } from "@maple-dev/browser/react-router/server"
+export const instrumentations = [serverInstrumentation]
+
+export default function handleRequest(request: Request, status: number, headers: Headers /* , ... */) {
+	const timing = serverTiming() // joins the page load to this request's trace
+	if (timing) headers.append("server-timing", timing)
+	// ...
+}
+```
+
+- Spans are named after the route pattern, like `navigate /projects/:id`, and
+  loader spans after the route id, like `loader routes/project`. A URL no route
+  matches is named after the root, `/`.
+- Data mode keeps a redirect or a click during loading in one span, named after
+  the route it landed on. Framework mode ends the earlier click as
+  `app.navigation.interrupted`, names a redirect after the route clicked, and
+  doesn't trace back and forward.
+- Hash changes, revalidations and fetcher loads start no span. Only thrown
+  `Error`s fail a loader span: `redirect()` and thrown responses don't.
+- `reportRouteError` skips thrown responses and errors a loader span recorded.
+  `handleError` logs like React Router's default and records render errors on
+  the request span.
+- Framework mode names navigations and server requests after the route since
+  React Router 8.1, which added the matched pattern to its instrumentation.
+
 ## Linking a marketing site to your app
 
 The visitor id lives in localStorage **and** a cookie scoped to your registered
