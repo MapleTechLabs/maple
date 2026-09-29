@@ -80,6 +80,11 @@ describe("shouldCapture", () => {
 		).toBe(false)
 	})
 
+	it("drops every matching error with a global regex, not every other one", () => {
+		configureErrorFilters({ ignore: [/chunk/gi] })
+		expect([1, 2, 3].map(() => check(errorWith("Loading chunk failed")))).toEqual([false, false, false])
+	})
+
 	it("matches allowUrls and denyUrls against the top frame only", () => {
 		configureErrorFilters({ denyUrls: ["cdn.test"] })
 		expect(check(errorWith("x", V8_STACK))).toBe(true)
