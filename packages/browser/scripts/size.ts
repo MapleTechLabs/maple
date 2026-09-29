@@ -24,7 +24,7 @@ import { gzipSync } from "node:zlib"
 /** Ceilings in gzipped KB. Raise deliberately, with the reason in the commit. */
 const BUDGET = {
 	/**
-	 * 43.5 since 2026-09: `sendFeedback` (~0.3 kB). 43: XHR spans and the HTTP status policy, which must patch
+	 * 43.5 since 2026-09: the offline queue's exporter wrapper (~0.2 kB). 43: XHR spans and the HTTP status policy, which must patch
 	 * before the app's first request (~1.5 kB). Document timing went to the
 	 * deferred chunk instead. 42: error filters and cause chains. 41 before that:
 	 * per-session trace sampling and the `logger` queue added ~2.4 kB (~1.2 kB
@@ -64,7 +64,7 @@ const BUDGET = {
 	 * (~0.5 kB), both needed before the deferred chunk lands. 17 for error
 	 * filters and cause chains (~0.8 kB), which run on the capture path. 17.5
 	 * for `errors.captureHttpStatus`, applied by the span exporter. 18 for the
-	 * `sendFeedback` API.
+	 * offline queue's exporter wrapper.
 	 */
 	firstParty: 18,
 }
