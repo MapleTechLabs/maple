@@ -4010,7 +4010,7 @@ fn attr_map(attributes: &[KeyValue]) -> Map<String, Value> {
     out
 }
 
-fn any_value_string(value: &AnyValue) -> String {
+pub(crate) fn any_value_string(value: &AnyValue) -> String {
     match value.value.as_ref() {
         Some(any_value::Value::StringValue(value)) => value.clone(),
         Some(any_value::Value::BoolValue(value)) => value.to_string(),

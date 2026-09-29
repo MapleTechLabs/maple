@@ -39,6 +39,7 @@ import { migration_0031_ai_trace_index_list_columns } from "./0031_ai_trace_inde
 import { migration_0032_ai_trace_index_tool_detail_columns } from "./0032_ai_trace_index_tool_detail_columns"
 import { migration_0033_ai_crawler_requests } from "./0033_ai_crawler_requests"
 import { migration_0034_trace_facets_hourly, traceFacetsHourlyBackfill } from "./0034_trace_facets_hourly"
+import { migration_0035_ai_trace_index_gateway_stamps } from "./0035_ai_trace_index_gateway_stamps"
 import { latestSnapshotStatements } from "../../generated/clickhouse-schema"
 import { clickHouseSchemaVersion, latestMigrationVersion, migrations } from "./index"
 
@@ -56,10 +57,10 @@ describe("ClickHouse migrations", () => {
 	it("keeps migrations ordered by version", () => {
 		expect(migrations.map((m) => m.version)).toEqual([
 			1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27,
-			28, 29, 30, 31, 32, 33, 34,
+			28, 29, 30, 31, 32, 33, 34, 35,
 		])
-		expect(migrations.at(-1)).toBe(migration_0034_trace_facets_hourly)
-		expect(latestMigrationVersion).toBe(34)
+		expect(migrations.at(-1)).toBe(migration_0035_ai_trace_index_gateway_stamps)
+		expect(latestMigrationVersion).toBe(35)
 		// 0010 and 0014-0020 are read-path only and skipped by the ingest-gating
 		// version; 0021 is not — the gateway writes `session_events`' new identity
 		// columns and `product_events` directly, so a BYO-CH org must apply it
@@ -96,6 +97,8 @@ describe("ClickHouse migrations", () => {
 		expect(migration_0033_ai_crawler_requests.requiredForIngest).toBe(false)
 		// 0034 adds the MV-populated trace_facets_hourly.
 		expect(migration_0034_trace_facets_hourly.requiredForIngest).toBe(false)
+		// 0035 only recreates the MV-populated ai_trace_index's view.
+		expect(migration_0035_ai_trace_index_gateway_stamps.requiredForIngest).toBe(false)
 	})
 
 	it("recreates both error-events MVs with the span-attribute exception fallback", () => {
@@ -920,5 +923,37 @@ describe("migration 0032 — ai_trace_index tool detail columns", () => {
 	it("does not backfill and does not gate ingest", () => {
 		expect(migration.requiredForIngest).toBe(false)
 		expect(migration.statements.some(isBackfill)).toBe(false)
+	})
+})
+
+describe("migration 0035 — ai_trace_index_mv projects the gateway's stamps", () => {
+	it("recreates the view over the maple_ai.* stamps, with no dialect key and no convention", () => {
+		const [drop, create, ...rest] = migration_0035_ai_trace_index_gateway_stamps.statements
+		expect(rest).toEqual([])
+		expect(drop).toBe("DROP VIEW IF EXISTS ai_trace_index_mv")
+		expect(create).toBe(latestSnapshotStatements.find((stmt) => stmt.includes("ai_trace_index_mv TO")))
+		for (const projection of [
+			"SpanAttributes['maple_ai.model'] AS Model",
+			"SpanAttributes['maple_ai.agent.name'] AS AgentName",
+			"SpanAttributes['maple_ai.tool.name'] AS ToolName",
+			"toUInt8(SpanAttributes['maple_ai.error'] = '1') AS IsError",
+			"toUInt8(SpanAttributes['maple_ai.llm_call'] = '1') AS IsLlmCall",
+			"toUInt8(SpanAttributes['maple_ai.tool_call'] = '1') AS IsToolCall",
+			"toFloat64OrZero(SpanAttributes['maple_ai.usage.cost']) AS Cost",
+			"SpanAttributes['maple_ai.response.id'] AS ResponseId",
+			"toFloat64OrZero(SpanAttributes['maple_ai.usage.input_tokens']) AS InputTokens",
+			"SpanAttributes['maple_ai.tool.description'] AS ToolDescription",
+			"SpanAttributes['maple_ai.tool.error_result'] AS FailedToolCallResult",
+		]) {
+			expect(create).toContain(projection)
+		}
+		// The only attribute keys read are the gateway's, `error.type`, and the
+		// resource's environment.
+		const keys = [...create.matchAll(/Attributes\['([^']+)'\]/g)].map(([, key]) => key)
+		expect(new Set(keys.filter((key) => !key.startsWith("maple_ai.")))).toEqual(
+			new Set(["deployment.environment.name", "deployment.environment", "error.type"]),
+		)
+		expect(create).not.toContain("multiIf")
+		expect(create).not.toContain("LIKE")
 	})
 })

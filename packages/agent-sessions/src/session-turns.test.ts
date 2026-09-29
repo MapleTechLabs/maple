@@ -11,7 +11,7 @@ import {
 	userMessages,
 } from "./span-test-support"
 import { buildSessionSummary } from "./session-summary"
-import { buildSessionTurns, classifyAiSpan, isLlmCall, spanTtftMs } from "./session-turns"
+import { buildSessionTurns, classifyAiSpan, isLlmCall, spanFailed, spanTtftMs } from "./session-turns"
 
 const SECOND = 1000
 
@@ -600,6 +600,38 @@ describe("isLlmCall", () => {
 
 		expect(classifyAiSpan(embedding)).toBe("inference")
 		expect(isLlmCall(embedding)).toBe(false)
+	})
+})
+
+describe("the ingest gateway's verdicts", () => {
+	const stamped = (spanName: string, genAi: AiSessionSpan["genAi"]) =>
+		makeSpan({ spanId: "a", startMs: 0, durationMs: 1, spanName, vendorId: "unknown:genai", genAi })
+
+	it("decide a stamped span, whatever its operation and name say", () => {
+		// ADK's `call_llm` names a model over its `generate_content` child.
+		const wrapper = stamped("call_llm", { responseModel: "gemini-2.5", mapleLlmCall: 0 })
+		expect(classifyAiSpan(wrapper)).toBe("agent")
+		expect(isLlmCall(wrapper)).toBe(false)
+		// A LiteLLM `acompletion` is the call, outside the convention's operations.
+		const call = stamped("litellm_request", { operationName: "acompletion", mapleLlmCall: 1 })
+		expect(classifyAiSpan(call)).toBe("inference")
+		expect(isLlmCall(call)).toBe(true)
+		const tool = stamped("search_docs", { mapleLlmCall: 0, mapleToolCall: 1 })
+		expect(classifyAiSpan(tool)).toBe("tool")
+		// Embeddings stay inference time, never a call.
+		expect(classifyAiSpan(stamped("embed", { operationName: "embeddings", mapleLlmCall: 0 }))).toBe(
+			"inference",
+		)
+	})
+
+	it("decide whether a stamped span failed", () => {
+		expect(spanFailed(stamped("execute_tool", { mapleLlmCall: 0, mapleError: 1 }))).toBe(true)
+		// The gateway already weighed the span's own `error.type`.
+		expect(spanFailed(stamped("execute_tool", { mapleLlmCall: 0, errorType: "Timeout" }))).toBe(false)
+		// A span before the gateway stamped: the attribute rule.
+		expect(
+			spanFailed(makeSpan({ spanId: "a", startMs: 0, durationMs: 1, genAi: { errorType: "Timeout" } })),
+		).toBe(true)
 	})
 })
 

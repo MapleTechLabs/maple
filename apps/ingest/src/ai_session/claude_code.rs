@@ -4,8 +4,8 @@
 //! Claude Code (`com.anthropic.claude_code.tracing`) names its facts in its own
 //! vocabulary — `input_tokens`, `tool_name`, `user_prompt` — and puts a tool's
 //! output in a `tool.output` span event. Every reader of an agent span keys on
-//! `gen_ai.*`: the `ai_trace_index` materialized view settles usage and kind at
-//! insert from fixed key lists, and the read side never sees span events. So the
+//! `gen_ai.*`: the gateway's own facts pass (`facts.rs`) and the detail page read
+//! fixed key lists, and the read side never sees span events. So the
 //! restatement happens here, once, where the span is still whole, rather than as
 //! a dialect every reader (the view, the integrations layer, a BYO-ClickHouse
 //! schema) has to learn — and an index row materialized without it could never
@@ -188,6 +188,7 @@ pub(super) fn fold_tool_failures(request: &mut ExportTraceServiceRequest, failur
                     .push(owned("gen_ai.tool.call.result", result));
             }
         }
+        super::facts::mark_tool_failed(span);
     }
 }
 

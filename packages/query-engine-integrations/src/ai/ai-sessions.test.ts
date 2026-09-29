@@ -1425,10 +1425,26 @@ describe("aiSessionSummaryQuery", () => {
 	it("guards every usage sum against a non-finite attribute", () => {
 		const { sql } = compileUnsafe(aiSessionSummaryQuery(), summaryParams)
 		for (const alias of ["inputTokens", "llmInputTokens", "cost", "llmCost"]) {
-			expect(sql, alias).toMatch(
-				new RegExp(`ifNotFinite\\(sum(If)?\\(toFloat64OrZero\\([^\\n]*, 0\\) AS ${alias},`),
-			)
+			expect(sql, alias).toMatch(new RegExp(`ifNotFinite\\(sum(If)?\\([^\\n]*, 0\\) AS ${alias},`))
 		}
+	})
+
+	it("reads a span the gateway stamped by its verdicts, names and buckets", () => {
+		const { sql } = compileUnsafe(aiSessionSummaryQuery(), summaryParams)
+		const stamped = "SpanAttributes['maple_ai.llm_call'] != ''"
+		// The gateway's prompt not read from cache, else the reported prompt.
+		expect(sql).toContain(
+			`if(${stamped}, toFloat64OrZero(coalesce(nullIf(SpanAttributes['maple_ai.usage.input_tokens'], ''), '')) + toFloat64OrZero(coalesce(nullIf(SpanAttributes['maple_ai.usage.cache_write_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens'], '')`,
+		)
+		// A model call and a tool call by the gateway's verdict, else by the
+		// op/model rules; a failure by its verdict or the span's status.
+		expect(sql).toContain(`countIf((SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (${stamped}) AND `)
+		expect(sql).toContain(`countIf((SpanAttributes['maple_ai.tool_call'] = '1' OR (NOT (${stamped}) AND `)
+		expect(sql).toContain(
+			`countIf(((StatusCode = 'Error' OR SpanAttributes['maple_ai.error'] = '1') OR ((NOT (${stamped}) AND `,
+		)
+		expect(sql).toContain(`if(${stamped}, SpanAttributes['maple_ai.model'], `)
+		expect(sql).toContain(`if(${stamped}, SpanAttributes['maple_ai.agent.name'], `)
 	})
 
 	it("reads the whole session's measures ungrouped, under the same detection", () => {

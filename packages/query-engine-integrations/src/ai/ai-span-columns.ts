@@ -10,7 +10,10 @@
 //   charges each reporter to its nearest reporting ancestor and keeps only the
 //   excess; {@link sessionUsageSum} is that rule in SQL, over the trace's
 //   index rows ({@link usageLinksExpr}): Strands puts an event-loop span
-//   between the agent and its calls, the Vercel AI SDK a step span.
+//   between the agent and its calls, the Vercel AI SDK a step span. Since
+//   migration 0035 the index reads usage the ingest gateway stamped on the
+//   model call alone, so on rows materialized after it no wrapper reports and
+//   the netting changes nothing; it serves the older rows until they age out.
 // - A sub-step of a call: a gateway records its provider attempts as model
 //   spans under the model span (OpenRouter's `provider attempt N`), and an SDK
 //   wraps `doGenerate` in `generateText`. A model span that reports no usage

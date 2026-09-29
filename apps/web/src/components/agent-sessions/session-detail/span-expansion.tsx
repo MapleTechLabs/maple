@@ -30,6 +30,7 @@ import {
 	classifyAiSpan,
 	formatCost,
 	payload,
+	spanCost,
 	spanFailed,
 	spanMessages,
 	spanToolCalls,
@@ -217,6 +218,7 @@ function OpenInTracesLink({ span }: { span: AiSessionSpan }) {
 function MetaStrip({ span }: { span: AiSessionSpan }) {
 	const { effectiveTimezone } = useTimezonePreference()
 	const ttftMs = spanTtftMs(span)
+	const cost = spanCost(span)
 
 	const pairs: readonly (readonly [string, ReactNode])[] = [
 		["provider", span.genAi.providerName],
@@ -233,12 +235,7 @@ function MetaStrip({ span }: { span: AiSessionSpan }) {
 			span.genAi.requestMaxTokens === undefined ? undefined : formatNumber(span.genAi.requestMaxTokens),
 		],
 		["temperature", span.genAi.requestTemperature],
-		[
-			"cost",
-			span.genAi.usageCost === undefined ? undefined : (
-				<span className="text-primary">{formatCost(span.genAi.usageCost)}</span>
-			),
-		],
+		["cost", cost === undefined ? undefined : <span className="text-primary">{formatCost(cost)}</span>],
 	]
 
 	return (

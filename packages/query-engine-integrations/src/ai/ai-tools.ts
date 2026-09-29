@@ -656,7 +656,7 @@ const groupFilter = (opts: AiToolErrorsOpts, $: Pick<ToolCallColumns, "fingerpri
 /**
  * One row per failed tool call of the selection — the level every read below
  * but the table's aggregates. `IsError` is the index's own transcription of the
- * rule the sessions pages apply to a span (`genAiIsErrorCond`), so a failure
+ * rule the sessions pages apply to a span (the gateway's `maple_ai.error`), so a failure
  * counted there is a failure here.
  *
  * `withParentModel` is `true` for the read that SHOWS a model rather than

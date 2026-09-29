@@ -1030,9 +1030,13 @@ export const traceDetailSpansMv = defineMaterializedView("trace_detail_spans_mv"
  * A missing Map key reads back as `''`, so the single `!= ''` comparison is
  * both the presence check and the non-empty check.
  *
- * The GenAI columns coalesce the dialects and classify the span at insert —
- * the SQL comes from `gen-ai-columns.ts`, so a raw-table read of the same fact
- * is the same expression. Migration 0026 added them; rows materialized before
+ * Every other GenAI column is a projection of the facts the gateway decided
+ * for the span and stamped on it (`MAPLE_AI_STAMP_ATTRS`, SQL from
+ * `gen-ai-columns.ts`) since migration 0035: the view holds no vendor rule,
+ * and a dialect is taught to the gateway instead. Rows materialized before it
+ * keep the values the view's own rules gave them until the 30-day TTL. Before
+ * 0035 the view coalesced the dialects and classified the span itself.
+ * Migration 0026 added the columns; rows materialized before
  * it carry `''`/0 throughout, which the facets drop, the filters never match
  * and the sums count as nothing. Migration 0027 changed `Tokens` to count a
  * nested cache or reasoning bucket once, under the reporter's usage
@@ -1048,7 +1052,7 @@ export const traceDetailSpansMv = defineMaterializedView("trace_detail_spans_mv"
  */
 export const aiTraceIndexMv = defineMaterializedView("ai_trace_index_mv", {
 	description:
-		"Populates ai_trace_index with GenAI agent spans (maple_ai.vendor.id stamped), pre-extracting the maple_ai.* identity, the environment, the GenAI model/agent/tool, the span's kind and usage, and its failure — whether it failed, the error.type it named, its status message, a failed tool call's result and the failure's fingerprint — plus the tool's own description, to plain columns.",
+		"Populates ai_trace_index with GenAI agent spans (maple_ai.vendor.id stamped), projecting the facts the ingest gateway stamped on each (maple_ai.*: identity, model/agent/tool, kind, usage, failure, a failed tool call's result, the tool's description) plus the environment, the error.type, the status message and the failure's fingerprint, to plain columns.",
 	datasource: aiTraceIndex,
 	// Migration 0026's columns are additive, and the rows already in the target
 	// are explicitly allowed to carry ''/0 for them (see above). Without this,

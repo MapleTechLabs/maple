@@ -151,6 +151,7 @@ import {
 	AI_RETRIEVAL_OPERATIONS,
 	AI_TOOL_OPERATIONS,
 	MAPLE_AI_SESSION_ID_ATTR,
+	MAPLE_AI_STAMP_ATTRS,
 	MAPLE_AI_TRACE_SESSION_PREFIX,
 	MAPLE_AI_VENDOR_ID_ATTR,
 	MAPLE_NATIVE_TURN_ID_ATTR,
@@ -1603,6 +1604,15 @@ const SUMMARY_ARRAY_CAP = 50
  * when there are any (`per-call`) and the plain sum otherwise (`roll-up`),
  * which is the deepest-reporter rule the page applies, at turn granularity.
  *
+ * A span the ingest gateway stamped (`MAPLE_AI_STAMP_ATTRS.llmCall` present) is
+ * read by the gateway's verdicts, names and buckets instead, the facts the
+ * list and the detail page read too. Only its model call carries usage, so a
+ * session of such spans is always per-call; its `input` is the prompt not read
+ * from cache (uncached plus cache write) and its `output` the completion
+ * (visible plus reasoning), so the three add up to its total. The rules above
+ * serve the spans ingested before the gateway stamped them, until they age out
+ * of the 30-day TTL.
+ *
  * Every Float64 aggregate is guarded with `ifNotFinite`: `toFloat64OrZero`
  * parses `nan` and `inf` successfully, one such attribute would poison the
  * whole sum, and `CHNumber` refuses to decode it.
@@ -1617,27 +1627,46 @@ const summaryMeasures_ = ($: SpanColumns) => {
 	const vendorId = $.SpanAttributes.get(VENDOR_ID_ATTR)
 	const isAi = vendorId.neq("")
 	const operation = field("operationName")
+	const stamp = (key: string) => $.SpanAttributes.get(key)
+	const stamped = stamp(MAPLE_AI_STAMP_ATTRS.llmCall).neq("")
+	const unstamped = CH.not(stamped)
+	const byGateway = <T>(gateway: CH.Expr<T>, reported: CH.Expr<T>) => CH.if_(stamped, gateway, reported)
 	// Response model first, request model second — `spanModel` on the page.
-	const model = attr([...aiFieldSourceKeys("responseModel"), ...aiFieldSourceKeys("requestModel")])
-	const toolName = field("toolName")
-	const agentName = field("agentName")
-	const isLlmCall = operation.in_(...AI_INFERENCE_OPERATIONS).or(
-		operation
-			.notIn(...AI_RETRIEVAL_OPERATIONS, ...AI_TOOL_OPERATIONS, ...AI_AGENT_OPERATIONS)
-			.and(model.neq(""))
-			.and(toolName.eq("")),
-	)
-	const isToolCall = operation
-		.in_(...AI_TOOL_OPERATIONS)
-		.or(operation.eq("").and(isAi).and(toolName.neq("")))
-	// The list query's error rule, so the summary and the list badge agree.
-	const failed = $.StatusCode.eq("Error").or(
-		isAi.and(
-			field("errorType")
-				.neq("")
-				.or(CH.inList($.SpanAttributes.get(RESPONSE_STATUS_ATTR), FAILED_RESPONSE_STATUSES)),
-		),
-	)
+	const reportedModel = attr([...aiFieldSourceKeys("responseModel"), ...aiFieldSourceKeys("requestModel")])
+	const reportedToolName = field("toolName")
+	const model = byGateway(stamp(MAPLE_AI_STAMP_ATTRS.model), reportedModel)
+	const agentName = byGateway(stamp(MAPLE_AI_STAMP_ATTRS.agentName), field("agentName"))
+	const isLlmCall = stamp(MAPLE_AI_STAMP_ATTRS.llmCall)
+		.eq("1")
+		.or(
+			unstamped.and(
+				operation.in_(...AI_INFERENCE_OPERATIONS).or(
+					operation
+						.notIn(...AI_RETRIEVAL_OPERATIONS, ...AI_TOOL_OPERATIONS, ...AI_AGENT_OPERATIONS)
+						.and(reportedModel.neq(""))
+						.and(reportedToolName.eq("")),
+				),
+			),
+		)
+	const isToolCall = stamp(MAPLE_AI_STAMP_ATTRS.toolCall)
+		.eq("1")
+		.or(
+			unstamped.and(
+				operation
+					.in_(...AI_TOOL_OPERATIONS)
+					.or(operation.eq("").and(isAi).and(reportedToolName.neq(""))),
+			),
+		)
+	// The list's error rule, so the summary and the list badge agree.
+	const failed = $.StatusCode.eq("Error")
+		.or(stamp(MAPLE_AI_STAMP_ATTRS.error).eq("1"))
+		.or(
+			unstamped.and(isAi).and(
+				field("errorType")
+					.neq("")
+					.or(CH.inList($.SpanAttributes.get(RESPONSE_STATUS_ATTR), FAILED_RESPONSE_STATUSES)),
+			),
+		)
 	const conversationId = attr([
 		// First, as `mapleIntegration` reads it: Maple's turn id wins over the
 		// conversation id its engine's tool spans carry, which names the session.
@@ -1646,10 +1675,17 @@ const summaryMeasures_ = ($: SpanColumns) => {
 		// What `eveIntegration` lifts into the field.
 		"eve.turn.id",
 	])
-	const inputTokens = number("usageInputTokens")
-	const outputTokens = number("usageOutputTokens")
-	const cacheReadTokens = number("usageCacheReadInputTokens")
-	const cost = number("usageCost")
+	const inputTokens = byGateway(
+		number("mapleInputTokens").add(number("mapleCacheWriteTokens")),
+		number("usageInputTokens"),
+	)
+	const outputTokens = byGateway(
+		number("mapleOutputTokens").add(number("mapleReasoningTokens")),
+		number("usageOutputTokens"),
+	)
+	const cacheReadTokens = byGateway(number("mapleCacheReadTokens"), number("usageCacheReadInputTokens"))
+	const costField = byGateway(field("mapleCost"), field("usageCost"))
+	const cost = CH.toFloat64OrZero(costField)
 
 	const finite = (expr: CH.Expr<number>) => CH.ifNotFinite(expr, 0)
 
@@ -1678,7 +1714,7 @@ const summaryMeasures_ = ($: SpanColumns) => {
 		llmCacheReadTokens: finite(CH.sumIf(cacheReadTokens, isLlmCall)),
 		// Spans that reported a cost at all: zero means "not measured", which the
 		// page distinguishes from "free".
-		costReporters: CH.countIf(field("usageCost").neq("")),
+		costReporters: CH.countIf(costField.neq("")),
 		cost: finite(CH.sum(cost)),
 		llmCost: finite(CH.sumIf(cost, isLlmCall)),
 		models: CH.groupUniqArrayIf(SUMMARY_ARRAY_CAP)(model, isLlmCall.and(model.neq(""))),

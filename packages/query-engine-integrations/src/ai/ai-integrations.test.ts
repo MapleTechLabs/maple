@@ -162,6 +162,20 @@ describe("value decoding", () => {
 		expect(mapAiSpan(row({ "gen_ai.request.model": "   " })).genAi.requestModel).toBeUndefined()
 	})
 
+	it("names the agent the ingest gateway named, as the list does", () => {
+		// OpenAI Agents through OpenInference names its agent only in the AGENT
+		// span's graph node, which the gateway reads and no dialect key carries.
+		const agent = mapAiSpan(
+			row({
+				"maple_ai.vendor.id": "openai_agents_sdk",
+				"openinference.span.kind": "AGENT",
+				"graph.node.id": "Triage Agent",
+				"maple_ai.agent.name": "Triage Agent",
+			}),
+		)
+		expect(agent.genAi.agentName).toBe("Triage Agent")
+	})
+
 	it("treats JSON null as not captured", () => {
 		expect(mapAiSpan(row({ "gen_ai.input.messages": "null" })).genAi.inputMessages).toBeUndefined()
 	})

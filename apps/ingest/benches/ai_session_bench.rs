@@ -393,6 +393,361 @@ fn bench_stamp_trace(c: &mut Criterion) {
     group.finish();
 }
 
+/// One scope's worth of agent spans, as its framework exports them: the agent
+/// wrapper, the model call with usage, and a tool call.
+type VendorBatch = (
+    &'static str,
+    Vec<(&'static str, Vec<(&'static str, &'static str)>)>,
+);
+
+#[expect(clippy::too_many_lines, reason = "one fixture per vendor")]
+fn vendor_batches() -> Vec<VendorBatch> {
+    let tool = |op: &'static str, name_key: &'static str| {
+        vec![
+            ("gen_ai.operation.name", op),
+            (name_key, "search_docs"),
+            ("gen_ai.tool.call.id", "call_8f14e45f"),
+            (
+                "gen_ai.tool.description",
+                "Search the product documentation.",
+            ),
+            (
+                "gen_ai.tool.call.arguments",
+                "{\"query\":\"refund policy\"}",
+            ),
+            ("gen_ai.tool.call.result", "{\"hits\":3}"),
+        ]
+    };
+    vec![
+        (
+            "gen_ai",
+            vec![
+                (
+                    "invoke_agent support",
+                    vec![
+                        ("gen_ai.operation.name", "invoke_agent"),
+                        ("gen_ai.agent.name", "support"),
+                        ("gen_ai.conversation.id", "conv-1"),
+                        ("gen_ai.usage.input_tokens", "900"),
+                        ("gen_ai.usage.output_tokens", "120"),
+                    ],
+                ),
+                (
+                    "chat openai/gpt-5-mini",
+                    vec![
+                        ("gen_ai.operation.name", "chat"),
+                        ("gen_ai.provider.name", "openrouter.chat"),
+                        ("gen_ai.request.model", "openai/gpt-5-mini"),
+                        ("gen_ai.response.id", "gen-1"),
+                        ("gen_ai.usage.input_tokens", "900"),
+                        ("gen_ai.usage.output_tokens", "120"),
+                        ("ai.usage.inputTokenDetails.noCacheTokens", "900"),
+                        ("ai.usage.outputTokenDetails.textTokens", "56"),
+                        ("ai.usage.outputTokenDetails.reasoningTokens", "64"),
+                    ],
+                ),
+                (
+                    "execute_tool search_docs",
+                    tool("execute_tool", "gen_ai.tool.name"),
+                ),
+            ],
+        ),
+        (
+            "ai",
+            vec![
+                ("ai.generateText", {
+                    let mut attrs = vec![("ai.telemetry.functionId", "support")];
+                    attrs.extend([("ai.usage.promptTokens", "812"), ("ai.model.id", "gpt-5")]);
+                    attrs
+                }),
+                (
+                    "ai.generateText.doGenerate",
+                    vec![
+                        ("ai.model.id", "gpt-5"),
+                        ("ai.model.provider", "openai.chat"),
+                        ("ai.response.id", "resp-1"),
+                        ("ai.usage.inputTokens", "812"),
+                        ("ai.usage.outputTokens", "96"),
+                        ("gen_ai.system", "openai.chat"),
+                        ("gen_ai.request.model", "gpt-5"),
+                    ],
+                ),
+                (
+                    "ai.toolCall",
+                    vec![
+                        ("ai.toolCall.name", "search_docs"),
+                        ("ai.toolCall.id", "call_1"),
+                        ("ai.toolCall.args", "{}"),
+                        ("ai.toolCall.result", "{\"hits\":3}"),
+                    ],
+                ),
+            ],
+        ),
+        (
+            "@mastra/otel-exporter",
+            vec![
+                (
+                    "invoke_agent support",
+                    vec![
+                        ("mastra.span.type", "agent_run"),
+                        ("gen_ai.operation.name", "invoke_agent"),
+                        ("gen_ai.agent.name", "support"),
+                        ("gen_ai.conversation.id", "conv-2"),
+                    ],
+                ),
+                (
+                    "chat openai/gpt-5-mini",
+                    vec![
+                        ("mastra.span.type", "model_generation"),
+                        ("gen_ai.operation.name", "chat"),
+                        ("gen_ai.request.model", "openai/gpt-5-mini"),
+                        ("gen_ai.usage.input_tokens", "849"),
+                        ("gen_ai.usage.output_tokens", "2200"),
+                        ("gen_ai.usage.reasoning_tokens", "1792"),
+                    ],
+                ),
+                (
+                    "execute_tool search_docs",
+                    tool("execute_tool", "gen_ai.tool.name"),
+                ),
+            ],
+        ),
+        (
+            "strands.telemetry.tracer",
+            vec![
+                (
+                    "invoke_agent support",
+                    vec![
+                        ("gen_ai.operation.name", "invoke_agent"),
+                        ("gen_ai.agent.name", "support"),
+                        ("gen_ai.system", "strands-agents"),
+                        ("gen_ai.usage.input_tokens", "103"),
+                    ],
+                ),
+                (
+                    "chat",
+                    vec![
+                        ("gen_ai.operation.name", "chat"),
+                        (
+                            "gen_ai.request.model",
+                            "us.anthropic.claude-sonnet-4-20250514-v1:0",
+                        ),
+                        ("gen_ai.usage.input_tokens", "12"),
+                        ("gen_ai.usage.cache_read_input_tokens", "4000"),
+                        ("gen_ai.usage.output_tokens", "35"),
+                    ],
+                ),
+                (
+                    "execute_tool search_docs",
+                    tool("execute_tool", "gen_ai.tool.name"),
+                ),
+            ],
+        ),
+        (
+            "openinference.instrumentation.openai_agents",
+            vec![
+                (
+                    "Agent workflow",
+                    vec![
+                        ("openinference.span.kind", "AGENT"),
+                        ("graph.node.id", "support"),
+                    ],
+                ),
+                (
+                    "generation",
+                    vec![
+                        ("openinference.span.kind", "LLM"),
+                        ("llm.model_name", "gpt-5-mini"),
+                        ("llm.token_count.prompt", "330"),
+                        ("llm.token_count.completion", "96"),
+                        ("llm.token_count.completion_details.reasoning", "107"),
+                    ],
+                ),
+                (
+                    "search_docs",
+                    vec![
+                        ("openinference.span.kind", "TOOL"),
+                        ("tool.name", "search_docs"),
+                        ("input.value", "{}"),
+                        ("output.value", "{\"hits\":3}"),
+                    ],
+                ),
+            ],
+        ),
+        (
+            "langsmith",
+            vec![
+                (
+                    "LangGraph",
+                    vec![
+                        ("gen_ai.operation.name", "chain"),
+                        ("langsmith.metadata.thread_id", "t-1"),
+                    ],
+                ),
+                (
+                    "ChatOpenAI",
+                    vec![
+                        ("gen_ai.operation.name", "chat"),
+                        ("gen_ai.system", "openai"),
+                        ("gen_ai.request.model", "gpt-4o-mini"),
+                        ("gen_ai.usage.input_tokens", "143"),
+                        ("gen_ai.usage.output_tokens", "32"),
+                    ],
+                ),
+                ("search_docs", tool("execute_tool", "gen_ai.tool.name")),
+            ],
+        ),
+        (
+            "pydantic-ai",
+            vec![
+                (
+                    "invoke_agent support",
+                    vec![
+                        ("gen_ai.operation.name", "invoke_agent"),
+                        ("gen_ai.agent.name", "support"),
+                        ("gen_ai.aggregated_usage.input_tokens", "133"),
+                    ],
+                ),
+                (
+                    "chat gpt-4o-mini",
+                    vec![
+                        ("gen_ai.operation.name", "chat"),
+                        ("gen_ai.request.model", "gpt-4o-mini"),
+                        ("gen_ai.usage.input_tokens", "133"),
+                        ("gen_ai.usage.output_tokens", "46"),
+                        ("operation.cost", "4.755e-05"),
+                    ],
+                ),
+                ("running tool", tool("execute_tool", "gen_ai.tool.name")),
+            ],
+        ),
+        (
+            "com.anthropic.claude_code.tracing",
+            vec![
+                (
+                    "claude_code.interaction",
+                    vec![
+                        ("span.type", "interaction"),
+                        ("session.id", "cc-1"),
+                        ("user_prompt", "fix it"),
+                    ],
+                ),
+                (
+                    "claude_code.llm_request",
+                    vec![
+                        ("span.type", "llm_request"),
+                        ("session.id", "cc-1"),
+                        ("gen_ai.request.model", "claude-sonnet-4-5"),
+                        ("input_tokens", "3"),
+                        ("output_tokens", "93"),
+                        ("cache_creation_tokens", "2025"),
+                    ],
+                ),
+                (
+                    "claude_code.tool",
+                    vec![
+                        ("span.type", "tool"),
+                        ("session.id", "cc-1"),
+                        ("tool_name", "Bash"),
+                        ("tool_use_id", "toolu_1"),
+                    ],
+                ),
+            ],
+        ),
+        (
+            "openrouter",
+            vec![(
+                "LLM Generation",
+                vec![
+                    ("gen_ai.operation.name", "chat"),
+                    ("gen_ai.request.model", "anthropic/claude-haiku-4.5"),
+                    ("gen_ai.response.id", "gen-2"),
+                    ("gen_ai.usage.input_tokens", "5021"),
+                    ("gen_ai.usage.input_tokens.cached", "4248"),
+                    ("gen_ai.usage.output_tokens", "263"),
+                    ("gen_ai.usage.total_cost", "0.0027"),
+                    ("session.id", "or-1"),
+                ],
+            )],
+        ),
+        (
+            "support-agent",
+            vec![
+                (
+                    "chat gpt-5",
+                    vec![
+                        ("gen_ai.operation.name", "chat"),
+                        ("gen_ai.request.model", "gpt-5"),
+                        ("gen_ai.usage.input_tokens", "812"),
+                        ("gen_ai.usage.output_tokens", "96"),
+                    ],
+                ),
+                ("execute_tool search_docs", {
+                    let mut attrs = tool("execute_tool", "gen_ai.tool.name");
+                    attrs.push(("error.type", "TimeoutError"));
+                    attrs
+                }),
+            ],
+        ),
+    ]
+}
+
+/// The stamping path itself: a request of agent spans only (ten vendors, each
+/// scope's wrapper/model-call/tool-call shape repeated to 120 spans), measured
+/// per span. Every span here pays the full classification and stamp, so this
+/// is the case the per-span stamps move; the mixed benches above show what
+/// that costs a realistic batch.
+fn bench_stamp_ai_batch(c: &mut Criterion) {
+    let mut group = c.benchmark_group("ai_stamp_ai_batch");
+    group.warm_up_time(Duration::from_millis(500));
+    group.measurement_time(Duration::from_secs(3));
+
+    let scope_spans: Vec<ScopeSpans> = vendor_batches()
+        .into_iter()
+        .map(|(scope, shapes)| ScopeSpans {
+            scope: Some(InstrumentationScope {
+                name: scope.to_owned(),
+                ..Default::default()
+            }),
+            spans: (0..120)
+                .map(|i| {
+                    let (name, pairs) = &shapes[i % shapes.len()];
+                    Span {
+                        name: (*name).to_owned(),
+                        attributes: attrs(pairs),
+                        ..Default::default()
+                    }
+                })
+                .collect(),
+            ..Default::default()
+        })
+        .collect();
+    let span_count: usize = scope_spans.iter().map(|ss| ss.spans.len()).sum();
+    let request = ExportTraceServiceRequest {
+        resource_spans: vec![ResourceSpans {
+            resource: Some(Resource {
+                attributes: service_resource("support-agent"),
+                ..Default::default()
+            }),
+            scope_spans,
+            ..Default::default()
+        }],
+    };
+
+    group.throughput(Throughput::Elements(span_count as u64));
+    group.bench_function("ai_1200_spans_10_vendors", |b| {
+        b.iter_batched(
+            || request.clone(),
+            |mut request| {
+                stamp_trace_request(&mut request);
+                black_box(request)
+            },
+            criterion::BatchSize::LargeInput,
+        );
+    });
+    group.finish();
+}
+
 fn attr_count(request: &ExportTraceServiceRequest) -> usize {
     request
         .resource_spans
@@ -407,6 +762,7 @@ criterion_group!(
     benches,
     bench_classify,
     bench_stamp_request,
-    bench_stamp_trace
+    bench_stamp_trace,
+    bench_stamp_ai_batch
 );
 criterion_main!(benches);
