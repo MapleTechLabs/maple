@@ -1193,8 +1193,8 @@ export const aiTraceIndex = defineDatasource("ai_trace_index", {
 		ResponseId: t.string(),
 		// Migration 0031 — the last facts the Agent Sessions list read off the
 		// raw spans: the vendor's version beside its id, and the five disjoint
-		// buckets `Tokens` is the sum of (the gateway's `maple_ai.usage.*`), so a row
-		// renders from one index query instead of a fan-out over
+		// buckets `Tokens` is the sum of (the gateway's `maple_ai.usage.*`), so
+		// a row renders from one index query instead of a fan-out over
 		// `trace_detail_spans`. '' / 0 on rows materialized before it.
 		VendorVersion: t.string().lowCardinality(),
 		InputTokens: t.float64(),
@@ -1212,8 +1212,8 @@ export const aiTraceIndex = defineDatasource("ai_trace_index", {
 		// (`GENAI_STATUS_MESSAGE_MAX`), `ToolDescription` by the ingest gateway,
 		// which stamps it on tool calls only, so the column is '' on the rest.
 		// `FailedToolCallResult` is a failed tool call's result (truncated by the
-		// gateway; '' on every other span), because
-		// several frameworks describe a tool failure there and nowhere else.
+		// gateway; '' on every other span), because several frameworks describe
+		// a tool failure there and nowhere else.
 		// `ErrorFingerprint` groups failures: a hash of that result, else of the
 		// status message, redacted as `error_events` redacts messages; 0 on spans
 		// that did not fail. Redacting at read time would cost seconds per million

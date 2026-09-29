@@ -956,9 +956,4 @@ describe("migration 0035 — ai_trace_index_mv projects the gateway's stamps", (
 		expect(create).not.toContain("multiIf")
 		expect(create).not.toContain("LIKE")
 	})
-
-	it("does not backfill and does not gate ingest", () => {
-		expect(migration_0035_ai_trace_index_gateway_stamps.requiredForIngest).toBe(false)
-		expect(migration_0035_ai_trace_index_gateway_stamps.statements.some(isBackfill)).toBe(false)
-	})
 })

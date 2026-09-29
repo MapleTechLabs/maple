@@ -132,8 +132,6 @@ export const MAPLE_GENAI_MODEL_DURATION_MS_ATTR = "maple_ai.model_duration_ms"
  * - `toolCall`, `error`: `"1"` where they hold, absent otherwise.
  * - `model`, `agentName`, `toolName`, `responseId`: the first non-empty value
  *   across the dialects' keys; `responseId` on model calls.
- * - The gateway also stamps `maple_ai.tool.call_id` and `maple_ai.tool.paused`
- *   (a tool call's copy that recorded no outcome), which nothing reads yet.
  * - `toolDescription` (on tool calls) and `toolErrorResult` (a failed tool
  *   call's result), cut by the gateway.
  * - The usage buckets, on the model call alone: `inputTokens` the uncached

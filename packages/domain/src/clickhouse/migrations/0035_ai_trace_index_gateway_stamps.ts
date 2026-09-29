@@ -23,9 +23,6 @@
  *
  * `requiredForIngest: false` — the gateway writes `traces`, never this table.
  *
- * This view replaces the in-flight view changes of other pull requests, which
- * rebase onto it and drop their own migrations of this view.
- *
  * The CREATE statement below is the verbatim DDL as the schema emitter produced
  * it at v35. Frozen history: never re-derive it from a later snapshot.
  */

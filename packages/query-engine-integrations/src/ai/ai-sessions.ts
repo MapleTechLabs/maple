@@ -1627,11 +1627,11 @@ const summaryMeasures_ = ($: SpanColumns) => {
 	const vendorId = $.SpanAttributes.get(VENDOR_ID_ATTR)
 	const isAi = vendorId.neq("")
 	const operation = field("operationName")
-	// Response model first, request model second — `spanModel` on the page.
 	const stamp = (key: string) => $.SpanAttributes.get(key)
 	const stamped = stamp(MAPLE_AI_STAMP_ATTRS.llmCall).neq("")
 	const unstamped = CH.not(stamped)
 	const byGateway = <T>(gateway: CH.Expr<T>, reported: CH.Expr<T>) => CH.if_(stamped, gateway, reported)
+	// Response model first, request model second — `spanModel` on the page.
 	const reportedModel = attr([...aiFieldSourceKeys("responseModel"), ...aiFieldSourceKeys("requestModel")])
 	const reportedToolName = field("toolName")
 	const model = byGateway(stamp(MAPLE_AI_STAMP_ATTRS.model), reportedModel)
