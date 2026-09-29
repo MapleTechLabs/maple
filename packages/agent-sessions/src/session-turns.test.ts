@@ -627,7 +627,7 @@ describe("the ingest gateway's verdicts", () => {
 	it("decide whether a stamped span failed", () => {
 		expect(spanFailed(stamped("execute_tool", { mapleLlmCall: 0, mapleError: 1 }))).toBe(true)
 		// The gateway already weighed the span's own `error.type`.
-		expect(spanFailed(stamped("execute_tool", { mapleLlmCall: 0, errorType: "" }))).toBe(false)
+		expect(spanFailed(stamped("execute_tool", { mapleLlmCall: 0, errorType: "Timeout" }))).toBe(false)
 		// A span before the gateway stamped: the attribute rule.
 		expect(
 			spanFailed(makeSpan({ spanId: "a", startMs: 0, durationMs: 1, genAi: { errorType: "Timeout" } })),
