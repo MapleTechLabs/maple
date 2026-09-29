@@ -13,7 +13,7 @@
 import type { AfterNavigate, BeforeNavigate, HandleClientError, NavigationType } from "@sveltejs/kit"
 import { isHttpError, isRedirect } from "@sveltejs/kit"
 import { captureException } from "../errors"
-import { endNavigation, startNavigation, traced } from "../navigation"
+import { endNavigation, interruptNavigation, startNavigation, traced } from "../navigation"
 
 /** What `traceNavigation` needs from `$app/navigation` and `$app/state`. */
 export interface SvelteKitNavigation {
@@ -47,7 +47,7 @@ export function traceNavigation({
 		// back while it loads, which don't call `beforeNavigate`: a newer navigation
 		// still loading takes the span over, and names it when it ends
 		navigation.complete.catch(() => {
-			if (!navigating.type) endNavigation()
+			if (!navigating.type) interruptNavigation()
 		})
 	})
 	// `navigation.to.route.id` is null on the first load; `page.route.id` is set

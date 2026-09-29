@@ -63,7 +63,7 @@ function sveltekit() {
 	const after = new Set<(navigation: AfterNavigate) => void>()
 	const page = { route: { id: null as string | null } }
 	let loading: BeforeNavigate | null = null
-	let token: object = {}
+	let token = {}
 
 	traceNavigation({
 		beforeNavigate: (callback) => before.add(callback),
@@ -79,7 +79,7 @@ function sveltekit() {
 	/** A click, `goto()` or back to `pathname`. Carries the token of the navigation it redirects. */
 	const start = (pathname: string, options: { willUnload?: boolean; redirects?: object } = {}) => {
 		let fulfil = () => {}
-		let reject = (_: Error) => {}
+		let reject: (error: Error) => void = () => {}
 		const complete = new Promise<void>((resolve, fail) => {
 			fulfil = resolve
 			reject = fail
@@ -223,7 +223,7 @@ describe("startPageLoad and traceNavigation", () => {
 		expect(exported.some((span) => span.attributes["app.navigation.interrupted"])).toBe(false)
 	})
 
-	it("ends a cancelled navigation right away, unnamed", async () => {
+	it("ends a cancelled navigation right away, as interrupted", async () => {
 		const kit = sveltekit()
 		startPageLoad()
 		kit.enter("/")
@@ -235,6 +235,7 @@ describe("startPageLoad and traceNavigation", () => {
 		await stop()
 
 		expect(names()).toEqual(["pageload /", "navigate", "query"])
+		expect(exported[1]?.attributes["app.navigation.interrupted"]).toBe(true)
 		expect(named("query")?.parentSpanContext).toBeUndefined()
 	})
 

@@ -280,6 +280,7 @@ export const handleError = handleErrorWithMaple() // or handleErrorWithMaple(you
 ```ts
 // src/routes/projects/[id]/+page.ts: universal loads
 import { loadSpan } from "@maple-dev/browser/sveltekit"
+import type { PageLoad } from "./$types"
 
 export const load: PageLoad = async ({ fetch, params, route }) =>
 	loadSpan(`loader ${route.id}`, async () => (await fetch(`/api/projects/${params.id}`)).json())
@@ -294,7 +295,8 @@ export const handle = mapleHandle // or sequence(mapleHandle, yourHandle)
 
 - Spans are named after the route id, like `navigate /projects/[id]`. A click
   while a navigation loads, or a `redirect()`, stays in one span named after
-  where it ends; a cancelled navigation ends right away. Hash links start no span.
+  where it ends; a cancelled navigation ends right away, as interrupted. Hash
+  links start no span.
 - The `$app/*` modules are passed in because only SvelteKit's Vite plugin
   resolves them.
 - `loadSpan` skips `redirect()` and `error()` below 500, and only runs `fn` on

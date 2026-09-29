@@ -397,7 +397,8 @@ export const handle = mapleHandle // or sequence(mapleHandle, yourHandle)
 ```
 
 - Spans are named after the route id, like `navigate /projects/[id]`, route groups included, the same string SvelteKit puts in `http.route` on its server spans.
-- A click while a navigation loads keeps one span, named after where it ends. A cancelled navigation ends right away, without a route in its name. A `redirect()` from a load stays in the span, named after the destination.
+- A click while a navigation loads keeps one span, named after where it ends. A cancelled navigation ends right away, as interrupted. A `redirect()` from a load stays in the span, named after the destination.
+- Loads SvelteKit preloads when you hover a link run before the click, as their own traces. The navigation span after the click then has no loads under it.
 - Hash links, `invalidate()` and shallow routing start no span. A query change is a navigation. A link no route matches loads a new document, whose span is a bare `pageload`.
 - `loadSpan` doesn't mark `redirect()` or `error()` below 500 as failures. On the server it only runs your function: SvelteKit's tracing already records each load.
 - `handleErrorWithMaple` reports what SvelteKit hands `handleError` as `sveltekit.client_error`, skipping 404s (unknown routes) and errors `loadSpan` already recorded, and returns what your handler returns.
