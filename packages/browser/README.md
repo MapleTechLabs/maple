@@ -249,6 +249,42 @@ export const config = { matcher: ["/((?!api|_next/static|_next/image|favicon.ico
 - The browser follows the server's sampling decision: a page load under an
   unsampled server trace isn't recorded.
 
+## Astro
+
+`@maple-dev/browser/astro` is an Astro integration (Astro 5+): page loads,
+`<ClientRouter />` navigations and on-demand renders, nothing in the layouts:
+
+```js
+// astro.config.mjs
+import maple from "@maple-dev/browser/astro"
+import { defineConfig } from "astro/config"
+
+export default defineConfig({ integrations: [maple()] })
+```
+
+```astro
+<!-- the base layout's <head>: init stays yours (functions, PUBLIC_ env vars) -->
+<script>
+	import { MapleBrowser } from "@maple-dev/browser"
+	MapleBrowser.init({ ingestKey: import.meta.env.PUBLIC_MAPLE_INGEST_KEY, serviceName: "acme-web" })
+</script>
+```
+
+- Spans are named after `Astro.routePattern` (`navigate /projects/[id]`), which
+  the integration's middleware writes on each page's `<html data-route>`, at
+  build time for prerendered pages.
+- Without `<ClientRouter />`: one `pageload` per document, ended at `load`.
+  With it: a `navigate` span per navigation with the page request under it;
+  interrupted navigations and full-page-load fallbacks keep the generic name.
+- Island code that fails to load is reported as `astro.hydration_error`.
+- On-demand pages run in an `ssr <route>` span and send `Server-Timing` (with
+  server OpenTelemetry), except responses a cache may replay: Astro's route
+  cache, `Cache-Control` with `public`/`s-maxage`/`max-age` > 0,
+  `CDN-Cache-Control` and its vendor variants.
+- Without the integration: `export { onRequest } from "@maple-dev/browser/astro/middleware"`
+  in `src/middleware.ts`, and `traceAstroNavigation()` from
+  `@maple-dev/browser/astro/client` in the layout script, after `init`.
+
 ## Linking a marketing site to your app
 
 The visitor id lives in localStorage **and** a cookie scoped to your registered
