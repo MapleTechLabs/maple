@@ -1003,7 +1003,10 @@ static UNKNOWN_TIER: &[Vendor] = &[
     Vendor {
         id: "unknown:openinference",
         detect: detect_unknown_openinference,
-        session_keys: &["session.id", CONVERSATION_ID_KEY],
+        // `session.id` only after the conversation id: Maple's browser SDK
+        // stamps its replay session under that key on every span, so it can
+        // span several conversations.
+        session_keys: &[CONVERSATION_ID_KEY, "session.id"],
     },
     Vendor {
         id: "unknown:other",
@@ -2369,15 +2372,24 @@ mod tests {
             "unknown:openinference",
             Some("conv-9"),
         );
-        // OpenInference's own session key ranks first.
+        // OpenInference's `session.id` fills in only without a conversation id:
+        // a browser replay session under that key must not merge conversations.
         classified(
             "",
             "llm",
             &[
                 ("openinference.span.kind", "LLM"),
                 ("gen_ai.conversation.id", "conv-9"),
-                ("session.id", "oi-1"),
+                ("session.id", "browser-1"),
             ],
+            &[],
+            "unknown:openinference",
+            Some("conv-9"),
+        );
+        classified(
+            "",
+            "llm",
+            &[("openinference.span.kind", "LLM"), ("session.id", "oi-1")],
             &[],
             "unknown:openinference",
             Some("oi-1"),
