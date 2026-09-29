@@ -139,6 +139,15 @@ Calls before `init()` are queued.
 MapleBrowser.logger.info("checkout started", { "cart.items": 3 })
 ```
 
+## User feedback
+
+```ts
+MapleBrowser.sendFeedback({ message: "The pay button does nothing", email: user.email })
+```
+
+Headless (bring your own form). Sent as a `maple.user_feedback` log event linked to the session and
+the last error the user hit, and keeps a buffered replay like an error does.
+
 ## Web Vitals
 
 LCP, CLS, INP, FCP and TTFB are reported as `browser.web_vital` OpenTelemetry log events
