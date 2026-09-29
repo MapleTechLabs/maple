@@ -26,6 +26,10 @@
 //! keys become the `gen_ai.*` keys every reader keys on, and the phases of its
 //! tool calls are left unstamped — see `ai_session/claude_code.rs`.
 //!
+//! A model call also gets its token usage restated as five disjoint
+//! `maple_ai.usage.*` buckets, whatever convention its emitter reported under;
+//! agent and workflow wrappers get none — see `ai_session/usage.rs`.
+//!
 //! Detection is ordered first-match over the vendor predicates below; the
 //! session ID is the first non-empty session-granularity attribute for the
 //! matched vendor. A vendor with no session-level key of its own (its
@@ -60,6 +64,7 @@ use opentelemetry_proto::tonic::common::v1::{any_value, AnyValue, KeyValue};
 use opentelemetry_proto::tonic::trace::v1::span::Event;
 
 mod claude_code;
+mod usage;
 
 pub const ATTR_NAMESPACE: &str = "maple_ai.";
 pub const VENDOR_ID_ATTR: &str = "maple_ai.vendor.id";
@@ -159,6 +164,7 @@ pub fn stamp_trace_request(request: &mut ExportTraceServiceRequest) {
                     }
                     claude_code::normalize(span);
                 }
+                usage::stamp(span, classification.vendor);
                 // One reserve, not up to three doubling reallocs that each
                 // copy every existing KeyValue.
                 span.attributes.reserve(3);
