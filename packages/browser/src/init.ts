@@ -29,7 +29,6 @@ import { trace } from "@opentelemetry/api"
 import { type MapleBrowserConfig, type ResolvedConfig, resolveConfig } from "./config"
 import { configureErrorFilters } from "./error-filters"
 import { onErrorRecorded, setupErrorCapture } from "./errors"
-import { configureFeedback } from "./feedback"
 import { setLogIdentity } from "./logs"
 import { resetNavigation } from "./navigation"
 import { setupTracing } from "./tracing"
@@ -217,12 +216,10 @@ export function init(rawConfig: MapleBrowserConfig): MapleBrowserHandle {
 		await Promise.all([replayShutdown, metadataShutdown, previous.replayPending])
 	}
 
-	// A buffered replay keeps itself the moment an error is recorded, or the user sends feedback.
-	const keepReplay = (): void => {
+	// A buffered replay keeps itself the moment an error is recorded.
+	const stopReplayTrigger = onErrorRecorded(() => {
 		void runtime?.replay?.trigger()
-	}
-	const stopReplayTrigger = onErrorRecorded(keepReplay)
-	configureFeedback({ captureUserEmail: config.captureUserEmail, keepReplay })
+	})
 	startRuntime()
 	const stopConsentListener = config.requireConsent
 		? onConsentChange((allowed) => {
@@ -248,7 +245,6 @@ export function init(rawConfig: MapleBrowserConfig): MapleBrowserHandle {
 			stopped = true
 			stopConsentListener()
 			stopReplayTrigger()
-			configureFeedback({ captureUserEmail: true, keepReplay: () => {} })
 			await stopRuntime(true)
 			stopErrorCapture?.()
 			stopErrorCapture = undefined

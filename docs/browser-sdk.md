@@ -366,26 +366,6 @@ Each event carries `session.id` and is linked to the page's `pageload` span when
 `startNavigation`. CLS, INP and LCP settle when the page is hidden, so they arrive then. Turn them off
 with `webVitals: false`.
 
-## User feedback
-
-`MapleBrowser.sendFeedback` records what a user tells you, from your own feedback form:
-
-```ts
-MapleBrowser.sendFeedback({
-	message: form.message, // required
-	email: form.email, // optional; dropped when privacy.captureUserEmail is false
-	name: form.name, // optional
-	attributes: { "feedback.category": "bug" },
-})
-```
-
-It is sent as a `maple.user_feedback` OpenTelemetry log event carrying `session.id`, `user.email` /
-`user.name`, `maple.feedback.has_replay` and, when the user hit an error earlier in the page,
-`maple.feedback.error_trace_id`. The event is linked to that error's span, so it shows up on the
-error's trace. Sending feedback also keeps a buffered replay (see
-[Replay on error](#replay-on-error)), since a user reporting a problem is as good a signal as an
-error. It returns `false` when nothing was sent (an empty message, or no consent).
-
 ## Browser reports
 
 Content Security Policy violations are reported as `maple.browser.csp_violation` WARN log events with
