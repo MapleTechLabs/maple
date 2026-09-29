@@ -543,7 +543,7 @@ replay: { networkBodies: { urls: [/^https:\/\/api\.example\.com\/checkout/], max
 ```
 
 Only text and JSON bodies are kept, each cut to `maxLength` characters. The response is read from a
-clone in the background, so your code gets it untouched and unwaited. Nothing is captured with
+clone in the background, only as far as `maxLength`, so your code gets it untouched and unwaited. Nothing is captured with
 `privacy.maskAllText`. Bodies can hold personal data: list only endpoints whose payloads you are
 allowed to record.
 

@@ -27,6 +27,8 @@ export function setHeaderAttributes(
 ): void {
 	for (const name of names) {
 		const value = read(name)
-		if (value) span.setAttribute(`http.${direction}.header.${name}`, value.split(/,\s*/))
+		// One entry: commas are part of many values (`date`, `cache-control`), and the
+		// browser has already joined repeated headers into one string.
+		if (value) span.setAttribute(`http.${direction}.header.${name}`, [value])
 	}
 }

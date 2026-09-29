@@ -81,4 +81,41 @@ describe("installNetworkCapture", () => {
 			window.fetch = realFetch
 		}
 	})
+
+	it("reads only as much of a large body as it keeps", async () => {
+		const realFetch = window.fetch
+		let pulled = 0
+		const chunk = new TextEncoder().encode("x".repeat(1_000))
+		window.fetch = async () =>
+			new Response(
+				new ReadableStream({
+					pull(controller) {
+						pulled++
+						if (pulled > 1_000) controller.close()
+						else controller.enqueue(chunk)
+					},
+				}),
+				{ headers: { "content-type": "text/plain" } },
+			)
+		try {
+			const events: SessionEvent[] = []
+			uninstall = installNetworkCapture(
+				(event) => events.push(event),
+				() => false,
+				{
+					urls: ["https://api.test/"],
+					maxLength: 2_500,
+				},
+			)
+			await fetch("https://api.test/big")
+			await vi.waitFor(() => expect(events.some((event) => event.type === "network")).toBe(true))
+			const body = events.find((event) => event.type === "network")?.attrs?.["response.body"] ?? ""
+			expect(body).toHaveLength(2_501)
+			expect(pulled).toBeLessThan(10)
+		} finally {
+			uninstall?.()
+			uninstall = undefined
+			window.fetch = realFetch
+		}
+	})
 })
