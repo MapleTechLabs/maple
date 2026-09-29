@@ -124,7 +124,10 @@ const INFERENCE_OPS: [&str; 4] = [
     "text_completion",
     "fetch_response",
 ];
-const KNOWN_OPS: [&str; 12] = [
+/// Every operation the convention names, as `KNOWN_OPS` in
+/// `packages/domain/src/tinybird/gen-ai-columns.ts` lists them, memory-store
+/// operations included: none of them is a model call by its span name.
+const KNOWN_OPS: [&str; 19] = [
     "chat",
     "generate_content",
     "text_completion",
@@ -137,6 +140,13 @@ const KNOWN_OPS: [&str; 12] = [
     "invoke_workflow",
     "plan",
     "agent_step",
+    "search_memory",
+    "create_memory",
+    "update_memory",
+    "upsert_memory",
+    "delete_memory",
+    "create_memory_store",
+    "delete_memory_store",
 ];
 
 /// Bedrock cross-region inference profile prefixes (`us.anthropic.claude-…`).
@@ -1420,7 +1430,8 @@ mod tests {
     }
 
     /// `captures/jev_agents`: `decide` is jev's own model call, found by the
-    /// unknown-dialect fallback; an unknown workflow op is not a call.
+    /// unknown-dialect fallback; an unknown workflow op is not a call, nor is a
+    /// memory operation naming its embedding model.
     #[test]
     fn unknown_dialect_calls_by_name_and_model() {
         let stamped = stamp_spans(
@@ -1456,6 +1467,13 @@ mod tests {
                         ("gen_ai.usage.input_tokens", "81"),
                     ],
                 ),
+                (
+                    "search_memory chat-history",
+                    &[
+                        ("gen_ai.operation.name", "search_memory"),
+                        ("gen_ai.request.model", "text-embedding-3-small"),
+                    ],
+                ),
             ],
         );
         assert!(stamped.iter().all(|span| span.vendor == "unknown:genai"));
@@ -1467,7 +1485,7 @@ mod tests {
             .iter()
             .map(|span| span.llm_call.as_deref())
             .collect();
-        assert_eq!(calls, [Some("1"), Some("1"), Some("0")]);
+        assert_eq!(calls, [Some("1"), Some("1"), Some("0"), Some("0")]);
     }
 
     // --- Guards and the write itself ------------------------------------
