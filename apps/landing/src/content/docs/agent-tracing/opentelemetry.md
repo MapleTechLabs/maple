@@ -7,7 +7,7 @@ navLabel: "Any language (OTel GenAI)"
 icon: "opentelemetry"
 ---
 
-If your agent loop is hand-written, runs on a framework without OpenTelemetry support, or lives in Go, Rust, Ruby or Elixir, you write the agent spans yourself. Maple needs three kinds: an `invoke_agent` span per user turn, a `chat` span per model call and an `execute_tool` span per tool call. The details that break most setups are the conversation id and sending messages as JSON strings.
+Use this guide when no other guide covers your agent, for example a hand-written agent loop. You write the agent spans yourself with any OpenTelemetry SDK. Maple needs three kinds: an `invoke_agent` span per user turn, a `chat` span per model call and an `execute_tool` span per tool call. The details that break most setups are the conversation id and sending messages as JSON strings.
 
 Tested with the OpenTelemetry JS SDK 2.11 on Node.js 26 and the Python SDK 1.45 on Python 3.14, calling OpenRouter, against the [GenAI conventions](https://github.com/open-telemetry/semantic-conventions-genai) as of September 2026.
 
