@@ -34,6 +34,8 @@ export function configureFeedback(options: {
 }): void {
 	captureEmail = options.captureUserEmail
 	keepReplay = options.keepReplay
+	// init() and shutdown() both start a new lifecycle: an earlier error's trace is not this one's.
+	lastError = undefined
 }
 
 export function resetFeedbackForTests(): void {
