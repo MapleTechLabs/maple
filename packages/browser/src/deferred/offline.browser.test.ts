@@ -101,6 +101,33 @@ describe("offline queue", () => {
 	})
 })
 
+describe("offline queue across tabs", () => {
+	it("sends each stored batch once when two tabs resend at the same time", async () => {
+		const posts: string[] = []
+		let online = false
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (url: string) => {
+				if (!online) throw new TypeError("Failed to fetch")
+				posts.push(url)
+				await new Promise((resolve) => setTimeout(resolve, 20))
+				return new Response("{}")
+			}),
+		)
+		// Two queues on one origin stand in for two tabs: they share the store and the lock.
+		const tabA = startOfflineQueue(CONFIG)
+		const tabB = startOfflineQueue(CONFIG)
+		tabA.stashSpans(finishedSpans("once"))
+		await vi.waitFor(async () => expect(await storedCount()).toBe(1))
+		online = true
+		await Promise.all([tabA.resend(), tabB.resend()])
+		tabA.stop()
+		tabB.stop()
+		expect(posts).toHaveLength(1)
+		expect(await storedCount()).toBe(0)
+	})
+})
+
 describe("offline queue and consent", () => {
 	it("drops batches captured before the current consent grant instead of sending them", async () => {
 		const posts: string[] = []
@@ -112,6 +139,8 @@ describe("offline queue and consent", () => {
 			}),
 		)
 		const first = startOfflineQueue(CONFIG)
+		// Let its startup resend (of an empty store) finish before anything is stored.
+		await first.resend()
 		first.stashSpans(finishedSpans("before"))
 		await vi.waitFor(async () => expect(await storedCount()).toBe(1))
 		first.stop()
