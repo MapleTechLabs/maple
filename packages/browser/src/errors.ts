@@ -48,11 +48,13 @@ const asError = (value: unknown): Error => {
  */
 let reported = new WeakSet<object>()
 
-/** Set by the deferred chunk, which exports the error's breadcrumb trail. */
-let onErrorRecorded: ((spanContext: SpanContext) => void) | undefined
+type ErrorRecordedListener = (spanContext: SpanContext) => void
+/** Told about every recorded error: breadcrumbs export their trail, a buffered replay keeps itself. */
+const errorListeners = new Set<ErrorRecordedListener>()
 
-export function setErrorRecordedHook(hook: ((spanContext: SpanContext) => void) | undefined): void {
-	onErrorRecorded = hook
+export function onErrorRecorded(listener: ErrorRecordedListener): () => void {
+	errorListeners.add(listener)
+	return () => errorListeners.delete(listener)
 }
 
 /** Whether this exact error object was already recorded. */
@@ -77,7 +79,14 @@ export function recordFailure(span: Span, error: unknown): void {
 	if (!alreadyReported(error)) {
 		if (span.isRecording() && typeof error === "object" && error !== null) reported.add(error)
 		span.recordException(exceptionOf(normalized))
-		if (span.isRecording()) onErrorRecorded?.(span.spanContext())
+		if (span.isRecording()) {
+			for (const listener of errorListeners) {
+				// A listener must never turn one error into another.
+				try {
+					listener(span.spanContext())
+				} catch {}
+			}
+		}
 	}
 	span.setStatus({ code: SpanStatusCode.ERROR, message: normalized.message })
 }

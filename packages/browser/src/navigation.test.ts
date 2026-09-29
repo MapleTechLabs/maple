@@ -35,6 +35,7 @@ const CONFIG = {
 	tracingCaptureErrors: false,
 	replayEnabled: false,
 	replaySampleRate: 0,
+	replayOnErrorSampleRate: 0,
 	maskAllInputs: true,
 	maskAllText: false,
 	persistVisitorId: true,

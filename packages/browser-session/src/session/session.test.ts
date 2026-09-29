@@ -1,11 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import {
 	adoptReplayDecision,
+	claimReplayMode,
 	claimReplaySample,
 	getSession,
 	getSessionId,
 	isNewVisitorSession,
 	markActivity,
+	markReplayTriggered,
 	nextChunkSeq,
 	nextMetaVersion,
 	onSessionRotate,
@@ -430,6 +432,28 @@ describe("replay sampling", () => {
 		expect(claimReplaySample(1)).toBe(false)
 		adoptReplayDecision(session.id, true)
 		expect(claimReplaySample(1)).toBe(false)
+	})
+})
+
+describe("claimReplayMode", () => {
+	it("records at the sample rate, else buffers for errors, and keeps the answer", () => {
+		getSession()
+		expect(claimReplayMode(0, 1)).toBe("buffer")
+		expect(claimReplayMode(1, 0)).toBe("buffer")
+	})
+
+	it("is off when neither rate claims the session", () => {
+		getSession()
+		expect(claimReplayMode(0, 0)).toBe("off")
+		expect(claimReplayMode(0, 1)).toBe("off")
+	})
+
+	it("records later loads of a session an error triggered", () => {
+		const session = getSession()
+		expect(claimReplayMode(0, 1)).toBe("buffer")
+		markReplayTriggered(session.id)
+		expect(claimReplayMode(0, 1)).toBe("record")
+		expect(peekSession()?.replayTrigger).toBe("error")
 	})
 })
 

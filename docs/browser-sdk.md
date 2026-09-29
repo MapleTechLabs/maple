@@ -63,6 +63,7 @@ Every field accepted by `MapleBrowser.init`:
 | `errors`                               | `ErrorFilterOptions`      | see [Filtering errors](#filtering-errors) | Drop captured errors by message, script URL, or a `beforeCapture` hook.                                                                                                                                                                                   |
 | `replay.enabled`                       | `boolean`                 | `true`                                    | Enable rrweb session recording.                                                                                                                                                                                                                           |
 | `replay.sampleRate`                    | `number`                  | `1`                                       | Fraction of sessions to record, `0` to `1`. Out-of-range values are clamped with a warning. See [Sampling](#sampling).                                                                                                                                    |
+| `replay.onErrorSampleRate`             | `number`                  | `0`                                       | Fraction of the sessions not recorded that buffer the last minute in memory and keep it only if an error happens. See [Sampling](#sampling).                                                                                                              |
 | `privacy.maskAllInputs`                | `boolean`                 | `true`                                    | Mask all `<input>` values in the recording.                                                                                                                                                                                                               |
 | `privacy.maskAllText`                  | `boolean`                 | `false`                                   | Mask all text in the rrweb recording and omit captured click-target text from session events.                                                                                                                                                             |
 | `privacy.persistVisitorId`             | `boolean`                 | `true`                                    | Store a persistent visitor id (localStorage + cookie) so unique visitors and new-vs-returning are measurable. Turning it off also purges any id already stored.                                                                                           |
@@ -455,6 +456,26 @@ privacy: {
 ## Sampling
 
 To record only a fraction of sessions, set `replay.sampleRate` between `0` and `1`. For example, `0.1` records ~10% of sessions. Tracing is unaffected by this setting.
+
+### Replay on error
+
+`replay.onErrorSampleRate` covers the sessions `replay.sampleRate` leaves out. Those sessions run
+the recorder into memory only, keeping roughly the last minute (the segments since the
+second-to-last full snapshot, taken every 30s). Nothing is uploaded. When an error is recorded (an
+uncaught error, an unhandled rejection or `captureException`, after [filters](#filtering-errors)),
+the buffered minute is uploaded and the rest of the session is recorded normally, including its
+later page loads. The session is marked `maple.session.replay_trigger: "error"`, and its replay starts
+up to a minute before the error rather than at the start of the session.
+
+```ts
+MapleBrowser.init({
+	// ...
+	replay: { sampleRate: 0.05, onErrorSampleRate: 1 }, // 5% of sessions, plus every session with an error
+})
+```
+
+Buffered sessions download the replay chunk like recorded ones, and keep up to 4 MB of events in
+memory.
 
 `tracing.sampleRate` does the same for traces. The decision is made once per session (a hash of
 `session.id`), so a sampled session keeps every one of its traces and its replay never links to a

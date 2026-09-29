@@ -2,7 +2,7 @@
 // behind this chunk, so it stays off the eager bundle every page load pays for.
 import type { SpanContext } from "@opentelemetry/api"
 import type { ResolvedConfig } from "../config"
-import { setErrorRecordedHook } from "../errors"
+import { onErrorRecorded } from "../errors"
 import { onDocumentPageload } from "../navigation"
 import { flushBreadcrumbs, startBreadcrumbs } from "./breadcrumbs"
 import { recordDocumentTiming } from "./document-timing"
@@ -22,14 +22,14 @@ export function startDeferred(config: ResolvedConfig): () => Promise<void> {
 		breadcrumbs: config.breadcrumbs,
 		captureConsole: config.captureConsole,
 	})
-	setErrorRecordedHook(flushBreadcrumbs)
+	const stopErrorListener = onErrorRecorded(flushBreadcrumbs)
 	const stopReports = startReports({ csp: config.reportCsp, browserReports: config.reportBrowser })
 	const stops = [
 		startLogs(config),
 		async () => {
 			stopVitals()
 			onDocumentPageload(undefined)
-			setErrorRecordedHook(undefined)
+			stopErrorListener()
 			stopBreadcrumbs()
 			stopReports()
 		},

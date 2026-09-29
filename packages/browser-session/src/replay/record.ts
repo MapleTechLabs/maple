@@ -2,7 +2,13 @@ import { record } from "rrweb"
 import { BLOCK_SELECTOR } from "../privacy-markers"
 import { markActivity, nextChunkSeq } from "../session/session"
 import type { IngestConfig } from "../platform/transport"
-import { gzip, postSessionBlob, warnDropped, type ChunkMeta } from "../platform/transport"
+import {
+	type BlobPostOutcome,
+	gzip,
+	postSessionBlob,
+	warnDropped,
+	type ChunkMeta,
+} from "../platform/transport"
 import { scrubUrl } from "../platform/url-privacy"
 
 // rrweb event shape — typed loosely to avoid coupling to @rrweb/types across
@@ -54,6 +60,33 @@ export interface Recorder {
 	getClickCount: () => number
 }
 
+/**
+ * gzip and POST one chunk. `seq` is claimed here, monotonic across reloads
+ * (persisted on the session record), so a refresh continues the sequence
+ * instead of overwriting the previous load's blobs.
+ */
+async function uploadChunk(
+	config: IngestConfig,
+	sessionId: string,
+	body: string,
+	chunk: Omit<ChunkMeta, "sessionId" | "chunkSeq">,
+	keepalive: boolean,
+): Promise<BlobPostOutcome | undefined> {
+	const chunkSeq = nextChunkSeq()
+	// `gzip` rejects rather than returning a truncated stream, and callers run
+	// this as a floating promise: an escaping rejection would surface in the
+	// host app's console as ours. Dropping the chunk is the same outcome ingest
+	// produced by refusing it, minus the wasted POST.
+	let gzipped: Uint8Array
+	try {
+		gzipped = await gzip(new TextEncoder().encode(body))
+	} catch (error) {
+		warnDropped("chunk compression", error)
+		return undefined
+	}
+	return postSessionBlob(config, { sessionId, chunkSeq, ...chunk }, gzipped, keepalive)
+}
+
 export function startRecording(config: IngestConfig, sessionId: string): Recorder {
 	// Events are serialized once at emit time and buffered as JSON strings, so
 	// flushing is a cheap `join` instead of re-stringifying the whole buffer
@@ -92,30 +125,14 @@ export function startRecording(config: IngestConfig, sessionId: string): Recorde
 		const isCheckpoint = bufferHasCheckpoint
 		const eventCount = parts.length
 		const durationMs = Math.max(0, lastTimestamp - firstTimestamp)
-		// Monotonic across reloads (persisted on the session record), so a refresh
-		// continues the sequence instead of overwriting the previous load's blobs.
-		const seq = nextChunkSeq()
 		resetBuffer()
-
-		// `gzip` now rejects rather than returning a truncated stream, and `flush`
-		// is called as a floating promise — an escaping rejection would surface in
-		// the host app's console as ours. Dropping the chunk is the same outcome
-		// ingest produced by refusing it, minus the wasted POST.
-		let gzipped: Uint8Array
-		try {
-			gzipped = await gzip(new TextEncoder().encode(body))
-		} catch (error) {
-			warnDropped("chunk compression", error)
-			return
-		}
-		const meta: ChunkMeta = {
+		const outcome = await uploadChunk(
+			config,
 			sessionId,
-			chunkSeq: seq,
-			isCheckpoint,
-			eventCount,
-			durationMs,
-		}
-		const outcome = await postSessionBlob(config, meta, gzipped, keepalive)
+			body,
+			{ isCheckpoint, eventCount, durationMs },
+			keepalive,
+		)
 		if (outcome === "exhausted" && !exhausted) {
 			exhausted = true
 			warnExhausted(sessionId)
@@ -240,6 +257,108 @@ export function startRecording(config: IngestConfig, sessionId: string): Recorde
 			haltCapture()
 		},
 		flush,
+		getClickCount: () => clickCount,
+	}
+}
+
+/** Buffer mode checks out often, so the retained window stays near a minute. */
+const BUFFER_CHECKOUT_MS = 30_000
+
+interface Segment {
+	parts: string[]
+	bytes: number
+	first: number
+	last: number
+}
+
+export interface BufferedRecorder {
+	/** Upload what is buffered, oldest first, each segment a checkpoint chunk. */
+	drain: (keepalive?: boolean) => Promise<void>
+	stop: () => void
+	getClickCount: () => number
+}
+
+/**
+ * Record into memory only: the segments since the second-to-last checkout, so
+ * 30-60s of replay, and nothing is uploaded until `drain()`. For sessions that
+ * keep a replay only when an error happens.
+ */
+export function startBufferedRecording(config: IngestConfig, sessionId: string): BufferedRecorder {
+	let segments: Segment[] = []
+	let bytes = 0
+	let clickCount = 0
+	let stopped = false
+
+	const stopRecord = record({
+		emit: (event: unknown) => {
+			const active = markActivity()
+			if (stopped || (active && active.id !== sessionId)) return
+			const e = event as RrwebEvent
+			if (e.type === META && e.data && typeof e.data.href === "string")
+				e.data.href = scrubUrl(e.data.href)
+			if (
+				e.type === INCREMENTAL &&
+				e.data?.source === SOURCE_MOUSE_INTERACTION &&
+				e.data.type === MOUSE_CLICK
+			) {
+				clickCount++
+			}
+			let json: string
+			try {
+				json = JSON.stringify(e)
+			} catch {
+				return
+			}
+			// Every snapshot, first or checkout, is a Meta event then a FullSnapshot.
+			if (e.type === META) {
+				segments.push({ parts: [], bytes: 0, first: e.timestamp, last: e.timestamp })
+				while (segments.length > 2) bytes -= segments.shift()?.bytes ?? 0
+			}
+			const segment = segments.at(-1)
+			// Nothing to play back before the first snapshot.
+			if (!segment) return
+			segment.parts.push(json)
+			segment.bytes += json.length
+			segment.last = e.timestamp
+			bytes += json.length
+			while (bytes > MAX_BUFFER_BYTES && segments.length > 0) bytes -= segments.shift()?.bytes ?? 0
+		},
+		maskAllInputs: config.maskAllInputs,
+		blockSelector: BLOCK_SELECTOR,
+		...(config.maskAllText ? { maskTextSelector: "*" } : undefined),
+		checkoutEveryNms: BUFFER_CHECKOUT_MS,
+	})
+
+	return {
+		drain: async (keepalive = false) => {
+			const pending = segments
+			segments = []
+			bytes = 0
+			if (stopped) return
+			// Each call claims its chunk seq synchronously, so these stay ahead of
+			// whatever the streaming recorder that follows uploads.
+			await Promise.all(
+				pending.map((segment) =>
+					uploadChunk(
+						config,
+						sessionId,
+						`[${segment.parts.join(",")}]`,
+						{
+							isCheckpoint: true,
+							eventCount: segment.parts.length,
+							durationMs: Math.max(0, segment.last - segment.first),
+						},
+						keepalive,
+					),
+				),
+			)
+		},
+		stop: () => {
+			stopped = true
+			segments = []
+			bytes = 0
+			stopRecord?.()
+		},
 		getClickCount: () => clickCount,
 	}
 }

@@ -109,6 +109,12 @@ export interface MapleBrowserConfig {
 		readonly enabled?: boolean
 		/** Fraction of sessions to record, 0–1. Default 1. */
 		readonly sampleRate?: number
+		/**
+		 * Fraction of the sessions not recorded that keep the last minute in
+		 * memory, and upload it and record the rest of the session only if an
+		 * error happens. 0–1, default 0.
+		 */
+		readonly onErrorSampleRate?: number
 	}
 	readonly privacy?: {
 		/** Mask all `<input>` values. Default true. */
@@ -177,6 +183,7 @@ export interface ResolvedConfig {
 	readonly reportBrowser: boolean
 	readonly replayEnabled: boolean
 	readonly replaySampleRate: number
+	readonly replayOnErrorSampleRate: number
 	readonly maskAllInputs: boolean
 	readonly maskAllText: boolean
 	readonly persistVisitorId: boolean
@@ -247,6 +254,10 @@ export function resolveConfig(config: MapleBrowserConfig): ResolvedConfig {
 		reportBrowser: config.reporting?.browserReports ?? false,
 		replayEnabled: config.replay?.enabled ?? true,
 		replaySampleRate: resolveSampleRate("replay.sampleRate", config.replay?.sampleRate),
+		replayOnErrorSampleRate:
+			config.replay?.onErrorSampleRate === undefined
+				? 0
+				: resolveSampleRate("replay.onErrorSampleRate", config.replay.onErrorSampleRate),
 		maskAllInputs: config.privacy?.maskAllInputs ?? true,
 		maskAllText: config.privacy?.maskAllText ?? false,
 		persistVisitorId: config.privacy?.persistVisitorId ?? true,

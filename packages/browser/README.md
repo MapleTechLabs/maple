@@ -145,6 +145,12 @@ LCP, CLS, INP, FCP and TTFB are reported as `browser.web_vital` OpenTelemetry lo
 (browser semantic conventions), linked to the `pageload` span and the session. Opt out with
 `webVitals: false`.
 
+## Replay on error
+
+`replay: { sampleRate: 0.05, onErrorSampleRate: 1 }` records 5% of sessions, and has every other
+session keep the last minute in memory, uploading it and recording the rest of the session only if
+an error is recorded.
+
 ## Trace sampling
 
 `tracing: { sampleRate: 0.25 }` exports the traces of ~25% of sessions. The decision is per

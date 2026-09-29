@@ -28,7 +28,14 @@ export { startMetadataSession } from "./session/metadata-session"
 // package-internal: `startSessionLifecycle` owns those invariants, and an SDK
 // reaching past it would write counts the lifecycle then overwrites.
 export type { SessionRecord } from "./session/session"
-export { claimReplaySample, getSession, getSessionId, rotateSession } from "./session/session"
+export type { ReplayMode } from "./session/session"
+export {
+	claimReplayMode,
+	claimReplaySample,
+	getSession,
+	getSessionId,
+	rotateSession,
+} from "./session/session"
 export type { MapleBrowserSessionSink } from "./session/sink"
 export { clearSessionSink } from "./session/sink"
 export { getObservedTraceIds, publishSessionSink, readSessionSink, recordTraceId } from "./session/sink"

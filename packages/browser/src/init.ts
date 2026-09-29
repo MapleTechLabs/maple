@@ -1,5 +1,5 @@
 import {
-	claimReplaySample,
+	claimReplayMode,
 	clearPendingEvents,
 	clearSessionSink,
 	configurePrivacy,
@@ -28,7 +28,7 @@ import type { ReplaySessionHandle } from "@maple/browser-session/replay"
 import { trace } from "@opentelemetry/api"
 import { type MapleBrowserConfig, type ResolvedConfig, resolveConfig } from "./config"
 import { configureErrorFilters } from "./error-filters"
-import { setupErrorCapture } from "./errors"
+import { onErrorRecorded, setupErrorCapture } from "./errors"
 import { setLogIdentity } from "./logs"
 import { resetNavigation } from "./navigation"
 import { setupTracing } from "./tracing"
@@ -109,7 +109,9 @@ export function init(rawConfig: MapleBrowserConfig): MapleBrowserHandle {
 		rotateOnNextStart = false
 		// Rolled once per session and persisted on it, so a reload or the next
 		// page of a multi-page app records (or skips) the same session consistently.
-		const recordReplay = replayEligible && claimReplaySample(config.replaySampleRate)
+		const replayMode = replayEligible
+			? claimReplayMode(config.replaySampleRate, config.replayOnErrorSampleRate)
+			: "off"
 		publishSessionSink(session.id)
 		const sink = startEventSink(
 			{
@@ -160,7 +162,7 @@ export function init(rawConfig: MapleBrowserConfig): MapleBrowserHandle {
 				onSessionChange: publishSessionSink,
 			})
 
-		if (!recordReplay) {
+		if (replayMode === "off") {
 			runtime = { initialSessionId: session.id, sink, metadata: startMetadata() }
 			return
 		}
@@ -180,6 +182,7 @@ export function init(rawConfig: MapleBrowserConfig): MapleBrowserHandle {
 					...shared,
 					maskAllInputs: config.maskAllInputs,
 					maskAllText: config.maskAllText,
+					mode: replayMode,
 				})
 			})
 			.catch(() => {
@@ -211,6 +214,10 @@ export function init(rawConfig: MapleBrowserConfig): MapleBrowserHandle {
 		await Promise.all([replayShutdown, metadataShutdown, previous.replayPending])
 	}
 
+	// A buffered replay keeps itself the moment an error is recorded.
+	const stopReplayTrigger = onErrorRecorded(() => {
+		void runtime?.replay?.trigger()
+	})
 	startRuntime()
 	const stopConsentListener = config.requireConsent
 		? onConsentChange((allowed) => {
@@ -235,6 +242,7 @@ export function init(rawConfig: MapleBrowserConfig): MapleBrowserHandle {
 			if (stopped) return
 			stopped = true
 			stopConsentListener()
+			stopReplayTrigger()
 			await stopRuntime(true)
 			stopErrorCapture?.()
 			stopErrorCapture = undefined
