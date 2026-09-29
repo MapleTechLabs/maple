@@ -206,8 +206,7 @@ export class GenAiSpans implements SpanProcessor {
 			set("gen_ai.tool.call.id", message?.tool_call_id)
 			set("gen_ai.tool.call.arguments", this.toolArgs.get(message?.tool_call_id))
 			this.toolArgs.delete(message?.tool_call_id)
-			// Maple reads a JSON object or array here
-			if (content !== undefined) set("gen_ai.tool.call.result", typeof result === "object" && result !== null ? result : { result: content })
+			if (content !== undefined) set("gen_ai.tool.call.result", typeof result === "object" && result !== null ? result : content)
 		} else if (span.name === metadata.lc_agent_name || AGENT_NAMES.has(span.name)) {
 			const messages = output?.messages ?? []
 			set("gen_ai.operation.name", "invoke_agent")
