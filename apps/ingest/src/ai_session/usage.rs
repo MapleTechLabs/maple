@@ -31,11 +31,12 @@
 //! `gen_ai.usage.input_tokens` as inclusive, so writing the uncached figure
 //! there would misreport the span to anyone reading it raw.
 
-use opentelemetry_proto::tonic::common::v1::{any_value, KeyValue};
+use opentelemetry_proto::tonic::common::v1::KeyValue;
 use opentelemetry_proto::tonic::trace::v1::span::SpanKind;
 use opentelemetry_proto::tonic::trace::v1::Span;
 
-use super::{owned_string_attribute, value_str};
+use super::facts::{self, name_has, Facts};
+use super::owned_string_attribute;
 
 const INPUT_TOKENS_ATTR: &str = "maple_ai.usage.input_tokens";
 const CACHE_READ_TOKENS_ATTR: &str = "maple_ai.usage.cache_read_tokens";
@@ -50,14 +51,14 @@ const LLM_CALL_ATTR: &str = "maple_ai.llm_call";
 // Vercel AI SDK and OpenInference dialects. Read for every vendor, so an
 // emitter that dual-writes two dialects is read the same way whoever it is.
 
-const INPUT_KEYS: &[&str] = &[
+pub(super) const INPUT_KEYS: &[&str] = &[
     "gen_ai.usage.input_tokens",
     "gen_ai.usage.prompt_tokens",
     "ai.usage.inputTokens",
     "ai.usage.promptTokens",
     "llm.token_count.prompt",
 ];
-const CACHE_READ_KEYS: &[&str] = &[
+pub(super) const CACHE_READ_KEYS: &[&str] = &[
     "gen_ai.usage.cache_read.input_tokens",
     // OpenRouter Broadcast.
     "gen_ai.usage.input_tokens.cached",
@@ -67,7 +68,7 @@ const CACHE_READ_KEYS: &[&str] = &[
     "ai.usage.inputTokenDetails.cacheReadTokens",
     "llm.token_count.prompt_details.cache_read",
 ];
-const CACHE_WRITE_KEYS: &[&str] = &[
+pub(super) const CACHE_WRITE_KEYS: &[&str] = &[
     "gen_ai.usage.cache_creation.input_tokens",
     "gen_ai.usage.cache_write.input_tokens",
     "gen_ai.usage.input_tokens.cache_write",
@@ -75,14 +76,14 @@ const CACHE_WRITE_KEYS: &[&str] = &[
     "ai.usage.inputTokenDetails.cacheWriteTokens",
     "llm.token_count.prompt_details.cache_write",
 ];
-const OUTPUT_KEYS: &[&str] = &[
+pub(super) const OUTPUT_KEYS: &[&str] = &[
     "gen_ai.usage.output_tokens",
     "gen_ai.usage.completion_tokens",
     "ai.usage.outputTokens",
     "ai.usage.completionTokens",
     "llm.token_count.completion",
 ];
-const REASONING_KEYS: &[&str] = &[
+pub(super) const REASONING_KEYS: &[&str] = &[
     "gen_ai.usage.reasoning.output_tokens",
     "gen_ai.usage.output_tokens.reasoning",
     // Mastra.
@@ -95,9 +96,9 @@ const REASONING_KEYS: &[&str] = &[
 ];
 /// The Vercel AI SDK reports the disjoint figures itself; they win over any
 /// arithmetic on the containing ones.
-const UNCACHED_INPUT_KEYS: &[&str] = &["ai.usage.inputTokenDetails.noCacheTokens"];
-const VISIBLE_OUTPUT_KEYS: &[&str] = &["ai.usage.outputTokenDetails.textTokens"];
-const COST_KEYS: &[&str] = &[
+pub(super) const UNCACHED_INPUT_KEYS: &[&str] = &["ai.usage.inputTokenDetails.noCacheTokens"];
+pub(super) const VISIBLE_OUTPUT_KEYS: &[&str] = &["ai.usage.outputTokenDetails.textTokens"];
+pub(super) const COST_KEYS: &[&str] = &[
     "gen_ai.usage.cost",
     "gen_ai.usage.total_cost",
     "llm.cost.total",
@@ -107,27 +108,15 @@ const COST_KEYS: &[&str] = &[
     "openrouter.cost",
 ];
 
-/// The model a call ran on, as `GENAI_MODEL_KEYS` in
-/// `packages/domain/src/tinybird/gen-ai-columns.ts` reads it.
-const MODEL_KEYS: &[&str] = &[
-    "gen_ai.response.model",
-    "gen_ai.request.model",
-    "ai.response.model",
-    "ai.model.id",
-    "llm.model_name",
-];
-const TOOL_NAME_KEYS: &[&str] = &["gen_ai.tool.name", "ai.toolCall.name", "tool.name"];
-
 const INFERENCE_OPS: [&str; 4] = [
     "chat",
     "generate_content",
     "text_completion",
     "fetch_response",
 ];
-/// Every operation the convention names, as `KNOWN_OPS` in
-/// `packages/domain/src/tinybird/gen-ai-columns.ts` lists them, memory-store
-/// operations included: none of them is a model call by its span name.
-const KNOWN_OPS: [&str; 19] = [
+/// Every operation the convention names, memory-store operations included:
+/// none of them is a model call or a tool call by its span name.
+pub(super) const KNOWN_OPS: [&str; 19] = [
     "chat",
     "generate_content",
     "text_completion",
@@ -153,19 +142,17 @@ const KNOWN_OPS: [&str; 19] = [
 const BEDROCK_REGION_PREFIXES: [&str; 4] = ["us.", "eu.", "apac.", "global."];
 
 /// Mark whether `span` is the model call, and stamp its usage buckets if it
-/// is.
-pub(super) fn stamp(span: &mut Span, vendor: &str) {
-    let call = is_model_call(vendor, span);
-    span.attributes.push(owned_string_attribute(
+/// is. Returns whether it is.
+pub(super) fn stamp(span: &Span, vendor: &str, facts: &Facts, out: &mut Vec<KeyValue>) -> bool {
+    let call = is_model_call(vendor, span, facts);
+    out.push(owned_string_attribute(
         LLM_CALL_ATTR,
         if call { "1" } else { "0" }.to_owned(),
     ));
     if !call {
-        return;
+        return false;
     }
-    let attrs = &span.attributes;
-    let usage = Usage::read(attrs, input_excludes_cache(vendor, attrs));
-    let cost = first_number(attrs, COST_KEYS).filter(|cost| *cost > 0.0);
+    let usage = Usage::read(facts, input_excludes_cache(vendor, facts.model()));
     let tokens = [
         (INPUT_TOKENS_ATTR, usage.input),
         (CACHE_READ_TOKENS_ATTR, usage.cache_read),
@@ -173,23 +160,23 @@ pub(super) fn stamp(span: &mut Span, vendor: &str) {
         (OUTPUT_TOKENS_ATTR, usage.output),
         (REASONING_TOKENS_ATTR, usage.reasoning),
     ];
-    span.attributes.extend(
+    out.extend(
         tokens
             .into_iter()
             .filter(|(_, count)| *count > 0)
             .map(|(key, count)| owned_string_attribute(key, count.to_string())),
     );
-    if let Some(cost) = cost {
-        span.attributes
-            .push(owned_string_attribute(COST_ATTR, cost.to_string()));
+    if let Some(cost) = facts.number(facts::COST).filter(|cost| *cost > 0.0) {
+        out.push(owned_string_attribute(COST_ATTR, cost.to_string()));
     }
+    true
 }
 
 /// Is this span the model call itself, rather than an agent, step or workflow
 /// wrapper that repeats its calls' usage?
-fn is_model_call(vendor: &str, span: &Span) -> bool {
-    let (span_name, attrs) = (span.name.as_str(), span.attributes.as_slice());
-    let op = operation(attrs);
+fn is_model_call(vendor: &str, span: &Span, facts: &Facts) -> bool {
+    let span_name = span.name.as_str();
+    let op = facts.operation();
     match vendor {
         // `call_llm` wraps its `generate_content` child with the same figures.
         "google_adk" if span_name == "call_llm" => false,
@@ -208,45 +195,25 @@ fn is_model_call(vendor: &str, span: &Span) -> bool {
         _ => {
             vendor.starts_with("unknown:")
                 && span.kind != SpanKind::Server as i32
-                && named_like_a_model_call(op, span_name, attrs)
+                && named_like_a_model_call(op, span_name, facts)
         }
     }
 }
 
-/// `gen_ai.operation.name`, else the OpenInference span kind translated, as
-/// `genAiOperationExpr` reads it.
-fn operation(attrs: &[KeyValue]) -> &str {
-    let op = first_text(attrs, &["gen_ai.operation.name"]);
-    if !op.is_empty() {
-        return op;
-    }
-    match first_text(attrs, &["openinference.span.kind"]) {
-        "LLM" => "chat",
-        "TOOL" => "execute_tool",
-        "AGENT" => "invoke_agent",
-        "EMBEDDING" => "embeddings",
-        "RETRIEVER" => "retrieval",
-        _ => "",
-    }
-}
-
-/// The span-name fallback of `genAiIsLlmCallCond`, for a dialect Maple has no
-/// vendor rules for: an op outside the convention, not a tool, not an agent or
+/// The span-name fallback `classifyAiSpan` applies to a span ingested before
+/// this stamp, for a dialect Maple has no vendor rules for: an op outside the convention, not a tool, not an agent or
 /// workflow, and a model named (or a name that says chat/completion).
-fn named_like_a_model_call(op: &str, span_name: &str, attrs: &[KeyValue]) -> bool {
+fn named_like_a_model_call(op: &str, span_name: &str, facts: &Facts) -> bool {
     if KNOWN_OPS.contains(&op) {
         return false;
     }
-    let name = span_name.to_ascii_lowercase();
-    if !first_text(attrs, TOOL_NAME_KEYS).is_empty() || name.contains("tool") {
+    if !facts.tool_name().is_empty() || name_has(span_name, "tool") {
         return false;
     }
-    if name.contains("agent") || name.contains("workflow") {
+    if name_has(span_name, "agent") || name_has(span_name, "workflow") {
         return false;
     }
-    !first_text(attrs, MODEL_KEYS).is_empty()
-        || name.contains("chat")
-        || name.contains("completion")
+    !facts.model().is_empty() || name_has(span_name, "chat") || name_has(span_name, "completion")
 }
 
 /// Does the prompt figure exclude the cache buckets? Only where the emitter
@@ -254,14 +221,14 @@ fn named_like_a_model_call(op: &str, span_name: &str, attrs: &[KeyValue]) -> boo
 /// `gen_ai.provider.name` cannot tell: it names the model's vendor, not the
 /// reporting convention, and these frameworks stamp values unrelated to the
 /// client (Strands `strands-agents`, ADK `gemini`, MAF `openai`).
-fn input_excludes_cache(vendor: &str, attrs: &[KeyValue]) -> bool {
+fn input_excludes_cache(vendor: &str, model: &str) -> bool {
     match vendor {
         // Claude Code reports the Messages API's own usage.
         "claude_agent_sdk" => true,
         // Their native Anthropic/Bedrock clients pass raw usage through; their
         // OpenAI, Gemini and LiteLLM clients report it inclusive.
         "strands" | "google_adk" | "agno" | "microsoft_agent_framework" => {
-            is_native_anthropic_or_bedrock_model(first_text(attrs, MODEL_KEYS))
+            is_native_anthropic_or_bedrock_model(model)
         }
         _ => false,
     }
@@ -289,28 +256,28 @@ struct Usage {
 }
 
 impl Usage {
-    fn read(attrs: &[KeyValue], input_excludes_cache: bool) -> Self {
-        let count = |keys: &[&str]| first_number(attrs, keys).map(tokens);
-        let prompt = count(INPUT_KEYS).unwrap_or(0);
-        let cache_read = count(CACHE_READ_KEYS).unwrap_or(0);
-        let cache_write = count(CACHE_WRITE_KEYS).unwrap_or(0);
-        let completion = count(OUTPUT_KEYS).unwrap_or(0);
+    fn read(facts: &Facts, input_excludes_cache: bool) -> Self {
+        let count = |slot| facts.number(slot).map(tokens);
+        let prompt = count(facts::INPUT).unwrap_or(0);
+        let cache_read = count(facts::CACHE_READ).unwrap_or(0);
+        let cache_write = count(facts::CACHE_WRITE).unwrap_or(0);
+        let completion = count(facts::OUTPUT).unwrap_or(0);
         // An inclusive prompt cannot be smaller than the cache it contains, so
         // a prompt that is must be a raw passthrough the vendor rule missed.
         let cache = cache_read + cache_write;
         let excludes_cache = input_excludes_cache || cache > prompt;
         // The completion is what the provider billed (`total_tokens` is prompt
         // + completion), so a reasoning figure larger than it is clamped.
-        let reasoning = count(REASONING_KEYS).unwrap_or(0).min(completion);
+        let reasoning = count(facts::REASONING).unwrap_or(0).min(completion);
         Self {
-            input: count(UNCACHED_INPUT_KEYS).unwrap_or(if excludes_cache {
+            input: count(facts::UNCACHED_INPUT).unwrap_or(if excludes_cache {
                 prompt
             } else {
                 prompt - cache
             }),
             cache_read,
             cache_write,
-            output: count(VISIBLE_OUTPUT_KEYS).unwrap_or(completion - reasoning),
+            output: count(facts::VISIBLE_OUTPUT).unwrap_or(completion - reasoning),
             reasoning,
         }
     }
@@ -325,43 +292,6 @@ fn tokens(value: f64) -> u64 {
     value as u64
 }
 
-/// The first of `keys` whose value is a finite, non-negative number.
-fn first_number(attrs: &[KeyValue], keys: &[&str]) -> Option<f64> {
-    keys.iter().find_map(|key| {
-        attrs
-            .iter()
-            .filter(|attr| attr.key == *key)
-            .find_map(number)
-    })
-}
-
-#[expect(
-    clippy::cast_precision_loss,
-    reason = "token counts and costs stay far below 2^53"
-)]
-fn number(attr: &KeyValue) -> Option<f64> {
-    let value = match attr.value.as_ref()?.value.as_ref()? {
-        any_value::Value::IntValue(int) => *int as f64,
-        any_value::Value::DoubleValue(double) => *double,
-        any_value::Value::StringValue(text) => text.trim().parse().ok()?,
-        _ => return None,
-    };
-    (value.is_finite() && value >= 0.0).then_some(value)
-}
-
-/// The first non-empty string value among `keys`, else `""`.
-fn first_text<'a>(attrs: &'a [KeyValue], keys: &[&str]) -> &'a str {
-    keys.iter()
-        .find_map(|key| {
-            attrs
-                .iter()
-                .filter(|attr| attr.key == *key)
-                .map(value_str)
-                .find(|text| !text.is_empty())
-        })
-        .unwrap_or("")
-}
-
 /// Each integration's usage spans as its instrumentation exports them: from
 /// the trace-capture recordings (`captures/<id>`), from EU production spans
 /// (PROD), or, where no capture exercises the path, from the framework source
@@ -369,9 +299,9 @@ fn first_text<'a>(attrs: &'a [KeyValue], keys: &[&str]) -> &'a str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ai_session::{stamp_trace_request, VENDOR_ID_ATTR};
+    use crate::ai_session::{stamp_trace_request, value_str, VENDOR_ID_ATTR};
     use opentelemetry_proto::tonic::collector::trace::v1::ExportTraceServiceRequest;
-    use opentelemetry_proto::tonic::common::v1::{AnyValue, InstrumentationScope};
+    use opentelemetry_proto::tonic::common::v1::{any_value, AnyValue, InstrumentationScope};
     use opentelemetry_proto::tonic::resource::v1::Resource;
     use opentelemetry_proto::tonic::trace::v1::{ResourceSpans, ScopeSpans};
 
@@ -429,12 +359,18 @@ mod tests {
             .iter()
             .map(|span| {
                 let attrs = &span.attributes;
-                let bucket = |key| first_number(attrs, &[key]).map_or(0, tokens);
+                let text = |key| {
+                    attrs
+                        .iter()
+                        .find(|attr| attr.key == key)
+                        .map_or("", value_str)
+                };
+                let bucket = |key| text(key).parse().unwrap_or(0);
                 let has_buckets = attrs
                     .iter()
                     .any(|attr| attr.key.starts_with("maple_ai.usage.") && attr.key != COST_ATTR);
                 Stamped {
-                    vendor: first_text(attrs, &[VENDOR_ID_ATTR]).to_owned(),
+                    vendor: text(VENDOR_ID_ATTR).to_owned(),
                     llm_call: attrs
                         .iter()
                         .find(|attr| attr.key == LLM_CALL_ATTR)
@@ -1658,7 +1594,7 @@ mod tests {
             owned_string_attribute("ai.usage.reasoningTokens", "10".to_owned()),
         ];
         assert_eq!(
-            Usage::read(&attrs, false),
+            Usage::read(&Facts::read(&attrs), false),
             Usage {
                 input: 120,
                 cache_read: 0,

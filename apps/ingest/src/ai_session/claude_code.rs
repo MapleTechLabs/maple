@@ -188,6 +188,7 @@ pub(super) fn fold_tool_failures(request: &mut ExportTraceServiceRequest, failur
                     .push(owned("gen_ai.tool.call.result", result));
             }
         }
+        super::facts::mark_tool_failed(span);
     }
 }
 

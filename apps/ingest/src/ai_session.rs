@@ -26,11 +26,12 @@
 //! keys become the `gen_ai.*` keys every reader keys on, and the phases of its
 //! tool calls are left unstamped — see `ai_session/claude_code.rs`.
 //!
-//! Every stamped span also says whether it is a model call
-//! (`maple_ai.llm_call`), and a model call gets its token usage restated as
-//! five disjoint `maple_ai.usage.*` buckets, whatever convention its emitter
-//! reported under; agent and workflow wrappers get none — see
-//! `ai_session/usage.rs`.
+//! Every stamped span also carries the facts Agent Sessions aggregates and
+//! filters on, decided here once: whether it is a model call
+//! (`maple_ai.llm_call`) or a tool call, whether it failed, its model, agent
+//! and tool, and a model call's token usage as five disjoint
+//! `maple_ai.usage.*` buckets, whatever convention its emitter reported under
+//! — see `ai_session/facts.rs` and `ai_session/usage.rs`.
 //!
 //! Detection is ordered first-match over the vendor predicates below; the
 //! session ID is the first non-empty session-granularity attribute for the
@@ -66,6 +67,7 @@ use opentelemetry_proto::tonic::common::v1::{any_value, AnyValue, KeyValue};
 use opentelemetry_proto::tonic::trace::v1::span::Event;
 
 mod claude_code;
+mod facts;
 mod usage;
 
 pub const ATTR_NAMESPACE: &str = "maple_ai.";
@@ -166,9 +168,10 @@ pub fn stamp_trace_request(request: &mut ExportTraceServiceRequest) {
                     }
                     claude_code::normalize(span);
                 }
-                // One reserve, not up to four doubling reallocs that each
-                // copy every existing KeyValue.
-                span.attributes.reserve(4);
+                let mut stamps = facts::stamps(span, classification.vendor);
+                // One reserve, not a doubling realloc per push that each copy
+                // every existing KeyValue.
+                span.attributes.reserve(stamps.len() + 3);
                 span.attributes
                     .push(string_attribute(VENDOR_ID_ATTR, classification.vendor));
                 span.attributes
@@ -179,7 +182,7 @@ pub fn stamp_trace_request(request: &mut ExportTraceServiceRequest) {
                     span.attributes
                         .push(owned_string_attribute(SESSION_ID_ATTR, session_id));
                 }
-                usage::stamp(span, classification.vendor);
+                span.attributes.append(&mut stamps);
             }
         }
     }
@@ -1813,6 +1816,14 @@ mod tests {
             attr_value(tool, "gen_ai.tool.call.result").as_deref(),
             Some(r#"{"error":"Syntax error"}"#)
         );
+        // The folded failure reaches the stamps: stamped before its phase was
+        // seen, the call had read as a paused copy with no result.
+        assert_eq!(attr_value(tool, "maple_ai.error").as_deref(), Some("1"));
+        assert_eq!(
+            attr_value(tool, "maple_ai.tool.error_result").as_deref(),
+            Some(r#"{"error":"Syntax error"}"#)
+        );
+        assert!(attr_value(tool, "maple_ai.tool.paused").is_none());
     }
 
     #[test]
