@@ -265,7 +265,7 @@ impl Usage {
         let completion = count(facts::OUTPUT).unwrap_or(0);
         // An inclusive prompt cannot be smaller than the cache it contains, so
         // a prompt that is must be a raw passthrough the vendor rule missed.
-        let cache = cache_read + cache_write;
+        let cache = cache_read.saturating_add(cache_write);
         let excludes_cache = input_excludes_cache || cache > prompt;
         // The completion is what the provider billed (`total_tokens` is prompt
         // + completion), so a reasoning figure larger than it is clamped.
