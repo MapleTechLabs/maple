@@ -16,6 +16,11 @@ describe("AGENT_GUIDE_CATEGORIES", () => {
 		expect(hrefs("python")).not.toContain("/docs/agent-tracing/mastra")
 	})
 
+	it("lists the any-language guide only under other languages", () => {
+		expect(hrefs("other")).toEqual(["/docs/agent-tracing/opentelemetry"])
+		expect(hrefs("typescript")).not.toContain("/docs/agent-tracing/opentelemetry")
+	})
+
 	it("points every guide at a page", () => {
 		for (const g of AGENT_GUIDES) {
 			const base = new URL(`../content/docs/agent-tracing/${g.slug}`, import.meta.url).pathname

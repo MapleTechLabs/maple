@@ -10,7 +10,8 @@ export const AGENT_GUIDE_LANGUAGES = [
 	{ id: "python", title: "Python", label: "Python" },
 	{ id: "java", title: "Java", label: "Java" },
 	{ id: "csharp", title: "C# / .NET", label: ".NET" },
-	{ id: "go", title: "Go", label: "Go" },
+	// Not a language tab: where readers look when their stack has no guide.
+	{ id: "other", title: "Other languages and frameworks", label: "Other" },
 ] as const
 
 export type AgentGuideLanguage = (typeof AGENT_GUIDE_LANGUAGES)[number]["id"]
@@ -66,7 +67,7 @@ export const AGENT_GUIDES: readonly AgentGuide[] = [
 		"Any language",
 		"Emit the OpenTelemetry GenAI conventions",
 		"opentelemetry",
-		AGENT_GUIDE_LANGUAGES.map((l) => l.id),
+		["other"],
 	),
 ]
 
