@@ -71,13 +71,11 @@ MapleBrowser.init({
 
 ## Step 4: Navigation and data-loading spans
 
-Use the framework entry from the reference (`@maple-dev/browser/nextjs`, `/tanstack`, `/react-router`, `/vue`, `/sveltekit`): it names spans, handles the first page load, redirects and interrupted navigations, and wraps loaders. Add only the calls the reference lists; don't hand-write router glue it already covers. For other frameworks, call the SDK's navigation API from the router's hooks (`frameworks/other.md`):
+Use the framework entry from the reference (`@maple-dev/browser/nextjs`, `/tanstack`, `/react-router`, `/vue`, `/sveltekit`, `/angular`, `/astro`): it names spans, handles the first page load, redirects and interrupted navigations, and wraps loaders. Add only the calls the reference lists; don't hand-write router glue it already covers. For other frameworks, call the SDK's navigation API from the router's hooks (`frameworks/other.md`):
 
 - `MapleBrowser.startNavigation(path)`: call when the router starts a navigation. The first call opens a `pageload` span (joined to the server render, see Step 6), later calls open `navigate` spans. A navigation that starts before the previous one ended ends the previous one as interrupted.
 - `MapleBrowser.endNavigation(routeTemplate?)`: call when the new route is ready. Renames the span to `<kind> <template>` and ends it. No-op when nothing is open.
 - `MapleBrowser.traced(name, fn, { isFailure })`: runs a data-loading function in a child span of the current navigation. Pass `isFailure` to exclude the framework's control-flow throws (redirects, not-found) from being marked as errors. An error it records isn't reported again by `captureException` or the global handlers.
-
-The Angular and Astro references still copy `tracing.ts` from this skill's directory verbatim, which also needs `@opentelemetry/api` installed. Follow them as written until they're updated.
 
 Rules:
 
@@ -95,7 +93,7 @@ Keep whatever the hook already does (logging, other vendors, fallback UI). `init
 ## Step 6: Server-side rendering (only if the app renders on the server)
 
 1. The server needs OpenTelemetry like any backend: follow `maple-nodejs-style` (or `maple-nextjs-style` for Next.js) for the SDK bootstrap and inline key. If that skill isn't installed, install it with `npx skills add MapleTechLabs/maple/skills --skill maple-nodejs-style -y`, or read it at https://github.com/MapleTechLabs/maple/tree/main/skills/maple-nodejs-style.
-2. Use the reference's server entry (`withMapleProxy`, `traceRequests`/`traceRender`, `serverInstrumentation`, `mapleNitroPlugin`, `mapleHandle`). Otherwise add a span around the render, named `ssr <template>`, unless the framework already creates one. If the framework loads data before it calls your render hook, open the span (or a request span) where the request arrives, so the server's loaders run inside it; otherwise every request's loaders become separate traces. Then, from inside that span's context, append the trace context to the response:
+2. Use the reference's server entry (`withMapleProxy`, `traceRequests`/`traceRender`, `serverInstrumentation`, `mapleNitroPlugin`, `mapleHandle`, `tracedRender`, Astro's `maple()` middleware). Otherwise add a span around the render, named `ssr <template>`, unless the framework already creates one. If the framework loads data before it calls your render hook, open the span (or a request span) where the request arrives, so the server's loaders run inside it; otherwise every request's loaders become separate traces. Then, from inside that span's context, append the trace context to the response:
 
 	```ts
 	import { serverTiming } from "@maple-dev/browser/server"

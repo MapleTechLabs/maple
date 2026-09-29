@@ -2,11 +2,11 @@
 
 Human version: https://maple.dev/docs/frontend/other
 
-Uses `MapleBrowser.startNavigation` / `endNavigation` / `traced` / `captureException` from `@maple-dev/browser` (0.10.0+) directly, plus `@maple-dev/browser/server` for SSR. For any frontend without its own reference: Solid/SolidStart (a worked Solid Router example is at the end), Qwik, Preact, Astro, Remix v2, Ember, Lit, a hand-rolled router, or a multi-page app. The steps in `SKILL.md` stay the same. This file is how to find where each one goes. Read the framework's installed types (`node_modules/<pkg>/**/*.d.ts`) to confirm every hook before using it.
+Uses `MapleBrowser.startNavigation` / `endNavigation` / `traced` / `captureException` from `@maple-dev/browser` (0.10.0+) directly, plus `@maple-dev/browser/server` for SSR. For any frontend without its own reference: Solid/SolidStart (a worked Solid Router example is at the end), Qwik, Preact, Remix v2, Ember, Lit, a hand-rolled router, or a multi-page app. The steps in `SKILL.md` stay the same. This file is how to find where each one goes. Read the framework's installed types (`node_modules/<pkg>/**/*.d.ts`) to confirm every hook before using it.
 
 ## 1. Init
 
-Call `MapleBrowser.init` in the module that runs first in the browser: the client entry (`main.ts`, `index.tsx`, `entry-client.tsx`, `client.ts`), or a script tag in the root layout for server-first frameworks (Astro: a `<script>` in the base layout). It must run before the app renders and before other code that wraps `fetch`.
+Call `MapleBrowser.init` in the module that runs first in the browser: the client entry (`main.ts`, `index.tsx`, `entry-client.tsx`, `client.ts`), or a `<script>` in the base layout for server-first frameworks and multi-page apps. It must run before the app renders and before other code that wraps `fetch`.
 
 ## 2. Navigation start and end
 
