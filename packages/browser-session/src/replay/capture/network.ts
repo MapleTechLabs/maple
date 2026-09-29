@@ -53,7 +53,11 @@ export function installNetworkCapture(
 				const requestBody = typeof init?.body === "string" ? init.body : undefined
 				const done = performance.now()
 				const contentType = res.headers.get("content-type") ?? ""
-				void (TEXT_CONTENT.test(contentType) ? res.clone().text() : Promise.resolve(undefined))
+				void (
+					TEXT_CONTENT.test(contentType)
+						? readPrefix(res.clone(), bodies?.maxLength ?? 0)
+						: Promise.resolve(undefined)
+				)
 					.catch(() => undefined)
 					.then((responseBody) =>
 						record(
@@ -136,7 +140,25 @@ export function installNetworkCapture(
 	}
 }
 
-/** A text or JSON XHR response, as text; anything else is not read. */
+/**
+ * Up to `maxLength` characters of a response body (one more, so `cut` marks it
+ * cut), then the stream is cancelled: a large payload is never read in full.
+ */
+async function readPrefix(response: Response, maxLength: number): Promise<string | undefined> {
+	const reader = response.body?.getReader()
+	if (!reader) return undefined
+	const decoder = new TextDecoder()
+	let text = ""
+	while (text.length <= maxLength) {
+		const { done, value } = await reader.read()
+		if (done) return text + decoder.decode()
+		text += decoder.decode(value, { stream: true })
+	}
+	void reader.cancel().catch(() => {})
+	return text
+}
+
+/** A text or JSON XHR response, as text; the browser already holds it, so this only slices. */
 function xhrResponseText(xhr: XMLHttpRequest): string | undefined {
 	if (!TEXT_CONTENT.test(xhr.getResponseHeader("content-type") ?? "")) return undefined
 	if (xhr.responseType === "" || xhr.responseType === "text") return xhr.responseText
