@@ -10,7 +10,7 @@
 // app that registered its provider first owns that). Without a live provider
 // (before `init()`, after `shutdown()`, tracing disabled, consent not yet
 // granted, or on a server) nothing is spanned and `traced` only runs `fn`.
-import { hasConsent, scrubUrl } from "@maple/browser-session"
+import { consentAllowedSince, hasConsent, scrubUrl } from "@maple/browser-session"
 import {
 	type Context,
 	context,
@@ -20,7 +20,7 @@ import {
 	trace,
 	type Tracer,
 } from "@opentelemetry/api"
-import { recordFailure } from "./errors"
+import { captureException, recordFailure } from "./errors"
 import { liveMapleTracer } from "./tracing"
 import { SDK_NAME, SDK_VERSION } from "./version"
 
@@ -92,8 +92,9 @@ export function startNavigation(path: string): void {
 	const live = tracer()
 	if (!live) return
 	const parent = (joinServer ? serverContext() : undefined) ?? context.active()
-	// The document's page load began at navigation start, not when the app's JS got here.
-	const startTime = joinServer ? performance.timeOrigin : undefined
+	// The document's page load began at navigation start, not when the app's JS got here,
+	// but never before a consent grant: the exporter drops anything that began earlier.
+	const startTime = joinServer ? Math.max(performance.timeOrigin, consentAllowedSince()) : undefined
 	const span = live.startSpan(kind, { startTime, attributes: { "url.path": scrubUrl(path) } }, parent)
 	navigation = { kind, span }
 	if (joinServer) {
@@ -125,7 +126,11 @@ export async function traced<T>(name: string, fn: () => Promise<T>, options: Tra
 		try {
 			return await fn()
 		} catch (error) {
-			if (isFailure(options, error)) recordFailure(span, error)
+			if (isFailure(options, error)) {
+				// An unsampled span drops what it records: report the failure on its own, which is always kept.
+				if (span.isRecording()) recordFailure(span, error)
+				else captureException(error, { name })
+			}
 			throw error
 		} finally {
 			span.end()

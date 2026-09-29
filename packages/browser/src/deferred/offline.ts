@@ -2,7 +2,13 @@
 // the exporters send, and sent again when the browser is back online or on the
 // next page load. Best-effort: a private window or blocked storage just means
 // nothing is kept.
-import { hasConsent, ingestHeaders, onConsentChange, sdkHint } from "@maple/browser-session"
+import {
+	consentAllowedSince,
+	hasConsent,
+	ingestHeaders,
+	onConsentChange,
+	sdkHint,
+} from "@maple/browser-session"
 import { JsonLogsSerializer, JsonTraceSerializer } from "@opentelemetry/otlp-transformer"
 import type { ReadableLogRecord } from "@opentelemetry/sdk-logs"
 import type { ReadableSpan } from "@opentelemetry/sdk-trace-base"
@@ -86,7 +92,8 @@ export function startOfflineQueue(config: ResolvedConfig): OfflineQueue {
 			const read = await store("readonly")
 			const stored = read ? (await settle(read.getAll())).filter(isStoredBatch) : []
 			for (const batch of stored) {
-				if (Date.now() - batch.createdAt <= MAX_AGE_MS) {
+				// Expired, or captured before the current consent grant (a revoke this queue never saw): drop it.
+				if (Date.now() - batch.createdAt <= MAX_AGE_MS && batch.createdAt >= consentAllowedSince()) {
 					const response = await fetch(`${config.endpoint}/v1/${batch.signal}`, {
 						method: "POST",
 						headers,
