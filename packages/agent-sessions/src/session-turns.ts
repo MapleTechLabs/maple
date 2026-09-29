@@ -127,11 +127,13 @@ const FAILED_RESPONSE_STATUSES = new Set(["failed", "error"])
  * `gen_ai.response.status` counts too. Scoped to AI spans because HTTP
  * instrumentation legitimately stamps `error.type` on expected 4xx requests
  * whose span status is deliberately not `Error`. On a span the ingest gateway
- * stamped, its verdict (`MAPLE_AI_STAMP_ATTRS.error`), which is this rule.
+ * stamped, its verdict (`MAPLE_AI_STAMP_ATTRS.error`), which is this rule
+ * less the copy a call paused for a human's approval leaves, which some
+ * frameworks end in error.
  */
 export function spanFailed(span: AiSessionSpan): boolean {
-	if (span.statusCode === "Error") return true
 	if (span.genAi.mapleLlmCall !== undefined) return span.genAi.mapleError === 1
+	if (span.statusCode === "Error") return true
 	if (!span.isAiSpan) return false
 	const errorType = span.genAi.errorType
 	if (errorType !== undefined && errorType !== "") return true

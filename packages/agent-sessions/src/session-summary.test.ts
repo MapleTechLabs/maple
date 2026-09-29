@@ -1566,6 +1566,40 @@ describe("per-model cost, tools and failure groups", () => {
 		])
 	})
 
+	// The tests above read spans ingested before the gateway stamped them. On a
+	// stamped span its `maple_ai.tool_call` verdict decides, as on the list.
+	it("counts a stamped tool span by the gateway's verdict alone", () => {
+		const stamped = (spanId: string, startMs: number, mapleToolCall: number, toolCallResult?: string) =>
+			toolSpan({
+				spanId,
+				traceId: `trace-${spanId}`,
+				toolName: "delete_file",
+				startMs,
+				durationMs: 1,
+				genAi: { mapleLlmCall: 0, mapleToolCall, toolCallId: "call_a", toolCallResult },
+			})
+		const summary = summarize([
+			// Google ADK's confirmation request: no call.
+			stamped(
+				"paused",
+				0,
+				0,
+				'{"error": "This tool call requires confirmation, please approve or reject."}',
+			),
+			// LlamaIndex ends a step waiting for a human in error, which the
+			// gateway stamped neither a call nor a failure.
+			{ ...stamped("waiting", 500, 0), statusCode: "Error" },
+			// No result and no framework mark: a call, not merged into the one
+			// that follows under the same id.
+			stamped("no-result", 1_000, 1),
+			stamped("approved", 2_000, 1, "deleted /tmp/scratch-notes.txt"),
+		])
+
+		expect(summary.work.toolCalls).toBe(2)
+		expect(summary.tools[0]!.events.map((event) => event.spanId)).toEqual(["no-result", "approved"])
+		expect(summary.failures.errors).toBe(0)
+	})
+
 	it("keeps two calls that share an id when both returned, and every call captured without payloads", () => {
 		const lane = (spanId: string, traceId: string, startMs: number, result?: string) =>
 			toolSpan({

@@ -1658,13 +1658,24 @@ const summaryMeasures_ = ($: SpanColumns) => {
 			),
 		)
 	// The list's error rule, so the summary and the list badge agree.
-	const failed = $.StatusCode.eq("Error")
-		.or(stamp(MAPLE_AI_STAMP_ATTRS.error).eq("1"))
+	// On a stamped span the gateway's verdict alone, as `spanFailed`: it leaves
+	// out a paused tool call's copy that its framework ended in error.
+	const failed = stamp(MAPLE_AI_STAMP_ATTRS.error)
+		.eq("1")
 		.or(
-			unstamped.and(isAi).and(
-				field("errorType")
-					.neq("")
-					.or(CH.inList($.SpanAttributes.get(RESPONSE_STATUS_ATTR), FAILED_RESPONSE_STATUSES)),
+			unstamped.and(
+				$.StatusCode.eq("Error").or(
+					isAi.and(
+						field("errorType")
+							.neq("")
+							.or(
+								CH.inList(
+									$.SpanAttributes.get(RESPONSE_STATUS_ATTR),
+									FAILED_RESPONSE_STATUSES,
+								),
+							),
+					),
+				),
 			),
 		)
 	const conversationId = attr([
