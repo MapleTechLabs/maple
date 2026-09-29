@@ -24,7 +24,7 @@ import { ChatMessage, type ChatTurnOrigin, type ChatTurnTenantEncoded } from "@m
 import type { InvestigationProgress, PrReviewFailureReason } from "@maple/domain/http"
 import { workerEnvLayer } from "@maple/infra/worker-runtime"
 import { workerTelemetryConfig } from "@maple/infra/worker-telemetry"
-import { Cause, Effect, Layer, ManagedRuntime, Option } from "effect"
+import { Cause, Effect, Layer, ManagedRuntime, Match, Option } from "effect"
 import type { ChatSession } from "./ChatSession"
 import type { ChatTurnEvent } from "./events"
 import { withToolTranscript } from "./close-out"
@@ -251,7 +251,8 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 	const tenant = toTenantContext(input.tenant, origin)
 	// One answer for the model's tags and the turn span, the same one the toolkit is built from.
 	// `meterTurn` resolves its own because it runs as a finalizer and is separately exported.
-	const surface = profileForTurn(agentForSession(input.sessionId), origin).surface
+	const agent = agentForSession(input.sessionId)
+	const surface = profileForTurn(agent, origin).surface
 	const observability = makeTurnObservability()
 	// Hoisted out of the program: `submit_diagnosis` reads it mid-run — the tool is invoked mid-run
 	// so there is no later moment to hand it a total — and the metering finalizer reads it after the
@@ -344,13 +345,15 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 		}
 		const history = input.session.history()
 		const tags = { surface, orgId: tenant.orgId, sessionId: input.sessionId, turnId: input.messageId }
-		// Reviews and replies run on the organization's pick; every other turn on the triage model.
-		const model =
-			prReviewId === undefined && prReplyId === undefined
-				? resolveTriageModel(input.env, tags)
-				: yield* reviews
-						.reviewModel(tenant.orgId)
-						.pipe(Effect.map((chosen) => resolveReviewModel(input.env, tags, chosen)))
+		const model = yield* Match.value(agent.model).pipe(
+			Match.when("triage", () => Effect.succeed(resolveTriageModel(input.env, tags))),
+			Match.when("review", () =>
+				reviews
+					.reviewModel(tenant.orgId)
+					.pipe(Effect.map((chosen) => resolveReviewModel(input.env, tags, chosen))),
+			),
+			Match.exhaustive,
+		)
 
 		// The session recorded the user's message before the run started, so the transcript's tail is
 		// this run's input rather than part of its history.

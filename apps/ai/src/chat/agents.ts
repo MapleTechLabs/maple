@@ -61,7 +61,14 @@ export interface AgentDefinition {
 	 * different work; they shared one budget until 2026-09-20, and it was the investigation's.
 	 */
 	readonly budget: AgentBudget
+	/**
+	 * Which model the agent runs on: `review` is the organization's pick for pull request work
+	 * (`resolveReviewModel`), `triage` the deployment's chat and investigation model.
+	 */
+	readonly model: AgentModel
 }
+
+export type AgentModel = "triage" | "review"
 
 /**
  * Keyed by `ChatMode`, not by `string`: a new mode is then a compile error here rather than an
@@ -74,6 +81,7 @@ export const AGENTS: Readonly<Record<ChatMode, AgentDefinition>> = {
 		prompt: SYSTEM_PROMPT,
 		permission: DEFAULT_RULESET,
 		budget: CHAT_BUDGET,
+		model: "triage",
 	},
 	alert: {
 		name: "alert",
@@ -81,6 +89,7 @@ export const AGENTS: Readonly<Record<ChatMode, AgentDefinition>> = {
 		prompt: SYSTEM_PROMPT,
 		permission: DEFAULT_RULESET,
 		budget: CHAT_BUDGET,
+		model: "triage",
 	},
 	"widget-fix": {
 		name: "widget-fix",
@@ -88,6 +97,7 @@ export const AGENTS: Readonly<Record<ChatMode, AgentDefinition>> = {
 		prompt: SYSTEM_PROMPT,
 		permission: DEFAULT_RULESET,
 		budget: CHAT_BUDGET,
+		model: "triage",
 	},
 	investigate: {
 		name: "investigate",
@@ -97,6 +107,7 @@ export const AGENTS: Readonly<Record<ChatMode, AgentDefinition>> = {
 		// further by its origin — see `profileForTurn` in `./profiles`.
 		permission: DEFAULT_RULESET,
 		budget: INVESTIGATION_BUDGET,
+		model: "triage",
 	},
 	"pr-review": {
 		name: "pr-review",
@@ -107,6 +118,7 @@ export const AGENTS: Readonly<Record<ChatMode, AgentDefinition>> = {
 		// nothing else: every unoffered schema is prompt it does not pay for on each call.
 		autonomousPermission: PR_REVIEW_RULESET,
 		budget: PR_REVIEW_BUDGET,
+		model: "review",
 	},
 	"pr-reply": {
 		name: "pr-reply",
@@ -115,6 +127,7 @@ export const AGENTS: Readonly<Record<ChatMode, AgentDefinition>> = {
 		permission: DEFAULT_RULESET,
 		autonomousPermission: PR_REPLY_RULESET,
 		budget: PR_REPLY_BUDGET,
+		model: "review",
 	},
 } as const satisfies Readonly<Record<ChatMode, AgentDefinition>>
 
