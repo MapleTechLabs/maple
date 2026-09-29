@@ -1094,6 +1094,27 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 		)
 	})
 
+	it("files a sessionless trace with no model call and no named agent under no session", async () => {
+		const classification = { ...WINDOW, orgId: CLASSIFICATION_ORG_ID }
+		const page = compileUnsafe(Integrations.aiSessionPageQuery(), classification)
+		const rows = Effect.runSync(page.decodeRows(await runJson(page.sql)))
+		// The scorer run is gone; the LangGraph trace stays, on its named agent.
+		assert.deepStrictEqual(
+			rows.map((row) => [row.sessionId, row.toolCalls]),
+			[[`${MAPLE_AI_TRACE_SESSION_PREFIX}${LANGGRAPH_TRACE}`, 2]],
+		)
+
+		const facets = compileUnionUnsafe(Integrations.aiSessionFacetsQuery(), classification)
+		const vendors = Effect.runSync(facets.decodeRows(await runJson(facets.sql)))
+			.filter((row) => row.facetType === "vendor")
+			.map((row) => [row.name, row.count])
+			.sort()
+		assert.deepStrictEqual(vendors, [
+			["langchain", 1],
+			["vercel_ai_sdk", 1],
+		])
+	})
+
 	it("distributes the sessions over each range the way the page measures them", async () => {
 		const compiled = compileUnsafe(Integrations.aiSessionDistributionsQuery(), WINDOW)
 		const rows = Effect.runSync(compiled.decodeRows(await runJson(compiled.sql)))
