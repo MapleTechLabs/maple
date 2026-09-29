@@ -97,7 +97,7 @@ describe("ClickHouse migrations", () => {
 		expect(migration_0033_ai_crawler_requests.requiredForIngest).toBe(false)
 		// 0034 adds the MV-populated trace_facets_hourly.
 		expect(migration_0034_trace_facets_hourly.requiredForIngest).toBe(false)
-		// 0035 widens the MV-populated ai_trace_index and recreates its view.
+		// 0035 only recreates the MV-populated ai_trace_index's view.
 		expect(migration_0035_ai_trace_index_gateway_stamps.requiredForIngest).toBe(false)
 	})
 
@@ -927,13 +927,9 @@ describe("migration 0032 — ai_trace_index tool detail columns", () => {
 })
 
 describe("migration 0035 — ai_trace_index_mv projects the gateway's stamps", () => {
-	it("adds the tool call columns, then recreates the view over the maple_ai.* stamps, with no dialect key and no convention", () => {
-		const [id, paused, drop, create, ...rest] = migration_0035_ai_trace_index_gateway_stamps.statements
+	it("recreates the view over the maple_ai.* stamps, with no dialect key and no convention", () => {
+		const [drop, create, ...rest] = migration_0035_ai_trace_index_gateway_stamps.statements
 		expect(rest).toEqual([])
-		expect(id).toBe("ALTER TABLE ai_trace_index ADD COLUMN IF NOT EXISTS ToolCallId String")
-		expect(paused).toBe("ALTER TABLE ai_trace_index ADD COLUMN IF NOT EXISTS IsPausedToolCall UInt8")
-		// An MV's SELECT is frozen at creation, so the columns are added before
-		// the view that fills them is created.
 		expect(drop).toBe("DROP VIEW IF EXISTS ai_trace_index_mv")
 		expect(create).toBe(latestSnapshotStatements.find((stmt) => stmt.includes("ai_trace_index_mv TO")))
 		for (const projection of [
@@ -948,8 +944,6 @@ describe("migration 0035 — ai_trace_index_mv projects the gateway's stamps", (
 			"toFloat64OrZero(SpanAttributes['maple_ai.usage.input_tokens']) AS InputTokens",
 			"SpanAttributes['maple_ai.tool.description'] AS ToolDescription",
 			"SpanAttributes['maple_ai.tool.error_result'] AS FailedToolCallResult",
-			"SpanAttributes['maple_ai.tool.call_id'] AS ToolCallId",
-			"toUInt8(SpanAttributes['maple_ai.tool.paused'] = '1') AS IsPausedToolCall",
 		]) {
 			expect(create).toContain(projection)
 		}

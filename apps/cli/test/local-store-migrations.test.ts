@@ -95,8 +95,8 @@ const [v10ToV11ProductEventsModule] = localStoreMigrations.filter(
 
 describe("current local schema identity", () => {
 	it("matches the generated v26 revision and keeps the issue-297 identity frozen", () => {
-		expect(SCHEMA_FINGERPRINT).toBe("ea530a31bf5e0990")
-		expect(SCHEMA_DIGEST).toBe("ea530a31bf5e0990e663f96eb7ec63809e43317f200fcb03467820595e59b59d")
+		expect(SCHEMA_FINGERPRINT).toBe("203c87dde2b5aedc")
+		expect(SCHEMA_DIGEST).toBe("203c87dde2b5aedc28de3b2fd72829991b28fdf703bbb40ae72ebd835dbdb67c")
 		expect(ISSUE_297_TARGET_SCHEMA_PROJECT_REVISION).toBe(
 			"506bc745f7a7eca202ec905a6403a6815e86413faf0cd3cbbf73881023edce91",
 		)

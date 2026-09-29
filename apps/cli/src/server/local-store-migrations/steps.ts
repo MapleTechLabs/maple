@@ -1118,20 +1118,13 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 		id: "local-0025-to-0026-ai-trace-index-gateway-stamps",
 		from: 25,
 		to: 26,
-		description:
-			"Add the tool call id and the paused-copy flag to ai_trace_index and recreate ai_trace_index_mv as a projection of the ingest gateway's maple_ai.* stamps",
+		description: "Recreate ai_trace_index_mv as a projection of the ingest gateway's maple_ai.* stamps",
 		clonedBefore: "any DDL runs",
-		beforeBootstrap: [
-			addColumns("ai_trace_index", [
-				["ToolCallId", "String"],
-				["IsPausedToolCall", "UInt8"],
-			]),
-			dropViews("ai_trace_index_mv"),
-		],
+		beforeBootstrap: [dropViews("ai_trace_index_mv")],
 		plan: [
 			[
 				"rebuild-ai-trace-index-view",
-				"Add the tool call id and the paused-copy flag to ai_trace_index and rebuild ai_trace_index_mv to project the maple_ai.* facts the ingest gateway stamps on each span",
+				"Rebuild ai_trace_index_mv to project the maple_ai.* facts the ingest gateway stamps on each span",
 			],
 		],
 		verifies: "Verify the v26 physical schema and the retained raw telemetry counts",
@@ -1142,7 +1135,7 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 				classification: "derived",
 				disposition: "rebuild-within-retention-horizon",
 				guarantee:
-					"Existing rows are preserved untouched with the values the v25 view gave them, an empty tool call id and a zero paused-copy flag; the rebuilt view fills spans materialized after the migration from the gateway's stamps, and the gap closes as the retention window rolls.",
+					"Existing rows are preserved untouched with the values the v25 view gave them; the rebuilt view fills spans materialized after the migration from the gateway's stamps, and the gap closes as the retention window rolls.",
 				...AI_TRACE_INDEX_FORWARD,
 			},
 		],

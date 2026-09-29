@@ -315,18 +315,17 @@ export const LOCAL_SCHEMA_HISTORY: ReadonlyArray<LocalSchemaHistoryEntry> = Obje
 		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
 	}),
 	Object.freeze({
-		// v26 adds ToolCallId and IsPausedToolCall to ai_trace_index and
-		// recreates its view as a projection of the ingest gateway's maple_ai.*
-		// stamps. No row is rewritten: rows before the edge keep the values the
-		// v25 view gave them, with an empty id and a zero flag.
+		// v26 recreates ai_trace_index_mv as a projection of the ingest
+		// gateway's maple_ai.* stamps. No column changes and no row is
+		// rewritten: rows before the edge keep the values the v25 view gave them.
 		//
 		// projectRevision is carried forward deliberately: it is a hardcoded
 		// constant that no longer tracks the generator's header, and the identity
 		// this gate compares is the fingerprint/digest pair.
 		version: 26,
-		fingerprint: "ea530a31bf5e0990",
-		digest: "ea530a31bf5e0990e663f96eb7ec63809e43317f200fcb03467820595e59b59d",
-		manifestDigest: "d6366346f270e9e41c17e7c72678eae4f6f587f95a33e82422a9b7f780c483da",
+		fingerprint: "203c87dde2b5aedc",
+		digest: "203c87dde2b5aedc28de3b2fd72829991b28fdf703bbb40ae72ebd835dbdb67c",
+		manifestDigest: "a3f69dea62db6610d63a6b2442f86d9071c91c286b5935e764700efc01fa7d7a",
 		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
 	}),
 ] as const)

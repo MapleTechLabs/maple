@@ -187,7 +187,6 @@ const SEED_SPANS: ReadonlyArray<SeedSpan> = [
 			"gen_ai.agent.name": "slack-agent",
 			...aiGatewayStamps({
 				toolCall: true,
-				toolPaused: true,
 				toolName: "search_traces",
 				toolDescription: "Search traces.",
 				agentName: "slack-agent",
@@ -240,7 +239,6 @@ const SEED_SPANS: ReadonlyArray<SeedSpan> = [
 			"gen_ai.tool.description": "Search traces by attribute.",
 			...aiGatewayStamps({
 				toolCall: true,
-				toolPaused: true,
 				toolName: "search_traces",
 				toolDescription: "Search traces by attribute.",
 			}),
@@ -353,7 +351,7 @@ const SEED_SPANS: ReadonlyArray<SeedSpan> = [
 		attrs: agentSpan({
 			"gen_ai.operation.name": "execute_tool",
 			"gen_ai.tool.name": "search_traces",
-			...aiGatewayStamps({ toolCall: true, toolPaused: true, toolName: "search_traces" }),
+			...aiGatewayStamps({ toolCall: true, toolName: "search_traces" }),
 		}),
 	},
 ]
@@ -372,7 +370,6 @@ const FOREIGN_SPAN: SeedSpan = {
 		"gen_ai.tool.description": "Another org's search.",
 		...aiGatewayStamps({
 			toolCall: true,
-			toolPaused: true,
 			toolName: "search_traces",
 			toolDescription: "Another org's search.",
 		}),

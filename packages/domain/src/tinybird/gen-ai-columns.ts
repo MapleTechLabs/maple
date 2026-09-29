@@ -4,9 +4,8 @@
 // gateway, once per span, and written onto the span as a `maple_ai.*` stamp
 // (`MAPLE_AI_STAMP_ATTRS`, decided in `apps/ingest/src/ai_session/facts.rs`
 // and `usage.rs`): whether the span is a model call or a tool call, whether it
-// failed, its model, agent and tool, a tool call's id and whether it is the
-// copy a call paused for approval left, and a model call's usage as five
-// disjoint buckets. So the view is a projection of those stamps plus generic OTel
+// failed, its model, agent and tool, and a model call's usage as five disjoint
+// buckets. So the view is a projection of those stamps plus generic OTel
 // fields, and holds no vendor rule: a dialect is taught to the gateway, where
 // the span is still whole, never to this SQL. The detail page reads the same
 // stamps, which is what keeps the list and the page equal.
@@ -114,8 +113,6 @@ export const GENAI_COST_SQL = sql(number(MAPLE_AI_STAMP_ATTRS.cost))
 export const GENAI_ERROR_TYPE_SQL = sql(attr("error.type"))
 export const GENAI_STATUS_MESSAGE_SQL = sql(statusMessage)
 export const GENAI_TOOL_DESCRIPTION_SQL = sql(attr(MAPLE_AI_STAMP_ATTRS.toolDescription))
-export const GENAI_TOOL_CALL_ID_SQL = sql(attr(MAPLE_AI_STAMP_ATTRS.toolCallId))
-export const GENAI_IS_PAUSED_TOOL_CALL_SQL = sql(flag(MAPLE_AI_STAMP_ATTRS.toolPaused))
 export const GENAI_FAILED_TOOL_CALL_RESULT_SQL = sql(failedToolCallResult)
 export const GENAI_ERROR_FINGERPRINT_SQL = sql(errorFingerprint)
 export const GENAI_INPUT_TOKENS_SQL = sql(input)

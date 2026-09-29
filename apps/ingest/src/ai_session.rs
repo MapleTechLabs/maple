@@ -1816,14 +1816,13 @@ mod tests {
             attr_value(tool, "gen_ai.tool.call.result").as_deref(),
             Some(r#"{"error":"Syntax error"}"#)
         );
-        // The folded failure reaches the stamps: stamped before its phase was
-        // seen, the call had read as a paused copy with no result.
+        // The folded failure reaches the stamps, though the call was stamped
+        // before its phase was seen.
         assert_eq!(attr_value(tool, "maple_ai.error").as_deref(), Some("1"));
         assert_eq!(
             attr_value(tool, "maple_ai.tool.error_result").as_deref(),
             Some(r#"{"error":"Syntax error"}"#)
         );
-        assert!(attr_value(tool, "maple_ai.tool.paused").is_none());
     }
 
     #[test]

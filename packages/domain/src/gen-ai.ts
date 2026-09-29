@@ -129,16 +129,15 @@ export const MAPLE_GENAI_MODEL_DURATION_MS_ATTR = "maple_ai.model_duration_ms"
  *   presence is what says the gateway decided the rest; a span ingested
  *   before it did carries none, and its readers keep their op/name rules and
  *   usage conventions for it until it ages out of the 30-day TTL.
- * - `toolCall`, `error`: `"1"` where they hold, absent otherwise.
+ * - `toolCall`, `error`: `"1"` where they hold, absent otherwise. `toolCall`
+ *   is `"0"` on the copy a call paused for a human's approval leaves, by its
+ *   framework's explicit mark (Google ADK, OpenAI Agents up to 0.22.0,
+ *   pydantic-ai, LlamaIndex's own tracer): that copy is neither a call nor a
+ *   failure, and a call rejected after it counts none.
  * - `model`, `agentName`, `toolName`, `responseId`: the first non-empty value
  *   across the dialects' keys; `responseId` on model calls.
  * - `toolDescription` (on tool calls) and `toolErrorResult` (a failed tool
  *   call's result), cut by the gateway.
- * - `toolCallId`: the call's id (`gen_ai.tool.call.id`, Vercel
- *   `ai.toolCall.id`). `toolPaused`: `"1"` on a tool call that did not fail
- *   and recorded no result, or only Google ADK's confirmation request — the
- *   copy a call paused for a human's approval leaves, before the approved run
- *   executes it again under the same id.
  * - The usage buckets, on the model call alone: `inputTokens` the uncached
  *   prompt, `outputTokens` the visible completion, a span's total the plain
  *   sum of the five; `cost` in USD as the emitter priced the call. An agent or
@@ -156,8 +155,6 @@ export const MAPLE_AI_STAMP_ATTRS = {
 	responseId: "maple_ai.response.id",
 	toolDescription: "maple_ai.tool.description",
 	toolErrorResult: "maple_ai.tool.error_result",
-	toolCallId: "maple_ai.tool.call_id",
-	toolPaused: "maple_ai.tool.paused",
 	inputTokens: "maple_ai.usage.input_tokens",
 	cacheReadTokens: "maple_ai.usage.cache_read_tokens",
 	cacheWriteTokens: "maple_ai.usage.cache_write_tokens",

@@ -4,22 +4,23 @@
 //! verdicts the list sums.
 //!
 //! - `maple_ai.llm_call` and the usage buckets: see `usage.rs`
-//! - `maple_ai.tool_call`: `1` on a tool call
+//! - `maple_ai.tool_call`: `1` on a tool call, `0` on the copy a call paused
+//!   for a human's approval leaves (see [`paused`]): that copy is no call
 //! - `maple_ai.error`: `1` on a span that failed, by its status or by
-//!   attribute (`error.type`, a failed `gen_ai.response.status`)
+//!   attribute (`error.type`, a failed `gen_ai.response.status`), unless it
+//!   is such a paused copy
 //! - `maple_ai.model`, `maple_ai.agent.name`, `maple_ai.tool.name`,
-//!   `maple_ai.tool.call_id`, `maple_ai.response.id`: each fact's first
-//!   non-empty value across the dialects' keys (and OpenAI Agents' agent from
-//!   its graph node, see [`agent_name`])
+//!   `maple_ai.response.id`: each fact's first non-empty value across the
+//!   dialects' keys (and OpenAI Agents' agent from its graph node, see
+//!   [`agent_name`])
 //! - `maple_ai.tool.description`, cut to [`TOOL_DESCRIPTION_MAX`] characters,
 //!   on a tool call
 //! - `maple_ai.tool.error_result`: a failed tool call's result, cut to
 //!   [`TOOL_ERROR_RESULT_MAX`], where several frameworks put the only account
 //!   of the failure
-//! - `maple_ai.tool.paused`: `1` on a tool call's copy that recorded no
-//!   outcome, the copy a call paused for a human's approval leaves behind
 //!
-//! A flag is written only when it holds and a value only when there is one:
+//! A flag is written only when it holds (`maple_ai.tool_call`'s `0` aside)
+//! and a value only when there is one:
 //! `maple_ai.llm_call`, present on every stamped span, is what tells a reader
 //! the rest were decided. The keys must match `MAPLE_AI_STAMP_ATTRS` in
 //! `packages/domain/src/gen-ai.ts`.
@@ -42,10 +43,8 @@ const ERROR_ATTR: &str = "maple_ai.error";
 const MODEL_ATTR: &str = "maple_ai.model";
 const AGENT_NAME_ATTR: &str = "maple_ai.agent.name";
 const TOOL_NAME_ATTR: &str = "maple_ai.tool.name";
-const TOOL_CALL_ID_ATTR: &str = "maple_ai.tool.call_id";
 const TOOL_DESCRIPTION_ATTR: &str = "maple_ai.tool.description";
 const TOOL_ERROR_RESULT_ATTR: &str = "maple_ai.tool.error_result";
-const TOOL_PAUSED_ATTR: &str = "maple_ai.tool.paused";
 const RESPONSE_ID_ATTR: &str = "maple_ai.response.id";
 
 /// A description is a sentence meant for a model, but a framework can inline
@@ -53,9 +52,17 @@ const RESPONSE_ID_ATTR: &str = "maple_ai.response.id";
 const TOOL_DESCRIPTION_MAX: usize = 2_000;
 /// An explanation of a failure is its opening; the rest of a result is payload.
 const TOOL_ERROR_RESULT_MAX: usize = 1_000;
-/// The result Google ADK records on a tool call it paused to ask a human for
-/// confirmation. The call runs again under the same call id once approved.
+/// The response Google ADK records on a tool call it paused to ask a human
+/// for confirmation. The call runs again under the same call id once approved.
 const CONFIRMATION_REQUEST: &str = "This tool call requires confirmation";
+/// OpenAI Agents SDK up to 0.22.0 records a call awaiting approval as the
+/// repr of its result, whose run item is a `ToolApprovalItem`; later versions
+/// record no output there, and so no mark.
+const APPROVAL_ITEM: &str = "type='tool_approval_item'";
+/// The status message LlamaIndex's own tracer ends a workflow step with when
+/// the step suspends to wait for an event, such as a human's response; the
+/// step runs again once it arrives.
+const WAITING_FOR_EVENT: &str = "Waiting for event";
 
 // Each fact's keys, canonical first: the first non-empty value wins.
 
@@ -72,7 +79,6 @@ const MODEL_KEYS: &[&str] = &[
 /// call, the only agent identity an older-SDK span has.
 const AGENT_NAME_KEYS: &[&str] = &["gen_ai.agent.name", "ai.telemetry.functionId"];
 const TOOL_NAME_KEYS: &[&str] = &["gen_ai.tool.name", "ai.toolCall.name", "tool.name"];
-const TOOL_CALL_ID_KEYS: &[&str] = &["gen_ai.tool.call.id", "ai.toolCall.id"];
 const TOOL_DESCRIPTION_KEYS: &[&str] = &["gen_ai.tool.description", "tool.description"];
 const TOOL_RESULT_KEYS: &[&str] = &["gen_ai.tool.call.result", "ai.toolCall.result"];
 const RESPONSE_ID_KEYS: &[&str] = &["gen_ai.response.id", "ai.response.id"];
@@ -83,26 +89,32 @@ const SPAN_KIND: usize = 1;
 const MODEL: usize = 2;
 const AGENT_NAME: usize = 3;
 const TOOL_NAME: usize = 4;
-const TOOL_CALL_ID: usize = 5;
-const TOOL_DESCRIPTION: usize = 6;
-const TOOL_RESULT: usize = 7;
-const RESPONSE_ID: usize = 8;
-const ERROR_TYPE: usize = 9;
-const RESPONSE_STATUS: usize = 10;
-const GRAPH_NODE_ID: usize = 11;
-const TEXT_KEYS: [&[&str]; 12] = [
+const TOOL_DESCRIPTION: usize = 5;
+const TOOL_RESULT: usize = 6;
+const RESPONSE_ID: usize = 7;
+const ERROR_TYPE: usize = 8;
+const RESPONSE_STATUS: usize = 9;
+const GRAPH_NODE_ID: usize = 10;
+const ADK_TOOL_RESPONSE: usize = 11;
+const OUTPUT_VALUE: usize = 12;
+const DEFERRAL: usize = 13;
+const TEXT_KEYS: [&[&str]; 14] = [
     &["gen_ai.operation.name"],
     &["openinference.span.kind"],
     MODEL_KEYS,
     AGENT_NAME_KEYS,
     TOOL_NAME_KEYS,
-    TOOL_CALL_ID_KEYS,
     TOOL_DESCRIPTION_KEYS,
     TOOL_RESULT_KEYS,
     RESPONSE_ID_KEYS,
     &["error.type"],
     &["gen_ai.response.status"],
     &["graph.node.id"],
+    // Every ADK version writes its tool's response here; 2.6 writes no
+    // `gen_ai.tool.call.result`.
+    &["gcp.vertex.agent.tool_response"],
+    &["output.value"],
+    &["pydantic_ai.tool.deferral.name"],
 ];
 
 /// Number facts, by slot: the first key whose value is a finite,
@@ -163,8 +175,8 @@ static KEY_TABLE: LazyLock<Vec<Vec<Key>>> = LazyLock::new(|| {
 });
 
 /// One span's facts, borrowed from its attributes. A text fact is any value
-/// the warehouse Map would hold as a non-empty string: an integer call id or a
-/// structured tool result counts, as it did when the view read the Map.
+/// the warehouse Map would hold as a non-empty string: a structured tool result
+/// counts, as it did when the view read the Map.
 pub(super) struct Facts<'a> {
     text: [Option<&'a AnyValue>; TEXT_KEYS.len()],
     text_rank: [u8; TEXT_KEYS.len()],
@@ -301,11 +313,13 @@ pub(super) fn stamps(span: &Span, vendor: &str) -> Vec<KeyValue> {
     let facts = Facts::read(&span.attributes);
     let llm_call = usage::stamp(span, vendor, &facts, &mut stamps);
     let tool_call = !llm_call && is_tool_call(&facts, &span.name);
-    let failed = failed_status
-        || facts.text[ERROR_TYPE].is_some()
-        || ["failed", "error"]
-            .iter()
-            .any(|status| facts.str(RESPONSE_STATUS).eq_ignore_ascii_case(status));
+    let paused = tool_call && paused(span, &facts, vendor);
+    let failed = !paused
+        && (failed_status
+            || facts.text[ERROR_TYPE].is_some()
+            || ["failed", "error"]
+                .iter()
+                .any(|status| facts.str(RESPONSE_STATUS).eq_ignore_ascii_case(status)));
     let mut text = |key: &str, value: Option<String>| {
         if let Some(value) = value.filter(|value| !value.is_empty()) {
             stamps.push(owned_string_attribute(key, value));
@@ -314,7 +328,6 @@ pub(super) fn stamps(span: &Span, vendor: &str) -> Vec<KeyValue> {
     text(MODEL_ATTR, facts.owned(MODEL));
     text(AGENT_NAME_ATTR, agent_name(&facts, vendor, &span.name));
     text(TOOL_NAME_ATTR, facts.owned(TOOL_NAME));
-    text(TOOL_CALL_ID_ATTR, facts.owned(TOOL_CALL_ID));
     if llm_call {
         text(RESPONSE_ID_ATTR, facts.owned(RESPONSE_ID));
     }
@@ -334,22 +347,33 @@ pub(super) fn stamps(span: &Span, vendor: &str) -> Vec<KeyValue> {
             );
         }
     }
-    // Only Google ADK writes the confirmation request, so only its results are
-    // searched for it.
-    let paused = tool_call
-        && !failed
-        && (facts.text[TOOL_RESULT].is_none()
-            || (vendor == "google_adk" && facts.str(TOOL_RESULT).contains(CONFIRMATION_REQUEST)));
-    for (key, holds) in [
-        (TOOL_CALL_ATTR, tool_call),
-        (ERROR_ATTR, failed),
-        (TOOL_PAUSED_ATTR, paused),
-    ] {
-        if holds {
-            stamps.push(owned_string_attribute(key, "1".to_owned()));
-        }
+    if tool_call {
+        let call = if paused { "0" } else { "1" };
+        stamps.push(owned_string_attribute(TOOL_CALL_ATTR, call.to_owned()));
+    }
+    if failed {
+        stamps.push(owned_string_attribute(ERROR_ATTR, "1".to_owned()));
     }
     stamps
+}
+
+/// Is this tool call the copy a call paused for a human's approval leaves,
+/// by its framework's explicit mark? Such a copy is neither a call nor a
+/// failure, though some frameworks end it in error. Never by a missing
+/// result: an app that does not capture content, or a tool that returns
+/// nothing, records none.
+fn paused(span: &Span, facts: &Facts, vendor: &str) -> bool {
+    match vendor {
+        "google_adk" => facts.str(ADK_TOOL_RESPONSE).contains(CONFIRMATION_REQUEST),
+        "openai_agents_sdk" => facts.str(OUTPUT_VALUE).contains(APPROVAL_ITEM),
+        // A tool that raised `ApprovalRequired`.
+        "pydantic_ai" => facts.str(DEFERRAL) == "ApprovalRequired",
+        "llamaindex" => span
+            .status
+            .as_ref()
+            .is_some_and(|status| status.message.starts_with(WAITING_FOR_EVENT)),
+        _ => false,
+    }
 }
 
 /// The agent that owns the span. OpenAI Agents' OpenInference instrumentor
@@ -380,7 +404,6 @@ fn is_tool_call(facts: &Facts, span_name: &str) -> bool {
 /// tool run's failure on a phase span that can arrive after its call's
 /// (`claude_code::fold_tool_failures`).
 pub(super) fn mark_tool_failed(span: &mut Span) {
-    span.attributes.retain(|attr| attr.key != TOOL_PAUSED_ATTR);
     let has = |key: &str| span.attributes.iter().any(|attr| attr.key == key);
     let result = (!has(TOOL_ERROR_RESULT_ATTR))
         .then(|| Facts::read(&span.attributes).owned(TOOL_RESULT))
@@ -520,7 +543,6 @@ mod tests {
                 pairs(&[
                     ("maple_ai.llm_call", "0"),
                     (TOOL_NAME_ATTR, "search_docs"),
-                    (TOOL_CALL_ID_ATTR, "call_1"),
                     (TOOL_DESCRIPTION_ATTR, "Search the docs."),
                     (TOOL_CALL_ATTR, "1"),
                 ]),
@@ -563,7 +585,6 @@ mod tests {
                 pairs(&[
                     ("maple_ai.llm_call", "0"),
                     (TOOL_NAME_ATTR, "search_docs"),
-                    (TOOL_CALL_ID_ATTR, "call_2"),
                     (TOOL_CALL_ATTR, "1"),
                 ]),
             ]
@@ -571,7 +592,7 @@ mod tests {
     }
 
     /// A failure by status, by `error.type` and by response status; a failed
-    /// tool call carries its result, cut, and is no paused copy.
+    /// tool call carries its result, cut.
     #[test]
     fn failures_and_the_failed_tool_result() {
         let mut errored = span("chat gpt-5", &[("gen_ai.operation.name", "chat")]);
@@ -622,30 +643,27 @@ mod tests {
                 (ERROR_ATTR, "1"),
             ])
         );
-        // An empty `error.type` is no failure; a call with no result is a
-        // paused copy.
+        // An empty `error.type` is no failure, and a call that recorded no
+        // result is still a call: only a framework's explicit mark pauses one.
         assert_eq!(
             got[3],
-            pairs(&[
-                ("maple_ai.llm_call", "0"),
-                (TOOL_CALL_ATTR, "1"),
-                (TOOL_PAUSED_ATTR, "1"),
-            ])
+            pairs(&[("maple_ai.llm_call", "0"), (TOOL_CALL_ATTR, "1")])
         );
     }
 
-    /// Google ADK's human-in-the-loop capture: the paused copy's result is the
-    /// confirmation request; the approved run under the same id is a call.
+    /// `captures/google_adk_hitl_probe` (ADK 2.6): the paused copy's response
+    /// is the confirmation request, and is no call; the approved run under the
+    /// same id is one.
     #[test]
-    fn a_confirmation_request_is_a_paused_copy() {
-        let tool = |result: &str| {
+    fn a_confirmation_request_is_no_tool_call() {
+        let tool = |response: &str| {
             span(
                 "execute_tool delete_file",
                 &[
                     ("gen_ai.operation.name", "execute_tool"),
                     ("gen_ai.tool.name", "delete_file"),
                     ("gen_ai.tool.call.id", "adk-1"),
-                    ("gen_ai.tool.call.result", result),
+                    ("gcp.vertex.agent.tool_response", response),
                 ],
             )
         };
@@ -656,8 +674,100 @@ mod tests {
                 tool("{\"deleted\": true}"),
             ],
         );
-        assert!(has(&got[0], TOOL_PAUSED_ATTR));
-        assert!(!has(&got[1], TOOL_PAUSED_ATTR));
+        let call = |flag: &str| {
+            pairs(&[
+                ("maple_ai.llm_call", "0"),
+                (TOOL_NAME_ATTR, "delete_file"),
+                (TOOL_CALL_ATTR, flag),
+            ])
+        };
+        assert_eq!(got, [call("0"), call("1")]);
+    }
+
+    /// `captures/openai_agents_sdk_user` (SDK 0.19.4, OpenInference 1.6.2):
+    /// the copy awaiting approval records its result's repr, a
+    /// `ToolApprovalItem`, and is no call; the approved run's copy is one.
+    #[test]
+    fn an_openai_agents_approval_item_is_no_tool_call() {
+        let tool = |output: &str| {
+            span(
+                "delete_file",
+                &[
+                    ("openinference.span.kind", "TOOL"),
+                    ("tool.name", "delete_file"),
+                    ("output.value", output),
+                ],
+            )
+        };
+        let got = stamps(
+            "openinference.instrumentation.openai_agents",
+            vec![
+                tool("FunctionToolResult(tool=FunctionTool(name='delete_file'), output=None, run_item=ToolApprovalItem(agent=Agent(name='assistant'), type='tool_approval_item'))"),
+                tool("deleted /tmp/scratch-notes.txt"),
+            ],
+        );
+        let call = |flag: &str| {
+            pairs(&[
+                ("maple_ai.llm_call", "0"),
+                (TOOL_NAME_ATTR, "delete_file"),
+                (TOOL_CALL_ATTR, flag),
+            ])
+        };
+        assert_eq!(got, [call("0"), call("1")]);
+    }
+
+    /// pydantic-ai (source: `_run_tool_span` in its instrumentation) marks a
+    /// tool that raised `ApprovalRequired`, in error before instrumentation
+    /// v5; a deferral to run the tool elsewhere is no pause. LlamaIndex's own
+    /// tracer (`captures/llamaindex_user`) ends a step waiting for a human's
+    /// response in error. Neither copy is a call or a failure.
+    #[test]
+    fn pydantic_ai_and_llamaindex_pauses_are_no_tool_call_nor_failure() {
+        let failed = |mut span: Span, message: &str| {
+            span.status = Some(Status {
+                code: StatusCode::Error as i32,
+                message: message.to_owned(),
+            });
+            span
+        };
+        let deferred = |name: &str| {
+            span(
+                "execute_tool delete_file",
+                &[
+                    ("gen_ai.operation.name", "execute_tool"),
+                    ("pydantic_ai.tool.deferral.name", name),
+                ],
+            )
+        };
+        let pydantic = stamps(
+            "pydantic-ai",
+            vec![
+                failed(deferred("ApprovalRequired"), "ApprovalRequired"),
+                deferred("CallDeferred"),
+            ],
+        );
+        let call = |flag: &str| pairs(&[("maple_ai.llm_call", "0"), (TOOL_CALL_ATTR, flag)]);
+        assert_eq!(pydantic, [call("0"), call("1")]);
+        let step = || span("FunctionTool.acall", &[("llamaindex.run_id", "r-1")]);
+        let llamaindex = stamps(
+            "llamaindex.opentelemetry.tracer",
+            vec![
+                failed(
+                    step(),
+                    "Waiting for event <class 'workflows.events.HumanResponseEvent'>",
+                ),
+                failed(step(), "boom"),
+            ],
+        );
+        assert_eq!(llamaindex[0], call("0"));
+        assert_eq!(
+            llamaindex[1],
+            pairs(&[
+                ("maple_ai.llm_call", "0"),
+                (TOOL_CALL_ATTR, "1"),
+                (ERROR_ATTR, "1"),
+            ])
+        );
     }
 
     /// PROD `cs-demo-004` (OpenAI Agents TS through OpenInference): an agent
@@ -724,8 +834,7 @@ mod tests {
     }
 
     /// A value the warehouse Map holds as a string counts whatever its OTLP
-    /// type: an integer call id, a structured tool result, a boolean
-    /// `error.type`. Only ADK's results are searched for its confirmation.
+    /// type: a structured tool result, a boolean `error.type`.
     #[test]
     fn non_string_values_count_as_the_map_holds_them() {
         let typed = |key: &str, value: any_value::Value| KeyValue {
@@ -741,41 +850,22 @@ mod tests {
             });
         let mut tool = span(
             "execute_tool fetch",
-            &[
-                ("gen_ai.operation.name", "execute_tool"),
-                (
-                    "gen_ai.tool.call.result",
-                    "This tool call requires confirmation",
-                ),
-            ],
+            &[("gen_ai.operation.name", "execute_tool")],
         );
         tool.attributes.extend([
-            typed("gen_ai.tool.call.id", any_value::Value::IntValue(7)),
+            typed("gen_ai.tool.call.result", result),
             typed("error.type", any_value::Value::BoolValue(true)),
         ]);
-        tool.attributes[1] = typed("gen_ai.tool.call.result", result);
-        let unconfirmed = span(
-            "execute_tool fetch",
-            &[
-                ("gen_ai.operation.name", "execute_tool"),
-                (
-                    "gen_ai.tool.call.result",
-                    "This tool call requires confirmation",
-                ),
-            ],
-        );
-        let got = stamps("support-agent", vec![tool, unconfirmed]);
+        let got = stamps("support-agent", vec![tool]);
         assert_eq!(
             got[0],
             pairs(&[
                 ("maple_ai.llm_call", "0"),
-                (TOOL_CALL_ID_ATTR, "7"),
                 (TOOL_ERROR_RESULT_ATTR, "[\"boom\"]"),
                 (TOOL_CALL_ATTR, "1"),
                 (ERROR_ATTR, "1"),
             ])
         );
-        assert!(!has(&got[1], TOOL_PAUSED_ATTR));
     }
 
     #[test]

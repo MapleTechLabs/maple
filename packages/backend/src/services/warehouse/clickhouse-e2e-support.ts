@@ -231,8 +231,6 @@ export const aiGatewayStamps = (facts: {
 	readonly responseId?: string
 	readonly toolDescription?: string
 	readonly toolErrorResult?: string
-	readonly toolCallId?: string
-	readonly toolPaused?: boolean
 	readonly usage?: readonly [number, number, number, number, number]
 	readonly cost?: string
 }): Readonly<Record<string, string>> => {
@@ -254,11 +252,9 @@ export const aiGatewayStamps = (facts: {
 		[MAPLE_AI_STAMP_ATTRS.responseId, facts.responseId],
 		[MAPLE_AI_STAMP_ATTRS.toolDescription, facts.toolDescription],
 		[MAPLE_AI_STAMP_ATTRS.toolErrorResult, facts.toolErrorResult],
-		[MAPLE_AI_STAMP_ATTRS.toolCallId, facts.toolCallId],
 		[MAPLE_AI_STAMP_ATTRS.cost, facts.cost],
 		[MAPLE_AI_STAMP_ATTRS.toolCall, facts.toolCall ? "1" : undefined],
 		[MAPLE_AI_STAMP_ATTRS.error, facts.error ? "1" : undefined],
-		[MAPLE_AI_STAMP_ATTRS.toolPaused, facts.toolPaused ? "1" : undefined],
 		...usage,
 	]
 	return Object.fromEntries(
