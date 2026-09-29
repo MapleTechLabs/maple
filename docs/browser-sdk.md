@@ -572,7 +572,8 @@ allowed to record.
 ### Canvas
 
 `replay: { canvasFps: 2 }` records `<canvas>` content (charts, maps, games) as WebP frames at up to
-that rate. It costs CPU and upload size, so it is off by default.
+that rate. It costs CPU and upload size, so it is off by default. It is never recorded with
+`privacy.maskAllText`, since text drawn into a canvas cannot be masked.
 
 ## Offline
 

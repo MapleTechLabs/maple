@@ -271,5 +271,7 @@ describe("canvas capture", () => {
 		expect(recordOptions?.recordCanvas).toBeUndefined()
 		startBufferedRecording({ ...CONFIG, canvasFps: 2 }, "session-1").stop()
 		expect(recordOptions).toMatchObject({ recordCanvas: true, sampling: { canvas: 2 } })
+		startRecording({ ...CONFIG, canvasFps: 2, maskAllText: true }, "session-1").stop()
+		expect(recordOptions?.recordCanvas).toBeUndefined()
 	})
 })

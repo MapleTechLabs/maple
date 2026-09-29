@@ -94,4 +94,32 @@ describe("MapleBrowser.sendFeedback", () => {
 		expect(feedback()[0]?.attributes["user.email"]).toBeUndefined()
 		expect(feedback()[0]?.attributes["maple.feedback.error_trace_id"]).toBeUndefined()
 	})
+
+	it("reports has_replay for the buffered replay the feedback itself keeps", async () => {
+		// Headless Chromium's user agent is classified as a bot, which never gets replay.
+		Object.defineProperty(navigator, "userAgent", {
+			value: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
+			configurable: true,
+		})
+		const urls: string[] = []
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (input: RequestInfo | URL) => {
+				urls.push(String(input))
+				return new Response("{}")
+			}),
+		)
+		try {
+			handle = MapleBrowser.init({ ...BASE, replay: { sampleRate: 0, onErrorSampleRate: 1 } })
+			await vi.waitFor(() =>
+				expect(urls.some((url) => url.endsWith("/v1/sessionReplays/meta"))).toBe(true),
+			)
+			MapleBrowser.sendFeedback({ message: "it froze" })
+			await stop()
+			expect(feedback()[0]?.attributes["maple.feedback.has_replay"]).toBe(true)
+		} finally {
+			Reflect.deleteProperty(navigator, "userAgent")
+			sessionStorage.clear()
+		}
+	})
 })
