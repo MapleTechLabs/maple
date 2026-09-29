@@ -91,6 +91,10 @@ export interface MapleBrowserConfig {
 		 * `{ response: ["x-request-id", "x-cache"] }`. `authorization`, `cookie`
 		 * and `set-cookie` are never recorded. XHR spans get response headers only.
 		 */
+		readonly captureHeaders?: {
+			readonly request?: ReadonlyArray<string>
+			readonly response?: ReadonlyArray<string>
+		}
 		/**
 		 * Span main-thread frames of 100ms or more (`longAnimationFrame`, with the
 		 * script that ran longest; `longtask` where that API is missing). Default false.
@@ -98,10 +102,6 @@ export interface MapleBrowserConfig {
 		readonly longFrames?: boolean
 		/** Span interactions of 200ms or more (`interaction click`, ...), split into input delay, processing and presentation. Default false. */
 		readonly slowInteractions?: boolean
-		readonly captureHeaders?: {
-			readonly request?: ReadonlyArray<string>
-			readonly response?: ReadonlyArray<string>
-		}
 	}
 	/**
 	 * Report Core Web Vitals (LCP, CLS, INP, FCP, TTFB) as `browser.web_vital`

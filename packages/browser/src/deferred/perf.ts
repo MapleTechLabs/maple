@@ -44,21 +44,23 @@ function scriptsOf(entry: PerformanceEntry): ScriptTiming[] {
 	if (!Array.isArray(scripts)) return []
 	return scripts.flatMap((script: unknown): ScriptTiming[] => {
 		if (typeof script !== "object" || script === null || !("duration" in script)) return []
-		const text = (key: string): string | undefined => {
-			const value =
-				key in script ? Object.entries(script).find(([name]) => name === key)?.[1] : undefined
-			return typeof value === "string" && value !== "" ? value : undefined
-		}
-		return typeof script.duration === "number"
-			? [
-					{
-						duration: script.duration,
-						invoker: text("invoker"),
-						sourceURL: text("sourceURL"),
-						sourceFunctionName: text("sourceFunctionName"),
-					},
-				]
-			: []
+		if (typeof script.duration !== "number") return []
+		// `in` and property reads walk the prototype, where PerformanceScriptTiming keeps these getters.
+		const invoker: unknown = "invoker" in script ? script.invoker : undefined
+		const sourceURL: unknown = "sourceURL" in script ? script.sourceURL : undefined
+		const sourceFunctionName: unknown =
+			"sourceFunctionName" in script ? script.sourceFunctionName : undefined
+		return [
+			{
+				duration: script.duration,
+				invoker: typeof invoker === "string" && invoker !== "" ? invoker : undefined,
+				sourceURL: typeof sourceURL === "string" && sourceURL !== "" ? sourceURL : undefined,
+				sourceFunctionName:
+					typeof sourceFunctionName === "string" && sourceFunctionName !== ""
+						? sourceFunctionName
+						: undefined,
+			},
+		]
 	})
 }
 
