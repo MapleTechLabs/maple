@@ -11,7 +11,7 @@ The Vercel AI SDK emits OpenTelemetry GenAI spans for every `generateText`, `str
 
 You have to get two things right. In AI SDK 7 nothing is traced until you call `registerTelemetry()` at startup, and the SDK has no conversation id, so you pass one on every call or each message becomes its own session.
 
-Tested with `ai` 7.0.118, `@ai-sdk/otel` 1.0.118, OpenTelemetry JS 0.222.0 and `@vercel/otel` 2.1.3 on Node.js 26. You need `ai` 7.0.106 or newer and Node.js 22 or newer. On AI SDK 5 or 6, run `npx @ai-sdk/codemod v7` first; the skill has a fallback setup if you can't upgrade.
+Tested with `ai` 7.0.118, `@ai-sdk/otel` 1.0.118, OpenTelemetry JS 0.222.0 and `@vercel/otel` 2.1.3 on Node.js 26 and Bun 1.3. You need `ai` 7.0.106 or newer and Node.js 22 or newer. On AI SDK 5 or 6, run `npx @ai-sdk/codemod v7` first; the skill has a fallback setup if you can't upgrade.
 
 ## Quick setup with a coding agent
 
@@ -29,19 +29,19 @@ Your ingest key is in **Settings → Ingestion**.
 
 ## Install the packages
 
-In AI SDK 7, OpenTelemetry support lives in `@ai-sdk/otel`. It creates the spans, and the OpenTelemetry SDK exports them:
-
 ```bash
-npm install ai@^7.0.106 @ai-sdk/otel @opentelemetry/api @opentelemetry/sdk-node \
-  @opentelemetry/sdk-trace-base @opentelemetry/exporter-trace-otlp-proto @opentelemetry/resources
+npm install ai@^7.0.106 @ai-sdk/otel @opentelemetry/sdk-node
 ```
+
+`@ai-sdk/otel` creates the spans and the OpenTelemetry Node SDK exports them. `@opentelemetry/api` comes with it as a peer dependency.
 
 ## Point the exporter at Maple
 
 ```bash
+export OTEL_SERVICE_NAME="support-agent"
+export OTEL_RESOURCE_ATTRIBUTES="deployment.environment.name=production"
 export OTEL_EXPORTER_OTLP_ENDPOINT="https://ingest.maple.dev"
 export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer YOUR_INGEST_KEY"
-export OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"
 ```
 
 For an EU organization, use `https://ingest.eu.maple.dev`. The exporter appends `/v1/traces` itself.
@@ -53,29 +53,18 @@ Create an `instrumentation.ts` and import it as the first line of your entry poi
 ```ts
 // instrumentation.ts
 import { OpenTelemetry } from "@ai-sdk/otel"
-import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto"
-import { resourceFromAttributes } from "@opentelemetry/resources"
 import { NodeSDK } from "@opentelemetry/sdk-node"
-import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-base"
 import { registerTelemetry } from "ai"
 
-// Reads OTEL_EXPORTER_OTLP_ENDPOINT and OTEL_EXPORTER_OTLP_HEADERS
-export const spanProcessor = new BatchSpanProcessor(new OTLPTraceExporter())
-
-export const sdk = new NodeSDK({
-	resource: resourceFromAttributes({
-		"service.name": "support-agent",
-		"deployment.environment.name": process.env.NODE_ENV ?? "development",
-	}),
-	spanProcessors: [spanProcessor],
-})
+// Reads OTEL_SERVICE_NAME, OTEL_RESOURCE_ATTRIBUTES and OTEL_EXPORTER_OTLP_*
+export const sdk = new NodeSDK()
 sdk.start()
 
 registerTelemetry(
 	new OpenTelemetry({
 		usage: true,
 		runtimeContext: true,
-		// The conversation id, explained in the next section
+		// The conversation id, explained below
 		enrichSpan: ({ runtimeContext }) =>
 			typeof runtimeContext?.conversationId === "string"
 				? { "gen_ai.conversation.id": runtimeContext.conversationId }
@@ -86,7 +75,22 @@ registerTelemetry(
 
 Call `registerTelemetry()` exactly once. Each call adds another integration, and each one emits its own copy of every span. Keep `usage: true` and `runtimeContext: true`: Maple uses the `ai.*` attributes they add to recognize AI SDK spans.
 
-If your app already starts an OpenTelemetry SDK (auto-instrumentation, Sentry, your own `NodeTracerProvider`), don't start a second one. Add the `BatchSpanProcessor` to the existing provider and keep the `registerTelemetry()` call.
+### Serverless, or an app that already uses OpenTelemetry
+
+Two setups need a handle on the span processor: a serverless handler that flushes after every invocation, and an app that already starts its own OpenTelemetry SDK (auto-instrumentation, Sentry, your own `NodeTracerProvider`), where you shouldn't start a second one. Install the exporter packages and create the processor yourself:
+
+```bash
+npm install @opentelemetry/sdk-trace-base @opentelemetry/exporter-trace-otlp-proto
+```
+
+```ts
+import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto"
+import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-base"
+
+export const spanProcessor = new BatchSpanProcessor(new OTLPTraceExporter())
+```
+
+Pass it as `new NodeSDK({ spanProcessors: [spanProcessor] })`, or add it to your existing provider instead of creating a `NodeSDK`. Keep the `registerTelemetry()` call either way.
 
 ### Next.js
 
@@ -183,7 +187,7 @@ Prompts and replies are recorded by default. To keep them out of Maple for a cal
 
 ## Flush in scripts and serverless functions
 
-`BatchSpanProcessor` exports every few seconds, so a short-lived process can exit first. In a script, call `await sdk.shutdown()` in a `finally` block before exiting. In a serverless handler that is reused between invocations, call `await spanProcessor.forceFlush()` in a `finally` instead, so the SDK keeps running.
+The SDK exports spans in batches every few seconds, so a short-lived process can exit first. In a script, call `await sdk.shutdown()` in a `finally` block before exiting. In a serverless handler that is reused between invocations, call `await spanProcessor.forceFlush()` in a `finally` instead (see [the variant above](#serverless-or-an-app-that-already-uses-opentelemetry)), so the SDK keeps running.
 
 Read streams to the end (`await result.consumeStream()`) before flushing: a stream's spans only end when it has been read. On Vercel, `@vercel/otel` flushes after each request, but queue consumers and cron jobs need their own `forceFlush()`.
 

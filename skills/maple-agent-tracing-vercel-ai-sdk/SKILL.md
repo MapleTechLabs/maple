@@ -38,37 +38,26 @@ Known gaps (tell the user, don't try to fix): cost shows as "unpriced" (AI SDK e
 ## Step 2a: Install and init (Node.js)
 
 ```bash
-npm install ai@^7.0.106 @ai-sdk/otel @opentelemetry/api @opentelemetry/sdk-node \
-  @opentelemetry/sdk-trace-base @opentelemetry/exporter-trace-otlp-proto @opentelemetry/resources
+npm install ai@^7.0.106 @ai-sdk/otel @opentelemetry/sdk-node
 ```
 
-Use the repo's package manager. Env (or the repo's equivalent):
+Use the repo's package manager (`@opentelemetry/api` arrives as a peer of `sdk-node`; add it explicitly only if the package manager doesn't install peers). Works on Node.js 22+ and Bun. Env (or the repo's equivalent):
 
 ```bash
+OTEL_SERVICE_NAME=support-agent
+OTEL_RESOURCE_ATTRIBUTES=deployment.environment.name=production
 OTEL_EXPORTER_OTLP_ENDPOINT=https://ingest.maple.dev
 OTEL_EXPORTER_OTLP_HEADERS=Authorization=Bearer <key>
-OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
 ```
 
-Create `instrumentation.ts` (adapt service name/environment; to inline instead of env, pass `{ url: "https://ingest.maple.dev/v1/traces", headers: { authorization: "Bearer <key>" } }` to `OTLPTraceExporter`):
+`NodeSDK()` with no span processors builds a batched OTLP http/protobuf exporter from these variables. Create `instrumentation.ts`:
 
 ```ts
 import { OpenTelemetry } from "@ai-sdk/otel"
-import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto"
-import { resourceFromAttributes } from "@opentelemetry/resources"
 import { NodeSDK } from "@opentelemetry/sdk-node"
-import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-base"
 import { registerTelemetry } from "ai"
 
-export const spanProcessor = new BatchSpanProcessor(new OTLPTraceExporter())
-
-export const sdk = new NodeSDK({
-	resource: resourceFromAttributes({
-		"service.name": "support-agent",
-		"deployment.environment.name": process.env.NODE_ENV ?? "development",
-	}),
-	spanProcessors: [spanProcessor],
-})
+export const sdk = new NodeSDK()
 sdk.start()
 
 registerTelemetry(
@@ -81,6 +70,24 @@ registerTelemetry(
 				: undefined,
 	}),
 )
+```
+
+Use the explicit span processor variant instead when either applies:
+
+- Serverless handler (Lambda, Cloud Run jobs, queue consumers, cron, Vercel Workflow steps): needs `spanProcessor.forceFlush()` per invocation; `NodeSDK` only has `shutdown()`.
+- The repo already starts an OpenTelemetry SDK/provider: add the processor to it, don't create a second `NodeSDK`.
+- Inlining the key instead of env: pass `{ url: "https://ingest.maple.dev/v1/traces", headers: { authorization: "Bearer <key>" } }` to `OTLPTraceExporter`.
+
+```bash
+npm install @opentelemetry/sdk-trace-base @opentelemetry/exporter-trace-otlp-proto
+```
+
+```ts
+import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto"
+import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-base"
+
+export const spanProcessor = new BatchSpanProcessor(new OTLPTraceExporter())
+export const sdk = new NodeSDK({ spanProcessors: [spanProcessor] })
 ```
 
 - `import "./instrumentation"` as the FIRST line of every entry point (server, worker, CLI). `registerTelemetry` must run before the first AI SDK call.
