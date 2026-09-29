@@ -49,7 +49,7 @@ import {
  * Mutable because the run discovers its outcome after the caller has already created the span.
  */
 interface TurnObservability {
-	outcome?: "stop" | "aborted" | "error" | "max-steps" | "unknown"
+	outcome?: "stop" | "aborted" | "error" | "max-steps" | "abandoned" | "resume_skipped" | "unknown"
 	failureReason?: string
 	/** Model-context compactions across the pass and its close-out; see `ChatRunOutcome`. */
 	compactions?: number
@@ -101,6 +101,13 @@ export interface RunChatSessionTurnInput {
 	readonly tenant: ChatTurnTenantEncoded
 	/** Who is driving the turn, stated by whoever raised it. */
 	readonly origin: ChatTurnOrigin
+	/**
+	 * Set when the session starts an evicted turn again. The kickoff is already in the log, under
+	 * `userMessageId`, followed by the dead attempt; the run reads from the kickoff, not the tail.
+	 */
+	readonly resume?: { readonly userMessageId: string; readonly text: string; readonly attempt: number }
+	/** The turn was evicted too often to start again: record that it failed, and run nothing. */
+	readonly abandoned?: true
 }
 
 /**
@@ -314,6 +321,38 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 		const conversations = yield* PrReviewConversationService
 		const toolExecutor = yield* McpToolExecutor
 		const runTenant = yield* withConnectorActor(tenant, origin)
+		if (prReviewId !== undefined && input.abandoned === true) {
+			observability.outcome = "abandoned"
+			yield* reviews
+				.failReview(tenant.orgId, prReviewId, reviewFailureError("interrupted"))
+				.pipe(
+					Effect.catchCause((cause) =>
+						Effect.logError("Could not record the abandoned review", cause),
+					),
+				)
+			yield* annotateTurn()
+			return
+		}
+		// The dead attempt may have filed its report, or a newer head superseded it, before the
+		// object went down: then there is nothing left to run.
+		if (prReviewId !== undefined && input.resume !== undefined) {
+			yield* Effect.annotateCurrentSpan("maple.pr_review.resume_attempt", input.resume.attempt)
+			// An unreadable row reviews anyway: the row's own guards still refuse a second report.
+			const current = yield* reviews
+				.getReview(tenant.orgId, prReviewId)
+				.pipe(Effect.catchCause(() => Effect.succeed(Option.none())))
+			const settled = Option.match(current, {
+				onNone: () => false,
+				onSome: (review) => review.status !== "queued" && review.status !== "running",
+			})
+			if (settled) {
+				observability.outcome = "resume_skipped"
+				input.session.append({ type: "turn-end", messageId: input.messageId, reason: "stop" })
+				recordedTerminal = true
+				yield* annotateTurn()
+				return
+			}
+		}
 		// Clone the commit while the model reads the diff, rather than when its first source tool
 		// asks and waits on it. A child of the turn: a clone still running when the turn ends
 		// carries on in the container.
@@ -352,8 +391,20 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 		// Read once: it is a SQL scan plus a decode, and it is a read-only snapshot.
 		const spoken = history.filter((message) => message.text.trim() !== "")
 		const latest = spoken.at(-1)
-		const text = latest?.role === "user" ? latest.text : ""
-		const prior = latest?.role === "user" ? spoken.slice(0, -1) : spoken
+		// A restarted turn reads from its kickoff: what came after it is the attempt that died.
+		const kickoff =
+			input.resume === undefined
+				? -1
+				: spoken.findIndex(
+						(message) => message.role === "user" && message.id === input.resume?.userMessageId,
+					)
+		const text = input.resume?.text ?? (latest?.role === "user" ? latest.text : "")
+		const prior =
+			input.resume !== undefined
+				? spoken.slice(0, kickoff === -1 ? spoken.length : kickoff)
+				: latest?.role === "user"
+					? spoken.slice(0, -1)
+					: spoken
 		const autonomous = isAutonomousTurn(input.sessionId, origin)
 		// One per review turn: the close-out sees what the pass read and keeps what it saved.
 		const review =
