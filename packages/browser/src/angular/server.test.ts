@@ -1,6 +1,7 @@
 import { AsyncLocalStorageContextManager } from "@opentelemetry/context-async-hooks"
 import { context, SpanStatusCode, trace } from "@opentelemetry/api"
 import { BasicTracerProvider, InMemorySpanExporter, SimpleSpanProcessor } from "@opentelemetry/sdk-trace-base"
+import { StackContextManager } from "@opentelemetry/sdk-trace-web"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { resetReportedErrorsForTests } from "../failures"
 import { traced } from "../server"
@@ -66,6 +67,16 @@ describe("tracedRender with server OpenTelemetry", () => {
 		expect(response?.headers.get("server-timing")).toBe(
 			`traceparent;desc="00-${ssr?.spanContext().traceId}-${ssr?.spanContext().spanId}-01"`,
 		)
+	})
+
+	it("hands its own trace to the page when async context is lost across await, as with zone.js", async () => {
+		context.disable()
+		// Keeps the active span for synchronous code only
+		context.setGlobalContextManager(new StackContextManager().enable())
+		const response = await tracedRender({ url: "/" }, async () => page())
+
+		const [ssr] = spans()
+		expect(response?.headers.get("server-timing")).toContain(ssr?.spanContext().spanId)
 	})
 
 	it("parents the render's own spans to it, across await", async () => {

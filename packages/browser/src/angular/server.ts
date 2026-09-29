@@ -25,8 +25,10 @@ export function tracedRender<R extends Response | null | undefined>(
 		runTraced(
 			span,
 			async () => {
-				const response = await render()
+				// Before the render: after an `await`, the active span is only this one
+				// if the runtime keeps async context across it, which zone.js breaks
 				const timing = serverTiming()
+				const response = await render()
 				if (response && timing) {
 					try {
 						response.headers.append("server-timing", timing)

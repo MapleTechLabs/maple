@@ -90,7 +90,8 @@
 		"rxjs": "^7.8.2",
 		"tsdown": "^0.23.0",
 		"typescript": "catalog:tooling",
-		"vitest": "catalog:"
+		"vitest": "catalog:",
+		"zone.js": "~0.16.0"
 	},
 	"peerDependencies": {
 		"@angular/common": "*",

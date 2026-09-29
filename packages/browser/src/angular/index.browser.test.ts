@@ -12,6 +12,7 @@ import {
 	PLATFORM_ID,
 	type Provider,
 	provideAppInitializer,
+	provideBrowserGlobalErrorListeners,
 } from "@angular/core"
 import { bootstrapApplication, createApplication } from "@angular/platform-browser"
 import {
@@ -432,6 +433,19 @@ describe("MapleErrorHandler", () => {
 })
 
 describe("reportAngularError", () => {
+	it("leaves a window error without an error object, like a cross-origin Script error., to the SDK's own handler", async () => {
+		await start([
+			provideBrowserGlobalErrorListeners(),
+			provideMapleTracing(),
+			{ provide: ErrorHandler, useClass: MapleErrorHandler },
+		])
+		vi.spyOn(console, "error").mockImplementation(() => {})
+		window.dispatchEvent(new ErrorEvent("error", { message: "Script error." }))
+		await stop()
+
+		expect(names()).toEqual(["pageload /"])
+	})
+
 	it("reports a thrown value that isn't an Error", async () => {
 		reportAngularError("plain string")
 		await stop()

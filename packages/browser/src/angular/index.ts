@@ -10,11 +10,13 @@ import {
 	type EnvironmentProviders,
 	ErrorHandler,
 	inject,
+	NgZone,
 	PLATFORM_ID,
 	provideEnvironmentInitializer,
 } from "@angular/core"
 import {
 	type ActivatedRouteSnapshot,
+	type Event as RouterEvent,
 	NavigationCancel,
 	NavigationCancellationCode,
 	NavigationEnd,
@@ -44,17 +46,21 @@ export function provideMapleTracing(): EnvironmentProviders {
 		const router = inject(Router)
 		if (tracedRouters.has(router)) return
 		tracedRouters.add(router)
-		traceRouter(router)
+		const zone = inject(NgZone)
+		const onEvent = routerEventHandler(router)
+		// Outside Angular's zone: ending a span starts the exporter's timer, which
+		// would keep a zone.js app from becoming stable until the next export
+		router.events.subscribe((event) => zone.runOutsideAngular(() => onEvent(event)))
 	})
 }
 
-function traceRouter(router: Router): void {
+function routerEventHandler(router: Router): (event: RouterEvent) => void {
 	/** The latest navigation: an event from an older one never ends its span. */
 	let current: number | undefined
 	/** Whether the latest navigation redirected: the next one continues its span. */
 	let redirecting = false
 
-	router.events.subscribe((event) => {
+	return (event) => {
 		if (event instanceof NavigationStart) {
 			current = event.id
 			if (redirecting) redirecting = false
@@ -92,7 +98,7 @@ function traceRouter(router: Router): void {
 		} else {
 			endNavigation(event.target && routeTemplate(event.target.root))
 		}
-	})
+	}
 }
 
 /**
@@ -121,6 +127,10 @@ export function tracedResolver<T>(name: string, fn: () => Promise<T>): Promise<T
  * `withNavigationErrorHandler`. An error `tracedResolver` already recorded is skipped.
  */
 export function reportAngularError(error: unknown): void {
+	// `provideBrowserGlobalErrorListeners()` wraps an `error` event without an error
+	// object, like a cross-origin "Script error.": the SDK's own handler already saw it
+	if (error instanceof Error && typeof ErrorEvent === "function" && error.cause instanceof ErrorEvent)
+		return
 	captureException(error, { name: "angular.error" })
 }
 
