@@ -29,11 +29,12 @@ export function mapleNitroPlugin(nitroApp: NitroApp): void {
 	nitroApp.hooks.hook("render:response", (response) => {
 		const value = serverTiming()
 		if (!value) return
-		const existing = response.headers?.["server-timing"]
-		response.headers = {
-			...response.headers,
-			"server-timing": existing ? `${existing}, ${value}` : value,
-		}
+		const headers = { ...response.headers }
+		// Header names are case-insensitive: add to one another hook set
+		const name =
+			Object.keys(headers).find((key) => key.toLowerCase() === "server-timing") ?? "server-timing"
+		headers[name] = headers[name] ? `${headers[name]}, ${value}` : value
+		response.headers = headers
 	})
 }
 

@@ -377,7 +377,7 @@ app.mount("#app")
 - The span ends once Vue has rendered the new route, so requests the new page starts in `setup` or an immediate watcher nest under it. Wrap the page's data loading in `MapleBrowser.traced`.
 - A redirect stays in the span its original location opened. A navigation replaced by a newer one ends as interrupted, and a link to the current page starts no span. Query and hash changes, back and forward are navigations.
 - Errors thrown in guards and route chunks that fail to load are reported as `vue_router.error`, and still logged.
-- `MapleVue` sets `app.config.errorHandler`: production builds only log component errors, so without it they never reach Maple. It keeps logging them, or calls the handler you set before `app.use(MapleVue)`. An error `traced` already recorded isn't reported again. An `errorCaptured` hook that returns `false` stops the error before it gets there: call `reportVueError(error, instance, info)` from that hook.
+- `MapleVue` sets `app.config.errorHandler`: production builds only log component errors, so without it they never reach Maple. Vue then handles them as it would without a handler, logging them in production, or the handler you set before `app.use(MapleVue)` does. An error `traced` already recorded isn't reported again. An `errorCaptured` hook that returns `false` stops the error before it gets there: call `reportVueError(error, instance, info)` from that hook.
 
 ### Nuxt
 

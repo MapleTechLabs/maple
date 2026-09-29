@@ -7,10 +7,13 @@
 import { type App, nextTick, type Plugin } from "vue"
 import type { RouteLocationNormalized, Router } from "vue-router"
 import { captureException } from "../errors"
-import { endNavigation, startNavigation } from "../navigation"
+import { endNavigation, interruptNavigation, startNavigation } from "../navigation"
 
-/** `NavigationFailureType.cancelled | NavigationFailureType.duplicated`, the same in Vue Router 4 and 5. */
-const REPLACED_OR_DUPLICATED = 8 | 16
+/**
+ * `NavigationFailureType.cancelled`, the same in Vue Router 4 and 5. Not imported: `MapleVue` works
+ * without Vue Router.
+ */
+const CANCELLED = 8
 
 /** Routers already traced: a second `traceRouter` would start every span twice. */
 const tracedRouters = new WeakSet<Router>()
@@ -40,13 +43,16 @@ export function traceRouter(router: Router): void {
 	})
 
 	router.afterEach((to, _from, failure) => {
-		// Cancelled: a newer navigation already ended this one as interrupted.
-		// Duplicated: a link to the current page, which runs no guards
-		if (failure && failure.type & REPLACED_OR_DUPLICATED) return
 		const origin = originOf(to)
-		// After Vue renders the new route, so what its `setup` starts nests under the span.
-		// Unless another navigation started since, or an earlier guard stopped this one
-		// before `beforeEach` opened a span for it
+		// Not the open span's navigation: a newer one already ended it as interrupted, an
+		// earlier guard stopped this one before `beforeEach`, or it's a link to the page on screen
+		if (origin !== current) return
+		// Replaced by a navigation that ran no guards, like a link back to the page on screen
+		if (failure && failure.type & CANCELLED) {
+			interruptNavigation()
+			return
+		}
+		// After Vue renders the new route, so what its `setup` starts nests under the span
 		void nextTick(() => {
 			if (origin === current) endNavigation(templateOf(to))
 		})
@@ -71,16 +77,20 @@ export function reportVueError(error: unknown, _instance: unknown, info: string)
 
 /**
  * `app.use(MapleVue)`: reports the errors Vue catches in components, watchers and event handlers,
- * which production builds only log. Keeps logging them, or calls the `errorHandler` set before it. Not for Nuxt.
+ * which production builds only log. Vue still handles them, or the `errorHandler` set before it. Not for Nuxt.
  */
 export const MapleVue: Plugin<[]> = {
 	install(app: App) {
 		const previous = app.config.errorHandler
 		app.config.errorHandler = (error, instance, info) => {
 			reportVueError(error, instance, info)
-			// A handler replaces Vue's own logging
-			if (previous) previous(error, instance, info)
-			else console.error(error)
+			if (previous) {
+				previous(error, instance, info)
+				return
+			}
+			// Back to Vue's own handling: it logs an error its handler throws, and in
+			// development throws it on, as it does without a handler
+			throw error
 		}
 	},
 }

@@ -59,13 +59,13 @@ describe("mapleNitroPlugin", () => {
 
 	it("appends to a Server-Timing header another plugin set", async () => {
 		const hook = renderResponse()
-		const response: RenderResponse = { headers: { "server-timing": "db;dur=53" } }
+		const response: RenderResponse = { headers: { "Server-Timing": "db;dur=53" } }
 		const traceparent = await request(async (traceparent) => {
 			hook(response)
 			return traceparent
 		})
 
-		expect(response.headers?.["server-timing"]).toBe(`db;dur=53, traceparent;desc="${traceparent}"`)
+		expect(response.headers).toEqual({ "Server-Timing": `db;dur=53, traceparent;desc="${traceparent}"` })
 	})
 
 	it("changes nothing without an active span", () => {

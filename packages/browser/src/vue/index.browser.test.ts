@@ -199,23 +199,31 @@ describe.each(routers)("traceRouter with %s", (_, lib) => {
 
 	it("ends a navigation replaced by a newer one as interrupted", async () => {
 		const slow = gate()
+		const next = gate()
 		const router = await start("/", [], (router) => {
-			router.beforeEach((to) => (to.path === "/slow" ? slow.promise : undefined))
+			router.beforeEach((to) => {
+				if (to.path === "/slow") return slow.promise
+				if (to.path === "/admin") return next.promise
+			})
 		})
 		const first = router.push("/slow")
 		await settle()
-		await router.push("/projects/1")
+		const second = router.push("/admin")
+		await settle()
+		// /slow is cancelled while /admin is still in flight
 		slow.open()
 		await first
+		next.open()
+		await second
 		await nextTick()
 		await stop()
 
-		expect(names()).toEqual(["pageload /", "navigate", "navigate /projects/:id"])
+		expect(names()).toEqual(["pageload /", "navigate", "navigate /admin"])
 		expect(exported[1]?.attributes["app.navigation.interrupted"]).toBe(true)
 		expect(exported[2]?.attributes["app.navigation.interrupted"]).toBeUndefined()
 	})
 
-	it("leaves the span open for a navigation a guard before its own stopped", async () => {
+	it("ends a navigation cancelled by one a guard before its own stopped as interrupted", async () => {
 		const slow = gate()
 		// Leave guards run before every `beforeEach`
 		const home = { ...page("home"), beforeRouteLeave: (to: { path: string }) => to.path !== "/login" }
@@ -231,9 +239,42 @@ describe.each(routers)("traceRouter with %s", (_, lib) => {
 		await nextTick()
 		await stop()
 
-		// Not named after /login, which it never reached
+		// Not named after /login, which it never reached, and not left open until the next click
 		expect(names()).toEqual(["pageload /", "navigate", "navigate /projects/:id"])
 		expect(exported[1]?.attributes["app.navigation.interrupted"]).toBe(true)
+	})
+
+	it("ends a navigation cancelled by a link back to the page on screen as interrupted", async () => {
+		const slow = gate()
+		const router = await start("/", [], (router) => {
+			router.beforeEach((to) => (to.path === "/slow" ? slow.promise : undefined))
+		})
+		const first = router.push("/slow")
+		await settle()
+		// Runs no guards, but cancels /slow
+		await router.push("/")
+		slow.open()
+		await first
+		// Ended now: it no longer parents what runs next
+		await MapleBrowser.traced("query members", async () => undefined)
+		await stop()
+
+		expect(names()).toEqual(["pageload /", "navigate", "query members"])
+		expect(exported[1]?.attributes["app.navigation.interrupted"]).toBe(true)
+		expect(exported[2]?.parentSpanContext).toBeUndefined()
+	})
+
+	it("ends a guard's redirect back to the page on screen", async () => {
+		const router = await start("/login", [], (router) => {
+			router.beforeEach((to) => (to.path === "/admin" ? "/login" : undefined))
+		})
+		await router.push("/admin")
+		await MapleBrowser.traced("query session", async () => undefined)
+		await stop()
+
+		expect(names()).toEqual(["pageload /login", "navigate /login", "query session"])
+		expect(exported[1]?.attributes["url.path"]).toBe("/admin")
+		expect(exported[2]?.parentSpanContext).toBeUndefined()
 	})
 
 	it("ignores a link to the page on screen", async () => {
@@ -355,15 +396,15 @@ describe("MapleVue", () => {
 		},
 	}
 
-	it("reports a component error once, with where Vue caught it, and still logs it", async () => {
-		mount(broken)
+	it("reports a component error once, with where Vue caught it, and hands it back to Vue", async () => {
+		// Development builds throw an error no handler took; production builds log it
+		expect(() => mount(broken)).toThrow("render exploded")
 		await stop()
 
 		const span = named("vue.error")
 		expect(span.attributes["vue.error.info"]).toBe("render function")
 		expect(exceptionEvents()).toHaveLength(1)
 		expect(exceptionEvents()[0]?.attributes?.["exception.message"]).toBe("render exploded")
-		expect(consoleError).toHaveBeenCalledWith(expect.objectContaining({ message: "render exploded" }))
 	})
 
 	it("calls the errorHandler set before it instead of logging", async () => {
@@ -383,27 +424,25 @@ describe("MapleVue", () => {
 	})
 
 	it("doesn't report an error traced already recorded", async () => {
-		const failed = new Promise<void>((resolve) => {
-			mount({
-				setup() {
-					onMounted(async () => {
-						try {
-							await MapleBrowser.traced("loader /", async () => {
-								throw new Error("loader exploded")
-							})
-						} finally {
-							setTimeout(resolve, 0)
-						}
-					})
-					return () => h("p", "page")
-				},
-			})
+		const own = vi.fn()
+		const loading = {
+			setup() {
+				onMounted(() =>
+					MapleBrowser.traced("loader /", async () => {
+						throw new Error("loader exploded")
+					}),
+				)
+				return () => h("p", "page")
+			},
+		}
+		mount(loading, (app) => {
+			app.config.errorHandler = own
 		})
-		await failed
+		// Vue hands the rejected hook to the handler once the promise settles
+		await vi.waitFor(() => expect(own).toHaveBeenCalledOnce())
 		await stop()
 
 		expect(names()).toEqual(["loader /"])
 		expect(exceptionEvents()).toHaveLength(1)
-		expect(consoleError).toHaveBeenCalledOnce()
 	})
 })

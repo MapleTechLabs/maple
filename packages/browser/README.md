@@ -273,9 +273,10 @@ app.use(router)
   `navigate /projects/:id`, and end once Vue rendered it, so what the new page
   starts in `setup` nests under them. A redirect stays in one span.
 - Guard errors and failed route chunk loads are reported as `vue_router.error`.
-- `MapleVue` keeps Vue's console logging, or calls the `errorHandler` set before
-  it, and skips errors `traced` already recorded. From an `errorCaptured` hook
-  that returns `false`, call `reportVueError(error, instance, info)`.
+- `MapleVue` reports the error, then hands it back to Vue's own handling (or to
+  the `errorHandler` set before it), and skips errors `traced` already recorded.
+  From an `errorCaptured` hook that returns `false`, call
+  `reportVueError(error, instance, info)`.
 
 Nuxt manages `app.config.errorHandler` itself: use `vue:error` instead of
 `MapleVue`. `@maple-dev/browser/nuxt` joins the page load to the server's
