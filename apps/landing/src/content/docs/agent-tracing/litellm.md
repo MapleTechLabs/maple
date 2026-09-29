@@ -236,7 +236,7 @@ async def call_model(conversation_id: str, messages: list, tools: list | None):
     )
 ```
 
-Don't also instrument the OpenAI client in the app, or calls and tokens double. On this path the LLM call count shows 2x (sessions list) or 3x (session page) the real number. Tokens, cost and the transcript are correct.
+Don't also instrument the OpenAI client in the app, or calls and tokens double. On this path the LLM call count shows 2x the real number. Tokens, cost and the transcript are correct.
 
 ## Flush before a short-lived process exits
 

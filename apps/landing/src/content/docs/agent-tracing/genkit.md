@@ -130,7 +130,6 @@ export class GenkitForMaple implements SpanProcessor {
 				})
 				const result = json("genkit:output")
 				if (result !== undefined) {
-					// Maple reads a JSON object or array here; a bare string is dropped
 					attrs["gen_ai.tool.call.result"] = JSON.stringify(typeof result === "object" ? result : { result })
 				}
 				break
@@ -222,7 +221,6 @@ The framework shows as **Unidentified**, which is expected. Cost shows as unpric
 - **No spans at all.** `instrumentation.ts` isn't the first import, or the app runs under `genkit start`.
 - **Traces show up, but Agent Sessions is empty.** `GenkitForMaple` is missing from `spanProcessors`.
 - **Every message is its own session.** The flow doesn't call `setCustomMetadataAttribute("conversationId", ...)`, or `ai.generate()` runs outside a flow.
-- **The transcript is empty, but tokens are there.** An attribute length limit cut the messages. Unset `OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT` and `OTEL_SPAN_ATTRIBUTE_VALUE_LENGTH_LIMIT`.
 - **The Developer UI shows no traces.** `disableGenkitOTelInitialization()` ran under `genkit start`. Keep the `GENKIT_ENV` check around it.
 
 ## Related

@@ -249,7 +249,7 @@ Long-running servers only need `provider.shutdown()` in their shutdown hook.
 
 ## Check that it works
 
-Run a conversation of at least two turns, one with a tool call, and open **Agent Sessions** filtered by your service name. You should see one session per conversation id, labelled Haystack, with one turn per `pipeline.run()`, model calls with tokens, and tool calls with failed ones marked. A tool's result shows on its tool call row only if the tool returns a dict.
+Run a conversation of at least two turns, one with a tool call, and open **Agent Sessions** filtered by your service name. You should see one session per conversation id, labelled Haystack, with one turn per `pipeline.run()`, model calls with tokens, and tool calls with failed ones marked.
 
 ## Troubleshooting
 

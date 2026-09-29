@@ -21,7 +21,7 @@ Mechanism: Pydantic AI's native OTel instrumentation (scope `pydantic-ai`, GenAI
    - Another `TracerProvider` exists → add a `BatchSpanProcessor(OTLPSpanExporter())` to it; do NOT create a second provider.
    - Nothing → Step 2a.
 3. Find: every `agent.run(` / `run_sync(` / `run_stream(` / `iter(` call, where the chat/thread id lives in the request, every `Agent(` construction, and every tool that calls another agent's `run()`.
-4. Other instrumentors on the same model client (`logfire.instrument_openai`, `OpenAIInstrumentor`, OpenLLMetry `Traceloop.init`) → they double-trace model calls. Keep Pydantic AI's; ask before removing the others if they serve something else.
+4. Other instrumentors on the same model client (`logfire.instrument_openai`, `OpenAIInstrumentor`, OpenLLMetry `Traceloop.init`, a global `logfire.instrument_httpx()`) → they double-trace model calls. Keep Pydantic AI's; ask before removing the others if they serve something else. `logfire.instrument_httpx(client)` on a non-model client (tool HTTP calls) is fine to keep.
 
 ## Step 1: Key and region
 
@@ -31,8 +31,10 @@ Mechanism: Pydantic AI's native OTel instrumentation (scope `pydantic-ai`, GenAI
 - No key → use the literal `MAPLE_TEST` (ingest accepts and discards it) and tell the user to replace it with their key from Settings → Ingestion.
 - Never put a private `maple_sk_` key in browser code.
 - Follow the repo's secret/env convention (`.env`, settings module, secret manager) if it has one. Otherwise inline is acceptable: ingest keys are write-only.
+- Key read from a secret env var in code: fail fast with a clear message when it is unset (not a bare `KeyError` on import, not a header without a key).
+- A 401 `ingest_unauthorized` ("Invalid ingest key") with a key you trust usually means the key belongs to the other region (keys are region-bound): try the other endpoint.
 
-Env vars (the exporter reads them; it appends `/v1/traces`):
+Env vars (the exporter reads them when it is built; it appends `/v1/traces`). If the app loads `.env` (`load_dotenv()`), call it at the top of the tracing module, before the exporter or `logfire.configure()`; otherwise the exporter silently targets `localhost:4318` with no key.
 
 ```bash
 OTEL_EXPORTER_OTLP_ENDPOINT=https://ingest.maple.dev
@@ -84,7 +86,7 @@ Agent.instrument_all(
 
 ## Step 2b: Logfire path (only if the project already uses Logfire)
 
-Keep the Step 1 env vars. Logfire adds an OTLP exporter when `OTEL_EXPORTER_OTLP_ENDPOINT` is set.
+Keep the Step 1 env vars; they must be in `os.environ` before `logfire.configure()` runs. Logfire then adds OTLP span, metric and log exporters for this endpoint; pass `metrics=False` to `logfire.configure()` if only traces are wanted.
 
 Do not install the Step 2a OTel packages: `logfire` already depends on the SDK and the OTLP/HTTP exporter, and logfire 5.1.x pins `opentelemetry-sdk<1.45`, so adding `opentelemetry-sdk>=1.45` makes the install unresolvable. Tested with logfire 5.1.1 (OTel SDK 1.44.0).
 
@@ -101,8 +103,8 @@ def keep_tool_content(match: logfire.ScrubMatch):
 
 logfire.configure(
     service_name="support-agent",
-    environment="production",
-    send_to_logfire=False,  # keep the project's existing value if it also sends to Logfire
+    environment="production",  # adapt to the project
+    send_to_logfire=False,  # keep the project's existing value as is (incl. 'if-token-present'); False only if unset
     scrubbing=logfire.ScrubbingOptions(callback=keep_tool_content),
 )
 logfire.instrument_pydantic_ai()
@@ -171,7 +173,7 @@ async def research_weather(ctx: RunContext[None], city: str) -> str:
 
 ## Step 7: Verify
 
-Run one real conversation: 2+ messages with the same id, at least one tool call, one streamed message if the app streams, and a sub-agent call if the app delegates. Then check (Maple → Agent Sessions, filter by the service name; wait ~30 s):
+Run one real conversation: 2+ messages with the same id, at least one tool call, one streamed message if the app streams, and a sub-agent call if the app delegates. If the app has no scriptable entry point (server, UI only), write a small driver for this run: one conversation id, 2+ turns, a tool call, flush before exit. Then check (Maple → Agent Sessions, filter by the service name; wait ~30 s):
 
 - [ ] Exactly one session per conversation; session id = the id you passed (not a UUID7 you didn't create). A second conversation is a different session.
 - [ ] Framework shows as **Pydantic AI**.
@@ -184,9 +186,13 @@ Run one real conversation: 2+ messages with the same id, at least one tool call,
 - [ ] Cost shows "unpriced" (expected: Pydantic AI writes `operation.cost`, which Maple doesn't read).
 - [ ] No attribute contains an API key or `Bearer ` token.
 
+With the Maple MCP: `list_agent_sessions` with `search=<conversation id>` returns one row.
+
 Quick local cue: Pydantic AI 2.51 prints an `observability: off` banner on the first run when no instrumentation is set; it disappears once `instrument_all()` (or `logfire.instrument_pydantic_ai()`) has run.
 
-Local check without Maple: add `ConsoleSpanExporter` via `SimpleSpanProcessor` temporarily and confirm `gen_ai.conversation.id` is identical across runs of one conversation and on delegate spans.
+Without Maple access (or with `MAPLE_TEST`), both must hold; silence alone proves nothing (no spans is silent too):
+- The run exits with no `Failed to export` / 401 lines on stderr.
+- A console exporter shows the spans with `gen_ai.conversation.id`, identical across runs of one conversation and on delegate spans. Add it temporarily: plain path `provider.add_span_processor(SimpleSpanProcessor(ConsoleSpanExporter()))`; Logfire path `logfire.configure(..., additional_span_processors=[SimpleSpanProcessor(ConsoleSpanExporter())])` (both from `opentelemetry.sdk.trace.export`). On the Logfire path its own console prints `<agent> run` / `running tool: <x>`; exported span names are still `invoke_agent` / `execute_tool`.
 
 ## Known behavior (tell the user when relevant)
 
@@ -212,7 +218,7 @@ Local check without Maple: add `ConsoleSpanExporter` via `SimpleSpanProcessor` t
 - Do not set `version=2|3|4` (deprecated) or `event_mode="logs"` (content moves to logs, which Maple doesn't read).
 - Do not add `session.id` or `maple_ai.session.id` attributes: Maple reads `gen_ai.conversation.id` for Pydantic AI, and `maple_ai.session.id` would re-vendor the span.
 - Do not set `use_aggregated_usage_attribute_names=False`; the default keeps run totals out of the token sum.
-- Do not also instrument the model client (OpenAI/Anthropic instrumentors, `logfire.instrument_openai`): duplicate model-call spans.
+- Do not also instrument the model client (OpenAI/Anthropic instrumentors, `logfire.instrument_openai`, a global `logfire.instrument_httpx()`): duplicate model-call spans. `instrument_httpx(client)` on a tool's own client is fine.
 - Do not return error strings from tools that failed; raise `ToolFailed`.
 - Do not promise cost in Maple; do not add token pricing code.
 - Do not print or commit real keys beyond the repo's convention.

@@ -372,7 +372,7 @@ try {
 
 Send two or three messages with the same conversation id, one of them using a tool, then open **Agent Sessions**. Within a minute you should see one session with one turn per `invoke()`, a readable transcript, model calls with tokens, and tool calls named after your tools.
 
-The framework shows as **Unidentified** and cost as **unpriced**, which is expected. In Python, with a checkpointer, every turn is labeled with the conversation's first message. The transcript inside each turn is still correct.
+Cost shows as **unpriced**, and in TypeScript the framework shows as **Unidentified**, which is expected. In Python, when each call passes the conversation history (checkpointer state or your own), every turn is labeled with the conversation's first message. The transcript inside each turn is still correct.
 
 ## Troubleshooting
 

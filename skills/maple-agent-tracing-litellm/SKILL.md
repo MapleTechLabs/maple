@@ -37,6 +37,8 @@ Mechanism:
 - No key → use the literal `MAPLE_TEST` (ingest accepts and discards it) and tell the user to replace it with their key from Settings → Ingestion.
 - Never put a private `maple_sk_` key in browser code.
 - Follow the repo's secret/env convention if it has one. Otherwise inline is acceptable: ingest keys are write-only.
+- App loads `.env` (`load_dotenv()`): call it at the top of `tracing.py`, before the provider is built. Otherwise the exporter silently targets `localhost:4318` with no key.
+- Key from an env var: fail fast with a clear message when it's unset (`if not os.environ.get("OTEL_EXPORTER_OTLP_HEADERS"): raise RuntimeError("OTEL_EXPORTER_OTLP_HEADERS (Maple ingest key) is not set")` in `tracing.py`, after any `load_dotenv()`); never let it surface as an opaque 401 or a bare `KeyError`.
 
 ```bash
 OTEL_EXPORTER_OTLP_ENDPOINT=https://ingest.maple.dev
@@ -125,7 +127,7 @@ async def call_model(conversation_id: str, messages: list, tools: list | None):
 ```
 
 - Alternative session carrier: body `metadata: {"session_id": ...}` (`extra_body={"metadata": {...}}`), verified. A W3C `baggage` header with `session.id=...` is used only when neither the header nor metadata is present.
-- Resulting tree per request: `invoke_agent` → `POST /chat/completions` (proxy FastAPI server span) → `chat <model>` + `auth /chat/completions`. Known Maple limitation: the `auth /chat/completions` span is counted as an extra LLM call (litellm scope + "chat" in the name), so LLM call counts double on the proxy path in the sessions list; the session detail page also counts the FastAPI `POST /chat/completions` span (it carries `gen_ai.request.model`), so it shows 3x. Tokens, cost, transcript and sessions are correct. Tell the user; nothing to fix app-side.
+- Resulting tree per request: `invoke_agent` → `POST /chat/completions` (proxy FastAPI server span) → `chat <model>` + `auth /chat/completions`. Known Maple limitation: LLM call counts double on the proxy path (sessions list: the `auth /chat/completions` span, litellm scope + "chat" in the name; session page: the FastAPI `POST /chat/completions` span, which carries `gen_ai.request.model`). Tokens, cost, transcript and sessions are correct. Tell the user; nothing to fix app-side.
 - Never also instrument the app's OpenAI client when the proxy traces: double LLM calls and tokens. Pick gateway OR in-app.
 - Do not set `OTEL_IGNORE_CONTEXT_PROPAGATION=true` on the proxy.
 
@@ -173,7 +175,7 @@ async def run_agent(agent: Agent, conversation_id: str, messages: list) -> str:
 
 - v2 default is `no_content`. `capture_message_content="span_only"` (or env `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=span_only`) puts `gen_ai.input.messages` / `gen_ai.output.messages` JSON on `chat` spans. Maple's transcript needs them.
 - Never `event_only` / `span_and_event` for Maple: events are not read.
-- Messages are OpenAI chat format (`{role, content, tool_calls}`). Maple's transcript ignores `tool_calls` inside messages: a call that only requested tools shows an empty reply, and tool calls render only from `execute_tool` spans (Step 5). So the `execute_tool` spans are required for tool calls to appear at all.
+- Messages are OpenAI chat format (`{role, content, tool_calls}`).
 - User wants content off → `no_content` + drop the tool args/result attributes in `run_tool`. `litellm.turn_off_message_logging = True` keeps structure but replaces text with `redacted-by-litellm` (applies to every LiteLLM logging callback). Pattern-based redaction → an OTel Collector between the app and Maple.
 
 ## Step 5: Tools, errors, sub-agents
@@ -254,11 +256,11 @@ Await it in a `finally` inside the event loop (end of `main()`, end of each hand
 
 ## Step 7: Verify
 
-Run one real conversation: 2+ messages with the same id, one tool call, one streamed reply if the app streams, a failing tool if one exists, a second conversation with a different id, and a multi-agent run if the app has one. Check (Maple → Agent Sessions, filter by service; wait ~30 s):
+Run one real conversation: 2+ messages with the same id, one tool call, one streamed reply if the app streams, a failing tool if one exists, a second conversation with a different id, and a multi-agent run if the app has one. No scriptable entry point (server, UI, REPL only): write a small driver for this run (one conversation id, 2+ turns, one tool call, `flush_tracing()` before exit). Check (Maple → Agent Sessions, filter by service; wait ~30 s):
 
 - [ ] Exactly one session per conversation, session id = the id passed; the second conversation is a separate session; no `trace:<id>` sessions.
 - [ ] Framework shows **LiteLLM** (not Unidentified).
-- [ ] One turn per top-level `invoke_agent`; transcript shows user prompts, assistant replies and tool calls (tool rows come from `execute_tool` spans; a tool-only model reply shows empty, expected).
+- [ ] One turn per top-level `invoke_agent`; transcript shows user prompts, assistant replies and tool calls.
 - [ ] Spans: `invoke_agent <name>` (app scope), `chat <model>` (scope `litellm`) and `execute_tool <tool>` inside it, same trace. No `litellm_request` / `raw_gen_ai_request` spans (those mean v1).
 - [ ] Every `chat` span has input and output tokens, including the streamed one; no call appears twice.
 - [ ] Tool spans have real names, arguments, results and call ids.
@@ -267,9 +269,9 @@ Run one real conversation: 2+ messages with the same id, one tool call, one stre
 - [ ] Cost: unpriced, or (Step 6) `gen_ai.usage.cost` only on top-level `invoke_agent` spans, equal to the sum of the turn's `litellm.cost.total`.
 - [ ] Last call of a script run present (flush worked).
 - [ ] No attribute contains an API key, `Bearer ` or `sk-`.
-- [ ] Proxy path: `chat` spans (service `litellm-proxy`) sit in the app's trace under `invoke_agent` → `POST /chat/completions`, carrying the session id. LLM call count shows 2x in the list, 3x on the session page (auth + FastAPI spans, known).
+- [ ] Proxy path: `chat` spans (service `litellm-proxy`) sit in the app's trace under `invoke_agent` → `POST /chat/completions`, carrying the session id. LLM call count shows 2x (auth / FastAPI span, known).
 
-Local check without Maple: temporarily add `SimpleSpanProcessor(ConsoleSpanExporter())` to the provider and confirm `gen_ai.conversation.id` on every `chat` span and the parent ids.
+Without Maple access (`MAPLE_TEST`, no MCP): the run must exit with no export errors on stderr (`Failed to export`, 401 lines) AND a temporary `SimpleSpanProcessor(ConsoleSpanExporter())` on the provider must show `gen_ai.conversation.id` on every `chat` span and the parent ids. Silence alone proves nothing (no spans is silent too). With the Maple MCP: `list_agent_sessions` with `search=<conversation id>` returns one row.
 
 ## Troubleshooting
 
@@ -282,7 +284,8 @@ Local check without Maple: temporarily add `SimpleSpanProcessor(ConsoleSpanExpor
 - Proxy spans in their own traces, apart from the app's agent span → no `traceparent` on the request; `propagate.inject(headers)` inside the agent span; no `OTEL_IGNORE_CONTEXT_PROPAGATION` on the proxy.
 - Nothing arrives from the proxy → the OTLP env vars aren't in the proxy's own environment, so it stays on the default `console` exporter.
 - Session cost lower than LiteLLM spend → `gen_ai.usage.cost` on nested agent spans; report on the outermost only (Step 6).
-- Empty assistant reply in the transcript → that call only requested tools; tool rows come from `execute_tool` spans.
+- 401 `ingest_unauthorized` / "Invalid ingest key" with a key you trust → keys are region-bound, so it likely belongs to the other region; try the other endpoint.
+- App exports to `localhost:4318` / nothing arrives, no errors → `.env` loaded after `tracing.py` built the provider; load it first.
 
 ## Do not
 

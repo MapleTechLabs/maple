@@ -29,6 +29,8 @@ DSPy emits nothing by itself. Spans come from `openinference-instrumentation-dsp
 - Key in the user's prompt: use it. No key: use the literal `MAPLE_TEST` (ingest accepts and discards it) and tell the user to replace it with a key from **Settings → Ingestion**.
 - Never put a private `maple_sk_` key in browser code.
 - Follow the repo's existing secret/env convention (`.env`, settings module, secret manager). If there is none, inline is acceptable: ingest keys are write-only.
+- App loads `.env` (`load_dotenv()`): call it at the top of `tracing.py`, before the provider is built. Otherwise the exporter silently targets `localhost:4318` with no key.
+- Key from an env var: fail fast with a clear message when it's unset (`if not os.environ.get("OTEL_EXPORTER_OTLP_HEADERS"): raise RuntimeError("OTEL_EXPORTER_OTLP_HEADERS (Maple ingest key) is not set")` in `tracing.py`, after any `load_dotenv()`); never let it surface as an opaque 401 or a bare `KeyError`.
 
 ## Step 2: Install and initialize
 
@@ -69,7 +71,7 @@ DSPyInstrumentor().instrument(tracer_provider=provider, config=TraceConfig(enabl
 ThreadingInstrumentor().instrument()
 ```
 
-- `enable_genai_semconv=True` is required: Maple's session page reads `gen_ai.*` for DSPy, not OpenInference `llm.*` / `input.value`.
+- `enable_genai_semconv=True` is required.
 - `ThreadingInstrumentor` is required whenever modules run in threads (`dspy.Parallel`, `Evaluate`, executors). Without it every worker is an orphan trace with no session.
 - Import `tracing` as the first import of every entry point (web app, CLI, worker), before the DSPy program modules.
 
@@ -234,7 +236,11 @@ finally:
 
 ## Step 7: Verify
 
-Run one conversation of 2-3 messages with the same conversation id (one using a tool), with `cache=False` on the LM so every call hits the provider. Then check in Maple **Agent Sessions** (`https://app.maple.dev/agent-sessions`, or `app.eu.maple.dev`), or with the Maple MCP (`list_agent_sessions`, `get_agent_session`):
+Run one conversation of 2-3 messages with the same conversation id (one using a tool), with `cache=False` on the LM so every call hits the provider. No scriptable entry point (server, UI, REPL only): write a small driver for this run (one conversation id, 2+ turns, one tool call, flush before exit).
+
+Without Maple access (`MAPLE_TEST`, no MCP): the run must exit with no export errors on stderr (`Failed to export`, 401 lines) AND a local exporter (`provider.add_span_processor(SimpleSpanProcessor(ConsoleSpanExporter()))` in a scratch run) must show `<YourModule>.forward`, `LM.__call__` and `<tool>.__call__` spans carrying `session.id`. Silence alone proves nothing (no spans is silent too). With the Maple MCP: `list_agent_sessions` with `search=<conversation id>` returns one row.
+
+Then check in Maple **Agent Sessions** (`https://app.maple.dev/agent-sessions`, or `app.eu.maple.dev`), or with the Maple MCP (`list_agent_sessions`, `get_agent_session`):
 
 - Exactly one session for the conversation, id = the conversation id, framework **DSPy**. A second conversation is a second session.
 - One turn per program call; each turn's root is `<YourModule>.forward`, titled with the user's question.
@@ -243,11 +249,10 @@ Run one conversation of 2-3 messages with the same conversation id (one using a 
 - Transcript non-empty (DSPy's `[[ ## field ## ]]` prompt format is expected).
 - Tool calls named `<tool>.__call__` with `gen_ai.tool.name`, arguments and results. `finish.__call__` (ReAct's end-of-loop tool) is expected and counts as a tool call.
 - A tool that raised is counted as failed (session check **Tool availability** fails with the exception); no successful tool or model call is marked failed.
-- A **Prompt cache** warning on a short test conversation is expected: the callback records the provider's cached input tokens (0 counts), and providers only cache long prompts (OpenAI from 1,024 tokens, Anthropic only with cache markers).
 - Worker modules appear as separate agents/lanes; with `dspy.Parallel`, all workers are in the same trace as the orchestrator, none orphaned.
 - The process exited cleanly and the last turn is present (flush ran).
 
-If a check fails, see the troubleshooting list in the human guide.
+401 `ingest_unauthorized` / "Invalid ingest key" with a key you trust: keys are region-bound, so it likely belongs to the other region; try the other endpoint. For other failed checks, see the troubleshooting list in the human guide.
 
 ## Known behaviours (expected, nothing to fix; explain them if the user asks)
 

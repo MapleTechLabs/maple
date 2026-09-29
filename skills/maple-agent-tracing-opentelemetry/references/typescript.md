@@ -31,6 +31,9 @@ export const provider = new NodeTracerProvider({
 provider.register()
 ```
 
+- `OTLPTraceExporter` reads `OTEL_*` when it is constructed. If the app loads `.env` (`dotenv`, `--env-file`), put `import "dotenv/config"` at the top of `tracing.ts`; otherwise the exporter silently targets `localhost:4318` with no key.
+- No env convention in the repo: pass the values inline, `new OTLPTraceExporter({ url: "https://ingest.maple.dev/v1/traces", headers: { Authorization: "Bearer <key>" } })`. Never build the header from an env var that can be unset (`Bearer undefined` is an opaque 401).
+
 ## agent.ts
 
 ```ts
@@ -170,8 +173,7 @@ async function runTool(agent: Agent, call: ToolCall) {
 		async (span) => {
 			try {
 				const result = await agent.tools[name]!.run(JSON.parse(call.function.arguments || "{}"))
-				// Maple reads a JSON object or array here; a bare string is dropped
-				const output = json(typeof result === "object" && result !== null ? result : { result })
+				const output = typeof result === "string" ? result : json(result ?? null)
 				span.setAttribute("gen_ai.tool.call.result", output)
 				return output
 			} catch (error) {
@@ -270,9 +272,12 @@ try {
 	await handleMessage("chat_42", "Hi! Briefly introduce yourself.")
 	await handleMessage("chat_42", "What's the weather in Berlin?", (delta) => process.stdout.write(delta))
 } finally {
-	await provider.shutdown()
+	// Rejects when an export failed; never let a Maple outage crash the app
+	await provider.shutdown().catch((err) => console.error("telemetry flush failed", err))
 }
 ```
+
+Long-running server: no per-request flush; `process.on("SIGTERM", () => provider.shutdown().catch((err) => console.error("telemetry flush failed", err)))`.
 
 ESM (`"type": "module"`) for top-level `await`. Run with `npx tsx main.ts` or the project's bundler/tsc; plain `node main.ts` fails on the extensionless `./tracing` import.
 
@@ -305,6 +310,6 @@ const orchestrator: Agent = {
 
 ```ts
 // after the handler's work, before returning (inside waitUntil/after() where the platform has one)
-await provider.forceFlush()
+await provider.forceFlush().catch((err) => console.error("telemetry flush failed", err))
 ```
 

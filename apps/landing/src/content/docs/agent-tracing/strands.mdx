@@ -155,7 +155,7 @@ async function handleMessage(conversationId: string, text: string): Promise<stri
 }
 ```
 
-Set both keys in `traceAttributes`. With a custom service name Maple groups these spans by `gen_ai.conversation.id` and shows the framework as "Unidentified". Create the agent per request here too, since a reused TypeScript agent reports its running token total on every turn.
+Set both keys in `traceAttributes`. Create the agent per request here too, since a reused TypeScript agent reports its running token total on every turn.
 
 </LanguageTab>
 </LanguageTabs>
@@ -198,7 +198,7 @@ try {
 
 Run a conversation of two or three messages, including one that calls a tool, then open **Agent Sessions** in Maple. You should see one session per conversation id with framework **Strands Agents**, one turn per `agent(...)` call, and a transcript with the user messages, replies and tool calls.
 
-Cost shows as unpriced because Strands doesn't report it. The sessions list currently shows about twice the real token count; the session's own page has the correct total.
+Cost shows as unpriced because Strands doesn't report it. With TypeScript, the sessions list may show about twice the real token count; the session's own page has the correct total.
 
 ## Troubleshooting
 

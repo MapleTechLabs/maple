@@ -28,6 +28,8 @@ Mechanism: `openinference-instrumentation-agno` (the instrumentor Agno's own `se
 - Key in the user's prompt: use it. No key: use the literal `MAPLE_TEST` (ingest accepts and discards it) and tell the user to replace it with their key from **Settings → Ingestion**.
 - Private `maple_sk_` keys never go in browser code. Agno runs server-side; a `maple_pk_` ingest key is write-only.
 - Follow the repo's existing secret/env convention (`.env`, settings module, secret manager). If there is none, inline is acceptable because ingest keys are write-only.
+- App loads `.env` (`load_dotenv()`): call it at the top of `tracing.py`, before the provider is built. Otherwise the exporter silently targets `localhost:4318` with no key.
+- Key from an env var: fail fast with a clear message when it's unset (`if not os.environ.get("OTEL_EXPORTER_OTLP_HEADERS"): raise RuntimeError("OTEL_EXPORTER_OTLP_HEADERS (Maple ingest key) is not set")` in `tracing.py`, after any `load_dotenv()`); never let it surface as an opaque 401 or a bare `KeyError`.
 
 ## Step 2: Install and initialize
 
@@ -79,7 +81,7 @@ AgnoInstrumentor().instrument(
 )
 ```
 
-- `enable_genai_semconv=True` is REQUIRED. It dual-writes `gen_ai.*` (messages in `{role, parts}` form, usage, tool name/args/result, agent name, `gen_ai.operation.name`). Without it Maple's session detail page has no transcript for Agno. Env equivalent: `OPENINFERENCE_ENABLE_GENAI_SEMCONV=true` (use it when you can't edit the `instrument()` call, e.g. AgentOS owns it).
+- `enable_genai_semconv=True` is REQUIRED. It dual-writes `gen_ai.*` (messages in `{role, parts}` form, usage, tool name/args/result, agent name, `gen_ai.operation.name`). Env equivalent: `OPENINFERENCE_ENABLE_GENAI_SEMCONV=true` (use it when you can't edit the `instrument()` call, e.g. AgentOS owns it).
 - Import `tracing` at the top of the entry point (`main.py`, `app.py`, the ASGI module), before building agents, teams or `AgentOS`.
 - AgentOS: `AgentOS(tracing=True)` and `setup_tracing(db=...)` skip their setup when a real `TracerProvider` is already registered, so AgentOS's traces view stops getting spans once `tracing.py` runs first. If the user wants to keep that view, add Agno's DB exporter to the same provider (use the `db` the AgentOS uses):
 
@@ -160,20 +162,26 @@ Run one real conversation: 2-3 turns with the same `session_id` including one to
 - [ ] The two conversations are two different sessions (not merged by a sticky auto id).
 - [ ] Framework shows **Agno** (not Unidentified).
 - [ ] One turn per `run()`/`arun()`; turn labels are the user messages.
-- [ ] Transcript shows system prompt, user and assistant messages, tool calls. Empty transcript with non-zero tokens = `enable_genai_semconv` not active (check Step 2c, check `instrument()` isn't called elsewhere first).
+- [ ] Transcript shows system prompt, user and assistant messages, tool calls.
 - [ ] Model calls (`<ModelClass>.invoke|ainvoke|invoke_stream|ainvoke_stream`) show the model id and non-zero input/output tokens, including streamed turns.
 - [ ] Each tool call appears once with its real name; a raised tool error is marked failed and nothing else is. Structured results render as JSON (not a Python repr).
 - [ ] Teams: one lane per named member; the team run and all member spans are in one trace, same session; a run started after a team run is NOT inside the team's trace (else see Step 5 context leak).
-- [ ] Cost shown in the Agent Sessions list if the provider returns it (OpenRouter does); otherwise "unpriced" is expected. The session detail page shows cost as not reported for Agno even then (it doesn't read `llm.cost.total` yet); tell the user, don't try to fix it.
+- [ ] Cost shown in the Agent Sessions list if the provider returns it (OpenRouter does); otherwise "unpriced" is expected.
 - [ ] No span attribute contains the model provider API key or `Bearer`.
 
-Raw span check (optional, e.g. with a console exporter in a scratch run): run spans `<agent_name>.run` have `session.id` + `gen_ai.operation.name=invoke_agent` + `gen_ai.agent.name`; model spans have `gen_ai.operation.name=chat`, `gen_ai.input.messages`, `gen_ai.usage.input_tokens`; tool spans have `gen_ai.operation.name=execute_tool`.
+No scriptable entry point (server, UI, REPL only): write a small driver for this run: one `session_id`, 2+ turns, one tool call, flush before exit.
+
+Without Maple access (`MAPLE_TEST`, no MCP): the run must exit with no export errors on stderr (`Failed to export`, 401 lines) AND a local exporter (`provider.add_span_processor(SimpleSpanProcessor(ConsoleSpanExporter()))` in a scratch run) must show the spans below. Silence alone proves nothing (no spans is silent too). With the Maple MCP: `list_agent_sessions` with `search=<session_id>` returns one row.
+
+401 `ingest_unauthorized` / "Invalid ingest key" with a key you trust: keys are region-bound, so it likely belongs to the other region; try the other endpoint.
+
+Raw span check: run spans `<agent_name>.run` have `session.id` + `gen_ai.operation.name=invoke_agent` + `gen_ai.agent.name`; model spans have `gen_ai.operation.name=chat`, `gen_ai.input.messages`, `gen_ai.usage.input_tokens`; tool spans have `gen_ai.operation.name=execute_tool`.
 
 ## Known behaviours (expected; explain if the user asks)
 
 - If `setup_tracing()`/`AgentOS(tracing=True)` ran first, `set_tracer_provider` in `tracing.py` logs "Overriding of current TracerProvider is not allowed" and spans go only to the AgentOS database. A second `instrument()` call logs "Attempting to instrument while already instrumented" and its `config` is ignored.
 - The instrumentor patches Agno's run functions and every model class in `agno.models`, so agents created after `tracing.py` runs are traced with no further changes.
-- Without `enable_genai_semconv`, spans carry only OpenInference attributes (`llm.input_messages.0.message.content`, `llm.token_count.prompt`); the sessions list still shows tokens/models, the detail page doesn't decode them for Agno.
+- Without `enable_genai_semconv`, spans carry only OpenInference attributes (`llm.input_messages.0.message.content`, `llm.token_count.prompt`).
 - With `enable_genai_semconv=True` the root span also carries `gen_ai.conversation.id` = `session.id`; Maple ignores it for Agno.
 - Maple reads span attributes only; the instrumentor emits no span events or OTLP logs, so nothing else needs enabling. Masked values are replaced with `__REDACTED__` in-process before export.
 - Team trace shape (one trace per team run): member runs sit directly under the leader's run, next to (not inside) the `delegate_task_to_member` tool spans; those show as ordinary tool calls on the leader with member id and task as arguments. With `team.arun()` in `coordinate` mode, members called in one step run concurrently and their spans overlap; sync `team.run()` runs them sequentially.

@@ -23,6 +23,8 @@ The framework emits the spans itself. You add: an OTLP/HTTP exporter, content ca
 - Key in the user's prompt: use it. No key: use the literal `MAPLE_TEST` (ingest accepts and discards it) and tell the user to replace it with their key from Settings → Ingestion.
 - Never put a private `maple_sk_` key in browser code.
 - Follow the repo's existing secret/env convention (`.env`, settings class, user-secrets). If there is none, inlining the ingest key is acceptable: ingest keys are write-only.
+- Key from an env var: fail fast with a clear message when it's unset instead of a bare `KeyError` on `os.environ['MAPLE_INGEST_KEY']` (`key = os.environ.get("MAPLE_INGEST_KEY") or sys.exit("MAPLE_INGEST_KEY is not set (Maple ingest key)")`); .NET: never pass a null `Environment.GetEnvironmentVariable(...)` into the header (`Bearer ` with no key is an opaque 401).
+- App loads `.env` (`load_dotenv()`): call it before `configure_otel_providers()` / the provider is built, and before reading the key. Otherwise the exporter silently targets `localhost:4318` with no key.
 
 ## Step 2: Install and init
 
@@ -161,7 +163,7 @@ async def handle_message(session: AgentSession, text: str) -> str:
 - Id: the app's chat/thread id, or `AgentSession.session_id` (create sessions with `agent.create_session(session_id=chat_id)` when the app has an id). Must be stable across all turns of one conversation and differ between conversations.
 - Streaming: the whole `async for update in agent.run(..., stream=True)` loop goes inside the `with`.
 - Approval resumes (`request.to_function_approval_response(...)` passed back to `agent.run`) and workflow runs go inside the same `with`. 1.19 logs a WARN "Ignored an approval response ... did not match" on each resume even though the tool runs; ignore it if the `execute_tool` span is there once.
-- Build workflows (`WorkflowBuilder(...).build()`, `SequentialBuilder`, `ConcurrentBuilder`, ...) inside the `with`. `build()` always emits a separate one-span `workflow.build` trace: inside the `with` it joins the session (Maple shows it as an empty, unlabeled turn 1, the run is turn 2, and the session has no title); outside it becomes a stray one-span session. Executors (fan-out included) inherit the id.
+- Build workflows (`WorkflowBuilder(...).build()`, `SequentialBuilder`, `ConcurrentBuilder`, ...) inside the `with`. `build()` always emits a separate one-span `workflow.build` trace: inside the `with` it joins the session; outside it becomes a stray one-span session. Executors (fan-out included) inherit the id.
 - .NET: `ConversationIdProcessor.Current.Value = chatId;` in the request handler before `RunAsync`/`RunStreamingAsync`.
 
 ## Step 4: Content
@@ -241,7 +243,7 @@ trace.set_tracer_provider(provider)
 
 ## Step 7: Verify
 
-Run one real conversation (2-3 turns, one tool call; a second conversation if cheap). With a real key, open Agent Sessions (`https://app.maple.dev/agent-sessions`, EU `app.eu.maple.dev`) after ~1 minute. With `MAPLE_TEST`, check the spans locally instead (add `ConsoleSpanExporter` temporarily, or point the endpoint at a local collector). Check:
+Run one real conversation (2-3 turns, one tool call; a second conversation if cheap). No scriptable entry point (server, UI, REPL only): write a small driver for this run (one conversation id, 2+ turns, one tool call, flush before exit). With a real key, open Agent Sessions (`https://app.maple.dev/agent-sessions`, EU `app.eu.maple.dev`) after ~1 minute, or with the Maple MCP `list_agent_sessions` with `search=<conversation id>` returns one row. Without Maple access (`MAPLE_TEST`, no MCP): the run must exit with no export errors on stderr (`Failed to export`, 401 lines) AND a local exporter (`ConsoleSpanExporter` added temporarily, or the endpoint pointed at a local collector) must show the spans below with `gen_ai.conversation.id`. Silence alone proves nothing (no spans is silent too). A 401 `ingest_unauthorized` / "Invalid ingest key" with a key you trust: keys are region-bound, so it likely belongs to the other region; try the other endpoint. Check:
 
 - Spans arrive and the process exits cleanly (flush ran); `service.name` is yours, not `agent_framework` / `unknown_service`.
 - Every span of every turn in one conversation has the same `gen_ai.conversation.id`; a second conversation has a different one. In Maple: one session per conversation, not `trace:<id>` sessions.
@@ -250,7 +252,7 @@ Run one real conversation (2-3 turns, one tool call; a second conversation if ch
 - `execute_tool`: real tool name, `gen_ai.tool.call.arguments` and `gen_ai.tool.call.result`; a raising tool has ERROR status + `error.type`, successful ones don't.
 - Sub-agents have distinct `gen_ai.agent.name`s.
 - No attribute contains the model API key or `Bearer `.
-- Cost: none is emitted; Maple shows sessions as unpriced. Framework label: "Microsoft Agent Framework" / "Semantic Kernel" (Python); .NET shows "Unidentified".
+- Cost: none is emitted; Maple shows sessions as unpriced. Framework label: "Microsoft Agent Framework" / "Semantic Kernel" (.NET SK: see the Semantic Kernel section).
 
 ## Tokens and cost notes
 

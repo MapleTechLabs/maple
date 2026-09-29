@@ -92,7 +92,7 @@ CrewAIInstrumentor().instrument(tracer_provider=provider, config=config, skip_de
 OpenAIInstrumentor().instrument(tracer_provider=provider, config=config, skip_dep_check=True)
 ```
 
-Pass `config` to every instrumentor, or the session has no transcript. Keep `skip_dep_check=True`, or an instrumentor can silently skip itself.
+Pass `config` to every instrumentor. Keep `skip_dep_check=True`, or an instrumentor can silently skip itself.
 
 If the app already has a `TracerProvider` (from `opentelemetry-instrument`, Logfire or Sentry), add `CrewAIAgentNames()` and the exporter to it and pass it to `instrument()`.
 

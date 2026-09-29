@@ -11,7 +11,7 @@ Human guide with the reasoning: https://maple.dev/docs/agent-tracing/claude-agen
 
 One conversation = one Maple Agent Session, one turn per user message, with the user prompts, every model call (model, tokens, TTFT), every tool call (name, args, result, failures).
 
-How it works: the Agent SDK emits nothing itself. `query()` spawns the Claude Code CLI, which has OpenTelemetry built in and exports spans `claude_code.interaction` (turn), `claude_code.llm_request` (model call), `claude_code.tool` (tool call), with phase children `claude_code.tool.blocked_on_user` / `claude_code.tool.execution`. All configuration is environment variables for that child process. Maple detects the `com.anthropic.claude_code` scope, groups by the `session.id` span attribute, and restates the spans as `gen_ai.*` at ingest. No instrumentation package, no TracerProvider.
+How it works: the Agent SDK emits nothing itself. `query()` spawns the Claude Code CLI, which has OpenTelemetry built in and exports spans `claude_code.interaction` (turn), `claude_code.llm_request` (model call), `claude_code.tool` (tool call), with phase children `claude_code.tool.blocked_on_user` / `claude_code.tool.execution`. All configuration is environment variables for that child process. Maple detects the `com.anthropic.claude_code*` scopes (spans come from `com.anthropic.claude_code.tracing`), groups by the `session.id` span attribute, and restates the spans as `gen_ai.*` at ingest. No instrumentation package, no TracerProvider.
 
 Known gaps (tell the user, don't try to fix): assistant reply text and cost are only on OTLP log events, which Maple's session views don't read, so transcripts have no assistant text and sessions show "unpriced"; no `gen_ai.agent.name`, so sub-agents get no separate lanes; tool arguments shown only for Bash (command) and Read/Edit/Write (file path).
 
@@ -25,7 +25,7 @@ Known gaps (tell the user, don't try to fix): assistant reply text and cost are 
 - Existing OpenTelemetry in the app: keep it. It can't carry the CLI's spans (the CLI exports on its own), but if the app has an active span when `query()` runs, both SDKs pass it as `TRACEPARENT` and the turn nests under it. Do not add a second SDK/exporter for the agent.
 - Remove any hook-based instrumentor for the Agent SDK (OpenInference `openinference-instrumentation-claude-agent-sdk`, Langfuse/LangSmith/Opik wrappers) if the user agrees: it duplicates every model call and its spans don't group by session in Maple.
 - Find where env is already set for the CLI: `options.env` / `ClaudeAgentOptions(env=...)`, Dockerfile, deploy manifests.
-- Settings files beat `options.env`: when `settingSources` / `setting_sources` is omitted (all sources) or includes `user`/`project`, an `env` block in `~/.claude/settings.json` or the repo's `.claude/settings.json` overrides the same keys passed in `options.env` (verified with `OTEL_SERVICE_NAME`). If those files set `OTEL_*` / `CLAUDE_CODE_*` keys, tell the user; for server apps that don't need file settings, suggest `settingSources: []` (Py `setting_sources=[]`).
+- Settings files beat `options.env`: when `settingSources` / `setting_sources` is omitted (all sources) or includes `user`/`project`, an `env` block in `~/.claude/settings.json` or the repo's `.claude/settings.json` overrides the same keys passed in `options.env` (verified with `OTEL_SERVICE_NAME`). If those files set `OTEL_*` / `CLAUDE_CODE_*` keys, tell the user; for server apps that don't need file settings, suggest `settingSources: []` (Py `setting_sources=[]`). Omitted `settingSources` also loads the developer's personal plugins and MCP servers into the agent and its telemetry.
 - Find the conversation boundary: how the app calls `query()` per user message, and whether it stores a session id (`resume`, `sessionId`, `session_id`, `continue`, `ClaudeSDKClient`).
 
 ## Step 1: Key and region
@@ -33,46 +33,50 @@ Known gaps (tell the user, don't try to fix): assistant reply text and cost are 
 - US endpoint `https://ingest.maple.dev`, EU endpoint `https://ingest.eu.maple.dev`. Header `Authorization=Bearer <key>`.
 - Key in the user's prompt: use it. No key: use the literal `MAPLE_TEST` (ingest accepts and discards it) and tell the user to replace it with their key from Settings → Ingestion.
 - Private `maple_sk_` keys never go in browser code. Ingest keys are write-only.
-- Follow the repo's existing secret/env convention (e.g. `MAPLE_INGEST_KEY` in `.env`). If there is none, inlining the ingest key is acceptable.
+- Follow the repo's existing secret/env convention (e.g. `MAPLE_INGEST_KEY` in `.env`). If there is none, inline the literal key; never ship a lookup that can come out `undefined` (`Bearer undefined` is an opaque 401).
+- A 401 `ingest_unauthorized` ("Invalid ingest key") with a key you trust usually means the key belongs to the other region (keys are region-bound): try the other endpoint.
 
 ## Step 2a: TypeScript SDK
 
-`npm install @anthropic-ai/claude-agent-sdk@latest zod` (zod ^4 is a peer).
+`npm install @anthropic-ai/claude-agent-sdk@latest zod`. Peers: zod ^4, `@anthropic-ai/sdk`, `@modelcontextprotocol/sdk`; install them explicitly if the package manager doesn't.
 
-`options.env` REPLACES the child environment. Always spread `process.env`, and drop inherited `TRACEPARENT`/`TRACESTATE`. Create `maple-env.ts` (adapt service name, environment, key source):
+`options.env` REPLACES the child environment. Always spread `process.env`, and drop inherited `TRACEPARENT`/`TRACESTATE`. Build the env when calling `query()`, not at import, so values loaded later (dotenv) are included. Create `maple-env.ts` (adapt service name and environment; with no env convention, replace the key lookup and the throw with the literal key):
 
 ```ts
-const inherited: Record<string, string | undefined> = { ...process.env }
-delete inherited.TRACEPARENT
-delete inherited.TRACESTATE
-
-export const mapleEnv: Record<string, string | undefined> = {
-	...inherited,
-	CLAUDE_CODE_ENABLE_TELEMETRY: "1",
-	CLAUDE_CODE_ENHANCED_TELEMETRY_BETA: "1",
-	OTEL_TRACES_EXPORTER: "otlp",
-	OTEL_LOGS_EXPORTER: "otlp",
-	OTEL_METRICS_EXPORTER: "otlp",
-	OTEL_EXPORTER_OTLP_PROTOCOL: "http/protobuf",
-	OTEL_EXPORTER_OTLP_ENDPOINT: "https://ingest.maple.dev",
-	OTEL_EXPORTER_OTLP_HEADERS: `Authorization=Bearer ${process.env.MAPLE_INGEST_KEY}`,
-	OTEL_SERVICE_NAME: "support-agent",
-	OTEL_RESOURCE_ATTRIBUTES: "deployment.environment.name=production",
-	OTEL_TRACES_EXPORT_INTERVAL: "1000",
-	OTEL_LOGS_EXPORT_INTERVAL: "1000",
-	OTEL_LOG_USER_PROMPTS: "1",
-	OTEL_LOG_TOOL_DETAILS: "1",
-	OTEL_LOG_TOOL_CONTENT: "1",
+export function mapleEnv(): Record<string, string | undefined> {
+	const key = process.env.MAPLE_INGEST_KEY
+	if (!key) throw new Error("MAPLE_INGEST_KEY is not set")
+	const env: Record<string, string | undefined> = {
+		...process.env,
+		CLAUDE_CODE_ENABLE_TELEMETRY: "1",
+		CLAUDE_CODE_ENHANCED_TELEMETRY_BETA: "1",
+		OTEL_TRACES_EXPORTER: "otlp",
+		OTEL_LOGS_EXPORTER: "otlp",
+		OTEL_METRICS_EXPORTER: "otlp",
+		OTEL_EXPORTER_OTLP_PROTOCOL: "http/protobuf",
+		OTEL_EXPORTER_OTLP_ENDPOINT: "https://ingest.maple.dev",
+		OTEL_EXPORTER_OTLP_HEADERS: `Authorization=Bearer ${key}`,
+		OTEL_SERVICE_NAME: "support-agent",
+		OTEL_RESOURCE_ATTRIBUTES: "deployment.environment.name=production",
+		OTEL_TRACES_EXPORT_INTERVAL: "1000",
+		OTEL_LOGS_EXPORT_INTERVAL: "1000",
+		OTEL_LOG_USER_PROMPTS: "1",
+		OTEL_LOG_TOOL_DETAILS: "1",
+		OTEL_LOG_TOOL_CONTENT: "1",
+	}
+	delete env.TRACEPARENT
+	delete env.TRACESTATE
+	return env
 }
 ```
 
-Pass `env: mapleEnv` on EVERY `query()` / `startup()` / session call in the codebase. If the call already sets `env`, merge its keys into `mapleEnv` rather than dropping them.
+Pass `env: mapleEnv()` on EVERY `query()` / `startup()` / session call in the codebase. If the call already sets `env`, merge rather than drop it: `env: { ...mapleEnv(), ...existing }`.
 
 ## Step 2b: Python SDK
 
 `pip install -U claude-agent-sdk` (or the repo's tool: `uv add`, `poetry add`). Python >= 3.10.
 
-`ClaudeAgentOptions.env` MERGES over the inherited env, so pass only telemetry vars; remove inherited trace context from `os.environ`. Create `maple_env.py`:
+`ClaudeAgentOptions.env` MERGES over the inherited env, so pass only telemetry vars; remove inherited trace context from `os.environ`. Build the env when calling `query()`, not at import, so values loaded later (dotenv) are included. Create `maple_env.py` (same adaptations):
 
 ```py
 import os
@@ -80,26 +84,32 @@ import os
 os.environ.pop("TRACEPARENT", None)
 os.environ.pop("TRACESTATE", None)
 
-MAPLE_ENV = {
-    "CLAUDE_CODE_ENABLE_TELEMETRY": "1",
-    "CLAUDE_CODE_ENHANCED_TELEMETRY_BETA": "1",
-    "OTEL_TRACES_EXPORTER": "otlp",
-    "OTEL_LOGS_EXPORTER": "otlp",
-    "OTEL_METRICS_EXPORTER": "otlp",
-    "OTEL_EXPORTER_OTLP_PROTOCOL": "http/protobuf",
-    "OTEL_EXPORTER_OTLP_ENDPOINT": "https://ingest.maple.dev",
-    "OTEL_EXPORTER_OTLP_HEADERS": f"Authorization=Bearer {os.environ['MAPLE_INGEST_KEY']}",
-    "OTEL_SERVICE_NAME": "support-agent",
-    "OTEL_RESOURCE_ATTRIBUTES": "deployment.environment.name=production",
-    "OTEL_TRACES_EXPORT_INTERVAL": "1000",
-    "OTEL_LOGS_EXPORT_INTERVAL": "1000",
-    "OTEL_LOG_USER_PROMPTS": "1",
-    "OTEL_LOG_TOOL_DETAILS": "1",
-    "OTEL_LOG_TOOL_CONTENT": "1",
-}
+
+def maple_env() -> dict[str, str]:
+    """Telemetry env for the Claude Code CLI, built per query()."""
+    key = os.environ.get("MAPLE_INGEST_KEY")
+    if not key:
+        raise RuntimeError("MAPLE_INGEST_KEY is not set")
+    return {
+        "CLAUDE_CODE_ENABLE_TELEMETRY": "1",
+        "CLAUDE_CODE_ENHANCED_TELEMETRY_BETA": "1",
+        "OTEL_TRACES_EXPORTER": "otlp",
+        "OTEL_LOGS_EXPORTER": "otlp",
+        "OTEL_METRICS_EXPORTER": "otlp",
+        "OTEL_EXPORTER_OTLP_PROTOCOL": "http/protobuf",
+        "OTEL_EXPORTER_OTLP_ENDPOINT": "https://ingest.maple.dev",
+        "OTEL_EXPORTER_OTLP_HEADERS": f"Authorization=Bearer {key}",
+        "OTEL_SERVICE_NAME": "support-agent",
+        "OTEL_RESOURCE_ATTRIBUTES": "deployment.environment.name=production",
+        "OTEL_TRACES_EXPORT_INTERVAL": "1000",
+        "OTEL_LOGS_EXPORT_INTERVAL": "1000",
+        "OTEL_LOG_USER_PROMPTS": "1",
+        "OTEL_LOG_TOOL_DETAILS": "1",
+        "OTEL_LOG_TOOL_CONTENT": "1",
+    }
 ```
 
-Import `maple_env` before the first `query()` / `ClaudeSDKClient` and pass `env=MAPLE_ENV` (merge with any existing `env` dict) on every `ClaudeAgentOptions`.
+Import `maple_env` before the first `query()` / `ClaudeSDKClient` and pass `env=maple_env()` (merge with any existing `env` dict) on every `ClaudeAgentOptions`.
 
 Alternative for both SDKs: set the same variables in the deployment environment (Dockerfile, k8s manifest) and omit `env`. Then make sure no `TRACEPARENT` is set there.
 
@@ -149,7 +159,7 @@ const sessionId = conversation.claudeSessionId ?? randomUUID()
 conversation.claudeSessionId = sessionId // persist with the conversation
 for await (const message of query({
 	prompt: text,
-	options: { env: mapleEnv, ...(firstTurn ? { sessionId } : { resume: sessionId }) },
+	options: { env: mapleEnv(), ...(firstTurn ? { sessionId } : { resume: sessionId }) },
 })) {
 	if (message.type === "result") return message.subtype === "success" ? message.result : undefined
 }
@@ -161,13 +171,13 @@ Python pattern:
 first_turn = "claude_session_id" not in conversation
 session_id = conversation.setdefault("claude_session_id", str(uuid.uuid4()))
 session = {"session_id": session_id} if first_turn else {"resume": session_id}
-async for message in query(prompt=text, options=ClaudeAgentOptions(env=MAPLE_ENV, **session)):
+async for message in query(prompt=text, options=ClaudeAgentOptions(env=maple_env(), **session)):
     ...
 ```
 
 ## Step 4: Content
 
-- `OTEL_LOG_USER_PROMPTS=1`: prompt on `claude_code.interaction` → turn titles + user messages. Without it: `<REDACTED>`, untitled turns.
+- `OTEL_LOG_USER_PROMPTS=1`: prompt in the `user_prompt` attribute of `claude_code.interaction` → turn titles + user messages. Without it: `<REDACTED>`, untitled turns.
 - `OTEL_LOG_TOOL_DETAILS=1`: Bash `full_command`, Read/Edit/Write `file_path` → tool arguments; full error message on failed tools; `subagent_type`.
 - `OTEL_LOG_TOOL_CONTENT=1`: `tool.output` span event → tool result (Read, Bash, Edit/Write with DETAILS; MCP/SDK tools, WebFetch, WebSearch on >= 2.1.283).
 - Ask the user before enabling content in production if the repo shows compliance constraints (PII handling, HIPAA, etc.); content flags send file contents and command output. Offer to leave them off; the session still works (untitled turns, no args/results).
@@ -190,7 +200,9 @@ async for message in query(prompt=text, options=ClaudeAgentOptions(env=MAPLE_ENV
 
 ## Step 7: Verify
 
-Run one conversation: two turns (the second resuming the first), one of which calls a tool. Use `MAPLE_TEST` only if no real key; with the sentinel nothing is stored, so ask the user to check in Maple once they have a key. To see export errors: add `CLAUDE_CODE_OTEL_DIAG_STDERR: "1"` to the env and a `stderr` callback (TS `options.stderr`, Py `ClaudeAgentOptions(stderr=...)`); no `[3P telemetry]` errors should appear. For the CLI: `claude --debug-file /tmp/claude.log`, then grep `3P telemetry`.
+Run one conversation: two turns (the second resuming the first), one of which calls a tool. If the app has no scriptable entry point (server, UI only), write a small driver for this run: one conversation, 2+ turns, a tool call, the Step 6 wait before exit. Pre-approve the tool in the driver (`allowedTools: ["Bash"]` / `allowed_tools=["Bash"]`); otherwise the call waits in `blocked_on_user` and never runs. Use `MAPLE_TEST` only if no real key; with the sentinel nothing is stored, so ask the user to check in Maple once they have a key. To see export errors: add `CLAUDE_CODE_OTEL_DIAG_STDERR: "1"` to the env and a `stderr` callback (TS `options.stderr`, Py `ClaudeAgentOptions(stderr=...)`); no `[3P telemetry]` errors should appear. For the CLI: `claude --debug-file /tmp/claude.log`, then grep `3P telemetry`.
+
+No `[3P telemetry]` errors is not proof of spans (no spans is silent too). Confirm in Maple, with the Maple MCP (`list_agent_sessions` with `search=<session id>` returns one row), or by pointing `OTEL_EXPORTER_OTLP_ENDPOINT` at a local OTLP listener once and checking `claude_code.interaction` / `claude_code.llm_request` spans arrive with `session.id`.
 
 Then in Maple → Agent Sessions (`https://app.maple.dev/agent-sessions`, EU `app.eu.maple.dev`) check:
 
@@ -201,7 +213,7 @@ Then in Maple → Agent Sessions (`https://app.maple.dev/agent-sessions`, EU `ap
 - Tool calls listed by real name (`mcp__<server>__<tool>`, `Bash`, ...), args for Bash/file tools, results when `OTEL_LOG_TOOL_CONTENT=1`.
 - A tool that threw is marked failed; successful tools are not.
 - Sub-agent model/tool calls appear under the `Agent` tool call in the same trace, and no turn is titled `<task-notification>` (if one is, see background sub-agents in Step 5).
-- Expected and not bugs: cost "unpriced"; no assistant text; no sub-agent lanes; a "Prompt cache" warning with 0% hit rate when prompts are below the model's minimum cacheable length (Claude Code reports zero cache buckets explicitly).
+- Expected and not bugs: cost "unpriced"; no assistant text; no sub-agent lanes.
 
 If spans exist but the turn nests under an unrelated trace, an inherited `TRACEPARENT` survived: fix the env stripping.
 
@@ -214,7 +226,7 @@ If spans exist but the turn nests under an unrelated trace, an inherited `TRACEP
 - A call rejected by the user or `canUseTool`: `blocked_on_user` span with `decision=reject` and no execution; Maple shows a call without a result, not a failure.
 - An active app span is passed to the CLI as `TRACEPARENT` by both SDKs (the turn nests under the request that triggered it; that's desired). Interactive `claude` ignores inbound `TRACEPARENT`; only SDK and `claude -p` runs read it.
 - Content truncation: 60 KB per attribute (`CLAUDE_CODE_OTEL_CONTENT_MAX_LENGTH`), `[TRUNCATED ...]` marker.
-- Terminal sessions signed in with a Claude account carry `user.email` on every span/event. To drop or mask attributes, route through an OpenTelemetry Collector with a `redaction` or `attributes` processor.
+- Any Claude Code process signed in with a Claude account, including SDK child processes, carries `user.email`, `user.account_uuid` and `organization.id` on every span/event. To drop or mask attributes, route through an OpenTelemetry Collector with a `redaction` or `attributes` processor.
 - Content never in session views: assistant replies (`assistant_response` log event), the system prompt, arguments of non-Bash/non-file tools (MCP and SDK tool args are only in the `tool_result` log event).
 - Cost: only on the `claude_code.api_request` log event (`cost_usd`, with `session.id`) and the `claude_code.cost.usage` metric; both are Claude Code's client-side estimate at list price unless managed settings set `modelPricing`. In SDK apps, the result message's `total_cost_usd` is the same estimate per `query()`. With logs on, Logs has one `claude_code.user_prompt`, one `claude_code.api_request` per model call and one `claude_code.tool_result` per tool run.
 - `/status` in `claude` lists telemetry variables it ignored (repo settings). 401s or data going elsewhere: managed settings or `~/.claude/remote-settings.json` set endpoint/headers and win; the user must ask whoever manages Claude Code.

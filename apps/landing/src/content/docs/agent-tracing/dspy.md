@@ -65,7 +65,7 @@ DSPyInstrumentor().instrument(tracer_provider=provider, config=TraceConfig(enabl
 ThreadingInstrumentor().instrument()
 ```
 
-Without `enable_genai_semconv=True` the session page has no transcript and no model. `ThreadingInstrumentor` keeps `dspy.Parallel` and thread pool workers in the caller's session.
+`ThreadingInstrumentor` keeps `dspy.Parallel` and thread pool workers in the caller's session.
 
 If the app already has a `TracerProvider` (from `opentelemetry-instrument`, Logfire or another library), add the OTLP exporter to it and pass it to `instrument()` instead of creating a second one.
 
@@ -217,7 +217,6 @@ Set `cache=False` on the LM, then run two or three messages through `handle_mess
 ## Troubleshooting
 
 - **No spans, or exports fail with 404.** Import `tracing` first. An `endpoint=` passed in code must end in `/v1/traces`; the env variable takes the base URL.
-- **Tokens in the list, empty session page.** Pass `TraceConfig(enable_genai_semconv=True)` to `instrument()`.
 - **No tokens anywhere.** `MapleCallback` isn't registered, a later `dspy.configure(callbacks=[...])` replaced it, or the calls were cache hits.
 - **One session per message.** The call runs outside `using_session(...)`, or the id changes per request.
 - **Every model call counted twice.** Remove `openinference-instrumentation-litellm` or `-openai`; the callback already records model calls.

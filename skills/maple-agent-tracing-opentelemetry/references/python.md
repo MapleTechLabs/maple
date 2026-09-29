@@ -30,6 +30,9 @@ provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
 trace.set_tracer_provider(provider)
 ```
 
+- `OTLPSpanExporter()` reads `OTEL_*` when it is constructed. If the app uses python-dotenv, call `load_dotenv()` at the top of `tracing.py`, before the exporter is built; otherwise it silently targets `localhost:4318` with no key.
+- No env convention in the repo: pass the values inline, `OTLPSpanExporter(endpoint="https://ingest.maple.dev/v1/traces", headers={"Authorization": "Bearer <key>"})`. Never build the header from `os.environ[...]` (bare `KeyError` on import) or `os.getenv(...)` (`Bearer None`, opaque 401) without failing fast with a clear message.
+
 ## agent.py
 
 ```py
@@ -160,8 +163,7 @@ def run_tool(agent: Agent, call: dict[str, Any]) -> str:
     with tracer.start_as_current_span(f"execute_tool {name}", kind=SpanKind.INTERNAL, attributes=attributes) as span:
         try:
             result = agent.tools[name].run(**json.loads(arguments))
-            # Maple reads a JSON object or array here; a bare string is dropped
-            output = json.dumps(result if isinstance(result, (dict, list)) else {"result": result})
+            output = result if isinstance(result, str) else json.dumps(result)
             span.set_attribute("gen_ai.tool.call.result", output)
             return output
         except Exception as error:

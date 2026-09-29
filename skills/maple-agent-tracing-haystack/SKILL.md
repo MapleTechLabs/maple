@@ -22,6 +22,8 @@ Haystack's `OpenTelemetryTracer` alone gives Maple structure only (model, tokens
 - Key given in the prompt: use it. No key: use the literal `MAPLE_TEST` (ingest accepts and discards it) and tell the user to replace it with their key from Settings → Ingestion.
 - Private `maple_sk_` keys never go in browser code.
 - Follow the repo's secret/env convention (`.env`, settings module, deployment env). If none exists, inline is acceptable: ingest keys are write-only.
+- Building the header in code from an env var: never let an unset var become `Bearer None` (opaque 401) or a bare `KeyError` on import. Fail fast with a clear message, or inline the key when the repo has no env convention.
+- 401 `ingest_unauthorized` / "Invalid ingest key" with a key you trust: keys are region-bound, so it usually belongs to the other region. Try the other endpoint.
 
 ## Step 2: Install and init
 
@@ -183,6 +185,7 @@ OTEL_EXPORTER_OTLP_HEADERS=Authorization=Bearer <key>
 OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
 ```
 
+- The app loads `.env` (`load_dotenv()`, `--env-file`): call it before `OTLPSpanExporter()` is built. Otherwise the exporter silently targets `localhost:4318` with no key.
 - Tracer name must be `"haystack"` (instrumentation scope = how Maple labels the vendor Haystack).
 - Set a real `service.name`; never leave `unknown_service`.
 
@@ -205,7 +208,6 @@ history = [m for m in result["assistant"]["messages"] if not m.is_from("system")
 ## Step 4: Content
 
 - Default `MapleHaystackTracer(..., content=True)` writes `gen_ai.input.messages`, `gen_ai.output.messages`, `gen_ai.system_instructions`, `gen_ai.tool.call.arguments`/`.result`, plus Haystack's own `haystack.*` content tags.
-- Maple shows a tool span's `gen_ai.tool.call.result` only when it is a JSON object/array. Plain-text tool results still appear in the transcript (as the next model call's tool message) but not on the tool call row. Don't change tools for this; mention it if the user's tools return strings.
 - `content=False` keeps model, tokens, cost, finish reason, tool names and failures; drops messages, tool args/results, `haystack.*` content tags and the ungated `haystack.pipeline.input_data` tag. Use it if the user asks for no prompts/PII in telemetry. The failed tool's status message still quotes its arguments (Haystack's `Failed to invoke Tool ... with parameters {...}`); if arguments can hold PII, redact them in `_tool()` before `set_status`.
 - `HAYSTACK_CONTENT_TRACING_ENABLED` is irrelevant with this tracer; don't add it.
 
@@ -234,7 +236,7 @@ Servers: `provider.shutdown()` in the shutdown hook (FastAPI lifespan, atexit).
 
 ## Step 7: Verify
 
-Run one real conversation (≥2 turns, one tool call). If you can export to a local collector or console first, check the spans; otherwise check Maple (Agent Sessions, filter by service). Check:
+Run one real conversation (≥2 turns, one tool call). No scriptable entry point (server, REPL, UI only) → write a small driver: one `conversation()` id, 2+ turns, at least one tool call, flush before exit. Without Maple access, both must hold: the run exits with no export errors on stderr (`Failed to export`, 401 lines), AND a local console/in-memory exporter shows the spans below. Silence alone proves nothing (no spans is silent too). With the Maple MCP: `list_agent_sessions` with `search=<conversation id>` returns one row. Check:
 
 - Every span has `service.name` set; spans' scope is `haystack`.
 - Each `haystack.agent.step.llm` span has `gen_ai.operation.name=chat`, `gen_ai.response.model`, `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens` (also on the streamed turn).

@@ -42,6 +42,8 @@ Why a span processor and not a plugin (the Python fix): ADK-TS runs `beforeToolC
 
 Same as SKILL.md Step 1. `OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer <key>"`: the JS exporter accepts a literal space (in quotes) or `%20`; both arrive as `Bearer <key>`.
 
+A 401 `ingest_unauthorized` ("Invalid ingest key") with a key you trust usually means the key belongs to the other region (keys are region-bound): try the other endpoint.
+
 ## Step 2: Install and initialize
 
 ```bash
@@ -153,6 +155,7 @@ sdk.start()
 ```
 
 - Import it first in every entry point (`import "./instrumentation"`, or `node --import ./instrumentation.js`), before the first `runAsync()`.
+- The exporter reads `OTEL_*` when `instrumentation.ts` is imported. If the app loads `.env` (dotenv, `--env-file`), load it at the top of `instrumentation.ts` (`import "dotenv/config"`) or pass `node --env-file=.env`; otherwise the exporter silently targets `localhost:4318` with no key.
 - The processor mutates `span.attributes` in `onEnd`, after the span is read-only through the API. This works on trace SDK 2.x (the attributes object is plain and the exporter reads it afterwards); any processor listed after it sees the rewritten attributes.
 - `NodeSDK({ spanProcessors })` disables the env-configured default exporter; that is intended. If the app already has a `NodeSDK`, add `spanProcessor` to its `spanProcessors` array (keeping the existing ones). With a `NodeTracerProvider`, pass it in `spanProcessors` at construction (SDK 2.x has no `addSpanProcessor`). Never register a second global provider.
 - Vertex AI (`new Gemini({ vertexai: true, ... })`, `GOOGLE_GENAI_USE_ENTERPRISE`, or the older `GOOGLE_GENAI_USE_VERTEXAI`): change `gcp.gemini` to `gcp.vertex_ai`. Maple applies the same token convention to both (input includes cached, output excludes thinking).
@@ -189,13 +192,14 @@ sdk.start()
 
 ## Step 6: Flush
 
-- Scripts, CLIs, jobs, tests: `try { ... } finally { await sdk.shutdown() }`.
-- Servers: `process.on("SIGTERM", () => sdk.shutdown())` (or the framework's shutdown hook).
+- `sdk.shutdown()` rejects when an export failed; always add `.catch((err) => console.error("telemetry flush failed", err))` so a Maple outage can't crash the app.
+- Scripts, CLIs, jobs, tests: `try { ... } finally { await sdk.shutdown().catch(...) }`.
+- Servers: `process.on("SIGTERM", () => sdk.shutdown().catch(...))` (or the framework's shutdown hook); nothing per request.
 - Serverless / CPU-frozen platforms (Cloud Run default, Cloud Functions, Lambda): `await spanProcessor.forceFlush()` before each response returns. Consume the whole `runAsync()` generator first.
 
 ## Step 7: Verify
 
-Run one conversation of 2-3 turns with the same session id, one calling a tool, then flush. With a real key, check Agent Sessions (`https://app.maple.dev/agent-sessions`, EU `app.eu.maple.dev`), data within about a minute:
+Run one conversation of 2-3 turns with the same session id, one calling a tool, then flush. If the app has no scriptable entry point (server, `adk web`, UI only), write a small driver for this run: one session id, 2+ turns, a tool call, flush before exit. With a real key, check Agent Sessions (`https://app.maple.dev/agent-sessions`, EU `app.eu.maple.dev`), data within about a minute:
 
 - [ ] One session, framework **Google ADK**, one turn per `runAsync()`; a second conversation is a separate session.
 - [ ] Transcript: user messages, assistant replies, tool calls; tool calls list arguments and results.
@@ -204,7 +208,11 @@ Run one conversation of 2-3 turns with the same session id, one calling a tool, 
 - [ ] No duplicated model calls.
 - [ ] Cost shows "unpriced" (expected).
 
-Without a real key: temporarily set `spanProcessors: [spanProcessor, new tracing.SimpleSpanProcessor(new tracing.ConsoleSpanExporter())]` (the console processor must come after, so it prints rewritten attributes), run one turn, and confirm `call_llm` has `gen_ai.operation.name=chat`, `gen_ai.input.messages`, `gen_ai.output.messages`, `gen_ai.usage.input_tokens`; `invoke_agent` has `gen_ai.conversation.id`; `execute_tool` has `gen_ai.tool.call.arguments` and `gen_ai.tool.call.result`; no `gcp.vertex.agent.llm_request`. Remove the console processor afterwards.
+With the Maple MCP: `list_agent_sessions` with `search=<session id>` returns one row.
+
+Without Maple access (or with `MAPLE_TEST`), both must hold; silence alone proves nothing (no spans is silent too):
+- Run with `OTEL_LOG_LEVEL=error` (`NodeSDK` then prints export failures): no `OTLPExporterError` / 401 lines on stderr.
+- A console exporter shows the spans: temporarily set `spanProcessors: [spanProcessor, new tracing.SimpleSpanProcessor(new tracing.ConsoleSpanExporter())]` (the console processor must come after, so it prints rewritten attributes), run one turn, and confirm `call_llm` has `gen_ai.operation.name=chat`, `gen_ai.input.messages`, `gen_ai.output.messages`, `gen_ai.usage.input_tokens`; `invoke_agent` has `gen_ai.conversation.id`; `execute_tool` has `gen_ai.tool.call.arguments` and `gen_ai.tool.call.result`; no `gcp.vertex.agent.llm_request`. Remove the console processor afterwards.
 
 Tell the user the known gaps: cost unpriced; model is the requested id (no response model/id); transcript tool calls carry no ids; a streamed function-call response has no output message; `adk web`/`api_server` traces have no transcript.
 

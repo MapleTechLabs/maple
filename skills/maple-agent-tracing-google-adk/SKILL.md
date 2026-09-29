@@ -28,6 +28,7 @@ ADK emits its own OTel spans (scope `gcp.vertex.agent`): `invocation` > `invoke_
 - Key given in the prompt: use it. No key: use the literal `MAPLE_TEST` (ingest accepts and discards it) and tell the user to replace it with a key from Settings → Ingestion.
 - Never put a private `maple_sk_` key in browser code.
 - Follow the repo's secret/env convention (`.env`, settings module, deployment env). If there is none, inline values are acceptable: ingest keys are write-only.
+- Key read from env in code: fail fast with a clear message when it is unset (not a bare `KeyError` on import, not a header without a key).
 
 ## Step 2: Install and initialize
 
@@ -49,7 +50,7 @@ ADK_CAPTURE_MESSAGE_CONTENT_IN_SPANS=false
 ```
 
 - `OTEL_EXPORTER_OTLP_ENDPOINT` gets `/v1/traces` appended. If you use `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` instead, give the full `https://ingest.maple.dev/v1/traces`.
-- The env vars must be in the process environment before the first `run_async()`. If the app loads `.env` with python-dotenv, load it before `import telemetry`.
+- The env vars must be in the process environment when `telemetry.py` builds the exporter. Otherwise it silently targets `localhost:4318` with no key.
 
 For Runner apps, create `telemetry.py` next to the entry point:
 
@@ -98,14 +99,14 @@ provider.add_span_processor(SkipDuplicateToolSpans(OTLPSpanExporter()))
 trace.set_tracer_provider(provider)
 ```
 
-- `import telemetry` as the first import of the entry module (before agents are built and before any run).
+- Import `telemetry` before any `google.adk` or agent import; if you use python-dotenv, call `load_dotenv()` on the line before it.
 - Existing provider found in Step 0: skip `TracerProvider(...)`/`set_tracer_provider`; call `existing_provider.add_span_processor(SkipDuplicateToolSpans(OTLPSpanExporter()))` right after it is created. Keep `ToolCallAttributes`.
 - Register the plugin on every `Runner`: `Runner(..., plugins=[telemetry.ToolCallAttributes()])`, appending to existing plugins. For `adk web`/`api_server`, add it to the `App(name=..., root_agent=..., plugins=[...])` in the agent module and do not create a provider (only the plugin is needed). The processor can't be added there without replacing ADK's provider, so `execute_tool (merged)` spans and paused-confirmation spans stay; tell the user tool counts can be inflated under the CLI.
 
 ## Step 3: Session id
 
 - ADK writes `session.id` as `gen_ai.conversation.id` on `invoke_agent` and `generate_content` spans; Maple groups on it. One `run_async()` = one trace = one turn.
-- Make sure every turn of a conversation calls `runner.run_async(user_id=..., session_id=<conversation id>, new_message=...)` with the SAME id. Use the app's own chat/thread id. `Runner(..., auto_create_session=True)` creates the session under that id on the first turn.
+- Make sure every turn of a conversation calls `runner.run_async(user_id=..., session_id=<conversation id>, new_message=...)` with the SAME id. Use the app's own chat/thread id. `Runner(..., auto_create_session=True)` creates the session under that id on the first turn. `InMemoryRunner` (ADK samples) has no `auto_create_session`: call `await runner.session_service.create_session(app_name=..., user_id=..., session_id=<conversation id>)` once before the first turn; `plugins=` works the same.
 - Fix code that calls `session_service.create_session(...)` without `session_id` on every request: that mints a new UUID per turn (and the model loses history).
 - Never use a process-global constant session id for all users.
 - Prefer `run_async()`; in servers do not use sync `runner.run()`.
@@ -146,7 +147,7 @@ class ToolErrorsAsResults(BasePlugin):
 
 ## Step 7: Verify
 
-Run one conversation of 2-3 turns with the same session id, one turn calling a tool, then flush. With a real key, open Maple → Agent Sessions (`https://app.maple.dev/agent-sessions`, EU `app.eu.maple.dev`); data appears within about a minute. Check:
+Run one conversation of 2-3 turns with the same session id, one turn calling a tool, then flush. If the app has no scriptable entry point (`adk web` agent package, server, UI only), write a small driver for this run: one session id, 2+ turns, a tool call, flush before exit. With a real key, open Maple → Agent Sessions (`https://app.maple.dev/agent-sessions`, EU `app.eu.maple.dev`); data appears within about a minute. Check:
 
 - [ ] Exactly one session for the conversation, framework **Google ADK**, one turn per `run_async()`. A second conversation is a separate session.
 - [ ] Transcript shows user messages, assistant replies, tool calls with arguments and results.
@@ -157,9 +158,13 @@ Run one conversation of 2-3 turns with the same session id, one turn calling a t
 - [ ] No duplicated model calls (no second instrumentor).
 - [ ] Cost shows "unpriced" (expected: ADK records no cost).
 
-Without a real key (`MAPLE_TEST`), verify locally: temporarily add `SimpleSpanProcessor(ConsoleSpanExporter())` to the provider, run one turn, and confirm `generate_content` spans have `gen_ai.conversation.id`, `gen_ai.input.messages`, `gen_ai.output.messages`, `gen_ai.usage.input_tokens`; `execute_tool` spans have `gen_ai.tool.call.arguments`. Remove the console exporter afterwards.
+With the Maple MCP: `list_agent_sessions` with `search=<session id>` returns one row.
 
-Tell the user about the known gaps: cost is unpriced; the model is the requested id, not the served one, and there is no `gen_ai.response.id`; with `StreamingMode.SSE` the transcript shows the streamed chunks and then the full reply (ADK records each chunk); session check headlines (provider errors, prompt cache) count `call_llm` and `generate_content` separately, so they show twice the LLM call count (tokens and LLM calls are netted correctly).
+Without Maple access (or with `MAPLE_TEST`), both must hold; silence alone proves nothing (no spans is silent too):
+- The run exits with no `Failed to export span batch` / 401 lines on stderr.
+- A local console exporter shows the spans. Temporarily add `provider.add_span_processor(SimpleSpanProcessor(ConsoleSpanExporter()))` (`from opentelemetry.sdk.trace.export import SimpleSpanProcessor, ConsoleSpanExporter`), run one turn, and confirm `generate_content` spans have `gen_ai.conversation.id`, `gen_ai.input.messages`, `gen_ai.output.messages`, `gen_ai.usage.input_tokens`; `execute_tool` spans have `gen_ai.tool.call.arguments`. Also useful with a real key when exports fail. Remove it afterwards.
+
+Tell the user about the known gaps: cost is unpriced; the model is the requested id, not the served one, and there is no `gen_ai.response.id`.
 
 ## Reference notes
 
@@ -181,7 +186,7 @@ Tell the user about the known gaps: cost is unpriced; the model is the requested
 - `AgentTool` detail: Maple keeps one `gen_ai.conversation.id` per trace and picks the larger of the two, which is why the turn can move to another session. ADK's API docs also prefer `mode="single_turn"`.
 - The approval `run_async()` is its own turn, labeled with the original request.
 - With the settings in this skill, `generate_content` spans carry no provider attribute; doesn't affect grouping, tokens or transcript.
-- 401 from the exporter: the header must be `Authorization=Bearer%20<key>` with a key for the right region.
+- 401 from the exporter (`ingest_unauthorized`, "Invalid ingest key"): the header must be `Authorization=Bearer%20<key>`. With a key you trust, it usually belongs to the other region (keys are region-bound): try the other endpoint.
 
 ## Do not
 

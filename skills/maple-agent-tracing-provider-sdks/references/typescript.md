@@ -2,7 +2,7 @@
 
 Tested: Node.js 22+ (ESM), `openai` 7.23.0, `@opentelemetry/api` 1.9.1, `@opentelemetry/sdk-node` 0.222.0, `@opentelemetry/exporter-trace-otlp-proto` 0.222.0.
 
-Why a helper: `@opentelemetry/instrumentation-openai` 0.20 only patches `openai` >=4.19 <7 and writes message content to log events (Maple reads span attributes only). OpenInference JS (`@arizeai/openinference-instrumentation-openai`) supports v7 but Maple shows its transcript as one raw JSON blob. `tracedChat` writes the GenAI attributes Maple reads.
+Why a helper: `@opentelemetry/instrumentation-openai` 0.20 only patches `openai` >=4.19 <7 and writes message content to log events (Maple reads span attributes only). `tracedChat` writes the GenAI attributes Maple reads.
 
 ## Install
 
@@ -22,6 +22,10 @@ export const spanProcessor = new tracing.BatchSpanProcessor(new OTLPTraceExporte
 export const sdk = new NodeSDK({ serviceName: "support-agent", spanProcessors: [spanProcessor] })
 sdk.start()
 ```
+
+- The exporter reads `OTEL_*` when it is constructed, and `agent-tracing.ts` reads the capture switch when it is imported. If the app loads `.env` (`dotenv`, `--env-file`), put `import "dotenv/config"` at the top of `instrumentation.ts`; otherwise the exporter silently targets `localhost:4318` with no key.
+- No env convention in the repo: pass the values inline, `new OTLPTraceExporter({ url: "https://ingest.maple.dev/v1/traces", headers: { Authorization: "Bearer <key>" } })`. Never build the header from an env var that can be unset (`Bearer undefined` is an opaque 401).
+- Flush: `await sdk.shutdown().catch((err) => console.error("telemetry flush failed", err))`; it rejects when an export failed.
 
 Existing `NodeSDK` / `NodeTracerProvider` / `registerOTel` → don't add another; add a `BatchSpanProcessor(new OTLPTraceExporter())` to it (keep a reference for `forceFlush`).
 

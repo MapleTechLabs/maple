@@ -97,7 +97,7 @@ registerTelemetry(
 )
 ```
 
-Keep `usage: true` and `runtimeContext: true`: Maple uses the attributes they add to recognize the spans. The context manager keeps sub-agents called from a tool inside the same trace.
+The context manager keeps sub-agents called from a tool inside the same trace.
 
 ## Pass the conversation id and flush each turn
 

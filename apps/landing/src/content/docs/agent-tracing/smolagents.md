@@ -7,7 +7,7 @@ navLabel: "smolagents"
 icon: "huggingface"
 ---
 
-smolagents is traced with OpenInference's `openinference-instrumentation-smolagents`. Turn on its GenAI attributes and wrap each run in `using_session(...)`. Without them, the session page shows no transcript and every message becomes its own session.
+smolagents is traced with OpenInference's `openinference-instrumentation-smolagents`. Turn on its GenAI attributes and wrap each run in `using_session(...)`. Without `using_session(...)`, every message becomes its own session.
 
 ## Quick setup with a coding agent
 
@@ -84,7 +84,7 @@ SmolagentsInstrumentor().instrument(
 )
 ```
 
-`enable_genai_semconv=True` is required for the transcript, tokens and tool calls. Copy `SmolagentsForMaple` as is. It gives each agent its own lane, stops tokens from being counted twice, and fixes tool names and arguments.
+`enable_genai_semconv=True` is required. Copy `SmolagentsForMaple` as is. It gives each agent its own lane and fixes tool names and arguments.
 
 If your app already has a `TracerProvider` (from `opentelemetry-instrument`, Logfire or another library), add `SmolagentsForMaple()` and the exporter to that provider and pass it to `instrument()` instead of creating a second one.
 
@@ -134,11 +134,10 @@ finally:
 
 Run two or three messages through `handle_message` with the same conversation id, including one that uses a tool, then open **Agent Sessions**. You should see one session with framework **smolagents**, one turn per `agent.run()`, a transcript, `OpenAIModel.generate` model calls with token counts, and `execute_tool <name>` tool calls. Each run ends with an `execute_tool final_answer` call.
 
-Turns and the session title start with `New task:`. Cost shows as unpriced.
+Cost shows as unpriced.
 
 ## Troubleshooting
 
-- **Tokens in the list, but the session page is empty.** Pass `TraceConfig(enable_genai_semconv=True)` to `instrument()`.
 - **One session per message.** Wrap every `agent.run()` in `using_session(...)` with the stored conversation id.
 - **Exports fail with 404.** `OTLPSpanExporter(endpoint=...)` doesn't append `/v1/traces`. Use the environment variable with the base URL, or pass the full path.
 - **Every model call appears twice.** Remove `openinference-instrumentation-openai` or `openinference-instrumentation-litellm`; the smolagents instrumentor already covers model calls.

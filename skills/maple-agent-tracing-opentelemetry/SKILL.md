@@ -9,7 +9,7 @@ Goal: every conversation = one Maple Agent Session. Each user message = one trac
 
 Human guide with the reasoning: https://maple.dev/docs/agent-tracing/opentelemetry
 
-Mechanism: you write the spans. Maple classifies a span only by `gen_ai.operation.name`, groups a trace by `gen_ai.conversation.id`, and reads content only from span attributes holding JSON strings. Hand-written spans show as framework "Unidentified" (vendor `unknown:genai`); that is expected.
+Mechanism: you write the spans. Maple classifies a span only by `gen_ai.operation.name`, groups a trace by `gen_ai.conversation.id`, and reads content only from span attributes. Hand-written spans show as framework "Unidentified" (vendor `unknown:genai`); that is expected.
 
 ## Step 0: Detect
 
@@ -36,6 +36,10 @@ OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
 
 The exporters append `/v1/traces`. If an SDK rejects the space in the header, use `Bearer%20<key>`.
 
+- The SDK exporters read these env vars when the exporter is constructed. If the app loads `.env` (dotenv, `load_dotenv()`, `--env-file`), load it at the top of the tracing module, before the provider is built; otherwise the exporter silently targets `localhost:4318` with no key.
+- If the header is built from your own env var, never let an unset var become `Bearer undefined` (opaque 401) or a bare `KeyError` on import: fail fast with a clear message, or inline the key when the repo has no env convention.
+- 401 `ingest_unauthorized` / "Invalid ingest key" with a key you trust: keys are region-bound, so it usually belongs to the other region. Try the other endpoint.
+
 ## Step 2: Install + init
 
 Read the reference for the language and adapt it:
@@ -61,9 +65,9 @@ Rules:
 `execute_tool` (kind INTERNAL, name `execute_tool <tool>`), around each tool call:
 - `gen_ai.operation.name`=`execute_tool`, `gen_ai.tool.name` (real name), `gen_ai.tool.call.id` (the model's call id), `gen_ai.tool.type`=`function`
 - `gen_ai.tool.call.arguments`: JSON string of an object
-- `gen_ai.tool.call.result`: JSON string of an object/array. Wrap scalars: `{"result": <value>}` (a bare JSON string is dropped).
+- `gen_ai.tool.call.result`: JSON string of the tool's return value; a string return can be set as its plain text.
 
-Message JSON (`input.messages`/`output.messages`): array of `{role, parts}`; parts `{type:"text",content}`, `{type:"tool_call",id,name,arguments:<object>}`, `{type:"tool_call_response",id,response}`, `{type:"reasoning",content}`. Output messages add `finish_reason`. `system_instructions` = array of parts, no role: `[{"type":"text","content":"..."}]`. Always a JSON **string** attribute; plain text and structured (non-string) attribute values don't render.
+Message JSON (`input.messages`/`output.messages`): array of `{role, parts}`; parts `{type:"text",content}`, `{type:"tool_call",id,name,arguments:<object>}`, `{type:"tool_call_response",id,response}`, `{type:"reasoning",content}`. Output messages add `finish_reason`. `system_instructions` = array of parts, no role: `[{"type":"text","content":"..."}]`. Always a JSON **string** attribute; plain-text messages don't render.
 
 Also read: `reasoning` parts are rendered; a message may carry `content` (string or part array) instead of `parts`. `gen_ai.response.model` wins over `gen_ai.request.model` when both are set. `gen_ai.response.finish_reasons` feeds the refusal (`content_filter`) and truncation (`length`) checks.
 
@@ -79,7 +83,7 @@ Legacy spellings are read as fallbacks (new key wins when both are set; use curr
 - Sub-agents in the same trace: no id (they inherit the trace's session) or the same id. Two different ids in one trace → the lexically larger silently wins.
 - Chat backends: one message list per conversation (keyed by that id, persisted), never one global list.
 
-Escape hatch, only when a framework's spans carry a session key Maple ignores for that framework (OpenInference `session.id` from LangChain/LlamaIndex instrumentors, Vercel AI SDK `runtimeContext`, LiteLLM, Haystack): wrap each turn in your own span with `gen_ai.operation.name`=`invoke_agent`, `gen_ai.agent.name`, and `maple_ai.session.id`=<conversation id>, and run the framework inside it. Rules:
+Escape hatch, only when a framework's spans carry a session key Maple ignores for that framework (LiteLLM, Haystack): wrap each turn in your own span with `gen_ai.operation.name`=`invoke_agent`, `gen_ai.agent.name`, and `maple_ai.session.id`=<conversation id>, and run the framework inside it. Rules:
 - Only on your own wrapper span, never on framework spans (it re-vendors the span to `maple`: framework decoding lost, usage read as inclusive of cache).
 - Use the same value the framework would use for the session.
 - Not needed for hand-written spans: use `gen_ai.conversation.id`.
@@ -137,11 +141,13 @@ await tracer.startActiveSpan(
 
 ## Step 8: Flush
 
-- Node script/CLI: `await provider.shutdown()` in `finally`. Serverless: `await provider.forceFlush()` before returning (inside `waitUntil`/`after()` if available).
+- Node script/CLI: `await provider.shutdown()` in `finally`. Serverless: `await provider.forceFlush()` before returning (inside `waitUntil`/`after()` if available). Both reject when an export failed: add `.catch((err) => console.error("telemetry flush failed", err))` so a Maple outage can't crash the app. Long-running server: flush on `SIGTERM`, nothing per request.
 - Python script: `provider.shutdown()` in `finally`. Lambda: `force_flush()` in `finally`. Notebooks/workers: `force_flush()` per cell/task.
 - Go: `defer tp.Shutdown(context.Background())` in `main`.
 
 ## Step 9: Verify
+
+If the app has no scriptable entry point (server, REPL, UI only), write a small driver for this run: one conversation id, 2+ turns, at least one tool call, flush before exit.
 
 Run one real conversation: 2+ messages with the same id, one streamed reply if the app streams, one tool call, one failing tool if one exists, one sub-agent call if the app delegates; then a second conversation. Wait ~30 s; Maple → Agent Sessions, filter by service name. Check:
 
@@ -155,7 +161,9 @@ Run one real conversation: 2+ messages with the same id, one streamed reply if t
 - [ ] Cost present only if spans carry `gen_ai.usage.cost`; else "unpriced".
 - [ ] No attribute contains an API key, `Bearer `, `sk-or-`, `maple_sk_`.
 
-Local check without Maple: temporarily add a console exporter (`ConsoleSpanExporter` + `SimpleSpanProcessor`) and confirm the tree, the conversation id, and that every messages attribute parses with `JSON.parse`/`json.loads`.
+With the Maple MCP: `list_agent_sessions` with `search=<conversation id>` returns one row.
+
+Check without Maple access: the run exits with no export errors on stderr (`Failed to export`, `OTLPExporterError`, 401 lines) AND a temporary console exporter (`ConsoleSpanExporter` + `SimpleSpanProcessor`) shows the expected span tree with `gen_ai.conversation.id`, and every messages attribute parses with `JSON.parse`/`json.loads`. Silence alone proves nothing: no spans also looks silent.
 
 ## Do not
 

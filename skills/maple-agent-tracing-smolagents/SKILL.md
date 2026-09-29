@@ -7,7 +7,7 @@ description: "Trace Hugging Face smolagents agents with Maple: OpenInference ins
 
 Goal: every conversation the app runs through a smolagents agent shows up in Maple **Agent Sessions** as ONE session, with the transcript, each model call (model, tokens), each tool call (name, arguments, result, failure) and one lane per managed agent. Reasoning and background for every step: https://maple.dev/docs/agent-tracing/smolagents
 
-smolagents has no OpenTelemetry code of its own. All spans come from `openinference-instrumentation-smolagents`. Its defaults are wrong for Maple in three ways this skill fixes: OpenInference-only attributes (Maple's session page reads `gen_ai.*` for smolagents), no session id, and no agent names / wrong tool arguments.
+smolagents has no OpenTelemetry code of its own. All spans come from `openinference-instrumentation-smolagents`. Its defaults are wrong for Maple in two ways this skill fixes: no session id, and no agent names / wrong tool arguments.
 
 ## Step 0: Detect versions and existing OpenTelemetry
 
@@ -24,6 +24,8 @@ smolagents has no OpenTelemetry code of its own. All spans come from `openinfere
 - Key given in the prompt: use it. No key: use the literal `MAPLE_TEST` (ingest accepts and discards it) and tell the user to replace it with their key from **Settings → Ingestion**.
 - Never put a private `maple_sk_` key in browser code.
 - Follow the repo's existing secret/env convention (`.env`, settings module, secret manager) if it has one. Otherwise inlining the key is acceptable: ingest keys are write-only.
+- App loads `.env` (`load_dotenv()`): call it at the top of `tracing.py`, before the provider is built. Otherwise the exporter silently targets `localhost:4318` with no key.
+- Key from an env var: fail fast with a clear message when it's unset (`if not os.environ.get("OTEL_EXPORTER_OTLP_HEADERS"): raise RuntimeError("OTEL_EXPORTER_OTLP_HEADERS (Maple ingest key) is not set")` in `tracing.py`, after any `load_dotenv()`); never let it surface as an opaque 401 or a bare `KeyError`.
 
 ## Step 2: Install and initialize
 
@@ -94,9 +96,9 @@ SmolagentsInstrumentor().instrument(
 
 - `import tracing` at the top of every entry point (web app module, worker, CLI main) so `instrument()` runs before the first `agent.run()`. Import order relative to `smolagents` does not matter.
 - Existing provider: skip the `TracerProvider()`/`set_tracer_provider` lines, add `SmolagentsForMaple()` and the exporter to the existing provider, pass it as `tracer_provider=`.
-- `enable_genai_semconv=True` is required: without it Maple's list shows tokens but the session page has no transcript, model or tools. The env var `OPENINFERENCE_ENABLE_GENAI_SEMCONV=true` is equivalent only if set before `TraceConfig` is constructed; prefer the code form.
+- `enable_genai_semconv=True` is required. The env var `OPENINFERENCE_ENABLE_GENAI_SEMCONV=true` is equivalent only if set before `TraceConfig` is constructed; prefer the code form.
 - Keep `SmolagentsForMaple` exactly: it must run in `on_start` (before the dual-write, which never overwrites existing keys).
-- The zeroed `gen_ai.usage.*` on `.run` spans is deliberate. The instrumentor copies the agent monitor's totals onto the run span; they repeat the model spans (a `Step N` span sits in between, so Maple can't net them) and with `reset=False` they accumulate across turns. Without the zeros Maple counts tokens two or more times. `llm.token_count.*` keeps the totals for other tools.
+- The zeroed `gen_ai.usage.*` on `.run` spans is deliberate. The instrumentor copies the agent monitor's totals onto the run span; they repeat the model spans and with `reset=False` they accumulate across turns. `llm.token_count.*` keeps the totals for other tools.
 
 ## Step 3: One session per conversation
 
@@ -152,7 +154,6 @@ def handle_message(conversation_id: str, text: str) -> str:
 - Provider comes from the model class: `OpenAIServerModel` is always `openai`, even for an Anthropic model behind OpenRouter. `OpenAIServerModel` is an alias of `OpenAIModel`, so spans are `OpenAIModel.generate`.
 - Streaming (`stream_outputs=True`) → `<ModelClass>.generate_stream` spans; smolagents requests `stream_options={"include_usage": True}` for `OpenAIServerModel`, `LiteLLMModel`, `InferenceClientModel`, so tokens are kept.
 - Cost: smolagents records none; sessions show as unpriced.
-- Turn labels and session title read `New task:` (smolagents prefixes each task; Maple uses the first line of the user message).
 
 ## Step 6: Flush
 
@@ -162,11 +163,15 @@ def handle_message(conversation_id: str, text: str) -> str:
 
 ## Step 7: Verify
 
-Run one real conversation (2-3 messages, same conversation id, at least one tool call), and one message in a second conversation. If the user gave no key (`MAPLE_TEST`), you can't see results in Maple; say so and list what they should check. Otherwise check in Maple **Agent Sessions** (`https://app.maple.dev/agent-sessions`, EU `app.eu.maple.dev`), filtered to the service name:
+Run one real conversation (2-3 messages, same conversation id, at least one tool call), and one message in a second conversation. No scriptable entry point (server, UI, REPL only): write a small driver for this run (one conversation id, 2+ turns, one tool call, flush before exit).
+
+Without Maple access (`MAPLE_TEST`, no MCP): the run must exit with no export errors on stderr (`Failed to export`, 401 lines) AND a local exporter (`provider.add_span_processor(SimpleSpanProcessor(ConsoleSpanExporter()))` in a scratch run) must show `<agent name>.run`, model and `execute_tool <name>` spans carrying `session.id`. Silence alone proves nothing (no spans is silent too). Say so and list what the user should check in Maple. With the Maple MCP: `list_agent_sessions` with `search=<conversation id>` returns one row.
+
+Otherwise check in Maple **Agent Sessions** (`https://app.maple.dev/agent-sessions`, EU `app.eu.maple.dev`), filtered to the service name:
 
 - Exactly one session per conversation id (two here), not one per message. Framework shows **smolagents**.
 - The first conversation has one turn per `agent.run()`; each turn's root span is `<agent name>.run`.
-- Transcript is non-empty (user text appears after `New task:`; tool results as `tool-response` messages). Turn labels and the session title read `New task:` (Maple uses the user message's first line). Expected; tell the user.
+- Transcript is non-empty (user text appears after `New task:`; tool results as `tool-response` messages).
 - Model calls `OpenAIModel.generate` (or `<ModelClass>.generate[_stream]`) have a model and non-zero input/output tokens, including streamed calls.
 - Session token totals equal the sum of the model calls (not 2x, not growing faster each turn).
 - Tool calls are `execute_tool <tool name>` with JSON arguments (the actual call's, not a schema) and results. `execute_tool final_answer` at the end of each turn is expected, and Maple's tool-call count includes one per agent run (managed agents too).
@@ -175,7 +180,7 @@ Run one real conversation (2-3 messages, same conversation id, at least one tool
 - Cost shows as unpriced (smolagents records no cost). Expected.
 - Each model call appears once (no nested duplicate model span).
 
-If sessions are split per message: `using_session` missing or id changing. Transcript empty: `enable_genai_semconv` not applied. Nothing arrives: exporter endpoint/header wrong, or process exited without flushing.
+If sessions are split per message: `using_session` missing or id changing. Nothing arrives: exporter endpoint/header wrong, `.env` loaded after `tracing.py`, or process exited without flushing. 401 `ingest_unauthorized` / "Invalid ingest key" with a key you trust: keys are region-bound, so it likely belongs to the other region; try the other endpoint.
 
 ## Do not
 

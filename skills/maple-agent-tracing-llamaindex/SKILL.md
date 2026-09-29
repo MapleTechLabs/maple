@@ -9,7 +9,7 @@ Goal: every conversation = one Maple Agent Session. Each `agent.run()` / `workfl
 
 Human guide with the reasoning: https://maple.dev/docs/agent-tracing/llamaindex
 
-Mechanism: `openinference-instrumentation-llama-index` (scope `openinference.instrumentation.llama_index`) with `TraceConfig(enable_genai_semconv=True)`, which dual-writes `gen_ai.*` on span attributes. Maple reads `gen_ai.conversation.id` as the session key. The `LlamaIndexForMaple` processor below stamps `llamaindex.instrumentor` so Maple labels the framework LlamaIndex (without it: "Unidentified").
+Mechanism: `openinference-instrumentation-llama-index` (scope `openinference.instrumentation.llama_index`) with `TraceConfig(enable_genai_semconv=True)`, which dual-writes `gen_ai.*` on span attributes. Maple reads `gen_ai.conversation.id` as the session key.
 
 ## Step 0: Detect
 
@@ -32,6 +32,8 @@ Mechanism: `openinference-instrumentation-llama-index` (scope `openinference.ins
 - No key → use the literal `MAPLE_TEST` (ingest accepts and discards it) and tell the user to replace it with their key from Settings → Ingestion.
 - Never put a private `maple_sk_` key in browser code.
 - Follow the repo's secret/env convention (`.env`, settings module, secret manager) if it has one. Otherwise inline is acceptable: ingest keys are write-only.
+- Building the header in code from an env var: never let an unset var become `Bearer None` (opaque 401) or a bare `KeyError` on import. Fail fast with a clear message, or inline the key when the repo has no env convention.
+- 401 `ingest_unauthorized` / "Invalid ingest key" with a key you trust: keys are region-bound, so it usually belongs to the other region. Try the other endpoint.
 
 Env vars (`OTLPSpanExporter()` reads them and appends `/v1/traces`):
 
@@ -78,8 +80,6 @@ class LlamaIndexForMaple(SpanProcessor):
         self._open_llm_spans = {}
 
     def on_start(self, span, parent_context=None):
-        # Maple labels a span "LlamaIndex" by a llamaindex.* key; OpenInference writes none
-        span.set_attribute("llamaindex.instrumentor", "openinference")
         # instrument_tags({"gen_ai.agent.name": ...}) becomes an attribute, so sub-agents get lanes
         agent_name = active_instrument_tags.get().get("gen_ai.agent.name")
         if agent_name:
@@ -121,6 +121,7 @@ LlamaIndexInstrumentor().instrument(
 ```
 
 - Import `tracing` first in the entry point (app module, `main.py`, worker). `instrument()` must run before the first `agent.run()`.
+- The app loads `.env` (`load_dotenv()`, `--env-file`): call `load_dotenv()` at the top of `tracing.py`, before the provider is built. Otherwise the exporter silently targets `localhost:4318` with no key.
 - Existing provider: skip `TracerProvider()`/`set_tracer_provider`; call `existing.add_span_processor(LlamaIndexForMaple(BatchSpanProcessor(OTLPSpanExporter())))` and pass `tracer_provider=existing`.
 - The exporter MUST be added through `LlamaIndexForMaple`, never directly: without it every model call counts 2-3x in Maple (`_prepare_chat_with_tools` + nested same-name `astream_chat`/`achat` spans, all OpenInference kind LLM) and every tool call 3x (`call_tool` / `aggregate_tool_results` step spans are classified as tools by name).
 - No `service.name` default is acceptable: set `OTEL_SERVICE_NAME` (never `unknown_service`).
@@ -202,11 +203,11 @@ llm = OpenAI(model="gpt-4o-mini", additional_kwargs={"stream_options": {"include
 
 ## Step 8: Verify
 
-Run one real conversation: 2+ messages with the same id, at least one tool call, a failing tool if one exists, and a sub-agent run if the app delegates. Then check (Maple → Agent Sessions, filter by service name; wait ~30-60 s):
+Run one real conversation: 2+ messages with the same id, at least one tool call, a failing tool if one exists, and a sub-agent run if the app delegates. No scriptable entry point (server, REPL, UI only) → write a small driver: one conversation id, 2+ turns, at least one tool call, `provider.shutdown()` before exit. Then check (Maple → Agent Sessions, filter by service name; wait ~30-60 s):
 
 - [ ] Exactly one session per conversation, id = the id you passed. A second conversation is a second session. Not `trace:<id>` sessions.
 - [ ] One turn per `run()`; each trace roots at `FunctionAgent.run` / `AgentWorkflow.run` / `<YourWorkflow>.run`.
-- [ ] Framework shows "LlamaIndex" ("Unidentified" = `llamaindex.instrumentor` missing: processor not installed or an old copy).
+- [ ] Framework shows "LlamaIndex".
 - [ ] Transcript shows user messages, assistant replies and tool calls.
 - [ ] LLM call count ≈ real number of model calls (one `<ModelClass>.astream_chat`/`.achat` span per call; no `_prepare_chat_with_tools` spans exported).
 - [ ] Every model span has a model and input/output tokens, including streamed calls.
@@ -228,7 +229,7 @@ More details (from the human guide, for edge cases):
 - With a persistent `Context` every model span repeats the whole chat. Maple has no per-attribute limit; ingest accepts requests up to 20 MiB.
 - Streaming query engines on llama-index-core 0.14.25: the model call of a `StreamingResponse` runs after the query span ended, so it lands in a separate trace. Fix pending in OpenInference PR #3841 (https://github.com/Arize-ai/openinference/pull/3841); until released, pin `llama-index-core<0.14.25` if the app traces streaming query engines. Agents unaffected.
 
-Local check without Maple: temporarily pass `SimpleSpanProcessor(ConsoleSpanExporter())` into `LlamaIndexForMaple` and confirm `gen_ai.conversation.id` is identical on every span of a conversation and `gen_ai.agent.name` is set.
+Without Maple access, both must hold: the run exits with no export errors on stderr (`Failed to export`, 401 lines), AND a temporary `SimpleSpanProcessor(ConsoleSpanExporter())` passed into `LlamaIndexForMaple` shows the agent, model and `FunctionTool.acall` spans with `gen_ai.conversation.id` identical on every span of a conversation and `gen_ai.agent.name` set. Silence alone proves nothing (no spans is silent too). With the Maple MCP: `list_agent_sessions` with `search=<conversation id>` returns one row.
 
 ## Do not
 

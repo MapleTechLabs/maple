@@ -69,7 +69,6 @@ class LlamaIndexForMaple(SpanProcessor):
         self._open_llm_spans = {}
 
     def on_start(self, span, parent_context=None):
-        span.set_attribute("llamaindex.instrumentor", "openinference")
         agent_name = active_instrument_tags.get().get("gen_ai.agent.name")
         if agent_name:
             span.set_attribute("gen_ai.agent.name", agent_name)

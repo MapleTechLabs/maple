@@ -31,6 +31,7 @@ Mechanism: Strands' native OTel tracer (scope `strands.telemetry.tracer`, `gen_a
 - No key → use the literal `MAPLE_TEST` (ingest accepts and discards it) and tell the user to replace it with their key from Settings → Ingestion.
 - Never put a private `maple_sk_` key in browser code.
 - Follow the repo's secret/env convention (`.env`, settings module, secret manager, container env) if it has one. Otherwise inline is acceptable: ingest keys are write-only.
+- Key read from a secret env var in code: fail fast with a clear message when it is unset (not a bare `KeyError` on import, not `Bearer undefined`, which is an opaque 401).
 
 ## Step 2: Install + init
 
@@ -52,6 +53,7 @@ OTEL_SEMCONV_STABILITY_OPT_IN=gen_ai_latest_experimental,gen_ai_span_attributes_
 ```
 
 - Endpoint is the base URL; the exporter appends `/v1/traces`.
+- The exporter reads these when it is built. If the app loads `.env` (`load_dotenv()`, `dotenv`, `--env-file`), load it at the top of the tracing module, before `StrandsTelemetry()` / `setupTracer()`; otherwise the exporter silently targets `localhost:4318` with no key.
 - `gen_ai_latest_experimental`: `{role, parts}` messages, `gen_ai.system_instructions`, tool args/results.
 - `gen_ai_span_attributes_only`: messages as span attributes. Without it the Maple transcript is EMPTY.
 - `gen_ai_use_latest_invocation_tokens`: `invoke_agent` usage = this call only, not the agent's lifetime total.
@@ -106,7 +108,7 @@ Rules:
   - `Swarm([...], trace_attributes={"session.id": conversation_id})`.
   - Graph: `graph = builder.build()` then `graph.trace_attributes = {"session.id": conversation_id}` (`GraphBuilder` drops trace attributes).
 
-TypeScript: set BOTH keys. TS names `gen_ai.provider.name` and the tracer scope after `OTEL_SERVICE_NAME`, so Maple can't fingerprint it as Strands and reads `gen_ai.conversation.id` instead.
+TypeScript: set BOTH keys.
 
 ```ts
 import { Agent, FileStorage, SessionManager } from "@strands-agents/sdk"
@@ -135,7 +137,7 @@ const agent = new Agent({
 - Nothing to add for tool failures: a raising `@tool` (or one returning `{"status": "error"}`) gets span status ERROR with the exception message and `gen_ai.tool.status=error`. Do not catch exceptions inside tools just to return friendly text; that hides the failure unless you return `status: "error"`.
 - Sub-agents: `sub.as_tool(description=...)` nests `invoke_agent <sub>` under `execute_tool <sub>`; Maple shows a delegation lane. Give each sub-agent a distinct `name`.
 - Graph node ids are not exported; the agent `name` identifies the node.
-- Interrupt/resume (HITL): the resume is a new trace in the same session (same `trace_attributes`). Interrupted tool spans appear twice with the same `gen_ai.tool.call.id` (first ends OK with no result, second has the real outcome); Maple counts both as tool calls. Expected, framework-level; do not try to filter spans.
+- Interrupt/resume (HITL): the resume is a new trace in the same session (same `trace_attributes`). Interrupted tool spans appear twice with the same `gen_ai.tool.call.id` (first ends OK with no result, second has the real outcome); the Agent Sessions list counts both as tool calls. Expected, framework-level; do not try to filter spans.
 - TS: failed Graph nodes end with status OK (upstream bug harness-sdk#4166). Tool failures are fine.
 
 ## Step 6: Flush
@@ -151,20 +153,19 @@ telemetry.tracer_provider.shutdown()
 - Lambda: `force_flush()` at the end of each invocation, no `shutdown()`.
 - Existing provider (Step 0): flush that provider instead.
 - A call cut off by `asyncio.wait_for` or task cancellation may export incomplete spans (upstream harness-sdk#3609); ended spans still flush.
-- TS: `await provider.forceFlush(); await provider.shutdown()` before exit. `setupTracer`'s own `beforeExit` flush does not run after `process.exit()`.
+- TS: `await provider.forceFlush(); await provider.shutdown()` before exit. `setupTracer`'s own `beforeExit` flush does not run after `process.exit()`. Both reject when an export failed: add `.catch((err) => console.error("telemetry flush failed", err))` so a Maple outage can't crash the app. TS long-running server: flush on `SIGTERM`, nothing per request.
 
 ## Step 7: Verify
 
-Run one short conversation (2-3 messages, one tool call; plus a failing tool if easy) with the real key, flush, then check in Maple → Agent Sessions (`https://app.maple.dev/agent-sessions`, EU `app.eu.maple.dev`), or via the Maple MCP (`list_agent_sessions`, `get_agent_session`):
+Run one short conversation (2-3 messages, one tool call; plus a failing tool if easy) with the real key and flush. If the app has no scriptable entry point (server, UI only), write a small driver for this run: one conversation id, 2+ turns, a tool call, flush before exit. Then check in Maple → Agent Sessions (`https://app.maple.dev/agent-sessions`, EU `app.eu.maple.dev`), or via the Maple MCP (`list_agent_sessions`, `get_agent_session`):
 
 - Exactly one session per conversation id (not `trace:<id>` sessions); a second conversation gets a different session.
-- Framework shows Strands Agents (Python). TS with a custom service name shows "Unidentified"; expected.
+- Framework shows Strands Agents.
 - One turn per agent call, with the user's message as the turn label.
 - Transcript shows user messages, replies, tool calls with args and results. Empty transcript → `gen_ai_span_attributes_only` missing or set after the first `Agent(`.
 - Spans: `invoke_agent <name>` → `execute_event_loop_cycle` → `chat` / `execute_tool <tool>`; model id on `chat` spans.
-- Input/output tokens on every `chat` span, including streamed turns. Session total on the session detail page ≈ sum of `chat` spans, not several times more. The Agent Sessions LIST currently shows ~2x for Strands (Python and TS) even when setup is correct (Maple nets roll-ups only one level deep; `execute_event_loop_cycle` sits between `invoke_agent` and `chat`). Tell the user; don't try to fix it in their code.
+- Input/output tokens on every `chat` span, including streamed turns. Session total on the session detail page ≈ sum of `chat` spans, not several times more. TS: the Agent Sessions LIST may show ~2x the detail page's total even when setup is correct. Tell the user; don't try to fix it in their code.
 - No time to first token in Maple: Strands emits `gen_ai.server.time_to_first_token` (ms), which Maple doesn't read. Expected.
-- "Reply length" check shows skipped (finish reason only inside output messages). Expected.
 - Failed tool counted as failed; successful tools not.
 - Sub-agents in separate lanes with their own names.
 - Cost shows "unpriced" (Strands emits no cost). Expected.
@@ -172,11 +173,15 @@ Run one short conversation (2-3 messages, one tool call; plus a failing tool if 
 
 Symptoms:
 - No model name on spans: a custom `Model` subclass that only implements `get_config()` gets no `gen_ai.request.model` (harness-sdk#4205). Give it a `config` dict with `model_id`.
-- `401` from ingest: wrong key or key from the other region; header must be `Authorization=Bearer <key>` in `OTEL_EXPORTER_OTLP_HEADERS`.
+- `401` from ingest (`ingest_unauthorized`, "Invalid ingest key"): header must be `Authorization=Bearer <key>` in `OTEL_EXPORTER_OTLP_HEADERS`. With a key you trust, it usually belongs to the other region (keys are region-bound): try the other endpoint.
 - Token totals several times too high on the session page: `invoke_agent` reports the agent's lifetime usage. Add `gen_ai_use_latest_invocation_tokens` (Python) or construct the agent per request.
 - Cache tokens zero with prompt caching on: `strands-agents` < 1.54 emits `cache_read_input_tokens` / `cache_write_input_tokens`, which Maple ignores. Upgrade.
 
-If you can't reach Maple, set `OTEL_EXPORTER_OTLP_ENDPOINT` to a local collector or use `telemetry.setup_console_exporter()` once and check a `chat` span has `gen_ai.input.messages` as an ATTRIBUTE (not in `events`) and `session.id`.
+With the Maple MCP: `list_agent_sessions` with `search=<conversation id>` returns one row.
+
+Without Maple access (or with `MAPLE_TEST`), both must hold; silence alone proves nothing (no spans is silent too):
+- The run exits with no `Failed to export` / `OTLPExporterError` / 401 lines on stderr.
+- A local exporter shows the spans: point `OTEL_EXPORTER_OTLP_ENDPOINT` at a local collector, or call `telemetry.setup_console_exporter()` once, and check a `chat` span has `gen_ai.input.messages` as an ATTRIBUTE (not in `events`) and `session.id`.
 
 ## Do not
 

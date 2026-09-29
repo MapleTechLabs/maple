@@ -7,7 +7,7 @@ description: "Trace CrewAI crews and flows with Maple: OpenInference CrewAI inst
 
 Goal: every conversation the app runs through CrewAI shows up in Maple **Agent Sessions** as ONE session, with the transcript, each model call (model, tokens), each tool call (name, result, failure) and one lane per agent role. Reasoning and background for every step: https://maple.dev/docs/agent-tracing/crewai
 
-CrewAI exports nothing to your backend. Its built-in telemetry is anonymous analytics to crewai.com on a private provider; its OTel export is AMP-only. All spans come from OpenInference, and the defaults are wrong for Maple in four ways this skill fixes: the CrewAI instrumentor records no model calls (a second, SDK-level instrumentor is required), OpenInference-only attributes (Maple's session page reads `gen_ai.*` for CrewAI's spans), no session id, and no agent-name attribute.
+CrewAI exports nothing to your backend. Its built-in telemetry is anonymous analytics to crewai.com on a private provider; its OTel export is AMP-only. All spans come from OpenInference, and the defaults are wrong for Maple in three ways this skill fixes: the CrewAI instrumentor records no model calls (a second, SDK-level instrumentor is required), no session id, and no agent-name attribute.
 
 ## Step 0: Detect versions and existing OpenTelemetry
 
@@ -34,6 +34,8 @@ CrewAI exports nothing to your backend. Its built-in telemetry is anonymous anal
 - Key given in the prompt: use it. No key: use the literal `MAPLE_TEST` (ingest accepts and discards it) and tell the user to replace it with their key from **Settings → Ingestion**.
 - Never put a private `maple_sk_` key in browser code.
 - Follow the repo's existing secret/env convention (`.env`, settings module, secret manager) if it has one. Otherwise inlining the key is acceptable: ingest keys are write-only.
+- App loads `.env` (`load_dotenv()`): call it at the top of `tracing.py`, before the provider is built. Otherwise the exporter silently targets `localhost:4318` with no key.
+- Key from an env var: fail fast with a clear message when it's unset (`if not os.environ.get("OTEL_EXPORTER_OTLP_HEADERS"): raise RuntimeError("OTEL_EXPORTER_OTLP_HEADERS (Maple ingest key) is not set")` in `tracing.py`, after any `load_dotenv()`); never let it surface as an opaque 401 or a bare `KeyError`.
 
 ## Step 2: Install and initialize
 
@@ -98,7 +100,7 @@ OpenAIInstrumentor().instrument(tracer_provider=provider, config=config, skip_de
 - `import tracing` at the top of every entry point (web app module, worker, CLI main, `main.py` of a `crewai create` project) so `instrument()` runs before the first kickoff.
 - Other SDKs: add `AnthropicInstrumentor().instrument(...)` etc. with the same `tracer_provider`, `config` and `skip_dep_check=True`. Only for SDKs the app uses (Step 0).
 - Existing provider: skip `TracerProvider()`/`set_tracer_provider`, add `CrewAIAgentNames()` and the exporter to the existing provider, pass it as `tracer_provider=`.
-- `enable_genai_semconv=True` on EVERY instrumentor is required: without it CrewAI's agent/tool spans have no operation or tool details on Maple's session page and model calls have no `{role, parts}` transcript. The env var `OPENINFERENCE_ENABLE_GENAI_SEMCONV=true` is equivalent only if set before `instrument()`; prefer the code form.
+- `enable_genai_semconv=True` on EVERY instrumentor is required. The env var `OPENINFERENCE_ENABLE_GENAI_SEMCONV=true` is equivalent only if set before `instrument()`; prefer the code form.
 - Keep `skip_dep_check=True`: a failed version check makes `instrument()` skip itself with only an error log.
 - Keep `CrewAIAgentNames` exactly, and add it BEFORE the `BatchSpanProcessor`.
 
@@ -181,7 +183,7 @@ def stream_message(conversation_id: str, text: str, history: str, send) -> None:
 - Every agent needs a distinct `role`; `CrewAIAgentNames` turns roles into lanes.
 - `async_execution=True` tasks keep context (siblings under the crew span). Nothing to do.
 - `Process.hierarchical`: delegated coworker work (`Delegate work to coworker` / `Ask question to coworker` tools) runs through un-instrumented `Agent.execute_task`: its model calls sit inside the tool span, no lane. Known; not fixable here.
-- Known, not fixable here: `gen_ai.tool.call.arguments` holds the tool's JSON schema (OpenInference copies `tool.parameters`); the real arguments are in `input.value`. No `gen_ai.tool.call.id` on tool spans.
+- Known, not fixable here: no `gen_ai.tool.call.id` on tool spans.
 
 ## Step 6: Flush
 
@@ -191,7 +193,11 @@ def stream_message(conversation_id: str, text: str, history: str, send) -> None:
 
 ## Step 7: Verify
 
-Run one real conversation (2-3 messages, same conversation id, at least one tool call), and one message in a second conversation. If the user gave no key (`MAPLE_TEST`), you can't see results in Maple; say so and list what they should check. Otherwise check in Maple **Agent Sessions** (`https://app.maple.dev/agent-sessions`, EU `app.eu.maple.dev`), filtered to the service name:
+Run one real conversation (2-3 messages, same conversation id, at least one tool call), and one message in a second conversation. No scriptable entry point (server, UI, REPL only): write a small driver for this run (one conversation id, 2+ turns, one tool call, flush before exit).
+
+Without Maple access (`MAPLE_TEST`, no MCP): the run must exit with no export errors on stderr (`Failed to export`, 401 lines) AND a local exporter (`provider.add_span_processor(SimpleSpanProcessor(ConsoleSpanExporter()))` in a scratch run) must show `<crew>.kickoff`, model and `<tool>.run` spans carrying `session.id`. Silence alone proves nothing (no spans is silent too). Say so and list what the user should check in Maple. With the Maple MCP: `list_agent_sessions` with `search=<conversation id>` returns one row.
+
+Otherwise check in Maple **Agent Sessions** (`https://app.maple.dev/agent-sessions`, EU `app.eu.maple.dev`), filtered to the service name:
 
 - Exactly one session per conversation id (two here), not one per message and no `trace:<id>` sessions.
 - Framework shows CrewAI in the session list (model spans themselves are tagged `openinference-openai`; that's fine).
@@ -212,7 +218,7 @@ More details (from the human guide, for edge cases):
 - Flow span layout: `<flow name>.kickoff` root, one `<flow name>.<method>` span per `@start`/`@listen`/`@router` method, crews and `Agent.kickoff()` nested inside. Conversational flow turns show `<flow>.route_conversation` and `<flow>.converse_turn` under the kickoff.
 - Why the streaming wrapper works: `gen_ai.operation.name=invoke_agent` makes Maple treat it as the turn's agent span, so the two crew kickoff spans under it are one turn.
 
-If sessions are split per message: `using_session` missing or id changing. No model spans/tokens: wrong or missing SDK instrumentor. Every call its own trace: `akickoff`. Empty session page details: `enable_genai_semconv` not applied to that instrumentor. Nothing arrives: exporter endpoint/header wrong, `OTEL_SDK_DISABLED=true`, or process exited without flushing.
+If sessions are split per message: `using_session` missing or id changing. No model spans/tokens: wrong or missing SDK instrumentor. Every call its own trace: `akickoff`. Nothing arrives: exporter endpoint/header wrong, `.env` loaded after `tracing.py`, `OTEL_SDK_DISABLED=true`, or process exited without flushing. 401 `ingest_unauthorized` / "Invalid ingest key" with a key you trust: keys are region-bound, so it likely belongs to the other region; try the other endpoint.
 
 ## Do not
 

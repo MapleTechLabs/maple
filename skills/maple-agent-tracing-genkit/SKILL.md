@@ -44,6 +44,7 @@ Known gaps (tell the user, don't try to fix): framework shows **Unidentified** (
 - Key in the user's prompt: use it. No key: use the literal `MAPLE_TEST` (ingest accepts and discards it) and tell the user to replace it with their key from Settings → Ingestion.
 - Private `maple_sk_` keys never go in browser code. Ingest keys are write-only.
 - Follow the repo's existing secret/env convention (`.env`, Firebase `defineSecret`, Secret Manager). If there is none, inlining the ingest key is acceptable.
+- A 401 `ingest_unauthorized` / "Invalid ingest key" with a key you trust usually means the key belongs to the other region (keys are region-bound): try the other endpoint.
 
 ## Step 2: Install
 
@@ -61,6 +62,9 @@ OTEL_EXPORTER_OTLP_HEADERS=Authorization=Bearer <key>
 ```
 
 Inlining instead of env: `new OTLPTraceExporter({ url: "https://ingest.maple.dev/v1/traces", headers: { authorization: "Bearer <key>" } })` (the full `/v1/traces` path is needed when passing `url`).
+
+- The app loads `.env` (`dotenv`, `--env-file`): load it at the top of `instrumentation.ts` (`import "dotenv/config"` as its first line) or run with `--env-file`. The exporter reads the `OTEL_*` vars when it is constructed; otherwise it silently targets `localhost:4318` with no key.
+- Building the header from a variable (`Bearer ${process.env.MAPLE_INGEST_KEY}`): throw at startup with a clear message when it is unset; never let it become `Bearer undefined` (opaque 401).
 
 ## Step 3: The span processor
 
@@ -132,18 +136,18 @@ setCustomMetadataAttribute("conversationId", chatId)
 ## Step 6: Content, errors, flush
 
 - Content: Genkit always records `genkit:input` / `genkit:output` (full prompts, replies, tool args/results). There is no Genkit switch. If the user needs content kept out of Maple, delete `genkit:input`/`genkit:output` in the processor after mapping and skip the message/argument/result attributes; tell them transcripts will be empty.
-- Never set `OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT` / `OTEL_SPAN_ATTRIBUTE_VALUE_LENGTH_LIMIT`: a truncated `genkit:input` makes `JSON.parse` in the processor throw inside `span.end()`, and truncated message JSON is dropped by Maple.
+- Never set `OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT` / `OTEL_SPAN_ATTRIBUTE_VALUE_LENGTH_LIMIT`: a truncated `genkit:input` makes `JSON.parse` in the processor throw inside `span.end()`.
 - Tool failures: a tool that throws ends with status `ERROR` (Maple counts it failed) and aborts the whole `generate` / flow (Genkit doesn't feed the error back to the model). Don't change tool error behavior for tracing; tools that return `{ error }` payloads show as successful, which is accurate to what the model saw.
 - Streaming (`ai.generateStream`, `flow.stream()`): model spans end with the full output and usage; read the stream to the end before flushing.
 - Flush:
-  - Scripts/CLIs: `await sdk.shutdown()` in a `finally`.
-  - Long-running servers (Cloud Run, plain Node): `process.on("SIGTERM", () => sdk.shutdown())`. Genkit's own SDK did this; Maple's doesn't by default.
+  - Scripts/CLIs: `await sdk.shutdown().catch((err) => console.error("telemetry flush failed", err))` in a `finally`. `shutdown()` rejects when an export failed; the `.catch` keeps a Maple outage from crashing the app.
+  - Long-running servers (Cloud Run, plain Node): `process.on("SIGTERM", () => sdk.shutdown().catch((err) => console.error("telemetry flush failed", err)))`; nothing per request. Genkit's own SDK did this; Maple's doesn't by default.
   - Serverless handlers you control: `await spanProcessor.forceFlush()` after the flow returns (the flow span ends when the flow returns, so flushing inside the flow misses it).
   - Cloud Functions for Firebase `onCallGenkit(flow)`: you can't hook after the flow; the instance may be throttled after the response, so the last batch can be delayed or lost. Tell the user; if it matters, wrap with `onCall` and call the flow then `forceFlush()` before returning. Untested.
 
 ## Step 7: Verify
 
-Run one conversation with 2+ turns under the same id, one tool call, plus a second conversation. Then check (Maple MCP `list_agent_sessions` / `get_agent_session`, or the Agent Sessions page, ~30 s after the run):
+Run one conversation with 2+ turns under the same id, one tool call, plus a second conversation. If the app has no scriptable entry point (server, Developer UI only), write a small driver for this that calls the flow directly: one conversation id, 2+ turns, at least one tool call, flush before exit. Then check (Maple MCP `list_agent_sessions` / `get_agent_session`, or the Agent Sessions page, ~30 s after the run):
 
 - One session per conversation (id = your conversation id), not `trace:<id>` sessions; the second conversation is separate.
 - Framework shows **Unidentified** (expected).
@@ -155,7 +159,7 @@ Run one conversation with 2+ turns under the same id, one tool call, plus a seco
 - Under `genkit start`, the Developer UI still shows traces (and nothing reaches Maple).
 - The process exited cleanly and no turn is missing (flush ran).
 
-Local check without Maple: point `OTEL_EXPORTER_OTLP_ENDPOINT` at a small HTTP server and swap in `@opentelemetry/exporter-trace-otlp-http` with `OTEL_EXPORTER_OTLP_PROTOCOL=http/json` to read the spans as JSON; confirm `gen_ai.operation.name` on flow/model/tool spans and `gen_ai.conversation.id` equal across turns.
+Without Maple access: the run exits with no export errors on stderr (`OTLPExporterError`, `Failed to export`, 401 lines) AND a local check shows the spans. Silence alone proves nothing (no spans also looks silent). Local check: point `OTEL_EXPORTER_OTLP_ENDPOINT` at a small HTTP server and swap in `@opentelemetry/exporter-trace-otlp-http` with `OTEL_EXPORTER_OTLP_PROTOCOL=http/json` to read the spans as JSON; confirm `gen_ai.operation.name` on flow/model/tool spans and `gen_ai.conversation.id` equal across turns. With the Maple MCP: `list_agent_sessions` with `search=<conversation id>` returns one row.
 
 ## Do not
 

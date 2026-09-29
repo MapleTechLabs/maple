@@ -68,7 +68,7 @@ AgnoInstrumentor().instrument(
 )
 ```
 
-Without `enable_genai_semconv=True` the session page has no transcript. If you can't change the `instrument()` call, set `OPENINFERENCE_ENABLE_GENAI_SEMCONV=true` instead.
+If you can't change the `instrument()` call, set `OPENINFERENCE_ENABLE_GENAI_SEMCONV=true` instead.
 
 ### Keep the AgentOS traces view
 
@@ -145,7 +145,6 @@ Run a conversation of two or three turns with one `session_id`, including a tool
 - **Nothing arrives in Maple.** `setup_tracing()` or `AgentOS(tracing=True)` ran before `tracing.py` and the spans went to the AgentOS database. Import `tracing` first.
 - **Every user is in one giant session.** The shared `Agent` runs without `session_id=`. Pass it on every `run()`, `arun()` and `continue_run()`.
 - **Every turn is its own session.** You pass a new id per request, often a fresh `uuid4()`. Use the stored conversation id.
-- **Tokens in the list, no transcript on the session page.** `enable_genai_semconv` is off, or other code called `instrument()` first.
 - **An agent run lands inside the previous team run's trace.** In scripts and workers, run each team run in its own context with `asyncio.create_task(...)` or `contextvars.copy_context().run(...)`.
 - **Every model call appears twice.** Remove the second instrumentor, usually `openinference-instrumentation-openai`, OpenLIT or Phoenix's `register(auto_instrument=True)`.
 

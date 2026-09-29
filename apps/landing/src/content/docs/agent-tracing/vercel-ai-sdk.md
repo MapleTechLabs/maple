@@ -71,7 +71,7 @@ registerTelemetry(
 )
 ```
 
-Call `registerTelemetry()` exactly once. Each call adds another integration, and each one emits its own copy of every span. Keep `usage: true` and `runtimeContext: true`: Maple uses the `ai.*` attributes they add to recognize AI SDK spans.
+Call `registerTelemetry()` exactly once. Each call adds another integration, and each one emits its own copy of every span.
 
 ### Serverless, or an app that already uses OpenTelemetry
 
@@ -193,13 +193,12 @@ Read streams to the end (`await result.consumeStream()`) before flushing, since 
 
 Run a conversation with two messages and a tool call, then open **Agent Sessions** in Maple. You should see one session named after your conversation id with framework **Vercel AI SDK**, one turn per call, and a transcript with the prompts, replies and tool calls.
 
-Cost shows as unpriced because the AI SDK doesn't report it. The session's token total is currently doubled; the per-model breakdown on the session page is correct.
+Cost shows as unpriced because the AI SDK doesn't report it.
 
 ## Troubleshooting
 
 - **No AI spans at all.** `registerTelemetry()` never ran. `experimental_telemetry: { isEnabled: true }` alone does nothing in AI SDK 7.
 - **Every message is its own session.** Check all three parts: `enrichSpan`, `runtimeContext: { conversationId }` on the call (or `prepareCall`), and `includeRuntimeContext: { conversationId: true }`.
-- **Framework shows "Unidentified".** Set `usage: true` and `runtimeContext: true` on `new OpenTelemetry()`.
 - **Every span shows up twice.** `registerTelemetry()` ran twice, or a second OpenTelemetry SDK (such as Sentry without `skipOpenTelemetrySetup: true`) exports the same spans.
 - **A failed tool shows as successful.** The tool returned an error value. Throw from `execute` instead.
 

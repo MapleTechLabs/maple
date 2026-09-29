@@ -109,7 +109,7 @@ func Chat(ctx context.Context, model string, input []Message, call func(context.
 	return res, nil
 }
 
-// Tool wraps one tool call. result must marshal to a JSON object or array.
+// Tool wraps one tool call. result is stored as JSON.
 func Tool(ctx context.Context, name, callID, arguments string, run func(context.Context) (any, error)) (string, error) {
 	ctx, span := tracer.Start(ctx, "execute_tool "+name, trace.WithAttributes(
 		attribute.String("gen_ai.operation.name", "execute_tool"),
@@ -146,6 +146,8 @@ res, err := agent.Chat(ctx, model, input, func(ctx context.Context) (agent.ChatR
 ```
 
 Failure on the turn span: call the same `fail(turn, err)` pattern before returning an error.
+
+`otlptracehttp.New` reads `OTEL_*` when it runs. If the app loads `.env` (`godotenv.Load()`), do it before `SetupTracing`; otherwise the exporter silently targets `localhost:4318` with no key. No env convention: pass `otlptracehttp.WithEndpointURL("https://ingest.maple.dev/v1/traces")` and `otlptracehttp.WithHeaders(map[string]string{"Authorization": "Bearer <key>"})` inline.
 
 ## Other languages (Rust, Ruby, Elixir, Java, .NET)
 

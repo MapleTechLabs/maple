@@ -166,14 +166,13 @@ Broadcast has no tool calls or agent names. For those, trace your app with its [
 
 Run a conversation of three turns with the same `session_id`. After about a minute, open **Agent Sessions** and filter by service `openrouter`.
 
-You should see one session named after your `session_id`, with vendor **OpenRouter**, an `LLM Generation` span per model call, and tokens and cost in USD. The transcript shows each call's prompt and completion as a raw JSON block. To keep content out of Maple, turn on **Privacy Mode** on the destination.
+You should see one session named after your `session_id`, with vendor **OpenRouter**, an `LLM Generation` span per model call, and tokens and cost in USD. To keep content out of Maple, turn on **Privacy Mode** on the destination.
 
 ## Troubleshooting
 
 - **Test Connection fails.** Use the full `https://ingest.maple.dev/v1/traces` URL and valid JSON headers.
 - **Test Connection passes but nothing arrives.** Check the destination's API key filter and data regions against the key and endpoint your app uses, and that you're not using a placeholder key like `MAPLE_TEST`.
 - **Every call is its own session, named `trace:<id>`.** The request has no `session_id`. Log the outgoing body, since some wrappers drop unknown fields.
-- **A session named `trace:00000000000000000000000000000001` with no model calls.** That's the **Test Connection** trace. Ignore it.
 - **Tokens or LLM calls are about double.** Your app and Broadcast both record each call. Nest Broadcast with the `trace` field as shown above.
 
 ## Related

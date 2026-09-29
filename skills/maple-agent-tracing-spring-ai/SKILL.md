@@ -27,6 +27,7 @@ Mechanism: Spring AI's Micrometer Observations → `micrometer-tracing-bridge-ot
 - Key in the user's prompt: use it. No key: use the literal `MAPLE_TEST` (ingest accepts and discards it) and tell the user to replace it with their key from **Settings → Ingestion**.
 - Private `maple_sk_` keys never go in browser code. Spring AI runs server-side; an ingest key is write-only.
 - Follow the repo's existing secret/env convention (`${ENV_VAR}` placeholders, profile files, Vault/Config Server). If there is none, inline in `application.properties` is acceptable because ingest keys are write-only.
+- Keep `${MAPLE_INGEST_KEY}` without a default: unresolved, Boot fails at startup with a clear error, while `${MAPLE_INGEST_KEY:}` sends an empty `Bearer ` and gets an opaque 401. Boot does not read `.env` files: export the variable, or add `spring.config.import=optional:file:.env[.properties]` if the repo keeps one.
 
 ## Step 2: Install and export
 
@@ -266,7 +267,6 @@ public class Workers {
 - `chat` spans carry `gen_ai.usage.input_tokens`, `output_tokens`, and `cache_read.input_tokens` / `cache_creation.input_tokens` when the provider reports them; Maple reads all four. `chat_client` spans carry no usage, so nothing is double counted.
 - Spring AI records the provider as `gen_ai.system`, derived from the client class, not the model: a Claude model behind OpenRouter via the OpenAI starter is labeled `openai`. Maple uses the provider only to decide whether input includes cached tokens, so only cache figures can be affected.
 - No cost attribute is emitted; sessions show as unpriced (Maple never prices tokens).
-- With model starters other than OpenAI, a `chat` span for a call without tools may carry no Spring AI marker, so Maple files it as a generic GenAI span (framework "Unidentified" on that span). Session, transcript and tokens are unaffected.
 
 ## Step 6: Flush
 
@@ -277,7 +277,9 @@ public class Workers {
 
 ## Step 7: Verify
 
-Run one real conversation: 2-3 turns with the same conversation id including one tool call (one streamed turn if the app streams), plus a second conversation with a different id. Exit cleanly. Wait ~1 minute. In Maple **Agent Sessions**, filtered by the service name (or via the Maple MCP `list_agent_sessions` + `get_agent_session`), check:
+If the app has no scriptable entry point (web or UI only), write a small `CommandLineRunner` driver for this run: one conversation id, 2+ turns, at least one tool call, exit as in Step 6.
+
+Run one real conversation: 2-3 turns with the same conversation id including one tool call (one streamed turn if the app streams), plus a second conversation with a different id. Exit cleanly. Wait ~1 minute. In Maple **Agent Sessions**, filtered by the service name (or via the Maple MCP: `list_agent_sessions` with `search=<conversation id>` returns one row; open it with `get_agent_session`), check:
 
 - [ ] Exactly one session per conversation id; none named `trace:<id>` (that means a top-level call lacked the `CONVERSATION_ID` param, or a sub-agent ran on a thread without context).
 - [ ] The two conversations are two different sessions.
@@ -290,7 +292,9 @@ Run one real conversation: 2-3 turns with the same conversation id including one
 - [ ] A tool that threw is counted as failed, with its message; successful tools are not.
 - [ ] Sub-agents appear as lanes under their agent names.
 - [ ] Cost shows as unpriced (Spring AI emits no cost; expected).
-- [ ] App logs have no `Failed to publish metrics` / OTLP export errors, no `401` (`401` = wrong key, key from the other region, or the header property not reading `...headers.Authorization=Bearer <key>`).
+- [ ] App logs have no `Failed to publish metrics` / OTLP export errors, no `401`. A 401 (`ingest_unauthorized` / "Invalid ingest key") with a key you trust usually means the key belongs to the other region (keys are region-bound): try the other endpoint. Otherwise check the header property reads `...headers.Authorization=Bearer <key>`.
+
+Without Maple access: the run logs no OTLP export errors or 401s AND a temporary `LoggingSpanExporter` bean (`io.opentelemetry:opentelemetry-exporter-logging`) logs the `chat_client` spans with `spring.ai.chat.client.conversation.id`. Silence alone proves nothing: no spans also looks silent.
 
 ## Do not
 

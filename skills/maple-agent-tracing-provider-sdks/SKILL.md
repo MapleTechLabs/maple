@@ -44,6 +44,9 @@ OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
 OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=SPAN_ONLY
 ```
 
+- These are read when the exporter and helper are constructed. If the app loads `.env` (dotenv, `load_dotenv()`, `--env-file`), load it at the top of the init module, before the provider is built; otherwise the exporter silently targets `localhost:4318` with no key.
+- Never let an unset env var become `Bearer undefined` (opaque 401) or a bare `KeyError` on import: fail fast with a clear message, or inline the key when the repo has no env convention.
+
 ## Step 2: Install + init + helper
 
 Read the reference for the service's language and apply it exactly:
@@ -91,9 +94,11 @@ Rules for both:
 ## Step 7: Flush
 
 - Python: the provider flushes at normal interpreter exit. Add `provider.force_flush()` after each turn in Lambda/Cloud Functions/Cloud Run jobs, notebooks, Celery/RQ tasks, and anything ending in `os._exit`. Scripts/CLIs: `provider.shutdown()` in `finally`.
-- TypeScript: `await sdk.shutdown()` before a CLI/script exits. Serverless: `await spanProcessor.forceFlush()` before returning (or in `waitUntil` after a streamed response).
+- TypeScript: `await sdk.shutdown()` before a CLI/script exits. Serverless: `await spanProcessor.forceFlush()` before returning (or in `waitUntil` after a streamed response). Both reject when an export failed: add `.catch((err) => console.error("telemetry flush failed", err))` so a Maple outage can't crash the app. Long-running server: flush on `SIGTERM`, nothing per request.
 
 ## Step 8: Verify
+
+If the app has no scriptable entry point (server, REPL, UI only), write a small driver for this run: one conversation id, 2+ turns, at least one tool call, flush before exit.
 
 Run one real conversation: 3+ user messages with the same id, one tool call, one streamed message if the app streams, one failing tool if you can trigger it, one sub-agent call if the app delegates; then a second conversation with a different id. Flush. In Maple → Agent Sessions (filter by service; allow ~30 s):
 
@@ -109,7 +114,9 @@ Run one real conversation: 3+ user messages with the same id, one tool call, one
 - [ ] Cost shows "unpriced", except TS calls through OpenRouter (helper records `usage.cost`).
 - [ ] No attribute contains an API key, `Bearer `, `sk-` or `maple_sk_`.
 
-Local check without Maple: temporarily add `SimpleSpanProcessor(ConsoleSpanExporter())` and confirm the `invoke_agent` span has `gen_ai.conversation.id` and the model spans have `gen_ai.input.messages` and `gen_ai.usage.*`.
+With the Maple MCP: `list_agent_sessions` with `search=<conversation id>` returns one row.
+
+Check without Maple access: the run exits with no export errors on stderr (`Failed to export`, `OTLPExporterError`, 401 lines) AND a temporary console exporter (`SimpleSpanProcessor(ConsoleSpanExporter())`) shows the `invoke_agent` span with `gen_ai.conversation.id` and model spans with `gen_ai.input.messages` and `gen_ai.usage.*`. Silence alone proves nothing: no spans also looks silent.
 
 ## Known limitations (tell the user, don't work around)
 
@@ -130,8 +137,8 @@ Local check without Maple: temporarily add `SimpleSpanProcessor(ConsoleSpanExpor
 - Streamed turn has 0 tokens → missing `stream_options.include_usage`.
 - Failing tool shown as success → exception caught outside `run_tool` without status/`error.type`.
 - Sub-agent calls in the orchestrator's lane → same `gen_ai.agent.name`, or never wrapped.
-- Exporter logs 401 → wrong key or region; EU keys only work with `ingest.eu.maple.dev`.
-- OpenInference instead of the GenAI packages (Python): OpenAI shows as "OpenInference · OpenAI" with tokens counted but the transcript is the raw request JSON as one message, no turn labels; the Anthropic/Gemini OpenInference packages show as Unidentified with the same raw transcript. Prefer the `-genai-` packages.
+- Exporter logs 401 (`ingest_unauthorized` / "Invalid ingest key") with a key you trust → keys are region-bound; it usually belongs to the other region. Try the other endpoint.
+- OpenInference instead of the GenAI packages (Python): OpenAI shows as "OpenInference · OpenAI"; the Anthropic/Gemini OpenInference packages show as Unidentified. Prefer the `-genai-` packages.
 
 ## Do not
 

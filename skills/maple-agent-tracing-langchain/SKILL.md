@@ -9,7 +9,7 @@ Goal: every conversation = one Maple Agent Session. Each `invoke()`/`stream()` =
 
 Human guide with the reasoning: https://maple.dev/docs/agent-tracing/langchain
 
-Mechanism: `openinference-instrumentation-langchain` (scope `openinference.instrumentation.langchain`) with `TraceConfig(enable_genai_semconv=True)`, which dual-writes `gen_ai.*` (incl. `gen_ai.conversation.id` from run metadata `session_id` > `conversation_id` > `thread_id`, and `gen_ai.input/output.messages` in `{role, parts}` form). Maple classifies these as generic GenAI (framework facet "Unidentified") and reads `gen_ai.conversation.id` as the session key. This beats LangSmith's OTel export for Maple: readable transcript, interrupts not marked ERROR, no middleware noise spans, normal flush.
+Mechanism: `openinference-instrumentation-langchain` (scope `openinference.instrumentation.langchain`) with `TraceConfig(enable_genai_semconv=True)`, which dual-writes `gen_ai.*` (incl. `gen_ai.conversation.id` from run metadata `session_id` > `conversation_id` > `thread_id`, and `gen_ai.input/output.messages` in `{role, parts}` form). Maple reads `gen_ai.conversation.id` as the session key. This beats LangSmith's OTel export for Maple: readable transcript, interrupts not marked ERROR, no middleware noise spans, normal flush.
 
 **TypeScript / JavaScript (LangChain.js, LangGraph.js):** the JS instrumentor has no GenAI dual-write, so the setup adds a small span processor. Do Step 1 below for the key and region, then follow [references/typescript.md](references/typescript.md) instead of Steps 2-7. A repo with both Python and TS agents gets both setups.
 
@@ -21,7 +21,7 @@ Mechanism: `openinference-instrumentation-langchain` (scope `openinference.instr
    - A `TracerProvider` exists → add the processors from Step 2 to it; do NOT create a second provider.
    - `LANGSMITH_OTEL_ENABLED`/`LANGSMITH_TRACING_MODE=otel` set → it duplicates every run. Ask the user; remove it for Maple (plain `LANGSMITH_TRACING=true` to LangSmith cloud is fine to keep).
    - OpenAI/Anthropic OpenInference instrumentors or OpenLLMetry LangChain instrumentor → duplicate model spans. Ask before removing if they serve something else.
-3. Find: every `create_agent(`, `create_react_agent(`, `StateGraph(`/`.compile(`, every `.invoke(`/`.ainvoke(`/`.stream(`/`.astream(`/`Command(resume=` call on an agent/graph/chain, where the app's chat/thread id lives, every `ChatOpenAI(` (note `base_url`), and every tool that invokes another agent.
+3. Find: every `create_agent(`, `create_react_agent(`, `StateGraph(`/`.compile(`, every `.invoke(`/`.ainvoke(`/`.stream(`/`.astream(`/`Command(resume=` call on an agent/graph/chain, where the app's chat/thread id lives, every `ChatOpenAI(` (note `base_url`) and `init_chat_model(` / `"openai:..."` model string, and every tool that invokes another agent.
 4. LangGraph Server (`langgraph.json` present): `import tracing` at the top of the module(s) `langgraph.json`'s `graphs` points to (the dir holding `tracing.py` must be in `dependencies`); `OTEL_*` env goes in the server env file/container. Server threads already carry `configurable.thread_id`: one Maple session per thread, no code.
 
 ## Step 1: Key and region
@@ -32,6 +32,8 @@ Mechanism: `openinference-instrumentation-langchain` (scope `openinference.instr
 - No key → use the literal `MAPLE_TEST` (ingest accepts and discards it) and tell the user to replace it with their key from Settings → Ingestion.
 - Never put a private `maple_sk_` key in browser code.
 - Follow the repo's secret/env convention (`.env`, settings module, secret manager) if it has one. Otherwise inline is acceptable: ingest keys are write-only.
+- Building the header in code from an env var: never let an unset var become `Bearer None` / `Bearer undefined` (opaque 401) or a bare `KeyError` on import. Fail fast with a clear message, or inline the key when the repo has no env convention.
+- 401 `ingest_unauthorized` / "Invalid ingest key" with a key you trust: keys are region-bound, so it usually belongs to the other region. Try the other endpoint.
 
 Env vars (`OTLPSpanExporter()` with no args reads them and appends `/v1/traces`):
 
@@ -72,9 +74,10 @@ STEP_NAMES = {"tools", "ChatPromptTemplate"}
 
 
 class AgentSpans(SpanProcessor):
-    """Names your agents' spans for Maple (one lane per agent) and keeps graph steps out of the tool and model counts."""
+    """Names your agents' spans for Maple (one lane per agent) and marks STEP_NAMES as steps, so Maple doesn't count them as tool or model calls by name."""
 
     def on_start(self, span, parent_context=None):
+        """Mark agent and step spans at start; the GenAI dual-write at span end keeps these values."""
         if span.instrumentation_scope.name != "openinference.instrumentation.langchain":
             return
         if span.name in AGENT_NAMES:
@@ -96,11 +99,12 @@ LangChainInstrumentor().instrument(
 ```
 
 - Import `tracing` first in the entry point (app module, `main.py`, worker, LangGraph Server graph module). It must run before the first `invoke()`.
+- The app loads `.env` (`load_dotenv()`, `--env-file`): call `load_dotenv()` at the top of `tracing.py`, before the provider is built. Otherwise the exporter silently targets `localhost:4318` with no key.
 - Fill `AGENT_NAMES` with every agent's `name=` from Step 0.3. Give unnamed `create_agent(...)` calls a `name=` (default graph name is `LangGraph`).
-- `STEP_NAMES`: `tools` is the tool node of `create_agent` and the usual `ToolNode` name. Add any other graph node whose name contains "tool" (e.g. `add_node("run_tools", ToolNode(...))`); Maple counts unmarked ones as extra tool calls. Never add real tool names.
+- `STEP_NAMES`: `tools` is the tool node of `create_agent` and the usual `ToolNode` name. Add every other graph node whose name contains `tool`, `chat` or `completion` (e.g. `add_node("run_tools", ToolNode(...))`); Maple counts unmarked ones as extra tool or model calls. Other node names (`call_model`, `route_*`) don't matter. Never add real tool names.
 - Existing provider: add `AgentSpans()` and the `BatchSpanProcessor(OTLPSpanExporter())` to it and pass it as `tracer_provider=`.
 - Set a real `service.name` (never `unknown_service`).
-- Streaming with `ChatOpenAI(base_url=...)` or `OPENAI_BASE_URL` set: add `stream_usage=True` to the `ChatOpenAI(...)` constructor. ChatOpenAI only requests streamed usage from api.openai.com; servers that don't send it unasked (vLLM, many gateways) give streamed calls no tokens. OpenRouter sends it anyway; set it regardless.
+- Streaming with `ChatOpenAI(base_url=...)` or `OPENAI_BASE_URL` set: add `stream_usage=True` to the `ChatOpenAI(...)` constructor; with `init_chat_model(..., model_provider="openai")` or an `"openai:..."` string, pass `stream_usage=True` as a kwarg (Anthropic/Fireworks chat models accept it too). ChatOpenAI only requests streamed usage from api.openai.com; servers that don't send it unasked (vLLM, many gateways) give streamed calls no tokens. OpenRouter sends it anyway; set it regardless. (Python; JS requests streamed usage by default.)
 
 ## Step 3: Session id (required)
 
@@ -118,6 +122,7 @@ agent.invoke(Command(resume={"decisions": [{"type": "approve"}]}), {"configurabl
 ```
 
 - Works with or without a checkpointer (LangGraph copies `configurable.thread_id` into run metadata). If the graph already uses a checkpointer, reuse its existing `thread_id`; don't invent a second id.
+- `thread_id` groups turns in Maple; it doesn't give the agent memory. With no checkpointer, pass the prior `result["messages"]` into the next call yourself, or add `InMemorySaver`/`MemorySaver`.
 - Plain LangChain chains (`prompt | model`, no graph) do NOT copy `configurable`: pass `{"metadata": {"thread_id": conversation_id}}` instead.
 - Nested runs (agents called inside tools or nodes) inherit it; don't pass a different id to them.
 - The id must be stable per conversation and unique across conversations: no constants, no `uuid4()` per request. No id in the app → ask where the conversation boundary is; single-shot script → one uuid per conversation, reused.
@@ -175,10 +180,9 @@ def ask_weather_worker(city: str) -> str:
 
 ## Step 7: Verify
 
-Run one real conversation: 2+ messages with the same id, at least one tool call, one streamed message if the app streams, a sub-agent call if the app delegates. Then check (Maple → Agent Sessions, filter by service name; wait up to ~1 min):
+Run one real conversation: 2+ messages with the same id, at least one tool call, one streamed message if the app streams, a sub-agent call if the app delegates. No scriptable entry point (server, REPL, UI only) → write a small driver: one conversation id, 2+ turns, at least one tool call, `provider.shutdown()` before exit. Then check (Maple → Agent Sessions, filter by service name; wait up to ~1 min):
 
 - [ ] Exactly one session per conversation, id = the `thread_id` you passed. A second conversation is a different session.
-- [ ] Framework shows **Unidentified** (expected for this path).
 - [ ] One turn per `invoke()`; transcript shows each turn's user message, assistant replies, tool calls (not a raw JSON blob). Turn labels all repeat the conversation's first message: expected, see Known gaps.
 - [ ] Each turn trace starts at the agent span (`name=`), with `model`/`tools` node spans, `ChatOpenAI` (or other chat model class) spans and tool spans named after the tools, all in one trace.
 - [ ] Tool call count = the tools the model actually called (a higher count means a tool node is missing from `STEP_NAMES`).
@@ -188,7 +192,7 @@ Run one real conversation: 2+ messages with the same id, at least one tool call,
 - [ ] Cost shows "unpriced" (expected: nothing records cost).
 - [ ] No attribute contains an API key or `Bearer ` token.
 
-Known gaps (not setup bugs, don't try to fix): tool spans have no `gen_ai.tool.call.id` or arguments (arguments are in the model's tool call in the transcript); tool results are LangChain's serialized `ToolMessage` JSON (output under `data.content`); chat model spans have no `gen_ai.response.id`; with a checkpointer every turn's label is the thread's first user message (Maple takes it from the `model` node span, where the instrumentor records only the first message; the transcript inside each turn is right).
+Known gaps (not setup bugs, don't try to fix): tool spans have no `gen_ai.tool.call.id`; chat model spans have no `gen_ai.response.id`; when each invoke passes history (checkpointer state or caller-carried), every turn is labelled with the conversation's first message (Maple labels a turn from the agent span's input, where the instrumentor records only the first message of `messages`; the transcript inside each turn is right).
 
 More details (from the human guide, for edge cases):
 
@@ -202,7 +206,7 @@ More details (from the human guide, for edge cases):
 - LangSmith OTel export (`LANGSMITH_OTEL_ENABLED` + `LANGSMITH_OTEL_ONLY`, tested langsmith 0.14.1): Maple labels it "LangChain" and reads `langsmith.metadata.thread_id`, but prompts/completions arrive as byte attributes (hex, unreadable transcript, no turn labels), interrupts are marked ERROR, middleware wrappers and the `tools` node count as extra tool calls, agent names only in `langsmith.metadata.lc_agent_name` (unread; LangSmith sets `gen_ai.operation.name` after start so a start-time processor can't fix it), and flush needs `wait_for_all_tracers()` (`langchain_core.tracers.langchain`) then `provider.force_flush()`. Don't recommend it.
 - LangChain.js/LangGraph.js: covered in [references/typescript.md](references/typescript.md) (OpenInference JS + a `GenAiSpans` processor, since the JS instrumentor has no GenAI dual-write).
 
-Local check without Maple: add `SimpleSpanProcessor(ConsoleSpanExporter())` temporarily and confirm `gen_ai.conversation.id` is identical on every span of every turn of one conversation.
+Without Maple access, both must hold: the run exits with no export errors on stderr (`Failed to export`, 401 lines), AND a temporary `SimpleSpanProcessor(ConsoleSpanExporter())` shows the agent, chat model and tool spans with `gen_ai.conversation.id` identical on every span of every turn. Silence alone proves nothing (no spans is silent too). With the Maple MCP: `list_agent_sessions` with `search=<conversation id>` returns one row.
 
 ## Do not
 
@@ -215,5 +219,5 @@ Local check without Maple: add `SimpleSpanProcessor(ConsoleSpanExporter())` temp
 - Do not name tools with "agent" in them.
 - Do not add `maple_ai.session.id` attributes (they re-vendor the span).
 - Do not use `gen_ai.operation.name=agent_step` for step spans: Maple fingerprints it as the Vercel AI SDK. Use `invoke_workflow` as above.
-- Do not promise cost or the "LangChain" framework label in Maple; do not add token pricing code.
+- Do not promise cost in Maple; do not add token pricing code.
 - Do not print or commit real keys beyond the repo's convention.

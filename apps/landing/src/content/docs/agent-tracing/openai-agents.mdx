@@ -65,6 +65,8 @@ Add a `tracing.py` and import it at the top of your entry point, before the firs
 
 ```py
 # tracing.py
+import re
+
 from agents import set_trace_processors
 from agents.tracing import TracingProcessor
 from agents.tracing.span_data import FunctionSpanData, GenerationSpanData, HandoffSpanData
@@ -99,7 +101,7 @@ class MapleSpanFixes(TracingProcessor):
             current.set_attribute("gen_ai.tool.call.arguments", data.input)
         elif isinstance(data, HandoffSpanData) and data.to_agent:
             # Handoff spans carry no tool name.
-            current.set_attribute("gen_ai.tool.name", f"transfer_to_{data.to_agent}")
+            current.set_attribute("gen_ai.tool.name", re.sub(r"[^a-zA-Z0-9_]", "_", f"transfer_to_{data.to_agent}").lower())
         elif isinstance(data, GenerationSpanData) and data.output and data.output[0].get("object") == "response":
             # Streamed Chat Completions calls record a Responses object OpenInference can't read.
             data.output = [_chat_message(data.output[0])]
@@ -125,7 +127,7 @@ OpenAIAgentsInstrumentor().instrument(
 )
 ```
 
-Without `enable_genai_semconv=True`, the session page is empty.
+Without `enable_genai_semconv=True`, there are no agent lanes.
 
 `MapleSpanFixes` fixes tool arguments, handoff tool names and streamed replies. It has to run before the OpenInference processor, so keep the order shown.
 
@@ -158,7 +160,7 @@ Don't use `setTracingDisabled(true)` or `OPENAI_AGENTS_DISABLE_TRACING=1` to sto
 
 If the app already starts OpenTelemetry (auto-instrumentation, Sentry, your own `NodeTracerProvider`), skip the `NodeSDK` lines and keep the `manuallyInstrument` call. The bridge sends its spans to the global tracer provider.
 
-The TypeScript bridge records less than the Python one. The framework shows as **Unidentified**, the transcript has your prompts but not the model's replies, tool calls show without their arguments or results, and there are no agent lanes. Turns, models, tokens and failed tools come through. For the full session page, emit the GenAI attributes yourself as in the [provider SDKs guide](/docs/agent-tracing/provider-sdks).
+The TypeScript bridge records less than the Python one: there are no agent lanes. For agent lanes, emit the GenAI attributes yourself as in the [provider SDKs guide](/docs/agent-tracing/provider-sdks).
 
 </LanguageTab>
 </LanguageTabs>
@@ -213,8 +215,6 @@ Use the id your app already stores the chat under. A new UUID per request gives 
 
 For streaming, call `run(agent, text, { stream: true })` inside the `context.with` callback. You can read the stream after it returns.
 
-`setSession()` from `@arizeai/openinference-core` doesn't group sessions in Maple. Set `gen_ai.conversation.id` as shown.
-
 </LanguageTab>
 </LanguageTabs>
 
@@ -263,13 +263,12 @@ Then call `await spanProcessor.forceFlush()` in a `finally` block before the han
 
 ## Check that it works
 
-Send two or three messages with the same conversation id, one using a tool, then open **Agent Sessions**. You should see one session with one turn per run, the tool calls, and tokens on every model call. The framework shows as **OpenAI Agents SDK** in Python and **Unidentified** in TypeScript. Cost shows as unpriced.
+Send two or three messages with the same conversation id, one using a tool, then open **Agent Sessions**. You should see one session with one turn per run, the tool calls, and tokens on every model call. The framework shows as **OpenAI Agents SDK**. Cost shows as unpriced.
 
 ## Troubleshooting
 
 - **No spans at all.** Tracing is disabled somewhere (`set_tracing_disabled` or `setTracingDisabled`, `OPENAI_AGENTS_DISABLE_TRACING`, or the run config), or the tracing setup ran after the first run. In TypeScript, `NODE_ENV=test` also turns tracing off; call `setTracingDisabled(false)` in tests.
 - **One session per message.** The run isn't inside `using_session(...)` or the `context.with` callback, or the id changes per request. Group ids and SDK session ids don't reach Maple.
-- **Tokens in the list, empty session page (Python).** Pass `TraceConfig(enable_genai_semconv=True)` and use bridge 2.5 or later.
 - **Streamed turns have zero tokens (Python).** Add `ModelSettings(include_usage=True)` to agents on a non-OpenAI base URL.
 - **Every model call appears twice.** Another instrumentation of the OpenAI client (OpenInference, Logfire, Langfuse, `@opentelemetry/instrumentation-openai`) is also active. Keep one.
 
