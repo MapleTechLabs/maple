@@ -28,10 +28,10 @@ Use your public key from **Settings → Ingestion**. Without one, the agent uses
 ## Install the browser SDK
 
 ```bash
-npm install @maple-dev/browser @opentelemetry/api
+npm install @maple-dev/browser
 ```
 
-`@opentelemetry/api` is for the tracing helper below. The SDK already depends on it, but strict package managers like pnpm only resolve packages you list yourself.
+This guide needs `@maple-dev/browser` 0.10.0 or later.
 
 ```ts
 // src/maple.ts
@@ -82,90 +82,19 @@ Your backend needs OpenTelemetry to read the header; every OpenTelemetry HTTP se
 
 Browser and server clocks disagree, so a server span can appear to start slightly before the `fetch` that caused it, and a laptop that slept can be minutes off. Durations are accurate; the offsets between browser and server spans are approximate.
 
-## Add the tracing helper
+## Navigation and data-loading spans
 
-Out of the box, every `fetch()` is its own trace, so a navigation that makes three requests shows up as three unrelated traces. The fix is a span per navigation, with the data-loading and `fetch` spans nested under it. Add this helper as `src/tracing.ts`; the rest of this guide connects it to your router:
+Out of the box, every `fetch()` is its own trace, so a navigation that makes three requests shows up as three unrelated traces. The SDK fixes that with a span per navigation, and the data-loading and `fetch` spans nested under it. Three calls do the work:
 
-```ts
-// src/tracing.ts
-import { context, propagation, type Span, SpanStatusCode, trace } from "@opentelemetry/api"
+- `MapleBrowser.startNavigation(path)` opens a `pageload` span for the first route and a `navigate` span for each one after it. If a navigation starts before the previous one ended, the previous span ends and is marked `app.navigation.interrupted`.
+- `MapleBrowser.endNavigation(route)` names the span after the route template and ends it.
+- `MapleBrowser.traced(name, fn, { isFailure })` runs data loading in a child span of the current navigation, and marks the span failed when `fn` throws, unless `isFailure` returns `false`. An error it recorded isn't reported a second time by `captureException` or the SDK's global error handlers.
 
-const tracer = trace.getTracer("acme-web")
-
-let navigation: { span: Span; kind: "pageload" | "navigate" } | undefined
-let firstLoad = true
-
-/** Call when the router starts a navigation. */
-export function startNavigation(path: string) {
-	// A click before the last navigation finished replaces it
-	navigation?.span.setAttribute("app.navigation.interrupted", true)
-	navigation?.span.end()
-
-	const kind = firstLoad ? "pageload" : "navigate"
-	// Only the first page load belongs to the server's trace, if there was one
-	const parent = firstLoad ? serverContext() : context.active()
-	firstLoad = false
-
-	navigation = { kind, span: tracer.startSpan(kind, { attributes: { "url.path": path } }, parent) }
-}
-
-/** Call when the new route is ready. `route` is its template, like `/projects/:id`. */
-export function endNavigation(route?: string) {
-	if (!navigation) return
-	if (route) navigation.span.updateName(`${navigation.kind} ${route}`)
-	navigation.span.end()
-	navigation = undefined
-}
-
-const recorded = new WeakSet<object>()
-
-/** Run `fn` in a span under the current navigation. */
-export function traced<T>(
-	name: string,
-	fn: () => Promise<T>,
-	isFailure: (error: unknown) => boolean = () => true,
-): Promise<T> {
-	const parent = navigation ? trace.setSpan(context.active(), navigation.span) : context.active()
-
-	return tracer.startActiveSpan(name, {}, parent, async (span) => {
-		try {
-			return await fn()
-		} catch (error) {
-			if (isFailure(error)) {
-				// Some libraries throw error-like objects that aren't Error instances
-				span.recordException(error instanceof Error ? error : String((error as { message?: unknown })?.message ?? error))
-				span.setStatus({ code: SpanStatusCode.ERROR })
-				if (typeof error === "object" && error !== null) recorded.add(error)
-			}
-			throw error
-		} finally {
-			span.end()
-		}
-	})
-}
-
-/** Whether `traced` already recorded this error on a span. */
-export const alreadyRecorded = (error: unknown) =>
-	typeof error === "object" && error !== null && recorded.has(error)
-
-/** The trace the server rendered this page under, from a `Server-Timing` header or a `<meta>` tag. */
-function serverContext() {
-	if (typeof document === "undefined") return context.active()
-	const [page] = performance.getEntriesByType("navigation") as PerformanceNavigationTiming[]
-	const traceparent =
-		page?.serverTiming?.find((entry) => entry.name === "traceparent")?.description ||
-		document.querySelector<HTMLMetaElement>('meta[name="traceparent"]')?.content
-	return traceparent ? propagation.extract(context.active(), { traceparent }) : context.active()
-}
-```
-
-- `startNavigation(path)` opens a `pageload` span for the first route and a `navigate` span for each one after it. If a navigation starts before the previous one ended, the previous span ends and is marked `app.navigation.interrupted`.
-- `endNavigation(route)` names the span after the route template and ends it.
-- `traced(name, fn, isFailure)` runs data loading in a child span of the current navigation, and marks the span failed when `fn` throws, unless `isFailure` returns `false`.
-- `alreadyRecorded(error)` tells you whether `traced` already recorded an error, so it isn't reported twice.
-- `serverContext()` joins the first page load to the server's trace when the server sent its trace context, in a `Server-Timing` header or a `<meta name="traceparent">` tag. In a client-only app it does nothing.
+The rest of this guide connects them to your router.
 
 Span names use the route template, like `navigate /projects/:id`, never the concrete URL. Maple groups by span name, so a template gives you one row with a real p95, while concrete URLs give you one row per project. The concrete path is still on the span as `url.path`.
+
+The first page load joins the server render's trace without any browser code: when the server sends its trace context in a `Server-Timing` header or a `<meta name="traceparent">` tag, the `pageload` span becomes part of that trace, and follows its sampling decision: a page load under a trace the server didn't sample isn't recorded. In a client-only app, it starts a trace of its own. The [Browser SDK reference](/docs/session-replay/browser-sdk#navigation-and-data-loading-spans) has the details.
 
 ### The await problem
 
@@ -173,7 +102,7 @@ In the browser, a span only stays active until the first `await` inside it. A re
 
 ```ts
 // ❌ fetchMembers starts after an await, so it becomes its own trace
-traced("load project", async () => {
+MapleBrowser.traced("load project", async () => {
 	const project = await fetchProject(id)
 	const members = await fetchMembers(project.id)
 	return { project, members }
@@ -184,13 +113,15 @@ traced("load project", async () => {
 // ✅ Save the context before the first await, and run later requests inside it
 import { context } from "@opentelemetry/api"
 
-traced("load project", async () => {
+MapleBrowser.traced("load project", async () => {
 	const ctx = context.active()
 	const project = await fetchProject(id)
 	const members = await context.with(ctx, () => fetchMembers(project.id))
 	return { project, members }
 })
 ```
+
+`context` comes from `@opentelemetry/api`, so add it with `npm install @opentelemetry/api` if you use this pattern. The SDK already depends on it, but strict package managers like pnpm only resolve packages you list yourself.
 
 If the requests don't depend on each other, start them together with `Promise.all` instead. Both nest under the span, and the page stops waiting on one request before starting the next.
 
@@ -202,19 +133,19 @@ Look for two hooks in your router's API: one that fires when a navigation starts
 
 | Look for | Examples | Call |
 | --- | --- | --- |
-| A "navigation started" event or guard | `beforeNavigate`, `beforeEach`, `NavigationStart`, `onBeforeNavigate`, `useBeforeLeave` | `startNavigation(path)` |
-| A "navigation finished" or "route resolved" event | `afterNavigate`, `afterEach`, `NavigationEnd`, `onResolved`, a router `subscribe` whose state goes from loading to idle | `endNavigation(template)` |
-| Failed or cancelled navigations | `NavigationCancel`, `NavigationError`, a `failure` argument | `endNavigation(template)` too |
+| A "navigation started" event or guard | `beforeNavigate`, `beforeEach`, `NavigationStart`, `onBeforeNavigate`, `useBeforeLeave` | `MapleBrowser.startNavigation(path)` |
+| A "navigation finished" or "route resolved" event | `afterNavigate`, `afterEach`, `NavigationEnd`, `onResolved`, a router `subscribe` whose state goes from loading to idle | `MapleBrowser.endNavigation(template)` |
+| Failed or cancelled navigations | `NavigationCancel`, `NavigationError`, a `failure` argument | `MapleBrowser.endNavigation(template)` too |
 
 Some details to handle:
 
-- **The first load.** The first call to `startNavigation` becomes the `pageload` span. If your router doesn't emit a start event for the initial route, call `startNavigation(location.pathname)` yourself right after `init`, before the router's first render.
+- **The first load.** The first call to `startNavigation` becomes the `pageload` span. If your router doesn't emit a start event for the initial route, call `MapleBrowser.startNavigation(location.pathname)` yourself right after `init`, before the router's first render.
 - **The end of the first load.** Many routers run no transition for the first render, so their "navigation finished" event never fires for it. End the `pageload` span when the first route has rendered with its data, for example from an effect inside the root `Suspense` boundary, which runs when the boundary resolves. End it from the root error boundary too, because a first page that fails never resolves. Until then, ignore the "navigation finished" event: a redirect during the first load can finish its transition before the data arrives.
 - **Start events without a path.** Some routers pass a history delta instead of a path for back and forward. The URL has already changed at that point, so use `window.location.pathname`.
 - **Redirects.** If a loader redirect starts a second navigation while the first one is still loading, don't call `startNavigation` for it, or the first span ends as interrupted. Skip it (Solid Router's `redirect()` navigates with `replace: true`, for example), and the open span ends named after the destination.
 - **Query-only and hash-only changes.** Skip them unless they load data.
 - **No start event at all.** Wrap `history.pushState` and `history.replaceState` and listen to `popstate` to call `startNavigation`, and end the span on the framework's "route rendered" hook. As a last resort, calling `startNavigation` and `endNavigation` together from a route-change effect still names and counts every route change.
-- **Multi-page apps**, where every navigation is a full page load: call `startNavigation(location.pathname)` right after `init` and `endNavigation(template)` on the window `load` event. Each page load becomes a `pageload` span, and [linking it to the server render](#link-the-first-page-load-to-the-server-render) puts it in the server's trace.
+- **Multi-page apps**, where every navigation is a full page load: call `MapleBrowser.startNavigation(location.pathname)` right after `init` and `MapleBrowser.endNavigation(template)` on the window `load` event. Each page load becomes a `pageload` span, and [linking it to the server render](#link-the-first-page-load-to-the-server-render) puts it in the server's trace.
 
 ### Find the route template
 
@@ -222,11 +153,11 @@ The span name needs the matched route's pattern, not the URL. Look on the matche
 
 ## Trace data loading
 
-Find your router's route-level data mechanism: `loader`, `load`, `resolve`, `query` and `createAsync`, or a guard that fetches. Wrap each one with `traced("loader <template>", fn, isFailure)`.
+Find your router's route-level data mechanism: `loader`, `load`, `resolve`, `query` and `createAsync`, or a guard that fetches. Wrap each one with `MapleBrowser.traced("loader <template>", fn, { isFailure })`.
 
 Most routers throw on purpose for control flow: redirects, not-found, HTTP error helpers. They usually export a guard like `isRedirect` or `isHttpError`. Return `false` from `isFailure` for those, so a redirect isn't recorded as an error. Some throw a `Response` for a redirect, like Solid Router's `redirect()`; for those, use `(error) => !(error instanceof Response)`.
 
-Wrap the function that runs on every navigation that needs the data. A route's `preload` hook can be the wrong place: Solid Router doesn't run it again when only the params change, and it ignores the promise `preload` returns, so a failed load also becomes an unhandled rejection that the SDK reports a second time. With cached query functions like Solid's `query`, put `traced` inside the query. You get one `loader` span per query, and none for cache hits.
+Wrap the function that runs on every navigation that needs the data. A route's `preload` hook can be the wrong place: Solid Router doesn't run it again when only the params change, and it ignores the promise `preload` returns, so a failed load becomes an unhandled rejection. With cached query functions like Solid's `query`, put `traced` inside the query. You get one `loader` span per query, and none for cache hits.
 
 Routers that preload on hover or focus run loaders with no navigation in progress, so those spans become their own traces. A navigation that then reads the preloaded data from the cache has no loader span under it.
 
@@ -238,26 +169,23 @@ The SDK's global handlers only see errors that nothing caught. Most frameworks c
 
 ```ts
 import { MapleBrowser } from "@maple-dev/browser"
-import { alreadyRecorded } from "./tracing"
 
 function reportCaughtError(error: unknown) {
-	// Errors thrown inside traced() are already on their span
-	if (!alreadyRecorded(error)) MapleBrowser.captureException(error)
+	MapleBrowser.captureException(error)
 }
 ```
 
-The `alreadyRecorded` check matters because a loader that throws usually ends up in the same handler. Without it, one failed loader shows up as two errors. `captureException` also records each error object only once, so reporting and rethrowing is safe.
+A loader that throws usually ends up in the same handler. `captureException` skips errors `traced` already recorded on a span, so one failed loader stays one error. It also records each error object only once, so reporting and rethrowing is safe.
 
 ## Example: Solid Router
 
-This wiring was tested with `@solidjs/router` 1.0 and `solid-js` 1.9 in a client-only app. Call `startNavigation(location.pathname)` in `src/index.tsx` after `MapleBrowser.init`, because the first render emits no start event. Then wire the rest in the component you pass to `<Router root={...}>`:
+This wiring was tested with `@solidjs/router` 1.0 and `solid-js` 1.9 in a client-only app. Call `MapleBrowser.startNavigation(location.pathname)` in `src/index.tsx` after `MapleBrowser.init`, because the first render emits no start event. Then wire the rest in the component you pass to `<Router root={...}>`:
 
 ```tsx
 // src/app.tsx
 import { MapleBrowser } from "@maple-dev/browser"
 import { useBeforeLeave, useCurrentMatches, useIsRouting } from "@solidjs/router"
 import { createEffect, ErrorBoundary, on, onMount, Suspense, type ParentComponent } from "solid-js"
-import { alreadyRecorded, endNavigation, startNavigation } from "./tracing"
 
 const App: ParentComponent = (props) => {
 	const matches = useCurrentMatches()
@@ -272,7 +200,7 @@ const App: ParentComponent = (props) => {
 	let firstLoad = true
 	const endFirstLoad = () => {
 		firstLoad = false
-		endNavigation(template())
+		MapleBrowser.endNavigation(template())
 	}
 	// Effects under a pending Suspense run when it resolves
 	const FirstLoadEnd = () => {
@@ -288,19 +216,19 @@ const App: ParentComponent = (props) => {
 		if (path === e.from.pathname) return
 		// A query's redirect() navigates with `replace` while the first navigation is loading: keep its span
 		if (e.options?.replace && (firstLoad || isRouting())) return
-		startNavigation(path)
+		MapleBrowser.startNavigation(path)
 	})
 
 	createEffect(
 		on(isRouting, (routing, wasRouting) => {
-			if (wasRouting && !routing && !firstLoad) endNavigation(template())
+			if (wasRouting && !routing && !firstLoad) MapleBrowser.endNavigation(template())
 		}),
 	)
 
 	return (
 		<ErrorBoundary
 			fallback={(error) => {
-				if (!alreadyRecorded(error)) MapleBrowser.captureException(error)
+				MapleBrowser.captureException(error)
 				// A failed first page never resolves its Suspense
 				endFirstLoad()
 				return <p role="alert">Something went wrong.</p>
@@ -320,13 +248,16 @@ export default App
 If your root component already has an `ErrorBoundary` and a `Suspense`, add these calls to them instead of nesting new ones. Trace data loading inside `query()`, not in the route's `preload`:
 
 ```ts
+import { MapleBrowser } from "@maple-dev/browser"
 import { query } from "@solidjs/router"
-import { traced } from "./tracing"
 
 // redirect() is thrown as a Response; it isn't a failure
 const isFailure = (error: unknown) => !(error instanceof Response)
 
-export const getProject = query((id: string) => traced("loader /projects/:id", () => fetchProject(id), isFailure), "project")
+export const getProject = query(
+	(id: string) => MapleBrowser.traced("loader /projects/:id", () => fetchProject(id), { isFailure }),
+	"project",
+)
 ```
 
 What you get:
@@ -335,27 +266,27 @@ What you get:
 - Query-only and hash-only changes make no span. Back and forward are navigations.
 - A second click while a page loads ends the first span as interrupted, under the generic name `navigate`. A redirect is one span named after the destination, and its `url.path` is the path you started from.
 - `<A>` links preload on hover and focus. Those loads are their own traces, and a click within the `query` cache window (about 5 seconds) gives a `navigate` span without a loader span. Back and forward within that window don't make one either.
-- A query that throws is recorded once, on its `loader` span; the error boundary skips it through `alreadyRecorded`. Rendering errors are reported from the boundary, and errors in event handlers reach the SDK's global handler.
+- A query that throws is recorded once, on its `loader` span; `captureException` in the error boundary skips it. Rendering errors are reported from the boundary, and errors in event handlers reach the SDK's global handler.
 
 ## Link the first page load to the server render
 
 If your framework renders the first page on the server, that render is part of what the user waits for. The server side is ordinary backend tracing: set up OpenTelemetry for your server's runtime from [Instrument your application](/docs/instrumentation), and add a span around the render in the hook that sees the response before it's sent (a server entry, a request middleware, a `handle` hook).
 
-Then, from inside that span, write the trace context into a `Server-Timing` response header:
+Then, from inside that span, write the trace context into a `Server-Timing` response header with `serverTiming()` from `@maple-dev/browser/server`:
 
 ```ts
-import { context, propagation } from "@opentelemetry/api"
+import { serverTiming } from "@maple-dev/browser/server"
 
-const carrier: Record<string, string> = {}
-propagation.inject(context.active(), carrier)
-if (carrier.traceparent) {
-	response.headers.append("server-timing", `traceparent;desc="${carrier.traceparent}"`)
-}
+// undefined when no span is active
+const timing = serverTiming()
+if (timing) response.headers.append("server-timing", timing)
 ```
 
-The browser can read that header from the Navigation Timing API, and `serverContext()` in the helper uses it to parent the `pageload` span, so the first page load is one trace from the incoming request to the first route in the browser. If your framework already renders a `<meta name="traceparent">` tag, `serverContext()` reads that instead. If you're adding it yourself, prefer the header: it keeps the value out of the HTML, so the server and client versions of your `<head>` can't disagree during hydration.
+The browser reads that header from the Navigation Timing API and parents the `pageload` span to it, so the first page load is one trace from the incoming request to the first route in the browser. If your framework already renders a `<meta name="traceparent">` tag, the SDK reads that instead. If you're adding it yourself, prefer the header: it keeps the value out of the HTML, so the server and client versions of your `<head>` can't disagree during hydration.
 
 - Only the `pageload` span joins the server trace. Later navigations are new work and get their own traces.
+- Server-side data loading can use `traced` from `@maple-dev/browser/server`. It creates the span with your server's OpenTelemetry setup, under the active span, and takes the same `isFailure` option. On the server, requests after an `await` keep their parent. Without server OpenTelemetry it only runs your function.
+- `@maple-dev/browser/server` only depends on `@opentelemetry/api`, so it works in Node, edge runtimes and Workers.
 - If a CDN caches your HTML, it caches the header too, and every visitor joins the same old trace. Skip the header on cached responses.
 - If the framework sends an `ETag` with HTML, a reload gets a 304 without your header, and the browser reuses the one it cached with the page. Drop the `ETag` on responses that carry the header.
 

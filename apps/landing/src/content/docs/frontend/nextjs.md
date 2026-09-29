@@ -28,17 +28,16 @@ Use your public key from **Settings → Ingestion**. Without one, the agent uses
 ## Install the browser SDK
 
 ```bash
-npm install @maple-dev/browser @opentelemetry/api
+npm install @maple-dev/browser
 ```
 
-`@opentelemetry/api` is for the tracing helper below. The SDK already depends on it, but strict package managers like pnpm only resolve packages you list yourself.
+This guide needs `@maple-dev/browser` 0.10.0 or later.
 
 Next.js has a file for this. `instrumentation-client.ts` runs after the HTML loads and before React hydrates, so the SDK is running before any of your components do. It's available from Next.js 15.3, and it goes next to `instrumentation.ts`:
 
 ```ts
 // src/instrumentation-client.ts
 import { MapleBrowser } from "@maple-dev/browser"
-import { startNavigation } from "./tracing"
 
 MapleBrowser.init({
 	ingestKey: process.env.NEXT_PUBLIC_MAPLE_INGEST_KEY!, // public key, maple_pk_...
@@ -47,18 +46,16 @@ MapleBrowser.init({
 })
 
 // Next.js only reports client-side navigations, so the first page load starts here
-startNavigation(location.pathname)
+MapleBrowser.startNavigation(location.pathname)
 
-export { onRouterTransitionStart } from "./app/navigation-tracing"
+export { onRouterTransitionStart } from "@maple-dev/browser/nextjs"
 ```
 
 Next.js inlines `NEXT_PUBLIC_*` variables at build time, so set the key where you build, not only where you run. It has to be the public `maple_pk_` key, never the private one.
 
-The `startNavigation` call opens the `pageload` span. It starts when this file runs, after the HTML and its JavaScript have downloaded, so it covers hydration but not the time to first byte. The server's half of the trace covers that part, once the two are linked (the last section below).
+The `startNavigation` call opens the `pageload` span. It starts when this file runs, after the HTML and its JavaScript have downloaded, so it covers hydration but not the time to first byte. The server's half of the trace covers that part, once the two are linked (the last section below). The re-exported `onRouterTransitionStart` starts a span for every navigation after it.
 
-If you followed the [Browser SDK docs](/docs/session-replay/browser-sdk#nextjs), which initialize from a client component in the root layout, that works too. `instrumentation-client.ts` runs earlier and doesn't depend on rendering.
-
-The `./tracing` helper and `./app/navigation-tracing` are added in the sections below.
+If you followed the [Browser SDK docs](/docs/session-replay/browser-sdk#nextjs), which initialize from a client component in the root layout, move the `init()` call here. Next.js only calls `onRouterTransitionStart` when this file exports it.
 
 `init()` sets up:
 
@@ -95,90 +92,19 @@ Your backend needs OpenTelemetry to read the header; every OpenTelemetry HTTP se
 
 Browser and server clocks disagree, so a server span can appear to start slightly before the `fetch` that caused it, and a laptop that slept can be minutes off. Durations are accurate; the offsets between browser and server spans are approximate.
 
-## Add the tracing helper
+## Navigation and data-loading spans
 
-Out of the box, every `fetch()` is its own trace, so a navigation that makes three requests shows up as three unrelated traces. The fix is a span per navigation, with the data-loading and `fetch` spans nested under it. Add this helper as `src/tracing.ts`; the rest of this guide connects it to the App Router:
+Out of the box, every `fetch()` is its own trace, so a navigation that makes three requests shows up as three unrelated traces. The SDK fixes that with a span per navigation, and the data-loading and `fetch` spans nested under it. Three calls do the work:
 
-```ts
-// src/tracing.ts
-import { context, propagation, type Span, SpanStatusCode, trace } from "@opentelemetry/api"
+- `MapleBrowser.startNavigation(path)` opens a `pageload` span for the first route and a `navigate` span for each one after it. If a navigation starts before the previous one ended, the previous span ends and is marked `app.navigation.interrupted`.
+- `MapleBrowser.endNavigation(route)` names the span after the route template and ends it.
+- `MapleBrowser.traced(name, fn, { isFailure })` runs data loading in a child span of the current navigation, and marks the span failed when `fn` throws, unless `isFailure` returns `false`. An error it recorded isn't reported a second time by `captureException` or the SDK's global error handlers.
 
-const tracer = trace.getTracer("acme-web")
-
-let navigation: { span: Span; kind: "pageload" | "navigate" } | undefined
-let firstLoad = true
-
-/** Call when the router starts a navigation. */
-export function startNavigation(path: string) {
-	// A click before the last navigation finished replaces it
-	navigation?.span.setAttribute("app.navigation.interrupted", true)
-	navigation?.span.end()
-
-	const kind = firstLoad ? "pageload" : "navigate"
-	// Only the first page load belongs to the server's trace, if there was one
-	const parent = firstLoad ? serverContext() : context.active()
-	firstLoad = false
-
-	navigation = { kind, span: tracer.startSpan(kind, { attributes: { "url.path": path } }, parent) }
-}
-
-/** Call when the new route is ready. `route` is its template, like `/projects/:id`. */
-export function endNavigation(route?: string) {
-	if (!navigation) return
-	if (route) navigation.span.updateName(`${navigation.kind} ${route}`)
-	navigation.span.end()
-	navigation = undefined
-}
-
-const recorded = new WeakSet<object>()
-
-/** Run `fn` in a span under the current navigation. */
-export function traced<T>(
-	name: string,
-	fn: () => Promise<T>,
-	isFailure: (error: unknown) => boolean = () => true,
-): Promise<T> {
-	const parent = navigation ? trace.setSpan(context.active(), navigation.span) : context.active()
-
-	return tracer.startActiveSpan(name, {}, parent, async (span) => {
-		try {
-			return await fn()
-		} catch (error) {
-			if (isFailure(error)) {
-				// Some libraries throw error-like objects that aren't Error instances
-				span.recordException(error instanceof Error ? error : String((error as { message?: unknown })?.message ?? error))
-				span.setStatus({ code: SpanStatusCode.ERROR })
-				if (typeof error === "object" && error !== null) recorded.add(error)
-			}
-			throw error
-		} finally {
-			span.end()
-		}
-	})
-}
-
-/** Whether `traced` already recorded this error on a span. */
-export const alreadyRecorded = (error: unknown) =>
-	typeof error === "object" && error !== null && recorded.has(error)
-
-/** The trace the server rendered this page under, from a `Server-Timing` header or a `<meta>` tag. */
-function serverContext() {
-	if (typeof document === "undefined") return context.active()
-	const [page] = performance.getEntriesByType("navigation") as PerformanceNavigationTiming[]
-	const traceparent =
-		page?.serverTiming?.find((entry) => entry.name === "traceparent")?.description ||
-		document.querySelector<HTMLMetaElement>('meta[name="traceparent"]')?.content
-	return traceparent ? propagation.extract(context.active(), { traceparent }) : context.active()
-}
-```
-
-- `startNavigation(path)` opens a `pageload` span for the first route and a `navigate` span for each one after it. If a navigation starts before the previous one ended, the previous span ends and is marked `app.navigation.interrupted`.
-- `endNavigation(route)` names the span after the route template and ends it.
-- `traced(name, fn, isFailure)` runs data loading in a child span of the current navigation, and marks the span failed when `fn` throws, unless `isFailure` returns `false`.
-- `alreadyRecorded(error)` tells you whether `traced` already recorded an error, so it isn't reported twice.
-- `serverContext()` joins the first page load to the server's trace when the server sent its trace context, in a `Server-Timing` header or a `<meta name="traceparent">` tag. In a client-only app it does nothing.
+The Next.js integration below connects them to the App Router.
 
 Span names use the route template, like `navigate /projects/:id`, never the concrete URL. Maple groups by span name, so a template gives you one row with a real p95, while concrete URLs give you one row per project. The concrete path is still on the span as `url.path`.
+
+The first page load joins the server render's trace without any browser code: when the server sends its trace context in a `Server-Timing` header or a `<meta name="traceparent">` tag, the `pageload` span becomes part of that trace, and follows its sampling decision: a page load under a trace the server didn't sample isn't recorded. In a client-only app, it starts a trace of its own. The [Browser SDK reference](/docs/session-replay/browser-sdk#navigation-and-data-loading-spans) has the details.
 
 ### The await problem
 
@@ -186,7 +112,7 @@ In the browser, a span only stays active until the first `await` inside it. A re
 
 ```ts
 // ❌ fetchMembers starts after an await, so it becomes its own trace
-traced("load project", async () => {
+MapleBrowser.traced("load project", async () => {
 	const project = await fetchProject(id)
 	const members = await fetchMembers(project.id)
 	return { project, members }
@@ -197,7 +123,7 @@ traced("load project", async () => {
 // ✅ Save the context before the first await, and run later requests inside it
 import { context } from "@opentelemetry/api"
 
-traced("load project", async () => {
+MapleBrowser.traced("load project", async () => {
 	const ctx = context.active()
 	const project = await fetchProject(id)
 	const members = await context.with(ctx, () => fetchMembers(project.id))
@@ -205,86 +131,25 @@ traced("load project", async () => {
 })
 ```
 
+`context` comes from `@opentelemetry/api`, so add it with `npm install @opentelemetry/api` if you use this pattern. The SDK already depends on it, but strict package managers like pnpm only resolve packages you list yourself.
+
 If the requests don't depend on each other, start them together with `Promise.all` instead. Both nest under the span, and the page stops waiting on one request before starting the next.
 
 This happens because browsers have no equivalent of Node's `AsyncLocalStorage`, which is what carries the active span across `await` on the server.
 
 ## Trace App Router navigations
 
-The App Router gives you one of the two events the helper needs. `instrumentation-client.ts` can export `onRouterTransitionStart(url, navigationType)`, which Next.js calls when a navigation starts: a `<Link>` click, `router.push()`, `router.replace()`, or the back and forward buttons.
-
-There's no matching event for the end. That comes from React instead: a client component that reads the current route and ends the span in an effect, which runs once the new route is committed. Both halves live in one file, because they share the `committed` variable:
-
-```tsx
-// src/app/navigation-tracing.tsx
-"use client"
-
-import { useParams, usePathname, useSearchParams, useSelectedLayoutSegments } from "next/navigation"
-import { useEffect } from "react"
-import { endNavigation, startNavigation } from "../tracing"
-
-// Pathname and query of the route React last committed
-let committed: string | undefined
-const urlKey = (pathname: string, search: string) => `${pathname}?${new URLSearchParams(search)}`
-
-export function onRouterTransitionStart(url: string) {
-	const target = new URL(url, location.href)
-	// Hash-only changes and links to the current URL don't render a new route
-	if (urlKey(target.pathname, target.search) === committed) return
-	startNavigation(target.pathname)
-}
-
-export function NavigationTracing() {
-	const pathname = usePathname()
-	const search = useSearchParams().toString()
-	const params = useParams()
-	// URLs no route matches render Next.js's built-in `/_not-found` route
-	const unmatched = useSelectedLayoutSegments()[0] === "/_not-found"
-
-	useEffect(() => {
-		committed = urlKey(pathname, search)
-		endNavigation(unmatched ? "/_not-found" : routeTemplate(pathname, params))
-	}, [pathname, search, params, unmatched])
-
-	return null
-}
-
-/** `/projects/8f2a` with `{ id: "8f2a" }` becomes `/projects/[id]`. */
-function routeTemplate(pathname: string, params: ReturnType<typeof useParams>) {
-	const segments = pathname.split("/")
-	let end = segments.length
-	// Params are ordered from the root. Matching from the end keeps a static
-	// segment that happens to equal a param value, like in `/projects/projects`.
-	for (const [name, value] of Object.entries(params).reverse()) {
-		if (!value?.length) continue
-		const parts = typeof value === "string" ? [value] : value
-		const matchesAt = (at: number) =>
-			parts.every((part, i) => segments[at + i] === part || segments[at + i] === encodeURIComponent(part))
-		let at = end - parts.length
-		while (at > 0 && !matchesAt(at)) at--
-		if (at <= 0) continue
-		segments.splice(at, parts.length, typeof value === "string" ? `[${name}]` : `[...${name}]`)
-		end = at
-	}
-	return segments.join("/")
-}
-```
-
-Render it in the root layout, above `{children}`:
+The App Router reports when a navigation starts, through the `onRouterTransitionStart` export above, but not when it ends. That comes from React: `MapleNavigation` is a client component that ends the span in an effect, which runs once the new route is committed. Render it once in the root layout, above `{children}`:
 
 ```tsx
 // src/app/layout.tsx
-import { Suspense } from "react"
-import { NavigationTracing } from "./navigation-tracing"
+import { MapleNavigation } from "@maple-dev/browser/nextjs"
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
 	return (
 		<html lang="en">
 			<body>
-				{/* useSearchParams() needs a Suspense boundary on statically rendered pages */}
-				<Suspense>
-					<NavigationTracing />
-				</Suspense>
+				<MapleNavigation />
 				{children}
 			</body>
 		</html>
@@ -292,12 +157,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 }
 ```
 
-The re-export at the bottom of `instrumentation-client.ts` hands `onRouterTransitionStart` to Next.js. A few details:
+`MapleNavigation` brings its own `<Suspense>` boundary, which Next.js requires on statically rendered pages because the component reads `useSearchParams()`. What to expect:
 
-- **The route template is rebuilt from the params.** Next.js doesn't expose the matched route pattern on the client, so `routeTemplate` replaces each value from `useParams()` with its name. `/projects/8f2a` becomes `/projects/[id]`, and the catch-all `/docs/a/b` becomes `/docs/[...slug]`.
-- **Hash links are skipped.** Next.js calls `onRouterTransitionStart` for a link to `#pricing` too, but nothing renders, so the span would never end. The `committed` check skips any navigation to the pathname and query already on screen.
-- **Query changes are navigations.** Going from `?tab=1` to `?tab=2` makes Next.js fetch new Server Component data, so it gets a span. That's why the component reads `useSearchParams()`, and that hook is why it's inside `<Suspense>`: Next.js fails the build when a statically rendered page calls it outside one.
-- **Unmatched URLs are named `/_not-found`.** A URL that no route matches has no params to replace, so without the `unmatched` check every mistyped URL would become its own span name. A `<Link>` to such a URL makes Next.js reload the page, so the `navigate` span is dropped with the old document and the new document reports `pageload /_not-found`. A route that calls `notFound()` keeps its own template, like `navigate /projects/[id]`.
+- **Spans are named after the route template, rebuilt from the params.** Next.js doesn't expose the matched route pattern on the client, so each value from `useParams()` is replaced with its name. `/projects/8f2a` becomes `navigate /projects/[id]`, and the catch-all `/docs/a/b` becomes `navigate /docs/[...slug]`.
+- **Hash links start no span.** Neither does a link to the pathname and query already on screen. If such a link is clicked while another navigation is still loading, that navigation ends as interrupted.
+- **Query changes are navigations.** Going from `?tab=1` to `?tab=2` makes Next.js fetch new Server Component data, so it gets a span. `router.refresh()` and a server action that revalidates the page don't end a navigation that's still loading.
+- **Unmatched URLs are named `/_not-found`.** A URL that no route matches has no params to replace, so without this every mistyped URL would become its own span name. A `<Link>` to such a URL makes Next.js reload the page: the old document's `navigate` span is exported as interrupted, and the new document reports `pageload /_not-found`. A route that calls `notFound()` keeps its own template, like `navigate /projects/[id]`.
 - **Redirects produce two spans.** When a Server Component calls `redirect()` during a client navigation, Next.js renders the redirect first and then starts a second navigation. You'll see `navigate /old` followed by `navigate /new`.
 - **The span ends at the commit, not when all data has arrived.** If the route has a `loading.tsx`, the loading state is committed first, and the span ends when the skeleton appears. Content that streams into Suspense boundaries afterwards isn't part of it.
 
@@ -339,29 +204,23 @@ The same rule as in the browser applies: only your own APIs, never third parties
 
 ### Database and SDK calls
 
-Next.js's spans cover the render and `fetch()`, but not database queries or SDK calls. Wrap those with `traced` from the helper to time them. On the server there's no navigation in progress, so `traced` parents to the active span, which is Next.js's render span. Node has `AsyncLocalStorage`, so requests after an `await` keep their parent too.
+Next.js's spans cover the render and `fetch()`, but not database queries or SDK calls. Wrap those with `traced` from `@maple-dev/browser/server` to time them. It creates the span with the OpenTelemetry setup from `instrumentation.ts`, under the active span, which is Next.js's render span. Node has `AsyncLocalStorage`, so requests after an `await` keep their parent too.
 
 When a Server Component throws, Next.js records the exception on its render span and marks it as an error. If the data span recorded the same error, it would count twice, so pass an `isFailure` that always returns `false`. That also keeps `redirect()` and `notFound()`, which work by throwing, from showing up as failures:
 
-```ts
-// src/data-span.ts
-import { traced } from "./tracing"
-
-// Next.js records errors thrown from Server Components on its render span, and
-// redirect() / notFound() are thrown too: the data span only times the call
-export const dataSpan = <T>(name: string, fn: () => Promise<T>) => traced(name, fn, () => false)
-```
-
 ```tsx
 // src/app/projects/[id]/page.tsx
+import { traced } from "@maple-dev/browser/server"
 import { notFound } from "next/navigation"
-import { dataSpan } from "../../../data-span"
 import { db } from "../../../db"
 
 export default async function ProjectPage({ params }: { params: Promise<{ id: string }> }) {
 	const { id } = await params
 
-	const project = await dataSpan("load project", () => db.project.findUnique({ where: { id } }))
+	// Next.js records a thrown error on its render span, so this span only times the call
+	const project = await traced("load project", () => db.project.findUnique({ where: { id } }), {
+		isFailure: () => false,
+	})
 	if (!project) notFound()
 
 	return <h1>{project.name}</h1>
@@ -372,14 +231,14 @@ If the query throws, the trace shows the `load project` span with its duration a
 
 ## Trace client-side data fetching
 
-Requests from client components, whether in `useEffect`, SWR, or React Query, get `fetch` spans without any extra work. Wrapping the fetcher in `traced` gives the request a name you'll recognize in a list of traces:
+Requests from client components, whether in `useEffect`, SWR, or React Query, get `fetch` spans without any extra work. Wrapping the fetcher in `MapleBrowser.traced` gives the request a name you'll recognize in a list of traces:
 
 ```tsx
 // src/app/projects/[id]/members-list.tsx
 "use client"
 
+import { MapleBrowser } from "@maple-dev/browser"
 import { useQuery } from "@tanstack/react-query"
-import { traced } from "../../../tracing"
 
 type Member = { id: string; name: string }
 
@@ -387,7 +246,7 @@ export function MembersList({ projectId }: { projectId: string }) {
 	const { data: members = [] } = useQuery({
 		queryKey: ["members", projectId],
 		queryFn: () =>
-			traced("query members", async () => {
+			MapleBrowser.traced("query members", async () => {
 				const res = await fetch(`/api/projects/${projectId}/members`)
 				return (await res.json()) as Member[]
 			}),
@@ -407,23 +266,17 @@ These also end up as their own traces rather than under the `navigate` span. The
 
 ## Report errors from error.tsx and global-error.tsx
 
-Every `error.tsx` is a React error boundary, and it receives the error as a prop. Report it from an effect:
+Every `error.tsx` is a React error boundary, and it receives the error as a prop. Report it from an effect with `reportNextError`:
 
 ```tsx
 // src/app/error.tsx
 "use client"
 
-import { MapleBrowser } from "@maple-dev/browser"
+import { reportNextError } from "@maple-dev/browser/nextjs"
 import { useEffect } from "react"
-import { alreadyRecorded } from "../tracing"
 
 export default function ErrorPage({ error, retry }: { error: Error & { digest?: string }; retry: () => void }) {
-	useEffect(() => {
-		// Server errors arrive with a digest and without their message.
-		// Next.js already recorded the real error on its server span.
-		if (error.digest || alreadyRecorded(error)) return
-		MapleBrowser.captureException(error, { name: "react.render_error" })
-	}, [error])
+	useEffect(() => reportNextError(error), [error])
 
 	return (
 		<main>
@@ -434,25 +287,17 @@ export default function ErrorPage({ error, retry }: { error: Error & { digest?: 
 }
 ```
 
-The `digest` check is the Next.js-specific part. In production, an error thrown in a Server Component reaches the browser as a generic React error, with the message removed and a `digest` added. Reporting that from the browser would group every server error into one meaningless issue.
-
-You don't lose anything by skipping it. Next.js records the original exception, message and stack included, on its own server span (`render route (app) /projects/[id]`, or `RSC GET /projects/[id]` on a client navigation) and marks it as an error, so it's already on the Errors page. For the same reason you don't need the `onRequestError` hook in `instrumentation.ts`: with OpenTelemetry set up, it would record every server error a second time.
-
-A client component that throws on every render shows up twice on a full page load: once on the server render span, where it turned the response into a 500, and once from `error.tsx`, when the browser renders the component again and it throws again. Those are two executions of the bug, not one error reported twice. After a client navigation, only the browser one happens.
-
-Errors thrown in the root layout skip `error.tsx` and go to `global-error.tsx`, which replaces the whole document:
+Errors thrown in the root layout skip `error.tsx` and go to `global-error.tsx`, which replaces the whole document. Report from there the same way:
 
 ```tsx
 // src/app/global-error.tsx
 "use client"
 
-import { MapleBrowser } from "@maple-dev/browser"
+import { reportNextError } from "@maple-dev/browser/nextjs"
 import { useEffect } from "react"
 
 export default function GlobalError({ error }: { error: Error & { digest?: string } }) {
-	useEffect(() => {
-		if (!error.digest) MapleBrowser.captureException(error, { name: "react.render_error" })
-	}, [error])
+	useEffect(() => reportNextError(error), [error])
 
 	return (
 		<html lang="en">
@@ -464,51 +309,59 @@ export default function GlobalError({ error }: { error: Error & { digest?: strin
 }
 ```
 
+`reportNextError` records the error as `react.render_error`, and skips two kinds:
+
+- **Errors with a `digest`.** In production, an error thrown in a Server Component reaches the browser as a generic React error, with the message removed and a `digest` added. Reporting that from the browser would group every server error into one meaningless issue. You don't lose anything by skipping it: Next.js records the original exception, message and stack included, on its own server span (`render route (app) /projects/[id]`, or `RSC GET /projects/[id]` on a client navigation) and marks it as an error, so it's already on the Errors page. For the same reason you don't need the `onRequestError` hook in `instrumentation.ts`: with OpenTelemetry set up, it would record every server error a second time.
+- **Errors `traced` already recorded** on a data-loading span.
+
+A client component that throws on every render shows up twice on a full page load: once on the server render span, where it turned the response into a 500, and once from `error.tsx`, when the browser renders the component again and it throws again. Those are two executions of the bug, not one error reported twice. After a client navigation, only the browser one happens.
+
 ## Link the first page load to the server render
 
-To join the browser's `pageload` span to the server render, the server hands its trace context to the browser in a `Server-Timing` header, which `serverContext()` in the helper reads. Next.js doesn't give pages a way to set response headers: `headers()` in a Server Component only reads the request. What can set them is `proxy.ts` (called `middleware.ts` before Next.js 16), which runs before the render:
+To join the browser's `pageload` span to the server render, the server hands its trace context to the browser in a `Server-Timing` header. Next.js doesn't give pages a way to set response headers: `headers()` in a Server Component only reads the request. What can set them is `proxy.ts` (called `middleware.ts` before Next.js 16), which runs before the render. `withMapleProxy` creates one:
 
 ```ts
 // src/proxy.ts
-import { context, propagation } from "@opentelemetry/api"
-import { type NextRequest, NextResponse } from "next/server"
+import { withMapleProxy } from "@maple-dev/browser/nextjs/server"
 
-export function proxy(request: NextRequest) {
-	const carrier: Record<string, string> = {}
-	propagation.inject(context.active(), carrier)
-
-	// Client navigations already carry the browser's traceparent: leave those alone
-	if (request.headers.has("traceparent") || !carrier.traceparent) return NextResponse.next()
-
-	// The render joins this trace through the request header...
-	const headers = new Headers(request.headers)
-	headers.set("traceparent", carrier.traceparent)
-	const response = NextResponse.next({ request: { headers } })
-	// ...and the browser's pageload span joins it through this one
-	response.headers.set("server-timing", `traceparent;desc="${carrier.traceparent}"`)
-	return response
-}
+export const proxy = withMapleProxy()
 
 export const config = {
 	matcher: ["/((?!api|_next/static|_next/image|favicon.ico).*)"],
 }
 ```
 
-Next.js runs the proxy inside its own `middleware GET` span. The proxy puts that span's context in the `traceparent` request header, which Next.js reads when it starts the render's root span, and in the `Server-Timing` response header, which the browser reads. The first page load becomes one trace: `middleware GET` at the root, with the `GET /projects/[id]` render and the browser's `pageload` span under it.
+If you already have a proxy, pass it in, and keep your own matcher. Your function runs first, and its responses pass through:
 
-Requests that already have a `traceparent` are skipped. Those are the RSC requests from client navigations, and replacing their header would cut them off from the browser `fetch` span that made them.
+```ts
+// src/proxy.ts
+import { withMapleProxy } from "@maple-dev/browser/nextjs/server"
+import { type NextRequest, NextResponse } from "next/server"
+
+export const proxy = withMapleProxy((request: NextRequest) => {
+	if (!request.cookies.has("session")) return NextResponse.redirect(new URL("/login", request.url))
+})
+```
+
+Next.js runs the proxy inside its own `middleware GET` span. `withMapleProxy` puts that span's context in the `traceparent` request header, which Next.js reads when it starts the render's root span, and in the `Server-Timing` response header, which the browser reads. The first page load becomes one trace: `middleware GET` at the root, with the `GET /projects/[id]` render and the browser's `pageload` span under it.
+
+- **Only responses that go on to a render in your app change.** That's `NextResponse.next()`, a rewrite to the same origin, or no response at all. Redirects, responses your proxy builds itself, and rewrites to another origin pass through unchanged.
+- **A `traceparent` the request already carries is kept.** The RSC requests from client navigations carry the browser's, and replacing it would cut them off from the browser `fetch` span that made them.
 
 This works with `next start` on Node. Next.js only reads the incoming `traceparent` when no span is active yet, so on a platform that starts its own server span first, or that runs the proxy separately from your app, the render may not join. After deploying, open one page load in Maple and check that the `pageload` span shares a trace with the server spans.
 
 The proxy runs on every request it matches, including prerendered pages and `304` revalidations, so each response gets a fresh header. That changes if a shared cache such as a CDN sits in front of `next start`: Next.js sends prerendered HTML with a long `s-maxage`, the cache would store the header, and every visitor would join the same trace. In that setup, leave prerendered routes out of the matcher or use the option below.
 
-If the page load doesn't join, Next.js has an experimental option that does the injection itself. `experimental.clientTraceMetadata: ["traceparent"]` in `next.config.ts` renders a `<meta name="traceparent">` tag with the render's trace context into every dynamically rendered page. The helper's `serverContext()` reads that tag when there's no header, so you can use it instead of the proxy.
+If the page load doesn't join, Next.js has an experimental option that does the injection itself. `experimental.clientTraceMetadata: ["traceparent"]` in `next.config.ts` renders a `<meta name="traceparent">` tag with the render's trace context into every dynamically rendered page. The SDK reads that tag when there's no header, so you can use it instead of the proxy.
 
 ## Next.js-specific gotchas
 
 - **The pageload span measures hydration, not the full load.** It starts when `instrumentation-client.ts` runs and ends after the first commit. The time before that is in the server spans and the browser's navigation timing.
-- **Development doubles effects.** React Strict Mode runs effects twice in `next dev`. The second `endNavigation` finds nothing open and does nothing, so traces look the same, but the dev server's timings are nothing like production.
+- **Development doubles effects.** React Strict Mode runs effects twice in `next dev`. The second end finds nothing open and does nothing, so traces look the same, but the dev server's timings are nothing like production.
 - **Static pages have no render to join.** With the proxy, a prerendered page's `pageload` span still joins the proxy's trace, but there's no render span under it, because nothing rendered. With `clientTraceMetadata`, prerendered pages get no `<meta>` tag, and their `pageload` span is its own trace.
+- **Some route templates are ambiguous.** Templates are rebuilt by matching param values from the end of the path, so a static segment after a param with the same value (`/users/settings/settings` for `/users/[name]/settings`) can be named wrong. `useParams()` can't tell an optional catch-all from a required one either: with `[[...slug]]`, `/docs` is `navigate /docs` and `/docs/a` is `navigate /docs/[...slug]`.
+- **`basePath` and hash entries.** With a `basePath`, going back or forward to a history entry that only differs by its hash can open a span that ends as interrupted.
+- **`global-error.tsx` replaces the root layout.** It unmounts `MapleNavigation`, so the navigation that hit the error ends as interrupted at the next navigation, or when the page is left.
 
 ## What this setup doesn't cover
 
@@ -526,7 +379,7 @@ On the server, yes. Next.js emits spans for requests, rendering, route handlers,
 
 ### Does this work with the Next.js Pages Router?
 
-The SDK setup and error reporting do. For navigations, the Pages Router has `router.events` with `routeChangeStart` and `routeChangeComplete`, which map onto `startNavigation` and `endNavigation` more directly than the App Router hooks. There, `router.pathname` is already the route template, like `/projects/[id]`, so you don't need `routeTemplate`.
+The SDK setup does, but `@maple-dev/browser/nextjs` is for the App Router. For navigations, the Pages Router has `router.events`: call `MapleBrowser.startNavigation` with the new path on `routeChangeStart`, and `MapleBrowser.endNavigation(router.pathname)` on `routeChangeComplete` and `routeChangeError`. There, `router.pathname` is already the route template, like `/projects/[id]`. Report errors from your error boundary with `MapleBrowser.captureException(error)`.
 
 ### Why aren't my Next.js server spans under the navigate span?
 
