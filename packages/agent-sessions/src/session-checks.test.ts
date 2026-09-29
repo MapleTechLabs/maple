@@ -400,6 +400,34 @@ describe("buildSessionChecks", () => {
 		expect(byId(checks(firstTurn()), "prompt-cache").status).toBe("skipped")
 	})
 
+	it("reads the prompt cache off the gateway's buckets on a span it stamped", () => {
+		// Strands' pre-rename cache key, which the detail decode does not alias:
+		// only the gateway's bucket says the call read from cache.
+		const call = (spanId: string, startMs: number) =>
+			llmSpan({
+				spanId,
+				parentSpanId: "a1",
+				startMs,
+				durationMs: SECOND,
+				model: "claude-opus-5",
+				genAi: {
+					conversationId: "t1",
+					mapleLlmCall: 1,
+					mapleInputTokens: 1_000,
+					mapleCacheReadTokens: 9_000,
+					mapleOutputTokens: 100,
+				},
+			})
+		const report = checks([
+			agentSpan({ spanId: "a1", startMs: 0, durationMs: MINUTE, genAi: { conversationId: "t1" } }),
+			call("c1", SECOND),
+			call("c2", 5 * SECOND),
+			call("c3", 10 * SECOND),
+			call("c4", 15 * SECOND),
+		])
+		expect(byId(report, "prompt-cache").headline).toBe("Cache hit rate 90% over 3 calls")
+	})
+
 	// Short test conversations (DSPy peaked at 870 tokens; Claude Agent SDK on
 	// Haiku 4.5 sent 1.2K–2.3K against a 4,096-token minimum) cannot be cached,
 	// so reading them as misses warned "0% ... missed the cache" on every one.
