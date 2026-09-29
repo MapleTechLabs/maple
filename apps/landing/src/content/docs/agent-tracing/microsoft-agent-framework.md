@@ -7,9 +7,7 @@ navLabel: "Microsoft Agent Framework"
 icon: "dotnet"
 ---
 
-Microsoft Agent Framework (MAF) emits OpenTelemetry spans for every agent run, model call and tool call in Python and .NET. It does not set a conversation id when your app keeps chat history itself, so you add one with a short span processor, or every turn shows up as its own session.
-
-Tested with `agent-framework` 1.19 (Python), `Microsoft.Agents.AI` 1.22 (.NET) and Semantic Kernel 1.44 (Python).
+Microsoft Agent Framework (MAF) emits OpenTelemetry spans in Python and .NET. You point them at Maple and add a short span processor that sets the conversation id, or every turn shows up as its own session.
 
 ## Quick setup with a coding agent
 
@@ -27,13 +25,13 @@ Your ingest key is in **Settings → Ingestion**. EU organizations should say EU
 
 ## Export traces from Python
 
-MAF installs no exporter, so add the OTLP/HTTP one:
+Install MAF with the OTLP/HTTP exporter:
 
 ```bash
 pip install "agent-framework-core>=1.19.0" "agent-framework-openai>=1.14.4" opentelemetry-exporter-otlp-proto-http
 ```
 
-Call `configure_otel_providers()` once at startup, before you create agents. `enable_sensitive_data=True` records prompts, replies and tool arguments and results; without it the transcript is empty.
+Call `configure_otel_providers()` once at startup, before you create agents. Without `enable_sensitive_data=True` the transcript is empty.
 
 ```py
 # telemetry.py
@@ -58,7 +56,7 @@ trace.get_tracer_provider().add_span_processor(ConversationIdProcessor())
 
 Keep `otlp_protocol="http/protobuf"`. MAF defaults to gRPC, which Maple doesn't accept.
 
-If your app already has a `TracerProvider` (Azure Monitor, Logfire, your own), don't call `configure_otel_providers()`. Add Maple's exporter and `ConversationIdProcessor` to your provider, then call `enable_instrumentation(enable_sensitive_data=True, enable_message_events=False)` from `agent_framework.observability`.
+If your app already has a `TracerProvider`, don't call `configure_otel_providers()`. Add Maple's exporter and `ConversationIdProcessor` to your provider, then call `enable_instrumentation(enable_sensitive_data=True, enable_message_events=False)` from `agent_framework.observability`.
 
 ## Export traces from .NET
 
@@ -67,8 +65,6 @@ dotnet add package Microsoft.Agents.AI --version 1.22.0
 dotnet add package Microsoft.Agents.AI.OpenAI --version 1.22.0
 dotnet add package OpenTelemetry.Exporter.OpenTelemetryProtocol --version 1.19.1
 ```
-
-`UseOpenTelemetry()` on the agent also instruments its chat client:
 
 ```csharp
 using System.ClientModel;
@@ -106,11 +102,11 @@ AIAgent agent = openAi.GetChatClient("gpt-4o-mini").AsIChatClient()
     .Build();
 ```
 
-Keep the leading `*` in `AddSource`: the default source names start with `Experimental.`, so `AddSource("Microsoft.Agents.AI.*")` matches nothing. Keep `/v1/traces` in the endpoint and the `HttpProtobuf` line. Pass each tool a `name`, or a local function in `Program.cs` shows up as something like `_Main_g_GetWeather_0_3`.
+Keep the leading `*` in `AddSource` (the source names start with `Experimental.`), `/v1/traces` in the endpoint, and the `HttpProtobuf` line. Pass each tool a `name`, or local functions show up under compiler-generated names.
 
 ## Group each conversation into one session
 
-Maple groups turns by `gen_ai.conversation.id`. MAF sets it only when the provider stores the conversation (Responses API with `store=True`, Foundry agents). This processor stamps your id on every span started inside a `conversation()` block:
+Maple groups turns into a session by `gen_ai.conversation.id`. This processor sets it on every span started inside a `conversation()` block:
 
 ```py
 # maple_tracing.py
@@ -139,21 +135,21 @@ def conversation(conversation_id: str):
         _conversation_id.reset(token)
 ```
 
-Wrap each request in it. `session.session_id` works as the id, or create the session with your own chat id: `agent.create_session(session_id=chat_id)`.
+Wrap each request in it. Use `session.session_id` as the id, or create the session with your own chat id: `agent.create_session(session_id=chat_id)`.
 
 ```py
-from agent_framework import AgentSession
+from agent_framework import Agent, AgentSession
 
 from maple_tracing import conversation
 
 
-async def handle_message(session: AgentSession, text: str) -> str:
+async def handle_message(agent: Agent, session: AgentSession, text: str) -> str:
     with conversation(session.session_id):
         response = await agent.run(text, session=session)
     return response.text
 ```
 
-When streaming, keep the whole `async for` loop inside the block. Build workflows inside it too, or `WorkflowBuilder.build()` shows up as a separate one-span session. Don't use `gen_ai.agent.id` or the `conversation_id` chat option as the id; the first is shared by every user and the second turns off MAF's in-memory history.
+When streaming, keep the whole `async for` loop inside the block. Don't pass the `conversation_id` chat option instead; it turns off MAF's in-memory history.
 
 In .NET, use an `Activity` processor with an `AsyncLocal` and set it before `RunAsync`:
 
@@ -180,7 +176,7 @@ var response = await agent.RunAsync(userMessage, session);
 
 ## Flush before a script exits
 
-`configure_otel_providers()` batches spans. Scripts, CLIs and notebooks that exit without flushing lose their last turns, so shut the providers down in a `finally`:
+Scripts, CLIs and notebooks that exit without flushing lose their last turns. Shut the providers down in a `finally`:
 
 ```py
 from opentelemetry import _logs, metrics, trace
@@ -188,7 +184,7 @@ from opentelemetry import _logs, metrics, trace
 
 def shutdown_telemetry() -> None:
     for provider in (trace.get_tracer_provider(), metrics.get_meter_provider(), _logs.get_logger_provider()):
-        provider.shutdown()  # exports whatever is still buffered
+        provider.shutdown()
 
 
 try:
@@ -201,7 +197,7 @@ In a serverless handler, call `trace.get_tracer_provider().force_flush()` before
 
 ## Semantic Kernel
 
-Semantic Kernel (SK) reads its telemetry switches at import time, so set them before the first `import semantic_kernel`. SK brings no exporter, so configure your own provider with the same `ConversationIdProcessor`:
+Semantic Kernel (SK) reads its telemetry switches at import time, so set them before the first `import semantic_kernel`. Configure your own provider with the same `ConversationIdProcessor`:
 
 ```bash
 pip install "semantic-kernel>=1.44.1" opentelemetry-sdk opentelemetry-exporter-otlp-proto-http
@@ -235,11 +231,11 @@ provider.add_span_processor(
 trace.set_tracer_provider(provider)
 ```
 
-Wrap each turn in `with conversation(thread_id):`. The transcript comes from `ChatCompletionAgent`, so pass messages positionally (`await agent.get_response(text, thread=thread)`); the `messages=` keyword records an empty input. Code that calls the kernel without an agent has no transcript in Maple.
+Wrap each turn in `with conversation(thread.id):`. Pass messages positionally, as in `await agent.get_response(text, thread=thread)`; the `messages=` keyword records an empty input. Only `ChatCompletionAgent` calls produce a transcript; calling the kernel directly doesn't.
 
 ## Check that it works
 
-Run a conversation of two or three turns where one turn calls a tool. Within about a minute, **Agent Sessions** shows one session for it, labeled **Microsoft Agent Framework** or **Semantic Kernel** (.NET shows **Unidentified**), with one turn per `agent.run()`, the transcript, and tool calls with their arguments and results. Cost shows as unpriced because MAF doesn't emit one.
+Run a conversation of two or three turns where one turn calls a tool. Within about a minute, **Agent Sessions** shows one session for it, labeled **Microsoft Agent Framework** or **Semantic Kernel** (.NET shows **Unidentified**), with one turn per `agent.run()`, the transcript, and tool calls with their arguments and results. Cost shows as unpriced; MAF doesn't emit cost.
 
 ## Troubleshooting
 
@@ -251,8 +247,7 @@ Run a conversation of two or three turns where one turn calls a tool. Within abo
 
 ## Related
 
-- [Agent Sessions](/docs/agent-sessions/overview): what a session, turn, model call and tool call are in Maple.
-- [Trace your AI agent](/docs/agent-tracing): guides for other frameworks.
+- [Agent Sessions](/docs/agent-sessions/overview): reading a session in Maple.
 - [Python instrumentation](/docs/guides/instrumentation-python) and [.NET instrumentation](/docs/guides/instrumentation-csharp): tracing the rest of the service.
 - [Agent Framework observability](https://learn.microsoft.com/en-us/agent-framework/agents/observability): Microsoft's reference for the settings above.
 - [Semantic Kernel telemetry](https://learn.microsoft.com/en-us/semantic-kernel/concepts/enterprise-readiness/observability/): the SK diagnostics switches.

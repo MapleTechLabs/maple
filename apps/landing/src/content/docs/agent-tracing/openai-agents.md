@@ -7,11 +7,7 @@ navLabel: "OpenAI Agents SDK"
 icon: "openai"
 ---
 
-The OpenAI Agents SDK traces every run, but it uploads those traces to the OpenAI dashboard instead of exporting OpenTelemetry. OpenInference's `openinference-instrumentation-openai-agents` bridges them to OpenTelemetry so Maple can read them.
-
-The part to get right is the session id. The SDK's `group_id` never reaches OpenTelemetry, so you wrap each run in OpenInference's `using_session`, or every message shows up as its own session.
-
-Tested with `openai-agents` 0.22 and `openinference-instrumentation-openai-agents` 2.5 on Python 3.10 to 3.14.
+OpenInference's `openinference-instrumentation-openai-agents` exports OpenAI Agents SDK runs to Maple. Wrap each run in its `using_session` helper, or every message shows up as its own session.
 
 ## Quick setup with a coding agent
 
@@ -41,7 +37,7 @@ export OTEL_EXPORTER_OTLP_ENDPOINT=https://ingest.maple.dev
 export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer YOUR_INGEST_KEY"
 ```
 
-EU organizations use `https://ingest.eu.maple.dev`. If you pass `endpoint=` to `OTLPSpanExporter` in code instead, give the full URL ending in `/v1/traces`.
+EU organizations use `https://ingest.eu.maple.dev`. If you pass `endpoint=` to `OTLPSpanExporter` in code, give the full URL ending in `/v1/traces`.
 
 ## Register the bridge
 
@@ -109,19 +105,19 @@ OpenAIAgentsInstrumentor().instrument(
 )
 ```
 
-`enable_genai_semconv=True` makes the bridge write the OpenTelemetry GenAI attributes that Maple builds the transcript from. Without it, the session page is empty.
+Without `enable_genai_semconv=True`, the session page is empty.
 
-`MapleSpanFixes` corrects three things the bridge records wrong: tool arguments (it would copy the tool's JSON schema), handoff tool names, and the reply of streamed Chat Completions calls. It has to run before the OpenInference processor, which is why `set_trace_processors` comes first and `instrument()` gets `exclusive_processor=False`.
+`MapleSpanFixes` fixes tool arguments, handoff tool names and streamed replies. It has to run before the OpenInference processor, so keep the order shown.
 
-`set_trace_processors` also stops the upload to OpenAI, so tracing needs no OpenAI key. Don't use `set_tracing_disabled(True)` or `OPENAI_AGENTS_DISABLE_TRACING=1` for that. They turn off the pipeline the bridge reads from, and you get no spans.
+`set_trace_processors` already stops the upload to OpenAI. Don't use `set_tracing_disabled(True)` or `OPENAI_AGENTS_DISABLE_TRACING=1` for that, or you get no spans.
 
 If the app already has a `TracerProvider` (from `opentelemetry-instrument`, Logfire or another library), add the OTLP exporter to it and pass it to `instrument()` instead of creating a second one.
 
-If an agent uses `OpenAIChatCompletionsModel` with a base URL other than OpenAI's (OpenRouter, LiteLLM, vLLM, Ollama), give it `model_settings=ModelSettings(include_usage=True)`. Otherwise streamed turns report zero tokens.
+If an agent uses `OpenAIChatCompletionsModel` with a non-OpenAI base URL (OpenRouter, LiteLLM, vLLM, Ollama), give it `model_settings=ModelSettings(include_usage=True)`. Otherwise streamed turns report zero tokens.
 
 ## Group each conversation into one session
 
-Maple groups this framework's traces by `session.id`, and the bridge only sets it inside `using_session`. Wrap every run:
+Wrap every run in `using_session` with the conversation's id:
 
 ```py
 from agents import RunConfig, Runner, SQLiteSession
@@ -139,15 +135,15 @@ async def handle_message(conversation_id: str, text: str) -> str:
     return result.final_output
 ```
 
-Use the id your app already stores the chat under, and give the SDK session the same one. A new UUID per request gives you one session per message, and a constant puts every user in one session.
+Use the id your app already stores the chat under, and give the SDK session the same one. A new UUID per request gives you one session per message.
 
-For streaming, call `Runner.run_streamed` inside the `with` block. Iterating `stream_events()` after the block is fine.
+For streaming, call `Runner.run_streamed` inside the `with` block.
 
-`workflow_name` names each trace's root span. Keep `chat`, `completion` and `tool` out of it, or Maple counts a phantom model or tool call per run. A name ending in `workflow` or `agent` is safe.
+Keep `chat`, `completion` and `tool` out of `workflow_name`, or Maple counts a phantom model or tool call per run.
 
 ## Flush in short-lived processes
 
-The provider flushes on a normal interpreter exit. A killed process, a serverless invocation or a notebook needs an explicit flush:
+In serverless functions and notebooks, flush explicitly:
 
 ```py
 from tracing import provider
@@ -158,17 +154,15 @@ finally:
     provider.force_flush()  # serverless: before returning; notebooks: after each run
 ```
 
-The SDK's `flush_traces()` doesn't help here, because the spans wait in the OpenTelemetry batch processor.
+The SDK's `flush_traces()` doesn't flush these spans.
 
 ## Check that it works
 
-Send two or three messages with the same conversation id, one of them using a tool, then open **Agent Sessions**. You should see one session with the framework **OpenAI Agents SDK**, one turn per `Runner.run`, a transcript with the tool calls and their arguments, and input and output tokens on every model call.
-
-Cost shows as unpriced, because neither the SDK nor the bridge records it.
+Send two or three messages with the same conversation id, one using a tool, then open **Agent Sessions**. You should see one session with the framework **OpenAI Agents SDK**, one turn per `Runner.run`, tool calls with their arguments, and tokens on every model call. Cost shows as unpriced.
 
 ## TypeScript
 
-The TypeScript bridge, `@arizeai/openinference-instrumentation-openai-agents`, works with less detail: the framework shows as **Unidentified**, model replies are missing from the transcript, there are no agent lanes, and the session id has to be set as `gen_ai.conversation.id`. The [skill](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-agent-tracing-openai-agents) has the setup. For the full session page in TypeScript, emit the GenAI attributes yourself as in the [provider SDKs guide](/docs/agent-tracing/provider-sdks).
+The TypeScript bridge, `@arizeai/openinference-instrumentation-openai-agents`, gives less detail: the framework shows as **Unidentified**, model replies are missing from the transcript, and there are no agent lanes. It takes the session id as `gen_ai.conversation.id`. The [skill](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-agent-tracing-openai-agents) has the setup. For the full session page, emit the GenAI attributes yourself as in the [provider SDKs guide](/docs/agent-tracing/provider-sdks).
 
 ## Troubleshooting
 
@@ -181,7 +175,5 @@ The TypeScript bridge, `@arizeai/openinference-instrumentation-openai-agents`, w
 ## Related
 
 - [Agent Sessions overview](/docs/agent-sessions/overview): what Maple builds from these spans.
-- [Trace your AI agent](/docs/agent-tracing): guides for every other framework.
-- [Tracing in the OpenAI Agents SDK](https://openai.github.io/openai-agents-python/tracing/): the SDK's span types, `trace()`, and the sensitive-data switch.
-- [openinference-instrumentation-openai-agents](https://github.com/Arize-ai/openinference/tree/main/python/instrumentation/openinference-instrumentation-openai-agents): the bridge's source.
+- [Tracing in the OpenAI Agents SDK](https://openai.github.io/openai-agents-python/tracing/): the switch that turns off prompt and reply capture.
 - [OpenRouter](/docs/agent-tracing/openrouter) and [LiteLLM](/docs/agent-tracing/litellm): if your models go through either gateway.

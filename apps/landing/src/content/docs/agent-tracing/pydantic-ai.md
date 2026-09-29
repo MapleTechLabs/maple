@@ -7,13 +7,11 @@ navLabel: "Pydantic AI"
 icon: "pydantic"
 ---
 
-Pydantic AI emits OpenTelemetry spans for every run, model call and tool call, with prompts, replies and token counts. You give it a `TracerProvider` that exports to Maple. The one thing to get right is the conversation id: unless you pass one, Pydantic AI generates a new id for every run, and each message becomes its own session.
-
-Tested with `pydantic-ai-slim` 2.51.0, the OpenTelemetry Python SDK 1.45.0, Logfire 5.1.1 and Python 3.10+.
+Pydantic AI already emits OpenTelemetry spans for runs, model calls and tool calls. You export them to Maple and pass a conversation id on every run. Without the id, each message becomes its own session.
 
 ## Quick setup with a coding agent
 
-Copy this prompt into Claude Code, Codex, Cursor or another agent that can run shell commands. It installs the [maple-agent-tracing-pydantic-ai](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-agent-tracing-pydantic-ai) skill, which contains every step of this guide.
+Copy this prompt into Claude Code, Codex, Cursor or another agent that can run shell commands. It installs the [maple-agent-tracing-pydantic-ai](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-agent-tracing-pydantic-ai) skill and follows it.
 
 ```text
 Set up Maple agent tracing for Pydantic AI in this project.
@@ -57,7 +55,6 @@ provider = TracerProvider(
         {"service.name": "support-agent", "deployment.environment.name": "production"}
     )
 )
-# Reads OTEL_EXPORTER_OTLP_ENDPOINT and OTEL_EXPORTER_OTLP_HEADERS
 provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
 trace.set_tracer_provider(provider)
 
@@ -70,13 +67,13 @@ Agent.instrument_all(
 )
 ```
 
-Import `tracing` at the top of your entry point (`main.py`, the FastAPI app module, the worker). It must run before the first `agent.run()`. Agents created earlier are still covered.
+Import `tracing` at the top of your entry point (`main.py`, the FastAPI app module, the worker), before the first `agent.run()`.
 
 If your app already has a `TracerProvider` (from `opentelemetry-instrument`, Sentry or your own setup), add the `BatchSpanProcessor` to it instead of creating a second one, and call `Agent.instrument_all(InstrumentationSettings(include_content=True, include_binary_content=False))` without `tracer_provider`.
 
 ### If you already use Logfire
 
-Logfire brings its own OpenTelemetry SDK and exporter, so skip the `pip install` above (Logfire 5.1 pins `opentelemetry-sdk` below 1.45 and the install won't resolve). Keep the three environment variables. Logfire exports to Maple whenever `OTEL_EXPORTER_OTLP_ENDPOINT` is set.
+Skip the `pip install` above, because it conflicts with Logfire's OpenTelemetry pins. Keep the three environment variables. Logfire exports to Maple whenever `OTEL_EXPORTER_OTLP_ENDPOINT` is set.
 
 ```py
 import logfire
@@ -89,7 +86,7 @@ Logfire scrubs tool arguments and results by default. If they arrive as `[Scrubb
 
 ## Pass the conversation id on every run
 
-Maple groups traces into sessions by `gen_ai.conversation.id`. Pydantic AI takes it from the `conversation_id=` you pass, then from the last message of `message_history`, and otherwise generates a new UUID7. Pass the chat or thread id your app already has on every `run()`, `run_stream()` and `iter()`:
+Pass the chat or thread id your app already has as `conversation_id=` on every `run()`, `run_stream()` and `iter()`:
 
 ```py
 from pydantic_ai import Agent
@@ -115,7 +112,7 @@ async def stream_reply(chat_id: str, text: str, history: list):
 
 ### Sub-agents
 
-When a tool calls another agent's `run()`, that run generates its own id unless you pass the caller's. Pass `conversation_id` and `usage` from the tool's context. Give every agent a `name=`, which Maple uses to draw one lane per agent.
+When a tool runs another agent, pass `conversation_id` and `usage` from the tool's context. Give every agent a `name=` so each one gets its own lane.
 
 ```py
 from pydantic_ai import Agent, RunContext
@@ -137,7 +134,7 @@ async def research_weather(ctx: RunContext[None], city: str) -> str:
 
 ## Flush short-lived processes
 
-The SDK flushes on a normal interpreter exit. A Lambda that freezes after returning, a killed worker or a notebook kernel doesn't exit normally, so flush explicitly:
+A Lambda, a killed worker or a notebook kernel doesn't exit normally, so flush explicitly:
 
 ```py
 import asyncio
@@ -156,21 +153,19 @@ In a script or CLI, call `provider.shutdown()` at the end. With Logfire, use `lo
 
 ## Check that it works
 
-Pydantic AI prints an `observability: off` banner on the first run when no instrumentation is set up. If you still see it, `tracing.py` didn't run before your first `agent.run()`.
+If Pydantic AI prints an `observability: off` banner on the first run, `tracing.py` didn't run before your first `agent.run()`.
 
-Run a conversation with two messages and a tool call, then open **Agent Sessions**. You should see one session with your conversation id and framework **Pydantic AI**, one turn per `run()`, a transcript with prompts, replies and tool calls, and token counts on every model call. Cost shows as unpriced, because Maple doesn't read the cost attribute Pydantic AI writes.
+Run a conversation with two messages and a tool call, then open **Agent Sessions**. You should see one session with your conversation id and framework **Pydantic AI**, one turn per `run()`, a transcript with prompts, replies and tool calls, and token counts on every model call. Cost shows as unpriced.
 
 ## Troubleshooting
 
 - **Every message is its own session.** Pass `conversation_id=` on every `run()`, `run_stream()` and `iter()`.
 - **A multi-agent run is split into several turns or sessions.** Pass `conversation_id=ctx.conversation_id` to every nested `run()`.
 - **Tool arguments or results read `[Scrubbed due to ...]`.** Logfire's scrubbing matched a word like `session` or `auth`. Pass `scrubbing=logfire.ScrubbingOptions(callback=...)` that keeps `gen_ai.tool.call.arguments` and `gen_ai.tool.call.result`, or `scrubbing=False`.
-- **A failed tool shows as successful.** The tool returned an error value. Raise `ToolFailed("...")` (Pydantic AI 2.16+) so the call is marked failed and the model still sees the message.
+- **A failed tool shows as successful.** The tool returned an error value. Raise `ToolFailed("...")` so the call is marked failed and the model still sees the message.
 - **Spans show up twice.** Another instrumentor (Logfire's `instrument_openai()`, OpenInference, OpenLLMetry) also traces the model client. Remove it and keep Pydantic AI's.
 
 ## Related
 
 - [Agent Sessions overview](/docs/agent-sessions/overview)
-- [All agent tracing guides](/docs/agent-tracing)
-- [Pydantic AI: debugging and monitoring with OpenTelemetry](https://pydantic.dev/docs/ai/integrations/logfire/)
 - [Instrument a Python application](/docs/guides/instrumentation-python)

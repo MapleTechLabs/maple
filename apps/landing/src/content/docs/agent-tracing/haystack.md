@@ -7,7 +7,7 @@ navLabel: "Haystack"
 icon: "haystack"
 ---
 
-Haystack 3 traces its pipelines, components, Agent steps and tool calls through `opentelemetry-haystack`, but it keeps the model, tokens and messages inside `haystack.*` JSON blobs Maple doesn't read, leaves failed tool calls unmarked and has no conversation id. This guide adds `maple_haystack.py`, a subclass of Haystack's tracer that writes the GenAI attributes Maple reads, and a `conversation()` block that groups runs into one session.
+This guide adds `maple_haystack.py`, a Haystack tracer that records model, tokens, messages and failed tool calls for Maple, and a `conversation()` block that groups runs into one session.
 
 Tested with `haystack-ai` 3.2 and `opentelemetry-haystack` 1.0 on Python 3.10 or later.
 
@@ -32,11 +32,9 @@ pip install "haystack-ai>=3.2" "opentelemetry-haystack>=1.0" \
   "opentelemetry-sdk>=1.45" "opentelemetry-exporter-otlp-proto-http>=1.45"
 ```
 
-Save this file next to your app as `maple_haystack.py`. It keeps every span and tag Haystack emits and adds `gen_ai.*` attributes to the Agent, model and tool spans:
+Save this file next to your app as `maple_haystack.py`:
 
 ```py
-"""Haystack tracer that adds the OpenTelemetry GenAI attributes Maple reads."""
-
 import json
 import logging
 from collections.abc import Iterator
@@ -55,7 +53,6 @@ _conversation_id: ContextVar[str | None] = ContextVar("maple_conversation_id", d
 
 @contextmanager
 def conversation(conversation_id: str) -> Iterator[None]:
-    """Every Haystack run inside this block joins the same Maple session."""
     token = _conversation_id.set(conversation_id)
     try:
         yield
@@ -110,7 +107,7 @@ class MapleSpan(OpenTelemetrySpan):
                 "gen_ai.usage.cache_read.input_tokens": prompt_details.get("cached_tokens"),
                 "gen_ai.usage.cache_write.input_tokens": prompt_details.get("cache_write_tokens"),
                 "gen_ai.usage.reasoning.output_tokens": (usage.get("completion_tokens_details") or {}).get("reasoning_tokens"),
-                "gen_ai.usage.cost": usage.get("cost"),  # OpenRouter prices every call; other providers leave this out
+                "gen_ai.usage.cost": usage.get("cost"),
             }
             if self._content:
                 attributes["gen_ai.output.messages"] = _messages(replies)
@@ -118,12 +115,10 @@ class MapleSpan(OpenTelemetrySpan):
 
     def _tool(self, key: str, value: Any) -> None:
         if key.endswith(".output") and isinstance(value, dict) and "error" in value:
-            # Haystack records a failed tool as {"error": ...} and leaves the span status unset
             self._span.set_status(StatusCode.ERROR, str(value["error"]))
             self._span.set_attribute("error.type", "ToolInvocationError")
         if self._content:
             attribute = "gen_ai.tool.call.arguments" if key.endswith(".input") else "gen_ai.tool.call.result"
-            # Tool results arrive as strings: write them as-is, so a JSON result stays a JSON object
             self._span.set_attribute(attribute, value if isinstance(value, str) else json.dumps(value, default=str))
 
 
@@ -138,7 +133,6 @@ class MapleHaystackTracer(OpenTelemetryTracer):
         attributes: dict[str, str] = {}
         operation = None
         if operation_name == "haystack.agent.run":
-            # The Agent span has no name: use the pipeline component or the AgentTool that runs it
             parent = getattr(trace.get_current_span(), "attributes", None) or {}
             attributes["gen_ai.operation.name"] = "invoke_agent"
             attributes["gen_ai.agent.name"] = parent.get("haystack.component.name") or parent.get("gen_ai.tool.name") or "agent"
@@ -150,7 +144,7 @@ class MapleHaystackTracer(OpenTelemetryTracer):
         if conversation_id := _conversation_id.get():
             attributes["gen_ai.conversation.id"] = conversation_id
         if not self._content:
-            tags.pop("haystack.pipeline.input_data", None)  # a plain tag, not gated by Haystack's content switch
+            tags.pop("haystack.pipeline.input_data", None)
 
         with self._tracer.start_as_current_span(operation_name, attributes=attributes) as raw_span:
             span = MapleSpan(raw_span, operation, self._content)
@@ -188,13 +182,13 @@ export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer YOUR_INGEST_KEY"
 export OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"
 ```
 
-EU organizations use `https://ingest.eu.maple.dev`. The exporter appends `/v1/traces` itself.
+EU organizations use `https://ingest.eu.maple.dev`. Set the base URL only; the exporter appends `/v1/traces`.
 
-Import `telemetry` before the first `pipeline.run()` or `agent.run()`. Keep the tracer name `"haystack"`, because Maple uses it to label the sessions as Haystack. If the app already has a `TracerProvider`, skip the provider lines and pass `trace.get_tracer("haystack")` from the existing one.
+Import `telemetry` before the first `pipeline.run()` or `agent.run()`. Keep the tracer name `"haystack"`, since Maple labels the sessions by it. If the app already has a `TracerProvider`, skip the provider lines and pass `trace.get_tracer("haystack")` from the existing one.
 
 ## Group turns into one session
 
-Haystack's `Agent` is stateless: your app passes the message history into every run, and each run is its own trace. Wrap every run in `conversation()` with your chat's id:
+Each run is its own trace. Wrap every run in `conversation()` with your chat's id:
 
 ```py
 from haystack import Pipeline
@@ -213,15 +207,15 @@ pipeline.add_component("assistant", agent)
 def handle_message(chat_id: str, history: list[ChatMessage], text: str) -> list[ChatMessage]:
     with conversation(chat_id):
         result = pipeline.run({"assistant": {"messages": [*history, ChatMessage.from_user(text)]}})
-    # The Agent adds its system prompt on every run, so keep it out of the stored history
+    # The Agent re-adds its system prompt on every run, so don't store it
     return [m for m in result["assistant"]["messages"] if not m.is_from("system")]
 ```
 
-Use the id your app already stores for the chat, such as a database row id or a frontend thread id. A new UUID per request gives one session per message, and one id for the whole process merges every user into one session. `conversation()` uses a `ContextVar`, so it stays scoped to the request in async and threaded servers and follows the Agent into its tool threads.
+Use the id your app already stores for the chat. A new UUID per request gives one session per message, and one id for the whole process merges every user into one session.
 
 ## Agent names, content and tokens
 
-Maple names each agent, and gives it a lane, from the pipeline component that runs it (`assistant` above) or from the `name=` of the `AgentTool` that wraps it. An Agent run directly with `agent.run()` is called `agent`.
+Each agent is named after its pipeline component (`assistant` above) or the `name=` of the `AgentTool` that wraps it. An Agent run directly with `agent.run()` is called `agent`.
 
 To keep prompts and responses out of Maple, pass `content=False`:
 
@@ -229,7 +223,7 @@ To keep prompts and responses out of Maple, pass `content=False`:
 tracing.enable_tracing(MapleHaystackTracer(trace.get_tracer("haystack"), content=False))
 ```
 
-Model, tokens, cost, tool names and failures are still recorded. `HAYSTACK_CONTENT_TRACING_ENABLED` has no effect with this tracer.
+`HAYSTACK_CONTENT_TRACING_ENABLED` has no effect with this tracer.
 
 A streamed `OpenAIChatGenerator` reply carries no token counts unless you ask for them (OpenRouter always sends usage):
 
@@ -237,11 +231,11 @@ A streamed `OpenAIChatGenerator` reply carries no token counts unless you ask fo
 OpenAIChatGenerator(model="gpt-4o-mini", generation_kwargs={"stream_options": {"include_usage": True}})
 ```
 
-Cost only appears with `OpenRouterChatGenerator`, the one Haystack generator that reports a price. Other providers show tokens and read as **unpriced**.
+Cost only appears with `OpenRouterChatGenerator`. Other providers show tokens and read as **unpriced**.
 
 ## Flush before short-lived processes exit
 
-`BatchSpanProcessor` exports every 5 seconds. A script, CLI, notebook, cron job or serverless handler that exits sooner loses the last batch:
+Scripts, notebooks, cron jobs and serverless handlers need an explicit flush before they exit:
 
 ```py
 try:
@@ -255,9 +249,7 @@ Long-running servers only need `provider.shutdown()` in their shutdown hook.
 
 ## Check that it works
 
-Run a conversation of at least two turns, one with a tool call, and open **Agent Sessions** filtered by your service name. You should see one session per conversation id, labelled Haystack, with one turn per `pipeline.run()`. Each `haystack.agent.step.llm` span shows up as a model call with model and tokens, and each `haystack.agent.step.tool` span as a tool call, with failed tools marked.
-
-A tool that returns plain text shows its result in the transcript but not on its tool call row. Return a dict to see the result there too.
+Run a conversation of at least two turns, one with a tool call, and open **Agent Sessions** filtered by your service name. You should see one session per conversation id, labelled Haystack, with one turn per `pipeline.run()`, model calls with tokens, and tool calls with failed ones marked. A tool's result shows on its tool call row only if the tool returns a dict.
 
 ## Troubleshooting
 
@@ -271,7 +263,3 @@ A tool that returns plain text shows its result in the transcript but not on its
 ## Related
 
 - [Agent Sessions overview](/docs/agent-sessions/overview)
-- [Agent tracing guides](/docs/agent-tracing)
-- [Trace agents with plain OpenTelemetry](/docs/agent-tracing/opentelemetry)
-- [Haystack tracing docs](https://docs.haystack.deepset.ai/docs/tracing)
-- [`opentelemetry-haystack` on PyPI](https://pypi.org/project/opentelemetry-haystack/)

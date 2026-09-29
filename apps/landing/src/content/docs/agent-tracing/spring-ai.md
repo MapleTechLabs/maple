@@ -7,7 +7,7 @@ navLabel: "Spring AI"
 icon: "spring"
 ---
 
-Spring AI already emits a `spring_ai chat_client` span per `ChatClient` call, a `chat <model>` span per model call and an `execute_tool <name>` span per tool call, with model and token counts. You add Spring Boot's OpenTelemetry starter, set sampling to 100%, and add one configuration class that writes the transcript, tool names and failed tools where Maple reads them. The thing to get right is passing the conversation id on every call.
+Spring AI already emits spans for `ChatClient`, model and tool calls, with token counts. You add Spring Boot's OpenTelemetry starter, set sampling to 100%, add one configuration class for the transcript, tool names and failed tools, and pass the conversation id on every call.
 
 Tested with Spring AI 2.0.1 on Spring Boot 4.1.1 and Java 21. Spring AI 1.1 on Boot 3.5 works too, with different dependencies and property names listed in the [skill](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-agent-tracing-spring-ai).
 
@@ -36,8 +36,6 @@ Next to the `spring-ai-bom` import (2.0.1) and your model starter, such as `spri
 </dependency>
 ```
 
-It brings the Micrometer tracing bridge, the OpenTelemetry SDK and the OTLP exporter. Boot 4 doesn't need Actuator for tracing.
-
 ## Export to Maple
 
 Add to `application.properties`:
@@ -60,11 +58,11 @@ maple.ai.capture-content=true
 
 For an EU organization, use `https://ingest.eu.maple.dev`. This property takes the full URL, so keep `/v1/traces` on the end. To skip metrics, replace the two metrics lines with `management.otlp.metrics.export.enabled=false`.
 
-Keep `management.tracing.sampling.probability=1.0`. Boot's default is `0.1`, which drops nine turns out of ten without any error.
+Keep `management.tracing.sampling.probability=1.0`. Boot's default of `0.1` silently drops nine turns out of ten.
 
 ## Add the attributes Maple reads
 
-Add this class in a package your application scans. Boot registers both beans by itself:
+Add this class in a package your application scans:
 
 ```java
 package com.example.agent;
@@ -92,7 +90,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-/** Adds the gen_ai.* attributes Maple reads on top of Spring AI's own observations. */
 @Configuration(proxyBeanMethods = false)
 public class MapleAiObservationConfig {
 
@@ -103,15 +100,13 @@ public class MapleAiObservationConfig {
 	ObservationFilter mapleGenAiAttributes(@Value("${maple.ai.capture-content:false}") boolean captureContent) {
 		return context -> {
 			if (context instanceof ChatClientObservationContext client) {
-				// One ChatClient call is one agent turn; Spring AI labels it "framework".
 				client.addLowCardinalityKeyValue(KeyValue.of("gen_ai.operation.name", "invoke_agent"));
 				if (client.getRequest().context().get(AGENT_NAME) instanceof String agent) {
 					client.addLowCardinalityKeyValue(KeyValue.of("gen_ai.agent.name", agent));
 				}
 			}
 			else if (context instanceof AdvisorObservationContext advisor) {
-				// Advisor span names ("tool _calling ", "message_chat_memory") would be
-				// counted as extra tool and LLM calls. A neutral name keeps them as plumbing.
+				// Renamed so Maple doesn't count advisor spans as tool and model calls
 				advisor.setContextualName("spring_ai advisor");
 			}
 			else if (context instanceof ToolCallingObservationContext tool) {
@@ -174,15 +169,13 @@ public class MapleAiObservationConfig {
 }
 ```
 
-The `ObservationFilter` marks each `ChatClient` call as an agent turn, copies tool names and call ids to the `gen_ai.tool.*` keys, and, with `maple.ai.capture-content=true`, writes the messages and tool arguments and results to the spans. Spring AI's own `log-prompt` and `log-completion` settings only write to the application log. The filter also renames the advisor spans, which Maple would otherwise count as extra model and tool calls.
+If your app already defines a `ToolExecutionExceptionProcessor`, add the `error()` call to it instead of adding a second bean.
 
-The `ToolExecutionExceptionProcessor` marks a tool span as failed when the tool throws, then hands the error to the model as before. If your app already defines one, add the `error()` call to it instead of adding a second bean.
-
-Set `maple.ai.capture-content=false` to keep message and tool content out of Maple. Sessions, tokens, tool names and failures still show up, with an empty transcript.
+The transcript comes from `maple.ai.capture-content=true`. Spring AI's own `log-prompt` and `log-completion` settings only write to the application log. Set it to `false` to keep message and tool content out of Maple; everything else still shows up, with an empty transcript.
 
 ## Group turns into one session
 
-Maple joins the traces of one conversation by the `spring.ai.chat.client.conversation.id` attribute. Spring AI sets it from the `ChatMemory.CONVERSATION_ID` advisor parameter, so pass that parameter on every request:
+Pass the `ChatMemory.CONVERSATION_ID` advisor parameter on every request. Spring AI writes it to the `spring.ai.chat.client.conversation.id` attribute, which Maple groups sessions by:
 
 ```java
 import org.springframework.ai.chat.client.ChatClient;
@@ -215,11 +208,11 @@ public class ChatService {
 }
 ```
 
-Use the conversation id your app already stores. Set it on the request, as above, and never with `defaultAdvisors` on the builder, which puts every user in one session. The parameter works without a chat memory advisor. Sub-agent calls inside tools don't need it, because they run in the same trace.
+Use the conversation id your app already stores. Set it on the request, as above, and never with `defaultAdvisors` on the builder, which puts every user in one session. The parameter works without a chat memory advisor. Sub-agent calls inside tools don't need it.
 
 ## Exit command-line apps explicitly
 
-A web app needs nothing extra: Boot flushes pending spans on shutdown. In a `CommandLineRunner` app, exit explicitly, or the OpenAI client's threads keep the JVM (and the unsent spans) waiting about 60 seconds:
+A web app needs nothing extra: Boot flushes pending spans on shutdown. In a `CommandLineRunner` app, exit explicitly, or the OpenAI client's threads hold the JVM and the unsent spans for about 60 seconds:
 
 ```java
 public static void main(String[] args) {
@@ -231,7 +224,7 @@ On serverless platforms, inject `SdkTracerProvider` and call `tracerProvider.for
 
 ## Check that it works
 
-Send two or three messages with the same conversation id, including one that calls a tool. After about a minute, **Agent Sessions** in Maple shows one session for that id with framework **Spring AI**, one turn per `ChatClient` call, the transcript, and tokens on every model call. Cost shows as unpriced, because Spring AI doesn't emit one.
+Send two or three messages with the same conversation id, including one that calls a tool. After about a minute, **Agent Sessions** in Maple shows one session for that id with framework **Spring AI**, one turn per `ChatClient` call, the transcript, and tokens on every model call. Cost shows as unpriced, because Spring AI doesn't report it.
 
 ## Troubleshooting
 
@@ -244,8 +237,5 @@ Send two or three messages with the same conversation id, including one that cal
 ## Related
 
 - [Agent Sessions overview](/docs/agent-sessions/overview)
-- [Agent tracing guides](/docs/agent-tracing)
-- [Any language: the OpenTelemetry GenAI conventions](/docs/agent-tracing/opentelemetry), also for LangChain4j
 - [Spring AI observability reference](https://docs.spring.io/spring-ai/reference/observability/index.html)
-- [Spring AI tool calling](https://docs.spring.io/spring-ai/reference/api/tools.html)
 - [Spring Boot tracing reference](https://docs.spring.io/spring-boot/reference/actuator/tracing.html)

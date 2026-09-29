@@ -7,9 +7,9 @@ navLabel: "Agno"
 icon: "agno"
 ---
 
-`openinference-instrumentation-agno` traces every Agno agent and team run, model call and tool call. Agno's own `setup_tracing()` uses the same instrumentor but writes spans to your AgentOS database, so to reach Maple you install it yourself with an OTLP exporter.
+This guide sends Agno's OpenInference spans to Maple with an OTLP exporter. Agno's own `setup_tracing()` writes to your AgentOS database, not to Maple.
 
-The one thing to get right is `session_id`. Without it, Agno generates an id once per `Agent` object, and a server with one shared agent puts every user's conversation into the same Maple session.
+Pass `session_id` on every run. Without it, a server with one shared `Agent` puts every user's conversation into the same Maple session.
 
 Tested with Agno 3.0.11 and `openinference-instrumentation-agno` 1.0.10 on Python 3.10 to 3.14.
 
@@ -43,7 +43,7 @@ export OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
 export AGNO_TELEMETRY=false
 ```
 
-EU organizations use `https://ingest.eu.maple.dev`. The exporter appends `/v1/traces` itself. `AGNO_TELEMETRY=false` only turns off Agno's anonymous usage pings.
+EU organizations use `https://ingest.eu.maple.dev`. Set the base URL only; the exporter appends `/v1/traces`. `AGNO_TELEMETRY=false` turns off Agno's anonymous usage pings.
 
 ## Initialize tracing
 
@@ -64,16 +64,15 @@ trace.set_tracer_provider(provider)
 
 AgnoInstrumentor().instrument(
     tracer_provider=provider,
-    # Also write gen_ai.* attributes, which Maple's session detail page reads
     config=TraceConfig(enable_genai_semconv=True),
 )
 ```
 
-Keep `enable_genai_semconv=True`. Without it the sessions list still shows tokens, but the session page has no transcript. If you can't change the `instrument()` call, set `OPENINFERENCE_ENABLE_GENAI_SEMCONV=true` instead.
+Without `enable_genai_semconv=True` the session page has no transcript. If you can't change the `instrument()` call, set `OPENINFERENCE_ENABLE_GENAI_SEMCONV=true` instead.
 
 ### Keep the AgentOS traces view
 
-`AgentOS(tracing=True)` and `setup_tracing(db=...)` skip their setup once `tracing.py` has registered a provider, so the AgentOS traces view stops filling. To keep it, add Agno's database exporter to your provider, with the same `db` you give AgentOS:
+Once `tracing.py` runs, `AgentOS(tracing=True)` and `setup_tracing(db=...)` stop filling the AgentOS traces view. To keep it, add Agno's database exporter to your provider, with the same `db` you give AgentOS:
 
 ```py
 from agno.tracing.exporter import DatabaseSpanExporter
@@ -83,7 +82,7 @@ provider.add_span_processor(BatchSpanProcessor(DatabaseSpanExporter(db=db)))
 
 ## Pass session_id on every run
 
-Each `run()` or `arun()` starts a new trace. Maple joins them into a session by the `session.id` Agno puts on the run span, taken from the `session_id` argument:
+Each `run()` or `arun()` is its own trace. Pass `session_id` to group them into one session:
 
 ```py
 from agno.agent import Agent
@@ -113,19 +112,19 @@ async def chat_stream(conversation_id: str, user_id: str, message: str):
             yield event.content
 ```
 
-Use the conversation id your app already stores. Agno uses the same id to load history from the agent's `db`, so tracing and memory stay in sync. Pass it to `team.run()`, workflows and `continue_run()` as well. Team members inherit the team's id, and a resumed human-in-the-loop run shows up as a second turn in the same session.
+Use the conversation id your app already stores, and pass it to `team.run()`, workflows and `continue_run()` as well.
 
 ## Teams, failed tools and content
 
-Give every `Agent` and `Team` a `name=`. Maple opens a lane for each named team member, and unnamed ones show up as `Agent.run` or `Team.run` with no lane.
+Give every `Agent` and `Team` a `name=`. Unnamed ones show up as `Agent.run` or `Team.run` with no lane of their own.
 
-A tool that raises is marked failed, even though Agno hands the error back to the model and the run continues. A tool that returns an error string counts as a success.
+A tool that raises is marked failed. A tool that returns an error string counts as a success.
 
 To keep content out of Maple, set `OPENINFERENCE_HIDE_INPUT_MESSAGES`, `OPENINFERENCE_HIDE_OUTPUT_MESSAGES`, `OPENINFERENCE_HIDE_INPUTS` and `OPENINFERENCE_HIDE_OUTPUTS` to `true` before the instrumentor starts. Tool arguments are still exported; removing them needs a `redaction` processor in an OpenTelemetry Collector.
 
 ## Flush before short-lived processes exit
 
-`BatchSpanProcessor` exports every 5 seconds. Long-running servers flush on shutdown, but scripts, CLIs, notebooks, workers and serverless handlers need an explicit flush:
+Scripts, notebooks, workers and serverless handlers need an explicit flush:
 
 ```py
 from tracing import provider
@@ -137,27 +136,19 @@ finally:
     provider.shutdown()     # scripts: flush and stop at the end of the process
 ```
 
-On AWS Lambda and similar platforms, call only `force_flush()`, since the next invocation reuses the process.
-
 ## Check that it works
 
-Run a conversation of two or three turns with one `session_id`, including a tool call, and open **Agent Sessions** filtered by your service name. You should see one session with your `session_id` as its id, framework **Agno**, one turn per `run()`, a transcript, and model calls such as `OpenRouter.invoke` with tokens. A session named `trace:...` means the run span had no `session.id`.
-
-Cost appears in the sessions list when your provider returns one (OpenRouter does). The session page shows it as not reported for Agno, and providers without prices show as **unpriced**.
+Run a conversation of two or three turns with one `session_id`, including a tool call, and open **Agent Sessions** filtered by your service name. You should see one session with your `session_id` as its id, framework **Agno**, one turn per `run()`, a transcript, and model calls such as `OpenRouter.invoke` with tokens. A session named `trace:...` means the run had no `session_id`. Cost shows in the sessions list only when your provider returns one, as OpenRouter does.
 
 ## Troubleshooting
 
 - **Nothing arrives in Maple.** `setup_tracing()` or `AgentOS(tracing=True)` ran before `tracing.py` and the spans went to the AgentOS database. Import `tracing` first.
 - **Every user is in one giant session.** The shared `Agent` runs without `session_id=`. Pass it on every `run()`, `arun()` and `continue_run()`.
 - **Every turn is its own session.** You pass a new id per request, often a fresh `uuid4()`. Use the stored conversation id.
-- **Tokens in the list, no transcript on the session page.** `enable_genai_semconv` is off, or other code called `instrument()` first (the second call is ignored).
-- **An agent run lands inside the previous team run's trace.** Instrumentor 1.0.10 leaves the team span attached to the thread or task. In scripts and workers, run each team run in its own context with `asyncio.create_task(...)` or `contextvars.copy_context().run(...)`.
+- **Tokens in the list, no transcript on the session page.** `enable_genai_semconv` is off, or other code called `instrument()` first.
+- **An agent run lands inside the previous team run's trace.** In scripts and workers, run each team run in its own context with `asyncio.create_task(...)` or `contextvars.copy_context().run(...)`.
 - **Every model call appears twice.** Remove the second instrumentor, usually `openinference-instrumentation-openai`, OpenLIT or Phoenix's `register(auto_instrument=True)`.
 
 ## Related
 
 - [Agent Sessions overview](/docs/agent-sessions/overview)
-- [Agent tracing guides](/docs/agent-tracing)
-- [Agno tracing documentation](https://docs.agno.com/agent-os/tracing/overview)
-- [openinference-instrumentation-agno on PyPI](https://pypi.org/project/openinference-instrumentation-agno/)
-- [OpenInference configuration variables](https://arize.com/docs/phoenix/tracing/how-to-tracing/advanced/masking-span-attributes)

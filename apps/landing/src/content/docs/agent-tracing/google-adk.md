@@ -7,11 +7,9 @@ navLabel: "Google ADK"
 icon: "googleadk"
 ---
 
-Google's Agent Development Kit (ADK) emits OpenTelemetry spans for every run, agent, model call and tool call, and stamps the ADK session id on them, so a multi-turn chat groups into one Maple session. You need no instrumentation package.
+Google's Agent Development Kit (ADK) emits OpenTelemetry spans on its own, so you need no instrumentation package. You set two environment variables so the transcript is in the format Maple reads, and register a tracer provider when you run a plain `Runner`.
 
-Two things need setup. By default ADK writes prompts and replies into its own attributes, which Maple doesn't read, so you switch it to the GenAI format with two environment variables. And with a plain `Runner`, nothing exports until you register a tracer provider.
-
-Tested with ADK for Python 2.10. ADK for Go and Kotlin emit the same span names, but their setup isn't covered here.
+This guide covers ADK for Python.
 
 ## Quick setup with a coding agent
 
@@ -33,7 +31,7 @@ Your ingest key is under **Settings → Ingestion**. EU organizations should say
 pip install "google-adk>=2.10" litellm opentelemetry-exporter-otlp-proto-http
 ```
 
-`litellm` is only needed for non-Gemini models through ADK's `LiteLlm` wrapper. Don't pin a newer OpenTelemetry version: ADK 2.10 caps `opentelemetry-sdk` at 1.42.1.
+`litellm` is only needed for non-Gemini models. Don't pin a newer OpenTelemetry version: ADK 2.10 caps `opentelemetry-sdk` at 1.42.1.
 
 ## Configure the export and the transcript format
 
@@ -48,13 +46,13 @@ OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=SPAN_ONLY
 ADK_CAPTURE_MESSAGE_CONTENT_IN_SPANS=false
 ```
 
-The `%20` is an encoded space; the Python SDK decodes it. EU organizations use `https://ingest.eu.maple.dev`. Use `SPAN_ONLY` exactly: `true` sends content to log records, which Maple doesn't read for the transcript.
+EU organizations use `https://ingest.eu.maple.dev`. The `%20` is an encoded space and must stay. Use `SPAN_ONLY` exactly, because `true` leaves the transcript empty.
 
 These settings store every prompt and tool result in Maple. To keep structure and tokens without content, leave `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` unset and delete the two `gen_ai.tool.call.*` lines from the plugin below.
 
 ## Register a tracer provider
 
-`adk web` and `adk api_server` build a tracer provider from the environment. A `Runner` in your own app, worker or script doesn't, and its spans go nowhere without a warning. Add a `telemetry.py`:
+A `Runner` in your own app, worker or script exports nothing until you register a tracer provider. Add a `telemetry.py`:
 
 ```py
 # telemetry.py
@@ -101,8 +99,6 @@ provider.add_span_processor(SkipDuplicateToolSpans(OTLPSpanExporter()))
 trace.set_tracer_provider(provider)
 ```
 
-ADK doesn't record tool arguments or results, so the `ToolCallAttributes` plugin adds them. `SkipDuplicateToolSpans` drops two tool spans that would otherwise count one call twice.
-
 Import `telemetry` as the first line of your entry point and register the plugin on the runner:
 
 ```py
@@ -137,13 +133,13 @@ runner = Runner(
 )
 ```
 
-If your app already sets up OpenTelemetry (Logfire, Sentry, a platform agent), add the `SkipDuplicateToolSpans(OTLPSpanExporter())` processor to that provider instead of creating a second one.
+If your app already sets up OpenTelemetry (Logfire, Sentry, a platform agent), add the `SkipDuplicateToolSpans(OTLPSpanExporter())` processor to that provider instead.
 
-Under `adk web` or `adk api_server`, skip the provider and register the plugin on your `App`: `App(name="support", root_agent=agent, plugins=[ToolCallAttributes()])`.
+`adk web` and `adk api_server` create the provider themselves. There, skip it and register the plugin on your `App`: `App(name="support", root_agent=agent, plugins=[ToolCallAttributes()])`.
 
 ## Use one ADK session per conversation
 
-Each `runner.run_async()` call is one turn. Pass your own conversation id as `session_id` on every turn, and the whole conversation is one Maple session:
+Each `runner.run_async()` call is one turn. Pass your conversation id as `session_id` on every turn:
 
 ```py
 async def chat(conversation_id: str, user_id: str, text: str) -> str:
@@ -158,13 +154,13 @@ async def chat(conversation_id: str, user_id: str, text: str) -> str:
     return reply
 ```
 
-With `auto_create_session=True`, the runner creates the session under that id on the first turn. Don't call `create_session()` without a `session_id` on each request; ADK then mints a new id per turn and every message becomes its own session.
+With `auto_create_session=True`, the runner creates the session on the first turn. Don't call `create_session()` without a `session_id`, or every message becomes its own session.
 
-To call an agent like a tool, add it to `sub_agents` with `mode="single_turn"`. `AgentTool` runs the sub-agent under a second session id, which can move the turn into a separate session.
+To call an agent like a tool, add it to `sub_agents` with `mode="single_turn"` instead of using `AgentTool`, which can move the turn into a separate session.
 
 ## Flush before a short-lived process exits
 
-`BatchSpanProcessor` sends spans every 5 seconds, so a script, notebook cell or job that exits sooner loses the last turn. Flush when the work ends:
+A script, notebook cell or job that exits within 5 seconds of its last turn loses that turn. Flush when the work ends:
 
 ```py
 # script.py
@@ -190,9 +186,7 @@ In a server, call `provider.shutdown()` from your shutdown hook. On Cloud Run or
 
 ## Check that it works
 
-Run a conversation of two or three turns, one of them calling a tool, then open **Agent Sessions**. You should see one session with the framework **Google ADK**, one turn per `run_async()`, a transcript with the tool calls, their arguments and results, and tokens on each model call.
-
-Cost shows as unpriced, because ADK doesn't record it.
+Run a conversation of two or three turns, one calling a tool, then open **Agent Sessions**. You should see one session with the framework **Google ADK**, one turn per `run_async()`, tool calls with their arguments and results, and tokens on each model call. Cost shows as unpriced.
 
 ## Troubleshooting
 
@@ -205,7 +199,4 @@ Cost shows as unpriced, because ADK doesn't record it.
 ## Related
 
 - [Agent Sessions overview](/docs/agent-sessions/overview): how Maple builds sessions, turns and checks.
-- [Agent tracing guides](/docs/agent-tracing): every framework.
 - [ADK agent activity traces](https://google.github.io/adk-docs/observability/traces/): ADK's span reference and export setup.
-- [LiteLLM](/docs/agent-tracing/litellm): tracing LiteLLM on its own, outside ADK.
-- [OpenTelemetry for any agent](/docs/agent-tracing/opentelemetry): the GenAI attributes Maple reads.

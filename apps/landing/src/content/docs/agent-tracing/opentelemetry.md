@@ -7,11 +7,9 @@ navLabel: "Any language (OTel GenAI)"
 icon: "opentelemetry"
 ---
 
-Use this guide when no other guide covers your agent, for example a hand-written agent loop. You write the agent spans yourself with any OpenTelemetry SDK. Maple needs three kinds: an `invoke_agent` span per user turn, a `chat` span per model call and an `execute_tool` span per tool call. The details that break most setups are the conversation id and sending messages as JSON strings.
+Use this guide when no other guide covers your agent, for example a hand-written agent loop. You write the agent spans yourself with any OpenTelemetry SDK. Maple needs three kinds: an `invoke_agent` span per user turn, a `chat` span per model call and an `execute_tool` span per tool call.
 
-Tested with the OpenTelemetry JS SDK 2.11 on Node.js 26 and the Python SDK 1.45 on Python 3.14, calling OpenRouter, against the [GenAI conventions](https://github.com/open-telemetry/semantic-conventions-genai) as of September 2026.
-
-If you use a framework, check the [framework guides](/docs/agent-tracing) first. Most of them emit these spans for you.
+Tested with the OpenTelemetry JS SDK 2.11 on Node.js 26 and the Python SDK 1.45 on Python 3.14, against the [GenAI conventions](https://github.com/open-telemetry/semantic-conventions-genai) as of September 2026.
 
 ## Quick setup with a coding agent
 
@@ -38,21 +36,21 @@ invoke_agent support                 gen_ai.conversation.id = chat_42
 └── chat openai/gpt-4o-mini          model call: final answer
 ```
 
-Maple classifies a span by `gen_ai.operation.name`, not by its name. Agent Sessions ignores a span without that attribute, even if it carries a model or token counts.
+Set `gen_ai.operation.name` on every span. Agent Sessions ignores spans without it.
 
 | Span (kind) | Attribute | Value |
 | --- | --- | --- |
 | `invoke_agent` (`INTERNAL`) | `gen_ai.operation.name` | `invoke_agent` |
-| | `gen_ai.agent.name` | `support`. Each sub-agent gets a lane named after it. |
+| | `gen_ai.agent.name` | `support` |
 | | `gen_ai.conversation.id` | your chat or thread id, see [sessions](#group-turns-into-one-session) |
 | | `gen_ai.input.messages`, `gen_ai.output.messages` | optional, JSON string |
-| `chat` (`CLIENT`) | `gen_ai.operation.name` | `chat` (`generate_content` and `text_completion` also work) |
+| `chat` (`CLIENT`) | `gen_ai.operation.name` | `chat` |
 | | `gen_ai.provider.name` | the API you called: `openai`, `anthropic`, `gcp.gemini`, `openrouter`... |
 | | `gen_ai.request.model`, `gen_ai.response.model` | model ids |
 | | `gen_ai.response.id` | the provider's response id |
 | | `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens` | int |
 | | `gen_ai.usage.cache_read.input_tokens`, `gen_ai.usage.cache_write.input_tokens`, `gen_ai.usage.reasoning.output_tokens` | int, optional |
-| | `gen_ai.usage.cost` | double in USD, optional (not part of the spec) |
+| | `gen_ai.usage.cost` | double in USD, optional |
 | | `gen_ai.system_instructions`, `gen_ai.input.messages`, `gen_ai.output.messages` | JSON string |
 | | `gen_ai.response.finish_reasons` | string array, e.g. `["stop"]` |
 | | `gen_ai.response.time_to_first_chunk` | double, in **seconds**, streamed calls |
@@ -62,9 +60,9 @@ Maple classifies a span by `gen_ai.operation.name`, not by its name. Agent Sessi
 | | `gen_ai.tool.call.arguments` | JSON string of an object |
 | | `gen_ai.tool.call.result` | JSON string of an object or array (a bare string is dropped) |
 
-Mark a failed span of any kind with status `ERROR` and an `error.type` attribute. When a tool fails, you can still return the error to the model as its result; the span status is what Maple counts.
+Mark a failed span with status `ERROR` and an `error.type` attribute, even when you return a tool's error to the model as its result.
 
-Put token usage on `chat` spans only, copied from the provider's response as is. Maple reads the input count by `gen_ai.provider.name`: for `anthropic`, send Anthropic's raw `input_tokens`, which exclude cache, or cached tokens are counted twice. On OpenAI's streaming API, set `stream_options: { include_usage: true }`, or streamed calls report no tokens. Maple never prices tokens, so a session without `gen_ai.usage.cost` shows as unpriced. OpenRouter returns the cost in `usage.cost`.
+Put token usage on `chat` spans only, copied from the provider's response as is. For `anthropic`, send Anthropic's raw `input_tokens`, which exclude cache, or cached tokens are counted twice. On OpenAI's streaming API, set `stream_options: { include_usage: true }`, or streamed calls report no tokens. Maple doesn't price tokens, so a session without `gen_ai.usage.cost` shows as unpriced. OpenRouter returns the cost in `usage.cost`.
 
 ### The message format
 
@@ -83,9 +81,9 @@ Put token usage on `chat` spans only, copied from the provider's response as is.
 
 Output messages add a `finish_reason` to each message. `gen_ai.system_instructions` is an array of parts without a role: `[{"type":"text","content":"You are a concise assistant."}]`.
 
-Always set these as a string holding JSON. Maple drops plain text, and it doesn't read messages from span events, logs or indexed keys like `gen_ai.prompt.0.content`. Leave `OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT` and `OTEL_SPAN_ATTRIBUTE_VALUE_LENGTH_LIMIT` unset: a long history cut mid-string no longer parses and Maple drops the whole attribute.
+Set these as JSON strings. Maple drops plain text and doesn't read span events, logs or indexed keys like `gen_ai.prompt.0.content`. Leave `OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT` and `OTEL_SPAN_ATTRIBUTE_VALUE_LENGTH_LIMIT` unset, because a truncated message array no longer parses.
 
-To keep prompts and results out of Maple, skip the five content attributes. Models, tokens, tool names and errors still show up, with an empty transcript.
+To keep prompts and results out of Maple, skip the five content attributes. Everything else still shows up, with an empty transcript.
 
 ## Export spans to Maple
 
@@ -148,18 +146,17 @@ provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
 trace.set_tracer_provider(provider)
 ```
 
-If your app already has a `TracerProvider` (from Sentry, Datadog, `opentelemetry-instrument` or `NodeSDK`), add the `BatchSpanProcessor` to it instead of creating a second one.
+If your app already has a `TracerProvider` (Sentry, Datadog, `opentelemetry-instrument`, `NodeSDK`), add the `BatchSpanProcessor` to it instead of creating a second one.
 
-Name the tracer after your app, like `support-agent`. A tracer named after a framework or gateway, such as `openrouter` or `langsmith`, makes Maple read that framework's session key and ignore `gen_ai.conversation.id`.
+Name the tracer after your app, like `support-agent`. A tracer named after a framework or gateway, such as `openrouter` or `langsmith`, makes Maple ignore `gen_ai.conversation.id`.
 
 ## Instrument the agent loop
 
-Complete, tested loops that stream, call tools and record every attribute above are in the skill: [TypeScript](https://github.com/MapleTechLabs/maple/blob/main/skills/maple-agent-tracing-opentelemetry/references/typescript.md), [Python](https://github.com/MapleTechLabs/maple/blob/main/skills/maple-agent-tracing-opentelemetry/references/python.md) and [Go](https://github.com/MapleTechLabs/maple/blob/main/skills/maple-agent-tracing-opentelemetry/references/go.md) (not compiled; run `go vet`). Keep your own loop and wrap its existing calls.
+Complete loops that stream, call tools and record every attribute above are in the skill: [TypeScript](https://github.com/MapleTechLabs/maple/blob/main/skills/maple-agent-tracing-opentelemetry/references/typescript.md), [Python](https://github.com/MapleTechLabs/maple/blob/main/skills/maple-agent-tracing-opentelemetry/references/python.md) and [Go](https://github.com/MapleTechLabs/maple/blob/main/skills/maple-agent-tracing-opentelemetry/references/go.md) (untested; run `go vet`). Wrap your own loop's existing calls the same way.
 
 This is the `execute_tool` span from the TypeScript version. The `chat` span follows the same pattern around each model call:
 
 ```ts
-// One tool call = one `execute_tool` span. A failure is marked on the span and returned to the model.
 async function runTool(agent: Agent, call: ToolCall) {
 	const name = call.function.name
 	return tracer.startActiveSpan(
@@ -196,7 +193,7 @@ Start the `chat` and `execute_tool` spans inside the `invoke_agent` span's callb
 
 ## Group turns into one session
 
-Set `gen_ai.conversation.id` on the `invoke_agent` span of every turn, using the id your app already has for the conversation. Every span in that trace joins the session. A chat backend passes it once per user message:
+Set `gen_ai.conversation.id` on the `invoke_agent` span of every turn, using the id your app already has for the conversation. A chat backend passes it once per user message:
 
 ```ts
 // One history per conversation. Store it in your database in a real backend.
@@ -210,12 +207,11 @@ export async function handleMessage(chatId: string, text: string, onText?: (delt
 }
 ```
 
-Without the id, each trace becomes its own one-turn session named `trace:<trace id>`. A UUID generated per request, or the trace id, has the same effect. Don't give sub-agents their own id: they inherit the session from the trace, and with two ids in one trace Maple keeps only one.
+Without the id, or with one generated per request, each trace becomes its own one-turn session named `trace:<trace id>`. Don't give sub-agents their own id; they inherit the session from the trace.
 
 If a framework writes its session id under a key Maple doesn't read, wrap each turn in your own span that carries `maple_ai.session.id`, and run the framework inside it:
 
 ```ts
-// chatId comes from your request; frameworkAgent is the framework's agent
 await tracer.startActiveSpan(
 	"invoke_agent support",
 	{
@@ -235,7 +231,7 @@ await tracer.startActiveSpan(
 )
 ```
 
-Put `maple_ai.session.id` only on your own wrapper span. On a framework's spans it replaces the framework's attribute decoding.
+Put `maple_ai.session.id` only on your own wrapper span, never on the framework's spans.
 
 ## Flush before a short-lived process exits
 
@@ -243,7 +239,7 @@ Put `maple_ai.session.id` only on your own wrapper span. On a framework's spans 
 
 ## Check that it works
 
-Run one conversation with two messages and a tool call, then open **Agent Sessions** in Maple. After a few seconds you should see one session with your conversation id, one turn per message with its transcript, and `chat` and `execute_tool` spans nested under each turn's `invoke_agent` span. Hand-written spans show the framework as **Unidentified**, which is expected.
+Run one conversation with two messages and a tool call, then open **Agent Sessions** in Maple. After a few seconds you should see one session with your conversation id, one turn per message with its transcript, and `chat` and `execute_tool` spans nested under each turn's `invoke_agent` span. The framework shows as **Unidentified**, which is expected.
 
 ## Troubleshooting
 
@@ -258,5 +254,4 @@ Run one conversation with two messages and a tool call, then open **Agent Sessio
 - [Agent Sessions overview](/docs/agent-sessions/overview)
 - [All agent tracing guides](/docs/agent-tracing)
 - [Provider SDKs](/docs/agent-tracing/provider-sdks), for auto-instrumented OpenAI, Anthropic and Gemini clients
-- [OpenTelemetry GenAI semantic conventions](https://github.com/open-telemetry/semantic-conventions-genai)
 - [GenAI spans](https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/gen-ai/gen-ai-spans.md) and [GenAI agent spans](https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/gen-ai/gen-ai-agent-spans.md)

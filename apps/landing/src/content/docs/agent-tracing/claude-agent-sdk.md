@@ -7,9 +7,9 @@ navLabel: "Claude Agent SDK & Claude Code"
 icon: "claude"
 ---
 
-Every Agent SDK `query()` starts the Claude Code CLI as a child process, and the CLI exports OpenTelemetry spans for each turn, model request and tool call. You configure it with environment variables, the same ones for the TypeScript SDK, the Python SDK and `claude` in your terminal. There is nothing else to install.
+The Claude Agent SDK and Claude Code export OpenTelemetry spans for each turn, model request and tool call once you set a few environment variables. There is nothing to install.
 
-Two things need care. Spans only exist with `CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1`, and in the SDK every `query()` starts a new session unless you resume the conversation's session id.
+Spans only exist with `CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1`, and in the SDK every `query()` starts a new session unless you resume the conversation's session id.
 
 Tested with `@anthropic-ai/claude-agent-sdk` 0.3.283 (TypeScript), `claude-agent-sdk` 0.2.160 (Python) and Claude Code 2.1.283.
 
@@ -29,11 +29,11 @@ Your ingest key is under **Settings → Ingestion**. EU organizations should say
 
 ## Pass the telemetry variables to the CLI
 
-Without `CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1` the CLI exports metrics and logs but no spans, and Agent Sessions stays empty. `OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf` is also required, because Claude Code has no default protocol. EU organizations use `https://ingest.eu.maple.dev`.
+`OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf` is required, because Claude Code has no default protocol. EU organizations use `https://ingest.eu.maple.dev`.
 
-The snippets below also drop any inherited `TRACEPARENT`. Claude Code's Bash tool and most CI systems set one, and without this your agent's turns nest inside that outer trace.
+The snippets below drop any inherited `TRACEPARENT`, which Claude Code's Bash tool and most CI systems set. Otherwise your agent's turns nest inside that outer trace.
 
-Never set an exporter to `console` in an SDK app. The SDK reads the CLI's standard output as its message stream.
+Never set an exporter to `console` in an SDK app. It breaks the SDK's message stream.
 
 ### TypeScript Agent SDK
 
@@ -105,9 +105,9 @@ MAPLE_ENV = {
 }
 ```
 
-Pass the env on every `query()` call, as in the next section. You can also set the same variables in your Dockerfile or deployment manifest and skip `env`, as long as no `TRACEPARENT` is set there.
+Pass the env on every `query()` call, as in the next section. Or set the same variables in your Dockerfile or deployment manifest and skip `env`, as long as no `TRACEPARENT` is set there.
 
-An `env` block in `~/.claude/settings.json` or the project's `.claude/settings.json` overrides `options.env`. A server app that doesn't need settings files can pass `settingSources: []` (Python `setting_sources=[]`).
+An `env` block in `~/.claude/settings.json` or the project's `.claude/settings.json` overrides `options.env`. Server apps can pass `settingSources: []` (Python `setting_sources=[]`) to skip settings files.
 
 ### Claude Code in your terminal, IDE or desktop app
 
@@ -131,11 +131,11 @@ Put the variables under `env` in `~/.claude/settings.json`, then start a new `cl
 }
 ```
 
-Use your user settings, your shell or [managed settings](https://code.claude.com/docs/en/managed-settings). Since 2.1.282, Claude Code ignores these variables in a repository's `.claude/settings.json`. Terminal sessions report the service `claude-code`, and each `claude` session is one Maple session.
+A repository's `.claude/settings.json` can't set these variables. Use your user settings, your shell or [managed settings](https://code.claude.com/docs/en/managed-settings). Terminal sessions report the service `claude-code`.
 
 ## Resume the session on every turn
 
-Maple groups Claude Code spans by `session.id`, which is the Claude session id. A chat backend that calls `query()` once per message without resuming gets one Maple session per message, and the agent forgets the previous message.
+A chat backend that calls `query()` once per message without resuming gets one Maple session per message, and the agent forgets the previous message.
 
 Store a UUID with each conversation. Pass it as `sessionId` on the first turn and as `resume` on every turn after:
 
@@ -177,23 +177,21 @@ async def reply(conversation: dict, text: str) -> str | None:
     return None
 ```
 
-`resume` reads the transcript from `~/.claude/projects/` on the machine that ran the earlier turns. If the next message can land on another host, use the SDK's [`sessionStore`](https://code.claude.com/docs/en/agent-sdk/session-storage) option. A Python `ClaudeSDKClient`, or a TypeScript `query()` fed an async iterable, keeps one session for all its turns and needs none of this.
+`resume` reads the earlier turns from `~/.claude/projects/` on the same machine. If messages can land on different hosts, use the SDK's [`sessionStore`](https://code.claude.com/docs/en/agent-sdk/session-storage) option. A Python `ClaudeSDKClient`, or a TypeScript `query()` fed an async iterable, keeps one session for all its turns and needs none of this.
 
 ## Choose what content to record
 
-Claude Code redacts content by default. `OTEL_LOG_USER_PROMPTS=1` records prompts, which title each turn. `OTEL_LOG_TOOL_DETAILS=1` records Bash commands, file paths and full tool error messages. `OTEL_LOG_TOOL_CONTENT=1` records what each tool returned.
-
-`OTEL_LOG_TOOL_CONTENT=1` sends whatever files Claude reads and whatever commands print, secrets included. Turn on only what your Maple organization is allowed to store.
+Claude Code redacts content by default. `OTEL_LOG_USER_PROMPTS=1` records prompts, which title each turn. `OTEL_LOG_TOOL_DETAILS=1` records Bash commands, file paths and tool error messages. `OTEL_LOG_TOOL_CONTENT=1` records tool results, including any secrets in files Claude reads or in command output. Turn on only what your Maple organization is allowed to store.
 
 ## Let each turn finish exporting
 
-The CLI exits at the end of each turn, and its final flush has a short timeout. Let every `query()` loop reach its `result` message; breaking out early, calling `close()` or aborting kills the CLI before it flushes. In a script, keep the process alive about 5 seconds after the last `query()`. On serverless platforms, finish the loop before returning the response.
+Let every `query()` loop reach its `result` message. Breaking out early, calling `close()` or aborting kills the CLI before it exports the turn. In a script, keep the process alive about 5 seconds after the last `query()`. On serverless platforms, finish the loop before returning the response.
 
 ## Check that it works
 
 Run a two-turn conversation through `reply()` with at least one tool call, then open **Agent Sessions**. You should see one session with the framework **Claude Agent SDK**, one turn per message titled with the prompt, model calls with their tokens, and the tool calls by name.
 
-The transcript has no assistant replies and cost shows as unpriced. Claude Code puts both only on log events, which you can search under **Logs** when the logs exporter is on.
+The transcript has no assistant replies and cost shows as unpriced. Both are on log events under **Logs** when the logs exporter is on.
 
 ## Troubleshooting
 
@@ -207,7 +205,5 @@ The transcript has no assistant replies and cost shows as unpriced. Claude Code 
 ## Related
 
 - [Agent Sessions overview](/docs/agent-sessions/overview): what Maple builds from these spans.
-- [Trace your AI agent](/docs/agent-tracing): guides for other frameworks.
 - [Provider SDKs](/docs/agent-tracing/provider-sdks): tracing direct calls with the Anthropic SDK instead of the Agent SDK.
 - Claude Code [Monitoring reference](https://code.claude.com/docs/en/monitoring-usage): every variable, span attribute and event.
-- Agent SDK [Observability with OpenTelemetry](https://code.claude.com/docs/en/agent-sdk/observability).

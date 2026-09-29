@@ -7,15 +7,13 @@ navLabel: "Strands Agents"
 icon: "strands"
 ---
 
-Strands Agents ships its own OpenTelemetry tracer: every `agent(...)` call becomes one trace with `invoke_agent`, `chat` and `execute_tool` spans. Maple recognizes them without an extra instrumentation library.
+Strands Agents has a built-in OpenTelemetry tracer, and Maple reads its spans without an extra instrumentation library. You set one environment variable so the transcript is recorded, and pass your conversation id as `session.id` on each agent.
 
-By default Strands writes prompts and replies as span events, which Maple doesn't read, so you set one environment variable to move them onto span attributes. You also pass your conversation id as `session.id` on each agent.
-
-Tested with `strands-agents` 1.57.1 (1.54 or newer required) and the TypeScript SDK `@strands-agents/sdk` 1.19.
+You need `strands-agents` 1.54 or newer, or the TypeScript SDK `@strands-agents/sdk` 1.19 or newer.
 
 ## Quick setup with a coding agent
 
-Copy this prompt into Claude Code, Codex, Cursor or another agent that can run shell commands. It installs the [maple-agent-tracing-strands](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-agent-tracing-strands) skill, which contains every step of this guide.
+Copy this prompt into a coding agent that can run shell commands, such as Claude Code, Codex or Cursor. It installs the [maple-agent-tracing-strands](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-agent-tracing-strands) skill and follows it.
 
 ```text
 Set up Maple agent tracing for Strands Agents in this project.
@@ -29,7 +27,7 @@ Your ingest key is in **Settings → Ingestion**.
 
 ## Install and configure the exporter
 
-The `otel` extra adds the OTLP/HTTP exporter. Add the extra for your model provider too (`openai`, `anthropic`, `litellm`; Bedrock needs none).
+Replace `openai` with your model provider's extra (`anthropic`, `litellm`; Bedrock needs none).
 
 ```bash
 pip install 'strands-agents[otel,openai]>=1.57'
@@ -48,7 +46,7 @@ export OTEL_SEMCONV_STABILITY_OPT_IN="gen_ai_latest_experimental,gen_ai_span_att
 
 For an EU organization, use `https://ingest.eu.maple.dev`. The exporter appends `/v1/traces` itself.
 
-`OTEL_SEMCONV_STABILITY_OPT_IN` is the important one. Its three values switch to the current GenAI message format, write messages as span attributes (without this the transcript is empty), and make each `invoke_agent` span report only that call's tokens. Strands reads it once, when the first `Agent` is created, so set it in the environment rather than in code.
+Without `OTEL_SEMCONV_STABILITY_OPT_IN` the transcript is empty and token counts are too high. Strands reads it when the first `Agent` is created, so set it in the environment rather than in code.
 
 To redact message content, append `gen_ai_unredacted_attributes=` with a `;`-separated allowlist of attributes to keep; everything else becomes `[REDACTED]`.
 
@@ -61,11 +59,11 @@ from strands.telemetry import StrandsTelemetry
 telemetry = StrandsTelemetry().setup_otlp_exporter()
 ```
 
-If your app already sets up a global `TracerProvider` (your web framework, `opentelemetry-instrument`, or the ADOT distro on AgentCore), skip `StrandsTelemetry()`. Add a `BatchSpanProcessor(OTLPSpanExporter(...))` pointing at Maple to that provider instead.
+If your app already sets up a global `TracerProvider` (for example `opentelemetry-instrument` or the ADOT distro on AgentCore), skip `StrandsTelemetry()` and add a `BatchSpanProcessor(OTLPSpanExporter(...))` pointing at Maple to that provider.
 
 ## Pass the conversation id as session.id
 
-Strands copies `trace_attributes` onto every span of the agent, and Maple groups Strands traces by `session.id`:
+Pass the conversation id in `trace_attributes`:
 
 ```py
 from strands import Agent
@@ -90,13 +88,13 @@ def handle_message(conversation_id: str, text: str) -> str:
 
 The session manager restores history but doesn't put its `session_id` on the spans, so you need both arguments. Use the conversation id your app already has, never a fresh UUID per request.
 
-Create the agent per request, as above. A shared module-level `Agent` would carry one user's id into everyone's traces. Give every agent a `name`: unnamed agents are all called `Strands Agents`, which merges sub-agents into one lane.
+Create the agent per request, as above. A shared module-level `Agent` would carry one user's id into everyone's traces. Give every agent a `name`, or sub-agents merge into one lane.
 
-With `agent.as_tool()` sub-agents, only the orchestrator needs `session.id`, because the sub-agents run inside its trace. For a `Swarm`, pass `trace_attributes={"session.id": conversation_id}` to the `Swarm`. For a `Graph`, set `graph.trace_attributes = {"session.id": conversation_id}` after `builder.build()`, which doesn't forward them.
+With `agent.as_tool()` sub-agents, only the orchestrator needs `session.id`. For a `Swarm`, pass `trace_attributes={"session.id": conversation_id}` to the `Swarm`. For a `Graph`, set `graph.trace_attributes = {"session.id": conversation_id}` after `builder.build()`.
 
 ## Flush in scripts and jobs
 
-Spans are exported in batches every few seconds. A long-running server needs nothing extra. Scripts, CLIs, notebooks and jobs lose their last spans unless they flush:
+A long-running server needs nothing extra. Scripts, notebooks and jobs lose their last spans unless they flush:
 
 ```py
 from telemetry import telemetry
@@ -108,11 +106,11 @@ finally:
     telemetry.tracer_provider.shutdown()
 ```
 
-On AWS Lambda, call `telemetry.tracer_provider.force_flush()` at the end of each invocation and don't call `shutdown()`, because the warm container reuses the provider.
+On AWS Lambda, call `telemetry.tracer_provider.force_flush()` at the end of each invocation and don't call `shutdown()`.
 
 ## TypeScript SDK
 
-The TypeScript SDK emits the same spans. Its OpenTelemetry packages are optional peer dependencies, so install them explicitly:
+Install the SDK with its OpenTelemetry packages:
 
 ```bash
 npm install @strands-agents/sdk @opentelemetry/api @opentelemetry/sdk-trace-base @opentelemetry/sdk-trace-node @opentelemetry/resources @opentelemetry/exporter-trace-otlp-http @opentelemetry/sdk-metrics @opentelemetry/exporter-metrics-otlp-http
@@ -153,13 +151,13 @@ try {
 }
 ```
 
-Set both keys in `traceAttributes`. With a custom service name, Maple can't tell the spans come from Strands and groups them by `gen_ai.conversation.id`, showing the framework as "Unidentified". Create the agent per request here too: a reused TypeScript agent reports its running token total on every turn.
+Set both keys in `traceAttributes`. With a custom service name Maple groups these spans by `gen_ai.conversation.id` and shows the framework as "Unidentified". Create the agent per request here too, since a reused TypeScript agent reports its running token total on every turn.
 
 ## Check that it works
 
 Run a conversation of two or three messages, including one that calls a tool, then open **Agent Sessions** in Maple. You should see one session per conversation id with framework **Strands Agents**, one turn per `agent(...)` call, and a transcript with the user messages, replies and tool calls.
 
-Cost shows as unpriced, because Strands doesn't report it. The sessions list currently shows about twice the real token count for Strands; the session's own page has the correct total.
+Cost shows as unpriced because Strands doesn't report it. The sessions list currently shows about twice the real token count; the session's own page has the correct total.
 
 ## Troubleshooting
 
@@ -172,6 +170,4 @@ Cost shows as unpriced, because Strands doesn't report it. The sessions list cur
 ## Related
 
 - [Agent Sessions overview](/docs/agent-sessions/overview)
-- [Agent tracing guides](/docs/agent-tracing)
 - [Strands Agents traces documentation](https://strandsagents.com/docs/user-guide/observability-evaluation/traces/)
-- [Strands telemetry tracer API reference](https://strandsagents.com/docs/api/python/strands.telemetry.tracer/)

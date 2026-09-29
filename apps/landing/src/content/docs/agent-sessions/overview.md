@@ -6,7 +6,7 @@ order: 1
 navLabel: "Overview"
 ---
 
-A chat backend handles each user message as its own request, so a ten-message conversation is ten traces. **Agent Sessions** groups those traces back into one conversation and shows it turn by turn. To send your agent's traces, pick your framework in [Trace your AI agent](/docs/agent-tracing).
+Each user message in a conversation is usually its own trace. **Agent Sessions** groups those traces into one conversation and shows it turn by turn. To send your agent's traces, pick your framework in [Trace your AI agent](/docs/agent-tracing).
 
 ## Sessions, turns and calls
 
@@ -28,16 +28,16 @@ The example below is a support agent where the customer asks to change a deliver
   <figcaption>The overview. The failed tool call leads the page: <code>update_shipping_address</code> returned <code>unsupported_destination</code> in turn 2.</figcaption>
 </figure>
 
-The **overview** splits the session's wall clock into model time, tool time and idle time, and totals cost and tokens per model. Here the agent was busy for 14 seconds of a 2 minute 25 second session; the rest was the customer typing.
+The **overview** splits the session's wall clock into model time, tool time and idle time, and totals cost and tokens per model.
 
-Below that is the verdict (completed, completed with warnings, or failed, with the span that ended it) and the checks behind it, failing ones first. The checks cover completion, context window, reply length, refusals, rate limits, provider errors, tool errors, tool arguments, tool timeouts, tool availability, repeated calls, stalls, prompt cache and structured output. A check that needs data your instrumentation doesn't record says it was skipped and what to capture.
+Below that is the verdict (completed, completed with warnings, or failed, with the span that ended it) and the checks behind it, failing ones first. A check that needs data your instrumentation doesn't record says it was skipped and what to capture.
 
 <figure class="shot">
   <img src="/screenshots/docs/agent-sessions-03-transcript.webp" alt="The transcript view of a session: system instructions, user and assistant messages in sequence, each model call annotated with its model, tokens, cost and finish reason, and a tool call row with its latency and payload sizes." loading="lazy" />
   <figcaption>The transcript. Each model call carries its model, tokens, cost and finish reason; tool calls sit where the model made them.</figcaption>
 </figure>
 
-The **transcript** is the conversation as the model saw it: system instructions, user and assistant messages, and tool calls with arguments and results. It needs message content on your spans, which most instrumentations leave off by default. Each framework guide shows the switch.
+The **transcript** is the conversation as the model saw it: system instructions, user and assistant messages, and tool calls with arguments and results. It needs message content on your spans, which most instrumentations leave off by default; each framework guide shows the switch.
 
 <figure class="shot">
   <img src="/screenshots/docs/agent-sessions-05-trace.webp" alt="The trace view of a session: three turns, each with an invoke_agent span, chat spans labeled with their model and token counts, and execute_tool spans, on a time axis with the idle gaps between turns removed. One tool span is marked with its error type." loading="lazy" />
@@ -52,8 +52,6 @@ The **trace** view puts every span of every turn on one time axis, with the idle
 </figure>
 
 The **list** has one row per session with its model, duration, call counts, tokens, cost and errors. Sort by cost to find expensive conversations, or filter to sessions that called a given tool.
-
-A session view loads up to 2,000 spans. Longer sessions show the first 2,000 and say so.
 
 ## Find the tools that fail
 
@@ -74,7 +72,7 @@ The **Tools** tab covers every tool call across all sessions.
   <figcaption><strong>What exactly happened?</strong> An error group opens on the failed calls themselves: arguments on the left, the result on the right, and a link to the trace.</figcaption>
 </figure>
 
-A tool call counts as failed when its span has an `ERROR` status or an `error.type` attribute. Failures with the same message are grouped, with ids and numbers masked, so a thousand `order 12345 not found` errors form one group.
+A tool call counts as failed when its span has an `ERROR` status or an `error.type` attribute. Failures with the same message, ignoring ids and numbers, form one group.
 
 ## Query sessions from your coding agent
 
@@ -88,4 +86,4 @@ The [MCP server](/docs/reference/mcp) exposes the same data. `list_agent_session
 - **Token totals look doubled.** Two instrumentations recorded the same model call, usually the framework's and a provider SDK instrumentor. Turn one off.
 - **Nothing appears at all.** Check **Explore → Traces** for the service first. No traces there means the exporter isn't reaching Maple, often a short-lived script that exits before flushing. Traces there but no session means the framework's tracing isn't on.
 
-A framework shown as **Unidentified** still gets sessions, transcripts and tools. If yours isn't covered, send the framework and a sample trace to [support@maple.dev](mailto:support@maple.dev) or [Discord](https://discord.gg/BnXjKuwJqP). Until then, [the OpenTelemetry GenAI guide](/docs/agent-tracing/opentelemetry) works for any agent in any language.
+A framework shown as **Unidentified** still gets sessions, transcripts and tools. If yours has no guide, [the OpenTelemetry GenAI guide](/docs/agent-tracing/opentelemetry) works for any agent, and a sample trace sent to [support@maple.dev](mailto:support@maple.dev) or [Discord](https://discord.gg/BnXjKuwJqP) helps us add one.

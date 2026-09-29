@@ -7,13 +7,13 @@ navLabel: "LangChain & LangGraph"
 icon: "langchain"
 ---
 
-LangChain and LangGraph report every run through callbacks, and OpenInference's `openinference-instrumentation-langchain` turns those runs into OpenTelemetry spans. Every `invoke()` starts a new trace, so you have to pass the conversation's `thread_id` for Maple to group a chat into one session.
+OpenInference's `openinference-instrumentation-langchain` sends LangChain and LangGraph runs to Maple. Pass the conversation's `thread_id` on every call so a chat becomes one session.
 
-Tested with LangChain 1.4 (`create_agent`), LangGraph 1.2 and `openinference-instrumentation-langchain` 0.1.76 on Python 3.10 or later. LangChain.js isn't covered yet.
+This guide covers Python 3.10 or later. LangChain.js isn't covered yet.
 
 ## Quick setup with a coding agent
 
-Copy this prompt into Claude Code, Codex, Cursor or another agent that can run shell commands. It installs the [maple-agent-tracing-langchain](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-agent-tracing-langchain) skill, which contains every step of this guide.
+Paste this prompt into Claude Code, Codex, Cursor or another coding agent. It installs the [maple-agent-tracing-langchain](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-agent-tracing-langchain) skill and follows it.
 
 ```text
 Set up Maple agent tracing for LangChain & LangGraph in this project.
@@ -33,7 +33,7 @@ pip install "langchain>=1.4" "langgraph>=1.2" "langchain-openai>=1.6" \
   "opentelemetry-sdk>=1.45" "opentelemetry-exporter-otlp-proto-http>=1.45"
 ```
 
-Pin `openinference-instrumentation` explicitly. Older versions lack the GenAI output this setup depends on.
+Keep the explicit `openinference-instrumentation` pin. Older versions don't work with this setup.
 
 ## Point the exporter at Maple
 
@@ -61,13 +61,11 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
 # The name= you gave create_agent(), and graph nodes that act as agents
 AGENT_NAMES = {"assistant"}
-# LangGraph's tool node and prompt templates: steps, not tool or model calls
+# Your tool node and prompt templates
 STEP_NAMES = {"tools", "ChatPromptTemplate"}
 
 
 class AgentSpans(SpanProcessor):
-    """Names your agents' spans for Maple (one lane per agent) and keeps graph steps out of the tool and model counts."""
-
     def on_start(self, span, parent_context=None):
         if span.instrumentation_scope.name != "openinference.instrumentation.langchain":
             return
@@ -78,7 +76,7 @@ class AgentSpans(SpanProcessor):
             span.set_attribute("gen_ai.operation.name", "invoke_workflow")
 
 
-provider = TracerProvider()  # reads OTEL_SERVICE_NAME and OTEL_RESOURCE_ATTRIBUTES
+provider = TracerProvider()
 provider.add_span_processor(AgentSpans())
 provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
 trace.set_tracer_provider(provider)
@@ -89,15 +87,15 @@ LangChainInstrumentor().instrument(
 )
 ```
 
-`enable_genai_semconv=True` is required. Without it, Maple ignores the `thread_id` and shows the transcript as raw JSON.
+Keep `enable_genai_semconv=True`. Without it, sessions don't group and the transcript shows as raw JSON.
 
-`AgentSpans` names your agents so Maple gives each one its own lane. Put every agent's `name=` in `AGENT_NAMES`, sub-agents included. `STEP_NAMES` keeps graph steps out of the tool and model counts; if your tool node has another name containing "tool", like `run_tools`, add it there.
+Put every agent's `name=` in `AGENT_NAMES`, sub-agents included, so each gets its own lane. If your tool node isn't called `tools`, add its name to `STEP_NAMES`.
 
-If the app already has a `TracerProvider` (from `opentelemetry-instrument`, Logfire or Sentry), add `AgentSpans()` and the exporter to that provider and pass it to `instrument()`.
+If the app already has a `TracerProvider` (from `opentelemetry-instrument`, Logfire or Sentry), add `AgentSpans()` and the exporter to it and pass it to `instrument()`.
 
 ## Group a conversation with thread_id
 
-Maple groups turns into a session by `gen_ai.conversation.id`, which the instrumentor fills from the run's `thread_id`. Pass your app's conversation id on every `invoke()`, `stream()` and `Command(resume=...)`:
+Pass your app's conversation id as `thread_id` on every `invoke()`, `stream()` and `Command(resume=...)`:
 
 ```py
 import tracing  # first, before the first invoke()
@@ -122,15 +120,13 @@ def handle_message(conversation_id: str, text: str) -> str:
     return result["messages"][-1].content
 ```
 
-This works with or without a checkpointer. A plain chain (`prompt | model`, no graph) doesn't read `configurable`, so pass `{"metadata": {"thread_id": conversation_id}}` instead. Agents called from inside a tool inherit the caller's id.
+Use the id your app stores the chat under. A new UUID per request gives you one session per message. A plain chain (`prompt | model`, no graph) ignores `configurable`, so pass `{"metadata": {"thread_id": conversation_id}}` instead.
 
-Use the id your app stores the chat under. A new UUID per request gives you one session per message.
-
-`stream_usage=True` makes `ChatOpenAI` report tokens on streamed replies when it talks to a server other than api.openai.com, such as a custom `base_url`, vLLM or a gateway.
+Keep `stream_usage=True` if `ChatOpenAI` uses a custom `base_url`, vLLM or a gateway. Without it, streamed replies have no tokens.
 
 ## Flush in short-lived processes
 
-The SDK flushes on a normal interpreter exit, and long-running servers need nothing. In serverless handlers, notebooks and task workers, flush after each run:
+Long-running servers need nothing. In serverless handlers, notebooks and task workers, flush after each run:
 
 ```py
 from tracing import provider
@@ -138,16 +134,16 @@ from tracing import provider
 try:
     handle_message("conv-42", "What's the weather in Berlin?")
 finally:
-    provider.force_flush()  # serverless: before returning; notebooks: after each run
+    provider.force_flush()
 ```
 
-On LangGraph Server (`langgraph dev` or self-hosted), import `tracing` at the top of the graph module that `langgraph.json` points to, and set the `OTEL_*` variables in the server's environment. Each server thread already carries its `thread_id`.
+On LangGraph Server (`langgraph dev` or self-hosted), import `tracing` at the top of the graph module that `langgraph.json` points to, and set the `OTEL_*` variables in the server's environment. Server threads group into sessions without extra code.
 
 ## Check that it works
 
 Send two or three messages with the same conversation id, one of them using a tool, then open **Agent Sessions**. Within a minute you should see one session with one turn per `invoke()`, a readable transcript, `ChatOpenAI` model calls with tokens, and tool calls named after your tools.
 
-The framework shows as **Unidentified** and cost as **unpriced**. Both are expected. With a checkpointer, every turn's label repeats the conversation's first message, but the transcript inside each turn is correct.
+The framework shows as **Unidentified** and cost as **unpriced**, which is expected. With a checkpointer, every turn is labeled with the conversation's first message. The transcript inside each turn is still correct.
 
 ## Troubleshooting
 
@@ -160,7 +156,4 @@ The framework shows as **Unidentified** and cost as **unpriced**. Both are expec
 ## Related
 
 - [Agent Sessions overview](/docs/agent-sessions/overview): what Maple builds from these spans.
-- [Trace your AI agent](/docs/agent-tracing): guides for every other framework.
-- [openinference-instrumentation-langchain](https://github.com/Arize-ai/openinference/tree/main/python/instrumentation/openinference-instrumentation-langchain): the instrumentor's source.
-- [Trace with OpenTelemetry](https://docs.langchain.com/langsmith/trace-with-opentelemetry): LangSmith's OpenTelemetry export.
 - [OpenRouter](/docs/agent-tracing/openrouter): if your models go through OpenRouter.

@@ -7,13 +7,11 @@ navLabel: "OpenRouter"
 icon: "openrouter"
 ---
 
-OpenRouter Broadcast exports a trace for every request made with your OpenRouter account, with the model, tokens, the cost OpenRouter charged, and the prompt and completion. You set it up once in the OpenRouter dashboard. The one thing to change in your code is the `session_id` field: without it, every model call is its own session.
-
-Code samples use the `openai` SDK (npm 7.23, PyPI 3.20), `@openrouter/ai-sdk-provider` 3.1 and `@openrouter/sdk` 1.3.
+OpenRouter Broadcast sends a trace of every request on your OpenRouter account to Maple, with tokens, cost, prompt and completion. You set it up once in the OpenRouter dashboard, then add a `session_id` to your requests. Without it, every model call is its own session.
 
 ## Quick setup with a coding agent
 
-Copy this prompt into Claude Code, Codex, Cursor or another agent that can run shell commands. It installs the [maple-agent-tracing-openrouter](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-agent-tracing-openrouter) skill, which contains every step of this guide.
+Copy this prompt into Claude Code, Codex, Cursor or another agent that can run shell commands. It installs the [maple-agent-tracing-openrouter](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-agent-tracing-openrouter) skill and follows it.
 
 ```text
 Set up Maple agent tracing for OpenRouter in this project.
@@ -23,7 +21,7 @@ Install the skill with `npx skills add MapleTechLabs/maple/skills --skill maple-
 My Maple ingest key is maple_pk_... and my organization is in the US region.
 ```
 
-Your ingest key is in **Settings → Ingestion**. The agent can't change your OpenRouter dashboard, so it ends by printing the values to enter in the next section.
+Your ingest key is in **Settings → Ingestion**. The agent prints the values for the OpenRouter dashboard, which you enter yourself as described in the next section.
 
 ## Point Broadcast at Maple
 
@@ -42,11 +40,11 @@ Your ingest key is in **Settings → Ingestion**. The agent can't change your Op
 
 4. Click **Test Connection**. OpenRouter only saves the destination if the test passes.
 
-Leave the sampling rate at 1.0. Sampling is per session, so a lower rate drops whole conversations. Leave the API key filter empty to export every key, and if your app calls `eu.openrouter.ai`, add the Europe data region.
+Leave the sampling rate at 1.0, since a lower rate drops whole conversations. Leave the API key filter empty. If your app calls `eu.openrouter.ai`, add the Europe data region.
 
 ## Send a session id with every request
 
-Maple groups calls into a session by the `session_id` field of your request body (or the `x-session-id` header). Send the same id on every request of a conversation, such as your chat thread id, and a new one for each conversation.
+Send a `session_id` field in the request body (or an `x-session-id` header). Use the same id on every request of a conversation, such as your chat thread id, and a new one for each conversation.
 
 With the `openai` SDK in TypeScript, the field isn't in the types, so it needs a `@ts-expect-error`:
 
@@ -101,14 +99,13 @@ OpenRouter's own SDKs have a typed field: `sessionId` in `@openrouter/sdk` and `
 
 ## Nest Broadcast under your own traces
 
-Skip this if OpenRouter is your only source of traces. If your app already sends its own traces to Maple, every model call is otherwise recorded twice. Pass the active span's ids in the `trace` field, and OpenRouter places its spans inside your trace.
+Skip this if OpenRouter is your only source of traces. If your app also sends its own traces to Maple, every model call is recorded twice. Pass the active span's ids in the `trace` field so OpenRouter places its spans inside your trace.
 
 In TypeScript, wrap `fetch` and pass it to the client (`new OpenAI({ baseURL, apiKey, fetch: openRouterFetch })` or `createOpenRouter({ apiKey, fetch: openRouterFetch })`):
 
 ```ts
 import { trace } from "@opentelemetry/api"
 
-// Nests each OpenRouter Broadcast trace under the span that made the request.
 export const openRouterFetch: typeof fetch = (input, init) => {
 	const span = trace.getActiveSpan()?.spanContext()
 	if (span && typeof init?.body === "string") {
@@ -142,13 +139,13 @@ client.chat.completions.create(model=model, messages=messages, extra_body=openro
 
 Use the same value for `session_id` as your framework's conversation id.
 
-Broadcast only sees requests to OpenRouter, so it has no tool calls or agent names. For those, instrument your app with its [framework guide](/docs/agent-tracing) and nest Broadcast under it as shown here.
+Broadcast has no tool calls or agent names. For those, trace your app with its [framework guide](/docs/agent-tracing) and nest Broadcast under it as shown here.
 
 ## Check that it works
 
-Broadcast sends traces from OpenRouter's servers, so your app needs no flush, but expect about a minute of delay. Run a conversation of three turns with the same `session_id`, then open **Agent Sessions** and filter by service `openrouter`.
+Run a conversation of three turns with the same `session_id`. After about a minute, open **Agent Sessions** and filter by service `openrouter`.
 
-You should see one session named after your `session_id`, with vendor **OpenRouter**, an `LLM Generation` span per model call, and tokens and cost in USD. The transcript shows each call's prompt and completion as a raw JSON block. To keep content out of Maple, turn on **Privacy Mode** on the destination. Tokens and cost still arrive.
+You should see one session named after your `session_id`, with vendor **OpenRouter**, an `LLM Generation` span per model call, and tokens and cost in USD. The transcript shows each call's prompt and completion as a raw JSON block. To keep content out of Maple, turn on **Privacy Mode** on the destination.
 
 ## Troubleshooting
 
@@ -161,6 +158,5 @@ You should see one session named after your `session_id`, with vendor **OpenRout
 ## Related
 
 - [Agent Sessions overview](/docs/agent-sessions/overview)
-- [Agent tracing guides](/docs/agent-tracing)
-- [OpenRouter Broadcast](https://openrouter.ai/docs/guides/features/broadcast) and its [OpenTelemetry Collector destination](https://openrouter.ai/docs/guides/features/broadcast/otel-collector)
+- [OpenRouter Broadcast](https://openrouter.ai/docs/guides/features/broadcast)
 - [Vercel AI SDK](/docs/agent-tracing/vercel-ai-sdk), if you call OpenRouter through `@openrouter/ai-sdk-provider`

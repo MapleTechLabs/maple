@@ -7,9 +7,7 @@ navLabel: "OpenAI, Anthropic & Gemini SDKs"
 icon: "openai"
 ---
 
-If your agent is your own loop around `client.chat.completions.create`, `client.messages.create` or `client.models.generate_content`, an instrumentation library can record each model call. It can't see where a turn starts, which conversation it belongs to, or the tools your code runs, so you add those spans yourself and put the conversation id on the turn span. You also have to turn on content capture, which is off by default.
-
-Tested with Python `openai` 3.20.0 and `anthropic` 1.8.0 (instrumentations 1.2b0) and TypeScript `openai` 7.23.0. The Gemini path follows the instrumentation's documentation and hasn't been run against a live model yet. If you use an agent framework on top of these SDKs, use [that framework's guide](/docs/agent-tracing) instead.
+Use this guide when your agent is your own loop around `client.chat.completions.create`, `client.messages.create` or `client.models.generate_content`. An instrumentation library records each model call, and you add the turn and tool spans and put the conversation id on the turn span. If you use an agent framework on top of these SDKs, use [that framework's guide](/docs/agent-tracing) instead.
 
 ## Quick setup with a coding agent
 
@@ -27,8 +25,6 @@ Your ingest key is in **Settings → Ingestion**. EU organizations should say EU
 
 ## Configure the exporter
 
-Both languages read the standard OpenTelemetry variables:
-
 ```bash
 export OTEL_EXPORTER_OTLP_ENDPOINT="https://ingest.maple.dev"
 export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer YOUR_INGEST_KEY"
@@ -36,11 +32,11 @@ export OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"
 export OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT="SPAN_ONLY"
 ```
 
-For an EU organization, use `https://ingest.eu.maple.dev`. `SPAN_ONLY` records prompts and replies as span attributes, which Maple needs for the transcript. Leave it unset to keep content out of Maple. `EVENT_ONLY` or `true` leaves the transcript empty.
+For an EU organization, use `https://ingest.eu.maple.dev`. `SPAN_ONLY` records prompts and replies for the transcript. Leave it unset to keep content out of Maple. `EVENT_ONLY` or `true` leaves the transcript empty.
 
 ## Python: install the GenAI instrumentation
 
-Use the official OpenTelemetry GenAI packages. Note the `genai` in the name: `opentelemetry-instrumentation-openai` is a different project (OpenLLMetry), and `opentelemetry-instrumentation-openai-v2` is deprecated.
+Install the `genai` packages below, not `opentelemetry-instrumentation-openai` or `opentelemetry-instrumentation-openai-v2`.
 
 ```bash
 pip install "opentelemetry-sdk>=1.45" "opentelemetry-exporter-otlp-proto-http>=1.45" \
@@ -59,7 +55,6 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
 provider = TracerProvider(resource=Resource.create({"service.name": "support-agent"}))
-# Reads OTEL_EXPORTER_OTLP_ENDPOINT and OTEL_EXPORTER_OTLP_HEADERS
 provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
 trace.set_tracer_provider(provider)
 
@@ -68,11 +63,11 @@ OpenAIInstrumentor().instrument()
 # from opentelemetry.instrumentation.google_genai import GoogleGenAiSdkInstrumentor
 ```
 
-Import `tracing` first in your entry point so the SDK is patched before the first request. If your app already has a `TracerProvider` (Sentry, Logfire, Datadog), add the `BatchSpanProcessor` to it instead of creating a second.
+Import `tracing` first in your entry point. If your app already has a `TracerProvider` (Sentry, Logfire, Datadog), add the `BatchSpanProcessor` to it instead.
 
 ## Python: wrap each turn and tool call
 
-Maple groups traces into a session by `gen_ai.conversation.id`. Put it on an `invoke_agent` span that wraps the whole turn, so the model and tool calls inside become one trace. Use the id your app already stores for the conversation (thread id, ticket id), not a new UUID per request.
+Wrap each turn in an `invoke_agent` span that carries `gen_ai.conversation.id`. Use the id your app already stores for the conversation (thread id, ticket id), not a new UUID per request.
 
 ```py
 # agent_tracing.py
@@ -85,7 +80,6 @@ from opentelemetry.trace import Status, StatusCode
 
 tracer = trace.get_tracer("support-agent")
 
-# Same switch the instrumentors read, so one env var controls content everywhere.
 CAPTURE_CONTENT = os.environ.get(
     "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", ""
 ).upper() in ("SPAN_ONLY", "SPAN_AND_EVENT")
@@ -114,7 +108,6 @@ def run_tool(call_id: str, name: str, arguments: str, tool) -> str:
         try:
             result = json.dumps(tool(**json.loads(arguments)))
         except Exception as exc:
-            # The exception never leaves this block, so mark the span failed by hand.
             span.record_exception(exc)
             span.set_status(Status(StatusCode.ERROR, str(exc)))
             span.set_attribute("error.type", type(exc).__qualname__)
@@ -157,7 +150,7 @@ With Anthropic, run each `tool_use` block with `run_tool(block.id, block.name, j
 
 ## TypeScript: set up the exporter and helper
 
-There is no OpenTelemetry instrumentation that works with `openai` 7 or writes messages where Maple reads them, so a small helper records the turn, each tool call and each model call.
+No OpenTelemetry instrumentation works for `openai` 7 in TypeScript, so this helper records the turn, each tool call and each model call.
 
 ```bash
 npm install @opentelemetry/api @opentelemetry/sdk-node @opentelemetry/exporter-trace-otlp-proto
@@ -168,7 +161,6 @@ npm install @opentelemetry/api @opentelemetry/sdk-node @opentelemetry/exporter-t
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto"
 import { NodeSDK, tracing } from "@opentelemetry/sdk-node"
 
-// The exporter reads OTEL_EXPORTER_OTLP_ENDPOINT and OTEL_EXPORTER_OTLP_HEADERS.
 export const spanProcessor = new tracing.BatchSpanProcessor(new OTLPTraceExporter())
 
 export const sdk = new NodeSDK({ serviceName: "support-agent", spanProcessors: [spanProcessor] })
@@ -258,7 +250,7 @@ export function tracedChat(client: OpenAI, params: ChatParams, onText?: (delta: 
 	})
 }
 
-// OpenAI chat messages -> the {role, parts} shape Maple renders as a transcript. Text and tool calls only.
+// Converts OpenAI messages to Maple's transcript format. Text and tool calls only.
 function toGenAiMessage(message: OpenAI.Chat.ChatCompletionMessageParam | OpenAI.Chat.ChatCompletionMessage) {
 	if (message.role === "tool") {
 		return { role: "tool", parts: [{ type: "tool_call_response", id: message.tool_call_id, response: message.content }] }
@@ -337,11 +329,11 @@ For `@anthropic-ai/sdk` or `@google/genai`, copy `tracedChat` and map that SDK's
 
 ## Sub-agents, streaming and cost
 
-A sub-agent is an agent run inside a tool call. Call it through `run_tool` and wrap its loop in `agent_span` with its own name and no conversation id. Maple draws one lane per agent name.
+Run a sub-agent inside `run_tool` and wrap its loop in `agent_span` with its own name and no conversation id.
 
 When you stream OpenAI Chat Completions in Python, pass `stream_options={"include_usage": True}`, or the call shows 0 tokens. The TypeScript helper sets it for you.
 
-Python sessions show as unpriced, because the instrumentations record no cost. The TypeScript helper records OpenRouter's `usage.cost` when you call through OpenRouter.
+Python sessions show as unpriced. The TypeScript helper records cost only when you call through OpenRouter.
 
 ## Flush before a short-lived process exits
 
@@ -349,7 +341,7 @@ In Python, a serverless handler or notebook should call `provider.force_flush()`
 
 ## Check that it works
 
-Run a conversation of two or three messages with a tool call, flush, and open **Agent Sessions** in Maple. You should see one session with your conversation id, one turn per user message, and a transcript with the replies and tool calls. The framework column says **Unidentified**, which is expected for this setup.
+Run a conversation of two or three messages with a tool call, flush, and open **Agent Sessions** in Maple. You should see one session with your conversation id, one turn per user message, and a transcript with the replies and tool calls. The framework is **Unidentified** for this setup.
 
 ## Troubleshooting
 
@@ -362,7 +354,5 @@ Run a conversation of two or three messages with a tool call, flush, and open **
 ## Related
 
 - [Agent Sessions overview](/docs/agent-sessions/overview)
-- [Agent tracing guides](/docs/agent-tracing)
 - [OpenRouter](/docs/agent-tracing/openrouter), if your calls go through OpenRouter
 - [OpenTelemetry GenAI instrumentations for Python](https://github.com/open-telemetry/opentelemetry-python-genai)
-- [OpenTelemetry GenAI semantic conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/)

@@ -7,13 +7,11 @@ navLabel: "CrewAI"
 icon: "crewai"
 ---
 
-CrewAI doesn't export traces to your backend on its own. OpenInference's `openinference-instrumentation-crewai` records crews, agents and tools, and a second instrumentor for the SDK CrewAI calls records the model calls, prompts and tokens. Without that second instrumentor you get no transcript, and without a session id every `kickoff()` is its own session.
-
-Tested with CrewAI 1.15, `openinference-instrumentation-crewai` 1.1.18 and `openinference-instrumentation-openai` 0.1.61 on Python 3.10 to 3.13.
+CrewAI needs two OpenInference instrumentors: `openinference-instrumentation-crewai` for crews, agents and tools, and one for your model provider, which records prompts and tokens. You also wrap every `kickoff()` in a conversation id so a chat becomes one session.
 
 ## Quick setup with a coding agent
 
-Copy this prompt into Claude Code, Codex, Cursor or another agent that can run shell commands. It installs the [maple-agent-tracing-crewai](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-agent-tracing-crewai) skill, which contains every step of this guide.
+Paste this prompt into Claude Code, Codex, Cursor or another coding agent. It installs the [maple-agent-tracing-crewai](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-agent-tracing-crewai) skill and follows it.
 
 ```text
 Set up Maple agent tracing for CrewAI in this project.
@@ -35,15 +33,15 @@ pip install "crewai>=1.15" "openinference-instrumentation-crewai>=1.1.18" \
 
 Pick the model instrumentor by the model string you pass to `LLM(...)`:
 
-| Model string | SDK CrewAI calls | Instrumentor |
-| --- | --- | --- |
-| `openai/…`, `openrouter/…`, `deepseek/…`, `ollama/…`, `custom_openai=True`, or a bare name like `gpt-4.1-mini` | `openai` | `openinference-instrumentation-openai` |
-| `anthropic/…` or a bare `claude-…` | `anthropic` | `openinference-instrumentation-anthropic` |
-| `gemini/…` or a bare `gemini-…` | `google-genai` | `openinference-instrumentation-google-genai` |
-| `bedrock/…` | `boto3` | `openinference-instrumentation-bedrock` |
-| Anything else (needs `crewai[litellm]`) | `litellm` | `openinference-instrumentation-litellm` |
+| Model string | Instrumentor |
+| --- | --- |
+| `openai/…`, `openrouter/…`, `deepseek/…`, `ollama/…`, `custom_openai=True`, or a bare name like `gpt-4.1-mini` | `openinference-instrumentation-openai` |
+| `anthropic/…` or a bare `claude-…` | `openinference-instrumentation-anthropic` |
+| `gemini/…` or a bare `gemini-…` | `openinference-instrumentation-google-genai` |
+| `bedrock/…` | `openinference-instrumentation-bedrock` |
+| Anything else (needs `crewai[litellm]`) | `openinference-instrumentation-litellm` |
 
-Install only the ones your crews use. The LiteLLM instrumentor records nothing for the native providers in the first four rows.
+Install only the ones your crews use. The LiteLLM instrumentor records nothing for the first four rows.
 
 ## Point the exporter at Maple
 
@@ -58,7 +56,7 @@ export CREWAI_TRACING_ENABLED=false
 
 EU organizations use `https://ingest.eu.maple.dev`. If you pass `endpoint=` to `OTLPSpanExporter` in code instead, it has to end in `/v1/traces`.
 
-The last two variables turn off CrewAI's anonymous analytics and its own trace uploader, whose first-run prompt waits for input at the end of a run. Don't use `OTEL_SDK_DISABLED=true` for this, because it disables your Maple traces too.
+The last two turn off CrewAI's own telemetry and a first-run prompt that blocks the process at exit. Don't use `OTEL_SDK_DISABLED=true` instead, because it disables your Maple traces too.
 
 ## Initialize tracing
 
@@ -76,11 +74,7 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
 
 class CrewAIAgentNames(SpanProcessor):
-    """Copies each CrewAI agent's role to gen_ai.agent.name, which Maple uses for agent lanes."""
-
     def on_start(self, span, parent_context=None):
-        # The instrumentor records the role (graph.node.id) just after the agent span starts,
-        # so name the agent span when its first child starts, while it's still open.
         parent = trace.get_current_span(parent_context)
         attrs = getattr(parent, "attributes", None) or {}
         role = attrs.get("graph.node.id")
@@ -88,7 +82,7 @@ class CrewAIAgentNames(SpanProcessor):
             parent.set_attribute("gen_ai.agent.name", role)
 
 
-provider = TracerProvider()  # reads OTEL_SERVICE_NAME and OTEL_RESOURCE_ATTRIBUTES
+provider = TracerProvider()
 provider.add_span_processor(CrewAIAgentNames())
 provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
 trace.set_tracer_provider(provider)
@@ -98,9 +92,9 @@ CrewAIInstrumentor().instrument(tracer_provider=provider, config=config, skip_de
 OpenAIInstrumentor().instrument(tracer_provider=provider, config=config, skip_dep_check=True)
 ```
 
-Pass `config` with `enable_genai_semconv=True` to every instrumentor, or the session page has no transcript and no tool details. `CrewAIAgentNames` gives each agent role its own lane. `skip_dep_check=True` stops an instrumentor from silently skipping itself when its version check disagrees with your installed packages.
+Pass `config` to every instrumentor, or the session has no transcript. Keep `skip_dep_check=True`, or an instrumentor can silently skip itself.
 
-If the app already has a `TracerProvider` (from `opentelemetry-instrument`, Logfire or Sentry), add `CrewAIAgentNames()` and the exporter to that provider and pass it to `instrument()`.
+If the app already has a `TracerProvider` (from `opentelemetry-instrument`, Logfire or Sentry), add `CrewAIAgentNames()` and the exporter to it and pass it to `instrument()`.
 
 ## Group a conversation into one session
 
@@ -137,15 +131,15 @@ def handle_message(conversation_id: str, text: str, history: str) -> str:
         return build_crew(text, history).kickoff().raw
 ```
 
-Put the user's message first in the task description, because Maple labels each turn with the first line of the prompt. Name the crew, or its root span gets a new `Crew_<uuid>` name on every request. `crew_id` and `crew_key` don't work as conversation ids.
+Put the user's message first in the task description, because Maple labels each turn with its first line. Give the crew a `name=`. `crew_id` and `crew_key` don't work as conversation ids.
 
 For conversational flows, wrap `flow.handle_turn(text, session_id=conversation_id)` in the same `using_session` and set `name = "support_flow"` on the flow class.
 
-Use `kickoff()` or `await crew.kickoff_async()`. The instrumentor doesn't patch `akickoff()`, so with it every model and tool call becomes its own trace.
+Use `kickoff()` or `await crew.kickoff_async()`, never `akickoff()`, which isn't traced as one run.
 
 ## Streaming crews
 
-`Crew(stream=True)` calls `kickoff()` twice, which gives each message an extra empty turn. Wrap the streamed turn in one span of your own:
+`Crew(stream=True)` adds an empty turn to every message. Wrap the streamed turn in one span of your own:
 
 ```py
 from opentelemetry import trace
@@ -169,13 +163,13 @@ def stream_message(conversation_id: str, text: str, history: str, send) -> None:
 
 ## Flush in short-lived processes
 
-The SDK flushes on a normal interpreter exit, which covers servers and `crewai run`. In serverless handlers and notebooks, import `provider` from `tracing` and call `provider.force_flush()` in a `finally` after each run.
+Servers and `crewai run` need nothing. In serverless handlers and notebooks, import `provider` from `tracing` and call `provider.force_flush()` in a `finally` after each run.
 
 ## Check that it works
 
 Send two or three messages with the same conversation id, one of them using a tool, then open **Agent Sessions**. Within a minute you should see one session labeled **CrewAI**, with one turn per `kickoff()` starting at `support.kickoff`, `ChatCompletion` model calls with tokens, tool calls like `get_weather.run`, and one lane per agent role.
 
-Cost shows as **unpriced** unless your models go through LiteLLM. That's expected.
+Cost shows as **unpriced** unless your models go through LiteLLM, which is expected.
 
 ## Troubleshooting
 
@@ -188,7 +182,4 @@ Cost shows as **unpriced** unless your models go through LiteLLM. That's expecte
 ## Related
 
 - [Agent Sessions overview](/docs/agent-sessions/overview): what Maple builds from these spans.
-- [Trace your AI agent](/docs/agent-tracing): guides for every other framework.
-- [CrewAI telemetry](https://docs.crewai.com/en/telemetry): what CrewAI's own analytics collect and how to turn them off.
-- [openinference-instrumentation-crewai](https://github.com/Arize-ai/openinference/tree/main/python/instrumentation/openinference-instrumentation-crewai): the instrumentor's source.
 - [LiteLLM](/docs/agent-tracing/litellm) and [OpenRouter](/docs/agent-tracing/openrouter): if your models go through either gateway.

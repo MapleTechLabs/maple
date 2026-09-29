@@ -7,13 +7,11 @@ navLabel: "LlamaIndex"
 icon: "llamaindex"
 ---
 
-OpenInference's `openinference-instrumentation-llama-index` turns LlamaIndex agent runs, workflow steps, model calls and tool calls into OpenTelemetry spans. It needs a small span processor to avoid counting each model call two or three times, and you have to wrap every `agent.run()` in a conversation id, or each message becomes its own session.
-
-Tested with llama-index-core 0.14.25 and `openinference-instrumentation-llama-index` 4.5.2 on Python 3.10 or later, using `FunctionAgent`, `AgentWorkflow` and custom `Workflow` classes.
+OpenInference's `openinference-instrumentation-llama-index` sends LlamaIndex agents and workflows to Maple. You add a small span processor and wrap every `agent.run()` in a conversation id so a chat becomes one session.
 
 ## Quick setup with a coding agent
 
-Copy this prompt into Claude Code, Codex, Cursor or another agent that can run shell commands. It installs the [maple-agent-tracing-llamaindex](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-agent-tracing-llamaindex) skill, which contains every step of this guide.
+Paste this prompt into Claude Code, Codex, Cursor or another coding agent. It installs the [maple-agent-tracing-llamaindex](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-agent-tracing-llamaindex) skill and follows it.
 
 ```text
 Set up Maple agent tracing for LlamaIndex in this project.
@@ -32,9 +30,9 @@ pip install "llama-index-core>=0.14.25" "openinference-instrumentation-llama-ind
   "opentelemetry-sdk>=1.45" "opentelemetry-exporter-otlp-proto-http>=1.45"
 ```
 
-Add your model package (`llama-index-llms-openai`, `llama-index-llms-openrouter`, ...) as usual. On llama-index-core older than 0.14.19 the instrumentor logs a dependency conflict and instruments nothing.
+Add your model package (`llama-index-llms-openai`, `llama-index-llms-openrouter`, ...) as usual.
 
-Use this instead of LlamaIndex's own `llama-index-observability-otel`, which puts the prompt and reply in span events that Maple doesn't read. Don't run both.
+If the app uses LlamaIndex's own `llama-index-observability-otel`, remove it. Maple can't read its transcripts, and running both doubles every span.
 
 ## Point the exporter at Maple
 
@@ -66,21 +64,16 @@ LLM_METHODS = (".chat", ".achat", ".stream_chat", ".astream_chat",
 
 
 class LlamaIndexForMaple(SpanProcessor):
-    """Sits in front of the exporter: one span per model and tool call, agent names, no false HITL failures."""
-
     def __init__(self, exporter_processor: SpanProcessor):
         self._next = exporter_processor
         self._open_llm_spans = {}
 
     def on_start(self, span, parent_context=None):
-        # Maple labels a span "LlamaIndex" by a llamaindex.* key; OpenInference writes none
         span.set_attribute("llamaindex.instrumentor", "openinference")
-        # instrument_tags({"gen_ai.agent.name": ...}) becomes an attribute, so sub-agents get lanes
         agent_name = active_instrument_tags.get().get("gen_ai.agent.name")
         if agent_name:
             span.set_attribute("gen_ai.agent.name", agent_name)
         if span.name.endswith((".call_tool", ".aggregate_tool_results")):
-            # agent workflow steps around the tool span; by name alone Maple would count them as tool calls
             span.set_attribute("gen_ai.operation.name", "invoke_workflow")
         if span.name.endswith(LLM_METHODS):
             self._open_llm_spans[span.context.span_id] = span
@@ -89,12 +82,12 @@ class LlamaIndexForMaple(SpanProcessor):
     def on_end(self, span):
         self._open_llm_spans.pop(span.context.span_id, None)
         if span.name.endswith("._prepare_chat_with_tools"):
-            return  # builds the request; never calls the model
+            return
         if (span.status.description or "").startswith("WaitingForEvent"):
-            return  # ctx.wait_for_event() suspends the tool and replays it later; not a failure
+            return
         outer = self._open_llm_spans.get(span.parent.span_id) if span.parent else None
         if outer is not None and outer.name == span.name:
-            outer.set_attributes(span.attributes)  # the inner twin holds the messages and usage
+            outer.set_attributes(span.attributes)
             return
         self._next.on_end(span)
 
@@ -105,7 +98,7 @@ class LlamaIndexForMaple(SpanProcessor):
         return self._next.force_flush(timeout_millis)
 
 
-provider = TracerProvider()  # reads OTEL_SERVICE_NAME and OTEL_RESOURCE_ATTRIBUTES
+provider = TracerProvider()
 provider.add_span_processor(LlamaIndexForMaple(BatchSpanProcessor(OTLPSpanExporter())))
 trace.set_tracer_provider(provider)
 
@@ -115,11 +108,9 @@ LlamaIndexInstrumentor().instrument(
 )
 ```
 
-`enable_genai_semconv=True` is required. Without it the session page has no transcript.
+Keep `enable_genai_semconv=True`, or the session has no transcript. Always add the exporter through `LlamaIndexForMaple`, never directly.
 
-`LlamaIndexForMaple` wraps the exporter, so always add the exporter through it. It merges the nested spans LlamaIndex opens around each model call into one, keeps workflow steps out of the tool count, copies agent names from `instrument_tags`, and labels the framework as LlamaIndex.
-
-If the app already has a `TracerProvider` (from `opentelemetry-instrument`, Logfire or Sentry), add `LlamaIndexForMaple(BatchSpanProcessor(OTLPSpanExporter()))` to that provider and pass it to `instrument()`.
+If the app already has a `TracerProvider` (from `opentelemetry-instrument`, Logfire or Sentry), add `LlamaIndexForMaple(BatchSpanProcessor(OTLPSpanExporter()))` to it and pass it to `instrument()`.
 
 ## Group a conversation into one session
 
@@ -148,15 +139,15 @@ async def handle_message(conversation_id: str, text: str):
     await handler
 ```
 
-Only the `agent.run()` call has to be inside the `with`. Every step, tool and model call of the run inherits the id, so you can consume the stream outside it.
+Only the `agent.run()` call needs to be inside the `with`. Consume the stream outside it.
 
-Keep one `Context` per conversation. The `Context` object itself isn't a session id, and a new UUID per request gives you one session per message.
+Keep one `Context` per conversation. A new UUID per request gives you one session per message.
 
-For multi-agent workflows, run the whole workflow inside `using_session(conversation_id)` and wrap each sub-agent's `run()` in its own `instrument_tags({"gen_ai.agent.name": agent.name})`. Maple then shows each agent in its own lane. `AgentWorkflow` handoffs happen inside one span, so they show as a single agent.
+For multi-agent workflows, run the whole workflow inside `using_session(conversation_id)` and wrap each sub-agent's `run()` in its own `instrument_tags({"gen_ai.agent.name": agent.name})` to give each agent its own lane. `AgentWorkflow` handoffs show as a single agent.
 
 ## Get tokens on streamed calls
 
-`FunctionAgent` streams every model call. OpenAI's API only sends usage on a stream when asked, so pass `stream_options` on OpenAI and OpenAI-compatible models:
+`FunctionAgent` streams its model calls, and OpenAI only reports tokens on a stream when asked. Pass `stream_options` on OpenAI and OpenAI-compatible models:
 
 ```py
 from llama_index.llms.openai import OpenAI
@@ -164,21 +155,21 @@ from llama_index.llms.openai import OpenAI
 llm = OpenAI(model="gpt-4o-mini", additional_kwargs={"stream_options": {"include_usage": True}})
 ```
 
-OpenRouter sends usage without it. With `OpenAILike` or `OpenRouter`, also pass `is_function_calling_model=True`, or the agent never calls tools.
+With `OpenAILike` or `OpenRouter`, also pass `is_function_calling_model=True`, or the agent never calls tools.
 
 ## Flush in short-lived processes
 
-The SDK flushes on a normal interpreter exit, and long-running servers need nothing. In serverless handlers, notebooks and task workers, import `provider` from `tracing` and call `provider.force_flush()` in a `finally` after each run.
+Long-running servers need nothing. In serverless handlers, notebooks and task workers, import `provider` from `tracing` and call `provider.force_flush()` in a `finally` after each run.
 
 ## Check that it works
 
 Send two or three messages with the same conversation id, one of them using a tool, then open **Agent Sessions**. Within a minute you should see one session labeled **LlamaIndex**, with one turn per `agent.run()`, a transcript, one model call per request with tokens, and `FunctionTool.acall` tool calls.
 
-Cost shows as **unpriced**, which is expected. Streamed model calls show about 1 ms of duration because the span ends when LlamaIndex hands back the stream.
+Cost shows as **unpriced** and streamed model calls last about 1 ms. Both are expected.
 
 ## Troubleshooting
 
-- **No spans at all.** Import `tracing` before the first `agent.run()`, check for `DependencyConflict` in the logs (llama-index-core older than 0.14.19), and look for exporter errors.
+- **No spans at all.** Import `tracing` before the first `agent.run()`, check the logs for `DependencyConflict` (upgrade llama-index-core) and exporter errors.
 - **One session per message.** `agent.run()` isn't inside `using_session(...)`, or the id changes per request.
 - **Each model or tool call counted two or three times.** The exporter was added directly. Add it through `LlamaIndexForMaple`.
 - **No tokens on streamed calls.** Add `stream_options={"include_usage": True}` through `additional_kwargs`.
@@ -187,7 +178,4 @@ Cost shows as **unpriced**, which is expected. Streamed model calls show about 1
 ## Related
 
 - [Agent Sessions overview](/docs/agent-sessions/overview): what Maple builds from these spans.
-- [Trace your AI agent](/docs/agent-tracing): guides for every other framework.
-- [LlamaIndex observability](https://developers.llamaindex.ai/python/framework/module_guides/observability/): LlamaIndex's own page on tracing.
-- [openinference-instrumentation-llama-index](https://github.com/Arize-ai/openinference/tree/main/python/instrumentation/openinference-instrumentation-llama-index): the instrumentor's source and `TraceConfig` options.
 - [OpenRouter](/docs/agent-tracing/openrouter): cost per call if your models go through OpenRouter.

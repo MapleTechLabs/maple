@@ -7,7 +7,7 @@ navLabel: "DSPy"
 icon: "python"
 ---
 
-DSPy has no tracing of its own. OpenInference's `openinference-instrumentation-dspy` records a span for every module, predictor, model call and tool call, but no token counts, no tool names and no conversation id. You add the first two with a small DSPy callback, and the conversation id by wrapping each call in `using_session`.
+This guide traces DSPy with OpenInference's DSPy instrumentor, adds tokens and tool names with a small DSPy callback, and groups each conversation into one session with `using_session`.
 
 Tested with DSPy 3.4 and `openinference-instrumentation-dspy` 0.1.45 on Python 3.10 or later.
 
@@ -65,13 +65,13 @@ DSPyInstrumentor().instrument(tracer_provider=provider, config=TraceConfig(enabl
 ThreadingInstrumentor().instrument()
 ```
 
-`enable_genai_semconv=True` writes the `gen_ai.*` attributes Maple's session page reads. Without it the session has no transcript and no model. `ThreadingInstrumentor` keeps `dspy.Parallel`, `Evaluate` and thread pool workers in the caller's trace and session.
+Without `enable_genai_semconv=True` the session page has no transcript and no model. `ThreadingInstrumentor` keeps `dspy.Parallel` and thread pool workers in the caller's session.
 
-If the app already has a `TracerProvider` (from `opentelemetry-instrument`, Logfire or another library), add the OTLP exporter to that one and pass it to `instrument()` instead of creating a second.
+If the app already has a `TracerProvider` (from `opentelemetry-instrument`, Logfire or another library), add the OTLP exporter to it and pass it to `instrument()` instead of creating a second one.
 
 ## Add the Maple callback
 
-The callback adds tokens and cost to model spans, names and arguments to tool spans, and an agent span for each module class you wrote. Save it as `maple_dspy.py`:
+The callback adds tokens, cost, tool names and agent spans. Save it as `maple_dspy.py`:
 
 ```py
 # maple_dspy.py
@@ -82,7 +82,6 @@ from dspy.utils.callback import BaseCallback
 from openinference.instrumentation import TraceConfig
 from opentelemetry import trace
 
-# Same switches as the instrumentor: OPENINFERENCE_HIDE_INPUTS / OPENINFERENCE_HIDE_OUTPUTS.
 _config = TraceConfig()
 
 
@@ -92,9 +91,6 @@ def _message(role, values):
 
 
 class MapleCallback(BaseCallback):
-    """Adds what Maple reads and the OpenInference DSPy instrumentor leaves out:
-    an agent span per program, tool names and arguments, tokens and cost."""
-
     def __init__(self):
         self._agents = set()
         self._lms = {}
@@ -120,7 +116,7 @@ class MapleCallback(BaseCallback):
                 trace.get_current_span().set_attribute("gen_ai.output.messages", reply)
 
     def on_adapter_format_start(self, call_id, instance, inputs):
-        # The span is "ChatAdapter.__call__"; without an operation, "chat" in the name reads as a model call.
+        # Keeps "ChatAdapter.__call__" from counting as a model call
         trace.get_current_span().set_attribute("gen_ai.operation.name", "invoke_workflow")
 
     def on_tool_start(self, call_id, instance, inputs):
@@ -135,7 +131,6 @@ class MapleCallback(BaseCallback):
 
     def on_lm_end(self, call_id, outputs, exception):
         lm = self._lms.pop(call_id, None)
-        # The LM's history holds the provider response. Threads share the LM, so match ours by identity.
         entry = next((e for e in reversed(lm.history[-16:]) if e["outputs"] is outputs), None) if lm else None
         if entry is None or getattr(entry["response"], "cache_hit", False):
             return  # history is off, or a cache hit that cost nothing
@@ -155,7 +150,7 @@ class MapleCallback(BaseCallback):
 Register it with the rest of your DSPy configuration:
 
 ```py
-import tracing  # first: sets up the provider and patches DSPy
+import tracing  # must come first
 
 import dspy
 from maple_dspy import MapleCallback
@@ -163,11 +158,11 @@ from maple_dspy import MapleCallback
 dspy.configure(lm=dspy.LM("openai/gpt-4o-mini", temperature=0), callbacks=[MapleCallback()])
 ```
 
-Every `dspy.Module` subclass you write becomes an agent in Maple, named after its class. Built-in modules like `Predict` and `ReAct` stay steps inside it. Give worker modules descriptive class names (`WeatherWorker`) so each gets its own lane.
+Every `dspy.Module` subclass you write shows up as an agent named after its class, so give worker modules descriptive names like `WeatherWorker`.
 
 ## Group a conversation into one session
 
-Each call to your module starts a new trace. Maple joins them into one session by `session.id`, which the instrumentor sets inside OpenInference's `using_session` block:
+Each call to your module is its own trace. Wrap every call in `using_session` with the conversation id to group them into one session:
 
 ```py
 import dspy
@@ -198,13 +193,13 @@ def handle_message(conversation_id: str, question: str, turns: list[dict]) -> st
 
 Use the id your app stores the chat under. A new UUID per request gives one session per message, and a constant puts every user in one session.
 
-If you stream with `dspy.streamify`, call it after `dspy.configure(callbacks=[MapleCallback()])`, since it copies the callback list when called. Put `using_session` around the loop that reads the stream, because the program only starts on the first chunk.
+If you stream with `dspy.streamify`, call it after `dspy.configure(callbacks=[MapleCallback()])`, and put `using_session` around the loop that reads the stream.
 
 To keep prompts and outputs out of your traces, set `OPENINFERENCE_HIDE_INPUTS=true` and `OPENINFERENCE_HIDE_OUTPUTS=true` before `tracing.py` runs. The callback follows both.
 
 ## Flush before short-lived processes exit
 
-`BatchSpanProcessor` exports every 5 seconds and flushes on a normal exit. A killed process, a serverless handler or a notebook needs an explicit flush:
+Serverless handlers, notebooks and processes that get killed need an explicit flush:
 
 ```py
 from tracing import provider
@@ -217,9 +212,7 @@ finally:
 
 ## Check that it works
 
-Run a conversation of two or three messages through `handle_message` with one conversation id, including one tool call, with `cache=False` on the LM so every call reaches the provider. In **Agent Sessions** you should see one session with framework **DSPy** and one turn per call, each starting at `ChatAssistant.forward`.
-
-Model calls are `LM.__call__` spans with a model and tokens. The transcript uses DSPy's `[[ ## field ## ]]` prompt format. Tool calls include `finish.__call__`, which is `dspy.ReAct`'s built-in end-of-loop tool. Cost is DSPy's own estimate, and models DSPy has no price for show as **unpriced**.
+Set `cache=False` on the LM, then run two or three messages through `handle_message` with one conversation id, including one tool call. In **Agent Sessions** you should see one session with framework **DSPy**, one turn per call, and `LM.__call__` model calls with tokens. `finish.__call__` is `dspy.ReAct`'s built-in end-of-loop tool.
 
 ## Troubleshooting
 
@@ -232,9 +225,5 @@ Model calls are `LM.__call__` spans with a model and tokens. The transcript uses
 
 ## Related
 
-- [Agent Sessions overview](/docs/agent-sessions/overview): what Maple builds from these spans.
-- [Trace your AI agent](/docs/agent-tracing): guides for every other framework.
-- [DSPy observability](https://dspy.ai/tutorials/observability/): DSPy's own tracing page, built on MLflow.
-- [openinference-instrumentation-dspy](https://github.com/Arize-ai/openinference/tree/main/python/instrumentation/openinference-instrumentation-dspy): the instrumentor's source.
-- [DSPy's `BaseCallback`](https://github.com/stanfordnlp/dspy/blob/main/dspy/utils/callback.py): the hook API `MapleCallback` builds on.
+- [Agent Sessions overview](/docs/agent-sessions/overview)
 - [LiteLLM](/docs/agent-tracing/litellm) and [OpenRouter](/docs/agent-tracing/openrouter): if your models go through either gateway.

@@ -7,15 +7,15 @@ navLabel: "Vercel AI SDK"
 icon: "vercel"
 ---
 
-The Vercel AI SDK emits OpenTelemetry GenAI spans for every `generateText`, `streamText` and `ToolLoopAgent` call, with the prompts, replies, tool calls and token counts. Maple reads them without an extra instrumentation package.
+The Vercel AI SDK emits OpenTelemetry spans for every `generateText`, `streamText` and `ToolLoopAgent` call, and Maple reads them without an extra instrumentation package.
 
-You have to get two things right. In AI SDK 7 nothing is traced until you call `registerTelemetry()` at startup, and the SDK has no conversation id, so you pass one on every call or each message becomes its own session.
+In AI SDK 7 nothing is traced until you call `registerTelemetry()` at startup. You also pass a conversation id on every call, or each message becomes its own session.
 
-Tested with `ai` 7.0.118, `@ai-sdk/otel` 1.0.118, OpenTelemetry JS 0.222.0 and `@vercel/otel` 2.1.3 on Node.js 26 and Bun 1.3. You need `ai` 7.0.106 or newer and Node.js 22 or newer. On AI SDK 5 or 6, run `npx @ai-sdk/codemod v7` first; the skill has a fallback setup if you can't upgrade.
+You need `ai` 7.0.106 or newer and Node.js 22 or newer (Bun works too). On AI SDK 5 or 6, run `npx @ai-sdk/codemod v7` first.
 
 ## Quick setup with a coding agent
 
-Copy this prompt into Claude Code, Codex, Cursor or another agent that can run shell commands. It installs the [maple-agent-tracing-vercel-ai-sdk](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-agent-tracing-vercel-ai-sdk) skill, which contains every step of this guide.
+Copy this prompt into a coding agent that can run shell commands, such as Claude Code, Codex or Cursor. It installs the [maple-agent-tracing-vercel-ai-sdk](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-agent-tracing-vercel-ai-sdk) skill and follows it.
 
 ```text
 Set up Maple agent tracing for the Vercel AI SDK in this project.
@@ -126,7 +126,7 @@ Return AI SDK streams as the response (`toUIMessageStreamResponse()` or `createA
 
 ## Pass the conversation id on every call
 
-Maple groups traces into sessions by `gen_ai.conversation.id`. The `enrichSpan` callback above copies it from `runtimeContext.conversationId`, which only reaches telemetry if you also list it in `includeRuntimeContext`:
+The `enrichSpan` callback above reads `runtimeContext.conversationId`, which only reaches telemetry if you also list it in `includeRuntimeContext`:
 
 ```ts
 import { streamText } from "ai"
@@ -179,21 +179,21 @@ export async function POST(req: Request) {
 }
 ```
 
-Sub-agents called from a tool's `execute` run inside the caller's trace, so they don't need the id. They do need their own `functionId` to get their own lane.
+Sub-agents called from a tool's `execute` don't need the id, only their own `functionId`.
 
-Prompts and replies are recorded by default. To keep them out of Maple for a call or agent, set `recordInputs: false` and `recordOutputs: false` in its `telemetry`.
+To keep a call's prompts and replies out of Maple, set `recordInputs: false` and `recordOutputs: false` in its `telemetry`.
 
 ## Flush in scripts and serverless functions
 
-The SDK exports spans in batches every few seconds, so a short-lived process can exit first. In a script, call `await sdk.shutdown()` in a `finally` block before exiting. In a serverless handler that is reused between invocations, call `await spanProcessor.forceFlush()` in a `finally` instead (see [the variant above](#serverless-or-an-app-that-already-uses-opentelemetry)), so the SDK keeps running.
+A short-lived process can exit before its spans are exported. In a script, call `await sdk.shutdown()` in a `finally` block before exiting. In a serverless handler, call `await spanProcessor.forceFlush()` in a `finally` instead (see [the variant above](#serverless-or-an-app-that-already-uses-opentelemetry)).
 
-Read streams to the end (`await result.consumeStream()`) before flushing: a stream's spans only end when it has been read. On Vercel, `@vercel/otel` flushes after each request, but queue consumers and cron jobs need their own `forceFlush()`.
+Read streams to the end (`await result.consumeStream()`) before flushing, since a stream's spans only end when it has been read. On Vercel, `@vercel/otel` flushes after each request, but queue consumers and cron jobs need their own `forceFlush()`.
 
 ## Check that it works
 
 Run a conversation with two messages and a tool call, then open **Agent Sessions** in Maple. You should see one session named after your conversation id with framework **Vercel AI SDK**, one turn per call, and a transcript with the prompts, replies and tool calls.
 
-Two things look off but are expected. Cost shows as unpriced, because the AI SDK doesn't report it. The session's token total is currently twice what the model calls used; the per-model breakdown on the session page is correct.
+Cost shows as unpriced because the AI SDK doesn't report it. The session's token total is currently doubled; the per-model breakdown on the session page is correct.
 
 ## Troubleshooting
 
@@ -206,8 +206,4 @@ Two things look off but are expected. Cost shows as unpriced, because the AI SDK
 ## Related
 
 - [Agent Sessions overview](/docs/agent-sessions/overview)
-- [All agent tracing guides](/docs/agent-tracing)
 - [AI SDK telemetry](https://ai-sdk.dev/docs/ai-sdk-core/telemetry)
-- [Next.js instrumentation](/docs/guides/instrumentation-nextjs)
-- [Node.js instrumentation](/docs/guides/instrumentation-nodejs)
-- [OpenRouter Broadcast](/docs/agent-tracing/openrouter)
