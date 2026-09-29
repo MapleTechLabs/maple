@@ -46,7 +46,7 @@ SELECT
           AND Timestamp >= '2026-01-02 10:30:00'
           AND Timestamp <= '2026-01-02 12:30:00'
         GROUP BY traceId
-        HAVING countIf(((SessionId != '' OR IsLlmCall = 1) OR AgentName != '')) > 0) AS agent_traces
+        HAVING countIf((((SessionId != '' OR IsLlmCall = 1) OR IsToolCall = 1) OR AgentName != '')) > 0) AS agent_traces
         WHERE if(rawSessionId = '', concat('trace:', traceId), rawSessionId) IN ('wrun_sql_catalog', 'trace:7f3a4b5c6d7e8f901234567890abcdef'))
         GROUP BY traceId) AS session_traces
         INNER JOIN (SELECT
@@ -78,7 +78,7 @@ SELECT
           AND Timestamp >= '2026-01-02 10:30:00'
           AND Timestamp <= '2026-01-02 12:30:00'
         GROUP BY traceId
-        HAVING countIf(((SessionId != '' OR IsLlmCall = 1) OR AgentName != '')) > 0) AS agent_traces
+        HAVING countIf((((SessionId != '' OR IsLlmCall = 1) OR IsToolCall = 1) OR AgentName != '')) > 0) AS agent_traces
         WHERE if(rawSessionId = '', concat('trace:', traceId), rawSessionId) IN ('wrun_sql_catalog', 'trace:7f3a4b5c6d7e8f901234567890abcdef')) AS index_traces ON session_traces.traceId = index_traces.traceId
         GROUP BY sessionId
         ORDER BY startTime DESC
@@ -132,7 +132,7 @@ SELECT
           AND Timestamp >= '2026-01-02 10:30:00'
           AND Timestamp <= '2026-01-02 12:30:00'
         GROUP BY traceId
-        HAVING countIf(((SessionId != '' OR IsLlmCall = 1) OR AgentName != '')) > 0
+        HAVING countIf((((SessionId != '' OR IsLlmCall = 1) OR IsToolCall = 1) OR AgentName != '')) > 0
           AND countIf(DeploymentEnv IN ('production')) > 0
           AND countIf(Model IN ('gpt-5.5')) > 0
           AND countIf(AgentName IN ('billing-agent')) > 0
@@ -169,7 +169,7 @@ SELECT
           AND Timestamp >= '2026-01-02 10:30:00'
           AND Timestamp <= '2026-01-02 12:30:00'
         GROUP BY traceId
-        HAVING countIf(((SessionId != '' OR IsLlmCall = 1) OR AgentName != '')) > 0
+        HAVING countIf((((SessionId != '' OR IsLlmCall = 1) OR IsToolCall = 1) OR AgentName != '')) > 0
           AND countIf(DeploymentEnv IN ('production')) > 0
           AND countIf(Model IN ('gpt-5.5')) > 0
           AND countIf(AgentName IN ('billing-agent')) > 0
@@ -228,7 +228,7 @@ SELECT
           AND Timestamp >= '2026-01-02 10:30:00'
           AND Timestamp <= '2026-01-02 12:30:00'
         GROUP BY traceId
-        HAVING countIf(((SessionId != '' OR IsLlmCall = 1) OR AgentName != '')) > 0
+        HAVING countIf((((SessionId != '' OR IsLlmCall = 1) OR IsToolCall = 1) OR AgentName != '')) > 0
           AND countIf(VendorId IN ('eve')) > 0
           AND countIf(ServiceName IN ('maple-slack-agent')) > 0) AS agent_traces
         WHERE if(rawSessionId = '', concat('trace:', traceId), rawSessionId) IN ('wrun_sql_catalog', 'trace:7f3a4b5c6d7e8f901234567890abcdef'))
@@ -262,7 +262,7 @@ SELECT
           AND Timestamp >= '2026-01-02 10:30:00'
           AND Timestamp <= '2026-01-02 12:30:00'
         GROUP BY traceId
-        HAVING countIf(((SessionId != '' OR IsLlmCall = 1) OR AgentName != '')) > 0
+        HAVING countIf((((SessionId != '' OR IsLlmCall = 1) OR IsToolCall = 1) OR AgentName != '')) > 0
           AND countIf(VendorId IN ('eve')) > 0
           AND countIf(ServiceName IN ('maple-slack-agent')) > 0) AS agent_traces
         WHERE if(rawSessionId = '', concat('trace:', traceId), rawSessionId) IN ('wrun_sql_catalog', 'trace:7f3a4b5c6d7e8f901234567890abcdef')) AS index_traces ON session_traces.traceId = index_traces.traceId
@@ -334,7 +334,7 @@ SELECT
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
         GROUP BY traceId
-        HAVING countIf(((SessionId != '' OR IsLlmCall = 1) OR AgentName != '')) > 0) AS index_traces
+        HAVING countIf((((SessionId != '' OR IsLlmCall = 1) OR IsToolCall = 1) OR AgentName != '')) > 0) AS index_traces
         GROUP BY sessionId) AS window_sessions) AS netted_sessions) AS session_measures) AS measured_sessions
         WHERE tupleElement(measured, 2) > 0
         GROUP BY measure
@@ -354,7 +354,7 @@ SELECT
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
         GROUP BY traceId
-        HAVING countIf(((SessionId != '' OR IsLlmCall = 1) OR AgentName != '')) > 0) AS facet_traces
+        HAVING countIf((((SessionId != '' OR IsLlmCall = 1) OR IsToolCall = 1) OR AgentName != '')) > 0) AS facet_traces
         GROUP BY name
         ORDER BY count DESC
         LIMIT 50
@@ -372,7 +372,7 @@ SELECT
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
         GROUP BY traceId
-        HAVING countIf(((SessionId != '' OR IsLlmCall = 1) OR AgentName != '')) > 0) AS facet_traces
+        HAVING countIf((((SessionId != '' OR IsLlmCall = 1) OR IsToolCall = 1) OR AgentName != '')) > 0) AS facet_traces
         GROUP BY name
         ORDER BY count DESC
         LIMIT 50
@@ -390,7 +390,7 @@ SELECT
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
         GROUP BY traceId
-        HAVING countIf(((SessionId != '' OR IsLlmCall = 1) OR AgentName != '')) > 0) AS facet_traces
+        HAVING countIf((((SessionId != '' OR IsLlmCall = 1) OR IsToolCall = 1) OR AgentName != '')) > 0) AS facet_traces
         GROUP BY name
         ORDER BY count DESC
         LIMIT 50
@@ -408,7 +408,7 @@ SELECT
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
         GROUP BY traceId
-        HAVING countIf(((SessionId != '' OR IsLlmCall = 1) OR AgentName != '')) > 0) AS facet_traces
+        HAVING countIf((((SessionId != '' OR IsLlmCall = 1) OR IsToolCall = 1) OR AgentName != '')) > 0) AS facet_traces
         GROUP BY name
         ORDER BY count DESC
         LIMIT 50
@@ -426,7 +426,7 @@ SELECT
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
         GROUP BY traceId
-        HAVING countIf(((SessionId != '' OR IsLlmCall = 1) OR AgentName != '')) > 0) AS facet_traces
+        HAVING countIf((((SessionId != '' OR IsLlmCall = 1) OR IsToolCall = 1) OR AgentName != '')) > 0) AS facet_traces
         GROUP BY name
         ORDER BY count DESC
         LIMIT 50
@@ -444,7 +444,7 @@ SELECT
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
         GROUP BY traceId
-        HAVING countIf(((SessionId != '' OR IsLlmCall = 1) OR AgentName != '')) > 0) AS facet_traces
+        HAVING countIf((((SessionId != '' OR IsLlmCall = 1) OR IsToolCall = 1) OR AgentName != '')) > 0) AS facet_traces
         GROUP BY name
         ORDER BY count DESC
         LIMIT 50
@@ -540,7 +540,7 @@ SELECT
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
         GROUP BY traceId
-        HAVING countIf(((SessionId != '' OR IsLlmCall = 1) OR AgentName != '')) > 0) AS index_traces
+        HAVING countIf((((SessionId != '' OR IsLlmCall = 1) OR IsToolCall = 1) OR AgentName != '')) > 0) AS index_traces
         GROUP BY sessionId
         ORDER BY agentStart DESC, sessionId ASC
         LIMIT 50) AS ranked_sessions) AS netted_sessions
@@ -637,7 +637,7 @@ SELECT
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
         GROUP BY traceId
-        HAVING countIf(((SessionId != '' OR IsLlmCall = 1) OR AgentName != '')) > 0
+        HAVING countIf((((SessionId != '' OR IsLlmCall = 1) OR IsToolCall = 1) OR AgentName != '')) > 0
           AND countIf(VendorId IN ('eve')) > 0
           AND countIf(ServiceName IN ('maple-slack-agent')) > 0
           AND countIf(DeploymentEnv IN ('production')) > 0
@@ -753,7 +753,7 @@ SELECT
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
         GROUP BY traceId
-        HAVING countIf(((SessionId != '' OR IsLlmCall = 1) OR AgentName != '')) > 0
+        HAVING countIf((((SessionId != '' OR IsLlmCall = 1) OR IsToolCall = 1) OR AgentName != '')) > 0
           AND countIf(VendorId IN ('eve')) > 0
           AND countIf(ServiceName IN ('maple-slack-agent')) > 0) AS index_traces
         GROUP BY sessionId

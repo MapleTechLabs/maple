@@ -225,7 +225,9 @@ describe("aiSessionPageQuery", () => {
 
 		// The one HAVING is the rule for which traces are sessions at all.
 		expect(sql.split("HAVING ").length - 1).toBe(1)
-		expect(sql).toContain("HAVING countIf(((SessionId != '' OR IsLlmCall = 1) OR AgentName != '')) > 0")
+		expect(sql).toContain(
+			"HAVING countIf((((SessionId != '' OR IsLlmCall = 1) OR IsToolCall = 1) OR AgentName != '')) > 0",
+		)
 		expect(sql).not.toContain("VendorId IN")
 		expect(sql).not.toContain("ServiceName IN")
 		// The one WHERE is the index read's; the usage level filters nothing.
@@ -884,8 +886,9 @@ describe("aiSessionFacetsQuery", () => {
 		// Only the traces the list shows: a sessionless trace with no model call
 		// and no named agent is no session, so no facet counts it.
 		expect(
-			sql.split("HAVING countIf(((SessionId != '' OR IsLlmCall = 1) OR AgentName != '')) > 0").length -
-				1,
+			sql.split(
+				"HAVING countIf((((SessionId != '' OR IsLlmCall = 1) OR IsToolCall = 1) OR AgentName != '')) > 0",
+			).length - 1,
 		).toBe(6)
 	})
 
@@ -971,7 +974,7 @@ describe("aiSessionDistributionsQuery", () => {
 		// No range, sort or page: every session in the window is placed.
 		expect(sql.split("HAVING ").length - 1).toBe(1)
 		expect(traces).toContain(
-			"HAVING countIf(((SessionId != '' OR IsLlmCall = 1) OR AgentName != '')) > 0",
+			"HAVING countIf((((SessionId != '' OR IsLlmCall = 1) OR IsToolCall = 1) OR AgentName != '')) > 0",
 		)
 		expect(sql).not.toContain("LIMIT")
 		expect(sql).not.toContain("ORDER BY")
