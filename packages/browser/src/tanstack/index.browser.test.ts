@@ -177,10 +177,34 @@ describe("traceRouter", () => {
 			"loader /projects/$id",
 			"navigate /projects/$id",
 		])
+		expect(exported[0]?.attributes["url.path"]).toBe("/")
 		const navigation = exported[2]
 		expect(navigation?.attributes["url.path"]).toBe("/projects/8f2a")
 		expect(exported[1]?.parentSpanContext?.spanId).toBe(navigation?.spanContext().spanId)
 		expect(exported[1]?.spanContext().traceId).toBe(navigation?.spanContext().traceId)
+	})
+
+	it("keeps the page load's own redirect in its span", async () => {
+		await mount("/old")
+		await stop()
+
+		expect(
+			names().filter((name) => !name.startsWith("loader") && !name.startsWith("beforeLoad")),
+		).toEqual(["pageload /projects/$id"])
+		expect(named("pageload /projects/$id").attributes["url.path"]).toBe("/old")
+	})
+
+	it("ends a page load the first click interrupts, before its route resolved", async () => {
+		const router = await mount("/slow")
+		await go(router, "/projects/1")
+		await stop()
+
+		expect(names().filter((name) => !name.startsWith("loader"))).toEqual([
+			"pageload",
+			"navigate /projects/$id",
+		])
+		expect(named("pageload").attributes["url.path"]).toBe("/slow")
+		expect(named("pageload").attributes["app.navigation.interrupted"]).toBe(true)
 	})
 
 	it("ends a hydrated page load on onRendered, the only event hydration emits", async () => {
@@ -220,6 +244,28 @@ describe("traceRouter", () => {
 		expect(navigation.attributes["url.path"]).toBe("/old")
 		expect(navigation.attributes["app.navigation.interrupted"]).toBeUndefined()
 		expect(named("beforeLoad /old").status.code).not.toBe(SpanStatusCode.ERROR)
+	})
+
+	it("keeps a hydrated page load whose URL the router fixes up in one span", async () => {
+		const router = createRouter({
+			routeTree,
+			history: createMemoryHistory({ initialEntries: ["/projects/1"] }),
+		})
+		await router.load()
+		traceRouter(router)
+		// The URL the server rendered isn't canonical: the router replaces its history entry
+		const hydrated = router.state.location
+		const info = { pathChanged: true, hrefChanged: true, hashChanged: false }
+		router.emit({
+			type: "onBeforeNavigate",
+			fromLocation: hydrated,
+			toLocation: { ...hydrated, pathname: "/projects/1/" },
+			...info,
+		})
+		router.emit({ type: "onResolved", fromLocation: hydrated, toLocation: hydrated, ...info })
+		await stop()
+
+		expect(names().filter((name) => !name.startsWith("loader"))).toEqual(["pageload /projects/$id"])
 	})
 
 	it("starts a new span for a redirect when the history has no index", async () => {

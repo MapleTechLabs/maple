@@ -6,17 +6,13 @@
 // the browser in `Server-Timing`, which the `pageload` span reads. Spans go
 // through the server's global tracer; without server OpenTelemetry, both
 // wrappers only pass through.
-import { context, propagation, SpanKind, SpanStatusCode, type TextMapGetter, trace } from "@opentelemetry/api"
+import { context, SpanKind, SpanStatusCode, trace } from "@opentelemetry/api"
 import type { AnyRouter } from "@tanstack/react-router"
 import { recordFailure } from "../failures"
 import { serverTiming } from "../server"
+import { parseTraceparent } from "../traceparent"
 import { SDK_NAME, SDK_VERSION } from "../version"
 import { routeTemplate } from "./route"
-
-const headerGetter: TextMapGetter<Headers> = {
-	keys: (headers) => [...headers.keys()],
-	get: (headers, key) => headers.get(key) ?? undefined,
-}
 
 /**
  * Wrap the server entry's `fetch`: a span per request, so a page's server loaders and its render share a trace.
@@ -26,22 +22,22 @@ export function traceRequests<Args extends unknown[]>(
 	fetch: (request: Request, ...args: Args) => Response | Promise<Response>,
 ): (request: Request, ...args: Args) => Promise<Response> {
 	return (request, ...args) => {
-		// A request that carries a trace, like a server function called from the
-		// browser, joins it, unless the server's HTTP instrumentation already did
+		// Inside a span the server's HTTP instrumentation opened, this one is part
+		// of that request. Otherwise it is the request, and joins a trace the
+		// request carries, like a server function called from the browser.
 		const active = context.active()
-		const parent = trace.getSpan(active)
-			? active
-			: propagation.extract(active, request.headers, headerGetter)
+		const inRequest = trace.getSpan(active) !== undefined
+		const carried = parseTraceparent(request.headers.get("traceparent") ?? undefined)
 		return trace.getTracer(SDK_NAME, SDK_VERSION).startActiveSpan(
 			request.method,
 			{
-				kind: SpanKind.SERVER,
+				kind: inRequest ? SpanKind.INTERNAL : SpanKind.SERVER,
 				attributes: {
 					"http.request.method": request.method,
 					"url.path": new URL(request.url).pathname,
 				},
 			},
-			parent,
+			inRequest || !carried ? active : trace.setSpanContext(active, carried),
 			async (span) => {
 				try {
 					const response = await fetch(request, ...args)

@@ -1,5 +1,5 @@
 import { AsyncLocalStorageContextManager } from "@opentelemetry/context-async-hooks"
-import { context, propagation, SpanKind, SpanStatusCode, trace } from "@opentelemetry/api"
+import { context, SpanKind, SpanStatusCode, trace } from "@opentelemetry/api"
 import {
 	BasicTracerProvider,
 	InMemorySpanExporter,
@@ -17,7 +17,6 @@ import {
 } from "@tanstack/react-router"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { resetReportedErrorsForTests } from "../failures"
-import { parseTraceparent } from "../traceparent"
 import { tracedLoader, traceRouter } from "./index"
 import { traceRender, traceRequests } from "./server"
 
@@ -29,16 +28,6 @@ function registerServerOtel(): void {
 	trace.setGlobalTracerProvider(
 		new BasicTracerProvider({ spanProcessors: [new SimpleSpanProcessor(exporter)] }),
 	)
-	// W3C trace context, as the Node SDK's default propagator reads it
-	propagation.setGlobalPropagator({
-		inject: () => {},
-		extract: (ctx, carrier, getter) => {
-			const header = getter.get(carrier, "traceparent")
-			const spanContext = parseTraceparent(typeof header === "string" ? header : undefined)
-			return spanContext ? trace.setSpanContext(ctx, spanContext) : ctx
-		},
-		fields: () => ["traceparent"],
-	})
 }
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 1))
@@ -122,7 +111,6 @@ beforeEach(() => {
 afterEach(() => {
 	trace.disable()
 	context.disable()
-	propagation.disable()
 })
 
 describe("without server OpenTelemetry", () => {

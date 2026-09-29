@@ -15,19 +15,21 @@ import { routeTemplate } from "./route"
 export function traceRouter(router: AnyRouter): void {
 	// The router emits the same events while rendering on the server
 	if (typeof window === "undefined") return
-	// The page load. A client-only app's first load emits `onBeforeNavigate` too, skipped below
-	startNavigation(location.pathname)
-	/** Whether a navigation is in flight, and the history index it pushed. */
-	let pending: { readonly index: number | undefined } | undefined
+	// The page load, open until its route renders
+	const first = router.latestLocation
+	startNavigation(first.pathname)
+	/** The navigation in flight, the page load first, and the history entry it loads in. */
+	let pending: { readonly index: number | undefined } | undefined = { index: first.state.__TSR_index }
 
 	router.subscribe("onBeforeNavigate", ({ fromLocation, toLocation }) => {
-		// No route resolved yet: the page load, already open
-		if (!fromLocation) return
 		const index: number | undefined = toLocation.state.__TSR_index
-		// `redirect()` replaces the history entry of the navigation it came from:
-		// one span covers both. Without the index, the redirect is a new span.
-		if (index !== undefined && index === pending?.index) return
+		// The navigation in flight loads its own history entry again: a client-only
+		// app's first load, or a `redirect()` or TanStack Start fixing up the URL
+		// it hydrated, both of which replace the entry. One span covers both.
+		// Without the index, only the first load is recognized.
+		if (index === undefined ? !fromLocation : index === pending?.index) return
 		if (
+			fromLocation &&
 			toLocation.pathname === fromLocation.pathname &&
 			toLocation.searchStr === fromLocation.searchStr
 		) {
