@@ -1,6 +1,13 @@
-import type { ReactNode } from "react"
+import { useState, type ReactNode } from "react"
 
 import { cn } from "@maple/ui/lib/utils"
+import {
+	Dialog,
+	DialogDescription,
+	DialogHeader,
+	DialogPopup,
+	DialogTitle,
+} from "@maple/ui/components/ui/dialog"
 import { formatNumber, formatPercent } from "@maple/ui/lib/format"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import type { AiContentFormat, AiCrawlPurpose, AiProduct } from "@maple/domain/ai-traffic"
@@ -13,6 +20,7 @@ import {
 	FileCodeIcon,
 	FileIcon,
 	MarkdownIcon,
+	MaximizeIcon,
 	UnorderedListIcon,
 	type IconComponent,
 } from "@/components/icons"
@@ -29,20 +37,35 @@ import {
 const plural = (count: number, one: string, many: string) =>
 	`${formatNumber(count)} ${count === 1 ? one : many}`
 
-/** Card frame for the AI tab's panels: an 11px title, an optional hint, then the body. */
+/** Where a panel's table is drawn: capped inside the card, taller in the expand dialog. */
+interface AiTableSurface {
+	readonly maxHeight: number | string
+	readonly surfaceClass: string
+}
+
+const CARD_SURFACE: AiTableSurface = { maxHeight: 360, surfaceClass: "bg-card" }
+const DIALOG_SURFACE: AiTableSurface = { maxHeight: "min(62vh, 640px)", surfaceClass: "bg-popover" }
+
+/**
+ * Card frame for the AI tab's panels: an 11px title, an optional hint, then the body.
+ * With `expand`, the body is a table that also reopens in a dialog, like the Overview breakdowns.
+ */
 export function AiPanel({
 	title,
 	hint,
 	aside,
 	children,
+	expand,
 	className,
 }: {
 	title: string
 	hint?: ReactNode
 	aside?: ReactNode
-	children: ReactNode
+	children?: ReactNode
+	expand?: { count: string; table: (surface: AiTableSurface) => ReactNode }
 	className?: string
 }) {
+	const [expanded, setExpanded] = useState(false)
 	return (
 		<div className={cn("@container/panel rounded-md border bg-card", className)}>
 			<div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1 px-4 pt-3 pb-2.5">
@@ -53,6 +76,34 @@ export function AiPanel({
 				{aside ? <div className="shrink-0 text-[11px] text-muted-foreground">{aside}</div> : null}
 			</div>
 			{children}
+			{expand ? (
+				<>
+					{expand.table(CARD_SURFACE)}
+					<button
+						type="button"
+						onClick={() => setExpanded(true)}
+						className="flex w-full items-center justify-between gap-2 rounded-b-md border-t border-border/40 px-4 py-2 text-[11px] text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground focus-visible:bg-muted/40 focus-visible:outline-none"
+					>
+						<span className="flex items-center gap-1.5">
+							<MaximizeIcon size={12} />
+							Expand table
+						</span>
+						<span className="font-mono tabular-nums">{expand.count}</span>
+					</button>
+					<Dialog open={expanded} onOpenChange={setExpanded}>
+						<DialogPopup className="w-[900px] max-w-[92vw] gap-0 p-0 max-sm:w-full">
+							<DialogHeader className="pb-3">
+								<div className="flex flex-col gap-1 pe-8">
+									<DialogTitle className="text-base">{title}</DialogTitle>
+									{hint ? <DialogDescription>{hint}</DialogDescription> : null}
+								</div>
+							</DialogHeader>
+							{/* Its own `/panel` container, so the columns the card sheds come back at dialog width. */}
+							<div className="@container/panel">{expand.table(DIALOG_SURFACE)}</div>
+						</DialogPopup>
+					</Dialog>
+				</>
+			) : null}
 		</div>
 	)
 }
@@ -152,56 +203,72 @@ const formatRatio = (ratio: number) => (ratio < 10 ? ratio.toFixed(1) : formatNu
 // Referral ranking
 
 export function AiReferralRanking({ ranks }: { ranks: ReadonlyArray<AiReferralRank> }) {
-	return (
-		<AiPanel title="Share of AI visits" hint="Change in share since the previous period">
-			{ranks.length === 0 ? (
+	const title = "Share of AI visits"
+	const hint = "Change in share since the previous period"
+	if (ranks.length === 0) {
+		return (
+			<AiPanel title={title} hint={hint}>
 				<AiEmpty>
 					No visits from AI assistants in this window. When someone follows a link from ChatGPT,
 					Perplexity, Claude or another assistant, it shows up here.
 				</AiEmpty>
-			) : (
-				<DataTable.Root ariaLabel="AI referrers" maxHeight={360} stickySurfaceClass="bg-card">
-					<DataTable.Head>
-						<ColumnHead label="#" width="w-5" align="right" />
-						<ColumnHead label="Assistant" width="w-0 flex-1 min-w-0" />
-						<ColumnHead label="Visits" width="w-14" align="right" />
-						<ColumnHead label="Share" width="w-14" align="right" />
-						<ColumnHead
-							label="Change"
-							width="w-20"
-							align="right"
-							hidden="hidden @min-[360px]/panel:flex"
-						/>
-					</DataTable.Head>
-					{ranks.map((rank, index) => (
-						<div
-							key={rank.product.id}
-							style={shareBar(rank.share)}
-							className="flex items-center gap-4 border-b border-border/40 px-4 py-2 last:border-0"
-						>
-							<span className="w-5 text-right font-mono text-[11px] tabular-nums text-muted-foreground/60">
-								{index + 1}
-							</span>
-							<span className="flex w-0 min-w-0 flex-1 items-center gap-2">
-								<AiProductIcon product={rank.product.id} />
-								<span className="truncate text-[12px] text-foreground/90">
-									{rank.product.label}
+			</AiPanel>
+		)
+	}
+	return (
+		<AiPanel
+			title={title}
+			hint={hint}
+			expand={{
+				count: plural(ranks.length, "assistant", "assistants"),
+				table: ({ maxHeight, surfaceClass }) => (
+					<DataTable.Root
+						ariaLabel="AI referrers"
+						maxHeight={maxHeight}
+						stickySurfaceClass={surfaceClass}
+					>
+						<DataTable.Head>
+							<ColumnHead label="#" width="w-5" align="right" />
+							<ColumnHead label="Assistant" width="w-0 flex-1 min-w-0" />
+							<ColumnHead label="Visits" width="w-14" align="right" />
+							<ColumnHead label="Share" width="w-14" align="right" />
+							<ColumnHead
+								label="Change"
+								width="w-20"
+								align="right"
+								hidden="hidden @min-[360px]/panel:flex"
+							/>
+						</DataTable.Head>
+						{ranks.map((rank, index) => (
+							<div
+								key={rank.product.id}
+								style={shareBar(rank.share)}
+								className="flex items-center gap-4 border-b border-border/40 px-4 py-2 last:border-0"
+							>
+								<span className="w-5 text-right font-mono text-[11px] tabular-nums text-muted-foreground/60">
+									{index + 1}
 								</span>
-							</span>
-							<span className="w-14 text-right font-mono text-[11px] tabular-nums text-muted-foreground">
-								{formatNumber(rank.visits)}
-							</span>
-							<span className="w-14 text-right font-mono text-[11px] tabular-nums">
-								{formatPercent(rank.share)}
-							</span>
-							<span className="hidden w-20 justify-end font-mono text-[10px] tabular-nums @min-[360px]/panel:flex">
-								<ShareChange share={rank.share} points={rank.shareDeltaPoints} />
-							</span>
-						</div>
-					))}
-				</DataTable.Root>
-			)}
-		</AiPanel>
+								<span className="flex w-0 min-w-0 flex-1 items-center gap-2">
+									<AiProductIcon product={rank.product.id} />
+									<span className="truncate text-[12px] text-foreground/90">
+										{rank.product.label}
+									</span>
+								</span>
+								<span className="w-14 text-right font-mono text-[11px] tabular-nums text-muted-foreground">
+									{formatNumber(rank.visits)}
+								</span>
+								<span className="w-14 text-right font-mono text-[11px] tabular-nums">
+									{formatPercent(rank.share)}
+								</span>
+								<span className="hidden w-20 justify-end font-mono text-[10px] tabular-nums @min-[360px]/panel:flex">
+									<ShareChange share={rank.share} points={rank.shareDeltaPoints} />
+								</span>
+							</div>
+						))}
+					</DataTable.Root>
+				),
+			}}
+		/>
 	)
 }
 
@@ -241,10 +308,19 @@ export function AiCrawlerTable({
 	const requests = crawlers.reduce((sum, row) => sum + row.requests, 0)
 	const failed = crawlers.reduce((sum, row) => sum + row.failedRequests, 0)
 
+	const title = "AI crawlers"
+	const hint = "Pages served to each crawler. Error responses are not counted as reads."
+	if (crawlers.length === 0) {
+		return (
+			<AiPanel title={title} hint={hint}>
+				<AiEmpty>{emptyMessage}</AiEmpty>
+			</AiPanel>
+		)
+	}
 	return (
 		<AiPanel
-			title="AI crawlers"
-			hint="Pages served to each crawler. Error responses are not counted as reads."
+			title={title}
+			hint={hint}
 			aside={
 				failed > 0 ? (
 					<span title="User agents are easy to spoof: scanners borrow crawler names and mostly get 404s.">
@@ -252,72 +328,76 @@ export function AiCrawlerTable({
 					</span>
 				) : undefined
 			}
-		>
-			{crawlers.length === 0 ? (
-				<AiEmpty>{emptyMessage}</AiEmpty>
-			) : (
-				<DataTable.Root ariaLabel="AI crawlers" maxHeight={360} stickySurfaceClass="bg-card">
-					<DataTable.Head>
-						<ColumnHead label="Crawler" width="w-0 flex-1 min-w-0" />
-						<ColumnHead label="Purpose" width="w-[72px]" />
-						<ColumnHead label="Pages" width="w-12" align="right" />
-						<ColumnHead
-							label="Fetches"
-							width="w-14"
-							align="right"
-							hidden="hidden @min-[380px]/panel:flex"
-						/>
-						<ColumnHead
-							label="Last seen"
-							width="w-20"
-							align="right"
-							hidden="hidden @min-[460px]/panel:flex"
-						/>
-					</DataTable.Head>
-					{crawlers.map((row) => {
-						const product = productForCrawler(row.crawler)
-						const purpose = purposeForCrawler(row.crawler)
-						return (
-							<div
-								key={row.crawler}
-								className="flex items-center gap-4 border-b border-border/40 px-4 py-2 last:border-0"
-							>
-								<span className="flex w-0 min-w-0 flex-1 items-center gap-2">
-									<AiProductIcon product={product?.id ?? ""} />
-									<span className="truncate text-[12px] text-foreground/90">
-										{row.crawler}
+			expand={{
+				count: plural(crawlers.length, "crawler", "crawlers"),
+				table: ({ maxHeight, surfaceClass }) => (
+					<DataTable.Root
+						ariaLabel="AI crawlers"
+						maxHeight={maxHeight}
+						stickySurfaceClass={surfaceClass}
+					>
+						<DataTable.Head>
+							<ColumnHead label="Crawler" width="w-0 flex-1 min-w-0" />
+							<ColumnHead label="Purpose" width="w-[72px]" />
+							<ColumnHead label="Pages" width="w-12" align="right" />
+							<ColumnHead
+								label="Fetches"
+								width="w-14"
+								align="right"
+								hidden="hidden @min-[380px]/panel:flex"
+							/>
+							<ColumnHead
+								label="Last seen"
+								width="w-20"
+								align="right"
+								hidden="hidden @min-[460px]/panel:flex"
+							/>
+						</DataTable.Head>
+						{crawlers.map((row) => {
+							const product = productForCrawler(row.crawler)
+							const purpose = purposeForCrawler(row.crawler)
+							return (
+								<div
+									key={row.crawler}
+									className="flex items-center gap-4 border-b border-border/40 px-4 py-2 last:border-0"
+								>
+									<span className="flex w-0 min-w-0 flex-1 items-center gap-2">
+										<AiProductIcon product={product?.id ?? ""} />
+										<span className="truncate text-[12px] text-foreground/90">
+											{row.crawler}
+										</span>
 									</span>
-								</span>
-								<span className="flex w-[72px] shrink-0">
-									{purpose ? <PurposeBadge purpose={purpose} /> : null}
-								</span>
-								<span
-									className={cn(
-										"w-12 text-right font-mono text-[11px] tabular-nums",
-										row.pages === 0 && "text-muted-foreground/60",
-									)}
-								>
-									{formatNumber(row.pages)}
-								</span>
-								<span
-									className="hidden w-14 text-right font-mono text-[11px] tabular-nums text-muted-foreground @min-[380px]/panel:inline-block"
-									title={
-										row.failedRequests > 0
-											? `${plural(row.failedRequests, "fetch", "fetches")} got an error response`
-											: undefined
-									}
-								>
-									{formatNumber(row.requests)}
-								</span>
-								<span className="hidden w-20 text-right text-[11px] text-muted-foreground @min-[460px]/panel:inline-block">
-									{formatRelativeTime(row.lastSeen)}
-								</span>
-							</div>
-						)
-					})}
-				</DataTable.Root>
-			)}
-		</AiPanel>
+									<span className="flex w-[72px] shrink-0">
+										{purpose ? <PurposeBadge purpose={purpose} /> : null}
+									</span>
+									<span
+										className={cn(
+											"w-12 text-right font-mono text-[11px] tabular-nums",
+											row.pages === 0 && "text-muted-foreground/60",
+										)}
+									>
+										{formatNumber(row.pages)}
+									</span>
+									<span
+										className="hidden w-14 text-right font-mono text-[11px] tabular-nums text-muted-foreground @min-[380px]/panel:inline-block"
+										title={
+											row.failedRequests > 0
+												? `${plural(row.failedRequests, "fetch", "fetches")} got an error response`
+												: undefined
+										}
+									>
+										{formatNumber(row.requests)}
+									</span>
+									<span className="hidden w-20 text-right text-[11px] text-muted-foreground @min-[460px]/panel:inline-block">
+										{formatRelativeTime(row.lastSeen)}
+									</span>
+								</div>
+							)
+						})}
+					</DataTable.Root>
+				),
+			}}
+		/>
 	)
 }
 
