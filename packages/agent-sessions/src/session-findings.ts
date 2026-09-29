@@ -22,7 +22,7 @@ import {
 	type SessionSummary,
 } from "./session-summary"
 import {
-	classifyAiSpan,
+	isCountedToolCall,
 	isLlmCall,
 	spanEndMs,
 	spanFailed,
@@ -359,7 +359,7 @@ function truncationSignal(span: AiSessionSpan): string | undefined {
 function repetitionFindings(turns: readonly SessionTurn[]): SessionFinding[] {
 	const findings: SessionFinding[] = []
 	turns.forEach((turn, index) => {
-		const calls = turn.spans.filter((span) => classifyAiSpan(span) === "tool")
+		const calls = turn.spans.filter(isCountedToolCall)
 		const byTool = new Map<string, AiSessionSpan[]>()
 		for (const span of calls) {
 			const name = toolNameOf(span)

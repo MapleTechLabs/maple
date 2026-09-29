@@ -11,7 +11,14 @@ import {
 	userMessages,
 } from "./span-test-support"
 import { buildSessionSummary } from "./session-summary"
-import { buildSessionTurns, classifyAiSpan, isLlmCall, spanFailed, spanTtftMs } from "./session-turns"
+import {
+	buildSessionTurns,
+	classifyAiSpan,
+	isCountedToolCall,
+	isLlmCall,
+	spanFailed,
+	spanTtftMs,
+} from "./session-turns"
 
 const SECOND = 1000
 
@@ -622,6 +629,26 @@ describe("the ingest gateway's verdicts", () => {
 		expect(classifyAiSpan(stamped("embed", { operationName: "embeddings", mapleLlmCall: 0 }))).toBe(
 			"inference",
 		)
+	})
+
+	it("render a paused tool copy as a tool, and never count it", () => {
+		// Google ADK's confirmation request, stamped `maple_ai.tool_call = 0`.
+		const paused = stamped("execute_tool delete_file", {
+			operationName: "execute_tool",
+			toolName: "delete_file",
+			toolCallResult: '{"error": "This tool call requires confirmation, please approve or reject."}',
+			mapleLlmCall: 0,
+			mapleToolCall: 0,
+		})
+		expect(classifyAiSpan(paused)).toBe("tool")
+		expect(isCountedToolCall(paused)).toBe(false)
+		expect(
+			isCountedToolCall(stamped("execute_tool delete_file", { mapleLlmCall: 0, mapleToolCall: 1 })),
+		).toBe(true)
+		// Before the gateway stamped: the classifier's rule.
+		expect(
+			isCountedToolCall(stamped("execute_tool delete_file", { operationName: "execute_tool" })),
+		).toBe(true)
 	})
 
 	it("decide whether a stamped span failed", () => {

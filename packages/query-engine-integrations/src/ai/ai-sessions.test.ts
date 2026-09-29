@@ -1437,11 +1437,11 @@ describe("aiSessionSummaryQuery", () => {
 			`if(${stamped}, toFloat64OrZero(coalesce(nullIf(SpanAttributes['maple_ai.usage.input_tokens'], ''), '')) + toFloat64OrZero(coalesce(nullIf(SpanAttributes['maple_ai.usage.cache_write_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens'], '')`,
 		)
 		// A model call and a tool call by the gateway's verdict, else by the
-		// op/model rules; a failure by its verdict or the span's status.
+		// op/model rules; a failure by its verdict, else by the span's status.
 		expect(sql).toContain(`countIf((SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (${stamped}) AND `)
 		expect(sql).toContain(`countIf((SpanAttributes['maple_ai.tool_call'] = '1' OR (NOT (${stamped}) AND `)
 		expect(sql).toContain(
-			`countIf(((StatusCode = 'Error' OR SpanAttributes['maple_ai.error'] = '1') OR ((NOT (${stamped}) AND `,
+			`countIf((SpanAttributes['maple_ai.error'] = '1' OR (NOT (${stamped}) AND (StatusCode = 'Error' OR `,
 		)
 		expect(sql).toContain(`if(${stamped}, SpanAttributes['maple_ai.model'], `)
 		expect(sql).toContain(`if(${stamped}, SpanAttributes['maple_ai.agent.name'], `)

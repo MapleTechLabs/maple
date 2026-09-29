@@ -69,7 +69,9 @@ export function classifyAiSpan(span: AiSessionSpan): AiSpanCategory {
 	// before it did, until they age out of the 30-day TTL.
 	if (span.genAi.mapleLlmCall !== undefined) {
 		if (span.genAi.mapleLlmCall === 1) return "inference"
-		if (span.genAi.mapleToolCall === 1) return "tool"
+		// `0` is the copy a call paused for a human's approval left: still a
+		// tool span on screen, never counted (`isCountedToolCall`).
+		if (span.genAi.mapleToolCall !== undefined) return "tool"
 		return operation !== undefined && RETRIEVAL_OPS.has(operation) ? "inference" : "agent"
 	}
 	if (operation !== undefined) {
@@ -105,6 +107,17 @@ export function classifyAiSpan(span: AiSessionSpan): AiSpanCategory {
  * documented four would color a span as inference and then leave it out of the
  * call count, the model rows and the token column.
  */
+/**
+ * A tool call that counts, wherever tool calls are counted: on a span the
+ * ingest gateway stamped, its `maple_ai.tool_call = 1`, which leaves out the
+ * copy a call paused for a human's approval left although it renders as a
+ * tool.
+ */
+export function isCountedToolCall(span: AiSessionSpan): boolean {
+	if (span.genAi.mapleLlmCall !== undefined) return span.genAi.mapleToolCall === 1
+	return classifyAiSpan(span) === "tool"
+}
+
 export function isLlmCall(span: AiSessionSpan): boolean {
 	if (span.genAi.mapleLlmCall !== undefined) return span.genAi.mapleLlmCall === 1
 	const operation = span.genAi.operationName
@@ -127,11 +140,13 @@ const FAILED_RESPONSE_STATUSES = new Set(["failed", "error"])
  * `gen_ai.response.status` counts too. Scoped to AI spans because HTTP
  * instrumentation legitimately stamps `error.type` on expected 4xx requests
  * whose span status is deliberately not `Error`. On a span the ingest gateway
- * stamped, its verdict (`MAPLE_AI_STAMP_ATTRS.error`), which is this rule.
+ * stamped, its verdict (`MAPLE_AI_STAMP_ATTRS.error`), which is this rule
+ * less the copy a call paused for a human's approval leaves, which some
+ * frameworks end in error.
  */
 export function spanFailed(span: AiSessionSpan): boolean {
-	if (span.statusCode === "Error") return true
 	if (span.genAi.mapleLlmCall !== undefined) return span.genAi.mapleError === 1
+	if (span.statusCode === "Error") return true
 	if (!span.isAiSpan) return false
 	const errorType = span.genAi.errorType
 	if (errorType !== undefined && errorType !== "") return true

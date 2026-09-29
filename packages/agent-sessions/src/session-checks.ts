@@ -28,7 +28,7 @@ import {
 	type SessionTokenReporting,
 } from "./session-summary"
 import {
-	classifyAiSpan,
+	isCountedToolCall,
 	isLlmCall,
 	spanModel,
 	spanStartMs,
@@ -202,7 +202,7 @@ function readCoverage(
 	turns: readonly SessionTurn[],
 ): SessionCoverage {
 	const llmCalls = spans.filter(isLlmCall)
-	const toolCalls = spans.filter((span) => classifyAiSpan(span) === "tool")
+	const toolCalls = spans.filter(isCountedToolCall)
 	// JSON-decoded payloads: an emitter that wrote `null` lands as `null`,
 	// not as a missing key, and recorded nothing.
 	const recorded = (
