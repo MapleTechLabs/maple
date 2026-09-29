@@ -103,16 +103,15 @@ const USAGE_BUCKET_KEYS = [
 	MAPLE_AI_USAGE_ATTRS.output,
 	MAPLE_AI_USAGE_ATTRS.reasoning,
 ] as const
-const modelCall = (buckets: readonly number[] = [], cost?: string): Readonly<Record<string, string>> => ({
-	[MAPLE_AI_LLM_CALL_ATTR]: "1",
-	...Object.fromEntries(
-		USAGE_BUCKET_KEYS.flatMap((key, index) => {
+const modelCall = (buckets: readonly number[] = [], cost?: string): Readonly<Record<string, string>> =>
+	Object.fromEntries([
+		[MAPLE_AI_LLM_CALL_ATTR, "1"] as const,
+		...USAGE_BUCKET_KEYS.flatMap((key, index) => {
 			const count = buckets[index] ?? 0
 			return count > 0 ? [[key, String(count)] as const] : []
 		}),
-	),
-	...(cost === undefined ? {} : { [MAPLE_AI_USAGE_ATTRS.cost]: cost }),
-})
+		...(cost === undefined ? [] : [[MAPLE_AI_USAGE_ATTRS.cost, cost] as const]),
+	])
 
 // The turn-owning span of the eve session: the only one of its trace that
 // carries the session key, which is why resolution is per-TRACE. It names the
