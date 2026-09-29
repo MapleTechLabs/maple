@@ -768,7 +768,7 @@ function AssistantBlock({
 					<p className="text-muted-foreground text-xs">No reply was produced by this call.</p>
 				</div>
 			)}
-			{!row.failed && row.text === undefined && (
+			{!row.failed && !row.toolCallsOnly && row.text === undefined && (
 				<InlineNote className="mt-2.5">
 					The reply isn't captured. This emitter recorded the request but not{" "}
 					<span className="font-mono">gen_ai.output.messages</span>, so the call's text is gone — it
@@ -954,7 +954,9 @@ function ToolBlock({
 						missingResultNote={
 							row.fromMessageOnly
 								? "not captured — this call is known only from the message that made it. Whether it ran is unknown."
-								: "not captured — the span carries no result attribute and no later message echoes this call id. Whether it succeeded is unknown."
+								: row.failed
+									? "not captured — the span failed without recording a result or an error message."
+									: "not captured — the span carries no result attribute and no later message echoes this call id. Whether it succeeded is unknown."
 						}
 						keyPrefix={row.key}
 						openRows={openRows}

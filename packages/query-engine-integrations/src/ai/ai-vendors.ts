@@ -1,7 +1,7 @@
 // Per-vendor overrides, keyed by the `maple_ai.vendor.id` the ingest gateway
 // stamped on the span.
 //
-// Five entries cover four dialects: the default GenAI integration already
+// Four dialects cover every entry: the default GenAI integration already
 // reads canonical `gen_ai.*`, which is what most detected vendors emit, so an
 // override is only worth writing for a framework with a different dialect. Each
 // list holds that dialect's keys alone — the default's canonical and legacy
@@ -10,6 +10,13 @@
 // rather than guessed: a wrong key never matches, so it is invisible.
 
 import type { AiIntegration, AiRefineContext } from "./ai-integrations"
+import {
+	flattenedMessages,
+	openInferenceMessages,
+	unwrapMessages,
+	unwrapOutputMessages,
+	unwrapToolMessage,
+} from "./ai-messages"
 import { MAPLE_NATIVE_TURN_ID_ATTR, type MutableAiGenAiValues } from "@maple/domain/gen-ai"
 
 /**
@@ -79,14 +86,23 @@ const OPENINFERENCE_SPAN_KIND_OPERATIONS = new Map([
 ])
 
 /**
- * OpenInference — the dialect Arize's instrumentors emit. Registered under both
- * `openinference-openai` (the gateway's id for the OpenAI instrumentor) and
+ * OpenInference — the dialect Arize's instrumentors emit. Registered under
+ * `openinference-openai` (the gateway's id for the OpenAI instrumentor),
  * `unknown:openinference` (its generic bucket for any other OpenInference
- * scope), because the dialect is identical; only the detection path differs.
+ * scope) and the framework ids an `openinference.instrumentation.<framework>`
+ * scope is stamped with (agno, crewai, dspy, openai_agents_sdk, smolagents;
+ * langchain and llamaindex once the gateway fingerprints those scopes),
+ * because the dialect is identical; only the detection path differs. A
+ * framework's native spans carry none of these keys, so the entry costs them
+ * nothing.
  *
- * The integration id is the DIALECT, not the vendor stamp, so both stamps
- * report the same integration.
+ * The integration id is the DIALECT, not the vendor stamp, so every stamp
+ * reports the same integration.
  */
+/** The flattened message families; see `flattenedMessages`. */
+const OI_INPUT_MESSAGES = "llm.input_messages."
+const OI_OUTPUT_MESSAGES = "llm.output_messages."
+
 const openInferenceIntegration: AiIntegration = {
 	id: "openinference",
 	sources: {
@@ -97,8 +113,7 @@ const openInferenceIntegration: AiIntegration = {
 		usageCacheReadInputTokens: ["llm.token_count.prompt_details.cache_read"],
 		usageReasoningOutputTokens: ["llm.token_count.completion_details.reasoning"],
 		usageCost: ["llm.cost.total"],
-		inputMessages: ["llm.input_messages", "input.value"],
-		outputMessages: ["llm.output_messages", "output.value"],
+		responseFinishReasons: ["llm.finish_reason"],
 		toolName: ["tool.name"],
 		toolDescription: ["tool.description"],
 		toolDefinitions: ["llm.tools"],
@@ -107,13 +122,54 @@ const openInferenceIntegration: AiIntegration = {
 		// `openinference.span.kind` is the dialect's operation classifier, but it
 		// is an enum of a different vocabulary rather than a differently named
 		// `gen_ai.operation.name`, so translating it is a refine, not an alias.
-		if (values.operationName !== undefined) return
-		const operation = OPENINFERENCE_SPAN_KIND_OPERATIONS.get(
-			ctx.attributes["openinference.span.kind"] ?? "",
+		const kind = ctx.attributes["openinference.span.kind"] ?? ""
+		if (values.operationName === undefined) {
+			const operation = OPENINFERENCE_SPAN_KIND_OPERATIONS.get(kind)
+			if (operation !== undefined) values.operationName = operation
+		}
+
+		// `input.value` / `output.value` are whatever the span's function took and
+		// returned, and the flattened `llm.*_messages.N` keys are the messages
+		// the instrumentor extracted. The value wins when it is a message list
+		// (it is the exact capture), the flattened keys when it is not (Python
+		// instrumentors write reprs there), and the bare value only on a model
+		// call: an agent run's `{"task": …}` is not the user speaking.
+		const modelCall = kind === "" || kind === "LLM"
+		const input = ctx.read("inputMessages", "input.value")
+		const output = ctx.read("outputMessages", "output.value")
+		const inputMessages = openInferenceMessages(
+			unwrapMessages(input),
+			flattenedMessages(ctx.attributes, OI_INPUT_MESSAGES),
+			modelCall,
 		)
-		if (operation !== undefined) values.operationName = operation
+		if (values.inputMessages === undefined && inputMessages !== undefined) {
+			values.inputMessages = inputMessages
+		}
+		const outputMessages = openInferenceMessages(
+			unwrapOutputMessages(output),
+			flattenedMessages(ctx.attributes, OI_OUTPUT_MESSAGES),
+			modelCall,
+		)
+		if (values.outputMessages === undefined && outputMessages !== undefined) {
+			values.outputMessages = outputMessages
+		}
+
+		// On a tool they are its arguments and result. The GenAI dual-write also
+		// copies the tool's parameter schema into `gen_ai.tool.call.arguments`,
+		// which the real arguments replace.
+		if (kind !== "TOOL") return
+		const schema = ctx.attributes["tool.parameters"]
+		const schemaAsArguments =
+			schema !== undefined && schema !== "" && schema === ctx.attributes["gen_ai.tool.call.arguments"]
+		if ((values.toolCallArguments === undefined || schemaAsArguments) && input !== undefined) {
+			values.toolCallArguments = input
+		}
+		if (values.toolCallResult === undefined && output !== undefined) {
+			values.toolCallResult = unwrapToolMessage(output)
+		}
 	},
-	refineKeys: ["openinference.span.kind"],
+	refineKeys: ["openinference.span.kind", "tool.parameters", "input.value", "output.value"],
+	refinePrefixes: [OI_INPUT_MESSAGES, OI_OUTPUT_MESSAGES],
 }
 
 /**
@@ -160,6 +216,13 @@ export const AI_VENDOR_INTEGRATIONS = {
 	vercel_ai_sdk: vercelAiSdkIntegration,
 	"openinference-openai": openInferenceIntegration,
 	"unknown:openinference": openInferenceIntegration,
+	agno: openInferenceIntegration,
+	crewai: openInferenceIntegration,
+	dspy: openInferenceIntegration,
+	langchain: openInferenceIntegration,
+	llamaindex: openInferenceIntegration,
+	openai_agents_sdk: openInferenceIntegration,
+	smolagents: openInferenceIntegration,
 	eve: eveIntegration,
 	maple: mapleIntegration,
 } as const satisfies Record<string, AiIntegration>

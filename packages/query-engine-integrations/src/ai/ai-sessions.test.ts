@@ -359,6 +359,13 @@ describe("aiSessionPageQuery", () => {
 		expect(traces).toContain(
 			"groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageReporters",
 		)
+		// And the trace's way up, so a claim climbs past spans that reported nothing.
+		expect(traces).toContain(
+			"CAST(groupArray(2000)(tuple(SpanId, if(Tokens > 0, SpanId, ParentSpanId))), 'Map(String, String)') AS tokenLinks",
+		)
+		expect(traces).toContain(
+			"CAST(groupArray(2000)(tuple(SpanId, if(Cost > 0, SpanId, ParentSpanId))), 'Map(String, String)') AS costLinks",
+		)
 		expect(traces).toContain(
 			"max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceAgentEndNanos",
 		)
@@ -369,13 +376,11 @@ describe("aiSessionPageQuery", () => {
 		// trace of a call is in hand next to the app's own span of it — and the
 		// two lookups the netting makes, taken off them once per session.
 		expect(sessions).toContain(
-			"arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000) AS reporters",
+			"arraySlice(arrayFlatten(groupArray(arrayMap(r -> tupleConcat(r, tuple(tokenLinks[tokenLinks[tokenLinks[tokenLinks[r.2]]]], costLinks[costLinks[costLinks[costLinks[r.2]]]])), usageReporters))), 1, 2000) AS reporters",
 		)
-		expect(sessions).toContain("arrayReduce('sumMap', arrayMap(c -> [c.2], reporters)")
+		expect(sessions).toContain("arrayReduce('sumMap', arrayMap(c -> [c.12, c.13], reporters)")
 		expect(sessions).toContain(") AS childClaims")
-		expect(sessions).toContain(
-			"tupleElement(arrayFilter(p -> p.3 > 0 OR p.4 > 0, reporters), 1) AS reportingIds",
-		)
+		expect(sessions).toContain("tupleElement(reporters, 1) AS reporterIds")
 		expect(sessions).toContain(
 			"intDiv(max(traceAgentEndNanos) - toUnixTimestamp64Nano(min(traceAgentStart)), 1000000) AS agentDurationMs",
 		)
@@ -1013,8 +1018,11 @@ describe("aiSessionSpansQuery", () => {
 		expect(sql).toContain("TraceId IN (SELECT")
 		expect(sql).toContain("FROM traces")
 		expect(sql).toContain("Duration / 1000000 AS durationMs")
-		expect(sql).toContain("mapFilter((k, v) -> (k IN ('maple_ai.session.id', ")
-		expect(sql).toContain("OR k LIKE 'gen_ai.prompt.variable.%'), SpanAttributes) AS spanAttributes")
+		expect(sql).toContain("mapFilter((k, v) -> (((k IN ('maple_ai.session.id', ")
+		expect(sql).toContain("OR k LIKE 'gen_ai.prompt.variable.%')")
+		expect(sql).toContain(
+			"OR k LIKE 'llm.input_messages.%') OR k LIKE 'llm.output_messages.%'), SpanAttributes) AS spanAttributes",
+		)
 		expect(sql).not.toContain("ResourceAttributes")
 		expect(sql).toContain("ORDER BY timestamp ASC")
 		expect(sql).toContain("LIMIT 2000")

@@ -115,6 +115,11 @@ export function mapleTracer(name: string, version: string): Tracer {
 	return (mapleProvider ?? trace.getTracerProvider()).getTracer(name, version)
 }
 
+/** A tracer on Maple's provider while tracing is live, with no global fallback. */
+export function liveMapleTracer(name: string, version: string): Tracer | undefined {
+	return mapleProvider?.getTracer(name, version)
+}
+
 /**
  * Set up browser OTel tracing exporting to Maple's ingest. When
  * `tracingInstrumentFetch` is true, fetch() calls are auto-instrumented and

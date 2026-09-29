@@ -13,6 +13,7 @@ import { canonicalJSON } from "@maple/query-engine"
 import { clipDetail, failureDetailText } from "./failure-text"
 import {
 	failureEvents,
+	finishReasonsIn,
 	findIdleGaps,
 	isProviderAttempt,
 	shadowedAncestorIds,
@@ -46,8 +47,9 @@ const IDENTICAL_RUN_MIN_CALLS = 3
  */
 const MID_TURN_STALL_MIN_MS = 30_000
 
-/** Finish reasons that mean the reply was cut off at the output token limit. */
-const TRUNCATION_FINISH_REASONS = new Set(["length", "max_tokens", "max_output_tokens"])
+/** Finish reasons that mean the reply was cut off at the output token limit,
+ *  as `finishReasonsIn` keys. */
+const TRUNCATION_FINISH_REASONS = new Set(["length", "maxtokens", "maxoutputtokens"])
 
 /**
  * Failure kinds that need a fix whether or not the run survived them: the
@@ -351,10 +353,7 @@ function truncationFindings(
 }
 
 function truncationSignal(span: AiSessionSpan): string | undefined {
-	const reasons = (span.genAi.responseFinishReasons ?? [])
-		.map((reason) => reason.toLowerCase())
-		.filter((reason) => TRUNCATION_FINISH_REASONS.has(reason))
-	return reasons.length === 0 ? undefined : reasons.join(",")
+	return finishReasonsIn(span, TRUNCATION_FINISH_REASONS)
 }
 
 function repetitionFindings(turns: readonly SessionTurn[]): SessionFinding[] {
