@@ -66,6 +66,12 @@ stack and no filename. Those are dropped rather than recorded: they all
 fingerprint to one contentless issue that buries the real ones. Add
 `crossorigin` to the script tag to get the real error instead.
 
+### Breadcrumbs
+
+The last 50 clicks, inputs, navigations and console lines are kept in memory and exported, as OTel
+log records linked to the error's span, only when an error is recorded. `breadcrumbs: false` turns
+this off; `logs: { captureConsole: ["warn", "error"] }` sends those console levels as logs right away.
+
 ## Bundle size
 
 Bundled, minified and gzipped, as your bundler would ship it:

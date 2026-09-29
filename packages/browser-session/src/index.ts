@@ -14,6 +14,7 @@ export type { SessionEvent, SessionEventSink } from "./events/events-sink"
 export {
 	clearPendingEvents,
 	getActiveSink,
+	onSessionEvent,
 	setActiveTraceIdProvider,
 	startEventSink,
 } from "./events/events-sink"

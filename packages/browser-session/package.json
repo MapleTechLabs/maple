@@ -9,7 +9,8 @@
 		".": "./src/index.ts",
 		"./replay": "./src/session/replay-session.ts",
 		"./props": "./src/events/props.ts",
-		"./region": "./src/platform/region.ts"
+		"./region": "./src/platform/region.ts",
+		"./console": "./src/replay/capture/console.ts"
 	},
 	"scripts": {
 		"typecheck": "tsc --noEmit",

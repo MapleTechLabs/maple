@@ -10,7 +10,7 @@
 // Error. That is the shape `error_events_mv` fingerprints on, so these arrive in
 // error tracking beside server-side errors rather than in a separate silo.
 import { scrubUrl } from "@maple/browser-session"
-import { context, type Span, SpanKind, SpanStatusCode } from "@opentelemetry/api"
+import { context, type Span, type SpanContext, SpanKind, SpanStatusCode } from "@opentelemetry/api"
 import { exceptionOf } from "./error-causes"
 import { type ErrorSource, shouldCapture } from "./error-filters"
 import { keepContext } from "./sampling"
@@ -48,6 +48,13 @@ const asError = (value: unknown): Error => {
  */
 let reported = new WeakSet<object>()
 
+/** Set by the deferred chunk, which exports the error's breadcrumb trail. */
+let onErrorRecorded: ((spanContext: SpanContext) => void) | undefined
+
+export function setErrorRecordedHook(hook: ((spanContext: SpanContext) => void) | undefined): void {
+	onErrorRecorded = hook
+}
+
 /** Whether this exact error object was already recorded. */
 const alreadyReported = (error: unknown): boolean =>
 	typeof error === "object" && error !== null && reported.has(error)
@@ -70,6 +77,7 @@ export function recordFailure(span: Span, error: unknown): void {
 	if (!alreadyReported(error)) {
 		if (span.isRecording() && typeof error === "object" && error !== null) reported.add(error)
 		span.recordException(exceptionOf(normalized))
+		if (span.isRecording()) onErrorRecorded?.(span.spanContext())
 	}
 	span.setStatus({ code: SpanStatusCode.ERROR, message: normalized.message })
 }

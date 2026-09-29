@@ -56,6 +56,8 @@ Every field accepted by `MapleBrowser.init`:
 | `tracing.propagateTraceHeaderCorsUrls` | `Array<string \| RegExp>` | `[]`                                      | Cross-origin URLs whose `fetch()` requests carry the `traceparent` header. See [Tracing across origins](#tracing-across-origins).                                                                                                                         |
 | `tracing.sampleRate`                   | `number`                  | `1`                                       | Fraction of sessions whose traces are exported, `0` to `1`. Decided per session; error spans are always exported. See [Sampling](#sampling).                                                                                                              |
 | `webVitals`                            | `boolean`                 | `true`                                    | Report Core Web Vitals as `browser.web_vital` log events. See [Web Vitals](#web-vitals).                                                                                                                                                                  |
+| `breadcrumbs`                          | `boolean`                 | `true`                                    | Keep the last clicks, inputs, navigations and console lines, and export them with the next error. See [Breadcrumbs](#breadcrumbs).                                                                                                                        |
+| `logs.captureConsole`                  | `ConsoleLevel[]`          | `[]`                                      | Console levels exported as OTel logs as they happen, e.g. `["warn", "error"]`.                                                                                                                                                                            |
 | `errors`                               | `ErrorFilterOptions`      | see [Filtering errors](#filtering-errors) | Drop captured errors by message, script URL, or a `beforeCapture` hook.                                                                                                                                                                                   |
 | `replay.enabled`                       | `boolean`                 | `true`                                    | Enable rrweb session recording.                                                                                                                                                                                                                           |
 | `replay.sampleRate`                    | `number`                  | `1`                                       | Fraction of sessions to record, `0` to `1`. Out-of-range values are clamped with a warning. See [Sampling](#sampling).                                                                                                                                    |
@@ -280,6 +282,22 @@ MapleBrowser.init({
 Errors thrown from browser extensions (`chrome-extension://`, `moz-extension://`,
 `safari-web-extension://`) and the benign `ResizeObserver loop` notices are dropped by default. Set
 `errors.defaultFilters: false` to keep them.
+
+### Breadcrumbs
+
+The SDK keeps the last 50 clicks, inputs, navigations and console lines in memory. Nothing is sent
+until an error is recorded: then the trail is exported as OpenTelemetry log records linked to the
+error's span, so it shows up on the error's trace. Each breadcrumb is sent once; the next error gets
+the trail since the last one.
+
+- Clicks, inputs and navigations are `maple.browser.breadcrumb` events with `maple.breadcrumb.type`,
+  `maple.breadcrumb.target` (a short selector, never an input value) and `url.full`.
+- Console lines are ordinary log records at the console call's severity, with
+  `maple.breadcrumb.type: "console"`.
+
+Collection starts with the SDK's deferred chunk, a moment after `init()`. Turn it off with
+`breadcrumbs: false`. To send console output as logs whether or not an error follows, list the
+levels in `logs.captureConsole`; those lines are exported right away and not kept as breadcrumbs.
 
 ### Linked errors
 

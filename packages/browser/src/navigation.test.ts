@@ -48,6 +48,8 @@ const CONFIG = {
 	tracingInstrumentXhr: false,
 	errorFilters: {},
 	webVitals: false,
+	breadcrumbs: false,
+	captureConsole: [],
 	sanitizeUrl: undefined,
 }
 

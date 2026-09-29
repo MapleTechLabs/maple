@@ -9,6 +9,8 @@ import {
 } from "@maple/browser-session"
 import type { ErrorFilterOptions } from "./error-filters"
 
+export type ConsoleLevel = "debug" | "log" | "info" | "warn" | "error"
+
 /** Public configuration for `MapleBrowser.init`. */
 export interface MapleBrowserConfig {
 	/**
@@ -85,6 +87,15 @@ export interface MapleBrowserConfig {
 	 * log events. Default true.
 	 */
 	readonly webVitals?: boolean
+	/**
+	 * Keep the last clicks, inputs, navigations and console lines in memory, and
+	 * export them as logs linked to the error when one is recorded. Default true.
+	 */
+	readonly breadcrumbs?: boolean
+	readonly logs?: {
+		/** Console levels exported as OTel logs as they happen, e.g. `["warn", "error"]`. Default none. */
+		readonly captureConsole?: ReadonlyArray<ConsoleLevel>
+	}
 	/** Which captured errors to drop before they are reported. See `ErrorFilterOptions`. */
 	readonly errors?: ErrorFilterOptions
 	readonly replay?: {
@@ -154,6 +165,8 @@ export interface ResolvedConfig {
 	readonly tracingSampleRate: number
 	readonly errorFilters: ErrorFilterOptions
 	readonly webVitals: boolean
+	readonly breadcrumbs: boolean
+	readonly captureConsole: ReadonlyArray<ConsoleLevel>
 	readonly replayEnabled: boolean
 	readonly replaySampleRate: number
 	readonly maskAllInputs: boolean
@@ -220,6 +233,8 @@ export function resolveConfig(config: MapleBrowserConfig): ResolvedConfig {
 		tracingSampleRate: resolveSampleRate("tracing.sampleRate", config.tracing?.sampleRate),
 		errorFilters: config.errors ?? {},
 		webVitals: config.webVitals ?? true,
+		breadcrumbs: config.breadcrumbs ?? true,
+		captureConsole: config.logs?.captureConsole ?? [],
 		replayEnabled: config.replay?.enabled ?? true,
 		replaySampleRate: resolveSampleRate("replay.sampleRate", config.replay?.sampleRate),
 		maskAllInputs: config.privacy?.maskAllInputs ?? true,

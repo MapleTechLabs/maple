@@ -2,7 +2,9 @@
 // behind this chunk, so it stays off the eager bundle every page load pays for.
 import type { SpanContext } from "@opentelemetry/api"
 import type { ResolvedConfig } from "../config"
+import { setErrorRecordedHook } from "../errors"
 import { onDocumentPageload } from "../navigation"
+import { flushBreadcrumbs, startBreadcrumbs } from "./breadcrumbs"
 import { recordDocumentTiming } from "./document-timing"
 import { startLogs } from "./logs"
 import { startWebVitals } from "./web-vitals"
@@ -15,11 +17,18 @@ export function startDeferred(config: ResolvedConfig): () => Promise<void> {
 	})
 	// Before the logs pipeline, so vitals reported on page hide are emitted before its flush listener runs.
 	const stopVitals = config.webVitals ? startWebVitals(() => pageload) : () => {}
+	const stopBreadcrumbs = startBreadcrumbs({
+		breadcrumbs: config.breadcrumbs,
+		captureConsole: config.captureConsole,
+	})
+	setErrorRecordedHook(flushBreadcrumbs)
 	const stops = [
 		startLogs(config),
 		async () => {
 			stopVitals()
 			onDocumentPageload(undefined)
+			setErrorRecordedHook(undefined)
+			stopBreadcrumbs()
 		},
 	]
 	return async () => {

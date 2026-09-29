@@ -30,6 +30,27 @@ export interface SessionEvent {
 	attrs?: Record<string, string>
 }
 
+type SessionEventListener = (ev: SessionEvent) => void
+
+/** On `globalThis` like the sink: every bundled copy of this module must see the same listeners. */
+const LISTENERS_KEY = "__MAPLE_SESSION_EVENT_LISTENERS__"
+
+function listeners(): Set<SessionEventListener> {
+	const global = globalThis as typeof globalThis & Record<string, Set<SessionEventListener> | undefined>
+	let set = global[LISTENERS_KEY]
+	if (!set) {
+		set = new Set()
+		global[LISTENERS_KEY] = set
+	}
+	return set
+}
+
+/** Observe every event the live sink records, e.g. for an error's breadcrumb trail. Returns an unsubscribe. */
+export function onSessionEvent(listener: SessionEventListener): () => void {
+	listeners().add(listener)
+	return () => listeners().delete(listener)
+}
+
 const FLUSH_INTERVAL_MS = 5_000
 const FLUSH_BYTES = 64 * 1024
 
@@ -143,6 +164,12 @@ export function startEventSink(config: IngestConfig, sessionId: string): Session
 		buffer.push({ ev, seq: seq++ })
 		bufferBytes += approximateSize(ev)
 		if (bufferBytes >= FLUSH_BYTES) void flush()
+		for (const listener of listeners()) {
+			// A listener must never break capture.
+			try {
+				listener(ev)
+			} catch {}
+		}
 	}
 
 	// Navigation is observed by the sink rather than by a capture module: page
