@@ -21,7 +21,8 @@
 //!
 //! A flag is written only when it holds and a value only when there is one:
 //! `maple_ai.llm_call`, present on every stamped span, is what tells a reader
-//! the rest were decided.
+//! the rest were decided. The keys must match `MAPLE_AI_STAMP_ATTRS` in
+//! `packages/domain/src/gen-ai.ts`.
 //!
 //! Performance: the span's attributes are read in one pass, each key looked
 //! up once in a table of every key any fact reads, instead of one scan of
@@ -59,7 +60,7 @@ const CONFIRMATION_REQUEST: &str = "This tool call requires confirmation";
 
 /// Response model first: an alias in the request resolves to a dated
 /// snapshot in the response.
-pub(super) const MODEL_KEYS: &[&str] = &[
+const MODEL_KEYS: &[&str] = &[
     "gen_ai.response.model",
     "gen_ai.request.model",
     "ai.response.model",
@@ -69,7 +70,7 @@ pub(super) const MODEL_KEYS: &[&str] = &[
 /// `ai.telemetry.functionId` is the name an app gave a traced Vercel AI SDK
 /// call, the only agent identity an older-SDK span has.
 const AGENT_NAME_KEYS: &[&str] = &["gen_ai.agent.name", "ai.telemetry.functionId"];
-pub(super) const TOOL_NAME_KEYS: &[&str] = &["gen_ai.tool.name", "ai.toolCall.name", "tool.name"];
+const TOOL_NAME_KEYS: &[&str] = &["gen_ai.tool.name", "ai.toolCall.name", "tool.name"];
 const TOOL_CALL_ID_KEYS: &[&str] = &["gen_ai.tool.call.id", "ai.toolCall.id"];
 const TOOL_DESCRIPTION_KEYS: &[&str] = &["gen_ai.tool.description", "tool.description"];
 const TOOL_RESULT_KEYS: &[&str] = &["gen_ai.tool.call.result", "ai.toolCall.result"];
@@ -130,12 +131,15 @@ enum Slot {
     Number(usize),
 }
 
+/// A key, the fact it feeds, and its rank in that fact's list.
+type Key = (&'static str, Slot, u8);
+
 /// Every key above as `(key, slot, rank)`, bucketed by the key's length;
 /// `rank` is the key's place in its fact's list. A span's key is compared
-/// only against the few keys of its own length, so the common miss costs an
-/// index and a short loop, never a string comparison.
-static KEY_TABLE: LazyLock<Vec<Vec<(&str, Slot, u8)>>> = LazyLock::new(|| {
-    let mut table: Vec<Vec<(&str, Slot, u8)>> = Vec::new();
+/// only against the few keys of its own length, and their last byte first, so
+/// the common miss costs an index and a short loop, rarely a string compare.
+static KEY_TABLE: LazyLock<Vec<Vec<Key>>> = LazyLock::new(|| {
+    let mut table: Vec<Vec<Key>> = Vec::new();
     let lists = TEXT_KEYS
         .iter()
         .enumerate()
