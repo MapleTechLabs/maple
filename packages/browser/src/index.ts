@@ -2,6 +2,7 @@ import { type IdentifyInput, setConsent, type TrackProps, track } from "@maple/b
 import type { MapleBrowserConfig } from "./config"
 import { type CaptureExceptionOptions, captureException } from "./errors"
 import { identify, init, type MapleBrowserHandle } from "./init"
+import { type MapleLogger, logger } from "./logger"
 import { endNavigation, startNavigation, type TracedOptions, traced } from "./navigation"
 
 export type {
@@ -11,9 +12,13 @@ export type {
 	TrackProps,
 	TraitValue,
 } from "@maple/browser-session"
-export type { MapleBrowserConfig } from "./config"
+export type { ConsoleLevel, MapleBrowserConfig } from "./config"
+export type { ErrorFilterHint, ErrorFilterOptions, ErrorSource } from "./error-filters"
 export type { CaptureExceptionOptions } from "./errors"
+export type { HttpStatusRange } from "./http-status"
 export type { MapleBrowserHandle } from "./init"
+export type { LogAttributeValue } from "./logs"
+export type { MapleLogger } from "./logger"
 export type { TracedOptions } from "./navigation"
 
 /** The `MapleBrowser` namespace object. */
@@ -52,6 +57,11 @@ export interface MapleBrowserApi {
 	 * Errors are recorded once and rethrown. Only requests started before `fn`'s first `await` nest under the span.
 	 */
 	traced: <T>(name: string, fn: () => Promise<T>, options?: TracedOptions) => Promise<T>
+	/**
+	 * Structured logs, exported as OpenTelemetry log records linked to the active
+	 * span and the session. Safe before `init`: records queue until it runs.
+	 */
+	logger: MapleLogger
 }
 
 /**
@@ -81,4 +91,5 @@ export const MapleBrowser: MapleBrowserApi = {
 	startNavigation,
 	endNavigation,
 	traced,
+	logger,
 }

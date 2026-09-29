@@ -1,5 +1,5 @@
 // TEST-SEAM: This focused test replaces process-global modules that have no instance-level injection seam.
-import { resetConsentForTests } from "@maple/browser-session"
+import { resetConsentForTests, scrubUrl, setConsent } from "@maple/browser-session"
 import {
 	context,
 	INVALID_SPAN_CONTEXT,
@@ -60,6 +60,18 @@ const stop = async (): Promise<void> => {
 	await handle?.shutdown()
 	handle = undefined
 }
+
+/** Document timing spans (`documentFetch`, `dns`, ...) are covered by their own tests. */
+const TIMING_SPANS = new Set([
+	"documentFetch",
+	"dns",
+	"connect",
+	"request",
+	"response",
+	"domProcessing",
+	"loadEvent",
+])
+const spanNames = () => exported.filter((span) => !TIMING_SPANS.has(span.name)).map((span) => span.name)
 
 const named = (name: string): ReadableSpan => {
 	const span = exported.find((candidate) => candidate.name === name)
@@ -122,7 +134,7 @@ describe("startNavigation / endNavigation", () => {
 		MapleBrowser.endNavigation("/settings")
 		await stop()
 
-		expect(exported.map((span) => span.name)).toEqual(["pageload /projects/:id", "navigate /settings"])
+		expect(spanNames()).toEqual(["pageload /projects/:id", "navigate /settings"])
 		expect(named("pageload /projects/:id").attributes["url.path"]).toBe("/projects/8f2a")
 		expect(named("navigate /settings").attributes["url.path"]).toBe("/settings")
 		expect(named("navigate /settings").attributes["app.navigation.interrupted"]).toBeUndefined()
@@ -134,7 +146,7 @@ describe("startNavigation / endNavigation", () => {
 		MapleBrowser.endNavigation()
 		await stop()
 
-		expect(exported.map((span) => span.name)).toEqual(["pageload"])
+		expect(spanNames()).toEqual(["pageload"])
 	})
 
 	it("does nothing when no navigation is open", async () => {
@@ -146,7 +158,7 @@ describe("startNavigation / endNavigation", () => {
 		MapleBrowser.endNavigation("/b")
 		await stop()
 
-		expect(exported.map((span) => span.name)).toEqual(["pageload /a"])
+		expect(spanNames()).toEqual(["pageload /a"])
 	})
 
 	it("ends a navigation still open when the next starts, as interrupted", async () => {
@@ -158,7 +170,7 @@ describe("startNavigation / endNavigation", () => {
 		MapleBrowser.endNavigation("/fast")
 		await stop()
 
-		expect(exported.map((span) => span.name)).toEqual(["pageload /a", "navigate", "navigate /fast"])
+		expect(spanNames()).toEqual(["pageload /a", "navigate", "navigate /fast"])
 		expect(named("navigate").attributes["app.navigation.interrupted"]).toBe(true)
 		expect(named("navigate").attributes["url.path"]).toBe("/slow")
 		expect(named("navigate /fast").attributes["app.navigation.interrupted"]).toBeUndefined()
@@ -179,7 +191,7 @@ describe("startNavigation / endNavigation", () => {
 		MapleBrowser.endNavigation("/login?token=abc")
 		await stop()
 
-		expect(exported.map((span) => span.name)).toEqual(["pageload /login?token=REDACTED"])
+		expect(spanNames()).toEqual(["pageload /login?token=REDACTED"])
 	})
 
 	it("ends and exports a navigation still open when the page is left", async () => {
@@ -188,11 +200,11 @@ describe("startNavigation / endNavigation", () => {
 		window.dispatchEvent(new Event("pagehide"))
 
 		// Exported by the page-exit flush itself, not by shutdown
-		await vi.waitFor(() => expect(exported.map((span) => span.name)).toEqual(["pageload"]))
+		await vi.waitFor(() => expect(spanNames()).toEqual(["pageload"]))
 		expect(named("pageload").attributes["app.navigation.interrupted"]).toBe(true)
 		expect(() => MapleBrowser.endNavigation("/checkout")).not.toThrow()
 		await stop()
-		expect(exported).toHaveLength(1)
+		expect(spanNames()).toEqual(["pageload"])
 	})
 
 	it("stamps session.id and user.id like every other span", async () => {
@@ -517,9 +529,9 @@ describe("error dedupe", () => {
 
 		expect(allExceptionEvents()).toHaveLength(1)
 		expect(exceptionEvents(named("loader /a"))).toHaveLength(1)
-		expect(exported.map((span) => span.name)).not.toContain("react.render_error")
-		expect(exported.map((span) => span.name)).not.toContain("browser.unhandled_rejection")
-		expect(exported.map((span) => span.name)).not.toContain("browser.uncaught_error")
+		expect(spanNames()).not.toContain("react.render_error")
+		expect(spanNames()).not.toContain("browser.unhandled_rejection")
+		expect(spanNames()).not.toContain("browser.uncaught_error")
 	})
 
 	it("puts the exception event on the innermost span only when traced calls nest", async () => {
@@ -550,7 +562,7 @@ describe("error dedupe", () => {
 		MapleBrowser.captureException(error)
 		await stop()
 
-		expect(exported.map((span) => span.name)).toEqual(["exception"])
+		expect(spanNames()).toEqual(["exception"])
 	})
 })
 
@@ -582,7 +594,7 @@ describe("without live tracing", () => {
 		MapleBrowser.endNavigation("/b")
 		await stop()
 
-		expect(exported.map((span) => span.name)).toEqual(["navigate /b"])
+		expect(spanNames()).toEqual(["navigate /b"])
 	})
 
 	it("is a no-op with tracing disabled", async () => {
@@ -608,7 +620,7 @@ describe("without live tracing", () => {
 
 		// The page load came before consent: the first traced navigation is a
 		// click, not the page load, and does not join the server render's trace
-		expect(exported.map((span) => span.name)).toEqual(["loader /b", "navigate /b"])
+		expect(spanNames()).toEqual(["loader /b", "navigate /b"])
 		expect(named("navigate /b").spanContext().traceId).not.toBe(SERVER_TRACE_ID)
 	})
 
@@ -629,7 +641,7 @@ describe("without live tracing", () => {
 		MapleBrowser.captureException(error)
 		await stop()
 
-		expect(exported.map((span) => span.name)).toEqual(["exception"])
+		expect(spanNames()).toEqual(["exception"])
 	})
 
 	it("is a no-op after shutdown", async () => {
@@ -647,7 +659,7 @@ describe("shutdown", () => {
 		MapleBrowser.startNavigation("/a")
 		await stop()
 
-		expect(exported.map((span) => span.name)).toEqual(["pageload"])
+		expect(spanNames()).toEqual(["pageload"])
 		expect(named("pageload").attributes["app.navigation.interrupted"]).toBe(true)
 		// Ended and cleared: nothing left to end
 		expect(() => MapleBrowser.endNavigation("/a")).not.toThrow()
@@ -657,7 +669,7 @@ describe("shutdown", () => {
 		MapleBrowser.startNavigation("/b")
 		MapleBrowser.endNavigation("/b")
 		await stop()
-		expect(exported.map((span) => span.name)).toEqual(["pageload /b"])
+		expect(spanNames()).toEqual(["pageload /b"])
 		// Long past the server render: only the document's own page load joins it
 		expect(parentOf(named("pageload /b"))).toBeUndefined()
 		expect(named("pageload /b").spanContext().traceId).not.toBe(SERVER_TRACE_ID)
@@ -682,5 +694,54 @@ describe("host-owned global provider", () => {
 		expect(startSpan).not.toHaveBeenCalled()
 		expect(startActiveSpan).not.toHaveBeenCalled()
 		expect(parentOf(named("loader /a"))).toBe(named("pageload /a").spanContext().spanId)
+	})
+})
+
+/** The deferred chunk spans the document a task after it lands (the test page loaded long ago). */
+const timingRecorded = async (): Promise<void> => {
+	await import("./deferred")
+	await new Promise((resolve) => setTimeout(resolve, 20))
+}
+
+describe("document timing", () => {
+	it("starts the page load at navigation start and spans the document's load under it", async () => {
+		start()
+		MapleBrowser.startNavigation("/a")
+		MapleBrowser.endNavigation("/a")
+		await timingRecorded()
+		await stop()
+
+		const pageload = named("pageload /a")
+		const fetch = named("documentFetch")
+		const toMs = ([s, ns]: [number, number]) => s * 1_000 + ns / 1_000_000
+		expect(toMs(pageload.startTime)).toBeCloseTo(performance.timeOrigin, 0)
+		expect(parentOf(fetch)).toBe(pageload.spanContext().spanId)
+		expect(fetch.attributes["url.full"]).toBe(scrubUrl(location.href))
+		const response = named("response")
+		expect(parentOf(response)).toBe(fetch.spanContext().spanId)
+		const [entry] = performance.getEntriesByType("navigation")
+		if (!(entry instanceof PerformanceNavigationTiming)) throw new Error("no navigation entry")
+		expect(toMs(response.endTime)).toBeCloseTo(performance.timeOrigin + entry.responseEnd, 0)
+		expect(parentOf(named("domProcessing"))).toBe(pageload.spanContext().spanId)
+	})
+
+	it("starts the page load at the consent grant when consent came later, so it still exports", async () => {
+		start({ privacy: { requireConsent: true } })
+		setConsent(true)
+		MapleBrowser.startNavigation("/a")
+		MapleBrowser.endNavigation("/a")
+		await stop()
+		expect(spanNames()).toContain("pageload /a")
+	})
+
+	it("does not span the document again for a navigate", async () => {
+		start()
+		MapleBrowser.startNavigation("/a")
+		MapleBrowser.endNavigation("/a")
+		await timingRecorded()
+		MapleBrowser.startNavigation("/b")
+		MapleBrowser.endNavigation("/b")
+		await stop()
+		expect(exported.filter((span) => span.name === "documentFetch")).toHaveLength(1)
 	})
 })

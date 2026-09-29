@@ -10,7 +10,7 @@
 // app that registered its provider first owns that). Without a live provider
 // (before `init()`, after `shutdown()`, tracing disabled, consent not yet
 // granted, or on a server) nothing is spanned and `traced` only runs `fn`.
-import { hasConsent, scrubUrl } from "@maple/browser-session"
+import { consentAllowedSince, hasConsent, scrubUrl } from "@maple/browser-session"
 import {
 	type Context,
 	context,
@@ -18,8 +18,9 @@ import {
 	type Span,
 	type SpanContext,
 	trace,
+	type Tracer,
 } from "@opentelemetry/api"
-import { recordFailure } from "./errors"
+import { captureException, recordFailure } from "./errors"
 import { liveMapleTracer } from "./tracing"
 import { SDK_NAME, SDK_VERSION } from "./version"
 
@@ -47,6 +48,18 @@ let firstLoad = true
  */
 let documentLoad = true
 
+type PageloadListener = (tracer: Tracer, pageload: Span) => void
+/** Set by the deferred chunk, which spans the document's own load under `pageload`. */
+let pageloadListener: PageloadListener | undefined
+/** A document page load that began before the deferred chunk landed. */
+let pendingPageload: { readonly tracer: Tracer; readonly span: Span } | undefined
+
+export function onDocumentPageload(listener: PageloadListener | undefined): void {
+	pageloadListener = listener
+	if (listener && pendingPageload) listener(pendingPageload.tracer, pendingPageload.span)
+	pendingPageload = undefined
+}
+
 /** Spans `traced` opened, which a nested `traced` may parent to instead of the navigation. */
 const tracedSpans = new WeakSet<Span>()
 
@@ -56,6 +69,11 @@ const tracedSpans = new WeakSet<Span>()
  * be claimed without ever being exported.
  */
 const tracer = () => (hasConsent() ? liveMapleTracer(SDK_NAME, SDK_VERSION) : undefined)
+
+/** The navigation span in flight, for work that should nest under it. */
+export function openNavigationSpan(): Span | undefined {
+	return navigation?.span
+}
 
 /** End the open navigation as interrupted: something other than its route finishing ended it. */
 function interruptNavigation(): void {
@@ -74,7 +92,15 @@ export function startNavigation(path: string): void {
 	const live = tracer()
 	if (!live) return
 	const parent = (joinServer ? serverContext() : undefined) ?? context.active()
-	navigation = { kind, span: live.startSpan(kind, { attributes: { "url.path": scrubUrl(path) } }, parent) }
+	// The document's page load began at navigation start, not when the app's JS got here,
+	// but never before a consent grant: the exporter drops anything that began earlier.
+	const startTime = joinServer ? Math.max(performance.timeOrigin, consentAllowedSince()) : undefined
+	const span = live.startSpan(kind, { startTime, attributes: { "url.path": scrubUrl(path) } }, parent)
+	navigation = { kind, span }
+	if (joinServer) {
+		if (pageloadListener) pageloadListener(live, span)
+		else pendingPageload = { tracer: live, span }
+	}
 	// A page left mid-navigation still exports it. Capture phase, so this runs
 	// before the provider's own `pagehide` flush (at the target, capture
 	// listeners run first). Registering the same listener again is a no-op.
@@ -100,7 +126,11 @@ export async function traced<T>(name: string, fn: () => Promise<T>, options: Tra
 		try {
 			return await fn()
 		} catch (error) {
-			if (isFailure(options, error)) recordFailure(span, error)
+			if (isFailure(options, error)) {
+				// An unsampled span drops what it records: report the failure on its own, which is always kept.
+				if (span.isRecording()) recordFailure(span, error)
+				else captureException(error, { name })
+			}
 			throw error
 		} finally {
 			span.end()
@@ -135,6 +165,7 @@ function isFailure(options: TracedOptions, error: unknown): boolean {
 export function resetNavigation(): void {
 	interruptNavigation()
 	firstLoad = true
+	pendingPageload = undefined
 }
 
 /** Test seam: as if the document had just loaded. */
