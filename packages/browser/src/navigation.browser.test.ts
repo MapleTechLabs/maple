@@ -1,5 +1,5 @@
 // TEST-SEAM: This focused test replaces process-global modules that have no instance-level injection seam.
-import { resetConsentForTests, scrubUrl } from "@maple/browser-session"
+import { resetConsentForTests, scrubUrl, setConsent } from "@maple/browser-session"
 import {
 	context,
 	INVALID_SPAN_CONTEXT,
@@ -723,6 +723,15 @@ describe("document timing", () => {
 		if (!(entry instanceof PerformanceNavigationTiming)) throw new Error("no navigation entry")
 		expect(toMs(response.endTime)).toBeCloseTo(performance.timeOrigin + entry.responseEnd, 0)
 		expect(parentOf(named("domProcessing"))).toBe(pageload.spanContext().spanId)
+	})
+
+	it("starts the page load at the consent grant when consent came later, so it still exports", async () => {
+		start({ privacy: { requireConsent: true } })
+		setConsent(true)
+		MapleBrowser.startNavigation("/a")
+		MapleBrowser.endNavigation("/a")
+		await stop()
+		expect(spanNames()).toContain("pageload /a")
 	})
 
 	it("does not span the document again for a navigate", async () => {
