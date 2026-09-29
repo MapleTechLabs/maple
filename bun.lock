@@ -647,6 +647,7 @@
         "@opentelemetry/instrumentation": "^0.222.0",
         "@opentelemetry/instrumentation-fetch": "^0.222.0",
         "@opentelemetry/instrumentation-xml-http-request": "^0.222.0",
+        "@opentelemetry/otlp-transformer": "^0.222.0",
         "@opentelemetry/resources": "^2.10.0",
         "@opentelemetry/sdk-logs": "^0.222.0",
         "@opentelemetry/sdk-trace-base": "^2.10.0",

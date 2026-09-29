@@ -64,6 +64,7 @@ Every field accepted by `MapleBrowser.init`:
 | `replay.enabled`                       | `boolean`                 | `true`                                    | Enable rrweb session recording.                                                                                                                                                                                                                           |
 | `replay.sampleRate`                    | `number`                  | `1`                                       | Fraction of sessions to record, `0` to `1`. Out-of-range values are clamped with a warning. See [Sampling](#sampling).                                                                                                                                    |
 | `replay.onErrorSampleRate`             | `number`                  | `0`                                       | Fraction of the sessions not recorded that buffer the last minute in memory and keep it only if an error happens. See [Sampling](#sampling).                                                                                                              |
+| `transport.offline`                    | `boolean`                 | `false`                                   | Keep span and log batches that could not be sent in IndexedDB for up to 24 hours and send them later. See [Offline](#offline).                                                                                                                            |
 | `privacy.maskAllInputs`                | `boolean`                 | `true`                                    | Mask all `<input>` values in the recording.                                                                                                                                                                                                               |
 | `privacy.maskAllText`                  | `boolean`                 | `false`                                   | Mask all text in the rrweb recording and omit captured click-target text from session events.                                                                                                                                                             |
 | `privacy.persistVisitorId`             | `boolean`                 | `true`                                    | Store a persistent visitor id (localStorage + cookie) so unique visitors and new-vs-returning are measurable. Turning it off also purges any id already stored.                                                                                           |
@@ -513,6 +514,15 @@ MapleBrowser.init({
 Sampled traces carry the W3C `tracestate` threshold (`ot=th:…`), so Maple weights each one by the
 inverse of the rate and request counts stay realistic. A trace joined from a server-rendered
 `traceparent` follows the server's decision instead.
+
+## Offline
+
+The OTLP exporters already retry a failed export a few times (about 10 seconds in all). With
+`transport: { offline: true }`, a batch that still fails (the browser is offline, or ingest is
+down) is kept in IndexedDB, as the same OTLP JSON the exporter sends, and sent again when the
+browser fires `online` and on the next page load. Batches older than 24 hours are dropped, and at
+most 100 are kept. Revoking consent clears the queue. Where IndexedDB is unavailable (some private
+windows), nothing is kept.
 
 ## Framework examples
 

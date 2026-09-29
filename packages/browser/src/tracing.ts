@@ -26,6 +26,7 @@ import { WebTracerProvider } from "@opentelemetry/sdk-trace-web"
 import { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION } from "@opentelemetry/semantic-conventions"
 import type { ResolvedConfig } from "./config"
 import { HttpStatusExporter } from "./http-status"
+import { OfflineSpanExporter } from "./offline"
 import { SessionSampler } from "./sampling"
 import { SDK_NAME, SDK_VERSION } from "./version"
 
@@ -164,14 +165,15 @@ export function resourceAttributes(config: ResolvedConfig): Record<string, strin
  * live id per span instead.
  */
 export function setupTracing(config: ResolvedConfig): () => Promise<void> {
+	const otlp = new OTLPTraceExporter({
+		url: `${config.endpoint}/v1/traces`,
+		// The same auth + `x-maple-sdk` headers as every session write; a page
+		// cannot set `user-agent`, so ingest reads the SDK from the latter.
+		headers: ingestHeaders({ ingestKey: config.ingestKey, sdk: sdkHint(SDK_NAME, SDK_VERSION) }),
+	})
 	const exporter = new ConsentSpanExporter(
 		new HttpStatusExporter(
-			new OTLPTraceExporter({
-				url: `${config.endpoint}/v1/traces`,
-				// The same auth + `x-maple-sdk` headers as every session write; a page
-				// cannot set `user-agent`, so ingest reads the SDK from the latter.
-				headers: ingestHeaders({ ingestKey: config.ingestKey, sdk: sdkHint(SDK_NAME, SDK_VERSION) }),
-			}),
+			config.offlineQueue ? new OfflineSpanExporter(otlp) : otlp,
 			config.errorFilters.captureHttpStatus,
 		),
 	)

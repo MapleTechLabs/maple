@@ -4,9 +4,11 @@ import type { SpanContext } from "@opentelemetry/api"
 import type { ResolvedConfig } from "../config"
 import { onErrorRecorded } from "../errors"
 import { onDocumentPageload } from "../navigation"
+import { attachSpanStash } from "../offline"
 import { flushBreadcrumbs, startBreadcrumbs } from "./breadcrumbs"
 import { recordDocumentTiming } from "./document-timing"
 import { startLogs } from "./logs"
+import { startOfflineQueue } from "./offline"
 import { startReports } from "./reports"
 import { startWebVitals } from "./web-vitals"
 
@@ -24,14 +26,18 @@ export function startDeferred(config: ResolvedConfig): () => Promise<void> {
 	})
 	const stopErrorListener = onErrorRecorded(flushBreadcrumbs)
 	const stopReports = startReports({ csp: config.reportCsp, browserReports: config.reportBrowser })
+	const offline = config.offlineQueue ? startOfflineQueue(config) : undefined
+	attachSpanStash(offline?.stashSpans)
 	const stops = [
-		startLogs(config),
+		startLogs(config, offline?.stashLogs),
 		async () => {
 			stopVitals()
 			onDocumentPageload(undefined)
 			stopErrorListener()
 			stopBreadcrumbs()
 			stopReports()
+			attachSpanStash(undefined)
+			offline?.stop()
 		},
 	]
 	return async () => {

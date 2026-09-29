@@ -53,6 +53,7 @@ const CONFIG = {
 	captureConsole: [],
 	reportCsp: false,
 	reportBrowser: false,
+	offlineQueue: false,
 	sanitizeUrl: undefined,
 }
 

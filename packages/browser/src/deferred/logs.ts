@@ -39,14 +39,39 @@ class ConsentLogExporter implements LogRecordExporter {
 	}
 }
 
+/** Hands batches the exporter gave up on to the offline queue. */
+class OfflineLogExporter implements LogRecordExporter {
+	constructor(
+		private readonly inner: LogRecordExporter,
+		private readonly stash: (logs: ReadableLogRecord[]) => void,
+	) {}
+
+	export(logs: ReadableLogRecord[], callback: (result: { code: number; error?: Error }) => void): void {
+		this.inner.export(logs, (result) => {
+			if (result.code !== 0) this.stash(logs)
+			callback(result)
+		})
+	}
+
+	forceFlush(): Promise<void> {
+		return this.inner.forceFlush?.() ?? Promise.resolve()
+	}
+
+	shutdown(): Promise<void> {
+		return this.inner.shutdown()
+	}
+}
+
 /** Start the OTel logs pipeline and drain the eager queue into it. Returns a shutdown. */
-export function startLogs(config: ResolvedConfig): () => Promise<void> {
-	const exporter = new ConsentLogExporter(
-		new OTLPLogExporter({
-			url: `${config.endpoint}/v1/logs`,
-			headers: ingestHeaders({ ingestKey: config.ingestKey, sdk: sdkHint(SDK_NAME, SDK_VERSION) }),
-		}),
-	)
+export function startLogs(
+	config: ResolvedConfig,
+	stashOffline?: (logs: ReadableLogRecord[]) => void,
+): () => Promise<void> {
+	const otlp = new OTLPLogExporter({
+		url: `${config.endpoint}/v1/logs`,
+		headers: ingestHeaders({ ingestKey: config.ingestKey, sdk: sdkHint(SDK_NAME, SDK_VERSION) }),
+	})
+	const exporter = new ConsentLogExporter(stashOffline ? new OfflineLogExporter(otlp, stashOffline) : otlp)
 	// The browser processor flushes on `visibilitychange → hidden` and `pagehide` itself.
 	const provider = new LoggerProvider({
 		resource: resourceFromAttributes(resourceAttributes(config)),

@@ -102,6 +102,14 @@ export interface MapleBrowserConfig {
 		/** Browser deprecation and intervention reports as `maple.browser.report` WARN logs. Default false. */
 		readonly browserReports?: boolean
 	}
+	readonly transport?: {
+		/**
+		 * Keep span and log batches that could not be sent (the browser was
+		 * offline) in IndexedDB for up to 24 hours, and send them once it is back
+		 * online or on the next page load. Default false.
+		 */
+		readonly offline?: boolean
+	}
 	/** Which captured errors to drop before they are reported. See `ErrorFilterOptions`. */
 	readonly errors?: ErrorFilterOptions
 	readonly replay?: {
@@ -181,6 +189,7 @@ export interface ResolvedConfig {
 	readonly captureConsole: ReadonlyArray<ConsoleLevel>
 	readonly reportCsp: boolean
 	readonly reportBrowser: boolean
+	readonly offlineQueue: boolean
 	readonly replayEnabled: boolean
 	readonly replaySampleRate: number
 	readonly replayOnErrorSampleRate: number
@@ -252,6 +261,7 @@ export function resolveConfig(config: MapleBrowserConfig): ResolvedConfig {
 		captureConsole: config.logs?.captureConsole ?? [],
 		reportCsp: config.reporting?.csp ?? true,
 		reportBrowser: config.reporting?.browserReports ?? false,
+		offlineQueue: config.transport?.offline ?? false,
 		replayEnabled: config.replay?.enabled ?? true,
 		replaySampleRate: resolveSampleRate("replay.sampleRate", config.replay?.sampleRate),
 		replayOnErrorSampleRate:
