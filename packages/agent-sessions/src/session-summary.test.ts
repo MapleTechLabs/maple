@@ -221,6 +221,46 @@ describe("buildSessionSummary — tokens and models", () => {
 		})
 	})
 
+	it("reads the ingest gateway's buckets and cost on a span it stamped", () => {
+		// Strands TS: `invoke_agent` repeats its chat's `gen_ai.usage.*` under an
+		// unstamped loop span. The gateway stamped buckets on the chat alone, and
+		// its buckets, not the emitter's figures, are what the list sums.
+		const reported = { usageInputTokens: 218, usageOutputTokens: 28, usageCost: 0.5 }
+		const summary = summarize([
+			agentSpan({
+				spanId: "agent",
+				startMs: 0,
+				durationMs: 5 * SECOND,
+				genAi: { ...reported, mapleLlmCall: 0 },
+			}),
+			llmSpan({
+				spanId: "chat",
+				parentSpanId: "loop",
+				startMs: SECOND,
+				durationMs: SECOND,
+				genAi: {
+					...reported,
+					mapleLlmCall: 1,
+					mapleInputTokens: 18,
+					mapleCacheReadTokens: 200,
+					mapleOutputTokens: 20,
+					mapleReasoningTokens: 8,
+					mapleCost: 0.002,
+				},
+			}),
+		])
+
+		expect(summary.tokens).toEqual({
+			input: 18,
+			cacheRead: 200,
+			cacheWrite: 0,
+			output: 20,
+			reasoning: 8,
+			total: 246,
+		})
+		expect(summary.cost).toBe(0.002)
+	})
+
 	it("counts usage at the deepest span that reports it", () => {
 		const summary = summarize([
 			// The framework reports a turn total on the agent span AND on each model
