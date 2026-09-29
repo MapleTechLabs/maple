@@ -1,4 +1,4 @@
-import { resetConsentForTests } from "@maple/browser-session"
+import { configurePrivacy, resetConsentForTests, setConsent } from "@maple/browser-session"
 import {
 	BasicTracerProvider,
 	InMemorySpanExporter,
@@ -98,6 +98,40 @@ describe("offline queue", () => {
 		expect(await storedCount()).toBe(1)
 		await queue.resend()
 		expect(await storedCount()).toBe(0)
+	})
+})
+
+describe("offline queue and consent", () => {
+	it("drops batches captured before the current consent grant instead of sending them", async () => {
+		const posts: string[] = []
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (url: string) => {
+				posts.push(url)
+				return new Response("{}", { status: 503 })
+			}),
+		)
+		const first = startOfflineQueue(CONFIG)
+		first.stashSpans(finishedSpans("before"))
+		await vi.waitFor(async () => expect(await storedCount()).toBe(1))
+		first.stop()
+
+		// A later page load that only has consent from now on.
+		configurePrivacy({ requireConsent: true })
+		await new Promise((resolve) => setTimeout(resolve, 5))
+		setConsent(true)
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (url: string) => {
+				posts.push(url)
+				return new Response("{}")
+			}),
+		)
+		const second = startOfflineQueue(CONFIG)
+		stop = second.stop
+		await second.resend()
+		await vi.waitFor(async () => expect(await storedCount()).toBe(0))
+		expect(posts.filter((url) => url.endsWith("/v1/traces"))).toEqual([])
 	})
 })
 
