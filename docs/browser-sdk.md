@@ -58,6 +58,8 @@ Every field accepted by `MapleBrowser.init`:
 | `webVitals`                            | `boolean`                 | `true`                                    | Report Core Web Vitals as `browser.web_vital` log events. See [Web Vitals](#web-vitals).                                                                                                                                                                  |
 | `breadcrumbs`                          | `boolean`                 | `true`                                    | Keep the last clicks, inputs, navigations and console lines, and export them with the next error. See [Breadcrumbs](#breadcrumbs).                                                                                                                        |
 | `logs.captureConsole`                  | `ConsoleLevel[]`          | `[]`                                      | Console levels exported as OTel logs as they happen, e.g. `["warn", "error"]`.                                                                                                                                                                            |
+| `reporting.csp`                        | `boolean`                 | `true`                                    | Content Security Policy violations as `maple.browser.csp_violation` WARN logs. See [Browser reports](#browser-reports).                                                                                                                                   |
+| `reporting.browserReports`             | `boolean`                 | `false`                                   | Browser deprecation and intervention reports as `maple.browser.report` WARN logs.                                                                                                                                                                         |
 | `errors`                               | `ErrorFilterOptions`      | see [Filtering errors](#filtering-errors) | Drop captured errors by message, script URL, or a `beforeCapture` hook.                                                                                                                                                                                   |
 | `replay.enabled`                       | `boolean`                 | `true`                                    | Enable rrweb session recording.                                                                                                                                                                                                                           |
 | `replay.sampleRate`                    | `number`                  | `1`                                       | Fraction of sessions to record, `0` to `1`. Out-of-range values are clamped with a warning. See [Sampling](#sampling).                                                                                                                                    |
@@ -283,6 +285,24 @@ Errors thrown from browser extensions (`chrome-extension://`, `moz-extension://`
 `safari-web-extension://`) and the benign `ResizeObserver loop` notices are dropped by default. Set
 `errors.defaultFilters: false` to keep them.
 
+### Failed HTTP requests
+
+A `fetch` or `XMLHttpRequest` response status is not an error on its own: a 404 from a search box
+is usually expected. List the statuses that should become errors (and so issues) in
+`errors.captureHttpStatus`:
+
+```ts
+MapleBrowser.init({
+	// ...
+	errors: { captureHttpStatus: [[500, 599], 429] },
+})
+```
+
+A matching span gets status `Error`, `error.type` set to the status code (per the HTTP semantic
+conventions) and `error.message` like `POST https://api.example.com/users/42 -> 503`, without the
+query string. Issues group by status and request, with ids in the path redacted. Network failures
+(no response at all) are always errors.
+
 ### Breadcrumbs
 
 The SDK keeps the last 50 clicks, inputs, navigations and console lines in memory. Nothing is sent
@@ -338,6 +358,17 @@ log-based event named `browser.web_vital`, following the browser semantic conven
 Each event carries `session.id` and is linked to the page's `pageload` span when your router calls
 `startNavigation`. CLS, INP and LCP settle when the page is hidden, so they arrive then. Turn them off
 with `webVitals: false`.
+
+## Browser reports
+
+Content Security Policy violations are reported as `maple.browser.csp_violation` WARN log events with
+`maple.csp.effective_directive`, `maple.csp.blocked_uri`, `maple.csp.disposition`, `url.full` and,
+when the browser knows it, `code.file.path` / `code.line.number`. Set `reporting.browserReports: true`
+to also get deprecation and intervention reports as `maple.browser.report` events. Both are logs,
+not errors, so they never open an issue.
+
+Each kind of report is sent once per page (a blocked image in a loop is one report), up to 50 kinds.
+Where the browser supports `ReportingObserver`, reports from before the SDK loaded are included.
 
 ## Tracing across origins
 

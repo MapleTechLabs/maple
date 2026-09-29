@@ -50,6 +50,8 @@ const CONFIG = {
 	webVitals: false,
 	breadcrumbs: false,
 	captureConsole: [],
+	reportCsp: false,
+	reportBrowser: false,
 	sanitizeUrl: undefined,
 }
 

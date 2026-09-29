@@ -7,6 +7,7 @@ import { onDocumentPageload } from "../navigation"
 import { flushBreadcrumbs, startBreadcrumbs } from "./breadcrumbs"
 import { recordDocumentTiming } from "./document-timing"
 import { startLogs } from "./logs"
+import { startReports } from "./reports"
 import { startWebVitals } from "./web-vitals"
 
 export function startDeferred(config: ResolvedConfig): () => Promise<void> {
@@ -22,6 +23,7 @@ export function startDeferred(config: ResolvedConfig): () => Promise<void> {
 		captureConsole: config.captureConsole,
 	})
 	setErrorRecordedHook(flushBreadcrumbs)
+	const stopReports = startReports({ csp: config.reportCsp, browserReports: config.reportBrowser })
 	const stops = [
 		startLogs(config),
 		async () => {
@@ -29,6 +31,7 @@ export function startDeferred(config: ResolvedConfig): () => Promise<void> {
 			onDocumentPageload(undefined)
 			setErrorRecordedHook(undefined)
 			stopBreadcrumbs()
+			stopReports()
 		},
 	]
 	return async () => {

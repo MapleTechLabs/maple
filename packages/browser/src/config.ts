@@ -96,6 +96,12 @@ export interface MapleBrowserConfig {
 		/** Console levels exported as OTel logs as they happen, e.g. `["warn", "error"]`. Default none. */
 		readonly captureConsole?: ReadonlyArray<ConsoleLevel>
 	}
+	readonly reporting?: {
+		/** Content Security Policy violations as `maple.browser.csp_violation` WARN logs. Default true. */
+		readonly csp?: boolean
+		/** Browser deprecation and intervention reports as `maple.browser.report` WARN logs. Default false. */
+		readonly browserReports?: boolean
+	}
 	/** Which captured errors to drop before they are reported. See `ErrorFilterOptions`. */
 	readonly errors?: ErrorFilterOptions
 	readonly replay?: {
@@ -167,6 +173,8 @@ export interface ResolvedConfig {
 	readonly webVitals: boolean
 	readonly breadcrumbs: boolean
 	readonly captureConsole: ReadonlyArray<ConsoleLevel>
+	readonly reportCsp: boolean
+	readonly reportBrowser: boolean
 	readonly replayEnabled: boolean
 	readonly replaySampleRate: number
 	readonly maskAllInputs: boolean
@@ -235,6 +243,8 @@ export function resolveConfig(config: MapleBrowserConfig): ResolvedConfig {
 		webVitals: config.webVitals ?? true,
 		breadcrumbs: config.breadcrumbs ?? true,
 		captureConsole: config.logs?.captureConsole ?? [],
+		reportCsp: config.reporting?.csp ?? true,
+		reportBrowser: config.reporting?.browserReports ?? false,
 		replayEnabled: config.replay?.enabled ?? true,
 		replaySampleRate: resolveSampleRate("replay.sampleRate", config.replay?.sampleRate),
 		maskAllInputs: config.privacy?.maskAllInputs ?? true,

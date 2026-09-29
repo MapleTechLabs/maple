@@ -15,6 +15,7 @@ export type {
 export type { ConsoleLevel, MapleBrowserConfig } from "./config"
 export type { ErrorFilterHint, ErrorFilterOptions, ErrorSource } from "./error-filters"
 export type { CaptureExceptionOptions } from "./errors"
+export type { HttpStatusRange } from "./http-status"
 export type { MapleBrowserHandle } from "./init"
 export type { LogAttributeValue } from "./logs"
 export type { MapleLogger } from "./logger"

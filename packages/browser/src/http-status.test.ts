@@ -9,16 +9,19 @@ import { describe, expect, it } from "vitest"
 import { HttpStatusExporter } from "./http-status"
 
 const exported = new InMemorySpanExporter()
-const tracer = new BasicTracerProvider({
-	spanProcessors: [new SimpleSpanProcessor(new HttpStatusExporter(exported))],
-}).getTracer("test")
+const tracerWith = (captureStatus?: ConstructorParameters<typeof HttpStatusExporter>[1]) =>
+	new BasicTracerProvider({
+		spanProcessors: [new SimpleSpanProcessor(new HttpStatusExporter(exported, captureStatus))],
+	}).getTracer("test")
+const tracer = tracerWith()
 
 const finish = (
 	build: (span: ReturnType<typeof tracer.startSpan>) => void,
 	kind = SpanKind.CLIENT,
+	using = tracer,
 ): ReadableSpan => {
 	exported.reset()
-	const span = tracer.startSpan("GET", { kind })
+	const span = using.startSpan("GET", { kind })
 	build(span)
 	span.end()
 	const [result] = exported.getFinishedSpans()
@@ -58,5 +61,48 @@ describe("HttpStatusExporter", () => {
 			s.setStatus({ code: SpanStatusCode.ERROR })
 		}, SpanKind.INTERNAL)
 		expect(internal.status.code).toBe(SpanStatusCode.ERROR)
+	})
+})
+
+describe("errors.captureHttpStatus", () => {
+	const capturing = tracerWith([[500, 599], 429])
+
+	it("makes a listed status an Error, typed by the status and described by the request", () => {
+		const span = finish(
+			(s) => {
+				s.setAttribute("http.request.method", "POST")
+				s.setAttribute("url.full", "https://api.test/users/42?token=REDACTED")
+				s.setAttribute("http.response.status_code", 503)
+			},
+			SpanKind.CLIENT,
+			capturing,
+		)
+		expect(span.status.code).toBe(SpanStatusCode.ERROR)
+		expect(span.attributes["error.type"]).toBe("503")
+		expect(span.attributes["error.message"]).toBe("POST https://api.test/users/42 -> 503")
+	})
+
+	it("matches single codes and old-semconv attributes, and leaves the rest alone", () => {
+		const limited = finish(
+			(s) => {
+				s.setAttribute("http.method", "GET")
+				s.setAttribute("http.url", "https://api.test/search")
+				s.setAttribute("http.status_code", 429)
+			},
+			SpanKind.CLIENT,
+			capturing,
+		)
+		expect(limited.attributes["error.type"]).toBe("429")
+
+		const notFound = finish(
+			(s) => {
+				s.setAttribute("http.response.status_code", 404)
+				s.setAttribute("error.type", "404")
+				s.setStatus({ code: SpanStatusCode.ERROR })
+			},
+			SpanKind.CLIENT,
+			capturing,
+		)
+		expect(notFound.status.code).toBe(SpanStatusCode.UNSET)
 	})
 })

@@ -172,6 +172,7 @@ export function setupTracing(config: ResolvedConfig): () => Promise<void> {
 				// cannot set `user-agent`, so ingest reads the SDK from the latter.
 				headers: ingestHeaders({ ingestKey: config.ingestKey, sdk: sdkHint(SDK_NAME, SDK_VERSION) }),
 			}),
+			config.errorFilters.captureHttpStatus,
 		),
 	)
 

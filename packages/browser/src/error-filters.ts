@@ -1,6 +1,8 @@
 // Client-side error filtering: runs before an error span exists, so a dropped
 // error costs nothing and never reaches an issue.
 
+import type { HttpStatusRange } from "./http-status"
+
 export type ErrorSource = "captureException" | "window.onerror" | "unhandledrejection"
 
 export interface ErrorFilterHint {
@@ -19,6 +21,12 @@ export interface ErrorFilterOptions {
 	readonly denyUrls?: ReadonlyArray<string | RegExp>
 	/** Return `false` to drop the error. Runs after the lists; if it throws, the error is kept. */
 	readonly beforeCapture?: (error: Error, hint: ErrorFilterHint) => boolean
+	/**
+	 * HTTP response statuses that make a `fetch`/XHR span an error (and so an
+	 * issue), e.g. `[[500, 599]]`. Default none: a response status alone is not
+	 * an error, and a network failure always is.
+	 */
+	readonly captureHttpStatus?: ReadonlyArray<HttpStatusRange>
 	/**
 	 * Drop errors thrown from browser extensions and the benign `ResizeObserver
 	 * loop` notices. Default true.

@@ -62,9 +62,10 @@ const BUDGET = {
 	 *
 	 * 16 since 2026-09: the session sampler (~0.7 kB) and the `logger` queue
 	 * (~0.5 kB), both needed before the deferred chunk lands. 17 for error
-	 * filters and cause chains (~0.8 kB), which run on the capture path.
+	 * filters and cause chains (~0.8 kB), which run on the capture path. 17.5
+	 * for `errors.captureHttpStatus`, applied by the span exporter.
 	 */
-	firstParty: 17,
+	firstParty: 17.5,
 }
 
 /** How close to a ceiling counts as worth warning about. */

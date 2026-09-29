@@ -66,6 +66,11 @@ stack and no filename. Those are dropped rather than recorded: they all
 fingerprint to one contentless issue that buries the real ones. Add
 `crossorigin` to the script tag to get the real error instead.
 
+### Failed HTTP requests
+
+`errors: { captureHttpStatus: [[500, 599]] }` makes those `fetch`/XHR responses errors, typed by
+status. By default a response status alone is not an error; a network failure always is.
+
 ### Breadcrumbs
 
 The last 50 clicks, inputs, navigations and console lines are kept in memory and exported, as OTel
