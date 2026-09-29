@@ -119,6 +119,51 @@ export const MAPLE_GENAI_INPUT_MESSAGES_DROPPED_ATTR = "maple_ai.input_messages_
  */
 export const MAPLE_GENAI_MODEL_DURATION_MS_ATTR = "maple_ai.model_duration_ms"
 
+/**
+ * Every fact Agent Sessions aggregates or filters on, as the ingest gateway
+ * decided it for one span (`apps/ingest/src/ai_session/facts.rs`, `usage.rs`).
+ * `ai_trace_index_mv` projects these and holds no vendor rule, and the detail
+ * page reads the same ones, so the list and the page cannot disagree.
+ *
+ * - `llmCall`: `"1"` on the model call, `"0"` on every other stamped span. Its
+ *   presence is what says the gateway decided the rest; a span ingested
+ *   before it did carries none, and its readers keep their op/name rules and
+ *   usage conventions for it until it ages out of the 30-day TTL.
+ * - `toolCall`, `error`, `toolPaused`: `"1"` where they hold, absent otherwise.
+ *   `toolPaused` marks a tool call's copy that recorded no outcome — no result
+ *   or only Google ADK's confirmation request — which a call paused for a
+ *   human's approval leaves behind.
+ * - `model`, `agentName`, `toolName`, `toolCallId`, `responseId`: the first
+ *   non-empty value across the dialects' keys; `responseId` on model calls.
+ * - `toolDescription` (on tool calls) and `toolErrorResult` (a failed tool
+ *   call's result), cut by the gateway.
+ * - The usage buckets, on the model call alone: `inputTokens` the uncached
+ *   prompt, `outputTokens` the visible completion, a span's total the plain
+ *   sum of the five; `cost` in USD as the emitter priced the call. An agent or
+ *   workflow wrapper repeating its calls' usage carries none.
+ *
+ * Gateway-owned: stripped from customer input with the rest of the namespace.
+ */
+export const MAPLE_AI_STAMP_ATTRS = {
+	llmCall: "maple_ai.llm_call",
+	toolCall: "maple_ai.tool_call",
+	error: "maple_ai.error",
+	toolPaused: "maple_ai.tool.paused",
+	model: "maple_ai.model",
+	agentName: "maple_ai.agent.name",
+	toolName: "maple_ai.tool.name",
+	toolCallId: "maple_ai.tool.call_id",
+	responseId: "maple_ai.response.id",
+	toolDescription: "maple_ai.tool.description",
+	toolErrorResult: "maple_ai.tool.error_result",
+	inputTokens: "maple_ai.usage.input_tokens",
+	cacheReadTokens: "maple_ai.usage.cache_read_tokens",
+	cacheWriteTokens: "maple_ai.usage.cache_write_tokens",
+	outputTokens: "maple_ai.usage.output_tokens",
+	reasoningTokens: "maple_ai.usage.reasoning_tokens",
+	cost: "maple_ai.usage.cost",
+} as const
+
 // Usage conventions — which of a reporter's token figures already contain
 // which others.
 //
@@ -128,11 +173,13 @@ export const MAPLE_GENAI_MODEL_DURATION_MS_ATTR = "maple_ai.model_duration_ms"
 // Anthropic's `input_tokens` EXCLUDES `cache_read_input_tokens` and
 // `cache_creation_input_tokens`; Gemini's `candidatesTokenCount` EXCLUDES
 // `thoughtsTokenCount`. A total that adds the five as if they were disjoint
-// bills a cache-heavy or reasoning-heavy call nearly twice. Both readers of
-// usage — `spanTokenBuckets` in the web app and `genAiTokensExpr` behind
-// `ai_trace_index` — resolve the reporter's convention here first and carve
-// the contained buckets back out, so `input` always means the uncached prompt,
-// `output` the visible completion, and a total is always the plain sum.
+// bills a cache-heavy or reasoning-heavy call nearly twice. The ingest gateway
+// settles this per emitter and stamps disjoint buckets (`MAPLE_AI_STAMP_ATTRS`);
+// `spanTokenBuckets` resolves the reporter's convention here only for a span
+// ingested before it did, carving the contained buckets back out, so `input`
+// always means the uncached prompt, `output` the visible completion, and a
+// total is always the plain sum. Remove once those spans have aged out of the
+// 30-day TTL.
 
 export interface GenAiUsageConvention {
 	/** The prompt figure already contains the cache-read and cache-write buckets. */
@@ -255,6 +302,17 @@ export const AI_GENAI_FIELDS = {
 	// none. Instrumentations that price calls themselves (OpenLLMetry,
 	// OpenInference, Logfire) each use their own key; this is OpenLLMetry's.
 	usageCost: { key: "gen_ai.usage.cost", type: "number" },
+	// The gateway's verdicts and disjoint usage buckets — see
+	// `MAPLE_AI_STAMP_ATTRS`.
+	mapleLlmCall: { key: MAPLE_AI_STAMP_ATTRS.llmCall, type: "number" },
+	mapleToolCall: { key: MAPLE_AI_STAMP_ATTRS.toolCall, type: "number" },
+	mapleError: { key: MAPLE_AI_STAMP_ATTRS.error, type: "number" },
+	mapleInputTokens: { key: MAPLE_AI_STAMP_ATTRS.inputTokens, type: "number" },
+	mapleCacheReadTokens: { key: MAPLE_AI_STAMP_ATTRS.cacheReadTokens, type: "number" },
+	mapleCacheWriteTokens: { key: MAPLE_AI_STAMP_ATTRS.cacheWriteTokens, type: "number" },
+	mapleOutputTokens: { key: MAPLE_AI_STAMP_ATTRS.outputTokens, type: "number" },
+	mapleReasoningTokens: { key: MAPLE_AI_STAMP_ATTRS.reasoningTokens, type: "number" },
+	mapleCost: { key: MAPLE_AI_STAMP_ATTRS.cost, type: "number" },
 
 	// conversation
 	conversationId: { key: "gen_ai.conversation.id", type: "string" },
