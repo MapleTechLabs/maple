@@ -14,6 +14,7 @@
 import {
 	AI_AGENT_OPERATIONS,
 	AI_INFERENCE_OPERATIONS,
+	AI_MEMORY_OPERATIONS,
 	AI_RETRIEVAL_OPERATIONS,
 	AI_TOOL_OPERATIONS,
 } from "@maple/domain/gen-ai"
@@ -37,8 +38,11 @@ const INFERENCE_OPS: ReadonlySet<string> = new Set(AI_INFERENCE_OPERATIONS)
 const RETRIEVAL_OPS: ReadonlySet<string> = new Set(AI_RETRIEVAL_OPERATIONS)
 const TOOL_OPS: ReadonlySet<string> = new Set(AI_TOOL_OPERATIONS)
 const AGENT_OPS: ReadonlySet<string> = new Set(AI_AGENT_OPERATIONS)
+/** A memory-store operation is the agent's own bookkeeping, so it reads as agent
+ *  work — not a model turn, not a tool call. */
+const MEMORY_OPS: ReadonlySet<string> = new Set(AI_MEMORY_OPERATIONS)
 
-/** Every operation name the four sets above recognise. A span name conventionally
+/** Every operation name the five sets above recognise. A span name conventionally
  *  leads with one ("execute_tool read_file", "chat gpt-5"), so a view that wants
  *  to set the operation apart from its subject needs to know which words are
  *  operations — including for the reporters that skip `gen_ai.operation.name`. */
@@ -47,6 +51,7 @@ export const GEN_AI_OPERATIONS: ReadonlySet<string> = new Set([
 	...RETRIEVAL_OPS,
 	...TOOL_OPS,
 	...AGENT_OPS,
+	...MEMORY_OPS,
 ])
 
 export function spanStartMs(span: AiSessionSpan): number {
@@ -67,7 +72,7 @@ export function classifyAiSpan(span: AiSessionSpan): AiSpanCategory {
 	if (operation !== undefined) {
 		if (INFERENCE_OPS.has(operation) || RETRIEVAL_OPS.has(operation)) return "inference"
 		if (TOOL_OPS.has(operation)) return "tool"
-		if (AGENT_OPS.has(operation)) return "agent"
+		if (AGENT_OPS.has(operation) || MEMORY_OPS.has(operation)) return "agent"
 	}
 	// Spans with no AI signal at all are the app's own HTTP/DB work, sharing the
 	// agent's traces. They are rendered, muted, and never colored as agent work.

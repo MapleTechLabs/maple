@@ -148,6 +148,7 @@ import {
 import {
 	AI_AGENT_OPERATIONS,
 	AI_INFERENCE_OPERATIONS,
+	AI_MEMORY_OPERATIONS,
 	AI_RETRIEVAL_OPERATIONS,
 	AI_TOOL_OPERATIONS,
 	MAPLE_AI_SESSION_ID_ATTR,
@@ -1641,7 +1642,12 @@ const summaryMeasures_ = ($: SpanColumns) => {
 	const agentName = field("agentName")
 	const isLlmCall = operation.in_(...AI_INFERENCE_OPERATIONS).or(
 		operation
-			.notIn(...AI_RETRIEVAL_OPERATIONS, ...AI_TOOL_OPERATIONS, ...AI_AGENT_OPERATIONS)
+			.notIn(
+				...AI_RETRIEVAL_OPERATIONS,
+				...AI_TOOL_OPERATIONS,
+				...AI_AGENT_OPERATIONS,
+				...AI_MEMORY_OPERATIONS,
+			)
 			.and(model.neq(""))
 			.and(toolName.eq("")),
 	)

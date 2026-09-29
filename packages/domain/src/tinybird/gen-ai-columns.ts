@@ -25,6 +25,7 @@ import { compile } from "@maple-dev/effect-clickhouse/sql"
 import * as T from "@maple-dev/effect-clickhouse/types"
 import { applyRedactions, chRedactChain, MSG_TEXT_REDACTIONS } from "./fingerprint"
 import {
+	AI_MEMORY_OPERATIONS,
 	GENAI_DEFAULT_USAGE_CONVENTION,
 	GENAI_PROVIDER_USAGE_CONVENTIONS,
 	GENAI_VENDOR_USAGE_CONVENTIONS,
@@ -153,7 +154,7 @@ const INFERENCE_OPS = ["chat", "generate_content", "text_completion", "fetch_res
 const RETRIEVAL_OPS = ["embeddings", "retrieval"] as const
 const TOOL_OPS = ["execute_tool"] as const
 const AGENT_OPS = ["invoke_agent", "create_agent", "invoke_workflow", "plan", "agent_step"] as const
-const KNOWN_OPS = [...INFERENCE_OPS, ...RETRIEVAL_OPS, ...TOOL_OPS, ...AGENT_OPS]
+const KNOWN_OPS = [...INFERENCE_OPS, ...RETRIEVAL_OPS, ...TOOL_OPS, ...AGENT_OPS, ...AI_MEMORY_OPERATIONS]
 
 /** `openinference.span.kind` → the operation the integration layer would
  *  refine it to. Mirrors `OPENINFERENCE_SPAN_KIND_OPERATIONS` in `ai-vendors.ts`. */

@@ -1140,5 +1140,34 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 			},
 		],
 	},
+	{
+		// TODO(v26 -> v27): what changes, and what is NOT backfilled. Fill beforeBootstrap
+		// with the ADD COLUMN / view drops an IF NOT EXISTS bootstrap cannot do, then the
+		// plan line and dispositions. The v27 physical verify fails an unfinished row.
+		id: "local-0026-to-0027-ai-trace-index-memory-ops",
+		from: 26,
+		to: 27,
+		description: "Recreate ai_trace_index_mv so a GenAI memory operation is never counted as an LLM or tool call",
+		clonedBefore: "the views are replaced",
+		beforeBootstrap: [dropViews("ai_trace_index_mv")],
+		plan: [
+			[
+				"rebuild-ai-trace-index-view",
+				"Drop and recreate ai_trace_index_mv with the GenAI memory operations among the known operations",
+			],
+		],
+		verifies: "Verify the v27 physical schema and the retained raw telemetry counts",
+		dispositions: [
+			AI_TRACE_INDEX_SOURCE,
+			{
+				name: "ai_trace_index",
+				classification: "derived",
+				disposition: "preserve-exact",
+				guarantee:
+					"Existing rows are preserved untouched; the memory-operation rule applies to spans materialized after the migration and converges as the retention window rolls.",
+				...AI_TRACE_INDEX_FORWARD,
+			},
+		],
+	},
 	// local-schema:bump appends the next step above this line.
 ]

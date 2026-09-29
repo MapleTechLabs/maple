@@ -155,7 +155,7 @@ describe("span classification SQL", () => {
 		// the convention, only to vendor-stamped spans, and only after the tool
 		// and agent rules have declined — the client's order.
 		expect(text).toContain(
-			"NOT IN ('chat', 'generate_content', 'text_completion', 'fetch_response', 'embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step')",
+			"NOT IN ('chat', 'generate_content', 'text_completion', 'fetch_response', 'embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store')",
 		)
 		expect(text).toContain("NOT ((coalesce(nullIf(SpanAttributes['gen_ai.tool.name'], '')")
 		expect(text).toContain("lower(SpanName) LIKE '%tool%'")

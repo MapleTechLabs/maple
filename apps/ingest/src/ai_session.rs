@@ -1717,7 +1717,7 @@ mod tests {
             ("gen_ai.operation.name", "chat"),
             ("gen_ai.usage.input_tokens", "2"),
             ("gen_ai.usage.cache_read.input_tokens", "114514"),
-            ("gen_ai.usage.cache_creation.input_tokens", "3549"),
+            ("gen_ai.usage.cache_write.input_tokens", "3549"),
             ("gen_ai.response.time_to_first_chunk", "0.934"),
         ] {
             assert_eq!(attr_value(llm, key).as_deref(), Some(value), "{key}");
