@@ -240,12 +240,8 @@ const CACHE_SNAP_S = 15
 const TRACE_SERVICE_PARTITION_BUFFER_MS = 24 * 60 * 60 * 1000
 // Same ±1h pad `traceListQuery` puts around the window, here around the page.
 const TRACE_LIST_PAGE_BUFFER_MS = 60 * 60 * 1000
-/**
- * Up to a day, the one-shot `traceListQuery` probes at most three daily
- * partitions in stage 2, so a second round trip would only add latency.
- */
-const TRACE_LIST_SINGLE_PASS_MAX_SECONDS = 24 * 60 * 60
 const TRACE_LIST_PAGE_SLICE_MS = MAX_LIST_RANGE_SECONDS * 1000
+const TRACE_LIST_FANOUT_CONCURRENCY = 4
 
 // Re-exported so `@maple/query-engine/runtime` consumers keep one import site;
 // the definition is in the driver-free `../group-key` because the query-set merge
@@ -972,16 +968,22 @@ const executeCHQuery = Effect.fnUntraced(function* <
 
 /**
  * The grouped trace list in two round trips: page the roots, then aggregate only
- * that page in `trace_detail_spans`, bounded by the page's own root timestamps
- * ±1h. The one-shot `traceListQuery` bounds stage 2 by the requested window, and
- * each cold daily partition it probes costs ~0.5–3s — a 30-day window times out
- * even though the newest page usually sits inside one or two of them.
+ * that page in `trace_detail_spans`. The one-shot `traceListQuery` bounds stage 2
+ * by the requested window, and each cold daily partition a `TraceId` seek probes
+ * costs ~0.5–3s — a 30-day window times out even when the page sits in one day.
  *
- * Stage 1 walks the window in `MAX_LIST_RANGE_SECONDS` slices from the sorted
- * end and stops once it holds `offset + limit` roots. Even read-in-order, one
- * `trace_list_mv` scan opens a stream per part in the window: on prod 14 days
- * fit in 512MB and 21 did not. A full first slice (the common case) makes this
- * one page query; a sparse filter pays one query per slice.
+ * Stage 1 reads `trace_list_mv` in `MAX_LIST_RANGE_SECONDS` slices from the
+ * sorted end: one scan over a wider window runs out of memory even read-in-order
+ * (on prod, 14 days fit in 512MB and 21 did not). A full first slice is the
+ * common case; otherwise the rest are read concurrently, each for what the first
+ * left missing, and concatenated in slice order — a sparse filter scans every
+ * slice, and one after another they would outrun the 30s engine timeout.
+ *
+ * Stage 2 seeks each UTC date's roots separately, so every seek probes at most
+ * two partitions however far the page spreads (on prod, 100 ids spread over 20
+ * days: killed at 10s; one day: 63ms). A seek reaches from an hour before its
+ * earliest root to the end of that date — its partition is read anyway — or an
+ * hour past the last root or the window, the one-shot's pad, whichever is less.
  */
 const executeTraceListByPage = Effect.fnUntraced(function* <T extends QueryTenant>(
 	warehouse: QueryEngineWarehouse<T>,
@@ -993,51 +995,79 @@ const executeTraceListByPage = Effect.fnUntraced(function* <T extends QueryTenan
 	const startMs = parseWarehouseDateTime(window.startTime)
 	const endMs = parseWarehouseDateTime(window.endTime)
 	const wanted = paging.offset + paging.limit
-	const roots: Array<CH.TraceListPageOutput> = []
 
 	// Slices share no second: `trace_list_mv` Timestamps are whole seconds and
 	// both bounds are inclusive, so the next slice starts one second past this one.
+	const slices: Array<{ readonly startMs: number; readonly endMs: number }> = []
 	let edge = paging.newestFirst ? endMs : startMs
-	while (roots.length < wanted && startMs <= edge && edge <= endMs) {
-		const sliceStart = paging.newestFirst ? Math.max(startMs, edge - TRACE_LIST_PAGE_SLICE_MS) : edge
-		const sliceEnd = paging.newestFirst ? edge : Math.min(endMs, edge + TRACE_LIST_PAGE_SLICE_MS)
-		edge = paging.newestFirst ? sliceStart - 1000 : sliceEnd + 1000
+	while (startMs <= edge && edge <= endMs) {
+		const slice = paging.newestFirst
+			? { startMs: Math.max(startMs, edge - TRACE_LIST_PAGE_SLICE_MS), endMs: edge }
+			: { startMs: edge, endMs: Math.min(endMs, edge + TRACE_LIST_PAGE_SLICE_MS) }
+		slices.push(slice)
+		edge = paging.newestFirst ? slice.startMs - 1000 : slice.endMs + 1000
+	}
 
-		const slice = yield* executeCHQuery(
+	const readSlice = (slice: (typeof slices)[number], limit: number) =>
+		executeCHQuery(
 			warehouse,
 			tenant,
-			(capabilities) =>
-				CH.traceListPageQuery({ ...listOpts(capabilities), limit: wanted - roots.length, offset: 0 }),
+			(capabilities) => CH.traceListPageQuery({ ...listOpts(capabilities), limit, offset: 0 }),
 			{
 				orgId: window.orgId,
-				startTime: formatWarehouseDateTime(sliceStart),
-				endTime: formatWarehouseDateTime(sliceEnd),
+				// The window's own edges pass through verbatim (they may carry
+				// fractional seconds); only the inner slice edges are derived.
+				startTime:
+					slice.startMs === startMs ? window.startTime : formatWarehouseDateTime(slice.startMs),
+				endTime: slice.endMs === endMs ? window.endTime : formatWarehouseDateTime(slice.endMs),
 			},
 			"traceListPage",
 			"list",
 		)
-		roots.push(...slice)
+
+	// Never defaulted: validation guarantees `startMs < endMs`, so there is a slice.
+	const [firstSlice = { startMs, endMs }, ...laterSlices] = slices
+	const first = yield* readSlice(firstSlice, wanted)
+	const rest =
+		first.length < wanted
+			? yield* Effect.forEach(laterSlices, (slice) => readSlice(slice, wanted - first.length), {
+					concurrency: TRACE_LIST_FANOUT_CONCURRENCY,
+				})
+			: []
+	const page = [...first, ...rest.flat()].slice(paging.offset, wanted)
+
+	const pageByDate = new Map<string, Array<CH.TraceListPageOutput>>()
+	for (const root of page) {
+		const date = String(root.ts).slice(0, 10)
+		pageByDate.set(date, [...(pageByDate.get(date) ?? []), root])
 	}
-
-	const page = roots.slice(paging.offset, wanted)
-	if (page.length === 0) return []
-
-	const pageTimes = page.map((row) => parseWarehouseDateTime(String(row.ts)))
-	const rows = yield* executeCHQuery(
-		warehouse,
-		tenant,
-		CH.traceListByTraceIdsQuery({ traceIds: page.map((row) => String(row.traceId)) }),
-		{
-			orgId: window.orgId,
-			startTime: formatWarehouseDateTime(Math.min(...pageTimes) - TRACE_LIST_PAGE_BUFFER_MS),
-			endTime: formatWarehouseDateTime(Math.max(...pageTimes) + TRACE_LIST_PAGE_BUFFER_MS),
+	const rows = yield* Effect.forEach(
+		pageByDate,
+		([date, roots]) => {
+			const times = roots.map((root) => parseWarehouseDateTime(String(root.ts)))
+			const dateEndMs = parseWarehouseDateTime(`${date} 23:59:59`)
+			const seekEndMs = Math.min(
+				endMs + TRACE_LIST_PAGE_BUFFER_MS,
+				Math.max(dateEndMs, Math.max(...times) + TRACE_LIST_PAGE_BUFFER_MS),
+			)
+			return executeCHQuery(
+				warehouse,
+				tenant,
+				CH.traceListByTraceIdsQuery({ traceIds: roots.map((root) => String(root.traceId)) }),
+				{
+					orgId: window.orgId,
+					startTime: formatWarehouseDateTime(Math.min(...times) - TRACE_LIST_PAGE_BUFFER_MS),
+					endTime: formatWarehouseDateTime(seekEndMs),
+				},
+				"traceList",
+				"list",
+			)
 		},
-		"traceList",
-		"list",
+		{ concurrency: TRACE_LIST_FANOUT_CONCURRENCY },
 	)
 
-	const byTraceId = new Map(rows.map((row) => [String(row.traceId), row] as const))
-	return page.flatMap((row) => byTraceId.get(String(row.traceId)) ?? [])
+	const byTraceId = new Map(rows.flat().map((row) => [String(row.traceId), row] as const))
+	return page.flatMap((root) => byTraceId.get(String(root.traceId)) ?? [])
 })
 
 type MetricsTimeseriesSpec = Extract<QuerySpec, { readonly source: "metrics"; readonly kind: "timeseries" }>
@@ -1892,7 +1922,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 				})
 				const window = { orgId: tenant.orgId, startTime: request.startTime, endTime: request.endTime }
 				const rows =
-					range.rangeSeconds <= TRACE_LIST_SINGLE_PASS_MAX_SECONDS
+					range.rangeSeconds <= MAX_LIST_RANGE_SECONDS
 						? yield* executeCHQuery(
 								warehouse,
 								tenant,

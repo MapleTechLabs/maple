@@ -849,11 +849,6 @@ export const querySpecFixtures: ReadonlyArray<QuerySpecFixture> = [
 	},
 	{
 		label: "traces-list-grouped",
-		// Under a day, so the grouped fixtures cover the one-shot `traceListQuery`;
-		// wider windows split into the `traceListPageQuery` +
-		// `traceListByTraceIdsQuery` builders.
-		startTime: SHORT_START_TIME,
-		endTime: SHORT_END_TIME,
 		query: { kind: "list", source: "traces", groupByTrace: true, limit: 50, filters: TRACES_FILTERS },
 		allCapabilities: true,
 	},
@@ -861,8 +856,6 @@ export const querySpecFixtures: ReadonlyArray<QuerySpecFixture> = [
 		// An attribute filter the MV cannot express — covers the raw-`traces`
 		// stage-1 fallback of traceListQuery.
 		label: "traces-list-grouped-attr-fallback",
-		startTime: SHORT_START_TIME,
-		endTime: SHORT_END_TIME,
 		query: {
 			kind: "list",
 			source: "traces",
@@ -877,8 +870,6 @@ export const querySpecFixtures: ReadonlyArray<QuerySpecFixture> = [
 	},
 	{
 		label: "traces-list-grouped-duration-sort",
-		startTime: SHORT_START_TIME,
-		endTime: SHORT_END_TIME,
 		query: {
 			kind: "list",
 			source: "traces",

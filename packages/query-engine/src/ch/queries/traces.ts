@@ -1781,8 +1781,8 @@ function traceListAggregate(
  * Stage 2 is bounded by the requested window padded by ±1h, not the exact
  * window: a trace's children can outlive it, and clipping them exactly would
  * undercount `spanCount` at the window edge. Stage 2 still probes every daily
- * partition of the window, so wide windows go through `traceListPageQuery` +
- * `traceListByTraceIdsQuery` instead, bounded by the page's own timestamps.
+ * partition of the window, so windows past the list ceiling go through
+ * `traceListPageQuery` + `traceListByTraceIdsQuery` instead, bounded per date.
  */
 export function traceListQuery(opts: TraceListOpts) {
 	const limit = opts.limit ?? 25
@@ -1835,10 +1835,10 @@ export interface TraceListByTraceIdsOpts {
 }
 
 /**
- * `traceListQuery`'s stage 2 for a page `traceListPageQuery` already chose. The
- * `startTime`/`endTime` params are the partition bound and must already carry
- * the ±1h pad around the page's root timestamps. Rows come back unordered; the
- * caller restores the page order.
+ * `traceListQuery`'s stage 2 for roots `traceListPageQuery` already chose. The
+ * `startTime`/`endTime` params are the partition bound: they must cover every
+ * span of those traces, and nothing more. Rows come back unordered; the caller
+ * restores the page order.
  */
 export function traceListByTraceIdsQuery(opts: TraceListByTraceIdsOpts) {
 	return traceListAggregate(($) => [
