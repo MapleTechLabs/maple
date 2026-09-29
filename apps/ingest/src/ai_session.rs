@@ -264,6 +264,7 @@ struct ScopeFacts {
     genkit: bool,
     google_adk: bool,
     haystack: bool,
+    haystack_openinference: bool,
     langchain: bool,
     litellm: bool,
     llamaindex: bool,
@@ -343,7 +344,8 @@ fn scope_facts(scope_name: &str, resource: &ResourceFacts) -> ScopeFacts {
         "gcp.vertex.agent" | "openinference.instrumentation.google_adk" => {
             facts.google_adk = true;
         }
-        "haystack" | "openinference.instrumentation.haystack" => facts.haystack = true,
+        "haystack" => facts.haystack = true,
+        "openinference.instrumentation.haystack" => facts.haystack_openinference = true,
         // The `@arizeai/` name is the TypeScript instrumentor.
         "langsmith"
         | "openinference.instrumentation.langchain"
@@ -390,6 +392,7 @@ fn scope_facts(scope_name: &str, resource: &ResourceFacts) -> ScopeFacts {
         || facts.flue
         || facts.google_adk
         || facts.haystack
+        || facts.haystack_openinference
         || facts.langchain
         || facts.litellm
         || facts.llamaindex
@@ -907,11 +910,17 @@ static VENDORS: &[Vendor] = &[
             "session.id",
         ],
     },
+    // One vendor, two dialects with their own session keys: `session.id` is
+    // the OpenInference instrumentor's, and means nothing on a native span.
+    Vendor {
+        id: "haystack",
+        detect: detect_haystack_openinference,
+        session_keys: &["session.id", "gen_ai.conversation.id"],
+    },
     Vendor {
         id: "haystack",
         detect: detect_haystack,
-        // `session.id` is OpenInference's; the native tracer has no session key.
-        session_keys: &["session.id", "gen_ai.conversation.id"],
+        session_keys: CONVERSATION_ID_ONLY,
     },
     Vendor {
         id: "langchain",
@@ -1133,6 +1142,10 @@ fn detect_genkit(c: &Ctx) -> bool {
 
 fn detect_google_adk(c: &Ctx) -> bool {
     c.scope.google_adk || c.ev.gcp_vertex_agent || c.ev.gen_ai_system == "gcp.vertex.agent"
+}
+
+fn detect_haystack_openinference(c: &Ctx) -> bool {
+    c.scope.haystack_openinference
 }
 
 fn detect_haystack(c: &Ctx) -> bool {
@@ -2155,6 +2168,45 @@ mod tests {
                 vendor,
                 Some(session_id),
             );
+        }
+    }
+
+    #[test]
+    fn session_key_order_follows_the_emitting_dialect() {
+        // Every span carries both keys.
+        let both = &[
+            ("gen_ai.conversation.id", "conv-1"),
+            ("session.id", "app-1"),
+        ];
+        for (scope, span_name, vendor, session_id) in [
+            // OpenInference's own session key leads on its instrumentor's spans.
+            (
+                "openinference.instrumentation.haystack",
+                "OpenAIChatGenerator.run",
+                "haystack",
+                "app-1",
+            ),
+            // A native span's `session.id` is not the vendor's: the
+            // conversation id wins.
+            ("haystack", "haystack.pipeline.run", "haystack", "conv-1"),
+            // google_adk and pydantic_ai rank `session.id` after their own keys
+            // on both scopes.
+            (
+                "openinference.instrumentation.google_adk",
+                "invoke_agent weather_agent",
+                "google_adk",
+                "conv-1",
+            ),
+            ("gcp.vertex.agent", "invoke_agent", "google_adk", "conv-1"),
+            (
+                "openinference.instrumentation.pydantic_ai",
+                "agent run",
+                "pydantic_ai",
+                "conv-1",
+            ),
+            ("pydantic-ai", "agent run", "pydantic_ai", "conv-1"),
+        ] {
+            classified(scope, span_name, both, &[], vendor, Some(session_id));
         }
     }
 
