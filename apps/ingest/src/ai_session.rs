@@ -26,9 +26,11 @@
 //! keys become the `gen_ai.*` keys every reader keys on, and the phases of its
 //! tool calls are left unstamped — see `ai_session/claude_code.rs`.
 //!
-//! A model call also gets its token usage restated as five disjoint
-//! `maple_ai.usage.*` buckets, whatever convention its emitter reported under;
-//! agent and workflow wrappers get none — see `ai_session/usage.rs`.
+//! Every stamped span also says whether it is a model call
+//! (`maple_ai.llm_call`), and a model call gets its token usage restated as
+//! five disjoint `maple_ai.usage.*` buckets, whatever convention its emitter
+//! reported under; agent and workflow wrappers get none — see
+//! `ai_session/usage.rs`.
 //!
 //! Detection is ordered first-match over the vendor predicates below; the
 //! session ID is the first non-empty session-granularity attribute for the
@@ -164,10 +166,9 @@ pub fn stamp_trace_request(request: &mut ExportTraceServiceRequest) {
                     }
                     claude_code::normalize(span);
                 }
-                usage::stamp(span, classification.vendor);
-                // One reserve, not up to three doubling reallocs that each
+                // One reserve, not up to four doubling reallocs that each
                 // copy every existing KeyValue.
-                span.attributes.reserve(3);
+                span.attributes.reserve(4);
                 span.attributes
                     .push(string_attribute(VENDOR_ID_ATTR, classification.vendor));
                 span.attributes
@@ -178,6 +179,7 @@ pub fn stamp_trace_request(request: &mut ExportTraceServiceRequest) {
                     span.attributes
                         .push(owned_string_attribute(SESSION_ID_ATTR, session_id));
                 }
+                usage::stamp(span, classification.vendor);
             }
         }
     }
@@ -2481,7 +2483,8 @@ mod tests {
                 .iter()
                 .filter(|kv| kv.key.starts_with(ATTR_NAMESPACE))
                 .count(),
-            3,
+            // Vendor, version, session, and the llm-call marker.
+            4,
             "spoofed stamps must be stripped, not duplicated"
         );
 

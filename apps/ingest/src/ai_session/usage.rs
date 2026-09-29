@@ -1,5 +1,11 @@
-//! A model call's token usage, restated as five disjoint buckets under
-//! Maple-owned keys.
+//! Which stamped span is the model call, and that call's token usage,
+//! restated as five disjoint buckets under Maple-owned keys.
+//!
+//! `maple_ai.llm_call` is `1` on the span that IS a model call — whether or not
+//! it reported usage, so a failed call still counts — and `0` on every other
+//! span the gateway stamps. The key being present at all is what tells a reader
+//! the gateway made that call, so a span ingested before it did falls back to
+//! the reader's own op/name heuristics.
 //!
 //! Every emitter reports usage its own way. The prompt figure contains the
 //! cache buckets on every semconv/OpenAI-shaped wire, but excludes them where a
@@ -26,6 +32,7 @@
 //! there would misreport the span to anyone reading it raw.
 
 use opentelemetry_proto::tonic::common::v1::{any_value, KeyValue};
+use opentelemetry_proto::tonic::trace::v1::span::SpanKind;
 use opentelemetry_proto::tonic::trace::v1::Span;
 
 use super::{owned_string_attribute, value_str};
@@ -36,6 +43,7 @@ const CACHE_WRITE_TOKENS_ATTR: &str = "maple_ai.usage.cache_write_tokens";
 const OUTPUT_TOKENS_ATTR: &str = "maple_ai.usage.output_tokens";
 const REASONING_TOKENS_ATTR: &str = "maple_ai.usage.reasoning_tokens";
 const COST_ATTR: &str = "maple_ai.usage.cost";
+const LLM_CALL_ATTR: &str = "maple_ai.llm_call";
 
 // Each bucket's spellings, canonical first: the first key whose value parses
 // as a number wins. The semconv key, its legacy and vendor spellings, then the
@@ -134,12 +142,18 @@ const KNOWN_OPS: [&str; 12] = [
 /// Bedrock cross-region inference profile prefixes (`us.anthropic.claude-…`).
 const BEDROCK_REGION_PREFIXES: [&str; 4] = ["us.", "eu.", "apac.", "global."];
 
-/// Stamp the usage buckets onto `span` if it is the model call.
+/// Mark whether `span` is the model call, and stamp its usage buckets if it
+/// is.
 pub(super) fn stamp(span: &mut Span, vendor: &str) {
-    let attrs = &span.attributes;
-    if !is_model_call(vendor, &span.name, attrs) {
+    let call = is_model_call(vendor, span);
+    span.attributes.push(owned_string_attribute(
+        LLM_CALL_ATTR,
+        if call { "1" } else { "0" }.to_owned(),
+    ));
+    if !call {
         return;
     }
+    let attrs = &span.attributes;
     let usage = Usage::read(attrs, input_excludes_cache(vendor, attrs));
     let cost = first_number(attrs, COST_KEYS).filter(|cost| *cost > 0.0);
     let tokens = [
@@ -163,7 +177,8 @@ pub(super) fn stamp(span: &mut Span, vendor: &str) {
 
 /// Is this span the model call itself, rather than an agent, step or workflow
 /// wrapper that repeats its calls' usage?
-fn is_model_call(vendor: &str, span_name: &str, attrs: &[KeyValue]) -> bool {
+fn is_model_call(vendor: &str, span: &Span) -> bool {
+    let (span_name, attrs) = (span.name.as_str(), span.attributes.as_slice());
     let op = operation(attrs);
     match vendor {
         // `call_llm` wraps its `generate_content` child with the same figures.
@@ -178,7 +193,13 @@ fn is_model_call(vendor: &str, span_name: &str, attrs: &[KeyValue]) -> bool {
                 && span_name.starts_with("ai.")
                 && (span_name.ends_with(".doGenerate") || span_name.ends_with(".doStream"))
         }
-        _ => vendor.starts_with("unknown:") && named_like_a_model_call(op, span_name, attrs),
+        // A server span is the endpoint that received the request (a proxy's
+        // `POST /chat/completions`), never the call it made.
+        _ => {
+            vendor.starts_with("unknown:")
+                && span.kind != SpanKind::Server as i32
+                && named_like_a_model_call(op, span_name, attrs)
+        }
     }
 }
 
@@ -352,12 +373,29 @@ mod tests {
     #[derive(Debug)]
     struct Stamped {
         vendor: String,
+        /// `maple_ai.llm_call`, absent on a span the gateway did not stamp.
+        llm_call: Option<String>,
         buckets: Option<Buckets>,
         cost: Option<String>,
     }
 
     /// One scope's spans through the gateway's stamping pass.
     fn stamp_spans(service: &str, scope: &str, spans: &[(&str, Attrs)]) -> Vec<Stamped> {
+        stamp_request(
+            service,
+            scope,
+            spans
+                .iter()
+                .map(|(name, attrs)| Span {
+                    name: (*name).to_owned(),
+                    attributes: kvs(attrs),
+                    ..Default::default()
+                })
+                .collect(),
+        )
+    }
+
+    fn stamp_request(service: &str, scope: &str, spans: Vec<Span>) -> Vec<Stamped> {
         let mut request = ExportTraceServiceRequest {
             resource_spans: vec![ResourceSpans {
                 resource: Some(Resource {
@@ -369,14 +407,7 @@ mod tests {
                         name: scope.to_owned(),
                         ..Default::default()
                     }),
-                    spans: spans
-                        .iter()
-                        .map(|(name, attrs)| Span {
-                            name: (*name).to_owned(),
-                            attributes: kvs(attrs),
-                            ..Default::default()
-                        })
-                        .collect(),
+                    spans,
                     ..Default::default()
                 }],
                 ..Default::default()
@@ -394,6 +425,10 @@ mod tests {
                     .any(|attr| attr.key.starts_with("maple_ai.usage.") && attr.key != COST_ATTR);
                 Stamped {
                     vendor: first_text(attrs, &[VENDOR_ID_ATTR]).to_owned(),
+                    llm_call: attrs
+                        .iter()
+                        .find(|attr| attr.key == LLM_CALL_ATTR)
+                        .map(|attr| value_str(attr).to_owned()),
                     buckets: has_buckets.then(|| {
                         [
                             bucket(INPUT_TOKENS_ATTR),
@@ -433,6 +468,10 @@ mod tests {
         for ((name, _, expected), got) in spans.iter().zip(&stamped) {
             assert_eq!(got.vendor, vendor, "{name}: vendor");
             assert_eq!(got.buckets, *expected, "{name}: buckets");
+            // Every span here that owns usage is the model call, and every one
+            // that owns none is a wrapper.
+            let call = if expected.is_some() { "1" } else { "0" };
+            assert_eq!(got.llm_call.as_deref(), Some(call), "{name}: llm_call");
         }
     }
 
@@ -1424,6 +1463,11 @@ mod tests {
         assert_eq!(stamped[0].cost.as_deref(), Some("0.000015918"));
         assert_eq!(stamped[1].buckets, Some([81, 0, 0, 14, 0]));
         assert_eq!(stamped[2].buckets, None);
+        let calls: Vec<_> = stamped
+            .iter()
+            .map(|span| span.llm_call.as_deref())
+            .collect();
+        assert_eq!(calls, [Some("1"), Some("1"), Some("0")]);
     }
 
     // --- Guards and the write itself ------------------------------------
@@ -1474,12 +1518,107 @@ mod tests {
                         ("gen_ai.operation.name", "invoke_agent"),
                         (INPUT_TOKENS_ATTR, "999"),
                         (COST_ATTR, "9.99"),
+                        (LLM_CALL_ATTR, "1"),
                     ],
                 ),
             ],
         );
+        // Still the model call: a failed call counts once.
+        assert_eq!(stamped[0].llm_call.as_deref(), Some("1"));
         assert!(stamped[0].buckets.is_none() && stamped[0].cost.is_none());
+        assert_eq!(stamped[1].llm_call.as_deref(), Some("0"));
         assert!(stamped[1].buckets.is_none() && stamped[1].cost.is_none());
+    }
+
+    /// Spans the op/name heuristics read as model calls because their names say
+    /// "chat" and a model is named nearby.
+    #[test]
+    fn name_heuristic_false_positives_are_not_calls() {
+        // `captures/spring_ai_agents`: the ChatClient facade over the chat model.
+        let spring = stamp_spans(
+            "spring-ai-trace-capture",
+            "org.springframework.boot",
+            &[(
+                "spring_ai chat_client",
+                &[
+                    ("gen_ai.operation.name", "framework"),
+                    ("gen_ai.system", "spring_ai"),
+                    ("spring.ai.chat.client.stream", "false"),
+                    ("spring.ai.kind", "chat_client"),
+                ],
+            )],
+        );
+        // LangSmith's OTel export names a prompt template step `chain`.
+        let langsmith = stamp_spans(
+            "docs-verify-langchain",
+            "langsmith",
+            &[(
+                "ChatPromptTemplate",
+                &[
+                    ("gen_ai.operation.name", "chain"),
+                    ("langsmith.span.kind", "prompt"),
+                ],
+            )],
+        );
+        // `captures/dspy_agents`: the adapter formatting the LM call.
+        let dspy = stamp_spans(
+            "dspy-agents-scenario",
+            "openinference.instrumentation.dspy",
+            &[(
+                "ChatAdapter.__call__",
+                &[
+                    ("input.mime_type", "application/json"),
+                    ("openinference.span.kind", "CHAIN"),
+                    ("output.mime_type", "application/json"),
+                ],
+            )],
+        );
+        for (stamped, vendor) in [
+            (spring, "spring_ai"),
+            (langsmith, "langchain"),
+            (dspy, "dspy"),
+        ] {
+            assert_eq!(stamped[0].vendor, vendor);
+            assert_eq!(stamped[0].llm_call.as_deref(), Some("0"), "{vendor}");
+        }
+
+        // `captures/docs_litellm_proxy`: the proxy's own server span for the
+        // request, which is no AI span at all as captured...
+        let proxy = |kind: SpanKind| Span {
+            name: "POST /chat/completions".to_owned(),
+            kind: kind as i32,
+            attributes: kvs(&[
+                ("http.method", "POST"),
+                ("http.route", "/chat/completions"),
+                ("gen_ai.request.model", "gpt-4o-mini"),
+                ("llm.request.type", "chat"),
+            ]),
+            ..Default::default()
+        };
+        let captured = stamp_spans(
+            "litellm-proxy",
+            "opentelemetry.instrumentation.fastapi",
+            &[(
+                "POST /chat/completions",
+                &[
+                    ("http.method", "POST"),
+                    ("http.route", "/chat/completions"),
+                    ("litellm.api_key.hash", "7c9f8cb332edbdb1"),
+                    ("gen_ai.request.model", "gpt-4o-mini"),
+                ],
+            )],
+        );
+        assert!(captured[0].llm_call.is_none());
+        // ...and, stamped as an unknown dialect, a server span is never the call;
+        // the same span as a client is.
+        let stamped = stamp_request(
+            "litellm-proxy",
+            "opentelemetry.instrumentation.fastapi",
+            vec![proxy(SpanKind::Server), proxy(SpanKind::Client)],
+        );
+        assert_eq!(stamped[0].vendor, "unknown:other");
+        assert_eq!(stamped[0].llm_call.as_deref(), Some("0"));
+        assert_eq!(stamped[1].llm_call.as_deref(), Some("1"));
     }
 
     /// Integer and double values count like their string forms; a value that
