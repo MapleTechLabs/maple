@@ -344,14 +344,13 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 		}
 		const history = input.session.history()
 		const tags = { surface, orgId: tenant.orgId, sessionId: input.sessionId, turnId: input.messageId }
+		// Reviews and replies run on the organization's pick; every other turn on the triage model.
 		const model =
 			prReviewId === undefined && prReplyId === undefined
 				? resolveTriageModel(input.env, tags)
-				: resolveReviewModel(
-						input.env,
-						tags,
-						Option.getOrUndefined(yield* reviews.reviewModel(tenant.orgId)),
-					)
+				: yield* reviews
+						.reviewModel(tenant.orgId)
+						.pipe(Effect.map((chosen) => resolveReviewModel(input.env, tags, chosen)))
 
 		// The session recorded the user's message before the run started, so the transcript's tail is
 		// this run's input rather than part of its history.

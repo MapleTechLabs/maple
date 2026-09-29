@@ -2222,23 +2222,23 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				}))
 			})
 
-			const reviewModel: PrReviewServiceApi["reviewModel"] = Effect.fn("PrReviewService.reviewModel")(
-				function* (orgId) {
-					const settings = yield* repositories.getPrReviewSettings(orgId).pipe(
-						Effect.tapError((error) =>
-							Effect.logWarning("Could not read the review model; using the default").pipe(
-								Effect.annotateLogs({ orgId, error: error.message }),
-							),
+			const reviewModel: PrReviewServiceApi["reviewModel"] = (orgId) =>
+				repositories.getPrReviewSettings(orgId).pipe(
+					Effect.map((settings) => Option.fromUndefinedOr(settings.model)),
+					Effect.tap((model) =>
+						Effect.annotateCurrentSpan(
+							"maple.pr_review.model",
+							Option.getOrElse(model, () => "default"),
 						),
-						Effect.option,
-					)
-					const model = Option.flatMap(settings, (value) => Option.fromUndefinedOr(value.model))
-					yield* Effect.annotateCurrentSpan({
-						"maple.pr_review.model": Option.getOrElse(model, () => "default"),
-					})
-					return model
-				},
-			)
+					),
+					Effect.catch((error) =>
+						Effect.logWarning("Could not read the review model; using the default").pipe(
+							Effect.annotateLogs({ orgId, error: error.message }),
+							Effect.as(Option.none()),
+						),
+					),
+					Effect.withSpan("PrReviewService.reviewModel"),
+				)
 
 			return {
 				reviewTarget,

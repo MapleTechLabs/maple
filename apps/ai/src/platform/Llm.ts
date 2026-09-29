@@ -420,24 +420,33 @@ export const resolveTriageModel = (env: LlmEnv, tags?: LlmCallTags): ResolvedMod
 			)
 
 /** The organization's pick, when this region serves it: the EU endpoint 404s a model it lacks. */
-const orgReviewModel = (env: LlmEnv, chosen: PrReviewModel | undefined): string | undefined => {
-	const entry = PR_REVIEW_MODELS.find((model) => model.id === chosen)
-	return entry !== undefined && (openRouterRegion(env) !== "eu" || entry.eu) ? entry.id : undefined
-}
+const servedReviewModel = (env: LlmEnv, chosen: Option.Option<PrReviewModel>): Option.Option<string> =>
+	chosen.pipe(
+		Option.flatMap((id) => Option.fromUndefinedOr(PR_REVIEW_MODELS.find((model) => model.id === id))),
+		Option.filter((model) => openRouterRegion(env) !== "eu" || model.eu),
+		Option.map((model) => model.id),
+	)
 
 /**
  * The model pull request reviews and replies run on: the organization's pick, then the deployment's
  * override, then the region default. OpenRouter only: the id is an OpenRouter id, so a Workers AI
  * deployment reviews on its triage model rather than sending it one.
  */
-export const resolveReviewModel = (env: LlmEnv, tags?: LlmCallTags, chosen?: PrReviewModel): ResolvedModel =>
+export const resolveReviewModel = (
+	env: LlmEnv,
+	tags?: LlmCallTags,
+	chosen: Option.Option<PrReviewModel> = Option.none(),
+): ResolvedModel =>
 	resolveLlmProvider(env) === "workers-ai"
 		? resolveTriageModel(env, tags)
 		: openRouterModel(
 				env,
-				orgReviewModel(env, chosen) ??
-					readString(env, "MAPLE_REVIEW_MODEL_OPENROUTER") ??
-					(openRouterRegion(env) === "eu" ? EU_DEFAULT_REVIEW_MODEL : DEFAULT_REVIEW_MODEL),
+				Option.getOrElse(
+					servedReviewModel(env, chosen),
+					() =>
+						readString(env, "MAPLE_REVIEW_MODEL_OPENROUTER") ??
+						(openRouterRegion(env) === "eu" ? EU_DEFAULT_REVIEW_MODEL : DEFAULT_REVIEW_MODEL),
+				),
 				"MAPLE_TRIAGE_REASONING_EFFORT",
 				undefined,
 				tags,
