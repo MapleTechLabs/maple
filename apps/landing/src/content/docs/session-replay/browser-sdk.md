@@ -340,6 +340,70 @@ export const config = {
 - `withMapleProxy` keeps a `traceparent` the request already carries, as client navigations do, and only changes responses that go on to a render in your app. Redirects and responses your proxy builds itself pass through unchanged. If a shared cache such as a CDN stores prerendered pages, leave them out of the matcher, or every visitor joins the same trace.
 - Server Components can time database and SDK calls with `traced` from `@maple-dev/browser/server`. Pass `isFailure: () => false`: Next.js records an error thrown from a Server Component on its render span, and `redirect()` and `notFound()` work by throwing.
 
+## SvelteKit integration
+
+`@maple-dev/browser/sveltekit` connects SvelteKit's client router (SvelteKit 2.12 or later) to the navigation spans, and `@maple-dev/browser/sveltekit/server` joins the first page load to the server render. Start the page load and report errors from the client hooks:
+
+```ts
+// src/hooks.client.ts
+import "$lib/maple" // first: your MapleBrowser.init call
+import { handleErrorWithMaple, startPageLoad } from "@maple-dev/browser/sveltekit"
+
+export const init = startPageLoad
+export const handleError = handleErrorWithMaple() // or handleErrorWithMaple(yourHandleError)
+```
+
+Pass the router's hooks from the root layout. They are SvelteKit modules only your app can import:
+
+```svelte
+<!-- src/routes/+layout.svelte -->
+<script lang="ts">
+	import { afterNavigate, beforeNavigate } from "$app/navigation"
+	import { navigating, page } from "$app/state"
+	import { traceNavigation } from "@maple-dev/browser/sveltekit"
+
+	let { children } = $props()
+
+	traceNavigation({ beforeNavigate, afterNavigate, navigating, page })
+</script>
+
+{@render children()}
+```
+
+Wrap universal `load` functions, in `+page.ts` and `+layout.ts`:
+
+```ts
+// src/routes/projects/[id]/+page.ts
+import { loadSpan } from "@maple-dev/browser/sveltekit"
+import type { PageLoad } from "./$types"
+
+export const load: PageLoad = async ({ fetch, params, route }) =>
+	loadSpan(`loader ${route.id}`, async () => {
+		const [project, members] = await Promise.all([
+			fetch(`/api/projects/${params.id}`),
+			fetch(`/api/projects/${params.id}/members`),
+		])
+		return { project: await project.json(), members: await members.json() }
+	})
+```
+
+With SvelteKit's server tracing on (`experimental.tracing.server`, SvelteKit 2.31 or later), add the `Server-Timing` header to rendered pages:
+
+```ts
+// src/hooks.server.ts
+import { mapleHandle } from "@maple-dev/browser/sveltekit/server"
+
+export const handle = mapleHandle // or sequence(mapleHandle, yourHandle)
+```
+
+- Spans are named after the route id, like `navigate /projects/[id]`, route groups included, the same string SvelteKit puts in `http.route` on its server spans.
+- A click while a navigation loads keeps one span, named after where it ends. A cancelled navigation ends right away, without a route in its name. A `redirect()` from a load stays in the span, named after the destination.
+- Hash links, `invalidate()` and shallow routing start no span. A query change is a navigation. A link no route matches loads a new document, whose span is a bare `pageload`.
+- `loadSpan` doesn't mark `redirect()` or `error()` below 500 as failures. On the server it only runs your function: SvelteKit's tracing already records each load.
+- `handleErrorWithMaple` reports what SvelteKit hands `handleError` as `sveltekit.client_error`, skipping 404s (unknown routes) and errors `loadSpan` already recorded, and returns what your handler returns.
+- `mapleHandle` names SvelteKit's `sveltekit.handle.root` span on HTML responses and drops their `ETag`, since a 304 revalidation would reuse the cached header and an earlier trace. Put it first in `sequence`. If a shared cache such as a CDN stores your pages, skip it for those, or every visitor joins the same trace.
+- SvelteKit 2.10 and 2.11 have no `$app/state`. Pass `navigating: { get type() { return get(navigatingStore)?.type ?? null } }` and `page: { get route() { return get(pageStore).route } }` instead, with both stores from `$app/stores` and `get` from `svelte/store`.
+
 ## Custom events
 
 `track(name, props)` records a product event against the current session. It appears inline in the session transcript next to the clicks and network calls around it, and counts as a [product event](/docs/product-events/overview).

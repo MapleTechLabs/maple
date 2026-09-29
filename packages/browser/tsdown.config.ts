@@ -6,6 +6,8 @@ export default defineConfig({
 		server: "./src/server.ts",
 		nextjs: "./src/nextjs/index.ts",
 		"nextjs-server": "./src/nextjs/server.ts",
+		sveltekit: "./src/sveltekit/index.ts",
+		"sveltekit-server": "./src/sveltekit/server.ts",
 	},
 	format: "esm",
 	// Types are emitted by tsgo in one pass rooted at the tsconfig's directory,
