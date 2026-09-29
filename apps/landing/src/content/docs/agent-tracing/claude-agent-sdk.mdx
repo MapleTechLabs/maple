@@ -48,29 +48,32 @@ npm install @anthropic-ai/claude-agent-sdk zod
 In TypeScript, `options.env` replaces the child's environment, so spread `process.env` to keep `PATH` and `ANTHROPIC_API_KEY`:
 
 ```ts
-// maple-env.ts
-const inherited: Record<string, string | undefined> = { ...process.env }
-delete inherited.TRACEPARENT
-delete inherited.TRACESTATE
-
-export const mapleEnv: Record<string, string | undefined> = {
-	...inherited,
-	CLAUDE_CODE_ENABLE_TELEMETRY: "1",
-	CLAUDE_CODE_ENHANCED_TELEMETRY_BETA: "1", // spans; without it there are none
-	OTEL_TRACES_EXPORTER: "otlp",
-	OTEL_LOGS_EXPORTER: "otlp", // optional: cost and replies, under Logs
-	OTEL_METRICS_EXPORTER: "otlp", // optional: token and cost counters
-	OTEL_EXPORTER_OTLP_PROTOCOL: "http/protobuf",
-	OTEL_EXPORTER_OTLP_ENDPOINT: "https://ingest.maple.dev",
-	OTEL_EXPORTER_OTLP_HEADERS: `Authorization=Bearer ${process.env.MAPLE_INGEST_KEY}`,
-	OTEL_SERVICE_NAME: "support-agent",
-	OTEL_RESOURCE_ATTRIBUTES: "deployment.environment.name=production",
-	OTEL_TRACES_EXPORT_INTERVAL: "1000",
-	OTEL_LOGS_EXPORT_INTERVAL: "1000",
-	// Content, off by default. See "Choose what content to record" below.
-	OTEL_LOG_USER_PROMPTS: "1",
-	OTEL_LOG_TOOL_DETAILS: "1",
-	OTEL_LOG_TOOL_CONTENT: "1",
+// maple-env.ts: built per query() so values loaded later (dotenv) are included
+export function mapleEnv(): Record<string, string | undefined> {
+	const key = process.env.MAPLE_INGEST_KEY
+	if (!key) throw new Error("MAPLE_INGEST_KEY is not set")
+	const env: Record<string, string | undefined> = {
+		...process.env,
+		CLAUDE_CODE_ENABLE_TELEMETRY: "1",
+		CLAUDE_CODE_ENHANCED_TELEMETRY_BETA: "1", // spans; without it there are none
+		OTEL_TRACES_EXPORTER: "otlp",
+		OTEL_LOGS_EXPORTER: "otlp", // optional: cost and replies, under Logs
+		OTEL_METRICS_EXPORTER: "otlp", // optional: token and cost counters
+		OTEL_EXPORTER_OTLP_PROTOCOL: "http/protobuf",
+		OTEL_EXPORTER_OTLP_ENDPOINT: "https://ingest.maple.dev",
+		OTEL_EXPORTER_OTLP_HEADERS: `Authorization=Bearer ${key}`,
+		OTEL_SERVICE_NAME: "support-agent",
+		OTEL_RESOURCE_ATTRIBUTES: "deployment.environment.name=production",
+		OTEL_TRACES_EXPORT_INTERVAL: "1000",
+		OTEL_LOGS_EXPORT_INTERVAL: "1000",
+		// Content, off by default. See "Choose what content to record" below.
+		OTEL_LOG_USER_PROMPTS: "1",
+		OTEL_LOG_TOOL_DETAILS: "1",
+		OTEL_LOG_TOOL_CONTENT: "1",
+	}
+	delete env.TRACEPARENT
+	delete env.TRACESTATE
+	return env
 }
 ```
 
@@ -90,24 +93,30 @@ import os
 os.environ.pop("TRACEPARENT", None)
 os.environ.pop("TRACESTATE", None)
 
-MAPLE_ENV = {
-    "CLAUDE_CODE_ENABLE_TELEMETRY": "1",
-    "CLAUDE_CODE_ENHANCED_TELEMETRY_BETA": "1",  # spans; without it there are none
-    "OTEL_TRACES_EXPORTER": "otlp",
-    "OTEL_LOGS_EXPORTER": "otlp",  # optional: cost and replies, under Logs
-    "OTEL_METRICS_EXPORTER": "otlp",  # optional: token and cost counters
-    "OTEL_EXPORTER_OTLP_PROTOCOL": "http/protobuf",
-    "OTEL_EXPORTER_OTLP_ENDPOINT": "https://ingest.maple.dev",
-    "OTEL_EXPORTER_OTLP_HEADERS": f"Authorization=Bearer {os.environ['MAPLE_INGEST_KEY']}",
-    "OTEL_SERVICE_NAME": "support-agent",
-    "OTEL_RESOURCE_ATTRIBUTES": "deployment.environment.name=production",
-    "OTEL_TRACES_EXPORT_INTERVAL": "1000",
-    "OTEL_LOGS_EXPORT_INTERVAL": "1000",
-    # Content, off by default. See "Choose what content to record" below.
-    "OTEL_LOG_USER_PROMPTS": "1",
-    "OTEL_LOG_TOOL_DETAILS": "1",
-    "OTEL_LOG_TOOL_CONTENT": "1",
-}
+
+def maple_env() -> dict[str, str]:
+    """Telemetry env for the Claude Code CLI, built per query()."""
+    key = os.environ.get("MAPLE_INGEST_KEY")
+    if not key:
+        raise RuntimeError("MAPLE_INGEST_KEY is not set")
+    return {
+        "CLAUDE_CODE_ENABLE_TELEMETRY": "1",
+        "CLAUDE_CODE_ENHANCED_TELEMETRY_BETA": "1",  # spans; without it there are none
+        "OTEL_TRACES_EXPORTER": "otlp",
+        "OTEL_LOGS_EXPORTER": "otlp",  # optional: cost and replies, under Logs
+        "OTEL_METRICS_EXPORTER": "otlp",  # optional: token and cost counters
+        "OTEL_EXPORTER_OTLP_PROTOCOL": "http/protobuf",
+        "OTEL_EXPORTER_OTLP_ENDPOINT": "https://ingest.maple.dev",
+        "OTEL_EXPORTER_OTLP_HEADERS": f"Authorization=Bearer {key}",
+        "OTEL_SERVICE_NAME": "support-agent",
+        "OTEL_RESOURCE_ATTRIBUTES": "deployment.environment.name=production",
+        "OTEL_TRACES_EXPORT_INTERVAL": "1000",
+        "OTEL_LOGS_EXPORT_INTERVAL": "1000",
+        # Content, off by default. See "Choose what content to record" below.
+        "OTEL_LOG_USER_PROMPTS": "1",
+        "OTEL_LOG_TOOL_DETAILS": "1",
+        "OTEL_LOG_TOOL_CONTENT": "1",
+    }
 ```
 
 </LanguageTab>
@@ -164,7 +173,7 @@ export async function reply(conversation: Conversation, text: string) {
 
 	for await (const message of query({
 		prompt: text,
-		options: { env: mapleEnv, ...(firstTurn ? { sessionId } : { resume: sessionId }) },
+		options: { env: mapleEnv(), ...(firstTurn ? { sessionId } : { resume: sessionId }) },
 	})) {
 		if (message.type === "result") return message.subtype === "success" ? message.result : undefined
 	}
@@ -177,7 +186,7 @@ export async function reply(conversation: Conversation, text: string) {
 ```py
 import uuid
 from claude_agent_sdk import ClaudeAgentOptions, ResultMessage, query
-from maple_env import MAPLE_ENV
+from maple_env import maple_env
 
 
 async def reply(conversation: dict, text: str) -> str | None:
@@ -185,7 +194,7 @@ async def reply(conversation: dict, text: str) -> str | None:
     session_id = conversation.setdefault("claude_session_id", str(uuid.uuid4()))
     session = {"session_id": session_id} if first_turn else {"resume": session_id}
 
-    async for message in query(prompt=text, options=ClaudeAgentOptions(env=MAPLE_ENV, **session)):
+    async for message in query(prompt=text, options=ClaudeAgentOptions(env=maple_env(), **session)):
         if isinstance(message, ResultMessage):
             return message.result
     return None

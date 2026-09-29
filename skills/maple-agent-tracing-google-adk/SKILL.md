@@ -122,7 +122,7 @@ trace.set_tracer_provider(provider)
 ## Step 5: Tools, errors, sub-agents
 
 - A tool call is marked failed (ERROR + `error.type`) when the tool raises, or returns a dict with a non-empty `"error"` key (`error.type=TOOL_ERROR`).
-- Tools returning `{"status": "error", "error_message": ...}` are NOT marked failed. If the repo uses that shape, tell the user and offer to change it to `{"error": ...}` (changes what the model sees; confirm first).
+- Tools returning `{"status": "error", "error_message": ...}` are NOT marked failed. If the repo uses that format, tell the user and offer to change it to `{"error": ...}` (changes what the model sees; confirm first).
 - A raised tool exception aborts the run. Only if the user wants the agent to continue, add:
 
 ```py

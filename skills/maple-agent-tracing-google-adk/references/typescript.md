@@ -159,7 +159,7 @@ sdk.start()
 - The processor mutates `span.attributes` in `onEnd`, after the span is read-only through the API. This works on trace SDK 2.x (the attributes object is plain and the exporter reads it afterwards); any processor listed after it sees the rewritten attributes.
 - `NodeSDK({ spanProcessors })` disables the env-configured default exporter; that is intended. If the app already has a `NodeSDK`, add `spanProcessor` to its `spanProcessors` array (keeping the existing ones). With a `NodeTracerProvider`, pass it in `spanProcessors` at construction (SDK 2.x has no `addSpanProcessor`). Never register a second global provider.
 - Vertex AI (`new Gemini({ vertexai: true, ... })`, `GOOGLE_GENAI_USE_ENTERPRISE`, or the older `GOOGLE_GENAI_USE_VERTEXAI`): change `gcp.gemini` to `gcp.vertex_ai`. Maple applies the same token convention to both (input includes cached, output excludes thinking).
-- A custom `BaseLlm` for a non-Gemini provider: ADK still records `usageMetadata` in Gemini shape if the model fills it. Set `gen_ai.provider.name` to the real provider only if its token figures follow that provider's raw API; otherwise remove the provider line and the two extra usage lines.
+- A custom `BaseLlm` for a non-Gemini provider: ADK still records `usageMetadata` in Gemini format if the model fills it. Set `gen_ai.provider.name` to the real provider only if its token figures follow that provider's raw API; otherwise remove the provider line and the two extra usage lines.
 - Keep `ADK_CAPTURE_MESSAGE_CONTENT_IN_SPANS` from being set to `false` anywhere (Dockerfile, `.env`).
 
 ## Step 3: Session id
@@ -182,7 +182,7 @@ sdk.start()
 
 - A tool that throws: ADK sends `{"error": "Error in tool '<name>': <message>"}` to the model and the run continues (Python aborts instead). The span is bare; the processor marks it `error.type=tool_error`. It has no arguments/result on the span; the error text is visible in the next `call_llm` input.
 - Unknown tool name from the model: same handling, `{"error": "Function <name> is not found in the toolsDict."}`.
-- A tool returning an object with a truthy `error` key is marked failed. `{status: "error", ...}` is not. If the repo uses that shape, tell the user and offer `{ error: ... }` (changes what the model sees; confirm first).
+- A tool returning an object with a truthy `error` key is marked failed. `{status: "error", ...}` is not. If the repo uses that format, tell the user and offer `{ error: ... }` (changes what the model sees; confirm first).
 - Span status stays UNSET on failures (status can't be set after end); Maple counts `error.type` on AI spans as a failure.
 - Non-object results are wrapped by ADK as `{result: <value>}` (arrays as `{results: [...]}`), so `gen_ai.tool.call.result` is always a JSON object.
 - Confirmation (`new FunctionTool({ ..., requireConfirmation: true })`): the first pass records `{"error": "This tool call requires confirmation, please approve or reject."}` on its span, which the processor marks failed; the approved call runs later in its own span. To count each call once, add `if (parse(attributes["gcp.vertex.agent.tool_response"]).error?.startsWith("This tool call requires confirmation")) return` at the top of the `execute_tool` branch (untested). A rejected call records `This tool call is rejected.` and counts as failed.

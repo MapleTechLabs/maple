@@ -61,7 +61,7 @@ Set `gen_ai.operation.name` on every span. Agent Sessions ignores spans without 
 | | `gen_ai.tool.name` | `get_weather` |
 | | `gen_ai.tool.call.id` | the id the model gave the tool call |
 | | `gen_ai.tool.call.arguments` | JSON string of an object |
-| | `gen_ai.tool.call.result` | JSON string of an object or array (a bare string is dropped) |
+| | `gen_ai.tool.call.result` | the tool's result: a string as is, anything else as a JSON string |
 
 Mark a failed span with status `ERROR` and an `error.type` attribute, even when you return a tool's error to the model as its result.
 
@@ -84,7 +84,7 @@ Put token usage on `chat` spans only, copied from the provider's response as is.
 
 Output messages add a `finish_reason` to each message. `gen_ai.system_instructions` is an array of parts without a role: `[{"type":"text","content":"You are a concise assistant."}]`.
 
-Set these as JSON strings. Maple drops plain text and doesn't read span events, logs or indexed keys like `gen_ai.prompt.0.content`. Leave `OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT` and `OTEL_SPAN_ATTRIBUTE_VALUE_LENGTH_LIMIT` unset, because a truncated message array no longer parses.
+Set the message attributes as JSON strings. Maple doesn't read span events, logs or indexed keys like `gen_ai.prompt.0.content`. Leave `OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT` and `OTEL_SPAN_ATTRIBUTE_VALUE_LENGTH_LIMIT` unset, because a truncated message array no longer parses.
 
 To keep prompts and results out of Maple, skip the five content attributes. Everything else still shows up, with an empty transcript.
 
@@ -186,8 +186,7 @@ async function runTool(agent: Agent, call: ToolCall) {
 		async (span) => {
 			try {
 				const result = await agent.tools[name]!.run(JSON.parse(call.function.arguments || "{}"))
-				// Maple reads a JSON object or array here; a bare string is dropped
-				const output = json(typeof result === "object" && result !== null ? result : { result })
+				const output = typeof result === "string" ? result : json(result ?? null)
 				span.setAttribute("gen_ai.tool.call.result", output)
 				return output
 			} catch (error) {
