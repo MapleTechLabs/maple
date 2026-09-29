@@ -133,4 +133,16 @@ describe("resolveConfig", () => {
 		})
 		expect(config.captureHeaders).toEqual({ request: ["x-request-id"], response: ["x-cache"] })
 	})
+
+	it("caps network body length at what ingest keeps", () => {
+		const resolve = (maxLength?: number) =>
+			resolveConfig({
+				ingestKey: "k",
+				serviceName: "s",
+				replay: { networkBodies: { urls: ["/api"], maxLength } },
+			}).networkBodies?.maxLength
+		expect(resolve()).toBe(1_000)
+		expect(resolve(200)).toBe(200)
+		expect(resolve(50_000)).toBe(1_000)
+	})
 })

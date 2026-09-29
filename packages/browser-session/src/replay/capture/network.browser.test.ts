@@ -60,19 +60,21 @@ describe("installNetworkCapture", () => {
 				(event) => events.push(event),
 				() => false,
 				{
-					urls: ["https://api.test/orders"],
+					// Global on purpose: a stateful regex must still match every request.
+					urls: [/\/orders/g],
 					maxLength: 8,
 				},
 			)
+			await fetch("https://api.test/orders")
 			const response = await fetch("https://api.test/orders", {
 				method: "POST",
 				body: "request payload",
 			})
 			expect(await response.text()).toBe('{"order":"12345678"}')
 			await fetch("https://api.test/other")
-			await vi.waitFor(() => expect(events.filter((event) => event.type === "network")).toHaveLength(2))
+			await vi.waitFor(() => expect(events.filter((event) => event.type === "network")).toHaveLength(3))
 
-			const [listed, other] = events.filter((event) => event.type === "network")
+			const [, listed, other] = events.filter((event) => event.type === "network")
 			expect(listed?.attrs).toEqual({ "request.body": "request …", "response.body": '{"order"…' })
 			expect(other?.attrs).toBeUndefined()
 		} finally {

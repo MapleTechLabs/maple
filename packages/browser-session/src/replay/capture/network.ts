@@ -6,7 +6,12 @@ import type { NetworkBodyOptions } from "../../platform/transport"
 const TEXT_CONTENT = /^(text\/|application\/(json|xml|x-www-form-urlencoded|[\w.+-]+\+(json|xml)))/i
 
 const matchesUrl = (url: string, patterns: ReadonlyArray<string | RegExp>): boolean =>
-	patterns.some((pattern) => (typeof pattern === "string" ? url.includes(pattern) : pattern.test(url)))
+	patterns.some((pattern) => {
+		if (typeof pattern === "string") return url.includes(pattern)
+		// A `g`/`y` regex is stateful: `test` advances `lastIndex`, so reset it first.
+		pattern.lastIndex = 0
+		return pattern.test(url)
+	})
 
 const cut = (text: string, maxLength: number): string =>
 	text.length > maxLength ? `${text.slice(0, maxLength)}…` : text
