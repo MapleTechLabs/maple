@@ -264,7 +264,8 @@ export function startRecording(config: IngestConfig, sessionId: string): Recorde
 
 /** rrweb options for `<canvas>` capture: sampled frames as WebP, off unless asked for. */
 function canvasOptions(config: IngestConfig) {
-	if (!config.canvasFps || config.canvasFps <= 0) return undefined
+	// Canvas pixels can carry text (chart labels, grids) that maskAllText cannot reach.
+	if (config.maskAllText || !config.canvasFps || config.canvasFps <= 0) return undefined
 	return {
 		recordCanvas: true,
 		sampling: { canvas: config.canvasFps },

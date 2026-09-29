@@ -134,7 +134,10 @@ export interface MapleBrowserConfig {
 		 * error happens. 0–1, default 0.
 		 */
 		readonly onErrorSampleRate?: number
-		/** Record `<canvas>` content at this many frames per second, e.g. 2. Off by default: it is heavy. */
+		/**
+		 * Record `<canvas>` content at this many frames per second, e.g. 2. Off by
+		 * default: it is heavy. Never with `privacy.maskAllText`, since canvas pixels can hold text.
+		 */
 		readonly canvasFps?: number
 		/**
 		 * Keep request and response bodies (text and JSON only, cut to
