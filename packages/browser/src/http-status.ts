@@ -1,35 +1,11 @@
-// One rule for when an HTTP client span is an error, whichever instrumentation
-// made it. The fetch instrumentation leaves 4xx/5xx responses Unset; the XHR
-// one marks every status >= 400 Error, and every Error span becomes an issue.
-// A response status is an error only when the app lists it in
-// `errors.captureHttpStatus`; a network failure always is.
+// The OTel adapter for the shared HTTP status policy. The fetch instrumentation
+// leaves 4xx/5xx responses Unset; the XHR one marks every status >= 400 Error,
+// and every Error span becomes an issue, so both are brought to the one rule.
+import { type HttpStatusRange, httpStatusError, inStatusRanges, responseStatus } from "@maple/sdk-core"
 import { type Attributes, type SpanStatus, SpanKind, SpanStatusCode } from "@opentelemetry/api"
 import type { ReadableSpan, SpanExporter } from "@opentelemetry/sdk-trace-base"
 
 const HTTP_STATUS = /^\d{3}$/
-
-/** A status code, or an inclusive `[from, to]` range. */
-export type HttpStatusRange = number | readonly [number, number]
-
-const statusOf = (span: ReadableSpan): number | undefined => {
-	const value = span.attributes["http.response.status_code"] ?? span.attributes["http.status_code"]
-	return typeof value === "number" ? value : undefined
-}
-
-const inRanges = (status: number, ranges: ReadonlyArray<HttpStatusRange>): boolean =>
-	ranges.some((range) =>
-		typeof range === "number" ? range === status : status >= range[0] && status <= range[1],
-	)
-
-/** `GET https://api.example.com/users/42 -> 500`, without the query: ids are redacted by the issue fingerprint. */
-function failureMessage(span: ReadableSpan, status: number | string): string {
-	const method = span.attributes["http.request.method"] ?? span.attributes["http.method"] ?? "GET"
-	const url = String(span.attributes["url.full"] ?? span.attributes["http.url"] ?? "").replace(
-		/[?#].*$/,
-		"",
-	)
-	return `${String(method)} ${url} -> ${status}`
-}
 
 /** An Error set only because of the response status: `error.type` is the status code itself. */
 function isStatusOnlyError(span: ReadableSpan): boolean {
@@ -70,17 +46,18 @@ export class HttpStatusExporter implements SpanExporter {
 	) {}
 
 	private apply(span: ReadableSpan): ReadableSpan {
-		const status = statusOf(span)
-		if (span.kind === SpanKind.CLIENT && status !== undefined && inRanges(status, this.captureStatus)) {
+		const read = (key: string): unknown => span.attributes[key]
+		const status = responseStatus(read)
+		if (
+			span.kind === SpanKind.CLIENT &&
+			status !== undefined &&
+			inStatusRanges(status, this.captureStatus)
+		) {
 			if (span.events.some((event) => event.name === "exception")) return span
 			return withStatus(
 				span,
 				{ code: SpanStatusCode.ERROR },
-				{
-					...span.attributes,
-					"error.type": String(status),
-					"error.message": failureMessage(span, status),
-				},
+				{ ...span.attributes, ...httpStatusError(read, status) },
 			)
 		}
 		const errorType = span.attributes["error.type"]
@@ -95,7 +72,7 @@ export class HttpStatusExporter implements SpanExporter {
 			// A network failure (`TypeError`, `error`, `timeout`): the same message shape as a status error.
 			return withStatus(span, span.status, {
 				...span.attributes,
-				"error.message": failureMessage(span, errorType),
+				"error.message": httpStatusError(read, errorType)["error.message"],
 			})
 		}
 		if (!isStatusOnlyError(span)) return span

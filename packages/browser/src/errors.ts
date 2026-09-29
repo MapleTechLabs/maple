@@ -10,12 +10,22 @@
 // Error. That is the shape `error_events_mv` fingerprints on, so these arrive in
 // error tracking beside server-side errors rather than in a separate silo.
 import { hasConsent, scrubUrl } from "@maple/browser-session"
-import { context, type Span, type SpanContext, SpanKind, SpanStatusCode } from "@opentelemetry/api"
+import {
+	asError,
+	type ErrorSource,
+	markReported,
+	notifyErrorRecorded,
+	resetPageForTests,
+	wasReported,
+} from "@maple/sdk-core"
+import { context, type Span, SpanKind, SpanStatusCode } from "@opentelemetry/api"
 import { exceptionOf } from "./error-causes"
-import { type ErrorSource, shouldCapture } from "./error-filters"
+import { shouldCapture } from "./error-filters"
 import { keepContext } from "./sampling"
 import { liveMapleTracer } from "./tracing"
 import { SDK_NAME, SDK_VERSION } from "./version"
+
+export { onErrorRecorded } from "@maple/sdk-core"
 
 export interface CaptureExceptionOptions {
 	/** Span name. Default `"exception"`. */
@@ -24,46 +34,16 @@ export interface CaptureExceptionOptions {
 	readonly attributes?: Record<string, string | number | boolean> | undefined
 }
 
-const asError = (value: unknown): Error => {
-	if (value instanceof Error) return value
-	if (typeof value === "string") return new Error(value)
-	if (typeof value === "object" && value !== null) {
-		const message = (value as { readonly message?: unknown }).message
-		if (typeof message === "string") return new Error(message)
-	}
-	// A rejected promise can carry literally anything. `String` keeps a number or
-	// a boolean legible; an unrenderable object still produces one grouped issue
-	// rather than throwing inside the error handler.
-	try {
-		return new Error(String(value))
-	} catch {
-		return new Error("Unknown error")
-	}
-}
-
 /**
- * Errors already reported, by identity. Module-level so the global handlers and
- * `captureException` share it: a framework boundary that reports an error and
- * then rethrows it would otherwise produce two issues for one crash.
+ * Errors already reported, by identity, page-wide: a framework boundary that
+ * reports an error and then rethrows it, or both Maple SDKs on one page, would
+ * otherwise produce two issues for one crash.
  */
-let reported = new WeakSet<object>()
-
-type ErrorRecordedListener = (spanContext: SpanContext) => void
-/** Told about every recorded error: breadcrumbs export their trail, a buffered replay keeps itself. */
-const errorListeners = new Set<ErrorRecordedListener>()
-
-export function onErrorRecorded(listener: ErrorRecordedListener): () => void {
-	errorListeners.add(listener)
-	return () => errorListeners.delete(listener)
-}
-
-/** Whether this exact error object was already recorded. */
-const alreadyReported = (error: unknown): boolean =>
-	typeof error === "object" && error !== null && reported.has(error)
+const alreadyReported = wasReported
 
 /** Test seam. */
 export function resetReportedErrorsForTests(): void {
-	reported = new WeakSet()
+	resetPageForTests()
 }
 
 /**
@@ -78,16 +58,9 @@ export function recordFailure(span: Span, error: unknown): void {
 	const normalized = asError(error)
 	if (!alreadyReported(error)) {
 		const exported = span.isRecording() && hasConsent()
-		if (exported && typeof error === "object" && error !== null) reported.add(error)
+		if (exported) markReported(error)
 		span.recordException(exceptionOf(normalized))
-		if (exported) {
-			for (const listener of errorListeners) {
-				// A listener must never turn one error into another.
-				try {
-					listener(span.spanContext())
-				} catch {}
-			}
-		}
+		if (exported) notifyErrorRecorded(span.spanContext())
 	}
 	span.setStatus({ code: SpanStatusCode.ERROR, message: normalized.message })
 }
@@ -155,7 +128,7 @@ export function setupErrorCapture(): () => void {
 	// One error must not become two issues. The same throw can reach both
 	// handlers (a rejected promise whose reason is later rethrown), and a host
 	// app's own boundary may report it through `captureException` as well:
-	// `alreadyReported` is shared with that path.
+	// `alreadyReported` is shared with that path, and with the other Maple SDK.
 	const onError = (event: ErrorEvent): void => {
 		// A cross-origin script surfaces as a bare "Script error." with no error
 		// object and no usable frames. It fingerprints to one meaningless issue
@@ -176,6 +149,7 @@ export function setupErrorCapture(): () => void {
 					// every uncaught error in the attribute list.
 					...(event.filename ? { "code.file.path": event.filename } : undefined),
 					...(event.lineno ? { "code.line.number": event.lineno } : undefined),
+					...(event.colno ? { "code.column.number": event.colno } : undefined),
 				},
 			},
 			"window.onerror",

@@ -1,6 +1,6 @@
-// Head sampling, decided per session rather than per trace, so a session's
-// replay never links to a trace that was dropped halfway through it.
+// The OTel adapter for the shared per-session sampling decision.
 import { readSessionSink } from "@maple/browser-session"
+import { sampleSession } from "@maple/sdk-core"
 import {
 	type Context,
 	createContextKey,
@@ -23,46 +23,8 @@ export function keepContext(ctx: Context): Context {
 	return base.setValue(KEEP, true)
 }
 
-/** FNV-1a over the session id, mapped to [0, 1). */
-export function sessionRoll(sessionId: string): number {
-	let hash = 0x811c9dc5
-	for (let i = 0; i < sessionId.length; i++) {
-		hash ^= sessionId.charCodeAt(i)
-		hash = Math.imul(hash, 0x01000193)
-	}
-	return (hash >>> 0) / 2 ** 32
-}
-
-const MAX_56 = 2 ** 56
-
-/** 56 bits as the 14-hex-digit form `ot=th`/`ot=rv` use; `th` drops trailing zeros. */
-const hex56 = (value: number): string => value.toString(16).padStart(14, "0")
-
-/**
- * The W3C `ot=th:` rejection threshold for a sampling probability: 56 bits,
- * hex, trailing zeros dropped. Ingest reads it back as the span's weight.
- */
-export function rejectionThreshold(probability: number): string {
-	return hex56(Math.round((1 - probability) * MAX_56)).replace(/0+$/, "") || "0"
-}
-
-/**
- * The session's randomness as the W3C `ot=rv:` value. The decision is `rv >= th`,
- * so a downstream consistent-probability sampler reaches the same answer as this
- * one instead of re-deciding from the trace id.
- */
-export function randomnessValue(roll: number): number {
-	return Math.min(MAX_56 - 1, Math.floor((1 - roll) * MAX_56))
-}
-
 export class SessionSampler implements Sampler {
-	private readonly threshold: string
-	private readonly thresholdValue: number
-
-	constructor(private readonly rate: number) {
-		this.threshold = rejectionThreshold(rate)
-		this.thresholdValue = Math.round((1 - rate) * MAX_56)
-	}
+	constructor(private readonly rate: number) {}
 
 	shouldSample(ctx: Context): SamplingResult {
 		if (ctx.getValue(KEEP) === true) return { decision: SamplingDecision.RECORD_AND_SAMPLED }
@@ -75,14 +37,12 @@ export class SessionSampler implements Sampler {
 						: SamplingDecision.RECORD_AND_SAMPLED,
 			}
 		}
-		if (this.rate >= 1) return { decision: SamplingDecision.RECORD_AND_SAMPLED }
-		if (this.rate <= 0) return { decision: SamplingDecision.NOT_RECORD }
-		const sessionId = readSessionSink()?.sessionId
-		const rv = randomnessValue(sessionId ? sessionRoll(sessionId) : Math.random())
-		if (rv < this.thresholdValue) return { decision: SamplingDecision.NOT_RECORD }
+		const decision = sampleSession(readSessionSink()?.sessionId, this.rate)
+		if (!decision.sampled) return { decision: SamplingDecision.NOT_RECORD }
+		// `createTraceState` parses the `ot=…` list member itself.
 		return {
 			decision: SamplingDecision.RECORD_AND_SAMPLED,
-			traceState: createTraceState().set("ot", `th:${this.threshold};rv:${hex56(rv)}`),
+			...(decision.traceState ? { traceState: createTraceState(decision.traceState) } : undefined),
 		}
 	}
 

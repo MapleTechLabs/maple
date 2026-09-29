@@ -63,6 +63,7 @@
 	},
 	"devDependencies": {
 		"@maple/browser-session": "workspace:*",
+		"@maple/sdk-core": "workspace:*",
 		"@types/react": "catalog:react",
 		"@types/react-dom": "catalog:react",
 		"@vitest/browser-playwright": "catalog:",

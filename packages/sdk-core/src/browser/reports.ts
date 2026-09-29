@@ -2,7 +2,7 @@
 // reports, as WARN log events. They are worth seeing but are not errors in the
 // app's code, so they never become issues.
 import { scrubUrl } from "@maple/browser-session"
-import { emitLog, type LogAttributeValue, Severity } from "../logs"
+import { type EmitLog, type LogAttributeValue, Severity } from "../log-record"
 
 export interface ReportOptions {
 	/** Content Security Policy violations. */
@@ -58,7 +58,7 @@ function sourceAttributes(fields: ReportFields): Record<string, LogAttributeValu
 	}
 }
 
-export function startReports(options: ReportOptions): () => void {
+export function startReports(emitLog: EmitLog, options: ReportOptions): () => void {
 	if (!options.csp && !options.browserReports) return () => {}
 	const seen = new Set<string>()
 	const once = (key: string): boolean => {

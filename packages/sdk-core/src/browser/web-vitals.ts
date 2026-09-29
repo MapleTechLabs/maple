@@ -1,19 +1,17 @@
-// Core Web Vitals as OTel log-based events, following the `browser.web_vital`
-// event in the browser semantic conventions. Aggregates are derived in the
-// warehouse, so each event keeps its page and the pageload trace it belongs to.
+// Core Web Vitals as log-based events, following the `browser.web_vital` event
+// in the browser semantic conventions. Aggregates are derived in the warehouse,
+// so each event keeps its page and the pageload trace it belongs to.
 import { scrubUrl } from "@maple/browser-session"
-import type { SpanContext } from "@opentelemetry/api"
 import { type Metric, onCLS, onFCP, onINP, onLCP, onTTFB } from "web-vitals"
-import { emitLog, Severity } from "../logs"
+import { type EmitLog, Severity, type SpanLink } from "../log-record"
 
 // web-vitals has no unsubscribe: register once per page, and gate reporting instead.
 let registered = false
-let reporting = false
-let pageload: (() => SpanContext | undefined) | undefined
+let emit: EmitLog | undefined
+let pageload: (() => SpanLink | undefined) | undefined
 
 function report(metric: Metric): void {
-	if (!reporting) return
-	emitLog({
+	emit?.({
 		eventName: "browser.web_vital",
 		severityNumber: Severity.INFO,
 		severityText: "INFO",
@@ -27,20 +25,21 @@ function report(metric: Metric): void {
 			"url.path": scrubUrl(location.pathname),
 		},
 		// Only the trace link needs a pageload span; tracing may be off, or the app not navigating yet.
-		spanContext: pageload?.(),
+		link: pageload?.(),
 	})
 }
 
-/** Report vitals, linked to the document's pageload span when there is one. Returns a stop. */
-export function startWebVitals(getPageload: () => SpanContext | undefined): () => void {
-	reporting = true
+/** Report vitals through `sink`, linked to the document's pageload span when there is one. Returns a stop. */
+export function startWebVitals(sink: EmitLog, getPageload: () => SpanLink | undefined): () => void {
+	emit = sink
 	pageload = getPageload
 	if (!registered) {
 		registered = true
 		for (const on of [onCLS, onFCP, onINP, onLCP, onTTFB]) on(report)
 	}
 	return () => {
-		reporting = false
+		if (emit !== sink) return
+		emit = undefined
 		pageload = undefined
 	}
 }

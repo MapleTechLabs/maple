@@ -1,16 +1,23 @@
 // Main-thread jank as spans: long animation frames (with the script that ran
 // longest) and slow interactions (split into input delay, processing and
 // presentation). Opt-in; nested under the open navigation when there is one.
-import { hasConsent, scrubUrl, selectorOf } from "@maple/browser-session"
-import { context, trace } from "@opentelemetry/api"
-import { navigationSpanAt } from "../navigation"
-import { liveMapleTracer } from "../tracing"
-import { SDK_NAME, SDK_VERSION } from "../version"
+import { scrubUrl, selectorOf } from "@maple/browser-session"
 
 /** A frame this long is visible jank; the Long Animation Frames API reports from 50ms. */
 const LONG_FRAME_MS = 100
 /** INP's "needs improvement" line. */
 const SLOW_INTERACTION_MS = 200
+
+/**
+ * Record one finished span, epoch ms. The SDK nests it under its open
+ * navigation only if that had started by `startMs`: buffered entries can predate it.
+ */
+export type StartSpan = (
+	name: string,
+	startMs: number,
+	endMs: number,
+	attributes: Record<string, string | number>,
+) => void
 
 export interface PerfOptions {
 	readonly longFrames: boolean
@@ -26,18 +33,15 @@ interface ScriptTiming {
 
 const epoch = (offset: number): number => performance.timeOrigin + offset
 
+let sink: StartSpan | undefined
+
 function span(
 	name: string,
 	start: number,
 	duration: number,
 	attributes: Record<string, string | number>,
 ): void {
-	const tracer = hasConsent() ? liveMapleTracer(SDK_NAME, SDK_VERSION) : undefined
-	if (!tracer) return
-	// Buffered entries can predate the open navigation: those stay roots.
-	const navigation = navigationSpanAt(epoch(start))
-	const parent = navigation ? trace.setSpan(context.active(), navigation) : context.active()
-	tracer.startSpan(name, { startTime: epoch(start), attributes }, parent).end(epoch(start + duration))
+	sink?.(name, epoch(start), epoch(start + duration), attributes)
 }
 
 function scriptsOf(entry: PerformanceEntry): ScriptTiming[] {
@@ -123,8 +127,9 @@ function spanInteraction(entry: PerformanceEventTiming): void {
 	})
 }
 
-export function startPerf(options: PerfOptions): () => void {
+export function startPerf(startSpan: StartSpan, options: PerfOptions): () => void {
 	const stops: Array<() => void> = []
+	if (options.longFrames || options.slowInteractions) sink = startSpan
 	if (options.longFrames) {
 		const hasLoaf =
 			typeof PerformanceObserver !== "undefined" &&
@@ -163,5 +168,6 @@ export function startPerf(options: PerfOptions): () => void {
 	}
 	return () => {
 		for (const stop of stops) stop()
+		if (sink === startSpan) sink = undefined
 	}
 }

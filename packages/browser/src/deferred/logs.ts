@@ -86,9 +86,7 @@ export function startLogs(
 			body: record.body,
 			attributes: record.attributes,
 			timestamp: record.timestamp,
-			context: record.spanContext
-				? trace.setSpanContext(ROOT_CONTEXT, record.spanContext)
-				: ROOT_CONTEXT,
+			context: record.link ? trace.setSpanContext(ROOT_CONTEXT, record.link) : ROOT_CONTEXT,
 		}),
 	)
 	return async () => {

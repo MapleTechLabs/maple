@@ -20,7 +20,7 @@ vi.mock("@opentelemetry/exporter-trace-otlp-http", () => ({
 }))
 
 const { MapleBrowser } = await import("../index")
-const { onLongFrame } = await import("./perf")
+const { onLongFrame } = await import("@maple/sdk-core/browser/perf")
 
 class ScriptTimingStub {
 	constructor(

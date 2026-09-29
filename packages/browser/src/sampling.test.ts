@@ -2,43 +2,15 @@ import { clearSessionSink, publishSessionSink } from "@maple/browser-session"
 import { ROOT_CONTEXT, trace, TraceFlags } from "@opentelemetry/api"
 import { SamplingDecision } from "@opentelemetry/sdk-trace-base"
 import { afterEach, describe, expect, it } from "vitest"
-import { keepContext, randomnessValue, rejectionThreshold, SessionSampler, sessionRoll } from "./sampling"
+import { sessionRoll } from "@maple/sdk-core"
+import { keepContext, SessionSampler } from "./sampling"
 
+// The sampling math itself is tested in @maple/sdk-core; this is the OTel adapter.
 const TRACE_ID = "0af7651916cd43dd8448eb211c80319c"
 const parent = (flags: number) =>
 	trace.setSpanContext(ROOT_CONTEXT, { traceId: TRACE_ID, spanId: "b7ad6b7169203331", traceFlags: flags })
 
-/** The weight ingest derives from `th`: inverse of the acceptance probability. */
-const weightOf = (hex: string): number => 1 / (1 - Number.parseInt(hex, 16) / 16 ** hex.length)
-
 afterEach(() => clearSessionSink())
-
-describe("rejectionThreshold", () => {
-	it("encodes the probability so ingest reads back its inverse as the weight", () => {
-		expect(weightOf(rejectionThreshold(0.1))).toBeCloseTo(10, 6)
-		expect(weightOf(rejectionThreshold(0.25))).toBeCloseTo(4, 6)
-		expect(rejectionThreshold(0.5)).toBe("8")
-		expect(rejectionThreshold(1)).toBe("0")
-	})
-})
-
-describe("randomnessValue", () => {
-	it("maps a roll onto 56 bits so that rv >= th exactly when the roll is under the rate", () => {
-		const threshold = Math.round((1 - 0.25) * 2 ** 56)
-		expect(randomnessValue(0.2)).toBeGreaterThanOrEqual(threshold)
-		expect(randomnessValue(0.3)).toBeLessThan(threshold)
-		expect(randomnessValue(0)).toBe(2 ** 56 - 1)
-	})
-})
-
-describe("sessionRoll", () => {
-	it("is stable per session and within [0, 1)", () => {
-		const roll = sessionRoll("3b0e7f4c-5a8e-4d0a-9b61-0c5a5d1e2f3a")
-		expect(roll).toBe(sessionRoll("3b0e7f4c-5a8e-4d0a-9b61-0c5a5d1e2f3a"))
-		expect(roll).toBeGreaterThanOrEqual(0)
-		expect(roll).toBeLessThan(1)
-	})
-})
 
 describe("SessionSampler", () => {
 	it("samples a whole session or none of it, and marks sampled roots with th", () => {

@@ -1,25 +1,15 @@
 import { configurePrivacy, resetConsentForTests, setConsent } from "@maple/browser-session"
-import {
-	BasicTracerProvider,
-	InMemorySpanExporter,
-	type ReadableSpan,
-	SimpleSpanProcessor,
-} from "@opentelemetry/sdk-trace-base"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { resolveConfig } from "../config"
-import { attachSpanStash, OfflineSpanExporter, resetOfflineForTests } from "../offline"
-import { startOfflineQueue } from "./offline"
+import { type OfflineQueueOptions, startOfflineQueue } from "./offline"
 
-const CONFIG = resolveConfig({ ingestKey: "k", serviceName: "web", endpoint: "https://ingest.test" })
-
-const finishedSpans = (...names: string[]): ReadableSpan[] => {
-	const memory = new InMemorySpanExporter()
-	const tracer = new BasicTracerProvider({ spanProcessors: [new SimpleSpanProcessor(memory)] }).getTracer(
-		"t",
-	)
-	for (const name of names) tracer.startSpan(name).end()
-	return memory.getFinishedSpans()
+const CONFIG: OfflineQueueOptions = {
+	endpoint: "https://ingest.test",
+	headers: { Authorization: "Bearer k", "x-maple-sdk": "test/1" },
 }
+
+/** An OTLP JSON body naming one span, as an exporter would have sent it. */
+const body = (name: string): Uint8Array =>
+	new TextEncoder().encode(JSON.stringify({ resourceSpans: [{ scopeSpans: [{ spans: [{ name }] }] }] }))
 
 /** How many batches the queue holds, read straight from IndexedDB. */
 const storedCount = async (): Promise<number> => {
@@ -51,7 +41,6 @@ beforeEach(async () => {
 afterEach(() => {
 	stop?.()
 	stop = undefined
-	resetOfflineForTests()
 	resetConsentForTests()
 	vi.unstubAllGlobals()
 })
@@ -70,7 +59,7 @@ describe("offline queue", () => {
 		)
 		const queue = startOfflineQueue(CONFIG)
 		stop = queue.stop
-		queue.stashSpans(finishedSpans("checkout"))
+		queue.stash("traces", body("checkout"))
 		await vi.waitFor(async () => expect(await storedCount()).toBe(1))
 
 		online = true
@@ -83,7 +72,7 @@ describe("offline queue", () => {
 		)
 	})
 
-	it("keeps batches while ingest is failing, and drops ones it rejects", async () => {
+	it("keeps batches while ingest is failing, drops ones it rejects, and never stores an empty one", async () => {
 		const statuses = [503, 400]
 		vi.stubGlobal(
 			"fetch",
@@ -92,13 +81,42 @@ describe("offline queue", () => {
 		const queue = startOfflineQueue(CONFIG)
 		stop = queue.stop
 		await queue.resend()
-		queue.stashLogs([])
-		queue.stashSpans(finishedSpans("a"))
+		queue.stash("logs", new Uint8Array())
+		queue.stash("traces", body("a"))
 		await vi.waitFor(async () => expect(await storedCount()).toBe(1))
 		await queue.resend()
 		expect(await storedCount()).toBe(1)
 		await queue.resend()
 		expect(await storedCount()).toBe(0)
+	})
+
+	it("never resends another SDK's batch under this one's endpoint or key", async () => {
+		const posts: Array<{ url: string; auth: string | null }> = []
+		let online = false
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (url: string, init: RequestInit) => {
+				if (!online) throw new TypeError("Failed to fetch")
+				posts.push({ url, auth: new Headers(init.headers).get("authorization") })
+				return new Response("{}")
+			}),
+		)
+		const other = startOfflineQueue({
+			endpoint: "https://proxy.test",
+			headers: { Authorization: "Bearer other" },
+		})
+		const mine = startOfflineQueue(CONFIG)
+		other.stash("traces", body("theirs"))
+		mine.stash("traces", body("mine"))
+		await vi.waitFor(async () => expect(await storedCount()).toBe(2))
+		online = true
+		await mine.resend()
+		expect(posts).toEqual([{ url: "https://ingest.test/v1/traces", auth: "Bearer k" }])
+		expect(await storedCount()).toBe(1)
+		await other.resend()
+		expect(posts.at(-1)).toEqual({ url: "https://proxy.test/v1/traces", auth: "Bearer other" })
+		other.stop()
+		mine.stop()
 	})
 })
 
@@ -118,7 +136,7 @@ describe("offline queue across tabs", () => {
 		// Two queues on one origin stand in for two tabs: they share the store and the lock.
 		const tabA = startOfflineQueue(CONFIG)
 		const tabB = startOfflineQueue(CONFIG)
-		tabA.stashSpans(finishedSpans("once"))
+		tabA.stash("traces", body("once"))
 		await vi.waitFor(async () => expect(await storedCount()).toBe(1))
 		online = true
 		await Promise.all([tabA.resend(), tabB.resend()])
@@ -144,7 +162,7 @@ describe("offline queue and consent", () => {
 		configurePrivacy({ requireConsent: true })
 		setConsent(true)
 		const first = startOfflineQueue(CONFIG)
-		first.stashSpans(finishedSpans("offline"))
+		first.stash("traces", body("offline"))
 		await vi.waitFor(async () => expect(await storedCount()).toBe(1))
 		first.stop()
 
@@ -173,7 +191,7 @@ describe("offline queue and consent", () => {
 		const first = startOfflineQueue(CONFIG)
 		// Let its startup resend (of an empty store) finish before anything is stored.
 		await first.resend()
-		first.stashSpans(finishedSpans("before"))
+		first.stash("traces", body("before"))
 		await vi.waitFor(async () => expect(await storedCount()).toBe(1))
 		first.stop()
 
@@ -194,22 +212,5 @@ describe("offline queue and consent", () => {
 		await second.resend()
 		await vi.waitFor(async () => expect(await storedCount()).toBe(0))
 		expect(posts.filter((url) => url.endsWith("/v1/traces"))).toEqual([])
-	})
-})
-
-describe("OfflineSpanExporter", () => {
-	it("hands failed batches to the stash, holding them until it is attached", () => {
-		const failing = {
-			export: (_spans: ReadableSpan[], callback: (result: { code: number }) => void) =>
-				callback({ code: 1 }),
-			shutdown: async () => {},
-		}
-		const exporter = new OfflineSpanExporter(failing)
-		const spans = finishedSpans("early")
-		exporter.export(spans, () => {})
-		const stashed: ReadableSpan[][] = []
-		attachSpanStash((batch) => stashed.push(batch))
-		exporter.export(finishedSpans("late"), () => {})
-		expect(stashed.map((batch) => batch[0]?.name)).toEqual(["early", "late"])
 	})
 })

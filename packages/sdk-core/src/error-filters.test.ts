@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it } from "vitest"
-import { configureErrorFilters, frameUrls, shouldCapture } from "./error-filters"
+import { beforeEach, describe, expect, it } from "vitest"
+import { type ErrorFilter, type ErrorFilterOptions, frameUrls, makeErrorFilter } from "./error-filters"
 
 const V8_STACK = `TypeError: x is undefined
     at render (https://app.test/assets/index-abc.js:10:5)
@@ -13,11 +13,15 @@ const errorWith = (message: string, stack?: string, name = "Error"): Error => {
 	error.stack = stack
 	return error
 }
+let shouldCapture: ErrorFilter = makeErrorFilter()
+const configureErrorFilters = (options: ErrorFilterOptions): void => {
+	shouldCapture = makeErrorFilter(options)
+}
 /** As the SDK calls it for a thrown Error: the error is its own original. */
 const check = (error: Error, frameUrl?: string): boolean =>
 	shouldCapture(error, { source: "captureException", originalError: error }, frameUrl)
 
-afterEach(() => configureErrorFilters(undefined))
+beforeEach(() => configureErrorFilters({}))
 
 describe("frameUrls", () => {
 	it("reads frame URLs from V8 and Firefox/Safari stacks, top first", () => {
@@ -38,7 +42,7 @@ describe("frameUrls", () => {
 	})
 })
 
-describe("shouldCapture", () => {
+describe("makeErrorFilter", () => {
 	it("drops extension errors and ResizeObserver notices by default", () => {
 		const extension = errorWith(
 			"boom",

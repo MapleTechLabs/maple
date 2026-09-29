@@ -1,28 +1,4 @@
-// Allowlisted request/response headers as the HTTP semconv span attributes
-// `http.request.header.<name>` / `http.response.header.<name>` (string arrays).
 import type { Span } from "@opentelemetry/api"
-
-/** Never recorded, even when listed: they carry credentials. */
-const CREDENTIAL_HEADERS = new Set([
-	"authorization",
-	"proxy-authorization",
-	"cookie",
-	"set-cookie",
-	"x-api-key",
-])
-
-export interface HeaderCapture {
-	readonly request: ReadonlyArray<string>
-	readonly response: ReadonlyArray<string>
-}
-
-export function resolveHeaderCapture(
-	raw: { readonly request?: ReadonlyArray<string>; readonly response?: ReadonlyArray<string> } | undefined,
-): HeaderCapture {
-	const clean = (names: ReadonlyArray<string> | undefined) =>
-		(names ?? []).map((name) => name.toLowerCase()).filter((name) => !CREDENTIAL_HEADERS.has(name))
-	return { request: clean(raw?.request), response: clean(raw?.response) }
-}
 
 /** `getAllResponseHeaders()` text as a lower-cased map: only the headers CORS exposes are in it. */
 export function responseHeaders(raw: string): Map<string, string> {

@@ -658,6 +658,7 @@
       },
       "devDependencies": {
         "@maple/browser-session": "workspace:*",
+        "@maple/sdk-core": "workspace:*",
         "@types/react": "catalog:react",
         "@types/react-dom": "catalog:react",
         "@vitest/browser-playwright": "catalog:",
@@ -877,6 +878,20 @@
       "devDependencies": {
         "@effect/language-service": "catalog:effect",
         "@types/node": "catalog:tooling",
+        "typescript": "catalog:tooling",
+        "vitest": "catalog:",
+      },
+    },
+    "packages/sdk-core": {
+      "name": "@maple/sdk-core",
+      "version": "0.1.0",
+      "dependencies": {
+        "@maple/browser-session": "workspace:*",
+        "web-vitals": "^6.2.2",
+      },
+      "devDependencies": {
+        "@vitest/browser-playwright": "catalog:",
+        "playwright": "catalog:",
         "typescript": "catalog:tooling",
         "vitest": "catalog:",
       },
@@ -1625,6 +1640,8 @@
     "@maple/sandbox": ["@maple/sandbox@workspace:apps/sandbox"],
 
     "@maple/scraper": ["@maple/scraper@workspace:apps/scraper"],
+
+    "@maple/sdk-core": ["@maple/sdk-core@workspace:packages/sdk-core"],
 
     "@maple/ui": ["@maple/ui@workspace:packages/ui"],
 

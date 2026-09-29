@@ -2,25 +2,23 @@
 // the exporters send, and sent again when the browser is back online or on the
 // next page load. Best-effort: a private window or blocked storage just means
 // nothing is kept.
-import { consentRevokedAt, hasConsent, ingestHeaders, onConsentChange, sdkHint } from "@maple/browser-session"
-import { JsonLogsSerializer, JsonTraceSerializer } from "@opentelemetry/otlp-transformer"
-import type { ReadableLogRecord } from "@opentelemetry/sdk-logs"
-import type { ReadableSpan } from "@opentelemetry/sdk-trace-base"
-import type { ResolvedConfig } from "../config"
-import { SDK_NAME, SDK_VERSION } from "../version"
+import { consentRevokedAt, hasConsent, onConsentChange } from "@maple/browser-session"
 
 const DB_NAME = "maple-offline"
 const STORE = "batches"
 const MAX_AGE_MS = 24 * 60 * 60 * 1_000
 const MAX_BATCHES = 100
 
-type Signal = "traces" | "logs"
+export type OfflineSignal = "traces" | "logs"
+type Signal = OfflineSignal
 
 interface StoredBatch {
 	readonly id?: number
 	readonly signal: Signal
 	readonly body: Uint8Array
 	readonly createdAt: number
+	/** Endpoint plus a fingerprint of the credentials: another SDK on the page may send elsewhere. */
+	readonly target?: string
 }
 
 const isStoredBatch = (value: unknown): value is StoredBatch & { readonly id: number } =>
@@ -55,28 +53,44 @@ function openDb(): Promise<IDBDatabase | undefined> {
 	}
 }
 
+/** FNV-1a, hex: identifies the credentials without storing them. */
+function fingerprint(value: string): string {
+	let hash = 0x811c9dc5
+	for (let i = 0; i < value.length; i++) {
+		hash ^= value.charCodeAt(i)
+		hash = Math.imul(hash, 0x01000193)
+	}
+	return (hash >>> 0).toString(16)
+}
+
+export interface OfflineQueueOptions {
+	/** Ingest base URL; batches are sent to `<endpoint>/v1/<signal>`. */
+	readonly endpoint: string
+	/** Auth and SDK headers for the resend. */
+	readonly headers: Record<string, string>
+}
+
 export interface OfflineQueue {
-	readonly stashSpans: (spans: ReadableSpan[]) => void
-	readonly stashLogs: (logs: ReadableLogRecord[]) => void
-	/** Send what is stored, oldest first. Stops at the first failure. */
+	/** Keep an OTLP JSON request body the exporter gave up on. */
+	readonly stash: (signal: OfflineSignal, body: Uint8Array) => void
+	/** Send what is stored for this endpoint and key, oldest first. Stops at the first failure. */
 	readonly resend: () => Promise<void>
 	readonly stop: () => void
 }
 
-export function startOfflineQueue(config: ResolvedConfig): OfflineQueue {
+export function startOfflineQueue(config: OfflineQueueOptions): OfflineQueue {
 	const db = openDb()
-	const headers = {
-		...ingestHeaders({ ingestKey: config.ingestKey, sdk: sdkHint(SDK_NAME, SDK_VERSION) }),
-		"Content-Type": "application/json",
-	}
+	const headers = { ...config.headers, "Content-Type": "application/json" }
+	const auth = Object.entries(config.headers).find(([name]) => name.toLowerCase() === "authorization")
+	const target = `${config.endpoint}|${fingerprint(auth?.[1] ?? "")}`
 	const store = async (mode: IDBTransactionMode): Promise<IDBObjectStore | undefined> =>
 		(await db)?.transaction(STORE, mode).objectStore(STORE)
 
-	const add = async (signal: Signal, body: Uint8Array | undefined): Promise<void> => {
-		if (!body || !hasConsent()) return
+	const add = async (signal: Signal, body: Uint8Array): Promise<void> => {
+		if (body.byteLength === 0 || !hasConsent()) return
 		const batches = await store("readwrite")
 		if (!batches) return
-		await settle(batches.add({ signal, body, createdAt: Date.now() } satisfies StoredBatch))
+		await settle(batches.add({ signal, body, createdAt: Date.now(), target } satisfies StoredBatch))
 		const keys = await settle(batches.getAllKeys())
 		for (const key of keys.slice(0, Math.max(0, keys.length - MAX_BATCHES)))
 			await settle(batches.delete(key))
@@ -88,8 +102,11 @@ export function startOfflineQueue(config: ResolvedConfig): OfflineQueue {
 		const stored = read ? (await settle(read.getAll())).filter(isStoredBatch) : []
 		const revokedAt = consentRevokedAt()
 		for (const batch of stored) {
+			const expired = Date.now() - batch.createdAt > MAX_AGE_MS
+			// Another SDK's batch is left for it, unless it is too old for anyone to send.
+			if (!expired && batch.target !== undefined && batch.target !== target) continue
 			// Expired, or captured before consent was last withdrawn (a revoke this queue never saw): drop it.
-			if (Date.now() - batch.createdAt <= MAX_AGE_MS && batch.createdAt > revokedAt) {
+			if (!expired && batch.createdAt > revokedAt) {
 				const response = await fetch(`${config.endpoint}/v1/${batch.signal}`, {
 					method: "POST",
 					headers,
@@ -143,16 +160,10 @@ export function startOfflineQueue(config: ResolvedConfig): OfflineQueue {
 
 	/** Writes in flight: `stop` closes the database only after them, so a stash made on the way out lands. */
 	let writes: Promise<void> = Promise.resolve()
-	const stash = (signal: Signal, body: Uint8Array | undefined): void => {
-		writes = writes.then(() => add(signal, body)).catch(() => {})
-	}
 
 	return {
-		stashSpans: (spans) => {
-			if (spans.length > 0) stash("traces", JsonTraceSerializer.serializeRequest(spans))
-		},
-		stashLogs: (logs) => {
-			if (logs.length > 0) stash("logs", JsonLogsSerializer.serializeRequest(logs))
+		stash: (signal, body) => {
+			writes = writes.then(() => add(signal, body)).catch(() => {})
 		},
 		resend,
 		stop: () => {

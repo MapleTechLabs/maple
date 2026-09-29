@@ -7,16 +7,19 @@ import {
 	resolveIngestEndpoint,
 	warnIfKeylessMapleIngest,
 } from "@maple/browser-session"
-import type { ErrorFilterOptions } from "./error-filters"
-import { type HeaderCapture, resolveHeaderCapture } from "./http-headers"
+import {
+	type ReplayOptions,
+	type ResolvedSignalOptions,
+	resolveReplayOptions,
+	resolveSignalOptions,
+	type SignalOptions,
+	type TracingSignalOptions,
+} from "@maple/sdk-core"
 
-/** Ingest keeps 1,024 bytes of a session-event attribute; this leaves room for the cut marker. */
-const MAX_BODY_LENGTH = 1_000
+export type { ConsoleLevel } from "@maple/sdk-core"
 
-export type ConsoleLevel = "debug" | "log" | "info" | "warn" | "error"
-
-/** Public configuration for `MapleBrowser.init`. */
-export interface MapleBrowserConfig {
+/** Public configuration for `MapleBrowser.init`. The signal groups are shared with the Effect SDK. */
+export interface MapleBrowserConfig extends SignalOptions {
 	/**
 	 * Public ingest key (`maple_pk_...`), sent as `Authorization: Bearer …` and
 	 * nothing else. Leave it unset when a proxy at `endpoint` adds auth: tracing
@@ -51,7 +54,7 @@ export interface MapleBrowserConfig {
 	readonly userId?: string | null | undefined
 	/** End-user identity attached to sessions and browser spans. */
 	readonly user?: MapleIdentity | undefined
-	readonly tracing?: {
+	readonly tracing?: TracingSignalOptions & {
 		/** Default true. */
 		readonly enabled?: boolean
 		/**
@@ -79,88 +82,8 @@ export interface MapleBrowserConfig {
 		 * `traceparent` header in CORS. Example: `[/^https:\/\/api\.example\.com\//]`.
 		 */
 		readonly propagateTraceHeaderCorsUrls?: ReadonlyArray<string | RegExp>
-		/**
-		 * Fraction of sessions whose traces are exported, 0–1. Default 1. Decided
-		 * once per session, so a sampled session keeps every trace. Error spans are
-		 * always exported.
-		 */
-		readonly sampleRate?: number
-		/**
-		 * Request and response headers to record on `fetch`/XHR spans, as
-		 * `http.request.header.<name>` / `http.response.header.<name>`, e.g.
-		 * `{ response: ["x-request-id", "x-cache"] }`. `authorization`, `cookie`
-		 * and `set-cookie` are never recorded. XHR spans get response headers only.
-		 */
-		readonly captureHeaders?: {
-			readonly request?: ReadonlyArray<string>
-			readonly response?: ReadonlyArray<string>
-		}
-		/**
-		 * Span main-thread frames of 100ms or more (`longAnimationFrame`, with the
-		 * script that ran longest; `longtask` where that API is missing). Default false.
-		 */
-		readonly longFrames?: boolean
-		/** Span interactions of 200ms or more (`interaction click`, ...), split into input delay, processing and presentation. Default false. */
-		readonly slowInteractions?: boolean
 	}
-	/**
-	 * Report Core Web Vitals (LCP, CLS, INP, FCP, TTFB) as `browser.web_vital`
-	 * log events. Default true.
-	 */
-	readonly webVitals?: boolean
-	/**
-	 * Keep the last clicks, inputs, navigations and console lines in memory, and
-	 * export them as logs linked to the error when one is recorded. Default true.
-	 */
-	readonly breadcrumbs?: boolean
-	readonly logs?: {
-		/** Console levels exported as OTel logs as they happen, e.g. `["warn", "error"]`. Default none. */
-		readonly captureConsole?: ReadonlyArray<ConsoleLevel>
-	}
-	readonly reporting?: {
-		/** Content Security Policy violations as `maple.browser.csp_violation` WARN logs. Default true. */
-		readonly csp?: boolean
-		/** Browser deprecation and intervention reports as `maple.browser.report` WARN logs. Default false. */
-		readonly browserReports?: boolean
-	}
-	readonly transport?: {
-		/**
-		 * Keep span and log batches that could not be sent (the browser was
-		 * offline) in IndexedDB for up to 24 hours, and send them once it is back
-		 * online or on the next page load. Default false.
-		 */
-		readonly offline?: boolean
-	}
-	/** Which captured errors to drop before they are reported. See `ErrorFilterOptions`. */
-	readonly errors?: ErrorFilterOptions
-	readonly replay?: {
-		/** Default true. */
-		readonly enabled?: boolean
-		/** Fraction of sessions to record, 0–1. Default 1. */
-		readonly sampleRate?: number
-		/**
-		 * Fraction of the sessions not recorded that keep the last minute in
-		 * memory, and upload it and record the rest of the session only if an
-		 * error happens. 0–1, default 0.
-		 */
-		readonly onErrorSampleRate?: number
-		/**
-		 * Record `<canvas>` content at this many frames per second, e.g. 2. Off by
-		 * default: it is heavy. Never with `privacy.maskAllText`, since canvas pixels can hold text.
-		 */
-		readonly canvasFps?: number
-		/**
-		 * Keep request and response bodies (text and JSON only) on the replay's
-		 * network events for these URLs, cut to `maxLength` characters. Ingest
-		 * keeps at most 1,024 bytes of each, so `maxLength` is capped at 1,000
-		 * (the default). Nothing is captured for other URLs, or with
-		 * `privacy.maskAllText`.
-		 */
-		readonly networkBodies?: {
-			readonly urls: ReadonlyArray<string | RegExp>
-			readonly maxLength?: number
-		}
-	}
+	readonly replay?: ReplayOptions
 	readonly privacy?: {
 		/** Mask all `<input>` values. Default true. */
 		readonly maskAllInputs?: boolean
@@ -205,7 +128,7 @@ export interface MapleBrowserConfig {
 	}
 }
 
-export interface ResolvedConfig {
+export interface ResolvedConfig extends ResolvedSignalOptions {
 	readonly ingestKey: string | undefined
 	readonly serviceName: string
 	readonly endpoint: string
@@ -219,14 +142,6 @@ export interface ResolvedConfig {
 	readonly tracingInstrumentXhr: boolean
 	readonly tracingCaptureErrors: boolean
 	readonly propagateTraceHeaderCorsUrls: ReadonlyArray<string | RegExp>
-	readonly tracingSampleRate: number
-	readonly errorFilters: ErrorFilterOptions
-	readonly webVitals: boolean
-	readonly breadcrumbs: boolean
-	readonly captureConsole: ReadonlyArray<ConsoleLevel>
-	readonly reportCsp: boolean
-	readonly reportBrowser: boolean
-	readonly offlineQueue: boolean
 	readonly replayEnabled: boolean
 	readonly replaySampleRate: number
 	readonly replayOnErrorSampleRate: number
@@ -234,9 +149,6 @@ export interface ResolvedConfig {
 	readonly networkBodies:
 		| { readonly urls: ReadonlyArray<string | RegExp>; readonly maxLength: number }
 		| undefined
-	readonly captureHeaders: HeaderCapture
-	readonly longFrames: boolean
-	readonly slowInteractions: boolean
 	readonly maskAllInputs: boolean
 	readonly maskAllText: boolean
 	readonly persistVisitorId: boolean
@@ -259,24 +171,6 @@ export function resolveIdentity(config: {
 	return normalizeIdentity((config.user ?? config.userId) as IdentifyInput)
 }
 
-/**
- * A sample rate outside 0–1 (or not a number) is a typo, not a policy. Clamp it
- * and say so, rather than recording everyone or no one without a word.
- */
-function resolveSampleRate(option: string, raw: number | undefined): number {
-	if (raw === undefined) return 1
-	if (typeof raw !== "number" || Number.isNaN(raw)) {
-		console.warn(`[maple] ${option} must be a number between 0 and 1; got ${String(raw)}. Using 1.`)
-		return 1
-	}
-	if (raw < 0 || raw > 1) {
-		const clamped = Math.min(1, Math.max(0, raw))
-		console.warn(`[maple] ${option} must be between 0 and 1; got ${raw}. Using ${clamped}.`)
-		return clamped
-	}
-	return raw
-}
-
 export function resolveConfig(config: MapleBrowserConfig): ResolvedConfig {
 	const endpoint = resolveIngestEndpoint({ endpoints: [config.endpoint], regions: [config.region] })
 	warnIfKeylessMapleIngest({
@@ -285,7 +179,9 @@ export function resolveConfig(config: MapleBrowserConfig): ResolvedConfig {
 		hasIngestKey: Boolean(config.ingestKey),
 		hint: "Pass `ingestKey`, or point `endpoint` at a proxy that adds it.",
 	})
+	const replay = resolveReplayOptions(config.replay)
 	return {
+		...resolveSignalOptions(config),
 		ingestKey: config.ingestKey,
 		serviceName: config.serviceName,
 		endpoint,
@@ -298,33 +194,11 @@ export function resolveConfig(config: MapleBrowserConfig): ResolvedConfig {
 		tracingInstrumentXhr: config.tracing?.instrumentXhr ?? true,
 		tracingCaptureErrors: config.tracing?.captureErrors ?? true,
 		propagateTraceHeaderCorsUrls: config.tracing?.propagateTraceHeaderCorsUrls ?? [],
-		tracingSampleRate: resolveSampleRate("tracing.sampleRate", config.tracing?.sampleRate),
-		errorFilters: config.errors ?? {},
-		webVitals: config.webVitals ?? true,
-		breadcrumbs: config.breadcrumbs ?? true,
-		captureConsole: config.logs?.captureConsole ?? [],
-		reportCsp: config.reporting?.csp ?? true,
-		reportBrowser: config.reporting?.browserReports ?? false,
-		offlineQueue: config.transport?.offline ?? false,
-		replayEnabled: config.replay?.enabled ?? true,
-		replaySampleRate: resolveSampleRate("replay.sampleRate", config.replay?.sampleRate),
-		canvasFps: config.replay?.canvasFps,
-		networkBodies: config.replay?.networkBodies?.urls.length
-			? {
-					urls: config.replay.networkBodies.urls,
-					maxLength: Math.min(
-						MAX_BODY_LENGTH,
-						config.replay.networkBodies.maxLength ?? MAX_BODY_LENGTH,
-					),
-				}
-			: undefined,
-		captureHeaders: resolveHeaderCapture(config.tracing?.captureHeaders),
-		longFrames: config.tracing?.longFrames ?? false,
-		slowInteractions: config.tracing?.slowInteractions ?? false,
-		replayOnErrorSampleRate:
-			config.replay?.onErrorSampleRate === undefined
-				? 0
-				: resolveSampleRate("replay.onErrorSampleRate", config.replay.onErrorSampleRate),
+		replayEnabled: replay.enabled,
+		replaySampleRate: replay.sampleRate,
+		replayOnErrorSampleRate: replay.onErrorSampleRate,
+		canvasFps: replay.canvasFps,
+		networkBodies: replay.networkBodies,
 		maskAllInputs: config.privacy?.maskAllInputs ?? true,
 		maskAllText: config.privacy?.maskAllText ?? false,
 		persistVisitorId: config.privacy?.persistVisitorId ?? true,

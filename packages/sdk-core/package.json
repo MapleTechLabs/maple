@@ -1,0 +1,32 @@
+{
+	"name": "@maple/sdk-core",
+	"version": "0.1.0",
+	"private": true,
+	"description": "Framework-free behaviour shared by @maple-dev/browser and @maple-dev/effect-sdk: sampling, error filtering and rendering, the HTTP status policy, header capture, and the browser signal collectors. Private: consumers bundle it. The root export is runtime-agnostic; DOM collectors live behind ./browser/* so consumers can code-split them.",
+	"type": "module",
+	"sideEffects": false,
+	"main": "./src/index.ts",
+	"exports": {
+		".": "./src/index.ts",
+		"./browser/breadcrumbs": "./src/browser/breadcrumbs.ts",
+		"./browser/document-timing": "./src/browser/document-timing.ts",
+		"./browser/offline": "./src/browser/offline.ts",
+		"./browser/perf": "./src/browser/perf.ts",
+		"./browser/reports": "./src/browser/reports.ts",
+		"./browser/web-vitals": "./src/browser/web-vitals.ts"
+	},
+	"scripts": {
+		"typecheck": "tsc --noEmit",
+		"test": "vitest run"
+	},
+	"dependencies": {
+		"@maple/browser-session": "workspace:*",
+		"web-vitals": "^6.2.2"
+	},
+	"devDependencies": {
+		"@vitest/browser-playwright": "catalog:",
+		"playwright": "catalog:",
+		"typescript": "catalog:tooling",
+		"vitest": "catalog:"
+	}
+}

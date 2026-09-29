@@ -2,29 +2,16 @@
 // to the active span at emit time, until the deferred chunk attaches the OTel
 // LoggerProvider that exports them.
 import { hasConsent, readSessionSink } from "@maple/browser-session"
-import { context, type SpanContext, trace } from "@opentelemetry/api"
+import type { LogAttributeValue, SignalLogRecord, SpanLink } from "@maple/sdk-core"
+import { context, trace } from "@opentelemetry/api"
 
-export type LogAttributeValue = string | number | boolean
+export type { LogAttributeValue } from "@maple/sdk-core"
+export { Severity } from "@maple/sdk-core"
 
-/** OTel severity numbers for the levels this SDK emits. */
-export const Severity = { DEBUG: 5, INFO: 9, WARN: 13, ERROR: 17 } as const
-
-export interface MapleLogRecord {
-	/** Set for a log-based event (`LogRecord.event_name`); absent for a plain log line. */
-	readonly eventName?: string | undefined
-	readonly severityNumber: number
-	readonly severityText: string
-	readonly body?: string | undefined
-	readonly attributes?: Readonly<Record<string, LogAttributeValue>> | undefined
-	/** Epoch ms when it happened. Defaults to now. */
-	readonly timestamp?: number | undefined
-	/** The span to link to. Defaults to the active span. */
-	readonly spanContext?: SpanContext | undefined
-}
-
-export interface QueuedLogRecord extends MapleLogRecord {
+export interface QueuedLogRecord extends SignalLogRecord {
 	readonly timestamp: number
 	readonly attributes: Readonly<Record<string, LogAttributeValue>>
+	readonly link: SpanLink | undefined
 }
 
 type LogSink = (record: QueuedLogRecord) => void
@@ -36,7 +23,7 @@ let queue: QueuedLogRecord[] = []
 let sink: LogSink | undefined
 let getUserId: () => string | undefined = () => undefined
 
-export function emitLog(record: MapleLogRecord): void {
+export function emitLog(record: SignalLogRecord): void {
 	if (!hasConsent()) return
 	const sessionId = readSessionSink()?.sessionId
 	const userId = getUserId()
@@ -49,7 +36,7 @@ export function emitLog(record: MapleLogRecord): void {
 		...record,
 		attributes,
 		timestamp: record.timestamp ?? Date.now(),
-		spanContext: record.spanContext ?? trace.getSpanContext(context.active()),
+		link: record.link ?? trace.getSpanContext(context.active()),
 	}
 	if (sink) {
 		sink(queued)
