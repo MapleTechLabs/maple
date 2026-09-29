@@ -148,7 +148,6 @@ import {
 import {
 	AI_AGENT_OPERATIONS,
 	AI_INFERENCE_OPERATIONS,
-	AI_PROMPT_VARIABLE_PREFIX,
 	AI_RETRIEVAL_OPERATIONS,
 	AI_TOOL_OPERATIONS,
 	MAPLE_AI_SESSION_ID_ATTR,
@@ -158,15 +157,16 @@ import {
 	type AiGenAiField,
 } from "@maple/domain/gen-ai"
 import { CREWAI_AGENT_NAME_KEY } from "@maple/domain/tinybird/gen-ai-columns"
-import { aiFieldSourceKeys, aiSpanAttributeKeys } from "./ai-integrations"
+import { aiFieldSourceKeys, aiSpanAttributeKeys, aiSpanAttributePrefixes } from "./ai-integrations"
 import {
 	childClaimsExpr,
 	MAX_USAGE_REPORTERS_PER_TRACE,
 	nettedReportersExpr,
-	reportingSpanIdsExpr,
+	reporterSpanIdsExpr,
 	sessionLlmCalls,
 	sessionReportersExpr,
 	sessionUsageSum,
+	usageLinksExpr,
 	usageReportersExpr,
 } from "./ai-span-columns"
 
@@ -557,6 +557,8 @@ const indexTraces = (opts: AiSessionFilterOpts, bounds: IndexBounds) => {
 				// Usage AND model calls travel as reporters: both are counted one level
 				// up, where every trace of the session is in hand — see `ai-span-columns`.
 				usageReporters: usageReportersExpr($),
+				tokenLinks: usageLinksExpr($, $.Tokens),
+				costLinks: usageLinksExpr($, $.Cost),
 			}
 		})
 		.where(($) => [
@@ -651,9 +653,9 @@ const indexSessions = (opts: AiSessionFilterOpts) =>
 			// The usage, still as reporters: netted one level up, summed two —
 			// with the two lookups the netting makes taken off the reporters here,
 			// once per session, rather than once per reporter inside the netting.
-			reporters: sessionReportersExpr("usageReporters"),
+			reporters: sessionReportersExpr("usageReporters", "tokenLinks", "costLinks"),
 			childClaims: childClaimsExpr("reporters"),
-			reportingIds: reportingSpanIdsExpr("reporters"),
+			reporterIds: reporterSpanIdsExpr("reporters"),
 		}))
 		.groupBy("sessionId")
 
@@ -775,7 +777,7 @@ export function aiSessionPageQuery(opts: AiSessionPageOpts = {}) {
 
 	const netted = fromQuery(ranked, "ranked_sessions").select(($) => ({
 		...carry($),
-		netted: nettedReportersExpr("reporters", "childClaims", "reportingIds"),
+		netted: nettedReportersExpr("reporters", "childClaims", "reporterIds"),
 	}))
 
 	const page = fromQuery(netted, "netted_sessions")
@@ -1181,7 +1183,7 @@ export function aiSessionDistributionsQuery() {
 	const netted = fromQuery(indexSessions({}), "window_sessions").select(($) => ({
 		agentDurationMs: $.agentDurationMs,
 		toolCalls: $.toolCalls,
-		netted: nettedReportersExpr("reporters", "childClaims", "reportingIds"),
+		netted: nettedReportersExpr("reporters", "childClaims", "reporterIds"),
 	}))
 	const measured = fromQuery(netted, "netted_sessions").select(($) => ({
 		durationMs: CH.toFloat64($.agentDurationMs),
@@ -1354,7 +1356,10 @@ const spanProjection = ($: ColumnAccessor<typeof TraceDetailSpans.columns>) => (
 	// `ResourceAttributes` — which the mapper deliberately ignores, see
 	// `mapAiSpan` — was another 60% on top. Neither is read any more.
 	spanAttributes: mapFilterKeys($.SpanAttributes, (key) =>
-		key.in_(...aiSpanAttributeKeys).or(key.like(`${AI_PROMPT_VARIABLE_PREFIX}%`)),
+		aiSpanAttributePrefixes.reduce(
+			(matched, prefix) => matched.or(key.like(`${prefix}%`)),
+			key.in_(...aiSpanAttributeKeys),
+		),
 	),
 })
 
@@ -1365,7 +1370,8 @@ const spanProjection = ($: ColumnAccessor<typeof TraceDetailSpans.columns>) => (
  * string serves every session.
  *
  * The attribute map is projected down to the keys the integration layer reads
- * (`aiSpanAttributeKeys`); everything else on the span stays in the warehouse.
+ * (`aiSpanAttributeKeys`, `aiSpanAttributePrefixes`); everything else on the
+ * span stays in the warehouse.
  * Even so, a content-heavy vendor puts whole prompts in `gen_ai.input.messages`,
  * so callers should still expect megabyte-scale payloads at the default limit.
  *

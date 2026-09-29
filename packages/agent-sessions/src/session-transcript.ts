@@ -40,6 +40,7 @@ import {
 	type SpanMessage,
 	type SpanMessagePart,
 } from "./span-detail"
+import { rawFailureText } from "./failure-text"
 import { countTurnUsage, type SessionTurnUsage } from "./session-summary"
 
 /* -------------------------------------------------------------------------- */
@@ -504,7 +505,8 @@ interface TurnContext {
 /**
  * Tool spans in this turn that carry no `gen_ai.tool.call.id`, counted by name.
  *
- * An id-less `tool_call` part in an output message cannot be matched to its
+ * A `tool_call` part no tool span's call id claims — an id-less part, or one
+ * whose tool span recorded no id (OpenInference) — cannot be matched to its
  * span by id, so without this the call renders twice: once first-hand from the
  * span, once again from the message that made it. The tool NAME is the only
  * evidence left, and it is spent conservatively — only against spans that no id
@@ -1216,7 +1218,7 @@ function outputRows(
 function coveredBySpan(part: Extract<SpanMessagePart, { kind: "tool_call" }>, context: TurnContext): boolean {
 	// A tool span for the same call carries the duration, the service and the
 	// error; the message-only row exists only where there is no such span.
-	if (part.id !== undefined) return context.coveredCallIds.has(part.id)
+	if (part.id !== undefined && context.coveredCallIds.has(part.id)) return true
 	if (part.name === undefined) return false
 	const unclaimed = context.unclaimedToolNames.get(part.name)
 	if (unclaimed === undefined || unclaimed === 0) return false
@@ -1296,12 +1298,15 @@ function toolArgsText(span: AiSessionSpan): string | undefined {
 }
 
 /** A tool span's captured result. The session-wide index only fills an absence:
- *  a later call's echoed response never overrides the span's own report. */
+ *  a later call's echoed response never overrides the span's own report. A
+ *  failed span that recorded no result still says why it failed (its status
+ *  message), which is the result the call produced. */
 function toolResultText(span: AiSessionSpan, context: TurnContext): string | undefined {
 	const own = span.genAi.toolCallResult ?? undefined
 	if (own !== undefined) return jsonText(own)
 	const id = span.genAi.toolCallId
-	return id === undefined ? undefined : toolResultFor(context.input.toolResults, span.traceId, id)
+	const echoed = id === undefined ? undefined : toolResultFor(context.input.toolResults, span.traceId, id)
+	return echoed ?? (spanFailed(span) ? rawFailureText(span) : undefined)
 }
 
 /* -------------------------------------------------------------------------- */

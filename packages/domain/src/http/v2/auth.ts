@@ -137,6 +137,20 @@ export const requiredScopeForRoute = (method: string, routePath: string): Requir
 }
 
 /**
+ * Endpoints any API key of the org may call, whatever its scopes: an agent holding a
+ * narrow key must still be able to report a problem with Maple and see what it reported.
+ */
+const SCOPE_EXEMPT_ROUTES = new Set(["POST /v2/agent_feedback", "GET /v2/agent_feedback"])
+
+/** Whether `method` on the matched route template skips the scope check. */
+export const isScopeExemptRoute = (method: string, routePath: string): boolean => {
+	// A loop, not a regex: the route path is request-derived, and `/\/+$/` backtracks on long runs of `/`.
+	let end = routePath.length
+	while (end > 1 && routePath[end - 1] === "/") end--
+	return SCOPE_EXEMPT_ROUTES.has(`${method} ${routePath.slice(0, end)}`)
+}
+
+/**
  * Scope check for API-key tenants. `write` implies `read` (Stripe semantics).
  * A key with no scopes recorded (legacy key) has full access; session-token
  * tenants are never scope-checked (they carry no scopes).

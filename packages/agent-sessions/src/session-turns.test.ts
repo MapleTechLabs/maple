@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest"
 import type { AiSessionSpan } from "@maple/domain/http"
 
 import { agentSpan, llmSpan, makeSpan, toolSpan, userMessages } from "./span-test-support"
+import { buildSessionSummary } from "./session-summary"
 import { buildSessionTurns, classifyAiSpan, isLlmCall, spanTtftMs } from "./session-turns"
 
 const SECOND = 1000
@@ -170,6 +171,76 @@ describe("buildSessionTurns", () => {
 		expect(Number.isFinite(turns[0]!.startMs)).toBe(true)
 	})
 
+	// Microsoft Agent Framework workflows: `workflow.build` is a one-span trace
+	// of its own, read as an agent root by its name, ahead of `workflow.run`.
+	// It became an empty turn 1 with no label, and the session lost its title.
+	it("folds an anchor that opened no work into the turn after it", () => {
+		const maf = {
+			vendorId: "microsoft_agent_framework",
+			sessionId: "wf-1",
+			genAi: { conversationId: "wf-1" },
+		}
+		const spans = [
+			makeSpan({
+				...maf,
+				spanId: "build",
+				traceId: "trace-build",
+				spanName: "workflow.build",
+				startMs: 0,
+				durationMs: 2,
+			}),
+			makeSpan({
+				...maf,
+				spanId: "run",
+				traceId: "trace-run",
+				spanName: "workflow.run",
+				startMs: 50,
+				durationMs: 10 * SECOND,
+			}),
+			agentSpan({
+				...maf,
+				spanId: "orchestrator",
+				parentSpanId: "run",
+				traceId: "trace-run",
+				startMs: 60,
+				durationMs: 4 * SECOND,
+			}),
+			llmSpan({
+				...maf,
+				spanId: "chat",
+				parentSpanId: "orchestrator",
+				traceId: "trace-run",
+				startMs: 70,
+				durationMs: 4 * SECOND,
+				genAi: {
+					conversationId: "wf-1",
+					inputMessages: userMessages("Produce a mini briefing about Amsterdam"),
+				},
+			}),
+		]
+		const turns = buildSessionTurns(spans)
+
+		expect(turns).toHaveLength(1)
+		expect(turns[0]!.spans.map((span) => span.spanId)).toEqual(["build", "run", "orchestrator", "chat"])
+		expect(turns[0]!.label).toBe("Produce a mini briefing about Amsterdam")
+		expect(buildSessionSummary({ spans, turns }).title).toBe("Produce a mini briefing about Amsterdam")
+	})
+
+	// A pause after it says the invocation stood on its own: folding it would
+	// read the pause as a stall inside the next turn.
+	it("keeps a workless anchor followed by a pause as its own turn", () => {
+		const turns = buildSessionTurns([
+			agentSpan({ spanId: "quiet", startMs: 0, durationMs: SECOND }),
+			agentSpan({ spanId: "busy", startMs: 60 * SECOND, durationMs: 10 * SECOND }),
+			llmSpan({ spanId: "chat", parentSpanId: "busy", startMs: 61 * SECOND, durationMs: SECOND }),
+		])
+
+		expect(turns.map((turn) => turn.spans.map((span) => span.spanId))).toEqual([
+			["quiet"],
+			["busy", "chat"],
+		])
+	})
+
 	it("falls back to root agent invocations when no conversation id exists", () => {
 		const turns = buildSessionTurns([
 			agentSpan({ spanId: "agent-1", startMs: 0, durationMs: 10 * SECOND }),
@@ -296,6 +367,49 @@ describe("buildSessionTurns", () => {
 		])
 
 		expect(turns[0]!.label).toBe("deploy the worker")
+	})
+
+	// LangGraph with a checkpointer, through the OpenInference dual-write: the
+	// `model` node (a CHAIN span, no operation) starts before its model call and
+	// carries only the thread's FIRST message, so every turn read turn 1's prompt.
+	it("labels from a model call before a framework span that started earlier", () => {
+		const turn = (n: number, prompts: readonly string[]) => {
+			const at = n * 60 * SECOND
+			return [
+				agentSpan({
+					spanId: `assistant-${n}`,
+					startMs: at,
+					durationMs: 2 * SECOND,
+					agentName: "assistant",
+				}),
+				makeSpan({
+					spanId: `model-${n}`,
+					parentSpanId: `assistant-${n}`,
+					spanName: "model",
+					startMs: at + 10,
+					durationMs: SECOND,
+					vendorId: "unknown:openinference",
+					genAi: { inputMessages: userMessages(prompts[0]!) },
+				}),
+				llmSpan({
+					spanId: `chat-${n}`,
+					parentSpanId: `model-${n}`,
+					spanName: "ChatOpenAI",
+					startMs: at + 12,
+					durationMs: SECOND,
+					genAi: { inputMessages: userMessages(...prompts) },
+				}),
+			]
+		}
+		const turns = buildSessionTurns([
+			...turn(0, ["Hi! Briefly introduce yourself."]),
+			...turn(1, ["Hi! Briefly introduce yourself.", "What's the weather in Berlin?"]),
+		])
+
+		expect(turns.map((t) => t.label)).toEqual([
+			"Hi! Briefly introduce yourself.",
+			"What's the weather in Berlin?",
+		])
 	})
 
 	it("has no label when message content was not captured", () => {
@@ -494,6 +608,15 @@ describe("turn labels", () => {
 		const long = labelFor([{ role: "user", content: "x".repeat(500) }])
 		expect(long).toHaveLength(80)
 		expect(long?.endsWith("…")).toBe(true)
+	})
+
+	// smolagents sends every task as "New task:\n<task>", so every turn and the
+	// session title read "New task:".
+	it("reads past smolagents' lead-in", () => {
+		expect(labelFor([{ role: "user", content: "New task:\nWhat is 17 * 23?" }])).toBe("What is 17 * 23?")
+		expect(labelFor([{ role: "user", content: "New task:" }])).toBe("New task:")
+		// A user's own line ending in a colon is the prompt itself.
+		expect(labelFor([{ role: "user", content: "Fix this:\n```ts" }])).toBe("Fix this:")
 	})
 
 	// Vendors write "User" as readily as "user", and the transcript's own row

@@ -154,6 +154,14 @@ The server exposes the tools below. Read-only tools are marked **read**; the res
 
 The source-code tools only return results for repositories the organization's GitHub App installation can access.
 
+### Feedback
+
+| Tool              | Access | What it does                                                                                            |
+| ----------------- | ------ | ------------------------------------------------------------------------------------------------------- |
+| `send_maple_feedback` | write  | Tell the Maple team about a bug, a missing capability or a misleading doc: its kind, the agent, and why |
+
+The same feedback can be sent over the REST API with `POST /v2/agent_feedback`.
+
 ## Prompts and resources
 
 The server also provides three prompts (`incident_triage`, `latency_analysis`, `debug_errors`) and one resource, `maple://instructions`, which explains Maple's data model to the model.

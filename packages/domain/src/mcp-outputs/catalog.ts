@@ -2,6 +2,7 @@
  * Every MCP tool's output schema, by tool name: the one list both the registry (which checks
  * each tool declares exactly this schema) and the chat UI's `StructuredToolOutput` derive from.
  */
+import { SendMapleFeedbackOutput } from "./feedback"
 import {
 	CreateAlertRuleOutput,
 	DeleteAlertRuleOutput,
@@ -152,6 +153,7 @@ export const McpToolOutputs = {
 	search_sessions: SearchSessionsOutput,
 	search_source_code: SearchSourceCodeOutput,
 	search_traces: SearchTracesOutput,
+	send_maple_feedback: SendMapleFeedbackOutput,
 	service_map: ServiceMapOutput,
 	set_issue_severity: SetIssueSeverityOutput,
 	transition_error_issue: TransitionErrorIssueOutput,

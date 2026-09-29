@@ -13,6 +13,7 @@ import { V2ChatIntegrationsApiGroup } from "./integrations-chat"
 import { V2PlanetScaleIntegrationsApiGroup } from "./integrations-planetscale"
 import { V2ErrorIssuesApiGroup } from "./error-issues"
 import { V2InvestigationsApiGroup } from "./investigations"
+import { V2AgentFeedbackApiGroup } from "./agent-feedback"
 import { V2MobileDevicesApiGroup } from "./mobile-devices"
 import { V2OnboardingChecklistApiGroup } from "./onboarding-checklist"
 import { V2OrganizationApiGroup } from "./organization"
@@ -109,6 +110,7 @@ export class MapleApiV2 extends HttpApi.make("MapleApiV2")
 	.add(V2OnboardingChecklistApiGroup)
 	.add(V2SupportChannelApiGroup)
 	.add(V2MobileDevicesApiGroup)
+	.add(V2AgentFeedbackApiGroup)
 	.add(V2SessionReplaysApiGroup)
 	.add(V2TracesApiGroup)
 	.add(V2LogsApiGroup)

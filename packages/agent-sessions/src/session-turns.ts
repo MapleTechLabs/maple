@@ -163,6 +163,11 @@ export interface SessionTurn {
 	readonly traceIds: readonly string[]
 }
 
+const WORK_CATEGORIES: ReadonlySet<AiSpanCategory> = new Set(["inference", "tool"])
+/** How soon before the next turn a workless anchor must end to be its setup:
+ *  the pause the session summary starts calling idle. */
+const SETUP_LEAD_MAX_MS = 5_000
+
 interface TurnAnchor {
 	readonly span: AiSessionSpan
 	readonly kind: TurnAnchorKind
@@ -216,6 +221,37 @@ export function buildSessionTurns(spans: readonly AiSessionSpan[]): readonly Ses
 	for (const { span, startMs } of ordered) {
 		while (cursor + 1 < anchors.length && anchorStarts[cursor + 1] <= startMs) cursor++
 		buckets[turnOf(span) ?? cursor].push(span)
+	}
+
+	// On rules 2 and 3 the boundary is a guess, and an anchor that opened no
+	// work — no model or tool call, no prompt, nothing failed — right before the
+	// next turn is that turn's setup: Microsoft Agent Framework's one-span
+	// `workflow.build` trace ahead of its `workflow.run` became an empty turn 1
+	// that also took the session's title. Its spans join the next turn, as spans
+	// before the first anchor join turn 1; the cursor filled the buckets in start
+	// order, so they stay in it. One followed by a pause is left alone, and a
+	// session with no work anywhere keeps its anchors.
+	const opened = (bucket: readonly AiSessionSpan[]) =>
+		bucket.some(
+			(span) =>
+				WORK_CATEGORIES.has(classifyAiSpan(span)) ||
+				spanFailed(span) ||
+				lastUserMessageText(span.genAi.inputMessages) !== undefined,
+		)
+	if (anchors[0]?.kind !== "conversation" && buckets.some(opened)) {
+		for (let i = 0; i < buckets.length - 1; i++) {
+			const bucket = buckets[i]
+			const next = buckets[i + 1]
+			if (opened(bucket)) continue
+			const endMs = bucket.reduce(
+				(max, span) => Math.max(max, spanEndMs(span)),
+				Number.NEGATIVE_INFINITY,
+			)
+			if (next[0] !== undefined && spanStartMs(next[0]) - endMs > SETUP_LEAD_MAX_MS) continue
+			for (const span of next) bucket.push(span)
+			buckets[i + 1] = bucket
+			buckets[i] = []
+		}
 	}
 
 	// A turn with no spans has no start, no end and nothing to draw. Rule 1 can no
@@ -401,12 +437,15 @@ function findAnchors(ordered: readonly AiSessionSpan[]): readonly TurnAnchor[] {
  *
  * The anchor is asked first — on a `chat`-shaped span `gen_ai.input.messages`
  * is the whole history sent to the model, so a descendant several turns deep
- * still carries turn 1's opening prompt.
+ * still carries turn 1's opening prompt. Model calls come next: the history a
+ * model was sent ends on the turn's prompt, while a framework's own node span
+ * may carry only what the thread started with (LangGraph's `model` node under a
+ * checkpointer holds the thread's first message on every turn).
  */
 function turnLabel(anchor: AiSessionSpan, turnSpans: readonly AiSessionSpan[]): string | undefined {
 	const fromAnchor = lastUserMessageText(anchor.genAi.inputMessages)
 	if (fromAnchor !== undefined) return fromAnchor
-	for (const span of turnSpans) {
+	for (const span of [...turnSpans.filter(isLlmCall), ...turnSpans]) {
 		const text = lastUserMessageText(span.genAi.inputMessages)
 		if (text !== undefined) return text
 	}
@@ -461,14 +500,23 @@ function messageText(value: unknown): string | undefined {
 	return undefined
 }
 
-/** The message's first non-empty line, collapsed to one line's worth of text. */
+/** A framework's own heading over the prompt, which names what follows rather
+ *  than saying it: smolagents opens every task with "New task:". Matched
+ *  literally, since a user's "Fix this:" over pasted code is the prompt. */
+const LEAD_IN = /^new task:$/i
+
+/** The message's first non-empty line, collapsed to one line's worth of text —
+ *  or the line after it, when the first is a lead-in. */
 function proseLine(value: string): string | undefined {
+	const lines: string[] = []
 	for (const rawLine of value.split("\n")) {
 		const line = rawLine.trim().replace(/\s+/g, " ")
-		if (line.length === 0) continue
-		return line.length > MAX_LABEL_LENGTH ? `${line.slice(0, MAX_LABEL_LENGTH - 1)}…` : line
+		if (line.length > 0 && lines.push(line) === 2) break
 	}
-	return undefined
+	const [first, second] = lines
+	if (first === undefined) return undefined
+	const line = second !== undefined && LEAD_IN.test(first) ? second : first
+	return line.length > MAX_LABEL_LENGTH ? `${line.slice(0, MAX_LABEL_LENGTH - 1)}…` : line
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
