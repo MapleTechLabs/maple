@@ -110,8 +110,18 @@ const gateway = (facts: {
 	readonly usage?: readonly [number, number, number, number, number]
 	readonly cost?: string
 }): Readonly<Record<string, string>> => {
-	const stamps: Record<string, string> = { [MAPLE_AI_STAMP_ATTRS.llmCall]: facts.llmCall ? "1" : "0" }
-	const text: ReadonlyArray<readonly [string, string | undefined]> = [
+	const usage = [
+		MAPLE_AI_STAMP_ATTRS.inputTokens,
+		MAPLE_AI_STAMP_ATTRS.cacheReadTokens,
+		MAPLE_AI_STAMP_ATTRS.cacheWriteTokens,
+		MAPLE_AI_STAMP_ATTRS.outputTokens,
+		MAPLE_AI_STAMP_ATTRS.reasoningTokens,
+	].map((key, index): readonly [string, string | undefined] => {
+		const count = facts.usage?.[index] ?? 0
+		return [key, count > 0 ? String(count) : undefined]
+	})
+	const entries: ReadonlyArray<readonly [string, string | undefined]> = [
+		[MAPLE_AI_STAMP_ATTRS.llmCall, facts.llmCall ? "1" : "0"],
 		[MAPLE_AI_STAMP_ATTRS.model, facts.model],
 		[MAPLE_AI_STAMP_ATTRS.agentName, facts.agentName],
 		[MAPLE_AI_STAMP_ATTRS.toolName, facts.toolName],
@@ -121,20 +131,11 @@ const gateway = (facts: {
 		[MAPLE_AI_STAMP_ATTRS.cost, facts.cost],
 		[MAPLE_AI_STAMP_ATTRS.toolCall, facts.toolCall ? "1" : undefined],
 		[MAPLE_AI_STAMP_ATTRS.error, facts.error ? "1" : undefined],
+		...usage,
 	]
-	for (const [key, value] of text) if (value !== undefined) stamps[key] = value
-	const buckets = [
-		MAPLE_AI_STAMP_ATTRS.inputTokens,
-		MAPLE_AI_STAMP_ATTRS.cacheReadTokens,
-		MAPLE_AI_STAMP_ATTRS.cacheWriteTokens,
-		MAPLE_AI_STAMP_ATTRS.outputTokens,
-		MAPLE_AI_STAMP_ATTRS.reasoningTokens,
-	]
-	buckets.forEach((key, index) => {
-		const count = facts.usage?.[index] ?? 0
-		if (count > 0) stamps[key] = String(count)
-	})
-	return stamps
+	return Object.fromEntries(
+		entries.filter((entry): entry is readonly [string, string] => entry[1] !== undefined),
+	)
 }
 
 // The turn-owning span of the eve session: the only one of its trace that
