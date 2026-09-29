@@ -107,6 +107,8 @@ const gateway = (facts: {
 	readonly responseId?: string
 	readonly toolDescription?: string
 	readonly toolErrorResult?: string
+	readonly toolCallId?: string
+	readonly toolPaused?: boolean
 	readonly usage?: readonly [number, number, number, number, number]
 	readonly cost?: string
 }): Readonly<Record<string, string>> => {
@@ -128,9 +130,11 @@ const gateway = (facts: {
 		[MAPLE_AI_STAMP_ATTRS.responseId, facts.responseId],
 		[MAPLE_AI_STAMP_ATTRS.toolDescription, facts.toolDescription],
 		[MAPLE_AI_STAMP_ATTRS.toolErrorResult, facts.toolErrorResult],
+		[MAPLE_AI_STAMP_ATTRS.toolCallId, facts.toolCallId],
 		[MAPLE_AI_STAMP_ATTRS.cost, facts.cost],
 		[MAPLE_AI_STAMP_ATTRS.toolCall, facts.toolCall ? "1" : undefined],
 		[MAPLE_AI_STAMP_ATTRS.error, facts.error ? "1" : undefined],
+		[MAPLE_AI_STAMP_ATTRS.toolPaused, facts.toolPaused ? "1" : undefined],
 		...usage,
 	]
 	return Object.fromEntries(
@@ -484,17 +488,37 @@ const STATUS_ONLY_FAILURE_SPAN = toolCallSpan("span-tool-failure-3", 2_000, {
 	statusMessage: "effect-agent.execute_tool: Tool execution reached a failed terminal state",
 	attrs: gateway({ toolCall: true, error: true, toolName: "submit_findings" }),
 })
+// The copy a call paused for a human's approval leaves: no failure and no
+// result. The approved run executes it again under the same id.
+const TOOL_CALL_ID = "call_submit_findings_1"
+const TOOL_PAUSED_SPAN = toolCallSpan("span-tool-paused-1", 2_500, {
+	status: "Unset",
+	attrs: {
+		"gen_ai.tool.call.id": TOOL_CALL_ID,
+		...gateway({
+			toolCall: true,
+			toolName: "submit_findings",
+			toolCallId: TOOL_CALL_ID,
+			toolPaused: true,
+		}),
+	},
+})
 // A call that succeeded: its result is a payload, not a failure, so the index
 // carries neither the result nor a fingerprint.
 const TOOL_SUCCESS_SPAN = toolCallSpan("span-tool-success-1", 3_000, {
 	status: "Ok",
-	attrs: { "gen_ai.tool.call.result": JSON.stringify({ result: "3 findings recorded" }) },
+	attrs: {
+		"gen_ai.tool.call.id": TOOL_CALL_ID,
+		"gen_ai.tool.call.result": JSON.stringify({ result: "3 findings recorded" }),
+		...gateway({ toolCall: true, toolName: "submit_findings", toolCallId: TOOL_CALL_ID }),
+	},
 })
 
 const TOOL_FAILURE_ORG_SPANS: ReadonlyArray<SeedSpan> = [
 	MISSING_KEY_0_SPAN,
 	MISSING_KEY_1_SPAN,
 	STATUS_ONLY_FAILURE_SPAN,
+	TOOL_PAUSED_SPAN,
 	TOOL_SUCCESS_SPAN,
 ]
 
@@ -658,7 +682,8 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 			        IsError, IsLlmCall, IsToolCall, Tokens, Cost, ResponseId,
 			        VendorVersion, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens,
 			        ErrorType, StatusMessage, ToolDescription,
-			        FailedToolCallResult, ErrorFingerprint != 0 AS HasErrorFingerprint
+			        FailedToolCallResult, ErrorFingerprint != 0 AS HasErrorFingerprint,
+			        ToolCallId, IsPausedToolCall
 			 FROM ai_trace_index WHERE OrgId != ${quote(NETTING_ORG_ID)} ORDER BY Timestamp ASC`,
 		)
 
@@ -684,6 +709,9 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 				ErrorType: string
 				ToolDescription: string
 				FailedToolCallResult: string
+				/** 0035: the call's id, and whether this is its paused copy. */
+				ToolCallId: string
+				IsPausedToolCall: number
 			}> = {},
 		) => {
 			const { buckets = [0, 0, 0, 0, 0], ...columns } = expect
@@ -718,6 +746,8 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 				StatusMessage: span.statusMessage ?? "",
 				ToolDescription: "",
 				FailedToolCallResult: "",
+				ToolCallId: "",
+				IsPausedToolCall: 0,
 				...columns,
 				// Every failed span belongs to a failure group, and no other does.
 				HasErrorFingerprint: isError,
@@ -804,8 +834,19 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 				ToolName: "submit_findings",
 				IsToolCall: 1,
 			}),
+			// Migration 0035: the paused copy and the executed one, under one id.
+			indexRow(TOOL_FAILURE_ORG_ID, TOOL_PAUSED_SPAN, {
+				ToolName: "submit_findings",
+				IsToolCall: 1,
+				ToolCallId: TOOL_CALL_ID,
+				IsPausedToolCall: 1,
+			}),
 			// A result, but no failure: nothing carried.
-			indexRow(TOOL_FAILURE_ORG_ID, TOOL_SUCCESS_SPAN, { ToolName: "submit_findings", IsToolCall: 1 }),
+			indexRow(TOOL_FAILURE_ORG_ID, TOOL_SUCCESS_SPAN, {
+				ToolName: "submit_findings",
+				IsToolCall: 1,
+				ToolCallId: TOOL_CALL_ID,
+			}),
 		])
 	})
 
@@ -845,6 +886,7 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 		)
 		assert.notStrictEqual(fingerprint(STATUS_ONLY_FAILURE_SPAN), fingerprint(MISSING_KEY_0_SPAN))
 		assert.strictEqual(fingerprint(TOOL_SUCCESS_SPAN), "0")
+		assert.strictEqual(fingerprint(TOOL_PAUSED_SPAN), "0")
 	})
 
 	// Both reads, wired the way the route and the client wire them: the page is

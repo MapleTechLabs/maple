@@ -1223,6 +1223,14 @@ export const aiTraceIndex = defineDatasource("ai_trace_index", {
 		ToolDescription: t.string(),
 		FailedToolCallResult: t.string(),
 		ErrorFingerprint: t.uint64(),
+		// Migration 0035 — a tool call's id and whether the span is the copy a
+		// call paused for a human's approval left (the gateway's
+		// `maple_ai.tool.call_id` / `maple_ai.tool.paused`): the approved run
+		// executes the call again under the same id, in a new trace of the
+		// session, so the list counts a session's tool calls by the id.
+		// ''/0 where the span carries none, and on rows materialized before it.
+		ToolCallId: t.string(),
+		IsPausedToolCall: t.uint8(),
 	},
 	engine: engine.mergeTree({
 		partitionKey: "toDate(Timestamp)",

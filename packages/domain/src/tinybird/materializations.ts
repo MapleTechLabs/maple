@@ -69,6 +69,7 @@ import {
 	GENAI_INPUT_TOKENS_SQL,
 	GENAI_IS_ERROR_SQL,
 	GENAI_IS_LLM_CALL_SQL,
+	GENAI_IS_PAUSED_TOOL_CALL_SQL,
 	GENAI_IS_TOOL_CALL_SQL,
 	GENAI_MODEL_SQL,
 	GENAI_OUTPUT_TOKENS_SQL,
@@ -76,6 +77,7 @@ import {
 	GENAI_RESPONSE_ID_SQL,
 	GENAI_STATUS_MESSAGE_SQL,
 	GENAI_TOKENS_SQL,
+	GENAI_TOOL_CALL_ID_SQL,
 	GENAI_TOOL_DESCRIPTION_SQL,
 	GENAI_TOOL_NAME_SQL,
 } from "./gen-ai-columns"
@@ -1048,11 +1050,13 @@ export const traceDetailSpansMv = defineMaterializedView("trace_detail_spans_mv"
  * call's result and the failure's fingerprint, which does the same for the tool
  * detail page; rows before it read `''`/0 there, so a failure older than the
  * migration groups under `unknown` and a tool whose only calls predate it shows
- * no description.
+ * no description. Migration 0035 added the tool call's id and whether the span
+ * is a paused copy, which the list counts tool calls by; rows before it read
+ * `''`/0 and count one call each.
  */
 export const aiTraceIndexMv = defineMaterializedView("ai_trace_index_mv", {
 	description:
-		"Populates ai_trace_index with GenAI agent spans (maple_ai.vendor.id stamped), projecting the facts the ingest gateway stamped on each (maple_ai.*: identity, model/agent/tool, kind, usage, failure, a failed tool call's result, the tool's description) plus the environment, the error.type, the status message and the failure's fingerprint, to plain columns.",
+		"Populates ai_trace_index with GenAI agent spans (maple_ai.vendor.id stamped), projecting the facts the ingest gateway stamped on each (maple_ai.*: identity, model/agent/tool, kind, usage, failure, a failed tool call's result, the tool's description, the tool call's id and whether it is a paused copy) plus the environment, the error.type, the status message and the failure's fingerprint, to plain columns.",
 	datasource: aiTraceIndex,
 	// Migration 0026's columns are additive, and the rows already in the target
 	// are explicitly allowed to carry ''/0 for them (see above). Without this,
@@ -1094,7 +1098,9 @@ export const aiTraceIndexMv = defineMaterializedView("ai_trace_index_mv", {
           ${GENAI_STATUS_MESSAGE_SQL} AS StatusMessage,
           ${GENAI_TOOL_DESCRIPTION_SQL} AS ToolDescription,
           ${GENAI_FAILED_TOOL_CALL_RESULT_SQL} AS FailedToolCallResult,
-          ${GENAI_ERROR_FINGERPRINT_SQL} AS ErrorFingerprint
+          ${GENAI_ERROR_FINGERPRINT_SQL} AS ErrorFingerprint,
+          ${GENAI_TOOL_CALL_ID_SQL} AS ToolCallId,
+          ${GENAI_IS_PAUSED_TOOL_CALL_SQL} AS IsPausedToolCall
         FROM traces
         WHERE SpanAttributes['${MAPLE_AI_VENDOR_ID_ATTR}'] != ''
       `,

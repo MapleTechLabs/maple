@@ -156,6 +156,11 @@ export const AiTraceIndex = table("ai_trace_index", {
 	ToolDescription: T.string,
 	FailedToolCallResult: T.string,
 	ErrorFingerprint: T.uint64,
+	// Migration 0035 — the tool call's id, and whether the span is the copy a
+	// call paused for approval left before the approved run executed it again
+	// under the same id. ''/0 where the span carries none.
+	ToolCallId: T.string,
+	IsPausedToolCall: T.uint8,
 })
 
 /**

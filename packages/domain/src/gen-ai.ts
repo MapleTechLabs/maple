@@ -134,6 +134,11 @@ export const MAPLE_GENAI_MODEL_DURATION_MS_ATTR = "maple_ai.model_duration_ms"
  *   across the dialects' keys; `responseId` on model calls.
  * - `toolDescription` (on tool calls) and `toolErrorResult` (a failed tool
  *   call's result), cut by the gateway.
+ * - `toolCallId`: the call's id (`gen_ai.tool.call.id`, Vercel
+ *   `ai.toolCall.id`). `toolPaused`: `"1"` on a tool call that did not fail
+ *   and recorded no result, or only Google ADK's confirmation request — the
+ *   copy a call paused for a human's approval leaves, before the approved run
+ *   executes it again under the same id.
  * - The usage buckets, on the model call alone: `inputTokens` the uncached
  *   prompt, `outputTokens` the visible completion, a span's total the plain
  *   sum of the five; `cost` in USD as the emitter priced the call. An agent or
@@ -151,6 +156,8 @@ export const MAPLE_AI_STAMP_ATTRS = {
 	responseId: "maple_ai.response.id",
 	toolDescription: "maple_ai.tool.description",
 	toolErrorResult: "maple_ai.tool.error_result",
+	toolCallId: "maple_ai.tool.call_id",
+	toolPaused: "maple_ai.tool.paused",
 	inputTokens: "maple_ai.usage.input_tokens",
 	cacheReadTokens: "maple_ai.usage.cache_read_tokens",
 	cacheWriteTokens: "maple_ai.usage.cache_write_tokens",
