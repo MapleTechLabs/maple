@@ -138,6 +138,21 @@ describe("tracing.sampleRate", () => {
 		expect(exportedSpans[0]?.parentSpanContext).toBeUndefined()
 	})
 
+	it("still exports a failure inside an unsampled traced() call, as its own error span", async () => {
+		handle = MapleBrowser.init({ ...BASE, tracing: { instrumentFetch: false, sampleRate: 0 } })
+		const error = new Error("loader failed")
+		await expect(
+			MapleBrowser.traced("loader /a", async () => {
+				throw error
+			}),
+		).rejects.toBe(error)
+		// Rethrown to the app, then reported again by a boundary: still one error.
+		MapleBrowser.captureException(error)
+		await stop()
+		expect(exportedSpans.map((span) => span.name)).toEqual(["loader /a"])
+		expect(exportedSpans[0]?.events.some((event) => event.name === "exception")).toBe(true)
+	})
+
 	it("exports everything at the default rate, with no sampling weight", async () => {
 		handle = MapleBrowser.init(BASE)
 		MapleBrowser.startNavigation("/a")
