@@ -551,7 +551,7 @@ mod tests {
     }
 
     /// (c) PROD `blind-ts-langchain-demo-001`, OpenInference LangChain JS with
-    /// the GenAI mirror (`unknown:genai`): (prompt, completion, reasoning).
+    /// the GenAI mirror (`langchain`): (prompt, completion, reasoning).
     /// Three calls report more reasoning than completion; the total is still
     /// the sum of `llm.token_count.total`, 17763. The list used to read output
     /// 1206 / reasoning 3098 / total 17827, the page 4240 / 0 / 17763.
@@ -606,7 +606,7 @@ mod tests {
             "@arizeai/openinference-instrumentation-langchain",
             &slices(&spans),
         );
-        assert!(stamped.iter().all(|span| span.vendor == "unknown:genai"));
+        assert!(stamped.iter().all(|span| span.vendor == "langchain"));
         // 73 completion, 95 reasoning: all of the completion was reasoning.
         assert_eq!(stamped[7].buckets, Some([732, 0, 0, 0, 73]));
         let total = sum(&stamped);
