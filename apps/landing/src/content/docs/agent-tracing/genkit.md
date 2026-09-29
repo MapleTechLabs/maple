@@ -130,7 +130,7 @@ export class GenkitForMaple implements SpanProcessor {
 				})
 				const result = json("genkit:output")
 				if (result !== undefined) {
-					attrs["gen_ai.tool.call.result"] = JSON.stringify(typeof result === "object" ? result : { result })
+					attrs["gen_ai.tool.call.result"] = typeof result === "string" ? result : JSON.stringify(result)
 				}
 				break
 			}

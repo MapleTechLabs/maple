@@ -62,7 +62,7 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
 
 class SmolagentsForMaple(SpanProcessor):
-    """Fixes what the smolagents instrumentor gets wrong for Maple: agent names, run token totals, tool names and arguments."""
+    """Fixes what the smolagents instrumentor gets wrong for Maple: agent names, tool names and arguments."""
 
     def on_start(self, span, parent_context=None):
         if span.instrumentation_scope.name != "openinference.instrumentation.smolagents":
@@ -71,9 +71,6 @@ class SmolagentsForMaple(SpanProcessor):
         if span.name.endswith(".run"):
             # "weather_worker.run" -> gen_ai.agent.name "weather_worker", so sub-agents get lanes
             span.set_attribute("gen_ai.agent.name", span.name.removesuffix(".run"))
-            # The run's token totals repeat its model calls (with reset=False, every earlier turn's too)
-            span.set_attribute("gen_ai.usage.input_tokens", 0)
-            span.set_attribute("gen_ai.usage.output_tokens", 0)
         elif "tool.name" in attrs:
             # Every @tool span is named "SimpleTool"; name it after the tool instead
             span.update_name(f"execute_tool {attrs['tool.name']}")
@@ -96,9 +93,8 @@ SmolagentsInstrumentor().instrument(
 
 - `import tracing` at the top of every entry point (web app module, worker, CLI main) so `instrument()` runs before the first `agent.run()`. Import order relative to `smolagents` does not matter.
 - Existing provider: skip the `TracerProvider()`/`set_tracer_provider` lines, add `SmolagentsForMaple()` and the exporter to the existing provider, pass it as `tracer_provider=`.
-- `enable_genai_semconv=True` is required. The env var `OPENINFERENCE_ENABLE_GENAI_SEMCONV=true` is equivalent only if set before `TraceConfig` is constructed; prefer the code form.
+- `enable_genai_semconv=True`: recommended (emits standard GenAI attributes). The env var `OPENINFERENCE_ENABLE_GENAI_SEMCONV=true` is equivalent only if set before `TraceConfig` is constructed; prefer the code form.
 - Keep `SmolagentsForMaple` exactly: it must run in `on_start` (before the dual-write, which never overwrites existing keys).
-- The zeroed `gen_ai.usage.*` on `.run` spans is deliberate. The instrumentor copies the agent monitor's totals onto the run span; they repeat the model spans and with `reset=False` they accumulate across turns. `llm.token_count.*` keeps the totals for other tools.
 
 ## Step 3: One session per conversation
 
@@ -190,7 +186,6 @@ If sessions are split per message: `using_session` missing or id changing. Nothi
 - Do not generate a session id per request or use a constant one.
 - Do not pass `OTLPSpanExporter(endpoint="https://ingest.maple.dev")` without `/v1/traces`.
 - Do not create a second `TracerProvider` when one exists, and do not call `instrument()` twice.
-- Do not drop the zero-token lines for `.run` spans from `SmolagentsForMaple`.
 - Do not override `generate` in a custom `Model` subclass and expect model spans.
 - Do not rely on `hide_inputs` alone for PII (`smolagents.task`).
 - Do not wrap tools in try/except that returns error strings; let them raise.

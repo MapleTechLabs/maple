@@ -1,6 +1,6 @@
 ---
 name: maple-agent-tracing-vercel-ai-sdk
-description: "Trace Vercel AI SDK agents with Maple: register the AI SDK's OpenTelemetry integration, export to Maple, and stamp a conversation id so each chat is one Agent Session with transcript, tool calls, sub-agents and tokens. Covers generateText, streamText, ToolLoopAgent, Node.js and Next.js. Triggers on 'trace my vercel ai sdk agent', 'add Maple to vercel ai sdk', 'agent sessions for vercel ai sdk', 'OpenTelemetry for vercel ai sdk', 'trace my ai sdk app'."
+description: "Trace Vercel AI SDK agents with Maple: register the AI SDK's OpenTelemetry integration, export to Maple, and pass a conversation id so each chat is one Agent Session with transcript, tool calls, sub-agents and tokens. Covers generateText, streamText, ToolLoopAgent, Node.js and Next.js. Triggers on 'trace my vercel ai sdk agent', 'add Maple to vercel ai sdk', 'agent sessions for vercel ai sdk', 'OpenTelemetry for vercel ai sdk', 'trace my ai sdk app'."
 ---
 
 # Maple agent tracing: Vercel AI SDK
@@ -11,7 +11,7 @@ Human guide with the reasoning: https://maple.dev/docs/agent-tracing/vercel-ai-s
 
 One conversation = one Maple Agent Session, one turn per `generate()`/`stream()` call, with the transcript, every model call (model, tokens, TTFT), every tool call (name, args, result, failures), and a lane per sub-agent.
 
-How it works: AI SDK 7 emits GenAI-semconv spans through `@ai-sdk/otel` (`invoke_agent <model>` → `step <n>` → `chat <model>` + `execute_tool <tool>`) on tracer `gen_ai`, once `registerTelemetry(new OpenTelemetry())` has run. Content is on by default. Maple detects the AI SDK by its `gen_ai`/`ai` tracer scope and groups sessions by `gen_ai.conversation.id`, which the AI SDK never sets. You add it with `enrichSpan` from `runtimeContext`.
+How it works: AI SDK 7 emits GenAI-semconv spans through `@ai-sdk/otel` (`invoke_agent <model>` → `step <n>` → `chat <model>` + `execute_tool <tool>`) on tracer `gen_ai`, once `registerTelemetry(new OpenTelemetry())` has run. Content is on by default. Maple detects the AI SDK by its `gen_ai`/`ai` tracer scope and groups sessions by the conversation id you pass in `runtimeContext` (recorded as `ai.settings.context.conversationId` once `runtimeContext: true` is on).
 
 Known gaps (tell the user, don't try to fix): cost shows as "unpriced" (AI SDK emits no cost; Maple never prices tokens); on AI SDK 5/6 the final assistant reply is missing from transcripts. If model calls go through OpenRouter, its Broadcast traces carry per-call cost and Maple matches them to the AI SDK `chat` spans by response id (see the OpenRouter guide).
 
@@ -67,10 +67,6 @@ registerTelemetry(
 	new OpenTelemetry({
 		usage: true,
 		runtimeContext: true,
-		enrichSpan: ({ runtimeContext }) =>
-			typeof runtimeContext?.conversationId === "string"
-				? { "gen_ai.conversation.id": runtimeContext.conversationId }
-				: undefined,
 	}),
 )
 ```
@@ -94,7 +90,7 @@ export const sdk = new NodeSDK({ spanProcessors: [spanProcessor] })
 ```
 
 - `import "./instrumentation"` as the FIRST line of every entry point (server, worker, CLI). `registerTelemetry` must run before the first AI SDK call.
-- Keep `usage: true` (adds the reasoning-token breakdown, `ai.usage.*`) and `runtimeContext: true` (records the included runtime context keys).
+- Keep `usage: true` (adds the reasoning-token breakdown, `ai.usage.*`) and `runtimeContext: true` (records the included runtime context keys; Maple reads the conversation id from them).
 - Do not pass `tracer:` to `OpenTelemetry` unless reusing a provider requires it; if you must, use `provider.getTracer("gen_ai")`. Other scope names break detection.
 - Existing provider: add `spanProcessor` to it (`spanProcessors: [..., spanProcessor]` or the provider's add method) instead of creating `NodeSDK`.
 
@@ -119,10 +115,6 @@ export function register() {
 		new OpenTelemetry({
 			usage: true,
 			runtimeContext: true,
-			enrichSpan: ({ runtimeContext }) =>
-				typeof runtimeContext?.conversationId === "string"
-					? { "gen_ai.conversation.id": runtimeContext.conversationId }
-					: undefined,
 		}),
 	)
 }
@@ -135,7 +127,7 @@ export function register() {
 
 ## Step 3: Conversation id (session)
 
-Every AI SDK call site that belongs to a conversation must pass `runtimeContext: { conversationId }` AND `telemetry.includeRuntimeContext: { conversationId: true }`. Without the include, `enrichSpan` gets `{}`.
+Every AI SDK call site that belongs to a conversation must pass `runtimeContext: { conversationId }` AND `telemetry.includeRuntimeContext: { conversationId: true }`. Without the include, the id is not recorded. `sessionId` works as the key too.
 
 generateText / streamText:
 
@@ -216,7 +208,7 @@ Run one real conversation: 2+ turns with the same id, one streamed, one tool cal
 - Cost shows as unpriced (expected).
 - The process exited cleanly and no turn is missing (flush ran).
 
-Without Maple access: the run exits with no export errors on stderr (`OTLPExporterError`, `Failed to export`, 401 lines) AND a local run with `OTEL_TRACES_EXPORTER=console,otlp` (the `NodeSDK()` variant without `spanProcessors`) prints the `invoke_agent`/`chat`/`execute_tool` spans with `gen_ai.conversation.id`. Silence alone proves nothing (no spans also looks silent). With the Maple MCP: `list_agent_sessions` with `search=<conversation id>` returns one row.
+Without Maple access: the run exits with no export errors on stderr (`OTLPExporterError`, `Failed to export`, 401 lines) AND a local run with `OTEL_TRACES_EXPORTER=console,otlp` (the `NodeSDK()` variant without `spanProcessors`) prints the `invoke_agent`/`chat`/`execute_tool` spans, with `ai.settings.context.conversationId` on the `invoke_agent` spans. Silence alone proves nothing (no spans also looks silent). With the Maple MCP: `list_agent_sessions` with `search=<conversation id>` returns one row.
 
 ## AI SDK 5/6 (only if the user won't upgrade)
 

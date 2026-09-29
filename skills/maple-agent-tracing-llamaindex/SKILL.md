@@ -9,7 +9,7 @@ Goal: every conversation = one Maple Agent Session. Each `agent.run()` / `workfl
 
 Human guide with the reasoning: https://maple.dev/docs/agent-tracing/llamaindex
 
-Mechanism: `openinference-instrumentation-llama-index` (scope `openinference.instrumentation.llama_index`) with `TraceConfig(enable_genai_semconv=True)`, which dual-writes `gen_ai.*` on span attributes. Maple reads `gen_ai.conversation.id` as the session key.
+Mechanism: `openinference-instrumentation-llama-index` (scope `openinference.instrumentation.llama_index`). Maple reads the session (`session.id` from `using_session`), transcript, tokens and tool calls from its spans. `TraceConfig(enable_genai_semconv=True)` is recommended: it also emits standard GenAI attributes (`gen_ai.*`, incl. `gen_ai.conversation.id`).
 
 ## Step 0: Detect
 
@@ -120,6 +120,7 @@ LlamaIndexInstrumentor().instrument(
 )
 ```
 
+- `TraceConfig(enable_genai_semconv=True)`: recommended (emits standard GenAI attributes).
 - Import `tracing` first in the entry point (app module, `main.py`, worker). `instrument()` must run before the first `agent.run()`.
 - The app loads `.env` (`load_dotenv()`, `--env-file`): call `load_dotenv()` at the top of `tracing.py`, before the provider is built. Otherwise the exporter silently targets `localhost:4318` with no key.
 - Existing provider: skip `TracerProvider()`/`set_tracer_provider`; call `existing.add_span_processor(LlamaIndexForMaple(BatchSpanProcessor(OTLPSpanExporter())))` and pass `tracer_provider=existing`.
@@ -155,7 +156,7 @@ async def handle_message(conversation_id: str, text: str):
 - The id must be stable per conversation and unique across conversations: the app's chat/thread id. No `uuid4()` per request, no constant, no module-level default. No id available → ask the user where the conversation boundary is; for a one-shot script, one uuid per conversation reused across its turns.
 - One `Context` per conversation (a shared `Context` shares memory across users).
 - HITL: keep `handler.ctx.send_event(HumanResponseEvent(...))` on the same handler; the resumed step stays in the same trace and session.
-- Do not use `session.id`/`maple_ai.session.id` attributes of your own; `using_session` + `enable_genai_semconv` already writes `session.id` and `gen_ai.conversation.id`.
+- Do not use `session.id`/`maple_ai.session.id` attributes of your own; `using_session` already writes `session.id` (and `gen_ai.conversation.id` with `enable_genai_semconv`).
 
 ## Step 4: Content
 
@@ -235,7 +236,6 @@ Without Maple access, both must hold: the run exits with no export errors on std
 
 - Do not use or keep `LlamaIndexOpenTelemetry` (`llama-index-observability-otel`) for Maple, and never alongside the OpenInference instrumentor.
 - Do not add the exporter to the provider directly; always through `LlamaIndexForMaple`.
-- Do not forget `enable_genai_semconv=True` (tokens in the list, empty session page).
 - Do not treat `Context` or `llamaindex.run_id` as a session id; use `using_session` around `run()`.
 - Do not generate a new conversation id per request, and do not share one `Context` across conversations.
 - Do not wrap `yield` statements in `using_session`/`instrument_tags` blocks.

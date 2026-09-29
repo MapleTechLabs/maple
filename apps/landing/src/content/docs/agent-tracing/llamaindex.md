@@ -107,7 +107,7 @@ LlamaIndexInstrumentor().instrument(
 )
 ```
 
-Keep `enable_genai_semconv=True`, or the session has no transcript. Always add the exporter through `LlamaIndexForMaple`, never directly.
+Always add the exporter through `LlamaIndexForMaple`, never directly.
 
 If the app already has a `TracerProvider` (from `opentelemetry-instrument`, Logfire or Sentry), add `LlamaIndexForMaple(BatchSpanProcessor(OTLPSpanExporter()))` to it and pass it to `instrument()`.
 

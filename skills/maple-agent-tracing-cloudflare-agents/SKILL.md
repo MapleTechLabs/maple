@@ -1,6 +1,6 @@
 ---
 name: maple-agent-tracing-cloudflare-agents
-description: "Trace Cloudflare Agents SDK agents (AIChatAgent, Agent on Durable Objects, npm `agents` / `@cloudflare/ai-chat`) with Maple: export the Vercel AI SDK's OpenTelemetry spans from a Worker/Durable Object over fetch, flush per turn, and stamp the agent instance name as the conversation id so each chat is one Agent Session with transcript, tool calls, sub-agents and tokens. Triggers on 'trace my cloudflare agent', 'add Maple to cloudflare agents', 'agent sessions for AIChatAgent', 'OpenTelemetry in a durable object agent', 'trace agents sdk on workers'."
+description: "Trace Cloudflare Agents SDK agents (AIChatAgent, Agent on Durable Objects, npm `agents` / `@cloudflare/ai-chat`) with Maple: export the Vercel AI SDK's OpenTelemetry spans from a Worker/Durable Object over fetch, flush per turn, and pass the agent instance name as the conversation id so each chat is one Agent Session with transcript, tool calls, sub-agents and tokens. Triggers on 'trace my cloudflare agent', 'add Maple to cloudflare agents', 'agent sessions for AIChatAgent', 'OpenTelemetry in a durable object agent', 'trace agents sdk on workers'."
 ---
 
 # Maple agent tracing: Cloudflare Agents SDK
@@ -11,7 +11,7 @@ Human guide: https://maple.dev/docs/agent-tracing/cloudflare-agents
 
 One chat (one agent instance) = one Maple Agent Session, one turn per user message, with the transcript, every model call (model, tokens), every tool call (name, args, result, failures), and a lane per sub-agent.
 
-How it works: the Agents SDK does not emit GenAI spans itself. Model calls go through the Vercel AI SDK, whose `@ai-sdk/otel` integration emits `invoke_agent <model>` → `step <n>` → `chat <model>` + `execute_tool <tool>` on tracer scope `gen_ai`. Maple detects them as **Vercel AI SDK** (by the `gen_ai` tracer scope) and groups sessions by `gen_ai.conversation.id`, which you add with `enrichSpan` from `runtimeContext`. Workers can't run `@opentelemetry/sdk-node`, so you build a `BasicTracerProvider` with the OTLP HTTP exporter (its browser/worker build posts OTLP JSON with `fetch`) and call `forceFlush()` at the end of each turn.
+How it works: the Agents SDK does not emit GenAI spans itself. Model calls go through the Vercel AI SDK, whose `@ai-sdk/otel` integration emits `invoke_agent <model>` → `step <n>` → `chat <model>` + `execute_tool <tool>` on tracer scope `gen_ai`. Maple detects them as **Vercel AI SDK** (by the `gen_ai` tracer scope) and groups sessions by the conversation id you pass in `runtimeContext` (recorded as `ai.settings.context.conversationId` once `runtimeContext: true` is on). Workers can't run `@opentelemetry/sdk-node`, so you build a `BasicTracerProvider` with the OTLP HTTP exporter (its browser/worker build posts OTLP JSON with `fetch`) and call `forceFlush()` at the end of each turn.
 
 Verified end to end (wrangler dev, workerd 1.20260926.1, a local OTLP receiver, `MockLanguageModelV4` from `ai/test`) with: `agents` 0.24.0, `@cloudflare/ai-chat` 0.12.0, `ai` 7.0.122, `@ai-sdk/otel` 1.0.122, `wrangler` 4.143.0, `@opentelemetry/sdk-trace-base` / `resources` / `context-async-hooks` 2.11.0, `@opentelemetry/exporter-trace-otlp-http` 0.222.0, `@opentelemetry/api` 1.9.1. Both `AIChatAgent` over its WebSocket protocol (2 turns x 2 chats, streamed, tool call, sub-agent) and a plain `Agent.onRequest` with `generateText`.
 
@@ -80,10 +80,6 @@ registerTelemetry(
 		tracer: tracerProvider.getTracer("gen_ai"),
 		usage: true,
 		runtimeContext: true,
-		enrichSpan: ({ runtimeContext }) =>
-			typeof runtimeContext?.conversationId === "string"
-				? { "gen_ai.conversation.id": runtimeContext.conversationId }
-				: undefined,
 	}),
 )
 ```
@@ -93,7 +89,7 @@ registerTelemetry(
 - `import { env } from "cloudflare:workers"` at module scope works (secrets included). If the repo's compatibility date or style prevents it, build the provider lazily on first use from `this.env` instead, once per isolate (module-level `let`), never per request.
 - `tracer: tracerProvider.getTracer("gen_ai")`: the scope name must stay `gen_ai` (Maple's Vercel AI SDK detection keys on scope `gen_ai`/`ai`). Alternative: `trace.setGlobalTracerProvider(tracerProvider)` and omit `tracer`; both verified.
 - The context manager is required for sub-agents: without it, a `generateText` inside a tool's `execute` starts a new trace with no conversation id, which Maple shows as a separate `trace:<id>` session. With it, the sub-agent's `invoke_agent` nests under the parent's `execute_tool` (verified).
-- Keep `usage: true` (adds the reasoning-token breakdown, `ai.usage.*`) and `runtimeContext: true` (records the included runtime context keys).
+- Keep `usage: true` (adds the reasoning-token breakdown, `ai.usage.*`) and `runtimeContext: true` (records the included runtime context keys; Maple reads the conversation id from them).
 - The exporter resolves to its browser build under wrangler/esbuild (`workerd`/`browser` conditions), which posts `application/json` via `fetch` with `keepalive`; Maple ingest accepts OTLP JSON. Don't switch to `exporter-trace-otlp-proto` (pulls Node transports) or gRPC (not supported by ingest).
 - Don't use `@opentelemetry/sdk-node`, `NodeSDK`, `NodeTracerProvider` or `OTEL_EXPORTER_OTLP_*` env vars: the Node SDK doesn't run on Workers and the browser exporter doesn't read env vars.
 - Don't set attribute length limits: they cut the message JSON.
@@ -167,7 +163,7 @@ Local, with no Maple key needed: run a throwaway OTLP receiver (e.g. a `Bun.serv
 - Put this in a small driver script: one conversation id (instance name), 2+ turns, at least one tool call.
 - Model without keys: `MockLanguageModelV4` from `ai/test` with a `doStream` that returns a `tool-call` chunk when the last prompt message isn't a tool result, then text.
 
-Check in the received spans: scope `gen_ai`; per turn one trace with `invoke_agent` (root) → `step n` → `chat` + `execute_tool`; `gen_ai.conversation.id` = the instance name on `invoke_agent`, `step`, `chat` and `execute_tool`, same across turns and different per chat; `gen_ai.agent.name` = the `functionId` on `invoke_agent` (only there); `gen_ai.input.messages` on turn 2 contains turn 1's history; `gen_ai.tool.call.arguments` / `gen_ai.tool.call.result` on `execute_tool`; `gen_ai.usage.input_tokens` / `output_tokens` on every `chat`; all of a turn's spans have arrived by the end of the turn (flush works; turns over 5 s may span several POSTs); a sub-agent's `invoke_agent` has the parent's `execute_tool` as parent. Restore the Maple URL afterwards.
+Check in the received spans: scope `gen_ai`; per turn one trace with `invoke_agent` (root) → `step n` → `chat` + `execute_tool`; `ai.settings.context.conversationId` = the instance name on `invoke_agent`, same across turns and different per chat; `gen_ai.agent.name` = the `functionId` on `invoke_agent` (only there); `gen_ai.input.messages` on turn 2 contains turn 1's history; `gen_ai.tool.call.arguments` / `gen_ai.tool.call.result` on `execute_tool`; `gen_ai.usage.input_tokens` / `output_tokens` on every `chat`; all of a turn's spans have arrived by the end of the turn (flush works; turns over 5 s may span several POSTs); a sub-agent's `invoke_agent` has the parent's `execute_tool` as parent. Restore the Maple URL afterwards.
 
 Then against Maple: the `wrangler dev` output shows no export errors (the diag logger prints 401 / `export response failure` lines); silence without the local receiver check proves nothing (no spans also looks silent). With the Maple MCP, `list_agent_sessions` with `search=<instance name>` returns one row; `get_agent_session` (or the Agent Sessions page, ~30 s after a run) shows one session per chat named after the instance name, framework **Vercel AI SDK**, turns = user messages (plus approval continuations), transcript with prompts/replies/tool calls, tokens on every model call, cost unpriced (expected), no attribute containing the provider API key or `Bearer `.
 
@@ -177,7 +173,7 @@ Then against Maple: the `wrangler dev` output shows no export errors (the diag l
 - Do not rely on Cloudflare's native trace destinations or `cloudflare:workers` `tracing` for the agent spans; they don't carry AI SDK spans.
 - Do not skip the per-turn flush.
 - Do not call `registerTelemetry` twice or register `LegacyOpenTelemetry` next to `OpenTelemetry` (duplicate spans, double tokens).
-- Do not stamp `gen_ai.conversation.id` with a per-request id, `ctx.id.toString()` of a shared DO, or a module constant.
+- Do not use a per-request id, `ctx.id.toString()` of a shared DO, or a module constant as the conversation id.
 - Do not stamp `maple_ai.session.id` on AI SDK spans: it re-vendors them and loses AI SDK decoding.
 - Do not add a second AI SDK tracer that also exports to Maple (Langfuse/Braintrust/Sentry AI integrations): every model call gets recorded twice.
 - Do not put the ingest key in `vars` in the Wrangler config or in client code; use a secret.

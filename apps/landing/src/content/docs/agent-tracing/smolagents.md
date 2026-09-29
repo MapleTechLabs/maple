@@ -56,7 +56,7 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
 
 class SmolagentsForMaple(SpanProcessor):
-    """Fixes agent names, run token totals, tool names and tool arguments for Maple."""
+    """Fixes agent names, tool names and tool arguments for Maple."""
 
     def on_start(self, span, parent_context=None):
         if span.instrumentation_scope.name != "openinference.instrumentation.smolagents":
@@ -64,8 +64,6 @@ class SmolagentsForMaple(SpanProcessor):
         attrs = span.attributes
         if span.name.endswith(".run"):
             span.set_attribute("gen_ai.agent.name", span.name.removesuffix(".run"))
-            span.set_attribute("gen_ai.usage.input_tokens", 0)
-            span.set_attribute("gen_ai.usage.output_tokens", 0)
         elif "tool.name" in attrs:
             span.update_name(f"execute_tool {attrs['tool.name']}")
             if attrs.get("input.value", "").startswith("{"):
@@ -84,7 +82,7 @@ SmolagentsInstrumentor().instrument(
 )
 ```
 
-`enable_genai_semconv=True` is required. Copy `SmolagentsForMaple` as is. It gives each agent its own lane and fixes tool names and arguments.
+Copy `SmolagentsForMaple` as is. It gives each agent its own lane and fixes tool names and arguments.
 
 If your app already has a `TracerProvider` (from `opentelemetry-instrument`, Logfire or another library), add `SmolagentsForMaple()` and the exporter to that provider and pass it to `instrument()` instead of creating a second one.
 

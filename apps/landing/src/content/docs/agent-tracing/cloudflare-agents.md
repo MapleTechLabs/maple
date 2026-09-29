@@ -7,7 +7,7 @@ navLabel: "Cloudflare Agents"
 icon: "cloudflare"
 ---
 
-Agents built with the Cloudflare Agents SDK (`AIChatAgent` or `Agent`) usually call models through the Vercel AI SDK, which emits the spans Maple reads. This guide sends those spans from the agent's Durable Object to Maple and stamps the agent's instance name on them as the conversation id.
+Agents built with the Cloudflare Agents SDK (`AIChatAgent` or `Agent`) usually call models through the Vercel AI SDK, which emits the spans Maple reads. This guide sends those spans from the agent's Durable Object to Maple and passes the agent's instance name as the conversation id.
 
 The Workers runtime can't run the Node.js OpenTelemetry SDK, so you create a small tracer provider that exports over `fetch` and flush it at the end of every turn. It works on the Workers Free and Paid plans.
 
@@ -88,11 +88,6 @@ registerTelemetry(
 		tracer: tracerProvider.getTracer("gen_ai"),
 		usage: true,
 		runtimeContext: true,
-		// The conversation id, explained below
-		enrichSpan: ({ runtimeContext }) =>
-			typeof runtimeContext?.conversationId === "string"
-				? { "gen_ai.conversation.id": runtimeContext.conversationId }
-				: undefined,
 	}),
 )
 ```

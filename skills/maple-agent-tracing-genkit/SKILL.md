@@ -74,7 +74,7 @@ Create `genkit-for-maple.ts` next to the entry point. Copy it verbatim from the 
 | --- | --- |
 | `flow`, `agent` | `gen_ai.operation.name=invoke_agent`, `gen_ai.agent.name=<genkit:name>`, `gen_ai.conversation.id` from `genkit:metadata:conversationId` or `genkit:metadata:agent:sessionId` |
 | `model` | `chat`, `gen_ai.provider.name` (prefix before `/`), `gen_ai.request.model` (rest), `gen_ai.input.messages` / `gen_ai.system_instructions` from `genkit:input.messages`, `gen_ai.output.messages` + `gen_ai.response.finish_reasons` from `genkit:output`, `gen_ai.usage.input_tokens` / `output_tokens` from `genkit:output.usage` |
-| `tool` | `execute_tool`, `gen_ai.tool.name`, `gen_ai.tool.call.arguments` (= `genkit:input`), `gen_ai.tool.call.result` (= `genkit:output`, bare values wrapped as `{"result": ...}`) |
+| `tool` | `execute_tool`, `gen_ai.tool.name`, `gen_ai.tool.call.arguments` (= `genkit:input`), `gen_ai.tool.call.result` (= `genkit:output`, string results as plain text) |
 
 Message conversion: role `model` → `assistant`; parts `{text}` → `text`, `{reasoning}` → `reasoning`, `{toolRequest:{name,ref,input}}` → `tool_call`, `{toolResponse:{name,ref,output}}` → `tool_call_response`; `media`, `data`, `custom` parts are dropped.
 

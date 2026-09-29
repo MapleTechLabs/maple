@@ -175,6 +175,7 @@ Symptoms:
 - No model name on spans: a custom `Model` subclass that only implements `get_config()` gets no `gen_ai.request.model` (harness-sdk#4205). Give it a `config` dict with `model_id`.
 - `401` from ingest (`ingest_unauthorized`, "Invalid ingest key"): header must be `Authorization=Bearer <key>` in `OTEL_EXPORTER_OTLP_HEADERS`. With a key you trust, it usually belongs to the other region (keys are region-bound): try the other endpoint.
 - Token totals several times too high on the session page: `invoke_agent` reports the agent's lifetime usage. Add `gen_ai_use_latest_invocation_tokens` (Python) or construct the agent per request.
+- TS: zero tokens on every `chat` span with an OpenAI-compatible gateway such as OpenRouter and `new OpenAIModel({ api: "chat", ... })`: the SDK reads usage only from stream chunks with empty `choices`. Use `api: "responses"`.
 - Cache tokens zero with prompt caching on: `strands-agents` < 1.54 emits `cache_read_input_tokens` / `cache_write_input_tokens`, which Maple ignores. Upgrade.
 
 With the Maple MCP: `list_agent_sessions` with `search=<conversation id>` returns one row.

@@ -4,7 +4,7 @@ Follow this instead of Steps 2-7 of SKILL.md when the app is TypeScript/JavaScri
 
 Goal is the same as Python: every conversation = one Maple Agent Session, each `invoke()`/`stream()` = one turn (one trace) with a readable transcript, chat spans with tokens, tool spans with name/arguments/result, failed tools marked failed, sub-agents in their own lanes.
 
-Mechanism: `@arizeai/openinference-instrumentation-langchain` (scope `@arizeai/openinference-instrumentation-langchain`) emits OpenInference attributes only; unlike Python it has NO GenAI dual-write (`enable_genai_semconv` does not exist in JS). Without help Maple ignores its `session.id` (one session per trace), shows `input.value` as a raw JSON transcript, and classifies the `tools` node as a tool call. The `GenAiSpans` span processor below fixes that: in the SDK's `onEnding` hook (after OpenInference has set its attributes, before the span is frozen) it copies them into `gen_ai.*`. Maple then classifies the spans as generic GenAI (framework "Unidentified") and reads `gen_ai.conversation.id`.
+Mechanism: `@arizeai/openinference-instrumentation-langchain` (scope `@arizeai/openinference-instrumentation-langchain`) emits OpenInference attributes only; unlike Python it has NO GenAI dual-write (`enable_genai_semconv` does not exist in JS). Without help Maple ignores its `session.id` (one session per trace), finds no agent names, and counts the `tools` node as a tool call. The `GenAiSpans` span processor below fixes that: in the SDK's `onEnding` hook (after OpenInference has set its attributes, before the span is frozen) it copies them into `gen_ai.*`. Maple then classifies the spans as generic GenAI (framework "Unidentified") and reads `gen_ai.conversation.id`.
 
 Tested: langchain 1.5.14, @langchain/core 1.2.13, @langchain/langgraph 1.4.18, @langchain/openai 1.6.0, @arizeai/openinference-instrumentation-langchain 4.1.1, @opentelemetry/sdk-node 0.222.0 (sdk-trace-base 2.11.0), Node.js 26 and Bun 1.3, with `createAgent` + `MemorySaver`, a mock OpenAI-compatible server (invoke and `streamMode: "messages"`), `FakeToolCallingModel`/`FakeListChatModel`, an agent-as-tool sub-agent, a failing tool, plain `prompt.pipe(model)` chains, a 20-turn thread.
 
@@ -271,7 +271,7 @@ Why not the alternatives (checked 2026-09):
 
 ## Do not
 
-- Do not skip `GenAiSpans`: without it Maple ignores the session id and shows a raw JSON transcript.
+- Do not skip `GenAiSpans`: without it every trace is its own session, agents have no names, and the `tools` node counts as a tool call.
 - Do not skip `manuallyInstrument(CallbackManagerModule)`.
 - Do not start a second `NodeSDK` / tracer provider when one exists.
 - Do not lower `spanLimits.attributeCountLimit` back to the default.

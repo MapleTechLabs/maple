@@ -9,7 +9,7 @@ Goal: every conversation = one Maple Agent Session. Each `invoke()`/`stream()` =
 
 Human guide with the reasoning: https://maple.dev/docs/agent-tracing/langchain
 
-Mechanism: `openinference-instrumentation-langchain` (scope `openinference.instrumentation.langchain`) with `TraceConfig(enable_genai_semconv=True)`, which dual-writes `gen_ai.*` (incl. `gen_ai.conversation.id` from run metadata `session_id` > `conversation_id` > `thread_id`, and `gen_ai.input/output.messages` in `{role, parts}` form). Maple reads `gen_ai.conversation.id` as the session key. This beats LangSmith's OTel export for Maple: readable transcript, interrupts not marked ERROR, no middleware noise spans, normal flush.
+Mechanism: `openinference-instrumentation-langchain` (scope `openinference.instrumentation.langchain`). Maple groups sessions by the run's `thread_id` and reads transcript, tokens and tool calls from its spans. `TraceConfig(enable_genai_semconv=True)` is recommended: it also emits standard GenAI attributes (`gen_ai.conversation.id` from run metadata `session_id` > `conversation_id` > `thread_id`, `gen_ai.input/output.messages` in `{role, parts}` form). This beats LangSmith's OTel export for Maple: readable transcript, interrupts not marked ERROR, no middleware noise spans, normal flush.
 
 **TypeScript / JavaScript (LangChain.js, LangGraph.js):** the JS instrumentor has no GenAI dual-write, so the setup adds a small span processor. Do Step 1 below for the key and region, then follow [references/typescript.md](references/typescript.md) instead of Steps 2-7. A repo with both Python and TS agents gets both setups.
 
@@ -98,6 +98,7 @@ LangChainInstrumentor().instrument(
 )
 ```
 
+- `TraceConfig(enable_genai_semconv=True)`: recommended (emits standard GenAI attributes).
 - Import `tracing` first in the entry point (app module, `main.py`, worker, LangGraph Server graph module). It must run before the first `invoke()`.
 - The app loads `.env` (`load_dotenv()`, `--env-file`): call `load_dotenv()` at the top of `tracing.py`, before the provider is built. Otherwise the exporter silently targets `localhost:4318` with no key.
 - Fill `AGENT_NAMES` with every agent's `name=` from Step 0.3. Give unnamed `create_agent(...)` calls a `name=` (default graph name is `LangGraph`).
@@ -210,7 +211,6 @@ Without Maple access, both must hold: the run exits with no export errors on std
 
 ## Do not
 
-- Do not skip `enable_genai_semconv=True`: without it Maple ignores the session id and shows a raw JSON transcript.
 - Do not also enable LangSmith's OTel export (`LANGSMITH_OTEL_ENABLED`, `LANGSMITH_OTEL_ONLY`, `LANGSMITH_TRACING_MODE=otel`) or a provider-level instrumentor (`openinference-instrumentation-openai`/`-anthropic`, OpenLLMetry): duplicate spans and doubled tokens.
 - Do not create a second `TracerProvider` when one exists.
 - Do not generate a new `thread_id` per request, and do not forget it on `stream()` and `Command(resume=...)` calls.

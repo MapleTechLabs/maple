@@ -62,11 +62,6 @@ registerTelemetry(
 	new OpenTelemetry({
 		usage: true,
 		runtimeContext: true,
-		// The conversation id, explained below
-		enrichSpan: ({ runtimeContext }) =>
-			typeof runtimeContext?.conversationId === "string"
-				? { "gen_ai.conversation.id": runtimeContext.conversationId }
-				: undefined,
 	}),
 )
 ```
@@ -113,10 +108,6 @@ export function register() {
 		new OpenTelemetry({
 			usage: true,
 			runtimeContext: true,
-			enrichSpan: ({ runtimeContext }) =>
-				typeof runtimeContext?.conversationId === "string"
-					? { "gen_ai.conversation.id": runtimeContext.conversationId }
-					: undefined,
 		}),
 	)
 }
@@ -126,7 +117,7 @@ Return AI SDK streams as the response (`toUIMessageStreamResponse()` or `createA
 
 ## Pass the conversation id on every call
 
-The `enrichSpan` callback above reads `runtimeContext.conversationId`, which only reaches telemetry if you also list it in `includeRuntimeContext`:
+Pass the id as `runtimeContext.conversationId`. It only reaches telemetry if you also list it in `includeRuntimeContext`:
 
 ```ts
 import { streamText } from "ai"
@@ -198,7 +189,7 @@ Cost shows as unpriced because the AI SDK doesn't report it.
 ## Troubleshooting
 
 - **No AI spans at all.** `registerTelemetry()` never ran. `experimental_telemetry: { isEnabled: true }` alone does nothing in AI SDK 7.
-- **Every message is its own session.** Check all three parts: `enrichSpan`, `runtimeContext: { conversationId }` on the call (or `prepareCall`), and `includeRuntimeContext: { conversationId: true }`.
+- **Every message is its own session.** Check all three parts: `runtimeContext: true` in `registerTelemetry()`, `runtimeContext: { conversationId }` on the call (or `prepareCall`), and `includeRuntimeContext: { conversationId: true }`.
 - **Every span shows up twice.** `registerTelemetry()` ran twice, or a second OpenTelemetry SDK (such as Sentry without `skipOpenTelemetrySetup: true`) exports the same spans.
 - **A failed tool shows as successful.** The tool returned an error value. Throw from `execute` instead.
 

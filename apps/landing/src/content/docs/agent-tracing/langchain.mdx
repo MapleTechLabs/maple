@@ -108,8 +108,6 @@ LangChainInstrumentor().instrument(
 )
 ```
 
-Keep `enable_genai_semconv=True`. Without it, sessions don't group and the transcript shows as raw JSON.
-
 Put every agent's `name=` in `AGENT_NAMES`, sub-agents included, so each gets its own lane. If your tool node isn't called `tools`, add its name to `STEP_NAMES`.
 
 If the app already has a `TracerProvider` (from `opentelemetry-instrument`, Logfire or Sentry), add `AgentSpans()` and the exporter to it and pass it to `instrument()`.
@@ -377,7 +375,7 @@ Cost shows as **unpriced**, and in TypeScript the framework shows as **Unidentif
 ## Troubleshooting
 
 - **No spans at all.** Load the tracing file before the first `invoke()`. In Python, pass `tracer_provider=provider`; in TypeScript, keep the `manuallyInstrument()` call. Then check the logs for exporter errors.
-- **One session per message.** The `thread_id` is missing or changes per request (plain chains need it in `metadata`). If it's set, check for `enable_genai_semconv=True` in Python, or that `GenAiSpans` is in `spanProcessors` in TypeScript.
+- **One session per message.** The `thread_id` is missing or changes per request (plain chains need it in `metadata`). If it's set in TypeScript, check that `GenAiSpans` is in `spanProcessors`.
 - **Streamed replies have no tokens.** In Python, set `stream_usage=True` on `ChatOpenAI`. In TypeScript, remove `streamUsage: false`.
 - **Every model call appears twice.** Remove `LANGSMITH_OTEL_ENABLED` and any provider instrumentor such as `openinference-instrumentation-openai`. Plain `LANGSMITH_TRACING=true` is fine.
 - **No agent lane, extra tool calls, or a tool shown as an agent.** In Python, fill `AGENT_NAMES` and `STEP_NAMES`, and don't put "agent" in tool names. In TypeScript, give every `createAgent()` a `name`.
