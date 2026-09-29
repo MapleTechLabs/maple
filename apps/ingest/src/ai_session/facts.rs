@@ -30,11 +30,12 @@
 
 use std::sync::LazyLock;
 
-use opentelemetry_proto::tonic::common::v1::{any_value, KeyValue};
+use opentelemetry_proto::tonic::common::v1::{any_value, AnyValue, KeyValue};
 use opentelemetry_proto::tonic::trace::v1::status::StatusCode;
 use opentelemetry_proto::tonic::trace::v1::Span;
 
-use super::{owned_string_attribute, usage, value_str};
+use super::{owned_string_attribute, usage};
+use crate::telemetry::any_value_string;
 
 const TOOL_CALL_ATTR: &str = "maple_ai.tool_call";
 const ERROR_ATTR: &str = "maple_ai.error";
@@ -161,9 +162,11 @@ static KEY_TABLE: LazyLock<Vec<Vec<Key>>> = LazyLock::new(|| {
     table
 });
 
-/// One span's facts, borrowed from its attributes.
+/// One span's facts, borrowed from its attributes. A text fact is any value
+/// the warehouse Map would hold as a non-empty string: an integer call id or a
+/// structured tool result counts, as it did when the view read the Map.
 pub(super) struct Facts<'a> {
-    text: [&'a str; TEXT_KEYS.len()],
+    text: [Option<&'a AnyValue>; TEXT_KEYS.len()],
     text_rank: [u8; TEXT_KEYS.len()],
     number: [Option<f64>; NUMBER_KEYS.len()],
     number_rank: [u8; NUMBER_KEYS.len()],
@@ -172,7 +175,7 @@ pub(super) struct Facts<'a> {
 impl<'a> Facts<'a> {
     pub(super) fn read(attrs: &'a [KeyValue]) -> Self {
         let mut facts = Self {
-            text: [""; TEXT_KEYS.len()],
+            text: [None; TEXT_KEYS.len()],
             text_rank: [u8::MAX; TEXT_KEYS.len()],
             number: [None; NUMBER_KEYS.len()],
             number_rank: [u8::MAX; NUMBER_KEYS.len()],
@@ -188,9 +191,8 @@ impl<'a> Facts<'a> {
             };
             match found {
                 (_, Slot::Text(slot), rank) if rank < facts.text_rank[slot] => {
-                    let value = value_str(attr);
-                    if !value.is_empty() {
-                        facts.text[slot] = value;
+                    if let Some(value) = attr.value.as_ref().filter(|value| present(value)) {
+                        facts.text[slot] = Some(value);
                         facts.text_rank[slot] = rank;
                     }
                 }
@@ -210,21 +212,36 @@ impl<'a> Facts<'a> {
         self.number[slot]
     }
 
-    pub(super) fn model(&self) -> &'a str {
-        self.text[MODEL]
+    /// A text fact's value if it is a string, else `""`: what the rules that
+    /// compare a fact to a known literal read.
+    fn str(&self, slot: usize) -> &'a str {
+        match self.text[slot].and_then(|value| value.value.as_ref()) {
+            Some(any_value::Value::StringValue(text)) => text,
+            _ => "",
+        }
     }
 
-    pub(super) fn tool_name(&self) -> &'a str {
-        self.text[TOOL_NAME]
+    /// A text fact as the stamp writes it, stringified the way the row encoder
+    /// writes the Map.
+    fn owned(&self, slot: usize) -> Option<String> {
+        self.text[slot].map(any_value_string)
+    }
+
+    pub(super) fn model(&self) -> &'a str {
+        self.str(MODEL)
+    }
+
+    pub(super) fn has_tool_name(&self) -> bool {
+        self.text[TOOL_NAME].is_some()
     }
 
     /// `gen_ai.operation.name`, else the OpenInference span kind translated.
     pub(super) fn operation(&self) -> &'a str {
-        let op = self.text[OPERATION];
+        let op = self.str(OPERATION);
         if !op.is_empty() {
             return op;
         }
-        match self.text[SPAN_KIND] {
+        match self.str(SPAN_KIND) {
             "LLM" => "chat",
             "TOOL" => "execute_tool",
             "AGENT" => "invoke_agent",
@@ -256,11 +273,22 @@ pub(super) fn name_has(name: &str, needle: &str) -> bool {
         .any(|window| window.eq_ignore_ascii_case(needle.as_bytes()))
 }
 
+/// Would the warehouse Map hold this value as a non-empty string?
+fn present(value: &AnyValue) -> bool {
+    match value.value.as_ref() {
+        Some(any_value::Value::StringValue(text)) => !text.is_empty(),
+        Some(any_value::Value::BytesValue(bytes)) => !bytes.is_empty(),
+        Some(any_value::Value::StringValueStrindex(_)) | None => false,
+        Some(_) => true,
+    }
+}
+
 /// `text` cut to `max` characters.
-fn truncate(text: &str, max: usize) -> &str {
-    text.char_indices()
-        .nth(max)
-        .map_or(text, |(end, _)| &text[..end])
+fn truncate(mut text: String, max: usize) -> String {
+    if let Some((end, _)) = text.char_indices().nth(max) {
+        text.truncate(end);
+    }
+    text
 }
 
 /// Decide every fact of one stamped span, as the stamps to write on it.
@@ -274,37 +302,44 @@ pub(super) fn stamps(span: &Span, vendor: &str) -> Vec<KeyValue> {
     let llm_call = usage::stamp(span, vendor, &facts, &mut stamps);
     let tool_call = !llm_call && is_tool_call(&facts, &span.name);
     let failed = failed_status
-        || !facts.text[ERROR_TYPE].is_empty()
+        || facts.text[ERROR_TYPE].is_some()
         || ["failed", "error"]
             .iter()
-            .any(|status| facts.text[RESPONSE_STATUS].eq_ignore_ascii_case(status));
-    let mut text = |key: &str, value: &str| {
-        if !value.is_empty() {
-            stamps.push(owned_string_attribute(key, value.to_owned()));
+            .any(|status| facts.str(RESPONSE_STATUS).eq_ignore_ascii_case(status));
+    let mut text = |key: &str, value: Option<String>| {
+        if let Some(value) = value.filter(|value| !value.is_empty()) {
+            stamps.push(owned_string_attribute(key, value));
         }
     };
-    text(MODEL_ATTR, facts.model());
+    text(MODEL_ATTR, facts.owned(MODEL));
     text(AGENT_NAME_ATTR, agent_name(&facts, vendor, &span.name));
-    text(TOOL_NAME_ATTR, facts.tool_name());
-    text(TOOL_CALL_ID_ATTR, facts.text[TOOL_CALL_ID]);
+    text(TOOL_NAME_ATTR, facts.owned(TOOL_NAME));
+    text(TOOL_CALL_ID_ATTR, facts.owned(TOOL_CALL_ID));
     if llm_call {
-        text(RESPONSE_ID_ATTR, facts.text[RESPONSE_ID]);
+        text(RESPONSE_ID_ATTR, facts.owned(RESPONSE_ID));
     }
-    let result = facts.text[TOOL_RESULT];
     if tool_call {
         text(
             TOOL_DESCRIPTION_ATTR,
-            truncate(facts.text[TOOL_DESCRIPTION], TOOL_DESCRIPTION_MAX),
+            facts
+                .owned(TOOL_DESCRIPTION)
+                .map(|text| truncate(text, TOOL_DESCRIPTION_MAX)),
         );
         if failed {
             text(
                 TOOL_ERROR_RESULT_ATTR,
-                truncate(result, TOOL_ERROR_RESULT_MAX),
+                facts
+                    .owned(TOOL_RESULT)
+                    .map(|text| truncate(text, TOOL_ERROR_RESULT_MAX)),
             );
         }
     }
-    let paused =
-        tool_call && !failed && (result.is_empty() || result.contains(CONFIRMATION_REQUEST));
+    // Only Google ADK writes the confirmation request, so only its results are
+    // searched for it.
+    let paused = tool_call
+        && !failed
+        && (facts.text[TOOL_RESULT].is_none()
+            || (vendor == "google_adk" && facts.str(TOOL_RESULT).contains(CONFIRMATION_REQUEST)));
     for (key, holds) in [
         (TOOL_CALL_ATTR, tool_call),
         (ERROR_ATTR, failed),
@@ -321,17 +356,15 @@ pub(super) fn stamps(span: &Span, vendor: &str) -> Vec<KeyValue> {
 /// names an agent only in `graph.node.id` on its AGENT span, where it equals
 /// the span name ("Triage Agent"); the run's root AGENT span has no node id,
 /// and agno's node id is a hash that never equals the span name.
-fn agent_name<'a>(facts: &Facts<'a>, vendor: &str, span_name: &str) -> &'a str {
-    let node = facts.text[GRAPH_NODE_ID];
-    match facts.text[AGENT_NAME] {
-        "" if matches!(vendor, "openai_agents_sdk" | "unknown:openinference")
-            && facts.text[SPAN_KIND] == "AGENT"
-            && node == span_name =>
-        {
-            node
-        }
-        name => name,
+fn agent_name(facts: &Facts, vendor: &str, span_name: &str) -> Option<String> {
+    if facts.text[AGENT_NAME].is_some() {
+        return facts.owned(AGENT_NAME);
     }
+    let node = facts.str(GRAPH_NODE_ID);
+    (matches!(vendor, "openai_agents_sdk" | "unknown:openinference")
+        && facts.str(SPAN_KIND) == "AGENT"
+        && node == span_name)
+        .then(|| node.to_owned())
 }
 
 /// A tool call: the convention's tool operation, or, under an operation the
@@ -340,7 +373,7 @@ fn is_tool_call(facts: &Facts, span_name: &str) -> bool {
     let op = facts.operation();
     op == "execute_tool"
         || (!usage::KNOWN_OPS.contains(&op)
-            && (!facts.tool_name().is_empty() || name_has(span_name, "tool")))
+            && (facts.has_tool_name() || name_has(span_name, "tool")))
 }
 
 /// Mark a stamped tool call as failed after the fact: Claude Code records a
@@ -350,9 +383,10 @@ pub(super) fn mark_tool_failed(span: &mut Span) {
     span.attributes.retain(|attr| attr.key != TOOL_PAUSED_ATTR);
     let has = |key: &str| span.attributes.iter().any(|attr| attr.key == key);
     let result = (!has(TOOL_ERROR_RESULT_ATTR))
-        .then(|| Facts::read(&span.attributes).text[TOOL_RESULT])
+        .then(|| Facts::read(&span.attributes).owned(TOOL_RESULT))
+        .flatten()
         .filter(|result| !result.is_empty())
-        .map(|result| truncate(result, TOOL_ERROR_RESULT_MAX).to_owned());
+        .map(|result| truncate(result, TOOL_ERROR_RESULT_MAX));
     let error = !has(ERROR_ATTR);
     if let Some(result) = result {
         span.attributes
@@ -367,7 +401,7 @@ pub(super) fn mark_tool_failed(span: &mut Span) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ai_session::stamp_trace_request;
+    use crate::ai_session::{stamp_trace_request, value_str};
     use opentelemetry_proto::tonic::collector::trace::v1::ExportTraceServiceRequest;
     use opentelemetry_proto::tonic::common::v1::InstrumentationScope;
     use opentelemetry_proto::tonic::resource::v1::Resource;
@@ -689,6 +723,61 @@ mod tests {
         assert!(!has(&got[1], TOOL_CALL_ATTR));
     }
 
+    /// A value the warehouse Map holds as a string counts whatever its OTLP
+    /// type: an integer call id, a structured tool result, a boolean
+    /// `error.type`. Only ADK's results are searched for its confirmation.
+    #[test]
+    fn non_string_values_count_as_the_map_holds_them() {
+        let typed = |key: &str, value: any_value::Value| KeyValue {
+            key: key.to_owned(),
+            key_strindex: 0,
+            value: Some(AnyValue { value: Some(value) }),
+        };
+        let result =
+            any_value::Value::ArrayValue(opentelemetry_proto::tonic::common::v1::ArrayValue {
+                values: vec![AnyValue {
+                    value: Some(any_value::Value::StringValue("boom".to_owned())),
+                }],
+            });
+        let mut tool = span(
+            "execute_tool fetch",
+            &[
+                ("gen_ai.operation.name", "execute_tool"),
+                (
+                    "gen_ai.tool.call.result",
+                    "This tool call requires confirmation",
+                ),
+            ],
+        );
+        tool.attributes.extend([
+            typed("gen_ai.tool.call.id", any_value::Value::IntValue(7)),
+            typed("error.type", any_value::Value::BoolValue(true)),
+        ]);
+        tool.attributes[1] = typed("gen_ai.tool.call.result", result);
+        let unconfirmed = span(
+            "execute_tool fetch",
+            &[
+                ("gen_ai.operation.name", "execute_tool"),
+                (
+                    "gen_ai.tool.call.result",
+                    "This tool call requires confirmation",
+                ),
+            ],
+        );
+        let got = stamps("support-agent", vec![tool, unconfirmed]);
+        assert_eq!(
+            got[0],
+            pairs(&[
+                ("maple_ai.llm_call", "0"),
+                (TOOL_CALL_ID_ATTR, "7"),
+                (TOOL_ERROR_RESULT_ATTR, "[\"boom\"]"),
+                (TOOL_CALL_ATTR, "1"),
+                (ERROR_ATTR, "1"),
+            ])
+        );
+        assert!(!has(&got[1], TOOL_PAUSED_ATTR));
+    }
+
     #[test]
     fn a_long_description_is_cut() {
         let long = "d".repeat(TOOL_DESCRIPTION_MAX + 1);
@@ -721,8 +810,8 @@ mod tests {
 
     #[test]
     fn truncation_counts_characters() {
-        assert_eq!(truncate("héllo", 2), "hé");
-        assert_eq!(truncate("héllo", 9), "héllo");
+        assert_eq!(truncate("héllo".to_owned(), 2), "hé");
+        assert_eq!(truncate("héllo".to_owned(), 9), "héllo");
     }
 
     #[test]

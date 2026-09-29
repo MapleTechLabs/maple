@@ -207,7 +207,7 @@ fn named_like_a_model_call(op: &str, span_name: &str, facts: &Facts) -> bool {
     if KNOWN_OPS.contains(&op) {
         return false;
     }
-    if !facts.tool_name().is_empty() || name_has(span_name, "tool") {
+    if facts.has_tool_name() || name_has(span_name, "tool") {
         return false;
     }
     if name_has(span_name, "agent") || name_has(span_name, "workflow") {
