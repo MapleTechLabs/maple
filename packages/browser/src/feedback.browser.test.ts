@@ -85,6 +85,16 @@ describe("MapleBrowser.sendFeedback", () => {
 		expect(typeof sent?.attributes["session.id"]).toBe("string")
 	})
 
+	it("does not link feedback to an error from before a shutdown and re-init", async () => {
+		handle = MapleBrowser.init(BASE)
+		MapleBrowser.captureException(new Error("old page state"))
+		await stop()
+		handle = MapleBrowser.init(BASE)
+		MapleBrowser.sendFeedback({ message: "still broken" })
+		await stop()
+		expect(feedback()[0]?.attributes["maple.feedback.error_trace_id"]).toBeUndefined()
+	})
+
 	it("keeps the email out when captureUserEmail is off, and sends nothing without a message", async () => {
 		handle = MapleBrowser.init({ ...BASE, privacy: { captureUserEmail: false } })
 		expect(MapleBrowser.sendFeedback({ message: "   " })).toBe(false)
