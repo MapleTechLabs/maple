@@ -18,10 +18,20 @@ import {
 	useMatches,
 } from "react-router"
 import { captureException } from "../errors"
-import { endNavigation, startNavigation, traced } from "../navigation"
+import { endNavigation, interruptNavigation, startNavigation, traced } from "../navigation"
 import { matchedPattern, routePattern, traceRouteHandlers } from "./route"
 
-const traceHandlers = traceRouteHandlers(traced)
+/**
+ * A server loader's or action's error as production React Router hands it to
+ * the browser: its message replaced, its stack dropped. The server's span
+ * recorded the real one.
+ */
+const fromServer = (error: unknown): boolean =>
+	error instanceof Error && error.message === "Unexpected Server Error" && error.stack === undefined
+
+const traceHandlers = traceRouteHandlers((name, fn) =>
+	traced(name, fn, { isFailure: (error) => !fromServer(error) }),
+)
 
 /** Pass to `createBrowserRouter`'s `instrumentations` (data mode), then call `traceNavigations(router)`. */
 export const dataRouterInstrumentation: ClientInstrumentation = {
@@ -46,6 +56,8 @@ export function traceNavigations(router: DataRouter): () => void {
 			loading = true
 			return
 		}
+		// The first load leaves the navigation state idle: it ends once the router is initialized
+		if (!state.initialized) return
 		// Fetcher loads, revalidations and hash changes aren't navigations
 		if (!loading && state.location.pathname === pathname) return
 		// A route without loaders goes straight to the new location
@@ -58,19 +70,28 @@ export function traceNavigations(router: DataRouter): () => void {
 
 /** Route ids to their paths, for `useMaplePageload`: `useMatches()` only has the ids. */
 const routePaths = new Map<string, string | undefined>()
-/** Counts `navigate` calls: only the latest one ends the span. */
+/** Counts clicks and history navigations: only the latest click ends its span. */
 let latest = 0
+/** Whether the page load is still open for `useMaplePageload` to end. */
+let pageLoading = false
 
 /** Pass to `HydratedRouter`'s `instrumentations` (framework mode), with `useMaplePageload()` in the root `Layout`. */
 export const frameworkInstrumentation: ClientInstrumentation = {
 	router({ instrument }) {
 		startNavigation(window.location.pathname)
+		pageLoading = true
+		// Back and forward don't go through `navigate`, and abandon a click still loading
+		window.addEventListener("popstate", () => {
+			latest++
+			interruptNavigation()
+		})
 		instrument({
 			navigate: async (navigate, { to }) => {
 				// `navigate(-1)` is a history navigation, like the back button, and hash links run nothing
 				if (typeof to === "number" || to.startsWith("#")) return
 				const id = ++latest
-				// `to` can carry a query string, or be relative, like `edit`
+				// `to` can carry a query string, or be relative. React Router resolves a
+				// relative one against the route, this against the URL: only `url.path` can differ.
 				startNavigation(new URL(to, window.location.href).pathname)
 				// `meta` since React Router 8.1
 				const { meta } = await navigate()
@@ -91,16 +112,21 @@ export const frameworkInstrumentation: ClientInstrumentation = {
  */
 export function useMaplePageload(): void {
 	const matches = useMatches()
-	// The server already ran the loaders: the page is ready once it hydrates. Once
-	// only: the `navigate` hook ends the navigations after it.
-	// oxlint-disable-next-line react-hooks/exhaustive-deps
-	useEffect(() => endNavigation(matchedPattern(matches.map((match) => routePaths.get(match.id)))), [])
+	// The server already ran the loaders: the page is ready once it hydrates. The
+	// page, its error boundary and its hydrate fallback each mount a `Layout` of
+	// their own: only the first ends the page load.
+	useEffect(() => {
+		if (!pageLoading) return
+		pageLoading = false
+		endNavigation(matchedPattern(matches.map((match) => routePaths.get(match.id))))
+		// oxlint-disable-next-line react-hooks/exhaustive-deps
+	}, [])
 }
 
 /** Pass as `onError` to `RouterProvider` or `HydratedRouter`: reports render, loader and action errors once each. */
 export const reportRouteError: ClientOnErrorFunction = (error, { pattern }) => {
 	// Thrown responses, like a loader's 404, are expected
-	if (isRouteErrorResponse(error)) return
+	if (isRouteErrorResponse(error) || fromServer(error)) return
 	// A loader or action error is already on its span, and `captureException` skips it
 	captureException(error, {
 		name: "react_router.error",

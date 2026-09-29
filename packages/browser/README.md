@@ -308,14 +308,16 @@ export default function handleRequest(request: Request, status: number, headers:
   loader spans after the route id, like `loader routes/project`. A URL no route
   matches is named after the root, `/`.
 - Data mode keeps a redirect or a click during loading in one span, named after
-  the route it landed on. Framework mode ends the earlier click as
-  `app.navigation.interrupted`, names a redirect after the route clicked, and
-  doesn't trace back and forward.
+  the route it landed on. In framework mode, a click still loading ends as
+  `app.navigation.interrupted` when the next click, back or forward replaces
+  it, a redirect is named after the route clicked, and back and forward
+  themselves aren't traced.
 - Hash changes, revalidations and fetcher loads start no span. Only thrown
   `Error`s fail a loader span: `redirect()` and thrown responses don't.
 - `reportRouteError` skips thrown responses and errors a loader span recorded.
-  `handleError` logs like React Router's default and records render errors on
-  the request span.
+  A server loader's error reaches the browser without its message in
+  production, so only the server's span records it. `handleError` logs like
+  React Router's default and records render errors on the request span.
 - Framework mode names navigations and server requests after the route since
   React Router 8.1, which added the matched pattern to its instrumentation.
 

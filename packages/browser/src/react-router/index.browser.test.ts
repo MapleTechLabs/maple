@@ -85,6 +85,15 @@ const routes = (): RouteObject[] => [
 				Component: Page,
 			},
 			{
+				id: "server-error",
+				path: "server-error",
+				loader: () => {
+					// A server loader's error, as production React Router hands it to the browser
+					throw Object.assign(new Error("Unexpected Server Error"), { stack: undefined })
+				},
+				Component: Page,
+			},
+			{
 				id: "missing",
 				path: "missing",
 				loader: () => {
@@ -148,6 +157,21 @@ describe("data mode", () => {
 
 		expect(names()).toEqual(["loader project", "pageload /projects/:id"])
 		expect(parentOf(named("loader project"))).toBe(idOf(named("pageload /projects/:id")))
+	})
+
+	it("ends the page load when its loaders finish, not at a state change before", async () => {
+		router = createMemoryRouter(routes(), {
+			initialEntries: ["/slow"],
+			instrumentations: [dataRouterInstrumentation],
+		})
+		traceNavigations(router)
+		// A fetcher publishes router state while the first load is still running
+		await router.fetch("members", "root", "/projects/1")
+		await vi.waitFor(() => expect(router?.state.initialized).toBe(true))
+		await stop()
+
+		const pageload = named("pageload /slow")
+		expect(pageload.endTime >= named("loader slow").endTime).toBe(true)
 	})
 
 	it("ends a page load without loaders at once", async () => {
@@ -231,6 +255,19 @@ describe("data mode", () => {
 		expect(loader.events.map((event) => event.attributes?.["exception.message"])).toEqual([
 			"loader exploded",
 		])
+		expect(names()).not.toContain("react_router.error")
+	})
+
+	it("leaves a server loader's error to the server's span", async () => {
+		const router = await dataRouter("/")
+		root = createRoot(document.body.appendChild(document.createElement("div")))
+		await act(async () =>
+			root?.render(createElement(RouterProvider, { router, onError: reportRouteError })),
+		)
+		await act(() => router.navigate("/server-error"))
+		await stop()
+
+		expect(named("loader server-error").status.code).toBe(SpanStatusCode.UNSET)
 		expect(names()).not.toContain("react_router.error")
 	})
 
@@ -327,6 +364,30 @@ describe("framework mode", () => {
 		])
 		expect(named("navigate").attributes["app.navigation.interrupted"]).toBe(true)
 		expect(named("navigate").attributes["url.path"]).toBe("/slow")
+	})
+
+	it("ends a click abandoned by back or forward as interrupted", async () => {
+		const router = await hydrate("/")
+		const slow = router.navigate("/slow")
+		window.dispatchEvent(new PopStateEvent("popstate"))
+		await act(() => slow)
+		await stop()
+
+		expect(names().filter((name) => !name.startsWith("loader"))).toEqual(["pageload /", "navigate"])
+		expect(named("navigate").attributes["app.navigation.interrupted"]).toBe(true)
+	})
+
+	it("ends the page load once, however many times Layout mounts", async () => {
+		const router = await hydrate("/")
+		const slow = router.navigate("/slow")
+		// The error boundary and the hydrate fallback each mount a Layout of their own
+		const other = createRoot(document.body.appendChild(document.createElement("div")))
+		await act(async () => other.render(createElement(RouterProvider, { router })))
+		await act(() => slow)
+		act(() => other.unmount())
+		await stop()
+
+		expect(names().filter((name) => !name.startsWith("loader"))).toEqual(["pageload /", "navigate /slow"])
 	})
 
 	it("names a redirected navigation after the route that was clicked", async () => {

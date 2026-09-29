@@ -408,9 +408,9 @@ export default function handleRequest(
 ```
 
 - Spans are named after the route pattern, like `navigate /projects/:id`, and loader and action spans after the route id, like `loader routes/project`. In data mode, route ids default to positions like `0-1`, so give routes with loaders an `id`. A URL no route matches is named after the root route, `/`.
-- In data mode, a redirect or a click while loaders run continues the same span, named after the route the user lands on. In framework mode, the next click ends the earlier span as interrupted, a redirected navigation is named after the route that was clicked, and back and forward aren't traced.
+- In data mode, a redirect or a click while loaders run continues the same span, named after the route the user lands on. In framework mode, a click still loading ends as interrupted when the next click, back or forward replaces it. A redirected navigation is named after the route that was clicked, and back and forward themselves aren't traced.
 - Hash changes, revalidations and fetcher loads start no span. Only a thrown `Error` fails a loader span: `redirect()`, `data()` and thrown responses don't.
-- `reportRouteError` skips thrown responses, like a loader's 404, and errors a loader span already recorded. If you have your own `onError`, call it from there.
+- `reportRouteError` skips thrown responses, like a loader's 404, and errors a loader span already recorded. In production, a server loader's error reaches the browser as `Unexpected Server Error`, so it's recorded on the server's span only. If you have your own `onError`, call it from there.
 - `handleError` logs like React Router's default and records render errors on the request span, which fails with the 500. If you have your own `handleError`, call it from there instead of logging.
 - `serverInstrumentation` needs the server's OpenTelemetry setup, like the Node SDK loaded with `--import`. The request span nests under its HTTP span and is active while `handleRequest` runs.
 - Framework mode names navigations and server requests after the route since React Router 8.1. Earlier versions don't report the matched pattern, so those spans keep their plain names.
