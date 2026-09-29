@@ -279,7 +279,8 @@ export default defineConfig({ integrations: [maple()] })
 - Island code that fails to load is reported as `astro.hydration_error`.
 - On-demand pages run in an `ssr <route>` span and send `Server-Timing` (with
   server OpenTelemetry), except responses a cache may replay: Astro's route
-  cache, `Cache-Control: public`/`s-maxage`, `CDN-Cache-Control`.
+  cache, `Cache-Control` with `public`/`s-maxage`/`max-age` > 0,
+  `CDN-Cache-Control` and its vendor variants.
 - Without the integration: `export { onRequest } from "@maple-dev/browser/astro/middleware"`
   in `src/middleware.ts`, and `traceAstroNavigation()` from
   `@maple-dev/browser/astro/client` in the layout script, after `init`.

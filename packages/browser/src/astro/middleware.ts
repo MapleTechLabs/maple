@@ -19,6 +19,8 @@ import { stampRoute } from "./html"
  * Added by the `maple()` integration; export it from `src/middleware.ts` (first in `sequence()`) to wire it yourself.
  */
 export const onRequest: MiddlewareHandler = (ctx, next): Promise<Response> => {
+	// Astro 4 and older: no route to name anything after
+	if (!ctx.routePattern) return next()
 	// Prerendered pages run this at build time: no request to trace
 	if (ctx.isPrerendered) return next().then((response) => withRoute(response, ctx.routePattern))
 	return trace.getTracer(SDK_NAME, SDK_VERSION).startActiveSpan(`ssr ${ctx.routePattern}`, (span) =>
@@ -35,15 +37,23 @@ export const onRequest: MiddlewareHandler = (ctx, next): Promise<Response> => {
 	)
 }
 
+/** `CDN-Cache-Control` and its vendor variants (`Vercel-CDN-Cache-Control`, ...), `Surrogate-Control`. */
+const CDN_CACHE_HEADER = /^(?:surrogate-control|(?:[\w-]+-)?cdn-cache-control)$/
+const CACHEABLE = /\b(?:public|s-maxage|max-age=0*[1-9])/i
+const NOT_STORED = /\b(?:no-store|private)\b/i
+
 /**
- * Whether other visitors may get this same response, and would all join this request's trace:
- * Astro's route cache stores it (Astro 7), or its headers let a shared cache like a CDN store it.
+ * Whether others may get this same response from a cache, and would all join this request's
+ * trace: Astro's route cache stores it (Astro 7), or its headers let a cache like a CDN store it.
  */
 function replayed(ctx: APIContext, headers: Headers): boolean {
-	if (ctx.cache?.options.maxAge !== undefined) return true
-	const cdn = headers.get("cdn-cache-control")
-	if (cdn !== null) return !/\b(?:no-store|private)\b/i.test(cdn)
-	return /\b(?:public|s-maxage)\b/i.test(headers.get("cache-control") ?? "")
+	const cache = ctx.cache?.options
+	if (cache?.maxAge || cache?.swr) return true
+	for (const [name, value] of headers) {
+		if (NOT_STORED.test(value)) continue
+		if (CDN_CACHE_HEADER.test(name) || (name === "cache-control" && CACHEABLE.test(value))) return true
+	}
+	return false
 }
 
 /** The HTML response with the route on its `<html>` element, and the `Server-Timing` entry if any. */

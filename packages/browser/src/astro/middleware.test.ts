@@ -25,9 +25,9 @@ const html = (body: BodyInit | null = PAGE, init: ResponseInit = {}) =>
 
 /** The fields of Astro's context the middleware reads. `cache` is missing before Astro 7. */
 interface PageContext {
-	readonly routePattern: string
+	readonly routePattern: string | undefined
 	readonly isPrerendered: boolean
-	readonly cache?: { readonly options: { readonly maxAge?: number } }
+	readonly cache?: { readonly options: { readonly maxAge?: number; readonly swr?: number } }
 }
 
 /** What Astro hands middleware, for a page at `/projects/[id]` rendered on demand. */
@@ -51,6 +51,11 @@ const traceparentIn = (response: Response) =>
 beforeEach(() => {
 	exporter.reset()
 	resetReportedErrorsForTests()
+})
+
+it("leaves Astro 4 and older alone, which have no route pattern", async () => {
+	const page = html()
+	expect(await run(async () => page, ctx({ routePattern: undefined }))).toBe(page)
 })
 
 describe("without server OpenTelemetry", () => {
@@ -140,7 +145,10 @@ describe("with server OpenTelemetry", () => {
 		for (const headers of [
 			{ "cache-control": "public, max-age=60" } as HeadersInit,
 			{ "cache-control": "s-maxage=300, stale-while-revalidate" },
+			{ "cache-control": "max-age=60" },
 			{ "cdn-cache-control": "max-age=60" },
+			{ "vercel-cdn-cache-control": "max-age=60" },
+			{ "surrogate-control": "max-age=60" },
 		]) {
 			const response = await run(async () => html(PAGE, { headers }))
 			expect(response.headers.has("server-timing"), JSON.stringify(headers)).toBe(false)
@@ -149,7 +157,8 @@ describe("with server OpenTelemetry", () => {
 		for (const headers of [
 			{ "cache-control": "private, max-age=60" } as HeadersInit,
 			{ "cache-control": "no-store" },
-			{ "cdn-cache-control": "no-store", "cache-control": "public" },
+			{ "cache-control": "max-age=0, must-revalidate" },
+			{ "cdn-cache-control": "no-store" },
 			{ "cdn-cache-control": "private" },
 		]) {
 			expect(
@@ -157,6 +166,14 @@ describe("with server OpenTelemetry", () => {
 				JSON.stringify(headers),
 			).toBeDefined()
 		}
+	})
+
+	it("sends Server-Timing when the route cache doesn't store the page", async () => {
+		expect(
+			traceparentIn(await run(async () => html(), ctx({ cache: { options: { maxAge: 0 } } }))),
+		).toBeDefined()
+		const stale = await run(async () => html(), ctx({ cache: { options: { maxAge: 0, swr: 60 } } }))
+		expect(stale.headers.has("server-timing")).toBe(false)
 	})
 
 	it("sends Server-Timing on Astro 6 and older, which have no route cache", async () => {

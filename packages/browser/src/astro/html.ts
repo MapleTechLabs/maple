@@ -34,11 +34,7 @@ const escapeAttribute = (value: string) => value.replaceAll("&", "&amp;").replac
  * is ASCII, which UTF-8 never uses inside a multibyte character. Not `TextDecoder("latin1")`:
  * not every runtime has it.
  */
-function byteString(bytes: Uint8Array): string {
-	let text = ""
-	for (const byte of bytes) text += String.fromCharCode(byte)
-	return text
-}
+const byteString = (bytes: Uint8Array): string => String.fromCharCode(...bytes)
 
 /** Adds `data-route` to the `<html>` start tag of the HTML streaming through, if it starts with one. */
 export function stampRoute(route: string): TransformStream<Uint8Array<ArrayBuffer>, Uint8Array<ArrayBuffer>> {
