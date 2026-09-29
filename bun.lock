@@ -657,12 +657,22 @@
       },
       "devDependencies": {
         "@maple/browser-session": "workspace:*",
+        "@types/react": "catalog:react",
+        "@types/react-dom": "catalog:react",
         "@vitest/browser-playwright": "catalog:",
         "playwright": "catalog:",
+        "react": "catalog:react",
+        "react-dom": "catalog:react",
         "tsdown": "^0.23.0",
         "typescript": "catalog:tooling",
         "vitest": "catalog:",
       },
+      "peerDependencies": {
+        "react": ">=18",
+      },
+      "optionalPeers": [
+        "react",
+      ],
     },
     "packages/browser-session": {
       "name": "@maple/browser-session",

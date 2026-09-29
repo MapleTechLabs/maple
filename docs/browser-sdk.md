@@ -514,6 +514,43 @@ createRoot(document.getElementById("root")!).render(<App />)
 
 In Next.js, run the import from a client component mounted high in the tree (e.g. the root layout), since the SDK is browser-only.
 
+### React integration
+
+`@maple-dev/browser/react` adds an error boundary, a React 19 root error handler, and adapters that
+span navigations straight from your router. `react` is an optional peer dependency; routers are
+typed structurally, so no router package is required.
+
+```tsx
+import { createBrowserRouter, RouterProvider } from "react-router"
+import { instrumentReactRouter, mapleReactErrorHandler, MapleErrorBoundary } from "@maple-dev/browser/react"
+
+const router = createBrowserRouter(routes)
+instrumentReactRouter(router)
+
+createRoot(document.getElementById("root")!, {
+	onCaughtError: mapleReactErrorHandler(),
+	onUncaughtError: mapleReactErrorHandler(),
+}).render(
+	<MapleErrorBoundary fallback={({ reset }) => <button onClick={reset}>Try again</button>}>
+		<RouterProvider router={router} />
+	</MapleErrorBoundary>,
+)
+```
+
+- `MapleErrorBoundary` reports a render error once (as a `react.render_error` span with the
+  component stack in `maple.react.component_stack`) and renders `fallback`, which may be a node or a
+  function of `{ error, reset }`.
+- `mapleReactErrorHandler()` fits React 19's `onCaughtError`, `onUncaughtError` and
+  `onRecoverableError` root options. An error already reported by a boundary is not reported again.
+- `instrumentReactRouter(router)` takes a data router (`createBrowserRouter` and friends). A
+  navigation starts when the router starts loading and ends when its loaders settle, named by the
+  route template (`navigate /projects/:id`). The first is the `pageload`.
+- `instrumentTanStackRouter(router)` does the same from `onBeforeNavigate` to `onResolved`, named by
+  the leaf route's full path (`navigate /projects/$projectId`). Search-only changes are not
+  navigations.
+
+Both adapters return an unsubscribe. Don't also call `startNavigation`/`endNavigation` yourself.
+
 ## Notes
 
 - Replay event blobs live in object storage. Only small, queryable metadata is indexed, and playback streams blobs directly via signed URLs.

@@ -199,6 +199,18 @@ MapleBrowser.endNavigation("/projects/:id") // the route is ready: its template
 - All three are no-ops on the server, before `init()`, with tracing disabled or
   without consent (`traced` then only runs `fn`).
 
+## React
+
+`@maple-dev/browser/react` has `MapleErrorBoundary`, `mapleReactErrorHandler()` for React 19's
+`createRoot` error options, and router adapters that call `startNavigation`/`endNavigation` for you:
+
+```ts
+import { instrumentReactRouter, instrumentTanStackRouter } from "@maple-dev/browser/react"
+
+instrumentReactRouter(createBrowserRouter(routes)) // navigate /projects/:id
+instrumentTanStackRouter(router) // navigate /projects/$projectId
+```
+
 ## Linking a marketing site to your app
 
 The visitor id lives in localStorage **and** a cookie scoped to your registered
