@@ -42,6 +42,14 @@
 		"./nextjs/server": {
 			"types": "./dist/nextjs-server.d.mts",
 			"import": "./dist/nextjs-server.mjs"
+		},
+		"./sveltekit": {
+			"types": "./dist/sveltekit.d.mts",
+			"import": "./dist/sveltekit.mjs"
+		},
+		"./sveltekit/server": {
+			"types": "./dist/sveltekit-server.d.mts",
+			"import": "./dist/sveltekit-server.mjs"
 		}
 	},
 	"publishConfig": {
@@ -67,6 +75,7 @@
 	"devDependencies": {
 		"@maple/browser-session": "workspace:*",
 		"@opentelemetry/context-async-hooks": "^2.11.0",
+		"@sveltejs/kit": "^2.70.3",
 		"@types/react": "catalog:react",
 		"@types/react-dom": "catalog:react",
 		"@vitest/browser-playwright": "catalog:",
@@ -79,10 +88,14 @@
 		"vitest": "catalog:"
 	},
 	"peerDependencies": {
+		"@sveltejs/kit": "*",
 		"next": "*",
 		"react": "*"
 	},
 	"peerDependenciesMeta": {
+		"@sveltejs/kit": {
+			"optional": true
+		},
 		"next": {
 			"optional": true
 		},

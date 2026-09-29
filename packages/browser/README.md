@@ -249,6 +249,63 @@ export const config = { matcher: ["/((?!api|_next/static|_next/image|favicon.ico
 - The browser follows the server's sampling decision: a page load under an
   unsampled server trace isn't recorded.
 
+## SvelteKit
+
+`@maple-dev/browser/sveltekit` wires SvelteKit's client router (2.12+) to the
+navigation spans:
+
+```ts
+// src/hooks.client.ts
+import "$lib/maple" // your MapleBrowser.init call, first
+import { handleErrorWithMaple, startPageLoad } from "@maple-dev/browser/sveltekit"
+
+export const init = startPageLoad // the page load
+export const handleError = handleErrorWithMaple() // or handleErrorWithMaple(yourHandleError)
+```
+
+```svelte
+<!-- src/routes/+layout.svelte: the root layout -->
+<script lang="ts">
+	import { afterNavigate, beforeNavigate } from "$app/navigation"
+	import { navigating, page } from "$app/state"
+	import { traceNavigation } from "@maple-dev/browser/sveltekit"
+
+	let { children } = $props()
+	traceNavigation({ beforeNavigate, afterNavigate, navigating, page })
+</script>
+
+{@render children()}
+```
+
+```ts
+// src/routes/projects/[id]/+page.ts: universal loads
+import { loadSpan } from "@maple-dev/browser/sveltekit"
+import type { PageLoad } from "./$types"
+
+export const load: PageLoad = async ({ fetch, params, route }) =>
+	loadSpan(`loader ${route.id}`, async () => (await fetch(`/api/projects/${params.id}`)).json())
+```
+
+```ts
+// src/hooks.server.ts: joins the page load to SvelteKit's server trace (2.31+)
+import { mapleHandle } from "@maple-dev/browser/sveltekit/server"
+
+export const handle = mapleHandle // or sequence(mapleHandle, yourHandle)
+```
+
+- Spans are named after the route id, like `navigate /projects/[id]`. A click
+  while a navigation loads, or a `redirect()`, stays in one span named after
+  where it ends; a cancelled navigation ends right away, as interrupted. Hash
+  links start no span.
+- The `$app/*` modules are passed in because only SvelteKit's Vite plugin
+  resolves them.
+- `loadSpan` skips `redirect()` and `error()` below 500, and only runs `fn` on
+  the server, where SvelteKit spans loads itself. `handleErrorWithMaple` skips
+  404s and errors `loadSpan` recorded.
+- `mapleHandle` adds `Server-Timing` to HTML responses and drops their `ETag`
+  (a 304 would reuse the cached header). Skip pages a shared cache (CDN) stores,
+  or every visitor joins one trace.
+
 ## Linking a marketing site to your app
 
 The visitor id lives in localStorage **and** a cookie scoped to your registered
