@@ -20,7 +20,8 @@
 //! - `maple_ai.usage.cache_read_tokens`, `maple_ai.usage.cache_write_tokens`
 //! - `maple_ai.usage.output_tokens`: the visible completion
 //! - `maple_ai.usage.reasoning_tokens`
-//! - `maple_ai.usage.cost`: USD, as the emitter priced the call
+//! - `maple_ai.usage.cost`: USD, as the emitter priced the call; `0` is kept,
+//!   because a free call is not an unpriced one
 //!
 //! A span's total is the plain sum of the five token buckets. Only the span
 //! that IS the model call carries them: a wrapper's figures are a roll-up of
@@ -166,7 +167,7 @@ pub(super) fn stamp(span: &Span, vendor: &str, facts: &Facts, out: &mut Vec<KeyV
             .filter(|(_, count)| *count > 0)
             .map(|(key, count)| owned_string_attribute(key, count.to_string())),
     );
-    if let Some(cost) = facts.number(facts::COST).filter(|cost| *cost > 0.0) {
+    if let Some(cost) = facts.number(facts::COST) {
         out.push(owned_string_attribute(COST_ATTR, cost.to_string()));
     }
     true
@@ -1449,8 +1450,9 @@ mod tests {
         );
     }
 
-    /// A failed call reports nothing, and a customer's own `maple_ai.usage.*`
-    /// is stripped with the rest of the namespace rather than trusted.
+    /// A failed call reports no tokens but keeps the price it reported, $0 for
+    /// a free model; a customer's own `maple_ai.usage.*` is stripped with the
+    /// rest of the namespace rather than trusted.
     #[test]
     fn zero_usage_writes_nothing_and_spoofed_buckets_are_stripped() {
         let stamped = stamp_spans(
@@ -1479,7 +1481,8 @@ mod tests {
         );
         // Still the model call: a failed call counts once.
         assert_eq!(stamped[0].llm_call.as_deref(), Some("1"));
-        assert!(stamped[0].buckets.is_none() && stamped[0].cost.is_none());
+        assert!(stamped[0].buckets.is_none());
+        assert_eq!(stamped[0].cost.as_deref(), Some("0"));
         assert_eq!(stamped[1].llm_call.as_deref(), Some("0"));
         assert!(stamped[1].buckets.is_none() && stamped[1].cost.is_none());
     }
