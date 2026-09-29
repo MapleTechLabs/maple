@@ -32,7 +32,7 @@ import {
 	type PrReviewStatus,
 	PR_REVIEW_CONFIDENCE_LABEL,
 	PR_REVIEW_FAILURE_COPY,
-	PR_REVIEWER_MENTION,
+	DEFAULT_REVIEWER_MENTION,
 	type PrReviewFailureReason,
 	prReviewFailureReason,
 	confidencePrReview,
@@ -415,6 +415,7 @@ export const withReviewStatus = (
 	existing: string | undefined,
 	marker: string,
 	notice: PrReviewStatusNotice,
+	mention: string,
 ): string | undefined => {
 	if (
 		notice.kind !== "reviewing" &&
@@ -430,7 +431,7 @@ export const withReviewStatus = (
 		],
 		failed: [
 			"> [!WARNING]",
-			`> ${failedSentence(sha, notice.kind === "failed" ? notice.reason : undefined)} Comment \`${PR_REVIEWER_MENTION} review\` to try again.`,
+			`> ${failedSentence(sha, notice.kind === "failed" ? notice.reason : undefined)} Comment \`${mention} review\` to try again.`,
 		],
 		superseded: [
 			"> [!NOTE]",
@@ -441,7 +442,7 @@ export const withReviewStatus = (
 }
 
 /** What the review's check run says before a result replaces it. */
-export const reviewCheckFor = (notice: PrReviewStatusNotice) => {
+export const reviewCheckFor = (notice: PrReviewStatusNotice, mention: string) => {
 	const sha = `\`${notice.headSha.slice(0, 7)}\``
 	const run = { name: PR_REVIEW_CHECK_NAME, headSha: notice.headSha }
 	switch (notice.kind) {
@@ -458,7 +459,7 @@ export const reviewCheckFor = (notice: PrReviewStatusNotice) => {
 				...run,
 				state: { status: "completed" as const, conclusion: "neutral" as const },
 				title: "Review could not finish",
-				summary: `${failedSentence(sha, notice.reason)} Comment \`${PR_REVIEWER_MENTION} review\` on the pull request to try again.`,
+				summary: `${failedSentence(sha, notice.reason)} Comment \`${mention} review\` on the pull request to try again.`,
 			}
 		case "superseded":
 			return {
@@ -471,12 +472,12 @@ export const reviewCheckFor = (notice: PrReviewStatusNotice) => {
 }
 
 /** The check a push gets once its pull request has used the repository's automatic reviews. */
-const pausedCheckFor = (headSha: string, limit: number) => ({
+const pausedCheckFor = (headSha: string, limit: number, mention: string) => ({
 	name: PR_REVIEW_CHECK_NAME,
 	headSha,
 	state: { status: "completed" as const, conclusion: "skipped" as const },
 	title: "Automatic reviews paused",
-	summary: `This pull request has had ${limit} ${limit === 1 ? "review" : "reviews"}, the repository's limit for pushes. Comment \`${PR_REVIEWER_MENTION} review\` on the pull request to review \`${headSha.slice(0, 7)}\`.`,
+	summary: `This pull request has had ${limit} ${limit === 1 ? "review" : "reviews"}, the repository's limit for pushes. Comment \`${mention} review\` on the pull request to review \`${headSha.slice(0, 7)}\`.`,
 })
 
 const SEVERITY_LABEL = {
@@ -515,6 +516,8 @@ export interface ReviewMarkdownInput {
 	/** The repository's web URL, for line links; GitHub Enterprise included. */
 	readonly repositoryUrl: string
 	readonly carried?: CarriedFindings
+	/** How the footer tells people to address the reviewer; the App's login. */
+	readonly mention?: string
 }
 
 const bySeverity = <F extends { readonly severity: PrReviewSeverity }>(findings: ReadonlyArray<F>) =>
@@ -694,7 +697,7 @@ export const renderReviewMarkdown = (input: ReviewMarkdownInput & { readonly hea
 		? " Check ids refer to Maple's instrumentation audit."
 		: ""
 	lines.push(
-		`<sub>\`${input.headSha.slice(0, 7)}\` · Updated on every push. Reply "won't fix" to dismiss a finding, or mention ${PR_REVIEWER_MENTION} to ask about one.${auditNote}</sub>`,
+		`<sub>\`${input.headSha.slice(0, 7)}\` · Updated on every push. Reply "won't fix" to dismiss a finding, or mention ${input.mention ?? DEFAULT_REVIEWER_MENTION} to ask about one.${auditNote}</sub>`,
 	)
 	return lines.join("\n")
 }
@@ -801,6 +804,7 @@ export const buildPublication = (input: {
 	readonly minInlineSeverity?: PrReviewSeverity
 	readonly keys?: ReadonlyMap<string, string>
 	readonly commentAttempt?: number
+	readonly mention?: string
 }): PullRequestReviewPublication => {
 	const { report } = input
 	const marker = prReviewCommentMarker(input.reviewId, input.commentAttempt)
@@ -829,6 +833,7 @@ export const buildPublication = (input: {
 		headSha: input.headSha,
 		repositoryUrl: input.repositoryUrl,
 		carried,
+		...(input.mention === undefined ? undefined : { mention: input.mention }),
 	}
 	const hasIssues = [...report.findings, ...carried.open].some((finding) => finding.severity !== "info")
 	return {
@@ -1178,11 +1183,16 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 								.writePullRequestSummaryComment(installation, ref, {
 									number,
 									marker,
-									body: (existing) => withReviewStatus(existing, marker, notice),
+									body: (existing) =>
+										withReviewStatus(existing, marker, notice, provider.reviewerMention),
 								})
 								.pipe(warn("comment")),
 							provider
-								.writePullRequestCheck(installation, ref, reviewCheckFor(notice))
+								.writePullRequestCheck(
+									installation,
+									ref,
+									reviewCheckFor(notice, provider.reviewerMention),
+								)
 								.pipe(warn("check run")),
 						],
 						{ concurrency: "unbounded", discard: true },
@@ -1209,7 +1219,11 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					const target = yield* providerFor(orgId, repo)
 					if (Option.isNone(target)) return
 					const { provider, installation, ref } = target.value
-					yield* provider.writePullRequestCheck(installation, ref, pausedCheckFor(headSha, limit))
+					yield* provider.writePullRequestCheck(
+						installation,
+						ref,
+						pausedCheckFor(headSha, limit, provider.reviewerMention),
+					)
 				}).pipe(
 					Effect.catchCause((cause) =>
 						Effect.logWarning("[PrReview] could not post the paused check").pipe(
@@ -2059,6 +2073,15 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 
 				if (Option.isNone(repository) || Option.isNone(installation)) return
 				const repo = repository.value
+				const ref = { externalRepoId: repo.externalRepoId, owner: repo.owner, name: repo.name }
+				const provider = yield* providers.resolve(repo.provider).pipe(Effect.result)
+				if (Result.isFailure(provider)) {
+					yield* update(orgId, reviewId, {
+						publishError: provider.failure.message.slice(0, 500),
+						updatedAt: msToDate(nowMs),
+					})
+					return
+				}
 				const publication = buildPublication({
 					reviewId,
 					commentAttempt: yield* commentAttemptOf(orgId, reviewId),
@@ -2069,19 +2092,11 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					partial: request.partial === true,
 					carried,
 					keys,
+					mention: provider.success.reviewerMention,
 					...(config.minInlineSeverity === undefined
 						? undefined
 						: { minInlineSeverity: config.minInlineSeverity }),
 				})
-				const ref = { externalRepoId: repo.externalRepoId, owner: repo.owner, name: repo.name }
-				const provider = yield* providers.resolve(repo.provider).pipe(Effect.result)
-				if (Result.isFailure(provider)) {
-					yield* update(orgId, reviewId, {
-						publishError: provider.failure.message.slice(0, 500),
-						updatedAt: msToDate(nowMs),
-					})
-					return
-				}
 				const published = yield* provider.success
 					.publishPullRequestReview(installation.value, ref, publication)
 					.pipe(Effect.result)

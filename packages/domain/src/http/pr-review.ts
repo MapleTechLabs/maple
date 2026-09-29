@@ -706,14 +706,29 @@ export type PrReviewReplyCommand = Schema.Schema.Type<typeof PrReviewReplyComman
 export const PrReviewReplyStatus = Schema.Literals(["queued", "running", "completed", "failed", "skipped"])
 export type PrReviewReplyStatus = Schema.Schema.Type<typeof PrReviewReplyStatus>
 
-/** How Maple's copy tells people to address the reviewer: the hosted App's login, which GitHub autocompletes. */
-export const PR_REVIEWER_MENTION = "@maplelabsapp"
+/** How copy addresses the reviewer when the install has no App slug configured. */
+export const DEFAULT_REVIEWER_MENTION = "@maple"
 
 /**
- * How a comment addresses the reviewer: `@maple`, or the hosted App's own login. Not `@maple-dev`
- * or `@maplefoo`, and not inside an email address or a path.
+ * The reviewer's handle as people should type it: the App's own login, which GitHub autocompletes,
+ * so each install names its own App rather than someone else's account.
  */
-const MENTION = /(^|[^\w@./-])@maple(?:labsapp)?(?![\w-])/i
+export const reviewerMention = (appSlug: string | undefined): string =>
+	appSlug === undefined || appSlug.trim() === "" ? DEFAULT_REVIEWER_MENTION : `@${appSlug.trim()}`
+
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+
+/**
+ * How a comment addresses the reviewer: `@maple`, the hosted App's login, or this install's own
+ * (`mention`). Not `@maple-dev` or `@maplefoo`, and not inside an email address or a path.
+ */
+const mentionPattern = (mention: string | undefined): RegExp => {
+	const handles = ["maple", "maplelabsapp"]
+	const own = mention?.replace(/^@/, "")
+	if (own !== undefined && own !== "" && !handles.includes(own.toLowerCase()))
+		handles.push(escapeRegExp(own))
+	return new RegExp(`(^|[^\\w@./-])@(?:${handles.join("|")})(?![\\w-])`, "i")
+}
 
 /** The comment without quoted lines or fenced code: a quote-reply of `@maple fix` is not a new request. */
 const addressedText = (body: string): string =>
@@ -724,7 +739,8 @@ const addressedText = (body: string): string =>
 		.join("\n")
 
 /** Whether a comment mentions the reviewer at all, outside quotes and code. */
-export const mentionsReviewer = (body: string): boolean => MENTION.test(addressedText(body))
+export const mentionsReviewer = (body: string, mention?: string): boolean =>
+	mentionPattern(mention).test(addressedText(body))
 
 /**
  * The command a mention carries: the first word after it, `review` or `fix`, else a question.
@@ -732,9 +748,10 @@ export const mentionsReviewer = (body: string): boolean => MENTION.test(addresse
  */
 export const parseReplyCommand = (
 	body: string,
+	mention?: string,
 ): { readonly command: PrReviewReplyCommand; readonly text: string } => {
 	const cleaned = addressedText(body)
-	const match = MENTION.exec(cleaned)
+	const match = mentionPattern(mention).exec(cleaned)
 	const word =
 		match === null ? undefined : /^\s*([a-z]+)\b/i.exec(cleaned.slice(match.index + match[0].length))?.[1]
 	const command: PrReviewReplyCommand =

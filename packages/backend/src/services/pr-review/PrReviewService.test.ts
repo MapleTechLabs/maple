@@ -114,6 +114,7 @@ const layerFor = (
 	const commentsByMarker = new Map<string, string>()
 	const provider: VcsProviderClient = {
 		id: "github",
+		reviewerMention: "@maple-review-bot",
 		webhookToJobs: unused,
 		fetchRepositories: unused,
 		fetchCommits: unused,
@@ -364,7 +365,7 @@ describe("PrReviewService.onPullRequestEvent", () => {
 
 			const unknown = yield* reviews.onPullRequestEvent(orgId, job({ headSha: HEAD_2 }))
 			yield* reviews.failReview(orgId, unknown.reviewId!, "no review")
-			assert.include(comments.at(-1)!, "could not finish. Comment `@maplelabsapp review`")
+			assert.include(comments.at(-1)!, "could not finish. Comment `@maple-review-bot review`")
 		}).pipe(Effect.provide(layerFor(testDb, { comments })))
 	})
 
@@ -1139,18 +1140,38 @@ describe("withReviewStatus", () => {
 	const MARKER = prReviewCommentMarker(UNKNOWN_REVIEW)
 
 	it("writes the review's own comment with the notice alone", () => {
-		const reviewing = withReviewStatus(undefined, MARKER, { kind: "reviewing", headSha: HEAD }) ?? ""
+		const reviewing =
+			withReviewStatus(undefined, MARKER, { kind: "reviewing", headSha: HEAD }, "@maple-review-bot") ??
+			""
 		assert.isTrue(reviewing.startsWith(`${MARKER}\n`))
 		assert.include(reviewing, "Maple is reviewing this pull request")
-		assert.equal(withReviewStatus(reviewing, MARKER, { kind: "reviewing", headSha: HEAD }), reviewing)
-		const failed = withReviewStatus(reviewing, MARKER, { kind: "failed", headSha: HEAD })
+		assert.equal(
+			withReviewStatus(reviewing, MARKER, { kind: "reviewing", headSha: HEAD }, "@maple-review-bot"),
+			reviewing,
+		)
+		const failed = withReviewStatus(
+			reviewing,
+			MARKER,
+			{ kind: "failed", headSha: HEAD },
+			"@maple-review-bot",
+		)
 		assert.include(failed, "could not finish")
 		assert.notInclude(failed, "is reviewing")
 	})
 
 	it("closes its own notice when a newer push replaces the review", () => {
-		const reviewing = withReviewStatus(undefined, MARKER, { kind: "reviewing", headSha: HEAD })
-		const superseded = withReviewStatus(reviewing, MARKER, { kind: "superseded", headSha: HEAD })
+		const reviewing = withReviewStatus(
+			undefined,
+			MARKER,
+			{ kind: "reviewing", headSha: HEAD },
+			"@maple-review-bot",
+		)
+		const superseded = withReviewStatus(
+			reviewing,
+			MARKER,
+			{ kind: "superseded", headSha: HEAD },
+			"@maple-review-bot",
+		)
 		assert.include(superseded, "A newer push replaced")
 		assert.notInclude(superseded, "is reviewing")
 	})
@@ -1162,8 +1183,12 @@ describe("withReviewStatus", () => {
 			headSha: HEAD,
 			repositoryUrl: REPO_URL,
 		})
-		assert.isUndefined(withReviewStatus(finished, MARKER, { kind: "failed", headSha: HEAD }))
-		assert.isUndefined(withReviewStatus(finished, MARKER, { kind: "superseded", headSha: HEAD }))
+		assert.isUndefined(
+			withReviewStatus(finished, MARKER, { kind: "failed", headSha: HEAD }, "@maple-review-bot"),
+		)
+		assert.isUndefined(
+			withReviewStatus(finished, MARKER, { kind: "superseded", headSha: HEAD }, "@maple-review-bot"),
+		)
 	})
 })
 
