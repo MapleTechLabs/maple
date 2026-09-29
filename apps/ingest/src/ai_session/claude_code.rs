@@ -113,7 +113,7 @@ pub(super) fn normalize(span: &mut Span) {
                     text(attrs, "cache_read_tokens"),
                 );
                 add(
-                    "gen_ai.usage.cache_creation.input_tokens",
+                    "gen_ai.usage.cache_write.input_tokens",
                     text(attrs, "cache_creation_tokens"),
                 );
                 add(
