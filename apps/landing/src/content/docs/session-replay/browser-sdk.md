@@ -340,6 +340,67 @@ export const config = {
 - `withMapleProxy` keeps a `traceparent` the request already carries, as client navigations do, and only changes responses that go on to a render in your app. Redirects and responses your proxy builds itself pass through unchanged. If a shared cache such as a CDN stores prerendered pages, leave them out of the matcher, or every visitor joins the same trace.
 - Server Components can time database and SDK calls with `traced` from `@maple-dev/browser/server`. Pass `isFailure: () => false`: Next.js records an error thrown from a Server Component on its render span, and `redirect()` and `notFound()` work by throwing.
 
+## Angular integration
+
+`@maple-dev/browser/angular` connects the Angular Router (Angular 19 or later) to the navigation spans and reports the errors Angular catches. It's plain functions and a class without decorators, so it needs no Angular compiler step. Import the file that calls `MapleBrowser.init()` first in `src/main.ts`, then add the providers next to `provideRouter`:
+
+```ts
+// src/app/app.config.ts
+import { provideHttpClient } from "@angular/common/http"
+import { type ApplicationConfig, ErrorHandler, provideBrowserGlobalErrorListeners } from "@angular/core"
+import { provideRouter } from "@angular/router"
+import { MapleErrorHandler, provideMapleTracing } from "@maple-dev/browser/angular"
+import { routes } from "./app.routes"
+
+export const appConfig: ApplicationConfig = {
+	providers: [
+		provideBrowserGlobalErrorListeners(),
+		provideRouter(routes),
+		provideHttpClient(),
+		provideMapleTracing(),
+		{ provide: ErrorHandler, useClass: MapleErrorHandler },
+	],
+}
+```
+
+Run each resolver's data loading in `tracedResolver`:
+
+```ts
+// src/app/projects/project.resolver.ts
+import { HttpClient } from "@angular/common/http"
+import { inject } from "@angular/core"
+import type { ResolveFn } from "@angular/router"
+import { tracedResolver } from "@maple-dev/browser/angular"
+import { firstValueFrom } from "rxjs"
+
+export const projectResolver: ResolveFn<Project> = (route) => {
+	// inject() only works synchronously, before the first await
+	const http = inject(HttpClient)
+	return tracedResolver("loader /projects/:id", () =>
+		firstValueFrom(http.get<Project>(`/api/projects/${route.paramMap.get("id")}`)),
+	)
+}
+```
+
+With `@angular/ssr`, render in a span and join the page load to it, in the render middleware of `src/server.ts`:
+
+```ts
+// src/server.ts
+import { tracedRender } from "@maple-dev/browser/angular/server"
+
+app.use((req, res, next) => {
+	tracedRender(req, () => angularApp.handle(req))
+		.then((response) => (response ? writeResponseToNodeResponse(response, res) : next()))
+		.catch(next)
+})
+```
+
+- Spans are named after the route template, joined from the `path` of each matched route: `navigate /projects/:id`, and `/**` for the wildcard route. A route matched by a `matcher` function has no `path`, so it adds nothing to the name.
+- A guard's `UrlTree` or a resolver's `RedirectCommand` stays in one span, named after the route it lands on, with the requested path in `url.path`. A navigation replaced by a newer one, including a click on the URL on screen, ends as interrupted. Query changes, fragments, back and forward are navigations. A navigation to the URL on screen starts no span.
+- `tracedResolver` records an error once and rethrows it; a thrown `RedirectCommand` isn't an error. Only requests started before the first `await` nest under its span, and `firstValueFrom` starts an `HttpClient` request right away.
+- `MapleErrorHandler` reports errors from templates, lifecycle hooks and listeners as `angular.error`, then logs them like Angular's own handler. An error a resolver already recorded isn't reported again. If your app has its own `ErrorHandler`, call `reportAngularError(error)` in it instead. Call it in `onViewError` too if you implement it, since Angular calls that instead of `handleError` for `@boundary` blocks, and in a `withNavigationErrorHandler` that returns a `RedirectCommand`, since the error then never reaches the `ErrorHandler`.
+- `provideMapleTracing()` does nothing during the server render. There, `tracedRender` runs the render in an `ssr` span, under the request span of the OpenTelemetry Node SDK, and adds `Server-Timing` to the response. The CLI bundles Express into `server.mjs`, so the HTTP instrumentation creates that request span, not the Express one. Resolvers and `MapleErrorHandler` record into the same trace on the server. If a shared cache such as a CDN stores your HTML, render those pages without `tracedRender`, or every visitor joins the same trace.
+
 ## Custom events
 
 `track(name, props)` records a product event against the current session. It appears inline in the session transcript next to the clicks and network calls around it, and counts as a [product event](/docs/product-events/overview).
