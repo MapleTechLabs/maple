@@ -340,6 +340,81 @@ export const config = {
 - `withMapleProxy` keeps a `traceparent` the request already carries, as client navigations do, and only changes responses that go on to a render in your app. Redirects and responses your proxy builds itself pass through unchanged. If a shared cache such as a CDN stores prerendered pages, leave them out of the matcher, or every visitor joins the same trace.
 - Server Components can time database and SDK calls with `traced` from `@maple-dev/browser/server`. Pass `isFailure: () => false`: Next.js records an error thrown from a Server Component on its render span, and `redirect()` and `notFound()` work by throwing.
 
+## Vue and Nuxt integration
+
+`@maple-dev/browser/vue` connects Vue Router 4 or 5 to the navigation spans and reports the errors Vue catches. Trace the router right after you create it, before adding other guards, so the span covers them:
+
+```ts
+// src/router/index.ts
+import { traceRouter } from "@maple-dev/browser/vue"
+import { createRouter, createWebHistory } from "vue-router"
+import { routes } from "./routes"
+
+const router = createRouter({ history: createWebHistory(import.meta.env.BASE_URL), routes })
+
+traceRouter(router)
+
+export default router
+```
+
+Then report component errors:
+
+```ts
+// src/main.ts
+import "./maple" // MapleBrowser.init(...), before anything renders
+import { MapleVue } from "@maple-dev/browser/vue"
+import { createApp } from "vue"
+import App from "./App.vue"
+import router from "./router"
+
+const app = createApp(App)
+app.use(MapleVue)
+app.use(router)
+app.mount("#app")
+```
+
+- Spans are named after the deepest matched route, parents included, like `navigate /projects/:id`. The first navigation is the `pageload` span.
+- The span ends once Vue has rendered the new route, so requests the new page starts in `setup` or an immediate watcher nest under it. Wrap the page's data loading in `MapleBrowser.traced`.
+- A redirect stays in the span its original location opened. A navigation replaced by a newer one ends as interrupted, and a link to the current page starts no span. Query and hash changes, back and forward are navigations.
+- Errors thrown in guards and route chunks that fail to load are reported as `vue_router.error`, and still logged.
+- `MapleVue` sets `app.config.errorHandler`: production builds only log component errors, so without it they never reach Maple. Vue then handles them as it would without a handler, logging them in production, or the handler you set before `app.use(MapleVue)` does. An error `traced` already recorded isn't reported again. An `errorCaptured` hook that returns `false` stops the error before it gets there: call `reportVueError(error, instance, info)` from that hook.
+
+### Nuxt
+
+Nuxt manages `app.config.errorHandler` itself, so its client plugin reports errors from the `vue:error` hook instead of `MapleVue`:
+
+```ts
+// app/plugins/maple.client.ts
+import { MapleBrowser } from "@maple-dev/browser"
+import { reportVueError, traceRouter } from "@maple-dev/browser/vue"
+
+export default defineNuxtPlugin((nuxtApp) => {
+	MapleBrowser.init({ ingestKey: "maple_pk_...", serviceName: "acme-web" })
+	traceRouter(useRouter())
+	nuxtApp.hook("vue:error", reportVueError)
+})
+```
+
+With OpenTelemetry on the server (the Node SDK with its HTTP instrumentation), `@maple-dev/browser/nuxt` joins the page load to the request span: one plugin names the span after the page's route, the other sends its trace context to the browser.
+
+```ts
+// app/plugins/maple.server.ts
+import { nameSsrSpan } from "@maple-dev/browser/nuxt"
+
+export default defineNuxtPlugin(() => nameSsrSpan(useRouter()))
+```
+
+```ts
+// server/plugins/maple.ts
+import { mapleNitroPlugin } from "@maple-dev/browser/nuxt"
+
+export default defineNitroPlugin(mapleNitroPlugin)
+```
+
+- The request span is named `ssr /projects/:id()`, and the browser's `pageload /projects/:id()` span is its child. A URL no route matches keeps the span's own name.
+- `MapleBrowser.traced` in a `useAsyncData` handler nests under the request span during the server render.
+- `mapleNitroPlugin` adds the `Server-Timing` header to rendered pages only, not to assets or API routes. A page cached by a CDN or a `swr`, `isr` or `cache` route rule keeps its header, so every visitor would join one trace: for those apps, add the header in your own `render:response` hook with `serverTiming()` from `@maple-dev/browser/server`, and skip the cached routes.
+
 ## Custom events
 
 `track(name, props)` records a product event against the current session. It appears inline in the session transcript next to the clicks and network calls around it, and counts as a [product event](/docs/product-events/overview).

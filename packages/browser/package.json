@@ -42,6 +42,14 @@
 		"./nextjs/server": {
 			"types": "./dist/nextjs-server.d.mts",
 			"import": "./dist/nextjs-server.mjs"
+		},
+		"./vue": {
+			"types": "./dist/vue.d.mts",
+			"import": "./dist/vue.mjs"
+		},
+		"./nuxt": {
+			"types": "./dist/nuxt.d.mts",
+			"import": "./dist/nuxt.mjs"
 		}
 	},
 	"publishConfig": {
@@ -76,17 +84,28 @@
 		"react-dom": "catalog:react",
 		"tsdown": "^0.23.0",
 		"typescript": "catalog:tooling",
-		"vitest": "catalog:"
+		"vitest": "catalog:",
+		"vue": "^3.5.43",
+		"vue-router": "^5.3.1",
+		"vue-router-4": "npm:vue-router@^4.6.4"
 	},
 	"peerDependencies": {
 		"next": "*",
-		"react": "*"
+		"react": "*",
+		"vue": "*",
+		"vue-router": "*"
 	},
 	"peerDependenciesMeta": {
 		"next": {
 			"optional": true
 		},
 		"react": {
+			"optional": true
+		},
+		"vue": {
+			"optional": true
+		},
+		"vue-router": {
 			"optional": true
 		}
 	}
