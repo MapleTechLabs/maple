@@ -35,10 +35,11 @@
 //!
 //! Detection is ordered first-match over the vendor predicates below; the
 //! session ID is the first non-empty session-granularity attribute for the
-//! matched vendor. A vendor with no session-level key of its own (its
-//! instrumentation only emits run/user-scoped IDs, or nothing) and every
-//! unknown-tier bucket read the OTel GenAI key, `gen_ai.conversation.id`,
-//! which the public docs give any emitter as the way to group its traces.
+//! matched vendor. Every vendor and unknown-tier bucket falls back to the OTel
+//! GenAI key, `gen_ai.conversation.id`, after its own keys: the public docs
+//! give any emitter that key as the way to group its traces, and for a vendor
+//! with no session-level key of its own (its instrumentation only emits
+//! run/user-scoped IDs, or nothing) it is the only one.
 //!
 //! One vendor is not a framework: `maple` matches any span carrying a
 //! `maple_ai.session.id` attribute. That is the one key an emitter both writes
@@ -842,12 +843,15 @@ struct Vendor {
     id: &'static str,
     detect: DetectFn,
     /// Session-granularity span attribute keys; the first non-empty value wins.
+    /// [`CONVERSATION_ID_KEY`] is tried last unless the list ranks it itself.
     session_keys: &'static [&'static str],
 }
 
-/// The session key of a dialect with none of its own: the OTel GenAI
-/// conversation id, which the docs tell every emitter to set.
-const CONVERSATION_ID_ONLY: &[&str] = &["gen_ai.conversation.id"];
+/// The OTel GenAI conversation id, which the docs tell every emitter to set.
+const CONVERSATION_ID_KEY: &str = "gen_ai.conversation.id";
+
+/// The session keys of a dialect with none of its own.
+const CONVERSATION_ID_ONLY: &[&str] = &[CONVERSATION_ID_KEY];
 
 /// Ordered: first match wins. `maple` leads because its key is an explicit
 /// opt-in rather than a framework fingerprint (see the module doc). Then
@@ -999,7 +1003,7 @@ static UNKNOWN_TIER: &[Vendor] = &[
     Vendor {
         id: "unknown:openinference",
         detect: detect_unknown_openinference,
-        session_keys: CONVERSATION_ID_ONLY,
+        session_keys: &["session.id", CONVERSATION_ID_KEY],
     },
     Vendor {
         id: "unknown:other",
@@ -1039,9 +1043,13 @@ fn run_predicates(
         .iter()
         .chain(UNKNOWN_TIER)
         .find(|vendor| (vendor.detect)(&ctx))?;
+    let fallback =
+        (!vendor.session_keys.contains(&CONVERSATION_ID_KEY)).then_some(CONVERSATION_ID_KEY);
     let session_id = vendor
         .session_keys
         .iter()
+        .copied()
+        .chain(fallback)
         .find_map(|key| session_value(span_attrs, key));
     Some(AiClassification {
         vendor: vendor.id,
@@ -1524,6 +1532,36 @@ mod tests {
             "vercel_ai_sdk",
             Some("e-1"),
         );
+    }
+
+    #[test]
+    fn vendors_with_their_own_key_fall_back_to_the_conversation_id() {
+        for (scope, span_name, vendor) in [
+            ("crewai.telemetry", "Crew.kickoff", "crewai"),
+            ("strands.telemetry.tracer", "invoke_agent", "strands"),
+            ("openinference.instrumentation.agno", "agent.run", "agno"),
+        ] {
+            classified(
+                scope,
+                span_name,
+                &[("gen_ai.conversation.id", "conv-8")],
+                &[],
+                vendor,
+                Some("conv-8"),
+            );
+            // The vendor's own key still wins when both are set.
+            classified(
+                scope,
+                span_name,
+                &[
+                    ("gen_ai.conversation.id", "conv-8"),
+                    ("session.id", "own-1"),
+                ],
+                &[],
+                vendor,
+                Some("own-1"),
+            );
+        }
     }
 
     #[test]
@@ -2330,6 +2368,19 @@ mod tests {
             &[],
             "unknown:openinference",
             Some("conv-9"),
+        );
+        // OpenInference's own session key ranks first.
+        classified(
+            "",
+            "llm",
+            &[
+                ("openinference.span.kind", "LLM"),
+                ("gen_ai.conversation.id", "conv-9"),
+                ("session.id", "oi-1"),
+            ],
+            &[],
+            "unknown:openinference",
+            Some("oi-1"),
         );
         classified(
             "",

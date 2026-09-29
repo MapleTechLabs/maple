@@ -402,10 +402,10 @@ function findAnchors(ordered: readonly AiSessionSpan[]): readonly TurnAnchor[] {
 	const byConversation = new Map<string, AiSessionSpan>()
 	for (const span of ordered) {
 		const conversationId = span.genAi.conversationId
-		// Six vendors (flue, google_adk, mastra, microsoft_agent_framework,
-		// openai_agents_sdk, pydantic_ai) derive `maple_ai.session.id` FROM
-		// `gen_ai.conversation.id`, so for them the id names the session and
-		// repeats on every span — a partition of one, not a turn key.
+		// The gateway derives `maple_ai.session.id` FROM `gen_ai.conversation.id`
+		// whenever a vendor's own session key is absent (and for some vendors
+		// ahead of it), so there the id names the session and repeats on every
+		// span — a partition of one, not a turn key.
 		if (conversationId === undefined || sessionIds.has(conversationId)) continue
 		if (!byConversation.has(conversationId)) byConversation.set(conversationId, span)
 	}
