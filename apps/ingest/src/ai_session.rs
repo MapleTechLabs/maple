@@ -1043,6 +1043,15 @@ fn run_predicates(
     ev: &SpanEvidence,
     span_attrs: &[KeyValue],
 ) -> Option<AiClassification> {
+    // A Mastra scorer grades a finished run in a trace of its own, with no
+    // conversation id: stamped, every scorer run became a `trace:` session, its
+    // `scorer_*` spans counted as tool calls and an LLM judge as a second agent.
+    // It is an evaluation, not a conversation, so none of it is agent work -
+    // whichever instrumentation recorded the span (a judge's model call can sit
+    // under LangSmith's scope, which the vendor order would name first).
+    if ev.mastra_scorer {
+        return None;
+    }
     let ctx = Ctx {
         scope,
         resource,
@@ -1053,13 +1062,6 @@ fn run_predicates(
         .iter()
         .chain(UNKNOWN_TIER)
         .find(|vendor| (vendor.detect)(&ctx))?;
-    // A Mastra scorer grades a finished run in a trace of its own, with no
-    // conversation id: stamped, every scorer run became a `trace:` session, its
-    // `scorer_*` spans counted as tool calls and an LLM judge as a second agent.
-    // It is an evaluation, not a conversation, so none of it is agent work.
-    if vendor.id == "mastra" && ev.mastra_scorer {
-        return None;
-    }
     let session_id = vendor
         .session_keys
         .iter()
@@ -2212,6 +2214,15 @@ mod tests {
                 "{name} was stamped"
             );
         }
+        // A judge's model call recorded by another instrumentation still
+        // carries the graded run, and is not stamped under that vendor either.
+        assert!(classify(
+            "langsmith",
+            "chat openai/gpt-5-mini",
+            &[("gen_ai.operation.name", "chat"), TARGET],
+            &[],
+        )
+        .is_none());
         // The run it graded is still the agent's.
         classified(
             SCOPE,
