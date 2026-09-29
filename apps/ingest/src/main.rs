@@ -194,6 +194,9 @@ struct AppConfig {
     /// window) or the drain is cut off mid-flight.
     shutdown_drain_secs: u64,
     wal_store: Option<WalStoreSettings>,
+    /// The 401 body for a key this instance does not know. See
+    /// `invalid_ingest_key_message`.
+    invalid_key_message: &'static str,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -634,6 +637,9 @@ impl AppConfig {
             }
         };
 
+        let invalid_key_message =
+            invalid_ingest_key_message(std::env::var("MAPLE_REGION").ok().as_deref())?;
+
         let shutdown_drain_secs = parse_u64(
             "INGEST_SHUTDOWN_DRAIN_SECS",
             std::env::var("INGEST_SHUTDOWN_DRAIN_SECS").ok(),
@@ -667,6 +673,7 @@ impl AppConfig {
             trust_proxy_geo,
             shutdown_drain_secs,
             wal_store,
+            invalid_key_message,
         })
     }
 }
@@ -2817,7 +2824,7 @@ async fn resolve_grpc_ingest_key(
         .resolve_ingest_key(&token)
         .await
         .map_err(|_| tonic::Status::unavailable("Ingest authentication unavailable"))?
-        .ok_or_else(|| tonic::Status::unauthenticated("Invalid ingest key"))
+        .ok_or_else(|| tonic::Status::unauthenticated(state.config.invalid_key_message))
 }
 
 /// Liveness only — deliberately independent of Postgres.
@@ -3099,7 +3106,7 @@ async fn resolve_replay_key(
         .resolve_ingest_key(&ingest_key)
         .await
         .map_err(|_| ApiError::service_unavailable("Ingest authentication unavailable"))?
-        .ok_or_else(|| ApiError::unauthorized("Invalid ingest key"))?;
+        .ok_or_else(|| ApiError::unauthorized(state.config.invalid_key_message))?;
     Ok(Some(resolved))
 }
 
@@ -4193,7 +4200,10 @@ async fn handle_signal_inner(
         .ok_or_else(|| {
             warn!("Unknown ingest key");
             record_stage_error(&auth_span_handle, "auth", "Unknown ingest key", false);
-            (ApiError::unauthorized("Invalid ingest key"), "auth")
+            (
+                ApiError::unauthorized(state.config.invalid_key_message),
+                "auth",
+            )
         })?;
     metrics::key_resolution_duration(key_resolve_start.elapsed().as_secs_f64());
     auth_span_handle.record("maple.ingest.key_type", resolved_key.key_type.as_str());
@@ -6418,6 +6428,26 @@ fn spawn_key_store_reprobe(store: Arc<PostgresKeyStore>, ready: Arc<AtomicBool>)
     });
 }
 
+/// Keys live in one region's database, so a valid key sent to the other
+/// region's ingest is indistinguishable from a bogus one here. `MAPLE_REGION`
+/// is set only on the hosted prd fleets; unset (self-hosted, local, previews)
+/// keeps the plain message, since there is no sibling instance to point at.
+fn invalid_ingest_key_message(region: Option<&str>) -> Result<&'static str, String> {
+    let region = region.unwrap_or_default().trim().to_ascii_lowercase();
+    match region.as_str() {
+        "" => Ok("Invalid ingest key"),
+        "us" => Ok(concat!(
+            "Invalid ingest key. Keys are region-specific: if your Maple org is in the EU, ",
+            "send to https://ingest.eu.maple.dev."
+        )),
+        "eu" => Ok(concat!(
+            "Invalid ingest key. Keys are region-specific: if your Maple org is in the US, ",
+            "send to https://ingest.maple.dev."
+        )),
+        other => Err(format!("MAPLE_REGION must be us or eu, got {other:?}")),
+    }
+}
+
 fn parse_bool(name: &str, raw: Option<String>, default: bool) -> Result<bool, String> {
     let Some(raw) = raw else {
         return Ok(default);
@@ -6516,6 +6546,26 @@ mod tests {
     // top-level import avoids an unused-import warning in non-test bin builds.
     use opentelemetry_proto::tonic::metrics::v1::metric;
     use std::sync::atomic::AtomicBool;
+
+    #[test]
+    fn invalid_key_message_points_at_the_other_region() {
+        assert_eq!(invalid_ingest_key_message(None), Ok("Invalid ingest key"));
+        assert_eq!(
+            invalid_ingest_key_message(Some("us")),
+            Ok(concat!(
+                "Invalid ingest key. Keys are region-specific: if your Maple org is in the EU, ",
+                "send to https://ingest.eu.maple.dev."
+            ))
+        );
+        assert_eq!(
+            invalid_ingest_key_message(Some(" EU ")),
+            Ok(concat!(
+                "Invalid ingest key. Keys are region-specific: if your Maple org is in the US, ",
+                "send to https://ingest.maple.dev."
+            ))
+        );
+        assert!(invalid_ingest_key_message(Some("apac")).is_err());
+    }
 
     #[test]
     fn postgres_target_is_derived_from_the_connection_string() {
@@ -7531,6 +7581,7 @@ mod tests {
                 trust_proxy_geo: false,
                 shutdown_drain_secs: 1,
             wal_store: None,
+                invalid_key_message: "Invalid ingest key",
             },
             #[expect(
                 clippy::useless_conversion,
