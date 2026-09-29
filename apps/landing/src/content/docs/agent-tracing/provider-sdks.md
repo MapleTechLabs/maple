@@ -11,7 +11,7 @@ Use this guide when your agent is your own loop around `client.chat.completions.
 
 ## Quick setup with a coding agent
 
-Copy this prompt into Claude Code, Codex, Cursor or another agent that can run shell commands. It installs the [maple-agent-tracing-provider-sdks](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-agent-tracing-provider-sdks) skill, which contains every step of this guide.
+Copy this prompt into a coding agent that can run shell commands, such as Claude Code, Codex or Cursor. It installs the [maple-agent-tracing-provider-sdks](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-agent-tracing-provider-sdks) skill and follows it.
 
 ```text
 Set up Maple agent tracing for the OpenAI, Anthropic or Gemini SDK in this project.
@@ -21,7 +21,7 @@ Install the skill with `npx skills add MapleTechLabs/maple/skills --skill maple-
 My Maple ingest key is maple_pk_... and my organization is in the US region.
 ```
 
-Your ingest key is in **Settings → Ingestion**. EU organizations should say EU region.
+Your ingest key is in **Settings → Ingestion**. If your organization is in the EU region, change `US` to `EU` in the prompt.
 
 ## Configure the exporter
 

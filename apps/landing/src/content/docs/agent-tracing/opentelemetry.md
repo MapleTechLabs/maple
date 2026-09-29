@@ -13,7 +13,7 @@ Tested with the OpenTelemetry JS SDK 2.11 on Node.js 26 and the Python SDK 1.45 
 
 ## Quick setup with a coding agent
 
-Copy this prompt into Claude Code, Codex, Cursor or another agent that can run shell commands. It installs the [maple-agent-tracing-opentelemetry](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-agent-tracing-opentelemetry) skill, which contains every step of this guide.
+Copy this prompt into a coding agent that can run shell commands, such as Claude Code, Codex or Cursor. It installs the [maple-agent-tracing-opentelemetry](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-agent-tracing-opentelemetry) skill and follows it.
 
 ```text
 Set up Maple agent tracing for my hand-rolled agent in this project, using the OpenTelemetry GenAI conventions.
@@ -23,7 +23,7 @@ Install the skill with `npx skills add MapleTechLabs/maple/skills --skill maple-
 My Maple ingest key is maple_pk_... and my organization is in the US region.
 ```
 
-Your ingest key is in **Settings → Ingestion**.
+Your ingest key is in **Settings → Ingestion**. If your organization is in the EU region, change `US` to `EU` in the prompt.
 
 ## The spans and attributes Maple reads
 

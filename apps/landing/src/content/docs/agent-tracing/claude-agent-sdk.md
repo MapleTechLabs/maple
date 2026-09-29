@@ -15,7 +15,7 @@ Tested with `@anthropic-ai/claude-agent-sdk` 0.3.283 (TypeScript), `claude-agent
 
 ## Quick setup with a coding agent
 
-Copy this prompt into Claude Code, Codex, Cursor or another agent that can run shell commands. It installs the [maple-agent-tracing-claude-agent-sdk](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-agent-tracing-claude-agent-sdk) skill, which contains every step of this guide.
+Copy this prompt into a coding agent that can run shell commands, such as Claude Code, Codex or Cursor. It installs the [maple-agent-tracing-claude-agent-sdk](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-agent-tracing-claude-agent-sdk) skill and follows it.
 
 ```text
 Set up Maple agent tracing for the Claude Agent SDK in this project.
@@ -25,7 +25,7 @@ Install the skill with `npx skills add MapleTechLabs/maple/skills --skill maple-
 My Maple ingest key is maple_pk_... and my organization is in the US region.
 ```
 
-Your ingest key is under **Settings → Ingestion**. EU organizations should say EU region.
+Your ingest key is in **Settings → Ingestion**. If your organization is in the EU region, change `US` to `EU` in the prompt.
 
 ## Pass the telemetry variables to the CLI
 
