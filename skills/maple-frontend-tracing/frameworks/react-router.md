@@ -1,214 +1,93 @@
 # React Router (v7 and v8)
 
-Written against react-router 8.4 (APIs stable since 7.15). Human version: https://maple.dev/docs/frontend/react-router
+Written against react-router 8.4, `@maple-dev/browser` 0.10.0. Human version: https://maple.dev/docs/frontend/react-router
 
-Version check: `instrumentations` was `unstable_instrumentations` from 7.9.5 to 7.15; `onError` was `unstable_onError` before 7.11. Below 7.9.5, wrap loaders with `traced` by hand. Imports come from `react-router` (and `react-router/dom` for `RouterProvider` / `HydratedRouter`); v6 apps using `react-router-dom` should be told the instrumentation API needs an upgrade.
+Install `@maple-dev/browser` (0.10.0+). Entries: `@maple-dev/browser/react-router` (client) and `@maple-dev/browser/react-router/server` (framework-mode server), plus `serverTiming` from `@maple-dev/browser/server`.
+
+Version check: needs React Router 7.15+ (stable `instrumentations`). Framework mode names navigations and server requests after the route only from 8.1 (`meta` on instrumentation results); on 7.15 to 8.0 those spans keep plain names (`navigate`, `GET`), data mode and the page load are unaffected. Below 7.15: tell the user to upgrade, or wrap loaders with `MapleBrowser.traced` by hand. v6 apps on `react-router-dom`: the instrumentation API needs an upgrade. Imports come from `react-router` (and `react-router/dom` for `RouterProvider` / `HydratedRouter`).
 
 Pick the mode:
 
-- **Data mode** (`createBrowserRouter` + `RouterProvider`): full setup below.
-- **Framework mode** (`@react-router/dev` Vite plugin, `app/entry.client.tsx`): same instrumentation, `navigate` hook instead of subscribe, plus SSR.
+- **Data mode** (`createBrowserRouter` + `RouterProvider`).
+- **Framework mode** (`@react-router/dev` Vite plugin, `app/entry.client.tsx`), with SSR.
+- **Declarative** (`<BrowserRouter>`): no loaders, no navigation state. Suggest `createBrowserRouter` + `createRoutesFromElements`; don't hand-roll navigation spans.
 
-Files: `maple.ts` (the `MapleBrowser.init` call), `tracing.ts` (copied verbatim) and `router-tracing.ts` go in `src/` in data mode and in `app/` in framework mode.
-- **Declarative mode** (`<BrowserRouter>`): no loaders, no navigation state. Don't migrate the app yourself; say in the hand-off that `createBrowserRouter` + `createRoutesFromElements` enables navigation spans. Steps 1 to 3 and 5 of `SKILL.md` still apply.
-
-## Shared: `router-tracing.ts`
-
-```ts
-import { MapleBrowser } from "@maple-dev/browser"
-import {
-	type ClientInstrumentation,
-	type ClientOnErrorFunction,
-	type DataRouteMatch,
-	type DataRouter,
-	type InstrumentationHandlerResult,
-	type InstrumentRouteFunction,
-	isRouteErrorResponse,
-} from "react-router"
-import { alreadyRecorded, endNavigation, startNavigation, traced } from "./tracing"
-
-/** Adds the leading slash that framework mode's patterns leave off. */
-export const routePattern = (pattern: string) => `/${pattern}`.replace(/\/+/g, "/")
-
-async function handlerSpan(name: string, handler: () => Promise<InstrumentationHandlerResult>) {
-	try {
-		await traced(name, async () => {
-			const result = await handler()
-			if (result.status === "error") throw result.error
-		})
-	} catch {
-		// Only the span needs the error; React Router rethrows it to your app itself
-	}
-}
-
-export const traceRouteHandlers: InstrumentRouteFunction = (route) => {
-	route.instrument({
-		loader: (handler) => handlerSpan(`loader ${route.id}`, handler),
-		action: (handler) => handlerSpan(`action ${route.id}`, handler),
-	})
-}
-
-export const reportRouteError: ClientOnErrorFunction = (error, { pattern }) => {
-	// Thrown responses, like a 404 from a loader, are expected
-	if (isRouteErrorResponse(error)) return
-	// Loader and action errors are already on their span
-	if (alreadyRecorded(error)) return
-	MapleBrowser.captureException(error, { name: "react_router.error", attributes: { "app.route": routePattern(pattern) } })
-}
-```
-
-- The instrumented handler never throws; it resolves to `{ status, error }`. Only thrown `Error`s are `"error"`: `redirect()`, `data()` and thrown Responses count as success, so no `isFailure` argument is needed.
-- Loader spans are named by route id. Data mode ids default to tree positions (`0-1`): add readable `id`s to routes that have loaders. Framework mode ids are file-based and fine.
-- `onError` receives loader, action and render errors once each; prefer it over reporting from `ErrorBoundary` components (they can render twice).
+`maple.ts` (the `MapleBrowser.init` call) goes in `src/` (data mode) or `app/` (framework mode), imported first by the client entry.
 
 ## Data mode
 
-Add to `src/router-tracing.ts`:
+```tsx
+// where the router is created
+import { dataRouterInstrumentation, traceNavigations } from "@maple-dev/browser/react-router"
 
-```ts
-// Each route's path is relative to its parent. Layout and index routes have none.
-const matchedPattern = (matches: DataRouteMatch[]) =>
-	routePattern(matches.map((match) => match.route.path).filter(Boolean).join("/"))
-
-export function traceNavigations(router: DataRouter) {
-	// The first route's loaders may still be running
-	let loading = !router.state.initialized
-	let pathname = router.state.location.pathname
-	if (!loading) endNavigation(matchedPattern(router.state.matches))
-
-	router.subscribe((state) => {
-		if (state.navigation.state !== "idle") {
-			// A redirect or a second click while loading continues the same span
-			if (!loading) startNavigation(state.navigation.location.pathname)
-			loading = true
-			return
-		}
-
-		// Fetcher loads, revalidations, and hash changes aren't navigations
-		if (!loading && state.location.pathname === pathname) return
-		// Routes without loaders go straight to the new location
-		if (!loading) startNavigation(state.location.pathname)
-
-		endNavigation(matchedPattern(state.matches))
-		loading = false
-		pathname = state.location.pathname
-	})
-}
-
-export const tracing: ClientInstrumentation = {
-	// Runs once, when the router is created and before it loads the first route
-	router: () => startNavigation(window.location.pathname),
-	route: traceRouteHandlers,
-}
+export const router = createBrowserRouter(routes, { instrumentations: [dataRouterInstrumentation] })
+traceNavigations(router)
 ```
 
-Wire it: `createBrowserRouter(routes, { instrumentations: [tracing] })` (merge into existing options and any existing `instrumentations` array), then `traceNavigations(router)` right after, and `<RouterProvider router={router} onError={reportRouteError} />`. If `onError` already exists, call `reportRouteError` from it.
+```tsx
+// src/main.tsx
+import { reportRouteError } from "@maple-dev/browser/react-router"
 
-Behavior: redirects and second clicks during loading are one span named after the final route; routes without loaders produce zero-length spans; back/forward and search changes are navigations; hash changes are skipped; fetcher loaders make their own traces; a URL that matches no route is named after the root route (`navigate /`).
+<RouterProvider router={router} onError={reportRouteError} />
+```
+
+- Merge into existing router options and any existing `instrumentations` array. If `onError` exists, call `reportRouteError(error, info)` from it.
+- `dataRouterInstrumentation` starts the page load before the first loaders run and spans every loader/action as `loader <route.id>` / `action <route.id>`. Route ids default to positions (`0-1`): give routes with loaders a readable `id`.
+- `traceNavigations` (call right after `createBrowserRouter`) ends each navigation named after the joined route pattern (`navigate /projects/:projectId`). It waits for `state.initialized` for the page load.
+- Behavior: redirects and second clicks during loading are one span named after the final route (`url.path` keeps the first path); routes without loaders give zero-length spans; back/forward and search changes are navigations; hash changes, revalidations and fetchers aren't; fetcher loaders are their own traces; a URL no route matches is `navigate /`.
+- Hash router (`createHashRouter`): the page load's `url.path` is `/`.
 
 ## Framework mode
 
-Run `npx react-router reveal` if `app/entry.client.tsx` / `app/entry.server.tsx` don't exist. There is no router object to subscribe to (`window.__reactRouterDataRouter` is internal: don't use it). Replace `tracing` with the `navigate` hook, and drop `traceNavigations`:
+Run `npx react-router reveal` if `app/entry.client.tsx` / `app/entry.server.tsx` don't exist. Don't use `window.__reactRouterDataRouter` (internal).
 
-```ts
-// Route ids to their paths, for naming the pageload span
-const routePaths = new Map<string, string | undefined>()
+```tsx
+// app/entry.client.tsx
+import "./maple"
+import { frameworkInstrumentation, reportRouteError } from "@maple-dev/browser/react-router"
 
-/** The template of the matched routes, from `useMatches()`. */
-export const matchesPattern = (matches: { id: string }[]) =>
-	routePattern(matches.map((match) => routePaths.get(match.id)).filter(Boolean).join("/"))
+// in the existing hydrateRoot(...) call
+<HydratedRouter instrumentations={[frameworkInstrumentation]} onError={reportRouteError} />
+```
 
-let latest = 0
+```tsx
+// app/root.tsx: in Layout (not App; Layout also wraps the root ErrorBoundary and HydrateFallback)
+import { useMaplePageload } from "@maple-dev/browser/react-router"
 
-export const tracing: ClientInstrumentation = {
-	router({ instrument }) {
-		startNavigation(window.location.pathname)
-
-		instrument({
-			navigate: async (navigate, { to }) => {
-				// navigate(-1) is a history navigation, like the back button; hash links run nothing
-				if (typeof to === "number" || to.startsWith("#")) return
-				const id = ++latest
-				// `to` can carry a query string, or be relative, like `edit`
-				startNavigation(new URL(to, window.location.href).pathname)
-				const { meta } = await navigate()
-				// A newer navigation has already replaced this one
-				if (id === latest) endNavigation(meta && routePattern(meta.pattern))
-			},
-		})
-	},
-	route(route) {
-		routePaths.set(route.id, route.path)
-		traceRouteHandlers(route)
-	},
+export function Layout({ children }: { children: React.ReactNode }) {
+	useMaplePageload()
+	// ...the existing <html> document, unchanged
 }
 ```
 
-- `app/entry.client.tsx`: `import "./maple"` first, then `<HydratedRouter instrumentations={[tracing]} onError={reportRouteError} />`.
-- End the SSR pageload once hydrated, in the root route's `Layout` (it also wraps the root `ErrorBoundary`, so 404 and error pages end it too; the default `App` export doesn't render there):
+- `frameworkInstrumentation`: page load start, a span per `navigate()` call (latest click wins; the previous one ends interrupted; back/forward during a pending click ends it interrupted), hash links skipped, loader/action spans. `useMaplePageload` ends the page load once, named from `useMatches()`.
+- Known gaps (tell the user): back/forward aren't traced (their loaders start their own traces); the `.data` request for server loaders is a separate trace; redirected navigations are named after the clicked route; `clientLoader.hydrate` (or a route with only a `clientLoader`) loads after the page load ended; a URL no route matches is `/` (the server span's 404 status tells it apart); every route gets a `loader` span on client navigations (module and style loading). Relative `to` (`edit`) resolves `url.path` against the URL, not the route (name is right); with a `basename`, the page load's `url.path` includes it and navigations' don't.
 
-	```tsx
-	// app/root.tsx: add useMatches to the react-router import
-	import { useEffect } from "react"
-	import { matchesPattern } from "./router-tracing"
-	import { endNavigation } from "./tracing"
+Server: start the Node SDK per `maple-nodejs-style` before the server build with Node's `--import` flag (`"start": "NODE_OPTIONS='--import ./instrumentation.server.mjs' react-router-serve ./build/server/index.js"`, or the flag on your own server's `node` command). It needs the HTTP server instrumentation (in the Node SDK's auto-instrumentations): that span reads incoming `traceparent`, so `.data` requests join the browser's request, and the React Router span nests under it. In `app/entry.server.tsx`:
 
-	export function Layout({ children }: { children: React.ReactNode }) {
-		const matches = useMatches()
-		// The server already ran the loaders, so the first page is ready once it hydrates
-		useEffect(() => endNavigation(matchesPattern(matches)), [])
-		// ...the existing <html> document, unchanged
-	```
+```tsx
+import { serverInstrumentation } from "@maple-dev/browser/react-router/server"
+import { serverTiming } from "@maple-dev/browser/server"
 
-- Known gaps (tell the user): back/forward buttons aren't traced, and the loaders they run start their own traces; the `.data` request for server loaders starts after an internal `await`, so it and its server spans are a separate trace; redirected navigations are named after the clicked route; a `clientLoader` that runs on hydration (`clientLoader.hydrate`, or a route with only a `clientLoader`) usually starts after the pageload span ended, so its spans are their own trace; a URL that matches no route is named after the root, `/` (a 404 `http.response.status_code` on the server span tells them apart).
-- Every route gets a `loader` span on client navigations, even without a loader: React Router loads the route's module and styles through it.
+export { handleError } from "@maple-dev/browser/react-router/server"
+export const instrumentations = [serverInstrumentation]
 
-Server (`app/entry.server.tsx`): start the Node SDK per `maple-nodejs-style` before the server build, with Node's `--import` flag (`"start": "NODE_OPTIONS='--import ./instrumentation.server.mjs' react-router-serve ./build/server/index.js"`, or the flag on your own server's `node` command). It needs the HTTP server instrumentation (part of the Node SDK's auto-instrumentations): that span reads the incoming `traceparent`, so a `.data` request's server spans join the browser's request, and the React Router span below nests under it. Add:
-
-```ts
-import { context, propagation, SpanStatusCode, trace } from "@opentelemetry/api"
-import { type HandleErrorFunction, isRouteErrorResponse, type ServerInstrumentation } from "react-router"
-import { routePattern, traceRouteHandlers } from "./router-tracing"
-import { alreadyRecorded } from "./tracing"
-
-const tracer = trace.getTracer("acme-web")
-
-export const instrumentations: ServerInstrumentation[] = [
-	{
-		handler: ({ instrument }) =>
-			instrument({
-				// Page requests, and the .data requests of client-side navigations
-				request: (handle, { request }) =>
-					tracer.startActiveSpan(request.method, async (span) => {
-						const { meta, statusCode } = await handle()
-						if (meta) span.updateName(`${request.method} ${routePattern(meta.pattern)}`)
-						span.setAttribute("http.response.status_code", statusCode)
-						if (statusCode >= 500) span.setStatus({ code: SpanStatusCode.ERROR })
-						span.end()
-					}),
-			}),
-		route: traceRouteHandlers,
-	},
-]
-
-// Render errors during SSR reach neither onError nor a loader span: record them here
-export const handleError: HandleErrorFunction = (error, { request }) => {
-	// Aborted requests aren't failures
-	if (request.signal.aborted) return
-	// Defining handleError replaces React Router's default logging
-	console.error(error)
-	// Thrown responses, like a 404, are expected, and loader errors are already on their span
-	if (isRouteErrorResponse(error) || alreadyRecorded(error)) return
-	trace.getActiveSpan()?.recordException(error instanceof Error ? error : String(error))
-}
+// first lines of the generated default handleRequest (it runs inside the request span):
+const timing = serverTiming()
+if (timing) responseHeaders.append("server-timing", timing)
 ```
 
-Merge the `react-router` import into the generated one. At the top of the default `handleRequest` (it runs inside the request span):
+- Existing `handleError` export: keep it and call the SDK's `handleError(error, args)` from it instead of logging (it logs like React Router's default). Existing `instrumentations`: add `serverInstrumentation` to the array.
+- `serverInstrumentation`: request span renamed `GET /projects/:id` (8.1+), `http.response.status_code`, Error on 5xx only, server loader/action spans under it.
+- `handleError`: records render errors (which reach no loader span) on the request span; skips aborted requests, route error responses (incl. no-match 404s) and errors already recorded.
+- Server loader errors: recorded once, on the server's loader span. In production the browser gets `Unexpected Server Error` and skips it; in development the real message reaches the browser, so it's recorded on both sides.
+- The request span ends when the shell streams (time to first byte).
+- `react-router-serve` sets no `ETag` on HTML. `.data` and asset responses don't go through `handleRequest`, so they never carry the header. CDN-cached HTML: skip the header.
 
-```ts
-const carrier: Record<string, string> = {}
-propagation.inject(context.active(), carrier)
-if (carrier.traceparent) responseHeaders.append("server-timing", `traceparent;desc="${carrier.traceparent}"`)
-```
+## Check
 
-`react-router-serve` sets no `ETag` on HTML, so there is nothing to delete. `.data` and asset responses don't go through `handleRequest`, so they never carry the header.
+Production build, in addition to `SKILL.md` Step 7:
+
+- Framework mode page load: `GET` (HTTP) → `GET /projects/:id` → `pageload /projects/:id`; `server-timing` on the HTML only; new trace per reload.
+- Click: `navigate /projects/:id` with `loader <route id>` spans under it and `fetch` under those.
+- A loader that throws: exactly one `exception` event (on the loader span; for a framework-mode server loader, on the server). A render error: one `react_router.error` in the browser; during SSR, the request span is 500 with one exception.

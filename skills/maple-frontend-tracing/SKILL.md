@@ -39,7 +39,7 @@ Browser code takes the **public** ingest key (`maple_pk_…`) only. It is write-
 
 ## Step 2: Install and initialize the browser SDK
 
-Install `@maple-dev/browser` and `@opentelemetry/api` with the project's package manager. `tracing.ts` imports `@opentelemetry/api`, which is only a transitive dependency of the SDK, and strict package managers (pnpm) won't resolve it. Initialize it once, before the app renders, at the place the framework reference names:
+Install `@maple-dev/browser` 0.10.0 or later with the project's package manager. The framework entries (`@maple-dev/browser/nextjs`, `/tanstack`, …) ship in the same package. Add `@opentelemetry/api` only if app code imports it (the `await` rule's `context`, or where a reference says so): strict package managers (pnpm) won't resolve it as the SDK's transitive dependency. Initialize the SDK once, before the app renders, at the place the framework reference names:
 
 ```ts
 import { MapleBrowser } from "@maple-dev/browser"
@@ -71,49 +71,41 @@ MapleBrowser.init({
 
 ## Step 4: Navigation and data-loading spans
 
-Copy `tracing.ts` from this skill's directory **verbatim** into the app, where the framework reference puts it (otherwise `src/tracing.ts`). It is the one helper this setup needs, because the current navigation has to be shared between router callbacks and loaders. Don't add further wrappers.
+Use the framework entry from the reference (`@maple-dev/browser/nextjs`, `/tanstack`, `/react-router`, `/vue`, `/sveltekit`): it names spans, handles the first page load, redirects and interrupted navigations, and wraps loaders. Add only the calls the reference lists; don't hand-write router glue it already covers. For other frameworks, call the SDK's navigation API from the router's hooks (`frameworks/other.md`):
 
-Its API:
+- `MapleBrowser.startNavigation(path)`: call when the router starts a navigation. The first call opens a `pageload` span (joined to the server render, see Step 6), later calls open `navigate` spans. A navigation that starts before the previous one ended ends the previous one as interrupted.
+- `MapleBrowser.endNavigation(routeTemplate?)`: call when the new route is ready. Renames the span to `<kind> <template>` and ends it. No-op when nothing is open.
+- `MapleBrowser.traced(name, fn, { isFailure })`: runs a data-loading function in a child span of the current navigation. Pass `isFailure` to exclude the framework's control-flow throws (redirects, not-found) from being marked as errors. An error it records isn't reported again by `captureException` or the global handlers.
 
-- `startNavigation(path)`: call when the router starts a navigation. The first call opens a `pageload` span (parented to the server render, see Step 6), later calls open `navigate` spans. A navigation that starts before the previous one ended ends the previous one as interrupted.
-- `endNavigation(routeTemplate?)`: call when the new route is ready. Renames the span to `<kind> <template>` and ends it.
-- `traced(name, fn, isFailure?)`: runs a data-loading function in a child span of the current navigation. Pass `isFailure` to exclude the framework's control-flow throws (redirects, not-found) from being marked as errors.
-- `alreadyRecorded(error)`: whether `traced` already recorded that error.
+The Angular and Astro references still copy `tracing.ts` from this skill's directory verbatim, which also needs `@opentelemetry/api` installed. Follow them as written until they're updated.
 
 Rules:
 
 - **Span names use the route template**, never the concrete URL: `navigate /projects/:id`, not `navigate /projects/8f2a`. The concrete path is already the `url.path` attribute.
 - Wrap the framework's **route-level** data loading (loaders, `load` functions, resolvers), named `loader <template>`. Don't wrap every component fetch or event handler.
-- **The `await` rule.** The browser has no async context: inside `traced`, only requests started before the first `await` nest under the span. Start independent requests together (`Promise.all`). For a request that depends on an earlier one, capture `const ctx = context.active()` before the first `await` and call it inside `context.with(ctx, () => …)`. Don't install `ZoneContextManager`.
+- **The `await` rule.** The browser has no async context: inside `traced`, only requests started before the first `await` nest under the span. Start independent requests together (`Promise.all`). For a request that depends on an earlier one, capture `const ctx = context.active()` (from `@opentelemetry/api`) before the first `await` and call it inside `context.with(ctx, () => …)`. Don't install `ZoneContextManager`.
 - No PII in span names or attributes.
 
 ## Step 5: Report errors the framework catches
 
-Error boundaries stop errors from reaching `window.onerror`, so the SDK's global handlers never see them. Find the framework's central caught-error hook (the reference names it) and report from there:
-
-```ts
-import { MapleBrowser } from "@maple-dev/browser"
-import { alreadyRecorded } from "./tracing"
-
-// inside the framework's caught-error hook
-if (!alreadyRecorded(error)) MapleBrowser.captureException(error)
-```
+Error boundaries stop errors from reaching `window.onerror`, so the SDK's global handlers never see them. Use the reporter from the framework entry, in the hook the reference names. For other frameworks, find the central caught-error hook and call `MapleBrowser.captureException(error)` there. No dedupe check is needed: it skips errors `traced` already recorded, and records each error object once.
 
 Keep whatever the hook already does (logging, other vendors, fallback UI). `init()` is a no-op on the server but `captureException` is not: if the hook also runs during SSR, the error is recorded in the server's trace.
 
 ## Step 6: Server-side rendering (only if the app renders on the server)
 
 1. The server needs OpenTelemetry like any backend: follow `maple-nodejs-style` (or `maple-nextjs-style` for Next.js) for the SDK bootstrap and inline key. If that skill isn't installed, install it with `npx skills add MapleTechLabs/maple/skills --skill maple-nodejs-style -y`, or read it at https://github.com/MapleTechLabs/maple/tree/main/skills/maple-nodejs-style.
-2. Add a span around the render, named `ssr <template>`, unless the framework already creates one (the reference says). If the framework loads data before it calls your render hook, open the span (or a request span) where the request arrives, so the server's loaders run inside it; otherwise every request's loaders become separate traces.
-3. From inside that span's context, append the trace context to the response:
+2. Use the reference's server entry (`withMapleProxy`, `traceRequests`/`traceRender`, `serverInstrumentation`, `mapleNitroPlugin`, `mapleHandle`). Otherwise add a span around the render, named `ssr <template>`, unless the framework already creates one. If the framework loads data before it calls your render hook, open the span (or a request span) where the request arrives, so the server's loaders run inside it; otherwise every request's loaders become separate traces. Then, from inside that span's context, append the trace context to the response:
 
 	```ts
-	const carrier: Record<string, string> = {}
-	propagation.inject(context.active(), carrier)
-	if (carrier.traceparent) headers.append("server-timing", `traceparent;desc="${carrier.traceparent}"`)
+	import { serverTiming } from "@maple-dev/browser/server"
+
+	const timing = serverTiming() // undefined when no span is active
+	if (timing) headers.append("server-timing", timing)
 	```
 
-	`tracing.ts` reads it back from the Navigation Timing API and parents the browser's `pageload` span to it. Only the page load joins the server trace; later navigations are their own traces.
+	The SDK reads it back from the Navigation Timing API and parents the browser's `pageload` span to it (or reads `<meta name="traceparent">`). Only the page load joins the server trace; later navigations are their own traces. The browser follows the server's sampling decision.
+3. Server-side data loading (SSR loaders, Server Components, resolvers): `traced` from `@maple-dev/browser/server` spans under the active server span through the global tracer, keeps parents across `await`, and only runs `fn` without server OpenTelemetry. `MapleBrowser.traced` behaves the same when there's no `window`. `@maple-dev/browser/server` depends only on `@opentelemetry/api`: safe in Node, edge runtimes and Workers.
 4. Don't send the header on responses a CDN caches, or every visitor joins the same trace. If the framework sets an `ETag` on HTML, delete it on responses that carry the header: a 304 revalidation reuses the cached header and joins an old trace.
 
 ## Step 7: Verify
