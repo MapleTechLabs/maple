@@ -494,6 +494,77 @@ const NETTING_ORG_SPANS: ReadonlyArray<SeedSpan> = [
 	},
 ]
 
+// Operation-named spans under a fifth org, shaped after production captures:
+// a Mastra scorer run (`blind-ts-mastra`, stamped as the gateway did before it
+// left scorer runs unstamped) and a LangSmith OTel `chain` wrapping LangGraph's
+// `tools` node over the real tool call. Only the `execute_tool` span and the
+// op-less `ai.toolCall` are tool calls.
+const CLASSIFICATION_ORG_ID = "org_ai_trace_index_e2e_classification"
+const SCORER_TRACE = "aitraceindexe2e000000000000000030"
+const LANGGRAPH_TRACE = "aitraceindexe2e000000000000000031"
+
+const classificationSpan = (
+	traceId: string,
+	spanId: string,
+	name: string,
+	offsetMs: number,
+	attrs: Readonly<Record<string, string>>,
+): SeedSpan => ({
+	traceId,
+	spanId,
+	name,
+	ms: BASE_MS + 600_000 + offsetMs,
+	service: "classification-service",
+	status: "Ok",
+	attrs,
+})
+
+const mastra = (operation: string) => ({
+	[MAPLE_AI_VENDOR_ID_ATTR]: "mastra",
+	"gen_ai.operation.name": operation,
+	"mastra.span.type": operation,
+})
+const langchain = (operation: string) => ({
+	[MAPLE_AI_VENDOR_ID_ATTR]: "langchain",
+	"gen_ai.operation.name": operation,
+})
+
+const CLASSIFICATION_ORG_SPANS: ReadonlyArray<SeedSpan> = [
+	classificationSpan(
+		SCORER_TRACE,
+		"span-scorer-run",
+		"scorer_run code-tool-call-accuracy-scorer",
+		0,
+		mastra("scorer_run"),
+	),
+	classificationSpan(
+		SCORER_TRACE,
+		"span-scorer-step",
+		"scorer_step code-tool-call-accuracy-scorer",
+		1,
+		mastra("scorer_step"),
+	),
+	classificationSpan(LANGGRAPH_TRACE, "span-lg-agent", "invoke_agent weather", 10, {
+		...langchain("invoke_agent"),
+		"gen_ai.agent.name": "weather",
+	}),
+	classificationSpan(LANGGRAPH_TRACE, "span-lg-tools", "tools", 11, langchain("chain")),
+	classificationSpan(
+		LANGGRAPH_TRACE,
+		"span-lg-hitl",
+		"HumanInTheLoopMiddleware.wrap_tool_call",
+		12,
+		langchain("chain"),
+	),
+	classificationSpan(LANGGRAPH_TRACE, "span-lg-tool", "get_weather", 13, {
+		...langchain("execute_tool"),
+		"gen_ai.tool.name": "get_weather",
+	}),
+	classificationSpan(LANGGRAPH_TRACE, "span-lg-sdk-tool", "ai.toolCall", 14, {
+		[MAPLE_AI_VENDOR_ID_ATTR]: "vercel_ai_sdk",
+	}),
+]
+
 const chMap = (attrs: Readonly<Record<string, string>>): string =>
 	`map(${Object.entries(attrs)
 		.flatMap(([key, value]) => [quote(key), quote(value)])
@@ -505,6 +576,7 @@ const seed = async (): Promise<void> => {
 		[FOREIGN_ORG_ID, FOREIGN_SPAN] as const,
 		...TOOL_FAILURE_ORG_SPANS.map((span) => [TOOL_FAILURE_ORG_ID, span] as const),
 		...NETTING_ORG_SPANS.map((span) => [NETTING_ORG_ID, span] as const),
+		...CLASSIFICATION_ORG_SPANS.map((span) => [CLASSIFICATION_ORG_ID, span] as const),
 	]
 		.map(
 			([orgId, span]) =>
@@ -550,7 +622,7 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 			        VendorVersion, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens,
 			        ErrorType, StatusMessage, ToolDescription,
 			        FailedToolCallResult, ErrorFingerprint != 0 AS HasErrorFingerprint
-			 FROM ai_trace_index WHERE OrgId != ${quote(NETTING_ORG_ID)} ORDER BY Timestamp ASC`,
+			 FROM ai_trace_index WHERE OrgId NOT IN (${quote(NETTING_ORG_ID)}, ${quote(CLASSIFICATION_ORG_ID)}) ORDER BY Timestamp ASC`,
 		)
 
 		/** The index row a seed span is expected to produce, by name — the
@@ -702,6 +774,25 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 			// A result, but no failure: nothing carried.
 			indexRow(TOOL_FAILURE_ORG_ID, TOOL_SUCCESS_SPAN, { ToolName: "submit_findings", IsToolCall: 1 }),
 		])
+	})
+
+	it("reads 'tool' off the span name only where no operation is named", async () => {
+		const rows = await runJson(
+			`SELECT SpanId, IsToolCall, IsLlmCall FROM ai_trace_index
+			 WHERE OrgId = ${quote(CLASSIFICATION_ORG_ID)} ORDER BY Timestamp ASC`,
+		)
+		assert.deepStrictEqual(
+			rows.map((row) => [row.SpanId, row.IsToolCall, row.IsLlmCall]),
+			[
+				["span-scorer-run", 0, 0],
+				["span-scorer-step", 0, 0],
+				["span-lg-agent", 0, 0],
+				["span-lg-tools", 0, 0],
+				["span-lg-hitl", 0, 0],
+				["span-lg-tool", 1, 0],
+				["span-lg-sdk-tool", 1, 0],
+			],
+		)
 	})
 
 	// The fingerprint off the real view, against the TypeScript mirror its

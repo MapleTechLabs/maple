@@ -193,6 +193,19 @@ const nameLooks = (name: Expr<string>, needles: readonly [string, ...string[]]):
 	return rest.reduce((cond, needle) => cond.or(lowered.like(`%${needle}%`)), lowered.like(`%${first}%`))
 }
 
+/** `classifyAiSpan`'s tool rule: the span names a tool, or it names no
+ *  operation at all and its name says "tool". A span that names an operation
+ *  the convention does not know (LangSmith's `chain`, a Mastra `scorer_step`)
+ *  has said what it is, and a "tool" in its name — the LangGraph `tools` node,
+ *  `code-tool-call-accuracy-scorer` — is not a tool call. */
+const looksLikeToolCond = (
+	$: Pick<GenAiSpanColumnsLike, "SpanName" | "SpanAttributes">,
+	op: Expr<string>,
+): Condition =>
+	genAiToolNameExpr($.SpanAttributes)
+		.neq("")
+		.or(op.eq("").and(nameLooks($.SpanName, ["tool"])))
+
 /** A model turn — what the list counts as an "LLM call". Embeddings and
  *  retrieval are inference time but not calls, exactly as `isLlmCall` says.
  *  Every span the index holds is vendor-stamped, so the client's "is an AI
@@ -202,13 +215,7 @@ export function genAiIsLlmCallCond($: Pick<GenAiSpanColumnsLike, "SpanName" | "S
 	const op = genAiOperationExpr(attrs)
 	const byOperation = CH.inList(op, INFERENCE_OPS)
 	const byName = CH.notInList(op, KNOWN_OPS)
-		.and(
-			CH.not(
-				genAiToolNameExpr(attrs)
-					.neq("")
-					.or(nameLooks($.SpanName, ["tool"])),
-			),
-		)
+		.and(CH.not(looksLikeToolCond($, op)))
 		.and(CH.not(nameLooks($.SpanName, ["agent", "workflow"])))
 		.and(
 			genAiModelExpr(attrs)
@@ -222,11 +229,7 @@ export function genAiIsToolCallCond($: Pick<GenAiSpanColumnsLike, "SpanName" | "
 	const attrs = $.SpanAttributes
 	const op = genAiOperationExpr(attrs)
 	const byOperation = CH.inList(op, TOOL_OPS)
-	const byName = CH.notInList(op, KNOWN_OPS).and(
-		genAiToolNameExpr(attrs)
-			.neq("")
-			.or(nameLooks($.SpanName, ["tool"])),
-	)
+	const byName = CH.notInList(op, KNOWN_OPS).and(looksLikeToolCond($, op))
 	return byOperation.or(byName)
 }
 

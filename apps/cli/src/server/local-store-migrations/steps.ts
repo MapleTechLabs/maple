@@ -1114,5 +1114,31 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 			},
 		],
 	},
+	{
+		id: "local-0025-to-0026-ai-trace-index-unknown-operation-tools",
+		from: 25,
+		to: 26,
+		description: "ai_trace_index_mv: an unknown GenAI operation is not a tool call by span name",
+		clonedBefore: "any DDL runs",
+		beforeBootstrap: [dropViews("ai_trace_index_mv")],
+		plan: [
+			[
+				"rebuild-ai-trace-index-view",
+				"Rebuild ai_trace_index_mv so a span naming an unknown GenAI operation is not a tool call for the 'tool' in its name",
+			],
+		],
+		verifies: "Verify the v26 physical schema and the retained raw telemetry counts",
+		dispositions: [
+			AI_TRACE_INDEX_SOURCE,
+			{
+				name: "ai_trace_index",
+				classification: "derived",
+				disposition: "rebuild-within-retention-horizon",
+				guarantee:
+					"Existing rows are preserved untouched with their v25 IsToolCall; the rebuilt view classifies spans materialized after the migration and the gap closes as the retention window rolls.",
+				...AI_TRACE_INDEX_FORWARD,
+			},
+		],
+	},
 	// local-schema:bump appends the next step above this line.
 ]

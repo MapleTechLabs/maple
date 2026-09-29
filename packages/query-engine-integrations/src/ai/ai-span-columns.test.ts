@@ -166,7 +166,12 @@ describe("span classification SQL", () => {
 	it("counts a tool call by operation, or by a tool name / tool-ish span name", () => {
 		const text = sql(genAiIsToolCallCond(columns))
 		expect(text).toContain("IN ('execute_tool')")
-		expect(text).toContain("SpanAttributes['tool.name']) != '' OR lower(SpanName) LIKE '%tool%'")
+		// The span name is read only where no operation is named at all: an
+		// unknown one (`chain`, `scorer_step`) already said what the span is.
+		expect(text).toContain(
+			"SpanAttributes['tool.name']) != '' OR (coalesce(nullIf(SpanAttributes['gen_ai.operation.name'], '')",
+		)
+		expect(text).toContain("'retrieval', '')) = '' AND lower(SpanName) LIKE '%tool%'))")
 	})
 
 	it("sums the token buckets under the reporter's convention, each coalesced canonical-first", () => {
