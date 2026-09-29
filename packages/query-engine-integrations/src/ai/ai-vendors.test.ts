@@ -18,19 +18,15 @@ const row = (vendorId: string, spanAttributes: Record<string, string>): AiSessio
 })
 
 describe("vercel_ai_sdk", () => {
-	it("reads the older ai.* usage keys the default integration knows nothing about", () => {
+	it("reads the older ai.* keys the default integration knows nothing about", () => {
 		const mapped = mapAiSpan(
 			row("vercel_ai_sdk", {
-				"ai.usage.promptTokens": "5033",
-				"ai.usage.completionTokens": "38",
 				"ai.model.id": "openai/gpt-5.6-luna",
 				"ai.model.provider": "openrouter",
 				"ai.response.finishReason": "stop",
 			}),
 		)
 
-		expect(mapped.genAi.usageInputTokens).toBe(5033)
-		expect(mapped.genAi.usageOutputTokens).toBe(38)
 		expect(mapped.genAi.requestModel).toBe("openai/gpt-5.6-luna")
 		expect(mapped.genAi.providerName).toBe("openrouter")
 		expect(mapped.genAi.responseFinishReasons).toEqual(["stop"])
@@ -41,10 +37,10 @@ describe("vercel_ai_sdk", () => {
 		// Current AI SDK versions emit both dialects on the same span; the
 		// convention's key has to be the one that lands.
 		const mapped = mapAiSpan(
-			row("vercel_ai_sdk", { "gen_ai.usage.input_tokens": "5033", "ai.usage.promptTokens": "1" }),
+			row("vercel_ai_sdk", { "gen_ai.request.model": "gpt-5", "ai.model.id": "gpt-4" }),
 		)
 
-		expect(mapped.genAi.usageInputTokens).toBe(5033)
+		expect(mapped.genAi.requestModel).toBe("gpt-5")
 	})
 
 	it("maps the tool dialect of an older SDK span", () => {
@@ -61,39 +57,6 @@ describe("vercel_ai_sdk", () => {
 		expect(mapped.genAi.toolCallId).toBe("call_uKgzomwVJhP3bYZ0fxvwUe86")
 		expect(mapped.genAi.toolCallArguments).toEqual({ emoji: "wave" })
 		expect(mapped.genAi.toolCallResult).toEqual({ reacted: true })
-	})
-
-	it("falls back to the telemetry function id for the agent name", () => {
-		// Real spans in this org put the same value in both, and it is the only
-		// agent identity an older-SDK span carries.
-		expect(
-			mapAiSpan(row("vercel_ai_sdk", { "ai.telemetry.functionId": "slack-agent" })).genAi.agentName,
-		).toBe("slack-agent")
-		expect(
-			mapAiSpan(
-				row("vercel_ai_sdk", {
-					"gen_ai.agent.name": "triage",
-					"ai.telemetry.functionId": "slack-agent",
-				}),
-			).genAi.agentName,
-		).toBe("triage")
-	})
-
-	it("reads TTFT from the v7 client.operation key, in seconds", () => {
-		const mapped = mapAiSpan(
-			row("vercel_ai_sdk", { "gen_ai.client.operation.time_to_first_chunk": "1.84" }),
-		)
-
-		expect(mapped.genAi.responseTimeToFirstChunk).toBe(1.84)
-
-		// The canonical key still wins when both appear on one span.
-		const both = mapAiSpan(
-			row("vercel_ai_sdk", {
-				"gen_ai.response.time_to_first_chunk": "0.5",
-				"gen_ai.client.operation.time_to_first_chunk": "1.84",
-			}),
-		)
-		expect(both.genAi.responseTimeToFirstChunk).toBe(0.5)
 	})
 
 	it("leaves fields it does not mention on the default source list", () => {
@@ -286,9 +249,6 @@ describe("openinference", () => {
 			row("agno", {
 				"openinference.span.kind": "LLM",
 				"llm.model_name": "openai/gpt-4o-mini",
-				"llm.token_count.prompt": "171",
-				"llm.token_count.completion": "46",
-				"llm.cost.total": "5.325e-05",
 				"input.value":
 					'{"messages": [{"id": "9b4bbc03-0b5a-4f0f-9383-1ad696468e2e", "content": "Hi! Briefly introduce yourself.", "role": "user"}]}',
 				"output.value": '[{"role": "assistant", "content": "Hello! I am an AI assistant."}]',
@@ -298,9 +258,6 @@ describe("openinference", () => {
 		expect(mapped.genAi).toMatchObject({
 			operationName: "chat",
 			requestModel: "openai/gpt-4o-mini",
-			usageInputTokens: 171,
-			usageOutputTokens: 46,
-			usageCost: 5.325e-5,
 			inputMessages: [
 				{
 					id: "9b4bbc03-0b5a-4f0f-9383-1ad696468e2e",
@@ -317,10 +274,6 @@ describe("openinference", () => {
 			row("openinference-openai", {
 				"llm.model_name": "gpt-5",
 				"llm.provider": "openai",
-				"llm.token_count.prompt": "5033",
-				"llm.token_count.completion": "38",
-				"llm.token_count.prompt_details.cache_read": "4924",
-				"llm.token_count.completion_details.reasoning": "12",
 				"input.value": '{"messages":[{"role":"user"}]}',
 				"output.value": '{"messages":[{"role":"assistant"}]}',
 				"tool.name": "search",
@@ -331,10 +284,6 @@ describe("openinference", () => {
 		expect(mapped.genAi).toMatchObject({
 			requestModel: "gpt-5",
 			providerName: "openai",
-			usageInputTokens: 5033,
-			usageOutputTokens: 38,
-			usageCacheReadInputTokens: 4924,
-			usageReasoningOutputTokens: 12,
 			inputMessages: [{ role: "user" }],
 			outputMessages: [{ role: "assistant" }],
 			toolName: "search",
@@ -362,12 +311,12 @@ describe("openinference", () => {
 	it("still reads the default's legacy aliases it did not supersede", () => {
 		const mapped = mapAiSpan(
 			row("openinference-openai", {
-				"gen_ai.usage.prompt_tokens": "120",
+				"gen_ai.system": "openai",
 				"gen_ai.completion": '[{"role":"assistant"}]',
 			}),
 		)
 
-		expect(mapped.genAi.usageInputTokens).toBe(120)
+		expect(mapped.genAi.providerName).toBe("openai")
 		expect(mapped.genAi.outputMessages).toEqual([{ role: "assistant" }])
 	})
 
@@ -529,55 +478,6 @@ describe("maple", () => {
 		)
 
 		expect(mapped.genAi.conversationId).toBe("msg_1")
-	})
-})
-
-describe("crewai", () => {
-	it("names the agent by its role when the span carries no gen_ai.agent.name", () => {
-		// A CrewAI agent span without the GenAI dual-write: the role is only here.
-		const bare = mapAiSpan(
-			row("crewai", { "openinference.span.kind": "AGENT", "graph.node.id": "weather_worker" }),
-		)
-		const dual = mapAiSpan(
-			row("crewai", { "gen_ai.agent.name": "summary", "graph.node.id": "summary_agent" }),
-		)
-
-		expect(bare.genAi.agentName).toBe("weather_worker")
-		expect(dual.genAi.agentName).toBe("summary")
-	})
-})
-
-describe("time to first token", () => {
-	it("reads the seconds-valued client key for every vendor", () => {
-		// Pydantic AI's chat span, vendor `pydantic_ai`.
-		const mapped = mapAiSpan(
-			row("pydantic_ai", { "gen_ai.client.operation.time_to_first_chunk": "0.735740500036627" }),
-		)
-
-		expect(mapped.genAi.responseTimeToFirstChunk).toBe(0.735740500036627)
-	})
-
-	it("converts OpenRouter's and Strands' millisecond keys to seconds", () => {
-		const openRouter = mapAiSpan(
-			row("openrouter", { "trace.metadata.openrouter.first_token_ms": "3784" }),
-		)
-		const strands = mapAiSpan(row("strands", { "gen_ai.server.time_to_first_token": "1127" }))
-
-		expect(openRouter.genAi.responseTimeToFirstChunk).toBe(3.784)
-		expect(strands.genAi.responseTimeToFirstChunk).toBe(1.127)
-	})
-
-	it("keeps a seconds-valued key over a millisecond one, and reads the millisecond key only for its vendor", () => {
-		const both = mapAiSpan(
-			row("strands", {
-				"gen_ai.response.time_to_first_chunk": "0.5",
-				"gen_ai.server.time_to_first_token": "1127",
-			}),
-		)
-		const otherVendor = mapAiSpan(row("pydantic_ai", { "gen_ai.server.time_to_first_token": "1127" }))
-
-		expect(both.genAi.responseTimeToFirstChunk).toBe(0.5)
-		expect(otherVendor.genAi.responseTimeToFirstChunk).toBeUndefined()
 	})
 })
 

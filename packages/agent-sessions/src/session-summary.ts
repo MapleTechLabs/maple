@@ -5,13 +5,12 @@
 // parallel would otherwise report 180% of itself. Tokens are counted at the
 // deepest span that reports them, because frameworks that also roll usage up to
 // the agent span would otherwise double the bill. And token buckets are
-// normalised to be disjoint at the point they are read off a span: a provider
-// that counts cached tokens inside its prompt figure, or reasoning inside its
-// completion figure, has them carved back out (see `genAiUsageConvention`), so
-// `input` always means the uncached prompt, `output` the visible completion,
-// and a total is always the plain sum of the buckets.
+// normalised to be disjoint at the point they are read off a span: the ingest
+// gateway restates every span's usage so the prompt figure contains the cache
+// buckets and the completion figure the reasoning, and they are carved back
+// out here, so `input` always means the uncached prompt, `output` the visible
+// completion, and a total is always the plain sum of the buckets.
 
-import { genAiUsageConvention } from "@maple/domain/gen-ai"
 import type { AiSessionSpan } from "@maple/domain/http"
 
 import { formatCurrency, formatDuration, formatNumber } from "@maple/domain/format"
@@ -432,11 +431,11 @@ const EMPTY_TOKENS: SessionTokenTotals = {
 
 /**
  * The five `gen_ai.usage.*` buckets a span reports, normalised to disjoint
- * buckets — or nothing when it reports none. A reporter whose prompt figure
- * already contains its cache buckets, or whose completion figure contains its
- * reasoning, has them carved back out (`genAiUsageConvention` says which), so
- * `input` is always the uncached prompt, `output` the visible completion, and
- * the total is always the sum, whichever convention the reporter billed under.
+ * buckets — or nothing when it reports none. The prompt figure contains the
+ * cache buckets and the completion figure the reasoning (the ingest gateway
+ * restates every emitter's usage that way, `ai_session/canonical.rs`), so both
+ * are carved back out: `input` is always the uncached prompt, `output` the
+ * visible completion, and the total is always the sum.
  * `ai_trace_index`'s `Tokens` column reaches the same sum at insert
  * (`genAiTokensExpr`), which is what keeps the list's usage equal to the
  * detail page's. Exported so the waterfall and the flow split a span's usage
@@ -455,7 +454,6 @@ export function spanTokenBuckets(span: AiSessionSpan): SessionTokenTotals | unde
 	) {
 		return undefined
 	}
-	const convention = genAiUsageConvention(span.vendorId, span.genAi.providerName)
 	const cacheRead = usageCacheReadInputTokens ?? 0
 	const cacheWrite = usageCacheCreationInputTokens ?? 0
 	const reasoning = usageReasoningOutputTokens ?? 0
@@ -465,12 +463,10 @@ export function spanTokenBuckets(span: AiSessionSpan): SessionTokenTotals | unde
 		// Clamped: a reporter whose nested figures exceed the figure that is
 		// supposed to contain them is mis-stamped, and a negative bucket would be
 		// a worse lie than a zero.
-		input: convention.inputIncludesCache
-			? Math.max(0, reportedInput - cacheRead - cacheWrite)
-			: reportedInput,
+		input: Math.max(0, reportedInput - cacheRead - cacheWrite),
 		cacheRead,
 		cacheWrite,
-		output: convention.outputIncludesReasoning ? Math.max(0, reportedOutput - reasoning) : reportedOutput,
+		output: Math.max(0, reportedOutput - reasoning),
 		reasoning,
 	})
 }

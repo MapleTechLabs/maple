@@ -194,41 +194,22 @@ describe("value decoding", () => {
 	})
 
 	it("falls through to the next alias when the first key does not decode", () => {
-		const mapped = mapAiSpan(
-			row({ "gen_ai.usage.input_tokens": "n/a", "gen_ai.usage.prompt_tokens": "5033" }),
-		)
+		const mapped = mapAiSpan(row({ "gen_ai.openai.request.seed": "7", "gen_ai.request.seed": "n/a" }))
 
-		expect(mapped.genAi.usageInputTokens).toBe(5033)
+		expect(mapped.genAi.requestSeed).toBe(7)
 	})
 })
 
 describe("legacy aliases", () => {
-	// One case per row of the semconv deprecation table.
+	// One case per row of the semconv deprecation table. Usage, cost and the
+	// agent name have no aliases: the ingest gateway restates every spelling
+	// (`apps/ingest/src/ai_session/canonical.rs`).
 	const cases: ReadonlyArray<readonly [string, string, AiGenAiField, unknown]> = [
-		["gen_ai.usage.prompt_tokens", "5033", "usageInputTokens", 5033],
-		["gen_ai.usage.completion_tokens", "38", "usageOutputTokens", 38],
 		["gen_ai.prompt", '[{"role":"user"}]', "inputMessages", [{ role: "user" }]],
 		["gen_ai.completion", '[{"role":"assistant"}]', "outputMessages", [{ role: "assistant" }]],
 		["gen_ai.system", "anthropic", "providerName", "anthropic"],
 		["gen_ai.openai.request.seed", "7", "requestSeed", 7],
 		["gen_ai.response.finish_reason", "stop", "responseFinishReasons", ["stop"]],
-		// Not in the deprecation table: the sub-key spellings OpenRouter actually
-		// emits, confirmed present in the warehouse or in its Broadcast docs.
-		["gen_ai.usage.output_tokens.reasoning", "704", "usageReasoningOutputTokens", 704],
-		["gen_ai.usage.input_tokens.cached", "2048", "usageCacheReadInputTokens", 2048],
-		["gen_ai.usage.input_tokens.cache_write", "11058", "usageCacheCreationInputTokens", 11058],
-		// Older Strands releases' cache spellings.
-		["gen_ai.usage.cache_read_input_tokens", "900", "usageCacheReadInputTokens", 900],
-		["gen_ai.usage.cache_write_input_tokens", "100", "usageCacheCreationInputTokens", 100],
-		// Mastra's and Pydantic AI's reasoning spellings, from their exports.
-		["gen_ai.usage.reasoning_tokens", "320", "usageReasoningOutputTokens", 320],
-		["gen_ai.usage.details.reasoning_tokens", "128", "usageReasoningOutputTokens", 128],
-		// The registry spelling, not a deprecation: semconv says `cache_write`
-		// where the catalog's primary keeps the Anthropic-era `cache_creation`.
-		["gen_ai.usage.cache_write.input_tokens", "512", "usageCacheCreationInputTokens", 512],
-		["gen_ai.usage.total_cost", "0.00130795", "usageCost", 0.00130795],
-		// LangSmith's OTel export: the LangChain agent's name, on every span of its run.
-		["langsmith.metadata.lc_agent_name", "assistant", "agentName", "assistant"],
 	]
 
 	for (const [key, value, field, expected] of cases) {
@@ -238,24 +219,17 @@ describe("legacy aliases", () => {
 	}
 
 	it("prefers the canonical key when both are present", () => {
-		const mapped = mapAiSpan(
-			row({ "gen_ai.usage.input_tokens": "5033", "gen_ai.usage.prompt_tokens": "1" }),
-		)
+		const mapped = mapAiSpan(row({ "gen_ai.provider.name": "openai", "gen_ai.system": "anthropic" }))
 
-		expect(mapped.genAi.usageInputTokens).toBe(5033)
+		expect(mapped.genAi.providerName).toBe("openai")
 	})
 
-	it("prefers the canonical cache_creation key over the cache_write spelling", () => {
-		// Pins the alias ordering that protects rows materialized under the
-		// Anthropic-era key: reordering GENAI_DEFAULT_ALIASES must fail here.
-		const mapped = mapAiSpan(
-			row({
-				"gen_ai.usage.cache_creation.input_tokens": "106",
-				"gen_ai.usage.cache_write.input_tokens": "512",
-			}),
-		)
-
-		expect(mapped.genAi.usageCacheCreationInputTokens).toBe(106)
+	it("reads usage under the catalog's key alone", () => {
+		// The gateway restates `gen_ai.usage.prompt_tokens` and friends; a span
+		// that still carries only the old spelling predates that restatement.
+		expect(
+			mapAiSpan(row({ "gen_ai.usage.prompt_tokens": "5033" })).genAi.usageInputTokens,
+		).toBeUndefined()
 	})
 
 	it("maps a real legacy OpenRouter span through the aliases alone", () => {
@@ -267,8 +241,6 @@ describe("legacy aliases", () => {
 				"gen_ai.prompt": '[{"role":"user","content":"hi"}]',
 				"gen_ai.completion": '[{"role":"assistant","content":"hello"}]',
 				"gen_ai.response.finish_reason": "stop",
-				"gen_ai.usage.prompt_tokens": "12",
-				"gen_ai.usage.completion_tokens": "4",
 			}),
 		)
 
@@ -277,8 +249,6 @@ describe("legacy aliases", () => {
 			inputMessages: [{ role: "user", content: "hi" }],
 			outputMessages: [{ role: "assistant", content: "hello" }],
 			responseFinishReasons: ["stop"],
-			usageInputTokens: 12,
-			usageOutputTokens: 4,
 		})
 		expect(mapped.isAiSpan).toBe(true)
 	})
@@ -317,21 +287,6 @@ describe("legacy aliases", () => {
 		expect(toolsOnly.genAi.outputMessages).toEqual([
 			{ role: "assistant", parts: [{ type: "reasoning", content: "**Exploring MCP commands**" }] },
 		])
-	})
-})
-
-describe("cost keys", () => {
-	// The list's `Cost` column reads every one of these for every vendor, so the
-	// detail page must too, or a session is priced on one page and not the other.
-	it("reads OpenInference's llm.cost.total whatever vendor stamped the span", () => {
-		const mapped = mapAiSpan(row({ "maple_ai.vendor.id": "agno", "llm.cost.total": "0.0042" }))
-
-		expect(mapped.genAi.usageCost).toBe(0.0042)
-	})
-
-	it("reads LiteLLM's and Pydantic AI's own price for the call", () => {
-		expect(mapAiSpan(row({ "litellm.cost.total": "2.895e-05" })).genAi.usageCost).toBe(2.895e-5)
-		expect(mapAiSpan(row({ "operation.cost": "4.755e-05" })).genAi.usageCost).toBe(4.755e-5)
 	})
 })
 

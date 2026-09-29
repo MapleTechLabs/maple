@@ -11,7 +11,9 @@
 // selects a population the facet never counted.
 //
 // The key lists mirror the sources the integrations layer decodes (its default
-// `gen_ai.*` keys plus the Vercel AI SDK and OpenInference dialects), and the
+// `gen_ai.*` keys plus the Vercel AI SDK and OpenInference dialects) — usage,
+// cost and the agent name have one key each, restated at ingest
+// (`apps/ingest/src/ai_session/canonical.rs`) — and the
 // classification rules transcribe `classifyAiSpan`/`isLlmCall`
 // (`packages/agent-sessions/src/session-turns.ts`) and `spanTokenBuckets`
 // (`session-summary.ts`) — so a session's "12 calls · $0.40" in the list agrees
@@ -24,13 +26,6 @@ import * as CH from "@maple-dev/effect-clickhouse/expr"
 import { compile } from "@maple-dev/effect-clickhouse/sql"
 import * as T from "@maple-dev/effect-clickhouse/types"
 import { applyRedactions, chRedactChain, MSG_TEXT_REDACTIONS } from "./fingerprint"
-import {
-	GENAI_DEFAULT_USAGE_CONVENTION,
-	GENAI_PROVIDER_USAGE_CONVENTIONS,
-	GENAI_VENDOR_USAGE_CONVENTIONS,
-	MAPLE_AI_VENDOR_ID_ATTR,
-	type GenAiUsageConvention,
-} from "../gen-ai"
 
 /** A `$.SpanAttributes`-shaped accessor: the builder's own, or the bare-column
  *  stand-in the SQL text below is compiled from. */
@@ -98,17 +93,8 @@ export const GENAI_MODEL_KEYS = [
 	"llm.model_name",
 ] as const
 
-/** The agent that owns the span, in the order the detail page reads them — the
- *  default integration's keys, then the vendor's. `langsmith.metadata.lc_agent_name`
- *  is the LangChain agent LangSmith's OTel export names on every span of its run.
- *  `ai.telemetry.functionId` is the name an app gave a traced Vercel AI SDK call —
- *  the only agent identity an older-SDK span has, and in production the same
- *  value the sibling `invoke_agent` span puts in `gen_ai.agent.name`. */
-export const GENAI_AGENT_NAME_KEYS = [
-	"gen_ai.agent.name",
-	"langsmith.metadata.lc_agent_name",
-	"ai.telemetry.functionId",
-] as const
+/** The agent that owns the span. Every spelling is restated under it at ingest. */
+export const GENAI_AGENT_NAME_KEY = "gen_ai.agent.name"
 
 /** The tool an `execute_tool` span ran. */
 export const GENAI_TOOL_NAME_KEYS = ["gen_ai.tool.name", "ai.toolCall.name", "tool.name"] as const
@@ -129,20 +115,8 @@ export function genAiModelExpr(spanAttributes: MapColumnLike): Expr<string> {
 	return firstNonEmptyAttr(spanAttributes, GENAI_MODEL_KEYS)
 }
 
-/** CrewAI's OpenInference spans name the agent's role here, and without the
- *  GenAI dual-write nowhere else. Agno's carry an opaque node id under the same
- *  key, so it is read for `crewai` spans alone. */
-export const CREWAI_AGENT_NAME_KEY = "graph.node.id"
-
 export function genAiAgentNameExpr(spanAttributes: MapColumnLike): Expr<string> {
-	return CH.coalesce(
-		...GENAI_AGENT_NAME_KEYS.map((key) => CH.nullIf(spanAttributes.get(key), "")),
-		CH.if_(
-			spanAttributes.get(MAPLE_AI_VENDOR_ID_ATTR).eq("crewai"),
-			spanAttributes.get(CREWAI_AGENT_NAME_KEY),
-			CH.lit(""),
-		),
-	)
+	return spanAttributes.get(GENAI_AGENT_NAME_KEY)
 }
 
 export function genAiToolNameExpr(spanAttributes: MapColumnLike): Expr<string> {
@@ -372,179 +346,57 @@ export const genAiErrorFingerprintText = (row: {
 		MSG_TEXT_REDACTIONS,
 	)
 
-// Usage — the five token buckets `spanTokenBuckets` sums, each under its
-// canonical key, its legacy `gen_ai.*` alias, and the Vercel AI SDK and
-// OpenInference spellings. Canonical first: a span carrying both spellings is
-// read the way the integration layer reads it.
+// Usage — the five token buckets `spanTokenBuckets` sums, each under the one
+// key the ingest gateway restates every spelling as. The input figure contains
+// both cache buckets and the output figure the reasoning bucket
+// (`apps/ingest/src/ai_session/canonical.rs`).
 
 export const GENAI_USAGE_KEYS = {
-	input: [
-		"gen_ai.usage.input_tokens",
-		"gen_ai.usage.prompt_tokens",
-		"ai.usage.inputTokens",
-		"ai.usage.promptTokens",
-		"llm.token_count.prompt",
-	],
-	cacheRead: [
-		"gen_ai.usage.cache_read.input_tokens",
-		"gen_ai.usage.input_tokens.cached",
-		"gen_ai.usage.cache_read_input_tokens",
-		"ai.usage.cachedInputTokens",
-		"ai.usage.inputTokenDetails.cacheReadTokens",
-		"llm.token_count.prompt_details.cache_read",
-	],
-	cacheWrite: [
-		"gen_ai.usage.cache_creation.input_tokens",
-		"gen_ai.usage.cache_write.input_tokens",
-		"gen_ai.usage.input_tokens.cache_write",
-		"gen_ai.usage.cache_write_input_tokens",
-		"ai.usage.inputTokenDetails.cacheWriteTokens",
-	],
-	output: [
-		"gen_ai.usage.output_tokens",
-		"gen_ai.usage.completion_tokens",
-		"ai.usage.outputTokens",
-		"ai.usage.completionTokens",
-		"llm.token_count.completion",
-	],
-	reasoning: [
-		"gen_ai.usage.reasoning.output_tokens",
-		"gen_ai.usage.output_tokens.reasoning",
-		"gen_ai.usage.reasoning_tokens",
-		"gen_ai.usage.details.reasoning_tokens",
-		"ai.usage.reasoningTokens",
-		"ai.usage.outputTokenDetails.reasoningTokens",
-		"llm.token_count.completion_details.reasoning",
-	],
+	input: "gen_ai.usage.input_tokens",
+	cacheRead: "gen_ai.usage.cache_read.input_tokens",
+	cacheWrite: "gen_ai.usage.cache_creation.input_tokens",
+	output: "gen_ai.usage.output_tokens",
+	reasoning: "gen_ai.usage.reasoning.output_tokens",
 } as const
 
-export const GENAI_COST_KEYS = [
-	"gen_ai.usage.cost",
-	"gen_ai.usage.total_cost",
-	"llm.cost.total",
-	"litellm.cost.total",
-	"operation.cost",
-] as const
-
-/** The provider that served the call, which decides the usage convention: the
- *  semconv key, its pre-rename spelling, then the Vercel AI SDK and
- *  OpenInference dialects — the sources the integration layer decodes
- *  `providerName` from. */
-export const GENAI_PROVIDER_NAME_KEYS = [
-	"gen_ai.provider.name",
-	"gen_ai.system",
-	"ai.model.provider",
-	"llm.provider",
-	"llm.system",
-] as const
-
-/** Pre-rename `gen_ai.system` spellings of the providers the convention table
- *  names. The read side canonicalises them before its lookup
- *  (`LEGACY_SYSTEM_VALUES` in `ai-integrations.ts`); the view has to match
- *  them as written. */
-export const GENAI_PROVIDER_LEGACY_VALUES = [
-	["gcp.gemini", "gemini"],
-	["gcp.vertex_ai", "vertex_ai"],
-] as const
-
-export function genAiProviderNameExpr(attrs: MapColumnLike): Expr<string> {
-	return firstNonEmptyAttr(attrs, GENAI_PROVIDER_NAME_KEYS)
-}
-
-const tokenBucket = (attrs: MapColumnLike, keys: ReadonlyArray<string>): Expr<number> =>
-	CH.toFloat64OrZero(firstNonEmptyAttr(attrs, keys))
+export const GENAI_COST_KEY = "gen_ai.usage.cost"
 
 const greatest = (a: Expr<number>, b: Expr<number>): Expr<number> =>
 	CH.compileFnCall<number>("greatest", a, b)
 
 /**
- * `nested` where the span's convention says the containing figure already
- * holds the contained bucket, `apart` where it reports them separately —
- * `genAiUsageConvention` as a `multiIf`: the vendor's verdict first, then the
- * provider's under its current and its legacy spelling, then the default.
- */
-const byConvention = (
-	attrs: MapColumnLike,
-	axis: keyof GenAiUsageConvention,
-	nested: Expr<number>,
-	apart: Expr<number>,
-): Expr<number> => {
-	const branches: Array<[Condition, Expr<number>]> = []
-	const split = (
-		column: Expr<string>,
-		table: ReadonlyMap<string, GenAiUsageConvention>,
-		spellings: (name: string) => ReadonlyArray<string>,
-	) => {
-		const names = (holds: boolean) =>
-			[...table]
-				.filter(([, convention]) => convention[axis] === holds)
-				.flatMap(([name]) => spellings(name))
-		const yes = names(true)
-		const no = names(false)
-		if (yes.length > 0) branches.push([CH.inList(column, yes), nested])
-		if (no.length > 0) branches.push([CH.inList(column, no), apart])
-	}
-	split(attrs.get(MAPLE_AI_VENDOR_ID_ATTR), GENAI_VENDOR_USAGE_CONVENTIONS, (name) => [name])
-	split(genAiProviderNameExpr(attrs), GENAI_PROVIDER_USAGE_CONVENTIONS, (name) => [
-		name,
-		...GENAI_PROVIDER_LEGACY_VALUES.filter(([canonical]) => canonical === name).map(
-			([, legacy]) => legacy,
-		),
-	])
-	return CH.multiIf(branches, GENAI_DEFAULT_USAGE_CONVENTION[axis] ? nested : apart)
-}
-
-/**
- * Every token the span reported, with the buckets its convention nests carved
- * back out — the sum `spanTokenBuckets` reaches. The prompt is
- * `greatest(input, cacheRead + cacheWrite)` where the prompt figure already
- * contains the cache buckets (OpenAI, OpenRouter, Gemini, every vendor that
- * re-sums) and `input + cacheRead + cacheWrite` where it excludes them
- * (Claude Code's raw Anthropic figures); the completion the same against the
- * reasoning bucket.
- * `toFloat64OrZero` rather than a UInt64 parse: a dialect that writes `1234.0`
- * still counts, and the sums never approach 2^53.
- */
-export function genAiTokensExpr(attrs: MapColumnLike): Expr<number> {
-	const bucket = (name: keyof typeof GENAI_USAGE_KEYS) => tokenBucket(attrs, GENAI_USAGE_KEYS[name])
-	const input = bucket("input")
-	const cache = bucket("cacheRead").add(bucket("cacheWrite"))
-	const output = bucket("output")
-	const reasoning = bucket("reasoning")
-	return byConvention(attrs, "inputIncludesCache", greatest(input, cache), input.add(cache)).add(
-		byConvention(attrs, "outputIncludesReasoning", greatest(output, reasoning), output.add(reasoning)),
-	)
-}
-
-/**
- * The five buckets as disjoint figures under the reporter's convention —
- * `input` the uncached prompt, `output` the visible completion, each clamped
- * at zero like the detail page clamps them — whose sum is `genAiTokensExpr`.
- * The index carries them as their own columns since migration 0031; a
- * raw-table read of the same split compiles the same expressions.
+ * The five buckets as disjoint figures — `input` the uncached prompt, `output`
+ * the visible completion, each clamped at zero like the detail page clamps
+ * them. `toFloat64OrZero` rather than a UInt64 parse: a dialect that writes
+ * `1234.0` still counts, and the sums never approach 2^53. The index carries
+ * them as their own columns since migration 0031.
  */
 export function genAiUsageBucketsExpr(
 	attrs: MapColumnLike,
 ): Readonly<Record<keyof typeof GENAI_USAGE_KEYS, Expr<number>>> {
-	const bucket = (name: keyof typeof GENAI_USAGE_KEYS) => tokenBucket(attrs, GENAI_USAGE_KEYS[name])
-	const floor = (expr: Expr<number>) => CH.compileFnCall<number>("greatest", CH.lit(0), expr)
-	const input = bucket("input")
+	const bucket = (name: keyof typeof GENAI_USAGE_KEYS) =>
+		CH.toFloat64OrZero(attrs.get(GENAI_USAGE_KEYS[name]))
 	const cacheRead = bucket("cacheRead")
 	const cacheWrite = bucket("cacheWrite")
-	const output = bucket("output")
 	const reasoning = bucket("reasoning")
 	return {
-		input: byConvention(attrs, "inputIncludesCache", floor(input.sub(cacheRead).sub(cacheWrite)), input),
+		input: greatest(CH.lit(0), bucket("input").sub(cacheRead).sub(cacheWrite)),
 		cacheRead,
 		cacheWrite,
-		output: byConvention(attrs, "outputIncludesReasoning", floor(output.sub(reasoning)), output),
+		output: greatest(CH.lit(0), bucket("output").sub(reasoning)),
 		reasoning,
 	}
 }
 
+/** Every token the span reported: the sum of the disjoint buckets. */
+export function genAiTokensExpr(attrs: MapColumnLike): Expr<number> {
+	const { input, cacheRead, cacheWrite, output, reasoning } = genAiUsageBucketsExpr(attrs)
+	return input.add(cacheRead).add(cacheWrite).add(output).add(reasoning)
+}
+
 /** USD as the instrumentation priced the call; 0 where nothing did. */
 export function genAiCostExpr(attrs: MapColumnLike): Expr<number> {
-	return CH.toFloat64OrZero(firstNonEmptyAttr(attrs, GENAI_COST_KEYS))
+	return CH.toFloat64OrZero(attrs.get(GENAI_COST_KEY))
 }
 
 /** A flag column: `1` where the condition holds. */

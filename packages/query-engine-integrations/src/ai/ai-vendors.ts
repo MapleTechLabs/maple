@@ -18,7 +18,6 @@ import {
 	unwrapToolMessage,
 } from "./ai-messages"
 import { MAPLE_NATIVE_TURN_ID_ATTR, type MutableAiGenAiValues } from "@maple/domain/gen-ai"
-import { CREWAI_AGENT_NAME_KEY } from "@maple/domain/tinybird/gen-ai-columns"
 
 /**
  * Vercel AI SDK — the `ai.*` dialect.
@@ -29,13 +28,9 @@ import { CREWAI_AGENT_NAME_KEY } from "@maple/domain/tinybird/gen-ai-columns"
  * telemetry code.
  *
  * Not mapped: `ai.response.text` (plain text, not the JSON message array
- * `outputMessages` holds), `ai.operationId` (an SDK function id such as
- * `ai.generateText.doGenerate`, not a `gen_ai.operation.name` value), and
- * `ai.response.msToFirstChunk` (milliseconds, where
- * `gen_ai.response.time_to_first_chunk` is seconds — silently mixing units is
- * worse than not having the field). The v7 SDK's
- * `gen_ai.client.operation.time_to_first_chunk` is in seconds and read by the
- * default integration.
+ * `outputMessages` holds) and `ai.operationId` (an SDK function id such as
+ * `ai.generateText.doGenerate`, not a `gen_ai.operation.name` value). Usage and
+ * the agent name are restated at ingest (`ai_session/canonical.rs`).
  */
 const vercelAiSdkIntegration: AiIntegration = {
 	id: "vercel_ai_sdk",
@@ -45,27 +40,12 @@ const vercelAiSdkIntegration: AiIntegration = {
 		responseId: ["ai.response.id"],
 		responseModel: ["ai.response.model"],
 		responseFinishReasons: ["ai.response.finishReason"],
-		usageInputTokens: ["ai.usage.inputTokens", "ai.usage.promptTokens"],
-		usageOutputTokens: ["ai.usage.outputTokens", "ai.usage.completionTokens"],
-		usageCacheReadInputTokens: [
-			"ai.usage.cachedInputTokens",
-			"ai.usage.inputTokenDetails.cacheReadTokens",
-		],
-		usageCacheCreationInputTokens: ["ai.usage.inputTokenDetails.cacheWriteTokens"],
-		usageReasoningOutputTokens: [
-			"ai.usage.reasoningTokens",
-			"ai.usage.outputTokenDetails.reasoningTokens",
-		],
 		inputMessages: ["ai.prompt.messages", "ai.prompt"],
 		toolName: ["ai.toolCall.name"],
 		toolCallId: ["ai.toolCall.id"],
 		toolCallArguments: ["ai.toolCall.args"],
 		toolCallResult: ["ai.toolCall.result"],
 		toolDefinitions: ["ai.prompt.tools"],
-		// `ai.telemetry.functionId` is the name the app gave the traced call —
-		// typically the same value a sibling `invoke_agent` span puts in
-		// `gen_ai.agent.name`, and the only agent identity an older-SDK span has.
-		agentName: ["ai.telemetry.functionId"],
 	},
 }
 
@@ -106,10 +86,6 @@ const openInferenceIntegration: AiIntegration = {
 	sources: {
 		requestModel: ["llm.model_name"],
 		providerName: ["llm.provider", "llm.system"],
-		usageInputTokens: ["llm.token_count.prompt"],
-		usageOutputTokens: ["llm.token_count.completion"],
-		usageCacheReadInputTokens: ["llm.token_count.prompt_details.cache_read"],
-		usageReasoningOutputTokens: ["llm.token_count.completion_details.reasoning"],
 		responseFinishReasons: ["llm.finish_reason"],
 		toolName: ["tool.name"],
 		toolDescription: ["tool.description"],
@@ -205,37 +181,6 @@ const mapleIntegration: AiIntegration = {
 }
 
 /**
- * CrewAI — OpenInference, whose agent spans name the agent's role only in
- * `graph.node.id` unless the GenAI dual-write is on. A vendor-gated refine
- * rather than an alias, because Agno's spans carry an opaque id under that key.
- */
-const crewAiIntegration: AiIntegration = {
-	...openInferenceIntegration,
-	refine: (values: MutableAiGenAiValues, ctx: AiRefineContext) => {
-		openInferenceIntegration.refine?.(values, ctx)
-		if (values.agentName !== undefined) return
-		const role = ctx.attributes[CREWAI_AGENT_NAME_KEY]
-		if (role !== undefined && role.trim() !== "") values.agentName = role
-	},
-	refineKeys: [...(openInferenceIntegration.refineKeys ?? []), CREWAI_AGENT_NAME_KEY],
-}
-
-/**
- * A dialect that reports time to first token in MILLISECONDS under its own key,
- * lifted into the catalog's `responseTimeToFirstChunk`, which is seconds. A
- * refine rather than an alias because the unit differs.
- */
-const msTimeToFirstChunk = (id: string, key: string): AiIntegration => ({
-	id,
-	refine: (values: MutableAiGenAiValues, ctx: AiRefineContext) => {
-		if (values.responseTimeToFirstChunk !== undefined) return
-		const ms = Number(ctx.attributes[key])
-		if (Number.isFinite(ms) && ms > 0) values.responseTimeToFirstChunk = ms / 1000
-	},
-	refineKeys: [key],
-})
-
-/**
  * Vendor id → override. Every id the gateway can stamp that is NOT in here maps
  * through the default GenAI integration, which is the right answer for the
  * frameworks that emit canonical `gen_ai.*`.
@@ -245,7 +190,7 @@ export const AI_VENDOR_INTEGRATIONS = {
 	"openinference-openai": openInferenceIntegration,
 	"unknown:openinference": openInferenceIntegration,
 	agno: openInferenceIntegration,
-	crewai: crewAiIntegration,
+	crewai: openInferenceIntegration,
 	dspy: openInferenceIntegration,
 	langchain: openInferenceIntegration,
 	llamaindex: openInferenceIntegration,
@@ -253,8 +198,4 @@ export const AI_VENDOR_INTEGRATIONS = {
 	smolagents: openInferenceIntegration,
 	eve: eveIntegration,
 	maple: mapleIntegration,
-	// OpenRouter Broadcast: the gateway's own clock, request in to first token out.
-	openrouter: msTimeToFirstChunk("openrouter", "trace.metadata.openrouter.first_token_ms"),
-	// Strands fills this semconv-named key from the model's `timeToFirstByteMs`.
-	strands: msTimeToFirstChunk("strands", "gen_ai.server.time_to_first_token"),
 } as const satisfies Record<string, AiIntegration>

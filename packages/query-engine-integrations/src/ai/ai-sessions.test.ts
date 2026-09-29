@@ -1034,9 +1034,9 @@ describe("aiSessionSpansQuery", () => {
 		for (const key of [
 			"maple_ai.vendor.id",
 			"gen_ai.input.messages",
-			"gen_ai.usage.prompt_tokens", // legacy alias
-			"ai.usage.inputTokens", // vercel_ai_sdk
-			"llm.token_count.prompt", // openinference
+			"gen_ai.prompt", // legacy alias
+			"ai.model.id", // vercel_ai_sdk
+			"llm.model_name", // openinference
 			"openinference.span.kind", // read by a refine hook, not a source list
 			"eve.turn.id",
 			"maple_ai.turn.id",
@@ -1388,22 +1388,14 @@ describe("aiSessionSummaryQuery", () => {
 		expect(sql).toContain(
 			"coalesce(nullIf(SpanAttributes['maple_ai.turn.id'], ''), nullIf(SpanAttributes['gen_ai.conversation.id'], ''), nullIf(SpanAttributes['eve.turn.id'], ''), '')",
 		)
-		// And the CrewAI role the crewai refine lifts into the agent name.
-		expect(sql).toContain(
-			"if(SpanAttributes['maple_ai.vendor.id'] = 'crewai', SpanAttributes['graph.node.id'], '')",
-		)
 	})
 
-	it("reads usage across every vendor spelling, per call and in total", () => {
+	it("reads usage under the canonical key the gateway restates, per call and in total", () => {
 		const { sql } = compileUnsafe(aiSessionSummaryQuery(), summaryParams)
 
-		for (const key of [
-			"gen_ai.usage.input_tokens",
-			"gen_ai.usage.prompt_tokens",
-			"ai.usage.inputTokens",
-			"llm.token_count.prompt",
-		]) {
-			expect(sql, key).toContain(`SpanAttributes['${key}']`)
+		expect(sql).toContain("SpanAttributes['gen_ai.usage.input_tokens']")
+		for (const key of ["gen_ai.usage.prompt_tokens", "ai.usage.inputTokens", "llm.token_count.prompt"]) {
+			expect(sql, key).not.toContain(`SpanAttributes['${key}']`)
 		}
 		expect(sql).toContain("AS inputTokens")
 		expect(sql).toContain("AS llmInputTokens")
