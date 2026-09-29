@@ -63,6 +63,8 @@ Every field accepted by `MapleBrowser.init`:
 | `errors`                               | `ErrorFilterOptions`      | see [Filtering errors](#filtering-errors) | Drop captured errors by message, script URL, or a `beforeCapture` hook.                                                                                                                                                                                   |
 | `replay.enabled`                       | `boolean`                 | `true`                                    | Enable rrweb session recording.                                                                                                                                                                                                                           |
 | `replay.sampleRate`                    | `number`                  | `1`                                       | Fraction of sessions to record, `0` to `1`. Out-of-range values are clamped with a warning. See [Sampling](#sampling).                                                                                                                                    |
+| `tracing.longFrames`                   | `boolean`                 | `false`                                   | Span main-thread frames of 100ms or more. See [Jank](#jank).                                                                                                                                                                                              |
+| `tracing.slowInteractions`             | `boolean`                 | `false`                                   | Span interactions of 200ms or more. See [Jank](#jank).                                                                                                                                                                                                    |
 | `tracing.captureHeaders`               | `{ request?, response? }` | none                                      | Header names recorded on `fetch`/XHR spans as `http.request.header.<name>` / `http.response.header.<name>`. See [Request and response detail](#request-and-response-detail).                                                                              |
 | `replay.canvasFps`                     | `number`                  | off                                       | Record `<canvas>` content at this many frames per second.                                                                                                                                                                                                 |
 | `replay.networkBodies`                 | `{ urls, maxLength? }`    | none                                      | Keep text request/response bodies of these URLs on replay network events.                                                                                                                                                                                 |
@@ -517,6 +519,26 @@ MapleBrowser.init({
 Sampled traces carry the W3C `tracestate` threshold (`ot=th:…`), so Maple weights each one by the
 inverse of the rate and request counts stay realistic. A trace joined from a server-rendered
 `traceparent` follows the server's decision instead.
+
+## Jank
+
+Two opt-in span sources show where the main thread got stuck:
+
+```ts
+tracing: { longFrames: true, slowInteractions: true }
+```
+
+- `longFrames` spans every frame of 100ms or more as `longAnimationFrame`, with the script that ran
+  longest as `code.file.path` / `code.function.name`, its `maple.browser.script.invoker` (e.g.
+  `BUTTON#save.onclick`) and `maple.browser.script.duration_ms`, plus
+  `maple.browser.frame.blocking_duration_ms`. Browsers without the Long Animation Frames API report
+  `longtask` spans instead, without script attribution.
+- `slowInteractions` spans every interaction of 200ms or more (INP's "needs improvement" line) as
+  `interaction <event>`, named after the event whose handlers ran longest, with
+  `maple.browser.interaction.input_delay_ms`, `processing_ms`, `presentation_ms` and `target`.
+
+Both nest under the open navigation span when there is one, include what happened before the SDK
+finished loading, and follow `tracing.sampleRate`.
 
 ## Request and response detail
 

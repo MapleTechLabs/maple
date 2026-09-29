@@ -88,6 +88,13 @@ export interface MapleBrowserConfig {
 		 * `{ response: ["x-request-id", "x-cache"] }`. `authorization`, `cookie`
 		 * and `set-cookie` are never recorded. XHR spans get response headers only.
 		 */
+		/**
+		 * Span main-thread frames of 100ms or more (`longAnimationFrame`, with the
+		 * script that ran longest; `longtask` where that API is missing). Default false.
+		 */
+		readonly longFrames?: boolean
+		/** Span interactions of 200ms or more (`interaction click`, ...), split into input delay, processing and presentation. Default false. */
+		readonly slowInteractions?: boolean
 		readonly captureHeaders?: {
 			readonly request?: ReadonlyArray<string>
 			readonly response?: ReadonlyArray<string>
@@ -221,6 +228,8 @@ export interface ResolvedConfig {
 		| { readonly urls: ReadonlyArray<string | RegExp>; readonly maxLength: number }
 		| undefined
 	readonly captureHeaders: HeaderCapture
+	readonly longFrames: boolean
+	readonly slowInteractions: boolean
 	readonly maskAllInputs: boolean
 	readonly maskAllText: boolean
 	readonly persistVisitorId: boolean
@@ -300,6 +309,8 @@ export function resolveConfig(config: MapleBrowserConfig): ResolvedConfig {
 				}
 			: undefined,
 		captureHeaders: resolveHeaderCapture(config.tracing?.captureHeaders),
+		longFrames: config.tracing?.longFrames ?? false,
+		slowInteractions: config.tracing?.slowInteractions ?? false,
 		replayOnErrorSampleRate:
 			config.replay?.onErrorSampleRate === undefined
 				? 0

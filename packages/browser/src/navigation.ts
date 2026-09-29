@@ -70,6 +70,11 @@ const tracedSpans = new WeakSet<Span>()
  */
 const tracer = () => (hasConsent() ? liveMapleTracer(SDK_NAME, SDK_VERSION) : undefined)
 
+/** The navigation span in flight, for work that should nest under it. */
+export function openNavigationSpan(): Span | undefined {
+	return navigation?.span
+}
+
 /** End the open navigation as interrupted: something other than its route finishing ended it. */
 function interruptNavigation(): void {
 	navigation?.span.setAttribute("app.navigation.interrupted", true)

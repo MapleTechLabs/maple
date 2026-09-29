@@ -57,3 +57,4 @@ export {
 	warnIfKeylessMapleIngest,
 } from "./platform/region"
 export { redactUrl, scrubUrl } from "./platform/url-privacy"
+export { selectorOf } from "./capture/interactions"

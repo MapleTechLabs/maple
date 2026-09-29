@@ -9,6 +9,7 @@ import { flushBreadcrumbs, startBreadcrumbs } from "./breadcrumbs"
 import { recordDocumentTiming } from "./document-timing"
 import { startLogs } from "./logs"
 import { startOfflineQueue } from "./offline"
+import { startPerf } from "./perf"
 import { startReports } from "./reports"
 import { startWebVitals } from "./web-vitals"
 
@@ -26,6 +27,7 @@ export function startDeferred(config: ResolvedConfig): () => Promise<void> {
 	})
 	const stopErrorListener = onErrorRecorded(flushBreadcrumbs)
 	const stopReports = startReports({ csp: config.reportCsp, browserReports: config.reportBrowser })
+	const stopPerf = startPerf({ longFrames: config.longFrames, slowInteractions: config.slowInteractions })
 	const offline = config.offlineQueue ? startOfflineQueue(config) : undefined
 	attachSpanStash(offline?.stashSpans)
 	const stops = [
@@ -38,6 +40,7 @@ export function startDeferred(config: ResolvedConfig): () => Promise<void> {
 			stopReports()
 			attachSpanStash(undefined)
 			offline?.stop()
+			stopPerf()
 		},
 	]
 	return async () => {

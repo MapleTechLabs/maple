@@ -39,6 +39,8 @@ const CONFIG = {
 	canvasFps: undefined,
 	networkBodies: undefined,
 	captureHeaders: { request: [], response: [] },
+	longFrames: false,
+	slowInteractions: false,
 	maskAllInputs: true,
 	maskAllText: false,
 	persistVisitorId: true,
