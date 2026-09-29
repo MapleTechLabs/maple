@@ -10,7 +10,8 @@
 // Error. That is the shape `error_events_mv` fingerprints on, so these arrive in
 // error tracking beside server-side errors rather than in a separate silo.
 import { scrubUrl } from "@maple/browser-session"
-import { type Span, SpanKind, SpanStatusCode } from "@opentelemetry/api"
+import { context, type Span, SpanKind, SpanStatusCode } from "@opentelemetry/api"
+import { keepContext } from "./sampling"
 import { mapleTracer } from "./tracing"
 import { SDK_NAME, SDK_VERSION } from "./version"
 
@@ -71,15 +72,19 @@ export function recordFailure(span: Span, error: unknown): void {
 	span.setStatus({ code: SpanStatusCode.ERROR, message: normalized.message })
 }
 
-/** Record `error` on a one-off span. */
+/** Record `error` on a one-off span, exported whatever the session's trace sampling. */
 function recordException(error: unknown, options: CaptureExceptionOptions): void {
-	const span = mapleTracer(SDK_NAME, SDK_VERSION).startSpan(options.name ?? "exception", {
-		kind: SpanKind.INTERNAL,
-		attributes: {
-			...(typeof location !== "undefined" ? { "url.full": scrubUrl(location.href) } : undefined),
-			...options.attributes,
+	const span = mapleTracer(SDK_NAME, SDK_VERSION).startSpan(
+		options.name ?? "exception",
+		{
+			kind: SpanKind.INTERNAL,
+			attributes: {
+				...(typeof location !== "undefined" ? { "url.full": scrubUrl(location.href) } : undefined),
+				...options.attributes,
+			},
 		},
-	})
+		keepContext(context.active()),
+	)
 	recordFailure(span, error)
 	span.end()
 }

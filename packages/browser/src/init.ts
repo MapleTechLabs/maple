@@ -28,6 +28,7 @@ import type { ReplaySessionHandle } from "@maple/browser-session/replay"
 import { trace } from "@opentelemetry/api"
 import { type MapleBrowserConfig, type ResolvedConfig, resolveConfig } from "./config"
 import { setupErrorCapture } from "./errors"
+import { setLogIdentity } from "./logs"
 import { resetNavigation } from "./navigation"
 import { setupTracing } from "./tracing"
 import { SDK_NAME, SDK_VERSION } from "./version"
@@ -93,6 +94,8 @@ export function init(rawConfig: MapleBrowserConfig): MapleBrowserHandle {
 	let rotateOnNextStart = false
 	let shutdownTracing: (() => Promise<void>) | undefined
 	let stopErrorCapture: (() => void) | undefined
+	let deferredPending: Promise<void> | undefined
+	let stopDeferred: (() => Promise<void>) | undefined
 	// Bumped by every start and stop, so a replay chunk that lands after a
 	// consent revoke (or a rotation) never attaches a recorder to a dead runtime.
 	let generation = 0
@@ -123,6 +126,17 @@ export function init(rawConfig: MapleBrowserConfig): MapleBrowserHandle {
 		// first moments into a no-op tracer.
 		if (config.tracingEnabled && config.tracingCaptureErrors && !stopErrorCapture) {
 			stopErrorCapture = setupErrorCapture()
+		}
+		if (!deferredPending) {
+			setLogIdentity(() => activeConfig?.identity?.id)
+			deferredPending = import("./deferred")
+				// Started even when shutdown() is already waiting on it, so queued records still flush.
+				.then(({ startDeferred }) => {
+					stopDeferred = startDeferred(config)
+				})
+				.catch(() => {
+					// A blocked chunk costs the deferred signals, never the page.
+				})
 		}
 		const shared = {
 			endpoint: config.endpoint,
@@ -224,6 +238,9 @@ export function init(rawConfig: MapleBrowserConfig): MapleBrowserHandle {
 			stopErrorCapture = undefined
 			// Before the provider shuts down, so an open navigation exports with it
 			resetNavigation()
+			await deferredPending
+			await stopDeferred?.()
+			stopDeferred = undefined
 			await shutdownTracing?.()
 			shutdownTracing = undefined
 			setActiveTraceIdProvider(() => undefined)

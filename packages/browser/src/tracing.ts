@@ -24,6 +24,7 @@ import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-base"
 import { WebTracerProvider } from "@opentelemetry/sdk-trace-web"
 import { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION } from "@opentelemetry/semantic-conventions"
 import type { ResolvedConfig } from "./config"
+import { SessionSampler } from "./sampling"
 import { SDK_NAME, SDK_VERSION } from "./version"
 
 /** Span attributes that carry a page or request URL. */
@@ -120,21 +121,8 @@ export function liveMapleTracer(name: string, version: string): Tracer | undefin
 	return mapleProvider?.getTracer(name, version)
 }
 
-/**
- * Set up browser OTel tracing exporting to Maple's ingest. When
- * `tracingInstrumentFetch` is true, fetch() calls are auto-instrumented and
- * their trace ids feed the session. Disable it when an external tracer (e.g.
- * the Effect client SDK) already instruments requests — that tracer feeds the
- * session via the published sink instead, and this avoids redundant duplicate
- * network spans. Returns a shutdown function.
- *
- * `session.id` is deliberately **not** a resource attribute: the resource is
- * fixed for the provider's lifetime, but sessions rotate under it (idle
- * rotation, consent revoke→re-grant), so a resource-level id would attribute
- * every post-rotation span to the ended session. `TraceIdCollector` stamps the
- * live id per span instead.
- */
-export function setupTracing(config: ResolvedConfig): () => Promise<void> {
+/** Resource attributes shared by every signal this SDK exports. */
+export function resourceAttributes(config: ResolvedConfig): Record<string, string> {
 	const attributes: Record<string, string> = {
 		[ATTR_SERVICE_NAME]: config.serviceName,
 		"maple.sdk.type": "browser",
@@ -156,7 +144,24 @@ export function setupTracing(config: ResolvedConfig): () => Promise<void> {
 		attributes["deployment.environment"] = config.environment
 		attributes["deployment.environment.name"] = config.environment
 	}
+	return attributes
+}
 
+/**
+ * Set up browser OTel tracing exporting to Maple's ingest. When
+ * `tracingInstrumentFetch` is true, fetch() calls are auto-instrumented and
+ * their trace ids feed the session. Disable it when an external tracer (e.g.
+ * the Effect client SDK) already instruments requests — that tracer feeds the
+ * session via the published sink instead, and this avoids redundant duplicate
+ * network spans. Returns a shutdown function.
+ *
+ * `session.id` is deliberately **not** a resource attribute: the resource is
+ * fixed for the provider's lifetime, but sessions rotate under it (idle
+ * rotation, consent revoke→re-grant), so a resource-level id would attribute
+ * every post-rotation span to the ended session. `TraceIdCollector` stamps the
+ * live id per span instead.
+ */
+export function setupTracing(config: ResolvedConfig): () => Promise<void> {
 	const exporter = new ConsentSpanExporter(
 		new OTLPTraceExporter({
 			url: `${config.endpoint}/v1/traces`,
@@ -167,7 +172,8 @@ export function setupTracing(config: ResolvedConfig): () => Promise<void> {
 	)
 
 	const provider = new WebTracerProvider({
-		resource: resourceFromAttributes(attributes),
+		resource: resourceFromAttributes(resourceAttributes(config)),
+		sampler: new SessionSampler(config.tracingSampleRate),
 		// The id only — the rest of the identity (email, group) belongs on the
 		// session row, not stamped onto every span on the hot path.
 		spanProcessors: [

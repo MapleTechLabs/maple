@@ -72,8 +72,9 @@ Bundled, minified and gzipped, as your bundler would ship it:
 
 |                  | gzipped | what it is                                                |
 | ---------------- | ------- | --------------------------------------------------------- |
-| **eager**        | ~36 kB  | every page load, before any sampling decision             |
-| ↳ our code alone | ~13 kB  | the marginal cost if your app already ships OpenTelemetry |
+| **eager**        | ~40 kB  | every page load, before any sampling decision             |
+| ↳ our code alone | ~16 kB  | the marginal cost if your app already ships OpenTelemetry |
+| **deferred**     | ~5 kB   | the OTel logs SDK, fetched right after `init()`           |
 | **lazy**         | ~61 kB  | rrweb — downloaded only by sessions sampled into replay   |
 
 The eager figure is ~90% OpenTelemetry. If your app already uses the OTel web
@@ -117,6 +118,20 @@ a separate analytics silo. Calls before `init()` finishes are queued.
 ```ts
 MapleBrowser.track("checkout_completed", { plan: "pro", seats: 12 })
 ```
+
+## Logs
+
+`MapleBrowser.logger` writes OpenTelemetry log records, linked to the active span and the session.
+Calls before `init()` are queued.
+
+```ts
+MapleBrowser.logger.info("checkout started", { "cart.items": 3 })
+```
+
+## Trace sampling
+
+`tracing: { sampleRate: 0.25 }` exports the traces of ~25% of sessions. The decision is per
+session, so a sampled session keeps all of its traces. Error spans are always exported.
 
 ## Regions
 

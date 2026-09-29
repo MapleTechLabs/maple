@@ -53,6 +53,7 @@ Every field accepted by `MapleBrowser.init`:
 | `tracing.instrumentFetch`              | `boolean`                 | `true`                     | Auto-instrument `fetch()` to create network spans. Set `false` when another tracer (e.g. the Effect client SDK) already instruments requests. Its spans feed the session through the published sink, and turning this off avoids duplicate network spans. |
 | `tracing.captureErrors`                | `boolean`                 | `true`                     | Record uncaught errors and unhandled rejections as error spans. See [Errors](#errors).                                                                                                                                                                    |
 | `tracing.propagateTraceHeaderCorsUrls` | `Array<string \| RegExp>` | `[]`                       | Cross-origin URLs whose `fetch()` requests carry the `traceparent` header. See [Tracing across origins](#tracing-across-origins).                                                                                                                         |
+| `tracing.sampleRate`                   | `number`                  | `1`                        | Fraction of sessions whose traces are exported, `0` to `1`. Decided per session; error spans are always exported. See [Sampling](#sampling).                                                                                                              |
 | `replay.enabled`                       | `boolean`                 | `true`                     | Enable rrweb session recording.                                                                                                                                                                                                                           |
 | `replay.sampleRate`                    | `number`                  | `1`                        | Fraction of sessions to record, `0` to `1`. Out-of-range values are clamped with a warning. See [Sampling](#sampling).                                                                                                                                    |
 | `privacy.maskAllInputs`                | `boolean`                 | `true`                     | Mask all `<input>` values in the recording.                                                                                                                                                                                                               |
@@ -241,6 +242,21 @@ Cross-origin scripts report a bare `"Script error."` with no stack or filename. 
 since they all fingerprint to one empty issue. Add `crossorigin` to the script tag to get the real
 error.
 
+## Logs
+
+`MapleBrowser.logger` writes OpenTelemetry log records. Each one is linked to the span active when
+it was logged and carries `session.id` (and `user.id` once known), so it shows up on the trace, in
+the logs explorer, and next to the session.
+
+```ts
+MapleBrowser.logger.info("checkout started", { "cart.items": 3 })
+MapleBrowser.logger.error("payment declined", { "payment.provider": "card" })
+```
+
+Levels are `debug`, `info`, `warn` and `error`. Attribute values are strings, numbers or booleans.
+Calls before `init()` are queued. The logs SDK loads in a separate chunk right after `init()`, so it
+stays out of the bundle every page load has to parse first.
+
 ## Tracing across origins
 
 `fetch` spans send the W3C `traceparent` header to same-origin requests only. When your API lives
@@ -327,13 +343,22 @@ privacy: {
 
 To record only a fraction of sessions, set `replay.sampleRate` between `0` and `1`. For example, `0.1` records ~10% of sessions. Tracing is unaffected by this setting.
 
+`tracing.sampleRate` does the same for traces. The decision is made once per session (a hash of
+`session.id`), so a sampled session keeps every one of its traces and its replay never links to a
+dropped one. Spans that record an error are always exported, whatever the rate.
+
 ```ts
 MapleBrowser.init({
 	ingestKey: "maple_pk_...",
 	serviceName: "acme-web",
+	tracing: { sampleRate: 0.25 },
 	replay: { sampleRate: 0.1 },
 })
 ```
+
+Sampled traces carry the W3C `tracestate` threshold (`ot=th:…`), so Maple weights each one by the
+inverse of the rate and request counts stay realistic. A trace joined from a server-rendered
+`traceparent` follows the server's decision instead.
 
 ## Framework examples
 

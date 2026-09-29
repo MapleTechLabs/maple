@@ -67,6 +67,12 @@ export interface MapleBrowserConfig {
 		 * `traceparent` header in CORS. Example: `[/^https:\/\/api\.example\.com\//]`.
 		 */
 		readonly propagateTraceHeaderCorsUrls?: ReadonlyArray<string | RegExp>
+		/**
+		 * Fraction of sessions whose traces are exported, 0–1. Default 1. Decided
+		 * once per session, so a sampled session keeps every trace. Error spans are
+		 * always exported.
+		 */
+		readonly sampleRate?: number
 	}
 	readonly replay?: {
 		/** Default true. */
@@ -131,6 +137,7 @@ export interface ResolvedConfig {
 	readonly tracingInstrumentFetch: boolean
 	readonly tracingCaptureErrors: boolean
 	readonly propagateTraceHeaderCorsUrls: ReadonlyArray<string | RegExp>
+	readonly tracingSampleRate: number
 	readonly replayEnabled: boolean
 	readonly replaySampleRate: number
 	readonly maskAllInputs: boolean
@@ -159,17 +166,15 @@ export function resolveIdentity(config: {
  * A sample rate outside 0–1 (or not a number) is a typo, not a policy. Clamp it
  * and say so, rather than recording everyone or no one without a word.
  */
-function resolveSampleRate(raw: number | undefined): number {
+function resolveSampleRate(option: string, raw: number | undefined): number {
 	if (raw === undefined) return 1
 	if (typeof raw !== "number" || Number.isNaN(raw)) {
-		console.warn(
-			`[maple] replay.sampleRate must be a number between 0 and 1; got ${String(raw)}. Using 1.`,
-		)
+		console.warn(`[maple] ${option} must be a number between 0 and 1; got ${String(raw)}. Using 1.`)
 		return 1
 	}
 	if (raw < 0 || raw > 1) {
 		const clamped = Math.min(1, Math.max(0, raw))
-		console.warn(`[maple] replay.sampleRate must be between 0 and 1; got ${raw}. Using ${clamped}.`)
+		console.warn(`[maple] ${option} must be between 0 and 1; got ${raw}. Using ${clamped}.`)
 		return clamped
 	}
 	return raw
@@ -195,8 +200,9 @@ export function resolveConfig(config: MapleBrowserConfig): ResolvedConfig {
 		tracingInstrumentFetch: config.tracing?.instrumentFetch ?? true,
 		tracingCaptureErrors: config.tracing?.captureErrors ?? true,
 		propagateTraceHeaderCorsUrls: config.tracing?.propagateTraceHeaderCorsUrls ?? [],
+		tracingSampleRate: resolveSampleRate("tracing.sampleRate", config.tracing?.sampleRate),
 		replayEnabled: config.replay?.enabled ?? true,
-		replaySampleRate: resolveSampleRate(config.replay?.sampleRate),
+		replaySampleRate: resolveSampleRate("replay.sampleRate", config.replay?.sampleRate),
 		maskAllInputs: config.privacy?.maskAllInputs ?? true,
 		maskAllText: config.privacy?.maskAllText ?? false,
 		persistVisitorId: config.privacy?.persistVisitorId ?? true,

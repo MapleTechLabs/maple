@@ -44,6 +44,7 @@ const CONFIG = {
 	captureUserEmail: true,
 	respectDoNotTrack: false,
 	propagateTraceHeaderCorsUrls: [],
+	tracingSampleRate: 1,
 	sanitizeUrl: undefined,
 }
 
