@@ -1,15 +1,15 @@
 ---
 title: "Trace Haystack agents with OpenTelemetry"
-description: "Send Haystack 3 Agent and pipeline runs to Maple as one Agent Session per conversation, with the transcript, model, tokens, cost and failed tool calls."
+description: "Send Haystack 3 Agent and pipeline runs to Maple as one Agent Session per conversation, with transcript, model, tokens, cost and failed tool calls."
 group: "AI Agents"
 order: 28
 navLabel: "Haystack"
 icon: "haystack"
 ---
 
-Haystack 3 traces its own pipelines, components, Agent steps and tool calls through the `opentelemetry-haystack` tracer. Those spans use a private `haystack.*` vocabulary: the model id and token counts exist only inside a JSON blob of the model's reply, a failed tool call ends with status `Unset`, and there is no conversation id anywhere. Sent to Maple as-is, every Haystack run shows up with the right shape but with no model calls, no tokens, no transcript, no tool failures, and one session per request.
+Haystack 3 traces its pipelines, components, Agent steps and tool calls through `opentelemetry-haystack`, but it keeps the model, tokens and messages inside `haystack.*` JSON blobs Maple doesn't read, leaves failed tool calls unmarked and has no conversation id. This guide adds `maple_haystack.py`, a subclass of Haystack's tracer that writes the GenAI attributes Maple reads, and a `conversation()` block that groups runs into one session.
 
-This guide keeps Haystack's own spans and adds a single-file tracer of about 120 lines, `maple_haystack.py`, that writes the OpenTelemetry GenAI attributes Maple reads onto them while they are still open. It covers Python 3.10+ with `haystack-ai` 3.2 and `opentelemetry-haystack` 1.0, for the `Agent` component, `AgentTool`/`PipelineTool` sub-agents and chat generators in plain pipelines.
+Tested with `haystack-ai` 3.2 and `opentelemetry-haystack` 1.0 on Python 3.10 or later.
 
 ## Quick setup with a coding agent
 
@@ -23,28 +23,16 @@ Install the skill with `npx skills add MapleTechLabs/maple/skills --skill maple-
 My Maple ingest key is maple_pk_... and my organization is in the US region.
 ```
 
-Use your key from **Settings → Ingestion**. Without one, the agent uses a placeholder you can replace later. EU organizations should say EU region.
+Your ingest key is under **Settings → Ingestion**.
 
-## Why not the plain Haystack tracer or OpenInference
-
-There are three ready-made ways to get OpenTelemetry spans out of Haystack. None of them gives Maple a complete session on its own:
-
-| Option | What Maple gets | What is missing |
-| --- | --- | --- |
-| `OpenTelemetryTracer` from `opentelemetry-haystack` | Pipeline, component, Agent, step and tool spans, detected as **Haystack** | Model, tokens, transcript and tool failures (all inside `haystack.*` blobs Maple does not read), session id |
-| `openinference-instrumentation-haystack` | Model and tokens on generator spans | Tool spans (tools run inside the Agent, which it records as one opaque chain), session id (`using_session` writes `session.id`, which Maple ignores for this dialect), framework label ("Unidentified") |
-| OpenLLMetry `opentelemetry-instrumentation-haystack` | `Pipeline.run`, plus `OpenAIGenerator` and `OpenAIChatGenerator` calls | Agent steps, tool spans, tokens, every other generator (OpenRouter, Anthropic, ...), content in indexed `gen_ai.prompt.N.*` keys Maple does not read, session id |
-
-The tracer in this guide is a subclass of the first option. It keeps every span and tag Haystack emits, so nothing you already see in Maple's trace view changes, and adds `gen_ai.*` attributes next to them. Don't run it together with the OpenInference or OpenLLMetry instrumentor: each would record every model call a second time.
-
-## Install and export to Maple
+## Install and add the Maple tracer
 
 ```bash
 pip install "haystack-ai>=3.2" "opentelemetry-haystack>=1.0" \
   "opentelemetry-sdk>=1.45" "opentelemetry-exporter-otlp-proto-http>=1.45"
 ```
 
-Save this file next to your app as `maple_haystack.py`:
+Save this file next to your app as `maple_haystack.py`. It keeps every span and tag Haystack emits and adds `gen_ai.*` attributes to the Agent, model and tool spans:
 
 ```py
 """Haystack tracer that adds the OpenTelemetry GenAI attributes Maple reads."""
@@ -170,16 +158,9 @@ class MapleHaystackTracer(OpenTelemetryTracer):
             yield span
 ```
 
-It maps Haystack's spans as follows:
+## Export to Maple
 
-| Haystack span | Maple reads |
-| --- | --- |
-| `haystack.agent.run` | `invoke_agent`, agent name from the pipeline component or `AgentTool` that runs it |
-| `haystack.agent.step.llm`, and any `*ChatGenerator` component | `chat`: model, finish reason, input/output/cache/reasoning tokens, cost, messages |
-| `haystack.agent.step.tool` | `execute_tool`: tool name, arguments, result, and `Error` status when the tool failed |
-| every span | `gen_ai.conversation.id` inside a `conversation()` block |
-
-Then configure OpenTelemetry once at startup and hand Haystack the tracer:
+Configure OpenTelemetry once at startup and hand Haystack the tracer:
 
 ```py
 # telemetry.py
@@ -207,20 +188,13 @@ export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer YOUR_INGEST_KEY"
 export OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"
 ```
 
-For an EU organization, use `https://ingest.eu.maple.dev`. The exporter appends `/v1/traces` to the endpoint itself.
+EU organizations use `https://ingest.eu.maple.dev`. The exporter appends `/v1/traces` itself.
 
-Import `telemetry` before the first `pipeline.run()` or `agent.run()`. Unlike Haystack's content switch, the tracer has no import-order trap: Haystack looks up the active tracer on every span, so any run after `enable_tracing()` is traced.
-
-Two details matter here:
-
-- **Keep the tracer name `"haystack"`.** It becomes the instrumentation scope, which is how Maple labels the sessions as Haystack. Maple also recognizes Haystack's span names, but the scope covers spans added in newer Haystack releases too.
-- **If the app already has a `TracerProvider`** (from FastAPI instrumentation or another library), skip the provider lines and pass `trace.get_tracer("haystack")` from the existing one. A second provider sends every span twice or not at all.
+Import `telemetry` before the first `pipeline.run()` or `agent.run()`. Keep the tracer name `"haystack"`, because Maple uses it to label the sessions as Haystack. If the app already has a `TracerProvider`, skip the provider lines and pass `trace.get_tracer("haystack")` from the existing one.
 
 ## Group turns into one session
 
-Haystack's `Agent` is stateless: your app keeps the message history and passes it into every run, so nothing on the wire says that two runs belong to the same chat. Each `pipeline.run()` is its own trace, and without a conversation id Maple shows each one as a separate one-turn session.
-
-Wrap every run in `conversation()` with your own chat id:
+Haystack's `Agent` is stateless: your app passes the message history into every run, and each run is its own trace. Wrap every run in `conversation()` with your chat's id:
 
 ```py
 from haystack import Pipeline
@@ -243,88 +217,31 @@ def handle_message(chat_id: str, history: list[ChatMessage], text: str) -> list[
     return [m for m in result["assistant"]["messages"] if not m.is_from("system")]
 ```
 
-Use the id your app already stores for the chat, such as a database row id or a thread id from your frontend. Don't mint a new UUID per request, and don't use one id for the whole process: both break the grouping, in opposite directions.
+Use the id your app already stores for the chat, such as a database row id or a frontend thread id. A new UUID per request gives one session per message, and one id for the whole process merges every user into one session. `conversation()` uses a `ContextVar`, so it stays scoped to the request in async and threaded servers and follows the Agent into its tool threads.
 
-`conversation()` is a `ContextVar`, so it is scoped to the current request in async and threaded servers alike, and it follows the Agent into the worker threads that run tools in parallel. It writes `gen_ai.conversation.id` on every span of the run. Maple needs it on at least one span per trace to join that trace to the session.
+## Agent names, content and tokens
 
-## Record prompts, responses and tool calls
+Maple names each agent, and gives it a lane, from the pipeline component that runs it (`assistant` above) or from the `name=` of the `AgentTool` that wraps it. An Agent run directly with `agent.run()` is called `agent`.
 
-With the default `content=True`, the tracer writes:
-
-- `gen_ai.input.messages` and `gen_ai.output.messages` on every model call, as `{role, parts}` arrays with text, tool calls and tool results;
-- `gen_ai.system_instructions` with the Agent's system prompt;
-- `gen_ai.tool.call.arguments` and `gen_ai.tool.call.result` on every tool span;
-- Haystack's own `haystack.*.input`/`.output` tags, as before.
-
-Maple builds the transcript and the turn labels from the `gen_ai.*` messages. The `haystack.*` blobs only show up in the raw span attributes.
-
-Maple currently shows a tool span's result only when it is a JSON object or array. A tool that returns plain text, like `"Sunny, 21°C"`, still has its result in the transcript, as the tool result the next model call receives, but its tool call row shows no result. Return a dict from tools whose results you want on the tool pages.
-
-`HAYSTACK_CONTENT_TRACING_ENABLED` has no effect with this tracer: `MapleHaystackTracer` decides on its own. Without the tracer, that variable is read once, at the first `import haystack`, and setting it any later silently records nothing.
-
-To keep prompts and responses out of Maple, turn content off:
+To keep prompts and responses out of Maple, pass `content=False`:
 
 ```py
 tracing.enable_tracing(MapleHaystackTracer(trace.get_tracer("haystack"), content=False))
 ```
 
-Model, tokens, cost, finish reasons, tool names and tool failures are still recorded, because they come from the reply metadata rather than the text. The error message of a failed tool stays on the span status, and Haystack's message quotes the call's arguments (``Failed to invoke Tool `fetch_transport_data` with parameters {'city': 'Rome'}``). If arguments can carry personal data, redact them in `_tool()` before `set_status`.
+Model, tokens, cost, tool names and failures are still recorded. `HAYSTACK_CONTENT_TRACING_ENABLED` has no effect with this tracer.
 
-Haystack also puts the whole pipeline input on the root span as `haystack.pipeline.input_data`, a plain tag that its own content switch never gated. With `content=False` the tracer drops it, so the user's message doesn't leak through the back door. To redact rather than drop, filter the values in `_messages()` before they are written.
-
-## Tools, errors and sub-agents
-
-Each tool call is a `haystack.agent.step.tool` span with `gen_ai.tool.name` set to the tool's name. Tools of one step run in parallel threads, and their spans sit side by side under the step.
-
-When a tool raises, Haystack wraps the exception in `ToolInvocationError`, feeds the error text back to the model, and writes `{"error": "..."}` as the tool output. The span itself ends with status `Unset`, so without the tracer the failure is invisible. The tracer sets status `Error` with the message and `error.type=ToolInvocationError`, which is what Maple counts as a failed tool call. This happens with both values of `raise_on_tool_invocation_failure`.
-
-Maple opens a lane for every agent with a distinct `gen_ai.agent.name`. The tracer takes that name from what runs the Agent:
-
-- an Agent added to a pipeline gets its component name, `assistant` in the example above;
-- an Agent wrapped in `AgentTool(agent=..., name="weather_worker", ...)` gets the tool name, and Maple shows the tool call as a delegation to that sub-agent;
-- an Agent inside a `PipelineTool` gets its component name in the inner pipeline;
-- an Agent run directly with `agent.run()` is called `agent`.
-
-A multi-agent setup with the orchestrator in a pipeline and workers as `AgentTool`s looks like this:
-
-```py
-from haystack.tools import AgentTool
-
-weather_worker = AgentTool(
-    agent=Agent(chat_generator=chat_generator, tools=[get_weather], system_prompt="Report the weather."),
-    name="weather_worker",
-    description="Look up the current weather for a city.",
-)
-# budget_worker and transport_worker are built the same way
-orchestrator = Agent(chat_generator=chat_generator, tools=[weather_worker, budget_worker, transport_worker])
-pipeline = Pipeline()
-pipeline.add_component("orchestrator", orchestrator)
-
-with conversation(briefing_id):
-    pipeline.run({"orchestrator": {"messages": [ChatMessage.from_user("Brief me on Amsterdam.")]}})
-```
-
-Approval gates (`ConfirmationHook` at `before_tool`) stay inside the same run and the same session. A call the user rejects never reaches the tool, so it has no tool span; the model sees the rejection as a tool result, which is visible in the transcript.
-
-## Tokens and cost
-
-Tokens come from the `usage` object Haystack's generators put in each reply's `meta`. The tracer reads the OpenAI field names (`prompt_tokens`, `completion_tokens`, `prompt_tokens_details.cached_tokens` and `.cache_write_tokens`, `completion_tokens_details.reasoning_tokens`), which is what `OpenAIChatGenerator`, `OpenRouterChatGenerator` and other OpenAI-compatible generators report.
-
-**Streaming needs one extra flag with OpenAI.** A streamed OpenAI response only carries usage when you ask for it, and Haystack doesn't:
+A streamed `OpenAIChatGenerator` reply carries no token counts unless you ask for them (OpenRouter always sends usage):
 
 ```py
 OpenAIChatGenerator(model="gpt-4o-mini", generation_kwargs={"stream_options": {"include_usage": True}})
 ```
 
-OpenRouter always sends usage in the last streamed chunk, so `OpenRouterChatGenerator` needs nothing extra.
+Cost only appears with `OpenRouterChatGenerator`, the one Haystack generator that reports a price. Other providers show tokens and read as **unpriced**.
 
-Maple never prices tokens itself. It shows cost only when a span carries one, and the only Haystack generator that reports a price is OpenRouter's (`usage.cost`, in USD), which the tracer copies to `gen_ai.usage.cost`. With any other provider, sessions show tokens and read as **unpriced**.
+## Flush before short-lived processes exit
 
-The Agent itself reports no usage, so there is nothing to double count: each model call is counted once, on its `haystack.agent.step.llm` span.
-
-## Short-lived processes
-
-`BatchSpanProcessor` exports in the background every 5 seconds. A script, CLI, notebook cell, cron job or serverless handler that exits sooner loses the last batch. Flush before the process ends:
+`BatchSpanProcessor` exports every 5 seconds. A script, CLI, notebook, cron job or serverless handler that exits sooner loses the last batch:
 
 ```py
 try:
@@ -338,41 +255,18 @@ Long-running servers only need `provider.shutdown()` in their shutdown hook.
 
 ## Check that it works
 
-Run one conversation of at least two turns, one of them with a tool call. Within a minute, open **Agent Sessions** in Maple and filter by your service name. You should see:
+Run a conversation of at least two turns, one with a tool call, and open **Agent Sessions** filtered by your service name. You should see one session per conversation id, labelled Haystack, with one turn per `pipeline.run()`. Each `haystack.agent.step.llm` span shows up as a model call with model and tokens, and each `haystack.agent.step.tool` span as a tool call, with failed tools marked.
 
-- **one session per conversation id**, labelled Haystack, with one turn per `pipeline.run()`;
-- a transcript with the user's messages, the assistant's replies and the tool calls, each turn labelled with its user message;
-- an LLM call per `haystack.agent.step.llm` span, with the model (for example `openai/gpt-4o-mini`) and input and output tokens, including the streamed turn;
-- a tool call per `haystack.agent.step.tool` span, named after the tool, with a failed tool counted as an error;
-- the agent name from your pipeline component or `AgentTool`, and a lane per sub-agent;
-- cost on OpenRouter, or "unpriced" with other providers.
-
-Each turn's trace looks like this:
-
-```text
-haystack.pipeline.run
-  haystack.component.run            assistant
-    haystack.agent.run              invoke_agent, agent "assistant"
-      haystack.agent.step
-        haystack.agent.step.llm     chat, openai/gpt-4o-mini
-        haystack.agent.step.tool    execute_tool, get_weather
-      haystack.agent.step
-        haystack.agent.step.llm     chat
-```
-
-An Agent with hooks, such as a `ConfirmationHook`, also gets a `haystack.agent.hook` span before its tool calls. Like `haystack.agent.step`, it carries no model or tool attributes, so Maple doesn't count it as a call.
+A tool that returns plain text shows its result in the transcript but not on its tool call row. Return a dict to see the result there too.
 
 ## Troubleshooting
 
-- **Every request is its own session.** The run happened outside a `conversation()` block, or each request passes a fresh id. Wrap the `pipeline.run()` call itself, and pass the chat's stored id.
-- **Sessions show the right spans but no model calls, tokens or transcript.** Haystack is still using the plain `OpenTelemetryTracer`. Check that `enable_tracing()` gets a `MapleHaystackTracer`, and that no later call replaces it.
-- **No Haystack spans at all.** Haystack 3 no longer turns tracing on when `opentelemetry-sdk` is installed. Call `tracing.enable_tracing(...)` before the first run.
-- **Every model call appears twice.** The OpenInference or OpenLLMetry Haystack instrumentor is also active. Remove it; this tracer already records every model call.
-- **The streamed turn has no tokens.** `OpenAIChatGenerator` without `stream_options.include_usage`. Add it to `generation_kwargs`.
-- **Tokens are zero with a non-OpenAI generator.** Its `meta["usage"]` doesn't use the OpenAI field names. Print `result["replies"][0].meta["usage"]` once and add its keys to `_chat()`.
-- **The agent is called `agent`.** It ran through `agent.run()`, not as a pipeline component or `AgentTool`. Add it to a `Pipeline` under the name you want to see.
-- **A failed tool isn't counted.** The tool caught its own exception and returned a normal value. Let it raise, or return `{"error": ...}`, which Haystack uses for failures too.
-- **Sessions are split or missing turns in a script.** The process exited before the batch was exported. Call `provider.force_flush()` and `provider.shutdown()` in `finally`.
+- **Every request is its own session.** Wrap the `pipeline.run()` call itself in `conversation()`, and pass the chat's stored id.
+- **Spans but no model calls, tokens or transcript.** `enable_tracing()` got the plain `OpenTelemetryTracer`, or a later call replaced `MapleHaystackTracer`.
+- **No Haystack spans at all.** Haystack 3 doesn't trace until you call `tracing.enable_tracing(...)`. Call it before the first run.
+- **Every model call appears twice.** Remove `openinference-instrumentation-haystack` or OpenLLMetry's `opentelemetry-instrumentation-haystack`.
+- **Tokens are zero with a non-OpenAI generator.** Print `result["replies"][0].meta["usage"]` once and add its keys to `_chat()`.
+- **A failed tool isn't counted.** The tool caught its own exception. Let it raise, or return `{"error": ...}`.
 
 ## Related
 

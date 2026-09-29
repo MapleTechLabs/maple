@@ -65,10 +65,15 @@ Rules:
 
 Message JSON (`input.messages`/`output.messages`): array of `{role, parts}`; parts `{type:"text",content}`, `{type:"tool_call",id,name,arguments:<object>}`, `{type:"tool_call_response",id,response}`, `{type:"reasoning",content}`. Output messages add `finish_reason`. `system_instructions` = array of parts, no role: `[{"type":"text","content":"..."}]`. Always a JSON **string** attribute; plain text and structured (non-string) attribute values don't render.
 
+Also read: `reasoning` parts are rendered; a message may carry `content` (string or part array) instead of `parts`. `gen_ai.response.model` wins over `gen_ai.request.model` when both are set. `gen_ai.response.finish_reasons` feeds the refusal (`content_filter`) and truncation (`length`) checks.
+
+Legacy spellings are read as fallbacks (new key wins when both are set; use current names in new code): `gen_ai.system` (→ `gen_ai.provider.name`, renamed in semconv 1.37), `gen_ai.usage.prompt_tokens`/`completion_tokens`, whole-value `gen_ai.prompt`/`gen_ai.completion`, `gen_ai.usage.cache_creation.input_tokens` (→ `cache_write`), `gen_ai.usage.total_cost` (→ `cost`).
+
 `provider.name` = the API actually called: `openai`, `anthropic`, `gcp.gemini`, `gcp.vertex_ai`, `aws.bedrock`, `azure.ai.openai`, `mistral_ai`, `groq`, `x_ai`, `deepseek`, or `openrouter` for OpenRouter.
 
 ## Step 4: Session id (required)
 
+- The id is read only from spans that have `gen_ai.operation.name`; on an unclassified span it is ignored.
 - Set `gen_ai.conversation.id` on the turn's `invoke_agent` span from the app's conversation/chat/thread id. Same value for every message of a conversation; different across conversations. One classified span per trace is enough; every span in the trace joins.
 - Never: `uuid4()`/`randomUUID()` per request, the trace id, a module-level constant, a per-process default. No real id (single-shot script) → generate one per conversation, not per message, and reuse it.
 - Sub-agents in the same trace: no id (they inherit the trace's session) or the same id. Two different ids in one trace → the lexically larger silently wins.
@@ -78,6 +83,28 @@ Escape hatch, only when a framework's spans carry a session key Maple ignores fo
 - Only on your own wrapper span, never on framework spans (it re-vendors the span to `maple`: framework decoding lost, usage read as inclusive of cache).
 - Use the same value the framework would use for the session.
 - Not needed for hand-written spans: use `gen_ai.conversation.id`.
+- The session then shows framework **Maple**.
+
+```ts
+// chatId comes from your request; frameworkAgent is the framework's agent
+await tracer.startActiveSpan(
+	"invoke_agent support",
+	{
+		attributes: {
+			"gen_ai.operation.name": "invoke_agent",
+			"gen_ai.agent.name": "support",
+			"maple_ai.session.id": chatId,
+		},
+	},
+	async (span) => {
+		try {
+			return await frameworkAgent.run(message) // the framework's spans nest under this one
+		} finally {
+			span.end()
+		}
+	},
+)
+```
 
 ## Step 5: Content
 
@@ -89,11 +116,13 @@ Escape hatch, only when a framework's spans carry a session key Maple ignores fo
 
 ## Step 6: Tools, errors, sub-agents
 
-- Tool failure: set status ERROR with the error message as description, set `error.type` (exception class or error code), no `gen_ai.tool.call.result`, then return the error to the model as the tool result so the loop continues. Keep the message specific: Maple groups failures by it.
+- Tool failure: set status ERROR with the error message as description, set `error.type` (exception class or error code), no `gen_ai.tool.call.result`, then return the error to the model as the tool result so the loop continues. Keep the message specific: Maple's tool pages group failures by it (ids and numbers masked).
+- Maple counts any span as failed if it has status ERROR, a non-empty `error.type`, or `gen_ai.response.status`=`failed`.
 - Tools that return `{"error": ...}` instead of raising: mark the span failed the same way when you detect it.
 - Model call failure: status ERROR + `error.type` (HTTP status or exception class), rethrow.
 - Agent run failure: same on `invoke_agent`.
 - Sub-agent: call its loop inside the delegating tool's `execute_tool` span, so `execute_tool ask_x` → `invoke_agent x` → its `chat`/`execute_tool`. Distinct `gen_ai.agent.name` per agent (lanes need it).
+- Delegation detection: an `execute_tool` span whose only child is an `invoke_agent` span is drawn as a delegation into a lane named after the child's `gen_ai.agent.name`; the tool's arguments/result become the lane's input/output. Two agents with the same name share one lane; an `invoke_agent` span without a name gets no lane.
 - Parallel tools: start each `execute_tool` span inside the turn's context (Node `Promise.all` keeps it; Python threads need `contextvars.copy_context().run`).
 
 ## Step 7: Tokens and cost

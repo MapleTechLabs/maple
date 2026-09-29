@@ -143,6 +143,17 @@ def handle_message(conversation_id: str, text: str) -> str:
 - `CodeAgent` with `executor_type` other than local (`e2b`, `docker`, `modal`, ...) runs tools outside the process: no tool spans. Tell the user; nothing to fix in tracing.
 - Known, not fixable here: no `gen_ai.tool.call.id` on tool spans; a failed tool also marks its `Step N` span ERROR (Maple: toolErrorCount 1, plus an "Other errors" warning for the Step span).
 
+## Known behavior (tell the user when relevant)
+
+- `ToolCallingAgent`: a model reply that calls `final_answer` together with another tool raises `AgentExecutionError`; that step shows as a failed `Step` span although the run continues. It's the framework rejecting the model output, not the user's code.
+- A tool failure puts two `exception` events on the enclosing `Step N` span (wrapped `AgentToolExecutionError`).
+- `CodeAgent` with `LocalPythonExecutor`: tool calls from generated code produce normal tool spans; positional args are recorded as a JSON array (`["Berlin"]`).
+- Tokens: only input/output tokens (`gen_ai.usage.input_tokens`/`output_tokens` + `llm.token_count.*`); cached and reasoning tokens are not recorded. Model = the requested id (`gen_ai.request.model`), not the provider's response model.
+- Provider comes from the model class: `OpenAIServerModel` is always `openai`, even for an Anthropic model behind OpenRouter. `OpenAIServerModel` is an alias of `OpenAIModel`, so spans are `OpenAIModel.generate`.
+- Streaming (`stream_outputs=True`) → `<ModelClass>.generate_stream` spans; smolagents requests `stream_options={"include_usage": True}` for `OpenAIServerModel`, `LiteLLMModel`, `InferenceClientModel`, so tokens are kept.
+- Cost: smolagents records none; sessions show as unpriced.
+- Turn labels and session title read `New task:` (smolagents prefixes each task; Maple uses the first line of the user message).
+
 ## Step 6: Flush
 
 - `TracerProvider` flushes on normal interpreter exit (atexit). That covers servers and CLIs that exit normally.

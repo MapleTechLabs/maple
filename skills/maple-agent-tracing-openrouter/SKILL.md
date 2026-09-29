@@ -153,6 +153,24 @@ Run one conversation (3+ turns, one with a tool call) with a fixed `session_id`,
 
 Tell the user: cost is shown (OpenRouter's charge); cache writes, TTFT, environment, tool calls and agent lanes are not available from Broadcast; transcript is raw JSON and Broadcast-only turns are unlabeled segments. Claude models (`gen_ai.provider.name=anthropic`): Maple applies Anthropic's input-excludes-cache rule to OpenRouter's cache-inclusive input, so cache reads count twice in token totals (cost unaffected).
 
+## Known behavior (tell the user when relevant)
+
+- Transport: OTLP over HTTP with JSON encoding only; Maple ingest accepts JSON on `/v1/traces`, no collector needed.
+- `session_id` also makes OpenRouter route a session's requests to the same provider (better prompt-cache hits). Body `session_id` wins over the `x-session-id` header if both are sent.
+- No `session_id` → each call is its own session named `trace:<trace id>`, one turn, one model call.
+- Turns: Maple counts one turn per trace, so Broadcast-only a user message with three model calls = three turns (shown as unlabeled Segment 1, 2, ...).
+- Dedup when nested: if `LLM Generation` is a descendant of the app's model-call span, usage is counted at the deepest span that reports it; siblings or separate traces are matched by `gen_ai.response.id`. When both spans carry cost, Maple keeps the larger (OpenRouter's).
+- Span tree: `LLM Generation` root, `provider attempt N: <provider>` children, sometimes `generation` / `moderation` children. Only `LLM Generation` counts as a model call, except on the all-attempts-failed path: that call has no usage, and Maple counts the root and each failed attempt as separate model calls (one failed request with one attempt = two LLM calls).
+- Content format: `gen_ai.prompt` = `{"messages": [...]}`, `gen_ai.completion` = `{"completion": "...", "reasoning": "..."}`, both JSON strings; Maple shows them as raw JSON blocks. If the app also emits `gen_ai.input.messages`, that transcript renders normally. Values over 10,000,000 chars are shortened with a `<key>.truncated` attribute; ingest body limit 20 MiB.
+- Attributes on `LLM Generation`: `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`, `gen_ai.usage.input_tokens.cached` (included in input), `gen_ai.usage.output_tokens.reasoning` (included in output), `gen_ai.usage.total_cost` (USD, actual charge), `gen_ai.request.model` / `gen_ai.response.model` (OpenRouter slug), `gen_ai.response.finish_reasons`.
+- Not read by Maple: `gen_ai.usage.input_tokens.cache_write` (cache-write column empty, totals fine), `trace.metadata.openrouter.first_token_ms` (Maple reads TTFT only from `gen_ai.response.time_to_first_chunk`), the **Cost** generation-metadata option's `span.metadata.openrouter_generation.*`.
+- `gen_ai.provider.name` = the model's author (`openai`, `anthropic`); the serving provider is `trace.metadata.openrouter.provider_name` (e.g. `Amazon Bedrock`).
+- Streaming: tokens and cost present without `stream_options.include_usage` (server-side accounting).
+- `service.name` on Broadcast spans is always `openrouter`, no environment attribute. Custom keys in the `trace` object arrive as `trace.metadata.<key>` (searchable in Traces, don't set service/environment).
+- OpenRouter's sample trace (`Test Trace - OpenRouter Observability`, an `openai/gpt-4-turbo` call with sample tokens/cost) can appear as a session; ignore it.
+- Test Connection passes but nothing arrives: check API key filter, data regions, **Enable Broadcast** on the account/org the app key belongs to, and that the key isn't `MAPLE_TEST`.
+- Destinations can be created via OpenRouter's observability API (`type: "otel-collector"`) with a management key (only if the user asks; see Do not).
+
 ## Do not
 
 - Do not use a constant or per-client `session_id`; it merges every user into one session.

@@ -152,18 +152,19 @@ HITL resumes (`approveToolCallGenerate` / `declineToolCallGenerate` / `approveTo
 - On by default: `gen_ai.output.messages` on `chat` spans, tool args/results on `execute_tool`. `gen_ai.input.messages` on `chat` spans (with the system prompt as the first message) only exists because of `mapleSpanProcessor`; without it the transcript has replies but no prompts. Tool calls inside earlier history are summarized by Mastra as `[tool: <name>]` text; the full calls are on the `execute_tool` spans.
 - `gen_ai.system_instructions` on `invoke_agent` is plain text, which Maple does not decode; the system prompt shows through the system message in the `chat` input instead.
 - Opt-out per request: `tracingOptions: { hideInput: true, hideOutput: true }` (whole trace). It hides span input/output only, not metadata; `mapleSpanProcessor` removes the one metadata copy of the reply (`mastra.metadata.body`).
-- `SensitiveDataFilter` is auto-applied (redacts values under keys like password/token/apiKey/authorization/secret). Do not disable it (`sensitiveDataFilter: false`) unless the user asks.
+- `SensitiveDataFilter` is auto-applied (redacts values under keys like password/token/apiKey/authorization/secret). Do not disable it (`sensitiveDataFilter: false`) unless the user asks. It matches key names, not free text: a password typed into the chat still reaches Maple. For pattern-based redaction of message text, suggest an OpenTelemetry Collector between the app and Maple.
 - Serialization caps: 128 KiB/string, 50 items/array, 50 keys/object, depth 8. If agents keep > ~40 messages of history (`lastMessages` > 40 or custom history), add `serializationOptions: { maxArrayLength: 200 }` to the config, or the newest messages are cut from the transcript.
 
 ## Step 5: Tools, errors, sub-agents
 
-- Tools: `createTool({ id, description, inputSchema, execute })`. Span name `execute_tool <id>`, `gen_ai.tool.name` = id. Give tools real ids.
+- Tools: `createTool({ id, description, inputSchema, execute })`. Span name `execute_tool <id>`, `gen_ai.tool.name` = id. Give tools real ids. The exporter leaves tool calls out of the `chat` span's output messages, so a model reply that only requests tools shows as an empty assistant message in the transcript; the calls show from the `execute_tool` spans. Expected.
 - Failures must throw (`throw new Error("...")`). Thrown → span status ERROR with the message as status message, `error.type=unknown`, plus an `exception` event. Returning `{ error }` = counted as success in Maple. If a tool swallows errors into a return value and the user wants failures visible, rethrow.
 - Every `new Agent({ id, name, ... })` needs a distinct `name`: it is `gen_ai.agent.name`, which Maple uses for lanes.
 - Supervisor agents (`agents: {...}` on an Agent): each delegation is `execute_tool agent-<key>` → `invoke_agent <name>` inside the supervisor's trace, one lane per sub-agent. Mastra gives each delegation a thread id `<supervisorThread>-<uuid>`, which sorts after the real id, so without `mapleSpanProcessor` Maple picks a sub-agent's id as the session and splits the turn. Same for `agent.network()` and workflow steps calling agents with their own `memory`. The processor fixes all of them; do not remove it.
 - Maple counts each `execute_tool agent-<key>` delegation as a tool call, next to the sub-agents' own tools. A sub-agent's `chat` input starts with the supervisor's system prompt and the user's original message (Mastra forwards the supervisor's conversation); expected.
 - HITL (`requireApproval: true` tools): the model call that requests the tool is exported twice, once without tokens or output when the run suspends and once with its tokens when the run resumes. Maple shows one extra model call with 0 tokens per approval; token totals are right. Expected, not a setup error.
 
+- Workflow runs: the root span is `invoke_workflow <workflow id>`; Maple treats it as the turn. Steps in `.parallel([...])` show as overlapping lanes.
 - Workflow steps that call an agent: pass `tracingContext` from the step's `execute` args into `agent.generate(prompt, { tracingContext })`, or the agent starts a separate trace.
 
 ## Step 6: Flush
@@ -187,7 +188,18 @@ Run one conversation: 2+ user messages with the same thread id (one streamed), a
 - No span has `mastra.metadata.headers` or `mastra.metadata.body`.
 - `execute_tool <id>` spans have the real tool name, arguments and result; a throwing tool is marked failed with its message; successful tools are not.
 - Supervisor/workflow: one session, one turn per run, one lane per sub-agent `name`, all spans in one trace; tool calls include the `agent-<key>` delegations.
-- Cost shows as unpriced (expected: Mastra emits no cost attribute).
+- Cost shows as unpriced (expected: Mastra emits no cost attribute). Mastra exports no `gen_ai.response.id`; that's fine, each call's usage is reported once.
+
+## Troubleshooting symptoms
+
+- `Custom configuration requires endpoint. Tracing will be disabled.` → no `endpoint` passed in code (env vars are not read).
+- `Traces http/json exporter is not installed` / `http/protobuf exporter is not installed` → protocol package missing (optional deps skipped); set `protocol: "http/protobuf"` and install `@opentelemetry/exporter-trace-otlp-proto`.
+- `Export FAILED` with 401/403 in debug output → missing `Authorization` header or wrong key/region. Value is `Bearer ` + ingest key.
+- One model call per turn carrying the turn's summed tokens → `@mastra/core` / `@mastra/observability` / `@mastra/otel-exporter` from different releases; exporter fell back to `model_generation` as the model call. Update all three together.
+- Dozens of `model_chunk` spans → add `excludeSpanTypes: [SpanType.MODEL_CHUNK]`. Hundreds of `workflow_step` spans → remove `includeInternalSpans: true`.
+- A workflow's agents in separate traces → pass `tracingContext` from the step.
+- Latest user message missing in long chats → raise `serializationOptions.maxArrayLength`.
+- Spans twice → two exporters to Maple (OtelExporter + OTel bridge, or + OpenLLMetry/OpenInference on the AI SDK). Keep OtelExporter only.
 
 ## Do not
 

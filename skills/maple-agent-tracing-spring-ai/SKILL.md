@@ -32,7 +32,7 @@ Mechanism: Spring AI's Micrometer Observations → `micrometer-tracing-bridge-ot
 
 ### 2a. Dependencies (Boot 4, Spring AI 2.0)
 
-Keep the existing `spring-ai-bom` import and model starter. Add:
+Keep the existing `spring-ai-bom` import and model starter. If there is no BOM yet, import `org.springframework.ai:spring-ai-bom:2.0.1` (`<type>pom</type><scope>import</scope>` in `dependencyManagement`; Gradle `implementation(platform("org.springframework.ai:spring-ai-bom:2.0.1"))`). Add:
 
 ```xml
 <dependency>
@@ -88,6 +88,8 @@ Then the agent exports everything: set `OTEL_EXPORTER_OTLP_ENDPOINT=https://inge
 - Deps: `io.micrometer:micrometer-tracing-bridge-otel` + `io.opentelemetry:opentelemetry-exporter-otlp` + `spring-boot-starter-actuator` (required on Boot 3.5; no `spring-boot-starter-opentelemetry`).
 - Properties: `management.otlp.tracing.endpoint=https://ingest.maple.dev/v1/traces`, `management.otlp.tracing.headers.Authorization=Bearer ...`; sampling property unchanged. Stream usage: `spring.ai.openai.chat.options.stream-usage=true`.
 - Step 3 class: replace `tools.jackson.databind.json.JsonMapper.shared().writeValueAsString(...)` with a Jackson 2 `com.fasterxml.jackson.databind.ObjectMapper` (wrap the checked `JsonProcessingException`), and delete the two `getToolCallId()` lines (not in 1.1).
+- OpenAI model property: `spring.ai.openai.chat.options.model` on 1.1 (2.0: `spring.ai.openai.chat.model`).
+- Boot 4 still accepts the Boot 3 `management.otlp.tracing.*` names but marks them deprecated.
 
 ## Step 3: Add the configuration class
 
@@ -201,6 +203,10 @@ public class MapleAiObservationConfig {
 }
 ```
 
+Boot applies `ObservationFilter` beans to the registry automatically; nothing else to register. The filter runs when each observation stops, after Spring AI's own conventions. Why each part exists: the `chat_client` span is labeled `framework` by Spring AI and its name contains "chat", so without `invoke_agent` Maple counts it as a model call; Maple classifies spans without a known operation by name, so unrenamed advisor spans count `tool _calling ` as a tool call and `message_chat_memory` as a model call on every turn. `spring.ai.tools.observations.include-content` writes `spring.ai.tool.call.arguments/result`, which Maple does not read; the filter's `gen_ai.tool.call.*` keys are the ones read.
+
+Content notes: every `chat` span carries the whole conversation so far, so spans grow with long chats (don't cap them; see 2b). With `maple.ai.capture-content=false` no message/tool content leaves the process; to redact instead, mask values inside `message(...)`. The conversation id and agent names are sent regardless: keep personal data out of them.
+
 Kotlin project: translate one to one (e.g. `ObservationFilter { context -> ...; context }`), same beans, same keys.
 
 Do NOT drop advisor observations with an `ObservationPredicate` instead of renaming them: on `.stream()` calls Spring AI takes the model span's parent from the Reactor context, which then holds the skipped (no-op) advisor observation, so the streamed `chat` span becomes its own trace outside the session (verified).
@@ -223,7 +229,44 @@ Maple reads ONLY `spring.ai.chat.client.conversation.id` for Spring AI, on the `
 - Tools that return error strings instead of throwing count as success. Point it out; don't change behavior unasked.
 - Sub-agents: one `ChatClient` per role, exposed to the orchestrator as a `@Tool(name = "<role>", description = ...)` method that calls it. Build each from `builder.clone()` with its own `AGENT_NAME` param. Maple shows `execute_tool <role>` → worker `chat_client` as a delegation lane.
 - Own thread pools / `CompletableFuture` fan-out: propagate the observation to worker threads (Micrometer `context-propagation`: `ContextSnapshot`, a wrapped executor, or build the worker observation with `.parentObservation(parent)`). Otherwise each worker starts a new trace and becomes its own `trace:<id>` session.
+- Spring AI runs the tool calls of one model response sequentially on the calling thread, so context flows without help unless the app fans out itself.
+- A `ChatClient` without an agent name gets no lane; its model and tool calls are drawn in the caller's lane.
 - Spring AI 2.0 has no native tool-approval/HITL mechanism; don't invent one.
+
+Sub-agent example:
+
+```java
+import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.tool.annotation.Tool;
+import org.springframework.stereotype.Component;
+
+@Component
+public class Workers {
+
+	private final ChatClient weather;
+
+	public Workers(ChatClient.Builder builder, WeatherTools weatherTools) {
+		this.weather = builder.clone()
+			.defaultSystem("You answer weather questions using your tools.")
+			.defaultTools(weatherTools)
+			.defaultAdvisors(a -> a.param(MapleAiObservationConfig.AGENT_NAME, "weather_worker"))
+			.build();
+	}
+
+	@Tool(name = "weather_worker", description = "Ask the weather specialist about a city")
+	public String weatherWorker(String task) {
+		return weather.prompt().user(task).call().content();
+	}
+
+}
+```
+
+## Step 5b: Tokens and cost (no action needed, explain if asked)
+
+- `chat` spans carry `gen_ai.usage.input_tokens`, `output_tokens`, and `cache_read.input_tokens` / `cache_creation.input_tokens` when the provider reports them; Maple reads all four. `chat_client` spans carry no usage, so nothing is double counted.
+- Spring AI records the provider as `gen_ai.system`, derived from the client class, not the model: a Claude model behind OpenRouter via the OpenAI starter is labeled `openai`. Maple uses the provider only to decide whether input includes cached tokens, so only cache figures can be affected.
+- No cost attribute is emitted; sessions show as unpriced (Maple never prices tokens).
+- With model starters other than OpenAI, a `chat` span for a call without tools may carry no Spring AI marker, so Maple files it as a generic GenAI span (framework "Unidentified" on that span). Session, transcript and tokens are unaffected.
 
 ## Step 6: Flush
 
@@ -247,7 +290,7 @@ Run one real conversation: 2-3 turns with the same conversation id including one
 - [ ] A tool that threw is counted as failed, with its message; successful tools are not.
 - [ ] Sub-agents appear as lanes under their agent names.
 - [ ] Cost shows as unpriced (Spring AI emits no cost; expected).
-- [ ] App logs have no `Failed to publish metrics` / OTLP export errors, no `401`.
+- [ ] App logs have no `Failed to publish metrics` / OTLP export errors, no `401` (`401` = wrong key, key from the other region, or the header property not reading `...headers.Authorization=Bearer <key>`).
 
 ## Do not
 

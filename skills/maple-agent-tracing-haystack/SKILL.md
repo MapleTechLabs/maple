@@ -248,6 +248,38 @@ Run one real conversation (≥2 turns, one tool call). If you can export to a lo
 
 Tell the user: known gaps are no `gen_ai.provider.name`, no `gen_ai.response.id`, no tool call id on tool spans, and cost only on OpenRouter.
 
+## Reference: span mapping and expected trace
+
+| Haystack span | What `MapleHaystackTracer` adds |
+| --- | --- |
+| `haystack.agent.run` | `invoke_agent`, agent name from the pipeline component or `AgentTool` that runs it |
+| `haystack.agent.step.llm`, and any `*ChatGenerator` component | `chat`: model, finish reason, input/output/cache/reasoning tokens, cost, messages |
+| `haystack.agent.step.tool` | `execute_tool`: tool name, arguments, result, and `Error` status when the tool failed |
+| every span | `gen_ai.conversation.id` inside a `conversation()` block |
+
+```text
+haystack.pipeline.run
+  haystack.component.run            assistant
+    haystack.agent.run              invoke_agent, agent "assistant"
+      haystack.agent.step
+        haystack.agent.step.llm     chat, openai/gpt-4o-mini
+        haystack.agent.step.tool    execute_tool, get_weather
+      haystack.agent.step
+        haystack.agent.step.llm     chat
+```
+
+## Known behaviours (expected; explain if the user asks)
+
+- Why not the ready-made options: plain `OpenTelemetryTracer` gives structure only (model, tokens, transcript, tool failures stay in `haystack.*` blobs; no session id). `openinference-instrumentation-haystack` gives model and tokens on generator spans but no tool spans (the Agent is one opaque chain), writes `session.id` (ignored for this dialect) and is labelled "Unidentified". OpenLLMetry's `opentelemetry-instrumentation-haystack` covers only `Pipeline.run`, `OpenAIGenerator` and `OpenAIChatGenerator`, no Agent steps, tool spans or tokens, and writes content as indexed `gen_ai.prompt.N.*` keys Maple doesn't read.
+- Maple also recognizes Haystack's span names, but the `"haystack"` scope covers spans added in newer Haystack releases too.
+- Haystack looks up the active tracer on every span, so there is no import-order trap for `enable_tracing()`. Without this tracer, `HAYSTACK_CONTENT_TRACING_ENABLED` is read once at the first `import haystack`; setting it later silently records nothing.
+- Tools of one step run in parallel threads; their spans sit side by side under the step.
+- Haystack wraps a raised tool exception in `ToolInvocationError`, feeds the text back to the model, writes `{"error": "..."}` as the tool output and leaves the span `Unset`. The tracer sets `Error` regardless of `raise_on_tool_invocation_failure`.
+- An Agent inside a `PipelineTool` is named after its component in the inner pipeline.
+- The Agent itself reports no usage, so there is no double counting: each model call counts once on its `haystack.agent.step.llm` span.
+- Approval gates (`ConfirmationHook` at `before_tool`) stay in the same run and session. A rejected call never reaches the tool, so it has no tool span; the model sees the rejection as a tool result in the transcript. An Agent with hooks also gets a `haystack.agent.hook` span before its tool calls; like `haystack.agent.step`, it carries no model or tool attributes and isn't counted.
+- `haystack.pipeline.input_data` on the root span is a plain tag Haystack's own content switch never gated; `content=False` drops it. To redact rather than drop message content, filter values in `_messages()`.
+
 ## Do not
 
 - Don't rely on `OpenTelemetryTracer`/`OpenTelemetryConnector` alone: Maple gets no model, tokens, transcript or tool failures.

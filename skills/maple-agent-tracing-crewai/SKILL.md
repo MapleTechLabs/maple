@@ -203,6 +203,15 @@ Run one real conversation (2-3 messages, same conversation id, at least one tool
 - Cost: unpriced unless models go through LiteLLM (which records `llm.cost.total`). Expected.
 - No spans with scope `crewai.telemetry`, no `coding_agent` attribute (telemetry is off).
 
+More details (from the human guide, for edge cases):
+
+- Tokens: model spans carry `gen_ai.usage.input_tokens`/`output_tokens` (plus cached and reasoning tokens when reported); crew and agent spans carry none, so nothing double-counts. CrewAI's OpenAI provider always requests `stream_options={"include_usage": True}` when streaming, so streamed calls keep tokens.
+- Model = the one the provider returned (e.g. `anthropic/claude-haiku-4.5` behind OpenRouter); provider = the SDK used, so every OpenRouter model shows `openai`.
+- `memory=True` / `planning=True` add real, billed model calls (memory analysis, embeddings, planning agent); they appear in the session. Expected.
+- The Arize Phoenix CrewAI page still recommends the LiteLLM instrumentor; ignore it for native providers (it records nothing there).
+- Flow span layout: `<flow name>.kickoff` root, one `<flow name>.<method>` span per `@start`/`@listen`/`@router` method, crews and `Agent.kickoff()` nested inside. Conversational flow turns show `<flow>.route_conversation` and `<flow>.converse_turn` under the kickoff.
+- Why the streaming wrapper works: `gen_ai.operation.name=invoke_agent` makes Maple treat it as the turn's agent span, so the two crew kickoff spans under it are one turn.
+
 If sessions are split per message: `using_session` missing or id changing. No model spans/tokens: wrong or missing SDK instrumentor. Every call its own trace: `akickoff`. Empty session page details: `enable_genai_semconv` not applied to that instrumentor. Nothing arrives: exporter endpoint/header wrong, `OTEL_SDK_DISABLED=true`, or process exited without flushing.
 
 ## Do not

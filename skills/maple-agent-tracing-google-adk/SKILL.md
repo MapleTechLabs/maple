@@ -159,6 +159,28 @@ Without a real key (`MAPLE_TEST`), verify locally: temporarily add `SimpleSpanPr
 
 Tell the user about the known gaps: cost is unpriced; the model is the requested id, not the served one, and there is no `gen_ai.response.id`; with `StreamingMode.SSE` the transcript shows the streamed chunks and then the full reply (ADK records each chunk); session check headlines (provider errors, prompt cache) count `call_llm` and `generate_content` separately, so they show twice the LLM call count (tokens and LLM calls are netted correctly).
 
+## Reference notes
+
+- Scope: ADK for Python. ADK for Go and Kotlin emit the same span names; their provider setup is not covered.
+- Expected trace per turn:
+
+  ```text
+  invocation
+  └─ invoke_agent assistant
+     ├─ call_llm
+     │  └─ generate_content openrouter/openai/gpt-4o-mini
+     ├─ execute_tool get_weather
+     └─ call_llm
+        └─ generate_content openrouter/openai/gpt-4o-mini
+  ```
+
+- Tokens: `generate_content` carries `gen_ai.usage.input_tokens` / `output_tokens`, plus `gen_ai.usage.cache_read.input_tokens` and `gen_ai.usage.reasoning.output_tokens` when reported (cached inside input, thinking inside output). `call_llm` repeats the same usage; Maple nets parent usage against children, so totals and LLM call count are correct. Streamed turns (`StreamingMode.SSE`) report usage; `LiteLlm` requests it via `stream_options.include_usage`.
+- Cost: LiteLLM computes a cost but it never reaches ADK's spans; sessions are unpriced.
+- `AgentTool` detail: Maple keeps one `gen_ai.conversation.id` per trace and picks the larger of the two, which is why the turn can move to another session. ADK's API docs also prefer `mode="single_turn"`.
+- The approval `run_async()` is its own turn, labeled with the original request.
+- With the settings in this skill, `generate_content` spans carry no provider attribute; doesn't affect grouping, tokens or transcript.
+- 401 from the exporter: the header must be `Authorization=Bearer%20<key>` with a key for the right region.
+
 ## Do not
 
 - Do not rely on `OTEL_EXPORTER_OTLP_*` env alone with a plain `Runner`: nothing is exported.

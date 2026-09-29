@@ -13,13 +13,13 @@ One conversation = one Maple Agent Session, one turn per `generate()`/`stream()`
 
 How it works: AI SDK 7 emits GenAI-semconv spans through `@ai-sdk/otel` (`invoke_agent <model>` → `step <n>` → `chat <model>` + `execute_tool <tool>`) on tracer `gen_ai`, once `registerTelemetry(new OpenTelemetry())` has run. Content is on by default. Maple detects the AI SDK by `ai.*` attributes on the `gen_ai`/`ai` scope and groups sessions by `gen_ai.conversation.id`, which the AI SDK never sets. You add it with `enrichSpan` from `runtimeContext`.
 
-Known gaps (tell the user, don't try to fix): cost shows as "unpriced" (AI SDK emits no cost; Maple never prices tokens); the session token total (list and detail page) is 2x the real usage, because Maple doesn't net the `invoke_agent` total against its `chat` spans two levels down (per-`chat` counts and the per-model breakdown are correct); on AI SDK 5/6 the final assistant reply is missing from transcripts.
+Known gaps (tell the user, don't try to fix): cost shows as "unpriced" (AI SDK emits no cost; Maple never prices tokens); the session token total (list and detail page) is 2x the real usage, because Maple doesn't net the `invoke_agent` total against its `chat` spans two levels down (per-`chat` counts and the per-model breakdown are correct); on AI SDK 5/6 the final assistant reply is missing from transcripts. If model calls go through OpenRouter, its Broadcast traces carry per-call cost and Maple matches them to the AI SDK `chat` spans by response id (see the OpenRouter guide).
 
 ## Step 0: Detect
 
 - `ai` version in `package.json` / lockfile:
   - `>= 7`: this skill. Upgrade to `^7.0.106` or newer if older (earlier 7.x leave spans open when a stream errors mid-read). Node.js >= 22 required.
-  - `5.x` / `6.x`: ask the user whether to upgrade to 7 (recommended; `npx @ai-sdk/codemod v7`). If not, go to "AI SDK 5/6" at the end.
+  - `5.x` / `6.x`: ask the user whether to upgrade to 7 (recommended; `npx @ai-sdk/codemod v7`). The codemod only renames `experimental_telemetry` to `telemetry`; you still install `@ai-sdk/otel`, call `registerTelemetry()`, and move the id from `metadata` (removed in 7) to `runtimeContext`, then drop any `ConversationIdProcessor`. If not, go to "AI SDK 5/6" at the end.
 - Mastra (`@mastra/core`) or another framework built on `ai`: stop, use that framework's skill instead.
 - Existing OpenTelemetry: search for `NodeSDK`, `NodeTracerProvider`, `registerOTel`, `@vercel/otel`, `Sentry.init`, `@langfuse/otel`, `LangfuseSpanProcessor`, `braintrust`, `registerTelemetry(`, `experimental_telemetry`, `telemetry:`.
   - An SDK/provider already exists: reuse it. Add one Maple exporting span processor to it. Never start a second SDK.
@@ -164,8 +164,9 @@ await assistant.generate({ messages, options: { conversationId: chatId } })
 ## Step 4: Content
 
 - On by default. Do not set `recordInputs`/`recordOutputs` unless the user asks for privacy; if they do, set them per call/agent in `telemetry` and tell them the transcript will be empty for those calls.
+- Content is not redacted. For pattern-based redaction, suggest an OpenTelemetry Collector between the app and Maple, or `recordInputs`/`recordOutputs: false` on the sensitive calls. `telemetry: { isEnabled: false }` drops a call's spans entirely.
 - Never set `OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT` / `OTEL_SPAN_ATTRIBUTE_VALUE_LENGTH_LIMIT`: truncated JSON is dropped by Maple.
-- Calls that send images/PDFs: warn the user they are recorded as base64 on every step; suggest `recordInputs: false` on those calls if payloads are large.
+- Calls that send images/PDFs: warn the user they are recorded as base64 on every step; suggest `recordInputs: false` on those calls if payloads are large (exports failing with 413 are the symptom).
 
 ## Step 5: Tools, errors, sub-agents
 
@@ -191,7 +192,7 @@ Run one real conversation: 2+ turns with the same id, one streamed, one tool cal
 - Transcript shows user messages, assistant replies and tool calls; turn labels are the user's messages.
 - Every `chat` span has input and output tokens, including the streamed turn; the streamed `chat` span has TTFT. The session token total is 2x the sum of the `chat` spans (known Maple gap, not a setup error; don't try to fix it); the per-model breakdown matches the `chat` spans.
 - Tool calls have name, arguments, result; a throwing tool is counted as failed with its message; successful tools are not failed.
-- Sub-agents show as their own lanes named after their `functionId`.
+- Sub-agents show as their own lanes named after their `functionId`. Span names carry the model id, not the agent name (`invoke_agent <model id>`); two agents on one model have identically named spans, and the name is on `gen_ai.agent.name`.
 - No attribute contains the provider API key or `Bearer `.
 - Cost shows as unpriced (expected).
 - The process exited cleanly and no turn is missing (flush ran).

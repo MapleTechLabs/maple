@@ -249,6 +249,21 @@ Run one conversation of 2-3 messages with the same conversation id (one using a 
 
 If a check fails, see the troubleshooting list in the human guide.
 
+## Known behaviours (expected, nothing to fix; explain them if the user asks)
+
+- `OPENINFERENCE_ENABLE_GENAI_SEMCONV=true` set before `instrument()` runs is equivalent to `TraceConfig(enable_genai_semconv=True)`. The GenAI dual-write never overwrites a key already set, so the callback's values win.
+- Each `LM.__call__` sits under `Predict.forward`, `Predict(StringSignature).forward` and `ChatAdapter.__call__`; those are DSPy steps, not extra model calls (the callback marks the adapter span `invoke_workflow` so its name isn't read as a model call).
+- A `dspy.History` input is expanded into earlier user/assistant messages, so each model call repeats the conversation so far.
+- `dspy.ReAct` catches tool exceptions and hands `Execution error in <tool>: ...` back to the model. The tool span is `ERROR` and counted as failed; the `ReAct.forward` span and the user's module span stay `OK`, and the program's return value doesn't reveal the failure.
+- Tool spans have no `gen_ai.tool.call.id`: ReAct asks the model for the next tool as text fields (`next_tool_name`, `next_tool_args`), not through the provider's tool-calling API.
+- When `ChatAdapter` can't parse a reply, DSPy retries with `JSONAdapter`: one `Predict` span holds two adapter spans, each with its own `LM.__call__`. Both calls happened and both are billed.
+- Cost is DSPy's estimate from each history entry's `cost`: on the `lm15` engine from DSPy's bundled model metadata, on the LiteLLM engine LiteLLM's `response_cost`. Maple never prices tokens; a model DSPy can't price shows as **unpriced**.
+- An `LM` with a custom `engine=` reports whatever usage that engine puts on its response.
+- Anthropic models run on the LiteLLM engine by default (as does `dspy.LM(..., engine="litellm")`); that is where an extra LiteLLM/OpenAI instrumentor would double-count.
+- `dspy.Parallel` copies only DSPy's settings into its worker threads, not the OpenTelemetry context; `ThreadingInstrumentor` is what carries it. Without it, a test fan-out became four traces with most spans orphaned.
+- Narrower content switches (`OPENINFERENCE_HIDE_INPUT_TEXT`, `OPENINFERENCE_HIDE_OUTPUT_TEXT`, `OPENINFERENCE_HIDE_LLM_INVOCATION_PARAMETERS`) redact parts of each model message; the callback's agent messages follow only `OPENINFERENCE_HIDE_INPUTS` / `OPENINFERENCE_HIDE_OUTPUTS`.
+- With content hidden the session still shows turns, model and tool calls, tokens and failures, with an empty transcript and no tool arguments or results.
+
 ## Do not
 
 - Do not add `openinference-instrumentation-litellm` or `-openai`. DSPy 3.4 runs most models on its own `lm15` engine, where they record nothing; on the LiteLLM engine they add a duplicate model span per call.

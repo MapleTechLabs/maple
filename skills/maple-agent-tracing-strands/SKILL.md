@@ -128,6 +128,7 @@ const agent = new Agent({
 - Content capture is ON by default; Step 2's tokens only move it onto attributes. Nothing else to enable.
 - Redaction, only if the user asks or the repo handles regulated data: append `gen_ai_unredacted_attributes=<allowlist>` to `OTEL_SEMCONV_STABILITY_OPT_IN`. `;`-separated, single trailing `*` only. Covered keys: `gen_ai.input.messages`, `gen_ai.output.messages`, `gen_ai.system_instructions`, `gen_ai.tool.call.arguments`, `gen_ai.tool.call.result`. Empty list (`gen_ai_unredacted_attributes=`) redacts all to `[REDACTED]`. Example keeping replies only: `...,gen_ai_unredacted_attributes=gen_ai.output.*;gen_ai.tool.call.result`.
 - Not redactable: `gen_ai.tool.description`, `gen_ai.tool.json_schema`, `trace_attributes` values.
+- Redacted values aren't JSON, so Maple leaves those transcript parts blank; tokens, tools and errors are unaffected.
 
 ## Step 5: Tools, errors, sub-agents
 
@@ -149,6 +150,7 @@ telemetry.tracer_provider.shutdown()
 
 - Lambda: `force_flush()` at the end of each invocation, no `shutdown()`.
 - Existing provider (Step 0): flush that provider instead.
+- A call cut off by `asyncio.wait_for` or task cancellation may export incomplete spans (upstream harness-sdk#3609); ended spans still flush.
 - TS: `await provider.forceFlush(); await provider.shutdown()` before exit. `setupTracer`'s own `beforeExit` flush does not run after `process.exit()`.
 
 ## Step 7: Verify
@@ -161,11 +163,18 @@ Run one short conversation (2-3 messages, one tool call; plus a failing tool if 
 - Transcript shows user messages, replies, tool calls with args and results. Empty transcript → `gen_ai_span_attributes_only` missing or set after the first `Agent(`.
 - Spans: `invoke_agent <name>` → `execute_event_loop_cycle` → `chat` / `execute_tool <tool>`; model id on `chat` spans.
 - Input/output tokens on every `chat` span, including streamed turns. Session total on the session detail page ≈ sum of `chat` spans, not several times more. The Agent Sessions LIST currently shows ~2x for Strands (Python and TS) even when setup is correct (Maple nets roll-ups only one level deep; `execute_event_loop_cycle` sits between `invoke_agent` and `chat`). Tell the user; don't try to fix it in their code.
+- No time to first token in Maple: Strands emits `gen_ai.server.time_to_first_token` (ms), which Maple doesn't read. Expected.
 - "Reply length" check shows skipped (finish reason only inside output messages). Expected.
 - Failed tool counted as failed; successful tools not.
 - Sub-agents in separate lanes with their own names.
 - Cost shows "unpriced" (Strands emits no cost). Expected.
 - No duplicate `chat` spans per model call.
+
+Symptoms:
+- No model name on spans: a custom `Model` subclass that only implements `get_config()` gets no `gen_ai.request.model` (harness-sdk#4205). Give it a `config` dict with `model_id`.
+- `401` from ingest: wrong key or key from the other region; header must be `Authorization=Bearer <key>` in `OTEL_EXPORTER_OTLP_HEADERS`.
+- Token totals several times too high on the session page: `invoke_agent` reports the agent's lifetime usage. Add `gen_ai_use_latest_invocation_tokens` (Python) or construct the agent per request.
+- Cache tokens zero with prompt caching on: `strands-agents` < 1.54 emits `cache_read_input_tokens` / `cache_write_input_tokens`, which Maple ignores. Upgrade.
 
 If you can't reach Maple, set `OTEL_EXPORTER_OTLP_ENDPOINT` to a local collector or use `telemetry.setup_console_exporter()` once and check a `chat` span has `gen_ai.input.messages` as an ATTRIBUTE (not in `events`) and `session.id`.
 

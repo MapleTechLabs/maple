@@ -142,6 +142,32 @@ Without it the SDK sends no `stream_options` for non-OpenAI clients and every `r
 
 Verified with `@openai/agents` 0.18.0, `@arizeai/openinference-instrumentation-openai-agents` 0.2.15, `@opentelemetry/sdk-trace-node` 2.11. Use a `NodeTracerProvider({ resource: detectResources({ detectors: [envDetector] }), spanProcessors: [new BatchSpanProcessor(new OTLPTraceExporter())] })` (`@opentelemetry/resources`, `@opentelemetry/exporter-trace-otlp-proto`; the 2.x provider does NOT read `OTEL_SERVICE_NAME` without `envDetector`, you get `unknown_service:node`), `provider.register()`, then `new OpenAIAgentsInstrumentation({ tracerProvider: provider }).manuallyInstrument(agents)`. Session: wrap each run in `context.with(setAttributes(context.active(), { "gen_ai.conversation.id": conversationId }), () => agents.run(agent, text))` (`setAttributes` from `@arizeai/openinference-core`). Tell the user the limits: framework shows as Unidentified, inputs render as messages but model replies and the model's tool-call requests are MISSING from each call (`output.value` is the raw `chat.completion` response, which Maple can't decode; earlier replies only show as history in the next call's input, so each turn's final reply is absent), no tool arguments/results fields, no agent lanes, the reply-length check is skipped (no finish reason read). `await provider.forceFlush()` before a script exits. Maple ignores `session.id`/`setSession` for this scope.
 
+Reference setup (verified):
+
+```ts
+import * as agents from "@openai/agents"
+import { context } from "@opentelemetry/api"
+import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto"
+import { detectResources, envDetector } from "@opentelemetry/resources"
+import { BatchSpanProcessor, NodeTracerProvider } from "@opentelemetry/sdk-trace-node"
+import { setAttributes } from "@arizeai/openinference-core"
+import { OpenAIAgentsInstrumentation } from "@arizeai/openinference-instrumentation-openai-agents"
+
+export const provider = new NodeTracerProvider({
+	resource: detectResources({ detectors: [envDetector] }), // OTEL_SERVICE_NAME, OTEL_RESOURCE_ATTRIBUTES
+	spanProcessors: [new BatchSpanProcessor(new OTLPTraceExporter())], // OTEL_EXPORTER_OTLP_* variables
+})
+provider.register()
+new OpenAIAgentsInstrumentation({ tracerProvider: provider }).manuallyInstrument(agents)
+
+export function handleMessage(conversationId: string, text: string) {
+	const ctx = setAttributes(context.active(), { "gen_ai.conversation.id": conversationId })
+	return context.with(ctx, () => agents.run(agent, text, { session }))
+}
+```
+
+Models, tokens and tool names come through as in Python. If the user needs the full session page (replies, tool args/results, agent lanes) in TypeScript, point them to https://maple.dev/docs/agent-tracing/provider-sdks to emit the GenAI attributes themselves.
+
 ## Step 3: Session id (one conversation = one session)
 
 Maple reads `session.id` on this framework's spans. Only OpenInference's `using_session` sets it. `RunConfig(group_id=...)`, `trace_metadata` and SDK `Session` ids are NOT exported.
@@ -163,14 +189,29 @@ async def handle_message(conversation_id: str, text: str) -> str:
 - `run_streamed`: call it inside the `with` block (its background task inherits the context there); consuming `stream_events()` may continue inside or after.
 - Human-in-the-loop resumes (`Runner.run(agent, state)` after `state.approve(...)`): wrap in the same `using_session` id. The resume is its own trace (a second turn with the same user message as label) whose root is the workflow-named span, not an `invoke_agent` root.
 - Set `RunConfig(workflow_name=...)` to name the trace root; the default `Agent workflow` is the same for every run. The name must NOT contain `chat`, `completion` or `tool` (any case): the per-run CHAIN span carries it with no operation, and Maple's name fallback then counts every run as an extra LLM call (`chat`, `completion`) or tool call (`tool`). End it in `workflow` or `agent`.
-- Multi-agent fan-out with several `Runner.run` calls: wrap them in one `with trace("<name>")` (from `agents`) inside `using_session`, or each run becomes its own trace/turn.
+- `using_session` stores the id in a contextvar; asyncio tasks inherit it, so concurrent tool calls and agents-as-tools inside the block get it too.
+- Multi-agent fan-out with several `Runner.run` calls: wrap them in one `with trace("<name>")` (from `agents`) inside `using_session`, or each run becomes its own trace/turn:
+
+  ```py
+  import asyncio
+
+  from agents import trace
+
+  with using_session(conversation_id), trace("amsterdam briefing"):
+      weather, budget = await asyncio.gather(
+          Runner.run(weather_worker, "Weather in Amsterdam?"),
+          Runner.run(budget_worker, "3-day budget for Amsterdam?"),
+      )
+  ```
 - Do not set `gen_ai.conversation.id` or `maple_ai.session.id` by hand; the dual-write copies `session.id` to `gen_ai.conversation.id` already.
 
 ## Step 4: Content
 
 - Content is ON by default (SDK `trace_include_sensitive_data=True`, OpenInference copies it). With Step 2c, messages land in `gen_ai.input.messages` / `gen_ai.output.messages`. Nothing to enable.
 - Content is sent three times per model span (flattened `llm.input_messages.*`, `input.value`, `gen_ai.input.messages`). Expected; don't strip the OpenInference keys, the GenAI ones are derived from them.
-- User wants no content / PII-sensitive: `OPENAI_AGENTS_TRACE_INCLUDE_SENSITIVE_DATA=false` (or `RunConfig(trace_include_sensitive_data=False)`). Tell them: empty transcript, tool error details redacted, tokens/tools/failures remain. Alternative at the bridge: `TraceConfig(enable_genai_semconv=True, hide_inputs=True, hide_outputs=True)`.
+- User wants no content / PII-sensitive: `OPENAI_AGENTS_TRACE_INCLUDE_SENSITIVE_DATA=false` (or `RunConfig(trace_include_sensitive_data=False)`). Tell them: empty transcript, tool error details redacted (`Tool execution failed. Error details are redacted.`), tokens/tools/failures remain. Alternative at the bridge: `TraceConfig(enable_genai_semconv=True, hide_inputs=True, hide_outputs=True)` (or `OPENINFERENCE_HIDE_INPUTS` / `OPENINFERENCE_HIDE_OUTPUTS`); also empties the transcript.
+- Partial redaction (e.g. mask emails): drop or rewrite attributes in an OpenTelemetry Collector with the `transform` or `redaction` processor.
+- Every model span repeats the conversation so far. Maple has no per-attribute limit and accepts requests up to 20 MiB, so this costs bandwidth, not data.
 
 ## Step 5: Tools, errors, sub-agents
 
@@ -180,6 +221,8 @@ async def handle_message(conversation_id: str, text: str) -> str:
 - Handoffs: a `handoff to <agent>` span (counted as a tool call named `transfer_to_<agent>` via `MapleSpanFixes`) and the target agent span as a sibling of the source agent's. Nothing to add.
 - `needs_approval=True` tools: the paused run records a tool span without a result, and the resumed run records the executed call again, so Maple shows the tool twice for one approved call. Expected; tell the user.
 - Known gaps, don't try to fix: no `gen_ai.tool.call.id` on tool spans; no `gen_ai.response.id` on Chat Completions model spans; no cost.
+- Model spans: named `generation` (Chat Completions) or `response` (Responses API). Model on Chat Completions = the configured id (`openai/gpt-4o-mini`); on Responses = the name OpenAI returns, usually a dated snapshot (`gpt-4o-mini-2024-07-18`). Provider is always `openai` (even an Anthropic model behind OpenRouter); Maple applies the OpenAI token convention (cached tokens inside the input total). Responses API also records cached input tokens and reasoning tokens (`llm.token_count.completion_details.reasoning`). The bridge doesn't export the SDK's per-run/per-turn usage totals, so nothing is double-counted.
+- Cost via OpenRouter: its Broadcast traces (https://maple.dev/docs/agent-tracing/openrouter) carry per-call cost. Because Chat Completions model spans have no `gen_ai.response.id`, nest the Broadcast spans under them (see "Join Broadcast to your own traces" in that guide) or each call is counted twice.
 
 ## Step 6: Flush
 
@@ -222,6 +265,7 @@ Raw span check (optional, e.g. an `InMemorySpanExporter` in a scratch run): mode
 - Do not disable the SDK's tracing (`set_tracing_disabled(True)`, `OPENAI_AGENTS_DISABLE_TRACING`, `tracing_disabled=True`) to stop the OpenAI upload; `set_trace_processors` already removes it.
 - Do not omit `TraceConfig(enable_genai_semconv=True)`.
 - Do not register `MapleSpanFixes` with `add_trace_processor` or after `instrument()`; it must precede the OpenInference processor.
+- Do not re-add `default_processor()` (or anything via `add_trace_processor`) without a valid OpenAI key: logs fill with `Tracing client error 401`.
 - Do not put `chat`, `completion` or `tool` in `workflow_name`.
 - Do not pass OpenRouter-style model strings (`Agent(model="openai/gpt-4o-mini")`): the SDK strips `openai/` and rejects other prefixes (`Unknown prefix: anthropic`). Use `OpenAIChatCompletionsModel(model=..., openai_client=...)`.
 - Do not rely on `group_id`, `trace_metadata` or SDK `Session` ids for the Maple session; use `using_session`.

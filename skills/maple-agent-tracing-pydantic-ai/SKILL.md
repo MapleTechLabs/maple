@@ -188,6 +188,22 @@ Quick local cue: Pydantic AI 2.51 prints an `observability: off` banner on the f
 
 Local check without Maple: add `ConsoleSpanExporter` via `SimpleSpanProcessor` temporarily and confirm `gen_ai.conversation.id` is identical across runs of one conversation and on delegate spans.
 
+## Known behavior (tell the user when relevant)
+
+- Tool failure matrix: `ToolFailed` → span ERROR, model sees message, run continues; `ModelRetry` → ERROR, one failed call per retry; other exception → ERROR, run raises, failed turn; `return {"error": ...}` → UNSET, shows as successful call.
+- Approval-gated tools (`requires_approval=True`) pause the run with no tool span; the `execute_tool` span appears only in the resumed run (the one sending `DeferredToolResults`). Same `conversation_id=` → paused and resumed runs are two turns of one session, both labeled with the original request.
+- Delegation rendering: an `execute_tool <x>` span whose only child is `invoke_agent <worker>` shows as a delegation; the tool's args/result become the lane's input/output. Several delegation tools in one model reply run concurrently, so lanes overlap in time.
+- `include_content=False` also drops exception messages (only the exception type is kept).
+- Instrumentation `version`: 5 default (tested); 2-4 deprecated with `PydanticAIDeprecationWarning` (version 2 used different span names); 6 is opt-in and sends tool results with `role: "tool"`. Fix the warning by removing `version=`.
+- Tokens: `chat` spans carry `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`, plus `gen_ai.usage.cache_read.input_tokens` / `gen_ai.usage.cache_creation.input_tokens` when the provider caches. `invoke_agent` carries run totals under `gen_ai.aggregated_usage.*`, which Maple does not add to the session total. Delegate tokens stay on the delegate's spans.
+- Anthropic + prompt caching via Pydantic AI's `anthropic` provider: Maple currently counts cached input tokens twice (Pydantic AI reports input tokens including cache for every provider; Maple applies Anthropic's convention where they're separate). OpenAI, OpenRouter, Gemini unaffected.
+- Streaming: Pydantic AI requests usage on OpenAI-compatible streams (`stream_options.include_usage`), so streamed calls have tokens. Time-to-first-chunk is recorded under a key Maple doesn't read yet.
+- Cost: Pydantic AI writes `operation.cost` on `chat` spans; Maple reads cost only from `gen_ai.usage.cost`, `gen_ai.usage.total_cost` or `llm.cost.total` and never prices tokens itself, so cost shows as unpriced.
+- Logfire with `send_to_logfire=True` (or a Logfire token in env) sends to both Logfire and Maple.
+- Provider extras: swap `[openai]` for `anthropic`, `google`, `openrouter`, ...; the full `pydantic-ai` package also works.
+- Duplicate spans: another instrumentor on the model client (Logfire `instrument_openai()`, OpenInference, OpenLLMetry) double-traces model calls; keep Pydantic AI's.
+- Export 413 / huge `chat` spans: binary content recorded as base64; set `include_binary_content=False`.
+
 ## Do not
 
 - Do not rely on the automatic `gen_ai.conversation.id`: it's a new UUID7 per run without history.

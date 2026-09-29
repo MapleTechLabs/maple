@@ -119,6 +119,20 @@ Local check without Maple: temporarily add `SimpleSpanProcessor(ConsoleSpanExpor
 - Anthropic instrumentation 1.2b0 records no time to first chunk for `messages.stream()`.
 - Gemini path (Python instrumentation, TS mapping) not yet run end to end against a live model; OpenAI and Anthropic paths are verified.
 
+## Troubleshooting
+
+- Every model call its own session → call ran outside `agent_span`, or the span ended before the call (e.g. a stream consumed after it closed).
+- One session per turn → conversation id changes per request.
+- Empty transcript → capture unset, `EVENT_ONLY` or legacy `true`; set `SPAN_ONLY` in the process that makes the calls.
+- No Python model spans → `.instrument()` ran after the first request, or the OpenLLMetry package (`opentelemetry-instrumentation-openai`) was installed instead of `-genai-openai`.
+- Duplicate model spans → second instrumentation on the same SDK. `opentelemetry-instrument` loads every installed instrumentation package, so uninstall extras rather than just not calling them.
+- Twin traces per call with OpenRouter → OpenRouter Broadcast also exports the calls; keep one source or nest Broadcast under the app's spans (https://maple.dev/docs/agent-tracing/openrouter#join-broadcast-to-your-own-traces).
+- Streamed turn has 0 tokens → missing `stream_options.include_usage`.
+- Failing tool shown as success → exception caught outside `run_tool` without status/`error.type`.
+- Sub-agent calls in the orchestrator's lane → same `gen_ai.agent.name`, or never wrapped.
+- Exporter logs 401 → wrong key or region; EU keys only work with `ingest.eu.maple.dev`.
+- OpenInference instead of the GenAI packages (Python): OpenAI shows as "OpenInference · OpenAI" with tokens counted but the transcript is the raw request JSON as one message, no turn labels; the Anthropic/Gemini OpenInference packages show as Unidentified with the same raw transcript. Prefer the `-genai-` packages.
+
 ## Do not
 
 - Do not install `opentelemetry-instrumentation-openai` or `opentelemetry-instrumentation-anthropic` (OpenLLMetry) or the deprecated `opentelemetry-instrumentation-openai-v2`; install the `-genai-` packages.

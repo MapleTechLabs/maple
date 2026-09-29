@@ -205,6 +205,21 @@ Then in Maple → Agent Sessions (`https://app.maple.dev/agent-sessions`, EU `ap
 
 If spans exist but the turn nests under an unrelated trace, an inherited `TRACEPARENT` survived: fix the env stripping.
 
+## Reference notes (for explaining results to the user)
+
+- Span map: `claude_code.interaction` = a turn titled with the prompt; `claude_code.llm_request` = model call (model, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_creation_tokens`, `ttft_ms`, stop reason, failure); `claude_code.tool` = tool call; `claude_code.tool.blocked_on_user` / `claude_code.tool.execution` = phases shown in the trace, not counted as calls.
+- Anthropic's `input_tokens` excludes both cache buckets; Maple counts it that way (total input = sum of the three). The CLI always streams and still records usage.
+- Model id is shown as Claude Code sent it (e.g. `anthropic/claude-haiku-4.5` through OpenRouter).
+- A failed model request (`success=false` on `claude_code.llm_request`, with `status_code` and `error`) counts as a failed LLM call. Without `OTEL_LOG_TOOL_DETAILS=1` a failed tool's error is only the `error_class` (`McpToolCallError` for SDK tools).
+- A call rejected by the user or `canUseTool`: `blocked_on_user` span with `decision=reject` and no execution; Maple shows a call without a result, not a failure.
+- An active app span is passed to the CLI as `TRACEPARENT` by both SDKs (the turn nests under the request that triggered it; that's desired). Interactive `claude` ignores inbound `TRACEPARENT`; only SDK and `claude -p` runs read it.
+- Content truncation: 60 KB per attribute (`CLAUDE_CODE_OTEL_CONTENT_MAX_LENGTH`), `[TRUNCATED ...]` marker.
+- Terminal sessions signed in with a Claude account carry `user.email` on every span/event. To drop or mask attributes, route through an OpenTelemetry Collector with a `redaction` or `attributes` processor.
+- Content never in session views: assistant replies (`assistant_response` log event), the system prompt, arguments of non-Bash/non-file tools (MCP and SDK tool args are only in the `tool_result` log event).
+- Cost: only on the `claude_code.api_request` log event (`cost_usd`, with `session.id`) and the `claude_code.cost.usage` metric; both are Claude Code's client-side estimate at list price unless managed settings set `modelPricing`. In SDK apps, the result message's `total_cost_usd` is the same estimate per `query()`. With logs on, Logs has one `claude_code.user_prompt`, one `claude_code.api_request` per model call and one `claude_code.tool_result` per tool run.
+- `/status` in `claude` lists telemetry variables it ignored (repo settings). 401s or data going elsewhere: managed settings or `~/.claude/remote-settings.json` set endpoint/headers and win; the user must ask whoever manages Claude Code.
+- For `claude -p` in CI, set the same two export intervals.
+
 ## Do not
 
 - Do not omit `CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1`: zero spans without it (metrics/logs still flow, which hides the problem).

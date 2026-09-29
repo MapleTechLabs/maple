@@ -1,17 +1,17 @@
 ---
 title: "Trace Mastra agents and workflows with OpenTelemetry"
-description: "Export Mastra's built-in GenAI spans to Maple with @mastra/otel-exporter so each conversation is one Agent Session with its transcript, tool calls, sub-agents and tokens."
+description: "Export Mastra's built-in spans to Maple with @mastra/otel-exporter and group each conversation into one Agent Session."
 group: "AI Agents"
 order: 11
 navLabel: "Mastra"
 icon: "mastra"
 ---
 
-Mastra traces itself. Every `agent.generate()` or `agent.stream()` produces an `invoke_agent` span, a `chat` span per model call with the prompt, the reply and the token counts, and an `execute_tool` span per tool call with its arguments and result. The `@mastra/otel-exporter` package turns those spans into OpenTelemetry GenAI spans (semantic conventions v1.38) and sends them to any OTLP endpoint, including Maple. You don't need an OpenTelemetry SDK or an instrumentation package.
+Mastra traces every agent run, model call and tool call itself, and `@mastra/otel-exporter` sends those spans to Maple as OpenTelemetry GenAI spans. You don't need an OpenTelemetry SDK or an instrumentation package.
 
-Three things go wrong by default. The exporter ignores the standard `OTEL_EXPORTER_OTLP_*` variables and falls back to OTLP/JSON, so a setup copied from another guide exports nothing and logs a single warning. The conversation id Maple groups by is Mastra's memory thread id: an agent called without `memory: { thread, resource }` sends no id at all, so every message becomes its own session. And Mastra 1.71 exports each model call without its prompt, so the transcript shows the replies but none of the user's messages. A short span processor, shown below, fixes the prompt and two smaller gaps.
+The session id is Mastra's memory thread id, so every call of a conversation must pass the same `memory: { thread }`. You also add a short span processor that fills in the prompt Mastra leaves off each model call.
 
-This guide covers Mastra 1.x on Node.js 22.13 or newer. It was written against `@mastra/core` 1.71, `@mastra/observability` 1.18 and `@mastra/otel-exporter` 1.4.
+Tested with `@mastra/core` 1.71, `@mastra/observability` 1.18 and `@mastra/otel-exporter` 1.4 on Node.js 22.13 or newer.
 
 ## Quick setup with a coding agent
 
@@ -25,25 +25,19 @@ Install the skill with `npx skills add MapleTechLabs/maple/skills --skill maple-
 My Maple ingest key is maple_pk_... and my organization is in the US region.
 ```
 
-Use your key from **Settings → Ingestion**. Without one, the agent uses a placeholder you can replace later. EU organizations should say EU region.
+Your ingest key is in **Settings → Ingestion**.
 
-## Export Mastra spans to Maple
-
-Install the observability packages next to `@mastra/core`:
+## Install the observability packages
 
 ```bash
 npm install @mastra/observability@latest @mastra/otel-exporter@latest
 ```
 
-The OTLP exporters, including `@opentelemetry/exporter-trace-otlp-proto`, are optional dependencies of `@mastra/otel-exporter` and install with it. Keep `@mastra/core`, `@mastra/observability` and `@mastra/otel-exporter` on releases from the same week. The exporter decides which span is the model call from features both packages report, so mismatched releases change what Maple counts as a model call.
+Keep `@mastra/core`, `@mastra/observability` and `@mastra/otel-exporter` on releases from the same week. With mismatched releases, the exporter can pick the wrong span as the model call.
 
-### Add the Maple span processor
+## Add the Maple span processor
 
-Mastra 1.71 has three gaps in what it exports, and one span processor closes all of them:
-
-- The `chat` span of each model call has the reply but not the prompt. Mastra records the messages on the enclosing step span instead. The processor copies them onto the `chat` span, where the exporter turns them into `gen_ai.input.messages`.
-- Sub-agents called by a supervisor get their own thread id, so one trace carries several conversation ids. The processor gives every span the thread id of the trace's root span.
-- Step spans carry the provider's raw HTTP response as metadata: response headers, including cookies, and the full response body with the reply text. The processor drops both.
+This processor fixes three gaps in what Mastra 1.71 exports. It copies each model call's prompt onto its `chat` span, gives sub-agents the conversation's thread id instead of their own, and drops the raw provider response (headers, cookies, full body) from step spans.
 
 ```ts
 // src/mastra/maple-span-processor.ts
@@ -73,11 +67,9 @@ export const mapleSpanProcessor: SpanOutputProcessor = {
 }
 ```
 
-A processor has to change the span it receives and return that same object; Mastra drops the span if you return a copy. Mastra's own `SensitiveDataFilter` runs after your processors, so the copied prompt is still redacted.
+## Configure the exporter
 
-### Configure the exporter
-
-Then configure observability on your `Mastra` instance:
+Add observability to your `Mastra` instance:
 
 ```ts
 // src/mastra/index.ts
@@ -115,34 +107,15 @@ export const mastra = new Mastra({
 })
 ```
 
-For an EU organization, use `https://ingest.eu.maple.dev`. The exporter appends `/v1/traces` itself, and strips it if you include it, so both forms work.
+For an EU organization, use `https://ingest.eu.maple.dev`. The exporter appends `/v1/traces` itself.
 
-Three details in this block are load-bearing:
+The endpoint, protocol and key have to be in code. This exporter ignores the `OTEL_EXPORTER_OTLP_*` variables and defaults to `http/json`. `observability` must be an `Observability` instance, since a plain object silently installs a no-op.
 
-- `observability` must be an `Observability` instance. A plain `{ configs: ... }` object logs a warning and installs a no-op, so nothing is exported.
-- `protocol: "http/protobuf"` must be explicit. The `custom` provider defaults to `http/json`, and each protocol loads a different exporter package; if that package is missing, tracing is disabled with one error line at startup.
-- The endpoint and key go in code. `OTEL_EXPORTER_OTLP_ENDPOINT` and `OTEL_EXPORTER_OTLP_HEADERS` are not read by this exporter. The `headers` object is sent as is, so there is no `%20` encoding to get wrong.
+Only agents and workflows registered on this `Mastra` instance are traced. Get them with `mastra.getAgent()` or `mastra.getWorkflow()`.
 
-Only agents and workflows registered on this `Mastra` instance, or called with a `tracingContext` from one, are traced. An `Agent` you construct and call on its own, outside `mastra.getAgent()`, has no observability attached.
+## Pass the thread id on every call
 
-### The exporter also sends logs
-
-`OtelExporter` exports two signals by default: traces to `/v1/traces` and Mastra's own log records (warnings and errors, such as a tool that threw) to `/v1/logs`. Maple accepts both. The logs carry the trace and span ids of the run that wrote them. Agent Sessions reads only the spans. To send traces only:
-
-```ts
-new OtelExporter({
-	provider: { custom: { /* as above */ } },
-	signals: { logs: false },
-})
-```
-
-### An app that already has OpenTelemetry
-
-The exporter runs its own `BatchSpanProcessor` and doesn't touch a global `TracerProvider`, so it coexists with an existing Node SDK setup. The Mastra spans then form their own traces, separate from your HTTP spans. If you want Mastra's spans nested under your request spans, use Mastra's [OpenTelemetry bridge](https://mastra.ai/reference/observability/tracing/bridges/otel) instead of `OtelExporter`, and point your existing exporter at Maple. Use one or the other, not both, or every span arrives twice.
-
-## Group every turn of a conversation into one session
-
-Maple groups traces into sessions by `gen_ai.conversation.id`. Mastra writes it on every span from the memory thread id of the run, and only from there. Each `generate()` or `stream()` call is its own trace, so a chat that sends one request per user message needs the same thread id on every call:
+Maple groups traces into sessions by `gen_ai.conversation.id`, which Mastra sets from the memory thread. Pass the same thread on every call of a conversation:
 
 ```ts
 const agent = mastra.getAgent("supportAgent")
@@ -155,22 +128,9 @@ export async function handleMessage(chatId: string, userId: string, text: string
 }
 ```
 
-The thread id must be stable for the whole conversation and different between conversations. Use the chat or conversation id your app already has; a per-process constant merges every user into one session.
+Use the chat id your app already has. It must stay the same for the whole conversation and differ between conversations. An agent that already uses `Memory` with this option needs nothing more. `agent.stream()` takes the same option; read the stream to the end, since the spans are exported when it finishes.
 
-This is the same `memory` option that makes the agent remember earlier messages, so an agent with `memory: new Memory(...)` that already passes it needs nothing more. If you skip it, each message shows up in **Agent Sessions** as its own one-turn session named after the trace id. Mastra's server routes (`mastra dev`, `@mastra/server`) pass the thread the client sends, or the one your middleware sets as `mastra__threadId` in the request context.
-
-Streaming works the same way. Consume the whole stream: the `invoke_agent` span ends, and gets exported, when the stream finishes.
-
-```ts
-const stream = await agent.stream(text, { memory: { thread: chatId, resource: userId } })
-for await (const chunk of stream.textStream) {
-	res.write(chunk)
-}
-```
-
-### Workflows and agents without memory
-
-A workflow run has no thread, and neither does an agent you call without `memory`. Put the id in the root span's metadata instead. Mastra copies root metadata to every span in the trace, and the exporter turns `metadata.threadId` into `gen_ai.conversation.id`:
+Workflow runs, and agents called without `memory`, have no thread. Put the id in the root span's metadata instead:
 
 ```ts
 const run = await mastra.getWorkflow("briefingWorkflow").createRun()
@@ -180,177 +140,25 @@ const result = await run.start({
 })
 ```
 
-The same `tracingOptions` works on `agent.generate()` for an agent that has no memory configured.
+Give every `Agent` a distinct `name`, since Maple draws one lane per agent name. When a workflow step calls an agent, pass it the step's `tracingContext` (`agent.generate(prompt, { tracingContext })`) so the agent joins the workflow's trace.
 
-## Record prompts, responses and tool calls
+## Flush in scripts and serverless functions
 
-Content capture is on by default. With the span processor in place, each `chat` span carries `gen_ai.input.messages` and `gen_ai.output.messages` as JSON in the GenAI message format, and each `execute_tool` span carries `gen_ai.tool.call.arguments` and `gen_ai.tool.call.result`. Maple builds the transcript from those attributes. The agent's instructions are the first, `system`, message of every prompt.
-
-Two details of Mastra's format show up in the transcript. Tool calls from earlier in the conversation appear in later prompts as short `[tool: get_weather]` placeholders; the full arguments and results are on the `execute_tool` spans. And the `invoke_agent` span's `gen_ai.system_instructions` is plain text rather than the JSON the convention asks for, so Maple skips it and shows the instructions from the system message instead.
-
-Mastra bounds what it serializes into a span. The defaults are 128 KiB per string, 50 items per array, 50 keys per object and 8 levels deep. A cut string ends in `…[truncated]`, which Maple shows as truncated. A message list longer than 50 entries loses the newest messages, so a turn with a long history can be missing its latest user message. Raise the array limit if your agents keep long histories:
-
-```ts
-new Observability({
-	configs: {
-		maple: {
-			serviceName: "support-agent",
-			exporters: [mapleExporter],
-			excludeSpanTypes: [SpanType.MODEL_CHUNK],
-			spanOutputProcessors: [mapleSpanProcessor],
-			serializationOptions: { maxArrayLength: 200 },
-		},
-	},
-})
-```
-
-To keep content out of Maple for one request, hide it for the whole trace:
-
-```ts
-await agent.generate(text, {
-	memory: { thread: chatId, resource: userId },
-	tracingOptions: { hideInput: true, hideOutput: true },
-})
-```
-
-Sessions keep their turns, models, tool names, tokens and errors, but the transcript is empty and tool calls have no arguments or results. These options hide span input and output only, not metadata. Without the span processor, the full provider response, reply included, still leaves in the step span's `mastra.metadata.body`.
-
-Mastra also applies a `SensitiveDataFilter` to every span by default. It redacts values under keys like `password`, `token`, `apiKey`, `authorization` and `secret`, including inside JSON strings, and replaces them with `[REDACTED]`. It matches key names, not free text, so a user who types a password into the chat still sends it to Maple. If you need pattern-based redaction of message text, run it in an OpenTelemetry Collector between your app and Maple.
-
-## Tools, errors and sub-agents
-
-Every tool call is an `execute_tool <tool id>` span with `gen_ai.tool.name`, the model's `gen_ai.tool.call.id`, the tool description, and the arguments and result. The transcript shows each call from its `execute_tool` span. The exporter leaves tool calls out of the `chat` span's output messages, so a model reply that only requests tools shows as an empty assistant message.
-
-A tool that throws is marked failed: status ERROR with the exception message as the status message, `error.type` set to `unknown`, and an `exception` event. The agent keeps running and the model sees the error. A tool that returns an error value instead of throwing stays green, and Maple counts the call as a success, so throw for failures you want to see:
-
-```ts
-import { createTool } from "@mastra/core/tools"
-import { z } from "zod"
-
-export const fetchTransportData = createTool({
-	id: "fetch_transport_data",
-	description: "Fetch public transport options for a city.",
-	inputSchema: z.object({ city: z.string() }),
-	execute: async () => {
-		throw new Error("transport data service unavailable (503)")
-	},
-})
-```
-
-Tools with `requireApproval: true` suspend the run before the tool executes. The resumed run (`approveToolCallGenerate()` or `declineToolCallGenerate()`) continues the same trace; pass the same `memory` to it. A declined call produces no `execute_tool` span.
-
-Approvals leave one artifact. The model call that asks for the tool is exported twice: once without tokens or reply when the run suspends, and again with its tokens when the resumed run replays it. Maple shows one extra model call with 0 tokens per approval. Token totals are right.
-
-### Sub-agents: keep one conversation id
-
-Mastra's multi-agent idiom is a supervisor: an agent with an `agents` property calls each sub-agent through a tool named `agent-<key>`. Each delegation runs the sub-agent inside the supervisor's trace, under that tool span. Give every agent a `name`; it becomes `gen_ai.agent.name`, and Maple draws one lane per agent name. An `execute_tool agent-weather_worker` span whose only child is `invoke_agent weather_worker` shows as a delegation, with the tool's arguments and result as the lane's input and output.
-
-The `agent-<key>` calls also count as tool calls in the session's totals, next to the sub-agents' own tools. A sub-agent's prompt in the transcript starts with the supervisor's instructions and the user's original message, then the delegated task: Mastra passes the supervisor's conversation along to each sub-agent.
-
-```ts
-export const orchestrator = new Agent({
-	id: "orchestrator",
-	name: "orchestrator",
-	instructions: "Call weather_worker, budget_worker and transport_worker, then summary.",
-	model: "openrouter/openai/gpt-4o-mini",
-	agents: { weather_worker: weatherWorker, budget_worker: budgetWorker, transport_worker: transportWorker, summary },
-	memory,
-})
-```
-
-The catch is memory. When the supervisor runs with a thread, Mastra gives each delegation its own thread id, `<your thread id>-<uuid>`. The sub-agent's spans carry that id as `gen_ai.conversation.id`, so one trace has several ids. Maple takes the largest one for the whole trace, which is always a sub-agent's, so the run lands in a session of its own and its turn splits into one turn per id. The `mapleSpanProcessor` above rewrites every span to the root span's thread id, so the whole run stays in your conversation's session.
-
-The processor also covers workflows whose steps call agents with their own `memory`. Pass `tracingContext` from the step's `execute` arguments to `agent.generate()`, so the agent's spans join the workflow's trace instead of starting a new one:
-
-```ts
-const weatherStep = createStep({
-	id: "weather_worker",
-	inputSchema: z.object({ city: z.string() }),
-	outputSchema: z.object({ findings: z.string() }),
-	execute: async ({ inputData, tracingContext }) => {
-		const res = await weatherWorker.generate(`Report the weather in ${inputData.city}.`, { tracingContext })
-		return { findings: res.text }
-	},
-})
-```
-
-Steps in `.parallel([...])` run concurrently, and their lanes overlap in time in Maple. A workflow run's root span is `invoke_workflow <workflow id>`; Maple treats it as the turn.
-
-## Tokens and cost
-
-The `chat` span of each model call carries `gen_ai.usage.input_tokens` and `gen_ai.usage.output_tokens`, plus `gen_ai.usage.cache_read.input_tokens` and `gen_ai.usage.cache_creation.input_tokens` when the provider reports caching. The input count includes the cached tokens; Maple shows the cached part separately and counts it once. Only that span carries usage, so the enclosing agent, step and generation spans add nothing to the total.
-
-Reasoning tokens are exported as `gen_ai.usage.reasoning_tokens`, a key Maple doesn't read. They're still inside the output token count, so totals are right; only the reasoning breakdown is missing.
-
-Streamed calls report usage too. Time to first token is exported only as `mastra.completion_start_time`, a timestamp Maple doesn't read, so sessions show no time to first token.
-
-Cost shows as unpriced. Mastra doesn't put a cost attribute on its spans, and Maple never prices tokens itself. Tokens and models are complete, and call counts are too, apart from the extra call per tool approval described above.
-
-Mastra doesn't export `gen_ai.response.id`. Maple uses it only to merge two reports of the same call, and Mastra reports each call's usage once, so nothing is counted twice.
-
-## Short-lived processes
-
-The exporter batches spans and sends them every 5 seconds. A script, CLI, test run or serverless function that exits sooner loses the batch. In a script, shut Mastra down before exiting; that flushes every exporter:
-
-```ts
-try {
-	await main()
-} finally {
-	await mastra.shutdown()
-}
-```
-
-In a serverless handler, flush at the end of each request instead, and keep the instance for the next one:
-
-```ts
-export async function POST(req: Request) {
-	const { chatId, userId, text } = await req.json()
-	try {
-		const result = await mastra.getAgent("supportAgent").generate(text, {
-			memory: { thread: chatId, resource: userId },
-		})
-		return Response.json({ text: result.text })
-	} finally {
-		await mastra.observability.flush()
-	}
-}
-```
-
-For a streamed response, flush after the stream has finished, for example in Next.js `after()` or Cloudflare's `ctx.waitUntil()`. Flushing when the handler returns the stream is too early: the spans end when the last chunk is sent.
+The exporter sends spans every 5 seconds. In a script, call `await mastra.shutdown()` in a `finally` block before exiting. In a serverless handler, call `await mastra.observability.flush()` at the end of each request, after any streamed response has finished.
 
 ## Check that it works
 
-Run one conversation with at least two messages and a tool call, then open **Agent Sessions** in Maple. Spans take a few seconds to arrive, longer if the process is still running and hasn't hit the 5-second export interval. You should see:
+Run a conversation with two messages and a tool call, then open **Agent Sessions** in Maple. You should see one session named after your thread id with framework **Mastra**, one turn per `generate()` or `stream()` call, and a transcript with the prompts, replies and tool calls.
 
-- one session per conversation, with your thread id as the session id, and framework **Mastra**;
-- one turn per `generate()` or `stream()` call, labeled with the user's message, and a transcript with the prompts, replies and tool calls;
-- `invoke_agent <agent name>` spans for runs, `chat <model>` spans for model calls, and `execute_tool <tool id>` spans for tool calls, with `agent_step` and `model_generation` spans in between;
-- `invoke_workflow <workflow id>` as the turn for workflow runs;
-- a lane per sub-agent, named after its `name`, with each `agent-<key>` delegation counted as a tool call;
-- token counts on every model call, including streamed ones, except one 0-token call per tool approval;
-- failed tool calls marked as failed, with the thrown message;
-- cost shown as unpriced.
-
-To see what the exporter does locally, set `logLevel: "debug"` on `OtelExporter`. It prints every queued span and a line per batch, `Export completed: N spans sent successfully` or `Export FAILED` with the reason.
+Cost shows as unpriced, because Mastra doesn't report it. If nothing arrives, set `logLevel: "debug"` on `OtelExporter` to log each export as `Export completed` or `Export FAILED` with the reason.
 
 ## Troubleshooting
 
-- **Nothing arrives and there is no error.** `observability` is a plain object instead of `new Observability(...)`, or the agent isn't registered on the `Mastra` instance. Check the startup log for a no-op observability warning.
-- **`Traces http/json exporter is not installed` or `http/protobuf exporter is not installed` at startup.** The protocol's exporter package is missing. It ships as an optional dependency of `@mastra/otel-exporter`, so an install with `--omit=optional` or `--no-optional` skips it. Set `protocol: "http/protobuf"` and install `@opentelemetry/exporter-trace-otlp-proto`.
-- **`Custom configuration requires endpoint. Tracing will be disabled.`** The exporter got no `endpoint`. It doesn't read `OTEL_EXPORTER_OTLP_ENDPOINT`; pass the endpoint in code.
-- **`Export FAILED` with 401 or 403 in debug output.** The `Authorization` header is missing or the key is wrong. The header value is `Bearer ` followed by the ingest key.
-- **Every message is its own session.** The call has no `memory: { thread, resource }`, or the thread id changes per request. Pass the conversation's id on every call; for workflows, use `tracingOptions.metadata.threadId`.
-- **The transcript has the replies but none of the user's messages.** `mapleSpanProcessor` isn't in `spanOutputProcessors`, so the `chat` spans have no `gen_ai.input.messages`.
-- **A supervisor run shows several turns, or lands in a session named `<thread id>-<uuid>`.** Delegations got their own thread ids. Add `mapleSpanProcessor`.
-- **Nothing arrives from a script or serverless function.** The process ended before the batch was exported. Call `mastra.shutdown()` in a script, or `mastra.observability.flush()` at the end of each request.
-- **One model call per turn with the turn's summed tokens, instead of one per request.** `@mastra/core`, `@mastra/observability` and `@mastra/otel-exporter` are from different releases, and the exporter fell back to the older `model_generation` span as the model call. Update the three together.
-- **One model call per tool approval has no tokens and no reply.** Expected: Mastra exports the call that requested the tool again when the run resumes, and that copy carries the tokens.
-- **Dozens of tiny `model_chunk` spans per reply.** Mastra exports one per streamed chunk by default, for `generate()` too. Add `excludeSpanTypes: [SpanType.MODEL_CHUNK]`.
-- **Hundreds of `workflow_step` spans per turn.** `includeInternalSpans: true` is set. Mastra runs its agent loop as internal workflows; the flag exports all of them, around 5 times the spans and 25 times the bytes per turn. Leave it off.
-- **A workflow's agents show up as separate traces.** The step called `agent.generate()` without `tracingContext`. Pass it from the step's `execute` arguments.
-- **The latest user message is missing from a long conversation's transcript.** The message list hit `maxArrayLength` (50). Raise it in `serializationOptions`.
-- **A failed tool shows as successful.** The tool returned an error value instead of throwing. Throw an `Error`.
-- **Spans show up twice.** Two exporters send the same spans to Maple, for example `OtelExporter` plus the OpenTelemetry bridge, or `OtelExporter` plus an OpenLLMetry or OpenInference instrumentation of the AI SDK underneath. Keep `OtelExporter` and remove the other.
+- **Nothing arrives and there is no error.** `observability` is a plain object instead of `new Observability(...)`, or the agent isn't registered on the `Mastra` instance.
+- **`http/protobuf exporter is not installed` at startup.** The install skipped optional dependencies. Install `@opentelemetry/exporter-trace-otlp-proto`.
+- **Every message is its own session.** The call has no `memory: { thread, resource }`, or the thread id changes per request. For workflows, use `tracingOptions.metadata.threadId`.
+- **The transcript has replies but no user messages, or a supervisor run lands in a session named `<thread id>-<uuid>`.** `mapleSpanProcessor` is missing from `spanOutputProcessors`.
+- **A failed tool shows as successful.** The tool returned an error value. Throw an `Error` instead.
 
 ## Related
 

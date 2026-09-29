@@ -216,6 +216,18 @@ Run one real conversation: 2+ messages with the same id, at least one tool call,
 - [ ] Cost shows "unpriced".
 - [ ] No attribute contains an API key or `Bearer ` token.
 
+More details (from the human guide, for edge cases):
+
+- Native `llama-index-observability-otel` (0.7.0, `LlamaIndexOpenTelemetry`): model settings/prompt only in `LLMChatStartEvent` span events (Maple ignores events); the end event with reply+usage is dropped on streamed calls; two nested `<Model>.astream_chat` spans per call; ignores `OTEL_EXPORTER_OTLP_*` and defaults to `ConsoleSpanExporter` without `span_exporter=`. If a user insists on keeping it and only wants sessions: `instrument_tags({"gen_ai.conversation.id": conversation_id})` around `agent.run()` groups traces (dotted tag keys become span attributes verbatim).
+- Span layout the processor fixes: `BaseWorkflowAgent.run_agent_step` → `<Model>._prepare_chat_with_tools` (kind LLM, ~1 ms) + `<Model>.astream_chat` (OpenAILike override) → `<Model>.astream_chat` (inner, holds messages+usage). Classes implementing the call directly (`OpenAI`) produce two spans. Merge only applies to directly nested identical names, so `CondensePlusContextChatEngine.chat` → `OpenAI.chat` is untouched. Tokens were never doubled (only innermost has usage), only call counts.
+- `OPENINFERENCE_ENABLE_GENAI_SEMCONV=true` is equivalent to the config flag only if set before `TraceConfig` is built.
+- Tool spans: `FunctionTool.acall` (kind TOOL, `execute_tool`), result is LlamaIndex `ToolOutput` JSON with `raw_input`/`raw_output` (real args are in `raw_input`). On failure the `call_tool` step stays OK because `FunctionAgent` hands the error to the model.
+- Agents-as-tools: a tool span with one `FunctionAgent.run` child shows as a delegation; tool args/result become the lane's input/output. Maple opens a lane for every agent span whose name differs from its caller's.
+- Provider: `OpenRouter` and every `OpenAILike` report `openai`, even for Anthropic models. No response model name or `gen_ai.response.id` recorded.
+- OpenRouter Broadcast for cost: because model spans lack `gen_ai.response.id`, nest Broadcast spans under them (https://maple.dev/docs/agent-tracing/openrouter#join-broadcast-to-your-own-traces) or each call counts twice.
+- With a persistent `Context` every model span repeats the whole chat. Maple has no per-attribute limit; ingest accepts requests up to 20 MiB.
+- Streaming query engines on llama-index-core 0.14.25: the model call of a `StreamingResponse` runs after the query span ended, so it lands in a separate trace. Fix pending in OpenInference PR #3841 (https://github.com/Arize-ai/openinference/pull/3841); until released, pin `llama-index-core<0.14.25` if the app traces streaming query engines. Agents unaffected.
+
 Local check without Maple: temporarily pass `SimpleSpanProcessor(ConsoleSpanExporter())` into `LlamaIndexForMaple` and confirm `gen_ai.conversation.id` is identical on every span of a conversation and `gen_ai.agent.name` is set.
 
 ## Do not

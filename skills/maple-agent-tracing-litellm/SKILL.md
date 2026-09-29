@@ -124,7 +124,7 @@ async def call_model(conversation_id: str, messages: list, tools: list | None):
     )
 ```
 
-- Alternative session carrier: body `metadata: {"session_id": ...}` (`extra_body={"metadata": {...}}`), verified.
+- Alternative session carrier: body `metadata: {"session_id": ...}` (`extra_body={"metadata": {...}}`), verified. A W3C `baggage` header with `session.id=...` is used only when neither the header nor metadata is present.
 - Resulting tree per request: `invoke_agent` → `POST /chat/completions` (proxy FastAPI server span) → `chat <model>` + `auth /chat/completions`. Known Maple limitation: the `auth /chat/completions` span is counted as an extra LLM call (litellm scope + "chat" in the name), so LLM call counts double on the proxy path in the sessions list; the session detail page also counts the FastAPI `POST /chat/completions` span (it carries `gen_ai.request.model`), so it shows 3x. Tokens, cost, transcript and sessions are correct. Tell the user; nothing to fix app-side.
 - Never also instrument the app's OpenAI client when the proxy traces: double LLM calls and tokens. Pick gateway OR in-app.
 - Do not set `OTEL_IGNORE_CONTEXT_PROPAGATION=true` on the proxy.
@@ -174,7 +174,7 @@ async def run_agent(agent: Agent, conversation_id: str, messages: list) -> str:
 - v2 default is `no_content`. `capture_message_content="span_only"` (or env `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=span_only`) puts `gen_ai.input.messages` / `gen_ai.output.messages` JSON on `chat` spans. Maple's transcript needs them.
 - Never `event_only` / `span_and_event` for Maple: events are not read.
 - Messages are OpenAI chat format (`{role, content, tool_calls}`). Maple's transcript ignores `tool_calls` inside messages: a call that only requested tools shows an empty reply, and tool calls render only from `execute_tool` spans (Step 5). So the `execute_tool` spans are required for tool calls to appear at all.
-- User wants content off → `no_content` + drop the tool args/result attributes in `run_tool`. `litellm.turn_off_message_logging = True` keeps structure but replaces text with `redacted-by-litellm`.
+- User wants content off → `no_content` + drop the tool args/result attributes in `run_tool`. `litellm.turn_off_message_logging = True` keeps structure but replaces text with `redacted-by-litellm` (applies to every LiteLLM logging callback). Pattern-based redaction → an OTel Collector between the app and Maple.
 
 ## Step 5: Tools, errors, sub-agents
 
@@ -270,6 +270,19 @@ Run one real conversation: 2+ messages with the same id, one tool call, one stre
 - [ ] Proxy path: `chat` spans (service `litellm-proxy`) sit in the app's trace under `invoke_agent` → `POST /chat/completions`, carrying the session id. LLM call count shows 2x in the list, 3x on the session page (auth + FastAPI spans, known).
 
 Local check without Maple: temporarily add `SimpleSpanProcessor(ConsoleSpanExporter())` to the provider and confirm `gen_ai.conversation.id` on every `chat` span and the parent ids.
+
+## Troubleshooting
+
+- `ModuleNotFoundError: No module named 'opentelemetry._events'`, or proxy logs `Error initializing custom logger` and exports nothing → OTel >= 1.44 on LiteLLM 1.103; pin 1.43.0.
+- App spans arrive, no `chat` spans → sync `litellm.completion()` under v2; switch to `acompletion()`.
+- Spans named `litellm_request` / `raw_gen_ai_request`, each call its own session → v1 logger; use the `OpenTelemetryV2` instance.
+- Model, tokens, prompts missing and the SDK logs `Setting attribute on ended span` → v1 writing onto an already-ended parent; use v2 (or Step 2c for sync-only).
+- Framework shows Unidentified → own span carries `gen_ai.conversation.id` / `maple_ai.session.id`; remove it.
+- No prompts/replies → content capture off (v2 default); `span_only`.
+- Proxy spans in their own traces, apart from the app's agent span → no `traceparent` on the request; `propagate.inject(headers)` inside the agent span; no `OTEL_IGNORE_CONTEXT_PROPAGATION` on the proxy.
+- Nothing arrives from the proxy → the OTLP env vars aren't in the proxy's own environment, so it stays on the default `console` exporter.
+- Session cost lower than LiteLLM spend → `gen_ai.usage.cost` on nested agent spans; report on the outermost only (Step 6).
+- Empty assistant reply in the transcript → that call only requested tools; tool rows come from `execute_tool` spans.
 
 ## Do not
 

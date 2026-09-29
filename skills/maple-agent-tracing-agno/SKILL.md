@@ -169,6 +169,20 @@ Run one real conversation: 2-3 turns with the same `session_id` including one to
 
 Raw span check (optional, e.g. with a console exporter in a scratch run): run spans `<agent_name>.run` have `session.id` + `gen_ai.operation.name=invoke_agent` + `gen_ai.agent.name`; model spans have `gen_ai.operation.name=chat`, `gen_ai.input.messages`, `gen_ai.usage.input_tokens`; tool spans have `gen_ai.operation.name=execute_tool`.
 
+## Known behaviours (expected; explain if the user asks)
+
+- If `setup_tracing()`/`AgentOS(tracing=True)` ran first, `set_tracer_provider` in `tracing.py` logs "Overriding of current TracerProvider is not allowed" and spans go only to the AgentOS database. A second `instrument()` call logs "Attempting to instrument while already instrumented" and its `config` is ignored.
+- The instrumentor patches Agno's run functions and every model class in `agno.models`, so agents created after `tracing.py` runs are traced with no further changes.
+- Without `enable_genai_semconv`, spans carry only OpenInference attributes (`llm.input_messages.0.message.content`, `llm.token_count.prompt`); the sessions list still shows tokens/models, the detail page doesn't decode them for Agno.
+- With `enable_genai_semconv=True` the root span also carries `gen_ai.conversation.id` = `session.id`; Maple ignores it for Agno.
+- Maple reads span attributes only; the instrumentor emits no span events or OTLP logs, so nothing else needs enabling. Masked values are replaced with `__REDACTED__` in-process before export.
+- Team trace shape (one trace per team run): member runs sit directly under the leader's run, next to (not inside) the `delegate_task_to_member` tool spans; those show as ordinary tool calls on the leader with member id and task as arguments. With `team.arun()` in `coordinate` mode, members called in one step run concurrently and their spans overlap; sync `team.run()` runs them sequentially.
+- Team context leak is upstream issue agno#5573. "Failed to detach context" in the logs after a streamed team run is agno#5208: log noise, spans still export.
+- Human-in-the-loop: the paused run (`<agent>.run`) and the resumed run (`<agent>.continue_run`) are two traces and two turns in one session; the approved tool call appears once, in the second. Instrumentor <1.0.8 doesn't wrap `continue_run()`, so resumed runs appear as loose model/tool calls with no session.
+- Tokens: every model span has input/output tokens plus cache read/write when the provider reports them; streamed runs record usage from the final chunk. The run span has no tokens, so nothing is double counted. Reasoning tokens aren't broken out. Maple links tool results to calls through the message history since tool spans lack `gen_ai.tool.call.id`, and can't show streaming latency (no TTFT).
+- Cost: OpenRouter's price is recorded as `llm.cost.total` (USD, instrumentor >=1.0.10). Providers called directly (OpenAI, Anthropic) return no price, so sessions are unpriced.
+- A tool that raises: Agno catches it and hands the message to the model; the tool span is `ERROR`, the run span stays OK. Maple groups repeated failures by the exception message.
+
 ## Do not
 
 - Do not rely on `setup_tracing()` or `AgentOS(tracing=True)` to reach Maple; they only write to the database.

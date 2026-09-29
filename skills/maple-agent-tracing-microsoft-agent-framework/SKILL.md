@@ -84,7 +84,19 @@ configure_otel_providers(
 trace.get_tracer_provider().add_span_processor(ConversationIdProcessor())
 ```
 
+Equivalent env-var config, with a bare `configure_otel_providers()` call:
+
+```bash
+export OTEL_SERVICE_NAME="<service-name>"
+export OTEL_EXPORTER_OTLP_ENDPOINT="https://ingest.maple.dev"
+export OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"
+export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer <key>"
+export ENABLE_SENSITIVE_DATA="true"
+export ENABLE_MESSAGE_EVENTS="false"
+```
+
 - `otlp_protocol` is mandatory: MAF defaults to gRPC (spec says http/protobuf) and fails silently or with an ImportError.
+- `configure_otel_providers()` appends `/v1/traces`, `/v1/metrics`, `/v1/logs` to the endpoint. `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`, if set, is used as-is and must include `/v1/traces`.
 - Existing provider instead: add `BatchSpanProcessor(OTLPSpanExporter(endpoint="https://ingest.maple.dev/v1/traces", headers={...}))` and `ConversationIdProcessor()` to it, then `from agent_framework.observability import enable_instrumentation; enable_instrumentation(enable_sensitive_data=True, enable_message_events=False)`.
 - For OpenRouter or any Chat Completions endpoint use `OpenAIChatCompletionClient(model=..., api_key=..., base_url=...)`, not `OpenAIChatClient` (Responses API; OpenRouter rejects its `previous_response_id` on turn 2).
 
@@ -92,6 +104,7 @@ trace.get_tracer_provider().add_span_processor(ConversationIdProcessor())
 
 ```bash
 dotnet add package Microsoft.Agents.AI --version 1.22.0
+dotnet add package Microsoft.Agents.AI.OpenAI --version 1.22.0
 dotnet add package OpenTelemetry.Exporter.OpenTelemetryProtocol --version 1.19.1
 ```
 
@@ -134,6 +147,8 @@ sealed class ConversationIdProcessor : BaseProcessor<Activity>
 
 ## Step 3: Conversation id
 
+MAF only sets `gen_ai.conversation.id` from the provider's own conversation id (`AgentSession.service_session_id`: Responses API with `store=True`, or a Foundry agent owning the thread). With Chat Completions, OpenRouter, Ollama or local `AgentSession` history it is never set, and `AgentSession.session_id` is not exported, so every `agent.run()` becomes its own `trace:<id>` session.
+
 Wrap every request/turn so all spans of that turn start inside `conversation(<id>)`:
 
 ```py
@@ -154,12 +169,16 @@ async def handle_message(session: AgentSession, text: str) -> str:
 - Python: `enable_sensitive_data=True` (or `ENABLE_SENSITIVE_DATA=true`). .NET: `EnableSensitiveData = true` (or `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true`).
 - If the process sets `OTEL_SEMCONV_STABILITY_OPT_IN`, it must include `gen_ai_latest_experimental` (e.g. `http,gen_ai_latest_experimental`); otherwise MAF moves content off the spans into log events Maple doesn't read.
 - `enable_message_events=False`: otherwise every message is also exported as OTLP log records (duplicate payload).
+- `gen_ai.tool.definitions` (each tool's JSON schema) is sent on every `invoke_agent` span even with sensitive data off.
 - If the user wants no prompt content stored, leave sensitive data off and tell them the transcript and tool arguments/results will be empty.
 
 ## Step 5: Tools, errors, sub-agents
 
 - Give every `Agent` a distinct `name` (Maple lanes key on `gen_ai.agent.name`; unnamed agents get a UUID).
 - Tool failures: raising from the tool function is enough; MAF sets ERROR + `error.type` on `execute_tool`. Do not catch and return an error string from the tool body (that hides the failure).
+- Python MAF also logs each tool failure as an ERROR and a WARN log record; `configure_otel_providers()` exports them as OTLP logs next to the span.
+- Approval-gated tools (`@tool(approval_mode="always_require")`): the resume is a new `agent.run()` and trace; it joins the session only inside `conversation()`. A rejected call emits no `execute_tool` span; the rejection only appears in the next `chat` span's input messages.
+- Workflows record fan-in as span links, so parallel executors are siblings under `workflow.run`.
 - Sub-agents: prefer `worker.as_tool()` in the orchestrator's `tools=[...]`, or MAF workflows/orchestrations. Do not also instrument the provider SDK (e.g. OpenInference/OpenLLMetry OpenAI instrumentors): that double-counts every call.
 
 ## Step 6: Flush
@@ -217,6 +236,7 @@ trace.set_tracer_provider(provider)
 - Transcript comes only from `invoke_agent` spans (`ChatCompletionAgent`). Model-call content is Python logging, which Maple doesn't read; code that uses the kernel without an agent has no transcript. Tell the user.
 - Orchestrations on `InProcessRuntime`: wrap in `with conversation(id), tracer.start_as_current_span("<run name>"):` and call `runtime.start()` inside it, or the run splits into many traces.
 - Flush with `provider.shutdown()` in `finally`.
+- Other SK differences to expect (not setup bugs): tool spans are `execute_tool <Plugin>-<function>`; failing tools get ERROR + `error.type` but no result attribute; finish reasons are Python enum names (`FinishReason.STOP`), so Maple's reply-length and refusal checks can't read them; `temperature=0` is omitted from spans.
 - .NET SK: same env vars (or `AppContext` switches `Microsoft.SemanticKernel.Experimental.GenAI.EnableOTelDiagnostics[Sensitive]`), `AddSource("Microsoft.SemanticKernel*")`, same `ConversationIdProcessor`. Shows as "Unidentified" framework in Maple.
 
 ## Step 7: Verify
@@ -231,6 +251,13 @@ Run one real conversation (2-3 turns, one tool call; a second conversation if ch
 - Sub-agents have distinct `gen_ai.agent.name`s.
 - No attribute contains the model API key or `Bearer `.
 - Cost: none is emitted; Maple shows sessions as unpriced. Framework label: "Microsoft Agent Framework" / "Semantic Kernel" (Python); .NET shows "Unidentified".
+
+## Tokens and cost notes
+
+- `chat` spans carry `gen_ai.usage.input_tokens` / `output_tokens` plus cache-read, cache-creation and reasoning buckets when the provider returns them. The OpenAI chat-completions client requests `include_usage` itself when streaming.
+- `invoke_agent` repeats the sum of its own `chat` calls; Maple nets it out, so don't strip it.
+- `gen_ai.provider.name` is the client type (`openai` even when pointed at OpenRouter or Ollama); `server.address` holds the real base URL.
+- .NET streamed `chat` spans carry `gen_ai.response.time_to_first_chunk` (time to first token in Maple); Python MAF doesn't record it.
 
 ## Do not
 
