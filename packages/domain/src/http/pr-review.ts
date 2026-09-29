@@ -706,6 +706,9 @@ export type PrReviewReplyCommand = Schema.Schema.Type<typeof PrReviewReplyComman
 export const PrReviewReplyStatus = Schema.Literals(["queued", "running", "completed", "failed", "skipped"])
 export type PrReviewReplyStatus = Schema.Schema.Type<typeof PrReviewReplyStatus>
 
+/** How Maple's copy tells people to address the reviewer: the hosted App's login, which GitHub autocompletes. */
+export const PR_REVIEWER_MENTION = "@maplelabsapp"
+
 /**
  * How a comment addresses the reviewer: `@maple`, or the hosted App's own login. Not `@maple-dev`
  * or `@maplefoo`, and not inside an email address or a path.

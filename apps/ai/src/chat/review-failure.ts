@@ -10,7 +10,7 @@ import {
 	ContextOverflowError,
 	ModelProtocolError,
 } from "effect-agent/agent-error"
-import { PR_REVIEW_FAILURE_COPY, type PrReviewFailureReason } from "@maple/domain/http"
+import { PR_REVIEW_FAILURE_COPY, PR_REVIEWER_MENTION, type PrReviewFailureReason } from "@maple/domain/http"
 import { Cause } from "effect"
 import { isAiError } from "effect/unstable/ai/AiError"
 
@@ -52,4 +52,4 @@ export const reviewFailureReason = (cause: Cause.Cause<unknown>): PrReviewFailur
 
 /** The row's `error` for a reason: its code first, so it can be read back. */
 export const reviewFailureError = (reason: PrReviewFailureReason): string =>
-	`${reason}: ${PR_REVIEW_FAILURE_COPY[reason]} Retry with @maple review.`
+	`${reason}: ${PR_REVIEW_FAILURE_COPY[reason]} Retry with ${PR_REVIEWER_MENTION} review.`

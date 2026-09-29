@@ -32,6 +32,7 @@ import {
 	type PrReviewStatus,
 	PR_REVIEW_CONFIDENCE_LABEL,
 	PR_REVIEW_FAILURE_COPY,
+	PR_REVIEWER_MENTION,
 	type PrReviewFailureReason,
 	prReviewFailureReason,
 	confidencePrReview,
@@ -429,7 +430,7 @@ export const withReviewStatus = (
 		],
 		failed: [
 			"> [!WARNING]",
-			`> ${failedSentence(sha, notice.kind === "failed" ? notice.reason : undefined)} Comment \`@maple review\` to try again.`,
+			`> ${failedSentence(sha, notice.kind === "failed" ? notice.reason : undefined)} Comment \`${PR_REVIEWER_MENTION} review\` to try again.`,
 		],
 		superseded: [
 			"> [!NOTE]",
@@ -457,7 +458,7 @@ export const reviewCheckFor = (notice: PrReviewStatusNotice) => {
 				...run,
 				state: { status: "completed" as const, conclusion: "neutral" as const },
 				title: "Review could not finish",
-				summary: `${failedSentence(sha, notice.reason)} Comment \`@maple review\` on the pull request to try again.`,
+				summary: `${failedSentence(sha, notice.reason)} Comment \`${PR_REVIEWER_MENTION} review\` on the pull request to try again.`,
 			}
 		case "superseded":
 			return {
@@ -475,7 +476,7 @@ const pausedCheckFor = (headSha: string, limit: number) => ({
 	headSha,
 	state: { status: "completed" as const, conclusion: "skipped" as const },
 	title: "Automatic reviews paused",
-	summary: `This pull request has had ${limit} ${limit === 1 ? "review" : "reviews"}, the repository's limit for pushes. Comment \`@maple review\` on the pull request to review \`${headSha.slice(0, 7)}\`.`,
+	summary: `This pull request has had ${limit} ${limit === 1 ? "review" : "reviews"}, the repository's limit for pushes. Comment \`${PR_REVIEWER_MENTION} review\` on the pull request to review \`${headSha.slice(0, 7)}\`.`,
 })
 
 const SEVERITY_LABEL = {
@@ -483,6 +484,23 @@ const SEVERITY_LABEL = {
 	warn: "Warning",
 	info: "Note",
 } as const satisfies Record<PrReviewFinding["severity"], string>
+
+/** A colored marker per severity, so the level reads at a glance in a comment, a check, and a summary. */
+const SEVERITY_MARK = {
+	critical: "🔴",
+	warn: "🟠",
+	info: "🔵",
+} as const satisfies Record<PrReviewFinding["severity"], string>
+
+/** The GitHub alert an inline comment sits in: red, orange, blue. */
+const SEVERITY_ALERT = {
+	critical: "CAUTION",
+	warn: "WARNING",
+	info: "NOTE",
+} as const satisfies Record<PrReviewFinding["severity"], string>
+
+/** Green when safe, amber when it needs a look, red when risky. */
+const confidenceMark = (confidence: number) => (confidence >= 4 ? "🟢" : confidence === 3 ? "🟡" : "🔴")
 
 /** `observability · SPAN-03`, or the bare category for every other lens. */
 const categoryLabel = (finding: { readonly category: string; readonly checkId?: string }): string =>
@@ -571,7 +589,7 @@ export const renderReviewMarkdown = (input: ReviewMarkdownInput & { readonly hea
 		lines.push("**Nothing to review**", "")
 	} else {
 		lines.push(
-			`**Confidence ${confidence.confidence}/5** · ${PR_REVIEW_CONFIDENCE_LABEL[confidence.confidence]}`,
+			`${confidenceMark(confidence.confidence)} **Confidence ${confidence.confidence}/5** · ${PR_REVIEW_CONFIDENCE_LABEL[confidence.confidence]}`,
 		)
 		// An early end is already the warning below; the reason would only say it again.
 		if (confidence.reason !== undefined && confidence.cappedBy !== "partial")
@@ -589,7 +607,7 @@ export const renderReviewMarkdown = (input: ReviewMarkdownInput & { readonly hea
 		for (const finding of bySeverity(report.findings)) {
 			const handle = finding.handle === undefined ? "" : `${finding.handle} · `
 			lines.push(
-				`<details><summary><b>${SEVERITY_LABEL[finding.severity]}</b> · ${escapeHtml(handle)}${summaryHtml(finding.title)}</summary>`,
+				`<details><summary>${SEVERITY_MARK[finding.severity]} <b>${SEVERITY_LABEL[finding.severity]}</b> · ${escapeHtml(handle)}${summaryHtml(finding.title)}</summary>`,
 				"",
 				`${categoryLabel(finding)} · [\`${whereLabel(finding)}\`](${lineUrl(finding)})`,
 				"",
@@ -600,6 +618,17 @@ export const renderReviewMarkdown = (input: ReviewMarkdownInput & { readonly hea
 			if (fix) lines.push(...fenced(fix), "")
 			lines.push("</details>", "")
 		}
+		// Right under the findings, not at the bottom: handing them to a coding agent is the next step.
+		if (input.heading) {
+			lines.push(
+				`<details><summary>🤖 <b>Prompt to fix ${report.findings.length === 1 ? "this finding" : `all ${report.findings.length} findings`} with an AI agent</b></summary>`,
+				"",
+				...fenced(copyAllFindings(report.findings, input.headSha), "text"),
+				"",
+				"</details>",
+				"",
+			)
+		}
 	}
 	if (carried.open.length > 0) {
 		lines.push(
@@ -607,7 +636,7 @@ export const renderReviewMarkdown = (input: ReviewMarkdownInput & { readonly hea
 			"",
 			...bySeverity(carried.open).map(
 				(finding) =>
-					`- **${SEVERITY_LABEL[finding.severity]}** · ${finding.handle} · ${escapeCell(finding.title)} · [\`${whereLabel(finding)}\`](${lineUrl(finding)})`,
+					`- ${SEVERITY_MARK[finding.severity]} **${SEVERITY_LABEL[finding.severity]}** · ${finding.handle} · ${escapeCell(finding.title)} · [\`${whereLabel(finding)}\`](${lineUrl(finding)})`,
 			),
 			"",
 		)
@@ -616,7 +645,7 @@ export const renderReviewMarkdown = (input: ReviewMarkdownInput & { readonly hea
 		lines.push(
 			"### Fixed since the last review",
 			"",
-			...carried.resolved.map((finding) => `- ~~${finding.handle} · ${escapeCell(finding.title)}~~`),
+			...carried.resolved.map((finding) => `- ✅ ~~${finding.handle} · ${escapeCell(finding.title)}~~`),
 			"",
 		)
 	}
@@ -661,21 +690,11 @@ export const renderReviewMarkdown = (input: ReviewMarkdownInput & { readonly hea
 			"",
 		)
 	}
-	if (input.heading && report.findings.length > 0) {
-		lines.push(
-			`<details><summary>Copy all findings (${report.findings.length})</summary>`,
-			"",
-			...fenced(copyAllFindings(report.findings, input.headSha), "text"),
-			"",
-			"</details>",
-			"",
-		)
-	}
 	const auditNote = report.findings.some((finding) => finding.checkId !== undefined)
 		? " Check ids refer to Maple's instrumentation audit."
 		: ""
 	lines.push(
-		`<sub>\`${input.headSha.slice(0, 7)}\` · Updated on every push. Reply "won't fix" to dismiss a finding, or mention @maple to ask about one.${auditNote}</sub>`,
+		`<sub>\`${input.headSha.slice(0, 7)}\` · Updated on every push. Reply "won't fix" to dismiss a finding, or mention ${PR_REVIEWER_MENTION} to ask about one.${auditNote}</sub>`,
 	)
 	return lines.join("\n")
 }
@@ -723,16 +742,17 @@ const CHECK_SUMMARY_MAX_BYTES = 65_000
  */
 const renderComment = (finding: PrReviewFinding): string => {
 	const lines = [
-		`**${finding.title}**`,
-		"",
-		`<sub>${[finding.handle, SEVERITY_LABEL[finding.severity], categoryLabel(finding)].filter((part) => part !== undefined).join(" · ")}</sub>`,
+		`> [!${SEVERITY_ALERT[finding.severity]}]`,
+		`> **${finding.title}**`,
+		">",
+		`> <sub>${[finding.handle, SEVERITY_LABEL[finding.severity], categoryLabel(finding)].filter((part) => part !== undefined).join(" · ")}</sub>`,
 	]
 	if (finding.body) lines.push("", finding.body)
 	if (finding.suggestion) lines.push("", ...fenced(finding.suggestion))
 	if (finding.replacement !== undefined) lines.push("", ...fenced(finding.replacement, "suggestion"))
 	lines.push(
 		"",
-		"<details><summary>Prompt for an AI agent</summary>",
+		"<details><summary>🤖 <b>Prompt to fix with an AI agent</b></summary>",
 		"",
 		...fenced(agentPrompt(finding), "text"),
 		"",
