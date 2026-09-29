@@ -26,6 +26,7 @@ import {
 	PrReviewPersistenceError,
 	PrReviewReport,
 	type PrReviewFeedbackScope,
+	type PrReviewModel,
 	type PrReviewRepositoryConfig,
 	type PrReviewSeverity,
 	type PrReviewSkipReason,
@@ -150,6 +151,11 @@ export interface PrReviewServiceApi {
 		orgId: OrgId,
 		reviewId: PrReviewId,
 	) => Effect.Effect<Option.Option<PrReview>, PrReviewPersistenceError>
+	/**
+	 * The model the organization picked for its reviews and replies, or none for the deployment's
+	 * default. Never fails: an unreadable setting reviews on the default.
+	 */
+	readonly reviewModel: (orgId: OrgId) => Effect.Effect<Option.Option<PrReviewModel>>
 	/** The repository and commit a review reads, so its checkout can start before the agent asks. */
 	readonly reviewTarget: (
 		orgId: OrgId,
@@ -2216,8 +2222,27 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				}))
 			})
 
+			const reviewModel: PrReviewServiceApi["reviewModel"] = Effect.fn("PrReviewService.reviewModel")(
+				function* (orgId) {
+					const settings = yield* repositories.getPrReviewSettings(orgId).pipe(
+						Effect.tapError((error) =>
+							Effect.logWarning("Could not read the review model; using the default").pipe(
+								Effect.annotateLogs({ orgId, error: error.message }),
+							),
+						),
+						Effect.option,
+					)
+					const model = Option.flatMap(settings, (value) => Option.fromUndefinedOr(value.model))
+					yield* Effect.annotateCurrentSpan({
+						"maple.pr_review.model": Option.getOrElse(model, () => "default"),
+					})
+					return model
+				},
+			)
+
 			return {
 				reviewTarget,
+				reviewModel,
 				onPullRequestEvent,
 				reviewNow,
 				getReview,

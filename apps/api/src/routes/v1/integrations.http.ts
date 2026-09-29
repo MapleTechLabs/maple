@@ -16,6 +16,7 @@ import {
 	GithubSetPrReviewResponse,
 	GithubPrReviewConfigResponse,
 	GithubPrReviewsResponse,
+	GithubPrReviewSettingsResponse,
 	GithubSetTrackedBranchResponse,
 	GithubStartConnectResponse,
 	HazelChannelsListResponse,
@@ -598,6 +599,25 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleApi, "integrations
 							payload.config,
 						)
 						return new GithubPrReviewConfigResponse({ config })
+					}),
+				)
+				.handle("githubGetPrReviewSettings", () =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const settings = yield* github.getPrReviewSettings(tenant.orgId)
+						return new GithubPrReviewSettingsResponse({ settings })
+					}),
+				)
+				.handle("githubSetPrReviewSettings", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requireAdmin(tenant.roles)
+						const settings = yield* github.setPrReviewSettings(
+							tenant.orgId,
+							payload.settings,
+							tenant.userId,
+						)
+						return new GithubPrReviewSettingsResponse({ settings })
 					}),
 				)
 				.handle("githubListPrReviews", ({ params }) =>

@@ -1,5 +1,10 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { IntegrationsValidationError, PrReviewRepositoryConfig, type VcsSyncJob } from "@maple/domain/http"
+import {
+	IntegrationsValidationError,
+	PrReviewOrgSettings,
+	PrReviewRepositoryConfig,
+	type VcsSyncJob,
+} from "@maple/domain/http"
 import { Effect, Layer, Option } from "effect"
 import { TestClock } from "effect/testing"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
@@ -636,6 +641,26 @@ describe("GithubConnectService", () => {
 			assert.strictEqual(stored.dailyLimit, 20)
 			assert.strictEqual(stored.automaticReviewLimit, 3)
 			assert.strictEqual(stored.feedbackScope, "off")
+		}).pipe(Effect.provide(connectLayer(testDb, scriptedHttp(connectResponders()), sent)))
+	})
+
+	it.effect("stores the organization's review model and clears it back to the default", () => {
+		const testDb = createTestDb(trackedDbs)
+		const sent: Array<VcsSyncJob> = []
+		return Effect.gen(function* () {
+			const svc = yield* GithubConnectService
+			const repo = yield* VcsRepository
+			const { orgId } = yield* connectedRepo(svc, repo)
+			const actor = asUserId("user_admin")
+			assert.strictEqual((yield* svc.getPrReviewSettings(orgId)).model, undefined)
+			yield* svc.setPrReviewSettings(
+				orgId,
+				new PrReviewOrgSettings({ model: "openai/gpt-6-luna" }),
+				actor,
+			)
+			assert.strictEqual((yield* svc.getPrReviewSettings(orgId)).model, "openai/gpt-6-luna")
+			yield* svc.setPrReviewSettings(orgId, new PrReviewOrgSettings({}), actor)
+			assert.strictEqual((yield* svc.getPrReviewSettings(orgId)).model, undefined)
 		}).pipe(Effect.provide(connectLayer(testDb, scriptedHttp(connectResponders()), sent)))
 	})
 

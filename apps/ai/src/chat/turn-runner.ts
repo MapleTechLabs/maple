@@ -343,9 +343,15 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 			yield* toolExecutor.prepareConnectedRepositories(runTenant).pipe(Effect.forkChild)
 		}
 		const history = input.session.history()
-		const model = (
-			prReviewId === undefined && prReplyId === undefined ? resolveTriageModel : resolveReviewModel
-		)(input.env, { surface, orgId: tenant.orgId, sessionId: input.sessionId, turnId: input.messageId })
+		const tags = { surface, orgId: tenant.orgId, sessionId: input.sessionId, turnId: input.messageId }
+		const model =
+			prReviewId === undefined && prReplyId === undefined
+				? resolveTriageModel(input.env, tags)
+				: resolveReviewModel(
+						input.env,
+						tags,
+						Option.getOrUndefined(yield* reviews.reviewModel(tenant.orgId)),
+					)
 
 		// The session recorded the user's message before the run started, so the transcript's tail is
 		// this run's input rather than part of its history.

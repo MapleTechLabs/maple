@@ -2,8 +2,12 @@ import { useState } from "react"
 import { Exit, Schema } from "effect"
 import {
 	GithubPrReviewConfigRequest,
+	GithubPrReviewSettingsRequest,
+	PR_REVIEW_MODELS,
 	PrReviewCategory,
 	PrReviewFeedbackScope,
+	PrReviewModel,
+	PrReviewOrgSettings,
 	PrReviewRepositoryConfig,
 	PrReviewSeverity,
 	type GithubRepoSummary,
@@ -42,6 +46,7 @@ import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
 import { useIsOrgAdmin } from "@/hooks/use-is-org-admin"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { errorMessage } from "@/lib/error-toast"
+import { currentRegion } from "@/lib/region"
 import { MapleApiAtomClient, retainedQuery } from "@/lib/services/common/atom-client"
 
 const INSTRUCTIONS_MAX = 4_000
@@ -92,6 +97,105 @@ const SKIP_LABELS = {
 
 const configKey = (repo: GithubRepoSummary) => `githubPrReviewConfig:${repo.id}`
 const reviewsKey = (repo: GithubRepoSummary) => `githubPrReviews:${repo.id}`
+
+const SETTINGS_KEY = "githubPrReviewSettings"
+const DEFAULT_MODEL = "default"
+/** The EU instance only serves models with an in-region provider. */
+const MODEL_OPTIONS = PR_REVIEW_MODELS.filter((model) => currentRegion !== "eu" || model.eu)
+const DEFAULT_MODEL_LABEL = "Maple default"
+const modelLabel = (id: string) =>
+	MODEL_OPTIONS.find((model) => model.id === id)?.label ?? DEFAULT_MODEL_LABEL
+const MODEL_LABELS = Object.fromEntries([
+	[DEFAULT_MODEL, DEFAULT_MODEL_LABEL],
+	...MODEL_OPTIONS.map((model) => [model.id, model.label]),
+])
+const isModel = Schema.is(PrReviewModel)
+
+/** The organization's review model, shared by every repository's reviews and replies. */
+export function PrReviewModelSetting() {
+	const result = useAtomValue(
+		retainedQuery("integrations", "githubGetPrReviewSettings", { reactivityKeys: [SETTINGS_KEY] }),
+	)
+
+	return (
+		<div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card px-4 py-3">
+			<div className="leading-tight">
+				<div className="text-sm font-medium">Review model</div>
+				<div className="text-xs text-muted-foreground">
+					Runs pull request reviews and replies in every repository.
+				</div>
+			</div>
+			{Result.builder(result)
+				.onInitial(() => <Skeleton className="h-8 w-52" />)
+				.onError((error) => (
+					<p className="text-xs text-severity-error" role="alert">
+						{errorMessage(error, "Failed to load the review model.")}
+					</p>
+				))
+				.onSuccess((response) => <ModelSelect settings={response.settings} />)
+				.render()}
+		</div>
+	)
+}
+
+function ModelSelect({ settings }: { settings: PrReviewOrgSettings }) {
+	const isAdmin = useIsOrgAdmin()
+	const save = useAtomSet(MapleApiAtomClient.mutation("integrations", "githubSetPrReviewSettings"), {
+		mode: "promiseExit",
+	})
+	const [saving, setSaving] = useState(false)
+	const current =
+		settings.model !== undefined && MODEL_OPTIONS.some((model) => model.id === settings.model)
+			? settings.model
+			: DEFAULT_MODEL
+
+	async function handleChange(value: unknown) {
+		if (value === current) return
+		const model = isModel(value) ? value : undefined
+		setSaving(true)
+		const result = await save({
+			payload: new GithubPrReviewSettingsRequest({
+				settings: new PrReviewOrgSettings(model === undefined ? {} : { model }),
+			}),
+			reactivityKeys: [SETTINGS_KEY],
+		})
+		setSaving(false)
+		if (Exit.isSuccess(result)) {
+			toastManager.add({
+				title: `Reviews now run on ${modelLabel(model ?? DEFAULT_MODEL)}`,
+				type: "success",
+			})
+			return
+		}
+		toastManager.add({ title: errorMessage(result, "Failed to save the review model."), type: "error" })
+	}
+
+	return (
+		<Select
+			items={MODEL_LABELS}
+			value={current}
+			onValueChange={handleChange}
+			disabled={!isAdmin || saving}
+		>
+			<SelectTrigger
+				size="sm"
+				className="w-52"
+				aria-label="Review model"
+				title={isAdmin ? undefined : "Only admins can change the review model"}
+			>
+				<SelectValue />
+			</SelectTrigger>
+			<SelectContent>
+				<SelectItem value={DEFAULT_MODEL}>{DEFAULT_MODEL_LABEL}</SelectItem>
+				{MODEL_OPTIONS.map((model) => (
+					<SelectItem key={model.id} value={model.id}>
+						{model.label}
+					</SelectItem>
+				))}
+			</SelectContent>
+		</Select>
+	)
+}
 
 /** Opens a repository's review settings and recent reviews. Shown once reviews are on. */
 export function PrReviewSettingsButton({ repo }: { repo: GithubRepoSummary }) {

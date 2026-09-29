@@ -3,7 +3,7 @@ import { Schema } from "effect"
 import { ExternalUserId, ScrapeTargetId, UserId } from "../primitives"
 import { Authorization } from "./current-tenant"
 import { HttpTaggedError } from "./error-policy"
-import { PrReviewListItem, PrReviewRepositoryConfig } from "./pr-review"
+import { PrReviewListItem, PrReviewOrgSettings, PrReviewRepositoryConfig } from "./pr-review"
 import {
 	GitCommitSha,
 	PullRequestSummary,
@@ -775,6 +775,18 @@ export class GithubPrReviewConfigResponse extends Schema.Class<GithubPrReviewCon
 	config: PrReviewRepositoryConfig,
 }) {}
 
+export class GithubPrReviewSettingsRequest extends Schema.Class<GithubPrReviewSettingsRequest>(
+	"GithubPrReviewSettingsRequest",
+)({
+	settings: PrReviewOrgSettings,
+}) {}
+
+export class GithubPrReviewSettingsResponse extends Schema.Class<GithubPrReviewSettingsResponse>(
+	"GithubPrReviewSettingsResponse",
+)({
+	settings: PrReviewOrgSettings,
+}) {}
+
 export class GithubPrReviewsResponse extends Schema.Class<GithubPrReviewsResponse>("GithubPrReviewsResponse")(
 	{
 		reviews: Schema.Array(PrReviewListItem),
@@ -1211,6 +1223,20 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 				],
 			},
 		),
+	)
+	.add(
+		// Organization-wide review settings (the model). Read by any member, written by admins.
+		HttpApiEndpoint.get("githubGetPrReviewSettings", "/github/pr-review/settings", {
+			success: GithubPrReviewSettingsResponse,
+			error: [IntegrationsForbiddenError, IntegrationsPersistenceError],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.put("githubSetPrReviewSettings", "/github/pr-review/settings", {
+			payload: GithubPrReviewSettingsRequest,
+			success: GithubPrReviewSettingsResponse,
+			error: [IntegrationsForbiddenError, IntegrationsPersistenceError],
+		}),
 	)
 	.add(
 		// The repository's most recent reviews, newest first.

@@ -184,6 +184,29 @@ export const PrReviewFeedbackScope = Schema.Literals(["organization", "repositor
 export type PrReviewFeedbackScope = Schema.Schema.Type<typeof PrReviewFeedbackScope>
 
 /**
+ * The models an organization may pick for its reviews and replies, as OpenRouter ids. `eu` marks
+ * a model the EU instance serves; there, a pick without it reviews on the region's default.
+ */
+export const PR_REVIEW_MODELS = [
+	{ id: "deepseek/deepseek-v4.1-flash:nitro", label: "DeepSeek V4.1 Flash", eu: false },
+	{ id: "z-ai/glm-5.3-flash:nitro", label: "GLM 5.3 Flash", eu: false },
+	{ id: "xiaomi/mimo-v2.6-pro", label: "MiMo V2.6 Pro", eu: false },
+	{ id: "openai/gpt-5.6-luna", label: "GPT-5.6 Luna", eu: false },
+	{ id: "openai/gpt-6-luna", label: "GPT-6 Luna", eu: true },
+] as const
+
+export const PrReviewModel = Schema.Literals(PR_REVIEW_MODELS.map((model) => model.id)).annotate({
+	identifier: "@maple/PrReviewModel",
+	title: "Pull Request Review Model",
+})
+export type PrReviewModel = Schema.Schema.Type<typeof PrReviewModel>
+
+/** Organization-wide review settings; absent fields use the deployment's defaults. */
+export class PrReviewOrgSettings extends Schema.Class<PrReviewOrgSettings>("PrReviewOrgSettings")({
+	model: Schema.optionalKey(PrReviewModel),
+}) {}
+
+/**
  * Per-repository review settings. Every field is optional so a repository with none set reviews
  * with the defaults: every lens, no ignored paths, drafts skipped, notes posted.
  */

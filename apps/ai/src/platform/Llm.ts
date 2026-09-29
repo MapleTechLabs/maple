@@ -13,6 +13,7 @@
 import { OpenAiClient, OpenAiEmbeddingModel, OpenAiLanguageModel } from "@effect/ai-openai-compat"
 import { OpenRouterClient, OpenRouterDecisionModel, OpenRouterLanguageModel } from "@effect/ai-openrouter"
 import { MAPLE_NATIVE_SESSION_ID_ATTR, MAPLE_NATIVE_TURN_ID_ATTR } from "@maple/domain/gen-ai"
+import { PR_REVIEW_MODELS, type PrReviewModel } from "@maple/domain/http"
 import { FindingEmbedder, PrReviewEmbeddingError } from "@maple/backend/services/pr-review/FindingEmbedder"
 import { Effect, Layer, Option, Redacted, Schema } from "effect"
 import type * as DecisionModel from "effect/unstable/ai/DecisionModel"
@@ -418,16 +419,24 @@ export const resolveTriageModel = (env: LlmEnv, tags?: LlmCallTags): ResolvedMod
 				tags,
 			)
 
+/** The organization's pick, when this region serves it: the EU endpoint 404s a model it lacks. */
+const orgReviewModel = (env: LlmEnv, chosen: PrReviewModel | undefined): string | undefined => {
+	const entry = PR_REVIEW_MODELS.find((model) => model.id === chosen)
+	return entry !== undefined && (openRouterRegion(env) !== "eu" || entry.eu) ? entry.id : undefined
+}
+
 /**
- * The model pull request reviews and replies run on. OpenRouter only: the id is an OpenRouter id,
- * so a Workers AI deployment reviews on its triage model rather than sending it one.
+ * The model pull request reviews and replies run on: the organization's pick, then the deployment's
+ * override, then the region default. OpenRouter only: the id is an OpenRouter id, so a Workers AI
+ * deployment reviews on its triage model rather than sending it one.
  */
-export const resolveReviewModel = (env: LlmEnv, tags?: LlmCallTags): ResolvedModel =>
+export const resolveReviewModel = (env: LlmEnv, tags?: LlmCallTags, chosen?: PrReviewModel): ResolvedModel =>
 	resolveLlmProvider(env) === "workers-ai"
 		? resolveTriageModel(env, tags)
 		: openRouterModel(
 				env,
-				readString(env, "MAPLE_REVIEW_MODEL_OPENROUTER") ??
+				orgReviewModel(env, chosen) ??
+					readString(env, "MAPLE_REVIEW_MODEL_OPENROUTER") ??
 					(openRouterRegion(env) === "eu" ? EU_DEFAULT_REVIEW_MODEL : DEFAULT_REVIEW_MODEL),
 				"MAPLE_TRIAGE_REASONING_EFFORT",
 				undefined,

@@ -15,6 +15,7 @@ import { Decision, DecisionModel, LanguageModel, Tool, Toolkit } from "effect/un
 import { FetchHttpClient } from "effect/unstable/http"
 import { assert, describe, it } from "@effect/vitest"
 import { expect } from "vitest"
+import { PR_REVIEW_MODELS } from "@maple/domain/http"
 import {
 	DEFAULT_DECISION_MODEL,
 	layerDecisionModel,
@@ -213,6 +214,24 @@ describe("resolveReviewModel", () => {
 	it("reads its window from the table, never the triage overrides", () => {
 		const model = resolveReviewModel({ ...openRouterEnv, MAPLE_TRIAGE_MODEL_CONTEXT: "64000" })
 		expect(model.limits.context).toBe(1_000_000)
+	})
+
+	it("runs on the organization's pick ahead of the deployment override", () => {
+		const env = { ...openRouterEnv, MAPLE_REVIEW_MODEL_OPENROUTER: "anthropic/claude-sonnet-5" }
+		expect(resolveReviewModel(env, undefined, "xiaomi/mimo-v2.6-pro").name).toBe("xiaomi/mimo-v2.6-pro")
+		expect(resolveReviewModel(env).name).toBe("anthropic/claude-sonnet-5")
+	})
+
+	it("ignores a pick the EU instance does not serve", () => {
+		const euEnv = { ...openRouterEnv, MAPLE_REGION: "eu" }
+		expect(resolveReviewModel(euEnv, undefined, "xiaomi/mimo-v2.6-pro").name).toBe("openai/gpt-6-luna")
+		expect(resolveReviewModel(euEnv, undefined, "openai/gpt-6-luna").name).toBe("openai/gpt-6-luna")
+	})
+
+	it("knows the window of every model an organization can pick", () => {
+		for (const { id } of PR_REVIEW_MODELS) {
+			expect(resolveReviewModel(openRouterEnv, undefined, id).limits.context).toBeGreaterThan(128_000)
+		}
 	})
 
 	it("reviews on the triage model when agents run on Workers AI", () => {
