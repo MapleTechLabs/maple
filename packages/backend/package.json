@@ -22,7 +22,7 @@
 		"@clerk/backend": "^3.20.1",
 		"@distilled.cloud/cloudflare": "1.0.0-rc.12",
 		"@distilled.cloud/core": "1.0.0-rc.12",
-		"@maple-dev/effect-clickhouse": "0.1.0",
+		"@maple-dev/effect-clickhouse": "0.1.4",
 		"@maple-dev/effect-clickhouse-http": "workspace:*",
 		"@maple/alerting-core": "workspace:*",
 		"@maple/auth": "workspace:*",

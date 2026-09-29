@@ -47,11 +47,13 @@ describe("productEventsFunnelQuery", () => {
 		)
 		// The window is passed in the timestamp's unit — epoch milliseconds — since
 		// windowFunnel does not accept DateTime64.
-		expect(sql).toContain("windowFunnel(3600000)(ts, s1 = 1, s2 = 1, s3 = 1) AS level")
-		expect(sql).toContain("toUInt64(toUnixTimestamp64Milli(Timestamp)) AS ts")
+		expect(sql).toContain(
+			"windowFunnel(3600000)(funnel_events.ts, funnel_events.s1 = 1, funnel_events.s2 = 1, funnel_events.s3 = 1) AS level",
+		)
+		expect(sql).toContain("toUInt64(toUnixTimestamp64Milli(e.Timestamp)) AS ts")
 		expect(sql).toContain("[countIf(level >= 1), countIf(level >= 2), countIf(level >= 3)] AS counts")
 		expect(sql).toContain("arrayJoin([1, 2, 3]) AS step")
-		expect(sql).toContain("arrayElement(counts, step) AS count")
+		expect(sql).toContain("arrayElement(totals.counts, step) AS count")
 		expect(sql).toContain("ORDER BY step ASC")
 	})
 
@@ -61,14 +63,14 @@ describe("productEventsFunnelQuery", () => {
 			params,
 		)
 		expect(sql).toContain(
-			"toUInt8(((Kind = 'navigation' AND PagePath = '/pricing') AND Host = 'maple.dev')) AS s1",
+			"toUInt8(((e.Kind = 'navigation' AND e.PagePath = '/pricing') AND e.Host = 'maple.dev')) AS s1",
 		)
-		expect(sql).toContain("toUInt8(EventName = 'signup_completed') AS s2")
+		expect(sql).toContain("toUInt8(e.EventName = 'signup_completed') AS s2")
 		expect(sql).toContain(
-			"toUInt8((EventName = 'plan_started' AND Attributes['plan'] = 'startup')) AS s3",
+			"toUInt8((e.EventName = 'plan_started' AND e.Attributes['plan'] = 'startup')) AS s3",
 		)
 		expect(oneLine(sql)).toContain(
-			"AND ((((Kind = 'navigation' AND PagePath = '/pricing') AND Host = 'maple.dev') OR EventName = 'signup_completed') OR (EventName = 'plan_started' AND Attributes['plan'] = 'startup'))",
+			"AND ((((e.Kind = 'navigation' AND e.PagePath = '/pricing') AND e.Host = 'maple.dev') OR e.EventName = 'signup_completed') OR (e.EventName = 'plan_started' AND e.Attributes['plan'] = 'startup'))",
 		)
 	})
 
@@ -78,7 +80,7 @@ describe("productEventsFunnelQuery", () => {
 			params,
 		).sql
 		expect(visitor).toContain("VisitorId AS key")
-		expect(visitor).toContain("AND VisitorId != ''")
+		expect(visitor).toContain("AND e.VisitorId != ''")
 		expect(visitor).not.toContain("identity_links")
 
 		const user = compileUnsafe(
@@ -86,14 +88,14 @@ describe("productEventsFunnelQuery", () => {
 			params,
 		).sql
 		expect(user).toContain("UserId AS key")
-		expect(user).toContain("AND UserId != ''")
+		expect(user).toContain("AND e.UserId != ''")
 
 		const session = compileUnsafe(
 			productEventsFunnelQuery({ steps: STEPS, keyBy: "session", windowSeconds: 60 }),
 			params,
 		).sql
 		expect(session).toContain("SessionId AS key")
-		expect(session).toContain("AND SessionId != ''")
+		expect(session).toContain("AND e.SessionId != ''")
 	})
 
 	it("stitches the person key through identity_links aggregated per visitor", () => {
@@ -106,7 +108,7 @@ describe("productEventsFunnelQuery", () => {
 		// so ranking a visitor's users on a raw FirstSeen would count arbitrary
 		// duplicates until parts merge.
 		expect(oneLine(sql)).toContain(
-			"LEFT JOIN (SELECT VisitorId AS VisitorId, argMin(UserId, FirstSeen) AS UserId FROM (SELECT VisitorId AS VisitorId, UserId AS UserId, min(FirstSeen) AS FirstSeen FROM identity_links WHERE OrgId = 'org_1' GROUP BY VisitorId, UserId) AS pair_links GROUP BY VisitorId) AS link ON e.VisitorId = link.VisitorId",
+			"LEFT JOIN (SELECT pair_links.VisitorId AS VisitorId, argMin(pair_links.UserId, pair_links.FirstSeen) AS UserId FROM (SELECT identity_links.VisitorId AS VisitorId, identity_links.UserId AS UserId, min(identity_links.FirstSeen) AS FirstSeen FROM identity_links WHERE identity_links.OrgId = 'org_1' GROUP BY VisitorId, UserId) AS pair_links GROUP BY VisitorId) AS link ON e.VisitorId = link.VisitorId",
 		)
 		expect(sql).toContain(
 			"multiIf(e.UserId != '', e.UserId, coalesce(link.UserId, '') != '', coalesce(link.UserId, ''), e.VisitorId) AS key",
@@ -125,14 +127,16 @@ describe("productEventsFunnelQuery", () => {
 		expect(sql).toContain("UNION ALL")
 		// The session branch: s1 = 1, every other step 0, at the session's StartTime.
 		expect(oneLine(sql)).toContain(
-			"SELECT VisitorId AS key, toUInt64(toUnixTimestamp64Milli(StartTime)) AS ts, 0 AS seq, 1 AS s1, 0 AS s2, 0 AS s3, 0 AS s4 FROM session_replays AS s",
+			"SELECT s.VisitorId AS key, toUInt64(toUnixTimestamp64Milli(s.StartTime)) AS ts, 0 AS seq, 1 AS s1, 0 AS s2, 0 AS s3, 0 AS s4 FROM session_replays AS s",
 		)
-		expect(sql).toContain("AND ReferrerHost = 'news.ycombinator.com'")
+		expect(sql).toContain("AND s.ReferrerHost = 'news.ycombinator.com'")
 		// The events branch never satisfies the session step.
 		expect(oneLine(sql)).toContain(
-			"SELECT VisitorId AS key, toUInt64(toUnixTimestamp64Milli(Timestamp)) AS ts, Seq AS seq, 0 AS s1,",
+			"SELECT e.VisitorId AS key, toUInt64(toUnixTimestamp64Milli(e.Timestamp)) AS ts, e.Seq AS seq, 0 AS s1,",
 		)
-		expect(sql).toContain("windowFunnel(86400000)(ts, s1 = 1, s2 = 1, s3 = 1, s4 = 1) AS level")
+		expect(sql).toContain(
+			"windowFunnel(86400000)(funnel_events.ts, funnel_events.s1 = 1, funnel_events.s2 = 1, funnel_events.s3 = 1, funnel_events.s4 = 1) AS level",
+		)
 	})
 
 	it("has no session_replays branch without a session step", () => {
@@ -163,9 +167,11 @@ describe("productEventsFunnelQuery", () => {
 		expect(flat).toContain("AND s.Country = 'DE'")
 		// …and the page filter through the navigation semi-join on product_events.
 		expect(flat).toContain(
-			"AND s.SessionId IN (SELECT SessionId AS sessionId FROM product_events WHERE OrgId = 'org_1'",
+			"AND s.SessionId IN (SELECT product_events.SessionId AS sessionId FROM product_events WHERE product_events.OrgId = 'org_1'",
 		)
-		expect(flat).toContain("AND Kind = 'navigation' AND PagePath = '/' GROUP BY sessionId)")
+		expect(flat).toContain(
+			"AND product_events.Kind = 'navigation' AND product_events.PagePath = '/' GROUP BY sessionId)",
+		)
 	})
 
 	it("omits the population subquery when no filter is set", () => {
@@ -213,11 +219,13 @@ describe("productEventsFunnelBreakdownQuery", () => {
 		expect(compiled.tenantScope).toBe("single-tenant")
 		const flat = oneLine(compiled.sql)
 		expect(flat).toContain("Attributes['plan'] AS dim")
-		expect(flat).toContain("argMinIf(dim, ts, dim != '') AS group")
+		expect(flat).toContain(
+			"argMinIf(funnel_events.dim, funnel_events.ts, funnel_events.dim != '') AS group",
+		)
 		expect(flat).toContain("countIf(level >= 1) AS entered")
 		expect(flat).toContain("GROUP BY group ORDER BY entered DESC, group ASC LIMIT 5")
 		expect(flat).toContain(
-			"SELECT group AS group, arrayJoin([1, 2, 3]) AS step, arrayElement(counts, step) AS count",
+			"SELECT groups.group AS group, arrayJoin([1, 2, 3]) AS step, arrayElement(groups.counts, step) AS count",
 		)
 		expect(flat).toContain("ORDER BY group ASC, step ASC")
 	})
@@ -235,7 +243,7 @@ describe("productEventsFunnelBreakdownQuery", () => {
 		const flat = oneLine(sql)
 		expect(flat).toContain("coalesce(sd.Value, '') AS dim")
 		expect(flat).toContain(
-			"LEFT JOIN (SELECT SessionId AS SessionId, max(UtmSource) AS Value FROM session_replays WHERE OrgId = 'org_1'",
+			"LEFT JOIN (SELECT session_replays.SessionId AS SessionId, max(session_replays.UtmSource) AS Value FROM session_replays WHERE session_replays.OrgId = 'org_1'",
 		)
 		expect(flat).toContain("AS sd ON e.SessionId = sd.SessionId")
 		expect(flat).toContain("LIMIT 10")
@@ -251,7 +259,7 @@ describe("productEventsFunnelBreakdownQuery", () => {
 			}),
 			params,
 		)
-		expect(oneLine(sql)).toContain("0 AS s4, Country AS dim FROM session_replays AS s")
+		expect(oneLine(sql)).toContain("0 AS s4, s.Country AS dim FROM session_replays AS s")
 	})
 
 	it("uses the event Host without a join", () => {
@@ -289,9 +297,9 @@ describe("productEventNamesQuery", () => {
 		expect(compiled.tenantScope).toBe("single-tenant")
 		const flat = oneLine(compiled.sql)
 		expect(flat).toContain(
-			"SELECT EventName AS eventName, Kind AS kind, count() AS count, uniqIf(SessionId, SessionId != '') AS sessions, uniq(if(UserId != '', UserId, VisitorId)) AS persons FROM product_events",
+			"SELECT product_events.EventName AS eventName, product_events.Kind AS kind, count() AS count, uniqIf(product_events.SessionId, product_events.SessionId != '') AS sessions, uniq(if(product_events.UserId != '', product_events.UserId, product_events.VisitorId)) AS persons FROM product_events",
 		)
-		expect(flat).toContain("WHERE OrgId = 'org_1'")
+		expect(flat).toContain("WHERE product_events.OrgId = 'org_1'")
 		expect(flat).toContain("GROUP BY eventName, kind ORDER BY count DESC, eventName ASC LIMIT 25")
 		expect(flat).not.toContain("session_replays")
 	})
@@ -305,11 +313,13 @@ describe("productEventNamesQuery", () => {
 		)
 		const flat = oneLine(sql)
 		expect(flat).toContain(
-			"AND Host = 'maple.dev' AND SessionId IN (SELECT SessionId AS sessionId FROM session_replays",
+			"AND product_events.Host = 'maple.dev' AND product_events.SessionId IN (SELECT session_replays.SessionId AS sessionId FROM session_replays",
 		)
-		expect(flat).toContain("AND ReferrerHost = 't.co'")
+		expect(flat).toContain("AND session_replays.ReferrerHost = 't.co'")
 		// pagePath narrows sessions through the navigation semi-join, not the events.
-		expect(flat).toContain("AND Kind = 'navigation' AND PagePath = '/pricing' GROUP BY sessionId)")
+		expect(flat).toContain(
+			"AND product_events.Kind = 'navigation' AND product_events.PagePath = '/pricing' GROUP BY sessionId)",
+		)
 	})
 })
 
@@ -334,7 +344,7 @@ describe("funnel drop-off details", () => {
 		expect(sql).toContain("quantileIf(0.5)(toFloat64(t2 - t1), level >= 2 AND t2 > 0)")
 		expect(sql).toContain("quantileIf(0.9)(toFloat64(t3 - t2), level >= 3 AND t3 > 0)")
 		expect(sql).toContain("arrayJoin([2, 3]) AS step")
-		expect(sql).toContain("arrayElement(p50s, step) AS p50Ms")
+		expect(sql).toContain("arrayElement(totals.p50s, step) AS p50Ms")
 	})
 
 	it("finds the first event after the last step a leaver reached, top rows per step", () => {
@@ -344,12 +354,12 @@ describe("funnel drop-off details", () => {
 		)
 		expect(sql).toContain("level + 1 AS step")
 		expect(sql).toContain("arrayElement([t1, t2, t3], level) AS tLast")
-		expect(sql).toContain("WHERE level >= 1")
-		expect(sql).toContain("AND level < 3")
+		expect(sql).toContain("WHERE chain.level >= 1")
+		expect(sql).toContain("AND chain.level < 3")
 		expect(sql).toContain("AND arrayElement([t1, t2, t3], level) > 0")
 		expect(sql).toContain("argMinIf(e.name, e.ts, e.ts > d.tLast) AS next")
 		// No identity join on a visitor key, so the branch's columns go unprefixed.
-		expect(sql).toContain("if(Kind = 'navigation', PagePath, EventName) AS name")
+		expect(sql).toContain("if(e.Kind = 'navigation', e.PagePath, e.EventName) AS name")
 		// Every event of the population, not just step matches: no step OR-chain
 		// on the joined branch.
 		expect(sql).toContain("INNER JOIN")

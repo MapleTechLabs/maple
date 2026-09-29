@@ -659,7 +659,7 @@ describe("makeQueryEngineExecute", () => {
 			})
 
 			assert.include(receivedSql ?? "", "metrics_gauge")
-			assert.include(receivedSql ?? "", "arrayJoin(mapKeys(Attributes))")
+			assert.include(receivedSql ?? "", "arrayJoin(mapKeys(metrics_gauge.Attributes))")
 			assert.include(receivedSql ?? "", "MetricName = 'http.server.duration'")
 			assert.deepStrictEqual(response.result, {
 				kind: "attributeKeys",

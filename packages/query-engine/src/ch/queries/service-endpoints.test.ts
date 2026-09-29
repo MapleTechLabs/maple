@@ -13,15 +13,16 @@ const baseParams = {
 	endTime: "2024-01-02 00:00:00",
 }
 
-const HTTP_FILTER = "match(SpanName, '^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS) ')"
+const httpFilter = (table: string) => `match(${table}.SpanName, '^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS) ')`
 
 describe("serviceEndpointsSummaryQuery", () => {
 	it("filters every splice branch to HTTP endpoint names", () => {
 		const { sql } = compileUnsafe(serviceEndpointsSummaryQuery({ serviceName: "api" }), baseParams)
 		// Three branches: the raw edge matches on the computed display name, the
 		// two rollup tiers on the name they already store normalized.
-		expect(sql.split(HTTP_FILTER).length - 1).toBe(2)
-		expect(sql).toContain("match(if(((SpanName LIKE 'http.server %'")
+		expect(sql).toContain(httpFilter("service_operations_hourly"))
+		expect(sql).toContain(httpFilter("service_operations_minutely"))
+		expect(sql).toContain("match(if(((traces.SpanName LIKE 'http.server %'")
 	})
 
 	it("leaves the unfiltered Operations query untouched", () => {
@@ -47,8 +48,8 @@ describe("serviceEndpointsSummaryQuery", () => {
 		const { sql } = compileUnsafe(serviceEndpointsSummaryRawQuery({ serviceName: "api" }), baseParams)
 		expect(sql).toContain("FROM traces")
 		expect(sql).not.toContain("service_operations_minutely")
-		expect(sql).toContain("match(if(((SpanName LIKE 'http.server %'")
-		expect(sql).toContain("quantile(0.99)(Duration)")
+		expect(sql).toContain("match(if(((traces.SpanName LIKE 'http.server %'")
+		expect(sql).toContain("quantile(0.99)(traces.Duration)")
 	})
 })
 

@@ -42,7 +42,7 @@ describe("releasesTimelineQuery", () => {
 		})
 		expect(sql).toContain("FROM service_overview_minutely")
 		expect(sql).not.toContain("FROM service_overview_hourly")
-		expect(sql).toContain("toStartOfInterval(bBucket, INTERVAL 300 SECOND)")
+		expect(sql).toContain("toStartOfInterval(service_windows.bBucket, INTERVAL 300 SECOND)")
 		expect(sql).toContain("GROUP BY bucket, serviceName, commitSha")
 	})
 
@@ -73,7 +73,7 @@ describe("releaseErrorFingerprintsQuery", () => {
 			{ ...baseParams, serviceVersion: "abc123" },
 		)
 		expect(sql).toContain("FROM error_events_by_time")
-		expect(sql).toContain("toString(FingerprintHash)")
+		expect(sql).toContain("toString(error_events_by_time.FingerprintHash)")
 		expect(sql).toContain("ServiceName = 'api'")
 		expect(sql).toContain("ServiceVersion = 'abc123'")
 		expect(sql).toContain("DeploymentEnv IN ('production')")

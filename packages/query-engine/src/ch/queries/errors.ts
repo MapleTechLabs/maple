@@ -760,9 +760,10 @@ export function tracesFacetsQuery(opts: TracesFacetsOpts): CHUnionQuery<TracesFa
 				exists(
 					from(Traces, "t_attr")
 						.select(() => ({ _: CH.lit(1) }))
-						.where(() => [
+						.where(($) => [
 							CH.dynamicColumn("t_attr.TraceId").eq(CH.outerRef("TraceId")),
-							CH.dynamicColumn("t_attr.OrgId").eq(param.string("orgId")),
+							// Typed so the compiler sees the subquery's tenant filter.
+							$.OrgId.eq(param.string("orgId")),
 							CH.dynamicColumn<string>("t_attr.Timestamp").gte(
 								param.dateTimeString("startTime"),
 							),
@@ -785,9 +786,10 @@ export function tracesFacetsQuery(opts: TracesFacetsOpts): CHUnionQuery<TracesFa
 				exists(
 					from(Traces, "t_res")
 						.select(() => ({ _: CH.lit(1) }))
-						.where(() => [
+						.where(($) => [
 							CH.dynamicColumn("t_res.TraceId").eq(CH.outerRef("TraceId")),
-							CH.dynamicColumn("t_res.OrgId").eq(param.string("orgId")),
+							// Typed so the compiler sees the subquery's tenant filter.
+							$.OrgId.eq(param.string("orgId")),
 							CH.dynamicColumn<string>("t_res.Timestamp").gte(
 								param.dateTimeString("startTime"),
 							),

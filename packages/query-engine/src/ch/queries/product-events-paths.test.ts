@@ -79,12 +79,12 @@ describe("productEventsPathsQuery", () => {
 			params,
 		)
 		// No identity join on a session key, so the columns go unprefixed.
-		expect(sql).toContain("if(Kind = 'navigation', PagePath, EventName) AS name")
+		expect(sql).toContain("if(e.Kind = 'navigation', e.PagePath, e.EventName) AS name")
 		// The anchor row is exempt from its own kind and name filters.
 		expect(sql).toContain(
 			"(r.isAnchor = 1 OR (r.kind = 'navigation' AND r.name NOT IN ('heartbeat', '/')))",
 		)
-		expect(sql).toContain("(Kind = 'navigation' AND PagePath = '/pricing') AND Host = 'maple.dev'")
+		expect(sql).toContain("(e.Kind = 'navigation' AND e.PagePath = '/pricing') AND e.Host = 'maple.dev'")
 		expect(sql).toContain("SessionId AS key")
 		expect(sql).not.toContain("identity_links")
 	})
