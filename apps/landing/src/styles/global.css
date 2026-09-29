@@ -1375,14 +1375,7 @@
 }
 
 /* Before the script runs (or without it), only the first panel shows. */
-.lt:not(.lt--filter):not([data-ready]) > .lt__panels > [data-lang-panel]:not(:first-child) {
-	display: none;
-}
-
-/* A filter shows every panel under its heading until the script runs, and
-   only the picked one after; its rail does nothing without the script. */
-.lt--filter:not([data-ready]) > .lt__rail,
-.lt--filter[data-ready] > .lt__panels > [data-lang-panel] > .lt__heading {
+.lt:not([data-ready]) > .lt__panels > [data-lang-panel]:not(:first-child) {
 	display: none;
 }
 
