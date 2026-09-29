@@ -85,9 +85,14 @@ export function classifyAiSpan(span: AiSessionSpan): AiSpanCategory {
 
 	// `gen_ai.operation.name` is optional and plenty of instrumentations skip it.
 	// The span name is the next best evidence: by convention it leads with the
-	// operation ("execute_tool read_file", "chat gpt-5").
+	// operation ("execute_tool read_file", "chat gpt-5"). Except for "tool": a
+	// span naming an operation the convention does not know (LangSmith's
+	// `chain`, a Mastra `scorer_step`) has said what it is, and the LangGraph
+	// `tools` node or a `code-tool-call-accuracy-scorer` is not a tool call.
 	const name = span.spanName.toLowerCase()
-	if (span.genAi.toolName !== undefined || name.includes("tool")) return "tool"
+	if (span.genAi.toolName !== undefined || (operation === undefined && name.includes("tool"))) {
+		return "tool"
+	}
 	if (name.includes("agent") || name.includes("workflow")) return "agent"
 	if (spanModel(span) !== undefined || name.includes("chat") || name.includes("completion")) {
 		return "inference"

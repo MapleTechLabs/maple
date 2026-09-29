@@ -208,7 +208,7 @@ fn named_like_a_model_call(op: &str, span_name: &str, facts: &Facts) -> bool {
     if KNOWN_OPS.contains(&op) {
         return false;
     }
-    if facts.has_tool_name() || name_has(span_name, "tool") {
+    if facts.has_tool_name() || (op.is_empty() && name_has(span_name, "tool")) {
         return false;
     }
     if name_has(span_name, "agent") || name_has(span_name, "workflow") {
@@ -1368,7 +1368,8 @@ mod tests {
 
     /// `captures/jev_agents`: `decide` is jev's own model call, found by the
     /// unknown-dialect fallback; an unknown workflow op is not a call, nor is a
-    /// memory operation naming its embedding model.
+    /// memory operation naming its embedding model. A "tool" in the name of a
+    /// span that names its own operation does not rule it out.
     #[test]
     fn unknown_dialect_calls_by_name_and_model() {
         let stamped = stamp_spans(
@@ -1411,6 +1412,15 @@ mod tests {
                         ("gen_ai.request.model", "text-embedding-3-small"),
                     ],
                 ),
+                (
+                    "rank_tools openai/gpt-4o-mini",
+                    &[
+                        ("gen_ai.operation.name", "rank"),
+                        ("gen_ai.request.model", "openai/gpt-4o-mini"),
+                        ("gen_ai.usage.input_tokens", "52"),
+                        ("gen_ai.usage.output_tokens", "9"),
+                    ],
+                ),
             ],
         );
         assert!(stamped.iter().all(|span| span.vendor == "unknown:genai"));
@@ -1422,7 +1432,11 @@ mod tests {
             .iter()
             .map(|span| span.llm_call.as_deref())
             .collect();
-        assert_eq!(calls, [Some("1"), Some("1"), Some("0"), Some("0")]);
+        assert_eq!(
+            calls,
+            [Some("1"), Some("1"), Some("0"), Some("0"), Some("1")]
+        );
+        assert_eq!(stamped[4].buckets, Some([52, 0, 0, 9, 0]));
     }
 
     // --- Guards and the write itself ------------------------------------

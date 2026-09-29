@@ -567,6 +567,43 @@ describe("classifyAiSpan", () => {
 		expect(named("chat gpt-5")).toBe("inference")
 	})
 
+	it("does not read 'tool' off the name of a span that names an unknown operation", () => {
+		// `blind-ts-mastra` (EU, 2026-09-29): the Mastra exporter lowercases a span
+		// type the convention has no name for into `gen_ai.operation.name`; a
+		// LangSmith OTel `chain` wraps LangGraph's `tools` node.
+		const unknownOp = (spanName: string, operationName: string) =>
+			makeSpan({
+				spanId: "a",
+				startMs: 0,
+				durationMs: 1,
+				spanName,
+				vendorId: "mastra",
+				genAi: { operationName },
+			})
+
+		for (const span of [
+			unknownOp("scorer_run code-tool-call-accuracy-scorer", "scorer_run"),
+			unknownOp("scorer_step code-tool-call-accuracy-scorer", "scorer_step"),
+			unknownOp("tools", "chain"),
+			unknownOp("HumanInTheLoopMiddleware.wrap_tool_call", "chain"),
+		]) {
+			expect(classifyAiSpan(span)).toBe("agent")
+			expect(isLlmCall(span)).toBe(false)
+		}
+		// A tool name is still a tool call, whatever the operation says.
+		expect(
+			classifyAiSpan(
+				makeSpan({
+					spanId: "a",
+					startMs: 0,
+					durationMs: 1,
+					spanName: "mcp_tool_call search",
+					genAi: { operationName: "mcp_tool_call", toolName: "search" },
+				}),
+			),
+		).toBe("tool")
+	})
+
 	it("classifies a span with no AI signal as other, whatever it is called", () => {
 		const httpSpan = makeSpan({
 			spanId: "a",

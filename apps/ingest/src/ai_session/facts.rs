@@ -392,12 +392,15 @@ fn agent_name(facts: &Facts, vendor: &str, span_name: &str) -> Option<String> {
 }
 
 /// A tool call: the convention's tool operation, or, under an operation the
-/// convention does not name, a tool name or a span name saying "tool".
+/// convention does not name, a tool name. A span name saying "tool" counts
+/// only when no operation is named: one that names its own (LangSmith's
+/// `chain` over LangGraph's `tools` node, a Mastra `scorer_step`) has said
+/// what it is.
 fn is_tool_call(facts: &Facts, span_name: &str) -> bool {
     let op = facts.operation();
     op == "execute_tool"
         || (!usage::KNOWN_OPS.contains(&op)
-            && (facts.has_tool_name() || name_has(span_name, "tool")))
+            && (facts.has_tool_name() || (op.is_empty() && name_has(span_name, "tool"))))
 }
 
 /// Mark a stamped tool call as failed after the fact: Claude Code records a
@@ -812,14 +815,28 @@ mod tests {
         assert_eq!(agno[0], pairs(&[("maple_ai.llm_call", "0")]));
     }
 
-    /// Outside the convention's operations a tool name or a span name saying
-    /// "tool" makes a tool call; a memory operation never does.
+    /// Outside the convention's operations a tool name makes a tool call, and
+    /// a span name saying "tool" does only when no operation is named (the
+    /// Mastra scorer and LangSmith `chain` wrappers name one); a memory
+    /// operation never does.
     #[test]
     fn tool_calls_by_name_under_unknown_operations() {
         let got = stamps(
             "support-agent",
             vec![
-                span("run_tools", &[("gen_ai.operation.name", "workflow_step")]),
+                span("run_tools", &[("traceloop.span.kind", "task")]),
+                span(
+                    "mcp_tool_call search",
+                    &[
+                        ("gen_ai.operation.name", "mcp_tool_call"),
+                        ("gen_ai.tool.name", "search"),
+                    ],
+                ),
+                span(
+                    "scorer_step code-tool-call-accuracy-scorer",
+                    &[("gen_ai.operation.name", "scorer_step")],
+                ),
+                span("tools", &[("gen_ai.operation.name", "chain")]),
                 span(
                     "search_memory notes",
                     &[
@@ -829,8 +846,8 @@ mod tests {
                 ),
             ],
         );
-        assert!(has(&got[0], TOOL_CALL_ATTR));
-        assert!(!has(&got[1], TOOL_CALL_ATTR));
+        let tool_calls: Vec<bool> = got.iter().map(|span| has(span, TOOL_CALL_ATTR)).collect();
+        assert_eq!(tool_calls, [true, true, false, false, false]);
     }
 
     /// A value the warehouse Map holds as a string counts whatever its OTLP
