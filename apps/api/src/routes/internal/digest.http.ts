@@ -2,10 +2,12 @@ import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { CurrentTenant, MapleInternalApi } from "@maple/domain/http"
 import { Effect } from "effect"
 import { DigestService } from "@maple/backend/services/digest/DigestService"
+import { WebAnalyticsDigestService } from "@maple/backend/services/digest/WebAnalyticsDigestService"
 
 export const HttpDigestLive = HttpApiBuilder.group(MapleInternalApi, "digest", (handlers) =>
 	Effect.gen(function* () {
 		const digest = yield* DigestService
+		const webAnalyticsDigest = yield* WebAnalyticsDigestService
 
 		return handlers
 			.handle("getSubscription", () =>
@@ -24,6 +26,7 @@ export const HttpDigestLive = HttpApiBuilder.group(MapleInternalApi, "digest", (
 						timezone: payload.timezone,
 						namespaces: payload.namespaces,
 						environments: payload.environments,
+						webAnalyticsEnabled: payload.webAnalyticsEnabled,
 					})
 				}),
 			)
@@ -37,6 +40,12 @@ export const HttpDigestLive = HttpApiBuilder.group(MapleInternalApi, "digest", (
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
 					return yield* digest.preview(tenant.orgId, tenant.userId)
+				}),
+			)
+			.handle("previewWebAnalytics", () =>
+				Effect.gen(function* () {
+					const tenant = yield* CurrentTenant.Context
+					return yield* webAnalyticsDigest.preview(tenant.orgId)
 				}),
 			)
 	}),

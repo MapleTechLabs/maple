@@ -4016,18 +4016,47 @@ fn any_value_string(value: &AnyValue) -> String {
         Some(any_value::Value::BoolValue(value)) => value.to_string(),
         Some(any_value::Value::IntValue(value)) => value.to_string(),
         Some(any_value::Value::DoubleValue(value)) => value.to_string(),
-        Some(any_value::Value::BytesValue(value)) => bytes_hex(value),
-        Some(any_value::Value::ArrayValue(value)) => {
-            let values: Vec<String> = value.values.iter().map(any_value_string).collect();
-            serde_json::to_string(&values).unwrap_or_default()
-        }
-        Some(any_value::Value::KvlistValue(value)) => {
-            let attrs = attr_map(&value.values);
-            serde_json::to_string(&attrs).unwrap_or_default()
+        // Text sent as bytes (LangSmith's prompt and completion) stays
+        // readable. Binary is hex, including binary that happens to be valid
+        // UTF-8: a control character other than whitespace marks it.
+        Some(any_value::Value::BytesValue(value)) => match std::str::from_utf8(value) {
+            Ok(text)
+                if !text
+                    .chars()
+                    .any(|c| c.is_control() && !matches!(c, '\t' | '\n' | '\r')) =>
+            {
+                text.to_owned()
+            }
+            _ => bytes_hex(value),
+        },
+        Some(any_value::Value::ArrayValue(_) | any_value::Value::KvlistValue(_)) => {
+            serde_json::to_string(&any_value_json(value)).unwrap_or_default()
         }
         // String-table references (OTLP 1.9 experimental encoding) cannot be resolved
         // without the sender's dictionary, which the gateway does not accept yet.
         Some(any_value::Value::StringValueStrindex(_)) | None => String::new(),
+    }
+}
+
+/// An array or map as JSON. Scalars keep their string form, as flat arrays and
+/// maps always have, but a nested array or map stays JSON instead of becoming
+/// a string of escaped JSON (structured `gen_ai.input.messages`).
+fn any_value_json(value: &AnyValue) -> Value {
+    match value.value.as_ref() {
+        Some(any_value::Value::ArrayValue(array)) => {
+            Value::Array(array.values.iter().map(any_value_json).collect())
+        }
+        Some(any_value::Value::KvlistValue(kvlist)) => Value::Object(
+            kvlist
+                .values
+                .iter()
+                .map(|kv| {
+                    let value = kv.value.as_ref().map_or(Value::from(""), any_value_json);
+                    (kv.key.clone(), value)
+                })
+                .collect(),
+        ),
+        _ => Value::String(any_value_string(value)),
     }
 }
 
@@ -4125,7 +4154,7 @@ mod tests {
     use axum::routing::post;
     use axum::Router;
     use flate2::read::GzDecoder;
-    use opentelemetry_proto::tonic::common::v1::InstrumentationScope;
+    use opentelemetry_proto::tonic::common::v1::{ArrayValue, InstrumentationScope, KeyValueList};
     use opentelemetry_proto::tonic::metrics::v1::{
         exponential_histogram_data_point, metric, AggregationTemporality, ExponentialHistogram,
         ExponentialHistogramDataPoint, Gauge, Histogram, HistogramDataPoint, Metric, Sum,
@@ -4430,6 +4459,73 @@ mod tests {
         assert_eq!(bytes_hex(&[]), "");
         assert_eq!(bytes_hex(&[0; 8]), "");
         assert_eq!(bytes_hex(&[0xab, 0xcd]), "abcd");
+    }
+
+    #[test]
+    fn bytes_attributes_decode_as_text_when_valid_utf8() {
+        let bytes = |value: &[u8]| AnyValue {
+            value: Some(any_value::Value::BytesValue(value.to_vec())),
+        };
+        // docs_langchain_ls: LangSmith sends `gen_ai.prompt` as UTF-8 JSON bytes.
+        assert_eq!(
+            any_value_string(&bytes(br#"{"messages":[{"content":"Hi"}]}"#)),
+            r#"{"messages":[{"content":"Hi"}]}"#
+        );
+        assert_eq!(any_value_string(&bytes(&[0xff, 0xfe, 0x01])), "fffe01");
+        // Valid UTF-8 that is really binary stays hex (all zero stays "").
+        assert_eq!(any_value_string(&bytes(&[0x01, 0x02, 0x7f])), "01027f");
+        assert_eq!(any_value_string(&bytes(&[0; 4])), "");
+        assert_eq!(any_value_string(&bytes(b"a\tb\r\nc")), "a\tb\r\nc");
+        // A leading BOM is kept, as the local-mode port keeps it.
+        assert_eq!(any_value_string(&bytes(b"\xef\xbb\xbfa")), "\u{feff}a");
+    }
+
+    #[test]
+    fn structured_attributes_stay_json_when_nested() {
+        let any = |value: any_value::Value| AnyValue { value: Some(value) };
+        let text = |value: &str| any(any_value::Value::StringValue(value.to_owned()));
+        let array =
+            |values: Vec<AnyValue>| any(any_value::Value::ArrayValue(ArrayValue { values }));
+        let map = |pairs: Vec<(&str, AnyValue)>| {
+            any(any_value::Value::KvlistValue(KeyValueList {
+                values: pairs
+                    .into_iter()
+                    .map(|(key, value)| KeyValue {
+                        key: key.to_owned(),
+                        key_strindex: 0,
+                        value: Some(value),
+                    })
+                    .collect(),
+            }))
+        };
+        // Flat arrays and maps are unchanged: scalars as strings.
+        assert_eq!(
+            any_value_string(&array(vec![
+                text("stop"),
+                any(any_value::Value::IntValue(1))
+            ])),
+            r#"["stop","1"]"#
+        );
+        assert_eq!(
+            any_value_string(&map(vec![("n", any(any_value::Value::BoolValue(true)))])),
+            r#"{"n":"true"}"#
+        );
+        // Structured messages decode as the JSON a reader expects, not as an
+        // array of escaped JSON strings.
+        let messages = array(vec![map(vec![
+            ("role", text("user")),
+            (
+                "parts",
+                array(vec![map(vec![
+                    ("type", text("text")),
+                    ("content", text("hi")),
+                ])]),
+            ),
+        ])]);
+        assert_eq!(
+            any_value_string(&messages),
+            r#"[{"parts":[{"content":"hi","type":"text"}],"role":"user"}]"#
+        );
     }
 
     #[test]

@@ -288,6 +288,32 @@ export const LOCAL_SCHEMA_HISTORY: ReadonlyArray<LocalSchemaHistoryEntry> = Obje
 		manifestDigest: "eac1c292f9f3d9d799d4a76a7a9991c258aaacf344d31479ebb5bf6014a6840a",
 		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
 	}),
+	Object.freeze({
+		// v24 adds trace_facets_hourly and its view off trace_list_mv, backfilled
+		// from the retained root spans. Nothing existing is rewritten.
+		//
+		// projectRevision is carried forward deliberately: it is a hardcoded
+		// constant that no longer tracks the generator's header, and the identity
+		// this gate compares is the fingerprint/digest pair.
+		version: 24,
+		fingerprint: "35f37b2e3c43d610",
+		digest: "35f37b2e3c43d61046bc05f477b4e16c4f0f2ddb2c9100dc5298699014b5a047",
+		manifestDigest: "09eeccdbd568e6d550b739bb05e074dedb399720902b35577d4eb963c48b0a53",
+		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
+	}),
+	Object.freeze({
+		// v25 partitions trace_facets_hourly by day (Tinybird rejects a TTL shorter
+		// than the partition period); the rollup is recreated and rebuilt.
+		//
+		// projectRevision is carried forward deliberately: it is a hardcoded
+		// constant that no longer tracks the generator's header, and the identity
+		// this gate compares is the fingerprint/digest pair.
+		version: 25,
+		fingerprint: "bfaed79bcf2423f5",
+		digest: "bfaed79bcf2423f532b582ab321d4b5f55410853cb381cad1df7041e0663f941",
+		manifestDigest: "005ad815cff50e1c642dfc696cf423d7d9a3c7ee58b8cdcd4ad647bf35ab1297",
+		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
+	}),
 ] as const)
 
 /** Immutable SQLite control DDL identities, checked by clickhouse:schema:check. */

@@ -28,11 +28,15 @@ import {
 } from "@maple/domain/gen-ai"
 import type { AiSessionSpansOutput } from "./ai-sessions"
 import { AI_VENDOR_INTEGRATIONS } from "./ai-vendors"
+import { isRecord, unwrapMessages, unwrapOutputMessages, unwrapToolMessage } from "./ai-messages"
 
 export interface AiRefineContext {
 	readonly row: AiSessionSpansOutput
 	/** The span's own attributes — the map the source key lists read. */
 	readonly attributes: Record<string, string>
+	/** One attribute decoded the way the mapper decodes `field`; `undefined`
+	 *  when the key is absent or its value does not decode. */
+	readonly read: (field: AiGenAiField, key: string) => unknown
 }
 
 /** Field → source attribute keys, tried in order; the first value that decodes wins. */
@@ -56,6 +60,8 @@ export interface AiIntegration {
 	 * so a key missing here is a key `refine` never sees.
 	 */
 	readonly refineKeys?: readonly string[]
+	/** Key prefixes `refine` reads, for a family with no fixed keys. */
+	readonly refinePrefixes?: readonly string[]
 }
 
 /** An integration carrying a source list for every catalog field. */
@@ -111,10 +117,15 @@ const decodeAttribute = (type: AiFieldDef["type"], raw: string): unknown => {
 		case "stringArray":
 			return decodeStringArray(raw)
 		case "json": {
-			// Objects and arrays only: `"null"`, `"0"` and `"false"` parse cleanly
-			// into values that would reach the UI where a message list belongs.
+			// The convention types tool arguments and results as any value, and
+			// emitters put plain text in these slots (a tool's string return, an
+			// error message, a bare system prompt). Anything that is not a JSON
+			// object or array is kept as its text; JSON `null` is the one value
+			// that means nothing was captured.
 			const parsed = parseJson(raw)
-			return parsed !== null && typeof parsed === "object" ? parsed : undefined
+			if (parsed === null) return undefined
+			if (typeof parsed === "object" || typeof parsed === "string") return parsed
+			return raw
 		}
 		default: {
 			// A field type added to the catalog without a case here would otherwise
@@ -186,6 +197,11 @@ export const LEGACY_SYSTEM_VALUES: ReadonlyMap<string, string> = new Map([
 ])
 
 const genAiRefine = (values: MutableAiGenAiValues, ctx: AiRefineContext): void => {
+	if (values.toolCallResult !== undefined) values.toolCallResult = unwrapToolMessage(values.toolCallResult)
+	if (values.inputMessages !== undefined) values.inputMessages = unwrapMessages(values.inputMessages)
+	if (values.outputMessages !== undefined)
+		values.outputMessages = unwrapOutputMessages(values.outputMessages)
+
 	// Gated on the canonical key being absent: a span that emits
 	// `gen_ai.provider.name` is already speaking the new vocabulary, and its
 	// values pass through even when they collide with an old enum member.
@@ -195,6 +211,17 @@ const genAiRefine = (values: MutableAiGenAiValues, ctx: AiRefineContext): void =
 	) {
 		const canonical = LEGACY_SYSTEM_VALUES.get(values.providerName)
 		if (canonical !== undefined) values.providerName = canonical
+	}
+
+	// The convention also keeps a finish reason on each output message, and some
+	// emitters (Strands) put it only there.
+	if (values.responseFinishReasons === undefined && Array.isArray(values.outputMessages)) {
+		const reasons = values.outputMessages.flatMap((message) =>
+			isRecord(message) && typeof message.finish_reason === "string" && message.finish_reason !== ""
+				? [message.finish_reason]
+				: [],
+		)
+		if (reasons.length > 0) values.responseFinishReasons = reasons
 	}
 
 	// The finish reason was singularised in place, so this is a value fix rather
@@ -265,6 +292,15 @@ export const aiSpanAttributeKeys: readonly string[] = [
 	]),
 ]
 
+/** Key prefixes the mapper reads besides `aiSpanAttributeKeys`: templated
+ *  families whose keys carry a name or an index. */
+export const aiSpanAttributePrefixes: readonly string[] = [
+	...new Set([
+		AI_PROMPT_VARIABLE_PREFIX,
+		...Object.values(AI_VENDOR_INTEGRATIONS).flatMap((vendor) => vendor.refinePrefixes ?? []),
+	]),
+]
+
 /**
  * Every source key any integration reads for one field, the canonical spelling
  * first — what a warehouse aggregation coalesces over to read the field the
@@ -325,12 +361,13 @@ export const mapAiSpan = (row: AiSessionSpansOutput): AiAgentSpan => {
 	// driven by the same catalog entry as the field it is written under, so the
 	// value matches the field by construction.
 	const genAi = {} as MutableAiGenAiValues & Record<string, unknown>
+	const read = (field: AiGenAiField, key: string): unknown => {
+		const raw = readAttribute(attributes, key)
+		return raw === undefined ? undefined : decodeAttribute(AI_GENAI_FIELDS[field].type, raw)
+	}
 	for (const [field, keys] of Object.entries(integration.sources)) {
-		const def = AI_GENAI_FIELDS[field as AiGenAiField]
 		for (const key of keys) {
-			const raw = readAttribute(attributes, key)
-			if (raw === undefined) continue
-			const value = decodeAttribute(def.type, raw)
+			const value = read(field as AiGenAiField, key)
 			// A key that carries an undecodable value does not consume the
 			// field: the next alias still gets its turn.
 			if (value === undefined) continue
@@ -338,7 +375,7 @@ export const mapAiSpan = (row: AiSessionSpansOutput): AiAgentSpan => {
 			break
 		}
 	}
-	integration.refine?.(genAi, { row, attributes })
+	integration.refine?.(genAi, { row, attributes, read })
 
 	const promptVariables = collectPromptVariables(attributes)
 	const sessionId = readAttribute(attributes, MAPLE_AI_SESSION_ID_ATTR)

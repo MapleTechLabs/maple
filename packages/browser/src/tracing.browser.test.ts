@@ -1,5 +1,7 @@
 // TEST-SEAM: This focused test replaces process-global modules that have no instance-level injection seam.
 import {
+	diag,
+	DiagLogLevel,
 	INVALID_SPAN_CONTEXT,
 	type Span as ApiSpan,
 	trace,
@@ -103,6 +105,9 @@ describe("setupTracing unload flush", () => {
 	let shutdown: (() => Promise<void>) | undefined
 
 	afterEach(async () => {
+		vi.useRealTimers()
+		vi.restoreAllMocks()
+		diag.disable()
 		await shutdown?.()
 		shutdown = undefined
 		exported.length = 0
@@ -176,6 +181,68 @@ describe("setupTracing unload flush", () => {
 
 		expect(trace.getTracer("host").startSpan("still-host")).toBeDefined()
 		expect(hostTracer.startSpan).toHaveBeenCalledWith("still-host")
+	})
+
+	it("exports a fetch span that settled just before pagehide", async () => {
+		// The fetch instrumentation ends its span 300ms after the response; a
+		// navigation inside that window used to flush before the span existed.
+		vi.useFakeTimers({ toFake: ["setTimeout"] })
+		// `vi.waitFor` advances fake timers by its interval on every poll; 0 keeps
+		// the instrumentation's 300ms timer parked until this test runs it.
+		const poll = { interval: 0 }
+		shutdown = setupTracing({ ...CONFIG, tracingInstrumentFetch: true })
+		const url = URL.createObjectURL(new Blob(["ok"]))
+
+		await (await fetch(url)).text()
+		// The instrumentation has settled the response and parked the span's end.
+		await vi.waitFor(() => expect(vi.getTimerCount()).toBe(1), poll)
+
+		window.dispatchEvent(new Event("pagehide"))
+		await vi.waitFor(() => expect(exported).toHaveLength(1), poll)
+		expect(exported[0]?.attributes["url.full"]).toBe(url)
+		URL.revokeObjectURL(url)
+	})
+
+	it("does not end a fetch span the instrumentation already ended", async () => {
+		const errors: string[] = []
+		const noop = (): void => {}
+		diag.setLogger(
+			{ error: (message) => errors.push(message), warn: noop, info: noop, debug: noop, verbose: noop },
+			DiagLogLevel.ERROR,
+		)
+		vi.useFakeTimers({ toFake: ["setTimeout"] })
+		const poll = { interval: 0 }
+		shutdown = setupTracing({ ...CONFIG, tracingInstrumentFetch: true })
+		const url = URL.createObjectURL(new Blob(["ok"]))
+
+		await (await fetch(url)).text()
+		await vi.waitFor(() => expect(vi.getTimerCount()).toBe(1), poll)
+		// The instrumentation's timer ends the span; no later fetch prunes it.
+		vi.runAllTimers()
+
+		window.dispatchEvent(new Event("pagehide"))
+		await vi.waitFor(() => expect(exported).toHaveLength(1), poll)
+		expect(errors).toEqual([])
+		URL.revokeObjectURL(url)
+	})
+
+	it("leaves a settled fetch span to the instrumentation when the page is only hidden", async () => {
+		// A hidden page (tab switch) lives on: ending the span early would leave
+		// the instrumentation's timer writing to an ended span.
+		vi.useFakeTimers({ toFake: ["setTimeout"] })
+		const poll = { interval: 0 }
+		shutdown = setupTracing({ ...CONFIG, tracingInstrumentFetch: true })
+		const url = URL.createObjectURL(new Blob(["ok"]))
+
+		await (await fetch(url)).text()
+		await vi.waitFor(() => expect(vi.getTimerCount()).toBe(1), poll)
+
+		vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden")
+		document.dispatchEvent(new Event("visibilitychange"))
+		vi.useRealTimers()
+		await new Promise((resolve) => setTimeout(resolve, 20))
+		expect(exported).toHaveLength(0)
+		URL.revokeObjectURL(url)
 	})
 
 	it("removes its listeners on shutdown", async () => {

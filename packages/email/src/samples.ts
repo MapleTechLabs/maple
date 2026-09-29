@@ -8,6 +8,12 @@ import type {
 	WeeklyDigestProps,
 } from "./weekly-digest-core"
 import { computeDelta } from "./weekly-digest-core"
+import {
+	aiProductIcon,
+	emailIcon,
+	faviconIcon,
+	type WebAnalyticsDigestProps,
+} from "./web-analytics-digest-core"
 
 const pct = (value: number): Delta => ({ kind: "pct", value })
 
@@ -414,4 +420,78 @@ export const alertNotificationProps: AlertNotificationProps = {
 	accentColor: "#e01e5a",
 	linkUrl: "https://app.maple.dev/alerts/rule_123",
 	chatUrl: "https://app.maple.dev/alerts/incidents/inc_456",
+}
+
+const shareOf = <T extends { value: number; icon: string | null }>(rows: Array<T>) => {
+	const total = rows.reduce((sum, row) => sum + row.value, 0)
+	return rows.map((row) => ({ ...row, share: total > 0 ? row.value / total : 0 }))
+}
+
+export const webAnalyticsDigestProps: WebAnalyticsDigestProps = {
+	orgName: "Acme Corp",
+	dateRange: { start: "Sep 21", end: "Sep 27" },
+	summary: {
+		visitors: { value: 12_480, delta: pct(18.2) },
+		pageViews: { value: 41_930, delta: pct(9.6) },
+		bounceRate: { value: 42.7, delta: pct(-3.1) },
+		avgSessionMs: { value: 154_000, delta: pct(6.4) },
+	},
+	topPages: shareOf([
+		{ icon: null, label: "/", value: 14_220, delta: pct(4.1) },
+		{ icon: null, label: "/pricing", value: 6_310, delta: pct(22.8) },
+		{ icon: null, label: "/docs/getting-started", value: 4_870, delta: pct(-6.2) },
+	]),
+	sources: shareOf([
+		{ icon: emailIcon("direct"), label: "Direct", value: 6_120 },
+		{ icon: faviconIcon("google.com"), label: "google.com", value: 3_480 },
+		{ icon: faviconIcon("github.com"), label: "github.com", value: 1_210 },
+	]),
+	ai: {
+		referrals: {
+			sessions: 642,
+			delta: pct(38.5),
+			byProduct: shareOf([
+				{ icon: aiProductIcon("chatgpt"), label: "ChatGPT", value: 410, delta: pct(21.3) },
+				{ icon: aiProductIcon("claude"), label: "Claude", value: 148, delta: pct(64.4) },
+				{
+					icon: aiProductIcon("perplexity"),
+					label: "Perplexity",
+					value: 61,
+					delta: { kind: "none" },
+				},
+			]),
+		},
+		crawlers: {
+			requests: 18_320,
+			delta: pct(-12.4),
+			byCrawler: shareOf([
+				{ icon: aiProductIcon("chatgpt"), label: "GPTBot", value: 7_940 },
+				{ icon: aiProductIcon("claude"), label: "ClaudeBot", value: 5_210 },
+				{ icon: aiProductIcon("perplexity"), label: "PerplexityBot", value: 2_880 },
+			]),
+		},
+	},
+	baseUrl: "https://app.maple.dev",
+	analyticsUrl:
+		"https://app.maple.dev/analytics?startTime=2026-09-21+00%3A00%3A00&endTime=2026-09-27+23%3A59%3A59",
+	aiUrl: "https://app.maple.dev/analytics?startTime=2026-09-21+00%3A00%3A00&endTime=2026-09-27+23%3A59%3A59&tab=ai",
+	unsubscribeUrl: "https://app.maple.dev/settings/notifications",
+}
+
+/** A small site with no AI traffic and a warehouse without the crawler table. */
+export const quietWebAnalyticsDigestProps: WebAnalyticsDigestProps = {
+	...webAnalyticsDigestProps,
+	orgName: "Tiny Blog",
+	summary: {
+		visitors: { value: 84, delta: { kind: "none" } },
+		pageViews: { value: 212, delta: { kind: "none" } },
+		bounceRate: { value: null, delta: { kind: "none" } },
+		avgSessionMs: { value: 41_000, delta: { kind: "none" } },
+	},
+	topPages: shareOf([
+		{ icon: null, label: "/", value: 150, delta: { kind: "none" } },
+		{ icon: null, label: "/about", value: 62, delta: { kind: "none" } },
+	]),
+	sources: shareOf([{ icon: emailIcon("direct"), label: "Direct", value: 84 }]),
+	ai: { referrals: { sessions: 0, delta: { kind: "none" }, byProduct: [] }, crawlers: null },
 }

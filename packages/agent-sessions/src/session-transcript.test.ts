@@ -1034,6 +1034,57 @@ describe("buildTranscript — session-level states", () => {
 		])
 	})
 
+	// The call after a failure that only called a tool still needs a speaker, or
+	// its tool call hangs under the failed call's "no reply" row.
+	it("gives a tool-only call after a failed call its own speaker row", () => {
+		const spans = turnSpans({
+			startMs: 0,
+			durationMs: 10 * SECOND,
+			children: [
+				llmSpan({
+					spanId: "l1",
+					parentSpanId: "agent",
+					startMs: 0,
+					durationMs: SECOND,
+					statusCode: "Error",
+					statusMessage: "Interrupted",
+					genAi: { errorType: "provider_error" },
+				}),
+				llmSpan({
+					spanId: "l2",
+					parentSpanId: "agent",
+					startMs: 2 * SECOND,
+					durationMs: SECOND,
+					genAi: {
+						outputMessages: [
+							{
+								role: "assistant",
+								parts: [
+									{ type: "tool_call", id: "c1", name: "submit_diagnosis", arguments: {} },
+								],
+							},
+						],
+					},
+				}),
+				toolSpan({
+					spanId: "t1",
+					parentSpanId: "agent",
+					startMs: 3 * SECOND,
+					durationMs: SECOND,
+					toolName: "submit_diagnosis",
+					genAi: { toolCallId: "c1" },
+				}),
+			],
+		})
+
+		const rows = transcript(spans)
+		expect(kinds(rows)).toEqual(["turn", "assistant", "assistant", "tool"])
+		expect(findRows(rows, "assistant").map((row) => [row.failed, row.toolCallsOnly])).toEqual([
+			[true, false],
+			[false, true],
+		])
+	})
+
 	it("drops the app's own HTTP spans and de-duplicates repeated span ids", () => {
 		const tool = toolSpan({
 			spanId: "t1",
@@ -1291,6 +1342,56 @@ describe("buildTranscript — what counts as a captured reply", () => {
 		const tools = findRows(transcript(spans), "tool")
 		expect(tools).toHaveLength(1)
 		expect(tools[0]!.fromMessageOnly).toBe(false)
+	})
+
+	// OpenInference records the call id in the model's output but not on the tool
+	// span it opens, so the id matches nothing and the name is again all there is.
+	it("drops a message-only tool call whose id no tool span recorded", () => {
+		const spans = outputOnly(
+			[{ type: "tool_call", id: "call_S2ZCSLmFSJRp7QxaBw8DoCgT", name: "get_weather", arguments: {} }],
+			[
+				toolSpan({
+					spanId: "t1",
+					parentSpanId: "agent",
+					startMs: 2 * SECOND,
+					durationMs: SECOND,
+					toolName: "get_weather",
+				}),
+			],
+		)
+		const tools = findRows(transcript(spans), "tool")
+		expect(tools).toHaveLength(1)
+		expect(tools[0]!.fromMessageOnly).toBe(false)
+	})
+
+	// The crewai `fetch_transport_data.run` span: failed, no result attribute, no
+	// call id, the reason in its status message only.
+	it("shows a failed tool span's status message as its result", () => {
+		const spans = outputOnly(
+			[
+				{
+					type: "tool_call",
+					id: "call_iLx2i9SBqgg8iUJyjJOMHGhn",
+					name: "fetch_transport_data",
+					arguments: {},
+				},
+			],
+			[
+				toolSpan({
+					spanId: "t1",
+					parentSpanId: "agent",
+					startMs: 2 * SECOND,
+					durationMs: SECOND,
+					toolName: "fetch_transport_data",
+					statusCode: "Error",
+					statusMessage: "transport data service unavailable (503)",
+				}),
+			],
+		)
+		const tools = findRows(transcript(spans), "tool")
+		expect(tools).toHaveLength(1)
+		expect(tools[0]!.failed).toBe(true)
+		expect(tools[0]!.result?.text).toBe("transport data service unavailable (503)")
 	})
 
 	it("keeps the message-only row when no span could be the same call", () => {

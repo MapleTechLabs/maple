@@ -8,11 +8,10 @@
  */
 import { FRAGMENTS, PAGE } from "./generated/weekly-digest"
 import { escapeHtml, fill, preheaderPadding, truncate } from "./template"
+import { C, deltaPalette, deltaParts, rowBorder, trendColor } from "./delta-render"
 import {
-	deltaArrow,
 	deriveDigestStatus,
 	fmtBytes,
-	fmtDeltaAbs,
 	fmtErrRate,
 	fmtLatency,
 	fmtNum,
@@ -46,16 +45,6 @@ export {
 	type WeeklyDigestProps,
 } from "./weekly-digest-core"
 
-const C = {
-	fgMuted: "#8a7f72",
-	fgDim: "#5c554c",
-	orange: "#e8872a",
-	green: "#4aa865",
-	red: "#e85d4a",
-	amber: "#e8a02a",
-	borderSubtle: "#302b26",
-}
-
 const STATUS_THEME: Record<
 	DigestStatusLevel,
 	{ accent: string; bannerBg: string; pillBg: string; pillFg: string }
@@ -80,44 +69,10 @@ const STATUS_THEME: Record<
 	},
 } satisfies Record<DigestStatusLevel, { accent: string; bannerBg: string; pillBg: string; pillFg: string }>
 
-/**
- * Arrow + text for one delta. `new`/`gone`/`none` carry no percentage, so they
- * render as a word rather than a number — the whole point of the `Delta` union
- * is that "no traffic last week" must never come out as `↑ 100.0%`.
- */
-function deltaParts(
-	delta: Delta,
-	invertColor: boolean,
-): { arrow: string; value: string; good: boolean | null } {
-	switch (delta.kind) {
-		case "pct": {
-			if (Math.abs(delta.value) < 0.05)
-				return { arrow: deltaArrow(0), value: fmtDeltaAbs(0), good: null }
-			const isPositive = delta.value > 0
-			return {
-				arrow: deltaArrow(delta.value),
-				value: fmtDeltaAbs(delta.value),
-				good: invertColor ? !isPositive : isPositive,
-			}
-		}
-		case "new":
-			return { arrow: "", value: "new", good: invertColor ? false : true }
-		case "gone":
-			return { arrow: "", value: "none this week", good: invertColor ? true : false }
-		case "none":
-			return { arrow: "", value: "—", good: null }
-	}
-}
-
 /** Empty string where the React tree rendered `null`. */
 function deltaPill(delta: Delta, invertColor = false): string {
-	const { arrow, value, good } = deltaParts(delta, invertColor)
-	const palette =
-		good === null
-			? { color: C.fgMuted, bg: "rgba(138,127,114,0.14)" }
-			: good
-				? { color: C.green, bg: "rgba(74,168,101,0.15)" }
-				: { color: C.red, bg: "rgba(232,93,74,0.15)" }
+	const { arrow, value } = deltaParts(delta, invertColor)
+	const palette = deltaPalette(delta, invertColor)
 
 	return fill(FRAGMENTS.deltaPill, {
 		bg: palette.bg,
@@ -125,15 +80,6 @@ function deltaPill(delta: Delta, invertColor = false): string {
 		arrow,
 		value,
 	})
-}
-
-/** Dim when flat or unquantified, otherwise the direction's colour. */
-function trendColor(delta: Delta): string {
-	if (delta.kind === "none") return C.fgDim
-	if (delta.kind === "new") return C.green
-	if (delta.kind === "gone") return C.red
-	if (Math.abs(delta.value) < 0.05) return C.fgDim
-	return delta.value > 0 ? C.green : C.red
 }
 
 /** Bare arrow + magnitude line, used under service and breakdown request counts. */
@@ -152,10 +98,6 @@ function statusDotColor(rate: number): string {
 	if (rate >= 5) return C.red
 	if (rate >= 1) return C.amber
 	return C.green
-}
-
-function rowBorder(index: number, total: number): string {
-	return index < total - 1 ? `1px solid ${C.borderSubtle}` : "none"
 }
 
 const MAX_BAR = 52

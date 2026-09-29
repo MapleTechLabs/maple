@@ -39,6 +39,7 @@ import {
 } from "@maple/backend/services/warehouse/warehouse-org-quarantine"
 
 import { formatWarehouseDateTime } from "@maple/query-engine"
+import { resolveOrgName } from "./resolve-org-name"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 const SYSTEM_DIGEST_USER = UserId.make("system-digest")
 const ROOT_ROLE = RoleName.make("root")
@@ -326,6 +327,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 				timezone?: string
 				namespaces?: ReadonlyArray<string>
 				environments?: ReadonlyArray<string>
+				webAnalyticsEnabled?: boolean
 			},
 		) {
 			yield* Effect.annotateCurrentSpan("orgId", orgId)
@@ -349,6 +351,9 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 							timezone: input.timezone ?? "UTC",
 							namespacesJson: JSON.stringify(input.namespaces ?? []),
 							environmentsJson: JSON.stringify(input.environments ?? []),
+							webAnalyticsEnabled: input.webAnalyticsEnabled !== false,
+							webAnalyticsOptedOutAt:
+								input.webAnalyticsEnabled === false ? msToDate(now) : null,
 							createdAt: msToDate(now),
 							updatedAt: msToDate(now),
 						})
@@ -368,6 +373,15 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 									: undefined),
 								...(input.environments != null
 									? { environmentsJson: JSON.stringify(input.environments) }
+									: undefined),
+								// Only touched when sent, so saving the ops digest never flips it.
+								...(input.webAnalyticsEnabled != null
+									? {
+											webAnalyticsEnabled: input.webAnalyticsEnabled,
+											webAnalyticsOptedOutAt: input.webAnalyticsEnabled
+												? null
+												: msToDate(now),
+										}
 									: undefined),
 								updatedAt: msToDate(now),
 							},
@@ -403,28 +417,6 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 						),
 				)
 				.pipe(Effect.mapError(toPersistenceError))
-		})
-
-		/**
-		 * Resolve a human-friendly org name via Clerk. Best-effort: a digest
-		 * must never fail because a name lookup did — falls back to the raw
-		 * orgId on any error or when Clerk isn't configured.
-		 */
-		const resolveOrgName = Effect.fn("DigestService.resolveOrgName")(function* (orgId: OrgId) {
-			yield* Effect.annotateCurrentSpan("orgId", orgId)
-			if (env.MAPLE_AUTH_MODE.toLowerCase() !== "clerk") return String(orgId)
-			if (Option.isNone(env.CLERK_SECRET_KEY)) return String(orgId)
-
-			const clerk = createClerkClient({
-				secretKey: Redacted.value(env.CLERK_SECRET_KEY.value),
-			})
-
-			return yield* clerkRequest("Clerk.organizations.getOrganization", { orgId }, () =>
-				clerk.organizations.getOrganization({ organizationId: orgId }),
-			).pipe(
-				Effect.map((org) => org.name || String(orgId)),
-				Effect.orElseSucceed(() => String(orgId)),
-			)
 		})
 
 		const generateDigestData = Effect.fn("DigestService.generateDigestData")(function* (
@@ -765,7 +757,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 					}
 				})
 
-			const orgName = yield* resolveOrgName(orgId)
+			const orgName = yield* resolveOrgName(env, orgId)
 
 			const props: WeeklyDigestProps = {
 				orgName,
@@ -969,6 +961,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 									set: {
 										email: m.email,
 										enabled: sql`${digestSubscriptions.optedOutAt} is null`,
+										webAnalyticsEnabled: sql`${digestSubscriptions.webAnalyticsOptedOutAt} is null`,
 										updatedAt: msToDate(now),
 									},
 								}),
@@ -1004,7 +997,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 					.execute((db) =>
 						db
 							.update(digestSubscriptions)
-							.set({ enabled: false, updatedAt: msToDate(now) })
+							.set({ enabled: false, webAnalyticsEnabled: false, updatedAt: msToDate(now) })
 							.where(inArray(digestSubscriptions.id, staleIds)),
 					)
 					.pipe(Effect.mapError(toPersistenceError))
@@ -1284,6 +1277,7 @@ function rowToResponse(row: typeof digestSubscriptions.$inferSelect): DigestSubs
 		namespaces: parseScopeColumn(row.namespacesJson),
 		environments: parseScopeColumn(row.environmentsJson),
 		lastSentAt: dateToMs(row.lastSentAt),
+		webAnalyticsEnabled: row.webAnalyticsEnabled,
 		createdAt: row.createdAt.getTime(),
 		updatedAt: row.updatedAt.getTime(),
 	})

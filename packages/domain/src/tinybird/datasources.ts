@@ -1046,6 +1046,50 @@ export const traceListMv = defineDatasource("trace_list_mv", {
 export type TraceListMvRow = InferRow<typeof traceListMv>
 
 /**
+ * Hourly rollup of `trace_list_mv` for the traces sidebar facets and duration
+ * stats. Scanning `trace_list_mv` itself (~14M root spans/day for a busy org)
+ * exceeds the 5s discovery budget past about a day; the facet dimensions
+ * collapse to a few hundred rows per org-hour.
+ */
+export const traceFacetsHourly = defineDatasource("trace_facets_hourly", {
+	description:
+		"Hourly root-span counts and duration state per service, span name, HTTP method/status, environment, namespace and error flag. Traces sidebar facets. Populated by materialized view from trace_list_mv.",
+	jsonPaths: false,
+	schema: {
+		OrgId: t.string().lowCardinality(),
+		Hour: t.dateTime(),
+		ServiceName: t.string().lowCardinality(),
+		SpanName: t.string(),
+		HttpMethod: t.string().lowCardinality(),
+		HttpStatusCode: t.string().lowCardinality(),
+		DeploymentEnv: t.string().lowCardinality(),
+		ServiceNamespace: t.string().lowCardinality(),
+		HasError: t.uint8(),
+		TraceCount: t.simpleAggregateFunction("sum", t.uint64()),
+		DurationMin: t.simpleAggregateFunction("min", t.uint64()),
+		DurationMax: t.simpleAggregateFunction("max", t.uint64()),
+		DurationQuantiles: t.aggregateFunction("quantilesTDigest(0.5, 0.95)", t.uint64()),
+	},
+	engine: engine.aggregatingMergeTree({
+		partitionKey: "toDate(Hour)",
+		sortingKey: [
+			"OrgId",
+			"Hour",
+			"ServiceName",
+			"SpanName",
+			"HttpMethod",
+			"HttpStatusCode",
+			"DeploymentEnv",
+			"ServiceNamespace",
+			"HasError",
+		],
+		ttl: "Hour + INTERVAL 30 DAY",
+	}),
+})
+
+export type TraceFacetsHourlyRow = InferRow<typeof traceFacetsHourly>
+
+/**
  * All spans for a given trace, re-sorted by TraceId for fast detail lookups.
  * Populated by materialized view, not direct ingestion.
  * Sorting key (OrgId, TraceId, SpanId) enables O(log N) primary-key lookup

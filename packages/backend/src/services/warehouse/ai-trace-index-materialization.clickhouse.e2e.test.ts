@@ -398,6 +398,102 @@ const TOOL_FAILURE_ORG_SPANS: ReadonlyArray<SeedSpan> = [
 	TOOL_SUCCESS_SPAN,
 ]
 
+// The netting shapes, under a fourth org so no read above sees them.
+//
+// A reused Strands agent across two requests: each `invoke_agent` reports the
+// agent's accumulated usage, over an event-loop span that reports nothing, over
+// the one chat it ran. The list must climb past the loop span to net the chat
+// against its agent, and count nothing of an agent span whose calls reported —
+// 204 + 44 + 269 + 78 = 595 tokens, where the roll-ups alone claim 843 more.
+//
+// And a gateway request that failed at every provider: the generation and its
+// provider attempt are both model spans with no usage, one call.
+const NETTING_ORG_ID = "org_ai_trace_index_e2e_netting"
+const NETTING_SESSION_ID = `${NETTING_ORG_ID}:strands-reused`
+const FAILED_GATEWAY_TRACE = "aitraceindexe2e000000000000000010"
+
+const strandsTurn = (turn: number, agent: [number, number], chat: [number, number]): SeedSpan[] => {
+	const traceId = `aitraceindexe2e00000000000000002${turn}`
+	const strands = { [MAPLE_AI_VENDOR_ID_ATTR]: "strands" }
+	return [
+		{
+			traceId,
+			spanId: `span-strands-agent-${turn}`,
+			name: "invoke_agent assistant",
+			ms: BASE_MS + 400_000 + turn * 10_000,
+			service: "strands-service",
+			status: "Ok",
+			attrs: {
+				...strands,
+				[MAPLE_AI_SESSION_ID_ATTR]: NETTING_SESSION_ID,
+				"gen_ai.operation.name": "invoke_agent",
+				"gen_ai.agent.name": "assistant",
+				"gen_ai.usage.input_tokens": String(agent[0]),
+				"gen_ai.usage.output_tokens": String(agent[1]),
+			},
+		},
+		{
+			traceId,
+			spanId: `span-strands-cycle-${turn}`,
+			parentSpanId: `span-strands-agent-${turn}`,
+			name: "execute_event_loop_cycle",
+			ms: BASE_MS + 400_000 + turn * 10_000 + 1,
+			service: "strands-service",
+			status: "Ok",
+			attrs: { ...strands, "gen_ai.operation.name": "execute_event_loop_cycle" },
+		},
+		{
+			traceId,
+			spanId: `span-strands-chat-${turn}`,
+			parentSpanId: `span-strands-cycle-${turn}`,
+			name: "chat",
+			ms: BASE_MS + 400_000 + turn * 10_000 + 2,
+			service: "strands-service",
+			status: "Ok",
+			attrs: {
+				...strands,
+				"gen_ai.operation.name": "chat",
+				"gen_ai.request.model": "gpt-4o-mini",
+				"gen_ai.usage.input_tokens": String(chat[0]),
+				"gen_ai.usage.output_tokens": String(chat[1]),
+			},
+		},
+	]
+}
+
+const NETTING_ORG_SPANS: ReadonlyArray<SeedSpan> = [
+	...strandsTurn(0, [204, 44], [204, 44]),
+	...strandsTurn(1, [473, 122], [269, 78]),
+	{
+		traceId: FAILED_GATEWAY_TRACE,
+		spanId: "span-gateway-generation",
+		name: "LLM Generation",
+		ms: BASE_MS + 500_000,
+		service: "openrouter",
+		status: "Error",
+		attrs: {
+			[MAPLE_AI_VENDOR_ID_ATTR]: "openrouter",
+			"gen_ai.operation.name": "chat",
+			"gen_ai.request.model": "openai/gpt-4o-mini",
+			"gen_ai.response.id": "gen-e2e-failed",
+		},
+	},
+	{
+		traceId: FAILED_GATEWAY_TRACE,
+		spanId: "span-gateway-attempt",
+		parentSpanId: "span-gateway-generation",
+		name: "provider attempt 1: OpenAI",
+		ms: BASE_MS + 500_001,
+		service: "openrouter",
+		status: "Error",
+		attrs: {
+			[MAPLE_AI_VENDOR_ID_ATTR]: "openrouter",
+			"gen_ai.operation.name": "chat",
+			"gen_ai.response.id": "gen-e2e-failed:attempt-0",
+		},
+	},
+]
+
 const chMap = (attrs: Readonly<Record<string, string>>): string =>
 	`map(${Object.entries(attrs)
 		.flatMap(([key, value]) => [quote(key), quote(value)])
@@ -408,6 +504,7 @@ const seed = async (): Promise<void> => {
 		...SEED_SPANS.map((span) => [ORG_ID, span] as const),
 		[FOREIGN_ORG_ID, FOREIGN_SPAN] as const,
 		...TOOL_FAILURE_ORG_SPANS.map((span) => [TOOL_FAILURE_ORG_ID, span] as const),
+		...NETTING_ORG_SPANS.map((span) => [NETTING_ORG_ID, span] as const),
 	]
 		.map(
 			([orgId, span]) =>
@@ -453,7 +550,7 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 			        VendorVersion, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens,
 			        ErrorType, StatusMessage, ToolDescription,
 			        FailedToolCallResult, ErrorFingerprint != 0 AS HasErrorFingerprint
-			 FROM ai_trace_index ORDER BY Timestamp ASC`,
+			 FROM ai_trace_index WHERE OrgId != ${quote(NETTING_ORG_ID)} ORDER BY Timestamp ASC`,
 		)
 
 		/** The index row a seed span is expected to produce, by name — the
@@ -884,6 +981,26 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 			SESSION_ID,
 			TRACE_SESSION_ID,
 		])
+	})
+
+	// The netting lambdas are raw SQL the builder cannot type-check, and the
+	// unit tests compare their text; this is where their numbers are proven.
+	it("nets usage past spans that reported nothing, and a failed request is one call", async () => {
+		const compiled = compileUnsafe(Integrations.aiSessionPageQuery(), {
+			...WINDOW,
+			orgId: NETTING_ORG_ID,
+		})
+		const rows = Effect.runSync(compiled.decodeRows(await runJson(compiled.sql)))
+		const measures = (sessionId: string) => {
+			const row = rows.find((candidate) => candidate.sessionId === sessionId)
+			return [row?.llmCalls, row?.totalTokens, row?.inputTokens, row?.outputTokens]
+		}
+
+		assert.deepStrictEqual(measures(NETTING_SESSION_ID), [2, 595, 473, 122])
+		assert.deepStrictEqual(
+			measures(`${MAPLE_AI_TRACE_SESSION_PREFIX}${FAILED_GATEWAY_TRACE}`),
+			[1, 0, 0, 0],
+		)
 	})
 
 	it("distributes the sessions over each range the way the page measures them", async () => {

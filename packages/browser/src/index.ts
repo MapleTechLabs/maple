@@ -2,6 +2,7 @@ import { type IdentifyInput, setConsent, type TrackProps, track } from "@maple/b
 import type { MapleBrowserConfig } from "./config"
 import { type CaptureExceptionOptions, captureException } from "./errors"
 import { identify, init, type MapleBrowserHandle } from "./init"
+import { endNavigation, startNavigation, type TracedOptions, traced } from "./navigation"
 
 export type {
 	IdentifyInput,
@@ -13,6 +14,7 @@ export type {
 export type { MapleBrowserConfig } from "./config"
 export type { CaptureExceptionOptions } from "./errors"
 export type { MapleBrowserHandle } from "./init"
+export type { TracedOptions } from "./navigation"
 
 /** The `MapleBrowser` namespace object. */
 export interface MapleBrowserApi {
@@ -41,6 +43,15 @@ export interface MapleBrowserApi {
 	captureException: (error: unknown, options?: CaptureExceptionOptions) => void
 	/** Grant or revoke consent when `privacy.requireConsent` is on. */
 	setConsent: (granted: boolean) => void
+	/** Call when a route change starts, with the new path. The first call in a page is the page load. */
+	startNavigation: (path: string) => void
+	/** Call when the new route is ready, with its route pattern (`/projects/:id`), not the URL. */
+	endNavigation: (route?: string) => void
+	/**
+	 * Run data loading, like a route loader, in a span under the current navigation.
+	 * Errors are recorded once and rethrown. Only requests started before `fn`'s first `await` nest under the span.
+	 */
+	traced: <T>(name: string, fn: () => Promise<T>, options?: TracedOptions) => Promise<T>
 }
 
 /**
@@ -61,4 +72,13 @@ export interface MapleBrowserApi {
  * MapleBrowser.track("checkout_completed", { plan: "pro", seats: 5 })
  * ```
  */
-export const MapleBrowser: MapleBrowserApi = { init, identify, track, captureException, setConsent }
+export const MapleBrowser: MapleBrowserApi = {
+	init,
+	identify,
+	track,
+	captureException,
+	setConsent,
+	startNavigation,
+	endNavigation,
+	traced,
+}

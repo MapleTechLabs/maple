@@ -21,7 +21,8 @@ import { gzipSync } from "node:zlib"
 
 /** Ceilings in gzipped KB. Raise deliberately, with the reason in the commit. */
 const BUDGET = {
-	eager: 37,
+	/** 38 since 2026-09: navigation spans took it to ~37.3 kB; see `firstParty`. */
+	eager: 38,
 	lazy: 68,
 	/**
 	 * Our own eager code, with OpenTelemetry and rrweb left external.
@@ -40,8 +41,12 @@ const BUDGET = {
 	 * 13.5 since 2026-09: default URL redaction, the duplicated-tab lease, the
 	 * shared keepalive budget, per-session replay sampling and the `region`
 	 * option added ~1.9 kB, all on paths that must run before the lazy chunk.
+	 *
+	 * 14.5 since 2026-09: navigation and data-loading spans (`startNavigation`,
+	 * `endNavigation`, `traced`) added ~0.6 kB. Apps used to copy the same code
+	 * into their own bundle, so for them this is a move rather than a cost.
 	 */
-	firstParty: 13.5,
+	firstParty: 14.5,
 }
 
 /** How close to a ceiling counts as worth warning about. */

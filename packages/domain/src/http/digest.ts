@@ -23,6 +23,8 @@ export class DigestSubscriptionResponse extends Schema.Class<DigestSubscriptionR
 	namespaces: Schema.Array(Schema.String),
 	environments: Schema.Array(Schema.String),
 	lastSentAt: Schema.NullOr(Schema.Number),
+	/** The separate weekly web analytics email. */
+	webAnalyticsEnabled: Schema.Boolean,
 	createdAt: Schema.Number,
 	updatedAt: Schema.Number,
 }) {}
@@ -44,6 +46,7 @@ export class UpsertDigestSubscriptionRequest extends Schema.Class<UpsertDigestSu
 	timezone: Schema.optionalKey(Schema.String),
 	namespaces: Schema.optionalKey(ScopeValues),
 	environments: Schema.optionalKey(ScopeValues),
+	webAnalyticsEnabled: Schema.optionalKey(Schema.Boolean),
 }) {}
 
 export class DigestPreviewResponse extends Schema.Class<DigestPreviewResponse>("DigestPreviewResponse")({
@@ -104,6 +107,12 @@ export class DigestApiGroup extends HttpApiGroup.make("digest")
 	)
 	.add(
 		HttpApiEndpoint.post("preview", "/preview", {
+			success: DigestPreviewResponse,
+			error: [DigestPersistenceError, DigestNotConfiguredError, DigestRenderError],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("previewWebAnalytics", "/web-analytics/preview", {
 			success: DigestPreviewResponse,
 			error: [DigestPersistenceError, DigestNotConfiguredError, DigestRenderError],
 		}),
