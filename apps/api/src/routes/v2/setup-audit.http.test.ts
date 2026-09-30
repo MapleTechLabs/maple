@@ -4,7 +4,13 @@ import { HttpRouter } from "effect/unstable/http"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { OrgId, UserId } from "@maple/domain/http"
 import { decodePublicId, MapleApiV2 } from "@maple/domain/http/v2"
-import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
+import {
+	cleanupTestDbs,
+	createTestDb,
+	executeSql,
+	queryFirstRow,
+	type TestDb,
+} from "@maple/backend/platform/test-pglite"
 import type { WarehouseQueryServiceApi } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -190,6 +196,26 @@ const makeHarness = (warehouse: WarehouseQueryServiceApi = warehouseStub()) => {
 		)
 	}
 
+	/** An onboarding row whose first-data stamp was never written — every org created since August. */
+	const seedUnstampedOrg = async () => {
+		await ensureSchema()
+		await executeSql(
+			testDb,
+			`INSERT INTO org_onboarding_state (org_id, created_at, updated_at) VALUES ($1, now(), now())`,
+			[ORG],
+		)
+	}
+
+	const readFirstDataReceivedAt = async () => {
+		await ensureSchema()
+		const row = await queryFirstRow<{ first_data_received_at: Date | null }>(
+			testDb,
+			`SELECT first_data_received_at FROM org_onboarding_state WHERE org_id = $1`,
+			[ORG],
+		)
+		return row?.first_data_received_at ?? null
+	}
+
 	const seedDestination = async (id: string, enabled: boolean, lastTestError: string | null) => {
 		await ensureSchema()
 		await executeSql(
@@ -220,6 +246,8 @@ const makeHarness = (warehouse: WarehouseQueryServiceApi = warehouseStub()) => {
 		request,
 		bootstrapKey,
 		seedConnectedOrg,
+		seedUnstampedOrg,
+		readFirstDataReceivedAt,
 		seedDestination,
 		seedRule,
 		dispose: async () => {
@@ -421,6 +449,45 @@ describe("GET /v2/instrumentation/audit", () => {
 			expect(response.body.data_status).toBe("no_data")
 			expect(response.body.checks).toEqual([])
 			expect(response.body.summary).toEqual({ critical: 0, warn: 0, info: 0, pass: 0, skip: 0 })
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("runs the checks and stamps first data when the warehouse has telemetry but the org was never stamped", async () => {
+		const harness = makeHarness(
+			warehouseStub({
+				service_usage: [
+					{
+						serviceName: "frontend",
+						totalLogCount: "0",
+						totalLogSizeBytes: "0",
+						totalTraceCount: "30000",
+						totalTraceSizeBytes: "9000000",
+						totalSumMetricCount: "0",
+						totalSumMetricSizeBytes: "0",
+						totalGaugeMetricCount: "0",
+						totalGaugeMetricSizeBytes: "0",
+						totalHistogramMetricCount: "0",
+						totalHistogramMetricSizeBytes: "0",
+						totalExpHistogramMetricCount: "0",
+						totalExpHistogramMetricSizeBytes: "0",
+						totalSizeBytes: "9000000",
+					},
+				],
+			}),
+		)
+		try {
+			await harness.seedUnstampedOrg()
+			const key = await harness.bootstrapKey()
+
+			const response = await harness.request("GET", "/v2/instrumentation/audit", {
+				token: key.secret,
+			})
+			expect(response.status).toBe(200)
+			expect(response.body.data_status).toBe("ok")
+			expect(response.body.checks.length).toBeGreaterThan(0)
+			expect(await harness.readFirstDataReceivedAt()).not.toBeNull()
 		} finally {
 			await harness.dispose()
 		}

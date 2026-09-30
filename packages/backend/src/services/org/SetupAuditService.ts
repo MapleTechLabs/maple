@@ -26,10 +26,11 @@ import {
 	runSetupAudit,
 } from "@maple/domain/setup-audit"
 import { CH, formatWarehouseDateTime } from "@maple/query-engine"
-import { and, eq, sql } from "drizzle-orm"
+import { and, eq, isNull, sql } from "drizzle-orm"
 import { Clock, Context, Effect, Layer } from "effect"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
+import { msToDate } from "@maple/backend/platform/time"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import * as Integrations from "@maple/query-engine-integrations"
 
@@ -509,8 +510,30 @@ const make: Effect.Effect<SetupAuditServiceApi, never, Database | WarehouseQuery
 			return inputs
 		})
 
+		/**
+		 * Nothing else stamps `first_data_received_at` any more, so the audit stamps it the first time
+		 * it sees telemetry. Best effort: the audit is a read, and the warehouse check already decided
+		 * this run. Only updates an existing onboarding row; creating one is onboarding's job.
+		 */
+		const stampFirstDataReceived = (orgId: OrgId, now: number) =>
+			runDb(
+				"stampFirstDataReceived",
+				database.execute((db) =>
+					db
+						.update(orgOnboardingState)
+						.set({ firstDataReceivedAt: msToDate(now), updatedAt: msToDate(now) })
+						.where(
+							and(
+								eq(orgOnboardingState.orgId, orgId),
+								isNull(orgOnboardingState.firstDataReceivedAt),
+							),
+						)
+						.returning({ orgId: orgOnboardingState.orgId }),
+				),
+			).pipe(Effect.ignore)
+
 		const run = Effect.fn("SetupAuditService.run")(function* (tenant: TenantContext) {
-			const config = yield* fetchConfigInputs(tenant.orgId)
+			let config = yield* fetchConfigInputs(tenant.orgId)
 
 			// A warehouse outage must not take the whole audit down — the configuration half is the
 			// part that most often explains "why didn't anything page me", and it is always readable.
@@ -526,6 +549,15 @@ const make: Effect.Effect<SetupAuditServiceApi, never, Database | WarehouseQuery
 			)
 
 			const now = yield* Clock.currentTimeMillis
+			const hasRecentTelemetry =
+				warehouseInputs?.serviceUsage.some(
+					(service) => service.traceCount + service.logCount + service.metricCount > 0,
+				) ?? false
+			if (config.firstDataReceivedAt === null && hasRecentTelemetry) {
+				yield* stampFirstDataReceived(tenant.orgId, now)
+				config = { ...config, firstDataReceivedAt: now }
+			}
+
 			const report = runSetupAudit({ now, config, warehouse: warehouseInputs })
 
 			yield* Effect.annotateCurrentSpan({
