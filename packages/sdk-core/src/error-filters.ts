@@ -39,15 +39,46 @@ export type ErrorFilter = (error: Error, hint: ErrorFilterHint, frameUrl?: strin
 const EXTENSION_URL = /^(?:chrome|moz|safari(?:-web)?|ms-browser)-extension:\/\//
 const BENIGN_MESSAGES = [/^ResizeObserver loop (?:limit exceeded|completed with undelivered notifications)/]
 
-// `at fn (url:1:2)`, `at url:1:2` (V8) and `fn@url:1:2` (SpiderMonkey, JavaScriptCore).
-const FRAME_URL = /(?:^\s*at (?:.*?\()?|@)([a-z][\w+.-]*:\/\/[^\s()]+?)(?::\d+){1,2}\)?\s*$/i
+const URL_SCHEME = /^[a-z][\w+.-]*:\/\//i
+const DIGITS = /^\d+$/
+
+/**
+ * The script URL of one frame: `at fn (url:1:2)`, `at url:1:2` (V8) or `fn@url:1:2`
+ * (SpiderMonkey, JavaScriptCore). Parsed by position, not one regex: a stack is page
+ * data, and a backtracking pattern over it can be made to run in polynomial time.
+ */
+function frameUrl(line: string): string | undefined {
+	let frame = line.trim()
+	if (frame.endsWith(")")) {
+		const open = frame.lastIndexOf("(")
+		if (open === -1) return undefined
+		frame = frame.slice(open + 1, -1)
+	} else if (frame.startsWith("at ")) {
+		frame = frame.slice(3)
+	} else {
+		const at = frame.lastIndexOf("@")
+		if (at === -1) return undefined
+		frame = frame.slice(at + 1)
+	}
+	// `:line` and an optional `:column` come off the end; at least the line must be there.
+	for (let parts = 0; parts < 2; parts++) {
+		const colon = frame.lastIndexOf(":")
+		if (colon === -1 || !DIGITS.test(frame.slice(colon + 1))) {
+			if (parts === 0) return undefined
+			break
+		}
+		frame = frame.slice(0, colon)
+	}
+	if (!URL_SCHEME.test(frame) || /[\s()]/.test(frame)) return undefined
+	return frame
+}
 
 /** The script URL of each stack frame, top first. */
 export function frameUrls(stack: string | undefined): string[] {
 	if (!stack) return []
 	const urls: string[] = []
 	for (const line of stack.split("\n")) {
-		const url = FRAME_URL.exec(line)?.[1]
+		const url = frameUrl(line)
 		if (url) urls.push(url)
 	}
 	return urls

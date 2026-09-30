@@ -40,6 +40,28 @@ describe("frameUrls", () => {
 			frameUrls("Error: failed to load https://api.test/x\n    at f (https://app.test/a.js:1:1)"),
 		).toEqual(["https://app.test/a.js"])
 	})
+
+	it("reads line-only frames, async frames and ports, and skips frames with no script URL", () => {
+		expect(
+			frameUrls(
+				[
+					"    at async load (https://app.test:8443/a.js:12)",
+					"    at https://app.test/b.js:3:4",
+					"    at native",
+					"    at f (<anonymous>)",
+					"g@https://app.test/c.js:5:6",
+				].join("\n"),
+			),
+		).toEqual(["https://app.test:8443/a.js", "https://app.test/b.js", "https://app.test/c.js"])
+	})
+
+	it("stays linear on a hostile stack line", () => {
+		// The shape a backtracking pattern chokes on: many `@a://` after `at a://`.
+		const line = `at a://${"@a://".repeat(50_000)}`
+		const started = performance.now()
+		expect(frameUrls(line)).toEqual([])
+		expect(performance.now() - started).toBeLessThan(200)
+	})
 })
 
 describe("makeErrorFilter", () => {
