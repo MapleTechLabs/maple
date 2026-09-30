@@ -24,7 +24,7 @@ import { gzipSync } from "node:zlib"
 /** Ceilings in gzipped KB. Raise deliberately, with the reason in the commit. */
 const BUDGET = {
 	/**
-	 * 43 since 2026-09: XHR spans and the HTTP status policy, which must patch
+	 * 43 since 2026-09: XHR spans, which must patch
 	 * before the app's first request (~1.5 kB). Document timing went to the
 	 * deferred chunk instead. 42: error filters and cause chains. 41 before that:
 	 * per-session trace sampling and the `logger` queue added ~2.4 kB (~1.2 kB
