@@ -65,7 +65,7 @@ Set `gen_ai.operation.name` on every span. Agent Sessions ignores spans without 
 
 Mark a failed span with status `ERROR` and an `error.type` attribute, even when you return a tool's error to the model as its result.
 
-Put token usage on `chat` spans only, copied from the provider's response as is. For `anthropic`, send Anthropic's raw `input_tokens`, which exclude cache, or cached tokens are counted twice. On OpenAI's streaming API, set `stream_options: { include_usage: true }`, or streamed calls report no tokens. Maple doesn't price tokens, so a session without `gen_ai.usage.cost` shows as unpriced. OpenRouter returns the cost in `usage.cost`.
+Put token usage on `chat` spans only. Input tokens include cached tokens and output tokens include reasoning: for Anthropic, add the cache reads and writes to `input_tokens`; for Gemini, add `thoughtsTokenCount` to `candidatesTokenCount`. On OpenAI's streaming API, set `stream_options: { include_usage: true }`, or streamed calls report no tokens. Maple doesn't price tokens, so a session without `gen_ai.usage.cost` shows as unpriced. OpenRouter returns the cost in `usage.cost`.
 
 ### The message format
 
@@ -160,7 +160,7 @@ trace.set_tracer_provider(provider)
 
 If your app already has a `TracerProvider` (Sentry, Datadog, `opentelemetry-instrument`, `NodeSDK`), add the `BatchSpanProcessor` to it instead of creating a second one.
 
-Name the tracer after your app, like `support-agent`. A tracer named after a framework or gateway, such as `openrouter` or `langsmith`, makes Maple ignore `gen_ai.conversation.id`.
+Name the tracer after your app, like `support-agent`. A tracer named after a framework or gateway, such as `openrouter` or `langsmith`, makes Maple treat your spans as that framework's.
 
 ## Instrument the agent loop
 

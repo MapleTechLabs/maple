@@ -98,7 +98,7 @@ SmolagentsInstrumentor().instrument(
 
 ## Step 3: One session per conversation
 
-smolagents has no conversation id; each `agent.run()` is its own trace. Maple reads `session.id` for smolagents (NOT `gen_ai.conversation.id`), and the instrumentor sets it only inside `using_session`:
+smolagents has no conversation id; each `agent.run()` is its own trace. Maple reads `session.id`, and the instrumentor sets it only inside `using_session`:
 
 ```py
 from openinference.instrumentation import using_session
@@ -182,7 +182,6 @@ If sessions are split per message: `using_session` missing or id changing. Nothi
 
 - Do not use the `smolagents[telemetry]` extra or `phoenix.otel.register()` to send to Maple.
 - Do not add `openinference-instrumentation-openai` / `-litellm` alongside (duplicate model spans, doubled tokens).
-- Do not set `gen_ai.conversation.id` manually expecting grouping: Maple reads `session.id` for smolagents.
 - Do not generate a session id per request or use a constant one.
 - Do not pass `OTLPSpanExporter(endpoint="https://ingest.maple.dev")` without `/v1/traces`.
 - Do not create a second `TracerProvider` when one exists, and do not call `instrument()` twice.

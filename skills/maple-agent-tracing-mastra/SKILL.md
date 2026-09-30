@@ -191,7 +191,6 @@ Run one conversation: 2+ user messages with the same thread id (one streamed), a
 - `execute_tool <key>` spans have the tool's map key as name, arguments and result; a throwing tool is marked failed with its message; successful tools are not.
 - Supervisor/workflow: one session, one turn per run, one lane per sub-agent `name`, all spans in one trace; tool calls include the `agent-<key>` delegations.
 - Cost shows as unpriced (expected: Mastra emits no cost attribute). Mastra exports no `gen_ai.response.id`; that's fine, each call's usage is reported once.
-- Scorer runs (`@mastra/evals`) are root spans with no thread id and show as their own `trace:<id>` sessions; expected, leave them.
 
 Without Maple access: `logLevel: "debug"` shows `Export completed` and no `Export FAILED` lines, AND a local run with `exporter: new ConsoleSpanExporter()` (from `@opentelemetry/sdk-trace-base`; install it if missing) passed to `OtelExporter` temporarily prints the `invoke_agent`/`chat`/`execute_tool` spans with `gen_ai.conversation.id`. Silence alone proves nothing (no spans also looks silent). With the Maple MCP: `list_agent_sessions` with `search=<thread id>` returns one row.
 
@@ -220,4 +219,4 @@ Without Maple access: `logLevel: "debug"` shows `Export completed` and no `Expor
 - Do not leave out `mapleSpanProcessor`, and do not replace it with a processor that returns a copy of the span.
 - Do not return error objects from tools you want counted as failures; throw.
 - Do not exit a script without `await mastra.shutdown()`.
-- Do not promise cost or time-to-first-token in Maple: Mastra emits neither under keys Maple reads. Reasoning tokens are in the output total but not broken out.
+- Do not promise cost or time-to-first-token in Maple: Mastra emits neither under keys Maple reads.

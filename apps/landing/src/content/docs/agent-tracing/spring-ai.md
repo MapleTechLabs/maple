@@ -77,7 +77,6 @@ import io.micrometer.observation.ObservationFilter;
 import io.micrometer.observation.ObservationRegistry;
 import tools.jackson.databind.json.JsonMapper;
 
-import org.springframework.ai.chat.client.advisor.observation.AdvisorObservationContext;
 import org.springframework.ai.chat.client.observation.ChatClientObservationContext;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
@@ -104,10 +103,6 @@ public class MapleAiObservationConfig {
 				if (client.getRequest().context().get(AGENT_NAME) instanceof String agent) {
 					client.addLowCardinalityKeyValue(KeyValue.of("gen_ai.agent.name", agent));
 				}
-			}
-			else if (context instanceof AdvisorObservationContext advisor) {
-				// Renamed so Maple doesn't count advisor spans as tool and model calls
-				advisor.setContextualName("spring_ai advisor");
 			}
 			else if (context instanceof ToolCallingObservationContext tool) {
 				tool.addLowCardinalityKeyValue(KeyValue.of("gen_ai.tool.name", tool.getToolDefinition().name()));
@@ -231,7 +226,6 @@ Send two or three messages with the same conversation id, including one that cal
 - **Only some turns arrive.** Sampling is at Boot's default of 10%. Set `management.tracing.sampling.probability=1.0`.
 - **Every message is its own session.** Pass `.advisors(a -> a.param(ChatMemory.CONVERSATION_ID, id))` on every `prompt()` call.
 - **The transcript is empty.** `maple.ai.capture-content` isn't `true`, or `MapleAiObservationConfig` isn't in a scanned package.
-- **Model calls are doubled and a tool named `tool _calling ` appears.** The `ObservationFilter` bean isn't loaded.
 - **Every span is its own trace.** The OpenTelemetry Java agent is attached next to the starter. Remove it, or follow the Java agent steps in the [skill](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-agent-tracing-spring-ai).
 
 ## Related

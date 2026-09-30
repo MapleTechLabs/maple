@@ -82,8 +82,8 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
 # The name= you gave create_agent(), and graph nodes that act as agents
 AGENT_NAMES = {"assistant"}
-# Your tool node and prompt templates
-STEP_NAMES = {"tools", "ChatPromptTemplate"}
+# Your tool node
+STEP_NAMES = {"tools"}
 
 
 class AgentSpans(SpanProcessor):
@@ -175,7 +175,6 @@ export class GenAiSpans implements SpanProcessor {
 		const input = parse(attrs["input.value"])
 		const output = parse(attrs["output.value"])
 		const kind = attrs["openinference.span.kind"]
-		set("gen_ai.conversation.id", attrs["session.id"])
 
 		if (kind === "LLM") {
 			const generations = output?.generations?.[0] ?? []
@@ -369,12 +368,12 @@ try {
 
 Send two or three messages with the same conversation id, one of them using a tool, then open **Agent Sessions**. Within a minute you should see one session with one turn per `invoke()`, a readable transcript, model calls with tokens, and tool calls named after your tools.
 
-Cost shows as **unpriced**, and in TypeScript the framework shows as **Unidentified**, which is expected. In Python, when each call passes the conversation history (checkpointer state or your own), every turn is labeled with the conversation's first message. The transcript inside each turn is still correct.
+Cost shows as **unpriced**, which is expected.
 
 ## Troubleshooting
 
 - **No spans at all.** Load the tracing file before the first `invoke()`. In Python, pass `tracer_provider=provider`; in TypeScript, keep the `manuallyInstrument()` call. Then check the logs for exporter errors.
-- **One session per message.** The `thread_id` is missing or changes per request (plain chains need it in `metadata`). If it's set in TypeScript, check that `GenAiSpans` is in `spanProcessors`.
+- **One session per message.** The `thread_id` is missing or changes per request (plain chains need it in `metadata`).
 - **Streamed replies have no tokens.** In Python, set `stream_usage=True` on `ChatOpenAI`. In TypeScript, remove `streamUsage: false`.
 - **Every model call appears twice.** Remove `LANGSMITH_OTEL_ENABLED` and any provider instrumentor such as `openinference-instrumentation-openai`. Plain `LANGSMITH_TRACING=true` is fine.
 - **No agent lane, extra tool calls, or a tool shown as an agent.** In Python, fill `AGENT_NAMES` and `STEP_NAMES`, and don't put "agent" in tool names. In TypeScript, give every `createAgent()` a `name`.

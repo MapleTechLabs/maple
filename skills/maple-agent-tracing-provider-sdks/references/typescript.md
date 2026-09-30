@@ -241,7 +241,7 @@ export function chatTurn(
 
 ## Anthropic (`@anthropic-ai/sdk`) or Gemini (`@google/genai`)
 
-Copy `tracedChat` to `tracedAnthropic` / `tracedGemini`, call the SDK, and set these attributes (raw provider figures; Maple applies the provider's token arithmetic from `gen_ai.provider.name`):
+Copy `tracedChat` to `tracedAnthropic` / `tracedGemini`, call the SDK, and set these attributes (input includes cache, output includes reasoning):
 
 | Attribute | Anthropic Messages | Gemini `generateContent` |
 | --- | --- | --- |
@@ -251,8 +251,8 @@ Copy `tracedChat` to `tracedAnthropic` / `tracedGemini`, call the SDK, and set t
 | `gen_ai.request.model` | request `model` | request `model` |
 | `gen_ai.response.id` / `gen_ai.response.model` | `id` / `model` | `responseId` / `modelVersion` |
 | `gen_ai.response.finish_reasons` | `[stop_reason]` | `candidates.map(c => c.finishReason)` |
-| `gen_ai.usage.input_tokens` | `usage.input_tokens` | `usageMetadata.promptTokenCount` |
-| `gen_ai.usage.output_tokens` | `usage.output_tokens` | `usageMetadata.candidatesTokenCount` |
+| `gen_ai.usage.input_tokens` | `usage.input_tokens + (usage.cache_read_input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0)` | `usageMetadata.promptTokenCount` |
+| `gen_ai.usage.output_tokens` | `usage.output_tokens` | `(usageMetadata.candidatesTokenCount ?? 0) + (usageMetadata.thoughtsTokenCount ?? 0)` |
 | `gen_ai.usage.cache_read.input_tokens` | `usage.cache_read_input_tokens ?? 0` | `usageMetadata.cachedContentTokenCount ?? 0` |
 | `gen_ai.usage.cache_write.input_tokens` | `usage.cache_creation_input_tokens ?? 0` | (omit) |
 | `gen_ai.usage.reasoning.output_tokens` | (omit) | `usageMetadata.thoughtsTokenCount ?? 0` |

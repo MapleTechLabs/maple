@@ -9,12 +9,12 @@ Goal: every conversation = one Maple Agent Session. Each `agent(...)` / `invoke_
 
 Human guide with the reasoning: https://maple.dev/docs/agent-tracing/strands
 
-Mechanism: Strands' native OTel tracer (scope `strands.telemetry.tracer`, `gen_ai.provider.name=strands-agents`). No extra instrumentation package. Maple reads `session.id` as the session key for Python Strands, and reads span ATTRIBUTES only (never span events).
+Mechanism: Strands' native OTel tracer (scope `strands.telemetry.tracer`, `gen_ai.provider.name=strands-agents`). No extra instrumentation package. Maple reads `session.id` (then `gen_ai.conversation.id`) as the session key, and reads span ATTRIBUTES only (never span events).
 
 ## Step 0: Detect
 
 1. Language and version.
-   - Python: `python -c "from importlib.metadata import version; print(version('strands-agents'))"` or read `pyproject.toml` / `uv.lock` / `requirements*.txt`. Need >= 1.54 (tested 1.57.1): span-attribute content needs 1.48, tool args/results 1.51, Maple-readable cache token names 1.54. Older → upgrade; do not work around it.
+   - Python: `python -c "from importlib.metadata import version; print(version('strands-agents'))"` or read `pyproject.toml` / `uv.lock` / `requirements*.txt`. Need >= 1.51 (tested 1.57.1): span-attribute content needs 1.48, tool args/results 1.51. Older → upgrade; do not work around it.
    - TypeScript: `@strands-agents/sdk` in `package.json` (tested 1.19.0). Follow Step 2 TS.
 2. Existing OTel setup. Search for `StrandsTelemetry(`, `TracerProvider(`, `set_tracer_provider`, `opentelemetry-instrument`, `aws-opentelemetry-distro`, `logfire.configure`, `sentry_sdk.init`, `setupTracer(`, `NodeSDK(`, `NodeTracerProvider(`.
    - `StrandsTelemetry().setup_otlp_exporter()` already present → reuse it; only change env vars.
@@ -49,14 +49,13 @@ OTEL_EXPORTER_OTLP_HEADERS=Authorization=Bearer <key>
 OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
 OTEL_SERVICE_NAME=<service name>
 OTEL_RESOURCE_ATTRIBUTES=deployment.environment.name=<env>
-OTEL_SEMCONV_STABILITY_OPT_IN=gen_ai_latest_experimental,gen_ai_span_attributes_only,gen_ai_use_latest_invocation_tokens
+OTEL_SEMCONV_STABILITY_OPT_IN=gen_ai_latest_experimental,gen_ai_span_attributes_only
 ```
 
 - Endpoint is the base URL; the exporter appends `/v1/traces`.
 - The exporter reads these when it is built. If the app loads `.env` (`load_dotenv()`, `dotenv`, `--env-file`), load it at the top of the tracing module, before `StrandsTelemetry()` / `setupTracer()`; otherwise the exporter silently targets `localhost:4318` with no key.
 - `gen_ai_latest_experimental`: `{role, parts}` messages, `gen_ai.system_instructions`, tool args/results.
 - `gen_ai_span_attributes_only`: messages as span attributes. Without it the Maple transcript is EMPTY.
-- `gen_ai_use_latest_invocation_tokens`: `invoke_agent` usage = this call only, not the agent's lifetime total.
 - If the repo already has an `OTEL_SEMCONV_STABILITY_OPT_IN` value, merge tokens (comma-separated), don't replace.
 
 Init once, imported from the entry point before any agent runs (skip if Step 0 found an existing provider):
@@ -74,7 +73,7 @@ TypeScript. OTel packages are optional peers; install them:
 npm install @strands-agents/sdk @opentelemetry/api @opentelemetry/sdk-trace-base @opentelemetry/sdk-trace-node @opentelemetry/resources @opentelemetry/exporter-trace-otlp-http @opentelemetry/sdk-metrics @opentelemetry/exporter-metrics-otlp-http
 ```
 
-Same env vars, but `OTEL_SEMCONV_STABILITY_OPT_IN=gen_ai_latest_experimental,gen_ai_span_attributes_only` (TS has no `gen_ai_use_latest_invocation_tokens`). The TS exporter sends OTLP/HTTP JSON; that's fine.
+Same env vars. The TS exporter sends OTLP/HTTP JSON; that's fine.
 
 ```ts
 import { setupTracer } from "@strands-agents/sdk/telemetry"
@@ -84,7 +83,7 @@ export const provider = setupTracer({ exporters: { otlp: true } }) // before the
 
 ## Step 3: Session id
 
-Python: pass the conversation id as `session.id` in `trace_attributes` on the agent that handles the turn. `gen_ai.conversation.id` is ignored for Python Strands; don't rely on it.
+Python: pass the conversation id as `session.id` in `trace_attributes` on the agent that handles the turn.
 
 ```py
 agent = Agent(
@@ -108,7 +107,7 @@ Rules:
   - `Swarm([...], trace_attributes={"session.id": conversation_id})`.
   - Graph: `graph = builder.build()` then `graph.trace_attributes = {"session.id": conversation_id}` (`GraphBuilder` drops trace attributes).
 
-TypeScript: set BOTH keys.
+TypeScript: same key, in `traceAttributes`.
 
 ```ts
 import { Agent, FileStorage, SessionManager } from "@strands-agents/sdk"
@@ -117,12 +116,12 @@ const agent = new Agent({
 	name: "support_agent",
 	model,
 	tools: [...],
-	traceAttributes: { "session.id": conversationId, "gen_ai.conversation.id": conversationId },
+	traceAttributes: { "session.id": conversationId },
 	sessionManager: new SessionManager({ sessionId: conversationId, storage: { snapshot: new FileStorage("./sessions") } }), // keep the repo's own storage
 })
 ```
 
-- TS: construct the agent PER REQUEST (restore history with the repo's `SessionManager` storage). The TS `invoke_agent` span always carries the agent instance's accumulated usage (no `gen_ai_use_latest_invocation_tokens`), so a reused agent re-reports every earlier turn and Maple's totals inflate.
+- TS: same rule as Python: construct the agent per request or per conversation (restore history with the repo's `SessionManager` storage), never one shared agent across conversations.
 - TS stamps `traceAttributes` on `invoke_agent` only (not chat/tool spans). That is enough.
 
 ## Step 4: Content
@@ -164,7 +163,7 @@ Run one short conversation (2-3 messages, one tool call; plus a failing tool if 
 - One turn per agent call, with the user's message as the turn label.
 - Transcript shows user messages, replies, tool calls with args and results. Empty transcript → `gen_ai_span_attributes_only` missing or set after the first `Agent(`.
 - Spans: `invoke_agent <name>` → `execute_event_loop_cycle` → `chat` / `execute_tool <tool>`; model id on `chat` spans.
-- Input/output tokens on every `chat` span, including streamed turns. Session total on the session detail page ≈ sum of `chat` spans, not several times more. TS: the Agent Sessions LIST may show ~2x the detail page's total even when setup is correct. Tell the user; don't try to fix it in their code.
+- Input/output tokens on every `chat` span, including streamed turns. Session total ≈ sum of `chat` spans.
 - No time to first token in Maple: Strands emits `gen_ai.server.time_to_first_token` (ms), which Maple doesn't read. Expected.
 - Failed tool counted as failed; successful tools not.
 - Sub-agents in separate lanes with their own names.
@@ -174,9 +173,7 @@ Run one short conversation (2-3 messages, one tool call; plus a failing tool if 
 Symptoms:
 - No model name on spans: a custom `Model` subclass that only implements `get_config()` gets no `gen_ai.request.model` (harness-sdk#4205). Give it a `config` dict with `model_id`.
 - `401` from ingest (`ingest_unauthorized`, "Invalid ingest key"): header must be `Authorization=Bearer <key>` in `OTEL_EXPORTER_OTLP_HEADERS`. With a key you trust, it usually belongs to the other region (keys are region-bound): try the other endpoint.
-- Token totals several times too high on the session page: `invoke_agent` reports the agent's lifetime usage. Add `gen_ai_use_latest_invocation_tokens` (Python) or construct the agent per request.
 - TS: zero tokens on every `chat` span with an OpenAI-compatible gateway such as OpenRouter and `new OpenAIModel({ api: "chat", ... })`: the SDK reads usage only from stream chunks with empty `choices`. Use `api: "responses"`.
-- Cache tokens zero with prompt caching on: `strands-agents` < 1.54 emits `cache_read_input_tokens` / `cache_write_input_tokens`, which Maple ignores. Upgrade.
 
 With the Maple MCP: `list_agent_sessions` with `search=<conversation id>` returns one row.
 
@@ -190,10 +187,10 @@ Without Maple access (or with `MAPLE_TEST`), both must hold; silence alone prove
 - Do not set `OTEL_SEMCONV_STABILITY_OPT_IN` in code after an `Agent` exists.
 - Do not create a second `TracerProvider` when one exists; do not call `StrandsTelemetry()` under `opentelemetry-instrument`/ADOT.
 - Do not put a session id on a shared module-level agent.
-- Do not rely on `session_manager` or `gen_ai.conversation.id` (Python) for Maple sessions; use `trace_attributes={"session.id": ...}`.
+- Do not rely on `session_manager` for Maple sessions; use `trace_attributes={"session.id": ...}`.
 - Do not add another GenAI instrumentor (OpenLIT, OpenLLMetry, OpenInference, OpenAI/Bedrock instrumentation): duplicate model calls and tokens.
 - Do not also enable OpenRouter Broadcast (or another gateway trace export) for the same traffic: Strands `chat` spans have no `gen_ai.response.id`, so Maple can't dedupe and tokens double.
 - Do not leave agents unnamed.
 - Do not use `OTEL_TRACES_SAMPLER=traceidratio` unless the user wants it: dropped traces are dropped turns.
-- Do not pin `strands-agents` below 1.54.
+- Do not pin `strands-agents` below 1.51.
 - Do not put PII in `trace_attributes`; it is never redacted.

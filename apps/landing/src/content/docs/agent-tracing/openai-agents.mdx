@@ -69,7 +69,7 @@ import re
 
 from agents import set_trace_processors
 from agents.tracing import TracingProcessor
-from agents.tracing.span_data import FunctionSpanData, GenerationSpanData, HandoffSpanData
+from agents.tracing.span_data import GenerationSpanData, HandoffSpanData
 from openinference.instrumentation import TraceConfig
 from openinference.instrumentation.openai_agents import OpenAIAgentsInstrumentor
 from opentelemetry import trace
@@ -91,15 +91,12 @@ def _chat_message(response: dict) -> dict:
 
 
 class MapleSpanFixes(TracingProcessor):
-    """Fills three gaps in what OpenInference exports. Must run before the OpenInference processor."""
+    """Fills two gaps in what OpenInference exports. Must run before the OpenInference processor."""
 
     def on_span_end(self, span):
         data = span.span_data
         current = trace.get_current_span()  # the matching OpenTelemetry span, still open here
-        if isinstance(data, FunctionSpanData) and data.input and getattr(current, "name", None) == data.name:
-            # Real arguments; OpenInference would copy the tool's JSON schema.
-            current.set_attribute("gen_ai.tool.call.arguments", data.input)
-        elif isinstance(data, HandoffSpanData) and data.to_agent:
+        if isinstance(data, HandoffSpanData) and data.to_agent:
             # Handoff spans carry no tool name.
             current.set_attribute("gen_ai.tool.name", re.sub(r"[^a-zA-Z0-9_]", "_", f"transfer_to_{data.to_agent}").lower())
         elif isinstance(data, GenerationSpanData) and data.output and data.output[0].get("object") == "response":
@@ -127,9 +124,7 @@ OpenAIAgentsInstrumentor().instrument(
 )
 ```
 
-Without `enable_genai_semconv=True`, there are no agent lanes.
-
-`MapleSpanFixes` fixes tool arguments, handoff tool names and streamed replies. It has to run before the OpenInference processor, so keep the order shown.
+`MapleSpanFixes` fixes handoff tool names and streamed replies. It has to run before the OpenInference processor, so keep the order shown.
 
 `set_trace_processors` already stops the upload to OpenAI. Don't use `set_tracing_disabled(True)` or `OPENAI_AGENTS_DISABLE_TRACING=1` for that, or you get no spans.
 
@@ -159,8 +154,6 @@ new OpenAIAgentsInstrumentation().manuallyInstrument(agents)
 Don't use `setTracingDisabled(true)` or `OPENAI_AGENTS_DISABLE_TRACING=1` to stop the upload to OpenAI, or you get no spans.
 
 If the app already starts OpenTelemetry (auto-instrumentation, Sentry, your own `NodeTracerProvider`), skip the `NodeSDK` lines and keep the `manuallyInstrument` call. The bridge sends its spans to the global tracer provider.
-
-The TypeScript bridge records less than the Python one: there are no agent lanes. For agent lanes, emit the GenAI attributes yourself as in the [provider SDKs guide](/docs/agent-tracing/provider-sdks).
 
 </LanguageTab>
 </LanguageTabs>
@@ -192,7 +185,7 @@ Use the id your app already stores the chat under, and give the SDK session the 
 
 For streaming, call `Runner.run_streamed` inside the `with` block.
 
-Keep `chat`, `completion` and `tool` out of `workflow_name`, or Maple counts a phantom model or tool call per run.
+Keep `tool` out of `workflow_name`, or Maple counts a phantom tool call per run.
 
 </LanguageTab>
 <LanguageTab id="typescript">

@@ -9,7 +9,7 @@ Goal: every conversation with the Spring AI app shows up in Maple **Agent Sessio
 
 Human guide with the reasoning: https://maple.dev/docs/agent-tracing/spring-ai
 
-Mechanism: Spring AI's Micrometer Observations → `micrometer-tracing-bridge-otel` → OpenTelemetry SDK → OTLP/HTTP to Maple, all from `spring-boot-starter-opentelemetry`. Maple detects the spans as Spring AI by their `spring.ai.*` keys. Out of the box: sampling is 10%, prompts/replies never reach spans (`log-prompt`/`log-completion` only log to SLF4J), thrown tool errors end the span OK, and advisor spans inflate call counts. Steps 2-5 fix all four.
+Mechanism: Spring AI's Micrometer Observations → `micrometer-tracing-bridge-otel` → OpenTelemetry SDK → OTLP/HTTP to Maple, all from `spring-boot-starter-opentelemetry`. Maple detects the spans as Spring AI by their `spring.ai.*` keys. Out of the box: sampling is 10%, prompts/replies never reach spans (`log-prompt`/`log-completion` only log to SLF4J), and thrown tool errors end the span OK. Steps 2-5 fix all three.
 
 ## Step 0: Detect versions and existing setup
 
@@ -109,7 +109,6 @@ import io.micrometer.observation.ObservationFilter;
 import io.micrometer.observation.ObservationRegistry;
 import tools.jackson.databind.json.JsonMapper;
 
-import org.springframework.ai.chat.client.advisor.observation.AdvisorObservationContext;
 import org.springframework.ai.chat.client.observation.ChatClientObservationContext;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
@@ -138,11 +137,6 @@ public class MapleAiObservationConfig {
 				if (client.getRequest().context().get(AGENT_NAME) instanceof String agent) {
 					client.addLowCardinalityKeyValue(KeyValue.of("gen_ai.agent.name", agent));
 				}
-			}
-			else if (context instanceof AdvisorObservationContext advisor) {
-				// Advisor span names ("tool _calling ", "message_chat_memory") would be
-				// counted as extra tool and LLM calls. A neutral name keeps them as plumbing.
-				advisor.setContextualName("spring_ai advisor");
 			}
 			else if (context instanceof ToolCallingObservationContext tool) {
 				tool.addLowCardinalityKeyValue(KeyValue.of("gen_ai.tool.name", tool.getToolDefinition().name()));
@@ -204,23 +198,22 @@ public class MapleAiObservationConfig {
 }
 ```
 
-Boot applies `ObservationFilter` beans to the registry automatically; nothing else to register. The filter runs when each observation stops, after Spring AI's own conventions. Why each part exists: the `chat_client` span is labeled `framework` by Spring AI and its name contains "chat", so without `invoke_agent` Maple counts it as a model call; Maple classifies spans without a known operation by name, so unrenamed advisor spans count `tool _calling ` as a tool call and `message_chat_memory` as a model call on every turn. `spring.ai.tools.observations.include-content` writes `spring.ai.tool.call.arguments/result`, which Maple does not read; the filter's `gen_ai.tool.call.*` keys are the ones read.
+Boot applies `ObservationFilter` beans to the registry automatically; nothing else to register. The filter runs when each observation stops, after Spring AI's own conventions. `spring.ai.tools.observations.include-content` writes `spring.ai.tool.call.arguments/result`, which Maple does not read; the filter's `gen_ai.tool.call.*` keys are the ones read.
 
 Content notes: every `chat` span carries the whole conversation so far, so spans grow with long chats (don't cap them; see 2b). With `maple.ai.capture-content=false` no message/tool content leaves the process; to redact instead, mask values inside `message(...)`. The conversation id and agent names are sent regardless: keep personal data out of them.
 
 Kotlin project: translate one to one (e.g. `ObservationFilter { context -> ...; context }`), same beans, same keys.
 
-Do NOT drop advisor observations with an `ObservationPredicate` instead of renaming them: on `.stream()` calls Spring AI takes the model span's parent from the Reactor context, which then holds the skipped (no-op) advisor observation, so the streamed `chat` span becomes its own trace outside the session (verified).
+Do NOT drop advisor observations with an `ObservationPredicate`: on `.stream()` calls Spring AI takes the model span's parent from the Reactor context, which then holds the skipped (no-op) advisor observation, so the streamed `chat` span becomes its own trace outside the session (verified).
 
 ## Step 4: Session id (one conversation = one session)
 
-Maple reads ONLY `spring.ai.chat.client.conversation.id` for Spring AI, on the `chat_client` span. Spring AI sets it from the `ChatMemory.CONVERSATION_ID` advisor param.
+Maple reads `spring.ai.chat.client.conversation.id` for Spring AI, on the `chat_client` span. Spring AI sets it from the `ChatMemory.CONVERSATION_ID` advisor param.
 
 - On EVERY top-level call: `chatClient.prompt().user(msg).advisors(a -> a.param(ChatMemory.CONVERSATION_ID, conversationId))...`. Use the id the app already stores for the chat/thread.
 - If the app already passes this param for `MessageChatMemoryAdvisor`/`PromptChatMemoryAdvisor`/`VectorStoreChatMemoryAdvisor`, nothing to add. If it has no chat memory, add the param anyway; it works without a memory advisor.
 - Never set the conversation id via `defaultAdvisors(...)` on a shared builder/client (constant id = all users in one session). Never mint a UUID per request.
 - Sub-agent `ChatClient` calls inside tools need no id: Maple groups the whole trace by any span carrying it. Don't pass a different id to sub-agents.
-- Do not add `gen_ai.conversation.id` or `session.id`; Maple ignores them on Spring AI spans.
 - Give every `ChatClient` an agent name: `builder.defaultAdvisors(a -> a.param(MapleAiObservationConfig.AGENT_NAME, "<snake_case_role>"))`.
 
 ## Step 5: Tools, errors, sub-agents
@@ -265,7 +258,7 @@ public class Workers {
 ## Step 5b: Tokens and cost (no action needed, explain if asked)
 
 - `chat` spans carry `gen_ai.usage.input_tokens`, `output_tokens`, and `cache_read.input_tokens` / `cache_creation.input_tokens` when the provider reports them; Maple reads all four. `chat_client` spans carry no usage, so nothing is double counted.
-- Spring AI records the provider as `gen_ai.system`, derived from the client class, not the model: a Claude model behind OpenRouter via the OpenAI starter is labeled `openai`. Maple uses the provider only to decide whether input includes cached tokens, so only cache figures can be affected.
+- Spring AI records the provider as `gen_ai.system`, derived from the client class, not the model: a Claude model behind OpenRouter via the OpenAI starter is labeled `openai`.
 - No cost attribute is emitted; sessions show as unpriced (Maple never prices tokens).
 
 ## Step 6: Flush
@@ -285,7 +278,7 @@ Run one real conversation: 2-3 turns with the same conversation id including one
 - [ ] The two conversations are two different sessions.
 - [ ] Framework shows **Spring AI**.
 - [ ] Every turn arrived (count = number of top-level `ChatClient` calls). Missing turns = sampling property not applied.
-- [ ] Spans: `spring_ai chat_client` (agent, with your agent name), `chat <model>`, `execute_tool <tool>`. Advisor spans are named `spring_ai advisor`; NO spans named `tool _calling `, `call`, `stream`, `message_chat_memory` (else the filter isn't loaded).
+- [ ] Spans: `spring_ai chat_client` (agent, with your agent name), `chat <model>`, `execute_tool <tool>`.
 - [ ] LLM call count = number of `chat <model>` spans (not doubled); tool call count = number of real tool invocations.
 - [ ] Transcript shows user messages, replies, tool calls with arguments and results (else `maple.ai.capture-content` isn't `true` or the class isn't scanned).
 - [ ] Input and output tokens on every model call, including the streamed one.

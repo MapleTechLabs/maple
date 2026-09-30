@@ -181,7 +181,7 @@ Tell the user about the known gaps: cost is unpriced; the model is the requested
         └─ generate_content openrouter/openai/gpt-4o-mini
   ```
 
-- Tokens: `generate_content` carries `gen_ai.usage.input_tokens` / `output_tokens`, plus `gen_ai.usage.cache_read.input_tokens` and `gen_ai.usage.reasoning.output_tokens` when reported (cached inside input, thinking inside output). `call_llm` repeats the same usage; Maple nets parent usage against children, so totals and LLM call count are correct. Streamed turns (`StreamingMode.SSE`) report usage; `LiteLlm` requests it via `stream_options.include_usage`.
+- Tokens: `generate_content` carries `gen_ai.usage.input_tokens` / `output_tokens`, plus `gen_ai.usage.cache_read.input_tokens` and `gen_ai.usage.reasoning.output_tokens` when reported (cached inside input, thinking inside output). `call_llm` repeats the same usage; Maple counts it on `generate_content` only, so totals and LLM call count are correct. Streamed turns (`StreamingMode.SSE`) report usage; `LiteLlm` requests it via `stream_options.include_usage`.
 - Cost: LiteLLM computes a cost but it never reaches ADK's spans; sessions are unpriced.
 - `AgentTool` detail: Maple keeps one `gen_ai.conversation.id` per trace and picks the larger of the two, which is why the turn can move to another session. ADK's API docs also prefer `mode="single_turn"`.
 - The approval `run_async()` is its own turn, labeled with the original request.

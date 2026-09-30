@@ -183,7 +183,7 @@ Run one real conversation: 2+ messages with the same id, at least one tool call,
 - [ ] Tool calls have their real names, arguments and results.
 - [ ] A failing tool is marked failed with its message; successful tools are not.
 - [ ] Sub-agents appear as separate lanes with their `name=`, all under the caller's session.
-- [ ] Cost shows "unpriced" (expected: Pydantic AI writes `operation.cost`, which Maple doesn't read).
+- [ ] Cost shows on sessions whose model Pydantic AI can price; "unpriced" otherwise.
 - [ ] No attribute contains an API key or `Bearer ` token.
 
 With the Maple MCP: `list_agent_sessions` with `search=<conversation id>` returns one row.
@@ -202,9 +202,8 @@ Without Maple access (or with `MAPLE_TEST`), both must hold; silence alone prove
 - `include_content=False` also drops exception messages (only the exception type is kept).
 - Instrumentation `version`: 5 default (tested); 2-4 deprecated with `PydanticAIDeprecationWarning` (version 2 used different span names); 6 is opt-in and sends tool results with `role: "tool"`. Fix the warning by removing `version=`.
 - Tokens: `chat` spans carry `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`, plus `gen_ai.usage.cache_read.input_tokens` / `gen_ai.usage.cache_creation.input_tokens` when the provider caches. `invoke_agent` carries run totals under `gen_ai.aggregated_usage.*`, which Maple does not add to the session total. Delegate tokens stay on the delegate's spans.
-- Anthropic + prompt caching via Pydantic AI's `anthropic` provider: Maple currently counts cached input tokens twice (Pydantic AI reports input tokens including cache for every provider; Maple applies Anthropic's convention where they're separate). OpenAI, OpenRouter, Gemini unaffected.
 - Streaming: Pydantic AI requests usage on OpenAI-compatible streams (`stream_options.include_usage`), so streamed calls have tokens. Time-to-first-chunk is recorded under a key Maple doesn't read yet.
-- Cost: Pydantic AI writes `operation.cost` on `chat` spans; Maple reads cost only from `gen_ai.usage.cost`, `gen_ai.usage.total_cost` or `llm.cost.total` and never prices tokens itself, so cost shows as unpriced.
+- Cost: Pydantic AI writes `operation.cost` on `chat` spans when it can price the model, and Maple shows it. Maple never prices tokens itself; a model Pydantic AI can't price shows as unpriced.
 - Logfire with `send_to_logfire=True` (or a Logfire token in env) sends to both Logfire and Maple.
 - Provider extras: swap `[openai]` for `anthropic`, `google`, `openrouter`, ...; the full `pydantic-ai` package also works.
 - Duplicate spans: another instrumentor on the model client (Logfire `instrument_openai()`, OpenInference, OpenLLMetry) double-traces model calls; keep Pydantic AI's.
@@ -217,8 +216,7 @@ Without Maple access (or with `MAPLE_TEST`), both must hold; silence alone prove
 - Do not create a second `TracerProvider` when one exists, and do not add Logfire just for Maple.
 - Do not set `version=2|3|4` (deprecated) or `event_mode="logs"` (content moves to logs, which Maple doesn't read).
 - Do not add `session.id` or `maple_ai.session.id` attributes: Maple reads `gen_ai.conversation.id` for Pydantic AI, and `maple_ai.session.id` would re-vendor the span.
-- Do not set `use_aggregated_usage_attribute_names=False`; the default keeps run totals out of the token sum.
 - Do not also instrument the model client (OpenAI/Anthropic instrumentors, `logfire.instrument_openai`, a global `logfire.instrument_httpx()`): duplicate model-call spans. `instrument_httpx(client)` on a tool's own client is fine.
 - Do not return error strings from tools that failed; raise `ToolFailed`.
-- Do not promise cost in Maple; do not add token pricing code.
+- Do not add token pricing code.
 - Do not print or commit real keys beyond the repo's convention.

@@ -163,7 +163,7 @@ async def handle_message(session: AgentSession, text: str) -> str:
 - Id: the app's chat/thread id, or `AgentSession.session_id` (create sessions with `agent.create_session(session_id=chat_id)` when the app has an id). Must be stable across all turns of one conversation and differ between conversations.
 - Streaming: the whole `async for update in agent.run(..., stream=True)` loop goes inside the `with`.
 - Approval resumes (`request.to_function_approval_response(...)` passed back to `agent.run`) and workflow runs go inside the same `with`. 1.19 logs a WARN "Ignored an approval response ... did not match" on each resume even though the tool runs; ignore it if the `execute_tool` span is there once.
-- Build workflows (`WorkflowBuilder(...).build()`, `SequentialBuilder`, `ConcurrentBuilder`, ...) inside the `with`. `build()` always emits a separate one-span `workflow.build` trace: inside the `with` it joins the session; outside it becomes a stray one-span session. Executors (fan-out included) inherit the id.
+- Workflow executors (fan-out included) inherit the id.
 - .NET: `ConversationIdProcessor.Current.Value = chatId;` in the request handler before `RunAsync`/`RunStreamingAsync`.
 
 ## Step 4: Content
@@ -239,7 +239,7 @@ trace.set_tracer_provider(provider)
 - Orchestrations on `InProcessRuntime`: wrap in `with conversation(id), tracer.start_as_current_span("<run name>"):` and call `runtime.start()` inside it, or the run splits into many traces.
 - Flush with `provider.shutdown()` in `finally`.
 - Other SK differences to expect (not setup bugs): tool spans are `execute_tool <Plugin>-<function>`; failing tools get ERROR + `error.type` but no result attribute; finish reasons are Python enum names (`FinishReason.STOP`), so Maple's reply-length and refusal checks can't read them; `temperature=0` is omitted from spans.
-- .NET SK: same env vars (or `AppContext` switches `Microsoft.SemanticKernel.Experimental.GenAI.EnableOTelDiagnostics[Sensitive]`), `AddSource("Microsoft.SemanticKernel*")`, same `ConversationIdProcessor`. Shows as "Unidentified" framework in Maple.
+- .NET SK: same env vars (or `AppContext` switches `Microsoft.SemanticKernel.Experimental.GenAI.EnableOTelDiagnostics[Sensitive]`), `AddSource("Microsoft.SemanticKernel*")`, same `ConversationIdProcessor`.
 
 ## Step 7: Verify
 
@@ -252,7 +252,7 @@ Run one real conversation (2-3 turns, one tool call; a second conversation if ch
 - `execute_tool`: real tool name, `gen_ai.tool.call.arguments` and `gen_ai.tool.call.result`; a raising tool has ERROR status + `error.type`, successful ones don't.
 - Sub-agents have distinct `gen_ai.agent.name`s.
 - No attribute contains the model API key or `Bearer `.
-- Cost: none is emitted; Maple shows sessions as unpriced. Framework label: "Microsoft Agent Framework" / "Semantic Kernel" (.NET SK: see the Semantic Kernel section).
+- Cost: none is emitted; Maple shows sessions as unpriced. Framework label: "Microsoft Agent Framework" / "Semantic Kernel".
 
 ## Tokens and cost notes
 

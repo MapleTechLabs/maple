@@ -1,6 +1,6 @@
 ---
 name: maple-agent-tracing-litellm
-description: "Trace LiteLLM agents with Maple: export LiteLLM's v2 OpenTelemetry spans (Python SDK or self-hosted LiteLLM Proxy) plus your own agent/tool spans so each conversation is one Maple Agent Session with transcript, tool calls, tokens and optional cost. Triggers on 'trace my litellm agent', 'add Maple to litellm', 'agent sessions for litellm', 'OpenTelemetry for litellm', 'trace the litellm proxy'."
+description: "Trace LiteLLM agents with Maple: export LiteLLM's v2 OpenTelemetry spans (Python SDK or self-hosted LiteLLM Proxy) plus your own agent/tool spans so each conversation is one Maple Agent Session with transcript, tool calls, tokens and cost. Triggers on 'trace my litellm agent', 'add Maple to litellm', 'agent sessions for litellm', 'OpenTelemetry for litellm', 'trace the litellm proxy'."
 ---
 
 # Maple agent tracing: LiteLLM
@@ -127,7 +127,7 @@ async def call_model(conversation_id: str, messages: list, tools: list | None):
 ```
 
 - Alternative session carrier: body `metadata: {"session_id": ...}` (`extra_body={"metadata": {...}}`), verified. A W3C `baggage` header with `session.id=...` is used only when neither the header nor metadata is present.
-- Resulting tree per request: `invoke_agent` → `POST /chat/completions` (proxy FastAPI server span) → `chat <model>` + `auth /chat/completions`. Known Maple limitation: LLM call counts double on the proxy path (sessions list: the `auth /chat/completions` span, litellm scope + "chat" in the name; session page: the FastAPI `POST /chat/completions` span, which carries `gen_ai.request.model`). Tokens, cost, transcript and sessions are correct. Tell the user; nothing to fix app-side.
+- Resulting tree per request: `invoke_agent` → `POST /chat/completions` (proxy FastAPI server span) → `chat <model>` + `auth /chat/completions`. Known Maple limitation: the session page's LLM call count doubles on the proxy path (the FastAPI `POST /chat/completions` span carries `gen_ai.request.model`). The sessions list count, tokens, cost, transcript and sessions are correct. Tell the user; nothing to fix app-side.
 - Never also instrument the app's OpenAI client when the proxy traces: double LLM calls and tokens. Pick gateway OR in-app.
 - Do not set `OTEL_IGNORE_CONTEXT_PROPAGATION=true` on the proxy.
 
@@ -209,36 +209,9 @@ async def run_tool(agent: Agent, call) -> str:
   - Code-driven orchestration: run workers inside an outer `agent_span("orchestrator")` so the whole run is one trace; `asyncio.gather` keeps context.
 - Thread pools (`run_in_executor`, `ThreadPoolExecutor`) lose OTel context: wrap with `contextvars.copy_context().run`.
 
-## Step 6: Cost (optional) and flush
+## Step 6: Flush
 
-Cost: Maple reads `gen_ai.usage.cost` (also `gen_ai.usage.total_cost`, `llm.cost.total`), never `litellm.cost.total`; LiteLLM writes `litellm.cost.total` (v2) / `hidden_params` (v1) → unpriced by default. If the user wants cost, report the TURN total on the OUTERMOST agent span only. Maple subtracts a descendant's reported cost from its nearest cost-reporting ancestor, so cost on every nested `invoke_agent` undercounts the orchestrator. Replace `agent_span`:
-
-```py
-from contextvars import ContextVar
-
-turn_costs: ContextVar[list | None] = ContextVar("turn_costs", default=None)
-
-
-@contextmanager
-def agent_span(name: str):
-    with tracer.start_as_current_span(f"invoke_agent {name}") as span:
-        span.set_attribute("gen_ai.operation.name", "invoke_agent")
-        span.set_attribute("gen_ai.agent.name", name)
-        if turn_costs.get() is not None:  # a sub-agent: the outermost agent reports the cost
-            yield span
-            return
-        costs: list[float] = []
-        token = turn_costs.set(costs)
-        try:
-            yield span
-        finally:
-            turn_costs.reset(token)
-            span.set_attribute("gen_ai.usage.cost", sum(costs))
-```
-
-- After each non-stream `acompletion`: `turn_costs.get().append(response._hidden_params.get("response_cost") or 0.0)`.
-- Stream: keep `cost = getattr(chunk.usage, "cost", None) or cost` for chunks whose `usage` is not None, append `cost` once after the loop.
-- Session and turn totals are then exact (verified: equals the sum of `litellm.cost.total`); per-model breakdown stays unpriced. Never add token pricing tables.
+Cost needs nothing: LiteLLM records each call's price as `litellm.cost.total` on its `chat` span, and Maple sums it. The v1 logger (Step 2c) records none, so its sessions show as unpriced. Never add token pricing tables.
 
 Flush (required for scripts, CLIs, Lambda/Cloud Run jobs, notebooks, workers; web servers only at shutdown). LiteLLM creates its span after the call via a background queue that drains at interpreter exit, after the provider shut down, so the last call is lost without this:
 
@@ -266,10 +239,10 @@ Run one real conversation: 2+ messages with the same id, one tool call, one stre
 - [ ] Tool spans have real names, arguments, results and call ids.
 - [ ] The failing tool is marked failed with its message; successful tools and model calls are not.
 - [ ] Sub-agents appear as separate lanes, all in the caller's session.
-- [ ] Cost: unpriced, or (Step 6) `gen_ai.usage.cost` only on top-level `invoke_agent` spans, equal to the sum of the turn's `litellm.cost.total`.
+- [ ] Session cost equals the sum of the `chat` spans' `litellm.cost.total`.
 - [ ] Last call of a script run present (flush worked).
 - [ ] No attribute contains an API key, `Bearer ` or `sk-`.
-- [ ] Proxy path: `chat` spans (service `litellm-proxy`) sit in the app's trace under `invoke_agent` → `POST /chat/completions`, carrying the session id. LLM call count shows 2x (auth / FastAPI span, known).
+- [ ] Proxy path: `chat` spans (service `litellm-proxy`) sit in the app's trace under `invoke_agent` → `POST /chat/completions`, carrying the session id. Session page LLM call count shows 2x (FastAPI span, known).
 
 Without Maple access (`MAPLE_TEST`, no MCP): the run must exit with no export errors on stderr (`Failed to export`, 401 lines) AND a temporary `SimpleSpanProcessor(ConsoleSpanExporter())` on the provider must show `gen_ai.conversation.id` on every `chat` span and the parent ids. Silence alone proves nothing (no spans is silent too). With the Maple MCP: `list_agent_sessions` with `search=<conversation id>` returns one row.
 
@@ -283,7 +256,6 @@ Without Maple access (`MAPLE_TEST`, no MCP): the run must exit with no export er
 - No prompts/replies → content capture off (v2 default); `span_only`.
 - Proxy spans in their own traces, apart from the app's agent span → no `traceparent` on the request; `propagate.inject(headers)` inside the agent span; no `OTEL_IGNORE_CONTEXT_PROPAGATION` on the proxy.
 - Nothing arrives from the proxy → the OTLP env vars aren't in the proxy's own environment, so it stays on the default `console` exporter.
-- Session cost lower than LiteLLM spend → `gen_ai.usage.cost` on nested agent spans; report on the outermost only (Step 6).
 - 401 `ingest_unauthorized` / "Invalid ingest key" with a key you trust → keys are region-bound, so it likely belongs to the other region; try the other endpoint.
 - App exports to `localhost:4318` / nothing arrives, no errors → `.env` loaded after `tracing.py` built the provider; load it first.
 
@@ -298,5 +270,5 @@ Without Maple access (`MAPLE_TEST`, no MCP): the run must exit with no export er
 - Do not use `event_only` content capture.
 - Do not skip the flush in short-lived processes.
 - Do not create a second `TracerProvider` when one exists.
-- Do not promise cost without the Step 6 recipe; do not add token pricing code; do not put `gen_ai.usage.cost` on nested agent spans.
+- Do not add token pricing code or `gen_ai.usage.cost` on your own spans.
 - Do not print or commit real keys beyond the repo's convention.

@@ -49,7 +49,7 @@ Read the reference for the language and adapt it:
 
 Rules:
 - Init module is imported first in every entry point. Set a real `service.name` and `deployment.environment.name`.
-- Name the tracer after the app (e.g. `support-agent`). Never `openrouter`, `langsmith`, `litellm`, `haystack`, `ai`, `gen_ai`: Maple fingerprints frameworks by scope name and would read a different session key.
+- Name the tracer after the app (e.g. `support-agent`). Never `openrouter`, `langsmith`, `litellm`, `haystack`, `ai`, `gen_ai`: Maple fingerprints frameworks by scope name and would treat your spans as that framework's.
 - Keep the project's loop structure; add spans around its existing calls. Use the reference's complete loop only when there is no loop yet.
 
 ## Step 3: The three spans (exact keys)
@@ -71,7 +71,7 @@ Message JSON (`input.messages`/`output.messages`): array of `{role, parts}`; par
 
 Also read: `reasoning` parts are rendered; a message may carry `content` (string or part array) instead of `parts`. `gen_ai.response.model` wins over `gen_ai.request.model` when both are set. `gen_ai.response.finish_reasons` feeds the refusal (`content_filter`) and truncation (`length`) checks.
 
-Legacy spellings are read as fallbacks (new key wins when both are set; use current names in new code): `gen_ai.system` (→ `gen_ai.provider.name`, renamed in semconv 1.37), `gen_ai.usage.prompt_tokens`/`completion_tokens`, whole-value `gen_ai.prompt`/`gen_ai.completion`, `gen_ai.usage.cache_creation.input_tokens` (→ `cache_write`), `gen_ai.usage.total_cost` (→ `cost`).
+Legacy spellings are read as fallbacks (use current names in new code): `gen_ai.system` (→ `gen_ai.provider.name`, renamed in semconv 1.37), `gen_ai.usage.prompt_tokens`/`completion_tokens`, whole-value `gen_ai.prompt`/`gen_ai.completion`, `gen_ai.usage.cache_creation.input_tokens` (→ `cache_write`), `gen_ai.usage.total_cost` (→ `cost`).
 
 `provider.name` = the API actually called: `openai`, `anthropic`, `gcp.gemini`, `gcp.vertex_ai`, `aws.bedrock`, `azure.ai.openai`, `mistral_ai`, `groq`, `x_ai`, `deepseek`, or `openrouter` for OpenRouter.
 
@@ -132,8 +132,8 @@ await tracer.startActiveSpan(
 ## Step 7: Tokens and cost
 
 - Usage on `chat` spans only, never cumulative totals on `invoke_agent`.
-- Keys: `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`, `gen_ai.usage.cache_read.input_tokens`, `gen_ai.usage.cache_write.input_tokens`, `gen_ai.usage.reasoning.output_tokens` (ints). Not read: `total_tokens`, `reasoning_tokens`, `cache_read_input_tokens`.
-- Copy the provider's raw numbers. Maple interprets by `gen_ai.provider.name`: `anthropic` → input EXCLUDES cache (send Anthropic's raw `input_tokens`, NOT input+cache as the spec says, or cache is double counted); `gcp.gemini`/`gcp.vertex_ai` → input includes cache, output excludes thoughts (raw Gemini counts); `openai`/`openrouter`/other → input includes cache, output includes reasoning (OpenAI shape).
+- Keys: `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`, `gen_ai.usage.cache_read.input_tokens`, `gen_ai.usage.cache_write.input_tokens`, `gen_ai.usage.reasoning.output_tokens` (ints). `total_tokens` is not read.
+- Totals as the spec defines them: `input_tokens` = every prompt token, cache reads and writes included; `output_tokens` = every completion token, reasoning included. OpenAI, OpenRouter and Gemini's `promptTokenCount` already count that way. Anthropic's `input_tokens` excludes cache: send `input_tokens + cache_read_input_tokens + cache_creation_input_tokens`. Gemini's `candidatesTokenCount` excludes thoughts: send `candidatesTokenCount + thoughtsTokenCount`.
 - Streaming OpenAI-compatible: `stream_options: {include_usage: true}`. OpenAI sends usage in an extra last chunk with empty `choices`; OpenRouter always sends usage + `cost` on the chunk carrying `finish_reason`. Read `chunk.usage` before skipping chunks without choices.
 - OpenRouter (Claude included): `prompt_tokens` already includes `cached_tokens` → provider `openrouter`, copy as is. Optional: `prompt_tokens_details.cache_write_tokens` → `gen_ai.usage.cache_write.input_tokens`.
 - Cost: `gen_ai.usage.cost` (double, USD) on `chat` spans. OpenRouter returns `usage.cost` → copy it. Other providers return none → compute only if the project has a price table; otherwise leave it (Maple shows "unpriced"; it never prices tokens).
@@ -174,7 +174,7 @@ Check without Maple access: the run exits with no export errors on stderr (`Fail
 - Do not set attribute length limits.
 - Do not stack a provider auto-instrumentor on top of hand-written `chat` spans.
 - Do not put `maple_ai.session.id` on framework spans or on `chat` spans.
-- Do not sum Anthropic cache tokens into `input_tokens`.
+- Do not send Anthropic's raw `input_tokens` or Gemini's raw `candidatesTokenCount` as the totals (Step 7).
 - Do not put usage on `invoke_agent` spans.
 - Do not use `gen_ai.system` in new code (read as a fallback only); use `gen_ai.provider.name`.
 - Do not name the tracer after a framework or gateway.

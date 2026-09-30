@@ -122,10 +122,6 @@ class MapleCallback(BaseCallback):
             if reply:
                 trace.get_current_span().set_attribute("gen_ai.output.messages", reply)
 
-    def on_adapter_format_start(self, call_id, instance, inputs):
-        # The span is "ChatAdapter.__call__"; without an operation, "chat" in the name reads as a model call.
-        trace.get_current_span().set_attribute("gen_ai.operation.name", "invoke_workflow")
-
     def on_tool_start(self, call_id, instance, inputs):
         span = trace.get_current_span()
         span.set_attribute("gen_ai.tool.name", instance.name)
@@ -171,7 +167,7 @@ dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"), callbacks=[MapleCallback()])  #
 
 ## Step 3: One session per conversation
 
-Maple reads `session.id` for DSPy (not `gen_ai.conversation.id`). Wrap every call to the program in `using_session` with the app's own stored conversation id:
+Maple reads `session.id` for DSPy. Wrap every call to the program in `using_session` with the app's own stored conversation id:
 
 ```py
 from openinference.instrumentation import using_session
@@ -202,7 +198,7 @@ async def stream_message(conversation_id: str, question: str, turns: list[dict])
                 turns.append({"question": question, "answer": chunk.answer})
 ```
 
-- Call `dspy.streamify(...)` only after `dspy.configure(callbacks=[MapleCallback()])`: it snapshots the callback list when called. A streamified program created earlier (e.g. at import time) streams without the callback: no tokens, no tool names, `ChatAdapter.__call__` counted as a model call.
+- Call `dspy.streamify(...)` only after `dspy.configure(callbacks=[MapleCallback()])`: it snapshots the callback list when called. A streamified program created earlier (e.g. at import time) streams without the callback: no tokens, no tool names.
 - `using_session` must wrap the loop that consumes the stream (inside the generator handed to the SSE/`StreamingResponse`), not only the `stream_assistant(...)` call: the program starts on the first iteration.
 - Streamed calls get tokens and cost; they have no `gen_ai.response.id` (DSPy's native engine drops it) and no TTFT attribute. Expected.
 
@@ -257,7 +253,7 @@ Then check in Maple **Agent Sessions** (`https://app.maple.dev/agent-sessions`, 
 ## Known behaviours (expected, nothing to fix; explain them if the user asks)
 
 - `OPENINFERENCE_ENABLE_GENAI_SEMCONV=true` set before `instrument()` runs is equivalent to `TraceConfig(enable_genai_semconv=True)`. The GenAI dual-write never overwrites a key already set, so the callback's values win.
-- Each `LM.__call__` sits under `Predict.forward`, `Predict(StringSignature).forward` and `ChatAdapter.__call__`; those are DSPy steps, not extra model calls (the callback marks the adapter span `invoke_workflow` so its name isn't read as a model call).
+- Each `LM.__call__` sits under `Predict.forward`, `Predict(StringSignature).forward` and `ChatAdapter.__call__`; those are DSPy steps, not extra model calls.
 - A `dspy.History` input is expanded into earlier user/assistant messages, so each model call repeats the conversation so far.
 - `dspy.ReAct` catches tool exceptions and hands `Execution error in <tool>: ...` back to the model. The tool span is `ERROR` and counted as failed; the `ReAct.forward` span and the user's module span stay `OK`, and the program's return value doesn't reveal the failure.
 - Tool spans have no `gen_ai.tool.call.id`: ReAct asks the model for the next tool as text fields (`next_tool_name`, `next_tool_args`), not through the provider's tool-calling API.
@@ -272,7 +268,6 @@ Then check in Maple **Agent Sessions** (`https://app.maple.dev/agent-sessions`, 
 ## Do not
 
 - Do not add `openinference-instrumentation-litellm` or `-openai`. DSPy 3.4 runs most models on its own `lm15` engine, where they record nothing; on the LiteLLM engine they add a duplicate model span per call.
-- Do not rely on `gen_ai.conversation.id` for grouping; Maple reads `session.id` for DSPy.
 - Do not name a `dspy.Module` attribute `history`: DSPy appends LM calls to it and a `dspy.History` there crashes every model call (`TypeError: object of type 'History' has no len()`). Pass `dspy.History` as an input field.
 - Do not set `disable_history=True` or `max_history_size=0`: the callback reads token usage from LM history.
 - Do not expect tokens for cache hits (`cache=True` is the default); they cost nothing and are skipped.

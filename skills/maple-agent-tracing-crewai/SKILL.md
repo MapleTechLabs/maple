@@ -226,7 +226,7 @@ If sessions are split per message: `using_session` missing or id changing. No mo
 - Do not add the LiteLLM instrumentor for `openai/`/`openrouter/`/`anthropic/`/`gemini/` models (CrewAI 1.x calls those SDKs natively; LiteLLM records nothing). Do not stack two model-layer instrumentors or `litellm.callbacks=["otel"]` on the same calls (duplicate spans).
 - Do not use `OTEL_SDK_DISABLED=true` to silence CrewAI telemetry.
 - Do not use `crewai.telemetry`, `share_crew`, or `CREWAI_TRACING_ENABLED=true` as the Maple pipeline.
-- Do not use `crew_id`, `crew_key`, `task_id` or a fresh UUID per request as the session id; do not set `gen_ai.conversation.id` alone expecting grouping (Maple reads `session.id` for CrewAI).
+- Do not use `crew_id`, `crew_key`, `task_id` or a fresh UUID per request as the session id.
 - Do not call `akickoff()` on traced crews.
 - Do not pass `OTLPSpanExporter(endpoint="https://ingest.maple.dev")` without `/v1/traces`.
 - Do not create a second `TracerProvider` when one exists, and do not call `instrument()` twice.

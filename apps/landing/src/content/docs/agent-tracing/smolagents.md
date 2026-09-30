@@ -109,7 +109,7 @@ def handle_message(conversation_id: str, text: str) -> str:
         return str(agent.run(text, reset=False))
 ```
 
-The id must stay the same across the conversation and differ between conversations. Setting `gen_ai.conversation.id` yourself doesn't group smolagents runs.
+The id must stay the same across the conversation and differ between conversations.
 
 Keep one agent object per conversation, as above. A single shared agent with `reset=False` mixes every user's memory into one conversation.
 

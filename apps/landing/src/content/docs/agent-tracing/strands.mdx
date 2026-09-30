@@ -12,7 +12,7 @@ import LanguageTab from "../../../components/docs/LanguageTab.astro"
 
 Strands Agents has a built-in OpenTelemetry tracer, and Maple reads its spans without an extra instrumentation library. You set one environment variable so the transcript is recorded, and pass your conversation id as `session.id` on each agent.
 
-You need `strands-agents` 1.54 or newer, or the TypeScript SDK `@strands-agents/sdk` 1.19 or newer.
+You need `strands-agents` 1.51 or newer, or the TypeScript SDK `@strands-agents/sdk` 1.19 or newer.
 
 ## Quick setup with a coding agent
 
@@ -59,12 +59,12 @@ export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer YOUR_INGEST_KEY"
 export OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"
 export OTEL_SERVICE_NAME="support-agent"
 export OTEL_RESOURCE_ATTRIBUTES="deployment.environment.name=production"
-export OTEL_SEMCONV_STABILITY_OPT_IN="gen_ai_latest_experimental,gen_ai_span_attributes_only,gen_ai_use_latest_invocation_tokens"
+export OTEL_SEMCONV_STABILITY_OPT_IN="gen_ai_latest_experimental,gen_ai_span_attributes_only"
 ```
 
 For an EU organization, use `https://ingest.eu.maple.dev`. The exporter appends `/v1/traces` itself.
 
-Without `OTEL_SEMCONV_STABILITY_OPT_IN` the transcript is empty and token counts are too high. Strands reads it when the first `Agent` is created, so set it in the environment rather than in code.
+Without `OTEL_SEMCONV_STABILITY_OPT_IN` the transcript is empty. Strands reads it when the first `Agent` is created, so set it in the environment rather than in code.
 
 To redact message content, append `gen_ai_unredacted_attributes=` with a `;`-separated allowlist of attributes to keep; everything else becomes `[REDACTED]`.
 
@@ -144,7 +144,7 @@ async function handleMessage(conversationId: string, text: string): Promise<stri
 		model,
 		tools: [getWeather],
 		systemPrompt: "You are a concise support assistant.",
-		traceAttributes: { "session.id": conversationId, "gen_ai.conversation.id": conversationId },
+		traceAttributes: { "session.id": conversationId },
 		sessionManager: new SessionManager({
 			sessionId: conversationId,
 			storage: { snapshot: new FileStorage("./sessions") },
@@ -155,7 +155,7 @@ async function handleMessage(conversationId: string, text: string): Promise<stri
 }
 ```
 
-Set both keys in `traceAttributes`. Create the agent per request here too, since a reused TypeScript agent reports its running token total on every turn.
+Create the agent per request here too.
 
 </LanguageTab>
 </LanguageTabs>
@@ -198,7 +198,7 @@ try {
 
 Run a conversation of two or three messages, including one that calls a tool, then open **Agent Sessions** in Maple. You should see one session per conversation id with framework **Strands Agents**, one turn per `agent(...)` call, and a transcript with the user messages, replies and tool calls.
 
-Cost shows as unpriced because Strands doesn't report it. With TypeScript, the sessions list may show about twice the real token count; the session's own page has the correct total.
+Cost shows as unpriced because Strands doesn't report it.
 
 ## Troubleshooting
 

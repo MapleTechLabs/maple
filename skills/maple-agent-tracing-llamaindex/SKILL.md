@@ -181,7 +181,7 @@ async def run_agent(agent: FunctionAgent, message: str) -> str:
 4. `AgentWorkflow` handoffs: one `AgentWorkflow.run` span, no per-agent spans, so no lanes; every span carries the root agent's tag and the handoff is a `handoff` tool call. Tag the call with the root agent's name. If the user needs lanes, suggest running agents via workflow steps or tools (ask first; it changes app behavior).
 5. Tool failures: a tool that raises → `FunctionTool.acall` status ERROR with the exception message (Maple counts it). Tools that `return "Error: ..."` look successful: convert to `raise` only where the user agrees.
 6. HITL (`ctx.wait_for_event`): the first, suspended `FunctionTool.acall` ends ERROR `WaitingForEvent: ...`; the processor drops it. Nothing to add.
-7. Known, unfixable here: `gen_ai.tool.call.arguments` = the tool's parameter schema (OpenInference GenAI mapping bug); no `gen_ai.tool.call.id` on tool spans. Real args are in the transcript's tool_call parts.
+7. Known, unfixable here: no `gen_ai.tool.call.id` on tool spans.
 
 ## Step 6: Tokens, cost, streaming
 

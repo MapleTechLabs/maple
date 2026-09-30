@@ -100,7 +100,7 @@ Maple groups Agno traces by `session.id` on the run span. Agno sets it from `ses
 - Without `session_id=`, Agno mints a `uuid4()` on the first run and stores it on the `Agent`/`Team` instance; every later run of that instance reuses it. A module-level shared agent then merges all users into one session. Fix it; don't rely on the default.
 - Do not mint a new id per request (every turn becomes its own session).
 - Team members inherit the team's session id automatically. Do not pass a different id to members.
-- Do not add `using_session()` or a custom span processor for the session; Agno's run span already carries it. Maple ignores `gen_ai.conversation.id` for Agno spans (it reads `session.id`).
+- Do not add `using_session()` or a custom span processor for the session; Agno's run span already carries it.
 - If the Agent has a `db`, `session_id` also selects the stored history: keep them the same id.
 
 ## Step 4: Content
@@ -182,7 +182,6 @@ Raw span check: run spans `<agent_name>.run` have `session.id` + `gen_ai.operati
 - If `setup_tracing()`/`AgentOS(tracing=True)` ran first, `set_tracer_provider` in `tracing.py` logs "Overriding of current TracerProvider is not allowed" and spans go only to the AgentOS database. A second `instrument()` call logs "Attempting to instrument while already instrumented" and its `config` is ignored.
 - The instrumentor patches Agno's run functions and every model class in `agno.models`, so agents created after `tracing.py` runs are traced with no further changes.
 - Without `enable_genai_semconv`, spans carry only OpenInference attributes (`llm.input_messages.0.message.content`, `llm.token_count.prompt`).
-- With `enable_genai_semconv=True` the root span also carries `gen_ai.conversation.id` = `session.id`; Maple ignores it for Agno.
 - Maple reads span attributes only; the instrumentor emits no span events or OTLP logs, so nothing else needs enabling. Masked values are replaced with `__REDACTED__` in-process before export.
 - Team trace shape (one trace per team run): member runs sit directly under the leader's run, next to (not inside) the `delegate_task_to_member` tool spans; those show as ordinary tool calls on the leader with member id and task as arguments. With `team.arun()` in `coordinate` mode, members called in one step run concurrently and their spans overlap; sync `team.run()` runs them sequentially.
 - Team context leak is upstream issue agno#5573. "Failed to detach context" in the logs after a streamed team run is agno#5208: log noise, spans still export.
@@ -199,7 +198,7 @@ Raw span check: run spans `<agent_name>.run` have `session.id` + `gen_ai.operati
 - Do not stack another LLM instrumentor (OpenAI/LiteLLM OpenInference, OpenLIT, `auto_instrument=True`) on the same calls.
 - Do not run agents without `session_id=` in a server; do not generate a fresh id per request.
 - Do not put a different `session_id` on team members or resumed runs than on the conversation.
-- Do not use `gen_ai.conversation.id` or `maple_ai.session.id` workarounds; `session.id` from Agno is what Maple reads (stamping `maple_ai.session.id` on Agno spans re-vendors them and loses decoding).
+- Do not stamp `maple_ai.session.id` on Agno spans: it re-vendors them and loses decoding. Agno's own `session.id` is what Maple reads.
 - Do not use a console/stdout exporter in production, and do not use `SimpleSpanProcessor` in servers (it exports synchronously on the request path).
 - Do not skip the flush in scripts, notebooks, CLIs and serverless.
 - Do not run an agent after a team run in the same thread/task without isolating the team run (Step 5).

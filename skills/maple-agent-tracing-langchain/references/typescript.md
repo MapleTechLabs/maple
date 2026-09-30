@@ -4,7 +4,7 @@ Follow this instead of Steps 2-7 of SKILL.md when the app is TypeScript/JavaScri
 
 Goal is the same as Python: every conversation = one Maple Agent Session, each `invoke()`/`stream()` = one turn (one trace) with a readable transcript, chat spans with tokens, tool spans with name/arguments/result, failed tools marked failed, sub-agents in their own lanes.
 
-Mechanism: `@arizeai/openinference-instrumentation-langchain` (scope `@arizeai/openinference-instrumentation-langchain`) emits OpenInference attributes only; unlike Python it has NO GenAI dual-write (`enable_genai_semconv` does not exist in JS). Without help Maple ignores its `session.id` (one session per trace), finds no agent names, and counts the `tools` node as a tool call. The `GenAiSpans` span processor below fixes that: in the SDK's `onEnding` hook (after OpenInference has set its attributes, before the span is frozen) it copies them into `gen_ai.*`. Maple then classifies the spans as generic GenAI (framework "Unidentified") and reads `gen_ai.conversation.id`.
+Mechanism: `@arizeai/openinference-instrumentation-langchain` (scope `@arizeai/openinference-instrumentation-langchain`) emits OpenInference attributes only; unlike Python it has NO GenAI dual-write (`enable_genai_semconv` does not exist in JS). Maple groups sessions by its `session.id` and decodes the transcript, but without help finds no agent names and counts the `tools` node as a tool call. The `GenAiSpans` span processor below fixes that: in the SDK's `onEnding` hook (after OpenInference has set its attributes, before the span is frozen) it copies them into `gen_ai.*`.
 
 Tested: langchain 1.5.14, @langchain/core 1.2.13, @langchain/langgraph 1.4.18, @langchain/openai 1.6.0, @arizeai/openinference-instrumentation-langchain 4.1.1, @opentelemetry/sdk-node 0.222.0 (sdk-trace-base 2.11.0), Node.js 26 and Bun 1.3, with `createAgent` + `MemorySaver`, a mock OpenAI-compatible server (invoke and `streamMode: "messages"`), `FakeToolCallingModel`/`FakeListChatModel`, an agent-as-tool sub-agent, a failing tool, plain `prompt.pipe(model)` chains, a 20-turn thread.
 
@@ -94,7 +94,6 @@ export class GenAiSpans implements SpanProcessor {
 		const input = parse(attrs["input.value"])
 		const output = parse(attrs["output.value"])
 		const kind = attrs["openinference.span.kind"]
-		set("gen_ai.conversation.id", attrs["session.id"])
 
 		if (kind === "LLM") {
 			const generations = output?.generations?.[0] ?? []
@@ -203,7 +202,7 @@ const stream = await agent.stream(input, { configurable: { thread_id: conversati
 await agent.invoke(new Command({ resume: decision }), { configurable: { thread_id: conversationId } })
 ```
 
-- LangGraph copies `configurable.thread_id` into run metadata; OpenInference reads metadata `session_id` > `thread_id` > `conversation_id` into `session.id`; `GenAiSpans` copies it to `gen_ai.conversation.id` on every span.
+- LangGraph copies `configurable.thread_id` into run metadata; OpenInference reads metadata `session_id` > `thread_id` > `conversation_id` into `session.id`, which Maple groups by.
 - With a checkpointer, reuse the existing `thread_id`; don't invent a second id.
 - `thread_id` groups turns in Maple; it doesn't give the agent memory. With no checkpointer, pass the prior `result.messages` into the next call yourself, or add `MemorySaver` (`@langchain/langgraph`).
 - Plain chains (`prompt.pipe(model)`, `RunnableSequence`, no graph) do NOT copy `configurable` (verified): pass `{ metadata: { thread_id: conversationId } }`.
@@ -250,7 +249,7 @@ const askWeatherWorker = tool(
 Run one real conversation: 2+ messages with the same id, at least one tool call, one streamed message if the app streams, a sub-agent call if the app delegates. No scriptable entry point (server, REPL, UI only) → write a small driver: one conversation id, 2+ turns, at least one tool call, `await sdk.shutdown()` before exit. Then check Maple → Agent Sessions (filter by service name; wait up to ~1 min):
 
 - [ ] One session per conversation, id = the `thread_id`. A second conversation is a different session.
-- [ ] Framework shows **Unidentified** (expected for this path).
+- [ ] Framework shows **LangChain**.
 - [ ] One turn per `invoke()`; each trace starts at the agent span (the `name`), with `model_request` / `tools` node spans, chat model spans (`ChatOpenAI`, ...) and tool spans named after the tools.
 - [ ] Transcript shows user messages, assistant replies and tool calls (not a raw JSON blob).
 - [ ] Tool call count = the tools the model actually called.
@@ -262,7 +261,7 @@ Run one real conversation: 2+ messages with the same id, at least one tool call,
 
 Without Maple access, both must hold: the run exits with no export errors on stderr (`OTLPExporterError`, 401 lines), AND a temporary `new SimpleSpanProcessor(new ConsoleSpanExporter())` (from `@opentelemetry/sdk-trace-base`) in `spanProcessors` shows every LangChain span of every turn has the same `gen_ai.conversation.id`, chat spans have `gen_ai.operation.name: "chat"` with `gen_ai.input.messages`, tool spans `execute_tool`, and the root span `invoke_agent`. Silence alone proves nothing (no spans is silent too). With the Maple MCP: `list_agent_sessions` with `search=<conversation id>` returns one row.
 
-Known gaps (not setup bugs): cache and reasoning token counts aren't copied (only input/output); `gen_ai.provider.name` is LangChain's `ls_provider` (`openai` for `ChatOpenAI` even behind a gateway; the class name for fake/unknown models); streamed chat spans have no `gen_ai.response.model`; failed tool spans have no call id or arguments, so Maple matches them to the model's tool call by name; with a checkpointer every chat span repeats the whole history (ingest accepts requests up to 20 MiB). Turn labels in the Maple UI were not checked for JS (the `invoke_agent` span carries the turn's own input).
+Known gaps (not setup bugs): `gen_ai.provider.name` is LangChain's `ls_provider` (`openai` for `ChatOpenAI` even behind a gateway; the class name for fake/unknown models); streamed chat spans have no `gen_ai.response.model`; failed tool spans have no call id or arguments, so Maple matches them to the model's tool call by name; with a checkpointer every chat span repeats the whole history (ingest accepts requests up to 20 MiB). Turn labels in the Maple UI were not checked for JS (the `invoke_agent` span carries the turn's own input).
 
 Why not the alternatives (checked 2026-09):
 - `@traceloop/instrumentation-langchain` 0.27 (OpenLLMetry) emits `gen_ai.*`, but starts spans without the LangChain parent run, drops tool calls from messages, and has no conversation id.
@@ -270,7 +269,7 @@ Why not the alternatives (checked 2026-09):
 
 ## Do not
 
-- Do not skip `GenAiSpans`: without it every trace is its own session, agents have no names, and the `tools` node counts as a tool call.
+- Do not skip `GenAiSpans`: without it agents have no names and the `tools` node counts as a tool call.
 - Do not skip `manuallyInstrument(CallbackManagerModule)`.
 - Do not start a second `NodeSDK` / tracer provider when one exists.
 - Do not lower `spanLimits.attributeCountLimit` back to the default.
@@ -278,4 +277,4 @@ Why not the alternatives (checked 2026-09):
 - Do not generate a new `thread_id` per request; do not forget it on `stream()` and `Command` resumes; use `metadata` for plain chains.
 - Do not leave `createAgent` calls unnamed.
 - Do not add `maple_ai.session.id` attributes.
-- Do not promise cost or the "LangChain" framework label.
+- Do not promise cost.

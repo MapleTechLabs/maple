@@ -272,7 +272,7 @@ haystack.pipeline.run
 
 ## Known behaviours (expected; explain if the user asks)
 
-- Why not the ready-made options: plain `OpenTelemetryTracer` gives structure only (model, tokens, transcript, tool failures stay in `haystack.*` blobs; no session id). `openinference-instrumentation-haystack` gives model and tokens on generator spans but no tool spans (the Agent is one opaque chain), writes `session.id` (ignored for this dialect) and is labelled "Unidentified". OpenLLMetry's `opentelemetry-instrumentation-haystack` covers only `Pipeline.run`, `OpenAIGenerator` and `OpenAIChatGenerator`, no Agent steps, tool spans or tokens, and writes content as indexed `gen_ai.prompt.N.*` keys Maple doesn't read.
+- Why not the ready-made options: plain `OpenTelemetryTracer` gives structure only (model, tokens, transcript, tool failures stay in `haystack.*` blobs; no session id). `openinference-instrumentation-haystack` gives model and tokens on generator spans but no tool spans (the Agent is one opaque chain). OpenLLMetry's `opentelemetry-instrumentation-haystack` covers only `Pipeline.run`, `OpenAIGenerator` and `OpenAIChatGenerator`, no Agent steps, tool spans or tokens, and writes content as indexed `gen_ai.prompt.N.*` keys Maple doesn't read.
 - Maple also recognizes Haystack's span names, but the `"haystack"` scope covers spans added in newer Haystack releases too.
 - Haystack looks up the active tracer on every span, so there is no import-order trap for `enable_tracing()`. Without this tracer, `HAYSTACK_CONTENT_TRACING_ENABLED` is read once at the first `import haystack`; setting it later silently records nothing.
 - Tools of one step run in parallel threads; their spans sit side by side under the step.
@@ -285,7 +285,7 @@ haystack.pipeline.run
 ## Do not
 
 - Don't rely on `OpenTelemetryTracer`/`OpenTelemetryConnector` alone: Maple gets no model, tokens, transcript or tool failures.
-- Don't add `openinference-instrumentation-haystack` or OpenLLMetry's Haystack instrumentor alongside (double model calls; OpenInference has no tool spans and its `session.id` is ignored).
+- Don't add `openinference-instrumentation-haystack` or OpenLLMetry's Haystack instrumentor alongside (double model calls; OpenInference has no tool spans).
 - Don't create a second `TracerProvider`; don't rename the tracer from `"haystack"`.
 - Don't mint a conversation id per request or share one across users.
 - Don't set `session.id` or `maple_ai.session.id` for Haystack; `gen_ai.conversation.id` via `conversation()` is the key.

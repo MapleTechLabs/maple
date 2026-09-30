@@ -26,7 +26,7 @@ supportChat            genkit:metadata:subtype=flow, genkit:isRoot=true  -> invo
 
 Beta agents (`ai.defineAgent()` / `defineCustomAgent` / `definePromptAgent` from `genkit/beta`): root span has subtype `agent` and `genkit:metadata:agent:sessionId` (Genkit's session id), which the processor uses as the conversation id. Under it: `runTurn-<n>` (flowStep), `render` (promptTemplate), `generate`, model, tool spans. One trace per `chat.send()`.
 
-Known gaps (tell the user, don't try to fix): framework shows **Unidentified** (Maple has no Genkit vendor detection; spans land in the generic GenAI bucket); cost shows as unpriced; `gen_ai.provider.name` is the Genkit plugin prefix (`googleai`, `vertexai`, `openai`, `anthropic`...) rather than the semconv value (`gcp.gemini`...), which is only a label in Maple; media parts are left out of transcripts; `execute_tool` spans have no `gen_ai.tool.call.id` (Genkit doesn't put the call ref on the tool span; the transcript still pairs calls and results through the ids in the model messages when the model plugin sets `ref`).
+Known gaps (tell the user, don't try to fix): cost shows as unpriced; `gen_ai.provider.name` is the Genkit plugin prefix (`googleai`, `vertexai`, `openai`, `anthropic`...) rather than the semconv value (`gcp.gemini`...), which is only a label in Maple; media parts are left out of transcripts; `execute_tool` spans have no `gen_ai.tool.call.id` (Genkit doesn't put the call ref on the tool span; the transcript still pairs calls and results through the ids in the model messages when the model plugin sets `ref`).
 
 ## Step 0: Detect
 
@@ -80,7 +80,7 @@ Message conversion: role `model` → `assistant`; parts `{text}` → `text`, `{r
 
 Notes:
 - It mutates `span.attributes` in `onEnd`. That works because the exporting processor reads the same object; list `GenkitForMaple` BEFORE the exporting processor (required with `SimpleSpanProcessor`, which exports inside `onEnd`).
-- Optional, only if the user asks for cache/reasoning token detail: `output.usage.cachedContentTokens` → `gen_ai.usage.cache_read.input_tokens`, `output.usage.thoughtsTokens` → `gen_ai.usage.reasoning.output_tokens`. Keep `input_tokens` as Genkit reports it.
+- Optional, only if the user asks for cache/reasoning token detail: `output.usage.cachedContentTokens` → `gen_ai.usage.cache_read.input_tokens`, `output.usage.thoughtsTokens` → `gen_ai.usage.reasoning.output_tokens`. Gemini models (`googleai/`, `vertexai/`) report `outputTokens` without thoughts: for them set `output_tokens` to `outputTokens + thoughtsTokens`. Keep `input_tokens` as Genkit reports it.
 - Optional provider label mapping (`googleai` → `gcp.gemini`, `vertexai` → `gcp.vertex_ai`): cosmetic, skip unless asked.
 - Leave `genkit:*` attributes in place; they are what the Genkit Developer UI and Google Cloud views read.
 - Typecheck the file with the repo's `tsc` (it passes `strict`).
@@ -150,7 +150,7 @@ setCustomMetadataAttribute("conversationId", chatId)
 Run one conversation with 2+ turns under the same id, one tool call, plus a second conversation. If the app has no scriptable entry point (server, Developer UI only), write a small driver for this that calls the flow directly: one conversation id, 2+ turns, at least one tool call, flush before exit. Then check (Maple MCP `list_agent_sessions` / `get_agent_session`, or the Agent Sessions page, ~30 s after the run):
 
 - One session per conversation (id = your conversation id), not `trace:<id>` sessions; the second conversation is separate.
-- Framework shows **Unidentified** (expected).
+- Framework shows **Genkit**.
 - Turns = number of flow runs; each trace has `invoke_agent` (flow name) → `generate` → model (`chat`) and tool (`execute_tool`) spans.
 - Transcript shows user messages, assistant replies, tool calls with arguments and results; turn labels are the user's messages.
 - Every model span has input and output tokens (if the model plugin reports usage).

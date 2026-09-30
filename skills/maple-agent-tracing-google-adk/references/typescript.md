@@ -20,7 +20,7 @@ invocation
 
 Gaps against what Maple reads (compare the Python side, which has a `generate_content` span with GenAI messages):
 
-- `call_llm` has no `gen_ai.operation.name` (Maple still counts it as a model call through `gen_ai.request.model`, but the contract wants `chat`).
+- `call_llm` has no `gen_ai.operation.name`.
 - No `gen_ai.input.messages` / `gen_ai.output.messages` / `gen_ai.system_instructions`. Content exists only as Gemini-shaped JSON in `gcp.vertex.agent.llm_request` (`{model, contents, config: {systemInstruction, tools}}`) and `gcp.vertex.agent.llm_response` (`{content, usageMetadata, finishReason}`), which Maple does not read. There is no `OTEL_SEMCONV_STABILITY_OPT_IN` switch in the TS package.
 - `execute_tool` has no `gen_ai.tool.call.arguments` / `gen_ai.tool.call.result`; they are in `gcp.vertex.agent.tool_call_args` / `tool_response`.
 - A tool that throws, or a call to a tool that does not exist, leaves its `execute_tool` span with no attributes at all and status UNSET.
@@ -113,7 +113,11 @@ class AdkSpanProcessor extends tracing.BatchSpanProcessor {
 			const system = request.config?.systemInstruction
 			attributes["gen_ai.operation.name"] = "chat"
 			attributes["gen_ai.provider.name"] = "gcp.gemini"
-			if (usage.thoughtsTokenCount) attributes["gen_ai.usage.reasoning.output_tokens"] = usage.thoughtsTokenCount
+			if (usage.thoughtsTokenCount) {
+				// Gemini counts thinking outside candidatesTokenCount; output tokens include it
+				attributes["gen_ai.usage.output_tokens"] = (usage.candidatesTokenCount ?? 0) + usage.thoughtsTokenCount
+				attributes["gen_ai.usage.reasoning.output_tokens"] = usage.thoughtsTokenCount
+			}
 			if (usage.cachedContentTokenCount) attributes["gen_ai.usage.cache_read.input_tokens"] = usage.cachedContentTokenCount
 			if (request.contents) attributes["gen_ai.input.messages"] = JSON.stringify(request.contents.map(toMessage))
 			if (response.content?.parts?.length) {
@@ -158,8 +162,8 @@ sdk.start()
 - The exporter reads `OTEL_*` when `instrumentation.ts` is imported. If the app loads `.env` (dotenv, `--env-file`), load it at the top of `instrumentation.ts` (`import "dotenv/config"`) or pass `node --env-file=.env`; otherwise the exporter silently targets `localhost:4318` with no key.
 - The processor mutates `span.attributes` in `onEnd`, after the span is read-only through the API. This works on trace SDK 2.x (the attributes object is plain and the exporter reads it afterwards); any processor listed after it sees the rewritten attributes.
 - `NodeSDK({ spanProcessors })` disables the env-configured default exporter; that is intended. If the app already has a `NodeSDK`, add `spanProcessor` to its `spanProcessors` array (keeping the existing ones). With a `NodeTracerProvider`, pass it in `spanProcessors` at construction (SDK 2.x has no `addSpanProcessor`). Never register a second global provider.
-- Vertex AI (`new Gemini({ vertexai: true, ... })`, `GOOGLE_GENAI_USE_ENTERPRISE`, or the older `GOOGLE_GENAI_USE_VERTEXAI`): change `gcp.gemini` to `gcp.vertex_ai`. Maple applies the same token convention to both (input includes cached, output excludes thinking).
-- A custom `BaseLlm` for a non-Gemini provider: ADK still records `usageMetadata` in Gemini format if the model fills it. Set `gen_ai.provider.name` to the real provider only if its token figures follow that provider's raw API; otherwise remove the provider line and the two extra usage lines.
+- Vertex AI (`new Gemini({ vertexai: true, ... })`, `GOOGLE_GENAI_USE_ENTERPRISE`, or the older `GOOGLE_GENAI_USE_VERTEXAI`): change `gcp.gemini` to `gcp.vertex_ai`.
+- A custom `BaseLlm` for a non-Gemini provider: ADK still records `usageMetadata` in Gemini format if the model fills it. Set `gen_ai.provider.name` to the real provider.
 - Keep `ADK_CAPTURE_MESSAGE_CONTENT_IN_SPANS` from being set to `false` anywhere (Dockerfile, `.env`).
 
 ## Step 3: Session id

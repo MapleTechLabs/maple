@@ -115,10 +115,6 @@ class MapleCallback(BaseCallback):
             if reply:
                 trace.get_current_span().set_attribute("gen_ai.output.messages", reply)
 
-    def on_adapter_format_start(self, call_id, instance, inputs):
-        # Keeps "ChatAdapter.__call__" from counting as a model call
-        trace.get_current_span().set_attribute("gen_ai.operation.name", "invoke_workflow")
-
     def on_tool_start(self, call_id, instance, inputs):
         span = trace.get_current_span()
         span.set_attribute("gen_ai.tool.name", instance.name)

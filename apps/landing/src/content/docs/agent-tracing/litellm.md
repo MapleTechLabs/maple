@@ -179,8 +179,6 @@ Don't set `gen_ai.conversation.id` on your own `invoke_agent` span, or the sessi
 
 For streaming, pass `stream_options={"include_usage": True}` and consume the stream inside the agent span, or the streamed call has no token counts.
 
-Cost shows as unpriced. The [skill](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-agent-tracing-litellm) has a recipe that reports each turn's total.
-
 ## Trace at the LiteLLM Proxy
 
 To trace at a proxy you run, enable the logger in its `config.yaml`:
@@ -236,7 +234,7 @@ async def call_model(conversation_id: str, messages: list, tools: list | None):
     )
 ```
 
-Don't also instrument the OpenAI client in the app, or calls and tokens double. On this path the LLM call count shows 2x the real number. Tokens, cost and the transcript are correct.
+Don't also instrument the OpenAI client in the app, or calls and tokens double. On this path the session page's LLM call count shows 2x the real number. Tokens, cost and the transcript are correct.
 
 ## Flush before a short-lived process exits
 

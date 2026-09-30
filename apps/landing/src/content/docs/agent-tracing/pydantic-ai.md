@@ -155,7 +155,7 @@ In a script or CLI, call `provider.shutdown()` at the end. With Logfire, use `lo
 
 If Pydantic AI prints an `observability: off` banner on the first run, `tracing.py` didn't run before your first `agent.run()`.
 
-Run a conversation with two messages and a tool call, then open **Agent Sessions**. You should see one session with your conversation id and framework **Pydantic AI**, one turn per `run()`, a transcript with prompts, replies and tool calls, and token counts on every model call. Cost shows as unpriced.
+Run a conversation with two messages and a tool call, then open **Agent Sessions**. You should see one session with your conversation id and framework **Pydantic AI**, one turn per `run()`, a transcript with prompts, replies and tool calls, and token counts and cost on every model call.
 
 ## Troubleshooting
 

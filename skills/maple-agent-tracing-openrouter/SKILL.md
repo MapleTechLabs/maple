@@ -151,7 +151,7 @@ Run one conversation (3+ turns, one with a tool call) with a fixed `session_id`,
 - Tool counts from Broadcast are 0 (expected). Tool spans only come from app instrumentation.
 - No attribute contains `sk-or-`, `Bearer ` or `maple_sk_`.
 
-Tell the user: cost is shown (OpenRouter's charge); cache writes, TTFT, environment, tool calls and agent lanes are not available from Broadcast. Claude models (`gen_ai.provider.name=anthropic`): Maple applies Anthropic's input-excludes-cache rule to OpenRouter's cache-inclusive input, so cache reads count twice in token totals (cost unaffected).
+Tell the user: cost is shown (OpenRouter's charge); TTFT, environment, tool calls and agent lanes are not available from Broadcast.
 
 ## Known behavior (tell the user when relevant)
 
@@ -163,7 +163,7 @@ Tell the user: cost is shown (OpenRouter's charge); cache writes, TTFT, environm
 - Span tree: `LLM Generation` root, `provider attempt N: <provider>` children, sometimes `generation` / `moderation` children. Only `LLM Generation` counts as a model call.
 - Content format: `gen_ai.prompt` = `{"messages": [...]}`, `gen_ai.completion` = `{"completion": "...", "reasoning": "..."}`, both JSON strings. Values over 10,000,000 chars are shortened with a `<key>.truncated` attribute; ingest body limit 20 MiB.
 - Attributes on `LLM Generation`: `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`, `gen_ai.usage.input_tokens.cached` (included in input), `gen_ai.usage.output_tokens.reasoning` (included in output), `gen_ai.usage.total_cost` (USD, actual charge), `gen_ai.request.model` / `gen_ai.response.model` (OpenRouter slug), `gen_ai.response.finish_reasons`.
-- Not read by Maple: `gen_ai.usage.input_tokens.cache_write` (cache-write column empty, totals fine), `trace.metadata.openrouter.first_token_ms` (Maple reads TTFT only from `gen_ai.response.time_to_first_chunk`), the **Cost** generation-metadata option's `span.metadata.openrouter_generation.*`.
+- Not read by Maple: `trace.metadata.openrouter.first_token_ms` (Maple reads TTFT only from `gen_ai.response.time_to_first_chunk`), the **Cost** generation-metadata option's `span.metadata.openrouter_generation.*`.
 - `gen_ai.provider.name` = the model's author (`openai`, `anthropic`); the serving provider is `trace.metadata.openrouter.provider_name` (e.g. `Amazon Bedrock`).
 - Streaming: tokens and cost present without `stream_options.include_usage` (server-side accounting).
 - `service.name` on Broadcast spans is always `openrouter`, no environment attribute. Custom keys in the `trace` object arrive as `trace.metadata.<key>` (searchable in Traces, don't set service/environment).
