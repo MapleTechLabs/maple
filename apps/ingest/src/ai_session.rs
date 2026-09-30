@@ -883,6 +883,13 @@ const CONVERSATION_ID_KEY: &str = "gen_ai.conversation.id";
 /// The session keys of a dialect with none of its own.
 const CONVERSATION_ID_ONLY: &[&str] = &[CONVERSATION_ID_KEY];
 
+/// `session.id` (OpenInference's, or a framework's documented trace
+/// attribute) after the conversation id. The two usually carry the same value;
+/// where they differ, `session.id` is often an app's own (a web-login session
+/// stamped on every span, Maple's browser SDK replay session) and can span
+/// several conversations.
+const CONVERSATION_THEN_SESSION_ID: &[&str] = &[CONVERSATION_ID_KEY, "session.id"];
+
 /// Ordered: first match wins. `maple` leads because its key is an explicit
 /// opt-in rather than a framework fingerprint (see the module doc). Then
 /// vendors with a dedicated instrumentation scope; the three detected purely
@@ -901,7 +908,7 @@ static VENDORS: &[Vendor] = &[
     Vendor {
         id: "dspy",
         detect: detect_dspy,
-        session_keys: &["session.id"],
+        session_keys: CONVERSATION_THEN_SESSION_ID,
     },
     Vendor {
         id: "eve",
@@ -933,7 +940,7 @@ static VENDORS: &[Vendor] = &[
     Vendor {
         id: "haystack",
         detect: detect_haystack_openinference,
-        session_keys: &["session.id", "gen_ai.conversation.id"],
+        session_keys: CONVERSATION_THEN_SESSION_ID,
     },
     Vendor {
         id: "haystack",
@@ -946,8 +953,8 @@ static VENDORS: &[Vendor] = &[
         // LangSmith's thread, then OpenInference's session keys.
         session_keys: &[
             "langsmith.metadata.thread_id",
+            CONVERSATION_ID_KEY,
             "session.id",
-            "gen_ai.conversation.id",
         ],
     },
     Vendor {
@@ -964,7 +971,7 @@ static VENDORS: &[Vendor] = &[
         id: "llamaindex",
         detect: detect_llamaindex,
         // `session.id` is OpenInference's; the native package has no session key.
-        session_keys: &["session.id", "gen_ai.conversation.id"],
+        session_keys: CONVERSATION_THEN_SESSION_ID,
     },
     Vendor {
         id: "mastra",
@@ -974,7 +981,7 @@ static VENDORS: &[Vendor] = &[
     Vendor {
         id: "agno",
         detect: detect_agno,
-        session_keys: &["session.id"],
+        session_keys: CONVERSATION_THEN_SESSION_ID,
     },
     Vendor {
         id: "microsoft_agent_framework",
@@ -984,17 +991,17 @@ static VENDORS: &[Vendor] = &[
     Vendor {
         id: "openai_agents_sdk",
         detect: detect_openai_agents_sdk,
-        session_keys: &["session.id", "gen_ai.conversation.id"],
+        session_keys: CONVERSATION_THEN_SESSION_ID,
     },
     Vendor {
         id: "openinference-openai",
         detect: detect_openinference_openai,
-        session_keys: &["session.id"],
+        session_keys: CONVERSATION_THEN_SESSION_ID,
     },
     Vendor {
         id: "crewai",
         detect: detect_crewai,
-        session_keys: &["session.id"],
+        session_keys: CONVERSATION_THEN_SESSION_ID,
     },
     Vendor {
         id: "pydantic_ai",
@@ -1010,12 +1017,12 @@ static VENDORS: &[Vendor] = &[
     Vendor {
         id: "smolagents",
         detect: detect_smolagents,
-        session_keys: &["session.id"],
+        session_keys: CONVERSATION_THEN_SESSION_ID,
     },
     Vendor {
         id: "strands",
         detect: detect_strands,
-        session_keys: &["session.id"],
+        session_keys: CONVERSATION_THEN_SESSION_ID,
     },
     Vendor {
         id: "effect_ai",
@@ -1051,10 +1058,7 @@ static UNKNOWN_TIER: &[Vendor] = &[
     Vendor {
         id: "unknown:openinference",
         detect: detect_unknown_openinference,
-        // `session.id` only after the conversation id: Maple's browser SDK
-        // stamps its replay session under that key on every span, so it can
-        // span several conversations.
-        session_keys: &[CONVERSATION_ID_KEY, "session.id"],
+        session_keys: CONVERSATION_THEN_SESSION_ID,
     },
     Vendor {
         id: "unknown:other",
@@ -1609,33 +1613,74 @@ mod tests {
     }
 
     #[test]
-    fn vendors_with_their_own_key_fall_back_to_the_conversation_id() {
+    fn openinference_session_id_ranks_below_the_conversation_id() {
+        let both = [
+            ("session.id", "login-1"),
+            ("gen_ai.conversation.id", "conv-8"),
+        ];
         for (scope, span_name, vendor) in [
-            ("crewai.telemetry", "Crew.kickoff", "crewai"),
-            ("strands.telemetry.tracer", "invoke_agent", "strands"),
+            ("openinference.instrumentation.dspy", "predict", "dspy"),
+            (
+                "openinference.instrumentation.haystack",
+                "OpenAIChatGenerator.run",
+                "haystack",
+            ),
+            (
+                "openinference.instrumentation.langchain",
+                "ChatOpenAI",
+                "langchain",
+            ),
+            (
+                "openinference.instrumentation.llama_index",
+                "FunctionAgent.run",
+                "llamaindex",
+            ),
             ("openinference.instrumentation.agno", "agent.run", "agno"),
+            (
+                "openinference.instrumentation.openai_agents",
+                "agent",
+                "openai_agents_sdk",
+            ),
+            (
+                "openinference.instrumentation.openai",
+                "chat",
+                "openinference-openai",
+            ),
+            ("crewai.telemetry", "Crew.kickoff", "crewai"),
+            (
+                "openinference.instrumentation.smolagents",
+                "step",
+                "smolagents",
+            ),
+            ("strands.telemetry.tracer", "invoke_agent", "strands"),
         ] {
+            classified(scope, span_name, &both, &[], vendor, Some("conv-8"));
             classified(
                 scope,
                 span_name,
-                &[("gen_ai.conversation.id", "conv-8")],
-                &[],
-                vendor,
-                Some("conv-8"),
-            );
-            // The vendor's own key still wins when both are set.
-            classified(
-                scope,
-                span_name,
-                &[
-                    ("gen_ai.conversation.id", "conv-8"),
-                    ("session.id", "own-1"),
-                ],
+                &[("session.id", "own-1")],
                 &[],
                 vendor,
                 Some("own-1"),
             );
         }
+        // Their `session.id` is their own session, not OpenInference's.
+        classified(
+            "com.anthropic.claude_code",
+            "claude_code.interaction",
+            &both,
+            &[],
+            "claude_agent_sdk",
+            Some("login-1"),
+        );
+        classified(
+            "openrouter",
+            "LLM Generation",
+            &[("gen_ai.operation.name", "chat"), both[0], both[1]],
+            &[],
+            "openrouter",
+            Some("login-1"),
+        );
     }
 
     #[test]
@@ -2243,13 +2288,6 @@ mod tests {
             ("session.id", "app-1"),
         ];
         for (scope, span_name, vendor, session_id) in [
-            // OpenInference's own session key leads on its instrumentor's spans.
-            (
-                "openinference.instrumentation.haystack",
-                "OpenAIChatGenerator.run",
-                "haystack",
-                "app-1",
-            ),
             // A native span's `session.id` is not the vendor's: the
             // conversation id wins.
             ("haystack", "haystack.pipeline.run", "haystack", "conv-1"),
