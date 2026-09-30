@@ -59,25 +59,19 @@ maple.ai.capture-content=true
 The empty default in `${MAPLE_INGEST_KEY:}` keeps the app starting when the key is missing. To avoid sending requests without a key, turn export off at the top of `main` in that case:
 
 ```java
-// imports: org.springframework.boot.SpringApplication, org.springframework.boot.context.event.ApplicationEnvironmentPreparedEvent,
-// org.springframework.context.ApplicationListener, org.springframework.core.env.MapPropertySource, java.util.Map
 public static void main(String[] args) {
-	var app = new SpringApplication(Application.class);
-	// Reads the key from Boot's environment (env vars and imported .env); a missing key disables export, it never stops the app.
-	app.addListeners((ApplicationListener<ApplicationEnvironmentPreparedEvent>) event -> {
-		var env = event.getEnvironment();
-		if (env.getProperty("MAPLE_INGEST_KEY", "").isEmpty()) {
-			System.err.println("MAPLE_INGEST_KEY is not set; Maple telemetry export is disabled");
-			env.getPropertySources().addFirst(new MapPropertySource("maple-export-off", Map.of(
-				"management.tracing.export.enabled", "false",
-				"management.otlp.metrics.export.enabled", "false")));
-		}
-	});
-	app.run(args);
+	// A missing key disables export; it never stops the app.
+	var mapleKey = System.getenv("MAPLE_INGEST_KEY");
+	if (mapleKey == null || mapleKey.isEmpty()) {
+		System.err.println("MAPLE_INGEST_KEY is not set; Maple telemetry export is disabled");
+		System.setProperty("management.tracing.export.enabled", "false");
+		System.setProperty("management.otlp.metrics.export.enabled", "false");
+	}
+	SpringApplication.run(Application.class, args);
 }
 ```
 
-To keep the key in a local `.env` file, add `spring.config.import=optional:file:.env[.properties]` to `application.properties` and keep `.env` gitignored.
+Spring Boot doesn't read `.env` files, so set `MAPLE_INGEST_KEY` in the environment that starts the JVM.
 
 For an EU organization, use `https://ingest.eu.maple.dev`. This property takes the full URL, so keep `/v1/traces` on the end. To skip metrics, replace the two metrics lines with `management.otlp.metrics.export.enabled=false`.
 
