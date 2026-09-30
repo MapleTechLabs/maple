@@ -8,8 +8,8 @@ description: "Next.js / Vercel OpenTelemetry style for Maple: instrumentation.ts
 For Next.js apps, use the framework entrypoint, `instrumentation.ts` with `@vercel/otel`.
 
 ```ts
-// instrumentation.ts
-import { registerOTel } from "@vercel/otel"
+// src/instrumentation.ts (or instrumentation.ts without a src/ dir)
+import { OTLPHttpProtoTraceExporter, registerOTel } from "@vercel/otel"
 
 const MAPLE_ENDPOINT = "https://ingest.maple.dev" // EU: https://ingest.eu.maple.dev
 const MAPLE_KEY = "MAPLE_TEST" // public ingest key (maple_pk_…), or MAPLE_TEST until the user has one
@@ -22,13 +22,15 @@ export function register() {
 			"vcs.repository.url.full": "https://github.com/acme/my-next-app",
 			"vcs.ref.head.revision": process.env.VERCEL_GIT_COMMIT_SHA,
 		},
-		traceExporter: {
+		traceExporter: new OTLPHttpProtoTraceExporter({
 			url: `${MAPLE_ENDPOINT}/v1/traces`,
 			headers: { authorization: `Bearer ${MAPLE_KEY}` },
-		},
+		}),
 	})
 }
 ```
+
+`traceExporter` takes an exporter instance; a plain `{ url, headers }` object doesn't typecheck against `@vercel/otel` 2.x. If Server Components or route handlers call first-party APIs on another origin, add `instrumentationConfig: { fetch: { propagateContextUrls: [/^https:\/\/api\.acme\.com\//] } }`: `@vercel/otel` only propagates `traceparent` to the deployment's own URLs by default.
 
 Do not replace this with a custom `NodeSDK` bootstrap unless the repo is not a standard Next/Vercel app or already has a custom provider to extend.
 
@@ -39,7 +41,7 @@ import Anthropic from "@anthropic-ai/sdk"
 import { AnthropicInstrumentation } from "@arizeai/openinference-instrumentation-anthropic"
 import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-http"
 import { BatchLogRecordProcessor } from "@opentelemetry/sdk-logs"
-import { registerOTel } from "@vercel/otel"
+import { OTLPHttpProtoTraceExporter, registerOTel } from "@vercel/otel"
 
 const MAPLE_ENDPOINT = "https://ingest.maple.dev"
 const MAPLE_KEY = "MAPLE_TEST"
@@ -57,10 +59,10 @@ export function register() {
 	registerOTel({
 		serviceName: "my-next-app",
 		instrumentations: [anthropicInstrumentation],
-		traceExporter: {
+		traceExporter: new OTLPHttpProtoTraceExporter({
 			url: `${MAPLE_ENDPOINT}/v1/traces`,
 			headers: { authorization: `Bearer ${MAPLE_KEY}` },
-		},
+		}),
 		logRecordProcessors: [
 			new BatchLogRecordProcessor({
 				exporter: new OTLPLogExporter({
@@ -131,7 +133,7 @@ logger.emit({
 
 ## Client side
 
-The browser half of the app uses `@maple-dev/browser` from a client component rendered in the root layout. `init()` is a no-op during server rendering, so module scope is safe.
+The browser half of the app uses `@maple-dev/browser` from a client component rendered in the root layout. `init()` is a no-op during server rendering, so module scope is safe. On Next.js 15.3+, `instrumentation-client.ts` is the better place (it runs before hydration); for navigation spans and linking the page load to the server render, see `maple-frontend-tracing` (`frameworks/nextjs.md`).
 
 ```tsx
 // app/maple.tsx

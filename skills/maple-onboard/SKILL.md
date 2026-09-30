@@ -16,6 +16,7 @@ Before editing, read the applicable companion skills:
 - `maple-nodejs-style` for plain Node servers (Express, Fastify, Hono, Bun).
 - `maple-python-style` for Python services (FastAPI, Django, Flask).
 - `maple-effect-style` for Effect-based services (Maple's first-class SDK).
+- `maple-frontend-tracing` for browser frontends: route navigation and data-loading spans, caught errors, and linking the browser to the backend and the server render.
 - `maple-go-style`, `maple-rust-style`, `maple-java-style`, `maple-csharp-style`, `maple-kotlin-style` for those stacks.
 
 If they are not installed next to this skill, read them from https://github.com/MapleTechLabs/maple/tree/main/skills. If none match the stack (Ruby, Elixir, PHP, plain Deno, …), use `maple-onboarding-style` and the upstream OTel docs for that language.

@@ -5,6 +5,7 @@
 // Language rows carry their logo; Effect's platform pages nest under Effect.
 import { getCollection } from "astro:content";
 import DocsCategoryIcon from "./DocsCategoryIcon.astro";
+import BrandMarkIcon from "../BrandMarkIcon.astro";
 import LanguageLogo from "./LanguageLogo.astro";
 import { groupRank, isDocGroup, sectionForGroup } from "../../lib/docs-nav";
 import { getDocSections } from "../../lib/docs-order";
@@ -73,8 +74,10 @@ const rowClass = (active: boolean) =>
                                 aria-current={active ? "page" : undefined}
                                 class:list={["flex items-center gap-2 px-2.5 py-1.5 text-[13px] leading-5 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-primary", rowClass(active)]}
                             >
-                                {doc.data.sdk && (
+                                {doc.data.sdk ? (
                                     <LanguageLogo id={doc.data.sdk} class="h-3.5 w-3.5 shrink-0" />
+                                ) : (
+                                    doc.data.icon && <BrandMarkIcon id={doc.data.icon} class="h-3.5 w-3.5 shrink-0" />
                                 )}
                                 <span class="truncate">{label(doc)}</span>
                             </a>
