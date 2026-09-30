@@ -1,14 +1,11 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it } from "vitest"
 
 import { REPLAY_BLOCK_CLASS } from "@/components/common/replay-privacy"
 import { isClerkAuthEnabled } from "@/lib/services/common/auth-mode"
 import { ingestUrl } from "@/lib/services/common/ingest-url"
 import { ConnectInstructions, useGuidedFramework } from "./guided-setup"
 import { ONBOARD_SKILL_COMMAND, onboardSkillPrompt } from "./onboard-skill"
-
-// The credentials column fetches the org's keys; its fields are masked inputs either way.
-vi.mock("./connect-credentials", () => ({ ConnectCredentials: () => null }))
 
 const API_KEY = "maple_pk_publickey123"
 
@@ -17,7 +14,7 @@ describe("ConnectInstructions", () => {
 
 	it("keeps the ingest key out of session replay", () => {
 		const { container } = render(
-			<ConnectInstructions framework="nodejs" apiKey={API_KEY} showCredentials />,
+			<ConnectInstructions framework="nodejs" apiKey={API_KEY} />,
 		)
 
 		fireEvent.click(screen.getByRole("tab", { name: "Instrument" }))
@@ -42,7 +39,7 @@ describe("ConnectInstructions", () => {
 
 	it("gives the agent the org's ingest endpoint and installs the companion skills", () => {
 		const { container } = render(
-			<ConnectInstructions framework="nodejs" apiKey={API_KEY} showCredentials />,
+			<ConnectInstructions framework="nodejs" apiKey={API_KEY} />,
 		)
 
 		fireEvent.click(screen.getByRole("tab", { name: "Claude Code" }))
