@@ -114,6 +114,20 @@ function observe(
 
 const processingOf = (entry: PerformanceEventTiming): number => entry.processingEnd - entry.processingStart
 
+/**
+ * The interaction an event belongs to. `0` means "not an interaction"; an engine
+ * without `interactionId` gets a per-event key, so its slow events are still spanned.
+ */
+export function interactionKey(entry: {
+	readonly interactionId?: number
+	readonly name: string
+	readonly startTime: number
+}): string | undefined {
+	const id = entry.interactionId
+	if (id === 0) return undefined
+	return id === undefined ? `${entry.name}:${Math.round(entry.startTime)}` : `id:${id}`
+}
+
 function spanInteraction(entry: PerformanceEventTiming): void {
 	span(`interaction ${entry.name}`, entry.startTime, entry.duration, {
 		"maple.browser.interaction.input_delay_ms": Math.round(entry.processingStart - entry.startTime),
@@ -141,20 +155,21 @@ export function startPerf(startSpan: StartSpan, options: PerfOptions): () => voi
 		)
 	}
 	if (options.slowInteractions) {
-		const seen = new Set<number>()
+		const seen = new Set<string>()
 		stops.push(
 			observe(
 				"event",
 				(entries) => {
 					// One interaction fires several events (pointerdown, pointerup, click): span it
 					// once, named after the event whose handlers ran longest.
-					const byInteraction = new Map<number, PerformanceEventTiming>()
+					const byInteraction = new Map<string, PerformanceEventTiming>()
 					for (const entry of entries) {
-						if (!(entry instanceof PerformanceEventTiming) || !entry.interactionId) continue
-						if (entry.duration < SLOW_INTERACTION_MS || seen.has(entry.interactionId)) continue
-						const best = byInteraction.get(entry.interactionId)
-						if (!best || processingOf(entry) > processingOf(best))
-							byInteraction.set(entry.interactionId, entry)
+						if (!(entry instanceof PerformanceEventTiming)) continue
+						const key = interactionKey(entry)
+						if (key === undefined || entry.duration < SLOW_INTERACTION_MS || seen.has(key))
+							continue
+						const best = byInteraction.get(key)
+						if (!best || processingOf(entry) > processingOf(best)) byInteraction.set(key, entry)
 					}
 					for (const [id, entry] of byInteraction) {
 						seen.add(id)

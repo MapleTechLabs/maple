@@ -213,4 +213,29 @@ describe("offline queue and consent", () => {
 		await vi.waitFor(async () => expect(await storedCount()).toBe(0))
 		expect(posts.filter((url) => url.endsWith("/v1/traces"))).toEqual([])
 	})
+
+	it("stops a resend when consent is withdrawn during it", async () => {
+		configurePrivacy({ requireConsent: true })
+		setConsent(true)
+		let online = false
+		const posts: string[] = []
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (url: string) => {
+				if (!online) throw new TypeError("Failed to fetch")
+				posts.push(url)
+				// The user withdraws consent while the first batch is in flight.
+				setConsent(false)
+				return new Response("{}")
+			}),
+		)
+		const queue = startOfflineQueue(CONFIG)
+		stop = queue.stop
+		queue.stash("traces", body("one"))
+		queue.stash("traces", body("two"))
+		await vi.waitFor(async () => expect(await storedCount()).toBe(2))
+		online = true
+		await queue.resend()
+		expect(posts).toHaveLength(1)
+	})
 })
