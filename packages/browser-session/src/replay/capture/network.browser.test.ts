@@ -74,7 +74,10 @@ describe("installNetworkCapture", () => {
 			await fetch("https://api.test/other")
 			await vi.waitFor(() => expect(events.filter((event) => event.type === "network")).toHaveLength(3))
 
-			const [, listed, other] = events.filter((event) => event.type === "network")
+			// Bodies are read in the background, so events can land in any order: find them by request.
+			const network = events.filter((event) => event.type === "network")
+			const listed = network.find((event) => event.net?.method === "POST")
+			const other = network.find((event) => event.net?.url.endsWith("/other"))
 			expect(listed?.attrs).toEqual({ "request.body": "request …", "response.body": '{"order"…' })
 			expect(other?.attrs).toBeUndefined()
 		} finally {
