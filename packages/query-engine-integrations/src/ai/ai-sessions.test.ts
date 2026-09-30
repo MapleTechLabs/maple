@@ -1407,6 +1407,13 @@ describe("aiSessionSummaryQuery", () => {
 		expect(sql).toContain("NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent'")
 	})
 
+	it("does not count an unstamped memory operation as an llm call", () => {
+		const { sql } = compileUnsafe(aiSessionSummaryQuery(), summaryParams)
+		expect(sql).toContain(
+			"'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store')",
+		)
+	})
+
 	it("is org-scoped on both levels", () => {
 		const { sql } = compileUnsafe(aiSessionSummaryQuery(), summaryParams)
 		expect(orgPredicateCount(sql)).toBe(2)
