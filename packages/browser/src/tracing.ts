@@ -277,11 +277,12 @@ export function setupTracing(config: ResolvedConfig): () => Promise<void> {
 								)
 							} else if (
 								result instanceof Error &&
-								result.name !== "AbortError" &&
-								!request.signal?.aborted
+								(isTimeout(result, request.signal) ||
+									(result.name !== "AbortError" && !request.signal?.aborted))
 							) {
 								// A rejected fetch (offline, DNS, CORS) ends with status 0 and no error; XHR marks its own.
-								// An abort rejects with its reason, whatever that is, so the signal decides.
+								// An abort rejects with its reason, whatever that is, so the signal decides; a
+								// timeout (`AbortSignal.timeout()`) is a failure, not the app changing its mind.
 								span.setStatus({ code: SpanStatusCode.ERROR, message: result.message })
 								span.setAttribute("error.type", result.name)
 							}
@@ -334,6 +335,12 @@ export function setupTracing(config: ResolvedConfig): () => Promise<void> {
 			propagation.disable()
 		}
 	}
+}
+
+/** `AbortSignal.timeout()` aborts with, and rejects the fetch with, a `TimeoutError` DOMException. */
+function isTimeout(error: Error, signal: AbortSignal | null | undefined): boolean {
+	const reason: unknown = signal?.reason
+	return error.name === "TimeoutError" || (reason instanceof DOMException && reason.name === "TimeoutError")
 }
 
 function escapeRegExp(value: string): string {

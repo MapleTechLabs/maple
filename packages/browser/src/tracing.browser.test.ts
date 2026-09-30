@@ -280,6 +280,23 @@ describe("setupTracing unload flush", () => {
 		expect(exported[0]?.attributes["error.message"]).toBeUndefined()
 	})
 
+	it("counts a fetch that timed out through AbortSignal.timeout() as an error", async () => {
+		vi.useFakeTimers({ toFake: ["setTimeout"] })
+		const poll = { interval: 0 }
+		shutdown = setupTracing({ ...CONFIG, tracingInstrumentFetch: true })
+		const url = URL.createObjectURL(new Blob(["slow"]))
+		const signal = AbortSignal.abort(new DOMException("signal timed out", "TimeoutError"))
+
+		await expect(fetch(url, { signal })).rejects.toThrow("signal timed out")
+		await vi.waitFor(() => expect(vi.getTimerCount()).toBe(1), poll)
+		window.dispatchEvent(new Event("pagehide"))
+		await vi.waitFor(() => expect(exported).toHaveLength(1), poll)
+
+		expect(exported[0]?.status.code).toBe(2)
+		expect(exported[0]?.attributes["error.type"]).toBe("TimeoutError")
+		URL.revokeObjectURL(url)
+	})
+
 	it("does not count a fetch aborted with a custom reason as a network failure", async () => {
 		vi.useFakeTimers({ toFake: ["setTimeout"] })
 		const poll = { interval: 0 }

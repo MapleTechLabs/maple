@@ -308,9 +308,9 @@ MapleBrowser.init({
 })
 ```
 
-Network failures (no response at all: offline, DNS, CORS, a timeout) are always errors, with
-`error.type` set to what failed (`TypeError` for `fetch`, `error` or `timeout` for XHR). An aborted
-request is not. No `error.message` is set: it is deprecated in the conventions, and the status
+Network failures (no response at all: offline, DNS, CORS, or a timeout, including one from `AbortSignal.timeout()`) are always errors, with
+`error.type` set to what failed (`TypeError` for `fetch`, `error` or `timeout` for XHR). A request your code
+aborts with its own `AbortController` is not. No `error.message` is set: it is deprecated in the conventions, and the status
 code already says what went wrong.
 
 ### Breadcrumbs

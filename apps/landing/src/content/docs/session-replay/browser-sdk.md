@@ -257,7 +257,7 @@ errors: {
 } // a 404 from a search box is expected here
 ```
 
-A request that gets no response at all (offline, DNS, CORS, a timeout) is always an error. An aborted request is not.
+A request that gets no response at all (offline, DNS, CORS, or a timeout from `AbortSignal.timeout()`) is always an error. A request your code aborts with its own `AbortController` is not.
 
 ### Breadcrumbs
 
@@ -451,7 +451,7 @@ MapleBrowser.init({
 
 A value outside `0` to `1` is clamped, with a console warning.
 
-`tracing.sampleRate` samples traces the same way. The decision is made once per session, so a sampled session keeps all of its traces and its replay never links to a missing one. Error spans are always sent, and sampled traces carry their sampling rate so request counts in Maple stay accurate.
+`tracing.sampleRate` samples traces the same way. The decision is made once per session, so a sampled session keeps all of its traces and its replay never links to a missing one. Errors reported as their own spans (uncaught errors, unhandled rejections, `captureException` and failures inside `traced()`) are always sent. Failed request spans follow the session's sampling like any other span. Sampled traces carry their sampling rate so request counts in Maple stay accurate.
 
 ### Replay on error
 
