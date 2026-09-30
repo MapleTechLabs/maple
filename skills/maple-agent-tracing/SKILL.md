@@ -19,7 +19,7 @@ Pick the first row that matches the service's dependencies. Install the skill wi
 npx skills add MapleTechLabs/maple/skills --skill <skill> -y
 ```
 
-Then read the installed `SKILL.md` and follow it. If `npx skills` is unavailable, read the file directly from `https://github.com/MapleTechLabs/maple/tree/main/skills/<skill>/SKILL.md`.
+Then read the installed `SKILL.md` and follow it. If `npx skills` is unavailable, read the file directly from `https://raw.githubusercontent.com/MapleTechLabs/maple/main/skills/<skill>/SKILL.md`.
 
 | Dependency | Skill |
 | --- | --- |

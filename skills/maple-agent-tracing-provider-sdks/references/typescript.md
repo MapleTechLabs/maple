@@ -67,7 +67,7 @@ export function runTool(
 			if (captureContent) span.setAttribute("gen_ai.tool.call.arguments", args)
 			let result: string
 			try {
-				result = JSON.stringify(await tool(JSON.parse(args)))
+				result = JSON.stringify((await tool(JSON.parse(args))) ?? null)
 			} catch (error) {
 				markFailed(span, error)
 				result = JSON.stringify({ error: String(error) })

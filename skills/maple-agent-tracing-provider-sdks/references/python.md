@@ -106,7 +106,7 @@ def chat_turn(conversation_id: str, history: list, user_text: str) -> str:
             message = response.choices[0].message
             history.append(message.model_dump(include={"role", "content", "tool_calls"}, exclude_none=True))
             if not message.tool_calls:
-                return message.content
+                return message.content or ""
             for call in message.tool_calls:
                 result = run_tool(call.id, call.function.name, call.function.arguments, TOOLS[call.function.name])
                 history.append({"role": "tool", "tool_call_id": call.id, "content": result})

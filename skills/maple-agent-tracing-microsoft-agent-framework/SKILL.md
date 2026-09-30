@@ -179,7 +179,7 @@ async def handle_message(session: AgentSession, text: str) -> str:
 - Give every `Agent` a distinct `name` (Maple lanes key on `gen_ai.agent.name`; unnamed agents get a UUID).
 - Tool failures: raising from the tool function is enough; MAF sets ERROR + `error.type` on `execute_tool`. Do not catch and return an error string from the tool body (that hides the failure).
 - Python MAF also logs each tool failure as an ERROR and a WARN log record; `configure_otel_providers()` exports them as OTLP logs next to the span.
-- Approval-gated tools (`@tool(approval_mode="always_require")`): the resume is a new `agent.run()` and trace; it joins the session only inside `conversation()`. A rejected call emits no `execute_tool` span; the rejection only appears in the next `chat` span's input messages.
+- Approval-gated tools (`@tool(approval_mode="always_require")`): the resume is a new `agent.run()` and trace; it joins the session only inside `conversation()`. A rejected call emits no `execute_tool` span; the rejection only appears in the next `chat` span's input messages, and only with sensitive data on.
 - Workflows record fan-in as span links, so parallel executors are siblings under `workflow.run`.
 - Sub-agents: prefer `worker.as_tool()` in the orchestrator's `tools=[...]`, or MAF workflows/orchestrations. Do not also instrument the provider SDK (e.g. OpenInference/OpenLLMetry OpenAI instrumentors): that double-counts every call.
 

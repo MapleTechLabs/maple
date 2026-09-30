@@ -58,6 +58,15 @@ export type Agent = { name: string; model: string; instructions: string; tools: 
 
 const json = (value: unknown) => JSON.stringify(value)
 
+// Model-generated arguments are not always valid JSON; keep the raw text then.
+function parseArguments(text: string) {
+	try {
+		return JSON.parse(text || "{}")
+	} catch {
+		return text
+	}
+}
+
 // OpenAI message -> GenAI semconv message: { role, parts: [...] }
 function toSemconv(message: Message) {
 	if (message.role === "tool") {
@@ -67,7 +76,7 @@ function toSemconv(message: Message) {
 	if (message.role === "assistant") {
 		for (const call of message.tool_calls ?? []) {
 			if (call.type !== "function") continue
-			parts.push({ type: "tool_call", id: call.id, name: call.function.name, arguments: JSON.parse(call.function.arguments || "{}") })
+			parts.push({ type: "tool_call", id: call.id, name: call.function.name, arguments: parseArguments(call.function.arguments) })
 		}
 	}
 	return { role: message.role, parts }

@@ -66,6 +66,14 @@ class Agent:
     tools: dict[str, Tool] = field(default_factory=dict)
 
 
+def parse_arguments(text: str | None) -> Any:
+    """Model-generated arguments are not always valid JSON; keep the raw text then."""
+    try:
+        return json.loads(text or "{}")
+    except json.JSONDecodeError:
+        return text
+
+
 def to_semconv(message: dict[str, Any]) -> dict[str, Any]:
     """OpenAI message -> GenAI semconv message: {role, parts: [...]}."""
     if message["role"] == "tool":
@@ -76,7 +84,7 @@ def to_semconv(message: dict[str, Any]) -> dict[str, Any]:
         parts.append({"type": "text", "content": message["content"]})
     for call in message.get("tool_calls") or []:
         fn = call["function"]
-        parts.append({"type": "tool_call", "id": call["id"], "name": fn["name"], "arguments": json.loads(fn["arguments"] or "{}")})
+        parts.append({"type": "tool_call", "id": call["id"], "name": fn["name"], "arguments": parse_arguments(fn["arguments"])})
     return {"role": message["role"], "parts": parts}
 
 

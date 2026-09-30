@@ -102,6 +102,7 @@ smolagents has no conversation id; each `agent.run()` is its own trace. Maple re
 from openinference.instrumentation import using_session
 from smolagents import OpenAIServerModel, ToolCallingAgent
 
+# One agent per conversation. In a long-running server, evict idle ones or rebuild them from stored history.
 agents: dict[str, ToolCallingAgent] = {}
 
 
