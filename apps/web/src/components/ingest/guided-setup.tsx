@@ -14,12 +14,12 @@ import {
 	PythonIcon,
 } from "@/components/quick-start/framework-icons"
 import { sdkSnippets, type FrameworkId } from "@/components/quick-start/sdk-snippets"
+import { ConnectCredentials } from "@/components/ingest/connect-credentials"
 import { ONBOARD_SKILL_COMMAND, onboardSkillPrompt } from "@/components/ingest/onboard-skill"
 import { ingestUrl } from "@/lib/services/common/ingest-url"
 import { isClerkAuthEnabled } from "@/lib/services/common/auth-mode"
 import { useQuickStart } from "@/hooks/use-quick-start"
 import type { OnboardingRole } from "@/lib/onboarding-role"
-import { CopyableField } from "@maple/ui/components/ui/copyable-field"
 
 const frameworkIconMap: Record<FrameworkId, React.ComponentType<{ size?: number; className?: string }>> = {
 	nextjs: NextjsIcon,
@@ -40,9 +40,9 @@ const ROLE_DEFAULT_FRAMEWORK = {
 } satisfies Record<OnboardingRole, FrameworkId>
 
 interface GuidedSetupProps {
-	/** Public ingest key, interpolated into the instrument snippet. */
+	/** Public ingest key, for the Claude Code prompt. Server snippets read MAPLE_INGEST_KEY. */
 	apiKey: string
-	/** Render the endpoint + key credentials column beside the snippet tabs. */
+	/** Render the endpoint + keys credentials column beside the snippet tabs. */
 	showCredentials?: boolean
 }
 
@@ -171,12 +171,6 @@ export function ConnectInstructions({
 
 	const contentPadding = variant === "boxed" ? "p-3" : "px-4 pt-3 pb-4"
 
-	function interpolate(template: string) {
-		return template
-			.replace(/\{\{INGEST_URL\}\}/g, ingestUrl)
-			.replace(/\{\{API_KEY\}\}/g, apiKey || "<your-api-key>")
-	}
-
 	const tabs = (
 		<div className={variant === "boxed" ? "rounded-lg border bg-card overflow-hidden" : undefined}>
 			<Tabs defaultValue="install" className="flex flex-col">
@@ -197,12 +191,9 @@ export function ConnectInstructions({
 				</TabsContent>
 
 				<TabsContent value="instrument" className={cn("overflow-auto mt-0", contentPadding)}>
-					{/* The snippet carries the org's ingest key in plain text and the dashboard
-					    records itself with rrweb — block the block, not just the key. */}
 					<CodeBlock
-						code={interpolate(snippet.instrument)}
+						code={snippet.instrument.replace(/\{\{INGEST_URL\}\}/g, ingestUrl)}
 						language={snippet.label.toLowerCase()}
-						className={REPLAY_BLOCK_CLASS}
 					/>
 				</TabsContent>
 
@@ -214,7 +205,10 @@ export function ConnectInstructions({
 						Install the Maple skills, then run the prompt in Claude Code, Codex, or Cursor. The{" "}
 						<code className="rounded bg-muted px-1">maple-onboard</code> skill walks every service
 						in the repo, installs OpenTelemetry, wires traces / logs / metrics, and verifies the
-						bootstrap end-to-end.
+						bootstrap end-to-end. The prompt carries only the public key: set{" "}
+						<code className="rounded bg-muted px-1">MAPLE_INGEST_KEY</code> to your private key in
+						your <code className="rounded bg-muted px-1">.env</code> and deployment secrets
+						yourself.
 					</p>
 					<CodeBlock code={ONBOARD_SKILL_COMMAND} language="shell" />
 					<CodeBlock
@@ -235,8 +229,7 @@ export function ConnectInstructions({
 				<span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
 					Credentials
 				</span>
-				<CopyableField value={ingestUrl} label="Ingest endpoint" />
-				<CopyableField value={apiKey || "Loading…"} label="API key" masked />
+				<ConnectCredentials />
 			</div>
 			{tabs}
 		</div>

@@ -8,15 +8,16 @@ describe("onboardSkillPrompt", () => {
 			[
 				"Install Maple in this repo using the maple-onboard skill.",
 				"My ingest endpoint is https://ingest.eu.maple.dev.",
-				"My ingest key is maple_pk_abc.",
+				"My public ingest key for browser and mobile code is maple_pk_abc.",
+				"Server code reads my private key from MAPLE_INGEST_KEY, which I set in my environment or .env myself.",
 			].join("\n"),
 		)
 	})
 
-	it("uses a placeholder while the key is loading", () => {
-		expect(onboardSkillPrompt("https://ingest.maple.dev", "")).toContain(
-			"My ingest key is <your-ingest-key>.",
-		)
+	it("drops the public key line while the key is loading, so the skill falls back to MAPLE_TEST", () => {
+		const prompt = onboardSkillPrompt("https://ingest.maple.dev", "")
+		expect(prompt).not.toContain("public ingest key")
+		expect(prompt).toContain("MAPLE_INGEST_KEY")
 	})
 })
 

@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react"
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { REPLAY_BLOCK_CLASS } from "@/components/common/replay-privacy"
 import { isClerkAuthEnabled } from "@/lib/services/common/auth-mode"
@@ -7,7 +7,10 @@ import { ingestUrl } from "@/lib/services/common/ingest-url"
 import { ConnectInstructions, useGuidedFramework } from "./guided-setup"
 import { ONBOARD_SKILL_COMMAND, onboardSkillPrompt } from "./onboard-skill"
 
-const API_KEY = "mpl_ingest_supersecretkey123"
+// The credentials column fetches the org's keys; its fields are masked inputs either way.
+vi.mock("./connect-credentials", () => ({ ConnectCredentials: () => null }))
+
+const API_KEY = "maple_pk_publickey123"
 
 describe("ConnectInstructions", () => {
 	afterEach(cleanup)
@@ -21,8 +24,7 @@ describe("ConnectInstructions", () => {
 		fireEvent.click(screen.getByRole("tab", { name: "Claude Code" }))
 
 		// rrweb blocks an `rr-block` element with its whole subtree, so every plain-text
-		// rendering of the key must sit under one. The credentials column renders into a
-		// readonly <input>, which `maskAllInputs: true` already masks.
+		// rendering of the key must sit under one.
 		const blocked = [...container.querySelectorAll(`.${REPLAY_BLOCK_CLASS}`)]
 		expect(blocked.length).toBeGreaterThan(0)
 		for (const el of container.querySelectorAll("pre")) {
@@ -48,6 +50,20 @@ describe("ConnectInstructions", () => {
 		const blocks = [...container.querySelectorAll("pre")].map((el) => el.textContent ?? "")
 		expect(blocks).toContain(ONBOARD_SKILL_COMMAND)
 		expect(blocks).toContain(onboardSkillPrompt(ingestUrl, API_KEY))
+	})
+
+	it("keeps the key out of the server snippet, which reads MAPLE_INGEST_KEY", () => {
+		const { container } = render(<ConnectInstructions framework="nodejs" apiKey={API_KEY} />)
+
+		fireEvent.click(screen.getByRole("tab", { name: "Instrument" }))
+
+		const snippet =
+			[...container.querySelectorAll("pre")]
+				.map((el) => el.textContent ?? "")
+				.find((t) => t.includes("NodeSDK")) ?? ""
+		expect(snippet).toContain("process.env.MAPLE_INGEST_KEY")
+		expect(snippet).toContain(`${ingestUrl}/v1/traces`)
+		expect(snippet).not.toContain(API_KEY)
 	})
 })
 
