@@ -275,8 +275,13 @@ export function setupTracing(config: ResolvedConfig): () => Promise<void> {
 								setHeaderAttributes(span, "response", headers.response, (name) =>
 									result.headers.get(name),
 								)
-							} else if (result instanceof Error && result.name !== "AbortError") {
+							} else if (
+								result instanceof Error &&
+								result.name !== "AbortError" &&
+								!request.signal?.aborted
+							) {
 								// A rejected fetch (offline, DNS, CORS) ends with status 0 and no error; XHR marks its own.
+								// An abort rejects with its reason, whatever that is, so the signal decides.
 								span.setStatus({ code: SpanStatusCode.ERROR, message: result.message })
 								span.setAttribute("error.type", result.name)
 							}

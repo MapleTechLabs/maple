@@ -2,6 +2,7 @@ export type { PrivacyOptions } from "./identity/consent"
 export {
 	configurePrivacy,
 	consentAllowedSince,
+	consentRevokedAt,
 	hasConsent,
 	mayPersistIdentifier,
 	onConsentChange,

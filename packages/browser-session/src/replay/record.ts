@@ -351,8 +351,15 @@ export function startBufferedRecording(config: IngestConfig, sessionId: string):
 
 	const checkoutTimer = setInterval(() => {
 		if (stopped || changedSinceSnapshot === 0) return
-		if (typeof document !== "undefined" && document.visibilityState === "hidden") return
-		record.takeFullSnapshot(true)
+		const current = segments.at(-1)
+		// Hidden, a checkout waits, unless the size cap emptied the buffer or is about to.
+		const urgent = current === undefined || current.bytes > MAX_BUFFER_BYTES / 2
+		if (!urgent && typeof document !== "undefined" && document.visibilityState === "hidden") return
+		try {
+			record.takeFullSnapshot(true)
+		} catch {
+			// rrweb throws when it is not recording; capture must never throw into the page.
+		}
 	}, BUFFER_CHECKOUT_MS)
 
 	return {

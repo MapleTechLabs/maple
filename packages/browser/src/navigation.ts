@@ -20,7 +20,7 @@ import {
 	trace,
 	type Tracer,
 } from "@opentelemetry/api"
-import { captureException, passesErrorFilters, recordFailure } from "./errors"
+import { captureFilteredException, passesErrorFilters, recordFailure } from "./errors"
 import { liveMapleTracer } from "./tracing"
 import { SDK_NAME, SDK_VERSION } from "./version"
 
@@ -138,7 +138,7 @@ export async function traced<T>(name: string, fn: () => Promise<T>, options: Tra
 			if (isFailure(options, error) && passesErrorFilters(error)) {
 				// An unsampled span drops what it records: report the failure on its own, which is always kept.
 				if (span.isRecording()) recordFailure(span, error)
-				else captureException(error, { name })
+				else captureFilteredException(error, { name })
 			}
 			throw error
 		} finally {

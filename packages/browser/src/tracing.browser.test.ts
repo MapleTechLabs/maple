@@ -279,6 +279,24 @@ describe("setupTracing unload flush", () => {
 		expect(exported[0]?.attributes["error.message"]).toBe(`GET ${url} -> TypeError`)
 	})
 
+	it("does not count a fetch aborted with a custom reason as a network failure", async () => {
+		vi.useFakeTimers({ toFake: ["setTimeout"] })
+		const poll = { interval: 0 }
+		shutdown = setupTracing({ ...CONFIG, tracingInstrumentFetch: true })
+		const url = URL.createObjectURL(new Blob(["ok"]))
+		const controller = new AbortController()
+		controller.abort(new Error("unmounted"))
+
+		await expect(fetch(url, { signal: controller.signal })).rejects.toThrow("unmounted")
+		await vi.waitFor(() => expect(vi.getTimerCount()).toBe(1), poll)
+		window.dispatchEvent(new Event("pagehide"))
+		await vi.waitFor(() => expect(exported).toHaveLength(1), poll)
+
+		expect(exported[0]?.status.code).toBe(0)
+		expect(exported[0]?.attributes["error.type"]).toBeUndefined()
+		URL.revokeObjectURL(url)
+	})
+
 	it("does not end a fetch span the instrumentation already ended", async () => {
 		const errors: string[] = []
 		const noop = (): void => {}

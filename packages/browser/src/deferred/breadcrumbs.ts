@@ -33,7 +33,12 @@ let active = false
 function push(crumb: Crumb): void {
 	// Typing is one `input` per keystroke: keep one crumb per field, or a message evicts the whole trail.
 	const last = crumbs.at(-1)
-	if (crumb.type === "input" && last?.type === "input" && last.target === crumb.target) {
+	if (
+		crumb.type === "input" &&
+		crumb.target !== undefined &&
+		last?.type === "input" &&
+		last.target === crumb.target
+	) {
 		crumbs[crumbs.length - 1] = crumb
 		return
 	}

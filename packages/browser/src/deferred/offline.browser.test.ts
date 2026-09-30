@@ -41,7 +41,7 @@ const storedCount = async (): Promise<number> => {
 let stop: (() => void) | undefined
 
 beforeEach(async () => {
-	localStorage.removeItem("maple-offline-revoked-at")
+	localStorage.removeItem("maple-consent-revoked-at")
 	await new Promise((resolve) => {
 		const request = indexedDB.deleteDatabase("maple-offline")
 		request.onsuccess = request.onerror = request.onblocked = () => resolve(undefined)
@@ -179,7 +179,7 @@ describe("offline queue and consent", () => {
 
 		// Consent was withdrawn somewhere this queue never saw (another tab, which records it), then granted again.
 		await new Promise((resolve) => setTimeout(resolve, 5))
-		localStorage.setItem("maple-offline-revoked-at", String(Date.now()))
+		localStorage.setItem("maple-consent-revoked-at", String(Date.now()))
 		configurePrivacy({ requireConsent: true })
 		setConsent(true)
 		vi.stubGlobal(

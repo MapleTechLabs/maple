@@ -67,7 +67,7 @@ Every field accepted by `MapleBrowser.init`:
 | `tracing.slowInteractions`             | `boolean`                 | `false`                                   | Span interactions of 200ms or more. See [Jank](#jank).                                                                                                                                                                                                    |
 | `tracing.captureHeaders`               | `{ request?, response? }` | none                                      | Header names recorded on `fetch`/XHR spans as `http.request.header.<name>` / `http.response.header.<name>`. See [Request and response detail](#request-and-response-detail).                                                                              |
 | `replay.canvasFps`                     | `number`                  | off                                       | Record `<canvas>` content at this many frames per second.                                                                                                                                                                                                 |
-| `replay.networkBodies`                 | `{ urls, maxLength? }`    | none                                      | Keep text request/response bodies of these URLs on replay network events.                                                                                                                                                                                 |
+| `replay.networkBodies`                 | `{ urls, maxLength? }`    | none                                      | Keep text response bodies of these URLs on replay network events, and request bodies too with `privacy.maskAllInputs: false`.                                                                                                                             |
 | `replay.onErrorSampleRate`             | `number`                  | `0`                                       | Fraction of the sessions not recorded that buffer the last minute in memory and keep it only if an error happens. See [Sampling](#sampling).                                                                                                              |
 | `transport.offline`                    | `boolean`                 | `false`                                   | Keep span and log batches that could not be sent in IndexedDB for up to 24 hours and send them later. See [Offline](#offline).                                                                                                                            |
 | `privacy.maskAllInputs`                | `boolean`                 | `true`                                    | Mask all `<input>` values in the recording.                                                                                                                                                                                                               |
@@ -555,8 +555,9 @@ Patterns match the full URL, so a relative `fetch("/api/checkout")` is matched a
 `https://your.app/api/checkout`. Only text and JSON bodies are kept, each cut to `maxLength` characters (at most and by default 1,000: ingest stores up to 1 KB per body). The response is read from a
 clone in the background, only as far as `maxLength` and for at most 5 seconds, so your code gets it untouched and unwaited;
 event streams (`text/event-stream`) are never read. Nothing is captured with `privacy.maskAllText`, and
-request bodies only with `privacy.maskAllInputs: false`, since a form POST carries what was typed. Bodies
-can hold personal data: list only endpoints whose payloads you are allowed to record.
+request bodies only with `privacy.maskAllInputs: false`, since a form POST carries what was typed. Only
+string request bodies are kept (not `FormData`, `Blob` or a stream). Bodies can hold personal data: list
+only endpoints whose payloads you are allowed to record.
 
 ### Canvas
 

@@ -372,6 +372,26 @@ describe("traced", () => {
 		expect(parentOf(named("outer"))).toBeUndefined()
 	})
 
+	it("runs beforeCapture once for a loader failure in an unsampled session", async () => {
+		let calls = 0
+		start({
+			tracing: { sampleRate: 0, instrumentFetch: false, instrumentXhr: false },
+			errors: {
+				beforeCapture: () => {
+					calls++
+					return true
+				},
+			},
+		})
+		await expect(
+			MapleBrowser.traced("loader", async () => {
+				throw new Error("load failed")
+			}),
+		).rejects.toThrow("load failed")
+		await stop()
+		expect(calls).toBe(1)
+	})
+
 	it("parents fetches started before the first await, but not after it", async () => {
 		start()
 		MapleBrowser.startNavigation("/a")

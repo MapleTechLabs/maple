@@ -101,8 +101,10 @@ function recordException(
 	options: CaptureExceptionOptions,
 	source: ErrorSource,
 	filename?: string,
+	filtered = false,
 ): void {
-	if (!hasConsent() || !shouldCapture(asError(error), { source, originalError: error }, filename)) return
+	if (!hasConsent()) return
+	if (!filtered && !shouldCapture(asError(error), { source, originalError: error }, filename)) return
 	// Maple's own provider only: before `init()` the global one may be the host app's.
 	const tracer = liveMapleTracer(SDK_NAME, SDK_VERSION)
 	if (!tracer) return
@@ -133,6 +135,12 @@ export function captureException(error: unknown, options: CaptureExceptionOption
 /** Whether the app's error filters keep `error`, for failures recorded on an existing span. */
 export function passesErrorFilters(error: unknown): boolean {
 	return shouldCapture(asError(error), { source: "captureException", originalError: error })
+}
+
+/** `captureException` for an error `passesErrorFilters` already let through: `beforeCapture` runs once. */
+export function captureFilteredException(error: unknown, options: CaptureExceptionOptions = {}): void {
+	if (alreadyReported(error)) return
+	recordException(error, options, "captureException", undefined, true)
 }
 
 /**

@@ -218,6 +218,8 @@ instrumentReactRouter(createBrowserRouter(routes)) // navigate /projects/:id
 instrumentTanStackRouter(router) // navigate /projects/$projectId
 ```
 
+Attach them after `MapleBrowser.init`: a navigation reported earlier uses up the page load.
+
 ## Linking a marketing site to your app
 
 The visitor id lives in localStorage **and** a cookie scoped to your registered
