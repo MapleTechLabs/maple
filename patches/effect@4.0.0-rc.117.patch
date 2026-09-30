@@ -160,3 +160,27 @@ index 0e2a1b906f0ff3a065489cd9489f543490a29938..98ce2bccbc8d4a75a312ed56366a52bc
      uninterruptible: handler.uninterruptible
    });
  }
+diff --git a/dist/unstable/ai/internal/mcpProtocol/v2025_06_18.js b/dist/unstable/ai/internal/mcpProtocol/v2025_06_18.js
+index 5a105d8..64a7b88 100644
+--- a/dist/unstable/ai/internal/mcpProtocol/v2025_06_18.js
++++ b/dist/unstable/ai/internal/mcpProtocol/v2025_06_18.js
+@@ -234,6 +234,7 @@ export const protocol = /*#__PURE__*/McpProtocol.make({
+           inputSchema: tool.inputSchema,
+           outputSchema: isToolOutputSchema(tool.outputSchema) ? tool.outputSchema : undefined,
+           annotations: tool.annotations === undefined ? undefined : McpSchema.ToolAnnotations.make({
++            title: tool.annotations.title,
+             readOnlyHint: tool.annotations.readOnlyHint,
+             destructiveHint: tool.annotations.destructiveHint,
+             idempotentHint: tool.annotations.idempotentHint,
+diff --git a/dist/unstable/ai/internal/mcpProtocol/v2025_11_25.js b/dist/unstable/ai/internal/mcpProtocol/v2025_11_25.js
+index 2744691..be65b9d 100644
+--- a/dist/unstable/ai/internal/mcpProtocol/v2025_11_25.js
++++ b/dist/unstable/ai/internal/mcpProtocol/v2025_11_25.js
+@@ -238,6 +238,7 @@ export const protocol = /*#__PURE__*/McpProtocol.make({
+           outputSchema: isToolOutputSchema(tool.outputSchema) ? tool.outputSchema : undefined,
+           icons: tool.icons,
+           annotations: tool.annotations === undefined ? undefined : McpSchema.ToolAnnotations.make({
++            title: tool.annotations.title,
+             readOnlyHint: tool.annotations.readOnlyHint,
+             destructiveHint: tool.annotations.destructiveHint,
+             idempotentHint: tool.annotations.idempotentHint,

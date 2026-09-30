@@ -58,7 +58,7 @@ let toolDescriptors: ReadonlyArray<McpToolDescriptor> | undefined
 const listToolDescriptors = (): ReadonlyArray<McpToolDescriptor> =>
 	(toolDescriptors ??= mapleToolCatalogFor("mcp").map((definition) => ({
 		name: definition.name,
-		// Current spec reads the top-level `title`; older clients read `annotations.title`.
+		// Current spec reads the top-level `title`; Claude's directory and older clients read `annotations.title`.
 		title: definition.title,
 		description: definition.description,
 		inputSchema: inputSchemaOf(definition),

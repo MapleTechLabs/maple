@@ -361,6 +361,22 @@ describe("MCP HTTP authorization", () => {
 				defect: false,
 			})
 			expect(body).toContain("inspect_trace")
+			// Claude's connector directory reads `annotations.title`; stock effect drops it for
+			// 2025-06-18+ (patches/effect@*.patch).
+			// SAFETY: a 200 `tools/list` response; a different body fails the expectation below.
+			const inspectTrace = (
+				JSON.parse(body) as {
+					result: {
+						tools: Array<{ name: string; title?: string; annotations?: { title?: string } }>
+					}
+				}
+			).result.tools.find((tool) => tool.name === "inspect_trace")
+			expect({ title: inspectTrace?.title, annotationTitle: inspectTrace?.annotations?.title }).toEqual(
+				{
+					title: "Inspect Trace",
+					annotationTitle: "Inspect Trace",
+				},
+			)
 
 			// A session id left over from an earlier isolate is ignored, not rejected.
 			const stale = await second.handler(
