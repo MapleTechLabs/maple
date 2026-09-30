@@ -113,6 +113,8 @@ export function register() {
 }
 ```
 
+Set `MAPLE_INGEST_KEY` to your ingest key; this exporter doesn't read the `OTEL_EXPORTER_OTLP_*` variables.
+
 Return AI SDK streams as the response (`toUIMessageStreamResponse()` or `createAgentUIStreamResponse()`). `@vercel/otel` ends all open spans when the request ends, so a stream read later, for example in `after()`, loses its reply and token counts.
 
 ## Pass the conversation id on every call

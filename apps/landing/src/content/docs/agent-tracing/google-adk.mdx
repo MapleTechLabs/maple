@@ -55,14 +55,14 @@ npm install @google/adk@^2.1 zod @opentelemetry/sdk-node @opentelemetry/exporter
 <LanguageTab id="python">
 
 ```bash
-OTEL_SERVICE_NAME=support-agent
-OTEL_EXPORTER_OTLP_ENDPOINT=https://ingest.maple.dev
-OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer YOUR_INGEST_KEY"
+export OTEL_SERVICE_NAME=support-agent
+export OTEL_EXPORTER_OTLP_ENDPOINT=https://ingest.maple.dev
+export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer YOUR_INGEST_KEY"
 # Put prompts, replies and tool calls on span attributes, in the format Maple reads
-OTEL_SEMCONV_STABILITY_OPT_IN=gen_ai_latest_experimental
-OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=SPAN_ONLY
+export OTEL_SEMCONV_STABILITY_OPT_IN=gen_ai_latest_experimental
+export OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=SPAN_ONLY
 # Drop ADK's own copies of the same content, which Maple doesn't read
-ADK_CAPTURE_MESSAGE_CONTENT_IN_SPANS=false
+export ADK_CAPTURE_MESSAGE_CONTENT_IN_SPANS=false
 ```
 
 EU organizations use `https://ingest.eu.maple.dev`. Use `SPAN_ONLY` exactly, because `true` leaves the transcript empty.

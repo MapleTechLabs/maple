@@ -94,6 +94,7 @@ Wrap every `agent.run()` in OpenInference's `using_session` with the id your app
 from openinference.instrumentation import using_session
 from smolagents import OpenAIServerModel, ToolCallingAgent
 
+# One agent per conversation. In a long-running server, evict idle ones or rebuild them from stored history.
 agents: dict[str, ToolCallingAgent] = {}
 
 

@@ -30,7 +30,7 @@ Your ingest key is in **Settings → Ingestion**. If your organization is in the
 ## Install the observability packages
 
 ```bash
-npm install @mastra/observability@latest @mastra/otel-exporter@latest
+npm install @mastra/core@latest @mastra/observability@latest @mastra/otel-exporter@latest
 ```
 
 Keep `@mastra/core`, `@mastra/observability` and `@mastra/otel-exporter` on releases from the same week, or the exporter can pick the wrong span as the model call.
@@ -107,7 +107,7 @@ export const mastra = new Mastra({
 })
 ```
 
-For an EU organization, use `https://ingest.eu.maple.dev`. The exporter appends `/v1/traces` itself.
+Set `MAPLE_INGEST_KEY` to your ingest key from **Settings → Ingestion**. For an EU organization, use `https://ingest.eu.maple.dev`. The exporter appends `/v1/traces` itself.
 
 Set the endpoint, protocol and key in code, since this exporter ignores the `OTEL_EXPORTER_OTLP_*` variables. `observability` must be an `Observability` instance; a plain object silently traces nothing.
 

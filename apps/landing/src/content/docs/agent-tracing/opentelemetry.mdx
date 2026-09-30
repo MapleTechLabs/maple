@@ -164,7 +164,7 @@ Name the tracer after your app, like `support-agent`. A tracer named after a fra
 
 ## Instrument the agent loop
 
-Complete loops that stream, call tools and record every attribute above are in the skill: [TypeScript](https://github.com/MapleTechLabs/maple/blob/main/skills/maple-agent-tracing-opentelemetry/references/typescript.md), [Python](https://github.com/MapleTechLabs/maple/blob/main/skills/maple-agent-tracing-opentelemetry/references/python.md) and [Go](https://github.com/MapleTechLabs/maple/blob/main/skills/maple-agent-tracing-opentelemetry/references/go.md) (untested; run `go vet`). Wrap your own loop's existing calls the same way.
+Complete loops that stream, call tools and record every attribute above are in the skill: [TypeScript](https://github.com/MapleTechLabs/maple/blob/main/skills/maple-agent-tracing-opentelemetry/references/typescript.md) and [Python](https://github.com/MapleTechLabs/maple/blob/main/skills/maple-agent-tracing-opentelemetry/references/python.md). Wrap your own loop's existing calls the same way.
 
 This is the `execute_tool` span from the TypeScript version. The `chat` span follows the same pattern around each model call:
 
@@ -246,7 +246,7 @@ Put `maple_ai.session.id` only on your own wrapper span, never on the framework'
 
 ## Flush before a short-lived process exits
 
-`BatchSpanProcessor` exports every few seconds, so a script, CLI or Lambda can exit before the last batch is sent. At the end of a script, call `await provider.shutdown()` (TypeScript), `provider.shutdown()` (Python) or `defer tp.Shutdown(context.Background())` (Go). In a serverless handler, call `provider.forceFlush()` (`force_flush()` in Python) before returning.
+`BatchSpanProcessor` exports every few seconds, so a script, CLI or Lambda can exit before the last batch is sent. At the end of a script, call `await provider.shutdown()` (TypeScript) or `provider.shutdown()` (Python). In a serverless handler, call `provider.forceFlush()` (`force_flush()` in Python) before returning.
 
 ## Check that it works
 
