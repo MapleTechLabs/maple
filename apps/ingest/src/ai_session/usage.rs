@@ -10,9 +10,10 @@
 //! Every emitter reports usage its own way. The prompt figure contains the
 //! cache buckets on every semconv/OpenAI-shaped wire, but excludes them where a
 //! framework passes a raw Anthropic Messages or Bedrock Converse response
-//! through. The completion figure contains the reasoning tokens, sometimes
-//! reports fewer of them than the reasoning figure does, and the same usage is
-//! repeated on agent, step and workflow wrappers above the call. Settling that
+//! through. The completion figure contains the reasoning tokens (except on
+//! TypeScript ADK's Gemini call) and sometimes reports fewer of them than the
+//! reasoning figure does, and the same usage is repeated on agent, step and
+//! workflow wrappers above the call. Settling that
 //! here, once, where the vendor is known and the span is whole, means every
 //! reader sums five columns instead of re-deriving the convention.
 //!
@@ -153,7 +154,11 @@ pub(super) fn stamp(span: &Span, vendor: &str, facts: &Facts, out: &mut Vec<KeyV
     if !call {
         return false;
     }
-    let usage = Usage::read(facts, input_excludes_cache(vendor, facts.model()));
+    let usage = Usage::read(
+        facts,
+        input_excludes_cache(vendor, facts.model()),
+        output_excludes_reasoning(vendor, span),
+    );
     let tokens = [
         (INPUT_TOKENS_ATTR, usage.input),
         (CACHE_READ_TOKENS_ATTR, usage.cache_read),
@@ -233,6 +238,16 @@ fn input_excludes_cache(vendor: &str, model: &str) -> bool {
     }
 }
 
+/// Does the completion figure exclude the reasoning tokens? Only on
+/// TypeScript ADK's `call_llm`: ADK records Gemini's `candidatesTokenCount` as
+/// `gen_ai.usage.output_tokens`, and the Maple span processor adds
+/// `thoughtsTokenCount` beside it. Python ADK's model call is its
+/// `generate_content` span (its `call_llm` never is), which reports candidates
+/// plus thoughts, like the Google GenAI and LangChain Gemini instrumentations.
+fn output_excludes_reasoning(vendor: &str, span: &Span) -> bool {
+    vendor == "google_adk" && span.name == "call_llm"
+}
+
 /// A model id only a native Anthropic or Bedrock client takes: `claude-…`,
 /// `anthropic.claude-…`, or a Bedrock cross-region profile. A `provider/model`
 /// id went through a router (LiteLLM, OpenRouter) that reports inclusive.
@@ -255,7 +270,7 @@ struct Usage {
 }
 
 impl Usage {
-    fn read(facts: &Facts, input_excludes_cache: bool) -> Self {
+    fn read(facts: &Facts, input_excludes_cache: bool, output_excludes_reasoning: bool) -> Self {
         let count = |slot| facts.number(slot).map(tokens);
         let prompt = count(facts::INPUT).unwrap_or(0);
         let cache_read = count(facts::CACHE_READ).unwrap_or(0);
@@ -265,9 +280,16 @@ impl Usage {
         // a prompt that is must be a raw passthrough the vendor rule missed.
         let cache = cache_read.saturating_add(cache_write);
         let excludes_cache = input_excludes_cache || cache > prompt;
-        // The completion is what the provider billed (`total_tokens` is prompt
-        // + completion), so a reasoning figure larger than it is clamped.
-        let reasoning = count(facts::REASONING).unwrap_or(0).min(completion);
+        // An inclusive completion is what the provider billed (`total_tokens`
+        // is prompt + completion), so a reasoning figure larger than it is
+        // clamped. An exclusive one is the visible output already.
+        let reasoning = count(facts::REASONING).unwrap_or(0);
+        let (output, reasoning) = if output_excludes_reasoning {
+            (completion, reasoning)
+        } else {
+            let reasoning = reasoning.min(completion);
+            (completion - reasoning, reasoning)
+        };
         Self {
             input: count(facts::UNCACHED_INPUT).unwrap_or(if excludes_cache {
                 prompt
@@ -276,7 +298,7 @@ impl Usage {
             }),
             cache_read,
             cache_write,
-            output: count(facts::VISIBLE_OUTPUT).unwrap_or(completion - reasoning),
+            output: count(facts::VISIBLE_OUTPUT).unwrap_or(output),
             reasoning,
         }
     }
@@ -1047,6 +1069,9 @@ mod tests {
 
     /// PROD `verify2-adk-ts-synthetic`: TypeScript ADK has no `generate_content`
     /// span, so the `call_llm` the Maple processor stamps `chat` is the call.
+    /// ADK 2.1.0 records `candidatesTokenCount` as the output and the processor
+    /// adds `thoughtsTokenCount` beside it (SRC), so thinking past the visible
+    /// output is kept whole.
     #[test]
     fn google_adk_ts_call_llm_owns_usage() {
         check(
@@ -1063,8 +1088,96 @@ mod tests {
                     ("gen_ai.usage.cache_read.input_tokens", "400"),
                     ("gen_ai.usage.input_tokens", "1000"),
                     ("gen_ai.usage.output_tokens", "100"),
+                    ("gen_ai.usage.reasoning.output_tokens", "300"),
                 ],
-                Some([600, 400, 0, 100, 0]),
+                Some([600, 400, 0, 100, 300]),
+            )],
+        );
+    }
+
+    /// Python ADK 2.6.2 and 2.10.0 `TokenUsage` (SRC): the output is
+    /// `candidates_token_count + thoughts_token_count`, so a Gemini call's
+    /// thinking comes out of it, and `call_llm` stays the wrapper.
+    #[test]
+    fn google_adk_python_gemini_output_includes_thoughts() {
+        let usage = [
+            ("gen_ai.usage.cache_read.input_tokens", "400"),
+            ("gen_ai.usage.input_tokens", "1000"),
+            ("gen_ai.usage.output_tokens", "400"),
+            ("gen_ai.usage.reasoning.output_tokens", "300"),
+        ];
+        let mut call_llm = vec![
+            ("gen_ai.request.model", "gemini-2.5-flash"),
+            ("gen_ai.system", "gcp.vertex.agent"),
+        ];
+        call_llm.extend(usage);
+        let mut generate = vec![
+            ("gen_ai.operation.name", "generate_content"),
+            ("gen_ai.request.model", "gemini-2.5-flash"),
+            ("gen_ai.system", "gemini"),
+        ];
+        generate.extend(usage);
+        check(
+            "adk-python-gemini",
+            "gcp.vertex.agent",
+            "google_adk",
+            &[
+                ("call_llm", &call_llm, None),
+                (
+                    "generate_content gemini-2.5-flash",
+                    &generate,
+                    Some([600, 400, 0, 100, 300]),
+                ),
+            ],
+        );
+    }
+
+    /// `opentelemetry-instrumentation-google-genai` 1.2b0 (SRC): the output is
+    /// `candidates_token_count + thoughts_token_count`.
+    #[test]
+    fn otel_google_genai_output_includes_thoughts() {
+        check(
+            "otel-google-genai",
+            "opentelemetry.instrumentation.google_genai",
+            "unknown:genai",
+            &[(
+                "generate_content gemini-2.5-flash",
+                &[
+                    ("gen_ai.operation.name", "generate_content"),
+                    ("gen_ai.provider.name", "gcp.gemini"),
+                    ("gen_ai.request.model", "gemini-2.5-flash"),
+                    ("gen_ai.usage.cache_read.input_tokens", "400"),
+                    ("gen_ai.usage.input_tokens", "1000"),
+                    ("gen_ai.usage.output_tokens", "400"),
+                    ("gen_ai.usage.reasoning.output_tokens", "300"),
+                ],
+                Some([600, 400, 0, 100, 300]),
+            )],
+        );
+    }
+
+    /// `openinference-instrumentation-google-genai` 1.4.8 (SRC): the completion
+    /// is candidates plus thoughts, the prompt contains the cache.
+    #[test]
+    fn openinference_google_genai_completion_includes_thoughts() {
+        check(
+            "openinference-google-genai",
+            "openinference.instrumentation.google_genai",
+            "unknown:openinference",
+            &[(
+                "GenerateContent",
+                &[
+                    ("llm.model_name", "gemini-2.5-flash"),
+                    ("llm.provider", "google"),
+                    ("llm.system", "vertexai"),
+                    ("llm.token_count.completion", "400"),
+                    ("llm.token_count.completion_details.reasoning", "300"),
+                    ("llm.token_count.prompt", "1000"),
+                    ("llm.token_count.prompt_details.cache_read", "400"),
+                    ("llm.token_count.total", "1400"),
+                    ("openinference.span.kind", "LLM"),
+                ],
+                Some([600, 400, 0, 100, 300]),
             )],
         );
     }
@@ -1633,7 +1746,7 @@ mod tests {
             owned_string_attribute("ai.usage.reasoningTokens", "10".to_owned()),
         ];
         assert_eq!(
-            Usage::read(&Facts::read(&attrs), false),
+            Usage::read(&Facts::read(&attrs), false, false),
             Usage {
                 input: 120,
                 cache_read: 0,
