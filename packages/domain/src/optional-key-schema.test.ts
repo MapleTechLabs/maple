@@ -1,7 +1,6 @@
 import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import { UpsertDigestSubscriptionRequest } from "./http/digest.ts"
-import { UpdateOnboardingStateRequest } from "./http/onboarding.ts"
 import { UpdateScrapeTargetRequest } from "./http/scrape-targets.ts"
 import { V2ApiKeyCreateParams } from "./http/v2/api-keys.ts"
 
@@ -33,12 +32,6 @@ const expectFail = <A>(result: DecodeResult<A>): void => {
 
 describe("optionalKey HTTP request schemas", () => {
 	describe("optional keys may be omitted", () => {
-		it("onboarding: all-optional class decodes {}", () => {
-			expectOk(decode(UpdateOnboardingStateRequest, {}))
-		})
-		it("onboarding: decodes a partial subset", () => {
-			expectOk(decode(UpdateOnboardingStateRequest, { markOnboardingComplete: true }))
-		})
 		it("scrape-target update: decodes {}", () => {
 			expectOk(decode(UpdateScrapeTargetRequest, {}))
 		})

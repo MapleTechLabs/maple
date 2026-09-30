@@ -4,13 +4,7 @@ import { HttpRouter } from "effect/unstable/http"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { OrgId, UserId } from "@maple/domain/http"
 import { decodePublicId, MapleApiV2 } from "@maple/domain/http/v2"
-import {
-	cleanupTestDbs,
-	createTestDb,
-	executeSql,
-	queryFirstRow,
-	type TestDb,
-} from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
 import type { WarehouseQueryServiceApi } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -196,7 +190,7 @@ const makeHarness = (warehouse: WarehouseQueryServiceApi = warehouseStub()) => {
 		)
 	}
 
-	/** An onboarding row whose first-data stamp was never written — every org created since August. */
+	/** An onboarding row the first-data tick has not stamped (yet, or ever for BYO-ClickHouse orgs). */
 	const seedUnstampedOrg = async () => {
 		await ensureSchema()
 		await executeSql(
@@ -204,16 +198,6 @@ const makeHarness = (warehouse: WarehouseQueryServiceApi = warehouseStub()) => {
 			`INSERT INTO org_onboarding_state (org_id, created_at, updated_at) VALUES ($1, now(), now())`,
 			[ORG],
 		)
-	}
-
-	const readFirstDataReceivedAt = async () => {
-		await ensureSchema()
-		const row = await queryFirstRow<{ first_data_received_at: Date | null }>(
-			testDb,
-			`SELECT first_data_received_at FROM org_onboarding_state WHERE org_id = $1`,
-			[ORG],
-		)
-		return row?.first_data_received_at ?? null
 	}
 
 	const seedDestination = async (id: string, enabled: boolean, lastTestError: string | null) => {
@@ -247,7 +231,6 @@ const makeHarness = (warehouse: WarehouseQueryServiceApi = warehouseStub()) => {
 		bootstrapKey,
 		seedConnectedOrg,
 		seedUnstampedOrg,
-		readFirstDataReceivedAt,
 		seedDestination,
 		seedRule,
 		dispose: async () => {
@@ -454,7 +437,7 @@ describe("GET /v2/instrumentation/audit", () => {
 		}
 	})
 
-	it("runs the checks and stamps first data when the warehouse has telemetry but the org was never stamped", async () => {
+	it("runs the checks when the warehouse has telemetry but the org is not stamped yet", async () => {
 		const harness = makeHarness(
 			warehouseStub({
 				service_usage: [
@@ -487,7 +470,6 @@ describe("GET /v2/instrumentation/audit", () => {
 			expect(response.status).toBe(200)
 			expect(response.body.data_status).toBe("ok")
 			expect(response.body.checks.length).toBeGreaterThan(0)
-			expect(await harness.readFirstDataReceivedAt()).not.toBeNull()
 		} finally {
 			await harness.dispose()
 		}

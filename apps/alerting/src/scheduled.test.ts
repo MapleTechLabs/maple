@@ -6,7 +6,7 @@ import { buildLayer, catchTickFailure, selectScheduledProgram, type ScheduledTic
 const cronCases = [
 	["*/5 * * * *", ["anomaly", "cloudflareAnalytics", "planetScale"]],
 	["*/15 * * * *", ["digest"]],
-	["0 * * * *", ["serviceMapRollup"]],
+	["0 * * * *", ["firstData", "serviceMapRollup"]],
 	["* * * * *", ["alert", "error", "escalation", "fixVerification"]],
 ] as const
 
@@ -26,6 +26,7 @@ describe("alerting Effect root", () => {
 				digest: tick("digest"),
 				error: tick("error"),
 				escalation: tick("escalation"),
+				firstData: tick("firstData"),
 				fixVerification: tick("fixVerification"),
 				planetScale: tick("planetScale"),
 				serviceMapRollup: tick("serviceMapRollup"),
@@ -55,6 +56,7 @@ describe("alerting Effect root", () => {
 				digest: record("digest"),
 				error: errorGate.await.pipe(Effect.andThen(record("error"))),
 				escalation: record("escalation"),
+				firstData: record("firstData"),
 				fixVerification: record("fixVerification"),
 				planetScale: record("planetScale"),
 				serviceMapRollup: record("serviceMapRollup"),
@@ -80,6 +82,7 @@ describe("alerting Effect root", () => {
 			digest: tick("digest"),
 			error: tick("error"),
 			escalation: tick("escalation"),
+			firstData: tick("firstData"),
 			fixVerification: tick("fixVerification"),
 			planetScale: tick("planetScale"),
 			serviceMapRollup: tick("serviceMapRollup"),

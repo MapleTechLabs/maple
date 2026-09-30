@@ -14,6 +14,7 @@ import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
 import { Env } from "@maple/backend/platform/Env"
 import { ErrorsService } from "@maple/backend/services/errors/ErrorsService"
 import { EscalationService } from "@maple/backend/services/alerts/EscalationService"
+import { FirstDataService } from "@maple/backend/services/org/FirstDataService"
 import { FixVerificationTickService } from "@maple/backend/services/errors/FixVerificationTickService"
 import { IncidentClassifier } from "@maple/backend/services/errors/IncidentClassifier"
 import { layerPg } from "@maple/backend/platform/DatabasePgLive"
@@ -43,6 +44,7 @@ export const buildLayer = (env: AlertingWorkerEnv) =>
 		DigestService.layer,
 		WebAnalyticsDigestService.layer,
 		ErrorsService.layer,
+		FirstDataService.layer,
 		FixVerificationTickService.layer,
 		EscalationService.layer,
 		ServiceMapRollupService.layer,
@@ -189,6 +191,14 @@ const digestTick = Effect.andThen(opsDigestTick, webAnalyticsDigestTick)
 // sequence, its send log and its suppression list. `org_onboarding_state` stays
 // here — the in-app checklist still uses the rest of that table — and so do its
 // four `*_email_sent_at` columns, which are what the portal's backfill reads.
+// `first_data_received_at` is still written here, by the first-data tick: the
+// setup audit gates on it and the portal reads it.
+
+const firstDataTick = makeTick(
+	FirstDataService.use((firstData) => firstData.runTick()),
+	"first_data",
+	(result) => (result.unstampedOrgs > 0 ? result : undefined),
+)
 
 const serviceMapRollupTick = makeTick(
 	ServiceMapRollupService.use((rollup) => rollup.runRollupTick()),
@@ -253,6 +263,7 @@ export interface ScheduledTickPrograms<R = never> {
 	readonly digest: Effect.Effect<void, never, R>
 	readonly error: Effect.Effect<void, never, R>
 	readonly escalation: Effect.Effect<void, never, R>
+	readonly firstData: Effect.Effect<void, never, R>
 	readonly fixVerification: Effect.Effect<void, never, R>
 	readonly planetScale: Effect.Effect<void, never, R>
 	readonly serviceMapRollup: Effect.Effect<void, never, R>
@@ -275,7 +286,9 @@ export const selectScheduledProgram = <R>(
 			}),
 		),
 		Match.when("*/15 * * * *", () => ticks.digest),
-		Match.when("0 * * * *", () => ticks.serviceMapRollup),
+		Match.when("0 * * * *", () =>
+			Effect.all([ticks.serviceMapRollup, ticks.firstData], { concurrency: 2, discard: true }),
+		),
 		Match.when("* * * * *", () =>
 			// `fixVerification` is chained onto `error` rather than listed beside it:
 			// a window this minute's error tick just refuted must already be settled
@@ -304,6 +317,7 @@ type ScheduledServices =
 	| WebAnalyticsDigestService
 	| ErrorsService
 	| EscalationService
+	| FirstDataService
 	| FixVerificationTickService
 	| PlanetScaleService
 	| ServiceMapRollupService
@@ -315,6 +329,7 @@ export const scheduledTicks: ScheduledTickPrograms<ScheduledServices> = {
 	digest: digestTick,
 	error: errorTick,
 	escalation: escalationTick,
+	firstData: firstDataTick,
 	fixVerification: fixVerificationTick,
 	planetScale: planetScaleTick,
 	serviceMapRollup: serviceMapRollupTick,
