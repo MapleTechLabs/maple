@@ -18,6 +18,7 @@ import {
 	Traces,
 	TracesAggregatesHourly,
 } from "../tables"
+import { deploymentEnvExpr, httpRequestMethodExpr } from "@maple/domain/tinybird/semconv-renames"
 import { METRIC_NEEDS } from "../../traces-shared"
 import type { ColumnDefs } from "@maple-dev/effect-clickhouse/types"
 import * as T from "@maple-dev/effect-clickhouse/types"
@@ -172,7 +173,7 @@ function buildGroupNameExpr(
 				parts.push(CH.toString_($.StatusCode))
 				break
 			case "http_method":
-				parts.push(CH.toString_($.SpanAttributes.get("http.method")))
+				parts.push(CH.toString_(httpRequestMethodExpr($.SpanAttributes)))
 				break
 			case "attribute":
 				if (groupByAttributeKeys?.length) {
@@ -289,13 +290,13 @@ function buildBreakdownGroupExpr(
 		case "namespace":
 			return $.ResourceAttributes.get("service.namespace")
 		case "environment":
-			return $.ResourceAttributes.get("deployment.environment")
+			return deploymentEnvExpr($.ResourceAttributes)
 		case "span_name":
 			return $.SpanName
 		case "status_code":
 			return $.StatusCode
 		case "http_method":
-			return $.SpanAttributes.get("http.method")
+			return httpRequestMethodExpr($.SpanAttributes)
 		case "attribute":
 			return groupByAttributeKey ? $.SpanAttributes.get(groupByAttributeKey) : $.ServiceName
 		default:

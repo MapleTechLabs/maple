@@ -295,11 +295,14 @@ function TraceDetailContent({
 
 	const rootSpan = data.rootSpans[0]
 	const rootHttpInfo = rootSpan ? getHttpInfo(rootSpan) : null
-	const deploymentEnv = rootSpan?.resourceAttributes?.["deployment.environment"]
+	const deploymentEnv =
+		rootSpan?.resourceAttributes?.["deployment.environment.name"] ||
+		rootSpan?.resourceAttributes?.["deployment.environment"]
 	const commitSha = rootSpan?.resourceAttributes?.["vcs.ref.head.revision"]
 	const hasError = data.spans.some((s: Span) => {
 		if (s.statusCode === "Error") return true
-		const httpStatus = s.spanAttributes?.["http.status_code"]
+		const httpStatus =
+			s.spanAttributes?.["http.response.status_code"] || s.spanAttributes?.["http.status_code"]
 		if (httpStatus) {
 			const code = typeof httpStatus === "string" ? parseInt(httpStatus) : httpStatus
 			if (typeof code === "number" && code >= 500) return true

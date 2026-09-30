@@ -2810,7 +2810,7 @@ SELECT
         FROM attribute_values_hourly
         WHERE OrgId = 'org_sql_catalog'
           AND AttributeScope = 'span'
-          AND AttributeKey IN ('peer.service', 'db.system', 'db.system.name', 'messaging.system', 'rpc.system')
+          AND AttributeKey IN ('service.peer.name', 'peer.service', 'db.system', 'db.system.name', 'messaging.system', 'rpc.system.name', 'rpc.system')
           AND Hour >= '2026-01-01 10:30:00'
           AND Hour <= '2026-01-03 14:15:00'
           AND AttributeValue != ''

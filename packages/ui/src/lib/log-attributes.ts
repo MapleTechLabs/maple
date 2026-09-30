@@ -49,7 +49,7 @@ const PROMOTED_RESOURCE_KEYS = new Set([
 function scoreKey(key: string): number {
 	if (key === "error" || key === "exception" || key.startsWith("exception.")) return 100
 	if (key === "http.status_code" || key === "http.response.status_code") return 95
-	if (key === "rpc.grpc.status_code") return 90
+	if (key === "rpc.grpc.status_code" || key === "rpc.response.status_code") return 90
 	if (key === "http.method" || key === "http.request.method") return 80
 	if (
 		key === "db.system" ||
@@ -60,10 +60,10 @@ function scoreKey(key: string): number {
 		key === "db.operation.name"
 	)
 		return 70
-	if (key === "rpc.service" || key === "rpc.method") return 68
+	if (key === "rpc.system.name" || key === "rpc.service" || key === "rpc.method") return 68
 	if (key === "user.id" || key === "enduser.id" || key === "customer_id" || key === "customer.id") return 66
 	if (key === "duration_ms" || key === "latency_ms" || key === "http.duration") return 60
-	if (key === "http.url" || key === "http.route" || key === "url.path") return 55
+	if (key === "http.url" || key === "url.full" || key === "http.route" || key === "url.path") return 55
 	if (key.startsWith("http.") || key.startsWith("url.")) return 40
 	if (key.startsWith("db.")) return 38
 	if (key.startsWith("rpc.")) return 36
@@ -104,8 +104,17 @@ export function getChipTone(key: string, value: string, severityText: string): C
 		if (Number.isFinite(n) && n !== 0) return "error"
 	}
 
+	// The current key carries the status name ("OK", "UNAVAILABLE") instead of a number.
+	if (key === "rpc.response.status_code" && value !== "" && value.toUpperCase() !== "OK") return "error"
+
 	if (key === "http.method" || key === "http.request.method") return "info"
-	if (key === "db.system" || key === "db.system.name" || key === "rpc.service" || key === "rpc.method")
+	if (
+		key === "db.system" ||
+		key === "db.system.name" ||
+		key === "rpc.system.name" ||
+		key === "rpc.service" ||
+		key === "rpc.method"
+	)
 		return "info"
 
 	if (rowIsError) return "muted"

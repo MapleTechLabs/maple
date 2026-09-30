@@ -42,20 +42,32 @@ import * as T from "@maple-dev/effect-clickhouse/types"
 
 // Semconv rename coalescing
 //
-// OpenTelemetry renamed several HTTP span attributes in the stable semconv:
-//   http.method      → http.request.method
-//   http.status_code → http.response.status_code
-// `trace_list_mv` coalesces both spellings when it pre-extracts its columns
-// (see materializations.ts), so the quick-filter facet counts cover spans that
-// use *either* key. Filters that read the raw `traces` table must coalesce the
-// same way — otherwise a facet shows a count while applying it matches zero
-// rows (the data carries the new key, the filter looked up the old one).
+// OpenTelemetry renamed several span attributes:
+//   http.method           → http.request.method
+//   http.status_code      → http.response.status_code
+//   db.system             → db.system.name
+//   messaging.destination → messaging.destination.name
+//   rpc.system            → rpc.system.name
+//   http.host             → server.address
+// `trace_list_mv` and the service-map rollups coalesce both spellings when they
+// pre-extract their columns (see materializations.ts), so facet counts and edge
+// targets cover spans that use *either* key. Filters that read the raw `traces`
+// table must coalesce the same way, otherwise a facet or a dependency drilldown
+// shows a count while applying it matches zero rows.
 
-const HTTP_SEMCONV_ALIASES: Record<string, readonly string[]> = {
+const SPAN_SEMCONV_ALIASES: Record<string, readonly string[]> = {
 	"http.method": ["http.method", "http.request.method"],
 	"http.request.method": ["http.method", "http.request.method"],
 	"http.status_code": ["http.status_code", "http.response.status_code"],
 	"http.response.status_code": ["http.status_code", "http.response.status_code"],
+	"db.system": ["db.system.name", "db.system"],
+	"db.system.name": ["db.system.name", "db.system"],
+	"messaging.destination": ["messaging.destination.name", "messaging.destination"],
+	"messaging.destination.name": ["messaging.destination.name", "messaging.destination"],
+	"rpc.system": ["rpc.system.name", "rpc.system"],
+	"rpc.system.name": ["rpc.system.name", "rpc.system"],
+	"server.address": ["server.address", "http.host"],
+	"http.host": ["server.address", "http.host"],
 } satisfies Record<string, readonly string[]>
 
 /**
@@ -117,7 +129,7 @@ export function buildAttrFilterCondition(
 	// `DeploymentEnv` (resource attributes).
 	const aliasTable =
 		mapName === "SpanAttributes"
-			? HTTP_SEMCONV_ALIASES
+			? SPAN_SEMCONV_ALIASES
 			: mapName === "ResourceAttributes"
 				? RESOURCE_SEMCONV_ALIASES
 				: undefined

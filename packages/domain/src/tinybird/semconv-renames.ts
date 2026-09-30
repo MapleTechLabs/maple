@@ -104,3 +104,18 @@ export function containerRuntimeExpr(resourceAttributes: MapColumnLike): Expr<st
 		resourceAttributes.get("container.runtime"),
 	)
 }
+
+/**
+ * Canonical HTTP request method expression for read paths that group by it.
+ *
+ * Stable HTTP semconv renamed `http.method` to `http.request.method`; a group-by
+ * on the legacy key alone put every span from current instrumentation into the
+ * `""` bucket. `trace_list_mv` pre-extracts `HttpMethod` with its own legacy-first
+ * `if()`, so like {@link containerRuntimeExpr} this has no SQL twin.
+ */
+export function httpRequestMethodExpr(spanAttributes: MapColumnLike): Expr<string> {
+	return CH.coalesce(
+		CH.nullIf(spanAttributes.get("http.request.method"), ""),
+		spanAttributes.get("http.method"),
+	)
+}

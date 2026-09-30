@@ -277,10 +277,12 @@ export function auditMetricLabelCardinalityQuery(opts: { limit?: number } = {}) 
 
 /** Keys whose *values* name a dependency, where inconsistent spelling fragments a service-map node. */
 export const AUDIT_PEER_KEYS = [
+	"service.peer.name",
 	"peer.service",
 	"db.system",
 	"db.system.name",
 	"messaging.system",
+	"rpc.system.name",
 	"rpc.system",
 ] as const
 

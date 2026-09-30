@@ -734,8 +734,49 @@ describe("tracesBreakdownQuery", () => {
 		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("FROM traces")
 		expect(sql).not.toContain("FROM service_overview_spans")
-		expect(sql).toContain("SpanAttributes['http.method'] AS name")
+		expect(sql).toContain(
+			"coalesce(nullIf(SpanAttributes['http.request.method'], ''), SpanAttributes['http.method']) AS name",
+		)
 	})
+
+	it("groups by environment under either semconv spelling on the raw path", () => {
+		const q = tracesBreakdownQuery({ metric: "count", groupBy: "environment" })
+		const { sql } = compileUnsafe(q, baseParams)
+		expect(sql).toContain("FROM traces")
+		expect(sql).toContain(
+			"coalesce(nullIf(ResourceAttributes['deployment.environment.name'], ''), ResourceAttributes['deployment.environment']) AS name",
+		)
+	})
+
+	it("groups a timeseries by http_method under either semconv spelling", () => {
+		const q = tracesTimeseriesQuery({
+			metric: "count",
+			needsSampling: false,
+			groupBy: ["http_method"],
+			bucketSeconds: 300,
+		})
+		const { sql } = compileUnsafe(q, { ...baseParams, bucketSeconds: 300 })
+		expect(sql).toContain(
+			"coalesce(nullIf(SpanAttributes['http.request.method'], ''), SpanAttributes['http.method'])",
+		)
+	})
+
+	// Dependency drilldowns and dashboard templates filter on these keys; the
+	// service-map rollups already coalesce them, so the raw filter has to too.
+	for (const [key, canonical, legacy] of [
+		["db.system", "db.system.name", "db.system"],
+		["messaging.destination.name", "messaging.destination.name", "messaging.destination"],
+		["rpc.system.name", "rpc.system.name", "rpc.system"],
+		["server.address", "server.address", "http.host"],
+	] as const) {
+		it(`matches both semconv spellings when filtering on ${key}`, () => {
+			const q = tracesListQuery({ attributeFilters: [{ key, value: "x", mode: "equals" }] })
+			const { sql } = compileUnsafe(q, baseParams)
+			expect(sql).toContain(
+				`if(SpanAttributes['${canonical}'] != '', SpanAttributes['${canonical}'], SpanAttributes['${legacy}']) = 'x'`,
+			)
+		})
+	}
 
 	it("groups by custom attribute", () => {
 		const q = tracesBreakdownQuery({

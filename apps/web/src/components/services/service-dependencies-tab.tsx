@@ -160,12 +160,17 @@ export function ServiceDependenciesTab({
 			const callCount = Number(edge.callCount ?? 0)
 			const estimated = Number(edge.estimatedCallCount ?? callCount)
 			const system = edge.targetSystem ? String(edge.targetSystem) : ""
+			// The where-clause parser drops `(a OR b)` groups, so each drill is one
+			// aliased key (the query engine matches both semconv spellings). An rpc
+			// TargetName falls back to the system when rpc.service is absent.
 			const whereClause =
 				kind === "messaging"
-					? `SpanKind = 'Producer' AND messaging.destination = ${quoteWhereValue(target)}`
+					? `SpanKind = 'Producer' AND messaging.destination.name = ${quoteWhereValue(target)}`
 					: kind === "rpc"
-						? `SpanKind = 'Client' AND rpc.service = ${quoteWhereValue(target)}`
-						: `SpanKind = 'Client' AND (server.address = ${quoteWhereValue(target)} OR http.host = ${quoteWhereValue(target)})`
+						? system === target
+							? `SpanKind = 'Client' AND rpc.system.name = ${quoteWhereValue(target)}`
+							: `SpanKind = 'Client' AND rpc.service = ${quoteWhereValue(target)}`
+						: `SpanKind = 'Client' AND server.address = ${quoteWhereValue(target)}`
 
 			out.push({
 				id: `${kind}:${target}`,

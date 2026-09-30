@@ -26,6 +26,7 @@ describe("normalizeKey", () => {
 		expect(normalizeKey("env")).toBe("deployment.environment")
 		expect(normalizeKey("environment")).toBe("deployment.environment")
 		expect(normalizeKey("deployment.environment")).toBe("deployment.environment")
+		expect(normalizeKey("deployment.environment.name")).toBe("deployment.environment")
 	})
 
 	it("normalizes commit_sha alias", () => {

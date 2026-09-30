@@ -39,7 +39,9 @@ export const normalizeKey = (raw: string): string =>
 	Match.value(raw.trim().toLowerCase()).pipe(
 		Match.when("service", () => "service.name"),
 		Match.when("span", () => "span.name"),
-		Match.whenOr("environment", "env", () => "deployment.environment"),
+		// The stable semconv key is a resource attribute too; without this it fell
+		// through to a span-attribute filter that matches nothing.
+		Match.whenOr("environment", "env", "deployment.environment.name", () => "deployment.environment"),
 		// `deployment.commit_sha` is retired telemetry, kept only as an alias so a
 		// saved where-clause written against it still names the commit filter.
 		Match.whenOr("commit_sha", "deployment.commit_sha", () => "vcs.ref.head.revision"),
