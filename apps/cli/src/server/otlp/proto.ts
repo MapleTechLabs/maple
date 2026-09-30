@@ -437,7 +437,8 @@ const ID_BYTES = { traceId: 16, spanId: 8, parentSpanId: 8 }
 const HEX = /^[0-9a-fA-F]+$/
 
 /** OTLP/JSON spells ids in hex where protobufjs reads base64. Only hex at an
- *  id's exact length converts; anything else is left for `idHex` to judge. */
+ *  id's exact length converts; anything else is read as base64, and a wrong
+ *  length is rejected by `idHex` after the round trip. */
 function hexIdsToBytes(holder: IdsJson): void {
 	for (const [field, bytes] of Object.entries(ID_BYTES)) {
 		const value = holder[field]

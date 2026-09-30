@@ -7,13 +7,18 @@ import { __testables } from "../src/server/serve"
 
 const TRACE_ID = "5b8efff798038103d269b633813fc60c"
 const SPAN_ID = "eee19b7ec3c1b174"
+const PARENT_ID = "0102030405060708"
+const LINKED_TRACE_ID = "0af7651916cd43dd8448eb211c80319c"
+// Several MiB, so the wasm memory has to grow mid-request.
+const LARGE = "x".repeat(8 * 1024 * 1024)
 
 const attrs = (pairs: Record<string, string>) =>
 	Object.entries(pairs).map(([key, stringValue]) => ({ key, value: { stringValue } }))
 
 // The gateway's own fixture, `vercel_v7_agent_call_and_tool` in
-// apps/ingest/crates/ai-session/src/facts.rs, plus a forged stamp.
-const request = (traceId: unknown, spanId: unknown) => ({
+// apps/ingest/crates/ai-session/src/facts.rs, plus a forged stamp. `id` spells
+// the ids for the wire format.
+const request = (id: (hex: string) => string | Uint8Array) => ({
 	resourceSpans: [
 		{
 			scopeSpans: [
@@ -21,8 +26,10 @@ const request = (traceId: unknown, spanId: unknown) => ({
 					scope: { name: "gen_ai" },
 					spans: [
 						{
-							traceId,
-							spanId,
+							traceId: id(TRACE_ID),
+							spanId: id(SPAN_ID),
+							parentSpanId: id(PARENT_ID),
+							links: [{ traceId: id(LINKED_TRACE_ID), spanId: id(PARENT_ID) }],
 							name: "chat openai/gpt-4o-mini",
 							startTimeUnixNano: "1700000000000000000",
 							endTimeUnixNano: "1700000001000000000",
@@ -32,6 +39,7 @@ const request = (traceId: unknown, spanId: unknown) => ({
 								"gen_ai.response.model": "openai/gpt-4o-mini-2024-07-18",
 								"gen_ai.response.id": "gen-1",
 								"maple_ai.tool_call": "1",
+								"app.note": LARGE,
 							}),
 						},
 					],
@@ -44,6 +52,8 @@ const request = (traceId: unknown, spanId: unknown) => ({
 interface DecodedSpan {
 	traceId: string
 	spanId: string
+	parentSpanId: string
+	links: { traceId: string; spanId: string }[]
 	attributes: { key: string; value: { stringValue?: string } }[]
 }
 
@@ -52,16 +62,23 @@ const stampsOf = (decoded: unknown) => {
 		.resourceSpans
 	const span = resourceSpans!.scopeSpans[0]!.spans[0]!
 	const stamps = span.attributes.filter(({ key }) => key.startsWith("maple_ai."))
+	const [link] = span.links
 	return {
-		traceId: traceIdHex(span.traceId, "traceId"),
-		spanId: spanIdHex(span.spanId, "spanId"),
+		ids: [
+			traceIdHex(span.traceId, "traceId"),
+			spanIdHex(span.spanId, "spanId"),
+			spanIdHex(span.parentSpanId, "parentSpanId"),
+			traceIdHex(link!.traceId, "link.traceId"),
+			spanIdHex(link!.spanId, "link.spanId"),
+		],
+		note: span.attributes.find(({ key }) => key === "app.note")?.value.stringValue?.length,
 		stamps: Object.fromEntries(stamps.map(({ key, value }) => [key, value.stringValue])),
 	}
 }
 
 const expected = {
-	traceId: TRACE_ID,
-	spanId: SPAN_ID,
+	ids: [TRACE_ID, SPAN_ID, PARENT_ID, LINKED_TRACE_ID, PARENT_ID],
+	note: LARGE.length,
 	stamps: {
 		"maple_ai.vendor.id": "vercel_ai_sdk",
 		"maple_ai.vendor.version": "0",
@@ -73,14 +90,14 @@ const expected = {
 
 describe("local ingest AI stamping", () => {
 	it("stamps an OTLP/protobuf request like the gateway", () => {
-		const bytes = encodeTraceRequest(request(Buffer.from(TRACE_ID, "hex"), Buffer.from(SPAN_ID, "hex")))
+		const bytes = encodeTraceRequest(request((hex) => Buffer.from(hex, "hex")))
 		const decoded = __testables.decodeOtlp("traces", bytes, "application/x-protobuf", null)
 		ok(Result.isSuccess(decoded))
 		deepStrictEqual(stampsOf(decoded.success), expected)
 	})
 
 	it("stamps an OTLP/JSON request and keeps its hex ids", () => {
-		const body = new TextEncoder().encode(JSON.stringify(request(TRACE_ID, SPAN_ID)))
+		const body = new TextEncoder().encode(JSON.stringify(request((hex) => hex)))
 		const decoded = __testables.decodeOtlp("traces", body, "application/json", null)
 		ok(Result.isSuccess(decoded))
 		deepStrictEqual(stampsOf(decoded.success), expected)
@@ -95,5 +112,7 @@ describe("local ingest AI stamping", () => {
 		)
 		ok(Result.isFailure(decoded))
 		strictEqual(decoded.failure._tag, "@maple/cli/OtlpDecodeFailed")
+		// prost's error, so the rejection came from the stamping, as in the gateway.
+		ok(decoded.failure.message.includes("failed to decode Protobuf message"), decoded.failure.message)
 	})
 })

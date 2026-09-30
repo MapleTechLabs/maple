@@ -27,25 +27,29 @@ const instantiate = () =>
 	new WebAssembly.Instance(module, imports).exports as unknown as AiStampExports
 let wasm = instantiate()
 
+/** Wasm memory never shrinks; past this, the next request gets a fresh instance. */
+const MAX_RETAINED_MEMORY_BYTES = 64 * 1024 * 1024
+
 /** Stamp a protobuf `ExportTraceServiceRequest`; fails with the decode error
  *  when it is not one, which the gateway rejects too. */
 export function stampTraceRequest(request: Uint8Array): Result.Result<Uint8Array, string> {
-	return Result.try({
+	const stamped = Result.try({
 		try: () => {
 			// `input` may grow memory, detaching any earlier view of it.
 			const at = wasm.input(request.length)
 			new Uint8Array(wasm.memory.buffer, at, request.length).set(request)
-			return wasm.stamp() === 1
+			const ok = wasm.stamp() === 1
+			const output = wasm.output()
+			const length = wasm.output_len()
+			return { ok, bytes: new Uint8Array(wasm.memory.buffer, output, length).slice() }
 		},
-		// A panic traps and can leave the instance unusable; the next request gets a fresh one.
-		catch: (trap) => {
+		// A panic is a stamping bug, not bad input, and a trap can leave the
+		// instance unusable: keep the batch unstamped and start over.
+		catch: () => {
 			wasm = instantiate()
-			return `AI stamping failed: ${String(trap)}`
+			return { ok: true, bytes: request }
 		},
-	}).pipe(
-		Result.flatMap((stamped) => {
-			const output = new Uint8Array(wasm.memory.buffer, wasm.output(), wasm.output_len()).slice()
-			return stamped ? Result.succeed(output) : Result.fail(new TextDecoder().decode(output))
-		}),
-	)
+	}).pipe(Result.merge)
+	if (wasm.memory.buffer.byteLength > MAX_RETAINED_MEMORY_BYTES) wasm = instantiate()
+	return stamped.ok ? Result.succeed(stamped.bytes) : Result.fail(new TextDecoder().decode(stamped.bytes))
 }
