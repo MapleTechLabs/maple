@@ -1,6 +1,6 @@
 ---
 name: maple-onboarding-style
-description: "General OpenTelemetry onboarding style for Maple: native APIs, the business-span pattern, signal quality, inline keys, VCS resource attributes, LLM calls, and smoke checks."
+description: "General OpenTelemetry onboarding style for Maple: native APIs, the business-span pattern, signal quality, endpoint and key setup, VCS resource attributes, LLM calls, and smoke checks."
 ---
 
 # Maple OTel onboarding style
@@ -56,14 +56,15 @@ withTelemetry(...)
 
 ## Endpoint and key
 
-Inline the endpoint and the ingest key directly in the bootstrap source and pass them explicitly to the exporter: its own URL option (`url` in JavaScript, `endpoint` in Python; each language skill shows the exact shape) plus `headers`. Don't read `OTEL_EXPORTER_OTLP_*` env vars and don't write `.env` files. `maple-onboard` Step 0 decides the region and which key goes where.
+Inline the endpoint in the bootstrap source and pass it explicitly to the exporter: its own URL option (`url` in JavaScript, `endpoint` in Python; each language skill shows the exact code) plus `headers`. Don't route it through `OTEL_EXPORTER_OTLP_*` env vars. `maple-onboard` Step 0 decides the region and which key goes where.
 
 ```text
 MAPLE_ENDPOINT = "https://ingest.maple.dev"   # EU organizations: https://ingest.eu.maple.dev
-MAPLE_KEY      = "maple_pk_…"                 # public ingest key, or "MAPLE_TEST" until the user has one
+MAPLE_KEY      = env MAPLE_INGEST_KEY          # servers: private key (maple_sk_…), fail fast when unset
+MAPLE_KEY      = "maple_pk_…"                 # browser/mobile: public key inline, or "MAPLE_TEST" until the user has one
 ```
 
-`MAPLE_TEST` is accepted by both regions and dropped, so the bootstrap exercises the full code path before the real key arrives.
+`MAPLE_TEST` is accepted by both regions and dropped, so the bootstrap exercises the full code path before the real key arrives. On servers it goes in the uncommitted `.env` as `MAPLE_INGEST_KEY=MAPLE_TEST`, never in source.
 
 If the repo can call telemetry init from multiple paths, guard provider/exporter setup so repeated imports, tests, reloads, or framework callbacks do not install duplicate processors or log handlers. For a single-entrypoint app that starts cleanly, keep this simple.
 

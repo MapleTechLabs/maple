@@ -1,6 +1,6 @@
 ---
 name: maple-go-style
-description: "Go OpenTelemetry style for Maple: go.opentelemetry.io/otel SDK with otlptracehttp / otlploghttp / otlpmetrichttp exporters, inline endpoint + ingest key, semconv resource attributes including vcs.repository.url.full."
+description: "Go OpenTelemetry style for Maple: go.opentelemetry.io/otel SDK with otlptracehttp / otlploghttp / otlpmetrichttp exporters, inline endpoint, ingest key from MAPLE_INGEST_KEY, semconv resource attributes including vcs.repository.url.full."
 ---
 
 # Maple Go style
@@ -22,13 +22,14 @@ go get \
 
 ## Bootstrap
 
-Inline the endpoint and ingest key. The key is a project-scoped, write-only token (shaped like a Sentry DSN). No env-var indirection. `WithEndpoint` takes a host without scheme, uses HTTPS, and appends the default `/v1/<signal>` path.
+Inline the endpoint. Read the private ingest key from `MAPLE_INGEST_KEY` and return an error when it is unset. `WithEndpoint` takes a host without scheme, uses HTTPS, and appends the default `/v1/<signal>` path.
 
 ```go
 package telemetry
 
 import (
 	"context"
+	"errors"
 	"os"
 
 	"go.opentelemetry.io/otel"
@@ -44,12 +45,13 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
 )
 
-const (
-	mapleEndpoint = "ingest.maple.dev" // EU: ingest.eu.maple.dev
-	mapleKey      = "MAPLE_TEST" // public ingest key (maple_pk_…), or MAPLE_TEST until the user has one
-)
+const mapleEndpoint = "ingest.maple.dev" // EU: ingest.eu.maple.dev
 
 func Init(ctx context.Context) (shutdown func(context.Context) error, err error) {
+	mapleKey := os.Getenv("MAPLE_INGEST_KEY") // private ingest key (maple_sk_…), a secret
+	if mapleKey == "" {
+		return nil, errors.New("MAPLE_INGEST_KEY is not set (Maple private ingest key)")
+	}
 	headers := map[string]string{"authorization": "Bearer " + mapleKey}
 
 	res, err := resource.New(ctx,

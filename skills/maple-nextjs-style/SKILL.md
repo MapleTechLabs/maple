@@ -1,6 +1,6 @@
 ---
 name: maple-nextjs-style
-description: "Next.js / Vercel OpenTelemetry style for Maple: instrumentation.ts, @vercel/otel bootstrap, native @opentelemetry/api call sites, inline endpoint + ingest key, no raw NodeSDK replacement, @maple-dev/browser on the client."
+description: "Next.js / Vercel OpenTelemetry style for Maple: instrumentation.ts, @vercel/otel bootstrap, native @opentelemetry/api call sites, inline endpoint, server key from MAPLE_INGEST_KEY, no raw NodeSDK replacement, @maple-dev/browser on the client."
 ---
 
 # Maple Next.js style
@@ -12,9 +12,10 @@ For Next.js apps, use the framework entrypoint, `instrumentation.ts` with `@verc
 import { registerOTel } from "@vercel/otel"
 
 const MAPLE_ENDPOINT = "https://ingest.maple.dev" // EU: https://ingest.eu.maple.dev
-const MAPLE_KEY = "MAPLE_TEST" // public ingest key (maple_pk_…), or MAPLE_TEST until the user has one
 
 export function register() {
+	const MAPLE_KEY = process.env.MAPLE_INGEST_KEY // private ingest key (maple_sk_…), a secret
+	if (!MAPLE_KEY) throw new Error("MAPLE_INGEST_KEY is not set (Maple private ingest key)")
 	registerOTel({
 		serviceName: "my-next-app",
 		attributes: {
@@ -42,7 +43,6 @@ import { BatchLogRecordProcessor } from "@opentelemetry/sdk-logs"
 import { registerOTel } from "@vercel/otel"
 
 const MAPLE_ENDPOINT = "https://ingest.maple.dev"
-const MAPLE_KEY = "MAPLE_TEST"
 
 const anthropicInstrumentation = new AnthropicInstrumentation({
 	traceConfig: {
@@ -54,6 +54,8 @@ const anthropicInstrumentation = new AnthropicInstrumentation({
 anthropicInstrumentation.manuallyInstrument(Anthropic)
 
 export function register() {
+	const MAPLE_KEY = process.env.MAPLE_INGEST_KEY
+	if (!MAPLE_KEY) throw new Error("MAPLE_INGEST_KEY is not set (Maple private ingest key)")
 	registerOTel({
 		serviceName: "my-next-app",
 		instrumentations: [anthropicInstrumentation],
@@ -156,6 +158,6 @@ Render `<Maple />` inside `<body>` in `app/layout.tsx` (Pages Router: import `./
 
 ## Configuration and smoke
 
-Inline the endpoint and ingest key in `instrumentation.ts` and pass them explicitly to `registerOTel`. Do not rely on `OTEL_EXPORTER_OTLP_*` env vars. The Maple ingest key is project-scoped and write-only, and inline config avoids Vercel's env-propagation quirks in preview builds.
+Inline the endpoint in `instrumentation.ts` and pass it with the key explicitly to `registerOTel`. Do not rely on `OTEL_EXPORTER_OTLP_*` env vars. The server key is the private key in `MAPLE_INGEST_KEY`: Next.js loads `.env.local` / `.env` itself, and on Vercel the user adds it under Project Settings → Environment Variables for every environment that runs the app (Preview included), or those builds stop at startup. Never give it a `NEXT_PUBLIC_` prefix: that ships it to the browser.
 
 Smoke-check with tools already in the repo (`npm run typecheck`, `npm run build`), plus a real app request where practical. Do not invent fragile inline Node scripts that import TypeScript source files directly, and do not assume `ts-node` exists unless it is already installed.

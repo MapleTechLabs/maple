@@ -11,7 +11,7 @@ Every signal reaches Maple through one OTLP/HTTP gateway. Any OpenTelemetry SDK 
 | ------------ | ----------------------------------------------------------------------------------- |
 | Base URL     | `https://ingest.maple.dev`, or your [region's](/docs/reference/regions) ingest host |
 | Protocol     | OTLP over HTTP, `POST`                                                              |
-| Auth         | `Authorization: Bearer maple_pk_…` (or `maple_sk_…`)                                |
+| Auth         | `Authorization: Bearer maple_sk_…` (servers) or `maple_pk_…` (browsers)             |
 | Encodings    | Protobuf (recommended) or JSON, optionally gzip                                     |
 | Max body     | 20 MiB per request, measured on the compressed body                                 |
 | Request time | 30 seconds per request                                                              |
@@ -31,7 +31,7 @@ Use the ingest host of your organization's [region](/docs/reference/regions). A 
 
 ```bash
 export OTEL_EXPORTER_OTLP_ENDPOINT="https://ingest.maple.dev"
-export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer maple_pk_…"
+export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer maple_sk_…"
 export OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"
 ```
 
@@ -40,8 +40,8 @@ export OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"
 Send your ingest key on every request, either as a Bearer token or in the `x-maple-ingest-key` header. The `Bearer` prefix is case-insensitive.
 
 ```http
-Authorization: Bearer maple_pk_…
-x-maple-ingest-key: maple_pk_…
+Authorization: Bearer maple_sk_…
+x-maple-ingest-key: maple_sk_…
 ```
 
 Ingest keys can only send data, and each belongs to one organization. Use the **public** key (`maple_pk_…`) in browsers and mobile apps, where it ships to end users, and the **private** key (`maple_sk_…`) on servers. Find both under **Settings → Ingestion** in the dashboard. [Authentication](/docs/reference/authentication#ingest-keys) explains the difference.

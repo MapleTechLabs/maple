@@ -31,18 +31,20 @@ Maple runs two separate regions. A key only works in the region that issued it; 
 
 Pick the region in this order: an ingest endpoint in the prompt (use it verbatim), an EU mention or an `eu.maple.dev` URL in the prompt, otherwise US. Use that region's hosts everywhere below: `<dashboard>` and `<mcp>` mean that region's dashboard and MCP server from this table. The endpoint is not a secret and **goes inline** in the bootstrap code.
 
-The **ingest key** is **project-scoped and write-only**. It can only send telemetry to one organization; it can't read anything or change settings. Treat it like a Sentry DSN or a PostHog public key: **inline it directly in the OTel bootstrap source** alongside the endpoint. No `.env` files, no deploy-target wiring, no `process.env.OTEL_EXPORTER_OTLP_HEADERS`. The user deploys their code and events flow.
+Each organization has two ingest keys under **Settings → Ingestion** (<dashboard>/settings?tab=ingestion). Both are write-only: they can only send telemetry to one organization.
 
-Each organization has two ingest keys with the same permissions:
+- **Private key** (`maple_sk_…`) for everything server-side: servers, workers, jobs, CLIs, serverless and edge functions.
+- **Public key** (`maple_pk_…`) for browser and mobile code only. It ships to end users anyway, so inline it in the client source. Never put the private key in a browser or mobile bundle.
 
-- **Public key** (`maple_pk_…`). Safe in browser and mobile bundles. Use it everywhere, servers included, so one key covers the repo.
-- **Private key** (`maple_sk_…`). Server-side code only. Never put it in a browser or mobile bundle.
+Server-side key rules:
 
-Three paths, no questions asked:
+- The user sets the private key as `MAPLE_INGEST_KEY` in their environment or `.env`; don't ask for it in the chat. Not set: put `MAPLE_INGEST_KEY=MAPLE_TEST` in the uncommitted `.env` (both regions accept it and return 200 without storing anything, so the bootstrap can run) and tell the user to replace it with their private key. Don't block install on signup.
+- The key is a secret. Keep it in the repo's secret/env convention (`.env`, settings module, secret manager), never in source, committed config, logs or command lines, and tell the user to add it to their deployment's secrets. No convention: create `.env`, add it to `.gitignore` if missing, and commit a `.env.example` with placeholder values.
+- The bootstrap reads `MAPLE_INGEST_KEY` and fails fast with a clear message when it is unset. Never let it become `Bearer undefined` or an empty bearer (an opaque 401).
+- If the app loads `.env` (`dotenv`, `--env-file`, `load_dotenv()`), load it before the bootstrap builds its exporters, or they start without a key.
+- A private key pasted in the prompt: don't copy it into any file or command; tell the user to set `MAPLE_INGEST_KEY` themselves.
 
-- **Public key in the prompt:** inline it in every bootstrap file.
-- **Private key in the prompt:** inline it in server-side bootstrap files only. Put `MAPLE_TEST` in browser and mobile code, and tell the user to swap in the public key there. Mention that the public key also works on servers, so one key can cover the repo.
-- **No key:** inline the literal sentinel `MAPLE_TEST`. Both regions accept it and return 200 without storing anything, so the app can boot and exercise the OTel bootstrap path while the user gets a real key. Tell the user *briefly* at the top of your work: "I'm using `MAPLE_TEST` as a placeholder so the bootstrap can run. Copy your public ingest key from Settings → Ingestion (<dashboard>/settings?tab=ingestion) and search-replace `MAPLE_TEST` in the files I write." Then keep going. Don't block install on signup.
+Browser and mobile code: inline the public key if the prompt has it, otherwise inline `MAPLE_TEST` and tell the user to swap in the public key.
 
 ## Step 1: Map every app/service in the repo
 
@@ -67,7 +69,7 @@ Wire all three signals on servers: traces, logs, metrics. **Logs go through OTLP
 Bootstrap rules:
 
 - The bootstrap file must run before any framework imports. Use the language/framework's documented hook (`--import` flag, `instrumentation.ts`, top-of-`main.py` import, etc.).
-- Inline the region's endpoint and the ingest key directly in the bootstrap source (Step 0). Don't read from `process.env.OTEL_EXPORTER_OTLP_*` or write any `.env` files. Inline configuration removes a whole class of "OTel didn't start because env vars weren't set" deploy failures. (See the framework-specific style skills for the exact shape per stack.)
+- Inline the region's endpoint in the bootstrap source and pass it to the exporters with the key from Step 0 (`MAPLE_INGEST_KEY` on servers, the inline public key in browser and mobile code). Don't route them through `OTEL_EXPORTER_OTLP_*` env vars. The framework-specific style skills show the exact code per stack.
 - Use HTTP OTLP exporters, not gRPC. gRPC pulls in native bindings that break bundlers and complicate containers.
 - Use the project's existing package manager (detect via lockfile).
 - Prefer idempotent edits. If a config file already exists, edit don't overwrite.
@@ -92,7 +94,7 @@ Framework rules:
 
 	Use `region`; pass `endpoint` instead only when the prompt's endpoint is not a Maple host (a proxy or self-hosted ingest). Session replay is on by default with inputs masked; say so in the hand-off. If the API is on another origin, list it in `tracing.propagateTraceHeaderCorsUrls`, or browser and server spans land in separate traces. The API's CORS preflight must also allow `traceparent`. Check the current preflight response first: many setups (the `cors` package default) already echo the requested headers. Only when the config has an explicit allow-list, add `traceparent` to it and keep the existing entries. Effect frontends use `@maple-dev/effect-sdk/client` instead (see `maple-effect-style`).
 - **Expo/React Native:** preserve existing Expo Go / unsupported-runtime guards. In supported builds, initialize telemetry before other SDKs that wrap `fetch` or the global error handler, and before app registration/user code. Inline the endpoint + public key in the observability module, with no `EXPO_PUBLIC_*` env vars.
-- **Supabase Edge Functions / Cloudflare Workers:** native Deno / Workers OpenTelemetry can be quirky. Keep the exporter shim tiny, provider-neutral, and OTel-shaped: `tracer.startActiveSpan`, `span.setAttributes`, `SpanStatusCode`, `meter.createCounter`, `histogram.record`. For Effect on Workers, use `@maple-dev/effect-sdk/cloudflare` (see `maple-effect-style`).
+- **Supabase Edge Functions / Cloudflare Workers:** the key is a platform secret named `MAPLE_INGEST_KEY` (`.dev.vars` locally and `wrangler secret put MAPLE_INGEST_KEY` for Workers; `supabase secrets set` for Supabase), which the user sets themselves. Native Deno / Workers OpenTelemetry can be quirky. Keep the exporter shim tiny, provider-neutral, and OTel-native: `tracer.startActiveSpan`, `span.setAttributes`, `SpanStatusCode`, `meter.createCounter`, `histogram.record`. For Effect on Workers, use `@maple-dev/effect-sdk/cloudflare` (see `maple-effect-style`).
 - **Python/FastAPI:** use native instrumentation such as `FastAPIInstrumentor.instrument_app(app)` rather than replacing request handling with manual middleware.
 
 **Coexist with existing observability vendors. Don't remove Sentry, Datadog, New Relic, Honeycomb, Logtail, Pino transports, etc.** OTel sits alongside them. The user wants both flowing during migration; removing the incumbent is not your call.
@@ -129,14 +131,14 @@ Get the meter once at module level, create instruments at module level, incremen
 
 ### LLM calls
 
-If the service calls an LLM, use the `maple-agent-tracing` skill for that service: it matches the agent framework (Vercel AI SDK, OpenAI Agents SDK, LangChain/LangGraph, Mastra, Pydantic AI, CrewAI, Google ADK and others), gateway (OpenRouter, LiteLLM) or direct OpenAI / Anthropic / Google Gen AI SDK, and installs the per-framework skill with the switches each needs for sessions, transcripts, tool failures and token counts. For that service, follow its key rules instead of Step 0's: it uses the private key (`maple_sk_…`) from `MAPLE_INGEST_KEY` in the repo's secret/env convention, never inline.
+If the service calls an LLM, use the `maple-agent-tracing` skill for that service: it matches the agent framework (Vercel AI SDK, OpenAI Agents SDK, LangChain/LangGraph, Mastra, Pydantic AI, CrewAI, Google ADK and others), gateway (OpenRouter, LiteLLM) or direct OpenAI / Anthropic / Google Gen AI SDK, and installs the per-framework skill with the switches each needs for sessions, transcripts, tool failures and token counts.
 
 ## Step 4: Verify the app still works and telemetry arrives
 
 Per service:
 
 1. **Run the project's own dev or build command** (whatever its `package.json` / `pyproject` / `Makefile` already wires up). Confirm it starts cleanly with no errors that trace back to your OTel install. Also run a telemetry bootstrap smoke that imports or starts the app, so provider setup, exporter construction, log bridging, and framework instrumentation all initialize. For a Python server this can be an import/startup command such as `uv run python -c 'from app.main import app; print(app.title)'`; for Node/Next use the repo's build/start path. For a server, hit at least one route with curl so traffic flows through the instrumentation; choose a route that exercises an instrumented operation when practical, not only a static health route. For a CLI, invoke a real command. **Don't ship if the app's own startup is now broken.** That is a regression.
-2. **Confirm telemetry leaves the process.** Exporters report failures and stay quiet on success, so turn diagnostics on for the smoke run and look for errors: `OTEL_LOG_LEVEL=debug` for Node's `NodeSDK` (each batch is dumped before it is sent; a failure logs `Export failed` / `OTLPExporterError` with the HTTP status); Python exporters log failures through `logging` at `WARNING`/`ERROR`, which reach stderr unless the app silences them; Go's default error handler prints to stderr. Batches sent and no export error once the process has shut down (so the final flush ran) means the exports got 2xx. A `401` means the key is wrong or belongs to the other region: try it once against the other region's ingest with curl. If both reject it, prove the export path with `MAPLE_TEST` for the smoke run, put the user's key back, and say in the hand-off that ingest rejected their key. As a network sanity check, `curl -X POST <endpoint>/v1/traces -H "authorization: Bearer MAPLE_TEST" -H "content-type: application/json" -d '{}'` returns 200. If the app's own exports never happen, the bootstrap is wrong (most often the SDK loads too late, or shutdown doesn't flush).
+2. **Confirm telemetry leaves the process.** Exporters report failures and stay quiet on success, so turn diagnostics on for the smoke run and look for errors: `OTEL_LOG_LEVEL=debug` for Node's `NodeSDK` (each batch is dumped before it is sent; a failure logs `Export failed` / `OTLPExporterError` with the HTTP status); Python exporters log failures through `logging` at `WARNING`/`ERROR`, which reach stderr unless the app silences them; Go's default error handler prints to stderr. Batches sent and no export error once the process has shut down (so the final flush ran) means the exports got 2xx. A `401` means the key is wrong or belongs to the other region: point one smoke run at the other region's endpoint. If both reject it, prove the export path with `MAPLE_INGEST_KEY=MAPLE_TEST` for the smoke run and say in the hand-off that ingest rejected their key. As a network sanity check, `curl -X POST <endpoint>/v1/traces -H "authorization: Bearer MAPLE_TEST" -H "content-type: application/json" -d '{}'` returns 200. If the app's own exports never happen, the bootstrap is wrong (most often the SDK loads too late, or shutdown doesn't flush).
 3. **Confirm the data landed (a key ingest accepted).** `MAPLE_TEST` stores nothing, so skip this with the placeholder or a rejected key. With a real key and the Maple MCP tools available, wait about a minute after the smoke traffic, call `list_services`, and check that every instrumented service is listed under the `service.name` you set. Then call `audit_setup` and fix the instrumentation findings it reports (missing signals, `service.name` mismatches, attribute gaps). Without MCP, tell the user that Settings → Ingestion shows when the first data arrives.
 
 A bootstrap that loads but never exports is not a partial success. Fix it before moving on.
@@ -147,19 +149,15 @@ A bootstrap that loads but never exports is not a partial success. Fix it before
 
 3–7 short factual bullets covering: packages installed, files created/modified, business spans/metrics added. Per service if changes differed, grouped if uniform. Mention any existing observability vendor (Sentry, Datadog, Logtail, Pino transports, etc.) you intentionally left in place so the coexistence is explicit. If you added `@maple-dev/browser`, say that session replay is on with inputs masked (`replay: { enabled: false }` turns it off), and that it keeps a persistent visitor id in localStorage and a cookie (`privacy: { persistVisitorId: false }` turns it off). Both matter for the user's privacy and cookie notices.
 
-### Swap the placeholder if you used one
+### Keys
 
-If `MAPLE_TEST` is still inline, tell the user:
+Tell the user where each key goes:
 
-> "The bootstrap currently uses `MAPLE_TEST` as a placeholder so the install could complete end-to-end. Copy your public ingest key from Settings → Ingestion (<dashboard>/settings?tab=ingestion), then search-replace `MAPLE_TEST` in the files I wrote and redeploy. If your organization is in the EU region (the dashboard is at app.eu.maple.dev), also replace `ingest.maple.dev` with `ingest.eu.maple.dev`, or set `region: "eu"` in the Maple SDKs."
+- Servers: set `MAPLE_INGEST_KEY` to the private key (`maple_sk_…`) from Settings → Ingestion (<dashboard>/settings?tab=ingestion) in the local `.env` (replacing `MAPLE_TEST` if you put it there) and in every deployment's secrets. Name the files and platforms you found. The bootstrap stops the app at startup when the variable is missing.
+- Browser and mobile code: if `MAPLE_TEST` is still inline, search-replace it with the public key (`maple_pk_…`) in the files you wrote.
+- If the organization is in the EU region (the dashboard is at app.eu.maple.dev) and you used the US endpoint, replace `ingest.maple.dev` with `ingest.eu.maple.dev`, or set `region: "eu"` in the Maple SDKs.
 
-Leave out the EU sentence if you already used the EU endpoint.
-
-### Deploy
-
-Tell the user to deploy as they normally would: push to their hosting platform, run their existing CI, or run locally. There are no env vars to wire and nothing platform-specific to configure: the endpoint and key are inline in the bootstrap, so events start flowing the moment the instrumented code runs.
-
-If the user asks "where do I put the key in production?", the answer is "you already did; it's in the source you just deployed."
+Then the user deploys as they normally would.
 
 ## Step 6: Drive Maple MCP install
 
@@ -182,8 +180,8 @@ For other agents the user might also use, mention but do *not* run:
 
 - Never modify files outside the project root.
 - Never commit, push, or open PRs.
-- Inline the ingest key in source. It's a write-only token (think Sentry DSN); env-var indirection just adds deploy-time failure modes for no gain.
-- Never put a private key (`maple_sk_…`) in browser or mobile code.
+- Server-side code reads the private key from `MAPLE_INGEST_KEY`. Never write it into source, committed config, logs or command lines, and never ask for it in the chat.
+- Browser and mobile code inline the public key (`maple_pk_…`). Never put the private key there.
 - Never remove an existing observability vendor unless the user asks for it.
 - Use the project's existing package manager and existing logger.
 - Prefer native OTel packages for the language; don't reinvent telemetry plumbing the SDK already provides.

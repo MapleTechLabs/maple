@@ -1,6 +1,6 @@
 ---
 name: maple-java-style
-description: "Java OpenTelemetry style for Maple: zero-code Java agent or manual SDK with OTLP HTTP exporters, inline endpoint + ingest key, semconv resource attributes, OTLP-bridged Logback / SLF4J logs."
+description: "Java OpenTelemetry style for Maple: zero-code Java agent or manual SDK with OTLP HTTP exporters, inline endpoint, ingest key from MAPLE_INGEST_KEY, semconv resource attributes, OTLP-bridged Logback / SLF4J logs."
 ---
 
 # Maple Java style
@@ -13,20 +13,20 @@ The fastest path is the OpenTelemetry Java agent. It auto-instruments the JVM wi
 curl -sLO https://github.com/open-telemetry/opentelemetry-java-instrumentation/releases/latest/download/opentelemetry-javaagent.jar
 ```
 
-Inline the endpoint and ingest key as JVM system properties. The agent also reads `OTEL_*` env vars, but inline `-D` flags fit the inline-key model. The agent appends `/v1/traces`, `/v1/logs`, and `/v1/metrics` to the base endpoint:
+Inline the endpoint as a JVM system property. The key goes in the `OTEL_EXPORTER_OTLP_HEADERS` environment variable, built from `MAPLE_INGEST_KEY` (the private key) so it never appears in the `java` command line. The agent appends `/v1/traces`, `/v1/logs`, and `/v1/metrics` to the base endpoint:
 
 ```bash
+export OTEL_EXPORTER_OTLP_HEADERS="authorization=Bearer ${MAPLE_INGEST_KEY:?MAPLE_INGEST_KEY is not set}"
 java \
   -javaagent:./opentelemetry-javaagent.jar \
   -Dotel.service.name=orders-api \
   -Dotel.exporter.otlp.protocol=http/protobuf \
   -Dotel.exporter.otlp.endpoint=https://ingest.maple.dev \
-  -Dotel.exporter.otlp.headers="authorization=Bearer MAPLE_TEST" \
   -Dotel.resource.attributes="vcs.repository.url.full=https://github.com/acme/orders-api,vcs.ref.head.revision=${GITHUB_SHA:-}" \
   -jar build/libs/app.jar
 ```
 
-Replace `MAPLE_TEST` with the project's real Maple ingest key once it exists. EU organizations use `https://ingest.eu.maple.dev` as the endpoint. Keep the flags inline where the JVM is launched (`Procfile`, `Dockerfile`, `systemd` unit, or `JAVA_TOOL_OPTIONS`). Do not move them behind unset env vars. The agent does not read Spring's `application.yml`.
+EU organizations use `https://ingest.eu.maple.dev` as the endpoint. Keep the flags where the JVM is launched (`Procfile`, entrypoint script, `systemd` unit, or `JAVA_TOOL_OPTIONS`); the `export` line needs a shell, so a Dockerfile uses an entrypoint script or shell-form `CMD`. `${MAPLE_INGEST_KEY:?}` stops the launch when the key is missing. The agent does not read Spring's `application.yml`.
 
 The agent auto-instruments Spring (Boot, MVC, WebFlux), Servlet containers, Apache HttpClient, OkHttp, JDBC, R2DBC, Hibernate, Kafka, gRPC, AWS SDK, and many more.
 
@@ -56,10 +56,13 @@ Where the agent can't run (GraalVM native image, embedded JVM, sealed module pat
 ```java
 public final class Telemetry {
     private static final String MAPLE_ENDPOINT = "https://ingest.maple.dev"; // EU: https://ingest.eu.maple.dev
-    private static final String MAPLE_KEY = "MAPLE_TEST"; // public ingest key (maple_pk_…), or MAPLE_TEST until the user has one
 
     public static OpenTelemetrySdk init() {
-        var headers = Map.of("authorization", "Bearer " + MAPLE_KEY);
+        var key = System.getenv("MAPLE_INGEST_KEY"); // private ingest key (maple_sk_…), a secret
+        if (key == null || key.isEmpty()) {
+            throw new IllegalStateException("MAPLE_INGEST_KEY is not set (Maple private ingest key)");
+        }
+        var headers = Map.of("authorization", "Bearer " + key);
         var resource = Resource.getDefault().merge(Resource.create(Attributes.builder()
             .put("service.name", "orders-api")
             .put("deployment.environment.name",

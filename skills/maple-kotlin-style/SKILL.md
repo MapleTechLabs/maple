@@ -1,6 +1,6 @@
 ---
 name: maple-kotlin-style
-description: "Kotlin (Ktor, Spring Boot) OpenTelemetry style for Maple: zero-code Java agent or manual SDK with OTLP HTTP exporters, inline endpoint + ingest key, semconv resource attributes, OTLP-bridged logs."
+description: "Kotlin (Ktor, Spring Boot) OpenTelemetry style for Maple: zero-code Java agent or manual SDK with OTLP HTTP exporters, inline endpoint, ingest key from MAPLE_INGEST_KEY, semconv resource attributes, OTLP-bridged logs."
 ---
 
 # Maple Kotlin style
@@ -12,17 +12,17 @@ Kotlin runs on the JVM, so the same OpenTelemetry Java agent and SDK apply. Pref
 ```bash
 curl -sLO https://github.com/open-telemetry/opentelemetry-java-instrumentation/releases/latest/download/opentelemetry-javaagent.jar
 
+export OTEL_EXPORTER_OTLP_HEADERS="authorization=Bearer ${MAPLE_INGEST_KEY:?MAPLE_INGEST_KEY is not set}"
 java \
   -javaagent:./opentelemetry-javaagent.jar \
   -Dotel.service.name=orders-api \
   -Dotel.exporter.otlp.protocol=http/protobuf \
   -Dotel.exporter.otlp.endpoint=https://ingest.maple.dev \
-  -Dotel.exporter.otlp.headers="authorization=Bearer MAPLE_TEST" \
   -Dotel.resource.attributes="vcs.repository.url.full=https://github.com/acme/orders-api,vcs.ref.head.revision=${GITHUB_SHA:-}" \
   -jar build/libs/app.jar
 ```
 
-Replace `MAPLE_TEST` with the project's real Maple ingest key once it exists. EU organizations use `https://ingest.eu.maple.dev` as the endpoint. Keep these flags inline where the JVM is launched (`Procfile`, `Dockerfile`, or `JAVA_TOOL_OPTIONS`). Do not move them behind unset env vars. The agent does not read `application.yml`.
+`MAPLE_INGEST_KEY` holds the private key; building the header in the environment keeps it out of the `java` command line, and `${MAPLE_INGEST_KEY:?}` stops the launch when it is missing. EU organizations use `https://ingest.eu.maple.dev` as the endpoint. Keep these flags where the JVM is launched (`Procfile`, entrypoint script, or `JAVA_TOOL_OPTIONS`). The agent does not read `application.yml`.
 
 The agent auto-instruments Ktor, Spring Boot (MVC, WebFlux), kotlinx.coroutines context propagation, JDBC (so Exposed), R2DBC, Kafka, gRPC, OkHttp, AWS SDK, and more.
 
@@ -30,10 +30,11 @@ The agent auto-instruments Ktor, Spring Boot (MVC, WebFlux), kotlinx.coroutines 
 
 ```kotlin
 val MAPLE_ENDPOINT = "https://ingest.maple.dev" // EU: https://ingest.eu.maple.dev
-val MAPLE_KEY = "MAPLE_TEST" // public ingest key (maple_pk_…), or MAPLE_TEST until the user has one
 
 fun initTelemetry(): OpenTelemetrySdk {
-    val headers = mapOf("authorization" to "Bearer $MAPLE_KEY")
+    val key = System.getenv("MAPLE_INGEST_KEY") // private ingest key (maple_sk_…), a secret
+        ?: error("MAPLE_INGEST_KEY is not set (Maple private ingest key)")
+    val headers = mapOf("authorization" to "Bearer $key")
     val resource = Resource.getDefault().merge(Resource.create(
         Attributes.builder()
             .put("service.name", "orders-api")
