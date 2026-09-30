@@ -5,6 +5,8 @@ import {
 	GitCommitSha,
 	type OrgId,
 	PrReviewListItem,
+	PrReviewModel,
+	PrReviewOrgSettings,
 	PrReviewRepositoryConfig,
 	type RepoUpsertInput,
 	type UserId,
@@ -25,6 +27,7 @@ import {
 } from "@maple/domain/http"
 import {
 	prReviews,
+	prReviewSettings,
 	vcsCommits,
 	vcsInstallations,
 	vcsRepositoryBranches,
@@ -49,6 +52,7 @@ const decodeInstallation = Schema.decodeUnknownSync(VcsInstallation)
 const decodeRepo = Schema.decodeUnknownSync(VcsRepo)
 const decodeCommit = Schema.decodeUnknownSync(VcsCommit)
 const decodePrReviewConfig = Schema.decodeUnknownOption(PrReviewRepositoryConfig)
+const decodePrReviewModel = Schema.decodeUnknownOption(PrReviewModel)
 const decodePrReviewListItem = Schema.decodeUnknownSync(PrReviewListItem)
 const decodeBranch = Schema.decodeUnknownSync(VcsBranch)
 // Validate the SHA shape via the branded type (the regex lives only there);
@@ -957,6 +961,39 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 			return rows.length > 0
 		})
 
+		const getPrReviewSettings = Effect.fn("VcsRepository.getPrReviewSettings")(function* (orgId: OrgId) {
+			const rows = yield* database
+				.execute((db) =>
+					db
+						.select({ model: prReviewSettings.model })
+						.from(prReviewSettings)
+						.where(eq(prReviewSettings.orgId, orgId))
+						.limit(1),
+				)
+				.pipe(Effect.mapError(toPersistenceError))
+			return Option.match(decodePrReviewModel(rows[0]?.model), {
+				onNone: () => new PrReviewOrgSettings({}),
+				onSome: (model) => new PrReviewOrgSettings({ model }),
+			})
+		})
+
+		const setPrReviewSettings = Effect.fn("VcsRepository.setPrReviewSettings")(function* (
+			orgId: OrgId,
+			settings: PrReviewOrgSettings,
+			updatedBy: UserId,
+		) {
+			const now = msToDate(yield* Clock.currentTimeMillis)
+			const values = { model: settings.model ?? null, updatedAt: now, updatedBy }
+			yield* database
+				.execute((db) =>
+					db
+						.insert(prReviewSettings)
+						.values({ orgId, ...values })
+						.onConflictDoUpdate({ target: prReviewSettings.orgId, set: values }),
+				)
+				.pipe(Effect.mapError(toPersistenceError))
+		})
+
 		// A repository's most recent reviews, newest first, for the settings list.
 		const listPrReviews = Effect.fn("VcsRepository.listPrReviews")(function* (
 			orgId: OrgId,
@@ -1149,6 +1186,8 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 			setPrReviewEnabled,
 			getPrReviewConfig,
 			setPrReviewConfig,
+			getPrReviewSettings,
+			setPrReviewSettings,
 			listPrReviews,
 			reconcileBranchDeletions,
 			deleteBranch,

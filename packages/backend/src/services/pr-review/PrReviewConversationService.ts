@@ -354,7 +354,12 @@ export class PrReviewConversationService extends Context.Service<
 				yield* annotate("skipped", { "maple.pr_reply.skip_reason": "quota" })
 				return skip("quota")
 			}
-			const { command, text } = parseReplyCommand(job.body)
+			// The provider's own handle, so an install's App login carries the command like `@maple` does.
+			const mention = yield* providers.resolve(repo.provider).pipe(
+				Effect.map((provider) => provider.reviewerMention),
+				Effect.option,
+			)
+			const { command, text } = parseReplyCommand(job.body, Option.getOrUndefined(mention))
 			const replyId = newReplyId()
 			const inserted = yield* database
 				.execute((db) =>

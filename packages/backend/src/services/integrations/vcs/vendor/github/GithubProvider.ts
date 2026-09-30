@@ -7,6 +7,7 @@ import {
 	type PullRequestHead,
 	type PullRequestReviewThread,
 	mentionsReviewer,
+	reviewerMention as reviewerMentionFor,
 	type PullRequestSummary,
 	type RepoUpsertInput,
 	type VcsInstallation,
@@ -340,6 +341,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 		make: Effect.gen(function* () {
 			const env = yield* Env
 			const client = yield* GithubAppClient
+			const reviewerMention = reviewerMentionFor(Option.getOrUndefined(env.GITHUB_APP_SLUG))
 
 			// Stamp the (low-cardinality) signature *result* on the active span. NEVER
 			// records the signature value or the secret — only the outcome enum. The
@@ -689,7 +691,8 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 						return yield* commentSkip("issue_comment_not_pull_request")
 					if (payload.comment.user === null || payload.comment.user.type === "Bot")
 						return yield* commentSkip("comment_by_bot")
-					if (!mentionsReviewer(body)) return yield* commentSkip("comment_no_mention")
+					if (!mentionsReviewer(body, reviewerMention))
+						return yield* commentSkip("comment_no_mention")
 					yield* Effect.annotateCurrentSpan({
 						"vcs.webhook.outcome": "handled",
 						"vcs.pull_request.number": payload.issue.number,
@@ -721,7 +724,8 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					if (payload.action !== "created") return yield* commentSkip("comment_action")
 					if (payload.comment.user === null || payload.comment.user.type === "Bot")
 						return yield* commentSkip("comment_by_bot")
-					if (!mentionsReviewer(body)) return yield* commentSkip("comment_no_mention")
+					if (!mentionsReviewer(body, reviewerMention))
+						return yield* commentSkip("comment_no_mention")
 					yield* Effect.annotateCurrentSpan({
 						"vcs.webhook.outcome": "handled",
 						"vcs.pull_request.number": payload.pull_request.number,
@@ -1468,6 +1472,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 
 			return {
 				id: PROVIDER,
+				reviewerMention,
 				webhookToJobs,
 				fetchRepositories,
 				fetchCommits,

@@ -14,6 +14,7 @@
 import {
 	AI_AGENT_OPERATIONS,
 	AI_INFERENCE_OPERATIONS,
+	AI_MEMORY_OPERATIONS,
 	AI_RETRIEVAL_OPERATIONS,
 	AI_TOOL_OPERATIONS,
 } from "@maple/domain/gen-ai"
@@ -37,8 +38,11 @@ const INFERENCE_OPS: ReadonlySet<string> = new Set(AI_INFERENCE_OPERATIONS)
 const RETRIEVAL_OPS: ReadonlySet<string> = new Set(AI_RETRIEVAL_OPERATIONS)
 const TOOL_OPS: ReadonlySet<string> = new Set(AI_TOOL_OPERATIONS)
 const AGENT_OPS: ReadonlySet<string> = new Set(AI_AGENT_OPERATIONS)
+/** A memory-store operation is the agent's own bookkeeping, so it reads as agent
+ *  work — not a model turn, not a tool call. */
+const MEMORY_OPS: ReadonlySet<string> = new Set(AI_MEMORY_OPERATIONS)
 
-/** Every operation name the four sets above recognise. A span name conventionally
+/** Every operation name the five sets above recognise. A span name conventionally
  *  leads with one ("execute_tool read_file", "chat gpt-5"), so a view that wants
  *  to set the operation apart from its subject needs to know which words are
  *  operations — including for the reporters that skip `gen_ai.operation.name`. */
@@ -47,6 +51,7 @@ export const GEN_AI_OPERATIONS: ReadonlySet<string> = new Set([
 	...RETRIEVAL_OPS,
 	...TOOL_OPS,
 	...AGENT_OPS,
+	...MEMORY_OPS,
 ])
 
 export function spanStartMs(span: AiSessionSpan): number {
@@ -64,10 +69,20 @@ export function spanModel(span: AiSessionSpan): string | undefined {
 
 export function classifyAiSpan(span: AiSessionSpan): AiSpanCategory {
 	const operation = span.genAi.operationName
+	// The ingest gateway's verdict, on a span it stamped (`MAPLE_AI_STAMP_ATTRS`):
+	// the one the sessions list counts. The rules below serve the spans ingested
+	// before it did, until they age out of the 30-day TTL.
+	if (span.genAi.mapleLlmCall !== undefined) {
+		if (span.genAi.mapleLlmCall === 1) return "inference"
+		// `0` is the copy a call paused for a human's approval left: still a
+		// tool span on screen, never counted (`isCountedToolCall`).
+		if (span.genAi.mapleToolCall !== undefined) return "tool"
+		return operation !== undefined && RETRIEVAL_OPS.has(operation) ? "inference" : "agent"
+	}
 	if (operation !== undefined) {
 		if (INFERENCE_OPS.has(operation) || RETRIEVAL_OPS.has(operation)) return "inference"
 		if (TOOL_OPS.has(operation)) return "tool"
-		if (AGENT_OPS.has(operation)) return "agent"
+		if (AGENT_OPS.has(operation) || MEMORY_OPS.has(operation)) return "agent"
 	}
 	// Spans with no AI signal at all are the app's own HTTP/DB work, sharing the
 	// agent's traces. They are rendered, muted, and never colored as agent work.
@@ -75,9 +90,14 @@ export function classifyAiSpan(span: AiSessionSpan): AiSpanCategory {
 
 	// `gen_ai.operation.name` is optional and plenty of instrumentations skip it.
 	// The span name is the next best evidence: by convention it leads with the
-	// operation ("execute_tool read_file", "chat gpt-5").
+	// operation ("execute_tool read_file", "chat gpt-5"). Except for "tool": a
+	// span naming an operation the convention does not know (LangSmith's
+	// `chain`, a Mastra `scorer_step`) has said what it is, and the LangGraph
+	// `tools` node or a `code-tool-call-accuracy-scorer` is not a tool call.
 	const name = span.spanName.toLowerCase()
-	if (span.genAi.toolName !== undefined || name.includes("tool")) return "tool"
+	if (span.genAi.toolName !== undefined || (operation === undefined && name.includes("tool"))) {
+		return "tool"
+	}
 	if (name.includes("agent") || name.includes("workflow")) return "agent"
 	if (spanModel(span) !== undefined || name.includes("chat") || name.includes("completion")) {
 		return "inference"
@@ -97,7 +117,19 @@ export function classifyAiSpan(span: AiSessionSpan): AiSpanCategory {
  * documented four would color a span as inference and then leave it out of the
  * call count, the model rows and the token column.
  */
+/**
+ * A tool call that counts, wherever tool calls are counted: on a span the
+ * ingest gateway stamped, its `maple_ai.tool_call = 1`, which leaves out the
+ * copy a call paused for a human's approval left although it renders as a
+ * tool.
+ */
+export function isCountedToolCall(span: AiSessionSpan): boolean {
+	if (span.genAi.mapleLlmCall !== undefined) return span.genAi.mapleToolCall === 1
+	return classifyAiSpan(span) === "tool"
+}
+
 export function isLlmCall(span: AiSessionSpan): boolean {
+	if (span.genAi.mapleLlmCall !== undefined) return span.genAi.mapleLlmCall === 1
 	const operation = span.genAi.operationName
 	if (operation !== undefined && RETRIEVAL_OPS.has(operation)) return false
 	return classifyAiSpan(span) === "inference"
@@ -117,9 +149,13 @@ const FAILED_RESPONSE_STATUSES = new Set(["failed", "error"])
  * semconv sets only when the operation errored) or a failed
  * `gen_ai.response.status` counts too. Scoped to AI spans because HTTP
  * instrumentation legitimately stamps `error.type` on expected 4xx requests
- * whose span status is deliberately not `Error`.
+ * whose span status is deliberately not `Error`. On a span the ingest gateway
+ * stamped, its verdict (`MAPLE_AI_STAMP_ATTRS.error`), which is this rule
+ * less the copy a call paused for a human's approval leaves, which some
+ * frameworks end in error.
  */
 export function spanFailed(span: AiSessionSpan): boolean {
+	if (span.genAi.mapleLlmCall !== undefined) return span.genAi.mapleError === 1
 	if (span.statusCode === "Error") return true
 	if (!span.isAiSpan) return false
 	const errorType = span.genAi.errorType
@@ -162,6 +198,11 @@ export interface SessionTurn {
 	/** Traces the turn's spans came from, first-seen first. A turn may cross traces. */
 	readonly traceIds: readonly string[]
 }
+
+const WORK_CATEGORIES: ReadonlySet<AiSpanCategory> = new Set(["inference", "tool"])
+/** How soon before the next turn a workless anchor must end to be its setup:
+ *  the pause the session summary starts calling idle. */
+const SETUP_LEAD_MAX_MS = 5_000
 
 interface TurnAnchor {
 	readonly span: AiSessionSpan
@@ -216,6 +257,37 @@ export function buildSessionTurns(spans: readonly AiSessionSpan[]): readonly Ses
 	for (const { span, startMs } of ordered) {
 		while (cursor + 1 < anchors.length && anchorStarts[cursor + 1] <= startMs) cursor++
 		buckets[turnOf(span) ?? cursor].push(span)
+	}
+
+	// On rules 2 and 3 the boundary is a guess, and an anchor that opened no
+	// work — no model or tool call, no prompt, nothing failed — right before the
+	// next turn is that turn's setup: Microsoft Agent Framework's one-span
+	// `workflow.build` trace ahead of its `workflow.run` became an empty turn 1
+	// that also took the session's title. Its spans join the next turn, as spans
+	// before the first anchor join turn 1; the cursor filled the buckets in start
+	// order, so they stay in it. One followed by a pause is left alone, and a
+	// session with no work anywhere keeps its anchors.
+	const opened = (bucket: readonly AiSessionSpan[]) =>
+		bucket.some(
+			(span) =>
+				WORK_CATEGORIES.has(classifyAiSpan(span)) ||
+				spanFailed(span) ||
+				lastUserMessageText(span.genAi.inputMessages) !== undefined,
+		)
+	if (anchors[0]?.kind !== "conversation" && buckets.some(opened)) {
+		for (let i = 0; i < buckets.length - 1; i++) {
+			const bucket = buckets[i]
+			const next = buckets[i + 1]
+			if (opened(bucket)) continue
+			const endMs = bucket.reduce(
+				(max, span) => Math.max(max, spanEndMs(span)),
+				Number.NEGATIVE_INFINITY,
+			)
+			if (next[0] !== undefined && spanStartMs(next[0]) - endMs > SETUP_LEAD_MAX_MS) continue
+			for (const span of next) bucket.push(span)
+			buckets[i + 1] = bucket
+			buckets[i] = []
+		}
 	}
 
 	// A turn with no spans has no start, no end and nothing to draw. Rule 1 can no
@@ -340,10 +412,10 @@ function findAnchors(ordered: readonly AiSessionSpan[]): readonly TurnAnchor[] {
 	const byConversation = new Map<string, AiSessionSpan>()
 	for (const span of ordered) {
 		const conversationId = span.genAi.conversationId
-		// Six vendors (flue, google_adk, mastra, microsoft_agent_framework,
-		// openai_agents_sdk, pydantic_ai) derive `maple_ai.session.id` FROM
-		// `gen_ai.conversation.id`, so for them the id names the session and
-		// repeats on every span — a partition of one, not a turn key.
+		// The gateway derives `maple_ai.session.id` FROM `gen_ai.conversation.id`
+		// whenever a vendor's own session key is absent (and for some vendors
+		// ahead of it), so there the id names the session and repeats on every
+		// span — a partition of one, not a turn key.
 		if (conversationId === undefined || sessionIds.has(conversationId)) continue
 		if (!byConversation.has(conversationId)) byConversation.set(conversationId, span)
 	}
@@ -374,8 +446,15 @@ function findAnchors(ordered: readonly AiSessionSpan[]): readonly TurnAnchor[] {
 		}
 		return false
 	}
+	// A memory operation is agent work, but bookkeeping around a turn rather than
+	// the start of one: as an anchor, a lookup ahead of the agent run would open a
+	// turn of its own.
 	const agentRoots = ordered.filter(
-		(span) => span.isAiSpan && classifyAiSpan(span) === "agent" && !underAiSpan(span),
+		(span) =>
+			span.isAiSpan &&
+			classifyAiSpan(span) === "agent" &&
+			!MEMORY_OPS.has(span.genAi.operationName ?? "") &&
+			!underAiSpan(span),
 	)
 	if (agentRoots.length > 0) {
 		return agentRoots.map((span) => ({
@@ -401,16 +480,40 @@ function findAnchors(ordered: readonly AiSessionSpan[]): readonly TurnAnchor[] {
  *
  * The anchor is asked first — on a `chat`-shaped span `gen_ai.input.messages`
  * is the whole history sent to the model, so a descendant several turns deep
- * still carries turn 1's opening prompt.
+ * still carries turn 1's opening prompt. Model calls come next: the history a
+ * model was sent ends on the turn's prompt, while a framework's own node span
+ * may carry only what the thread started with (LangGraph's `model` node under a
+ * checkpointer holds the thread's first message on every turn).
+ *
+ * An anchor whose prompt is an earlier user message of the first model call's
+ * history is stale, and that call's newest prompt wins: OpenInference's
+ * LangChain instrumentor records only the first message of a chain's input, so
+ * a thread that re-sends its history (checkpointer state, or messages the
+ * caller carries) puts turn 1's prompt on every agent root. A model call whose
+ * history does not hold the anchor's prompt (a title or routing call) leaves
+ * the anchor standing.
  */
 function turnLabel(anchor: AiSessionSpan, turnSpans: readonly AiSessionSpan[]): string | undefined {
+	let modelPrompts: readonly string[] = []
+	for (const span of turnSpans) {
+		if (!isLlmCall(span)) continue
+		modelPrompts = userMessageTexts(span.genAi.inputMessages)
+		if (modelPrompts.length > 0) break
+	}
 	const fromAnchor = lastUserMessageText(anchor.genAi.inputMessages)
-	if (fromAnchor !== undefined) return fromAnchor
+	if (fromAnchor !== undefined && !modelPrompts.slice(0, -1).includes(fromAnchor)) return fromAnchor
+	const fromModel = modelPrompts.at(-1)
+	if (fromModel !== undefined) return fromModel
 	for (const span of turnSpans) {
 		const text = lastUserMessageText(span.genAi.inputMessages)
 		if (text !== undefined) return text
 	}
 	return undefined
+}
+
+/** Every user message with readable text in a captured history, oldest first. */
+function userMessageTexts(value: unknown): readonly string[] {
+	return Array.isArray(value) ? value.flatMap((entry) => lastUserMessageText([entry]) ?? []) : []
 }
 
 /** Longest turn label the page will render before eliding — a captured prompt
@@ -461,14 +564,23 @@ function messageText(value: unknown): string | undefined {
 	return undefined
 }
 
-/** The message's first non-empty line, collapsed to one line's worth of text. */
+/** A framework's own heading over the prompt, which names what follows rather
+ *  than saying it: smolagents opens every task with "New task:". Matched
+ *  literally, since a user's "Fix this:" over pasted code is the prompt. */
+const LEAD_IN = /^new task:$/i
+
+/** The message's first non-empty line, collapsed to one line's worth of text —
+ *  or the line after it, when the first is a lead-in. */
 function proseLine(value: string): string | undefined {
+	const lines: string[] = []
 	for (const rawLine of value.split("\n")) {
 		const line = rawLine.trim().replace(/\s+/g, " ")
-		if (line.length === 0) continue
-		return line.length > MAX_LABEL_LENGTH ? `${line.slice(0, MAX_LABEL_LENGTH - 1)}…` : line
+		if (line.length > 0 && lines.push(line) === 2) break
 	}
-	return undefined
+	const [first, second] = lines
+	if (first === undefined) return undefined
+	const line = second !== undefined && LEAD_IN.test(first) ? second : first
+	return line.length > MAX_LABEL_LENGTH ? `${line.slice(0, MAX_LABEL_LENGTH - 1)}…` : line
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

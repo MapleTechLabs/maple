@@ -1331,9 +1331,8 @@ describe("converted queries", () => {
 			matchModes: { serviceName: "contains" },
 		})
 		const { sql } = compileUnsafe(q, baseParams)
-		expect(sql).toContain("positionCaseInsensitive(ServiceName, 'api') > 0")
-		expect(sql).toContain("quantile(0.5)(Duration)")
-		expect(sql).toContain("FROM trace_list_mv") // tracesDurationStats always uses MV directly
+		// On both tiers: the trace_list_mv edges and the hourly interior.
+		expect(sql.match(/positionCaseInsensitive\(ServiceName, 'api'\) > 0/g)).toHaveLength(2)
 	})
 
 	it("spanHierarchyQuery projects only the trimmed tree attribute keys", () => {

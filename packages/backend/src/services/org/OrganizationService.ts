@@ -20,6 +20,7 @@ import {
 } from "@maple/domain/organization-regions"
 import {
 	actors,
+	agentFeedback,
 	alertDeliveryEvents,
 	alertDestinations,
 	alertIncidents,
@@ -53,6 +54,7 @@ import {
 	scrapeTargets,
 	vcsCommits,
 	prReviews,
+	prReviewSettings,
 	prReviewFindings,
 	prReviewFindingEmbeddings,
 	prReviewReplies,
@@ -85,6 +87,7 @@ const toProviderError = (error: unknown) =>
 	})
 
 const ORG_SCOPED_TABLES = [
+	agentFeedback,
 	dashboardVersions,
 	dashboards,
 	alertDeliveryEvents,
@@ -116,6 +119,7 @@ const ORG_SCOPED_TABLES = [
 	vcsRepositories,
 	vcsCommits,
 	prReviews,
+	prReviewSettings,
 	prReviewFindings,
 	prReviewFindingEmbeddings,
 	prReviewReplies,

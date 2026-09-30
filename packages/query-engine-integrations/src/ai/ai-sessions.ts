@@ -148,24 +148,26 @@ import {
 import {
 	AI_AGENT_OPERATIONS,
 	AI_INFERENCE_OPERATIONS,
-	AI_PROMPT_VARIABLE_PREFIX,
+	AI_MEMORY_OPERATIONS,
 	AI_RETRIEVAL_OPERATIONS,
 	AI_TOOL_OPERATIONS,
 	MAPLE_AI_SESSION_ID_ATTR,
+	MAPLE_AI_STAMP_ATTRS,
 	MAPLE_AI_TRACE_SESSION_PREFIX,
 	MAPLE_AI_VENDOR_ID_ATTR,
 	MAPLE_NATIVE_TURN_ID_ATTR,
 	type AiGenAiField,
 } from "@maple/domain/gen-ai"
-import { aiFieldSourceKeys, aiSpanAttributeKeys } from "./ai-integrations"
+import { aiFieldSourceKeys, aiSpanAttributeKeys, aiSpanAttributePrefixes } from "./ai-integrations"
 import {
 	childClaimsExpr,
 	MAX_USAGE_REPORTERS_PER_TRACE,
 	nettedReportersExpr,
-	reportingSpanIdsExpr,
+	reporterSpanIdsExpr,
 	sessionLlmCalls,
 	sessionReportersExpr,
 	sessionUsageSum,
+	usageLinksExpr,
 	usageReportersExpr,
 } from "./ai-span-columns"
 
@@ -240,6 +242,24 @@ export const orderTuple = (...parts: ReadonlyArray<unknown>): CH.Expr<unknown> =
  */
 export const sessionKey = (rawSessionId: CH.Expr<string>, traceId: CH.Expr<string>): CH.Expr<string> =>
 	CH.if_(rawSessionId.eq(""), CH.concat(MAPLE_AI_TRACE_SESSION_PREFIX, traceId), rawSessionId)
+
+/**
+ * Whether a trace is a session at all, as a HAVING over its index rows: it
+ * carries a session id (joining whatever session that names), or it made a
+ * model call or a tool call, or ran a named agent. A sessionless trace with
+ * none of these is framework plumbing that happened to be stamped — a lone
+ * Spring AI advisor span, OpenRouter's connection test — and filing it as
+ * `trace:<id>` put an empty session in the list for every one of them. A
+ * trace of tool calls alone (a tool server whose caller did not propagate its
+ * context) is still agent work, and stays.
+ */
+export const isSessionTraceCond = ($: {
+	readonly SessionId: CH.Expr<string>
+	readonly IsLlmCall: CH.Expr<number>
+	readonly IsToolCall: CH.Expr<number>
+	readonly AgentName: CH.Expr<string>
+}): CH.Condition =>
+	CH.countIf($.SessionId.neq("").or($.IsLlmCall.eq(1)).or($.IsToolCall.eq(1)).or($.AgentName.neq(""))).gt(0)
 
 /**
  * One trace's failed agent spans — `(SpanId, ParentSpanId, IsToolCall)` per
@@ -556,6 +576,8 @@ const indexTraces = (opts: AiSessionFilterOpts, bounds: IndexBounds) => {
 				// Usage AND model calls travel as reporters: both are counted one level
 				// up, where every trace of the session is in hand — see `ai-span-columns`.
 				usageReporters: usageReportersExpr($),
+				tokenLinks: usageLinksExpr($, $.Tokens),
+				costLinks: usageLinksExpr($, $.Cost),
 			}
 		})
 		.where(($) => [
@@ -565,6 +587,7 @@ const indexTraces = (opts: AiSessionFilterOpts, bounds: IndexBounds) => {
 		])
 		.groupBy("traceId")
 		.having(($) => [
+			isSessionTraceCond($),
 			CH.when(values(opts.vendorIds), (v) => carries(CH.inList($.VendorId, v))),
 			CH.when(values(opts.serviceNames), (v) => carries(CH.inList($.ServiceName, v))),
 			CH.when(values(opts.deploymentEnvs), (v) => carries(CH.inList($.DeploymentEnv, v))),
@@ -650,9 +673,9 @@ const indexSessions = (opts: AiSessionFilterOpts) =>
 			// The usage, still as reporters: netted one level up, summed two —
 			// with the two lookups the netting makes taken off the reporters here,
 			// once per session, rather than once per reporter inside the netting.
-			reporters: sessionReportersExpr("usageReporters"),
+			reporters: sessionReportersExpr("usageReporters", "tokenLinks", "costLinks"),
 			childClaims: childClaimsExpr("reporters"),
-			reportingIds: reportingSpanIdsExpr("reporters"),
+			reporterIds: reporterSpanIdsExpr("reporters"),
 		}))
 		.groupBy("sessionId")
 
@@ -774,7 +797,7 @@ export function aiSessionPageQuery(opts: AiSessionPageOpts = {}) {
 
 	const netted = fromQuery(ranked, "ranked_sessions").select(($) => ({
 		...carry($),
-		netted: nettedReportersExpr("reporters", "childClaims", "reportingIds"),
+		netted: nettedReportersExpr("reporters", "childClaims", "reporterIds"),
 	}))
 
 	const page = fromQuery(netted, "netted_sessions")
@@ -1096,6 +1119,8 @@ export function aiSessionFacetsQuery(): CHUnionQuery<AiSessionFacetsOutput> {
 				$.Timestamp.lte(param.dateTimeString("endTime")),
 			])
 			.groupBy("traceId")
+			// The list's population, so a facet never counts a session it cannot show.
+			.having(($) => [isSessionTraceCond($)])
 
 		return fromQuery(perTrace, "facet_traces")
 			.select(($) => ({
@@ -1180,7 +1205,7 @@ export function aiSessionDistributionsQuery() {
 	const netted = fromQuery(indexSessions({}), "window_sessions").select(($) => ({
 		agentDurationMs: $.agentDurationMs,
 		toolCalls: $.toolCalls,
-		netted: nettedReportersExpr("reporters", "childClaims", "reportingIds"),
+		netted: nettedReportersExpr("reporters", "childClaims", "reporterIds"),
 	}))
 	const measured = fromQuery(netted, "netted_sessions").select(($) => ({
 		durationMs: CH.toFloat64($.agentDurationMs),
@@ -1334,6 +1359,23 @@ export const aiSessionSpansRowSchema: CompiledQueryRowSchema<AiSessionSpansOutpu
 	spanAttributes: Schema.Record(Schema.String, Schema.String),
 })
 
+/**
+ * A span's attribute map cut down to what `mapAiSpan` reads. Measured on
+ * production's largest sessions, the whole map is dominated by keys the mapper
+ * never touches (`db.query.text` alone was half of one session's bytes), and
+ * `ResourceAttributes` — which the mapper deliberately ignores, see
+ * `mapAiSpan` — was another 60% on top. Neither is read any more.
+ */
+export const aiSpanAttributes = (
+	attributes: CH.Expr<Record<string, string>>,
+): CH.Expr<Record<string, string>> =>
+	mapFilterKeys(attributes, (key) =>
+		aiSpanAttributePrefixes.reduce(
+			(matched, prefix) => matched.or(key.like(`${prefix}%`)),
+			key.in_(...aiSpanAttributeKeys),
+		),
+	)
+
 /** Shared by both span reads, so a session keyed by id and one keyed by trace
  *  cannot drift apart in shape — {@link aiSessionSpansRowSchema} decodes both. */
 const spanProjection = ($: ColumnAccessor<typeof TraceDetailSpans.columns>) => ({
@@ -1347,14 +1389,7 @@ const spanProjection = ($: ColumnAccessor<typeof TraceDetailSpans.columns>) => (
 	statusCode: $.StatusCode,
 	statusMessage: $.StatusMessage,
 	timestamp: CH.toString_($.Timestamp),
-	// The map cut down to what `mapAiSpan` reads. Measured on production's
-	// largest sessions, the whole map is dominated by keys the mapper never
-	// touches (`db.query.text` alone was half of one session's bytes), and
-	// `ResourceAttributes` — which the mapper deliberately ignores, see
-	// `mapAiSpan` — was another 60% on top. Neither is read any more.
-	spanAttributes: mapFilterKeys($.SpanAttributes, (key) =>
-		key.in_(...aiSpanAttributeKeys).or(key.like(`${AI_PROMPT_VARIABLE_PREFIX}%`)),
-	),
+	spanAttributes: aiSpanAttributes($.SpanAttributes),
 })
 
 /**
@@ -1364,7 +1399,8 @@ const spanProjection = ($: ColumnAccessor<typeof TraceDetailSpans.columns>) => (
  * string serves every session.
  *
  * The attribute map is projected down to the keys the integration layer reads
- * (`aiSpanAttributeKeys`); everything else on the span stays in the warehouse.
+ * (`aiSpanAttributeKeys`, `aiSpanAttributePrefixes`); everything else on the
+ * span stays in the warehouse.
  * Even so, a content-heavy vendor puts whole prompts in `gen_ai.input.messages`,
  * so callers should still expect megabyte-scale payloads at the default limit.
  *
@@ -1597,6 +1633,15 @@ const SUMMARY_ARRAY_CAP = 50
  * when there are any (`per-call`) and the plain sum otherwise (`roll-up`),
  * which is the deepest-reporter rule the page applies, at turn granularity.
  *
+ * A span the ingest gateway stamped (`MAPLE_AI_STAMP_ATTRS.llmCall` present) is
+ * read by the gateway's verdicts, names and buckets instead, the facts the
+ * list and the detail page read too. Only its model call carries usage, so a
+ * session of such spans is always per-call; its `input` is the prompt not read
+ * from cache (uncached plus cache write) and its `output` the completion
+ * (visible plus reasoning), so the three add up to its total. The rules above
+ * serve the spans ingested before the gateway stamped them, until they age out
+ * of the 30-day TTL.
+ *
  * Every Float64 aggregate is guarded with `ifNotFinite`: `toFloat64OrZero`
  * parses `nan` and `inf` successfully, one such attribute would poison the
  * whole sum, and `CHNumber` refuses to decode it.
@@ -1611,27 +1656,62 @@ const summaryMeasures_ = ($: SpanColumns) => {
 	const vendorId = $.SpanAttributes.get(VENDOR_ID_ATTR)
 	const isAi = vendorId.neq("")
 	const operation = field("operationName")
+	const stamp = (key: string) => $.SpanAttributes.get(key)
+	const stamped = stamp(MAPLE_AI_STAMP_ATTRS.llmCall).neq("")
+	const unstamped = CH.not(stamped)
+	const byGateway = <T>(gateway: CH.Expr<T>, reported: CH.Expr<T>) => CH.if_(stamped, gateway, reported)
 	// Response model first, request model second — `spanModel` on the page.
-	const model = attr([...aiFieldSourceKeys("responseModel"), ...aiFieldSourceKeys("requestModel")])
-	const toolName = field("toolName")
-	const agentName = field("agentName")
-	const isLlmCall = operation.in_(...AI_INFERENCE_OPERATIONS).or(
-		operation
-			.notIn(...AI_RETRIEVAL_OPERATIONS, ...AI_TOOL_OPERATIONS, ...AI_AGENT_OPERATIONS)
-			.and(model.neq(""))
-			.and(toolName.eq("")),
-	)
-	const isToolCall = operation
-		.in_(...AI_TOOL_OPERATIONS)
-		.or(operation.eq("").and(isAi).and(toolName.neq("")))
-	// The list query's error rule, so the summary and the list badge agree.
-	const failed = $.StatusCode.eq("Error").or(
-		isAi.and(
-			field("errorType")
-				.neq("")
-				.or(CH.inList($.SpanAttributes.get(RESPONSE_STATUS_ATTR), FAILED_RESPONSE_STATUSES)),
-		),
-	)
+	const reportedModel = attr([...aiFieldSourceKeys("responseModel"), ...aiFieldSourceKeys("requestModel")])
+	const reportedToolName = field("toolName")
+	const model = byGateway(stamp(MAPLE_AI_STAMP_ATTRS.model), reportedModel)
+	const agentName = byGateway(stamp(MAPLE_AI_STAMP_ATTRS.agentName), field("agentName"))
+	const isLlmCall = stamp(MAPLE_AI_STAMP_ATTRS.llmCall)
+		.eq("1")
+		.or(
+			unstamped.and(
+				operation.in_(...AI_INFERENCE_OPERATIONS).or(
+					operation
+						.notIn(
+							...AI_RETRIEVAL_OPERATIONS,
+							...AI_TOOL_OPERATIONS,
+							...AI_AGENT_OPERATIONS,
+							...AI_MEMORY_OPERATIONS,
+						)
+						.and(reportedModel.neq(""))
+						.and(reportedToolName.eq("")),
+				),
+			),
+		)
+	const isToolCall = stamp(MAPLE_AI_STAMP_ATTRS.toolCall)
+		.eq("1")
+		.or(
+			unstamped.and(
+				operation
+					.in_(...AI_TOOL_OPERATIONS)
+					.or(operation.eq("").and(isAi).and(reportedToolName.neq(""))),
+			),
+		)
+	// The list's error rule, so the summary and the list badge agree.
+	// On a stamped span the gateway's verdict alone, as `spanFailed`: it leaves
+	// out a paused tool call's copy that its framework ended in error.
+	const failed = stamp(MAPLE_AI_STAMP_ATTRS.error)
+		.eq("1")
+		.or(
+			unstamped.and(
+				$.StatusCode.eq("Error").or(
+					isAi.and(
+						field("errorType")
+							.neq("")
+							.or(
+								CH.inList(
+									$.SpanAttributes.get(RESPONSE_STATUS_ATTR),
+									FAILED_RESPONSE_STATUSES,
+								),
+							),
+					),
+				),
+			),
+		)
 	const conversationId = attr([
 		// First, as `mapleIntegration` reads it: Maple's turn id wins over the
 		// conversation id its engine's tool spans carry, which names the session.
@@ -1640,10 +1720,17 @@ const summaryMeasures_ = ($: SpanColumns) => {
 		// What `eveIntegration` lifts into the field.
 		"eve.turn.id",
 	])
-	const inputTokens = number("usageInputTokens")
-	const outputTokens = number("usageOutputTokens")
-	const cacheReadTokens = number("usageCacheReadInputTokens")
-	const cost = number("usageCost")
+	const inputTokens = byGateway(
+		number("mapleInputTokens").add(number("mapleCacheWriteTokens")),
+		number("usageInputTokens"),
+	)
+	const outputTokens = byGateway(
+		number("mapleOutputTokens").add(number("mapleReasoningTokens")),
+		number("usageOutputTokens"),
+	)
+	const cacheReadTokens = byGateway(number("mapleCacheReadTokens"), number("usageCacheReadInputTokens"))
+	const costField = byGateway(field("mapleCost"), field("usageCost"))
+	const cost = CH.toFloat64OrZero(costField)
 
 	const finite = (expr: CH.Expr<number>) => CH.ifNotFinite(expr, 0)
 
@@ -1672,7 +1759,7 @@ const summaryMeasures_ = ($: SpanColumns) => {
 		llmCacheReadTokens: finite(CH.sumIf(cacheReadTokens, isLlmCall)),
 		// Spans that reported a cost at all: zero means "not measured", which the
 		// page distinguishes from "free".
-		costReporters: CH.countIf(field("usageCost").neq("")),
+		costReporters: CH.countIf(costField.neq("")),
 		cost: finite(CH.sum(cost)),
 		llmCost: finite(CH.sumIf(cost, isLlmCall)),
 		models: CH.groupUniqArrayIf(SUMMARY_ARRAY_CAP)(model, isLlmCall.and(model.neq(""))),

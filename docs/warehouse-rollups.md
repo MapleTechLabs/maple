@@ -1,6 +1,6 @@
 # Warehouse rollups and materialized views
 
-We have 43 materialized views across 41 datasources. They accreted one product feature at a
+We have 44 materialized views across 42 datasources. They accreted one product feature at a
 time, and for a long time nobody could answer "should this be an MV?" without re-deriving it
 from scratch. This is that answer.
 
@@ -20,7 +20,7 @@ DDL snapshot, `local-schema.sql` for the embedded chDB engine, and the Rust inse
 
 **A query must read the coarsest tier that can answer it.** The routing guards
 (`canUseAnnualServiceOverview`, `canUseTracesAggregatesMv`, `canUseServiceOverviewMv`,
-`canUseLogsAggregatesHourly`) exist to enforce that, and each one names the tier it unlocks.
+`canUseLogsAggregatesHourly`, `canUseTraceFacetsRollup`) exist to enforce that, and each one names the tier it unlocks.
 
 Rollup routes union a **raw edge** with a **rollup interior**: the rollup answers whole
 buckets, and the raw table covers the partial buckets at each end of the window. Getting the

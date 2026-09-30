@@ -7765,6 +7765,10 @@
       "name": "Mobile Devices"
     },
     {
+      "description": "Feedback about Maple from agents: bugs, missing capabilities, misleading docs.",
+      "name": "Agent Feedback"
+    },
+    {
       "description": "Recorded browser sessions — search them, retrieve detail, stream rrweb event chunks, read the distilled transcript, and reverse-correlate from a trace.",
       "name": "Session Replays"
     },

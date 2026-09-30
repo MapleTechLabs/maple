@@ -67,16 +67,22 @@
 
 import * as CH from "@maple-dev/effect-clickhouse/expr"
 import * as T from "@maple-dev/effect-clickhouse/types"
+import { compile } from "@maple-dev/effect-clickhouse/sql"
 import { from, fromQuery, inSubquery, param, unionAll, type CHUnionQuery } from "@maple-dev/effect-clickhouse"
 import { AI_TOOLS_BREAKDOWN_MAX, AI_TOOLS_OTHER_SERIES_KEY, type AiToolsPeriod } from "@maple/domain/http"
-import type { AiGenAiField } from "@maple/domain/gen-ai"
 import { Array as Arr, Schema } from "effect"
 import type { CompiledQueryRowSchema } from "@maple-dev/effect-clickhouse"
 import { AiTraceIndex, TraceDetailSpans } from "@maple/query-engine/ch/tables"
-import { finiteOrZero, isoBucket, leftUTF8 } from "@maple/query-engine/ch/format"
+import { finiteOrZero, isoBucket } from "@maple/query-engine/ch/format"
 import { CHNumber } from "@maple/query-engine/ch/schema"
-import { aiFieldSourceKeys } from "./ai-integrations"
-import { SESSION_ORDER_SENTINEL, orderTuple, sessionKey } from "./ai-sessions"
+import { aiToolCallPayload } from "./ai-integrations"
+import {
+	SESSION_ORDER_SENTINEL,
+	aiSpanAttributes,
+	isSessionTraceCond,
+	orderTuple,
+	sessionKey,
+} from "./ai-sessions"
 
 /**
  * The page's selection, as every read here takes it.
@@ -184,6 +190,10 @@ const parentModels = (window: AiToolsWindow) =>
  * level — for the failure modal, which links each failure to its session. The
  * overview's aggregates never select them, and ClickHouse prunes unselected
  * columns of a derived table.
+ *
+ * Only the traces the sessions list shows (`isSessionTraceCond`), so the
+ * Sessions tile counts that list's population. A trace holding a tool call
+ * always passes it, so no tool call is lost to the join.
  */
 const traceFacts = (window: AiToolsWindow) =>
 	from(AiTraceIndex)
@@ -206,6 +216,7 @@ const traceFacts = (window: AiToolsWindow) =>
 			$.Timestamp.lte(endParam(window)),
 		])
 		.groupBy("TraceId")
+		.having(($) => [isSessionTraceCond($)])
 
 /**
  * The model a tool call is attributed to: its parent model call's, else its
@@ -622,6 +633,14 @@ export function aiToolsBreakdownsQuery(opts: AiToolsFilterOpts = {}) {
  *  reports the true size beside it. */
 export const AI_TOOL_ERROR_PAYLOAD_MAX = 4_000
 
+/** How much of each span attribute the payload read carries, in characters. A
+ *  span's attributes hold whole files and message histories, and a hundred
+ *  samples of them would leave the warehouse only to be cut to
+ *  {@link AI_TOOL_ERROR_PAYLOAD_MAX}. Four times that cut, so the JSON behind a
+ *  payload the modal can show whole still parses; a longer value arrives cut,
+ *  decodes as its raw text, and is cut again for display. */
+export const AI_TOOL_ERROR_ATTRIBUTE_MAX = 16_384
+
 /** Error groups one breakdown returns, most failed calls first. */
 export const AI_TOOL_ERRORS_LIMIT = 50
 
@@ -656,7 +675,7 @@ const groupFilter = (opts: AiToolErrorsOpts, $: Pick<ToolCallColumns, "fingerpri
 /**
  * One row per failed tool call of the selection — the level every read below
  * but the table's aggregates. `IsError` is the index's own transcription of the
- * rule the sessions pages apply to a span (`genAiIsErrorCond`), so a failure
+ * rule the sessions pages apply to a span (the gateway's `maple_ai.error`), so a failure
  * counted there is a failure here.
  *
  * `withParentModel` is `true` for the read that SHOWS a model rather than
@@ -926,25 +945,23 @@ export interface AiToolErrorCallKey {
 	readonly spanId: string
 }
 
-export interface AiToolErrorPayloadsOutput {
+export interface AiToolErrorPayloadsRow {
 	readonly traceId: string
 	readonly spanId: string
 	readonly statusCode: string
-	/** Truncated to {@link AI_TOOL_ERROR_PAYLOAD_MAX}; `*Bytes` is the true size. */
-	readonly arguments: string
-	readonly argumentsBytes: number
-	readonly result: string
-	readonly resultBytes: number
+	/** Each value cut to {@link AI_TOOL_ERROR_ATTRIBUTE_MAX} characters. */
+	readonly spanAttributes: Record<string, string>
+	/** The true size in bytes of every value that was cut, by key. */
+	readonly cutAttributeBytes: Record<string, number>
 }
 
-export const aiToolErrorPayloadsRowSchema: CompiledQueryRowSchema<AiToolErrorPayloadsOutput> = Schema.Struct({
+export const aiToolErrorPayloadsRowSchema: CompiledQueryRowSchema<AiToolErrorPayloadsRow> = Schema.Struct({
 	traceId: Schema.String,
 	spanId: Schema.String,
 	statusCode: Schema.String,
-	arguments: Schema.String,
-	argumentsBytes: CHNumber,
-	result: Schema.String,
-	resultBytes: CHNumber,
+	// A Map column arrives as a JSON object under FORMAT JSON.
+	spanAttributes: Schema.Record(Schema.String, Schema.String),
+	cutAttributeBytes: Schema.Record(Schema.String, CHNumber),
 })
 
 /** A span row's `(TraceId, SpanId)`, for the payload read's tuple `IN`. Raw
@@ -952,16 +969,19 @@ export const aiToolErrorPayloadsRowSchema: CompiledQueryRowSchema<AiToolErrorPay
  *  literals of the same shape. */
 const traceSpanKey = CH.rawExpr("(trace_detail_spans.TraceId, trace_detail_spans.SpanId)", T.string)
 
-type SpanAccessor = {
-	readonly SpanAttributes: CH.Expr<Record<string, string>>
-}
+/** The attribute map with every value cut to {@link AI_TOOL_ERROR_ATTRIBUTE_MAX}
+ *  characters. Raw because the DSL has no `mapApply`. */
+const cutAttributeValues = (attributes: CH.Expr<Record<string, string>>): CH.Expr<Record<string, string>> =>
+	CH.rawExpr(
+		`mapApply((k, v) -> (k, leftUTF8(v, ${AI_TOOL_ERROR_ATTRIBUTE_MAX})), ${compile(attributes.toFragment())})`,
+		T.map(T.string, T.string),
+	)
 
-/** `coalesce(nullIf(a, ''), …, '')` — the first source key of a field that has
- *  a value, across every vendor dialect the integrations declare. */
-const spanField = ($: SpanAccessor, field: AiGenAiField): CH.Expr<string> =>
-	CH.coalesce(
-		...aiFieldSourceKeys(field).map((key) => CH.nullIf(CH.mapGet($.SpanAttributes, key), "")),
-		CH.lit(""),
+/** The byte size of each value {@link cutAttributeValues} cuts, by key. */
+const cutAttributeBytes = (attributes: CH.Expr<Record<string, string>>): CH.Expr<Record<string, number>> =>
+	CH.rawExpr(
+		`mapApply((k, v) -> (k, length(v)), mapFilter((k, v) -> lengthUTF8(v) > ${AI_TOOL_ERROR_ATTRIBUTE_MAX}, ${compile(attributes.toFragment())}))`,
+		T.map(T.string, T.uint64),
 	)
 
 /**
@@ -975,24 +995,25 @@ const spanField = ($: SpanAccessor, field: AiGenAiField): CH.Expr<string> =>
  * are exact and unpadded: the index copies `Timestamp` from the span verbatim,
  * so the call is inside its own bounds by construction, and a pad would only buy
  * partitions.
+ *
+ * It returns the span's attributes as the session page reads them, not the
+ * payloads: which attribute holds the arguments is a per-vendor decision the
+ * integrations make in TypeScript ({@link aiToolErrorPayload}), so the modal
+ * and the session page decode a tool span one way: an OpenInference tool shows
+ * its `input.value`, not the parameter schema its GenAI dual-write copied into
+ * `gen_ai.tool.call.arguments`. Each value is cut to
+ * {@link AI_TOOL_ERROR_ATTRIBUTE_MAX} in SQL, beside the true size of the ones
+ * that were, so a sample costs kilobytes on the wire rather than its whole span.
  */
 export function aiToolErrorPayloadsQuery(calls: Arr.NonEmptyReadonlyArray<AiToolErrorCallKey>) {
 	return from(TraceDetailSpans)
-		.select(($) => {
-			const args = spanField($, "toolCallArguments")
-			const result = spanField($, "toolCallResult")
-			return {
-				traceId: $.TraceId,
-				spanId: $.SpanId,
-				statusCode: $.StatusCode,
-				// Characters, not bytes: `left` cuts mid-codepoint on any payload
-				// holding one. `length` stays byte-based — it reports a size.
-				arguments: leftUTF8(args, CH.lit(AI_TOOL_ERROR_PAYLOAD_MAX)),
-				argumentsBytes: CH.length_(args),
-				result: leftUTF8(result, CH.lit(AI_TOOL_ERROR_PAYLOAD_MAX)),
-				resultBytes: CH.length_(result),
-			}
-		})
+		.select(($) => ({
+			traceId: $.TraceId,
+			spanId: $.SpanId,
+			statusCode: $.StatusCode,
+			spanAttributes: cutAttributeValues(aiSpanAttributes($.SpanAttributes)),
+			cutAttributeBytes: cutAttributeBytes(aiSpanAttributes($.SpanAttributes)),
+		}))
 		.where(($) => [
 			$.OrgId.eq(param.string("orgId")),
 			$.Timestamp.gte(param.dateTimeString("sliceStart")),
@@ -1005,6 +1026,52 @@ export function aiToolErrorPayloadsQuery(calls: Arr.NonEmptyReadonlyArray<AiTool
 			),
 		])
 		.format("JSON")
+}
+
+export interface AiToolErrorPayloadsOutput {
+	readonly traceId: string
+	readonly spanId: string
+	readonly statusCode: string
+	/** Truncated to {@link AI_TOOL_ERROR_PAYLOAD_MAX}; `*Bytes` is the true size. */
+	readonly arguments: string
+	readonly argumentsBytes: number
+	readonly result: string
+	readonly resultBytes: number
+}
+
+const utf8 = new TextEncoder()
+
+/** Decoded payloads are re-serialised for display; a string is already the text. */
+const payloadText = (value: unknown): string =>
+	value === undefined ? "" : typeof value === "string" ? value : JSON.stringify(value)
+
+/** Characters, not UTF-16 units: a cut never splits a codepoint. */
+const truncatePayload = (text: string): string =>
+	text.length <= AI_TOOL_ERROR_PAYLOAD_MAX
+		? text
+		: Array.from(text).slice(0, AI_TOOL_ERROR_PAYLOAD_MAX).join("")
+
+/** One {@link aiToolErrorPayloadsQuery} row as the modal shows it: the payloads
+ *  the session page decodes for the same span, cut to
+ *  {@link AI_TOOL_ERROR_PAYLOAD_MAX} characters beside their size in bytes. A
+ *  payload decoded from a value the read cut no longer parses, so it is that
+ *  value's text, and its size is the one the read reported for it. */
+export const aiToolErrorPayload = (row: AiToolErrorPayloadsRow): AiToolErrorPayloadsOutput => {
+	const payload = aiToolCallPayload(row.spanAttributes)
+	const args = payloadText(payload.arguments)
+	const result = payloadText(payload.result)
+	const bytes = (text: string): number =>
+		Object.entries(row.cutAttributeBytes).find(([key]) => row.spanAttributes[key] === text)?.[1] ??
+		utf8.encode(text).length
+	return {
+		traceId: row.traceId,
+		spanId: row.spanId,
+		statusCode: row.statusCode,
+		arguments: truncatePayload(args),
+		argumentsBytes: bytes(args),
+		result: truncatePayload(result),
+		resultBytes: bytes(result),
+	}
 }
 
 /** The bounds one {@link aiToolErrorPayloadsQuery} is read over: the earliest

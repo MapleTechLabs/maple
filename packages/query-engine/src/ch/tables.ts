@@ -112,8 +112,9 @@ export const TraceDetailSpans = table("trace_detail_spans", {
  * Migration 0026 added the sidebar's other facet dimensions (`DeploymentEnv`,
  * `Model`, `AgentName`, `ToolName`) and the per-span measures the page ranks
  * and filters on (`IsError`, `IsLlmCall`, `IsToolCall`, `Tokens`, `Cost`, with
- * `SpanId`/`ParentSpanId`/`Duration`), all coalesced and classified at insert
- * by `@maple/domain/tinybird/gen-ai-columns`; `''`/0 where the span carries no
+ * `SpanId`/`ParentSpanId`/`Duration`), each since 0035 a projection of the
+ * fact the ingest gateway stamped on the span
+ * (`@maple/domain/tinybird/gen-ai-columns`); `''`/0 where the span carries no
  * such fact, and on every row materialized before 0026.
  */
 export const AiTraceIndex = table("ai_trace_index", {
@@ -188,6 +189,21 @@ export const TraceListMv = table("trace_list_mv", {
 	ServiceNamespace: T.string,
 	HasError: T.uint8,
 	TraceState: T.string,
+})
+
+export const TraceFacetsHourly = table("trace_facets_hourly", {
+	OrgId: orgId,
+	Hour: dateTime,
+	ServiceName: T.string,
+	SpanName: T.string,
+	HttpMethod: T.string,
+	HttpStatusCode: T.string,
+	DeploymentEnv: T.string,
+	ServiceNamespace: T.string,
+	HasError: T.uint8,
+	TraceCount: T.uint64,
+	DurationMin: T.uint64,
+	DurationMax: T.uint64,
 })
 
 export const Logs = table("logs", {

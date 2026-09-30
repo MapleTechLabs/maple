@@ -306,8 +306,6 @@ const EXEMPT_BUILDERS: ReadonlySet<string> = new Set([
 	"errors/errorsByTypeQuery",
 	"errors/errorsTimeseriesQuery",
 	"errors/spanHierarchyQuery",
-	"errors/tracesDurationStatsQuery",
-	"errors/tracesFacetsQuery",
 	"errors/errorsFacetsQuery",
 	"errors/errorsSummaryQuery",
 	"errors/errorDetailTracesQuery",

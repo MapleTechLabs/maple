@@ -796,6 +796,9 @@ export const createMapleIngest = ({ stage, domains, region, dbRole }: CreateMapl
 			env: {
 				INGEST_PORT: String(INGEST_PORT),
 				MAPLE_ENVIRONMENT: resolveDeploymentEnvironment(stage),
+				// Makes the unknown-key 401 name the other region's ingest URL, the usual
+				// cause for a valid key. prd only: a preview has no sibling instance.
+				...(stage.kind === "prd" && { MAPLE_REGION: region }),
 				TINYBIRD_HOST: yield* requiredPlain("TINYBIRD_HOST"),
 				INGEST_KEY_STORE_BACKEND: "postgres",
 				// A replaced role changes this, so the task definition changes and the

@@ -10,7 +10,10 @@
 // Error. That is the shape `error_events_mv` fingerprints on, so these arrive in
 // error tracking beside server-side errors rather than in a separate silo.
 import { scrubUrl } from "@maple/browser-session"
-import { SpanKind, SpanStatusCode } from "@opentelemetry/api"
+import { context, type Span, type SpanContext, SpanKind, SpanStatusCode } from "@opentelemetry/api"
+import { exceptionOf } from "./error-causes"
+import { type ErrorSource, shouldCapture } from "./error-filters"
+import { keepContext } from "./sampling"
 import { mapleTracer } from "./tracing"
 import { SDK_NAME, SDK_VERSION } from "./version"
 
@@ -45,6 +48,15 @@ const asError = (value: unknown): Error => {
  */
 let reported = new WeakSet<object>()
 
+type ErrorRecordedListener = (spanContext: SpanContext) => void
+/** Told about every recorded error: breadcrumbs export their trail, a buffered replay keeps itself. */
+const errorListeners = new Set<ErrorRecordedListener>()
+
+export function onErrorRecorded(listener: ErrorRecordedListener): () => void {
+	errorListeners.add(listener)
+	return () => errorListeners.delete(listener)
+}
+
 /** Whether this exact error object was already recorded. */
 const alreadyReported = (error: unknown): boolean =>
 	typeof error === "object" && error !== null && reported.has(error)
@@ -55,22 +67,53 @@ export function resetReportedErrorsForTests(): void {
 }
 
 /**
- * Record `error` on a one-off span. The error is claimed only when the span is
- * recording: before `init()` the tracer is a no-op, and claiming it then would
- * swallow the same error reported again once tracing is live.
+ * Mark `span` as failed by `error`. The exception event goes on the first span
+ * that records this error object; a later one (an outer `traced`, say) only
+ * takes the Error status, so one error stays one issue. The error is claimed
+ * only when the span is recording: before `init()` the tracer is a no-op, and
+ * claiming it then would swallow the same error reported again once tracing is
+ * live.
  */
-function recordException(error: unknown, options: CaptureExceptionOptions): void {
+export function recordFailure(span: Span, error: unknown): void {
 	const normalized = asError(error)
-	const span = mapleTracer(SDK_NAME, SDK_VERSION).startSpan(options.name ?? "exception", {
-		kind: SpanKind.INTERNAL,
-		attributes: {
-			...(typeof location !== "undefined" ? { "url.full": scrubUrl(location.href) } : undefined),
-			...options.attributes,
-		},
-	})
-	if (span.isRecording() && typeof error === "object" && error !== null) reported.add(error)
-	span.recordException(normalized)
+	if (!alreadyReported(error)) {
+		if (span.isRecording() && typeof error === "object" && error !== null) reported.add(error)
+		span.recordException(exceptionOf(normalized))
+		if (span.isRecording()) {
+			for (const listener of errorListeners) {
+				// A listener must never turn one error into another.
+				try {
+					listener(span.spanContext())
+				} catch {}
+			}
+		}
+	}
 	span.setStatus({ code: SpanStatusCode.ERROR, message: normalized.message })
+}
+
+/**
+ * Record `error` on a one-off span, exported whatever the session's trace
+ * sampling, unless the app's error filters drop it.
+ */
+function recordException(
+	error: unknown,
+	options: CaptureExceptionOptions,
+	source: ErrorSource,
+	filename?: string,
+): void {
+	if (!shouldCapture(asError(error), { source, originalError: error }, filename)) return
+	const span = mapleTracer(SDK_NAME, SDK_VERSION).startSpan(
+		options.name ?? "exception",
+		{
+			kind: SpanKind.INTERNAL,
+			attributes: {
+				...(typeof location !== "undefined" ? { "url.full": scrubUrl(location.href) } : undefined),
+				...options.attributes,
+			},
+		},
+		keepContext(context.active()),
+	)
+	recordFailure(span, error)
 	span.end()
 }
 
@@ -81,7 +124,7 @@ function recordException(error: unknown, options: CaptureExceptionOptions): void
  */
 export function captureException(error: unknown, options: CaptureExceptionOptions = {}): void {
 	if (alreadyReported(error)) return
-	recordException(error, options)
+	recordException(error, options, "captureException")
 }
 
 /**
@@ -105,26 +148,36 @@ export function setupErrorCapture(): () => void {
 		const error: unknown =
 			event.error ?? (event.message && event.filename ? new Error(event.message) : undefined)
 		if (error === undefined || alreadyReported(error)) return
-		recordException(error, {
-			name: "browser.uncaught_error",
-			attributes: {
-				"maple.exception.source": "window.onerror",
-				// `code.file.path` / `code.line.number` since semconv v1.34.0. Nothing
-				// reads the names they replaced, so they are dropped rather than
-				// dual-emitted — carrying both would put four near-identical rows on
-				// every uncaught error in the attribute list.
-				...(event.filename ? { "code.file.path": event.filename } : undefined),
-				...(event.lineno ? { "code.line.number": event.lineno } : undefined),
+		recordException(
+			error,
+			{
+				name: "browser.uncaught_error",
+				attributes: {
+					"maple.exception.source": "window.onerror",
+					// `code.file.path` / `code.line.number` since semconv v1.34.0. Nothing
+					// reads the names they replaced, so they are dropped rather than
+					// dual-emitted — carrying both would put four near-identical rows on
+					// every uncaught error in the attribute list.
+					...(event.filename ? { "code.file.path": event.filename } : undefined),
+					...(event.lineno ? { "code.line.number": event.lineno } : undefined),
+				},
 			},
-		})
+			"window.onerror",
+			// A thrown Error carries its own frames; anything else only has the event's filename.
+			event.error instanceof Error ? undefined : event.filename || undefined,
+		)
 	}
 
 	const onUnhandledRejection = (event: PromiseRejectionEvent): void => {
 		if (alreadyReported(event.reason)) return
-		recordException(event.reason, {
-			name: "browser.unhandled_rejection",
-			attributes: { "maple.exception.source": "unhandledrejection" },
-		})
+		recordException(
+			event.reason,
+			{
+				name: "browser.unhandled_rejection",
+				attributes: { "maple.exception.source": "unhandledrejection" },
+			},
+			"unhandledrejection",
+		)
 	}
 
 	window.addEventListener("error", onError)

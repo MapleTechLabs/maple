@@ -34,8 +34,10 @@
  * for the route graph.
  */
 import * as Cloudflare from "alchemy/Cloudflare"
-import { Effect } from "effect"
+import { Effect, Option, Schema } from "effect"
 import {
+	ChatTurnOrigin as ChatTurnOriginSchema,
+	ChatTurnTenant,
 	decidedBy,
 	decodeChatEventPayload,
 	encodeChatEventPayload,
@@ -46,10 +48,12 @@ import {
 	type ChatProposalSettlement,
 	type ChatTurnOrigin,
 	type ChatTurnTenantEncoded,
+	prReviewIdFromChatSessionId,
 } from "@maple/domain/chat-session"
 import { type ChatSessionStub } from "@maple/domain/chat-session-stub"
 import { makeChatTranscript } from "@maple/domain/chat-transcript"
 import type { AppliedProposal, ApplyChatProposalInput } from "./apply-proposal"
+import type { RunChatSessionTurnInput } from "./turn-runner"
 
 /** What the class reads off its Durable Object state: SQLite, the alarm, and the object's own `waitUntil`. */
 interface ChatSessionState {
@@ -73,6 +77,8 @@ interface SessionRow extends Record<string, SqlStorageValue> {
 	readonly running: number
 	readonly running_since: number | null
 	readonly running_message_id: string | null
+	readonly running_input: string | null
+	readonly running_resumes: number | null
 }
 
 /** Rows the DO writes. `payload` is the encoded `ChatEvent` minus its `seq`, which is the key. */
@@ -86,7 +92,9 @@ CREATE TABLE IF NOT EXISTS session (
 	id INTEGER PRIMARY KEY CHECK (id = 1),
 	running INTEGER NOT NULL DEFAULT 0,
 	running_since INTEGER,
-	running_message_id TEXT
+	running_message_id TEXT,
+	running_input TEXT,
+	running_resumes INTEGER
 );
 INSERT OR IGNORE INTO session (id, running) VALUES (1, 0);
 `
@@ -135,6 +143,48 @@ const CHAT_TURN_FAILED = "Maple couldn't complete this response."
  * evicted about two minutes in, mid-run (seen 2026-09-15). The alarm is the event that prevents it.
  */
 const TURN_HEARTBEAT_MS = 30 * 1000
+
+/**
+ * How many times an evicted turn is started again before it is given up.
+ *
+ * A deploy resets every Durable Object, and the turn's fiber goes with it; the alarm survives and
+ * is how the new activation finds out. Two covers a turn that straddles back-to-back deploys; a
+ * turn that keeps dying is failing for its own reasons and should say so.
+ */
+export const MAX_TURN_RESUMES = 2
+
+/** What the dead attempt's assistant message is closed with when the turn is started again. */
+const TURN_RESTARTED = "Maple was restarted mid-review and is starting this review again."
+
+/**
+ * What an evicted turn needs to run again: everything `beginTurn` was given. Plain JSON in the
+ * session row, decoded back through the same schemas that describe it on the wire.
+ */
+const TurnInput = Schema.Struct({
+	sessionId: Schema.String,
+	userMessageId: Schema.String,
+	text: Schema.String,
+	tenant: Schema.toEncoded(ChatTurnTenant),
+	origin: Schema.toEncoded(ChatTurnOriginSchema),
+})
+type TurnInput = typeof TurnInput.Type
+const decodeTurnInput = Schema.decodeUnknownOption(Schema.fromJsonString(TurnInput))
+
+/**
+ * Only an autonomous review is started again. Its kickoff is self-contained and its row guards
+ * against a second report; a person's chat turn is theirs to retry, and an investigation already
+ * has its own abandoned-run sweep.
+ */
+const resumable = (input: TurnInput): boolean =>
+	input.origin.kind === "autonomous" && prReviewIdFromChatSessionId(input.sessionId) !== undefined
+
+/** How the session runs a turn: a port for the same reason as {@link ProposalApplier}. */
+export type TurnRunner = (input: RunChatSessionTurnInput) => Promise<void>
+
+const runThroughWorker: TurnRunner = async (input) => {
+	const { runChatSessionTurn } = await import("./turn-runner")
+	return runChatSessionTurn(input)
+}
 
 /** What the copy says when applying an approved mutation fell over rather than failing in-band. */
 const PROPOSAL_FAILED = "Maple couldn't apply this change. Check whether it went through in Maple."
@@ -201,12 +251,18 @@ export class ChatSession {
 		private readonly ctx: ChatSessionState,
 		private readonly env: Record<string, unknown>,
 		private readonly applier: ProposalApplier = applyThroughWorker,
+		private readonly runner: TurnRunner = runThroughWorker,
 	) {
 		this.sql = ctx.storage.sql
 		this.sql.exec(SCHEMA)
 		// Sessions created before the watchdog columns existed (local dev only — the class has
 		// never been deployed) would otherwise fail every read against `session`.
-		for (const column of ["running_since INTEGER", "running_message_id TEXT"]) {
+		for (const column of [
+			"running_since INTEGER",
+			"running_message_id TEXT",
+			"running_input TEXT",
+			"running_resumes INTEGER",
+		]) {
 			try {
 				this.sql.exec(`ALTER TABLE session ADD COLUMN ${column}`)
 			} catch {
@@ -223,7 +279,9 @@ export class ChatSession {
 
 	private sessionRow(): SessionRow {
 		return this.sql
-			.exec<SessionRow>("SELECT running, running_since, running_message_id FROM session WHERE id = 1")
+			.exec<SessionRow>(
+				"SELECT running, running_since, running_message_id, running_input, running_resumes FROM session WHERE id = 1",
+			)
 			.one()
 	}
 
@@ -264,7 +322,7 @@ export class ChatSession {
 
 	private clearRunning(): void {
 		this.sql.exec(
-			"UPDATE session SET running = 0, running_since = NULL, running_message_id = NULL WHERE id = 1",
+			"UPDATE session SET running = 0, running_since = NULL, running_message_id = NULL, running_input = NULL, running_resumes = NULL WHERE id = 1",
 		)
 	}
 
@@ -405,18 +463,21 @@ export class ChatSession {
 		// user's own bubble — "Say PONG" came back as "Say PONGPING" — and the client folded it the
 		// same way, since it keys the optimistic user message on exactly this id.
 		const turnId = crypto.randomUUID()
+		const turn: TurnInput = {
+			sessionId: input.sessionId,
+			userMessageId: input.messageId,
+			text: input.text,
+			tenant: input.tenant,
+			origin: input.origin,
+		}
 		this.sql.exec(
-			"UPDATE session SET running = 1, running_since = ?, running_message_id = ? WHERE id = 1",
+			"UPDATE session SET running = 1, running_since = ?, running_message_id = ?, running_input = ?, running_resumes = 0 WHERE id = 1",
 			Date.now(),
 			turnId,
+			JSON.stringify(turn),
 		)
 		this.append({ type: "user-message", id: input.messageId, text: input.text })
-		this.liveTurn = turnId
-		this.armHeartbeat()
-		// `waitUntil` on the DO's own context: the turn is now this object's work, and it outlives
-		// whatever request asked for it. `waitUntil` alone does not keep the object in memory — the
-		// heartbeat alarm does.
-		this.ctx.waitUntil(this.runTurn(input.sessionId, turnId, input.tenant, input.origin))
+		this.startTurn(turnId, turn)
 		return { cursor, messageId: input.messageId, turnMessageId: turnId }
 	}
 
@@ -558,11 +619,80 @@ export class ChatSession {
 		const messageId = this.runningTurn()
 		if (messageId === undefined) return
 		if (messageId !== null && this.liveTurn !== messageId) {
-			this.clearRunning()
-			this.append({ type: "turn-end", messageId, reason: "error", error: CHAT_TURN_FAILED })
+			this.recoverEvictedTurn(messageId)
 			return
 		}
 		this.armHeartbeat()
+	}
+
+	/**
+	 * The object came back holding a claim whose fiber is gone — almost always a deploy.
+	 *
+	 * An autonomous review is started again under a new turn id, from the kickoff `beginTurn`
+	 * stored, up to {@link MAX_TURN_RESUMES} times. Past that, or for any other turn, the slot is
+	 * released; a review is also told it failed, since nothing else would move its row off
+	 * `running` and its check run off in-progress.
+	 */
+	private recoverEvictedTurn(messageId: string): void {
+		const row = this.sessionRow()
+		const turn = row.running_input === null ? Option.none() : decodeTurnInput(row.running_input)
+		const resumes = row.running_resumes ?? 0
+		if (Option.isSome(turn) && resumable(turn.value) && resumes < MAX_TURN_RESUMES) {
+			this.append({ type: "turn-end", messageId, reason: "error", error: TURN_RESTARTED })
+			const turnId = crypto.randomUUID()
+			this.sql.exec(
+				"UPDATE session SET running_since = ?, running_message_id = ?, running_resumes = ? WHERE id = 1",
+				Date.now(),
+				turnId,
+				resumes + 1,
+			)
+			this.startTurn(turnId, turn.value, { resume: resumes + 1 })
+			return
+		}
+		this.clearRunning()
+		this.append({ type: "turn-end", messageId, reason: "error", error: CHAT_TURN_FAILED })
+		if (Option.isSome(turn) && resumable(turn.value)) {
+			this.ctx.waitUntil(
+				this.runner({ ...this.turnRunInput(messageId, turn.value), abandoned: true }).catch((cause) =>
+					console.error("[chat.turn] Failed to record an abandoned turn", cause),
+				),
+			)
+		}
+	}
+
+	private turnRunInput(messageId: string, turn: TurnInput): RunChatSessionTurnInput {
+		return {
+			session: this,
+			sessionId: turn.sessionId,
+			env: this.env,
+			messageId,
+			tenant: turn.tenant,
+			origin: turn.origin,
+		}
+	}
+
+	/**
+	 * Run `turnId` on this activation. `waitUntil` on the DO's own context: the turn is this
+	 * object's work and outlives whatever request asked for it. `waitUntil` alone does not keep
+	 * the object in memory — the heartbeat alarm does.
+	 */
+	private startTurn(turnId: string, turn: TurnInput, restart?: { readonly resume: number }): void {
+		this.liveTurn = turnId
+		this.armHeartbeat()
+		this.ctx.waitUntil(
+			this.runTurn({
+				...this.turnRunInput(turnId, turn),
+				...(restart === undefined
+					? undefined
+					: {
+							resume: {
+								userMessageId: turn.userMessageId,
+								text: turn.text,
+								attempt: restart.resume,
+							},
+						}),
+			}),
+		)
 	}
 
 	private armHeartbeat(): void {
@@ -577,22 +707,10 @@ export class ChatSession {
 	 * terminal event rather than thrown: the log is what the client reads, so a turn that dies
 	 * silently is indistinguishable from one that hung.
 	 */
-	private async runTurn(
-		sessionId: string,
-		messageId: string,
-		tenant: ChatTurnTenantEncoded,
-		origin: ChatTurnOrigin,
-	): Promise<void> {
+	private async runTurn(input: RunChatSessionTurnInput): Promise<void> {
+		const messageId = input.messageId
 		try {
-			const { runChatSessionTurn } = await import("./turn-runner")
-			await runChatSessionTurn({
-				session: this,
-				sessionId,
-				env: this.env,
-				messageId,
-				tenant,
-				origin,
-			})
+			await this.runner(input)
 		} catch (cause) {
 			console.error("[chat.turn] Failed to start turn runner", cause)
 			if (this.holdsTurn(messageId)) {

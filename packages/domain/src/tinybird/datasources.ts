@@ -1046,6 +1046,50 @@ export const traceListMv = defineDatasource("trace_list_mv", {
 export type TraceListMvRow = InferRow<typeof traceListMv>
 
 /**
+ * Hourly rollup of `trace_list_mv` for the traces sidebar facets and duration
+ * stats. Scanning `trace_list_mv` itself (~14M root spans/day for a busy org)
+ * exceeds the 5s discovery budget past about a day; the facet dimensions
+ * collapse to a few hundred rows per org-hour.
+ */
+export const traceFacetsHourly = defineDatasource("trace_facets_hourly", {
+	description:
+		"Hourly root-span counts and duration state per service, span name, HTTP method/status, environment, namespace and error flag. Traces sidebar facets. Populated by materialized view from trace_list_mv.",
+	jsonPaths: false,
+	schema: {
+		OrgId: t.string().lowCardinality(),
+		Hour: t.dateTime(),
+		ServiceName: t.string().lowCardinality(),
+		SpanName: t.string(),
+		HttpMethod: t.string().lowCardinality(),
+		HttpStatusCode: t.string().lowCardinality(),
+		DeploymentEnv: t.string().lowCardinality(),
+		ServiceNamespace: t.string().lowCardinality(),
+		HasError: t.uint8(),
+		TraceCount: t.simpleAggregateFunction("sum", t.uint64()),
+		DurationMin: t.simpleAggregateFunction("min", t.uint64()),
+		DurationMax: t.simpleAggregateFunction("max", t.uint64()),
+		DurationQuantiles: t.aggregateFunction("quantilesTDigest(0.5, 0.95)", t.uint64()),
+	},
+	engine: engine.aggregatingMergeTree({
+		partitionKey: "toDate(Hour)",
+		sortingKey: [
+			"OrgId",
+			"Hour",
+			"ServiceName",
+			"SpanName",
+			"HttpMethod",
+			"HttpStatusCode",
+			"DeploymentEnv",
+			"ServiceNamespace",
+			"HasError",
+		],
+		ttl: "Hour + INTERVAL 30 DAY",
+	}),
+})
+
+export type TraceFacetsHourlyRow = InferRow<typeof traceFacetsHourly>
+
+/**
  * All spans for a given trace, re-sorted by TraceId for fast detail lookups.
  * Populated by materialized view, not direct ingestion.
  * Sorting key (OrgId, TraceId, SpanId) enables O(log N) primary-key lookup
@@ -1096,7 +1140,7 @@ export type TraceDetailSpansRow = InferRow<typeof traceDetailSpans>
  * The columns are what its readers need — the trace-id set, the grouping key,
  * the agent-span bounds that tell the fan-out which hours to read, the filter
  * dimensions the sidebar offers (service, environment, and the span's model,
- * agent and tool coalesced across dialects), and the per-span measures the
+ * agent and tool as stamped by the ingest gateway), and the per-span measures the
  * page ranks and filters on: whether the span is a model call, a tool call, a
  * failure, and the tokens and cost it reported, with `SpanId`/`ParentSpanId`
  * so a wrapper's roll-up of its children's usage can be taken off it. Every
@@ -1127,7 +1171,8 @@ export const aiTraceIndex = defineDatasource("ai_trace_index", {
 		VendorId: t.string().lowCardinality(),
 		ServiceName: t.string().lowCardinality(),
 		// Migration 0026 — the sidebar's other facet dimensions, and the per-span
-		// measures the page ranks and filters on. All `gen-ai-columns.ts`.
+		// measures the page ranks and filters on. Since 0035 the GenAI ones project a
+		// fact the ingest gateway stamped (`gen-ai-columns.ts`).
 		DeploymentEnv: t.string().lowCardinality(),
 		Model: t.string().lowCardinality(),
 		AgentName: t.string().lowCardinality(),
@@ -1148,8 +1193,8 @@ export const aiTraceIndex = defineDatasource("ai_trace_index", {
 		ResponseId: t.string(),
 		// Migration 0031 — the last facts the Agent Sessions list read off the
 		// raw spans: the vendor's version beside its id, and the five disjoint
-		// buckets `Tokens` is the sum of (`genAiUsageBucketsExpr`), so a row
-		// renders from one index query instead of a fan-out over
+		// buckets `Tokens` is the sum of (the gateway's `maple_ai.usage.*`), so
+		// a row renders from one index query instead of a fan-out over
 		// `trace_detail_spans`. '' / 0 on rows materialized before it.
 		VendorVersion: t.string().lowCardinality(),
 		InputTokens: t.float64(),
@@ -1163,12 +1208,12 @@ export const aiTraceIndex = defineDatasource("ai_trace_index", {
 		// its header each seeked `trace_detail_spans` inside the window's whole
 		// spread of partitions — seconds to tens of seconds, and the header's
 		// description was the page's render gate. All three are facts of the tool
-		// span itself. `StatusMessage` and `ToolDescription` are truncated by the
-		// view (`GENAI_STATUS_MESSAGE_MAX`, `GENAI_TOOL_DESCRIPTION_MAX`); only
-		// tool spans ever carry a description, so the column is '' on the rest.
-		// `FailedToolCallResult` is a failed tool call's result (truncated,
-		// `GENAI_FAILED_TOOL_CALL_RESULT_MAX`; '' on every other span), because
-		// several frameworks describe a tool failure there and nowhere else.
+		// span itself. `StatusMessage` is truncated by the view
+		// (`GENAI_STATUS_MESSAGE_MAX`), `ToolDescription` by the ingest gateway,
+		// which stamps it on tool calls only, so the column is '' on the rest.
+		// `FailedToolCallResult` is a failed tool call's result (truncated by the
+		// gateway; '' on every other span), because several frameworks describe
+		// a tool failure there and nowhere else.
 		// `ErrorFingerprint` groups failures: a hash of that result, else of the
 		// status message, redacted as `error_events` redacts messages; 0 on spans
 		// that did not fail. Redacting at read time would cost seconds per million

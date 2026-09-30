@@ -21,6 +21,7 @@ import {
 	ErrorFingerprintsMinutely,
 	ServiceUsage,
 	TraceDetailSpans,
+	TraceFacetsHourly,
 	TraceListMv,
 	Traces,
 } from "../tables"
@@ -535,7 +536,12 @@ export function traceTimeProbeQuery(opts: { traceId: string; narrowByTime?: bool
 		.format("JSON")
 }
 
-// Traces duration stats
+// Traces duration stats and facets
+//
+// Both count root spans over the window. When `trace_facets_hourly` carries the
+// filters, its whole hours answer the interior and `trace_list_mv` only the
+// partial hour at each end (`rollup-splice`); otherwise `trace_list_mv` answers
+// the whole window through the same union.
 
 export interface TracesDurationStatsOpts {
 	serviceName?: string
@@ -563,6 +569,103 @@ export interface TracesDurationStatsOpts {
 		deploymentEnv?: "contains"
 		serviceNamespace?: "contains"
 	}
+	/** Read only `trace_list_mv`: for clusters that have not applied migration 0034. */
+	rawOnly?: boolean
+}
+
+/** The facet dimensions, spelled the same on `trace_list_mv` and `trace_facets_hourly`. */
+type TraceFacetColumns = Pick<
+	typeof TraceListMv.columns,
+	| "ServiceName"
+	| "SpanName"
+	| "HttpMethod"
+	| "HttpStatusCode"
+	| "DeploymentEnv"
+	| "ServiceNamespace"
+	| "HasError"
+>
+
+function traceFacetDimensionConditions(
+	$: ColumnAccessor<TraceFacetColumns>,
+	opts: TracesDurationStatsOpts,
+): Array<CH.Condition | undefined> {
+	const mm = opts.matchModes
+	const services = inclusionValues(opts.serviceName, opts.serviceNames)
+	const spanNames = inclusionValues(opts.spanName, opts.spanNames)
+	const httpMethods = inclusionValues(opts.httpMethod, opts.httpMethods)
+	const httpStatusCodes = inclusionValues(opts.httpStatusCode, opts.httpStatusCodes)
+	const envs = inclusionValues(opts.deploymentEnv, opts.deploymentEnvs)
+	const namespaces = inclusionValues(opts.namespace, opts.namespaces)
+
+	return [
+		CH.when(services, (v: readonly string[]) =>
+			matchOrIn($.ServiceName, v, mm?.serviceName === "contains"),
+		),
+		CH.when(spanNames, (v: readonly string[]) => matchOrIn($.SpanName, v, mm?.spanName === "contains")),
+		CH.whenTrue(!!opts.hasError, () => $.HasError.eq(1)),
+		CH.when(httpMethods, (v: readonly string[]) => inclusionCondition($.HttpMethod, v)),
+		CH.when(httpStatusCodes, (v: readonly string[]) => inclusionCondition($.HttpStatusCode, v)),
+		CH.when(envs, (v: readonly string[]) =>
+			matchOrIn($.DeploymentEnv, v, mm?.deploymentEnv === "contains"),
+		),
+		CH.when(namespaces, (v: readonly string[]) =>
+			matchOrIn($.ServiceNamespace, v, mm?.serviceNamespace === "contains"),
+		),
+	]
+}
+
+/**
+ * Whether `trace_facets_hourly` can answer the whole-hour interior. It keeps the
+ * facet dimensions and nothing finer, so a duration bound or an attribute
+ * filter, which each need the individual root span, reads `trace_list_mv` for
+ * the whole window.
+ */
+export function canUseTraceFacetsRollup(
+	opts: TracesDurationStatsOpts & {
+		readonly attributeFilterKey?: string
+		readonly resourceFilterKey?: string
+	},
+): boolean {
+	return (
+		!opts.rawOnly &&
+		opts.minDurationMs == null &&
+		opts.maxDurationMs == null &&
+		!opts.attributeFilterKey &&
+		!opts.resourceFilterKey
+	)
+}
+
+/** `trace_list_mv` rows in the window, narrowed to the partial end hours when the rollup has the rest. */
+function traceListWindowConditions($: ColumnAccessor<typeof TraceListMv.columns>, opts: TracesFacetsOpts) {
+	return [
+		$.OrgId.eq(param.string("orgId")),
+		$.Timestamp.gte(param.dateTimeSeconds("startTime")),
+		$.Timestamp.lte(param.dateTimeSeconds("endTime")),
+		...traceFacetDimensionConditions($, opts),
+		CH.when(opts.minDurationMs, (v: number) => $.Duration.gte(v * 1000000)),
+		CH.when(opts.maxDurationMs, (v: number) => $.Duration.lte(v * 1000000)),
+		CH.whenTrue(canUseTraceFacetsRollup(opts), () => edgeCondition("Timestamp")),
+	]
+}
+
+function traceFacetsHourlyInteriorConditions(
+	$: ColumnAccessor<typeof TraceFacetsHourly.columns>,
+	opts: TracesDurationStatsOpts,
+) {
+	return [
+		$.OrgId.eq(param.string("orgId")),
+		...interiorConditions($.Hour),
+		...traceFacetDimensionConditions($, opts),
+	]
+}
+
+/** The raw tier, plus the hourly interior when the rollup can answer it. */
+function traceFacetTiers<Output extends Record<string, unknown>>(
+	opts: TracesFacetsOpts,
+	raw: CHQuery<ColumnDefs, Output, {}>,
+	hourly: () => CHQuery<ColumnDefs, Output, {}>,
+): CHUnionQuery<Output> {
+	return canUseTraceFacetsRollup(opts) ? unionAll(raw, hourly()) : unionAll(raw)
 }
 
 export interface TracesDurationStatsOutput {
@@ -572,48 +675,45 @@ export interface TracesDurationStatsOutput {
 	readonly p95DurationMs: number
 }
 
-export function tracesDurationStatsQuery(opts: TracesDurationStatsOpts) {
-	const mm = opts.matchModes
-	const services = inclusionValues(opts.serviceName, opts.serviceNames)
-	const spanNames = inclusionValues(opts.spanName, opts.spanNames)
-	const httpMethods = inclusionValues(opts.httpMethod, opts.httpMethods)
-	const httpStatusCodes = inclusionValues(opts.httpStatusCode, opts.httpStatusCodes)
-	const envs = inclusionValues(opts.deploymentEnv, opts.deploymentEnvs)
-	const namespaces = inclusionValues(opts.namespace, opts.namespaces)
-
-	return from(TraceListMv)
+export function tracesDurationStatsQuery(
+	opts: TracesDurationStatsOpts,
+): CHQuery<ColumnDefs, TracesDurationStatsOutput, {}> {
+	// Each tier reports its row count beside its extremes: an aggregate over an
+	// empty tier returns 0 rather than nothing, and that 0 must not win the
+	// outer `min`. The t-digest states merge across tiers; an empty one is inert.
+	const raw = from(TraceListMv)
 		.select(($) => ({
-			minDurationMs: CH.min_($.Duration).div(1000000),
-			maxDurationMs: CH.max_($.Duration).div(1000000),
-			p50DurationMs: finiteOrZero(CH.quantile(0.5)($.Duration).div(1000000)),
-			p95DurationMs: finiteOrZero(CH.quantile(0.95)($.Duration).div(1000000)),
+			traceCount: CH.count(),
+			durationMin: CH.min_($.Duration),
+			durationMax: CH.max_($.Duration),
+			durationQuantiles: CH.rawExpr("quantilesTDigestState(0.5, 0.95)(Duration)", T.string),
 		}))
-		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
-			$.Timestamp.gte(param.dateTimeSeconds("startTime")),
-			$.Timestamp.lte(param.dateTimeSeconds("endTime")),
-			CH.when(services, (v: readonly string[]) =>
-				matchOrIn($.ServiceName, v, mm?.serviceName === "contains"),
-			),
-			CH.when(spanNames, (v: readonly string[]) =>
-				matchOrIn($.SpanName, v, mm?.spanName === "contains"),
-			),
-			CH.whenTrue(!!opts.hasError, () => $.HasError.eq(1)),
-			CH.when(opts.minDurationMs, (v: number) => $.Duration.gte(v * 1000000)),
-			CH.when(opts.maxDurationMs, (v: number) => $.Duration.lte(v * 1000000)),
-			CH.when(httpMethods, (v: readonly string[]) => inclusionCondition($.HttpMethod, v)),
-			CH.when(httpStatusCodes, (v: readonly string[]) => inclusionCondition($.HttpStatusCode, v)),
-			CH.when(envs, (v: readonly string[]) =>
-				matchOrIn($.DeploymentEnv, v, mm?.deploymentEnv === "contains"),
-			),
-			CH.when(namespaces, (v: readonly string[]) =>
-				matchOrIn($.ServiceNamespace, v, mm?.serviceNamespace === "contains"),
-			),
-		])
+		.where(($) => traceListWindowConditions($, opts))
+	const hourly = () =>
+		from(TraceFacetsHourly)
+			.select(($) => ({
+				traceCount: CH.sum($.TraceCount),
+				durationMin: CH.min_($.DurationMin),
+				durationMax: CH.max_($.DurationMax),
+				durationQuantiles: CH.rawExpr(
+					"quantilesTDigestMergeState(0.5, 0.95)(DurationQuantiles)",
+					T.string,
+				),
+			}))
+			.where(($) => traceFacetsHourlyInteriorConditions($, opts))
+
+	const quantiles = "quantilesTDigestMerge(0.5, 0.95)(durationQuantiles)"
+	return fromUnion(traceFacetTiers(opts, raw, hourly), "duration_tiers")
+		.select(() => ({
+			minDurationMs: CH.rawExpr("minIf(durationMin, traceCount > 0) / 1000000", T.float64),
+			maxDurationMs: CH.rawExpr("maxIf(durationMax, traceCount > 0) / 1000000", T.float64),
+			p50DurationMs: finiteOrZero(CH.rawExpr(`arrayElement(${quantiles}, 1) / 1000000`, T.float64)),
+			p95DurationMs: finiteOrZero(CH.rawExpr(`arrayElement(${quantiles}, 2) / 1000000`, T.float64)),
+		}))
 		.format("JSON")
 }
 
-// Traces facets (UNION ALL — 6 facet dimensions on trace_list_mv)
+// Traces facets (UNION ALL — 6 facet dimensions and the error count)
 
 export type TracesFacetDimension =
 	| "service"
@@ -623,32 +723,7 @@ export type TracesFacetDimension =
 	| "deploymentEnv"
 	| "serviceNamespace"
 
-export interface TracesFacetsOpts {
-	serviceName?: string
-	spanName?: string
-	hasError?: boolean
-	minDurationMs?: number
-	maxDurationMs?: number
-	httpMethod?: string
-	httpStatusCode?: string
-	deploymentEnv?: string
-	namespace?: string
-	/**
-	 * Multi-value spellings, compiled to `IN (...)` against trace_list_mv's
-	 * pre-extracted columns. Each wins over its scalar counterpart when non-empty.
-	 */
-	serviceNames?: readonly string[]
-	spanNames?: readonly string[]
-	httpMethods?: readonly string[]
-	httpStatusCodes?: readonly string[]
-	deploymentEnvs?: readonly string[]
-	namespaces?: readonly string[]
-	matchModes?: {
-		serviceName?: "contains"
-		spanName?: "contains"
-		deploymentEnv?: "contains"
-		serviceNamespace?: "contains"
-	}
+export interface TracesFacetsOpts extends TracesDurationStatsOpts {
 	attributeFilterKey?: string
 	attributeFilterValue?: string
 	attributeFilterValueMatchMode?: "contains"
@@ -668,39 +743,8 @@ type StringColumn<Cols extends ColumnDefs> = {
 }[keyof Cols & string]
 
 export function tracesFacetsQuery(opts: TracesFacetsOpts): CHUnionQuery<TracesFacetsOutput> {
-	const baseWhere = ($: ColumnAccessor<typeof TraceListMv.columns>): Array<CH.Condition | undefined> => {
-		const conditions: Array<CH.Condition | undefined> = [
-			$.OrgId.eq(param.string("orgId")),
-			$.Timestamp.gte(param.dateTimeSeconds("startTime")),
-			$.Timestamp.lte(param.dateTimeSeconds("endTime")),
-		]
-
-		const services = inclusionValues(opts.serviceName, opts.serviceNames)
-		const spanNames = inclusionValues(opts.spanName, opts.spanNames)
-		const httpMethods = inclusionValues(opts.httpMethod, opts.httpMethods)
-		const httpStatusCodes = inclusionValues(opts.httpStatusCode, opts.httpStatusCodes)
-		const envs = inclusionValues(opts.deploymentEnv, opts.deploymentEnvs)
-		const namespaces = inclusionValues(opts.namespace, opts.namespaces)
-
-		if (services) {
-			conditions.push(matchOrIn($.ServiceName, services, opts.matchModes?.serviceName === "contains"))
-		}
-		if (spanNames) {
-			conditions.push(matchOrIn($.SpanName, spanNames, opts.matchModes?.spanName === "contains"))
-		}
-		if (opts.hasError) conditions.push($.HasError.eq(1))
-		if (opts.minDurationMs != null) conditions.push($.Duration.gte(opts.minDurationMs * 1000000))
-		if (opts.maxDurationMs != null) conditions.push($.Duration.lte(opts.maxDurationMs * 1000000))
-		if (httpMethods) conditions.push(inclusionCondition($.HttpMethod, httpMethods))
-		if (httpStatusCodes) conditions.push(inclusionCondition($.HttpStatusCode, httpStatusCodes))
-		if (envs) {
-			conditions.push(matchOrIn($.DeploymentEnv, envs, opts.matchModes?.deploymentEnv === "contains"))
-		}
-		if (namespaces) {
-			conditions.push(
-				matchOrIn($.ServiceNamespace, namespaces, opts.matchModes?.serviceNamespace === "contains"),
-			)
-		}
+	const rawWhere = ($: ColumnAccessor<typeof TraceListMv.columns>): Array<CH.Condition | undefined> => {
+		const conditions: Array<CH.Condition | undefined> = traceListWindowConditions($, opts)
 
 		// Attribute filter EXISTS subqueries (correlated — references outer TraceId)
 		if (opts.attributeFilterKey) {
@@ -757,35 +801,60 @@ export function tracesFacetsQuery(opts: TracesFacetsOpts): CHUnionQuery<TracesFa
 		return conditions
 	}
 
-	// `colName` is a real `TraceListMv` column, so the accessor already knows how
+	// `colName` is a real column of both tiers, so the accessor already knows how
 	// it decodes — naming it as a `dynamicColumn` threw that away and cost every
 	// facet branch its row schema.
 	const makeFacetQuery = (
-		colName: StringColumn<typeof TraceListMv.columns>,
+		colName: StringColumn<typeof TraceListMv.columns> & StringColumn<typeof TraceFacetsHourly.columns>,
 		facetType: string,
-		extraWhere?: ($: ColumnAccessor<typeof TraceListMv.columns>) => CH.Condition,
+		dropEmpty: boolean,
 		limit = 50,
-	) =>
-		from(TraceListMv)
+	) => {
+		const raw = from(TraceListMv)
+			.select(($) => ({ name: $[colName], count: CH.count() }))
+			.where(($) => [...rawWhere($), CH.whenTrue(dropEmpty, () => $[colName].neq(""))])
+			.groupBy("name")
+		const hourly = () =>
+			from(TraceFacetsHourly)
+				.select(($) => ({ name: $[colName], count: CH.sum($.TraceCount) }))
+				.where(($) => [
+					...traceFacetsHourlyInteriorConditions($, opts),
+					CH.whenTrue(dropEmpty, () => $[colName].neq("")),
+				])
+				.groupBy("name")
+		return fromUnion(traceFacetTiers(opts, raw, hourly), `${facetType}_tiers`)
 			.select(($) => ({
-				name: $[colName],
-				count: CH.count(),
+				name: $.name,
+				count: CH.sum($.count),
 				facetType: CH.lit(facetType),
 			}))
-			.where(($) => [...baseWhere($), extraWhere?.($)])
 			.groupBy("name")
 			.orderBy(["count", "desc"])
 			.limit(limit)
+	}
 
-	const facetBranches: Record<TracesFacetDimension, () => ReturnType<typeof makeFacetQuery>> = {
-		service: () => makeFacetQuery("ServiceName", "service"),
-		spanName: () => makeFacetQuery("SpanName", "spanName", ($) => $.SpanName.neq(""), 20),
-		httpMethod: () => makeFacetQuery("HttpMethod", "httpMethod", ($) => $.HttpMethod.neq(""), 20),
-		httpStatus: () => makeFacetQuery("HttpStatusCode", "httpStatus", ($) => $.HttpStatusCode.neq(""), 20),
-		deploymentEnv: () =>
-			makeFacetQuery("DeploymentEnv", "deploymentEnv", ($) => $.DeploymentEnv.neq(""), 20),
-		serviceNamespace: () =>
-			makeFacetQuery("ServiceNamespace", "serviceNamespace", ($) => $.ServiceNamespace.neq(""), 20),
+	const errorCountQuery = () => {
+		const raw = from(TraceListMv)
+			.select(() => ({ count: CH.count() }))
+			.where(($) => [...rawWhere($), $.HasError.eq(1)])
+		const hourly = () =>
+			from(TraceFacetsHourly)
+				.select(($) => ({ count: CH.sum($.TraceCount) }))
+				.where(($) => [...traceFacetsHourlyInteriorConditions($, opts), $.HasError.eq(1)])
+		return fromUnion(traceFacetTiers(opts, raw, hourly), "errorCount_tiers").select(($) => ({
+			name: CH.lit("error"),
+			count: CH.sum($.count),
+			facetType: CH.lit("errorCount"),
+		}))
+	}
+
+	const facetBranches = {
+		service: () => makeFacetQuery("ServiceName", "service", false),
+		spanName: () => makeFacetQuery("SpanName", "spanName", true, 20),
+		httpMethod: () => makeFacetQuery("HttpMethod", "httpMethod", true, 20),
+		httpStatus: () => makeFacetQuery("HttpStatusCode", "httpStatus", true, 20),
+		deploymentEnv: () => makeFacetQuery("DeploymentEnv", "deploymentEnv", true, 20),
+		serviceNamespace: () => makeFacetQuery("ServiceNamespace", "serviceNamespace", true, 20),
 	} satisfies Record<TracesFacetDimension, () => ReturnType<typeof makeFacetQuery>>
 
 	if (opts.facet) {
@@ -799,13 +868,7 @@ export function tracesFacetsQuery(opts: TracesFacetsOpts): CHUnionQuery<TracesFa
 		facetBranches.httpStatus(),
 		facetBranches.deploymentEnv(),
 		facetBranches.serviceNamespace(),
-		from(TraceListMv)
-			.select(() => ({
-				name: CH.lit("error"),
-				count: CH.count(),
-				facetType: CH.lit("errorCount"),
-			}))
-			.where(($) => [...baseWhere($), $.HasError.eq(1)]),
+		errorCountQuery(),
 	).format("JSON")
 }
 

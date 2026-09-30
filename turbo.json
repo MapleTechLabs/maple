@@ -66,6 +66,13 @@
 			"dependsOn": ["^build"],
 			"outputs": []
 		},
+		// `gen-ai.test.ts` pins the stamp keys against the ingest gateway's Rust
+		// sources, which the default package-scoped inputs miss.
+		"@maple/domain#test": {
+			"dependsOn": ["^build"],
+			"outputs": [],
+			"inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/apps/ingest/src/ai_session/*.rs"]
+		},
 		"eval": {
 			"dependsOn": ["^build"],
 			"cache": false

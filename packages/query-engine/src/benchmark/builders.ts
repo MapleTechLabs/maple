@@ -754,6 +754,20 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 	...webAnalyticsFixtures,
 	...webAnalyticsAiFixtures,
 
+	// Traces sidebar (query-engine runtime); the pipe fixtures cover the raw-only route.
+	{
+		module: "errors",
+		name: "tracesFacetsQuery",
+		label: "rollup",
+		compile: () => CH.compileUnionUnsafe(CH.tracesFacetsQuery({ serviceNames: ["api"] }), window),
+	},
+	{
+		module: "errors",
+		name: "tracesDurationStatsQuery",
+		label: "rollup",
+		compile: () => CH.compileUnsafe(CH.tracesDurationStatsQuery({ serviceNames: ["api"] }), window),
+	},
+
 	// Error fixtures reached through ErrorsService, v2 telemetry, and observability.
 	{
 		// telemetry.http.ts v2GetSpan / observability/span-detail.ts

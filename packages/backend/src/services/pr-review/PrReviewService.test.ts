@@ -114,6 +114,7 @@ const layerFor = (
 	const commentsByMarker = new Map<string, string>()
 	const provider: VcsProviderClient = {
 		id: "github",
+		reviewerMention: "@maple-review-bot",
 		webhookToJobs: unused,
 		fetchRepositories: unused,
 		fetchCommits: unused,
@@ -364,7 +365,7 @@ describe("PrReviewService.onPullRequestEvent", () => {
 
 			const unknown = yield* reviews.onPullRequestEvent(orgId, job({ headSha: HEAD_2 }))
 			yield* reviews.failReview(orgId, unknown.reviewId!, "no review")
-			assert.include(comments.at(-1)!, "could not finish. Comment `@maple review`")
+			assert.include(comments.at(-1)!, "could not finish. Comment `@maple-review-bot review`")
 		}).pipe(Effect.provide(layerFor(testDb, { comments })))
 	})
 
@@ -1139,18 +1140,38 @@ describe("withReviewStatus", () => {
 	const MARKER = prReviewCommentMarker(UNKNOWN_REVIEW)
 
 	it("writes the review's own comment with the notice alone", () => {
-		const reviewing = withReviewStatus(undefined, MARKER, { kind: "reviewing", headSha: HEAD }) ?? ""
+		const reviewing =
+			withReviewStatus(undefined, MARKER, { kind: "reviewing", headSha: HEAD }, "@maple-review-bot") ??
+			""
 		assert.isTrue(reviewing.startsWith(`${MARKER}\n`))
 		assert.include(reviewing, "Maple is reviewing this pull request")
-		assert.equal(withReviewStatus(reviewing, MARKER, { kind: "reviewing", headSha: HEAD }), reviewing)
-		const failed = withReviewStatus(reviewing, MARKER, { kind: "failed", headSha: HEAD })
+		assert.equal(
+			withReviewStatus(reviewing, MARKER, { kind: "reviewing", headSha: HEAD }, "@maple-review-bot"),
+			reviewing,
+		)
+		const failed = withReviewStatus(
+			reviewing,
+			MARKER,
+			{ kind: "failed", headSha: HEAD },
+			"@maple-review-bot",
+		)
 		assert.include(failed, "could not finish")
 		assert.notInclude(failed, "is reviewing")
 	})
 
 	it("closes its own notice when a newer push replaces the review", () => {
-		const reviewing = withReviewStatus(undefined, MARKER, { kind: "reviewing", headSha: HEAD })
-		const superseded = withReviewStatus(reviewing, MARKER, { kind: "superseded", headSha: HEAD })
+		const reviewing = withReviewStatus(
+			undefined,
+			MARKER,
+			{ kind: "reviewing", headSha: HEAD },
+			"@maple-review-bot",
+		)
+		const superseded = withReviewStatus(
+			reviewing,
+			MARKER,
+			{ kind: "superseded", headSha: HEAD },
+			"@maple-review-bot",
+		)
 		assert.include(superseded, "A newer push replaced")
 		assert.notInclude(superseded, "is reviewing")
 	})
@@ -1162,8 +1183,12 @@ describe("withReviewStatus", () => {
 			headSha: HEAD,
 			repositoryUrl: REPO_URL,
 		})
-		assert.isUndefined(withReviewStatus(finished, MARKER, { kind: "failed", headSha: HEAD }))
-		assert.isUndefined(withReviewStatus(finished, MARKER, { kind: "superseded", headSha: HEAD }))
+		assert.isUndefined(
+			withReviewStatus(finished, MARKER, { kind: "failed", headSha: HEAD }, "@maple-review-bot"),
+		)
+		assert.isUndefined(
+			withReviewStatus(finished, MARKER, { kind: "superseded", headSha: HEAD }, "@maple-review-bot"),
+		)
 	})
 })
 
@@ -1221,7 +1246,7 @@ describe("buildPublication", () => {
 		assert.isTrue(publication.summaryComment.body.startsWith(prReviewCommentMarker(UNKNOWN_REVIEW)))
 		assert.include(
 			publication.summaryComment.body,
-			"## Maple review\n\n**Confidence 4/5** · likely safe to merge\n<sub>quality 100/100 · no findings · 0/1 new units observable</sub>",
+			"## Maple review\n\n🟢 **Confidence 4/5** · likely safe to merge\n<sub>quality 100/100 · no findings · 0/1 new units observable</sub>",
 		)
 	})
 
@@ -1248,11 +1273,11 @@ describe("buildPublication", () => {
 		const comment = renderSummaryComment(prReviewCommentMarker(UNKNOWN_REVIEW), input)
 		assert.include(comment, "Files not reviewed (2)")
 		assert.include(comment, "- `src/c.ts`")
-		assert.include(comment, "Copy all findings (1)")
+		assert.include(comment, "Prompt to fix this finding with an AI agent")
 		assert.include(comment, `automated review of commit ${HEAD}`)
 		assert.include(comment, "F1 · Warning · correctness · src/orders.ts:42")
 		// The check run carries each finding as an annotation already.
-		assert.notInclude(renderCheckSummary(input), "Copy all findings")
+		assert.notInclude(renderCheckSummary(input), "Prompt to fix")
 		assert.include(renderCheckSummary(input), "Files not reviewed (2)")
 	})
 
@@ -1275,10 +1300,10 @@ describe("buildPublication", () => {
 			repositoryUrl: `${REPO_URL}/`,
 		})
 		assert.include(comment, `(${REPO_URL}/blob/${HEAD}/src/a%20b.ts#L4-L6)`)
-		assert.include(comment, "**Confidence 2/5** · risky as written")
+		assert.include(comment, "🔴 **Confidence 2/5** · risky as written")
 		assert.include(comment, "<sub>quality 75/100 · 1 critical · 0/1 new units observable</sub>")
 		assert.include(comment, "Observability coverage: 0 of 1 changes observable")
-		assert.include(comment, "<details><summary><b>Critical</b> · gap</summary>")
+		assert.include(comment, "<details><summary>🔴 <b>Critical</b> · gap</summary>")
 	})
 
 	it("renders the coverage table and the check ids into the summary", () => {
@@ -1369,18 +1394,18 @@ describe("buildPublication", () => {
 			})
 		assert.include(
 			render([]),
-			"**Confidence 5/5** · safe to merge\nSmall change, verified end to end.\n<sub>quality 100/100 · no findings · tests covered · risk low</sub>",
+			"🟢 **Confidence 5/5** · safe to merge\nSmall change, verified end to end.\n<sub>quality 100/100 · no findings · tests covered · risk low</sub>",
 		)
 		const critical = render([
 			{ path: "a.ts", line: 1, category: "correctness", severity: "critical", title: "t", body: "b" },
 		])
 		assert.include(
 			critical,
-			"**Confidence 2/5** · risky as written\nHeld at 2 because a critical finding is open.",
+			"🔴 **Confidence 2/5** · risky as written\nHeld at 2 because a critical finding is open.",
 		)
 		assert.notInclude(critical, "verified end to end")
 		const partial = render([], true)
-		assert.include(partial, "**Confidence 3/5** · needs attention\n<sub>")
+		assert.include(partial, "🟡 **Confidence 3/5** · needs attention\n<sub>")
 		// The early end is the warning; a reason saying so again is left out.
 		assert.notInclude(partial, "Held at")
 		assert.include(partial, "ended early")
@@ -1453,6 +1478,7 @@ describe("buildPublication", () => {
 		assert.equal(comment.startLine, 3)
 		assert.equal(comment.line, 4)
 		assert.include(comment.body, "```suggestion\nfor (let i = 0; i <= n; i++) {\n\tvisit(i)\n```")
+		assert.include(comment.body, "> [!WARNING]\n> **off by one**")
 		assert.include(comment.body, "<sub>Warning · correctness</sub>")
 		assert.include(comment.body, "In `a.ts:3-4`: off by one.")
 		assert.notInclude(publication.summaryComment.body, "instrumentation audit")

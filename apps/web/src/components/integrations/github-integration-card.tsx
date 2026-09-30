@@ -43,7 +43,7 @@ import { useOrganizationFeatureFlags } from "@/hooks/use-organization-feature-fl
 import { MapleApiAtomClient, retainedQuery } from "@/lib/services/common/atom-client"
 import { GITHUB_ACCENT, IntegrationIconPlate } from "./integration-catalog"
 import { useIntegrationConnect, type IntegrationConnect } from "./integration-connect"
-import { PrReviewSettingsButton } from "./pr-review-settings"
+import { PrReviewModelSetting, PrReviewSettingsButton } from "./pr-review-settings"
 import {
 	IntegrationEmpty,
 	IntegrationEmptyCard,
@@ -491,6 +491,7 @@ function ConnectedView({
 	onSetPrReview: (repo: GithubRepoSummary, enabled: boolean) => Promise<void>
 }) {
 	const actionBusy = connectFlow.busy || disconnectBusy
+	const prReviewRolledOut = useOrganizationFeatureFlags().flags.prReview
 	const activeRepos = status.repositories.filter((r) => r.status === "active")
 	const removedRepos = status.repositories.filter((r) => r.status === "removed")
 	const counts = {
@@ -551,6 +552,10 @@ function ConnectedView({
 					</Button>
 				</div>
 			</div>
+
+			{prReviewRolledOut && activeRepos.some((repo) => repo.prReviewEnabled) ? (
+				<PrReviewModelSetting />
+			) : null}
 
 			<div className="overflow-hidden rounded-lg border bg-card">
 				<div className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-2.5">

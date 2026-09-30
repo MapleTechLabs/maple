@@ -8,6 +8,7 @@ import {
 	aiToolErrorBreakdownRowSchema,
 	aiToolErrorOccurrencesQuery,
 	aiToolErrorOccurrencesRowSchema,
+	aiToolErrorPayload,
 	aiToolErrorPayloadSlice,
 	aiToolErrorPayloadsQuery,
 	aiToolErrorPayloadsRowSchema,
@@ -23,6 +24,8 @@ import {
 	aiToolsTotalsQuery,
 	AI_TOOLS_BREAKDOWN_LIMIT,
 	AI_TOOLS_SERIES_MAX_KEYS,
+	AI_TOOL_ERROR_ATTRIBUTE_MAX,
+	AI_TOOL_ERROR_PAYLOAD_MAX,
 	AI_TOOL_OCCURRENCES_LIMIT,
 	type AiToolErrorCallKey,
 } from "./ai-tools"
@@ -112,6 +115,17 @@ describe("tool call population", () => {
 		expect(sql).toContain("max(SessionId) AS rawSessionId")
 		expect(sql).toContain(`${SESSION_KEY} AS sessionKey`)
 		expect(sql).toContain("uniqExact(sessionKey) AS sessions")
+	})
+
+	it("counts the sessions list's population in the window's Sessions tile", () => {
+		const { sql } = compileUnionUnsafe(aiToolsTotalsQuery({}, ["window"]), totalsParams)
+
+		// The same per-trace rule the list applies, or the tile counts sessions
+		// the list does not show.
+		expect(sql).toContain(
+			"HAVING countIf((((SessionId != '' OR IsLlmCall = 1) OR IsToolCall = 1) OR AgentName != '')) > 0",
+		)
+		expect(sql).toContain(") AS window_traces")
 	})
 
 	it("scopes every level that reads the table to the org", () => {
@@ -644,25 +658,161 @@ describe("aiToolErrorPayloadsQuery", () => {
 		expect(compiled.sql).not.toContain("2026-08-19 23:59:59")
 	})
 
-	it("truncates payloads by codepoint and reports their size in bytes", () => {
-		// `left` counts BYTES and would cut a multi-byte codepoint in half.
-		expect(compiled.sql).not.toContain("left(")
-		expect(compiled.sql).toContain("leftUTF8(")
-		expect(compiled.sql).toContain("AS argumentsBytes")
-		expect(compiled.sql).toContain("AS resultBytes")
+	it("reads the attributes the session page decodes, not a payload of its own", () => {
+		// Which attribute holds the arguments is the integrations' call, so the
+		// read hands back the same projection the session span read does.
+		expect(compiled.sql).toContain("mapFilter((k, v) ->")
+		expect(compiled.sql).toContain("'input.value'")
+		expect(compiled.sql).toContain("'tool.parameters'")
+		expect(compiled.sql).toContain("AS spanAttributes")
+		expect(compiled.sql).not.toContain("coalesce(")
+	})
+
+	it("cuts every value in SQL and reports the true size of the ones it cut", () => {
+		expect(compiled.sql).toContain(
+			`mapApply((k, v) -> (k, leftUTF8(v, ${AI_TOOL_ERROR_ATTRIBUTE_MAX})), mapFilter(`,
+		)
+		expect(compiled.sql).toContain(
+			`mapApply((k, v) -> (k, length(v)), mapFilter((k, v) -> lengthUTF8(v) > ${AI_TOOL_ERROR_ATTRIBUTE_MAX}, mapFilter(`,
+		)
+		expect(compiled.sql).toContain("AS cutAttributeBytes")
 		expect(
 			decodeRows(compiled, [
 				{
 					traceId: "t1",
 					spanId: "s1",
 					statusCode: "Error",
-					arguments: "{}",
-					argumentsBytes: "2",
-					result: "",
-					resultBytes: 0,
+					spanAttributes: { "input.value": "{}" },
+					// UInt64 arrives quoted under FORMAT JSON.
+					cutAttributeBytes: { "output.value": "40000" },
 				},
-			])[0],
-		).toMatchObject({ argumentsBytes: 2, resultBytes: 0 })
+			])[0]?.cutAttributeBytes,
+		).toEqual({ "output.value": 40_000 })
+	})
+})
+
+describe("aiToolErrorPayload", () => {
+	const payload = (
+		spanAttributes: Record<string, string>,
+		cutAttributeBytes: Record<string, number> = {},
+	) =>
+		aiToolErrorPayload({
+			traceId: "t1",
+			spanId: "s1",
+			statusCode: "Error",
+			spanAttributes,
+			cutAttributeBytes,
+		})
+
+	// `update_seat` as the OpenAI Agents SDK's Python OpenInference instrumentor
+	// emitted it in production: the GenAI dual-write put the parameter schema in
+	// `gen_ai.tool.call.arguments` (session `verify-oa-py-nofix1-1`) where the
+	// baseline run (`verify-oa-py-base-1`) had the real arguments.
+	const UPDATE_SEAT_SCHEMA =
+		'{"properties": {"confirmation_number": {"description": "The confirmation number for the flight.", "title": "Confirmation Number", "type": "string"}, "new_seat": {"description": "The new seat to update to.", "title": "New Seat", "type": "string"}}, "required": ["confirmation_number", "new_seat"], "title": "update_seat_args", "type": "object", "additionalProperties": false}'
+	const UPDATE_SEAT_ARGS = '{"confirmation_number":"ABC123","new_seat":"14C"}'
+	const UPDATE_SEAT_ERROR =
+		"An error occurred while running the tool. Please try again. Error: Seat 14C is temporarily locked, retry once"
+	const updateSeat = (dualWrittenArguments: string) => ({
+		"maple_ai.vendor.id": "openai_agents_sdk",
+		"openinference.span.kind": "TOOL",
+		"tool.name": "update_seat",
+		"gen_ai.tool.name": "update_seat",
+		"tool.parameters": UPDATE_SEAT_SCHEMA,
+		"gen_ai.tool.call.arguments": dualWrittenArguments,
+		"input.value": UPDATE_SEAT_ARGS,
+		"output.value": UPDATE_SEAT_ERROR,
+		"gen_ai.tool.call.result": UPDATE_SEAT_ERROR,
+	})
+
+	it("shows an OpenInference tool's arguments where the dual-write copied its schema", () => {
+		expect(payload(updateSeat(UPDATE_SEAT_SCHEMA))).toMatchObject({
+			arguments: UPDATE_SEAT_ARGS,
+			argumentsBytes: UPDATE_SEAT_ARGS.length,
+			result: UPDATE_SEAT_ERROR,
+		})
+		// The run whose dual-write carried the arguments reads the same.
+		expect(payload(updateSeat(UPDATE_SEAT_ARGS)).arguments).toBe(UPDATE_SEAT_ARGS)
+	})
+
+	// LlamaIndex `get_weather`: with the GenAI dual-write on (`verify-li-sem1-1`)
+	// the arguments slot holds the schema, with it off (`verify-li-sem0-1`) it is
+	// empty, and `input.value` has the call either way.
+	const WEATHER_SCHEMA =
+		'{"properties": {"city": {"title": "City", "type": "string"}, "unit": {"title": "Unit", "type": "string"}}, "required": ["city", "unit"], "type": "object"}'
+	const WEATHER_OUTPUT =
+		'{"blocks":[{"text":"Weather in Berlin: 18 degrees celsius, light rain."}],"tool_name":"get_weather","raw_input":{"args":[],"kwargs":{"city":"Berlin","unit":"celsius"}},"raw_output":"Weather in Berlin: 18 degrees celsius, light rain.","is_error":false}'
+	const getWeather = (dualWrite: Record<string, string>) => ({
+		"maple_ai.vendor.id": "llamaindex",
+		"openinference.span.kind": "TOOL",
+		"tool.name": "get_weather",
+		"tool.parameters": WEATHER_SCHEMA,
+		"input.value": '{"kwargs": {"city": "Berlin", "unit": "celsius"}}',
+		"output.value": WEATHER_OUTPUT,
+		...dualWrite,
+	})
+
+	it("reads a LlamaIndex tool's input whether or not the dual-write ran", () => {
+		const withDualWrite = payload(
+			getWeather({
+				"gen_ai.tool.call.arguments": WEATHER_SCHEMA,
+				"gen_ai.tool.call.result": WEATHER_OUTPUT,
+			}),
+		)
+		const without = payload(getWeather({}))
+		// Re-serialised from the decoded value, as the session page renders it.
+		const args = '{"kwargs":{"city":"Berlin","unit":"celsius"}}'
+		expect(withDualWrite.arguments).toBe(args)
+		expect(without.arguments).toBe(args)
+		expect(without.result).toBe(WEATHER_OUTPUT)
+	})
+
+	it("unwraps a LangChain ToolMessage result to what the tool returned", () => {
+		expect(
+			payload({
+				"gen_ai.tool.name": "get_weather",
+				"gen_ai.tool.call.result":
+					'{"type": "tool", "data": {"content": "{\\"city\\": \\"Berlin\\"}", "type": "tool", "name": "get_weather", "tool_call_id": "call_1", "status": "success"}}',
+			}).result,
+		).toBe('{"city": "Berlin"}')
+	})
+
+	it("truncates by codepoint and reports the full size in bytes", () => {
+		const long = `"${"é".repeat(AI_TOOL_ERROR_PAYLOAD_MAX + 10)}"`
+		const cut = payload({ "gen_ai.tool.call.arguments": "{}", "gen_ai.tool.call.result": long })
+		expect(cut).toMatchObject({ arguments: "{}", argumentsBytes: 2 })
+		// A JSON string decodes to its text; every `é` is two bytes.
+		expect(Array.from(cut.result)).toHaveLength(AI_TOOL_ERROR_PAYLOAD_MAX)
+		expect(cut.resultBytes).toBe((AI_TOOL_ERROR_PAYLOAD_MAX + 10) * 2)
+		expect(payload({})).toMatchObject({ arguments: "", argumentsBytes: 0, result: "", resultBytes: 0 })
+	})
+
+	it("shows a value the read cut as its raw text, at its true size", () => {
+		// As the read returns a 40 KB JSON result: cut mid-document, so it no
+		// longer parses.
+		const whole = JSON.stringify({ rows: "x".repeat(40_000) })
+		const cut = whole.slice(0, AI_TOOL_ERROR_ATTRIBUTE_MAX)
+		const shown = payload(
+			{ "gen_ai.tool.call.arguments": "{}", "gen_ai.tool.call.result": cut },
+			{ "gen_ai.tool.call.result": whole.length },
+		)
+		expect(shown).toMatchObject({ arguments: "{}", argumentsBytes: 2, resultBytes: whole.length })
+		expect(shown.result).toBe(cut.slice(0, AI_TOOL_ERROR_PAYLOAD_MAX))
+	})
+
+	it("still swaps an OpenInference schema for the arguments when both are cut", () => {
+		// The schema and its dual-written copy are cut to the same prefix, so
+		// they still compare equal and `input.value` still wins.
+		const schema = JSON.stringify({
+			properties: { seat: { description: "d".repeat(AI_TOOL_ERROR_ATTRIBUTE_MAX) } },
+		})
+		const cut = schema.slice(0, AI_TOOL_ERROR_ATTRIBUTE_MAX)
+		expect(
+			payload(
+				{ ...updateSeat(cut), "tool.parameters": cut },
+				{ "tool.parameters": schema.length, "gen_ai.tool.call.arguments": schema.length },
+			),
+		).toMatchObject({ arguments: UPDATE_SEAT_ARGS, argumentsBytes: UPDATE_SEAT_ARGS.length })
 	})
 })
 

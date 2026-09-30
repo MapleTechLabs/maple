@@ -7,6 +7,7 @@ import {
 	isInstallationProcessable,
 	type OrgId,
 	type PrReviewListItem,
+	type PrReviewOrgSettings,
 	PrReviewRepositoryConfig,
 	type UserId,
 	type VcsAccountType,
@@ -151,6 +152,14 @@ export interface GithubConnectServiceApi {
 		repositoryId: VcsRepositoryId,
 		config: PrReviewRepositoryConfig,
 	) => Effect.Effect<PrReviewRepositoryConfig, IntegrationsPersistenceError | IntegrationsValidationError>
+	readonly getPrReviewSettings: (
+		orgId: OrgId,
+	) => Effect.Effect<PrReviewOrgSettings, IntegrationsPersistenceError>
+	readonly setPrReviewSettings: (
+		orgId: OrgId,
+		settings: PrReviewOrgSettings,
+		updatedBy: UserId,
+	) => Effect.Effect<PrReviewOrgSettings, IntegrationsPersistenceError>
 	readonly listPrReviews: (
 		orgId: OrgId,
 		repositoryId: VcsRepositoryId,
@@ -795,6 +804,25 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 				return cleaned
 			})
 
+			const getPrReviewSettings = Effect.fn("GithubConnectService.getPrReviewSettings")(function* (
+				orgId: OrgId,
+			) {
+				return yield* asPersistence(repo.getPrReviewSettings(orgId))
+			})
+
+			const setPrReviewSettings = Effect.fn("GithubConnectService.setPrReviewSettings")(function* (
+				orgId: OrgId,
+				settings: PrReviewOrgSettings,
+				updatedBy: UserId,
+			) {
+				yield* asPersistence(repo.setPrReviewSettings(orgId, settings, updatedBy))
+				yield* Effect.annotateCurrentSpan({
+					orgId,
+					"vcs.pr_review.model": settings.model ?? "default",
+				})
+				return settings
+			})
+
 			const listPrReviews = Effect.fn("GithubConnectService.listPrReviews")(function* (
 				orgId: OrgId,
 				repositoryId: VcsRepositoryId,
@@ -812,6 +840,8 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 				setTrackedBranch,
 				setPrReviewEnabled,
 				getPrReviewConfig,
+				getPrReviewSettings,
+				setPrReviewSettings,
 				setPrReviewConfig,
 				listPrReviews,
 			} satisfies GithubConnectServiceApi

@@ -5,11 +5,11 @@
 // parallel would otherwise report 180% of itself. Tokens are counted at the
 // deepest span that reports them, because frameworks that also roll usage up to
 // the agent span would otherwise double the bill. And token buckets are
-// normalised to be disjoint at the point they are read off a span: a provider
-// that counts cached tokens inside its prompt figure, or reasoning inside its
-// completion figure, has them carved back out (see `genAiUsageConvention`), so
-// `input` always means the uncached prompt, `output` the visible completion,
-// and a total is always the plain sum of the buckets.
+// disjoint: the ingest gateway stamps them so on the model call alone, and a
+// span ingested before it did has its provider's nested figures carved back out
+// where it is read (see `genAiUsageConvention`), so `input` always means the
+// uncached prompt, `output` the visible completion, and a total is always the
+// plain sum of the buckets.
 
 import { genAiUsageConvention } from "@maple/domain/gen-ai"
 import type { AiSessionSpan } from "@maple/domain/http"
@@ -25,6 +25,7 @@ import {
 } from "./failure-text"
 import {
 	classifyAiSpan,
+	isCountedToolCall,
 	isLlmCall,
 	spanEndMs,
 	spanFailed,
@@ -241,7 +242,7 @@ export interface SessionSummary {
 const RATE_LIMIT_PATTERN = /\b429\b|rate.?limit|too.many.requests|resource.exhausted|overloaded/i
 const CONTEXT_EXCEEDED_PATTERN =
 	/context.{0,16}(length|window|limit)|maximum.context|prompt is too long|too many tokens/i
-const REFUSAL_FINISH_REASONS = new Set(["refusal", "content_filter"])
+const REFUSAL_FINISH_REASONS = new Set(["refusal", "contentfilter"])
 
 export function buildSessionSummary({
 	spans,
@@ -266,6 +267,7 @@ export function buildSessionSummary({
 
 	const usage = countableUsageSpans(ordered, byId)
 	const calls = countedLlmCalls(ordered, byId, usage.bySpan, usage.costs)
+	const toolCalls = countedToolCalls(ordered)
 	// The counts and the breakdown are two readings of this one list.
 	const events = failureEvents(ordered)
 
@@ -289,11 +291,11 @@ export function buildSessionSummary({
 		work: {
 			turns: turns.length,
 			llmCalls: calls.length,
-			toolCalls: ordered.filter((span) => classifyAiSpan(span) === "tool").length,
+			toolCalls: toolCalls.length,
 		},
 		failures: countFailures(events),
 		failureGroups: groupFailures(events),
-		tools: toolUsage(ordered, turns),
+		tools: toolUsage(toolCalls, turns),
 		spanCount: ordered.length,
 		traceCount: new Set(ordered.map((span) => span.traceId)).size,
 	}
@@ -356,29 +358,55 @@ export function findIdleGaps(spans: readonly AiSessionSpan[]): readonly IdleGap[
  * A TTFT splits its own span: the wait is not inference, and a session whose
  * time is mostly first-token latency is a different session from one that is
  * mostly generation. Agent and non-AI spans contribute nothing — an agent span
- * covers its children, and adding it would count the same work twice.
+ * covers its children, and adding it would count the same work twice. For the
+ * same reason an inference span inside another, with no agent or tool between
+ * them, is charged nothing: its time is already inside the outer span's
+ * (OpenRouter's `LLM Generation` over its `generation`, ADK's `call_llm` over
+ * `generate_content`). The outermost carries the time, and borrows a TTFT from
+ * a nested span when it reported none.
  */
 export function computeAgentTime(spans: readonly AiSessionSpan[]): SessionAgentTime {
 	const totals = new Map<AgentTimeKind, number>()
 	const add = (kind: AgentTimeKind, ms: number) => {
 		if (ms > 0) totals.set(kind, (totals.get(kind) ?? 0) + ms)
 	}
+	const byId = new Map(spans.map((span) => [span.spanId, span]))
+	const outermostCall = (span: AiSessionSpan): AiSessionSpan => {
+		let call = span
+		const seen = new Set<string>([span.spanId])
+		let parent = byId.get(span.parentSpanId)
+		while (parent !== undefined && !seen.has(parent.spanId)) {
+			seen.add(parent.spanId)
+			const category = classifyAiSpan(parent)
+			// An agent or a tool in between ran calls of its own.
+			if (category === "agent" || category === "tool") break
+			if (category === "inference") call = parent
+			parent = byId.get(parent.parentSpanId)
+		}
+		return call
+	}
 
+	const calls: AiSessionSpan[] = []
+	const nestedTtftMs = new Map<string, number>()
 	for (const span of spans) {
-		const spanStart = spanStartMs(span)
-		const spanEnd = spanEndMs(span)
 		const category = classifyAiSpan(span)
-		if (category !== "tool" && category !== "inference") continue
-		if (category === "tool") {
-			add("tool", spanEnd - spanStart)
+		if (category === "tool") add("tool", span.durationMs)
+		if (category !== "inference") continue
+		const call = outermostCall(span)
+		if (call === span) {
+			calls.push(span)
 			continue
 		}
 		const ttftMs = spanTtftMs(span)
+		if (ttftMs !== undefined && !nestedTtftMs.has(call.spanId)) nestedTtftMs.set(call.spanId, ttftMs)
+	}
+	for (const call of calls) {
+		const ttftMs = spanTtftMs(call) ?? nestedTtftMs.get(call.spanId)
 		// A TTFT longer than the span itself is instrumentation disagreeing with
 		// itself; the span's own duration is the one both classes must fit in.
-		const ttft = ttftMs === undefined ? 0 : Math.min(ttftMs, spanEnd - spanStart)
+		const ttft = ttftMs === undefined ? 0 : Math.min(ttftMs, call.durationMs)
 		add("ttft", ttft)
-		add("inference", spanEnd - spanStart - ttft)
+		add("inference", call.durationMs - ttft)
 	}
 
 	const segments = AGENT_TIME_KIND_ORDER.map((kind) => ({ kind, ms: totals.get(kind) ?? 0 })).filter(
@@ -404,19 +432,51 @@ const EMPTY_TOKENS: SessionTokenTotals = {
 }
 
 /**
- * The five `gen_ai.usage.*` buckets a span reports, normalised to disjoint
- * buckets — or nothing when it reports none. A reporter whose prompt figure
- * already contains its cache buckets, or whose completion figure contains its
- * reasoning, has them carved back out (`genAiUsageConvention` says which), so
- * `input` is always the uncached prompt, `output` the visible completion, and
- * the total is always the sum, whichever convention the reporter billed under.
- * `ai_trace_index`'s `Tokens` column reaches the same sum at insert
- * (`genAiTokensExpr`), which is what keeps the list's usage equal to the
+ * A span's usage as five disjoint buckets, or nothing when it reports none:
+ * `input` the uncached prompt, `output` the visible completion, the total
+ * their sum. On a span the ingest gateway stamped, the buckets it wrote
+ * (`MAPLE_AI_STAMP_ATTRS`), which only a model call carries — the figures
+ * `ai_trace_index` sums, which is what keeps the list's usage equal to the
  * detail page's. Exported so the waterfall and the flow split a span's usage
  * the same way the header does rather than re-deriving the prompt/completion
  * halves.
  */
 export function spanTokenBuckets(span: AiSessionSpan): SessionTokenTotals | undefined {
+	if (span.genAi.mapleLlmCall === undefined) return reportedTokenBuckets(span)
+	const { mapleInputTokens, mapleCacheReadTokens, mapleCacheWriteTokens } = span.genAi
+	const { mapleOutputTokens, mapleReasoningTokens } = span.genAi
+	if (
+		mapleInputTokens === undefined &&
+		mapleCacheReadTokens === undefined &&
+		mapleCacheWriteTokens === undefined &&
+		mapleOutputTokens === undefined &&
+		mapleReasoningTokens === undefined
+	) {
+		return undefined
+	}
+	return tokenTotals({
+		input: mapleInputTokens ?? 0,
+		cacheRead: mapleCacheReadTokens ?? 0,
+		cacheWrite: mapleCacheWriteTokens ?? 0,
+		output: mapleOutputTokens ?? 0,
+		reasoning: mapleReasoningTokens ?? 0,
+	})
+}
+
+/** What a span reported it cost, read the way {@link spanTokenBuckets} reads
+ *  its tokens: the gateway's figure on a span it stamped, else the emitter's. */
+export function spanCost(span: AiSessionSpan): number | undefined {
+	return span.genAi.mapleLlmCall === undefined ? span.genAi.usageCost : span.genAi.mapleCost
+}
+
+/**
+ * The five `gen_ai.usage.*` buckets of a span ingested before the gateway
+ * stamped usage, as its emitter reported them: a reporter whose prompt figure
+ * already contains its cache buckets, or whose completion figure contains its
+ * reasoning, has them carved back out (`genAiUsageConvention` says which).
+ * Remove once those spans have aged out of the 30-day TTL.
+ */
+function reportedTokenBuckets(span: AiSessionSpan): SessionTokenTotals | undefined {
 	const { usageInputTokens, usageCacheReadInputTokens, usageCacheCreationInputTokens } = span.genAi
 	const { usageOutputTokens, usageReasoningOutputTokens } = span.genAi
 	if (
@@ -471,26 +531,35 @@ interface CountableUsage {
  *
  * Several frameworks stamp `gen_ai.usage.*` on the model span AND sum it onto
  * the agent span that wraps it. Counting the deepest reporter keeps the session
- * total equal to what was actually billed. The wrapper is not dropped outright,
- * though: it keeps whatever it reported ABOVE the sum of the reporters beneath
- * it — zero for a clean roll-up, and the missing call's usage when one of its
- * children reported none.
+ * total equal to what was actually billed.
+ *
+ * A model-call wrapper (an SDK's `generateText` over its `doGenerate`, a
+ * gateway's generation over its attempts) keeps whatever it reported ABOVE the
+ * sum of the reporters beneath it — zero for a clean roll-up, and the missing
+ * call's usage when one of its children reported none. Any other wrapper (an
+ * agent, a workflow) keeps nothing once a reporter sits beneath it: agents
+ * that live across turns report the conversation so far (smolagents
+ * `run(reset=False)`, a reused Strands agent), so their excess is earlier
+ * turns' calls counted again. See {@link keptClaim}.
  */
 function countableUsageSpans(
 	spans: readonly AiSessionSpan[],
 	byId: ReadonlyMap<string, AiSessionSpan>,
 ): CountableUsage {
+	// A span whose usage reads zero throughout is not a reporter: a Vercel AI SDK
+	// `step` stamps only `reasoningTokens="0"`, and as a reporter it would absorb
+	// its chat's usage and leave the agent span above both keeping its roll-up.
 	const reported = new Map<string, SessionTokenTotals>()
 	for (const span of spans) {
 		const tokens = spanTokenBuckets(span)
-		if (tokens !== undefined) reported.set(span.spanId, tokens)
+		if (tokens !== undefined && tokens.total > 0) reported.set(span.spanId, tokens)
 	}
 
 	const bySpan = new Map<string, SessionTokenTotals>()
 	let rolledUp = false
 	for (const [spanId, { own, beneath }] of chargeToNearestReporter(byId, reported)) {
 		if (beneath.length > 0) rolledUp = true
-		const tokens = excessTokens(own, sumTokens(beneath))
+		const tokens = keptClaim(byId, spanId, beneath) ? excessTokens(own, sumTokens(beneath)) : EMPTY_TOKENS
 		if (tokens.total > 0) bySpan.set(spanId, tokens)
 	}
 	const collapsed = collapseObservations(bySpan, costBySpan(spans, byId), byId)
@@ -539,9 +608,10 @@ function collapseObservations(
 /**
  * The model calls the session made, each counted once. A model span counts
  * when it is the deepest account of its call: it reported usage its children
- * do not already cover, or it reported none and neither did any span above it
- * — so a failed call still counts, while a gateway's provider attempt under
- * the call that reports (OpenRouter's `provider attempt N`) and an SDK's
+ * do not already cover, or it reported none, nor did any span above it, and
+ * its parent is not a model call — so a failed call still counts once, while
+ * a gateway's provider attempt under its generation (OpenRouter's `provider
+ * attempt N`, whether or not the generation reported) and an SDK's
  * `generateText` over its `doGenerate` do not. Calls sharing a response id
  * are one call, represented by the observation whose usage claim was kept so
  * the per-model table finds its tokens.
@@ -553,7 +623,7 @@ function countedLlmCalls(
 	costsBySpan: ReadonlyMap<string, number>,
 ): readonly AiSessionSpan[] {
 	const reportsUsage = (span: AiSessionSpan) =>
-		(spanTokenBuckets(span)?.total ?? 0) > 0 || (span.genAi.usageCost ?? 0) > 0
+		(spanTokenBuckets(span)?.total ?? 0) > 0 || (spanCost(span) ?? 0) > 0
 	const claimed = (span: AiSessionSpan) =>
 		tokensBySpan.has(span.spanId) || (costsBySpan.get(span.spanId) ?? 0) > 0
 	const deepest = spans.filter((span) => {
@@ -561,6 +631,7 @@ function countedLlmCalls(
 		if (reportsUsage(span)) return claimed(span)
 		const seen = new Set<string>([span.spanId])
 		let parent = byId.get(span.parentSpanId)
+		if (parent !== undefined && isLlmCall(parent)) return false
 		while (parent !== undefined && !seen.has(parent.spanId)) {
 			if (reportsUsage(parent)) return false
 			seen.add(parent.spanId)
@@ -580,6 +651,14 @@ function countedLlmCalls(
 		if (current === undefined || (!claimed(current) && claimed(span))) byResponse.set(responseId, span)
 	}
 	return [...unkeyed, ...byResponse.values()].sort((a, b) => spanStartMs(a) - spanStartMs(b))
+}
+
+/** The spans `work.llmCalls` counts, in start order: for a reading that needs
+ *  one span per model call rather than every observation of it. */
+export function sessionLlmCalls(spans: readonly AiSessionSpan[]): readonly AiSessionSpan[] {
+	const byId = new Map(spans.map((span) => [span.spanId, span]))
+	const usage = countableUsageSpans(spans, byId)
+	return countedLlmCalls(spans, byId, usage.bySpan, usage.costs)
 }
 
 /**
@@ -616,23 +695,40 @@ function chargeToNearestReporter<T>(
  * wrapper that sums its children's cost onto itself keeps only what it claims
  * above them. Every span that reported a cost has an entry, a fully rolled-up
  * wrapper's being zero — so an empty map means nothing reported at all, which
- * is the difference between "free" and "not measured".
+ * is the difference between "free" and "not measured". A zero cost is an
+ * entry but not a reporter, as a zero usage is not, and as the list's
+ * `Cost > 0` has it: charged a child's cost, it would net to nothing and
+ * leave the wrapper above both keeping its roll-up.
  */
 function costBySpan(
 	spans: readonly AiSessionSpan[],
 	byId: ReadonlyMap<string, AiSessionSpan>,
 ): ReadonlyMap<string, number> {
+	const bySpan = new Map<string, number>()
 	const reported = new Map<string, number>()
 	for (const span of spans) {
-		const cost = span.genAi.usageCost
-		if (cost !== undefined && cost >= 0) reported.set(span.spanId, cost)
+		const cost = spanCost(span)
+		if (cost === 0) bySpan.set(span.spanId, 0)
+		if (cost !== undefined && cost > 0) reported.set(span.spanId, cost)
 	}
 
-	const bySpan = new Map<string, number>()
 	for (const [spanId, { own, beneath }] of chargeToNearestReporter(byId, reported)) {
-		bySpan.set(spanId, Math.max(0, own - beneath.reduce((sum, c) => sum + c, 0)))
+		const excess = Math.max(0, own - beneath.reduce((sum, c) => sum + c, 0))
+		bySpan.set(spanId, keptClaim(byId, spanId, beneath) ? excess : 0)
 	}
 	return bySpan
+}
+
+/** Whether a reporter keeps its claim above the reporters charged to it: a
+ *  leaf does, a model-call wrapper does, any other wrapper does not — see
+ *  `countableUsageSpans`. */
+function keptClaim(
+	byId: ReadonlyMap<string, AiSessionSpan>,
+	spanId: string,
+	beneath: readonly unknown[],
+): boolean {
+	const span = byId.get(spanId)
+	return beneath.length === 0 || (span !== undefined && isLlmCall(span))
 }
 
 function sumCosts(costs: Iterable<number>): number {
@@ -780,13 +876,43 @@ function modelUsage(
 }
 
 /**
+ * The tool calls the session made, in start order. On a span the ingest
+ * gateway stamped, its verdict alone (`maple_ai.tool_call`, what the list
+ * sums): the copy a call paused for a human's approval leaves is stamped no
+ * call by its framework's explicit mark, and nothing is merged.
+ *
+ * The spans ingested before the gateway stamped them keep the old merge until
+ * they age out of the 30-day TTL: a call paused for a human leaves a tool span
+ * that recorded no result and did not fail, and the resumed turn opens
+ * another under the same `gen_ai.tool.call.id` that carries the result on its
+ * attributes (Strands), so the paused copy is dropped when a later copy with a
+ * result exists. Two calls that merely share an id (parallel lanes, a provider
+ * numbering its calls per turn) both carry results, and a session captured
+ * without payloads keeps every span.
+ */
+function countedToolCalls(ordered: readonly AiSessionSpan[]): readonly AiSessionSpan[] {
+	const tools = ordered.filter(isCountedToolCall)
+	const recorded = (span: AiSessionSpan) => (span.genAi.toolCallResult ?? undefined) !== undefined
+	const resumedAt = new Map<string, number>()
+	for (const span of tools) {
+		const callId = span.genAi.toolCallId
+		if (callId !== undefined && callId !== "" && recorded(span)) resumedAt.set(callId, spanStartMs(span))
+	}
+	return tools.filter((span) => {
+		if (span.genAi.mapleLlmCall !== undefined) return true
+		const resumed = resumedAt.get(span.genAi.toolCallId ?? "")
+		return resumed === undefined || resumed <= spanStartMs(span) || recorded(span) || spanFailed(span)
+	})
+}
+
+/**
  * Tools by how often the session called them. Named by `gen_ai.tool.name` where
  * the instrumentation stamped one and by the span name otherwise, so a
  * framework that skips the attribute still gets a histogram rather than
  * disappearing from a column whose total says 63.
  */
 function toolUsage(
-	spans: readonly AiSessionSpan[],
+	calls: readonly AiSessionSpan[],
 	turns: readonly SessionTurn[],
 ): readonly SessionToolUsage[] {
 	const turnIndexBySpan = new Map<string, number>()
@@ -795,8 +921,7 @@ function toolUsage(
 	}
 
 	const byName = new Map<string, { description: string | undefined; events: SessionToolCall[] }>()
-	for (const span of spans) {
-		if (classifyAiSpan(span) !== "tool") continue
+	for (const span of calls) {
 		const name = span.genAi.toolName ?? span.spanName
 		const entry = byName.get(name) ?? { description: undefined, events: [] }
 		// The first stamped description speaks for the tool: emitters send the
@@ -851,9 +976,19 @@ function failureSignal(span: AiSessionSpan): string | undefined {
 }
 
 function refusalSignal(span: AiSessionSpan): string | undefined {
+	return finishReasonsIn(span, REFUSAL_FINISH_REASONS)
+}
+
+/**
+ * The span's finish reasons that are one of `keys`, lowercased and joined — or
+ * `undefined`. Matched without case or separators, since vendors spell one
+ * reason `max_tokens`, `MAX_TOKENS` and `maxTokens` (Strands TS); `keys` are
+ * written that way too.
+ */
+export function finishReasonsIn(span: AiSessionSpan, keys: ReadonlySet<string>): string | undefined {
 	const reasons = (span.genAi.responseFinishReasons ?? [])
 		.map((reason) => reason.toLowerCase())
-		.filter((reason) => REFUSAL_FINISH_REASONS.has(reason))
+		.filter((reason) => keys.has(reason.replace(/[^a-z0-9]/g, "")))
 	return reasons.length === 0 ? undefined : reasons.join(",")
 }
 
@@ -1186,7 +1321,7 @@ export function callMetaParts(span: AiSessionSpan, options?: CallMetaOptions): r
 
 	const buckets = options?.usage === false ? undefined : spanTokenBuckets(span)
 	if (buckets !== undefined && buckets.total > 0) parts.push(tokenFlowLabel(buckets))
-	const cost = options?.usage === false ? undefined : span.genAi.usageCost
+	const cost = options?.usage === false ? undefined : spanCost(span)
 	if (cost !== undefined) parts.push(formatCost(cost))
 	const ttftMs = spanTtftMs(span)
 	if (ttftMs !== undefined) parts.push(`ttft ${formatDuration(ttftMs)}`)

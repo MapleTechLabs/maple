@@ -50,6 +50,9 @@ export const reviewFailureReason = (cause: Cause.Cause<unknown>): PrReviewFailur
 	)
 }
 
-/** The row's `error` for a reason: its code first, so it can be read back. */
+/**
+ * The row's `error` for a reason: its code first, so it can be read back. No retry hint: this
+ * worker does not know the install's App login, and the comment and check already carry one.
+ */
 export const reviewFailureError = (reason: PrReviewFailureReason): string =>
-	`${reason}: ${PR_REVIEW_FAILURE_COPY[reason]} Retry with @maple review.`
+	`${reason}: ${PR_REVIEW_FAILURE_COPY[reason]}`

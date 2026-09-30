@@ -105,7 +105,6 @@ export const apiConfiguredEnv = (stage: MapleStage, region: MapleRegion, domains
 		// The repository-reading half is shared with maple-ai; the install flow and
 		// the webhook receiver are this Worker's alone.
 		githubAppSourceEnv,
-		optionalPlain("GITHUB_APP_SLUG"),
 		optionalPlain("GITHUB_APP_CLIENT_ID"),
 		optionalSecret("GITHUB_APP_CLIENT_SECRET"),
 		optionalSecret("GITHUB_APP_WEBHOOK_SECRET"),

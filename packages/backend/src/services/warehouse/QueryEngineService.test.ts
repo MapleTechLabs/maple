@@ -4,7 +4,12 @@ import { TestClock } from "effect/testing"
 import { Deferred, Effect, Exit, Fiber, Option, Schema } from "effect"
 import { strict as nodeAssert } from "node:assert"
 import { MetricName, OrgId, ServiceName, UserId } from "@maple/domain"
-import { RawSqlValidationError, WarehouseUpstreamError } from "@maple/domain/http"
+import {
+	RawSqlValidationError,
+	WarehouseConfigError,
+	WarehouseQuotaExceededError,
+	WarehouseUpstreamError,
+} from "@maple/domain/http"
 import {
 	baselineWarehouseCapabilities,
 	type QueryEngineEvaluateRequest,
@@ -290,6 +295,80 @@ describe("makeQueryEngineExecute", () => {
 				source: "logs",
 				data: { total: 42 },
 			})
+		}),
+	)
+
+	// The sidebar's two reads: a failure on the first one is what either returns.
+	const traceSidebarStub = (failRollup: () => unknown) => {
+		const queries: Array<string> = []
+		const execute = makeQueryEngineExecute(
+			makeTinybirdStub({
+				sqlQuery: (_tenant, sql) => {
+					queries.push(sql)
+					return sql.includes("trace_facets_hourly")
+						? Effect.fail(failRollup() as WarehouseConfigError)
+						: Effect.succeed(
+								sql.includes("facetType")
+									? [{ name: "api", count: 3, facetType: "service" }]
+									: [
+											{
+												minDurationMs: 1,
+												maxDurationMs: 9,
+												p50DurationMs: 4,
+												p95DurationMs: 8,
+											},
+										],
+							)
+				},
+			}),
+		)
+		return { queries, execute }
+	}
+	const sidebarRequest = (kind: "facets" | "stats") => ({
+		startTime: "2026-01-01 00:00:00",
+		endTime: "2026-01-08 00:00:00",
+		query: { kind, source: "traces" as const },
+	})
+
+	it.effect("reads trace_list_mv when the cluster lacks trace_facets_hourly", () =>
+		Effect.gen(function* () {
+			for (const kind of ["facets", "stats"] as const) {
+				const { queries, execute } = traceSidebarStub(
+					() =>
+						new WarehouseConfigError({
+							message: "Unknown table expression identifier 'trace_facets_hourly'",
+							pipeName: "tracesFacets",
+							clickhouseType: "UNKNOWN_TABLE",
+						}),
+				)
+				const response = yield* execute(tenant, sidebarRequest(kind))
+
+				assert.strictEqual(queries.length, 2, kind)
+				assert.ok(queries[0]!.includes("trace_facets_hourly"), kind)
+				assert.ok(!queries[1]!.includes("trace_facets_hourly"), kind)
+				assert.strictEqual(response.result.kind, kind)
+			}
+		}),
+	)
+
+	it.effect("surfaces a rollup read that failed for another reason instead of rereading raw", () =>
+		Effect.gen(function* () {
+			const { queries, execute } = traceSidebarStub(
+				() =>
+					new WarehouseQuotaExceededError({
+						message: "Timeout exceeded while reading from table default.trace_facets_hourly",
+						pipeName: "tracesFacets",
+						setting: "max_execution_time",
+					}),
+			)
+			const exit = yield* Effect.exit(execute(tenant, sidebarRequest("facets")))
+
+			assert.isTrue(Exit.isFailure(exit))
+			assert.strictEqual(queries.length, 1)
+			assert.strictEqual(
+				(getFailure(exit) as { _tag?: string } | undefined)?._tag,
+				"@maple/http/errors/WarehouseQuotaExceededError",
+			)
 		}),
 	)
 

@@ -59,8 +59,11 @@ export interface SessionSuspendOptions {
 
 /** The parts of the lifecycle each capture mode owns. */
 export interface SessionLifecycleHooks {
-	/** Whether the rows this owner posts are accompanied by an rrweb recording. */
-	readonly recorded: boolean
+	/**
+	 * Whether the rows this owner posts are accompanied by an rrweb recording.
+	 * A function when it can change mid-run: a buffered session becomes recorded when an error happens.
+	 */
+	readonly recorded: boolean | (() => boolean)
 	/** POST one metadata row. Best-effort — must never throw. */
 	readonly post: (row: Record<string, unknown>, keepalive: boolean) => void
 	/**
@@ -83,6 +86,8 @@ export interface SessionLifecycleHooks {
 
 export interface SessionLifecycleHandle {
 	readonly sessionId: string
+	/** Post a fresh `active` row now, e.g. after the session became recorded. */
+	readonly announce: () => void
 	readonly shutdown: (options?: { readonly flush?: boolean }) => Promise<void>
 }
 
@@ -112,6 +117,8 @@ export function startSessionLifecycle(
 	let errorCountBase = 0
 	let sinkClickCountAtStart = 0
 	let sinkErrorCountAtStart = 0
+	const isRecorded = (): boolean =>
+		typeof hooks.recorded === "function" ? hooks.recorded() : hooks.recorded
 
 	/**
 	 * The persisted record of the session this lifecycle owns.
@@ -196,7 +203,8 @@ export function startSessionLifecycle(
 				pageViews: counts.pageViews,
 				errorCount: counts.errorCount,
 				traceIds: status === "ended" ? options.getTraceIds?.(record.id) : undefined,
-				recorded: hooks.recorded,
+				recorded: isRecorded(),
+				replayTrigger: record.replayTrigger,
 				billableStart,
 			}),
 			keepalive,
@@ -215,7 +223,7 @@ export function startSessionLifecycle(
 		const record = liveRecord()
 		// A session minted by idle rotation mid-page has no sampling decision yet;
 		// it takes this page's mode so its later loads agree with it.
-		adoptReplayDecision(record.id, hooks.recorded)
+		adoptReplayDecision(record.id, isRecorded())
 		rebaseCounts(record)
 		hooks.onStart?.(record)
 		post("active", false)
@@ -300,6 +308,9 @@ export function startSessionLifecycle(
 	return {
 		get sessionId() {
 			return current.id
+		},
+		announce: () => {
+			if (running) post("active", false)
 		},
 		shutdown: async (shutdownOptions) => {
 			if (stopped) return

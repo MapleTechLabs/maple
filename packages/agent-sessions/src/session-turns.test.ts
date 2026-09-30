@@ -2,8 +2,23 @@ import { describe, expect, it } from "vitest"
 
 import type { AiSessionSpan } from "@maple/domain/http"
 
-import { agentSpan, llmSpan, makeSpan, toolSpan, userMessages } from "./span-test-support"
-import { buildSessionTurns, classifyAiSpan, isLlmCall, spanTtftMs } from "./session-turns"
+import {
+	agentSpan,
+	langGraphThreadSpans,
+	llmSpan,
+	makeSpan,
+	toolSpan,
+	userMessages,
+} from "./span-test-support"
+import { buildSessionSummary } from "./session-summary"
+import {
+	buildSessionTurns,
+	classifyAiSpan,
+	isCountedToolCall,
+	isLlmCall,
+	spanFailed,
+	spanTtftMs,
+} from "./session-turns"
 
 const SECOND = 1000
 
@@ -170,6 +185,93 @@ describe("buildSessionTurns", () => {
 		expect(Number.isFinite(turns[0]!.startMs)).toBe(true)
 	})
 
+	// Microsoft Agent Framework workflows: `workflow.build` is a one-span trace
+	// of its own, read as an agent root by its name, ahead of `workflow.run`.
+	// It became an empty turn 1 with no label, and the session lost its title.
+	it("folds an anchor that opened no work into the turn after it", () => {
+		const maf = {
+			vendorId: "microsoft_agent_framework",
+			sessionId: "wf-1",
+			genAi: { conversationId: "wf-1" },
+		}
+		const spans = [
+			makeSpan({
+				...maf,
+				spanId: "build",
+				traceId: "trace-build",
+				spanName: "workflow.build",
+				startMs: 0,
+				durationMs: 2,
+			}),
+			makeSpan({
+				...maf,
+				spanId: "run",
+				traceId: "trace-run",
+				spanName: "workflow.run",
+				startMs: 50,
+				durationMs: 10 * SECOND,
+			}),
+			agentSpan({
+				...maf,
+				spanId: "orchestrator",
+				parentSpanId: "run",
+				traceId: "trace-run",
+				startMs: 60,
+				durationMs: 4 * SECOND,
+			}),
+			llmSpan({
+				...maf,
+				spanId: "chat",
+				parentSpanId: "orchestrator",
+				traceId: "trace-run",
+				startMs: 70,
+				durationMs: 4 * SECOND,
+				genAi: {
+					conversationId: "wf-1",
+					inputMessages: userMessages("Produce a mini briefing about Amsterdam"),
+				},
+			}),
+		]
+		const turns = buildSessionTurns(spans)
+
+		expect(turns).toHaveLength(1)
+		expect(turns[0]!.spans.map((span) => span.spanId)).toEqual(["build", "run", "orchestrator", "chat"])
+		expect(turns[0]!.label).toBe("Produce a mini briefing about Amsterdam")
+		expect(buildSessionSummary({ spans, turns }).title).toBe("Produce a mini briefing about Amsterdam")
+	})
+
+	// A pause after it says the invocation stood on its own: folding it would
+	// read the pause as a stall inside the next turn.
+	it("keeps a workless anchor followed by a pause as its own turn", () => {
+		const turns = buildSessionTurns([
+			agentSpan({ spanId: "quiet", startMs: 0, durationMs: SECOND }),
+			agentSpan({ spanId: "busy", startMs: 60 * SECOND, durationMs: 10 * SECOND }),
+			llmSpan({ spanId: "chat", parentSpanId: "busy", startMs: 61 * SECOND, durationMs: SECOND }),
+		])
+
+		expect(turns.map((turn) => turn.spans.map((span) => span.spanId))).toEqual([
+			["quiet"],
+			["busy", "chat"],
+		])
+	})
+
+	it("does not open a turn at a root memory operation", () => {
+		const turns = buildSessionTurns([
+			makeSpan({
+				spanId: "memory",
+				spanName: "search_memory chat-history",
+				startMs: 0,
+				durationMs: SECOND,
+				genAi: { operationName: "search_memory" },
+			}),
+			agentSpan({ spanId: "agent", startMs: 10 * SECOND, durationMs: 10 * SECOND }),
+			llmSpan({ spanId: "chat", parentSpanId: "agent", startMs: 11 * SECOND, durationMs: SECOND }),
+		])
+
+		expect(turns.map((turn) => turn.anchorKind)).toEqual(["agent-root"])
+		expect(turns[0]!.spans.map((span) => span.spanId)).toEqual(["memory", "agent", "chat"])
+	})
+
 	it("falls back to root agent invocations when no conversation id exists", () => {
 		const turns = buildSessionTurns([
 			agentSpan({ spanId: "agent-1", startMs: 0, durationMs: 10 * SECOND }),
@@ -298,6 +400,83 @@ describe("buildSessionTurns", () => {
 		expect(turns[0]!.label).toBe("deploy the worker")
 	})
 
+	// LangGraph with a checkpointer, through the OpenInference dual-write: the
+	// `model` node (a CHAIN span, no operation) starts before its model call and
+	// carries only the thread's FIRST message, so every turn read turn 1's prompt.
+	it("labels from a model call before a framework span that started earlier", () => {
+		const turn = (n: number, prompts: readonly string[]) => {
+			const at = n * 60 * SECOND
+			return [
+				agentSpan({
+					spanId: `assistant-${n}`,
+					startMs: at,
+					durationMs: 2 * SECOND,
+					agentName: "assistant",
+				}),
+				makeSpan({
+					spanId: `model-${n}`,
+					parentSpanId: `assistant-${n}`,
+					spanName: "model",
+					startMs: at + 10,
+					durationMs: SECOND,
+					vendorId: "unknown:openinference",
+					genAi: { inputMessages: userMessages(prompts[0]!) },
+				}),
+				llmSpan({
+					spanId: `chat-${n}`,
+					parentSpanId: `model-${n}`,
+					spanName: "ChatOpenAI",
+					startMs: at + 12,
+					durationMs: SECOND,
+					genAi: { inputMessages: userMessages(...prompts) },
+				}),
+			]
+		}
+		const turns = buildSessionTurns([
+			...turn(0, ["Hi! Briefly introduce yourself."]),
+			...turn(1, ["Hi! Briefly introduce yourself.", "What's the weather in Berlin?"]),
+		])
+
+		expect(turns.map((t) => t.label)).toEqual([
+			"Hi! Briefly introduce yourself.",
+			"What's the weather in Berlin?",
+		])
+	})
+
+	it("labels a LangGraph thread turn by its model call when the agent root holds turn 1's prompt", () => {
+		const prompts = [
+			"Hi! What's the etiquette for proposing a meeting across timezones?",
+			"What is the current local date and time in Tokyo?",
+			"And what is it right now in Europe/Berlin?",
+		]
+		const spans = langGraphThreadSpans(prompts)
+		const turns = buildSessionTurns(spans)
+
+		expect(turns.map((turn) => turn.label)).toEqual(prompts)
+		expect(buildSessionSummary({ spans, turns }).title).toBe(prompts[0])
+	})
+
+	it("keeps the agent root's prompt over a model call that was asked something else", () => {
+		const turn = (n: number, prompt: string) => [
+			agentSpan({
+				spanId: `agent-${n}`,
+				startMs: n * 60 * SECOND,
+				durationMs: 2 * SECOND,
+				genAi: { inputMessages: userMessages(prompt) },
+			}),
+			llmSpan({
+				spanId: `title-${n}`,
+				parentSpanId: `agent-${n}`,
+				startMs: n * 60 * SECOND + 10,
+				durationMs: SECOND,
+				genAi: { inputMessages: userMessages(`Write a short title for: ${prompt}`) },
+			}),
+		]
+		const turns = buildSessionTurns([...turn(0, "retry the deploy"), ...turn(1, "retry the deploy")])
+
+		expect(turns.map((t) => t.label)).toEqual(["retry the deploy", "retry the deploy"])
+	})
+
 	it("has no label when message content was not captured", () => {
 		const turns = buildSessionTurns([agentSpan({ spanId: "agent", startMs: 0, durationMs: SECOND })])
 
@@ -405,6 +584,43 @@ describe("classifyAiSpan", () => {
 		expect(named("chat gpt-5")).toBe("inference")
 	})
 
+	it("does not read 'tool' off the name of a span that names an unknown operation", () => {
+		// `blind-ts-mastra` (EU, 2026-09-29): the Mastra exporter lowercases a span
+		// type the convention has no name for into `gen_ai.operation.name`; a
+		// LangSmith OTel `chain` wraps LangGraph's `tools` node.
+		const unknownOp = (spanName: string, operationName: string) =>
+			makeSpan({
+				spanId: "a",
+				startMs: 0,
+				durationMs: 1,
+				spanName,
+				vendorId: "mastra",
+				genAi: { operationName },
+			})
+
+		for (const span of [
+			unknownOp("scorer_run code-tool-call-accuracy-scorer", "scorer_run"),
+			unknownOp("scorer_step code-tool-call-accuracy-scorer", "scorer_step"),
+			unknownOp("tools", "chain"),
+			unknownOp("HumanInTheLoopMiddleware.wrap_tool_call", "chain"),
+		]) {
+			expect(classifyAiSpan(span)).toBe("agent")
+			expect(isLlmCall(span)).toBe(false)
+		}
+		// A tool name is still a tool call, whatever the operation says.
+		expect(
+			classifyAiSpan(
+				makeSpan({
+					spanId: "a",
+					startMs: 0,
+					durationMs: 1,
+					spanName: "mcp_tool_call search",
+					genAi: { operationName: "mcp_tool_call", toolName: "search" },
+				}),
+			),
+		).toBe("tool")
+	})
+
 	it("classifies a span with no AI signal as other, whatever it is called", () => {
 		const httpSpan = makeSpan({
 			spanId: "a",
@@ -445,6 +661,71 @@ describe("isLlmCall", () => {
 
 		expect(classifyAiSpan(embedding)).toBe("inference")
 		expect(isLlmCall(embedding)).toBe(false)
+	})
+
+	it("reads a memory operation as agent work, even when it names a model", () => {
+		const memory = makeSpan({
+			spanId: "a",
+			startMs: 0,
+			durationMs: 1,
+			spanName: "search_memory chat-history",
+			genAi: { operationName: "search_memory", requestModel: "text-embedding-3-small" },
+		})
+
+		expect(classifyAiSpan(memory)).toBe("agent")
+		expect(isLlmCall(memory)).toBe(false)
+	})
+})
+
+describe("the ingest gateway's verdicts", () => {
+	const stamped = (spanName: string, genAi: AiSessionSpan["genAi"]) =>
+		makeSpan({ spanId: "a", startMs: 0, durationMs: 1, spanName, vendorId: "unknown:genai", genAi })
+
+	it("decide a stamped span, whatever its operation and name say", () => {
+		// ADK's `call_llm` names a model over its `generate_content` child.
+		const wrapper = stamped("call_llm", { responseModel: "gemini-2.5", mapleLlmCall: 0 })
+		expect(classifyAiSpan(wrapper)).toBe("agent")
+		expect(isLlmCall(wrapper)).toBe(false)
+		// A LiteLLM `acompletion` is the call, outside the convention's operations.
+		const call = stamped("litellm_request", { operationName: "acompletion", mapleLlmCall: 1 })
+		expect(classifyAiSpan(call)).toBe("inference")
+		expect(isLlmCall(call)).toBe(true)
+		const tool = stamped("search_docs", { mapleLlmCall: 0, mapleToolCall: 1 })
+		expect(classifyAiSpan(tool)).toBe("tool")
+		// Embeddings stay inference time, never a call.
+		expect(classifyAiSpan(stamped("embed", { operationName: "embeddings", mapleLlmCall: 0 }))).toBe(
+			"inference",
+		)
+	})
+
+	it("render a paused tool copy as a tool, and never count it", () => {
+		// Google ADK's confirmation request, stamped `maple_ai.tool_call = 0`.
+		const paused = stamped("execute_tool delete_file", {
+			operationName: "execute_tool",
+			toolName: "delete_file",
+			toolCallResult: '{"error": "This tool call requires confirmation, please approve or reject."}',
+			mapleLlmCall: 0,
+			mapleToolCall: 0,
+		})
+		expect(classifyAiSpan(paused)).toBe("tool")
+		expect(isCountedToolCall(paused)).toBe(false)
+		expect(
+			isCountedToolCall(stamped("execute_tool delete_file", { mapleLlmCall: 0, mapleToolCall: 1 })),
+		).toBe(true)
+		// Before the gateway stamped: the classifier's rule.
+		expect(
+			isCountedToolCall(stamped("execute_tool delete_file", { operationName: "execute_tool" })),
+		).toBe(true)
+	})
+
+	it("decide whether a stamped span failed", () => {
+		expect(spanFailed(stamped("execute_tool", { mapleLlmCall: 0, mapleError: 1 }))).toBe(true)
+		// The gateway already weighed the span's own `error.type`.
+		expect(spanFailed(stamped("execute_tool", { mapleLlmCall: 0, errorType: "Timeout" }))).toBe(false)
+		// A span before the gateway stamped: the attribute rule.
+		expect(
+			spanFailed(makeSpan({ spanId: "a", startMs: 0, durationMs: 1, genAi: { errorType: "Timeout" } })),
+		).toBe(true)
 	})
 })
 
@@ -494,6 +775,15 @@ describe("turn labels", () => {
 		const long = labelFor([{ role: "user", content: "x".repeat(500) }])
 		expect(long).toHaveLength(80)
 		expect(long?.endsWith("…")).toBe(true)
+	})
+
+	// smolagents sends every task as "New task:\n<task>", so every turn and the
+	// session title read "New task:".
+	it("reads past smolagents' lead-in", () => {
+		expect(labelFor([{ role: "user", content: "New task:\nWhat is 17 * 23?" }])).toBe("What is 17 * 23?")
+		expect(labelFor([{ role: "user", content: "New task:" }])).toBe("New task:")
+		// A user's own line ending in a colon is the prompt itself.
+		expect(labelFor([{ role: "user", content: "Fix this:\n```ts" }])).toBe("Fix this:")
 	})
 
 	// Vendors write "User" as readily as "user", and the transcript's own row

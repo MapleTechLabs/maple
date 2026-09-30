@@ -344,6 +344,18 @@ export const prReviewEdits = pgTable(
 	(table) => [uniqueIndex("pr_review_edits_reply_seq_idx").on(table.replyId, table.seq)],
 )
 
+/** Organization-wide review settings, one row per org; no row reviews on the deployment's defaults. */
+export const prReviewSettings = pgTable("pr_review_settings", {
+	orgId: text("org_id").$type<OrgId>().notNull().primaryKey(),
+	/**
+	 * The model reviews and replies run on; null uses the deployment's default. Plain text, decoded
+	 * on read: a model dropped from the catalog falls back to the default instead of failing.
+	 */
+	model: text("model"),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
+	updatedBy: text("updated_by").$type<UserId>(),
+})
+
 export type VcsInstallationRow = typeof vcsInstallations.$inferSelect
 export type VcsInstallationInsert = typeof vcsInstallations.$inferInsert
 export type VcsRepositoryRow = typeof vcsRepositories.$inferSelect
@@ -353,6 +365,7 @@ export type VcsCommitInsert = typeof vcsCommits.$inferInsert
 export type VcsRepositoryBranchRow = typeof vcsRepositoryBranches.$inferSelect
 export type VcsRepositoryBranchInsert = typeof vcsRepositoryBranches.$inferInsert
 export type PrReviewRow = typeof prReviews.$inferSelect
+export type PrReviewSettingsRow = typeof prReviewSettings.$inferSelect
 export type PrReviewInsert = typeof prReviews.$inferInsert
 export type PrReviewFindingRow = typeof prReviewFindings.$inferSelect
 export type PrReviewFindingEmbeddingRow = typeof prReviewFindingEmbeddings.$inferSelect
