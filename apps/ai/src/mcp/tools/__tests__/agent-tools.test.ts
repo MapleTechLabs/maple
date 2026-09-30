@@ -158,6 +158,7 @@ const payload = (ids: [string, string], args: string, result = "TimeoutError: up
 	spanId: ids[1].repeat(16),
 	statusCode: "Error",
 	spanAttributes: { "gen_ai.tool.call.arguments": args, "gen_ai.tool.call.result": result },
+	cutAttributeBytes: {},
 })
 
 const payloadRows = [payload(["a", "b"], LONG_ARGUMENTS), payload(["c", "d"], `{"query":"short"}`)]
