@@ -10,7 +10,7 @@ icon: "opentelemetry"
 import LanguageTabs from "../../../components/docs/LanguageTabs.astro"
 import LanguageTab from "../../../components/docs/LanguageTab.astro"
 
-Use this guide when no other guide covers your agent, for example a hand-written agent loop. You write the agent spans yourself with any OpenTelemetry SDK. Maple needs three kinds: an `invoke_agent` span per user turn, a `chat` span per model call and an `execute_tool` span per tool call.
+Use this guide when no other guide covers your agent, for example a hand-written agent loop. You write the agent spans yourself with any OpenTelemetry SDK: an `invoke_agent` span per user turn, a `chat` span per model call and an `execute_tool` span per tool call.
 
 Tested with the OpenTelemetry JS SDK 2.11 on Node.js 26 and the Python SDK 1.45 on Python 3.14, against the [GenAI conventions](https://github.com/open-telemetry/semantic-conventions-genai) as of September 2026.
 
@@ -86,7 +86,7 @@ Output messages add a `finish_reason` to each message. `gen_ai.system_instructio
 
 Set the message attributes as JSON strings. Maple doesn't read span events, logs or indexed keys like `gen_ai.prompt.0.content`. Leave `OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT` and `OTEL_SPAN_ATTRIBUTE_VALUE_LENGTH_LIMIT` unset, because a truncated message array no longer parses.
 
-To keep prompts and results out of Maple, skip the five content attributes. Everything else still shows up, with an empty transcript.
+To keep prompts and results out of Maple, skip the content attributes (`gen_ai.system_instructions`, `gen_ai.input.messages`, `gen_ai.output.messages`, `gen_ai.tool.call.arguments`, `gen_ai.tool.call.result`). The transcript is then empty and everything else still shows up.
 
 ## Export spans to Maple
 
@@ -250,7 +250,7 @@ Put `maple_ai.session.id` only on your own wrapper span, never on the framework'
 
 ## Check that it works
 
-Run one conversation with two messages and a tool call, then open **Agent Sessions** in Maple. After a few seconds you should see one session with your conversation id, one turn per message with its transcript, and `chat` and `execute_tool` spans nested under each turn's `invoke_agent` span. The framework shows as **Unidentified**, which is expected.
+Run one conversation with two messages and a tool call, then open **Agent Sessions** in Maple. After a few seconds you should see one session with your conversation id, one turn per message with its transcript, and `chat` and `execute_tool` spans nested under each turn's `invoke_agent` span. Hand-written spans show the framework as **Unidentified**.
 
 ## Troubleshooting
 
