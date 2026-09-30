@@ -128,9 +128,12 @@ describe("openinference", () => {
 			"agno",
 			"crewai",
 			"dspy",
+			"google_adk",
+			"haystack",
 			"langchain",
 			"llamaindex",
 			"openai_agents_sdk",
+			"pydantic_ai",
 			"smolagents",
 		] as const) {
 			expect(AI_VENDOR_INTEGRATIONS[vendorId].id).toBe("openinference")

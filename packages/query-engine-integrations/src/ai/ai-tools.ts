@@ -75,7 +75,13 @@ import { AiTraceIndex, TraceDetailSpans } from "@maple/query-engine/ch/tables"
 import { finiteOrZero, isoBucket } from "@maple/query-engine/ch/format"
 import { CHNumber } from "@maple/query-engine/ch/schema"
 import { aiToolCallPayload } from "./ai-integrations"
-import { SESSION_ORDER_SENTINEL, aiSpanAttributes, orderTuple, sessionKey } from "./ai-sessions"
+import {
+	SESSION_ORDER_SENTINEL,
+	aiSpanAttributes,
+	isSessionTraceCond,
+	orderTuple,
+	sessionKey,
+} from "./ai-sessions"
 
 /**
  * The page's selection, as every read here takes it.
@@ -183,6 +189,10 @@ const parentModels = (window: AiToolsWindow) =>
  * level — for the failure modal, which links each failure to its session. The
  * overview's aggregates never select them, and ClickHouse prunes unselected
  * columns of a derived table.
+ *
+ * Only the traces the sessions list shows (`isSessionTraceCond`), so the
+ * Sessions tile counts that list's population. A trace holding a tool call
+ * always passes it, so no tool call is lost to the join.
  */
 const traceFacts = (window: AiToolsWindow) =>
 	from(AiTraceIndex)
@@ -205,6 +215,7 @@ const traceFacts = (window: AiToolsWindow) =>
 			$.Timestamp.lte(endParam(window)),
 		])
 		.groupBy("TraceId")
+		.having(($) => [isSessionTraceCond($)])
 
 /**
  * The model a tool call is attributed to: its parent model call's, else its

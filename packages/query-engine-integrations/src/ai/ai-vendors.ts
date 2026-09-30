@@ -90,9 +90,9 @@ const OPENINFERENCE_SPAN_KIND_OPERATIONS = new Map([
  * `openinference-openai` (the gateway's id for the OpenAI instrumentor),
  * `unknown:openinference` (its generic bucket for any other OpenInference
  * scope) and the framework ids an `openinference.instrumentation.<framework>`
- * scope is stamped with (agno, crewai, dspy, openai_agents_sdk, smolagents;
- * langchain and llamaindex once the gateway fingerprints those scopes),
- * because the dialect is identical; only the detection path differs. A
+ * scope is stamped with (agno, crewai, dspy, google_adk, haystack, langchain,
+ * llamaindex, openai_agents_sdk, pydantic_ai, smolagents), because the dialect
+ * is identical; only the detection path differs. A
  * framework's native spans carry none of these keys, so the entry costs them
  * nothing.
  *
@@ -219,9 +219,12 @@ export const AI_VENDOR_INTEGRATIONS = {
 	agno: openInferenceIntegration,
 	crewai: openInferenceIntegration,
 	dspy: openInferenceIntegration,
+	google_adk: openInferenceIntegration,
+	haystack: openInferenceIntegration,
 	langchain: openInferenceIntegration,
 	llamaindex: openInferenceIntegration,
 	openai_agents_sdk: openInferenceIntegration,
+	pydantic_ai: openInferenceIntegration,
 	smolagents: openInferenceIntegration,
 	eve: eveIntegration,
 	maple: mapleIntegration,

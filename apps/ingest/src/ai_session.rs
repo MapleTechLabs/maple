@@ -33,12 +33,17 @@
 //! `maple_ai.usage.*` buckets, whatever convention its emitter reported under
 //! — see `ai_session/facts.rs` and `ai_session/usage.rs`.
 //!
+//! One vendor's evaluations are left unstamped entirely: a Mastra scorer run
+//! grades a finished agent run and is not a conversation (see
+//! [`run_predicates`]).
+//!
 //! Detection is ordered first-match over the vendor predicates below; the
 //! session ID is the first non-empty session-granularity attribute for the
-//! matched vendor. A vendor with no session-level key of its own (its
-//! instrumentation only emits run/user-scoped IDs, or nothing) and every
-//! unknown-tier bucket read the OTel GenAI key, `gen_ai.conversation.id`,
-//! which the public docs give any emitter as the way to group its traces.
+//! matched vendor. Every vendor and unknown-tier bucket falls back to the OTel
+//! GenAI key, `gen_ai.conversation.id`, after its own keys: the public docs
+//! give any emitter that key as the way to group its traces, and for a vendor
+//! with no session-level key of its own (its instrumentation only emits
+//! run/user-scoped IDs, or nothing) it is the only one.
 //!
 //! One vendor is not a framework: `maple` matches any span carrying a
 //! `maple_ai.session.id` attribute. That is the one key an emitter both writes
@@ -246,7 +251,8 @@ fn resource_facts(attrs: &[KeyValue]) -> ResourceFacts<'_> {
 
 /// Scope-level facts, computed once per `ScopeSpans`. `any` is true when the
 /// scope alone can decide a vendor; the flags that only narrow span evidence
-/// (`spring_boot`, `vercel_ai`, `matches_service_name`, the crewai refusal)
+/// (`genkit`, `spring_boot`, `vercel_ai`, `matches_service_name`, the crewai
+/// refusal)
 /// deliberately don't set it, so they never force predicate evaluation on
 /// evidence-free spans.
 #[expect(
@@ -260,8 +266,10 @@ struct ScopeFacts {
     dspy: bool,
     eve: bool,
     flue: bool,
+    genkit: bool,
     google_adk: bool,
     haystack: bool,
+    haystack_openinference: bool,
     langchain: bool,
     litellm: bool,
     llamaindex: bool,
@@ -292,6 +300,7 @@ const SCOPE_NAMES: &[&str] = &[
     "openinference.instrumentation.",
     "eve",
     "@flue/opentelemetry",
+    "genkit-tracer",
     "gcp.vertex.agent",
     "haystack",
     "langsmith",
@@ -301,6 +310,7 @@ const SCOPE_NAMES: &[&str] = &[
     "agent_framework",
     "Experimental.Microsoft.Agents.AI",
     "@arizeai/openinference-instrumentation-openai-agents",
+    "@arizeai/openinference-instrumentation-langchain",
     "agent_runtime ",
     "openrouter",
     "crewai.telemetry",
@@ -310,6 +320,7 @@ const SCOPE_NAMES: &[&str] = &[
     "ai",
     "gen_ai",
     "semantic_kernel.",
+    "Microsoft.SemanticKernel.Diagnostics",
 ];
 
 static SCOPE_SCREEN: [u64; 256] = build_screen(&[SCOPE_NAMES]);
@@ -334,9 +345,16 @@ fn scope_facts(scope_name: &str, resource: &ResourceFacts) -> ScopeFacts {
         "openinference.instrumentation.dspy" => facts.dspy = true,
         "eve" => facts.eve = true,
         "@flue/opentelemetry" => facts.flue = true,
-        "gcp.vertex.agent" => facts.google_adk = true,
+        "genkit-tracer" => facts.genkit = true,
+        "gcp.vertex.agent" | "openinference.instrumentation.google_adk" => {
+            facts.google_adk = true;
+        }
         "haystack" => facts.haystack = true,
-        "langsmith" | "openinference.instrumentation.langchain" => facts.langchain = true,
+        "openinference.instrumentation.haystack" => facts.haystack_openinference = true,
+        // The `@arizeai/` name is the TypeScript instrumentor.
+        "langsmith"
+        | "openinference.instrumentation.langchain"
+        | "@arizeai/openinference-instrumentation-langchain" => facts.langchain = true,
         "litellm" => facts.litellm = true,
         "llamaindex.opentelemetry.tracer" | "openinference.instrumentation.llama_index" => {
             facts.llamaindex = true;
@@ -354,7 +372,9 @@ fn scope_facts(scope_name: &str, resource: &ResourceFacts) -> ScopeFacts {
         "openrouter" => facts.openrouter = true,
         "openinference.instrumentation.crewai" | "crewai.telemetry" => facts.crewai = true,
         "openinference.instrumentation.smolagents" => facts.smolagents = true,
-        "pydantic-ai" => facts.pydantic = true,
+        "pydantic-ai" | "openinference.instrumentation.pydantic_ai" => facts.pydantic = true,
+        // The .NET build's ActivitySource; Python's are `semantic_kernel.*`.
+        "Microsoft.SemanticKernel.Diagnostics" => facts.semantic_kernel = true,
         "strands.telemetry.tracer" => facts.strands = true,
         "org.springframework.boot" => facts.spring_boot = true,
         "ai" | "gen_ai" => facts.vercel_ai = true,
@@ -377,6 +397,7 @@ fn scope_facts(scope_name: &str, resource: &ResourceFacts) -> ScopeFacts {
         || facts.flue
         || facts.google_adk
         || facts.haystack
+        || facts.haystack_openinference
         || facts.langchain
         || facts.litellm
         || facts.llamaindex
@@ -426,6 +447,9 @@ struct SpanEvidence<'a> {
     langsmith: bool,
     llamaindex: bool,
     mastra: bool,
+    /// A Mastra scorer's span: its `scorer_run`/`scorer_step`, or any span it
+    /// ran (an LLM judge's agent and model calls) - see [`run_predicates`].
+    mastra_scorer: bool,
     agno: bool,
     agent_framework: bool,
     executor: bool,
@@ -656,6 +680,13 @@ fn absorb_key<'a>(ev: &mut SpanEvidence<'a>, attr: &'a KeyValue, b0: u8) {
         b'm' => {
             if key.starts_with("mastra.") {
                 ev.mastra = true;
+                // A scorer stamps the run it grades as metadata, and Mastra
+                // copies a span's metadata onto every span beneath it.
+                if key == "mastra.metadata.targetTraceId"
+                    || (key == "mastra.span.type" && value_str(attr).starts_with("scorer_"))
+                {
+                    ev.mastra_scorer = true;
+                }
             } else if key.starts_with("message.") {
                 ev.message = true;
             } else if key == "model_request_parameters" {
@@ -842,12 +873,15 @@ struct Vendor {
     id: &'static str,
     detect: DetectFn,
     /// Session-granularity span attribute keys; the first non-empty value wins.
+    /// [`CONVERSATION_ID_KEY`] is tried last unless the list ranks it itself.
     session_keys: &'static [&'static str],
 }
 
-/// The session key of a dialect with none of its own: the OTel GenAI
-/// conversation id, which the docs tell every emitter to set.
-const CONVERSATION_ID_ONLY: &[&str] = &["gen_ai.conversation.id"];
+/// The OTel GenAI conversation id, which the docs tell every emitter to set.
+const CONVERSATION_ID_KEY: &str = "gen_ai.conversation.id";
+
+/// The session keys of a dialect with none of its own.
+const CONVERSATION_ID_ONLY: &[&str] = &[CONVERSATION_ID_KEY];
 
 /// Ordered: first match wins. `maple` leads because its key is an explicit
 /// opt-in rather than a framework fingerprint (see the module doc). Then
@@ -880,9 +914,26 @@ static VENDORS: &[Vendor] = &[
         session_keys: &["gen_ai.conversation.id"],
     },
     Vendor {
+        id: "genkit",
+        detect: detect_genkit,
+        session_keys: CONVERSATION_ID_ONLY,
+    },
+    Vendor {
         id: "google_adk",
         detect: detect_google_adk,
-        session_keys: &["gen_ai.conversation.id", "gcp.vertex.agent.session_id"],
+        // `session.id` is OpenInference's.
+        session_keys: &[
+            "gen_ai.conversation.id",
+            "gcp.vertex.agent.session_id",
+            "session.id",
+        ],
+    },
+    // One vendor, two dialects with their own session keys: `session.id` is
+    // the OpenInference instrumentor's, and means nothing on a native span.
+    Vendor {
+        id: "haystack",
+        detect: detect_haystack_openinference,
+        session_keys: &["session.id", "gen_ai.conversation.id"],
     },
     Vendor {
         id: "haystack",
@@ -948,7 +999,8 @@ static VENDORS: &[Vendor] = &[
     Vendor {
         id: "pydantic_ai",
         detect: detect_pydantic_ai,
-        session_keys: &["gen_ai.conversation.id"],
+        // `session.id` is OpenInference's.
+        session_keys: &["gen_ai.conversation.id", "session.id"],
     },
     Vendor {
         id: "semantic_kernel",
@@ -999,7 +1051,10 @@ static UNKNOWN_TIER: &[Vendor] = &[
     Vendor {
         id: "unknown:openinference",
         detect: detect_unknown_openinference,
-        session_keys: CONVERSATION_ID_ONLY,
+        // `session.id` only after the conversation id: Maple's browser SDK
+        // stamps its replay session under that key on every span, so it can
+        // span several conversations.
+        session_keys: &[CONVERSATION_ID_KEY, "session.id"],
     },
     Vendor {
         id: "unknown:other",
@@ -1029,6 +1084,15 @@ fn run_predicates(
     ev: &SpanEvidence,
     span_attrs: &[KeyValue],
 ) -> Option<AiClassification> {
+    // A Mastra scorer grades a finished run in a trace of its own, with no
+    // conversation id: stamped, every scorer run became a `trace:` session, its
+    // `scorer_*` spans counted as tool calls and an LLM judge as a second agent.
+    // It is an evaluation, not a conversation, so none of it is agent work -
+    // whichever instrumentation recorded the span (a judge's model call can sit
+    // under LangSmith's scope, which the vendor order would name first).
+    if ev.mastra_scorer {
+        return None;
+    }
     let ctx = Ctx {
         scope,
         resource,
@@ -1039,9 +1103,13 @@ fn run_predicates(
         .iter()
         .chain(UNKNOWN_TIER)
         .find(|vendor| (vendor.detect)(&ctx))?;
+    let fallback =
+        (!vendor.session_keys.contains(&CONVERSATION_ID_KEY)).then_some(CONVERSATION_ID_KEY);
     let session_id = vendor
         .session_keys
         .iter()
+        .copied()
+        .chain(fallback)
         .find_map(|key| session_value(span_attrs, key));
     Some(AiClassification {
         vendor: vendor.id,
@@ -1099,8 +1167,19 @@ fn detect_flue(c: &Ctx) -> bool {
     c.scope.flue || c.ev.flue
 }
 
+fn detect_genkit(c: &Ctx) -> bool {
+    // Genkit's raw spans carry only its own `genkit:*` dialect, which nothing
+    // here decodes; the spans an app's GenAI processor has restated name their
+    // operation.
+    c.scope.genkit && c.ev.has_gen_ai_operation_name
+}
+
 fn detect_google_adk(c: &Ctx) -> bool {
     c.scope.google_adk || c.ev.gcp_vertex_agent || c.ev.gen_ai_system == "gcp.vertex.agent"
+}
+
+fn detect_haystack_openinference(c: &Ctx) -> bool {
+    c.scope.haystack_openinference
 }
 
 fn detect_haystack(c: &Ctx) -> bool {
@@ -1256,7 +1335,10 @@ fn detect_vercel_ai_sdk(c: &Ctx) -> bool {
 }
 
 fn detect_unknown_genai(c: &Ctx) -> bool {
-    c.ev.has_gen_ai_operation_name
+    // An OpenInference span that also dual-writes the GenAI operation (every
+    // provider-client instrumentor does) belongs to the bucket that decodes
+    // its dialect.
+    c.ev.has_gen_ai_operation_name && !c.ev.openinference_span_kind
 }
 
 fn detect_unknown_openinference(c: &Ctx) -> bool {
@@ -1524,6 +1606,36 @@ mod tests {
             "vercel_ai_sdk",
             Some("e-1"),
         );
+    }
+
+    #[test]
+    fn vendors_with_their_own_key_fall_back_to_the_conversation_id() {
+        for (scope, span_name, vendor) in [
+            ("crewai.telemetry", "Crew.kickoff", "crewai"),
+            ("strands.telemetry.tracer", "invoke_agent", "strands"),
+            ("openinference.instrumentation.agno", "agent.run", "agno"),
+        ] {
+            classified(
+                scope,
+                span_name,
+                &[("gen_ai.conversation.id", "conv-8")],
+                &[],
+                vendor,
+                Some("conv-8"),
+            );
+            // The vendor's own key still wins when both are set.
+            classified(
+                scope,
+                span_name,
+                &[
+                    ("gen_ai.conversation.id", "conv-8"),
+                    ("session.id", "own-1"),
+                ],
+                &[],
+                vendor,
+                Some("own-1"),
+            );
+        }
     }
 
     #[test]
@@ -2047,6 +2159,69 @@ mod tests {
                 "openai_agents_sdk",
                 "oa-1",
             ),
+            (
+                "@arizeai/openinference-instrumentation-langchain",
+                "ChatOpenAI",
+                &[
+                    ("openinference.span.kind", "LLM"),
+                    ("gen_ai.operation.name", "chat"),
+                    ("session.id", "lc-3"),
+                ],
+                "langchain",
+                "lc-3",
+            ),
+            (
+                "openinference.instrumentation.haystack",
+                "OpenAIChatGenerator.run",
+                &[("openinference.span.kind", "LLM"), ("session.id", "h-1")],
+                "haystack",
+                "h-1",
+            ),
+            (
+                "openinference.instrumentation.google_adk",
+                "invoke_agent weather_agent",
+                &[("openinference.span.kind", "AGENT"), ("session.id", "g-2")],
+                "google_adk",
+                "g-2",
+            ),
+            (
+                "openinference.instrumentation.pydantic_ai",
+                "agent run",
+                &[("openinference.span.kind", "AGENT"), ("session.id", "p-2")],
+                "pydantic_ai",
+                "p-2",
+            ),
+            (
+                "Microsoft.SemanticKernel.Diagnostics",
+                "chat.completions gpt-4o",
+                &[
+                    ("gen_ai.operation.name", "chat"),
+                    ("gen_ai.conversation.id", "sk-1"),
+                ],
+                "semantic_kernel",
+                "sk-1",
+            ),
+            (
+                "Microsoft.SemanticKernel.Diagnostics",
+                "invoke_agent WeatherAgent",
+                &[
+                    ("gen_ai.operation.name", "invoke_agent"),
+                    ("gen_ai.conversation.id", "sk-2"),
+                ],
+                "semantic_kernel",
+                "sk-2",
+            ),
+            (
+                "genkit-tracer",
+                "generate",
+                &[
+                    ("genkit:type", "action"),
+                    ("gen_ai.operation.name", "chat"),
+                    ("gen_ai.conversation.id", "gk-1"),
+                ],
+                "genkit",
+                "gk-1",
+            ),
         ];
         for (scope_name, span_name, span_attrs, vendor, session_id) in cases {
             classified(
@@ -2056,6 +2231,83 @@ mod tests {
                 &[],
                 vendor,
                 Some(session_id),
+            );
+        }
+    }
+
+    #[test]
+    fn session_key_order_follows_the_emitting_dialect() {
+        // Every span carries both keys.
+        let both = &[
+            ("gen_ai.conversation.id", "conv-1"),
+            ("session.id", "app-1"),
+        ];
+        for (scope, span_name, vendor, session_id) in [
+            // OpenInference's own session key leads on its instrumentor's spans.
+            (
+                "openinference.instrumentation.haystack",
+                "OpenAIChatGenerator.run",
+                "haystack",
+                "app-1",
+            ),
+            // A native span's `session.id` is not the vendor's: the
+            // conversation id wins.
+            ("haystack", "haystack.pipeline.run", "haystack", "conv-1"),
+            // google_adk and pydantic_ai rank `session.id` after their own keys
+            // on both scopes.
+            (
+                "openinference.instrumentation.google_adk",
+                "invoke_agent weather_agent",
+                "google_adk",
+                "conv-1",
+            ),
+            ("gcp.vertex.agent", "invoke_agent", "google_adk", "conv-1"),
+            (
+                "openinference.instrumentation.pydantic_ai",
+                "agent run",
+                "pydantic_ai",
+                "conv-1",
+            ),
+            ("pydantic-ai", "agent run", "pydantic_ai", "conv-1"),
+        ] {
+            classified(scope, span_name, both, &[], vendor, Some(session_id));
+        }
+    }
+
+    #[test]
+    fn genkit_spans_without_a_gen_ai_operation_are_not_ai() {
+        assert_eq!(
+            classify(
+                "genkit-tracer",
+                "generate",
+                &[("genkit:type", "action"), ("genkit:name", "generate")],
+                &[],
+            ),
+            None,
+        );
+    }
+
+    #[test]
+    fn openinference_provider_clients_land_in_the_openinference_bucket() {
+        // The provider-client instrumentors dual-write the GenAI operation, which
+        // used to file them under `unknown:genai`, whose read path skips the
+        // OpenInference decoding.
+        for scope_name in [
+            "openinference.instrumentation.anthropic",
+            "openinference.instrumentation.google_genai",
+            "@arizeai/openinference-instrumentation-anthropic",
+        ] {
+            classified(
+                scope_name,
+                "Messages",
+                &[
+                    ("openinference.span.kind", "LLM"),
+                    ("gen_ai.operation.name", "chat"),
+                    ("gen_ai.conversation.id", "conv-4"),
+                ],
+                &[],
+                "unknown:openinference",
+                Some("conv-4"),
             );
         }
     }
@@ -2129,6 +2381,89 @@ mod tests {
             &[("telemetry.sdk.name", "@mastra/otel-exporter")],
             "mastra",
             Some("ma-1"),
+        );
+    }
+
+    #[test]
+    fn mastra_scorer_runs_are_not_agent_work() {
+        // capture `blind-ts-mastra` (EU, 2026-09-29): a live scorer grades the
+        // agent's run in a root trace of its own. Every span of it carries the
+        // graded run as `mastra.metadata.target*`, including the LLM judge's
+        // agent and model call beneath a `scorer_step`.
+        const SCOPE: &str = "@mastra/otel-exporter";
+        const TARGET: (&str, &str) = (
+            "mastra.metadata.targetTraceId",
+            "7df8c67d7b9310062270dae3ddc6e010",
+        );
+        let spans: &[(&str, &[(&str, &str)])] = &[
+            (
+                "scorer_run code-tool-call-accuracy-scorer",
+                &[
+                    ("gen_ai.operation.name", "scorer_run"),
+                    ("mastra.span.type", "scorer_run"),
+                    TARGET,
+                ],
+            ),
+            (
+                "scorer_step translation-quality-scorer",
+                &[
+                    ("gen_ai.operation.name", "scorer_step"),
+                    ("mastra.span.type", "scorer_step"),
+                    TARGET,
+                ],
+            ),
+            (
+                "invoke_agent judge",
+                &[
+                    ("gen_ai.operation.name", "invoke_agent"),
+                    ("gen_ai.agent.name", "judge"),
+                    ("mastra.span.type", "agent_run"),
+                    TARGET,
+                ],
+            ),
+            (
+                "chat openai/gpt-5-mini",
+                &[
+                    ("gen_ai.operation.name", "chat"),
+                    ("gen_ai.request.model", "openai/gpt-5-mini"),
+                    ("gen_ai.usage.input_tokens", "352"),
+                    ("mastra.span.type", "model_inference"),
+                    TARGET,
+                ],
+            ),
+            // A scorer run with no graded trace still names its own type.
+            (
+                "scorer_run code-tool-call-accuracy-scorer",
+                &[("mastra.span.type", "scorer_run")],
+            ),
+        ];
+        for (name, span) in spans {
+            assert!(
+                classify(SCOPE, name, span, &[]).is_none(),
+                "{name} was stamped"
+            );
+        }
+        // A judge's model call recorded by another instrumentation still
+        // carries the graded run, and is not stamped under that vendor either.
+        assert!(classify(
+            "langsmith",
+            "chat openai/gpt-5-mini",
+            &[("gen_ai.operation.name", "chat"), TARGET],
+            &[],
+        )
+        .is_none());
+        // The run it graded is still the agent's.
+        classified(
+            SCOPE,
+            "invoke_agent translator",
+            &[
+                ("gen_ai.operation.name", "invoke_agent"),
+                ("gen_ai.conversation.id", "maple-demo-conversation-1"),
+                ("mastra.span.type", "agent_run"),
+            ],
+            &[],
+            "mastra",
+            Some("maple-demo-conversation-1"),
         );
     }
 
@@ -2330,6 +2665,28 @@ mod tests {
             &[],
             "unknown:openinference",
             Some("conv-9"),
+        );
+        // OpenInference's `session.id` fills in only without a conversation id:
+        // a browser replay session under that key must not merge conversations.
+        classified(
+            "",
+            "llm",
+            &[
+                ("openinference.span.kind", "LLM"),
+                ("gen_ai.conversation.id", "conv-9"),
+                ("session.id", "browser-1"),
+            ],
+            &[],
+            "unknown:openinference",
+            Some("conv-9"),
+        );
+        classified(
+            "",
+            "llm",
+            &[("openinference.span.kind", "LLM"), ("session.id", "oi-1")],
+            &[],
+            "unknown:openinference",
+            Some("oi-1"),
         );
         classified(
             "",

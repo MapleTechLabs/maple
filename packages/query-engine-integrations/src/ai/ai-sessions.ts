@@ -243,6 +243,24 @@ export const sessionKey = (rawSessionId: CH.Expr<string>, traceId: CH.Expr<strin
 	CH.if_(rawSessionId.eq(""), CH.concat(MAPLE_AI_TRACE_SESSION_PREFIX, traceId), rawSessionId)
 
 /**
+ * Whether a trace is a session at all, as a HAVING over its index rows: it
+ * carries a session id (joining whatever session that names), or it made a
+ * model call or a tool call, or ran a named agent. A sessionless trace with
+ * none of these is framework plumbing that happened to be stamped — a lone
+ * Spring AI advisor span, OpenRouter's connection test — and filing it as
+ * `trace:<id>` put an empty session in the list for every one of them. A
+ * trace of tool calls alone (a tool server whose caller did not propagate its
+ * context) is still agent work, and stays.
+ */
+export const isSessionTraceCond = ($: {
+	readonly SessionId: CH.Expr<string>
+	readonly IsLlmCall: CH.Expr<number>
+	readonly IsToolCall: CH.Expr<number>
+	readonly AgentName: CH.Expr<string>
+}): CH.Condition =>
+	CH.countIf($.SessionId.neq("").or($.IsLlmCall.eq(1)).or($.IsToolCall.eq(1)).or($.AgentName.neq(""))).gt(0)
+
+/**
  * One trace's failed agent spans — `(SpanId, ParentSpanId, IsToolCall)` per
  * failed index row — for the tool/turn split one level up, which needs the
  * whole trace's failures in hand at once. Same shape and cap as
@@ -568,6 +586,7 @@ const indexTraces = (opts: AiSessionFilterOpts, bounds: IndexBounds) => {
 		])
 		.groupBy("traceId")
 		.having(($) => [
+			isSessionTraceCond($),
 			CH.when(values(opts.vendorIds), (v) => carries(CH.inList($.VendorId, v))),
 			CH.when(values(opts.serviceNames), (v) => carries(CH.inList($.ServiceName, v))),
 			CH.when(values(opts.deploymentEnvs), (v) => carries(CH.inList($.DeploymentEnv, v))),
@@ -1099,6 +1118,8 @@ export function aiSessionFacetsQuery(): CHUnionQuery<AiSessionFacetsOutput> {
 				$.Timestamp.lte(param.dateTimeString("endTime")),
 			])
 			.groupBy("traceId")
+			// The list's population, so a facet never counts a session it cannot show.
+			.having(($) => [isSessionTraceCond($)])
 
 		return fromQuery(perTrace, "facet_traces")
 			.select(($) => ({

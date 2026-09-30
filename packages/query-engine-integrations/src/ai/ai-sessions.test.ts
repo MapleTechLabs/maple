@@ -191,7 +191,7 @@ describe("aiSessionPageQuery", () => {
 		// `trace:` whenever its turn-owning span belongs to the other vendor it
 		// calls through. It also has to match `aiSessionFacetsQuery`'s any-span
 		// counting, or the sidebar's number and the page's length disagree.
-		expect(sql).toContain("HAVING countIf(VendorId IN ('eve')) > 0")
+		expect(sql).toContain("AND countIf(VendorId IN ('eve')) > 0")
 		expect(sql).toContain("AND countIf(ServiceName IN ('maple-slack-agent')) > 0")
 		expect(sql).not.toContain("WHERE VendorId IN")
 	})
@@ -214,7 +214,7 @@ describe("aiSessionPageQuery", () => {
 		// maple-slack-agent spans are different spans — the ordinary case, since a
 		// trace's spans come from several services. Neither name may appear in the
 		// index read's WHERE at all.
-		expect(sql.split("countIf(").length - 1).toBe(2)
+		expect(sql.split("countIf(").length - 1).toBe(3)
 		expect(where).not.toContain("VendorId")
 		expect(where).not.toContain("ServiceName")
 		expect(sql).not.toContain("VendorId IN ('eve') AND ServiceName")
@@ -223,7 +223,11 @@ describe("aiSessionPageQuery", () => {
 	it("omits the optional filters when none are given", () => {
 		const { sql } = compileUnsafe(aiSessionPageQuery(), params)
 
-		expect(sql).not.toContain("HAVING")
+		// The one HAVING is the rule for which traces are sessions at all.
+		expect(sql.split("HAVING ").length - 1).toBe(1)
+		expect(sql).toContain(
+			"HAVING countIf((((SessionId != '' OR IsLlmCall = 1) OR IsToolCall = 1) OR AgentName != '')) > 0",
+		)
 		expect(sql).not.toContain("VendorId IN")
 		expect(sql).not.toContain("ServiceName IN")
 		// The one WHERE is the index read's; the usage level filters nothing.
@@ -686,7 +690,7 @@ describe("aiSessionDetailsQuery", () => {
 		// They must also be the SAME filters the page ran under, or the two stages
 		// resolve traces differently and the join silently loses rows.
 		const [fanOut, detection] = sql.split("TraceId IN (SELECT")
-		expect(detection).toContain("HAVING countIf(VendorId IN ('eve')) > 0")
+		expect(detection).toContain("AND countIf(VendorId IN ('eve')) > 0")
 		expect(detection).toContain("AND countIf(ServiceName IN ('maple-slack-agent')) > 0")
 		expect(fanOut).not.toContain("IN ('eve')")
 	})
@@ -879,6 +883,13 @@ describe("aiSessionFacetsQuery", () => {
 		expect(sql.split(`uniqExact(${SESSION_KEY}) AS count`).length - 1).toBe(6)
 		expect(sql.split("GROUP BY traceId").length - 1).toBe(6)
 		expect(sql).not.toContain("uniqExact(SpanAttributes['maple_ai.session.id'])")
+		// Only the traces the list shows: a sessionless trace with no model call
+		// and no named agent is no session, so no facet counts it.
+		expect(
+			sql.split(
+				"HAVING countIf((((SessionId != '' OR IsLlmCall = 1) OR IsToolCall = 1) OR AgentName != '')) > 0",
+			).length - 1,
+		).toBe(6)
 	})
 
 	it("repeats the org and window predicates on every union branch", () => {
@@ -961,7 +972,10 @@ describe("aiSessionDistributionsQuery", () => {
 		expect(sessions).toContain(`${SESSION_KEY} AS sessionId`)
 		expect(sql).toContain("GROUP BY sessionId")
 		// No range, sort or page: every session in the window is placed.
-		expect(sql).not.toContain("HAVING")
+		expect(sql.split("HAVING ").length - 1).toBe(1)
+		expect(traces).toContain(
+			"HAVING countIf((((SessionId != '' OR IsLlmCall = 1) OR IsToolCall = 1) OR AgentName != '')) > 0",
+		)
 		expect(sql).not.toContain("LIMIT")
 		expect(sql).not.toContain("ORDER BY")
 		expect(traces).toContain(`Timestamp >= '${params.startTime}'`)

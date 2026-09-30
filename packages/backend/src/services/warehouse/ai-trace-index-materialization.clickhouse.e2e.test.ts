@@ -565,6 +565,68 @@ const NETTING_ORG_SPANS: ReadonlyArray<SeedSpan> = [
 	},
 ]
 
+// Traces the session rule sorts, under a fifth org, stamped as the gateway
+// stamps them: a sessionless plumbing span (a Spring AI advisor) that is no
+// session, a LangSmith OTel `chain` over LangGraph's `tools` node beside the
+// real tool calls, and a tool server's lone tool call.
+const SESSION_RULE_ORG_ID = "org_ai_trace_index_e2e_session_rule"
+const PLUMBING_TRACE = "aitraceindexe2e000000000000000030"
+const LANGGRAPH_TRACE = "aitraceindexe2e000000000000000031"
+/** A tool server's own trace: one tool call, no session id, model or agent. */
+const TOOL_ONLY_TRACE = "aitraceindexe2e000000000000000032"
+
+const sessionRuleSpan = (
+	traceId: string,
+	spanId: string,
+	name: string,
+	offsetMs: number,
+	vendor: string,
+	attrs: Readonly<Record<string, string>>,
+): SeedSpan => ({
+	traceId,
+	spanId,
+	name,
+	ms: BASE_MS + 600_000 + offsetMs,
+	service: "session-rule-service",
+	status: "Ok",
+	attrs: { [MAPLE_AI_VENDOR_ID_ATTR]: vendor, ...attrs },
+})
+
+const SESSION_RULE_ORG_SPANS: ReadonlyArray<SeedSpan> = [
+	sessionRuleSpan(
+		PLUMBING_TRACE,
+		"span-advisor",
+		"spring_ai chat_client advisor",
+		0,
+		"spring_ai",
+		aiGatewayStamps({}),
+	),
+	sessionRuleSpan(LANGGRAPH_TRACE, "span-lg-agent", "invoke_agent weather", 10, "langchain", {
+		"gen_ai.operation.name": "invoke_agent",
+		...aiGatewayStamps({ agentName: "weather" }),
+	}),
+	sessionRuleSpan(LANGGRAPH_TRACE, "span-lg-tools", "tools", 11, "langchain", {
+		"gen_ai.operation.name": "chain",
+		...aiGatewayStamps({}),
+	}),
+	sessionRuleSpan(LANGGRAPH_TRACE, "span-lg-tool", "get_weather", 13, "langchain", {
+		"gen_ai.operation.name": "execute_tool",
+		...aiGatewayStamps({ toolCall: true, toolName: "get_weather" }),
+	}),
+	sessionRuleSpan(
+		LANGGRAPH_TRACE,
+		"span-lg-sdk-tool",
+		"ai.toolCall",
+		14,
+		"vercel_ai_sdk",
+		aiGatewayStamps({ toolCall: true }),
+	),
+	sessionRuleSpan(TOOL_ONLY_TRACE, "span-tool-only", "execute_tool search", 20, "unknown:genai", {
+		"gen_ai.operation.name": "execute_tool",
+		...aiGatewayStamps({ toolCall: true, toolName: "search" }),
+	}),
+]
+
 const chMap = (attrs: Readonly<Record<string, string>>): string =>
 	`map(${Object.entries(attrs)
 		.flatMap(([key, value]) => [quote(key), quote(value)])
@@ -576,6 +638,7 @@ const seed = async (): Promise<void> => {
 		[FOREIGN_ORG_ID, FOREIGN_SPAN] as const,
 		...TOOL_FAILURE_ORG_SPANS.map((span) => [TOOL_FAILURE_ORG_ID, span] as const),
 		...NETTING_ORG_SPANS.map((span) => [NETTING_ORG_ID, span] as const),
+		...SESSION_RULE_ORG_SPANS.map((span) => [SESSION_RULE_ORG_ID, span] as const),
 	]
 		.map(
 			([orgId, span]) =>
@@ -621,7 +684,7 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 			        VendorVersion, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens,
 			        ErrorType, StatusMessage, ToolDescription,
 			        FailedToolCallResult, ErrorFingerprint != 0 AS HasErrorFingerprint
-			 FROM ai_trace_index WHERE OrgId != ${quote(NETTING_ORG_ID)} ORDER BY Timestamp ASC`,
+			 FROM ai_trace_index WHERE OrgId NOT IN (${quote(NETTING_ORG_ID)}, ${quote(SESSION_RULE_ORG_ID)}) ORDER BY Timestamp ASC`,
 		)
 
 		/** The index row a seed span is expected to produce, by name — the
@@ -1068,6 +1131,32 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 			measures(`${MAPLE_AI_TRACE_SESSION_PREFIX}${FAILED_GATEWAY_TRACE}`),
 			[1, 0, 0, 0],
 		)
+	})
+
+	it("files a sessionless trace with no model call, tool call or named agent under no session", async () => {
+		const sessionRule = { ...WINDOW, orgId: SESSION_RULE_ORG_ID }
+		const page = compileUnsafe(Integrations.aiSessionPageQuery(), sessionRule)
+		const rows = Effect.runSync(page.decodeRows(await runJson(page.sql)))
+		// The advisor's trace is gone; the LangGraph trace stays on its named agent,
+		// and the tool server's trace on its one tool call.
+		assert.deepStrictEqual(
+			rows.map((row) => [row.sessionId, row.toolCalls]),
+			[
+				[`${MAPLE_AI_TRACE_SESSION_PREFIX}${TOOL_ONLY_TRACE}`, 1],
+				[`${MAPLE_AI_TRACE_SESSION_PREFIX}${LANGGRAPH_TRACE}`, 2],
+			],
+		)
+
+		const facets = compileUnionUnsafe(Integrations.aiSessionFacetsQuery(), sessionRule)
+		const vendors = Effect.runSync(facets.decodeRows(await runJson(facets.sql)))
+			.filter((row) => row.facetType === "vendor")
+			.map((row) => [row.name, row.count])
+			.sort()
+		assert.deepStrictEqual(vendors, [
+			["langchain", 1],
+			["unknown:genai", 1],
+			["vercel_ai_sdk", 1],
+		])
 	})
 
 	it("distributes the sessions over each range the way the page measures them", async () => {

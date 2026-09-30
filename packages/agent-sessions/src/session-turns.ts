@@ -85,9 +85,14 @@ export function classifyAiSpan(span: AiSessionSpan): AiSpanCategory {
 
 	// `gen_ai.operation.name` is optional and plenty of instrumentations skip it.
 	// The span name is the next best evidence: by convention it leads with the
-	// operation ("execute_tool read_file", "chat gpt-5").
+	// operation ("execute_tool read_file", "chat gpt-5"). Except for "tool": a
+	// span naming an operation the convention does not know (LangSmith's
+	// `chain`, a Mastra `scorer_step`) has said what it is, and the LangGraph
+	// `tools` node or a `code-tool-call-accuracy-scorer` is not a tool call.
 	const name = span.spanName.toLowerCase()
-	if (span.genAi.toolName !== undefined || name.includes("tool")) return "tool"
+	if (span.genAi.toolName !== undefined || (operation === undefined && name.includes("tool"))) {
+		return "tool"
+	}
 	if (name.includes("agent") || name.includes("workflow")) return "agent"
 	if (spanModel(span) !== undefined || name.includes("chat") || name.includes("completion")) {
 		return "inference"
@@ -402,10 +407,10 @@ function findAnchors(ordered: readonly AiSessionSpan[]): readonly TurnAnchor[] {
 	const byConversation = new Map<string, AiSessionSpan>()
 	for (const span of ordered) {
 		const conversationId = span.genAi.conversationId
-		// Six vendors (flue, google_adk, mastra, microsoft_agent_framework,
-		// openai_agents_sdk, pydantic_ai) derive `maple_ai.session.id` FROM
-		// `gen_ai.conversation.id`, so for them the id names the session and
-		// repeats on every span — a partition of one, not a turn key.
+		// The gateway derives `maple_ai.session.id` FROM `gen_ai.conversation.id`
+		// whenever a vendor's own session key is absent (and for some vendors
+		// ahead of it), so there the id names the session and repeats on every
+		// span — a partition of one, not a turn key.
 		if (conversationId === undefined || sessionIds.has(conversationId)) continue
 		if (!byConversation.has(conversationId)) byConversation.set(conversationId, span)
 	}
