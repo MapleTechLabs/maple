@@ -719,7 +719,7 @@ describe("buildTimeseriesQuerySpec where-clause OR groups", () => {
 		}
 	})
 
-	it("applies groups to logs and warns on metrics", () => {
+	it("applies groups to logs and reports them as unsupported elsewhere", () => {
 		const logs = buildTimeseriesQuerySpec(
 			tracesDraft({ dataSource: "logs", whereClause: '(attr.a = "1" OR attr.b = "2")' }),
 		)
@@ -736,7 +736,20 @@ describe("buildTimeseriesQuerySpec where-clause OR groups", () => {
 				whereClause: '(attr.a = "1" OR attr.b = "2")',
 			}),
 		)
-		expect(metrics.warnings).toContain("Metrics filters do not support OR groups; ignoring them")
+		expect(metrics.warnings).toContain(
+			'Unsupported clause syntax ignored: (attr.a = "1" OR attr.b = "2")',
+		)
+
+		const productEvents = buildTimeseriesQuerySpec(
+			tracesDraft({
+				dataSource: "product_events",
+				aggregation: "count",
+				whereClause: '(event.kind = "a" OR event.kind = "b")',
+			}),
+		)
+		expect(productEvents.warnings).toContain(
+			'Unsupported clause syntax ignored: (event.kind = "a" OR event.kind = "b")',
+		)
 	})
 
 	it("round-trips a group through formatFiltersAsWhereClause", () => {

@@ -1451,7 +1451,11 @@ export function buildTimeseriesQuerySpec(query: QueryBuilderQueryDraftPayload): 
 		clauses,
 		groups,
 		warnings: parseWarnings,
-	} = parseWhereClause(query.whereClause ?? "", { orGroups: true })
+	} = parseWhereClause(query.whereClause ?? "", {
+		// Only the sources that lower groups ask for them. Any other source gets the
+		// parser's "unsupported clause" warning, so a group is never dropped silently.
+		orGroups: query.dataSource === "traces" || query.dataSource === "logs",
+	})
 	for (const w of parseWarnings) warnings.push(w.message)
 
 	const stepInterval = query.stepInterval ?? ""
@@ -1664,7 +1668,6 @@ export function buildTimeseriesQuerySpec(query: QueryBuilderQueryDraftPayload): 
 		}
 	}
 
-	if (groups.length > 0) warnings.push("Metrics filters do not support OR groups; ignoring them")
 	const metricsFilters = clauses.reduce<MetricsFilterAccumulator>(
 		(acc, clause) => applyMetricsClause(acc, clause, warnings),
 		{
