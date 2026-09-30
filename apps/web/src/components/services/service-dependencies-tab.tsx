@@ -10,6 +10,7 @@ import { normalizeTimestampInput } from "@/lib/timezone-format"
 import { DependencyTable, type DependencyRow } from "./dependency-table"
 import type { DependencyKind } from "./dependency-type-badge"
 import { quoteWhereValue } from "@maple/domain/where-clause"
+import { dependencyDrillWhereClause } from "./dependency-drill"
 
 interface ServiceDependenciesTabProps {
 	serviceName: string
@@ -160,17 +161,7 @@ export function ServiceDependenciesTab({
 			const callCount = Number(edge.callCount ?? 0)
 			const estimated = Number(edge.estimatedCallCount ?? callCount)
 			const system = edge.targetSystem ? String(edge.targetSystem) : ""
-			// The where-clause parser drops `(a OR b)` groups, so each drill is one
-			// aliased key (the query engine matches both semconv spellings). An rpc
-			// TargetName falls back to the system when rpc.service is absent.
-			const whereClause =
-				kind === "messaging"
-					? `SpanKind = 'Producer' AND messaging.destination.name = ${quoteWhereValue(target)}`
-					: kind === "rpc"
-						? system === target
-							? `SpanKind = 'Client' AND rpc.system.name = ${quoteWhereValue(target)}`
-							: `SpanKind = 'Client' AND rpc.service = ${quoteWhereValue(target)}`
-						: `SpanKind = 'Client' AND server.address = ${quoteWhereValue(target)}`
+			const whereClause = dependencyDrillWhereClause(kind, target, system)
 
 			out.push({
 				id: `${kind}:${target}`,

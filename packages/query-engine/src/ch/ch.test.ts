@@ -761,13 +761,22 @@ describe("tracesBreakdownQuery", () => {
 		)
 	})
 
+	it("matches every http target the service map names when filtering on server.address", () => {
+		const q = tracesListQuery({
+			attributeFilters: [{ key: "server.address", value: "x", mode: "equals" }],
+		})
+		const { sql } = compileUnsafe(q, baseParams)
+		expect(sql).toContain(
+			"if(SpanAttributes['server.address'] != '', SpanAttributes['server.address'], if(SpanAttributes['http.host'] != '', SpanAttributes['http.host'], SpanAttributes['url.authority'])) = 'x'",
+		)
+	})
+
 	// Dependency drilldowns and dashboard templates filter on these keys; the
 	// service-map rollups already coalesce them, so the raw filter has to too.
 	for (const [key, canonical, legacy] of [
 		["db.system", "db.system.name", "db.system"],
 		["messaging.destination.name", "messaging.destination.name", "messaging.destination"],
 		["rpc.system.name", "rpc.system.name", "rpc.system"],
-		["server.address", "server.address", "http.host"],
 	] as const) {
 		it(`matches both semconv spellings when filtering on ${key}`, () => {
 			const q = tracesListQuery({ attributeFilters: [{ key, value: "x", mode: "equals" }] })

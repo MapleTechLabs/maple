@@ -48,7 +48,7 @@ import * as T from "@maple-dev/effect-clickhouse/types"
 //   db.system             → db.system.name
 //   messaging.destination → messaging.destination.name
 //   rpc.system            → rpc.system.name
-//   http.host             → server.address
+//   http.host             → server.address (and url.authority, the service map's last fallback)
 // `trace_list_mv` and the service-map rollups coalesce both spellings when they
 // pre-extract their columns (see materializations.ts), so facet counts and edge
 // targets cover spans that use *either* key. Filters that read the raw `traces`
@@ -66,8 +66,8 @@ const SPAN_SEMCONV_ALIASES: Record<string, readonly string[]> = {
 	"messaging.destination.name": ["messaging.destination.name", "messaging.destination"],
 	"rpc.system": ["rpc.system.name", "rpc.system"],
 	"rpc.system.name": ["rpc.system.name", "rpc.system"],
-	"server.address": ["server.address", "http.host"],
-	"http.host": ["server.address", "http.host"],
+	"server.address": ["server.address", "http.host", "url.authority"],
+	"http.host": ["server.address", "http.host", "url.authority"],
 } satisfies Record<string, readonly string[]>
 
 /**
