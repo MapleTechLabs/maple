@@ -24,8 +24,8 @@ Sub-agents show up inside a turn as their own lane, labeled with their `gen_ai.a
 The example below is a support agent where the customer asks to change a delivery address and ends up canceling the order.
 
 <figure class="shot">
-  <img src="/screenshots/docs/agent-sessions-02-overview.webp" alt="A session's overview page: a time breakdown bar, a findings list with a failed tool call, a tools table with calls, failures and a timeline, and a right column with cost by model and token buckets." loading="lazy" />
-  <figcaption>The overview. The failed tool call leads the page: <code>update_shipping_address</code> returned <code>unsupported_destination</code> in turn 2.</figcaption>
+  <img src="/screenshots/docs/agent-sessions-02-overview.webp" alt="A session's overview page: a Needs attention check naming a rejected update_shipping_address call in turn 2, the passed and unchecked checks, a tools table with calls, failures and a timeline, and a right column with where the time went, cost by model and token buckets." loading="lazy" />
+  <figcaption>The overview. The failed tool call leads the page: <code>update_shipping_address</code> rejected a call in turn 2 with <code>Order region is US</code>, and the check says what to tighten.</figcaption>
 </figure>
 
 The **overview** splits the session's wall clock into model time, tool time and idle time, and totals cost and tokens per model.
@@ -33,8 +33,8 @@ The **overview** splits the session's wall clock into model time, tool time and 
 Below that is the verdict (completed, completed with warnings, or failed, with the span that ended it) and the checks behind it, failing ones first. A check that needs data your instrumentation doesn't record says it was skipped and what to capture.
 
 <figure class="shot">
-  <img src="/screenshots/docs/agent-sessions-03-transcript.webp" alt="The transcript view of a session: system instructions, user and assistant messages in sequence, each model call annotated with its model, tokens, cost and finish reason, and a tool call row with its latency and payload sizes." loading="lazy" />
-  <figcaption>The transcript. Each model call carries its model, tokens, cost and finish reason; tool calls sit where the model made them.</figcaption>
+  <img src="/screenshots/docs/agent-sessions-03-transcript.webp" alt="The transcript view of a session: turns headed by their tokens, cost, start time and duration, system prompts, user and assistant messages in sequence with each reply labeled by its model, and a tool call row with its latency and payload sizes." loading="lazy" />
+  <figcaption>The transcript. Each turn carries its tokens and cost, each reply its model; tool calls sit where the model made them.</figcaption>
 </figure>
 
 The **transcript** is the conversation as the model saw it: system instructions, user and assistant messages, and tool calls with arguments and results. It needs message content on your spans, which most instrumentations leave off by default; each framework guide shows the switch.
