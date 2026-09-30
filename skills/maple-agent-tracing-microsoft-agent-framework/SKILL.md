@@ -20,9 +20,8 @@ The framework emits the spans itself. You add: an OTLP/HTTP exporter, content ca
 ## Step 1: Key and region
 
 - US endpoint `https://ingest.maple.dev`, EU `https://ingest.eu.maple.dev`. Header `Authorization=Bearer <key>`. Protocol `http/protobuf`.
-- Key in the user's prompt: use it. No key: use the literal `MAPLE_TEST` (ingest accepts and discards it) and tell the user to replace it with their key from Settings → Ingestion.
-- Never put a private `maple_sk_` key in browser code.
-- Follow the repo's existing secret/env convention (`.env`, settings class, user-secrets). If there is none, inlining the ingest key is acceptable: ingest keys are write-only.
+- Key: the private ingest key (`maple_sk_…`, the **Private key** under **Settings → Ingestion**). The user sets it as `MAPLE_INGEST_KEY` in their environment or `.env`; don't ask for it in the chat. Not set: use the literal `MAPLE_TEST` (ingest accepts and discards it) and tell the user to replace it with their private key.
+- The key is a secret. Keep it in the repo's secret/env convention (`.env`, settings class, user-secrets), never in source, committed config, logs or command lines, and tell the user to add it to their deployment's secrets. No convention: create `.env`, add it to `.gitignore` if missing, and commit a `.env.example` with placeholder values.
 - Key from an env var: fail fast with a clear message when it's unset instead of a bare `KeyError` on `os.environ['MAPLE_INGEST_KEY']` (`key = os.environ.get("MAPLE_INGEST_KEY") or sys.exit("MAPLE_INGEST_KEY is not set (Maple ingest key)")`); .NET: never pass a null `Environment.GetEnvironmentVariable(...)` into the header (`Bearer ` with no key is an opaque 401).
 - App loads `.env` (`load_dotenv()`): call it before `configure_otel_providers()` / the provider is built, and before reading the key. Otherwise the exporter silently targets `localhost:4318` with no key.
 
@@ -111,6 +110,9 @@ dotnet add package OpenTelemetry.Exporter.OpenTelemetryProtocol --version 1.19.1
 ```
 
 ```csharp
+var mapleKey = Environment.GetEnvironmentVariable("MAPLE_INGEST_KEY")
+    ?? throw new InvalidOperationException("MAPLE_INGEST_KEY is not set");
+
 using var tracerProvider = Sdk.CreateTracerProviderBuilder()
     .ConfigureResource(r => r.AddService("<service-name>"))
     .AddSource("*Microsoft.Agents.AI*")
@@ -120,7 +122,7 @@ using var tracerProvider = Sdk.CreateTracerProviderBuilder()
     {
         o.Endpoint = new Uri("https://ingest.maple.dev/v1/traces");
         o.Protocol = OtlpExportProtocol.HttpProtobuf;
-        o.Headers = "Authorization=Bearer <key>";
+        o.Headers = $"Authorization=Bearer {mapleKey}";
     })
     .Build();
 

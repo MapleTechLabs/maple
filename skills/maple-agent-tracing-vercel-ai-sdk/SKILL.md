@@ -27,11 +27,10 @@ Known gaps (tell the user, don't try to fix): cost shows as "unpriced" (AI SDK e
 ## Step 1: Key and region
 
 - US endpoint `https://ingest.maple.dev`, EU endpoint `https://ingest.eu.maple.dev`. Header `Authorization=Bearer <key>`.
-- Key in the user's prompt: use it. No key: use the literal `MAPLE_TEST` (ingest accepts and discards it) and tell the user to replace it with their key from Settings → Ingestion.
-- Private `maple_sk_` keys never go in browser code. Ingest keys are write-only.
-- Follow the repo's existing secret/env convention (e.g. `MAPLE_INGEST_KEY` or `OTEL_EXPORTER_OTLP_*` in `.env`). If there is none, inlining the ingest key is acceptable.
+- Key: the private ingest key (`maple_sk_…`, the **Private key** under **Settings → Ingestion**). The user sets it as `MAPLE_INGEST_KEY` in their environment or `.env`; don't ask for it in the chat. Not set: use the literal `MAPLE_TEST` (ingest accepts and discards it) and tell the user to replace it with their private key.
+- The key is a secret. Keep it in the repo's secret/env convention (`.env`, settings module, secret manager), never in source, committed config, logs or command lines, and tell the user to add it to their deployment's secrets. No convention: create `.env`, add it to `.gitignore` if missing, and commit a `.env.example` with placeholder values.
 - The app loads `.env` (`dotenv`, `--env-file`): load it at the top of `instrumentation.ts` (`import "dotenv/config"` as its first line) or run with `--env-file`. `NodeSDK()` reads the `OTEL_*` vars when it is constructed; otherwise the exporter silently targets `localhost:4318` with no key.
-- Never let an unset variable become `Bearer undefined` (opaque 401): throw at startup with a clear message when the key variable is missing, or inline the key when the repo has no env convention.
+- Never let an unset variable become `Bearer undefined` (opaque 401): throw at startup with a clear message when the key variable is missing.
 - A 401 `ingest_unauthorized` / "Invalid ingest key" with a key you trust usually means the key belongs to the other region (keys are region-bound): try the other endpoint.
 
 ## Step 2a: Install and init (Node.js)
@@ -71,7 +70,6 @@ Use the explicit span processor variant instead when either applies:
 
 - Serverless handler (Lambda, Cloud Run jobs, queue consumers, cron, Vercel Workflow steps): needs `spanProcessor.forceFlush()` per invocation; `NodeSDK` only has `shutdown()`.
 - The repo already starts an OpenTelemetry SDK/provider: add the processor to it, don't create a second `NodeSDK`.
-- Inlining the key instead of env: pass `{ url: "https://ingest.maple.dev/v1/traces", headers: { authorization: "Bearer <key>" } }` to `OTLPTraceExporter`.
 
 ```bash
 npm install @opentelemetry/sdk-trace-base @opentelemetry/exporter-trace-otlp-proto

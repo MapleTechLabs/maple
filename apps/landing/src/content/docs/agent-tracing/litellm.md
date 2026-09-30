@@ -18,10 +18,10 @@ Set up Maple agent tracing for LiteLLM in this project.
 
 Install the skill with `npx skills add MapleTechLabs/maple/skills --skill maple-agent-tracing-litellm -y`, then follow it.
 
-My Maple ingest key is maple_pk_... and my organization is in the US region.
+My Maple ingest key is set as MAPLE_INGEST_KEY and my organization is in the US region.
 ```
 
-Your ingest key is in **Settings → Ingestion**. If your organization is in the EU region, change `US` to `EU` in the prompt.
+Before you run it, set `MAPLE_INGEST_KEY` to the **Private key** (`maple_sk_…`) from **Settings → Ingestion**, in your environment or the project's gitignored `.env`. Keep the key out of the prompt. If your organization is in the EU region, change `US` to `EU` in the prompt.
 
 ## Trace in your app or at the proxy
 
@@ -39,7 +39,7 @@ Point the exporter at Maple:
 
 ```bash
 export OTEL_EXPORTER_OTLP_ENDPOINT="https://ingest.maple.dev"
-export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer YOUR_INGEST_KEY"
+export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer maple_sk_..."
 export OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"
 ```
 
@@ -199,7 +199,7 @@ Set these in the proxy's environment:
 ```bash
 LITELLM_OTEL_V2=true
 OTEL_EXPORTER_OTLP_ENDPOINT=https://ingest.maple.dev
-OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer YOUR_INGEST_KEY"
+OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer maple_sk_..."
 OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
 OTEL_SERVICE_NAME=litellm-proxy
 OTEL_ENVIRONMENT_NAME=production

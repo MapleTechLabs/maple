@@ -21,10 +21,10 @@ Set up Maple agent tracing for OpenRouter in this project.
 
 Install the skill with `npx skills add MapleTechLabs/maple/skills --skill maple-agent-tracing-openrouter -y`, then follow it.
 
-My Maple ingest key is maple_pk_... and my organization is in the US region.
+My Maple organization is in the US region.
 ```
 
-Your ingest key is in **Settings → Ingestion**. If your organization is in the EU region, change `US` to `EU` in the prompt. The agent prints the values for the OpenRouter dashboard, which you enter yourself as described in the next section.
+If your organization is in the EU region, change `US` to `EU` in the prompt. The agent prints the values for the OpenRouter dashboard, which you enter yourself as described in the next section.
 
 ## Point Broadcast at Maple
 
@@ -35,10 +35,10 @@ Your ingest key is in **Settings → Ingestion**. If your organization is in the
    https://ingest.maple.dev/v1/traces
    ```
 
-3. Set **Headers** to your Maple ingest key:
+3. Set **Headers** to your Maple **Private key** (`maple_sk_…`) from **Settings → Ingestion**:
 
    ```json
-   { "Authorization": "Bearer YOUR_INGEST_KEY" }
+   { "Authorization": "Bearer maple_sk_..." }
    ```
 
 4. Click **Test Connection**. OpenRouter only saves the destination if the test passes.

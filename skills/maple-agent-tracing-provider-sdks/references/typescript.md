@@ -24,7 +24,7 @@ sdk.start()
 ```
 
 - The exporter reads `OTEL_*` when it is constructed, and `agent-tracing.ts` reads the capture switch when it is imported. If the app loads `.env` (`dotenv`, `--env-file`), put `import "dotenv/config"` at the top of `instrumentation.ts`; otherwise the exporter silently targets `localhost:4318` with no key.
-- No env convention in the repo: pass the values inline, `new OTLPTraceExporter({ url: "https://ingest.maple.dev/v1/traces", headers: { Authorization: "Bearer <key>" } })`. Never build the header from an env var that can be unset (`Bearer undefined` is an opaque 401).
+- Building the header in code from `MAPLE_INGEST_KEY` (`` new OTLPTraceExporter({ url: "https://ingest.maple.dev/v1/traces", headers: { Authorization: `Bearer ${key}` } }) ``): throw at startup with a clear message when it is unset; `Bearer undefined` is an opaque 401.
 - Flush: `await sdk.shutdown().catch((err) => console.error("telemetry flush failed", err))`; it rejects when an export failed.
 
 Existing `NodeSDK` / `NodeTracerProvider` / `registerOTel` → don't add another; add a `BatchSpanProcessor(new OTLPTraceExporter())` to it (keep a reference for `forceFlush`).

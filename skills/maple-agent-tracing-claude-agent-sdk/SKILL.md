@@ -29,16 +29,16 @@ Known gaps (tell the user, don't try to fix): assistant reply text and cost are 
 ## Step 1: Key and region
 
 - US endpoint `https://ingest.maple.dev`, EU endpoint `https://ingest.eu.maple.dev`. Header `Authorization=Bearer <key>`.
-- Key in the user's prompt: use it. No key: use the literal `MAPLE_TEST` (ingest accepts and discards it) and tell the user to replace it with their key from Settings → Ingestion.
-- Private `maple_sk_` keys never go in browser code. Ingest keys are write-only.
-- Follow the repo's existing secret/env convention (e.g. `MAPLE_INGEST_KEY` in `.env`). If there is none, inline the literal key; never ship a lookup that can come out `undefined` (`Bearer undefined` is an opaque 401).
+- Key: the private ingest key (`maple_sk_…`, the **Private key** under **Settings → Ingestion**). The user sets it as `MAPLE_INGEST_KEY` in their environment or `.env`; don't ask for it in the chat. Not set: use the literal `MAPLE_TEST` (ingest accepts and discards it) and tell the user to replace it with their private key.
+- The key is a secret. Keep it in the repo's secret/env convention (`.env`, secret manager, deployment env), never in source, committed config, logs or command lines, and tell the user to add it to their deployment's secrets. No convention: create `.env`, add it to `.gitignore` if missing, and commit a `.env.example` with placeholder values.
+- Read it from the environment when building the CLI env, and throw when it is unset; `Bearer undefined` is an opaque 401.
 - A 401 `ingest_unauthorized` ("Invalid ingest key") with a key you trust usually means the key belongs to the other region (keys are region-bound): try the other endpoint.
 
 ## Step 2a: TypeScript SDK
 
 `npm install @anthropic-ai/claude-agent-sdk@latest zod`. Peers: zod ^4, `@anthropic-ai/sdk`, `@modelcontextprotocol/sdk`; install them explicitly if the package manager doesn't.
 
-`options.env` REPLACES the child environment. Always spread `process.env`, and drop inherited `TRACEPARENT`/`TRACESTATE`. Build the env when calling `query()`, not at import, so values loaded later (dotenv) are included. Create `maple-env.ts` (adapt service name and environment; with no env convention, replace the key lookup and the throw with the literal key):
+`options.env` REPLACES the child environment. Always spread `process.env`, and drop inherited `TRACEPARENT`/`TRACESTATE`. Build the env when calling `query()`, not at import, so values loaded later (dotenv) are included. Create `maple-env.ts` (adapt service name and environment):
 
 ```ts
 export function mapleEnv(): Record<string, string | undefined> {
@@ -125,7 +125,7 @@ Merge into `~/.claude/settings.json` (user settings; create if missing, keep exi
 		"OTEL_METRICS_EXPORTER": "otlp",
 		"OTEL_EXPORTER_OTLP_PROTOCOL": "http/protobuf",
 		"OTEL_EXPORTER_OTLP_ENDPOINT": "https://ingest.maple.dev",
-		"OTEL_EXPORTER_OTLP_HEADERS": "Authorization=Bearer YOUR_INGEST_KEY",
+		"OTEL_EXPORTER_OTLP_HEADERS": "Authorization=Bearer maple_sk_...",
 		"OTEL_LOG_USER_PROMPTS": "1",
 		"OTEL_LOG_TOOL_DETAILS": "1",
 		"OTEL_LOG_TOOL_CONTENT": "1"
@@ -133,6 +133,7 @@ Merge into `~/.claude/settings.json` (user settings; create if missing, keep exi
 }
 ```
 
+- Fill in the key from `MAPLE_INGEST_KEY` without printing it. This file is per-user and outside the repo, so it may hold the key; the repo's settings files may not.
 - NOT the repo's `.claude/settings.json` / `.claude/settings.local.json`: Claude Code >= 2.1.282 ignores the vars there that turn export on, set the endpoint, or capture content (`CLAUDE_CODE_ENABLE_TELEMETRY`, `OTEL_LOG_*`, ...).
 - Existing `OTEL_*` keys in user settings, or managed settings / `~/.claude/remote-settings.json` setting endpoint or headers: stop and ask the user; managed values override the user's, and replacing them would redirect their company's telemetry.
 - Tell the user to start a new `claude` session. The current session doesn't reload it.

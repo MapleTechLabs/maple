@@ -20,10 +20,10 @@ Set up Maple agent tracing for DSPy in this project.
 
 Install the skill with `npx skills add MapleTechLabs/maple/skills --skill maple-agent-tracing-dspy -y`, then follow it.
 
-My Maple ingest key is maple_pk_... and my organization is in the US region.
+My Maple ingest key is set as MAPLE_INGEST_KEY and my organization is in the US region.
 ```
 
-Your ingest key is in **Settings → Ingestion**. If your organization is in the EU region, change `US` to `EU` in the prompt.
+Before you run it, set `MAPLE_INGEST_KEY` to the **Private key** (`maple_sk_…`) from **Settings → Ingestion**, in your environment or the project's gitignored `.env`. Keep the key out of the prompt. If your organization is in the EU region, change `US` to `EU` in the prompt.
 
 ## Install and point the exporter at Maple
 
@@ -37,7 +37,7 @@ pip install "dspy>=3.4" "openinference-instrumentation-dspy>=0.1.45" "openinfere
 export OTEL_SERVICE_NAME=support-agent
 export OTEL_RESOURCE_ATTRIBUTES=deployment.environment.name=production
 export OTEL_EXPORTER_OTLP_ENDPOINT=https://ingest.maple.dev
-export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer YOUR_INGEST_KEY"
+export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer maple_sk_..."
 export OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
 ```
 

@@ -20,10 +20,10 @@ Set up Maple agent tracing for Spring AI in this project.
 
 Install the skill with `npx skills add MapleTechLabs/maple/skills --skill maple-agent-tracing-spring-ai -y`, then follow it.
 
-My Maple ingest key is maple_pk_... and my organization is in the US region.
+My Maple ingest key is set as MAPLE_INGEST_KEY and my organization is in the US region.
 ```
 
-Your ingest key is in **Settings → Ingestion**. If your organization is in the EU region, change `US` to `EU` in the prompt.
+Before you run it, set `MAPLE_INGEST_KEY` to the **Private key** (`maple_sk_…`) from **Settings → Ingestion**, in your environment or the project's gitignored `.env`. Keep the key out of the prompt. If your organization is in the EU region, change `US` to `EU` in the prompt.
 
 ## Install the OpenTelemetry starter
 

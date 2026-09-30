@@ -21,10 +21,10 @@ Set up Maple agent tracing for Microsoft Agent Framework in this project.
 
 Install the skill with `npx skills add MapleTechLabs/maple/skills --skill maple-agent-tracing-microsoft-agent-framework -y`, then follow it.
 
-My Maple ingest key is maple_pk_... and my organization is in the US region.
+My Maple ingest key is set as MAPLE_INGEST_KEY and my organization is in the US region.
 ```
 
-Your ingest key is in **Settings → Ingestion**. If your organization is in the EU region, change `US` to `EU` in the prompt.
+Before you run it, set `MAPLE_INGEST_KEY` to the **Private key** (`maple_sk_…`) from **Settings → Ingestion**, in your environment or the project's gitignored `.env`. Keep the key out of the prompt. If your organization is in the EU region, change `US` to `EU` in the prompt.
 
 ## Export traces
 
@@ -83,6 +83,9 @@ using OpenTelemetry.Exporter;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 
+var mapleKey = Environment.GetEnvironmentVariable("MAPLE_INGEST_KEY")
+    ?? throw new InvalidOperationException("MAPLE_INGEST_KEY is not set");
+
 using var tracerProvider = Sdk.CreateTracerProviderBuilder()
     .ConfigureResource(r => r.AddService("support-agent"))
     .AddSource("*Microsoft.Agents.AI*")    // agent, chat and workflow spans
@@ -92,7 +95,7 @@ using var tracerProvider = Sdk.CreateTracerProviderBuilder()
     {
         o.Endpoint = new Uri("https://ingest.maple.dev/v1/traces"); // EU: ingest.eu.maple.dev
         o.Protocol = OtlpExportProtocol.HttpProtobuf;
-        o.Headers = "Authorization=Bearer YOUR_INGEST_KEY";
+        o.Headers = $"Authorization=Bearer {mapleKey}";
     })
     .Build();
 

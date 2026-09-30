@@ -28,13 +28,11 @@ Mastra 1.71 has three export gaps that a small span processor (Step 2) fixes; it
 
 - US: `https://ingest.maple.dev`. EU: `https://ingest.eu.maple.dev`.
 - Header: `Authorization: Bearer <key>` (passed as a headers object in code).
-- Key given in the prompt → use it.
-- No key → use the literal `MAPLE_TEST` (ingest accepts and discards it) and tell the user to replace it with their key from Settings → Ingestion.
-- Never put a private `maple_sk_` key in browser code.
-- Follow the repo's secret/env convention (`.env`, config module, secret manager) if it has one, e.g. `process.env.MAPLE_INGEST_KEY`. Otherwise inline is acceptable: ingest keys are write-only.
+- Key: the private ingest key (`maple_sk_…`, the **Private key** under **Settings → Ingestion**). The user sets it as `MAPLE_INGEST_KEY` in their environment or `.env`; don't ask for it in the chat. Not set: use the literal `MAPLE_TEST` (ingest accepts and discards it) and tell the user to replace it with their private key.
+- The key is a secret. Keep it in the repo's secret/env convention (`.env`, config module, secret manager), never in source, committed config, logs or command lines, and tell the user to add it to their deployment's secrets. No convention: create `.env`, add it to `.gitignore` if missing, and commit a `.env.example` with placeholder values.
 - OtelExporter's `custom` provider reads NO env vars (`OTEL_EXPORTER_OTLP_*` are ignored). Endpoint, protocol and headers must be passed in code.
 - Only `mastra dev` loads `.env`. Scripts run with plain `node`/`tsx` don't: run them with `--env-file=.env`, or `import "dotenv/config"` before importing the Mastra instance. Otherwise the key is `Bearer undefined` and every export 401s.
-- Never ship a header lookup that can come out `undefined`: throw at startup with a clear message when `MAPLE_INGEST_KEY` is unset, or inline the key when the repo has no env convention.
+- Never ship a header lookup that can come out `undefined`: throw at startup with a clear message when `MAPLE_INGEST_KEY` is unset.
 - A 401 `ingest_unauthorized` / "Invalid ingest key" with a key you trust usually means the key belongs to the other region (keys are region-bound): try the other endpoint.
 
 ## Step 2: Install + init
