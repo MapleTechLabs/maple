@@ -29,7 +29,7 @@ Mechanism: Pydantic AI's native OTel instrumentation (scope `pydantic-ai`, GenAI
 - No key → use the literal `MAPLE_TEST` (ingest accepts and discards it) and tell the user to replace it with their key from Settings → Ingestion.
 - Never put a private `maple_sk_` key in browser code.
 - Follow the repo's secret/env convention (`.env`, settings module, secret manager) if it has one. Otherwise inline is acceptable: ingest keys are write-only.
-- Key read from a secret env var in code: fail fast with a clear message when it is unset (not a bare `KeyError` on import, not a header without a key).
+- Key read from a secret env var in code: when it is unset, log one warning (`MAPLE_INGEST_KEY is not set; Maple telemetry export is disabled`) and skip the Maple exporter so the app runs normally. Never raise or exit over the key; no bare `KeyError` on import, no header without a key.
 - A 401 `ingest_unauthorized` ("Invalid ingest key") with a key you trust usually means the key belongs to the other region (keys are region-bound): try the other endpoint.
 
 Env vars (the exporter reads them when it is built; it appends `/v1/traces`). If the app loads `.env` (`load_dotenv()`), call it at the top of the tracing module, before the exporter or `logfire.configure()`; otherwise the exporter silently targets `localhost:4318` with no key.

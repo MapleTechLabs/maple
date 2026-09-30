@@ -42,7 +42,7 @@ OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=SPAN_ONLY
 ```
 
 - These are read when the exporter and helper are constructed. If the app loads `.env` (dotenv, `load_dotenv()`, `--env-file`), load it at the top of the init module, before the provider is built; otherwise the exporter silently targets `localhost:4318` with no key.
-- Never let an unset env var become `Bearer undefined` (opaque 401) or a bare `KeyError` on import: fail fast with a clear message, or inline the key when the repo has no env convention.
+- Key read from an env var in code: when it is unset, log one warning (`MAPLE_INGEST_KEY is not set; Maple telemetry export is disabled`) and skip the Maple exporter so the app runs normally. Never throw or exit over the key, and never let it become `Bearer undefined` (opaque 401) or a bare `KeyError` on import. Or inline the key when the repo has no env convention.
 
 ## Step 2: Install + init + helper
 

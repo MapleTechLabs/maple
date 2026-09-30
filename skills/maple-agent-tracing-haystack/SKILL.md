@@ -20,7 +20,7 @@ Goal: one conversation = one Maple Agent Session, with transcript, model calls, 
 - Key given in the prompt: use it. No key: use the literal `MAPLE_TEST` (ingest accepts and discards it) and tell the user to replace it with their key from Settings → Ingestion.
 - Private `maple_sk_` keys never go in browser code.
 - Follow the repo's secret/env convention (`.env`, settings module, deployment env). If none exists, inline is acceptable: ingest keys are write-only.
-- Building the header in code from an env var: never let an unset var become `Bearer None` (opaque 401) or a bare `KeyError` on import. Fail fast with a clear message, or inline the key when the repo has no env convention.
+- Building the header in code from an env var: when it is unset, log one warning (`MAPLE_INGEST_KEY is not set; Maple telemetry export is disabled`) and skip the Maple exporter so the app runs normally. Never raise or exit over the key, and never send `Bearer None` (opaque 401) or hit a bare `KeyError` on import. Or inline the key when the repo has no env convention.
 - 401 `ingest_unauthorized` / "Invalid ingest key" with a key you trust: keys are region-bound, so it usually belongs to the other region. Try the other endpoint.
 
 ## Step 2: Install and init

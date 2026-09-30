@@ -28,7 +28,7 @@ ADK emits its own OTel spans (scope `gcp.vertex.agent`): `invocation` > `invoke_
 - Key given in the prompt: use it. No key: use the literal `MAPLE_TEST` (ingest accepts and discards it) and tell the user to replace it with a key from Settings → Ingestion.
 - Never put a private `maple_sk_` key in browser code.
 - Follow the repo's secret/env convention (`.env`, settings module, deployment env). If there is none, inline values are acceptable: ingest keys are write-only.
-- Key read from env in code: fail fast with a clear message when it is unset (not a bare `KeyError` on import, not a header without a key).
+- Key read from env in code: when it is unset, log one warning (`MAPLE_INGEST_KEY is not set; Maple telemetry export is disabled`) and skip the Maple exporter so the app runs normally. Never raise or exit over the key; no bare `KeyError` on import, no header without a key.
 
 ## Step 2: Install and initialize
 

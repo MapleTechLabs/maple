@@ -36,7 +36,7 @@ Mechanism:
 - Never put a private `maple_sk_` key in browser code.
 - Follow the repo's secret/env convention if it has one. Otherwise inline is acceptable: ingest keys are write-only.
 - App loads `.env` (`load_dotenv()`): call it at the top of `tracing.py`, before the provider is built. Otherwise the exporter silently targets `localhost:4318` with no key.
-- Key from an env var: fail fast with a clear message when it's unset (`if not os.environ.get("OTEL_EXPORTER_OTLP_HEADERS"): raise RuntimeError("OTEL_EXPORTER_OTLP_HEADERS (Maple ingest key) is not set")` in `tracing.py`, after any `load_dotenv()`); never let it surface as an opaque 401 or a bare `KeyError`.
+- Key missing: instrumentation must never crash or block the app. In `tracing.py`, after any `load_dotenv()`, when `OTEL_EXPORTER_OTLP_HEADERS` is unset, log one warning (`logging.getLogger(__name__).warning("OTEL_EXPORTER_OTLP_HEADERS (Maple ingest key) is not set; Maple telemetry export is disabled")`) and skip the provider and exporter setup. Never raise or exit over the key, and never send a header without one (opaque 401).
 
 ```bash
 OTEL_EXPORTER_OTLP_ENDPOINT=https://ingest.maple.dev

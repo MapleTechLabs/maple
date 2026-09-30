@@ -29,7 +29,7 @@ Python is the primary path. TypeScript (`@openai/agents` in `package.json`): Ste
 - Key in the user's prompt: use it. No key: use the literal `MAPLE_TEST` (ingest accepts and discards it) and tell the user to replace it with their key from **Settings → Ingestion**.
 - Private `maple_sk_` keys never go in browser code. This runs server-side; a `maple_pk_` ingest key is write-only.
 - Follow the repo's existing secret/env convention (`.env`, settings module, secret manager). If there is none, inline is acceptable because ingest keys are write-only: set the `OTEL_*` values from 2b as defaults at the top of the tracing module, before the provider / `NodeSDK` is built (`os.environ.setdefault(...)` / `process.env.X ??= ...`).
-- Building the header in code from an env var: never let an unset var become `Bearer None` / `Bearer undefined` (opaque 401) or a bare `KeyError` on import. Fail fast with a clear message, or inline the key when the repo has no env convention.
+- Building the header in code from an env var: when it is unset, log one warning (`MAPLE_INGEST_KEY is not set; Maple telemetry export is disabled`) and skip the Maple exporter so the app runs normally. Never raise, throw or exit over the key, and never send `Bearer None` / `Bearer undefined` (opaque 401) or hit a bare `KeyError` on import. Or inline the key when the repo has no env convention.
 - 401 `ingest_unauthorized` / "Invalid ingest key" with a key you trust: keys are region-bound, so it usually belongs to the other region. Try the other endpoint.
 
 ## Step 2: Install and initialize

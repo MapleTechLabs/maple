@@ -29,7 +29,7 @@ Mechanism: Strands' native OTel tracer (scope `strands.telemetry.tracer`, `gen_a
 - No key → use the literal `MAPLE_TEST` (ingest accepts and discards it) and tell the user to replace it with their key from Settings → Ingestion.
 - Never put a private `maple_sk_` key in browser code.
 - Follow the repo's secret/env convention (`.env`, settings module, secret manager, container env) if it has one. Otherwise inline is acceptable: ingest keys are write-only.
-- Key read from a secret env var in code: fail fast with a clear message when it is unset (not a bare `KeyError` on import, not `Bearer undefined`, which is an opaque 401).
+- Key read from a secret env var in code: when it is unset, log one warning (`MAPLE_INGEST_KEY is not set; Maple telemetry export is disabled`) and skip the Maple exporter so the app runs normally. Never raise, throw or exit over the key; no bare `KeyError` on import, no `Bearer undefined` (an opaque 401).
 
 ## Step 2: Install + init
 

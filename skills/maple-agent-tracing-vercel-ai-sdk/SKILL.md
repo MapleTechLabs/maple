@@ -31,7 +31,7 @@ Known gaps (tell the user, don't try to fix): cost shows as "unpriced" (AI SDK e
 - Private `maple_sk_` keys never go in browser code. Ingest keys are write-only.
 - Follow the repo's existing secret/env convention (e.g. `MAPLE_INGEST_KEY` or `OTEL_EXPORTER_OTLP_*` in `.env`). If there is none, inlining the ingest key is acceptable.
 - The app loads `.env` (`dotenv`, `--env-file`): load it at the top of `instrumentation.ts` (`import "dotenv/config"` as its first line) or run with `--env-file`. `NodeSDK()` reads the `OTEL_*` vars when it is constructed; otherwise the exporter silently targets `localhost:4318` with no key.
-- Never let an unset variable become `Bearer undefined` (opaque 401): throw at startup with a clear message when the key variable is missing, or inline the key when the repo has no env convention.
+- Never let an unset variable become `Bearer undefined` (opaque 401). When the key variable is missing, log one warning (`MAPLE_INGEST_KEY is not set; Maple telemetry export is disabled`) and leave the Maple exporter out so the app runs normally; never throw over the key. Or inline the key when the repo has no env convention.
 - A 401 `ingest_unauthorized` / "Invalid ingest key" with a key you trust usually means the key belongs to the other region (keys are region-bound): try the other endpoint.
 
 ## Step 2a: Install and init (Node.js)
@@ -99,11 +99,17 @@ import { OTLPHttpProtoTraceExporter, registerOTel } from "@vercel/otel"
 import { registerTelemetry } from "ai"
 
 export function register() {
+	const mapleKey = process.env.MAPLE_INGEST_KEY
+	if (!mapleKey) {
+		// A missing key disables export; it never stops the app.
+		console.warn("MAPLE_INGEST_KEY is not set; Maple telemetry export is disabled")
+		return
+	}
 	registerOTel({
 		serviceName: "support-chat",
 		traceExporter: new OTLPHttpProtoTraceExporter({
 			url: "https://ingest.maple.dev/v1/traces",
-			headers: { authorization: `Bearer ${process.env.MAPLE_INGEST_KEY}` },
+			headers: { authorization: `Bearer ${mapleKey}` },
 		}),
 	})
 	registerTelemetry(
