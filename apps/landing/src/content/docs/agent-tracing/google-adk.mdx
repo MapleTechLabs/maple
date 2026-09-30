@@ -57,7 +57,7 @@ npm install @google/adk@^2.1 zod @opentelemetry/sdk-node @opentelemetry/exporter
 ```bash
 OTEL_SERVICE_NAME=support-agent
 OTEL_EXPORTER_OTLP_ENDPOINT=https://ingest.maple.dev
-OTEL_EXPORTER_OTLP_HEADERS=Authorization=Bearer%20YOUR_INGEST_KEY
+OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer YOUR_INGEST_KEY"
 # Put prompts, replies and tool calls on span attributes, in the format Maple reads
 OTEL_SEMCONV_STABILITY_OPT_IN=gen_ai_latest_experimental
 OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=SPAN_ONLY
@@ -65,7 +65,7 @@ OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=SPAN_ONLY
 ADK_CAPTURE_MESSAGE_CONTENT_IN_SPANS=false
 ```
 
-EU organizations use `https://ingest.eu.maple.dev`. The `%20` is an encoded space and must stay. Use `SPAN_ONLY` exactly, because `true` leaves the transcript empty.
+EU organizations use `https://ingest.eu.maple.dev`. Use `SPAN_ONLY` exactly, because `true` leaves the transcript empty.
 
 These settings store every prompt and tool result in Maple. To keep structure and tokens without content, leave `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` unset and delete the two `gen_ai.tool.call.*` lines from the plugin below.
 
