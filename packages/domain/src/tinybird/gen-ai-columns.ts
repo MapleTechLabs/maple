@@ -2,7 +2,7 @@
 //
 // Every fact the index aggregates or filters on is decided by the ingest
 // gateway, once per span, and written onto the span as a `maple_ai.*` stamp
-// (`MAPLE_AI_STAMP_ATTRS`, decided in `apps/ingest/src/ai_session/facts.rs`
+// (`MAPLE_AI_STAMP_ATTRS`, decided in `apps/ingest/crates/ai-session/src/facts.rs`
 // and `usage.rs`): whether the span is a model call or a tool call, whether it
 // failed, its model, agent and tool, and a model call's usage as five disjoint
 // buckets. So the view is a projection of those stamps plus generic OTel

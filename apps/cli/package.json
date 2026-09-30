@@ -6,8 +6,9 @@
 	},
 	"type": "module",
 	"scripts": {
-		"start": "bun run src/bin.ts",
-		"test": "bun test --max-concurrency=1 test/*.test.ts src/server/otlp/encode.test.ts src/core/*.test.ts",
+		"build:ai-stamp": "cd ../ingest && cargo build --locked --profile wasm --target wasm32-unknown-unknown -p maple-ai-session-wasm && cp target/wasm32-unknown-unknown/wasm/maple_ai_session_wasm.wasm ../cli/src/server/otlp/ai-stamp.wasm",
+		"start": "bun run build:ai-stamp && bun run src/bin.ts",
+		"test": "bun run build:ai-stamp && bun test --max-concurrency=1 test/*.test.ts src/server/otlp/encode.test.ts src/core/*.test.ts",
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {

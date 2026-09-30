@@ -49,7 +49,7 @@ jobs:
                   path: |
                       ~/.cargo-ingest
                       ${{ runner.temp }}/ingest-target
-                  key: ingest-cargo-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('apps/ingest/Cargo.lock') }}-${{ hashFiles('apps/ingest/src/**') }}
+                  key: ingest-cargo-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('apps/ingest/Cargo.lock') }}-${{ hashFiles('apps/ingest/src/**', 'apps/ingest/crates/**') }}
                   restore-keys: |
                       ingest-cargo-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('apps/ingest/Cargo.lock') }}-
                       ingest-cargo-${{ runner.os }}-${{ runner.arch }}-

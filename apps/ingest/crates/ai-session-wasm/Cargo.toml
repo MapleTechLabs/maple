@@ -1,0 +1,15 @@
+[package]
+name = "maple-ai-session-wasm"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+maple-ai-session = { path = "../ai-session" }
+opentelemetry-proto = { version = "0.32", default-features = false, features = ["gen-tonic-messages", "trace"] }
+prost = "0.14.3"
+
+[lints]
+workspace = true

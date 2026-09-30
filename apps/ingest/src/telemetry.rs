@@ -18,11 +18,12 @@ use crc32fast::Hasher as Crc32;
 use dashmap::DashMap;
 use flate2::write::GzEncoder;
 use flate2::Compression;
+use maple_ai_session::value::{any_value_json, any_value_string, bytes_hex};
 use opentelemetry::trace::{SpanContext, TraceContextExt};
 use opentelemetry_proto::tonic::collector::logs::v1::ExportLogsServiceRequest;
 use opentelemetry_proto::tonic::collector::metrics::v1::ExportMetricsServiceRequest;
 use opentelemetry_proto::tonic::collector::trace::v1::ExportTraceServiceRequest;
-use opentelemetry_proto::tonic::common::v1::{any_value, AnyValue, KeyValue};
+use opentelemetry_proto::tonic::common::v1::KeyValue;
 use opentelemetry_proto::tonic::logs::v1::LogRecord;
 use opentelemetry_proto::tonic::metrics::v1::{
     metric, number_data_point, Exemplar, NumberDataPoint,
@@ -4010,56 +4011,9 @@ fn attr_map(attributes: &[KeyValue]) -> Map<String, Value> {
     out
 }
 
-pub(crate) fn any_value_string(value: &AnyValue) -> String {
-    match value.value.as_ref() {
-        Some(any_value::Value::StringValue(value)) => value.clone(),
-        Some(any_value::Value::BoolValue(value)) => value.to_string(),
-        Some(any_value::Value::IntValue(value)) => value.to_string(),
-        Some(any_value::Value::DoubleValue(value)) => value.to_string(),
-        // Text sent as bytes (LangSmith's prompt and completion) stays
-        // readable. Binary is hex, including binary that happens to be valid
-        // UTF-8: a control character other than whitespace marks it.
-        Some(any_value::Value::BytesValue(value)) => match std::str::from_utf8(value) {
-            Ok(text)
-                if !text
-                    .chars()
-                    .any(|c| c.is_control() && !matches!(c, '\t' | '\n' | '\r')) =>
-            {
-                text.to_owned()
-            }
-            _ => bytes_hex(value),
-        },
-        Some(any_value::Value::ArrayValue(_) | any_value::Value::KvlistValue(_)) => {
-            serde_json::to_string(&any_value_json(value)).unwrap_or_default()
-        }
-        // String-table references (OTLP 1.9 experimental encoding) cannot be resolved
-        // without the sender's dictionary, which the gateway does not accept yet.
-        Some(any_value::Value::StringValueStrindex(_)) | None => String::new(),
-    }
-}
-
 /// An array or map as JSON. Scalars keep their string form, as flat arrays and
 /// maps always have, but a nested array or map stays JSON instead of becoming
 /// a string of escaped JSON (structured `gen_ai.input.messages`).
-fn any_value_json(value: &AnyValue) -> Value {
-    match value.value.as_ref() {
-        Some(any_value::Value::ArrayValue(array)) => {
-            Value::Array(array.values.iter().map(any_value_json).collect())
-        }
-        Some(any_value::Value::KvlistValue(kvlist)) => Value::Object(
-            kvlist
-                .values
-                .iter()
-                .map(|kv| {
-                    let value = kv.value.as_ref().map_or(Value::from(""), any_value_json);
-                    (kv.key.clone(), value)
-                })
-                .collect(),
-        ),
-        _ => Value::String(any_value_string(value)),
-    }
-}
-
 fn span_kind(kind: i32) -> &'static str {
     match kind {
         x if x == span::SpanKind::Internal as i32 => "Internal",
@@ -4089,19 +4043,6 @@ fn severity_number_to_text(n: i32) -> &'static str {
         21..=24 => "FATAL",
         _ => "",
     }
-}
-
-fn bytes_hex(bytes: &[u8]) -> String {
-    if bytes.is_empty() || bytes.iter().all(|byte| *byte == 0) {
-        return String::new();
-    }
-    const HEX: &[u8; 16] = b"0123456789abcdef";
-    let mut out = String::with_capacity(bytes.len() * 2);
-    for byte in bytes {
-        out.push(HEX[(byte >> 4) as usize] as char);
-        out.push(HEX[(byte & 0x0f) as usize] as char);
-    }
-    out
 }
 
 fn format_timestamp_nano(unix_nano: u64) -> String {
@@ -4154,6 +4095,7 @@ mod tests {
     use axum::routing::post;
     use axum::Router;
     use flate2::read::GzDecoder;
+    use opentelemetry_proto::tonic::common::v1::{any_value, AnyValue};
     use opentelemetry_proto::tonic::common::v1::{ArrayValue, InstrumentationScope, KeyValueList};
     use opentelemetry_proto::tonic::metrics::v1::{
         exponential_histogram_data_point, metric, AggregationTemporality, ExponentialHistogram,

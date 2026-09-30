@@ -75,3 +75,6 @@ apps/ios/build/
 
 # Vitest Browser Mode failure screenshots and traces
 .vitest/
+
+# AI stamping wasm, built from apps/ingest by `bun run --cwd apps/cli build:ai-stamp`
+apps/cli/src/server/otlp/ai-stamp.wasm

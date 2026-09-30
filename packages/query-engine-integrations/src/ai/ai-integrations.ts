@@ -9,7 +9,7 @@
 // a different value. Vendor entries are keyed on the `maple_ai.vendor.id` the
 // ingest gateway stamped at decode time, from evidence the read path no longer
 // has (instrumentation scope, resource SDK name, span events — see
-// `apps/ingest/src/ai_session.rs`). Attributes arrive as `Map(String, String)`,
+// `apps/ingest/crates/ai-session/src/lib.rs`). Attributes arrive as `Map(String, String)`,
 // so a missing key reads back as `''` and an undecodable value yields no field.
 
 import { Effect, Option } from "effect"

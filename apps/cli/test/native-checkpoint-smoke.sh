@@ -193,6 +193,25 @@ wait "$SERVER_PID" 2>/dev/null || true
 SERVER_PID=""
 
 start_server
+
+# The binary embeds the ingest gateway's AI stamping: an AI SDK span reaches
+# ai_trace_index, which projects stamped spans only.
+now_ns="$(date +%s)000000000"
+curl --fail-with-body -sS --max-time 30 "http://127.0.0.1:$PORT/v1/traces" \
+	-H 'content-type: application/json' \
+	--data "$(jq -nc --arg now "$now_ns" '{resourceSpans: [{
+		resource: {attributes: [{key: "service.name", value: {stringValue: "ai-stamp-smoke"}}]},
+		scopeSpans: [{scope: {name: "gen_ai"}, spans: [{
+			traceId: "5b8efff798038103d269b633813fc60c", spanId: "eee19b7ec3c1b174",
+			name: "chat gpt-4o-mini", startTimeUnixNano: $now, endTimeUnixNano: $now,
+			attributes: [
+				{key: "gen_ai.operation.name", value: {stringValue: "chat"}},
+				{key: "gen_ai.request.model", value: {stringValue: "gpt-4o-mini"}}
+			]}]}]}]}')" >/dev/null
+ai_row="$(query "SELECT VendorId, IsLlmCall FROM ai_trace_index WHERE ServiceName = 'ai-stamp-smoke'" |
+	jq -r '.[0] | "\(.VendorId) \(.IsLlmCall)"')"
+[[ "$ai_row" == "vercel_ai_sdk 1" ]] || fail "AI span not stamped at ingest: ai_trace_index row '$ai_row'"
+
 insert_marker A
 C1="$(checkpoint)"
 [[ "$C1" =~ ^[0-9a-f-]{36}$ ]] || fail "invalid C1 ID: $C1"

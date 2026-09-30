@@ -3,8 +3,10 @@
 //! Runs at decode time (`enrich_trace_request`), before the write path forks,
 //! so the stamps ride inside the OTLP payload itself and reach both the native
 //! row encoder and the forward-to-collector path — same as the `maple_org_id`
-//! resource enrichment. A span that matches a vendor (or, failing that, a
-//! generic AI dialect) gets these span attributes appended:
+//! resource enrichment. The local CLI's ingest runs the same code, compiled to
+//! WebAssembly by `crates/ai-session-wasm`, so this crate stays pure: no I/O,
+//! clocks, threads or randomness. A span that matches a vendor (or, failing
+//! that, a generic AI dialect) gets these span attributes appended:
 //!
 //! - `maple_ai.vendor.id` — vendor slug
 //! - `maple_ai.vendor.version` — identified vendor version, currently always `"0"`
@@ -24,14 +26,14 @@
 //!
 //! One vendor's dialect is restated as well as stamped: Claude Code's native
 //! keys become the `gen_ai.*` keys every reader keys on, and the phases of its
-//! tool calls are left unstamped — see `ai_session/claude_code.rs`.
+//! tool calls are left unstamped — see `claude_code.rs`.
 //!
 //! Every stamped span also carries the facts Agent Sessions aggregates and
 //! filters on, decided here once: whether it is a model call
 //! (`maple_ai.llm_call`) or a tool call, whether it failed, its model, agent
 //! and tool, and a model call's token usage as five disjoint
 //! `maple_ai.usage.*` buckets, whatever convention its emitter reported under
-//! — see `ai_session/facts.rs` and `ai_session/usage.rs`.
+//! — see `facts.rs` and `usage.rs`.
 //!
 //! One vendor's evaluations are left unstamped entirely: a Mastra scorer run
 //! grades a finished agent run and is not a conversation (see
@@ -74,6 +76,7 @@ use opentelemetry_proto::tonic::trace::v1::span::Event;
 mod claude_code;
 mod facts;
 mod usage;
+pub mod value;
 
 pub const ATTR_NAMESPACE: &str = "maple_ai.";
 pub const VENDOR_ID_ATTR: &str = "maple_ai.vendor.id";

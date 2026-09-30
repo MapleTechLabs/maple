@@ -1,4 +1,4 @@
-pub mod ai_session;
+pub use maple_ai_session as ai_session;
 pub mod aws;
 pub mod clickhouse_insert_mappings;
 pub mod metrics;

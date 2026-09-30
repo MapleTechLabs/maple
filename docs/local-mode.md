@@ -156,13 +156,14 @@ There is a single binary, `maple`, compiled from **`apps/cli`** (package
 the server. It talks to the embedded ClickHouse engine **directly via
 `bun:ffi`**, with no subprocess and no second language in front:
 
-| Concern              | Where                          | How                                                                                                                                                                                                                                                                                                                                                                  |
-| -------------------- | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| CLI commands         | `apps/cli/src/commands`        | `maple services`, `traces`, `errors`, … run against **either** the local server **or** a remote workspace. `apps/cli/src/core/operations.ts` picks the path per [mode](#local-vs-remote-mode).                                                                                                                                                                       |
-| `maple start` server | `apps/cli/src/server/serve.ts` | A `Bun.serve` hosting OTLP/HTTP ingest (`POST /v1/{traces,logs,metrics}`), the query API (`POST /local/query`), and the bundled SPA, all on one port.                                                                                                                                                                                                                |
-| Embedded ClickHouse  | `apps/cli/src/server/chdb.ts`  | `dlopen`s `libchdb` via `bun:ffi` (the `chdb_*` accessor C API) and holds a single connection for the process.                                                                                                                                                                                                                                                       |
-| OTLP → rows          | `apps/cli/src/server/otlp/`    | Decodes OTLP protobuf/JSON (protobufjs) and encodes each signal to per-table NDJSON, matching the generated `local-inserts.json` schema exactly. Ported from the production Rust encoders so row shapes can't diverge.                                                                                                                                               |
-| UI (SPA)             | `apps/local-ui` (Vite + React) | Hooks compile queries with `CH.compile(...)` and POST to `/local/query`. The same build is deployed to `local.maple.dev` (the default) **and** inlined into the binary as the `--offline` fallback (see [release bundle](#release-bundle)); it picks its query base URL from `window.location` at runtime (see [Where the UI comes from](#where-the-ui-comes-from)). |
+| Concern              | Where                                  | How                                                                                                                                                                                                                                                                                                                                                                  |
+| -------------------- | -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| CLI commands         | `apps/cli/src/commands`                | `maple services`, `traces`, `errors`, … run against **either** the local server **or** a remote workspace. `apps/cli/src/core/operations.ts` picks the path per [mode](#local-vs-remote-mode).                                                                                                                                                                       |
+| `maple start` server | `apps/cli/src/server/serve.ts`         | A `Bun.serve` hosting OTLP/HTTP ingest (`POST /v1/{traces,logs,metrics}`), the query API (`POST /local/query`), and the bundled SPA, all on one port.                                                                                                                                                                                                                |
+| Embedded ClickHouse  | `apps/cli/src/server/chdb.ts`          | `dlopen`s `libchdb` via `bun:ffi` (the `chdb_*` accessor C API) and holds a single connection for the process.                                                                                                                                                                                                                                                       |
+| OTLP → rows          | `apps/cli/src/server/otlp/`            | Decodes OTLP protobuf/JSON (protobufjs) and encodes each signal to per-table NDJSON, matching the generated `local-inserts.json` schema exactly. Ported from the production Rust encoders so row shapes can't diverge.                                                                                                                                               |
+| AI stamping          | `apps/cli/src/server/otlp/ai-stamp.ts` | Runs the ingest gateway's `maple_ai.*` stamping (`apps/ingest/crates/ai-session`, compiled to wasm and embedded) on every trace request before it is encoded, so Agent Sessions reads the same stamps as in the cloud.                                                                                                                                               |
+| UI (SPA)             | `apps/local-ui` (Vite + React)         | Hooks compile queries with `CH.compile(...)` and POST to `/local/query`. The same build is deployed to `local.maple.dev` (the default) **and** inlined into the binary as the `--offline` fallback (see [release bundle](#release-bundle)); it picks its query base URL from `window.location` at runtime (see [Where the UI comes from](#where-the-ui-comes-from)). |
 
 chDB allows exactly one connection per process and isn't safe to call
 concurrently. The long-lived `maple start` process owns the connection, and
@@ -422,9 +423,13 @@ their matching loopback address instead of the unusable `0.0.0.0` or `::`.
 
 ## Dev workflow
 
-No Rust toolchain needed. Run the server and the SPA dev server in two terminals:
+Run the server and the SPA dev server in two terminals. The server embeds the
+gateway's AI stamping as wasm, built with the mise Rust toolchain; rebuild it
+after changing `apps/ingest/crates/ai-session`:
 
 ```bash
+bun run --cwd apps/cli build:ai-stamp
+
 # Terminal 1: the server (OTLP ingest + query API + chDB) on :4318.
 # Needs libchdb: set MAPLE_LIBCHDB, or keep libchdb.so in ~/.maple/bin.
 bun run apps/cli/src/bin.ts start

@@ -8,7 +8,7 @@ import { MAPLE_AI_STAMP_ATTRS } from "./gen-ai"
 // literals are pinned against the Rust sources that write them.
 const gatewaySource = ["facts.rs", "usage.rs"]
 	.map((file) =>
-		readFileSync(new URL(`../../../apps/ingest/src/ai_session/${file}`, import.meta.url), "utf8"),
+		readFileSync(new URL(`../../../apps/ingest/crates/ai-session/src/${file}`, import.meta.url), "utf8"),
 	)
 	.join("\n")
 

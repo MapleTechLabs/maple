@@ -320,7 +320,7 @@ fn tokens(value: f64) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ai_session::{stamp_trace_request, value_str, VENDOR_ID_ATTR};
+    use crate::{stamp_trace_request, value_str, VENDOR_ID_ATTR};
     use opentelemetry_proto::tonic::collector::trace::v1::ExportTraceServiceRequest;
     use opentelemetry_proto::tonic::common::v1::{any_value, AnyValue, InstrumentationScope};
     use opentelemetry_proto::tonic::resource::v1::Resource;

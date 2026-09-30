@@ -1,0 +1,11 @@
+[package]
+name = "maple-ai-session"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+opentelemetry-proto = { version = "0.32", default-features = false, features = ["gen-tonic-messages", "trace"] }
+serde_json = "1.0.145"
+
+[lints]
+workspace = true
