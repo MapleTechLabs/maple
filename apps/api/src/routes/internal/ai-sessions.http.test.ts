@@ -1673,6 +1673,7 @@ describe("POST /internal/ai-sessions/tools/error-samples", () => {
 											"gen_ai.tool.call.arguments": "{}",
 											"gen_ai.tool.call.result": occurrence.message,
 										},
+										cutAttributeBytes: {},
 									},
 								],
 					)
