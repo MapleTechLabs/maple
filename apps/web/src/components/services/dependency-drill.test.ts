@@ -19,6 +19,18 @@ describe("dependencyDrillWhereClause", () => {
 		])
 	})
 
+	// The rollup merges `destination = kafka` spans into the same edge as the
+	// fallback spans; without OR in the where-clause only the fallback half is
+	// reachable. Pinned so a parser that gains OR support flips this on purpose.
+	it("drills only the fallback spans when a destination shares its system's name", () => {
+		expect(filtersOf("messaging", "kafka", "kafka").filters.attributeFilters).toContainEqual({
+			key: "messaging.destination.name",
+			value: "",
+			matchMode: "exists",
+			negated: true,
+		})
+	})
+
 	it("drills an rpc service, or the legacy system key when the edge is named by it", () => {
 		expect(filtersOf("rpc", "checkout.Cart", "grpc").filters.attributeFilters).toEqual([
 			{ key: "rpc.service", value: "checkout.Cart" },

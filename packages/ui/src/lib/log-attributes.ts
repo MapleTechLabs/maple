@@ -73,6 +73,32 @@ function scoreKey(key: string): number {
 	return 20
 }
 
+// `rpc.response.status_code` values are system-specific. gRPC's are status
+// names (or their numbers from older instrumentation); semconv counts only these
+// as errors on a server span, and the chip does not know the span kind, so the
+// other non-OK codes are a warning and any other system's values stay neutral.
+const GRPC_SERVER_ERROR_CODES = new Set([
+	"UNKNOWN",
+	"DEADLINE_EXCEEDED",
+	"UNIMPLEMENTED",
+	"INTERNAL",
+	"UNAVAILABLE",
+	"DATA_LOSS",
+	"2",
+	"4",
+	"12",
+	"13",
+	"14",
+	"15",
+])
+const GRPC_CODES = new Set([
+	...GRPC_SERVER_ERROR_CODES,
+	..."OK CANCELLED INVALID_ARGUMENT NOT_FOUND ALREADY_EXISTS PERMISSION_DENIED RESOURCE_EXHAUSTED FAILED_PRECONDITION ABORTED OUT_OF_RANGE UNAUTHENTICATED".split(
+		" ",
+	),
+	..."0 1 3 5 6 7 8 9 10 11 16".split(" "),
+])
+
 function isNumericStatus(value: string): number | null {
 	const n = Number(value)
 	return Number.isInteger(n) && n >= 100 && n < 600 ? n : null
@@ -104,10 +130,11 @@ export function getChipTone(key: string, value: string, severityText: string): C
 		if (Number.isFinite(n) && n !== 0) return "error"
 	}
 
-	// The current key carries the status name ("OK", "UNAVAILABLE"); some instrumentation
-	// still writes the numeric gRPC code, where 0 is OK.
-	if (key === "rpc.response.status_code" && value !== "" && value !== "0" && value.toUpperCase() !== "OK")
-		return "error"
+	if (key === "rpc.response.status_code") {
+		const code = value.toUpperCase()
+		if (GRPC_SERVER_ERROR_CODES.has(code)) return "error"
+		if (GRPC_CODES.has(code) && code !== "OK" && code !== "0") return "warn"
+	}
 
 	if (key === "http.method" || key === "http.request.method") return "info"
 	if (

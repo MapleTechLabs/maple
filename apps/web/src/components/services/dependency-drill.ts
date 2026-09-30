@@ -16,6 +16,11 @@ export type DependencyDrillKind = "service" | "database" | "messaging" | "rpc" |
  * also require the absence, otherwise they would match every destination of the
  * system. The rpc system uses the legacy key because that is what the rollup
  * reads today.
+ *
+ * Known gap: when a destination or rpc.service is literally named after its
+ * system, the rollup merges those spans and the fallback spans into one edge.
+ * Matching both needs an OR the where-clause parser does not support, so the
+ * drill shows only the fallback spans.
  */
 export function dependencyDrillWhereClause(
 	kind: DependencyDrillKind,
