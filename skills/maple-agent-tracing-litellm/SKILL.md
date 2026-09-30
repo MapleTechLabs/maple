@@ -7,11 +7,9 @@ description: "Trace LiteLLM agents with Maple: export LiteLLM's v2 OpenTelemetry
 
 Goal: every conversation = one Maple Agent Session. Each agent run = one turn (one trace) with transcript, LiteLLM `chat <model>` spans with tokens, `execute_tool` spans with args/results, failed tools marked failed, sub-agents in their own lanes.
 
-Human guide with the reasoning: https://maple.dev/docs/agent-tracing/litellm
-
 Mechanism:
 - LiteLLM traces model calls only (scope `litellm`). It has no agent loop, no tool executor, no conversation concept. The app MUST emit `invoke_agent` and `execute_tool` spans itself.
-- Use LiteLLM's **v2** OTel logger (`OpenTelemetryV2`). It writes `gen_ai.operation.name=chat`, provider, model, usage, `gen_ai.response.id`, TTFT, `error.type`, and `gen_ai.conversation.id` from `litellm_session_id`. Maple reads `gen_ai.conversation.id` as the session key for LiteLLM.
+- Use LiteLLM's **v2** OTel logger (`OpenTelemetryV2`). It sets `gen_ai.conversation.id` (Maple's session key) from `litellm_session_id`.
 - The default v1 logger (`litellm.callbacks=["otel"]` without v2) is wrong for Maple: op `acompletion`, no conversation id ever, and under an open parent span it writes onto the (ended) parent and the data is dropped.
 
 ## Step 0: Detect
@@ -42,7 +40,7 @@ Mechanism:
 
 ```bash
 OTEL_EXPORTER_OTLP_ENDPOINT=https://ingest.maple.dev
-OTEL_EXPORTER_OTLP_HEADERS=Authorization=Bearer <key>
+OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer <key>"
 OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
 ```
 
@@ -90,7 +88,6 @@ tracer = trace.get_tracer("support-agent")
 - Import it first in the entry point, before the first model call.
 - Passing the instance: no `LITELLM_OTEL_V2` env needed, LiteLLM builds no provider/exporter of its own.
 - If the project appends to `litellm.callbacks` elsewhere (other loggers), append the instance instead of overwriting the list.
-- Set a real `service.name`.
 
 ## Step 2b: Proxy path (self-hosted LiteLLM Proxy)
 
@@ -201,7 +198,6 @@ async def run_tool(agent: Agent, call) -> str:
         return output
 ```
 
-- Real tool name in `gen_ai.tool.name`, the model's `call.id` in `gen_ai.tool.call.id`. Async tools are awaited inside the span (the `isawaitable` branch).
 - Tool failure: ERROR status + `error.type` on the tool span; the model still gets an error payload. Where the existing loop swallows exceptions into strings, add the status/`error.type` there (don't change what the model sees unless asked).
 - LiteLLM marks failed model calls ERROR + `error.type` itself.
 - Multi-agent: each agent its own `name` (→ `gen_ai.agent.name`, one lane each). Same `conversation_id` to every `run_agent`.
@@ -258,17 +254,3 @@ Without Maple access (`MAPLE_TEST`, no MCP): the run must exit with no export er
 - Nothing arrives from the proxy → the OTLP env vars aren't in the proxy's own environment, so it stays on the default `console` exporter.
 - 401 `ingest_unauthorized` / "Invalid ingest key" with a key you trust → keys are region-bound, so it likely belongs to the other region; try the other endpoint.
 - App exports to `localhost:4318` / nothing arrives, no errors → `.env` loaded after `tracing.py` built the provider; load it first.
-
-## Do not
-
-- Do not use the v1 logger (`litellm.callbacks=["otel"]` alone) when async is possible: no session key, op `acompletion`, attributes lost under parent spans.
-- Do not run LiteLLM 1.103 with OpenTelemetry >= 1.44 (v2 silently disabled).
-- Do not register two loggers (v2 instance plus `"otel"` / `LITELLM_OTEL_V2` factory) in one process.
-- Do not trace the same call at the proxy and in the app (client instrumentor): double counting.
-- Do not rely on sync `litellm.completion()` under v2: no span.
-- Do not put `gen_ai.conversation.id` / `maple_ai.session.id` on your own spans in the v2 setup.
-- Do not use `event_only` content capture.
-- Do not skip the flush in short-lived processes.
-- Do not create a second `TracerProvider` when one exists.
-- Do not add token pricing code or `gen_ai.usage.cost` on your own spans.
-- Do not print or commit real keys beyond the repo's convention.

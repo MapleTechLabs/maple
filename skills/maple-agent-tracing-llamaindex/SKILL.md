@@ -7,8 +7,6 @@ description: "Trace LlamaIndex agents with Maple: OpenInference LlamaIndex instr
 
 Goal: every conversation = one Maple Agent Session. Each `agent.run()` / `workflow.run()` = one turn (one trace) with transcript, one model span per model call with tokens, `FunctionTool.acall` tool spans with results, failed tools marked failed, sub-agents in their own lanes.
 
-Human guide with the reasoning: https://maple.dev/docs/agent-tracing/llamaindex
-
 Mechanism: `openinference-instrumentation-llama-index` (scope `openinference.instrumentation.llama_index`). Maple reads the session (`session.id` from `using_session`), transcript, tokens and tool calls from its spans. `TraceConfig(enable_genai_semconv=True)` is recommended: it also emits standard GenAI attributes (`gen_ai.*`, incl. `gen_ai.conversation.id`).
 
 ## Step 0: Detect
@@ -41,7 +39,7 @@ Env vars (`OTLPSpanExporter()` reads them and appends `/v1/traces`):
 OTEL_SERVICE_NAME=support-agent
 OTEL_RESOURCE_ATTRIBUTES=deployment.environment.name=production
 OTEL_EXPORTER_OTLP_ENDPOINT=https://ingest.maple.dev
-OTEL_EXPORTER_OTLP_HEADERS=Authorization=Bearer <key>
+OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer <key>"
 OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
 ```
 
@@ -120,7 +118,6 @@ LlamaIndexInstrumentor().instrument(
 )
 ```
 
-- `TraceConfig(enable_genai_semconv=True)`: recommended (emits standard GenAI attributes).
 - Import `tracing` first in the entry point (app module, `main.py`, worker). `instrument()` must run before the first `agent.run()`.
 - The app loads `.env` (`load_dotenv()`, `--env-file`): call `load_dotenv()` at the top of `tracing.py`, before the provider is built. Otherwise the exporter silently targets `localhost:4318` with no key.
 - Existing provider: skip `TracerProvider()`/`set_tracer_provider`; call `existing.add_span_processor(LlamaIndexForMaple(BatchSpanProcessor(OTLPSpanExporter())))` and pass `tracer_provider=existing`.
@@ -197,7 +194,7 @@ llm = OpenAI(model="gpt-4o-mini", additional_kwargs={"stream_options": {"include
 
 ## Step 7: Flush
 
-- `BatchSpanProcessor` exports every 5 s; the provider flushes at normal interpreter exit.
+- The provider flushes at normal interpreter exit.
 - Scripts/CLIs/one-shot jobs: `provider.shutdown()` in a `finally` at the end.
 - Serverless handlers, Celery/RQ tasks, notebooks: `provider.force_flush()` in a `finally` after each run (`from tracing import provider`).
 - FastAPI/long-running servers: nothing extra; optionally `provider.shutdown()` in the lifespan shutdown.
@@ -218,7 +215,7 @@ Run one real conversation: 2+ messages with the same id, at least one tool call,
 - [ ] Cost shows "unpriced".
 - [ ] No attribute contains an API key or `Bearer ` token.
 
-More details (from the human guide, for edge cases):
+Edge cases:
 
 - Native `llama-index-observability-otel` (0.7.0, `LlamaIndexOpenTelemetry`): model settings/prompt only in `LLMChatStartEvent` span events (Maple ignores events); the end event with reply+usage is dropped on streamed calls; two nested `<Model>.astream_chat` spans per call; ignores `OTEL_EXPORTER_OTLP_*` and defaults to `ConsoleSpanExporter` without `span_exporter=`. If a user insists on keeping it and only wants sessions: `instrument_tags({"gen_ai.conversation.id": conversation_id})` around `agent.run()` groups traces (dotted tag keys become span attributes verbatim).
 - Span layout the processor fixes: `BaseWorkflowAgent.run_agent_step` → `<Model>._prepare_chat_with_tools` (kind LLM, ~1 ms) + `<Model>.astream_chat` (OpenAILike override) → `<Model>.astream_chat` (inner, holds messages+usage). Classes implementing the call directly (`OpenAI`) produce two spans. Merge only applies to directly nested identical names, so `CondensePlusContextChatEngine.chat` → `OpenAI.chat` is untouched. Tokens were never doubled (only innermost has usage), only call counts.
@@ -231,15 +228,3 @@ More details (from the human guide, for edge cases):
 - Streaming query engines on llama-index-core 0.14.25: the model call of a `StreamingResponse` runs after the query span ended, so it lands in a separate trace. Fix pending in OpenInference PR #3841 (https://github.com/Arize-ai/openinference/pull/3841); until released, pin `llama-index-core<0.14.25` if the app traces streaming query engines. Agents unaffected.
 
 Without Maple access, both must hold: the run exits with no export errors on stderr (`Failed to export`, 401 lines), AND a temporary `SimpleSpanProcessor(ConsoleSpanExporter())` passed into `LlamaIndexForMaple` shows the agent, model and `FunctionTool.acall` spans with `gen_ai.conversation.id` identical on every span of a conversation and `gen_ai.agent.name` set. Silence alone proves nothing (no spans is silent too). With the Maple MCP: `list_agent_sessions` with `search=<conversation id>` returns one row.
-
-## Do not
-
-- Do not use or keep `LlamaIndexOpenTelemetry` (`llama-index-observability-otel`) for Maple, and never alongside the OpenInference instrumentor.
-- Do not add the exporter to the provider directly; always through `LlamaIndexForMaple`.
-- Do not treat `Context` or `llamaindex.run_id` as a session id; use `using_session` around `run()`.
-- Do not generate a new conversation id per request, and do not share one `Context` across conversations.
-- Do not wrap `yield` statements in `using_session`/`instrument_tags` blocks.
-- Do not add provider instrumentors (OpenAI/LiteLLM OpenInference, OpenLLMetry) on top: duplicate model spans and tokens.
-- Do not add `maple_ai.session.id` (re-vendors spans) or custom pricing attributes.
-- Do not return error strings from failing tools where a raise is acceptable.
-- Do not print or commit real keys beyond the repo's convention.

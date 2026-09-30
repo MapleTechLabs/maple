@@ -5,9 +5,9 @@ description: "Trace CrewAI crews and flows with Maple: OpenInference CrewAI inst
 
 # Maple agent tracing: CrewAI
 
-Goal: every conversation the app runs through CrewAI shows up in Maple **Agent Sessions** as ONE session, with the transcript, each model call (model, tokens), each tool call (name, result, failure) and one lane per agent role. Reasoning and background for every step: https://maple.dev/docs/agent-tracing/crewai
+Goal: every conversation the app runs through CrewAI shows up in Maple **Agent Sessions** as ONE session, with the transcript, each model call (model, tokens), each tool call (name, result, failure) and one lane per agent role.
 
-CrewAI exports nothing to your backend. Its built-in telemetry is anonymous analytics to crewai.com on a private provider; its OTel export is AMP-only. All spans come from OpenInference, and the defaults are wrong for Maple in three ways this skill fixes: the CrewAI instrumentor records no model calls (a second, SDK-level instrumentor is required), no session id, and no agent-name attribute.
+CrewAI exports nothing to your backend. All spans come from OpenInference, and the defaults are wrong for Maple in three ways this skill fixes: the CrewAI instrumentor records no model calls (a second, SDK-level instrumentor is required), no session id, and no agent-name attribute.
 
 ## Step 0: Detect versions and existing OpenTelemetry
 
@@ -209,25 +209,16 @@ Otherwise check in Maple **Agent Sessions** (`https://app.maple.dev/agent-sessio
 - Cost: unpriced unless models go through LiteLLM (which records `llm.cost.total`). Expected.
 - No spans with scope `crewai.telemetry`, no `coding_agent` attribute (telemetry is off).
 
-More details (from the human guide, for edge cases):
+Edge cases:
 
 - Tokens: model spans carry `gen_ai.usage.input_tokens`/`output_tokens` (plus cached and reasoning tokens when reported); crew and agent spans carry none, so nothing double-counts. CrewAI's OpenAI provider always requests `stream_options={"include_usage": True}` when streaming, so streamed calls keep tokens.
 - Model = the one the provider returned (e.g. `anthropic/claude-haiku-4.5` behind OpenRouter); provider = the SDK used, so every OpenRouter model shows `openai`.
 - `memory=True` / `planning=True` add real, billed model calls (memory analysis, embeddings, planning agent); they appear in the session. Expected.
 - The Arize Phoenix CrewAI page still recommends the LiteLLM instrumentor; ignore it for native providers (it records nothing there).
 - Flow span layout: `<flow name>.kickoff` root, one `<flow name>.<method>` span per `@start`/`@listen`/`@router` method, crews and `Agent.kickoff()` nested inside. Conversational flow turns show `<flow>.route_conversation` and `<flow>.converse_turn` under the kickoff.
-- Why the streaming wrapper works: `gen_ai.operation.name=invoke_agent` makes Maple treat it as the turn's agent span, so the two crew kickoff spans under it are one turn.
 
 If sessions are split per message: `using_session` missing or id changing. No model spans/tokens: wrong or missing SDK instrumentor. Every call its own trace: `akickoff`. Nothing arrives: exporter endpoint/header wrong, `.env` loaded after `tracing.py`, `OTEL_SDK_DISABLED=true`, or process exited without flushing. 401 `ingest_unauthorized` / "Invalid ingest key" with a key you trust: keys are region-bound, so it likely belongs to the other region; try the other endpoint.
 
 ## Do not
 
-- Do not install only `openinference-instrumentation-crewai`: no model calls, no tokens, no transcript.
-- Do not add the LiteLLM instrumentor for `openai/`/`openrouter/`/`anthropic/`/`gemini/` models (CrewAI 1.x calls those SDKs natively; LiteLLM records nothing). Do not stack two model-layer instrumentors or `litellm.callbacks=["otel"]` on the same calls (duplicate spans).
-- Do not use `OTEL_SDK_DISABLED=true` to silence CrewAI telemetry.
-- Do not use `crewai.telemetry`, `share_crew`, or `CREWAI_TRACING_ENABLED=true` as the Maple pipeline.
-- Do not use `crew_id`, `crew_key`, `task_id` or a fresh UUID per request as the session id.
-- Do not call `akickoff()` on traced crews.
-- Do not pass `OTLPSpanExporter(endpoint="https://ingest.maple.dev")` without `/v1/traces`.
-- Do not create a second `TracerProvider` when one exists, and do not call `instrument()` twice.
-- Do not wrap tools in try/except that returns error strings; let them raise.
+- Do not stack two model-layer instrumentors (or `litellm.callbacks=["otel"]`) on the same calls: duplicate model spans and tokens.

@@ -53,7 +53,6 @@ from opentelemetry.trace import Status, StatusCode
 
 tracer = trace.get_tracer("support-agent")
 
-# Same switch the instrumentors read, so one env var controls content everywhere.
 CAPTURE_CONTENT = os.environ.get(
     "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", ""
 ).upper() in ("SPAN_ONLY", "SPAN_AND_EVENT")

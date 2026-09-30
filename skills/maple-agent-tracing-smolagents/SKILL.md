@@ -5,9 +5,9 @@ description: "Trace Hugging Face smolagents agents with Maple: OpenInference ins
 
 # Maple agent tracing: smolagents
 
-Goal: every conversation the app runs through a smolagents agent shows up in Maple **Agent Sessions** as ONE session, with the transcript, each model call (model, tokens), each tool call (name, arguments, result, failure) and one lane per managed agent. Reasoning and background for every step: https://maple.dev/docs/agent-tracing/smolagents
+Goal: every conversation the app runs through a smolagents agent shows up in Maple **Agent Sessions** as ONE session, with the transcript, each model call (model, tokens), each tool call (name, arguments, result, failure) and one lane per managed agent.
 
-smolagents has no OpenTelemetry code of its own. All spans come from `openinference-instrumentation-smolagents`. Its defaults are wrong for Maple in two ways this skill fixes: no session id, and no agent names / wrong tool arguments.
+All spans come from `openinference-instrumentation-smolagents`.
 
 ## Step 0: Detect versions and existing OpenTelemetry
 
@@ -62,8 +62,6 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
 
 class SmolagentsForMaple(SpanProcessor):
-    """Fixes what the smolagents instrumentor gets wrong for Maple: agent names, tool names and arguments."""
-
     def on_start(self, span, parent_context=None):
         if span.instrumentation_scope.name != "openinference.instrumentation.smolagents":
             return
@@ -93,7 +91,7 @@ SmolagentsInstrumentor().instrument(
 
 - `import tracing` at the top of every entry point (web app module, worker, CLI main) so `instrument()` runs before the first `agent.run()`. Import order relative to `smolagents` does not matter.
 - Existing provider: skip the `TracerProvider()`/`set_tracer_provider` lines, add `SmolagentsForMaple()` and the exporter to the existing provider, pass it as `tracer_provider=`.
-- `enable_genai_semconv=True`: recommended (emits standard GenAI attributes). The env var `OPENINFERENCE_ENABLE_GENAI_SEMCONV=true` is equivalent only if set before `TraceConfig` is constructed; prefer the code form.
+- `enable_genai_semconv=True`: required (emits the standard GenAI attributes the processor relies on). The env var `OPENINFERENCE_ENABLE_GENAI_SEMCONV=true` is equivalent only if set before `TraceConfig` is constructed; prefer the code form.
 - Keep `SmolagentsForMaple` exactly: it must run in `on_start` (before the dual-write, which never overwrites existing keys).
 
 ## Step 3: One session per conversation
@@ -180,11 +178,4 @@ If sessions are split per message: `using_session` missing or id changing. Nothi
 
 ## Do not
 
-- Do not use the `smolagents[telemetry]` extra or `phoenix.otel.register()` to send to Maple.
-- Do not add `openinference-instrumentation-openai` / `-litellm` alongside (duplicate model spans, doubled tokens).
-- Do not generate a session id per request or use a constant one.
-- Do not pass `OTLPSpanExporter(endpoint="https://ingest.maple.dev")` without `/v1/traces`.
-- Do not create a second `TracerProvider` when one exists, and do not call `instrument()` twice.
-- Do not override `generate` in a custom `Model` subclass and expect model spans.
-- Do not rely on `hide_inputs` alone for PII (`smolagents.task`).
-- Do not wrap tools in try/except that returns error strings; let them raise.
+- Do not use `phoenix.otel.register()` (the smolagents docs' setup) to send to Maple: it skips `SmolagentsForMaple` (no lanes, tools named `SimpleTool`).

@@ -1,8 +1,6 @@
 # Google ADK for TypeScript (`@google/adk`)
 
-Human guide (TypeScript tab): https://maple.dev/docs/agent-tracing/google-adk
-
-Tested with `@google/adk` 2.1.0 (`@google/genai` 2.24.0), `@opentelemetry/sdk-node` 0.222.0 (trace SDK 2.11.0), `@opentelemetry/exporter-trace-otlp-proto` 0.222.0, `zod` 4.6.5, Node.js 26.0, TypeScript 7.0 `strict`. Gemini was mocked with a local server (`GOOGLE_GEMINI_BASE_URL`), spans read from a local OTLP receiver: two turns in one session with a tool call, streaming (`StreamingMode.SSE`), a throwing tool, an unknown tool, and two parallel tool calls.
+Tested with `@google/adk` 2.1.0 (`@google/genai` 2.24.0), `@opentelemetry/sdk-node` 0.222.0 (trace SDK 2.11.0), `@opentelemetry/exporter-trace-otlp-proto` 0.222.0, `zod` 4.6.5, Node.js 26.0, TypeScript 7.0 `strict`.
 
 ## What ADK for TypeScript emits, and what is missing
 
@@ -18,7 +16,7 @@ invocation
    └─ call_llm
 ```
 
-Gaps against what Maple reads (compare the Python side, which has a `generate_content` span with GenAI messages):
+Gaps against what Maple reads:
 
 - `call_llm` has no `gen_ai.operation.name`.
 - No `gen_ai.input.messages` / `gen_ai.output.messages` / `gen_ai.system_instructions`. Content exists only as Gemini-shaped JSON in `gcp.vertex.agent.llm_request` (`{model, contents, config: {systemInstruction, tools}}`) and `gcp.vertex.agent.llm_response` (`{content, usageMetadata, finishReason}`), which Maple does not read. There is no `OTEL_SEMCONV_STABILITY_OPT_IN` switch in the TS package.
@@ -40,7 +38,7 @@ Why a span processor and not a plugin (the Python fix): ADK-TS runs `beforeToolC
 
 ## Step 1: Key and region
 
-Same as SKILL.md Step 1. `OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer <key>"`: the JS exporter accepts a literal space (in quotes) or `%20`; both arrive as `Bearer <key>`.
+Same as SKILL.md Step 1. `OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer <key>"`.
 
 A 401 `ingest_unauthorized` ("Invalid ingest key") with a key you trust usually means the key belongs to the other region (keys are region-bound): try the other endpoint.
 
@@ -62,7 +60,7 @@ OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer <key>"
 
 Leave `ADK_CAPTURE_MESSAGE_CONTENT_IN_SPANS` unset (default `true`): the processor reads those attributes. Do not set `OTEL_EXPORTER_OTLP_PROTOCOL`; the exporter class decides the protocol.
 
-`instrumentation.ts` (identical to the guide; typechecks under `strict`):
+`instrumentation.ts` (typechecks under `strict`):
 
 ```ts
 // instrumentation.ts
@@ -222,10 +220,4 @@ Tell the user the known gaps: cost unpriced; model is the requested id (no respo
 
 ## Do not
 
-- Do not rely on `new NodeSDK()` with env alone: spans export, but with no transcript and no tool arguments/results.
-- Do not set `ADK_CAPTURE_MESSAGE_CONTENT_IN_SPANS=false` unless the user wants no content.
-- Do not port the Python plugin (`before_tool_callback` setting span attributes): in TS the callbacks run outside the tool span and would annotate `call_llm` instead.
-- Do not start a second `NodeSDK`/provider next to an existing one; add the processor to it.
-- Do not create a new ADK session per request, or share one session id across users.
-- Do not drop `call_llm` or `invocation` spans.
-- Do not skip `sdk.shutdown()` / `forceFlush()` in short-lived processes.
+- Do not drop `call_llm` or `invocation` spans in the processor: their children lose their parent.

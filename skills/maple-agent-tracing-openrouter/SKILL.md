@@ -7,9 +7,7 @@ description: "Trace OpenRouter calls with Maple: route OpenRouter Broadcast (OTL
 
 Goal: every conversation = one Maple Agent Session with each OpenRouter model call, its tokens, cost (`gen_ai.usage.total_cost`, OpenRouter's real charge) and prompt/completion. If the app already exports its own traces to Maple, the Broadcast spans nest inside them and each call is counted once.
 
-Human guide with the reasoning: https://maple.dev/docs/agent-tracing/openrouter
-
-Mechanism: OpenRouter Broadcast, configured in the OpenRouter dashboard, exports one OTLP/HTTP JSON trace per request (scope and `service.name` = `openrouter`, root span `LLM Generation`, children `provider attempt N: <provider>`). Maple detects vendor `openrouter` from the scope and reads **`session.id`** as the session key. OpenRouter sets `session.id` from the request's `session_id` body field or `x-session-id` header, and uses `trace.trace_id` / `trace.parent_span_id` from the body verbatim as the OTLP trace id / parent span id.
+Mechanism: OpenRouter Broadcast, configured in the OpenRouter dashboard, exports one OTLP/HTTP JSON trace per request (scope and `service.name` = `openrouter`, root span `LLM Generation`, children `provider attempt N: <provider>`). Maple reads **`session.id`** as the session key. OpenRouter sets `session.id` from the request's `session_id` body field or `x-session-id` header, and uses `trace.trace_id` / `trace.parent_span_id` from the body verbatim as the OTLP trace id / parent span id.
 
 You cannot change the OpenRouter dashboard. Your job: (1) edit the app's OpenRouter calls, (2) hand the user the exact destination settings.
 
@@ -169,16 +167,4 @@ Tell the user: cost is shown (OpenRouter's charge); TTFT, environment, tool call
 - `service.name` on Broadcast spans is always `openrouter`, no environment attribute. Custom keys in the `trace` object arrive as `trace.metadata.<key>` (searchable in Traces, don't set service/environment).
 - OpenRouter's sample trace (`Test Trace - OpenRouter Observability`, an `openai/gpt-4-turbo` call with sample tokens/cost) can appear as a session; ignore it.
 - Test Connection passes but nothing arrives: check API key filter, data regions, **Enable Broadcast** on the account/org the app key belongs to, and that the key isn't `MAPLE_TEST`.
-- Destinations can be created via OpenRouter's observability API (`type: "otel-collector"`) with a management key (only if the user asks; see Do not).
-
-## Do not
-
-- Do not use a constant or per-client `session_id`; it merges every user into one session.
-- Do not use non-hex or wrong-length `trace_id` / `parent_span_id`; use the active span's W3C ids.
-- Do not use a different id for `session_id` than the framework's conversation id when both exist.
-- Do not stack Broadcast on in-app instrumentation without nesting or a response-id match; tokens and calls double.
-- Do not claim Broadcast captures tools, tool errors or sub-agents.
-- Do not point the destination at `https://ingest.maple.dev` without `/v1/traces`, and do not put the Maple key anywhere in the repo for Broadcast.
-- Do not set sampling below 1 to "save volume" without telling the user whole sessions disappear.
-- Do not create or edit OpenRouter destinations via the management API unless the user explicitly gives a management key and asks.
-- Do not put PII in `user`, `session_id` or `trace` metadata.
+- Destinations can be created via OpenRouter's observability API (`type: "otel-collector"`) with a management key (only if the user explicitly asks and provides a management key).

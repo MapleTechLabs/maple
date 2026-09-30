@@ -7,9 +7,7 @@ description: "Trace Mastra agents and workflows with Maple: export Mastra's buil
 
 Goal: every conversation = one Maple Agent Session. Each `agent.generate()` / `agent.stream()` / workflow `run.start()` = one turn (one trace) with transcript, `chat <model>` spans with tokens, `execute_tool <tool>` spans with args/results, failed tools marked failed, sub-agents in their own lanes.
 
-Human guide with the reasoning: https://maple.dev/docs/agent-tracing/mastra
-
-Mechanism: Mastra's own tracing (`@mastra/observability`) converted to OTel GenAI semconv v1.38 by `@mastra/otel-exporter`, which runs its own BatchSpanProcessor. No OTel SDK or instrumentation package needed. Maple detects the vendor from resource `telemetry.sdk.name=@mastra/otel-exporter` and reads `gen_ai.conversation.id` as the session key. The exporter writes that key from span `metadata.threadId`, which Mastra sets from `memory.thread`. No thread = no session key.
+The session key is `gen_ai.conversation.id`; the exporter writes it from span `metadata.threadId`, which Mastra sets from `memory.thread`. No thread = no session key.
 
 Mastra 1.71 has three export gaps that a small span processor (Step 2) fixes; it is required in every setup: the `chat` span has no input messages (empty prompt side of the transcript), sub-agents get their own thread id (turn split, wrong session), and step spans carry the raw provider HTTP response (headers with cookies, full reply body) as `mastra.metadata.headers` / `mastra.metadata.body`, which `hideOutput` does not hide.
 
@@ -29,7 +27,7 @@ Mastra 1.71 has three export gaps that a small span processor (Step 2) fixes; it
 ## Step 1: Key and region
 
 - US: `https://ingest.maple.dev`. EU: `https://ingest.eu.maple.dev`.
-- Header: `Authorization: Bearer <key>` (passed as a headers object in code; no `%20` encoding).
+- Header: `Authorization: Bearer <key>` (passed as a headers object in code).
 - Key given in the prompt → use it.
 - No key → use the literal `MAPLE_TEST` (ingest accepts and discards it) and tell the user to replace it with their key from Settings → Ingestion.
 - Never put a private `maple_sk_` key in browser code.
@@ -207,16 +205,5 @@ Without Maple access: `logLevel: "debug"` shows `Export completed` and no `Expor
 
 ## Do not
 
-- Do not pass a plain object as `observability`; use `new Observability(...)`.
-- Do not rely on `OTEL_EXPORTER_OTLP_ENDPOINT` / `OTEL_EXPORTER_OTLP_HEADERS` / `OTEL_EXPORTER_OTLP_PROTOCOL`; the custom provider ignores them.
-- Do not omit `protocol: "http/protobuf"` (defaults to `http/json`, needs a different package).
-- Do not add an OTel NodeSDK, `@vercel/otel`, OpenLLMetry or OpenInference just for Mastra; they are unnecessary and double-trace model calls.
-- Do not use both OtelExporter and `@mastra/otel-bridge` to reach Maple.
-- Do not call `generate()` / `stream()` without a stable `memory.thread` (or `tracingOptions.metadata.threadId`) in a multi-turn chat.
-- Do not enable `includeInternalSpans`.
-- Do not stamp `maple_ai.session.id` on Mastra spans; it re-vendors them away from Mastra decoding. Use the thread id.
-- Do not leave more than one copy of `@mastra/observability` installed (`npm ls @mastra/observability`); the exporter picks the model-call span from features both packages report.
-- Do not leave out `mapleSpanProcessor`, and do not replace it with a processor that returns a copy of the span.
-- Do not return error objects from tools you want counted as failures; throw.
-- Do not exit a script without `await mastra.shutdown()`.
-- Do not promise cost or time-to-first-token in Maple: Mastra emits neither under keys Maple reads.
+- Do not add an OTel NodeSDK, `@vercel/otel`, OpenLLMetry or OpenInference for Mastra: double-traces model calls.
+- Do not stamp `maple_ai.session.id` on Mastra spans: it re-vendors them away from Mastra decoding.

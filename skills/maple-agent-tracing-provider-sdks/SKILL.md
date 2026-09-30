@@ -7,13 +7,10 @@ description: "Trace agents built directly on the OpenAI, Anthropic or Google Gen
 
 Goal: every conversation = one Maple Agent Session. Each user message = one turn = one trace rooted at an `invoke_agent <agent>` span, containing a `chat <model>` / `generate_content <model>` span per model call (transcript + tokens) and an `execute_tool <tool>` span per tool call (args, result, failures).
 
-Human guide with the reasoning: https://maple.dev/docs/agent-tracing/provider-sdks
-
 Mechanism:
 - Python: OpenTelemetry GenAI instrumentations (`opentelemetry-instrumentation-genai-openai`, `-genai-anthropic`, `opentelemetry-instrumentation-google-genai`, all >= 1.2b0) write `chat` spans with GenAI semconv on span attributes.
 - TypeScript: no usable instrumentation (`@opentelemetry/instrumentation-openai` only patches `openai` < 7 and puts messages in log events; nothing official for `@anthropic-ai/sdk` / `@google/genai`). Record the model call with the helper in `references/typescript.md`.
-- Both: YOU add the `invoke_agent` span (with `gen_ai.conversation.id`) and `execute_tool` spans. Instrumentations can't see turns, conversations or your tools.
-- Maple files these spans under vendor `unknown:genai` (UI: "Unidentified") and reads `gen_ai.conversation.id` as the session key. Everything else is read in full.
+- Both: YOU add the `invoke_agent` span (with `gen_ai.conversation.id`) and `execute_tool` spans.
 
 ## Step 0: Detect
 
@@ -39,7 +36,7 @@ Env vars (the exporter reads them and appends `/v1/traces`):
 
 ```bash
 OTEL_EXPORTER_OTLP_ENDPOINT=https://ingest.maple.dev
-OTEL_EXPORTER_OTLP_HEADERS=Authorization=Bearer <key>
+OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer <key>"
 OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
 OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=SPAN_ONLY
 ```
@@ -141,13 +138,4 @@ Check without Maple access: the run exits with no export errors on stderr (`Fail
 
 ## Do not
 
-- Do not install `opentelemetry-instrumentation-openai` or `opentelemetry-instrumentation-anthropic` (OpenLLMetry) or the deprecated `opentelemetry-instrumentation-openai-v2`; install the `-genai-` packages.
-- Do not use `@opentelemetry/instrumentation-openai` in TS (no `openai` 7 support; content only in logs).
-- Do not run two instrumentations on the same SDK, and do not add provider instrumentation under an agent framework.
-- Do not create a second `TracerProvider`.
-- Do not set content capture to `EVENT_ONLY` or `true`, or rely on log export for content.
-- Do not generate a conversation id per request or share one across conversations.
-- Do not give a sub-agent the orchestrator's agent name, or a different conversation id.
-- Do not catch tool exceptions outside `run_tool` without marking the span failed.
-- Do not stream OpenAI Chat Completions without `stream_options.include_usage`.
-- Do not print or commit real keys beyond the repo's convention.
+- Do not install `opentelemetry-instrumentation-openai` / `-anthropic` (OpenLLMetry) or the deprecated `-openai-v2`; install the `-genai-` packages.

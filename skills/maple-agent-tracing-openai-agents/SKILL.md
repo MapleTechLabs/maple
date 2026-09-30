@@ -7,9 +7,7 @@ description: "Trace OpenAI Agents SDK agents with Maple: bridges the SDK's traci
 
 Goal: every conversation with the app shows up in Maple **Agent Sessions** as exactly one session, one turn per `Runner.run`, with transcript, model calls, tool calls (failures marked), agent lanes for sub-agents and handoffs, and tokens (streamed turns included).
 
-Human guide with the reasoning: https://maple.dev/docs/agent-tracing/openai-agents
-
-Mechanism: the SDK has its own tracing pipeline (not OpenTelemetry) whose default processor uploads to the OpenAI dashboard. `openinference-instrumentation-openai-agents` registers a processor on that pipeline that converts each SDK span into an OTel span; an OTel SDK `TracerProvider` + OTLP/HTTP exporter sends them to Maple. Maple fingerprints the scope `openinference.instrumentation.openai_agents` as "OpenAI Agents SDK" and reads `session.id` for the session.
+Mechanism: the SDK has its own tracing pipeline (not OpenTelemetry) whose default processor uploads to the OpenAI dashboard. `openinference-instrumentation-openai-agents` registers a processor on that pipeline that converts each SDK span into an OTel span; an OTel SDK `TracerProvider` + OTLP/HTTP exporter sends them to Maple.
 
 Python is the primary path. TypeScript (`@openai/agents` in `package.json`): Step 1 applies; then follow Step 2e in place of Steps 0 and 2a-6, and verify with Step 7. The TypeScript bridge exports less (see the end of 2e).
 
@@ -53,7 +51,7 @@ opentelemetry-exporter-otlp-proto-http>=1.45
 OTEL_SERVICE_NAME=<service name, e.g. support-agent>
 OTEL_RESOURCE_ATTRIBUTES=deployment.environment.name=<env>
 OTEL_EXPORTER_OTLP_ENDPOINT=https://ingest.maple.dev     # EU: https://ingest.eu.maple.dev
-OTEL_EXPORTER_OTLP_HEADERS=Authorization=Bearer <key>
+OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer <key>"
 OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
 ```
 
@@ -145,7 +143,7 @@ Without it the SDK sends no `stream_options` for non-OpenAI clients and every `r
 
 Steps 0, 2a-2d and 3-6 are Python. For TypeScript do this section instead, then Step 7. Find every `run(` / `runner.run(` / `Runner` call and where the conversation id lives first.
 
-Verified 2026-09-29 against a mock OpenAI server and a local OTLP receiver: `@openai/agents` 0.18.0, `@arizeai/openinference-instrumentation-openai-agents` 0.2.15, `@arizeai/openinference-core` 2.7.1, `@opentelemetry/sdk-node` 0.222.0, `@opentelemetry/api` 1.9.1, Node 26. Responses API (default model, streamed and not) and `OpenAIChatCompletionsModel` (streamed and not), two conversations, tool calls, a throwing tool.
+Verified 2026-09-29: `@openai/agents` 0.18.0, `@arizeai/openinference-instrumentation-openai-agents` 0.2.15, `@arizeai/openinference-core` 2.7.1, `@opentelemetry/sdk-node` 0.222.0, `@opentelemetry/api` 1.9.1, Node 26.
 
 Install (the project's package manager):
 
@@ -200,7 +198,7 @@ Flush:
 - Script / CLI: `await sdk.shutdown().catch((err) => console.error("telemetry flush failed", err))` in `finally`: `shutdown()` rejects when an export failed, and a Maple outage must not crash the app.
 - Serverless: add `@opentelemetry/sdk-trace-base` + `@opentelemetry/exporter-trace-otlp-proto`, build `export const spanProcessor = new BatchSpanProcessor(new OTLPTraceExporter())`, pass `new NodeSDK({ spanProcessors: [spanProcessor] })`, and `await spanProcessor.forceFlush()` in `finally` of EVERY invocation (verified: spans arrive with the process exiting right after `forceFlush()`). Never `shutdown()` per invocation. `NodeSDK` has no `forceFlush()` of its own.
 
-What Maple shows for TypeScript (verified against the exported spans and Maple's read path; tell the user):
+What Maple shows for TypeScript (tell the user):
 - Works: one session per conversation id, one turn per `run` (root `Agent workflow` AGENT span, turn label = last user message), operation per span from `openinference.span.kind` (LLM -> chat, TOOL -> execute_tool, AGENT -> invoke_agent), model (`llm.model_name`: the configured id on Chat Completions, the dated snapshot OpenAI returns on Responses), provider `openai`, input/output tokens on every model call INCLUDING streamed Chat Completions on non-OpenAI base URLs (the JS SDK always sends `stream_options.include_usage` when streaming; no `include_usage` step needed), cached tokens on Responses, reasoning tokens on Responses and on Chat Completions (when the provider reports them), tool name, tool failures (a throwing tool's span is status ERROR `Error running tool (non-fatal): ...`; a tool that RETURNS an error string counts as success), prompts in the transcript (from `input.value`). Handoffs are TOOL spans `handoff to <agent>` with tool name `handoff_to_<agent>`.
 - Agent lanes: one per agent name, read from the agent spans' `graph.node.id`.
 - Missing: cost.
@@ -258,7 +256,7 @@ async def handle_message(conversation_id: str, text: str) -> str:
 - Handoffs: a `handoff to <agent>` span (counted as a tool call named `transfer_to_<agent>`, snake-cased, via `MapleSpanFixes`) and the target agent span as a sibling of the source agent's. Nothing to add.
 - `needs_approval=True` tools: the paused run records a tool span without a result, and the resumed run records the executed call again, so Maple shows the tool twice for one approved call. Expected; tell the user.
 - Known gaps, don't try to fix: no `gen_ai.tool.call.id` on tool spans; no `gen_ai.response.id` on Chat Completions model spans; no cost.
-- Model spans: named `generation` (Chat Completions) or `response` (Responses API). Model on Chat Completions = the configured id (`openai/gpt-4o-mini`); on Responses = the name OpenAI returns, usually a dated snapshot (`gpt-4o-mini-2024-07-18`). Provider is always `openai` (even an Anthropic model behind OpenRouter); cached tokens are inside the input total. Responses API also records cached input tokens and reasoning tokens (`llm.token_count.completion_details.reasoning`). The bridge doesn't export the SDK's per-run/per-turn usage totals, so nothing is double-counted.
+- Model spans: named `generation` (Chat Completions) or `response` (Responses API). Model on Chat Completions = the configured id (`openai/gpt-4o-mini`); on Responses = the name OpenAI returns, usually a dated snapshot (`gpt-4o-mini-2024-07-18`). Provider is always `openai` (even an Anthropic model behind OpenRouter); cached tokens are inside the input total. Responses API also records cached input tokens and reasoning tokens (`llm.token_count.completion_details.reasoning`).
 - Cost via OpenRouter: its Broadcast traces (https://maple.dev/docs/agent-tracing/openrouter) carry per-call cost. Because Chat Completions model spans have no `gen_ai.response.id`, nest the Broadcast spans under them (see "Join Broadcast to your own traces" in that guide) or each call is counted twice.
 
 ## Step 6: Flush
@@ -299,20 +297,3 @@ Run one real conversation: 2-3 turns with the same conversation id including one
 Without Maple access, both must hold: the run exits with no export errors on stderr (`Failed to export`, `OTLPExporterError`, 401 lines), AND a local console/in-memory exporter shows the expected span names with `gen_ai.conversation.id` (TS) / `session.id` (Python) on every span. Silence alone proves nothing (no spans is silent too). With the Maple MCP: `list_agent_sessions` with `search=<conversation id>` returns one row.
 
 Raw span check (optional, e.g. an `InMemorySpanExporter` in a scratch run): model spans have `gen_ai.operation.name=chat`, `gen_ai.input.messages`, `gen_ai.usage.input_tokens`, `session.id`; tool spans have `gen_ai.operation.name=execute_tool`, `gen_ai.tool.call.arguments` equal to the call's arguments; agent spans have `gen_ai.agent.name`.
-
-## Do not
-
-- Do not disable the SDK's tracing (`set_tracing_disabled(True)`, `OPENAI_AGENTS_DISABLE_TRACING`, `tracing_disabled=True`) to stop the OpenAI upload; `set_trace_processors` / the TS bridge already removes it.
-- (Python) Do not omit `TraceConfig(enable_genai_semconv=True)`.
-- (Python) Do not register `MapleSpanFixes` with `add_trace_processor` or after `instrument()`; it must precede the OpenInference processor.
-- (Python) Do not re-add `default_processor()` (or anything via `add_trace_processor`) without a valid OpenAI key: logs fill with `Tracing client error 401`.
-- Do not put `tool` in `workflow_name`.
-- (Python) Do not pass OpenRouter-style model strings (`Agent(model="openai/gpt-4o-mini")`): the SDK strips `openai/` and rejects other prefixes (`Unknown prefix: anthropic`). Use `OpenAIChatCompletionsModel(model=..., openai_client=...)`.
-- (TS) Non-OpenAI base URLs: `setDefaultOpenAIClient(new OpenAI({ baseURL }))` + `setOpenAIAPI("chat_completions")`; model strings like `openai/gpt-5-mini` pass through unchanged.
-- Do not rely on `group_id`/`groupId`, `trace_metadata` or SDK `Session` ids for the Maple session; use `using_session` (Python) / `setAttributes` + `context.with` (TS).
-- Do not generate a fresh session id per request or use a constant.
-- Do not stack `openinference-instrumentation-openai`, Logfire, Langfuse, Traceloop or the OTel contrib Agents instrumentation on the same process.
-- (Python) Do not skip `include_usage=True` for streamed non-OpenAI Chat Completions models.
-- Do not create a second `TracerProvider` / `NodeSDK`, or call `instrument()` twice.
-- Do not use `SimpleSpanProcessor` or a console exporter in servers.
-- Do not skip the flush in scripts, notebooks, CLIs and serverless.

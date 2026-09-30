@@ -5,7 +5,7 @@ description: "Trace Google ADK (Agent Development Kit) agents with Maple, in Pyt
 
 # Maple agent tracing: Google ADK (Python and TypeScript)
 
-Goal: one conversation = one ADK session id = one Maple Agent Session, with the transcript (user, assistant, tool calls and results), model calls, tool calls with arguments/results, failures, and tokens. Reasoning for every step: https://maple.dev/docs/agent-tracing/google-adk
+Goal: one conversation = one ADK session id = one Maple Agent Session, with the transcript (user, assistant, tool calls and results), model calls, tool calls with arguments/results, failures, and tokens.
 
 ADK emits its own OTel spans (scope `gcp.vertex.agent`): `invocation` > `invoke_agent {agent}` > `call_llm` > `generate_content {model}`, plus `execute_tool {tool}`. No instrumentation package is needed. You add: a tracer provider (Runner apps only), the env vars below, one plugin, one span processor.
 
@@ -24,7 +24,7 @@ ADK emits its own OTel spans (scope `gcp.vertex.agent`): `invocation` > `invoke_
 ## Step 1: Key and region
 
 - US: `https://ingest.maple.dev`. EU: `https://ingest.eu.maple.dev`.
-- Header: `Authorization=Bearer <key>`. In `OTEL_EXPORTER_OTLP_HEADERS` write the space as `%20`: `Authorization=Bearer%20<key>`.
+- Header: `Authorization=Bearer <key>`.
 - Key given in the prompt: use it. No key: use the literal `MAPLE_TEST` (ingest accepts and discards it) and tell the user to replace it with a key from Settings → Ingestion.
 - Never put a private `maple_sk_` key in browser code.
 - Follow the repo's secret/env convention (`.env`, settings module, deployment env). If there is none, inline values are acceptable: ingest keys are write-only.
@@ -43,7 +43,7 @@ Env vars (all runtimes, including `adk web`/`api_server`):
 ```bash
 OTEL_SERVICE_NAME=<service-name>
 OTEL_EXPORTER_OTLP_ENDPOINT=https://ingest.maple.dev
-OTEL_EXPORTER_OTLP_HEADERS=Authorization=Bearer%20<key>
+OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer <key>"
 OTEL_SEMCONV_STABILITY_OPT_IN=gen_ai_latest_experimental
 OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=SPAN_ONLY
 ADK_CAPTURE_MESSAGE_CONTENT_IN_SPANS=false
@@ -183,19 +183,11 @@ Tell the user about the known gaps: cost is unpriced; the model is the requested
 
 - Tokens: `generate_content` carries `gen_ai.usage.input_tokens` / `output_tokens`, plus `gen_ai.usage.cache_read.input_tokens` and `gen_ai.usage.reasoning.output_tokens` when reported (cached inside input, thinking inside output). `call_llm` repeats the same usage; Maple counts it on `generate_content` only, so totals and LLM call count are correct. Streamed turns (`StreamingMode.SSE`) report usage; `LiteLlm` requests it via `stream_options.include_usage`.
 - Cost: LiteLLM computes a cost but it never reaches ADK's spans; sessions are unpriced.
-- `AgentTool` detail: Maple keeps one `gen_ai.conversation.id` per trace and picks the larger of the two, which is why the turn can move to another session. ADK's API docs also prefer `mode="single_turn"`.
+- `AgentTool` detail: Maple keeps one `gen_ai.conversation.id` per trace and picks the larger of the two, which is why the turn can move to another session.
 - The approval `run_async()` is its own turn, labeled with the original request.
 - With the settings in this skill, `generate_content` spans carry no provider attribute; doesn't affect grouping, tokens or transcript.
-- 401 from the exporter (`ingest_unauthorized`, "Invalid ingest key"): the header must be `Authorization=Bearer%20<key>`. With a key you trust, it usually belongs to the other region (keys are region-bound): try the other endpoint.
+- 401 from the exporter (`ingest_unauthorized`, "Invalid ingest key"): with a key you trust, it usually belongs to the other region (keys are region-bound): try the other endpoint.
 
 ## Do not
 
-- Do not rely on `OTEL_EXPORTER_OTLP_*` env alone with a plain `Runner`: nothing is exported.
-- Do not set `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true` (log records only) or leave out `OTEL_SEMCONV_STABILITY_OPT_IN`: the transcript stays empty.
-- Do not create a second `TracerProvider` when one exists; only the first global one wins.
-- Do not add `litellm.callbacks=["otel"]`, OpenInference ADK/LiteLLM/OpenAI instrumentors, or the OpenAI OTel instrumentor alongside ADK's spans: doubled model calls and tokens.
-- Do not create a new ADK session per request, or share one session id across users.
-- Do not use `AgentTool` for sub-agents when tracing matters; use `mode="single_turn"` sub-agents.
 - Do not drop or filter `call_llm` spans: `generate_content` would lose its parent.
-- Do not use the gRPC OTLP exporter or pin OTel packages above ADK's cap.
-- Do not skip `force_flush()`/`shutdown()` in short-lived processes.

@@ -7,14 +7,12 @@ description: "Trace a hand-rolled or unsupported AI agent with Maple by emitting
 
 Goal: every conversation = one Maple Agent Session. Each user message = one trace rooted at an `invoke_agent` span, with a `chat` span per model call (model, tokens, transcript) and an `execute_tool` span per tool call (args, result, failures).
 
-Human guide with the reasoning: https://maple.dev/docs/agent-tracing/opentelemetry
-
 Mechanism: you write the spans. Maple classifies a span only by `gen_ai.operation.name`, groups a trace by `gen_ai.conversation.id`, and reads content only from span attributes. Hand-written spans show as framework "Unidentified" (vendor `unknown:genai`); that is expected.
 
 ## Step 0: Detect
 
 1. Language and entry points (web server, workers, scripts, serverless handlers).
-2. Is a supported framework the real agent runtime? (`@mastra/core`, `ai`, `@openai/agents`/`openai-agents`, `langchain`/`langgraph`, `pydantic-ai`, `crewai`, `google-adk`, `llama-index`, `strands-agents`, `smolagents`, `agno`, `dspy`, `haystack-ai`, `agent-framework`, Spring AI, `litellm`, Claude Agent SDK). If yes, stop and use `maple-agent-tracing-<framework>` instead; use this skill only for the parts that framework doesn't cover, or for the `maple_ai.session.id` wrapper (Step 4).
+2. Is a supported framework the real agent runtime? (`@mastra/core`, `ai`, `agents`/`@cloudflare/ai-chat`, `genkit`/`@genkit-ai/*`, `@openai/agents`/`openai-agents`, `langchain`/`langgraph`, `pydantic-ai`, `crewai`, `google-adk`, `llama-index`, `strands-agents`, `smolagents`, `agno`, `dspy`, `haystack-ai`, `agent-framework`, Spring AI, `litellm`, Claude Agent SDK). If yes, stop and use `maple-agent-tracing-<framework>` instead; use this skill only for the parts that framework doesn't cover, or for the `maple_ai.session.id` wrapper (Step 4).
 3. Existing OTel setup. Search for `TracerProvider`, `NodeTracerProvider`, `NodeSDK`, `registerOTel`, `set_tracer_provider`, `opentelemetry-instrument`, `logfire.configure`, `sentry_sdk.init`/`Sentry.init`, `otel.SetTracerProvider`. Exists → add Maple's exporter/processor to it; never create a second provider.
 4. Existing GenAI auto-instrumentation on the model client (`@opentelemetry/instrumentation-openai`, `opentelemetry-instrumentation-openai-v2`, OpenLLMetry `Traceloop.init`, OpenInference `OpenAIInstrumentor`, `logfire.instrument_openai`). Pick one source of `chat` spans: either keep that instrumentation (then see `maple-agent-tracing-provider-sdks`) or remove it and write `chat` spans here. Both = every model call twice.
 5. Find in the code: the agent loop (where one user message is handled), every model call site, every tool dispatch, sub-agent calls, and where the conversation/chat/thread id lives in the request.
@@ -30,11 +28,11 @@ Mechanism: you write the spans. Maple classifies a span only by `gen_ai.operatio
 
 ```bash
 OTEL_EXPORTER_OTLP_ENDPOINT=https://ingest.maple.dev
-OTEL_EXPORTER_OTLP_HEADERS=Authorization=Bearer <key>
+OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer <key>"
 OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
 ```
 
-The exporters append `/v1/traces`. If an SDK rejects the space in the header, use `Bearer%20<key>`.
+The exporters append `/v1/traces`.
 
 - The SDK exporters read these env vars when the exporter is constructed. If the app loads `.env` (dotenv, `load_dotenv()`, `--env-file`), load it at the top of the tracing module, before the provider is built; otherwise the exporter silently targets `localhost:4318` with no key.
 - If the header is built from your own env var, never let an unset var become `Bearer undefined` (opaque 401) or a bare `KeyError` on import: fail fast with a clear message, or inline the key when the repo has no env convention.
@@ -45,7 +43,7 @@ The exporters append `/v1/traces`. If an SDK rejects the space in the header, us
 Read the reference for the language and adapt it:
 - TypeScript/Node: `references/typescript.md`
 - Python: `references/python.md`
-- Go, Rust, Ruby, Elixir, Java, .NET: `references/go.md` (Go code + notes for the others)
+- Other languages: the language's OTel SDK with an OTLP/HTTP exporter, following the steps below.
 
 Rules:
 - Init module is imported first in every entry point. Set a real `service.name` and `deployment.environment.name`.
@@ -69,7 +67,7 @@ Rules:
 
 Message JSON (`input.messages`/`output.messages`): array of `{role, parts}`; parts `{type:"text",content}`, `{type:"tool_call",id,name,arguments:<object>}`, `{type:"tool_call_response",id,response}`, `{type:"reasoning",content}`. Output messages add `finish_reason`. `system_instructions` = array of parts, no role: `[{"type":"text","content":"..."}]`. Always a JSON **string** attribute; plain-text messages don't render.
 
-Also read: `reasoning` parts are rendered; a message may carry `content` (string or part array) instead of `parts`. `gen_ai.response.model` wins over `gen_ai.request.model` when both are set. `gen_ai.response.finish_reasons` feeds the refusal (`content_filter`) and truncation (`length`) checks.
+Also read: a message may carry `content` (string or part array) instead of `parts`. `gen_ai.response.model` wins over `gen_ai.request.model` when both are set.
 
 Legacy spellings are read as fallbacks (use current names in new code): `gen_ai.system` (→ `gen_ai.provider.name`, renamed in semconv 1.37), `gen_ai.usage.prompt_tokens`/`completion_tokens`, whole-value `gen_ai.prompt`/`gen_ai.completion`, `gen_ai.usage.cache_creation.input_tokens` (→ `cache_write`), `gen_ai.usage.total_cost` (→ `cost`).
 
@@ -120,7 +118,7 @@ await tracer.startActiveSpan(
 
 ## Step 6: Tools, errors, sub-agents
 
-- Tool failure: set status ERROR with the error message as description, set `error.type` (exception class or error code), no `gen_ai.tool.call.result`, then return the error to the model as the tool result so the loop continues. Keep the message specific: Maple's tool pages group failures by it (ids and numbers masked).
+- Tool failure: set status ERROR with the error message as description, set `error.type` (exception class or error code), no `gen_ai.tool.call.result`, then return the error to the model as the tool result so the loop continues. Keep the message specific: Maple's tool pages group failures by it.
 - Maple counts any span as failed if it has status ERROR, a non-empty `error.type`, or `gen_ai.response.status`=`failed`.
 - Tools that return `{"error": ...}` instead of raising: mark the span failed the same way when you detect it.
 - Model call failure: status ERROR + `error.type` (HTTP status or exception class), rethrow.
@@ -143,7 +141,6 @@ await tracer.startActiveSpan(
 
 - Node script/CLI: `await provider.shutdown()` in `finally`. Serverless: `await provider.forceFlush()` before returning (inside `waitUntil`/`after()` if available). Both reject when an export failed: add `.catch((err) => console.error("telemetry flush failed", err))` so a Maple outage can't crash the app. Long-running server: flush on `SIGTERM`, nothing per request.
 - Python script: `provider.shutdown()` in `finally`. Lambda: `force_flush()` in `finally`. Notebooks/workers: `force_flush()` per cell/task.
-- Go: `defer tp.Shutdown(context.Background())` in `main`.
 
 ## Step 9: Verify
 
@@ -164,19 +161,3 @@ Run one real conversation: 2+ messages with the same id, one streamed reply if t
 With the Maple MCP: `list_agent_sessions` with `search=<conversation id>` returns one row.
 
 Check without Maple access: the run exits with no export errors on stderr (`Failed to export`, `OTLPExporterError`, 401 lines) AND a temporary console exporter (`ConsoleSpanExporter` + `SimpleSpanProcessor`) shows the expected span tree with `gen_ai.conversation.id`, and every messages attribute parses with `JSON.parse`/`json.loads`. Silence alone proves nothing: no spans also looks silent.
-
-## Do not
-
-- Do not emit spans without `gen_ai.operation.name` and expect them in Agent Sessions.
-- Do not send messages as plain text, structured attribute values, span events or logs.
-- Do not generate a conversation id per request or use the trace id.
-- Do not give sub-agents their own conversation ids.
-- Do not set attribute length limits.
-- Do not stack a provider auto-instrumentor on top of hand-written `chat` spans.
-- Do not put `maple_ai.session.id` on framework spans or on `chat` spans.
-- Do not send Anthropic's raw `input_tokens` or Gemini's raw `candidatesTokenCount` as the totals (Step 7).
-- Do not put usage on `invoke_agent` spans.
-- Do not use `gen_ai.system` in new code (read as a fallback only); use `gen_ai.provider.name`.
-- Do not name the tracer after a framework or gateway.
-- Do not create a second TracerProvider.
-- Do not print or commit real keys beyond the repo's convention.

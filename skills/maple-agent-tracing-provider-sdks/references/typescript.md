@@ -37,7 +37,6 @@ import type OpenAI from "openai"
 
 const tracer = trace.getTracer("support-agent")
 
-// Same switch as the Python instrumentors, so one env var controls content everywhere.
 const captureContent = ["SPAN_ONLY", "SPAN_AND_EVENT"].includes(
 	(process.env.OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT ?? "").toUpperCase(),
 )
@@ -235,7 +234,6 @@ export function chatTurn(
 }
 ```
 
-- `onText` switches `tracedChat` to streaming with `stream_options.include_usage` and records time to first chunk.
 - Replace every `client.chat.completions.create(...)` in the agent with `tracedChat(client, params)`. Don't wrap `create` twice.
 - Sub-agent inside a tool: `runTool(id, "ask_weather_worker", args, (a) => agentSpan("weather_worker", undefined, () => workerLoop(a)))`.
 

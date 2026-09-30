@@ -7,8 +7,6 @@ description: "Trace Strands Agents (AWS, Python or TypeScript) with Maple: expor
 
 Goal: every conversation = one Maple Agent Session. Each `agent(...)` / `invoke_async` / `stream_async` call = one turn (one trace) with transcript, `chat` spans with tokens, `execute_tool` spans with args/results, failed tools marked failed, sub-agents in their own lanes.
 
-Human guide with the reasoning: https://maple.dev/docs/agent-tracing/strands
-
 Mechanism: Strands' native OTel tracer (scope `strands.telemetry.tracer`, `gen_ai.provider.name=strands-agents`). No extra instrumentation package. Maple reads `session.id` (then `gen_ai.conversation.id`) as the session key, and reads span ATTRIBUTES only (never span events).
 
 ## Step 0: Detect
@@ -45,7 +43,7 @@ Env vars. Put them where the repo keeps env (shell/.env/container). `OTEL_SEMCON
 
 ```bash
 OTEL_EXPORTER_OTLP_ENDPOINT=https://ingest.maple.dev
-OTEL_EXPORTER_OTLP_HEADERS=Authorization=Bearer <key>
+OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer <key>"
 OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
 OTEL_SERVICE_NAME=<service name>
 OTEL_RESOURCE_ATTRIBUTES=deployment.environment.name=<env>
@@ -73,7 +71,7 @@ TypeScript. OTel packages are optional peers; install them:
 npm install @strands-agents/sdk @opentelemetry/api @opentelemetry/sdk-trace-base @opentelemetry/sdk-trace-node @opentelemetry/resources @opentelemetry/exporter-trace-otlp-http @opentelemetry/sdk-metrics @opentelemetry/exporter-metrics-otlp-http
 ```
 
-Same env vars. The TS exporter sends OTLP/HTTP JSON; that's fine.
+Same env vars.
 
 ```ts
 import { setupTracer } from "@strands-agents/sdk/telemetry"
@@ -183,14 +181,4 @@ Without Maple access (or with `MAPLE_TEST`), both must hold; silence alone prove
 
 ## Do not
 
-- Do not omit `gen_ai_span_attributes_only`: Maple never reads span events, so the transcript would be empty.
-- Do not set `OTEL_SEMCONV_STABILITY_OPT_IN` in code after an `Agent` exists.
-- Do not create a second `TracerProvider` when one exists; do not call `StrandsTelemetry()` under `opentelemetry-instrument`/ADOT.
-- Do not put a session id on a shared module-level agent.
-- Do not rely on `session_manager` for Maple sessions; use `trace_attributes={"session.id": ...}`.
-- Do not add another GenAI instrumentor (OpenLIT, OpenLLMetry, OpenInference, OpenAI/Bedrock instrumentation): duplicate model calls and tokens.
 - Do not also enable OpenRouter Broadcast (or another gateway trace export) for the same traffic: Strands `chat` spans have no `gen_ai.response.id`, so Maple can't dedupe and tokens double.
-- Do not leave agents unnamed.
-- Do not use `OTEL_TRACES_SAMPLER=traceidratio` unless the user wants it: dropped traces are dropped turns.
-- Do not pin `strands-agents` below 1.51.
-- Do not put PII in `trace_attributes`; it is never redacted.
