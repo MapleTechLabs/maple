@@ -31,12 +31,14 @@ import {
 } from "./eventing/control-store"
 import { ensureEventConsumerToken, eventConsumerTokenMatches } from "./eventing/consumer-auth"
 import { LocalEventingRuntime, type LocalEventingRuntimeApi } from "./eventing/runtime"
+import { stampTraceRequest } from "./otlp/ai-stamp"
 import { encodeLogs, encodeMetrics, encodeTraces, type EncodedBatch, OtlpFieldError } from "./otlp/encode"
 import {
 	decodeLogsRequest,
 	decodeMetricsRequest,
 	decodeTraceRequest,
 	encodeExportResponse,
+	encodeTraceJsonRequest,
 } from "./otlp/proto"
 import { CURRENT_LOCAL_SCHEMA, LOCAL_SCHEMA_SQL, SCHEMA_FINGERPRINT } from "./schema-identity"
 import { assertCurrentPhysicalSchema } from "./schema-physical"
@@ -297,13 +299,15 @@ function decodeOtlp(
 	const decodedBytes = bytes
 	return Result.try({
 		try: (): unknown => {
-			if (contentType.includes("json"))
-				return Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown))(
+			if (contentType.includes("json")) {
+				const request = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown))(
 					new TextDecoder().decode(decodedBytes),
 				)
+				return signal === "traces" ? stampedTraces(encodeTraceJsonRequest(request)) : request
+			}
 			switch (signal) {
 				case "traces":
-					return decodeTraceRequest(decodedBytes)
+					return stampedTraces(decodedBytes)
 				case "logs":
 					return decodeLogsRequest(decodedBytes)
 				case "metrics":
@@ -313,6 +317,13 @@ function decodeOtlp(
 		catch: (error) => new OtlpDecodeFailed({ message: describeThrown(error) }),
 	})
 }
+
+/** Traces carry the ingest gateway's `maple_ai.*` stamps before anything
+ *  reads them. Throws into `decodeOtlp`'s `Result.try`. */
+const stampedTraces = (bytes: Uint8Array): unknown =>
+	decodeTraceRequest(
+		Result.getOrThrowWith(stampTraceRequest(bytes), (message) => new OtlpDecodeFailed({ message })),
+	)
 
 function encodeFor(signal: Signal, req: unknown): EncodedBatch[] {
 	switch (signal) {

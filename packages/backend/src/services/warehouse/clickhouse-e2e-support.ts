@@ -214,7 +214,7 @@ export const looksLikeIdentityColumn = (name: string): boolean =>
 
 /**
  * What the ingest gateway stamps on a span it classifies
- * (`apps/ingest/src/ai_session/facts.rs`, `usage.rs`), spelled out per seed as
+ * (`apps/ingest/crates/ai-session/src/facts.rs`, `usage.rs`), spelled out per seed as
  * the gateway would have written it: `ai_trace_index_mv` reads these and
  * nothing else, so a seed without them materializes as neither a call nor a
  * tool. Seeds keep their dialect attributes so detail reads see whole spans.

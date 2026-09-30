@@ -1,6 +1,6 @@
 /**
  * Vendor ids the ingest gateway stamps (`AI_VENDORS` in
- * apps/ingest/src/ai_session.rs) → brand names. Listed here are the ids whose
+ * apps/ingest/crates/ai-session/src/lib.rs) → brand names. Listed here are the ids whose
  * brand casing the title-case fallback below can't derive — acronyms (SDK,
  * ADK), camel brands (LiteLLM, DSPy), and deliberately lowercase ones (eve,
  * smolagents).

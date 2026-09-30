@@ -419,10 +419,43 @@ export function decodeMetricsRequest(bytes: Uint8Array): unknown {
 	return ExportMetricsServiceRequest.toObject(message, toObjectOptions)
 }
 
-/** Test helper: encode a trace request object to protobuf bytes. */
+/** Encode a trace request object to protobuf bytes. */
 export function encodeTraceRequest(obj: unknown): Uint8Array {
 	const message = ExportTraceServiceRequest.fromObject(obj as Record<string, unknown>)
 	return ExportTraceServiceRequest.encode(message).finish()
+}
+
+interface IdsJson {
+	[field: string]: unknown
+	links?: IdsJson[]
+}
+interface TraceRequestJson {
+	resourceSpans?: { scopeSpans?: { spans?: IdsJson[] }[] }[]
+}
+
+const ID_BYTES = { traceId: 16, spanId: 8, parentSpanId: 8 }
+const HEX = /^[0-9a-fA-F]+$/
+
+/** OTLP/JSON spells ids in hex where protobufjs reads base64. Only hex at an
+ *  id's exact length converts; anything else is left for `idHex` to judge. */
+function hexIdsToBytes(holder: IdsJson): void {
+	for (const [field, bytes] of Object.entries(ID_BYTES)) {
+		const value = holder[field]
+		if (typeof value === "string" && value.length === bytes * 2 && HEX.test(value))
+			holder[field] = Buffer.from(value, "hex")
+	}
+}
+
+/** Encode a parsed OTLP/JSON trace request to protobuf (for the AI stamping),
+ *  rewriting its ids in place. */
+export function encodeTraceJsonRequest(request: unknown): Uint8Array {
+	for (const resourceSpans of (request as TraceRequestJson | null)?.resourceSpans ?? [])
+		for (const scopeSpans of resourceSpans.scopeSpans ?? [])
+			for (const span of scopeSpans.spans ?? []) {
+				hexIdsToBytes(span)
+				for (const link of span.links ?? []) hexIdsToBytes(link)
+			}
+	return encodeTraceRequest(request)
 }
 
 /** Test helper: encode a metrics request object to protobuf bytes. */

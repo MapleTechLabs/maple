@@ -36,7 +36,7 @@ use opentelemetry_proto::tonic::trace::v1::status::StatusCode;
 use opentelemetry_proto::tonic::trace::v1::Span;
 
 use super::{owned_string_attribute, usage};
-use crate::telemetry::any_value_string;
+use crate::value::any_value_string;
 
 const TOOL_CALL_ATTR: &str = "maple_ai.tool_call";
 const ERROR_ATTR: &str = "maple_ai.error";
@@ -427,7 +427,7 @@ pub(super) fn mark_tool_failed(span: &mut Span) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ai_session::{stamp_trace_request, value_str};
+    use crate::{stamp_trace_request, value_str};
     use opentelemetry_proto::tonic::collector::trace::v1::ExportTraceServiceRequest;
     use opentelemetry_proto::tonic::common::v1::InstrumentationScope;
     use opentelemetry_proto::tonic::resource::v1::Resource;

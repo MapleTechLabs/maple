@@ -70,7 +70,7 @@ export const traceSessionTraceId = (sessionId: string): string | undefined => {
 // The gateway strips `maple_ai.*` on the way in and re-stamps its own verdict,
 // with the exceptions it does not own and lets through: the turn id, the
 // dropped-messages counter and the model-duration clock (`PRESERVED_ATTRS` in
-// `apps/ingest/src/ai_session.rs`).
+// `apps/ingest/crates/ai-session/src/lib.rs`).
 
 /**
  * Groups every span of one conversation/investigation into one agent session.
@@ -105,7 +105,7 @@ export const AI_AGENT_OPERATIONS = [
 ] as const
 /** The convention's memory-store operations: the agent's own bookkeeping, never
  *  a model turn or a tool call. The ingest gateway decides this for the spans it
- *  stamps (`KNOWN_OPS` in `apps/ingest/src/ai_session/usage.rs`); the span
+ *  stamps (`KNOWN_OPS` in `apps/ingest/crates/ai-session/src/usage.rs`); the span
  *  classifier reads it for the spans ingested before. */
 export const AI_MEMORY_OPERATIONS = [
 	"search_memory",
@@ -134,7 +134,7 @@ export const MAPLE_GENAI_MODEL_DURATION_MS_ATTR = "maple_ai.model_duration_ms"
 
 /**
  * Every fact Agent Sessions aggregates or filters on, as the ingest gateway
- * decided it for one span (`apps/ingest/src/ai_session/facts.rs`, `usage.rs`).
+ * decided it for one span (`apps/ingest/crates/ai-session/src/facts.rs`, `usage.rs`).
  * `ai_trace_index_mv` projects these and holds no vendor rule, and the detail
  * page reads the same ones, so the list and the page cannot disagree.
  *

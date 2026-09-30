@@ -71,7 +71,18 @@
 		"@maple/domain#test": {
 			"dependsOn": ["^build"],
 			"outputs": [],
-			"inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/apps/ingest/src/ai_session/*.rs"]
+			"inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/apps/ingest/crates/ai-session/src/*.rs"]
+		},
+		// The test script builds the ingest gateway's AI stamping to wasm first.
+		"@maple/cli#test": {
+			"dependsOn": ["^build"],
+			"outputs": [],
+			"inputs": [
+				"$TURBO_DEFAULT$",
+				"$TURBO_ROOT$/apps/ingest/crates/**",
+				"$TURBO_ROOT$/apps/ingest/Cargo.*",
+				"$TURBO_ROOT$/apps/ingest/.cargo/**"
+			]
 		},
 		"eval": {
 			"dependsOn": ["^build"],

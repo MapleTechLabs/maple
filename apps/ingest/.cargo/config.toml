@@ -1,0 +1,5 @@
+# opentelemetry-proto's `trace` feature pulls opentelemetry_sdk -> rand ->
+# getrandom, which has no default wasm32-unknown-unknown backend. The AI
+# stamping module never draws randomness.
+[target.wasm32-unknown-unknown]
+rustflags = ['--cfg', 'getrandom_backend="unsupported"']

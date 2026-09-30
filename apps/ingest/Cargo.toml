@@ -4,7 +4,15 @@ version = "0.1.0"
 edition = "2021"
 default-run = "maple-ingest"
 
+# crates/ai-session is the AI stamping the gateway runs at decode time;
+# crates/ai-session-wasm compiles it for the local CLI (apps/cli) so local
+# ingest stamps with the same code (`bun run --cwd apps/cli build:ai-stamp`).
+[workspace]
+members = ["crates/*"]
+default-members = [".", "crates/ai-session"]
+
 [dependencies]
+maple-ai-session = { path = "crates/ai-session" }
 axum = "0.8.8"
 aes-gcm = "0.10"
 async-trait = "0.1"
@@ -75,13 +83,16 @@ default = []
 hotpath = ["hotpath/hotpath"]
 hotpath-alloc = ["hotpath/hotpath-alloc"]
 
-[lints.rust]
+[lints]
+workspace = true
+
+[workspace.lints.rust]
 unsafe_code = "deny"
 missing_debug_implementations = "warn"
 unreachable_pub = "warn"
 unused_qualifications = "warn"
 
-[lints.clippy]
+[workspace.lints.clippy]
 # groups first, negative priority so specific lints below can override
 pedantic = { level = "warn", priority = -1 }
 
@@ -132,3 +143,13 @@ harness = false
 [[bench]]
 name = "ai_session_bench"
 harness = false
+
+# `cargo build --profile wasm --target wasm32-unknown-unknown -p maple-ai-session-wasm`:
+# size over speed, and no unwinding in a module the CLI instantiates once.
+[profile.wasm]
+inherits = "release"
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

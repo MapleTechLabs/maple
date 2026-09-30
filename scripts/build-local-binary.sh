@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # Build the distributable `maple` local binary — a single Bun-compiled
-# executable plus libchdb. No Rust/cargo involved.
+# executable plus libchdb. Cargo only builds the embedded AI stamping wasm.
 #
 # Pipeline:
 #   1. Build the workspace packages consumed through gitignored `dist/` paths.
 #   2. Build the lightweight SPA (`apps/local-ui` → its `dist/`).
 #   3. Inline that dist into apps/cli/src/server/ui-embed.gen.ts so
 #      `bun build --compile` bakes the SPA into the binary.
+#   3b. Build the ingest gateway's AI stamping to wasm (apps/ingest/crates/
+#      ai-session-wasm) for the binary to embed; needs the mise rust toolchain.
 #   4. Compile apps/cli (the CLI + the OTLP-ingest/query server) into a single
 #      executable with `bun build --compile`. The schema artifacts and SPA are
 #      embedded; the OTLP encoders run in-process; chDB is reached via bun:ffi.
@@ -47,6 +49,9 @@ echo "==> Inlining SPA into ui-embed.gen.ts"
 restore_stub() { git -C "$REPO_ROOT" checkout -- "$UI_EMBED" 2>/dev/null || true; }
 trap restore_stub EXIT
 bun run "$REPO_ROOT/scripts/gen-ui-embed.ts"
+
+echo "==> Building the AI stamping wasm"
+bun run --cwd "$REPO_ROOT/apps/cli" build:ai-stamp
 
 echo "==> Compiling maple binary (bun build --compile) — version $MAPLE_BUILD_VERSION"
 ( cd "$REPO_ROOT" && bun build apps/cli/src/bin.ts --compile \

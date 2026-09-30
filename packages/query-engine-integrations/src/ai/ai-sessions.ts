@@ -1,7 +1,7 @@
 // AI agent sessions — read side
 //
 // The ingest gateway stamps three attributes on AI-agent spans at decode time
-// (`apps/ingest/src/ai_session.rs`): `maple_ai.vendor.id`,
+// (`apps/ingest/crates/ai-session/src/lib.rs`): `maple_ai.vendor.id`,
 // `maple_ai.vendor.version` and `maple_ai.session.id`. Only the last one is
 // sparse — a vendor exposes a session key on the spans that own the turn
 // (`ai.eve.turn`, `invoke_agent`), never on the sibling `chat`, `execute_tool`,
