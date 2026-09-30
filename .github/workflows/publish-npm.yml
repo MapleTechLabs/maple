@@ -1,0 +1,106 @@
+name: Publish npm package
+
+# Publishes one of the public `@maple-dev/*` packages when its release tag is
+# pushed. The tag names the package and the version:
+#
+#   effect-sdk@0.9.0  → packages/effect-sdk   (@maple-dev/effect-sdk)
+#   browser@0.9.0     → packages/browser      (@maple-dev/browser)
+#   alchemy@0.1.0     → packages/alchemy-maple (@maple-dev/alchemy)
+#
+# Release: bump `version` in the package.json (and its `src/version.ts`), merge
+# to main, then `git tag effect-sdk@0.9.0 <merged sha> && git push origin effect-sdk@0.9.0`.
+#
+# Auth is npm trusted publishing (OIDC): no npm token is stored anywhere, and
+# every publish gets a provenance attestation. One-time setup per package, done
+# by a package owner on npmjs.com → package → Settings → Trusted Publisher:
+# GitHub Actions, organization `MapleTechLabs`, repository `maple`, workflow
+# `publish-npm.yml`. A package must already exist on npm before it can be
+# configured, so a brand-new package's first version is still published by hand.
+#
+# `bun pm pack` builds the tarball because it rewrites `workspace:` and
+# `catalog:` specifiers to real versions; `npm publish` does not, but it is the
+# client that speaks OIDC, so it publishes the packed tarball.
+
+on:
+    push:
+        tags:
+            - "effect-sdk@*"
+            - "browser@*"
+            - "alchemy@*"
+
+concurrency:
+    group: ${{ github.workflow }}-${{ github.ref }}
+    cancel-in-progress: false
+
+permissions:
+    contents: read
+
+jobs:
+    publish:
+        name: Publish ${{ github.ref_name }}
+        runs-on: ubuntu-latest
+        timeout-minutes: 20
+        permissions:
+            contents: read
+            id-token: write # npm trusted publishing + provenance
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+              with:
+                  fetch-depth: 0
+
+            - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+              with:
+                  install_args: bun node
+
+            - name: Resolve the package from the tag
+              id: pkg
+              env:
+                  TAG: ${{ github.ref_name }}
+              run: |
+                  name="${TAG%@*}"
+                  version="${TAG#*@}"
+                  case "$name" in
+                    effect-sdk) dir=packages/effect-sdk ;;
+                    browser) dir=packages/browser ;;
+                    alchemy) dir=packages/alchemy-maple ;;
+                    *) echo "::error::Unknown package in tag $TAG"; exit 1 ;;
+                  esac
+
+                  actual="$(node -p "require('./$dir/package.json').version")"
+                  if [[ "$actual" != "$version" ]]; then
+                    echo "::error::Tag says $version but $dir/package.json is $actual"
+                    exit 1
+                  fi
+
+                  # Only publish reviewed code: the tagged commit must be on main.
+                  git fetch --quiet origin main
+                  if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+                    echo "::error::$TAG does not point at a commit on main"
+                    exit 1
+                  fi
+
+                  # Pre-releases (0.10.0-rc.1) go to `next`, never `latest`.
+                  dist_tag=latest
+                  [[ "$version" == *-* ]] && dist_tag=next
+
+                  echo "dir=$dir" >> "$GITHUB_OUTPUT"
+                  echo "package=$(node -p "require('./$dir/package.json').name")" >> "$GITHUB_OUTPUT"
+                  echo "dist_tag=$dist_tag" >> "$GITHUB_OUTPUT"
+
+            - uses: ./.github/actions/bun-install
+              with:
+                  filters: ${{ steps.pkg.outputs.package }}
+
+            - name: Build
+              run: bun turbo build --filter=${{ steps.pkg.outputs.package }}
+
+            - name: Test
+              if: ${{ steps.pkg.outputs.dir != 'packages/browser' }} # browser tests need Playwright; CI runs them
+              run: bun run --cwd ${{ steps.pkg.outputs.dir }} test
+
+            - name: Pack
+              run: bun pm pack --destination "$RUNNER_TEMP/pack"
+              working-directory: ${{ steps.pkg.outputs.dir }}
+
+            - name: Publish
+              run: npm publish "$RUNNER_TEMP"/pack/*.tgz --access public --tag ${{ steps.pkg.outputs.dist_tag }}
