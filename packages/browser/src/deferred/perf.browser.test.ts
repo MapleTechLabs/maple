@@ -20,7 +20,17 @@ vi.mock("@opentelemetry/exporter-trace-otlp-http", () => ({
 }))
 
 const { MapleBrowser } = await import("../index")
-const { onLongFrame } = await import("./perf")
+const { interactionKey, onLongFrame } = await import("./perf")
+
+describe("interactionKey", () => {
+	it("skips non-interactions, groups by id, and still keys events from engines without ids", () => {
+		expect(interactionKey({ interactionId: 0, name: "pointermove", startTime: 10 })).toBeUndefined()
+		expect(interactionKey({ interactionId: 7, name: "click", startTime: 10 })).toBe(
+			interactionKey({ interactionId: 7, name: "pointerup", startTime: 12 }),
+		)
+		expect(interactionKey({ name: "click", startTime: 10.4 })).toBe("click:10")
+	})
+})
 
 class ScriptTimingStub {
 	constructor(

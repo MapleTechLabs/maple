@@ -72,11 +72,12 @@ export function startOfflineQueue(config: ResolvedConfig): OfflineQueue {
 	const store = async (mode: IDBTransactionMode): Promise<IDBObjectStore | undefined> =>
 		(await db)?.transaction(STORE, mode).objectStore(STORE)
 
-	const add = async (signal: Signal, body: Uint8Array | undefined): Promise<void> => {
-		if (!body || !hasConsent()) return
+	const add = async (signal: Signal, body: Uint8Array, createdAt: number): Promise<void> => {
+		// Withdrawn while this write waited its turn: it must not land after the clear.
+		if (!hasConsent() || createdAt <= consentRevokedAt()) return
 		const batches = await store("readwrite")
 		if (!batches) return
-		await settle(batches.add({ signal, body, createdAt: Date.now() } satisfies StoredBatch))
+		await settle(batches.add({ signal, body, createdAt } satisfies StoredBatch))
 		const keys = await settle(batches.getAllKeys())
 		for (const key of keys.slice(0, Math.max(0, keys.length - MAX_BATCHES)))
 			await settle(batches.delete(key))
@@ -86,10 +87,11 @@ export function startOfflineQueue(config: ResolvedConfig): OfflineQueue {
 	const drain = async (): Promise<void> => {
 		const read = await store("readonly")
 		const stored = read ? (await settle(read.getAll())).filter(isStoredBatch) : []
-		const revokedAt = consentRevokedAt()
 		for (const batch of stored) {
+			// Checked per batch: consent can be withdrawn while an earlier POST is in flight.
+			if (!hasConsent()) return
 			// Expired, or captured before consent was last withdrawn (a revoke this queue never saw): drop it.
-			if (Date.now() - batch.createdAt <= MAX_AGE_MS && batch.createdAt > revokedAt) {
+			if (Date.now() - batch.createdAt <= MAX_AGE_MS && batch.createdAt > consentRevokedAt()) {
 				const response = await fetch(`${config.endpoint}/v1/${batch.signal}`, {
 					method: "POST",
 					headers,
@@ -132,20 +134,25 @@ export function startOfflineQueue(config: ResolvedConfig): OfflineQueue {
 		if (batches) await settle(batches.clear())
 	}
 
+	/** Writes in order: a revoke's clear runs after the writes before it, and `stop` closes the database after all of them. */
+	let writes: Promise<void> = Promise.resolve()
+	const queue = (write: () => Promise<void>): void => {
+		writes = writes.then(write).catch(() => {})
+	}
+	const stash = (signal: Signal, body: Uint8Array | undefined): void => {
+		// Stamped now, not when the write runs, so a revoke in between is seen for what it is.
+		const createdAt = Date.now()
+		if (body && hasConsent()) queue(() => add(signal, body, createdAt))
+	}
+
 	const onOnline = (): void => void resend()
 	window.addEventListener("online", onOnline)
 	// Withdrawn consent also withdraws what was kept for later.
 	const stopConsent = onConsentChange((allowed) => {
 		// The consent module records the revoke itself, so it holds even where this queue never ran.
-		if (!allowed) void clear().catch(() => {})
+		if (!allowed) queue(clear)
 	})
 	void resend()
-
-	/** Writes in flight: `stop` closes the database only after them, so a stash made on the way out lands. */
-	let writes: Promise<void> = Promise.resolve()
-	const stash = (signal: Signal, body: Uint8Array | undefined): void => {
-		writes = writes.then(() => add(signal, body)).catch(() => {})
-	}
 
 	return {
 		stashSpans: (spans) => {
