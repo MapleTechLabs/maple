@@ -96,17 +96,11 @@ import { OTLPHttpProtoTraceExporter, registerOTel } from "@vercel/otel"
 import { registerTelemetry } from "ai"
 
 export function register() {
-	const mapleKey = process.env.MAPLE_INGEST_KEY
-	if (!mapleKey) {
-		// A missing key disables export; it never stops the app.
-		console.warn("MAPLE_INGEST_KEY is not set; Maple telemetry export is disabled")
-		return
-	}
 	registerOTel({
 		serviceName: "support-chat",
 		traceExporter: new OTLPHttpProtoTraceExporter({
 			url: "https://ingest.maple.dev/v1/traces", // EU: https://ingest.eu.maple.dev/v1/traces
-			headers: { authorization: `Bearer ${mapleKey}` },
+			headers: { authorization: `Bearer ${process.env.MAPLE_INGEST_KEY}` },
 		}),
 	})
 

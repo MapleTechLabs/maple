@@ -140,14 +140,13 @@ func main() {
 	ctx := context.Background()
 
 	// Reads OTEL_EXPORTER_OTLP_ENDPOINT and OTEL_EXPORTER_OTLP_HEADERS.
-	// A setup error only disables tracing; it never stops the app.
-	if exporter, err := otlptracehttp.New(ctx); err != nil {
-		log.Printf("telemetry disabled: %v", err)
-	} else {
-		tp := sdktrace.NewTracerProvider(sdktrace.WithBatcher(exporter))
-		defer tp.Shutdown(ctx)
-		otel.SetTracerProvider(tp)
+	exporter, err := otlptracehttp.New(ctx)
+	if err != nil {
+		log.Fatal(err)
 	}
+	tp := sdktrace.NewTracerProvider(sdktrace.WithBatcher(exporter))
+	defer tp.Shutdown(ctx)
+	otel.SetTracerProvider(tp)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /hello", func(w http.ResponseWriter, r *http.Request) {

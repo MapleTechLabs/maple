@@ -26,7 +26,7 @@ Mechanism: `openinference-instrumentation-agno` + OTel SDK + OTLP/HTTP exporter 
 - Key: the private ingest key (`maple_sk_…`, the **Private key** under **Settings → Ingestion**). The user sets it as `MAPLE_INGEST_KEY` in their environment or `.env`; don't ask for it in the chat. Not set: use the literal `MAPLE_TEST` (ingest accepts and discards it) and tell the user to replace it with their private key.
 - The key is a secret. Keep it in the repo's secret/env convention (`.env`, settings module, secret manager), never in source, committed config, logs or command lines, and tell the user to add it to their deployment's secrets. No convention: create `.env`, add it to `.gitignore` if missing, and commit a `.env.example` with placeholder values.
 - App loads `.env` (`load_dotenv()`): call it at the top of `tracing.py`, before the provider is built. Otherwise the exporter silently targets `localhost:4318` with no key.
-- Key missing: instrumentation must never crash or block the app. In `tracing.py`, after any `load_dotenv()`, when `OTEL_EXPORTER_OTLP_HEADERS` is unset, log one warning (`logging.getLogger(__name__).warning("OTEL_EXPORTER_OTLP_HEADERS (Maple ingest key) is not set; Maple telemetry export is disabled")`) and skip the provider and exporter setup. Never raise or exit over the key, and never send a header without one (opaque 401).
+- Key from an env var: fail fast with a clear message when it's unset (`if not os.environ.get("OTEL_EXPORTER_OTLP_HEADERS"): raise RuntimeError("OTEL_EXPORTER_OTLP_HEADERS (Maple ingest key) is not set")` in `tracing.py`, after any `load_dotenv()`); never let it surface as an opaque 401 or a bare `KeyError`.
 
 ## Step 2: Install and initialize
 

@@ -24,57 +24,52 @@ register("@opentelemetry/instrumentation/hook.mjs", import.meta.url)
 
 const MAPLE_ENDPOINT = "https://ingest.maple.dev" // EU: https://ingest.eu.maple.dev
 const MAPLE_KEY = process.env.MAPLE_INGEST_KEY // private ingest key (maple_sk_…), a secret
+if (!MAPLE_KEY) throw new Error("MAPLE_INGEST_KEY is not set (Maple private ingest key)")
 
-// A missing key disables export; it never stops the app.
-if (MAPLE_KEY) startTelemetry(MAPLE_KEY)
-else console.warn("MAPLE_INGEST_KEY is not set; Maple telemetry export is disabled")
+const headers = { authorization: `Bearer ${MAPLE_KEY}` }
 
-function startTelemetry(key: string) {
-	const headers = { authorization: `Bearer ${key}` }
-
-	const sdk = new NodeSDK({
-		resource: resourceFromAttributes({
-			"service.name": "my-node-app",
-			"service.version": "1.4.2", // package.json version, a release tag, or the commit SHA
-			"deployment.environment.name": process.env.NODE_ENV ?? "development",
-			"vcs.repository.url.full": "https://github.com/acme/my-node-app",
-			"vcs.ref.head.revision":
-				process.env.RAILWAY_GIT_COMMIT_SHA ??
-				process.env.GITHUB_SHA ??
-				process.env.GIT_COMMIT,
+const sdk = new NodeSDK({
+	resource: resourceFromAttributes({
+		"service.name": "my-node-app",
+		"service.version": "1.4.2", // package.json version, a release tag, or the commit SHA
+		"deployment.environment.name": process.env.NODE_ENV ?? "development",
+		"vcs.repository.url.full": "https://github.com/acme/my-node-app",
+		"vcs.ref.head.revision":
+			process.env.RAILWAY_GIT_COMMIT_SHA ??
+			process.env.GITHUB_SHA ??
+			process.env.GIT_COMMIT,
+	}),
+	traceExporter: new OTLPTraceExporter({
+		url: `${MAPLE_ENDPOINT}/v1/traces`,
+		headers,
+	}),
+	logRecordProcessors: [
+		new BatchLogRecordProcessor({
+			exporter: new OTLPLogExporter({ url: `${MAPLE_ENDPOINT}/v1/logs`, headers }),
 		}),
-		traceExporter: new OTLPTraceExporter({
-			url: `${MAPLE_ENDPOINT}/v1/traces`,
-			headers,
+	],
+	metricReaders: [
+		new PeriodicExportingMetricReader({
+			exporter: new OTLPMetricExporter({
+				url: `${MAPLE_ENDPOINT}/v1/metrics`,
+				headers,
+			}),
 		}),
-		logRecordProcessors: [
-			new BatchLogRecordProcessor({
-				exporter: new OTLPLogExporter({ url: `${MAPLE_ENDPOINT}/v1/logs`, headers }),
-			}),
-		],
-		metricReaders: [
-			new PeriodicExportingMetricReader({
-				exporter: new OTLPMetricExporter({
-					url: `${MAPLE_ENDPOINT}/v1/metrics`,
-					headers,
-				}),
-			}),
-		],
-		instrumentations: [getNodeAutoInstrumentations()],
+	],
+	instrumentations: [getNodeAutoInstrumentations()],
+})
+
+sdk.start()
+
+// Flush buffered spans, logs, and metrics before exit. If the app already handles
+// SIGTERM, call sdk.shutdown() from that handler instead.
+for (const signal of ["SIGTERM", "SIGINT"]) {
+	process.once(signal, () => {
+		sdk
+			.shutdown()
+			.catch((err) => console.error("telemetry shutdown failed", err))
+			.finally(() => process.exit(0))
 	})
-
-	sdk.start()
-
-	// Flush buffered spans, logs, and metrics before exit. If the app already handles
-	// SIGTERM, call sdk.shutdown() from that handler instead.
-	for (const signal of ["SIGTERM", "SIGINT"]) {
-		process.once(signal, () => {
-			sdk
-				.shutdown()
-				.catch((err) => console.error("telemetry shutdown failed", err))
-				.finally(() => process.exit(0))
-		})
-	}
 }
 ```
 

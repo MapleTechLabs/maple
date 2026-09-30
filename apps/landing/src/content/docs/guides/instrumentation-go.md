@@ -118,12 +118,11 @@ func initTelemetry(ctx context.Context) (func(context.Context) error, error) {
 func main() {
 	ctx := context.Background()
 
-	// A setup error only disables telemetry; it never stops the app.
-	if shutdown, err := initTelemetry(ctx); err != nil {
-		log.Printf("telemetry disabled: %v", err)
-	} else {
-		defer shutdown(ctx)
+	shutdown, err := initTelemetry(ctx)
+	if err != nil {
+		log.Fatal(err)
 	}
+	defer shutdown(ctx)
 
 	// Your application code here
 }

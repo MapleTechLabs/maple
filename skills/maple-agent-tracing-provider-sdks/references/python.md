@@ -37,7 +37,7 @@ OpenAIInstrumentor().instrument()
 
 - Import `tracing` first in the entry point (app module, `main.py`, worker).
 - The exporter reads `OTEL_*` when it is built, and `agent_tracing` reads the capture switch when it is imported. If the app uses python-dotenv, call `load_dotenv()` at the top of `tracing.py`; otherwise the exporter silently targets `localhost:4318` with no key.
-- Building the header in code from `MAPLE_INGEST_KEY` (`OTLPSpanExporter(endpoint="https://ingest.maple.dev/v1/traces", headers={"Authorization": f"Bearer {key}"})`): when it is unset, log one warning (`MAPLE_INGEST_KEY is not set; Maple telemetry export is disabled`) and skip the exporter so the app runs normally. Never raise or exit over the key, and never a bare `KeyError` on import or `Bearer None` (opaque 401).
+- Building the header in code from `MAPLE_INGEST_KEY` (`OTLPSpanExporter(endpoint="https://ingest.maple.dev/v1/traces", headers={"Authorization": f"Bearer {key}"})`): fail fast with a clear message when it is unset, never a bare `KeyError` on import or `Bearer None` (opaque 401).
 - Existing provider → don't create one; add the processor to it and just call `.instrument()`.
 - Using `opentelemetry-instrument` (zero-code)? It already calls every installed instrumentor; don't call `.instrument()` again, and make sure no other GenAI instrumentation package is installed.
 

@@ -28,7 +28,7 @@ Mechanism: `openinference-instrumentation-llama-index` (scope `openinference.ins
 - Header: `Authorization=Bearer <key>`.
 - Key: the private ingest key (`maple_sk_…`, the **Private key** under **Settings → Ingestion**). The user sets it as `MAPLE_INGEST_KEY` in their environment or `.env`; don't ask for it in the chat. Not set: use the literal `MAPLE_TEST` (ingest accepts and discards it) and tell the user to replace it with their private key.
 - The key is a secret. Keep it in the repo's secret/env convention (`.env`, settings module, secret manager), never in source, committed config, logs or command lines, and tell the user to add it to their deployment's secrets. No convention: create `.env`, add it to `.gitignore` if missing, and commit a `.env.example` with placeholder values.
-- Building the header in code from an env var: when it is unset, log one warning (`MAPLE_INGEST_KEY is not set; Maple telemetry export is disabled`) and skip the Maple exporter so the app runs normally. Never raise or exit over the key, and never send `Bearer None` (opaque 401) or hit a bare `KeyError` on import.
+- Building the header in code from an env var: never let an unset var become `Bearer None` (opaque 401) or a bare `KeyError` on import. Fail fast with a clear message.
 - 401 `ingest_unauthorized` / "Invalid ingest key" with a key you trust: keys are region-bound, so it usually belongs to the other region. Try the other endpoint.
 
 Env vars (`OTLPSpanExporter()` reads them and appends `/v1/traces`):

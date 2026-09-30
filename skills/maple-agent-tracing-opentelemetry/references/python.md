@@ -31,7 +31,7 @@ trace.set_tracer_provider(provider)
 ```
 
 - `OTLPSpanExporter()` reads `OTEL_*` when it is constructed. If the app uses python-dotenv, call `load_dotenv()` at the top of `tracing.py`, before the exporter is built; otherwise it silently targets `localhost:4318` with no key.
-- Building the header in code from `MAPLE_INGEST_KEY` (`OTLPSpanExporter(endpoint="https://ingest.maple.dev/v1/traces", headers={"Authorization": f"Bearer {key}"})`): when it is unset, log one warning (`MAPLE_INGEST_KEY is not set; Maple telemetry export is disabled`) and skip the exporter so the app runs normally. Never raise or exit over the key, and never a bare `KeyError` on import or `Bearer None` (opaque 401).
+- Building the header in code from `MAPLE_INGEST_KEY` (`OTLPSpanExporter(endpoint="https://ingest.maple.dev/v1/traces", headers={"Authorization": f"Bearer {key}"})`): fail fast with a clear message when it is unset, never a bare `KeyError` on import or `Bearer None` (opaque 401).
 
 ## agent.py
 

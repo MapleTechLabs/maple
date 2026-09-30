@@ -40,7 +40,7 @@ Server-side key rules:
 
 - The user sets the private key as `MAPLE_INGEST_KEY` in their environment or `.env`; don't ask for it in the chat. Not set: put `MAPLE_INGEST_KEY=MAPLE_TEST` in the uncommitted `.env` (both regions accept it and return 200 without storing anything, so the bootstrap can run) and tell the user to replace it with their private key. Don't block install on signup.
 - The key is a secret. Keep it in the repo's secret/env convention (`.env`, settings module, secret manager), never in source, committed config, logs or command lines, and tell the user to add it to their deployment's secrets. No convention: create `.env`, add it to `.gitignore` if missing, and commit a `.env.example` with placeholder values.
-- The bootstrap reads `MAPLE_INGEST_KEY`. When it is unset, it logs one warning (`MAPLE_INGEST_KEY is not set; Maple telemetry export is disabled`) and skips the Maple exporter, so the app runs normally. Telemetry never throws, exits or blocks startup over the key. Never let it become `Bearer undefined` or an empty bearer (an opaque 401).
+- The bootstrap reads `MAPLE_INGEST_KEY` and fails fast with a clear message when it is unset. Never let it become `Bearer undefined` or an empty bearer (an opaque 401).
 - If the app loads `.env` (`dotenv`, `--env-file`, `load_dotenv()`), load it before the bootstrap builds its exporters, or they start without a key.
 - A private key pasted in the prompt: don't copy it into any file or command; tell the user to set `MAPLE_INGEST_KEY` themselves.
 
@@ -153,7 +153,7 @@ A bootstrap that loads but never exports is not a partial success. Fix it before
 
 Tell the user where each key goes:
 
-- Servers: set `MAPLE_INGEST_KEY` to the private key (`maple_sk_…`) from Settings → Ingestion (<dashboard>/settings?tab=ingestion) in the local `.env` (replacing `MAPLE_TEST` if you put it there) and in every deployment's secrets. Name the files and platforms you found. Where the variable is missing, the app still runs but logs `MAPLE_INGEST_KEY is not set; Maple telemetry export is disabled` and sends nothing.
+- Servers: set `MAPLE_INGEST_KEY` to the private key (`maple_sk_…`) from Settings → Ingestion (<dashboard>/settings?tab=ingestion) in the local `.env` (replacing `MAPLE_TEST` if you put it there) and in every deployment's secrets. Name the files and platforms you found. The bootstrap stops the app at startup when the variable is missing.
 - Browser and mobile code: if `MAPLE_TEST` is still inline, search-replace it with the public key (`maple_pk_…`) in the files you wrote.
 - If the organization is in the EU region (the dashboard is at app.eu.maple.dev) and you used the US endpoint, replace `ingest.maple.dev` with `ingest.eu.maple.dev`, or set `region: "eu"` in the Maple SDKs.
 

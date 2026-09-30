@@ -68,24 +68,19 @@ import { env } from "cloudflare:workers"
 
 context.setGlobalContextManager(new AsyncLocalStorageContextManager().enable())
 
-// A missing key disables export; it never stops the Worker.
-if (!env.MAPLE_INGEST_KEY) console.warn("MAPLE_INGEST_KEY is not set; Maple telemetry export is disabled")
-
 export const tracerProvider = new BasicTracerProvider({
 	resource: resourceFromAttributes({
 		"service.name": "support-agent",
 		"deployment.environment.name": "production",
 	}),
-	spanProcessors: env.MAPLE_INGEST_KEY
-		? [
-				new BatchSpanProcessor(
-					new OTLPTraceExporter({
-						url: "https://ingest.maple.dev/v1/traces", // EU: https://ingest.eu.maple.dev/v1/traces
-						headers: { authorization: `Bearer ${env.MAPLE_INGEST_KEY}` },
-					}),
-				),
-			]
-		: [],
+	spanProcessors: [
+		new BatchSpanProcessor(
+			new OTLPTraceExporter({
+				url: "https://ingest.maple.dev/v1/traces", // EU: https://ingest.eu.maple.dev/v1/traces
+				headers: { authorization: `Bearer ${env.MAPLE_INGEST_KEY}` },
+			}),
+		),
+	],
 })
 
 registerTelemetry(

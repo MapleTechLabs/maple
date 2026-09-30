@@ -60,7 +60,7 @@ Inline the endpoint in the bootstrap source and pass it explicitly to the export
 
 ```text
 MAPLE_ENDPOINT = "https://ingest.maple.dev"   # EU organizations: https://ingest.eu.maple.dev
-MAPLE_KEY      = env MAPLE_INGEST_KEY          # servers: private key (maple_sk_…); unset = warn once, skip the exporter
+MAPLE_KEY      = env MAPLE_INGEST_KEY          # servers: private key (maple_sk_…), fail fast when unset
 MAPLE_KEY      = "maple_pk_…"                 # browser/mobile: public key inline, or "MAPLE_TEST" until the user has one
 ```
 

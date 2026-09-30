@@ -41,21 +41,11 @@ Known gaps (tell the user, don't try to fix): assistant reply text and cost are 
 `options.env` REPLACES the child environment. Always spread `process.env`, and drop inherited `TRACEPARENT`/`TRACESTATE`. Build the env when calling `query()`, not at import, so values loaded later (dotenv) are included. Create `maple-env.ts` (adapt service name and environment):
 
 ```ts
-let warnedNoKey = false
-
 export function mapleEnv(): Record<string, string | undefined> {
-	const env: Record<string, string | undefined> = { ...process.env }
-	delete env.TRACEPARENT
-	delete env.TRACESTATE
 	const key = process.env.MAPLE_INGEST_KEY
-	if (!key) {
-		// A missing key turns telemetry off; the agent still runs.
-		if (!warnedNoKey) console.warn("MAPLE_INGEST_KEY is not set; Maple telemetry export is disabled")
-		warnedNoKey = true
-		return env
-	}
-	return {
-		...env,
+	if (!key) throw new Error("MAPLE_INGEST_KEY is not set")
+	const env: Record<string, string | undefined> = {
+		...process.env,
 		CLAUDE_CODE_ENABLE_TELEMETRY: "1",
 		CLAUDE_CODE_ENHANCED_TELEMETRY_BETA: "1",
 		OTEL_TRACES_EXPORTER: "otlp",
@@ -72,6 +62,9 @@ export function mapleEnv(): Record<string, string | undefined> {
 		OTEL_LOG_TOOL_DETAILS: "1",
 		OTEL_LOG_TOOL_CONTENT: "1",
 	}
+	delete env.TRACEPARENT
+	delete env.TRACESTATE
+	return env
 }
 ```
 
@@ -84,25 +77,17 @@ Pass `env: mapleEnv()` on EVERY `query()` / `startup()` / session call in the co
 `ClaudeAgentOptions.env` MERGES over the inherited env, so pass only telemetry vars; remove inherited trace context from `os.environ`. Build the env when calling `query()`, not at import, so values loaded later (dotenv) are included. Create `maple_env.py` (same adaptations):
 
 ```py
-import logging
 import os
 
 os.environ.pop("TRACEPARENT", None)
 os.environ.pop("TRACESTATE", None)
 
-_warned_no_key = False
-
 
 def maple_env() -> dict[str, str]:
     """Telemetry env for the Claude Code CLI, built per query()."""
-    global _warned_no_key
     key = os.environ.get("MAPLE_INGEST_KEY")
     if not key:
-        # A missing key turns telemetry off; the agent still runs.
-        if not _warned_no_key:
-            logging.getLogger(__name__).warning("MAPLE_INGEST_KEY is not set; Maple telemetry export is disabled")
-            _warned_no_key = True
-        return {}
+        raise RuntimeError("MAPLE_INGEST_KEY is not set")
     return {
         "CLAUDE_CODE_ENABLE_TELEMETRY": "1",
         "CLAUDE_CODE_ENHANCED_TELEMETRY_BETA": "1",
