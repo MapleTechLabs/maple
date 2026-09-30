@@ -82,7 +82,7 @@ export function registerSourceCodeTools(server: McpToolRegistrar) {
 		name: "search_source_code",
 		title: "Search Source Code",
 		description:
-			"Search one connected repository through GitHub's code search: an index of the default branch, matched on whole tokens, not regex, and rate limited. It finds where a symbol or message lives, not what was deployed. Use exact exception text, function or class names, routes, span names or log fragments from telemetry, then read_source_file on promising paths. The repository comes from telemetry (vcs.repository.url.full) or list_source_repositories.",
+			"Search one connected repository through GitHub's code search: an index of the default branch, matched on whole tokens, not regex, and rate limited. It finds where a symbol or message lives, not what was deployed. Use exact exception text, function or class names, routes, span names or log fragments from telemetry, then read_source_file on promising paths. The repository comes from telemetry (vcs.repository.url.full) or list_source_repositories. API: https://docs.github.com/en/rest/search/search#search-code",
 		parameters: Schema.Struct({
 			repository: REPOSITORY,
 			query: P.text("Plain code or text to search for, without repo:, org: or user: qualifiers"),
@@ -169,7 +169,7 @@ export function registerSourceCodeTools(server: McpToolRegistrar) {
 		name: "read_source_file",
 		title: "Read Source File",
 		description:
-			"Read a line range from a file in one connected repository, through GitHub. For incident causality pass the deployed commit SHA from telemetry as `ref`; otherwise the tracked branch is read and the result is not proof of deployed code.",
+			"Read a line range from a file in one connected repository, through GitHub. For incident causality pass the deployed commit SHA from telemetry as `ref`; otherwise the tracked branch is read and the result is not proof of deployed code. API: https://docs.github.com/en/rest/repos/contents#get-repository-content",
 		parameters: Schema.Struct({
 			repository: REPOSITORY,
 			path: P.text("Repository-relative file path"),

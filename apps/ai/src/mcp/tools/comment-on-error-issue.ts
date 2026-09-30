@@ -13,7 +13,7 @@ export function registerCommentOnErrorIssueTool(server: McpToolRegistrar) {
 		name: "comment_on_error_issue",
 		title: "Comment on Error Issue",
 		description:
-			"Add a comment to an issue's timeline. Use `kind=agent_note` for automated reasoning steps: they stay in the audit log but the UI styles them apart from human comments. Commenting renews your lease if you hold one.",
+			"Add a comment to an issue's timeline. Use `kind=agent_note` for automated reasoning steps: they stay in the audit log but the UI styles them apart from human comments. Commenting renews your lease if you hold one. Docs: https://maple.dev/docs/errors/overview#work-with-issues-from-an-assistant",
 		parameters: Schema.Struct({
 			issue_id: issueIdParam(),
 			body: P.text("Comment text, markdown"),
