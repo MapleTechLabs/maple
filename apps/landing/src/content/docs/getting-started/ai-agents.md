@@ -125,7 +125,7 @@ Install them together with the per-language guides they read:
 bunx skills add MapleTechLabs/maple/skills --skill '*'
 ```
 
-Set `MAPLE_INGEST_KEY` to your private key (`maple_sk_…` from **Settings → Ingestion**) in your environment or `.env`, then ask: _"Set up Maple in this repo. My ingest endpoint is https://ingest.maple.dev and my public key is maple_pk\_…"_ or _"Audit my Maple instrumentation."_ Servers use the private key; the public key goes into browser code. EU organizations give `https://ingest.eu.maple.dev`. With the MCP server connected, the agent can confirm the first traces arrived and run `audit_setup` and `get_instrumentation_recommendations` against your live data.
+Then ask: _"Set up Maple in this repo. My ingest endpoint is https://ingest.maple.dev and my ingest key is maple_pk\_…"_ or _"Audit my Maple instrumentation."_ EU organizations give `https://ingest.eu.maple.dev`. With the MCP server connected, the agent can confirm the first traces arrived and run `audit_setup` and `get_instrumentation_recommendations` against your live data.
 
 ## Stay in control
 

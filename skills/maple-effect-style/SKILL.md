@@ -32,7 +32,7 @@ import { Effect } from "effect"
 const TracerLive = Maple.layer({
 	serviceName: "orders-api",
 	endpoint: "https://ingest.maple.dev", // EU: https://ingest.eu.maple.dev
-	// ingestKey omitted: read from MAPLE_INGEST_KEY (private key, maple_sk_…)
+	ingestKey: "MAPLE_TEST", // public ingest key (maple_pk_…), or MAPLE_TEST until the user has one
 	repositoryUrl: "https://github.com/acme/orders-api",
 })
 
@@ -45,7 +45,7 @@ Effect.runPromise(program.pipe(Effect.provide(TracerLive)))
 
 The default import resolves to the server build under Node.js. Import `@maple-dev/effect-sdk/server` explicitly when needed.
 
-If `endpoint` is omitted, the server layer reads `MAPLE_ENDPOINT`, then `OTEL_EXPORTER_OTLP_ENDPOINT`, then falls back to the public ingest for the region (`https://ingest.maple.dev`, or `https://ingest.eu.maple.dev` with `region: "eu"` / `MAPLE_REGION=eu`). The key falls back to `MAPLE_INGEST_KEY`; on servers leave `ingestKey` out and keep the private key in that variable (maple-onboard Step 0). `Maple.layer` always exports: a missing key does not disable it, so keyless local-mode and self-hosted-collector setups keep working, but against Maple's ingest every export gets a 401 with only a warning. For Maple's hosted ingest, check `MAPLE_INGEST_KEY` at startup and fail with a clear message when it is unset. `MapleFlush.make` and the Cloudflare `make()` differ: they no-op without a key.
+If `endpoint` is omitted, the server layer reads `MAPLE_ENDPOINT`, then `OTEL_EXPORTER_OTLP_ENDPOINT`, then falls back to the public ingest for the region (`https://ingest.maple.dev`, or `https://ingest.eu.maple.dev` with `region: "eu"` / `MAPLE_REGION=eu`). The key falls back to `MAPLE_INGEST_KEY`. `Maple.layer` always exports. A missing ingest key does not disable it, so keyless local-mode and self-hosted-collector setups keep working. Inline the key when telemetry must flow regardless of env (the maple-onboard inline-key pattern). `MapleFlush.make` and the Cloudflare `make()` differ: they no-op without a key.
 
 The server layer also auto-fills `vcs.ref.head.revision` from `COMMIT_SHA` / `RAILWAY_GIT_COMMIT_SHA` / `VERCEL_GIT_COMMIT_SHA` / `CF_PAGES_COMMIT_SHA` / `RENDER_GIT_COMMIT` (first match wins). For `vcs.repository.url.full`, use the `repositoryUrl` option or `MAPLE_REPOSITORY_URL`. Do not hand-write the attribute. The layer also dual-emits `deployment.environment` and `deployment.environment.name` from the `environment` option or `MAPLE_ENVIRONMENT`.
 
@@ -60,7 +60,7 @@ import { Effect } from "effect"
 const telemetry = MapleCloudflareSDK.make({
 	serviceName: "orders-edge",
 	endpoint: "https://ingest.maple.dev", // EU: https://ingest.eu.maple.dev
-	// ingestKey omitted: read from env.MAPLE_INGEST_KEY (private key, maple_sk_…)
+	ingestKey: "MAPLE_TEST",
 })
 
 export default {
@@ -77,8 +77,6 @@ export default {
 }
 ```
 
-The key is a Worker secret: `MAPLE_INGEST_KEY` in the gitignored `.dev.vars` locally, and the user runs `npx wrangler secret put MAPLE_INGEST_KEY` for deploys. Without it the SDK logs `no ingest key configured` once and sends nothing.
-
 Call `ctx.waitUntil(telemetry.flush(env))` on every request so telemetry survives the isolate exit. `flush` takes `env`. A missing `waitUntil` is the most common reason Worker traces never arrive. When routes go through `HttpRouter.toWebHandler`, provide `telemetry.layer` to the layer you pass it (`Layer.provideMerge(telemetry.layer)`), not to a separate per-request runtime.
 
 ### Browser
@@ -89,7 +87,7 @@ import { Maple } from "@maple-dev/effect-sdk/client"
 const TracerLive = Maple.layer({
 	serviceName: "web-client",
 	endpoint: "https://ingest.maple.dev", // EU: https://ingest.eu.maple.dev
-	ingestKey: "MAPLE_TEST", // public key (maple_pk_…) only, never maple_sk_
+	ingestKey: "MAPLE_TEST",
 })
 ```
 

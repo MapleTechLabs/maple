@@ -1,6 +1,6 @@
 ---
 name: maple-python-style
-description: "Python OpenTelemetry style for Maple: module-scope tracers/meters, decorators for bounded work, error spans, OTLP-bridged logs via LoggingHandler + LoggingInstrumentor, inline endpoint, ingest key from MAPLE_INGEST_KEY, and no helper-API wrappers."
+description: "Python OpenTelemetry style for Maple: module-scope tracers/meters, decorators for bounded work, error spans, OTLP-bridged logs via LoggingHandler + LoggingInstrumentor, inline endpoint + ingest key, and no helper-API wrappers."
 ---
 
 # Maple Python style
@@ -72,13 +72,12 @@ Preserve existing `logging.basicConfig`, console / file handlers, and log levels
 
 ## Init behavior
 
-Inline the endpoint in the init module. Read the private ingest key from `MAPLE_INGEST_KEY` and exit with a clear message when it is unset. If the app calls `load_dotenv()`, call it before `init_observability()`.
+Inline the endpoint and ingest key in the init module. Do not read them from env. The ingest key is project-scoped and write-only (shaped like a Sentry DSN), so source-level configuration is the default. Env indirection adds "OTel didn't start because env wasn't set" deploy failures.
 
 ```python
 # telemetry.py
 import logging
 import os
-import sys
 
 from opentelemetry import _logs, metrics, trace
 from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
@@ -94,6 +93,7 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
 MAPLE_ENDPOINT = "https://ingest.maple.dev"  # EU: https://ingest.eu.maple.dev
+MAPLE_KEY = "MAPLE_TEST"  # public ingest key (maple_pk_…), or MAPLE_TEST until the user has one
 
 _INITIALIZED = False
 
@@ -104,10 +104,7 @@ def init_observability() -> None:
         return
     _INITIALIZED = True
 
-    key = os.environ.get("MAPLE_INGEST_KEY")  # private ingest key (maple_sk_…), a secret
-    if not key:
-        sys.exit("MAPLE_INGEST_KEY is not set (Maple private ingest key)")
-    headers = {"authorization": f"Bearer {key}"}
+    headers = {"authorization": f"Bearer {MAPLE_KEY}"}
     resource = Resource.create({
         "service.name": "my-python-app",
         "deployment.environment.name": os.getenv("DEPLOYMENT_ENV", "development"),

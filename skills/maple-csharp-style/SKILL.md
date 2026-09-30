@@ -1,6 +1,6 @@
 ---
 name: maple-csharp-style
-description: ".NET / C# OpenTelemetry style for Maple: OpenTelemetry.Extensions.Hosting + OTLP HTTP exporter, ActivitySource for spans, ILogger bridging via WithLogging, inline endpoint, ingest key from MAPLE_INGEST_KEY."
+description: ".NET / C# OpenTelemetry style for Maple: OpenTelemetry.Extensions.Hosting + OTLP HTTP exporter, ActivitySource for spans, ILogger bridging via WithLogging, inline endpoint + ingest key."
 ---
 
 # Maple .NET / C# style
@@ -18,7 +18,7 @@ dotnet add package OpenTelemetry.Instrumentation.Http
 
 ## Bootstrap (ASP.NET Core)
 
-Inline the endpoint. Read the private ingest key from `MAPLE_INGEST_KEY` (an environment variable or user-secret, never `appsettings.json`) and throw at startup when it is unset. With `HttpProtobuf`, an `Endpoint` set in code is used as-is, so include the `/v1/<signal>` path.
+Inline the endpoint and ingest key. The key is a project-scoped, write-only token (shaped like a Sentry DSN). No env-var indirection. With `HttpProtobuf`, an `Endpoint` set in code is used as-is, so include the `/v1/<signal>` path.
 
 ```csharp
 using OpenTelemetry;
@@ -29,17 +29,15 @@ using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 
 const string MapleEndpoint = "https://ingest.maple.dev"; // EU: https://ingest.eu.maple.dev
-var builder = WebApplication.CreateBuilder(args);
+const string MapleKey = "MAPLE_TEST"; // public ingest key (maple_pk_…), or MAPLE_TEST until the user has one
 
-// Private ingest key (maple_sk_…), a secret.
-var mapleKey = builder.Configuration["MAPLE_INGEST_KEY"]
-    ?? throw new InvalidOperationException("MAPLE_INGEST_KEY is not set (Maple private ingest key)");
+var builder = WebApplication.CreateBuilder(args);
 
 void ConfigureOtlp(OtlpExporterOptions options, string path)
 {
     options.Endpoint = new Uri($"{MapleEndpoint}/v1/{path}");
     options.Protocol = OtlpExportProtocol.HttpProtobuf;
-    options.Headers = $"authorization=Bearer {mapleKey}";
+    options.Headers = $"authorization=Bearer {MapleKey}";
 }
 
 builder.Services.AddOpenTelemetry()

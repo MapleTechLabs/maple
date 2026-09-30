@@ -1,6 +1,6 @@
 ---
 name: maple-nodejs-style
-description: "Plain Node.js (Express, Fastify, Hono, Bun) OpenTelemetry style for Maple: NodeSDK + --import bootstrap, native @opentelemetry/api call sites, inline endpoint, ingest key from MAPLE_INGEST_KEY, OTLP HTTP exporters."
+description: "Plain Node.js (Express, Fastify, Hono, Bun) OpenTelemetry style for Maple: NodeSDK + --import bootstrap, native @opentelemetry/api call sites, inline endpoint + ingest key, OTLP HTTP exporters."
 ---
 
 # Maple Node.js style
@@ -23,8 +23,7 @@ import { resourceFromAttributes } from "@opentelemetry/resources"
 register("@opentelemetry/instrumentation/hook.mjs", import.meta.url)
 
 const MAPLE_ENDPOINT = "https://ingest.maple.dev" // EU: https://ingest.eu.maple.dev
-const MAPLE_KEY = process.env.MAPLE_INGEST_KEY // private ingest key (maple_sk_…), a secret
-if (!MAPLE_KEY) throw new Error("MAPLE_INGEST_KEY is not set (Maple private ingest key)")
+const MAPLE_KEY = "MAPLE_TEST" // public ingest key (maple_pk_…), or MAPLE_TEST until the user has one
 
 const headers = { authorization: `Bearer ${MAPLE_KEY}` }
 
@@ -76,10 +75,8 @@ for (const signal of ["SIGTERM", "SIGINT"]) {
 Run the app with the bootstrap loaded first:
 
 ```bash
-node --env-file=.env --import ./telemetry.js app.js
+node --import ./telemetry.js app.js
 ```
-
-Drop `--env-file` when the process manager or platform already injects the environment. The bootstrap runs before app code, so an app-level `dotenv` call is too late for it.
 
 For TypeScript projects, use the loader the repo already uses (`tsx`, `ts-node/esm`, native Bun). Do not introduce a new loader. For ESM apps, keep the `register(...)` hook call and add `@opentelemetry/instrumentation` to `package.json`.
 

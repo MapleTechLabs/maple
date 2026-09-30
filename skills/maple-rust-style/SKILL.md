@@ -1,6 +1,6 @@
 ---
 name: maple-rust-style
-description: "Rust OpenTelemetry style for Maple: opentelemetry + opentelemetry_sdk + opentelemetry-otlp HTTP exporter, tracing-opentelemetry bridge for the tracing crate, inline endpoint, ingest key from MAPLE_INGEST_KEY, semconv resource attributes."
+description: "Rust OpenTelemetry style for Maple: opentelemetry + opentelemetry_sdk + opentelemetry-otlp HTTP exporter, tracing-opentelemetry bridge for the tracing crate, inline endpoint + ingest key, semconv resource attributes."
 ---
 
 # Maple Rust style
@@ -24,7 +24,7 @@ Keep the `opentelemetry*` crates on one minor version, and pair `tracing-opentel
 
 ## Bootstrap
 
-Inline the endpoint. Read the private ingest key from `MAPLE_INGEST_KEY` and stop at startup with a clear message when it is unset.
+Inline the endpoint and ingest key. The key is a project-scoped, write-only token (shaped like a Sentry DSN).
 
 ```rust
 use opentelemetry::{global, trace::TracerProvider as _, KeyValue};
@@ -39,12 +39,10 @@ use opentelemetry_sdk::{
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 const MAPLE_ENDPOINT: &str = "https://ingest.maple.dev"; // EU: https://ingest.eu.maple.dev
+const MAPLE_KEY: &str = "MAPLE_TEST"; // public ingest key (maple_pk_…), or MAPLE_TEST until the user has one
 
 pub fn init() -> Result<(SdkTracerProvider, SdkLoggerProvider, SdkMeterProvider), ExporterBuildError> {
-    // Private ingest key (maple_sk_…), a secret.
-    let key = std::env::var("MAPLE_INGEST_KEY")
-        .expect("MAPLE_INGEST_KEY is not set (Maple private ingest key)");
-    let auth = format!("Bearer {key}");
+    let auth = format!("Bearer {MAPLE_KEY}");
     let mut headers = std::collections::HashMap::new();
     headers.insert("authorization".to_string(), auth);
 
