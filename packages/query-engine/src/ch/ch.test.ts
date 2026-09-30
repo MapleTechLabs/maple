@@ -761,6 +761,23 @@ describe("tracesBreakdownQuery", () => {
 		)
 	})
 
+	it("ORs a filter with its alternatives, each under its own semconv aliases", () => {
+		const q = tracesListQuery({
+			attributeFilters: [
+				{
+					key: "messaging.system",
+					value: "kafka",
+					mode: "equals",
+					or: [{ key: "messaging.destination.name", mode: "exists", negated: true }],
+				},
+			],
+		})
+		const { sql } = compileUnsafe(q, baseParams)
+		expect(sql).toContain("(SpanAttributes['messaging.system'] = 'kafka' OR NOT (")
+		expect(sql).toContain("mapContains(SpanAttributes, 'messaging.destination.name')")
+		expect(sql).toContain("mapContains(SpanAttributes, 'messaging.destination')")
+	})
+
 	it("matches every http target the service map names when filtering on server.address", () => {
 		const q = tracesListQuery({
 			attributeFilters: [{ key: "server.address", value: "x", mode: "equals" }],

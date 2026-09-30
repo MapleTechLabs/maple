@@ -12,23 +12,17 @@ describe("dependencyDrillWhereClause", () => {
 		])
 	})
 
-	it("drills a messaging edge named by its system to spans without a destination", () => {
+	// The rollup merges spans whose destination is literally `kafka` into the
+	// same edge as the fallback spans, so the drill reaches both halves.
+	it("drills both halves of an edge named after its system", () => {
 		expect(filtersOf("messaging", "kafka", "kafka").filters.attributeFilters).toEqual([
 			{ key: "messaging.system", value: "kafka" },
-			{ key: "messaging.destination.name", value: "", matchMode: "exists", negated: true },
+			{
+				key: "messaging.destination.name",
+				value: "kafka",
+				or: [{ key: "messaging.destination.name", value: "", matchMode: "exists", negated: true }],
+			},
 		])
-	})
-
-	// The rollup merges `destination = kafka` spans into the same edge as the
-	// fallback spans; without OR in the where-clause only the fallback half is
-	// reachable. Pinned so a parser that gains OR support flips this on purpose.
-	it("drills only the fallback spans when a destination shares its system's name", () => {
-		expect(filtersOf("messaging", "kafka", "kafka").filters.attributeFilters).toContainEqual({
-			key: "messaging.destination.name",
-			value: "",
-			matchMode: "exists",
-			negated: true,
-		})
 	})
 
 	it("drills an rpc service, or the legacy system key when the edge is named by it", () => {
@@ -37,7 +31,11 @@ describe("dependencyDrillWhereClause", () => {
 		])
 		expect(filtersOf("rpc", "grpc", "grpc").filters.attributeFilters).toEqual([
 			{ key: "rpc.system", value: "grpc" },
-			{ key: "rpc.service", value: "", matchMode: "exists", negated: true },
+			{
+				key: "rpc.service",
+				value: "grpc",
+				or: [{ key: "rpc.service", value: "", matchMode: "exists", negated: true }],
+			},
 		])
 	})
 

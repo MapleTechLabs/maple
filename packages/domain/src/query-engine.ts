@@ -38,13 +38,27 @@ export type MetricsMetric = Schema.Schema.Type<typeof MetricsMetric>
 export const MetricType = Schema.Literals(["sum", "gauge", "histogram", "exponential_histogram"])
 export type MetricType = Schema.Schema.Type<typeof MetricType>
 
-export const AttributeFilter = Schema.Struct({
+const attributeFilterFields = {
 	key: Schema.String,
 	value: Schema.optional(Schema.String),
 	/** Candidate set for `mode: "in"`. Ignored by every other mode, which read `value`. */
 	values: Schema.optional(Schema.Array(Schema.String)),
 	mode: Schema.Literals(["equals", "exists", "gt", "gte", "lt", "lte", "contains", "in"]),
 	negated: Schema.optional(Schema.Boolean),
+}
+
+/** One attribute predicate, the member type of an `or` group. */
+export const AttributeFilterLeaf = Schema.Struct(attributeFilterFields)
+export type AttributeFilterLeaf = Schema.Schema.Type<typeof AttributeFilterLeaf>
+
+export const AttributeFilter = Schema.Struct({
+	...attributeFilterFields,
+	/**
+	 * Alternatives on the same attribute map: the filter matches when it, or any
+	 * of these, matches. A where-clause `(a = 1 OR b = 2)` group. Filters stay
+	 * AND-ed with each other.
+	 */
+	or: Schema.optional(Schema.Array(AttributeFilterLeaf)),
 })
 export type AttributeFilter = Schema.Schema.Type<typeof AttributeFilter>
 

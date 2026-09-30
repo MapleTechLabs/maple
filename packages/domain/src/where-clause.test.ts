@@ -334,3 +334,73 @@ describe("quoteWhereValue", () => {
 		expect(result.warnings).toHaveLength(1)
 	})
 })
+
+describe("OR groups", () => {
+	const orGroups = { orGroups: true }
+
+	it("parses a parenthesized OR group next to plain clauses", () => {
+		const result = parseWhereClause(
+			'service.name = "api" AND (messaging.destination.name = "kafka" OR messaging.destination.name !exists)',
+			orGroups,
+		)
+		expect(result.warnings).toEqual([])
+		expect(result.clauses).toEqual([
+			{ key: "service.name", rawKey: "service.name", operator: "=", value: "api" },
+		])
+		expect(result.groups).toEqual([
+			[
+				{
+					key: "messaging.destination.name",
+					rawKey: "messaging.destination.name",
+					operator: "=",
+					value: "kafka",
+				},
+				{
+					key: "messaging.destination.name",
+					rawKey: "messaging.destination.name",
+					operator: "!exists",
+					value: "",
+				},
+			],
+		])
+	})
+
+	it("reports a group as unsupported unless the caller opts in", () => {
+		const result = parseWhereClause("(a = 1 OR b = 2) AND c = 3")
+		expect(result.groups).toEqual([])
+		expect(result.clauses).toHaveLength(1)
+		expect(result.warnings.map((w) => w.message)).toEqual([
+			"Unsupported clause syntax ignored: (a = 1 OR b = 2)",
+		])
+	})
+
+	it("does not split on AND or OR inside a quoted value or a group", () => {
+		const result = parseWhereClause(
+			`(note = "buy and sell" OR note = 'this or that') AND x = 1`,
+			orGroups,
+		)
+		expect(result.warnings).toEqual([])
+		expect(result.groups[0]?.map((c) => c.value)).toEqual(["buy and sell", "this or that"])
+		expect(result.clauses.map((c) => c.key)).toEqual(["x"])
+	})
+
+	it("treats a single parenthesized clause as a plain clause", () => {
+		const result = parseWhereClause("(a = 1)")
+		expect(result.warnings).toEqual([])
+		expect(result.clauses).toEqual([{ key: "a", rawKey: "a", operator: "=", value: "1" }])
+	})
+
+	it("rejects AND and nesting inside a group instead of guessing precedence", () => {
+		for (const expression of ["(a = 1 AND b = 2 OR c = 3)", "(a = 1 OR (b = 2 OR c = 3))"]) {
+			const result = parseWhereClause(expression, orGroups)
+			expect(result.groups).toEqual([])
+			expect(result.warnings).toHaveLength(1)
+		}
+	})
+
+	it("keeps `(a) AND (b)` as two clauses", () => {
+		const result = parseWhereClause("(a = 1) AND (b = 2)", orGroups)
+		expect(result.warnings).toEqual([])
+		expect(result.clauses.map((c) => c.key)).toEqual(["a", "b"])
+	})
+})

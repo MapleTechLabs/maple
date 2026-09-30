@@ -122,6 +122,15 @@ export function buildAttrFilterCondition(
 	mapName: "SpanAttributes" | "LogAttributes" | "ResourceAttributes" | "Attributes",
 	requestedIndexMode: AttributeIndexMode = "none",
 ): CH.Condition {
+	// An `(a OR b)` group. Each member keeps its own exact predicate; the index
+	// prefilters are skipped, since an OR of per-member candidates is no narrower
+	// than the exact OR and only adds granule reads.
+	if (af.or?.length) {
+		const { or, ...first } = af
+		return [first, ...or]
+			.map((member) => buildAttrFilterCondition(member, mapName, "none"))
+			.reduce((acc, cond) => acc.or(cond))
+	}
 	// `product_events.Attributes` carries no skip index, so the exact predicate stands alone.
 	const indexMode: AttributeIndexMode = mapName === "Attributes" ? "none" : requestedIndexMode
 	const mapExpr = CH.dynamicColumn<Record<string, string>>(mapName)

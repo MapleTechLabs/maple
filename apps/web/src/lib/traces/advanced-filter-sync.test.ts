@@ -682,3 +682,40 @@ describe("applyWhereClause removals", () => {
 		expect(result.hasError).toBe(true)
 	})
 })
+
+describe("OR groups", () => {
+	it("parses an attribute group onto one entry with or alternatives", () => {
+		const { filters, warnings } = parseWhereClause(
+			'root_only = false AND (messaging.destination.name = "kafka" OR messaging.destination.name !exists)',
+		)
+		expect(warnings).toEqual([])
+		expect(filters.rootOnly).toBe(false)
+		expect(filters.attributeFilters).toEqual([
+			{
+				key: "messaging.destination.name",
+				value: "kafka",
+				or: [{ key: "messaging.destination.name", value: "", matchMode: "exists", negated: true }],
+			},
+		])
+	})
+
+	it("rejects a group that ORs a named field or mixes maps", () => {
+		for (const whereClause of [
+			'(service.name = "api" OR attr.x = "1")',
+			'(attr.x = "1" OR resource.y = "2")',
+		]) {
+			const { filters, warnings } = parseWhereClause(whereClause)
+			expect(filters.attributeFilters).toEqual([])
+			expect(filters.resourceAttributeFilters).toEqual([])
+			expect(filters.service).toBeUndefined()
+			expect(warnings).toHaveLength(1)
+			expect(warnings[0]).toContain("OR group ignored")
+		}
+	})
+
+	it("round-trips a group through toWhereClause", () => {
+		const whereClause = '(attr.a = "1" OR attr.b !exists)'
+		const { filters } = parseWhereClause(whereClause)
+		expect(toWhereClause(filters)).toBe(whereClause)
+	})
+})

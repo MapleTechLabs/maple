@@ -1565,6 +1565,7 @@ export function canUseTraceListMvStage1(opts: TraceListOpts): boolean {
 	if (opts.resourceAttributeFilters?.length) return false
 	if (opts.commitShas?.length) return false
 	for (const af of opts.attributeFilters ?? []) {
+		if (af.or?.length) return false
 		if (!TRACE_LIST_MV_ATTR_COLUMNS.has(af.key)) return false
 		const expressible =
 			(af.mode === "equals" && af.value !== undefined) || (af.mode === "in" && !!af.values?.length)
