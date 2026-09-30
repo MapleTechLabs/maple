@@ -230,8 +230,6 @@ class AdkSpanProcessor extends tracing.BatchSpanProcessor {
 			attributes["gen_ai.operation.name"] = "chat"
 			attributes["gen_ai.provider.name"] = "gcp.gemini"
 			if (usage.thoughtsTokenCount) {
-				// Gemini counts thinking outside candidatesTokenCount; output tokens include it
-				attributes["gen_ai.usage.output_tokens"] = (usage.candidatesTokenCount ?? 0) + usage.thoughtsTokenCount
 				attributes["gen_ai.usage.reasoning.output_tokens"] = usage.thoughtsTokenCount
 			}
 			if (usage.cachedContentTokenCount) attributes["gen_ai.usage.cache_read.input_tokens"] = usage.cachedContentTokenCount
