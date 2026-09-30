@@ -28,17 +28,18 @@ export interface SignalLogRecord {
 
 export type EmitLog = (record: SignalLogRecord) => void
 
-const LEVELS: Record<string, keyof typeof Severity> = {
-	error: "ERROR",
-	warn: "WARN",
-	debug: "DEBUG",
-}
+/** A `Map`, not an object: a level string like `"constructor"` must not reach the prototype. */
+const LEVELS = new Map<string, keyof typeof Severity>([
+	["error", "ERROR"],
+	["warn", "WARN"],
+	["debug", "DEBUG"],
+])
 
 /** Severity for a console level: `log` and `info` are INFO. */
 export function severityOf(level: string | undefined): {
 	readonly number: number
 	readonly text: keyof typeof Severity
 } {
-	const text = (level !== undefined && Object.hasOwn(LEVELS, level) ? LEVELS[level] : undefined) ?? "INFO"
+	const text = (level !== undefined ? LEVELS.get(level) : undefined) ?? "INFO"
 	return { number: Severity[text], text }
 }

@@ -1,8 +1,17 @@
 import { describe, expect, it } from "vitest"
 import { filterHeaderAttribute, resolveHeaderCapture } from "./http-headers"
-import { httpStatusError, inStatusRanges, responseStatus } from "./http-status"
+import {
+	type AttributeValue,
+	httpStatusError,
+	inStatusRanges,
+	type ReadAttribute,
+	responseStatus,
+} from "./http-status"
 
-const attributes = (values: Record<string, unknown>) => (key: string) => values[key]
+const attributes =
+	(values: Record<string, AttributeValue>): ReadAttribute =>
+	(key) =>
+		values[key]
 
 describe("http status policy", () => {
 	it("matches codes and inclusive ranges", () => {

@@ -1,7 +1,13 @@
 // The OTel adapter for the shared HTTP status policy. The fetch instrumentation
 // leaves 4xx/5xx responses Unset; the XHR one marks every status >= 400 Error,
 // and every Error span becomes an issue, so both are brought to the one rule.
-import { type HttpStatusRange, httpStatusError, inStatusRanges, responseStatus } from "@maple/sdk-core"
+import {
+	type HttpStatusRange,
+	httpStatusError,
+	inStatusRanges,
+	type ReadAttribute,
+	responseStatus,
+} from "@maple/sdk-core"
 import { type Attributes, type SpanStatus, SpanKind, SpanStatusCode } from "@opentelemetry/api"
 import type { ReadableSpan, SpanExporter } from "@opentelemetry/sdk-trace-base"
 
@@ -46,7 +52,7 @@ export class HttpStatusExporter implements SpanExporter {
 	) {}
 
 	private apply(span: ReadableSpan): ReadableSpan {
-		const read = (key: string): unknown => span.attributes[key]
+		const read: ReadAttribute = (key) => span.attributes[key]
 		const status = responseStatus(read)
 		if (
 			span.kind === SpanKind.CLIENT &&

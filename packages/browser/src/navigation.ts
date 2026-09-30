@@ -73,11 +73,6 @@ const tracedSpans = new WeakSet<Span>()
  */
 const tracer = () => (hasConsent() ? liveMapleTracer(SDK_NAME, SDK_VERSION) : undefined)
 
-/** The navigation span in flight, for work that should nest under it. */
-export function openNavigationSpan(): Span | undefined {
-	return navigation?.span
-}
-
 /** The open navigation span, if it had already started at `epochMs`: a child must not begin before its parent. */
 export function navigationSpanAt(epochMs: number): Span | undefined {
 	return navigation && navigation.startedAt <= epochMs ? navigation.span : undefined

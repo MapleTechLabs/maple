@@ -6,7 +6,7 @@ export type { ErrorFilter, ErrorFilterHint, ErrorFilterOptions, ErrorSource } fr
 export { frameUrls, makeErrorFilter } from "./error-filters"
 export type { HeaderCapture, HeaderCaptureOptions } from "./http-headers"
 export { filterHeaderAttribute, resolveHeaderCapture } from "./http-headers"
-export type { HttpStatusRange } from "./http-status"
+export type { AttributeValue, HttpStatusRange, ReadAttribute } from "./http-status"
 export { httpStatusError, inStatusRanges, responseStatus } from "./http-status"
 export type { EmitLog, LogAttributeValue, SignalLogRecord, SpanLink } from "./log-record"
 export { Severity, severityOf } from "./log-record"

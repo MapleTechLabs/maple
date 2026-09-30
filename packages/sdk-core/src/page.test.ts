@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, it } from "vitest"
 import {
 	claimPageSignal,
+	leasePageSignalAsOtherCopyForTests,
 	markReported,
 	notifyErrorRecorded,
 	onErrorRecorded,
+	pageSignalLeasesForTests,
 	resetPageForTests,
 	wasReported,
 } from "./page"
@@ -12,15 +14,6 @@ afterEach(() => resetPageForTests())
 
 const LINK = { traceId: "0af7651916cd43dd8448eb211c80319c", spanId: "b7ad6b7169203331", traceFlags: 1 }
 const KEY = "__MAPLE_SDK_PAGE_V1__"
-
-/** The shared state as another bundled copy of this module would see it. */
-function sharedLeases(): Map<string, { owner: symbol; count: number }> {
-	const state: unknown = Reflect.get(globalThis, KEY)
-	const leases: unknown =
-		typeof state === "object" && state !== null ? Reflect.get(state, "leases") : undefined
-	if (!(leases instanceof Map)) throw new Error("no shared page state")
-	return leases
-}
 
 describe("page coordination", () => {
 	it("records an error object once across SDK copies", () => {
@@ -51,19 +44,20 @@ describe("page coordination", () => {
 		expect(second).toBeDefined()
 		first?.()
 		first?.()
-		expect(sharedLeases().get("webVitals")?.count).toBe(1)
+		expect(pageSignalLeasesForTests("webVitals")).toBe(1)
 		second?.()
-		expect(sharedLeases().has("webVitals")).toBe(false)
+		expect(pageSignalLeasesForTests("webVitals")).toBe(0)
+		expect(claimPageSignal("webVitals")).toBeDefined()
 	})
 
 	it("refuses a collector another copy runs, and leaves the other collectors free", () => {
-		sharedLeases().set("webVitals", { owner: Symbol("other copy"), count: 1 })
+		leasePageSignalAsOtherCopyForTests("webVitals")
 		expect(claimPageSignal("webVitals")).toBeUndefined()
 		expect(claimPageSignal("csp")).toBeDefined()
 	})
 
 	it("starts fresh instead of misreading state an older copy wrote", () => {
-		Reflect.set(globalThis, KEY, { reported: new WeakSet(), errorListeners: new Set() })
+		Object.assign(globalThis, { [KEY]: { reported: new WeakSet(), errorListeners: new Set() } })
 		expect(claimPageSignal("longFrames")).toBeDefined()
 		expect(wasReported(new Error("y"))).toBe(false)
 	})

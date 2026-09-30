@@ -92,6 +92,17 @@ export function claimPageSignal(signal: PageSignal): (() => void) | undefined {
 	}
 }
 
+/** Test seam: how many instances of this copy hold `signal`, 0 when another copy or nobody does. */
+export function pageSignalLeasesForTests(signal: PageSignal): number {
+	const lease = page().leases.get(signal)
+	return lease?.owner === COPY ? lease.count : 0
+}
+
+/** Test seam: have another bundled copy hold `signal`. */
+export function leasePageSignalAsOtherCopyForTests(signal: PageSignal): void {
+	page().leases.set(signal, { owner: Symbol("other maple-sdk copy"), count: 1 })
+}
+
 /** Test seam: forget reported errors and leases; listeners belong to live SDK instances and stay. */
 export function resetPageForTests(): void {
 	const listeners = page().errorListeners

@@ -100,7 +100,8 @@
 			"entry": ["src/drain/index.ts"]
 		},
 		"packages/browser": {
-			"ignoreDependencies": ["rrweb"]
+			// Imported by the private packages it bundles (browser-session, sdk-core); listed here so the build keeps them external.
+			"ignoreDependencies": ["rrweb", "web-vitals"]
 		}
 	},
 	"rules": {
