@@ -24,6 +24,7 @@ import {
 	aiToolsTotalsQuery,
 	AI_TOOLS_BREAKDOWN_LIMIT,
 	AI_TOOLS_SERIES_MAX_KEYS,
+	AI_TOOL_ERROR_ATTRIBUTE_MAX,
 	AI_TOOL_ERROR_PAYLOAD_MAX,
 	AI_TOOL_OCCURRENCES_LIMIT,
 	type AiToolErrorCallKey,
@@ -666,11 +667,42 @@ describe("aiToolErrorPayloadsQuery", () => {
 		expect(compiled.sql).toContain("AS spanAttributes")
 		expect(compiled.sql).not.toContain("coalesce(")
 	})
+
+	it("cuts every value in SQL and reports the true size of the ones it cut", () => {
+		expect(compiled.sql).toContain(
+			`mapApply((k, v) -> (k, leftUTF8(v, ${AI_TOOL_ERROR_ATTRIBUTE_MAX})), mapFilter(`,
+		)
+		expect(compiled.sql).toContain(
+			`mapApply((k, v) -> (k, length(v)), mapFilter((k, v) -> lengthUTF8(v) > ${AI_TOOL_ERROR_ATTRIBUTE_MAX}, mapFilter(`,
+		)
+		expect(compiled.sql).toContain("AS cutAttributeBytes")
+		expect(
+			decodeRows(compiled, [
+				{
+					traceId: "t1",
+					spanId: "s1",
+					statusCode: "Error",
+					spanAttributes: { "input.value": "{}" },
+					// UInt64 arrives quoted under FORMAT JSON.
+					cutAttributeBytes: { "output.value": "40000" },
+				},
+			])[0]?.cutAttributeBytes,
+		).toEqual({ "output.value": 40_000 })
+	})
 })
 
 describe("aiToolErrorPayload", () => {
-	const payload = (spanAttributes: Record<string, string>) =>
-		aiToolErrorPayload({ traceId: "t1", spanId: "s1", statusCode: "Error", spanAttributes })
+	const payload = (
+		spanAttributes: Record<string, string>,
+		cutAttributeBytes: Record<string, number> = {},
+	) =>
+		aiToolErrorPayload({
+			traceId: "t1",
+			spanId: "s1",
+			statusCode: "Error",
+			spanAttributes,
+			cutAttributeBytes,
+		})
 
 	// `update_seat` as the OpenAI Agents SDK's Python OpenInference instrumentor
 	// emitted it in production: the GenAI dual-write put the parameter schema in
@@ -753,6 +785,34 @@ describe("aiToolErrorPayload", () => {
 		expect(Array.from(cut.result)).toHaveLength(AI_TOOL_ERROR_PAYLOAD_MAX)
 		expect(cut.resultBytes).toBe((AI_TOOL_ERROR_PAYLOAD_MAX + 10) * 2)
 		expect(payload({})).toMatchObject({ arguments: "", argumentsBytes: 0, result: "", resultBytes: 0 })
+	})
+
+	it("shows a value the read cut as its raw text, at its true size", () => {
+		// As the read returns a 40 KB JSON result: cut mid-document, so it no
+		// longer parses.
+		const whole = JSON.stringify({ rows: "x".repeat(40_000) })
+		const cut = whole.slice(0, AI_TOOL_ERROR_ATTRIBUTE_MAX)
+		const shown = payload(
+			{ "gen_ai.tool.call.arguments": "{}", "gen_ai.tool.call.result": cut },
+			{ "gen_ai.tool.call.result": whole.length },
+		)
+		expect(shown).toMatchObject({ arguments: "{}", argumentsBytes: 2, resultBytes: whole.length })
+		expect(shown.result).toBe(cut.slice(0, AI_TOOL_ERROR_PAYLOAD_MAX))
+	})
+
+	it("still swaps an OpenInference schema for the arguments when both are cut", () => {
+		// The schema and its dual-written copy are cut to the same prefix, so
+		// they still compare equal and `input.value` still wins.
+		const schema = JSON.stringify({
+			properties: { seat: { description: "d".repeat(AI_TOOL_ERROR_ATTRIBUTE_MAX) } },
+		})
+		const cut = schema.slice(0, AI_TOOL_ERROR_ATTRIBUTE_MAX)
+		expect(
+			payload(
+				{ ...updateSeat(cut), "tool.parameters": cut },
+				{ "tool.parameters": schema.length, "gen_ai.tool.call.arguments": schema.length },
+			),
+		).toMatchObject({ arguments: UPDATE_SEAT_ARGS, argumentsBytes: UPDATE_SEAT_ARGS.length })
 	})
 })
 
