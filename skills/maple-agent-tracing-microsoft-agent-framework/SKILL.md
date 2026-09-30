@@ -5,7 +5,7 @@ description: "Trace Microsoft Agent Framework and Semantic Kernel agents (Python
 
 # Maple agent tracing: Microsoft Agent Framework and Semantic Kernel
 
-Goal: one user conversation = one Maple Agent Session, with a transcript, every model call, every tool call (arguments, results, failures) and tokens. Human guide with the reasoning: https://maple.dev/docs/agent-tracing/microsoft-agent-framework
+Goal: one user conversation = one Maple Agent Session, with a transcript, every model call, every tool call (arguments, results, failures) and tokens.
 
 The framework emits the spans itself. You add: an OTLP/HTTP exporter, content capture, a `gen_ai.conversation.id` span processor (the framework never sets one for local-history sessions), and a flush.
 
@@ -263,12 +263,5 @@ Run one real conversation (2-3 turns, one tool call; a second conversation if ch
 
 ## Do not
 
-- Do not leave the MAF protocol at its gRPC default.
-- Do not use `gen_ai.agent.id`, `workflow.id`, `service.instance.id` or a module-level constant as the conversation id.
 - Do not pass `conversation_id` as an agent/run option to label traces: it disables in-memory history and becomes `previous_response_id` on the Responses client.
-- Do not call `configure_otel_providers()` when the app already has a TracerProvider, and do not create a second provider.
-- Do not set `OTEL_SEMCONV_STABILITY_OPT_IN` without `gen_ai_latest_experimental`.
-- Do not add a provider-SDK instrumentor (OpenAI, httpx-based GenAI instrumentors) on top; MAF already traces model calls.
-- Do not import `semantic_kernel` before setting its diagnostics env vars.
 - Do not pass a bare string as `Message("user", text)` contents; use `[text]`.
-- Do not filter out non-AI spans (HTTP, workflow) in a collector; dropping parents orphans the AI spans.

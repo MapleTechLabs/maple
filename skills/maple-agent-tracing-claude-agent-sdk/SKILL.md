@@ -5,13 +5,11 @@ description: "Trace Claude Agent SDK agents (TypeScript and Python) and Claude C
 
 # Maple agent tracing: Claude Agent SDK and Claude Code
 
-Human guide with the reasoning: https://maple.dev/docs/agent-tracing/claude-agent-sdk
-
 ## Goal
 
 One conversation = one Maple Agent Session, one turn per user message, with the user prompts, every model call (model, tokens, TTFT), every tool call (name, args, result, failures).
 
-How it works: the Agent SDK emits nothing itself. `query()` spawns the Claude Code CLI, which has OpenTelemetry built in and exports spans `claude_code.interaction` (turn), `claude_code.llm_request` (model call), `claude_code.tool` (tool call), with phase children `claude_code.tool.blocked_on_user` / `claude_code.tool.execution`. All configuration is environment variables for that child process. Maple detects the `com.anthropic.claude_code*` scopes (spans come from `com.anthropic.claude_code.tracing`), groups by the `session.id` span attribute, and restates the spans as `gen_ai.*` at ingest. No instrumentation package, no TracerProvider.
+How it works: the Agent SDK emits nothing itself. `query()` spawns the Claude Code CLI, which has OpenTelemetry built in and exports spans `claude_code.interaction` (turn), `claude_code.llm_request` (model call), `claude_code.tool` (tool call), with phase children `claude_code.tool.blocked_on_user` / `claude_code.tool.execution`. All configuration is environment variables for that child process. No instrumentation package, no TracerProvider.
 
 Known gaps (tell the user, don't try to fix): assistant reply text and cost are only on OTLP log events, which Maple's session views don't read, so transcripts have no assistant text and sessions show "unpriced"; no `gen_ai.agent.name`, so sub-agents get no separate lanes; tool arguments shown only for Bash (command) and Read/Edit/Write (file path).
 
@@ -234,15 +232,5 @@ If spans exist but the turn nests under an unrelated trace, an inherited `TRACEP
 
 ## Do not
 
-- Do not omit `CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1`: zero spans without it (metrics/logs still flow, which hides the problem).
-- Do not leave `OTEL_EXPORTER_OTLP_PROTOCOL` unset or use `grpc`: Claude Code has no default; Maple ingest is OTLP/HTTP.
-- Do not set any exporter to `console` in SDK apps: stdout is the SDK message channel.
-- Do not pass a TS `env` without `...process.env`.
-- Do not pass an inherited `TRACEPARENT`/`TRACESTATE` to the CLI (Claude Code's Bash tool and CI set them).
-- Do not call `query()` per message without `resume`.
-- Do not put telemetry vars in a repo's `.claude/settings.json`.
-- Do not assume `options.env` wins: `env` in loaded settings files overrides it (Step 0).
-- Do not add a second instrumentation (OpenInference/Langfuse/LangSmith hooks) on top of the CLI's spans.
-- Do not use `OTEL_METRICS_INCLUDE_SESSION_ID=false`, `forkSession` on normal turns, or detailed beta tracing.
-- Do not promise cost or assistant replies in Maple's session views; they are in Logs (`claude_code.api_request` `cost_usd`, `claude_code.assistant_response`) and the `claude_code.cost.usage` metric.
-- Do not print or commit `maple_sk_` keys or model API keys.
+- Do not omit `CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1`: zero spans, while metrics/logs still flow and hide it.
+- Do not leave `OTEL_EXPORTER_OTLP_PROTOCOL` unset or `grpc`: Claude Code has no default; Maple ingest is OTLP/HTTP.

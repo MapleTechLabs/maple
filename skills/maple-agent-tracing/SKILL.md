@@ -5,11 +5,11 @@ description: "Trace an AI agent or LLM app with Maple so each conversation shows
 
 # Maple agent tracing (router)
 
-This skill only picks the right per-framework skill. Each framework has its own skill so you load the steps for your stack and nothing else. The human-readable overview is https://maple.dev/docs/agent-tracing.
+This skill only picks the right per-framework skill.
 
 ## Step 1: Find every agent in the repo
 
-Look for LLM and agent dependencies in every app and service: `package.json`, `pyproject.toml`, `requirements*.txt`, `uv.lock`, `pom.xml`, `build.gradle*`, `*.csproj`, `go.mod`. A repo can have more than one (a TypeScript chat backend and a Python worker, for example). Handle each one.
+Look for LLM and agent dependencies in every app and service: `package.json`, `pyproject.toml`, `requirements*.txt`, `uv.lock`, `pom.xml`, `build.gradle*`, `*.csproj`, `go.mod`. A repo can have more than one; handle each one.
 
 ## Step 2: Install the matching skill and follow it
 

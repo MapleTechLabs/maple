@@ -7,9 +7,7 @@ description: "Trace Spring AI agents with Maple: wires Spring Boot's OpenTelemet
 
 Goal: every conversation with the Spring AI app shows up in Maple **Agent Sessions** as exactly one session, one turn per `ChatClient` call, with transcript, model calls, tool calls (failures marked), sub-agent lanes and tokens.
 
-Human guide with the reasoning: https://maple.dev/docs/agent-tracing/spring-ai
-
-Mechanism: Spring AI's Micrometer Observations → `micrometer-tracing-bridge-otel` → OpenTelemetry SDK → OTLP/HTTP to Maple, all from `spring-boot-starter-opentelemetry`. Maple detects the spans as Spring AI by their `spring.ai.*` keys. Out of the box: sampling is 10%, prompts/replies never reach spans (`log-prompt`/`log-completion` only log to SLF4J), and thrown tool errors end the span OK. Steps 2-5 fix all three.
+Mechanism: Spring AI's Micrometer Observations → `micrometer-tracing-bridge-otel` → OpenTelemetry SDK → OTLP/HTTP to Maple, all from `spring-boot-starter-opentelemetry`. Out of the box: sampling is 10%, prompts/replies never reach spans (`log-prompt`/`log-completion` only log to SLF4J), and thrown tool errors end the span OK. Steps 2-5 fix all three.
 
 ## Step 0: Detect versions and existing setup
 
@@ -25,7 +23,7 @@ Mechanism: Spring AI's Micrometer Observations → `micrometer-tracing-bridge-ot
 - US: `https://ingest.maple.dev`. EU: `https://ingest.eu.maple.dev`.
 - Header: `Authorization=Bearer <key>`. Protocol: OTLP/HTTP protobuf (Boot's default transport).
 - Key in the user's prompt: use it. No key: use the literal `MAPLE_TEST` (ingest accepts and discards it) and tell the user to replace it with their key from **Settings → Ingestion**.
-- Private `maple_sk_` keys never go in browser code. Spring AI runs server-side; an ingest key is write-only.
+- Private `maple_sk_` keys never go in browser code.
 - Follow the repo's existing secret/env convention (`${ENV_VAR}` placeholders, profile files, Vault/Config Server). If there is none, inline in `application.properties` is acceptable because ingest keys are write-only.
 - Keep `${MAPLE_INGEST_KEY}` without a default: unresolved, Boot fails at startup with a clear error, while `${MAPLE_INGEST_KEY:}` sends an empty `Bearer ` and gets an opaque 401. Boot does not read `.env` files: export the variable, or add `spring.config.import=optional:file:.env[.properties]` if the repo keeps one.
 
@@ -198,7 +196,7 @@ public class MapleAiObservationConfig {
 }
 ```
 
-Boot applies `ObservationFilter` beans to the registry automatically; nothing else to register. The filter runs when each observation stops, after Spring AI's own conventions. `spring.ai.tools.observations.include-content` writes `spring.ai.tool.call.arguments/result`, which Maple does not read; the filter's `gen_ai.tool.call.*` keys are the ones read.
+Boot applies `ObservationFilter` beans to the registry automatically; nothing else to register. `spring.ai.tools.observations.include-content` writes `spring.ai.tool.call.arguments/result`, which Maple does not read; the filter's `gen_ai.tool.call.*` keys are the ones read.
 
 Content notes: every `chat` span carries the whole conversation so far, so spans grow with long chats (don't cap them; see 2b). With `maple.ai.capture-content=false` no message/tool content leaves the process; to redact instead, mask values inside `message(...)`. The conversation id and agent names are sent regardless: keep personal data out of them.
 
@@ -257,7 +255,6 @@ public class Workers {
 
 ## Step 5b: Tokens and cost (no action needed, explain if asked)
 
-- `chat` spans carry `gen_ai.usage.input_tokens`, `output_tokens`, and `cache_read.input_tokens` / `cache_creation.input_tokens` when the provider reports them; Maple reads all four. `chat_client` spans carry no usage, so nothing is double counted.
 - Spring AI records the provider as `gen_ai.system`, derived from the client class, not the model: a Claude model behind OpenRouter via the OpenAI starter is labeled `openai`.
 - No cost attribute is emitted; sessions show as unpriced (Maple never prices tokens).
 
@@ -291,12 +288,4 @@ Without Maple access: the run logs no OTLP export errors or 401s AND a temporary
 
 ## Do not
 
-- Do not leave `management.tracing.sampling.probability` at the default `0.1`.
-- Do not rely on `log-prompt`/`log-completion`/`include-content` for the transcript; Maple reads `gen_ai.input.messages`/`gen_ai.output.messages`/`gen_ai.tool.call.*` span attributes only.
 - Do not stamp `maple_ai.session.id` on Spring AI spans; the conversation id param is the supported path.
-- Do not put a constant or per-request conversation id on calls.
-- Do not register a second `ToolExecutionExceptionProcessor` next to an existing one (ambiguous bean).
-- Do not attach the OTel Java agent next to the starter without the `GlobalOpenTelemetry` bean from Step 2c (every span becomes its own trace).
-- Do not set an attribute length limit (breaks content JSON).
-- Do not use an `ObservationPredicate` to drop Spring AI observations (breaks the streamed turn's trace).
-- Do not use this skill for LangChain4j; use the generic OpenTelemetry GenAI guide: https://maple.dev/docs/agent-tracing/opentelemetry

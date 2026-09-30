@@ -5,13 +5,9 @@ description: "Trace Vercel AI SDK agents with Maple: register the AI SDK's OpenT
 
 # Maple agent tracing: Vercel AI SDK
 
-Human guide with the reasoning: https://maple.dev/docs/agent-tracing/vercel-ai-sdk
-
 ## Goal
 
 One conversation = one Maple Agent Session, one turn per `generate()`/`stream()` call, with the transcript, every model call (model, tokens, TTFT), every tool call (name, args, result, failures), and a lane per sub-agent.
-
-How it works: AI SDK 7 emits GenAI-semconv spans through `@ai-sdk/otel` (`invoke_agent <model>` → `step <n>` → `chat <model>` + `execute_tool <tool>`) on tracer `gen_ai`, once `registerTelemetry(new OpenTelemetry())` has run. Content is on by default. Maple detects the AI SDK by its `gen_ai`/`ai` tracer scope and groups sessions by the conversation id you pass in `runtimeContext` (recorded as `ai.settings.context.conversationId` once `runtimeContext: true` is on).
 
 Known gaps (tell the user, don't try to fix): cost shows as "unpriced" (AI SDK emits no cost; Maple never prices tokens); on AI SDK 5/6 the final assistant reply is missing from transcripts. If model calls go through OpenRouter, its Broadcast traces carry per-call cost and Maple matches them to the AI SDK `chat` spans by response id (see the OpenRouter guide).
 
@@ -50,7 +46,7 @@ Use the repo's package manager (`@opentelemetry/api` arrives as a peer of `sdk-n
 OTEL_SERVICE_NAME=support-agent
 OTEL_RESOURCE_ATTRIBUTES=deployment.environment.name=production
 OTEL_EXPORTER_OTLP_ENDPOINT=https://ingest.maple.dev
-OTEL_EXPORTER_OTLP_HEADERS=Authorization=Bearer <key>
+OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer <key>"
 ```
 
 `NodeSDK()` with no span processors builds a batched OTLP http/protobuf exporter from these variables. Create `instrumentation.ts`:
@@ -92,7 +88,6 @@ export const sdk = new NodeSDK({ spanProcessors: [spanProcessor] })
 - `import "./instrumentation"` as the FIRST line of every entry point (server, worker, CLI). `registerTelemetry` must run before the first AI SDK call.
 - Keep `usage: true` (adds the reasoning-token breakdown, `ai.usage.*`) and `runtimeContext: true` (records the included runtime context keys; Maple reads the conversation id from them).
 - Do not pass `tracer:` to `OpenTelemetry` unless reusing a provider requires it; if you must, use `provider.getTracer("gen_ai")`. Other scope names break detection.
-- Existing provider: add `spanProcessor` to it (`spanProcessors: [..., spanProcessor]` or the provider's add method) instead of creating `NodeSDK`.
 
 ## Step 2b: Install and init (Next.js)
 
@@ -240,11 +235,4 @@ export class ConversationIdProcessor implements SpanProcessor {
 ## Do not
 
 - Do not use `experimental_telemetry: { isEnabled: true }` as the v7 setup; without `registerTelemetry` there are zero spans.
-- Do not call `registerTelemetry` twice or register `LegacyOpenTelemetry` alongside `OpenTelemetry` (duplicate spans, double tokens).
-- Do not start a second OpenTelemetry SDK next to an existing one; add a span processor.
-- Do not use `telemetry.metadata` (removed in v7) or `ToolLoopAgent({ id })` for agent names.
-- Do not stamp `maple_ai.session.id` on AI SDK spans: it re-vendors them and loses AI SDK decoding.
 - Do not add a second AI SDK tracer that also exports to Maple (Langfuse/Braintrust/Sentry AI integrations, OpenLLMetry/OpenInference AI SDK processors): every model call gets recorded twice.
-- Do not return error payloads from failing tools; throw.
-- Do not set attribute length limits.
-- Do not use a gRPC exporter; Maple ingest is OTLP over HTTP.

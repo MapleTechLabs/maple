@@ -5,15 +5,9 @@ description: "Trace Cloudflare Agents SDK agents (AIChatAgent, Agent on Durable 
 
 # Maple agent tracing: Cloudflare Agents SDK
 
-Human guide: https://maple.dev/docs/agent-tracing/cloudflare-agents
-
 ## Goal
 
 One chat (one agent instance) = one Maple Agent Session, one turn per user message, with the transcript, every model call (model, tokens), every tool call (name, args, result, failures), and a lane per sub-agent.
-
-How it works: the Agents SDK does not emit GenAI spans itself. Model calls go through the Vercel AI SDK, whose `@ai-sdk/otel` integration emits `invoke_agent <model>` → `step <n>` → `chat <model>` + `execute_tool <tool>` on tracer scope `gen_ai`. Maple detects them as **Vercel AI SDK** (by the `gen_ai` tracer scope) and groups sessions by the conversation id you pass in `runtimeContext` (recorded as `ai.settings.context.conversationId` once `runtimeContext: true` is on). Workers can't run `@opentelemetry/sdk-node`, so you build a `BasicTracerProvider` with the OTLP HTTP exporter (its browser/worker build posts OTLP JSON with `fetch`) and call `forceFlush()` at the end of each turn.
-
-Verified end to end (wrangler dev, workerd 1.20260926.1, a local OTLP receiver, `MockLanguageModelV4` from `ai/test`) with: `agents` 0.24.0, `@cloudflare/ai-chat` 0.12.0, `ai` 7.0.122, `@ai-sdk/otel` 1.0.122, `wrangler` 4.143.0, `@opentelemetry/sdk-trace-base` / `resources` / `context-async-hooks` 2.11.0, `@opentelemetry/exporter-trace-otlp-http` 0.222.0, `@opentelemetry/api` 1.9.1. Both `AIChatAgent` over its WebSocket protocol (2 turns x 2 chats, streamed, tool call, sub-agent) and a plain `Agent.onRequest` with `generateText`.
 
 Known gaps (tell the user, don't try to fix): cost shows as "unpriced" (the AI SDK emits no cost). These traces are separate from Cloudflare's native Workers traces (different trace ids); that's expected.
 
@@ -169,11 +163,4 @@ Then against Maple: the `wrangler dev` output shows no export errors (the diag l
 
 ## Do not
 
-- Do not use `@opentelemetry/sdk-node` / `NodeSDK` / `@vercel/otel` in a Worker.
-- Do not rely on Cloudflare's native trace destinations or `cloudflare:workers` `tracing` for the agent spans; they don't carry AI SDK spans.
-- Do not skip the per-turn flush.
-- Do not call `registerTelemetry` twice or register `LegacyOpenTelemetry` next to `OpenTelemetry` (duplicate spans, double tokens).
-- Do not use a per-request id, `ctx.id.toString()` of a shared DO, or a module constant as the conversation id.
-- Do not stamp `maple_ai.session.id` on AI SDK spans: it re-vendors them and loses AI SDK decoding.
 - Do not add a second AI SDK tracer that also exports to Maple (Langfuse/Braintrust/Sentry AI integrations): every model call gets recorded twice.
-- Do not put the ingest key in `vars` in the Wrangler config or in client code; use a secret.

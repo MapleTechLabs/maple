@@ -5,9 +5,9 @@ description: "Trace DSPy programs and ReAct agents with Maple: OpenInference DSP
 
 # Maple agent tracing: DSPy
 
-Goal: every conversation with the user's DSPy program shows up in Maple **Agent Sessions** as one session, with one turn per call to the program, a transcript, model calls with tokens and cost, tool calls with arguments, results and failures, and one lane per worker module. Human guide with the reasoning: https://maple.dev/docs/agent-tracing/dspy
+Goal: every conversation with the user's DSPy program shows up in Maple **Agent Sessions** as one session, with one turn per call to the program, a transcript, model calls with tokens and cost, tool calls with arguments, results and failures, and one lane per worker module.
 
-DSPy emits nothing by itself. Spans come from `openinference-instrumentation-dspy`. It records no tokens, no tool names, no agent spans and no session id; the steps below add all four. Do not skip any step.
+Spans come from `openinference-instrumentation-dspy`. It records no tokens, no tool names, no agent spans and no session id; the steps below add all four. Do not skip any step.
 
 ## Step 0: Detect versions and existing setup
 
@@ -95,9 +95,6 @@ def _message(role, values):
 
 
 class MapleCallback(BaseCallback):
-    """Adds what Maple reads and the OpenInference DSPy instrumentor leaves out:
-    an agent span per program, tool names and arguments, tokens and cost."""
-
     def __init__(self):
         self._agents = set()
         self._lms = {}
@@ -248,30 +245,25 @@ Then check in Maple **Agent Sessions** (`https://app.maple.dev/agent-sessions`, 
 - Worker modules appear as separate agents/lanes; with `dspy.Parallel`, all workers are in the same trace as the orchestrator, none orphaned.
 - The process exited cleanly and the last turn is present (flush ran).
 
-401 `ingest_unauthorized` / "Invalid ingest key" with a key you trust: keys are region-bound, so it likely belongs to the other region; try the other endpoint. For other failed checks, see the troubleshooting list in the human guide.
+401 `ingest_unauthorized` / "Invalid ingest key" with a key you trust: keys are region-bound, so it likely belongs to the other region; try the other endpoint.
 
 ## Known behaviours (expected, nothing to fix; explain them if the user asks)
 
 - `OPENINFERENCE_ENABLE_GENAI_SEMCONV=true` set before `instrument()` runs is equivalent to `TraceConfig(enable_genai_semconv=True)`. The GenAI dual-write never overwrites a key already set, so the callback's values win.
 - Each `LM.__call__` sits under `Predict.forward`, `Predict(StringSignature).forward` and `ChatAdapter.__call__`; those are DSPy steps, not extra model calls.
-- A `dspy.History` input is expanded into earlier user/assistant messages, so each model call repeats the conversation so far.
 - `dspy.ReAct` catches tool exceptions and hands `Execution error in <tool>: ...` back to the model. The tool span is `ERROR` and counted as failed; the `ReAct.forward` span and the user's module span stay `OK`, and the program's return value doesn't reveal the failure.
 - Tool spans have no `gen_ai.tool.call.id`: ReAct asks the model for the next tool as text fields (`next_tool_name`, `next_tool_args`), not through the provider's tool-calling API.
 - When `ChatAdapter` can't parse a reply, DSPy retries with `JSONAdapter`: one `Predict` span holds two adapter spans, each with its own `LM.__call__`. Both calls happened and both are billed.
 - Cost is DSPy's estimate from each history entry's `cost`: on the `lm15` engine from DSPy's bundled model metadata, on the LiteLLM engine LiteLLM's `response_cost`. Maple never prices tokens; a model DSPy can't price shows as **unpriced**.
 - An `LM` with a custom `engine=` reports whatever usage that engine puts on its response.
 - Anthropic models run on the LiteLLM engine by default (as does `dspy.LM(..., engine="litellm")`); that is where an extra LiteLLM/OpenAI instrumentor would double-count.
-- `dspy.Parallel` copies only DSPy's settings into its worker threads, not the OpenTelemetry context; `ThreadingInstrumentor` is what carries it. Without it, a test fan-out became four traces with most spans orphaned.
+- `dspy.Parallel` copies only DSPy's settings into its worker threads, not the OpenTelemetry context; `ThreadingInstrumentor` is what carries it.
 - Narrower content switches (`OPENINFERENCE_HIDE_INPUT_TEXT`, `OPENINFERENCE_HIDE_OUTPUT_TEXT`, `OPENINFERENCE_HIDE_LLM_INVOCATION_PARAMETERS`) redact parts of each model message; the callback's agent messages follow only `OPENINFERENCE_HIDE_INPUTS` / `OPENINFERENCE_HIDE_OUTPUTS`.
 - With content hidden the session still shows turns, model and tool calls, tokens and failures, with an empty transcript and no tool arguments or results.
 
 ## Do not
 
-- Do not add `openinference-instrumentation-litellm` or `-openai`. DSPy 3.4 runs most models on its own `lm15` engine, where they record nothing; on the LiteLLM engine they add a duplicate model span per call.
 - Do not name a `dspy.Module` attribute `history`: DSPy appends LM calls to it and a `dspy.History` there crashes every model call (`TypeError: object of type 'History' has no len()`). Pass `dspy.History` as an input field.
 - Do not set `disable_history=True` or `max_history_size=0`: the callback reads token usage from LM history.
-- Do not expect tokens for cache hits (`cache=True` is the default); they cost nothing and are skipped.
-- Do not use MLflow autolog or `opentelemetry-instrumentation-genai-dspy` as the Maple path: the first has no session id Maple reads, the second (1.2b0) records no model calls and is not identified as DSPy.
-- Do not create a second `TracerProvider` when one exists.
-- Do not pass `endpoint=` without `/v1/traces`, or set the env endpoint with it.
+- Do not use `opentelemetry-instrumentation-genai-dspy` as the Maple path: 1.2b0 records no model calls and is not identified as DSPy.
 - Do not trace optimizer runs (`MIPROv2`, `GEPA`, `BootstrapFewShot`) or `dspy.Evaluate` under the production service name; they make hundreds of calls.

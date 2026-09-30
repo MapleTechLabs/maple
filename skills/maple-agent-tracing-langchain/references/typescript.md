@@ -2,11 +2,9 @@
 
 Follow this instead of Steps 2-7 of SKILL.md when the app is TypeScript/JavaScript. Step 1 (key and region) is shared.
 
-Goal is the same as Python: every conversation = one Maple Agent Session, each `invoke()`/`stream()` = one turn (one trace) with a readable transcript, chat spans with tokens, tool spans with name/arguments/result, failed tools marked failed, sub-agents in their own lanes.
-
 Mechanism: `@arizeai/openinference-instrumentation-langchain` (scope `@arizeai/openinference-instrumentation-langchain`) emits OpenInference attributes only; unlike Python it has NO GenAI dual-write (`enable_genai_semconv` does not exist in JS). Maple groups sessions by its `session.id` and decodes the transcript, but without help finds no agent names and counts the `tools` node as a tool call. The `GenAiSpans` span processor below fixes that: in the SDK's `onEnding` hook (after OpenInference has set its attributes, before the span is frozen) it copies them into `gen_ai.*`.
 
-Tested: langchain 1.5.14, @langchain/core 1.2.13, @langchain/langgraph 1.4.18, @langchain/openai 1.6.0, @arizeai/openinference-instrumentation-langchain 4.1.1, @opentelemetry/sdk-node 0.222.0 (sdk-trace-base 2.11.0), Node.js 26 and Bun 1.3, with `createAgent` + `MemorySaver`, a mock OpenAI-compatible server (invoke and `streamMode: "messages"`), `FakeToolCallingModel`/`FakeListChatModel`, an agent-as-tool sub-agent, a failing tool, plain `prompt.pipe(model)` chains, a 20-turn thread.
+Tested: langchain 1.5.14, @langchain/core 1.2.13, @langchain/langgraph 1.4.18, @langchain/openai 1.6.0, @arizeai/openinference-instrumentation-langchain 4.1.1, @opentelemetry/sdk-node 0.222.0 (sdk-trace-base 2.11.0), Node.js 26 and Bun 1.3.
 
 ## Step 0: Detect
 
@@ -34,7 +32,7 @@ Env vars (as SKILL.md Step 1): `OTEL_SERVICE_NAME`, `OTEL_RESOURCE_ATTRIBUTES`, 
 
 ## Step 2: Init
 
-Create `genai-spans.ts` next to the entry point. Copy it unchanged (it is the exact file that was tested):
+Create `genai-spans.ts` next to the entry point. Copy it unchanged:
 
 ```ts
 // genai-spans.ts: adds the OpenTelemetry GenAI attributes Maple reads to OpenInference's LangChain spans
@@ -266,15 +264,3 @@ Known gaps (not setup bugs): `gen_ai.provider.name` is LangChain's `ls_provider`
 Why not the alternatives (checked 2026-09):
 - `@traceloop/instrumentation-langchain` 0.27 (OpenLLMetry) emits `gen_ai.*`, but starts spans without the LangChain parent run, drops tool calls from messages, and has no conversation id.
 - LangSmith JS OTel export is experimental; Maple labels it "LangChain" but it has the same problems as the Python LangSmith path (see SKILL.md).
-
-## Do not
-
-- Do not skip `GenAiSpans`: without it agents have no names and the `tools` node counts as a tool call.
-- Do not skip `manuallyInstrument(CallbackManagerModule)`.
-- Do not start a second `NodeSDK` / tracer provider when one exists.
-- Do not lower `spanLimits.attributeCountLimit` back to the default.
-- Do not also enable OpenLLMetry's LangChain instrumentation or LangSmith OTel export: duplicate spans and doubled tokens.
-- Do not generate a new `thread_id` per request; do not forget it on `stream()` and `Command` resumes; use `metadata` for plain chains.
-- Do not leave `createAgent` calls unnamed.
-- Do not add `maple_ai.session.id` attributes.
-- Do not promise cost.

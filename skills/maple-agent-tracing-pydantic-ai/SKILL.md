@@ -7,8 +7,6 @@ description: "Trace Pydantic AI agents with Maple: export Pydantic AI's built-in
 
 Goal: every conversation = one Maple Agent Session. Each `agent.run()` = one turn (one trace) with transcript, `chat` spans with tokens, `execute_tool` spans with args/results, failed tools marked failed, sub-agents in their own lanes.
 
-Human guide with the reasoning: https://maple.dev/docs/agent-tracing/pydantic-ai
-
 Mechanism: Pydantic AI's native OTel instrumentation (scope `pydantic-ai`, GenAI semconv on span attributes). No extra instrumentation package. Maple reads `gen_ai.conversation.id` as the session key for this framework.
 
 ## Step 0: Detect
@@ -38,7 +36,7 @@ Env vars (the exporter reads them when it is built; it appends `/v1/traces`). If
 
 ```bash
 OTEL_EXPORTER_OTLP_ENDPOINT=https://ingest.maple.dev
-OTEL_EXPORTER_OTLP_HEADERS=Authorization=Bearer <key>
+OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer <key>"
 OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
 ```
 
@@ -211,12 +209,5 @@ Without Maple access (or with `MAPLE_TEST`), both must hold; silence alone prove
 
 ## Do not
 
-- Do not rely on the automatic `gen_ai.conversation.id`: it's a new UUID7 per run without history.
-- Do not forget `conversation_id=ctx.conversation_id` on delegated runs.
-- Do not create a second `TracerProvider` when one exists, and do not add Logfire just for Maple.
-- Do not set `version=2|3|4` (deprecated) or `event_mode="logs"` (content moves to logs, which Maple doesn't read).
-- Do not add `session.id` or `maple_ai.session.id` attributes: Maple reads `gen_ai.conversation.id` for Pydantic AI, and `maple_ai.session.id` would re-vendor the span.
-- Do not also instrument the model client (OpenAI/Anthropic instrumentors, `logfire.instrument_openai`, a global `logfire.instrument_httpx()`): duplicate model-call spans. `instrument_httpx(client)` on a tool's own client is fine.
-- Do not return error strings from tools that failed; raise `ToolFailed`.
-- Do not add token pricing code.
-- Do not print or commit real keys beyond the repo's convention.
+- Do not keep `event_mode="logs"`: content moves to logs, which Maple doesn't read (empty transcript).
+- Do not add `session.id` or `maple_ai.session.id`: Maple reads `gen_ai.conversation.id` here; `maple_ai.session.id` re-vendors the span.

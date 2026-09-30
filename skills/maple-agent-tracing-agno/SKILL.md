@@ -7,9 +7,7 @@ description: "Trace Agno agents with Maple: installs the OpenInference Agno inst
 
 Goal: every conversation with the Agno app shows up in Maple **Agent Sessions** as exactly one session, one turn per `run()`, with transcript, model calls, tool calls (failures marked), team-member lanes, tokens and cost where the provider returns it.
 
-Human guide with the reasoning: https://maple.dev/docs/agent-tracing/agno
-
-Mechanism: `openinference-instrumentation-agno` (the instrumentor Agno's own `setup_tracing()` uses) + OTel SDK + OTLP/HTTP exporter to Maple. Agno's `setup_tracing(db=...)` and `AgentOS(tracing=True)` only write to the AgentOS database; they never export OTLP.
+Mechanism: `openinference-instrumentation-agno` + OTel SDK + OTLP/HTTP exporter to Maple. Agno's `setup_tracing(db=...)` and `AgentOS(tracing=True)` only write to the AgentOS database; they never export OTLP.
 
 ## Step 0: Detect versions and existing setup
 
@@ -52,12 +50,12 @@ opentelemetry-exporter-otlp-proto-http
 OTEL_SERVICE_NAME=<service name, e.g. support-agent>
 OTEL_RESOURCE_ATTRIBUTES=deployment.environment.name=<env>
 OTEL_EXPORTER_OTLP_ENDPOINT=https://ingest.maple.dev     # EU: https://ingest.eu.maple.dev
-OTEL_EXPORTER_OTLP_HEADERS=Authorization=Bearer <key>
+OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer <key>"
 OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
 AGNO_TELEMETRY=false
 ```
 
-The exporter appends `/v1/traces` to `OTEL_EXPORTER_OTLP_ENDPOINT`. If you use `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` instead, give the full `.../v1/traces` URL. `AGNO_TELEMETRY=false` disables Agno's anonymous usage pings (unrelated to OTel).
+The exporter appends `/v1/traces` to `OTEL_EXPORTER_OTLP_ENDPOINT`. If you use `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` instead, give the full `.../v1/traces` URL.
 
 ### 2c. Tracing module
 
@@ -81,7 +79,7 @@ AgnoInstrumentor().instrument(
 )
 ```
 
-- `enable_genai_semconv=True` is REQUIRED. It dual-writes `gen_ai.*` (messages in `{role, parts}` form, usage, tool name/args/result, agent name, `gen_ai.operation.name`). Env equivalent: `OPENINFERENCE_ENABLE_GENAI_SEMCONV=true` (use it when you can't edit the `instrument()` call, e.g. AgentOS owns it).
+- `enable_genai_semconv=True` is REQUIRED. Env equivalent: `OPENINFERENCE_ENABLE_GENAI_SEMCONV=true` (use it when you can't edit the `instrument()` call, e.g. AgentOS owns it).
 - Import `tracing` at the top of the entry point (`main.py`, `app.py`, the ASGI module), before building agents, teams or `AgentOS`.
 - AgentOS: `AgentOS(tracing=True)` and `setup_tracing(db=...)` skip their setup when a real `TracerProvider` is already registered, so AgentOS's traces view stops getting spans once `tracing.py` runs first. If the user wants to keep that view, add Agno's DB exporter to the same provider (use the `db` the AgentOS uses):
 
@@ -93,8 +91,6 @@ AgnoInstrumentor().instrument(
   If `setup_tracing`/`tracing=True` must run first instead, don't create a provider: call `trace.get_tracer_provider().add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))` after it and set `OPENINFERENCE_ENABLE_GENAI_SEMCONV=true` in the environment before the process starts.
 
 ## Step 3: Session id (one conversation = one session)
-
-Maple groups Agno traces by `session.id` on the run span. Agno sets it from `session_id=`.
 
 - Pass `session_id=<conversation id>` on EVERY `run`, `arun`, `print_response`, `aprint_response`, `continue_run`, `acontinue_run`, and on `team.run/arun` and `workflow.run/arun`. Use the id the app already stores for the chat/thread; pass `user_id=` too if available.
 - Without `session_id=`, Agno mints a `uuid4()` on the first run and stores it on the `Agent`/`Team` instance; every later run of that instance reuses it. A module-level shared agent then merges all users into one session. Fix it; don't rely on the default.
@@ -180,27 +176,14 @@ Raw span check: run spans `<agent_name>.run` have `session.id` + `gen_ai.operati
 ## Known behaviours (expected; explain if the user asks)
 
 - If `setup_tracing()`/`AgentOS(tracing=True)` ran first, `set_tracer_provider` in `tracing.py` logs "Overriding of current TracerProvider is not allowed" and spans go only to the AgentOS database. A second `instrument()` call logs "Attempting to instrument while already instrumented" and its `config` is ignored.
-- The instrumentor patches Agno's run functions and every model class in `agno.models`, so agents created after `tracing.py` runs are traced with no further changes.
 - Without `enable_genai_semconv`, spans carry only OpenInference attributes (`llm.input_messages.0.message.content`, `llm.token_count.prompt`).
-- Maple reads span attributes only; the instrumentor emits no span events or OTLP logs, so nothing else needs enabling. Masked values are replaced with `__REDACTED__` in-process before export.
-- Team trace shape (one trace per team run): member runs sit directly under the leader's run, next to (not inside) the `delegate_task_to_member` tool spans; those show as ordinary tool calls on the leader with member id and task as arguments. With `team.arun()` in `coordinate` mode, members called in one step run concurrently and their spans overlap; sync `team.run()` runs them sequentially.
+- Teams: `delegate_task_to_member` tool spans show as ordinary tool calls on the leader with member id and task as arguments. With `team.arun()` in `coordinate` mode, members called in one step run concurrently and their spans overlap; sync `team.run()` runs them sequentially.
 - Team context leak is upstream issue agno#5573. "Failed to detach context" in the logs after a streamed team run is agno#5208: log noise, spans still export.
 - Human-in-the-loop: the paused run (`<agent>.run`) and the resumed run (`<agent>.continue_run`) are two traces and two turns in one session; the approved tool call appears once, in the second. Instrumentor <1.0.8 doesn't wrap `continue_run()`, so resumed runs appear as loose model/tool calls with no session.
 - Tokens: every model span has input/output tokens plus cache read/write when the provider reports them; streamed runs record usage from the final chunk. The run span has no tokens, so nothing is double counted. Reasoning tokens aren't broken out. Maple links tool results to calls through the message history since tool spans lack `gen_ai.tool.call.id`, and can't show streaming latency (no TTFT).
 - Cost: OpenRouter's price is recorded as `llm.cost.total` (USD, instrumentor >=1.0.10). Providers called directly (OpenAI, Anthropic) return no price, so sessions are unpriced.
-- A tool that raises: Agno catches it and hands the message to the model; the tool span is `ERROR`, the run span stays OK. Maple groups repeated failures by the exception message.
+- A tool that raises: Agno catches it and hands the message to the model; the tool span is `ERROR`, the run span stays OK.
 
 ## Do not
 
-- Do not rely on `setup_tracing()` or `AgentOS(tracing=True)` to reach Maple; they only write to the database.
-- Do not omit `TraceConfig(enable_genai_semconv=True)` / `OPENINFERENCE_ENABLE_GENAI_SEMCONV=true`.
-- Do not call `AgnoInstrumentor().instrument()` twice or create a second `TracerProvider`.
-- Do not stack another LLM instrumentor (OpenAI/LiteLLM OpenInference, OpenLIT, `auto_instrument=True`) on the same calls.
-- Do not run agents without `session_id=` in a server; do not generate a fresh id per request.
-- Do not put a different `session_id` on team members or resumed runs than on the conversation.
 - Do not stamp `maple_ai.session.id` on Agno spans: it re-vendors them and loses decoding. Agno's own `session.id` is what Maple reads.
-- Do not use a console/stdout exporter in production, and do not use `SimpleSpanProcessor` in servers (it exports synchronously on the request path).
-- Do not skip the flush in scripts, notebooks, CLIs and serverless.
-- Do not run an agent after a team run in the same thread/task without isolating the team run (Step 5).
-- Do not expect `gen_ai.response.id`, `gen_ai.tool.call.id` on tool spans, TTFT or reasoning-token attributes from this instrumentor; they are not emitted and nothing needs fixing.
-- Do not set `OTEL_SDK_DISABLED=true` (it turns off all tracing). `AGNO_TELEMETRY=false` only stops Agno's product analytics and is safe.

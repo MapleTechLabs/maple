@@ -7,9 +7,7 @@ description: "Trace LangChain and LangGraph agents (Python, and LangChain.js / L
 
 Goal: every conversation = one Maple Agent Session. Each `invoke()`/`stream()` = one turn (one trace) with a readable transcript, chat model spans with tokens, tool spans with names/results, failed tools marked failed, sub-agents in their own lanes.
 
-Human guide with the reasoning: https://maple.dev/docs/agent-tracing/langchain
-
-Mechanism: `openinference-instrumentation-langchain` (scope `openinference.instrumentation.langchain`). Maple groups sessions by the run's `thread_id` and reads transcript, tokens and tool calls from its spans. `TraceConfig(enable_genai_semconv=True)` is recommended: it also emits standard GenAI attributes (`gen_ai.conversation.id` from run metadata `session_id` > `conversation_id` > `thread_id`, `gen_ai.input/output.messages` in `{role, parts}` form). This beats LangSmith's OTel export for Maple: readable transcript, interrupts not marked ERROR, no middleware noise spans, normal flush.
+Mechanism: `openinference-instrumentation-langchain` (scope `openinference.instrumentation.langchain`). Maple groups sessions by the run's `thread_id` and reads transcript, tokens and tool calls from its spans. `TraceConfig(enable_genai_semconv=True)` is recommended: it also emits standard GenAI attributes (`gen_ai.conversation.id` from run metadata `session_id` > `conversation_id` > `thread_id`, `gen_ai.input/output.messages` in `{role, parts}` form).
 
 **TypeScript / JavaScript (LangChain.js, LangGraph.js):** the JS instrumentor has no GenAI dual-write, so the setup adds a small span processor. Do Step 1 below for the key and region, then follow [references/typescript.md](references/typescript.md) instead of Steps 2-7. A repo with both Python and TS agents gets both setups.
 
@@ -41,7 +39,7 @@ Env vars (`OTLPSpanExporter()` with no args reads them and appends `/v1/traces`)
 OTEL_SERVICE_NAME=<service>
 OTEL_RESOURCE_ATTRIBUTES=deployment.environment.name=<env>
 OTEL_EXPORTER_OTLP_ENDPOINT=https://ingest.maple.dev
-OTEL_EXPORTER_OTLP_HEADERS=Authorization=Bearer <key>
+OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer <key>"
 ```
 
 If you pass `OTLPSpanExporter(endpoint=...)` in code, it must end in `/v1/traces` (used verbatim).
@@ -98,7 +96,6 @@ LangChainInstrumentor().instrument(
 )
 ```
 
-- `TraceConfig(enable_genai_semconv=True)`: recommended (emits standard GenAI attributes).
 - Import `tracing` first in the entry point (app module, `main.py`, worker, LangGraph Server graph module). It must run before the first `invoke()`.
 - The app loads `.env` (`load_dotenv()`, `--env-file`): call `load_dotenv()` at the top of `tracing.py`, before the provider is built. Otherwise the exporter silently targets `localhost:4318` with no key.
 - Fill `AGENT_NAMES` with every agent's `name=` from Step 0.3. Give unnamed `create_agent(...)` calls a `name=` (default graph name is `LangGraph`).
@@ -195,7 +192,7 @@ Run one real conversation: 2+ messages with the same id, at least one tool call,
 
 Known gaps (not setup bugs, don't try to fix): tool spans have no `gen_ai.tool.call.id`; chat model spans have no `gen_ai.response.id`.
 
-More details (from the human guide, for edge cases):
+More details (edge cases):
 
 - `OPENINFERENCE_ENABLE_GENAI_SEMCONV=true` is equivalent to `enable_genai_semconv=True`, only if set before `TraceConfig` is built. The dual-write happens at span end and never overwrites a key already set (so `AgentSpans` values win).
 - Why `AgentSpans`: the instrumentor marks a span AGENT only when its name contains "agent" (`name="support_agent"` yes, `name="assistant"` no) and never sets `gen_ai.agent.name`. Spans with no operation are classified by name, so the `tools` node counts as a tool call unless marked `invoke_workflow`.
@@ -205,18 +202,5 @@ More details (from the human guide, for edge cases):
 - HITL: the pause ends the turn's trace; the resume is a new trace, so an approved action shows as two turns in one session (shared `thread_id` is what joins them).
 - LangGraph Server verified with `langgraph dev` (langgraph-api 0.10.3).
 - LangSmith OTel export (`LANGSMITH_OTEL_ENABLED` + `LANGSMITH_OTEL_ONLY`, tested langsmith 0.14.1): Maple labels it "LangChain" and reads `langsmith.metadata.thread_id`, but prompts/completions arrive as byte attributes (hex, unreadable transcript, no turn labels), interrupts are marked ERROR, agent names only in `langsmith.metadata.lc_agent_name` (unread; LangSmith sets `gen_ai.operation.name` after start so a start-time processor can't fix it), and flush needs `wait_for_all_tracers()` (`langchain_core.tracers.langchain`) then `provider.force_flush()`. Don't recommend it.
-- LangChain.js/LangGraph.js: covered in [references/typescript.md](references/typescript.md) (OpenInference JS + a `GenAiSpans` processor, since the JS instrumentor has no GenAI dual-write).
 
 Without Maple access, both must hold: the run exits with no export errors on stderr (`Failed to export`, 401 lines), AND a temporary `SimpleSpanProcessor(ConsoleSpanExporter())` shows the agent, chat model and tool spans with `gen_ai.conversation.id` identical on every span of every turn. Silence alone proves nothing (no spans is silent too). With the Maple MCP: `list_agent_sessions` with `search=<conversation id>` returns one row.
-
-## Do not
-
-- Do not also enable LangSmith's OTel export (`LANGSMITH_OTEL_ENABLED`, `LANGSMITH_OTEL_ONLY`, `LANGSMITH_TRACING_MODE=otel`) or a provider-level instrumentor (`openinference-instrumentation-openai`/`-anthropic`, OpenLLMetry): duplicate spans and doubled tokens.
-- Do not create a second `TracerProvider` when one exists.
-- Do not generate a new `thread_id` per request, and do not forget it on `stream()` and `Command(resume=...)` calls.
-- Do not rely on `configurable` for plain chains; use `metadata`.
-- Do not forget `stream_usage=True` on `ChatOpenAI` with a custom `base_url`.
-- Do not name tools with "agent" in them.
-- Do not add `maple_ai.session.id` attributes (they re-vendor the span).
-- Do not promise cost in Maple; do not add token pricing code.
-- Do not print or commit real keys beyond the repo's convention.
