@@ -276,7 +276,8 @@ describe("setupTracing unload flush", () => {
 
 		expect(exported[0]?.status.code).toBe(2)
 		expect(exported[0]?.attributes["error.type"]).toBe("TypeError")
-		expect(exported[0]?.attributes["error.message"]).toBe(`GET ${url} -> TypeError`)
+		// error.message is deprecated in the conventions; error.type carries the class of failure.
+		expect(exported[0]?.attributes["error.message"]).toBeUndefined()
 	})
 
 	it("does not count a fetch aborted with a custom reason as a network failure", async () => {

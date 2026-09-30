@@ -1,6 +1,8 @@
 // One rule for when an HTTP client span is an error, whichever SDK or
-// instrumentation made it: a response status is an error only when the app
-// lists it in `errors.captureHttpStatus`; a network failure always is.
+// instrumentation made it. By default it is the HTTP semantic conventions' rule:
+// a 4xx or 5xx response makes a client span Error, with `error.type` set to the
+// status code and no status description. `errors.captureHttpStatus` narrows the
+// statuses that count. A network failure is always an error.
 
 /** A status code, or an inclusive `[from, to]` range. */
 export type HttpStatusRange = number | readonly [number, number]
@@ -14,6 +16,9 @@ export type AttributeValue =
 
 /** Reads one attribute of the span being classified. */
 export type ReadAttribute = (key: string) => AttributeValue | undefined
+
+/** The statuses the HTTP semantic conventions make a client span Error for: every 4xx and 5xx. */
+export const DEFAULT_ERROR_STATUS: ReadonlyArray<HttpStatusRange> = [[400, 599]]
 
 export const inStatusRanges = (status: number, ranges: ReadonlyArray<HttpStatusRange>): boolean =>
 	ranges.some((range) =>
@@ -29,15 +34,10 @@ export function responseStatus(read: ReadAttribute): number | undefined {
 }
 
 /**
- * The `error.type` / `error.message` pair for a listed status or a network
- * failure (`TypeError`, `timeout`), e.g. `POST https://api.example.com/users/42 -> 503`.
- * The query is dropped; ids in the path are redacted by the issue fingerprint.
+ * The `error.type` for a counted status or a network failure (`TypeError`,
+ * `timeout`), per the HTTP semantic conventions. No message: `error.message` is
+ * deprecated, and the status code already says what went wrong.
  */
-export function httpStatusError(
-	read: ReadAttribute,
-	status: number | string,
-): { readonly "error.type": string; readonly "error.message": string } {
-	const method = read("http.request.method") ?? read("http.method") ?? "GET"
-	const url = String(read("url.full") ?? read("http.url") ?? "").replace(/[?#].*$/, "")
-	return { "error.type": String(status), "error.message": `${String(method)} ${url} -> ${status}` }
+export function httpErrorType(status: number | string): { readonly "error.type": string } {
+	return { "error.type": String(status) }
 }

@@ -1,9 +1,10 @@
-// The OTel adapter for the shared HTTP status policy. The fetch instrumentation
-// leaves 4xx/5xx responses Unset; the XHR one marks every status >= 400 Error,
-// and every Error span becomes an issue, so both are brought to the one rule.
+// The OTel adapter for the shared HTTP status policy. The fetch and XHR
+// instrumentations already mark 4xx/5xx client spans Error, as the HTTP semantic
+// conventions say; this applies `errors.captureHttpStatus` when an app narrows it.
 import {
+	DEFAULT_ERROR_STATUS,
 	type HttpStatusRange,
-	httpStatusError,
+	httpErrorType,
 	inStatusRanges,
 	type ReadAttribute,
 	responseStatus,
@@ -48,7 +49,7 @@ function withStatus(span: ReadableSpan, status: SpanStatus, attributes: Attribut
 export class HttpStatusExporter implements SpanExporter {
 	constructor(
 		private readonly inner: SpanExporter,
-		private readonly captureStatus: ReadonlyArray<HttpStatusRange> = [],
+		private readonly captureStatus: ReadonlyArray<HttpStatusRange> = DEFAULT_ERROR_STATUS,
 	) {}
 
 	private apply(span: ReadableSpan): ReadableSpan {
@@ -63,23 +64,8 @@ export class HttpStatusExporter implements SpanExporter {
 			return withStatus(
 				span,
 				{ code: SpanStatusCode.ERROR },
-				{ ...span.attributes, ...httpStatusError(read, status) },
+				{ ...span.attributes, ...httpErrorType(status) },
 			)
-		}
-		const errorType = span.attributes["error.type"]
-		if (
-			span.kind === SpanKind.CLIENT &&
-			span.status.code === SpanStatusCode.ERROR &&
-			typeof errorType === "string" &&
-			!HTTP_STATUS.test(errorType) &&
-			span.attributes["error.message"] === undefined &&
-			!span.events.some((event) => event.name === "exception")
-		) {
-			// A network failure (`TypeError`, `error`, `timeout`): the same message shape as a status error.
-			return withStatus(span, span.status, {
-				...span.attributes,
-				"error.message": httpStatusError(read, errorType)["error.message"],
-			})
 		}
 		if (!isStatusOnlyError(span)) return span
 		const { "error.type": _errorType, ...attributes } = span.attributes

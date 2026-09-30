@@ -7,7 +7,7 @@ export { frameUrls, makeErrorFilter } from "./error-filters"
 export type { HeaderCapture, HeaderCaptureOptions } from "./http-headers"
 export { filterHeaderAttribute, resolveHeaderCapture } from "./http-headers"
 export type { AttributeValue, HttpStatusRange, ReadAttribute } from "./http-status"
-export { httpStatusError, inStatusRanges, responseStatus } from "./http-status"
+export { DEFAULT_ERROR_STATUS, httpErrorType, inStatusRanges, responseStatus } from "./http-status"
 export type { EmitLog, LogAttributeValue, SignalLogRecord, SpanLink } from "./log-record"
 export { Severity, severityOf } from "./log-record"
 export type {

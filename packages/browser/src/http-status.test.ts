@@ -29,71 +29,55 @@ const finish = (
 	return result
 }
 
-describe("HttpStatusExporter", () => {
-	it("clears an Error set only because of the response status", () => {
-		const span = finish((s) => {
-			s.setAttribute("http.response.status_code", 404)
-			s.setAttribute("error.type", "404")
-			s.setStatus({ code: SpanStatusCode.ERROR })
-		})
-		expect(span.status.code).toBe(SpanStatusCode.UNSET)
-		expect(span.attributes["error.type"]).toBeUndefined()
-		expect(span.attributes["http.response.status_code"]).toBe(404)
-		expect(span.spanContext().spanId).toMatch(/^[0-9a-f]{16}$/)
+describe("HttpStatusExporter, by default", () => {
+	it("keeps 4xx and 5xx client spans Error, typed by the status, with no description", () => {
+		for (const status of [404, 503]) {
+			const span = finish((s) => {
+				s.setAttribute("http.request.method", "POST")
+				s.setAttribute("url.full", "https://api.test/users/42")
+				s.setAttribute("http.response.status_code", status)
+			})
+			expect(span.status).toEqual({ code: SpanStatusCode.ERROR })
+			expect(span.attributes["error.type"]).toBe(String(status))
+			expect(span.attributes["error.message"]).toBeUndefined()
+		}
 	})
 
-	it("keeps network failures, recorded exceptions, and non-client spans", () => {
+	it("leaves 2xx/3xx, recorded exceptions, network failures and non-client spans alone", () => {
+		const ok = finish((s) => s.setAttribute("http.response.status_code", 204))
+		expect(ok.status.code).toBe(SpanStatusCode.UNSET)
+
 		const network = finish((s) => {
-			s.setAttribute("error.type", "timeout")
-			s.setStatus({ code: SpanStatusCode.ERROR, message: "timeout" })
+			s.setAttribute("error.type", "TypeError")
+			s.setStatus({ code: SpanStatusCode.ERROR })
 		})
 		expect(network.status.code).toBe(SpanStatusCode.ERROR)
+		expect(network.attributes["error.message"]).toBeUndefined()
 
 		const withException = finish((s) => {
-			s.setAttribute("error.type", "500")
+			s.setAttribute("http.response.status_code", 500)
 			s.recordException(new Error("boom"))
 			s.setStatus({ code: SpanStatusCode.ERROR })
 		})
 		expect(withException.status.code).toBe(SpanStatusCode.ERROR)
 
 		const internal = finish((s) => {
-			s.setAttribute("error.type", "500")
-			s.setStatus({ code: SpanStatusCode.ERROR })
+			s.setAttribute("http.response.status_code", 500)
 		}, SpanKind.INTERNAL)
-		expect(internal.status.code).toBe(SpanStatusCode.ERROR)
+		expect(internal.status.code).toBe(SpanStatusCode.UNSET)
 	})
 })
 
-describe("errors.captureHttpStatus", () => {
-	const capturing = tracerWith([[500, 599], 429])
+describe("errors.captureHttpStatus, narrowed", () => {
+	const serverErrors = tracerWith([[500, 599], 429])
 
-	it("makes a listed status an Error, typed by the status and described by the request", () => {
-		const span = finish(
-			(s) => {
-				s.setAttribute("http.request.method", "POST")
-				s.setAttribute("url.full", "https://api.test/users/42?token=REDACTED")
-				s.setAttribute("http.response.status_code", 503)
-			},
-			SpanKind.CLIENT,
-			capturing,
-		)
-		expect(span.status.code).toBe(SpanStatusCode.ERROR)
-		expect(span.attributes["error.type"]).toBe("503")
-		expect(span.attributes["error.message"]).toBe("POST https://api.test/users/42 -> 503")
+	it("keeps listed statuses Error, including old-semconv attributes", () => {
+		const limited = finish((s) => s.setAttribute("http.status_code", 429), SpanKind.CLIENT, serverErrors)
+		expect(limited.status.code).toBe(SpanStatusCode.ERROR)
+		expect(limited.attributes["error.type"]).toBe("429")
 	})
 
-	it("matches single codes and old-semconv attributes, and leaves the rest alone", () => {
-		const limited = finish(
-			(s) => {
-				s.setAttribute("http.method", "GET")
-				s.setAttribute("http.url", "https://api.test/search")
-				s.setAttribute("http.status_code", 429)
-			},
-			SpanKind.CLIENT,
-			capturing,
-		)
-		expect(limited.attributes["error.type"]).toBe("429")
-
+	it("clears the Error an instrumentation set for a status left out", () => {
 		const notFound = finish(
 			(s) => {
 				s.setAttribute("http.response.status_code", 404)
@@ -101,20 +85,9 @@ describe("errors.captureHttpStatus", () => {
 				s.setStatus({ code: SpanStatusCode.ERROR })
 			},
 			SpanKind.CLIENT,
-			capturing,
+			serverErrors,
 		)
 		expect(notFound.status.code).toBe(SpanStatusCode.UNSET)
-	})
-
-	it("keeps a network failure an error and describes it like a status error", () => {
-		const failed = finish((s) => {
-			s.setAttribute("http.request.method", "POST")
-			s.setAttribute("url.full", "https://api.test/orders?id=7")
-			s.setAttribute("http.response.status_code", 0)
-			s.setAttribute("error.type", "TypeError")
-			s.setStatus({ code: SpanStatusCode.ERROR, message: "Failed to fetch" })
-		})
-		expect(failed.status.code).toBe(SpanStatusCode.ERROR)
-		expect(failed.attributes["error.message"]).toBe("POST https://api.test/orders -> TypeError")
+		expect(notFound.attributes["error.type"]).toBeUndefined()
 	})
 })

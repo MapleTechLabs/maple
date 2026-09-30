@@ -22,8 +22,9 @@ export interface ErrorFilterOptions {
 	readonly beforeCapture?: (error: Error, hint: ErrorFilterHint) => boolean
 	/**
 	 * HTTP response statuses that make a client request span an error (and so an
-	 * issue), e.g. `[[500, 599]]`. Default none: a response status alone is not
-	 * an error, and a network failure always is.
+	 * issue). Default `[[400, 599]]`, as the HTTP semantic conventions say for
+	 * client spans; narrow it, e.g. `[[500, 599]]`, to count fewer. A network
+	 * failure is always an error.
 	 */
 	readonly captureHttpStatus?: ReadonlyArray<HttpStatusRange>
 	/**

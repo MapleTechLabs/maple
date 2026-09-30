@@ -68,8 +68,9 @@ fingerprint to one contentless issue that buries the real ones. Add
 
 ### Failed HTTP requests
 
-`errors: { captureHttpStatus: [[500, 599]] }` makes those `fetch`/XHR responses errors, typed by
-status. By default a response status alone is not an error; a network failure always is.
+`fetch`/XHR responses with a 4xx or 5xx status are errors, typed by status, as the HTTP semantic
+conventions say for client spans. Narrow that with `errors: { captureHttpStatus: [[500, 599]] }`.
+A network failure is always an error.
 
 ### Breadcrumbs
 

@@ -294,22 +294,24 @@ Errors thrown from browser extensions (`chrome-extension://`, `moz-extension://`
 
 ### Failed HTTP requests
 
-A `fetch` or `XMLHttpRequest` response status is not an error on its own: a 404 from a search box
-is usually expected. List the statuses that should become errors (and so issues) in
-`errors.captureHttpStatus`:
+`fetch` and `XMLHttpRequest` spans follow the HTTP semantic conventions for client spans: a 4xx or
+5xx response makes the span `Error`, with `error.type` set to the status code (`"404"`, `"503"`)
+and no status description, so it opens an issue. Issues group by service and status code.
+
+To count fewer statuses, narrow `errors.captureHttpStatus` (default `[[400, 599]]`). A status left
+out has its `Error` cleared:
 
 ```ts
 MapleBrowser.init({
 	// ...
-	errors: { captureHttpStatus: [[500, 599], 429] },
+	errors: { captureHttpStatus: [[500, 599], 429] }, // a 404 from a search box is expected here
 })
 ```
 
-A matching span gets status `Error`, `error.type` set to the status code (per the HTTP semantic
-conventions) and `error.message` like `POST https://api.example.com/users/42 -> 503`, without the
-query string. Issues group by status and request, with ids in the path redacted. Network failures
-(no response at all: offline, DNS, CORS, a timeout) are always errors, with `error.type` set to
-what failed (`TypeError` for `fetch`, `error` or `timeout` for XHR). An aborted request is not.
+Network failures (no response at all: offline, DNS, CORS, a timeout) are always errors, with
+`error.type` set to what failed (`TypeError` for `fetch`, `error` or `timeout` for XHR). An aborted
+request is not. No `error.message` is set: it is deprecated in the conventions, and the status
+code already says what went wrong.
 
 ### Breadcrumbs
 
@@ -488,7 +490,7 @@ memory.
 `session.id`), so a sampled session keeps every one of its traces and its replay never links to a
 dropped one. Errors reported as their own spans (uncaught errors, unhandled rejections and
 `captureException`) are always exported, whatever the rate; request spans of an unsampled session
-are not, including ones `errors.captureHttpStatus` would have marked.
+are not, including failed requests.
 
 ```ts
 MapleBrowser.init({

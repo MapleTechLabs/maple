@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest"
 import { filterHeaderAttribute, resolveHeaderCapture } from "./http-headers"
 import {
 	type AttributeValue,
-	httpStatusError,
+	DEFAULT_ERROR_STATUS,
+	httpErrorType,
 	inStatusRanges,
 	type ReadAttribute,
 	responseStatus,
@@ -26,15 +27,15 @@ describe("http status policy", () => {
 		expect(responseStatus(attributes({}))).toBeUndefined()
 	})
 
-	it("describes the failure by method and URL without the query", () => {
-		const read = attributes({
-			"http.request.method": "POST",
-			"url.full": "https://api.test/users/42?token=x",
-		})
-		expect(httpStatusError(read, 503)).toEqual({
-			"error.type": "503",
-			"error.message": "POST https://api.test/users/42 -> 503",
-		})
+	it("counts every 4xx and 5xx by default, as the HTTP conventions say for client spans", () => {
+		expect(inStatusRanges(400, DEFAULT_ERROR_STATUS)).toBe(true)
+		expect(inStatusRanges(599, DEFAULT_ERROR_STATUS)).toBe(true)
+		expect(inStatusRanges(399, DEFAULT_ERROR_STATUS)).toBe(false)
+	})
+
+	it("types the error by the status code alone", () => {
+		expect(httpErrorType(503)).toEqual({ "error.type": "503" })
+		expect(httpErrorType("TypeError")).toEqual({ "error.type": "TypeError" })
 	})
 })
 
