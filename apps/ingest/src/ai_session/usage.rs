@@ -179,8 +179,6 @@ fn is_model_call(vendor: &str, span: &Span, facts: &Facts) -> bool {
     let span_name = span.name.as_str();
     let op = facts.operation();
     match vendor {
-        // `call_llm` wraps its `generate_content` child with the same figures.
-        "google_adk" if span_name == "call_llm" => false,
         _ if INFERENCE_OPS.contains(&op) => true,
         "litellm" => matches!(op, "acompletion" | "completion"),
         "semantic_kernel" => matches!(op, "chat.completions" | "chat.streaming_completions"),
@@ -1001,9 +999,9 @@ mod tests {
         );
     }
 
-    /// `captures/docs_google-adk_a`: `call_llm` and its `generate_content`
-    /// child carry the same figures. ADK's AnthropicLlm passes the raw usage
-    /// through (SRC).
+    /// `captures/docs_google-adk_a`: Python ADK's `call_llm` and its
+    /// `generate_content` child carry the same figures, and only the child
+    /// names an operation. ADK's AnthropicLlm passes the raw usage through (SRC).
     #[test]
     fn google_adk_generate_content_owns_usage() {
         let usage = [
@@ -1044,6 +1042,30 @@ mod tests {
                     Some([3200, 3000, 0, 40, 0]),
                 ),
             ],
+        );
+    }
+
+    /// PROD `verify2-adk-ts-synthetic`: TypeScript ADK has no `generate_content`
+    /// span, so the `call_llm` the Maple processor stamps `chat` is the call.
+    #[test]
+    fn google_adk_ts_call_llm_owns_usage() {
+        check(
+            "verify2-adk-ts-synthetic",
+            "gcp.vertex.agent",
+            "google_adk",
+            &[(
+                "call_llm",
+                &[
+                    ("gcp.vertex.agent.session_id", "verify2-adk-ts-synthetic-1"),
+                    ("gen_ai.operation.name", "chat"),
+                    ("gen_ai.provider.name", "gcp.gemini"),
+                    ("gen_ai.request.model", "gemini-2.5-flash"),
+                    ("gen_ai.usage.cache_read.input_tokens", "400"),
+                    ("gen_ai.usage.input_tokens", "1000"),
+                    ("gen_ai.usage.output_tokens", "100"),
+                ],
+                Some([600, 400, 0, 100, 0]),
+            )],
         );
     }
 
