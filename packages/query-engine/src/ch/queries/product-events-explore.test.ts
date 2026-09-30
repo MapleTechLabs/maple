@@ -23,7 +23,9 @@ describe("productEventsTimeseriesQuery", () => {
 		expect(compiled.tenantScope).toBe("single-tenant")
 		expect(compiled.sql).toContain("FROM product_events")
 		expect(compiled.sql).toContain("OrgId = 'org_1'")
-		expect(compiled.sql).toContain("toStartOfInterval(Timestamp, INTERVAL 3600 SECOND) AS bucket")
+		expect(compiled.sql).toContain(
+			"toStartOfInterval(product_events.Timestamp, INTERVAL 3600 SECOND) AS bucket",
+		)
 		expect(compiled.sql).toContain("'all' AS groupName")
 		expect(compiled.sql).toContain("count() AS value")
 		expect(compiled.sql).toContain("count() AS eventCount")
@@ -33,11 +35,17 @@ describe("productEventsTimeseriesQuery", () => {
 	it("lowers each metric to a guarded uniq", () => {
 		const sqlFor = (metric: Parameters<typeof productEventsTimeseriesQuery>[0]["metric"]) =>
 			oneLine(compileUnsafe(productEventsTimeseriesQuery({ metric }), params).sql)
-		expect(sqlFor("sessions")).toContain("uniqIf(SessionId, SessionId != '') AS value")
-		expect(sqlFor("users")).toContain("uniqIf(UserId, UserId != '') AS value")
-		expect(sqlFor("visitors")).toContain("uniqIf(VisitorId, VisitorId != '') AS value")
+		expect(sqlFor("sessions")).toContain(
+			"uniqIf(product_events.SessionId, product_events.SessionId != '') AS value",
+		)
+		expect(sqlFor("users")).toContain(
+			"uniqIf(product_events.UserId, product_events.UserId != '') AS value",
+		)
+		expect(sqlFor("visitors")).toContain(
+			"uniqIf(product_events.VisitorId, product_events.VisitorId != '') AS value",
+		)
 		expect(sqlFor("persons")).toContain(
-			"uniqIf(if(UserId != '', UserId, VisitorId), (UserId != '' OR VisitorId != '')) AS value",
+			"uniqIf(if(product_events.UserId != '', product_events.UserId, product_events.VisitorId), (product_events.UserId != '' OR product_events.VisitorId != '')) AS value",
 		)
 	})
 
@@ -50,8 +58,8 @@ describe("productEventsTimeseriesQuery", () => {
 			}),
 			params,
 		)
-		expect(oneLine(sql)).toContain("coalesce(nullIf(EventName, ''), '(none)')")
-		expect(oneLine(sql)).toContain("coalesce(nullIf(Attributes['plan'], ''), '(none)')")
+		expect(oneLine(sql)).toContain("coalesce(nullIf(product_events.EventName, ''), '(none)')")
+		expect(oneLine(sql)).toContain("coalesce(nullIf(product_events.Attributes['plan'], ''), '(none)')")
 		expect(sql).toContain("GROUP BY bucket, groupName")
 	})
 
@@ -72,7 +80,9 @@ describe("productEventsTimeseriesQuery", () => {
 		expect(flat).toContain("Kind IN ('custom')")
 		expect(flat).toContain("Host NOT IN ('localhost')")
 		expect(flat).toContain("Attributes['plan'] = 'startup'")
-		expect(flat).toContain("SessionId IN (SELECT SessionId AS sessionId FROM session_replays")
+		expect(flat).toContain(
+			"product_events.SessionId IN (SELECT session_replays.SessionId AS sessionId FROM session_replays",
+		)
 		expect(flat).toContain("Country = 'DE'")
 	})
 
@@ -100,7 +110,7 @@ describe("productEventsBreakdownQuery", () => {
 			params,
 		)
 		expect(sql).toContain("PagePath AS name")
-		expect(sql).toContain("uniqIf(SessionId, SessionId != '') AS value")
+		expect(sql).toContain("uniqIf(product_events.SessionId, product_events.SessionId != '') AS value")
 		expect(sql).toContain("ORDER BY value DESC, name ASC")
 		expect(sql).toContain("LIMIT 25")
 	})
@@ -123,13 +133,13 @@ describe("productEventsListQuery", () => {
 describe("attribute discovery", () => {
 	it("lists keys by array-joining the map keys", () => {
 		const { sql } = compileUnsafe(productEventAttributeKeysQuery({ limit: 10 }), params)
-		expect(sql).toContain("arrayJoin(mapKeys(Attributes)) AS attributeKey")
+		expect(sql).toContain("arrayJoin(mapKeys(product_events.Attributes)) AS attributeKey")
 		expect(sql).toContain("GROUP BY attributeKey")
 	})
 
 	it("lists values for one key only where the key is present", () => {
 		const { sql } = compileUnsafe(productEventAttributeValuesQuery({ attributeKey: "plan" }), params)
 		expect(sql).toContain("Attributes['plan'] AS attributeValue")
-		expect(sql).toContain("has(mapKeys(Attributes), 'plan')")
+		expect(sql).toContain("has(mapKeys(product_events.Attributes), 'plan')")
 	})
 })

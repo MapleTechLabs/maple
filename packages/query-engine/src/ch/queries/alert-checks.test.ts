@@ -12,9 +12,11 @@ describe("listRuleChecksQuery", () => {
 		const q = listRuleChecksQuery({ limit: 500 })
 		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("FROM alert_checks")
-		expect(sql).toContain("formatDateTime(Timestamp, '%Y-%m-%dT%H:%i:%S.%fZ') AS timestamp")
-		expect(sql).toContain("formatDateTime(WindowStart, '%Y-%m-%dT%H:%i:%S.%fZ') AS windowStart")
-		expect(sql).toContain("formatDateTime(WindowEnd, '%Y-%m-%dT%H:%i:%S.%fZ') AS windowEnd")
+		expect(sql).toContain("formatDateTime(alert_checks.Timestamp, '%Y-%m-%dT%H:%i:%S.%fZ') AS timestamp")
+		expect(sql).toContain(
+			"formatDateTime(alert_checks.WindowStart, '%Y-%m-%dT%H:%i:%S.%fZ') AS windowStart",
+		)
+		expect(sql).toContain("formatDateTime(alert_checks.WindowEnd, '%Y-%m-%dT%H:%i:%S.%fZ') AS windowEnd")
 		expect(sql).toContain("OrgId = 'org_1'")
 		expect(sql).toContain("RuleId = 'rule_1'")
 		expect(sql).toContain("ORDER BY timestamp DESC, groupKey ASC")

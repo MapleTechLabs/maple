@@ -212,7 +212,8 @@ describe("a breakdown totals the same regardless of the dimension", () => {
 					}).sql,
 			)
 
-			const exprs = new Set(compiled.map(countExpr))
+			// Compare the definition, not the table it reads (qualifiers differ per table).
+			const exprs = new Set(compiled.map((sql) => countExpr(sql).replace(/\b[a-z_]+\.(?=[A-Z])/g, "")))
 			expect([...exprs]).toEqual(["sum(SampleRate)"])
 
 			// Table may differ (the MV can serve some dimensions and not others),
@@ -288,8 +289,8 @@ describe("timeseries and breakdown agree for the same query", () => {
 			}
 
 			// Both union branches weight, and the outer query just sums the partials.
-			expect(ts).toContain("sum(SampleRate) AS bWeightedCount")
-			expect(ts).toContain("sum(WeightedCount) AS bWeightedCount")
+			expect(ts).toContain("sum(traces.SampleRate) AS bWeightedCount")
+			expect(ts).toContain("sum(traces_aggregates_hourly.WeightedCount) AS bWeightedCount")
 			expect(countExpr(ts)).toBe("sum(bWeightedCount)")
 
 			// The edges cover [start, firstFullHour) ∪ [endHour, end] and the interior
@@ -314,7 +315,7 @@ describe("timeseries and breakdown agree for the same query", () => {
 	it("keeps union branch column types compatible", () => {
 		const sql = timeseriesSql("service", {}, 3600)
 		expect(sql).toContain("toFloat64(count()) AS bSpanCount")
-		expect(sql).toContain("sum(WeightedCount) AS bSpanCount")
+		expect(sql).toContain("sum(traces_aggregates_hourly.WeightedCount) AS bSpanCount")
 		expect(sql).not.toContain("count() AS bSpanCount\n")
 	})
 
