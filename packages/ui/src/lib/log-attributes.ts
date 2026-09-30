@@ -73,10 +73,11 @@ function scoreKey(key: string): number {
 	return 20
 }
 
-// `rpc.response.status_code` values are system-specific. gRPC's are status
-// names (or their numbers from older instrumentation); semconv counts only these
-// as errors on a server span, and the chip does not know the span kind, so the
-// other non-OK codes are a warning and any other system's values stay neutral.
+// `rpc.response.status_code` values are system-specific, so they are only toned
+// when the row says the system is gRPC. gRPC's are status names (or their
+// numbers from older instrumentation); semconv counts only these as errors on a
+// server span, and the chip does not know the span kind, so the other non-OK
+// codes are a warning.
 const GRPC_SERVER_ERROR_CODES = new Set([
 	"UNKNOWN",
 	"DEADLINE_EXCEEDED",
@@ -104,7 +105,11 @@ function isNumericStatus(value: string): number | null {
 	return Number.isInteger(n) && n >= 100 && n < 600 ? n : null
 }
 
-export function getChipTone(key: string, value: string, severityText: string): ChipTone {
+/**
+ * `rpcSystem` is the row's `rpc.system.name` (or legacy `rpc.system`); without
+ * it `rpc.response.status_code` stays neutral.
+ */
+export function getChipTone(key: string, value: string, severityText: string, rpcSystem?: string): ChipTone {
 	const sev = severityText.toUpperCase()
 	const rowIsError = sev === "ERROR" || sev === "FATAL"
 
@@ -130,7 +135,7 @@ export function getChipTone(key: string, value: string, severityText: string): C
 		if (Number.isFinite(n) && n !== 0) return "error"
 	}
 
-	if (key === "rpc.response.status_code") {
+	if (key === "rpc.response.status_code" && rpcSystem?.toLowerCase() === "grpc") {
 		const code = value.toUpperCase()
 		if (GRPC_SERVER_ERROR_CODES.has(code)) return "error"
 		if (GRPC_CODES.has(code) && code !== "OK" && code !== "0") return "warn"
@@ -156,6 +161,7 @@ function shouldSkip(key: string): boolean {
 }
 
 export function pickImportantAttributes(log: LogLike, limit = 4): PickedAttribute[] {
+	const rpcSystem = log.logAttributes["rpc.system.name"] || log.logAttributes["rpc.system"]
 	const serviceNameLower = log.serviceName.toLowerCase()
 	const scored: Array<{ key: string; value: string; score: number; source: "log" | "resource" }> = []
 
@@ -179,7 +185,7 @@ export function pickImportantAttributes(log: LogLike, limit = 4): PickedAttribut
 	return scored.slice(0, limit).map(({ key, value, source }) => ({
 		key,
 		value,
-		tone: getChipTone(key, value, log.severityText),
+		tone: getChipTone(key, value, log.severityText, rpcSystem),
 		source,
 	}))
 }
