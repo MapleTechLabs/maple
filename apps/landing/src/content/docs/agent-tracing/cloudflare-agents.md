@@ -22,10 +22,10 @@ Set up Maple agent tracing for the Cloudflare Agents SDK in this project.
 
 Install the skill with `npx skills add MapleTechLabs/maple/skills --skill maple-agent-tracing-cloudflare-agents -y`, then follow it.
 
-My Maple ingest key is set as MAPLE_INGEST_KEY in .dev.vars and my organization is in the US region.
+My Maple ingest key is maple_pk_... and my organization is in the US region.
 ```
 
-Before you run it, add `MAPLE_INGEST_KEY=maple_sk_...` to `.dev.vars`, using the **Private key** from **Settings → Ingestion**. Keep the key out of the prompt. If your organization is in the EU region, change `US` to `EU` in the prompt.
+Your ingest key is in **Settings → Ingestion**. If your organization is in the EU region, change `US` to `EU` in the prompt.
 
 ## Install the packages
 
@@ -43,13 +43,13 @@ What each package does:
 
 ## Store the ingest key
 
-Save the private key as a Worker secret so it isn't in your Wrangler config:
+Save the key as a secret so it isn't in your Wrangler config:
 
 ```bash
 npx wrangler secret put MAPLE_INGEST_KEY
 ```
 
-For `wrangler dev`, add `MAPLE_INGEST_KEY=maple_sk_...` to `.dev.vars` and keep that file gitignored.
+For `wrangler dev`, add `MAPLE_INGEST_KEY=YOUR_INGEST_KEY` to `.dev.vars`.
 
 ## Create the tracer provider
 

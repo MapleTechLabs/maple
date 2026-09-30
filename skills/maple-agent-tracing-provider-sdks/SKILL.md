@@ -27,8 +27,10 @@ Mechanism:
 
 - US: `https://ingest.maple.dev`. EU: `https://ingest.eu.maple.dev`.
 - Header: `Authorization=Bearer <key>`.
-- Key: the private ingest key (`maple_sk_…`, the **Private key** under **Settings → Ingestion**). The user sets it as `MAPLE_INGEST_KEY` in their environment or `.env`; don't ask for it in the chat. Not set: use the literal `MAPLE_TEST` (ingest accepts and discards it) and tell the user to replace it with their private key.
-- The key is a secret. Keep it in the repo's secret/env convention (`.env`, settings module, secret manager), never in source, committed config, logs or command lines, and tell the user to add it to their deployment's secrets. No convention: create `.env`, add it to `.gitignore` if missing, and commit a `.env.example` with placeholder values.
+- Key given in the prompt → use it.
+- No key → use the literal `MAPLE_TEST` (ingest accepts and discards it) and tell the user to replace it with their key from Settings → Ingestion.
+- Never put a private `maple_sk_` key in browser code.
+- Follow the repo's secret/env convention (`.env`, settings module, secret manager) if it has one. Otherwise inline is acceptable: ingest keys are write-only.
 
 Env vars (the exporter reads them and appends `/v1/traces`):
 
@@ -40,7 +42,7 @@ OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=SPAN_ONLY
 ```
 
 - These are read when the exporter and helper are constructed. If the app loads `.env` (dotenv, `load_dotenv()`, `--env-file`), load it at the top of the init module, before the provider is built; otherwise the exporter silently targets `localhost:4318` with no key.
-- Never let an unset env var become `Bearer undefined` (opaque 401) or a bare `KeyError` on import: fail fast with a clear message.
+- Never let an unset env var become `Bearer undefined` (opaque 401) or a bare `KeyError` on import: fail fast with a clear message, or inline the key when the repo has no env convention.
 
 ## Step 2: Install + init + helper
 

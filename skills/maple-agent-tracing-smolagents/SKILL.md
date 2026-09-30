@@ -21,8 +21,9 @@ All spans come from `openinference-instrumentation-smolagents`.
 
 - US: `https://ingest.maple.dev`. EU: `https://ingest.eu.maple.dev`.
 - Header: `Authorization=Bearer <key>`. Protocol: http/protobuf.
-- Key: the private ingest key (`maple_sk_…`, the **Private key** under **Settings → Ingestion**). The user sets it as `MAPLE_INGEST_KEY` in their environment or `.env`; don't ask for it in the chat. Not set: use the literal `MAPLE_TEST` (ingest accepts and discards it) and tell the user to replace it with their private key.
-- The key is a secret. Keep it in the repo's secret/env convention (`.env`, settings module, secret manager), never in source, committed config, logs or command lines, and tell the user to add it to their deployment's secrets. No convention: create `.env`, add it to `.gitignore` if missing, and commit a `.env.example` with placeholder values.
+- Key given in the prompt: use it. No key: use the literal `MAPLE_TEST` (ingest accepts and discards it) and tell the user to replace it with their key from **Settings → Ingestion**.
+- Never put a private `maple_sk_` key in browser code.
+- Follow the repo's existing secret/env convention (`.env`, settings module, secret manager) if it has one. Otherwise inlining the key is acceptable: ingest keys are write-only.
 - App loads `.env` (`load_dotenv()`): call it at the top of `tracing.py`, before the provider is built. Otherwise the exporter silently targets `localhost:4318` with no key.
 - Key from an env var: fail fast with a clear message when it's unset (`if not os.environ.get("OTEL_EXPORTER_OTLP_HEADERS"): raise RuntimeError("OTEL_EXPORTER_OTLP_HEADERS (Maple ingest key) is not set")` in `tracing.py`, after any `load_dotenv()`); never let it surface as an opaque 401 or a bare `KeyError`.
 

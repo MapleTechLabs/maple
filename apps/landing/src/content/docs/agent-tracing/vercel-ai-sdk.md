@@ -22,10 +22,10 @@ Set up Maple agent tracing for the Vercel AI SDK in this project.
 
 Install the skill with `npx skills add MapleTechLabs/maple/skills --skill maple-agent-tracing-vercel-ai-sdk -y`, then follow it.
 
-My Maple ingest key is set as MAPLE_INGEST_KEY and my organization is in the US region.
+My Maple ingest key is maple_pk_... and my organization is in the US region.
 ```
 
-Before you run it, set `MAPLE_INGEST_KEY` to the **Private key** (`maple_sk_…`) from **Settings → Ingestion**, in your environment or the project's gitignored `.env`. Keep the key out of the prompt. If your organization is in the EU region, change `US` to `EU` in the prompt.
+Your ingest key is in **Settings → Ingestion**. If your organization is in the EU region, change `US` to `EU` in the prompt.
 
 ## Install the packages
 
@@ -39,7 +39,7 @@ npm install ai@^7.0.106 @ai-sdk/otel @opentelemetry/sdk-node
 export OTEL_SERVICE_NAME="support-agent"
 export OTEL_RESOURCE_ATTRIBUTES="deployment.environment.name=production"
 export OTEL_EXPORTER_OTLP_ENDPOINT="https://ingest.maple.dev"
-export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer maple_sk_..."
+export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer YOUR_INGEST_KEY"
 ```
 
 For an EU organization, use `https://ingest.eu.maple.dev`. The exporter appends `/v1/traces` itself.
@@ -113,7 +113,7 @@ export function register() {
 }
 ```
 
-Set `MAPLE_INGEST_KEY` to your private ingest key (`maple_sk_…`); this exporter doesn't read the `OTEL_EXPORTER_OTLP_*` variables.
+Set `MAPLE_INGEST_KEY` to your ingest key; this exporter doesn't read the `OTEL_EXPORTER_OTLP_*` variables.
 
 Return AI SDK streams as the response (`toUIMessageStreamResponse()` or `createAgentUIStreamResponse()`). `@vercel/otel` ends all open spans when the request ends, so a stream read later, for example in `after()`, loses its reply and token counts.
 

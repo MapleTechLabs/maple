@@ -32,7 +32,7 @@ provider.register()
 ```
 
 - `OTLPTraceExporter` reads `OTEL_*` when it is constructed. If the app loads `.env` (`dotenv`, `--env-file`), put `import "dotenv/config"` at the top of `tracing.ts`; otherwise the exporter silently targets `localhost:4318` with no key.
-- Building the header in code from `MAPLE_INGEST_KEY` (`` new OTLPTraceExporter({ url: "https://ingest.maple.dev/v1/traces", headers: { Authorization: `Bearer ${key}` } }) ``): throw at startup with a clear message when it is unset; `Bearer undefined` is an opaque 401.
+- No env convention in the repo: pass the values inline, `new OTLPTraceExporter({ url: "https://ingest.maple.dev/v1/traces", headers: { Authorization: "Bearer <key>" } })`. Never build the header from an env var that can be unset (`Bearer undefined` is an opaque 401).
 
 ## agent.ts
 

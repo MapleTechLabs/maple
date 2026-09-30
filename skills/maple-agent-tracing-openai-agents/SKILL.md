@@ -26,9 +26,10 @@ Python is the primary path. TypeScript (`@openai/agents` in `package.json`): Ste
 
 - US: `https://ingest.maple.dev`. EU: `https://ingest.eu.maple.dev`.
 - Header: `Authorization=Bearer <key>`. Protocol `http/protobuf`.
-- Key: the private ingest key (`maple_sk_…`, the **Private key** under **Settings → Ingestion**). The user sets it as `MAPLE_INGEST_KEY` in their environment or `.env`; don't ask for it in the chat. Not set: use the literal `MAPLE_TEST` (ingest accepts and discards it) and tell the user to replace it with their private key.
-- The key is a secret. Keep it in the repo's secret/env convention (`.env`, settings module, secret manager), never in source, committed config, logs or command lines, and tell the user to add it to their deployment's secrets. No convention: create `.env`, add it to `.gitignore` if missing, and commit a `.env.example` with placeholder values.
-- Building the header in code from an env var: never let an unset var become `Bearer None` / `Bearer undefined` (opaque 401) or a bare `KeyError` on import. Fail fast with a clear message.
+- Key in the user's prompt: use it. No key: use the literal `MAPLE_TEST` (ingest accepts and discards it) and tell the user to replace it with their key from **Settings → Ingestion**.
+- Private `maple_sk_` keys never go in browser code. This runs server-side; a `maple_pk_` ingest key is write-only.
+- Follow the repo's existing secret/env convention (`.env`, settings module, secret manager). If there is none, inline is acceptable because ingest keys are write-only: set the `OTEL_*` values from 2b as defaults at the top of the tracing module, before the provider / `NodeSDK` is built (`os.environ.setdefault(...)` / `process.env.X ??= ...`).
+- Building the header in code from an env var: never let an unset var become `Bearer None` / `Bearer undefined` (opaque 401) or a bare `KeyError` on import. Fail fast with a clear message, or inline the key when the repo has no env convention.
 - 401 `ingest_unauthorized` / "Invalid ingest key" with a key you trust: keys are region-bound, so it usually belongs to the other region. Try the other endpoint.
 
 ## Step 2: Install and initialize

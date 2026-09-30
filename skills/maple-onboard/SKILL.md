@@ -129,7 +129,7 @@ Get the meter once at module level, create instruments at module level, incremen
 
 ### LLM calls
 
-If the service calls an LLM, use the `maple-agent-tracing` skill for that service: it matches the agent framework (Vercel AI SDK, OpenAI Agents SDK, LangChain/LangGraph, Mastra, Pydantic AI, CrewAI, Google ADK and others), gateway (OpenRouter, LiteLLM) or direct OpenAI / Anthropic / Google Gen AI SDK, and installs the per-framework skill with the switches each needs for sessions, transcripts, tool failures and token counts. For that service, follow its key rules instead of Step 0's: it uses the private key (`maple_sk_…`) from `MAPLE_INGEST_KEY` in the repo's secret/env convention, never inline.
+If the service calls an LLM, use the `maple-agent-tracing` skill for that service: it matches the agent framework (Vercel AI SDK, OpenAI Agents SDK, LangChain/LangGraph, Mastra, Pydantic AI, CrewAI, Google ADK and others), gateway (OpenRouter, LiteLLM) or direct OpenAI / Anthropic / Google Gen AI SDK, and installs the per-framework skill with the switches each needs for sessions, transcripts, tool failures and token counts.
 
 ## Step 4: Verify the app still works and telemetry arrives
 

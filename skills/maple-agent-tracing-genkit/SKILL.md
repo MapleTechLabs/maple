@@ -37,8 +37,9 @@ Known gaps (tell the user, don't try to fix): cost shows as unpriced; `gen_ai.pr
 ## Step 1: Key and region
 
 - US endpoint `https://ingest.maple.dev`, EU endpoint `https://ingest.eu.maple.dev`. Header `Authorization=Bearer <key>`.
-- Key: the private ingest key (`maple_sk_…`, the **Private key** under **Settings → Ingestion**). The user sets it as `MAPLE_INGEST_KEY` in their environment or `.env`; don't ask for it in the chat. Not set: use the literal `MAPLE_TEST` (ingest accepts and discards it) and tell the user to replace it with their private key.
-- The key is a secret. Keep it in the repo's secret/env convention (`.env`, Firebase `defineSecret`, Secret Manager), never in source, committed config, logs or command lines, and tell the user to add it to their deployment's secrets. No convention: create `.env`, add it to `.gitignore` if missing, and commit a `.env.example` with placeholder values.
+- Key in the user's prompt: use it. No key: use the literal `MAPLE_TEST` (ingest accepts and discards it) and tell the user to replace it with their key from Settings → Ingestion.
+- Private `maple_sk_` keys never go in browser code. Ingest keys are write-only.
+- Follow the repo's existing secret/env convention (`.env`, Firebase `defineSecret`, Secret Manager). If there is none, inlining the ingest key is acceptable.
 - A 401 `ingest_unauthorized` / "Invalid ingest key" with a key you trust usually means the key belongs to the other region (keys are region-bound): try the other endpoint.
 
 ## Step 2: Install
@@ -56,7 +57,7 @@ OTEL_EXPORTER_OTLP_ENDPOINT=https://ingest.maple.dev
 OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer <key>"
 ```
 
-Passing the values in code instead: `` new OTLPTraceExporter({ url: "https://ingest.maple.dev/v1/traces", headers: { authorization: `Bearer ${key}` } }) ``, with `key` read from `MAPLE_INGEST_KEY` (the full `/v1/traces` path is needed when passing `url`).
+Inlining instead of env: `new OTLPTraceExporter({ url: "https://ingest.maple.dev/v1/traces", headers: { authorization: "Bearer <key>" } })` (the full `/v1/traces` path is needed when passing `url`).
 
 - The app loads `.env` (`dotenv`, `--env-file`): load it at the top of `instrumentation.ts` (`import "dotenv/config"` as its first line) or run with `--env-file`. The exporter reads the `OTEL_*` vars when it is constructed; otherwise it silently targets `localhost:4318` with no key.
 - Building the header from a variable (`Bearer ${process.env.MAPLE_INGEST_KEY}`): throw at startup with a clear message when it is unset; never let it become `Bearer undefined` (opaque 401).

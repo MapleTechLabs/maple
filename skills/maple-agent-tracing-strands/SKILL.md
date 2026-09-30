@@ -25,8 +25,10 @@ Mechanism: Strands' native OTel tracer (scope `strands.telemetry.tracer`, `gen_a
 
 - US: `https://ingest.maple.dev`. EU: `https://ingest.eu.maple.dev`.
 - Header: `Authorization=Bearer <key>`.
-- Key: the private ingest key (`maple_sk_…`, the **Private key** under **Settings → Ingestion**). The user sets it as `MAPLE_INGEST_KEY` in their environment or `.env`; don't ask for it in the chat. Not set: use the literal `MAPLE_TEST` (ingest accepts and discards it) and tell the user to replace it with their private key.
-- The key is a secret. Keep it in the repo's secret/env convention (`.env`, settings module, secret manager, container env), never in source, committed config, logs or command lines, and tell the user to add it to their deployment's secrets. No convention: create `.env`, add it to `.gitignore` if missing, and commit a `.env.example` with placeholder values.
+- Key given in the prompt → use it.
+- No key → use the literal `MAPLE_TEST` (ingest accepts and discards it) and tell the user to replace it with their key from Settings → Ingestion.
+- Never put a private `maple_sk_` key in browser code.
+- Follow the repo's secret/env convention (`.env`, settings module, secret manager, container env) if it has one. Otherwise inline is acceptable: ingest keys are write-only.
 - Key read from a secret env var in code: fail fast with a clear message when it is unset (not a bare `KeyError` on import, not `Bearer undefined`, which is an opaque 401).
 
 ## Step 2: Install + init

@@ -26,9 +26,8 @@ Known gaps (tell the user, don't try to fix): cost shows as "unpriced" (the AI S
 ## Step 1: Key and region
 
 - US `https://ingest.maple.dev/v1/traces`, EU `https://ingest.eu.maple.dev/v1/traces`. The exporter takes the full URL (`/v1/traces` included). Header `authorization: Bearer <key>`.
-- Key: the private ingest key (`maple_sk_…`, the **Private key** under **Settings → Ingestion**), a secret. The user puts `MAPLE_INGEST_KEY=<key>` in `.dev.vars` for `wrangler dev`; don't ask for it in the chat. Check `.dev.vars` is gitignored (add it if not) and commit a `.dev.vars.example` with a placeholder. Not set: put `MAPLE_INGEST_KEY=MAPLE_TEST` in `.dev.vars` (ingest accepts and discards it) and tell the user to replace it with their private key.
-- Deploys read it as a Worker secret: tell the user to run `npx wrangler secret put MAPLE_INGEST_KEY` themselves (it prompts for the value). Never put the key in the Wrangler config, source, logs or command lines.
-- Re-run the repo's own type generation after adding the variable if it uses generated `Env` types (its `types` script, e.g. `npm run types`, or `npx wrangler types <file>`; the output may be `worker-configuration.d.ts`, `env.d.ts`...); otherwise add `MAPLE_INGEST_KEY: string` to the `Env` interface.
+- Key from the user's prompt; no key: use the literal `MAPLE_TEST` (ingest accepts and discards it) and tell the user to replace it with their key from Settings → Ingestion.
+- Store it as a Worker secret: `npx wrangler secret put MAPLE_INGEST_KEY`, and `MAPLE_INGEST_KEY=<key>` in `.dev.vars` for `wrangler dev` (check `.dev.vars` is gitignored). Re-run the repo's own type generation afterwards if it uses generated `Env` types (its `types` script, e.g. `npm run types`, or `npx wrangler types <file>`; the output may be `worker-configuration.d.ts`, `env.d.ts`...); otherwise add `MAPLE_INGEST_KEY: string` to the `Env` interface.
 - An unset secret becomes `Bearer undefined` and every export 401s with no other hint: confirm the key is in `.dev.vars` (and `npx wrangler secret list` for deploys) before the verification run.
 - A 401 `ingest_unauthorized` / "Invalid ingest key" with a key you trust usually means the key belongs to the other region (keys are region-bound): try the other endpoint.
 - Follow the repo's existing secret naming if it has one.

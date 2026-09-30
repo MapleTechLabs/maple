@@ -22,10 +22,10 @@ Set up Maple agent tracing for Mastra in this project.
 
 Install the skill with `npx skills add MapleTechLabs/maple/skills --skill maple-agent-tracing-mastra -y`, then follow it.
 
-My Maple ingest key is set as MAPLE_INGEST_KEY and my organization is in the US region.
+My Maple ingest key is maple_pk_... and my organization is in the US region.
 ```
 
-Before you run it, set `MAPLE_INGEST_KEY` to the **Private key** (`maple_sk_…`) from **Settings → Ingestion**, in your environment or the project's gitignored `.env`. Keep the key out of the prompt. If your organization is in the EU region, change `US` to `EU` in the prompt.
+Your ingest key is in **Settings → Ingestion**. If your organization is in the EU region, change `US` to `EU` in the prompt.
 
 ## Install the observability packages
 
@@ -107,7 +107,7 @@ export const mastra = new Mastra({
 })
 ```
 
-Set `MAPLE_INGEST_KEY` to the **Private key** (`maple_sk_…`) from **Settings → Ingestion**. For an EU organization, use `https://ingest.eu.maple.dev`. The exporter appends `/v1/traces` itself.
+Set `MAPLE_INGEST_KEY` to your ingest key from **Settings → Ingestion**. For an EU organization, use `https://ingest.eu.maple.dev`. The exporter appends `/v1/traces` itself.
 
 Set the endpoint, protocol and key in code, since this exporter ignores the `OTEL_EXPORTER_OTLP_*` variables. `observability` must be an `Observability` instance; a plain object silently traces nothing.
 

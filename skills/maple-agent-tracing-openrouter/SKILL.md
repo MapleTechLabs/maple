@@ -26,8 +26,10 @@ What Broadcast cannot give (tell the user, don't try to fix it here): tool spans
 
 - US: `https://ingest.maple.dev`. EU: `https://ingest.eu.maple.dev`.
 - Header: `Authorization=Bearer <key>`.
-- Key: the private ingest key (`maple_sk_…`, the **Private key** under **Settings → Ingestion**), a secret. The user enters it in OpenRouter's dashboard themselves (Step 7); don't ask for it in the chat, and never print it or write it into the repo.
-- If the app also exports its own OTel to Maple, that exporter reads the key from `MAPLE_INGEST_KEY` through the repo's secret/env convention, never from source, committed config, logs or command lines. No convention: create `.env`, add it to `.gitignore` if missing, and commit a `.env.example` with placeholder values. Not set: use the literal `MAPLE_TEST` (ingest accepts and discards it) and tell the user to replace it with their private key.
+- Key given in the prompt → use it.
+- No key → use the literal `MAPLE_TEST` (ingest accepts and discards it) and tell the user to replace it with their key from Settings → Ingestion. Test Connection passes with it, but nothing lands.
+- Never put a private `maple_sk_` key in browser code. The key here goes into OpenRouter's dashboard, not the repo.
+- If the app also exports its own OTel to Maple, follow the repo's existing secret/env convention for that exporter. Ingest keys are write-only, so inline is acceptable if there is none.
 
 ## Step 2: Send `session_id` on every OpenRouter request
 
@@ -121,12 +123,12 @@ Broadcast needs none: OpenRouter exports from its servers after each request. De
 
 ## Step 7: Hand the user the dashboard settings
 
-Print these, filled in except the key (you cannot apply them):
+Print these, filled in (you cannot apply them):
 
 1. OpenRouter → Settings → Observability (`https://openrouter.ai/settings/observability`) → **Enable Broadcast** (org accounts: org admin only).
 2. Edit **OpenTelemetry Collector**:
    - Endpoint: `https://ingest.maple.dev/v1/traces` (EU: `https://ingest.eu.maple.dev/v1/traces`). Full path; OpenRouter does not append `/v1/traces`.
-   - Headers: `{ "Authorization": "Bearer maple_sk_..." }`, with the user's private key.
+   - Headers: `{ "Authorization": "Bearer <key>" }`
    - Sampling rate: `1` (sampling is per session; lower values drop whole conversations).
    - API keys: empty, or include the key(s) the app uses. Excluded keys always win.
    - Data regions: include Europe if the app calls `eu.openrouter.ai`.

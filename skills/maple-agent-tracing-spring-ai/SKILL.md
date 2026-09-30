@@ -22,8 +22,9 @@ Mechanism: Spring AI's Micrometer Observations → `micrometer-tracing-bridge-ot
 
 - US: `https://ingest.maple.dev`. EU: `https://ingest.eu.maple.dev`.
 - Header: `Authorization=Bearer <key>`. Protocol: OTLP/HTTP protobuf (Boot's default transport).
-- Key: the private ingest key (`maple_sk_…`, the **Private key** under **Settings → Ingestion**). The user sets it as `MAPLE_INGEST_KEY` in their environment or `.env`; don't ask for it in the chat. Not set: use the literal `MAPLE_TEST` (ingest accepts and discards it) and tell the user to replace it with their private key.
-- The key is a secret. Reference it as `${MAPLE_INGEST_KEY}` and keep the value in the repo's secret/env convention (env vars, uncommitted profile files, Vault/Config Server), never in committed `application.properties`, source, logs or command lines. Tell the user to add it to their deployment's secrets. No convention: create `.env`, add it to `.gitignore` if missing, and commit a `.env.example` with placeholder values.
+- Key in the user's prompt: use it. No key: use the literal `MAPLE_TEST` (ingest accepts and discards it) and tell the user to replace it with their key from **Settings → Ingestion**.
+- Private `maple_sk_` keys never go in browser code.
+- Follow the repo's existing secret/env convention (`${ENV_VAR}` placeholders, profile files, Vault/Config Server). If there is none, inline in `application.properties` is acceptable because ingest keys are write-only.
 - Keep `${MAPLE_INGEST_KEY}` without a default: unresolved, Boot fails at startup with a clear error, while `${MAPLE_INGEST_KEY:}` sends an empty `Bearer ` and gets an opaque 401. Boot does not read `.env` files: export the variable, or add `spring.config.import=optional:file:.env[.properties]` if the repo keeps one.
 
 ## Step 2: Install and export

@@ -25,10 +25,10 @@ Set up Maple agent tracing for the Claude Agent SDK in this project.
 
 Install the skill with `npx skills add MapleTechLabs/maple/skills --skill maple-agent-tracing-claude-agent-sdk -y`, then follow it.
 
-My Maple ingest key is set as MAPLE_INGEST_KEY and my organization is in the US region.
+My Maple ingest key is maple_pk_... and my organization is in the US region.
 ```
 
-Before you run it, set `MAPLE_INGEST_KEY` to the **Private key** (`maple_sk_…`) from **Settings → Ingestion**, in your environment or the project's gitignored `.env`. Keep the key out of the prompt. If your organization is in the EU region, change `US` to `EU` in the prompt.
+Your ingest key is in **Settings → Ingestion**. If your organization is in the EU region, change `US` to `EU` in the prompt.
 
 ## Pass the telemetry variables to the CLI
 
@@ -140,7 +140,7 @@ Put the variables under `env` in `~/.claude/settings.json`, then start a new `cl
 		"OTEL_METRICS_EXPORTER": "otlp",
 		"OTEL_EXPORTER_OTLP_PROTOCOL": "http/protobuf",
 		"OTEL_EXPORTER_OTLP_ENDPOINT": "https://ingest.maple.dev",
-		"OTEL_EXPORTER_OTLP_HEADERS": "Authorization=Bearer maple_sk_...",
+		"OTEL_EXPORTER_OTLP_HEADERS": "Authorization=Bearer YOUR_INGEST_KEY",
 		"OTEL_LOG_USER_PROMPTS": "1",
 		"OTEL_LOG_TOOL_DETAILS": "1",
 		"OTEL_LOG_TOOL_CONTENT": "1"
