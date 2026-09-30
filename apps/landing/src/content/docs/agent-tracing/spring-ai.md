@@ -166,7 +166,7 @@ public class MapleAiObservationConfig {
 
 If your app already defines a `ToolExecutionExceptionProcessor`, add the `error()` call to it instead of adding a second bean.
 
-The transcript comes from `maple.ai.capture-content=true`. Spring AI's own `log-prompt` and `log-completion` settings only write to the application log. Set it to `false` to keep message and tool content out of Maple; everything else still shows up, with an empty transcript.
+The transcript comes from `maple.ai.capture-content=true`. Spring AI's own `log-prompt` and `log-completion` settings only write to the application log. Set it to `false` to keep message and tool content out of Maple; everything else still shows up, with an empty transcript. A failed tool's exception message is still sent.
 
 ## Group turns into one session
 

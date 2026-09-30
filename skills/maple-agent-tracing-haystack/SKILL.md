@@ -116,7 +116,7 @@ class MapleSpan(OpenTelemetrySpan):
     def _tool(self, key: str, value: Any) -> None:
         if key.endswith(".output") and isinstance(value, dict) and "error" in value:
             # Haystack records a failed tool as {"error": ...} and leaves the span status unset
-            self._span.set_status(StatusCode.ERROR, str(value["error"]))
+            self._span.set_status(StatusCode.ERROR, str(value["error"]) if self._content else "Tool invocation failed")
             self._span.set_attribute("error.type", "ToolInvocationError")
         if self._content:
             attribute = "gen_ai.tool.call.arguments" if key.endswith(".input") else "gen_ai.tool.call.result"
@@ -206,7 +206,7 @@ history = [m for m in result["assistant"]["messages"] if not m.is_from("system")
 ## Step 4: Content
 
 - Default `MapleHaystackTracer(..., content=True)` writes `gen_ai.input.messages`, `gen_ai.output.messages`, `gen_ai.system_instructions`, `gen_ai.tool.call.arguments`/`.result`, plus Haystack's own `haystack.*` content tags.
-- `content=False` keeps model, tokens, cost, finish reason, tool names and failures; drops messages, tool args/results, `haystack.*` content tags and the ungated `haystack.pipeline.input_data` tag. Use it if the user asks for no prompts/PII in telemetry. The failed tool's status message still quotes its arguments (Haystack's `Failed to invoke Tool ... with parameters {...}`); if arguments can hold PII, redact them in `_tool()` before `set_status`.
+- `content=False` keeps model, tokens, cost, finish reason, tool names and failures; drops messages, tool args/results, `haystack.*` content tags and the ungated `haystack.pipeline.input_data` tag. Use it if the user asks for no prompts/PII in telemetry. It also replaces a failed tool's status message, which quotes the tool's arguments, with a generic one.
 - `HAYSTACK_CONTENT_TRACING_ENABLED` is irrelevant with this tracer; don't add it.
 
 ## Step 5: Tools, errors, sub-agents

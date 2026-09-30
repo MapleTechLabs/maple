@@ -115,7 +115,7 @@ class MapleSpan(OpenTelemetrySpan):
 
     def _tool(self, key: str, value: Any) -> None:
         if key.endswith(".output") and isinstance(value, dict) and "error" in value:
-            self._span.set_status(StatusCode.ERROR, str(value["error"]))
+            self._span.set_status(StatusCode.ERROR, str(value["error"]) if self._content else "Tool invocation failed")
             self._span.set_attribute("error.type", "ToolInvocationError")
         if self._content:
             attribute = "gen_ai.tool.call.arguments" if key.endswith(".input") else "gen_ai.tool.call.result"

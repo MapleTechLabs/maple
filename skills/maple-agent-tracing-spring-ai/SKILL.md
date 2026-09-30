@@ -198,7 +198,7 @@ public class MapleAiObservationConfig {
 
 Boot applies `ObservationFilter` beans to the registry automatically; nothing else to register. `spring.ai.tools.observations.include-content` writes `spring.ai.tool.call.arguments/result`, which Maple does not read; the filter's `gen_ai.tool.call.*` keys are the ones read.
 
-Content notes: every `chat` span carries the whole conversation so far, so spans grow with long chats (don't cap them; see 2b). With `maple.ai.capture-content=false` no message/tool content leaves the process; to redact instead, mask values inside `message(...)`. The conversation id and agent names are sent regardless: keep personal data out of them.
+Content notes: every `chat` span carries the whole conversation so far, so spans grow with long chats (don't cap them; see 2b). With `maple.ai.capture-content=false` no message/tool content leaves the process, except a failed tool's exception message and stack trace (`toolCall.error(exception)`, Step 3); if those can hold user data, pass `error()` an exception without them. To redact content instead, mask values inside `message(...)`. The conversation id and agent names are sent regardless: keep personal data out of them.
 
 Kotlin project: translate one to one (e.g. `ObservationFilter { context -> ...; context }`), same beans, same keys.
 
