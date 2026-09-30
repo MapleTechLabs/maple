@@ -15,7 +15,11 @@ const MAPLE_ENDPOINT = "https://ingest.maple.dev" // EU: https://ingest.eu.maple
 
 export function register() {
 	const MAPLE_KEY = process.env.MAPLE_INGEST_KEY // private ingest key (maple_sk_…), a secret
-	if (!MAPLE_KEY) throw new Error("MAPLE_INGEST_KEY is not set (Maple private ingest key)")
+	if (!MAPLE_KEY) {
+		// A missing key disables export; it never stops the app.
+		console.warn("MAPLE_INGEST_KEY is not set; Maple telemetry export is disabled")
+		return
+	}
 	registerOTel({
 		serviceName: "my-next-app",
 		attributes: {
@@ -55,7 +59,10 @@ anthropicInstrumentation.manuallyInstrument(Anthropic)
 
 export function register() {
 	const MAPLE_KEY = process.env.MAPLE_INGEST_KEY
-	if (!MAPLE_KEY) throw new Error("MAPLE_INGEST_KEY is not set (Maple private ingest key)")
+	if (!MAPLE_KEY) {
+		console.warn("MAPLE_INGEST_KEY is not set; Maple telemetry export is disabled")
+		return
+	}
 	registerOTel({
 		serviceName: "my-next-app",
 		instrumentations: [anthropicInstrumentation],
@@ -158,6 +165,6 @@ Render `<Maple />` inside `<body>` in `app/layout.tsx` (Pages Router: import `./
 
 ## Configuration and smoke
 
-Inline the endpoint in `instrumentation.ts` and pass it with the key explicitly to `registerOTel`. Do not rely on `OTEL_EXPORTER_OTLP_*` env vars. The server key is the private key in `MAPLE_INGEST_KEY`: Next.js loads `.env.local` / `.env` itself, and on Vercel the user adds it under Project Settings → Environment Variables for every environment that runs the app (Preview included), or those builds stop at startup. Never give it a `NEXT_PUBLIC_` prefix: that ships it to the browser.
+Inline the endpoint in `instrumentation.ts` and pass it with the key explicitly to `registerOTel`. Do not rely on `OTEL_EXPORTER_OTLP_*` env vars. The server key is the private key in `MAPLE_INGEST_KEY`: Next.js loads `.env.local` / `.env` itself, and on Vercel the user adds it under Project Settings → Environment Variables for every environment that runs the app (Preview included), or those deployments run without telemetry (the bootstrap logs `MAPLE_INGEST_KEY is not set; Maple telemetry export is disabled`). Never give it a `NEXT_PUBLIC_` prefix: that ships it to the browser.
 
 Smoke-check with tools already in the repo (`npm run typecheck`, `npm run build`), plus a real app request where practical. Do not invent fragile inline Node scripts that import TypeScript source files directly, and do not assume `ts-node` exists unless it is already installed.

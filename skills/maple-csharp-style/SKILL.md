@@ -18,7 +18,7 @@ dotnet add package OpenTelemetry.Instrumentation.Http
 
 ## Bootstrap (ASP.NET Core)
 
-Inline the endpoint. Read the private ingest key from `MAPLE_INGEST_KEY` (an environment variable or user-secret, never `appsettings.json`) and throw at startup when it is unset. With `HttpProtobuf`, an `Endpoint` set in code is used as-is, so include the `/v1/<signal>` path.
+Inline the endpoint. Read the private ingest key from `MAPLE_INGEST_KEY` (an environment variable or user-secret, never `appsettings.json`). When it is unset, log one warning and skip `AddOpenTelemetry()` so the app runs normally; telemetry must never stop the app. With `HttpProtobuf`, an `Endpoint` set in code is used as-is, so include the `/v1/<signal>` path.
 
 ```csharp
 using OpenTelemetry;
@@ -32,8 +32,7 @@ const string MapleEndpoint = "https://ingest.maple.dev"; // EU: https://ingest.e
 var builder = WebApplication.CreateBuilder(args);
 
 // Private ingest key (maple_sk_…), a secret.
-var mapleKey = builder.Configuration["MAPLE_INGEST_KEY"]
-    ?? throw new InvalidOperationException("MAPLE_INGEST_KEY is not set (Maple private ingest key)");
+var mapleKey = builder.Configuration["MAPLE_INGEST_KEY"];
 
 void ConfigureOtlp(OtlpExporterOptions options, string path)
 {
@@ -42,31 +41,39 @@ void ConfigureOtlp(OtlpExporterOptions options, string path)
     options.Headers = $"authorization=Bearer {mapleKey}";
 }
 
-builder.Services.AddOpenTelemetry()
-    .ConfigureResource(r => r
-        .AddService("orders-api")
-        .AddAttributes(new Dictionary<string, object>
-        {
-            ["deployment.environment.name"] = builder.Environment.EnvironmentName,
-            ["vcs.repository.url.full"] = "https://github.com/acme/orders-api",
-            ["vcs.ref.head.revision"] = Environment.GetEnvironmentVariable("GITHUB_SHA") ?? "",
-        }))
-    .WithTracing(tracing => tracing
-        .AddSource("orders.api") // every custom ActivitySource name, or its spans are dropped
-        .AddAspNetCoreInstrumentation()
-        .AddHttpClientInstrumentation()
-        .AddOtlpExporter(o => ConfigureOtlp(o, "traces")))
-    .WithMetrics(metrics => metrics
-        .AddAspNetCoreInstrumentation()
-        .AddHttpClientInstrumentation()
-        .AddOtlpExporter(o => ConfigureOtlp(o, "metrics")))
-    .WithLogging(
-        logging => logging.AddOtlpExporter(o => ConfigureOtlp(o, "logs")),
-        options =>
-        {
-            options.IncludeFormattedMessage = true;
-            options.IncludeScopes = true;
-        });
+if (string.IsNullOrEmpty(mapleKey))
+{
+    // A missing key disables export; it never stops the app.
+    Console.Error.WriteLine("MAPLE_INGEST_KEY is not set; Maple telemetry export is disabled");
+}
+else
+{
+    builder.Services.AddOpenTelemetry()
+        .ConfigureResource(r => r
+            .AddService("orders-api")
+            .AddAttributes(new Dictionary<string, object>
+            {
+                ["deployment.environment.name"] = builder.Environment.EnvironmentName,
+                ["vcs.repository.url.full"] = "https://github.com/acme/orders-api",
+                ["vcs.ref.head.revision"] = Environment.GetEnvironmentVariable("GITHUB_SHA") ?? "",
+            }))
+        .WithTracing(tracing => tracing
+            .AddSource("orders.api") // every custom ActivitySource name, or its spans are dropped
+            .AddAspNetCoreInstrumentation()
+            .AddHttpClientInstrumentation()
+            .AddOtlpExporter(o => ConfigureOtlp(o, "traces")))
+        .WithMetrics(metrics => metrics
+            .AddAspNetCoreInstrumentation()
+            .AddHttpClientInstrumentation()
+            .AddOtlpExporter(o => ConfigureOtlp(o, "metrics")))
+        .WithLogging(
+            logging => logging.AddOtlpExporter(o => ConfigureOtlp(o, "logs")),
+            options =>
+            {
+                options.IncludeFormattedMessage = true;
+                options.IncludeScopes = true;
+            });
+}
 
 var app = builder.Build();
 ```

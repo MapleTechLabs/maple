@@ -16,7 +16,13 @@ curl -sLO https://github.com/open-telemetry/opentelemetry-java-instrumentation/r
 Inline the endpoint as a JVM system property. The key goes in the `OTEL_EXPORTER_OTLP_HEADERS` environment variable, built from `MAPLE_INGEST_KEY` (the private key) so it never appears in the `java` command line. The agent appends `/v1/traces`, `/v1/logs`, and `/v1/metrics` to the base endpoint:
 
 ```bash
-export OTEL_EXPORTER_OTLP_HEADERS="authorization=Bearer ${MAPLE_INGEST_KEY:?MAPLE_INGEST_KEY is not set}"
+# A missing key disables export; it never stops the launch.
+if [ -n "${MAPLE_INGEST_KEY:-}" ]; then
+  export OTEL_EXPORTER_OTLP_HEADERS="authorization=Bearer ${MAPLE_INGEST_KEY}"
+else
+  echo "MAPLE_INGEST_KEY is not set; Maple telemetry export is disabled" >&2
+  export OTEL_SDK_DISABLED=true
+fi
 java \
   -javaagent:./opentelemetry-javaagent.jar \
   -Dotel.service.name=orders-api \
@@ -26,7 +32,7 @@ java \
   -jar build/libs/app.jar
 ```
 
-EU organizations use `https://ingest.eu.maple.dev` as the endpoint. Keep the flags where the JVM is launched (`Procfile`, entrypoint script, `systemd` unit, or `JAVA_TOOL_OPTIONS`); the `export` line needs a shell, so a Dockerfile uses an entrypoint script or shell-form `CMD`. `${MAPLE_INGEST_KEY:?}` stops the launch when the key is missing. The agent does not read Spring's `application.yml`.
+EU organizations use `https://ingest.eu.maple.dev` as the endpoint. Keep the flags where the JVM is launched (`Procfile`, entrypoint script, `systemd` unit, or `JAVA_TOOL_OPTIONS`); the `export` line needs a shell, so a Dockerfile uses an entrypoint script or shell-form `CMD`. Without the key the app still starts: the script prints one warning and sets `OTEL_SDK_DISABLED=true`, so the agent sends nothing and no request goes out with an empty bearer. The agent does not read Spring's `application.yml`.
 
 The agent auto-instruments Spring (Boot, MVC, WebFlux), Servlet containers, Apache HttpClient, OkHttp, JDBC, R2DBC, Hibernate, Kafka, gRPC, AWS SDK, and many more.
 
@@ -60,7 +66,9 @@ public final class Telemetry {
     public static OpenTelemetrySdk init() {
         var key = System.getenv("MAPLE_INGEST_KEY"); // private ingest key (maple_sk_…), a secret
         if (key == null || key.isEmpty()) {
-            throw new IllegalStateException("MAPLE_INGEST_KEY is not set (Maple private ingest key)");
+            // A missing key disables export; it never stops the app.
+            System.err.println("MAPLE_INGEST_KEY is not set; Maple telemetry export is disabled");
+            return OpenTelemetrySdk.builder().build(); // no exporter, nothing sent
         }
         var headers = Map.of("authorization", "Bearer " + key);
         var resource = Resource.getDefault().merge(Resource.create(Attributes.builder()

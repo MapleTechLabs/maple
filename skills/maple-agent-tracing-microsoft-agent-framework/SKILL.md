@@ -22,7 +22,7 @@ The framework emits the spans itself. You add: an OTLP/HTTP exporter, content ca
 - US endpoint `https://ingest.maple.dev`, EU `https://ingest.eu.maple.dev`. Header `Authorization=Bearer <key>`. Protocol `http/protobuf`.
 - Key: the private ingest key (`maple_sk_…`, the **Private key** under **Settings → Ingestion**). The user sets it as `MAPLE_INGEST_KEY` in their environment or `.env`; don't ask for it in the chat. Not set: use the literal `MAPLE_TEST` (ingest accepts and discards it) and tell the user to replace it with their private key.
 - The key is a secret. Keep it in the repo's secret/env convention (`.env`, settings class, user-secrets), never in source, committed config, logs or command lines, and tell the user to add it to their deployment's secrets. No convention: create `.env`, add it to `.gitignore` if missing, and commit a `.env.example` with placeholder values.
-- Key from an env var: fail fast with a clear message when it's unset instead of a bare `KeyError` on `os.environ['MAPLE_INGEST_KEY']` (`key = os.environ.get("MAPLE_INGEST_KEY") or sys.exit("MAPLE_INGEST_KEY is not set (Maple ingest key)")`); .NET: never pass a null `Environment.GetEnvironmentVariable(...)` into the header (`Bearer ` with no key is an opaque 401).
+- Key from an env var: when it's unset, log one warning (`MAPLE_INGEST_KEY is not set; Maple telemetry export is disabled`) and skip the Maple exporter so the app runs normally (Step 2 shows it). Never raise, exit or throw over the key, no bare `KeyError` on `os.environ['MAPLE_INGEST_KEY']`, and never pass a null `Environment.GetEnvironmentVariable(...)` into the .NET header (`Bearer ` with no key is an opaque 401).
 - App loads `.env` (`load_dotenv()`): call it before `configure_otel_providers()` / the provider is built, and before reading the key. Otherwise the exporter silently targets `localhost:4318` with no key.
 
 ## Step 2: Install and init
@@ -66,6 +66,7 @@ def conversation(conversation_id: str):
 At startup, once, before agents are created:
 
 ```py
+import logging
 import os
 
 from agent_framework.observability import configure_otel_providers
@@ -73,16 +74,21 @@ from opentelemetry import trace
 
 from maple_tracing import ConversationIdProcessor
 
-configure_otel_providers(
-    service_name="<service-name>",
-    resource_attributes={"deployment.environment.name": "<env>"},
-    otlp_endpoint="https://ingest.maple.dev",
-    otlp_protocol="http/protobuf",
-    otlp_headers={"Authorization": f"Bearer {os.environ['MAPLE_INGEST_KEY']}"},
-    enable_sensitive_data=True,
-    enable_message_events=False,
-)
-trace.get_tracer_provider().add_span_processor(ConversationIdProcessor())
+key = os.environ.get("MAPLE_INGEST_KEY")
+if key:
+    configure_otel_providers(
+        service_name="<service-name>",
+        resource_attributes={"deployment.environment.name": "<env>"},
+        otlp_endpoint="https://ingest.maple.dev",
+        otlp_protocol="http/protobuf",
+        otlp_headers={"Authorization": f"Bearer {key}"},
+        enable_sensitive_data=True,
+        enable_message_events=False,
+    )
+    trace.get_tracer_provider().add_span_processor(ConversationIdProcessor())
+else:
+    # A missing key disables export; it never stops the app.
+    logging.getLogger(__name__).warning("MAPLE_INGEST_KEY is not set; Maple telemetry export is disabled")
 ```
 
 Equivalent env-var config, with a bare `configure_otel_providers()` call:
@@ -110,21 +116,25 @@ dotnet add package OpenTelemetry.Exporter.OpenTelemetryProtocol --version 1.19.1
 ```
 
 ```csharp
-var mapleKey = Environment.GetEnvironmentVariable("MAPLE_INGEST_KEY")
-    ?? throw new InvalidOperationException("MAPLE_INGEST_KEY is not set");
+var mapleKey = Environment.GetEnvironmentVariable("MAPLE_INGEST_KEY");
+// A missing key disables export; it never stops the app.
+if (string.IsNullOrEmpty(mapleKey))
+    Console.Error.WriteLine("MAPLE_INGEST_KEY is not set; Maple telemetry export is disabled");
 
-using var tracerProvider = Sdk.CreateTracerProviderBuilder()
-    .ConfigureResource(r => r.AddService("<service-name>"))
-    .AddSource("*Microsoft.Agents.AI*")
-    .AddSource("*Microsoft.Extensions.AI")
-    .AddProcessor(new ConversationIdProcessor())
-    .AddOtlpExporter(o =>
-    {
-        o.Endpoint = new Uri("https://ingest.maple.dev/v1/traces");
-        o.Protocol = OtlpExportProtocol.HttpProtobuf;
-        o.Headers = $"Authorization=Bearer {mapleKey}";
-    })
-    .Build();
+using var tracerProvider = string.IsNullOrEmpty(mapleKey)
+    ? null
+    : Sdk.CreateTracerProviderBuilder()
+        .ConfigureResource(r => r.AddService("<service-name>"))
+        .AddSource("*Microsoft.Agents.AI*")
+        .AddSource("*Microsoft.Extensions.AI")
+        .AddProcessor(new ConversationIdProcessor())
+        .AddOtlpExporter(o =>
+        {
+            o.Endpoint = new Uri("https://ingest.maple.dev/v1/traces");
+            o.Protocol = OtlpExportProtocol.HttpProtobuf;
+            o.Headers = $"Authorization=Bearer {mapleKey}";
+        })
+        .Build();
 
 AIAgent agent = chatClient
     .AsAIAgent(instructions: "...", name: "<agent_name>", tools: [...])
@@ -212,6 +222,7 @@ pip install "semantic-kernel>=1.44.1" opentelemetry-sdk opentelemetry-exporter-o
 In a module imported before anything that imports `semantic_kernel`:
 
 ```py
+import logging
 import os
 
 os.environ["SEMANTICKERNEL_EXPERIMENTAL_GENAI_ENABLE_OTEL_DIAGNOSTICS"] = "true"
@@ -227,10 +238,15 @@ from maple_tracing import ConversationIdProcessor
 
 provider = TracerProvider(resource=Resource.create({"service.name": "<service-name>"}))
 provider.add_span_processor(ConversationIdProcessor())
-provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter(
-    endpoint="https://ingest.maple.dev/v1/traces",
-    headers={"Authorization": f"Bearer {os.environ['MAPLE_INGEST_KEY']}"},
-)))
+key = os.environ.get("MAPLE_INGEST_KEY")
+if key:
+    provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter(
+        endpoint="https://ingest.maple.dev/v1/traces",
+        headers={"Authorization": f"Bearer {key}"},
+    )))
+else:
+    # A missing key disables export; it never stops the app.
+    logging.getLogger(__name__).warning("MAPLE_INGEST_KEY is not set; Maple telemetry export is disabled")
 trace.set_tracer_provider(provider)
 ```
 

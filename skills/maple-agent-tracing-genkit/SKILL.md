@@ -59,7 +59,7 @@ OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer <key>"
 Passing the values in code instead: `` new OTLPTraceExporter({ url: "https://ingest.maple.dev/v1/traces", headers: { authorization: `Bearer ${key}` } }) ``, with `key` read from `MAPLE_INGEST_KEY` (the full `/v1/traces` path is needed when passing `url`).
 
 - The app loads `.env` (`dotenv`, `--env-file`): load it at the top of `instrumentation.ts` (`import "dotenv/config"` as its first line) or run with `--env-file`. The exporter reads the `OTEL_*` vars when it is constructed; otherwise it silently targets `localhost:4318` with no key.
-- Building the header from a variable (`Bearer ${process.env.MAPLE_INGEST_KEY}`): throw at startup with a clear message when it is unset; never let it become `Bearer undefined` (opaque 401).
+- Building the header from a variable (`Bearer ${process.env.MAPLE_INGEST_KEY}`): when it is unset, log one warning (`MAPLE_INGEST_KEY is not set; Maple telemetry export is disabled`) and skip the Maple exporter so the app runs normally. Never throw over the key, and never let it become `Bearer undefined` (opaque 401).
 
 ## Step 3: The span processor
 

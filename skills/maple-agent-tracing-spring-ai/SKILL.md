@@ -23,8 +23,8 @@ Mechanism: Spring AI's Micrometer Observations → `micrometer-tracing-bridge-ot
 - US: `https://ingest.maple.dev`. EU: `https://ingest.eu.maple.dev`.
 - Header: `Authorization=Bearer <key>`. Protocol: OTLP/HTTP protobuf (Boot's default transport).
 - Key: the private ingest key (`maple_sk_…`, the **Private key** under **Settings → Ingestion**). The user sets it as `MAPLE_INGEST_KEY` in their environment or `.env`; don't ask for it in the chat. Not set: use the literal `MAPLE_TEST` (ingest accepts and discards it) and tell the user to replace it with their private key.
-- The key is a secret. Reference it as `${MAPLE_INGEST_KEY}` and keep the value in the repo's secret/env convention (env vars, uncommitted profile files, Vault/Config Server), never in committed `application.properties`, source, logs or command lines. Tell the user to add it to their deployment's secrets. No convention: create `.env`, add it to `.gitignore` if missing, and commit a `.env.example` with placeholder values.
-- Keep `${MAPLE_INGEST_KEY}` without a default: unresolved, Boot fails at startup with a clear error, while `${MAPLE_INGEST_KEY:}` sends an empty `Bearer ` and gets an opaque 401. Boot does not read `.env` files: export the variable, or add `spring.config.import=optional:file:.env[.properties]` if the repo keeps one.
+- The key is a secret. Reference it as `${MAPLE_INGEST_KEY:}` and keep the value in the repo's secret/env convention (env vars, uncommitted profile files, Vault/Config Server), never in committed `application.properties`, source, logs or command lines. Tell the user to add it to their deployment's secrets. No convention: create `.env`, add it to `.gitignore` if missing, and commit a `.env.example` with placeholder values.
+- A missing key must never stop the app or send an empty `Bearer ` (opaque 401). Use the empty default `${MAPLE_INGEST_KEY:}` (a bare `${MAPLE_INGEST_KEY}` fails startup when unset) and turn export off in `main` when the key is missing, before `SpringApplication.run` (Step 2b shows it). That check reads the process environment and Boot does not read `.env` files, so export the variable where the JVM starts.
 
 ## Step 2: Install and export
 
@@ -49,14 +49,29 @@ Add to `application.properties` (or the YAML equivalent):
 spring.application.name=<service name, e.g. support-agent>
 
 management.opentelemetry.tracing.export.otlp.endpoint=https://ingest.maple.dev/v1/traces
-management.opentelemetry.tracing.export.otlp.headers.Authorization=Bearer ${MAPLE_INGEST_KEY}
+management.opentelemetry.tracing.export.otlp.headers.Authorization=Bearer ${MAPLE_INGEST_KEY:}
 management.tracing.sampling.probability=1.0
 management.opentelemetry.resource-attributes.deployment.environment.name=<env>
 
 management.otlp.metrics.export.url=https://ingest.maple.dev/v1/metrics
-management.otlp.metrics.export.headers.Authorization=Bearer ${MAPLE_INGEST_KEY}
+management.otlp.metrics.export.headers.Authorization=Bearer ${MAPLE_INGEST_KEY:}
 
 maple.ai.capture-content=true
+```
+
+Then, in the application's `main`, disable export when the key is unset (merge with an existing `main`; keep its `SpringApplication` call):
+
+```java
+public static void main(String[] args) {
+	// A missing key disables export; it never stops the app.
+	var mapleKey = System.getenv("MAPLE_INGEST_KEY");
+	if (mapleKey == null || mapleKey.isEmpty()) {
+		System.err.println("MAPLE_INGEST_KEY is not set; Maple telemetry export is disabled");
+		System.setProperty("management.tracing.export.enabled", "false");
+		System.setProperty("management.otlp.metrics.export.enabled", "false");
+	}
+	SpringApplication.run(Application.class, args);
+}
 ```
 
 - The endpoint property takes the FULL URL including `/v1/traces` (Boot does not append it).

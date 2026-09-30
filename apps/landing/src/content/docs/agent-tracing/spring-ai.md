@@ -44,17 +44,34 @@ Add to `application.properties`:
 spring.application.name=support-agent
 
 management.opentelemetry.tracing.export.otlp.endpoint=https://ingest.maple.dev/v1/traces
-management.opentelemetry.tracing.export.otlp.headers.Authorization=Bearer ${MAPLE_INGEST_KEY}
+management.opentelemetry.tracing.export.otlp.headers.Authorization=Bearer ${MAPLE_INGEST_KEY:}
 management.tracing.sampling.probability=1.0
 management.opentelemetry.resource-attributes.deployment.environment.name=production
 
 # The starter also exports metrics, to localhost:4318 unless told otherwise
 management.otlp.metrics.export.url=https://ingest.maple.dev/v1/metrics
-management.otlp.metrics.export.headers.Authorization=Bearer ${MAPLE_INGEST_KEY}
+management.otlp.metrics.export.headers.Authorization=Bearer ${MAPLE_INGEST_KEY:}
 
 # Read by the configuration class below
 maple.ai.capture-content=true
 ```
+
+The empty default in `${MAPLE_INGEST_KEY:}` keeps the app starting when the key is missing. To avoid sending requests without a key, turn export off at the top of `main` in that case:
+
+```java
+public static void main(String[] args) {
+	// A missing key disables export; it never stops the app.
+	var mapleKey = System.getenv("MAPLE_INGEST_KEY");
+	if (mapleKey == null || mapleKey.isEmpty()) {
+		System.err.println("MAPLE_INGEST_KEY is not set; Maple telemetry export is disabled");
+		System.setProperty("management.tracing.export.enabled", "false");
+		System.setProperty("management.otlp.metrics.export.enabled", "false");
+	}
+	SpringApplication.run(Application.class, args);
+}
+```
+
+Spring Boot doesn't read `.env` files, so set `MAPLE_INGEST_KEY` in the environment that starts the JVM.
 
 For an EU organization, use `https://ingest.eu.maple.dev`. This property takes the full URL, so keep `/v1/traces` on the end. To skip metrics, replace the two metrics lines with `management.otlp.metrics.export.enabled=false`.
 

@@ -12,7 +12,13 @@ Kotlin runs on the JVM, so the same OpenTelemetry Java agent and SDK apply. Pref
 ```bash
 curl -sLO https://github.com/open-telemetry/opentelemetry-java-instrumentation/releases/latest/download/opentelemetry-javaagent.jar
 
-export OTEL_EXPORTER_OTLP_HEADERS="authorization=Bearer ${MAPLE_INGEST_KEY:?MAPLE_INGEST_KEY is not set}"
+# A missing key disables export; it never stops the launch.
+if [ -n "${MAPLE_INGEST_KEY:-}" ]; then
+  export OTEL_EXPORTER_OTLP_HEADERS="authorization=Bearer ${MAPLE_INGEST_KEY}"
+else
+  echo "MAPLE_INGEST_KEY is not set; Maple telemetry export is disabled" >&2
+  export OTEL_SDK_DISABLED=true
+fi
 java \
   -javaagent:./opentelemetry-javaagent.jar \
   -Dotel.service.name=orders-api \
@@ -22,7 +28,7 @@ java \
   -jar build/libs/app.jar
 ```
 
-`MAPLE_INGEST_KEY` holds the private key; building the header in the environment keeps it out of the `java` command line, and `${MAPLE_INGEST_KEY:?}` stops the launch when it is missing. EU organizations use `https://ingest.eu.maple.dev` as the endpoint. Keep these flags where the JVM is launched (`Procfile`, entrypoint script, or `JAVA_TOOL_OPTIONS`). The agent does not read `application.yml`.
+`MAPLE_INGEST_KEY` holds the private key; building the header in the environment keeps it out of the `java` command line. Without the key the app still starts: the script prints one warning and sets `OTEL_SDK_DISABLED=true`, so the agent sends nothing. EU organizations use `https://ingest.eu.maple.dev` as the endpoint. Keep these flags where the JVM is launched (`Procfile`, entrypoint script, or `JAVA_TOOL_OPTIONS`). The agent does not read `application.yml`.
 
 The agent auto-instruments Ktor, Spring Boot (MVC, WebFlux), kotlinx.coroutines context propagation, JDBC (so Exposed), R2DBC, Kafka, gRPC, OkHttp, AWS SDK, and more.
 
@@ -33,7 +39,11 @@ val MAPLE_ENDPOINT = "https://ingest.maple.dev" // EU: https://ingest.eu.maple.d
 
 fun initTelemetry(): OpenTelemetrySdk {
     val key = System.getenv("MAPLE_INGEST_KEY") // private ingest key (maple_sk_…), a secret
-        ?: error("MAPLE_INGEST_KEY is not set (Maple private ingest key)")
+    if (key.isNullOrEmpty()) {
+        // A missing key disables export; it never stops the app.
+        System.err.println("MAPLE_INGEST_KEY is not set; Maple telemetry export is disabled")
+        return OpenTelemetrySdk.builder().build() // no exporter, nothing sent
+    }
     val headers = mapOf("authorization" to "Bearer $key")
     val resource = Resource.getDefault().merge(Resource.create(
         Attributes.builder()

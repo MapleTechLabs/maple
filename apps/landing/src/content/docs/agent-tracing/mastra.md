@@ -80,16 +80,22 @@ import { OtelExporter } from "@mastra/otel-exporter"
 import { supportAgent } from "./agents/support"
 import { mapleSpanProcessor } from "./maple-span-processor"
 
-export const mapleExporter = new OtelExporter({
-	provider: {
-		custom: {
-			endpoint: "https://ingest.maple.dev",
-			protocol: "http/protobuf",
-			headers: { Authorization: `Bearer ${process.env.MAPLE_INGEST_KEY}` },
-		},
-	},
-	resourceAttributes: { "deployment.environment.name": "production" },
-})
+// A missing key disables export; it never stops the app.
+const mapleKey = process.env.MAPLE_INGEST_KEY
+if (!mapleKey) console.warn("MAPLE_INGEST_KEY is not set; Maple telemetry export is disabled")
+
+const mapleExporter = mapleKey
+	? new OtelExporter({
+			provider: {
+				custom: {
+					endpoint: "https://ingest.maple.dev",
+					protocol: "http/protobuf",
+					headers: { Authorization: `Bearer ${mapleKey}` },
+				},
+			},
+			resourceAttributes: { "deployment.environment.name": "production" },
+		})
+	: undefined
 
 export const mastra = new Mastra({
 	agents: { supportAgent },
@@ -97,7 +103,7 @@ export const mastra = new Mastra({
 		configs: {
 			maple: {
 				serviceName: "support-agent",
-				exporters: [mapleExporter],
+				exporters: mapleExporter ? [mapleExporter] : [],
 				// One span per streamed chunk adds nothing Maple uses
 				excludeSpanTypes: [SpanType.MODEL_CHUNK],
 				spanOutputProcessors: [mapleSpanProcessor],

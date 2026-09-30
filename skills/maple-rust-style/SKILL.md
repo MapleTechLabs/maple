@@ -24,7 +24,7 @@ Keep the `opentelemetry*` crates on one minor version, and pair `tracing-opentel
 
 ## Bootstrap
 
-Inline the endpoint. Read the private ingest key from `MAPLE_INGEST_KEY` and stop at startup with a clear message when it is unset.
+Inline the endpoint. Read the private ingest key from `MAPLE_INGEST_KEY`. When it is unset, keep the app's console logging, log one warning and build no exporter; telemetry must never stop the app, so no `expect` or `panic!` on the key.
 
 ```rust
 use opentelemetry::{global, trace::TracerProvider as _, KeyValue};
@@ -40,10 +40,18 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 const MAPLE_ENDPOINT: &str = "https://ingest.maple.dev"; // EU: https://ingest.eu.maple.dev
 
-pub fn init() -> Result<(SdkTracerProvider, SdkLoggerProvider, SdkMeterProvider), ExporterBuildError> {
-    // Private ingest key (maple_sk_…), a secret.
-    let key = std::env::var("MAPLE_INGEST_KEY")
-        .expect("MAPLE_INGEST_KEY is not set (Maple private ingest key)");
+type Providers = (SdkTracerProvider, SdkLoggerProvider, SdkMeterProvider);
+
+pub fn init() -> Result<Option<Providers>, ExporterBuildError> {
+    // Private ingest key (maple_sk_…), a secret. A missing key disables export; it never stops the app.
+    let Some(key) = std::env::var("MAPLE_INGEST_KEY").ok().filter(|k| !k.is_empty()) else {
+        tracing_subscriber::registry()
+            .with(tracing_subscriber::EnvFilter::from_default_env())
+            .with(tracing_subscriber::fmt::layer())
+            .init();
+        tracing::warn!("MAPLE_INGEST_KEY is not set; Maple telemetry export is disabled");
+        return Ok(None);
+    };
     let auth = format!("Bearer {key}");
     let mut headers = std::collections::HashMap::new();
     headers.insert("authorization".to_string(), auth);
@@ -102,7 +110,7 @@ pub fn init() -> Result<(SdkTracerProvider, SdkLoggerProvider, SdkMeterProvider)
         .with(otel_log_layer)
         .init();
 
-    Ok((tracer_provider, logger_provider, meter_provider))
+    Ok(Some((tracer_provider, logger_provider, meter_provider)))
 }
 ```
 
@@ -111,14 +119,19 @@ Call from `main` and shut down on exit:
 ```rust
 #[tokio::main]
 async fn main() {
-    let (tracer_provider, logger_provider, meter_provider) =
-        telemetry::init().expect("telemetry init");
+    // A telemetry setup error is logged, never fatal: the app runs without export.
+    let providers = telemetry::init().unwrap_or_else(|err| {
+        eprintln!("telemetry disabled: {err}");
+        None
+    });
 
     // app run …
 
-    let _ = tracer_provider.shutdown();
-    let _ = logger_provider.shutdown();
-    let _ = meter_provider.shutdown();
+    if let Some((tracer_provider, logger_provider, meter_provider)) = providers {
+        let _ = tracer_provider.shutdown();
+        let _ = logger_provider.shutdown();
+        let _ = meter_provider.shutdown();
+    }
 }
 ```
 

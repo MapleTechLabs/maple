@@ -41,6 +41,7 @@ Call `configure_otel_providers()` once at startup, before you create agents. Wit
 
 ```py
 # telemetry.py
+import logging
 import os
 
 from agent_framework.observability import configure_otel_providers
@@ -48,16 +49,21 @@ from opentelemetry import trace
 
 from maple_tracing import ConversationIdProcessor
 
-configure_otel_providers(
-    service_name="support-agent",
-    resource_attributes={"deployment.environment.name": "production"},
-    otlp_endpoint="https://ingest.maple.dev",  # EU: https://ingest.eu.maple.dev
-    otlp_protocol="http/protobuf",
-    otlp_headers={"Authorization": f"Bearer {os.environ['MAPLE_INGEST_KEY']}"},
-    enable_sensitive_data=True,   # prompts, replies, tool arguments and results
-    enable_message_events=False,  # skip the duplicate copy of the content in OTLP logs
-)
-trace.get_tracer_provider().add_span_processor(ConversationIdProcessor())
+key = os.environ.get("MAPLE_INGEST_KEY")
+if key:
+    configure_otel_providers(
+        service_name="support-agent",
+        resource_attributes={"deployment.environment.name": "production"},
+        otlp_endpoint="https://ingest.maple.dev",  # EU: https://ingest.eu.maple.dev
+        otlp_protocol="http/protobuf",
+        otlp_headers={"Authorization": f"Bearer {key}"},
+        enable_sensitive_data=True,   # prompts, replies, tool arguments and results
+        enable_message_events=False,  # skip the duplicate copy of the content in OTLP logs
+    )
+    trace.get_tracer_provider().add_span_processor(ConversationIdProcessor())
+else:
+    # A missing key disables export; it never stops the app.
+    logging.getLogger(__name__).warning("MAPLE_INGEST_KEY is not set; Maple telemetry export is disabled")
 ```
 
 Keep `otlp_protocol="http/protobuf"`. MAF defaults to gRPC, which Maple doesn't accept.
@@ -83,21 +89,25 @@ using OpenTelemetry.Exporter;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 
-var mapleKey = Environment.GetEnvironmentVariable("MAPLE_INGEST_KEY")
-    ?? throw new InvalidOperationException("MAPLE_INGEST_KEY is not set");
+var mapleKey = Environment.GetEnvironmentVariable("MAPLE_INGEST_KEY");
+// A missing key disables export; it never stops the app.
+if (string.IsNullOrEmpty(mapleKey))
+    Console.Error.WriteLine("MAPLE_INGEST_KEY is not set; Maple telemetry export is disabled");
 
-using var tracerProvider = Sdk.CreateTracerProviderBuilder()
-    .ConfigureResource(r => r.AddService("support-agent"))
-    .AddSource("*Microsoft.Agents.AI*")    // agent, chat and workflow spans
-    .AddSource("*Microsoft.Extensions.AI") // chat clients you instrument yourself
-    .AddProcessor(new ConversationIdProcessor())
-    .AddOtlpExporter(o =>
-    {
-        o.Endpoint = new Uri("https://ingest.maple.dev/v1/traces"); // EU: ingest.eu.maple.dev
-        o.Protocol = OtlpExportProtocol.HttpProtobuf;
-        o.Headers = $"Authorization=Bearer {mapleKey}";
-    })
-    .Build();
+using var tracerProvider = string.IsNullOrEmpty(mapleKey)
+    ? null
+    : Sdk.CreateTracerProviderBuilder()
+        .ConfigureResource(r => r.AddService("support-agent"))
+        .AddSource("*Microsoft.Agents.AI*")    // agent, chat and workflow spans
+        .AddSource("*Microsoft.Extensions.AI") // chat clients you instrument yourself
+        .AddProcessor(new ConversationIdProcessor())
+        .AddOtlpExporter(o =>
+        {
+            o.Endpoint = new Uri("https://ingest.maple.dev/v1/traces"); // EU: ingest.eu.maple.dev
+            o.Protocol = OtlpExportProtocol.HttpProtobuf;
+            o.Headers = $"Authorization=Bearer {mapleKey}";
+        })
+        .Build();
 
 var openAi = new OpenAIClient(
     new ApiKeyCredential(Environment.GetEnvironmentVariable("OPENAI_API_KEY")!));
@@ -242,6 +252,7 @@ pip install "semantic-kernel>=1.44.1" opentelemetry-sdk opentelemetry-exporter-o
 
 ```py
 # telemetry.py: import this before anything that imports semantic_kernel
+import logging
 import os
 
 os.environ["SEMANTICKERNEL_EXPERIMENTAL_GENAI_ENABLE_OTEL_DIAGNOSTICS"] = "true"
@@ -257,14 +268,19 @@ from maple_tracing import ConversationIdProcessor
 
 provider = TracerProvider(resource=Resource.create({"service.name": "support-agent"}))
 provider.add_span_processor(ConversationIdProcessor())
-provider.add_span_processor(
-    BatchSpanProcessor(
-        OTLPSpanExporter(
-            endpoint="https://ingest.maple.dev/v1/traces",  # EU: https://ingest.eu.maple.dev/v1/traces
-            headers={"Authorization": f"Bearer {os.environ['MAPLE_INGEST_KEY']}"},
+key = os.environ.get("MAPLE_INGEST_KEY")
+if key:
+    provider.add_span_processor(
+        BatchSpanProcessor(
+            OTLPSpanExporter(
+                endpoint="https://ingest.maple.dev/v1/traces",  # EU: https://ingest.eu.maple.dev/v1/traces
+                headers={"Authorization": f"Bearer {key}"},
+            )
         )
     )
-)
+else:
+    # A missing key disables export; it never stops the app.
+    logging.getLogger(__name__).warning("MAPLE_INGEST_KEY is not set; Maple telemetry export is disabled")
 trace.set_tracer_provider(provider)
 ```
 

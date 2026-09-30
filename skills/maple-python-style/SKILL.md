@@ -72,13 +72,12 @@ Preserve existing `logging.basicConfig`, console / file handlers, and log levels
 
 ## Init behavior
 
-Inline the endpoint in the init module. Read the private ingest key from `MAPLE_INGEST_KEY` and exit with a clear message when it is unset. If the app calls `load_dotenv()`, call it before `init_observability()`.
+Inline the endpoint in the init module. Read the private ingest key from `MAPLE_INGEST_KEY`. When it is unset, log one warning and skip the exporters so the app runs normally; telemetry must never stop the app. If the app calls `load_dotenv()`, call it before `init_observability()`.
 
 ```python
 # telemetry.py
 import logging
 import os
-import sys
 
 from opentelemetry import _logs, metrics, trace
 from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
@@ -106,7 +105,10 @@ def init_observability() -> None:
 
     key = os.environ.get("MAPLE_INGEST_KEY")  # private ingest key (maple_sk_…), a secret
     if not key:
-        sys.exit("MAPLE_INGEST_KEY is not set (Maple private ingest key)")
+        logging.getLogger(__name__).warning(
+            "MAPLE_INGEST_KEY is not set; Maple telemetry export is disabled"
+        )
+        return
     headers = {"authorization": f"Bearer {key}"}
     resource = Resource.create({
         "service.name": "my-python-app",

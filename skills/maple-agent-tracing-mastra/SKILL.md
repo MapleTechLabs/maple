@@ -32,7 +32,7 @@ Mastra 1.71 has three export gaps that a small span processor (Step 2) fixes; it
 - The key is a secret. Keep it in the repo's secret/env convention (`.env`, config module, secret manager), never in source, committed config, logs or command lines, and tell the user to add it to their deployment's secrets. No convention: create `.env`, add it to `.gitignore` if missing, and commit a `.env.example` with placeholder values.
 - OtelExporter's `custom` provider reads NO env vars (`OTEL_EXPORTER_OTLP_*` are ignored). Endpoint, protocol and headers must be passed in code.
 - Only `mastra dev` loads `.env`. Scripts run with plain `node`/`tsx` don't: run them with `--env-file=.env`, or `import "dotenv/config"` before importing the Mastra instance. Otherwise the key is `Bearer undefined` and every export 401s.
-- Never ship a header lookup that can come out `undefined`: throw at startup with a clear message when `MAPLE_INGEST_KEY` is unset.
+- Never ship a header lookup that can come out `undefined`. When `MAPLE_INGEST_KEY` is unset, log one warning (`MAPLE_INGEST_KEY is not set; Maple telemetry export is disabled`) and leave the Maple exporter out so the app runs normally; never throw over the key.
 - A 401 `ingest_unauthorized` / "Invalid ingest key" with a key you trust usually means the key belongs to the other region (keys are region-bound): try the other endpoint.
 
 ## Step 2: Install + init
@@ -84,16 +84,22 @@ import { Observability } from "@mastra/observability"
 import { OtelExporter } from "@mastra/otel-exporter"
 import { mapleSpanProcessor } from "./maple-span-processor"
 
-export const mapleExporter = new OtelExporter({
-	provider: {
-		custom: {
-			endpoint: "https://ingest.maple.dev",
-			protocol: "http/protobuf",
-			headers: { Authorization: `Bearer ${process.env.MAPLE_INGEST_KEY}` },
-		},
-	},
-	resourceAttributes: { "deployment.environment.name": process.env.NODE_ENV ?? "development" },
-})
+// A missing key disables export; it never stops the app.
+const mapleKey = process.env.MAPLE_INGEST_KEY
+if (!mapleKey) console.warn("MAPLE_INGEST_KEY is not set; Maple telemetry export is disabled")
+
+const mapleExporter = mapleKey
+	? new OtelExporter({
+			provider: {
+				custom: {
+					endpoint: "https://ingest.maple.dev",
+					protocol: "http/protobuf",
+					headers: { Authorization: `Bearer ${mapleKey}` },
+				},
+			},
+			resourceAttributes: { "deployment.environment.name": process.env.NODE_ENV ?? "development" },
+		})
+	: undefined
 
 export const mastra = new Mastra({
 	// ...existing agents, workflows, storage
@@ -101,7 +107,7 @@ export const mastra = new Mastra({
 		configs: {
 			maple: {
 				serviceName: "support-agent",
-				exporters: [mapleExporter],
+				exporters: mapleExporter ? [mapleExporter] : [],
 				excludeSpanTypes: [SpanType.MODEL_CHUNK],
 				spanOutputProcessors: [mapleSpanProcessor],
 			},

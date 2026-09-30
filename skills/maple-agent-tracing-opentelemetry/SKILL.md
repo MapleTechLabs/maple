@@ -33,7 +33,7 @@ OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
 The exporters append `/v1/traces`.
 
 - The SDK exporters read these env vars when the exporter is constructed. If the app loads `.env` (dotenv, `load_dotenv()`, `--env-file`), load it at the top of the tracing module, before the provider is built; otherwise the exporter silently targets `localhost:4318` with no key.
-- If the header is built from your own env var, never let an unset var become `Bearer undefined` (opaque 401) or a bare `KeyError` on import: fail fast with a clear message.
+- If the header is built from your own env var and it is unset, log one warning (`MAPLE_INGEST_KEY is not set; Maple telemetry export is disabled`) and skip the Maple exporter so the app runs normally. Never throw or exit over the key, and never let it become `Bearer undefined` (opaque 401) or a bare `KeyError` on import.
 - 401 `ingest_unauthorized` / "Invalid ingest key" with a key you trust: keys are region-bound, so it usually belongs to the other region. Try the other endpoint.
 
 ## Step 2: Install + init

@@ -22,14 +22,14 @@ go get \
 
 ## Bootstrap
 
-Inline the endpoint. Read the private ingest key from `MAPLE_INGEST_KEY` and return an error when it is unset. `WithEndpoint` takes a host without scheme, uses HTTPS, and appends the default `/v1/<signal>` path.
+Inline the endpoint. Read the private ingest key from `MAPLE_INGEST_KEY`. When it is unset, log one warning and return a no-op shutdown without registering any exporter; telemetry must never stop the app. `WithEndpoint` takes a host without scheme, uses HTTPS, and appends the default `/v1/<signal>` path.
 
 ```go
 package telemetry
 
 import (
 	"context"
-	"errors"
+	"log"
 	"os"
 
 	"go.opentelemetry.io/otel"
@@ -50,7 +50,9 @@ const mapleEndpoint = "ingest.maple.dev" // EU: ingest.eu.maple.dev
 func Init(ctx context.Context) (shutdown func(context.Context) error, err error) {
 	mapleKey := os.Getenv("MAPLE_INGEST_KEY") // private ingest key (maple_sk_…), a secret
 	if mapleKey == "" {
-		return nil, errors.New("MAPLE_INGEST_KEY is not set (Maple private ingest key)")
+		// A missing key disables export; it never stops the app.
+		log.Print("MAPLE_INGEST_KEY is not set; Maple telemetry export is disabled")
+		return func(context.Context) error { return nil }, nil
 	}
 	headers := map[string]string{"authorization": "Bearer " + mapleKey}
 
@@ -122,11 +124,12 @@ Wire from `main`:
 ```go
 func main() {
 	ctx := context.Background()
-	shutdown, err := telemetry.Init(ctx)
-	if err != nil {
-		log.Fatal(err)
+	// A telemetry setup error is logged, never fatal: the app runs without export.
+	if shutdown, err := telemetry.Init(ctx); err != nil {
+		log.Printf("telemetry disabled: %v", err)
+	} else {
+		defer shutdown(ctx)
 	}
-	defer shutdown(ctx)
 
 	// app start
 }
