@@ -39,6 +39,7 @@ const renderTable = (info: NonNullable<Output["table"]>): ToolDoc => {
 export function registerDescribeWarehouseTablesTool(server: McpToolRegistrar) {
 	server.define({
 		name: TOOL,
+		title: "Describe Warehouse Tables",
 		description:
 			"Table and column catalog for raw warehouse SQL (run_sql, raw_sql widgets, raw_query alert rules). With no arguments it lists every table; with `table` it gives that table's columns, sorting key and notes on enum casing and units. Read it before writing SQL rather than guessing names.",
 		parameters: Schema.Struct({

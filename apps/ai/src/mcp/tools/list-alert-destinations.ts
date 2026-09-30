@@ -11,6 +11,7 @@ import { doc } from "../lib/tool-doc"
 export function registerListAlertDestinationsTool(server: McpToolRegistrar) {
 	server.define({
 		name: "list_alert_destinations",
+		title: "List Alert Destinations",
 		description:
 			"List the notification destinations a rule can deliver to, with id, type and delivery health. Pass the ids as destination_ids to create_alert_rule / update_alert_rule.",
 		parameters: Schema.Struct({

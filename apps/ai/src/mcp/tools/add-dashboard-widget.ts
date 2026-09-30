@@ -44,6 +44,7 @@ const invalid = (message: string, example?: string, parameter?: string) =>
 export function registerAddDashboardWidgetTool(server: McpToolRegistrar) {
 	server.define({
 		name: TOOL,
+		title: "Add Dashboard Widget",
 		// The panel-type list is the `panel_type` enum, where it is binding; do not repeat it here.
 		description:
 			"Add one widget to a dashboard. Pick `panel_type`, then one of: `data_source_json` plus `display_json` (query builder); " +

@@ -37,6 +37,7 @@ const checkLength = (parameter: string, value: string | undefined, max: number, 
 export function registerSendMapleFeedbackTool(server: McpToolRegistrar) {
 	server.define({
 		name: "send_maple_feedback",
+		title: "Send Maple Feedback",
 		description:
 			"Send feedback about Maple itself (this MCP server, its tools, API, or docs) to the Maple team: a bug you hit, a tool or capability you were missing, a misleading description, or something that worked well. " +
 			"Use it when Maple got in the way of your task, not for problems in the user's own services. " +

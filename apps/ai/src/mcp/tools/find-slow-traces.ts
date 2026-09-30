@@ -14,6 +14,7 @@ const WINDOW = P.timeWindow({ defaultHours: 6, maxHours: MCP_SEARCH_MAX_HOURS })
 export function registerFindSlowTracesTool(server: McpToolRegistrar) {
 	server.define({
 		name: "find_slow_traces",
+		title: "Find Slow Traces",
 		description:
 			"Find the slowest traces with percentile context (p50, p95, min, max). Use inspect_trace on slow trace_ids to find bottleneck spans.",
 		parameters: Schema.Struct({

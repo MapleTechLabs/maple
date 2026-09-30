@@ -16,6 +16,7 @@ const WINDOW = P.timeWindow({ defaultHours: 6, maxHours: MCP_SEARCH_MAX_HOURS })
 export function registerGetServiceTopOperationsTool(server: McpToolRegistrar) {
 	server.define({
 		name: "get_service_top_operations",
+		title: "Service Top Operations",
 		description:
 			"Top operations (endpoints/spans) of one service, ranked by the chosen metric. Use after diagnose_service to find which endpoints need attention.",
 		parameters: Schema.Struct({

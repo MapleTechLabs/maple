@@ -129,6 +129,7 @@ function buildUpdatedRequest(current: AlertRuleDocument, params: typeof Paramete
 export function registerUpdateAlertRuleTool(server: McpToolRegistrar) {
 	server.define({
 		name: "update_alert_rule",
+		title: "Update Alert Rule",
 		description:
 			"Update an alert rule. Pass only the fields to change; the rest keep their current value (get_alert_rule shows it). " +
 			"Ids from list_alert_rules and list_alert_destinations.",

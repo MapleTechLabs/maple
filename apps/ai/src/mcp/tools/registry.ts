@@ -98,6 +98,7 @@ interface MapleToolDefinition extends MapleToolCatalogEntry {
 
 export interface MapleToolCatalogEntry {
 	readonly name: string
+	readonly title: string
 	readonly description: string
 	readonly schema: Schema.Codec<unknown, unknown, never, unknown>
 	readonly outputSchema: Schema.Codec<unknown, unknown, never, never>
@@ -319,6 +320,7 @@ const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 		const encode = Schema.encodeUnknownEffect(spec.output)
 		definitions.push({
 			name: spec.name,
+			title: spec.title,
 			description: spec.description,
 			schema: spec.parameters,
 			outputSchema: spec.output,

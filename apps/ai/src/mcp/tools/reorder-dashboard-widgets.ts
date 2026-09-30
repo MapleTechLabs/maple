@@ -62,6 +62,7 @@ const validateLayoutGeometry = (entries: ReadonlyArray<LayoutEntry>): string[] =
 export function registerReorderDashboardWidgetsTool(server: McpToolRegistrar) {
 	server.define({
 		name: TOOL,
+		title: "Reorder Dashboard Widgets",
 		description:
 			"Move or resize widgets on a dashboard. Only the listed widget ids change; the rest keep their layout.",
 		parameters: Schema.Struct({

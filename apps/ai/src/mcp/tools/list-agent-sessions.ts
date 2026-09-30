@@ -64,6 +64,7 @@ const filterArgs = (filters: Filters) => ({
 export function registerListAgentSessionsTool(server: McpToolRegistrar) {
 	server.define({
 		name: "list_agent_sessions",
+		title: "List Agent Sessions",
 		description:
 			"List AI agent sessions: LLM agent traces carrying gen_ai/maple_ai attributes. Not browser session replays: those are `search_sessions`. One row per session with its agent, vendor, models, LLM and tool calls, failures, tokens and reported cost. Open one with the `get_agent_session` call the result suggests; it carries the session's window, which makes that read a seek.",
 		parameters: Schema.Struct({

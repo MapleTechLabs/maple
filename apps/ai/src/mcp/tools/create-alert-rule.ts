@@ -263,6 +263,7 @@ const buildAlertRuleRequest = Effect.fnUntraced(function* (params: typeof Parame
 export function registerCreateAlertRuleTool(server: McpToolRegistrar) {
 	server.define({
 		name: "create_alert_rule",
+		title: "Create Alert Rule",
 		// The template names live on the `template` parameter, with their thresholds;
 		// repeating them here cost tokens twice for one fact.
 		description:

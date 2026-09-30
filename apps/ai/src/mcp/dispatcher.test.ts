@@ -92,6 +92,8 @@ describe("MCP dispatcher", () => {
 				expect(descriptor?.annotations?.readOnlyHint, definition.name).toBe(
 					definition.hints?.readOnly,
 				)
+				expect(descriptor?.title, definition.name).toBe(definition.title)
+				expect(descriptor?.annotations?.title, definition.name).toBe(definition.title)
 			}
 		}),
 	)

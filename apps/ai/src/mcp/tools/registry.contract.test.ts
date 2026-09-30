@@ -30,6 +30,13 @@ describe("MCP tool catalog contract", () => {
 		expect(legacy).toEqual([])
 	})
 
+	// Directory listings (Claude's connector directory) reject tools without a title.
+	it("gives every tool a distinct title", () => {
+		const titles = mapleToolCatalog.map((tool) => tool.title.trim())
+		expect(titles.filter((title) => title === "")).toEqual([])
+		expect(titles.filter((title, index) => titles.indexOf(title) !== index)).toEqual([])
+	})
+
 	it("declares each tool's output as the schema the domain catalog lists for it", () => {
 		const catalog: Readonly<Record<string, unknown>> = McpToolOutputs
 		const mismatched = mapleToolCatalog

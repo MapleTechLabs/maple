@@ -19,6 +19,7 @@ const toIso = (value: string): string => `${value.replace(" ", "T")}Z`
 export function registerListAlertChecksTool(server: McpToolRegistrar) {
 	server.define({
 		name: "list_alert_checks",
+		title: "List Alert Checks",
 		description:
 			"List a rule's recent checks (one row per evaluation) with observed value, threshold, sample count and incident transition. Use it to tune thresholds, diagnose flapping, or see the near-misses before a breach.",
 		parameters: Schema.Struct({

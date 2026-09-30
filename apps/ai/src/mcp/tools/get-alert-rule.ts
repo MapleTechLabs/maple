@@ -11,6 +11,7 @@ import { doc, type DocBlock } from "../lib/tool-doc"
 export function registerGetAlertRuleTool(server: McpToolRegistrar) {
 	server.define({
 		name: "get_alert_rule",
+		title: "Get Alert Rule",
 		description:
 			"Get full configuration details of a specific alert rule including thresholds, service filters, evaluation settings, and notification destinations. Use list_alert_rules to find rule IDs.",
 		parameters: Schema.Struct({

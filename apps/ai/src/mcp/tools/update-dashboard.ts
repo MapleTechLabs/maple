@@ -25,6 +25,7 @@ const decodeDashboardId = Schema.decodeUnknownEffect(DashboardId)
 export function registerUpdateDashboardTool(server: McpToolRegistrar) {
 	server.define({
 		name: TOOL,
+		title: "Update Dashboard",
 		description:
 			"Change a dashboard's name, description or time_range. For widgets use add_dashboard_widget, update_dashboard_widget, remove_dashboard_widget, reorder_dashboard_widgets, or replace_dashboard_widgets for a validated rewrite of the whole list. `dashboard_json` replaces everything unvalidated; use it only to restore a saved document.",
 		parameters: Schema.Struct({

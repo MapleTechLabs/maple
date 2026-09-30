@@ -72,6 +72,7 @@ const formatLine = (ev: TranscriptEvent): string => {
 export function registerGetSessionTranscriptTool(server: McpToolRegistrar) {
 	server.define({
 		name: "get_session_transcript",
+		title: "Get Session Transcript",
 		description:
 			"Read a browser session replay (session id from `search_sessions`; for an AI agent session use `get_agent_session`) as a text transcript: navigation, clicks, console logs, network requests and errors in order, each with the trace id it ran under. Use it to see what a user did and where it went wrong; `inspect_trace` opens any referenced trace.",
 		parameters: Schema.Struct({

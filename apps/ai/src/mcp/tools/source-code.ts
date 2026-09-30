@@ -26,6 +26,7 @@ const REPOSITORY = P.text("Connected repository in owner/name form")
 export function registerSourceCodeTools(server: McpToolRegistrar) {
 	server.define({
 		name: "list_source_repositories",
+		title: "List Source Repositories",
 		description:
 			"List source repositories connected to this Maple organization. Use before source investigation when telemetry does not identify an exact vcs.repository.url.full. Returns only repositories the organization's GitHub App installation can access.",
 		parameters: Schema.Struct({}),
@@ -79,6 +80,7 @@ export function registerSourceCodeTools(server: McpToolRegistrar) {
 
 	server.define({
 		name: "search_source_code",
+		title: "Search Source Code",
 		description:
 			"Search one connected repository through GitHub's code search: an index of the default branch, matched on whole tokens, not regex, and rate limited. It finds where a symbol or message lives, not what was deployed. Use exact exception text, function or class names, routes, span names or log fragments from telemetry, then read_source_file on promising paths. The repository comes from telemetry (vcs.repository.url.full) or list_source_repositories.",
 		parameters: Schema.Struct({
@@ -165,6 +167,7 @@ export function registerSourceCodeTools(server: McpToolRegistrar) {
 
 	server.define({
 		name: "read_source_file",
+		title: "Read Source File",
 		description:
 			"Read a line range from a file in one connected repository, through GitHub. For incident causality pass the deployed commit SHA from telemetry as `ref`; otherwise the tracked branch is read and the result is not proof of deployed code.",
 		parameters: Schema.Struct({

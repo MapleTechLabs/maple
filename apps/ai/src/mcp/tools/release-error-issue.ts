@@ -18,6 +18,7 @@ import { ErrorIssueWorkflowService } from "@maple/backend/services/errors/ErrorI
 export function registerReleaseErrorIssueTool(server: McpToolRegistrar) {
 	server.define({
 		name: "release_error_issue",
+		title: "Release Error Issue",
 		description:
 			"Give up the lease you hold on an error issue, optionally moving it to another workflow state. Without `transition_to`, an `in_progress` issue goes back to `todo` and any other state is kept. Fails if another agent holds the lease.",
 		parameters: Schema.Struct({

@@ -14,6 +14,7 @@ const WINDOW = P.timeWindow({ defaultHours: 6 })
 export function registerDiagnoseServiceTool(server: McpToolRegistrar) {
 	server.define({
 		name: "diagnose_service",
+		title: "Diagnose Service",
 		description:
 			"Deep investigation of one service: health metrics, Apdex, top errors, recent traces and logs. Use after list_services identifies a problem service.",
 		parameters: Schema.Struct({

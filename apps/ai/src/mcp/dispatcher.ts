@@ -58,6 +58,8 @@ let toolDescriptors: ReadonlyArray<McpToolDescriptor> | undefined
 const listToolDescriptors = (): ReadonlyArray<McpToolDescriptor> =>
 	(toolDescriptors ??= mapleToolCatalogFor("mcp").map((definition) => ({
 		name: definition.name,
+		// Current spec reads the top-level `title`; older clients read `annotations.title`.
+		title: definition.title,
 		description: definition.description,
 		inputSchema: inputSchemaOf(definition),
 		...(definition.outputSchema === undefined
@@ -67,6 +69,7 @@ const listToolDescriptors = (): ReadonlyArray<McpToolDescriptor> =>
 			? undefined
 			: {
 					annotations: {
+						title: definition.title,
 						readOnlyHint: definition.hints.readOnly,
 						// The protocol defaults both of these to true; every Maple tool states them.
 						destructiveHint: !definition.hints.readOnly && definition.hints.destructive === true,

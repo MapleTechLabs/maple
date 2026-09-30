@@ -106,6 +106,7 @@ const traceBlocks = (
 export function registerErrorDetailTool(server: McpToolRegistrar) {
 	server.define({
 		name: "error_detail",
+		title: "Error Detail",
 		description:
 			"Sample traces and correlated logs for one error, by `fingerprint` (a decimal UInt64 from find_errors; not an issue id). Use inspect_trace on a trace_id for the full span tree.",
 		parameters: Schema.Struct({

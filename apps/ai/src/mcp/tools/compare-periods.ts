@@ -66,6 +66,7 @@ const HALF_WINDOW_MS = 30 * 60 * 1000
 export function registerComparePeriodsTool(server: McpToolRegistrar) {
 	server.define({
 		name: "compare_periods",
+		title: "Compare Periods",
 		description:
 			"Compare error rate, throughput and P95 between two periods, overall and per service, and flag regressions (error_rate_up, latency_up, throughput_drop). Useful after a deploy or an incident report.",
 		parameters: Schema.Struct({

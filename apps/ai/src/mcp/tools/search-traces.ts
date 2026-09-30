@@ -14,6 +14,7 @@ const WINDOW = P.timeWindow({ defaultHours: 6, maxHours: MCP_SEARCH_MAX_HOURS })
 export function registerSearchTracesTool(server: McpToolRegistrar) {
 	server.define({
 		name: "search_traces",
+		title: "Search Traces",
 		description:
 			"Find traces, newest first, by service, duration, error status, HTTP method, span name, or one span attribute. Without `span_name` the filters apply to each trace's entry span and one row per trace comes back; with `span_name` every span is searched and each row is a matching span. For the slowest traces ranked by duration with percentiles, use find_slow_traces. explore_attributes lists attribute keys and values.",
 		parameters: Schema.Struct({

@@ -85,6 +85,7 @@ export const deriveCoverageGaps = (
 export function registerGetInstrumentationRecommendationsTool(server: McpToolRegistrar) {
 	server.define({
 		name: "get_instrumentation_recommendations",
+		title: "Instrumentation Recommendations",
 		description:
 			"Span attribute issues found in the org's live data (deprecated semconv keys to rename, keys emitted under " +
 			"both old and new names, non-conforming names) plus org-wide resource attribute gaps (deployment " +

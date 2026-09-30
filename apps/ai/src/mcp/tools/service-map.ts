@@ -17,6 +17,7 @@ const errorRateOf = (edge: { readonly callCount: number; readonly errorCount: nu
 export function registerServiceMapTool(server: McpToolRegistrar) {
 	server.define({
 		name: "service_map",
+		title: "Service Map",
 		description:
 			"Show service-to-service dependencies with call counts, error rates, and latency per edge. Use to understand system architecture and identify problematic inter-service calls.",
 		parameters: Schema.Struct({

@@ -19,6 +19,7 @@ const TOOL = "update_dashboard_widget"
 export function registerUpdateDashboardWidgetTool(server: McpToolRegistrar) {
 	server.define({
 		name: TOOL,
+		title: "Update Dashboard Widget",
 		description:
 			"Replace one widget on a dashboard with the full widget object; other widgets and the dashboard metadata are untouched. Read describe_dashboard_schema before editing. " +
 			"Whole-widget semantics: leave `timeRange` out and an existing per-widget override is removed. " +

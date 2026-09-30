@@ -45,6 +45,7 @@ export const formatAffected = (check: AffectedLike): string => {
 export function registerAuditSetupTool(server: McpToolRegistrar) {
 	server.define({
 		name: "audit_setup",
+		title: "Audit Setup",
 		description:
 			"Audit the organization's whole Maple setup and report every check with its outcome: alert routing and " +
 			"delivery (rules that will never notify anyone), error-notification wiring, what each service actually " +

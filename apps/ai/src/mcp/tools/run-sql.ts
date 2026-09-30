@@ -132,6 +132,7 @@ function cellToString(value: Schema.Json | undefined): string {
 export function registerRunSqlTool(server: McpToolRegistrar) {
 	server.define({
 		name: "run_sql",
+		title: "Run SQL",
 		description: runSqlDescription,
 		parameters: runSqlSchema,
 		output: RunSqlOutput,

@@ -36,6 +36,7 @@ export const McpToolsLive = Layer.effectDiscard(
 			server.addTool({
 				tool: new McpSchema.Tool({
 					name: descriptor.name,
+					title: descriptor.title,
 					description: descriptor.description,
 					inputSchema: descriptor.inputSchema,
 					...(descriptor.outputSchema === undefined

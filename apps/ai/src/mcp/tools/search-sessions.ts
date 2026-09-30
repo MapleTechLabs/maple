@@ -40,6 +40,7 @@ const filterArgs = (filters: Filters) => ({
 export function registerSearchSessionsTool(server: McpToolRegistrar) {
 	server.define({
 		name: "search_sessions",
+		title: "Search Sessions",
 		description:
 			"Find browser session replays (end-user web sessions). Not AI agent sessions: those are `list_agent_sessions`. Filter by who (user_id, user_search, group_name), by client, by whether the session errored, by session type (tags: `engaged` drops bots, bounces, idle tabs and glances), by how long it lasted, or by what happened inside it (an event type, console level, HTTP status, URL, message or trace id). All filters are ANDed. Then `get_session_transcript` reads a session's events and `get_session_traces` lists the backend traces it produced.",
 		parameters: Schema.Struct({

@@ -87,6 +87,7 @@ const inspectChartDataDescription =
 export function registerInspectChartDataTool(server: McpToolRegistrar) {
 	server.define({
 		name: TOOL,
+		title: "Inspect Chart Data",
 		description: inspectChartDataDescription,
 		parameters: Schema.Struct({
 			dashboard_id: P.text("Dashboard ID"),
