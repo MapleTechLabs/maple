@@ -9,7 +9,6 @@ import { formatLatency } from "@maple/ui/lib/format"
 import { normalizeTimestampInput } from "@/lib/timezone-format"
 import { DependencyTable, type DependencyRow } from "./dependency-table"
 import type { DependencyKind } from "./dependency-type-badge"
-import { quoteWhereValue } from "@maple/domain/where-clause"
 import { dependencyDrillWhereClause } from "./dependency-drill"
 
 interface ServiceDependenciesTabProps {
@@ -119,7 +118,7 @@ export function ServiceDependenciesTab({
 				p95DurationMs: Number(edge.p95DurationMs ?? 0),
 				hasSampling: Boolean(edge.hasSampling),
 				samplingWeight: Number(edge.samplingWeight ?? 1),
-				whereClause: `SpanKind = 'Client' AND server.address ILIKE ${quoteWhereValue(`%${target}%`)}`,
+				whereClause: dependencyDrillWhereClause("service", target, ""),
 			})
 		}
 
@@ -149,7 +148,7 @@ export function ServiceDependenciesTab({
 				p95DurationMs: Number(edge.p95DurationMs ?? 0),
 				hasSampling: Boolean(edge.hasSampling),
 				samplingWeight: Number(edge.samplingWeight ?? 1),
-				whereClause: `SpanKind = 'Client' AND db.system.name = ${quoteWhereValue(target)}`,
+				whereClause: dependencyDrillWhereClause("database", target, ""),
 			})
 		}
 

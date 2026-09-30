@@ -18,7 +18,11 @@ import {
 	Traces,
 	TracesAggregatesHourly,
 } from "../tables"
-import { deploymentEnvExpr, httpRequestMethodExpr } from "@maple/domain/tinybird/semconv-renames"
+import {
+	deploymentEnvExpr,
+	httpRequestMethodExpr,
+	httpResponseStatusCodeExpr,
+} from "@maple/domain/tinybird/semconv-renames"
 import { METRIC_NEEDS } from "../../traces-shared"
 import type { ColumnDefs } from "@maple-dev/effect-clickhouse/types"
 import * as T from "@maple-dev/effect-clickhouse/types"
@@ -1453,9 +1457,9 @@ export function tracesRootListQuery(opts: TracesRootListOpts) {
 			rootSpanKind: $.SpanKind,
 			rootSpanStatusCode: $.StatusCode,
 			rootSpanStatusMessage: $.StatusMessage,
-			rootHttpMethod: $.SpanAttributes.get("http.method"),
+			rootHttpMethod: httpRequestMethodExpr($.SpanAttributes),
 			rootHttpRoute: $.SpanAttributes.get("http.route"),
-			rootHttpStatusCode: $.SpanAttributes.get("http.status_code"),
+			rootHttpStatusCode: httpResponseStatusCodeExpr($.SpanAttributes),
 			rootSpanAttributes: CH.toJSONString(buildProjectedMapExpr(ROOT_SPAN_ATTR_KEYS, "SpanAttributes")),
 			hasError: CH.if_($.StatusCode.eq("Error"), CH.lit(1), CH.lit(0)),
 		}))
@@ -1759,9 +1763,9 @@ export function traceListQuery(opts: TraceListOpts) {
 				rootSpanName: argMin($.SpanName, rootOrder),
 				rootSpanKind: argMin($.SpanKind, rootOrder),
 				rootSpanStatusCode: argMin($.StatusCode, rootOrder),
-				rootHttpMethod: argMin($.SpanAttributes.get("http.method"), rootOrder),
+				rootHttpMethod: argMin(httpRequestMethodExpr($.SpanAttributes), rootOrder),
 				rootHttpRoute: argMin($.SpanAttributes.get("http.route"), rootOrder),
-				rootHttpStatusCode: argMin($.SpanAttributes.get("http.status_code"), rootOrder),
+				rootHttpStatusCode: argMin(httpResponseStatusCodeExpr($.SpanAttributes), rootOrder),
 				rootSpanAttributes: argMin(
 					CH.toJSONString(buildProjectedMapExpr(ROOT_SPAN_ATTR_KEYS, "SpanAttributes")),
 					rootOrder,

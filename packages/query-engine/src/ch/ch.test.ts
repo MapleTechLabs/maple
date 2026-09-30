@@ -771,18 +771,21 @@ describe("tracesBreakdownQuery", () => {
 		)
 	})
 
-	// Dependency drilldowns and dashboard templates filter on these keys; the
-	// service-map rollups already coalesce them, so the raw filter has to too.
-	for (const [key, canonical, legacy] of [
-		["db.system", "db.system.name", "db.system"],
+	// Dependency drilldowns and dashboard templates filter on these keys. The
+	// spelling the user typed is read first, so a saved legacy filter keeps its
+	// meaning on spans that dual-emit a different value under the new key.
+	for (const [key, first, second] of [
+		["db.system", "db.system", "db.system.name"],
+		["db.system.name", "db.system.name", "db.system"],
 		["messaging.destination.name", "messaging.destination.name", "messaging.destination"],
+		["rpc.system", "rpc.system", "rpc.system.name"],
 		["rpc.system.name", "rpc.system.name", "rpc.system"],
 	] as const) {
 		it(`matches both semconv spellings when filtering on ${key}`, () => {
 			const q = tracesListQuery({ attributeFilters: [{ key, value: "x", mode: "equals" }] })
 			const { sql } = compileUnsafe(q, baseParams)
 			expect(sql).toContain(
-				`if(SpanAttributes['${canonical}'] != '', SpanAttributes['${canonical}'], SpanAttributes['${legacy}']) = 'x'`,
+				`if(SpanAttributes['${first}'] != '', SpanAttributes['${first}'], SpanAttributes['${second}']) = 'x'`,
 			)
 		})
 	}

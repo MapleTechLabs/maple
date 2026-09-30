@@ -104,8 +104,10 @@ export function getChipTone(key: string, value: string, severityText: string): C
 		if (Number.isFinite(n) && n !== 0) return "error"
 	}
 
-	// The current key carries the status name ("OK", "UNAVAILABLE") instead of a number.
-	if (key === "rpc.response.status_code" && value !== "" && value.toUpperCase() !== "OK") return "error"
+	// The current key carries the status name ("OK", "UNAVAILABLE"); some instrumentation
+	// still writes the numeric gRPC code, where 0 is OK.
+	if (key === "rpc.response.status_code" && value !== "" && value !== "0" && value.toUpperCase() !== "OK")
+		return "error"
 
 	if (key === "http.method" || key === "http.request.method") return "info"
 	if (

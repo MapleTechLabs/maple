@@ -119,3 +119,13 @@ export function httpRequestMethodExpr(spanAttributes: MapColumnLike): Expr<strin
 	const legacy = spanAttributes.get("http.method")
 	return CH.if_(legacy.neq(""), legacy, spanAttributes.get("http.request.method"))
 }
+
+/**
+ * HTTP response status code expression, legacy-first for the same reason as
+ * {@link httpRequestMethodExpr}: it has to agree with `trace_list_mv`'s
+ * pre-extracted `HttpStatusCode`.
+ */
+export function httpResponseStatusCodeExpr(spanAttributes: MapColumnLike): Expr<string> {
+	const legacy = spanAttributes.get("http.status_code")
+	return CH.if_(legacy.neq(""), legacy, spanAttributes.get("http.response.status_code"))
+}

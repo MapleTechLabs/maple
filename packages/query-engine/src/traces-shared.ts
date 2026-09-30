@@ -49,25 +49,26 @@ import * as T from "@maple-dev/effect-clickhouse/types"
 //   messaging.destination → messaging.destination.name
 //   rpc.system            → rpc.system.name
 //   http.host             → server.address (and url.authority, the service map's last fallback)
-// `trace_list_mv` and the service-map rollups coalesce both spellings when they
-// pre-extract their columns (see materializations.ts), so facet counts and edge
-// targets cover spans that use *either* key. Filters that read the raw `traces`
-// table must coalesce the same way, otherwise a facet or a dependency drilldown
-// shows a count while applying it matches zero rows.
+// A filter on either spelling matches spans that carry either key. The key the
+// user typed is read first, so a saved filter on a legacy key keeps matching a
+// span that dual-emits a different value under the new key (`db.system=mssql`
+// next to `db.system.name=microsoft.sql_server`). HTTP method and status are
+// legacy-first under both spellings because that is how `trace_list_mv`
+// pre-extracts them, and the facet counts must agree with the filter.
 
 const SPAN_SEMCONV_ALIASES: Record<string, readonly string[]> = {
 	"http.method": ["http.method", "http.request.method"],
 	"http.request.method": ["http.method", "http.request.method"],
 	"http.status_code": ["http.status_code", "http.response.status_code"],
 	"http.response.status_code": ["http.status_code", "http.response.status_code"],
-	"db.system": ["db.system.name", "db.system"],
+	"db.system": ["db.system", "db.system.name"],
 	"db.system.name": ["db.system.name", "db.system"],
-	"messaging.destination": ["messaging.destination.name", "messaging.destination"],
+	"messaging.destination": ["messaging.destination", "messaging.destination.name"],
 	"messaging.destination.name": ["messaging.destination.name", "messaging.destination"],
-	"rpc.system": ["rpc.system.name", "rpc.system"],
+	"rpc.system": ["rpc.system", "rpc.system.name"],
 	"rpc.system.name": ["rpc.system.name", "rpc.system"],
 	"server.address": ["server.address", "http.host", "url.authority"],
-	"http.host": ["server.address", "http.host", "url.authority"],
+	"http.host": ["http.host", "server.address", "url.authority"],
 } satisfies Record<string, readonly string[]>
 
 /**
