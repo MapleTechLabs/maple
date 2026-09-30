@@ -735,7 +735,7 @@ describe("tracesBreakdownQuery", () => {
 		expect(sql).toContain("FROM traces")
 		expect(sql).not.toContain("FROM service_overview_spans")
 		expect(sql).toContain(
-			"coalesce(nullIf(SpanAttributes['http.request.method'], ''), SpanAttributes['http.method']) AS name",
+			"if(SpanAttributes['http.method'] != '', SpanAttributes['http.method'], SpanAttributes['http.request.method']) AS name",
 		)
 	})
 
@@ -757,7 +757,7 @@ describe("tracesBreakdownQuery", () => {
 		})
 		const { sql } = compileUnsafe(q, { ...baseParams, bucketSeconds: 300 })
 		expect(sql).toContain(
-			"coalesce(nullIf(SpanAttributes['http.request.method'], ''), SpanAttributes['http.method'])",
+			"if(SpanAttributes['http.method'] != '', SpanAttributes['http.method'], SpanAttributes['http.request.method'])",
 		)
 	})
 

@@ -106,16 +106,16 @@ export function containerRuntimeExpr(resourceAttributes: MapColumnLike): Expr<st
 }
 
 /**
- * Canonical HTTP request method expression for read paths that group by it.
+ * HTTP request method expression for read paths that group by it.
  *
  * Stable HTTP semconv renamed `http.method` to `http.request.method`; a group-by
  * on the legacy key alone put every span from current instrumentation into the
- * `""` bucket. `trace_list_mv` pre-extracts `HttpMethod` with its own legacy-first
- * `if()`, so like {@link containerRuntimeExpr} this has no SQL twin.
+ * `""` bucket. The precedence is legacy-first on purpose: it must match
+ * `trace_list_mv`'s pre-extracted `HttpMethod` and the query engine's span filter
+ * aliases, so a group, its facet count and the filter it drills into agree on a
+ * span that carries both keys with different values.
  */
 export function httpRequestMethodExpr(spanAttributes: MapColumnLike): Expr<string> {
-	return CH.coalesce(
-		CH.nullIf(spanAttributes.get("http.request.method"), ""),
-		spanAttributes.get("http.method"),
-	)
+	const legacy = spanAttributes.get("http.method")
+	return CH.if_(legacy.neq(""), legacy, spanAttributes.get("http.request.method"))
 }
