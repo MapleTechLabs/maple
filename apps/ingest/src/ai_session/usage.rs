@@ -38,7 +38,7 @@ use opentelemetry_proto::tonic::trace::v1::span::SpanKind;
 use opentelemetry_proto::tonic::trace::v1::Span;
 
 use super::facts::{self, name_has, Facts};
-use super::owned_string_attribute;
+use super::{owned_string_attribute, value_str};
 
 const INPUT_TOKENS_ATTR: &str = "maple_ai.usage.input_tokens";
 const CACHE_READ_TOKENS_ATTR: &str = "maple_ai.usage.cache_read_tokens";
@@ -156,7 +156,7 @@ pub(super) fn stamp(span: &Span, vendor: &str, facts: &Facts, out: &mut Vec<KeyV
     }
     let usage = Usage::read(
         facts,
-        input_excludes_cache(vendor, facts.model()),
+        input_excludes_cache(vendor, span, facts.model()),
         output_excludes_reasoning(vendor, span),
     );
     let tokens = [
@@ -225,10 +225,19 @@ fn named_like_a_model_call(op: &str, span_name: &str, facts: &Facts) -> bool {
 /// `gen_ai.provider.name` cannot tell: it names the model's vendor, not the
 /// reporting convention, and these frameworks stamp values unrelated to the
 /// client (Strands `strands-agents`, ADK `gemini`, MAF `openai`).
-fn input_excludes_cache(vendor: &str, model: &str) -> bool {
+fn input_excludes_cache(vendor: &str, span: &Span, model: &str) -> bool {
     match vendor {
         // Claude Code reports the Messages API's own usage.
         "claude_agent_sdk" => true,
+        // Spring AI's `gen_ai.system` names the `ChatModel` class that made
+        // the call, not the model's vendor: its Anthropic and Bedrock Converse
+        // clients pass raw usage through; its OpenAI client (also used for
+        // OpenRouter) reports `openai`, inclusive.
+        "spring_ai" => span
+            .attributes
+            .iter()
+            .find(|attr| attr.key == "gen_ai.system")
+            .is_some_and(|attr| matches!(value_str(attr), "anthropic" | "bedrock_converse")),
         // Their native Anthropic/Bedrock clients pass raw usage through; their
         // OpenAI, Gemini and LiteLLM clients report it inclusive.
         "strands" | "google_adk" | "agno" | "microsoft_agent_framework" => {
@@ -1498,6 +1507,54 @@ mod tests {
                 ],
                 Some([90, 0, 0, 71, 0]),
             )],
+        );
+    }
+
+    /// Spring AI 2.0.1's Anthropic client (`AnthropicChatModel.getDefaultUsage`
+    /// and the streaming path) and Bedrock Converse (`BedrockProxyChatModel`)
+    /// report `input_tokens` without the cache (SRC; PROD sessions
+    /// `verify3-b-*-conv`). The index used to count 5200 and 6200 for the
+    /// first two. Its OpenAI client stays inclusive.
+    #[test]
+    fn spring_ai_anthropic_and_converse_are_cache_exclusive() {
+        fn chat(system: &str, model: &str, [input, read, write]: [&str; 3], expected: Buckets) {
+            check(
+                "spring-ai-app",
+                "org.springframework.boot",
+                "spring_ai",
+                &[(
+                    "chat",
+                    &[
+                        ("gen_ai.operation.name", "chat"),
+                        ("gen_ai.request.model", model),
+                        ("gen_ai.system", system),
+                        ("gen_ai.usage.cache_creation.input_tokens", write),
+                        ("gen_ai.usage.cache_read.input_tokens", read),
+                        ("gen_ai.usage.input_tokens", input),
+                        ("gen_ai.usage.output_tokens", "200"),
+                    ],
+                    Some(expected),
+                )],
+            );
+        }
+        // Sent uncached, cache read, cache write.
+        for (sent, expected) in [
+            (["5000", "4000", "1000"], [5000, 4000, 1000, 200, 0]),
+            (["6000", "1000", "500"], [6000, 1000, 500, 200, 0]),
+            (["300", "4000", "1000"], [300, 4000, 1000, 200, 0]),
+        ] {
+            chat("anthropic", "claude-sonnet-4-5", sent, expected);
+        }
+        let model = "us.anthropic.claude-sonnet-4-5-v1:0";
+        let sent = ["5000", "4000", "1000"];
+        chat("bedrock_converse", model, sent, [5000, 4000, 1000, 200, 0]);
+        // Inclusive: 1000 uncached of 5000.
+        let sent = ["5000", "4000", "0"];
+        chat(
+            "openai",
+            "anthropic/claude-sonnet-4.5",
+            sent,
+            [1000, 4000, 0, 200, 0],
         );
     }
 
