@@ -55,6 +55,8 @@
 	},
 	"scripts": {
 		"build": "tsdown",
+		"prepack": "MAPLE_EFFECT_STABLE_PATHS=1 bun run build",
+		"postpack": "bun run build",
 		"typecheck": "tsc --noEmit",
 		"test": "vitest run"
 	},
@@ -72,6 +74,6 @@
 		"vitest": "catalog:"
 	},
 	"peerDependencies": {
-		"effect": ">=4.0.0-rc.113"
+		"effect": ">=4.0.0-rc.118"
 	}
 }

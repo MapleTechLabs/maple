@@ -1,5 +1,11 @@
 import { defineConfig } from "tsdown"
 
+// Effect rc.118 promoted `effect/unstable/{http,observability}` to
+// `effect/{http,observability}` and dropped the old paths. The monorepo still
+// builds against an earlier rc, so the source keeps the unstable paths and the
+// published tarball (`prepack`) is built with them rewritten.
+const stableEffectPaths = process.env.MAPLE_EFFECT_STABLE_PATHS === "1"
+
 export default defineConfig({
 	entry: {
 		"index.server": "./src/index.server.ts",
@@ -18,4 +24,14 @@ export default defineConfig({
 	deps: {
 		neverBundle: ["effect"],
 	},
+	plugins: stableEffectPaths
+		? [
+				{
+					name: "maple:effect-stable-paths",
+					renderChunk(code) {
+						return code.replaceAll(/(["'])effect\/unstable\//g, "$1effect/")
+					},
+				},
+			]
+		: [],
 })
