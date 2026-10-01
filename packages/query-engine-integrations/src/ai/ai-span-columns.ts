@@ -85,11 +85,13 @@ const USAGE_LINK_HOPS = 4
 
 /**
  * One trace's reporters, as the columns of the trace level — the last one,
- * `usageReporters`, is what the session level collects: `(SpanId,
- * ParentSpanId, tokens, cost, responseId, isLlmCall, input, cacheRead,
- * cacheWrite, output, reasoning)` per index row that reported usage or is a
- * model call, plus the nearest ancestor that reported tokens (12) and the
- * nearest that reported a cost (13), `''` where there is none.
+ * `usageReporters`, is what the session level collects: `(span, parent,
+ * tokens, cost, responseId, isLlmCall, input, cacheRead, cacheWrite, output,
+ * reasoning)` per index row that reported usage or is a model call, plus the
+ * nearest ancestor that reported tokens (12) and the nearest that reported a
+ * cost (13). The four spans are keys rather than ids — a 63-bit hash of the
+ * span id, 0 where there is none — because the netting only ever compares
+ * them, and comparing integers is most of what its lookups cost.
  *
  * A span whose usage parses to zero throughout and is not a model call is not
  * a reporter, the same as `spanTokenBuckets` returning a total of 0: a wrapper
@@ -101,19 +103,19 @@ const USAGE_LINK_HOPS = 4
  *
  * The ancestors are climbed off `usageLinks`, the trace's way up for each
  * measure: every index row's span id mapped to itself where it reported the
- * measure, else to its parent, keyed `t<SpanId>` for tokens and `c<SpanId>`
- * for cost so one table serves both. Following it from a reporter's parent
+ * measure, else to its parent, the key doubled for tokens and doubled plus
+ * one for cost so one table serves both. Following it from a reporter's parent
  * climbs past the spans that reported none of it (an event loop, a step, a
  * chain, a wrapper that priced but did not count) and stops at the nearest
- * ancestor that did — or at `''` above the root, or at a parent outside the
+ * ancestor that did — or at 0 above the root, or at a parent outside the
  * index, whose ancestry the index cannot see. Tokens and cost each climb
  * their own way, because the session page charges each measure to its own
  * nearest reporter. Each hop is one lookup ({@link lookupExpr}) of
  * every reporter's two needles, the tokens' first and the cost's after them.
  *
  * {@link USAGE_LINK_HOPS} hops, so a claim passes up to three spans that
- * reported nothing. The shapes seen climb past one (Strands' event loop, the Vercel AI SDK's step,
- * smolagents' `Step N`) and two (a Strands sub-agent: its tool span, then the
+ * reported nothing. The shapes seen climb past one (Strands' event loop, the
+ * Vercel AI SDK's step, smolagents' `Step N`) and two (a Strands sub-agent: its tool span, then the
  * event loop). A deeper chain is charged to where the climb stopped, which no
  * reporter is, so its claim is counted in full.
  *
@@ -134,10 +136,15 @@ export function traceUsageColumns($: {
 	readonly OutputTokens: Expr<number>
 	readonly ReasoningTokens: Expr<number>
 }) {
+	// A span id as the netting compares it: a 63-bit hash, so a lookup sorts
+	// integers rather than strings and a key has a bit to spare for the
+	// measure. Zero stands for no span.
+	const spanKey = (spanId: Expr<string>) =>
+		`if(${compile(spanId.toFragment())} = '', 0, bitShiftRight(cityHash64(${compile(spanId.toFragment())}), 1))`
 	const reporter = CH.compileFnCall<unknown>(
 		"tuple",
-		$.SpanId,
-		$.ParentSpanId,
+		CH.untypedExpr(spanKey($.SpanId)),
+		CH.untypedExpr(spanKey($.ParentSpanId)),
 		$.Tokens,
 		$.Cost,
 		$.ResponseId,
@@ -149,18 +156,14 @@ export function traceUsageColumns($: {
 		$.ReasoningTokens,
 	)
 	const reports = $.Tokens.gt(0).or($.Cost.gt(0)).or($.IsLlmCall.eq(1))
-	const link = (prefix: string, reported: Expr<number>) =>
-		CH.compileFnCall<unknown>(
-			"tuple",
-			CH.concat(prefix, $.SpanId),
-			CH.concat(prefix, CH.if_(reported.gt(0), $.SpanId, $.ParentSpanId)),
-		)
+	// A link's key is the span's key doubled, plus one for the cost's way up.
+	const link = (measure: 0 | 1, reported: Expr<number>) =>
+		`tuple(${spanKey($.SpanId)} * 2 + ${measure}, if(${compile(reported.gt(0).toFragment())}, ${spanKey($.SpanId)}, ${spanKey($.ParentSpanId)}) * 2 + ${measure})`
 	// The first hop starts at the reporters' parents; each later one at where
 	// the hop before it arrived.
-	const parents =
-		"arrayConcat(arrayMap(r -> concat('t', r.2), usageSpans), arrayMap(r -> concat('c', r.2), usageSpans))"
+	const parents = "arrayConcat(arrayMap(r -> r.2 * 2, usageSpans), arrayMap(r -> r.2 * 2 + 1, usageSpans))"
 	const ancestors = Array.from({ length: USAGE_LINK_HOPS }).reduce<string>(
-		(needles) => lookupExpr("usageLinks", needles, "''"),
+		(needles) => lookupExpr("usageLinks", needles, "toUInt64(0)"),
 		parents,
 	)
 	return {
@@ -170,14 +173,14 @@ export function traceUsageColumns($: {
 			)})`,
 		),
 		usageLinks: CH.untypedExpr(
-			`groupArrayArray(${2 * MAX_USAGE_REPORTERS_PER_TRACE})([${compile(link("t", $.Tokens).toFragment())}, ${compile(link("c", $.Cost).toFragment())}])`,
+			`groupArrayArray(${2 * MAX_USAGE_REPORTERS_PER_TRACE})([${link(0, $.Tokens)}, ${link(1, $.Cost)}])`,
 		),
-		// The key's prefix comes off again; a climb that left the index is `''`.
+		// The measure's bit comes off again; a climb that left the index is 0.
 		usageReporters: CH.untypedExpr(
 			bind(
 				"ancestors",
 				ancestors,
-				"arrayMap((r, t, c) -> tupleConcat(r, (substring(t, 2), substring(c, 2))), usageSpans, arraySlice(ancestors, 1, length(usageSpans)), arraySlice(ancestors, length(usageSpans) + 1))",
+				"arrayMap((r, t, c) -> tupleConcat(r, (intDiv(t, 2), intDiv(c, 2))), usageSpans, arraySlice(ancestors, 1, length(usageSpans)), arraySlice(ancestors, length(usageSpans) + 1))",
 			),
 		),
 	}

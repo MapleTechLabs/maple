@@ -28,6 +28,9 @@ const lookup = (table: string, needles: string, fallback: string) =>
 		),
 	)
 
+/** A span id as the netting compares it: a 63-bit hash, 0 for none. */
+const key = (column: string) => `if(${column} = '', 0, bitShiftRight(cityHash64(${column}), 1))`
+
 describe("session usage SQL", () => {
 	const trace = traceUsageColumns({
 		SpanId: CH.dynamicColumn<string>("SpanId", T.string),
@@ -47,28 +50,28 @@ describe("session usage SQL", () => {
 		// The five buckets ride along as elements 7–11; a span reports by its
 		// total or cost, which the buckets sum to, so they add no predicate.
 		expect(sql(trace.usageSpans)).toBe(
-			"groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1))",
+			`groupArrayIf(2000)(tuple(${key("SpanId")}, ${key("ParentSpanId")}, Tokens, Cost, ResponseId, IsLlmCall, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1))`,
 		)
 	})
 
 	it("maps each of a trace's spans to itself when it reported the measure, else to its parent", () => {
-		// Both measures in one table, the key's first character telling them apart.
+		// Both measures in one table, the key's lowest bit telling them apart.
 		expect(sql(trace.usageLinks)).toBe(
-			"groupArrayArray(4000)([tuple(concat('t', SpanId), concat('t', if(Tokens > 0, SpanId, ParentSpanId))), tuple(concat('c', SpanId), concat('c', if(Cost > 0, SpanId, ParentSpanId)))])",
+			`groupArrayArray(4000)([tuple(${key("SpanId")} * 2 + 0, if(Tokens > 0, ${key("SpanId")}, ${key("ParentSpanId")}) * 2 + 0), tuple(${key("SpanId")} * 2 + 1, if(Cost > 0, ${key("SpanId")}, ${key("ParentSpanId")}) * 2 + 1)])`,
 		)
 	})
 
 	it("climbs four links from every reporter's parent, each hop one lookup", () => {
 		const parents =
-			"arrayConcat(arrayMap(r -> concat('t', r.2), usageSpans), arrayMap(r -> concat('c', r.2), usageSpans))"
-		const hop = (needles: string) => lookup("usageLinks", needles, "''")
+			"arrayConcat(arrayMap(r -> r.2 * 2, usageSpans), arrayMap(r -> r.2 * 2 + 1, usageSpans))"
+		const hop = (needles: string) => lookup("usageLinks", needles, "toUInt64(0)")
 		// Each reporter gains the nearest ancestor that reported tokens (12) and
 		// the nearest that reported a cost (13).
 		expect(sql(trace.usageReporters)).toBe(
 			bind(
 				"ancestors",
 				hop(hop(hop(hop(parents)))),
-				"arrayMap((r, t, c) -> tupleConcat(r, (substring(t, 2), substring(c, 2))), usageSpans, arraySlice(ancestors, 1, length(usageSpans)), arraySlice(ancestors, length(usageSpans) + 1))",
+				"arrayMap((r, t, c) -> tupleConcat(r, (intDiv(t, 2), intDiv(c, 2))), usageSpans, arraySlice(ancestors, 1, length(usageSpans)), arraySlice(ancestors, length(usageSpans) + 1))",
 			),
 		)
 	})

@@ -362,6 +362,13 @@ export interface AiSessionPageOpts extends AiSessionFilterOpts {
 	readonly toolCallsMax?: number
 	readonly sortBy?: AiSessionSortKey
 	readonly sortDir?: AiSessionSortDir
+	/**
+	 * The page to read, as `aiSessionRankQuery` ranked it under the same
+	 * filters: the read then covers these sessions alone, over the page's own
+	 * bounds (`fanOutStart`/`fanOutEnd`) rather than the caller's window, and
+	 * neither pages nor filters again. Never empty — see `AiSessionDetailsOpts`.
+	 */
+	readonly sessionIds?: readonly string[]
 }
 
 export interface AiSessionPageOutput {
@@ -505,76 +512,40 @@ const MAX_NAMES_PER_TRACE = 20
  * wrapper's roll-up of its children cannot be undone one row at a time — see
  * `traceUsageColumns`.
  */
-const indexTraces = (opts: AiSessionFilterOpts, bounds: IndexBounds) => {
+type IndexColumns = ColumnAccessor<typeof AiTraceIndex.columns>
+
+/** What ranks a trace's session, per trace: its key, its extent and the two
+ *  measures the session filters and sorts read. All `aiSessionRankQuery`
+ *  selects, and the first columns of `indexTraces`. */
+const traceRankColumns = ($: IndexColumns) => ({
+	traceId: $.TraceId,
+	rawSessionId: CH.max_($.SessionId),
+	// Named apart from the page's `agentStart`/`agentEnd`: an outer alias
+	// shadows the derived table's column of the same name, so `min(…)` of
+	// it would resolve to the outer `toString(…)` String and fail — see
+	// `traceStart` in `aiSessionDetailsQuery`.
+	traceAgentStart: CH.min_($.Timestamp),
+	// `Timestamp` is the span's START; the extent ends where the
+	// last-starting agent span ended. Same idiom as `traceEndNanos`.
+	traceAgentEndNanos: CH.max_(CH.toUnixTimestamp64Nano($.Timestamp).add(CH.toInt64($.Duration))),
+	toolCalls: CH.sum($.IsToolCall),
+	errorAgentSpans: CH.sum($.IsError),
+})
+
+/** The agent traces of the window (or of a ranked page's bounds, and then of
+ *  its sessions alone), one row each, with whatever `select` measures — the
+ *  rows and the filters `indexTraces` documents. */
+const indexTracesOf = <Row extends { readonly traceId: CH.Expr<string> }>(
+	opts: AiSessionFilterOpts,
+	bounds: IndexBounds,
+	sessionIds: readonly string[] | undefined,
+	select: ($: IndexColumns) => Row,
+) => {
 	const values = (list: readonly string[] | undefined) => (list?.length ? list : undefined)
 	const search = opts.search?.trim() || undefined
 	const carries = (cond: CH.Condition) => CH.countIf(cond).gt(0)
 	return from(AiTraceIndex)
-		.select(($) => {
-			// Ranks the trace's spans for the agent-name `argMin`: a span that
-			// names an agent sorts at its own timestamp, one that does not sorts
-			// at the sentinel and can never win — here, or one level up where the
-			// same column orders the traces. A sentinel because the DSL has no
-			// `argMinIf`.
-			// A trace that names no agent at all ties every span at the sentinel,
-			// and the tie is harmless because every candidate's name is `''`.
-			const agentOrder = CH.if_(
-				$.AgentName.neq(""),
-				$.Timestamp,
-				CH.toDateTime(CH.lit(SESSION_ORDER_SENTINEL)),
-			)
-			// Ranks the trace's spans for the vendor `argMin`s: session-bearing
-			// first, then the rest, and inside each rank the earliest — the order
-			// the fan-out once ranked the raw spans by, less the rank for an
-			// unstamped span, which the index never holds. A single trace
-			// legitimately carries several vendors (an eve agent calling through
-			// the Vercel AI SDK), and the root-most session-bearing span is the one
-			// that names the framework that ran the turn; `max(VendorId)` picked
-			// the SDK alphabetically. A tuple, compared element by element, so
-			// ties at one rank fall through to time rather than to whichever row
-			// ClickHouse read first.
-			const vendorOrder = orderTuple(CH.if_($.SessionId.neq(""), CH.lit(0), CH.lit(1)), $.Timestamp)
-			return {
-				traceId: $.TraceId,
-				rawSessionId: CH.max_($.SessionId),
-				vendorId: CH.argMin($.VendorId, vendorOrder),
-				vendorVersion: CH.argMin($.VendorVersion, vendorOrder),
-				// Carried so the session level can rank its traces the same way.
-				vendorAt: CH.min_(vendorOrder),
-				// Named apart from the page's `agentStart`/`agentEnd`: an outer alias
-				// shadows the derived table's column of the same name, so `min(…)` of
-				// it would resolve to the outer `toString(…)` String and fail — see
-				// `traceStart` in `aiSessionDetailsQuery`.
-				traceAgentStart: CH.min_($.Timestamp),
-				traceAgentEnd: CH.max_($.Timestamp),
-				// `Timestamp` is the span's START; the extent ends where the
-				// last-starting agent span ended. Same idiom as `traceEndNanos`.
-				traceAgentEndNanos: CH.max_(
-					CH.toUnixTimestamp64Nano($.Timestamp).add(CH.toInt64($.Duration)),
-				),
-				agentSpanCount: CH.count(),
-				// Bounded per trace: a row is a list cell, and a trace that somehow
-				// names more models than that is not one the cell can show anyway.
-				serviceNames: CH.groupUniqArrayIf(MAX_NAMES_PER_TRACE)($.ServiceName, $.ServiceName.neq("")),
-				models: CH.groupUniqArrayIf(MAX_NAMES_PER_TRACE)($.Model, $.Model.neq("")),
-				agentNames: CH.groupUniqArrayIf(MAX_NAMES_PER_TRACE)($.AgentName, $.AgentName.neq("")),
-				// The name the session goes by, and when that name first appeared.
-				// `agentNames` is a set — `groupUniqArrayIf`, then `groupUniqArrayArray`
-				// across traces — so its first element is whatever the aggregate
-				// happened to emit, while the detail page's heading is the agent on the
-				// session's earliest-starting named span. Taking the heading from the
-				// set left a multi-agent session titled one thing in the list and
-				// another on its own page.
-				firstAgentName: CH.argMin($.AgentName, agentOrder),
-				firstAgentAt: CH.min_(agentOrder),
-				toolCalls: CH.sum($.IsToolCall),
-				errorAgentSpans: CH.sum($.IsError),
-				failedSpans: failedSpansExpr($),
-				// Usage AND model calls travel as reporters: both are counted one level
-				// up, where every trace of the session is in hand — see `ai-span-columns`.
-				...traceUsageColumns($),
-			}
-		})
+		.select(select)
 		.where(($) => [
 			$.OrgId.eq(param.string("orgId")),
 			$.Timestamp.gte(param.dateTimeString(bounds === "window" ? "startTime" : "fanOutStart")),
@@ -583,6 +554,9 @@ const indexTraces = (opts: AiSessionFilterOpts, bounds: IndexBounds) => {
 		.groupBy("traceId")
 		.having(($) => [
 			isSessionTraceCond($),
+			// Before the select list is evaluated: a trace of another session
+			// inside the page's bounds costs its grouping and no netting.
+			CH.when(sessionIds, (ids) => CH.inList(sessionKey(CH.max_($.SessionId), $.TraceId), ids)),
 			CH.when(values(opts.vendorIds), (v) => carries(CH.inList($.VendorId, v))),
 			CH.when(values(opts.serviceNames), (v) => carries(CH.inList($.ServiceName, v))),
 			CH.when(values(opts.deploymentEnvs), (v) => carries(CH.inList($.DeploymentEnv, v))),
@@ -595,6 +569,60 @@ const indexTraces = (opts: AiSessionFilterOpts, bounds: IndexBounds) => {
 			}),
 		])
 }
+
+const indexTraces = (opts: AiSessionFilterOpts, bounds: IndexBounds, sessionIds?: readonly string[]) =>
+	indexTracesOf(opts, bounds, sessionIds, ($) => {
+		// Ranks the trace's spans for the agent-name `argMin`: a span that
+		// names an agent sorts at its own timestamp, one that does not sorts
+		// at the sentinel and can never win — here, or one level up where the
+		// same column orders the traces. A sentinel because the DSL has no
+		// `argMinIf`.
+		// A trace that names no agent at all ties every span at the sentinel,
+		// and the tie is harmless because every candidate's name is `''`.
+		const agentOrder = CH.if_(
+			$.AgentName.neq(""),
+			$.Timestamp,
+			CH.toDateTime(CH.lit(SESSION_ORDER_SENTINEL)),
+		)
+		// Ranks the trace's spans for the vendor `argMin`s: session-bearing
+		// first, then the rest, and inside each rank the earliest — the order
+		// the fan-out once ranked the raw spans by, less the rank for an
+		// unstamped span, which the index never holds. A single trace
+		// legitimately carries several vendors (an eve agent calling through
+		// the Vercel AI SDK), and the root-most session-bearing span is the one
+		// that names the framework that ran the turn; `max(VendorId)` picked
+		// the SDK alphabetically. A tuple, compared element by element, so
+		// ties at one rank fall through to time rather than to whichever row
+		// ClickHouse read first.
+		const vendorOrder = orderTuple(CH.if_($.SessionId.neq(""), CH.lit(0), CH.lit(1)), $.Timestamp)
+		return {
+			...traceRankColumns($),
+			vendorId: CH.argMin($.VendorId, vendorOrder),
+			vendorVersion: CH.argMin($.VendorVersion, vendorOrder),
+			// Carried so the session level can rank its traces the same way.
+			vendorAt: CH.min_(vendorOrder),
+			traceAgentEnd: CH.max_($.Timestamp),
+			agentSpanCount: CH.count(),
+			// Bounded per trace: a row is a list cell, and a trace that somehow
+			// names more models than that is not one the cell can show anyway.
+			serviceNames: CH.groupUniqArrayIf(MAX_NAMES_PER_TRACE)($.ServiceName, $.ServiceName.neq("")),
+			models: CH.groupUniqArrayIf(MAX_NAMES_PER_TRACE)($.Model, $.Model.neq("")),
+			agentNames: CH.groupUniqArrayIf(MAX_NAMES_PER_TRACE)($.AgentName, $.AgentName.neq("")),
+			// The name the session goes by, and when that name first appeared.
+			// `agentNames` is a set — `groupUniqArrayIf`, then `groupUniqArrayArray`
+			// across traces — so its first element is whatever the aggregate
+			// happened to emit, while the detail page's heading is the agent on the
+			// session's earliest-starting named span. Taking the heading from the
+			// set left a multi-agent session titled one thing in the list and
+			// another on its own page.
+			firstAgentName: CH.argMin($.AgentName, agentOrder),
+			firstAgentAt: CH.min_(agentOrder),
+			failedSpans: failedSpansExpr($),
+			// Usage AND model calls travel as reporters: both are counted one level
+			// up, where every trace of the session is in hand — see `ai-span-columns`.
+			...traceUsageColumns($),
+		}
+	})
 
 /** The session-level columns of the page, carried through every level above
  *  the one that computes them — the row as the index answers it, less the
@@ -622,28 +650,50 @@ type SessionColumn = (typeof SESSION_COLUMNS)[number]
 const carry = <Row extends Record<SessionColumn, unknown>>(row: Row): Pick<Row, SessionColumn> =>
 	Object.fromEntries(SESSION_COLUMNS.map((column) => [column, row[column]])) as Pick<Row, SessionColumn>
 
+/** What ranks a session, off `traceRankColumns`: its key, its extent and
+ *  the measures the session filters and sorts read — the session level of
+ *  `aiSessionRankQuery`, and the first columns of `indexSessions`. */
+const sessionRankColumns = ($: {
+	readonly rawSessionId: CH.Expr<string>
+	readonly traceId: CH.Expr<string>
+	readonly traceAgentStart: CH.Expr<string>
+	readonly traceAgentEndNanos: CH.Expr<number>
+	readonly toolCalls: CH.Expr<number>
+	readonly errorAgentSpans: CH.Expr<number>
+}) => ({
+	// The grouping key, and the only level that can compute it: the
+	// derived table is one row per trace, so a trace with no session id
+	// of its own becomes a session of one trace here rather than joining
+	// every other sessionless trace under `''`.
+	sessionId: sessionKey($.rawSessionId, $.traceId),
+	agentStart: CH.toString_(CH.min_($.traceAgentStart)),
+	// The extent's END, not the last agent span's start: the row shows
+	// this as the session's end until the details replace it.
+	agentEnd: CH.toString_(fromUnixTimestamp64Nano(CH.max_($.traceAgentEndNanos))),
+	toolCalls: CH.sum($.toolCalls),
+	errorAgentSpans: CH.sum($.errorAgentSpans),
+	// Nanoseconds first, wrapped in `intDiv` — see `durationMs` in
+	// `aiSessionDetailsQuery` for both.
+	agentDurationMs: CH.intDiv(
+		CH.max_($.traceAgentEndNanos).sub(CH.toUnixTimestamp64Nano(CH.min_($.traceAgentStart))),
+		1_000_000,
+	),
+})
+
 /**
  * One row per session in the caller's window, off `indexTraces`: every
  * measure the index carries per span, summed, and the usage reporters the
  * netting reads — the session level of the page and of the distributions,
  * so a session measures the same in the row and in the histogram above it.
  */
-const indexSessions = (opts: AiSessionFilterOpts) =>
-	fromQuery(indexTraces(opts, "window"), "index_traces")
+const indexSessions = (opts: AiSessionFilterOpts, sessionIds?: readonly string[]) =>
+	fromQuery(indexTraces(opts, sessionIds ? "page" : "window", sessionIds), "index_traces")
 		.select(($) => ({
-			// The grouping key, and the only level that can compute it: the
-			// derived table is one row per trace, so a trace with no session id
-			// of its own becomes a session of one trace here rather than joining
-			// every other sessionless trace under `''`.
-			sessionId: sessionKey($.rawSessionId, $.traceId),
+			...sessionRankColumns($),
 			// Across traces the same ordering resolves the session's vendor: its
 			// earliest session-bearing span's, else its earliest agent span's.
 			vendorId: CH.argMin($.vendorId, $.vendorAt),
 			vendorVersion: CH.argMin($.vendorVersion, $.vendorAt),
-			agentStart: CH.toString_(CH.min_($.traceAgentStart)),
-			// The extent's END, not the last agent span's start: the row shows
-			// this as the session's end until the details replace it.
-			agentEnd: CH.toString_(fromUnixTimestamp64Nano(CH.max_($.traceAgentEndNanos))),
 			// `count()`, not `uniq()`: the derived table already emits exactly one
 			// row per trace, so this is exact and cheaper.
 			traceCount: CH.count(),
@@ -655,16 +705,8 @@ const indexSessions = (opts: AiSessionFilterOpts) =>
 			// named agent: a trace that named none carries the sentinel and loses
 			// to any trace that did.
 			firstAgentName: CH.argMin($.firstAgentName, $.firstAgentAt),
-			toolCalls: CH.sum($.toolCalls),
-			errorAgentSpans: CH.sum($.errorAgentSpans),
 			toolErrors: deepestFailureCount("failedSpans", "tool"),
 			turnErrors: deepestFailureCount("failedSpans", "turn"),
-			// Nanoseconds first, wrapped in `intDiv` — see `durationMs` in
-			// `aiSessionDetailsQuery` for both.
-			agentDurationMs: CH.intDiv(
-				CH.max_($.traceAgentEndNanos).sub(CH.toUnixTimestamp64Nano(CH.min_($.traceAgentStart))),
-				1_000_000,
-			),
 			// The usage, still as reporters: netted one level up, summed two.
 			reporters: sessionReportersExpr("usageReporters"),
 		}))
@@ -717,7 +759,9 @@ const indexSessions = (opts: AiSessionFilterOpts) =>
  * traces lie entirely outside the range is still found only by the traces that
  * touched it, which needs a session-keyed table to fix and not a wider window.
  */
-export function aiSessionPageQuery(opts: AiSessionPageOpts = {}) {
+/** What `aiSessionPageQuery` and `aiSessionRankQuery` agree on: which level
+ *  orders the page, by what, and which sessions are on it at all. */
+const pagePlan = (opts: AiSessionPageOpts) => {
 	const limit = opts.limit ?? 50
 	const offset = opts.offset ?? 0
 
@@ -755,10 +799,6 @@ export function aiSessionPageQuery(opts: AiSessionPageOpts = {}) {
 					["agentStart", "desc"],
 				]
 	order.push(["sessionId", "asc"])
-	// Usage exists only once the reporters are netted, two levels up; the
-	// session level orders on everything else.
-	const sortsOnSession = (_specs: typeof order): _specs is Array<[SessionSort, AiSessionSortDir]> =>
-		sortBy !== "cost" && sortBy !== "totalTokens" && sortBy !== "llmCalls"
 	const filtersOnUsage = [
 		opts.costMin,
 		opts.costMax,
@@ -767,12 +807,15 @@ export function aiSessionPageQuery(opts: AiSessionPageOpts = {}) {
 		opts.llmCallsMin,
 		opts.llmCallsMax,
 	].some((bound) => bound !== undefined)
+	// Usage exists only once the reporters are netted, two levels up; the
+	// session level orders and cuts the page on everything else.
+	const ranksOnSession = (_specs: typeof order): _specs is Array<[SessionSort, AiSessionSortDir]> =>
+		sortBy !== "cost" && sortBy !== "totalTokens" && sortBy !== "llmCalls" && !filtersOnUsage
 	// Only a positive offset is emitted: `OFFSET 0` is a no-op that would still
 	// change the compiled SQL of every first-page read.
 	const paged = <Q extends { limit(n: number): Q; offset(n: number): Q }>(query: Q): Q =>
 		offset > 0 ? query.limit(limit).offset(offset) : query.limit(limit)
-
-	const sessions = indexSessions(opts).having(() => [
+	const sessionFilters = () => [
 		CH.whenTrue(opts.hasErrors, () => column.errorAgentSpans.gt(0)),
 		CH.whenTrue(opts.excludeTraceSessions, () =>
 			CH.not(column.sessionId.like(`${MAPLE_AI_TRACE_SESSION_PREFIX}%`)),
@@ -781,10 +824,64 @@ export function aiSessionPageQuery(opts: AiSessionPageOpts = {}) {
 		CH.when(opts.durationMaxMs, (v) => column.agentDurationMs.lte(v)),
 		CH.when(opts.toolCallsMin, (v) => column.toolCalls.gte(v)),
 		CH.when(opts.toolCallsMax, (v) => column.toolCalls.lte(v)),
-	])
+	]
+	return { column, order, ranksOnSession, paged, sessionFilters }
+}
+
+/** Whether the index alone ranks this page — every sort and filter but the
+ *  ones on cost, tokens and model calls — so `aiSessionRankQuery` can cut it
+ *  before anything is netted. */
+export const aiSessionPageRanksOnIndex = (opts: AiSessionPageOpts): boolean => {
+	const { order, ranksOnSession } = pagePlan(opts)
+	return ranksOnSession(order)
+}
+
+/**
+ * Which sessions a page holds, and the extent of their agent spans: the
+ * session level of `aiSessionPageQuery`, ordered, filtered and cut the same
+ * way, with nothing measured but what ranks. The usage a row shows is what a
+ * page read costs — the ancestry climb and the netting run per trace — and
+ * that grows with the window where a page's rows grow with the page; leaving
+ * it out of the text as well spares the analysis of its lambdas. The caller reads the
+ * rows with `aiSessionPageQuery({ sessionIds })`, bounded by these rows'
+ * earliest `agentStart` and latest `agentEnd`.
+ *
+ * A defect for a page the index cannot rank (`aiSessionPageRanksOnIndex`):
+ * a sort or filter on usage needs every session netted, which is the one
+ * read `aiSessionPageQuery` already is.
+ */
+export function aiSessionRankQuery(opts: AiSessionPageOpts = {}) {
+	const { order, ranksOnSession, paged, sessionFilters } = pagePlan(opts)
+	if (!ranksOnSession(order)) {
+		throw new QueryBuilderDefect({
+			message: "aiSessionRankQuery cannot rank on usage; read the page with aiSessionPageQuery",
+		})
+	}
+	const sessions = fromQuery(indexTracesOf(opts, "window", undefined, traceRankColumns), "index_traces")
+		.select(sessionRankColumns)
+		.groupBy("sessionId")
+	const ranked = paged(sessions.having(sessionFilters).orderBy(...order))
+	return fromQuery(ranked, "ranked_sessions")
+		.select(($) => ({ sessionId: $.sessionId, agentStart: $.agentStart, agentEnd: $.agentEnd }))
+		.format("JSON")
+}
+
+export function aiSessionPageQuery(opts: AiSessionPageOpts = {}) {
+	const { column, order, ranksOnSession, paged, sessionFilters } = pagePlan(opts)
+	if (opts.sessionIds?.length === 0) {
+		throw new QueryBuilderDefect({
+			message: "aiSessionPageQuery needs the ranked session ids; an empty page has nothing to read",
+		})
+	}
+	// A page already ranked is read as it is: its sessions passed the filters
+	// and the cut when `aiSessionRankQuery` made them.
+	const sessions = opts.sessionIds
+		? indexSessions(opts, opts.sessionIds)
+		: indexSessions(opts).having(sessionFilters)
 	// A String order, and a correct one: the literal is fixed-width
 	// `YYYY-MM-DD hh:mm:ss.nnnnnnnnn`, so it sorts as the instant does.
-	const ranked = sortsOnSession(order) && !filtersOnUsage ? paged(sessions.orderBy(...order)) : sessions
+	const cutsOnSession = !opts.sessionIds && ranksOnSession(order)
+	const ranked = !opts.sessionIds && ranksOnSession(order) ? paged(sessions.orderBy(...order)) : sessions
 
 	const netted = fromQuery(ranked, "ranked_sessions").select(($) => ({
 		...carry($),
@@ -814,7 +911,7 @@ export function aiSessionPageQuery(opts: AiSessionPageOpts = {}) {
 		// Re-ordered even when the session level already did: a level of its
 		// own keeps no order, and the page's order is the page's.
 		.orderBy(...order)
-	return (sortsOnSession(order) && !filtersOnUsage ? page : paged(page)).format("JSON")
+	return (cutsOnSession || opts.sessionIds ? page : paged(page)).format("JSON")
 }
 
 /**

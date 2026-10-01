@@ -23,24 +23,24 @@ SELECT
         FROM (SELECT
           TraceId AS traceId,
           max(SessionId) AS rawSessionId,
+          min(Timestamp) AS traceAgentStart,
+          max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceAgentEndNanos,
+          sum(IsToolCall) AS toolCalls,
+          sum(IsError) AS errorAgentSpans,
           argMin(VendorId, tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorId,
           argMin(VendorVersion, tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorVersion,
           min(tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorAt,
-          min(Timestamp) AS traceAgentStart,
           max(Timestamp) AS traceAgentEnd,
-          max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceAgentEndNanos,
           count() AS agentSpanCount,
           groupUniqArrayIf(20)(ServiceName, ServiceName != '') AS serviceNames,
           groupUniqArrayIf(20)(Model, Model != '') AS models,
           groupUniqArrayIf(20)(AgentName, AgentName != '') AS agentNames,
           argMin(AgentName, if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentName,
           min(if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentAt,
-          sum(IsToolCall) AS toolCalls,
-          sum(IsError) AS errorAgentSpans,
           groupArrayIf(2000)(tuple(SpanId, ParentSpanId, IsToolCall), IsError = 1) AS failedSpans,
-          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageSpans,
-          groupArrayArray(4000)([tuple(concat('t', SpanId), concat('t', if(Tokens > 0, SpanId, ParentSpanId))), tuple(concat('c', SpanId), concat('c', if(Cost > 0, SpanId, ParentSpanId)))]) AS usageLinks,
-          arrayMap(ancestors -> arrayMap((r, t, c) -> tupleConcat(r, (substring(t, 2), substring(c, 2))), usageSpans, arraySlice(ancestors, 1, length(usageSpans)), arraySlice(ancestors, length(usageSpans) + 1)), [arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, ''), arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, ''), arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, ''), arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, ''), arrayConcat(arrayMap(r -> concat('t', r.2), usageSpans), arrayMap(r -> concat('c', r.2), usageSpans))))])[1]))])[1]))])[1]))])[1]])[1] AS usageReporters
+          groupArrayIf(2000)(tuple(if(SpanId = '', 0, bitShiftRight(cityHash64(SpanId), 1)), if(ParentSpanId = '', 0, bitShiftRight(cityHash64(ParentSpanId), 1)), Tokens, Cost, ResponseId, IsLlmCall, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageSpans,
+          groupArrayArray(4000)([tuple(if(SpanId = '', 0, bitShiftRight(cityHash64(SpanId), 1)) * 2 + 0, if(Tokens > 0, if(SpanId = '', 0, bitShiftRight(cityHash64(SpanId), 1)), if(ParentSpanId = '', 0, bitShiftRight(cityHash64(ParentSpanId), 1))) * 2 + 0), tuple(if(SpanId = '', 0, bitShiftRight(cityHash64(SpanId), 1)) * 2 + 1, if(Cost > 0, if(SpanId = '', 0, bitShiftRight(cityHash64(SpanId), 1)), if(ParentSpanId = '', 0, bitShiftRight(cityHash64(ParentSpanId), 1))) * 2 + 1)]) AS usageLinks,
+          arrayMap(ancestors -> arrayMap((r, t, c) -> tupleConcat(r, (intDiv(t, 2), intDiv(c, 2))), usageSpans, arraySlice(ancestors, 1, length(usageSpans)), arraySlice(ancestors, length(usageSpans) + 1)), [arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, toUInt64(0)), arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, toUInt64(0)), arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, toUInt64(0)), arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, toUInt64(0)), arrayConcat(arrayMap(r -> r.2 * 2, usageSpans), arrayMap(r -> r.2 * 2 + 1, usageSpans))))])[1]))])[1]))])[1]))])[1]])[1] AS usageReporters
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-02 10:30:00'
@@ -55,24 +55,24 @@ SELECT
         FROM (SELECT
           TraceId AS traceId,
           max(SessionId) AS rawSessionId,
+          min(Timestamp) AS traceAgentStart,
+          max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceAgentEndNanos,
+          sum(IsToolCall) AS toolCalls,
+          sum(IsError) AS errorAgentSpans,
           argMin(VendorId, tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorId,
           argMin(VendorVersion, tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorVersion,
           min(tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorAt,
-          min(Timestamp) AS traceAgentStart,
           max(Timestamp) AS traceAgentEnd,
-          max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceAgentEndNanos,
           count() AS agentSpanCount,
           groupUniqArrayIf(20)(ServiceName, ServiceName != '') AS serviceNames,
           groupUniqArrayIf(20)(Model, Model != '') AS models,
           groupUniqArrayIf(20)(AgentName, AgentName != '') AS agentNames,
           argMin(AgentName, if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentName,
           min(if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentAt,
-          sum(IsToolCall) AS toolCalls,
-          sum(IsError) AS errorAgentSpans,
           groupArrayIf(2000)(tuple(SpanId, ParentSpanId, IsToolCall), IsError = 1) AS failedSpans,
-          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageSpans,
-          groupArrayArray(4000)([tuple(concat('t', SpanId), concat('t', if(Tokens > 0, SpanId, ParentSpanId))), tuple(concat('c', SpanId), concat('c', if(Cost > 0, SpanId, ParentSpanId)))]) AS usageLinks,
-          arrayMap(ancestors -> arrayMap((r, t, c) -> tupleConcat(r, (substring(t, 2), substring(c, 2))), usageSpans, arraySlice(ancestors, 1, length(usageSpans)), arraySlice(ancestors, length(usageSpans) + 1)), [arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, ''), arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, ''), arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, ''), arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, ''), arrayConcat(arrayMap(r -> concat('t', r.2), usageSpans), arrayMap(r -> concat('c', r.2), usageSpans))))])[1]))])[1]))])[1]))])[1]])[1] AS usageReporters
+          groupArrayIf(2000)(tuple(if(SpanId = '', 0, bitShiftRight(cityHash64(SpanId), 1)), if(ParentSpanId = '', 0, bitShiftRight(cityHash64(ParentSpanId), 1)), Tokens, Cost, ResponseId, IsLlmCall, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageSpans,
+          groupArrayArray(4000)([tuple(if(SpanId = '', 0, bitShiftRight(cityHash64(SpanId), 1)) * 2 + 0, if(Tokens > 0, if(SpanId = '', 0, bitShiftRight(cityHash64(SpanId), 1)), if(ParentSpanId = '', 0, bitShiftRight(cityHash64(ParentSpanId), 1))) * 2 + 0), tuple(if(SpanId = '', 0, bitShiftRight(cityHash64(SpanId), 1)) * 2 + 1, if(Cost > 0, if(SpanId = '', 0, bitShiftRight(cityHash64(SpanId), 1)), if(ParentSpanId = '', 0, bitShiftRight(cityHash64(ParentSpanId), 1))) * 2 + 1)]) AS usageLinks,
+          arrayMap(ancestors -> arrayMap((r, t, c) -> tupleConcat(r, (intDiv(t, 2), intDiv(c, 2))), usageSpans, arraySlice(ancestors, 1, length(usageSpans)), arraySlice(ancestors, length(usageSpans) + 1)), [arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, toUInt64(0)), arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, toUInt64(0)), arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, toUInt64(0)), arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, toUInt64(0)), arrayConcat(arrayMap(r -> r.2 * 2, usageSpans), arrayMap(r -> r.2 * 2 + 1, usageSpans))))])[1]))])[1]))])[1]))])[1]])[1] AS usageReporters
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-02 10:30:00'
@@ -109,24 +109,24 @@ SELECT
         FROM (SELECT
           TraceId AS traceId,
           max(SessionId) AS rawSessionId,
+          min(Timestamp) AS traceAgentStart,
+          max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceAgentEndNanos,
+          sum(IsToolCall) AS toolCalls,
+          sum(IsError) AS errorAgentSpans,
           argMin(VendorId, tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorId,
           argMin(VendorVersion, tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorVersion,
           min(tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorAt,
-          min(Timestamp) AS traceAgentStart,
           max(Timestamp) AS traceAgentEnd,
-          max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceAgentEndNanos,
           count() AS agentSpanCount,
           groupUniqArrayIf(20)(ServiceName, ServiceName != '') AS serviceNames,
           groupUniqArrayIf(20)(Model, Model != '') AS models,
           groupUniqArrayIf(20)(AgentName, AgentName != '') AS agentNames,
           argMin(AgentName, if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentName,
           min(if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentAt,
-          sum(IsToolCall) AS toolCalls,
-          sum(IsError) AS errorAgentSpans,
           groupArrayIf(2000)(tuple(SpanId, ParentSpanId, IsToolCall), IsError = 1) AS failedSpans,
-          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageSpans,
-          groupArrayArray(4000)([tuple(concat('t', SpanId), concat('t', if(Tokens > 0, SpanId, ParentSpanId))), tuple(concat('c', SpanId), concat('c', if(Cost > 0, SpanId, ParentSpanId)))]) AS usageLinks,
-          arrayMap(ancestors -> arrayMap((r, t, c) -> tupleConcat(r, (substring(t, 2), substring(c, 2))), usageSpans, arraySlice(ancestors, 1, length(usageSpans)), arraySlice(ancestors, length(usageSpans) + 1)), [arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, ''), arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, ''), arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, ''), arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, ''), arrayConcat(arrayMap(r -> concat('t', r.2), usageSpans), arrayMap(r -> concat('c', r.2), usageSpans))))])[1]))])[1]))])[1]))])[1]])[1] AS usageReporters
+          groupArrayIf(2000)(tuple(if(SpanId = '', 0, bitShiftRight(cityHash64(SpanId), 1)), if(ParentSpanId = '', 0, bitShiftRight(cityHash64(ParentSpanId), 1)), Tokens, Cost, ResponseId, IsLlmCall, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageSpans,
+          groupArrayArray(4000)([tuple(if(SpanId = '', 0, bitShiftRight(cityHash64(SpanId), 1)) * 2 + 0, if(Tokens > 0, if(SpanId = '', 0, bitShiftRight(cityHash64(SpanId), 1)), if(ParentSpanId = '', 0, bitShiftRight(cityHash64(ParentSpanId), 1))) * 2 + 0), tuple(if(SpanId = '', 0, bitShiftRight(cityHash64(SpanId), 1)) * 2 + 1, if(Cost > 0, if(SpanId = '', 0, bitShiftRight(cityHash64(SpanId), 1)), if(ParentSpanId = '', 0, bitShiftRight(cityHash64(ParentSpanId), 1))) * 2 + 1)]) AS usageLinks,
+          arrayMap(ancestors -> arrayMap((r, t, c) -> tupleConcat(r, (intDiv(t, 2), intDiv(c, 2))), usageSpans, arraySlice(ancestors, 1, length(usageSpans)), arraySlice(ancestors, length(usageSpans) + 1)), [arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, toUInt64(0)), arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, toUInt64(0)), arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, toUInt64(0)), arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, toUInt64(0)), arrayConcat(arrayMap(r -> r.2 * 2, usageSpans), arrayMap(r -> r.2 * 2 + 1, usageSpans))))])[1]))])[1]))])[1]))])[1]])[1] AS usageReporters
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-02 10:30:00'
@@ -146,24 +146,24 @@ SELECT
         FROM (SELECT
           TraceId AS traceId,
           max(SessionId) AS rawSessionId,
+          min(Timestamp) AS traceAgentStart,
+          max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceAgentEndNanos,
+          sum(IsToolCall) AS toolCalls,
+          sum(IsError) AS errorAgentSpans,
           argMin(VendorId, tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorId,
           argMin(VendorVersion, tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorVersion,
           min(tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorAt,
-          min(Timestamp) AS traceAgentStart,
           max(Timestamp) AS traceAgentEnd,
-          max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceAgentEndNanos,
           count() AS agentSpanCount,
           groupUniqArrayIf(20)(ServiceName, ServiceName != '') AS serviceNames,
           groupUniqArrayIf(20)(Model, Model != '') AS models,
           groupUniqArrayIf(20)(AgentName, AgentName != '') AS agentNames,
           argMin(AgentName, if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentName,
           min(if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentAt,
-          sum(IsToolCall) AS toolCalls,
-          sum(IsError) AS errorAgentSpans,
           groupArrayIf(2000)(tuple(SpanId, ParentSpanId, IsToolCall), IsError = 1) AS failedSpans,
-          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageSpans,
-          groupArrayArray(4000)([tuple(concat('t', SpanId), concat('t', if(Tokens > 0, SpanId, ParentSpanId))), tuple(concat('c', SpanId), concat('c', if(Cost > 0, SpanId, ParentSpanId)))]) AS usageLinks,
-          arrayMap(ancestors -> arrayMap((r, t, c) -> tupleConcat(r, (substring(t, 2), substring(c, 2))), usageSpans, arraySlice(ancestors, 1, length(usageSpans)), arraySlice(ancestors, length(usageSpans) + 1)), [arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, ''), arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, ''), arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, ''), arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, ''), arrayConcat(arrayMap(r -> concat('t', r.2), usageSpans), arrayMap(r -> concat('c', r.2), usageSpans))))])[1]))])[1]))])[1]))])[1]])[1] AS usageReporters
+          groupArrayIf(2000)(tuple(if(SpanId = '', 0, bitShiftRight(cityHash64(SpanId), 1)), if(ParentSpanId = '', 0, bitShiftRight(cityHash64(ParentSpanId), 1)), Tokens, Cost, ResponseId, IsLlmCall, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageSpans,
+          groupArrayArray(4000)([tuple(if(SpanId = '', 0, bitShiftRight(cityHash64(SpanId), 1)) * 2 + 0, if(Tokens > 0, if(SpanId = '', 0, bitShiftRight(cityHash64(SpanId), 1)), if(ParentSpanId = '', 0, bitShiftRight(cityHash64(ParentSpanId), 1))) * 2 + 0), tuple(if(SpanId = '', 0, bitShiftRight(cityHash64(SpanId), 1)) * 2 + 1, if(Cost > 0, if(SpanId = '', 0, bitShiftRight(cityHash64(SpanId), 1)), if(ParentSpanId = '', 0, bitShiftRight(cityHash64(ParentSpanId), 1))) * 2 + 1)]) AS usageLinks,
+          arrayMap(ancestors -> arrayMap((r, t, c) -> tupleConcat(r, (intDiv(t, 2), intDiv(c, 2))), usageSpans, arraySlice(ancestors, 1, length(usageSpans)), arraySlice(ancestors, length(usageSpans) + 1)), [arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, toUInt64(0)), arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, toUInt64(0)), arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, toUInt64(0)), arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, toUInt64(0)), arrayConcat(arrayMap(r -> r.2 * 2, usageSpans), arrayMap(r -> r.2 * 2 + 1, usageSpans))))])[1]))])[1]))])[1]))])[1]])[1] AS usageReporters
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-02 10:30:00'
@@ -205,24 +205,24 @@ SELECT
         FROM (SELECT
           TraceId AS traceId,
           max(SessionId) AS rawSessionId,
+          min(Timestamp) AS traceAgentStart,
+          max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceAgentEndNanos,
+          sum(IsToolCall) AS toolCalls,
+          sum(IsError) AS errorAgentSpans,
           argMin(VendorId, tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorId,
           argMin(VendorVersion, tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorVersion,
           min(tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorAt,
-          min(Timestamp) AS traceAgentStart,
           max(Timestamp) AS traceAgentEnd,
-          max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceAgentEndNanos,
           count() AS agentSpanCount,
           groupUniqArrayIf(20)(ServiceName, ServiceName != '') AS serviceNames,
           groupUniqArrayIf(20)(Model, Model != '') AS models,
           groupUniqArrayIf(20)(AgentName, AgentName != '') AS agentNames,
           argMin(AgentName, if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentName,
           min(if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentAt,
-          sum(IsToolCall) AS toolCalls,
-          sum(IsError) AS errorAgentSpans,
           groupArrayIf(2000)(tuple(SpanId, ParentSpanId, IsToolCall), IsError = 1) AS failedSpans,
-          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageSpans,
-          groupArrayArray(4000)([tuple(concat('t', SpanId), concat('t', if(Tokens > 0, SpanId, ParentSpanId))), tuple(concat('c', SpanId), concat('c', if(Cost > 0, SpanId, ParentSpanId)))]) AS usageLinks,
-          arrayMap(ancestors -> arrayMap((r, t, c) -> tupleConcat(r, (substring(t, 2), substring(c, 2))), usageSpans, arraySlice(ancestors, 1, length(usageSpans)), arraySlice(ancestors, length(usageSpans) + 1)), [arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, ''), arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, ''), arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, ''), arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, ''), arrayConcat(arrayMap(r -> concat('t', r.2), usageSpans), arrayMap(r -> concat('c', r.2), usageSpans))))])[1]))])[1]))])[1]))])[1]])[1] AS usageReporters
+          groupArrayIf(2000)(tuple(if(SpanId = '', 0, bitShiftRight(cityHash64(SpanId), 1)), if(ParentSpanId = '', 0, bitShiftRight(cityHash64(ParentSpanId), 1)), Tokens, Cost, ResponseId, IsLlmCall, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageSpans,
+          groupArrayArray(4000)([tuple(if(SpanId = '', 0, bitShiftRight(cityHash64(SpanId), 1)) * 2 + 0, if(Tokens > 0, if(SpanId = '', 0, bitShiftRight(cityHash64(SpanId), 1)), if(ParentSpanId = '', 0, bitShiftRight(cityHash64(ParentSpanId), 1))) * 2 + 0), tuple(if(SpanId = '', 0, bitShiftRight(cityHash64(SpanId), 1)) * 2 + 1, if(Cost > 0, if(SpanId = '', 0, bitShiftRight(cityHash64(SpanId), 1)), if(ParentSpanId = '', 0, bitShiftRight(cityHash64(ParentSpanId), 1))) * 2 + 1)]) AS usageLinks,
+          arrayMap(ancestors -> arrayMap((r, t, c) -> tupleConcat(r, (intDiv(t, 2), intDiv(c, 2))), usageSpans, arraySlice(ancestors, 1, length(usageSpans)), arraySlice(ancestors, length(usageSpans) + 1)), [arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, toUInt64(0)), arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, toUInt64(0)), arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, toUInt64(0)), arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, toUInt64(0)), arrayConcat(arrayMap(r -> r.2 * 2, usageSpans), arrayMap(r -> r.2 * 2 + 1, usageSpans))))])[1]))])[1]))])[1]))])[1]])[1] AS usageReporters
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-02 10:30:00'
@@ -239,24 +239,24 @@ SELECT
         FROM (SELECT
           TraceId AS traceId,
           max(SessionId) AS rawSessionId,
+          min(Timestamp) AS traceAgentStart,
+          max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceAgentEndNanos,
+          sum(IsToolCall) AS toolCalls,
+          sum(IsError) AS errorAgentSpans,
           argMin(VendorId, tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorId,
           argMin(VendorVersion, tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorVersion,
           min(tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorAt,
-          min(Timestamp) AS traceAgentStart,
           max(Timestamp) AS traceAgentEnd,
-          max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceAgentEndNanos,
           count() AS agentSpanCount,
           groupUniqArrayIf(20)(ServiceName, ServiceName != '') AS serviceNames,
           groupUniqArrayIf(20)(Model, Model != '') AS models,
           groupUniqArrayIf(20)(AgentName, AgentName != '') AS agentNames,
           argMin(AgentName, if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentName,
           min(if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentAt,
-          sum(IsToolCall) AS toolCalls,
-          sum(IsError) AS errorAgentSpans,
           groupArrayIf(2000)(tuple(SpanId, ParentSpanId, IsToolCall), IsError = 1) AS failedSpans,
-          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageSpans,
-          groupArrayArray(4000)([tuple(concat('t', SpanId), concat('t', if(Tokens > 0, SpanId, ParentSpanId))), tuple(concat('c', SpanId), concat('c', if(Cost > 0, SpanId, ParentSpanId)))]) AS usageLinks,
-          arrayMap(ancestors -> arrayMap((r, t, c) -> tupleConcat(r, (substring(t, 2), substring(c, 2))), usageSpans, arraySlice(ancestors, 1, length(usageSpans)), arraySlice(ancestors, length(usageSpans) + 1)), [arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, ''), arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, ''), arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, ''), arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, ''), arrayConcat(arrayMap(r -> concat('t', r.2), usageSpans), arrayMap(r -> concat('c', r.2), usageSpans))))])[1]))])[1]))])[1]))])[1]])[1] AS usageReporters
+          groupArrayIf(2000)(tuple(if(SpanId = '', 0, bitShiftRight(cityHash64(SpanId), 1)), if(ParentSpanId = '', 0, bitShiftRight(cityHash64(ParentSpanId), 1)), Tokens, Cost, ResponseId, IsLlmCall, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageSpans,
+          groupArrayArray(4000)([tuple(if(SpanId = '', 0, bitShiftRight(cityHash64(SpanId), 1)) * 2 + 0, if(Tokens > 0, if(SpanId = '', 0, bitShiftRight(cityHash64(SpanId), 1)), if(ParentSpanId = '', 0, bitShiftRight(cityHash64(ParentSpanId), 1))) * 2 + 0), tuple(if(SpanId = '', 0, bitShiftRight(cityHash64(SpanId), 1)) * 2 + 1, if(Cost > 0, if(SpanId = '', 0, bitShiftRight(cityHash64(SpanId), 1)), if(ParentSpanId = '', 0, bitShiftRight(cityHash64(ParentSpanId), 1))) * 2 + 1)]) AS usageLinks,
+          arrayMap(ancestors -> arrayMap((r, t, c) -> tupleConcat(r, (intDiv(t, 2), intDiv(c, 2))), usageSpans, arraySlice(ancestors, 1, length(usageSpans)), arraySlice(ancestors, length(usageSpans) + 1)), [arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, toUInt64(0)), arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, toUInt64(0)), arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, toUInt64(0)), arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, toUInt64(0)), arrayConcat(arrayMap(r -> r.2 * 2, usageSpans), arrayMap(r -> r.2 * 2 + 1, usageSpans))))])[1]))])[1]))])[1]))])[1]])[1] AS usageReporters
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-02 10:30:00'
@@ -290,43 +290,43 @@ SELECT
           arrayMap(charged -> arrayMap((r, own, tokenAncestor, costAncestor, parent) -> tuple(r.5, r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), greatest(0., r.3 - own.1) > 0 OR greatest(0., r.4 - own.2) > 0, tokenAncestor.8 = 0 AND costAncestor.8 = 0 AND parent.8 = 0), if(r.6 = 0 AND own.1 > 0, 0., greatest(0., r.3 - own.1)), if(r.6 = 0 AND own.2 > 0, 0., greatest(0., r.4 - own.2)), if(r.6 = 0 AND own.1 > 0, 0., greatest(0., r.7 - own.3)), if(r.6 = 0 AND own.1 > 0, 0., greatest(0., r.8 - own.4)), if(r.6 = 0 AND own.1 > 0, 0., greatest(0., r.9 - own.5)), if(r.6 = 0 AND own.1 > 0, 0., greatest(0., r.10 - own.6)), if(r.6 = 0 AND own.1 > 0, 0., greatest(0., r.11 - own.7))), reporters, arraySlice(charged, 0 * length(reporters) + 1, length(reporters)), arraySlice(charged, 1 * length(reporters) + 1, length(reporters)), arraySlice(charged, 2 * length(reporters) + 1, length(reporters)), arraySlice(charged, 3 * length(reporters) + 1, length(reporters))), [arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), arrayMap(claims -> arrayZip(claims.1, arrayZip(claims.2, claims.3, claims.4, claims.5, claims.6, claims.7, claims.8, claims.9)), [arrayReduce('sumMap', arrayMap(r -> [r.12, r.13, r.1], reporters), arrayMap(r -> [r.3, 0., 0.], reporters), arrayMap(r -> [0., r.4, 0.], reporters), arrayMap(r -> [r.7, 0., 0.], reporters), arrayMap(r -> [r.8, 0., 0.], reporters), arrayMap(r -> [r.9, 0., 0.], reporters), arrayMap(r -> [r.10, 0., 0.], reporters), arrayMap(r -> [r.11, 0., 0.], reporters), arrayMap(r -> [0., 0., 1.], reporters))])[1]), arrayMap(k -> (k, 1, (0., 0., 0., 0., 0., 0., 0., 0.)), arrayConcat(tupleElement(reporters, 1), tupleElement(reporters, 12), tupleElement(reporters, 13), tupleElement(reporters, 2))))])[1]])[1] AS netted
         FROM (SELECT
           if(rawSessionId = '', concat('trace:', traceId), rawSessionId) AS sessionId,
-          argMin(vendorId, vendorAt) AS vendorId,
-          argMin(vendorVersion, vendorAt) AS vendorVersion,
           toString(min(traceAgentStart)) AS agentStart,
           toString(fromUnixTimestamp64Nano(max(traceAgentEndNanos))) AS agentEnd,
+          sum(toolCalls) AS toolCalls,
+          sum(errorAgentSpans) AS errorAgentSpans,
+          intDiv(max(traceAgentEndNanos) - toUnixTimestamp64Nano(min(traceAgentStart)), 1000000) AS agentDurationMs,
+          argMin(vendorId, vendorAt) AS vendorId,
+          argMin(vendorVersion, vendorAt) AS vendorVersion,
           count() AS traceCount,
           sum(agentSpanCount) AS spanCount,
           groupUniqArrayArray(serviceNames) AS serviceNames,
           groupUniqArrayArray(models) AS models,
           groupUniqArrayArray(agentNames) AS agentNames,
           argMin(firstAgentName, firstAgentAt) AS firstAgentName,
-          sum(toolCalls) AS toolCalls,
-          sum(errorAgentSpans) AS errorAgentSpans,
           sum(arrayCount(f -> f.3 = 1 AND NOT has(tupleElement(failedSpans, 2), f.1), failedSpans)) AS toolErrors,
           sum(arrayCount(f -> f.3 != 1 AND NOT has(tupleElement(failedSpans, 2), f.1), failedSpans)) AS turnErrors,
-          intDiv(max(traceAgentEndNanos) - toUnixTimestamp64Nano(min(traceAgentStart)), 1000000) AS agentDurationMs,
           groupArrayArray(2000)(usageReporters) AS reporters
         FROM (SELECT
           TraceId AS traceId,
           max(SessionId) AS rawSessionId,
+          min(Timestamp) AS traceAgentStart,
+          max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceAgentEndNanos,
+          sum(IsToolCall) AS toolCalls,
+          sum(IsError) AS errorAgentSpans,
           argMin(VendorId, tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorId,
           argMin(VendorVersion, tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorVersion,
           min(tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorAt,
-          min(Timestamp) AS traceAgentStart,
           max(Timestamp) AS traceAgentEnd,
-          max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceAgentEndNanos,
           count() AS agentSpanCount,
           groupUniqArrayIf(20)(ServiceName, ServiceName != '') AS serviceNames,
           groupUniqArrayIf(20)(Model, Model != '') AS models,
           groupUniqArrayIf(20)(AgentName, AgentName != '') AS agentNames,
           argMin(AgentName, if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentName,
           min(if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentAt,
-          sum(IsToolCall) AS toolCalls,
-          sum(IsError) AS errorAgentSpans,
           groupArrayIf(2000)(tuple(SpanId, ParentSpanId, IsToolCall), IsError = 1) AS failedSpans,
-          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageSpans,
-          groupArrayArray(4000)([tuple(concat('t', SpanId), concat('t', if(Tokens > 0, SpanId, ParentSpanId))), tuple(concat('c', SpanId), concat('c', if(Cost > 0, SpanId, ParentSpanId)))]) AS usageLinks,
-          arrayMap(ancestors -> arrayMap((r, t, c) -> tupleConcat(r, (substring(t, 2), substring(c, 2))), usageSpans, arraySlice(ancestors, 1, length(usageSpans)), arraySlice(ancestors, length(usageSpans) + 1)), [arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, ''), arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, ''), arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, ''), arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, ''), arrayConcat(arrayMap(r -> concat('t', r.2), usageSpans), arrayMap(r -> concat('c', r.2), usageSpans))))])[1]))])[1]))])[1]))])[1]])[1] AS usageReporters
+          groupArrayIf(2000)(tuple(if(SpanId = '', 0, bitShiftRight(cityHash64(SpanId), 1)), if(ParentSpanId = '', 0, bitShiftRight(cityHash64(ParentSpanId), 1)), Tokens, Cost, ResponseId, IsLlmCall, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageSpans,
+          groupArrayArray(4000)([tuple(if(SpanId = '', 0, bitShiftRight(cityHash64(SpanId), 1)) * 2 + 0, if(Tokens > 0, if(SpanId = '', 0, bitShiftRight(cityHash64(SpanId), 1)), if(ParentSpanId = '', 0, bitShiftRight(cityHash64(ParentSpanId), 1))) * 2 + 0), tuple(if(SpanId = '', 0, bitShiftRight(cityHash64(SpanId), 1)) * 2 + 1, if(Cost > 0, if(SpanId = '', 0, bitShiftRight(cityHash64(SpanId), 1)), if(ParentSpanId = '', 0, bitShiftRight(cityHash64(ParentSpanId), 1))) * 2 + 1)]) AS usageLinks,
+          arrayMap(ancestors -> arrayMap((r, t, c) -> tupleConcat(r, (intDiv(t, 2), intDiv(c, 2))), usageSpans, arraySlice(ancestors, 1, length(usageSpans)), arraySlice(ancestors, length(usageSpans) + 1)), [arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, toUInt64(0)), arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, toUInt64(0)), arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, toUInt64(0)), arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, toUInt64(0)), arrayConcat(arrayMap(r -> r.2 * 2, usageSpans), arrayMap(r -> r.2 * 2 + 1, usageSpans))))])[1]))])[1]))])[1]))])[1]])[1] AS usageReporters
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
@@ -494,43 +494,43 @@ SELECT
           arrayMap(charged -> arrayMap((r, own, tokenAncestor, costAncestor, parent) -> tuple(r.5, r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), greatest(0., r.3 - own.1) > 0 OR greatest(0., r.4 - own.2) > 0, tokenAncestor.8 = 0 AND costAncestor.8 = 0 AND parent.8 = 0), if(r.6 = 0 AND own.1 > 0, 0., greatest(0., r.3 - own.1)), if(r.6 = 0 AND own.2 > 0, 0., greatest(0., r.4 - own.2)), if(r.6 = 0 AND own.1 > 0, 0., greatest(0., r.7 - own.3)), if(r.6 = 0 AND own.1 > 0, 0., greatest(0., r.8 - own.4)), if(r.6 = 0 AND own.1 > 0, 0., greatest(0., r.9 - own.5)), if(r.6 = 0 AND own.1 > 0, 0., greatest(0., r.10 - own.6)), if(r.6 = 0 AND own.1 > 0, 0., greatest(0., r.11 - own.7))), reporters, arraySlice(charged, 0 * length(reporters) + 1, length(reporters)), arraySlice(charged, 1 * length(reporters) + 1, length(reporters)), arraySlice(charged, 2 * length(reporters) + 1, length(reporters)), arraySlice(charged, 3 * length(reporters) + 1, length(reporters))), [arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), arrayMap(claims -> arrayZip(claims.1, arrayZip(claims.2, claims.3, claims.4, claims.5, claims.6, claims.7, claims.8, claims.9)), [arrayReduce('sumMap', arrayMap(r -> [r.12, r.13, r.1], reporters), arrayMap(r -> [r.3, 0., 0.], reporters), arrayMap(r -> [0., r.4, 0.], reporters), arrayMap(r -> [r.7, 0., 0.], reporters), arrayMap(r -> [r.8, 0., 0.], reporters), arrayMap(r -> [r.9, 0., 0.], reporters), arrayMap(r -> [r.10, 0., 0.], reporters), arrayMap(r -> [r.11, 0., 0.], reporters), arrayMap(r -> [0., 0., 1.], reporters))])[1]), arrayMap(k -> (k, 1, (0., 0., 0., 0., 0., 0., 0., 0.)), arrayConcat(tupleElement(reporters, 1), tupleElement(reporters, 12), tupleElement(reporters, 13), tupleElement(reporters, 2))))])[1]])[1] AS netted
         FROM (SELECT
           if(rawSessionId = '', concat('trace:', traceId), rawSessionId) AS sessionId,
-          argMin(vendorId, vendorAt) AS vendorId,
-          argMin(vendorVersion, vendorAt) AS vendorVersion,
           toString(min(traceAgentStart)) AS agentStart,
           toString(fromUnixTimestamp64Nano(max(traceAgentEndNanos))) AS agentEnd,
+          sum(toolCalls) AS toolCalls,
+          sum(errorAgentSpans) AS errorAgentSpans,
+          intDiv(max(traceAgentEndNanos) - toUnixTimestamp64Nano(min(traceAgentStart)), 1000000) AS agentDurationMs,
+          argMin(vendorId, vendorAt) AS vendorId,
+          argMin(vendorVersion, vendorAt) AS vendorVersion,
           count() AS traceCount,
           sum(agentSpanCount) AS spanCount,
           groupUniqArrayArray(serviceNames) AS serviceNames,
           groupUniqArrayArray(models) AS models,
           groupUniqArrayArray(agentNames) AS agentNames,
           argMin(firstAgentName, firstAgentAt) AS firstAgentName,
-          sum(toolCalls) AS toolCalls,
-          sum(errorAgentSpans) AS errorAgentSpans,
           sum(arrayCount(f -> f.3 = 1 AND NOT has(tupleElement(failedSpans, 2), f.1), failedSpans)) AS toolErrors,
           sum(arrayCount(f -> f.3 != 1 AND NOT has(tupleElement(failedSpans, 2), f.1), failedSpans)) AS turnErrors,
-          intDiv(max(traceAgentEndNanos) - toUnixTimestamp64Nano(min(traceAgentStart)), 1000000) AS agentDurationMs,
           groupArrayArray(2000)(usageReporters) AS reporters
         FROM (SELECT
           TraceId AS traceId,
           max(SessionId) AS rawSessionId,
+          min(Timestamp) AS traceAgentStart,
+          max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceAgentEndNanos,
+          sum(IsToolCall) AS toolCalls,
+          sum(IsError) AS errorAgentSpans,
           argMin(VendorId, tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorId,
           argMin(VendorVersion, tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorVersion,
           min(tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorAt,
-          min(Timestamp) AS traceAgentStart,
           max(Timestamp) AS traceAgentEnd,
-          max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceAgentEndNanos,
           count() AS agentSpanCount,
           groupUniqArrayIf(20)(ServiceName, ServiceName != '') AS serviceNames,
           groupUniqArrayIf(20)(Model, Model != '') AS models,
           groupUniqArrayIf(20)(AgentName, AgentName != '') AS agentNames,
           argMin(AgentName, if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentName,
           min(if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentAt,
-          sum(IsToolCall) AS toolCalls,
-          sum(IsError) AS errorAgentSpans,
           groupArrayIf(2000)(tuple(SpanId, ParentSpanId, IsToolCall), IsError = 1) AS failedSpans,
-          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageSpans,
-          groupArrayArray(4000)([tuple(concat('t', SpanId), concat('t', if(Tokens > 0, SpanId, ParentSpanId))), tuple(concat('c', SpanId), concat('c', if(Cost > 0, SpanId, ParentSpanId)))]) AS usageLinks,
-          arrayMap(ancestors -> arrayMap((r, t, c) -> tupleConcat(r, (substring(t, 2), substring(c, 2))), usageSpans, arraySlice(ancestors, 1, length(usageSpans)), arraySlice(ancestors, length(usageSpans) + 1)), [arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, ''), arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, ''), arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, ''), arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, ''), arrayConcat(arrayMap(r -> concat('t', r.2), usageSpans), arrayMap(r -> concat('c', r.2), usageSpans))))])[1]))])[1]))])[1]))])[1]])[1] AS usageReporters
+          groupArrayIf(2000)(tuple(if(SpanId = '', 0, bitShiftRight(cityHash64(SpanId), 1)), if(ParentSpanId = '', 0, bitShiftRight(cityHash64(ParentSpanId), 1)), Tokens, Cost, ResponseId, IsLlmCall, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageSpans,
+          groupArrayArray(4000)([tuple(if(SpanId = '', 0, bitShiftRight(cityHash64(SpanId), 1)) * 2 + 0, if(Tokens > 0, if(SpanId = '', 0, bitShiftRight(cityHash64(SpanId), 1)), if(ParentSpanId = '', 0, bitShiftRight(cityHash64(ParentSpanId), 1))) * 2 + 0), tuple(if(SpanId = '', 0, bitShiftRight(cityHash64(SpanId), 1)) * 2 + 1, if(Cost > 0, if(SpanId = '', 0, bitShiftRight(cityHash64(SpanId), 1)), if(ParentSpanId = '', 0, bitShiftRight(cityHash64(ParentSpanId), 1))) * 2 + 1)]) AS usageLinks,
+          arrayMap(ancestors -> arrayMap((r, t, c) -> tupleConcat(r, (intDiv(t, 2), intDiv(c, 2))), usageSpans, arraySlice(ancestors, 1, length(usageSpans)), arraySlice(ancestors, length(usageSpans) + 1)), [arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, toUInt64(0)), arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, toUInt64(0)), arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, toUInt64(0)), arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, toUInt64(0)), arrayConcat(arrayMap(r -> r.2 * 2, usageSpans), arrayMap(r -> r.2 * 2 + 1, usageSpans))))])[1]))])[1]))])[1]))])[1]])[1] AS usageReporters
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
@@ -589,43 +589,43 @@ SELECT
           arrayMap(charged -> arrayMap((r, own, tokenAncestor, costAncestor, parent) -> tuple(r.5, r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), greatest(0., r.3 - own.1) > 0 OR greatest(0., r.4 - own.2) > 0, tokenAncestor.8 = 0 AND costAncestor.8 = 0 AND parent.8 = 0), if(r.6 = 0 AND own.1 > 0, 0., greatest(0., r.3 - own.1)), if(r.6 = 0 AND own.2 > 0, 0., greatest(0., r.4 - own.2)), if(r.6 = 0 AND own.1 > 0, 0., greatest(0., r.7 - own.3)), if(r.6 = 0 AND own.1 > 0, 0., greatest(0., r.8 - own.4)), if(r.6 = 0 AND own.1 > 0, 0., greatest(0., r.9 - own.5)), if(r.6 = 0 AND own.1 > 0, 0., greatest(0., r.10 - own.6)), if(r.6 = 0 AND own.1 > 0, 0., greatest(0., r.11 - own.7))), reporters, arraySlice(charged, 0 * length(reporters) + 1, length(reporters)), arraySlice(charged, 1 * length(reporters) + 1, length(reporters)), arraySlice(charged, 2 * length(reporters) + 1, length(reporters)), arraySlice(charged, 3 * length(reporters) + 1, length(reporters))), [arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), arrayMap(claims -> arrayZip(claims.1, arrayZip(claims.2, claims.3, claims.4, claims.5, claims.6, claims.7, claims.8, claims.9)), [arrayReduce('sumMap', arrayMap(r -> [r.12, r.13, r.1], reporters), arrayMap(r -> [r.3, 0., 0.], reporters), arrayMap(r -> [0., r.4, 0.], reporters), arrayMap(r -> [r.7, 0., 0.], reporters), arrayMap(r -> [r.8, 0., 0.], reporters), arrayMap(r -> [r.9, 0., 0.], reporters), arrayMap(r -> [r.10, 0., 0.], reporters), arrayMap(r -> [r.11, 0., 0.], reporters), arrayMap(r -> [0., 0., 1.], reporters))])[1]), arrayMap(k -> (k, 1, (0., 0., 0., 0., 0., 0., 0., 0.)), arrayConcat(tupleElement(reporters, 1), tupleElement(reporters, 12), tupleElement(reporters, 13), tupleElement(reporters, 2))))])[1]])[1] AS netted
         FROM (SELECT
           if(rawSessionId = '', concat('trace:', traceId), rawSessionId) AS sessionId,
-          argMin(vendorId, vendorAt) AS vendorId,
-          argMin(vendorVersion, vendorAt) AS vendorVersion,
           toString(min(traceAgentStart)) AS agentStart,
           toString(fromUnixTimestamp64Nano(max(traceAgentEndNanos))) AS agentEnd,
+          sum(toolCalls) AS toolCalls,
+          sum(errorAgentSpans) AS errorAgentSpans,
+          intDiv(max(traceAgentEndNanos) - toUnixTimestamp64Nano(min(traceAgentStart)), 1000000) AS agentDurationMs,
+          argMin(vendorId, vendorAt) AS vendorId,
+          argMin(vendorVersion, vendorAt) AS vendorVersion,
           count() AS traceCount,
           sum(agentSpanCount) AS spanCount,
           groupUniqArrayArray(serviceNames) AS serviceNames,
           groupUniqArrayArray(models) AS models,
           groupUniqArrayArray(agentNames) AS agentNames,
           argMin(firstAgentName, firstAgentAt) AS firstAgentName,
-          sum(toolCalls) AS toolCalls,
-          sum(errorAgentSpans) AS errorAgentSpans,
           sum(arrayCount(f -> f.3 = 1 AND NOT has(tupleElement(failedSpans, 2), f.1), failedSpans)) AS toolErrors,
           sum(arrayCount(f -> f.3 != 1 AND NOT has(tupleElement(failedSpans, 2), f.1), failedSpans)) AS turnErrors,
-          intDiv(max(traceAgentEndNanos) - toUnixTimestamp64Nano(min(traceAgentStart)), 1000000) AS agentDurationMs,
           groupArrayArray(2000)(usageReporters) AS reporters
         FROM (SELECT
           TraceId AS traceId,
           max(SessionId) AS rawSessionId,
+          min(Timestamp) AS traceAgentStart,
+          max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceAgentEndNanos,
+          sum(IsToolCall) AS toolCalls,
+          sum(IsError) AS errorAgentSpans,
           argMin(VendorId, tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorId,
           argMin(VendorVersion, tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorVersion,
           min(tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorAt,
-          min(Timestamp) AS traceAgentStart,
           max(Timestamp) AS traceAgentEnd,
-          max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceAgentEndNanos,
           count() AS agentSpanCount,
           groupUniqArrayIf(20)(ServiceName, ServiceName != '') AS serviceNames,
           groupUniqArrayIf(20)(Model, Model != '') AS models,
           groupUniqArrayIf(20)(AgentName, AgentName != '') AS agentNames,
           argMin(AgentName, if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentName,
           min(if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentAt,
-          sum(IsToolCall) AS toolCalls,
-          sum(IsError) AS errorAgentSpans,
           groupArrayIf(2000)(tuple(SpanId, ParentSpanId, IsToolCall), IsError = 1) AS failedSpans,
-          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageSpans,
-          groupArrayArray(4000)([tuple(concat('t', SpanId), concat('t', if(Tokens > 0, SpanId, ParentSpanId))), tuple(concat('c', SpanId), concat('c', if(Cost > 0, SpanId, ParentSpanId)))]) AS usageLinks,
-          arrayMap(ancestors -> arrayMap((r, t, c) -> tupleConcat(r, (substring(t, 2), substring(c, 2))), usageSpans, arraySlice(ancestors, 1, length(usageSpans)), arraySlice(ancestors, length(usageSpans) + 1)), [arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, ''), arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, ''), arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, ''), arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, ''), arrayConcat(arrayMap(r -> concat('t', r.2), usageSpans), arrayMap(r -> concat('c', r.2), usageSpans))))])[1]))])[1]))])[1]))])[1]])[1] AS usageReporters
+          groupArrayIf(2000)(tuple(if(SpanId = '', 0, bitShiftRight(cityHash64(SpanId), 1)), if(ParentSpanId = '', 0, bitShiftRight(cityHash64(ParentSpanId), 1)), Tokens, Cost, ResponseId, IsLlmCall, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageSpans,
+          groupArrayArray(4000)([tuple(if(SpanId = '', 0, bitShiftRight(cityHash64(SpanId), 1)) * 2 + 0, if(Tokens > 0, if(SpanId = '', 0, bitShiftRight(cityHash64(SpanId), 1)), if(ParentSpanId = '', 0, bitShiftRight(cityHash64(ParentSpanId), 1))) * 2 + 0), tuple(if(SpanId = '', 0, bitShiftRight(cityHash64(SpanId), 1)) * 2 + 1, if(Cost > 0, if(SpanId = '', 0, bitShiftRight(cityHash64(SpanId), 1)), if(ParentSpanId = '', 0, bitShiftRight(cityHash64(ParentSpanId), 1))) * 2 + 1)]) AS usageLinks,
+          arrayMap(ancestors -> arrayMap((r, t, c) -> tupleConcat(r, (intDiv(t, 2), intDiv(c, 2))), usageSpans, arraySlice(ancestors, 1, length(usageSpans)), arraySlice(ancestors, length(usageSpans) + 1)), [arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, toUInt64(0)), arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, toUInt64(0)), arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, toUInt64(0)), arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, toUInt64(0)), arrayConcat(arrayMap(r -> r.2 * 2, usageSpans), arrayMap(r -> r.2 * 2 + 1, usageSpans))))])[1]))])[1]))])[1]))])[1]])[1] AS usageReporters
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
@@ -703,43 +703,43 @@ SELECT
           arrayMap(charged -> arrayMap((r, own, tokenAncestor, costAncestor, parent) -> tuple(r.5, r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), greatest(0., r.3 - own.1) > 0 OR greatest(0., r.4 - own.2) > 0, tokenAncestor.8 = 0 AND costAncestor.8 = 0 AND parent.8 = 0), if(r.6 = 0 AND own.1 > 0, 0., greatest(0., r.3 - own.1)), if(r.6 = 0 AND own.2 > 0, 0., greatest(0., r.4 - own.2)), if(r.6 = 0 AND own.1 > 0, 0., greatest(0., r.7 - own.3)), if(r.6 = 0 AND own.1 > 0, 0., greatest(0., r.8 - own.4)), if(r.6 = 0 AND own.1 > 0, 0., greatest(0., r.9 - own.5)), if(r.6 = 0 AND own.1 > 0, 0., greatest(0., r.10 - own.6)), if(r.6 = 0 AND own.1 > 0, 0., greatest(0., r.11 - own.7))), reporters, arraySlice(charged, 0 * length(reporters) + 1, length(reporters)), arraySlice(charged, 1 * length(reporters) + 1, length(reporters)), arraySlice(charged, 2 * length(reporters) + 1, length(reporters)), arraySlice(charged, 3 * length(reporters) + 1, length(reporters))), [arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), arrayMap(claims -> arrayZip(claims.1, arrayZip(claims.2, claims.3, claims.4, claims.5, claims.6, claims.7, claims.8, claims.9)), [arrayReduce('sumMap', arrayMap(r -> [r.12, r.13, r.1], reporters), arrayMap(r -> [r.3, 0., 0.], reporters), arrayMap(r -> [0., r.4, 0.], reporters), arrayMap(r -> [r.7, 0., 0.], reporters), arrayMap(r -> [r.8, 0., 0.], reporters), arrayMap(r -> [r.9, 0., 0.], reporters), arrayMap(r -> [r.10, 0., 0.], reporters), arrayMap(r -> [r.11, 0., 0.], reporters), arrayMap(r -> [0., 0., 1.], reporters))])[1]), arrayMap(k -> (k, 1, (0., 0., 0., 0., 0., 0., 0., 0.)), arrayConcat(tupleElement(reporters, 1), tupleElement(reporters, 12), tupleElement(reporters, 13), tupleElement(reporters, 2))))])[1]])[1] AS netted
         FROM (SELECT
           if(rawSessionId = '', concat('trace:', traceId), rawSessionId) AS sessionId,
-          argMin(vendorId, vendorAt) AS vendorId,
-          argMin(vendorVersion, vendorAt) AS vendorVersion,
           toString(min(traceAgentStart)) AS agentStart,
           toString(fromUnixTimestamp64Nano(max(traceAgentEndNanos))) AS agentEnd,
+          sum(toolCalls) AS toolCalls,
+          sum(errorAgentSpans) AS errorAgentSpans,
+          intDiv(max(traceAgentEndNanos) - toUnixTimestamp64Nano(min(traceAgentStart)), 1000000) AS agentDurationMs,
+          argMin(vendorId, vendorAt) AS vendorId,
+          argMin(vendorVersion, vendorAt) AS vendorVersion,
           count() AS traceCount,
           sum(agentSpanCount) AS spanCount,
           groupUniqArrayArray(serviceNames) AS serviceNames,
           groupUniqArrayArray(models) AS models,
           groupUniqArrayArray(agentNames) AS agentNames,
           argMin(firstAgentName, firstAgentAt) AS firstAgentName,
-          sum(toolCalls) AS toolCalls,
-          sum(errorAgentSpans) AS errorAgentSpans,
           sum(arrayCount(f -> f.3 = 1 AND NOT has(tupleElement(failedSpans, 2), f.1), failedSpans)) AS toolErrors,
           sum(arrayCount(f -> f.3 != 1 AND NOT has(tupleElement(failedSpans, 2), f.1), failedSpans)) AS turnErrors,
-          intDiv(max(traceAgentEndNanos) - toUnixTimestamp64Nano(min(traceAgentStart)), 1000000) AS agentDurationMs,
           groupArrayArray(2000)(usageReporters) AS reporters
         FROM (SELECT
           TraceId AS traceId,
           max(SessionId) AS rawSessionId,
+          min(Timestamp) AS traceAgentStart,
+          max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceAgentEndNanos,
+          sum(IsToolCall) AS toolCalls,
+          sum(IsError) AS errorAgentSpans,
           argMin(VendorId, tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorId,
           argMin(VendorVersion, tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorVersion,
           min(tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorAt,
-          min(Timestamp) AS traceAgentStart,
           max(Timestamp) AS traceAgentEnd,
-          max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceAgentEndNanos,
           count() AS agentSpanCount,
           groupUniqArrayIf(20)(ServiceName, ServiceName != '') AS serviceNames,
           groupUniqArrayIf(20)(Model, Model != '') AS models,
           groupUniqArrayIf(20)(AgentName, AgentName != '') AS agentNames,
           argMin(AgentName, if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentName,
           min(if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentAt,
-          sum(IsToolCall) AS toolCalls,
-          sum(IsError) AS errorAgentSpans,
           groupArrayIf(2000)(tuple(SpanId, ParentSpanId, IsToolCall), IsError = 1) AS failedSpans,
-          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageSpans,
-          groupArrayArray(4000)([tuple(concat('t', SpanId), concat('t', if(Tokens > 0, SpanId, ParentSpanId))), tuple(concat('c', SpanId), concat('c', if(Cost > 0, SpanId, ParentSpanId)))]) AS usageLinks,
-          arrayMap(ancestors -> arrayMap((r, t, c) -> tupleConcat(r, (substring(t, 2), substring(c, 2))), usageSpans, arraySlice(ancestors, 1, length(usageSpans)), arraySlice(ancestors, length(usageSpans) + 1)), [arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, ''), arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, ''), arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, ''), arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, ''), arrayConcat(arrayMap(r -> concat('t', r.2), usageSpans), arrayMap(r -> concat('c', r.2), usageSpans))))])[1]))])[1]))])[1]))])[1]])[1] AS usageReporters
+          groupArrayIf(2000)(tuple(if(SpanId = '', 0, bitShiftRight(cityHash64(SpanId), 1)), if(ParentSpanId = '', 0, bitShiftRight(cityHash64(ParentSpanId), 1)), Tokens, Cost, ResponseId, IsLlmCall, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageSpans,
+          groupArrayArray(4000)([tuple(if(SpanId = '', 0, bitShiftRight(cityHash64(SpanId), 1)) * 2 + 0, if(Tokens > 0, if(SpanId = '', 0, bitShiftRight(cityHash64(SpanId), 1)), if(ParentSpanId = '', 0, bitShiftRight(cityHash64(ParentSpanId), 1))) * 2 + 0), tuple(if(SpanId = '', 0, bitShiftRight(cityHash64(SpanId), 1)) * 2 + 1, if(Cost > 0, if(SpanId = '', 0, bitShiftRight(cityHash64(SpanId), 1)), if(ParentSpanId = '', 0, bitShiftRight(cityHash64(ParentSpanId), 1))) * 2 + 1)]) AS usageLinks,
+          arrayMap(ancestors -> arrayMap((r, t, c) -> tupleConcat(r, (intDiv(t, 2), intDiv(c, 2))), usageSpans, arraySlice(ancestors, 1, length(usageSpans)), arraySlice(ancestors, length(usageSpans) + 1)), [arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, toUInt64(0)), arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, toUInt64(0)), arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, toUInt64(0)), arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, toUInt64(0)), arrayConcat(arrayMap(r -> r.2 * 2, usageSpans), arrayMap(r -> r.2 * 2 + 1, usageSpans))))])[1]))])[1]))])[1]))])[1]])[1] AS usageReporters
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
@@ -753,6 +753,134 @@ SELECT
         LIMIT 25
         OFFSET 25) AS ranked_sessions) AS netted_sessions
         ORDER BY agentStart DESC, sessionId ASC
+        FORMAT JSON
+
+-- builder:ai-sessions:aiSessionPageQuery:ranked
+SELECT
+          sessionId AS sessionId,
+          vendorId AS vendorId,
+          vendorVersion AS vendorVersion,
+          agentStart AS agentStart,
+          agentEnd AS agentEnd,
+          traceCount AS traceCount,
+          spanCount AS spanCount,
+          serviceNames AS serviceNames,
+          models AS models,
+          agentNames AS agentNames,
+          firstAgentName AS firstAgentName,
+          toolCalls AS toolCalls,
+          errorAgentSpans AS errorAgentSpans,
+          toolErrors AS toolErrors,
+          turnErrors AS turnErrors,
+          agentDurationMs AS agentDurationMs,
+          toFloat64(arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 2)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, toFloat64(n.2)), arrayFilter(n -> n.1 != '', netted)))))) AS llmCalls,
+          arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 3)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.3), arrayFilter(n -> n.1 != '', netted))))) AS totalTokens,
+          arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 4)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.4), arrayFilter(n -> n.1 != '', netted))))) AS cost,
+          arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 5)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.5), arrayFilter(n -> n.1 != '', netted))))) AS inputTokens,
+          arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 6)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.6), arrayFilter(n -> n.1 != '', netted))))) AS cacheReadTokens,
+          arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 7)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.7), arrayFilter(n -> n.1 != '', netted))))) AS cacheWriteTokens,
+          arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 8)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.8), arrayFilter(n -> n.1 != '', netted))))) AS outputTokens,
+          arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 9)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.9), arrayFilter(n -> n.1 != '', netted))))) AS reasoningTokens
+        FROM (SELECT
+          sessionId AS sessionId,
+          vendorId AS vendorId,
+          vendorVersion AS vendorVersion,
+          agentStart AS agentStart,
+          agentEnd AS agentEnd,
+          traceCount AS traceCount,
+          spanCount AS spanCount,
+          serviceNames AS serviceNames,
+          models AS models,
+          agentNames AS agentNames,
+          firstAgentName AS firstAgentName,
+          toolCalls AS toolCalls,
+          errorAgentSpans AS errorAgentSpans,
+          toolErrors AS toolErrors,
+          turnErrors AS turnErrors,
+          agentDurationMs AS agentDurationMs,
+          arrayMap(charged -> arrayMap((r, own, tokenAncestor, costAncestor, parent) -> tuple(r.5, r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), greatest(0., r.3 - own.1) > 0 OR greatest(0., r.4 - own.2) > 0, tokenAncestor.8 = 0 AND costAncestor.8 = 0 AND parent.8 = 0), if(r.6 = 0 AND own.1 > 0, 0., greatest(0., r.3 - own.1)), if(r.6 = 0 AND own.2 > 0, 0., greatest(0., r.4 - own.2)), if(r.6 = 0 AND own.1 > 0, 0., greatest(0., r.7 - own.3)), if(r.6 = 0 AND own.1 > 0, 0., greatest(0., r.8 - own.4)), if(r.6 = 0 AND own.1 > 0, 0., greatest(0., r.9 - own.5)), if(r.6 = 0 AND own.1 > 0, 0., greatest(0., r.10 - own.6)), if(r.6 = 0 AND own.1 > 0, 0., greatest(0., r.11 - own.7))), reporters, arraySlice(charged, 0 * length(reporters) + 1, length(reporters)), arraySlice(charged, 1 * length(reporters) + 1, length(reporters)), arraySlice(charged, 2 * length(reporters) + 1, length(reporters)), arraySlice(charged, 3 * length(reporters) + 1, length(reporters))), [arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), arrayMap(claims -> arrayZip(claims.1, arrayZip(claims.2, claims.3, claims.4, claims.5, claims.6, claims.7, claims.8, claims.9)), [arrayReduce('sumMap', arrayMap(r -> [r.12, r.13, r.1], reporters), arrayMap(r -> [r.3, 0., 0.], reporters), arrayMap(r -> [0., r.4, 0.], reporters), arrayMap(r -> [r.7, 0., 0.], reporters), arrayMap(r -> [r.8, 0., 0.], reporters), arrayMap(r -> [r.9, 0., 0.], reporters), arrayMap(r -> [r.10, 0., 0.], reporters), arrayMap(r -> [r.11, 0., 0.], reporters), arrayMap(r -> [0., 0., 1.], reporters))])[1]), arrayMap(k -> (k, 1, (0., 0., 0., 0., 0., 0., 0., 0.)), arrayConcat(tupleElement(reporters, 1), tupleElement(reporters, 12), tupleElement(reporters, 13), tupleElement(reporters, 2))))])[1]])[1] AS netted
+        FROM (SELECT
+          if(rawSessionId = '', concat('trace:', traceId), rawSessionId) AS sessionId,
+          toString(min(traceAgentStart)) AS agentStart,
+          toString(fromUnixTimestamp64Nano(max(traceAgentEndNanos))) AS agentEnd,
+          sum(toolCalls) AS toolCalls,
+          sum(errorAgentSpans) AS errorAgentSpans,
+          intDiv(max(traceAgentEndNanos) - toUnixTimestamp64Nano(min(traceAgentStart)), 1000000) AS agentDurationMs,
+          argMin(vendorId, vendorAt) AS vendorId,
+          argMin(vendorVersion, vendorAt) AS vendorVersion,
+          count() AS traceCount,
+          sum(agentSpanCount) AS spanCount,
+          groupUniqArrayArray(serviceNames) AS serviceNames,
+          groupUniqArrayArray(models) AS models,
+          groupUniqArrayArray(agentNames) AS agentNames,
+          argMin(firstAgentName, firstAgentAt) AS firstAgentName,
+          sum(arrayCount(f -> f.3 = 1 AND NOT has(tupleElement(failedSpans, 2), f.1), failedSpans)) AS toolErrors,
+          sum(arrayCount(f -> f.3 != 1 AND NOT has(tupleElement(failedSpans, 2), f.1), failedSpans)) AS turnErrors,
+          groupArrayArray(2000)(usageReporters) AS reporters
+        FROM (SELECT
+          TraceId AS traceId,
+          max(SessionId) AS rawSessionId,
+          min(Timestamp) AS traceAgentStart,
+          max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceAgentEndNanos,
+          sum(IsToolCall) AS toolCalls,
+          sum(IsError) AS errorAgentSpans,
+          argMin(VendorId, tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorId,
+          argMin(VendorVersion, tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorVersion,
+          min(tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorAt,
+          max(Timestamp) AS traceAgentEnd,
+          count() AS agentSpanCount,
+          groupUniqArrayIf(20)(ServiceName, ServiceName != '') AS serviceNames,
+          groupUniqArrayIf(20)(Model, Model != '') AS models,
+          groupUniqArrayIf(20)(AgentName, AgentName != '') AS agentNames,
+          argMin(AgentName, if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentName,
+          min(if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentAt,
+          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, IsToolCall), IsError = 1) AS failedSpans,
+          groupArrayIf(2000)(tuple(if(SpanId = '', 0, bitShiftRight(cityHash64(SpanId), 1)), if(ParentSpanId = '', 0, bitShiftRight(cityHash64(ParentSpanId), 1)), Tokens, Cost, ResponseId, IsLlmCall, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageSpans,
+          groupArrayArray(4000)([tuple(if(SpanId = '', 0, bitShiftRight(cityHash64(SpanId), 1)) * 2 + 0, if(Tokens > 0, if(SpanId = '', 0, bitShiftRight(cityHash64(SpanId), 1)), if(ParentSpanId = '', 0, bitShiftRight(cityHash64(ParentSpanId), 1))) * 2 + 0), tuple(if(SpanId = '', 0, bitShiftRight(cityHash64(SpanId), 1)) * 2 + 1, if(Cost > 0, if(SpanId = '', 0, bitShiftRight(cityHash64(SpanId), 1)), if(ParentSpanId = '', 0, bitShiftRight(cityHash64(ParentSpanId), 1))) * 2 + 1)]) AS usageLinks,
+          arrayMap(ancestors -> arrayMap((r, t, c) -> tupleConcat(r, (intDiv(t, 2), intDiv(c, 2))), usageSpans, arraySlice(ancestors, 1, length(usageSpans)), arraySlice(ancestors, length(usageSpans) + 1)), [arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, toUInt64(0)), arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, toUInt64(0)), arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, toUInt64(0)), arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), usageLinks), arrayMap(k -> (k, 1, toUInt64(0)), arrayConcat(arrayMap(r -> r.2 * 2, usageSpans), arrayMap(r -> r.2 * 2 + 1, usageSpans))))])[1]))])[1]))])[1]))])[1]])[1] AS usageReporters
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-02 10:30:00'
+          AND Timestamp <= '2026-01-02 12:30:00'
+        GROUP BY traceId
+        HAVING countIf((((SessionId != '' OR IsLlmCall = 1) OR IsToolCall = 1) OR AgentName != '')) > 0
+          AND if(max(SessionId) = '', concat('trace:', TraceId), max(SessionId)) IN ('wrun_sql_catalog', 'trace:7f3a4b5c6d7e8f901234567890abcdef')
+          AND countIf(VendorId IN ('eve')) > 0) AS index_traces
+        GROUP BY sessionId) AS ranked_sessions) AS netted_sessions
+        ORDER BY agentDurationMs DESC, agentStart DESC, sessionId ASC
+        FORMAT JSON
+
+-- builder:ai-sessions:aiSessionRankQuery:filtered
+SELECT
+          sessionId AS sessionId,
+          agentStart AS agentStart,
+          agentEnd AS agentEnd
+        FROM (SELECT
+          if(rawSessionId = '', concat('trace:', traceId), rawSessionId) AS sessionId,
+          toString(min(traceAgentStart)) AS agentStart,
+          toString(fromUnixTimestamp64Nano(max(traceAgentEndNanos))) AS agentEnd,
+          sum(toolCalls) AS toolCalls,
+          sum(errorAgentSpans) AS errorAgentSpans,
+          intDiv(max(traceAgentEndNanos) - toUnixTimestamp64Nano(min(traceAgentStart)), 1000000) AS agentDurationMs
+        FROM (SELECT
+          TraceId AS traceId,
+          max(SessionId) AS rawSessionId,
+          min(Timestamp) AS traceAgentStart,
+          max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceAgentEndNanos,
+          sum(IsToolCall) AS toolCalls,
+          sum(IsError) AS errorAgentSpans
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+        GROUP BY traceId
+        HAVING countIf((((SessionId != '' OR IsLlmCall = 1) OR IsToolCall = 1) OR AgentName != '')) > 0
+          AND countIf(VendorId IN ('eve')) > 0) AS index_traces
+        GROUP BY sessionId
+        HAVING errorAgentSpans > 0
+        ORDER BY agentDurationMs DESC, agentStart DESC, sessionId ASC
+        LIMIT 25
+        OFFSET 25) AS ranked_sessions
         FORMAT JSON
 
 -- builder:ai-sessions:aiSessionSpansQuery:ai-scope-after-cursor
