@@ -242,8 +242,8 @@ describe("remote MCP operations map onto local output shapes", () => {
 		}
 		const keys = await run((mcp) => RemoteMcp.attributeKeys(mcp, { source: "services", range: RANGE }))
 		expect(keys).toEqual([
-			{ key: "production", count: 3, facetType: "environment" },
-			{ key: "abc123", count: 1, facetType: "commit_sha" },
+			{ key: "environment:production", count: 3, facetType: "environment" },
+			{ key: "commit_sha:abc123", count: 1, facetType: "commit_sha" },
 		])
 	})
 

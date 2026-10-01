@@ -281,12 +281,12 @@ export const attributeKeys = (
 			p.source === "services"
 				? [
 						...(out.environments ?? []).map((e) => ({
-							key: e.name,
+							key: `environment:${e.name}`,
 							count: e.count,
 							facetType: "environment",
 						})),
 						...(out.commitShas ?? []).map((c) => ({
-							key: c.name,
+							key: `commit_sha:${c.name}`,
 							count: c.count,
 							facetType: "commit_sha",
 						})),
