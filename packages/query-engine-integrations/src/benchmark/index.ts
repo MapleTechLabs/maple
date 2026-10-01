@@ -154,7 +154,7 @@ export const integrationFixtures: ReadonlyArray<IntegrationFixture> = [
 					vendorIds: ["eve"],
 					sortBy: "durationMs",
 				}),
-				aiPageBounds,
+				{ ...aiPageBounds, endTime: window.endTime },
 			),
 	},
 	{

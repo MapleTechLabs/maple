@@ -166,7 +166,12 @@ const resolveRead = Effect.fnUntraced(function* (
 	return yield* resolveAiSessionWindow(tenant, payload.sessionId)
 })
 
-type PageBounds = { readonly orgId: string; readonly fanOutStart: string; readonly fanOutEnd: string }
+type PageBounds = {
+	readonly orgId: string
+	readonly fanOutStart: string
+	readonly fanOutEnd: string
+	readonly endTime: string
+}
 
 export const listAiSessions = Effect.fn("aiSessions.list")(function* (
 	tenant: TenantContext,
@@ -232,6 +237,7 @@ export const listAiSessions = Effect.fn("aiSessions.list")(function* (
 						// Fixed-width literals, so they order as the instants do.
 						fanOutStart: ranked.map((row) => row.agentStart).reduce((a, b) => (a < b ? a : b)),
 						fanOutEnd: ranked.map((row) => row.agentEnd).reduce((a, b) => (a > b ? a : b)),
+						endTime: payload.endTime,
 					},
 				)
 			})

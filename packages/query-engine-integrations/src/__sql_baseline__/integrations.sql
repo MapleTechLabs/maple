@@ -842,6 +842,7 @@ SELECT
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-02 10:30:00'
           AND Timestamp <= '2026-01-02 12:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
         GROUP BY traceId
         HAVING countIf((((SessionId != '' OR IsLlmCall = 1) OR IsToolCall = 1) OR AgentName != '')) > 0
           AND if(max(SessionId) = '', concat('trace:', TraceId), max(SessionId)) IN ('wrun_sql_catalog', 'trace:7f3a4b5c6d7e8f901234567890abcdef')

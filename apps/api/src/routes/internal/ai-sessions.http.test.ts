@@ -499,6 +499,7 @@ describe("POST /internal/ai-sessions/list", () => {
 			expect(page).toContain("IN ('wrun_beta', 'wrun_alpha', 'trace:")
 			expect(page).toContain("Timestamp >= '2026-08-19 09:50:00.000000000'")
 			expect(page).toContain("Timestamp <= '2026-08-19 10:40:00.000000000'")
+			expect(page).toContain(`Timestamp <= '${WINDOW.endTime}'`)
 			expect(page).not.toContain("LIMIT")
 		} finally {
 			await harness.dispose()

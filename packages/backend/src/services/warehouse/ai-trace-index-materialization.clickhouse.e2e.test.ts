@@ -1181,17 +1181,27 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 	it("reads a ranked page to the same rows as the one read that ranks and nets together", async () => {
 		// The list's two reads: which sessions, over the window; then their rows,
 		// over the extent of the ranked sessions alone.
-		for (const orgId of [ORG_ID, NETTING_ORG_ID]) {
+		// The second window ends inside the second Strands turn, after its
+		// event-loop span started and before that span ended: the chat beneath
+		// it starts past the window, and no read may count it.
+		const windows = [WINDOW, { ...WINDOW, endTime: chDateTime(BASE_MS + 410_001) }]
+		for (const [orgId, bounds] of [ORG_ID, NETTING_ORG_ID].flatMap((org) =>
+			windows.map((window) => [org, window] as const),
+		)) {
 			for (const opts of [
 				{},
 				{ limit: 1 },
 				{ limit: 1, offset: 1 },
 				{ sortBy: "durationMs" },
 			] as const) {
-				const window = { ...WINDOW, orgId }
+				const window = { ...bounds, orgId }
 				const whole = compileUnsafe(Integrations.aiSessionPageQuery(opts), window)
 				const rank = compileUnsafe(Integrations.aiSessionRankQuery(opts), window)
 				const ranked = Effect.runSync(rank.decodeRows(await runJson(rank.sql)))
+				if (ranked.length === 0) {
+					assert.deepStrictEqual(await runJson(whole.sql), [])
+					continue
+				}
 				const rows = compileUnsafe(
 					Integrations.aiSessionPageQuery({
 						...opts,
@@ -1204,6 +1214,7 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 							.map((row) => row.agentEnd)
 							.sort()
 							.at(-1)!,
+						endTime: window.endTime,
 					},
 				)
 				// Sets come back in no order; everything else must match as it is.

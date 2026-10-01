@@ -365,8 +365,8 @@ export interface AiSessionPageOpts extends AiSessionFilterOpts {
 	/**
 	 * The page to read, as `aiSessionRankQuery` ranked it under the same
 	 * filters: the read then covers these sessions alone, over the page's own
-	 * bounds (`fanOutStart`/`fanOutEnd`) rather than the caller's window, and
-	 * neither pages nor filters again. Never empty — see `AiSessionDetailsOpts`.
+	 * bounds (`fanOutStart`/`fanOutEnd`) and never past the window's `endTime`,
+	 * and neither pages nor filters again. Never empty — see `AiSessionDetailsOpts`.
 	 */
 	readonly sessionIds?: readonly string[]
 }
@@ -550,6 +550,10 @@ const indexTracesOf = <Row extends { readonly traceId: CH.Expr<string> }>(
 			$.OrgId.eq(param.string("orgId")),
 			$.Timestamp.gte(param.dateTimeString(bounds === "window" ? "startTime" : "fanOutStart")),
 			$.Timestamp.lte(param.dateTimeString(bounds === "window" ? "endTime" : "fanOutEnd")),
+			// A ranked page's rows are the window's: `fanOutEnd` is where the
+			// page's last span ENDED, and a span that started past the window
+			// but before that is one the ranking never counted.
+			CH.when(sessionIds, () => $.Timestamp.lte(param.dateTimeString("endTime"))),
 		])
 		.groupBy("traceId")
 		.having(($) => [

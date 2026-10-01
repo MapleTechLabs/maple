@@ -374,6 +374,7 @@ describe("aiSessionPageQuery", () => {
 			orgId: params.orgId,
 			fanOutStart: "2026-08-19 10:00:00",
 			fanOutEnd: "2026-08-19 11:00:00",
+			endTime: "2026-08-19 10:45:00",
 		}
 		const { sql } = compileUnsafe(
 			aiSessionPageQuery({
@@ -386,6 +387,8 @@ describe("aiSessionPageQuery", () => {
 		)
 		expect(sql).toContain(`Timestamp >= '${bounds.fanOutStart}'`)
 		expect(sql).toContain(`Timestamp <= '${bounds.fanOutEnd}'`)
+		// The page's last span may end past the window; none may start past it.
+		expect(sql).toContain(`Timestamp <= '${bounds.endTime}'`)
 		// Per trace and before the select list, so no other session is netted.
 		expect(sql).toContain(
 			"AND if(max(SessionId) = '', concat('trace:', TraceId), max(SessionId)) IN ('wrun_a', 'trace:abc')",
