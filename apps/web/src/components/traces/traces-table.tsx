@@ -456,7 +456,7 @@ function TracesTableView({
 				 * only column that should flex.
 				 */}
 				<table className="w-full table-fixed caption-bottom text-sm" aria-label="Traces">
-					<thead className="[&_tr]:border-b sticky top-0 z-10 bg-background">
+					<thead className="[&_tr]:border-b sticky top-0 z-20 bg-background">
 						{table.getHeaderGroups().map((headerGroup) => (
 							<tr key={headerGroup.id} className="border-b transition-colors hover:bg-muted/50">
 								{headerGroup.headers.map((header) => (
