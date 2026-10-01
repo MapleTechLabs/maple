@@ -76,7 +76,7 @@ import {
 	type DirtyStorePolicy,
 	hostedDashboardUrl,
 	hostedUiOrigin,
-	ingestedSince,
+	storeChangedSince,
 	isProcessAlive,
 	LocalStatus,
 	mapleCommand,
@@ -852,8 +852,8 @@ const takeCheckpointQuietly = (
  *
  * `BACKUP` runs on the server's own JS thread and stalls ingest and queries
  * while it runs, so an idle server skips it: once this process has a
- * checkpoint, a tick with nothing ingested since that checkpoint started
- * (`/local/status` `lastIngestAtMs`) has nothing new to protect. Consecutive
+ * checkpoint, a tick with nothing ingested or deleted since that checkpoint
+ * started (`/local/status` `lastIngestAtMs`/`lastDeleteAtMs`) has nothing new to protect. Consecutive
  * failures back the interval off (`checkpointRefreshBackoff`).
  */
 const checkpointRefreshLoop = (
@@ -877,9 +877,8 @@ const checkpointRefreshLoop = (
 			yield* Effect.sleep(backoff.delay)
 			if (lastTakenAtMs !== undefined) {
 				const status = yield* fetchLocalStatus(statusUrl, "5 seconds")
-				const lastIngestAtMs = Option.isSome(status) ? status.value.lastIngestAtMs : undefined
-				if (!ingestedSince(lastIngestAtMs, lastTakenAtMs)) {
-					debugLog("checkpoint refresh skipped", "nothing ingested since the last checkpoint")
+				if (!storeChangedSince(Option.getOrUndefined(status), lastTakenAtMs)) {
+					debugLog("checkpoint refresh skipped", "nothing ingested or deleted since the last checkpoint")
 					continue
 				}
 			}

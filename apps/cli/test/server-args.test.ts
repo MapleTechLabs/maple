@@ -8,6 +8,7 @@ import {
 	defaultDataDir,
 	defaultLocalUrl,
 	ingestedSince,
+	storeChangedSince,
 	mapleCommand,
 	parseElapsedSeconds,
 	prettyPath,
@@ -240,6 +241,14 @@ describe("checkpoint refresh skip", () => {
 		strictEqual(ingestedSince(999, 1_000), false)
 		strictEqual(ingestedSince(1_000, 1_000), true)
 		strictEqual(ingestedSince(undefined, 1_000), true) // status unknown: take it
+	})
+
+	it("also refreshes after a scoped delete, so restore points drop the deleted rows", () => {
+		const status = { service: "maple-local", pid: 1, version: "x", url: "", dataDir: "" } as const
+		strictEqual(storeChangedSince({ ...status, lastIngestAtMs: null }, 1_000), false)
+		strictEqual(storeChangedSince({ ...status, lastIngestAtMs: null, lastDeleteAtMs: 1_000 }, 1_000), true)
+		strictEqual(storeChangedSince({ ...status, lastIngestAtMs: 999, lastDeleteAtMs: 999 }, 1_000), false)
+		strictEqual(storeChangedSince(undefined, 1_000), true)
 	})
 })
 

@@ -38,7 +38,8 @@ import {
 	decodeTraceRequest,
 	encodeExportResponse,
 } from "./otlp/proto"
-import { CURRENT_LOCAL_SCHEMA, LOCAL_SCHEMA_SQL, SCHEMA_FINGERPRINT } from "./schema-identity"
+import { CURRENT_LOCAL_SCHEMA, LOCAL_SCHEMA_MANIFEST, LOCAL_SCHEMA_SQL, SCHEMA_FINGERPRINT } from "./schema-identity"
+import { resumePendingDelete, runScopedDelete, ScopedDeleteRequest } from "./scoped-delete"
 import { assertCurrentPhysicalSchema } from "./schema-physical"
 import {
 	countArrayRows,
@@ -610,6 +611,8 @@ interface ServerStatus {
 	url: string
 	readonly dataDir: string
 	lastIngestAtMs: number | null
+	/** Last scoped delete that may have changed the store; checkpoint refresh reads it. */
+	lastDeleteAtMs: number | null
 }
 
 /** OTLP-ingest request as a `Server`-kind span, mirroring the Rust gateway
@@ -943,6 +946,44 @@ const MAX_CHECKPOINT_BODY_BYTES = 4 * 1024
 const MAX_PROJECTION_BODY_BYTES = 512 * 1024
 const MAX_CONSUMER_BODY_BYTES = 16 * 1024
 const MAX_RETIREMENT_BODY_BYTES = 16 * 1024
+const MAX_DELETE_BODY_BYTES = 16 * 1024
+
+const ScopedDeleteBody = Schema.Struct({ ...ScopedDeleteRequest.fields, dryRun: Schema.Boolean })
+
+/** `maple delete`: removes one service's rows from raw and derived tables while admission is closed. */
+const handleScopedDelete = (
+	db: Chdb,
+	dataDir: string,
+	gate: RequestQuiescenceGate,
+	status: ServerStatus,
+	token: string,
+	req: Request,
+): Effect.Effect<Response> => {
+	if (!maintenanceTokenMatches(token, req.headers.get("x-maple-maintenance-token")))
+		return Effect.succeed(text("maintenance authorization required", 403))
+	return Effect.gen(function* () {
+		const body = yield* readBoundedJson(req, MAX_DELETE_BODY_BYTES)
+		const decoded = Schema.decodeUnknownResult(ScopedDeleteBody, { onExcessProperty: "error" })(body)
+		if (Result.isFailure(decoded)) return text("invalid delete fields", 400)
+		const { dryRun, ...request } = decoded.success
+		const work = runScopedDelete(db, LOCAL_SCHEMA_MANIFEST, dataDir, request, { dryRun })
+		const report = yield* gate.exclusiveEffect(
+			dryRun
+				? work
+				: // Even a failed delete may have changed rows, so the next checkpoint refresh must run.
+					work.pipe(Effect.ensuring(Effect.sync(() => (status.lastDeleteAtMs = Date.now())))),
+		)
+		return json(report)
+	}).pipe(
+		Effect.catchTags({
+			"@maple/cli/MaintenanceInProgress": (error) => Effect.succeed(text(error.message, 409)),
+			"@maple/cli/RequestBodyTooLarge": (error) => Effect.succeed(text(error.message, 413)),
+			"@maple/cli/InvalidJsonBody": () => Effect.succeed(text("invalid JSON body", 400)),
+			"@maple/cli/ScopedDeleteError": (error) =>
+				Effect.succeed(text(`scoped delete failed: ${error.message}`, 409)),
+		}),
+	)
+}
 
 /** The chDB half of a checkpoint backup failed. */
 class CheckpointBackupFailed extends Schema.TaggedError<CheckpointBackupFailed>()(
@@ -1315,6 +1356,7 @@ const statusResponse = (status: ServerStatus): Response =>
 		url: status.url,
 		dataDir: status.dataDir,
 		lastIngestAtMs: status.lastIngestAtMs,
+		lastDeleteAtMs: status.lastDeleteAtMs,
 	})
 
 /** The `Bun.serve` fetch handler, closed over the chDB connection. Each ingest
@@ -1377,6 +1419,12 @@ const makeFetch =
 				return respond(await runSpan(handleConsumerClaim(gate, consumerToken, req)))
 			if (url.pathname === "/local/eventing/acks")
 				return respond(await runSpan(handleConsumerAcknowledgement(gate, consumerToken, req)))
+			if (url.pathname === "/local/maintenance/delete")
+				return respond(
+					await runSpan(
+						handleScopedDelete(db, options.dataDir, gate, context.status, maintenanceToken, req),
+					),
+				)
 			if (url.pathname === "/local/retention/retire")
 				return respond(await handleRetirement(db, authority, gate, maintenanceToken, req))
 		}
@@ -1531,6 +1579,13 @@ export const startServer = (
 					message: `failed to enforce retired-day authority: ${describeThrown(error)}`,
 				}),
 		})
+		// A delete that failed or crashed midway is journaled; finish it before
+		// serving. A failure keeps the journal for the next `maple delete` to resume.
+		yield* resumePendingDelete(db, LOCAL_SCHEMA_MANIFEST, options.dataDir).pipe(
+			Effect.catchTag("@maple/cli/ScopedDeleteError", (error) =>
+				Effect.logWarning(`interrupted scoped delete is still pending: ${error.message}`),
+			),
+		)
 		const maintenanceToken = yield* Effect.tryPromise({
 			try: () => ensureMaintenanceToken(options.dataDir),
 			catch: (error) =>
@@ -1560,7 +1615,7 @@ export const startServer = (
 					),
 				),
 		)
-		const status: ServerStatus = { url: "", dataDir: resolve(options.dataDir), lastIngestAtMs: null }
+		const status: ServerStatus = { url: "", dataDir: resolve(options.dataDir), lastIngestAtMs: null, lastDeleteAtMs: null }
 		const server = yield* Effect.acquireRelease(
 			Effect.try({
 				try: () =>
@@ -1622,6 +1677,7 @@ export const __testables = {
 	handleConsumerRegistration,
 	handleCheckpointBackup,
 	handleEventingRead,
+	handleScopedDelete,
 	handleProjectionActivation,
 	ingest,
 	readBoundedJson,

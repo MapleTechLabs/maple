@@ -12,6 +12,7 @@ import { use } from "./commands/config"
 import { start, stop, reset, checkpoint, restore } from "./commands/server"
 import { schema } from "./commands/schema"
 import { archive } from "./commands/archive"
+import { deleteCommand } from "./commands/delete"
 import { update } from "./commands/update"
 import { OutputFormatSetting } from "./lib/output"
 
@@ -48,6 +49,7 @@ export const cli = Command.make("maple").pipe(
 		reset,
 		checkpoint,
 		restore,
+		deleteCommand,
 		schema,
 		// Parquet archives (local mode)
 		archive,

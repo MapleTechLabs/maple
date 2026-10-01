@@ -99,6 +99,8 @@ export const LocalStatus = Schema.Struct({
 	url: Schema.String,
 	dataDir: Schema.String,
 	lastIngestAtMs: Schema.NullOr(Schema.Number),
+	/** Absent from binaries that predate `maple delete`. */
+	lastDeleteAtMs: Schema.optionalKey(Schema.NullOr(Schema.Number)),
 })
 export type LocalStatus = typeof LocalStatus.Type
 
@@ -132,6 +134,12 @@ export const startedBeforeWrite = (startedAtMs: number, writtenAtMs: number): bo
  * ingest state (`undefined`) always does. */
 export const ingestedSince = (lastIngestAtMs: number | null | undefined, sinceMs: number): boolean =>
 	lastIngestAtMs === undefined || (lastIngestAtMs !== null && lastIngestAtMs >= sinceMs)
+
+/** Did ingest or a scoped delete change the store since `sinceMs`? Unknown status always did. */
+export const storeChangedSince = (status: LocalStatus | undefined, sinceMs: number): boolean =>
+	status === undefined ||
+	ingestedSince(status.lastIngestAtMs, sinceMs) ||
+	(status.lastDeleteAtMs != null && status.lastDeleteAtMs >= sinceMs)
 
 export interface DetachedChildArgs {
 	readonly entry: string | undefined
