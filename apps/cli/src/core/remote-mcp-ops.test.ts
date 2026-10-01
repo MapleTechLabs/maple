@@ -190,6 +190,18 @@ describe("remote MCP operations map onto local output shapes", () => {
 		expect(out.pagination).toEqual({ offset: 20, limit: 20, hasMore: true })
 	})
 
+	it("log tools get WARN for the WARNING spelling, which they do not accept", async () => {
+		reply = {
+			status: 200,
+			body: toolResult({ timeRange: TIME_RANGE, totalSampled: 0, sampleSize: 10000, patterns: [] }),
+		}
+		await run((mcp) => RemoteMcp.mineLogPatterns(mcp, { range: RANGE, severity: "WARNING" }))
+		expect(requests[0]!.body.params).toMatchObject({
+			name: "mine_log_patterns",
+			arguments: { severity: "WARN" },
+		})
+	})
+
 	it("compare emits one row per period with traffic, and no invented p99", async () => {
 		reply = {
 			status: 200,

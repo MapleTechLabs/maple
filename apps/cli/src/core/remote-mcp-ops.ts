@@ -31,6 +31,9 @@ const toTimeRange = (r: { readonly start: string; readonly end: string }) => ({
 
 const decodeTraceId = Schema.decodeUnknownSync(TraceId)
 
+/** The MCP log tools take OTel's `WARN` only; the CLI also accepts `WARNING`. */
+const mcpSeverity = (severity: string | undefined) => (severity === "WARNING" ? "WARN" : severity)
+
 type TraceSummary = McpToolOutput<"search_traces">["traces"][number]
 
 /**
@@ -208,7 +211,7 @@ export const searchLogs = (
 		mcp.call("search_logs", {
 			...window(p.range),
 			service: p.service,
-			severity: p.severity,
+			severity: mcpSeverity(p.severity),
 			search: p.search,
 			trace_id: p.traceId,
 			limit: p.limit,
@@ -234,7 +237,7 @@ export const mineLogPatterns = (
 		mcp.call("mine_log_patterns", {
 			...window(p.range),
 			service: p.service,
-			severity: p.severity,
+			severity: mcpSeverity(p.severity),
 			search: p.search,
 			limit: p.limit,
 		}),
