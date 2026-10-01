@@ -57,14 +57,6 @@ export const unsupportedInRemote = (pipeName: string, reason: string) =>
 		}),
 	)
 
-/**
- * A remote operation that v2 supports but that found nothing to answer with,
- * distinct from `unsupportedInRemote`, which reports a missing capability and
- * points at local mode. Tagged so `bin.ts` treats it as an expected outcome.
- */
-export const remoteFailure = (pipeName: string, message: string) =>
-	Effect.fail(new WarehouseClientError({ message, pipeName }))
-
 export type RemoteError = WarehouseClientError | WarehouseQueryError | CliNotFoundError | CliUsageError
 
 /**

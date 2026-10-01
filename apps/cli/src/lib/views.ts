@@ -144,9 +144,29 @@ const flattenTree = (nodes: ReadonlyArray<SpanNode>): ReadonlyArray<TreeRow> => 
 	return rows
 }
 
+/**
+ * A span start to epoch ms, keeping the sub-second part: local mode reports
+ * `YYYY-MM-DD HH:mm:ss.fffffffff` UTC, remote mode ISO-8601.
+ */
+const spanStartMs = (value: string): number => {
+	const iso = value
+		.trim()
+		.replace(" ", "T")
+		.replace(/(\.\d{3})\d+/, "$1")
+	return Date.parse(/Z|[+-]\d\d:?\d\d$/.test(iso) ? iso : `${iso}Z`)
+}
+
 export const traceView: View<InspectTraceOutput> = {
 	isEmpty: (d) => d.spans.length === 0,
 	table: (d) => {
+		const rows = flattenTree(d.spans)
+		const starts = rows.map((r) => spanStartMs(r.span.startTime)).filter(Number.isFinite)
+		const traceStartMs = starts.length === 0 ? Number.NaN : Math.min(...starts)
+		// Offset from the earliest span, so gaps and overlaps read straight off the column.
+		const offset = (r: TreeRow): string => {
+			const ms = spanStartMs(r.span.startTime) - traceStartMs
+			return Number.isFinite(ms) ? `+${formatDuration(ms)}` : ""
+		}
 		const sections: Array<Section> = [
 			{
 				body: renderFields([
@@ -162,6 +182,7 @@ export const traceView: View<InspectTraceOutput> = {
 					[
 						{ header: "SPAN", cell: (r) => r.label, maxWidth: 90 },
 						{ header: "SERVICE", cell: (r) => r.span.serviceName },
+						{ header: "START", cell: offset, align: right },
 						{ header: "DURATION", cell: (r) => formatDuration(r.span.durationMs), align: right },
 						{
 							header: "STATUS",
@@ -172,7 +193,7 @@ export const traceView: View<InspectTraceOutput> = {
 							maxWidth: 60,
 						},
 					],
-					flattenTree(d.spans),
+					rows,
 				),
 			},
 		]
@@ -362,7 +383,8 @@ export interface CompareRow {
 	readonly throughput: number
 	readonly errorCount: number
 	readonly p95LatencyMs: number
-	readonly p99LatencyMs: number
+	/** Absent in remote mode, which does not report it. */
+	readonly p99LatencyMs?: number
 }
 
 const change = (prev: number | undefined, cur: number | undefined, fmt: (n: number) => string): string =>

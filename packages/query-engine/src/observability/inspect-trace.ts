@@ -186,6 +186,7 @@ export const inspectTrace = Effect.fn("Observability.inspectTrace")(function* (
 			serviceName: span.serviceName,
 			spanKind: span.spanKind,
 			durationMs: span.durationMs,
+			startTime: span.startTime,
 			statusCode: span.statusCode,
 			statusMessage: span.statusMessage,
 			attributes,

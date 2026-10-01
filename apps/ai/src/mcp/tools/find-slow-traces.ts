@@ -49,6 +49,7 @@ export function registerFindSlowTracesTool(server: McpToolRegistrar) {
 					spanCount: 1,
 					services: [t.serviceName],
 					hasError: t.statusCode === "Error",
+					...(t.timestamp ? { startTime: t.timestamp } : undefined),
 					resourceAttributes: t.resourceAttributes,
 				})),
 				...(params.service === undefined ? undefined : { service: params.service }),
