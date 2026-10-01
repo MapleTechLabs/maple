@@ -165,9 +165,9 @@ export function registerListAlertChecksTool(server: McpToolRegistrar) {
 			if (output.noData > 0 && output.noData === output.total) {
 				next.push(
 					doc.next(
-						"get_alert_rule",
+						"preview_alert_rule",
 						{ rule_id: output.ruleId },
-						"every check had no data (the query matched nothing), so the rule is blind, not healthy: check its filters",
+						"every check had no data (the query matched nothing), so the rule is blind, not healthy: replay it with adjusted filters",
 					),
 				)
 			} else if (output.belowMinSamples > 0) {

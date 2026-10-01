@@ -451,6 +451,12 @@ const V2AlertRulePreviewPoint = Schema.Struct({
 	value: Schema.NullOr(Schema.Number),
 	sample_count: Schema.Number,
 	status: AlertEvaluationStatus,
+	skip_reason: Schema.optionalKey(
+		AlertSkipReason.annotate({
+			description:
+				"Set on `skipped` points: `no_data` (the window had no data), `below_min_samples`, or `no_value`.",
+		}),
+	),
 	provisional: Schema.optionalKey(
 		Schema.Boolean.annotate({
 			description:

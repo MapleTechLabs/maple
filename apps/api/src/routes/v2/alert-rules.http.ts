@@ -323,6 +323,7 @@ const toV2PreviewResult = (preview: AlertRulePreviewResponse): V2AlertRulePrevie
 			value: point.value,
 			sample_count: point.sampleCount,
 			status: point.status,
+			...(point.skipReason !== undefined ? { skip_reason: point.skipReason } : undefined),
 			...(point.provisional !== undefined ? { provisional: point.provisional } : undefined),
 		})),
 	})),

@@ -142,6 +142,11 @@ export function registerGetAlertRuleTool(server: McpToolRegistrar) {
 						"recent evaluations: observed values and near-misses",
 					),
 					doc.next("get_incident_timeline", { rule_id: rule.id }, "incident history for this rule"),
+					doc.next(
+						"preview_alert_rule",
+						{ rule_id: rule.id },
+						"replay it over past data, with or without changes",
+					),
 				],
 			}
 		},

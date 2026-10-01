@@ -10,6 +10,8 @@ import {
 	AlertIncidentsListResponse,
 	AlertRuleDocument,
 	AlertRuleNotFoundError,
+	AlertRulePreviewRequest,
+	AlertRulePreviewResponse,
 	AlertRulesListResponse,
 	AlertRuleUpsertRequest,
 	OrgId,
@@ -22,6 +24,7 @@ import {
 	ListAlertDestinationsOutput,
 	ListAlertIncidentsOutput,
 	ListAlertRulesOutput,
+	PreviewAlertRuleOutput,
 } from "@maple/domain/mcp-outputs"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
 import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
@@ -99,6 +102,7 @@ const incident = (overrides: Record<string, unknown>) => ({
 interface Seen {
 	created?: AlertRuleUpsertRequest
 	updated?: AlertRuleUpsertRequest
+	previewed?: AlertRulePreviewRequest
 	incidentOptions?: unknown
 	checkOptions?: unknown
 }
@@ -134,6 +138,36 @@ const layer = (seen: Seen) =>
 						),
 		} as never),
 		Layer.succeed(AlertsService, {
+			previewRule: (_o: unknown, _r: unknown, request: AlertRulePreviewRequest) => {
+				seen.previewed = request
+				const point = (bucket: string) => ({
+					bucket,
+					value: null,
+					sampleCount: 0,
+					status: "skipped",
+					skipReason: "no_data",
+				})
+				return Effect.succeed(
+					Schema.decodeUnknownSync(AlertRulePreviewResponse)({
+						bucketSeconds: 300,
+						windowMinutes: 5,
+						threshold: 0.05,
+						thresholdUpper: null,
+						comparator: "gt",
+						truncatedToStart: null,
+						series: [
+							{
+								groupKey: "__total__",
+								points: [
+									point("2026-09-24T09:50:00.000Z"),
+									point("2026-09-24T09:55:00.000Z"),
+								],
+							},
+						],
+						wouldFire: [],
+					}),
+				)
+			},
 			updateRule: (
 				_o: unknown,
 				_u: unknown,
@@ -455,6 +489,47 @@ describe("alert tools", () => {
 		expect(
 			Schema.decodeUnknownSync(CreateAlertRuleOutput)(quiet.structuredContent).warnings,
 		).toBeUndefined()
+	})
+
+	it("preview_alert_rule replays a draft and flags a window range with no data", async () => {
+		const seen: Seen = {}
+		const result = await ok(
+			"preview_alert_rule",
+			{
+				signal_type: "raw_query",
+				comparator: "gt",
+				threshold: 0.05,
+				raw_query_sql:
+					"SELECT count() AS value FROM traces WHERE $__orgFilter AND $__timeFilter(Timestamp)",
+				start_time: "2026-09-24 09:00:00",
+				end_time: "2026-09-24 10:00:00",
+			},
+			seen,
+		)
+		expect(seen.previewed?.rule).toMatchObject({
+			name: "Preview",
+			destinationIds: [],
+			signalType: "raw_query",
+		})
+		expect(seen.previewed?.startTime).toBe("2026-09-24T09:00:00Z")
+		const output = Schema.decodeUnknownSync(PreviewAlertRuleOutput)(result.structuredContent)
+		expect(output.groups[0]).toMatchObject({ windows: 2, noData: 2, breached: 0 })
+		expect(output.points[0]?.skipReason).toBe("no_data")
+		expect(output.warnings[0]).toContain("Every window had no data")
+		expect(text(result)).toContain("| no data |")
+	})
+
+	it("preview_alert_rule overlays overrides on a saved rule", async () => {
+		const seen: Seen = {}
+		await ok("preview_alert_rule", { rule_id: RULE_ID, threshold: 0.2 }, seen)
+		expect(seen.previewed?.rule).toMatchObject({
+			name: "Checkout errors",
+			threshold: 0.2,
+			signalType: "error_rate",
+		})
+
+		const missing = await run("preview_alert_rule", { rule_id: "8f1c2d3e-4b5a-4c6d-8e9f-0a1b2c3d4e5f" })
+		expect(missing._tag === "Failure" && missing.failure.parameter).toBe("rule_id")
 	})
 
 	it("update_alert_rule overlays only the given fields", async () => {

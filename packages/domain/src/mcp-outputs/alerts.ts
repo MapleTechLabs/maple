@@ -86,6 +86,50 @@ export const AlertRuleDetailRow = Schema.Struct({
 
 export const GetAlertRuleOutput = Schema.Struct({ rule: AlertRuleDetailRow })
 
+/** One evaluation window of a preview: what the scheduler would have observed and decided. */
+export const AlertPreviewPointRow = Schema.Struct({
+	groupKey: Schema.String,
+	bucket: Schema.String,
+	status: Schema.String,
+	skipReason: NullableString,
+	value: NullableNumber,
+	sampleCount: Schema.Number,
+	provisional: Schema.Boolean,
+})
+
+/** One group's windows, counted by verdict. */
+export const AlertPreviewGroupRow = Schema.Struct({
+	groupKey: Schema.String,
+	windows: Schema.Number,
+	breached: Schema.Number,
+	healthy: Schema.Number,
+	noData: Schema.Number,
+	belowMinSamples: Schema.Number,
+	noValue: Schema.Number,
+	minValue: NullableNumber,
+	maxValue: NullableNumber,
+	totalSamples: Schema.Number,
+})
+
+export const PreviewAlertRuleOutput = Schema.Struct({
+	/** Set when an existing rule was previewed. */
+	ruleId: Schema.optionalKey(Schema.String),
+	timeRange: OutputTimeRange,
+	/** Set when the range was clamped to the preview's window cap. */
+	truncatedToStart: NullableString,
+	windowMinutes: Schema.Number,
+	comparator: Schema.String,
+	threshold: Schema.Number,
+	thresholdUpper: NullableNumber,
+	minimumSampleCount: Schema.Number,
+	groups: Schema.Array(AlertPreviewGroupRow),
+	points: Schema.Array(AlertPreviewPointRow),
+	wouldFire: Schema.Array(
+		Schema.Struct({ groupKey: Schema.String, start: Schema.String, end: Schema.String }),
+	),
+	warnings: Schema.Array(Schema.String),
+})
+
 export const AlertIncidentRow = Schema.Struct({
 	id: Schema.String,
 	ruleId: Schema.String,

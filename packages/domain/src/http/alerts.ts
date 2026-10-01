@@ -617,6 +617,8 @@ export class AlertRulePreviewPoint extends Schema.Class<AlertRulePreviewPoint>("
 	value: Schema.NullOr(Schema.Number),
 	sampleCount: Schema.Number,
 	status: AlertEvaluationStatus,
+	/** Set on `status: "skipped"` points. */
+	skipReason: Schema.optionalKey(AlertSkipReason),
 	/**
 	 * The trailing in-progress window: evaluated over less than a full
 	 * `windowMinutes`, so its value may still move as data arrives.

@@ -112,6 +112,7 @@ const toolLabels: Record<string, string> = {
 	delete_alert_rule: "Delete Alert Rule",
 	list_alert_incidents: "List Alert Incidents",
 	list_alert_checks: "List Alert Checks",
+	preview_alert_rule: "Preview Alert Rule",
 	get_incident_timeline: "Incident Timeline",
 	update_error_notification_policy: "Notification Policy",
 	// sessions
@@ -177,6 +178,7 @@ const toolIcons: Record<string, IconComponent> = {
 	delete_alert_rule: TrashIcon,
 	list_alert_incidents: AlertWarningIcon,
 	list_alert_checks: CircleCheckIcon,
+	preview_alert_rule: HistoryIcon,
 	get_incident_timeline: HistoryIcon,
 	update_error_notification_policy: BellIcon,
 	run_sql: DatabaseIcon,

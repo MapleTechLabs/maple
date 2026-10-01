@@ -1328,6 +1328,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						return {
 							bucketMs,
 							status: evaluation.status,
+							skipReason: evaluation.skipReason,
 							value: evaluation.value,
 							sampleCount: obs.sampleCount,
 							provisional: hasPartialBucket && bucketMs === endMs,
@@ -1338,12 +1339,13 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						new AlertRulePreviewSeries({
 							groupKey,
 							points: evaluations.map(
-								({ bucketMs, status, value, sampleCount, provisional }) =>
+								({ bucketMs, status, skipReason, value, sampleCount, provisional }) =>
 									new AlertRulePreviewPoint({
 										bucket: iso(bucketMs),
 										value,
 										sampleCount,
 										status,
+										...(skipReason === undefined ? undefined : { skipReason }),
 										...(provisional ? { provisional } : undefined),
 									}),
 							),

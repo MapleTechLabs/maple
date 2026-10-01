@@ -143,6 +143,11 @@ export const renderRuleWrite = (
 	],
 	next: [
 		doc.next("get_alert_rule", { rule_id: rule.id }, "full configuration"),
+		doc.next(
+			"preview_alert_rule",
+			{ rule_id: rule.id },
+			"replay it over the last day to see what it would have done",
+		),
 		doc.next("list_alert_checks", { rule_id: rule.id }, "its evaluations once the scheduler picks it up"),
 	],
 })

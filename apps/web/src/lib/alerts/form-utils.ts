@@ -688,6 +688,9 @@ export function v2PreviewToResponse(result: V2AlertRulePreviewResult): AlertRule
 								value: point.value,
 								sampleCount: point.sample_count,
 								status: point.status,
+								...(point.skip_reason !== undefined
+									? { skipReason: point.skip_reason }
+									: undefined),
 								...(point.provisional !== undefined
 									? { provisional: point.provisional }
 									: undefined),

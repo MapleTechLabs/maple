@@ -26,7 +26,7 @@ import * as P from "../lib/params"
 
 const decodeAlertRuleRequest = Schema.decodeUnknownEffect(AlertRuleUpsertRequest)
 
-const Parameters = Schema.Struct({
+export const UpdateAlertRuleParameters = Schema.Struct({
 	rule_id: P.text("Alert rule ID to update (use list_alert_rules to find IDs)"),
 	name: P.optionalText("New rule name"),
 	severity: P.optionalOneOf(ALERT_SEVERITIES, "Alert severity"),
@@ -80,7 +80,10 @@ const Parameters = Schema.Struct({
  * rule's current config and overlaid with only the params the caller provided. The service's
  * `normalizeRule` validates the merged result.
  */
-function buildUpdatedRequest(current: AlertRuleDocument, params: typeof Parameters.Type) {
+export function buildUpdatedRequest(
+	current: AlertRuleDocument,
+	params: typeof UpdateAlertRuleParameters.Type,
+) {
 	// Merge notification template fields onto the existing template (null-safe).
 	const touchesTemplate = params.notification_title !== undefined || params.notification_body !== undefined
 	const title = params.notification_title ?? current.notificationTemplate?.title ?? undefined
@@ -136,7 +139,7 @@ export function registerUpdateAlertRuleTool(server: McpToolRegistrar) {
 		description:
 			"Update an alert rule. Pass only the fields to change; the rest keep their current value (get_alert_rule shows it). " +
 			"Ids from list_alert_rules and list_alert_destinations.",
-		parameters: Parameters,
+		parameters: UpdateAlertRuleParameters,
 		aliases: { service_names: "services" },
 		output: UpdateAlertRuleOutput,
 		hints: { readOnly: false, destructive: false, idempotent: true },

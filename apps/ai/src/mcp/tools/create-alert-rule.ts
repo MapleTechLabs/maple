@@ -60,7 +60,7 @@ const ALERT_TEMPLATES = {
 	throughput_drop: { signalType: "throughput", comparator: "lt", defaultThreshold: 100 },
 } satisfies Record<TemplateName, AlertTemplate>
 
-const Parameters = Schema.Struct({
+export const CreateAlertRuleParameters = Schema.Struct({
 	name: P.text("Rule name"),
 	destination_ids: P.list(
 		"Destination IDs to notify (use list_alert_destinations to find IDs). Pass an empty list for none.",
@@ -139,7 +139,9 @@ const invalid = (message: string, parameter: string, example?: string) =>
 	)
 
 /** The upsert request the params describe, before the domain schema checks it. */
-const buildAlertRuleRequest = Effect.fnUntraced(function* (params: typeof Parameters.Type) {
+export const buildAlertRuleRequest = Effect.fnUntraced(function* (
+	params: typeof CreateAlertRuleParameters.Type,
+) {
 	const template: AlertTemplate | undefined =
 		params.template === undefined || params.template === "custom"
 			? undefined
@@ -272,7 +274,7 @@ export function registerCreateAlertRuleTool(server: McpToolRegistrar) {
 		description:
 			"Create an alert rule. Pick a `template` for the common cases; otherwise pass signal_type, comparator and threshold yourself. " +
 			"Use list_alert_destinations for destination_ids.",
-		parameters: Parameters,
+		parameters: CreateAlertRuleParameters,
 		aliases: { service_names: "services" },
 		output: CreateAlertRuleOutput,
 		hints: { readOnly: false, destructive: false, idempotent: false },

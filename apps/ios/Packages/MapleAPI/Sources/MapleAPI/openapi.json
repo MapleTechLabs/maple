@@ -3447,6 +3447,7 @@
         "type": "string"
       },
       "_maple_AlertSkipReason": {
+        "description": "Set on `skipped` points: `no_data` (the window had no data), `below_min_samples`, or `no_value`.",
         "enum": [
           "no_data",
           "below_min_samples",
