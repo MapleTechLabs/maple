@@ -1,7 +1,7 @@
 import * as os from "node:os"
 import * as Command from "effect/unstable/cli/Command"
 import * as Flag from "effect/unstable/cli/Flag"
-import { Console, Duration, Effect, Option, Redacted, Schema, Stream } from "effect"
+import { Console, Duration, Effect, Fiber, Option, Redacted, Schema, Stream } from "effect"
 import { Stdio } from "effect/Stdio"
 import { HttpClient, HttpClientRequest } from "effect/unstable/http"
 import { MapleConfig } from "../core/config"
@@ -197,18 +197,33 @@ const loginHandler = Effect.fnUntraced(function* (a: {
 	})
 	yield* Console.error(`! First copy your one-time code: ${started.userCode}`)
 	yield* Console.error(`  ${started.verificationUri}`)
-	if (process.stdin.isTTY && process.stdout.isTTY) {
-		yield* Console.error("Press Enter to open Maple in your browser…")
-		yield* readStdinLine
-		yield* openBrowser(started.verificationUriComplete).pipe(
-			Effect.catchTag("@maple/cli/CliAuthError", () =>
-				Console.error(`Could not open a browser. Visit ${started.verificationUriComplete}`),
+	// Poll from the start: approving in a tab opened by hand must not wait on a keypress.
+	const browser = yield* Effect.forkChild(
+		process.stdin.isTTY && process.stdout.isTTY
+			? Console.error("Press Enter to open Maple in your browser, or open the link above…").pipe(
+					Effect.andThen(readStdinLine),
+					Effect.andThen(openBrowser(started.verificationUriComplete)),
+					Effect.catchTag("@maple/cli/CliAuthError", () =>
+						Console.error(`Could not open a browser. Visit ${started.verificationUriComplete}`),
+					),
+				)
+			: Console.error(`Open ${started.verificationUriComplete} to continue.`),
+	)
+	const token = yield* pollDeviceToken(apiUrl, started).pipe(
+		Effect.ensuring(
+			Fiber.interrupt(browser).pipe(
+				// An interrupted stdin read stays referenced and would keep the process alive.
+				Effect.andThen(Effect.sync(() => process.stdin.destroy())),
 			),
-		)
-	} else {
-		yield* Console.error(`Open ${started.verificationUriComplete} to continue.`)
-	}
+		),
+	)
+	const session = yield* validateToken(apiUrl, token)
+	const store = yield* saveCredential(apiUrl, token, session, true)
+	yield* Console.log(`✓ Logged in to ${apiUrl} as ${session.userId} (${session.orgId}) via ${store}.`)
+})
 
+/** Poll until the browser approves, denies, or the code expires. */
+const pollDeviceToken = Effect.fnUntraced(function* (apiUrl: string, started: DeviceStart) {
 	const deadline = Date.now() + started.expiresIn * 1000
 	let interval = Math.max(1, started.interval)
 	while (Date.now() < deadline) {
@@ -229,10 +244,7 @@ const loginHandler = Effect.fnUntraced(function* (a: {
 		if (result.value.status === "expired") {
 			return yield* new CliAuthError({ message: "CLI login code expired; run maple auth login again" })
 		}
-		const session = yield* validateToken(apiUrl, result.value.token)
-		const store = yield* saveCredential(apiUrl, result.value.token, session, true)
-		yield* Console.log(`✓ Logged in to ${apiUrl} as ${session.userId} (${session.orgId}) via ${store}.`)
-		return
+		return result.value.token
 	}
 	return yield* new CliAuthError({ message: "CLI login code expired; run maple auth login again" })
 })
