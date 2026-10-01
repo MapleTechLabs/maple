@@ -362,7 +362,8 @@ export interface CompareRow {
 	readonly throughput: number
 	readonly errorCount: number
 	readonly p95LatencyMs: number
-	readonly p99LatencyMs: number
+	/** Absent in remote mode, which does not report it. */
+	readonly p99LatencyMs?: number
 }
 
 const change = (prev: number | undefined, cur: number | undefined, fmt: (n: number) => string): string =>

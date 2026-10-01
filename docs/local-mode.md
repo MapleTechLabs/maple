@@ -487,37 +487,62 @@ Env overrides: `MAPLE_API_URL`, `MAPLE_API_TOKEN`, `MAPLE_LOCAL_URL`,
 **How queries route.** Local mode compiles the pipe to SQL client-side and POSTs
 it to `/local/query`. Remote mode does **not** compile pipes at all. It calls
 Maple's public v2 API (`/v2/traces/*`, `/v2/logs/*`, `/v2/services`,
-`/v2/service_map`, `/v2/metrics`, `/v2/error_issues`) with the API key
-`maple auth login` stored, and maps each response into the same output type the local path produces. The
-branch lives in `apps/cli/src/core/operations.ts`; the v2 implementations are in
-`core/remote-ops.ts`.
+`/v2/service_map`, `/v2/metrics`) with the API key `maple auth login` stored,
+and maps each response into the same output type the local path produces.
+
+Where v2 has no resource for a command, remote mode calls the workspace's MCP
+tools instead (`POST /mcp`, one stateless `tools/call`, same API key). Those
+tools run the same `@maple/query-engine/observability` functions local mode runs,
+and the CLI decodes each answer with the tool's published output schema
+(`@maple/domain/mcp-outputs`). The branch lives in
+`apps/cli/src/core/operations.ts`; the v2 implementations are in
+`core/remote-ops.ts`, the MCP ones in `core/remote-mcp-ops.ts`.
+
+| Command                             | Remote surface                                                        |
+| ----------------------------------- | --------------------------------------------------------------------- |
+| `maple errors`                      | `find_errors`                                                         |
+| `maple error <fp>`                  | `error_detail` (raw error events, as local mode reads them)           |
+| `maple diagnose`                    | `diagnose_service`                                                    |
+| `maple slow-traces`                 | `find_slow_traces`                                                    |
+| `maple top-ops`                     | `get_service_top_operations`                                          |
+| `maple compare`                     | `compare_periods`                                                     |
+| `maple attributes keys` / `values`  | `explore_attributes`                                                  |
+| `maple traces --span-name/--offset` | `search_traces`                                                       |
+| `maple logs --offset`               | `search_logs`                                                         |
+| `maple log-patterns`                | `mine_log_patterns` (10k-log sample); with `--env`, a v2 100-log page |
+| `maple query "<sql>"`               | `run_sql`                                                             |
 
 This replaced a generic `POST /api/tinybird/query` endpoint that let the client
 name a pipe and have the server compile it. That endpoint is retired. A pipe
 name is an internal compiler detail, and treating it as a public contract meant
-every CLI binary pinned the server's query catalog.
+every CLI binary pinned the server's query catalog. The MCP tools are a typed,
+versioned contract instead.
 
-**Some commands are local-only.** Where v2 has no equivalent, the command fails
-with the reason instead of returning a narrower answer:
+**`maple query` and macros.** Remote SQL must be scoped with `$__orgFilter` and
+returns at most 100 rows (the CLI says when it was cut). Locally, plain SQL runs
+as written; SQL that uses the workspace macros (`$__orgFilter`,
+`$__timeFilter(Column)`, `$__startTime`, `$__endTime`, `$__interval_s`) is
+expanded with the local tenant and the `--since/--start/--end` window, and
+validated the same way, so one query string runs in both modes. Single-quote
+it, or the shell expands `$__orgFilter` to nothing:
 
-| Command                            | Why it needs local mode                                                                                          |
-| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `maple query "<sql>"`              | A raw-SQL passthrough against the multi-tenant warehouse would let a client read other orgs' data.               |
-| `maple attributes keys` / `values` | v2 exposes no attribute-discovery surface (`/v2/attribute_mappings` is mapping config, not observed keys).       |
-| `maple slow-traces`                | `/v2/traces/search` filters by minimum duration but cannot order by it.                                          |
-| `maple top-ops`                    | Needs count, latency and error rate ranked together; `/v2/traces/breakdown` returns one aggregation per request. |
-| `maple traces --span-name`         | v2 search returns root-based summaries matched on an exact name, not spans matched by substring.                 |
-| `maple errors`                     | `/v2/error_issues` holds one issue per fingerprint, so it cannot report how many services an error spans.        |
-| `maple compare`                    | v2 has no window-comparison endpoint.                                                                            |
-| `maple diagnose`                   | Its error breakdown depends on the exception-type aggregates above.                                              |
+```bash
+maple query 'SELECT ServiceName, count() FROM traces WHERE $__orgFilter AND $__timeFilter(Timestamp) GROUP BY ServiceName' --since 1h
+```
 
-`maple error <fp>` **does** work remotely: `/v2/error_issues?fingerprint_hash=`
-resolves the hash to an issue, and the issue detail carries the timeseries and
-sample traces. It reads Maple's triage issues rather than raw error events, so a
-fingerprint no sweep has turned into an issue fails instead of showing traces.
+**What still differs remotely.**
 
-Remote mode also inherits v2's pagination: lists cap at 100 rows per page and
-seek by opaque cursor, so `--offset` is rejected instead of silently ignored.
+- The MCP tools filter no deployment environment for span search, log search
+  and log patterns, so `--env` with `--span-name` is refused in both modes, and
+  remote `--env` with `--offset` is refused (v2 pages by cursor).
+- `maple metrics show --env` is local-only: neither v2 nor the MCP tools filter
+  metrics by environment.
+- `maple errors` names a service only when `--service` is given; the tool reports
+  how many services an error spans, not which.
+- `maple compare` reports no p99 and does not split services by environment.
+- `maple slow-traces` and span search report error-or-not rather than the status
+  code, and no span id.
+- v2 lists cap at 100 rows per page; `maple error` caps sample traces at 20.
 
 ### Seeding data
 

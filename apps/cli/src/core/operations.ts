@@ -11,7 +11,8 @@
 // renderers never learn which backend answered.
 
 import { Clock, Effect, References, Schema } from "effect"
-import { CH, type TracesMetric } from "@maple/query-engine"
+import { CH, computeBucketSecondsForRange, type TracesMetric } from "@maple/query-engine"
+import { prepareRawSql } from "@maple/query-engine/runtime"
 import {
 	type SqlQueryOptions,
 	WarehouseExecutor,
@@ -28,6 +29,9 @@ import {
 	serviceMap as obsServiceMap,
 	findSlowTraces as obsFindSlowTraces,
 	topOperations as obsTopOperations,
+	type MineLogPatternsOutput,
+	type SearchLogsOutput,
+	type SearchTracesOutput,
 } from "@maple/query-engine/observability"
 import { MetricType } from "@maple/domain"
 import type { WarehouseQueryName } from "@maple/domain/warehouse-queries"
@@ -43,17 +47,14 @@ import {
 } from "@maple/query-engine/execution"
 import { HttpClient } from "effect/unstable/http"
 import { verboseLogging } from "../lib/debug"
-import {
-	CliNotFoundError,
-	CliUsageError,
-	LocalServerUnreachableError,
-	ReadOnlyQueryError,
-} from "../lib/errors"
+import { CliUsageError, LocalServerUnreachableError, ReadOnlyQueryError } from "../lib/errors"
 import { isLocalUnreachable, isNotMapleServer, readOnlyRejection } from "../lib/failure"
 import type { ErrorRow, MetricSeriesOutput, TopOperationRow } from "../lib/views"
 import { LOCAL_ORG_ID, localDriverError } from "./executor"
 import { Mode, type ModeError } from "./mode"
 import * as Remote from "./remote-ops"
+import * as RemoteMcp from "./remote-mcp-ops"
+import { type MapleMcpClient, makeMcpClient } from "./mcp-client"
 import {
 	type MapleV2Client,
 	type RemoteError,
@@ -66,19 +67,26 @@ import { parseTimestampMs, type Range } from "./time"
 type AttrSource = "traces" | "metrics" | "services"
 type AttrScope = "span" | "resource"
 
-const ATTRIBUTE_DISCOVERY_GAP =
-	"v2 exposes no attribute-discovery surface; /v2/attribute_mappings is mapping configuration, not the keys and values observed in your telemetry."
+/** The workspace's two surfaces: v2 resources first, MCP tools where v2 has no resource. */
+interface RemoteClients {
+	readonly v2: MapleV2Client
+	readonly mcp: MapleMcpClient
+}
 
 type Backend =
 	| { readonly _tag: "local"; readonly baseUrl: string }
-	| { readonly _tag: "remote"; readonly client: MapleV2Client }
+	| ({ readonly _tag: "remote" } & RemoteClients)
 
-/** Resolve the backend once per operation: the local URL, or a v2 client for the workspace. */
+/** Resolve the backend once per operation: the local URL, or clients for the workspace. */
 const backend: Effect.Effect<Backend, ModeError, Mode | HttpClient.HttpClient> = Effect.gen(function* () {
 	const mode = yield* Mode
 	const resolved = yield* mode.resolve
 	if (resolved._tag === "local") return { _tag: "local", baseUrl: resolved.baseUrl } satisfies Backend
-	return { _tag: "remote", client: yield* makeV2Client(resolved.apiUrl, resolved.token) } satisfies Backend
+	return {
+		_tag: "remote",
+		v2: yield* makeV2Client(resolved.apiUrl, resolved.token),
+		mcp: yield* makeMcpClient(resolved.apiUrl, resolved.token),
+	} satisfies Backend
 })
 
 /**
@@ -107,16 +115,16 @@ const localServerFailure =
 					})
 				: error
 
-/** Run `remote` against v2 when a workspace is configured, else `local`. */
+/** Run `remote` against the workspace when one is configured, else `local`. */
 const dispatch = <A, E, R, E2, R2>(
 	local: Effect.Effect<A, E, R>,
-	remote: (client: MapleV2Client) => Effect.Effect<A, E2, R2>,
+	remote: (clients: RemoteClients) => Effect.Effect<A, E2, R2>,
 	pipeName: string,
 ) =>
 	Effect.flatMap(backend, (b): Effect.Effect<A, E | LocalServerUnreachableError | RemoteError, R | R2> =>
 		b._tag === "local"
 			? local.pipe(quietUnlessVerbose, Effect.mapError(localServerFailure(b.baseUrl)))
-			: Effect.mapError(remote(b.client), toWarehouseError(pipeName)),
+			: Effect.mapError(remote(b), toWarehouseError(pipeName)),
 	)
 
 /** Pipes whose compiled query filters on the `deployment_env` param. */
@@ -152,7 +160,7 @@ const withEnvironment =
 export const listServices = (p: { range: Range; environment?: string }) =>
 	dispatch(
 		obsListServices({ timeRange: p.range, environment: p.environment }),
-		(client) => Remote.listServices(client, p),
+		({ v2 }) => Remote.listServices(v2, p),
 		"service_overview",
 	)
 
@@ -170,16 +178,16 @@ export const searchTraces = (p: {
 	limit?: number
 	offset?: number
 }) =>
-	dispatch(
-		Effect.gen(function* () {
-			// Span-level search runs on `span_search`, which has no environment filter.
-			if (p.environment !== undefined && p.spanName !== undefined && p.rootOnly !== true) {
-				return yield* new CliUsageError({
-					message: "--env cannot be combined with --span-name yet",
-					hint: "drop one of them; --env filters root spans, --span-name searches every span",
-				})
-			}
-			return yield* obsSearchTraces({
+	Effect.gen(function* () {
+		// Span-level search has no environment filter in either mode.
+		if (p.environment !== undefined && p.spanName !== undefined && p.rootOnly !== true) {
+			return yield* new CliUsageError({
+				message: "--env cannot be combined with --span-name yet",
+				hint: "drop one of them; --env filters root spans, --span-name searches every span",
+			})
+		}
+		return yield* dispatch(
+			obsSearchTraces({
 				timeRange: p.range,
 				service: p.service,
 				spanName: p.spanName,
@@ -192,11 +200,18 @@ export const searchTraces = (p: {
 				rootOnly: p.rootOnly,
 				limit: p.limit,
 				offset: p.offset,
-			}).pipe(withEnvironment(p.environment))
-		}),
-		(client) => Remote.searchTraces(client, p),
-		"list_traces",
-	)
+			}).pipe(withEnvironment(p.environment)),
+			// `/v2/traces/search` matches root spans on an exact name and pages by
+			// cursor. The MCP tool searches spans by substring and takes a numeric
+			// offset, but filters no environment, so `--env --offset` stays on v2,
+			// which refuses it.
+			({ v2, mcp }): Effect.Effect<SearchTracesOutput, unknown> =>
+				p.environment === undefined && (p.spanName !== undefined || (p.offset ?? 0) > 0)
+					? RemoteMcp.searchTraces(mcp, p)
+					: Remote.searchTraces(v2, p),
+			"list_traces",
+		)
+	})
 
 /** How far back `maple trace <id>` looks when no window is given (after the default 24h misses). */
 export const TRACE_LOOKBACK_DAYS = 30
@@ -209,7 +224,7 @@ export const inspectTrace = (p: { traceId: string; range?: Range }) =>
 				? { widenedLookbackHours: TRACE_LOOKBACK_DAYS * 24 }
 				: { timeRange: { startTime: p.range.startTime, endTime: p.range.endTime } }),
 		}),
-		(client) => Remote.inspectTrace(client, p),
+		({ v2 }) => Remote.inspectTrace(v2, p),
 		"span_hierarchy",
 	)
 
@@ -247,15 +262,7 @@ const localFindErrors = (p: { range: Range; service?: string; environment?: stri
 	})
 
 export const findErrors = (p: { range: Range; service?: string; environment?: string; limit?: number }) =>
-	dispatch(
-		localFindErrors(p),
-		() =>
-			unsupportedInRemote(
-				"errors_by_type",
-				"/v2/error_issues lists one triage issue per fingerprint, so it cannot report how many services an error spans, and it only covers fingerprints a sweep has already turned into issues.",
-			),
-		"errors_by_type",
-	)
+	dispatch(localFindErrors(p), ({ mcp }) => RemoteMcp.findErrors(mcp, p), "errors_by_type")
 
 export const errorDetail = (p: { fingerprintHash: string; range: Range; service?: string; limit?: number }) =>
 	dispatch(
@@ -266,18 +273,14 @@ export const errorDetail = (p: { fingerprintHash: string; range: Range; service?
 			includeTimeseries: true,
 			limit: p.limit,
 		}),
-		(client) => Remote.errorDetail(client, p),
+		({ mcp }) => RemoteMcp.errorDetail(mcp, p),
 		"error_detail_traces",
 	)
 
 export const diagnoseService = (p: { serviceName: string; range: Range; environment?: string }) =>
 	dispatch(
 		obsDiagnoseService({ serviceName: p.serviceName, timeRange: p.range, environment: p.environment }),
-		() =>
-			unsupportedInRemote(
-				"diagnose",
-				"its error breakdown depends on exception-type aggregates that v2 does not expose, so a remote diagnosis would silently omit the errors section.",
-			),
+		({ mcp }) => RemoteMcp.diagnoseService(mcp, p),
 		"diagnose",
 	)
 
@@ -301,7 +304,11 @@ export const searchLogs = (p: {
 			limit: p.limit,
 			offset: p.offset,
 		}).pipe(withEnvironment(p.environment)),
-		(client) => Remote.searchLogs(client, p),
+		// A numeric offset needs the MCP tool, which has no environment filter.
+		({ v2, mcp }): Effect.Effect<SearchLogsOutput, unknown> =>
+			(p.offset ?? 0) > 0 && p.environment === undefined
+				? RemoteMcp.searchLogs(mcp, p)
+				: Remote.searchLogs(v2, p),
 		"list_logs",
 	)
 
@@ -321,7 +328,10 @@ export const mineLogPatterns = (p: {
 			search: p.search,
 			limit: p.limit,
 		}).pipe(withEnvironment(p.environment)),
-		(client) => Remote.mineLogPatterns(client, p),
+		// The MCP tool clusters a 10k-log sample server-side, as local mode does;
+		// it has no environment filter, so --env falls back to v2's 100-log page.
+		({ v2, mcp }): Effect.Effect<MineLogPatternsOutput, unknown> =>
+			p.environment === undefined ? RemoteMcp.mineLogPatterns(mcp, p) : Remote.mineLogPatterns(v2, p),
 		"list_logs",
 	)
 
@@ -333,18 +343,14 @@ export const findSlowTraces = (p: { range: Range; service?: string; environment?
 			environment: p.environment,
 			limit: p.limit,
 		}),
-		() =>
-			unsupportedInRemote(
-				"slow_traces",
-				"/v2/traces/search can filter by minimum duration but cannot order by it, so the slowest traces cannot be selected.",
-			),
+		({ mcp }) => RemoteMcp.findSlowTraces(mcp, p),
 		"slow_traces",
 	)
 
 export const serviceMap = (p: { range: Range; service?: string; environment?: string }) =>
 	dispatch(
 		obsServiceMap({ timeRange: p.range, service: p.service, environment: p.environment }),
-		(client) => Remote.serviceMap(client, p),
+		({ v2 }) => Remote.serviceMap(v2, p),
 		"service_dependencies",
 	)
 
@@ -363,7 +369,7 @@ export const attributeKeys = (p: {
 			timeRange: p.range,
 			limit: p.limit,
 		}),
-		() => unsupportedInRemote("attribute_keys", ATTRIBUTE_DISCOVERY_GAP),
+		({ mcp }) => RemoteMcp.attributeKeys(mcp, p),
 		"attribute_keys",
 	)
 
@@ -384,7 +390,7 @@ export const attributeValues = (p: {
 			timeRange: p.range,
 			limit: p.limit,
 		}),
-		() => unsupportedInRemote("attribute_values", ATTRIBUTE_DISCOVERY_GAP),
+		({ mcp }) => RemoteMcp.attributeValues(mcp, p),
 		"attribute_values",
 	)
 
@@ -408,10 +414,9 @@ export const topOperations = (p: {
 			(rows) =>
 				rows.map((r): TopOperationRow => ({ ...r, metric: p.metric, unit: metricUnit(p.metric) })),
 		),
-		() =>
-			unsupportedInRemote(
-				"top_operations",
-				"it reports call count, latency and error rate per operation together, and /v2/traces/breakdown returns one aggregation per request without a combined ranking.",
+		({ mcp }) =>
+			Effect.map(RemoteMcp.topOperations(mcp, p), (rows) =>
+				rows.map((r): TopOperationRow => ({ ...r, metric: p.metric, unit: metricUnit(p.metric) })),
 			),
 		"top_operations",
 	)
@@ -436,7 +441,7 @@ export const listMetrics = (p: { range: Range; service?: string; search?: string
 				isMonotonic: asBoolean(m.isMonotonic),
 			}))
 		}),
-		(client) => Remote.listMetrics(client, p),
+		({ v2 }) => Remote.listMetrics(v2, p),
 		"list_metrics",
 	)
 
@@ -488,26 +493,62 @@ const executeRawLocalQuery = Effect.fn("WarehouseExecutor.rawQuery", { kind: "cl
 	return rows
 })
 
-export const rawQuery = (sql: string) =>
+/** True when the SQL uses the workspace's macros (`$__orgFilter`, `$__timeFilter(…)`, …). */
+const usesMacros = (sql: string): boolean => sql.includes("$__")
+
+/**
+ * Expand the raw-SQL macros exactly as the workspace does, with the local
+ * tenant and the command's window, so one query runs in both modes. The same
+ * validation applies, which is what makes it portable: the expansion requires
+ * `$__orgFilter` remotely, so it does here too.
+ */
+const expandLocalMacros = (sql: string, range: Range) =>
+	prepareRawSql({
+		sql,
+		orgId: LOCAL_ORG_ID,
+		startTime: range.startTime,
+		endTime: range.endTime,
+		granularitySeconds: computeBucketSecondsForRange(range.startTime, range.endTime, "rawSql"),
+		workload: "interactive",
+	}).pipe(
+		Effect.map((prepared) => prepared.sql),
+		Effect.mapError((error) => new CliUsageError({ message: `SQL rejected: ${error.message}` })),
+	)
+
+/**
+ * Locally, plain SQL runs as written against the single-tenant store, and SQL
+ * that uses macros is expanded first. Remotely, the workspace's `run_sql` tool
+ * runs it, which requires `$__orgFilter` and returns at most 100 rows.
+ */
+export const rawQuery = (p: { sql: string; range: Range }) =>
 	Effect.gen(function* () {
-		const mode = yield* Mode
-		const resolved = yield* mode.resolve
-		if (resolved._tag !== "local") {
-			return yield* new CliUsageError({
-				message: "maple query runs raw SQL against a local store only",
-				hint: "start one with `maple start`, then pass --local",
-			})
+		const b = yield* backend
+		if (b._tag === "remote") {
+			return yield* RemoteMcp.rawQuery(b.mcp, p).pipe(
+				Effect.mapError(toWarehouseError("rawSqlQuery")),
+				Effect.mapError((error) =>
+					// Plain SQL works locally but is refused remotely; say how to fix it.
+					!usesMacros(p.sql) && error._tag === "@maple/cli/UsageError"
+						? new CliUsageError({
+								message: error.message,
+								hint: "scope remote SQL with $__orgFilter, e.g. SELECT count() FROM traces WHERE $__orgFilter AND $__timeFilter(Timestamp)",
+							})
+						: error,
+				),
+			)
 		}
-		return yield* executeRawLocalQuery(sql, resolved.baseUrl).pipe(
+		const sql = usesMacros(p.sql) ? yield* expandLocalMacros(p.sql, p.range) : p.sql
+		const rows = yield* executeRawLocalQuery(sql, b.baseUrl).pipe(
 			quietUnlessVerbose,
 			Effect.mapError((error) => {
 				// The server refuses writes, multi-statement batches and table functions.
 				const reason = readOnlyRejection(error)
 				return reason === undefined
-					? localServerFailure(resolved.baseUrl)(error)
+					? localServerFailure(b.baseUrl)(error)
 					: new ReadOnlyQueryError({ reason, message: `maple query is read-only: ${reason}` })
 			}),
 		)
+		return { rows } satisfies RemoteMcp.RawQueryResult
 	})
 
 // Custom traces analytics share the `group_by_*` presence-flag convention the
@@ -536,11 +577,7 @@ export const tracesTimeseries = (p: {
 	environment?: string
 	bucketSeconds?: number
 }) =>
-	dispatch(
-		localTracesTimeseries(p),
-		(client) => Remote.tracesTimeseries(client, p),
-		"custom_traces_timeseries",
-	)
+	dispatch(localTracesTimeseries(p), ({ v2 }) => Remote.tracesTimeseries(v2, p), "custom_traces_timeseries")
 
 const localTracesTimeseries = (p: {
 	range: Range
@@ -574,12 +611,7 @@ export const tracesBreakdown = (p: {
 	limit?: number
 	errorsOnly?: boolean
 	environment?: string
-}) =>
-	dispatch(
-		localTracesBreakdown(p),
-		(client) => Remote.tracesBreakdown(client, p),
-		"custom_traces_breakdown",
-	)
+}) => dispatch(localTracesBreakdown(p), ({ v2 }) => Remote.tracesBreakdown(v2, p), "custom_traces_breakdown")
 
 const localTracesBreakdown = (p: {
 	range: Range
@@ -608,11 +640,7 @@ const localTracesBreakdown = (p: {
 export const compareServiceOverview = (p: { current: Range; previous: Range; environment?: string }) =>
 	dispatch(
 		localCompareServiceOverview(p),
-		() =>
-			unsupportedInRemote(
-				"service_overview_compare",
-				"v2 has no window-comparison endpoint, and diffing two /v2/services calls client-side would lose the server-side weighting the comparison depends on.",
-			),
+		({ mcp }) => RemoteMcp.compareServiceOverview(mcp, p),
 		"service_overview_compare",
 	)
 
@@ -776,4 +804,4 @@ const remoteMetricSeries = (client: MapleV2Client, p: MetricSeriesInput) =>
 	})
 
 export const metricSeries = (p: MetricSeriesInput) =>
-	dispatch(localMetricSeries(p), (client) => remoteMetricSeries(client, p), "metrics_timeseries")
+	dispatch(localMetricSeries(p), ({ v2 }) => remoteMetricSeries(v2, p), "metrics_timeseries")

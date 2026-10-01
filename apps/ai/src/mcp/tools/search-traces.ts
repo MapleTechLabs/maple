@@ -103,6 +103,7 @@ export function registerSearchTracesTool(server: McpToolRegistrar) {
 					spanCount: 1,
 					services: [s.serviceName],
 					hasError: s.statusCode === "Error",
+					...(s.timestamp ? { startTime: s.timestamp } : undefined),
 					resourceAttributes: s.resourceAttributes,
 				})),
 				filters: {

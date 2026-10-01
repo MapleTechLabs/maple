@@ -96,21 +96,39 @@ export const metrics = Command.make("metrics", {
 )
 
 export const query = Command.make("query", {
-	sql: Argument.String("sql").pipe(
-		Argument.withDescription("A read-only ClickHouse SELECT to run against the local chDB store"),
-	),
+	sql: Argument.String("sql").pipe(Argument.withDescription("A read-only ClickHouse SELECT")),
+	since: f.since,
+	start: f.start,
+	end: f.end,
 }).pipe(
 	Command.withDescription(
-		"Run a read-only SQL query against local data (escape hatch). Writes, multiple statements and table functions are rejected.",
+		"Run a read-only SQL query (escape hatch). Writes, multiple statements and table functions are rejected. " +
+			"Macros expand in both modes: $__orgFilter, $__timeFilter(Column), $__startTime, $__endTime, $__interval_s, " +
+			"using the --since/--start/--end window. Remote queries must include $__orgFilter and return at most 100 rows.",
 	),
 	Command.withExamples([
 		{ command: 'maple query "SELECT ServiceName, count() FROM traces GROUP BY ServiceName"' },
+		{
+			command:
+				"maple query 'SELECT ServiceName, count() AS spans FROM traces WHERE $__orgFilter AND $__timeFilter(Timestamp) GROUP BY ServiceName' --since 1h",
+			description: "Runs unchanged locally and remotely (single quotes keep the shell off $__)",
+		},
 		{ command: 'maple query "SHOW TABLES" --format table' },
 	]),
 	Command.withHandler(
 		Effect.fnUntraced(function* (a) {
-			const result = yield* Ops.rawQuery(a.sql)
-			yield* printResult(result, { raw: true, empty: "Query returned no rows" })
+			const range = yield* resolveRangeChecked(a)
+			const result = yield* Ops.rawQuery({ sql: a.sql, range })
+			yield* printResult(result.rows, {
+				raw: true,
+				empty: "Query returned no rows",
+				notes: () =>
+					result.truncatedFrom === undefined
+						? []
+						: [
+								`showing ${result.rows.length} of ${result.truncatedFrom} rows; aggregate or add a LIMIT`,
+							],
+			})
 		}),
 	),
 )
