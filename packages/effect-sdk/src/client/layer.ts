@@ -1,7 +1,8 @@
 import type { Duration } from "effect"
 import { type MapleRegion, resolveIngestEndpoint, warnIfKeylessMapleIngest } from "@maple/browser-session"
 import { Effect, Layer } from "effect"
-import { Otlp } from "effect/unstable/observability"
+import { makeOtlpLayer } from "../shared/otlp-layer.js"
+import type { MapleSpanOptions } from "../shared/span-options.js"
 import { trySyncOrUndefined } from "../shared/try-sync.js"
 import { browserNavigator } from "./browser-globals.js"
 import { consentHttpClientLayer } from "./consent-http-client.js"
@@ -10,7 +11,7 @@ import { withSessionLink } from "./session-link.js"
 import { type IdentifyInput, type PrivacyOptions, type TrackProps, track as trackEvent } from "./track.js"
 import { clearIdentity as clearIdentityUser, identify as identifyUser } from "./user.js"
 
-export interface MapleClientConfig {
+export interface MapleClientConfig extends MapleSpanOptions {
 	/** The service name reported in traces, logs, and metrics. */
 	readonly serviceName: string
 	/**
@@ -57,6 +58,8 @@ export interface MapleClientConfig {
 	 * when post-grant browser metrics are required.
 	 */
 	readonly privacy?: PrivacyOptions | undefined
+	/** Skip Effect log spans in OTLP log attributes. Default `false`. */
+	readonly excludeLogSpans?: boolean | undefined
 	readonly maxBatchSize?: number | undefined
 	readonly loggerExportInterval?: Duration.Input | undefined
 	readonly metricsExportInterval?: Duration.Input | undefined
@@ -135,7 +138,7 @@ export const layer = (config: MapleClientConfig) => {
 		privacy: config.privacy,
 	} as const
 
-	const base = Otlp.layerJson({
+	const base = makeOtlpLayer({
 		baseUrl: endpoint,
 		resource: {
 			serviceName: config.serviceName,
@@ -148,6 +151,9 @@ export const layer = (config: MapleClientConfig) => {
 		metricsExportInterval: config.metricsExportInterval,
 		tracerExportInterval: config.tracerExportInterval,
 		shutdownTimeout: config.shutdownTimeout,
+		loggerExcludeLogSpans: config.excludeLogSpans,
+		// Matches the stock `OtlpTracer` this layer used before (fingerprint parity).
+		spans: { ...config, includeCauseInStack: true },
 	}).pipe(Layer.provide(consentHttpClientLayer(config.privacy?.requireConsent ?? false)))
 
 	const lifecycle = Layer.effectDiscard(

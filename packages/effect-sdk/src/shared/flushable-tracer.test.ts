@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Data, Effect, Schema } from "effect"
+import { Data, Effect, Fiber, Schema } from "effect"
 import * as ErrorReporter from "effect/ErrorReporter"
 import * as HttpServerError from "effect/unstable/http/HttpServerError"
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest"
@@ -369,4 +369,137 @@ describe("makeSpanBuffer captureException", () => {
 		buffer.captureException(new Error("boom"))
 		assert.strictEqual(buffer.size(), 0)
 	})
+})
+
+describe("makeSpanBuffer span dropping", () => {
+	const poll = (buffer: ReturnType<typeof makeSpanBuffer>) =>
+		Effect.void.pipe(
+			Effect.withSpan("db.query"),
+			Effect.withSpan("queue.claim"),
+			Effect.andThen(
+				Effect.forkChild(Effect.void.pipe(Effect.withSpan("forked.work"))).pipe(
+					Effect.flatMap(Fiber.join),
+				),
+			),
+			Effect.withSpan("queue.poll"),
+			Effect.provide(buffer.tracerLayer),
+		)
+
+	it.effect("dropSpanNames drops only the matching span", () =>
+		Effect.gen(function* () {
+			const buffer = makeSpanBuffer({ dropSpanNames: ["queue.poll"] })
+			yield* poll(buffer)
+			assert.deepStrictEqual(
+				buffer
+					.drain()
+					.map((span) => span.name)
+					.sort(),
+				["db.query", "forked.work", "queue.claim"],
+			)
+		}),
+	)
+
+	it.effect("dropSpanSubtrees drops the span, its grandchildren, and forked children", () =>
+		Effect.gen(function* () {
+			const buffer = makeSpanBuffer({ dropSpanSubtrees: ["queue.poll"] })
+			yield* poll(buffer)
+			yield* Effect.void.pipe(Effect.withSpan("job.process"), Effect.provide(buffer.tracerLayer))
+			assert.deepStrictEqual(
+				buffer.drain().map((span) => span.name),
+				["job.process"],
+			)
+		}),
+	)
+
+	it.effect("dropSpanSubtrees drops errors raised inside the subtree", () =>
+		Effect.gen(function* () {
+			const buffer = makeSpanBuffer({ dropSpanSubtrees: ["queue.poll"] })
+			yield* Effect.fail(new ReportableError()).pipe(
+				Effect.withSpan("db.query"),
+				Effect.withSpan("queue.poll"),
+				Effect.provide(buffer.tracerLayer),
+				Effect.exit,
+			)
+			assert.strictEqual(buffer.size(), 0)
+		}),
+	)
+
+	it.effect("dropSpan sees the finished span's attributes and exit", () =>
+		Effect.gen(function* () {
+			const buffer = makeSpanBuffer({
+				dropSpan: (span) =>
+					span.attributes.get("queue.empty") === true && span.exit._tag === "Success",
+			})
+			yield* Effect.annotateCurrentSpan("queue.empty", true).pipe(
+				Effect.withSpan("queue.poll"),
+				Effect.provide(buffer.tracerLayer),
+			)
+			yield* Effect.annotateCurrentSpan("queue.empty", false).pipe(
+				Effect.withSpan("queue.poll"),
+				Effect.provide(buffer.tracerLayer),
+			)
+			const spans = buffer.drain()
+			assert.strictEqual(spans.length, 1)
+			assert.deepStrictEqual(
+				spans[0]!.attributes.find((attribute) => attribute.key === "queue.empty")?.value,
+				{ boolValue: false },
+			)
+		}),
+	)
+})
+
+describe("makeSpanBuffer anticipated-error predicate and 5xx precedence", () => {
+	class SqlError extends Data.TaggedError("SqlError")<{ readonly code: string }> {}
+
+	it.effect("isAnticipatedError marks only the failures it matches", () =>
+		Effect.gen(function* () {
+			const buffer = makeSpanBuffer({
+				isAnticipatedError: (error) => error instanceof SqlError && error.code === "23505",
+			})
+			yield* runSpan(buffer, Effect.fail(new SqlError({ code: "23505" })))
+			yield* runSpan(buffer, Effect.fail(new SqlError({ code: "57014" })))
+			assert.deepStrictEqual(
+				buffer.drain().map((span) => span.status.code),
+				[1 /* Ok */, 2 /* Error */],
+			)
+		}),
+	)
+
+	it.effect("keeps a server span that answered 5xx as Error even when the failure is anticipated", () =>
+		Effect.gen(function* () {
+			const buffer = makeSpanBuffer({ anticipatedErrorIdentifiers: ["UnauthorizedError"] })
+			yield* Effect.annotateCurrentSpan("http.response.status_code", 500).pipe(
+				Effect.andThen(Effect.fail(new UnauthorizedError())),
+				Effect.withSpan("http.server GET", { kind: "server" }),
+				Effect.provide(buffer.tracerLayer),
+				Effect.exit,
+			)
+			const [span] = buffer.drain()
+			assert.strictEqual(span!.status.code, 2 /* Error */)
+			assert.deepStrictEqual(
+				span!.events
+					.find((event) => event.name === "exception")
+					?.attributes.find((attribute) => attribute.key === "exception.type")?.value,
+				{ stringValue: "UnauthorizedError" },
+			)
+		}),
+	)
+
+	it.effect("includeCauseInStack appends the cause chain to the stacktrace", () =>
+		Effect.gen(function* () {
+			const failure = new Error("outer", { cause: new Error("inner") })
+			const stacktrace = (buffer: ReturnType<typeof makeSpanBuffer>) =>
+				buffer
+					.drain()[0]!
+					.events.find((event) => event.name === "exception")
+					?.attributes.find((attribute) => attribute.key === "exception.stacktrace")?.value
+					.stringValue
+			const withCause = makeSpanBuffer({ includeCauseInStack: true })
+			const without = makeSpanBuffer()
+			yield* runSpan(withCause, Effect.fail(failure))
+			yield* runSpan(without, Effect.fail(failure))
+			assert.include(stacktrace(withCause), "inner")
+			assert.notInclude(stacktrace(without), "inner")
+		}),
+	)
 })

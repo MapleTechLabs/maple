@@ -78,13 +78,13 @@ When `MAPLE_INGEST_KEY` is unset, the SDK runs in no-op mode: buffers are draine
 
 ### Cloudflare-specific options
 
-| Option                        | Description                                                                                                                                                                                                                                                                           |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `anticipatedErrorIdentifiers` | Stable `_tag` / `Error.name` identifiers for expected 4xx failures; exported as `Ok` without an exception. A failure wrapped in an `{ error: … }` envelope is matched on the body's `_tag`, so an error decoded from an HTTP response classifies the same as the class that raised it |
-| `dropSpanNames`               | Span names whose prefix matches an entry are dropped before OTLP export (e.g. `"McpServer/Notifications."`)                                                                                                                                                                           |
-| `excludeLogSpans`             | Skip Effect log spans in OTLP log attributes. Default `false`                                                                                                                                                                                                                         |
-| `tracesPath`                  | OTLP traces path appended to `endpoint`. Default `/v1/traces`                                                                                                                                                                                                                         |
-| `logsPath`                    | OTLP logs path appended to `endpoint`. Default `/v1/logs`                                                                                                                                                                                                                             |
+The [span options](#span-options) apply here too.
+
+| Option            | Description                                                   |
+| ----------------- | ------------------------------------------------------------- |
+| `excludeLogSpans` | Skip Effect log spans in OTLP log attributes. Default `false` |
+| `tracesPath`      | OTLP traces path appended to `endpoint`. Default `/v1/traces` |
+| `logsPath`        | OTLP logs path appended to `endpoint`. Default `/v1/logs`     |
 
 The same `MAPLE_ENDPOINT` / `MAPLE_REGION` / `MAPLE_INGEST_KEY` / `MAPLE_ENVIRONMENT` env vars apply, read from the Workers `env` binding.
 
@@ -336,15 +336,52 @@ Both server and client layers accept these options:
 | `metricsExportInterval` | No                            | Metrics export interval                                                                   |
 | `shutdownTimeout`       | No                            | Graceful shutdown timeout                                                                 |
 
-The flushable presets (`MapleFlush.make`, and the Cloudflare `make`) replace the
-four interval options with `autoFlushInterval`, and add `excludeLogSpans`,
-`dropSpanNames`, `anticipatedErrorIdentifiers`, `tracesPath`, `logsPath`, and
-`metricsPath`.
+`excludeLogSpans` (skip Effect log spans in OTLP log attributes) and the
+[span options](#span-options) below are accepted by every preset. The
+flushable presets (`MapleFlush.make`, and the Cloudflare `make`) replace the
+four interval options with `autoFlushInterval`, and add `tracesPath`,
+`logsPath`, and `metricsPath`.
 
-> **`anticipatedErrorIdentifiers` is flushable/Cloudflare-only.** `Maple.layer`
-> builds on Effect's stock `Otlp.layerJson`, which has no hook for it — so with
-> the plain server layer, expected 4xx failures still export as `Error` spans.
-> Use `MapleFlush.make` if you need that suppression.
+### Span options
+
+Every preset (`Maple.layer`, `MapleFlush.make`, the Cloudflare `make`) takes
+the same options for dropping spans and classifying expected failures:
+
+| Option                        | Description                                                                                                                                                                           |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `dropSpanNames`               | Span name prefixes to drop before export. Only the matching span is dropped; its children still export                                                                                |
+| `dropSpanSubtrees`            | Span name prefixes whose span and every descendant are dropped, whatever the descendants are called (DB queries, HTTP calls, ...)                                                     |
+| `dropSpan`                    | `(span) => boolean` on each finished span (`name`, `kind`, `attributes`, `exit`); `true` drops it                                                                                     |
+| `anticipatedErrorIdentifiers` | Stable `_tag` / `Error.name` identifiers of expected failures; exported as `Ok` without an exception. A failure wrapped in an `{ error: … }` envelope is matched on the body's `_tag` |
+| `isAnticipatedError`          | `(error) => boolean`, for expected failures a tag can't single out (e.g. a driver error that is only expected for a duplicate key)                                                    |
+
+A server span that answered 5xx stays `Error` even when its failure is
+anticipated. Spans whose failure carries Effect's `ErrorReporter.ignore` flag
+(unmatched-route 404s) are dropped.
+
+```typescript
+const TracerLive = Maple.layer({
+	serviceName: "worker",
+	// The idle poll loop and everything under it: no spans at all.
+	dropSpanSubtrees: ["JobQueue.poll"],
+	// An expected outcome, not an error.
+	anticipatedErrorIdentifiers: ["DuplicateDocument"],
+})
+```
+
+Two things to know before using `dropSpanSubtrees`:
+
+- The span starts unsampled, so outgoing HTTP calls under it send `traceparent`
+  with the sampled flag off. Downstream services that honour it drop their part
+  of the trace too.
+- Errors inside the subtree never reach error tracking. Keep real work (e.g.
+  processing a job a poll found) outside the dropped span, or use `dropSpan` to
+  drop only the polls that found nothing.
+
+Effect's span levels do the same without any Maple option:
+`Effect.withSpan("JobQueue.poll", { level: "Debug" })` plus
+`Tracer.MinimumTraceLevel` set to `"Info"` leaves that span and its subtree
+unsampled.
 
 Client-only options:
 

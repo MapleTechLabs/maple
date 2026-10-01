@@ -50,12 +50,15 @@ import {
 import { type LogBuffer, makeLogBuffer } from "../shared/flushable-logger.js"
 import { makeMetricBuffer } from "../shared/flushable-metrics.js"
 import { makeSpanBuffer, type SpanBuffer } from "../shared/flushable-tracer.js"
+import type { MapleSpanOptions } from "../shared/span-options.js"
+
+export type { FinishedSpan, MapleSpanOptions } from "../shared/span-options.js"
 import { makeNoOpNotice } from "../shared/no-op-notice.js"
 import { resolveResourceFromEnv } from "../server/resource.js"
 import { SDK_VERSION } from "../version.js"
 import type { MapleRegion } from "@maple/browser-session/region"
 
-export interface Config {
+export interface Config extends MapleSpanOptions {
 	/**
 	 * Service name reported in traces, logs, and metrics. Defaults to `env.OTEL_SERVICE_NAME`,
 	 * then `"unknown"`.
@@ -94,21 +97,6 @@ export interface Config {
 	readonly attributes?: Record<string, unknown> | undefined
 	/** Skip Effect log spans in OTLP log attributes. Default `false`. */
 	readonly excludeLogSpans?: boolean | undefined
-	/**
-	 * Span names whose prefix matches an entry here are dropped before they
-	 * reach the OTLP exporter. Useful for suppressing protocol-level chatter
-	 * (e.g. `"McpServer/Notifications."` for MCP notification spam).
-	 */
-	readonly dropSpanNames?: ReadonlyArray<string> | undefined
-	/**
-	 * Stable `_tag` / `Error.name` identifiers of anticipated 4xx failures. A span
-	 * whose failure is caused entirely by these is exported with status `Ok` and
-	 * no `exception` event, so it stays visible as a trace but never counts as an
-	 * error.
-	 */
-	readonly anticipatedErrorIdentifiers?: ReadonlyArray<string> | undefined
-	/** @deprecated Use `anticipatedErrorIdentifiers`. */
-	readonly anticipatedErrorTags?: ReadonlyArray<string> | undefined
 	/** OTLP traces path appended to `endpoint`. Default `/v1/traces`. */
 	readonly tracesPath?: string | undefined
 	/** OTLP logs path appended to `endpoint`. Default `/v1/logs`. */
@@ -170,21 +158,7 @@ const resolveOnce = (env: Record<string, unknown>, config: Config): Resolved => 
 }
 
 export const make = (config: Config = {}): Telemetry => {
-	const dropPrefixes = config.dropSpanNames
-	const dropSpan =
-		dropPrefixes !== undefined && dropPrefixes.length > 0
-			? (name: string) => dropPrefixes.some((prefix) => name.startsWith(prefix))
-			: undefined
-	const anticipatedErrorIdentifiers = [
-		...(config.anticipatedErrorIdentifiers ?? []),
-		...(config.anticipatedErrorTags ?? []),
-	]
-	const anticipatedIdentifiers =
-		anticipatedErrorIdentifiers.length > 0 ? new Set(anticipatedErrorIdentifiers) : undefined
-	const spans: SpanBuffer = makeSpanBuffer({
-		dropSpan,
-		anticipatedErrorIdentifiers: anticipatedIdentifiers,
-	})
+	const spans: SpanBuffer = makeSpanBuffer(config)
 	const logs: LogBuffer = makeLogBuffer({ excludeLogSpans: config.excludeLogSpans })
 	const metrics = makeMetricBuffer()
 
