@@ -565,6 +565,46 @@ const NETTING_ORG_SPANS: ReadonlyArray<SeedSpan> = [
 	},
 ]
 
+// One long agent run, under an org of its own: a single trace whose agent span
+// wraps a model call per step. The netting looks every reporter's ancestors
+// and claims up in tables as long as the trace, and a lookup that copied the
+// table per reporter put a trace this size past the list read's memory
+// ceiling in production.
+const WIDE_ORG_ID = "org_ai_trace_index_e2e_wide"
+const WIDE_TRACE = "aitraceindexe2e000000000000000030"
+const WIDE_TRACE_CALLS = 1_500
+const WIDE_ORG_SPANS: ReadonlyArray<SeedSpan> = [
+	{
+		traceId: WIDE_TRACE,
+		spanId: "span-wide-agent",
+		name: "invoke_agent crawler",
+		ms: BASE_MS + 600_000,
+		service: "strands-service",
+		status: "Ok",
+		attrs: {
+			[MAPLE_AI_VENDOR_ID_ATTR]: "strands",
+			"gen_ai.operation.name": "invoke_agent",
+			"gen_ai.agent.name": "crawler",
+			...aiGatewayStamps({ agentName: "crawler" }),
+		},
+	},
+	...Array.from({ length: WIDE_TRACE_CALLS }, (_, call) => ({
+		traceId: WIDE_TRACE,
+		spanId: `span-wide-chat-${call}`,
+		parentSpanId: "span-wide-agent",
+		name: "chat",
+		ms: BASE_MS + 600_001 + call,
+		service: "strands-service",
+		status: "Ok",
+		attrs: {
+			[MAPLE_AI_VENDOR_ID_ATTR]: "strands",
+			"gen_ai.operation.name": "chat",
+			"gen_ai.request.model": "gpt-4o-mini",
+			...aiGatewayStamps({ llmCall: true, model: "gpt-4o-mini", usage: [10, 0, 0, 2, 0] }),
+		},
+	})),
+]
+
 // Traces the session rule sorts, under a fifth org, stamped as the gateway
 // stamps them: a sessionless plumbing span (a Spring AI advisor) that is no
 // session, a LangSmith OTel `chain` over LangGraph's `tools` node beside the
@@ -638,6 +678,7 @@ const seed = async (): Promise<void> => {
 		[FOREIGN_ORG_ID, FOREIGN_SPAN] as const,
 		...TOOL_FAILURE_ORG_SPANS.map((span) => [TOOL_FAILURE_ORG_ID, span] as const),
 		...NETTING_ORG_SPANS.map((span) => [NETTING_ORG_ID, span] as const),
+		...WIDE_ORG_SPANS.map((span) => [WIDE_ORG_ID, span] as const),
 		...SESSION_RULE_ORG_SPANS.map((span) => [SESSION_RULE_ORG_ID, span] as const),
 	]
 		.map(
@@ -654,10 +695,14 @@ const seed = async (): Promise<void> => {
 	)
 }
 
-const runJson = async (sql: string): Promise<ReadonlyArray<Record<string, unknown>>> => {
+const runJson = async (
+	sql: string,
+	settings: Readonly<Record<string, string>> = {},
+): Promise<ReadonlyArray<Record<string, unknown>>> => {
 	const body = await clickhouseExec(normalizeSqlForClickHouseClient(sql), database, {
 		default_format: "JSON",
 		output_format_json_quote_64bit_integers: "0",
+		...settings,
 	})
 	const parsed = JSON.parse(body) as {
 		readonly data?: ReadonlyArray<Record<string, unknown>>
@@ -684,7 +729,7 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 			        VendorVersion, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens,
 			        ErrorType, StatusMessage, ToolDescription,
 			        FailedToolCallResult, ErrorFingerprint != 0 AS HasErrorFingerprint
-			 FROM ai_trace_index WHERE OrgId NOT IN (${quote(NETTING_ORG_ID)}, ${quote(SESSION_RULE_ORG_ID)}) ORDER BY Timestamp ASC`,
+			 FROM ai_trace_index WHERE OrgId NOT IN (${quote(NETTING_ORG_ID)}, ${quote(WIDE_ORG_ID)}, ${quote(SESSION_RULE_ORG_ID)}) ORDER BY Timestamp ASC`,
 		)
 
 		/** The index row a seed span is expected to produce, by name — the
@@ -1130,6 +1175,75 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 		assert.deepStrictEqual(
 			measures(`${MAPLE_AI_TRACE_SESSION_PREFIX}${FAILED_GATEWAY_TRACE}`),
 			[1, 0, 0, 0],
+		)
+	})
+
+	it("reads a ranked page to the same rows as the one read that ranks and nets together", async () => {
+		// The list's two reads: which sessions, over the window; then their rows,
+		// over the extent of the ranked sessions alone.
+		// The second window ends inside the second Strands turn, after its
+		// event-loop span started and before that span ended: the chat beneath
+		// it starts past the window, and no read may count it.
+		const windows = [WINDOW, { ...WINDOW, endTime: chDateTime(BASE_MS + 410_001) }]
+		for (const [orgId, bounds] of [ORG_ID, NETTING_ORG_ID].flatMap((org) =>
+			windows.map((window) => [org, window] as const),
+		)) {
+			for (const opts of [
+				{},
+				{ limit: 1 },
+				{ limit: 1, offset: 1 },
+				{ sortBy: "durationMs" },
+			] as const) {
+				const window = { ...bounds, orgId }
+				const whole = compileUnsafe(Integrations.aiSessionPageQuery(opts), window)
+				const rank = compileUnsafe(Integrations.aiSessionRankQuery(opts), window)
+				const ranked = Effect.runSync(rank.decodeRows(await runJson(rank.sql)))
+				if (ranked.length === 0) {
+					assert.deepStrictEqual(await runJson(whole.sql), [])
+					continue
+				}
+				const rows = compileUnsafe(
+					Integrations.aiSessionPageQuery({
+						...opts,
+						sessionIds: ranked.map((row) => row.sessionId),
+					}),
+					{
+						orgId,
+						fanOutStart: ranked.map((row) => row.agentStart).sort()[0]!,
+						fanOutEnd: ranked
+							.map((row) => row.agentEnd)
+							.sort()
+							.at(-1)!,
+						endTime: window.endTime,
+					},
+				)
+				// Sets come back in no order; everything else must match as it is.
+				const comparable = (page: ReadonlyArray<Record<string, unknown>>) =>
+					page.map((row) =>
+						Object.fromEntries(
+							Object.entries(row).map(([key, value]) => [
+								key,
+								Array.isArray(value) ? [...value].sort() : value,
+							]),
+						),
+					)
+				assert.deepStrictEqual(
+					comparable(await runJson(rows.sql)),
+					comparable(await runJson(whole.sql)),
+				)
+			}
+		}
+	})
+
+	it("nets a trace of many model calls inside a fraction of the list read's memory", async () => {
+		const compiled = compileUnsafe(Integrations.aiSessionPageQuery(), { ...WINDOW, orgId: WIDE_ORG_ID })
+		const rows = Effect.runSync(
+			compiled.decodeRows(await runJson(compiled.sql, { max_memory_usage: "100000000" })),
+		)
+
+		assert.deepStrictEqual(
+			rows.map((row) => [row.sessionId, row.llmCalls, row.totalTokens]),
+			[[`${MAPLE_AI_TRACE_SESSION_PREFIX}${WIDE_TRACE}`, WIDE_TRACE_CALLS, WIDE_TRACE_CALLS * 12]],
 		)
 	})
 

@@ -677,3 +677,97 @@ describe("product_events clause edge cases", () => {
 		expect(result.warnings.join(" ")).toContain("supports only =")
 	})
 })
+
+describe("buildTimeseriesQuerySpec where-clause OR groups", () => {
+	it("lowers a span-attribute group onto one filter with or alternatives", () => {
+		const { warnings, attributeFilters } = attrFilters(
+			'(messaging.destination.name = "kafka" OR messaging.destination.name !exists) AND db.system = "x"',
+		)
+		expect(warnings).toEqual([])
+		expect(attributeFilters).toEqual([
+			{ key: "db.system", mode: "equals", value: "x" },
+			{
+				key: "messaging.destination.name",
+				mode: "equals",
+				value: "kafka",
+				or: [{ key: "messaging.destination.name", mode: "exists", negated: true }],
+			},
+		])
+	})
+
+	it("keeps a resource-attribute group on the resource map", () => {
+		const { warnings, filters } = attrFilters(
+			'(resource.k8s.namespace.name = "a" OR resource.k8s.namespace.name = "b")',
+		)
+		expect(warnings).toEqual([])
+		expect(filters).toMatchObject({
+			resourceAttributeFilters: [
+				{ key: "k8s.namespace.name", value: "a", or: [{ key: "k8s.namespace.name", value: "b" }] },
+			],
+		})
+	})
+
+	it("drops a group that ORs a named dimension or mixes maps, with a warning", () => {
+		for (const whereClause of [
+			'(service.name = "api" OR http.route = "/x")',
+			'(attr.a = "1" OR resource.b = "2")',
+		]) {
+			const { warnings, attributeFilters } = attrFilters(whereClause)
+			expect(attributeFilters).toEqual([])
+			expect(warnings).toHaveLength(1)
+			expect(warnings[0]).toContain("OR group ignored")
+		}
+	})
+
+	it("applies groups to logs and reports them as unsupported elsewhere", () => {
+		const logs = buildTimeseriesQuerySpec(
+			tracesDraft({ dataSource: "logs", whereClause: '(attr.a = "1" OR attr.b = "2")' }),
+		)
+		expect(logs.warnings).toEqual([])
+		expect(logs.query).toMatchObject({
+			filters: { attributeFilters: [{ key: "a", value: "1", or: [{ key: "b", value: "2" }] }] },
+		})
+
+		const metrics = buildTimeseriesQuerySpec(
+			tracesDraft({
+				dataSource: "metrics",
+				metricName: "http.server.request.duration",
+				aggregation: "avg",
+				whereClause: '(attr.a = "1" OR attr.b = "2")',
+			}),
+		)
+		expect(metrics.warnings).toContain(
+			'Unsupported clause syntax ignored: (attr.a = "1" OR attr.b = "2")',
+		)
+
+		const productEvents = buildTimeseriesQuerySpec(
+			tracesDraft({
+				dataSource: "product_events",
+				aggregation: "count",
+				whereClause: '(event.kind = "a" OR event.kind = "b")',
+			}),
+		)
+		expect(productEvents.warnings).toContain(
+			'Unsupported clause syntax ignored: (event.kind = "a" OR event.kind = "b")',
+		)
+	})
+
+	it("round-trips a group through formatFiltersAsWhereClause", () => {
+		const formatted = formatFiltersAsWhereClause({
+			filters: {
+				attributeFilters: [
+					{
+						key: "a",
+						mode: "equals",
+						value: "1",
+						or: [{ key: "b", mode: "exists", negated: true }],
+					},
+				],
+			},
+		})
+		expect(formatted).toBe('(attr.a = "1" OR attr.b !exists)')
+		expect(attrFilters(formatted).attributeFilters).toEqual([
+			{ key: "a", mode: "equals", value: "1", or: [{ key: "b", mode: "exists", negated: true }] },
+		])
+	})
+})

@@ -8564,7 +8564,7 @@ SELECT
         OFFSET 0
         FORMAT JSON
 
--- pipe:list_traces:contains-match:baseline  [40cb839e]
+-- pipe:list_traces:contains-match:baseline  [e1c7d3ae]
 SELECT
           TraceId AS traceId,
           Timestamp AS startTime,
@@ -8577,9 +8577,9 @@ SELECT
           SpanKind AS rootSpanKind,
           StatusCode AS rootSpanStatusCode,
           StatusMessage AS rootSpanStatusMessage,
-          SpanAttributes['http.method'] AS rootHttpMethod,
+          if(SpanAttributes['http.method'] != '', SpanAttributes['http.method'], SpanAttributes['http.request.method']) AS rootHttpMethod,
           SpanAttributes['http.route'] AS rootHttpRoute,
-          SpanAttributes['http.status_code'] AS rootHttpStatusCode,
+          if(SpanAttributes['http.status_code'] != '', SpanAttributes['http.status_code'], SpanAttributes['http.response.status_code']) AS rootHttpStatusCode,
           toJSONString(map('http.method', SpanAttributes['http.method'], 'http.request.method', SpanAttributes['http.request.method'], 'http.route', SpanAttributes['http.route'], 'http.target', SpanAttributes['http.target'], 'http.status_code', SpanAttributes['http.status_code'], 'http.response.status_code', SpanAttributes['http.response.status_code'], 'http.url', SpanAttributes['http.url'], 'url.full', SpanAttributes['url.full'], 'url.path', SpanAttributes['url.path'], 'server.address', SpanAttributes['server.address'], 'net.peer.name', SpanAttributes['net.peer.name'], 'screen.name', SpanAttributes['screen.name'])) AS rootSpanAttributes,
           if(StatusCode = 'Error', 1, 0) AS hasError
         FROM traces
@@ -8602,7 +8602,7 @@ SELECT
         LIMIT 100
         FORMAT JSON
 
--- pipe:list_traces:contains-match:bloom  [40cb839e]
+-- pipe:list_traces:contains-match:bloom  [e1c7d3ae]
 SELECT
           TraceId AS traceId,
           Timestamp AS startTime,
@@ -8615,9 +8615,9 @@ SELECT
           SpanKind AS rootSpanKind,
           StatusCode AS rootSpanStatusCode,
           StatusMessage AS rootSpanStatusMessage,
-          SpanAttributes['http.method'] AS rootHttpMethod,
+          if(SpanAttributes['http.method'] != '', SpanAttributes['http.method'], SpanAttributes['http.request.method']) AS rootHttpMethod,
           SpanAttributes['http.route'] AS rootHttpRoute,
-          SpanAttributes['http.status_code'] AS rootHttpStatusCode,
+          if(SpanAttributes['http.status_code'] != '', SpanAttributes['http.status_code'], SpanAttributes['http.response.status_code']) AS rootHttpStatusCode,
           toJSONString(map('http.method', SpanAttributes['http.method'], 'http.request.method', SpanAttributes['http.request.method'], 'http.route', SpanAttributes['http.route'], 'http.target', SpanAttributes['http.target'], 'http.status_code', SpanAttributes['http.status_code'], 'http.response.status_code', SpanAttributes['http.response.status_code'], 'http.url', SpanAttributes['http.url'], 'url.full', SpanAttributes['url.full'], 'url.path', SpanAttributes['url.path'], 'server.address', SpanAttributes['server.address'], 'net.peer.name', SpanAttributes['net.peer.name'], 'screen.name', SpanAttributes['screen.name'])) AS rootSpanAttributes,
           if(StatusCode = 'Error', 1, 0) AS hasError
         FROM traces
@@ -8640,7 +8640,7 @@ SELECT
         LIMIT 100
         FORMAT JSON
 
--- pipe:list_traces:contains-match:text  [40cb839e]
+-- pipe:list_traces:contains-match:text  [e1c7d3ae]
 SELECT
           TraceId AS traceId,
           Timestamp AS startTime,
@@ -8653,9 +8653,9 @@ SELECT
           SpanKind AS rootSpanKind,
           StatusCode AS rootSpanStatusCode,
           StatusMessage AS rootSpanStatusMessage,
-          SpanAttributes['http.method'] AS rootHttpMethod,
+          if(SpanAttributes['http.method'] != '', SpanAttributes['http.method'], SpanAttributes['http.request.method']) AS rootHttpMethod,
           SpanAttributes['http.route'] AS rootHttpRoute,
-          SpanAttributes['http.status_code'] AS rootHttpStatusCode,
+          if(SpanAttributes['http.status_code'] != '', SpanAttributes['http.status_code'], SpanAttributes['http.response.status_code']) AS rootHttpStatusCode,
           toJSONString(map('http.method', SpanAttributes['http.method'], 'http.request.method', SpanAttributes['http.request.method'], 'http.route', SpanAttributes['http.route'], 'http.target', SpanAttributes['http.target'], 'http.status_code', SpanAttributes['http.status_code'], 'http.response.status_code', SpanAttributes['http.response.status_code'], 'http.url', SpanAttributes['http.url'], 'url.full', SpanAttributes['url.full'], 'url.path', SpanAttributes['url.path'], 'server.address', SpanAttributes['server.address'], 'net.peer.name', SpanAttributes['net.peer.name'], 'screen.name', SpanAttributes['screen.name'])) AS rootSpanAttributes,
           if(StatusCode = 'Error', 1, 0) AS hasError
         FROM traces
@@ -8678,7 +8678,7 @@ SELECT
         LIMIT 100
         FORMAT JSON
 
--- pipe:list_traces:default:baseline  [81ae2912]
+-- pipe:list_traces:default:baseline  [5b987fa2]
 SELECT
           TraceId AS traceId,
           Timestamp AS startTime,
@@ -8691,9 +8691,9 @@ SELECT
           SpanKind AS rootSpanKind,
           StatusCode AS rootSpanStatusCode,
           StatusMessage AS rootSpanStatusMessage,
-          SpanAttributes['http.method'] AS rootHttpMethod,
+          if(SpanAttributes['http.method'] != '', SpanAttributes['http.method'], SpanAttributes['http.request.method']) AS rootHttpMethod,
           SpanAttributes['http.route'] AS rootHttpRoute,
-          SpanAttributes['http.status_code'] AS rootHttpStatusCode,
+          if(SpanAttributes['http.status_code'] != '', SpanAttributes['http.status_code'], SpanAttributes['http.response.status_code']) AS rootHttpStatusCode,
           toJSONString(map('http.method', SpanAttributes['http.method'], 'http.request.method', SpanAttributes['http.request.method'], 'http.route', SpanAttributes['http.route'], 'http.target', SpanAttributes['http.target'], 'http.status_code', SpanAttributes['http.status_code'], 'http.response.status_code', SpanAttributes['http.response.status_code'], 'http.url', SpanAttributes['http.url'], 'url.full', SpanAttributes['url.full'], 'url.path', SpanAttributes['url.path'], 'server.address', SpanAttributes['server.address'], 'net.peer.name', SpanAttributes['net.peer.name'], 'screen.name', SpanAttributes['screen.name'])) AS rootSpanAttributes,
           if(StatusCode = 'Error', 1, 0) AS hasError
         FROM traces
@@ -8714,7 +8714,7 @@ SELECT
         LIMIT 100
         FORMAT JSON
 
--- pipe:list_traces:default:bloom  [81ae2912]
+-- pipe:list_traces:default:bloom  [5b987fa2]
 SELECT
           TraceId AS traceId,
           Timestamp AS startTime,
@@ -8727,9 +8727,9 @@ SELECT
           SpanKind AS rootSpanKind,
           StatusCode AS rootSpanStatusCode,
           StatusMessage AS rootSpanStatusMessage,
-          SpanAttributes['http.method'] AS rootHttpMethod,
+          if(SpanAttributes['http.method'] != '', SpanAttributes['http.method'], SpanAttributes['http.request.method']) AS rootHttpMethod,
           SpanAttributes['http.route'] AS rootHttpRoute,
-          SpanAttributes['http.status_code'] AS rootHttpStatusCode,
+          if(SpanAttributes['http.status_code'] != '', SpanAttributes['http.status_code'], SpanAttributes['http.response.status_code']) AS rootHttpStatusCode,
           toJSONString(map('http.method', SpanAttributes['http.method'], 'http.request.method', SpanAttributes['http.request.method'], 'http.route', SpanAttributes['http.route'], 'http.target', SpanAttributes['http.target'], 'http.status_code', SpanAttributes['http.status_code'], 'http.response.status_code', SpanAttributes['http.response.status_code'], 'http.url', SpanAttributes['http.url'], 'url.full', SpanAttributes['url.full'], 'url.path', SpanAttributes['url.path'], 'server.address', SpanAttributes['server.address'], 'net.peer.name', SpanAttributes['net.peer.name'], 'screen.name', SpanAttributes['screen.name'])) AS rootSpanAttributes,
           if(StatusCode = 'Error', 1, 0) AS hasError
         FROM traces
@@ -8750,7 +8750,7 @@ SELECT
         LIMIT 100
         FORMAT JSON
 
--- pipe:list_traces:default:text  [81ae2912]
+-- pipe:list_traces:default:text  [5b987fa2]
 SELECT
           TraceId AS traceId,
           Timestamp AS startTime,
@@ -8763,9 +8763,9 @@ SELECT
           SpanKind AS rootSpanKind,
           StatusCode AS rootSpanStatusCode,
           StatusMessage AS rootSpanStatusMessage,
-          SpanAttributes['http.method'] AS rootHttpMethod,
+          if(SpanAttributes['http.method'] != '', SpanAttributes['http.method'], SpanAttributes['http.request.method']) AS rootHttpMethod,
           SpanAttributes['http.route'] AS rootHttpRoute,
-          SpanAttributes['http.status_code'] AS rootHttpStatusCode,
+          if(SpanAttributes['http.status_code'] != '', SpanAttributes['http.status_code'], SpanAttributes['http.response.status_code']) AS rootHttpStatusCode,
           toJSONString(map('http.method', SpanAttributes['http.method'], 'http.request.method', SpanAttributes['http.request.method'], 'http.route', SpanAttributes['http.route'], 'http.target', SpanAttributes['http.target'], 'http.status_code', SpanAttributes['http.status_code'], 'http.response.status_code', SpanAttributes['http.response.status_code'], 'http.url', SpanAttributes['http.url'], 'url.full', SpanAttributes['url.full'], 'url.path', SpanAttributes['url.path'], 'server.address', SpanAttributes['server.address'], 'net.peer.name', SpanAttributes['net.peer.name'], 'screen.name', SpanAttributes['screen.name'])) AS rootSpanAttributes,
           if(StatusCode = 'Error', 1, 0) AS hasError
         FROM traces
@@ -8786,7 +8786,7 @@ SELECT
         LIMIT 100
         FORMAT JSON
 
--- pipe:list_traces:filtered:baseline  [3ad9d1ec]
+-- pipe:list_traces:filtered:baseline  [8cdab2fc]
 SELECT
           TraceId AS traceId,
           Timestamp AS startTime,
@@ -8799,9 +8799,9 @@ SELECT
           SpanKind AS rootSpanKind,
           StatusCode AS rootSpanStatusCode,
           StatusMessage AS rootSpanStatusMessage,
-          SpanAttributes['http.method'] AS rootHttpMethod,
+          if(SpanAttributes['http.method'] != '', SpanAttributes['http.method'], SpanAttributes['http.request.method']) AS rootHttpMethod,
           SpanAttributes['http.route'] AS rootHttpRoute,
-          SpanAttributes['http.status_code'] AS rootHttpStatusCode,
+          if(SpanAttributes['http.status_code'] != '', SpanAttributes['http.status_code'], SpanAttributes['http.response.status_code']) AS rootHttpStatusCode,
           toJSONString(map('http.method', SpanAttributes['http.method'], 'http.request.method', SpanAttributes['http.request.method'], 'http.route', SpanAttributes['http.route'], 'http.target', SpanAttributes['http.target'], 'http.status_code', SpanAttributes['http.status_code'], 'http.response.status_code', SpanAttributes['http.response.status_code'], 'http.url', SpanAttributes['http.url'], 'url.full', SpanAttributes['url.full'], 'url.path', SpanAttributes['url.path'], 'server.address', SpanAttributes['server.address'], 'net.peer.name', SpanAttributes['net.peer.name'], 'screen.name', SpanAttributes['screen.name'])) AS rootSpanAttributes,
           if(StatusCode = 'Error', 1, 0) AS hasError
         FROM traces
@@ -8838,7 +8838,7 @@ SELECT
         LIMIT 25
         FORMAT JSON
 
--- pipe:list_traces:filtered:bloom  [2d366eb8]
+-- pipe:list_traces:filtered:bloom  [08b94a48]
 SELECT
           TraceId AS traceId,
           Timestamp AS startTime,
@@ -8851,9 +8851,9 @@ SELECT
           SpanKind AS rootSpanKind,
           StatusCode AS rootSpanStatusCode,
           StatusMessage AS rootSpanStatusMessage,
-          SpanAttributes['http.method'] AS rootHttpMethod,
+          if(SpanAttributes['http.method'] != '', SpanAttributes['http.method'], SpanAttributes['http.request.method']) AS rootHttpMethod,
           SpanAttributes['http.route'] AS rootHttpRoute,
-          SpanAttributes['http.status_code'] AS rootHttpStatusCode,
+          if(SpanAttributes['http.status_code'] != '', SpanAttributes['http.status_code'], SpanAttributes['http.response.status_code']) AS rootHttpStatusCode,
           toJSONString(map('http.method', SpanAttributes['http.method'], 'http.request.method', SpanAttributes['http.request.method'], 'http.route', SpanAttributes['http.route'], 'http.target', SpanAttributes['http.target'], 'http.status_code', SpanAttributes['http.status_code'], 'http.response.status_code', SpanAttributes['http.response.status_code'], 'http.url', SpanAttributes['http.url'], 'url.full', SpanAttributes['url.full'], 'url.path', SpanAttributes['url.path'], 'server.address', SpanAttributes['server.address'], 'net.peer.name', SpanAttributes['net.peer.name'], 'screen.name', SpanAttributes['screen.name'])) AS rootSpanAttributes,
           if(StatusCode = 'Error', 1, 0) AS hasError
         FROM traces
@@ -8890,7 +8890,7 @@ SELECT
         LIMIT 25
         FORMAT JSON
 
--- pipe:list_traces:filtered:text  [ff504ae4]
+-- pipe:list_traces:filtered:text  [3cbe65b4]
 SELECT
           TraceId AS traceId,
           Timestamp AS startTime,
@@ -8903,9 +8903,9 @@ SELECT
           SpanKind AS rootSpanKind,
           StatusCode AS rootSpanStatusCode,
           StatusMessage AS rootSpanStatusMessage,
-          SpanAttributes['http.method'] AS rootHttpMethod,
+          if(SpanAttributes['http.method'] != '', SpanAttributes['http.method'], SpanAttributes['http.request.method']) AS rootHttpMethod,
           SpanAttributes['http.route'] AS rootHttpRoute,
-          SpanAttributes['http.status_code'] AS rootHttpStatusCode,
+          if(SpanAttributes['http.status_code'] != '', SpanAttributes['http.status_code'], SpanAttributes['http.response.status_code']) AS rootHttpStatusCode,
           toJSONString(map('http.method', SpanAttributes['http.method'], 'http.request.method', SpanAttributes['http.request.method'], 'http.route', SpanAttributes['http.route'], 'http.target', SpanAttributes['http.target'], 'http.status_code', SpanAttributes['http.status_code'], 'http.response.status_code', SpanAttributes['http.response.status_code'], 'http.url', SpanAttributes['http.url'], 'url.full', SpanAttributes['url.full'], 'url.path', SpanAttributes['url.path'], 'server.address', SpanAttributes['server.address'], 'net.peer.name', SpanAttributes['net.peer.name'], 'screen.name', SpanAttributes['screen.name'])) AS rootSpanAttributes,
           if(StatusCode = 'Error', 1, 0) AS hasError
         FROM traces
@@ -13518,7 +13518,7 @@ SELECT
 ) AS errorCount_tiers
 FORMAT JSON
 
--- spec:traces-list-grouped-attr-fallback:baseline  [6b9a4329]
+-- spec:traces-list-grouped-attr-fallback:baseline  [17176ec5]
 SELECT
           TraceId AS traceId,
           argMin(Timestamp, (if(ParentSpanId = '', 0, 1), Timestamp)) AS startTime,
@@ -13531,9 +13531,9 @@ SELECT
           argMin(SpanName, (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanName,
           argMin(SpanKind, (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanKind,
           argMin(StatusCode, (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanStatusCode,
-          argMin(SpanAttributes['http.method'], (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpMethod,
+          argMin(if(SpanAttributes['http.method'] != '', SpanAttributes['http.method'], SpanAttributes['http.request.method']), (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpMethod,
           argMin(SpanAttributes['http.route'], (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpRoute,
-          argMin(SpanAttributes['http.status_code'], (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpStatusCode,
+          argMin(if(SpanAttributes['http.status_code'] != '', SpanAttributes['http.status_code'], SpanAttributes['http.response.status_code']), (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpStatusCode,
           argMin(toJSONString(map('http.method', SpanAttributes['http.method'], 'http.request.method', SpanAttributes['http.request.method'], 'http.route', SpanAttributes['http.route'], 'http.target', SpanAttributes['http.target'], 'http.status_code', SpanAttributes['http.status_code'], 'http.response.status_code', SpanAttributes['http.response.status_code'], 'http.url', SpanAttributes['http.url'], 'url.full', SpanAttributes['url.full'], 'url.path', SpanAttributes['url.path'], 'server.address', SpanAttributes['server.address'], 'net.peer.name', SpanAttributes['net.peer.name'], 'screen.name', SpanAttributes['screen.name'])), (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanAttributes,
           if(argMin(StatusCode, (if(ParentSpanId = '', 0, 1), Timestamp)) = 'Error', 1, 0) AS hasError
         FROM trace_detail_spans
@@ -13559,7 +13559,7 @@ SELECT
         LIMIT 50
         FORMAT JSON
 
--- spec:traces-list-grouped-attr-fallback:bloom  [b78292d3]
+-- spec:traces-list-grouped-attr-fallback:bloom  [89660e07]
 SELECT
           TraceId AS traceId,
           argMin(Timestamp, (if(ParentSpanId = '', 0, 1), Timestamp)) AS startTime,
@@ -13572,9 +13572,9 @@ SELECT
           argMin(SpanName, (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanName,
           argMin(SpanKind, (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanKind,
           argMin(StatusCode, (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanStatusCode,
-          argMin(SpanAttributes['http.method'], (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpMethod,
+          argMin(if(SpanAttributes['http.method'] != '', SpanAttributes['http.method'], SpanAttributes['http.request.method']), (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpMethod,
           argMin(SpanAttributes['http.route'], (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpRoute,
-          argMin(SpanAttributes['http.status_code'], (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpStatusCode,
+          argMin(if(SpanAttributes['http.status_code'] != '', SpanAttributes['http.status_code'], SpanAttributes['http.response.status_code']), (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpStatusCode,
           argMin(toJSONString(map('http.method', SpanAttributes['http.method'], 'http.request.method', SpanAttributes['http.request.method'], 'http.route', SpanAttributes['http.route'], 'http.target', SpanAttributes['http.target'], 'http.status_code', SpanAttributes['http.status_code'], 'http.response.status_code', SpanAttributes['http.response.status_code'], 'http.url', SpanAttributes['http.url'], 'url.full', SpanAttributes['url.full'], 'url.path', SpanAttributes['url.path'], 'server.address', SpanAttributes['server.address'], 'net.peer.name', SpanAttributes['net.peer.name'], 'screen.name', SpanAttributes['screen.name'])), (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanAttributes,
           if(argMin(StatusCode, (if(ParentSpanId = '', 0, 1), Timestamp)) = 'Error', 1, 0) AS hasError
         FROM trace_detail_spans
@@ -13600,7 +13600,7 @@ SELECT
         LIMIT 50
         FORMAT JSON
 
--- spec:traces-list-grouped-attr-fallback:text  [b34bb97f]
+-- spec:traces-list-grouped-attr-fallback:text  [948dcec3]
 SELECT
           TraceId AS traceId,
           argMin(Timestamp, (if(ParentSpanId = '', 0, 1), Timestamp)) AS startTime,
@@ -13613,9 +13613,9 @@ SELECT
           argMin(SpanName, (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanName,
           argMin(SpanKind, (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanKind,
           argMin(StatusCode, (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanStatusCode,
-          argMin(SpanAttributes['http.method'], (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpMethod,
+          argMin(if(SpanAttributes['http.method'] != '', SpanAttributes['http.method'], SpanAttributes['http.request.method']), (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpMethod,
           argMin(SpanAttributes['http.route'], (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpRoute,
-          argMin(SpanAttributes['http.status_code'], (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpStatusCode,
+          argMin(if(SpanAttributes['http.status_code'] != '', SpanAttributes['http.status_code'], SpanAttributes['http.response.status_code']), (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpStatusCode,
           argMin(toJSONString(map('http.method', SpanAttributes['http.method'], 'http.request.method', SpanAttributes['http.request.method'], 'http.route', SpanAttributes['http.route'], 'http.target', SpanAttributes['http.target'], 'http.status_code', SpanAttributes['http.status_code'], 'http.response.status_code', SpanAttributes['http.response.status_code'], 'http.url', SpanAttributes['http.url'], 'url.full', SpanAttributes['url.full'], 'url.path', SpanAttributes['url.path'], 'server.address', SpanAttributes['server.address'], 'net.peer.name', SpanAttributes['net.peer.name'], 'screen.name', SpanAttributes['screen.name'])), (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanAttributes,
           if(argMin(StatusCode, (if(ParentSpanId = '', 0, 1), Timestamp)) = 'Error', 1, 0) AS hasError
         FROM trace_detail_spans
@@ -13641,7 +13641,7 @@ SELECT
         LIMIT 50
         FORMAT JSON
 
--- spec:traces-list-grouped-duration-sort:baseline  [093a8beb]
+-- spec:traces-list-grouped-duration-sort:baseline  [a37a427f]
 SELECT
           TraceId AS traceId,
           argMin(Timestamp, (if(ParentSpanId = '', 0, 1), Timestamp)) AS startTime,
@@ -13654,9 +13654,9 @@ SELECT
           argMin(SpanName, (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanName,
           argMin(SpanKind, (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanKind,
           argMin(StatusCode, (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanStatusCode,
-          argMin(SpanAttributes['http.method'], (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpMethod,
+          argMin(if(SpanAttributes['http.method'] != '', SpanAttributes['http.method'], SpanAttributes['http.request.method']), (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpMethod,
           argMin(SpanAttributes['http.route'], (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpRoute,
-          argMin(SpanAttributes['http.status_code'], (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpStatusCode,
+          argMin(if(SpanAttributes['http.status_code'] != '', SpanAttributes['http.status_code'], SpanAttributes['http.response.status_code']), (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpStatusCode,
           argMin(toJSONString(map('http.method', SpanAttributes['http.method'], 'http.request.method', SpanAttributes['http.request.method'], 'http.route', SpanAttributes['http.route'], 'http.target', SpanAttributes['http.target'], 'http.status_code', SpanAttributes['http.status_code'], 'http.response.status_code', SpanAttributes['http.response.status_code'], 'http.url', SpanAttributes['http.url'], 'url.full', SpanAttributes['url.full'], 'url.path', SpanAttributes['url.path'], 'server.address', SpanAttributes['server.address'], 'net.peer.name', SpanAttributes['net.peer.name'], 'screen.name', SpanAttributes['screen.name'])), (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanAttributes,
           if(argMin(StatusCode, (if(ParentSpanId = '', 0, 1), Timestamp)) = 'Error', 1, 0) AS hasError
         FROM trace_detail_spans
@@ -13681,7 +13681,7 @@ SELECT
         LIMIT 50
         FORMAT JSON
 
--- spec:traces-list-grouped:baseline  [b3702242]
+-- spec:traces-list-grouped:baseline  [f4908fbe]
 SELECT
           TraceId AS traceId,
           argMin(Timestamp, (if(ParentSpanId = '', 0, 1), Timestamp)) AS startTime,
@@ -13694,9 +13694,9 @@ SELECT
           argMin(SpanName, (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanName,
           argMin(SpanKind, (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanKind,
           argMin(StatusCode, (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanStatusCode,
-          argMin(SpanAttributes['http.method'], (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpMethod,
+          argMin(if(SpanAttributes['http.method'] != '', SpanAttributes['http.method'], SpanAttributes['http.request.method']), (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpMethod,
           argMin(SpanAttributes['http.route'], (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpRoute,
-          argMin(SpanAttributes['http.status_code'], (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpStatusCode,
+          argMin(if(SpanAttributes['http.status_code'] != '', SpanAttributes['http.status_code'], SpanAttributes['http.response.status_code']), (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpStatusCode,
           argMin(toJSONString(map('http.method', SpanAttributes['http.method'], 'http.request.method', SpanAttributes['http.request.method'], 'http.route', SpanAttributes['http.route'], 'http.target', SpanAttributes['http.target'], 'http.status_code', SpanAttributes['http.status_code'], 'http.response.status_code', SpanAttributes['http.response.status_code'], 'http.url', SpanAttributes['http.url'], 'url.full', SpanAttributes['url.full'], 'url.path', SpanAttributes['url.path'], 'server.address', SpanAttributes['server.address'], 'net.peer.name', SpanAttributes['net.peer.name'], 'screen.name', SpanAttributes['screen.name'])), (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanAttributes,
           if(argMin(StatusCode, (if(ParentSpanId = '', 0, 1), Timestamp)) = 'Error', 1, 0) AS hasError
         FROM trace_detail_spans
@@ -13720,7 +13720,7 @@ SELECT
         LIMIT 50
         FORMAT JSON
 
--- spec:traces-list-grouped:bloom  [b3702242]
+-- spec:traces-list-grouped:bloom  [f4908fbe]
 SELECT
           TraceId AS traceId,
           argMin(Timestamp, (if(ParentSpanId = '', 0, 1), Timestamp)) AS startTime,
@@ -13733,9 +13733,9 @@ SELECT
           argMin(SpanName, (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanName,
           argMin(SpanKind, (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanKind,
           argMin(StatusCode, (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanStatusCode,
-          argMin(SpanAttributes['http.method'], (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpMethod,
+          argMin(if(SpanAttributes['http.method'] != '', SpanAttributes['http.method'], SpanAttributes['http.request.method']), (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpMethod,
           argMin(SpanAttributes['http.route'], (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpRoute,
-          argMin(SpanAttributes['http.status_code'], (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpStatusCode,
+          argMin(if(SpanAttributes['http.status_code'] != '', SpanAttributes['http.status_code'], SpanAttributes['http.response.status_code']), (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpStatusCode,
           argMin(toJSONString(map('http.method', SpanAttributes['http.method'], 'http.request.method', SpanAttributes['http.request.method'], 'http.route', SpanAttributes['http.route'], 'http.target', SpanAttributes['http.target'], 'http.status_code', SpanAttributes['http.status_code'], 'http.response.status_code', SpanAttributes['http.response.status_code'], 'http.url', SpanAttributes['http.url'], 'url.full', SpanAttributes['url.full'], 'url.path', SpanAttributes['url.path'], 'server.address', SpanAttributes['server.address'], 'net.peer.name', SpanAttributes['net.peer.name'], 'screen.name', SpanAttributes['screen.name'])), (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanAttributes,
           if(argMin(StatusCode, (if(ParentSpanId = '', 0, 1), Timestamp)) = 'Error', 1, 0) AS hasError
         FROM trace_detail_spans
@@ -13759,7 +13759,7 @@ SELECT
         LIMIT 50
         FORMAT JSON
 
--- spec:traces-list-grouped:text  [b3702242]
+-- spec:traces-list-grouped:text  [f4908fbe]
 SELECT
           TraceId AS traceId,
           argMin(Timestamp, (if(ParentSpanId = '', 0, 1), Timestamp)) AS startTime,
@@ -13772,9 +13772,9 @@ SELECT
           argMin(SpanName, (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanName,
           argMin(SpanKind, (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanKind,
           argMin(StatusCode, (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanStatusCode,
-          argMin(SpanAttributes['http.method'], (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpMethod,
+          argMin(if(SpanAttributes['http.method'] != '', SpanAttributes['http.method'], SpanAttributes['http.request.method']), (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpMethod,
           argMin(SpanAttributes['http.route'], (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpRoute,
-          argMin(SpanAttributes['http.status_code'], (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpStatusCode,
+          argMin(if(SpanAttributes['http.status_code'] != '', SpanAttributes['http.status_code'], SpanAttributes['http.response.status_code']), (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpStatusCode,
           argMin(toJSONString(map('http.method', SpanAttributes['http.method'], 'http.request.method', SpanAttributes['http.request.method'], 'http.route', SpanAttributes['http.route'], 'http.target', SpanAttributes['http.target'], 'http.status_code', SpanAttributes['http.status_code'], 'http.response.status_code', SpanAttributes['http.response.status_code'], 'http.url', SpanAttributes['http.url'], 'url.full', SpanAttributes['url.full'], 'url.path', SpanAttributes['url.path'], 'server.address', SpanAttributes['server.address'], 'net.peer.name', SpanAttributes['net.peer.name'], 'screen.name', SpanAttributes['screen.name'])), (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanAttributes,
           if(argMin(StatusCode, (if(ParentSpanId = '', 0, 1), Timestamp)) = 'Error', 1, 0) AS hasError
         FROM trace_detail_spans

@@ -9,7 +9,6 @@
 import type { AiSessionSpan } from "@maple/domain/http"
 
 import { formatNumber, formatSessionDuration } from "@maple/domain/format"
-import { canonicalJSON } from "@maple/query-engine"
 import { clipDetail, failureDetailText } from "./failure-text"
 import {
 	failureEvents,
@@ -22,23 +21,12 @@ import {
 	type SessionSummary,
 } from "./session-summary"
 import {
-	isCountedToolCall,
 	isLlmCall,
 	spanEndMs,
 	spanFailed,
 	spanStartMs,
 	type SessionTurn,
 } from "./session-turns"
-
-/** Same tool this often within one turn reads as the agent going in circles. */
-const REPEATED_TOOL_MIN_CALLS = 8
-
-/**
- * The same call — tool and arguments — this many times in a row, with nothing
- * between, is a loop whatever the tool's total. One unchanged retry after a
- * failure is not: a transient 429 or timeout is retried exactly that way.
- */
-const IDENTICAL_RUN_MIN_CALLS = 3
 
 /**
  * A hole this long INSIDE a turn is the framework stalled mid-flight. Gaps
@@ -71,9 +59,9 @@ const FAILURE_KINDS: ReadonlySet<SessionFailureKind> = new Set([
  *  split reads the same field, so the two never disagree. */
 export type FindingSeverity = "failure" | "anomaly"
 
-/** Which detector produced the row: a failure kind, or one of the four
+/** Which detector produced the row: a failure kind, or one of the three
  *  session-shape detectors below. What the checklist groups rows on. */
-export type SessionFindingKind = SessionFailureKind | "providerRetry" | "truncation" | "repetition" | "stall"
+export type SessionFindingKind = SessionFailureKind | "providerRetry" | "truncation" | "stall"
 
 export interface SessionFinding {
 	readonly id: string
@@ -140,7 +128,6 @@ export function buildSessionFindings(
 		...failureFindings(events, turns, turnIndexBySpan, cause?.span.spanId, spans),
 		...retryFindings(spans, turns, turnIndexBySpan),
 		...truncationFindings(spans, turns, turnIndexBySpan),
-		...repetitionFindings(turns),
 		...stallFindings(turns),
 	].sort(
 		(a, b) =>
@@ -354,91 +341,6 @@ function truncationFindings(
 
 function truncationSignal(span: AiSessionSpan): string | undefined {
 	return finishReasonsIn(span, TRUNCATION_FINISH_REASONS)
-}
-
-function repetitionFindings(turns: readonly SessionTurn[]): SessionFinding[] {
-	const findings: SessionFinding[] = []
-	turns.forEach((turn, index) => {
-		const calls = turn.spans.filter(isCountedToolCall)
-		const byTool = new Map<string, AiSessionSpan[]>()
-		for (const span of calls) {
-			const name = toolNameOf(span)
-			const list = byTool.get(name) ?? []
-			list.push(span)
-			byTool.set(name, list)
-		}
-		const runs = longestIdenticalRuns(calls)
-		for (const [name, toolCalls] of byTool) {
-			const run = runs.get(name) ?? []
-			const looped = run.length >= IDENTICAL_RUN_MIN_CALLS
-			if (toolCalls.length < REPEATED_TOOL_MIN_CALLS && !looped) continue
-			// The row links where the loop began, else the tool's first call.
-			const first = looped ? run[0] : toolCalls[0]
-			findings.push({
-				id: `repetition:${turn.id}:${name}`,
-				kind: "repetition",
-				severity: "anomaly",
-				label: name,
-				tool: name,
-				count: 1,
-				turnText: turnListText([index], turns, false),
-				terminal: false,
-				detail: looped
-					? spanFailed(run[0])
-						? `retried ${run.length - 1}× unchanged after it failed`
-						: `called ${toolCalls.length}× within one turn, ${run.length} in a row with identical arguments`
-					: `called ${toolCalls.length}× within one turn`,
-				spanId: first.spanId,
-				atMs: spanStartMs(first),
-			})
-		}
-	})
-	return findings
-}
-
-function toolNameOf(span: AiSessionSpan): string {
-	return span.genAi.toolName ?? span.spanName
-}
-
-/**
- * Per tool, the longest run of back-to-back calls that sent the same
- * arguments — back-to-back across every tool call of the turn, in start
- * order, with nothing at all between. A test suite re-run after a write sends
- * the same arguments over new code, which is progress; the same call three
- * times with nothing between is not. A tool whose calls never recorded
- * arguments has no run. Among runs of equal length the one that opened with a
- * failure wins, since that is the one the row should say retried. Arguments
- * compare as canonical JSON so key order cannot split a run.
- */
-function longestIdenticalRuns(
-	calls: readonly AiSessionSpan[],
-): ReadonlyMap<string, readonly AiSessionSpan[]> {
-	const longest = new Map<string, readonly AiSessionSpan[]>()
-	let run: AiSessionSpan[] = []
-	let key: string | undefined
-	for (const span of calls) {
-		// `?? undefined`: a JSON `null` is a call that recorded nothing.
-		const args = span.genAi.toolCallArguments ?? undefined
-		const name = toolNameOf(span)
-		const next = args === undefined ? undefined : `${name}\u0000${canonicalJSON(args)}`
-		if (next !== undefined && next === key) {
-			run.push(span)
-		} else {
-			run = next === undefined ? [] : [span]
-			key = next
-		}
-		if (run.length === 0) continue
-		const best = longest.get(name)
-		if (
-			best === undefined ||
-			run.length > best.length ||
-			(run.length === best.length && spanFailed(run[0]) && !spanFailed(best[0]))
-		) {
-			// A copy: the run keeps growing after it is recorded.
-			longest.set(name, [...run])
-		}
-	}
-	return longest
 }
 
 function stallFindings(turns: readonly SessionTurn[]): SessionFinding[] {

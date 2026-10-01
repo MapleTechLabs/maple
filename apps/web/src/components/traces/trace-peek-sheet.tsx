@@ -350,7 +350,8 @@ function TracePeekLoaded({
 	const rootHttpInfo = getHttpInfo(rootSpan)
 	const hasError = data.spans.some((s: Span) => {
 		if (s.statusCode === "Error") return true
-		const httpStatus = s.spanAttributes?.["http.status_code"]
+		const httpStatus =
+			s.spanAttributes?.["http.response.status_code"] || s.spanAttributes?.["http.status_code"]
 		const code = typeof httpStatus === "string" ? parseInt(httpStatus) : httpStatus
 		return typeof code === "number" && code >= 500
 	})
@@ -388,7 +389,10 @@ function TracePeekLoaded({
 					traceId={traceId}
 					hasError={hasError}
 					httpStatusCode={rootHttpInfo?.statusCode}
-					deploymentEnv={rootSpan.resourceAttributes?.["deployment.environment"]}
+					deploymentEnv={
+						rootSpan.resourceAttributes?.["deployment.environment.name"] ||
+						rootSpan.resourceAttributes?.["deployment.environment"]
+					}
 					commitSha={rootSpan.resourceAttributes?.["vcs.ref.head.revision"]}
 				/>
 

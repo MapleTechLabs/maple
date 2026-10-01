@@ -470,13 +470,11 @@ describe("POST /internal/ai-sessions/list", () => {
 		pageRow(`trace:${TRACE_ID}`, "2026-08-19 09:50:00.000000000", "2026-08-19 10:00:00.000000000"),
 	]
 
-	it("answers from one index read over the caller's window, never touching trace_detail_spans", async () => {
-		const contexts: Array<string | undefined> = []
-		let pageSql: string | undefined
+	it("ranks the page over the caller's window, then reads its rows over the page's extent, never touching trace_detail_spans", async () => {
+		const reads: Array<{ context: string | undefined; sql: string }> = []
 		const harness = makeHarness({
 			compiledQuery: (_tenant, compiled, options) => {
-				contexts.push(options?.context)
-				pageSql = compiledQueryOf(compiled).sql
+				reads.push({ context: options?.context, sql: compiledQueryOf(compiled).sql })
 				return compiledQueryOf(compiled).decodeRows(PAGE).pipe(Effect.orDie)
 			},
 		})
@@ -487,12 +485,43 @@ describe("POST /internal/ai-sessions/list", () => {
 			// The fan-out over `trace_detail_spans` is seconds on a cold partition,
 			// which is why it is the client's second request (`/details`) and not
 			// part of this one.
+			expect(reads.map((read) => read.context)).toEqual(["aiSessionsRank", "aiSessionsPage"])
+			const [rank, page] = reads.map((read) => read.sql)
+			for (const sql of [rank, page]) {
+				expect(sql).toContain("FROM ai_trace_index")
+				expect(sql).not.toContain("trace_detail_spans")
+				expect(sql).not.toContain("__PARAM_")
+			}
+			expect(rank).toContain(`Timestamp <= '${WINDOW.endTime}'`)
+			expect(rank).toContain("LIMIT 3")
+			// The rows: the ranked sessions, between the earliest start and the
+			// latest end among them.
+			expect(page).toContain("IN ('wrun_beta', 'wrun_alpha', 'trace:")
+			expect(page).toContain("Timestamp >= '2026-08-19 09:50:00.000000000'")
+			expect(page).toContain("Timestamp <= '2026-08-19 10:40:00.000000000'")
+			expect(page).toContain(`Timestamp <= '${WINDOW.endTime}'`)
+			expect(page).not.toContain("LIMIT")
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("reads a page sorted on usage in one read, which nets every session of the window", async () => {
+		const contexts: Array<string | undefined> = []
+		const harness = makeHarness({
+			compiledQuery: (_tenant, compiled, options) => {
+				contexts.push(options?.context)
+				return compiledQueryOf(compiled).decodeRows(PAGE).pipe(Effect.orDie)
+			},
+		})
+
+		try {
+			const response = await harness.post("/internal/ai-sessions/list", {
+				...LIST_BODY,
+				sortBy: "cost",
+			})
+			expect(response.status).toBe(200)
 			expect(contexts).toEqual(["aiSessionsPage"])
-			expect(pageSql).toContain("FROM ai_trace_index")
-			expect(pageSql).not.toContain("trace_detail_spans")
-			expect(pageSql).toContain(`Timestamp <= '${WINDOW.endTime}'`)
-			expect(pageSql).toContain("LIMIT 3")
-			expect(pageSql).not.toContain("__PARAM_")
 		} finally {
 			await harness.dispose()
 		}

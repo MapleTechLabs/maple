@@ -3,6 +3,7 @@ import {
 	QueryEngineExecuteRequest,
 	TracesFacetDimension,
 	type AttributeFilter,
+	type AttributeFilterLeaf,
 	formatWarehouseDateTime,
 } from "@maple/query-engine"
 import { TraceId, SpanId } from "@maple/domain"
@@ -40,11 +41,18 @@ const toTraceId = Schema.decodeSync(TraceId)
 
 const ContainsMatchMode = Schema.optional(Schema.Literals(["contains"]))
 
-const AttributeFilterInput = Schema.Struct({
+const attributeFilterInputFields = {
 	key: Schema.String,
 	value: Schema.String,
 	matchMode: Schema.optional(Schema.Literals(["contains", "exists", "gt", "gte", "lt", "lte"])),
 	negated: Schema.optional(Schema.Boolean),
+}
+const AttributeFilterLeafInput = Schema.Struct(attributeFilterInputFields)
+
+const AttributeFilterInput = Schema.Struct({
+	...attributeFilterInputFields,
+	/** The other members of an `(a OR b)` where-clause group. */
+	or: Schema.optional(Schema.Array(AttributeFilterLeafInput)),
 })
 
 const ListTracesInputSchema = Schema.Struct({
@@ -189,13 +197,21 @@ function httpAttributeFilter(key: string, values: readonly string[] | undefined)
 }
 
 /** An absent match mode is equality; `exists` is a presence check and carries no value. */
-function toAttributeFilter(entry: typeof AttributeFilterInput.Type): AttributeFilter {
+function toAttributeFilterLeaf(entry: typeof AttributeFilterLeafInput.Type): AttributeFilterLeaf {
 	const mode = entry.matchMode ?? "equals"
 	return {
 		key: entry.key,
 		...(mode === "exists" ? undefined : { value: entry.value }),
 		mode,
 		negated: entry.negated || undefined,
+	}
+}
+
+function toAttributeFilter(entry: typeof AttributeFilterInput.Type): AttributeFilter {
+	const { or, ...first } = entry
+	return {
+		...toAttributeFilterLeaf(first),
+		...(or?.length ? { or: or.map(toAttributeFilterLeaf) } : undefined),
 	}
 }
 

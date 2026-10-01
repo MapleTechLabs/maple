@@ -166,44 +166,82 @@ const resolveRead = Effect.fnUntraced(function* (
 	return yield* resolveAiSessionWindow(tenant, payload.sessionId)
 })
 
+type PageBounds = {
+	readonly orgId: string
+	readonly fanOutStart: string
+	readonly fanOutEnd: string
+	readonly endTime: string
+}
+
 export const listAiSessions = Effect.fn("aiSessions.list")(function* (
 	tenant: TenantContext,
 	payload: ListAiSessionsRequest,
 ) {
 	const warehouse = yield* WarehouseQueryService
 	yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId })
-	// One read, off `ai_trace_index` alone: the page is ranked over the
-	// caller's whole window and every fact the row shows is measured
-	// there, over the session's agent spans. The facts only the traces'
-	// other spans can answer come from `details`, which the client
-	// asks for once this has rendered — see `aiSessionPageQuery` for
-	// what the fan-out cost on the critical path.
-	const page = yield* warehouse.compiledQuery(
-		tenant,
-		CH.compile(
-			Integrations.aiSessionPageQuery({
-				...countedFilters(payload),
-				limit: payload.limit,
-				offset: payload.offset,
-				hasErrors: payload.hasErrors,
-				excludeTraceSessions: payload.excludeTraceSessions,
-				durationMinMs: payload.durationMinMs,
-				durationMaxMs: payload.durationMaxMs,
-				costMin: payload.costMin,
-				costMax: payload.costMax,
-				tokensMin: payload.tokensMin,
-				tokensMax: payload.tokensMax,
-				llmCallsMin: payload.llmCallsMin,
-				llmCallsMax: payload.llmCallsMax,
-				toolCallsMin: payload.toolCallsMin,
-				toolCallsMax: payload.toolCallsMax,
-				sortBy: payload.sortBy,
-				sortDir: payload.sortDir,
-			}),
-			{ orgId: tenant.orgId, startTime: payload.startTime, endTime: payload.endTime },
-		),
-		{ profile: "list", context: "aiSessionsPage" },
-	)
+	// Off `ai_trace_index` alone: the page is ranked over the caller's whole
+	// window and every fact the row shows is measured there, over the
+	// session's agent spans. The facts only the traces' other spans can
+	// answer come from `details`, which the client asks for once this has
+	// rendered — see `aiSessionPageQuery` for what the fan-out cost on the
+	// critical path.
+	const opts = {
+		...countedFilters(payload),
+		limit: payload.limit,
+		offset: payload.offset,
+		hasErrors: payload.hasErrors,
+		excludeTraceSessions: payload.excludeTraceSessions,
+		durationMinMs: payload.durationMinMs,
+		durationMaxMs: payload.durationMaxMs,
+		costMin: payload.costMin,
+		costMax: payload.costMax,
+		tokensMin: payload.tokensMin,
+		tokensMax: payload.tokensMax,
+		llmCallsMin: payload.llmCallsMin,
+		llmCallsMax: payload.llmCallsMax,
+		toolCallsMin: payload.toolCallsMin,
+		toolCallsMax: payload.toolCallsMax,
+		sortBy: payload.sortBy,
+		sortDir: payload.sortDir,
+	}
+	const window = { orgId: tenant.orgId, startTime: payload.startTime, endTime: payload.endTime }
+	const readPage = (
+		query: ReturnType<typeof Integrations.aiSessionPageQuery>,
+		params: typeof window | PageBounds,
+	) =>
+		warehouse.compiledQuery(tenant, CH.compile(query, params), {
+			profile: "list",
+			context: "aiSessionsPage",
+		})
+	// Two reads where the index can rank the page without its usage: which
+	// sessions, over the window, then their rows over the page's own extent.
+	// What a row costs is its traces' netting, so one read nets every trace of
+	// the window to show fifty sessions — the whole of a list read for an org
+	// with long agent runs, and past the profile's memory on a later page. A
+	// sort or filter on usage needs every session netted either way.
+	const page = Integrations.aiSessionPageRanksOnIndex(opts)
+		? yield* Effect.gen(function* () {
+				const ranked = yield* warehouse.compiledQuery(
+					tenant,
+					CH.compile(Integrations.aiSessionRankQuery(opts), window),
+					{ profile: "list", context: "aiSessionsRank" },
+				)
+				if (ranked.length === 0) return []
+				return yield* readPage(
+					Integrations.aiSessionPageQuery({
+						...opts,
+						sessionIds: ranked.map((row) => row.sessionId),
+					}),
+					{
+						orgId: tenant.orgId,
+						// Fixed-width literals, so they order as the instants do.
+						fanOutStart: ranked.map((row) => row.agentStart).reduce((a, b) => (a < b ? a : b)),
+						fanOutEnd: ranked.map((row) => row.agentEnd).reduce((a, b) => (a > b ? a : b)),
+						endTime: payload.endTime,
+					},
+				)
+			})
+		: yield* readPage(Integrations.aiSessionPageQuery(opts), window)
 	// Rows returned, not rows asked for — annotated before the empty answer
 	// leaves, so a window that ranks nothing is visible as such.
 	yield* Effect.annotateCurrentSpan({ "maple.ai.page_size": page.length })

@@ -16,6 +16,7 @@ import {
 	type QueryEngineExecuteRequest,
 	type QuerySpec,
 	type TimeseriesPoint,
+	type AttributeFilter,
 } from "@maple/domain/query-engine"
 import {
 	QueryEngineTimeoutError,
@@ -1104,13 +1105,7 @@ function resolveAttributeScope(
 	return scope === "resource" ? "resource" : "span"
 }
 
-type AttrFilterArray = Array<{
-	key: string
-	value?: string
-	values?: readonly string[]
-	mode: "equals" | "exists" | "gt" | "gte" | "lt" | "lte" | "contains" | "in"
-	negated?: boolean
-}>
+type AttrFilterArray = Array<AttributeFilter>
 
 function extractTracesOpts(filters: Record<string, unknown> | undefined) {
 	return {
@@ -1150,8 +1145,12 @@ function extractTracesOpts(filters: Record<string, unknown> | undefined) {
  * TracesFilters stores http filters as attributeFilters entries; facets opts want them as top-level fields.
  */
 function extractTracesFacetsOpts(filters: Record<string, unknown> | undefined): CH.TracesFacetsOpts {
-	const attrFilters = (filters?.attributeFilters ?? []) as AttrFilterArray
-	const resFilters = (filters?.resourceAttributeFilters ?? []) as AttrFilterArray
+	// Facet opts take single filters; an `(a OR b)` group has no such shape, so
+	// facet counts ignore it rather than read one member as the whole filter.
+	const attrFilters = ((filters?.attributeFilters ?? []) as AttrFilterArray).filter((f) => !f.or?.length)
+	const resFilters = ((filters?.resourceAttributeFilters ?? []) as AttrFilterArray).filter(
+		(f) => !f.or?.length,
+	)
 
 	// Positive http filters arrive either as a single `equals` or, when the user
 	// ticks several facet values, as one `in` carrying the whole set. Negated

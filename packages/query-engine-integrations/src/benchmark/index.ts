@@ -125,6 +125,39 @@ export const integrationFixtures: ReadonlyArray<IntegrationFixture> = [
 		compile: () => compileUnsafe(CH.aiSessionPageQuery(), window),
 	},
 	{
+		// What the list runs first where the index can rank the page: the page's
+		// session ids and bounds over the caller's window, nothing netted.
+		module: "ai-sessions",
+		name: "aiSessionRankQuery",
+		label: "filtered",
+		compile: () =>
+			compileUnsafe(
+				CH.aiSessionRankQuery({
+					limit: 25,
+					offset: 25,
+					vendorIds: ["eve"],
+					hasErrors: true,
+					sortBy: "durationMs",
+				}),
+				window,
+			),
+	},
+	{
+		// And then: the ranked sessions' rows, over the page's bounds alone.
+		module: "ai-sessions",
+		name: "aiSessionPageQuery",
+		label: "ranked",
+		compile: () =>
+			compileUnsafe(
+				CH.aiSessionPageQuery({
+					sessionIds: AI_PAGE_SESSION_IDS,
+					vendorIds: ["eve"],
+					sortBy: "durationMs",
+				}),
+				{ ...aiPageBounds, endTime: window.endTime },
+			),
+	},
+	{
 		// The vendor/service filters the AI sessions list page sends, on its
 		// second page. They land here and are repeated verbatim on the fan-out, or
 		// the two stages resolve traces differently.

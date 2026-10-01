@@ -157,7 +157,6 @@ export function buildSessionChecks(
 			summary,
 		),
 		...otherErrorsCheck(errors.filter((finding) => finding.tool === undefined)),
-		repetitionCheck(of("repetition"), summary, coverage),
 		stallCheck(of("stall")),
 		promptCacheCheck(cacheObservations(spans)),
 	].sort(
@@ -576,36 +575,6 @@ function otherErrorsCheck(findings: readonly SessionFinding[]): SessionCheck[] {
 			findings,
 		),
 	]
-}
-
-function repetitionCheck(
-	findings: readonly SessionFinding[],
-	summary: SessionSummary,
-	coverage: SessionCoverage,
-): SessionCheck {
-	const identity: CheckIdentity = { id: "repetition", name: "Repeated calls", fixArea: "prompt" }
-	if (findings.length === 0) {
-		return check(
-			identity,
-			"passed",
-			summary.tools.length === 0
-				? "No tool was called"
-				: coverage.toolPayloads === "captured"
-					? "No tool was called on repeat within a turn"
-					: "No tool was hammered within a turn; arguments were not captured, so identical retries could not be checked",
-		)
-	}
-	return check(
-		identity,
-		foundStatus(findings),
-		clauses(
-			findings,
-			(finding) =>
-				`${toolName(finding)} was ${finding.detail ?? "called repeatedly"} on ${where(finding)}`,
-		),
-		"Cache the result, or give the agent a stop rule; it repeated itself.",
-		findings,
-	)
 }
 
 function stallCheck(findings: readonly SessionFinding[]): SessionCheck {
