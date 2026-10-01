@@ -7,6 +7,7 @@ import {
 	type SetStateAction,
 } from "react"
 import type { AlertComparator, AlertSeverity, AlertSignalType } from "@maple/domain/http"
+import { rawAlertSampleCountWarning } from "@maple/domain/raw-sql"
 
 import { Card } from "@maple/ui/components/ui/card"
 import { Input } from "@maple/ui/components/ui/input"
@@ -360,7 +361,11 @@ export function SignalAndThresholdSection({
 							<NumericField
 								id="rule-minimum-samples"
 								label="Min samples"
-								hint="Skip below this count."
+								hint={
+									form.signalType === "raw_query"
+										? "Sums the samples column (1 per row without one)."
+										: "Skip below this count."
+								}
 								value={form.minimumSampleCount}
 								onChange={(value) => onChange((c) => ({ ...c, minimumSampleCount: value }))}
 							/>
@@ -657,7 +662,11 @@ function SignalSubConfig({ form, onChange, autocompleteValues }: SignalAndThresh
 		case "builder_query":
 			return <AlertQueryPanel form={form} onChange={onChange} autocompleteValues={autocompleteValues} />
 
-		case "raw_query":
+		case "raw_query": {
+			const sampleWarning = rawAlertSampleCountWarning(
+				form.rawQuerySql,
+				Number(form.minimumSampleCount) || 0,
+			)
 			return (
 				<div className="space-y-3">
 					<RawSqlEditorPanel
@@ -669,8 +678,12 @@ function SignalSubConfig({ form, onChange, autocompleteValues }: SignalAndThresh
 						targetLabel="alert rule"
 					/>
 					<p className="text-muted-foreground text-xs">
-						Alert SQL must return a numeric <code>value</code> column.
+						Return a numeric <code>value</code> column. Optional: <code>group</code> for one
+						series per value, and <code>samples</code> for the event count behind each row (Min
+						samples sums it; without it each row counts as 1). A query that returns no rows is a
+						no-data check.
 					</p>
+					{sampleWarning && <p className="text-warning text-xs">{sampleWarning}</p>}
 					<div className="flex items-end gap-3">
 						<div className="space-y-1.5">
 							<Label htmlFor="rule-raw-reducer">Reduce buckets by</Label>
@@ -700,6 +713,7 @@ function SignalSubConfig({ form, onChange, autocompleteValues }: SignalAndThresh
 					</div>
 				</div>
 			)
+		}
 
 		default:
 			return null

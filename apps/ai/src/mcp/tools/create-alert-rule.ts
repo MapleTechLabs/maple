@@ -16,6 +16,7 @@ import {
 	ALERT_SEVERITIES,
 	ALERT_SIGNAL_TYPES,
 	renderRuleWrite,
+	ruleConfigWarnings,
 	ruleWriteInputErrors,
 	toAlertRuleRow,
 } from "../lib/alert-rules"
@@ -97,7 +98,9 @@ const Parameters = Schema.Struct({
 	group_by: P.optionalList(
 		"Evaluate one value per group. Built-in tokens: service.name, span.name, status.code, http.method, severity; attribute keys as attr.<key> (e.g. attr.http.route).",
 	),
-	minimum_sample_count: P.optionalNumber("Minimum sample count before evaluating (default: 0)"),
+	minimum_sample_count: P.optionalNumber(
+		"Skip evaluation below this many samples in the window (default: 0). For raw_query it sums the `samples` column; without one each returned row counts as 1, so it gates on buckets, not events.",
+	),
 	consecutive_breaches: P.optionalNumber("Consecutive breaches before alerting (default: 1)"),
 	consecutive_healthy: P.optionalNumber("Consecutive healthy evaluations before resolving (default: 1)"),
 	renotify_interval_minutes: P.optionalNumber("Re-notification interval in minutes (default: 60)"),
@@ -109,7 +112,7 @@ const Parameters = Schema.Struct({
 		"The query to evaluate, in the query-builder draft shape dashboard custom-query widgets use ({ id, name, dataSource, aggregation, whereClause, groupBy, ... }). Required for signal_type=builder_query.",
 	),
 	raw_query_sql: P.optionalText(
-		"ClickHouse SQL returning a numeric `value` column and optional `group` / `samples` columns. Must reference $__orgFilter and $__timeFilter(col); $__startTime, $__endTime and $__interval_s are also available. Required for signal_type=raw_query.",
+		"ClickHouse SQL returning a numeric `value` column and optional `group` / `samples` columns (`samples` is the event count behind each row; it feeds minimum_sample_count). A query returning no rows is a no-data check, not a healthy one. Must reference $__orgFilter and $__timeFilter(col); $__startTime, $__endTime and $__interval_s are also available. Required for signal_type=raw_query.",
 	),
 	raw_query_reducer: P.optionalOneOf(
 		ALERT_REDUCERS,
@@ -295,8 +298,9 @@ export function registerCreateAlertRuleTool(server: McpToolRegistrar) {
 				}),
 			)
 
-			return { rule: toAlertRuleRow(rule) }
+			const warnings = ruleConfigWarnings(rule)
+			return { rule: toAlertRuleRow(rule), ...(warnings.length > 0 ? { warnings } : undefined) }
 		}),
-		render: (output) => renderRuleWrite("Alert Rule Created", output.rule),
+		render: (output) => renderRuleWrite("Alert Rule Created", output.rule, output.warnings),
 	})
 }

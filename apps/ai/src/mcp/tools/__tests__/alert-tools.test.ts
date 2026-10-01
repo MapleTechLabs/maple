@@ -16,6 +16,7 @@ import {
 	UserId,
 } from "@maple/domain/http"
 import {
+	CreateAlertRuleOutput,
 	GetAlertRuleOutput,
 	ListAlertChecksOutput,
 	ListAlertDestinationsOutput,
@@ -114,7 +115,13 @@ const layer = (seen: Seen) =>
 			listRules: () => Effect.succeed(new AlertRulesListResponse({ rules: [rule] })),
 			createRule: (_org: unknown, _user: unknown, _roles: unknown, request: AlertRuleUpsertRequest) => {
 				seen.created = request
-				return Effect.succeed(rule)
+				// Echo the fields the write warnings read, so a raw-SQL create reads back as one.
+				return Effect.succeed({
+					...rule,
+					signalType: request.signalType,
+					rawQuerySql: request.rawQuerySql ?? null,
+					minimumSampleCount: request.minimumSampleCount ?? 0,
+				} as never)
 			},
 			deleteRule: (_org: unknown, _roles: unknown, id: string) =>
 				id === RULE_ID
@@ -397,6 +404,30 @@ describe("alert tools", () => {
 		expect(noDestinations._tag === "Failure" && noDestinations.failure.message).toContain(
 			"Missing required `destination_ids`",
 		)
+	})
+
+	it("create_alert_rule warns when a raw_query minimum sample count would count rows", async () => {
+		const base = {
+			name: "Raw",
+			destination_ids: [],
+			signal_type: "raw_query",
+			comparator: "gt",
+			threshold: 0.05,
+			minimum_sample_count: 50,
+		}
+		const sql = "SELECT count() AS value FROM traces WHERE $__orgFilter AND $__timeFilter(Timestamp)"
+		const warned = await ok("create_alert_rule", { ...base, raw_query_sql: sql })
+		const output = Schema.decodeUnknownSync(CreateAlertRuleOutput)(warned.structuredContent)
+		expect(output.warnings?.[0]).toContain("counts returned rows")
+		expect(text(warned)).toContain("`samples` column")
+
+		const quiet = await ok("create_alert_rule", {
+			...base,
+			raw_query_sql: sql.replace("AS value", "AS value, count() AS samples"),
+		})
+		expect(
+			Schema.decodeUnknownSync(CreateAlertRuleOutput)(quiet.structuredContent).warnings,
+		).toBeUndefined()
 	})
 
 	it("update_alert_rule overlays only the given fields", async () => {

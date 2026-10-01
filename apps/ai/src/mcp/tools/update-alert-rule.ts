@@ -16,6 +16,7 @@ import {
 	ALERT_SEVERITIES,
 	ALERT_SIGNAL_TYPES,
 	renderRuleWrite,
+	ruleConfigWarnings,
 	ruleNotFound,
 	ruleNotFoundFromError,
 	ruleWriteInputErrors,
@@ -48,7 +49,9 @@ const Parameters = Schema.Struct({
 		"Dimensions to evaluate the alert per-group (replaces the current grouping; an empty list removes it). " +
 			"Built-in tokens: service.name, span.name, status.code, http.method, severity. Attribute keys: attr.<key>.",
 	),
-	minimum_sample_count: P.optionalNumber("Minimum sample count before evaluating"),
+	minimum_sample_count: P.optionalNumber(
+		"Skip evaluation below this many samples in the window. For raw_query it sums the `samples` column; without one each returned row counts as 1.",
+	),
 	consecutive_breaches: P.optionalNumber("Consecutive breaches before alerting"),
 	consecutive_healthy: P.optionalNumber("Consecutive healthy evaluations before resolving"),
 	renotify_interval_minutes: P.optionalNumber("Re-notification interval in minutes"),
@@ -171,8 +174,9 @@ export function registerUpdateAlertRuleTool(server: McpToolRegistrar) {
 					}),
 				)
 
-			return { rule: toAlertRuleRow(rule) }
+			const warnings = ruleConfigWarnings(rule)
+			return { rule: toAlertRuleRow(rule), ...(warnings.length > 0 ? { warnings } : undefined) }
 		}),
-		render: (output) => renderRuleWrite("Alert Rule Updated", output.rule),
+		render: (output) => renderRuleWrite("Alert Rule Updated", output.rule, output.warnings),
 	})
 }

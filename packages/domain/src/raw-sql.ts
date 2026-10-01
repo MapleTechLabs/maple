@@ -283,3 +283,16 @@ export const RawSqlText = Schema.String.check(
 	title: "Raw SQL",
 	description: `ClickHouse SELECT with Maple macros. Must reference $__orgFilter. ${SUPPORTED_MACROS_HELP}`,
 })
+
+/**
+ * Whether an alert query names a `samples` column. Without one every returned
+ * row counts as 1 sample, so a minimum sample count gates on buckets, not events.
+ */
+export const rawAlertSqlSelectsSamples = (sql: string): boolean =>
+	/\bsamples\b/i.test(maskLiteralsAndComments(sql))
+
+/** The warning to show when a raw-SQL rule's minimum sample count is likely counting rows. */
+export const rawAlertSampleCountWarning = (sql: string, minimumSampleCount: number): string | null =>
+	minimumSampleCount > 1 && !rawAlertSqlSelectsSamples(sql)
+		? `Minimum sample count ${minimumSampleCount} counts returned rows (one per bucket) because the query has no \`samples\` column. Select an event count as \`samples\` (e.g. \`count() AS samples\`) to gate on volume.`
+		: null

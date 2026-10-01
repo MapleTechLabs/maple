@@ -54,9 +54,12 @@ export const ListAlertDestinationsOutput = Schema.Struct({
 	enabledOnly: Schema.optionalKey(Schema.Boolean),
 })
 
-export const CreateAlertRuleOutput = Schema.Struct({ rule: AlertRuleRow })
+/** Configuration that saved but probably does not do what the caller meant. */
+const RuleWriteWarnings = Schema.optionalKey(Schema.Array(Schema.String))
 
-export const UpdateAlertRuleOutput = Schema.Struct({ rule: AlertRuleRow })
+export const CreateAlertRuleOutput = Schema.Struct({ rule: AlertRuleRow, warnings: RuleWriteWarnings })
+
+export const UpdateAlertRuleOutput = Schema.Struct({ rule: AlertRuleRow, warnings: RuleWriteWarnings })
 
 export const DeleteAlertRuleOutput = Schema.Struct({ id: Schema.String })
 

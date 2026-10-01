@@ -15,6 +15,7 @@ import {
 	type AlertValidationError,
 } from "@maple/domain/http"
 import { QueryEngineAlertReducer } from "@maple/domain"
+import { rawAlertSampleCountWarning } from "@maple/domain/raw-sql"
 import { McpInvalidInputError } from "../tools/types"
 import { doc, type ToolDoc } from "./tool-doc"
 
@@ -107,9 +108,25 @@ export const ruleWriteInputErrors = {
 export const ruleNotFoundFromError = (error: AlertRuleNotFoundError) =>
 	Effect.fail(ruleNotFound(error.ruleId))
 
+/** Saved-but-suspicious configuration worth telling the caller about. */
+export const ruleConfigWarnings = (rule: {
+	readonly signalType: string
+	readonly rawQuerySql: string | null
+	readonly minimumSampleCount: number
+}): ReadonlyArray<string> => {
+	if (rule.signalType !== "raw_query" || rule.rawQuerySql === null) return []
+	const warning = rawAlertSampleCountWarning(rule.rawQuerySql, rule.minimumSampleCount)
+	return warning === null ? [] : [warning]
+}
+
 /** The text a create or update returns: the rule as saved. */
-export const renderRuleWrite = (title: string, rule: typeof AlertRuleRow.Type): ToolDoc => ({
+export const renderRuleWrite = (
+	title: string,
+	rule: typeof AlertRuleRow.Type,
+	warnings: ReadonlyArray<string> = [],
+): ToolDoc => ({
 	title,
+	...(warnings.length > 0 ? { notices: warnings } : undefined),
 	blocks: [
 		doc.fields([
 			["ID", rule.id],

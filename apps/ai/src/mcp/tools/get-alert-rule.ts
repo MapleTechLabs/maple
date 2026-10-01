@@ -4,7 +4,7 @@ import { Effect, Schema } from "effect"
 import { GetAlertRuleOutput } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
-import { formatCondition, ruleNotFound, toAlertRuleRow } from "../lib/alert-rules"
+import { formatCondition, ruleConfigWarnings, ruleNotFound, toAlertRuleRow } from "../lib/alert-rules"
 import * as P from "../lib/params"
 import { doc, type DocBlock } from "../lib/tool-doc"
 
@@ -130,8 +130,10 @@ export function registerGetAlertRuleTool(server: McpToolRegistrar) {
 				if (rule.notificationBody) blocks.push(doc.text("Body:"), doc.code("", rule.notificationBody))
 			}
 
+			const warnings = ruleConfigWarnings(rule)
 			return {
 				title: `Alert Rule: ${rule.name}`,
+				...(warnings.length > 0 ? { notices: warnings } : undefined),
 				blocks,
 				next: [
 					doc.next(
