@@ -13,6 +13,8 @@ export {
 	aiSessionDistributionsQuery,
 	aiSessionFacetsQuery,
 	aiSessionPageQuery,
+	aiSessionPageRanksOnIndex,
+	aiSessionRankQuery,
 	mergeAiSessionDetails,
 	aiSessionSpansQuery,
 	aiSessionSpansRowSchema,

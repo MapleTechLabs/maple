@@ -92,6 +92,9 @@
 		"lib/ai-model-catalog": {
 			"entry": ["scripts/**/*.ts"]
 		},
+		"lib/semconv": {
+			"entry": ["scripts/**/*.ts"]
+		},
 		"lib/alchemy-portless": {
 			// The dev-sidecar entry alchemy loads by URL, not by import.
 			"entry": ["src/Local.ts"]

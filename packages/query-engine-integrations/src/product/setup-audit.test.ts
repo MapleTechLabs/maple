@@ -104,7 +104,7 @@ describe("auditPeerValueInventoryQuery", () => {
 		const { sql } = compileUnsafe(auditPeerValueInventoryQuery(), baseParams)
 		expect(sql).toContain("AttributeScope = 'span'")
 		expect(sql).toContain(
-			"AttributeKey IN ('peer.service', 'db.system', 'db.system.name', 'messaging.system', 'rpc.system')",
+			"AttributeKey IN ('service.peer.name', 'peer.service', 'db.system', 'db.system.name', 'messaging.system', 'rpc.system.name', 'rpc.system')",
 		)
 		expect(sql).toContain("AttributeValue != ''")
 		expect(sql).toContain("GROUP BY attributeKey, attributeValue")

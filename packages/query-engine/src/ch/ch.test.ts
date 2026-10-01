@@ -734,8 +734,78 @@ describe("tracesBreakdownQuery", () => {
 		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("FROM traces")
 		expect(sql).not.toContain("FROM service_overview_spans")
-		expect(sql).toContain("SpanAttributes['http.method'] AS name")
+		expect(sql).toContain(
+			"if(SpanAttributes['http.method'] != '', SpanAttributes['http.method'], SpanAttributes['http.request.method']) AS name",
+		)
 	})
+
+	it("groups by environment under either semconv spelling on the raw path", () => {
+		const q = tracesBreakdownQuery({ metric: "count", groupBy: "environment" })
+		const { sql } = compileUnsafe(q, baseParams)
+		expect(sql).toContain("FROM traces")
+		expect(sql).toContain(
+			"coalesce(nullIf(ResourceAttributes['deployment.environment.name'], ''), ResourceAttributes['deployment.environment']) AS name",
+		)
+	})
+
+	it("groups a timeseries by http_method under either semconv spelling", () => {
+		const q = tracesTimeseriesQuery({
+			metric: "count",
+			needsSampling: false,
+			groupBy: ["http_method"],
+			bucketSeconds: 300,
+		})
+		const { sql } = compileUnsafe(q, { ...baseParams, bucketSeconds: 300 })
+		expect(sql).toContain(
+			"if(SpanAttributes['http.method'] != '', SpanAttributes['http.method'], SpanAttributes['http.request.method'])",
+		)
+	})
+
+	it("ORs a filter with its alternatives, each under its own semconv aliases", () => {
+		const q = tracesListQuery({
+			attributeFilters: [
+				{
+					key: "messaging.system",
+					value: "kafka",
+					mode: "equals",
+					or: [{ key: "messaging.destination.name", mode: "exists", negated: true }],
+				},
+			],
+		})
+		const { sql } = compileUnsafe(q, baseParams)
+		expect(sql).toContain("(SpanAttributes['messaging.system'] = 'kafka' OR NOT (")
+		expect(sql).toContain("mapContains(SpanAttributes, 'messaging.destination.name')")
+		expect(sql).toContain("mapContains(SpanAttributes, 'messaging.destination')")
+	})
+
+	it("matches every http target the service map names when filtering on server.address", () => {
+		const q = tracesListQuery({
+			attributeFilters: [{ key: "server.address", value: "x", mode: "equals" }],
+		})
+		const { sql } = compileUnsafe(q, baseParams)
+		expect(sql).toContain(
+			"if(SpanAttributes['server.address'] != '', SpanAttributes['server.address'], if(SpanAttributes['http.host'] != '', SpanAttributes['http.host'], SpanAttributes['url.authority'])) = 'x'",
+		)
+	})
+
+	// Dependency drilldowns and dashboard templates filter on these keys. The
+	// spelling the user typed is read first, so a saved legacy filter keeps its
+	// meaning on spans that dual-emit a different value under the new key.
+	for (const [key, first, second] of [
+		["db.system", "db.system", "db.system.name"],
+		["db.system.name", "db.system.name", "db.system"],
+		["messaging.destination.name", "messaging.destination.name", "messaging.destination"],
+		["rpc.system", "rpc.system", "rpc.system.name"],
+		["rpc.system.name", "rpc.system.name", "rpc.system"],
+	] as const) {
+		it(`matches both semconv spellings when filtering on ${key}`, () => {
+			const q = tracesListQuery({ attributeFilters: [{ key, value: "x", mode: "equals" }] })
+			const { sql } = compileUnsafe(q, baseParams)
+			expect(sql).toContain(
+				`if(SpanAttributes['${first}'] != '', SpanAttributes['${first}'], SpanAttributes['${second}']) = 'x'`,
+			)
+		})
+	}
 
 	it("groups by custom attribute", () => {
 		const q = tracesBreakdownQuery({

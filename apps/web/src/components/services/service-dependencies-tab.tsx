@@ -9,7 +9,7 @@ import { formatLatency } from "@maple/ui/lib/format"
 import { normalizeTimestampInput } from "@/lib/timezone-format"
 import { DependencyTable, type DependencyRow } from "./dependency-table"
 import type { DependencyKind } from "./dependency-type-badge"
-import { quoteWhereValue } from "@maple/domain/where-clause"
+import { dependencyDrillWhereClause } from "./dependency-drill"
 
 interface ServiceDependenciesTabProps {
 	serviceName: string
@@ -118,7 +118,7 @@ export function ServiceDependenciesTab({
 				p95DurationMs: Number(edge.p95DurationMs ?? 0),
 				hasSampling: Boolean(edge.hasSampling),
 				samplingWeight: Number(edge.samplingWeight ?? 1),
-				whereClause: `SpanKind = 'Client' AND server.address ILIKE ${quoteWhereValue(`%${target}%`)}`,
+				whereClause: dependencyDrillWhereClause("service", target, ""),
 			})
 		}
 
@@ -148,7 +148,7 @@ export function ServiceDependenciesTab({
 				p95DurationMs: Number(edge.p95DurationMs ?? 0),
 				hasSampling: Boolean(edge.hasSampling),
 				samplingWeight: Number(edge.samplingWeight ?? 1),
-				whereClause: `SpanKind = 'Client' AND db.system.name = ${quoteWhereValue(target)}`,
+				whereClause: dependencyDrillWhereClause("database", target, ""),
 			})
 		}
 
@@ -160,12 +160,7 @@ export function ServiceDependenciesTab({
 			const callCount = Number(edge.callCount ?? 0)
 			const estimated = Number(edge.estimatedCallCount ?? callCount)
 			const system = edge.targetSystem ? String(edge.targetSystem) : ""
-			const whereClause =
-				kind === "messaging"
-					? `SpanKind = 'Producer' AND messaging.destination = ${quoteWhereValue(target)}`
-					: kind === "rpc"
-						? `SpanKind = 'Client' AND rpc.service = ${quoteWhereValue(target)}`
-						: `SpanKind = 'Client' AND (server.address = ${quoteWhereValue(target)} OR http.host = ${quoteWhereValue(target)})`
+			const whereClause = dependencyDrillWhereClause(kind, target, system)
 
 			out.push({
 				id: `${kind}:${target}`,
