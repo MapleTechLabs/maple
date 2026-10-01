@@ -361,37 +361,40 @@ describe("aiSessionPageQuery", () => {
 		// Model calls travel as reporters too: they are counted two levels up.
 		expect(traces).not.toContain("AS llmCalls")
 		expect(traces).toContain(
-			"groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageReporters",
+			"groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageSpans",
 		)
-		// And the trace's way up, so a claim climbs past spans that reported nothing.
+		// And the trace's way up, so a claim climbs past spans that reported
+		// nothing: one table for both measures, looked up once per hop.
 		expect(traces).toContain(
-			"CAST(groupArray(2000)(tuple(SpanId, if(Tokens > 0, SpanId, ParentSpanId))), 'Map(String, String)') AS tokenLinks",
+			"groupArrayArray(4000)([tuple(concat('t', SpanId), concat('t', if(Tokens > 0, SpanId, ParentSpanId))), tuple(concat('c', SpanId), concat('c', if(Cost > 0, SpanId, ParentSpanId)))]) AS usageLinks",
 		)
+		expect(traces.split("arrayMap(t -> (t.1, 0, t.2), usageLinks)").length - 1).toBe(4)
 		expect(traces).toContain(
-			"CAST(groupArray(2000)(tuple(SpanId, if(Cost > 0, SpanId, ParentSpanId))), 'Map(String, String)') AS costLinks",
+			"arrayMap(ancestors -> arrayMap((r, t, c) -> tupleConcat(r, (substring(t, 2), substring(c, 2))), usageSpans, arraySlice(ancestors, 1, length(usageSpans)), arraySlice(ancestors, length(usageSpans) + 1)), [",
 		)
+		expect(traces).toContain("])[1] AS usageReporters")
 		expect(traces).toContain(
 			"max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceAgentEndNanos",
 		)
 
 		expect(sessions).toContain("groupUniqArrayArray(models) AS models")
 		expect(sessions).toContain("sum(errorAgentSpans) AS errorAgentSpans")
-		// The session's reporters, every trace's flattened, so a gateway's mirror
-		// trace of a call is in hand next to the app's own span of it — and the
-		// two lookups the netting makes, taken off them once per session.
-		expect(sessions).toContain(
-			"arraySlice(arrayFlatten(groupArray(arrayMap(r -> tupleConcat(r, tuple(tokenLinks[tokenLinks[tokenLinks[tokenLinks[r.2]]]], costLinks[costLinks[costLinks[costLinks[r.2]]]])), usageReporters))), 1, 2000) AS reporters",
-		)
-		expect(sessions).toContain("arrayReduce('sumMap', arrayMap(c -> [c.12, c.13], reporters)")
-		expect(sessions).toContain(") AS childClaims")
-		expect(sessions).toContain("tupleElement(reporters, 1) AS reporterIds")
+		// The session's reporters, every trace's in one array, so a gateway's
+		// mirror trace of a call is in hand next to the app's own span of it.
+		expect(sessions).toContain("groupArrayArray(2000)(usageReporters) AS reporters")
 		expect(sessions).toContain(
 			"intDiv(max(traceAgentEndNanos) - toUnixTimestamp64Nano(min(traceAgentStart)), 1000000) AS agentDurationMs",
 		)
 		// Deepest reporter: a parent keeps only its excess over its reporting
-		// children — one pass over the reporters, on a level of its own.
-		expect(netted).toContain("arrayMap(r -> tuple(r.5, r.6 = 1 AND if((r.3 > 0 OR r.4 > 0),")
-		expect(netted).toContain(", reporters) AS netted")
+		// children — one pass over the reporters, on a level of its own, where
+		// only the ranked page pays for the lookups it reads.
+		expect(netted).toContain(
+			"arrayMap(charged -> arrayMap((r, own, tokenAncestor, costAncestor, parent) -> tuple(r.5, r.6 = 1 AND if((r.3 > 0 OR r.4 > 0),",
+		)
+		expect(
+			netted.split("arrayReduce('sumMap', arrayMap(r -> [r.12, r.13, r.1], reporters)").length - 1,
+		).toBe(1)
+		expect(netted).toContain("])[1] AS netted")
 		expect(netted).not.toContain("AS totalTokens")
 		// Then one claim per response id, per measure, off the netted column.
 		for (const [element, name] of [
@@ -964,7 +967,9 @@ describe("aiSessionDistributionsQuery", () => {
 
 		// One netting pass for all three usage measures: five grouped passes, or
 		// a netting per measure, would multiply the cost of the page's slowest part.
-		expect(sql.split("arrayMap(r -> tuple(").length - 1).toBe(1)
+		expect(sql.split("arrayMap((r, own, tokenAncestor, costAncestor, parent) -> tuple(").length - 1).toBe(
+			1,
+		)
 		expect(netted).toContain("AS netted")
 		expect(sums).toMatch(/AS llmCalls,/)
 		expect(sums).toMatch(/AS totalTokens,/)

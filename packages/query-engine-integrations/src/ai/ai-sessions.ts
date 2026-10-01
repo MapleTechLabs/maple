@@ -160,15 +160,12 @@ import {
 } from "@maple/domain/gen-ai"
 import { aiFieldSourceKeys, aiSpanAttributeKeys, aiSpanAttributePrefixes } from "./ai-integrations"
 import {
-	childClaimsExpr,
 	MAX_USAGE_REPORTERS_PER_TRACE,
 	nettedReportersExpr,
-	reporterSpanIdsExpr,
 	sessionLlmCalls,
 	sessionReportersExpr,
 	sessionUsageSum,
-	usageLinksExpr,
-	usageReportersExpr,
+	traceUsageColumns,
 } from "./ai-span-columns"
 
 const SESSION_ID_ATTR = MAPLE_AI_SESSION_ID_ATTR
@@ -265,7 +262,7 @@ export const isSessionTraceCond = ($: {
  * One trace's failed agent spans — `(SpanId, ParentSpanId, IsToolCall)` per
  * failed index row — for the tool/turn split one level up, which needs the
  * whole trace's failures in hand at once. Same shape and cap as
- * `usageReportersExpr`, for the same reason: a framework that fails the turn
+ * `traceUsageColumns`, for the same reason: a framework that fails the turn
  * span because the call beneath it failed reports one failure as two, and
  * only the deepest span carrying the failure counts — `failureEvents` in
  * `@maple/agent-sessions`' `session-summary.ts`, one level deep.
@@ -506,7 +503,7 @@ const MAX_NAMES_PER_TRACE = 20
  * The measures are collected here per trace and summed per session one level
  * up. Usage travels as the trace's reporters rather than a sum, because a
  * wrapper's roll-up of its children cannot be undone one row at a time — see
- * `usageReportersExpr`.
+ * `traceUsageColumns`.
  */
 const indexTraces = (opts: AiSessionFilterOpts, bounds: IndexBounds) => {
 	const values = (list: readonly string[] | undefined) => (list?.length ? list : undefined)
@@ -575,9 +572,7 @@ const indexTraces = (opts: AiSessionFilterOpts, bounds: IndexBounds) => {
 				failedSpans: failedSpansExpr($),
 				// Usage AND model calls travel as reporters: both are counted one level
 				// up, where every trace of the session is in hand — see `ai-span-columns`.
-				usageReporters: usageReportersExpr($),
-				tokenLinks: usageLinksExpr($, $.Tokens),
-				costLinks: usageLinksExpr($, $.Cost),
+				...traceUsageColumns($),
 			}
 		})
 		.where(($) => [
@@ -670,12 +665,8 @@ const indexSessions = (opts: AiSessionFilterOpts) =>
 				CH.max_($.traceAgentEndNanos).sub(CH.toUnixTimestamp64Nano(CH.min_($.traceAgentStart))),
 				1_000_000,
 			),
-			// The usage, still as reporters: netted one level up, summed two —
-			// with the two lookups the netting makes taken off the reporters here,
-			// once per session, rather than once per reporter inside the netting.
-			reporters: sessionReportersExpr("usageReporters", "tokenLinks", "costLinks"),
-			childClaims: childClaimsExpr("reporters"),
-			reporterIds: reporterSpanIdsExpr("reporters"),
+			// The usage, still as reporters: netted one level up, summed two.
+			reporters: sessionReportersExpr("usageReporters"),
 		}))
 		.groupBy("sessionId")
 
@@ -797,7 +788,7 @@ export function aiSessionPageQuery(opts: AiSessionPageOpts = {}) {
 
 	const netted = fromQuery(ranked, "ranked_sessions").select(($) => ({
 		...carry($),
-		netted: nettedReportersExpr("reporters", "childClaims", "reporterIds"),
+		netted: nettedReportersExpr("reporters"),
 	}))
 
 	const page = fromQuery(netted, "netted_sessions")
@@ -1205,7 +1196,7 @@ export function aiSessionDistributionsQuery() {
 	const netted = fromQuery(indexSessions({}), "window_sessions").select(($) => ({
 		agentDurationMs: $.agentDurationMs,
 		toolCalls: $.toolCalls,
-		netted: nettedReportersExpr("reporters", "childClaims", "reporterIds"),
+		netted: nettedReportersExpr("reporters"),
 	}))
 	const measured = fromQuery(netted, "netted_sessions").select(($) => ({
 		durationMs: CH.toFloat64($.agentDurationMs),
