@@ -168,6 +168,7 @@ const buildSpanTree = (
 		service_name: string
 		kind: string
 		duration_ms: number
+		start_time: string
 		status_code: string
 		status_message: string | null
 		attributes: Record<string, string>
@@ -183,6 +184,7 @@ const buildSpanTree = (
 			serviceName: s.service_name,
 			spanKind: s.kind,
 			durationMs: s.duration_ms,
+			startTime: s.start_time,
 			statusCode: s.status_code,
 			statusMessage: s.status_message ?? "",
 			attributes: s.attributes,

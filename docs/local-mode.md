@@ -461,7 +461,9 @@ resolved per invocation:
 
 1. `--remote` / `--local` flags (highest priority; usable as `maple <command> --local`).
 2. `defaultMode` in `~/.maple/config.json`.
-3. **Auto-detect**: a configured token ⇒ remote; otherwise a quick probe of
+3. **Auto-detect**: an explicitly set `MAPLE_LOCAL_URL` ⇒ local; else a
+   configured token ⇒ remote (with a stderr note when a local `maple start` is
+   also running, since that is the easy way to query prod by mistake); otherwise a quick probe of
    `GET <local-url>/local/status` (which must identify itself as
    `maple-local`; older binaries fall back to `/health`) ⇒ local. `<local-url>`
    is `MAPLE_LOCAL_URL`, else the URL in a live `maple-server.json`, else

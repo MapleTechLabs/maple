@@ -167,6 +167,16 @@ export const probeFailure = (result: Exclude<ProbeResult, "maple">, url: string)
 	}
 }
 
+/**
+ * Auto mode's pick once no flag or stored preference decided. An explicitly set
+ * `MAPLE_LOCAL_URL` names the server to use, so it wins over a stored login;
+ * otherwise a login means remote, and with neither the local URL is probed.
+ */
+export const autoBackend = (p: {
+	readonly localUrlFromEnv: boolean
+	readonly remoteConfigured: boolean
+}): "local" | "remote" | "probe" => (p.localUrlFromEnv ? "local" : p.remoteConfigured ? "remote" : "probe")
+
 export interface ModeApi {
 	/** Resolve the active backend. Fails with `ModeError` if none is available. */
 	readonly resolve: Effect.Effect<ResolvedMode, ModeError>
@@ -231,9 +241,23 @@ export class Mode extends Context.Service<Mode, ModeApi>()("@maple/cli/Mode", {
 			if (Option.contains(config.defaultMode, "remote") && remote !== undefined) return remote
 			if (Option.contains(config.defaultMode, "local")) return yield* local
 
-			// Auto-detect: a configured token implies remote; otherwise probe for a
-			// running local binary.
-			if (remote !== undefined) return remote
+			const pick = autoBackend({
+				localUrlFromEnv: process.env.MAPLE_LOCAL_URL !== undefined,
+				remoteConfigured: remote !== undefined,
+			})
+			if (pick === "local") return yield* local
+			if (pick === "remote" && remote?._tag === "remote") {
+				// Logged in with a local server running is the easy way to query prod by
+				// mistake. The discovery files are local reads, so checking costs nothing.
+				const running = yield* discoverServers(fs)
+				const localRunning = Option.getOrUndefined(running.url) ?? running.ambiguous[0]
+				if (localRunning !== undefined) {
+					process.stderr.write(
+						`note: querying the workspace at ${remote.apiUrl} because you are logged in; a local server is running at ${localRunning}. Pass --local, or run \`maple use local\`.\n`,
+					)
+				}
+				return remote
+			}
 			const baseUrl = yield* localUrl
 			const probe = yield* probeLocal(client, baseUrl)
 			if (probe === "maple") return { _tag: "local", baseUrl } satisfies ResolvedMode
