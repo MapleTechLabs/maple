@@ -421,9 +421,9 @@ function coverageSignals(coverage: SessionCoverage): readonly Signal[] {
 			title: "Tool arguments and results",
 			explains: {
 				captured:
-					"Each tool call's arguments and result were recorded. Tool errors and Repeated calls read them.",
+					"Each tool call's arguments and result were recorded. Tool errors reads them.",
 				missing:
-					"No tool call recorded its arguments or result. A failed call has only its status, and identical retries cannot be told apart.",
+					"No tool call recorded its arguments or result. A failed call has only its status.",
 				absent: "No tool was called in this session.",
 			}[coverage.toolPayloads],
 		},
@@ -466,7 +466,7 @@ function coverageSignals(coverage: SessionCoverage): readonly Signal[] {
 					? "Turns follow the conversation id on the spans."
 					: turns === "agent-root"
 						? "Turns follow each agent's root span."
-						: "No conversation id or agent root on the spans, so each trace is one turn. Stalls and Repeated calls read a guess.",
+						: "No conversation id or agent root on the spans, so each trace is one turn. Stalls reads a guess.",
 		},
 	]
 }
