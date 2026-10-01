@@ -42,7 +42,7 @@
 		"alchemy": "catalog:alchemy",
 		"drizzle-orm": "1.0.0-rc.5-5935859",
 		"effect": "catalog:effect",
-		"effect-agent": "0.1.0-beta.144"
+		"effect-agent": "0.1.0-beta.164"
 	},
 	"devDependencies": {
 		"@cloudflare/workers-types": "catalog:alchemy",

@@ -14,6 +14,7 @@ import * as Output from "effect-agent/output"
 import { Effect, Layer, Schema } from "effect"
 import { type Tool, Toolkit } from "effect/unstable/ai"
 import type { ResolvedModel } from "../platform/Llm"
+import { MODEL_RETRIES } from "./budgets"
 
 export const REVIEW_FILES = "review_files"
 
@@ -61,6 +62,7 @@ const workerPolicy = AgentPolicy.make({
 	tokenBudget: 4_000_000,
 	completionReserveTokens: 16_000,
 	toolConcurrency: 4,
+	modelRetries: MODEL_RETRIES,
 	onExhaustion: "final-answer",
 	// A worker sees its own clock too, so it answers inside its four minutes.
 	runStatus: "appended",

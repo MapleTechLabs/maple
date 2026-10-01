@@ -33,6 +33,7 @@ import {
 	PR_REPLY_BUDGET,
 	PR_REVIEW_BUDGET,
 	liveContextLimit,
+	MODEL_RETRIES,
 	REPEATED_TOOL_CALLS,
 	TOOL_CONCURRENCY,
 } from "./budgets"
@@ -161,6 +162,7 @@ export const agentPolicyFor = (agent: AgentDefinition, contextTokens?: number): 
 		completionReserveTokens: budget.completionReserveTokens,
 		toolConcurrency: TOOL_CONCURRENCY,
 		repeatedFailureLimit: REPEATED_TOOL_CALLS,
+		modelRetries: MODEL_RETRIES,
 		// The closing step, as policy: a turn that runs out of turns, or out of tokens, gets one
 		// more without tools, to answer from what it found rather than stopping on a wall of tool
 		// rows. This is also what makes `tokenBudget` a deadline rather than a way to lose a run.

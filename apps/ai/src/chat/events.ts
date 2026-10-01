@@ -351,6 +351,8 @@ export const toChatEvents = (
 		case "ApprovalRequested":
 		case "TurnStarted":
 		case "ModelStarted":
+		// Only emitted under `restartOnJoinedInput`, which no Maple policy sets.
+		case "ModelRestarted":
 		case "ReasoningDelta":
 		case "ToolCallStarted":
 		case "ToolProgress":

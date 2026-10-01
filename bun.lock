@@ -43,7 +43,7 @@
         "@maple/query-model": "workspace:*",
         "@maple/widgets": "workspace:*",
         "effect": "catalog:effect",
-        "effect-agent": "0.1.0-beta.144",
+        "effect-agent": "0.1.0-beta.164",
       },
       "devDependencies": {
         "@ai-sdk/openai-compatible": "^3.0.57",
@@ -625,7 +625,7 @@
         "alchemy": "catalog:alchemy",
         "drizzle-orm": "1.0.0-rc.5-5935859",
         "effect": "catalog:effect",
-        "effect-agent": "0.1.0-beta.144",
+        "effect-agent": "0.1.0-beta.164",
       },
       "devDependencies": {
         "@cloudflare/workers-types": "catalog:alchemy",
@@ -2965,7 +2965,7 @@
 
     "effect": ["effect@4.0.0-rc.117", "", {}, "sha512-UUyi9QiOW4nySFIBM3KnYbNMd9EZliOdKfBcyLD0mPMPheO2fkuXS5y0opjWc9oqzlJxPQICEGm8gGw3kh9j/w=="],
 
-    "effect-agent": ["effect-agent@0.1.0-beta.144", "", { "peerDependencies": { "effect": "^4.0.0-rc.117" } }, "sha512-8XzsMT58a/rn4JDGpx1sTt/oJjM11aX4vPpcmtQiPV0hHB2MlPy07Bmuh4Hub6dv6EnOmuX4be+PNDuBu9igQA=="],
+    "effect-agent": ["effect-agent@0.1.0-beta.164", "", { "peerDependencies": { "effect": "^4.0.0-rc.117" } }, "sha512-bWWwsiV9usyc04qDl12dWNAxDw51uNPz05+QXQwpemTRAf86aA1muXLaWLB0xvap22YWg2a2oz0/58Q+dyasTg=="],
 
     "electron-to-chromium": ["electron-to-chromium@1.5.439", "", {}, "sha512-qu6QIPXhsb+CRcAiTMNjR4A1y/7tCYKkKjr5CZXRVih6qkDf79peZ2BpEU3qoDBNCRrcy3Mra3X9nG5oruuA7Q=="],
 
