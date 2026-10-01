@@ -749,6 +749,10 @@ export const serviceOverviewSpans = defineDatasource("service_overview_spans", {
 		CommitSha: t.string().lowCardinality(),
 		SampleRate: t.float64().default(1.0),
 		ServiceNamespace: t.string().lowCardinality(),
+		// Which entry-point rule admitted the span: its kind, and whether it is a trace root.
+		// '' / 0 on rows materialized before migration 0037.
+		SpanKind: t.string().lowCardinality().default(""),
+		IsRoot: t.uint8().default(0),
 	},
 	engine: engine.mergeTree({
 		partitionKey: "toDate(Timestamp)",

@@ -41,6 +41,7 @@ import { migration_0033_ai_crawler_requests } from "./0033_ai_crawler_requests"
 import { migration_0034_trace_facets_hourly, traceFacetsHourlyBackfill } from "./0034_trace_facets_hourly"
 import { migration_0035_ai_trace_index_gateway_stamps } from "./0035_ai_trace_index_gateway_stamps"
 import { migration_0036_alert_checks_skip_reason } from "./0036_alert_checks_skip_reason"
+import { migration_0037_service_overview_spans_span_kind } from "./0037_service_overview_spans_span_kind"
 import { latestSnapshotStatements } from "../../generated/clickhouse-schema"
 import { clickHouseSchemaVersion, latestMigrationVersion, migrations } from "./index"
 
@@ -58,10 +59,10 @@ describe("ClickHouse migrations", () => {
 	it("keeps migrations ordered by version", () => {
 		expect(migrations.map((m) => m.version)).toEqual([
 			1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27,
-			28, 29, 30, 31, 32, 33, 34, 35, 36,
+			28, 29, 30, 31, 32, 33, 34, 35, 36, 37,
 		])
-		expect(migrations.at(-1)).toBe(migration_0036_alert_checks_skip_reason)
-		expect(latestMigrationVersion).toBe(36)
+		expect(migrations.at(-1)).toBe(migration_0037_service_overview_spans_span_kind)
+		expect(latestMigrationVersion).toBe(37)
 		// 0010 and 0014-0020 are read-path only and skipped by the ingest-gating
 		// version; 0021 is not — the gateway writes `session_events`' new identity
 		// columns and `product_events` directly, so a BYO-CH org must apply it
@@ -102,6 +103,8 @@ describe("ClickHouse migrations", () => {
 		expect(migration_0035_ai_trace_index_gateway_stamps.requiredForIngest).toBe(false)
 		// 0036 widens alert_checks, which the scheduler writes through Tinybird.
 		expect(migration_0036_alert_checks_skip_reason.requiredForIngest).toBe(false)
+		// 0037 widens the MV-populated service_overview_spans and rebuilds its view.
+		expect(migration_0037_service_overview_spans_span_kind.requiredForIngest).toBe(false)
 	})
 
 	it("recreates both error-events MVs with the span-attribute exception fallback", () => {
@@ -958,5 +961,20 @@ describe("migration 0035 — ai_trace_index_mv projects the gateway's stamps", (
 		)
 		expect(create).not.toContain("multiIf")
 		expect(create).not.toContain("LIKE")
+	})
+})
+
+describe("migration 0037: service_overview_spans records why a row is an entry point", () => {
+	it("adds the columns before recreating the view that fills them", () => {
+		const [addKind, addRoot, drop, create, ...rest] =
+			migration_0037_service_overview_spans_span_kind.statements
+		expect(rest).toEqual([])
+		expect(addKind).toContain("ADD COLUMN IF NOT EXISTS SpanKind")
+		expect(addRoot).toContain("ADD COLUMN IF NOT EXISTS IsRoot")
+		expect(drop).toBe("DROP VIEW IF EXISTS service_overview_spans_mv")
+		expect(create).toBe(
+			latestSnapshotStatements.find((stmt) => stmt.includes("service_overview_spans_mv TO")),
+		)
+		expect(create).toContain("toUInt8(ParentSpanId = '') AS IsRoot")
 	})
 })

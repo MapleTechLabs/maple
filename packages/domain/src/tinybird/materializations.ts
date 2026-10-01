@@ -340,7 +340,9 @@ export const serviceOverviewSpansMv = defineMaterializedView("service_overview_s
           ${DEPLOYMENT_ENV_SQL} AS DeploymentEnv,
           ResourceAttributes['vcs.ref.head.revision'] AS CommitSha,
           SampleRate,
-          ResourceAttributes['service.namespace'] AS ServiceNamespace
+          ResourceAttributes['service.namespace'] AS ServiceNamespace,
+          SpanKind,
+          toUInt8(ParentSpanId = '') AS IsRoot
         FROM traces
         WHERE SpanKind IN ('Server', 'Consumer') OR ParentSpanId = ''
       `,

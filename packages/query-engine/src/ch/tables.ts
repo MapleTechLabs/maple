@@ -240,6 +240,8 @@ export const ServiceOverviewSpans = table("service_overview_spans", {
 	ServiceNamespace: T.string,
 	CommitSha: T.string,
 	SampleRate: T.float64,
+	SpanKind: T.string,
+	IsRoot: T.uint8,
 })
 
 export const ServiceOverviewHourly = table("service_overview_hourly", {

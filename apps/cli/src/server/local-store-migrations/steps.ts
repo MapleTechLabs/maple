@@ -1159,5 +1159,40 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 			},
 		],
 	},
+	{
+		id: "local-0027-to-0028-service-overview-spans-span-kind",
+		from: 27,
+		to: 28,
+		description:
+			"Add SpanKind and IsRoot to service_overview_spans and recreate service_overview_spans_mv to fill them",
+		clonedBefore: "any DDL runs",
+		beforeBootstrap: [
+			addColumns("service_overview_spans", [
+				["SpanKind", "LowCardinality(String) DEFAULT ''"],
+				["IsRoot", "UInt8 DEFAULT 0"],
+			]),
+			dropViews("service_overview_spans_mv"),
+		],
+		plan: [
+			[
+				"widen-service-overview-spans",
+				"Add SpanKind and IsRoot to service_overview_spans and rebuild service_overview_spans_mv to fill them",
+			],
+		],
+		verifies: "Verify the v28 physical schema and the retained raw telemetry counts",
+		dispositions: [
+			TRACES_UNDER_REPLACED_VIEWS,
+			{
+				name: "service_overview_spans",
+				classification: "derived",
+				disposition: "rebuild-within-retention-horizon",
+				guarantee:
+					"Existing rows are preserved untouched with an empty SpanKind and a zero IsRoot; the rebuilt view fills both for spans materialized after the migration and the gap closes as the 30-day retention window rolls.",
+				preservationInterval: "source retention horizon",
+				sourceRetentionDays: 30,
+				targetRetentionDays: 30,
+			},
+		],
+	},
 	// local-schema:bump appends the next step above this line.
 ]

@@ -50,7 +50,7 @@ const TABLE_NOTES: Record<string, ReadonlyArray<string>> = {
 		"`Duration` is NANOSECONDS — divide by 1e6 for ms.",
 		"`StatusCode` is Title Case: 'Ok', 'Error', 'Unset'.",
 		"Does NOT include `SpanAttributes`/`ResourceAttributes` — query `traces` if you need attribute access.",
-		"Has NO `SpanKind` column: Server, Consumer and root spans are mixed together. Query `traces` to split by kind.",
+		"`SpanKind` ('Server', 'Consumer', or another kind for a root span) and `IsRoot` (UInt8) say why a row is an entry point; filter on them to split request traffic from consumers or background roots. Both are ''/0 on rows materialized before migration 0037 (the table keeps 30 days).",
 	],
 	error_events: [
 		"Per-error-occurrence rows with the OTel `exception` event unwrapped — surfaces `ExceptionType`, `ExceptionMessage`, `Stacktrace`, and a stable `FingerprintHash` for grouping.",
