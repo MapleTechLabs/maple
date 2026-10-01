@@ -4,6 +4,7 @@ import { QueryEngineAlertReducer, QueryEngineNoDataBehavior } from "../../query-
 import { PostgresTransactionId, UserId } from "../../primitives"
 import {
 	AlertCheckStatus,
+	AlertSkipReason,
 	AlertComparator,
 	AlertEvaluationStatus,
 	AlertIncidentTransition,
@@ -543,6 +544,10 @@ export const V2AlertCheck = Schema.Struct({
 		description: "`breached`, `healthy`, `skipped`, or `error` (the evaluation query failed).",
 		examples: ["breached"],
 	}),
+	skip_reason: Schema.NullOr(AlertSkipReason).annotate({
+		description:
+			"Why a `skipped` check skipped: `no_data` (the window had no data, e.g. a raw query returned no rows), `below_min_samples`, or `no_value`. `null` on other checks and on checks recorded before this field existed.",
+	}),
 	signal_type: AlertSignalType,
 	comparator: AlertComparator,
 	threshold: Schema.Number,
@@ -580,6 +585,7 @@ export const V2AlertCheck = Schema.Struct({
 			timestamp: "2026-07-15T09:10:00.000Z",
 			group_key: "__total__",
 			status: "breached",
+			skip_reason: null,
 			signal_type: "error_rate",
 			comparator: "gt",
 			threshold: 0.05,

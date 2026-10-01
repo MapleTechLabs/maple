@@ -677,6 +677,7 @@ describe("v2 alerts over HTTP", () => {
 				evaluationDurationMs: 8,
 				errorMessage: null,
 				errorCategory: "",
+				skipReason: "",
 			}
 		})
 		const pagedWarehouse: WarehouseQueryServiceApi = {

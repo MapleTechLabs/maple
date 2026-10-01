@@ -19,6 +19,7 @@
             "observed_value": 0.09,
             "sample_count": 132,
             "signal_type": "error_rate",
+            "skip_reason": null,
             "status": "breached",
             "threshold": 0.05,
             "threshold_upper": null,
@@ -78,6 +79,10 @@
           },
           "signal_type": {
             "$ref": "#/components/schemas/_maple_AlertSignalType"
+          },
+          "skip_reason": {
+            "$ref": "#/components/schemas/_maple_AlertSkipReason",
+            "description": "Why a `skipped` check skipped: `no_data` (the window had no data, e.g. a raw query returned no rows), `below_min_samples`, or `no_value`. `null` on other checks and on checks recorded before this field existed."
           },
           "status": {
             "$ref": "#/components/schemas/_maple_AlertCheckStatus"
@@ -3439,6 +3444,15 @@
           "error_rate"
         ],
         "title": "Alert Signal Type",
+        "type": "string"
+      },
+      "_maple_AlertSkipReason": {
+        "enum": [
+          "no_data",
+          "below_min_samples",
+          "no_value"
+        ],
+        "title": "Alert Skip Reason",
         "type": "string"
       },
       "_maple_AnomalyIncidentId": {

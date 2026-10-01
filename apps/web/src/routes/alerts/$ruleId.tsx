@@ -239,6 +239,7 @@ function RuleDetailContent() {
 				timestamp: bucketStart,
 				groupKey: point.groupKey,
 				status,
+				skipReason: null,
 				signalType: rule.signalType,
 				comparator: rule.comparator,
 				threshold: point.threshold,

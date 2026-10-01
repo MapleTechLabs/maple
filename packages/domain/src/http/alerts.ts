@@ -156,6 +156,16 @@ export const AlertCheckStatus = Schema.Literals(["breached", "healthy", "skipped
 })
 export type AlertCheckStatus = Schema.Schema.Type<typeof AlertCheckStatus>
 
+/**
+ * Why a check was skipped: the window had no data, fewer samples than the
+ * rule's minimum, or data without a usable scalar.
+ */
+export const AlertSkipReason = Schema.Literals(["no_data", "below_min_samples", "no_value"]).annotate({
+	identifier: "@maple/AlertSkipReason",
+	title: "Alert Skip Reason",
+})
+export type AlertSkipReason = Schema.Schema.Type<typeof AlertSkipReason>
+
 const ChannelLabel = Schema.String.pipe(Schema.check(Schema.isMinLength(1), Schema.isTrimmed()))
 
 const NonEmptyString = Schema.String.pipe(Schema.check(Schema.isMinLength(1), Schema.isTrimmed()))
@@ -585,6 +595,8 @@ export class AlertEvaluationResult extends Schema.Class<AlertEvaluationResult>("
 	thresholdUpper: Schema.NullOr(Schema.Number),
 	comparator: AlertComparator,
 	reason: Schema.String,
+	/** Set on `status: "skipped"`. */
+	skipReason: Schema.optionalKey(AlertSkipReason),
 }) {}
 
 export class AlertRulePreviewRequest extends Schema.Class<AlertRulePreviewRequest>("AlertRulePreviewRequest")(
@@ -1089,6 +1101,8 @@ export class AlertCheckDocument extends Schema.Class<AlertCheckDocument>("AlertC
 	timestamp: IsoDateTimeString,
 	groupKey: Schema.String,
 	status: AlertCheckStatus,
+	/** Populated on `status: "skipped"` rows; null on rows recorded before it existed. */
+	skipReason: Schema.NullOr(AlertSkipReason),
 	signalType: AlertSignalType,
 	comparator: AlertComparator,
 	threshold: Schema.Number,

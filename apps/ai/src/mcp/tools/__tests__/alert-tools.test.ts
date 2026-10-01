@@ -202,6 +202,29 @@ const layer = (seen: Seen) =>
 								evaluationDurationMs: 12,
 								errorMessage: "column Foo not found",
 								errorCategory: "validation",
+								skipReason: null,
+							},
+							{
+								timestamp: NOW,
+								groupKey: "checkout",
+								status: "skipped",
+								skipReason: "no_data",
+								signalType: "error_rate",
+								comparator: "gt",
+								threshold: 0.05,
+								thresholdUpper: null,
+								observedValue: null,
+								sampleCount: 0,
+								windowMinutes: 5,
+								windowStart: NOW,
+								windowEnd: NOW,
+								consecutiveBreaches: 0,
+								consecutiveHealthy: 0,
+								incidentId: null,
+								incidentTransition: "none",
+								evaluationDurationMs: 9,
+								errorMessage: null,
+								errorCategory: null,
 							},
 						],
 					}),
@@ -323,6 +346,10 @@ describe("alert tools", () => {
 		})
 		const output = Schema.decodeUnknownSync(ListAlertChecksOutput)(result.structuredContent)
 		expect(output.errored).toBe(1)
+		expect(output.noData).toBe(1)
+		expect(output.checks[1]?.skipReason).toBe("no_data")
+		expect(text(result)).toContain("1 skipped [1 no data]")
+		expect(text(result)).toContain("| no data |")
 		expect(output.timeRange).toEqual({ start: "2026-09-24 00:00:00", end: "2026-09-24 12:00:00" })
 		expect(text(result)).toContain("Time range: 2026-09-24 00:00:00 to 2026-09-24 12:00:00")
 		expect(text(result)).toContain(`\`get_alert_rule rule_id="${RULE_ID}"\``)

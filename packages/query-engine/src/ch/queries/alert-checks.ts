@@ -39,6 +39,7 @@ export interface ListRuleChecksOutput {
 	readonly evaluationDurationMs: number
 	readonly errorMessage: string | null
 	readonly errorCategory: string
+	readonly skipReason: string
 }
 
 export function listRuleChecksQuery(opts: ListRuleChecksOpts) {
@@ -63,6 +64,7 @@ export function listRuleChecksQuery(opts: ListRuleChecksOpts) {
 				evaluationDurationMs: $.EvaluationDurationMs,
 				errorMessage: $.ErrorMessage,
 				errorCategory: $.ErrorCategory,
+				skipReason: $.SkipReason,
 			}))
 			.where(($) => [
 				$.OrgId.eq(param.string("orgId")),

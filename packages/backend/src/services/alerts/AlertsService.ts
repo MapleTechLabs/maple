@@ -1054,6 +1054,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 										thresholdUpper: normalized.thresholdUpper,
 										comparator: normalized.comparator,
 										reason: "No data",
+										skipReason: "no_data" as const,
 									}
 								)
 							}),
@@ -1068,6 +1069,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							thresholdUpper: normalized.thresholdUpper,
 							comparator: normalized.comparator,
 							reason: "No data",
+							skipReason: "no_data" as const,
 						}
 				} else {
 					// Uniform grouped/ungrouped path — mirrors runSchedulerTick: the
@@ -1088,6 +1090,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							thresholdUpper: normalized.thresholdUpper,
 							comparator: normalized.comparator,
 							reason: "No data",
+							skipReason: "no_data" as const,
 						}
 				}
 
@@ -2026,7 +2029,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						} else {
 							heldForMs = gate.heldForMs
 							resolveEvaluation =
-								evaluation.skippedForNoData === true
+								evaluation.skipReason === "no_data"
 									? makeSyntheticResolveEvaluation(
 											normalized,
 											gate.reason ??
@@ -2299,6 +2302,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					GroupKey: groupKey,
 					Timestamp: toIngestDateTime64(timestamp),
 					Status: evaluation.status,
+					SkipReason: evaluation.skipReason ?? "",
 					SignalType: normalized.signalType,
 					Comparator: normalized.comparator,
 					Threshold: normalized.threshold,
@@ -3120,6 +3124,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							GroupKey: UNGROUPED_GROUP_KEY,
 							Timestamp: toIngestDateTime64(failedAt),
 							Status: "error",
+							SkipReason: "",
 							SignalType: row.signalType,
 							Comparator: row.comparator,
 							Threshold: row.threshold,

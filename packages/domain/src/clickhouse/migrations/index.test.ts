@@ -40,6 +40,7 @@ import { migration_0032_ai_trace_index_tool_detail_columns } from "./0032_ai_tra
 import { migration_0033_ai_crawler_requests } from "./0033_ai_crawler_requests"
 import { migration_0034_trace_facets_hourly, traceFacetsHourlyBackfill } from "./0034_trace_facets_hourly"
 import { migration_0035_ai_trace_index_gateway_stamps } from "./0035_ai_trace_index_gateway_stamps"
+import { migration_0036_alert_checks_skip_reason } from "./0036_alert_checks_skip_reason"
 import { latestSnapshotStatements } from "../../generated/clickhouse-schema"
 import { clickHouseSchemaVersion, latestMigrationVersion, migrations } from "./index"
 
@@ -57,10 +58,10 @@ describe("ClickHouse migrations", () => {
 	it("keeps migrations ordered by version", () => {
 		expect(migrations.map((m) => m.version)).toEqual([
 			1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27,
-			28, 29, 30, 31, 32, 33, 34, 35,
+			28, 29, 30, 31, 32, 33, 34, 35, 36,
 		])
-		expect(migrations.at(-1)).toBe(migration_0035_ai_trace_index_gateway_stamps)
-		expect(latestMigrationVersion).toBe(35)
+		expect(migrations.at(-1)).toBe(migration_0036_alert_checks_skip_reason)
+		expect(latestMigrationVersion).toBe(36)
 		// 0010 and 0014-0020 are read-path only and skipped by the ingest-gating
 		// version; 0021 is not — the gateway writes `session_events`' new identity
 		// columns and `product_events` directly, so a BYO-CH org must apply it
@@ -99,6 +100,8 @@ describe("ClickHouse migrations", () => {
 		expect(migration_0034_trace_facets_hourly.requiredForIngest).toBe(false)
 		// 0035 only recreates the MV-populated ai_trace_index's view.
 		expect(migration_0035_ai_trace_index_gateway_stamps.requiredForIngest).toBe(false)
+		// 0036 widens alert_checks, which the scheduler writes through Tinybird.
+		expect(migration_0036_alert_checks_skip_reason.requiredForIngest).toBe(false)
 	})
 
 	it("recreates both error-events MVs with the span-attribute exception fallback", () => {

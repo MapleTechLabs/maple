@@ -711,6 +711,7 @@ export function v2CheckToDocument(check: V2AlertCheck): AlertCheckDocument {
 		timestamp: asIso(check.timestamp),
 		groupKey: check.group_key,
 		status: check.status,
+		skipReason: check.skip_reason,
 		signalType: check.signal_type,
 		comparator: check.comparator,
 		threshold: check.threshold,

@@ -322,6 +322,7 @@ describe("v2 response mappers", () => {
 			timestamp: "2026-07-15T09:10:00.000Z",
 			group_key: "__total__",
 			status: "breached",
+			skip_reason: null,
 			signal_type: "error_rate",
 			comparator: "gt",
 			threshold: 0.05,

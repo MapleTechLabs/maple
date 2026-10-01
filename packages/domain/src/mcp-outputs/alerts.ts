@@ -126,6 +126,8 @@ export const AlertCheckRow = Schema.Struct({
 	timestamp: Schema.String,
 	groupKey: Schema.String,
 	status: Schema.String,
+	/** Why a skipped check skipped: no_data, below_min_samples or no_value. */
+	skipReason: NullableString,
 	observedValue: NullableNumber,
 	threshold: Schema.Number,
 	comparator: Schema.String,
@@ -147,6 +149,10 @@ export const ListAlertChecksOutput = Schema.Struct({
 	breached: Schema.Number,
 	healthy: Schema.Number,
 	skipped: Schema.Number,
+	/** Skipped checks whose window had no data (a raw query that returned no rows). */
+	noData: Schema.Number,
+	/** Skipped checks with fewer samples than the rule's minimum. */
+	belowMinSamples: Schema.Number,
 	errored: Schema.Number,
 	transitions: Schema.Number,
 	checks: Schema.Array(AlertCheckRow),

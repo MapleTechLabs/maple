@@ -3469,6 +3469,7 @@ describe("AlertsService evaluation error persistence", () => {
 			assert.strictEqual(errorChecks[0]?.ErrorMessage, "Unknown column FooBar in traces")
 			assert.strictEqual(errorChecks[0]?.ErrorCategory, "warehouse_query_failed")
 			assert.strictEqual(errorChecks[0]?.GroupKey, "__total__")
+			assert.strictEqual(errorChecks[0]?.SkipReason, "")
 
 			const stateAfterFirstFailure = yield* Effect.promise(() =>
 				queryFirstRow<{ updated_at: Date }>(
@@ -3501,6 +3502,26 @@ describe("AlertsService evaluation error persistence", () => {
 			yield* alerts.runSchedulerTick()
 			const rulesAfterRecovery = yield* alerts.listRules(orgId)
 			assert.isNull(rulesAfterRecovery.rules[0]?.lastEvaluationError)
+		}).pipe(Effect.provide(makeLayer(testDb, failingWarehouseStub(state), { fetch: okFetch })))
+	})
+
+	it.effect("records why a check skipped when the window has no data", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = { failing: false, rows: [], ingested: [] as Array<Record<string, unknown>> }
+
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_alert_skip_reason")
+			const userId = asUserId("user_alert_skip_reason")
+			const destination = yield* createWebhookDestination(alerts, orgId, userId)
+			yield* createErrorRateRule(alerts, orgId, userId, destination.id)
+
+			yield* alerts.runSchedulerTick()
+
+			const skipped = state.ingested.filter((row) => row.Status === "skipped")
+			assert.lengthOf(skipped, 1)
+			assert.strictEqual(skipped[0]?.SkipReason, "no_data")
 		}).pipe(Effect.provide(makeLayer(testDb, failingWarehouseStub(state), { fetch: okFetch })))
 	})
 })

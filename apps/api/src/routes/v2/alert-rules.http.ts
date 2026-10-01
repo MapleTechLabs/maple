@@ -138,6 +138,7 @@ const toV2Check = (check: AlertCheckDocument): V2AlertCheck => ({
 	timestamp: check.timestamp,
 	group_key: check.groupKey,
 	status: check.status,
+	skip_reason: check.skipReason,
 	signal_type: check.signalType,
 	comparator: check.comparator,
 	threshold: check.threshold,

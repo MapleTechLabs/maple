@@ -21,6 +21,7 @@ import {
 	AlertSeverity as AlertSeveritySchema,
 	AlertSignalType as AlertSignalTypeSchema,
 	AlertCheckStatus as AlertCheckStatusSchema,
+	AlertSkipReason,
 	AlertValidationError,
 	OrgId,
 	type AlertIncidentId,
@@ -135,6 +136,7 @@ const decodeAlertSeveritySync = Schema.decodeUnknownSync(AlertSeveritySchema)
 const decodeAlertSignalTypeSync = Schema.decodeUnknownSync(AlertSignalTypeSchema)
 const decodeAlertComparatorSync = Schema.decodeUnknownSync(AlertComparatorSchema)
 const decodeAlertCheckStatusSync = Schema.decodeUnknownSync(AlertCheckStatusSchema)
+const decodeAlertSkipReasonSync = Schema.decodeUnknownSync(AlertSkipReason)
 const decodeAlertIncidentTransitionSync = Schema.decodeUnknownSync(AlertIncidentTransitionSchema)
 const decodeAlertIncidentStatusSync = Schema.decodeUnknownSync(AlertIncidentStatus)
 const decodeAlertIncidentHoldReasonSync = Schema.decodeUnknownSync(AlertIncidentHoldReason)
@@ -328,6 +330,10 @@ export class AlertReadModelsService extends Context.Service<
 							timestamp: decodeIsoDateTimeStringSync(String(r.timestamp)),
 							groupKey: String(r.groupKey ?? ""),
 							status: decodeAlertCheckStatusSync(String(r.status)),
+							skipReason:
+								r.skipReason == null || r.skipReason === ""
+									? null
+									: decodeAlertSkipReasonSync(String(r.skipReason)),
 							signalType: decodeAlertSignalTypeSync(String(r.signalType)),
 							comparator: decodeAlertComparatorSync(String(r.comparator)),
 							threshold: Number(r.threshold),

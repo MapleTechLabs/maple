@@ -1140,5 +1140,24 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 			},
 		],
 	},
+	{
+		id: "local-0026-to-0027-alert-checks-skip-reason",
+		from: 26,
+		to: 27,
+		description: "Add SkipReason to alert_checks",
+		clonedBefore: "any DDL runs",
+		beforeBootstrap: [addColumns("alert_checks", [["SkipReason", "LowCardinality(String) DEFAULT ''"]])],
+		plan: [["widen-alert-checks", "Add SkipReason to alert_checks so skipped checks record why"]],
+		verifies: "Verify the v27 physical schema and the retained raw telemetry counts",
+		dispositions: [
+			{
+				name: "alert_checks",
+				classification: "authoritative",
+				disposition: "preserve-exact",
+				guarantee:
+					"Existing check rows are kept as written with an empty SkipReason; only checks recorded after the migration carry one.",
+			},
+		],
+	},
 	// local-schema:bump appends the next step above this line.
 ]

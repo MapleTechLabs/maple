@@ -1666,6 +1666,8 @@ export const alertChecks = defineDatasource("alert_checks", {
 		GroupKey: t.string(),
 		Timestamp: t.dateTime64(3),
 		Status: t.string().lowCardinality(),
+		// Why a skipped check skipped (no_data, below_min_samples, no_value); '' otherwise.
+		SkipReason: t.string().lowCardinality().default(""),
 		SignalType: t.string().lowCardinality(),
 		Comparator: t.string().lowCardinality(),
 		Threshold: t.float64(),

@@ -176,7 +176,7 @@ describe("planAlertLifecycle", () => {
 			{ value: null, sampleCount: 0, hasData: false },
 			"above threshold",
 		)
-		expect(evaluation).toMatchObject({ status: "skipped", skippedForNoData: true })
+		expect(evaluation).toMatchObject({ status: "skipped", skipReason: "no_data" })
 		const input = {
 			policy,
 			evaluation,
@@ -235,7 +235,7 @@ describe("planAlertLifecycle", () => {
 				"above threshold",
 			)
 			expect(evaluation.status).toBe("skipped")
-			expect(evaluation.skippedForNoData).not.toBe(true)
+			expect(evaluation.skipReason).not.toBe("no_data")
 			const state = { consecutiveBreaches: 2, consecutiveHealthy: 1 }
 			expect(
 				planAlertLifecycle({

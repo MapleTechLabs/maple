@@ -654,6 +654,7 @@ export const AlertChecks = table("alert_checks", {
 	GroupKey: T.string,
 	Timestamp: dateTime64,
 	Status: T.string,
+	SkipReason: T.string,
 	SignalType: T.string,
 	Comparator: T.string,
 	Threshold: T.float64,
