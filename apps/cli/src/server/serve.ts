@@ -39,7 +39,7 @@ import {
 	encodeExportResponse,
 } from "./otlp/proto"
 import { CURRENT_LOCAL_SCHEMA, LOCAL_SCHEMA_MANIFEST, LOCAL_SCHEMA_SQL, SCHEMA_FINGERPRINT } from "./schema-identity"
-import { resumePendingDelete, runScopedDelete, ScopedDeleteRequest } from "./scoped-delete"
+import { hasSubject, resumePendingDelete, runScopedDelete, ScopedDeleteRequest } from "./scoped-delete"
 import { assertCurrentPhysicalSchema } from "./schema-physical"
 import {
 	countArrayRows,
@@ -950,7 +950,7 @@ const MAX_DELETE_BODY_BYTES = 16 * 1024
 
 const ScopedDeleteBody = Schema.Struct({ ...ScopedDeleteRequest.fields, dryRun: Schema.Boolean })
 
-/** `maple delete`: removes one service's rows from raw and derived tables while admission is closed. */
+/** `maple delete`: removes a service's or namespace's rows from raw and derived tables while admission is closed. */
 const handleScopedDelete = (
 	db: Chdb,
 	dataDir: string,
@@ -966,6 +966,7 @@ const handleScopedDelete = (
 		const decoded = Schema.decodeUnknownResult(ScopedDeleteBody, { onExcessProperty: "error" })(body)
 		if (Result.isFailure(decoded)) return text("invalid delete fields", 400)
 		const { dryRun, ...request } = decoded.success
+		if (!hasSubject(request)) return text("a delete needs service or namespace", 400)
 		const work = runScopedDelete(db, LOCAL_SCHEMA_MANIFEST, dataDir, request, { dryRun })
 		const report = yield* gate.exclusiveEffect(
 			dryRun

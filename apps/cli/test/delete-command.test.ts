@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { Effect, Layer } from "effect"
-import { parseBefore, resolveDeleteBaseUrl } from "../src/commands/delete"
+import { Effect, Layer, Option } from "effect"
+import { buildDeleteRequest, parseBefore, resolveDeleteBaseUrl } from "../src/commands/delete"
 import { Mode } from "../src/core/mode"
 import { CliUsageError } from "../src/lib/errors"
 
@@ -49,5 +49,21 @@ describe("--before", () => {
 		expect(parseBefore("2h", 10 * 3_600_000)).toBe(8 * 3_600_000)
 		expect(parseBefore("2026-10-01 12:00", 0)).toBe(Date.UTC(2026, 9, 1, 12))
 		expect(parseBefore("yesterday", 0)).toBeNull()
+	})
+})
+
+describe("delete request", () => {
+	const flags = { service: undefined, namespace: undefined, env: undefined, beforeMs: undefined }
+
+	test("needs a service or a namespace", () => {
+		expect(Option.isNone(buildDeleteRequest(flags))).toBe(true)
+		expect(Option.isNone(buildDeleteRequest({ ...flags, service: "  ", env: "prod" }))).toBe(true)
+	})
+
+	test("accepts a namespace alone or with a service, env and cutoff", () => {
+		expect(buildDeleteRequest({ ...flags, namespace: "pr-42" })).toEqual(Option.some({ namespace: "pr-42" }))
+		expect(
+			buildDeleteRequest({ service: " api ", namespace: "pr-42", env: "", beforeMs: 1_000.7 }),
+		).toEqual(Option.some({ service: "api", namespace: "pr-42", env: "", beforeMs: 1_000 }))
 	})
 })

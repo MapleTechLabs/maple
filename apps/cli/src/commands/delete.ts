@@ -8,7 +8,7 @@ import { parseTimestampMs, sinceToMs } from "../core/time"
 import { CliUsageError } from "../lib/errors"
 import { bold, dim, green } from "../lib/style"
 import { maintenanceTokenPath } from "../server/archives/retention"
-import { ScopedDeleteReport, type ScopedDeleteRequest } from "../server/scoped-delete"
+import { hasSubject, ScopedDeleteReport, ScopedDeleteRequest } from "../server/scoped-delete"
 import { jsonFormatRequested, writeJson } from "./json-output"
 import { LocalStatus, prettyPath } from "./server-args"
 
@@ -34,6 +34,22 @@ export const resolveDeleteBaseUrl = Effect.gen(function* () {
 export const parseBefore = (raw: string, nowMs: number): number | null => {
 	const age = sinceToMs(raw)
 	return age === null ? parseTimestampMs(raw) : nowMs - age
+}
+
+/** Present flags as a request; a blank `--service` or `--namespace` counts as absent. */
+export const buildDeleteRequest = (flags: {
+	readonly service: string | undefined
+	readonly namespace: string | undefined
+	readonly env: string | undefined
+	readonly beforeMs: number | undefined
+}): Option.Option<ScopedDeleteRequest> => {
+	const present = Object.entries({
+		service: flags.service?.trim() || undefined,
+		namespace: flags.namespace?.trim() || undefined,
+		env: flags.env,
+		beforeMs: flags.beforeMs === undefined ? undefined : Math.floor(flags.beforeMs),
+	}).filter(([, value]) => value !== undefined)
+	return Option.filter(Schema.decodeUnknownOption(ScopedDeleteRequest)(Object.fromEntries(present)), hasSubject)
 }
 
 const failure = (message: string, hint?: string) =>
@@ -77,7 +93,8 @@ const postDelete = (baseUrl: string, body: ScopedDeleteRequest & { readonly dryR
 
 const describeRequest = (request: ScopedDeleteRequest): string =>
 	[
-		`service ${bold(request.service)}`,
+		...(request.service === undefined ? [] : [`service ${bold(request.service)}`]),
+		...(request.namespace === undefined ? [] : [`namespace ${bold(request.namespace)}`]),
 		...(request.env === undefined ? [] : [`env ${bold(request.env === "" ? '""' : request.env)}`]),
 		...(request.beforeMs === undefined ? [] : [`before ${bold(new Date(request.beforeMs).toISOString())}`]),
 	].join(", ")
@@ -95,7 +112,14 @@ const renderReport = (report: ScopedDeleteReport): string => {
 }
 
 export const deleteCommand = Command.make("delete", {
-	service: Flag.String("service").pipe(Flag.withDescription("service.name whose telemetry to delete")),
+	service: Flag.optional(
+		Flag.String("service").pipe(Flag.withDescription("service.name whose telemetry to delete")),
+	),
+	namespace: Flag.optional(
+		Flag.String("namespace").pipe(
+			Flag.withDescription("service.namespace whose telemetry to delete (with --service: both must match)"),
+		),
+	),
 	env: Flag.optional(
 		Flag.String("env").pipe(
 			Flag.withDescription("Only rows whose deployment.environment(.name) equals this value"),
@@ -114,26 +138,30 @@ export const deleteCommand = Command.make("delete", {
 	),
 }).pipe(
 	Command.withDescription(
-		"Delete one service's telemetry from the local store: raw tables and every derived rollup (local only)",
+		"Delete a service's or namespace's telemetry from the local store: raw tables and every derived rollup (local only)",
 	),
 	Command.withExamples([
 		{ command: "maple delete --service checkout-pr-42" },
+		{ command: "maple delete --namespace pr-42 --yes" },
 		{ command: "maple delete --service api --env preview-17 --yes" },
 		{ command: "maple delete --service api --before 7d --yes" },
 	]),
 	Command.withHandler(
 		Effect.fnUntraced(function* (a) {
 			const baseUrl = yield* resolveDeleteBaseUrl
-			const service = a.service.trim()
-			if (service.length === 0) return yield* failure("--service must not be empty")
 			const rawBefore = Option.getOrUndefined(a.before)
 			const beforeMs = rawBefore === undefined ? undefined : parseBefore(rawBefore, Date.now())
 			if (beforeMs === null)
 				return yield* failure(`invalid --before: ${rawBefore}`, "use an age like 7d or a timestamp like 2026-10-01 12:00")
-			const env = Option.getOrUndefined(a.env)
-			const base = { service }
-			const withEnv = env === undefined ? base : { ...base, env }
-			const request = beforeMs === undefined ? withEnv : { ...withEnv, beforeMs: Math.floor(beforeMs) }
+			const built = buildDeleteRequest({
+				service: Option.getOrUndefined(a.service),
+				namespace: Option.getOrUndefined(a.namespace),
+				env: Option.getOrUndefined(a.env),
+				beforeMs,
+			})
+			if (Option.isNone(built))
+				return yield* failure("pass --service, --namespace, or both", "e.g. maple delete --namespace pr-42")
+			const request = built.value
 			const report = yield* postDelete(baseUrl, { ...request, dryRun: !a.yes })
 			if (jsonFormatRequested()) yield* writeJson(report)
 			else

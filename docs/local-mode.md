@@ -235,23 +235,27 @@ Checkpoints and `maple stop` wait for at most one hour's join. Sealed hours and
 retired UTC days are skipped. A span that arrives after its hour is sealed is
 not counted in the map's complete hours.
 
-### Deleting one service's data
+### Deleting a service's or namespace's data
 
-`maple delete` removes one service's telemetry from the live store without a
-full `maple reset`, for example when one shared local Maple serves many
-throwaway dev environments:
+`maple delete` removes one service's or one `service.namespace`'s telemetry from
+the live store without a full `maple reset`, for example when one shared local
+Maple serves many throwaway dev environments:
 
 ```bash
 maple delete --service checkout-pr-42                 # preview: per-table counts, exits 1
 maple delete --service checkout-pr-42 --yes           # delete everything for the service
+maple delete --namespace pr-42 --yes                  # every service in one service.namespace
+maple delete --service api --namespace pr-42 --yes    # one service within one namespace
 maple delete --service api --env preview-17 --yes     # one deployment.environment only
 maple delete --service api --before 7d --yes          # rows older than an age or UTC timestamp
 ```
 
-`--service` is required. `--env` matches `deployment.environment.name`, falling
-back to `deployment.environment`, the same expression the rollups store as
-`DeploymentEnv`. `--before` is floored to the UTC hour, because hourly rollups
-cannot split an hour; the report echoes the effective cutoff.
+Pass `--service`, `--namespace`, or both (a row must match all given). `--env`
+matches `deployment.environment.name`, falling back to `deployment.environment`,
+the same expression the rollups store as `DeploymentEnv`. `--before` is floored
+to the UTC hour, because hourly rollups cannot split an hour; the report echoes
+the effective cutoff. A namespace delete keeps a same-named service in another
+namespace: `api` in `pr-41` survives `--namespace pr-42`.
 
 The command is local-only: `--remote`, or a mode that resolves to remote, is
 refused before anything is sent. It needs a running `maple start`, reads the
@@ -262,32 +266,38 @@ inside the admission gate's exclusive section, so ingest, queries, the service
 map rollup and checkpoint backups wait for it.
 
 **Which tables.** Every table in the local schema is classified in
-`TABLE_DELETE_PLAN` (`apps/cli/src/server/scoped-delete.ts`), and
-`validateDeletePlan` checks the map against the bundled schema manifest. The
-server refuses to delete when they disagree, and
+`TABLE_DELETE_PLAN` (`apps/cli/src/server/scoped-delete.ts`). A table either is
+`excluded` or declares which of the three dimensions (service, namespace, env)
+it can filter exactly, plus how to recompute it when a request names one it
+lacks. `validateDeletePlan` checks the map against the bundled schema manifest
+for every request shape. The server refuses to delete when they disagree, and
 `apps/cli/test/scoped-delete.test.ts` fails when a table is added without a
-classification. There are three strategies:
+classification. Per request, each table is handled one of three ways:
 
-- **filter**: `ALTER TABLE ... DELETE` on the service, env and time columns. Used
-  for the six raw tables (env from `ResourceAttributes`) and the derived tables
-  that key on `ServiceName` and `DeploymentEnv`: `trace_list_mv`, `error_events*`,
-  `service_overview_*`, `service_operations_*`, `traces_aggregates_hourly`,
-  `trace_facets_hourly`, the service map tables, and so on. On a merging engine
-  (Aggregating, Summing, Replacing) every filter column must be in the sorting
-  key, so a row never mixes services. `service_map_edges_hourly` and
+- **filter**: the table declares every requested dimension, so
+  `ALTER TABLE ... DELETE` removes exactly the matching rows. The six raw tables
+  read namespace and env from `ResourceAttributes` and can always filter.
+  `trace_list_mv`, `service_overview_*`, `trace_facets_hourly`,
+  `logs_aggregates_hourly` and `trace_detail_spans` also carry the namespace;
+  most other rollups carry `ServiceName` and `DeploymentEnv` only. On a merging
+  engine (Aggregating, Summing, Replacing) every filter column must be in the
+  sorting key, so a row never mixes scopes. `service_map_edges_hourly` and
   `service_address_resolutions_hourly` match the service on either end of the
   edge, because an edge is derived from both services' spans.
-- **rebuild**: tables whose rows do not carry the service as a key.
-  `attribute_keys_hourly` and `attribute_values_hourly` have no service column,
-  and `error_fingerprints_minutely` stores `ServiceName` as an `anyLast`
-  aggregate. Tables that key on the service but have no environment
-  (`service_usage`, `metric_catalog`, `span_metrics_calls_hourly`,
-  `product_events`, `ai_crawler_requests`) use this path only under `--env`.
-  The hours the deleted source rows covered are cleared and recomputed by
-  re-running the table's own materialized-view bodies over the surviving source
-  rows, one UTC day per insert. An hour is recomputed only while every source
-  still holds all of it (bundled TTL plus a day of margin). Older hours are left
-  as they are and reported as skipped; their TTL removes them.
+- **rebuild**: the table lacks a requested dimension. The hours the deleted
+  source rows covered are cleared, limited to the requested dimensions the table
+  does key on, and recomputed from the surviving source rows. Most tables are
+  recomputed by re-running their own materialized-view bodies, one UTC day per
+  insert, in dependency order: a recomputed source fires its downstream views
+  (`service_operations_minutely` into `_hourly`, `error_events` into
+  `error_fingerprints_minutely`), and the downstream recompute that follows
+  wipes and redoes those hours. The two service map tables are recomputed by
+  re-running the hourly rollup from raw spans, only for hours it had already
+  sealed. `attribute_keys_hourly`, `attribute_values_hourly` and
+  `error_fingerprints_minutely` have no usable service key, so they are always
+  recomputed. An hour is recomputed only while every source still holds all of
+  it (bundled TTL plus a day of margin). Older hours are left as they are and
+  reported as skipped; their TTL removes them.
 - **excluded**: tables no local telemetry reaches. `session_events`,
   `session_replay_events`, `session_replays` and `identity_links` hold browser
   session data that local OTLP ingest never writes. `alert_checks` and
@@ -624,7 +634,7 @@ maple query 'SELECT ServiceName, count() FROM traces WHERE $__orgFilter AND $__t
   code, and no span id.
 - v2 lists cap at 100 rows per page; `maple error` caps sample traces at 20.
 - `maple delete` is local-only: it deletes from the local store (see
-  [Deleting one service's data](#deleting-one-services-data)) and refuses remote mode.
+  [Deleting a service's or namespace's data](#deleting-a-services-or-namespaces-data)) and refuses remote mode.
 
 ### Seeding data
 
