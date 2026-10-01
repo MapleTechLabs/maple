@@ -8,6 +8,20 @@ import { formatCondition, ruleConfigWarnings, ruleNotFound, toAlertRuleRow } fro
 import * as P from "../lib/params"
 import { doc, type DocBlock } from "../lib/tool-doc"
 
+/** How the rule treats an empty window, in words. */
+const noDataLabel = (behavior: string): string => {
+	switch (behavior) {
+		case "skip":
+			return "skip the check (never breaches)"
+		case "zero":
+			return "read as 0"
+		case "alert":
+			return "breach (alerts when the rule goes blind)"
+		default:
+			return behavior
+	}
+}
+
 export function registerGetAlertRuleTool(server: McpToolRegistrar) {
 	server.define({
 		name: "get_alert_rule",
@@ -37,6 +51,7 @@ export function registerGetAlertRuleTool(server: McpToolRegistrar) {
 					excludeServiceNames: [...rule.excludeServiceNames],
 					groupBy: rule.groupBy ? [...rule.groupBy] : null,
 					minimumSampleCount: rule.minimumSampleCount,
+					noDataBehavior: rule.noDataBehavior,
 					consecutiveBreachesRequired: rule.consecutiveBreachesRequired,
 					consecutiveHealthyRequired: rule.consecutiveHealthyRequired,
 					renotifyIntervalMinutes: rule.renotifyIntervalMinutes,
@@ -86,6 +101,7 @@ export function registerGetAlertRuleTool(server: McpToolRegistrar) {
 				doc.heading("Evaluation"),
 				doc.fields([
 					["Minimum Sample Count", rule.minimumSampleCount],
+					["When No Data", noDataLabel(rule.noDataBehavior)],
 					["Consecutive Breaches Required", rule.consecutiveBreachesRequired],
 					["Consecutive Healthy Required", rule.consecutiveHealthyRequired],
 					["Renotify Interval", `${rule.renotifyIntervalMinutes}m`],

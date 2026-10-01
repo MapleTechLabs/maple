@@ -402,6 +402,7 @@ describe("alert tools", () => {
 				template: "high_error_rate",
 				destination_ids: DEST_ID,
 				environments: ["production"],
+				alert_on_no_data: true,
 			},
 			seen,
 		)
@@ -413,6 +414,7 @@ describe("alert tools", () => {
 			destinationIds: [DEST_ID],
 			environments: ["production"],
 			groupBy: ["service.name"],
+			alertOnNoData: true,
 		})
 		expect(text(result)).toContain("## Alert Rule Created")
 
@@ -544,6 +546,8 @@ describe("alert tools", () => {
 			name: "Checkout errors",
 			serviceNames: ["checkout"],
 			groupBy: ["service.name", "attr.http.route"],
+			// Carried over from the saved rule, which skips empty windows.
+			alertOnNoData: false,
 		})
 	})
 

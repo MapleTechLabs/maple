@@ -76,6 +76,7 @@ export interface NormalizedRule {
 	readonly queryBuilderDraft: QueryBuilderQueryDraftPayload | null
 	readonly rawQuerySql: string | null
 	readonly rawQueryReducer: QueryEngineAlertReducer | null
+	readonly alertOnNoData: boolean
 	readonly destinationIds: ReadonlyArray<AlertDestinationId>
 	readonly compiledPlan: Schema.Schema.Type<typeof CompiledAlertQueryPlan>
 	readonly createdAt: number
@@ -248,6 +249,7 @@ export const compileRulePlan = Effect.fn("AlertsService.compileRulePlan")(functi
 	readonly comparator: AlertComparator
 	readonly windowMinutes: number
 	readonly groupBy: AlertGroupBy | null
+	readonly alertOnNoData: boolean
 }): Effect.fn.Return<Schema.Schema.Type<typeof CompiledAlertQueryPlan>, AlertValidationError> {
 	const bucketSeconds = alertWindowBucketSeconds(rule.windowMinutes)
 	const envFilter = rule.environments.length > 0 ? { environments: rule.environments } : {}
@@ -256,8 +258,13 @@ export const compileRulePlan = Effect.fn("AlertsService.compileRulePlan")(functi
 		...envFilter,
 	}
 
+	// A low-throughput rule already breaches on an empty window read as zero.
 	const noDataBehavior: QueryEngineNoDataBehavior =
-		rule.signalType === "throughput" && ["lt", "lte"].includes(rule.comparator) ? "zero" : "skip"
+		rule.signalType === "throughput" && ["lt", "lte"].includes(rule.comparator)
+			? "zero"
+			: rule.alertOnNoData
+				? "alert"
+				: "skip"
 	const traceSignalMetrics: Record<string, string> = {
 		error_rate: "error_rate",
 		p95_latency: "p95_duration",
@@ -648,6 +655,7 @@ export const makeAlertRuleNormalizer = (runtime: AlertRuntimeApi) => {
 			queryBuilderDraft: stored.queryBuilderDraft,
 			rawQuerySql: row.rawQuerySql ?? null,
 			rawQueryReducer: decoded.rawQueryReducer,
+			alertOnNoData: row.noDataBehavior === "alert",
 			destinationIds: yield* decodeStoredAlertRuleDestinationIds(row.id, row.destinationIdsJson),
 			compiledPlan: yield* parseCompiledPlan(row),
 			createdAt: dateToMs(row.createdAt),
@@ -779,6 +787,7 @@ export const makeAlertRuleNormalizer = (runtime: AlertRuntimeApi) => {
 			rawQuerySql:
 				request.signalType === "raw_query" ? normalizeOptionalString(request.rawQuerySql) : null,
 			rawQueryReducer: request.signalType === "raw_query" ? (request.rawQueryReducer ?? null) : null,
+			alertOnNoData: request.alertOnNoData ?? false,
 			destinationIds,
 			createdAt: nowMs,
 			updatedAt: nowMs,

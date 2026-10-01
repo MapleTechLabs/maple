@@ -184,7 +184,9 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 	const noDataExplainer =
 		rule.noDataBehavior === "zero"
 			? "No-data windows are treated as 0 (they still evaluate)."
-			: "No-data windows are skipped (they never breach)."
+			: rule.noDataBehavior === "alert"
+				? "No-data windows count as breaches."
+				: "No-data windows are skipped (they never breach). Turn on alerting when there is no data to hear about it."
 	// Checks recorded before skip reasons existed carry none and count as neither.
 	const belowMinChecks = groupChecks.filter((c) => c.skipReason === "below_min_samples").length
 	const noDataChecks = groupChecks.filter((c) => c.skipReason === "no_data").length

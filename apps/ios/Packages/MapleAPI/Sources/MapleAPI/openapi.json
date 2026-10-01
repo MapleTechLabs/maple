@@ -482,6 +482,7 @@
         "description": "A monitor that evaluates a built-in signal, query-builder query, or raw SQL over a rolling window and opens incidents when the threshold condition holds for enough consecutive checks. Metrics use the same query-builder path as metric charts. Notifications are delivered to the referenced alert destinations.",
         "examples": [
           {
+            "alert_on_no_data": false,
             "apdex_threshold_ms": null,
             "comparator": "gt",
             "consecutive_breaches_required": 2,
@@ -527,6 +528,13 @@
           }
         ],
         "properties": {
+          "alert_on_no_data": {
+            "description": "Whether a window with no data counts as a breach (`no_data_behavior` is `alert`).",
+            "examples": [
+              false
+            ],
+            "type": "boolean"
+          },
           "apdex_threshold_ms": {
             "description": "For `apdex` rules: the satisfied-latency threshold in milliseconds.",
             "exclusiveMinimum": 0,
@@ -743,6 +751,7 @@
           "renotify_interval_minutes",
           "destination_ids",
           "no_data_behavior",
+          "alert_on_no_data",
           "created_at",
           "updated_at",
           "created_by",
@@ -3641,10 +3650,11 @@
         "type": "string"
       },
       "_maple_QueryEngineNoDataBehavior": {
-        "description": "What the evaluator does when the window has no data: `skip` the check or treat the value as `zero`.",
+        "description": "What the evaluator does when the window has no data: `skip` the check, treat the value as `zero`, or `alert` (count it as a breach; set with `alert_on_no_data`).",
         "enum": [
           "skip",
-          "zero"
+          "zero",
+          "alert"
         ],
         "examples": [
           "skip"

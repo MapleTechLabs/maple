@@ -79,6 +79,8 @@ export type RuleFormState = {
 	thresholdUpper: string
 	windowMinutes: string
 	minimumSampleCount: string
+	/** Count an empty window as a breach instead of skipping it. */
+	alertOnNoData: boolean
 	consecutiveBreachesRequired: string
 	consecutiveHealthyRequired: string
 	renotifyIntervalMinutes: string
@@ -250,6 +252,7 @@ export function defaultRuleForm(serviceName?: string): RuleFormState {
 		thresholdUpper: "",
 		windowMinutes: "5",
 		minimumSampleCount: "50",
+		alertOnNoData: false,
 		consecutiveBreachesRequired: "2",
 		consecutiveHealthyRequired: "2",
 		renotifyIntervalMinutes: "30",
@@ -282,6 +285,7 @@ export function ruleToFormState(rule: AlertRuleDocument): RuleFormState {
 			rule.thresholdUpper == null ? "" : domainThresholdToForm(rule.signalType, rule.thresholdUpper),
 		windowMinutes: String(rule.windowMinutes),
 		minimumSampleCount: String(rule.minimumSampleCount),
+		alertOnNoData: rule.noDataBehavior === "alert",
 		consecutiveBreachesRequired: String(rule.consecutiveBreachesRequired),
 		consecutiveHealthyRequired: String(rule.consecutiveHealthyRequired),
 		renotifyIntervalMinutes: String(rule.renotifyIntervalMinutes),
@@ -364,6 +368,7 @@ export function buildRuleCreateParamsV2(form: RuleFormState): V2AlertRuleCreateP
 			: null,
 		window_minutes: parsePositiveNumber(form.windowMinutes, 5),
 		minimum_sample_count: parseNonNegativeNumber(form.minimumSampleCount, 0),
+		alert_on_no_data: form.alertOnNoData,
 		consecutive_breaches_required: parsePositiveNumber(form.consecutiveBreachesRequired, 2),
 		consecutive_healthy_required: parsePositiveNumber(form.consecutiveHealthyRequired, 2),
 		renotify_interval_minutes: parsePositiveNumber(form.renotifyIntervalMinutes, 30),

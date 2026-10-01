@@ -3505,6 +3505,48 @@ describe("AlertsService evaluation error persistence", () => {
 		}).pipe(Effect.provide(makeLayer(testDb, failingWarehouseStub(state), { fetch: okFetch })))
 	})
 
+	it.effect("opens an incident on empty windows when the rule alerts on no data", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = { failing: false, rows: [], ingested: [] as Array<Record<string, unknown>> }
+
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_alert_on_no_data")
+			const userId = asUserId("user_alert_on_no_data")
+			const destination = yield* createWebhookDestination(alerts, orgId, userId)
+			const rule = yield* alerts.createRule(
+				orgId,
+				userId,
+				adminRoles,
+				new AlertRuleUpsertRequest({
+					name: "Checkout goes blind",
+					severity: "critical",
+					serviceNames: ["checkout"],
+					signalType: "error_rate",
+					comparator: "gt",
+					threshold: 5,
+					windowMinutes: 5,
+					minimumSampleCount: 10,
+					consecutiveBreachesRequired: 1,
+					alertOnNoData: true,
+					destinationIds: [destination.id],
+				}),
+			)
+			assert.strictEqual(rule.noDataBehavior, "alert")
+
+			yield* alerts.runSchedulerTick()
+
+			const breached = state.ingested.filter((row) => row.Status === "breached")
+			assert.lengthOf(breached, 1)
+			assert.isNull(breached[0]?.ObservedValue)
+			assert.strictEqual(breached[0]?.IncidentTransition, "opened")
+			const incidents = yield* alerts.listIncidents(orgId)
+			assert.lengthOf(incidents.incidents, 1)
+			assert.strictEqual(incidents.incidents[0]?.status, "open")
+		}).pipe(Effect.provide(makeLayer(testDb, failingWarehouseStub(state), { fetch: okFetch })))
+	})
+
 	it.effect("records why a check skipped when the window has no data", () => {
 		const testDb = createTestDb(trackedDbs)
 		const state = { failing: false, rows: [], ingested: [] as Array<Record<string, unknown>> }

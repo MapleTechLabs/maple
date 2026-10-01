@@ -374,6 +374,7 @@ describe("V2 alerts wire format", () => {
 		raw_query_reducer: null,
 		destination_ids: [encodePublicId("dest", DEST_UUID)],
 		no_data_behavior: "skip",
+		alert_on_no_data: false,
 		last_evaluation_error: null,
 		last_evaluated_at: null,
 		last_scheduled_at: null,

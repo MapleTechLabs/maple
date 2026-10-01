@@ -21,7 +21,7 @@ export interface AlertEvaluationPolicy {
 	readonly threshold: number
 	readonly thresholdUpper: number | null
 	readonly minimumSampleCount: number
-	readonly noDataBehavior: "skip" | "zero"
+	readonly noDataBehavior: "skip" | "zero" | "alert"
 }
 
 export interface AlertEvaluation extends Pick<
@@ -35,7 +35,7 @@ export interface AlertEvaluation extends Pick<
 	| "reason"
 	| "skipReason"
 > {
-	/** A healthy result derived from an empty window synthesized as zero. */
+	/** Derived from an empty window: healthy when read as zero, breached when the rule alerts on no data. */
 	readonly derivedFromNoData: boolean
 }
 
@@ -92,6 +92,20 @@ export const evaluateAlertObservation = (
 			reason: "No data in the selected window",
 			skipReason: "no_data",
 			derivedFromNoData: false,
+		}
+	}
+
+	// The window is empty and the rule asked to hear about it: a breach with no value.
+	if (!observation.hasData && policy.noDataBehavior === "alert") {
+		return {
+			status: "breached",
+			value: null,
+			sampleCount,
+			threshold: policy.threshold,
+			thresholdUpper: policy.thresholdUpper,
+			comparator: policy.comparator,
+			reason: "No data in the selected window",
+			derivedFromNoData: true,
 		}
 	}
 

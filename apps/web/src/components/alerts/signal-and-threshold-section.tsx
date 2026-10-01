@@ -13,6 +13,7 @@ import { Card } from "@maple/ui/components/ui/card"
 import { Input } from "@maple/ui/components/ui/input"
 import { Label } from "@maple/ui/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
+import { Switch } from "@maple/ui/components/ui/switch"
 import { cn } from "@maple/ui/lib/utils"
 
 import { AlertSegmentedSelect } from "@/components/alerts/alert-segmented-select"
@@ -381,6 +382,22 @@ export function SignalAndThresholdSection({
 									}))
 								}
 							/>
+							<div className="flex items-start gap-2.5 sm:col-span-2 lg:col-span-3">
+								<Switch
+									id="rule-alert-on-no-data"
+									checked={form.alertOnNoData}
+									onCheckedChange={(checked) =>
+										onChange((c) => ({ ...c, alertOnNoData: checked }))
+									}
+								/>
+								<div className="space-y-0.5">
+									<Label htmlFor="rule-alert-on-no-data">Alert when there is no data</Label>
+									<p className="text-muted-foreground text-xs">
+										Count a window with no data as a breach. Off, those windows are
+										skipped and the rule goes quiet when its query stops matching.
+									</p>
+								</div>
+							</div>
 						</div>
 					)}
 				</div>

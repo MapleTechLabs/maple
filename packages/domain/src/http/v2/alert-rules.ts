@@ -86,6 +86,7 @@ const alertRuleExample = {
 	raw_query_reducer: null,
 	destination_ids: ["dest_oybbpTBhtSFGShMjjLiCrh"],
 	no_data_behavior: "skip",
+	alert_on_no_data: false,
 	last_evaluation_error: null,
 	last_evaluated_at: "2026-07-15T09:10:00.000Z",
 	last_scheduled_at: "2026-07-15T09:10:00.000Z",
@@ -196,8 +197,12 @@ export const V2AlertRule = Schema.Struct({
 	}),
 	no_data_behavior: QueryEngineNoDataBehavior.annotate({
 		description:
-			"What the evaluator does when the window has no data: `skip` the check or treat the value as `zero`.",
+			"What the evaluator does when the window has no data: `skip` the check, treat the value as `zero`, or `alert` (count it as a breach; set with `alert_on_no_data`).",
 		examples: ["skip"],
+	}),
+	alert_on_no_data: Schema.Boolean.annotate({
+		description: "Whether a window with no data counts as a breach (`no_data_behavior` is `alert`).",
+		examples: [false],
 	}),
 	last_evaluation_error: Schema.NullOr(Schema.String).annotate({
 		description:
@@ -314,6 +319,12 @@ const createParamsFields = {
 	query_builder_draft: Schema.optionalKey(Schema.NullOr(QueryBuilderDraftPassthrough)),
 	raw_query_sql: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	raw_query_reducer: Schema.optionalKey(Schema.NullOr(QueryEngineAlertReducer)),
+	alert_on_no_data: Schema.optionalKey(
+		Schema.Boolean.annotate({
+			description:
+				"Count a window with no data (e.g. a raw query returning no rows) as a breach, so a rule that goes blind opens an incident. Default `false`: such windows are skipped.",
+		}),
+	),
 	destination_ids: Schema.Array(AlertDestinationPublicId).annotate({
 		description: "The alert destinations (`dest_…`) to notify. May be empty.",
 	}),
@@ -365,6 +376,7 @@ export const V2AlertRuleUpdateParams = Schema.Struct({
 	query_builder_draft: createParamsFields.query_builder_draft,
 	raw_query_sql: createParamsFields.raw_query_sql,
 	raw_query_reducer: createParamsFields.raw_query_reducer,
+	alert_on_no_data: createParamsFields.alert_on_no_data,
 }).annotate({
 	identifier: "AlertRuleUpdateParams",
 	title: "Alert rule update parameters",

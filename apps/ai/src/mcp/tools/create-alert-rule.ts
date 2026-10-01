@@ -101,6 +101,9 @@ export const CreateAlertRuleParameters = Schema.Struct({
 	minimum_sample_count: P.optionalNumber(
 		"Skip evaluation below this many samples in the window (default: 0). For raw_query it sums the `samples` column; without one each returned row counts as 1, so it gates on buckets, not events.",
 	),
+	alert_on_no_data: P.optionalFlag(
+		"Count a window with no data as a breach, so a rule whose query stops matching opens an incident instead of going quiet (default false: such windows are skipped).",
+	),
 	consecutive_breaches: P.optionalNumber("Consecutive breaches before alerting (default: 2)"),
 	consecutive_healthy: P.optionalNumber("Consecutive healthy evaluations before resolving (default: 2)"),
 	renotify_interval_minutes: P.optionalNumber("Re-notification interval in minutes (default: 30)"),
@@ -232,6 +235,7 @@ export const buildAlertRuleRequest = Effect.fnUntraced(function* (
 		...(params.minimum_sample_count === undefined
 			? undefined
 			: { minimumSampleCount: params.minimum_sample_count }),
+		...(params.alert_on_no_data === undefined ? undefined : { alertOnNoData: params.alert_on_no_data }),
 		...(params.consecutive_breaches === undefined
 			? undefined
 			: { consecutiveBreachesRequired: params.consecutive_breaches }),

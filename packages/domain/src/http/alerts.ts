@@ -567,6 +567,8 @@ export class AlertRuleUpsertRequest extends Schema.Class<AlertRuleUpsertRequest>
 	queryBuilderDraft: Schema.optionalKey(Schema.NullOr(QueryBuilderQueryDraftSchema)),
 	rawQuerySql: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	rawQueryReducer: Schema.optionalKey(Schema.NullOr(QueryEngineAlertReducer)),
+	/** Count a window with no data as a breach instead of skipping it. Default false. */
+	alertOnNoData: Schema.optionalKey(Schema.Boolean),
 	destinationIds: Schema.Array(AlertDestinationId),
 }) {}
 

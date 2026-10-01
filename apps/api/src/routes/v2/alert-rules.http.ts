@@ -87,6 +87,7 @@ const toV2Rule = (doc: AlertRuleDocument): V2AlertRule => ({
 	raw_query_reducer: doc.rawQueryReducer,
 	destination_ids: doc.destinationIds,
 	no_data_behavior: doc.noDataBehavior,
+	alert_on_no_data: doc.noDataBehavior === "alert",
 	last_evaluation_error: doc.lastEvaluationError,
 	last_evaluated_at: doc.lastEvaluatedAt,
 	last_scheduled_at: doc.lastScheduledAt,
@@ -212,6 +213,9 @@ const toUpsertRequest = (
 						minimumSampleCount: params.minimum_sample_count,
 					}
 				: undefined),
+			...(params.alert_on_no_data !== undefined
+				? { alertOnNoData: params.alert_on_no_data }
+				: undefined),
 			...(params.consecutive_breaches_required !== undefined
 				? {
 						consecutiveBreachesRequired: params.consecutive_breaches_required,
@@ -304,6 +308,7 @@ const mergeUpsertRequest = (
 			queryBuilderDraft,
 			rawQuerySql,
 			rawQueryReducer,
+			alertOnNoData: patch.alert_on_no_data ?? doc.noDataBehavior === "alert",
 			destinationIds: patch.destination_ids ?? doc.destinationIds,
 		})
 	})

@@ -68,6 +68,8 @@ export const AlertRuleDetailRow = Schema.Struct({
 	excludeServiceNames: Schema.Array(Schema.String),
 	groupBy: Schema.NullOr(Schema.Array(Schema.String)),
 	minimumSampleCount: Schema.Number,
+	/** What an empty window does: skip, zero, or alert. */
+	noDataBehavior: Schema.String,
 	consecutiveBreachesRequired: Schema.Number,
 	consecutiveHealthyRequired: Schema.Number,
 	renotifyIntervalMinutes: Schema.Number,

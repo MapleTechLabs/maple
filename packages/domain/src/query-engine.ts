@@ -704,7 +704,11 @@ export const QueryEngineSampleCountStrategy = Schema.Literals([
 })
 export type QueryEngineSampleCountStrategy = Schema.Schema.Type<typeof QueryEngineSampleCountStrategy>
 
-export const QueryEngineNoDataBehavior = Schema.Literals(["skip", "zero"]).annotate({
+/**
+ * What an empty window evaluates to: `skip` the check, read it as `zero`, or
+ * `alert`, which counts it as a breach so a rule that goes blind opens an incident.
+ */
+export const QueryEngineNoDataBehavior = Schema.Literals(["skip", "zero", "alert"]).annotate({
 	identifier: "@maple/QueryEngineNoDataBehavior",
 })
 export type QueryEngineNoDataBehavior = Schema.Schema.Type<typeof QueryEngineNoDataBehavior>
