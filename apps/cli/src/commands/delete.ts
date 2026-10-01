@@ -7,10 +7,12 @@ import { Mode } from "../core/mode"
 import { parseTimestampMs, sinceToMs } from "../core/time"
 import { CliUsageError } from "../lib/errors"
 import { bold, dim, green } from "../lib/style"
+import { isLoopbackHostname } from "../lib/local-address"
 import { maintenanceTokenPath } from "../server/archives/retention"
 import { hasSubject, ScopedDeleteReport, ScopedDeleteRequest } from "../server/scoped-delete"
 import { jsonFormatRequested, writeJson } from "./json-output"
-import { LocalStatus, prettyPath } from "./server-args"
+import { serverDiscoveryPath } from "../server/store-version"
+import { isProcessAlive, LocalStatus, prettyPath, ServerDiscovery } from "./server-args"
 
 const LOCAL_ONLY = "maple delete removes data from a local store only"
 
@@ -55,6 +57,48 @@ export const buildDeleteRequest = (flags: {
 const failure = (message: string, hint?: string) =>
 	hint === undefined ? new CliUsageError({ message }) : new CliUsageError({ message, hint })
 
+const decodeDiscovery = Schema.decodeUnknownOption(Schema.fromJsonString(ServerDiscovery))
+
+/**
+ * The maintenance token goes only to the live loopback server its own store's
+ * discovery file names; any server could otherwise claim another store's dataDir.
+ */
+export const verifyStoreServer = (
+	baseUrl: string,
+	status: LocalStatus,
+	deps: {
+		readonly readDiscovery: (path: string) => string
+		readonly isAlive: (pid: number) => boolean
+	} = { readDiscovery: (path) => readFileSync(path, "utf8"), isAlive: isProcessAlive },
+): Effect.Effect<void, CliUsageError> =>
+	Effect.gen(function* () {
+		const target = URL.canParse(baseUrl) ? new URL(baseUrl) : undefined
+		if (target === undefined || !isLoopbackHostname(target.hostname.replace(/^\[(.*)\]$/, "$1")))
+			return yield* failure(
+				`maple delete only talks to a loopback server, not ${baseUrl}`,
+				"run it on the machine that runs `maple start`, against 127.0.0.1",
+			)
+		const path = serverDiscoveryPath(status.dataDir)
+		const discovery = Option.flatMap(
+			Option.liftThrowable(deps.readDiscovery)(path),
+			decodeDiscovery,
+		)
+		const port = (url: string) => (URL.canParse(url) ? new URL(url).port : undefined)
+		const matches = Option.exists(
+			discovery,
+			(found) =>
+				found.pid === status.pid &&
+				found.dataDir === status.dataDir &&
+				port(found.url) === target.port &&
+				deps.isAlive(found.pid),
+		)
+		if (!matches)
+			return yield* failure(
+				`the server at ${baseUrl} is not the live server ${prettyPath(path)} names`,
+				"point MAPLE_LOCAL_URL at the `maple start` that owns this store",
+			)
+	})
+
 const postDelete = (baseUrl: string, body: ScopedDeleteRequest & { readonly dryRun: boolean }) =>
 	Effect.gen(function* () {
 		const client = yield* HttpClient.HttpClient
@@ -63,6 +107,7 @@ const postDelete = (baseUrl: string, body: ScopedDeleteRequest & { readonly dryR
 			Effect.flatMap(HttpClientResponse.schemaBodyJson(LocalStatus)),
 			Effect.mapError(() => failure(`no Maple server answered at ${baseUrl}`, "start one with `maple start`")),
 		)
+		yield* verifyStoreServer(baseUrl, status)
 		// The token sits beside the data dir, so only the machine that owns the store can delete.
 		const tokenPath = maintenanceTokenPath(status.dataDir)
 		const token = yield* Effect.try({
