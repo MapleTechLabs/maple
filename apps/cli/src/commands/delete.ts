@@ -38,24 +38,35 @@ export const parseBefore = (raw: string, nowMs: number): number | null => {
 	return age === null ? parseTimestampMs(raw) : nowMs - age
 }
 
+const failure = (message: string, hint?: string) =>
+	hint === undefined ? new CliUsageError({ message }) : new CliUsageError({ message, hint })
+
 /** Present flags as a request; a blank `--service` or `--namespace` counts as absent. */
 export const buildDeleteRequest = (flags: {
 	readonly service: string | undefined
 	readonly namespace: string | undefined
 	readonly env: string | undefined
 	readonly beforeMs: number | undefined
-}): Option.Option<ScopedDeleteRequest> => {
-	const present = Object.entries({
-		service: flags.service?.trim() || undefined,
-		namespace: flags.namespace?.trim() || undefined,
-		env: flags.env,
-		beforeMs: flags.beforeMs === undefined ? undefined : Math.floor(flags.beforeMs),
-	}).filter(([, value]) => value !== undefined)
-	return Option.filter(Schema.decodeUnknownOption(ScopedDeleteRequest)(Object.fromEntries(present)), hasSubject)
-}
-
-const failure = (message: string, hint?: string) =>
-	hint === undefined ? new CliUsageError({ message }) : new CliUsageError({ message, hint })
+}): Effect.Effect<ScopedDeleteRequest, CliUsageError> =>
+	Effect.gen(function* () {
+		const present = Object.entries({
+			service: flags.service?.trim() || undefined,
+			namespace: flags.namespace?.trim() || undefined,
+			env: flags.env,
+			beforeMs: flags.beforeMs === undefined ? undefined : Math.floor(flags.beforeMs),
+		}).filter(([, value]) => value !== undefined)
+		const request = yield* Schema.decodeUnknownEffect(ScopedDeleteRequest)(Object.fromEntries(present)).pipe(
+			Effect.mapError(() =>
+				failure(
+					"invalid delete flags",
+					"--service, --namespace and --env take at most 512 characters, and --before must be after 1970",
+				),
+			),
+		)
+		if (!hasSubject(request))
+			return yield* failure("pass --service, --namespace, or both", "e.g. maple delete --namespace pr-42")
+		return request
+	})
 
 const decodeDiscovery = Schema.decodeUnknownOption(Schema.fromJsonString(ServerDiscovery))
 
@@ -198,15 +209,12 @@ export const deleteCommand = Command.make("delete", {
 			const beforeMs = rawBefore === undefined ? undefined : parseBefore(rawBefore, Date.now())
 			if (beforeMs === null)
 				return yield* failure(`invalid --before: ${rawBefore}`, "use an age like 7d or a timestamp like 2026-10-01 12:00")
-			const built = buildDeleteRequest({
+			const request = yield* buildDeleteRequest({
 				service: Option.getOrUndefined(a.service),
 				namespace: Option.getOrUndefined(a.namespace),
 				env: Option.getOrUndefined(a.env),
 				beforeMs,
 			})
-			if (Option.isNone(built))
-				return yield* failure("pass --service, --namespace, or both", "e.g. maple delete --namespace pr-42")
-			const request = built.value
 			const report = yield* postDelete(baseUrl, { ...request, dryRun: !a.yes })
 			if (jsonFormatRequested()) yield* writeJson(report)
 			else

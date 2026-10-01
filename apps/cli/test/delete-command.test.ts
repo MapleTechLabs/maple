@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { Effect, Layer, Option } from "effect"
+import { Effect, Layer } from "effect"
 import { buildDeleteRequest, parseBefore, resolveDeleteBaseUrl, verifyStoreServer } from "../src/commands/delete"
 import { Mode } from "../src/core/mode"
 import { CliUsageError } from "../src/lib/errors"
@@ -54,17 +54,31 @@ describe("--before", () => {
 
 describe("delete request", () => {
 	const flags = { service: undefined, namespace: undefined, env: undefined, beforeMs: undefined }
+	const build = (input: Parameters<typeof buildDeleteRequest>[0]) =>
+		Effect.runPromise(
+			Effect.match(buildDeleteRequest(input), {
+				onFailure: (error) => ({ error: error.message }),
+				onSuccess: (request) => ({ request }),
+			}),
+		)
 
-	test("needs a service or a namespace", () => {
-		expect(Option.isNone(buildDeleteRequest(flags))).toBe(true)
-		expect(Option.isNone(buildDeleteRequest({ ...flags, service: "  ", env: "prod" }))).toBe(true)
+	test("needs a service or a namespace", async () => {
+		expect(await build(flags)).toEqual({ error: "pass --service, --namespace, or both" })
+		expect(await build({ ...flags, service: "  ", env: "prod" })).toEqual({
+			error: "pass --service, --namespace, or both",
+		})
 	})
 
-	test("accepts a namespace alone or with a service, env and cutoff", () => {
-		expect(buildDeleteRequest({ ...flags, namespace: "pr-42" })).toEqual(Option.some({ namespace: "pr-42" }))
-		expect(
-			buildDeleteRequest({ service: " api ", namespace: "pr-42", env: "", beforeMs: 1_000.7 }),
-		).toEqual(Option.some({ service: "api", namespace: "pr-42", env: "", beforeMs: 1_000 }))
+	test("reports an out-of-range value as invalid, not as a missing selector", async () => {
+		expect(await build({ ...flags, service: "a".repeat(513) })).toEqual({ error: "invalid delete flags" })
+		expect(await build({ ...flags, namespace: "pr-42", beforeMs: -1 })).toEqual({ error: "invalid delete flags" })
+	})
+
+	test("accepts a namespace alone or with a service, env and cutoff", async () => {
+		expect(await build({ ...flags, namespace: "pr-42" })).toEqual({ request: { namespace: "pr-42" } })
+		expect(await build({ service: " api ", namespace: "pr-42", env: "", beforeMs: 1_000.7 })).toEqual({
+			request: { service: "api", namespace: "pr-42", env: "", beforeMs: 1_000 },
+		})
 	})
 })
 
