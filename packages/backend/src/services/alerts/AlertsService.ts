@@ -7,7 +7,12 @@ import {
 	planAlertLifecycle,
 	type AlertLifecycleInput,
 } from "@maple/alerting-core"
-import { formatWarehouseDateTime, snapAlertWindowEndMs, warehouseDateTime64 } from "@maple/query-engine"
+import {
+	ENGINE_UNGROUPED_GROUP_KEY,
+	formatWarehouseDateTime,
+	snapAlertWindowEndMs,
+	warehouseDateTime64,
+} from "@maple/query-engine"
 import {
 	AlertComparator as AlertComparatorSchema,
 	type AlertComparator,
@@ -1299,14 +1304,15 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					}
 				}
 
-				// Ungrouped rules always observe *something* per tick, so chart a series
-				// even when the whole range is empty.
-				if (
-					obsByGroup.size === 0 &&
-					!isGroupedPlan(normalized.compiledPlan) &&
-					normalized.serviceNames.length <= 1
-				) {
-					obsByGroup.set(UNGROUPED_GROUP_KEY, new Map())
+				// The scheduler observes *something* every tick: an empty result becomes one
+				// no-data observation (per service in multi-service mode), keyed as storage
+				// keys it. Chart that series too, or a query matching nothing previews as nothing.
+				if (normalized.serviceNames.length > 1) {
+					for (const serviceName of normalized.serviceNames) {
+						if (!obsByGroup.has(serviceName)) obsByGroup.set(serviceName, new Map())
+					}
+				} else if (obsByGroup.size === 0) {
+					obsByGroup.set(toStorageGroupKey(plan, ENGINE_UNGROUPED_GROUP_KEY), new Map())
 				}
 
 				const NO_DATA: PreviewObs = {

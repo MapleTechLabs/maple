@@ -3780,6 +3780,37 @@ describe("AlertsService.previewRule", () => {
 		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: okFetch })))
 	})
 
+	it.effect("charts a no-data series for a raw-SQL rule whose query matches nothing", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = { rawQueryRows: [] }
+
+		return Effect.gen(function* () {
+			const alerts = yield* AlertsService
+			const request = decodePreviewRequest({
+				rule: {
+					name: "Raw preview empty",
+					severity: "warning",
+					signalType: "raw_query",
+					rawQuerySql:
+						"SELECT count() AS value FROM traces WHERE $__orgFilter AND $__timeFilter(Timestamp)",
+					comparator: "gt",
+					threshold: 10,
+					windowMinutes: 5,
+					destinationIds: [],
+				},
+				startTime: "2026-01-01T00:00:00.000Z",
+				endTime: "2026-01-01T00:30:00.000Z",
+			})
+
+			// The scheduler sees one no-data observation per tick here, so the preview must too.
+			const preview = yield* alerts.previewRule(asOrgId("org_preview_raw_empty"), adminRoles, request)
+			assert.lengthOf(preview.series, 1)
+			const points = preview.series[0]?.points ?? []
+			assert.lengthOf(points, 6)
+			assert.isTrue(points.every((p) => p.status === "skipped" && p.skipReason === "no_data"))
+		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: okFetch })))
+	})
+
 	it.effect("dedupes rule destinations and environments, preserving order", () => {
 		const testDb = createTestDb(trackedDbs)
 		// Guards the `Arr.dedupe` calls in normalizeRule. A destination listed twice

@@ -20,6 +20,8 @@ const WINDOW = P.timeWindow({ defaultHours: 24, maxHours: 7 * 24 })
 /** Most recent windows the text shows per group; the rest stay in the structured output. */
 const SHOWN_POINTS = 12
 const SHOWN_GROUPS = 20
+/** Latest windows per group kept in the structured output; group counts cover the whole range. */
+const POINTS_PER_GROUP = 200
 
 type Output = typeof PreviewAlertRuleOutput.Type
 
@@ -31,7 +33,7 @@ const toIso = (value: string) => decodeIsoDateTimeString(`${value.replace(" ", "
 
 const Parameters = Schema.Struct({
 	rule_id: P.optionalText(
-		"Existing rule to preview (list_alert_rules). Definition params you also pass override its saved config, so a change can be tried before update_alert_rule.",
+		"Existing rule to preview (list_alert_rules). Definition params you also pass override its saved config, so a change can be tried before update_alert_rule. `template` is ignored with rule_id.",
 	),
 	// The rule definition, exactly as create_alert_rule takes it; naming and delivery do not affect evaluation.
 	...Struct.omit(CreateAlertRuleParameters.fields, [
@@ -80,6 +82,7 @@ const summarizeGroups = (preview: AlertRulePreviewResponse): Output["groups"] =>
 /** What an agent would otherwise only learn after saving the rule and waiting for checks. */
 const previewWarnings = (
 	groups: Output["groups"],
+	clamped: boolean,
 	rule: {
 		readonly signalType: string
 		readonly rawQuerySql?: string | null
@@ -92,7 +95,7 @@ const previewWarnings = (
 	const warnings: Array<string> = []
 	if (windows > 0 && noData === windows) {
 		warnings.push(
-			"Every window had no data: the query matched nothing in this range. Saved as is, every check would be skipped, which reads as quiet, not healthy. Check the filters, or widen start_time.",
+			`Every window had no data: the query matched nothing in this range. Saved as is, every check would be skipped, which reads as quiet, not healthy. Check the filters${clamped ? "; the range was already clamped to the preview cap, so try a longer window_minutes rather than an earlier start_time" : ", or widen start_time"}.`,
 		)
 	} else if (windows > 0 && belowMin === windows) {
 		warnings.push(
@@ -205,7 +208,7 @@ export function registerPreviewAlertRuleTool(server: McpToolRegistrar) {
 				minimumSampleCount: ruleRequest.minimumSampleCount ?? 0,
 				groups,
 				points: preview.series.flatMap((series) =>
-					series.points.map((p) => ({
+					series.points.slice(-POINTS_PER_GROUP).map((p) => ({
 						groupKey: series.groupKey,
 						bucket: p.bucket,
 						status: p.status,
@@ -221,7 +224,7 @@ export function registerPreviewAlertRuleTool(server: McpToolRegistrar) {
 					end: span.end,
 				})),
 				warnings: [
-					...previewWarnings(groups, {
+					...previewWarnings(groups, preview.truncatedToStart !== null, {
 						signalType: ruleRequest.signalType,
 						rawQuerySql: ruleRequest.rawQuerySql,
 						minimumSampleCount: ruleRequest.minimumSampleCount ?? 0,
@@ -274,7 +277,7 @@ export function registerPreviewAlertRuleTool(server: McpToolRegistrar) {
 				blocks.push(
 					doc.heading(`Latest windows: ${truncate(first.groupKey, 40)}`),
 					doc.table(
-						["Window end", "Verdict", "Value", "Samples"],
+						["Window start", "Verdict", "Value", "Samples"],
 						recent.map((p) => [
 							`${p.bucket.slice(0, 19)}${p.provisional ? " (in progress)" : ""}`,
 							p.status === "skipped" ? skipLabel(p.skipReason) : p.status,

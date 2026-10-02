@@ -123,6 +123,7 @@ export const PreviewAlertRuleOutput = Schema.Struct({
 	thresholdUpper: NullableNumber,
 	minimumSampleCount: Schema.Number,
 	groups: Schema.Array(AlertPreviewGroupRow),
+	/** The latest 200 windows per group; `groups` counts the whole range. */
 	points: Schema.Array(AlertPreviewPointRow),
 	wouldFire: Schema.Array(
 		Schema.Struct({ groupKey: Schema.String, start: Schema.String, end: Schema.String }),
