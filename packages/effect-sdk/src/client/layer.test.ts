@@ -9,10 +9,16 @@ import { layer } from "./layer.js"
 // (That the decorator also stamps `session.id` onto the OTLP span is asserted
 // robustly — off the actual exported body — in flushable.test.ts.)
 
+// `FetchHttpClient` resolves `globalThis.fetch` once, so the stub is installed
+// for the whole file and each test swaps the handler behind it.
+const ok = async (_request: Request) => new Response(null, { status: 200 })
+let onFetch = ok
+globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) =>
+	onFetch(new Request(input, init))) as typeof fetch
+
 const setupFetch = () => {
-	const original = globalThis.fetch
-	globalThis.fetch = (async () => new Response(null, { status: 200 })) as typeof fetch
-	return () => void (globalThis.fetch = original)
+	onFetch = ok
+	return () => void (onFetch = ok)
 }
 
 describe("Maple.layer (client) — session linking after refactor", () => {
@@ -59,5 +65,38 @@ describe("Maple.layer (client) — session linking after refactor", () => {
 
 		// Just has to run without throwing — proves the layer still composes.
 		await Effect.runPromise(Effect.void.pipe(Effect.withSpan("page-load"), Effect.provide(TracerLive)))
+	})
+
+	it("applies span options and still stamps session.id on the exported span", async () => {
+		const bodies: Array<string> = []
+		onFetch = async (request) => {
+			if (request.url.endsWith("/v1/traces")) bodies.push(await request.text())
+			return new Response(null, { status: 200 })
+		}
+		const g = globalThis as Record<string, unknown>
+		g.__MAPLE_BROWSER_SESSION__ = { sessionId: "sess-xyz", recordTraceId: vi.fn() }
+		restore = () => {
+			onFetch = ok
+			delete g.__MAPLE_BROWSER_SESSION__
+		}
+
+		const TracerLive = layer({
+			serviceName: "web-test",
+			endpoint: "https://collector.test",
+			ingestKey: "secret",
+			dropSpanNames: ["noise."],
+		})
+		await Effect.runPromise(
+			Effect.void.pipe(
+				Effect.withSpan("noise.poll"),
+				Effect.andThen(Effect.void.pipe(Effect.withSpan("page-load"))),
+				Effect.provide(TracerLive),
+			),
+		)
+
+		const payload = bodies.join("\n")
+		expect(payload).toContain('"page-load"')
+		expect(payload).not.toContain('"noise.poll"')
+		expect(payload).toContain("sess-xyz")
 	})
 })

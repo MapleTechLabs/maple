@@ -1,8 +1,9 @@
 import type { Duration } from "effect"
 import { Effect, Layer, Redacted } from "effect"
 import { FetchHttpClient } from "effect/unstable/http"
-import { Otlp } from "effect/unstable/observability"
 import { type MapleRegion, warnIfKeylessMapleIngest } from "@maple/browser-session/region"
+import { makeOtlpLayer } from "../shared/otlp-layer.js"
+import type { MapleSpanOptions } from "../shared/span-options.js"
 import { type ResolvedResource, resolveResource } from "./resource.js"
 
 /**
@@ -17,7 +18,7 @@ const warnIfDoomed = (resolved: ResolvedResource): void =>
 		hint: "Set MAPLE_INGEST_KEY, or point MAPLE_ENDPOINT at your own collector.",
 	})
 
-export interface MapleConfig {
+export interface MapleConfig extends MapleSpanOptions {
 	/**
 	 * Service name reported in traces, logs, and metrics. When omitted, falls
 	 * back to `OTEL_SERVICE_NAME` env var, then `"unknown"`.
@@ -58,6 +59,8 @@ export interface MapleConfig {
 	 * same key.
 	 */
 	readonly attributes?: Record<string, unknown> | undefined
+	/** Skip Effect log spans in OTLP log attributes. Default `false`. */
+	readonly excludeLogSpans?: boolean | undefined
 	readonly maxBatchSize?: number | undefined
 	readonly loggerExportInterval?: Duration.Input | undefined
 	readonly metricsExportInterval?: Duration.Input | undefined
@@ -86,8 +89,12 @@ export interface MapleConfig {
  * For Cloudflare Workers, prefer `@maple-dev/effect-sdk/cloudflare`'s `make()`
  * — it has no background fiber and exposes an explicit `flush` Effect that
  * `@maple/infra/worker-runtime`'s `withRequestRuntime` schedules in
- * `ctx.waitUntil`. This layer's `Otlp.layerJson` background-export fiber
+ * `ctx.waitUntil`. This layer's background-export fiber
  * doesn't tick on Workers between invocations.
+ *
+ * Accepts the same span options as the flushable presets (`dropSpanNames`,
+ * `dropSpanSubtrees`, `dropSpan`, `anticipatedErrorIdentifiers`,
+ * `isAnticipatedError`); see `MapleSpanOptions`.
  *
  * @example
  * ```typescript
@@ -111,7 +118,7 @@ export const layer = (config: MapleConfig = {}) =>
 			// that one gets a warning rather than silence — see `warnIfDoomed`.
 			warnIfDoomed(resolved)
 
-			return Otlp.layerJson({
+			return makeOtlpLayer({
 				baseUrl: resolved.endpoint,
 				resource: resolved.resource,
 				headers: resolved.ingestKey
@@ -122,6 +129,10 @@ export const layer = (config: MapleConfig = {}) =>
 				metricsExportInterval: config.metricsExportInterval,
 				tracerExportInterval: config.tracerExportInterval,
 				shutdownTimeout: config.shutdownTimeout,
+				loggerExcludeLogSpans: config.excludeLogSpans,
+				// Matches the stock `OtlpTracer` this layer used before, so existing
+				// stack traces (and the error fingerprints hashed from them) don't move.
+				spans: { ...config, includeCauseInStack: true },
 			}).pipe(Layer.provide(FetchHttpClient.layer))
 		}),
 	)
