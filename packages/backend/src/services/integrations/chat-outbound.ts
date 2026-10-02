@@ -20,7 +20,7 @@ import { connectors } from "@maple/chat-platform/connectors"
 import { ChatWorkspaceId, type OrgId } from "@maple/domain/http"
 import { and, eq } from "drizzle-orm"
 import { Array as Arr, Context, Effect, Option, Schema } from "effect"
-import { HttpClient } from "effect/unstable/http"
+import { HttpClient } from "effect/http"
 import type { DatabaseApi } from "@maple/backend/platform/DatabaseLive"
 import {
 	openChatWorkspaceCredentials,

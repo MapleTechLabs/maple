@@ -1,9 +1,13 @@
 diff --git a/dist/http-BzDD2HYu.mjs b/dist/http-BzDD2HYu.mjs
-index 29e576e664a51f86e30a9aa35568007f790f09dc..33a588287f6b68365dea78b5eab9af3ddbe7d654 100644
+index 29e576e..4cff0bf 100644
 --- a/dist/http-BzDD2HYu.mjs
 +++ b/dist/http-BzDD2HYu.mjs
-@@ -5,10 +5,10 @@ import { createHash, randomUUID } from "node:crypto";
- import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http";
+@@ -2,13 +2,13 @@ import { r as escapeClickHouseString } from "./sql-fragment-BLNHcfff.mjs";
+ import { f as metricNumber, l as canonicalJson, n as BenchmarkError } from "./model-DZfJJyza.mjs";
+ import { Clock, Config, Effect, Redacted, Schema } from "effect";
+ import { createHash, randomUUID } from "node:crypto";
+-import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http";
++import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
  //#region src/benchmark/http.ts
  const httpConfigFromEnv = Config.all({
 -	url: Config.string("CLICKHOUSE_URL"),

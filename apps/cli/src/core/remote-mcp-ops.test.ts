@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "bun:test"
 import { Effect, Schema } from "effect"
-import { FetchHttpClient } from "effect/unstable/http"
+import { FetchHttpClient } from "effect/http"
 import { WarehouseQueryError } from "@maple/domain/http/warehouse-errors"
 import { CliUsageError } from "../lib/errors"
 import { describeFailure } from "../lib/failure"

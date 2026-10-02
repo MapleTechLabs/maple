@@ -1,4 +1,4 @@
-import { HttpServerRequest } from "effect/unstable/http"
+import { HttpServerRequest } from "effect/http"
 import type { WarehouseQueryName } from "@maple/domain"
 import { Context, Effect } from "effect"
 import { resolveMcpTenantContext } from "./resolve-tenant"

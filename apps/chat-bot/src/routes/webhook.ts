@@ -13,7 +13,7 @@
  */
 import { connectors as registeredConnectors } from "@maple/chat-platform/connectors"
 import { Effect, Schema } from "effect"
-import { HttpRouter, HttpServerResponse } from "effect/unstable/http"
+import { HttpRouter, HttpServerResponse } from "effect/http"
 import { resolveConnectorConfig, type IngressConnector } from "../config.ts"
 import { InboundHandler } from "../inbound.ts"
 

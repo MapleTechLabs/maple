@@ -5,8 +5,8 @@ import * as PgDrizzle from "drizzle-orm/effect-postgres"
 import type { EffectPgQueryEffectHKT, EffectPgQueryResultHKT } from "drizzle-orm/effect-postgres"
 import type { PgEffectDatabase } from "drizzle-orm/pg-core/effect"
 import { Context, Duration, Effect, Layer, Redacted, type Scope } from "effect"
-import type * as Reactivity from "effect/unstable/reactivity/Reactivity"
-import { SqlError } from "effect/unstable/sql/SqlError"
+import type * as Reactivity from "effect/reactivity/Reactivity"
+import { SqlError } from "effect/sql/SqlError"
 
 /**
  * The drizzle database every Maple service codes against: Effect-native, over

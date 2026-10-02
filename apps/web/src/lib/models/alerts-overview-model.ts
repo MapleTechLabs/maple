@@ -18,8 +18,8 @@ import * as Db from "@maple/unitflow/db"
 import * as Clock from "effect/Clock"
 import * as Effect from "effect/Effect"
 import * as Stream from "effect/Stream"
-import * as AsyncResult from "effect/unstable/reactivity/AsyncResult"
-import { Reactivity } from "effect/unstable/reactivity/Reactivity"
+import * as AsyncResult from "effect/reactivity/AsyncResult"
+import { Reactivity } from "effect/reactivity/Reactivity"
 
 import { deriveRuleStatus, type DerivedRuleStatus, needsAttention } from "@/lib/alerts/rule-status"
 import {

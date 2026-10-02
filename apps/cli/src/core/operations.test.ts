@@ -7,7 +7,7 @@ import {
 	HttpClientError,
 	type HttpClientRequest,
 	HttpClientResponse,
-} from "effect/unstable/http"
+} from "effect/http"
 import { LocalServerUnreachableError, ReadOnlyQueryError } from "../lib/errors"
 import { Mode } from "./mode"
 import { rawQuery } from "./operations"

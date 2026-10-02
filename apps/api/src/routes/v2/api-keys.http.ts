@@ -1,4 +1,4 @@
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpApiBuilder } from "effect/http-api"
 import type { ApiKeyCreatedResponse, ApiKeyResponse } from "@maple/domain/http"
 import { CurrentTenant } from "@maple/domain/http"
 import {

@@ -1,4 +1,4 @@
-import { HttpRouter, type HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
+import { HttpRouter, type HttpServerRequest, HttpServerResponse } from "effect/http"
 import { Effect, Option, Schema } from "effect"
 import type { VcsProviderClient } from "@maple/backend/services/integrations/vcs/VcsProviderClient"
 import { VcsProviderRegistry } from "@maple/backend/services/integrations/vcs/VcsProviderRegistry"

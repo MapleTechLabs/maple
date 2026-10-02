@@ -1,4 +1,4 @@
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpApiBuilder } from "effect/http-api"
 import { CurrentTenant, MapleApi } from "@maple/domain/http"
 import { Effect } from "effect"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"

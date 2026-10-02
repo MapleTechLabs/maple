@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { Layer } from "effect"
-import { HttpRouter, HttpServerResponse } from "effect/unstable/http"
+import { HttpRouter, HttpServerResponse } from "effect/http"
 import { API_CORS_OPTIONS, API_CORS_RESPONSE_HEADERS, apiCorsPreflightResponse } from "./api-cors"
 
 describe("apiCorsPreflightResponse", () => {

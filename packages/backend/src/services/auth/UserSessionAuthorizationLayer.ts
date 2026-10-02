@@ -1,4 +1,4 @@
-import { HttpServerRequest } from "effect/unstable/http"
+import { HttpServerRequest } from "effect/http"
 import { API_KEY_PREFIX } from "@maple/db"
 import { makeResolveClerkUser } from "@maple/auth"
 import { CurrentTenant } from "@maple/domain/http"

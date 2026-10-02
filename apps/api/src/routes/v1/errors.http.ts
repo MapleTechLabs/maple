@@ -1,4 +1,4 @@
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpApiBuilder } from "effect/http-api"
 import { CurrentTenant, ErrorForbiddenError, MapleApi } from "@maple/domain/http"
 import { Effect } from "effect"
 import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"

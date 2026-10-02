@@ -81,7 +81,7 @@ overrides them:
 ```typescript
 import * as Maple from "@maple-dev/alchemy"
 import { Layer, Redacted } from "effect"
-import { HttpClient } from "effect/unstable/http"
+import { HttpClient } from "effect/http"
 
 const mapleProviders = Maple.providersWithDependencies().pipe(
 	Layer.provide(

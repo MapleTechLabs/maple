@@ -26,7 +26,7 @@ import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Queue from "effect/Queue"
 import * as Stream from "effect/Stream"
-import * as AsyncResult from "effect/unstable/reactivity/AsyncResult"
+import * as AsyncResult from "effect/reactivity/AsyncResult"
 import { Registry } from "../core/registry.js"
 import * as Store from "../core/store.js"
 

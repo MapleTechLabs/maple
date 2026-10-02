@@ -1,6 +1,6 @@
 import { assert, describe, it } from "@effect/vitest"
 import { Effect } from "effect"
-import { HttpServerRequest } from "effect/unstable/http"
+import { HttpServerRequest } from "effect/http"
 import { forwardsToAi, forwardToAi, isCloudflareFetcher } from "./ai-forward"
 
 /**

@@ -1,4 +1,4 @@
-import { HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi"
+import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Effect, Schema } from "effect"
 import { ChatProposalDecision } from "../chat-session"
 import { SessionAuthorization } from "./current-tenant"

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "bun:test"
 import { Effect, Exit, Schema } from "effect"
-import { FetchHttpClient } from "effect/unstable/http"
+import { FetchHttpClient } from "effect/http"
 import * as Remote from "./remote-ops"
 import { makeV2Client, toV2Timestamp } from "./v2-client"
 

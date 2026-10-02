@@ -44,7 +44,7 @@ import { merge, optionalSecret, plainWithDefault, selfObservabilityEnv } from "@
 import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Effect, Layer, Ref, Scope } from "effect"
-import { HttpRouter } from "effect/unstable/http"
+import { HttpRouter } from "effect/http"
 import { resolveConnectorConfig, socketConnectors, type IngressConnector } from "./config.ts"
 import { InboundHandler } from "./inbound.ts"
 import { connectorConfigEnv } from "./resources/env.ts"

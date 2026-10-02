@@ -16,7 +16,7 @@ import {
 } from "@maple/domain/http"
 import { WorkerEnvironment } from "@maple/infra/worker-runtime"
 import { Effect, Option, Redacted } from "effect"
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpApiBuilder } from "effect/http-api"
 import { Env } from "@maple/backend/platform/Env"
 import { resolveDecisionModel } from "../../platform/Llm"
 import { classifyIncident } from "../../triage/incident-classifier"

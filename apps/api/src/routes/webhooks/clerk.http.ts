@@ -1,6 +1,6 @@
 import { OrgId, RoleName, UserId } from "@maple/domain/http"
 import { Effect, Layer, Option, Schema } from "effect"
-import { HttpRouter, type HttpServerRequest } from "effect/unstable/http"
+import { HttpRouter, type HttpServerRequest } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
 import { MembershipRevocationService } from "@maple/backend/services/auth/MembershipRevocationService"
 import {

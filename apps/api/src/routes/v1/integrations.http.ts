@@ -1,5 +1,5 @@
-import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { HttpApiBuilder } from "effect/http-api"
 import {
 	CloudflareDisconnectResponse,
 	CloudflareHyperdrivesResponse,

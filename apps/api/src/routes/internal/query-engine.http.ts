@@ -1,5 +1,5 @@
 // BOUNDARY: This module owns unparsed external values and narrows them before domain use.
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpApiBuilder } from "effect/http-api"
 import {
 	CurrentTenant,
 	MapleInternalApi,

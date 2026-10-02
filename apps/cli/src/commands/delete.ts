@@ -1,7 +1,7 @@
 import { Effect, Option, Schema } from "effect"
-import * as Command from "effect/unstable/cli/Command"
-import * as Flag from "effect/unstable/cli/Flag"
-import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
+import * as Command from "effect/cli/Command"
+import * as Flag from "effect/cli/Flag"
+import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http"
 import { readFileSync } from "node:fs"
 import { Mode } from "../core/mode"
 import { parseTimestampMs, sinceToMs } from "../core/time"
@@ -55,7 +55,9 @@ export const buildDeleteRequest = (flags: {
 			env: flags.env,
 			beforeMs: flags.beforeMs === undefined ? undefined : Math.floor(flags.beforeMs),
 		}).filter(([, value]) => value !== undefined)
-		const request = yield* Schema.decodeUnknownEffect(ScopedDeleteRequest)(Object.fromEntries(present)).pipe(
+		const request = yield* Schema.decodeUnknownEffect(ScopedDeleteRequest)(
+			Object.fromEntries(present),
+		).pipe(
 			Effect.mapError(() =>
 				failure(
 					"invalid delete flags",
@@ -64,7 +66,10 @@ export const buildDeleteRequest = (flags: {
 			),
 		)
 		if (!hasSubject(request))
-			return yield* failure("pass --service, --namespace, or both", "e.g. maple delete --namespace pr-42")
+			return yield* failure(
+				"pass --service, --namespace, or both",
+				"e.g. maple delete --namespace pr-42",
+			)
 		return request
 	})
 
@@ -90,10 +95,7 @@ export const verifyStoreServer = (
 				"run it on the machine that runs `maple start`, against 127.0.0.1",
 			)
 		const path = serverDiscoveryPath(status.dataDir)
-		const discovery = Option.flatMap(
-			Option.liftThrowable(deps.readDiscovery)(path),
-			decodeDiscovery,
-		)
+		const discovery = Option.flatMap(Option.liftThrowable(deps.readDiscovery)(path), decodeDiscovery)
 		const port = (url: string) => (URL.canParse(url) ? new URL(url).port : undefined)
 		const matches = Option.exists(
 			discovery,
@@ -116,7 +118,9 @@ const postDelete = (baseUrl: string, body: ScopedDeleteRequest & { readonly dryR
 		const status = yield* HttpClient.get(`${baseUrl}/local/status`).pipe(
 			Effect.flatMap(HttpClientResponse.filterStatusOk),
 			Effect.flatMap(HttpClientResponse.schemaBodyJson(LocalStatus)),
-			Effect.mapError(() => failure(`no Maple server answered at ${baseUrl}`, "start one with `maple start`")),
+			Effect.mapError(() =>
+				failure(`no Maple server answered at ${baseUrl}`, "start one with `maple start`"),
+			),
 		)
 		yield* verifyStoreServer(baseUrl, status)
 		// The token sits beside the data dir, so only the machine that owns the store can delete.
@@ -139,7 +143,10 @@ const postDelete = (baseUrl: string, body: ScopedDeleteRequest & { readonly dryR
 			.pipe(Effect.mapError((error) => failure(`delete request failed: ${error.message}`)))
 		const text = yield* response.text.pipe(Effect.orElseSucceed(() => ""))
 		if (response.status === 404)
-			return yield* failure("this server predates `maple delete`", "update with `maple update` and restart it")
+			return yield* failure(
+				"this server predates `maple delete`",
+				"update with `maple update` and restart it",
+			)
 		if (response.status < 200 || response.status >= 300)
 			return yield* failure(text || `server answered HTTP ${response.status}`)
 		return yield* Schema.decodeUnknownEffect(Schema.fromJsonString(ScopedDeleteReport))(text).pipe(
@@ -152,7 +159,9 @@ const describeRequest = (request: ScopedDeleteRequest): string =>
 		...(request.service === undefined ? [] : [`service ${bold(request.service)}`]),
 		...(request.namespace === undefined ? [] : [`namespace ${bold(request.namespace)}`]),
 		...(request.env === undefined ? [] : [`env ${bold(request.env === "" ? '""' : request.env)}`]),
-		...(request.beforeMs === undefined ? [] : [`before ${bold(new Date(request.beforeMs).toISOString())}`]),
+		...(request.beforeMs === undefined
+			? []
+			: [`before ${bold(new Date(request.beforeMs).toISOString())}`]),
 	].join(", ")
 
 const renderReport = (report: ScopedDeleteReport): string => {
@@ -173,7 +182,9 @@ export const deleteCommand = Command.make("delete", {
 	),
 	namespace: Flag.optional(
 		Flag.String("namespace").pipe(
-			Flag.withDescription("service.namespace whose telemetry to delete (with --service: both must match)"),
+			Flag.withDescription(
+				"service.namespace whose telemetry to delete (with --service: both must match)",
+			),
 		),
 	),
 	env: Flag.optional(
@@ -208,7 +219,10 @@ export const deleteCommand = Command.make("delete", {
 			const rawBefore = Option.getOrUndefined(a.before)
 			const beforeMs = rawBefore === undefined ? undefined : parseBefore(rawBefore, Date.now())
 			if (beforeMs === null)
-				return yield* failure(`invalid --before: ${rawBefore}`, "use an age like 7d or a timestamp like 2026-10-01 12:00")
+				return yield* failure(
+					`invalid --before: ${rawBefore}`,
+					"use an age like 7d or a timestamp like 2026-10-01 12:00",
+				)
 			const request = yield* buildDeleteRequest({
 				service: Option.getOrUndefined(a.service),
 				namespace: Option.getOrUndefined(a.namespace),

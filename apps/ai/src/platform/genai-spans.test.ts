@@ -4,7 +4,7 @@
  */
 import { assert, describe, it } from "@effect/vitest"
 import { Effect, Schema } from "effect"
-import { Tool } from "effect/unstable/ai"
+import { Tool } from "effect/ai"
 import { makeRecordingTracer } from "@maple/backend/testing/recording-tracer"
 import { invokeAgentAttributes, messagesJson, toolCallJson, withToolCallContent } from "./genai-spans"
 

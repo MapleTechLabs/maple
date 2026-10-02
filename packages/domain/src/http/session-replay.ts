@@ -1,4 +1,4 @@
-import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
+import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 import { Schema } from "effect"
 import { SessionId, TraceId, UserId } from "../primitives"
 import { SessionTag, TinybirdDateTime } from "../query-engine"

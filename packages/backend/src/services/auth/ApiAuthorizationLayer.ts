@@ -1,4 +1,4 @@
-import { HttpServerRequest } from "effect/unstable/http"
+import { HttpServerRequest } from "effect/http"
 import { CurrentTenant, RoleName, UnauthorizedError } from "@maple/domain/http"
 import { Effect, Layer, Option, Schema } from "effect"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"

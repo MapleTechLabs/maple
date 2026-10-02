@@ -21,7 +21,7 @@ import { authEnv, merge, optionalPlain, optionalSecret, selfObservabilityEnv } f
 import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Effect, Layer, Scope } from "effect"
-import { FetchHttpClient, HttpRouter } from "effect/unstable/http"
+import { FetchHttpClient, HttpRouter } from "effect/http"
 
 const configuredEnv = (stage: MapleStage, region: MapleRegion) =>
 	merge(

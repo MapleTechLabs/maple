@@ -8,7 +8,7 @@
  */
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Effect } from "effect"
-import { HttpRouter, HttpServerResponse } from "effect/unstable/http"
+import { HttpRouter, HttpServerResponse } from "effect/http"
 
 export const HealthRouter = HttpRouter.use((router) =>
 	router.add("GET", "/health", () =>

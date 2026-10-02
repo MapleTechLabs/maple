@@ -34,7 +34,7 @@ import { spawnSync } from "node:child_process"
 import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs"
 import { join, resolve } from "node:path"
 import { Predicate, Schema } from "effect"
-import { HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi"
+import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 
 // https://developers.cloudflare.com/workers/platform/limits/#worker-startup-time
 const CF_STARTUP_BUDGET_MS = 1_000

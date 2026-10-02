@@ -1,8 +1,8 @@
 diff --git a/dist/OpenRouterLanguageModel.js b/dist/OpenRouterLanguageModel.js
-index 5f2344b9ba778bffaf88d07d4b12a2fcae0f056a..c59b4252edea72e6e7210de8f6e3e247964476d0 100644
+index 464d9e4..e76b1e8 100644
 --- a/dist/OpenRouterLanguageModel.js
 +++ b/dist/OpenRouterLanguageModel.js
-@@ -720,7 +720,22 @@ const makeStreamResponse = /*#__PURE__*/Effect.fnUntraced(function* ({
+@@ -726,7 +726,22 @@ const makeStreamResponse = /*#__PURE__*/Effect.fnUntraced(function* ({
        reasoning: undefined
      }
    };
@@ -26,7 +26,7 @@ index 5f2344b9ba778bffaf88d07d4b12a2fcae0f056a..c59b4252edea72e6e7210de8f6e3e247
      const parts = [];
      if (Predicate.isNotUndefined(event.error)) {
        finishReason = "error";
-@@ -996,7 +1011,16 @@ const makeStreamResponse = /*#__PURE__*/Effect.fnUntraced(function* ({
+@@ -1002,7 +1017,16 @@ const makeStreamResponse = /*#__PURE__*/Effect.fnUntraced(function* ({
      }
      // Usage is only emitted by the last part of the stream, so we need to
      // handle flushing any remaining text / reasoning / tool calls
@@ -44,7 +44,7 @@ index 5f2344b9ba778bffaf88d07d4b12a2fcae0f056a..c59b4252edea72e6e7210de8f6e3e247
        // Fix for Gemini 3 thoughtSignature: when there are tool calls with encrypted
        // reasoning (thoughtSignature), the model returns 'stop' but expects continuation.
        // Override to 'tool-calls' so the SDK knows to continue the conversation.
-@@ -1074,6 +1098,8 @@ const makeStreamResponse = /*#__PURE__*/Effect.fnUntraced(function* ({
+@@ -1080,6 +1104,8 @@ const makeStreamResponse = /*#__PURE__*/Effect.fnUntraced(function* ({
          response: buildHttpResponseDetails(response),
          metadata
        });

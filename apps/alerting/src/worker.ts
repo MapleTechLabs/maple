@@ -42,7 +42,7 @@ import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
 import { chatConnectorOutboundConfigKeys } from "@maple/chat-platform"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Cause, Effect, Layer, Ref } from "effect"
-import { HttpServerResponse } from "effect/unstable/http"
+import { HttpServerResponse } from "effect/http"
 
 /**
  * The alerting worker's resource bindings, split from the `Config`-sourced env

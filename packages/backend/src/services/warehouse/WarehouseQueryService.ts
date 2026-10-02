@@ -1,5 +1,5 @@
 import * as ClickHouseHttp from "@maple-dev/effect-clickhouse-http"
-import { FetchHttpClient, HttpClient, HttpClientRequest, type HttpClientError } from "effect/unstable/http"
+import { FetchHttpClient, HttpClient, HttpClientRequest, type HttpClientError } from "effect/http"
 import { Context, Effect, Layer, Option, Redacted, Schema, Stream } from "effect"
 import { WarehouseConfigError, type WarehouseQueryRequest } from "@maple/domain/http"
 import {

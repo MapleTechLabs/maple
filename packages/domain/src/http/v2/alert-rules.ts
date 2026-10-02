@@ -1,4 +1,4 @@
-import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
+import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 import { Schema } from "effect"
 import { QueryEngineAlertReducer, QueryEngineNoDataBehavior } from "../../query-engine"
 import { PostgresTransactionId, UserId } from "../../primitives"

@@ -15,7 +15,7 @@ import { Model, Registry, Store } from "@maple/unitflow"
 import * as Db from "@maple/unitflow/db"
 import * as Effect from "effect/Effect"
 import * as Stream from "effect/Stream"
-import * as AsyncResult from "effect/unstable/reactivity/AsyncResult"
+import * as AsyncResult from "effect/reactivity/AsyncResult"
 
 import type { Dashboard } from "@/components/dashboard-builder/types"
 import { type DashboardRow, rowToDashboard } from "@/lib/collections/dashboards"

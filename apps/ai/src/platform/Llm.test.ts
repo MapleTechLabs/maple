@@ -11,8 +11,8 @@
  * keeps the run to a single request with no backoff; the resulting failure is expected and ignored.
  */
 import { Effect, Layer, Option, Schema, Stream } from "effect"
-import { Decision, DecisionModel, LanguageModel, Tool, Toolkit } from "effect/unstable/ai"
-import { FetchHttpClient } from "effect/unstable/http"
+import { Decision, DecisionModel, LanguageModel, Tool, Toolkit } from "effect/ai"
+import { FetchHttpClient } from "effect/http"
 import { assert, describe, it } from "@effect/vitest"
 import { expect } from "vitest"
 import { PR_REVIEW_MODELS } from "@maple/domain/http"

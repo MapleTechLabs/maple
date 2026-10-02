@@ -1,25 +1,8 @@
-diff --git a/dist/internal/redacted.js b/dist/internal/redacted.js
-index b71c514f6c36983a6fb94a663e9ff878d58a3c1b..6192bdac6f761aef3c8e1ed2f3b4747ffd55692f 100644
---- a/dist/internal/redacted.js
-+++ b/dist/internal/redacted.js
-@@ -1,5 +1,11 @@
- /** @internal */
--export const redactedRegistry = /*#__PURE__*/new WeakMap();
-+// Patched (maple): share the registry across duplicate `effect` module
-+// instances via a Symbol.for-keyed global (like effect v3's globalValue).
-+// Bun's isolated linker gives the alchemy CLI and the user's alchemy.run.ts
-+// two path-distinct copies of this module; a module-local WeakMap makes
-+// `Redacted.value` throw "Unable to get redacted value" for a Redacted made
-+// by the other copy.
-+export const redactedRegistry = globalThis[Symbol.for("effect/Redacted/redactedRegistry")] ??= /*#__PURE__*/new WeakMap();
- /** @internal */
- export const value = self => {
-   if (redactedRegistry.has(self)) {
-diff --git a/dist/unstable/ai/LanguageModel.js b/dist/unstable/ai/LanguageModel.js
-index e2f77b2c4104355f487259f3a5798a0716628160..7ed73ef178c53282e38243e47a4c78c230065429 100644
---- a/dist/unstable/ai/LanguageModel.js
-+++ b/dist/unstable/ai/LanguageModel.js
-@@ -338,16 +338,19 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (params) {
+diff --git a/dist/ai/LanguageModel.js b/dist/ai/LanguageModel.js
+index 7a53537..7c25061 100644
+--- a/dist/ai/LanguageModel.js
++++ b/dist/ai/LanguageModel.js
+@@ -344,16 +344,19 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (params) {
        previousResponseId: undefined,
        incrementalPrompt: undefined
      };
@@ -43,7 +26,7 @@ index e2f77b2c4104355f487259f3a5798a0716628160..7ed73ef178c53282e38243e47a4c78c2
      return stream.pipe(Stream.mapArray(parts => {
        content.push(...parts);
        return parts;
-@@ -525,7 +528,7 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (params) {
+@@ -532,7 +535,7 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (params) {
      // Retain pre-resolved results so Chat can recognize completed approvals on later turns.
      return [...preResolvedResults, ...content, ...toolResults];
    });
@@ -52,7 +35,7 @@ index e2f77b2c4104355f487259f3a5798a0716628160..7ed73ef178c53282e38243e47a4c78c2
      const tracker = Option.getOrUndefined(yield* Effect.serviceOption(ResponseIdTracker.ResponseIdTracker));
      const toolChoice = options.toolChoice ?? "auto";
      const concurrency = options.concurrency ?? "unbounded";
-@@ -548,6 +551,43 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (params) {
+@@ -556,6 +559,43 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (params) {
          if (part.type !== "response-metadata") emitted = true;
        })), Stream.catchReason("AiError", "InvalidRequestError", (_, error) => emitted ? Stream.fail(error) : params.streamText(fallbackOptions))) : params.streamText(requestOptions);
      };
@@ -96,7 +79,7 @@ index e2f77b2c4104355f487259f3a5798a0716628160..7ed73ef178c53282e38243e47a4c78c2
      // Check for pending approvals that need resolution
      const {
        approved: pendingApproved,
-@@ -577,14 +617,7 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (params) {
+@@ -585,14 +625,7 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (params) {
        }
        const schema = Schema.NonEmptyArray(Response.StreamPart(Toolkit.empty));
        const decodeParts = Schema.decodeEffect(schema);
@@ -112,7 +95,7 @@ index e2f77b2c4104355f487259f3a5798a0716628160..7ed73ef178c53282e38243e47a4c78c2
      }
      // If there is a toolkit resolve and apply it to the provider options
      const toolkit = yield* resolveToolkit(options.toolkit);
-@@ -609,14 +642,7 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (params) {
+@@ -617,14 +650,7 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (params) {
        }
        const schema = Schema.NonEmptyArray(Response.StreamPart(Toolkit.empty));
        const decodeParts = Schema.decodeEffect(schema);
@@ -128,7 +111,7 @@ index e2f77b2c4104355f487259f3a5798a0716628160..7ed73ef178c53282e38243e47a4c78c2
      }
      // Pre-resolve pending tool approvals before calling the LLM
      let preResolvedStreamParts = [];
-@@ -679,14 +705,7 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (params) {
+@@ -687,14 +713,7 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (params) {
      // If tool call resolution is disabled, return the response without
      // resolving the tool calls that were generated
      if (options.disableToolCallResolution === true) {
@@ -144,12 +127,12 @@ index e2f77b2c4104355f487259f3a5798a0716628160..7ed73ef178c53282e38243e47a4c78c2
      }
      // Queue for decoded parts and tool results
      const queue = yield* Queue.make();
-diff --git a/dist/unstable/httpapi/HttpApiBuilder.js b/dist/unstable/httpapi/HttpApiBuilder.js
-index 0e2a1b906f0ff3a065489cd9489f543490a29938..98ce2bccbc8d4a75a312ed56366a52bc0e2fcbca 100644
---- a/dist/unstable/httpapi/HttpApiBuilder.js
-+++ b/dist/unstable/httpapi/HttpApiBuilder.js
-@@ -365,7 +365,10 @@ function handlerToHttpEffect(api, group, endpoint, context, handler, isRaw) {
- /** @internal */
+diff --git a/dist/http-api/HttpApiBuilder.js b/dist/http-api/HttpApiBuilder.js
+index e1686d6..21ab531 100644
+--- a/dist/http-api/HttpApiBuilder.js
++++ b/dist/http-api/HttpApiBuilder.js
+@@ -372,7 +372,10 @@ function handlerToHttpEffect(api, group, endpoint, context, handler, isRaw) {
+  */
  export function handlerToRoute(api, group, handler, context) {
    const endpoint = handler.endpoint;
 -  return HttpRouter.route(endpoint.method, HttpApiPath.toRouterPath(endpoint.path, endpoint.params), handlerToHttpEffect(api, group, endpoint, context, handler.handler, handler.isRaw), {
@@ -160,27 +143,20 @@ index 0e2a1b906f0ff3a065489cd9489f543490a29938..98ce2bccbc8d4a75a312ed56366a52bc
      uninterruptible: handler.uninterruptible
    });
  }
-diff --git a/dist/unstable/ai/internal/mcpProtocol/v2025_06_18.js b/dist/unstable/ai/internal/mcpProtocol/v2025_06_18.js
-index 5a105d8..64a7b88 100644
---- a/dist/unstable/ai/internal/mcpProtocol/v2025_06_18.js
-+++ b/dist/unstable/ai/internal/mcpProtocol/v2025_06_18.js
-@@ -234,6 +234,7 @@ export const protocol = /*#__PURE__*/McpProtocol.make({
-           inputSchema: tool.inputSchema,
-           outputSchema: isToolOutputSchema(tool.outputSchema) ? tool.outputSchema : undefined,
-           annotations: tool.annotations === undefined ? undefined : McpSchema.ToolAnnotations.make({
-+            title: tool.annotations.title,
-             readOnlyHint: tool.annotations.readOnlyHint,
-             destructiveHint: tool.annotations.destructiveHint,
-             idempotentHint: tool.annotations.idempotentHint,
-diff --git a/dist/unstable/ai/internal/mcpProtocol/v2025_11_25.js b/dist/unstable/ai/internal/mcpProtocol/v2025_11_25.js
-index 2744691..be65b9d 100644
---- a/dist/unstable/ai/internal/mcpProtocol/v2025_11_25.js
-+++ b/dist/unstable/ai/internal/mcpProtocol/v2025_11_25.js
-@@ -238,6 +238,7 @@ export const protocol = /*#__PURE__*/McpProtocol.make({
-           outputSchema: isToolOutputSchema(tool.outputSchema) ? tool.outputSchema : undefined,
-           icons: tool.icons,
-           annotations: tool.annotations === undefined ? undefined : McpSchema.ToolAnnotations.make({
-+            title: tool.annotations.title,
-             readOnlyHint: tool.annotations.readOnlyHint,
-             destructiveHint: tool.annotations.destructiveHint,
-             idempotentHint: tool.annotations.idempotentHint,
+diff --git a/dist/internal/redacted.js b/dist/internal/redacted.js
+index b71c514..6192bda 100644
+--- a/dist/internal/redacted.js
++++ b/dist/internal/redacted.js
+@@ -1,5 +1,11 @@
+ /** @internal */
+-export const redactedRegistry = /*#__PURE__*/new WeakMap();
++// Patched (maple): share the registry across duplicate `effect` module
++// instances via a Symbol.for-keyed global (like effect v3's globalValue).
++// Bun's isolated linker gives the alchemy CLI and the user's alchemy.run.ts
++// two path-distinct copies of this module; a module-local WeakMap makes
++// `Redacted.value` throw "Unable to get redacted value" for a Redacted made
++// by the other copy.
++export const redactedRegistry = globalThis[Symbol.for("effect/Redacted/redactedRegistry")] ??= /*#__PURE__*/new WeakMap();
+ /** @internal */
+ export const value = self => {
+   if (redactedRegistry.has(self)) {

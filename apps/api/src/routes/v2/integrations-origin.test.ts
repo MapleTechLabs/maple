@@ -1,4 +1,4 @@
-import type { HttpServerRequest } from "effect/unstable/http"
+import type { HttpServerRequest } from "effect/http"
 import { assert, describe, it } from "@effect/vitest"
 import { isTrustedCallbackOrigin, resolveRequestOrigin } from "./integrations.http"
 

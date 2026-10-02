@@ -1,4 +1,4 @@
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpApiBuilder } from "effect/http-api"
 import { CurrentTenant } from "@maple/domain/http"
 import { isoTimestampOrNull, MapleApiV2 } from "@maple/domain/http/v2"
 import { Effect } from "effect"

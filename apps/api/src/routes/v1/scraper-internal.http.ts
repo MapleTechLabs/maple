@@ -1,4 +1,4 @@
-import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
+import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { Effect, Option, Redacted, Schema } from "effect"
 import {
 	InternalScrapeTarget,

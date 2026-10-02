@@ -1,4 +1,4 @@
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpApiBuilder } from "effect/http-api"
 import type { IngestAttributeMapping, IngestAttributeMappingId, OrgId } from "@maple/domain/http"
 import {
 	CreateIngestAttributeMappingRequest,

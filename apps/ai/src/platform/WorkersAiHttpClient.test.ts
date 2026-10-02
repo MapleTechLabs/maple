@@ -10,7 +10,7 @@
 import { describe, it } from "@effect/vitest"
 import { assert } from "vitest"
 import { Effect } from "effect"
-import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
+import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http"
 import { isWorkersAiBinding, workersAiHttpClient } from "./WorkersAiHttpClient"
 
 const WORKERS_AI_URL = "https://api.cloudflare.com/client/v4/accounts/abc123/ai/v1/chat/completions"

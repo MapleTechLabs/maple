@@ -1,4 +1,4 @@
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpApiBuilder } from "effect/http-api"
 import type { AlertCheckDocument, AlertRuleDocument, AlertRulePreviewResponse } from "@maple/domain/http"
 import {
 	AlertRulePreviewRequest,
@@ -18,7 +18,8 @@ import type {
 } from "@maple/domain/http/v2"
 import { MapleApiV2, paginateArray, scopeAllows, timestamp, V2ParameterInvalid } from "@maple/domain/http/v2"
 import { AlertForbiddenError } from "@maple/domain/http"
-import { Effect, Encoding, Result, Schema } from "effect"
+import { Effect, Result, Schema } from "effect"
+import { Base64Url } from "effect/encoding"
 import { auditDiff } from "@/routes/v2/audit-changes"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
@@ -28,14 +29,14 @@ import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesServ
 const decodeIsoDateTime = Schema.decodeUnknownSync(IsoDateTimeString)
 
 const encodeChecksCursor = (check: AlertCheckDocument): string =>
-	`chk_${Encoding.encodeBase64Url(JSON.stringify([check.timestamp, check.groupKey]))}`
+	`chk_${Base64Url.encode(JSON.stringify([check.timestamp, check.groupKey]))}`
 
 const decodeChecksCursor = (value: string | undefined) => {
 	if (value === undefined) return Effect.succeed<readonly [string, string] | undefined>(undefined)
 	if (!value.startsWith("chk_")) {
 		return Effect.fail(V2ParameterInvalid.make("Invalid pagination cursor.", { param: "cursor" }))
 	}
-	const decoded = Encoding.decodeBase64UrlString(value.slice(4))
+	const decoded = Base64Url.decodeString(value.slice(4))
 	if (Result.isFailure(decoded)) {
 		return Effect.fail(V2ParameterInvalid.make("Invalid pagination cursor.", { param: "cursor" }))
 	}

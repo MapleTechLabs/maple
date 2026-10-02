@@ -18,11 +18,11 @@
  * the wire and the mode is derived from it server-side. Every mode names an agent, by
  * construction; `agents.test.ts` fails if one is ever added without one.
  */
-import * as Agent from "effect-agent/agent"
-import { AgentPolicy } from "effect-agent/agent-policy"
-import * as Output from "effect-agent/output"
+import * as Agent from "@yielded/agent/agent"
+import { AgentPolicy } from "@yielded/agent/agent-policy"
+import * as Output from "@yielded/agent/output"
 import { Schema } from "effect"
-import type { Toolkit } from "effect/unstable/ai"
+import type { Toolkit } from "effect/ai"
 import { chatModeFromSessionId, type ChatMode } from "@maple/domain/chat-session"
 // The specific file, not the `./loop` barrel: the barrel re-exports `turn.ts`, which imports this
 // module back. `budgets.ts` depends on nothing but `effect`.

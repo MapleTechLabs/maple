@@ -1,4 +1,4 @@
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpApiBuilder } from "effect/http-api"
 import {
 	CurrentTenant,
 	MetricName,
@@ -53,7 +53,8 @@ import {
 	MAX_TIMESERIES_POINTS as MAX_TIMESERIES_BUCKETS,
 	MAX_UNFILTERED_BREAKDOWN_RANGE_SECONDS,
 } from "@maple/query-engine/runtime"
-import { Effect, Encoding, Option, Result, Schema } from "effect"
+import { Effect, Option, Result, Schema } from "effect"
+import { Base64Url } from "effect/encoding"
 import { decodeKeysetCursor, encodeKeysetCursor } from "@/routes/v2/keyset-cursor"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
@@ -191,11 +192,11 @@ const compactHexId = (value: string) => {
 	const bytes = Uint8Array.from({ length: value.length / 2 }, (_, index) =>
 		Number.parseInt(value.slice(index * 2, index * 2 + 2), 16),
 	)
-	return `~${Encoding.encodeBase64Url(bytes)}`
+	return `~${Base64Url.encode(bytes)}`
 }
 const expandHexId = (value: string) => {
 	if (!value.startsWith("~")) return value
-	const decoded = Encoding.decodeBase64Url(value.slice(1))
+	const decoded = Base64Url.decode(value.slice(1))
 	if (Result.isFailure(decoded)) throw new Error("invalid compact identifier")
 	return [...decoded.success].map((byte) => byte.toString(16).padStart(2, "0")).join("")
 }

@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, it } from "@effect/vitest"
 import { MAPLE_MCP_SERVER_NAME } from "@maple/domain/mcp-manifest"
 import { ConfigProvider, Effect, Layer } from "effect"
-import { HttpRouter, HttpServerResponse } from "effect/unstable/http"
+import { HttpRouter, HttpServerResponse } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
 import { DiscoveryRouter, NotFoundRouter } from "./discovery.http"
 

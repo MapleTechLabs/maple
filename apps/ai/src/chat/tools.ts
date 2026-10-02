@@ -37,9 +37,9 @@ import {
 	SubmitPrReviewRequest,
 } from "@maple/domain/http"
 import { InvestigationId } from "@maple/domain/primitives"
-import type { RunBudgetHook, RunUsageDelta } from "effect-agent/run-options"
+import type { RunBudgetHook, RunUsageDelta } from "@yielded/agent/run-options"
 import { type Cause, Effect, type Layer, Option, Schema } from "effect"
-import { Tool, Toolkit } from "effect/unstable/ai"
+import { Tool, Toolkit } from "effect/ai"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
 import {

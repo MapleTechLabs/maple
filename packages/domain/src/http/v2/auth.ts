@@ -1,4 +1,4 @@
-import { HttpApiMiddleware, HttpApiSecurity, OpenApi } from "effect/unstable/httpapi"
+import { HttpApiMiddleware, HttpApiSecurity, OpenApi } from "effect/http-api"
 import { Schema } from "effect"
 import { ApiKeyLookupPersistenceError } from "../api-keys"
 import { AuthorizationUnavailableError, Context, UnauthorizedError } from "../current-tenant"

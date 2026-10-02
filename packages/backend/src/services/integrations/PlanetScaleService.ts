@@ -22,7 +22,7 @@ import {
 } from "@maple/db"
 import { and, desc, eq, gte, inArray, isNull, lt, lte, or } from "drizzle-orm"
 import { Cause, Clock, Context, Duration, Effect, Layer, Predicate, Schedule, Schema } from "effect"
-import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
 import {

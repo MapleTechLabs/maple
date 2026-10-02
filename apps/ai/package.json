@@ -26,7 +26,7 @@
 		"@maple/query-model": "workspace:*",
 		"@maple/widgets": "workspace:*",
 		"effect": "catalog:effect",
-		"effect-agent": "0.1.0-beta.164"
+		"@yielded/agent": "0.1.0-beta.166"
 	},
 	"devDependencies": {
 		"@ai-sdk/openai-compatible": "^3.0.57",

@@ -1,6 +1,6 @@
 import { SupportChannelUnavailableError } from "@maple/domain/support-channel"
 import { Context, Effect, Layer, Option, Redacted, Schema } from "effect"
-import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
 
 /**

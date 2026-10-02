@@ -1,6 +1,6 @@
 import { Effect, Option, Predicate } from "effect"
-import * as Flag from "effect/unstable/cli/Flag"
-import * as GlobalFlag from "effect/unstable/cli/GlobalFlag"
+import * as Flag from "effect/cli/Flag"
+import * as GlobalFlag from "effect/cli/GlobalFlag"
 import { bold, dim } from "./style"
 
 /**

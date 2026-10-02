@@ -1,6 +1,6 @@
 import { Atom, scheduleTask } from "@/lib/effect-atom"
 import { Layer } from "effect"
-import { AtomRegistry } from "effect/unstable/reactivity"
+import { AtomRegistry } from "effect/reactivity"
 import { MapleApiAtomClient } from "./services/common/atom-client"
 import { MapleFetchHttpClientLive } from "./services/common/http-client"
 import { mapleOtelLayer } from "./services/common/otel-layer"

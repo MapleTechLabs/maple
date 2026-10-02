@@ -20,7 +20,7 @@ import {
 import { planetscaleConnections, scrapeTargets, type PlanetScaleConnectionRow } from "@maple/db"
 import { and, eq } from "drizzle-orm"
 import { Clock, Context, Duration, Effect, Layer, Redacted, Schema } from "effect"
-import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"

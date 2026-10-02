@@ -1,7 +1,7 @@
 import { assert, describe, it } from "@effect/vitest"
 import { Duration, Effect, Exit, Fiber, Schema } from "effect"
 import { TestClock } from "effect/testing"
-import { FetchHttpClient } from "effect/unstable/http"
+import { FetchHttpClient } from "effect/http"
 import { InternalScrapeTarget } from "@maple/domain/http"
 import { endedSpansNamed, makeCapturingTracer } from "./testing/capturing-tracer"
 import { parseRetryAfterSeconds, scrapeTimeoutMs, TargetFetcher } from "./TargetFetcher"

@@ -45,7 +45,7 @@ import {
 	warehouseFailureAttributes,
 	warehouseHttpClient,
 } from "@maple/query-engine/execution"
-import { HttpClient } from "effect/unstable/http"
+import { HttpClient } from "effect/http"
 import { verboseLogging } from "../lib/debug"
 import { CliUsageError, LocalServerUnreachableError, ReadOnlyQueryError } from "../lib/errors"
 import { isLocalUnreachable, isNotMapleServer, readOnlyRejection } from "../lib/failure"

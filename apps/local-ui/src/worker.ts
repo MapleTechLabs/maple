@@ -22,7 +22,7 @@ import * as Cloudflare from "alchemy/Cloudflare"
 import * as Command from "alchemy/Command"
 import * as Output from "alchemy/Output"
 import { Effect } from "effect"
-import { HttpServerResponse } from "effect/unstable/http"
+import { HttpServerResponse } from "effect/http"
 
 interface AssetsBinding {
 	readonly fetch: (request: Request) => Promise<Response>

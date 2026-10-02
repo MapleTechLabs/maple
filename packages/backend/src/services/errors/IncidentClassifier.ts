@@ -17,7 +17,7 @@ import {
 import { WorkerEnvironment } from "@maple/infra/worker-runtime"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Cause, Context, Duration, Effect, Layer, Option, Redacted } from "effect"
-import { HttpApiClient } from "effect/unstable/httpapi"
+import { HttpApiClient } from "effect/http-api"
 import { Env } from "@maple/backend/platform/Env"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 

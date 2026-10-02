@@ -2,7 +2,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { test } from "bun:test"
 import { Deferred, Effect, Exit, Fiber, Layer } from "effect"
-import { FetchHttpClient } from "effect/unstable/http"
+import { FetchHttpClient } from "effect/http"
 import { rawCompiledQuery } from "@maple/query-engine/ch"
 import { makeLocalWarehouseExecutorApi } from "./executor"
 

@@ -1,6 +1,6 @@
 import { Effect, Option, Schema } from "effect"
-import * as Command from "effect/unstable/cli/Command"
-import * as Flag from "effect/unstable/cli/Flag"
+import * as Command from "effect/cli/Command"
+import * as Flag from "effect/cli/Flag"
 import { randomUUID } from "node:crypto"
 import { homedir } from "node:os"
 import { join } from "node:path"

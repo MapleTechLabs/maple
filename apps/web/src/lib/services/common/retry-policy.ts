@@ -1,10 +1,5 @@
 import { Effect, Schedule } from "effect"
-import {
-	HttpClient,
-	HttpClientError,
-	type HttpClientRequest,
-	type HttpClientResponse,
-} from "effect/unstable/http"
+import { HttpClient, HttpClientError, type HttpClientRequest, type HttpClientResponse } from "effect/http"
 
 const IDEMPOTENT_METHODS = new Set(["GET", "HEAD", "OPTIONS"])
 

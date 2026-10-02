@@ -8,7 +8,7 @@
  * edge in Maple.
  */
 import { Effect } from "effect"
-import { FetchHttpClient, HttpClient } from "effect/unstable/http"
+import { FetchHttpClient, HttpClient } from "effect/http"
 import { TodoApi } from "../../../shared/api.ts"
 import { AtomHttpApi } from "./effect-atom.ts"
 

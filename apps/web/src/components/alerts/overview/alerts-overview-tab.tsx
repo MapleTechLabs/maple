@@ -1,6 +1,6 @@
 import { useNavigate, useSearch } from "@tanstack/react-router"
 import { Exit } from "effect"
-import * as AsyncResult from "effect/unstable/reactivity/AsyncResult"
+import * as AsyncResult from "effect/reactivity/AsyncResult"
 import { memo, useEffect, useMemo, useRef, useState } from "react"
 import { toastManager } from "@maple/ui/components/ui/toast"
 

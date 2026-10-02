@@ -2,7 +2,7 @@ import { assert, describe, it } from "@effect/vitest"
 import { makeMaplePgClient } from "@maple/db/client"
 import { sql } from "drizzle-orm"
 import { Effect, Tracer } from "effect"
-import * as Reactivity from "effect/unstable/reactivity/Reactivity"
+import * as Reactivity from "effect/reactivity/Reactivity"
 import { forkRequestScoped } from "@maple/backend/platform/fork-request-scoped"
 import {
 	makePgConnectionScope,

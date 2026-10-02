@@ -1,6 +1,6 @@
 import { assert, describe, it } from "@effect/vitest"
 import { ConfigProvider, Context, Effect, Layer } from "effect"
-import { HttpRouter } from "effect/unstable/http"
+import { HttpRouter } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
 import {
 	ProductEventsService,

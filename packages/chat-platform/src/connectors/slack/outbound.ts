@@ -21,7 +21,7 @@
  */
 import { ChatConversationKey } from "@maple/primitives"
 import { Array as Arr, Duration, Effect, Option, Order, Redacted, Schema } from "effect"
-import { HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/unstable/http"
+import { HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/http"
 import type { ConnectorConfig, InboundAction, InboundMessage } from "../../ingress"
 import {
 	ChatOutboundError,

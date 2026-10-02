@@ -38,7 +38,7 @@ import type {
 import { connectors } from "@maple/chat-platform/connectors"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Effect, Layer } from "effect"
-import { FetchHttpClient } from "effect/unstable/http"
+import { FetchHttpClient } from "effect/http"
 import { resolveConnectorConfig, type IngressConnector } from "../config.ts"
 import { InboundHandler } from "../inbound.ts"
 import { applyStep, reconnectDelayMs } from "./driver.ts"

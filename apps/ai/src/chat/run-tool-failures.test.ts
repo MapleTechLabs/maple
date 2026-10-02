@@ -7,9 +7,9 @@
  */
 import { OrgId, UserId } from "@maple/domain"
 import { Effect, Exit, Layer, Schema, Stream } from "effect"
-import { LanguageModel } from "effect/unstable/ai"
-import type { Prompt, Response } from "effect/unstable/ai"
-import * as AiModel from "effect/unstable/ai/Model"
+import { LanguageModel } from "effect/ai"
+import type { Prompt, Response } from "effect/ai"
+import * as AiModel from "effect/ai/Model"
 import { assert, describe, it } from "vitest"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"

@@ -1,6 +1,6 @@
 import { Effect } from "effect"
 import { constTrue } from "effect/Function"
-import { HttpClient } from "effect/unstable/http"
+import { HttpClient } from "effect/http"
 
 /**
  * The `HttpClient` a warehouse driver runs on. OTel's database conventions

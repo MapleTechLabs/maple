@@ -35,7 +35,7 @@ import {
 import { chatSessionStub, type ChatSessionStub } from "@maple/domain/chat-session-stub"
 import { WorkerEnvironment } from "@maple/infra/worker-runtime"
 import { Effect, Layer, Option, Schema, Stream } from "effect"
-import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
+import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"

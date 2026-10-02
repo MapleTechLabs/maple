@@ -1,7 +1,7 @@
 import { assert, describe, it } from "@effect/vitest"
 import { Effect, Fiber, Result } from "effect"
 import { TestClock } from "effect/testing"
-import { FetchHttpClient, HttpClient, HttpClientError } from "effect/unstable/http"
+import { FetchHttpClient, HttpClient, HttpClientError } from "effect/http"
 
 import { withRequestTimeout } from "./http-client"
 

@@ -13,7 +13,7 @@
  * a platform as the person, only as itself.
  */
 import { Effect, Schema } from "effect"
-import type { HttpClient } from "effect/unstable/http"
+import type { HttpClient } from "effect/http"
 import { ChatConnectorId } from "./connector"
 import type { ChatConnectorNotConfigured, ChatInstallCallback, ChatInstallStart } from "./install"
 

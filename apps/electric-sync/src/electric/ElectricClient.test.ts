@@ -1,7 +1,7 @@
 import { assert, describe, it } from "@effect/vitest"
 import { Duration, Effect, Fiber, Layer, Option, Redacted, Tracer } from "effect"
 import { TestClock } from "effect/testing"
-import { FetchHttpClient } from "effect/unstable/http"
+import { FetchHttpClient } from "effect/http"
 import { type RecordedRequest, stubFetch, syncConfigLayer } from "../test-support"
 import { SUBSCRIPTION_NAMES, type SubscriptionName, subscriptionScopeColumn } from "../shapes/registry"
 import type { SyncRequest } from "../shapes/request"

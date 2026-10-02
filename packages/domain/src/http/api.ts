@@ -1,4 +1,4 @@
-import { HttpApi, OpenApi } from "effect/unstable/httpapi"
+import { HttpApi, OpenApi } from "effect/http-api"
 import { AuthApiGroup, AuthPublicApiGroup } from "./auth"
 import { BillingPublicApiGroup } from "./billing"
 import { CodeReviewApiGroup } from "./code-review"

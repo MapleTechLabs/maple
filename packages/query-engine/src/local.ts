@@ -9,7 +9,7 @@
 // So callers POST `compiled.sql` verbatim.
 
 import { Effect, Schema } from "effect"
-import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 
 /**
  * The local server refused the query. Its own tag, and structured fields, so

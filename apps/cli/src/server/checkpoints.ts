@@ -5,7 +5,7 @@ import { existsSync, lstatSync, readFileSync, rmSync, writeFileSync } from "node
 import { lstat, mkdir, readFile, readdir, rm, rmdir, stat } from "node:fs/promises"
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
 import { Duration, Effect, Option, Schema } from "effect"
-import { HttpClient, HttpClientRequest } from "effect/unstable/http"
+import { HttpClient, HttpClientRequest } from "effect/http"
 import { CHDB_VERSION, MAPLE_VERSION } from "../version"
 import { serverUrl } from "../lib/local-address"
 import { Chdb, RAW_TELEMETRY_TTL_COLUMNS } from "./chdb"

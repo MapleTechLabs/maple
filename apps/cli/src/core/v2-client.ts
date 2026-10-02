@@ -12,8 +12,8 @@
 // `ApiAuthorizationV2Layer` accepts across every `/v2` family.
 
 import { Effect } from "effect"
-import { HttpClient, HttpClientRequest } from "effect/unstable/http"
-import { HttpApiClient } from "effect/unstable/httpapi"
+import { HttpClient, HttpClientRequest } from "effect/http"
+import { HttpApiClient } from "effect/http-api"
 import { MapleApiV2 } from "@maple/domain/http/v2"
 import { WarehouseClientError, WarehouseQueryError } from "@maple/domain/http/warehouse-errors"
 import { CliNotFoundError, CliUsageError } from "../lib/errors"

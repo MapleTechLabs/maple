@@ -12,7 +12,7 @@
  */
 import type { ChatConnectorId, ConnectorRequest, SocketStep } from "@maple/chat-platform"
 import { Duration, Effect } from "effect"
-import { HttpClient, HttpClientRequest } from "effect/unstable/http"
+import { HttpClient, HttpClientRequest } from "effect/http"
 import { InboundHandler } from "../inbound.ts"
 
 /** The live connection, as much of it as the loop needs. */

@@ -59,7 +59,7 @@
 		"vitest": "catalog:"
 	},
 	"peerDependencies": {
-		"alchemy": ">=2.0.0-beta.74 <3",
-		"effect": ">=4.0.0-rc.113 <5"
+		"alchemy": ">=2.0.0-beta.80 <3",
+		"effect": "^4.0.0"
 	}
 }

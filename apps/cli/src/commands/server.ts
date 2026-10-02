@@ -1,8 +1,8 @@
 import { Duration, Effect, Option, Schema } from "effect"
 import { FileSystem } from "effect/FileSystem"
-import * as Command from "effect/unstable/cli/Command"
-import * as Flag from "effect/unstable/cli/Flag"
-import { HttpClient, HttpClientResponse } from "effect/unstable/http"
+import * as Command from "effect/cli/Command"
+import * as Flag from "effect/cli/Flag"
+import { HttpClient, HttpClientResponse } from "effect/http"
 import { randomUUID } from "node:crypto"
 import {
 	closeSync,
@@ -878,7 +878,10 @@ const checkpointRefreshLoop = (
 			if (lastTakenAtMs !== undefined) {
 				const status = yield* fetchLocalStatus(statusUrl, "5 seconds")
 				if (!storeChangedSince(Option.getOrUndefined(status), lastTakenAtMs)) {
-					debugLog("checkpoint refresh skipped", "nothing ingested or deleted since the last checkpoint")
+					debugLog(
+						"checkpoint refresh skipped",
+						"nothing ingested or deleted since the last checkpoint",
+					)
 					continue
 				}
 			}

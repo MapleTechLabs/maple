@@ -9,10 +9,10 @@ import {
 	ContextBudgetError,
 	ContextOverflowError,
 	ModelProtocolError,
-} from "effect-agent/agent-error"
+} from "@yielded/agent/agent-error"
 import { PR_REVIEW_FAILURE_COPY, type PrReviewFailureReason } from "@maple/domain/http"
 import { Cause } from "effect"
-import { isAiError } from "effect/unstable/ai/AiError"
+import { isAiError } from "effect/ai/AiError"
 
 /** The reason one error names, or `undefined` for one that says nothing specific. */
 const reasonOf = (error: unknown): PrReviewFailureReason | undefined => {

@@ -1,7 +1,7 @@
 /**
  * What the agents' sandbox tools call: grep, list, read and run, each phrased
  * as one bounded `SandboxRequest` over a repository mount and drained through
- * effect-agent's `Sandbox` port. The service knows the commands; the port
+ * @yielded/agent's `Sandbox` port. The service knows the commands; the port
  * knows the container.
  */
 import type { OrgId } from "@maple/domain/http"
@@ -13,7 +13,7 @@ import {
 	SandboxUnsupportedRequestError,
 	type SandboxError,
 	type SandboxEvent,
-} from "effect-agent/sandbox"
+} from "@yielded/agent/sandbox"
 import { Context, Duration, Effect, Layer, Stream } from "effect"
 import {
 	NETWORK_DISABLED,

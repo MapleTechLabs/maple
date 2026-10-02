@@ -1,6 +1,6 @@
 import { CollectionError } from "@maple/unitflow/db"
 import type * as Db from "@maple/unitflow/db"
-import * as AsyncResult from "effect/unstable/reactivity/AsyncResult"
+import * as AsyncResult from "effect/reactivity/AsyncResult"
 import { describe, expect, it } from "vitest"
 import type { DashboardRow } from "@/lib/collections/dashboards"
 import { buildList, deriveDashboardsList } from "./dashboards-list-model"

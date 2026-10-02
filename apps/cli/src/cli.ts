@@ -1,5 +1,5 @@
-import * as Command from "effect/unstable/cli/Command"
-import * as Flag from "effect/unstable/cli/Flag"
+import * as Command from "effect/cli/Command"
+import * as Flag from "effect/cli/Flag"
 import { services, diagnose, serviceMap, topOps } from "./commands/services"
 import { traces, trace, slowTraces } from "./commands/traces"
 import { errors, error } from "./commands/errors"

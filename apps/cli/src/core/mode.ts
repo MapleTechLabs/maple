@@ -1,6 +1,6 @@
 import { Context, Duration, Effect, Layer, Option, Predicate, Redacted, Schema } from "effect"
 import { FileSystem } from "effect/FileSystem"
-import { HttpClient, HttpClientRequest } from "effect/unstable/http"
+import { HttpClient, HttpClientRequest } from "effect/http"
 import * as os from "node:os"
 import * as path from "node:path"
 import { MapleConfig } from "./config"

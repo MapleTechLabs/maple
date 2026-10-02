@@ -25,16 +25,16 @@
  * and the 404 branch cannot be reached. See `statelessMcpServerLayer`.
  */
 import { Cause, Context, Effect, Layer, Predicate, Queue, Scope } from "effect"
-import { McpProtocol, McpServer } from "effect/unstable/ai"
-import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
-import { RpcSerialization, RpcServer } from "effect/unstable/rpc"
+import { McpProtocol, McpServer } from "effect/ai"
+import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { RpcSerialization, RpcServer } from "effect/rpc"
 import {
 	constEof,
 	type FromClientEncoded,
 	type FromServerEncoded,
 	RequestId,
 	type RequestEncoded,
-} from "effect/unstable/rpc/RpcMessage"
+} from "effect/rpc/RpcMessage"
 
 /**
  * JSON-RPC id for the `initialize` this transport synthesises. Namespaced so it

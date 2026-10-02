@@ -8,7 +8,7 @@ import {
 	type AttributeValueItem,
 } from "@maple/query-engine"
 import { Effect, Layer, Schema } from "effect"
-import { HttpClientError } from "effect/unstable/http"
+import { HttpClientError } from "effect/http"
 import { PublicHttpErrorBodySchema, type AnyPublicHttpErrorBody } from "@maple/domain/http"
 import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
 import { MapleInternalAtomClient } from "@/lib/services/common/internal-atom-client"

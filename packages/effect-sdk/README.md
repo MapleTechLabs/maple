@@ -51,7 +51,7 @@ The Workers preset uses a custom flushable tracer + Effect logger — Workers do
 ```typescript
 import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
 import { Layer } from "effect"
-import { HttpRouter } from "effect/unstable/http"
+import { HttpRouter } from "effect/http"
 
 const telemetry = MapleCloudflareSDK.make({
 	serviceName: "my-worker",

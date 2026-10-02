@@ -18,8 +18,8 @@
  * produce the same body, so nothing here is an oracle for whether a given token
  * ever existed.
  */
-import { HttpApiBuilder } from "effect/unstable/httpapi"
-import { HttpServerRequest } from "effect/unstable/http"
+import { HttpApiBuilder } from "effect/http-api"
+import { HttpServerRequest } from "effect/http"
 import {
 	ChartTimeseries,
 	AlertRuleId,

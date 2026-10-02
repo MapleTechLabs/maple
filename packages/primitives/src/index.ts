@@ -1,22 +1,25 @@
 import { Schema } from "effect"
 
-const MapleId = <const Id extends string>(identifier: Id, title: string) =>
+// `Schema.brand` proves the key is one literal; taking its parameter type keeps that check at each call site.
+type BrandKey<Id extends string> = Parameters<typeof Schema.brand<Id>>[0]
+
+const MapleId = <const Id extends string>(identifier: BrandKey<Id>, title: string) =>
 	Schema.String.check(Schema.isMinLength(1), Schema.isTrimmed()).pipe(
-		Schema.brand(identifier),
+		Schema.brand<Id>(identifier),
 		Schema.annotate({ identifier, title }),
 	)
 
-const MapleUuidId = <const Id extends string>(identifier: Id, title: string) =>
+const MapleUuidId = <const Id extends string>(identifier: BrandKey<Id>, title: string) =>
 	Schema.String.check(Schema.isUUID()).pipe(
-		Schema.brand(identifier),
+		Schema.brand<Id>(identifier),
 		Schema.annotate({ identifier, title }),
 	)
 
 // Telemetry dimension primitives are intentionally permissive (no minLength/trim):
 // real OpenTelemetry data legitimately carries empty service namespaces, deployment
 // environments, etc., so a strict check would make response decoding throw on live data.
-const MapleTelemetry = <const Id extends string>(identifier: Id, title: string) =>
-	Schema.String.pipe(Schema.brand(identifier), Schema.annotate({ identifier, title }))
+const MapleTelemetry = <const Id extends string>(identifier: BrandKey<Id>, title: string) =>
+	Schema.String.pipe(Schema.brand<Id>(identifier), Schema.annotate({ identifier, title }))
 
 export const TraceId = MapleId("@maple/TraceId", "Trace ID")
 export type TraceId = Schema.Schema.Type<typeof TraceId>

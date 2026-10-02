@@ -1,4 +1,4 @@
-import { HttpRouter, HttpServerRequest } from "effect/unstable/http"
+import { HttpRouter, HttpServerRequest } from "effect/http"
 import { CurrentTenant, RoleName } from "@maple/domain/http"
 import {
 	AuthorizationV2,
