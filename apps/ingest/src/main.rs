@@ -2490,7 +2490,7 @@ async fn main() {
                 "Shutdown drain deadline hit with WAL backlog remaining"
             );
         }
-        // Even a clean drain runs this: it retires the owner heartbeat, so a
+        // Even a clean drain runs this: it marks the owner retired, so a
         // successor claims anything left instead of waiting out the staleness
         // window. With a backlog it also seals and ships the tail, which is the
         // difference between "replays if this task's storage survives" (it does
