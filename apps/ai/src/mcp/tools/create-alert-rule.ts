@@ -101,9 +101,9 @@ const Parameters = Schema.Struct({
 	minimum_sample_count: P.optionalNumber(
 		"Skip evaluation below this many samples in the window (default: 0). For raw_query it sums the `samples` column; without one each returned row counts as 1, so it gates on buckets, not events.",
 	),
-	consecutive_breaches: P.optionalNumber("Consecutive breaches before alerting (default: 1)"),
-	consecutive_healthy: P.optionalNumber("Consecutive healthy evaluations before resolving (default: 1)"),
-	renotify_interval_minutes: P.optionalNumber("Re-notification interval in minutes (default: 60)"),
+	consecutive_breaches: P.optionalNumber("Consecutive breaches before alerting (default: 2)"),
+	consecutive_healthy: P.optionalNumber("Consecutive healthy evaluations before resolving (default: 2)"),
+	renotify_interval_minutes: P.optionalNumber("Re-notification interval in minutes (default: 30)"),
 	apdex_threshold_ms: P.optionalNumber(
 		"Response time counted as satisfactory, in ms. Required for signal_type=apdex.",
 	),

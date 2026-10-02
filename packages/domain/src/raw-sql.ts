@@ -285,11 +285,18 @@ export const RawSqlText = Schema.String.check(
 })
 
 /**
- * Whether an alert query names a `samples` column. Without one every returned
- * row counts as 1 sample, so a minimum sample count gates on buckets, not events.
+ * Whether an alert query aliases a column `AS samples` (the engine reads that
+ * exact, case-sensitive key). Without one every returned row counts as 1 sample,
+ * so a minimum sample count gates on buckets, not events.
  */
-export const rawAlertSqlSelectsSamples = (sql: string): boolean =>
-	/\bsamples\b/i.test(maskLiteralsAndComments(sql))
+export const rawAlertSqlSelectsSamples = (sql: string): boolean => {
+	// Masking keeps offsets (a quoted alias becomes spaces), so read the alias from the original text.
+	for (const match of maskLiteralsAndComments(sql).matchAll(/\bAS\s/gi)) {
+		const alias = sql.slice(match.index + match[0].length).trimStart()
+		if (/^(?:samples|`samples`|"samples")(?![A-Za-z0-9_])/.test(alias)) return true
+	}
+	return false
+}
 
 /** The warning to show when a raw-SQL rule's minimum sample count is likely counting rows. */
 export const rawAlertSampleCountWarning = (sql: string, minimumSampleCount: number): string | null =>

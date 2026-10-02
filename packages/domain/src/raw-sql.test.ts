@@ -181,6 +181,16 @@ describe("rawAlertSampleCountWarning", () => {
 		expect(rawAlertSampleCountWarning(noSamples, 0)).toBeNull()
 	})
 
+	it("accepts a quoted alias and rejects one the engine would not read", () => {
+		const quoted = (alias: string) =>
+			`SELECT count() AS value, count() AS ${alias} FROM traces WHERE $__orgFilter AND $__timeFilter(Timestamp)`
+		expect(rawAlertSampleCountWarning(quoted("`samples`"), 10)).toBeNull()
+		expect(rawAlertSampleCountWarning(quoted('"samples"'), 10)).toBeNull()
+		expect(rawAlertSampleCountWarning(quoted("Samples"), 10)).not.toBeNull()
+		expect(rawAlertSampleCountWarning(quoted("samples_total"), 10)).not.toBeNull()
+		expect(rawAlertSampleCountWarning(`${noSamples} AND t.samples > 0`, 10)).not.toBeNull()
+	})
+
 	it("ignores samples mentioned only in a comment or string", () => {
 		expect(rawAlertSampleCountWarning(`${noSamples} -- samples`, 10)).not.toBeNull()
 		expect(
