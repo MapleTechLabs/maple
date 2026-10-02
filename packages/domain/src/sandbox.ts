@@ -95,7 +95,7 @@ const BoundedMessage = Schema.String.check(Schema.isMaxLength(4 * 1024))
  * checkout's git config immediately afterwards, so no token is left on disk.
  */
 /** A commit, as the only thing the sandbox will check out. */
-export const SandboxCommitSha = Schema.String.check(Schema.isPattern(/^[0-9a-f]{40}$/))
+export const SandboxCommitSha = Schema.String.check(Schema.isPattern(/^[0-9a-f]{40}$/u))
 
 /**
  * A checkout-relative directory. Validated here as well as at the api's own

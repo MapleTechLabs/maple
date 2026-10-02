@@ -44,7 +44,7 @@ export type VcsBranchId = Schema.Schema.Type<typeof VcsBranchId>
  * (40 hex = git's SHA-1 object format; git's experimental SHA-256 object format
  * — 64 hex — is a known, currently-unused limitation across every git host.)
  */
-const GitCommitShaBrand = Schema.String.check(Schema.isPattern(/^[0-9a-f]{40}$/)).pipe(
+const GitCommitShaBrand = Schema.String.check(Schema.isPattern(/^[0-9a-f]{40}$/u)).pipe(
 	Schema.brand("@maple/GitCommitSha"),
 )
 export const GitCommitSha = Schema.String.pipe(

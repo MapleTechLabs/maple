@@ -81,7 +81,7 @@ const IsoDateTime = Schema.String.check(
 const NonNegativeInt = Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0))
 /** Rows per UTC day for each raw table, with the table's TTL in days, measured on `countedOn`. */
 const RetainedDaysSchema = Schema.Struct({
-	countedOn: Schema.String.check(Schema.isPattern(/^\d{4}-\d{2}-\d{2}$/)),
+	countedOn: Schema.String.check(Schema.isPattern(/^\d{4}-\d{2}-\d{2}$/u)),
 	tables: Schema.Record(
 		Schema.String,
 		Schema.Struct({
@@ -136,7 +136,7 @@ const CheckpointManifestSchema = Schema.Union([
 		...CheckpointManifestFields,
 		controlRelativePath: Schema.String,
 		controlBytes: NonNegativeInt,
-		controlSha256: Schema.String.check(Schema.isPattern(/^[0-9a-f]{64}$/)),
+		controlSha256: Schema.String.check(Schema.isPattern(/^[0-9a-f]{64}$/u)),
 		controlValidation: EventingControlSnapshotValidationSchema,
 	}),
 ])

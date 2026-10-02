@@ -31,7 +31,7 @@ const PageLimit = Schema.NumberFromString.check(
 	Schema.isBetween({ minimum: 1, maximum: 200 }),
 )
 /** `<createdAtMs>_<id>` of the last row on the previous page. */
-const PageCursor = Schema.String.check(Schema.isPattern(/^\d+_[0-9a-zA-Z-]+$/))
+const PageCursor = Schema.String.check(Schema.isPattern(/^\d+_[0-9a-zA-Z-]+$/u))
 const AuthorLogin = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(100))
 
 const filterFields = {

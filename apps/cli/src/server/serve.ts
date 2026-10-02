@@ -38,7 +38,12 @@ import {
 	decodeTraceRequest,
 	encodeExportResponse,
 } from "./otlp/proto"
-import { CURRENT_LOCAL_SCHEMA, LOCAL_SCHEMA_MANIFEST, LOCAL_SCHEMA_SQL, SCHEMA_FINGERPRINT } from "./schema-identity"
+import {
+	CURRENT_LOCAL_SCHEMA,
+	LOCAL_SCHEMA_MANIFEST,
+	LOCAL_SCHEMA_SQL,
+	SCHEMA_FINGERPRINT,
+} from "./schema-identity"
 import { hasSubject, resumePendingDelete, runScopedDelete, ScopedDeleteRequest } from "./scoped-delete"
 import { assertCurrentPhysicalSchema } from "./schema-physical"
 import {
@@ -913,7 +918,7 @@ const handleRetirement = async (
 	const decoded = Schema.decodeUnknownResult(
 		Schema.Struct({
 			archiveDir: Schema.NonEmptyString,
-			rangeDate: Schema.String.check(Schema.isPattern(/^\d{4}-\d{2}-\d{2}$/)),
+			rangeDate: Schema.String.check(Schema.isPattern(/^\d{4}-\d{2}-\d{2}$/u)),
 			sealingLagHours: Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0)),
 		}),
 		{ onExcessProperty: "error" },
@@ -1115,7 +1120,7 @@ const recoverEventConsumerFailure = <R>(
 		),
 	)
 
-const ConsumerIdSchema = Schema.String.check(Schema.isPattern(/^[a-z][a-z0-9._-]{0,63}$/))
+const ConsumerIdSchema = Schema.String.check(Schema.isPattern(/^[a-z][a-z0-9._-]{0,63}$/u))
 
 /** Decodes a bounded consumer body, then runs the store call under ordinary admission. */
 const consumerRequest = <A, S extends Schema.Top & { readonly DecodingServices: never }>(
@@ -1218,7 +1223,7 @@ const handleConsumerAcknowledgement = (
 			req,
 			Schema.Struct({
 				consumerId: ConsumerIdSchema,
-				leaseToken: Schema.String.check(Schema.isPattern(/^[0-9a-f]{64}$/)),
+				leaseToken: Schema.String.check(Schema.isPattern(/^[0-9a-f]{64}$/u)),
 				throughSequence: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)),
 			}),
 			"invalid event consumer acknowledgement fields",
@@ -1616,7 +1621,12 @@ export const startServer = (
 					),
 				),
 		)
-		const status: ServerStatus = { url: "", dataDir: resolve(options.dataDir), lastIngestAtMs: null, lastDeleteAtMs: null }
+		const status: ServerStatus = {
+			url: "",
+			dataDir: resolve(options.dataDir),
+			lastIngestAtMs: null,
+			lastDeleteAtMs: null,
+		}
 		const server = yield* Effect.acquireRelease(
 			Effect.try({
 				try: () =>

@@ -43,7 +43,7 @@ const BOT_SCOPE = "bot"
  * mints is one, and checking it here means a value that is not an id fails where
  * it is diagnosable rather than one the API silently never matches.
  */
-const Snowflake = Schema.String.check(Schema.isPattern(/^\d{17,20}$/))
+const Snowflake = Schema.String.check(Schema.isPattern(/^\d{17,20}$/u))
 
 /**
  * The extended token response Discord returns for a `bot` authorization: the

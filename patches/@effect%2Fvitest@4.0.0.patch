@@ -1,5 +1,5 @@
 diff --git a/dist/internal/internal.js b/dist/internal/internal.js
-index 7138319..0fdd563 100644
+index 7138319..00315cc 100644
 --- a/dist/internal/internal.js
 +++ b/dist/internal/internal.js
 @@ -13,7 +13,8 @@ import * as Scope from "effect/Scope";
@@ -22,8 +22,30 @@ index 7138319..0fdd563 100644
      // Vitest stops awaiting the test promise once the signal aborts (timeout or
      // cancellation), so only then add a hook that waits for the finalizers.
      // Registering it unconditionally would change the teardown of every test.
+@@ -105,15 +107,19 @@ const makeTester = (mapEffect, it) => {
+   const register = test => (name, self, timeout) => test(name, testOptions(timeout), withFixturesOf(self, ctx => run(ctx, [ctx], self)));
+   const each = cases => (name, self, timeout) => it.for(cases)(name, testOptions(timeout), withFixturesOf(self, (args, ctx) => run(ctx, [args, ctx], self).then(constVoid)));
+   const prop = (name, arbitraries, self, timeout) => registerProp(it, name, arbitraries, (values, ctx) => Effect.mapEager(mapEffect(Effect.suspend(() => self(values, ctx))), value => value !== false), timeout);
+-  return Object.assign(register(it), {
++  const tester = Object.assign(register(it), {
+     skip: register(it.skip),
+     skipIf: condition => register(it.skipIf(condition)),
+     runIf: condition => register(it.runIf(condition)),
+-    only: register(it.only),
+     each,
+     fails: register(it.fails),
+     prop
+   });
++  // Patched (maple): `bun test` throws on any `it.only` access under CI, so resolve it on use.
++  return Object.defineProperty(tester, "only", {
++    get: () => register(it.only),
++    enumerable: true
++  });
+ };
+ const makeProp = it => (name, arbitraries, self, timeout) => registerProp(it, name, arbitraries, (values, ctx) => self(values, ctx) !== false, timeout);
+ const makeLayer = it => (layer_, options) => (...args) => {
 diff --git a/src/internal/internal.ts b/src/internal/internal.ts
-index b43385b..e3974e6 100644
+index b43385b..90af746 100644
 --- a/src/internal/internal.ts
 +++ b/src/internal/internal.ts
 @@ -17,7 +17,8 @@ import * as TestConsole from "effect/testing/TestConsole"
@@ -46,3 +68,25 @@ index b43385b..e3974e6 100644
      // Vitest stops awaiting the test promise once the signal aborts (timeout or
      // cancellation), so only then add a hook that waits for the finalizers.
      // Registering it unconditionally would change the teardown of every test.
+@@ -220,15 +222,19 @@ const makeTester = <R, ExtraContext>(
+       timeout
+     )
+ 
+-  return Object.assign(register(it), {
++  const tester = Object.assign(register(it), {
+     skip: register(it.skip),
+     skipIf: (condition: unknown) => register(it.skipIf(condition)),
+     runIf: (condition: unknown) => register(it.runIf(condition)),
+-    only: register(it.only),
+     each,
+     fails: register(it.fails),
+     prop
+   })
++  // Patched (maple): `bun test` throws on any `it.only` access under CI, so resolve it on use.
++  return Object.defineProperty(tester, "only", {
++    get: () => register(it.only),
++    enumerable: true
++  }) as typeof tester & { readonly only: ReturnType<typeof register> }
+ }
+ 
+ const makeProp =

@@ -2971,9 +2971,9 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						)
 
 				const selfHealOrgIds = Arr.dedupe(Arr.map(selfHeal, (t) => t.orgId))
-				// One pass: `partition` returns [excluded, satisfying], so the `Result`
-				// failure arm carries the ungrouped ids and the success arm the grouped.
-				const [ungroupedRuleIds, groupedRuleIds] = Arr.partition(selfHeal, (t) =>
+				// One pass: since Effect 4.0.0 `partition` returns [passes, fails], so the
+				// `Result` success arm carries the grouped ids and the failure arm the ungrouped.
+				const [groupedRuleIds, ungroupedRuleIds] = Arr.partition(selfHeal, (t) =>
 					t.grouped ? Result.succeed(t.ruleId) : Result.fail(t.ruleId),
 				)
 

@@ -400,7 +400,11 @@ describe("MapleApiV2 OpenAPI", () => {
 		expect(withSecret.properties.txid.$ref).toBe("#/components/schemas/_maple_PostgresTransactionId")
 		expect(schemas["_maple_PostgresTransactionId"].allOf).toEqual(
 			expect.arrayContaining([
-				expect.objectContaining({ description: expect.stringContaining("reconciliation") }),
+				expect.objectContaining({
+					description: expect.stringContaining("reconciliation"),
+					// Exported only because the regex carries `u`; a plain one is dropped from the spec.
+					pattern: "^\\d+$",
+				}),
 			]),
 		)
 
