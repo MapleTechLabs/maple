@@ -1934,6 +1934,9 @@ impl ShardedWal {
                 }
             };
             let mut recovered_frames = 0usize;
+            // Segments still in the bucket after this pass. Any at all keeps the
+            // owner discoverable so a later boot retries them.
+            let mut left_behind = 0usize;
             let mut keys = Vec::with_capacity(segments.len());
             for segment in segments {
                 let Some(lane) = Self::lane_for_key(&segment.lane_key, cfg) else {
@@ -1942,6 +1945,7 @@ impl ShardedWal {
                         lane_key = segment.lane_key,
                         "Skipping an orphaned WAL segment for an unknown lane"
                     );
+                    left_behind += 1;
                     continue;
                 };
                 let frames = decode_segment_frames(&segment.bytes);
@@ -1968,10 +1972,14 @@ impl ShardedWal {
                 }
                 if committed {
                     keys.push(segment.key);
+                } else {
+                    left_behind += 1;
                 }
             }
             if recovered_frames == 0 && keys.is_empty() {
-                drop(store.release_owner(&owner).await);
+                if left_behind == 0 {
+                    drop(store.release_owner(&owner).await);
+                }
                 continue;
             }
             // Sealed and re-shipped under our own owner id *before* the source
@@ -1981,9 +1989,16 @@ impl ShardedWal {
             for key in keys {
                 if let Err(error) = store.release_key(&key).await {
                     warn!(owner, key, error = %error, "Failed to delete a recovered WAL segment");
+                    left_behind += 1;
                 }
             }
-            if let Err(error) = store.release_owner(&owner).await {
+            if left_behind > 0 {
+                warn!(
+                    owner,
+                    left_behind,
+                    "Keeping a WAL owner so a later boot retries its remaining segments"
+                );
+            } else if let Err(error) = store.release_owner(&owner).await {
                 warn!(owner, error = %error, "Failed to retire a recovered WAL owner");
             }
             metrics::wal_frames_recovered(recovered_frames as u64);
@@ -7423,6 +7438,48 @@ mod tests {
         assert!(
             keys.iter().all(|key| !key.contains(&retired)),
             "the retired owner's segments and markers are cleaned up: {keys:?}"
+        );
+
+        drop(std::fs::remove_dir_all(old_dir));
+        drop(std::fs::remove_dir_all(new_dir));
+    }
+
+    #[tokio::test]
+    async fn an_owner_with_unrecovered_segments_stays_claimable() {
+        // Releasing the owner after a partial recovery dropped its last discovery
+        // path, so the segments it still held were never retried.
+        let (endpoint, bucket) = fake_s3::spawn("maple-wal-test").await;
+        let frame = wal_test_frame(64);
+
+        let old_dir = unique_test_dir("wal-partial-owner");
+        std::fs::create_dir_all(&old_dir).unwrap();
+        let old_cfg = segmented_cfg(old_dir.clone(), 64 * 1024, WAL_SEGMENT_MAX_BYTES);
+        let old_wal = ShardedWal::open(&old_cfg).expect("open WAL");
+        let old_store = test_wal_store(&endpoint);
+        old_store.heartbeat().await.expect("heartbeat");
+        old_wal.append(0, &frame).await.expect("append");
+        assert!(old_wal.flush_segments_to(&old_store).await > 0);
+        // A lane this binary cannot place, so recovery has to leave it behind.
+        old_store
+            .put_segment("shard-000-unknown", 0, b"unplaceable".to_vec())
+            .await
+            .expect("put unknown-lane segment");
+        old_store.retire().await.expect("retire");
+        let retired = old_store.owner().to_owned();
+
+        let new_dir = unique_test_dir("wal-partial-successor");
+        std::fs::create_dir_all(&new_dir).unwrap();
+        let new_cfg = segmented_cfg(new_dir.clone(), 64 * 1024, WAL_SEGMENT_MAX_BYTES);
+        let new_wal = ShardedWal::open(&new_cfg).expect("open WAL");
+        new_wal
+            .recover_orphans(&new_cfg, &test_wal_store(&endpoint))
+            .await;
+
+        assert_eq!(new_wal.replay(0).await.expect("replay").len(), 1);
+        let keys = bucket.keys();
+        assert!(
+            keys.iter().any(|key| key.ends_with(&format!("/retired/{retired}"))),
+            "the retired marker survives while a segment is left: {keys:?}"
         );
 
         drop(std::fs::remove_dir_all(old_dir));
