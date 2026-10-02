@@ -314,6 +314,23 @@ describe("cleanErrorMessage", () => {
 		expect(cleaned).toBe("Request failed with status 503")
 	})
 
+	it("keeps comparison operators in echoed SQL across UNION branches", () => {
+		const branch = (t: string) =>
+			`SELECT count() FROM ${t} WHERE TimeUnix >= toDateTime('2026-10-01 12:00:00') AND TimeUnix <= toDateTime('2026-10-01 12:10:00')`
+		const sql = `${branch("metrics_histogram")} UNION ALL ${branch("metrics_sum")} UNION ALL ${branch("metrics_gauge")} AND a < 5 AND b > 3`
+		const message = `Code: 47. DB::Exception: Unknown expression identifier 'n' in scope ${sql}. (UNKNOWN_IDENTIFIER)`
+		const cleaned = cleanErrorMessage(message)
+		expect(cleaned).toBe(message)
+		expect(cleaned.match(/TimeUnix <= /g)).toHaveLength(3)
+		expect(cleaned.match(/TimeUnix >= /g)).toHaveLength(3)
+	})
+
+	it("strips inline HTML tags outside a full page", () => {
+		expect(cleanErrorMessage("Bad gateway <b>upstream</b> <p class=\"x\">down</p>")).toBe(
+			"Bad gateway upstream down",
+		)
+	})
+
 	it("trims a trailing colon", () => {
 		expect(cleanErrorMessage("Request failed with status 500:")).toBe("Request failed with status 500")
 	})
