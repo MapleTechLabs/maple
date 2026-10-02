@@ -166,17 +166,28 @@ const ALL = "all"
 
 /**
  * Repository, author and window. The repositories are the GitHub installation's; the authors are
- * whoever opened a reviewed pull request in the window, which the caller already has.
+ * whoever opened a reviewed pull request in the window and repository, read without the author
+ * filter so picking one never empties the list. On Analytics, with no author picked, it is the
+ * page's own query.
  */
 export function CodeReviewFilters({
 	search,
-	authors,
+	window,
 	onChange,
 }: {
 	search: CodeReviewSearch
-	authors: ReadonlyArray<string>
+	/** The resolved window, epoch ms. */
+	window: { readonly startTime: number; readonly endTime: number }
 	onChange: (patch: Partial<CodeReviewSearch> & { timePreset?: string }) => void
 }) {
+	const authorsResult = useAtomValue(
+		retainedQuery("codeReview", "analytics", {
+			query: { ...window, repositoryId: search.repo, author: undefined },
+		}),
+	)
+	const authors: ReadonlyArray<string> = Result.builder(authorsResult)
+		.onSuccess((analytics) => analytics.authors.map((row) => row.author))
+		.orElse(() => [])
 	const status = useAtomValue(
 		retainedQuery("integrations", "githubStatus", { reactivityKeys: ["githubIntegrationStatus"] }),
 	)

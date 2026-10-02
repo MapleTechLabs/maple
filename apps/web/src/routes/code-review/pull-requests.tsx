@@ -58,12 +58,13 @@ function CodeReviewPullRequestsPage() {
 	const navigate = useNavigate({ from: Route.fullPath })
 	const preset = search.timePreset ?? CODE_REVIEW_DEFAULT_PRESET
 	const { startTime, endTime } = useEffectiveTimeRange(search.startTime, search.endTime, preset)
+	// Named for what it is, not `window`\'s global: the one key every query on the page shares.
+	const window = { startTime: toEpochMs(startTime), endTime: toEpochMs(endTime) }
 	const [limit, setLimit] = useState(PAGE)
 
 	const query = retainedQuery("codeReview", "listReviews", {
 		query: {
-			startTime: toEpochMs(startTime),
-			endTime: toEpochMs(endTime),
+			...window,
 			repositoryId: search.repo,
 			author: search.author,
 			status: search.status,
@@ -79,14 +80,6 @@ function CodeReviewPullRequestsPage() {
 		.orElse(() => false)
 	useIntervalRefresh(refresh, { intervalMs: POLL_MS, enabled: active })
 
-	const authors = Result.builder(result)
-		.onSuccess((response) => [
-			...new Set(
-				response.reviews.flatMap((review) => (review.authorLogin ? [review.authorLogin] : [])),
-			),
-		])
-		.orElse(() => [])
-
 	const onChange = (
 		patch: Partial<CodeReviewSearch> & { status?: Status; review?: typeof search.review },
 	) => {
@@ -99,7 +92,7 @@ function CodeReviewPullRequestsPage() {
 		<CodeReviewLayout
 			active="pull-requests"
 			search={search}
-			toolbar={<CodeReviewFilters search={search} authors={authors} onChange={onChange} />}
+			toolbar={<CodeReviewFilters search={search} window={window} onChange={onChange} />}
 		>
 			<div className="flex items-center justify-between gap-3">
 				<Select

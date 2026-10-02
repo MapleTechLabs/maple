@@ -31,20 +31,18 @@ function CodeReviewAnalyticsPage() {
 	const navigate = useNavigate({ from: Route.fullPath })
 	const preset = search.timePreset ?? CODE_REVIEW_DEFAULT_PRESET
 	const { startTime, endTime } = useEffectiveTimeRange(search.startTime, search.endTime, preset)
+	// Named for what it is, not `window`\'s global: the one key every query on the page shares.
+	const window = { startTime: toEpochMs(startTime), endTime: toEpochMs(endTime) }
 
 	const query = retainedQuery("codeReview", "analytics", {
 		query: {
-			startTime: toEpochMs(startTime),
-			endTime: toEpochMs(endTime),
+			...window,
 			repositoryId: search.repo,
 			author: search.author,
 		},
 	})
 	const result = useAtomValue(query)
 	const refresh = useAtomRefresh(query)
-	const authors = Result.builder(result)
-		.onSuccess((analytics) => analytics.authors.map((row) => row.author))
-		.orElse(() => [])
 
 	const onChange = (patch: Partial<CodeReviewSearch>) =>
 		navigate({ search: (prev) => ({ ...prev, ...patch }) })
@@ -54,7 +52,7 @@ function CodeReviewAnalyticsPage() {
 		<CodeReviewLayout
 			active="analytics"
 			search={search}
-			toolbar={<CodeReviewFilters search={search} authors={authors} onChange={onChange} />}
+			toolbar={<CodeReviewFilters search={search} window={window} onChange={onChange} />}
 		>
 			{Result.builder(result)
 				.onInitial(() => <CodeReviewAnalyticsSkeleton />)
