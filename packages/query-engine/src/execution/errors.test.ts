@@ -326,8 +326,18 @@ describe("cleanErrorMessage", () => {
 	})
 
 	it("strips inline HTML tags outside a full page", () => {
-		expect(cleanErrorMessage("Bad gateway <b>upstream</b> <p class=\"x\">down</p>")).toBe(
+		expect(cleanErrorMessage('Bad gateway <b>upstream</b> <p class="x">down</p>')).toBe(
 			"Bad gateway upstream down",
+		)
+	})
+
+	it("strips a doctype and unquoted attributes but keeps tag-like SQL comparisons", () => {
+		expect(cleanErrorMessage("Request failed with status 503: <!DOCTYPE html>\n<html><head>")).toBe(
+			"Request failed with status 503",
+		)
+		expect(cleanErrorMessage("Bad gateway <p class=x>down</p>")).toBe("Bad gateway down")
+		expect(cleanErrorMessage("Syntax error near WHERE x<b AND y>3")).toBe(
+			"Syntax error near WHERE x<b AND y>3",
 		)
 	})
 
