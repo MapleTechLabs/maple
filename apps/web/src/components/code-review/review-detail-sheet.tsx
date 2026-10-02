@@ -25,6 +25,7 @@ import { ExternalLinkIcon } from "@/components/icons"
 import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
 import { retainedQuery } from "@/lib/services/common/atom-client"
 
+import { AuthorLabel } from "./author-avatar"
 import {
 	CATEGORY_LABELS,
 	FINDING_STATUS_LABELS,
@@ -115,8 +116,13 @@ function ReviewDetailContent({
 				</SheetTitle>
 				<SheetDescription>
 					{review.repositoryFullName}
-					{review.authorLogin ? ` · opened by ${review.authorLogin}` : null} · head{" "}
-					<span className="font-mono">{review.headSha.slice(0, 7)}</span>
+					{review.authorLogin ? (
+						<>
+							{" · opened by "}
+							<AuthorLabel login={review.authorLogin} className="align-middle" />
+						</>
+					) : null}{" "}
+					· head <span className="font-mono">{review.headSha.slice(0, 7)}</span>
 				</SheetDescription>
 				<div className="flex flex-wrap gap-2 pt-1">
 					<LinkButton href={review.url}>Pull request</LinkButton>

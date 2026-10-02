@@ -9,6 +9,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { ArrowRightIcon, ArrowTrendDownIcon, ArrowTrendUpIcon, GithubIcon } from "@/components/icons"
 import { pickTimeRangeSearch } from "@/components/time-range-picker/search"
 
+import { AuthorLabel } from "./author-avatar"
 import type { CodeReviewSearch } from "./code-review-layout"
 import {
 	CATEGORY_LABELS,
@@ -473,7 +474,9 @@ function AuthorsCard({ analytics }: { analytics: CodeReviewAnalytics }) {
 					<tbody>
 						{analytics.authors.map((row) => (
 							<tr key={row.author}>
-								<td className="max-w-0 truncate py-1.5 pr-3">{row.author}</td>
+								<td className="max-w-0 py-1.5 pr-3">
+									<AuthorLabel login={row.author} className="max-w-full" />
+								</td>
 								<td className="py-1.5 text-right tabular-nums">
 									{formatCount(row.pullRequests)}
 								</td>

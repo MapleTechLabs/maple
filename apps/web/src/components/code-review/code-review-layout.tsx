@@ -28,6 +28,8 @@ import { Result, useAtomValue } from "@/lib/effect-atom"
 import { retainedQuery } from "@/lib/services/common/atom-client"
 import { LONG_RANGE_PRESET_OPTIONS } from "@/lib/time-utils"
 
+import { AuthorLabel } from "./author-avatar"
+
 /** Reviews are slow-moving: a month is the window that has something in it. */
 export const CODE_REVIEW_DEFAULT_PRESET = "30d"
 export const CODE_REVIEW_MAX_RANGE_SECONDS = 365 * 24 * 60 * 60
@@ -74,7 +76,7 @@ const TABS = [
 function CodeReviewTabs({ active, search }: { active: CodeReviewTab; search: CodeReviewSearch }) {
 	const carried = { ...pickTimeRangeSearch(search), repo: search.repo, author: search.author }
 	return (
-		<nav className="flex items-center border-b border-border" aria-label="Code review views">
+		<nav className="flex items-center self-end" aria-label="Code review views">
 			{TABS.map(({ tab, to, label, Icon }) => (
 				<Link
 					key={tab}
@@ -123,18 +125,10 @@ export function CodeReviewLayout({
 				/>
 				<DashboardLayout.Body>
 					<DashboardLayout.Content>
-						<DashboardLayout.Sticky>
-							<DashboardLayout.Header
-								title="Code Review"
-								description="Every pull request reviewed by Maple: what it caught, and how it is set up."
-							>
-								{flags.prReview ? toolbar : null}
-							</DashboardLayout.Header>
-						</DashboardLayout.Sticky>
 						<DashboardLayout.Scroll>
 							{!isLoaded ? (
 								<div className="space-y-4">
-									<Skeleton className="h-9 w-80" />
+									<Skeleton className="h-9 w-full" />
 									<Skeleton className="h-28 w-full" />
 									<Skeleton className="h-72 w-full" />
 								</div>
@@ -150,7 +144,10 @@ export function CodeReviewLayout({
 								</Empty>
 							) : (
 								<div className="flex flex-col gap-6 pb-8">
-									<CodeReviewTabs active={active} search={search} />
+									<div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-border">
+										<CodeReviewTabs active={active} search={search} />
+										{toolbar ? <div className="pb-2">{toolbar}</div> : null}
+									</div>
 									{children}
 								</div>
 							)}
@@ -237,7 +234,7 @@ export function CodeReviewFilters({
 					<SelectItem value={ALL}>All authors</SelectItem>
 					{authorOptions.map((author) => (
 						<SelectItem key={author} value={author}>
-							{author}
+							<AuthorLabel login={author} />
 						</SelectItem>
 					))}
 				</SelectContent>

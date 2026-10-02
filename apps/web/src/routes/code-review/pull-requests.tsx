@@ -17,6 +17,7 @@ import {
 	NothingInWindow,
 	type CodeReviewSearch,
 } from "@/components/code-review/code-review-layout"
+import { AuthorLabel } from "@/components/code-review/author-avatar"
 import { ReviewDetailSheet } from "@/components/code-review/review-detail-sheet"
 import { QueryErrorState } from "@/components/common/query-error-state"
 import { CircleCheckIcon, CircleWarningIcon, ClockIcon, LoaderIcon } from "@/components/icons"
@@ -253,7 +254,13 @@ function ReviewTable({
 									<div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
 										<span className="truncate">{review.repositoryFullName}</span>
 										{review.authorLogin ? (
-											<span className="shrink-0">· {review.authorLogin}</span>
+											<>
+												<span className="shrink-0">·</span>
+												<AuthorLabel
+													login={review.authorLogin}
+													className="shrink-0"
+												/>
+											</>
 										) : null}
 										<span className={cn("shrink-0 md:hidden", outcome.tone)}>
 											· {outcome.label}
