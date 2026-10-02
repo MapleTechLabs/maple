@@ -486,7 +486,7 @@
     },
     "lib/effect-router": {
       "name": "@effect-router/core",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "devDependencies": {
         "@effect/atom-react": "catalog:effect",
         "@effect/language-service": "catalog:effect",
@@ -557,7 +557,7 @@
     },
     "packages/alchemy-maple": {
       "name": "@maple-dev/alchemy",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "dependencies": {
         "@maple-dev/effect-sdk": "workspace:*",
       },
