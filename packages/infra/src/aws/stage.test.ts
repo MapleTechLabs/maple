@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { parseMapleStage } from "../cloudflare/stage.ts"
 import {
+	type MapleRegion,
 	parseIngestFleets,
 	parseMapleRegion,
 	resolveAwsRegion,
@@ -10,6 +11,8 @@ import {
 	resolveElectricDbPoolSize,
 	resolveIngestCidrBlock,
 	resolveIngestDesiredCount,
+	resolveIngestEc2InstanceType,
+	resolveIngestEc2TaskSize,
 	resolveIngestNamespaceName,
 	resolveIngestScaling,
 	resolveIngestSelfTraceSampleRatio,
@@ -108,25 +111,63 @@ describe("collector service discovery", () => {
 	})
 
 	it("sizes the collector task with 1 GiB everywhere so the memory limiter can fire", () => {
-		expect(resolveCollectorTaskSize(parseMapleStage("prd"))).toEqual({ cpu: 512, memory: 1024 })
-		expect(resolveCollectorTaskSize(parseMapleStage("pr-12"))).toEqual({ cpu: 256, memory: 1024 })
-		expect(resolveCollectorTaskSize(parseMapleStage("dev-alice"))).toEqual({ cpu: 256, memory: 1024 })
+		expect(resolveCollectorTaskSize(parseMapleStage("prd"), "us")).toEqual({ cpu: 512, memory: 1024 })
+		expect(resolveCollectorTaskSize(parseMapleStage("prd"), "eu")).toEqual({ cpu: 256, memory: 1024 })
+		expect(resolveCollectorTaskSize(parseMapleStage("pr-12"), "us")).toEqual({ cpu: 256, memory: 1024 })
+		expect(resolveCollectorTaskSize(parseMapleStage("dev-alice"), "us")).toEqual({
+			cpu: 256,
+			memory: 1024,
+		})
 	})
 })
 
 describe("resolveIngestScaling", () => {
 	it("autoscales production between the fixed count and a burst ceiling", () => {
-		const scaling = resolveIngestScaling(parseMapleStage("prd"))
-		expect(scaling).toBeDefined()
-		expect(scaling!.min).toBe(resolveIngestDesiredCount(parseMapleStage("prd")))
-		expect(scaling!.max).toBeGreaterThan(scaling!.min)
-		expect(scaling!.cpuUtilization).toBeGreaterThan(0)
-		expect(scaling!.cpuUtilization).toBeLessThan(100)
+		const regions: ReadonlyArray<MapleRegion> = ["us", "eu"]
+		for (const region of regions) {
+			const scaling = resolveIngestScaling(parseMapleStage("prd"), region)
+			expect(scaling).toBeDefined()
+			expect(scaling!.min).toBe(resolveIngestDesiredCount(parseMapleStage("prd"), region))
+			expect(scaling!.max).toBeGreaterThan(scaling!.min)
+			expect(scaling!.cpuUtilization).toBeGreaterThan(0)
+			expect(scaling!.cpuUtilization).toBeLessThan(100)
+		}
+	})
+
+	it("keeps US prd at 2-6 and sizes EU prd to its traffic at 1-3", () => {
+		const policy = { cpuUtilization: 60, scaleInCooldown: "5 minutes", scaleOutCooldown: "60 seconds" }
+		expect(resolveIngestScaling(parseMapleStage("prd"), "us")).toEqual({ min: 2, max: 6, ...policy })
+		expect(resolveIngestScaling(parseMapleStage("prd"), "eu")).toEqual({ min: 1, max: 3, ...policy })
+		expect(resolveIngestDesiredCount(parseMapleStage("prd"), "us")).toBe(2)
+		expect(resolveIngestDesiredCount(parseMapleStage("prd"), "eu")).toBe(1)
 	})
 
 	it("keeps every other stage at a fixed count", () => {
-		expect(resolveIngestScaling(parseMapleStage("pr-12"))).toBeUndefined()
-		expect(resolveIngestScaling(parseMapleStage("dev-alice"))).toBeUndefined()
+		expect(resolveIngestScaling(parseMapleStage("pr-12"), "us")).toBeUndefined()
+		expect(resolveIngestScaling(parseMapleStage("dev-alice"), "us")).toBeUndefined()
+		expect(resolveIngestScaling(parseMapleStage("dev-alice"), "eu")).toBeUndefined()
+		expect(resolveIngestDesiredCount(parseMapleStage("pr-12"), "us")).toBe(1)
+	})
+})
+
+describe("EC2 fleet sizing", () => {
+	it("runs US prd and previews on c7gd.large with the full-host task", () => {
+		for (const stage of ["prd", "pr-12"]) {
+			expect(resolveIngestEc2InstanceType(parseMapleStage(stage), "us")).toBe("c7gd.large")
+			expect(resolveIngestEc2TaskSize(parseMapleStage(stage), "us")).toEqual({
+				cpu: 2048,
+				memory: 3072,
+			})
+		}
+	})
+
+	it("runs EU prd on a c7gd.medium with a task that fits its registered memory", () => {
+		expect(resolveIngestEc2InstanceType(parseMapleStage("prd"), "eu")).toBe("c7gd.medium")
+		expect(resolveIngestEc2TaskSize(parseMapleStage("prd"), "eu")).toEqual({ cpu: 1024, memory: 1536 })
+	})
+
+	it("keeps a non-prd EU stage on the default sizing", () => {
+		expect(resolveIngestEc2InstanceType(parseMapleStage("dev-alice"), "eu")).toBe("c7gd.large")
 	})
 })
 
