@@ -126,7 +126,10 @@ const rowsForSql = (sql: string): ReadonlyArray<Record<string, unknown>> => {
 		return sql.includes("TraceId <") ? rows.slice(1) : rows
 	}
 	if (sql.includes("FROM trace_detail_spans") && sql.includes("AS relationship")) return [hierarchyRow]
-	if (sql.includes("FROM trace_detail_spans") && sql.includes("toJSONString(SpanAttributes)")) {
+	if (
+		sql.includes("FROM trace_detail_spans") &&
+		sql.includes("toJSONString(trace_detail_spans.SpanAttributes)")
+	) {
 		return [
 			{
 				...hierarchyRow,

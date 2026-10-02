@@ -35,12 +35,12 @@ describe("serviceLivenessQuery", () => {
 
 		// The pair is the whole point: a raw collapse with a steady corrected
 		// count is a sampling change, not a traffic change.
-		expect(sql).toContain("sum(SpanCount) AS spanCount")
-		expect(sql).toContain("sum(EstimatedSpanCount) AS estimatedSpanCount")
-		expect(sql).toContain("sum(ErrorCount) AS errorCount")
-		expect(sql).toContain("sum(EstimatedErrorCount) AS estimatedErrorCount")
-		expect(sql).toContain("uniq(Minute) AS minutesWithData")
-		expect(sql).toContain("toString(max(Minute)) AS lastSeen")
+		expect(sql).toContain("sum(service_operations_minutely.SpanCount) AS spanCount")
+		expect(sql).toContain("sum(service_operations_minutely.EstimatedSpanCount) AS estimatedSpanCount")
+		expect(sql).toContain("sum(service_operations_minutely.ErrorCount) AS errorCount")
+		expect(sql).toContain("sum(service_operations_minutely.EstimatedErrorCount) AS estimatedErrorCount")
+		expect(sql).toContain("uniq(service_operations_minutely.Minute) AS minutesWithData")
+		expect(sql).toContain("toString(max(service_operations_minutely.Minute)) AS lastSeen")
 	})
 
 	it("is a group-less single-row aggregate", () => {
@@ -108,7 +108,8 @@ describe("orgTelemetryPulseQuery", () => {
 		expect(sql).toContain("count() AS count")
 		// Stringified so the DateTime (spans) / DateTime64 (logs) branches share a
 		// column type across the UNION.
-		expect(sql).toContain("toString(max(Timestamp)) AS lastSeen")
+		expect(sql).toContain("toString(max(service_overview_spans.Timestamp)) AS lastSeen")
+		expect(sql).toContain("toString(max(logs.Timestamp)) AS lastSeen")
 		expect(sql).toContain("FORMAT JSON")
 	})
 

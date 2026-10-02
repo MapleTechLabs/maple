@@ -91,7 +91,7 @@ describe("tool call population", () => {
 		// span's parent. Left, because a tool span under a workflow node has no
 		// model-bearing parent and must still be counted.
 		expect(sql).toContain(
-			"LEFT JOIN (SELECT\n          TraceId AS TraceId,\n          SpanId AS SpanId,\n          anyIf(Model, Model != '') AS parentModel",
+			"LEFT JOIN (SELECT\n          ai_trace_index.TraceId AS TraceId,\n          ai_trace_index.SpanId AS SpanId,\n          anyIf(ai_trace_index.Model, ai_trace_index.Model != '') AS parentModel",
 		)
 		// One parent row per span, whatever models it was indexed under — a second
 		// row would double the tool call the join matches.
@@ -101,7 +101,7 @@ describe("tool call population", () => {
 		)
 		// Step two: the trace's own model. Inner, because every tool call of the
 		// window belongs to a trace of the window.
-		expect(sql).toContain("anyIf(Model, Model != '') AS traceModel")
+		expect(sql).toContain("anyIf(ai_trace_index.Model, ai_trace_index.Model != '') AS traceModel")
 		expect(sql).toContain("INNER JOIN")
 		expect(sql).toContain(`${MODEL_EXPR} AS modelName`)
 	})
@@ -112,9 +112,9 @@ describe("tool call population", () => {
 		// `max(SessionId)` per trace, because the id sits on the turn-owning span
 		// and every other row of the trace reads ''. Keyed per tool ROW instead,
 		// nearly every tool call would become its own `trace:` session.
-		expect(sql).toContain("max(SessionId) AS rawSessionId")
+		expect(sql).toContain("max(ai_trace_index.SessionId) AS rawSessionId")
 		expect(sql).toContain(`${SESSION_KEY} AS sessionKey`)
-		expect(sql).toContain("uniqExact(sessionKey) AS sessions")
+		expect(sql).toContain("uniqExact(tool_calls.sessionKey) AS sessions")
 	})
 
 	it("counts the sessions list's population in the window's Sessions tile", () => {
@@ -123,7 +123,7 @@ describe("tool call population", () => {
 		// The same per-trace rule the list applies, or the tile counts sessions
 		// the list does not show.
 		expect(sql).toContain(
-			"HAVING countIf((((SessionId != '' OR IsLlmCall = 1) OR IsToolCall = 1) OR AgentName != '')) > 0",
+			"HAVING countIf((((ai_trace_index.SessionId != '' OR ai_trace_index.IsLlmCall = 1) OR ai_trace_index.IsToolCall = 1) OR ai_trace_index.AgentName != '')) > 0",
 		)
 		expect(sql).toContain(") AS window_traces")
 	})
@@ -275,17 +275,17 @@ describe("aiToolsSeriesQuery", () => {
 		// Both picked is a single series, and the tool is what names it.
 		expect(aiToolsSeriesKind({ tool: "search_traces", model: "gpt-5" })).toBe("tool")
 
-		expect(compileUnsafe(aiToolsSeriesQuery(), params).sql).toContain("if(toolName IN (SELECT")
+		expect(compileUnsafe(aiToolsSeriesQuery(), params).sql).toContain("if(tool_calls.toolName IN (SELECT")
 		expect(compileUnsafe(aiToolsSeriesQuery({ tool: "t" }), params).sql).toContain(
-			"if(modelName IN (SELECT",
+			"if(tool_calls.modelName IN (SELECT",
 		)
 	})
 
 	it("buckets by the caller's interval and folds the long tail into one key", () => {
 		const { sql } = compileUnsafe(aiToolsSeriesQuery(), params)
 
-		expect(sql).toContain("toStartOfInterval(ts, INTERVAL 300 SECOND)")
-		expect(sql).toContain(`, toolName, '${AI_TOOLS_OTHER_SERIES_KEY}') AS seriesKey`)
+		expect(sql).toContain("toStartOfInterval(tool_calls.ts, INTERVAL 300 SECOND)")
+		expect(sql).toContain(`, tool_calls.toolName, '${AI_TOOLS_OTHER_SERIES_KEY}') AS seriesKey`)
 		// Ranked, not truncated: the tail is folded so the stack still totals what
 		// the tiles report. The key breaks ties so a series cannot swap in and out
 		// of `other` between two loads of the same window.
@@ -335,7 +335,7 @@ describe("aiToolsTotalsQuery", () => {
 		expect(sql).toContain("Timestamp >= '2026-08-16 00:00:01'")
 		// Quantiles do not merge, which is why the tiles are their own read
 		// rather than a client-side fold of the chart.
-		expect(sql).toContain("quantile(0.95)(durationNs)")
+		expect(sql).toContain("quantile(0.95)(tool_calls_current.durationNs)")
 		// Un-bucketed: one row per branch, the whole window in each.
 		expect(sql).not.toContain("GROUP BY period")
 		expect(sql).not.toContain("toStartOfInterval")
@@ -364,7 +364,9 @@ describe("aiToolsTotalsQuery", () => {
 
 		// A quantile over no rows is NULL, which the row schema refuses — so the
 		// query returns 0 and the tile renders a real number.
-		expect(compiled.sql).toContain("ifNull(ifNotFinite(quantile(0.5)(durationNs), 0), 0) AS p50")
+		expect(compiled.sql).toContain(
+			"ifNull(ifNotFinite(quantile(0.5)(tool_calls_current.durationNs), 0), 0) AS p50",
+		)
 		const rows = decodeRows(compiled, [
 			{
 				period: "previous",
@@ -400,7 +402,7 @@ describe("aiToolsBreakdownsQuery", () => {
 	it("returns the busiest rows, with the last call under each key", () => {
 		const { sql } = compileUnsafe(aiToolsBreakdownsQuery(), params)
 
-		expect(sql).toContain("toString(max(ts)) AS lastSeen")
+		expect(sql).toContain("toString(max(tool_breakdown.ts)) AS lastSeen")
 		expect(sql).toContain("ORDER BY calls DESC, key ASC")
 		expect(sql).toContain(`LIMIT ${AI_TOOLS_BREAKDOWN_LIMIT}`)
 	})
@@ -419,8 +421,8 @@ describe("aiToolsSeriesQuery split", () => {
 		expect(sql).not.toContain("top_series_keys")
 		expect(sql).not.toContain(AI_TOOLS_OTHER_SERIES_KEY)
 		expect(sql).toContain("'' AS seriesKey")
-		expect(sql).toContain("uniqExact(sessionKey) AS sessions")
-		expect(sql).toContain("quantile(0.95)(durationNs)")
+		expect(sql).toContain("uniqExact(tool_calls.sessionKey) AS sessions")
+		expect(sql).toContain("quantile(0.95)(tool_calls.durationNs)")
 	})
 
 	it("still derives the kind when the caller names none", () => {
@@ -437,8 +439,8 @@ describe("aiToolsTotalsQuery empty window", () => {
 		// A non-grouped `min()` over zero rows returns the DateTime default, so
 		// without the guard an empty window claims a first call in 1970 — which
 		// the response contract says is `''`.
-		expect(sql).toContain("if(count() = 0, '', toString(min(ts))) AS firstSeen")
-		expect(sql).toContain("if(count() = 0, '', toString(max(ts))) AS lastSeen")
+		expect(sql).toContain("if(count() = 0, '', toString(min(tool_calls_current.ts))) AS firstSeen")
+		expect(sql).toContain("if(count() = 0, '', toString(max(tool_calls_current.ts))) AS lastSeen")
 	})
 })
 
@@ -479,10 +481,12 @@ describe("the tool detail reads", () => {
 			"coalesce(nullIf(ai_trace_index.FailedToolCallResult, ''), ai_trace_index.StatusMessage) AS failureMessage",
 		)
 		// Aggregates are never aliased to their own input's name.
-		expect(sql).toContain("argMax(callErrorType, ts) AS errorType")
-		expect(sql).toContain("argMax(failureMessage, ts) AS message")
-		expect(sql).toContain("uniqExact(failureMessage) AS variants")
-		expect(sql).toContain("uniqExact(sessionKey) AS sessions")
+		expect(sql).toContain(
+			"argMax(numbered_tool_calls.callErrorType, numbered_tool_calls.ts) AS errorType",
+		)
+		expect(sql).toContain("argMax(numbered_tool_calls.failureMessage, numbered_tool_calls.ts) AS message")
+		expect(sql).toContain("uniqExact(numbered_tool_calls.failureMessage) AS variants")
+		expect(sql).toContain("uniqExact(numbered_tool_calls.sessionKey) AS sessions")
 		expect(sql).toContain("GROUP BY fingerprint")
 		expect(sql).toContain("ORDER BY calls DESC, fingerprint ASC")
 	})
@@ -494,16 +498,18 @@ describe("the tool detail reads", () => {
 
 		expect(sql).not.toContain("ai_trace_index.IsError = 1")
 		expect(sql).toContain("row_number() OVER (ORDER BY ts DESC, spanId DESC) - 1 AS newerCalls")
-		expect(sql).toContain("min(newerCalls) AS callsSince")
+		expect(sql).toContain("min(numbered_tool_calls.newerCalls) AS callsSince")
 		// The failure filter is the outer level's, above the numbering.
-		expect(sql).toContain("WHERE isError = 1")
-		expect(sql.indexOf("WHERE isError = 1")).toBeGreaterThan(sql.indexOf("row_number()"))
+		expect(sql).toContain("WHERE numbered_tool_calls.isError = 1")
+		expect(sql.indexOf("WHERE numbered_tool_calls.isError = 1")).toBeGreaterThan(
+			sql.indexOf("row_number()"),
+		)
 	})
 
 	it("counts each group's failures per bucket of the caller's interval", () => {
 		const { sql } = compileUnsafe(aiToolErrorsQuery(errorSelection), params)
 
-		expect(sql).toContain("toStartOfInterval(ts, INTERVAL 300 SECOND)")
+		expect(sql).toContain("toStartOfInterval(tool_calls.ts, INTERVAL 300 SECOND)")
 		expect(sql).toContain("sumMap(map(bucket, toUInt64(1))) AS trend")
 	})
 
@@ -539,7 +545,7 @@ describe("the tool detail reads", () => {
 		)
 
 		expect(sql).toContain(
-			"(ts < '2026-08-18 01:00:00.000000000' OR (ts = '2026-08-18 01:00:00.000000000' AND spanId < 's9'))",
+			"(failing_tool_calls.ts < '2026-08-18 01:00:00.000000000' OR (failing_tool_calls.ts = '2026-08-18 01:00:00.000000000' AND failing_tool_calls.spanId < 's9'))",
 		)
 	})
 
@@ -833,7 +839,9 @@ describe("aiToolDescriptionQuery", () => {
 	})
 
 	it("keeps the latest description a call actually stamped", () => {
-		expect(compiled.sql).toContain("argMax(ToolDescription, Timestamp) AS description")
+		expect(compiled.sql).toContain(
+			"argMax(ai_trace_index.ToolDescription, ai_trace_index.Timestamp) AS description",
+		)
 		// Rows materialized before migration 0032 read '', and so does a call
 		// whose framework stamps nothing — without this the `argMax` would answer
 		// '' for a tool whose most recent call is one of them.

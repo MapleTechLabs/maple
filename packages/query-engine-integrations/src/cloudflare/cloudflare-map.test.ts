@@ -14,8 +14,10 @@ describe("cloudflareServiceCountersSQL", () => {
 		expect(sql).toContain("FROM metrics_sum")
 		expect(sql).toContain("OrgId = 'org_1'")
 		expect(sql).toContain("MetricName IN ('cloudflare.worker.requests', 'cloudflare.worker.errors')")
-		expect(sql).toContain("sumIf(Value, MetricName = 'cloudflare.worker.requests')")
-		expect(sql).toContain("sumIf(Value, MetricName = 'cloudflare.worker.errors')")
+		expect(sql).toContain(
+			"sumIf(metrics_sum.Value, metrics_sum.MetricName = 'cloudflare.worker.requests')",
+		)
+		expect(sql).toContain("sumIf(metrics_sum.Value, metrics_sum.MetricName = 'cloudflare.worker.errors')")
 		// Zone analytics are intentionally excluded — CF data only overlays onto
 		// instrumented services, and zones never match one.
 		expect(sql).not.toContain("cloudflare.http.requests")
