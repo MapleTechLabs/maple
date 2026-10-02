@@ -653,6 +653,9 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				}))
 			})
 
+			/** What an empty result observes: the engine's no-data fallback. */
+			const EMPTY_OBSERVATION = { value: null, sampleCount: 0, hasData: false } as const
+
 			const applyEvaluationLogic = (
 				rule: NormalizedRule,
 				obs: Pick<GroupedAlertObservation, "value" | "sampleCount" | "hasData">,
@@ -1051,31 +1054,16 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							Effect.gen(function* () {
 								const observations = yield* evaluateRule(orgId, rule)
 								return (
-									observations[0]?.evaluation ?? {
-										status: "skipped" as const,
-										value: null,
-										sampleCount: 0,
-										threshold: normalized.threshold,
-										thresholdUpper: normalized.thresholdUpper,
-										comparator: normalized.comparator,
-										reason: "No data",
-										skipReason: "no_data" as const,
-									}
+									observations[0]?.evaluation ??
+									applyEvaluationLogic(rule, EMPTY_OBSERVATION)
 								)
 							}),
 						{ concurrency: 5 },
 					)
-					evaluation = results.find((r) => r.status === "breached") ??
-						results[0] ?? {
-							status: "skipped" as const,
-							value: null,
-							sampleCount: 0,
-							threshold: normalized.threshold,
-							thresholdUpper: normalized.thresholdUpper,
-							comparator: normalized.comparator,
-							reason: "No data",
-							skipReason: "no_data" as const,
-						}
+					evaluation =
+						results.find((r) => r.status === "breached") ??
+						results[0] ??
+						applyEvaluationLogic(normalized, EMPTY_OBSERVATION)
 				} else {
 					// Uniform grouped/ungrouped path — mirrors runSchedulerTick: the
 					// compiled plan decides groupedness, and a breaching group (if any)
@@ -1086,17 +1074,10 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						? Arr.filter(allResults, (r) => !HashSet.has(excludeSet, r.groupKey))
 						: allResults
 					const breached = results.find((r) => r.evaluation.status === "breached")
-					evaluation = breached?.evaluation ??
-						results[0]?.evaluation ?? {
-							status: "skipped" as const,
-							value: null,
-							sampleCount: 0,
-							threshold: normalized.threshold,
-							thresholdUpper: normalized.thresholdUpper,
-							comparator: normalized.comparator,
-							reason: "No data",
-							skipReason: "no_data" as const,
-						}
+					evaluation =
+						breached?.evaluation ??
+						results[0]?.evaluation ??
+						applyEvaluationLogic(normalized, EMPTY_OBSERVATION)
 				}
 
 				if (sendNotification) {
@@ -1322,15 +1303,48 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				}
 				const iso = (ms: number) => decodeIsoDateTimeStringSync(new Date(ms).toISOString())
 
+				// The scheduler never evaluates a group that is missing from a tick; with
+				// alert-on-no-data it breaches only when the whole result is empty, under the
+				// engine's ungrouped key. Model both so per-group gaps do not read as breaches.
+				const groupedAlert = isGroupedPlan(plan) && plan.noDataBehavior === "alert"
+				const skipGapsRule: NormalizedRule = {
+					...normalized,
+					compiledPlan: { ...plan, noDataBehavior: "skip" },
+				}
+				const emptyKey = toStorageGroupKey(plan, ENGINE_UNGROUPED_GROUP_KEY)
+				if (groupedAlert && !obsByGroup.has(emptyKey)) {
+					const emptyTicks = pointBuckets.filter(
+						(bucketMs) =>
+							![...obsByGroup.values()].some(
+								(buckets) => buckets.get(bucketMs)?.hasData === true,
+							),
+					)
+					if (emptyTicks.length > 0) obsByGroup.set(emptyKey, new Map())
+				}
+
 				const series: AlertRulePreviewSeries[] = []
 				const wouldFire: AlertRulePreviewFiringSpan[] = []
 				for (const [groupKey, buckets] of obsByGroup) {
+					const isEmptyResultSeries = groupedAlert && groupKey === emptyKey && buckets.size === 0
+					const tickHasData = (bucketMs: number) =>
+						[...obsByGroup.values()].some((other) => other.get(bucketMs)?.hasData === true)
 					// Every window in the grid, judged by the same `applyEvaluationLogic`
 					// the scheduler runs per tick — no-data windows included, filled from
 					// `NO_DATA` so a gap is an evaluated skip rather than a missing point.
 					const evaluations = pointBuckets.map((bucketMs) => {
 						const obs = buckets.get(bucketMs) ?? NO_DATA
-						const evaluation = applyEvaluationLogic(normalized, obs)
+						const evaluation: EvaluatedRule = isEmptyResultSeries
+							? tickHasData(bucketMs)
+								? // Groups reported this tick: the empty-result incident resolves.
+									{
+										...applyEvaluationLogic(skipGapsRule, NO_DATA),
+										status: "healthy",
+										skipReason: undefined,
+									}
+								: applyEvaluationLogic(normalized, NO_DATA)
+							: groupedAlert && !buckets.has(bucketMs)
+								? applyEvaluationLogic(skipGapsRule, NO_DATA)
+								: applyEvaluationLogic(normalized, obs)
 						return {
 							bucketMs,
 							status: evaluation.status,
@@ -2388,6 +2402,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			const ruleStructureChanged = (oldRule: NormalizedRule, newRule: NormalizedRule): boolean => {
 				if (!groupByEqual(effectiveGroupByKeys(oldRule), effectiveGroupByKeys(newRule))) return true
 				if (oldRule.signalType !== newRule.signalType) return true
+				// An incident opened on an empty window cannot resolve once empty windows are skipped again.
+				if (oldRule.compiledPlan.noDataBehavior !== newRule.compiledPlan.noDataBehavior) return true
 				const mode = (r: NormalizedRule) =>
 					isGroupedPlan(r.compiledPlan) ? "grouped" : r.serviceNames.length > 1 ? "multi" : "single"
 				return mode(oldRule) !== mode(newRule)

@@ -102,7 +102,7 @@ export const CreateAlertRuleParameters = Schema.Struct({
 		"Skip evaluation below this many samples in the window (default: 0). For raw_query it sums the `samples` column; without one each returned row counts as 1, so it gates on buckets, not events.",
 	),
 	alert_on_no_data: P.optionalFlag(
-		"Count a window with no data as a breach, so a rule whose query stops matching opens an incident instead of going quiet (default false: such windows are skipped).",
+		"Count a window with no data as a breach, so a rule whose query stops matching opens an incident instead of going quiet (default false: such windows are skipped). Not supported with group_by.",
 	),
 	consecutive_breaches: P.optionalNumber("Consecutive breaches before alerting (default: 2)"),
 	consecutive_healthy: P.optionalNumber("Consecutive healthy evaluations before resolving (default: 2)"),

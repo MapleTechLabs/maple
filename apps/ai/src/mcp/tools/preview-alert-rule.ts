@@ -95,7 +95,7 @@ const previewWarnings = (
 	const warnings: Array<string> = []
 	if (windows > 0 && noData === windows) {
 		warnings.push(
-			`Every window had no data: the query matched nothing in this range. Saved as is, every check would be skipped, which reads as quiet, not healthy. Check the filters${clamped ? "; the range was already clamped to the preview cap, so try a longer window_minutes rather than an earlier start_time" : ", or widen start_time"}.`,
+			`Every window had no data: the query matched nothing in this range. Saved as is, every check would be skipped, which reads as quiet, not healthy (alert_on_no_data makes it fire instead). Check the filters${clamped ? "; the range was already clamped to the preview cap, so try a longer window_minutes rather than an earlier start_time" : ", or widen start_time"}.`,
 		)
 	} else if (windows > 0 && belowMin === windows) {
 		warnings.push(

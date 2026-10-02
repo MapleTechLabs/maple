@@ -52,7 +52,9 @@ export const UpdateAlertRuleParameters = Schema.Struct({
 	minimum_sample_count: P.optionalNumber(
 		"Skip evaluation below this many samples in the window. For raw_query it sums the `samples` column; without one each returned row counts as 1.",
 	),
-	alert_on_no_data: P.optionalFlag("Count a window with no data as a breach instead of skipping it"),
+	alert_on_no_data: P.optionalFlag(
+		"Count a window with no data as a breach instead of skipping it. Not supported with group_by.",
+	),
 	consecutive_breaches: P.optionalNumber("Consecutive breaches before alerting"),
 	consecutive_healthy: P.optionalNumber("Consecutive healthy evaluations before resolving"),
 	renotify_interval_minutes: P.optionalNumber("Re-notification interval in minutes"),

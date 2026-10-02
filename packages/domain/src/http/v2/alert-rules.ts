@@ -322,7 +322,7 @@ const createParamsFields = {
 	alert_on_no_data: Schema.optionalKey(
 		Schema.Boolean.annotate({
 			description:
-				"Count a window with no data (e.g. a raw query returning no rows) as a breach, so a rule that goes blind opens an incident. Default `false`: such windows are skipped.",
+				"Count a window with no data (e.g. a raw query returning no rows) as a breach, so a rule that goes blind opens an incident. Default `false`: such windows are skipped. Not supported on grouped rules, where a group that stops reporting keeps its incident open until telemetry returns.",
 		}),
 	),
 	destination_ids: Schema.Array(AlertDestinationPublicId).annotate({

@@ -123,6 +123,7 @@ const ruleAuditDiff = auditDiff<keyof V2AlertRuleUpdateParams & keyof V2AlertRul
 		"query_builder_draft",
 		"raw_query_sql",
 		"raw_query_reducer",
+		"alert_on_no_data",
 		"destination_ids",
 	],
 	// Query drafts and raw SQL are config blobs — audit that they changed, not their bodies.

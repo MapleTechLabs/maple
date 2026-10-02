@@ -40,7 +40,8 @@ const asIncidentStatus = Schema.decodeUnknownSync(AlertIncidentStatus)
 const asHoldReason = Schema.decodeUnknownSync(AlertIncidentHoldReason)
 const asEventType = Schema.decodeUnknownSync(AlertEventType)
 const asReducer = Schema.decodeUnknownSync(QueryEngineAlertReducer)
-const asNoDataBehavior = Schema.decodeUnknownSync(QueryEngineNoDataBehavior)
+// Lenient: a behavior added by a newer server reads as skip rather than breaking the alerts list.
+const decodeNoDataBehavior = Schema.decodeUnknownOption(QueryEngineNoDataBehavior)
 
 const decodeNotificationTemplate = Schema.decodeUnknownOption(AlertNotificationTemplate)
 const decodeQueryBuilderDraft = Schema.decodeUnknownOption(QueryBuilderQueryDraftSchema)
@@ -216,7 +217,7 @@ export const rowToAlertRuleDocument = (
 		rawQuerySql: row.raw_query_sql ?? null,
 		rawQueryReducer: row.signal_type === "raw_query" ? asReducer(row.reducer) : null,
 		destinationIds: safeParseStringArray(row.destination_ids_json).map((id) => decodeDestinationId(id)),
-		noDataBehavior: asNoDataBehavior(row.no_data_behavior),
+		noDataBehavior: Option.getOrElse(decodeNoDataBehavior(row.no_data_behavior), () => "skip" as const),
 		lastEvaluationError: state?.last_error ?? null,
 		lastEvaluatedAt: state?.last_evaluated_at != null ? decodeIso(state.last_evaluated_at) : null,
 		lastScheduledAt: row.last_scheduled_at != null ? decodeIso(row.last_scheduled_at) : null,

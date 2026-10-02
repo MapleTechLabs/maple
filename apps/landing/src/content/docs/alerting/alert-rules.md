@@ -97,7 +97,7 @@ Maple evaluates every enabled rule once a minute. Each check aggregates the last
 
 A skipped check counts neither as a breach nor as healthy. It leaves the breach and healthy counters where they were.
 
-A window with no data at all is skipped, with two exceptions: a **Throughput** rule with `<` or `<=` treats an empty window as zero, and a rule with **Alert when there is no data** on (`alert_on_no_data`) counts it as a breach. Turn it on for **Raw SQL** rules, where a query that stops matching otherwise goes quiet instead of firing.
+A window with no data at all is skipped, with two exceptions: a rule with **Alert when there is no data** on (`alert_on_no_data`) counts it as a breach, and otherwise a **Throughput** rule with `<` or `<=` treats it as zero. Turn the switch on for **Raw SQL** rules, where a query that stops matching otherwise goes quiet instead of firing. It is not available on grouped rules: a group that stops reporting keeps its open incident until its telemetry returns. On a **Raw SQL** rule that returns a group column, it fires only when the query returns no rows at all.
 
 The **Min samples** check runs before the threshold comparison, and that zero still counts as zero samples. For **Throughput** the sample count is the signal, so a drop rule with the blank form's default of 50 skips every window below 50 requests, including a full outage, and cannot fire for those windows. Set **Min samples** to 0 for throughput drop rules, as the **Throughput drop** template does. Then traffic stopping entirely fires the rule.
 

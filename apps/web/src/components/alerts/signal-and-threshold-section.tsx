@@ -35,6 +35,7 @@ import {
 	comparatorLabels,
 	isRangeComparator,
 	RAW_QUERY_REDUCER_LABELS,
+	ruleFormIsGrouped,
 	type RuleFormState,
 } from "@/lib/alerts/form-utils"
 import { Result, useAtomValue } from "@/lib/effect-atom"
@@ -188,6 +189,7 @@ export function SignalAndThresholdSection({
 	const [advancedOpen, setAdvancedOpen] = useState(false)
 
 	const kind = signalTypeToKind(form.signalType)
+	const grouped = ruleFormIsGrouped(form)
 
 	/* Switching tier-1 has to seed a valid signalType for the new kind.
 	   Built-in defaults to error_rate; the other three map 1:1 since
@@ -385,7 +387,8 @@ export function SignalAndThresholdSection({
 							<div className="flex items-start gap-2.5 sm:col-span-2 lg:col-span-3">
 								<Switch
 									id="rule-alert-on-no-data"
-									checked={form.alertOnNoData}
+									checked={form.alertOnNoData && !grouped}
+									disabled={grouped}
 									onCheckedChange={(checked) =>
 										onChange((c) => ({ ...c, alertOnNoData: checked }))
 									}
@@ -393,8 +396,9 @@ export function SignalAndThresholdSection({
 								<div className="space-y-0.5">
 									<Label htmlFor="rule-alert-on-no-data">Alert when there is no data</Label>
 									<p className="text-muted-foreground text-xs">
-										Count a window with no data as a breach. Off, those windows are
-										skipped and the rule goes quiet when its query stops matching.
+										{grouped
+											? "Not available on grouped rules: a group that stops reporting keeps its incident open until telemetry returns."
+											: "Count a window with no data as a breach. Off, those windows are skipped and the rule goes quiet when its query stops matching."}
 									</p>
 								</div>
 							</div>

@@ -258,13 +258,13 @@ export const compileRulePlan = Effect.fn("AlertsService.compileRulePlan")(functi
 		...envFilter,
 	}
 
-	// A low-throughput rule already breaches on an empty window read as zero.
-	const noDataBehavior: QueryEngineNoDataBehavior =
-		rule.signalType === "throughput" && ["lt", "lte"].includes(rule.comparator)
+	// An explicit alert-on-no-data wins: a low-throughput rule reads an empty window
+	// as zero, but a minimum sample count then skips it instead of breaching.
+	const noDataBehavior: QueryEngineNoDataBehavior = rule.alertOnNoData
+		? "alert"
+		: rule.signalType === "throughput" && ["lt", "lte"].includes(rule.comparator)
 			? "zero"
-			: rule.alertOnNoData
-				? "alert"
-				: "skip"
+			: "skip"
 	const traceSignalMetrics: Record<string, string> = {
 		error_rate: "error_rate",
 		p95_latency: "p95_duration",
@@ -792,10 +792,17 @@ export const makeAlertRuleNormalizer = (runtime: AlertRuntimeApi) => {
 			createdAt: nowMs,
 			updatedAt: nowMs,
 		}
-		return {
-			...normalizedBase,
-			compiledPlan: yield* compileRulePlan(normalizedBase),
+		const compiledPlan = yield* compileRulePlan(normalizedBase)
+		// A grouped rule's missing group is already held open by its incident's
+		// liveness check; an empty result would breach under no real group.
+		if (normalizedBase.alertOnNoData && planGroupingTokens(compiledPlan) != null) {
+			return yield* Effect.fail(
+				makeAlertValidationError("Invalid alert rule", [
+					"alertOnNoData is not supported on grouped rules: a group that stops reporting is already held open by its incident's telemetry check",
+				]),
+			)
 		}
+		return { ...normalizedBase, compiledPlan }
 	})
 
 	return { normalizeRule, normalizeRuleRow }

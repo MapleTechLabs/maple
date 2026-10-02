@@ -266,6 +266,15 @@ export function defaultRuleForm(serviceName?: string): RuleFormState {
 	}
 }
 
+/** Grouped rules cannot alert on no data: a group that stops reporting is held by its incident. */
+export function ruleFormIsGrouped(form: RuleFormState): boolean {
+	if (form.signalType === "raw_query") return false
+	if (form.signalType === "builder_query") {
+		return form.queryBuilderDraft.groupBy.some((token) => token !== "none" && token.length > 0)
+	}
+	return form.groupBy.length > 0
+}
+
 export function ruleToFormState(rule: AlertRuleDocument): RuleFormState {
 	const queryBuilderDraft = normalizeRuleQueryDraft(rule.queryBuilderDraft)
 	return {
@@ -368,7 +377,7 @@ export function buildRuleCreateParamsV2(form: RuleFormState): V2AlertRuleCreateP
 			: null,
 		window_minutes: parsePositiveNumber(form.windowMinutes, 5),
 		minimum_sample_count: parseNonNegativeNumber(form.minimumSampleCount, 0),
-		alert_on_no_data: form.alertOnNoData,
+		alert_on_no_data: form.alertOnNoData && !ruleFormIsGrouped(form),
 		consecutive_breaches_required: parsePositiveNumber(form.consecutiveBreachesRequired, 2),
 		consecutive_healthy_required: parsePositiveNumber(form.consecutiveHealthyRequired, 2),
 		renotify_interval_minutes: parsePositiveNumber(form.renotifyIntervalMinutes, 30),

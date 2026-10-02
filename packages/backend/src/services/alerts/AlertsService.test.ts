@@ -3547,6 +3547,57 @@ describe("AlertsService evaluation error persistence", () => {
 		}).pipe(Effect.provide(makeLayer(testDb, failingWarehouseStub(state), { fetch: okFetch })))
 	})
 
+	it.effect("keeps alertOnNoData on a low-throughput rule and rejects it on a grouped one", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = { failing: false, rows: [], ingested: [] as Array<Record<string, unknown>> }
+
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_alert_on_no_data_shapes")
+			const userId = asUserId("user_alert_on_no_data_shapes")
+			const destination = yield* createWebhookDestination(alerts, orgId, userId)
+			const request = (fields: Partial<ConstructorParameters<typeof AlertRuleUpsertRequest>[0]>) =>
+				new AlertRuleUpsertRequest({
+					name: "No data shapes",
+					severity: "critical",
+					signalType: "throughput",
+					comparator: "lt",
+					threshold: 10,
+					windowMinutes: 5,
+					minimumSampleCount: 50,
+					consecutiveBreachesRequired: 1,
+					alertOnNoData: true,
+					destinationIds: [destination.id],
+					...fields,
+				})
+
+			// Read as zero, an empty window would be skipped under the minimum; alert wins.
+			const throughput = yield* alerts.createRule(
+				orgId,
+				userId,
+				adminRoles,
+				request({ serviceNames: ["checkout"] }),
+			)
+			assert.strictEqual(throughput.noDataBehavior, "alert")
+			yield* alerts.runSchedulerTick()
+			assert.lengthOf(
+				state.ingested.filter((row) => row.Status === "breached" && row.ObservedValue === null),
+				1,
+			)
+
+			const grouped = yield* alerts
+				.createRule(
+					orgId,
+					userId,
+					adminRoles,
+					request({ name: "Grouped", groupBy: ["service.name"] }),
+				)
+				.pipe(Effect.flip)
+			assert.instanceOf(grouped, AlertValidationError)
+		}).pipe(Effect.provide(makeLayer(testDb, failingWarehouseStub(state), { fetch: okFetch })))
+	})
+
 	it.effect("records why a check skipped when the window has no data", () => {
 		const testDb = createTestDb(trackedDbs)
 		const state = { failing: false, rows: [], ingested: [] as Array<Record<string, unknown>> }
@@ -3850,6 +3901,50 @@ describe("AlertsService.previewRule", () => {
 			const points = preview.series[0]?.points ?? []
 			assert.lengthOf(points, 6)
 			assert.isTrue(points.every((p) => p.status === "skipped" && p.skipReason === "no_data"))
+		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: okFetch })))
+	})
+
+	it.effect("previews a grouped raw-SQL rule that alerts on no data the way the scheduler fires", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = {
+			rawQueryRows: [
+				{ bucket: "2026-01-01 00:00:00", group: "a", value: 1, samples: 5 },
+				{ bucket: "2026-01-01 00:05:00", group: "a", value: 1, samples: 5 },
+			],
+		}
+
+		return Effect.gen(function* () {
+			const alerts = yield* AlertsService
+			const request = decodePreviewRequest({
+				rule: {
+					name: "Raw grouped no data",
+					severity: "warning",
+					signalType: "raw_query",
+					rawQuerySql:
+						"SELECT $__timeGroup(Timestamp) AS bucket, ServiceName AS group, count() AS value FROM traces WHERE $__orgFilter AND $__timeFilter(Timestamp) GROUP BY bucket, group",
+					comparator: "gt",
+					threshold: 10,
+					windowMinutes: 5,
+					consecutiveBreachesRequired: 1,
+					alertOnNoData: true,
+					destinationIds: [],
+				},
+				startTime: "2026-01-01T00:00:00.000Z",
+				endTime: "2026-01-01T00:30:00.000Z",
+			})
+
+			const preview = yield* alerts.previewRule(asOrgId("org_preview_raw_grouped"), adminRoles, request)
+			const byGroup = new Map(preview.series.map((series) => [series.groupKey, series.points]))
+			// A group missing from a tick is not evaluated by the scheduler, so it never breaches.
+			const a = byGroup.get("a") ?? []
+			assert.isTrue(a.slice(2).every((p) => p.status === "skipped" && p.skipReason === "no_data"))
+			// Ticks where nothing reported at all breach under the empty-result key.
+			const empty = byGroup.get("all") ?? []
+			assert.deepStrictEqual(
+				empty.map((p) => p.status),
+				["healthy", "healthy", "breached", "breached", "breached", "breached"],
+			)
+			assert.isTrue(preview.wouldFire.every((span) => span.groupKey === "all"))
 		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: okFetch })))
 	})
 

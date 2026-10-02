@@ -13,6 +13,7 @@ import {
 	buildRuleCreateParamsV2,
 	defaultDestinationForm,
 	defaultRuleForm,
+	ruleFormIsGrouped,
 	deriveRuleQueryIssues,
 	domainThresholdToForm,
 	formThresholdToDomain,
@@ -387,5 +388,16 @@ describe("v2 response mappers", () => {
 			status: "success",
 			responseCode: 200,
 		})
+	})
+})
+
+describe("alert on no data", () => {
+	it("is sent only for rules that are not grouped", () => {
+		const form = { ...defaultRuleForm(), name: "A", alertOnNoData: true }
+		expect(buildRuleCreateParamsV2(form).alert_on_no_data).toBe(true)
+		const grouped = { ...form, serviceNames: [], groupBy: ["service.name"] }
+		expect(ruleFormIsGrouped(grouped)).toBe(true)
+		expect(buildRuleCreateParamsV2(grouped).alert_on_no_data).toBe(false)
+		expect(ruleFormIsGrouped({ ...grouped, signalType: "raw_query" })).toBe(false)
 	})
 })
