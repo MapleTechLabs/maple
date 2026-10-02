@@ -1473,6 +1473,26 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 			),
 	},
 
+	// Wide-window trace list: the two round trips of the grouped `traceList`.
+	{
+		module: "traces",
+		name: "traceListPageQuery",
+		label: "wide-window-page",
+		compile: () => CH.compileUnsafe(CH.traceListPageQuery({ limit: 50, serviceName: "api" }), window),
+	},
+	{
+		module: "traces",
+		name: "traceListByTraceIdsQuery",
+		label: "wide-window-aggregate",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.traceListByTraceIdsQuery({
+					traceIds: [TRACE_ID, "4bf92f3577b34da6a3ce929d0e0e4736"],
+				}),
+				window,
+			),
+	},
+
 	// ----- activity: the only deliberately cross-org builders in the product.
 	// ----- Fixtured so the catalog's tenant-scope test actually exercises the
 	// ----- cross-org branch, rather than asserting a rule nothing exemplifies.

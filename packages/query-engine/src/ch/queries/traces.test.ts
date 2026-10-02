@@ -3,6 +3,8 @@ import { compileUnsafe } from "@maple-dev/effect-clickhouse"
 import {
 	slowTracesQuery,
 	spanSearchQuery,
+	traceListByTraceIdsQuery,
+	traceListPageQuery,
 	traceListQuery,
 	traceServicesByTraceIdsQuery,
 	traceSpanStatsByTraceIdsQuery,
@@ -380,6 +382,30 @@ function pageSubquery(sql: string): string {
 	}
 	throw new Error("unbalanced page subquery")
 }
+
+describe("traceListPageQuery / traceListByTraceIdsQuery", () => {
+	it("pages the MV on its own, reading only the page columns", () => {
+		const { sql } = compileUnsafe(traceListPageQuery({ limit: 50 }), baseParams)
+
+		expect(sql).toContain("FROM trace_list_mv")
+		expect(sql).not.toContain("trace_detail_spans")
+		expect(sql).toContain("ORDER BY ts DESC, traceId DESC")
+		expect(sql).toContain("LIMIT 50")
+		expect(sql).toContain("FORMAT JSON")
+	})
+
+	it("seeks the page's ids within the caller's bounds, with no window pad of its own", () => {
+		const { sql } = compileUnsafe(traceListByTraceIdsQuery({ traceIds: ["t1", "t2"] }), baseParams)
+
+		expect(sql).toContain("FROM trace_detail_spans")
+		expect(sql).toContain("TraceId IN ('t1', 't2')")
+		expect(sql).toContain("Timestamp >= '2024-01-01 00:00:00'")
+		expect(sql).toContain("Timestamp <= '2024-01-02 00:00:00'")
+		expect(sql).not.toContain("subtractHours")
+		expect(sql).toContain("GROUP BY traceId")
+		expect(sql).toContain("LIMIT 2")
+	})
+})
 
 describe("traceListQuery", () => {
 	it("returns one aggregated row per trace, keyed on TraceId", () => {

@@ -1651,29 +1651,12 @@ function traceListMvWhereConditions(
 }
 
 /**
- * Two-stage **trace**-level list: exactly one row per TraceId, carrying the real
- * span count, every participating service, and the trace's wall-clock duration.
- *
- * Distinct from `tracesRootListQuery`, which lists *entry-point spans*
- * (`SpanKind IN ('Server','Consumer') OR ParentSpanId = ''`). A trace crossing N
- * services has N entry points, so that query emits N rows for it — correct for a
- * span list, wrong for anything whose columns say "Trace" and "Spans".
- *
- * Stage 1 pages over true roots (`ParentSpanId = ''`, one per trace by
- * construction) in `traces`, reading only TraceId + Timestamp under the caller's
- * filters — so filtering, ordering and the cursor stay root-scoped, matching the
- * `trace_list_mv`-backed sidebar facets. Stage 2 aggregates that page's traces in
- * `trace_detail_spans`, whose `(OrgId, TraceId, SpanId)` sort key turns the
- * `limit` trace ids into primary-key seeks; the heavy SpanAttributes lookups are
- * materialized only there, for at most one page of traces.
- *
- * Stage 2 is bounded by the requested window padded by ±1h, not the exact
- * window: a trace's children can outlive it, and clipping them exactly would
- * undercount `spanCount` at the window edge. The pad has to exist at all
- * because an unbounded stage 2 defeats partition pruning — the PK analysis
- * touches every retained partition and times out on prod-sized retention.
+ * Stage 1 of the trace list: one page of true roots, reading only TraceId +
+ * Timestamp (+ the duration sort key) under the caller's filters, so filtering,
+ * ordering and the cursor stay root-scoped, matching the `trace_list_mv`-backed
+ * sidebar facets.
  */
-export function traceListQuery(opts: TraceListOpts) {
+function traceListPage(opts: TraceListOpts) {
 	const limit = opts.limit ?? 25
 	const offset = opts.offset ?? 0
 	const cursor = opts.cursor
@@ -1683,8 +1666,7 @@ export function traceListQuery(opts: TraceListOpts) {
 	// An IIFE per arm rather than a `let` widened to `CHQuery<any, any, any>`:
 	// the two stage-1 pages read different tables but the same three columns, and
 	// inferring their union keeps the splice below typed.
-	const pagesOverMv = canUseTraceListMvStage1(opts)
-	const pageQuery = pagesOverMv
+	return canUseTraceListMvStage1(opts)
 		? (() => {
 				// `trace_list_mv` is sorted `(OrgId, Timestamp, TraceId)`, so this pages
 				// read-in-order instead of scanning the window. Its Timestamp is
@@ -1736,12 +1718,24 @@ export function traceListQuery(opts: TraceListOpts) {
 				}
 				return page
 			})()
+}
 
+/**
+ * Stage 2 of the trace list: one aggregated row per page trace in
+ * `trace_detail_spans`, whose `(OrgId, TraceId, SpanId)` sort key turns the
+ * page's trace ids into primary-key seeks; the heavy SpanAttributes lookups are
+ * materialized only here, for at most one page of traces. `where` supplies the
+ * trace-id set and the Timestamp partition bound — without that bound the PK
+ * analysis touches every retained partition and times out on prod retention.
+ */
+function traceListAggregate(
+	where: ($: ColumnAccessor<typeof TraceDetailSpans.columns>) => Array<CH.Condition | undefined>,
+) {
 	// Lexicographic tuple ordering: true root first, earliest span as the
 	// tiebreaker for the (malformed) traces that ship no root at all.
 	const rootOrder = CH.untypedExpr("(if(ParentSpanId = '', 0, 1), Timestamp)")
 
-	const aggregated = from(TraceDetailSpans)
+	return from(TraceDetailSpans)
 		.select(($) => {
 			const rootServiceName = argMin($.ServiceName, rootOrder)
 			const startNanos = CH.toUnixTimestamp64Nano($.Timestamp)
@@ -1776,30 +1770,89 @@ export function traceListQuery(opts: TraceListOpts) {
 				hasError: CH.if_(argMin($.StatusCode, rootOrder).eq("Error"), CH.lit(1), CH.lit(0)),
 			}
 		})
-		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
-			// Padded, not exact: children can start slightly before their root
-			// (clock skew) or outlive the window, but they cannot drift a full
-			// hour — the same ±1h convention as the trace-detail partition hint
-			// (`computeTraceTimeWindow`). Without any bound this scans every
-			// retained partition for the PK analysis and times out on prod
-			// (measured: 12h window, unbounded >10s; bounded <10s).
-			$.Timestamp.gte(subtractHours(CH.toDateTime(param.dateTimeString("startTime")), CH.lit(1))),
-			$.Timestamp.lte(addHours(CH.toDateTime(param.dateTimeString("endTime")), CH.lit(1))),
-			subqueryCond(pageQuery, (sql) => `TraceId IN (SELECT traceId FROM (${sql}))`),
-		])
+		.where(($) => [$.OrgId.eq(param.string("orgId")), ...where($)])
 		.groupBy("traceId")
+}
+
+/**
+ * Two-stage **trace**-level list in one round trip: exactly one row per TraceId,
+ * carrying the real span count, every participating service, and the trace's
+ * wall-clock duration.
+ *
+ * Distinct from `tracesRootListQuery`, which lists *entry-point spans*
+ * (`SpanKind IN ('Server','Consumer') OR ParentSpanId = ''`). A trace crossing N
+ * services has N entry points, so that query emits N rows for it — correct for a
+ * span list, wrong for anything whose columns say "Trace" and "Spans".
+ *
+ * Stage 2 is bounded by the requested window padded by ±1h, not the exact
+ * window: a trace's children can outlive it, and clipping them exactly would
+ * undercount `spanCount` at the window edge. Stage 2 still probes every daily
+ * partition of the window, so windows past the list ceiling go through
+ * `traceListPageQuery` + `traceListByTraceIdsQuery` instead, bounded per date.
+ */
+export function traceListQuery(opts: TraceListOpts) {
+	const limit = opts.limit ?? 25
+	const sortBy = opts.sortBy ?? "timestamp"
+	const sortDir = opts.sortDir ?? "desc"
+	const pageQuery = traceListPage(opts)
+
+	const aggregated = traceListAggregate(($) => [
+		// Padded, not exact: children can start slightly before their root
+		// (clock skew) or outlive the window, but they cannot drift a full
+		// hour — the same ±1h convention as the trace-detail partition hint
+		// (`computeTraceTimeWindow`). Without any bound this scans every
+		// retained partition for the PK analysis and times out on prod
+		// (measured: 12h window, unbounded >10s; bounded <10s).
+		$.Timestamp.gte(subtractHours(CH.toDateTime(param.dateTimeString("startTime")), CH.lit(1))),
+		$.Timestamp.lte(addHours(CH.toDateTime(param.dateTimeString("endTime")), CH.lit(1))),
+		subqueryCond(pageQuery, (sql) => `TraceId IN (SELECT traceId FROM (${sql}))`),
+	])
 
 	// The page must come back in stage 1's order, or its last row is not the
 	// stage-1 cut and the next cursor repeats traces. The MV pages whole seconds
 	// by TraceId, so within a second this orders by TraceId, not nanoseconds.
-	const startKey = pagesOverMv ? "startSecond" : "startTime"
+	const startKey = canUseTraceListMvStage1(opts) ? "startSecond" : "startTime"
 	return (
 		sortBy === "durationMs"
 			? aggregated.orderBy(["rootDurationMicros", sortDir], [startKey, sortDir], ["traceId", "desc"])
 			: aggregated.orderBy([startKey, sortDir], ["traceId", "desc"])
 	)
 		.limit(limit)
+		.format("JSON")
+}
+
+export interface TraceListPageOutput {
+	readonly traceId: string
+	/** Root span timestamp: the partition bound for stage 2. */
+	readonly ts: string
+	readonly d: number
+}
+
+/**
+ * `traceListQuery`'s stage 1 as its own round trip: the page's trace ids in
+ * list order, with the root timestamps (`ts`) the caller bounds stage 2 by.
+ */
+export function traceListPageQuery(opts: TraceListOpts): CHQuery<any, TraceListPageOutput, {}> {
+	return traceListPage(opts).format("JSON")
+}
+
+export interface TraceListByTraceIdsOpts {
+	readonly traceIds: readonly string[]
+}
+
+/**
+ * `traceListQuery`'s stage 2 for roots `traceListPageQuery` already chose. The
+ * `startTime`/`endTime` params are the partition bound: they must cover every
+ * span of those traces, and nothing more. Rows come back unordered; the caller
+ * restores the page order.
+ */
+export function traceListByTraceIdsQuery(opts: TraceListByTraceIdsOpts) {
+	return traceListAggregate(($) => [
+		$.TraceId.in_(...opts.traceIds),
+		$.Timestamp.gte(param.dateTimeSeconds("startTime")),
+		$.Timestamp.lte(param.dateTimeSeconds("endTime")),
+	])
+		.limit(opts.traceIds.length)
 		.format("JSON")
 }
 

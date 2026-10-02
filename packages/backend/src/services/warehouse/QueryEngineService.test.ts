@@ -1055,6 +1055,171 @@ describe("makeQueryEngineExecute", () => {
 		}),
 	)
 
+	describe("30-day trace list", () => {
+		const aggregateRow = (traceId: string, startTime: string) => ({
+			traceId,
+			startTime,
+			startSecond: startTime,
+			endTime: startTime,
+			durationMicros: 1000,
+			rootDurationMicros: 1000,
+			spanCount: 3,
+			services: ["gateway"],
+			rootSpanName: "GET /checkout",
+			rootSpanKind: "Server",
+			rootSpanStatusCode: "Ok",
+			rootHttpMethod: "",
+			rootHttpRoute: "",
+			rootHttpStatusCode: "",
+			rootSpanAttributes: "{}",
+			hasError: 0,
+		})
+		const window = { startTime: "2026-01-01 00:00:00", endTime: "2026-01-31 00:00:00" }
+		const newestWeekRoots = [
+			{ traceId: "t-new", ts: "2026-01-30 09:00:00", d: 1000 },
+			{ traceId: "t-old", ts: "2026-01-29 22:00:00", d: 1000 },
+		]
+
+		/** Serves `roots` from the newest week only; aggregates whichever ids a seek names. */
+		const makeExecute = (receivedSql: string[], roots: ReadonlyArray<(typeof newestWeekRoots)[number]>) =>
+			makeQueryEngineExecute(
+				makeTinybirdStub({
+					sqlQuery: (_tenant: unknown, sql: unknown) => {
+						const text = String(sql)
+						receivedSql.push(text)
+						if (text.includes("FROM trace_detail_spans")) {
+							return Effect.succeed(
+								roots
+									.filter((root) => text.includes(`'${root.traceId}'`))
+									.map((root) => aggregateRow(root.traceId, root.ts)),
+							)
+						}
+						return Effect.succeed(
+							text.includes("Timestamp <= '2026-01-31 00:00:00'") ? roots : [],
+						)
+					},
+				}),
+			)
+		const seeks = (receivedSql: ReadonlyArray<string>) =>
+			receivedSql.filter((sql) => sql.includes("FROM trace_detail_spans"))
+		const pages = (receivedSql: ReadonlyArray<string>) =>
+			receivedSql.filter((sql) => sql.includes("FROM trace_list_mv"))
+
+		it.effect("keeps a 7-day list on the one-shot query", () =>
+			Effect.gen(function* () {
+				const receivedSql: string[] = []
+				yield* makeExecute(receivedSql, newestWeekRoots)(tenant, {
+					startTime: "2026-01-24 00:00:00",
+					endTime: "2026-01-31 00:00:00",
+					query: { kind: "list", source: "traces", groupByTrace: true, limit: 2, filters: {} },
+				})
+
+				assert.strictEqual(receivedSql.length, 1)
+				assert.include(receivedSql[0] ?? "", "TraceId IN (SELECT traceId FROM (")
+				assert.include(receivedSql[0] ?? "", "addHours(toDateTime('2026-01-31 00:00:00'), 1)")
+			}),
+		)
+
+		it.effect("pages the newest week only, then seeks each date's roots within their own bounds", () =>
+			Effect.gen(function* () {
+				const receivedSql: string[] = []
+				const response = yield* makeExecute(receivedSql, newestWeekRoots)(tenant, {
+					...window,
+					query: { kind: "list", source: "traces", groupByTrace: true, limit: 2, filters: {} },
+				})
+
+				assert.strictEqual(response.result.kind, "list")
+				assert.deepStrictEqual(
+					response.result.data.map((row) => row.traceId),
+					["t-new", "t-old"],
+				)
+				assert.strictEqual(pages(receivedSql).length, 1)
+				assert.include(pages(receivedSql)[0] ?? "", "Timestamp >= '2026-01-24 00:00:00'")
+				assert.strictEqual(seeks(receivedSql).length, 2)
+				const newSeek = seeks(receivedSql).find((sql) => sql.includes("'t-new'")) ?? ""
+				const oldSeek = seeks(receivedSql).find((sql) => sql.includes("'t-old'")) ?? ""
+				assert.include(newSeek, "TraceId IN ('t-new')")
+				assert.include(newSeek, "Timestamp >= '2026-01-30 08:00:00'")
+				// Through the end of the root's date: that partition is read anyway.
+				assert.include(newSeek, "Timestamp <= '2026-01-30 23:59:59'")
+				assert.include(oldSeek, "TraceId IN ('t-old')")
+				assert.include(oldSeek, "Timestamp >= '2026-01-29 21:00:00'")
+				assert.include(oldSeek, "Timestamp <= '2026-01-29 23:59:59'")
+			}),
+		)
+
+		it.effect("seeks one date in a single query, no further than an hour past the window", () =>
+			Effect.gen(function* () {
+				const receivedSql: string[] = []
+				const response = yield* makeExecute(receivedSql, [
+					{ traceId: "t-b", ts: "2026-01-31 00:00:00", d: 1000 },
+					{ traceId: "t-a", ts: "2026-01-31 00:00:00", d: 1000 },
+				])(tenant, {
+					...window,
+					query: { kind: "list", source: "traces", groupByTrace: true, limit: 2, filters: {} },
+				})
+
+				assert.deepStrictEqual(
+					response.result.data.map((row) => row.traceId),
+					["t-b", "t-a"],
+				)
+				assert.strictEqual(seeks(receivedSql).length, 1)
+				const seek = seeks(receivedSql)[0] ?? ""
+				assert.include(seek, "TraceId IN ('t-b', 't-a')")
+				assert.include(seek, "Timestamp >= '2026-01-30 23:00:00'")
+				assert.include(seek, "Timestamp <= '2026-01-31 01:00:00'")
+			}),
+		)
+
+		it.effect(
+			"reads the older weeks, without overlap, only when the newest one leaves the page short",
+			() =>
+				Effect.gen(function* () {
+					const receivedSql: string[] = []
+					const response = yield* makeExecute(receivedSql, newestWeekRoots)(tenant, {
+						...window,
+						query: { kind: "list", source: "traces", groupByTrace: true, limit: 50, filters: {} },
+					})
+
+					assert.strictEqual(response.result.data.length, 2)
+					const [newest = "", ...older] = pages(receivedSql)
+					assert.include(newest, "LIMIT 50")
+					assert.strictEqual(older.length, 4)
+					// Each older week asks only for what the newest left missing.
+					assert.isTrue(older.every((sql) => sql.includes("LIMIT 48")))
+					const bounds = (from: string, to: string) =>
+						older.some(
+							(sql) =>
+								sql.includes(`Timestamp >= '${from}'`) &&
+								sql.includes(`Timestamp <= '${to}'`),
+						)
+					assert.isTrue(bounds("2026-01-16 23:59:59", "2026-01-23 23:59:59"))
+					assert.isTrue(bounds("2026-01-01 00:00:00", "2026-01-02 23:59:56"))
+				}),
+		)
+	})
+
+	it.effect("keeps the 7-day ceiling for trace lists that must rank or scan the whole window", () =>
+		Effect.gen(function* () {
+			const execute = makeQueryEngineExecute(makeTinybirdStub())
+			const window = { startTime: "2026-01-01 00:00:00", endTime: "2026-01-31 00:00:00" }
+
+			for (const query of [
+				{ kind: "list", source: "traces", groupByTrace: true, sortBy: "durationMs", filters: {} },
+				{
+					kind: "list",
+					source: "traces",
+					groupByTrace: true,
+					filters: { attributeFilters: [{ key: "user.id", value: "u1", mode: "equals" }] },
+				},
+				{ kind: "list", source: "traces", filters: {} },
+			] as const) {
+				const exit = yield* execute(tenant, { ...window, query }).pipe(Effect.exit)
+				assert.strictEqual(getFailure(exit)?.message, "List query time range too large")
+			}
+		}),
+	)
+
 	it.effect("rejects breakdown queries beyond a 30-day range", () =>
 		Effect.gen(function* () {
 			const execute = makeQueryEngineExecute(
