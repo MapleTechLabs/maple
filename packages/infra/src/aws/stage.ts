@@ -132,6 +132,15 @@ export function resolveIngestTaskSize(stage: MapleStage): IngestTaskSize {
 }
 
 /**
+ * Head-sampling ratio for the gateway's own traces (`INGEST_SELF_TRACE_SAMPLE_RATIO`),
+ * or `undefined` for the gateway default of 1.0. prd emits ~7 spans per request at
+ * ~650k req/h; sampled spans carry `SampleRate`, so throughput still reads true.
+ */
+export function resolveIngestSelfTraceSampleRatio(stage: MapleStage): string | undefined {
+	return stage.kind === "prd" ? "0.05" : undefined
+}
+
+/**
  * Which fleets run the gateway. Both can run at once, each behind its own ALB,
  * which is how a fleet cutover works: bring the new one up beside the old,
  * flip the proxied `ingest` CNAME, then drop the old one.

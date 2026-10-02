@@ -23,6 +23,7 @@ import {
 	resolveIngestDesiredCount,
 	resolveIngestNamespaceName,
 	resolveIngestScaling,
+	resolveIngestSelfTraceSampleRatio,
 	resolveIngestTaskSize,
 	stageDeploysCollector,
 	stageEnablesReplayBlobs,
@@ -225,6 +226,7 @@ export const createMapleIngest = ({ stage, domains, region, dbRole }: CreateMapl
 	Effect.gen(function* () {
 		const replayBlobs = yield* replayBlobWriterCredentials(stage, region)
 		const taskSize = resolveIngestTaskSize(stage)
+		const selfTraceSampleRatio = resolveIngestSelfTraceSampleRatio(stage)
 		const scaling = resolveIngestScaling(stage)
 		const name = (base: string) => resolveAwsResourceName(base, stage, region)
 		const fleets = parseIngestFleets((yield* optionalPlain("MAPLE_INGEST_FLEETS")).MAPLE_INGEST_FLEETS)
@@ -848,6 +850,11 @@ export const createMapleIngest = ({ stage, domains, region, dbRole }: CreateMapl
 				...(collectorEndpoint
 					? { INGEST_FORWARD_OTLP_ENDPOINT: collectorEndpoint }
 					: yield* optionalPlain("INGEST_FORWARD_OTLP_ENDPOINT")),
+				// The gateway's own traces are most of that collector's volume; prd
+				// head-samples them (logs and metrics stay complete).
+				...(selfTraceSampleRatio
+					? { INGEST_SELF_TRACE_SAMPLE_RATIO: selfTraceSampleRatio }
+					: yield* optionalPlain("INGEST_SELF_TRACE_SAMPLE_RATIO")),
 				// Every optional entry below is `yield*`-ed. `optionalPlain` returns a
 				// `Config`, not a record, so a bare `...optionalPlain("X")` spreads the
 				// Config's own fields (`_tag`, `original`, `mapOrFail`) into the task

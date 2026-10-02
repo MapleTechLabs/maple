@@ -12,6 +12,7 @@ import {
 	resolveIngestDesiredCount,
 	resolveIngestNamespaceName,
 	resolveIngestScaling,
+	resolveIngestSelfTraceSampleRatio,
 	stageDeploysCollector,
 	stageDeploysIngest,
 	stageEnablesReplayBlobs,
@@ -126,6 +127,14 @@ describe("resolveIngestScaling", () => {
 	it("keeps every other stage at a fixed count", () => {
 		expect(resolveIngestScaling(parseMapleStage("pr-12"))).toBeUndefined()
 		expect(resolveIngestScaling(parseMapleStage("dev-alice"))).toBeUndefined()
+	})
+})
+
+describe("resolveIngestSelfTraceSampleRatio", () => {
+	it("samples the gateway's own traces in production only", () => {
+		expect(resolveIngestSelfTraceSampleRatio(parseMapleStage("prd"))).toBe("0.05")
+		expect(resolveIngestSelfTraceSampleRatio(parseMapleStage("pr-12"))).toBeUndefined()
+		expect(resolveIngestSelfTraceSampleRatio(parseMapleStage("dev-alice"))).toBeUndefined()
 	})
 })
 

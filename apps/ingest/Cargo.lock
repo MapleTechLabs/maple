@@ -1811,6 +1811,7 @@ version = "0.32.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9966929966d17620d7c316c643ba62631826e10021409357772d5eea84f62c35"
 dependencies = [
+ "flate2",
  "http",
  "opentelemetry",
  "opentelemetry-http",
