@@ -3,6 +3,7 @@ import {
 	type BranchUpsertInput,
 	type CommitUpsertInput,
 	GitCommitSha,
+	mergePrReviewConfig,
 	type OrgId,
 	PrReviewListItem,
 	PrReviewModel,
@@ -965,16 +966,31 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 			const rows = yield* database
 				.execute((db) =>
 					db
-						.select({ model: prReviewSettings.model })
+						.select({ model: prReviewSettings.model, defaults: prReviewSettings.defaults })
 						.from(prReviewSettings)
 						.where(eq(prReviewSettings.orgId, orgId))
 						.limit(1),
 				)
 				.pipe(Effect.mapError(toPersistenceError))
-			return Option.match(decodePrReviewModel(rows[0]?.model), {
-				onNone: () => new PrReviewOrgSettings({}),
-				onSome: (model) => new PrReviewOrgSettings({ model }),
+			// Each field decodes on its own: a model dropped from the catalog keeps the defaults.
+			const model = decodePrReviewModel(rows[0]?.model)
+			const defaults = decodePrReviewConfig(rows[0]?.defaults ?? {})
+			return new PrReviewOrgSettings({
+				...(Option.isSome(model) ? { model: model.value } : undefined),
+				...(Option.isSome(defaults) ? { defaults: defaults.value } : undefined),
 			})
+		})
+
+		// What a review of the repository runs with: its own settings over the organization's.
+		const getEffectivePrReviewConfig = Effect.fn("VcsRepository.getEffectivePrReviewConfig")(function* (
+			orgId: OrgId,
+			repositoryId: VcsRepositoryId,
+		) {
+			const [settings, config] = yield* Effect.all(
+				[getPrReviewSettings(orgId), getPrReviewConfig(orgId, repositoryId)],
+				{ concurrency: 2 },
+			)
+			return mergePrReviewConfig(settings.defaults, config)
 		})
 
 		const setPrReviewSettings = Effect.fn("VcsRepository.setPrReviewSettings")(function* (
@@ -983,7 +999,12 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 			updatedBy: UserId,
 		) {
 			const now = msToDate(yield* Clock.currentTimeMillis)
-			const values = { model: settings.model ?? null, updatedAt: now, updatedBy }
+			const values = {
+				model: settings.model ?? null,
+				defaults: settings.defaults ?? null,
+				updatedAt: now,
+				updatedBy,
+			}
 			yield* database
 				.execute((db) =>
 					db
@@ -1186,6 +1207,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 			setPrReviewEnabled,
 			getPrReviewConfig,
 			setPrReviewConfig,
+			getEffectivePrReviewConfig,
 			getPrReviewSettings,
 			setPrReviewSettings,
 			listPrReviews,

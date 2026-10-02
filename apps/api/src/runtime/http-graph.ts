@@ -16,6 +16,7 @@ import { V1ErrorBoundaryLive } from "@maple/backend/http/error-boundary"
 import { HttpDemoLive } from "@/routes/internal/demo.http"
 import { DiscoveryRouter, instanceApiV2, NotFoundRouter } from "@/routes/discovery.http"
 import { HttpDigestLive } from "@/routes/internal/digest.http"
+import { HttpCodeReviewLive } from "@/routes/v1/code-review.http"
 import { HttpErrorsLive } from "@/routes/v1/errors.http"
 import { HttpIntegrationsLive, IntegrationsCallbackRouter } from "@/routes/v1/integrations.http"
 import { OAuthDiscoveryRouter } from "@/routes/v1/oauth-discovery.http"
@@ -110,6 +111,7 @@ const ApiRoutes = HttpApiBuilder.layer(MapleApi).pipe(
 	Layer.provide(HttpAuthPublicLive),
 	Layer.provide(HttpAuthLive),
 	Layer.provide(HttpBillingPublicLive),
+	Layer.provide(HttpCodeReviewLive),
 	Layer.provide(HttpErrorsLive),
 	Layer.provide(HttpIntegrationsLive),
 	Layer.provide(HttpOrgClickHouseSettingsLive),

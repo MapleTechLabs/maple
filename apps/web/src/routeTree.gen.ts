@@ -34,6 +34,10 @@ import { Route as AlertsCreateRouteImport } from './routes/alerts/create'
 import { Route as AnalyticsIndexRouteImport } from './routes/analytics/index'
 import { Route as AnomaliesIndexRouteImport } from './routes/anomalies/index'
 import { Route as AnomaliesIncidentIdRouteImport } from './routes/anomalies/$incidentId'
+import { Route as CodeReviewIndexRouteImport } from './routes/code-review/index'
+import { Route as CodeReviewIssuesRouteImport } from './routes/code-review/issues'
+import { Route as CodeReviewPullRequestsRouteImport } from './routes/code-review/pull-requests'
+import { Route as CodeReviewSettingsRouteImport } from './routes/code-review/settings'
 import { Route as DashboardsIndexRouteImport } from './routes/dashboards/index'
 import { Route as DashboardsDashboardIdRouteImport } from './routes/dashboards/$dashboardId'
 import { Route as DashboardsTemplatesRouteImport } from './routes/dashboards/templates'
@@ -227,6 +231,26 @@ const AnomaliesIndexRoute = AnomaliesIndexRouteImport.update({
 const AnomaliesIncidentIdRoute = AnomaliesIncidentIdRouteImport.update({
   id: '/anomalies/$incidentId',
   path: '/anomalies/$incidentId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CodeReviewIndexRoute = CodeReviewIndexRouteImport.update({
+  id: '/code-review/',
+  path: '/code-review/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CodeReviewIssuesRoute = CodeReviewIssuesRouteImport.update({
+  id: '/code-review/issues',
+  path: '/code-review/issues',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CodeReviewPullRequestsRoute = CodeReviewPullRequestsRouteImport.update({
+  id: '/code-review/pull-requests',
+  path: '/code-review/pull-requests',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CodeReviewSettingsRoute = CodeReviewSettingsRouteImport.update({
+  id: '/code-review/settings',
+  path: '/code-review/settings',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DashboardsIndexRoute = DashboardsIndexRouteImport.update({
@@ -610,6 +634,9 @@ export interface FileRoutesByFullPath {
   '/alerts/$ruleId': typeof AlertsRuleIdRoute
   '/alerts/create': typeof AlertsCreateRoute
   '/anomalies/$incidentId': typeof AnomaliesIncidentIdRoute
+  '/code-review/issues': typeof CodeReviewIssuesRoute
+  '/code-review/pull-requests': typeof CodeReviewPullRequestsRoute
+  '/code-review/settings': typeof CodeReviewSettingsRoute
   '/dashboards/$dashboardId': typeof DashboardsDashboardIdRoute
   '/dashboards/templates': typeof DashboardsTemplatesRoute
   '/infra/$hostName': typeof InfraHostNameRoute
@@ -644,6 +671,7 @@ export interface FileRoutesByFullPath {
   '/alerts/': typeof AlertsIndexRoute
   '/analytics/': typeof AnalyticsIndexRoute
   '/anomalies/': typeof AnomaliesIndexRoute
+  '/code-review/': typeof CodeReviewIndexRoute
   '/dashboards/': typeof DashboardsIndexRoute
   '/errors/': typeof ErrorsIndexRoute
   '/infra/': typeof InfraIndexRoute
@@ -705,6 +733,9 @@ export interface FileRoutesByTo {
   '/alerts/$ruleId': typeof AlertsRuleIdRoute
   '/alerts/create': typeof AlertsCreateRoute
   '/anomalies/$incidentId': typeof AnomaliesIncidentIdRoute
+  '/code-review/issues': typeof CodeReviewIssuesRoute
+  '/code-review/pull-requests': typeof CodeReviewPullRequestsRoute
+  '/code-review/settings': typeof CodeReviewSettingsRoute
   '/dashboards/$dashboardId': typeof DashboardsDashboardIdRoute
   '/dashboards/templates': typeof DashboardsTemplatesRoute
   '/infra/$hostName': typeof InfraHostNameRoute
@@ -739,6 +770,7 @@ export interface FileRoutesByTo {
   '/alerts': typeof AlertsIndexRoute
   '/analytics': typeof AnalyticsIndexRoute
   '/anomalies': typeof AnomaliesIndexRoute
+  '/code-review': typeof CodeReviewIndexRoute
   '/dashboards': typeof DashboardsIndexRoute
   '/errors': typeof ErrorsIndexRoute
   '/infra': typeof InfraIndexRoute
@@ -802,6 +834,9 @@ export interface FileRoutesById {
   '/alerts/$ruleId': typeof AlertsRuleIdRoute
   '/alerts/create': typeof AlertsCreateRoute
   '/anomalies/$incidentId': typeof AnomaliesIncidentIdRoute
+  '/code-review/issues': typeof CodeReviewIssuesRoute
+  '/code-review/pull-requests': typeof CodeReviewPullRequestsRoute
+  '/code-review/settings': typeof CodeReviewSettingsRoute
   '/dashboards/$dashboardId': typeof DashboardsDashboardIdRoute
   '/dashboards/templates': typeof DashboardsTemplatesRoute
   '/infra/$hostName': typeof InfraHostNameRoute
@@ -836,6 +871,7 @@ export interface FileRoutesById {
   '/alerts/': typeof AlertsIndexRoute
   '/analytics/': typeof AnalyticsIndexRoute
   '/anomalies/': typeof AnomaliesIndexRoute
+  '/code-review/': typeof CodeReviewIndexRoute
   '/dashboards/': typeof DashboardsIndexRoute
   '/errors/': typeof ErrorsIndexRoute
   '/infra/': typeof InfraIndexRoute
@@ -900,6 +936,9 @@ export interface FileRouteTypes {
     | '/alerts/$ruleId'
     | '/alerts/create'
     | '/anomalies/$incidentId'
+    | '/code-review/issues'
+    | '/code-review/pull-requests'
+    | '/code-review/settings'
     | '/dashboards/$dashboardId'
     | '/dashboards/templates'
     | '/infra/$hostName'
@@ -934,6 +973,7 @@ export interface FileRouteTypes {
     | '/alerts/'
     | '/analytics/'
     | '/anomalies/'
+    | '/code-review/'
     | '/dashboards/'
     | '/errors/'
     | '/infra/'
@@ -995,6 +1035,9 @@ export interface FileRouteTypes {
     | '/alerts/$ruleId'
     | '/alerts/create'
     | '/anomalies/$incidentId'
+    | '/code-review/issues'
+    | '/code-review/pull-requests'
+    | '/code-review/settings'
     | '/dashboards/$dashboardId'
     | '/dashboards/templates'
     | '/infra/$hostName'
@@ -1029,6 +1072,7 @@ export interface FileRouteTypes {
     | '/alerts'
     | '/analytics'
     | '/anomalies'
+    | '/code-review'
     | '/dashboards'
     | '/errors'
     | '/infra'
@@ -1091,6 +1135,9 @@ export interface FileRouteTypes {
     | '/alerts/$ruleId'
     | '/alerts/create'
     | '/anomalies/$incidentId'
+    | '/code-review/issues'
+    | '/code-review/pull-requests'
+    | '/code-review/settings'
     | '/dashboards/$dashboardId'
     | '/dashboards/templates'
     | '/infra/$hostName'
@@ -1125,6 +1172,7 @@ export interface FileRouteTypes {
     | '/alerts/'
     | '/analytics/'
     | '/anomalies/'
+    | '/code-review/'
     | '/dashboards/'
     | '/errors/'
     | '/infra/'
@@ -1188,6 +1236,9 @@ export interface RootRouteChildren {
   AlertsRuleIdRoute: typeof AlertsRuleIdRoute
   AlertsCreateRoute: typeof AlertsCreateRoute
   AnomaliesIncidentIdRoute: typeof AnomaliesIncidentIdRoute
+  CodeReviewIssuesRoute: typeof CodeReviewIssuesRoute
+  CodeReviewPullRequestsRoute: typeof CodeReviewPullRequestsRoute
+  CodeReviewSettingsRoute: typeof CodeReviewSettingsRoute
   DashboardsDashboardIdRoute: typeof DashboardsDashboardIdRoute
   DashboardsTemplatesRoute: typeof DashboardsTemplatesRoute
   InfraHostNameRoute: typeof InfraHostNameRoute
@@ -1205,6 +1256,7 @@ export interface RootRouteChildren {
   AlertsIndexRoute: typeof AlertsIndexRoute
   AnalyticsIndexRoute: typeof AnalyticsIndexRoute
   AnomaliesIndexRoute: typeof AnomaliesIndexRoute
+  CodeReviewIndexRoute: typeof CodeReviewIndexRoute
   DashboardsIndexRoute: typeof DashboardsIndexRoute
   ErrorsIndexRoute: typeof ErrorsIndexRoute
   InfraIndexRoute: typeof InfraIndexRoute
@@ -1413,6 +1465,34 @@ declare module '@tanstack/react-router' {
       path: '/anomalies/$incidentId'
       fullPath: '/anomalies/$incidentId'
       preLoaderRoute: typeof AnomaliesIncidentIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/code-review/': {
+      id: '/code-review/'
+      path: '/code-review'
+      fullPath: '/code-review/'
+      preLoaderRoute: typeof CodeReviewIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/code-review/issues': {
+      id: '/code-review/issues'
+      path: '/code-review/issues'
+      fullPath: '/code-review/issues'
+      preLoaderRoute: typeof CodeReviewIssuesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/code-review/pull-requests': {
+      id: '/code-review/pull-requests'
+      path: '/code-review/pull-requests'
+      fullPath: '/code-review/pull-requests'
+      preLoaderRoute: typeof CodeReviewPullRequestsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/code-review/settings': {
+      id: '/code-review/settings'
+      path: '/code-review/settings'
+      fullPath: '/code-review/settings'
+      preLoaderRoute: typeof CodeReviewSettingsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/dashboards/': {
@@ -1983,6 +2063,9 @@ const rootRouteChildren: RootRouteChildren = {
   AlertsRuleIdRoute: AlertsRuleIdRoute,
   AlertsCreateRoute: AlertsCreateRoute,
   AnomaliesIncidentIdRoute: AnomaliesIncidentIdRoute,
+  CodeReviewIssuesRoute: CodeReviewIssuesRoute,
+  CodeReviewPullRequestsRoute: CodeReviewPullRequestsRoute,
+  CodeReviewSettingsRoute: CodeReviewSettingsRoute,
   DashboardsDashboardIdRoute: DashboardsDashboardIdRoute,
   DashboardsTemplatesRoute: DashboardsTemplatesRoute,
   InfraHostNameRoute: InfraHostNameRoute,
@@ -2000,6 +2083,7 @@ const rootRouteChildren: RootRouteChildren = {
   AlertsIndexRoute: AlertsIndexRoute,
   AnalyticsIndexRoute: AnalyticsIndexRoute,
   AnomaliesIndexRoute: AnomaliesIndexRoute,
+  CodeReviewIndexRoute: CodeReviewIndexRoute,
   DashboardsIndexRoute: DashboardsIndexRoute,
   ErrorsIndexRoute: ErrorsIndexRoute,
   InfraIndexRoute: InfraIndexRoute,

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react"
+import { Link } from "@tanstack/react-router"
 import { Exit, Option } from "effect"
 import {
-	GithubSetPrReviewRequest,
 	GithubSetTrackedBranchRequest,
 	type GithubIntegrationStatus,
 	type GithubRepoSummary,
@@ -21,7 +21,6 @@ import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@maple/ui/components/ui/popover"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import { Switch } from "@maple/ui/components/ui/switch"
 import { formatRelativeFrom } from "@maple/ui/lib/time-format"
 import { toastManager } from "@maple/ui/components/ui/toast"
 
@@ -43,7 +42,6 @@ import { useOrganizationFeatureFlags } from "@/hooks/use-organization-feature-fl
 import { MapleApiAtomClient, retainedQuery } from "@/lib/services/common/atom-client"
 import { GITHUB_ACCENT, IntegrationIconPlate } from "./integration-catalog"
 import { useIntegrationConnect, type IntegrationConnect } from "./integration-connect"
-import { PrReviewModelSetting, PrReviewSettingsButton } from "./pr-review-settings"
 import {
 	IntegrationEmpty,
 	IntegrationEmptyCard,
@@ -95,9 +93,6 @@ export function GithubIntegrationCard() {
 		MapleApiAtomClient.mutation("integrations", "githubSetTrackedBranch"),
 		{ mode: "promiseExit" },
 	)
-	const setPrReview = useAtomSet(MapleApiAtomClient.mutation("integrations", "githubSetPrReview"), {
-		mode: "promiseExit",
-	})
 
 	// Connect flow (popup, busy, refresh-on-return, post-close grace window) lives in
 	// IntegrationConnectProvider — shared with the drill-in header's Connect button.
@@ -207,25 +202,6 @@ export function GithubIntegrationCard() {
 		}
 	}
 
-	async function handleSetPrReview(repo: GithubRepoSummary, enabled: boolean) {
-		const result = await setPrReview({
-			params: { repositoryId: repo.id },
-			payload: new GithubSetPrReviewRequest({ enabled }),
-			reactivityKeys: ["githubIntegrationStatus"],
-		})
-		if (Exit.isSuccess(result)) {
-			toastManager.add({
-				title: enabled
-					? `Maple will review pull requests on ${repo.fullName}`
-					: `Pull request reviews off for ${repo.fullName}`,
-				type: "success",
-			})
-		} else {
-			toastManager.add({ title: "Failed to change pull request reviews", type: "error" })
-			throw new Error("Failed to change pull request reviews")
-		}
-	}
-
 	return (
 		<>
 			{isLoading ? (
@@ -243,7 +219,6 @@ export function GithubIntegrationCard() {
 					onRequestDisconnect={() => setConfirmingDisconnect(true)}
 					onRequestDelete={setRepoToDelete}
 					onSetTrackedBranch={handleSetTrackedBranch}
-					onSetPrReview={handleSetPrReview}
 				/>
 			) : status?.state === "disconnected" || status?.state === "suspended" ? (
 				<DeactivatedState status={status} connectFlow={connectFlow} />
@@ -477,7 +452,6 @@ function ConnectedView({
 	onRequestDisconnect,
 	onRequestDelete,
 	onSetTrackedBranch,
-	onSetPrReview,
 }: {
 	status: GithubIntegrationStatus
 	connectFlow: IntegrationConnect
@@ -488,7 +462,6 @@ function ConnectedView({
 	onRequestDisconnect: () => void
 	onRequestDelete: (repo: GithubRepoSummary) => void
 	onSetTrackedBranch: (repo: GithubRepoSummary, branch: string) => Promise<void>
-	onSetPrReview: (repo: GithubRepoSummary, enabled: boolean) => Promise<void>
 }) {
 	const actionBusy = connectFlow.busy || disconnectBusy
 	const prReviewRolledOut = useOrganizationFeatureFlags().flags.prReview
@@ -553,8 +526,20 @@ function ConnectedView({
 				</div>
 			</div>
 
-			{prReviewRolledOut && activeRepos.some((repo) => repo.prReviewEnabled) ? (
-				<PrReviewModelSetting />
+			{prReviewRolledOut ? (
+				<div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card px-4 py-3">
+					<div className="leading-tight">
+						<div className="text-sm font-medium">Pull request reviews</div>
+						<div className="text-xs text-muted-foreground">
+							{activeRepos.filter((repo) => repo.prReviewEnabled).length} of{" "}
+							{activeRepos.length} repositories reviewed. Rules, models and analytics live in
+							Code Review.
+						</div>
+					</div>
+					<Button size="sm" variant="outline" render={<Link to="/code-review/settings" />}>
+						Open Code Review
+					</Button>
+				</div>
 			) : null}
 
 			<div className="overflow-hidden rounded-lg border bg-card">
@@ -599,7 +584,6 @@ function ConnectedView({
 								key={repo.id}
 								repo={repo}
 								onSetTrackedBranch={(branch) => onSetTrackedBranch(repo, branch)}
-								onSetPrReview={(enabled) => onSetPrReview(repo, enabled)}
 							/>
 						))}
 					</ul>
@@ -678,17 +662,14 @@ function ConnectedView({
 	)
 }
 
-/** A single active repository: leading sync-status icon, name + meta, review toggle, tracked-branch picker. */
+/** A single active repository: leading sync-status icon, name + meta, tracked-branch picker. */
 function RepoRow({
 	repo,
 	onSetTrackedBranch,
-	onSetPrReview,
 }: {
 	repo: GithubRepoSummary
 	onSetTrackedBranch: (branch: string) => Promise<void>
-	onSetPrReview: (enabled: boolean) => Promise<void>
 }) {
-	const prReviewRolledOut = useOrganizationFeatureFlags().flags.prReview
 	const presentation = SYNC_PRESENTATION[repo.syncStatus]
 	const StatusIcon = presentation.Icon
 
@@ -731,60 +712,18 @@ function RepoRow({
 					) : null}
 				</div>
 			</div>
-			{/* Staged per organization: the switch appears only once the org carries the `prreview` flag. */}
-			{prReviewRolledOut ? <PrReviewToggle repo={repo} onChange={onSetPrReview} /> : null}
-			{prReviewRolledOut && repo.prReviewEnabled ? <PrReviewSettingsButton repo={repo} /> : null}
+			{repo.prReviewEnabled ? (
+				<Badge
+					variant="outline"
+					size="sm"
+					className="shrink-0"
+					title="Maple reviews this repository's pull requests"
+				>
+					Reviewed
+				</Badge>
+			) : null}
 			<BranchSelector repo={repo} onSelect={onSetTrackedBranch} />
 		</li>
-	)
-}
-
-/**
- * Per-repo opt-in to the pull request review. Optimistic like the branch
- * selector: the switch moves at once and snaps back if the server refuses.
- */
-function PrReviewToggle({
-	repo,
-	onChange,
-}: {
-	repo: GithubRepoSummary
-	onChange: (enabled: boolean) => Promise<void>
-}) {
-	const [enabled, setEnabled] = useState(repo.prReviewEnabled)
-	const [busy, setBusy] = useState(false)
-	// A fresh server value wins over the optimistic one; adjusted during render, not in an effect.
-	const [seenServer, setSeenServer] = useState(repo.prReviewEnabled)
-	if (seenServer !== repo.prReviewEnabled) {
-		setSeenServer(repo.prReviewEnabled)
-		setEnabled(repo.prReviewEnabled)
-	}
-	const id = `pr-review-${repo.id}`
-
-	return (
-		<label
-			htmlFor={id}
-			className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground"
-			title="Post a Maple code review on every pull request opened against this repository"
-		>
-			<span>Review PRs</span>
-			<Switch
-				id={id}
-				aria-label={`Review pull requests on ${repo.fullName}`}
-				checked={enabled}
-				aria-busy={busy}
-				onCheckedChange={(next) => {
-					// Ignored while a change is in flight, rather than disabling the switch, which
-					// would drop keyboard focus mid-toggle.
-					if (busy) return
-					const previous = enabled
-					setEnabled(next)
-					setBusy(true)
-					onChange(next)
-						.catch(() => setEnabled(previous))
-						.finally(() => setBusy(false))
-				}}
-			/>
-		</label>
 	)
 }
 

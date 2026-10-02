@@ -139,8 +139,22 @@ adds `vcs_repositories.pr_review_enabled`) holds the PR identity (`repository_id
 `publish_error`, `error`, `model`, token counts and timestamps. The prd deploy applies the
 migration. The table is registered with `OrganizationService`, so an organization purge removes it.
 
-`PUT /api/integrations/github/repositories/:id/pr-review` sets `pr_review_enabled`, and
-Integrations → GitHub shows a "Review PRs" switch per repository.
+`PUT /api/integrations/github/repositories/:id/pr-review` sets `pr_review_enabled`. Reviews have
+their own section, **Code Review** (`/code-review`, a sidebar row behind the flag), with four tabs:
+
+- **Analytics**: pull requests reviewed, reviews, time to merge and issues caught against the
+  previous window, issues by severity over time, by category, by repository and by author.
+  `pr_reviews.author_login` and `merged_at` (stamped on every review of a pull request by its
+  merged `closed` event) feed the author filter and time to merge.
+- **Pull requests**: every review in the organization, with a sheet for one review's report, its
+  tracked findings and the other reviews of the same pull request.
+- **Issues**: the tracked findings (`pr_review_findings`), filterable by severity, category and state.
+- **Settings**: the review model, the organization's default review rules
+  (`pr_review_settings.defaults`), and per repository the switch and its overrides.
+
+A review runs with `mergePrReviewConfig(defaults, repository)`: a repository field overrides the
+organization's, and instructions and ignored paths add up. The reads are `GET /api/code-review/*`
+(`PrReviewAnalyticsService`); settings stay on the integrations endpoints.
 
 ### Observability of the reviewer
 
@@ -166,7 +180,7 @@ this in the Clerk dashboard under the organization's public metadata:
 Only the literal boolean `true` counts; a missing key, `false` or the string `"true"` all read as
 off. The flag is enforced in three places:
 
-- **The switch.** Integrations → GitHub shows "Review PRs" on a repository only for a flagged
+- **The section.** Code Review, and its per-repository switch, appear only for a flagged
   organization.
 - **The endpoint.** The `pr-review` endpoint refuses to turn reviews on for an unflagged
   organization, so the switch cannot be bypassed by calling the API. Turning reviews off is always

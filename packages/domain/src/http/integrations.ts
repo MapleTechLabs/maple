@@ -1225,7 +1225,7 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 		),
 	)
 	.add(
-		// Organization-wide review settings (the model). Read by any member, written by admins.
+		// Organization-wide review settings: the model and the rules every repository inherits. Read by any member, written by admins.
 		HttpApiEndpoint.get("githubGetPrReviewSettings", "/github/pr-review/settings", {
 			success: GithubPrReviewSettingsResponse,
 			error: [IntegrationsForbiddenError, IntegrationsPersistenceError],
@@ -1235,7 +1235,7 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 		HttpApiEndpoint.put("githubSetPrReviewSettings", "/github/pr-review/settings", {
 			payload: GithubPrReviewSettingsRequest,
 			success: GithubPrReviewSettingsResponse,
-			error: [IntegrationsForbiddenError, IntegrationsPersistenceError],
+			error: [IntegrationsForbiddenError, IntegrationsValidationError, IntegrationsPersistenceError],
 		}),
 	)
 	.add(

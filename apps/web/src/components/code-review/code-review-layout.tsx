@@ -1,0 +1,276 @@
+import type { ReactNode } from "react"
+import { Link } from "@tanstack/react-router"
+import { Schema } from "effect"
+import {
+	PrReviewCategory,
+	PrReviewFindingStatus,
+	PrReviewId,
+	PrReviewSeverity,
+	VcsRepositoryId,
+} from "@maple/domain/http"
+import { Button } from "@maple/ui/components/ui/button"
+import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@maple/ui/components/ui/empty"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
+import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { cn } from "@maple/ui/lib/utils"
+
+import { BranchForkIcon, ChartBarIcon, CircleWarningIcon, GearIcon } from "@/components/icons"
+import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
+import {
+	TimeRangeSearchFields,
+	pickTimeRangeSearch,
+	type TimeRangeSearch,
+} from "@/components/time-range-picker/search"
+import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
+import { useOrganizationFeatureFlags } from "@/hooks/use-organization-feature-flags"
+import { Result, useAtomValue } from "@/lib/effect-atom"
+import { retainedQuery } from "@/lib/services/common/atom-client"
+import { LONG_RANGE_PRESET_OPTIONS } from "@/lib/time-utils"
+
+/** Reviews are slow-moving: a month is the window that has something in it. */
+export const CODE_REVIEW_DEFAULT_PRESET = "30d"
+export const CODE_REVIEW_MAX_RANGE_SECONDS = 365 * 24 * 60 * 60
+
+/** The filters the Analytics and Pull requests tabs share, carried between them. */
+export const CodeReviewSearchFields = {
+	repo: Schema.optional(VcsRepositoryId),
+	author: Schema.optional(Schema.String),
+	...TimeRangeSearchFields,
+}
+
+export const CodeReviewIssuesSearchFields = {
+	...CodeReviewSearchFields,
+	severity: Schema.optional(PrReviewSeverity),
+	category: Schema.optional(PrReviewCategory),
+	state: Schema.optional(PrReviewFindingStatus),
+	review: Schema.optional(PrReviewId),
+}
+
+export const CodeReviewListSearchFields = {
+	...CodeReviewSearchFields,
+	status: Schema.optional(Schema.Literals(["completed", "failed", "skipped", "running", "queued"])),
+	review: Schema.optional(PrReviewId),
+}
+
+export interface CodeReviewSearch extends TimeRangeSearch {
+	repo?: VcsRepositoryId
+	author?: string
+}
+
+export type CodeReviewTab = "analytics" | "pull-requests" | "issues" | "settings"
+
+const TABS = [
+	{ tab: "analytics", to: "/code-review", label: "Analytics", Icon: ChartBarIcon },
+	{ tab: "pull-requests", to: "/code-review/pull-requests", label: "Pull requests", Icon: BranchForkIcon },
+	{ tab: "issues", to: "/code-review/issues", label: "Issues", Icon: CircleWarningIcon },
+	{ tab: "settings", to: "/code-review/settings", label: "Settings", Icon: GearIcon },
+] as const
+
+/**
+ * Real links rather than a `Tabs` widget: each tab is a route, so middle-click, Copy link and Back
+ * work. The window and the repository and author filters travel between the tabs that read them.
+ */
+function CodeReviewTabs({ active, search }: { active: CodeReviewTab; search: CodeReviewSearch }) {
+	const carried = { ...pickTimeRangeSearch(search), repo: search.repo, author: search.author }
+	return (
+		<nav className="flex items-center border-b border-border" aria-label="Code review views">
+			{TABS.map(({ tab, to, label, Icon }) => (
+				<Link
+					key={tab}
+					to={to}
+					search={tab === "settings" ? {} : carried}
+					aria-current={active === tab ? "page" : undefined}
+					className={cn(
+						"-mb-px flex h-9 items-center gap-[7px] border-b-2 px-3 text-sm transition-colors first:pl-0.5",
+						active === tab
+							? "border-primary font-medium text-foreground [&_svg]:text-primary"
+							: "border-transparent text-muted-foreground hover:text-foreground [&_svg]:text-muted-foreground",
+					)}
+				>
+					<Icon size={14} aria-hidden />
+					{label}
+				</Link>
+			))}
+		</nav>
+	)
+}
+
+/**
+ * The frame every Code Review tab renders in. Gated on the `prReview` rollout like the reviewer
+ * itself; while the flags load, a skeleton rather than a not-enabled flash.
+ */
+export function CodeReviewLayout({
+	active,
+	search,
+	toolbar,
+	children,
+}: {
+	active: CodeReviewTab
+	search: CodeReviewSearch
+	/** Right of the title: the filters, on the tabs that have them. */
+	toolbar?: ReactNode
+	children: ReactNode
+}) {
+	const { flags, isLoaded } = useOrganizationFeatureFlags()
+	const label = TABS.find((tab) => tab.tab === active)?.label
+
+	return (
+		<PageRefreshProvider timePreset={search.timePreset ?? CODE_REVIEW_DEFAULT_PRESET}>
+			<DashboardLayout.Root>
+				<DashboardLayout.Breadcrumbs
+					items={[{ label: "Code Review", href: "/code-review" }, ...(label ? [{ label }] : [])]}
+				/>
+				<DashboardLayout.Body>
+					<DashboardLayout.Content>
+						<DashboardLayout.Sticky>
+							<DashboardLayout.Header
+								title="Code Review"
+								description="Every pull request reviewed by Maple: what it caught, and how it is set up."
+							>
+								{flags.prReview ? toolbar : null}
+							</DashboardLayout.Header>
+						</DashboardLayout.Sticky>
+						<DashboardLayout.Scroll>
+							{!isLoaded ? (
+								<div className="space-y-4">
+									<Skeleton className="h-9 w-80" />
+									<Skeleton className="h-28 w-full" />
+									<Skeleton className="h-72 w-full" />
+								</div>
+							) : !flags.prReview ? (
+								<Empty>
+									<EmptyHeader>
+										<EmptyTitle>Code review is not enabled</EmptyTitle>
+										<EmptyDescription>
+											Pull request reviews are rolling out by organization. Ask us to
+											turn them on for yours.
+										</EmptyDescription>
+									</EmptyHeader>
+								</Empty>
+							) : (
+								<div className="flex flex-col gap-6 pb-8">
+									<CodeReviewTabs active={active} search={search} />
+									{children}
+								</div>
+							)}
+						</DashboardLayout.Scroll>
+					</DashboardLayout.Content>
+				</DashboardLayout.Body>
+			</DashboardLayout.Root>
+		</PageRefreshProvider>
+	)
+}
+
+const ALL = "all"
+
+/**
+ * Repository, author and window. The repositories are the GitHub installation's; the authors are
+ * whoever opened a reviewed pull request in the window, which the caller already has.
+ */
+export function CodeReviewFilters({
+	search,
+	authors,
+	onChange,
+}: {
+	search: CodeReviewSearch
+	authors: ReadonlyArray<string>
+	onChange: (patch: Partial<CodeReviewSearch> & { timePreset?: string }) => void
+}) {
+	const status = useAtomValue(
+		retainedQuery("integrations", "githubStatus", { reactivityKeys: ["githubIntegrationStatus"] }),
+	)
+	const repositories = Result.builder(status)
+		.onSuccess((response) => response.repositories.filter((repo) => repo.prReviewEnabled))
+		.orElse(() => [])
+	const repoItems = Object.fromEntries([
+		[ALL, "All repositories"],
+		...repositories.map((repo) => [repo.id, repo.fullName]),
+	])
+	// A filter from a link keeps its option even when the author has nothing in the new window.
+	const authorOptions =
+		search.author && !authors.includes(search.author) ? [search.author, ...authors] : authors
+	const authorItems = Object.fromEntries([[ALL, "All authors"], ...authorOptions.map((a) => [a, a])])
+	const isRepositoryId = Schema.is(VcsRepositoryId)
+
+	return (
+		<div className="flex flex-wrap items-center gap-2">
+			<Select
+				items={repoItems}
+				value={search.repo ?? ALL}
+				onValueChange={(value) => onChange({ repo: isRepositoryId(value) ? value : undefined })}
+			>
+				<SelectTrigger size="sm" className="w-full min-w-0 @2xl/page:w-48" aria-label="Repository">
+					<SelectValue />
+				</SelectTrigger>
+				<SelectContent>
+					<SelectItem value={ALL}>All repositories</SelectItem>
+					{repositories.map((repo) => (
+						<SelectItem key={repo.id} value={repo.id}>
+							{repo.fullName}
+						</SelectItem>
+					))}
+				</SelectContent>
+			</Select>
+			<Select
+				items={authorItems}
+				value={search.author ?? ALL}
+				onValueChange={(value) =>
+					onChange({ author: typeof value === "string" && value !== ALL ? value : undefined })
+				}
+			>
+				<SelectTrigger size="sm" className="w-full min-w-0 @2xl/page:w-40" aria-label="Author">
+					<SelectValue />
+				</SelectTrigger>
+				<SelectContent>
+					<SelectItem value={ALL}>All authors</SelectItem>
+					{authorOptions.map((author) => (
+						<SelectItem key={author} value={author}>
+							{author}
+						</SelectItem>
+					))}
+				</SelectContent>
+			</Select>
+			<TimeRangeHeaderControls
+				startTime={search.startTime}
+				endTime={search.endTime}
+				presetValue={search.timePreset ?? (search.startTime ? undefined : CODE_REVIEW_DEFAULT_PRESET)}
+				defaultPreset={CODE_REVIEW_DEFAULT_PRESET}
+				presets={LONG_RANGE_PRESET_OPTIONS}
+				maxRangeSeconds={CODE_REVIEW_MAX_RANGE_SECONDS}
+				onTimeChange={(range) =>
+					onChange(
+						range.presetValue
+							? { timePreset: range.presetValue, startTime: undefined, endTime: undefined }
+							: { startTime: range.startTime, endTime: range.endTime, timePreset: undefined },
+					)
+				}
+			/>
+		</div>
+	)
+}
+
+/** The empty state of a tab whose filters left nothing: one way back to everything. */
+export function NothingInWindow({
+	title,
+	description,
+	onClear,
+}: {
+	title: string
+	description: string
+	onClear?: () => void
+}) {
+	return (
+		<Empty className="rounded-xl border border-dashed md:py-14">
+			<EmptyHeader>
+				<EmptyTitle>{title}</EmptyTitle>
+				<EmptyDescription>{description}</EmptyDescription>
+			</EmptyHeader>
+			{onClear ? (
+				<Button variant="outline" size="sm" onClick={onClear}>
+					Clear filters
+				</Button>
+			) : null}
+		</Empty>
+	)
+}

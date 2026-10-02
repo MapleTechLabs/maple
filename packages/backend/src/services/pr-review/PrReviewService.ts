@@ -1612,6 +1612,24 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						.pipe(Effect.mapError(toPersistence))
 					if (Option.isSome(closedRepo)) {
 						const nowMs = yield* Clock.currentTimeMillis
+						if (job.merged) {
+							// Stamped on every review of the pull request, for time to merge.
+							const repositoryId = closedRepo.value.id
+							yield* database
+								.execute((db) =>
+									db
+										.update(prReviews)
+										.set({ mergedAt: msToDate(job.mergedAtMs ?? nowMs) })
+										.where(
+											and(
+												eq(prReviews.orgId, orgId),
+												eq(prReviews.repositoryId, repositoryId),
+												eq(prReviews.number, job.number),
+											),
+										),
+								)
+								.pipe(Effect.mapError(toPersistence))
+						}
 						const tracked = yield* loadTracked(orgId, closedRepo.value.id, job.number)
 						if (tracked.length > 0) {
 							yield* syncThreads(orgId, closedRepo.value, job.number, tracked, nowMs)
@@ -1639,7 +1657,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					return skip("not_rolled_out")
 				}
 				const config = yield* repositories
-					.getPrReviewConfig(orgId, repo.id)
+					.getEffectivePrReviewConfig(orgId, repo.id)
 					.pipe(Effect.mapError(toPersistence))
 				if (job.draft === true && config.reviewDrafts !== true && !requested) {
 					yield* annotate("skipped", { "maple.pr_review.skip_reason": "draft" })
@@ -1776,6 +1794,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 								baseSha: job.baseSha ?? null,
 								url: job.url,
 								title: job.title,
+								authorLogin: job.authorLogin,
 								status: "queued",
 								sessionId: prReviewSessionId(orgId, reviewId),
 								createdAt: msToDate(nowMs),
@@ -1903,7 +1922,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 							.getInstallationById(orgId, repository.value.installationId)
 							.pipe(Effect.mapError(toPersistence))
 				const config = yield* repositories
-					.getPrReviewConfig(orgId, review.repositoryId)
+					.getEffectivePrReviewConfig(orgId, review.repositoryId)
 					.pipe(Effect.mapError(toPersistence))
 
 				// Earlier findings: the ones this head fixes, and the ones still open.

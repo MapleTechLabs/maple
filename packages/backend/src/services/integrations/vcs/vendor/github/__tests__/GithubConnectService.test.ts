@@ -664,6 +664,44 @@ describe("GithubConnectService", () => {
 		}).pipe(Effect.provide(connectLayer(testDb, scriptedHttp(connectResponders()), sent)))
 	})
 
+	it.effect("stores organization default rules, cleaned, and merges them under a repository's own", () => {
+		const testDb = createTestDb(trackedDbs)
+		const sent: Array<VcsSyncJob> = []
+		return Effect.gen(function* () {
+			const svc = yield* GithubConnectService
+			const repo = yield* VcsRepository
+			const { orgId, repository } = yield* connectedRepo(svc, repo)
+			const actor = asUserId("user_admin")
+			const saved = yield* svc.setPrReviewSettings(
+				orgId,
+				new PrReviewOrgSettings({
+					model: "openai/gpt-6-luna",
+					defaults: new PrReviewRepositoryConfig({
+						instructions: "  Org rule  ",
+						ignorePaths: [" dist/ ", "dist/", ""],
+						minInlineSeverity: "critical",
+					}),
+				}),
+				actor,
+			)
+			assert.strictEqual(saved.defaults?.instructions, "Org rule")
+			assert.deepStrictEqual(saved.defaults?.ignorePaths, ["dist/"])
+			const stored = yield* svc.getPrReviewSettings(orgId)
+			assert.strictEqual(stored.model, "openai/gpt-6-luna")
+			assert.strictEqual(stored.defaults?.minInlineSeverity, "critical")
+
+			yield* svc.setPrReviewConfig(
+				orgId,
+				repository.id,
+				new PrReviewRepositoryConfig({ instructions: "Repo rule", minInlineSeverity: "info" }),
+			)
+			const effective = yield* repo.getEffectivePrReviewConfig(orgId, repository.id)
+			assert.strictEqual(effective.instructions, "Org rule\n\nRepo rule")
+			assert.strictEqual(effective.minInlineSeverity, "info")
+			assert.deepStrictEqual(effective.ignorePaths, ["dist/"])
+		}).pipe(Effect.provide(connectLayer(testDb, scriptedHttp(connectResponders()), sent)))
+	})
+
 	it.effect(
 		"setPrReviewEnabled refuses an organization outside the staged rollout, but still turns off",
 		() => {

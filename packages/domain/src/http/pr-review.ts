@@ -205,11 +205,6 @@ export const PrReviewModel = Schema.Literals(PR_REVIEW_MODELS.map((model) => mod
 })
 export type PrReviewModel = Schema.Schema.Type<typeof PrReviewModel>
 
-/** Organization-wide review settings; absent fields use the deployment's defaults. */
-export class PrReviewOrgSettings extends Schema.Class<PrReviewOrgSettings>("PrReviewOrgSettings")({
-	model: Schema.optionalKey(PrReviewModel),
-}) {}
-
 /**
  * Per-repository review settings. Every field is optional so a repository with none set reviews
  * with the defaults: every lens, no ignored paths, drafts skipped, notes posted.
@@ -239,6 +234,49 @@ export class PrReviewRepositoryConfig extends Schema.Class<PrReviewRepositoryCon
 	 */
 	feedbackScope: Schema.optionalKey(PrReviewFeedbackScope),
 }) {}
+
+/** Organization-wide review settings; absent fields use the deployment's defaults. */
+export class PrReviewOrgSettings extends Schema.Class<PrReviewOrgSettings>("PrReviewOrgSettings")({
+	model: Schema.optionalKey(PrReviewModel),
+	/** Rules every repository starts from; a repository's own config overrides field by field. */
+	defaults: Schema.optionalKey(PrReviewRepositoryConfig),
+}) {}
+
+/**
+ * The config a review of one repository runs with: the repository's fields over the
+ * organization's. Instructions and ignored paths add up rather than replace, so a repository can
+ * only narrow what the organization asked for. Built unchecked: the sum can pass a single field's
+ * length cap, which bounds what one form saves, not what a review reads.
+ */
+export const mergePrReviewConfig = (
+	defaults: PrReviewRepositoryConfig | undefined,
+	repository: PrReviewRepositoryConfig,
+): PrReviewRepositoryConfig => {
+	if (defaults === undefined) return repository
+	const instructions = [defaults.instructions, repository.instructions]
+		.map((text) => text?.trim())
+		.filter((text): text is string => text !== undefined && text !== "")
+	const ignorePaths = [...new Set([...(defaults.ignorePaths ?? []), ...(repository.ignorePaths ?? [])])]
+	const pick = <K extends keyof PrReviewRepositoryConfig>(key: K) =>
+		repository[key] !== undefined
+			? { [key]: repository[key] }
+			: defaults[key] !== undefined
+				? { [key]: defaults[key] }
+				: undefined
+	return new PrReviewRepositoryConfig(
+		{
+			...(instructions.length > 0 ? { instructions: instructions.join("\n\n") } : undefined),
+			...(ignorePaths.length > 0 ? { ignorePaths } : undefined),
+			...pick("categories"),
+			...pick("minInlineSeverity"),
+			...pick("reviewDrafts"),
+			...pick("dailyLimit"),
+			...pick("automaticReviewLimit"),
+			...pick("feedbackScope"),
+		},
+		{ disableChecks: true },
+	)
+}
 
 /** The stored review: the shape a reader can rely on. */
 export class PrReviewReport extends Schema.Class<PrReviewReport>("PrReviewReport")({
