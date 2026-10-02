@@ -654,7 +654,6 @@ export const AlertChecks = table("alert_checks", {
 	GroupKey: T.string,
 	Timestamp: dateTime64,
 	Status: T.string,
-	SkipReason: T.string,
 	SignalType: T.string,
 	Comparator: T.string,
 	Threshold: T.float64,
@@ -670,6 +669,7 @@ export const AlertChecks = table("alert_checks", {
 	EvaluationDurationMs: T.uint32,
 	ErrorMessage: T.nullable(T.string),
 	ErrorCategory: T.string,
+	SkipReason: T.string,
 })
 
 export const AuditLog = table("audit_log", {

@@ -329,16 +329,16 @@ export const LOCAL_SCHEMA_HISTORY: ReadonlyArray<LocalSchemaHistoryEntry> = Obje
 		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
 	}),
 	Object.freeze({
-		// TODO(v27): what changed, whether any part is rewritten or any row
-		// moves, and what this edge does NOT backfill.
+		// v27 appends SkipReason to alert_checks. No row is rewritten: checks
+		// recorded before the edge keep an empty reason.
 		//
 		// projectRevision is carried forward deliberately: it is a hardcoded
 		// constant that no longer tracks the generator's header, and the identity
 		// this gate compares is the fingerprint/digest pair.
 		version: 27,
-		fingerprint: "f4b55267f932f2e3",
-		digest: "f4b55267f932f2e3028f082232a3d8899dd5a2993427a8fe9fc722fa7e46c417",
-		manifestDigest: "6e946029157f4d3adf5aa078f56261cc80e6a1165ff85a1cc5412288832476e6",
+		fingerprint: "64a7d92899d7bdb7",
+		digest: "64a7d92899d7bdb7380c150b0c15301396572d8d573bf4db7b890426e729c43c",
+		manifestDigest: "2f52ca5a525a85621729e885a028bc9bfe73fa94ef62be7790efec0283d792d5",
 		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
 	}),
 ] as const)
