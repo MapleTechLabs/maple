@@ -45,7 +45,7 @@ jobs:
               uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
 
             - name: Load secrets from Infisical
-              uses: Infisical/secrets-action@6cd3f7c0e4cc0d2395ee4ef414eb6eeb5d3e73db # v1.0.17
+              uses: Infisical/secrets-action@d2e351f16c6ca20d17c85e6c992e04bdeb64e87d # v1.0.18
               with:
                   method: "oidc"
                   identity-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
