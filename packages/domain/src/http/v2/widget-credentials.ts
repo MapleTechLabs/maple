@@ -30,7 +30,8 @@ import { publicError } from "./public-error"
  * scopes, a longer life, or more authority than the person running the app.
  */
 export const InstallationId = Schema.String.check(
-	Schema.isMinLength(8),
+	// Code points: the same as length for this ASCII id, and exportable as an exact `minLength`.
+	Schema.isMinCodePoints(8),
 	Schema.isMaxLength(128),
 	Schema.isPattern(/^[A-Za-z0-9_-]+$/u, {
 		description: "an opaque installation identifier (letters, digits, `_` and `-`)",
