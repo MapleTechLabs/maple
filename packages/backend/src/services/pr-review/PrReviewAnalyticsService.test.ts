@@ -213,6 +213,19 @@ describe("PrReviewAnalyticsService", () => {
 		),
 	)
 
+	it.effect("caps the window, so an unbounded range cannot build an unbounded series", () =>
+		provide(
+			Effect.gen(function* () {
+				yield* seed
+				const service = yield* PrReviewAnalyticsService
+				const analytics = yield* service.analytics(ORG, { startTime: 0, endTime: START + 10 * DAY })
+				assert.strictEqual(analytics.bucketSeconds, 7 * 86_400)
+				assert.isAtMost(analytics.series.length, 54)
+				assert.strictEqual(analytics.current.reviews, 4)
+			}),
+		),
+	)
+
 	it.effect("filters by author", () =>
 		provide(
 			Effect.gen(function* () {

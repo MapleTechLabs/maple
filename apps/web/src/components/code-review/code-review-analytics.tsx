@@ -10,7 +10,7 @@ import { ArrowRightIcon, ArrowTrendDownIcon, ArrowTrendUpIcon, GithubIcon } from
 import { pickTimeRangeSearch } from "@/components/time-range-picker/search"
 
 import { AuthorLabel } from "./author-avatar"
-import type { CodeReviewSearch } from "./code-review-layout"
+import type { CodeReviewSearch } from "./code-review-search"
 import {
 	CATEGORY_LABELS,
 	bucketIso,

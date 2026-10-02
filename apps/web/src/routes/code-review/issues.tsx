@@ -21,13 +21,15 @@ import {
 	SEVERITY_TONES,
 } from "@/components/code-review/code-review-format"
 import {
-	CODE_REVIEW_DEFAULT_PRESET,
 	CodeReviewFilters,
-	CodeReviewIssuesSearchFields,
 	CodeReviewLayout,
 	NothingInWindow,
-	type CodeReviewSearch,
 } from "@/components/code-review/code-review-layout"
+import {
+	CODE_REVIEW_DEFAULT_PRESET,
+	CodeReviewIssuesSearchFields,
+	type CodeReviewSearch,
+} from "@/components/code-review/code-review-search"
 import { ReviewDetailSheet } from "@/components/code-review/review-detail-sheet"
 import { QueryErrorState } from "@/components/common/query-error-state"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
@@ -51,7 +53,7 @@ function CodeReviewIssuesPage() {
 	const navigate = useNavigate({ from: Route.fullPath })
 	const preset = search.timePreset ?? CODE_REVIEW_DEFAULT_PRESET
 	const { startTime, endTime } = useEffectiveTimeRange(search.startTime, search.endTime, preset)
-	// Named for what it is, not `window`\'s global: the one key every query on the page shares.
+	// The resolved window, shared by the page's query and the filters' author list.
 	const window = { startTime: toEpochMs(startTime), endTime: toEpochMs(endTime) }
 	const [limit, setLimit] = useState(PAGE)
 
@@ -72,7 +74,8 @@ function CodeReviewIssuesPage() {
 	const onChange = (
 		patch: Partial<CodeReviewSearch> & Partial<Omit<IssuesSearch, keyof CodeReviewSearch>>,
 	) => {
-		setLimit(PAGE)
+		// Opening or closing a review keeps the rows already loaded; a filter change starts over.
+		if (Object.keys(patch).some((key) => key !== "review")) setLimit(PAGE)
 		void navigate({ search: (prev) => ({ ...prev, ...patch }) })
 	}
 	const filtered =

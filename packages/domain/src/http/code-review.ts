@@ -21,7 +21,11 @@ import { GitCommitSha, VcsRepositoryId } from "./vcs"
  * where the GitHub App that posts the reviews lives.
  */
 
-const EpochMs = Schema.NumberFromString.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0))
+/** Epoch ms up to the year 3000: past JavaScript's date range a bound turns into an Invalid Date. */
+const EpochMs = Schema.NumberFromString.check(
+	Schema.isInt(),
+	Schema.isBetween({ minimum: 0, maximum: 32_503_680_000_000 }),
+)
 const PageLimit = Schema.NumberFromString.check(
 	Schema.isInt(),
 	Schema.isBetween({ minimum: 1, maximum: 200 }),

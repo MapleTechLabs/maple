@@ -52,6 +52,8 @@ const DAY = 86_400
 const DEFAULT_PAGE = 50
 /** The repository and author lists are a leaderboard, not an index. */
 const TOP = 8
+/** The longest window analytics reads; an older start is moved up, which caps the bucket series. */
+const MAX_SPAN_MS = 366 * DAY * 1000
 
 /** Hourly up to two days, daily up to four months, weekly beyond. */
 export const codeReviewBucketSeconds = (spanMs: number) =>
@@ -302,10 +304,11 @@ export class PrReviewAnalyticsService extends Context.Service<
 			orgId: OrgId,
 			query: CodeReviewAnalyticsQuery,
 		) {
-			const spanMs = Math.max(query.endTime - query.startTime, 60_000)
+			const startTime = Math.max(query.startTime, query.endTime - MAX_SPAN_MS)
+			const spanMs = Math.max(query.endTime - startTime, 60_000)
 			const bucketSeconds = codeReviewBucketSeconds(spanMs)
-			const window: Window = { start: msToDate(query.startTime), end: msToDate(query.endTime) }
-			const previous: Window = { start: msToDate(query.startTime - spanMs), end: window.start }
+			const window: Window = { start: msToDate(startTime), end: msToDate(query.endTime) }
+			const previous: Window = { start: msToDate(startTime - spanMs), end: window.start }
 			yield* Effect.annotateCurrentSpan({
 				orgId,
 				"maple.code_review.span_ms": spanMs,
@@ -432,7 +435,7 @@ export class PrReviewAnalyticsService extends Context.Service<
 
 			// Every bucket of the window, so the chart's x axis is the window and not the data.
 			const bucketMs = bucketSeconds * 1000
-			const first = Math.floor(query.startTime / bucketMs) * bucketMs
+			const first = Math.floor(startTime / bucketMs) * bucketMs
 			const series = new Map<
 				number,
 				{ reviews: number; pullRequests: number; critical: number; warn: number; info: number }

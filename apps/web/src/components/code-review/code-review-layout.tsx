@@ -1,13 +1,7 @@
 import type { ReactNode } from "react"
 import { Link } from "@tanstack/react-router"
 import { Schema } from "effect"
-import {
-	PrReviewCategory,
-	PrReviewFindingStatus,
-	PrReviewId,
-	PrReviewSeverity,
-	VcsRepositoryId,
-} from "@maple/domain/http"
+import { VcsRepositoryId } from "@maple/domain/http"
 import { Button } from "@maple/ui/components/ui/button"
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
@@ -17,11 +11,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { BranchForkIcon, ChartBarIcon, CircleWarningIcon, GearIcon } from "@/components/icons"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
-import {
-	TimeRangeSearchFields,
-	pickTimeRangeSearch,
-	type TimeRangeSearch,
-} from "@/components/time-range-picker/search"
+import { pickTimeRangeSearch } from "@/components/time-range-picker/search"
 import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
 import { useOrganizationFeatureFlags } from "@/hooks/use-organization-feature-flags"
 import { Result, useAtomValue } from "@/lib/effect-atom"
@@ -29,36 +19,11 @@ import { retainedQuery } from "@/lib/services/common/atom-client"
 import { LONG_RANGE_PRESET_OPTIONS } from "@/lib/time-utils"
 
 import { AuthorLabel } from "./author-avatar"
-
-/** Reviews are slow-moving: a month is the window that has something in it. */
-export const CODE_REVIEW_DEFAULT_PRESET = "30d"
-export const CODE_REVIEW_MAX_RANGE_SECONDS = 365 * 24 * 60 * 60
-
-/** The filters the Analytics and Pull requests tabs share, carried between them. */
-export const CodeReviewSearchFields = {
-	repo: Schema.optional(VcsRepositoryId),
-	author: Schema.optional(Schema.String),
-	...TimeRangeSearchFields,
-}
-
-export const CodeReviewIssuesSearchFields = {
-	...CodeReviewSearchFields,
-	severity: Schema.optional(PrReviewSeverity),
-	category: Schema.optional(PrReviewCategory),
-	state: Schema.optional(PrReviewFindingStatus),
-	review: Schema.optional(PrReviewId),
-}
-
-export const CodeReviewListSearchFields = {
-	...CodeReviewSearchFields,
-	status: Schema.optional(Schema.Literals(["completed", "failed", "skipped", "running", "queued"])),
-	review: Schema.optional(PrReviewId),
-}
-
-export interface CodeReviewSearch extends TimeRangeSearch {
-	repo?: VcsRepositoryId
-	author?: string
-}
+import {
+	CODE_REVIEW_DEFAULT_PRESET,
+	CODE_REVIEW_MAX_RANGE_SECONDS,
+	type CodeReviewSearch,
+} from "./code-review-search"
 
 export type CodeReviewTab = "analytics" | "pull-requests" | "issues" | "settings"
 
