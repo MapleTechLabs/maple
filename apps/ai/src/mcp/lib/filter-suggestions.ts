@@ -72,6 +72,8 @@ export interface KnownValues {
 	/** False when `services` is a capped top-N, so absence from it proves nothing. */
 	readonly servicesComplete?: boolean
 	readonly environments?: ReadonlyArray<string>
+	/** Same as `servicesComplete`, for `environments`. */
+	readonly environmentsComplete?: boolean
 	readonly attributeKeys?: ReadonlyArray<string>
 	readonly spanNames?: ReadonlyArray<string>
 }
@@ -114,7 +116,7 @@ export const missingFilterHints = (
 				"environment",
 				environment,
 				known.environments,
-				true,
+				known.environmentsComplete ?? true,
 				"explore_attributes source=services lists the environments",
 			),
 		)
