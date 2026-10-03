@@ -145,6 +145,9 @@ export const truncateToolOutput = (
  */
 export const MAX_TOOL_TEXT_CHARS = 25_000
 
+/** Upper bound on `truncateToolOutput`'s appended marker, kept free on the hard-cut fallback. */
+const HARD_CUT_MARKER_RESERVE = 300
+
 /** Room kept for the budget notice, so adding it never pushes a fitted doc back over. */
 const NOTICE_RESERVE = 400
 
@@ -231,7 +234,26 @@ export const renderToolDocWithinBudget = (tool: ToolDoc, maxChars: number = MAX_
 	}
 	const omitted = tool.blocks.length - kept.length
 	const notice = budgetNotice(maxChars, clipped, omitted)
-	const text = render([...kept, { _tag: "text", text: notice }])
-	// Head and tail alone over budget: fall back to a hard cut, which carries its own notice.
-	return text.length <= maxChars ? text : truncateToolOutput(text, { maxBytes: maxChars }).text
+	const paging = clippedPaging(tool, clipped)
+	const text = renderToolDoc({
+		...tool,
+		...(paging === undefined ? undefined : { truncation: paging }),
+		blocks: [...kept, { _tag: "text", text: notice }],
+	})
+	if (text.length <= maxChars) return text
+	// Head and tail alone over budget: hard cut, leaving room for the cut's own marker.
+	const cut = truncateToolOutput(text, { maxBytes: Math.max(0, maxChars - HARD_CUT_MARKER_RESERVE) }).text
+	return cut.length <= maxChars ? cut : cut.slice(0, maxChars)
+}
+
+/**
+ * The tool's paging line once the budget has cut its body. Its next-page call would start after rows
+ * the model never received, so it is dropped (the budget notice says to lower `limit` instead), and
+ * the shown count follows the clipped table when that table is the page.
+ */
+const clippedPaging = (tool: ToolDoc, clipped: ClippedBlock | undefined): ToolDoc["truncation"] => {
+	if (tool.truncation === undefined) return undefined
+	const { shown, total, noun } = tool.truncation
+	const isPage = clipped !== undefined && clipped.unit === "rows" && clipped.total === shown
+	return { shown: isPage ? clipped.shown : shown, noun, ...(total === undefined ? undefined : { total }) }
 }
