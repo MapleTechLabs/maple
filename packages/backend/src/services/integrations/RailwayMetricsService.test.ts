@@ -90,7 +90,7 @@ const stubFetch = (calls: StubCalls, options: StubOptions = {}) => {
 		const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
 		const headers = new Headers(init?.headers)
 		const body = decodeRequestBody(await new Response(init?.body ?? null).text())
-		if (url.startsWith("https://ingest.test")) {
+		if (new URL(url).host === "ingest.test") {
 			calls.ingest.push({ body, authorization: headers.get("authorization") })
 			return json({}, options.ingestStatus ?? 200)
 		}
