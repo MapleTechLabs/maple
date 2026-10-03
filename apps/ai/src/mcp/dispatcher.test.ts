@@ -8,6 +8,11 @@ import { mapleToolCatalog, mapleToolCatalogFor, toInputSchema, toOutputSchema } 
 import type { McpToolRuntimeRequirements } from "./tools/runtime-requirements"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { AuditLogService, makeMemoryAuditLog } from "@maple/backend/services/audit/AuditLogService"
+import {
+	WarehouseQueryService,
+	type WarehouseQueryServiceApi,
+} from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { WarehouseQueryError } from "@maple/domain"
 
 const TENANT: TenantContext = {
 	orgId: "org_test" as TenantContext["orgId"],
@@ -302,6 +307,36 @@ describe("MCP dispatcher", () => {
 					connector: "testchat",
 					external_user_id: "u-1",
 				})
+			}),
+		)
+
+		// A warehouse failure is a real failure: the dispatcher span must export as Error,
+		// while the caller still receives an in-band isError result.
+		it.effect("fails the dispatcher span on a real query failure", () =>
+			Effect.gen(function* () {
+				const warehouse = {
+					rawSqlQuery: () =>
+						Effect.fail(new WarehouseQueryError({ message: "boom", pipeName: "run_sql" })),
+				} as unknown as WarehouseQueryServiceApi
+				const executor = yield* McpToolExecutor.make.pipe(
+					Effect.provide(
+						Context.make(AuditLogService, makeMemoryAuditLog()).pipe(
+							Context.add(WarehouseQueryService, warehouse),
+						) as Context.Context<McpToolRuntimeRequirements>,
+					),
+				)
+				const { spans, tracer } = makeRecordingTracer()
+
+				const result = yield* executor
+					.execute(TENANT, "run_sql", { sql: "SELECT 1 FROM traces WHERE $__orgFilter" }, "mcp")
+					.pipe(Effect.withTracer(tracer))
+				expect(result.isError).toBe(true)
+
+				const dispatchSpan = spans.find((s) => s.name === "McpToolDispatcher.call")
+				assert.isDefined(dispatchSpan)
+				expect(dispatchSpan.status._tag).toBe("Ended")
+				if (dispatchSpan.status._tag === "Ended") expect(dispatchSpan.status.exit._tag).toBe("Failure")
+				expect(dispatchSpan.attributes.get("maple.mcp.error.category")).toBe("query")
 			}),
 		)
 

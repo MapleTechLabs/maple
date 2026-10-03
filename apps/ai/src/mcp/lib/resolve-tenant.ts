@@ -65,6 +65,22 @@ const getBearerToken = (headers: Headers): string | undefined => {
 	return token
 }
 
+const MAPLE_API_KEY_PREFIX = "maple_ak_"
+const PLACEHOLDER = /\$\{[^}]*\}|^\$[A-Za-z_][A-Za-z0-9_]*$|^<[^>]+>$/
+
+/**
+ * Why a bearer can be neither a Maple key nor a session JWT, so the 401 names the fix instead of
+ * a JWT parse error. Undefined when the token may be valid and should be looked up.
+ */
+export const describeMalformedBearer = (token: string | undefined): string | undefined => {
+	if (token === undefined || token.startsWith(MAPLE_API_KEY_PREFIX)) return undefined
+	if (PLACEHOLDER.test(token)) {
+		return `The bearer token \`${token}\` is an unexpanded placeholder: your MCP client sent the variable name, not its value. Set the variable or paste the key; Maple API keys start with \`${MAPLE_API_KEY_PREFIX}\`.`
+	}
+	if (token.split(".").length === 3) return undefined
+	return `The bearer token is not a Maple API key. Maple API keys start with \`${MAPLE_API_KEY_PREFIX}\`; create one in Maple's settings, or connect with OAuth.`
+}
+
 const firstForwardedValue = (value: string | null) => value?.split(",")[0]?.trim()
 
 export const mcpResourceForRequest = (request: Request) => {
@@ -142,8 +158,15 @@ export const resolveMcpTenantContext = Effect.fn("resolveMcpTenantContext")(
 			})
 		}
 
+		const malformed = describeMalformedBearer(token)
+		if (malformed !== undefined) {
+			return yield* new McpAuthInvalidError({ message: malformed, reason: "malformed_token" })
+		}
+
 		const apiKeys = yield* ApiKeysService
 		const apiKeyResolved = yield* apiKeys.resolveByBearer(token).pipe(
+			// One retry absorbs a dropped pooled connection before the client sees a 503.
+			Effect.retry({ times: 1 }),
 			Effect.catchTag("@maple/http/errors/ApiKeyLookupPersistenceError", () =>
 				Effect.fail(
 					new McpAuthUnavailableError({
