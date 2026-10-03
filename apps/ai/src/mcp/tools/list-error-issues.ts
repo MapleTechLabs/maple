@@ -127,7 +127,7 @@ const spanLabelsFor = (
 		timeRange: { startTime: formatWarehouseDateTime(startMs), endTime: formatWarehouseDateTime(endMs) },
 	}).pipe(
 		provideWarehouseExecutorFromTenant(tenant),
-		Effect.catch(() => Effect.succeed(new Map<string, string>())),
+		Effect.orElseSucceed(() => new Map<string, string>()),
 	)
 }
 
