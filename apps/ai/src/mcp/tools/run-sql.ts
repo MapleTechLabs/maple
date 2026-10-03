@@ -109,7 +109,8 @@ const runSqlDescription =
 	`at most ${MAX_RAW_SQL_RESULT_ROWS} are fetched and the first ${MAX_RENDERED_ROWS} rendered, with the true count reported. ` +
 	"Use it to answer what query_data cannot express, to spot-check data, or to test SQL before saving it " +
 	"as a raw_sql widget with add_dashboard_widget. For trends and top-N prefer query_data. " +
-	"describe_warehouse_tables gives table and column names."
+	"Spans are in `traces` (there is no otel_spans, otel_traces or spans table) and log lines in `logs`; " +
+	"describe_warehouse_tables gives every table's columns."
 
 /** A warehouse cell as JSON: 64-bit ints can arrive as bigint, and nothing else is JSON-unsafe. */
 const toJson = (value: unknown): Schema.Json => {
