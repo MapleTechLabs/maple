@@ -29,6 +29,8 @@
  * enormous ones. Either alone lets the other through.
  */
 
+import { renderToolDoc, type DocBlock, type ToolDoc } from "../lib/tool-doc"
+
 /** Line ceiling. Enough rows to see a distribution; far short of enough to reason over one by one. */
 export const MAX_TOOL_OUTPUT_LINES = 2_000
 
@@ -135,4 +137,101 @@ export const truncateToolOutput = (
 		text: kept + marker(countLines(kept), totalLines, utf8ByteLength(kept), totalBytes),
 		truncated: true,
 	}
+}
+
+/**
+ * Character ceiling for the text a tool hands a model, enforced where a {@link ToolDoc} is rendered.
+ * Applies to every surface, MCP clients included; the byte/line bound above is the chat fallback.
+ */
+export const MAX_TOOL_TEXT_CHARS = 25_000
+
+/** Room kept for the budget notice, so adding it never pushes a fitted doc back over. */
+const NOTICE_RESERVE = 400
+
+interface ClippedBlock {
+	readonly block: DocBlock
+	readonly shown: number
+	readonly total: number
+	readonly unit: string
+}
+
+/** Largest `n` in `[1, total]` with `fits(n)`, or 0. `fits` is monotone: fewer units never render longer. */
+const largestFitting = (total: number, fits: (n: number) => boolean): number => {
+	let lo = 0
+	let hi = total
+	while (lo < hi) {
+		const mid = Math.ceil((lo + hi) / 2)
+		if (fits(mid)) lo = mid
+		else hi = mid - 1
+	}
+	return lo
+}
+
+/** A prefix of `block` that still fits, cut on whole rows, items, entries or lines. */
+const clipBlock = (block: DocBlock, fits: (block: DocBlock) => boolean): ClippedBlock | undefined => {
+	const clip = <A>(units: ReadonlyArray<A>, unit: string, make: (kept: ReadonlyArray<A>) => DocBlock) => {
+		const n = largestFitting(units.length, (count) => fits(make(units.slice(0, count))))
+		return n === 0 ? undefined : { block: make(units.slice(0, n)), shown: n, total: units.length, unit }
+	}
+	switch (block._tag) {
+		case "table":
+			return clip(block.rows, "rows", (rows) => ({ ...block, rows }))
+		case "list":
+			return clip(block.items, "items", (items) => ({ ...block, items }))
+		case "fields":
+			return clip(block.entries, "fields", (entries) => ({ ...block, entries }))
+		case "code":
+		case "text": {
+			const lines = block.text.split("\n")
+			if (lines.length > 1) return clip(lines, "lines", (kept) => ({ ...block, text: kept.join("\n") }))
+			return clip([...block.text], "characters", (kept) => ({ ...block, text: kept.join("") }))
+		}
+		case "heading":
+			return undefined
+	}
+}
+
+const budgetNotice = (maxChars: number, clipped: ClippedBlock | undefined, omitted: number): string => {
+	const parts = [
+		...(clipped === undefined
+			? []
+			: [`showing ${clipped.shown} of ${clipped.total} ${clipped.unit} in the last section`]),
+		...(omitted === 0 ? [] : [`${omitted} later section${omitted === 1 ? "" : "s"} omitted`]),
+	]
+	return (
+		`[Output budget reached (${formatNumberOfChars(maxChars)} characters): ${parts.join("; ")}. ` +
+		"Narrow the request to see the rest: lower `limit`, add filters (service, environment, " +
+		"attributes), page with `offset`, or shorten the time range.]"
+	)
+}
+
+const formatNumberOfChars = (chars: number): string =>
+	chars >= 1000 ? `${Math.round(chars / 1000)}k` : String(chars)
+
+/**
+ * Render a doc within {@link MAX_TOOL_TEXT_CHARS}. Head (title, scope, notices) and tail (paging,
+ * next calls) always survive; body blocks are kept in order and the first that overflows is cut on a
+ * row or line boundary, followed by a notice telling the model how to narrow the call.
+ */
+export const renderToolDocWithinBudget = (tool: ToolDoc, maxChars: number = MAX_TOOL_TEXT_CHARS): string => {
+	const full = renderToolDoc(tool)
+	if (full.length <= maxChars) return full
+	const limit = maxChars - NOTICE_RESERVE
+	const render = (blocks: ReadonlyArray<DocBlock>) => renderToolDoc({ ...tool, blocks })
+	const kept: Array<DocBlock> = []
+	let clipped: ClippedBlock | undefined
+	for (const block of tool.blocks) {
+		if (render([...kept, block]).length <= limit) {
+			kept.push(block)
+			continue
+		}
+		clipped = clipBlock(block, (candidate) => render([...kept, candidate]).length <= limit)
+		if (clipped !== undefined) kept.push(clipped.block)
+		break
+	}
+	const omitted = tool.blocks.length - kept.length
+	const notice = budgetNotice(maxChars, clipped, omitted)
+	const text = render([...kept, { _tag: "text", text: notice }])
+	// Head and tail alone over budget: fall back to a hard cut, which carries its own notice.
+	return text.length <= maxChars ? text : truncateToolOutput(text, { maxBytes: maxChars }).text
 }

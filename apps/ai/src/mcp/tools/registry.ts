@@ -82,7 +82,8 @@ import {
 	normalizeArguments,
 	type NormalizedArguments,
 } from "../lib/decode-issues"
-import { filterNextCalls, nextCallsOf, renderToolDoc, type NextCall, type ToolDoc } from "../lib/tool-doc"
+import { filterNextCalls, nextCallsOf, type NextCall, type ToolDoc } from "../lib/tool-doc"
+import { renderToolDocWithinBudget } from "./tool-output"
 import type { McpToolRequirements } from "./runtime-requirements"
 import { registerUpdateDashboardTool } from "./update-dashboard"
 import { registerUpdateDashboardWidgetTool } from "./update-dashboard-widget"
@@ -505,7 +506,7 @@ const finish = Effect.fnUntraced(function* (
 		)
 	}
 	const doc = invalid.length === 0 ? run.doc : filterNextCalls(run.doc, (call) => !invalid.includes(call))
-	const text = renderToolDoc(
+	const text = renderToolDocWithinBudget(
 		notices.length === 0 ? doc : { ...doc, notices: [...notices, ...(doc.notices ?? [])] },
 	)
 	const result: McpToolResult = {
