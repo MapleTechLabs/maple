@@ -10,6 +10,7 @@ import { spawn } from "node:child_process"
 import { existsSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
+import { MAPLE_AI_STAMP_ATTRS } from "@maple/domain/gen-ai"
 
 export const clickhouseE2eEnabled = process.env.CLICKHOUSE_E2E === "1"
 export const clickhouseUrl = process.env.CLICKHOUSE_E2E_URL ?? "http://127.0.0.1:8123"
@@ -210,3 +211,53 @@ const sampleValue = (type: string, quote64Bit: boolean): unknown => {
  */
 export const looksLikeIdentityColumn = (name: string): boolean =>
 	/hash|fingerprint/i.test(name) || /(?:_id|Id)$/.test(name) || /^id$/i.test(name)
+
+/**
+ * What the ingest gateway stamps on a span it classifies
+ * (`apps/ingest/src/ai_session/facts.rs`, `usage.rs`), spelled out per seed as
+ * the gateway would have written it: `ai_trace_index_mv` reads these and
+ * nothing else, so a seed without them materializes as neither a call nor a
+ * tool. Seeds keep their dialect attributes so detail reads see whole spans.
+ * `usage` is input, cache read, cache write, output, reasoning; a zero bucket
+ * is left out, as the gateway leaves it out.
+ */
+export const aiGatewayStamps = (facts: {
+	readonly llmCall?: boolean
+	readonly toolCall?: boolean
+	readonly error?: boolean
+	readonly model?: string
+	readonly agentName?: string
+	readonly toolName?: string
+	readonly responseId?: string
+	readonly toolDescription?: string
+	readonly toolErrorResult?: string
+	readonly usage?: readonly [number, number, number, number, number]
+	readonly cost?: string
+}): Readonly<Record<string, string>> => {
+	const usage = [
+		MAPLE_AI_STAMP_ATTRS.inputTokens,
+		MAPLE_AI_STAMP_ATTRS.cacheReadTokens,
+		MAPLE_AI_STAMP_ATTRS.cacheWriteTokens,
+		MAPLE_AI_STAMP_ATTRS.outputTokens,
+		MAPLE_AI_STAMP_ATTRS.reasoningTokens,
+	].map((key, index): readonly [string, string | undefined] => {
+		const count = facts.usage?.[index] ?? 0
+		return [key, count > 0 ? String(count) : undefined]
+	})
+	const entries: ReadonlyArray<readonly [string, string | undefined]> = [
+		[MAPLE_AI_STAMP_ATTRS.llmCall, facts.llmCall ? "1" : "0"],
+		[MAPLE_AI_STAMP_ATTRS.model, facts.model],
+		[MAPLE_AI_STAMP_ATTRS.agentName, facts.agentName],
+		[MAPLE_AI_STAMP_ATTRS.toolName, facts.toolName],
+		[MAPLE_AI_STAMP_ATTRS.responseId, facts.responseId],
+		[MAPLE_AI_STAMP_ATTRS.toolDescription, facts.toolDescription],
+		[MAPLE_AI_STAMP_ATTRS.toolErrorResult, facts.toolErrorResult],
+		[MAPLE_AI_STAMP_ATTRS.cost, facts.cost],
+		[MAPLE_AI_STAMP_ATTRS.toolCall, facts.toolCall ? "1" : undefined],
+		[MAPLE_AI_STAMP_ATTRS.error, facts.error ? "1" : undefined],
+		...usage,
+	]
+	return Object.fromEntries(
+		entries.filter((entry): entry is readonly [string, string] => entry[1] !== undefined),
+	)
+}

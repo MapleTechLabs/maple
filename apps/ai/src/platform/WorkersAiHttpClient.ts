@@ -24,7 +24,7 @@
  * Requests that are not Workers AI chat completions fall through to the wrapped client untouched.
  */
 import { Effect, Layer, Predicate } from "effect"
-import { HttpClient, HttpClientError, HttpClientResponse, type HttpClientRequest } from "effect/unstable/http"
+import { HttpClient, HttpClientError, HttpClientResponse, type HttpClientRequest } from "effect/http"
 
 /** The subset of the Cloudflare `Ai` binding this shim uses. */
 export interface WorkersAiBinding {

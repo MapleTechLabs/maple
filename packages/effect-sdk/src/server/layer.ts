@@ -1,7 +1,7 @@
 import type { Duration } from "effect"
 import { Effect, Layer, Redacted } from "effect"
-import { FetchHttpClient } from "effect/unstable/http"
-import { Otlp } from "effect/unstable/observability"
+import { FetchHttpClient } from "effect/http"
+import { Otlp } from "effect/observability"
 import { type MapleRegion, warnIfKeylessMapleIngest } from "@maple/browser-session/region"
 import { type ResolvedResource, resolveResource } from "./resource.js"
 

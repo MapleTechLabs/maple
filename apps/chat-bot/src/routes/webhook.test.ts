@@ -2,7 +2,7 @@ import type { InboundEvent } from "@maple/chat-platform"
 import type { IngressConnector } from "../config.ts"
 import { chatConnectorId } from "@maple/chat-platform"
 import { Context, Effect, Exit, Layer, Tracer } from "effect"
-import { HttpRouter, HttpServerResponse } from "effect/unstable/http"
+import { HttpRouter, HttpServerResponse } from "effect/http"
 import { describe, expect, it } from "vitest"
 import { InboundHandler, type InboundHandlerApi } from "../inbound.ts"
 import {

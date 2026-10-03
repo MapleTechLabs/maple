@@ -5,7 +5,7 @@ import { existsSync, lstatSync, readFileSync, rmSync, writeFileSync } from "node
 import { lstat, mkdir, readFile, readdir, rm, rmdir, stat } from "node:fs/promises"
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
 import { Duration, Effect, Option, Schema } from "effect"
-import { HttpClient, HttpClientRequest } from "effect/unstable/http"
+import { HttpClient, HttpClientRequest } from "effect/http"
 import { CHDB_VERSION, MAPLE_VERSION } from "../version"
 import { serverUrl } from "../lib/local-address"
 import { Chdb, RAW_TELEMETRY_TTL_COLUMNS } from "./chdb"
@@ -22,7 +22,9 @@ import {
 } from "./durable-files"
 import {
 	eventingControlSnapshotPath,
-	LocalEventingControlStore,
+	openControlStore,
+	restoreControlSnapshot,
+	validateControlSnapshot,
 	type EventingControlSnapshotValidation,
 } from "./eventing/control-store"
 import { CURRENT_LOCAL_SCHEMA, SCHEMA_FINGERPRINT } from "./schema-identity"
@@ -79,7 +81,7 @@ const IsoDateTime = Schema.String.check(
 const NonNegativeInt = Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0))
 /** Rows per UTC day for each raw table, with the table's TTL in days, measured on `countedOn`. */
 const RetainedDaysSchema = Schema.Struct({
-	countedOn: Schema.String.check(Schema.isPattern(/^\d{4}-\d{2}-\d{2}$/)),
+	countedOn: Schema.String.check(Schema.isPattern(/^\d{4}-\d{2}-\d{2}$/u)),
 	tables: Schema.Record(
 		Schema.String,
 		Schema.Struct({
@@ -134,7 +136,7 @@ const CheckpointManifestSchema = Schema.Union([
 		...CheckpointManifestFields,
 		controlRelativePath: Schema.String,
 		controlBytes: NonNegativeInt,
-		controlSha256: Schema.String.check(Schema.isPattern(/^[0-9a-f]{64}$/)),
+		controlSha256: Schema.String.check(Schema.isPattern(/^[0-9a-f]{64}$/u)),
 		controlValidation: EventingControlSnapshotValidationSchema,
 	}),
 ])
@@ -1029,7 +1031,7 @@ const resolveCheckpointById = async (
 		const controlSha256 = await sha256File(controlPath)
 		if (controlSha256 !== manifest.controlSha256)
 			throw new Error("checkpoint control-store digest mismatch")
-		const controlValidation = LocalEventingControlStore.validateSnapshot(controlPath)
+		const controlValidation = await Effect.runPromise(validateControlSnapshot(controlPath))
 		if (!controlValidationMatches(manifest.controlValidation, controlValidation))
 			throw new Error("checkpoint control-store validation does not match its manifest")
 	} else if (existsSync(controlPath)) {
@@ -1090,13 +1092,12 @@ const restoreResolvedInto = async (
 		)
 		freezeBackgroundMerges(db)
 		if (resolvedCheckpoint.manifest.formatVersion === MANIFEST_FORMAT_VERSION) {
-			await LocalEventingControlStore.restoreSnapshot(
-				join(resolvedCheckpoint.snapshotDir, "control.sqlite"),
-				targetDataDir,
+			await Effect.runPromise(
+				restoreControlSnapshot(join(resolvedCheckpoint.snapshotDir, "control.sqlite"), targetDataDir),
 			)
 		} else {
-			const controlStore = await LocalEventingControlStore.open(targetDataDir)
-			controlStore.close()
+			// A legacy checkpoint has no control snapshot: open and close to create an empty store.
+			await Effect.runPromise(Effect.scoped(Effect.asVoid(openControlStore(targetDataDir))))
 		}
 		return { db, validation: validateRestoredDatabase(db) }
 	} catch (error) {
@@ -2165,15 +2166,22 @@ const createCheckpointTraced = Effect.fn("CheckpointService.create")(function* (
 						: createError(error),
 				),
 			)
+			const controlPath = eventingControlSnapshotPath(options.dataDir, checkpointId)
+			yield* Effect.tryPromise({
+				try: async () => {
+					await syncTree(snapshotBackupDir(options.dataDir, checkpointId))
+					await assertNoSymlink(checkpointSnapshotsRoot(options.dataDir), controlPath)
+					await assertRealFile(controlPath, "checkpoint eventing control snapshot")
+				},
+				catch: createError,
+			})
+			const controlValidation = yield* validateControlSnapshot(controlPath).pipe(
+				Effect.mapError(createError),
+			)
 			const created = yield* Effect.tryPromise({
 				try: async () => {
 					const { oldState, snapshot, startedAt } = prepared
 					let { operation } = prepared
-					await syncTree(snapshotBackupDir(options.dataDir, checkpointId))
-					const controlPath = eventingControlSnapshotPath(options.dataDir, checkpointId)
-					await assertNoSymlink(checkpointSnapshotsRoot(options.dataDir), controlPath)
-					await assertRealFile(controlPath, "checkpoint eventing control snapshot")
-					const controlValidation = LocalEventingControlStore.validateSnapshot(controlPath)
 					operation = { ...operation, phase: "backup-complete" }
 					await writeOperation(options.dataDir, operation, options.faults)
 					const provisionalManifest: CheckpointManifest = {

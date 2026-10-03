@@ -44,6 +44,7 @@ const fmtPct = (fraction: number | null): string => (fraction === null ? "—" :
 export function registerQueryFunnelTool(server: McpToolRegistrar) {
 	server.define({
 		name: TOOL,
+		title: "Query Funnel",
 		description:
 			"Conversion funnel over product events (page views, browser `track()` events and server-side events), stitched per person. Reports each step's count, share of step 1, step-to-step conversion and drop-off, optionally per `breakdown_by` group. An event step needs the exact name `list_product_events` lists. The host, page, referrer, country, utm, device and browser filters narrow the population to persons with a matching session.",
 		parameters: Schema.Struct({

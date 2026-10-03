@@ -43,7 +43,7 @@ import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
 import { chatConnectorOutboundConfigKeys } from "@maple/chat-platform"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Cause, Effect, Layer, Ref } from "effect"
-import { HttpServerResponse } from "effect/unstable/http"
+import { HttpServerResponse } from "effect/http"
 
 /**
  * The alerting worker's resource bindings, split from the `Config`-sourced env
@@ -132,7 +132,7 @@ const props = Effect.gen(function* () {
 	return {
 		main: import.meta.url,
 		name: resolveWorkerName("alerting", stage, region),
-		compatibility: { date: "2026-04-08", flags: ["nodejs_compat"] },
+		compatibility: { date: "2026-10-01" },
 		placement: resolveWorkerPlacement(region),
 		// Under `bun dev`: a sticky port the app's route follows.
 		dev: workerDev("alerting"),

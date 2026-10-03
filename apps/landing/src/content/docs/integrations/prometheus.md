@@ -15,13 +15,13 @@ Maple can scrape any endpoint that serves the Prometheus or OpenMetrics text for
 
 Open **Integrations → Prometheus** in Maple and click **Add Target**. The **Add Scrape Target** dialog has these fields:
 
-| Field                         | Notes                                                                                                                              |
-| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| **Name**                      | Display name. Used as the service name when **Service Name** is empty.                                                             |
-| **Service Name**              | Optional. Sets `service.name` on the resource and the `job` attribute on every data point.                                         |
+| Field                         | Notes                                                                                                                                |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| **Name**                      | Display name. Used as the service name when **Service Name** is empty.                                                               |
+| **Service Name**              | Optional. Sets `service.name` on the resource and the `job` attribute on every data point.                                           |
 | **URL**                       | Full endpoint URL, for example `https://myapp.com:9090/metrics`. Loopback, private-range, and cloud-metadata addresses are rejected. |
-| **Scrape Interval (seconds)** | 5 to 300. Default 15.                                                                                                              |
-| **Authentication**            | **None**, **Bearer Token** (sent as `Authorization: Bearer …`), or **Basic Auth** (**Username** and **Password**).                 |
+| **Scrape Interval (seconds)** | 5 to 300. Default 15.                                                                                                                |
+| **Authentication**            | **None**, **Bearer Token** (sent as `Authorization: Bearer …`), or **Basic Auth** (**Username** and **Password**).                   |
 
 Credentials are encrypted at rest. The scraper receives the decrypted auth header from Maple's API for each run and sends it directly to your endpoint. Requests carry the user agent `maple-prometheus-scraper`.
 

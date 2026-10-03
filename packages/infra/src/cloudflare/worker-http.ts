@@ -1,9 +1,9 @@
 import * as Cloudflare from "alchemy/Cloudflare"
 import type { HttpEffect } from "alchemy/Http"
 import { Context, Effect, Exit, FileSystem, Layer, Logger, Path, Scope } from "effect"
-import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
-import * as Etag from "effect/unstable/http/Etag"
-import * as HttpPlatform from "effect/unstable/http/HttpPlatform"
+import { HttpServerRequest, HttpServerResponse } from "effect/http"
+import * as Etag from "effect/http/Etag"
+import * as HttpPlatform from "effect/http/HttpPlatform"
 
 const WorkerFileSystemLive = FileSystem.layerNoop({})
 

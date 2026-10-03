@@ -23,7 +23,7 @@ import * as Workers from "@distilled.cloud/cloudflare/workers"
 import * as Zones from "@distilled.cloud/cloudflare/zones"
 import { IntegrationsRevokedError, IntegrationsUpstreamError } from "@maple/domain/http"
 import { Effect, Layer, Match, Schema, Stream } from "effect"
-import { FetchHttpClient, type HttpClient } from "effect/unstable/http"
+import { FetchHttpClient, type HttpClient } from "effect/http"
 
 /** The Effect context a distilled operation requires: resolved credentials + an HTTP client. */
 type CloudflareRequirements = Credentials | HttpClient.HttpClient
@@ -160,12 +160,10 @@ const collectBounded = <T, E, R>(stream: Stream.Stream<T, E, R>, max: number) =>
 	stream.pipe(
 		Stream.take(max + 1),
 		Stream.runCollect,
-		Effect.map(
-			(collected): BoundedListing<T> => ({
-				items: collected.slice(0, max),
-				truncated: collected.length > max,
-			}),
-		),
+		Effect.map((collected): BoundedListing<T> => ({
+			items: collected.slice(0, max),
+			truncated: collected.length > max,
+		})),
 	)
 
 /**

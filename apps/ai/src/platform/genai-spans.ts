@@ -20,12 +20,12 @@ import {
 } from "@maple/domain/gen-ai"
 import { Effect, Option, Predicate, Stream } from "effect"
 import type { Tracer } from "effect"
-import * as AiError from "effect/unstable/ai/AiError"
-import type * as LanguageModel from "effect/unstable/ai/LanguageModel"
-import type * as Prompt from "effect/unstable/ai/Prompt"
-import * as Telemetry from "effect/unstable/ai/Telemetry"
-import * as Tool from "effect/unstable/ai/Tool"
-import type * as Toolkit from "effect/unstable/ai/Toolkit"
+import * as AiError from "effect/ai/AiError"
+import type * as LanguageModel from "effect/ai/LanguageModel"
+import type * as Prompt from "effect/ai/Prompt"
+import * as Telemetry from "effect/ai/Telemetry"
+import * as Tool from "effect/ai/Tool"
+import type * as Toolkit from "effect/ai/Toolkit"
 import { coalesceDeltas } from "./coalesce-deltas"
 
 /**
@@ -511,7 +511,7 @@ const EXECUTE_TOOL_SPAN_PREFIX = "execute_tool "
 /**
  * The engine's `execute_tool` span, found from inside a tool handler.
  *
- * effect-agent's tool spans are content-free by design, and it runs a handler under a local span it
+ * @yielded/agent's tool spans are content-free by design, and it runs a handler under a local span it
  * never exports (`AgentRuntime.toolkit.handle`) whose parent is the canonical `execute_tool` one — so
  * an `annotateCurrentSpan` there would land on a span nobody sees. Matched by the convention's span
  * name, not the engine's internal one, so a handler that already runs directly under the tool span
@@ -579,7 +579,7 @@ export const withToolCallContent = <A, E, R>(
 /**
  * A toolkit's handler map and its layer, with every handler recording its own call content.
  *
- * The one seam Maple has for this: effect-agent's `execute_tool` span is content-free, so a handler
+ * The one seam Maple has for this: @yielded/agent's `execute_tool` span is content-free, so a handler
  * registered straight through `toolkit.toLayer` produces a tool call Agent Sessions renders with no
  * arguments and no result. `submit_diagnosis` — whose arguments ARE the diagnosis report — shipped
  * that way. Wrapping is a whole-map operation rather than something each handler remembers, the

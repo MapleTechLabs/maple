@@ -1,4 +1,4 @@
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpApiBuilder } from "effect/http-api"
 import { Clock, Effect, Option, Schema } from "effect"
 import { EdgeCacheService } from "@maple/cache"
 import {

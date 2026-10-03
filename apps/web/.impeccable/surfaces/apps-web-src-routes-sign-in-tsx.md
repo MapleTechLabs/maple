@@ -2,7 +2,7 @@
 version: 1
 slug: "apps-web-src-routes-sign-in-tsx"
 primary_target: "apps/web/src/routes/sign-in.tsx"
-related_targets: ["apps/web/src/routes/sign-up.tsx","apps/web/src/components/layout/account-layout.tsx"]
+related_targets: ["apps/web/src/routes/sign-up.tsx", "apps/web/src/components/layout/account-layout.tsx"]
 ---
 
 # Account entry

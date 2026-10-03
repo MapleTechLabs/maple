@@ -10,8 +10,8 @@ import {
 import { MapleApiV2 } from "@maple/domain/http/v2"
 import { QueryEngineExecuteResponse } from "@maple/query-engine"
 import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Option, Schema } from "effect"
-import { HttpRouter } from "effect/unstable/http"
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpRouter } from "effect/http"
+import { HttpApiBuilder } from "effect/http-api"
 import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { ApiAuthorizationV2Layer } from "@maple/backend/services/auth/ApiAuthorizationV2Layer"
@@ -331,6 +331,7 @@ describe("GET /v2/widget_summary", () => {
 		let issuesEnv: string | undefined
 		let catalogSql = ""
 		const seriesEnvironments: Array<ReadonlyArray<string> | undefined> = []
+		const seriesRootOnly: Array<boolean | undefined> = []
 
 		const harness = makeHarness({
 			listIssues: (_orgId, opts) => {
@@ -354,6 +355,7 @@ describe("GET /v2/widget_summary", () => {
 			}) as WarehouseQueryService,
 			queryEngine: queryEngineStub((tenant, request) => {
 				seriesEnvironments.push(request.query.filters?.environments)
+				seriesRootOnly.push(request.query.filters?.rootSpansOnly)
 				return seriesEngine.execute(tenant, request)
 			}),
 		})
@@ -368,6 +370,9 @@ describe("GET /v2/widget_summary", () => {
 			// headline it sits under would describe different populations.
 			expect(seriesEnvironments).toHaveLength(2)
 			expect(seriesEnvironments).toEqual([["staging"], ["staging"]])
+			// Entry spans, like the catalog; also what keeps the read on the rollups
+			// rather than a raw scan of every span in the org.
+			expect(seriesRootOnly).toEqual([true, true])
 			// Echoed so the client can prove the payload belongs to the snapshot
 			// slot it is about to overwrite.
 			expect(summary.body.deployment_environment).toBe("staging")

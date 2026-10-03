@@ -6,6 +6,7 @@ import { registerAddDashboardWidgetTool } from "./add-dashboard-widget"
 import { registerDescribeWarehouseTablesTool } from "./describe-warehouse-tables"
 import { registerComparePeriodsTool } from "./compare-periods"
 import { registerCreateAlertRuleTool } from "./create-alert-rule"
+import { registerPreviewAlertRuleTool } from "./preview-alert-rule"
 import { registerUpdateAlertRuleTool } from "./update-alert-rule"
 import { registerDeleteAlertRuleTool } from "./delete-alert-rule"
 import { registerCreateDashboardTool } from "./create-dashboard"
@@ -36,6 +37,7 @@ import { registerListErrorIssuesTool } from "./list-error-issues"
 import { registerLinkPullRequestTool } from "./link-pull-request"
 import { registerProposeFixTool } from "./propose-fix"
 import { registerRegisterAgentTool } from "./register-agent"
+import { registerSendMapleFeedbackTool } from "./send-maple-feedback"
 import { registerReleaseErrorIssueTool } from "./release-error-issue"
 import { registerSetIssueSeverityTool } from "./set-issue-severity"
 import { registerTransitionErrorIssueTool } from "./transition-error-issue"
@@ -97,6 +99,7 @@ interface MapleToolDefinition extends MapleToolCatalogEntry {
 
 export interface MapleToolCatalogEntry {
 	readonly name: string
+	readonly title: string
 	readonly description: string
 	readonly schema: Schema.Codec<unknown, unknown, never, unknown>
 	readonly outputSchema: Schema.Codec<unknown, unknown, never, never>
@@ -318,6 +321,7 @@ const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 		const encode = Schema.encodeUnknownEffect(spec.output)
 		definitions.push({
 			name: spec.name,
+			title: spec.title,
 			description: spec.description,
 			schema: spec.parameters,
 			outputSchema: spec.output,
@@ -375,6 +379,7 @@ const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 	registerGetAlertRuleTool(registrar)
 	registerListAlertIncidentsTool(registrar)
 	registerListAlertChecksTool(registrar)
+	registerPreviewAlertRuleTool(registrar)
 	registerGetIncidentTimelineTool(registrar)
 	registerCreateAlertRuleTool(registrar)
 	registerUpdateAlertRuleTool(registrar)
@@ -410,6 +415,7 @@ const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 	registerLinkPullRequestTool(registrar)
 	registerListErrorIssueEventsTool(registrar)
 	registerRegisterAgentTool(registrar)
+	registerSendMapleFeedbackTool(registrar)
 	registerListErrorIncidentsTool(registrar)
 	registerUpdateErrorNotificationPolicyTool(registrar)
 

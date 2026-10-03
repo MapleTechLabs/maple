@@ -11,12 +11,12 @@ The **Metrics** page lists every metric Maple received in the selected time rang
 
 Metrics arrive over OTLP from an OpenTelemetry SDK or collector, or from a [Prometheus scrape target](/docs/integrations/prometheus). Maple stores four OTLP metric types:
 
-| Type                  | Badge         | Examples                                       |
-| --------------------- | ------------- | ---------------------------------------------- |
+| Type                  | Badge         | Examples                                        |
+| --------------------- | ------------- | ----------------------------------------------- |
 | Sum                   | **Sum**       | Request counters, bytes sent. Monotonic or not. |
-| Gauge                 | **Gauge**     | Memory in use, queue depth.                    |
-| Histogram             | **Histogram** | Request duration with explicit buckets.        |
-| Exponential histogram | **Exp Hist**  | Request duration with exponential buckets.     |
+| Gauge                 | **Gauge**     | Memory in use, queue depth.                     |
+| Histogram             | **Histogram** | Request duration with explicit buckets.         |
+| Exponential histogram | **Exp Hist**  | Request duration with exponential buckets.      |
 
 OTLP Summary metrics are not stored. The Prometheus scraper converts summaries into sums and a quantile gauge before ingest.
 
@@ -43,12 +43,12 @@ The metric page has a chart, a breakdown panel, and a side panel of metadata.
 
 Query controls above the chart:
 
-| Control      | What it does                                                                                                   |
-| ------------ | -------------------------------------------------------------------------------------------------------------- |
+| Control       | What it does                                                                                                                                                          |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Aggregate** | How data points combine per time bucket. Monotonic sums offer `rate` (the default), `increase`, and `sum`. Other types offer `avg`, `sum`, `min`, `max`, and `count`. |
-| **Where**    | A filter on attributes, with autocomplete. For example `http.route = "/api/users"`.                            |
-| **Group by** | **Everything (no breakdown)**, `service.name`, or any data point attribute as `attr.<key>`.                    |
-| **Every**    | The bucket size in seconds. **Auto** picks one from the time range.                                            |
+| **Where**     | A filter on attributes, with autocomplete. For example `http.route = "/api/users"`.                                                                                   |
+| **Group by**  | **Everything (no breakdown)**, `service.name`, or any data point attribute as `attr.<key>`.                                                                           |
+| **Every**     | The bucket size in seconds. **Auto** picks one from the time range.                                                                                                   |
 
 The chart header shows the query, such as `rate(http.server.requests) by service.name`, and the metric's unit.
 

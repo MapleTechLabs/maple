@@ -260,22 +260,18 @@ export function IssueTimeline({
 	// foot, and a thread that answers itself upwards is unreadable — a reply
 	// rendered above the message it replies to.
 	const items: ReadonlyArray<TimelineItem> = [
-		...events.map(
-			(event): TimelineItem => ({
-				kind: "event",
-				key: event.id,
-				createdAt: event.createdAt,
-				event,
-			}),
-		),
-		...escalations.map(
-			(escalation): TimelineItem => ({
-				kind: "escalation",
-				key: `escalation:${escalation.id}`,
-				createdAt: escalation.createdAt,
-				escalation,
-			}),
-		),
+		...events.map((event): TimelineItem => ({
+			kind: "event",
+			key: event.id,
+			createdAt: event.createdAt,
+			event,
+		})),
+		...escalations.map((escalation): TimelineItem => ({
+			kind: "escalation",
+			key: `escalation:${escalation.id}`,
+			createdAt: escalation.createdAt,
+			escalation,
+		})),
 	].sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt))
 
 	if (items.length === 0) {

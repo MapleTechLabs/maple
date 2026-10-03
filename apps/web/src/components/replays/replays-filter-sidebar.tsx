@@ -10,6 +10,15 @@ import {
 import { MagnifierIcon, XmarkIcon } from "@/components/icons"
 import { browserIconFor, deviceIconFor } from "@/components/replays/session-icons"
 import {
+	SESSION_TAG_DESCRIPTIONS,
+	SESSION_TAG_DOTS,
+	SESSION_TAG_LABELS,
+	SESSION_TAG_ORDER,
+	asSessionTag,
+	nextTagSelection,
+	sessionTagsFromSearch,
+} from "@/components/replays/session-tags"
+import {
 	InputGroup,
 	InputGroupAddon,
 	InputGroupButton,
@@ -49,6 +58,8 @@ interface ReplaysFacets {
 	readonly groups: ReadonlyArray<ReplaysFacetItem>
 	/** Page paths visited anywhere in a session, by sessions that reached them. */
 	readonly pages: ReadonlyArray<ReplaysFacetItem>
+	/** Sessions per rule-based tag; tags with no sessions are absent. */
+	readonly tags: ReadonlyArray<ReplaysFacetItem>
 	readonly errorCount: number
 	/** Session-length distribution: `name` is the bucket floor in ms. */
 	readonly durationBuckets: ReadonlyArray<ReplaysFacetItem>
@@ -78,7 +89,7 @@ function sessionLengthPresets(p50Ms: number, p95Ms: number): RangePreset[] {
 // to avoid. Static thresholds, named for what they mean.
 const ACTIVE_TIME_PRESETS: RangePreset[] = [
 	{ key: "idle", label: "Idle", value: "<5s", max: 5 },
-	{ key: "engaged", label: "Engaged", value: ">30s", min: 30 },
+	{ key: "active", label: "Active", value: ">30s", min: 30 },
 ]
 
 // The facet branches exclude their own dimension server-side, so a selected
@@ -90,6 +101,32 @@ function withSelected(options: ReadonlyArray<ReplaysFacetItem>, selected?: strin
 		list.unshift({ name: selected, count: 0 })
 	}
 	return list
+}
+
+// Every tag in a fixed order, counts filled from the facet. Each count is taken
+// under the other selected tags, so it reads as "sessions you would get by ticking it".
+function tagOptions(counts: ReadonlyArray<ReplaysFacetItem>): FilterOption[] {
+	return SESSION_TAG_ORDER.map((tag) => ({
+		name: tag,
+		count: counts.find((item) => item.name === tag)?.count ?? 0,
+	})).filter((option) => option.count > 0)
+}
+
+const tagLabel = (name: string) => {
+	const tag = asSessionTag(name)
+	return tag === undefined ? name : SESSION_TAG_LABELS[tag]
+}
+
+// The same colour the tag's pill has in the list, so the two read as one vocabulary.
+const tagDot = (name: string) => {
+	const tag = asSessionTag(name)
+	if (tag === undefined) return undefined
+	return <span aria-hidden className={cn("size-2 shrink-0 rounded-full", SESSION_TAG_DOTS[tag])} />
+}
+
+const tagDescription = (name: string) => {
+	const tag = asSessionTag(name)
+	return tag === undefined ? undefined : SESSION_TAG_DESCRIPTIONS[tag]
 }
 
 interface ReplaysFilterSidebarProps {
@@ -109,6 +146,13 @@ export function ReplaysFilterSidebar({ facetsResult }: ReplaysFilterSidebarProps
 		navigate({
 			search: (prev) => ({ ...prev, [key]: values.at(-1) ?? undefined }),
 		})
+	}
+
+	// Traits combine with a tier; ticking a tier replaces the previous one, since a
+	// session has exactly one and two would match nothing.
+	const setTags = (values: string[]) => {
+		const next = nextTagSelection(sessionTagsFromSearch(search.tags) ?? [], values)
+		navigate({ search: (prev) => ({ ...prev, tags: next.length > 0 ? next : undefined }) })
 	}
 
 	const setUserId = (value: string | undefined) => {
@@ -148,6 +192,7 @@ export function ReplaysFilterSidebar({ facetsResult }: ReplaysFilterSidebarProps
 		!!search.user ||
 		!!search.group ||
 		!!search.page ||
+		(search.tags?.length ?? 0) > 0 ||
 		search.hasErrors === true ||
 		search.durationMin != null ||
 		search.durationMax != null ||
@@ -164,6 +209,11 @@ export function ReplaysFilterSidebar({ facetsResult }: ReplaysFilterSidebarProps
 			const devices = withSelected(facets.devices, search.deviceType)
 			const groups = withSelected(facets.groups, search.group)
 			const pages = withSelected(facets.pages, search.page)
+			const selectedTags = sessionTagsFromSearch(search.tags) ?? []
+			const tags = tagOptions(facets.tags)
+			for (const tag of selectedTags) {
+				if (!tags.some((option) => option.name === tag)) tags.unshift({ name: tag, count: 0 })
+			}
 
 			const hasFacets =
 				services.length > 0 ||
@@ -172,6 +222,7 @@ export function ReplaysFilterSidebar({ facetsResult }: ReplaysFilterSidebarProps
 				devices.length > 0 ||
 				groups.length > 0 ||
 				pages.length > 0 ||
+				tags.length > 0 ||
 				facets.errorCount > 0
 
 			return (
@@ -189,6 +240,18 @@ export function ReplaysFilterSidebar({ facetsResult }: ReplaysFilterSidebarProps
 						    that exact filter, with the same facet count, as a one-click chip. Two
 						    controls for one boolean in the same viewport is not redundancy, it is a
 						    question about whether they agree. */}
+						{/* The cheapest cut through the noise: "Engaged" alone drops bots,
+						    bounces, idle tabs and glances, usually most of a window. */}
+						<FilterSection
+							title="Session type"
+							options={tags}
+							selected={selectedTags}
+							onChange={setTags}
+							getOptionLabel={tagLabel}
+							getOptionDescription={tagDescription}
+							renderOptionIcon={tagDot}
+						/>
+
 						<RangeFilterSection
 							title="Session length"
 							unit="s"

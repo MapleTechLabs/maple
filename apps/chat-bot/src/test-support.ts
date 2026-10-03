@@ -10,7 +10,7 @@ import type { ConnectorConfig, InboundEvent, InboundMessage, SocketStep } from "
 import type { IngressConnector } from "./config.ts"
 import { ConnectorIngressError, chatConnectorId, socketIngress } from "@maple/chat-platform"
 import { Effect, Schema } from "effect"
-import { HttpServerResponse } from "effect/unstable/http"
+import { HttpServerResponse } from "effect/http"
 
 export const TEST_SOCKET_ID = chatConnectorId("testchat")
 export const TEST_WEBHOOK_ID = chatConnectorId("testhook")

@@ -38,13 +38,27 @@ export type MetricsMetric = Schema.Schema.Type<typeof MetricsMetric>
 export const MetricType = Schema.Literals(["sum", "gauge", "histogram", "exponential_histogram"])
 export type MetricType = Schema.Schema.Type<typeof MetricType>
 
-export const AttributeFilter = Schema.Struct({
+const attributeFilterFields = {
 	key: Schema.String,
 	value: Schema.optional(Schema.String),
 	/** Candidate set for `mode: "in"`. Ignored by every other mode, which read `value`. */
 	values: Schema.optional(Schema.Array(Schema.String)),
 	mode: Schema.Literals(["equals", "exists", "gt", "gte", "lt", "lte", "contains", "in"]),
 	negated: Schema.optional(Schema.Boolean),
+}
+
+/** One attribute predicate, the member type of an `or` group. */
+export const AttributeFilterLeaf = Schema.Struct(attributeFilterFields)
+export type AttributeFilterLeaf = Schema.Schema.Type<typeof AttributeFilterLeaf>
+
+export const AttributeFilter = Schema.Struct({
+	...attributeFilterFields,
+	/**
+	 * Alternatives on the same attribute map: the filter matches when it, or any
+	 * of these, matches. A where-clause `(a = 1 OR b = 2)` group. Filters stay
+	 * AND-ed with each other.
+	 */
+	or: Schema.optional(Schema.Array(AttributeFilterLeaf)),
 })
 export type AttributeFilter = Schema.Schema.Type<typeof AttributeFilter>
 
@@ -690,7 +704,11 @@ export const QueryEngineSampleCountStrategy = Schema.Literals([
 })
 export type QueryEngineSampleCountStrategy = Schema.Schema.Type<typeof QueryEngineSampleCountStrategy>
 
-export const QueryEngineNoDataBehavior = Schema.Literals(["skip", "zero"]).annotate({
+/**
+ * What an empty window evaluates to: `skip` the check, read it as `zero`, or
+ * `alert`, which counts it as a breach so a rule that goes blind opens an incident.
+ */
+export const QueryEngineNoDataBehavior = Schema.Literals(["skip", "zero", "alert"]).annotate({
 	identifier: "@maple/QueryEngineNoDataBehavior",
 })
 export type QueryEngineNoDataBehavior = Schema.Schema.Type<typeof QueryEngineNoDataBehavior>
@@ -772,3 +790,11 @@ export const WEB_ANALYTICS_UNSET = "(none)"
  * forever when a tab dies without sending its unload row.
  */
 export const SESSION_LIVE_WINDOW_SECONDS = 300
+
+export {
+	SESSION_QUALITY_TAGS,
+	SESSION_TAG_THRESHOLDS,
+	SESSION_TAGS,
+	SessionTag,
+	sessionTagsOf,
+} from "./session-tags"

@@ -198,6 +198,29 @@ describe("ErrorIssueReadModelsService", () => {
 		}).pipe(Effect.provide(makeLayer(contexts)))
 	})
 
+	it.effect("keeps only issues introduced or regressed after an instant", () => {
+		const contexts: Array<string> = []
+		return Effect.gen(function* () {
+			const readModels = yield* ErrorIssueReadModelsService
+			const now = yield* Clock.currentTimeMillis
+			const fresh = asIssueId(randomUUID())
+			const regressed = asIssueId(randomUUID())
+			const ongoing = asIssueId(randomUUID())
+
+			yield* seedIssue(ORG, fresh, now, { firstSeenAt: msToDate(now - 60_000) })
+			yield* seedIssue(ORG, regressed, now, {
+				firstSeenAt: msToDate(now - 86_400_000),
+				lastRegressedAt: msToDate(now - 30_000),
+			})
+			yield* seedIssue(ORG, ongoing, now, { firstSeenAt: msToDate(now - 86_400_000) })
+
+			const listed = yield* readModels.listIssues(ORG, {
+				introducedAfter: new Date(now - 120_000).toISOString(),
+			})
+			expect(listed.issues.map((issue) => issue.id).toSorted()).toEqual([fresh, regressed].toSorted())
+		}).pipe(Effect.provide(makeLayer(contexts)))
+	})
+
 	it.effect("preserves issue ownership and not-found semantics", () => {
 		const contexts: Array<string> = []
 		return Effect.gen(function* () {

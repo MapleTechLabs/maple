@@ -1,4 +1,5 @@
 import { resolveEffectiveTimeRange } from "@/hooks/use-effective-time-range"
+import { sessionTagsFromSearch } from "@/components/replays/session-tags"
 
 /**
  * The URL state the replays list filters on. Structurally the decoded search
@@ -23,6 +24,8 @@ export interface ReplaysSearchState {
 	readonly q?: string
 	/** Exact page path visited anywhere in the session. */
 	readonly page?: string
+	/** Required session tags, unvalidated as they come off the URL. */
+	readonly tags?: ReadonlyArray<string>
 	readonly durationMin?: number
 	readonly durationMax?: number
 	readonly activeMin?: number
@@ -58,6 +61,7 @@ export const replaysFilterInputs = (search: ReplaysSearchState) => {
 		hasErrors: search.hasErrors,
 		search: search.q,
 		pagePath: search.page,
+		tags: sessionTagsFromSearch(search.tags),
 		// URL params are whole seconds; the warehouse filters in ms.
 		durationMinMs: search.durationMin != null ? search.durationMin * 1000 : undefined,
 		durationMaxMs: search.durationMax != null ? search.durationMax * 1000 : undefined,

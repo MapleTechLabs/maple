@@ -1,5 +1,5 @@
 import { Clock, Effect, Schema } from "effect"
-import { HttpClient } from "effect/unstable/http"
+import { HttpClient } from "effect/http"
 import { OrgId, UserId } from "@maple/domain/http"
 import {
 	makeWarehouseExecutor,

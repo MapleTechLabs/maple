@@ -137,10 +137,10 @@ describe("serviceOverviewQuery", () => {
 		expect(sql).toContain("GROUP BY serviceName, environment")
 		expect(sql).toContain("quantilesTDigestMerge(0.5, 0.95, 0.99)(cDurationQuantiles)")
 		expect(sql).toContain("argMax(cServiceNamespace, cEstimatedSpanCount)")
-		expect(sql).toContain("sum(cSpanCount) AS throughput")
-		expect(sql).toContain("sum(cErrorCount) AS errorCount")
-		expect(sql).toContain("sum(cEstimatedErrorCount) AS estimatedErrorCount")
-		expect(sql).toContain("min(cFirstSeen) AS firstSeen")
+		expect(sql).toContain("sum(service_commit_rows.cSpanCount) AS throughput")
+		expect(sql).toContain("sum(service_commit_rows.cErrorCount) AS errorCount")
+		expect(sql).toContain("sum(service_commit_rows.cEstimatedErrorCount) AS estimatedErrorCount")
+		expect(sql).toContain("min(service_commit_rows.cFirstSeen) AS firstSeen")
 
 		// Commits ride along as a capped, count-descending tuple array rather than
 		// one row per commit. `arrayReverseSort`, not `arraySort(x -> -x.2)`: the
@@ -160,11 +160,13 @@ describe("serviceOverviewQuery", () => {
 		const q = serviceOverviewQuery({})
 		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("estimatedSpanCount")
-		expect(sql).toContain("sum(SampleRate)")
+		expect(sql).toContain("sum(service_overview_spans.SampleRate)")
 		expect(sql).toContain("estimatedErrorCount")
-		expect(sql).toContain("sumIf(SampleRate, StatusCode = 'Error')")
-		expect(sql).toContain("sum(EstimatedSpanCount)")
-		expect(sql).toContain("sum(bEstimatedSpanCount)")
+		expect(sql).toContain(
+			"sumIf(service_overview_spans.SampleRate, service_overview_spans.StatusCode = 'Error')",
+		)
+		expect(sql).toContain("sum(service_overview_hourly.EstimatedSpanCount)")
+		expect(sql).toContain("sum(service_windows.bEstimatedSpanCount)")
 		// The old `anyIf(threshold)` approach must be gone — it was the bug.
 		expect(sql).not.toContain("dominantThreshold")
 		expect(sql).not.toContain("anyIf")
@@ -230,7 +232,7 @@ describe("serviceHealthBaselineQuery", () => {
 		expect(sql).toContain(
 			"arrayElement(quantilesTDigestMerge(0.5, 0.95, 0.99)(bDurationQuantiles), 2) / 1000000 AS baselineP95LatencyMs",
 		)
-		expect(sql).toContain("sum(bSpanCount) AS baselineSpanCount")
+		expect(sql).toContain("sum(service_windows.bSpanCount) AS baselineSpanCount")
 		// Baseline must NOT split by commit — health compares service+env totals.
 		expect(sql).toContain("GROUP BY serviceName, serviceNamespace, environment")
 		expect(sql).not.toContain("commitSha")
@@ -257,8 +259,8 @@ describe("serviceReleasesTimelineQuery", () => {
 		expect(sql).toContain("ServiceName = 'api'")
 		expect(sql).toContain("CommitSha != ''")
 		expect(sql).toContain("CommitSha AS commitSha")
-		expect(sql).toContain("sum(bSpanCount) AS count")
-		expect(sql).toContain("sum(bErrorCount) AS errorCount")
+		expect(sql).toContain("sum(service_windows.bSpanCount) AS count")
+		expect(sql).toContain("sum(service_windows.bErrorCount) AS errorCount")
 		expect(sql).toContain("GROUP BY bucket, commitSha")
 		expect(sql).toContain("ORDER BY bucket ASC")
 		expect(sql).toContain("LIMIT 1000")
@@ -274,7 +276,7 @@ describe("serviceReleasesTimelineQuery", () => {
 		expect(sql).toContain("FROM service_overview_minutely")
 		expect(sql).not.toContain("FROM service_overview_hourly")
 		// The raw edge floors to the minute too, so every tier agrees on grain.
-		expect(sql).toContain("toStartOfMinute(Timestamp) AS bBucket")
+		expect(sql).toContain("toStartOfMinute(service_overview_spans.Timestamp) AS bBucket")
 	})
 
 	it("falls back to a raw scan for sub-minute buckets", () => {
@@ -320,7 +322,7 @@ describe("serviceApdexTimeseriesQuery", () => {
 		expect(sql).toContain("FROM service_overview_hourly")
 		expect(sql).toContain("UNION ALL")
 		expect(sql).toContain("ServiceName = 'api'")
-		expect(sql).toContain("sum(bSpanCount) AS totalCount")
+		expect(sql).toContain("sum(service_windows.bSpanCount) AS totalCount")
 		expect(sql).toContain("Duration < 500000000")
 		expect(sql).toContain("AS satisfiedCount")
 		expect(sql).toContain("AS toleratingCount")
@@ -329,7 +331,7 @@ describe("serviceApdexTimeseriesQuery", () => {
 		// gated on the non-error predicate, so a fast 5xx never inflates apdex.
 		expect(sql).toContain("StatusCode != 'Error'")
 		// totalCount still counts every span (errors included), so they drag the score down.
-		expect(sql).toContain("sum(bSpanCount) AS totalCount")
+		expect(sql).toContain("sum(service_windows.bSpanCount) AS totalCount")
 		expect(sql).toContain("GROUP BY bucket")
 		expect(sql).toContain("ORDER BY bucket ASC")
 		// The MV pre-filters at write time — the runtime root-only predicate is
@@ -361,10 +363,10 @@ describe("serviceApdexTimeseriesQuery", () => {
 		// The Apdex SELECT must contain the split-term form: each countIf is
 		// divided by count() before being summed, instead of summed first.
 		expect(sql).toContain(
-			"sum(bApdexSatisfiedCount) / sum(bSpanCount) + sum(bApdexToleratingCount) * 0.5 / sum(bSpanCount)",
+			"sum(service_windows.bApdexSatisfiedCount) / sum(service_windows.bSpanCount) + sum(service_windows.bApdexToleratingCount) * 0.5 / sum(service_windows.bSpanCount)",
 		)
 		// And it must NOT contain the buggy summed-then-divided form.
-		expect(sql).not.toMatch(/sum\(bApdexSatisfiedCount\) \+ sum\(bApdexToleratingCount\)/)
+		expect(sql).not.toMatch(/sum\((\w+\.)?bApdexSatisfiedCount\) \+ sum\((\w+\.)?bApdexToleratingCount\)/)
 	})
 
 	it("coerces BYO ClickHouse string-encoded Apdex aggregates", () => {
@@ -396,14 +398,14 @@ describe("serviceUsageQuery", () => {
 		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("FROM service_usage")
 		expect(sql).toContain("ServiceName AS serviceName")
-		expect(sql).toContain("sum(LogCount) AS totalLogCount")
-		expect(sql).toContain("sum(LogSizeBytes) AS totalLogSizeBytes")
-		expect(sql).toContain("sum(TraceCount) AS totalTraceCount")
-		expect(sql).toContain("sum(TraceSizeBytes) AS totalTraceSizeBytes")
-		expect(sql).toContain("sum(SumMetricCount) AS totalSumMetricCount")
-		expect(sql).toContain("sum(GaugeMetricCount) AS totalGaugeMetricCount")
-		expect(sql).toContain("sum(HistogramMetricCount) AS totalHistogramMetricCount")
-		expect(sql).toContain("sum(ExpHistogramMetricCount) AS totalExpHistogramMetricCount")
+		expect(sql).toContain("sum(service_usage.LogCount) AS totalLogCount")
+		expect(sql).toContain("sum(service_usage.LogSizeBytes) AS totalLogSizeBytes")
+		expect(sql).toContain("sum(service_usage.TraceCount) AS totalTraceCount")
+		expect(sql).toContain("sum(service_usage.TraceSizeBytes) AS totalTraceSizeBytes")
+		expect(sql).toContain("sum(service_usage.SumMetricCount) AS totalSumMetricCount")
+		expect(sql).toContain("sum(service_usage.GaugeMetricCount) AS totalGaugeMetricCount")
+		expect(sql).toContain("sum(service_usage.HistogramMetricCount) AS totalHistogramMetricCount")
+		expect(sql).toContain("sum(service_usage.ExpHistogramMetricCount) AS totalExpHistogramMetricCount")
 		expect(sql).toContain("AS totalSizeBytes")
 		expect(sql).toContain("GROUP BY serviceName")
 		expect(sql).toContain("ORDER BY totalSizeBytes DESC")
@@ -445,11 +447,11 @@ describe("serviceUsageWithPreviousQuery", () => {
 		expect(sql).toContain("Hour <= toStartOfHour(toDateTime('2024-01-03 00:00:00'))")
 		// Current totals are sumIf over [startTime, endTime].
 		expect(sql).toContain(
-			"sumIf(LogCount, (Hour >= toStartOfHour(toDateTime('2024-01-02 00:00:00')) AND Hour <= toStartOfHour(toDateTime('2024-01-03 00:00:00')))) AS totalLogCount",
+			"sumIf(service_usage.LogCount, (service_usage.Hour >= toStartOfHour(toDateTime('2024-01-02 00:00:00')) AND service_usage.Hour <= toStartOfHour(toDateTime('2024-01-03 00:00:00')))) AS totalLogCount",
 		)
 		// Previous aggregates are sumIf over [previousStartTime, previousEndTime].
 		expect(sql).toContain(
-			"sumIf(LogCount, (Hour >= toStartOfHour(toDateTime('2024-01-01 00:00:00')) AND Hour <= toStartOfHour(toDateTime('2024-01-02 00:00:00')))) AS previousLogCount",
+			"sumIf(service_usage.LogCount, (service_usage.Hour >= toStartOfHour(toDateTime('2024-01-01 00:00:00')) AND service_usage.Hour <= toStartOfHour(toDateTime('2024-01-02 00:00:00')))) AS previousLogCount",
 		)
 		expect(sql).toContain("AS previousSizeBytes")
 		expect(sql).toContain("GROUP BY serviceName")

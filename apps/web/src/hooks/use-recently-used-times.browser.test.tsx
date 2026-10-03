@@ -8,15 +8,12 @@ import type { ReactNode } from "react"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { useRecentlyUsedTimes } from "./use-recently-used-times"
 
-const ranges = Array.from(
-	{ length: 6 },
-	(_, index): RecentTimeRange => ({
-		label: `Range ${index + 1}`,
-		value: `${index + 1}h`,
-		startTime: `2026-07-17 0${index}:00:00`,
-		endTime: `2026-07-17 0${index + 1}:00:00`,
-	}),
-)
+const ranges = Array.from({ length: 6 }, (_, index): RecentTimeRange => ({
+	label: `Range ${index + 1}`,
+	value: `${index + 1}h`,
+	startTime: `2026-07-17 0${index}:00:00`,
+	endTime: `2026-07-17 0${index + 1}:00:00`,
+}))
 
 function createWrapper() {
 	const registry = Registry.make()

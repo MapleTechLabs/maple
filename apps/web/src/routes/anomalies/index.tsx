@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from "react"
-import { createFileRoute, useNavigate } from "@tanstack/react-router"
+import { Link, createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Result, useAtomRefresh } from "@/lib/effect-atom"
 import { Schema } from "effect"
 
@@ -29,8 +29,11 @@ import { runMapleApiV2 } from "@/lib/collections/api-runner"
 import { anomalyIncidentFromV2 } from "@/lib/services/anomalies"
 import { toastManager } from "@maple/ui/components/ui/toast"
 import { Button } from "@maple/ui/components/ui/button"
-import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@maple/ui/components/ui/empty"
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from "@maple/ui/components/ui/empty"
+import { DocsLink, EmptyActions } from "@/components/common/docs-link"
 import { ErrorState } from "@/components/common/error-state"
+import { ConnectionIcon } from "@/components/icons"
+import { useSignalPresence } from "@/hooks/use-signal-presence"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import type { AnomalyIncidentDocument, AnomalyIncidentId } from "@maple/domain/http"
 
@@ -354,6 +357,7 @@ function AnomaliesPageBody({
 	onLoadMore: () => void
 }) {
 	const navigate = useNavigate({ from: Route.fullPath })
+	const tracePresence = useSignalPresence("traces")
 
 	const grouped = useMemo(() => {
 		const map = new Map<AnomalyGroupKey, AnomalyIncidentDocument[]>()
@@ -431,12 +435,42 @@ function AnomaliesPageBody({
 									{hasActiveFilters
 										? "Try widening or clearing the filters."
 										: "The detector compares every service's error rate, latency, throughput, error fingerprints, and log volume against its own 7-day baseline. Incidents appear here when something deviates."}
+									{!hasActiveFilters && tracePresence.status === "absent"
+										? " Anomaly detection learns a baseline from your traces and logs. Send telemetry to start."
+										: null}
 								</EmptyDescription>
 							</EmptyHeader>
 							{hasActiveFilters ? (
 								<Button variant="outline" size="sm" onClick={onClearFilters}>
 									Clear filters
 								</Button>
+							) : tracePresence.status === "absent" ? (
+								<EmptyContent>
+									<EmptyActions>
+										<Button
+											size="sm"
+											className="gap-2"
+											render={<Link to="/settings" search={{ tab: "ingestion" }} />}
+										>
+											<ConnectionIcon size={14} />
+											Set up tracing
+										</Button>
+										<DocsLink page="instrumentation">Setup guide</DocsLink>
+									</EmptyActions>
+								</EmptyContent>
+							) : tracePresence.status === "present" ? (
+								<EmptyContent>
+									<EmptyActions>
+										<Button
+											variant="outline"
+											size="sm"
+											render={<Link to="/alerts/create" />}
+										>
+											Create an alert rule
+										</Button>
+										<DocsLink page="alertRules">Alert rules</DocsLink>
+									</EmptyActions>
+								</EmptyContent>
 							) : null}
 							{/* Named separately from "Clear filters": an inclusion is visible in what
 							    came back, an exclusion only in what did not. */}

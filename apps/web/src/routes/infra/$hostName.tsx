@@ -86,7 +86,13 @@ function HostDetailPage() {
 										onRetry={refreshSummary}
 									/>
 								))
-								.onSuccess((r) => <HostDetailHeader summary={r.data} hostName={hostName} />)
+								.onSuccess((r) => (
+									<HostDetailHeader
+										summary={r.data}
+										hostName={hostName}
+										onWidenRange={preset === "7d" ? undefined : () => setPreset("7d")}
+									/>
+								))
 								.render()}
 
 							<div className="rounded-md border bg-card">

@@ -30,6 +30,7 @@ import {
 } from "@/components/alerts/alert-segmented-select"
 import { destinationProvider, ProviderLogo } from "@/components/alerts/destination-provider"
 import { SeverityBadge, SEVERITY_ORDER } from "@/components/errors/severity-badge"
+import { DocsLink } from "@/components/common/docs-link"
 
 const CONFIDENCE_ANY = "any" as const
 
@@ -158,17 +159,22 @@ export function EscalationPolicySection({ isAdmin }: { isAdmin: boolean }) {
 					.onSuccess((response) => {
 						if (response.destinations.length === 0) {
 							return (
-								<p className="text-muted-foreground text-sm">
-									No destinations yet.{" "}
-									<Link
-										to="/alerts"
-										search={{ tab: "settings" }}
-										className="underline underline-offset-4 hover:text-foreground"
-									>
-										Create one in Alerts → Destinations
-									</Link>{" "}
-									first.
-								</p>
+								<div className="space-y-3">
+									<p className="text-muted-foreground text-sm">
+										Escalation sends triaged issues to a destination. Add a Slack, email
+										or webhook destination first.
+									</p>
+									<div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+										<Button
+											size="sm"
+											variant="outline"
+											render={<Link to="/alerts" search={{ tab: "settings" }} />}
+										>
+											Add a destination
+										</Button>
+										<DocsLink page="destinations" />
+									</div>
+								</div>
 							)
 						}
 						const destinationOptions = response.destinations.map((d) => ({

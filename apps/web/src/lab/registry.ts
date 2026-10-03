@@ -116,6 +116,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/replays",
+		title: "Session replays list",
+		description:
+			"The `/replays` list over a day of mostly bots, bounces and idle tabs, with an errored bot and a live bounce that must not fold into a low-signal run.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/agent-tools",
 		title: "Agent tools",
 		description:

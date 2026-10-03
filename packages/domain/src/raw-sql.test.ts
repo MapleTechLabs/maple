@@ -1,6 +1,6 @@
 import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
-import { isValidRawSql, RawSqlText, rawSqlIssue } from "./raw-sql"
+import { isValidRawSql, rawAlertSampleCountWarning, RawSqlText, rawSqlIssue } from "./raw-sql"
 
 const ok = "SELECT count() FROM logs WHERE $__orgFilter AND $__timeFilter(Timestamp)"
 
@@ -163,5 +163,38 @@ describe("RawSqlText", () => {
 		expect(() => decode("SELECT 1 WHERE $__orgFilter SETTINGS max_threads=8")).toThrow(
 			/SETTINGS is managed by Maple/,
 		)
+	})
+})
+
+describe("rawAlertSampleCountWarning", () => {
+	const noSamples = "SELECT count() AS value FROM traces WHERE $__orgFilter AND $__timeFilter(Timestamp)"
+	const withSamples =
+		"SELECT countIf(StatusCode = 'Error') / count() AS value, count() AS samples FROM traces WHERE $__orgFilter AND $__timeFilter(Timestamp)"
+
+	it("warns when a minimum above 1 would count rows", () => {
+		expect(rawAlertSampleCountWarning(noSamples, 50)).toMatch(/counts returned rows/)
+	})
+
+	it("stays quiet when the query selects samples or the minimum is trivial", () => {
+		expect(rawAlertSampleCountWarning(withSamples, 50)).toBeNull()
+		expect(rawAlertSampleCountWarning(noSamples, 1)).toBeNull()
+		expect(rawAlertSampleCountWarning(noSamples, 0)).toBeNull()
+	})
+
+	it("accepts a quoted alias and rejects one the engine would not read", () => {
+		const quoted = (alias: string) =>
+			`SELECT count() AS value, count() AS ${alias} FROM traces WHERE $__orgFilter AND $__timeFilter(Timestamp)`
+		expect(rawAlertSampleCountWarning(quoted("`samples`"), 10)).toBeNull()
+		expect(rawAlertSampleCountWarning(quoted('"samples"'), 10)).toBeNull()
+		expect(rawAlertSampleCountWarning(quoted("Samples"), 10)).not.toBeNull()
+		expect(rawAlertSampleCountWarning(quoted("samples_total"), 10)).not.toBeNull()
+		expect(rawAlertSampleCountWarning(`${noSamples} AND t.samples > 0`, 10)).not.toBeNull()
+	})
+
+	it("ignores samples mentioned only in a comment or string", () => {
+		expect(rawAlertSampleCountWarning(`${noSamples} -- samples`, 10)).not.toBeNull()
+		expect(
+			rawAlertSampleCountWarning(noSamples.replace("count()", "countIf(x = 'samples')"), 10),
+		).not.toBeNull()
 	})
 })

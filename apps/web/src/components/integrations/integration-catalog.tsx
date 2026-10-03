@@ -12,6 +12,7 @@ import {
 	HazelIcon,
 	PlanetScaleIcon,
 	PrometheusIcon,
+	RailwayIcon,
 	WarpStreamIcon,
 } from "@/components/icons"
 import { Option, Schema } from "effect"
@@ -21,6 +22,7 @@ import type { ChatConnectorManifest } from "@maple/chat-platform/manifests"
 import { PLANETSCALE_COLOR } from "@/components/infra/planetscale/metrics"
 import { useChatConnectorGate } from "@/hooks/use-organization-feature-flags"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
+import { docsUrl } from "@/lib/docs"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { retainedQuery } from "@/lib/services/common/atom-client"
 import { retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
@@ -37,6 +39,7 @@ export type IntegrationId =
 	| "cloudflare"
 	| "prometheus"
 	| "planetscale"
+	| "railway"
 	| "warpstream"
 	| "hazel"
 	| "github"
@@ -94,6 +97,8 @@ export const CLOUDFLARE_ACCENT = "#F38020"
 /** Google Analytics 4 brand orange. */
 export const GOOGLE_ANALYTICS_ACCENT = "#E37400"
 
+export const RAILWAY_ACCENT = "#0B0D0E"
+
 export interface CatalogEntry {
 	readonly id: IntegrationId
 	readonly name: string
@@ -128,28 +133,38 @@ const CATALOG: ReadonlyArray<CatalogEntry> = [
 	{
 		id: "cloudflare",
 		name: "Cloudflare",
-		description:
-			"Connect your Cloudflare account via OAuth — the foundation for one-click Workers telemetry.",
+		description: "Connect your Cloudflare account via OAuth to collect zone and Workers analytics.",
 		icon: CloudflareIcon,
 		accent: CLOUDFLARE_ACCENT,
+		docsUrl: docsUrl("cloudflare"),
 	},
 	{
 		id: "prometheus",
 		name: "Prometheus",
-		description: "Scrape any Prometheus-compatible endpoint on a schedule — no collector required.",
+		description: "Scrape any Prometheus-compatible endpoint on a schedule. No collector required.",
 		icon: PrometheusIcon,
 		accent: "#E6522C",
-		docsUrl: "https://maple.dev/docs/integrations/prometheus",
+		docsUrl: docsUrl("prometheus"),
 	},
 	{
 		id: "planetscale",
 		name: "PlanetScale",
 		description:
-			"Authorize your organization with one click — Maple tracks every database branch automatically.",
+			"Authorize your organization with one click. Maple tracks every database branch automatically.",
 		icon: PlanetScaleIcon,
 		// PlanetScale's mark is monochrome — neutral wash that works in both themes.
 		accent: PLANETSCALE_COLOR,
-		docsUrl: "https://maple.dev/docs/integrations/planetscale",
+		docsUrl: docsUrl("planetscale"),
+	},
+	{
+		id: "railway",
+		name: "Railway",
+		description:
+			"Paste a Railway token to collect CPU, memory, network and disk metrics for every service.",
+		icon: RailwayIcon,
+		accent: RAILWAY_ACCENT,
+		// Railway's mark is near-black — render it in the foreground token, like GitHub.
+		iconClassName: "text-foreground",
 	},
 	{
 		id: "warpstream",
@@ -158,13 +173,13 @@ const CATALOG: ReadonlyArray<CatalogEntry> = [
 		icon: WarpStreamIcon,
 		// WarpStream's brand crimson (fill of the official mark).
 		accent: "#E52344",
-		docsUrl: "https://maple.dev/docs/integrations/warpstream",
+		docsUrl: docsUrl("warpstream"),
 	},
 	{
 		id: "hazel",
 		name: "Hazel",
 		description:
-			"Forward Maple alerts into a Hazel workspace via OAuth — pick destinations per notification.",
+			"Forward Maple alerts into a Hazel workspace via OAuth. Pick destinations per notification.",
 		icon: HazelIcon,
 		accent: HAZEL_ACCENT,
 		docsUrl: "https://hazel.sh/docs/integrations/maple",
@@ -177,7 +192,7 @@ const CATALOG: ReadonlyArray<CatalogEntry> = [
 		accent: GITHUB_ACCENT,
 		// GitHub's mark is near-black — render the glyph in the foreground token so it reads on the card.
 		iconClassName: "text-foreground",
-		docsUrl: "https://maple.dev/docs/integrations/github",
+		docsUrl: docsUrl("github"),
 	},
 	{
 		id: "google-analytics",
@@ -271,14 +286,27 @@ export function useIntegrationStatuses(): Partial<Record<IntegrationId, CardStat
 			reactivityKeys: ["googleAnalyticsIntegration"],
 		}),
 	)
+	const railwayResult = useAtomValue(
+		retainedQuery("integrations", "railwayStatus", {
+			reactivityKeys: ["railwayIntegrationStatus"],
+		}),
+	)
 	const chatResult = useAtomValue(
 		retainedQueryV2("chatIntegration", "connectors", { reactivityKeys: ["chatIntegration"] }),
 	)
 
+	const railway: CardStatus | null = Result.builder(railwayResult)
+		.onSuccess((status): CardStatus => {
+			if (!status.connected) return NOT_CONNECTED
+			if (status.authFailed) return { label: "Token rejected", variant: "error" }
+			return { label: plural(status.environments.length, "environment"), variant: "success" }
+		})
+		.onInitial(() => null)
+		.orElse(() => STATUS_UNAVAILABLE)
+
 	const cloudflare: CardStatus | null = Result.builder(cloudflareAccountResult)
-		.onSuccess(
-			(status): CardStatus =>
-				status.connected ? { label: "Connected", variant: "success" } : NOT_CONNECTED,
+		.onSuccess((status): CardStatus =>
+			status.connected ? { label: "Connected", variant: "success" } : NOT_CONNECTED,
 		)
 		.onInitial(() => null)
 		.orElse(() => STATUS_UNAVAILABLE)
@@ -314,9 +342,8 @@ export function useIntegrationStatuses(): Partial<Record<IntegrationId, CardStat
 		.orElse(() => STATUS_UNAVAILABLE)
 
 	const hazel: CardStatus | null = Result.builder(hazelResult)
-		.onSuccess(
-			(status): CardStatus =>
-				status.connected ? { label: "Connected", variant: "success" } : NOT_CONNECTED,
+		.onSuccess((status): CardStatus =>
+			status.connected ? { label: "Connected", variant: "success" } : NOT_CONNECTED,
 		)
 		.onInitial(() => null)
 		.orElse(() => STATUS_UNAVAILABLE)
@@ -384,6 +411,7 @@ export function useIntegrationStatuses(): Partial<Record<IntegrationId, CardStat
 		cloudflare,
 		prometheus: scrapeStatus("prometheus"),
 		planetscale,
+		railway,
 		// WarpStream rides the generic Prometheus pipeline — no own target type.
 		warpstream: { label: "Via Prometheus", variant: "outline" },
 		hazel,
@@ -526,9 +554,36 @@ export function useIntegrationOverviews(): Record<IntegrationId, IntegrationOver
 			reactivityKeys: ["googleAnalyticsIntegration"],
 		}),
 	)
+	const railwayResult = useAtomValue(
+		retainedQuery("integrations", "railwayStatus", {
+			reactivityKeys: ["railwayIntegrationStatus"],
+		}),
+	)
 	const chatResult = useAtomValue(
 		retainedQueryV2("chatIntegration", "connectors", { reactivityKeys: ["chatIntegration"] }),
 	)
+
+	const railway: IntegrationOverview = Result.builder(railwayResult)
+		.onSuccess((status): IntegrationOverview => {
+			if (!status.connected) return CONNECT
+			const failing = status.environments.filter((environment) => environment.lastError != null).length
+			const issue = status.authFailed
+				? "Token rejected"
+				: failing > 0
+					? `${plural(failing, "environment")} failing`
+					: null
+			return {
+				kind: "connected",
+				health: issue ? "attention" : "healthy",
+				stateLabel: issue ? "Needs attention" : "Healthy",
+				context: status.workspaceNames,
+				stat: `${plural(status.environments.length, "environment")} polled`,
+				lastSyncLabel: syncedLabel(status.lastSyncedAt),
+				issue,
+			}
+		})
+		.onInitial(() => null)
+		.orElse(() => UNAVAILABLE)
 
 	const cloudflare: IntegrationOverview = Result.builder(cloudflareResult)
 		.onSuccess((status): IntegrationOverview => {
@@ -631,20 +686,19 @@ export function useIntegrationOverviews(): Record<IntegrationId, IntegrationOver
 		.orElse(() => UNAVAILABLE)
 
 	const hazel: IntegrationOverview = Result.builder(hazelResult)
-		.onSuccess(
-			(status): IntegrationOverview =>
-				status.connected
-					? {
-							kind: "connected",
-							health: "healthy",
-							stateLabel: "Healthy",
-							context: status.externalUserEmail,
-							stat: "Alert delivery ready",
-							// Hazel has no sync loop — deliveries are push-per-alert.
-							lastSyncLabel: null,
-							issue: null,
-						}
-					: CONNECT,
+		.onSuccess((status): IntegrationOverview =>
+			status.connected
+				? {
+						kind: "connected",
+						health: "healthy",
+						stateLabel: "Healthy",
+						context: status.externalUserEmail,
+						stat: "Alert delivery ready",
+						// Hazel has no sync loop — deliveries are push-per-alert.
+						lastSyncLabel: null,
+						issue: null,
+					}
+				: CONNECT,
 		)
 		.onInitial(() => null)
 		.orElse(() => UNAVAILABLE)
@@ -759,6 +813,7 @@ export function useIntegrationOverviews(): Record<IntegrationId, IntegrationOver
 		cloudflare,
 		prometheus: scrapeOverview("prometheus"),
 		planetscale,
+		railway,
 		// WarpStream rides the generic Prometheus pipeline — always a set-up card.
 		warpstream: SET_UP,
 		hazel,

@@ -8,7 +8,7 @@ import {
 	SqlSyntaxError,
 	UniqueViolation,
 	UnknownError,
-} from "effect/unstable/sql/SqlError"
+} from "effect/sql/SqlError"
 import { DatabaseError, toDatabaseError } from "./DatabaseLive"
 import {
 	isPostgresConnectionError,

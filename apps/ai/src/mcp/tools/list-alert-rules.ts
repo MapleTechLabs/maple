@@ -11,6 +11,7 @@ import { doc } from "../lib/tool-doc"
 export function registerListAlertRulesTool(server: McpToolRegistrar) {
 	server.define({
 		name: "list_alert_rules",
+		title: "List Alert Rules",
 		description:
 			"List configured alert rules with severity, signal type and condition. Use list_alert_incidents for what has fired.",
 		parameters: Schema.Struct({

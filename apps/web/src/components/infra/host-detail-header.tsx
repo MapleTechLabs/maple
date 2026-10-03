@@ -1,3 +1,5 @@
+import { Link } from "@tanstack/react-router"
+import { Button } from "@maple/ui/components/ui/button"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 
 import type { HostDetailSummaryResponse } from "@maple/domain/http"
@@ -12,14 +14,28 @@ import { formatRelativeTime } from "@maple/ui/lib/time-format"
 interface HostDetailHeaderProps {
 	summary: HostDetailSummaryResponse["data"]
 	hostName: string
+	/** Offered when the window is empty; omit when the range is already the widest. */
+	onWidenRange?: () => void
 }
 
-export function HostDetailHeader({ summary, hostName }: HostDetailHeaderProps) {
+export function HostDetailHeader({ summary, hostName, onWidenRange }: HostDetailHeaderProps) {
 	if (!summary) {
 		return (
 			<PageHero
 				title={<span className="font-mono">{hostName}</span>}
-				description="No metrics have arrived in the selected time window."
+				description="This host sent no metrics in the selected time window. It may have stopped reporting earlier: try a wider range, or go back to the hosts list."
+				actions={
+					<>
+						{onWidenRange ? (
+							<Button variant="outline" size="sm" onClick={onWidenRange}>
+								Show last 7 days
+							</Button>
+						) : null}
+						<Button variant="outline" size="sm" render={<Link to="/infra" />}>
+							Back to hosts
+						</Button>
+					</>
+				}
 			/>
 		)
 	}

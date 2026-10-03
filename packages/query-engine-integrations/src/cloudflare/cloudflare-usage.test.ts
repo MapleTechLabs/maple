@@ -16,10 +16,12 @@ describe("cloudflareUsageQuery", () => {
 		expect(sql).toContain("FROM metrics_sum")
 		expect(sql).toContain("OrgId = 'org_1'")
 		expect(sql).toContain("MetricName IN ('cloudflare.http.requests', 'cloudflare.worker.requests')")
-		expect(sql).toContain("toStartOfInterval(TimeUnix, INTERVAL 3600 SECOND)")
-		expect(sql).toContain("sum(Value) AS requests")
+		expect(sql).toContain("toStartOfInterval(metrics_sum.TimeUnix, INTERVAL 3600 SECOND)")
+		expect(sql).toContain("sum(metrics_sum.Value) AS requests")
 		expect(sql).toContain("count() AS datapoints")
-		expect(sql).toContain("formatDateTime(max(TimeUnix), '%Y-%m-%dT%H:%i:%S.%fZ') AS lastTimeUnix")
+		expect(sql).toContain(
+			"formatDateTime(max(metrics_sum.TimeUnix), '%Y-%m-%dT%H:%i:%S.%fZ') AS lastTimeUnix",
+		)
 		expect(sql).toContain("TimeUnix >= '2026-07-02 00:00:00.000'")
 		expect(sql).toContain("TimeUnix <= '2026-07-03 00:00:00.000'")
 		expect(sql).toContain("GROUP BY serviceName, bucket")
@@ -53,7 +55,7 @@ describe("cloudflareUsageStatsQuery", () => {
 		expect(sql).toContain("TimeUnix <= '2026-07-03 00:00:00.000'")
 		// Previous window: usage metrics strictly before the current window start.
 		expect(sql).toContain(
-			"sumIf(Value, (MetricName IN ('cloudflare.http.requests', 'cloudflare.worker.requests') AND TimeUnix < '2026-07-02 00:00:00.000')) AS previousRequests",
+			"sumIf(metrics_sum.Value, (metrics_sum.MetricName IN ('cloudflare.http.requests', 'cloudflare.worker.requests') AND metrics_sum.TimeUnix < '2026-07-02 00:00:00.000')) AS previousRequests",
 		)
 		// Current window: mitigating firewall actions only (no skip/log).
 		expect(sql).toContain("MetricName = 'cloudflare.firewall.events'")

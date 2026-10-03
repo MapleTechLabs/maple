@@ -74,7 +74,8 @@ const typing = (event: KeyboardEvent) =>
 	event.metaKey ||
 	event.ctrlKey ||
 	event.altKey ||
-	(event.target instanceof HTMLElement && event.target.closest("input, textarea, [contenteditable='true']") !== null)
+	(event.target instanceof HTMLElement &&
+		event.target.closest("input, textarea, [contenteditable='true']") !== null)
 
 /** Listens on the window for as long as the component is mounted. */
 function useWindowKeydown(handler: (event: KeyboardEvent) => void) {
@@ -163,7 +164,8 @@ export function ToolErrorModal({
 		variant !== undefined && session === undefined
 			? (detail.variants.find((row) => row.message === variant)?.calls ?? samples.occurrences.length)
 			: session !== undefined && variant === undefined
-				? (detail.sessions.find((row) => row.sessionId === session)?.hits ?? samples.occurrences.length)
+				? (detail.sessions.find((row) => row.sessionId === session)?.hits ??
+					samples.occurrences.length)
 				: variant === undefined
 					? group.calls
 					: samples.occurrences.length
@@ -217,8 +219,9 @@ export function ToolErrorModal({
 										Failures recorded before error grouping
 									</h2>
 									<p className="max-w-[90ch] font-mono text-xs leading-[17px] text-muted-foreground">
-										These calls failed before Maple kept a failure's text, so they cannot be told apart by
-										what they said. They leave this list as raw retention ages them out.
+										These calls failed before Maple kept a failure's text, so they cannot
+										be told apart by what they said. They leave this list as raw retention
+										ages them out.
 									</p>
 								</div>
 							) : text === "" ? (
@@ -232,7 +235,8 @@ export function ToolErrorModal({
 								<Facts
 									items={[
 										<span key="calls" className="text-foreground">
-											{formatToolCount(group.calls)} failed call{group.calls === 1 ? "" : "s"}
+											{formatToolCount(group.calls)} failed call
+											{group.calls === 1 ? "" : "s"}
 										</span>,
 										`${share}% of failures`,
 										`${formatToolCount(group.sessions)} session${group.sessions === 1 ? "" : "s"}`,
@@ -245,7 +249,11 @@ export function ToolErrorModal({
 
 						<div className="flex w-[340px] shrink-0 flex-col items-end gap-3.5 max-lg:items-start">
 							<div className="flex items-center gap-2">
-								<IconButton label="Previous error" disabled={position.index === 0} onClick={() => onStep(-1)}>
+								<IconButton
+									label="Previous error"
+									disabled={position.index === 0}
+									onClick={() => onStep(-1)}
+								>
 									<ChevronUpIcon size={12} aria-hidden />
 								</IconButton>
 								<IconButton
@@ -257,7 +265,11 @@ export function ToolErrorModal({
 								</IconButton>
 								<IconButton
 									label={
-										linkCopy === "failed" ? "Copy failed" : linkCopy === "copied" ? "Link copied" : "Copy link"
+										linkCopy === "failed"
+											? "Copy failed"
+											: linkCopy === "copied"
+												? "Link copied"
+												: "Copy link"
 									}
 									onClick={() => {
 										void navigator.clipboard.writeText(window.location.href).then(
@@ -266,7 +278,11 @@ export function ToolErrorModal({
 										)
 									}}
 								>
-									{linkCopy === "copied" ? <CheckIcon size={12} aria-hidden /> : <LinkIcon size={12} aria-hidden />}
+									{linkCopy === "copied" ? (
+										<CheckIcon size={12} aria-hidden />
+									) : (
+										<LinkIcon size={12} aria-hidden />
+									)}
 								</IconButton>
 								<Link
 									to="/agent-sessions"
@@ -276,7 +292,11 @@ export function ToolErrorModal({
 									className="inline-flex h-[30px] items-center gap-2 rounded-md border border-border bg-card px-2.5 font-mono text-[11.5px] text-foreground transition-colors hover:bg-muted/50"
 								>
 									Open in Sessions
-									<ExternalLinkIcon size={11} className="text-muted-foreground" aria-hidden />
+									<ExternalLinkIcon
+										size={11}
+										className="text-muted-foreground"
+										aria-hidden
+									/>
 								</Link>
 								<IconButton label="Close" onClick={onClose}>
 									<XmarkIcon size={12} aria-hidden />
@@ -293,8 +313,12 @@ export function ToolErrorModal({
 								</div>
 								<TrendBars counts={group.spark} width={340} height={44} radius={2} />
 								<div className="flex justify-between font-mono text-[10.5px] leading-3.5 text-muted-foreground/70">
-									<span>{windowRangeLabel(range.startMs, range.startMs, effectiveTimezone)}</span>
-									<span>{windowRangeLabel(range.endMs, range.endMs, effectiveTimezone)}</span>
+									<span>
+										{windowRangeLabel(range.startMs, range.startMs, effectiveTimezone)}
+									</span>
+									<span>
+										{windowRangeLabel(range.endMs, range.endMs, effectiveTimezone)}
+									</span>
 								</div>
 								<FailureStatusLine
 									status={status}
@@ -316,7 +340,10 @@ export function ToolErrorModal({
 					<div className="flex min-h-0 grow max-md:flex-col">
 						<aside className="flex w-[340px] shrink-0 flex-col overflow-y-auto overscroll-contain border-r border-border bg-sidebar max-md:h-56 max-md:w-full max-md:border-r-0 max-md:border-b">
 							{detailFailure !== undefined ? (
-								<QueryErrorState error={detailFailure} titleOverride="Failed to load this error's details" />
+								<QueryErrorState
+									error={detailFailure}
+									titleOverride="Failed to load this error's details"
+								/>
 							) : (
 								<>
 									{detail.variants.length > 1 ? (
@@ -444,13 +471,17 @@ function VariantsSection({
 					>
 						<span className="flex w-0 min-w-0 flex-1 items-baseline overflow-hidden whitespace-pre">
 							{difference === undefined || difference.middle === "" ? (
-								<span className="truncate text-muted-foreground">{unwrapToolErrorText(row.message).text}</span>
+								<span className="truncate text-muted-foreground">
+									{unwrapToolErrorText(row.message).text}
+								</span>
 							) : (
 								<>
 									<span className="min-w-0 truncate whitespace-pre text-muted-foreground">
 										{difference.before}
 									</span>
-									<span className="shrink-0 whitespace-pre font-medium text-foreground">{difference.middle}</span>
+									<span className="shrink-0 whitespace-pre font-medium text-foreground">
+										{difference.middle}
+									</span>
 									<span className="min-w-0 truncate whitespace-pre text-muted-foreground">
 										{difference.after}
 									</span>
@@ -463,7 +494,9 @@ function VariantsSection({
 								style={{ width: `${Math.max(4, (row.calls / max) * 100)}%` }}
 							/>
 						</span>
-						<span className="w-7 shrink-0 text-right tabular-nums text-foreground">{formatToolCount(row.calls)}</span>
+						<span className="w-7 shrink-0 text-right tabular-nums text-foreground">
+							{formatToolCount(row.calls)}
+						</span>
 					</button>
 				)
 			})}
@@ -479,7 +512,13 @@ function VariantsSection({
 
 /** Which models and services the group's failures ran under — "is it one
  *  model?" — folded from the read's pairs, whose counts add. */
-function WhereItHappens({ rows, loading }: { rows: ReadonlyArray<ToolErrorBreakdownRow>; loading?: boolean }) {
+function WhereItHappens({
+	rows,
+	loading,
+}: {
+	rows: ReadonlyArray<ToolErrorBreakdownRow>
+	loading?: boolean
+}) {
 	const fold = (keyOf: (row: ToolErrorBreakdownRow) => string) => {
 		const totals = new Map<string, number>()
 		for (const row of rows) totals.set(keyOf(row), (totals.get(keyOf(row)) ?? 0) + row.calls)
@@ -625,7 +664,12 @@ function SessionsSection({
 					{formatToolCount(total)}
 				</span>
 			</div>
-			<div className={cn("flex h-[30px] shrink-0 items-center gap-3 border-y border-border px-4", railLabel)}>
+			<div
+				className={cn(
+					"flex h-[30px] shrink-0 items-center gap-3 border-y border-border px-4",
+					railLabel,
+				)}
+			>
 				<span className="grow">Session</span>
 				<span className="w-10 shrink-0 text-right">Hits</span>
 				<span className="w-14 shrink-0 text-right">Last</span>
@@ -664,9 +708,17 @@ function SessionsSection({
 								className="absolute inset-0 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
 							/>
 							<span className="flex w-0 min-w-0 grow flex-col items-start gap-[3px]">
-								<SessionLink tool={tool} sessionId={row.sessionId} className="max-w-full font-mono text-xs" />
+								<SessionLink
+									tool={tool}
+									sessionId={row.sessionId}
+									className="max-w-full font-mono text-xs"
+								/>
 								<span className="w-full truncate font-mono text-[11px] leading-3.5 text-muted-foreground/70">
-									{row.service === "" ? (row.agentName === "" ? row.vendorId : row.agentName) : row.service}
+									{row.service === ""
+										? row.agentName === ""
+											? row.vendorId
+											: row.agentName
+										: row.service}
 								</span>
 							</span>
 							<span className="w-10 shrink-0 text-right font-mono text-xs tabular-nums text-foreground">
@@ -868,7 +920,12 @@ function Sample({
 				<span className="shrink-0 text-[12.5px] text-foreground">{time}</span>
 				<span className="flex min-w-0 shrink items-center gap-[5px] text-xs">
 					<span className="shrink-0 text-muted-foreground/70">session</span>
-					<SessionLink tool={tool} sessionId={row.sessionId} spanId={row.spanId} className="max-w-[160px]" />
+					<SessionLink
+						tool={tool}
+						sessionId={row.sessionId}
+						spanId={row.spanId}
+						className="max-w-[160px]"
+					/>
 				</span>
 				{/* Plain breakpoints, not container queries: the dialog is portalled out
 				    of the page's container, so `@min-…/page` never matches here. */}
@@ -932,12 +989,17 @@ function SampleBody({ row }: { row: ToolErrorOccurrenceRow }) {
 			)}
 			{row.arguments === "" && row.result === "" ? (
 				<div className="flex items-start gap-3 rounded-md border border-border bg-sidebar px-3.5 py-3 font-mono">
-					<span aria-hidden className="mt-[5px] size-1.5 shrink-0 rounded-full bg-muted-foreground" />
+					<span
+						aria-hidden
+						className="mt-[5px] size-1.5 shrink-0 rounded-full bg-muted-foreground"
+					/>
 					<span className="flex flex-col gap-1">
-						<span className="text-[12.5px] leading-4 text-foreground">The tool reported no error detail</span>
+						<span className="text-[12.5px] leading-4 text-foreground">
+							The tool reported no error detail
+						</span>
 						<span className="text-xs leading-[17px] text-muted-foreground">
-							This call recorded no arguments and no result, so the cause of the failure isn't in the
-							telemetry — the message above is all the span carries.
+							This call recorded no arguments and no result, so the cause of the failure isn't
+							in the telemetry — the message above is all the span carries.
 						</span>
 					</span>
 				</div>
@@ -950,10 +1012,22 @@ function SampleBody({ row }: { row: ToolErrorOccurrenceRow }) {
 	)
 }
 
-function PayloadHead({ label, attribute, bytes, action }: { label: string; attribute: string; bytes: number; action?: ReactNode }) {
+function PayloadHead({
+	label,
+	attribute,
+	bytes,
+	action,
+}: {
+	label: string
+	attribute: string
+	bytes: number
+	action?: ReactNode
+}) {
 	return (
 		<div className="flex items-center gap-2 font-mono leading-3.5">
-			<span className="text-[10.5px] uppercase tracking-[0.07em] text-muted-foreground/80">{label}</span>
+			<span className="text-[10.5px] uppercase tracking-[0.07em] text-muted-foreground/80">
+				{label}
+			</span>
 			<span className="truncate text-[10.5px] text-muted-foreground/50">
 				{attribute}
 				{bytes > 0 ? ` · ${formatToolCount(bytes)} B` : null}
@@ -968,7 +1042,9 @@ function NotRecorded({ what }: { what: "arguments" | "result" }) {
 	return (
 		<div className="flex flex-col gap-1 rounded-md border border-dashed border-input p-3.5 font-mono">
 			<span className="text-xs text-muted-foreground">Not recorded</span>
-			<span className="text-[11px] leading-[15px] text-muted-foreground/70">The span has no {what} attribute.</span>
+			<span className="text-[11px] leading-[15px] text-muted-foreground/70">
+				The span has no {what} attribute.
+			</span>
 		</div>
 	)
 }
@@ -981,12 +1057,23 @@ const utf8Length = (text: string) => new TextEncoder().encode(text).length
  * it runs past folded, long strings cut. "Show full payload" is everything the
  * read carries.
  */
-function ArgumentsBlock({ row, message, args }: { row: ToolErrorOccurrenceRow; message: string; args: unknown }) {
+function ArgumentsBlock({
+	row,
+	message,
+	args,
+}: {
+	row: ToolErrorOccurrenceRow
+	message: string
+	args: unknown
+}) {
 	const [full, setFull] = useState(false)
 	// `writeText` rejects outside a secure context or without the clipboard
 	// permission; the button says so rather than staying silent.
 	const [copy, setCopy] = useState<"idle" | "copied" | "failed">("idle")
-	const lines = useMemo(() => (args === undefined ? undefined : payloadLines(args, message)), [args, message])
+	const lines = useMemo(
+		() => (args === undefined ? undefined : payloadLines(args, message)),
+		[args, message],
+	)
 	if (row.arguments === "") {
 		return (
 			<div className="flex w-0 min-w-0 grow flex-col gap-2 max-lg:w-full">
@@ -1068,14 +1155,20 @@ function PayloadLineView({ line }: { line: PayloadLine }) {
 				<span
 					className={cn(
 						"whitespace-pre-wrap break-words",
-						line.highlight ? "text-foreground" : line.folded !== undefined ? "text-muted-foreground" : "text-foreground/85",
+						line.highlight
+							? "text-foreground"
+							: line.folded !== undefined
+								? "text-muted-foreground"
+								: "text-foreground/85",
 					)}
 				>
 					{line.text}
 				</span>
 			)}
 			{line.folded === undefined ? null : (
-				<span className="ml-2 rounded-[3px] bg-muted px-1 text-[10.5px] text-muted-foreground">{line.folded}</span>
+				<span className="ml-2 rounded-[3px] bg-muted px-1 text-[10.5px] text-muted-foreground">
+					{line.folded}
+				</span>
 			)}
 			{line.note === undefined ? null : (
 				<div className="flex items-center gap-2.5 pb-1 text-[11px] leading-3.5">

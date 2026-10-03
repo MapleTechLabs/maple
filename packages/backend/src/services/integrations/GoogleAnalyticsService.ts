@@ -40,7 +40,7 @@ import {
 } from "@maple/db"
 import { and, eq, gte, inArray, isNull, lt, or, sql } from "drizzle-orm"
 import { Clock, Context, Effect, Layer, Schema } from "effect"
-import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
@@ -335,12 +335,11 @@ export class GoogleAnalyticsService extends Context.Service<
 						),
 					),
 			).pipe(
-				Effect.map(
-					(rows): ReadonlyArray<LedgerBucket> =>
-						rows.map((row) => ({
-							bucketMs: row.bucketAt.getTime(),
-							emitted: parseLedger(row.emittedJson),
-						})),
+				Effect.map((rows): ReadonlyArray<LedgerBucket> =>
+					rows.map((row) => ({
+						bucketMs: row.bucketAt.getTime(),
+						emitted: parseLedger(row.emittedJson),
+					})),
 				),
 			)
 

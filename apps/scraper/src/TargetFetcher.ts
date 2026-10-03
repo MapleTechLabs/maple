@@ -1,5 +1,5 @@
 import { Context, Effect, Layer, Option, Schema } from "effect"
-import { FetchHttpClient } from "effect/unstable/http"
+import { FetchHttpClient } from "effect/http"
 import type { InternalScrapeTarget } from "@maple/domain/http"
 import { safeFetch, UrlValidationError } from "@maple/safe-fetch"
 

@@ -39,7 +39,7 @@ describe("planetscaleStorageSQL", () => {
 		// `(capacity - available) / capacity * 100` would compile to
 		// `capacity - available / capacity * 100` — a byte count, not a percentage.
 		// Subtracting free space from 100 is correct without parens.
-		expect(sql).toContain("100 - availableBytes / capacityBytes * 100")
+		expect(sql).toContain("100 - vol.availableBytes / vol.capacityBytes * 100")
 		expect(sql).not.toContain("capacityBytes - availableBytes / capacityBytes")
 	})
 
@@ -66,7 +66,7 @@ describe("planetscaleBranchStorageSQL", () => {
 	it("filters to one database and keeps the raw byte counts", () => {
 		const { sql } = compileUnsafe(planetscaleBranchStorageSQL(), { ...params, database: "maple" })
 		expect(sql).toContain(
-			"coalesce(nullIf(Attributes['planetscale_database_name'], ''), Attributes['planetscale_database']) = 'maple'",
+			"coalesce(nullIf(metrics_gauge.Attributes['planetscale_database_name'], ''), metrics_gauge.Attributes['planetscale_database']) = 'maple'",
 		)
 		expect(sql).toContain("GROUP BY database, branch")
 		expect(sql).toContain("FORMAT JSON")

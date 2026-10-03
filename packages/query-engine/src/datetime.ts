@@ -150,7 +150,7 @@ const isWarehouseTimeInput = Schema.makeFilter(
  * through {@link WarehouseTimeInput} or by {@link warehouseDateTime}.
  */
 export const WarehouseDateTime = Schema.String.pipe(
-	Schema.check(Schema.isPattern(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/), isWarehouseTimeInput),
+	Schema.check(Schema.isPattern(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/u), isWarehouseTimeInput),
 	Schema.brand("@maple/WarehouseDateTime"),
 ).annotate({
 	title: "WarehouseDateTime",
@@ -169,7 +169,7 @@ export type WarehouseDateTime = Schema.Schema.Type<typeof WarehouseDateTime>
  * the warehouse rather than by any check in front of it.
  */
 export const WarehouseDateTime64 = Schema.String.pipe(
-	Schema.check(Schema.isPattern(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}$/)),
+	Schema.check(Schema.isPattern(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}$/u)),
 	Schema.brand("@maple/WarehouseDateTime64"),
 ).annotate({
 	title: "WarehouseDateTime64",

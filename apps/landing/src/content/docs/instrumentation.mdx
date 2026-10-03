@@ -53,6 +53,10 @@ Maple ingests OpenTelemetry over OTLP/HTTP, so any OTLP exporter works without a
 
 </section>
 
+## AI agents and LLM calls
+
+Agent frameworks and LLM gateways have their own guides, so each conversation shows up as one [Agent Session](/docs/agent-sessions/overview) with its transcript, tool calls, tokens and cost: Vercel AI SDK, OpenAI Agents SDK, LangChain and LangGraph, Mastra, Pydantic AI, CrewAI, Google ADK, OpenRouter, LiteLLM and more. See [Trace your AI agent](/docs/agent-tracing).
+
 <section data-guide-section="infrastructure">
 
 ## Infrastructure and data sources
@@ -78,9 +82,9 @@ Maple reads the standard semantic conventions; the attributes it relies on for t
 
 Maple Cloud runs in two regions. An organization's region is chosen during onboarding and cannot be changed afterwards. Send telemetry to the ingest endpoint of your organization's region, with an ingest key created in that region's dashboard. A key from one region is rejected by the other.
 
-| Region | Dashboard | Ingest endpoint |
-| --- | --- | --- |
-| United States | `https://app.maple.dev` | `https://ingest.maple.dev` |
+| Region                     | Dashboard                  | Ingest endpoint               |
+| -------------------------- | -------------------------- | ----------------------------- |
+| United States              | `https://app.maple.dev`    | `https://ingest.maple.dev`    |
 | European Union (Frankfurt) | `https://app.eu.maple.dev` | `https://ingest.eu.maple.dev` |
 
 Every guide on this site uses the US endpoint. For an EU organization, replace `ingest.maple.dev` with `ingest.eu.maple.dev` and nothing else changes. See [Regions](/docs/reference/regions) for details and [EU hosting](/eu) for what the EU region covers.

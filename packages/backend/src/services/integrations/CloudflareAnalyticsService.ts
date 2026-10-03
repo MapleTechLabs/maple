@@ -66,7 +66,7 @@ import {
 	Result,
 	Schema,
 } from "effect"
-import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import {
 	graphqlQuery,

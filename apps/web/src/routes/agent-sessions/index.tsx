@@ -143,6 +143,19 @@ function AgentSessionsBody() {
 		[navigate],
 	)
 
+	// Every search key but the sort narrows the list.
+	const hasActiveFilters = Object.entries(search).some(
+		([key, value]) =>
+			key !== "sortBy" &&
+			key !== "sortDir" &&
+			value !== undefined &&
+			value !== "" &&
+			value !== false &&
+			!(Array.isArray(value) && value.length === 0),
+	)
+	const handleClearFilters = () =>
+		navigate({ search: (prev) => ({ sortBy: prev.sortBy, sortDir: prev.sortDir }) })
+
 	const toolbar = (
 		<AgentSessionsToolbar
 			// Held back until the first page lands, so the count never reads zero
@@ -205,6 +218,8 @@ function AgentSessionsBody() {
 								isCapped={isCapped}
 								loadingMore={isFetchingNextPage}
 								onReachEnd={fetchNextPage}
+								filtered={hasActiveFilters}
+								onClearFilters={handleClearFilters}
 							/>
 						))
 						.render()}

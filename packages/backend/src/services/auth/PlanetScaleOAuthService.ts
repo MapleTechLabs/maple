@@ -11,7 +11,7 @@ import {
 } from "@maple/domain/http"
 import { oauthAuthStates } from "@maple/db"
 import { Clock, Context, Duration, Effect, Layer, Option, Redacted, Result, Schema } from "effect"
-import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env, type EnvConfig } from "@maple/backend/platform/Env"
 import { msToDate } from "@maple/backend/platform/time"

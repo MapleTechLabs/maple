@@ -27,6 +27,19 @@ export const digestSubscriptions = pgTable(
 		environmentsJson: text("environments_json").notNull().default("[]"),
 		lastSentAt: timestamp("last_sent_at", { withTimezone: true, mode: "date" }),
 		lastAttemptedAt: timestamp("last_attempted_at", { withTimezone: true, mode: "date" }),
+		/**
+		 * The weekly web analytics email: a second, independent opt-out on the same
+		 * subscriber row. `enabled` is the ops digest's own switch, so the Clerk
+		 * reconciliation recomputes this one from `web_analytics_opted_out_at` the
+		 * same way. Sent on the same `day_of_week`, and only to orgs with browser data.
+		 */
+		webAnalyticsEnabled: boolean("web_analytics_enabled").notNull().default(true),
+		webAnalyticsOptedOutAt: timestamp("web_analytics_opted_out_at", { withTimezone: true, mode: "date" }),
+		webAnalyticsLastSentAt: timestamp("web_analytics_last_sent_at", { withTimezone: true, mode: "date" }),
+		webAnalyticsLastAttemptedAt: timestamp("web_analytics_last_attempted_at", {
+			withTimezone: true,
+			mode: "date",
+		}),
 		createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
 		updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
 	},

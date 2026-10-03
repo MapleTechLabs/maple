@@ -2,7 +2,12 @@
 version: 1
 slug: "apps-landing-src-pages-index-astro"
 primary_target: "apps/landing/src/pages/index.astro"
-related_targets: ["apps/landing/src/components/home/Home.astro","apps/landing/src/components/home/HomeHero.astro","apps/landing/src/styles/home-monument.css"]
+related_targets:
+    [
+        "apps/landing/src/components/home/Home.astro",
+        "apps/landing/src/components/home/HomeHero.astro",
+        "apps/landing/src/styles/home-monument.css",
+    ]
 ---
 
 # Homepage

@@ -21,7 +21,7 @@
  */
 import { IntegrationsRevokedError, IntegrationsUpstreamError } from "@maple/domain/http"
 import { Effect, Option, Schema } from "effect"
-import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 
 /**
  * Each call provides its own client rather than demanding one from the caller's context — the
@@ -76,7 +76,9 @@ const ReportRow = Schema.Struct({
  * row's positional values back to names without trusting our own request-building twice.
  */
 const RunReportResponse = Schema.Struct({
-	dimensionHeaders: Schema.optionalKey(Schema.Array(Schema.Struct({ name: Schema.optionalKey(Schema.String) }))),
+	dimensionHeaders: Schema.optionalKey(
+		Schema.Array(Schema.Struct({ name: Schema.optionalKey(Schema.String) })),
+	),
 	metricHeaders: Schema.optionalKey(Schema.Array(MetricHeader)),
 	rows: Schema.optionalKey(Schema.Array(ReportRow)),
 	rowCount: Schema.optionalKey(Schema.Number),
@@ -216,7 +218,9 @@ export const listProperties = Effect.fn("GoogleAnalyticsApi.listProperties")(fun
 			.pipe(
 				Effect.annotateSpans("peer.service", "google-analytics-admin"),
 				Effect.catchTag("HttpClientError", (error) =>
-					Effect.fail(upstream(`Google Analytics admin request failed: ${error.message}`, undefined, error)),
+					Effect.fail(
+						upstream(`Google Analytics admin request failed: ${error.message}`, undefined, error),
+					),
 				),
 			)
 
@@ -266,38 +270,37 @@ const decodePropertyDetail = Schema.decodeUnknownEffect(PropertyDetail)
  * property can be polled at all — `dateHour` is expressed in it — so this is fetched once per
  * property and cached on the state row rather than per discovery pass.
  */
-export const getPropertyTimeZone = Effect.fn("GoogleAnalyticsApi.getPropertyTimeZone")(
-	function* (options: {
-		readonly accessToken: string
-		readonly adminBaseUrl: string
-		readonly propertyId: string
-	}) {
-		const httpClient = yield* HttpClient.HttpClient
-		const url = `${options.adminBaseUrl.replace(/\/+$/, "")}/properties/${options.propertyId}`
-		const response = yield* httpClient
-			.execute(authorized(HttpClientRequest.get(url), options.accessToken))
-			.pipe(
-				Effect.annotateSpans("peer.service", "google-analytics-admin"),
-				Effect.catchTag("HttpClientError", (error) =>
-					Effect.fail(upstream(`Google Analytics admin request failed: ${error.message}`, undefined, error)),
+export const getPropertyTimeZone = Effect.fn("GoogleAnalyticsApi.getPropertyTimeZone")(function* (options: {
+	readonly accessToken: string
+	readonly adminBaseUrl: string
+	readonly propertyId: string
+}) {
+	const httpClient = yield* HttpClient.HttpClient
+	const url = `${options.adminBaseUrl.replace(/\/+$/, "")}/properties/${options.propertyId}`
+	const response = yield* httpClient
+		.execute(authorized(HttpClientRequest.get(url), options.accessToken))
+		.pipe(
+			Effect.annotateSpans("peer.service", "google-analytics-admin"),
+			Effect.catchTag("HttpClientError", (error) =>
+				Effect.fail(
+					upstream(`Google Analytics admin request failed: ${error.message}`, undefined, error),
 				),
-			)
-
-		if (response.status >= 300) {
-			const text = yield* response.text.pipe(Effect.orElseSucceed(() => ""))
-			return yield* Effect.fail(classifyFailure(response.status, text, "Admin API"))
-		}
-
-		const json = yield* response.json.pipe(
-			Effect.mapError(() => upstream("Google Analytics Admin API returned a non-JSON response")),
+			),
 		)
-		const detail = yield* decodePropertyDetail(json).pipe(
-			Effect.mapError(() => upstream("Google Analytics Admin API returned an unexpected payload")),
-		)
-		return { timeZone: detail.timeZone ?? null, displayName: detail.displayName ?? null }
-	},
-	withHttpClient,
-)
+
+	if (response.status >= 300) {
+		const text = yield* response.text.pipe(Effect.orElseSucceed(() => ""))
+		return yield* Effect.fail(classifyFailure(response.status, text, "Admin API"))
+	}
+
+	const json = yield* response.json.pipe(
+		Effect.mapError(() => upstream("Google Analytics Admin API returned a non-JSON response")),
+	)
+	const detail = yield* decodePropertyDetail(json).pipe(
+		Effect.mapError(() => upstream("Google Analytics Admin API returned an unexpected payload")),
+	)
+	return { timeZone: detail.timeZone ?? null, displayName: detail.displayName ?? null }
+}, withHttpClient)
 
 /** One Data API `runReport` against a single property. */
 export const runReport = Effect.fn("GoogleAnalyticsApi.runReport")(function* (options: {
@@ -335,7 +338,9 @@ export const runReport = Effect.fn("GoogleAnalyticsApi.runReport")(function* (op
 		.pipe(
 			Effect.annotateSpans("peer.service", "google-analytics-data"),
 			Effect.catchTag("HttpClientError", (error) =>
-				Effect.fail(upstream(`Google Analytics data request failed: ${error.message}`, undefined, error)),
+				Effect.fail(
+					upstream(`Google Analytics data request failed: ${error.message}`, undefined, error),
+				),
 			),
 		)
 

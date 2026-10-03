@@ -298,15 +298,13 @@ export const planetScaleWebhookPayloadFromEvent = (
 			}),
 		}),
 	)(event).pipe(
-		Result.map(
-			({ time, data }): PlanetScaleWebhookPayload => ({
-				timestamp: Date.parse(time) / 1000,
-				event: data.event,
-				organization: data.organization,
-				database: data.database,
-				resource: data.resource,
-			}),
-		),
+		Result.map(({ time, data }): PlanetScaleWebhookPayload => ({
+			timestamp: Date.parse(time) / 1000,
+			event: data.event,
+			organization: data.organization,
+			database: data.database,
+			resource: data.resource,
+		})),
 		Result.mapError(
 			(cause) =>
 				new PlanetScaleWebhookProjectionInvalid({

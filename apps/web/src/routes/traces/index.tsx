@@ -28,11 +28,17 @@ const ContainsMatchMode = Schema.optional(Schema.Literals(["contains"]))
 const TraceSortKeyParam = Schema.optional(Schema.Literals(["timestamp", "durationMs"]))
 const SortDirParam = Schema.optional(Schema.Literals(["asc", "desc"]))
 
-const AttributeFilterParam = Schema.Struct({
+const attributeFilterParamFields = {
 	key: Schema.String,
 	value: Schema.String,
 	matchMode: Schema.optional(Schema.Literals(["contains", "exists", "gt", "gte", "lt", "lte"])),
 	negated: Schema.optional(Schema.Union([Schema.Boolean, BooleanFromStringParam])),
+}
+
+const AttributeFilterParam = Schema.Struct({
+	...attributeFilterParamFields,
+	/** The other members of an `(a OR b)` where-clause group. */
+	or: Schema.optional(Schema.Array(Schema.Struct(attributeFilterParamFields))),
 })
 
 const tracesSearchSchema = Schema.Struct({

@@ -2,19 +2,22 @@ import { assert, beforeEach, describe, it } from "vitest"
 import { SpanStatusCode, trace } from "@opentelemetry/api"
 import { BasicTracerProvider, InMemorySpanExporter, SimpleSpanProcessor } from "@opentelemetry/sdk-trace-base"
 import type { ReadableSpan } from "@opentelemetry/sdk-trace-base"
+import { configureErrorFilters } from "./error-filters"
 import { captureException, resetReportedErrorsForTests, setupErrorCapture } from "./errors"
+import { setMapleProviderForTests } from "./tracing"
 
 const exporter = new InMemorySpanExporter()
 
 const provider = new BasicTracerProvider({
 	spanProcessors: [new SimpleSpanProcessor(exporter)],
 })
-trace.setGlobalTracerProvider(provider)
+setMapleProviderForTests(provider)
 
 const exceptionEventOf = (span: ReadableSpan) => span.events.find((event) => event.name === "exception")
 
 beforeEach(() => {
 	exporter.reset()
+	configureErrorFilters(undefined)
 })
 
 describe("captureException", () => {
@@ -56,12 +59,25 @@ describe("captureException", () => {
 	it("still records an error reported before tracing was live", () => {
 		resetReportedErrorsForTests()
 		const error = new Error("early")
-		trace.disable()
+		setMapleProviderForTests(undefined)
 		captureException(error)
-		trace.setGlobalTracerProvider(provider)
+		setMapleProviderForTests(provider)
 		captureException(error)
 
 		assert.strictEqual(exporter.getFinishedSpans().length, 1)
+	})
+
+	it("never records into a host app's global provider before init", () => {
+		const hostExporter = new InMemorySpanExporter()
+		trace.setGlobalTracerProvider(
+			new BasicTracerProvider({ spanProcessors: [new SimpleSpanProcessor(hostExporter)] }),
+		)
+		setMapleProviderForTests(undefined)
+		captureException(new Error("before init"))
+		setMapleProviderForTests(provider)
+		trace.disable()
+
+		assert.strictEqual(hostExporter.getFinishedSpans().length, 0)
 	})
 
 	it("carries a custom name and caller attributes", () => {
@@ -121,5 +137,39 @@ describe("setupErrorCapture", () => {
 		window.dispatchEvent(new ErrorEvent("error", { message: "Script error.", filename: "" }))
 		assert.strictEqual(exporter.getFinishedSpans().length, 0)
 		stop()
+	})
+})
+
+describe("filters and linked errors", () => {
+	it("drops what the app filters out before any span exists", () => {
+		configureErrorFilters({ ignore: ["ChunkLoadError"] })
+		const chunk = new Error("Loading chunk 3 failed")
+		chunk.name = "ChunkLoadError"
+		captureException(chunk)
+		captureException(new Error("kept"))
+
+		assert.deepEqual(
+			exporter
+				.getFinishedSpans()
+				.map((span) => exceptionEventOf(span)?.attributes?.["exception.message"]),
+			["kept"],
+		)
+	})
+
+	it("drops an uncaught error thrown from a browser extension", () => {
+		const stop = setupErrorCapture()
+		const error = new Error("injected")
+		error.stack = "Error: injected\n    at run (chrome-extension://abc/content.js:1:1)"
+		window.dispatchEvent(new ErrorEvent("error", { error, message: error.message }))
+		stop()
+		assert.strictEqual(exporter.getFinishedSpans().length, 0)
+	})
+
+	it("records the cause chain in exception.stacktrace", () => {
+		captureException(new Error("save failed", { cause: new TypeError("network down") }))
+		const stacktrace = exceptionEventOf(exporter.getFinishedSpans()[0]!)?.attributes?.[
+			"exception.stacktrace"
+		]
+		assert.include(String(stacktrace), "Caused by: TypeError: network down")
 	})
 })

@@ -7,6 +7,7 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@m
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { DocsLink } from "@/components/common/docs-link"
 import { QueryErrorState } from "@/components/common/query-error-state"
 import { CloudflareIcon, MagnifierIcon, XmarkIcon } from "@/components/icons"
 import type { CloudflareZoneRow } from "@/api/warehouse/cloudflare-infra"
@@ -212,6 +213,7 @@ function CloudflareData({
 						check back once more traffic has been collected.
 					</EmptyDescription>
 				</EmptyHeader>
+				<DocsLink page="cloudflare" />
 			</Empty>
 		)
 	}

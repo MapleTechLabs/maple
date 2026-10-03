@@ -734,16 +734,14 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					// Per repo: sync its branch list (names only); sync-branches then enqueues
 					// the commit backfill, keeping all commit-sync enqueuing in one place.
 					yield* queue.sendBatch(
-						repos.map(
-							(r): VcsSyncJob => ({
-								kind: "sync-branches",
-								provider: installation.provider,
-								externalInstallationId: installation.externalInstallationId,
-								externalRepoId: r.externalRepoId,
-								owner: r.owner,
-								name: r.name,
-							}),
-						),
+						repos.map((r): VcsSyncJob => ({
+							kind: "sync-branches",
+							provider: installation.provider,
+							externalInstallationId: installation.externalInstallationId,
+							externalRepoId: r.externalRepoId,
+							owner: r.owner,
+							name: r.name,
+						})),
 					)
 					yield* Effect.annotateCurrentSpan({
 						"vcs.installation_sync.outcome": "handled",

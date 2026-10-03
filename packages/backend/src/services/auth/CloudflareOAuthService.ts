@@ -10,7 +10,7 @@ import {
 } from "@maple/domain/http"
 import { oauthAuthStates } from "@maple/db"
 import { Array as Arr, Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
-import { FetchHttpClient } from "effect/unstable/http"
+import { FetchHttpClient } from "effect/http"
 import { listAccounts } from "@maple/backend/services/integrations/CloudflareApi"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env, type EnvConfig } from "@maple/backend/platform/Env"
@@ -380,16 +380,13 @@ export class CloudflareOAuthService extends Context.Service<
 				connectedAt: dateToMs(row.createdAt),
 				// `Arr.map` carries the non-emptiness through, so the connected branch keeps its
 				// at-least-one-account guarantee.
-				accounts: Arr.map(
-					grantedAccountsOfRow(row),
-					(account): CloudflareConnectedAccount => ({
-						accountId: account.id,
-						accountName: account.name,
-						connectedByUserId: row.connectedByUserId,
-						scope: row.scope,
-						revoked: row.revokedAt != null,
-					}),
-				),
+				accounts: Arr.map(grantedAccountsOfRow(row), (account): CloudflareConnectedAccount => ({
+					accountId: account.id,
+					accountName: account.name,
+					connectedByUserId: row.connectedByUserId,
+					scope: row.scope,
+					revoked: row.revokedAt != null,
+				})),
 			} satisfies CloudflareConnectionStatus
 		})
 

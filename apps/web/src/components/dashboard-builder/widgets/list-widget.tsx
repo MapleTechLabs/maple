@@ -3,7 +3,7 @@ import { Link } from "@tanstack/react-router"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
 import { cn } from "@maple/ui/lib/utils"
-import { WidgetFrame } from "@/components/dashboard-builder/widgets/widget-shell"
+import { WidgetEmptyState, WidgetFrame } from "@/components/dashboard-builder/widgets/widget-shell"
 import { columnVisibilityClass, formatCellValue } from "@/components/dashboard-builder/widgets/table-widget"
 import { resolveFieldPath } from "@/lib/resolve-field-path"
 import type { WidgetDataState, WidgetDisplayConfig, WidgetMode } from "@/components/dashboard-builder/types"
@@ -58,35 +58,28 @@ export const ListWidget = memo(function ListWidget({ dataState, display, mode }:
 				</div>
 			}
 		>
-			<Table>
-				<TableHeader>
-					<TableRow>
-						{effectiveColumns.map((col, colIndex) => (
-							<TableHead
-								key={col.field}
-								className={cn("text-xs", columnVisibilityClass(colIndex))}
-								style={{
-									textAlign: col.align ?? "left",
-									width: col.width ? `${col.width}px` : undefined,
-								}}
-							>
-								{col.header}
-							</TableHead>
-						))}
-					</TableRow>
-				</TableHeader>
-				<TableBody>
-					{rows.length === 0 ? (
+			{rows.length === 0 ? (
+				<WidgetEmptyState />
+			) : (
+				<Table>
+					<TableHeader>
 						<TableRow>
-							<TableCell
-								colSpan={effectiveColumns.length}
-								className="text-center text-xs text-muted-foreground"
-							>
-								No data
-							</TableCell>
+							{effectiveColumns.map((col, colIndex) => (
+								<TableHead
+									key={col.field}
+									className={cn("text-xs", columnVisibilityClass(colIndex))}
+									style={{
+										textAlign: col.align ?? "left",
+										width: col.width ? `${col.width}px` : undefined,
+									}}
+								>
+									{col.header}
+								</TableHead>
+							))}
 						</TableRow>
-					) : (
-						rows.map((row, i) => (
+					</TableHeader>
+					<TableBody>
+						{rows.map((row, i) => (
 							<TableRow key={i}>
 								{effectiveColumns.map((col, colIndex) => {
 									const value = resolveFieldPath(row, col.field)
@@ -138,10 +131,10 @@ export const ListWidget = memo(function ListWidget({ dataState, display, mode }:
 									)
 								})}
 							</TableRow>
-						))
-					)}
-				</TableBody>
-			</Table>
+						))}
+					</TableBody>
+				</Table>
+			)}
 		</WidgetFrame>
 	)
 })

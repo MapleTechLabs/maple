@@ -9,8 +9,8 @@
  * land in the *same* distributed trace inside Maple.
  */
 import { Schema } from "effect"
-import { HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi"
-import { HttpApi } from "effect/unstable/httpapi"
+import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
+import { HttpApi } from "effect/http-api"
 
 export class Todo extends Schema.Class<Todo>("Todo")({
 	id: Schema.String,

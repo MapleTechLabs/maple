@@ -7,11 +7,11 @@
  */
 import { evaluatePermission } from "@maple/domain/permission"
 import type { ChatMessage, ChatTurnOrigin } from "@maple/domain/chat-session"
-import * as AgentRuntime from "effect-agent/agent-runtime"
-import * as ThreadHistory from "effect-agent/thread-history"
-import { ThreadId } from "effect-agent/identifiers"
+import * as AgentRuntime from "@yielded/agent/agent-runtime"
+import * as ThreadHistory from "@yielded/agent/thread-history"
+import { ThreadId } from "@yielded/agent/identifiers"
 import { Effect, Layer, Schema, Stream } from "effect"
-import { Prompt, Toolkit } from "effect/unstable/ai"
+import { Prompt, Toolkit } from "effect/ai"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"
 import { ApprovalRequired, type ToolUiPayload } from "../mcp/tools/llm-tools"
 import { mapleToolPhrase } from "../mcp/tools/registry"
@@ -280,13 +280,11 @@ export const runChatTurn = (input: ChatRunInput) => {
 						)
 			}),
 		),
-		Effect.map(
-			(): ChatRunOutcome => ({
-				autonomous: completion?.autonomous ?? false,
-				submitted: completion?.submitted() ?? false,
-				compactions,
-			}),
-		),
+		Effect.map((): ChatRunOutcome => ({
+			autonomous: completion?.autonomous ?? false,
+			submitted: completion?.submitted() ?? false,
+			compactions,
+		})),
 		// One provide, so the run's services share a lifetime. `ChatSession` is the history owner,
 		// which is why the engine's lives only for this provide. A run is an entry point: the Durable Object
 		// invocation owns this scope and nothing outside it composes these layers. The model's own

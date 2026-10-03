@@ -1,6 +1,6 @@
 import { Effect, Layer } from "effect"
-import { HttpApiMiddleware } from "effect/unstable/httpapi"
-import { HttpEffect, HttpServerResponse } from "effect/unstable/http"
+import { HttpApiMiddleware } from "effect/http-api"
+import { HttpEffect, HttpServerResponse } from "effect/http"
 import {
 	V2InvalidRequest,
 	V2ResponseSchemaFailure,

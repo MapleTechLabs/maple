@@ -293,6 +293,7 @@ export function registerCreateDashboardTool(server: McpToolRegistrar) {
 
 	server.define({
 		name: TOOL,
+		title: "Create Dashboard",
 		// Kept deliberately short: this is routing information, which of the three
 		// modes to use, not a schema reference. The per-parameter descriptions carry
 		// the shapes, and `describe_dashboard_schema` carries the full vocabulary.

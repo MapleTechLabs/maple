@@ -41,7 +41,7 @@
  * unfurls the link. It takes a signed share id instead (`shareOgId`), which is
  * not a credential and cannot be turned back into a token.
  */
-import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
+import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 import { ChartTimeseries, ShareChartRequest, ShareChartResponse } from "../share-chart"
 import {
 	ShareNotConfiguredError,

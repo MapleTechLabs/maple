@@ -130,6 +130,14 @@ impl WalSegmentStore {
         format!("{}/{KEY_SCHEME}/claims/{owner}", self.prefix)
     }
 
+    fn retired_key(&self, owner: &str) -> String {
+        format!("{}/{KEY_SCHEME}/retired/{owner}", self.prefix)
+    }
+
+    fn listing(&self, kind: &str) -> String {
+        format!("{}/{KEY_SCHEME}/{kind}/", self.prefix)
+    }
+
     /// Ship one sealed segment. Overwrites unconditionally: the only writer for
     /// this key is this process, and a retry of a partial PUT must win.
     pub async fn put_segment(
@@ -157,29 +165,34 @@ impl WalSegmentStore {
             .await
     }
 
-    /// Remove this owner's heartbeat, so a successor does not have to wait out
-    /// `orphan_after` before claiming whatever we failed to drain.
+    /// Mark this owner as gone for good, so a successor claims whatever we
+    /// shipped at shutdown right away. The marker lands before the heartbeat is
+    /// dropped, so the owner is never invisible to `stale_owners`.
     pub async fn retire(&self) -> Result<(), S3Error> {
+        self.s3
+            .put(&self.retired_key(&self.owner), Vec::new(), false)
+            .await?;
         self.s3.delete(&self.owner_key(&self.owner)).await
     }
 
-    /// Owners whose heartbeat has gone stale, newest-stale first.
+    /// Owners whose segments are claimable now: retired ones at any age, and
+    /// ones whose heartbeat went stale.
     pub async fn stale_owners(&self, now: DateTime<Utc>) -> Result<Vec<String>, S3Error> {
-        let prefix = format!("{}/{KEY_SCHEME}/owners/", self.prefix);
-        let objects = self.s3.list(&prefix, MAX_LIST_PAGES).await?;
-        Ok(objects
-            .into_iter()
-            .filter(|object| !object.key.ends_with(&self.owner))
-            .filter(|object| is_older_than(object, now, self.orphan_after))
-            .filter_map(|object| {
-                object
-                    .key
-                    .rsplit('/')
-                    .next()
-                    .filter(|owner| !owner.is_empty())
-                    .map(str::to_owned)
-            })
-            .collect())
+        let heartbeats = self
+            .s3
+            .list(&self.listing("owners"), MAX_LIST_PAGES)
+            .await?;
+        let retired = self
+            .s3
+            .list(&self.listing("retired"), MAX_LIST_PAGES)
+            .await?;
+        Ok(claimable_owners(
+            &self.owner,
+            &heartbeats,
+            &retired,
+            now,
+            self.orphan_after,
+        ))
     }
 
     /// Take ownership of a dead task's segments, or report that someone else
@@ -238,13 +251,15 @@ impl WalSegmentStore {
     }
 
     /// Finish a claim: drop the recovered object and, once every segment is
-    /// gone, the owner's heartbeat and claim marker.
+    /// gone, the owner's heartbeat, retired marker and claim marker.
     pub async fn release_key(&self, key: &str) -> Result<(), S3Error> {
         self.s3.delete(key).await
     }
 
     pub async fn release_owner(&self, owner: &str) -> Result<(), S3Error> {
         self.s3.delete(&self.owner_key(owner)).await?;
+        self.s3.delete(&self.retired_key(owner)).await?;
+        // The claim goes last: until it does, no other task re-claims the owner.
         self.s3.delete(&self.claim_key(owner)).await
     }
 }
@@ -258,6 +273,32 @@ fn is_older_than(object: &S3Object, now: DateTime<Utc>, age: Duration) -> bool {
     (now - modified)
         .to_std()
         .is_ok_and(|elapsed| elapsed >= age)
+}
+
+/// Which owners other than `own` may be claimed, in key order.
+fn claimable_owners(
+    own: &str,
+    heartbeats: &[S3Object],
+    retired: &[S3Object],
+    now: DateTime<Utc>,
+    orphan_after: Duration,
+) -> Vec<String> {
+    let stale = heartbeats
+        .iter()
+        .filter(|object| is_older_than(object, now, orphan_after))
+        .filter_map(|object| last_component(&object.key));
+    // A retired owner shut down on purpose and will never write again, so its
+    // age does not matter.
+    let retired = retired
+        .iter()
+        .filter_map(|object| last_component(&object.key));
+    let claimable: std::collections::BTreeSet<&str> =
+        stale.chain(retired).filter(|owner| *owner != own).collect();
+    claimable.into_iter().map(str::to_owned).collect()
+}
+
+fn last_component(key: &str) -> Option<&str> {
+    key.rsplit('/').next().filter(|part| !part.is_empty())
 }
 
 /// `…/segments/<owner>/<lane_key>/<seq>.seg` → `<lane_key>`.
@@ -301,6 +342,27 @@ mod tests {
             now,
             DEFAULT_ORPHAN_AFTER
         ));
+    }
+
+    #[test]
+    fn retired_owners_are_claimable_at_any_age() {
+        let heartbeats = [
+            object("wal/v1/owners/live", 1),
+            object("wal/v1/owners/dead", 30),
+            object("wal/v1/owners/me", 30),
+        ];
+        // Retired a moment ago: no staleness window to wait out.
+        let retired = [object("wal/v1/retired/just-retired", 0)];
+        assert_eq!(
+            claimable_owners(
+                "me",
+                &heartbeats,
+                &retired,
+                Utc::now(),
+                DEFAULT_ORPHAN_AFTER
+            ),
+            vec!["dead", "just-retired"]
+        );
     }
 
     #[test]

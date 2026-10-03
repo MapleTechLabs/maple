@@ -37,6 +37,7 @@ const repository = {
 const makeLayer = (providerCalls: string[]) => {
 	const provider = {
 		id: "github",
+		reviewerMention: "@maple-review-bot",
 		searchCode: (_installation, repo, query) =>
 			Effect.sync(() => {
 				providerCalls.push(`search:${repo.owner}/${repo.name}:${query}`)

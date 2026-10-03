@@ -3,8 +3,8 @@ import { OrgId, UserId, WarehouseQueryError } from "@maple/domain/http"
 import { MapleApiV2 } from "@maple/domain/http/v2"
 import { QueryEngineExecuteResponse, type QueryEngineExecuteRequest } from "@maple/query-engine"
 import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Option, Schema } from "effect"
-import { HttpRouter } from "effect/unstable/http"
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpRouter } from "effect/http"
+import { HttpApiBuilder } from "effect/http-api"
 import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import {
@@ -127,7 +127,10 @@ const rowsForSql = (sql: string): ReadonlyArray<Record<string, unknown>> => {
 		return sql.includes("TraceId <") ? rows.slice(1) : rows
 	}
 	if (sql.includes("FROM trace_detail_spans") && sql.includes("AS relationship")) return [hierarchyRow]
-	if (sql.includes("FROM trace_detail_spans") && sql.includes("toJSONString(SpanAttributes)")) {
+	if (
+		sql.includes("FROM trace_detail_spans") &&
+		sql.includes("toJSONString(trace_detail_spans.SpanAttributes)")
+	) {
 		return [
 			{
 				...hierarchyRow,
@@ -749,6 +752,32 @@ describe("v2 telemetry reads over HTTP", () => {
 		await harness.dispose()
 	})
 
+	// Regression: without `rootSpansOnly` the overview series skipped the
+	// service-overview rollups and scanned every raw span of the service, which
+	// took 23s+ for a busy service on the phone's service detail screen.
+	it("reads the overview series from entry spans", async () => {
+		const observedFilters: Array<Record<string, unknown> | undefined> = []
+		const queryEngine: QueryEngineServiceApi = {
+			...queryEngineStub,
+			execute: (tenant, request) => {
+				observedFilters.push(request.query.filters)
+				return queryEngineStub.execute(tenant, request)
+			},
+		}
+		const harness = makeHarness(warehouseStub, queryEngine)
+		const key = await harness.bootstrapKey()
+		const response = await harness.request(
+			"GET",
+			`/v2/services/api/overview?${windowQuery}&bucket_seconds=120&deployment_environment=production`,
+			key.secret,
+		)
+		expect(response.status, JSON.stringify(response.body)).toBe(200)
+		expect(observedFilters).toEqual([
+			{ serviceName: "api", rootSpansOnly: true, environments: ["production"] },
+		])
+		await harness.dispose()
+	})
+
 	it("enforces signal query windows, bucket budgets, and breakdown narrowing", async () => {
 		const harness = makeHarness()
 		const key = await harness.bootstrapKey(["traces:read"])
@@ -995,6 +1024,7 @@ describe("v2 replay migration parity", () => {
 			errorCount: 0,
 			traceCount: 1,
 			recorded: "",
+			quality: "engaged",
 			version: 1,
 			userAgent: "test",
 			traceIds: [TRACE_ID],
@@ -1061,6 +1091,8 @@ describe("v2 replay migration parity", () => {
 				false,
 				true,
 			])
+			// Anonymous, first visit: the quality tier plus `new_visitor`, no `signed_in`.
+			expect(search.body.data[0].tags).toEqual(["engaged", "new_visitor"])
 			expect(search.body.data[0]).toMatchObject({
 				visitor_id: "visitor-shared",
 				utm_source: "newsletter",

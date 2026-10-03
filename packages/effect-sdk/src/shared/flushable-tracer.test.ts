@@ -1,8 +1,8 @@
 import { assert, describe, it } from "@effect/vitest"
 import { Data, Effect, Schema } from "effect"
 import * as ErrorReporter from "effect/ErrorReporter"
-import * as HttpServerError from "effect/unstable/http/HttpServerError"
-import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest"
+import * as HttpServerError from "effect/http/HttpServerError"
+import * as HttpServerRequest from "effect/http/HttpServerRequest"
 import { makeSpanBuffer } from "./flushable-tracer.js"
 
 // A benign error flagged exactly the way Effect's RouteNotFound is.

@@ -36,7 +36,7 @@ const base = (): QueryBuilderWidgetState => ({
 	sparklineEnabled: false,
 	markdownContent: "",
 	funnel: defaultFunnelDraft(),
-		paths: DEFAULT_PATHS_DRAFT(),
+	paths: DEFAULT_PATHS_DRAFT(),
 })
 
 describe("reconcileFunnelSource", () => {

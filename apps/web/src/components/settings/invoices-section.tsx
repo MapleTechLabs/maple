@@ -112,7 +112,11 @@ export function InvoicesSection({ onManageBilling }: { onManageBilling: () => vo
 	}
 
 	if (invoices.length === 0) {
-		return <p className="text-muted-foreground text-sm">No invoices yet.</p>
+		return (
+			<p className="text-muted-foreground text-sm">
+				Your first invoice appears after your first billing cycle closes.
+			</p>
+		)
 	}
 
 	return (

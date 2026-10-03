@@ -1,6 +1,6 @@
 import { Effect, Option } from "effect"
-import * as Command from "effect/unstable/cli/Command"
-import * as Flag from "effect/unstable/cli/Flag"
+import * as Command from "effect/cli/Command"
+import * as Flag from "effect/cli/Flag"
 import { releaseSignatureNotice } from "../core/release-signature"
 import { fetchLatestTag, isNewer, performUpdate, stripV, UpdateError } from "../core/update"
 import { amber, bold, cyan, dim, green } from "../lib/style"

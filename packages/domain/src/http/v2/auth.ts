@@ -1,4 +1,4 @@
-import { HttpApiMiddleware, HttpApiSecurity, OpenApi } from "effect/unstable/httpapi"
+import { HttpApiMiddleware, HttpApiSecurity, OpenApi } from "effect/http-api"
 import { Schema } from "effect"
 import { ApiKeyLookupPersistenceError } from "../api-keys"
 import { AuthorizationUnavailableError, Context, UnauthorizedError } from "../current-tenant"
@@ -68,7 +68,7 @@ export class V2SchemaErrors extends HttpApiMiddleware.Service<V2SchemaErrors>()(
 
 /** Scope string grammar: `<family>:read`, `<family>:write`, or `*`. */
 export const V2Scope = Schema.String.check(
-	Schema.isPattern(/^([a-z][a-z0-9_]*:(read|write)|\*)$/, {
+	Schema.isPattern(/^([a-z][a-z0-9_]*:(read|write)|\*)$/u, {
 		description: 'scope like "dashboards:read", "alerts:write", or "*"',
 	}),
 ).annotate({
@@ -134,6 +134,20 @@ export const requiredScopeForRoute = (method: string, routePath: string): Requir
 			? "read"
 			: "write"
 	return { family, access }
+}
+
+/**
+ * Endpoints any API key of the org may call, whatever its scopes: an agent holding a
+ * narrow key must still be able to report a problem with Maple and see what it reported.
+ */
+const SCOPE_EXEMPT_ROUTES = new Set(["POST /v2/agent_feedback", "GET /v2/agent_feedback"])
+
+/** Whether `method` on the matched route template skips the scope check. */
+export const isScopeExemptRoute = (method: string, routePath: string): boolean => {
+	// A loop, not a regex: the route path is request-derived, and `/\/+$/` backtracks on long runs of `/`.
+	let end = routePath.length
+	while (end > 1 && routePath[end - 1] === "/") end--
+	return SCOPE_EXEMPT_ROUTES.has(`${method} ${routePath.slice(0, end)}`)
 }
 
 /**

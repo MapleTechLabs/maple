@@ -1,6 +1,7 @@
 import { Effect, Schema } from "effect"
 import { SearchSessionsOutput } from "@maple/domain/mcp-outputs"
 import { searchSessions } from "@maple/query-engine/observability"
+import { SESSION_TAGS, sessionTagsOf } from "@maple/domain/query-engine"
 import type { McpToolRegistrar } from "./types"
 import { warehouseToMcpHandlers } from "../lib/map-warehouse-error"
 import { withTenantExecutor, CurrentMcpTenant } from "../lib/query-warehouse"
@@ -23,6 +24,7 @@ const filterArgs = (filters: Filters) => ({
 	country: filters.country,
 	device_type: filters.deviceType,
 	has_errors: filters.hasErrors,
+	tags: filters.tags,
 	duration_min_ms: filters.durationMinMs,
 	duration_max_ms: filters.durationMaxMs,
 	active_min_ms: filters.activeMinMs,
@@ -38,8 +40,9 @@ const filterArgs = (filters: Filters) => ({
 export function registerSearchSessionsTool(server: McpToolRegistrar) {
 	server.define({
 		name: "search_sessions",
+		title: "Search Sessions",
 		description:
-			"Find browser session replays (end-user web sessions). Not AI agent sessions: those are `list_agent_sessions`. Filter by who (user_id, user_search, group_name), by client, by whether the session errored, by how long it lasted, or by what happened inside it (an event type, console level, HTTP status, URL, message or trace id). All filters are ANDed. Then `get_session_transcript` reads a session's events and `get_session_traces` lists the backend traces it produced.",
+			"Find browser session replays (end-user web sessions). Not AI agent sessions: those are `list_agent_sessions`. Filter by who (user_id, user_search, group_name), by client, by whether the session errored, by session type (tags: `engaged` drops bots, bounces, idle tabs and glances), by how long it lasted, or by what happened inside it (an event type, console level, HTTP status, URL, message or trace id). All filters are ANDed. Then `get_session_transcript` reads a session's events and `get_session_traces` lists the backend traces it produced.",
 		parameters: Schema.Struct({
 			...WINDOW.fields,
 			// Session metadata filters (who / where / how long)
@@ -55,6 +58,10 @@ export function registerSearchSessionsTool(server: McpToolRegistrar) {
 			country: P.optionalText("Only sessions from this country (two-letter ISO code, e.g. DE)"),
 			device_type: P.optionalText("Exact match on device type (e.g. desktop, mobile)"),
 			has_errors: P.optionalFlag("Only sessions with at least one recorded error"),
+			tags: P.optionalOneOfList(
+				SESSION_TAGS,
+				"Only sessions carrying every one of these tags, so pass at most one quality tier. Quality tiers (exactly one per session): bot, bounce (<5s, no clicks), idle (one page, no clicks), glance (one page, <=2 clicks, <30s), engaged (everything else). Traits: signed_in, new_visitor.",
+			),
 			duration_min_ms: P.optionalNumber("Only sessions at least this long (ms)"),
 			duration_max_ms: P.optionalNumber("Only sessions at most this long (ms)"),
 			active_min_ms: P.optionalNumber(
@@ -117,6 +124,7 @@ export function registerSearchSessionsTool(server: McpToolRegistrar) {
 					country: params.country,
 					deviceType: params.device_type,
 					hasErrors: params.has_errors,
+					tags: params.tags,
 					durationMinMs: params.duration_min_ms,
 					durationMaxMs: params.duration_max_ms,
 					activeTimeMinMs: params.active_min_ms,
@@ -159,6 +167,7 @@ export function registerSearchSessionsTool(server: McpToolRegistrar) {
 					errorCount: Number(s.errorCount),
 					traceCount: Number(s.traceCount),
 					urlInitial: truncate(s.urlInitial, 256),
+					tags: sessionTagsOf(s),
 					...(eventFiltered ? { matchCount: Number(s.matchCount ?? 0) } : undefined),
 				})),
 				pagination: {
@@ -176,6 +185,9 @@ export function registerSearchSessionsTool(server: McpToolRegistrar) {
 					...(params.country === undefined ? undefined : { country: params.country }),
 					...(params.device_type === undefined ? undefined : { deviceType: params.device_type }),
 					...(params.has_errors === undefined ? undefined : { hasErrors: params.has_errors }),
+					...(params.tags === undefined || params.tags.length === 0
+						? undefined
+						: { tags: params.tags }),
 					...(params.duration_min_ms === undefined
 						? undefined
 						: { durationMinMs: params.duration_min_ms }),
@@ -213,6 +225,7 @@ export function registerSearchSessionsTool(server: McpToolRegistrar) {
 				"Device",
 				"Country",
 				"Errors",
+				"Tags",
 				"Entry URL",
 			]
 			const window = { start_time: output.timeRange.start, end_time: output.timeRange.end }
@@ -249,6 +262,7 @@ export function registerSearchSessionsTool(server: McpToolRegistrar) {
 											device || "—",
 											s.country || "—",
 											s.errorCount > 0 ? String(s.errorCount) : "",
+											s.tags.join(" "),
 											truncate(s.urlInitial, 60),
 										]
 										return eventFiltered ? [...row, String(s.matchCount ?? 0)] : row

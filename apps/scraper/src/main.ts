@@ -13,7 +13,7 @@
 import { BunRuntime } from "@effect/platform-bun"
 import { Maple } from "@maple-dev/effect-sdk/server"
 import { Effect, Layer } from "effect"
-import { FetchHttpClient } from "effect/unstable/http"
+import { FetchHttpClient } from "effect/http"
 import { ApiClient } from "./ApiClient"
 import { OtlpIngest } from "./OtlpIngest"
 import { ScraperEnv } from "./Env"

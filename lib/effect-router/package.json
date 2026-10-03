@@ -1,6 +1,6 @@
 {
 	"name": "@effect-router/core",
-	"version": "0.1.0",
+	"version": "0.2.0",
 	"type": "module",
 	"exports": {
 		".": "./src/index.ts",
@@ -12,7 +12,7 @@
 	"devDependencies": {
 		"@effect/atom-react": "catalog:effect",
 		"@effect/language-service": "catalog:effect",
-		"@tanstack/react-router": "^1.170.16",
+		"@tanstack/react-router": "^1.170.40",
 		"@types/node": "catalog:tooling",
 		"@types/react": "catalog:react",
 		"effect": "catalog:effect",
@@ -20,9 +20,9 @@
 		"typescript": "catalog:tooling"
 	},
 	"peerDependencies": {
-		"@effect/atom-react": ">=4.0.0-beta.0",
+		"@effect/atom-react": "^4.0.0",
 		"@tanstack/react-router": ">=1.150.0",
-		"effect": ">=4.0.0-beta.0",
+		"effect": "^4.0.0",
 		"react": ">=19.0.0"
 	}
 }

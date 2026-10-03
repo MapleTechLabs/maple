@@ -43,6 +43,12 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
 				icon: { mark: "cloudflare" },
 			},
 			{
+				name: "Cloudflare Workers (native)",
+				hint: "Any Worker · OTLP destinations, no SDK",
+				href: "/docs/guides/instrumentation-cloudflare-workers",
+				icon: { mark: "cloudflare" },
+			},
+			{
 				name: "Browser",
 				hint: "Traces, web vitals, session replay",
 				href: "/docs/session-replay/browser-sdk",

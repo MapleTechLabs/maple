@@ -239,7 +239,9 @@ export function errorTextTokens(text: string): ReadonlyArray<ErrorTextToken> {
 	if (firstBreak <= 0) return tokens.filter((token) => !(token.kind === "text" && token.text === ""))
 	return tokens
 		.map((token, index) =>
-			index < firstBreak && token.kind === "text" ? { kind: "value" as const, text: token.text } : token,
+			index < firstBreak && token.kind === "text"
+				? { kind: "value" as const, text: token.text }
+				: token,
 		)
 		.filter((token) => !((token.kind === "text" || token.kind === "value") && token.text.trim() === ""))
 }
@@ -326,7 +328,12 @@ export function whatsWrong(text: string, args: unknown): WhatsWrongHint | undefi
 		const key = path[path.length - 1]
 		const parentPath = path.slice(0, -1)
 		const parent = resolveErrorPath(args, parentPath)
-		if (typeof key !== "string" || !parent.found || !isRecord(parent.value) || Object.hasOwn(parent.value, key)) {
+		if (
+			typeof key !== "string" ||
+			!parent.found ||
+			!isRecord(parent.value) ||
+			Object.hasOwn(parent.value, key)
+		) {
 			return undefined
 		}
 		if (parentPath.length === 0) {
@@ -394,7 +401,8 @@ export function variantDifferences(texts: ReadonlyArray<string>): ReadonlyArray<
 						: prefix,
 			middle: text.slice(from, to),
 			after:
-				pathTail ?? (suffix.length > VARIANT_CONTEXT ? `${suffix.slice(0, VARIANT_CONTEXT)}…` : suffix),
+				pathTail ??
+				(suffix.length > VARIANT_CONTEXT ? `${suffix.slice(0, VARIANT_CONTEXT)}…` : suffix),
 		}
 	})
 }
@@ -445,7 +453,8 @@ const outlineOf = (value: unknown): string => {
 	return typeof value === "string" ? '"…"' : JSON.stringify(value)
 }
 
-const samePath = (a: ErrorPath, b: ErrorPath) => a.length === b.length && a.every((segment, i) => segment === b[i])
+const samePath = (a: ErrorPath, b: ErrorPath) =>
+	a.length === b.length && a.every((segment, i) => segment === b[i])
 const isPrefix = (prefix: ErrorPath, path: ErrorPath) =>
 	prefix.length <= path.length && prefix.every((segment, i) => segment === path[i])
 
@@ -465,7 +474,14 @@ export function payloadLines(value: unknown, message: string): ReadonlyArray<Pay
 	const expected = EXPECTED.exec(message)?.[1]
 	const lines: PayloadLine[] = []
 
-	const walk = (node: unknown, at: ErrorPath, depth: number, label: string, comma: string, lit: boolean) => {
+	const walk = (
+		node: unknown,
+		at: ErrorPath,
+		depth: number,
+		label: string,
+		comma: string,
+		lit: boolean,
+	) => {
 		const isTarget = path.length > 0 && samePath(at, target)
 		const highlight = lit || isTarget
 		const onPath = path.length > 0 && isPrefix(at, path)
@@ -493,7 +509,12 @@ export function payloadLines(value: unknown, message: string): ReadonlyArray<Pay
 				walk(inner, innerAt, depth + 1, innerLabel, innerComma, highlight)
 			})
 			if (isTarget && missing) {
-				lines.push({ depth: depth + 1, text: "", highlight: true, missingKey: String(path[path.length - 1]) })
+				lines.push({
+					depth: depth + 1,
+					text: "",
+					highlight: true,
+					missingKey: String(path[path.length - 1]),
+				})
 			}
 			lines.push({ depth, text: `${close}${comma}`, highlight })
 			return
@@ -600,7 +621,10 @@ const HOUR = 3_600
 
 /** The trend's bucket for a window, and what one bucket is called. A week
  *  reads in days — eight bars, which is what a row's sparkline has room for. */
-export function errorTrendBucket(startMs: number, endMs: number): { readonly seconds: number; readonly unit: string } {
+export function errorTrendBucket(
+	startMs: number,
+	endMs: number,
+): { readonly seconds: number; readonly unit: string } {
 	const hours = (endMs - startMs) / (HOUR * 1000)
 	if (hours <= 6) return { seconds: HOUR / 2, unit: "30 min" }
 	if (hours <= 24) return { seconds: 3 * HOUR, unit: "3 hours" }

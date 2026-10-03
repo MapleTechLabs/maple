@@ -1,7 +1,7 @@
 import type { Duration } from "effect"
 import { type MapleRegion, resolveIngestEndpoint, warnIfKeylessMapleIngest } from "@maple/browser-session"
 import { Effect, Layer } from "effect"
-import { Otlp } from "effect/unstable/observability"
+import { Otlp } from "effect/observability"
 import { trySyncOrUndefined } from "../shared/try-sync.js"
 import { browserNavigator } from "./browser-globals.js"
 import { consentHttpClientLayer } from "./consent-http-client.js"

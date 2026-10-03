@@ -7,12 +7,12 @@ order: 2
 
 Maple Local keeps everything in one embedded ClickHouse store under `~/.maple/data`. Three mechanisms keep that store safe, and one keeps it small:
 
-| Mechanism | What it protects against | Command |
-| --- | --- | --- |
-| **Checkpoints** | A crash, a bad upgrade, a mistake | `maple checkpoint`, `maple restore` |
-| **Dirty-store policy** | Silent data loss after an unclean shutdown | `maple start --on-dirty-store` |
-| **Journaled reset** | Deleting more than the store | `maple reset`, `maple start --reset` |
-| **Archives** | The live store growing without bound | `maple archive …` |
+| Mechanism              | What it protects against                   | Command                              |
+| ---------------------- | ------------------------------------------ | ------------------------------------ |
+| **Checkpoints**        | A crash, a bad upgrade, a mistake          | `maple checkpoint`, `maple restore`  |
+| **Dirty-store policy** | Silent data loss after an unclean shutdown | `maple start --on-dirty-store`       |
+| **Journaled reset**    | Deleting more than the store               | `maple reset`, `maple start --reset` |
+| **Archives**           | The live store growing without bound       | `maple archive …`                    |
 
 When a destructive step is uncertain, the CLI stops and prints the paths it kept. It does not guess.
 
@@ -74,11 +74,11 @@ The server must be stopped. The store you are replacing is moved beside the data
 
 If the server did not close the store cleanly, the next `maple start` applies the `--on-dirty-store` policy:
 
-| Policy | What happens |
-| --- | --- |
-| `fail` (default) | Refuse to start and say so. Nothing is deleted; choose one of the others deliberately |
+| Policy               | What happens                                                                                                            |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `fail` (default)     | Refuse to start and say so. Nothing is deleted; choose one of the others deliberately                                   |
 | `restore-checkpoint` | Roll back to the current checkpoint and move the dirty store beside the data directory as `<data-dir>.quarantine-<ids>` |
-| `wipe` | Discard the live data and start empty. Checkpoints are kept and pinned |
+| `wipe`               | Discard the live data and start empty. Checkpoints are kept and pinned                                                  |
 
 A detached start (`-d`) passes the policy to the background process unchanged. A store whose schema the binary does not recognize also refuses to start until you reset it or run [`maple schema migrate`](/docs/reference/cli#maple-schema).
 

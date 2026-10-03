@@ -67,27 +67,22 @@
 
 import * as CH from "@maple-dev/effect-clickhouse/expr"
 import * as T from "@maple-dev/effect-clickhouse/types"
-import {
-	from,
-	fromQuery,
-	inSubquery,
-	param,
-	unionAll,
-	type CHUnionQuery,
-} from "@maple-dev/effect-clickhouse"
-import {
-	AI_TOOLS_BREAKDOWN_MAX,
-	AI_TOOLS_OTHER_SERIES_KEY,
-	type AiToolsPeriod,
-} from "@maple/domain/http"
-import type { AiGenAiField } from "@maple/domain/gen-ai"
+import { compile } from "@maple-dev/effect-clickhouse/sql"
+import { from, fromQuery, inSubquery, param, unionAll, type CHUnionQuery } from "@maple-dev/effect-clickhouse"
+import { AI_TOOLS_BREAKDOWN_MAX, AI_TOOLS_OTHER_SERIES_KEY, type AiToolsPeriod } from "@maple/domain/http"
 import { Array as Arr, Schema } from "effect"
 import type { CompiledQueryRowSchema } from "@maple-dev/effect-clickhouse"
 import { AiTraceIndex, TraceDetailSpans } from "@maple/query-engine/ch/tables"
-import { finiteOrZero, isoBucket, leftUTF8 } from "@maple/query-engine/ch/format"
+import { finiteOrZero, isoBucket } from "@maple/query-engine/ch/format"
 import { CHNumber } from "@maple/query-engine/ch/schema"
-import { aiFieldSourceKeys } from "./ai-integrations"
-import { SESSION_ORDER_SENTINEL, orderTuple, sessionKey } from "./ai-sessions"
+import { aiToolCallPayload } from "./ai-integrations"
+import {
+	SESSION_ORDER_SENTINEL,
+	aiSpanAttributes,
+	isSessionTraceCond,
+	orderTuple,
+	sessionKey,
+} from "./ai-sessions"
 
 /**
  * The page's selection, as every read here takes it.
@@ -195,6 +190,10 @@ const parentModels = (window: AiToolsWindow) =>
  * level — for the failure modal, which links each failure to its session. The
  * overview's aggregates never select them, and ClickHouse prunes unselected
  * columns of a derived table.
+ *
+ * Only the traces the sessions list shows (`isSessionTraceCond`), so the
+ * Sessions tile counts that list's population. A trace holding a tool call
+ * always passes it, so no tool call is lost to the join.
  */
 const traceFacts = (window: AiToolsWindow) =>
 	from(AiTraceIndex)
@@ -217,6 +216,7 @@ const traceFacts = (window: AiToolsWindow) =>
 			$.Timestamp.lte(endParam(window)),
 		])
 		.groupBy("TraceId")
+		.having(($) => [isSessionTraceCond($)])
 
 /**
  * The model a tool call is attributed to: its parent model call's, else its
@@ -373,8 +373,7 @@ const measures = ($: ToolCallColumns) => ({
 export type AiToolsSeriesKind = "tool" | "model" | "none"
 
 export const aiToolsSeriesKind = (opts: AiToolsFilterOpts): AiToolsSeriesKind =>
-	opts.split ??
-	(opts.tool !== undefined && opts.model === undefined ? "model" : "tool")
+	opts.split ?? (opts.tool !== undefined && opts.model === undefined ? "model" : "tool")
 
 /**
  * The expression a bucket is split by, or `undefined` for `none` — one series
@@ -427,27 +426,29 @@ const topSeriesKeys = (opts: AiToolsFilterOpts, key: ($: ToolCallColumns) => CH.
  */
 export function aiToolsSeriesQuery(opts: AiToolsFilterOpts = {}) {
 	const key = seriesKeyColumn(opts)
-	return fromQuery(toolCalls(opts, "current", seriesParentModelNeeded(opts)), "tool_calls")
-		.select(($) => ({
-			bucket: isoBucket($.ts),
-			// `none` still projects the column, so the response shape does not
-			// depend on the split. `''` is the only honest key for a series that
-			// is not keyed by anything.
-			seriesKey:
-				key === undefined
-					? CH.lit("")
-					: CH.if_(
-							inSubquery(key($), topSeriesKeys(opts, key)),
-							key($),
-							CH.lit(AI_TOOLS_OTHER_SERIES_KEY),
-						),
-			...measures($),
-		}))
-		.groupBy("bucket", "seriesKey")
-		// Oldest first, and the busiest series first inside a bucket — the order
-		// a stacked chart draws in.
-		.orderBy(["bucket", "asc"], ["calls", "desc"], ["seriesKey", "asc"])
-		.format("JSON")
+	return (
+		fromQuery(toolCalls(opts, "current", seriesParentModelNeeded(opts)), "tool_calls")
+			.select(($) => ({
+				bucket: isoBucket($.ts),
+				// `none` still projects the column, so the response shape does not
+				// depend on the split. `''` is the only honest key for a series that
+				// is not keyed by anything.
+				seriesKey:
+					key === undefined
+						? CH.lit("")
+						: CH.if_(
+								inSubquery(key($), topSeriesKeys(opts, key)),
+								key($),
+								CH.lit(AI_TOOLS_OTHER_SERIES_KEY),
+							),
+				...measures($),
+			}))
+			.groupBy("bucket", "seriesKey")
+			// Oldest first, and the busiest series first inside a bucket — the order
+			// a stacked chart draws in.
+			.orderBy(["bucket", "asc"], ["calls", "desc"], ["seriesKey", "asc"])
+			.format("JSON")
+	)
 }
 
 /** A datetime aggregate as `''` where the aggregate saw no rows at all. Only
@@ -632,6 +633,14 @@ export function aiToolsBreakdownsQuery(opts: AiToolsFilterOpts = {}) {
  *  reports the true size beside it. */
 export const AI_TOOL_ERROR_PAYLOAD_MAX = 4_000
 
+/** How much of each span attribute the payload read carries, in characters. A
+ *  span's attributes hold whole files and message histories, and a hundred
+ *  samples of them would leave the warehouse only to be cut to
+ *  {@link AI_TOOL_ERROR_PAYLOAD_MAX}. Four times that cut, so the JSON behind a
+ *  payload the modal can show whole still parses; a longer value arrives cut,
+ *  decodes as its raw text, and is cut again for display. */
+export const AI_TOOL_ERROR_ATTRIBUTE_MAX = 16_384
+
 /** Error groups one breakdown returns, most failed calls first. */
 export const AI_TOOL_ERRORS_LIMIT = 50
 
@@ -666,7 +675,7 @@ const groupFilter = (opts: AiToolErrorsOpts, $: Pick<ToolCallColumns, "fingerpri
 /**
  * One row per failed tool call of the selection — the level every read below
  * but the table's aggregates. `IsError` is the index's own transcription of the
- * rule the sessions pages apply to a span (`genAiIsErrorCond`), so a failure
+ * rule the sessions pages apply to a span (the gateway's `maple_ai.error`), so a failure
  * counted there is a failure here.
  *
  * `withParentModel` is `true` for the read that SHOWS a model rather than
@@ -737,26 +746,28 @@ export function aiToolErrorsQuery(opts: AiToolErrorsOpts = {}) {
 		fingerprint: $.fingerprint,
 		newerCalls: CH.rawExpr("row_number() OVER (ORDER BY ts DESC, spanId DESC) - 1", T.uint64),
 	}))
-	return fromQuery(numbered, "numbered_tool_calls")
-		.select(($) => ({
-			fingerprint: $.fingerprint,
-			errorType: CH.argMax($.callErrorType, $.ts),
-			message: CH.argMax($.failureMessage, $.ts),
-			calls: CH.count(),
-			sessions: CH.uniqExact($.sessionKey),
-			variants: CH.uniqExact($.failureMessage),
-			firstSeen: CH.toString_(CH.min_($.ts)),
-			lastSeen: CH.toString_(CH.max_($.ts)),
-			callsSince: CH.min_($.newerCalls),
-			trend: CH.rawExpr("sumMap(map(bucket, toUInt64(1)))", T.map(T.string, T.uint64)),
-		}))
-		// Above the numbering, never inside it: a failure is numbered among every
-		// call of the tool, and filtering first would number it among failures.
-		.where(($) => [$.isError.eq(1)])
-		.groupBy("fingerprint")
-		.orderBy(["calls", "desc"], ["fingerprint", "asc"])
-		.limit(opts.limit ?? AI_TOOL_ERRORS_LIMIT)
-		.format("JSON")
+	return (
+		fromQuery(numbered, "numbered_tool_calls")
+			.select(($) => ({
+				fingerprint: $.fingerprint,
+				errorType: CH.argMax($.callErrorType, $.ts),
+				message: CH.argMax($.failureMessage, $.ts),
+				calls: CH.count(),
+				sessions: CH.uniqExact($.sessionKey),
+				variants: CH.uniqExact($.failureMessage),
+				firstSeen: CH.toString_(CH.min_($.ts)),
+				lastSeen: CH.toString_(CH.max_($.ts)),
+				callsSince: CH.min_($.newerCalls),
+				trend: CH.rawExpr("sumMap(map(bucket, toUInt64(1)))", T.map(T.string, T.uint64)),
+			}))
+			// Above the numbering, never inside it: a failure is numbered among every
+			// call of the tool, and filtering first would number it among failures.
+			.where(($) => [$.isError.eq(1)])
+			.groupBy("fingerprint")
+			.orderBy(["calls", "desc"], ["fingerprint", "asc"])
+			.limit(opts.limit ?? AI_TOOL_ERRORS_LIMIT)
+			.format("JSON")
+	)
 }
 
 /** The modal's sessions list: which sessions hit this group, and how often. */
@@ -769,15 +780,14 @@ export interface AiToolErrorSessionsOutput {
 	readonly lastSeen: string
 }
 
-export const aiToolErrorSessionsRowSchema: CompiledQueryRowSchema<AiToolErrorSessionsOutput> =
-	Schema.Struct({
-		sessionId: Schema.String,
-		vendorId: Schema.String,
-		agentName: Schema.String,
-		service: Schema.String,
-		hits: CHNumber,
-		lastSeen: Schema.String,
-	})
+export const aiToolErrorSessionsRowSchema: CompiledQueryRowSchema<AiToolErrorSessionsOutput> = Schema.Struct({
+	sessionId: Schema.String,
+	vendorId: Schema.String,
+	agentName: Schema.String,
+	service: Schema.String,
+	hits: CHNumber,
+	lastSeen: Schema.String,
+})
 
 export function aiToolErrorSessionsQuery(opts: AiToolErrorsOpts = {}) {
 	return failingToolCalls(opts)
@@ -803,12 +813,11 @@ export interface AiToolErrorVariantsOutput {
 	readonly lastSeen: string
 }
 
-export const aiToolErrorVariantsRowSchema: CompiledQueryRowSchema<AiToolErrorVariantsOutput> =
-	Schema.Struct({
-		message: Schema.String,
-		calls: CHNumber,
-		lastSeen: Schema.String,
-	})
+export const aiToolErrorVariantsRowSchema: CompiledQueryRowSchema<AiToolErrorVariantsOutput> = Schema.Struct({
+	message: Schema.String,
+	calls: CHNumber,
+	lastSeen: Schema.String,
+})
 
 export function aiToolErrorVariantsQuery(opts: AiToolErrorsOpts = {}) {
 	return failingToolCalls(opts)
@@ -895,35 +904,37 @@ export const aiToolErrorOccurrencesRowSchema: CompiledQueryRowSchema<AiToolError
 
 export function aiToolErrorOccurrencesQuery(opts: AiToolErrorsOpts = {}) {
 	const before = opts.before
-	return failingToolCalls(opts, true)
-		.select(($) => ({
-			timestamp: CH.toString_($.ts),
-			traceId: $.traceId,
-			spanId: $.spanId,
-			sessionId: $.sessionKey,
-			vendorId: $.vendor,
-			agentName: $.agent,
-			model: $.modelName,
-			service: $.service,
-			errorType: $.errorType,
-			message: $.failureMessage,
-			durationNs: $.durationNs,
-		}))
-		.where(($) => [
-			groupFilter(opts, $),
-			CH.when(opts.session, (session) => $.sessionKey.eq(session)),
-			opts.variant === undefined ? undefined : $.failureMessage.eq(opts.variant),
-			// The previous page's last row. The timestamp is the warehouse literal at
-			// nanosecond precision, which with the span id makes the position unique.
-			before === undefined
-				? undefined
-				: $.ts.lt(before.timestamp).or($.ts.eq(before.timestamp).and($.spanId.lt(before.spanId))),
-		])
-		// Newest first: a modal opened from a failing tool is asking what is
-		// happening now, and `spanId` breaks the ties agent spans routinely have.
-		.orderBy(["timestamp", "desc"], ["spanId", "desc"])
-		.limit(opts.limit ?? AI_TOOL_OCCURRENCES_LIMIT)
-		.format("JSON")
+	return (
+		failingToolCalls(opts, true)
+			.select(($) => ({
+				timestamp: CH.toString_($.ts),
+				traceId: $.traceId,
+				spanId: $.spanId,
+				sessionId: $.sessionKey,
+				vendorId: $.vendor,
+				agentName: $.agent,
+				model: $.modelName,
+				service: $.service,
+				errorType: $.errorType,
+				message: $.failureMessage,
+				durationNs: $.durationNs,
+			}))
+			.where(($) => [
+				groupFilter(opts, $),
+				CH.when(opts.session, (session) => $.sessionKey.eq(session)),
+				opts.variant === undefined ? undefined : $.failureMessage.eq(opts.variant),
+				// The previous page's last row. The timestamp is the warehouse literal at
+				// nanosecond precision, which with the span id makes the position unique.
+				before === undefined
+					? undefined
+					: $.ts.lt(before.timestamp).or($.ts.eq(before.timestamp).and($.spanId.lt(before.spanId))),
+			])
+			// Newest first: a modal opened from a failing tool is asking what is
+			// happening now, and `spanId` breaks the ties agent spans routinely have.
+			.orderBy(["timestamp", "desc"], ["spanId", "desc"])
+			.limit(opts.limit ?? AI_TOOL_OCCURRENCES_LIMIT)
+			.format("JSON")
+	)
 }
 
 /** One call {@link aiToolErrorPayloadsQuery} reads the payloads of, as
@@ -934,43 +945,43 @@ export interface AiToolErrorCallKey {
 	readonly spanId: string
 }
 
-export interface AiToolErrorPayloadsOutput {
+export interface AiToolErrorPayloadsRow {
 	readonly traceId: string
 	readonly spanId: string
 	readonly statusCode: string
-	/** Truncated to {@link AI_TOOL_ERROR_PAYLOAD_MAX}; `*Bytes` is the true size. */
-	readonly arguments: string
-	readonly argumentsBytes: number
-	readonly result: string
-	readonly resultBytes: number
+	/** Each value cut to {@link AI_TOOL_ERROR_ATTRIBUTE_MAX} characters. */
+	readonly spanAttributes: Record<string, string>
+	/** The true size in bytes of every value that was cut, by key. */
+	readonly cutAttributeBytes: Record<string, number>
 }
 
-export const aiToolErrorPayloadsRowSchema: CompiledQueryRowSchema<AiToolErrorPayloadsOutput> =
-	Schema.Struct({
-		traceId: Schema.String,
-		spanId: Schema.String,
-		statusCode: Schema.String,
-		arguments: Schema.String,
-		argumentsBytes: CHNumber,
-		result: Schema.String,
-		resultBytes: CHNumber,
-	})
+export const aiToolErrorPayloadsRowSchema: CompiledQueryRowSchema<AiToolErrorPayloadsRow> = Schema.Struct({
+	traceId: Schema.String,
+	spanId: Schema.String,
+	statusCode: Schema.String,
+	// A Map column arrives as a JSON object under FORMAT JSON.
+	spanAttributes: Schema.Record(Schema.String, Schema.String),
+	cutAttributeBytes: Schema.Record(Schema.String, CHNumber),
+})
 
 /** A span row's `(TraceId, SpanId)`, for the payload read's tuple `IN`. Raw
  *  because the DSL has no tuple; qualified because the occurrences' own keys are
  *  literals of the same shape. */
 const traceSpanKey = CH.rawExpr("(trace_detail_spans.TraceId, trace_detail_spans.SpanId)", T.string)
 
-type SpanAccessor = {
-	readonly SpanAttributes: CH.Expr<Record<string, string>>
-}
+/** The attribute map with every value cut to {@link AI_TOOL_ERROR_ATTRIBUTE_MAX}
+ *  characters. Raw because the DSL has no `mapApply`. */
+const cutAttributeValues = (attributes: CH.Expr<Record<string, string>>): CH.Expr<Record<string, string>> =>
+	CH.rawExpr(
+		`mapApply((k, v) -> (k, leftUTF8(v, ${AI_TOOL_ERROR_ATTRIBUTE_MAX})), ${compile(attributes.toFragment())})`,
+		T.map(T.string, T.string),
+	)
 
-/** `coalesce(nullIf(a, ''), …, '')` — the first source key of a field that has
- *  a value, across every vendor dialect the integrations declare. */
-const spanField = ($: SpanAccessor, field: AiGenAiField): CH.Expr<string> =>
-	CH.coalesce(
-		...aiFieldSourceKeys(field).map((key) => CH.nullIf(CH.mapGet($.SpanAttributes, key), "")),
-		CH.lit(""),
+/** The byte size of each value {@link cutAttributeValues} cuts, by key. */
+const cutAttributeBytes = (attributes: CH.Expr<Record<string, string>>): CH.Expr<Record<string, number>> =>
+	CH.rawExpr(
+		`mapApply((k, v) -> (k, length(v)), mapFilter((k, v) -> lengthUTF8(v) > ${AI_TOOL_ERROR_ATTRIBUTE_MAX}, ${compile(attributes.toFragment())}))`,
+		T.map(T.string, T.uint64),
 	)
 
 /**
@@ -984,24 +995,25 @@ const spanField = ($: SpanAccessor, field: AiGenAiField): CH.Expr<string> =>
  * are exact and unpadded: the index copies `Timestamp` from the span verbatim,
  * so the call is inside its own bounds by construction, and a pad would only buy
  * partitions.
+ *
+ * It returns the span's attributes as the session page reads them, not the
+ * payloads: which attribute holds the arguments is a per-vendor decision the
+ * integrations make in TypeScript ({@link aiToolErrorPayload}), so the modal
+ * and the session page decode a tool span one way: an OpenInference tool shows
+ * its `input.value`, not the parameter schema its GenAI dual-write copied into
+ * `gen_ai.tool.call.arguments`. Each value is cut to
+ * {@link AI_TOOL_ERROR_ATTRIBUTE_MAX} in SQL, beside the true size of the ones
+ * that were, so a sample costs kilobytes on the wire rather than its whole span.
  */
 export function aiToolErrorPayloadsQuery(calls: Arr.NonEmptyReadonlyArray<AiToolErrorCallKey>) {
 	return from(TraceDetailSpans)
-		.select(($) => {
-			const args = spanField($, "toolCallArguments")
-			const result = spanField($, "toolCallResult")
-			return {
-				traceId: $.TraceId,
-				spanId: $.SpanId,
-				statusCode: $.StatusCode,
-				// Characters, not bytes: `left` cuts mid-codepoint on any payload
-				// holding one. `length` stays byte-based — it reports a size.
-				arguments: leftUTF8(args, CH.lit(AI_TOOL_ERROR_PAYLOAD_MAX)),
-				argumentsBytes: CH.length_(args),
-				result: leftUTF8(result, CH.lit(AI_TOOL_ERROR_PAYLOAD_MAX)),
-				resultBytes: CH.length_(result),
-			}
-		})
+		.select(($) => ({
+			traceId: $.TraceId,
+			spanId: $.SpanId,
+			statusCode: $.StatusCode,
+			spanAttributes: cutAttributeValues(aiSpanAttributes($.SpanAttributes)),
+			cutAttributeBytes: cutAttributeBytes(aiSpanAttributes($.SpanAttributes)),
+		}))
 		.where(($) => [
 			$.OrgId.eq(param.string("orgId")),
 			$.Timestamp.gte(param.dateTimeString("sliceStart")),
@@ -1014,6 +1026,52 @@ export function aiToolErrorPayloadsQuery(calls: Arr.NonEmptyReadonlyArray<AiTool
 			),
 		])
 		.format("JSON")
+}
+
+export interface AiToolErrorPayloadsOutput {
+	readonly traceId: string
+	readonly spanId: string
+	readonly statusCode: string
+	/** Truncated to {@link AI_TOOL_ERROR_PAYLOAD_MAX}; `*Bytes` is the true size. */
+	readonly arguments: string
+	readonly argumentsBytes: number
+	readonly result: string
+	readonly resultBytes: number
+}
+
+const utf8 = new TextEncoder()
+
+/** Decoded payloads are re-serialised for display; a string is already the text. */
+const payloadText = (value: unknown): string =>
+	value === undefined ? "" : typeof value === "string" ? value : JSON.stringify(value)
+
+/** Characters, not UTF-16 units: a cut never splits a codepoint. */
+const truncatePayload = (text: string): string =>
+	text.length <= AI_TOOL_ERROR_PAYLOAD_MAX
+		? text
+		: Array.from(text).slice(0, AI_TOOL_ERROR_PAYLOAD_MAX).join("")
+
+/** One {@link aiToolErrorPayloadsQuery} row as the modal shows it: the payloads
+ *  the session page decodes for the same span, cut to
+ *  {@link AI_TOOL_ERROR_PAYLOAD_MAX} characters beside their size in bytes. A
+ *  payload decoded from a value the read cut no longer parses, so it is that
+ *  value's text, and its size is the one the read reported for it. */
+export const aiToolErrorPayload = (row: AiToolErrorPayloadsRow): AiToolErrorPayloadsOutput => {
+	const payload = aiToolCallPayload(row.spanAttributes)
+	const args = payloadText(payload.arguments)
+	const result = payloadText(payload.result)
+	const bytes = (text: string): number =>
+		Object.entries(row.cutAttributeBytes).find(([key]) => row.spanAttributes[key] === text)?.[1] ??
+		utf8.encode(text).length
+	return {
+		traceId: row.traceId,
+		spanId: row.spanId,
+		statusCode: row.statusCode,
+		arguments: truncatePayload(args),
+		argumentsBytes: bytes(args),
+		result: truncatePayload(result),
+		resultBytes: bytes(result),
+	}
 }
 
 /** The bounds one {@link aiToolErrorPayloadsQuery} is read over: the earliest

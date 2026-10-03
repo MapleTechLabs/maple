@@ -21,6 +21,12 @@ import {
 } from "./step-executor"
 import type { StateDispositionEntry } from "../local-store-migration-module"
 
+/** Rebuilds the facet rollup from every retained root span; the truncate makes a resumed step converge. */
+const TRACE_FACETS_HOURLY_BACKFILL = [
+	"TRUNCATE TABLE IF EXISTS trace_facets_hourly",
+	"INSERT INTO trace_facets_hourly (OrgId, Hour, ServiceName, SpanName, HttpMethod, HttpStatusCode, DeploymentEnv, ServiceNamespace, HasError, TraceCount, DurationMin, DurationMax, DurationQuantiles) SELECT OrgId, toStartOfHour(Timestamp) AS Hour, ServiceName, SpanName, HttpMethod, HttpStatusCode, DeploymentEnv, ServiceNamespace, HasError, count() AS TraceCount, min(Duration) AS DurationMin, max(Duration) AS DurationMax, quantilesTDigestState(0.5, 0.95)(Duration) AS DurationQuantiles FROM trace_list_mv GROUP BY OrgId, Hour, ServiceName, SpanName, HttpMethod, HttpStatusCode, DeploymentEnv, ServiceNamespace, HasError",
+] as const
+
 /** Existing rollup rows keep what the old view bodies wrote and age out with their TTL. */
 const ERROR_RETENTION = {
 	preservationInterval: "error retention horizon",
@@ -1047,6 +1053,142 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 				guarantee:
 					"The projection accrues for spans ingested after the migration; older crawler spans stay in raw traces but are invisible to the AI tab until they age out.",
 				preservationInterval: "from the migration forward",
+				sourceRetentionDays: 30,
+				targetRetentionDays: 30,
+			},
+		],
+	},
+	{
+		// Both objects are new; the backfill rolls up the root spans already retained.
+		id: "local-0023-to-0024-trace-facets-hourly",
+		from: 23,
+		to: 24,
+		description:
+			"Create trace_facets_hourly and its materialized view, backfilled from trace_list_mv, so the traces sidebar facets read an hourly rollup",
+		clonedBefore: "any DDL runs",
+		afterBootstrap: [backfill(...TRACE_FACETS_HOURLY_BACKFILL)],
+		plan: [
+			[
+				"create-trace-facets-hourly",
+				"Create trace_facets_hourly and trace_facets_hourly_mv via the v24 bootstrap and backfill the rollup from trace_list_mv",
+			],
+		],
+		verifies: "Verify the v24 physical schema and the retained raw telemetry counts",
+		dispositions: [
+			{
+				name: "trace_facets_hourly",
+				classification: "derived",
+				disposition: "rebuild-within-retention-horizon",
+				guarantee: "Rebuilt from every root span trace_list_mv retains; both keep 30 days.",
+				preservationInterval: "source retention horizon",
+				sourceRetentionDays: 30,
+				targetRetentionDays: 30,
+			},
+		],
+	},
+	{
+		// Partitioning cannot be altered in place, so the rollup is recreated and rebuilt.
+		id: "local-0024-to-0025-trace-facets-hourly-daily-partition",
+		from: 24,
+		to: 25,
+		description: "Recreate trace_facets_hourly partitioned by day and rebuild it from trace_list_mv",
+		clonedBefore: "any DDL runs",
+		beforeBootstrap: [dropViews("trace_facets_hourly_mv"), dropTables("trace_facets_hourly")],
+		afterBootstrap: [backfill(...TRACE_FACETS_HOURLY_BACKFILL)],
+		plan: [
+			[
+				"recreate-trace-facets-hourly",
+				"Drop trace_facets_hourly and its view, recreate both partitioned by day, and backfill from trace_list_mv",
+			],
+		],
+		verifies: "Verify the v25 physical schema and the retained raw telemetry counts",
+		dispositions: [
+			{
+				name: "trace_facets_hourly",
+				classification: "derived",
+				disposition: "rebuild-within-retention-horizon",
+				guarantee: "Rebuilt from every root span trace_list_mv retains; both keep 30 days.",
+				preservationInterval: "source retention horizon",
+				sourceRetentionDays: 30,
+				targetRetentionDays: 30,
+			},
+		],
+	},
+	{
+		id: "local-0025-to-0026-ai-trace-index-gateway-stamps",
+		from: 25,
+		to: 26,
+		description: "Recreate ai_trace_index_mv as a projection of the ingest gateway's maple_ai.* stamps",
+		clonedBefore: "any DDL runs",
+		beforeBootstrap: [dropViews("ai_trace_index_mv")],
+		plan: [
+			[
+				"rebuild-ai-trace-index-view",
+				"Rebuild ai_trace_index_mv to project the maple_ai.* facts the ingest gateway stamps on each span",
+			],
+		],
+		verifies: "Verify the v26 physical schema and the retained raw telemetry counts",
+		dispositions: [
+			AI_TRACE_INDEX_SOURCE,
+			{
+				name: "ai_trace_index",
+				classification: "derived",
+				disposition: "rebuild-within-retention-horizon",
+				guarantee:
+					"Existing rows are preserved untouched with the values the v25 view gave them; the rebuilt view fills spans materialized after the migration from the gateway's stamps, and the gap closes as the retention window rolls.",
+				...AI_TRACE_INDEX_FORWARD,
+			},
+		],
+	},
+	{
+		id: "local-0026-to-0027-alert-checks-skip-reason",
+		from: 26,
+		to: 27,
+		description: "Add SkipReason to alert_checks",
+		clonedBefore: "any DDL runs",
+		beforeBootstrap: [addColumns("alert_checks", [["SkipReason", "LowCardinality(String) DEFAULT ''"]])],
+		plan: [["widen-alert-checks", "Add SkipReason to alert_checks so skipped checks record why"]],
+		verifies: "Verify the v27 physical schema and the retained raw telemetry counts",
+		dispositions: [
+			{
+				name: "alert_checks",
+				classification: "authoritative",
+				disposition: "preserve-exact",
+				guarantee:
+					"Existing check rows are kept as written with an empty SkipReason; only checks recorded after the migration carry one.",
+			},
+		],
+	},
+	{
+		id: "local-0027-to-0028-service-overview-spans-span-kind",
+		from: 27,
+		to: 28,
+		description:
+			"Add SpanKind and IsRoot to service_overview_spans and recreate service_overview_spans_mv to fill them",
+		clonedBefore: "any DDL runs",
+		beforeBootstrap: [
+			addColumns("service_overview_spans", [
+				["SpanKind", "LowCardinality(String) DEFAULT ''"],
+				["IsRoot", "UInt8 DEFAULT 0"],
+			]),
+			dropViews("service_overview_spans_mv"),
+		],
+		plan: [
+			[
+				"widen-service-overview-spans",
+				"Add SpanKind and IsRoot to service_overview_spans and rebuild service_overview_spans_mv to fill them",
+			],
+		],
+		verifies: "Verify the v28 physical schema and the retained raw telemetry counts",
+		dispositions: [
+			TRACES_UNDER_REPLACED_VIEWS,
+			{
+				name: "service_overview_spans",
+				classification: "derived",
+				disposition: "rebuild-within-retention-horizon",
+				guarantee:
+					"Existing rows are preserved untouched with an empty SpanKind and a zero IsRoot; the rebuilt view fills both for spans materialized after the migration and the gap closes as the 30-day retention window rolls.",
+				preservationInterval: "source retention horizon",
 				sourceRetentionDays: 30,
 				targetRetentionDays: 30,
 			},

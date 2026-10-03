@@ -1,6 +1,7 @@
 import { useMemo } from "react"
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Schema } from "effect"
+import { Button } from "@maple/ui/components/ui/button"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { ActiveFilterChips } from "@maple/ui/components/filters/active-filter-chips"
 import { formatNumber } from "@maple/ui/lib/format"
@@ -12,6 +13,7 @@ import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { getReleasesResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { QueryErrorState } from "@/components/common/query-error-state"
+import { DocsLink } from "@/components/common/docs-link"
 import {
 	TimeRangeSearchFields,
 	applyTimeRangeSearch,
@@ -25,7 +27,16 @@ import { ReleasesFilterSidebar } from "@/components/releases/releases-filter-sid
 import { RELEASES_DEFAULT_PRESET, releasesQueryInput } from "@/components/releases/releases-query-input"
 import { ReleasesTimeline } from "@/components/releases/releases-timeline"
 import { ReleasesTable } from "@/components/releases/releases-table"
-import { deriveReleaseImpacts, groupReleases, type ReleaseHealth } from "@/components/releases/release-model"
+import { ReleasesLiveNow } from "@/components/releases/releases-live-now"
+import { useReleaseIssueCounts } from "@/components/releases/use-release-issue-counts"
+import {
+	deriveReleaseImpacts,
+	groupReleases,
+	liveVersions,
+	type ReleaseGroup,
+	type ReleaseServiceImpact,
+	type ReleaseHealth,
+} from "@/components/releases/release-model"
 import { RELEASE_HEALTH_LABEL } from "@/components/releases/release-health"
 
 const ONE_YEAR_SECONDS = 365 * 24 * 60 * 60
@@ -157,6 +168,7 @@ function ReleasesSkeleton() {
 }
 
 function ReleasesContent({ search }: { search: ReleasesSearchParams }) {
+	const navigate = useNavigate({ from: Route.fullPath })
 	const atom = getReleasesResultAtom({ data: releasesQueryInput(search) })
 	const result = useRefreshableAtomValue(atom)
 	const refresh = useAtomRefresh(atom)
@@ -165,7 +177,8 @@ function ReleasesContent({ search }: { search: ReleasesSearchParams }) {
 		if (!Result.isSuccess(result)) return undefined
 		const impacts = deriveReleaseImpacts(result.value.releases, result.value.timeline)
 		const groups = groupReleases(impacts)
-		return { impacts, groups, response: result.value }
+		const live = liveVersions(result.value.timeline, groups)
+		return { impacts, groups, live, response: result.value }
 	}, [result])
 
 	if (Result.isFailure(result)) {
@@ -175,7 +188,7 @@ function ReleasesContent({ search }: { search: ReleasesSearchParams }) {
 	}
 	if (derived === undefined) return <ReleasesSkeleton />
 
-	const { impacts, groups, response } = derived
+	const { impacts, groups, live, response } = derived
 	const health: ReleaseHealth | undefined = search.impact
 	const visibleGroups = health === undefined ? groups : groups.filter((group) => group.health === health)
 	const visibleImpacts =
@@ -194,11 +207,15 @@ function ReleasesContent({ search }: { search: ReleasesSearchParams }) {
 			<div className="flex flex-col items-center gap-1 rounded-md border bg-card px-4 py-12 text-center text-sm text-muted-foreground">
 				<span>No releases detected in this window.</span>
 				<span className="text-xs text-muted-foreground/70">
-					Release tracking needs spans to carry the{" "}
+					Releases compare errors and latency before and after each deploy. Release tracking needs
+					spans to carry the{" "}
 					<code className="rounded bg-muted px-1 py-px font-mono text-[11px]">
 						vcs.ref.head.revision
 					</code>{" "}
 					resource attribute.
+				</span>
+				<span className="mt-2">
+					<DocsLink page="github" />
 				</span>
 			</div>
 		)
@@ -231,12 +248,16 @@ function ReleasesContent({ search }: { search: ReleasesSearchParams }) {
 						{flagged === 1 ? "release" : "releases"} with errors up
 					</span>
 				) : null}
+				<span className="text-muted-foreground/70">
+					Each release is compared with the version it replaced
+				</span>
 				{response.truncated ? (
 					<span className="text-muted-foreground/70">
 						Showing the newest {formatNumber(response.releases.length)} rows
 					</span>
 				) : null}
 			</div>
+			<ReleasesLiveNow live={live} timeSearch={timeSearch} environments={search.environments} />
 			<ReleasesTimeline
 				impacts={visibleImpacts}
 				startTime={response.startTime}
@@ -245,17 +266,51 @@ function ReleasesContent({ search }: { search: ReleasesSearchParams }) {
 				environments={search.environments}
 			/>
 			{visibleGroups.length === 0 ? (
-				<div className="rounded-md border bg-card px-4 py-8 text-center text-sm text-muted-foreground">
+				<div className="flex flex-col items-center gap-3 rounded-md border bg-card px-4 py-8 text-center text-sm text-muted-foreground">
 					No releases match the health filter.
+					<Button
+						variant="outline"
+						size="sm"
+						onClick={() => navigate({ search: (prev) => ({ ...prev, impact: undefined }) })}
+					>
+						Clear filter
+					</Button>
 				</div>
 			) : (
-				<ReleasesTable
+				<ReleasesTableWithIssues
 					groups={visibleGroups}
+					impacts={impacts}
+					windowStart={response.startTime}
 					timeSearch={timeSearch}
 					environments={search.environments}
 					waiting={waiting}
 				/>
 			)}
+		</div>
+	)
+}
+
+function ReleasesTableWithIssues({
+	impacts,
+	windowStart,
+	...props
+}: {
+	groups: ReadonlyArray<ReleaseGroup>
+	impacts: ReadonlyArray<ReleaseServiceImpact>
+	windowStart: string
+	timeSearch: ReturnType<typeof pickTimeRangeSearch>
+	environments?: string[]
+	waiting: boolean
+}) {
+	const { counts, capped } = useReleaseIssueCounts(impacts, windowStart)
+	return (
+		<div className="flex flex-col gap-1.5">
+			<ReleasesTable {...props} issueCounts={counts} />
+			{capped ? (
+				<span className="px-0.5 text-[11px] text-muted-foreground/70">
+					Issue counts cover the 100 most recently active issues introduced in this window.
+				</span>
+			) : null}
 		</div>
 	)
 }

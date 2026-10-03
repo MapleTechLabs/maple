@@ -122,22 +122,20 @@ export const getPlanetScaleQueryInsights = Effect.fn("Integrations.getPlanetScal
 	return {
 		branch: result.branch,
 		unavailableReason: result.unavailable_reason,
-		rows: result.data.map(
-			(row): PlanetScaleQueryInsightEntry => ({
-				fingerprint: row.fingerprint,
-				normalizedSql: row.normalized_sql,
-				statementType: row.statement_type,
-				queryCount: row.query_count,
-				errorCount: row.error_count,
-				errorRate: row.query_count > 0 ? row.error_count / row.query_count : 0,
-				totalDurationMillis: row.total_duration_millis,
-				timePerQueryMillis: row.time_per_query_millis,
-				p50LatencyMillis: row.p50_latency_millis,
-				p99LatencyMillis: row.p99_latency_millis,
-				rowsReadPerQuery: row.rows_read_per_query,
-				lastRunAt: row.last_run_at === null ? null : Date.parse(row.last_run_at),
-			}),
-		),
+		rows: result.data.map((row): PlanetScaleQueryInsightEntry => ({
+			fingerprint: row.fingerprint,
+			normalizedSql: row.normalized_sql,
+			statementType: row.statement_type,
+			queryCount: row.query_count,
+			errorCount: row.error_count,
+			errorRate: row.query_count > 0 ? row.error_count / row.query_count : 0,
+			totalDurationMillis: row.total_duration_millis,
+			timePerQueryMillis: row.time_per_query_millis,
+			p50LatencyMillis: row.p50_latency_millis,
+			p99LatencyMillis: row.p99_latency_millis,
+			rowsReadPerQuery: row.rows_read_per_query,
+			lastRunAt: row.last_run_at === null ? null : Date.parse(row.last_run_at),
+		})),
 	}
 })
 
@@ -178,22 +176,20 @@ export const getPlanetScaleEvents = Effect.fn("Integrations.getPlanetScaleEvents
 		}),
 	)
 	return {
-		events: result.data.map(
-			(row): PlanetScaleEventEntry => ({
-				id: row.id,
-				databaseName: row.database_name,
-				branchName: row.branch_name,
-				category: row.category,
-				eventType: row.event_type,
-				state: row.state,
-				externalId: row.external_id,
-				title: row.title,
-				source: row.source,
-				actorLogin: row.actor_login,
-				url: row.url,
-				occurredAt: Date.parse(row.occurred_at),
-			}),
-		),
+		events: result.data.map((row): PlanetScaleEventEntry => ({
+			id: row.id,
+			databaseName: row.database_name,
+			branchName: row.branch_name,
+			category: row.category,
+			eventType: row.event_type,
+			state: row.state,
+			externalId: row.external_id,
+			title: row.title,
+			source: row.source,
+			actorLogin: row.actor_login,
+			url: row.url,
+			occurredAt: Date.parse(row.occurred_at),
+		})),
 		nextCursor: result.next_cursor,
 	}
 })

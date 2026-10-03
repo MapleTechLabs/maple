@@ -9,6 +9,7 @@ import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
 import { AnomalyDetectionService } from "@maple/backend/services/alerts/AnomalyDetectionService"
 import { CloudflareAnalyticsService } from "@maple/backend/services/integrations/CloudflareAnalyticsService"
 import { DigestService } from "@maple/backend/services/digest/DigestService"
+import { WebAnalyticsDigestService } from "@maple/backend/services/digest/WebAnalyticsDigestService"
 import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
 import { Env } from "@maple/backend/platform/Env"
 import { ErrorsService } from "@maple/backend/services/errors/ErrorsService"
@@ -19,6 +20,7 @@ import { IncidentClassifier } from "@maple/backend/services/errors/IncidentClass
 import { layerPg } from "@maple/backend/platform/DatabasePgLive"
 import { PullRequestLookupLive } from "@maple/backend/services/errors/pull-request-lookup-live"
 import { PlanetScaleService } from "@maple/backend/services/integrations/PlanetScaleService"
+import { RailwayMetricsService } from "@maple/backend/services/integrations/RailwayMetricsService"
 import { ServiceMapRollupService } from "@maple/backend/services/dashboards/ServiceMapRollupService"
 import { mapleDbConnectionLayer } from "@maple/backend/platform/pg-connection-source"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
@@ -41,7 +43,9 @@ export const buildLayer = (env: AlertingWorkerEnv) =>
 		CloudflareAnalyticsService.layer,
 		GoogleAnalyticsService.layer,
 		PlanetScaleService.layer,
+		RailwayMetricsService.layer,
 		DigestService.layer,
+		WebAnalyticsDigestService.layer,
 		ErrorsService.layer,
 		FixVerificationTickService.layer,
 		EscalationService.layer,
@@ -161,7 +165,7 @@ const escalationTick = makeTick(
 			: undefined,
 )
 
-const digestTick = makeTick(
+const opsDigestTick = makeTick(
 	DigestService.use((digest) => digest.runDigestTick()),
 	"digest",
 	(result) => ({
@@ -170,6 +174,20 @@ const digestTick = makeTick(
 		skipped: result.skipped,
 	}),
 )
+
+const webAnalyticsDigestTick = makeTick(
+	WebAnalyticsDigestService.use((digest) => digest.runTick()),
+	"web_analytics_digest",
+	(result) => ({
+		sentCount: result.sentCount,
+		errorCount: result.errorCount,
+		skipped: result.skipped,
+	}),
+)
+
+// Sequential: the ops digest tick runs the daily Clerk member sweep that seeds
+// the subscriber rows both emails read.
+const digestTick = Effect.andThen(opsDigestTick, webAnalyticsDigestTick)
 
 // The onboarding drip moved to maple-portal (`camp_onboarding`), which owns the
 // sequence, its send log and its suppression list. `org_onboarding_state` stays
@@ -247,6 +265,20 @@ const planetScaleTick = makeTick(
 			: undefined,
 )
 
+const railwayMetricsTick = makeTick(
+	RailwayMetricsService.use((railway) => railway.pollAllOrgs()),
+	"railway_metrics",
+	(result) =>
+		result.orgs > 0
+			? {
+					orgs: result.orgs,
+					rowsIngested: result.rowsIngested,
+					skipped: result.skipped,
+					failures: result.failures,
+				}
+			: undefined,
+)
+
 export interface ScheduledTickPrograms<R = never> {
 	readonly alert: Effect.Effect<void, never, R>
 	readonly anomaly: Effect.Effect<void, never, R>
@@ -257,6 +289,7 @@ export interface ScheduledTickPrograms<R = never> {
 	readonly fixVerification: Effect.Effect<void, never, R>
 	readonly googleAnalytics: Effect.Effect<void, never, R>
 	readonly planetScale: Effect.Effect<void, never, R>
+	readonly railwayMetrics: Effect.Effect<void, never, R>
 	readonly serviceMapRollup: Effect.Effect<void, never, R>
 }
 
@@ -271,8 +304,8 @@ export const selectScheduledProgram = <R>(
 ): Effect.Effect<void, never, R> =>
 	Match.value(cron).pipe(
 		Match.when("*/5 * * * *", () =>
-			Effect.all([ticks.anomaly, ticks.cloudflareAnalytics, ticks.planetScale], {
-				concurrency: 3,
+			Effect.all([ticks.anomaly, ticks.cloudflareAnalytics, ticks.planetScale, ticks.railwayMetrics], {
+				concurrency: 4,
 				discard: true,
 			}),
 		),
@@ -305,11 +338,13 @@ type ScheduledServices =
 	| AnomalyDetectionService
 	| CloudflareAnalyticsService
 	| DigestService
+	| WebAnalyticsDigestService
 	| ErrorsService
 	| EscalationService
 	| FixVerificationTickService
 	| GoogleAnalyticsService
 	| PlanetScaleService
+	| RailwayMetricsService
 	| ServiceMapRollupService
 
 export const scheduledTicks: ScheduledTickPrograms<ScheduledServices> = {
@@ -322,6 +357,7 @@ export const scheduledTicks: ScheduledTickPrograms<ScheduledServices> = {
 	fixVerification: fixVerificationTick,
 	googleAnalytics: googleAnalyticsTick,
 	planetScale: planetScaleTick,
+	railwayMetrics: railwayMetricsTick,
 	serviceMapRollup: serviceMapRollupTick,
 }
 

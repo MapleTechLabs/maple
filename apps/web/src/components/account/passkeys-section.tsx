@@ -146,6 +146,10 @@ export function PasskeysSection() {
 									Add one to sign in without typing a password.
 								</EmptyDescription>
 							</EmptyHeader>
+							<Button size="sm" onClick={handleCreate} disabled={isBusy}>
+								<PlusIcon size={14} />
+								Add passkey
+							</Button>
 						</Empty>
 					) : (
 						<Table>

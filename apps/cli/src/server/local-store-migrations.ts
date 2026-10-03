@@ -1254,15 +1254,13 @@ const createJournal = (dataDir: string, plan: MigrationPlan, marker: StoreMarker
 		formatVersion: 2,
 		migrationId,
 		phase: "planned",
-		chain: plan.chain.map(
-			(migration): MigrationStepJournal => ({
-				id: migration.id,
-				moduleVersion: migration.moduleVersion,
-				from: migration.from,
-				to: migration.to,
-				status: "pending",
-			}),
-		),
+		chain: plan.chain.map((migration): MigrationStepJournal => ({
+			id: migration.id,
+			moduleVersion: migration.moduleVersion,
+			from: migration.from,
+			to: migration.to,
+			status: "pending",
+		})),
 		currentStepIndex: 0,
 		sourceDataDir: resolve(dataDir),
 		sourceStoreId: sourceStoreId(marker),

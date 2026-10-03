@@ -47,17 +47,17 @@ Issues come from three sources. The **Source** filter names them:
 
 ## Issue states
 
-| State           | Set by           | Meaning                                                                 |
-| --------------- | ---------------- | ----------------------------------------------------------------------- |
-| **Triage**      | Maple, or you    | New and not yet looked at.                                              |
-| **Todo**        | You              | Accepted, not started.                                                  |
-| **In progress** | You              | Someone holds the lease and is working on it.                           |
-| **In review**   | You              | A fix is proposed or a pull request is attached.                        |
-| **Verifying**   | Maple            | The fix merged. Maple is watching for new occurrences.                  |
-| **Done**        | You, or Maple    | Fixed.                                                                  |
-| **Regressed**   | Maple            | It was done, and it fired again from a newer build.                     |
-| **Won't fix**   | You              | Suppressed, forever or until a snooze time.                             |
-| **Cancelled**   | You              | Closed for good. Cannot be reopened.                                    |
+| State           | Set by        | Meaning                                                |
+| --------------- | ------------- | ------------------------------------------------------ |
+| **Triage**      | Maple, or you | New and not yet looked at.                             |
+| **Todo**        | You           | Accepted, not started.                                 |
+| **In progress** | You           | Someone holds the lease and is working on it.          |
+| **In review**   | You           | A fix is proposed or a pull request is attached.       |
+| **Verifying**   | Maple         | The fix merged. Maple is watching for new occurrences. |
+| **Done**        | You, or Maple | Fixed.                                                 |
+| **Regressed**   | Maple         | It was done, and it fired again from a newer build.    |
+| **Won't fix**   | You           | Suppressed, forever or until a snooze time.            |
+| **Cancelled**   | You           | Closed for good. Cannot be reopened.                   |
 
 Maple sets **Regressed** and **Verifying** itself. You cannot pick them.
 
@@ -105,11 +105,11 @@ To route issues to destinations by severity, open **Settings → Automation** an
 
 The error notification policy decides when Maple sends an issue to your [notification destinations](/docs/alerting/notification-destinations). Defaults:
 
-| Event                       | Default |
-| --------------------------- | ------- |
-| First seen (new incident)   | On      |
-| Regression                  | On      |
-| Incident resolved           | Off     |
+| Event                     | Default |
+| ------------------------- | ------- |
+| First seen (new incident) | On      |
+| Regression                | On      |
+| Incident resolved         | Off     |
 
 A minimum occurrence count (default 1) applies to first-seen and regression notifications. No destinations are selected by default, so nothing is sent until you add one.
 
@@ -128,13 +128,13 @@ The page opens with a stat strip: error count, share of all spans, and affected 
 
 Tabs filter by state:
 
-| Tab          | States                                        |
-| ------------ | --------------------------------------------- |
+| Tab          | States                                          |
+| ------------ | ----------------------------------------------- |
 | **Open**     | Triage, Regressed, Todo, In progress, In review |
-| **Triage**   | Triage, Regressed                             |
-| **Active**   | Todo, In progress, In review                  |
-| **Resolved** | Done, Cancelled, Won't fix                    |
-| **All**      | Every state                                   |
+| **Triage**   | Triage, Regressed                               |
+| **Active**   | Todo, In progress, In review                    |
+| **Resolved** | Done, Cancelled, Won't fix                      |
+| **All**      | Every state                                     |
 
 Columns: **Error**, **Trend · 24h**, **Events**, **Service**, **Status**, and **Last seen**. The trend and event counts cover the last 24 hours. The list covers all time.
 
@@ -166,20 +166,20 @@ The sidebar holds **Details** (status, severity, assignee), **Scope** (service, 
 
 The [MCP server](/docs/reference/mcp) covers the whole workflow:
 
-| Tool                              | What it does                                                                 |
-| --------------------------------- | ---------------------------------------------------------------------------- |
-| `list_error_issues`               | List issues by state, severity, source, service, or last seen time.          |
-| `find_errors`                     | Error types with their fingerprints and counts.                              |
-| `error_detail`                    | Sample occurrences and logs for one fingerprint.                             |
-| `list_error_issue_events`         | An issue's activity history.                                                 |
-| `list_error_incidents`            | Incidents under an issue.                                                    |
-| `claim_error_issue`, `release_error_issue` | Take or give up the lease.                                          |
-| `transition_error_issue`          | Change state, with an optional `snooze_until` for Won't fix.                 |
-| `set_issue_severity`              | Set severity. Never overrides a severity set by hand.                        |
-| `comment_on_error_issue`          | Add a comment.                                                               |
-| `propose_fix`                     | Claim the issue, move it to In review, and optionally attach a PR URL.       |
-| `link_pull_request`               | Attach a GitHub pull request. Its merge starts fix verification.             |
-| `update_error_notification_policy` | Change the notification policy (admins only).                               |
+| Tool                                       | What it does                                                           |
+| ------------------------------------------ | ---------------------------------------------------------------------- |
+| `list_error_issues`                        | List issues by state, severity, source, service, or last seen time.    |
+| `find_errors`                              | Error types with their fingerprints and counts.                        |
+| `error_detail`                             | Sample occurrences and logs for one fingerprint.                       |
+| `list_error_issue_events`                  | An issue's activity history.                                           |
+| `list_error_incidents`                     | Incidents under an issue.                                              |
+| `claim_error_issue`, `release_error_issue` | Take or give up the lease.                                             |
+| `transition_error_issue`                   | Change state, with an optional `snooze_until` for Won't fix.           |
+| `set_issue_severity`                       | Set severity. Never overrides a severity set by hand.                  |
+| `comment_on_error_issue`                   | Add a comment.                                                         |
+| `propose_fix`                              | Claim the issue, move it to In review, and optionally attach a PR URL. |
+| `link_pull_request`                        | Attach a GitHub pull request. Its merge starts fix verification.       |
+| `update_error_notification_policy`         | Change the notification policy (admins only).                          |
 
 ## Troubleshooting
 

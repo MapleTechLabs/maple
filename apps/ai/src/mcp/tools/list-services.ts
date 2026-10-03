@@ -14,6 +14,7 @@ const WINDOW = P.timeWindow({ defaultHours: 6 })
 export function registerListServicesTool(server: McpToolRegistrar) {
 	server.define({
 		name: "list_services",
+		title: "List Services",
 		description:
 			"List all active services with key metrics (throughput, error rate, P95 latency). Use as an entry point to discover services before drilling down with diagnose_service or get_service_top_operations.",
 		parameters: Schema.Struct({

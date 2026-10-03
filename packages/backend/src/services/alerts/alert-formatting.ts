@@ -180,8 +180,11 @@ export const formatThresholdSummary = (context: ThresholdContext): string => {
 		: `${formatComparator(context.comparator)} ${formatSignalMetric(context.threshold, display)}`
 }
 
+/** A breach without a value is a rule alerting on an empty window. */
 export const formatObservedSummary = (context: ObservedContext): string =>
-	`${formatSignalMetric(context.value, signalDisplayOf(context))} ${formatThresholdSummary(context)}`
+	context.value === null
+		? `No data (threshold ${formatThresholdSummary(context)})`
+		: `${formatSignalMetric(context.value, signalDisplayOf(context))} ${formatThresholdSummary(context)}`
 
 export const comparatorBreachPhrase = (context: ThresholdContext): string => {
 	const display = signalDisplayOf(context)

@@ -14,14 +14,14 @@ describe("planetscaleInfraTimeseriesSQL", () => {
 		})
 		expect(sql).toContain("FROM metrics_gauge")
 		expect(sql).toContain(
-			"coalesce(nullIf(Attributes['planetscale_database_name'], ''), Attributes['planetscale_database']) = 'main-db'",
+			"coalesce(nullIf(metrics_gauge.Attributes['planetscale_database_name'], ''), metrics_gauge.Attributes['planetscale_database']) = 'main-db'",
 		)
 		// Inner per-timestamp grouping, outer bucketed aggregation.
 		expect(sql).toContain("GROUP BY t")
 		expect(sql).toContain("toStartOfInterval")
 		expect(sql).toContain("GROUP BY bucket")
-		expect(sql).toContain("avg(totalConnections)")
-		expect(sql).toContain("max(cpuMax)")
+		expect(sql).toContain("avg(points.totalConnections)")
+		expect(sql).toContain("max(points.cpuMax)")
 		expect(sql).toContain("ORDER BY bucket ASC")
 		expect(sql).toContain("FORMAT JSON")
 	})
@@ -76,7 +76,7 @@ describe("planetscaleInfraTimeseriesSQL", () => {
 		// sample must be excluded rather than read as zero bytes free.
 		expect(sql).toContain("availableSamples > 0")
 		// Phrased so SQL precedence yields a percentage — see planetscale-storage.test.ts.
-		expect(sql).toContain("100 - availableBytes / capacityBytes * 100")
+		expect(sql).toContain("100 - points.availableBytes / points.capacityBytes * 100")
 	})
 })
 
@@ -91,10 +91,10 @@ describe("planetscaleBranchInfraTimeseriesSQL", () => {
 			branch: "pr-246",
 		})
 		expect(sql).toContain(
-			"coalesce(nullIf(Attributes['planetscale_database_name'], ''), Attributes['planetscale_database']) = 'main-db'",
+			"coalesce(nullIf(metrics_gauge.Attributes['planetscale_database_name'], ''), metrics_gauge.Attributes['planetscale_database']) = 'main-db'",
 		)
 		expect(sql).toContain(
-			"coalesce(nullIf(Attributes['planetscale_branch_name'], ''), Attributes['planetscale_branch']) = 'pr-246'",
+			"coalesce(nullIf(metrics_gauge.Attributes['planetscale_branch_name'], ''), metrics_gauge.Attributes['planetscale_branch']) = 'pr-246'",
 		)
 		expect(sql).toContain("GROUP BY bucket")
 		expect(sql).toContain("ORDER BY bucket ASC")

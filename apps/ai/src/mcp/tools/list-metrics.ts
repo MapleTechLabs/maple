@@ -28,6 +28,7 @@ interface MetricSummaryRow {
 export function registerListMetricsTool(server: McpToolRegistrar) {
 	server.define({
 		name: "list_metrics",
+		title: "List Metrics",
 		description:
 			"Discover custom metrics with their type, unit, monotonicity and data volume. Pass a discovered `metric_name` and `metric_type` to query_data source=metrics.",
 		parameters: Schema.Struct({

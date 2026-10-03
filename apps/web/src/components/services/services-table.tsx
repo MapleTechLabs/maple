@@ -240,13 +240,17 @@ function deriveDeployInfo(commits: CommitBreakdown[]): DeployCellInfo | undefine
 	const latest = pool.reduce((best, c) => (c.firstSeen > best.firstSeen ? c : best))
 	const dominant = real.reduce((best, c) => (c.spanCount > best.spanCount ? c : best))
 
-	const older = real.filter((c) => c !== latest)
-	const olderSpans = older.reduce((sum, c) => sum + c.spanCount, 0)
-	const olderErrors = older.reduce((sum, c) => sum + c.errorCount, 0)
-	const latestRate = latest.spanCount > 0 ? latest.errorCount / latest.spanCount : 0
-	const olderRate = olderSpans > 0 ? olderErrors / olderSpans : 0
 	// "Errors ↑ since deploy": the newest commit errors at least twice as often
-	// as everything it is replacing, by a margin that can't be rounding noise.
+	// as the version it replaced, by a margin that can't be rounding noise.
+	const previous = pool
+		.filter((c) => c.firstSeen < latest.firstSeen)
+		.reduce<CommitBreakdown | undefined>(
+			(best, c) => (best === undefined || c.firstSeen > best.firstSeen ? c : best),
+			undefined,
+		)
+	const olderSpans = previous?.spanCount ?? 0
+	const latestRate = latest.spanCount > 0 ? latest.errorCount / latest.spanCount : 0
+	const olderRate = previous !== undefined && olderSpans > 0 ? previous.errorCount / olderSpans : 0
 	const errorsSince =
 		latest.spanCount >= MIN_DEPLOY_COMPARE_SPANS &&
 		olderSpans >= MIN_DEPLOY_COMPARE_SPANS &&

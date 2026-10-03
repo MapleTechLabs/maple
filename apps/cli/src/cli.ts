@@ -1,5 +1,5 @@
-import * as Command from "effect/unstable/cli/Command"
-import * as Flag from "effect/unstable/cli/Flag"
+import * as Command from "effect/cli/Command"
+import * as Flag from "effect/cli/Flag"
 import { services, diagnose, serviceMap, topOps } from "./commands/services"
 import { traces, trace, slowTraces } from "./commands/traces"
 import { errors, error } from "./commands/errors"
@@ -12,14 +12,15 @@ import { use } from "./commands/config"
 import { start, stop, reset, checkpoint, restore } from "./commands/server"
 import { schema } from "./commands/schema"
 import { archive } from "./commands/archive"
+import { deleteCommand } from "./commands/delete"
 import { update } from "./commands/update"
 import { OutputFormatSetting } from "./lib/output"
 
-// One CLI, two backends. Every query command bottoms out at the shared
-// `WarehouseExecutor`; the active mode (local chDB vs remote warehouse) is
-// resolved at runtime (see core/mode.ts). The `--remote`/`--local` flags are
-// declared here as shared flags so parsing accepts them and `--help` lists
-// them — the mode resolver reads them back from argv.
+// One CLI, two backends. Local mode runs the query-engine helpers against the
+// local chDB server; remote mode calls the workspace's v2 API, and its MCP tools
+// where v2 has no resource (see core/operations.ts). The mode is resolved at
+// runtime (core/mode.ts); `--remote`/`--local` are declared here as shared flags
+// so parsing accepts them and `--help` lists them, and the resolver reads argv.
 export const cli = Command.make("maple").pipe(
 	Command.withDescription(
 		"Query Maple telemetry (traces, logs, errors, services) from your terminal. " +
@@ -48,6 +49,7 @@ export const cli = Command.make("maple").pipe(
 		reset,
 		checkpoint,
 		restore,
+		deleteCommand,
 		schema,
 		// Parquet archives (local mode)
 		archive,
@@ -75,7 +77,7 @@ export const cli = Command.make("maple").pipe(
 		timeseries,
 		breakdown,
 		compare,
-		// Raw SQL (local only)
+		// Raw SQL
 		query,
 		// Auth / config
 		login,

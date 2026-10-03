@@ -8,7 +8,8 @@
  */
 import { assert, beforeEach, describe, it } from "vitest"
 import { encodeChatTurnTenant, type ChatTurnOrigin, type ChatTurnTenant } from "@maple/domain/chat-session"
-import { ChatSession, TURN_STALE_MS } from "./ChatSession"
+import { ChatSession, MAX_TURN_RESUMES, TURN_STALE_MS } from "./ChatSession"
+import type { RunChatSessionTurnInput } from "./turn-runner"
 import { installSchedulerWait, makeFakeDurableObjectState } from "../../test/chat/fake-do-state"
 
 installSchedulerWait()
@@ -463,6 +464,109 @@ describe("ChatSession turn heartbeat", () => {
 		assert.strictEqual(last?.type, "turn-end")
 		assert.strictEqual(last?.type === "turn-end" ? last.messageId : undefined, orphaned)
 		assert.strictEqual(last?.type === "turn-end" ? last.reason : undefined, "error")
+	})
+})
+
+describe("ChatSession eviction recovery", () => {
+	const REVIEW_SESSION = "org_test:pr-rev_1"
+	const KICKOFF = "Review pull request #7"
+
+	/** A session whose turns are recorded rather than run: a run never settles, like a live one. */
+	const recording = (state = makeFakeDurableObjectState()) => {
+		const runs: Array<RunChatSessionTurnInput> = []
+		const session = new ChatSession(state, {}, undefined, (input) => {
+			runs.push(input)
+			return new Promise<void>(() => undefined)
+		})
+		return { session, state, runs }
+	}
+
+	const claimedTurn = (state: ReturnType<typeof makeFakeDurableObjectState>): string | undefined =>
+		(
+			state.storage.sql.exec("SELECT running_message_id FROM session WHERE id = 1").toArray()[0] as
+				| { running_message_id: string | null }
+				| undefined
+		)?.running_message_id ?? undefined
+
+	const beginReview = (session: ChatSession) =>
+		session.beginTurn({
+			sessionId: REVIEW_SESSION,
+			messageId: "kickoff",
+			text: KICKOFF,
+			tenant: TENANT,
+			origin: { kind: "autonomous" },
+		})
+
+	/** A deploy resets the object; the alarm is what reaches the new activation. */
+	it("starts an evicted autonomous review again from its kickoff", () => {
+		const { session, state } = recording()
+		beginReview(session)
+		const orphaned = claimedTurn(state)!
+
+		const revived = recording(state)
+		revived.session.alarm()
+
+		assert.isTrue(revived.session.running())
+		const restarted = claimedTurn(state)!
+		assert.notStrictEqual(restarted, orphaned)
+		assert.lengthOf(revived.runs, 1)
+		assert.strictEqual(revived.runs[0]?.messageId, restarted)
+		assert.deepEqual(revived.runs[0]?.resume, { userMessageId: "kickoff", text: KICKOFF, attempt: 1 })
+		assert.strictEqual(revived.runs[0]?.sessionId, REVIEW_SESSION)
+		// The dead attempt's message is closed, so a reader does not see it streaming forever.
+		const closed = revived.session
+			.since(0)
+			.find((event) => event.type === "turn-end" && event.messageId === orphaned)
+		assert.strictEqual(closed?.type === "turn-end" ? closed.reason : undefined, "error")
+		// The restarted turn keeps the object alive like the first one did.
+		assert.lengthOf(state.alarms, 2)
+		// And a heartbeat on the activation that runs it is just a heartbeat.
+		revived.session.alarm()
+		assert.strictEqual(claimedTurn(state), restarted)
+	})
+
+	it("gives the review up, and says so, once it has been evicted too often", () => {
+		const first = recording()
+		beginReview(first.session)
+		let state = first.state
+		for (let attempt = 1; attempt <= MAX_TURN_RESUMES; attempt++) {
+			const revived = recording(state)
+			revived.session.alarm()
+			assert.strictEqual(revived.runs[0]?.resume?.attempt, attempt)
+			state = revived.state
+		}
+		const last = claimedTurn(state)!
+
+		const final = recording(state)
+		final.session.alarm()
+
+		assert.isFalse(final.session.running())
+		assert.lengthOf(final.runs, 1)
+		assert.strictEqual(final.runs[0]?.abandoned, true)
+		assert.strictEqual(final.runs[0]?.messageId, last)
+		// A later turn on the same session starts from a clean count.
+		beginReview(final.session)
+		const again = recording(state)
+		again.session.alarm()
+		assert.strictEqual(again.runs[0]?.resume?.attempt, 1)
+	})
+
+	/** A person's chat turn is theirs to retry: released, not re-run. */
+	it("does not start an evicted chat turn again", () => {
+		const { session, state } = recording()
+		session.beginTurn({
+			sessionId: "org_test:tab",
+			messageId: "u1",
+			text: "hi",
+			tenant: TENANT,
+			origin: APP,
+		})
+
+		const revived = recording(state)
+		revived.session.alarm()
+
+		assert.isFalse(revived.session.running())
+		assert.lengthOf(revived.runs, 0)
 	})
 })
 

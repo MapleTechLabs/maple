@@ -72,6 +72,7 @@ const GROUP_COLUMNS = [
 export function registerGetAgentToolsOverviewTool(server: McpToolRegistrar) {
 	server.define({
 		name: "get_agent_tools_overview",
+		title: "Agent Tools Overview",
 		description:
 			"AI agent tool calls (the tools an LLM agent invokes; not browser sessions, not Maple's own MCP tools): calls, failures and latency per tool, for the window against the equal window before it. With `tool` set it also lists that tool's failure groups by fingerprint: what it fails with, how often, and whether it still fails; `get_agent_tool_error` opens a group. Tool names here are what `get_agent_tool_error tool` and `list_agent_sessions tools` take. Start with no `tool`.",
 		parameters: Schema.Struct({

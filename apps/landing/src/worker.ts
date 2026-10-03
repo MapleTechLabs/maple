@@ -18,7 +18,7 @@ import * as Cloudflare from "alchemy/Cloudflare"
 import * as Command from "alchemy/Command"
 import * as Output from "alchemy/Output"
 import { Effect } from "effect"
-import { HttpServerResponse } from "effect/unstable/http"
+import { HttpServerResponse } from "effect/http"
 import { type AssetsBinding, handleRequest } from "./handler"
 
 /**
@@ -62,7 +62,7 @@ const props = Effect.gen(function* () {
 			// invocation.
 			runWorkerFirst: ["/*", "!/_astro/*", "!/*.*"],
 		},
-		compatibility: { date: "2026-04-08", flags: ["nodejs_compat"] },
+		compatibility: { date: "2026-10-01" },
 		placement: resolveWorkerPlacement(region),
 		observability: assetWorkerObservability(destinations),
 		workersDev: true,

@@ -1,6 +1,6 @@
 import { Duration, Effect, Fiber, Layer, Redacted } from "effect"
 import { TestClock } from "effect/testing"
-import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
+import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http"
 import { describe, expect, it } from "@effect/vitest"
 import { MapleApi, MapleApiFromHttpClient } from "../src/MapleApi"
 import { isMapleApiResponseError } from "../src/errors"

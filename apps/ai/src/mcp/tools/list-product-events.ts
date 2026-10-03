@@ -21,6 +21,7 @@ const TRACK_HINT =
 export function registerListProductEventsTool(server: McpToolRegistrar) {
 	server.define({
 		name: TOOL,
+		title: "List Product Events",
 		description:
 			"List the product event names an org recorded (browser `track()` events, server-side events, page views) with how often each fired and how many sessions and persons it reached. Use it to find exact step names for `query_funnel`. `kind`: `custom` is a `track()` or server event, `navigation` a page view, `screen` a mobile screen. `kind` and `search` select among the 200 most frequent names in the window.",
 		parameters: Schema.Struct({

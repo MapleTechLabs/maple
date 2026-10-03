@@ -11,8 +11,6 @@ import type { MapleRegion } from "@maple/infra/aws"
 import {
 	COLLECTOR_DNS_LABEL,
 	COLLECTOR_OTLP_HTTP_PORT,
-	INGEST_EC2_INSTANCE_TYPE,
-	INGEST_EC2_TASK_SIZE,
 	parseIngestFleets,
 	pgUrlRequireSsl,
 	resolveAwsRegion,
@@ -21,8 +19,11 @@ import {
 	resolveCollectorTaskSize,
 	resolveIngestCidrBlock,
 	resolveIngestDesiredCount,
+	resolveIngestEc2InstanceType,
+	resolveIngestEc2TaskSize,
 	resolveIngestNamespaceName,
 	resolveIngestScaling,
+	resolveIngestSelfTraceSampleRatio,
 	resolveIngestTaskSize,
 	stageDeploysCollector,
 	stageEnablesReplayBlobs,
@@ -225,7 +226,9 @@ export const createMapleIngest = ({ stage, domains, region, dbRole }: CreateMapl
 	Effect.gen(function* () {
 		const replayBlobs = yield* replayBlobWriterCredentials(stage, region)
 		const taskSize = resolveIngestTaskSize(stage)
-		const scaling = resolveIngestScaling(stage)
+		const selfTraceSampleRatio = resolveIngestSelfTraceSampleRatio(stage)
+		const scaling = resolveIngestScaling(stage, region)
+		const ec2TaskSize = resolveIngestEc2TaskSize(stage, region)
 		const name = (base: string) => resolveAwsResourceName(base, stage, region)
 		const fleets = parseIngestFleets((yield* optionalPlain("MAPLE_INGEST_FLEETS")).MAPLE_INGEST_FLEETS)
 
@@ -364,7 +367,7 @@ export const createMapleIngest = ({ stage, domains, region, dbRole }: CreateMapl
 						{
 							launchTemplateName: name("ingest-ec2"),
 							imageId,
-							instanceType: INGEST_EC2_INSTANCE_TYPE,
+							instanceType: resolveIngestEc2InstanceType(stage, region),
 							securityGroupIds: [instanceSecurityGroup.groupId],
 							instanceProfileName: instanceProfile.instanceProfileName,
 							associatePublicIpAddress: true,
@@ -377,7 +380,7 @@ export const createMapleIngest = ({ stage, domains, region, dbRole }: CreateMapl
 					// redeploy from resetting it to `minSize`); the bounds leave room for
 					// a rolling deploy to double the fleet while old and new tasks
 					// overlap on separate hosts.
-					const maxTasks = scaling?.max ?? resolveIngestDesiredCount(stage)
+					const maxTasks = scaling?.max ?? resolveIngestDesiredCount(stage, region)
 					const autoScalingGroup = yield* AWS.AutoScaling.AutoScalingGroup("ingest-ec2-asg", {
 						autoScalingGroupName: name("ingest-ec2"),
 						launchTemplate,
@@ -541,7 +544,7 @@ export const createMapleIngest = ({ stage, domains, region, dbRole }: CreateMapl
 						tags: { Service: "maple-ingest", Region: region },
 					})
 
-					const collectorTaskSize = resolveCollectorTaskSize(stage)
+					const collectorTaskSize = resolveCollectorTaskSize(stage, region)
 					return yield* AWS.ECS.Service("otel-collector", {
 						cluster,
 						serviceName: name("otel-collector"),
@@ -746,7 +749,7 @@ export const createMapleIngest = ({ stage, domains, region, dbRole }: CreateMapl
 			// correct.
 			runtimePlatform: { cpuArchitecture: "ARM64", operatingSystemFamily: "LINUX" } as const,
 
-			desiredCount: resolveIngestDesiredCount(stage),
+			desiredCount: resolveIngestDesiredCount(stage, region),
 			// prd autoscales on CPU between this count and a burst ceiling; alchemy
 			// stops pinning desiredCount while `scaling` is set, so the autoscaler's
 			// decisions survive redeploys. Other stages stay fixed.
@@ -796,6 +799,9 @@ export const createMapleIngest = ({ stage, domains, region, dbRole }: CreateMapl
 			env: {
 				INGEST_PORT: String(INGEST_PORT),
 				MAPLE_ENVIRONMENT: resolveDeploymentEnvironment(stage),
+				// Makes the unknown-key 401 name the other region's ingest URL, the usual
+				// cause for a valid key. prd only: a preview has no sibling instance.
+				...(stage.kind === "prd" && { MAPLE_REGION: region }),
 				TINYBIRD_HOST: yield* requiredPlain("TINYBIRD_HOST"),
 				INGEST_KEY_STORE_BACKEND: "postgres",
 				// A replaced role changes this, so the task definition changes and the
@@ -845,6 +851,11 @@ export const createMapleIngest = ({ stage, domains, region, dbRole }: CreateMapl
 				...(collectorEndpoint
 					? { INGEST_FORWARD_OTLP_ENDPOINT: collectorEndpoint }
 					: yield* optionalPlain("INGEST_FORWARD_OTLP_ENDPOINT")),
+				// The gateway's own traces are most of that collector's volume; prd
+				// head-samples them (logs and metrics stay complete).
+				...(selfTraceSampleRatio
+					? { INGEST_SELF_TRACE_SAMPLE_RATIO: selfTraceSampleRatio }
+					: yield* optionalPlain("INGEST_SELF_TRACE_SAMPLE_RATIO")),
 				// Every optional entry below is `yield*`-ed. `optionalPlain` returns a
 				// `Config`, not a record, so a bare `...optionalPlain("X")` spreads the
 				// Config's own fields (`_tag`, `original`, `mapOrFail`) into the task
@@ -919,6 +930,8 @@ export const createMapleIngest = ({ stage, domains, region, dbRole }: CreateMapl
 		// own group (`ingest-ec2-sg`) is what admits the ALB. A rolling deploy
 		// cannot start the new task beside the old one (the port is taken), so
 		// managed scaling brings up a fresh host for it and drains the old one.
+		// That holds for EU prd's single host too: ECS's default 100/200 keeps the
+		// old task serving until the new host's task is healthy, so no min-healthy 0.
 		const ec2Service = ec2Capacity
 			? yield* AWS.ECS.Service("ingest-ec2", {
 					...gateway,
@@ -929,8 +942,8 @@ export const createMapleIngest = ({ stage, domains, region, dbRole }: CreateMapl
 						{ capacityProvider: ec2Capacity.capacityProvider.name, weight: 1 },
 					],
 					placementConstraints: [{ type: "distinctInstance" }],
-					cpu: INGEST_EC2_TASK_SIZE.cpu,
-					memory: INGEST_EC2_TASK_SIZE.memory,
+					cpu: ec2TaskSize.cpu,
+					memory: ec2TaskSize.memory,
 					volumes: [{ name: "wal", host: { sourcePath: WAL_HOST_DIR } }],
 					container: {
 						stopTimeout,

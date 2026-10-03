@@ -15,7 +15,7 @@ import {
 	type IssueSeverity,
 } from "@maple/domain/http"
 import { Effect } from "effect"
-import { Decision, DecisionModel } from "effect/unstable/ai"
+import { Decision, DecisionModel } from "effect/ai"
 
 /** The severity scale, ordered as `Decision.rate` needs it: least to most urgent. */
 const SEVERITY_SCALE = ["low", "medium", "high", "critical"] as const satisfies ReadonlyArray<IssueSeverity>

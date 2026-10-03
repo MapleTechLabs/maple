@@ -40,22 +40,22 @@ Click a row to expand it inline. Click **Open detail** to open the full record.
 
 The **Search** box accepts three kinds of input:
 
-| Input                                | What it does                                              |
-| ------------------------------------ | --------------------------------------------------------- |
-| Any text                             | Matches log messages containing the text, ignoring case. |
-| A 32-character hex trace ID          | Shows only logs from that trace.                          |
-| A W3C `traceparent` header value     | Shows only logs from the trace it names.                  |
+| Input                            | What it does                                             |
+| -------------------------------- | -------------------------------------------------------- |
+| Any text                         | Matches log messages containing the text, ignoring case. |
+| A 32-character hex trace ID      | Shows only logs from that trace.                         |
+| A W3C `traceparent` header value | Shows only logs from the trace it names.                 |
 
 A trace ID becomes a removable chip. To search for a trace ID as plain text in messages, wrap it in double quotes. There is no `key:value` syntax. Use the sidebar to filter on fields.
 
 ### Sidebar filters
 
-| Filter          | What it does                                               |
-| --------------- | ---------------------------------------------------------- |
+| Filter          | What it does                                                                                                    |
+| --------------- | --------------------------------------------------------------------------------------------------------------- |
 | **Severity**    | Filter by severity. Values come from your data, such as `TRACE`, `DEBUG`, `INFO`, `WARN`, `ERROR`, and `FATAL`. |
-| **Environment** | Filter by `deployment.environment`.                        |
-| **Namespace**   | Filter by `service.namespace`.                             |
-| **Service**     | Filter by `service.name`.                                  |
+| **Environment** | Filter by `deployment.environment`.                                                                             |
+| **Namespace**   | Filter by `service.namespace`.                                                                                  |
+| **Service**     | Filter by `service.name`.                                                                                       |
 
 Each filter can include or exclude a value.
 

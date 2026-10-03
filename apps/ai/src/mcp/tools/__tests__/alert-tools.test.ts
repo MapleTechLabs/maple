@@ -10,17 +10,21 @@ import {
 	AlertIncidentsListResponse,
 	AlertRuleDocument,
 	AlertRuleNotFoundError,
+	AlertRulePreviewRequest,
+	AlertRulePreviewResponse,
 	AlertRulesListResponse,
 	AlertRuleUpsertRequest,
 	OrgId,
 	UserId,
 } from "@maple/domain/http"
 import {
+	CreateAlertRuleOutput,
 	GetAlertRuleOutput,
 	ListAlertChecksOutput,
 	ListAlertDestinationsOutput,
 	ListAlertIncidentsOutput,
 	ListAlertRulesOutput,
+	PreviewAlertRuleOutput,
 } from "@maple/domain/mcp-outputs"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
 import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
@@ -98,6 +102,7 @@ const incident = (overrides: Record<string, unknown>) => ({
 interface Seen {
 	created?: AlertRuleUpsertRequest
 	updated?: AlertRuleUpsertRequest
+	previewed?: AlertRulePreviewRequest
 	incidentOptions?: unknown
 	checkOptions?: unknown
 }
@@ -114,7 +119,13 @@ const layer = (seen: Seen) =>
 			listRules: () => Effect.succeed(new AlertRulesListResponse({ rules: [rule] })),
 			createRule: (_org: unknown, _user: unknown, _roles: unknown, request: AlertRuleUpsertRequest) => {
 				seen.created = request
-				return Effect.succeed(rule)
+				// Echo the fields the write warnings read, so a raw-SQL create reads back as one.
+				return Effect.succeed({
+					...rule,
+					signalType: request.signalType,
+					rawQuerySql: request.rawQuerySql ?? null,
+					minimumSampleCount: request.minimumSampleCount ?? 0,
+				} as never)
 			},
 			deleteRule: (_org: unknown, _roles: unknown, id: string) =>
 				id === RULE_ID
@@ -127,6 +138,36 @@ const layer = (seen: Seen) =>
 						),
 		} as never),
 		Layer.succeed(AlertsService, {
+			previewRule: (_o: unknown, _r: unknown, request: AlertRulePreviewRequest) => {
+				seen.previewed = request
+				const point = (bucket: string) => ({
+					bucket,
+					value: null,
+					sampleCount: 0,
+					status: "skipped",
+					skipReason: "no_data",
+				})
+				return Effect.succeed(
+					Schema.decodeUnknownSync(AlertRulePreviewResponse)({
+						bucketSeconds: 300,
+						windowMinutes: 5,
+						threshold: 0.05,
+						thresholdUpper: null,
+						comparator: "gt",
+						truncatedToStart: null,
+						series: [
+							{
+								groupKey: "__total__",
+								points: [
+									point("2026-09-24T09:50:00.000Z"),
+									point("2026-09-24T09:55:00.000Z"),
+								],
+							},
+						],
+						wouldFire: [],
+					}),
+				)
+			},
 			updateRule: (
 				_o: unknown,
 				_u: unknown,
@@ -195,6 +236,29 @@ const layer = (seen: Seen) =>
 								evaluationDurationMs: 12,
 								errorMessage: "column Foo not found",
 								errorCategory: "validation",
+								skipReason: null,
+							},
+							{
+								timestamp: NOW,
+								groupKey: "checkout",
+								status: "skipped",
+								skipReason: "no_data",
+								signalType: "error_rate",
+								comparator: "gt",
+								threshold: 0.05,
+								thresholdUpper: null,
+								observedValue: null,
+								sampleCount: 0,
+								windowMinutes: 5,
+								windowStart: NOW,
+								windowEnd: NOW,
+								consecutiveBreaches: 0,
+								consecutiveHealthy: 0,
+								incidentId: null,
+								incidentTransition: "none",
+								evaluationDurationMs: 9,
+								errorMessage: null,
+								errorCategory: null,
 							},
 						],
 					}),
@@ -316,6 +380,10 @@ describe("alert tools", () => {
 		})
 		const output = Schema.decodeUnknownSync(ListAlertChecksOutput)(result.structuredContent)
 		expect(output.errored).toBe(1)
+		expect(output.noData).toBe(1)
+		expect(output.checks[1]?.skipReason).toBe("no_data")
+		expect(text(result)).toContain("1 skipped [1 no data]")
+		expect(text(result)).toContain("| no data |")
 		expect(output.timeRange).toEqual({ start: "2026-09-24 00:00:00", end: "2026-09-24 12:00:00" })
 		expect(text(result)).toContain("Time range: 2026-09-24 00:00:00 to 2026-09-24 12:00:00")
 		expect(text(result)).toContain(`\`get_alert_rule rule_id="${RULE_ID}"\``)
@@ -334,6 +402,7 @@ describe("alert tools", () => {
 				template: "high_error_rate",
 				destination_ids: DEST_ID,
 				environments: ["production"],
+				alert_on_no_data: true,
 			},
 			seen,
 		)
@@ -345,6 +414,7 @@ describe("alert tools", () => {
 			destinationIds: [DEST_ID],
 			environments: ["production"],
 			groupBy: ["service.name"],
+			alertOnNoData: true,
 		})
 		expect(text(result)).toContain("## Alert Rule Created")
 
@@ -399,6 +469,71 @@ describe("alert tools", () => {
 		)
 	})
 
+	it("create_alert_rule warns when a raw_query minimum sample count would count rows", async () => {
+		const base = {
+			name: "Raw",
+			destination_ids: [],
+			signal_type: "raw_query",
+			comparator: "gt",
+			threshold: 0.05,
+			minimum_sample_count: 50,
+		}
+		const sql = "SELECT count() AS value FROM traces WHERE $__orgFilter AND $__timeFilter(Timestamp)"
+		const warned = await ok("create_alert_rule", { ...base, raw_query_sql: sql })
+		const output = Schema.decodeUnknownSync(CreateAlertRuleOutput)(warned.structuredContent)
+		expect(output.warnings?.[0]).toContain("counts returned rows")
+		expect(text(warned)).toContain("`samples` column")
+
+		const quiet = await ok("create_alert_rule", {
+			...base,
+			raw_query_sql: sql.replace("AS value", "AS value, count() AS samples"),
+		})
+		expect(
+			Schema.decodeUnknownSync(CreateAlertRuleOutput)(quiet.structuredContent).warnings,
+		).toBeUndefined()
+	})
+
+	it("preview_alert_rule replays a draft and flags a window range with no data", async () => {
+		const seen: Seen = {}
+		const result = await ok(
+			"preview_alert_rule",
+			{
+				signal_type: "raw_query",
+				comparator: "gt",
+				threshold: 0.05,
+				raw_query_sql:
+					"SELECT count() AS value FROM traces WHERE $__orgFilter AND $__timeFilter(Timestamp)",
+				start_time: "2026-09-24 09:00:00",
+				end_time: "2026-09-24 10:00:00",
+			},
+			seen,
+		)
+		expect(seen.previewed?.rule).toMatchObject({
+			name: "Preview",
+			destinationIds: [],
+			signalType: "raw_query",
+		})
+		expect(seen.previewed?.startTime).toBe("2026-09-24T09:00:00Z")
+		const output = Schema.decodeUnknownSync(PreviewAlertRuleOutput)(result.structuredContent)
+		expect(output.groups[0]).toMatchObject({ windows: 2, noData: 2, breached: 0 })
+		expect(output.points[0]?.skipReason).toBe("no_data")
+		expect(output.warnings[0]).toContain("Every window had no data")
+		expect(text(result)).toContain("| no data |")
+	})
+
+	it("preview_alert_rule overlays overrides on a saved rule", async () => {
+		const seen: Seen = {}
+		await ok("preview_alert_rule", { rule_id: RULE_ID, threshold: 0.2 }, seen)
+		expect(seen.previewed?.rule).toMatchObject({
+			name: "Checkout errors",
+			threshold: 0.2,
+			signalType: "error_rate",
+		})
+
+		const missing = await run("preview_alert_rule", { rule_id: "8f1c2d3e-4b5a-4c6d-8e9f-0a1b2c3d4e5f" })
+		expect(missing._tag === "Failure" && missing.failure.parameter).toBe("rule_id")
+	})
+
 	it("update_alert_rule overlays only the given fields", async () => {
 		const seen: Seen = {}
 		await ok(
@@ -411,6 +546,8 @@ describe("alert tools", () => {
 			name: "Checkout errors",
 			serviceNames: ["checkout"],
 			groupBy: ["service.name", "attr.http.route"],
+			// Carried over from the saved rule, which skips empty windows.
+			alertOnNoData: false,
 		})
 	})
 

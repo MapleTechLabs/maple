@@ -22,9 +22,10 @@ import * as T from "@maple-dev/effect-clickhouse/types"
 import { inSubquery, param } from "@maple-dev/effect-clickhouse"
 import { from, fromQuery, type ColumnAccessor, type CHQuery } from "@maple-dev/effect-clickhouse"
 import { unionAll, type CHUnionQuery } from "@maple-dev/effect-clickhouse"
-import { SESSION_LIVE_WINDOW_SECONDS } from "@maple/domain/query-engine"
+import { SESSION_LIVE_WINDOW_SECONDS, type SessionTag } from "@maple/domain/query-engine"
 import { ProductEvents, SessionReplays, SessionReplayEvents, TraceDetailSpans } from "../tables"
 import { sessionActivityAggregateQuery, sessionEventMatchQuery } from "./session-events"
+import { sessionQualityExpr, sessionTagFacet, taggedSessionIds } from "./session-tags"
 import type { FacetOutput } from "./query-helpers"
 
 // argMax(value, ordering) — finalize a ReplacingMergeTree column to its latest
@@ -103,6 +104,24 @@ function pageVisitSessions(pagePath: string) {
 		])
 }
 
+// Sessions carrying every tag in `tags`. SessionId is version-invariant, so this
+// sits in WHERE like `pagePath`; the tags themselves are decided over the window's
+// finalized rows inside the subquery.
+function tagFilter(
+	tags: ReadonlyArray<SessionTag> | undefined,
+	$: ColumnAccessor<typeof SessionReplays.columns>,
+): CH.Condition | undefined {
+	if (tags === undefined || tags.length === 0) return undefined
+	return inSubquery(
+		$.SessionId,
+		taggedSessionIds(tags, ($$) => [
+			$$.OrgId.eq(param.string("orgId")),
+			$$.StartTime.gte(param.dateTimeString("startTime")),
+			$$.StartTime.lte(param.dateTimeString("endTime")),
+		]),
+	)
+}
+
 // List query
 
 export interface SessionReplaysListOpts {
@@ -134,6 +153,8 @@ export interface SessionReplaysListOpts {
 	search?: string
 	/** Exact page path (no query/hash) the session navigated to at any point. */
 	pagePath?: string
+	/** Only sessions carrying every one of these tags (see session-tags.ts). */
+	tags?: ReadonlyArray<SessionTag>
 	/**
 	 * Keyset cursor: the (StartTime, SessionId) of the last row of the previous
 	 * page, matching this query's `ORDER BY startTime DESC, sessionId DESC`.
@@ -221,6 +242,10 @@ export interface SessionReplaysListOutput {
 	/** The SDK's `maple.session.recorded` marker: `"true"`, `"false"`, or `""`
 	 *  for sessions written before the SDK stamped it (absent map key). */
 	readonly recorded: string
+	/** Quality tier: one of `SESSION_QUALITY_TAGS`, decided by `sessionQualityExpr`. */
+	readonly quality: string
+	/** 1 when the visitor id was minted on this session's first page load. */
+	readonly visitorIsNew: number
 	/** Count of distilled events matching the event predicates. Present only when an
 	 *  `event*` filter is set (the event INNER JOIN selects it); absent otherwise. */
 	readonly matchCount?: number
@@ -283,6 +308,8 @@ export function sessionReplaysListQuery(
 			// already-selected resource map — no join against session_replay_events,
 			// which would undo this query's partition pruning.
 			recorded: argMax($.ResourceAttributes.get("maple.session.recorded"), $.Version),
+			quality: sessionQualityExpr($),
+			visitorIsNew: argMax($.VisitorIsNew, $.Version),
 		}))
 		.where(($) => [
 			$.OrgId.eq(param.string("orgId")),
@@ -312,6 +339,7 @@ export function sessionReplaysListQuery(
 			CH.when(opts.search, (v: string) => $.UrlInitial.ilike(`%${v}%`)),
 			// SessionId is version-invariant, so this is row-level like the rest.
 			CH.when(opts.pagePath, (v: string) => inSubquery($.SessionId, pageVisitSessions(v))),
+			tagFilter(opts.tags, $),
 			// Version-invariant, so the keyset can sit in WHERE ahead of the GROUP BY
 			// rather than becoming another post-aggregate predicate.
 			CH.when(opts.cursor, (c: { startTime: string; sessionId?: string }) =>
@@ -379,6 +407,8 @@ export function sessionReplaysListQuery(
 				errorCount: $.errorCount,
 				traceCount: $.traceCount,
 				recorded: $.recorded,
+				quality: $.quality,
+				visitorIsNew: $.visitorIsNew,
 				matchCount: $.e.matchCount,
 			}))
 			.where(($: any) => {
@@ -444,6 +474,8 @@ export function sessionReplaysListQuery(
 				errorCount: $.errorCount,
 				traceCount: $.traceCount,
 				recorded: $.recorded,
+				quality: $.quality,
+				visitorIsNew: $.visitorIsNew,
 			}))
 			.where(($) => {
 				// The LEFT JOIN yields NULL activeTimeMs for sessions with no
@@ -494,6 +526,8 @@ export function sessionReplaysListQuery(
 			errorCount: $.errorCount,
 			traceCount: $.traceCount,
 			recorded: $.recorded,
+			quality: $.quality,
+			visitorIsNew: $.visitorIsNew,
 		}))
 		.where(($) => [
 			// durationMs is NULL for in-progress (Version=1-only) sessions; leaving
@@ -539,11 +573,13 @@ export interface SessionReplaysFacetsOpts {
 	search?: string
 	/** Exact visited page path — excluded from its own (page) branch. */
 	pagePath?: string
+	/** Required tags — excluded from their own (tag) branch. */
+	tags?: ReadonlyArray<SessionTag>
 }
 
 export type SessionReplaysFacetsOutput = FacetOutput
 
-type SessionFacetKey = "service" | "browser" | "country" | "device" | "group" | "page"
+type SessionFacetKey = "service" | "browser" | "country" | "device" | "group" | "page" | "tag"
 
 export function sessionReplaysFacetsQuery(
 	opts: SessionReplaysFacetsOpts,
@@ -571,6 +607,7 @@ export function sessionReplaysFacetsQuery(
 		exclude === "page"
 			? undefined
 			: CH.when(opts.pagePath, (v: string) => inSubquery($.SessionId, pageVisitSessions(v))),
+		exclude === "tag" ? undefined : tagFilter(opts.tags, $),
 	]
 
 	const makeFacet = (
@@ -713,6 +750,7 @@ export function sessionReplaysFacetsQuery(
 		// blank option.
 		makeFacet("group", ($) => $.GroupName),
 		pageFacet,
+		sessionTagFacet(($) => baseWhere($, "tag"), opts.tags),
 		durationHistogram,
 		durationStat("p50", 0.5),
 		durationStat("p95", 0.95),
@@ -742,6 +780,7 @@ export function sessionReplaysFacetsQuery(
 				),
 				CH.when(opts.search, (v: string) => $.UrlInitial.ilike(`%${v}%`)),
 				CH.when(opts.pagePath, (v: string) => inSubquery($.SessionId, pageVisitSessions(v))),
+				tagFilter(opts.tags, $),
 				$.ErrorCount.gt(0),
 			]),
 	).format("JSON")

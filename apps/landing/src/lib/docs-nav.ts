@@ -31,8 +31,8 @@ export const SECTIONS = [
 		id: "instrumentation",
 		icon: "Instrumentation",
 		label: "Instrumentation",
-		blurb: "Languages, frameworks, hosts and clusters.",
-		groups: ["Instrumentation", "Infrastructure"],
+		blurb: "Languages, frameworks, AI agents, hosts and clusters.",
+		groups: ["Instrumentation", "AI Agents", "Infrastructure"],
 	},
 	{
 		id: "local",
@@ -74,6 +74,7 @@ export const INSTRUMENTATION_SLUG = "instrumentation"
 export const GROUP_BLURBS = {
 	"Getting Started": "What Maple is and the three steps to first data.",
 	Instrumentation: "Setup guides for every language, framework and runtime.",
+	"AI Agents": "Trace an agent framework or LLM gateway so its conversations show up as Agent Sessions.",
 	Concepts: "How Maple reads OpenTelemetry data and what it expects from yours.",
 	Explore: "Search traces, logs and metrics, and read services and the service map.",
 	Errors: "How errors become issues, and how to triage and resolve them.",

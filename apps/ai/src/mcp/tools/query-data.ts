@@ -306,6 +306,7 @@ const renderQueryData = (output: Output): ToolDoc => {
 export function registerQueryDataTool(server: McpToolRegistrar) {
 	server.define({
 		name: "query_data",
+		title: "Query Data",
 		description: queryDataDescription,
 		parameters: queryDataSchema,
 		aliases: P.SERVICE_ALIASES,

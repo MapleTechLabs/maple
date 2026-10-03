@@ -139,6 +139,18 @@ const sealedHours = (db: LocalServiceMapRollupDeps["db"], oldestHourMs: number, 
 		return CH.serviceMapHourSet(yield* decodeRows(decodeHourRows, text, "existing hours"))
 	})
 
+/** The INSERTs that seal one hour from raw spans: resolutions, then edges (the seal). */
+export const serviceMapRollupInserts = (hourMs: number) =>
+	Effect.gen(function* () {
+		const params = CH.serviceMapRollupHourParams(ORG_ID, hourMs)
+		const resolutions = yield* selectBody(CH.serviceMapResolutionsRollupSQL(params), "resolutions")
+		const edges = yield* selectBody(CH.serviceMapEdgesRollupSQL(params), "edges")
+		return [
+			`INSERT INTO service_address_resolutions_hourly (${RESOLUTION_COLUMNS}) SELECT ${RESOLUTION_COLUMNS} FROM (${resolutions})`,
+			`INSERT INTO service_map_edges_hourly_ingest (${EDGE_COLUMNS}) SELECT ${EDGE_COLUMNS} FROM (${edges})`,
+		] as const
+	})
+
 /**
  * Roll up one hour inside the admission gate. Resolutions are written first and
  * the edges (the seal) last, so a failure leaves the hour unsealed and the next
@@ -151,22 +163,9 @@ const rollupHour = (deps: LocalServiceMapRollupDeps, hourMs: number) =>
 			leave === null
 				? Effect.succeed(false)
 				: Effect.gen(function* () {
-						const params = CH.serviceMapRollupHourParams(ORG_ID, hourMs)
-						const resolutions = yield* selectBody(
-							CH.serviceMapResolutionsRollupSQL(params),
-							"resolutions",
-						)
-						const edges = yield* selectBody(CH.serviceMapEdgesRollupSQL(params), "edges")
-						yield* runExec(
-							deps.db,
-							`INSERT INTO service_address_resolutions_hourly (${RESOLUTION_COLUMNS}) SELECT ${RESOLUTION_COLUMNS} FROM (${resolutions})`,
-							"insert address resolutions",
-						)
-						yield* runExec(
-							deps.db,
-							`INSERT INTO service_map_edges_hourly_ingest (${EDGE_COLUMNS}) SELECT ${EDGE_COLUMNS} FROM (${edges})`,
-							"insert service map edges",
-						)
+						const [resolutions, edges] = yield* serviceMapRollupInserts(hourMs)
+						yield* runExec(deps.db, resolutions, "insert address resolutions")
+						yield* runExec(deps.db, edges, "insert service map edges")
 						return true
 					}),
 		(leave) => Effect.sync(() => leave?.()),

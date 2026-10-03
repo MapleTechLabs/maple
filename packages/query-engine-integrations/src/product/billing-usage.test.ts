@@ -18,7 +18,7 @@ describe("dailySignalVolumeQuery", () => {
 
 		expect(sql).toContain("FROM service_usage")
 		expect(sql).toContain("OrgId = 'org_123'")
-		expect(sql).toContain("toStartOfInterval(Hour, INTERVAL 86400 SECOND) AS day")
+		expect(sql).toContain("toStartOfInterval(service_usage.Hour, INTERVAL 86400 SECOND) AS day")
 		expect(sql).toContain("GROUP BY day")
 		expect(sql).toContain("ORDER BY day ASC")
 	})
@@ -35,12 +35,12 @@ describe("dailySignalVolumeQuery", () => {
 	it("sums all four metric-type columns into the one billed metrics feature", () => {
 		const { sql } = compileUnsafe(dailySignalVolumeQuery(), params)
 
-		expect(sql).toContain("sum(LogSizeBytes) AS logBytes")
-		expect(sql).toContain("sum(TraceSizeBytes) AS traceBytes")
-		expect(sql).toContain("sum(SumMetricSizeBytes)")
-		expect(sql).toContain("sum(GaugeMetricSizeBytes)")
-		expect(sql).toContain("sum(HistogramMetricSizeBytes)")
-		expect(sql).toContain("sum(ExpHistogramMetricSizeBytes)")
+		expect(sql).toContain("sum(service_usage.LogSizeBytes) AS logBytes")
+		expect(sql).toContain("sum(service_usage.TraceSizeBytes) AS traceBytes")
+		expect(sql).toContain("sum(service_usage.SumMetricSizeBytes)")
+		expect(sql).toContain("sum(service_usage.GaugeMetricSizeBytes)")
+		expect(sql).toContain("sum(service_usage.HistogramMetricSizeBytes)")
+		expect(sql).toContain("sum(service_usage.ExpHistogramMetricSizeBytes)")
 	})
 
 	it("decodes UInt64 byte sums that arrive as strings on BYO-ClickHouse", () => {
@@ -70,8 +70,8 @@ describe("dailySessionCountQuery", () => {
 
 		expect(sql).toContain("FROM session_replays")
 		expect(sql).toContain("OrgId = 'org_123'")
-		expect(sql).toContain("toStartOfInterval(StartTime, INTERVAL 86400 SECOND) AS day")
-		expect(sql).toContain("uniqExact(SessionId) AS sessions")
+		expect(sql).toContain("toStartOfInterval(session_replays.StartTime, INTERVAL 86400 SECOND) AS day")
+		expect(sql).toContain("uniqExact(session_replays.SessionId) AS sessions")
 		expect(sql).not.toContain("count()")
 		expect(sql).toContain("GROUP BY day")
 	})
@@ -98,7 +98,7 @@ describe("dailyProductEventCountQuery", () => {
 
 		expect(sql).toContain("FROM product_events")
 		expect(sql).toContain("OrgId = 'org_123'")
-		expect(sql).toContain("toStartOfInterval(Timestamp, INTERVAL 86400 SECOND) AS day")
+		expect(sql).toContain("toStartOfInterval(product_events.Timestamp, INTERVAL 86400 SECOND) AS day")
 		expect(sql).toContain("count() AS events")
 		expect(sql).toContain("Kind != 'navigation'")
 		expect(sql).toContain("Timestamp >= toDateTime('2026-07-01 00:00:00')")

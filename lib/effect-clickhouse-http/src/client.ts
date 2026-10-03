@@ -1,5 +1,6 @@
-import { Context, Effect, Encoding, Layer, Option, Redacted, type Scope, Stream, type Types } from "effect"
-import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"
+import { Context, Effect, Layer, Option, Redacted, type Scope, Stream, type Types } from "effect"
+import { Base64 } from "effect/encoding"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import {
 	ClickHouseConfigError,
 	ClickHouseRedirectError,
@@ -111,7 +112,7 @@ export const make = (
 		const http = yield* HttpClient.HttpClient
 		// UTF-8 Basic auth: `HttpClientRequest.basicAuth` goes through `btoa`, which
 		// rejects anything outside Latin-1 and mis-encodes what it accepts.
-		const authorization = `Basic ${Encoding.encodeBase64(
+		const authorization = `Basic ${Base64.encode(
 			`${config.username ?? "default"}:${config.password ? Redacted.value(config.password) : ""}`,
 		)}`
 
@@ -138,7 +139,10 @@ export const make = (
 					url.searchParams.set(key, String(value))
 				const request = HttpClientRequest.post(url).pipe(
 					HttpClientRequest.setHeader("authorization", authorization),
-					HttpClientRequest.bodyText(`${options.sql}\nFORMAT JSONEachRow`, "text/plain; charset=utf-8"),
+					HttpClientRequest.bodyText(
+						`${options.sql}\nFORMAT JSONEachRow`,
+						"text/plain; charset=utf-8",
+					),
 				)
 				// The scope spans body consumption, not just response headers. Never follow
 				// redirects with database credentials, including with FetchHttpClient defaults.
@@ -164,7 +168,9 @@ export const make = (
 				}
 				const body = response.stream.pipe(
 					Stream.catchTag("HttpClientError", (error) =>
-						error.reason._tag === "EmptyBodyError" ? Stream.empty : Stream.fail(transportError(error, id)),
+						error.reason._tag === "EmptyBodyError"
+							? Stream.empty
+							: Stream.fail(transportError(error, id)),
 					),
 				)
 				const exceptionCode = response.headers["x-clickhouse-exception-code"]
@@ -190,7 +196,10 @@ export const make = (
 			query: (options) =>
 				Effect.scoped(
 					Effect.flatMap(openWithId(options), (query) =>
-						Effect.map(Stream.runCollect(query.rows), (data) => ({ data, queryId: query.queryId })),
+						Effect.map(Stream.runCollect(query.rows), (data) => ({
+							data,
+							queryId: query.queryId,
+						})),
 					),
 				),
 		}

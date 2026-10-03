@@ -1,4 +1,4 @@
-import { useMemo } from "react"
+import { useMemo, useState } from "react"
 
 import { Button } from "@maple/ui/components/ui/button"
 import { Input } from "@maple/ui/components/ui/input"
@@ -17,6 +17,7 @@ import {
 } from "@/components/dashboard-builder/config/query-panel-shell"
 import { GroupByMultiSelect } from "@/components/query-builder/group-by-multi-select"
 import { SignalEmptyState } from "@/components/common/signal-empty-state"
+import { DocsLink } from "@/components/common/docs-link"
 import { useSignalPresence } from "@/hooks/use-signal-presence"
 import { WhereClauseEditor } from "@/components/query-builder/where-clause-editor"
 import { useMetricScopedAutocomplete } from "@/hooks/use-metric-scoped-autocomplete"
@@ -226,6 +227,28 @@ function ProductEventsAbsentHint() {
 	return <SignalEmptyState signal="product_events" className="py-3" />
 }
 
+/** Empty metric picker: a search miss, an org that never sent metrics, or a plain empty page. */
+function MetricOptionsEmpty({ searchTerm }: { readonly searchTerm: string }) {
+	const presence = useSignalPresence("metrics")
+	const term = searchTerm.trim()
+	return (
+		<div className="flex flex-col items-center gap-2 px-3 py-4 text-center text-xs text-muted-foreground">
+			{term !== "" ? (
+				<span>No metric name contains "{term}".</span>
+			) : presence.status === "absent" ? (
+				<>
+					<span>
+						No metrics yet. Export OpenTelemetry metrics or add a Prometheus scrape target.
+					</span>
+					<DocsLink page="metrics" />
+				</>
+			) : (
+				<span>No metrics found.</span>
+			)}
+		</div>
+	)
+}
+
 const WHERE_PLACEHOLDER = {
 	traces: 'service.name = "checkout" AND status.code = "Error"',
 	logs: 'service.name = "checkout" AND severity = "ERROR"',
@@ -398,6 +421,7 @@ function MetricsBody({
 			...metricSelectionOptions,
 		]
 	}, [metricValue, metricSelectionOptions, metricsQuery])
+	const [metricSearchTerm, setMetricSearchTerm] = useState("")
 
 	return (
 		<>
@@ -421,13 +445,14 @@ function MetricsBody({
 					<ComboboxInput
 						placeholder="Search metrics..."
 						className="h-8 flex-1 text-xs"
-						onChange={(e) => onMetricSearch?.(e.target.value)}
+						onChange={(e) => {
+							setMetricSearchTerm(e.target.value)
+							onMetricSearch?.(e.target.value)
+						}}
 					/>
 					<ComboboxContent>
 						{metricOptions.length === 0 ? (
-							<div className="py-4 text-center text-xs text-muted-foreground">
-								No metrics found.
-							</div>
+							<MetricOptionsEmpty searchTerm={metricSearchTerm} />
 						) : (
 							<ComboboxList>
 								{metricOptions.map((metric) => (

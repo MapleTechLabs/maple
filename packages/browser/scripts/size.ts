@@ -6,12 +6,14 @@
  * unminified and with every dependency left external, so reading it tells you
  * almost nothing. What a visitor downloads is the *bundled, minified, gzipped*
  * graph their bundler produces, OpenTelemetry and rrweb included. This builds
- * exactly that and splits it two ways:
+ * exactly that and splits it three ways:
  *
- *   eager — the entry plus everything statically reachable from it. Paid by
- *           every visitor on every page load, before any sampling decision.
- *   lazy  — reachable only through `import()`. Paid only by visitors sampled
- *           into replay, which is the entire point of the code split.
+ *   eager    — the entry plus everything statically reachable from it. Paid by
+ *              every visitor on every page load, before any sampling decision.
+ *   deferred — the `./deferred` chunk `init()` imports right away. Paid by every
+ *              visitor too, but after `init()` and off the critical path.
+ *   lazy     — the rrweb chunk. Paid only by visitors sampled into replay,
+ *              which is the entire point of the code split.
  *
  * A regression in `eager` is the expensive kind: it hits 100% of page loads.
  * The budgets below fail CI so that cost has to be argued for in review rather
@@ -21,7 +23,24 @@ import { gzipSync } from "node:zlib"
 
 /** Ceilings in gzipped KB. Raise deliberately, with the reason in the commit. */
 const BUDGET = {
-	eager: 37,
+	/**
+	 * 44.5 since 2026-09: `@maple/sdk-core`'s page-wide coordination with the Effect
+	 * SDK (one error is one issue across SDK copies) and shared option resolution (~0.4 kB).
+	 * 44: `tracing.captureHeaders` in the request hooks (~0.3 kB).
+	 * 43.5: the offline queue's exporter wrapper (~0.2 kB). 43: XHR spans and the HTTP status policy, which must patch
+	 * before the app's first request (~1.5 kB). Document timing went to the
+	 * deferred chunk instead. 42: error filters and cause chains. 41 before that:
+	 * per-session trace sampling and the `logger` queue added ~2.4 kB (~1.2 kB
+	 * code, the rest chunk-split overhead now that a second chunk shares the OTel
+	 * core). Was 38 for navigation spans.
+	 */
+	eager: 44.5,
+	/**
+	 * Every page load, after `init()`, off the critical path: the OTel logs SDK
+	 * and exporter, document timing, `web-vitals` (~3.3 kB), breadcrumbs,
+	 * reports, the offline queue and long-frame/interaction spans.
+	 */
+	deferred: 14,
 	lazy: 68,
 	/**
 	 * Our own eager code, with OpenTelemetry and rrweb left external.
@@ -40,8 +59,20 @@ const BUDGET = {
 	 * 13.5 since 2026-09: default URL redaction, the duplicated-tab lease, the
 	 * shared keepalive budget, per-session replay sampling and the `region`
 	 * option added ~1.9 kB, all on paths that must run before the lazy chunk.
+	 *
+	 * 14.5 since 2026-09: navigation and data-loading spans (`startNavigation`,
+	 * `endNavigation`, `traced`) added ~0.6 kB. Apps used to copy the same code
+	 * into their own bundle, so for them this is a move rather than a cost.
+	 *
+	 * 16 since 2026-09: the session sampler (~0.7 kB) and the `logger` queue
+	 * (~0.5 kB), both needed before the deferred chunk lands. 17 for error
+	 * filters and cause chains (~0.8 kB), which run on the capture path. 17.5
+	 * for `errors.captureHttpStatus`, applied by the span exporter. 18 for the
+	 * offline queue's exporter wrapper, 18.5 for `tracing.captureHeaders`. 19 for
+	 * `@maple/sdk-core`'s page-wide coordination with the Effect SDK (~0.45 kB).
+	 * 19.5 for the linear stack-frame parser that replaced a backtracking regex (CodeQL).
 	 */
-	firstParty: 13.5,
+	firstParty: 19.5,
 }
 
 /** How close to a ceiling counts as worth warning about. */
@@ -114,7 +145,12 @@ const eagerChunks = (group: Chunk[]): Chunk[] => {
 
 const eager = eagerChunks(chunks)
 const eagerNames = new Set(eager.map((chunk) => chunk.name))
-const lazy = chunks.filter((chunk) => !eagerNames.has(chunk.name))
+const notEager = chunks.filter((chunk) => !eagerNames.has(chunk.name))
+// The rrweb chunk is the one carrying the recorder; every other `import()`
+// target is deferred work that every page load fetches.
+const isReplay = (chunk: Chunk): boolean => chunk.text.includes("rrweb")
+const lazy = notEager.filter(isReplay)
+const deferred = notEager.filter((chunk) => !isReplay(chunk))
 const total = (group: Chunk[]): number => group.reduce((sum, chunk) => sum + chunk.gzip, 0)
 
 // Same entry, dependencies left external: what a host app that already ships
@@ -140,11 +176,12 @@ const report = (label: string, group: Chunk[], budget: number): boolean => {
 }
 
 console.log("@maple-dev/browser — bundled, minified, gzipped")
-const eagerOk = report("eager  every page load ", eager, BUDGET.eager)
-const lazyOk = report("lazy   sampled sessions", lazy, BUDGET.lazy)
-const firstPartyOk = report("ours   eager, deps external", firstParty, BUDGET.firstParty)
+const eagerOk = report("eager     every page load ", eager, BUDGET.eager)
+const deferredOk = report("deferred  every page load, after init", deferred, BUDGET.deferred)
+const lazyOk = report("lazy      sampled sessions", lazy, BUDGET.lazy)
+const firstPartyOk = report("ours      eager, deps external", firstParty, BUDGET.firstParty)
 
-if (!eagerOk || !lazyOk || !firstPartyOk) {
+if (!eagerOk || !deferredOk || !lazyOk || !firstPartyOk) {
 	console.error("\nbundle size exceeds budget — raise it in scripts/size.ts if the cost is intended")
 	process.exit(1)
 }

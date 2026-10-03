@@ -14,6 +14,7 @@ const WINDOW = P.timeWindow({ defaultHours: 6 })
 export function registerFindErrorsTool(server: McpToolRegistrar) {
 	server.define({
 		name: "find_errors",
+		title: "Find Errors",
 		// Do not reinstate the old claim that a fingerprint is the "same identity as
 		// list_error_issues" — it is not. A fingerprint is a decimal UInt64 hash; an
 		// issue id is a UUID. Conflating them was the sole cause of every production

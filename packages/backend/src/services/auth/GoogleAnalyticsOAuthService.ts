@@ -24,7 +24,7 @@ import {
 } from "@maple/domain/http"
 import { oauthAuthStates } from "@maple/db"
 import { Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
-import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { listProperties } from "@maple/backend/services/integrations/GoogleAnalyticsApi"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env, type EnvConfig } from "@maple/backend/platform/Env"
@@ -300,14 +300,14 @@ export class GoogleAnalyticsOAuthService extends Context.Service<
 			return { orgId, returnTo: stateRow.returnTo ?? null }
 		})
 
-		const getValidAccessToken = Effect.fn("GoogleAnalyticsOAuthService.getValidAccessToken")(
-			function* (orgId: OrgId) {
-				yield* Effect.annotateCurrentSpan({ orgId })
-				const config = yield* resolveConfig(env)
-				const { accessToken, row } = yield* oauth.getValidConnectionToken(config, orgId)
-				return { accessToken, scope: row.scope }
-			},
-		)
+		const getValidAccessToken = Effect.fn("GoogleAnalyticsOAuthService.getValidAccessToken")(function* (
+			orgId: OrgId,
+		) {
+			yield* Effect.annotateCurrentSpan({ orgId })
+			const config = yield* resolveConfig(env)
+			const { accessToken, row } = yield* oauth.getValidConnectionToken(config, orgId)
+			return { accessToken, scope: row.scope }
+		})
 
 		const getStatus = Effect.fn("GoogleAnalyticsOAuthService.getStatus")(function* (orgId: OrgId) {
 			const row = yield* oauth.loadConnection(orgId)

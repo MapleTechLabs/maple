@@ -33,33 +33,25 @@ const at = (isoMinutesAgo: number) => new Date(NOW - isoMinutesAgo * 60_000).toI
 
 describe("isSessionLive", () => {
 	it("is live while the heartbeat is inside the window", () => {
-		expect(
-			isSessionLive({ status: "active", lastActivityAt: at(2), startTime: at(40) }, NOW),
-		).toBe(true)
+		expect(isSessionLive({ status: "active", lastActivityAt: at(2), startTime: at(40) }, NOW)).toBe(true)
 	})
 
 	it("is not live once the heartbeat has gone quiet", () => {
-		expect(
-			isSessionLive({ status: "active", lastActivityAt: at(31), startTime: at(40) }, NOW),
-		).toBe(false)
+		expect(isSessionLive({ status: "active", lastActivityAt: at(31), startTime: at(40) }, NOW)).toBe(
+			false,
+		)
 	})
 
 	it("is never live for a session that reported its own end", () => {
-		expect(isSessionLive({ status: "ended", lastActivityAt: at(1), startTime: at(5) }, NOW)).toBe(
-			false,
-		)
+		expect(isSessionLive({ status: "ended", lastActivityAt: at(1), startTime: at(5) }, NOW)).toBe(false)
 	})
 
 	it("falls back to the start time when no heartbeat has landed yet", () => {
 		// The v1 start row carries no LastActivityAt. A session seconds old is
 		// genuinely live; the stranded start row of a tab that went away is not,
 		// and the window separates them without a special case.
-		expect(isSessionLive({ status: "active", lastActivityAt: null, startTime: at(1) }, NOW)).toBe(
-			true,
-		)
-		expect(isSessionLive({ status: "active", lastActivityAt: null, startTime: at(90) }, NOW)).toBe(
-			false,
-		)
+		expect(isSessionLive({ status: "active", lastActivityAt: null, startTime: at(1) }, NOW)).toBe(true)
+		expect(isSessionLive({ status: "active", lastActivityAt: null, startTime: at(90) }, NOW)).toBe(false)
 	})
 
 	it("accepts warehouse-shaped timestamps, not just ISO", () => {

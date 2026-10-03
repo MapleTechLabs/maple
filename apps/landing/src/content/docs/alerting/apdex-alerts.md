@@ -31,7 +31,7 @@ Apdex compresses a latency distribution into a single number between <span class
   <div class="mt-2 text-xs text-fg-muted">Always between 0 and 1. Both boundaries come from the single value you set for T.</div>
 </div>
 
-Counting failures as frustrated is what makes this worth alerting on. A dependency that starts failing 15% of requests in 40ms makes your p95 *faster*, so a latency alert stays quiet while Apdex falls from 0.97 to about 0.83.
+Counting failures as frustrated is what makes this worth alerting on. A dependency that starts failing 15% of requests in 40ms makes your p95 _faster_, so a latency alert stays quiet while Apdex falls from 0.97 to about 0.83.
 
 [**What is Apdex?**](/guides/what-is-apdex) walks through the formula, a worked example, and where Apdex and latency percentiles disagree. The rest of this page is the Maple-specific part: picking T for a rule, and building it.
 
@@ -169,7 +169,17 @@ To see what the rule would have done over a past range before it can wake anyone
 
 ```json
 {
-	"rule": { "name": "Checkout Apdex below 0.8", "signal_type": "apdex", "apdex_threshold_ms": 500, "comparator": "lt", "threshold": 0.8, "window_minutes": 5, "service_names": ["checkout"], "severity": "critical", "destination_ids": ["dest_oybbpTBhtSFGShMjjLiCrh"] },
+	"rule": {
+		"name": "Checkout Apdex below 0.8",
+		"signal_type": "apdex",
+		"apdex_threshold_ms": 500,
+		"comparator": "lt",
+		"threshold": 0.8,
+		"window_minutes": 5,
+		"service_names": ["checkout"],
+		"severity": "critical",
+		"destination_ids": ["dest_oybbpTBhtSFGShMjjLiCrh"]
+	},
 	"start_time": "2026-07-08T00:00:00.000Z",
 	"end_time": "2026-07-15T00:00:00.000Z"
 }

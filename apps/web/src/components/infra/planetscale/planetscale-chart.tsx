@@ -132,10 +132,11 @@ export function PlanetScaleChart({
 	// label point scale this replaced folded a 24h window onto itself.
 	const { effectiveTimezone } = useTimezonePreference()
 	const axis = useMemo(
-		() => makeBucketAxis(
-			buckets.map((row) => row.bucket),
-			effectiveTimezone,
-		),
+		() =>
+			makeBucketAxis(
+				buckets.map((row) => row.bucket),
+				effectiveTimezone,
+			),
 		[buckets, effectiveTimezone],
 	)
 

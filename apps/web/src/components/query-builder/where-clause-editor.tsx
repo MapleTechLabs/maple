@@ -281,7 +281,9 @@ export function WhereClauseEditor({
 	)
 }
 
-interface ListboxPosition {
+// A type alias, not an interface: takumi adds a `--*` index signature to
+// React.CSSProperties, and only aliases satisfy it implicitly.
+type ListboxPosition = {
 	left: number
 	width: number
 	maxHeight: number

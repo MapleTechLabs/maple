@@ -11,6 +11,7 @@ import {
 	EmptyTitle,
 } from "@maple/ui/components/ui/empty"
 
+import { DocsLink, EmptyActions } from "@/components/common/docs-link"
 import { CircleInfoIcon, CircleWarningIcon, CloudflareIcon, LoaderIcon } from "@/components/icons"
 import { describeCloudflareIngestPhase, type CloudflareIngestPhase } from "./ingest-phase"
 
@@ -77,8 +78,15 @@ export function CloudflareIngestEmpty({
 /** The one action a stalled connection has: re-grant access from the integrations page. */
 export function CloudflareStalledAction() {
 	return (
-		<Button size="sm" variant="outline" render={<Link to="/integrations" />}>
-			Check the connection
-		</Button>
+		<EmptyActions>
+			<Button
+				size="sm"
+				variant="outline"
+				render={<Link to="/integrations" search={{ integration: "cloudflare" }} />}
+			>
+				Check the connection
+			</Button>
+			<DocsLink page="cloudflare" />
+		</EmptyActions>
 	)
 }

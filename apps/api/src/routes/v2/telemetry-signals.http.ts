@@ -1,4 +1,4 @@
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpApiBuilder } from "effect/http-api"
 import { CurrentTenant } from "@maple/domain/http"
 import { MapleApiV2 } from "@maple/domain/http/v2"
 import type { V2TelemetrySignal, V2TelemetrySignals } from "@maple/domain/http/v2"

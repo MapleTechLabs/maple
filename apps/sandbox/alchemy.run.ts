@@ -107,7 +107,7 @@ const props = Effect.gen(function* () {
 	return {
 		main: `${import.meta.dirname}/src/worker.ts`,
 		name: resolveWorkerName("sandbox", stage, region),
-		compatibility: { date: "2026-04-08", flags: ["nodejs_compat"] },
+		compatibility: { date: "2026-10-01" },
 		// The container has no jurisdiction setting of its own, so the clone sits
 		// under the same best-effort placement as the Workers.
 		placement: resolveWorkerPlacement(region),

@@ -79,6 +79,8 @@ export type RuleFormState = {
 	thresholdUpper: string
 	windowMinutes: string
 	minimumSampleCount: string
+	/** Count an empty window as a breach instead of skipping it. */
+	alertOnNoData: boolean
 	consecutiveBreachesRequired: string
 	consecutiveHealthyRequired: string
 	renotifyIntervalMinutes: string
@@ -250,6 +252,7 @@ export function defaultRuleForm(serviceName?: string): RuleFormState {
 		thresholdUpper: "",
 		windowMinutes: "5",
 		minimumSampleCount: "50",
+		alertOnNoData: false,
 		consecutiveBreachesRequired: "2",
 		consecutiveHealthyRequired: "2",
 		renotifyIntervalMinutes: "30",
@@ -261,6 +264,15 @@ export function defaultRuleForm(serviceName?: string): RuleFormState {
 		notificationTitle: "",
 		notificationBody: "",
 	}
+}
+
+/** Grouped rules cannot alert on no data: a group that stops reporting is held by its incident. */
+export function ruleFormIsGrouped(form: RuleFormState): boolean {
+	if (form.signalType === "raw_query") return false
+	if (form.signalType === "builder_query") {
+		return form.queryBuilderDraft.groupBy.some((token) => token !== "none" && token.length > 0)
+	}
+	return form.groupBy.length > 0
 }
 
 export function ruleToFormState(rule: AlertRuleDocument): RuleFormState {
@@ -282,6 +294,7 @@ export function ruleToFormState(rule: AlertRuleDocument): RuleFormState {
 			rule.thresholdUpper == null ? "" : domainThresholdToForm(rule.signalType, rule.thresholdUpper),
 		windowMinutes: String(rule.windowMinutes),
 		minimumSampleCount: String(rule.minimumSampleCount),
+		alertOnNoData: rule.noDataBehavior === "alert",
 		consecutiveBreachesRequired: String(rule.consecutiveBreachesRequired),
 		consecutiveHealthyRequired: String(rule.consecutiveHealthyRequired),
 		renotifyIntervalMinutes: String(rule.renotifyIntervalMinutes),
@@ -364,6 +377,7 @@ export function buildRuleCreateParamsV2(form: RuleFormState): V2AlertRuleCreateP
 			: null,
 		window_minutes: parsePositiveNumber(form.windowMinutes, 5),
 		minimum_sample_count: parseNonNegativeNumber(form.minimumSampleCount, 0),
+		alert_on_no_data: form.alertOnNoData && !ruleFormIsGrouped(form),
 		consecutive_breaches_required: parsePositiveNumber(form.consecutiveBreachesRequired, 2),
 		consecutive_healthy_required: parsePositiveNumber(form.consecutiveHealthyRequired, 2),
 		renotify_interval_minutes: parsePositiveNumber(form.renotifyIntervalMinutes, 30),
@@ -688,6 +702,9 @@ export function v2PreviewToResponse(result: V2AlertRulePreviewResult): AlertRule
 								value: point.value,
 								sampleCount: point.sample_count,
 								status: point.status,
+								...(point.skip_reason !== undefined
+									? { skipReason: point.skip_reason }
+									: undefined),
 								...(point.provisional !== undefined
 									? { provisional: point.provisional }
 									: undefined),
@@ -711,6 +728,7 @@ export function v2CheckToDocument(check: V2AlertCheck): AlertCheckDocument {
 		timestamp: asIso(check.timestamp),
 		groupKey: check.group_key,
 		status: check.status,
+		skipReason: check.skip_reason,
 		signalType: check.signal_type,
 		comparator: check.comparator,
 		threshold: check.threshold,

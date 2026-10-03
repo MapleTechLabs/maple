@@ -64,6 +64,7 @@ const aiBlocks = (output: Output): Array<DocBlock> => {
 export function registerInspectSpanTool(server: McpToolRegistrar) {
 	server.define({
 		name: "inspect_span",
+		title: "Inspect Span",
 		description:
 			"Full attribute set for one span; `inspect_trace` shows only a trimmed set per span. For an AI agent span (an LLM call, a tool execution, an agent invocation) it also decodes the captured messages and the tool calls it made or executed, with each call's result resolved from the rest of the trace.",
 		parameters: Schema.Struct({

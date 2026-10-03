@@ -81,6 +81,7 @@ const layerFor = (
 	const unused = () => Effect.die("not used by the conversation service")
 	const provider: VcsProviderClient = {
 		id: "github",
+		reviewerMention: "@maple-review-bot",
 		webhookToJobs: unused,
 		fetchRepositories: unused,
 		fetchCommits: unused,

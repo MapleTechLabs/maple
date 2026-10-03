@@ -44,6 +44,7 @@ export const logFilterScope = (
 export function registerSearchLogsTool(server: McpToolRegistrar) {
 	server.define({
 		name: "search_logs",
+		title: "Search Logs",
 		description:
 			"Individual log entries, newest first, filtered by service, severity, body text, trace or span. When the match is too large to read, use mine_log_patterns instead. inspect_trace shows the full trace behind an entry.",
 		parameters: Schema.Struct({

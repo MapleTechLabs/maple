@@ -10,10 +10,9 @@ import type { Release, ReleaseTimelineBucket } from "@/api/warehouse/releases"
  * Health, worst first. A single band per release so the sidebar facet and the
  * row pill never disagree.
  *
- * - `regressed`: this version errors at least twice as often as every other
- *   version of the same service in the same window, by a margin that cannot be
- *   rounding noise.
- * - `watch`: p95 is up by a quarter or more against those other versions.
+ * - `regressed`: this version errors at least twice as often as the version it
+ *   replaced on the same service, by a margin that cannot be rounding noise.
+ * - `watch`: p95 is up by a quarter or more against that previous version.
  * - `rolling`: the newest version of its service, still short of carrying the
  *   whole of the last bucket's traffic.
  * - `healthy`: none of the above, with enough traffic to say so.
@@ -35,17 +34,21 @@ const P95_DELTA_THRESHOLD = 0.25
 /** Below this share of the last bucket, the newest version is still rolling out. */
 export const ROLLOUT_COMPLETE_SHARE = 0.9
 
-/** Every other version of the same (service, environment) in the window, merged. */
+/**
+ * The version this one replaced: the previous first-seen on the same (service,
+ * environment). Measured over its own lifetime in the window, so a service that
+ * deploys hourly compares hour against hour, not against the whole week.
+ */
 export interface ReleaseBaseline {
+	commitSha: string
+	firstSeen: string
 	spanCount: number
 	errorCount: number
 	errorRate: number
-	/** Span-weighted mean of the other versions' p95s — a comparison, not a quantile. */
-	p95LatencyMs: number
 	p50LatencyMs: number
+	p95LatencyMs: number
 	p99LatencyMs: number
 	apdexScore: number
-	versions: number
 }
 
 /** One (service, environment) slice of a release, with its impact derived. */
@@ -61,7 +64,7 @@ export interface ReleaseServiceImpact {
 	p95LatencyMs: number
 	p99LatencyMs: number
 	apdexScore: number
-	/** Undefined when this is the only version of the service in the window. */
+	/** The previous version; undefined for the oldest version of the service in the window. */
 	baseline: ReleaseBaseline | undefined
 	/** `errorRate / baseline.errorRate`, only when both sides clear the span floor. */
 	errorRatio: number | undefined
@@ -154,10 +157,8 @@ function deriveHealth(impact: Omit<ReleaseServiceImpact, "health">): ReleaseHeal
 
 /**
  * Derive every release's impact from the per-(service, env, commit) rows and
- * the timeline. The comparison is same-window: this version against the merged
- * remainder of its service, which is what handles a canary running beside its
- * predecessor. A version that is the only one of its service has no baseline
- * and is reported healthy by default.
+ * the timeline. Each version is compared against the one it replaced; the
+ * oldest version of a service in the window has no baseline and reads healthy.
  */
 export function deriveReleaseImpacts(
 	releases: ReadonlyArray<Release>,
@@ -174,10 +175,13 @@ export function deriveReleaseImpacts(
 
 	const impacts: ReleaseServiceImpact[] = []
 	for (const rows of byService.values()) {
-		const newestFirstSeen = rows.reduce((max, row) => (row.firstSeen > max ? row.firstSeen : max), "")
+		const ordered = rows.toSorted(compareFirstSeen)
+		const newestFirstSeen = ordered.at(-1)?.firstSeen ?? ""
 		for (const row of rows) {
-			const others = rows.filter((other) => other !== row)
-			const baseline = others.length === 0 ? undefined : mergeBaseline(others)
+			// Strictly earlier: versions first seen in the same second have no known
+			// order, so neither is the other's predecessor.
+			const previous = ordered.findLast((candidate) => candidate.firstSeen < row.firstSeen)
+			const baseline = previous === undefined ? undefined : toBaseline(previous)
 			const errorRate = rate(row.errorCount, row.spanCount)
 			const comparable =
 				baseline !== undefined &&
@@ -219,20 +223,20 @@ export function deriveReleaseImpacts(
 	return impacts
 }
 
-function mergeBaseline(rows: ReadonlyArray<Release>): ReleaseBaseline {
-	const spanCount = rows.reduce((sum, row) => sum + row.spanCount, 0)
-	const errorCount = rows.reduce((sum, row) => sum + row.errorCount, 0)
-	const weighted = (pick: (row: Release) => number) =>
-		spanCount > 0 ? rows.reduce((sum, row) => sum + pick(row) * row.spanCount, 0) / spanCount : 0
+const compareFirstSeen = (a: { firstSeen: string }, b: { firstSeen: string }) =>
+	a.firstSeen < b.firstSeen ? -1 : a.firstSeen > b.firstSeen ? 1 : 0
+
+function toBaseline(row: Release): ReleaseBaseline {
 	return {
-		spanCount,
-		errorCount,
-		errorRate: rate(errorCount, spanCount),
-		p95LatencyMs: weighted((row) => row.p95LatencyMs),
-		p50LatencyMs: weighted((row) => row.p50LatencyMs),
-		p99LatencyMs: weighted((row) => row.p99LatencyMs),
-		apdexScore: weighted((row) => row.apdexScore),
-		versions: rows.length,
+		commitSha: row.commitSha,
+		firstSeen: row.firstSeen,
+		spanCount: row.spanCount,
+		errorCount: row.errorCount,
+		errorRate: rate(row.errorCount, row.spanCount),
+		p50LatencyMs: row.p50LatencyMs,
+		p95LatencyMs: row.p95LatencyMs,
+		p99LatencyMs: row.p99LatencyMs,
+		apdexScore: row.apdexScore,
 	}
 }
 
@@ -308,4 +312,159 @@ export function releaseDayLabel(iso: string, nowMs: number, timeZone: string): s
 	if (dayDiff === 0) return "Today"
 	if (dayDiff === 1) return "Yesterday"
 	return date.toLocaleDateString(undefined, { timeZone, weekday: "short", month: "short", day: "numeric" })
+}
+
+/**
+ * The service whose figures stand for a multi-service release in the list:
+ * worst health first, then the largest error-rate jump, then the busiest.
+ */
+export function releaseHeadline(group: ReleaseGroup): ReleaseServiceImpact {
+	const rank = (impact: ReleaseServiceImpact) => RELEASE_HEALTH_ORDER.indexOf(impact.health)
+	return group.services.reduce((best, impact) => {
+		if (rank(impact) !== rank(best)) return rank(impact) < rank(best) ? impact : best
+		if ((impact.errorRatio ?? 0) !== (best.errorRatio ?? 0))
+			return (impact.errorRatio ?? 0) > (best.errorRatio ?? 0) ? impact : best
+		return impact.spanCount > best.spanCount ? impact : best
+	})
+}
+
+/**
+ * Slack between a version's first span and an issue it introduced: the
+ * rollup's first-seen is bucket-floored, and an error can land a beat early.
+ */
+export const NEW_ISSUE_SLACK_MS = 5 * 60 * 1000
+
+export interface ReleaseIssueCounts {
+	fresh: number
+	regressed: number
+}
+
+export interface IntroducedIssue {
+	readonly serviceName: string
+	readonly firstSeenAt: string
+	readonly lastRegressedAt: string | null
+}
+
+export interface ReleaseIssues<T extends IntroducedIssue> {
+	fresh: T[]
+	regressed: T[]
+}
+
+/**
+ * Credit each issue to the release of its service that was newest when the
+ * issue first appeared, or last regressed. Keyed by commit sha.
+ */
+export function attributeIssues<T extends IntroducedIssue>(
+	impacts: ReadonlyArray<ReleaseServiceImpact>,
+	issues: ReadonlyArray<T>,
+): Map<string, ReleaseIssues<T>> {
+	const byService = new Map<string, ReleaseServiceImpact[]>()
+	for (const impact of impacts) {
+		const list = byService.get(impact.serviceName)
+		if (list === undefined) byService.set(impact.serviceName, [impact])
+		else list.push(impact)
+	}
+	const attributed = new Map<string, ReleaseIssues<T>>()
+	for (const issue of issues) {
+		const firstMs = Date.parse(issue.firstSeenAt)
+		const regressedMs = issue.lastRegressedAt === null ? Number.NaN : Date.parse(issue.lastRegressedAt)
+		const regressed = Number.isFinite(regressedMs) && regressedMs > firstMs
+		const atMs = regressed ? regressedMs : firstMs
+		if (!Number.isFinite(atMs)) continue
+		let owner: ReleaseServiceImpact | undefined
+		for (const impact of byService.get(issue.serviceName) ?? []) {
+			const startMs = Date.parse(impact.firstSeen) - NEW_ISSUE_SLACK_MS
+			if (startMs <= atMs && (owner === undefined || impact.firstSeen > owner.firstSeen)) owner = impact
+		}
+		if (owner === undefined) continue
+		const entry = attributed.get(owner.commitSha) ?? { fresh: [], regressed: [] }
+		if (regressed) entry.regressed.push(issue)
+		else entry.fresh.push(issue)
+		attributed.set(owner.commitSha, entry)
+	}
+	return attributed
+}
+
+/** `attributeIssues`, reduced to counts for the list. */
+export function countIssues<T extends IntroducedIssue>(
+	attributed: ReadonlyMap<string, ReleaseIssues<T>>,
+): Map<string, ReleaseIssueCounts> {
+	return new Map(
+		[...attributed].map(([sha, issues]) => [
+			sha,
+			{ fresh: issues.fresh.length, regressed: issues.regressed.length },
+		]),
+	)
+}
+
+export interface LiveVersion {
+	serviceName: string
+	commitSha: string
+	/** Share of the service's last bucket this version carried. */
+	share: number
+	/**
+	 * Newer releases its usual siblings already serve, but this service does not.
+	 * Zero for a service that never co-deploys with another.
+	 */
+	behind: number
+}
+
+/** What each service is serving right now, and how far it trails its siblings. */
+export function liveVersions(
+	timeline: ReadonlyArray<ReleaseTimelineBucket>,
+	groups: ReadonlyArray<ReleaseGroup>,
+): LiveVersion[] {
+	const shares = lastBucketShares(timeline)
+	const live = new Map<string, { commitSha: string; share: number }>()
+	for (const [key, share] of shares) {
+		const split = key.lastIndexOf(" ")
+		const serviceName = key.slice(0, split)
+		const commitSha = key.slice(split + 1)
+		const current = live.get(serviceName)
+		if (current === undefined || share > current.share) live.set(serviceName, { commitSha, share })
+	}
+	const groupBySha = new Map(groups.map((group) => [group.commitSha, group]))
+	const result: LiveVersion[] = []
+	for (const [serviceName, { commitSha, share }] of live) {
+		const liveGroup = groupBySha.get(commitSha)
+		const siblings = new Set(
+			(liveGroup?.services ?? [])
+				.map((impact) => impact.serviceName)
+				.filter((name) => name !== serviceName),
+		)
+		// Only releases some sibling is already serving count: one still rolling
+		// out elsewhere would otherwise mark every service behind for minutes.
+		let siblingsNewest = ""
+		for (const sibling of siblings) {
+			const seen = groupBySha.get(live.get(sibling)?.commitSha ?? "")?.firstSeen ?? ""
+			if (seen > siblingsNewest) siblingsNewest = seen
+		}
+		const behind =
+			liveGroup === undefined || siblings.size === 0
+				? 0
+				: groups.filter(
+						(group) =>
+							group.firstSeen > liveGroup.firstSeen &&
+							group.firstSeen <= siblingsNewest &&
+							!group.services.some((impact) => impact.serviceName === serviceName) &&
+							group.services.some((impact) => siblings.has(impact.serviceName)),
+					).length
+		result.push({ serviceName, commitSha, share, behind })
+	}
+	return result.toSorted((a, b) => b.behind - a.behind || a.serviceName.localeCompare(b.serviceName))
+}
+
+/**
+ * The commit a release replaced, for its changeset: the predecessor most of its
+ * services agree on. Undefined when none of them has one in the window.
+ */
+export function previousSha(group: ReleaseGroup): string | undefined {
+	const votes = new Map<string, number>()
+	for (const impact of group.services) {
+		const sha = impact.baseline?.commitSha
+		if (sha !== undefined) votes.set(sha, (votes.get(sha) ?? 0) + 1)
+	}
+	let best: string | undefined
+	for (const [sha, count] of votes) if (best === undefined || count > (votes.get(best) ?? 0)) best = sha
+	return best
 }

@@ -144,6 +144,7 @@ const nextCalls = (output: Output): ReadonlyArray<NextCall> => {
 export function registerListErrorIssuesTool(server: McpToolRegistrar) {
 	server.define({
 		name: "list_error_issues",
+		title: "List Error Issues",
 		description:
 			"List persistent error issues (one per exception fingerprint, plus alert and integration issues) with workflow state, counts, assignment and lease holder. An issue survives new occurrences, so its state, notes and assignee persist. The `Issue ID` is what the issue tools take; the `Fingerprint` column is what error_detail takes. A `regressed` issue was fixed before and started firing again: read its events before investigating it as new.",
 		parameters: Schema.Struct({

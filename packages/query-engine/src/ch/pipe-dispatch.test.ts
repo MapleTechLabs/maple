@@ -92,7 +92,7 @@ describe("compilePipeQuery", () => {
 
 			it("keeps only errored spans when errors_only is set", () => {
 				const sql = compilePipeQuery(pipe, { ...baseParams(), errors_only: "1" })!.sql
-				expect(sql).toContain("AND StatusCode = 'Error'")
+				expect(sql).toContain("AND traces.StatusCode = 'Error'")
 			})
 
 			it("treats a falsy errors_only value as absent", () => {
@@ -160,7 +160,7 @@ describe("compilePipeQuery", () => {
 		})
 		expect(result).toBeDefined()
 		expect(result!.sql).toContain("metrics_gauge")
-		expect(result!.sql).toContain("arrayJoin(mapKeys(Attributes))")
+		expect(result!.sql).toContain("arrayJoin(mapKeys(metrics_gauge.Attributes))")
 		expect(result!.sql).toContain("MetricName = 'http.server.duration'")
 	})
 

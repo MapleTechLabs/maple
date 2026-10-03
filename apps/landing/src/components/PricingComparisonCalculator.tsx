@@ -13,6 +13,7 @@ const MARKS = {
 	signoz: "signoz",
 	axiom: "axiom",
 	"better-stack": "betterstack",
+	honeycomb: "honeycomb",
 } satisfies Record<Competitor, BrandMarkId>
 
 /** The vendor's mark in its brand colour; on the active (amber) tab it takes the tab's foreground instead. */
@@ -26,7 +27,11 @@ function VendorMark({ id, active }: { id: BrandMarkId; active: boolean }) {
 			fill="currentColor"
 			aria-hidden="true"
 		>
-			<path d={mark.path} />
+			{mark.layers && !active ? (
+				mark.layers.map((layer) => <path key={layer.fill} d={layer.path} fill={layer.fill} />)
+			) : (
+				<path d={mark.path} />
+			)}
 			{mark.overlay && (
 				<path d={mark.overlay.path} fill={mark.overlay.fill} fillRule={mark.overlay.fillRule} />
 			)}

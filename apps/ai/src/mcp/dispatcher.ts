@@ -4,7 +4,7 @@ import { WarehouseQueryService } from "@maple/backend/services/warehouse/Warehou
 import { VcsSourceService } from "@maple/backend/services/integrations/vcs/VcsSourceService"
 import { SandboxClient } from "@maple/backend/sandbox/client"
 import { CloudflareRepoSandboxLive } from "@maple/backend/services/sandbox/CloudflareRepoSandbox"
-import type { SandboxError } from "effect-agent/sandbox"
+import type { SandboxError } from "@yielded/agent/sandbox"
 import { RepoSandboxService, type RepositoryTarget } from "@maple/backend/services/sandbox/RepoSandboxService"
 
 import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
@@ -24,6 +24,7 @@ import { RecommendationIssueService } from "@maple/backend/services/errors/Recom
 import { PullRequestLookupLive } from "@maple/backend/services/errors/pull-request-lookup-live"
 
 import { SetupAuditService } from "@maple/backend/services/org/SetupAuditService"
+import { AgentFeedbackService } from "@maple/backend/services/feedback/AgentFeedbackService"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 
 // BOUNDARY: This module owns unparsed external values and narrows them before domain use.
@@ -57,6 +58,8 @@ let toolDescriptors: ReadonlyArray<McpToolDescriptor> | undefined
 const listToolDescriptors = (): ReadonlyArray<McpToolDescriptor> =>
 	(toolDescriptors ??= mapleToolCatalogFor("mcp").map((definition) => ({
 		name: definition.name,
+		// Current spec reads the top-level `title`; Claude's directory and older clients read `annotations.title`.
+		title: definition.title,
 		description: definition.description,
 		inputSchema: inputSchemaOf(definition),
 		...(definition.outputSchema === undefined
@@ -66,6 +69,7 @@ const listToolDescriptors = (): ReadonlyArray<McpToolDescriptor> =>
 			? undefined
 			: {
 					annotations: {
+						title: definition.title,
 						readOnlyHint: definition.hints.readOnly,
 						// The protocol defaults both of these to true; every Maple tool states them.
 						destructiveHint: !definition.hints.readOnly && definition.hints.destructive === true,
@@ -87,6 +91,16 @@ const failureResult = (text: string, category: string): McpToolResult => ({
 	content: [{ type: "text", text }],
 	failureCategory: category,
 })
+
+/**
+ * Appended to failures that are likely Maple's fault, on the public transport only: an outside
+ * agent has the motive and the details to report it right when the call fails. Maple's own
+ * agents (chat, bot) are not asked to report on Maple.
+ */
+export const withFeedbackHint = (text: string, name: string, surface: McpToolSurface): string =>
+	surface === "mcp" && name !== "send_maple_feedback"
+		? `${text}\nIf this looks like a bug in Maple rather than in your call, offer the user to report it with \`send_maple_feedback\`.`
+		: text
 
 /** Raw dispatcher. Executable handlers stay private so callers cannot omit the request tenant. */
 const callMcpToolUnscoped = Effect.fn("McpToolDispatcher.call")(function* (
@@ -150,12 +164,22 @@ const callMcpToolUnscoped = Effect.fn("McpToolDispatcher.call")(function* (
 						"error.type": error._tag,
 						"maple.mcp.pipe": error.pipeName,
 					}),
-					Effect.as(failureResult(`Query failed: ${error.message}`, "query")),
+					Effect.as(
+						failureResult(
+							withFeedbackHint(`Query failed: ${error.message}`, name, surface),
+							"query",
+						),
+					),
 				),
 			"@maple/mcp/errors/McpTenantError": (error) =>
 				Effect.logError("MCP tool execution failed").pipe(
 					Effect.annotateLogs({ "error.message": error.message, "error.type": error._tag }),
-					Effect.as(failureResult(`Tenant error: ${error.message}`, "tenant")),
+					Effect.as(
+						failureResult(
+							withFeedbackHint(`Tenant error: ${error.message}`, name, surface),
+							"tenant",
+						),
+					),
 				),
 			// Missing/invalid credentials are expected 401s, not failures: they are
 			// recorded on the span as attributes + a Warn log (see
@@ -238,6 +262,7 @@ const MAX_PREPARED_REPOSITORIES = 3
  * accidentally execute a raw handler without CurrentMcpTenant.
  */
 const McpRuntimeServicesLive = Layer.mergeAll(
+	AgentFeedbackService.layer,
 	AlertReadModelsService.layer,
 	AlertRulesService.layer,
 	AlertsService.layer,

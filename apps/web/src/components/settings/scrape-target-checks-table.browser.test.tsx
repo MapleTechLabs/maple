@@ -31,7 +31,11 @@ describe("ScrapeTargetChecksTable", () => {
 		expect(screen.getByText("Failed to load scheduled checks.")).toBeTruthy()
 
 		view.rerender(<ScrapeTargetChecksTable result={Result.success({ checks: [] })} checks={[]} />)
-		expect(screen.getByText("No scheduled checks recorded yet.")).toBeTruthy()
+		expect(
+			screen.getByText(
+				"The first scrape runs shortly after you save. Use Test to check the endpoint now.",
+			),
+		).toBeTruthy()
 	})
 
 	it("preserves newest-first API order and renders v2 snake-case fields", () => {

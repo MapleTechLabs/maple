@@ -33,12 +33,14 @@ export const GET: APIRoute = ({ site }) => {
 				"SigNoz",
 				"Axiom",
 				"Better Stack",
+				"Honeycomb",
 			],
 			[
 				[
 					m.bill_row_per_host(),
 					m.bill_v_none(),
 					"$15+ / host / mo",
+					m.bill_v_none(),
 					m.bill_v_none(),
 					m.bill_v_none(),
 					m.bill_v_none(),
@@ -56,6 +58,7 @@ export const GET: APIRoute = ({ site }) => {
 					m.bill_v_none(),
 					m.bill_v_none(),
 					"$29–34 / on-call responder / mo",
+					m.bill_v_none(),
 				],
 				[
 					m.bill_row_ingest(),
@@ -67,6 +70,7 @@ export const GET: APIRoute = ({ site }) => {
 					"$0.30 / GB · $0.10 / M samples",
 					"$0.12 / GB + $0.20 / GB-hr",
 					"$0.10 / GB + $0.05 / GB-mo stored (EU)",
+					"$3.00 / M events (spans, logs)",
 				],
 				[
 					m.bill_row_retention(),
@@ -78,6 +82,7 @@ export const GET: APIRoute = ({ site }) => {
 					"15d logs/traces · 1mo metrics",
 					"Configurable · from $0.03 / GB stored",
 					"30d in bundles · billed per GB-mo stored",
+					"60d events and metrics",
 				],
 				[
 					m.bill_row_otel(),
@@ -85,6 +90,7 @@ export const GET: APIRoute = ({ site }) => {
 					m.bill_v_yes(),
 					m.bill_v_yes(),
 					m.bill_v_yes(),
+					m.bill_v_native(),
 					m.bill_v_native(),
 					m.bill_v_native(),
 					m.bill_v_native(),
@@ -100,6 +106,7 @@ export const GET: APIRoute = ({ site }) => {
 					"MIT + commercial ee/",
 					m.bill_v_proprietary(),
 					m.bill_v_proprietary(),
+					m.bill_v_proprietary(),
 				],
 				[
 					m.bill_row_selfhost(),
@@ -111,10 +118,12 @@ export const GET: APIRoute = ({ site }) => {
 					m.bill_v_supported(),
 					m.bill_v_no(),
 					m.bill_v_no(),
+					"Enterprise, own AWS account",
 				],
 				[
 					m.bill_row_mcp(),
 					m.bill_v_hosted(),
+					m.bill_v_yes(),
 					m.bill_v_yes(),
 					m.bill_v_yes(),
 					m.bill_v_yes(),

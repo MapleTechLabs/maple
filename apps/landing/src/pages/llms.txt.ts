@@ -59,7 +59,7 @@ export const GET: APIRoute = ({ site }) => {
 
 		"## Changelog",
 		"",
-		`Maple product updates, month by month. The index enumerates every release. ${CONVENTION("changelog")}`,
+		`Maple product updates, one entry per shipped change. The index enumerates every entry. ${CONVENTION("changelog")}`,
 		"",
 		...both("Changelog index", "/changelog"),
 		`- [RSS feed](${url("/changelog/rss.xml")})`,

@@ -12,6 +12,7 @@ const TOOL = "get_dashboard"
 export function registerGetDashboardTool(server: McpToolRegistrar) {
 	server.define({
 		name: TOOL,
+		title: "Get Dashboard",
 		description:
 			"Full configuration of one dashboard: every widget with its id, visualization, dataSource, display, layout and any pinned timeRange. Widgets come back in the shape update_dashboard_widget and replace_dashboard_widgets take. Ids from list_dashboards.",
 		parameters: Schema.Struct({

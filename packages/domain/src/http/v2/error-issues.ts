@@ -1,4 +1,4 @@
-import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
+import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 import { Schema } from "effect"
 import {
 	ActorType,
@@ -152,6 +152,9 @@ export const V2ErrorIssueListQuery = Schema.Struct({
 	// Also bounds the deployment_environment lookup.
 	start_time: Schema.optional(Timestamp),
 	end_time: Schema.optional(Timestamp),
+	// Only issues first seen or last regressed at or after this instant: what a
+	// deploy introduced, rather than everything still occurring.
+	introduced_after: Schema.optional(Timestamp),
 	actionable: Schema.optional(Schema.Literal("true")),
 	sort: Schema.optional(Schema.Literals(["last_seen", "severity"])),
 }).annotate({

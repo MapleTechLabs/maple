@@ -6,7 +6,7 @@
 // buffer on `flush`, so the layer itself can be constructed without I/O.
 import { Cause, Context, Exit, Layer, Option, Predicate, Tracer } from "effect"
 import * as ErrorReporter from "effect/ErrorReporter"
-import * as OtlpResource from "effect/unstable/observability/OtlpResource"
+import * as OtlpResource from "effect/observability/OtlpResource"
 import type { ExtractTag } from "effect/Types"
 
 export interface CaptureExceptionOptions {
@@ -153,7 +153,7 @@ export const makeSpanBuffer = (options: SpanBufferOptions = {}): SpanBuffer => {
 	}
 }
 
-// OTLP span construction (adapted from `effect/unstable/observability/OtlpTracer`)
+// OTLP span construction (adapted from `effect/observability/OtlpTracer`)
 
 const ATTR_EXCEPTION_TYPE = "exception.type"
 const ATTR_EXCEPTION_MESSAGE = "exception.message"

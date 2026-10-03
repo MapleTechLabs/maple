@@ -18,6 +18,7 @@ import { ErrorsService } from "@maple/backend/services/errors/ErrorsService"
 export function registerTransitionErrorIssueTool(server: McpToolRegistrar) {
 	server.define({
 		name: "transition_error_issue",
+		title: "Transition Error Issue",
 		description: [
 			"Move an error issue to another workflow state.",
 			"`regressed` and `verifying` are set by Maple's own ticks and cannot be requested: `regressed` means a fixed error fired again from a build after the fix, `verifying` means a linked PR merged and the post-merge check is running.",

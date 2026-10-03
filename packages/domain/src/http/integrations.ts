@@ -1,9 +1,9 @@
-import { HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi"
+import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Schema } from "effect"
 import { ExternalUserId, ScrapeTargetId, UserId } from "../primitives"
 import { Authorization } from "./current-tenant"
 import { HttpTaggedError } from "./error-policy"
-import { PrReviewListItem, PrReviewRepositoryConfig } from "./pr-review"
+import { PrReviewListItem, PrReviewOrgSettings, PrReviewRepositoryConfig } from "./pr-review"
 import {
 	GitCommitSha,
 	PullRequestSummary,
@@ -21,7 +21,7 @@ const RETURN_PATH_MAX_LENGTH = 2048
 // One leading `/`, never `//` or `/\` (protocol-relative or backslash origin
 // tricks), and no backslash, whitespace or control character anywhere — which
 // leaves no room for a scheme or embedded credentials.
-export const RETURN_PATH_PATTERN = /^\/(?![/\\])[^\\\s\u0000-\u001f\u007f]*$/
+export const RETURN_PATH_PATTERN = /^\/(?![/\\])[^\\\s\u0000-\u001f\u007f]*$/u
 
 /**
  * A path inside the Maple dashboard, e.g. `/integrations?connected=1`.
@@ -775,6 +775,18 @@ export class GithubPrReviewConfigResponse extends Schema.Class<GithubPrReviewCon
 	config: PrReviewRepositoryConfig,
 }) {}
 
+export class GithubPrReviewSettingsRequest extends Schema.Class<GithubPrReviewSettingsRequest>(
+	"GithubPrReviewSettingsRequest",
+)({
+	settings: PrReviewOrgSettings,
+}) {}
+
+export class GithubPrReviewSettingsResponse extends Schema.Class<GithubPrReviewSettingsResponse>(
+	"GithubPrReviewSettingsResponse",
+)({
+	settings: PrReviewOrgSettings,
+}) {}
+
 export class GithubPrReviewsResponse extends Schema.Class<GithubPrReviewsResponse>("GithubPrReviewsResponse")(
 	{
 		reviews: Schema.Array(PrReviewListItem),
@@ -834,6 +846,70 @@ export class VcsCommitDetailsResponse extends Schema.Class<VcsCommitDetailsRespo
 
 /** Upper bound on SHAs per bulk commit lookup — one page of a list view. */
 export const VCS_COMMIT_DETAILS_MAX_SHAS = 50
+
+/** Upper bound on `base..head` pairs per commit-range lookup, and on commits listed per range. */
+export const VCS_COMMIT_RANGES_MAX = 50
+export const VCS_COMMIT_RANGE_COMMITS_MAX = 100
+
+/**
+ * What shipped between two deploys: the stored commits after `base` up to and
+ * including `head` on one repo's tracked branch. `unavailable` when either end is
+ * not a stored commit of the same repo (a short sha, a tag, an untracked branch).
+ */
+export class VcsCommitRangeResponse extends Schema.Class<VcsCommitRangeResponse>("VcsCommitRangeResponse")({
+	base: Schema.String,
+	head: Schema.String,
+	status: Schema.Literals(["resolved", "unavailable"]),
+	repoFullName: Schema.String,
+	totalCount: Schema.Number,
+	commits: Schema.Array(VcsCommitDetailResponse),
+	/** True when `totalCount` is a lower bound. */
+	truncated: Schema.Boolean,
+}) {}
+
+export class VcsCommitRangesResponse extends Schema.Class<VcsCommitRangesResponse>("VcsCommitRangesResponse")(
+	{
+		ranges: Schema.Array(VcsCommitRangeResponse),
+	},
+) {}
+
+export class RailwayEnvironmentStatus extends Schema.Class<RailwayEnvironmentStatus>(
+	"RailwayEnvironmentStatus",
+)({
+	projectId: Schema.String,
+	projectName: Schema.String,
+	environmentId: Schema.String,
+	environmentName: Schema.String,
+	serviceCount: Schema.Number,
+	enabled: Schema.Boolean,
+	lastSyncedAt: Schema.NullOr(Schema.Number),
+	lastError: Schema.NullOr(Schema.String),
+}) {}
+
+/** Connection state of the Railway metrics integration (token-based, one per org). */
+export class RailwayIntegrationStatus extends Schema.Class<RailwayIntegrationStatus>(
+	"RailwayIntegrationStatus",
+)({
+	connected: Schema.Boolean,
+	workspaceNames: Schema.NullOr(Schema.String),
+	connectedByUserId: Schema.NullOr(UserId),
+	connectedAt: Schema.NullOr(Schema.Number),
+	/** True when Railway rejected the stored token; polling is paused until a new one is saved. */
+	authFailed: Schema.Boolean,
+	lastSyncedAt: Schema.NullOr(Schema.Number),
+	lastError: Schema.NullOr(Schema.String),
+	environments: Schema.Array(RailwayEnvironmentStatus),
+}) {}
+
+export class RailwayConnectRequest extends Schema.Class<RailwayConnectRequest>("RailwayConnectRequest")({
+	token: Schema.String.check(Schema.isTrimmed(), Schema.isMinLength(8), Schema.isMaxLength(512)),
+}) {}
+
+export class RailwayDisconnectResponse extends Schema.Class<RailwayDisconnectResponse>(
+	"RailwayDisconnectResponse",
+)({
+	disconnected: Schema.Boolean,
+}) {}
 
 export class IntegrationsForbiddenError extends HttpTaggedError<IntegrationsForbiddenError>()(
 	"@maple/http/errors/IntegrationsForbiddenError",
@@ -1098,6 +1174,31 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 		}),
 	)
 	.add(
+		HttpApiEndpoint.get("railwayStatus", "/railway/status", {
+			success: RailwayIntegrationStatus,
+			error: IntegrationsPersistenceError,
+		}),
+	)
+	.add(
+		// Validates the token against Railway (discovery + a metrics probe) before storing it.
+		HttpApiEndpoint.put("railwayConnect", "/railway", {
+			payload: RailwayConnectRequest,
+			success: RailwayIntegrationStatus,
+			error: [
+				IntegrationsForbiddenError,
+				IntegrationsValidationError,
+				IntegrationsUpstreamError,
+				IntegrationsPersistenceError,
+			],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.delete("railwayDisconnect", "/railway", {
+			success: RailwayDisconnectResponse,
+			error: [IntegrationsForbiddenError, IntegrationsPersistenceError],
+		}),
+	)
+	.add(
 		HttpApiEndpoint.get("githubStatus", "/github/status", {
 			success: GithubIntegrationStatus,
 			error: IntegrationsPersistenceError,
@@ -1187,6 +1288,20 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 		),
 	)
 	.add(
+		// Organization-wide review settings: the model and the rules every repository inherits. Read by any member, written by admins.
+		HttpApiEndpoint.get("githubGetPrReviewSettings", "/github/pr-review/settings", {
+			success: GithubPrReviewSettingsResponse,
+			error: [IntegrationsForbiddenError, IntegrationsPersistenceError],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.put("githubSetPrReviewSettings", "/github/pr-review/settings", {
+			payload: GithubPrReviewSettingsRequest,
+			success: GithubPrReviewSettingsResponse,
+			error: [IntegrationsForbiddenError, IntegrationsValidationError, IntegrationsPersistenceError],
+		}),
+	)
+	.add(
 		// The repository's most recent reviews, newest first.
 		HttpApiEndpoint.get("githubListPrReviews", "/github/repositories/:repositoryId/pr-reviews", {
 			params: { repositoryId: VcsRepositoryId },
@@ -1225,6 +1340,22 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 			}),
 			success: VcsCommitDetailsResponse,
 			error: [IntegrationsNotConnectedError, IntegrationsUpstreamError, IntegrationsPersistenceError],
+		}),
+	)
+	.add(
+		// `ranges` is `base..head` pairs, comma-separated, answered in request order.
+		// Raw strings like `shas` above: an unresolvable end reads `unavailable`.
+		HttpApiEndpoint.get("vcsCommitRanges", "/vcs/commit-ranges", {
+			query: Schema.Struct({
+				ranges: Schema.String.check(Schema.isMinLength(1)),
+				limit: Schema.optional(
+					Schema.FiniteFromString.check(
+						Schema.isBetween({ minimum: 0, maximum: VCS_COMMIT_RANGE_COMMITS_MAX }),
+					),
+				),
+			}),
+			success: VcsCommitRangesResponse,
+			error: [IntegrationsPersistenceError],
 		}),
 	)
 	.add(

@@ -16,6 +16,7 @@ import {
 	ALERT_SEVERITIES,
 	ALERT_SIGNAL_TYPES,
 	renderRuleWrite,
+	ruleConfigWarnings,
 	ruleNotFound,
 	ruleNotFoundFromError,
 	ruleWriteInputErrors,
@@ -25,7 +26,7 @@ import * as P from "../lib/params"
 
 const decodeAlertRuleRequest = Schema.decodeUnknownEffect(AlertRuleUpsertRequest)
 
-const Parameters = Schema.Struct({
+export const UpdateAlertRuleParameters = Schema.Struct({
 	rule_id: P.text("Alert rule ID to update (use list_alert_rules to find IDs)"),
 	name: P.optionalText("New rule name"),
 	severity: P.optionalOneOf(ALERT_SEVERITIES, "Alert severity"),
@@ -48,7 +49,12 @@ const Parameters = Schema.Struct({
 		"Dimensions to evaluate the alert per-group (replaces the current grouping; an empty list removes it). " +
 			"Built-in tokens: service.name, span.name, status.code, http.method, severity. Attribute keys: attr.<key>.",
 	),
-	minimum_sample_count: P.optionalNumber("Minimum sample count before evaluating"),
+	minimum_sample_count: P.optionalNumber(
+		"Skip evaluation below this many samples in the window. For raw_query it sums the `samples` column; without one each returned row counts as 1.",
+	),
+	alert_on_no_data: P.optionalFlag(
+		"Count a window with no data as a breach instead of skipping it. Not supported with group_by.",
+	),
 	consecutive_breaches: P.optionalNumber("Consecutive breaches before alerting"),
 	consecutive_healthy: P.optionalNumber("Consecutive healthy evaluations before resolving"),
 	renotify_interval_minutes: P.optionalNumber("Re-notification interval in minutes"),
@@ -77,7 +83,10 @@ const Parameters = Schema.Struct({
  * rule's current config and overlaid with only the params the caller provided. The service's
  * `normalizeRule` validates the merged result.
  */
-function buildUpdatedRequest(current: AlertRuleDocument, params: typeof Parameters.Type) {
+export function buildUpdatedRequest(
+	current: AlertRuleDocument,
+	params: typeof UpdateAlertRuleParameters.Type,
+) {
 	// Merge notification template fields onto the existing template (null-safe).
 	const touchesTemplate = params.notification_title !== undefined || params.notification_body !== undefined
 	const title = params.notification_title ?? current.notificationTemplate?.title ?? undefined
@@ -122,6 +131,7 @@ function buildUpdatedRequest(current: AlertRuleDocument, params: typeof Paramete
 		queryBuilderDraft: params.query_builder_draft ?? current.queryBuilderDraft,
 		rawQuerySql: params.raw_query_sql ?? current.rawQuerySql,
 		rawQueryReducer: params.raw_query_reducer ?? current.rawQueryReducer,
+		alertOnNoData: params.alert_on_no_data ?? current.noDataBehavior === "alert",
 		destinationIds: [...(params.destination_ids ?? current.destinationIds)],
 	}
 }
@@ -129,10 +139,11 @@ function buildUpdatedRequest(current: AlertRuleDocument, params: typeof Paramete
 export function registerUpdateAlertRuleTool(server: McpToolRegistrar) {
 	server.define({
 		name: "update_alert_rule",
+		title: "Update Alert Rule",
 		description:
 			"Update an alert rule. Pass only the fields to change; the rest keep their current value (get_alert_rule shows it). " +
 			"Ids from list_alert_rules and list_alert_destinations.",
-		parameters: Parameters,
+		parameters: UpdateAlertRuleParameters,
 		aliases: { service_names: "services" },
 		output: UpdateAlertRuleOutput,
 		hints: { readOnly: false, destructive: false, idempotent: true },
@@ -170,8 +181,9 @@ export function registerUpdateAlertRuleTool(server: McpToolRegistrar) {
 					}),
 				)
 
-			return { rule: toAlertRuleRow(rule) }
+			const warnings = ruleConfigWarnings(rule)
+			return { rule: toAlertRuleRow(rule), ...(warnings.length > 0 ? { warnings } : undefined) }
 		}),
-		render: (output) => renderRuleWrite("Alert Rule Updated", output.rule),
+		render: (output) => renderRuleWrite("Alert Rule Updated", output.rule, output.warnings),
 	})
 }

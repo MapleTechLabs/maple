@@ -15,7 +15,7 @@
  * three seconds and retries it, and an agent turn is not a three-second operation.
  */
 import { Clock, Effect, Option } from "effect"
-import { HttpServerResponse, type HttpServerRequest } from "effect/unstable/http"
+import { HttpServerResponse, type HttpServerRequest } from "effect/http"
 import {
 	ConnectorIngressError,
 	type ConnectorConfig,

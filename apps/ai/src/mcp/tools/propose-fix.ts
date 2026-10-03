@@ -17,6 +17,7 @@ import { ErrorsService } from "@maple/backend/services/errors/ErrorsService"
 export function registerProposeFixTool(server: McpToolRegistrar) {
 	server.define({
 		name: "propose_fix",
+		title: "Propose Fix",
 		description: [
 			"Record a proposed fix for an error issue and move it to `in_review`.",
 			"Claims the issue and walks it there from wherever it is, so no claim_error_issue or transition_error_issue call is needed first; it fails if another agent holds the issue.",

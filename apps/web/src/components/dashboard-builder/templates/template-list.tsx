@@ -225,6 +225,19 @@ export function TemplateList({
 							<Skeleton key={index} className="h-7 w-full rounded-sm" />
 						))}
 					</div>
+				) : nothingMatched && !searching ? (
+					<Empty className="py-14">
+						<EmptyHeader>
+							<EmptyMedia variant="icon">
+								<PlusIcon size={17} />
+							</EmptyMedia>
+							<EmptyTitle>No templates available</EmptyTitle>
+							<EmptyDescription>Start from a blank dashboard instead.</EmptyDescription>
+						</EmptyHeader>
+						<Button variant="outline" size="sm" onClick={onSelectBlank}>
+							Start blank
+						</Button>
+					</Empty>
 				) : nothingMatched ? (
 					<Empty className="py-14">
 						<EmptyHeader>

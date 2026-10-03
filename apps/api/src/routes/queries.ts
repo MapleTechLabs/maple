@@ -20,6 +20,8 @@ import type {
 	NodeInfraTimeseriesRequest,
 	PlanetScaleInfraTimeseriesRequest,
 	PodInfraTimeseriesRequest,
+	RailwayInfraServicesRequest,
+	RailwayInfraServiceTimeseriesRequest,
 	ServiceCloudflareStatsRequest,
 	SpanDetailRequest,
 	WorkloadInfraTimeseriesRequest,
@@ -256,6 +258,33 @@ const planetscaleInfraTimeseries = defineQuery({
 					branch: payload.branch,
 				})
 	},
+})
+
+const railwayInfraServices = defineQuery({
+	id: "railwayInfraServices",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: RailwayInfraServicesRequest, orgId: string) =>
+		CH.compile(Integrations.railwayServicesSQL(), {
+			orgId,
+			startTime: payload.startTime,
+			endTime: payload.endTime,
+		}),
+})
+
+const railwayInfraServiceTimeseries = defineQuery({
+	id: "railwayInfraServiceTimeseries",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: RailwayInfraServiceTimeseriesRequest, orgId: string) =>
+		CH.compile(Integrations.railwayServiceTimeseriesSQL(), {
+			orgId,
+			startTime: payload.startTime,
+			endTime: payload.endTime,
+			bucketSeconds: Math.max(60, Math.floor(payload.bucketSeconds)),
+			environmentId: payload.environmentId,
+			serviceId: payload.serviceId,
+		}),
 })
 
 const zoneDetailParams = (payload: CloudflareInfraZoneDetailRequest, orgId: string) => ({
@@ -689,6 +718,8 @@ export const Queries = {
 	cloudflareServiceCounters,
 	cloudflareServiceLatency,
 	planetscaleInfraTimeseries,
+	railwayInfraServices,
+	railwayInfraServiceTimeseries,
 
 	// ZoneDetail / PlanetScaleStats sub-queries, declared above.
 	cloudflareInfraZoneDetailStatus,

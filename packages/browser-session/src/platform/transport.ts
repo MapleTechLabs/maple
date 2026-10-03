@@ -19,6 +19,19 @@ export interface IngestConfig {
 	 * follow it — the same source the session metadata row reads.
 	 */
 	readonly getIdentity?: (() => EventIdentity | undefined) | undefined
+	/** Record `<canvas>` content at this many frames per second. Off when unset or 0. */
+	readonly canvasFps?: number | undefined
+	/** Keep request and response bodies of these URLs on replay network events. */
+	readonly networkBodies?: NetworkBodyOptions | undefined
+}
+
+export interface NetworkBodyOptions {
+	/** Matched against the full request URL. Nothing is captured for other URLs. */
+	readonly urls: ReadonlyArray<string | RegExp>
+	/** Each body is cut to this many characters. */
+	readonly maxLength: number
+	/** Keep request bodies too. Off while inputs are masked: a form POST carries what was typed. */
+	readonly requestBodies?: boolean | undefined
 }
 
 /**

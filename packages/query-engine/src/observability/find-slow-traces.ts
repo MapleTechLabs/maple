@@ -67,20 +67,18 @@ export const findSlowTraces = Effect.fn("Observability.findSlowTraces")(function
 
 	const traces: ReadonlyArray<SpanResult> = pipe(
 		rows,
-		Arr.map(
-			(r): SpanResult => ({
-				traceId: Schema.decodeSync(TraceId)(r.traceId),
-				spanId: null,
-				spanName: r.spanName,
-				serviceName: r.serviceName,
-				durationMs: Number(r.durationMs),
-				statusCode: r.statusCode,
-				statusMessage: "",
-				attributes: {},
-				resourceAttributes: {},
-				timestamp: r.timestamp,
-			}),
-		),
+		Arr.map((r): SpanResult => ({
+			traceId: Schema.decodeSync(TraceId)(r.traceId),
+			spanId: null,
+			spanName: r.spanName,
+			serviceName: r.serviceName,
+			durationMs: Number(r.durationMs),
+			statusCode: r.statusCode,
+			statusMessage: "",
+			attributes: {},
+			resourceAttributes: {},
+			timestamp: r.timestamp,
+		})),
 	)
 
 	const rawStats = rows.length > 0 ? statsResult.data[0] : undefined

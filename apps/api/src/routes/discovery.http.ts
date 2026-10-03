@@ -1,8 +1,8 @@
 import { MapleApiV2, v2RouteNotFoundBody } from "@maple/domain/http/v2"
 import { mapleMcpServerManifest } from "@maple/domain/mcp-manifest"
 import { Context, Effect, identity, Option } from "effect"
-import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
-import { OpenApi } from "effect/unstable/httpapi"
+import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { OpenApi } from "effect/http-api"
 import { Env } from "@maple/backend/platform/Env"
 
 /**

@@ -315,10 +315,10 @@ export const pinProcessTimezoneToUtc = (): void => {
  */
 export class Chdb {
 	readonly #sym: ChdbSymbols
-	#connPtrPtr: Pointer | null
+	#connPtrPtr: Pointer | bigint | null
 	readonly #conn: Pointer
 
-	private constructor(sym: ChdbSymbols, connPtrPtr: Pointer, conn: Pointer) {
+	private constructor(sym: ChdbSymbols, connPtrPtr: Pointer | bigint, conn: Pointer) {
 		this.#sym = sym
 		this.#connPtrPtr = connPtrPtr
 		this.#conn = conn

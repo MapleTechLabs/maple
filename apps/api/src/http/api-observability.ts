@@ -1,5 +1,5 @@
 import { Layer } from "effect"
-import { Headers, HttpMiddleware } from "effect/unstable/http"
+import { Headers, HttpMiddleware } from "effect/http"
 
 // OAuth callbacks whose query string carries a provider-issued authorization
 // `code` (exchangeable for an access token) plus the single-use connect `state`.

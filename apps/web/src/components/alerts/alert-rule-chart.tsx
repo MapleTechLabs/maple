@@ -286,6 +286,7 @@ export const AlertRuleChart = React.memo(function AlertRuleChart({
 			breached: 0,
 			healthy: 0,
 			skipped: 0,
+			noData: 0,
 			errored: 0,
 			opened: false,
 			errorMessage: null as string | null,
@@ -303,7 +304,10 @@ export const AlertRuleChart = React.memo(function AlertRuleChart({
 				if (bucket.errorMessage == null && check.errorMessage != null) {
 					bucket.errorMessage = check.errorMessage
 				}
-			} else bucket.skipped += 1
+			} else {
+				bucket.skipped += 1
+				if (check.skipReason === "no_data") bucket.noData += 1
+			}
 			if (check.incidentTransition === "opened") bucket.opened = true
 		}
 		return buckets.map((bucket, i) => {
@@ -325,7 +329,11 @@ export const AlertRuleChart = React.memo(function AlertRuleChart({
 				bucket.errored > 0 ? `${bucket.errored} failed` : null,
 				bucket.breached > 0 ? `${bucket.breached} breached` : null,
 				bucket.healthy > 0 ? `${bucket.healthy} healthy` : null,
-				bucket.skipped > 0 ? `${bucket.skipped} skipped` : null,
+				bucket.skipped > 0
+					? bucket.noData > 0
+						? `${bucket.skipped} skipped (${bucket.noData} no data)`
+						: `${bucket.skipped} skipped`
+					: null,
 			]
 				.filter(Boolean)
 				.join(", ")

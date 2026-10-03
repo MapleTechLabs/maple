@@ -1,5 +1,5 @@
 import { Effect, Schema } from "effect"
-import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
+import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
 import {
 	MCP_OAUTH_SCOPE,

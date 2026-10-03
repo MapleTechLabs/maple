@@ -80,15 +80,15 @@ Open **Infrastructure → Containers**. Containers on the host appear within abo
 
 ## What gets collected
 
-| Metric                                           | What it powers                               |
-| ------------------------------------------------ | -------------------------------------------- |
-| `container.cpu.utilization`                      | CPU column, saturation ranking, CPU chart    |
-| `container.memory.percent`                       | Memory-vs-limit column and chart             |
-| `container.memory.usage.total` / `.limit`        | Memory bytes chart and limit metadata        |
-| `container.network.io.usage.rx_bytes`/`tx_bytes` | Network I/O chart                            |
-| `container.blockio.io_service_bytes_recursive`   | Block I/O chart (by operation)               |
-| `container.restarts`, `container.uptime`         | Restart count and uptime on the detail page  |
-| `container.cpu.limit`, `container.pids.count`    | Returned by the container API; not charted   |
+| Metric                                           | What it powers                              |
+| ------------------------------------------------ | ------------------------------------------- |
+| `container.cpu.utilization`                      | CPU column, saturation ranking, CPU chart   |
+| `container.memory.percent`                       | Memory-vs-limit column and chart            |
+| `container.memory.usage.total` / `.limit`        | Memory bytes chart and limit metadata       |
+| `container.network.io.usage.rx_bytes`/`tx_bytes` | Network I/O chart                           |
+| `container.blockio.io_service_bytes_recursive`   | Block I/O chart (by operation)              |
+| `container.restarts`, `container.uptime`         | Restart count and uptime on the detail page |
+| `container.cpu.limit`, `container.pids.count`    | Returned by the container API; not charted  |
 
 Identity rides on resource attributes: `container.name`, `container.id`, `container.image.name`, `container.runtime`, and `host.name`. The agent reads `host.name` from the Docker daemon, so it reports the host, not the agent container. Container names are only unique per host, so Maple keys every container on `(container.name, host.name)`.
 

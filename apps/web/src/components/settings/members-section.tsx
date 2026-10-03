@@ -224,6 +224,12 @@ export function MembersSection() {
 								<EmptyTitle>No members</EmptyTitle>
 								<EmptyDescription>This organization has no members yet.</EmptyDescription>
 							</EmptyHeader>
+							{isAdmin && (
+								<Button size="sm" onClick={() => setInviteOpen(true)}>
+									<PlusIcon size={14} />
+									Invite
+								</Button>
+							)}
 						</Empty>
 					) : (
 						<Table>

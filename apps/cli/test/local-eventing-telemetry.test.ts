@@ -2,7 +2,7 @@ import { strictEqual, ok } from "node:assert"
 import { describe, it } from "vitest"
 import { Effect, ManagedRuntime } from "effect"
 import { Maple } from "@maple-dev/effect-sdk/server"
-import { makeEffectEventingTelemetry } from "../src/server/eventing/telemetry"
+import { observeEventing } from "../src/server/eventing/telemetry"
 
 describe("eventing metric export", () => {
 	it("exports eventing counters through the CLI's server SDK layer", async () => {
@@ -25,12 +25,9 @@ describe("eventing metric export", () => {
 			}),
 		)
 		try {
-			const pending: Promise<void>[] = []
-			const telemetry = makeEffectEventingTelemetry((effect) =>
-				pending.push(runtime.runPromise(effect)),
+			await runtime.runPromise(
+				observeEventing({ operation: "outbox_stage", outcome: "success", count: 3 }),
 			)
-			telemetry.record({ operation: "outbox_stage", outcome: "success", count: 3 })
-			await Promise.all(pending)
 			await runtime.runPromise(
 				Effect.repeat(Effect.sleep("10 millis"), {
 					until: () => bodies.some((body) => body.includes("maple.eventing.operations_total")),

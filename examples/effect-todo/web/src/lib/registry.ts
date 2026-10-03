@@ -6,7 +6,7 @@
  * span to be created, exported, and `traceparent`-propagated to the backend.
  * FetchHttpClient is primed first so the OTLP exporter reuses the same build.
  */
-import { FetchHttpClient } from "effect/unstable/http"
+import { FetchHttpClient } from "effect/http"
 import { appStartedAtom } from "./actions.ts"
 import { TodoApiClient } from "./atom-client.ts"
 import { Atom, AtomRegistry, scheduleTask } from "./effect-atom.ts"

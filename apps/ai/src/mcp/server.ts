@@ -1,4 +1,4 @@
-import { McpSchema, McpServer as EffectMcpServer } from "effect/unstable/ai"
+import { McpSchema, McpServer as EffectMcpServer } from "effect/ai"
 import { Context, Effect, Layer } from "effect"
 import { McpToolExecutor, listMcpTools } from "./dispatcher"
 import { CurrentMcpRequestTenant } from "./lib/query-warehouse"
@@ -36,6 +36,7 @@ export const McpToolsLive = Layer.effectDiscard(
 			server.addTool({
 				tool: new McpSchema.Tool({
 					name: descriptor.name,
+					title: descriptor.title,
 					description: descriptor.description,
 					inputSchema: descriptor.inputSchema,
 					...(descriptor.outputSchema === undefined

@@ -26,12 +26,12 @@ A Slack workspace can be linked to one Maple organization at a time. Enterprise 
 
 The bot requests these Slack scopes. It requests no user token.
 
-| Scope                                                                | Used for                                                     |
-| -------------------------------------------------------------------- | ------------------------------------------------------------ |
-| `app_mentions:read`                                                  | Seeing when someone mentions the bot.                        |
-| `channels:history`, `groups:history`, `im:history`, `mpim:history`   | Reading the thread it is replying in, for context.           |
-| `chat:write`                                                         | Posting and updating its replies.                            |
-| `chat:write.public`, `channels:read`, `groups:read`                  | Listing channels and posting alerts to them.                 |
+| Scope                                                              | Used for                                           |
+| ------------------------------------------------------------------ | -------------------------------------------------- |
+| `app_mentions:read`                                                | Seeing when someone mentions the bot.              |
+| `channels:history`, `groups:history`, `im:history`, `mpim:history` | Reading the thread it is replying in, for context. |
+| `chat:write`                                                       | Posting and updating its replies.                  |
+| `chat:write.public`, `channels:read`, `groups:read`                | Listing channels and posting alerts to them.       |
 
 ## Ask the bot a question
 

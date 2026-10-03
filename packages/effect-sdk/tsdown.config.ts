@@ -9,13 +9,11 @@ export default defineConfig({
 		"cloudflare/index": "./src/cloudflare/index.ts",
 	},
 	format: "esm",
-	// `eager` is required, not a tuning knob: the client entry re-exports types
-	// that originate in `@maple/browser-session` (a private, source-consumed
-	// workspace package). The plugin's lazy path resolves that package to a
-	// declaration file it synthesized without those exports and fails with
-	// "X is not exported by .../src/index.d.ts". Eager emission resolves them
-	// from source. Costs ~2s.
-	dts: { eager: true },
+	// Types are emitted by tsgo in one pass rooted at the tsconfig's directory,
+	// and it skips files reached through node_modules. The bundled types come
+	// from `@maple/browser-session`, so this tsconfig sits in packages/ and lists
+	// that package's sources as roots. Same as packages/browser.
+	dts: { tsconfig: "../tsconfig.effect-sdk.dts.json" },
 	outDir: "dist",
 	deps: {
 		neverBundle: ["effect"],

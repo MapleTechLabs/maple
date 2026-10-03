@@ -121,7 +121,9 @@ export function MetricsGrid({ items, className, waiting, syncId, overlay, yAxisW
 									<ChartSkeleton variant={entry.category} />
 								) : item.data.length === 0 ? (
 									// A chart handed no rows draws bare axes and says nothing.
-									<ChartEmpty hint="Try a wider time range">No data in this window</ChartEmpty>
+									<ChartEmpty hint="Try a wider time range">
+										No data in this window
+									</ChartEmpty>
 								) : (
 									<div className="relative h-full min-h-0 w-full">
 										<Suspense fallback={<ChartSkeleton variant={entry.category} />}>

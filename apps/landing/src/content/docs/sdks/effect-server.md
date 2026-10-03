@@ -48,16 +48,16 @@ The server layer always exports; there is no disable switch. A missing ingest ke
 
 The server layer reads these variables when the matching config option is not set:
 
-| Variable                      | Used for                                                                              |
-| ----------------------------- | ------------------------------------------------------------------------------------- |
-| `MAPLE_INGEST_KEY`            | Ingest key, sent as a bearer token. Omitted from requests when unset                  |
-| `MAPLE_REGION`                | `us` (default) or `eu`. Only used when no endpoint is set anywhere                    |
-| `MAPLE_ENDPOINT`              | Ingest base URL, for a proxy, collector or Maple Local. Overrides the region          |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | Endpoint fallback when `MAPLE_ENDPOINT` is unset                                      |
+| Variable                      | Used for                                                                             |
+| ----------------------------- | ------------------------------------------------------------------------------------ |
+| `MAPLE_INGEST_KEY`            | Ingest key, sent as a bearer token. Omitted from requests when unset                 |
+| `MAPLE_REGION`                | `us` (default) or `eu`. Only used when no endpoint is set anywhere                   |
+| `MAPLE_ENDPOINT`              | Ingest base URL, for a proxy, collector or Maple Local. Overrides the region         |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | Endpoint fallback when `MAPLE_ENDPOINT` is unset                                     |
 | `OTEL_SERVICE_NAME`           | Service name when `serviceName` is not passed. Without either, the name is `unknown` |
-| `MAPLE_ENVIRONMENT`           | Deployment environment                                                                |
-| `MAPLE_REPOSITORY_URL`        | Repository URL, emitted as `vcs.repository.url.full`                                  |
-| `OTEL_RESOURCE_ATTRIBUTES`    | Extra resource attributes as `key=value` pairs                                        |
+| `MAPLE_ENVIRONMENT`           | Deployment environment                                                               |
+| `MAPLE_REPOSITORY_URL`        | Repository URL, emitted as `vcs.repository.url.full`                                 |
+| `OTEL_RESOURCE_ATTRIBUTES`    | Extra resource attributes as `key=value` pairs                                       |
 
 **Ingest endpoint:** `endpoint` option, then `MAPLE_ENDPOINT`, then `OTEL_EXPORTER_OTLP_ENDPOINT`, then the ingest for `region` or `MAPLE_REGION`, then `https://ingest.maple.dev`. Any explicit endpoint beats any region setting.
 

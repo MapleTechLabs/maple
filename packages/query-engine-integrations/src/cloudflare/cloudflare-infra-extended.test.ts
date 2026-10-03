@@ -67,7 +67,9 @@ describe("cloudflareQueueGaugesSQL", () => {
 		expect(sql).toContain(
 			"MetricName IN ('cloudflare.queue.backlog.messages', 'cloudflare.queue.backlog.bytes', 'cloudflare.queue.consumer.concurrency')",
 		)
-		expect(sql).toContain("maxIf(Value, MetricName = 'cloudflare.queue.backlog.messages')")
+		expect(sql).toContain(
+			"maxIf(metrics_gauge.Value, metrics_gauge.MetricName = 'cloudflare.queue.backlog.messages')",
+		)
 		// avgIf over an empty set is NaN → must be guarded.
 		expect(sql).toContain("ifNull(ifNotFinite(avgIf(")
 		expect(sql).toContain("GROUP BY serviceName")
@@ -80,7 +82,9 @@ describe("cloudflareDurableObjectCountersSQL", () => {
 		expect(sql).toContain(
 			"MetricName IN ('cloudflare.durable_object.requests', 'cloudflare.durable_object.errors')",
 		)
-		expect(sql).toContain("sumIf(Value, MetricName = 'cloudflare.durable_object.requests')")
+		expect(sql).toContain(
+			"sumIf(metrics_sum.Value, metrics_sum.MetricName = 'cloudflare.durable_object.requests')",
+		)
 		expect(sql).toContain("GROUP BY serviceName")
 	})
 })

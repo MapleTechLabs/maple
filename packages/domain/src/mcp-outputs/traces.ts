@@ -63,6 +63,7 @@ export interface SpanNodeOutput {
 	readonly serviceName: string
 	readonly spanKind?: string
 	readonly durationMs: number
+	readonly startTime?: string
 	readonly statusCode: string
 	readonly statusMessage: string
 	readonly attributes: { readonly [key: string]: string }
@@ -77,6 +78,8 @@ export const SpanNodeOutput = Schema.Struct({
 	serviceName: Schema.String,
 	spanKind: Schema.optionalKey(Schema.String),
 	durationMs: Schema.Number,
+	/** When the span started (UTC), to place it inside the trace. */
+	startTime: Schema.optionalKey(Schema.String),
 	statusCode: Schema.String,
 	statusMessage: Schema.String,
 	attributes: StringMap,

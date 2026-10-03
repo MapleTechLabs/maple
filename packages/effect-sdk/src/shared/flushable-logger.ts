@@ -4,7 +4,7 @@
 // Same pattern as the tracer — URL/resource/headers are resolved by the caller
 // at flush time, not at construction time.
 import { Array as Arr, Cause, Layer, Logger, type LogLevel, References } from "effect"
-import * as OtlpResource from "effect/unstable/observability/OtlpResource"
+import * as OtlpResource from "effect/observability/OtlpResource"
 
 export interface LogBuffer {
 	readonly loggerLayer: Layer.Layer<never>
@@ -46,7 +46,7 @@ export const makeLogBuffer = (options: { readonly excludeLogSpans?: boolean } = 
 	}
 }
 
-// Log record conversion (adapted from `effect/unstable/observability/OtlpLogger`)
+// Log record conversion (adapted from `effect/observability/OtlpLogger`)
 
 const makeLogRecord = (logOptions: Logger.Options<unknown>, excludeLogSpans: boolean): LogRecord => {
 	const nowMillis = logOptions.date.getTime()

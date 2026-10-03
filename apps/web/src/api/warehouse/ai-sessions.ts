@@ -200,7 +200,9 @@ const AiSessionSpansInput = Schema.Struct({
 	/** The previous page's `nextCursor`. */
 	after: Schema.optional(AiSessionSpanCursor),
 	/** A turn's traces, for its `app` spans — needs the window. */
-	traceIds: Schema.optional(Schema.Array(Schema.String).check(Schema.isMaxLength(AI_SESSION_SPANS_MAX_TRACE_IDS))),
+	traceIds: Schema.optional(
+		Schema.Array(Schema.String).check(Schema.isMaxLength(AI_SESSION_SPANS_MAX_TRACE_IDS)),
+	),
 	limit: Schema.optional(Schema.Number),
 })
 export type AiSessionSpansInput = Schema.Schema.Type<typeof AiSessionSpansInput>

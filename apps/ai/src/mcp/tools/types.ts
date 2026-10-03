@@ -160,6 +160,8 @@ export interface McpToolSpec<
 	R extends McpToolRequirements,
 > {
 	readonly name: string
+	/** Human-readable name, shown by clients in place of `name`. Title Case, no trailing period. */
+	readonly title: string
 	readonly description: string
 	readonly parameters: P
 	/** The result's schema: published as `outputSchema`, used to encode `structuredContent`. */

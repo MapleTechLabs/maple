@@ -23,7 +23,16 @@ import {
 	type ErrorTextToken,
 } from "@/lib/agent-sessions/tool-error-display"
 
-import { ROW, ROW_IDLE, ROW_SELECTED, ShareCell, Table, TableBody, TableHead, Th } from "./tool-breakdown-tables"
+import {
+	ROW,
+	ROW_IDLE,
+	ROW_SELECTED,
+	ShareCell,
+	Table,
+	TableBody,
+	TableHead,
+	Th,
+} from "./tool-breakdown-tables"
 import { ErrorTextLine, FailureStatusLine, MaskChip, TrendBars, windowRangeLabel } from "./tool-error-parts"
 
 type ErrorSortKey = "calls" | "sessions" | "lastSeen"
@@ -73,7 +82,9 @@ export function prepareToolErrors(
 	)
 	// The pre-grouping row names no type because it names nothing; it does not
 	// stop the others' shared type from being the tool's.
-	const types = new Set(rows.flatMap((row) => (row.fingerprint === UNGROUPED_FINGERPRINT ? [] : [row.errorType])))
+	const types = new Set(
+		rows.flatMap((row) => (row.fingerprint === UNGROUPED_FINGERPRINT ? [] : [row.errorType])),
+	)
 	const [onlyType] = types
 	return {
 		prefix,
@@ -189,7 +200,10 @@ export function ToolErrorsTable({
 	const empty = !loading && failure === undefined && rows.length === 0
 
 	return (
-		<section className="@container/panel min-w-0 border-b border-border px-6 pt-5 pb-4" aria-label="Errors">
+		<section
+			className="@container/panel min-w-0 border-b border-border px-6 pt-5 pb-4"
+			aria-label="Errors"
+		>
 			<div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 pb-3 font-mono">
 				<div className="flex items-baseline gap-2.5">
 					<span className="text-[12.5px] font-medium text-foreground">Errors</span>
@@ -198,7 +212,9 @@ export function ToolErrorsTable({
 					) : (
 						<span className="text-[11.5px] leading-3.5 tabular-nums text-muted-foreground/70">
 							{formatToolCount(failures)} failed call{failures === 1 ? "" : "s"}
-							{rows.length > 0 ? ` · ${formatToolCount(rows.length)} error${rows.length === 1 ? "" : "s"}` : null}
+							{rows.length > 0
+								? ` · ${formatToolCount(rows.length)} error${rows.length === 1 ? "" : "s"}`
+								: null}
 						</span>
 					)}
 				</div>
@@ -216,8 +232,12 @@ export function ToolErrorsTable({
 			{empty ? (
 				<div className="flex flex-col gap-2 border-t border-border px-2.5 pt-[22px] pb-5 font-mono">
 					<span className="flex items-center gap-2 text-[12.5px] text-foreground">
-						<span aria-hidden className="size-1.5 shrink-0 rounded-full bg-[var(--severity-info)]" />
-						No failed calls between {windowRangeLabel(window.startMs, window.startMs, effectiveTimezone)} and{" "}
+						<span
+							aria-hidden
+							className="size-1.5 shrink-0 rounded-full bg-[var(--severity-info)]"
+						/>
+						No failed calls between{" "}
+						{windowRangeLabel(window.startMs, window.startMs, effectiveTimezone)} and{" "}
 						{windowRangeLabel(window.endMs, window.endMs, effectiveTimezone)}
 					</span>
 					<span className="pl-3.5 text-xs text-muted-foreground">
@@ -230,7 +250,9 @@ export function ToolErrorsTable({
 				<Table>
 					<TableHead>
 						<div className="flex w-0 min-w-0 flex-1 items-baseline gap-2.5 font-mono text-[10.5px] leading-3.5">
-							<span className="uppercase tracking-[0.07em] text-muted-foreground/80">Error</span>
+							<span className="uppercase tracking-[0.07em] text-muted-foreground/80">
+								Error
+							</span>
 							{headHint === "" ? null : (
 								<span className="truncate text-muted-foreground/60" title={headHint}>
 									{headHint}
@@ -277,7 +299,10 @@ export function ToolErrorsTable({
 
 					<TableBody waiting={waiting} maxHeight={expanded ? 760 : 460}>
 						{failure !== undefined ? (
-							<QueryErrorState error={failure} titleOverride={`Failed to load ${tool} errors`} />
+							<QueryErrorState
+								error={failure}
+								titleOverride={`Failed to load ${tool} errors`}
+							/>
 						) : loading ? (
 							<LoadingRows />
 						) : (
@@ -288,7 +313,10 @@ export function ToolErrorsTable({
 										type="button"
 										aria-pressed={row.fingerprint === selected}
 										onClick={() => onSelect(row.fingerprint)}
-										className={cn(ROW, row.fingerprint === selected ? ROW_SELECTED : ROW_IDLE)}
+										className={cn(
+											ROW,
+											row.fingerprint === selected ? ROW_SELECTED : ROW_IDLE,
+										)}
 										title={row.display === "" ? undefined : row.display}
 									>
 										<span className="flex w-0 min-w-0 flex-1 items-center gap-2.5 overflow-hidden font-mono text-[12.5px] leading-4">
@@ -311,7 +339,10 @@ export function ToolErrorsTable({
 											ratio={row.share}
 											max={maxShare}
 											label={shareLabel(row.share)}
-											tone={{ bar: "bg-[var(--severity-error)]", text: "text-muted-foreground" }}
+											tone={{
+												bar: "bg-[var(--severity-error)]",
+												text: "text-muted-foreground",
+											}}
 										/>
 										<span className="w-[76px] shrink-0 text-right font-mono text-[12.5px] tabular-nums text-foreground">
 											{formatToolCount(row.calls)}
@@ -320,7 +351,11 @@ export function ToolErrorsTable({
 											{formatToolCount(row.sessions)}
 										</span>
 										<span className="hidden w-[96px] shrink-0 text-right font-mono text-[11.5px] tabular-nums text-muted-foreground/70 @min-[800px]/panel:block">
-											{formatRelativeTimeOrDate(row.lastSeen, undefined, effectiveTimezone)}
+											{formatRelativeTimeOrDate(
+												row.lastSeen,
+												undefined,
+												effectiveTimezone,
+											)}
 										</span>
 										<span className="flex w-3.5 shrink-0 items-center justify-end text-muted-foreground/60">
 											<ChevronRightIcon size={14} aria-hidden />
@@ -336,7 +371,10 @@ export function ToolErrorsTable({
 									>
 										<ChevronDownIcon
 											size={12}
-											className={cn("text-muted-foreground transition-transform", expanded && "rotate-180")}
+											className={cn(
+												"text-muted-foreground transition-transform",
+												expanded && "rotate-180",
+											)}
 											aria-hidden
 										/>
 										<span className="text-foreground">
@@ -346,8 +384,11 @@ export function ToolErrorsTable({
 										</span>
 										{expanded ? null : (
 											<span className="text-muted-foreground/70">
-												{formatToolCount(hiddenCalls)} failed call{hiddenCalls === 1 ? "" : "s"}
-												{hiddenCalls === hidden.length && hidden.length > 1 ? ", 1 each" : null}
+												{formatToolCount(hiddenCalls)} failed call
+												{hiddenCalls === 1 ? "" : "s"}
+												{hiddenCalls === hidden.length && hidden.length > 1
+													? ", 1 each"
+													: null}
 											</span>
 										)}
 									</button>

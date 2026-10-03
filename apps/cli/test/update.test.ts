@@ -8,7 +8,7 @@ import { join } from "node:path"
 import * as BunServices from "@effect/platform-bun/BunServices"
 import { Duration, Effect, Exit } from "effect"
 import { FileSystem } from "effect/FileSystem"
-import { FetchHttpClient } from "effect/unstable/http"
+import { FetchHttpClient } from "effect/http"
 import {
 	__testables,
 	CHECK_TTL_MS,

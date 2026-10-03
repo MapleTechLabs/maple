@@ -1,7 +1,7 @@
 import { getAutoPlatformAttributes } from "@maple-dev/effect-sdk/server"
 import { Layer } from "effect"
-import { FetchHttpClient, HttpBody } from "effect/unstable/http"
-import { OtlpMetrics, OtlpResource, OtlpSerialization, OtlpTracer } from "effect/unstable/observability"
+import { FetchHttpClient, HttpBody } from "effect/http"
+import { OtlpMetrics, OtlpResource, OtlpSerialization, OtlpTracer } from "effect/observability"
 import { MAPLE_VERSION } from "../version"
 
 // Publishable ("pk") ingest token, baked into the distributed binary so CLI

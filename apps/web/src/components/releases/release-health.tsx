@@ -10,10 +10,11 @@ export const RELEASE_HEALTH_LABEL = {
 } satisfies Record<ReleaseHealth, string>
 
 export const RELEASE_HEALTH_DESCRIPTION = {
-	regressed: "Errors at least twice as often as the other versions of the same service in this window.",
-	watch: "p95 latency up by a quarter or more against the other versions of the same service.",
+	regressed: "Errors at least twice as often as the version it replaced on the same service.",
+	watch: "p95 latency up by a quarter or more against the version it replaced.",
 	rolling: "The newest version of its service, not yet carrying the whole of the latest traffic.",
-	healthy: "No change worth flagging against the other versions of the same service.",
+	healthy:
+		"No change worth flagging against the version it replaced, or no earlier version in the window to compare with.",
 } satisfies Record<ReleaseHealth, string>
 
 /** Marker fill for the swimlanes and the filter legend. */

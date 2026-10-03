@@ -6,7 +6,9 @@ import type { AlertDestinationDocument, AlertDestinationId } from "@maple/domain
 
 import { DestinationCard } from "@/components/alerts/destination-card"
 import { ProviderLogo } from "@/components/alerts/destination-provider"
-import { CircleWarningIcon, FireIcon, PlusIcon, TruckIcon } from "@/components/icons"
+import { Link } from "@tanstack/react-router"
+import { DocsLink, EmptyActions } from "@/components/common/docs-link"
+import { CircleWarningIcon, PaperPlaneIcon, PlusIcon, TruckIcon } from "@/components/icons"
 import {
 	buildDestinationCreateParamsV2,
 	buildDestinationUpdateParamsV2,
@@ -263,19 +265,23 @@ export function AlertsSettingsTab({ manager, isAdmin }: { manager: DestinationMa
 						<Empty className="py-12">
 							<EmptyHeader>
 								<EmptyMedia variant="icon">
-									<FireIcon size={18} />
+									<PaperPlaneIcon size={18} />
 								</EmptyMedia>
 								<EmptyTitle>No destinations configured</EmptyTitle>
 								<EmptyDescription>
 									Add Slack, PagerDuty, or webhook destinations before creating alert rules.
+									{!isAdmin && " Ask an org admin to add one."}
 								</EmptyDescription>
 							</EmptyHeader>
-							{isAdmin && (
-								<Button size="sm" onClick={() => manager.openDialog()}>
-									<PlusIcon size={14} />
-									Add destination
-								</Button>
-							)}
+							<EmptyActions>
+								{isAdmin && (
+									<Button size="sm" onClick={() => manager.openDialog()}>
+										<PlusIcon size={14} />
+										Add destination
+									</Button>
+								)}
+								<DocsLink page="destinations" />
+							</EmptyActions>
 						</Empty>
 					) : (
 						<div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
@@ -337,6 +343,14 @@ export function AlertsSettingsTab({ manager, isAdmin }: { manager: DestinationMa
 									Once rules start triggering, delivery attempts will show up here.
 								</EmptyDescription>
 							</EmptyHeader>
+							<EmptyActions>
+								{isAdmin && (
+									<Button variant="outline" size="sm" render={<Link to="/alerts/create" />}>
+										Create an alert rule
+									</Button>
+								)}
+								<DocsLink page="destinations" />
+							</EmptyActions>
 						</Empty>
 					) : (
 						<Table>

@@ -34,13 +34,13 @@ You manage rules on the **Alerts** page. Creating, editing and deleting rules re
 
 The templates:
 
-| Template         | Signal      | Fires when          | Window | Also sets                                              |
-| ---------------- | ----------- | ------------------- | ------ | ------------------------------------------------------ |
-| High error rate  | Error rate  | above 5%            | 5 min  | **Group by** `service.name` when no scope is set       |
-| Slow P95 latency | P95         | above 1000 ms       | 5 min  |                                                        |
-| Slow P99 latency | P99         | above 2000 ms       | 5 min  |                                                        |
-| Low Apdex score  | Apdex       | below 0.8 (T 500ms) | 5 min  |                                                        |
-| Throughput drop  | Throughput  | below 100           | 5 min  | **Min samples** 0                                      |
+| Template         | Signal     | Fires when          | Window | Also sets                                        |
+| ---------------- | ---------- | ------------------- | ------ | ------------------------------------------------ |
+| High error rate  | Error rate | above 5%            | 5 min  | **Group by** `service.name` when no scope is set |
+| Slow P95 latency | P95        | above 1000 ms       | 5 min  |                                                  |
+| Slow P99 latency | P99        | above 2000 ms       | 5 min  |                                                  |
+| Low Apdex score  | Apdex      | below 0.8 (T 500ms) | 5 min  |                                                  |
+| Throughput drop  | Throughput | below 100           | 5 min  | **Min samples** 0                                |
 
 ## Signals
 
@@ -48,13 +48,13 @@ The signal kind is **Built-in**, **Query** or **Raw SQL**.
 
 **Built-in** signals read the entry-point spans of each service: server and consumer spans, and trace roots. That is the same set of requests the service pages chart.
 
-| Signal     | API `signal_type` | Value compared against the threshold                                                   |
-| ---------- | ----------------- | -------------------------------------------------------------------------------------- |
-| Error rate | `error_rate`      | Share of requests with status `Error`. Entered as a percent in the app, a 0 to 1 ratio in the API. |
-| P95        | `p95_latency`     | 95th percentile duration, in milliseconds.                                             |
-| P99        | `p99_latency`     | 99th percentile duration, in milliseconds.                                             |
+| Signal     | API `signal_type` | Value compared against the threshold                                                                         |
+| ---------- | ----------------- | ------------------------------------------------------------------------------------------------------------ |
+| Error rate | `error_rate`      | Share of requests with status `Error`. Entered as a percent in the app, a 0 to 1 ratio in the API.           |
+| P95        | `p95_latency`     | 95th percentile duration, in milliseconds.                                                                   |
+| P99        | `p99_latency`     | 99th percentile duration, in milliseconds.                                                                   |
 | Apdex      | `apdex`           | Apdex score from 0 to 1, against the **Apdex target (ms)**. See [Apdex alerts](/docs/alerting/apdex-alerts). |
-| Throughput | `throughput`      | Estimated number of requests in the window.                                            |
+| Throughput | `throughput`      | Estimated number of requests in the window.                                                                  |
 
 Counts and rates are weighted for sampling. See [Sampling and throughput](/docs/concepts/sampling-throughput).
 
@@ -62,7 +62,7 @@ A built-in signal only sees entry-point spans. A service that records a failure 
 
 **Query** (`builder_query`) uses the same query builder as dashboard charts. It can read traces, logs, metrics or product events, with its own filters and group-by. The quickest way to build one is from a chart: open a dashboard, open the chart's menu and choose **Create alert**.
 
-**Raw SQL** (`raw_query`) runs your own SQL. The query must include `$__orgFilter` and a `$__timeFilter(...)` on the time column, and return a time bucket and a value. **Reduce buckets by** turns the buckets in the window into one value: **Last bucket**, **Sum**, **Average**, **Minimum** or **Maximum**. To evaluate several groups, return a group column. See the [SQL reference](/docs/reference/sql).
+**Raw SQL** (`raw_query`) runs your own SQL. The query must include `$__orgFilter` and a `$__timeFilter(...)` on the time column, and return a time bucket and a value. **Reduce buckets by** turns the buckets in the window into one value: **Last bucket**, **Sum**, **Average**, **Minimum** or **Maximum**. To evaluate several groups, return a group column. Return a `samples` column with the number of events behind each row: **Min samples** sums it, and without it every row counts as one sample, so the minimum counts buckets rather than events. See the [SQL reference](/docs/reference/sql).
 
 For **Query** and **Raw SQL** rules the query carries its own filters, so the **Scope** section is hidden.
 
@@ -87,17 +87,17 @@ Maple evaluates every enabled rule once a minute. Each check aggregates the last
 
 **Evaluation timing** is collapsed to a summary line (for example `5min · 2× · renotify 30min`) until you open it:
 
-| Field              | App default | API field                        | API default | What it does                                                                     |
-| ------------------ | ----------- | -------------------------------- | ----------- | -------------------------------------------------------------------------------- |
-| Window (min)       | 5           | `window_minutes`                 | required    | Length of the window each check aggregates. 1 to 1440 minutes.                   |
-| Breaches to fire   | 2           | `consecutive_breaches_required`  | 2           | Consecutive breaching checks before an incident opens.                           |
-| Healthy to resolve | 2           | `consecutive_healthy_required`   | 2           | Consecutive healthy checks before an incident resolves.                          |
-| Min samples        | 50          | `minimum_sample_count`           | 0           | A check with fewer samples than this is skipped.                                 |
-| Renotify (min)     | 30          | `renotify_interval_minutes`      | 30          | How often an open incident notifies again while it keeps breaching.              |
+| Field              | App default | API field                       | API default | What it does                                                        |
+| ------------------ | ----------- | ------------------------------- | ----------- | ------------------------------------------------------------------- |
+| Window (min)       | 5           | `window_minutes`                | required    | Length of the window each check aggregates. 1 to 1440 minutes.      |
+| Breaches to fire   | 2           | `consecutive_breaches_required` | 2           | Consecutive breaching checks before an incident opens.              |
+| Healthy to resolve | 2           | `consecutive_healthy_required`  | 2           | Consecutive healthy checks before an incident resolves.             |
+| Min samples        | 50          | `minimum_sample_count`          | 0           | A check with fewer samples than this is skipped.                    |
+| Renotify (min)     | 30          | `renotify_interval_minutes`     | 30          | How often an open incident notifies again while it keeps breaching. |
 
 A skipped check counts neither as a breach nor as healthy. It leaves the breach and healthy counters where they were.
 
-A window with no data at all is skipped, with one exception: a **Throughput** rule with `<` or `<=` treats an empty window as zero.
+A window with no data at all is skipped, with two exceptions: a rule with **Alert when there is no data** on (`alert_on_no_data`) counts it as a breach, and otherwise a **Throughput** rule with `<` or `<=` treats it as zero. Turn the switch on for **Raw SQL** rules, where a query that stops matching otherwise goes quiet instead of firing. It is not available on grouped rules: a group that stops reporting keeps its open incident until its telemetry returns. On a **Raw SQL** rule that returns a group column, it fires only when the query returns no rows at all.
 
 The **Min samples** check runs before the threshold comparison, and that zero still counts as zero samples. For **Throughput** the sample count is the signal, so a drop rule with the blank form's default of 50 skips every window below 50 requests, including a full outage, and cannot fire for those windows. Set **Min samples** to 0 for throughput drop rules, as the **Throughput drop** template does. Then traffic stopping entirely fires the rule.
 
@@ -171,7 +171,7 @@ The response lists the value and status of each window per group in `series`, an
 
 ## Troubleshooting
 
-- **The rule never fires.** Open the rule and look at its checks. If every check is skipped, the window has fewer samples than **Min samples**, or the scope matches no data. Check the service names and environments against what is arriving.
+- **The rule never fires.** Open the rule and look at its checks. If every check is skipped, each one says why: **no data** means the scope or query matches nothing, **below min samples** means the window has fewer samples than **Min samples**. Check the service names and environments against what is arriving.
 - **The rule fires and resolves over and over.** Raise **Breaches to fire** and **Healthy to resolve**, or widen the window.
 - **Save is disabled.** The action bar lists what is missing, such as a rule name or a destination.
 

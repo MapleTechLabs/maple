@@ -649,6 +649,12 @@ architecture.
   preview stack (`scripts/ingest-preview.run.ts` and `deploy-pr-ingest.yml` are deleted).
   Two alchemy stacks claiming the same `maple-ingest-pr-<n>` physical names is how orphan
   fleets accumulate.
+- **The EU ingest fleet is sized to EU traffic** (`isEuPrd` in `packages/infra/src/aws/stage.ts`).
+  Over 30 days the EU ALB served 34k requests (~2 GB) against the US's 136M (~2.3 TB in),
+  yet ran the US footprint at ~$300/mo. EU prd runs one c7gd.medium (autoscaling 1-3, same
+  CPU target) and the collector at the non-prd size; Electric keeps the prd size. One host
+  still rolls a deploy: managed scaling adds a host for the new task, as in the US. To scale
+  it with traffic, raise the EU branches there or drop `isEuPrd` to inherit US sizing.
 - **Graviton (ARM64).** The gateway and collector tasks run `cpuArchitecture: "ARM64"`
   (`runtimePlatform` in `apps/ingest/alchemy.run.ts`), ~20% cheaper than x86_64. The
   blocker used to be the builder: cross-compiling Rust under QEMU is 10-30 min a build.

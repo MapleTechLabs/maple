@@ -1,8 +1,9 @@
 import { MAPLE_MCP_SERVER_VERSION } from "@maple/domain/mcp-manifest"
-import { McpProtocol } from "effect/unstable/ai"
-import { RpcSerialization } from "effect/unstable/rpc"
+import { MAPLE_MCP_SERVER_INSTRUCTIONS } from "./server-instructions"
+import { McpProtocol } from "effect/ai"
+import { RpcSerialization } from "effect/rpc"
 import { Cause, Effect, Layer } from "effect"
-import { Headers, HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
+import { Headers, HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { McpToolsLive } from "./server"
 import { layerStatelessMcpHttp, statelessMcpServerLayer } from "./transport/stateless-http"
 import { DebugErrorsPrompt } from "./prompts/debug-errors"
@@ -26,7 +27,7 @@ const MCP_PROTOCOL_VERSION_HEADER = "mcp-protocol-version"
 
 /**
  * The MCP protocol revisions this server implements. Effect currently ships a
- * single adapter (`effect/unstable/ai/McpProtocol`), so this is a one-element
+ * single adapter (`effect/ai/McpProtocol`), so this is a one-element
  * list; it stays an array so adding a revision is a one-line change here and
  * `SUPPORTED_PROTOCOL_VERSIONS` cannot drift from what `layerHttp` registers.
  */
@@ -200,6 +201,7 @@ const McpHttpLive = statelessMcpServerLayer({
 	name: "maple-observability",
 	// Kept equal to the public `server.json` manifest (`@maple/domain/mcp-manifest`).
 	version: MAPLE_MCP_SERVER_VERSION,
+	instructions: MAPLE_MCP_SERVER_INSTRUCTIONS,
 	protocols: MCP_PROTOCOLS,
 }).pipe(Layer.provide(McpTransportLive))
 

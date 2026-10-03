@@ -51,6 +51,7 @@ import {
 import { DASHBOARD_SORT_OPTIONS, type DashboardSortOption } from "@/atoms/dashboard-preferences-atoms"
 import type { Dashboard } from "@/components/dashboard-builder/types"
 import { TagEditorDialog } from "@/components/dashboard-builder/tag-editor"
+import { DocsLink } from "@/components/common/docs-link"
 import {
 	collectTags,
 	dashboardDomains,
@@ -698,6 +699,7 @@ function FirstRunEmpty({ readOnly, onCreate }: { readOnly: boolean; onCreate: ()
 				<Button variant="outline" size="sm" disabled={readOnly} onClick={onCreate}>
 					Create blank dashboard
 				</Button>
+				<DocsLink page="dashboards" />
 			</div>
 		</Empty>
 	)

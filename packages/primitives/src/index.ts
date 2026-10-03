@@ -1,22 +1,25 @@
 import { Schema } from "effect"
 
-const MapleId = <const Id extends string>(identifier: Id, title: string) =>
+// `Schema.brand` proves the key is one literal; taking its parameter type keeps that check at each call site.
+type BrandKey<Id extends string> = Parameters<typeof Schema.brand<Id>>[0]
+
+const MapleId = <const Id extends string>(identifier: BrandKey<Id>, title: string) =>
 	Schema.String.check(Schema.isMinLength(1), Schema.isTrimmed()).pipe(
-		Schema.brand(identifier),
+		Schema.brand<Id>(identifier),
 		Schema.annotate({ identifier, title }),
 	)
 
-const MapleUuidId = <const Id extends string>(identifier: Id, title: string) =>
+const MapleUuidId = <const Id extends string>(identifier: BrandKey<Id>, title: string) =>
 	Schema.String.check(Schema.isUUID()).pipe(
-		Schema.brand(identifier),
+		Schema.brand<Id>(identifier),
 		Schema.annotate({ identifier, title }),
 	)
 
 // Telemetry dimension primitives are intentionally permissive (no minLength/trim):
 // real OpenTelemetry data legitimately carries empty service namespaces, deployment
 // environments, etc., so a strict check would make response decoding throw on live data.
-const MapleTelemetry = <const Id extends string>(identifier: Id, title: string) =>
-	Schema.String.pipe(Schema.brand(identifier), Schema.annotate({ identifier, title }))
+const MapleTelemetry = <const Id extends string>(identifier: BrandKey<Id>, title: string) =>
+	Schema.String.pipe(Schema.brand<Id>(identifier), Schema.annotate({ identifier, title }))
 
 export const TraceId = MapleId("@maple/TraceId", "Trace ID")
 export type TraceId = Schema.Schema.Type<typeof TraceId>
@@ -48,7 +51,7 @@ export type DashboardShareId = Schema.Schema.Type<typeof DashboardShareId>
 export const DashboardTemplateId = Schema.String.check(
 	Schema.isMinLength(1),
 	Schema.isTrimmed(),
-	Schema.isPattern(/^[a-z][a-z0-9-]*$/),
+	Schema.isPattern(/^[a-z][a-z0-9-]*$/u),
 ).pipe(
 	Schema.brand("@maple/DashboardTemplateId"),
 	Schema.annotate({ identifier: "@maple/DashboardTemplateId", title: "Dashboard Template ID" }),
@@ -57,7 +60,7 @@ export type DashboardTemplateId = Schema.Schema.Type<typeof DashboardTemplateId>
 
 export const DashboardTemplateParameterKey = Schema.String.check(
 	Schema.isMinLength(1),
-	Schema.isPattern(/^[a-z][a-z0-9_]*$/),
+	Schema.isPattern(/^[a-z][a-z0-9_]*$/u),
 ).pipe(
 	Schema.brand("@maple/DashboardTemplateParameterKey"),
 	Schema.annotate({
@@ -87,7 +90,7 @@ export type IngestKeyId = Schema.Schema.Type<typeof IngestKeyId>
 export const ApiKeyId = MapleUuidId("@maple/ApiKeyId", "API Key ID")
 export type ApiKeyId = Schema.Schema.Type<typeof ApiKeyId>
 
-export const PostgresTransactionId = Schema.String.check(Schema.isTrimmed(), Schema.isPattern(/^\d+$/)).pipe(
+export const PostgresTransactionId = Schema.String.check(Schema.isTrimmed(), Schema.isPattern(/^\d+$/u)).pipe(
 	Schema.brand("@maple/PostgresTransactionId"),
 	Schema.annotate({
 		identifier: "@maple/PostgresTransactionId",
@@ -115,6 +118,9 @@ export type AlertDeliveryEventId = Schema.Schema.Type<typeof AlertDeliveryEventI
 
 export const MobileDeviceId = MapleUuidId("@maple/MobileDeviceId", "Mobile Device ID")
 export type MobileDeviceId = Schema.Schema.Type<typeof MobileDeviceId>
+
+export const AgentFeedbackId = MapleUuidId("@maple/AgentFeedbackId", "Agent Feedback ID")
+export type AgentFeedbackId = Schema.Schema.Type<typeof AgentFeedbackId>
 
 export const ChatWorkspaceId = MapleUuidId("@maple/ChatWorkspaceId", "Chat Workspace ID")
 export type ChatWorkspaceId = Schema.Schema.Type<typeof ChatWorkspaceId>
@@ -321,7 +327,7 @@ export type ChartId = Schema.Schema.Type<typeof ChartId>
 export const ChatConnectorId = Schema.String.check(
 	Schema.isMinLength(1),
 	Schema.isMaxLength(32),
-	Schema.isPattern(/^[a-z][a-z0-9]*$/),
+	Schema.isPattern(/^[a-z][a-z0-9]*$/u),
 ).pipe(
 	Schema.brand("@maple/ChatConnectorId"),
 	Schema.annotate({ identifier: "@maple/ChatConnectorId", title: "Chat Connector ID" }),
@@ -338,7 +344,7 @@ export type ChatConnectorId = Schema.Schema.Type<typeof ChatConnectorId>
 export const ChatConversationKey = Schema.String.check(
 	Schema.isMinLength(1),
 	Schema.isMaxLength(128),
-	Schema.isPattern(/^[A-Za-z0-9_.:]+$/),
+	Schema.isPattern(/^[A-Za-z0-9_.:]+$/u),
 ).pipe(
 	Schema.brand("@maple/ChatConversationKey"),
 	Schema.annotate({ identifier: "@maple/ChatConversationKey", title: "Chat Conversation Key" }),

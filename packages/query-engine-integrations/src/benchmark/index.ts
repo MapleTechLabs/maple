@@ -48,6 +48,14 @@ const cfUsageCompare = { ...window, currentStartTime: "2026-01-02 10:30:00", pre
 const psBranch = { ...window, database: "maple-prd", branch: "main" }
 const psBranchBucketed = { ...psBranch, bucketSeconds: 300 }
 
+const railwayWindow = { orgId: ORG_ID, startTime: START_TIME, endTime: END_TIME }
+const railwayServiceBucketed = {
+	...railwayWindow,
+	environmentId: "env_1",
+	serviceId: "svc_1",
+	bucketSeconds: 300,
+}
+
 /** The zone-slice filters the /infra/cloudflare page sends, as one bag. */
 const CF_FILTERS = { hosts: ["example.com"], statusClasses: ["5xx"], methods: ["GET"] }
 
@@ -123,6 +131,39 @@ export const integrationFixtures: ReadonlyArray<IntegrationFixture> = [
 		name: "aiSessionPageQuery",
 		label: "default",
 		compile: () => compileUnsafe(CH.aiSessionPageQuery(), window),
+	},
+	{
+		// What the list runs first where the index can rank the page: the page's
+		// session ids and bounds over the caller's window, nothing netted.
+		module: "ai-sessions",
+		name: "aiSessionRankQuery",
+		label: "filtered",
+		compile: () =>
+			compileUnsafe(
+				CH.aiSessionRankQuery({
+					limit: 25,
+					offset: 25,
+					vendorIds: ["eve"],
+					hasErrors: true,
+					sortBy: "durationMs",
+				}),
+				window,
+			),
+	},
+	{
+		// And then: the ranked sessions' rows, over the page's bounds alone.
+		module: "ai-sessions",
+		name: "aiSessionPageQuery",
+		label: "ranked",
+		compile: () =>
+			compileUnsafe(
+				CH.aiSessionPageQuery({
+					sessionIds: AI_PAGE_SESSION_IDS,
+					vendorIds: ["eve"],
+					sortBy: "durationMs",
+				}),
+				{ ...aiPageBounds, endTime: window.endTime },
+			),
 	},
 	{
 		// The vendor/service filters the AI sessions list page sends, on its
@@ -262,10 +303,7 @@ export const integrationFixtures: ReadonlyArray<IntegrationFixture> = [
 		name: "aiToolsSeriesQuery",
 		label: "split-none",
 		compile: () =>
-			compileUnsafe(
-				CH.aiToolsSeriesQuery({ tool: AI_TOOLS_SELECTION.tool, split: "none" }),
-				bucketed,
-			),
+			compileUnsafe(CH.aiToolsSeriesQuery({ tool: AI_TOOLS_SELECTION.tool, split: "none" }), bucketed),
 	},
 	{
 		// The toolbar's two predicates, which scope the chart as well as the
@@ -335,7 +373,10 @@ export const integrationFixtures: ReadonlyArray<IntegrationFixture> = [
 		label: "default",
 		compile: () =>
 			compileUnsafe(
-				CH.aiToolErrorSessionsQuery({ ...AI_TOOLS_ERROR_SELECTION, fingerprint: AI_TOOL_ERROR_FINGERPRINT }),
+				CH.aiToolErrorSessionsQuery({
+					...AI_TOOLS_ERROR_SELECTION,
+					fingerprint: AI_TOOL_ERROR_FINGERPRINT,
+				}),
 				window,
 				{ rowSchema: CH.aiToolErrorSessionsRowSchema },
 			),
@@ -346,7 +387,10 @@ export const integrationFixtures: ReadonlyArray<IntegrationFixture> = [
 		label: "default",
 		compile: () =>
 			compileUnsafe(
-				CH.aiToolErrorVariantsQuery({ ...AI_TOOLS_ERROR_SELECTION, fingerprint: AI_TOOL_ERROR_FINGERPRINT }),
+				CH.aiToolErrorVariantsQuery({
+					...AI_TOOLS_ERROR_SELECTION,
+					fingerprint: AI_TOOL_ERROR_FINGERPRINT,
+				}),
 				window,
 				{ rowSchema: CH.aiToolErrorVariantsRowSchema },
 			),
@@ -358,7 +402,10 @@ export const integrationFixtures: ReadonlyArray<IntegrationFixture> = [
 		label: "default",
 		compile: () =>
 			compileUnsafe(
-				CH.aiToolErrorBreakdownQuery({ ...AI_TOOLS_ERROR_SELECTION, fingerprint: AI_TOOL_ERROR_FINGERPRINT }),
+				CH.aiToolErrorBreakdownQuery({
+					...AI_TOOLS_ERROR_SELECTION,
+					fingerprint: AI_TOOL_ERROR_FINGERPRINT,
+				}),
 				window,
 				{ rowSchema: CH.aiToolErrorBreakdownRowSchema },
 			),
@@ -376,7 +423,10 @@ export const integrationFixtures: ReadonlyArray<IntegrationFixture> = [
 					fingerprint: AI_TOOL_ERROR_FINGERPRINT,
 					session: "wrun_sql_catalog",
 					variant: '{"result":"Invalid tool input: Missing key\\n  at [\\"claim\\"]"}',
-					before: { timestamp: AI_TOOL_ERROR_CALLS[1].timestamp, spanId: AI_TOOL_ERROR_CALLS[1].spanId },
+					before: {
+						timestamp: AI_TOOL_ERROR_CALLS[1].timestamp,
+						spanId: AI_TOOL_ERROR_CALLS[1].spanId,
+					},
 				}),
 				window,
 				{ rowSchema: CH.aiToolErrorOccurrencesRowSchema },
@@ -461,7 +511,10 @@ export const integrationFixtures: ReadonlyArray<IntegrationFixture> = [
 		label: "traces-app-scope",
 		compile: () =>
 			compileUnsafe(
-				CH.aiTraceSpansQuery({ scope: "app", traceIds: [AI_TRACE_ID, "0123456789abcdef0123456789abcdef"] }),
+				CH.aiTraceSpansQuery({
+					scope: "app",
+					traceIds: [AI_TRACE_ID, "0123456789abcdef0123456789abcdef"],
+				}),
 				window,
 				{ rowSchema: CH.aiSessionSpansRowSchema },
 			),
@@ -691,6 +744,18 @@ export const integrationFixtures: ReadonlyArray<IntegrationFixture> = [
 		name: "planetscaleBranchInfraTimeseriesSQL",
 		label: "default",
 		compile: () => compileUnsafe(CH.planetscaleBranchInfraTimeseriesSQL(), psBranchBucketed),
+	},
+	{
+		module: "railway-infra",
+		name: "railwayServicesSQL",
+		label: "default",
+		compile: () => compileUnsafe(CH.railwayServicesSQL(), railwayWindow),
+	},
+	{
+		module: "railway-infra",
+		name: "railwayServiceTimeseriesSQL",
+		label: "default",
+		compile: () => compileUnsafe(CH.railwayServiceTimeseriesSQL(), railwayServiceBucketed),
 	},
 	{
 		module: "planetscale-map",

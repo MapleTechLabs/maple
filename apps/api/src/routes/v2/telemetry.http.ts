@@ -1,4 +1,4 @@
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpApiBuilder } from "effect/http-api"
 import {
 	CurrentTenant,
 	MetricName,
@@ -53,7 +53,8 @@ import {
 	MAX_TIMESERIES_POINTS as MAX_TIMESERIES_BUCKETS,
 	MAX_UNFILTERED_BREAKDOWN_RANGE_SECONDS,
 } from "@maple/query-engine/runtime"
-import { Effect, Encoding, Option, Result, Schema } from "effect"
+import { Effect, Option, Result, Schema } from "effect"
+import { Base64Url } from "effect/encoding"
 import { decodeKeysetCursor, encodeKeysetCursor } from "@/routes/v2/keyset-cursor"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
@@ -191,11 +192,11 @@ const compactHexId = (value: string) => {
 	const bytes = Uint8Array.from({ length: value.length / 2 }, (_, index) =>
 		Number.parseInt(value.slice(index * 2, index * 2 + 2), 16),
 	)
-	return `~${Encoding.encodeBase64Url(bytes)}`
+	return `~${Base64Url.encode(bytes)}`
 }
 const expandHexId = (value: string) => {
 	if (!value.startsWith("~")) return value
-	const decoded = Encoding.decodeBase64Url(value.slice(1))
+	const decoded = Base64Url.decode(value.slice(1))
 	if (Result.isFailure(decoded)) throw new Error("invalid compact identifier")
 	return [...decoded.success].map((byte) => byte.toString(16).padStart(2, "0")).join("")
 }
@@ -866,20 +867,19 @@ export const HttpV2MetricsLive = HttpApiBuilder.group(MapleApiV2, "metrics", (ha
 									context: "v2ListMetrics",
 								})
 								.pipe(
-									Effect.map(
-										(rows): ReadonlyArray<V2Metric> =>
-											rows.map((row) => ({
-												object: "metric",
-												name: decodeMetricName(row.metricName),
-												type: row.metricType,
-												service_name: row.serviceName,
-												description: row.metricDescription,
-												unit: row.metricUnit,
-												is_monotonic: Number(row.isMonotonic) !== 0,
-												data_point_count: Number(row.dataPointCount),
-												first_seen: chToIso(row.firstSeen),
-												last_seen: chToIso(row.lastSeen),
-											})),
+									Effect.map((rows): ReadonlyArray<V2Metric> =>
+										rows.map((row) => ({
+											object: "metric",
+											name: decodeMetricName(row.metricName),
+											type: row.metricType,
+											service_name: row.serviceName,
+											description: row.metricDescription,
+											unit: row.metricUnit,
+											is_monotonic: Number(row.isMonotonic) !== 0,
+											data_point_count: Number(row.dataPointCount),
+											first_seen: chToIso(row.firstSeen),
+											last_seen: chToIso(row.lastSeen),
+										})),
 									),
 								)
 						}),
@@ -1230,7 +1230,7 @@ export const HttpV2ServicesLive = HttpApiBuilder.group(MapleApiV2, "services", (
 				.handle("overview", ({ params, query }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						// The series read raw traces (or the minutely tier), so the window
+						// The series can fall back to raw spans (sub-minute buckets), so the window
 						// takes the timeseries range cap rather than the catalog's annual one.
 						const window = yield* parseWindow(query.start_time, query.end_time, {
 							maxSeconds: MAX_QUERY_RANGE_SECONDS,
@@ -1258,6 +1258,10 @@ export const HttpV2ServicesLive = HttpApiBuilder.group(MapleApiV2, "services", (
 									bucketSeconds,
 									filters: {
 										serviceName: params.name,
+										// Entry spans, the same population as the summary. It is also
+										// what routes the read to the minutely/hourly rollups: without
+										// it every span of the service is scanned raw (23s+ on a busy one).
+										rootSpansOnly: true,
 										...(query.deployment_environment
 											? { environments: [query.deployment_environment] }
 											: undefined),

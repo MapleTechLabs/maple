@@ -21,7 +21,7 @@
  */
 import { ChatConversationKey } from "@maple/primitives"
 import { Array as Arr, Duration, Effect, Option, Order, Redacted, Schema } from "effect"
-import { HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/unstable/http"
+import { HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/http"
 import type { ConnectorConfig, InboundAction, InboundMessage } from "../../ingress"
 import {
 	ChatOutboundError,
@@ -460,13 +460,11 @@ export const discordOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCred
 				return Arr.sort(
 					channels.filter((channel) => POSTABLE_CHANNEL_TYPES.has(channel.type)),
 					byPosition,
-				).map(
-					(channel): ChatDestination => ({
-						id: channel.id,
-						name: channel.name ?? channel.id,
-						private: false,
-					}),
-				)
+				).map((channel): ChatDestination => ({
+					id: channel.id,
+					name: channel.name ?? channel.id,
+					private: false,
+				}))
 			}),
 
 			/**

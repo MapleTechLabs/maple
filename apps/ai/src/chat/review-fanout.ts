@@ -6,14 +6,15 @@
  * own read-only toolkit (the grant is exactly its tools, depth one), its own bounded budget reserved
  * from the parent's, and plain-text output the parent verifies before filing anything.
  */
-import * as Agent from "effect-agent/agent"
-import { AgentPolicy } from "effect-agent/agent-policy"
-import * as Subagent from "effect-agent/subagent"
-import { SubagentReservationsMemoryLive } from "effect-agent/subagent-reservations"
-import * as Output from "effect-agent/output"
+import * as Agent from "@yielded/agent/agent"
+import { AgentPolicy } from "@yielded/agent/agent-policy"
+import * as Subagent from "@yielded/agent/subagent"
+import { SubagentReservationsMemoryLive } from "@yielded/agent/subagent-reservations"
+import * as Output from "@yielded/agent/output"
 import { Effect, Layer, Schema } from "effect"
-import { type Tool, Toolkit } from "effect/unstable/ai"
+import { type Tool, Toolkit } from "effect/ai"
 import type { ResolvedModel } from "../platform/Llm"
+import { MODEL_RETRIES } from "./budgets"
 
 export const REVIEW_FILES = "review_files"
 
@@ -61,6 +62,7 @@ const workerPolicy = AgentPolicy.make({
 	tokenBudget: 4_000_000,
 	completionReserveTokens: 16_000,
 	toolConcurrency: 4,
+	modelRetries: MODEL_RETRIES,
 	onExhaustion: "final-answer",
 	// A worker sees its own clock too, so it answers inside its four minutes.
 	runStatus: "appended",

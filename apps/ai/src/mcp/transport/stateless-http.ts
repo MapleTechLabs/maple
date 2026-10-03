@@ -25,16 +25,16 @@
  * and the 404 branch cannot be reached. See `statelessMcpServerLayer`.
  */
 import { Cause, Context, Effect, Layer, Predicate, Queue, Scope } from "effect"
-import { McpProtocol, McpServer } from "effect/unstable/ai"
-import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
-import { RpcSerialization, RpcServer } from "effect/unstable/rpc"
+import { McpProtocol, McpServer } from "effect/ai"
+import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { RpcSerialization, RpcServer } from "effect/rpc"
 import {
 	constEof,
 	type FromClientEncoded,
 	type FromServerEncoded,
 	RequestId,
 	type RequestEncoded,
-} from "effect/unstable/rpc/RpcMessage"
+} from "effect/rpc/RpcMessage"
 
 /**
  * JSON-RPC id for the `initialize` this transport synthesises. Namespaced so it
@@ -281,7 +281,7 @@ export const layerStatelessMcpHttp = (options: {
 						const client = clients.get(targetClientId)
 						return client ? client.end : Effect.void
 					},
-					clientIds: Effect.sync(() => clientIds),
+					clientIds: Effect.succeed(clientIds),
 					initialMessage: Effect.succeedNone,
 					supportsAck: false,
 					supportsTransferables: false,
@@ -306,6 +306,7 @@ export const layerStatelessMcpHttp = (options: {
 export const statelessMcpServerLayer = (options: {
 	readonly name: string
 	readonly version: string
+	readonly instructions?: string | undefined
 	readonly protocols: readonly [McpProtocol.ProtocolAdapter, ...Array<McpProtocol.ProtocolAdapter>]
 }) =>
 	Layer.effectDiscard(Effect.forkScoped(Effect.updateContext(McpServer.run(options), omitRouter))).pipe(

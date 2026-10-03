@@ -1,6 +1,8 @@
 import { defineCollection, reference, z } from "astro:content"
 import { glob } from "astro/loaders"
+import { BRAND_MARKS, type BrandMarkId } from "./lib/brand-marks"
 import { LANGUAGE_IDS } from "./lib/docs-languages"
+import { CHANGELOG_CATEGORIES, CONTRIBUTOR_IDS } from "./lib/changelog-meta"
 
 const roadmap = defineCollection({
 	loader: glob({ pattern: "**/*.md", base: "./src/content/roadmap" }),
@@ -27,6 +29,9 @@ const docs = defineCollection({
 		// ("Node.js" for "Node.js Instrumentation").
 		navLabel: z.string().optional(),
 		sdk: z.enum(LANGUAGE_IDS).optional(),
+		// Brand mark on the sidebar row, for guides that aren't a language (`sdk`),
+		// like the frontend framework guides.
+		icon: z.enum(Object.keys(BRAND_MARKS) as [BrandMarkId, ...BrandMarkId[]]).optional(),
 	}),
 })
 
@@ -49,18 +54,20 @@ const blog = defineCollection({
 	}),
 })
 
-// One entry per monthly release — the filename is the permalink (`2026-07.md`
-// → /changelog/2026-07), so it sorts chronologically on disk too. `highlights`
-// feeds the index panel; the body is the full release note.
+// One entry per shipped change. The filename is the permalink
+// (`2026-09-23-eu-region.md` → /changelog/2026-09-23-eu-region), so it sorts
+// chronologically on disk too. The body renders in full on the timeline.
 const changelog = defineCollection({
 	loader: glob({ pattern: "**/*.{md,mdx}", base: "./src/content/changelog" }),
 	schema: z.object({
 		title: z.string(),
 		description: z.string(),
-		date: z.coerce.date(), // month close — sorts the ledger, drives <time>
-		highlights: z.array(z.string()).default([]),
-		// Release cover served from /public/changelog. Doubles as the per-release
-		// OG card; without it the page falls back to the generic /og-image.png.
+		date: z.coerce.date(), // ship day: sorts the timeline, drives <time>
+		category: z.enum(CHANGELOG_CATEGORIES),
+		// Keys of CONTRIBUTORS in lib/changelog.ts; unknown handles fail the build.
+		authors: z.array(z.enum(CONTRIBUTOR_IDS)).default([]),
+		// Served from /public/changelog, shown under the summary. Doubles as the
+		// entry's OG card; without it the page falls back to /og-image.png.
 		cover: z.string().optional(),
 		coverAlt: z.string().optional(),
 		// Drives the BREAKING marker only. The prose stays in the body so there
@@ -95,7 +102,10 @@ const customers = defineCollection({
 		author: z.string().default("Maple Team"),
 		authorRole: z.string().optional(),
 		// Headline numbers for the stat strip on the card and the story page.
-		highlights: z.array(z.object({ value: z.string(), label: z.string() })).max(4).default([]),
+		highlights: z
+			.array(z.object({ value: z.string(), label: z.string() }))
+			.max(4)
+			.default([]),
 		cover: z.string().optional(),
 		coverAlt: z.string().optional(),
 		featured: z.boolean().default(false),

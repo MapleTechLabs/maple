@@ -2,7 +2,7 @@ import type { PGliteInterface } from "@electric-sql/pglite"
 import type { MapleDb } from "@maple/db/client"
 import { makeMaplePgliteDb } from "@maple/db/pglite"
 import { Effect, type Scope } from "effect"
-import type { SqlError } from "effect/unstable/sql/SqlError"
+import type { SqlError } from "effect/sql/SqlError"
 import { Database, type DatabaseApi, executeWithSpan } from "./DatabaseLive"
 
 /** `db.namespace` for the embedded Postgres used by vitest / local entrypoints. */

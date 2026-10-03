@@ -8,7 +8,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { ChevronRightIcon, DockerIcon, KubernetesIcon, PlusIcon, ServerIcon } from "@/components/icons"
 import { PageHero } from "@/components/infra/primitives/page-hero"
-import { InstallHostModal } from "@/components/infra/install-modal"
+import { InstallHostModal, type InstallTab } from "@/components/infra/install-modal"
 import { InfraIntegrations } from "@/components/infra/infra-integrations"
 import { useInfraSurfaces } from "@/hooks/use-infra-surfaces"
 import type { NavSurface } from "@/components/dashboard/nav-items"
@@ -35,7 +35,7 @@ interface CollectorSource {
 	/** Where to look once it's live. */
 	readonly to: "/infra" | "/infra/containers" | "/infra/kubernetes"
 	/** Which tab the install modal opens on. */
-	readonly tab: "kubernetes" | "docker"
+	readonly tab: InstallTab
 }
 
 const COLLECTOR_SOURCES: ReadonlyArray<CollectorSource> = [
@@ -45,7 +45,7 @@ const COLLECTOR_SOURCES: ReadonlyArray<CollectorSource> = [
 		surfaces: ["hosts"],
 		blurb: "CPU, memory, disk and network",
 		to: "/infra",
-		tab: "kubernetes",
+		tab: "hosts",
 	},
 	{
 		name: "Containers",
@@ -67,10 +67,10 @@ const COLLECTOR_SOURCES: ReadonlyArray<CollectorSource> = [
 
 function DiscoverInfraPage() {
 	const [installOpen, setInstallOpen] = useState(false)
-	const [installTab, setInstallTab] = useState<"kubernetes" | "docker">("kubernetes")
+	const [installTab, setInstallTab] = useState<InstallTab>("kubernetes")
 	const surfaces = useInfraSurfaces()
 
-	const openInstall = (tab: "kubernetes" | "docker") => {
+	const openInstall = (tab: InstallTab) => {
 		setInstallTab(tab)
 		setInstallOpen(true)
 	}
@@ -123,7 +123,9 @@ function DiscoverInfraPage() {
 							<InfraIntegrations />
 						</div>
 
+						{/* Keyed so the modal's tab state starts on the card's tab each time. */}
 						<InstallHostModal
+							key={installTab}
 							open={installOpen}
 							onOpenChange={setInstallOpen}
 							defaultTab={installTab}

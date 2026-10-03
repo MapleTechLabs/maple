@@ -12,7 +12,7 @@ import { Label } from "@maple/ui/components/ui/label"
 import { Switch } from "@maple/ui/components/ui/switch"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { MultiSelectCombobox } from "@maple/ui/components/multi-select-combobox"
-import { EnvelopeIcon } from "@/components/icons"
+import { ChartBarTrendUpIcon, EnvelopeIcon } from "@/components/icons"
 import { cn } from "@maple/ui/lib/utils"
 import { getServicesFacetsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { snapRangeForCache } from "@/lib/time-utils"
@@ -41,11 +41,14 @@ export function NotificationsSection() {
 	const settled = !Result.isInitial(subscriptionResult)
 
 	const [enabledEdit, setEnabledEdit] = useState<boolean | null>(null)
+	const [webAnalyticsEdit, setWebAnalyticsEdit] = useState<boolean | null>(null)
 	const [scopeEdit, setScopeEdit] = useState<{ environments: string[]; namespaces: string[] } | null>(null)
 	const [isSaving, setIsSaving] = useState(false)
 	const [isPreviewing, setIsPreviewing] = useState(false)
+	const [isPreviewingWebAnalytics, setIsPreviewingWebAnalytics] = useState(false)
 
 	const enabled = enabledEdit ?? saved?.enabled ?? true
+	const webAnalyticsEnabled = webAnalyticsEdit ?? saved?.webAnalyticsEnabled ?? true
 	const savedScope = {
 		environments: saved ? [...saved.environments] : [],
 		namespaces: saved ? [...saved.namespaces] : [],
@@ -59,6 +62,10 @@ export function NotificationsSection() {
 	const previewMutation = useAtomSet(MapleInternalAtomClient.mutation("digest", "preview"), {
 		mode: "promiseExit",
 	})
+	const previewWebAnalyticsMutation = useAtomSet(
+		MapleInternalAtomClient.mutation("digest", "previewWebAnalytics"),
+		{ mode: "promiseExit" },
+	)
 
 	// The same snapped 24h probe the overview, service map and namespace switcher
 	// run, so this shares their cache entry rather than adding a request.
@@ -92,6 +99,7 @@ export function NotificationsSection() {
 		enabled: boolean
 		environments: string[]
 		namespaces: string[]
+		webAnalyticsEnabled?: boolean
 	}): Promise<boolean> {
 		if (!email) return false
 		setIsSaving(true)
@@ -101,12 +109,16 @@ export function NotificationsSection() {
 				enabled: next.enabled,
 				environments: next.environments,
 				namespaces: next.namespaces,
+				// The saved value when this save is not about it, so the ops digest's
+				// controls never flip the web analytics email.
+				webAnalyticsEnabled: next.webAnalyticsEnabled ?? webAnalyticsEnabled,
 			}),
 		})
 		setIsSaving(false)
 		if (Exit.isSuccess(result)) {
 			// Drop the local edits; the refreshed subscription now carries them.
 			setEnabledEdit(null)
+			setWebAnalyticsEdit(null)
 			setScopeEdit(null)
 			refreshSubscription()
 		}
@@ -127,6 +139,21 @@ export function NotificationsSection() {
 		}
 	}
 
+	async function handleWebAnalyticsToggle(checked: boolean) {
+		setWebAnalyticsEdit(checked)
+		// `enabled` rides along: the upsert treats a missing value as "on".
+		const ok = await save({ enabled, environments, namespaces, webAnalyticsEnabled: checked })
+		if (ok) {
+			toastManager.add({
+				title: checked ? "Web analytics email enabled" : "Web analytics email disabled",
+				type: "success",
+			})
+		} else {
+			toastManager.add({ title: "Failed to update notification preferences", type: "error" })
+			setWebAnalyticsEdit(!checked)
+		}
+	}
+
 	async function handleSaveScope() {
 		const ok = await save({ enabled, environments, namespaces })
 		if (ok) {
@@ -136,19 +163,39 @@ export function NotificationsSection() {
 		}
 	}
 
+	/**
+	 * The email HTML carries org data (page paths, referrers, names), so it never
+	 * runs on the app's origin: it renders in a sandboxed iframe with no scripts
+	 * and an opaque origin. Popups stay allowed so the email's links still open.
+	 */
+	function openPreview(html: string) {
+		const win = window.open("", "_blank")
+		if (!win) return
+		win.opener = null
+		const doc = win.document
+		doc.title = "Email preview"
+		doc.body.style.margin = "0"
+		const frame = doc.createElement("iframe")
+		frame.setAttribute("sandbox", "allow-popups allow-popups-to-escape-sandbox")
+		frame.srcdoc = html
+		frame.style.cssText = "border:0;width:100vw;height:100vh;display:block"
+		doc.body.append(frame)
+	}
+
 	async function handlePreview() {
 		setIsPreviewing(true)
 		const result = await previewMutation({})
-		if (Exit.isSuccess(result)) {
-			const win = window.open("", "_blank")
-			if (win) {
-				win.document.write(result.value.html)
-				win.document.close()
-			}
-		} else {
-			toastManager.add({ title: "Failed to generate digest preview", type: "error" })
-		}
+		if (Exit.isSuccess(result)) openPreview(result.value.html)
+		else toastManager.add({ title: "Failed to generate digest preview", type: "error" })
 		setIsPreviewing(false)
+	}
+
+	async function handlePreviewWebAnalytics() {
+		setIsPreviewingWebAnalytics(true)
+		const result = await previewWebAnalyticsMutation({})
+		if (Exit.isSuccess(result)) openPreview(result.value.html)
+		else toastManager.add({ title: "Failed to generate web analytics preview", type: "error" })
+		setIsPreviewingWebAnalytics(false)
 	}
 
 	if (!settled || !user) {
@@ -224,6 +271,40 @@ export function NotificationsSection() {
 					</div>
 				</div>
 			)}
+			<div
+				className={cn(
+					"!mt-3 flex items-center justify-between gap-4 rounded-lg border p-4 transition-colors",
+					webAnalyticsEnabled ? "border-primary/20 bg-primary/[0.02]" : "border-border",
+				)}
+			>
+				<div className="flex items-center gap-3">
+					<div className="text-muted-foreground">
+						<ChartBarTrendUpIcon size={18} />
+					</div>
+					<div>
+						<p className="text-sm font-medium">Web analytics</p>
+						<p className="text-muted-foreground text-xs">
+							Weekly overview of visitors, top pages and AI traffic. Only sent once the browser
+							SDK is reporting visits.
+						</p>
+					</div>
+				</div>
+				<div className="flex shrink-0 items-center gap-3">
+					<Button
+						variant="outline"
+						size="sm"
+						onClick={handlePreviewWebAnalytics}
+						disabled={isPreviewingWebAnalytics || isSaving}
+					>
+						{isPreviewingWebAnalytics ? "Generating..." : "Preview"}
+					</Button>
+					<Switch
+						checked={webAnalyticsEnabled}
+						onCheckedChange={handleWebAnalyticsToggle}
+						disabled={isSaving || !email}
+					/>
+				</div>
+			</div>
 		</div>
 	)
 }

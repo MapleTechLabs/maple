@@ -61,6 +61,8 @@ export interface AlertRuleProps {
 	query_builder_draft?: Record<string, unknown> | null
 	raw_query_sql?: string | null
 	raw_query_reducer?: "identity" | "sum" | "avg" | "min" | "max" | null
+	/** Count a window with no data as a breach instead of skipping it. */
+	alert_on_no_data?: boolean
 	notification_template?: Record<string, unknown> | null
 }
 

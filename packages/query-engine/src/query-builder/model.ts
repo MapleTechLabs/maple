@@ -377,11 +377,74 @@ function parseBucketSeconds(raw: string): number | undefined {
 
 // Clause-to-filter mapping via Match
 
-interface AccumulatedAttributeFilter {
+interface AccumulatedAttributeFilterLeaf {
 	key: string
 	value?: string
 	mode: "equals" | "exists" | "gt" | "gte" | "lt" | "lte" | "contains"
 	negated?: boolean
+}
+
+interface AccumulatedAttributeFilter extends AccumulatedAttributeFilterLeaf {
+	/** The other members of an `(a OR b)` group; see `AttributeFilter.or`. */
+	or?: AccumulatedAttributeFilterLeaf[]
+}
+
+interface AttributeFilterAccumulator {
+	attributeFilters: AccumulatedAttributeFilter[]
+	resourceAttributeFilters: AccumulatedAttributeFilter[]
+}
+
+/**
+ * Lowers an `(a OR b)` where-clause group onto one attribute filter with `or`
+ * alternatives. Each member goes through the source's own clause handler on an
+ * empty accumulator, so key aliases, casing and the bare-key fallback apply as
+ * they do outside a group. A member that lands anywhere but a single attribute
+ * filter (a named dimension like `service.name`), or members split across span
+ * and resource attributes, cannot be OR-ed and the group is dropped with a
+ * warning.
+ */
+function applyOrGroup<A extends AttributeFilterAccumulator>(
+	filters: A,
+	group: readonly WhereClauseInput[],
+	apply: (acc: A, clause: WhereClauseInput, warnings: string[]) => A,
+	empty: A,
+	source: string,
+	warnings: string[],
+): A {
+	const label = `(${group.map((c) => `${typedKey(c)} ${c.operator} ${c.value}`.trim()).join(" OR ")})`
+	const members: Array<{ map: keyof AttributeFilterAccumulator; filter: AccumulatedAttributeFilter }> = []
+	for (const clause of group) {
+		const memberWarnings: string[] = []
+		const next = apply(empty, clause, memberWarnings)
+		const setsOtherField = Object.entries(next).some(
+			([field, value]) =>
+				field !== "attributeFilters" && field !== "resourceAttributeFilters" && value !== undefined,
+		)
+		const map =
+			next.attributeFilters.length === 1 && next.resourceAttributeFilters.length === 0
+				? "attributeFilters"
+				: next.resourceAttributeFilters.length === 1 && next.attributeFilters.length === 0
+					? "resourceAttributeFilters"
+					: undefined
+		const filter = map === undefined ? undefined : next[map][0]
+		if (memberWarnings.length > 0 || setsOtherField || map === undefined || filter === undefined) {
+			warnings.push(`${source} OR group ignored: only attribute filters can be OR-ed: ${label}`)
+			return filters
+		}
+		members.push({ map, filter })
+	}
+	const [first, ...rest] = members
+	if (first === undefined) return filters
+	if (rest.some((m) => m.map !== first.map)) {
+		warnings.push(`${source} OR group ignored: its members mix span and resource attributes: ${label}`)
+		return filters
+	}
+	if (filters[first.map].length >= 5) {
+		warnings.push(`Maximum of 5 filters per attribute map; ignoring ${label}`)
+		return filters
+	}
+	const combined: AccumulatedAttributeFilter = { ...first.filter, or: rest.map((m) => m.filter) }
+	return { ...filters, [first.map]: [...filters[first.map], combined] }
 }
 
 type TracesMatchModeField = "serviceName" | "spanName" | "deploymentEnv"
@@ -1384,7 +1447,15 @@ function dedupeGroupByKeys<T extends string>(keys: readonly T[]): T[] {
 
 export function buildTimeseriesQuerySpec(query: QueryBuilderQueryDraftPayload): BuildSpecResult {
 	const warnings: string[] = []
-	const { clauses, warnings: parseWarnings } = parseWhereClause(query.whereClause ?? "")
+	const {
+		clauses,
+		groups,
+		warnings: parseWarnings,
+	} = parseWhereClause(query.whereClause ?? "", {
+		// Only the sources that lower groups ask for them. Any other source gets the
+		// parser's "unsupported clause" warning, so a group is never dropped silently.
+		orGroups: query.dataSource === "traces" || query.dataSource === "logs",
+	})
 	for (const w of parseWarnings) warnings.push(w.message)
 
 	const stepInterval = query.stepInterval ?? ""
@@ -1443,9 +1514,10 @@ export function buildTimeseriesQuerySpec(query: QueryBuilderQueryDraftPayload): 
 			}
 		}
 
-		const filters = clauses.reduce<TracesFilterAccumulator>(
-			(acc, clause) => applyTracesClause(acc, clause, warnings),
-			{ attributeFilters: [], resourceAttributeFilters: [] },
+		const emptyTraces: TracesFilterAccumulator = { attributeFilters: [], resourceAttributeFilters: [] }
+		const filters = groups.reduce(
+			(acc, group) => applyOrGroup(acc, group, applyTracesClause, emptyTraces, "Traces", warnings),
+			clauses.reduce((acc, clause) => applyTracesClause(acc, clause, warnings), emptyTraces),
 		)
 
 		const groupByKeys: TracesGroupByKey[] = []
@@ -1511,9 +1583,10 @@ export function buildTimeseriesQuerySpec(query: QueryBuilderQueryDraftPayload): 
 			}
 		}
 
-		const filters = clauses.reduce<LogsFilterAccumulator>(
-			(acc, clause) => applyLogsClause(acc, clause, warnings),
-			{ attributeFilters: [], resourceAttributeFilters: [] },
+		const emptyLogs: LogsFilterAccumulator = { attributeFilters: [], resourceAttributeFilters: [] }
+		const filters = groups.reduce(
+			(acc, group) => applyOrGroup(acc, group, applyLogsClause, emptyLogs, "Logs", warnings),
+			clauses.reduce((acc, clause) => applyLogsClause(acc, clause, warnings), emptyLogs),
 		)
 
 		const logsGroupByKeys: LogsGroupByKey[] = []
@@ -1760,10 +1833,19 @@ const FILTER_MODE_TO_DISPLAY: Record<string, string> = {
 	contains: "contains",
 } satisfies Record<string, string>
 
-function formatAttrFilterClause(
-	prefix: string,
-	af: { key: string; value?: string; mode: string; negated?: boolean },
-): string {
+interface FormattableAttrFilter {
+	key: string
+	value?: string
+	mode: string
+	negated?: boolean
+	or?: ReadonlyArray<FormattableAttrFilter>
+}
+
+function formatAttrFilterClause(prefix: string, af: FormattableAttrFilter): string {
+	if (af.or?.length) {
+		const { or, ...first } = af
+		return `(${[first, ...or].map((member) => formatAttrFilterClause(prefix, member)).join(" OR ")})`
+	}
 	if (af.mode === "exists") {
 		return `${prefix}.${af.key} ${af.negated ? "!exists" : "exists"}`
 	}
@@ -1842,17 +1924,13 @@ export function formatFiltersAsWhereClause(params: Record<string, unknown>): str
 	excluded("vcs.ref.head.revision", filters.excludedCommitShas)
 
 	if (Array.isArray(filters.attributeFilters)) {
-		for (const af of filters.attributeFilters as Array<{ key: string; value?: string; mode: string }>) {
+		for (const af of filters.attributeFilters as Array<FormattableAttrFilter>) {
 			clauses.push(formatAttrFilterClause("attr", af))
 		}
 	}
 
 	if (Array.isArray(filters.resourceAttributeFilters)) {
-		for (const rf of filters.resourceAttributeFilters as Array<{
-			key: string
-			value?: string
-			mode: string
-		}>) {
+		for (const rf of filters.resourceAttributeFilters as Array<FormattableAttrFilter>) {
 			clauses.push(formatAttrFilterClause("resource", rf))
 		}
 	}

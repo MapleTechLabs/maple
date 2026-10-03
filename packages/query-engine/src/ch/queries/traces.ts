@@ -18,6 +18,11 @@ import {
 	Traces,
 	TracesAggregatesHourly,
 } from "../tables"
+import {
+	deploymentEnvExpr,
+	httpRequestMethodExpr,
+	httpResponseStatusCodeExpr,
+} from "@maple/domain/tinybird/semconv-renames"
 import { METRIC_NEEDS } from "../../traces-shared"
 import type { ColumnDefs } from "@maple-dev/effect-clickhouse/types"
 import * as T from "@maple-dev/effect-clickhouse/types"
@@ -172,7 +177,7 @@ function buildGroupNameExpr(
 				parts.push(CH.toString_($.StatusCode))
 				break
 			case "http_method":
-				parts.push(CH.toString_($.SpanAttributes.get("http.method")))
+				parts.push(CH.toString_(httpRequestMethodExpr($.SpanAttributes)))
 				break
 			case "attribute":
 				if (groupByAttributeKeys?.length) {
@@ -289,13 +294,13 @@ function buildBreakdownGroupExpr(
 		case "namespace":
 			return $.ResourceAttributes.get("service.namespace")
 		case "environment":
-			return $.ResourceAttributes.get("deployment.environment")
+			return deploymentEnvExpr($.ResourceAttributes)
 		case "span_name":
 			return $.SpanName
 		case "status_code":
 			return $.StatusCode
 		case "http_method":
-			return $.SpanAttributes.get("http.method")
+			return httpRequestMethodExpr($.SpanAttributes)
 		case "attribute":
 			return groupByAttributeKey ? $.SpanAttributes.get(groupByAttributeKey) : $.ServiceName
 		default:
@@ -1452,9 +1457,9 @@ export function tracesRootListQuery(opts: TracesRootListOpts) {
 			rootSpanKind: $.SpanKind,
 			rootSpanStatusCode: $.StatusCode,
 			rootSpanStatusMessage: $.StatusMessage,
-			rootHttpMethod: $.SpanAttributes.get("http.method"),
+			rootHttpMethod: httpRequestMethodExpr($.SpanAttributes),
 			rootHttpRoute: $.SpanAttributes.get("http.route"),
-			rootHttpStatusCode: $.SpanAttributes.get("http.status_code"),
+			rootHttpStatusCode: httpResponseStatusCodeExpr($.SpanAttributes),
 			rootSpanAttributes: CH.toJSONString(buildProjectedMapExpr(ROOT_SPAN_ATTR_KEYS, "SpanAttributes")),
 			hasError: CH.if_($.StatusCode.eq("Error"), CH.lit(1), CH.lit(0)),
 		}))
@@ -1560,6 +1565,7 @@ export function canUseTraceListMvStage1(opts: TraceListOpts): boolean {
 	if (opts.resourceAttributeFilters?.length) return false
 	if (opts.commitShas?.length) return false
 	for (const af of opts.attributeFilters ?? []) {
+		if (af.or?.length) return false
 		if (!TRACE_LIST_MV_ATTR_COLUMNS.has(af.key)) return false
 		const expressible =
 			(af.mode === "equals" && af.value !== undefined) || (af.mode === "in" && !!af.values?.length)
@@ -1758,9 +1764,9 @@ export function traceListQuery(opts: TraceListOpts) {
 				rootSpanName: argMin($.SpanName, rootOrder),
 				rootSpanKind: argMin($.SpanKind, rootOrder),
 				rootSpanStatusCode: argMin($.StatusCode, rootOrder),
-				rootHttpMethod: argMin($.SpanAttributes.get("http.method"), rootOrder),
+				rootHttpMethod: argMin(httpRequestMethodExpr($.SpanAttributes), rootOrder),
 				rootHttpRoute: argMin($.SpanAttributes.get("http.route"), rootOrder),
-				rootHttpStatusCode: argMin($.SpanAttributes.get("http.status_code"), rootOrder),
+				rootHttpStatusCode: argMin(httpResponseStatusCodeExpr($.SpanAttributes), rootOrder),
 				rootSpanAttributes: argMin(
 					CH.toJSONString(buildProjectedMapExpr(ROOT_SPAN_ATTR_KEYS, "SpanAttributes")),
 					rootOrder,

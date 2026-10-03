@@ -16,7 +16,7 @@ import { makeWarehouseExecutor } from "@/api/warehouse/query-set-executor"
 
 const executor = makeWarehouseExecutor("queryEngine.breakdownQuery")
 
-const dateTimeString = Schema.String.check(Schema.isPattern(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/))
+const dateTimeString = Schema.String.check(Schema.isPattern(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/u))
 
 const QueryBuilderBreakdownInputSchema = Schema.Struct({
 	startTime: dateTimeString,

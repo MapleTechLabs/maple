@@ -135,6 +135,10 @@ export const buildSummaryLine = (context: SummaryLineContext, em: (value: string
 		const now = context.value != null ? ` — now ${em(observed)}` : ""
 		return `${em(signal)} is back within its threshold (${formatThresholdSummary(context)})${now}.`
 	}
+	// A breach without a value is a rule that alerts when its window has no data.
+	if (context.value == null) {
+		return `${em(signal)} has no data over the last ${window} (alert threshold ${formatThresholdSummary(context)}).`
+	}
 	return `${em(signal)} is ${em(observed)} — ${comparatorBreachPhrase(context)}, measured over the last ${window}.`
 }
 

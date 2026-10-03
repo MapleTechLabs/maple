@@ -1,0 +1,99 @@
+---
+/**
+ * The changelog as a timeline: every entry rendered in full, newest first, on
+ * a rail with the date in the gutter and a month marker where the month turns.
+ * Paged so the index stays a reasonable weight; each entry also has its own
+ * permalink.
+ *
+ * Deliberately monochrome chrome. The one amber moment is the newest entry's
+ * rail dot (DESIGN.md: spend amber once per screen).
+ */
+import ChangelogEntry from "./ChangelogEntry.astro";
+import type { Release } from "../../lib/changelog";
+import { monthKey, monthName, pageHref } from "../../lib/changelog";
+
+interface Props {
+    entries: Release[];
+    page: number;
+    pages: number;
+    /** Id of the newest entry overall, so only page 1 lights its dot. */
+    latestId?: string;
+}
+
+const { entries, page, pages, latestId } = Astro.props;
+
+// A month marker precedes the first entry of each month on this page.
+const rows = entries.map((release, i) => {
+    const prev = entries[i - 1];
+    const turns = !prev || monthKey(prev.data.date) !== monthKey(release.data.date);
+    return { release, month: turns ? monthName(release.data.date) : null };
+});
+
+const key = "font-mono text-[10px] uppercase tracking-[0.14em] text-fg-muted";
+const numbers = Array.from({ length: pages }, (_, i) => i + 1);
+---
+
+<div class="relative mt-14 [--cl-gutter:9rem] md:mt-16">
+    {/* The rail. */}
+    <span class="absolute inset-y-0 left-[var(--cl-gutter)] hidden w-px bg-border lg:block" aria-hidden="true"></span>
+
+    {rows.map(({ release, month }) => (
+        <>
+            {month && (
+                <div class="flex items-center gap-4 pt-10 lg:grid lg:grid-cols-[var(--cl-gutter)_minmax(0,1fr)] lg:gap-0">
+                    <div class="relative flex items-center lg:justify-end lg:pr-8">
+                        <h2 class={key}>{month}</h2>
+                        <span
+                            class="absolute right-0 hidden h-2 w-2 translate-x-1/2 border border-border bg-bg lg:block"
+                            aria-hidden="true"
+                        ></span>
+                    </div>
+                    <span class="h-px flex-1 bg-border lg:ml-12" aria-hidden="true"></span>
+                </div>
+            )}
+            <ChangelogEntry release={release} latest={release.id === latestId} />
+        </>
+    ))}
+</div>
+
+{pages > 1 && (
+    <nav
+        aria-label="Changelog pages"
+        class="mt-8 flex flex-wrap items-center justify-between gap-4 border-t border-border pt-6 lg:ml-[var(--cl-gutter)] lg:pl-12 [--cl-gutter:9rem]"
+    >
+        {page > 1 ? (
+            <a href={pageHref(page - 1)} class="font-mono text-xs text-fg-muted transition-colors hover:text-primary">
+                <span aria-hidden="true">←</span> newer
+            </a>
+        ) : (
+            <span class="font-mono text-xs text-fg-muted/40">← newer</span>
+        )}
+
+        <ol class="flex items-center gap-1 font-mono text-xs tabular-nums">
+            {numbers.map((n) => (
+                <li>
+                    <a
+                        href={pageHref(n)}
+                        aria-current={n === page ? "page" : undefined}
+                        class:list={[
+                            "flex h-7 min-w-7 items-center justify-center border px-2 transition-colors",
+                            n === page
+                                ? "border-foreground/60 text-foreground"
+                                : "border-transparent text-fg-muted hover:border-border hover:text-foreground",
+                        ]}
+                    >
+                        {n}
+                    </a>
+                </li>
+            ))}
+        </ol>
+
+        {page < pages ? (
+            <a href={pageHref(page + 1)} class="font-mono text-xs text-fg-muted transition-colors hover:text-primary">
+                older <span aria-hidden="true">→</span>
+            </a>
+        ) : (
+            <span class="font-mono text-xs text-fg-muted/40">older →</span>
+        )}
+    </nav>
+)}

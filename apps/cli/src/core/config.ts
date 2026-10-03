@@ -1,6 +1,6 @@
 import { Clock, Context, Effect, Layer, Option, Redacted, Result, Schema } from "effect"
 import { FileSystem } from "effect/FileSystem"
-import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import * as os from "node:os"
 import * as path from "node:path"
 import { defaultLocalUrl } from "../lib/local-address"

@@ -10,6 +10,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@maple/ui/components/u
 import { ScrollArea } from "@maple/ui/components/ui/scroll-area"
 import { type Log, type LogsResponse } from "@/api/warehouse/logs"
 import { LogDetailSheet } from "@/components/logs/log-detail-sheet"
+import { DocsLink } from "@/components/common/docs-link"
 import { formatDuration } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { getSpanKindLabel, getSpanStatusBadgeClass } from "@maple/ui/lib/span-kind"
@@ -173,8 +174,10 @@ export function SpanLogs({
 
 					if (logs.length === 0) {
 						return (
-							<div className="p-4 text-center text-sm text-muted-foreground">
-								No logs found for this span
+							<div className="flex flex-col items-center gap-2 p-4 text-center text-sm text-muted-foreground">
+								No logs carry this span&apos;s trace context. Logs link here when your log
+								bridge runs inside the active span.
+								<DocsLink page="logs" />
 							</div>
 						)
 					}

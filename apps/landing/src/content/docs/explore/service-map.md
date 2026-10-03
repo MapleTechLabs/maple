@@ -21,12 +21,12 @@ A `Client` or `Producer` span with `db.system.name` (or the older `db.system`) c
 
 Database nodes are labeled by category from the `db.system.name` value:
 
-| Category | Systems                                                     |
-| -------- | ----------------------------------------------------------- |
-| Cache    | `redis`, `memcached`, `hazelcast`                           |
-| Queue    | `kafka`, `rabbitmq`, `pulsar`, `nats`, `activemq`, `sqs`    |
-| Search   | `elasticsearch`, `opensearch`, `solr`                       |
-| Database | Everything else, such as `postgresql`, `mysql`, `mongodb`   |
+| Category | Systems                                                   |
+| -------- | --------------------------------------------------------- |
+| Cache    | `redis`, `memcached`, `hazelcast`                         |
+| Queue    | `kafka`, `rabbitmq`, `pulsar`, `nats`, `activemq`, `sqs`  |
+| Search   | `elasticsearch`, `opensearch`, `solr`                     |
+| Database | Everything else, such as `postgresql`, `mysql`, `mongodb` |
 
 When the [PlanetScale integration](/docs/integrations/planetscale) is connected, PlanetScale databases are marked on their nodes. Databases reached through Cloudflare Hyperdrive are grouped into one **Hyperdrive** node.
 
@@ -53,16 +53,16 @@ The map shows at most 200 edges.
 
 ## Controls
 
-| Control                    | What it does                                                                                           |
-| -------------------------- | ------------------------------------------------------------------------------------------------------ |
-| **2D** / **3D**            | Switch between a flat layout (the default) and a 3D view.                                              |
-| Environment                | Show one `deployment.environment`, or **All Environments**. Defaults to `production` when it exists.    |
-| Time range                 | Defaults to the last 12 hours.                                                                         |
-| **Focus a service…**       | Center the map on one service and its neighbors. Pick **1 hop** or **2 hops**. **Hide rest** hides everything outside the focus instead of dimming it. **Clear focus** resets. |
-| Traffic threshold          | **All traffic**, or hide edges below 0.1%, 1%, or 5% of the busiest edge. A button shows how many services and edges are hidden. |
-| **Color nodes by**         | **Service**, **Health**, or **Platform**.                                                              |
-| **Re-sort**                | Discard manual positions and auto-arrange.                                                             |
-| **Zoom In**, **Zoom Out**, **Fit View** | Canvas zoom. You can also scroll to zoom and drag nodes to arrange them.                  |
+| Control                                 | What it does                                                                                                                                                                   |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **2D** / **3D**                         | Switch between a flat layout (the default) and a 3D view.                                                                                                                      |
+| Environment                             | Show one `deployment.environment`, or **All Environments**. Defaults to `production` when it exists.                                                                           |
+| Time range                              | Defaults to the last 12 hours.                                                                                                                                                 |
+| **Focus a service…**                    | Center the map on one service and its neighbors. Pick **1 hop** or **2 hops**. **Hide rest** hides everything outside the focus instead of dimming it. **Clear focus** resets. |
+| Traffic threshold                       | **All traffic**, or hide edges below 0.1%, 1%, or 5% of the busiest edge. A button shows how many services and edges are hidden.                                               |
+| **Color nodes by**                      | **Service**, **Health**, or **Platform**.                                                                                                                                      |
+| **Re-sort**                             | Discard manual positions and auto-arrange.                                                                                                                                     |
+| **Zoom In**, **Zoom Out**, **Fit View** | Canvas zoom. You can also scroll to zoom and drag nodes to arrange them.                                                                                                       |
 
 The focused service, hop count, and hide mode are kept in the URL, so you can share a focused view.
 

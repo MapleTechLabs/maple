@@ -66,6 +66,9 @@ export interface VcsSourceFile {
 export interface VcsProviderClient {
 	readonly id: VcsProviderId
 
+	/** How people address the review bot on this provider, e.g. `@maple-review-bot`. */
+	readonly reviewerMention: string
+
 	/** Verify the webhook signature, parse the event, and map it to generic jobs. */
 	readonly webhookToJobs: (
 		input: VcsWebhookRequest,

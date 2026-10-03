@@ -1,5 +1,5 @@
-import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { HttpApiBuilder } from "effect/http-api"
 import {
 	CloudflareDisconnectResponse,
 	CloudflareHyperdrivesResponse,
@@ -16,6 +16,7 @@ import {
 	GithubSetPrReviewResponse,
 	GithubPrReviewConfigResponse,
 	GithubPrReviewsResponse,
+	GithubPrReviewSettingsResponse,
 	GithubSetTrackedBranchResponse,
 	GithubStartConnectResponse,
 	HazelChannelsListResponse,
@@ -28,12 +29,16 @@ import {
 	IntegrationsUpstreamError,
 	IntegrationsValidationError,
 	MapleApi,
+	RailwayDisconnectResponse,
 	RoleName,
 	UserId,
 	VCS_COMMIT_DETAILS_MAX_SHAS,
+	VCS_COMMIT_RANGES_MAX,
 	VcsCommitDetailResponse,
 	VCS_PULL_REQUESTS_DEFAULT_LIMIT,
 	VcsCommitDetailsResponse,
+	VcsCommitRangeResponse,
+	VcsCommitRangesResponse,
 	VcsPullRequestsResponse,
 	validateIntegrationReturnPath,
 } from "@maple/domain/http"
@@ -57,6 +62,7 @@ import {
 } from "@maple/backend/services/integrations/cloudflare-analytics/queries"
 import { PlanetScaleConnectionService } from "@maple/backend/services/integrations/PlanetScaleConnectionService"
 import { PlanetScaleService } from "@maple/backend/services/integrations/PlanetScaleService"
+import { RailwayMetricsService } from "@maple/backend/services/integrations/RailwayMetricsService"
 import {
 	GOOGLE_ANALYTICS_CALLBACK_PATH,
 	GoogleAnalyticsOAuthService,
@@ -162,6 +168,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleApi, "integrations
 		const planetscale = yield* PlanetScaleConnectionService
 		const planetscaleOAuth = yield* PlanetScaleOAuthService
 		const planetscaleInventory = yield* PlanetScaleService
+		const railway = yield* RailwayMetricsService
 		const database = yield* Database
 		const edgeCache = yield* EdgeCacheService
 		const env = yield* Env
@@ -516,6 +523,26 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleApi, "integrations
 						})
 					}),
 				)
+				.handle("railwayStatus", () =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						return yield* railway.getStatus(tenant.orgId)
+					}),
+				)
+				.handle("railwayConnect", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requireAdmin(tenant.roles)
+						return yield* railway.connect(tenant.orgId, tenant.userId, payload.token)
+					}),
+				)
+				.handle("railwayDisconnect", () =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requireAdmin(tenant.roles)
+						return new RailwayDisconnectResponse(yield* railway.disconnect(tenant.orgId))
+					}),
+				)
 				.handle("githubStatus", () =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
@@ -602,6 +629,25 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleApi, "integrations
 						return new GithubPrReviewConfigResponse({ config })
 					}),
 				)
+				.handle("githubGetPrReviewSettings", () =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const settings = yield* github.getPrReviewSettings(tenant.orgId)
+						return new GithubPrReviewSettingsResponse({ settings })
+					}),
+				)
+				.handle("githubSetPrReviewSettings", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requireAdmin(tenant.roles)
+						const settings = yield* github.setPrReviewSettings(
+							tenant.orgId,
+							payload.settings,
+							tenant.userId,
+						)
+						return new GithubPrReviewSettingsResponse({ settings })
+					}),
+				)
 				.handle("githubListPrReviews", ({ params }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
@@ -628,6 +674,32 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleApi, "integrations
 						const details = yield* vcsCommits.resolveCommitDetails(tenant.orgId, shas)
 						return new VcsCommitDetailsResponse({
 							commits: details.map((detail) => new VcsCommitDetailResponse(detail)),
+						})
+					}),
+				)
+				.handle("vcsCommitRanges", ({ query }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const ranges = query.ranges
+							.split(",")
+							.flatMap((pair) => {
+								const [base, head] = pair.trim().split("..")
+								return base && head ? [{ base, head }] : []
+							})
+							.slice(0, VCS_COMMIT_RANGES_MAX)
+						const results = yield* vcsCommits.resolveCommitRanges(tenant.orgId, ranges, {
+							limit: query.limit ?? 20,
+						})
+						return new VcsCommitRangesResponse({
+							ranges: results.map(
+								(range) =>
+									new VcsCommitRangeResponse({
+										...range,
+										commits: range.commits.map(
+											(detail) => new VcsCommitDetailResponse(detail),
+										),
+									}),
+							),
 						})
 					}),
 				)

@@ -2,13 +2,17 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Schema } from "effect"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 
+import { Button } from "@maple/ui/components/ui/button"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
 
 import type { WorkloadKind } from "@/api/warehouse/infra"
 import { OptionalStringArrayParam } from "@/lib/search-params"
 import { QueryErrorState } from "@/components/common/query-error-state"
 import { GridIcon, MagnifierIcon } from "@/components/icons"
+import { EmptyActions } from "@/components/common/docs-link"
+import { InfraSetupEmpty } from "@/components/infra/infra-empty-state"
 import { KubernetesShell } from "@/components/infra/kubernetes/kubernetes-shell"
+import { useInfraSurfaces } from "@/hooks/use-infra-surfaces"
 import { deriveHostStatus, severityLevel } from "@/components/infra/format"
 import { WorkloadTable, WorkloadTableLoading, type WorkloadRow } from "@/components/infra/workload-table"
 import { WorkloadsFilterSidebarView, type WorkloadFilters } from "@/components/infra/k8s-filter-sidebar"
@@ -113,6 +117,11 @@ function WorkloadsPage() {
 	}
 
 	const kindOption = KIND_OPTIONS.find((option) => option.value === kind) ?? KIND_OPTIONS[0]
+	// The sidebar's presence probe (already cached): any Kubernetes surface means the chart is in.
+	const surfaces = useInfraSurfaces()
+	const clusterReporting =
+		surfaces !== null &&
+		(surfaces.has("k8sPods") || surfaces.has("k8sNodes") || surfaces.has("k8sWorkloads"))
 
 	return (
 		<KubernetesShell
@@ -145,21 +154,49 @@ function WorkloadsPage() {
 					const hasStructuredFilter = Object.values(filters).some((v) => (v?.length ?? 0) > 0)
 
 					if (workloads.length === 0 && !hasStructuredFilter) {
+						const otherKinds = KIND_OPTIONS.filter((option) => option.value !== kind).map(
+							(option) => (
+								<Button
+									key={option.value}
+									variant="outline"
+									size="sm"
+									onClick={() =>
+										patchSearch({ kind: option.value, workloadNames: undefined })
+									}
+								>
+									Show {option.label}
+								</Button>
+							),
+						)
+						// The cluster already reports, so only this kind is missing: no install advice.
+						if (clusterReporting) {
+							return (
+								<Empty className="py-16">
+									<EmptyHeader>
+										<EmptyMedia variant="icon">
+											<GridIcon size={16} />
+										</EmptyMedia>
+										<EmptyTitle>No {kindOption.label} in this window.</EmptyTitle>
+										<EmptyDescription>
+											Your cluster is reporting, but no pod carried a{" "}
+											{`k8s.${kind}.name`} attribute in this time range.
+										</EmptyDescription>
+									</EmptyHeader>
+									<EmptyActions>{otherKinds}</EmptyActions>
+								</Empty>
+							)
+						}
 						return (
-							<Empty className="py-16">
-								<EmptyHeader>
-									<EmptyMedia variant="icon">
-										<GridIcon size={16} />
-									</EmptyMedia>
-									<EmptyTitle>No workloads reporting yet</EmptyTitle>
-									<EmptyDescription>
-										Maple aggregates pod metrics by k8s.deployment.name,
-										k8s.statefulset.name, and k8s.daemonset.name. Install the Helm chart
-										so the k8sattributes processor can enrich pod metrics with workload
-										identity.
-									</EmptyDescription>
-								</EmptyHeader>
-							</Empty>
+							<InfraSetupEmpty
+								icon={<GridIcon size={16} />}
+								title={`No ${kindOption.label} reporting yet`}
+								description="Maple aggregates pod metrics by k8s.deployment.name, k8s.statefulset.name, and k8s.daemonset.name. If the Helm chart is not installed yet, install it so the k8sattributes processor can tag pod metrics with their workload. If it is, try another workload kind."
+								installTab="kubernetes"
+								actionLabel="Install the Helm chart"
+								docs="kubernetes"
+							>
+								{otherKinds}
+							</InfraSetupEmpty>
 						)
 					}
 
@@ -256,9 +293,16 @@ function WorkloadsPage() {
 											<EmptyDescription>
 												{q
 													? `Nothing named “${searchText}” in this scope.`
-													: "Nothing in this scope right now — which is good news."}
+													: "Nothing in this scope right now, which is good news."}
 											</EmptyDescription>
 										</EmptyHeader>
+										<Button
+											variant="outline"
+											size="sm"
+											onClick={() => patchSearch({ q: undefined, scope: undefined })}
+										>
+											{q ? "Clear search" : "Show all workloads"}
+										</Button>
 									</Empty>
 								) : (
 									<WorkloadTable

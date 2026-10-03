@@ -52,7 +52,7 @@ sorted worst-first. Time window picker (1h · 6h · 24h · 7d) lives here.
 **Service detail** leads with the verdict and the sentence that justifies it
 (`Degraded — p95 410ms is 3.4× its 7-day baseline of 120ms`), then one
 full-width chart with a Throughput · Errors · Latency switch. The big number
-is the *latest settled bucket* — what the service is doing now — with the
+is the _latest settled bucket_ — what the service is doing now — with the
 window's peak and average as small print, because an average over a day is
 not the question anyone opens this screen with. Scrubbing the chart swaps the
 number for the bucket under the finger. Under it: window aggregates, open

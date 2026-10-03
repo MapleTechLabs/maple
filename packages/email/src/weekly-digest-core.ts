@@ -300,16 +300,18 @@ export function deriveDigestStatus(props: WeeklyDigestProps): DigestStatus {
 		headline = `${lead} — error rate at ${fmtErrRate(overallErrRate)}${ledBy}.`
 	}
 
+	// Org name first so a member of several orgs can tell the emails apart, then
+	// which email this is (the web analytics email follows the same pattern).
 	const scopeLabel = fmtScopeLabel(props.scope)
-	const brand = scopeLabel === null ? "Maple" : `Maple [${scopeLabel}]`
+	const brand = `${props.orgName}${scopeLabel === null ? "" : ` [${scopeLabel}]`} · Weekly digest`
 
 	let subject: string
 	if (level === "healthy") {
-		subject = `${brand} · ${fmtNum(reqs)} requests · ${errDir}`
+		subject = `${brand} · ${fmtNum(reqs)} requests, ${errDir}`
 	} else if (level === "watch") {
-		subject = `⚠️ ${brand} · error rate ${fmtErrRate(overallErrRate)} this week`
+		subject = `${brand} · Heads up: error rate ${fmtErrRate(overallErrRate)}`
 	} else {
-		subject = `\u{1f6a8} ${brand} · error rate ${fmtErrRate(overallErrRate)} — needs attention`
+		subject = `${brand} · Action needed: error rate ${fmtErrRate(overallErrRate)}`
 	}
 
 	return { level, label, headline, biggestMover, subject }

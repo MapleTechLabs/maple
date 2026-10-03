@@ -8,7 +8,7 @@
 import { createHmac } from "node:crypto"
 import { describe, expect, it } from "@effect/vitest"
 import { Effect } from "effect"
-import { HttpServerRequest } from "effect/unstable/http"
+import { HttpServerRequest } from "effect/http"
 import { MAX_TIMESTAMP_SKEW_SECONDS, SIGNING_SECRET_CONFIG } from "./api"
 
 /** The one thing a refused caller is ever told. */

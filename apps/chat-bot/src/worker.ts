@@ -44,7 +44,7 @@ import { merge, optionalSecret, plainWithDefault, selfObservabilityEnv } from "@
 import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Effect, Layer, Ref, Scope } from "effect"
-import { HttpRouter } from "effect/unstable/http"
+import { HttpRouter } from "effect/http"
 import { resolveConnectorConfig, socketConnectors, type IngressConnector } from "./config.ts"
 import { InboundHandler } from "./inbound.ts"
 import { connectorConfigEnv } from "./resources/env.ts"
@@ -87,7 +87,7 @@ const props = Effect.gen(function* () {
 	return {
 		main: import.meta.url,
 		name: resolveWorkerName("chat-bot", stage, region),
-		compatibility: { date: "2026-04-08", flags: ["nodejs_compat"] },
+		compatibility: { date: "2026-10-01" },
 		placement: resolveWorkerPlacement(region),
 		// Under `bun dev`: a sticky port the app's route follows.
 		dev: workerDev("chat-bot"),

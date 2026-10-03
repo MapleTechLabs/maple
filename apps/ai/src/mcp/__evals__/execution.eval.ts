@@ -1,5 +1,5 @@
 import { afterAll, beforeAll } from "vitest"
-import { generateText, stepCountIs } from "ai"
+import { generateText, isStepCount } from "ai"
 import { ToolCallScorer, type TaskResult, type ToolCall } from "vitest-evals"
 import { describeMapleEval, FIXTURES } from "./utils"
 import { createEvalModel, hasEvalCredentials } from "./model"
@@ -45,23 +45,17 @@ describeMapleEval("observability tool execution (fake warehouse)", {
 			model: createEvalModel(),
 			temperature: 0,
 			tools: buildExecutionToolSet(rt!.runtime, rt!.tenant),
-			stopWhen: stepCountIs(6),
+			stopWhen: isStepCount(6),
 			messages: [{ role: "user", content: input }],
 		})
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		const steps = result.steps as any[]
-		const toolCalls: ToolCall[] = steps.flatMap((step) =>
-			(step.toolCalls ?? []).map((call: { toolName: string; input?: unknown }) => ({
-				name: call.toolName,
-				arguments: (call.input ?? {}) as Record<string, unknown>,
-			})),
-		)
+		// `toolCalls` / `toolResults` accumulate across every step.
+		const toolCalls: ToolCall[] = result.toolCalls.map((call) => ({
+			name: call.toolName,
+			arguments: (call.input ?? {}) as Record<string, unknown>,
+		}))
 		// Fold rendered tool output into `result` so OutputContainsScorer (which
 		// reads opts.output) can assert on the bounded-overview text.
-		const toolText = steps
-			.flatMap((step) => step.toolResults ?? [])
-			.map(extractText)
-			.join("\n")
+		const toolText = result.toolResults.map(extractText).join("\n")
 		return { result: `${toolText}\n${result.text}`, toolCalls }
 	},
 	scorers: [

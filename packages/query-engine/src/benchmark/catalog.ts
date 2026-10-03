@@ -232,7 +232,12 @@ export const pipeFixtures: ReadonlyArray<PipeFixture> = [
 	{
 		pipe: "list_logs",
 		label: "searched",
-		params: { search: "upstream connection refused by peer", severity: "ERROR", service: "api", trace_id: TRACE_ID },
+		params: {
+			search: "upstream connection refused by peer",
+			severity: "ERROR",
+			service: "api",
+			trace_id: TRACE_ID,
+		},
 		allCapabilities: true,
 	},
 	{ pipe: "logs_count", label: "default", params: {}, allCapabilities: true },
@@ -490,22 +495,20 @@ export const querySpecFixtures: ReadonlyArray<QuerySpecFixture> = [
 			"p99_duration",
 			"apdex",
 		] as const
-	).map(
-		(metric): QuerySpecFixture => ({
-			label: `traces-timeseries-annual-single-${metric}`,
-			route: "traces_timeseries:annual",
-			query: {
-				kind: "timeseries",
-				source: "traces",
-				metric,
-				bucketSeconds: 300,
-				groupBy: ["service"],
-				filters: { rootSpansOnly: true },
-			},
-			startTime: SHORT_START_TIME,
-			endTime: SHORT_END_TIME,
-		}),
-	),
+	).map((metric): QuerySpecFixture => ({
+		label: `traces-timeseries-annual-single-${metric}`,
+		route: "traces_timeseries:annual",
+		query: {
+			kind: "timeseries",
+			source: "traces",
+			metric,
+			bucketSeconds: 300,
+			groupBy: ["service"],
+			filters: { rootSpansOnly: true },
+		},
+		startTime: SHORT_START_TIME,
+		endTime: SHORT_END_TIME,
+	})),
 	{
 		label: "traces-timeseries-annual",
 		route: "traces_timeseries:annual",
@@ -1184,7 +1187,7 @@ export function undecodedColumns(
  */
 const ROLLUP_TABLE_RE = /\w_(?:hourly|minutely|daily)\b|\w_aggregates_\w/
 const RAW_TABLE_RE =
-	/\bFROM\s+(?:traces|logs|service_map_spans|service_map_children|service_overview_spans)\b/
+	/\bFROM\s+(?:traces|logs|service_map_spans|service_map_children|service_overview_spans|trace_list_mv)\b/
 
 /**
  * The `firstFullBucket` fragment `makeGrain` emits. Structural rather than a

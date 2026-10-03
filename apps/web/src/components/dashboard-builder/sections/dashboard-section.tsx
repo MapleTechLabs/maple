@@ -214,9 +214,17 @@ export function DashboardSectionView<W extends CanvasWidget>({
 			{/* Collapsed renders nothing at all — no grid, no tiles, no queries. */}
 			{!collapsed &&
 				(widgets.length === 0 ? (
-					<p className="px-1 py-6 text-xs text-muted-foreground">
-						{editable ? "No widgets in this group yet." : "No widgets in this group."}
-					</p>
+					editable ? (
+						<div className="flex items-center gap-2 px-1 py-6 text-xs text-muted-foreground">
+							<span>No widgets in this group yet.</span>
+							<Button variant="ghost" size="sm" onClick={() => onAddWidget(activeTabId)}>
+								<PlusIcon size={14} />
+								Add widget
+							</Button>
+						</div>
+					) : (
+						<p className="px-1 py-6 text-xs text-muted-foreground">This group is empty.</p>
+					)
 				) : (
 					<div className="pt-2">
 						<DashboardGrid

@@ -1,4 +1,4 @@
-import * as Command from "effect/unstable/cli/Command"
+import * as Command from "effect/cli/Command"
 import { Effect, Option } from "effect"
 import * as f from "../lib/flags"
 import { printResult } from "../lib/output"

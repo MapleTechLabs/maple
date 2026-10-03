@@ -9,6 +9,7 @@ import { cn } from "@maple/ui/lib/utils"
 
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { GridIcon } from "@/components/icons"
+import { DocsLink } from "@/components/common/docs-link"
 import { QueryErrorState } from "@/components/common/query-error-state"
 import { PodTable, PodTableLoading } from "@/components/infra/pod-table"
 import { chartBucketSeconds } from "@/components/infra/chart-utils"
@@ -377,6 +378,7 @@ function LensBody({
 							Helm chart so the collector tags them.
 						</EmptyDescription>
 					</EmptyHeader>
+					<DocsLink page="kubernetes" />
 				</Empty>
 			) : (
 				<>

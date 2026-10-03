@@ -22,12 +22,12 @@ The popup closes and the card lists your **Connected accounts**. Maple starts co
 
 ### Permissions requested
 
-| Scope                                                   | Used for                                                   |
-| ------------------------------------------------------- | ---------------------------------------------------------- |
-| `account-analytics.read`                                | Workers, Queues, and Durable Objects analytics.            |
-| `analytics.read`                                        | Zone HTTP, firewall, and DNS analytics.                    |
-| `zone.read`                                             | Listing your zones.                                        |
-| `query-cache.read`                                      | Listing Hyperdrive configs for the service map. Optional.  |
+| Scope                                                                                                                                            | Used for                                                                                      |
+| ------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
+| `account-analytics.read`                                                                                                                         | Workers, Queues, and Durable Objects analytics.                                               |
+| `analytics.read`                                                                                                                                 | Zone HTTP, firewall, and DNS analytics.                                                       |
+| `zone.read`                                                                                                                                      | Listing your zones.                                                                           |
+| `query-cache.read`                                                                                                                               | Listing Hyperdrive configs for the service map. Optional.                                     |
 | `account-settings.read`, `workers-scripts.read`, `workers-scripts.write`, `workers-observability.write`, `workers-observability-telemetry.write` | Also requested on the consent screen. Analytics collection needs only the three scopes above. |
 
 Maple also requests `offline_access` so the connection can refresh its token without you reconnecting.
@@ -38,12 +38,12 @@ Maple reads these Cloudflare datasets in 5-minute buckets: HTTP requests (with b
 
 The data is stored as metrics named `cloudflare.*`, for example:
 
-| Metric                                           | Service name                   |
-| ------------------------------------------------ | ------------------------------ |
-| `cloudflare.http.requests`, `cloudflare.http.bytes`, `cloudflare.http.edge.ttfb`, `cloudflare.http.origin.duration` | `cloudflare/<zone name>` |
-| `cloudflare.firewall.events`, `cloudflare.dns.queries` | `cloudflare/<zone name>`       |
+| Metric                                                                                                               | Service name                      |
+| -------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
+| `cloudflare.http.requests`, `cloudflare.http.bytes`, `cloudflare.http.edge.ttfb`, `cloudflare.http.origin.duration`  | `cloudflare/<zone name>`          |
+| `cloudflare.firewall.events`, `cloudflare.dns.queries`                                                               | `cloudflare/<zone name>`          |
 | `cloudflare.worker.requests`, `cloudflare.worker.errors`, `cloudflare.worker.cpu_time`, `cloudflare.worker.duration` | `cloudflare-worker/<script name>` |
-| `cloudflare.queue.backlog.messages`, `cloudflare.queue.consumer.concurrency` | `cloudflare-queue/<queue id>` |
+| `cloudflare.queue.backlog.messages`, `cloudflare.queue.consumer.concurrency`                                         | `cloudflare-queue/<queue id>`     |
 
 Counters are delta sums per 5-minute bucket. Latency percentiles are gauges with a `quantile` attribute (`0.5`, `0.95`, `0.99`). Chart and alert on them like any other metric.
 

@@ -5,6 +5,7 @@ import { listReplays } from "@/api/warehouse/replays"
 import { listReplaysResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import type { Effect } from "effect"
+import type { SessionTag } from "@maple/domain/query-engine"
 import { logClientError } from "@/lib/services/common/telemetry"
 import { mapleRuntime } from "@/lib/registry"
 
@@ -31,6 +32,8 @@ export interface ReplaysFilterInputs {
 	groupName?: string
 	hasErrors?: boolean
 	search?: string
+	pagePath?: string
+	tags?: ReadonlyArray<SessionTag>
 	durationMinMs?: number
 	durationMaxMs?: number
 	activeTimeMinMs?: number

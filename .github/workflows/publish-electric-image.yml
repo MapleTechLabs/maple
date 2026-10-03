@@ -1,0 +1,97 @@
+name: Publish Electric image
+
+# Upstream's `electricsql/electric` Docker Hub repo was deleted (electric-sql/electric#4822),
+# which broke every PRD deploy at the Electric image build. This builds the same release
+# from upstream source, once, into our own registry; `apps/electric/Dockerfile` pins the
+# resulting digest. Run it again only to adopt a new Electric version.
+
+on:
+    workflow_dispatch:
+        inputs:
+            version:
+                description: "Electric sync-service version (upstream tag @core/sync-service@<version>)"
+                required: true
+                default: "1.7.12"
+                type: string
+
+permissions:
+    contents: read
+    packages: write
+
+jobs:
+    publish:
+        # Native arm64: ECS runs Electric on Graviton, and compiling the Elixir release
+        # under QEMU on an x64 runner is several times slower.
+        runs-on: ubuntu-24.04-arm
+        timeout-minutes: 60
+        environment: publish-images
+        steps:
+            - name: Resolve image name + tag
+              id: image
+              env:
+                  INPUT_VERSION: ${{ inputs.version }}
+                  OWNER: ${{ github.repository_owner }}
+              run: |
+                  set -euo pipefail
+                  if ! printf '%s' "$INPUT_VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+                    echo "::error::Version '$INPUT_VERSION' is not MAJOR.MINOR.PATCH"
+                    exit 1
+                  fi
+                  owner_lc=$(printf '%s' "$OWNER" | tr '[:upper:]' '[:lower:]')
+                  echo "name=ghcr.io/${owner_lc}/maple/electric" >> "$GITHUB_OUTPUT"
+                  echo "version=$INPUT_VERSION" >> "$GITHUB_OUTPUT"
+
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+              with:
+                  repository: electric-sql/electric
+                  ref: refs/tags/@core/sync-service@${{ steps.image.outputs.version }}
+                  persist-credentials: false
+
+            - name: Record upstream commit
+              id: upstream
+              run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+            - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+            - name: Log in to GHCR
+              uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+              with:
+                  registry: ghcr.io
+                  username: ${{ github.actor }}
+                  password: ${{ secrets.GITHUB_TOKEN }}
+
+            # Mirrors upstream's own invocation in sync_service_dockerhub_image.yml.
+            - name: Build + push (arm64)
+              id: build
+              uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+              with:
+                  context: packages/sync-service
+                  file: packages/sync-service/Dockerfile
+                  build-contexts: |
+                      electric-telemetry=packages/electric-telemetry
+                  build-args: |
+                      ELECTRIC_VERSION=${{ steps.image.outputs.version }}
+                      GIT_REVISION=${{ steps.upstream.outputs.sha }}
+                  platforms: linux/arm64
+                  push: true
+                  tags: ${{ steps.image.outputs.name }}:${{ steps.image.outputs.version }}
+                  labels: |
+                      org.opencontainers.image.source=https://github.com/${{ github.repository }}
+                      org.opencontainers.image.revision=${{ steps.upstream.outputs.sha }}
+                      org.opencontainers.image.version=${{ steps.image.outputs.version }}
+                  provenance: false
+
+            - name: Summary
+              env:
+                  NAME: ${{ steps.image.outputs.name }}
+                  VERSION: ${{ steps.image.outputs.version }}
+                  DIGEST: ${{ steps.build.outputs.digest }}
+                  UPSTREAM_SHA: ${{ steps.upstream.outputs.sha }}
+              run: |
+                  {
+                    echo "Pushed \`${NAME}:${VERSION}@${DIGEST}\`"
+                    echo
+                    echo "Built from electric-sql/electric@${UPSTREAM_SHA}. Pin it in apps/electric/Dockerfile:"
+                    echo
+                    echo "    FROM ${NAME}:${VERSION}@${DIGEST}"
+                  } >> "$GITHUB_STEP_SUMMARY"

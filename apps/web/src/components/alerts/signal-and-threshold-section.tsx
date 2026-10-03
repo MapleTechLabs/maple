@@ -7,11 +7,13 @@ import {
 	type SetStateAction,
 } from "react"
 import type { AlertComparator, AlertSeverity, AlertSignalType } from "@maple/domain/http"
+import { rawAlertSampleCountWarning } from "@maple/domain/raw-sql"
 
 import { Card } from "@maple/ui/components/ui/card"
 import { Input } from "@maple/ui/components/ui/input"
 import { Label } from "@maple/ui/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
+import { Switch } from "@maple/ui/components/ui/switch"
 import { cn } from "@maple/ui/lib/utils"
 
 import { AlertSegmentedSelect } from "@/components/alerts/alert-segmented-select"
@@ -33,6 +35,7 @@ import {
 	comparatorLabels,
 	isRangeComparator,
 	RAW_QUERY_REDUCER_LABELS,
+	ruleFormIsGrouped,
 	type RuleFormState,
 } from "@/lib/alerts/form-utils"
 import { Result, useAtomValue } from "@/lib/effect-atom"
@@ -186,6 +189,7 @@ export function SignalAndThresholdSection({
 	const [advancedOpen, setAdvancedOpen] = useState(false)
 
 	const kind = signalTypeToKind(form.signalType)
+	const grouped = ruleFormIsGrouped(form)
 
 	/* Switching tier-1 has to seed a valid signalType for the new kind.
 	   Built-in defaults to error_rate; the other three map 1:1 since
@@ -360,7 +364,11 @@ export function SignalAndThresholdSection({
 							<NumericField
 								id="rule-minimum-samples"
 								label="Min samples"
-								hint="Skip below this count."
+								hint={
+									form.signalType === "raw_query"
+										? "Sums the samples column (1 per row without one)."
+										: "Skip below this count."
+								}
 								value={form.minimumSampleCount}
 								onChange={(value) => onChange((c) => ({ ...c, minimumSampleCount: value }))}
 							/>
@@ -376,6 +384,24 @@ export function SignalAndThresholdSection({
 									}))
 								}
 							/>
+							<div className="flex items-start gap-2.5 sm:col-span-2 lg:col-span-3">
+								<Switch
+									id="rule-alert-on-no-data"
+									checked={form.alertOnNoData && !grouped}
+									disabled={grouped}
+									onCheckedChange={(checked) =>
+										onChange((c) => ({ ...c, alertOnNoData: checked }))
+									}
+								/>
+								<div className="space-y-0.5">
+									<Label htmlFor="rule-alert-on-no-data">Alert when there is no data</Label>
+									<p className="text-muted-foreground text-xs">
+										{grouped
+											? "Not available on grouped rules: a group that stops reporting keeps its incident open until telemetry returns."
+											: "Count a window with no data as a breach. Off, those windows are skipped and the rule goes quiet when its query stops matching."}
+									</p>
+								</div>
+							</div>
 						</div>
 					)}
 				</div>
@@ -657,7 +683,11 @@ function SignalSubConfig({ form, onChange, autocompleteValues }: SignalAndThresh
 		case "builder_query":
 			return <AlertQueryPanel form={form} onChange={onChange} autocompleteValues={autocompleteValues} />
 
-		case "raw_query":
+		case "raw_query": {
+			const sampleWarning = rawAlertSampleCountWarning(
+				form.rawQuerySql,
+				Number(form.minimumSampleCount) || 0,
+			)
 			return (
 				<div className="space-y-3">
 					<RawSqlEditorPanel
@@ -669,8 +699,12 @@ function SignalSubConfig({ form, onChange, autocompleteValues }: SignalAndThresh
 						targetLabel="alert rule"
 					/>
 					<p className="text-muted-foreground text-xs">
-						Alert SQL must return a numeric <code>value</code> column.
+						Return a numeric <code>value</code> column. Optional: <code>group</code> for one
+						series per value, and <code>samples</code> for the event count behind each row (Min
+						samples sums it; without it each row counts as 1). A query that returns no rows is a
+						no-data check.
 					</p>
+					{sampleWarning && <p className="text-warning text-xs">{sampleWarning}</p>}
 					<div className="flex items-end gap-3">
 						<div className="space-y-1.5">
 							<Label htmlFor="rule-raw-reducer">Reduce buckets by</Label>
@@ -700,6 +734,7 @@ function SignalSubConfig({ form, onChange, autocompleteValues }: SignalAndThresh
 					</div>
 				</div>
 			)
+		}
 
 		default:
 			return null

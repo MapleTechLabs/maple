@@ -2,7 +2,7 @@ import { memo } from "react"
 import { cn } from "@maple/ui/lib/utils"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
-import { WidgetFrame } from "@/components/dashboard-builder/widgets/widget-shell"
+import { WidgetEmptyState, WidgetFrame } from "@/components/dashboard-builder/widgets/widget-shell"
 import type { WidgetDataState, WidgetDisplayConfig, WidgetMode } from "@/components/dashboard-builder/types"
 import { ArrowUpDownIcon } from "@/components/icons"
 import { useTableSort } from "@/hooks/use-table-sort"
@@ -173,61 +173,54 @@ export const TableWidget = memo(function TableWidget({
 				</div>
 			}
 		>
-			<Table>
-				<TableHeader>
-					<TableRow>
-						{effectiveColumns.map((col, colIndex) => {
-							const active = sortKey === col.field
-							return (
-								<TableHead
-									key={col.field}
-									className={cn("text-xs", columnVisibilityClass(colIndex))}
-									aria-sort={
-										active ? (sortDir === "asc" ? "ascending" : "descending") : "none"
-									}
-									style={{
-										textAlign: col.align ?? "left",
-										width: col.width ? `${col.width}px` : undefined,
-									}}
-								>
-									<button
-										type="button"
-										onClick={() => handleSort(col.field)}
-										className={cn(
-											"inline-flex max-w-full items-center gap-1 transition-colors",
-											col.align === "right" && "justify-end",
-											active
-												? "text-foreground"
-												: "text-muted-foreground hover:text-foreground",
-										)}
-									>
-										<span className="truncate">{col.header}</span>
-										<ArrowUpDownIcon
-											size={10}
-											className={cn(
-												"shrink-0 transition-opacity",
-												active ? "opacity-100" : "opacity-40",
-												active && sortDir === "asc" && "rotate-180",
-											)}
-										/>
-									</button>
-								</TableHead>
-							)
-						})}
-					</TableRow>
-				</TableHeader>
-				<TableBody>
-					{rows.length === 0 ? (
+			{rows.length === 0 ? (
+				<WidgetEmptyState />
+			) : (
+				<Table>
+					<TableHeader>
 						<TableRow>
-							<TableCell
-								colSpan={effectiveColumns.length}
-								className="text-center text-xs text-muted-foreground"
-							>
-								No data
-							</TableCell>
+							{effectiveColumns.map((col, colIndex) => {
+								const active = sortKey === col.field
+								return (
+									<TableHead
+										key={col.field}
+										className={cn("text-xs", columnVisibilityClass(colIndex))}
+										aria-sort={
+											active ? (sortDir === "asc" ? "ascending" : "descending") : "none"
+										}
+										style={{
+											textAlign: col.align ?? "left",
+											width: col.width ? `${col.width}px` : undefined,
+										}}
+									>
+										<button
+											type="button"
+											onClick={() => handleSort(col.field)}
+											className={cn(
+												"inline-flex max-w-full items-center gap-1 transition-colors",
+												col.align === "right" && "justify-end",
+												active
+													? "text-foreground"
+													: "text-muted-foreground hover:text-foreground",
+											)}
+										>
+											<span className="truncate">{col.header}</span>
+											<ArrowUpDownIcon
+												size={10}
+												className={cn(
+													"shrink-0 transition-opacity",
+													active ? "opacity-100" : "opacity-40",
+													active && sortDir === "asc" && "rotate-180",
+												)}
+											/>
+										</button>
+									</TableHead>
+								)
+							})}
 						</TableRow>
-					) : (
-						sorted.map((row, i) => (
+					</TableHeader>
+					<TableBody>
+						{sorted.map((row, i) => (
 							<TableRow key={rowKeys[i]}>
 								{effectiveColumns.map((col, colIndex) => {
 									const value = row[col.field]
@@ -247,10 +240,10 @@ export const TableWidget = memo(function TableWidget({
 									)
 								})}
 							</TableRow>
-						))
-					)}
-				</TableBody>
-			</Table>
+						))}
+					</TableBody>
+				</Table>
+			)}
 		</WidgetFrame>
 	)
 })

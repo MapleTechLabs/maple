@@ -43,6 +43,19 @@ describe("prepareRawSql", () => {
 		}),
 	)
 
+	it.effect("expands every $__timeFilter across UNION branches with both comparisons", () =>
+		Effect.gen(function* () {
+			const branch = (t: string) =>
+				`SELECT ServiceName, count() n FROM ${t} WHERE $__orgFilter AND $__timeFilter(TimeUnix) GROUP BY 1`
+			const prepared = yield* prepareOk(
+				`${branch("metrics_histogram")} UNION ALL ${branch("metrics_sum")} UNION ALL ${branch("metrics_gauge")} ORDER BY n DESC LIMIT 15`,
+			)
+			assert.strictEqual(prepared.sql.match(/TimeUnix >= toDateTime\('2026-05-14 00:00:00'\)/g)?.length, 3)
+			assert.strictEqual(prepared.sql.match(/TimeUnix <= toDateTime\('2026-05-14 06:00:00'\)/g)?.length, 3)
+			assert.include(prepared.sql, "FROM metrics_gauge")
+		}),
+	)
+
 	it.effect("requires a time filter for alerts only", () =>
 		Effect.gen(function* () {
 			yield* prepareOk("SELECT 1 FROM Logs WHERE $__orgFilter")

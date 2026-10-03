@@ -12,6 +12,7 @@ import { GithubIntegrationCard } from "@/components/integrations/github-integrat
 import { HazelIntegrationCard } from "@/components/integrations/hazel-integration-card"
 import { PlanetScaleIntegrationCard } from "@/components/integrations/planetscale-integration-card"
 import { GoogleAnalyticsIntegrationCard } from "@/components/integrations/google-analytics-integration-card"
+import { RailwayIntegrationCard } from "@/components/integrations/railway-integration-card"
 import { ChatIntegrationCard } from "@/components/integrations/chat-integration-card"
 import {
 	IntegrationCatalog,
@@ -35,6 +36,7 @@ import { Alert, AlertDescription } from "@maple/ui/components/ui/alert"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
 import { cn } from "@maple/ui/lib/utils"
+import { docsUrl } from "@/lib/docs"
 import { ArrowLeftIcon, CircleInfoIcon, ExternalLinkIcon, LoaderIcon } from "@/components/icons"
 
 // Deliberately a plain string rather than a literal union: this page is the
@@ -206,16 +208,35 @@ function IntegrationsPage() {
 						</DashboardLayout.Sticky>
 						<DashboardLayout.Scroll>
 							<div className="space-y-4">
+								{integration === "prometheus" && (
+									<Alert variant="info">
+										<CircleInfoIcon />
+										<AlertDescription>
+											Maple scrapes any public Prometheus{" "}
+											<code className="font-mono text-xs">/metrics</code> endpoint you
+											add as a target below and stores the samples as OpenTelemetry
+											metrics.{" "}
+											<a
+												href={docsUrl("prometheus")}
+												target="_blank"
+												rel="noreferrer"
+												className="text-foreground underline underline-offset-2 hover:no-underline"
+											>
+												Setup guide
+											</a>
+										</AlertDescription>
+									</Alert>
+								)}
 								{integration === "warpstream" && (
 									<Alert variant="info">
 										<CircleInfoIcon />
 										<AlertDescription>
-											WarpStream clusters are scraped as Prometheus targets — point a
+											WarpStream clusters are scraped as Prometheus targets. Point a
 											target at an agent&apos;s{" "}
 											<code className="font-mono text-xs">:8080/metrics</code> endpoint
 											or the hosted Prometheus endpoint with Basic auth.{" "}
 											<a
-												href="https://maple.dev/docs/integrations/warpstream"
+												href={docsUrl("warpstream")}
 												target="_blank"
 												rel="noreferrer"
 												className="text-foreground underline underline-offset-2 hover:no-underline"
@@ -237,6 +258,8 @@ function IntegrationsPage() {
 									<PlanetScaleIntegrationCard />
 								) : integration === "google-analytics" ? (
 									<GoogleAnalyticsIntegrationCard />
+								) : integration === "railway" ? (
+									<RailwayIntegrationCard />
 								) : (
 									// prometheus + warpstream share the generic scrape-target flow
 									<ScrapeTargetsSection sourceFilter="prometheus" />

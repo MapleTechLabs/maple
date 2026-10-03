@@ -11,6 +11,7 @@ import { Result } from "@/lib/effect-atom"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { getServiceEndpointsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { QueryErrorState } from "@/components/common/query-error-state"
+import { DocsLink } from "@/components/common/docs-link"
 import type { ServiceEndpoint } from "@/api/warehouse/service-endpoints"
 import {
 	BarCell,
@@ -688,6 +689,7 @@ function ApiEmptyState({ serviceName }: { serviceName: string }) {
 				<span className="font-mono text-foreground/80">http.route</span> or{" "}
 				<span className="font-mono text-foreground/80">url.path</span>.
 			</span>
+			<DocsLink page="otelConventions" />
 		</div>
 	)
 }

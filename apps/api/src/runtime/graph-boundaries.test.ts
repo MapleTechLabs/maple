@@ -12,7 +12,7 @@ describe("API runtime graph boundaries", () => {
 
 		expect(imports.filter((specifier) => specifier.includes("/routes/"))).toEqual([])
 		expect(imports.filter((specifier) => specifier.startsWith("@maple/domain/http"))).toEqual([])
-		expect(imports.filter((specifier) => specifier.startsWith("effect/unstable/http"))).toEqual([])
+		expect(imports.filter((specifier) => specifier.startsWith("effect/http"))).toEqual([])
 	})
 
 	it("keeps the HTTP entrypoint off the compatibility facade", () => {

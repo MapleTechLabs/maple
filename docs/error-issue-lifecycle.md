@@ -7,15 +7,15 @@ This is the flow both humans and agents are meant to follow. If you are changing
 
 ## The pieces
 
-| Thing         | Where it lives                          | What it is                                              |
-| ------------- | --------------------------------------- | ------------------------------------------------------- |
-| Occurrence    | ClickHouse / Tinybird                   | One exception, one row. Never mutated.                  |
-| Fingerprint   | `cityHash64(org, service, type, frames, message signature)` | The identity of an error _class_. |
-| Candidate     | `error_fingerprint_candidates`          | A fingerprint seen, but not yet worth a row of its own. |
-| **Issue**     | `error_issues`                          | The durable, assignable record. One per fingerprint.    |
-| Incident      | `error_incidents`                       | A time-bounded flare-up _under_ an issue.               |
-| Investigation | `investigations`                        | One AI diagnostic run. Zero or more per issue.          |
-| Verification  | `error_issue_verifications`             | One post-merge "did that actually work?" check.         |
+| Thing         | Where it lives                                              | What it is                                              |
+| ------------- | ----------------------------------------------------------- | ------------------------------------------------------- |
+| Occurrence    | ClickHouse / Tinybird                                       | One exception, one row. Never mutated.                  |
+| Fingerprint   | `cityHash64(org, service, type, frames, message signature)` | The identity of an error _class_.                       |
+| Candidate     | `error_fingerprint_candidates`                              | A fingerprint seen, but not yet worth a row of its own. |
+| **Issue**     | `error_issues`                                              | The durable, assignable record. One per fingerprint.    |
+| Incident      | `error_incidents`                                           | A time-bounded flare-up _under_ an issue.               |
+| Investigation | `investigations`                                            | One AI diagnostic run. Zero or more per issue.          |
+| Verification  | `error_issue_verifications`                                 | One post-merge "did that actually work?" check.         |
 
 The exception comes from the first OTel `exception` event, or the status message when
 there is no event. Only spans missing both fall back to `exception.*` span attributes,
@@ -202,16 +202,16 @@ loop in verification without a human ever seeing it.
 
 ## The files
 
-| Concern                                 | File                                                                  |
-| --------------------------------------- | --------------------------------------------------------------------- |
-| State machine, transitions, labels      | `packages/domain/src/http/errors.ts`                                  |
-| Verification windows, verdicts          | `packages/domain/src/http/fix-verification.ts`                        |
-| Transitions, leases, timeline events    | `packages/backend/src/services/errors/ErrorIssueWorkflowService.ts`   |
-| The errors tick (incidents, regression) | `packages/backend/src/services/errors/error-tick-persistence.ts`      |
-| Starting an investigation               | `packages/backend/src/services/errors/ai-triage-enqueue.ts`           |
+| Concern                                 | File                                                                                                         |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| State machine, transitions, labels      | `packages/domain/src/http/errors.ts`                                                                         |
+| Verification windows, verdicts          | `packages/domain/src/http/fix-verification.ts`                                                               |
+| Transitions, leases, timeline events    | `packages/backend/src/services/errors/ErrorIssueWorkflowService.ts`                                          |
+| The errors tick (incidents, regression) | `packages/backend/src/services/errors/error-tick-persistence.ts`                                             |
+| Starting an investigation               | `packages/backend/src/services/errors/ai-triage-enqueue.ts`                                                  |
 | The gates in front of it                | `packages/backend/src/services/errors/investigation-gate.ts`, `IncidentClassifier.ts`, `apps/ai/src/triage/` |
-| The investigate agent and its close-out | `apps/ai/src/chat/turn-runner.ts`, `apps/ai/src/chat/prompts.ts`      |
-| Writing a diagnosis back                | `packages/backend/src/services/errors/apply-diagnosis.ts`             |
-| PR links and verification windows       | `packages/backend/src/services/errors/IssueFixVerificationService.ts` |
-| The verification tick                   | `packages/backend/src/services/errors/FixVerificationTickService.ts`  |
-| What agents are told                    | `apps/ai/src/mcp/resources/instructions.ts`                           |
+| The investigate agent and its close-out | `apps/ai/src/chat/turn-runner.ts`, `apps/ai/src/chat/prompts.ts`                                             |
+| Writing a diagnosis back                | `packages/backend/src/services/errors/apply-diagnosis.ts`                                                    |
+| PR links and verification windows       | `packages/backend/src/services/errors/IssueFixVerificationService.ts`                                        |
+| The verification tick                   | `packages/backend/src/services/errors/FixVerificationTickService.ts`                                         |
+| What agents are told                    | `apps/ai/src/mcp/resources/instructions.ts`                                                                  |

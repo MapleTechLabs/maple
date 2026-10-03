@@ -10,8 +10,8 @@ import {
 import type { ChatSessionStub } from "@maple/domain/chat-session-stub"
 import { WorkerEnvironment } from "@maple/infra/worker-runtime"
 import { Context, Effect, Layer } from "effect"
-import { HttpRouter } from "effect/unstable/http"
-import { HttpApi, HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpRouter } from "effect/http"
+import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import { HttpChatLive } from "./chat.http"
 import { V1ErrorBoundaryLive } from "@maple/backend/http/error-boundary"
 

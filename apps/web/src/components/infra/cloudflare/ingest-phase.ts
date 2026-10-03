@@ -134,12 +134,12 @@ export function describeCloudflareIngestPhase(phase: CloudflareIngestPhase): {
 			return {
 				title: `${phase.live} of ${phase.total} zones reporting`,
 				description:
-					"The rest are still catching up, or had no traffic in this window. Nothing to do — they fill in as the poller works through them.",
+					"The rest are still catching up, or had no traffic in this window. Nothing to do: they fill in as the poller works through them.",
 				tone: "info",
 			}
 		case "backfilling":
 			return {
-				title: `Backfilling history — ${Math.round(phase.progress * 100)}% of the last 24 hours`,
+				title: `Backfilling history: ${Math.round(phase.progress * 100)}% of the last 24 hours`,
 				description:
 					"Live data is already flowing. Older windows arrive a few at a time, so charts reaching further back keep filling in.",
 				tone: "info",
@@ -148,7 +148,7 @@ export function describeCloudflareIngestPhase(phase: CloudflareIngestPhase): {
 			return {
 				title: "No Cloudflare data has arrived",
 				description:
-					"Collection has been connected for a while with nothing ingested. Check that the zones have traffic, and that the connection still has the analytics permissions — reconnecting re-grants them.",
+					"Collection has been connected for a while with nothing ingested. Check that the zones have traffic, and that the connection still has the analytics permissions. Reconnecting re-grants them.",
 				tone: "warning",
 			}
 		case "live":

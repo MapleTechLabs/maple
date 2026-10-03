@@ -342,8 +342,13 @@ interface WidgetFrameProps {
  */
 export function WidgetEmptyState() {
 	return (
-		<div className="flex items-center justify-center h-full">
-			<span className="text-xs text-muted-foreground">No data in selected time range</span>
+		<div className="flex items-center justify-center h-full flex-col gap-1.5 px-3">
+			<span className="text-xs font-medium text-muted-foreground">
+				No data in the selected time range
+			</span>
+			<span className="text-[10px] text-muted-foreground/70 max-w-full text-center line-clamp-3">
+				Widen the time range or check the query's filters.
+			</span>
 		</div>
 	)
 }
@@ -362,6 +367,7 @@ export function WidgetFrame({
 	const actions = useWidgetActions()
 	const fix = actions?.fix
 	const narrowRange = actions?.narrowRange
+	const configure = mode === "edit" ? actions?.configure : undefined
 
 	return (
 		<WidgetShell
@@ -373,12 +379,13 @@ export function WidgetFrame({
 			{dataState.status === "loading" ? (
 				loadingSkeleton
 			) : dataState.status === "error" ? (
+				dataState.kind === "empty" ||
 				dataState.message === "No query data found in selected time range" ? (
 					<WidgetEmptyState />
 				) : dataState.kind === "range" || dataState.kind === "config" ? (
-					// A constraint, not a failure — muted like the empty state rather
-					// than destructive, since nothing is broken: the window is too wide
-					// for a list, or the tile simply isn't configured yet.
+					// Muted like the empty state rather than destructive, since nothing
+					// is broken: the window is too wide for a list, or the tile simply
+					// isn't configured yet.
 					<div className="flex items-center justify-center h-full flex-col gap-1.5 px-3">
 						<span className="text-xs font-medium text-muted-foreground">
 							{dataState.title ??
@@ -398,6 +405,17 @@ export function WidgetFrame({
 							>
 								<ClockIcon size={12} />
 								{actions?.narrowRangeLabel ?? "Narrow range"}
+							</Button>
+						)}
+						{dataState.kind === "config" && configure && (
+							<Button
+								variant="outline"
+								size="xs"
+								onClick={configure}
+								className="mt-1 h-6 gap-1 text-[10px]"
+							>
+								<PencilIcon size={12} />
+								Edit
 							</Button>
 						)}
 					</div>

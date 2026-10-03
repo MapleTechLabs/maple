@@ -43,6 +43,7 @@ const LANDING_EVENTS = [
 	"install_command_copied",
 	"docs_search",
 	"docs_snippet_copied",
+	"changelog_link_copied",
 	"brand_asset_copied",
 	"brand_asset_downloaded",
 	"media_opened",

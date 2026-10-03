@@ -2,7 +2,7 @@ import { assert, describe, it } from "@effect/vitest"
 import { makeMaplePgClient } from "@maple/db/client"
 import { sql } from "drizzle-orm"
 import { Effect, Tracer } from "effect"
-import * as Reactivity from "effect/unstable/reactivity/Reactivity"
+import * as Reactivity from "effect/reactivity/Reactivity"
 import { forkRequestScoped } from "@maple/backend/platform/fork-request-scoped"
 import {
 	makePgConnectionScope,
@@ -178,27 +178,31 @@ describe.skipIf(PG_URL === undefined)("PgConnectionScope against a real Postgres
 		// The regression this whole change exists for. With the pool capped at 1,
 		// four 300ms statements queue head-to-tail and take ~1.2s; a cron tick issuing
 		// thousands is what took `SELECT actors` from p50 928ms to 5687ms in
-		// production. `pg_sleep` makes the serialization observable in wall time,
-		// which no fake pool can do.
+		// production. Overlap is read from the server's own clock: wall time also
+		// counts four cold handshakes, which on a slow CI runner alone blew a budget.
 		const baseline = await settle()
 		const scope = makePgConnectionScope(url)
-		const sleepSeconds = 0.3
 		const concurrency = 4
 
-		const startedAt = Date.now()
-		await Effect.runPromise(
+		const results = await Effect.runPromise(
 			Effect.all(
 				Array.from({ length: concurrency }, () =>
-					scope.run((db) => db.execute(sql`select pg_sleep(${sleepSeconds})`)),
+					scope.run((db) =>
+						db.execute<{ started_ms: number; ended_ms: number }>(
+							sql`select (extract(epoch from statement_timestamp()) * 1000)::float8 as started_ms, pg_sleep(1), (extract(epoch from clock_timestamp()) * 1000)::float8 as ended_ms`,
+						),
+					),
 				),
 				{ concurrency },
 			),
 		)
-		const elapsedMs = Date.now() - startedAt
+		const windows = results.map((result) => rawRows(result)[0]!)
 
-		// Serialized would be >= 1200ms. Overlapped is one sleep plus scheduling.
-		// The midpoint is a wide margin either way, so this is not timing-flaky.
-		assert.isBelow(elapsedMs, sleepSeconds * 1000 * concurrency * 0.6)
+		// Serialized, each statement starts after the previous one ended. Overlapped,
+		// every statement is running at once: the last start precedes the first end.
+		const lastStart = Math.max(...windows.map((w) => w.started_ms))
+		const firstEnd = Math.min(...windows.map((w) => w.ended_ms))
+		assert.isBelow(lastStart, firstEnd)
 		assert.isAtMost((await backends()) - baseline, MAX_CONNECTIONS)
 
 		await Effect.runPromise(scope.close)

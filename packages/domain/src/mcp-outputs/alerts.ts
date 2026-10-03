@@ -54,9 +54,12 @@ export const ListAlertDestinationsOutput = Schema.Struct({
 	enabledOnly: Schema.optionalKey(Schema.Boolean),
 })
 
-export const CreateAlertRuleOutput = Schema.Struct({ rule: AlertRuleRow })
+/** Configuration that saved but probably does not do what the caller meant. */
+const RuleWriteWarnings = Schema.optionalKey(Schema.Array(Schema.String))
 
-export const UpdateAlertRuleOutput = Schema.Struct({ rule: AlertRuleRow })
+export const CreateAlertRuleOutput = Schema.Struct({ rule: AlertRuleRow, warnings: RuleWriteWarnings })
+
+export const UpdateAlertRuleOutput = Schema.Struct({ rule: AlertRuleRow, warnings: RuleWriteWarnings })
 
 export const DeleteAlertRuleOutput = Schema.Struct({ id: Schema.String })
 
@@ -65,6 +68,8 @@ export const AlertRuleDetailRow = Schema.Struct({
 	excludeServiceNames: Schema.Array(Schema.String),
 	groupBy: Schema.NullOr(Schema.Array(Schema.String)),
 	minimumSampleCount: Schema.Number,
+	/** What an empty window does: skip, zero, or alert. */
+	noDataBehavior: Schema.String,
 	consecutiveBreachesRequired: Schema.Number,
 	consecutiveHealthyRequired: Schema.Number,
 	renotifyIntervalMinutes: Schema.Number,
@@ -82,6 +87,51 @@ export const AlertRuleDetailRow = Schema.Struct({
 })
 
 export const GetAlertRuleOutput = Schema.Struct({ rule: AlertRuleDetailRow })
+
+/** One evaluation window of a preview: what the scheduler would have observed and decided. */
+export const AlertPreviewPointRow = Schema.Struct({
+	groupKey: Schema.String,
+	bucket: Schema.String,
+	status: Schema.String,
+	skipReason: NullableString,
+	value: NullableNumber,
+	sampleCount: Schema.Number,
+	provisional: Schema.Boolean,
+})
+
+/** One group's windows, counted by verdict. */
+export const AlertPreviewGroupRow = Schema.Struct({
+	groupKey: Schema.String,
+	windows: Schema.Number,
+	breached: Schema.Number,
+	healthy: Schema.Number,
+	noData: Schema.Number,
+	belowMinSamples: Schema.Number,
+	noValue: Schema.Number,
+	minValue: NullableNumber,
+	maxValue: NullableNumber,
+	totalSamples: Schema.Number,
+})
+
+export const PreviewAlertRuleOutput = Schema.Struct({
+	/** Set when an existing rule was previewed. */
+	ruleId: Schema.optionalKey(Schema.String),
+	timeRange: OutputTimeRange,
+	/** Set when the range was clamped to the preview's window cap. */
+	truncatedToStart: NullableString,
+	windowMinutes: Schema.Number,
+	comparator: Schema.String,
+	threshold: Schema.Number,
+	thresholdUpper: NullableNumber,
+	minimumSampleCount: Schema.Number,
+	groups: Schema.Array(AlertPreviewGroupRow),
+	/** The latest 200 windows per group; `groups` counts the whole range. */
+	points: Schema.Array(AlertPreviewPointRow),
+	wouldFire: Schema.Array(
+		Schema.Struct({ groupKey: Schema.String, start: Schema.String, end: Schema.String }),
+	),
+	warnings: Schema.Array(Schema.String),
+})
 
 export const AlertIncidentRow = Schema.Struct({
 	id: Schema.String,
@@ -123,6 +173,8 @@ export const AlertCheckRow = Schema.Struct({
 	timestamp: Schema.String,
 	groupKey: Schema.String,
 	status: Schema.String,
+	/** Why a skipped check skipped: no_data, below_min_samples or no_value. */
+	skipReason: NullableString,
 	observedValue: NullableNumber,
 	threshold: Schema.Number,
 	comparator: Schema.String,
@@ -144,6 +196,10 @@ export const ListAlertChecksOutput = Schema.Struct({
 	breached: Schema.Number,
 	healthy: Schema.Number,
 	skipped: Schema.Number,
+	/** Skipped checks whose window had no data (a raw query that returned no rows). */
+	noData: Schema.Number,
+	/** Skipped checks with fewer samples than the rule's minimum. */
+	belowMinSamples: Schema.Number,
 	errored: Schema.Number,
 	transitions: Schema.Number,
 	checks: Schema.Array(AlertCheckRow),

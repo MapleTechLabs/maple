@@ -52,9 +52,7 @@ describe("mapWarehouseError", () => {
 
 			// Tinybird's /v0/sql returns the text without a structured type field.
 			it("classifies NO_COMMON_TYPE from the message alone", () => {
-				expect(classify("p", noCommonType, "maple")).toBeInstanceOf(
-					WarehouseMalformedQueryError,
-				)
+				expect(classify("p", noCommonType, "maple")).toBeInstanceOf(WarehouseMalformedQueryError)
 			})
 
 			it("classifies an illegal argument type", () => {
@@ -117,9 +115,7 @@ describe("mapWarehouseError", () => {
 			})
 
 			it("defaults to caller authorship, the conservative reading", () => {
-				expect(classify("p", { message: noCommonType })).toBeInstanceOf(
-					WarehouseInvalidSqlError,
-				)
+				expect(classify("p", { message: noCommonType })).toBeInstanceOf(WarehouseInvalidSqlError)
 			})
 		})
 
@@ -200,9 +196,9 @@ describe("mapWarehouseError", () => {
 		// testify that the warehouse is pointed somewhere wrong; the same complaint
 		// about SQL the caller wrote is a typo in their query.
 		it("classifies an unknown-database ClickHouse type in Maple-authored SQL", () => {
-			expect(
-				classify("p", { message: "x", type: "UNKNOWN_DATABASE" }, "maple"),
-			).toBeInstanceOf(WarehouseConfigError)
+			expect(classify("p", { message: "x", type: "UNKNOWN_DATABASE" }, "maple")).toBeInstanceOf(
+				WarehouseConfigError,
+			)
 		})
 
 		it("classifies an unknown-database message in Maple-authored SQL", () => {
@@ -226,9 +222,7 @@ describe("mapWarehouseError", () => {
 		it("still reads a missing datasource and a bad URL as configuration", () => {
 			// Neither names a table the caller chose, so both stay config errors
 			// regardless of who wrote the SQL.
-			expect(classify("p", "Resource 'product_events' not found")).toBeInstanceOf(
-				WarehouseConfigError,
-			)
+			expect(classify("p", "Resource 'product_events' not found")).toBeInstanceOf(WarehouseConfigError)
 			expect(classify("p", "Invalid URL")).toBeInstanceOf(WarehouseConfigError)
 			expect(classify("p", { message: "x", type: "UNKNOWN_SETTING" })).toBeInstanceOf(
 				WarehouseConfigError,
@@ -244,9 +238,7 @@ describe("mapWarehouseError", () => {
 		})
 
 		it("classifies a response-parse message", () => {
-			expect(classify("p", "Failed to parse ClickHouse response")).toBeInstanceOf(
-				WarehouseClientError,
-			)
+			expect(classify("p", "Failed to parse ClickHouse response")).toBeInstanceOf(WarehouseClientError)
 		})
 	})
 
@@ -254,18 +246,14 @@ describe("mapWarehouseError", () => {
 	// `"maple"` explicitly: it is only diagnosable from SQL we generated.
 	describe("schema_drift", () => {
 		it("classifies the unknown-identifier ClickHouse type", () => {
-			expect(
-				classify("p", { message: "x", type: "UNKNOWN_IDENTIFIER" }, "maple"),
-			).toBeInstanceOf(WarehouseSchemaDriftError)
+			expect(classify("p", { message: "x", type: "UNKNOWN_IDENTIFIER" }, "maple")).toBeInstanceOf(
+				WarehouseSchemaDriftError,
+			)
 		})
 
 		it("classifies an unknown-identifier message", () => {
 			expect(
-				classify(
-					"p",
-					"Unknown expression or function identifier 'SampleRate' in scope",
-					"maple",
-				),
+				classify("p", "Unknown expression or function identifier 'SampleRate' in scope", "maple"),
 			).toBeInstanceOf(WarehouseSchemaDriftError)
 		})
 	})
@@ -326,6 +314,33 @@ describe("cleanErrorMessage", () => {
 		expect(cleaned).toBe("Request failed with status 503")
 	})
 
+	it("keeps comparison operators in echoed SQL across UNION branches", () => {
+		const branch = (t: string) =>
+			`SELECT count() FROM ${t} WHERE TimeUnix >= toDateTime('2026-10-01 12:00:00') AND TimeUnix <= toDateTime('2026-10-01 12:10:00')`
+		const sql = `${branch("metrics_histogram")} UNION ALL ${branch("metrics_sum")} UNION ALL ${branch("metrics_gauge")} AND a < 5 AND b > 3`
+		const message = `Code: 47. DB::Exception: Unknown expression identifier 'n' in scope ${sql}. (UNKNOWN_IDENTIFIER)`
+		const cleaned = cleanErrorMessage(message)
+		expect(cleaned).toBe(message)
+		expect(cleaned.match(/TimeUnix <= /g)).toHaveLength(3)
+		expect(cleaned.match(/TimeUnix >= /g)).toHaveLength(3)
+	})
+
+	it("strips inline HTML tags outside a full page", () => {
+		expect(cleanErrorMessage('Bad gateway <b>upstream</b> <p class="x">down</p>')).toBe(
+			"Bad gateway upstream down",
+		)
+	})
+
+	it("strips a doctype and unquoted attributes but keeps tag-like SQL comparisons", () => {
+		expect(cleanErrorMessage("Request failed with status 503: <!DOCTYPE html>\n<html><head>")).toBe(
+			"Request failed with status 503",
+		)
+		expect(cleanErrorMessage("Bad gateway <p class=x>down</p>")).toBe("Bad gateway down")
+		expect(cleanErrorMessage("Syntax error near WHERE x<b AND y>3")).toBe(
+			"Syntax error near WHERE x<b AND y>3",
+		)
+	})
+
 	it("trims a trailing colon", () => {
 		expect(cleanErrorMessage("Request failed with status 500:")).toBe("Request failed with status 500")
 	})
@@ -348,8 +363,9 @@ describe("toWarehouseQueryError", () => {
 })
 
 describe("mapWarehouseError on structured driver errors", () => {
-	const driver = (fields: Omit<ConstructorParameters<typeof WarehouseDriverError>[0], "message"> & { message?: string }) =>
-		new WarehouseDriverError({ message: "boom", ...fields })
+	const driver = (
+		fields: Omit<ConstructorParameters<typeof WarehouseDriverError>[0], "message"> & { message?: string },
+	) => new WarehouseDriverError({ message: "boom", ...fields })
 
 	it("reads the HTTP status from the driver error instead of the message", () => {
 		const mapped = mapWarehouseError("p", driver({ reason: "server", status: 503 }))
@@ -375,9 +391,9 @@ describe("mapWarehouseError on structured driver errors", () => {
 	})
 
 	it("treats a transport failure as upstream regardless of its message", () => {
-		expect(mapWarehouseError("p", driver({ reason: "transport", message: "socket hang up" }))).toBeInstanceOf(
-			WarehouseUpstreamError,
-		)
+		expect(
+			mapWarehouseError("p", driver({ reason: "transport", message: "socket hang up" })),
+		).toBeInstanceOf(WarehouseUpstreamError)
 	})
 
 	it("treats an undecodable response as a client failure", () => {
@@ -410,7 +426,9 @@ describe("WarehouseDriverError.fromUnknown", () => {
 	})
 
 	it("marks a SyntaxError as a protocol failure", () => {
-		expect(WarehouseDriverError.fromUnknown(new SyntaxError("Unexpected token <")).reason).toBe("protocol")
+		expect(WarehouseDriverError.fromUnknown(new SyntaxError("Unexpected token <")).reason).toBe(
+			"protocol",
+		)
 	})
 
 	it("returns an existing driver error unchanged", () => {

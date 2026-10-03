@@ -32,9 +32,10 @@ It records, in order:
 1. **Backup configuration as observed.** The source branch (cluster size, region, replica count)
    and the recent backups with state, size, completion and expiry. The actual cadence and
    retention are derived from these. This is the "backup settings" half of the evidence.
-2. **The restore.** `pscale branch create <db> restore-test-<stamp> --restore <backup-id>
-   --cluster-size PS_DEV --wait`. The source branch is only ever read (`branch show`,
-   `backup list`). The restore lands in a new branch on its own cluster.
+2. **The restore.**
+   `pscale branch create <db> restore-test-<stamp> --restore <backup-id> --cluster-size PS_DEV --wait`.
+   The source branch is only ever read (`branch show`, `backup list`). The restore lands in a new
+   branch on its own cluster.
 3. **Verification** on the restored branch, each a pass/fail row in the report:
     - the Drizzle migrations table (`drizzle.__drizzle_migrations`) is present;
     - every critical table exists (`org_ingest_keys`, `api_keys`, dashboards and their versions,
@@ -47,6 +48,7 @@ It records, in order:
     - one record reads back with its full history.
 
     A query that errors is a failed row, not a crash. The report is always written.
+
 4. **Cleanup.** The only destructive call is `branch delete`. It passes through a gate
    (`assertThrowaway`) that refuses any name without the `restore-test-` prefix, the source
    branch, and `main`. The report is written before the delete is requested. A process `exit`

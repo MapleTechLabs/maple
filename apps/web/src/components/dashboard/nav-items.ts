@@ -4,6 +4,7 @@ import {
 	ChartLineIcon,
 	CircleWarningIcon,
 	CloudflareIcon,
+	CodeIcon,
 	ComputerIcon,
 	FileIcon,
 	GridSquareCirclePlusIcon,
@@ -233,8 +234,8 @@ const exploreItem: NavItem = {
  *
  * `flags` is *optional*, so a caller with no organization context yet hides a
  * flagged row rather than flashing it — a row that appears and then vanishes is
- * worse than one that arrives a beat late. Releases (`releases`)
- * is the row behind a staged rollout right now.
+ * worse than one that arrives a beat late. Releases (`releases`) and Code
+ * Review (`prReview`) are the rows behind staged rollouts right now.
  */
 export function navGroups(flags?: OrganizationFeatureFlags): NavGroup[] {
 	const analyzeItems: NavItem[] = [
@@ -271,6 +272,8 @@ export function navGroups(flags?: OrganizationFeatureFlags): NavGroup[] {
 				// { title: "Investigations", href: "/investigations", icon: MagnifierCheckIcon },
 				{ title: "Errors", href: "/errors", icon: CircleWarningIcon },
 				{ title: "Alerts", href: "/alerts", icon: BellIcon },
+				// Behind the `prReview` rollout, like the reviewer itself.
+				...(flags?.prReview ? [{ title: "Code Review", href: "/code-review", icon: CodeIcon }] : []),
 			],
 		},
 	]

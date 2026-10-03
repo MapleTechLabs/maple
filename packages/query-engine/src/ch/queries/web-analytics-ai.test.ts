@@ -22,10 +22,12 @@ describe("webAnalyticsAiReferralsQuery", () => {
 		expect(flat).toContain("FROM session_replays")
 		// `www.` is dropped before the exact host match.
 		expect(flat).toContain(
-			"transform(replaceRegexpOne(lower(ReferrerHost), '^www\\\\.', ''), ['chatgpt.com'",
+			"transform(replaceRegexpOne(lower(session_replays.ReferrerHost), '^www\\\\.', ''), ['chatgpt.com'",
 		)
-		expect(flat).toContain("transform(lower(UtmSource), ['chatgpt.com'")
-		expect(flat).toMatch(/if\(transform\(replaceRegexpOne\(lower\(ReferrerHost\).* != '', transform/)
+		expect(flat).toContain("transform(lower(session_replays.UtmSource), ['chatgpt.com'")
+		expect(flat).toMatch(
+			/if\(transform\(replaceRegexpOne\(lower\(session_replays\.ReferrerHost\).* != '', transform/,
+		)
 		expect(flat).toContain("GROUP BY bucket, product")
 	})
 
@@ -36,11 +38,11 @@ describe("webAnalyticsAiReferralsQuery", () => {
 		)
 		const flat = oneLine(sql)
 		expect(flat).toMatch(
-			/replaceRegexpOne\(lower\(ReferrerHost\), '\^www\\\\\.', ''\) IN \('chatgpt\.com'/,
+			/replaceRegexpOne\(lower\(session_replays\.ReferrerHost\), '\^www\\\\\.', ''\) IN \('chatgpt\.com'/,
 		)
-		expect(flat).toContain("OR lower(UtmSource) IN ('chatgpt.com'")
+		expect(flat).toContain("OR lower(session_replays.UtmSource) IN ('chatgpt.com'")
 		expect(flat).toContain("Country = 'DE'")
-		expect(flat).toContain("NOT (multiSearchAnyCaseInsensitive(UserAgent")
+		expect(flat).toContain("NOT (multiSearchAnyCaseInsensitive(session_replays.UserAgent")
 	})
 })
 
@@ -48,9 +50,13 @@ describe("AI crawler queries", () => {
 	it("counts requests by trace and pages only when the site served them", () => {
 		const flat = oneLine(compileUnsafe(webAnalyticsAiCrawlersQuery({}), params).sql)
 		expect(flat).toContain("FROM ai_crawler_requests")
-		expect(flat).toContain("uniq(TraceId) AS requests")
-		expect(flat).toContain("uniqIf(TraceId, NOT (HttpStatus < 400)) AS failedRequests")
-		expect(flat).toContain("uniqIf(concat(Host, Path), HttpStatus < 400) AS pages")
+		expect(flat).toContain("uniq(ai_crawler_requests.TraceId) AS requests")
+		expect(flat).toContain(
+			"uniqIf(ai_crawler_requests.TraceId, NOT (ai_crawler_requests.HttpStatus < 400)) AS failedRequests",
+		)
+		expect(flat).toContain(
+			"uniqIf(concat(ai_crawler_requests.Host, ai_crawler_requests.Path), ai_crawler_requests.HttpStatus < 400) AS pages",
+		)
 		expect(flat).toContain("GROUP BY crawler")
 	})
 
@@ -79,7 +85,7 @@ describe("AI crawler queries", () => {
 
 	it("lists only served pages, most read first", () => {
 		const flat = oneLine(compileUnsafe(webAnalyticsAiCrawledPagesQuery({ limit: 10 }), params).sql)
-		expect(flat).toContain("AND HttpStatus < 400")
+		expect(flat).toContain("AND ai_crawler_requests.HttpStatus < 400")
 		expect(flat).toContain("ORDER BY requests DESC LIMIT 10")
 	})
 })

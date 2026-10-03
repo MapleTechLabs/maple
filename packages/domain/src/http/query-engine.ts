@@ -1,4 +1,4 @@
-import { HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi"
+import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Schema } from "effect"
 import { MAX_RAW_SQL_LENGTH } from "../raw-sql"
 import { RawSqlDisplayType } from "@maple/widgets"
@@ -446,6 +446,31 @@ export class PlanetScaleInfraTimeseriesRequest extends Schema.Class<PlanetScaleI
 
 export class PlanetScaleInfraTimeseriesResponse extends Schema.Class<PlanetScaleInfraTimeseriesResponse>(
 	"PlanetScaleInfraTimeseriesResponse",
+)({
+	data: Schema.Array(Schema.Record(Schema.String, Schema.Unknown)),
+}) {}
+
+// Railway infrastructure page (/infra/railway): `railway.*` gauges from the Railway poller.
+export class RailwayInfraServicesRequest extends Schema.Class<RailwayInfraServicesRequest>(
+	"RailwayInfraServicesRequest",
+)({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+}) {}
+
+export class RailwayInfraServiceTimeseriesRequest extends Schema.Class<RailwayInfraServiceTimeseriesRequest>(
+	"RailwayInfraServiceTimeseriesRequest",
+)({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	bucketSeconds: BucketSeconds,
+	/** Railway service ids are shared across a project's environments, so both are required. */
+	environmentId: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(128)),
+	serviceId: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(128)),
+}) {}
+
+export class RailwayInfraRowsResponse extends Schema.Class<RailwayInfraRowsResponse>(
+	"RailwayInfraRowsResponse",
 )({
 	data: Schema.Array(Schema.Record(Schema.String, Schema.Unknown)),
 }) {}
@@ -2626,6 +2651,20 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 		HttpApiEndpoint.post("planetscaleInfraTimeseries", "/planetscale-infra-timeseries", {
 			payload: PlanetScaleInfraTimeseriesRequest,
 			success: PlanetScaleInfraTimeseriesResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("railwayInfraServices", "/railway-infra-services", {
+			payload: RailwayInfraServicesRequest,
+			success: RailwayInfraRowsResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("railwayInfraServiceTimeseries", "/railway-infra-service-timeseries", {
+			payload: RailwayInfraServiceTimeseriesRequest,
+			success: RailwayInfraRowsResponse,
 			error: queryEngineEndpointErrors,
 		}),
 	)

@@ -149,6 +149,12 @@ describe("buildSummaryLine", () => {
 	 * metric name and its value as a bare unpunctuated integer —
 	 * "*builder_query* is *1041923*".
 	 */
+	it("says a breach without a value is a window with no data", () => {
+		const line = bold({ ...baseContext, value: null })
+		assert.include(line, "has no data over the last")
+		assert.notInclude(line, "n/a")
+	})
+
 	it("names what a builder_query rule measures instead of its query kind", () => {
 		const line = bold({
 			...baseContext,

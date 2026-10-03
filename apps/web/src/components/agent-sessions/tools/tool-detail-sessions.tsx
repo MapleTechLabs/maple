@@ -52,9 +52,7 @@ export function ToolDetailSessions({
 		>
 			<div className="flex flex-wrap items-center justify-between gap-4 pb-3">
 				<div className="flex min-w-0 items-baseline gap-2.5 font-mono">
-					<span className="text-[12.5px] font-medium text-foreground">
-						Sessions running {tool}
-					</span>
+					<span className="text-[12.5px] font-medium text-foreground">Sessions running {tool}</span>
 					<span className="text-[11.5px] leading-3.5 tabular-nums text-muted-foreground/70">
 						{plural(rows.length, "session")}
 					</span>
@@ -150,7 +148,11 @@ export function ToolDetailSessions({
 								</span>
 
 								<span className="shrink-0 whitespace-nowrap text-xs text-muted-foreground">
-									{formatRelativeTimeOrDate(session.startTime, undefined, effectiveTimezone)}
+									{formatRelativeTimeOrDate(
+										session.startTime,
+										undefined,
+										effectiveTimezone,
+									)}
 								</span>
 							</Link>
 						)
@@ -160,8 +162,8 @@ export function ToolDetailSessions({
 
 			{capped ? (
 				<p className="px-3 pt-3 text-sm text-muted-foreground">
-					Showing the {rows.length.toLocaleString()} most recent sessions — narrow the time range
-					to see older ones
+					Showing the {rows.length.toLocaleString()} most recent sessions — narrow the time range to
+					see older ones
 				</p>
 			) : null}
 		</section>

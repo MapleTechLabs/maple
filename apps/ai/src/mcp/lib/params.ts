@@ -78,6 +78,10 @@ export const oneOf = <const L extends ReadonlyArray<string>>(values: L, descript
 export const optionalOneOf = <const L extends ReadonlyArray<string>>(values: L, description: string) =>
 	Schema.optional(Schema.Literals(values)).annotate({ description })
 
+/** Several values from a closed set, each listed in the item schema's `enum`. */
+export const optionalOneOfList = <const L extends ReadonlyArray<string>>(values: L, description: string) =>
+	Schema.optional(Schema.Array(Schema.Literals(values))).annotate({ description })
+
 /**
  * A list. Published as an array; a comma-separated string is still accepted because every
  * `*_names` parameter used to be one.

@@ -64,7 +64,7 @@ const TracerLive = Maple.layer({
 | Option                 | Default | Description                                                                        |
 | ---------------------- | ------- | ---------------------------------------------------------------------------------- |
 | `replay.enabled`       | `true`  | Record rrweb session replays.                                                      |
-| `replay.sampleRate`    | `1`     | Fraction of sessions to record, 0 to 1.                                              |
+| `replay.sampleRate`    | `1`     | Fraction of sessions to record, 0 to 1.                                            |
 | `replay.maskAllInputs` | `true`  | Mask all `<input>` values in the recording.                                        |
 | `replay.maskAllText`   | `false` | Mask all text in the recording.                                                    |
 | `emitSessionMeta`      | `true`  | Post session metadata rows so unrecorded sessions still appear in the Sessions UI. |
@@ -96,14 +96,14 @@ clearIdentity()
 
 The `privacy` option controls consent, the persistent visitor id and what identity data is sent:
 
-| Option                         | Default | Description                                                                                                                                                         |
-| ------------------------------ | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `privacy.requireConsent`       | `false` | Capture nothing until `setConsent(true)` is called                                                                                                                  |
-| `privacy.persistVisitorId`     | `true`  | Store a persistent visitor id                                                                                                                                       |
-| `privacy.crossSubdomainCookie` | `true`  | Scope the visitor-id cookie to the registered domain, so sibling subdomains share one visitor                                                                       |
-| `privacy.cookieDomain`         |         | Explicit cookie `Domain` (without the leading dot). `""` forces a host-only cookie                                                                                  |
-| `privacy.captureUserEmail`     | `true`  | Send the email passed to `identify()`                                                                                                                               |
-| `privacy.respectDoNotTrack`    | `false` | Treat `navigator.doNotTrack` like Global Privacy Control                                                                                                            |
+| Option                         | Default | Description                                                                                                                                                                         |
+| ------------------------------ | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `privacy.requireConsent`       | `false` | Capture nothing until `setConsent(true)` is called                                                                                                                                  |
+| `privacy.persistVisitorId`     | `true`  | Store a persistent visitor id                                                                                                                                                       |
+| `privacy.crossSubdomainCookie` | `true`  | Scope the visitor-id cookie to the registered domain, so sibling subdomains share one visitor                                                                                       |
+| `privacy.cookieDomain`         |         | Explicit cookie `Domain` (without the leading dot). `""` forces a host-only cookie                                                                                                  |
+| `privacy.captureUserEmail`     | `true`  | Send the email passed to `identify()`                                                                                                                                               |
+| `privacy.respectDoNotTrack`    | `false` | Treat `navigator.doNotTrack` like Global Privacy Control                                                                                                                            |
 | `privacy.sanitizeUrl`          |         | Function that rewrites every URL before it leaves the page. Runs after the built-in redaction of credential-shaped query and fragment parameters such as `token` and `access_token` |
 
 Global Privacy Control is honored by default: when the browser sends it, the SDK does not store the persistent visitor id. Capture itself continues without it.

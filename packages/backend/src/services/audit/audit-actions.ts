@@ -16,6 +16,8 @@ import { ErrorIssueEventType } from "@maple/domain/http"
  */
 export const AuditResources = {
 	agent: { prefix: PublicIdPrefixes.actor, verbs: ["registered"] },
+	/** Feedback about Maple sent by an agent; kind and agent type are in `metadata`. */
+	agent_feedback: { prefix: PublicIdPrefixes.agentFeedback, verbs: ["submitted"] },
 	alert_destination: {
 		prefix: PublicIdPrefixes.alertDestination,
 		verbs: ["created", "updated", "deleted"],

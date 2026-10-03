@@ -34,6 +34,10 @@ import { Route as AlertsCreateRouteImport } from './routes/alerts/create'
 import { Route as AnalyticsIndexRouteImport } from './routes/analytics/index'
 import { Route as AnomaliesIndexRouteImport } from './routes/anomalies/index'
 import { Route as AnomaliesIncidentIdRouteImport } from './routes/anomalies/$incidentId'
+import { Route as CodeReviewIndexRouteImport } from './routes/code-review/index'
+import { Route as CodeReviewIssuesRouteImport } from './routes/code-review/issues'
+import { Route as CodeReviewPullRequestsRouteImport } from './routes/code-review/pull-requests'
+import { Route as CodeReviewSettingsRouteImport } from './routes/code-review/settings'
 import { Route as DashboardsIndexRouteImport } from './routes/dashboards/index'
 import { Route as DashboardsDashboardIdRouteImport } from './routes/dashboards/$dashboardId'
 import { Route as DashboardsTemplatesRouteImport } from './routes/dashboards/templates'
@@ -55,6 +59,7 @@ import { Route as LabLoadersRouteImport } from './routes/lab/loaders'
 import { Route as LabNodesRouteImport } from './routes/lab/nodes'
 import { Route as LabOnboardingRouteImport } from './routes/lab/onboarding'
 import { Route as LabQueryBuilderRouteImport } from './routes/lab/query-builder'
+import { Route as LabReplaysRouteImport } from './routes/lab/replays'
 import { Route as LabServiceMap3dRouteImport } from './routes/lab/service-map-3d'
 import { Route as LabTimeRangeRouteImport } from './routes/lab/time-range'
 import { Route as LabTimelineRouteImport } from './routes/lab/timeline'
@@ -86,6 +91,8 @@ import { Route as InfraContainersContainerNameRouteImport } from './routes/infra
 import { Route as InfraKubernetesIndexRouteImport } from './routes/infra/kubernetes/index'
 import { Route as InfraPlanetscaleIndexRouteImport } from './routes/infra/planetscale/index'
 import { Route as InfraPlanetscaleDbNameRouteImport } from './routes/infra/planetscale/$dbName'
+import { Route as InfraRailwayIndexRouteImport } from './routes/infra/railway/index'
+import { Route as InfraRailwayServiceIdRouteImport } from './routes/infra/railway/$serviceId'
 import { Route as LabBenchAgentTranscriptRouteImport } from './routes/lab/bench/agent-transcript'
 import { Route as LabBenchInfraRouteImport } from './routes/lab/bench/infra'
 import { Route as LabBenchLogsRouteImport } from './routes/lab/bench/logs'
@@ -228,6 +235,26 @@ const AnomaliesIncidentIdRoute = AnomaliesIncidentIdRouteImport.update({
   path: '/anomalies/$incidentId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CodeReviewIndexRoute = CodeReviewIndexRouteImport.update({
+  id: '/code-review/',
+  path: '/code-review/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CodeReviewIssuesRoute = CodeReviewIssuesRouteImport.update({
+  id: '/code-review/issues',
+  path: '/code-review/issues',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CodeReviewPullRequestsRoute = CodeReviewPullRequestsRouteImport.update({
+  id: '/code-review/pull-requests',
+  path: '/code-review/pull-requests',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CodeReviewSettingsRoute = CodeReviewSettingsRouteImport.update({
+  id: '/code-review/settings',
+  path: '/code-review/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DashboardsIndexRoute = DashboardsIndexRouteImport.update({
   id: '/dashboards/',
   path: '/dashboards/',
@@ -331,6 +358,11 @@ const LabOnboardingRoute = LabOnboardingRouteImport.update({
 const LabQueryBuilderRoute = LabQueryBuilderRouteImport.update({
   id: '/query-builder',
   path: '/query-builder',
+  getParentRoute: () => LabRouteRoute,
+} as any)
+const LabReplaysRoute = LabReplaysRouteImport.update({
+  id: '/replays',
+  path: '/replays',
   getParentRoute: () => LabRouteRoute,
 } as any)
 const LabServiceMap3dRoute = LabServiceMap3dRouteImport.update({
@@ -492,6 +524,16 @@ const InfraPlanetscaleDbNameRoute = InfraPlanetscaleDbNameRouteImport.update({
   path: '/infra/planetscale/$dbName',
   getParentRoute: () => rootRouteImport,
 } as any)
+const InfraRailwayIndexRoute = InfraRailwayIndexRouteImport.update({
+  id: '/infra/railway/',
+  path: '/infra/railway/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const InfraRailwayServiceIdRoute = InfraRailwayServiceIdRouteImport.update({
+  id: '/infra/railway/$serviceId',
+  path: '/infra/railway/$serviceId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LabBenchAgentTranscriptRoute = LabBenchAgentTranscriptRouteImport.update({
   id: '/bench/agent-transcript',
   path: '/bench/agent-transcript',
@@ -604,6 +646,9 @@ export interface FileRoutesByFullPath {
   '/alerts/$ruleId': typeof AlertsRuleIdRoute
   '/alerts/create': typeof AlertsCreateRoute
   '/anomalies/$incidentId': typeof AnomaliesIncidentIdRoute
+  '/code-review/issues': typeof CodeReviewIssuesRoute
+  '/code-review/pull-requests': typeof CodeReviewPullRequestsRoute
+  '/code-review/settings': typeof CodeReviewSettingsRoute
   '/dashboards/$dashboardId': typeof DashboardsDashboardIdRoute
   '/dashboards/templates': typeof DashboardsTemplatesRoute
   '/infra/$hostName': typeof InfraHostNameRoute
@@ -620,6 +665,7 @@ export interface FileRoutesByFullPath {
   '/lab/nodes': typeof LabNodesRoute
   '/lab/onboarding': typeof LabOnboardingRoute
   '/lab/query-builder': typeof LabQueryBuilderRoute
+  '/lab/replays': typeof LabReplaysRoute
   '/lab/service-map-3d': typeof LabServiceMap3dRoute
   '/lab/time-range': typeof LabTimeRangeRoute
   '/lab/timeline': typeof LabTimelineRoute
@@ -637,6 +683,7 @@ export interface FileRoutesByFullPath {
   '/alerts/': typeof AlertsIndexRoute
   '/analytics/': typeof AnalyticsIndexRoute
   '/anomalies/': typeof AnomaliesIndexRoute
+  '/code-review/': typeof CodeReviewIndexRoute
   '/dashboards/': typeof DashboardsIndexRoute
   '/errors/': typeof ErrorsIndexRoute
   '/infra/': typeof InfraIndexRoute
@@ -654,6 +701,7 @@ export interface FileRoutesByFullPath {
   '/infra/cloudflare/$zoneName': typeof InfraCloudflareZoneNameRoute
   '/infra/containers/$containerName': typeof InfraContainersContainerNameRoute
   '/infra/planetscale/$dbName': typeof InfraPlanetscaleDbNameRoute
+  '/infra/railway/$serviceId': typeof InfraRailwayServiceIdRoute
   '/lab/bench/agent-transcript': typeof LabBenchAgentTranscriptRoute
   '/lab/bench/infra': typeof LabBenchInfraRoute
   '/lab/bench/logs': typeof LabBenchLogsRoute
@@ -667,6 +715,7 @@ export interface FileRoutesByFullPath {
   '/infra/containers/': typeof InfraContainersIndexRoute
   '/infra/kubernetes/': typeof InfraKubernetesIndexRoute
   '/infra/planetscale/': typeof InfraPlanetscaleIndexRoute
+  '/infra/railway/': typeof InfraRailwayIndexRoute
   '/dashboards/$dashboardId/widgets/$widgetId': typeof DashboardsDashboardIdWidgetsWidgetIdRoute
   '/infra/kubernetes/nodes/$nodeName': typeof InfraKubernetesNodesNodeNameRoute
   '/infra/kubernetes/pods/$podName': typeof InfraKubernetesPodsPodNameRoute
@@ -698,6 +747,9 @@ export interface FileRoutesByTo {
   '/alerts/$ruleId': typeof AlertsRuleIdRoute
   '/alerts/create': typeof AlertsCreateRoute
   '/anomalies/$incidentId': typeof AnomaliesIncidentIdRoute
+  '/code-review/issues': typeof CodeReviewIssuesRoute
+  '/code-review/pull-requests': typeof CodeReviewPullRequestsRoute
+  '/code-review/settings': typeof CodeReviewSettingsRoute
   '/dashboards/$dashboardId': typeof DashboardsDashboardIdRoute
   '/dashboards/templates': typeof DashboardsTemplatesRoute
   '/infra/$hostName': typeof InfraHostNameRoute
@@ -714,6 +766,7 @@ export interface FileRoutesByTo {
   '/lab/nodes': typeof LabNodesRoute
   '/lab/onboarding': typeof LabOnboardingRoute
   '/lab/query-builder': typeof LabQueryBuilderRoute
+  '/lab/replays': typeof LabReplaysRoute
   '/lab/service-map-3d': typeof LabServiceMap3dRoute
   '/lab/time-range': typeof LabTimeRangeRoute
   '/lab/timeline': typeof LabTimelineRoute
@@ -731,6 +784,7 @@ export interface FileRoutesByTo {
   '/alerts': typeof AlertsIndexRoute
   '/analytics': typeof AnalyticsIndexRoute
   '/anomalies': typeof AnomaliesIndexRoute
+  '/code-review': typeof CodeReviewIndexRoute
   '/dashboards': typeof DashboardsIndexRoute
   '/errors': typeof ErrorsIndexRoute
   '/infra': typeof InfraIndexRoute
@@ -748,6 +802,7 @@ export interface FileRoutesByTo {
   '/infra/cloudflare/$zoneName': typeof InfraCloudflareZoneNameRoute
   '/infra/containers/$containerName': typeof InfraContainersContainerNameRoute
   '/infra/planetscale/$dbName': typeof InfraPlanetscaleDbNameRoute
+  '/infra/railway/$serviceId': typeof InfraRailwayServiceIdRoute
   '/lab/bench/agent-transcript': typeof LabBenchAgentTranscriptRoute
   '/lab/bench/infra': typeof LabBenchInfraRoute
   '/lab/bench/logs': typeof LabBenchLogsRoute
@@ -761,6 +816,7 @@ export interface FileRoutesByTo {
   '/infra/containers': typeof InfraContainersIndexRoute
   '/infra/kubernetes': typeof InfraKubernetesIndexRoute
   '/infra/planetscale': typeof InfraPlanetscaleIndexRoute
+  '/infra/railway': typeof InfraRailwayIndexRoute
   '/dashboards/$dashboardId/widgets/$widgetId': typeof DashboardsDashboardIdWidgetsWidgetIdRoute
   '/infra/kubernetes/nodes/$nodeName': typeof InfraKubernetesNodesNodeNameRoute
   '/infra/kubernetes/pods/$podName': typeof InfraKubernetesPodsPodNameRoute
@@ -794,6 +850,9 @@ export interface FileRoutesById {
   '/alerts/$ruleId': typeof AlertsRuleIdRoute
   '/alerts/create': typeof AlertsCreateRoute
   '/anomalies/$incidentId': typeof AnomaliesIncidentIdRoute
+  '/code-review/issues': typeof CodeReviewIssuesRoute
+  '/code-review/pull-requests': typeof CodeReviewPullRequestsRoute
+  '/code-review/settings': typeof CodeReviewSettingsRoute
   '/dashboards/$dashboardId': typeof DashboardsDashboardIdRoute
   '/dashboards/templates': typeof DashboardsTemplatesRoute
   '/infra/$hostName': typeof InfraHostNameRoute
@@ -810,6 +869,7 @@ export interface FileRoutesById {
   '/lab/nodes': typeof LabNodesRoute
   '/lab/onboarding': typeof LabOnboardingRoute
   '/lab/query-builder': typeof LabQueryBuilderRoute
+  '/lab/replays': typeof LabReplaysRoute
   '/lab/service-map-3d': typeof LabServiceMap3dRoute
   '/lab/time-range': typeof LabTimeRangeRoute
   '/lab/timeline': typeof LabTimelineRoute
@@ -827,6 +887,7 @@ export interface FileRoutesById {
   '/alerts/': typeof AlertsIndexRoute
   '/analytics/': typeof AnalyticsIndexRoute
   '/anomalies/': typeof AnomaliesIndexRoute
+  '/code-review/': typeof CodeReviewIndexRoute
   '/dashboards/': typeof DashboardsIndexRoute
   '/errors/': typeof ErrorsIndexRoute
   '/infra/': typeof InfraIndexRoute
@@ -844,6 +905,7 @@ export interface FileRoutesById {
   '/infra/cloudflare/$zoneName': typeof InfraCloudflareZoneNameRoute
   '/infra/containers/$containerName': typeof InfraContainersContainerNameRoute
   '/infra/planetscale/$dbName': typeof InfraPlanetscaleDbNameRoute
+  '/infra/railway/$serviceId': typeof InfraRailwayServiceIdRoute
   '/lab/bench/agent-transcript': typeof LabBenchAgentTranscriptRoute
   '/lab/bench/infra': typeof LabBenchInfraRoute
   '/lab/bench/logs': typeof LabBenchLogsRoute
@@ -857,6 +919,7 @@ export interface FileRoutesById {
   '/infra/containers/': typeof InfraContainersIndexRoute
   '/infra/kubernetes/': typeof InfraKubernetesIndexRoute
   '/infra/planetscale/': typeof InfraPlanetscaleIndexRoute
+  '/infra/railway/': typeof InfraRailwayIndexRoute
   '/dashboards/$dashboardId_/widgets/$widgetId': typeof DashboardsDashboardIdWidgetsWidgetIdRoute
   '/infra/kubernetes/nodes/$nodeName': typeof InfraKubernetesNodesNodeNameRoute
   '/infra/kubernetes/pods/$podName': typeof InfraKubernetesPodsPodNameRoute
@@ -891,6 +954,9 @@ export interface FileRouteTypes {
     | '/alerts/$ruleId'
     | '/alerts/create'
     | '/anomalies/$incidentId'
+    | '/code-review/issues'
+    | '/code-review/pull-requests'
+    | '/code-review/settings'
     | '/dashboards/$dashboardId'
     | '/dashboards/templates'
     | '/infra/$hostName'
@@ -907,6 +973,7 @@ export interface FileRouteTypes {
     | '/lab/nodes'
     | '/lab/onboarding'
     | '/lab/query-builder'
+    | '/lab/replays'
     | '/lab/service-map-3d'
     | '/lab/time-range'
     | '/lab/timeline'
@@ -924,6 +991,7 @@ export interface FileRouteTypes {
     | '/alerts/'
     | '/analytics/'
     | '/anomalies/'
+    | '/code-review/'
     | '/dashboards/'
     | '/errors/'
     | '/infra/'
@@ -941,6 +1009,7 @@ export interface FileRouteTypes {
     | '/infra/cloudflare/$zoneName'
     | '/infra/containers/$containerName'
     | '/infra/planetscale/$dbName'
+    | '/infra/railway/$serviceId'
     | '/lab/bench/agent-transcript'
     | '/lab/bench/infra'
     | '/lab/bench/logs'
@@ -954,6 +1023,7 @@ export interface FileRouteTypes {
     | '/infra/containers/'
     | '/infra/kubernetes/'
     | '/infra/planetscale/'
+    | '/infra/railway/'
     | '/dashboards/$dashboardId/widgets/$widgetId'
     | '/infra/kubernetes/nodes/$nodeName'
     | '/infra/kubernetes/pods/$podName'
@@ -985,6 +1055,9 @@ export interface FileRouteTypes {
     | '/alerts/$ruleId'
     | '/alerts/create'
     | '/anomalies/$incidentId'
+    | '/code-review/issues'
+    | '/code-review/pull-requests'
+    | '/code-review/settings'
     | '/dashboards/$dashboardId'
     | '/dashboards/templates'
     | '/infra/$hostName'
@@ -1001,6 +1074,7 @@ export interface FileRouteTypes {
     | '/lab/nodes'
     | '/lab/onboarding'
     | '/lab/query-builder'
+    | '/lab/replays'
     | '/lab/service-map-3d'
     | '/lab/time-range'
     | '/lab/timeline'
@@ -1018,6 +1092,7 @@ export interface FileRouteTypes {
     | '/alerts'
     | '/analytics'
     | '/anomalies'
+    | '/code-review'
     | '/dashboards'
     | '/errors'
     | '/infra'
@@ -1035,6 +1110,7 @@ export interface FileRouteTypes {
     | '/infra/cloudflare/$zoneName'
     | '/infra/containers/$containerName'
     | '/infra/planetscale/$dbName'
+    | '/infra/railway/$serviceId'
     | '/lab/bench/agent-transcript'
     | '/lab/bench/infra'
     | '/lab/bench/logs'
@@ -1048,6 +1124,7 @@ export interface FileRouteTypes {
     | '/infra/containers'
     | '/infra/kubernetes'
     | '/infra/planetscale'
+    | '/infra/railway'
     | '/dashboards/$dashboardId/widgets/$widgetId'
     | '/infra/kubernetes/nodes/$nodeName'
     | '/infra/kubernetes/pods/$podName'
@@ -1080,6 +1157,9 @@ export interface FileRouteTypes {
     | '/alerts/$ruleId'
     | '/alerts/create'
     | '/anomalies/$incidentId'
+    | '/code-review/issues'
+    | '/code-review/pull-requests'
+    | '/code-review/settings'
     | '/dashboards/$dashboardId'
     | '/dashboards/templates'
     | '/infra/$hostName'
@@ -1096,6 +1176,7 @@ export interface FileRouteTypes {
     | '/lab/nodes'
     | '/lab/onboarding'
     | '/lab/query-builder'
+    | '/lab/replays'
     | '/lab/service-map-3d'
     | '/lab/time-range'
     | '/lab/timeline'
@@ -1113,6 +1194,7 @@ export interface FileRouteTypes {
     | '/alerts/'
     | '/analytics/'
     | '/anomalies/'
+    | '/code-review/'
     | '/dashboards/'
     | '/errors/'
     | '/infra/'
@@ -1130,6 +1212,7 @@ export interface FileRouteTypes {
     | '/infra/cloudflare/$zoneName'
     | '/infra/containers/$containerName'
     | '/infra/planetscale/$dbName'
+    | '/infra/railway/$serviceId'
     | '/lab/bench/agent-transcript'
     | '/lab/bench/infra'
     | '/lab/bench/logs'
@@ -1143,6 +1226,7 @@ export interface FileRouteTypes {
     | '/infra/containers/'
     | '/infra/kubernetes/'
     | '/infra/planetscale/'
+    | '/infra/railway/'
     | '/dashboards/$dashboardId_/widgets/$widgetId'
     | '/infra/kubernetes/nodes/$nodeName'
     | '/infra/kubernetes/pods/$podName'
@@ -1176,6 +1260,9 @@ export interface RootRouteChildren {
   AlertsRuleIdRoute: typeof AlertsRuleIdRoute
   AlertsCreateRoute: typeof AlertsCreateRoute
   AnomaliesIncidentIdRoute: typeof AnomaliesIncidentIdRoute
+  CodeReviewIssuesRoute: typeof CodeReviewIssuesRoute
+  CodeReviewPullRequestsRoute: typeof CodeReviewPullRequestsRoute
+  CodeReviewSettingsRoute: typeof CodeReviewSettingsRoute
   DashboardsDashboardIdRoute: typeof DashboardsDashboardIdRoute
   DashboardsTemplatesRoute: typeof DashboardsTemplatesRoute
   InfraHostNameRoute: typeof InfraHostNameRoute
@@ -1193,6 +1280,7 @@ export interface RootRouteChildren {
   AlertsIndexRoute: typeof AlertsIndexRoute
   AnalyticsIndexRoute: typeof AnalyticsIndexRoute
   AnomaliesIndexRoute: typeof AnomaliesIndexRoute
+  CodeReviewIndexRoute: typeof CodeReviewIndexRoute
   DashboardsIndexRoute: typeof DashboardsIndexRoute
   ErrorsIndexRoute: typeof ErrorsIndexRoute
   InfraIndexRoute: typeof InfraIndexRoute
@@ -1209,12 +1297,14 @@ export interface RootRouteChildren {
   InfraCloudflareZoneNameRoute: typeof InfraCloudflareZoneNameRoute
   InfraContainersContainerNameRoute: typeof InfraContainersContainerNameRoute
   InfraPlanetscaleDbNameRoute: typeof InfraPlanetscaleDbNameRoute
+  InfraRailwayServiceIdRoute: typeof InfraRailwayServiceIdRoute
   AgentSessionsToolsIndexRoute: typeof AgentSessionsToolsIndexRoute
   ErrorsIssuesIndexRoute: typeof ErrorsIssuesIndexRoute
   InfraCloudflareIndexRoute: typeof InfraCloudflareIndexRoute
   InfraContainersIndexRoute: typeof InfraContainersIndexRoute
   InfraKubernetesIndexRoute: typeof InfraKubernetesIndexRoute
   InfraPlanetscaleIndexRoute: typeof InfraPlanetscaleIndexRoute
+  InfraRailwayIndexRoute: typeof InfraRailwayIndexRoute
   DashboardsDashboardIdWidgetsWidgetIdRoute: typeof DashboardsDashboardIdWidgetsWidgetIdRoute
   InfraKubernetesNodesNodeNameRoute: typeof InfraKubernetesNodesNodeNameRoute
   InfraKubernetesPodsPodNameRoute: typeof InfraKubernetesPodsPodNameRoute
@@ -1403,6 +1493,34 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AnomaliesIncidentIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/code-review/': {
+      id: '/code-review/'
+      path: '/code-review'
+      fullPath: '/code-review/'
+      preLoaderRoute: typeof CodeReviewIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/code-review/issues': {
+      id: '/code-review/issues'
+      path: '/code-review/issues'
+      fullPath: '/code-review/issues'
+      preLoaderRoute: typeof CodeReviewIssuesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/code-review/pull-requests': {
+      id: '/code-review/pull-requests'
+      path: '/code-review/pull-requests'
+      fullPath: '/code-review/pull-requests'
+      preLoaderRoute: typeof CodeReviewPullRequestsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/code-review/settings': {
+      id: '/code-review/settings'
+      path: '/code-review/settings'
+      fullPath: '/code-review/settings'
+      preLoaderRoute: typeof CodeReviewSettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/dashboards/': {
       id: '/dashboards/'
       path: '/dashboards'
@@ -1548,6 +1666,13 @@ declare module '@tanstack/react-router' {
       path: '/query-builder'
       fullPath: '/lab/query-builder'
       preLoaderRoute: typeof LabQueryBuilderRouteImport
+      parentRoute: typeof LabRouteRoute
+    }
+    '/lab/replays': {
+      id: '/lab/replays'
+      path: '/replays'
+      fullPath: '/lab/replays'
+      preLoaderRoute: typeof LabReplaysRouteImport
       parentRoute: typeof LabRouteRoute
     }
     '/lab/service-map-3d': {
@@ -1767,6 +1892,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof InfraPlanetscaleDbNameRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/infra/railway/': {
+      id: '/infra/railway/'
+      path: '/infra/railway'
+      fullPath: '/infra/railway/'
+      preLoaderRoute: typeof InfraRailwayIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/infra/railway/$serviceId': {
+      id: '/infra/railway/$serviceId'
+      path: '/infra/railway/$serviceId'
+      fullPath: '/infra/railway/$serviceId'
+      preLoaderRoute: typeof InfraRailwayServiceIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/lab/bench/agent-transcript': {
       id: '/lab/bench/agent-transcript'
       path: '/bench/agent-transcript'
@@ -1894,6 +2033,7 @@ interface LabRouteRouteChildren {
   LabNodesRoute: typeof LabNodesRoute
   LabOnboardingRoute: typeof LabOnboardingRoute
   LabQueryBuilderRoute: typeof LabQueryBuilderRoute
+  LabReplaysRoute: typeof LabReplaysRoute
   LabServiceMap3dRoute: typeof LabServiceMap3dRoute
   LabTimeRangeRoute: typeof LabTimeRangeRoute
   LabTimelineRoute: typeof LabTimelineRoute
@@ -1921,6 +2061,7 @@ const LabRouteRouteChildren: LabRouteRouteChildren = {
   LabNodesRoute: LabNodesRoute,
   LabOnboardingRoute: LabOnboardingRoute,
   LabQueryBuilderRoute: LabQueryBuilderRoute,
+  LabReplaysRoute: LabReplaysRoute,
   LabServiceMap3dRoute: LabServiceMap3dRoute,
   LabTimeRangeRoute: LabTimeRangeRoute,
   LabTimelineRoute: LabTimelineRoute,
@@ -1962,6 +2103,9 @@ const rootRouteChildren: RootRouteChildren = {
   AlertsRuleIdRoute: AlertsRuleIdRoute,
   AlertsCreateRoute: AlertsCreateRoute,
   AnomaliesIncidentIdRoute: AnomaliesIncidentIdRoute,
+  CodeReviewIssuesRoute: CodeReviewIssuesRoute,
+  CodeReviewPullRequestsRoute: CodeReviewPullRequestsRoute,
+  CodeReviewSettingsRoute: CodeReviewSettingsRoute,
   DashboardsDashboardIdRoute: DashboardsDashboardIdRoute,
   DashboardsTemplatesRoute: DashboardsTemplatesRoute,
   InfraHostNameRoute: InfraHostNameRoute,
@@ -1979,6 +2123,7 @@ const rootRouteChildren: RootRouteChildren = {
   AlertsIndexRoute: AlertsIndexRoute,
   AnalyticsIndexRoute: AnalyticsIndexRoute,
   AnomaliesIndexRoute: AnomaliesIndexRoute,
+  CodeReviewIndexRoute: CodeReviewIndexRoute,
   DashboardsIndexRoute: DashboardsIndexRoute,
   ErrorsIndexRoute: ErrorsIndexRoute,
   InfraIndexRoute: InfraIndexRoute,
@@ -1995,12 +2140,14 @@ const rootRouteChildren: RootRouteChildren = {
   InfraCloudflareZoneNameRoute: InfraCloudflareZoneNameRoute,
   InfraContainersContainerNameRoute: InfraContainersContainerNameRoute,
   InfraPlanetscaleDbNameRoute: InfraPlanetscaleDbNameRoute,
+  InfraRailwayServiceIdRoute: InfraRailwayServiceIdRoute,
   AgentSessionsToolsIndexRoute: AgentSessionsToolsIndexRoute,
   ErrorsIssuesIndexRoute: ErrorsIssuesIndexRoute,
   InfraCloudflareIndexRoute: InfraCloudflareIndexRoute,
   InfraContainersIndexRoute: InfraContainersIndexRoute,
   InfraKubernetesIndexRoute: InfraKubernetesIndexRoute,
   InfraPlanetscaleIndexRoute: InfraPlanetscaleIndexRoute,
+  InfraRailwayIndexRoute: InfraRailwayIndexRoute,
   DashboardsDashboardIdWidgetsWidgetIdRoute:
     DashboardsDashboardIdWidgetsWidgetIdRoute,
   InfraKubernetesNodesNodeNameRoute: InfraKubernetesNodesNodeNameRoute,

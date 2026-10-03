@@ -1,7 +1,7 @@
 import { assert, describe, it } from "@effect/vitest"
 import { Effect, Exit, Fiber, Layer, Redacted } from "effect"
 import { TestClock } from "effect/testing"
-import { FetchHttpClient } from "effect/unstable/http"
+import { FetchHttpClient } from "effect/http"
 import { OtlpIngest } from "./OtlpIngest"
 import { ScraperEnv, type ScraperEnvConfig } from "./Env"
 import { endedSpansNamed, makeCapturingTracer } from "./testing/capturing-tracer"

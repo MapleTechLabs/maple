@@ -470,6 +470,15 @@ function ShareBody({
 		)
 	}
 
+	if (share.dashboard.widgets.length === 0) {
+		return (
+			<CenteredCard
+				title="This dashboard has no charts yet"
+				body="Ask whoever shared it to add widgets, then reload."
+			/>
+		)
+	}
+
 	return (
 		<div className="flex flex-col gap-3">
 			{/* The one thing a viewer needs to compare this page with the board it

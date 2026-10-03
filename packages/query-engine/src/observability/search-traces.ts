@@ -97,20 +97,18 @@ const spanLevelSearch = (
 	return Effect.map(
 		executor.query<SpanSearchOutput>("span_search", params, { profile: "list" }),
 		(result): ReadonlyArray<SpanResult> =>
-			result.data.map(
-				(row): SpanResult => ({
-					traceId: Schema.decodeSync(TraceId)(row.traceId),
-					spanId: Schema.decodeSync(SpanId)(row.spanId),
-					spanName: row.spanName,
-					serviceName: row.serviceName,
-					durationMs: Number(row.durationMs),
-					statusCode: row.statusCode,
-					statusMessage: row.statusMessage ?? "",
-					attributes: row.spanAttributes ?? {},
-					resourceAttributes: row.resourceAttributes ?? {},
-					timestamp: String(row.timestamp),
-				}),
-			),
+			result.data.map((row): SpanResult => ({
+				traceId: Schema.decodeSync(TraceId)(row.traceId),
+				spanId: Schema.decodeSync(SpanId)(row.spanId),
+				spanName: row.spanName,
+				serviceName: row.serviceName,
+				durationMs: Number(row.durationMs),
+				statusCode: row.statusCode,
+				statusMessage: row.statusMessage ?? "",
+				attributes: row.spanAttributes ?? {},
+				resourceAttributes: row.resourceAttributes ?? {},
+				timestamp: String(row.timestamp),
+			})),
 	)
 }
 

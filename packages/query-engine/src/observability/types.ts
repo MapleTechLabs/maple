@@ -73,6 +73,8 @@ export interface SpanNode {
 	 * service-entry spans when bounding a large trace to an overview. */
 	readonly spanKind: string
 	readonly durationMs: number
+	/** When the span started, as the warehouse or API reported it (UTC). */
+	readonly startTime: string
 	readonly statusCode: string
 	readonly statusMessage: string
 	readonly attributes: Record<string, string>

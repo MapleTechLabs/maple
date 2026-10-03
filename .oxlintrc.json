@@ -124,11 +124,16 @@
 			}
 		},
 		// The rule points at an Effect primitive, so it only applies where Effect is on
-		// the dependency list. These three ship to customers with no runtime deps at all
-		// (`@maple/browser` and `@maple/browser-session` are under a bundle-size budget),
-		// so `try`/`catch` is the only error handling they have.
+		// the dependency list. These ship to customers with no runtime deps at all
+		// (`@maple/browser`, and `@maple/browser-session` and `@maple/sdk-core` bundled into
+		// it, are under a bundle-size budget), so `try`/`catch` is the only error handling they have.
 		{
-			"files": ["packages/browser/**", "packages/browser-session/**", "packages/clickhouse-cli/**"],
+			"files": [
+				"packages/browser/**",
+				"packages/browser-session/**",
+				"packages/sdk-core/**",
+				"packages/clickhouse-cli/**"
+			],
 			"rules": {
 				"maple/no-try-catch": "off"
 			}

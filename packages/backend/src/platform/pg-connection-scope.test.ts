@@ -7,8 +7,8 @@ import {
 } from "@maple/db/client"
 import { sql } from "drizzle-orm"
 import { Effect, Exit, Fiber, Option, References, Schema, Scope, Tracer } from "effect"
-import type * as Reactivity from "effect/unstable/reactivity/Reactivity"
-import type { SqlError } from "effect/unstable/sql/SqlError"
+import type * as Reactivity from "effect/reactivity/Reactivity"
+import type { SqlError } from "effect/sql/SqlError"
 import { createServer, type Socket } from "node:net"
 import { MapleDbConnection } from "./bindings"
 import {

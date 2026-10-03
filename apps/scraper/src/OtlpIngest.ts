@@ -1,5 +1,5 @@
 import { Context, Duration, Effect, Layer, Schema } from "effect"
-import { HttpClient, HttpClientRequest } from "effect/unstable/http"
+import { HttpClient, HttpClientRequest } from "effect/http"
 import { countDataPoints, splitExportRequest, type OtlpExportRequest } from "./prometheus/otlp"
 import { ScraperEnv } from "./Env"
 

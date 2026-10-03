@@ -3,8 +3,8 @@
 import { dirname, resolve } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import { Clock, Config, Console, Context, Effect, FileSystem, Layer, Option, Redacted, Schema } from "effect"
-import { Command, Flag } from "effect/unstable/cli"
-import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"
+import { Command, Flag } from "effect/cli"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { BunRuntime, BunServices } from "@effect/platform-bun"
 import { CH } from "@maple/query-engine"
 import * as Integrations from "@maple/query-engine-integrations"
@@ -430,7 +430,7 @@ const catalogHandler = Effect.fn("bench.catalog")(function* (config: {
 		)
 })
 
-// CLI command tree (effect/unstable/cli)
+// CLI command tree (effect/cli)
 
 const fetchCommand = Command.make(
 	"fetch",

@@ -163,10 +163,11 @@ export function StackedBreakdownChart({
 	// label point scale this replaced folded a 24h window onto itself.
 	const { effectiveTimezone } = useTimezonePreference()
 	const axis = useMemo(
-		() => makeBucketAxis(
-			data.map((point) => point.bucket),
-			effectiveTimezone,
-		),
+		() =>
+			makeBucketAxis(
+				data.map((point) => point.bucket),
+				effectiveTimezone,
+			),
 		[data, effectiveTimezone],
 	)
 
@@ -397,10 +398,11 @@ export function CloudflareZoneLatencyChart({
 	// label point scale this replaced folded a 24h window onto itself.
 	const { effectiveTimezone } = useTimezonePreference()
 	const axis = useMemo(
-		() => makeBucketAxis(
-			buckets.map((b) => b.bucket),
-			effectiveTimezone,
-		),
+		() =>
+			makeBucketAxis(
+				buckets.map((b) => b.bucket),
+				effectiveTimezone,
+			),
 		[buckets, effectiveTimezone],
 	)
 

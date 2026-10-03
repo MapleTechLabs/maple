@@ -17,15 +17,15 @@ The toolbar shows how many sessions match and how many are **live** (still recor
 
 The sidebar narrows the list:
 
-| Filter           | What it matches                                                                  |
-| ---------------- | -------------------------------------------------------------------------------- |
-| Session length   | Duration. **Bounced** is under 10 seconds. The other presets come from your own p50 and p95. |
-| Active time      | Time the user was active. **Idle** is under 5 seconds, **Engaged** over 30 seconds. |
-| Page visited     | Sessions that visited a page.                                                    |
-| Service          | The `serviceName` the SDK was initialized with.                                  |
-| Browser, Device, Country | The visitor's environment.                                                |
-| Group            | The company or team passed to `identify()`. Shown once any session has one.      |
-| Identity         | **Name or email…** and **User ID…**, from `identify()`.                          |
+| Filter                   | What it matches                                                                              |
+| ------------------------ | -------------------------------------------------------------------------------------------- |
+| Session length           | Duration. **Bounced** is under 10 seconds. The other presets come from your own p50 and p95. |
+| Active time              | Time the user was active. **Idle** is under 5 seconds, **Engaged** over 30 seconds.          |
+| Page visited             | Sessions that visited a page.                                                                |
+| Service                  | The `serviceName` the SDK was initialized with.                                              |
+| Browser, Device, Country | The visitor's environment.                                                                   |
+| Group                    | The company or team passed to `identify()`. Shown once any session has one.                  |
+| Identity                 | **Name or email…** and **User ID…**, from `identify()`.                                      |
 
 Sessions with errors are marked in the list.
 

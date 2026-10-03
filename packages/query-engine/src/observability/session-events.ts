@@ -1,6 +1,7 @@
 import { Effect } from "effect"
 import * as CH from "../ch"
 import { WarehouseExecutor } from "./WarehouseExecutor"
+import type { SessionTag } from "@maple/domain/query-engine"
 
 export type { SessionTranscriptOutput } from "../ch/queries/session-events"
 export type { SessionReplaysListOutput } from "../ch/queries/session-replays"
@@ -31,6 +32,8 @@ export interface SearchSessionsInput {
 	readonly country?: string
 	readonly deviceType?: string
 	readonly hasErrors?: boolean
+	/** Sessions carrying every one of these rule-based tags. */
+	readonly tags?: ReadonlyArray<SessionTag>
 	readonly durationMinMs?: number
 	readonly durationMaxMs?: number
 	readonly activeTimeMinMs?: number
@@ -62,6 +65,7 @@ export const searchSessions = Effect.fn("Observability.searchSessions")(function
 			country: input.country,
 			deviceType: input.deviceType,
 			hasErrors: input.hasErrors,
+			tags: input.tags,
 			durationMinMs: input.durationMinMs,
 			durationMaxMs: input.durationMaxMs,
 			activeTimeMinMs: input.activeTimeMinMs,

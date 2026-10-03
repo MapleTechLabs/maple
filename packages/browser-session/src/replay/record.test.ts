@@ -10,9 +10,11 @@ let emitRef: EmitFn | undefined
 const takeFullSnapshot = vi.fn()
 const stopFn = vi.fn()
 
+let recordOptions: Record<string, unknown> | undefined
 vi.mock("rrweb", () => {
-	const record = (options: { emit: EmitFn }) => {
+	const record = (options: { emit: EmitFn } & Record<string, unknown>) => {
 		emitRef = options.emit
+		recordOptions = options
 		return stopFn
 	}
 	record.takeFullSnapshot = takeFullSnapshot
@@ -41,7 +43,7 @@ vi.mock("../platform/transport", () => ({
 	}),
 }))
 
-const { startRecording } = await import("./record")
+const { startBufferedRecording, startRecording } = await import("./record")
 
 const CONFIG = {
 	endpoint: "https://ingest.example",
@@ -204,5 +206,107 @@ describe("startRecording", () => {
 		} finally {
 			vi.unstubAllGlobals()
 		}
+	})
+})
+
+const META = 4
+const meta = (timestamp: number) => ({
+	type: META,
+	timestamp,
+	data: { href: "https://app.example/?token=abc" },
+})
+/** One rrweb snapshot: a Meta event, then the FullSnapshot. */
+const snapshot = (timestamp: number) => {
+	emitRef!(meta(timestamp), true)
+	emitRef!(fullSnapshot(timestamp + 1), true)
+}
+
+describe("startBufferedRecording", () => {
+	beforeEach(() => {
+		posted.length = 0
+		outcomes.length = 0
+		stopFn.mockClear()
+		emitRef = undefined
+	})
+
+	it("uploads nothing until drained, then the last two snapshots' segments as checkpoints", async () => {
+		const recorder = startBufferedRecording(CONFIG, "session-1")
+		emitRef!(incremental(500))
+		snapshot(1_000)
+		emitRef!(incremental(1_500))
+		snapshot(31_000)
+		emitRef!(incremental(31_500))
+		snapshot(61_000)
+		emitRef!(incremental(61_500))
+		emitRef!(incremental(62_000))
+		expect(posted).toEqual([])
+
+		await recorder.drain()
+		expect(posted.map((chunk) => chunk.meta)).toEqual([
+			{ sessionId: "session-1", chunkSeq: 1, isCheckpoint: true, eventCount: 3, durationMs: 500 },
+			{ sessionId: "session-1", chunkSeq: 1, isCheckpoint: true, eventCount: 4, durationMs: 1_000 },
+		])
+		const first = JSON.parse(posted[0]!.body) as Array<{ timestamp: number; data: { href?: string } }>
+		expect(first[0]?.timestamp).toBe(31_000)
+		expect(first[0]?.data.href).toBe("https://app.example/?token=REDACTED")
+
+		await recorder.drain()
+		expect(posted).toHaveLength(2)
+	})
+
+	it("discards the buffer on stop", async () => {
+		const recorder = startBufferedRecording(CONFIG, "session-1")
+		snapshot(1_000)
+		emitRef!(incremental(1_500))
+		recorder.stop()
+		await recorder.drain()
+		expect(posted).toEqual([])
+		expect(stopFn).toHaveBeenCalled()
+	})
+
+	it("takes a checkout snapshot only when the page changed since the last one", () => {
+		vi.useFakeTimers()
+		takeFullSnapshot.mockClear()
+		const recorder = startBufferedRecording(CONFIG, "session-1")
+		snapshot(1_000)
+		vi.advanceTimersByTime(30_000)
+		expect(takeFullSnapshot).not.toHaveBeenCalled()
+		emitRef!(incremental(1_500))
+		vi.advanceTimersByTime(30_000)
+		expect(takeFullSnapshot).toHaveBeenCalledWith(true)
+		recorder.stop()
+		vi.useRealTimers()
+	})
+
+	it("waits for the page to be shown, unless the buffer has nothing to play back", () => {
+		vi.useFakeTimers()
+		vi.stubGlobal("document", { visibilityState: "hidden" })
+		takeFullSnapshot.mockClear()
+		const recorder = startBufferedRecording(CONFIG, "session-1")
+		snapshot(1_000)
+		emitRef!(incremental(1_500))
+		vi.advanceTimersByTime(30_000)
+		expect(takeFullSnapshot).not.toHaveBeenCalled()
+		recorder.stop()
+
+		// Nothing buffered yet (or the size cap emptied it): a snapshot is due even while hidden.
+		const empty = startBufferedRecording(CONFIG, "session-1")
+		emitRef!(incremental(2_000))
+		vi.advanceTimersByTime(30_000)
+		expect(takeFullSnapshot).toHaveBeenCalledWith(true)
+		empty.stop()
+		vi.unstubAllGlobals()
+		vi.useRealTimers()
+	})
+})
+
+describe("canvas capture", () => {
+	it("is off by default and samples frames at canvasFps when asked", () => {
+		startRecording(CONFIG, "session-1").stop()
+		expect(recordOptions?.recordCanvas).toBeUndefined()
+		startBufferedRecording({ ...CONFIG, canvasFps: 2 }, "session-1").stop()
+		expect(recordOptions).toMatchObject({ recordCanvas: true, sampling: { canvas: 2 } })
+		startRecording({ ...CONFIG, canvasFps: 2, maskAllText: true }, "session-1").stop()
+		expect(recordOptions?.recordCanvas).toBeUndefined()
 	})
 })

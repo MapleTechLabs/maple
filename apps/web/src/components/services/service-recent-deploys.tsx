@@ -11,6 +11,7 @@ import {
 	isResolvableSha,
 } from "@/components/vcs/commit-sha-hover-card"
 import type { ReleasePoint } from "@/components/vcs/commit-markers/marker-layout"
+import { DocsLink } from "@/components/common/docs-link"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { formatNumber } from "@maple/ui/lib/format"
 import { normalizeTimestampInput } from "@/lib/timezone-format"
@@ -307,6 +308,9 @@ export function ServiceRecentDeploys({ releases, isLoading = false }: ServiceRec
 							vcs.ref.head.revision
 						</code>{" "}
 						resource attribute.
+					</span>
+					<span className="mt-1">
+						<DocsLink page="github" />
 					</span>
 				</div>
 			) : (

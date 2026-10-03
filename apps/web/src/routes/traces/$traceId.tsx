@@ -10,6 +10,7 @@ import { useAppHotkey } from "@/hooks/use-app-hotkey"
 import { TraceReplayLink } from "@/components/replays/trace-replay-link"
 import { TraceLogsLink } from "@/components/traces/trace-logs-link"
 import { QueryErrorState } from "@/components/common/query-error-state"
+import { DocsLink } from "@/components/common/docs-link"
 import { TraceViewTabs } from "@maple/ui/components/traces/trace-view-tabs"
 import { SpanDetailPanel } from "@/components/traces/span-detail-panel"
 import { TraceAnatomyStrip } from "@/components/traces/trace-anatomy-strip"
@@ -156,6 +157,9 @@ function TraceDetailPage() {
 										>
 											Back to Traces
 										</a>
+										<span className="mt-3">
+											<DocsLink page="retention">How long traces are kept</DocsLink>
+										</span>
 									</div>
 								</DashboardLayout.Scroll>
 							</DashboardLayout.Content>
@@ -291,11 +295,14 @@ function TraceDetailContent({
 
 	const rootSpan = data.rootSpans[0]
 	const rootHttpInfo = rootSpan ? getHttpInfo(rootSpan) : null
-	const deploymentEnv = rootSpan?.resourceAttributes?.["deployment.environment"]
+	const deploymentEnv =
+		rootSpan?.resourceAttributes?.["deployment.environment.name"] ||
+		rootSpan?.resourceAttributes?.["deployment.environment"]
 	const commitSha = rootSpan?.resourceAttributes?.["vcs.ref.head.revision"]
 	const hasError = data.spans.some((s: Span) => {
 		if (s.statusCode === "Error") return true
-		const httpStatus = s.spanAttributes?.["http.status_code"]
+		const httpStatus =
+			s.spanAttributes?.["http.response.status_code"] || s.spanAttributes?.["http.status_code"]
 		if (httpStatus) {
 			const code = typeof httpStatus === "string" ? parseInt(httpStatus) : httpStatus
 			if (typeof code === "number" && code >= 500) return true

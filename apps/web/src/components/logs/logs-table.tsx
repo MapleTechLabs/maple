@@ -28,6 +28,12 @@ import { shortTraceId } from "@/lib/logs/log-search-query"
 import { ChevronRightIcon } from "@/components/icons"
 import { QueryErrorState } from "@/components/common/query-error-state"
 import { usePageScrolledReporter } from "@maple/ui/components/ui/page-layout"
+import { DocsLink } from "@/components/common/docs-link"
+import {
+	applyTimeRangeSearch,
+	canWidenTimeRange,
+	WIDEN_TIME_PRESET,
+} from "@/components/time-range-picker/search"
 
 const ROW_HEIGHT = 36
 const ROW_HEIGHT_COMFORTABLE = 48
@@ -59,6 +65,11 @@ interface LogsTableViewProps {
 	 *  (a trace's spans, a session) carry no facet filters. */
 	excludedValues?: ReadonlyArray<string>
 	clearExclusions?: () => void
+	/** Any facet filter is narrowing the stream. */
+	filtered?: boolean
+	onClearFilters?: () => void
+	/** Absent when the range is already wide or custom. */
+	onWidenRange?: () => void
 }
 
 interface LogsTableProps {
@@ -338,6 +349,9 @@ export function LogsTableView({
 	embedded,
 	excludedValues = EMPTY_EXCLUDED,
 	clearExclusions,
+	filtered = excludedValues.length > 0,
+	onClearFilters,
+	onWidenRange,
 }: LogsTableViewProps) {
 	const [selectedLog, setSelectedLog] = React.useState<Log | null>(null)
 	const [sheetOpen, setSheetOpen] = React.useState(false)
@@ -575,6 +589,12 @@ export function LogsTableView({
 								</>
 							)}
 						</span>
+						{traceId && (
+							<span className="flex max-w-md flex-col items-center gap-2 text-xs text-muted-foreground">
+								Logs link to a trace when your logger bridge runs inside the active span.
+								<DocsLink page="logs" />
+							</span>
+						)}
 						{onClearSearch && (
 							<button
 								type="button"
@@ -596,7 +616,9 @@ export function LogsTableView({
 					<div className="rounded-md border">
 						<SignalEmptyState
 							signal="logs"
-							filtered={excludedValues.length > 0}
+							filtered={filtered}
+							onClearFilters={onClearFilters}
+							onWidenRange={onWidenRange}
 							detail={
 								clearExclusions && (
 									<ExcludedEmptyHint
@@ -695,6 +717,17 @@ export function LogsTable({ filters, embedded }: LogsTableProps) {
 				...Object.fromEntries(excludedChips.map((chip) => [chip.param, undefined])),
 			}),
 		})
+	const filterChips = logFilterChips(filters ?? {})
+	const clearFilters = () =>
+		navigateLogs({
+			search: (prev) => ({
+				...prev,
+				...Object.fromEntries(filterChips.map((chip) => [chip.param, undefined])),
+			}),
+		})
+	const canWiden = !embedded && canWidenTimeRange(filters ?? {}, "")
+	const widenRange = () =>
+		navigateLogs({ search: (prev) => applyTimeRangeSearch(prev, { presetValue: WIDEN_TIME_PRESET }) })
 	const { wrap, density } = useLogsViewPreferences()
 
 	const columnsKey = (filters?.columns ?? EMPTY_COLUMNS).join("\x00")
@@ -731,6 +764,9 @@ export function LogsTable({ filters, embedded }: LogsTableProps) {
 				embedded={embedded}
 				excludedValues={excludedValues}
 				clearExclusions={clearExclusions}
+				filtered={filterChips.length > 0}
+				onClearFilters={embedded ? undefined : clearFilters}
+				onWidenRange={canWiden ? widenRange : undefined}
 			/>
 		))
 		.render()

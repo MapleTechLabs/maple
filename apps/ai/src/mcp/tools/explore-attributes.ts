@@ -139,6 +139,7 @@ const renderKeys = (output: Output): ToolDoc => {
 export function registerExploreAttributesTool(server: McpToolRegistrar) {
 	server.define({
 		name: "explore_attributes",
+		title: "Explore Attributes",
 		description:
 			"Discover attribute keys and their values, for filtering in query_data and search_traces. " +
 			"source=services instead lists the environments and commit SHAs seen in the window.",

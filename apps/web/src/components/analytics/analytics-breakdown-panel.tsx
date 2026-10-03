@@ -55,7 +55,7 @@ export interface BreakdownDimension {
 	 * dimension is not being collected" from "no traffic matched", which for a
 	 * dimension like Country is the difference between a config gap and a fact.
 	 */
-	readonly emptyMessage?: string
+	readonly emptyMessage?: ReactNode
 	/** Row-name → display text, for codes whose label differs (country, language). */
 	readonly formatValue?: (name: string) => string
 	/**

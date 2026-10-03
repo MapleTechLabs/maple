@@ -1,0 +1,7 @@
+{
+	// Declaration emit for browser's tsdown build only. It lives here so tsgo's
+	// rootDir covers @maple/browser-session and @maple/sdk-core, whose types the SDK bundles.
+	"extends": "./browser/tsconfig.json",
+	"include": ["./browser/src/**/*.ts", "./browser-session/src/**/*.ts", "./sdk-core/src/**/*.ts"],
+	"exclude": ["**/*.test.ts", "**/*.bench.ts"]
+}

@@ -5,6 +5,7 @@ import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { formatNumber } from "@maple/ui/lib/format"
 import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
 
+import { ServiceDot } from "@maple/ui/components/service-dot"
 import { SeverityBadge } from "@/components/errors/severity-badge"
 import { SectionCard } from "@/components/services/section-card"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
@@ -12,16 +13,10 @@ import { Result, useAtomValue } from "@/lib/effect-atom"
 import { retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { errorIssueFromV2 } from "@/lib/services/error-issues"
 import type { ReleaseErrorFingerprint } from "@/api/warehouse/releases"
+import { NEW_ISSUE_SLACK_MS } from "./release-model"
 
 /** The v2 list takes one page of fingerprints; the rest of a very noisy version stays on /errors. */
 const FINGERPRINT_LIMIT = 50
-
-/**
- * Slack between a version's first span and an issue's first occurrence: the
- * rollup's first-seen is bucket-floored, and the error event can land a beat
- * before the entry-point span that carried it.
- */
-const NEW_ISSUE_SLACK_MS = 5 * 60 * 1000
 
 /** The two timestamps the split reads; the panel passes whole issue documents. */
 export interface ReleaseIssueDates {
@@ -58,9 +53,10 @@ interface IssueLineProps {
 	issue: ErrorIssueDocument
 	/** Occurrences carried by this version, from the warehouse split. */
 	onVersion: number | undefined
+	showService?: boolean
 }
 
-function IssueLine({ issue, onVersion }: IssueLineProps) {
+function IssueLine({ issue, onVersion, showService }: IssueLineProps) {
 	const { effectiveTimezone } = useTimezonePreference()
 	const title = issue.errorLabel || issue.exceptionType || issue.exceptionMessage || "Unknown error"
 	return (
@@ -70,6 +66,11 @@ function IssueLine({ issue, onVersion }: IssueLineProps) {
 			className="flex items-center gap-2.5 rounded-sm px-2 py-1.5 text-sm transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
 		>
 			<SeverityBadge severity={issue.severity} className="w-[60px] shrink-0 justify-center" />
+			{showService ? (
+				<span className="inline-flex shrink-0" title={issue.serviceName}>
+					<ServiceDot serviceName={issue.serviceName} />
+				</span>
+			) : null}
 			<span className="min-w-0 flex-1 truncate" title={title}>
 				{title}
 			</span>
@@ -86,18 +87,21 @@ function IssueLine({ issue, onVersion }: IssueLineProps) {
 	)
 }
 
-function IssueList({
+export function IssueList({
 	title,
 	issues,
 	counts,
 	empty,
 	tone,
+	showService,
 }: {
 	title: string
 	issues: ReadonlyArray<ErrorIssueDocument>
 	counts: ReadonlyMap<string, number>
 	empty: string
 	tone?: "error" | "warn"
+	/** Marks each line with its service, for a release spanning several. */
+	showService?: boolean
 }) {
 	return (
 		<SectionCard
@@ -127,6 +131,7 @@ function IssueList({
 							key={issue.id}
 							issue={issue}
 							onVersion={counts.get(issue.fingerprintHash)}
+							showService={showService}
 						/>
 					))}
 				</div>

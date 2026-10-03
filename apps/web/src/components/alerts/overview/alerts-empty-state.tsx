@@ -5,6 +5,7 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@maple/ui/comp
 import { cn } from "@maple/ui/lib/utils"
 
 import { useOpenDestinationDialog } from "@/components/alerts/destination-manager-context"
+import { DocsLink, EmptyActions } from "@/components/common/docs-link"
 import { PaperPlaneIcon, PlusIcon } from "@/components/icons"
 import { ALERT_TEMPLATES, type AlertTemplate } from "@/lib/alerts/templates"
 
@@ -74,6 +75,7 @@ export function AlertsEmptyState({
 									Slack, Discord, PagerDuty, Telegram, email or a webhook. Rules notify
 									these.
 								</p>
+								<DocsLink page="destinations">Destination setup</DocsLink>
 							</div>
 							{openDestinationDialog ? (
 								<Button size="sm" onClick={openDestinationDialog}>
@@ -100,16 +102,20 @@ export function AlertsEmptyState({
 							<TemplateTile key={template.id} template={template} serviceName={serviceName} />
 						))}
 					</div>
-					<Button
-						variant="ghost"
-						size="sm"
-						render={<Link to="/alerts/create" search={{ serviceName }} />}
-					>
-						<PlusIcon size={14} />
-						Start from scratch
-					</Button>
+					<EmptyActions>
+						<Button
+							variant="ghost"
+							size="sm"
+							render={<Link to="/alerts/create" search={{ serviceName }} />}
+						>
+							<PlusIcon size={14} />
+							Start from scratch
+						</Button>
+						<DocsLink page="alertRules" />
+					</EmptyActions>
 				</div>
 			)}
+			{!isAdmin && <DocsLink page="alertRules" />}
 		</Empty>
 	)
 }

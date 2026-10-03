@@ -325,14 +325,12 @@ export const stepModule = (spec: StepSpec): LocalStoreMigrationModule<StepState,
 			requiresQuiescence: true,
 			phase: "target-created",
 		},
-		...spec.plan.map(
-			([id, description]): MigrationOperation => ({
-				id,
-				description,
-				requiresQuiescence: true,
-				phase: "copying",
-			}),
-		),
+		...spec.plan.map(([id, description]): MigrationOperation => ({
+			id,
+			description,
+			requiresQuiescence: true,
+			phase: "copying",
+		})),
 		{
 			id: `verify-v${spec.to}-schema`,
 			description: spec.verifies,

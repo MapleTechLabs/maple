@@ -15,6 +15,7 @@ const FILTERED_SCAN = 500
 export function registerListAlertIncidentsTool(server: McpToolRegistrar) {
 	server.define({
 		name: "list_alert_incidents",
+		title: "List Alert Incidents",
 		description:
 			"List triggered alert incidents (open and resolved) with severity, group, condition and last observed value. For one rule's history with trigger, notify and resolve timestamps use get_incident_timeline.",
 		parameters: Schema.Struct({

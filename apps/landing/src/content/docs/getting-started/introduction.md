@@ -35,12 +35,12 @@ For a copy-paste walkthrough, including a curl command that sends a test span wi
 2. Open **Settings → Ingestion** and copy an ingest key. Use the private key (`maple_sk_…`) for server applications and the public key (`maple_pk_…`) for browser code.
 3. Point an OpenTelemetry SDK at the ingest endpoint for your region:
 
-   | Region         | Ingest endpoint               |
-   | -------------- | ----------------------------- |
-   | United States  | `https://ingest.maple.dev`    |
-   | European Union | `https://ingest.eu.maple.dev` |
+    | Region         | Ingest endpoint               |
+    | -------------- | ----------------------------- |
+    | United States  | `https://ingest.maple.dev`    |
+    | European Union | `https://ingest.eu.maple.dev` |
 
-   A key only works in the region it was created in. See [Regions](/docs/reference/regions).
+    A key only works in the region it was created in. See [Regions](/docs/reference/regions).
 
 4. Send a request to your application, then open **Explore → Traces** in Maple and check that a trace for it appears.
 

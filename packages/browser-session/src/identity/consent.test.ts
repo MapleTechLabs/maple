@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import {
 	configurePrivacy,
 	consentAllowedSince,
+	consentRevokedAt,
 	hasConsent,
 	mayPersistIdentifier,
 	onConsentChange,
@@ -36,6 +37,23 @@ describe("consent", () => {
 
 		setConsent(false)
 		expect(hasConsent()).toBe(false)
+	})
+
+	it("persists when consent was withdrawn, so data kept from before can be dropped on a later page", () => {
+		const store = new Map<string, string>()
+		vi.stubGlobal("localStorage", {
+			getItem: (key: string) => store.get(key) ?? null,
+			setItem: (key: string, value: string) => store.set(key, value),
+		})
+		// A page that starts without consent has not had it revoked.
+		configurePrivacy({ requireConsent: true })
+		setConsent(false)
+		expect(consentRevokedAt()).toBe(0)
+		setConsent(true)
+		expect(consentRevokedAt()).toBe(0)
+		vi.useFakeTimers({ now: 5_000 })
+		setConsent(false)
+		expect(consentRevokedAt()).toBe(5_000)
 	})
 
 	it("notifies only effective transitions and advances the grant boundary", () => {

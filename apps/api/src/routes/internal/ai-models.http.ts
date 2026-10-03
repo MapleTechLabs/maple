@@ -1,4 +1,4 @@
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpApiBuilder } from "effect/http-api"
 import { detectAiModel } from "@maple/ai-model-catalog"
 import { CurrentTenant, DetectAiModelResponse, MapleInternalApi } from "@maple/domain/http"
 import { Effect } from "effect"

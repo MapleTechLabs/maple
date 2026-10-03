@@ -10,7 +10,13 @@ import {
 	type DigestService,
 	type WeeklyDigestProps,
 } from "./weekly-digest-core"
-import { healthyDigestProps, multiEnvDigestProps, scopedDigestProps } from "./samples"
+import {
+	criticalDigestProps,
+	healthyDigestProps,
+	multiEnvDigestProps,
+	scopedDigestProps,
+	watchDigestProps,
+} from "./samples"
 
 const pct = (value: number): Delta => ({ kind: "pct", value })
 
@@ -172,5 +178,20 @@ describe("deriveDigestStatus", () => {
 		expect(scoped.subject).toContain("[commerce · production]")
 		expect(unscoped.subject).not.toContain("[")
 		expect(scoped.subject).not.toBe(unscoped.subject)
+	})
+
+	it("leads the subject with the org name and names the email", () => {
+		const { subject } = deriveDigestStatus(healthyDigestProps)
+		expect(subject.startsWith(`${healthyDigestProps.orgName} · Weekly digest · `)).toBe(true)
+		expect(subject).not.toContain("—")
+	})
+
+	it("keeps emoji out of the subject and says the urgency in words", () => {
+		const emoji = /\p{Extended_Pictographic}/u
+		for (const props of [healthyDigestProps, watchDigestProps, criticalDigestProps]) {
+			expect(deriveDigestStatus(props).subject).not.toMatch(emoji)
+		}
+		expect(deriveDigestStatus(watchDigestProps).subject).toContain("Heads up: error rate")
+		expect(deriveDigestStatus(criticalDigestProps).subject).toContain("Action needed: error rate")
 	})
 })

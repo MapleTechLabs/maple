@@ -21,6 +21,7 @@ const MAX_OVERVIEW_SPANS_CEILING = 300
 export function registerInspectTraceTool(server: McpToolRegistrar) {
 	server.define({
 		name: "inspect_trace",
+		title: "Inspect Trace",
 		description:
 			"Span tree and logs for one trace: request flow, bottlenecks, error context. Large traces are bounded to an overview (errors and longest spans first); `inspect_span` gives one span's full attributes. Without `timestamp` the last 24h is scanned first, then up to 30 days back if the trace is not found.",
 		parameters: Schema.Struct({

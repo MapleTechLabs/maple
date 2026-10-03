@@ -16,6 +16,7 @@ import {
 	AI_SESSION_SORT_KEYS,
 } from "../http/ai-sessions"
 import { OutputPagination, OutputTimeRange } from "./shared"
+import { SessionTag } from "../session-tags"
 
 const StringList = Schema.Array(Schema.String)
 
@@ -43,6 +44,8 @@ export const SessionSearchRow = Schema.Struct({
 	errorCount: Schema.Number,
 	traceCount: Schema.Number,
 	urlInitial: Schema.String,
+	/** Rule-based tags: one quality tier plus `signed_in` / `new_visitor` when they apply. */
+	tags: Schema.Array(SessionTag),
 	/** In-session events matching the event predicates; present only when one was applied. */
 	matchCount: Schema.optionalKey(Schema.Number),
 })
@@ -57,6 +60,7 @@ export const SearchSessionsFilters = Schema.Struct({
 	country: Schema.optionalKey(Schema.String),
 	deviceType: Schema.optionalKey(Schema.String),
 	hasErrors: Schema.optionalKey(Schema.Boolean),
+	tags: Schema.optionalKey(Schema.Array(SessionTag)),
 	durationMinMs: Schema.optionalKey(Schema.Number),
 	durationMaxMs: Schema.optionalKey(Schema.Number),
 	activeMinMs: Schema.optionalKey(Schema.Number),

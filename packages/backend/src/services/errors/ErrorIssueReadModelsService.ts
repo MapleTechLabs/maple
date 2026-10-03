@@ -24,7 +24,7 @@ import {
 	type WarehouseReadError,
 } from "@maple/domain/http"
 import { errorIncidents, type ErrorIncidentRow, errorIssues } from "@maple/db"
-import { and, desc, eq, gt, inArray, isNull, lt, or, sql } from "drizzle-orm"
+import { and, desc, eq, gt, gte, inArray, isNull, lt, or, sql } from "drizzle-orm"
 import {
 	CH,
 	formatWarehouseDateTime,
@@ -102,6 +102,8 @@ export interface ErrorIssueReadModelsPublicApi {
 			readonly includeArchived?: boolean
 			readonly startTime?: string
 			readonly endTime?: string
+			/** First seen or last regressed at or after this instant. */
+			readonly introducedAfter?: string
 			readonly limit?: number
 			readonly cursor?: IssueListCursorFields | IssueSeverityListCursorFields
 			readonly actionable?: boolean
@@ -233,6 +235,17 @@ const make: Effect.Effect<
 			if (opts.startTime) {
 				const startMs = parseWarehouseDateTime(opts.startTime)
 				if (Number.isFinite(startMs)) conditions.push(gt(errorIssues.lastSeenAt, msToDate(startMs)))
+			}
+			if (opts.introducedAfter) {
+				const sinceMs = parseWarehouseDateTime(opts.introducedAfter)
+				if (Number.isFinite(sinceMs)) {
+					const since = msToDate(sinceMs)
+					const introduced = or(
+						gte(errorIssues.firstSeenAt, since),
+						gte(errorIssues.lastRegressedAt, since),
+					)
+					if (introduced) conditions.push(introduced)
+				}
 			}
 			if (opts.cursor) {
 				const cursorSeenAt = msToDate(opts.cursor.lastSeenAt)

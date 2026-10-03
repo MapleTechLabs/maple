@@ -78,8 +78,7 @@ export function ToolMetricStrip({
 		// population rather than against the previous window: "142 of 1,284" is
 		// what makes a tool's reach legible, and the movement of a session count
 		// under a tool filter is not.
-		const share =
-			key === "sessions" && allSessions > 0 ? totals.sessions / allSessions : undefined
+		const share = key === "sessions" && allSessions > 0 ? totals.sessions / allSessions : undefined
 		const spark = metricSpark(series, key, percentile).slice(-SPARK_WINDOW)
 		return (
 			<button
@@ -262,9 +261,7 @@ function Delta({ delta }: { delta: ToolDelta }) {
 			)}
 			title={`${delta.direction === "flat" ? "Flat" : delta.direction === "up" ? "Up" : "Down"} ${delta.text} vs the previous period`}
 		>
-			<span aria-hidden>
-				{delta.direction === "flat" ? "→" : delta.direction === "up" ? "↑" : "↓"}
-			</span>
+			<span aria-hidden>{delta.direction === "flat" ? "→" : delta.direction === "up" ? "↑" : "↓"}</span>
 			{delta.text}
 		</span>
 	)

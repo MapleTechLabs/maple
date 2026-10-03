@@ -13,12 +13,13 @@
 import { OpenAiClient, OpenAiEmbeddingModel, OpenAiLanguageModel } from "@effect/ai-openai-compat"
 import { OpenRouterClient, OpenRouterDecisionModel, OpenRouterLanguageModel } from "@effect/ai-openrouter"
 import { MAPLE_NATIVE_SESSION_ID_ATTR, MAPLE_NATIVE_TURN_ID_ATTR } from "@maple/domain/gen-ai"
+import { PR_REVIEW_MODELS, type PrReviewModel } from "@maple/domain/http"
 import { FindingEmbedder, PrReviewEmbeddingError } from "@maple/backend/services/pr-review/FindingEmbedder"
 import { Effect, Layer, Option, Redacted, Schema } from "effect"
-import type * as DecisionModel from "effect/unstable/ai/DecisionModel"
-import * as LanguageModel from "effect/unstable/ai/LanguageModel"
-import * as AiModel from "effect/unstable/ai/Model"
-import { FetchHttpClient, HttpBody, HttpClient, HttpClientRequest } from "effect/unstable/http"
+import type * as DecisionModel from "effect/ai/DecisionModel"
+import * as LanguageModel from "effect/ai/LanguageModel"
+import * as AiModel from "effect/ai/Model"
+import { FetchHttpClient, HttpBody, HttpClient, HttpClientRequest } from "effect/http"
 import { type ModelCallTelemetry, instrumentLanguageModel } from "./genai-spans"
 import { layerWorkersAi } from "./WorkersAiHttpClient"
 
@@ -208,6 +209,10 @@ const MODEL_LIMITS: Record<string, { readonly context: number; readonly output: 
 	"xiaomi/mimo-v2.6-pro": { context: 1_000_000, output: 128_000 },
 	// The EU default. OpenRouter's EU catalogue: context_length 1_050_000, max_completion_tokens 128_000.
 	"openai/gpt-6-luna": { context: 1_000_000, output: 128_000 },
+	// OpenRouter's catalogue (US and EU): context_length 1_050_000, max_completion_tokens 128_000.
+	"openai/gpt-6.1-sol": { context: 1_000_000, output: 128_000 },
+	// OpenRouter's catalogue (US and EU): context_length 1_000_000, max_completion_tokens 128_000.
+	"anthropic/claude-sonnet-5.5": { context: 950_000, output: 128_000 },
 	// Moonshot's own kimi-k2.6 is 262_144, but Cloudflare does not publish the window its Workers AI
 	// deployment actually serves. Held at the conservative default until someone measures it.
 	"@cf/moonshotai/kimi-k2.6": { context: 128_000, output: 8_000 },
@@ -418,17 +423,34 @@ export const resolveTriageModel = (env: LlmEnv, tags?: LlmCallTags): ResolvedMod
 				tags,
 			)
 
+/** The organization's pick, when this region serves it: the EU endpoint 404s a model it lacks. */
+const servedReviewModel = (env: LlmEnv, chosen: Option.Option<PrReviewModel>): Option.Option<string> =>
+	chosen.pipe(
+		Option.flatMap((id) => Option.fromUndefinedOr(PR_REVIEW_MODELS.find((model) => model.id === id))),
+		Option.filter((model) => openRouterRegion(env) !== "eu" || model.eu),
+		Option.map((model) => model.id),
+	)
+
 /**
- * The model pull request reviews and replies run on. OpenRouter only: the id is an OpenRouter id,
- * so a Workers AI deployment reviews on its triage model rather than sending it one.
+ * The model pull request reviews and replies run on: the organization's pick, then the deployment's
+ * override, then the region default. OpenRouter only: the id is an OpenRouter id, so a Workers AI
+ * deployment reviews on its triage model rather than sending it one.
  */
-export const resolveReviewModel = (env: LlmEnv, tags?: LlmCallTags): ResolvedModel =>
+export const resolveReviewModel = (
+	env: LlmEnv,
+	tags?: LlmCallTags,
+	chosen: Option.Option<PrReviewModel> = Option.none(),
+): ResolvedModel =>
 	resolveLlmProvider(env) === "workers-ai"
 		? resolveTriageModel(env, tags)
 		: openRouterModel(
 				env,
-				readString(env, "MAPLE_REVIEW_MODEL_OPENROUTER") ??
-					(openRouterRegion(env) === "eu" ? EU_DEFAULT_REVIEW_MODEL : DEFAULT_REVIEW_MODEL),
+				Option.getOrElse(
+					servedReviewModel(env, chosen),
+					() =>
+						readString(env, "MAPLE_REVIEW_MODEL_OPENROUTER") ??
+						(openRouterRegion(env) === "eu" ? EU_DEFAULT_REVIEW_MODEL : DEFAULT_REVIEW_MODEL),
+				),
 				"MAPLE_TRIAGE_REASONING_EFFORT",
 				undefined,
 				tags,
