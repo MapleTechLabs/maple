@@ -82,3 +82,51 @@ export const IngestFreshnessOutput = Schema.Struct({
 	probeWindow: OutputTimeRange,
 	signals: Schema.Array(IngestFreshnessRow),
 })
+
+// db_query_volume
+
+export const DbQueryVolumeRow = Schema.Struct({
+	service: Schema.String,
+	dbSystem: Schema.String,
+	/** Database identity (`db.namespace`, falling back to the server address); "" when unknown. */
+	dbNamespace: Schema.String,
+	/** Normalized statement shape, literals replaced with `?`. */
+	query: Schema.String,
+	calls: Schema.Number,
+	/** Sampling-corrected call count. */
+	estimatedCalls: Schema.Number,
+	errorCount: Schema.Number,
+	avgMs: Schema.Number,
+	p95Ms: Schema.Number,
+	lastSeen: Schema.String,
+})
+
+export const DbQueryVolumeOutput = Schema.Struct({
+	timeRange: OutputTimeRange,
+	service: Schema.optionalKey(Schema.String),
+	dbSystem: Schema.optionalKey(Schema.String),
+	environment: Schema.optionalKey(Schema.String),
+	truncated: Schema.Boolean,
+	queries: Schema.Array(DbQueryVolumeRow),
+})
+
+// ingest_usage
+
+export const IngestUsageRow = Schema.Struct({
+	service: Schema.String,
+	traceCount: Schema.Number,
+	logCount: Schema.Number,
+	/** Datapoints across sum, gauge, histogram and exponential histogram metrics. */
+	metricCount: Schema.Number,
+	traceBytes: Schema.Number,
+	logBytes: Schema.Number,
+	metricBytes: Schema.Number,
+	totalBytes: Schema.Number,
+})
+
+export const IngestUsageOutput = Schema.Struct({
+	timeRange: OutputTimeRange,
+	service: Schema.optionalKey(Schema.String),
+	totals: IngestUsageRow,
+	services: Schema.Array(IngestUsageRow),
+})

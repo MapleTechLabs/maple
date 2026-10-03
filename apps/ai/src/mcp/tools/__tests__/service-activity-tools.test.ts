@@ -1,6 +1,12 @@
 import { afterAll, beforeAll, describe, expect, it } from "@effect/vitest"
 import { Schema } from "effect"
-import { IngestFreshnessOutput, RouteUsageOutput, ServiceDeploymentsOutput } from "@maple/domain/mcp-outputs"
+import {
+	DbQueryVolumeOutput,
+	IngestFreshnessOutput,
+	IngestUsageOutput,
+	RouteUsageOutput,
+	ServiceDeploymentsOutput,
+} from "@maple/domain/mcp-outputs"
 import type { McpToolResult } from "../types"
 import { freshnessRow } from "../ingest-freshness"
 import { installFakeWarehouse, restoreWarehouse, type FixtureRule } from "../../__evals__/fake-warehouse"
@@ -11,6 +17,61 @@ const sqlSeen: string[] = []
 
 // Each tool reads one distinctive table; the probe and history unions of ingest_freshness differ by table.
 const fixtures: FixtureRule[] = [
+	{
+		match: (sql) => (sql.includes("totalSizeBytes") ? (sqlSeen.push(sql), true) : false),
+		rows: [
+			{
+				serviceName: "api",
+				totalLogCount: "10",
+				totalLogSizeBytes: "1000",
+				totalTraceCount: "200",
+				totalTraceSizeBytes: "20000",
+				totalSumMetricCount: "5",
+				totalSumMetricSizeBytes: "50",
+				totalGaugeMetricCount: "5",
+				totalGaugeMetricSizeBytes: "50",
+				totalHistogramMetricCount: "0",
+				totalHistogramMetricSizeBytes: "0",
+				totalExpHistogramMetricCount: "0",
+				totalExpHistogramMetricSizeBytes: "0",
+				totalSizeBytes: "21100",
+			},
+			{
+				serviceName: "web",
+				totalLogCount: "1",
+				totalLogSizeBytes: "100",
+				totalTraceCount: "20",
+				totalTraceSizeBytes: "2000",
+				totalSumMetricCount: "0",
+				totalSumMetricSizeBytes: "0",
+				totalGaugeMetricCount: "0",
+				totalGaugeMetricSizeBytes: "0",
+				totalHistogramMetricCount: "0",
+				totalHistogramMetricSizeBytes: "0",
+				totalExpHistogramMetricCount: "0",
+				totalExpHistogramMetricSizeBytes: "0",
+				totalSizeBytes: "2100",
+			},
+		],
+	},
+	{
+		match: (sql) =>
+			sql.includes("service_map_db_query_shapes_hourly") ? (sqlSeen.push(sql), true) : false,
+		rows: [
+			{
+				serviceName: "api",
+				dbSystem: "postgresql",
+				dbNamespace: "maple",
+				queryLabel: "SELECT * FROM users WHERE id = ?",
+				queryCount: "900",
+				estimatedQueryCount: 900,
+				errorCount: "9",
+				avgDurationMs: 2.5,
+				p95DurationMs: 8,
+				lastSeen: "2026-10-01 11:59:00",
+			},
+		],
+	},
 	{
 		match: (sql) => (sql.includes("AS commitSha") ? (sqlSeen.push(sql), true) : false),
 		rows: [
@@ -185,5 +246,49 @@ describe("ingest_freshness", () => {
 			{ count: 3, lastSeen: "2026-10-01 11:00:00" },
 		)
 		expect(row).toMatchObject({ status: "delayed", lagSeconds: 1200 })
+	})
+})
+
+describe("db_query_volume", () => {
+	it("ranks shapes across databases without a db_system", async () => {
+		const result = await call("db_query_volume", { start_time: "2026-09-30 12:00:00", end_time: END })
+		expect(result.isError).toBeUndefined()
+		const output = Schema.decodeUnknownSync(DbQueryVolumeOutput)(result.structuredContent)
+		expect(output.queries[0]).toMatchObject({
+			service: "api",
+			dbSystem: "postgresql",
+			calls: 900,
+			p95Ms: 8,
+		})
+		expect(sqlSeen.at(-1)).not.toContain("DbSystem = ")
+		expect(markdown(result)).toContain("| postgresql maple |")
+	})
+
+	it("passes db_system and service into both tiers", async () => {
+		await call("db_query_volume", {
+			db_system: "redis",
+			service: "api",
+			start_time: "2026-09-30 12:00:00",
+			end_time: END,
+		})
+		const sql = sqlSeen.at(-1) ?? ""
+		expect(sql).toContain("DbSystem = 'redis'")
+		expect(sql).toContain("traces.ServiceName = 'api'")
+	})
+})
+
+describe("ingest_usage", () => {
+	it("folds the metric shapes together and totals every service", async () => {
+		const result = await call("ingest_usage", { end_time: END })
+		expect(result.isError).toBeUndefined()
+		const output = Schema.decodeUnknownSync(IngestUsageOutput)(result.structuredContent)
+		expect(output.services[0]).toMatchObject({
+			service: "api",
+			traceCount: 200,
+			metricCount: 10,
+			metricBytes: 100,
+		})
+		expect(output.totals).toMatchObject({ traceCount: 220, logCount: 11, totalBytes: 23200 })
+		expect(markdown(result)).toContain("| (all) | 220 |")
 	})
 })

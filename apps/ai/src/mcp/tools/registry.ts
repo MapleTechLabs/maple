@@ -25,6 +25,8 @@ import { registerGetServiceTopOperationsTool } from "./get-service-top-operation
 import { registerServiceDeploymentsTool } from "./service-deployments"
 import { registerRouteUsageTool } from "./route-usage"
 import { registerIngestFreshnessTool } from "./ingest-freshness"
+import { registerDbQueryVolumeTool } from "./db-query-volume"
+import { registerIngestUsageTool } from "./ingest-usage"
 import { registerInspectChartDataTool } from "./inspect-chart-data"
 import { registerInspectTraceTool } from "./inspect-trace"
 import { registerInspectSpanTool } from "./inspect-span"
@@ -409,6 +411,8 @@ const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 	registerServiceDeploymentsTool(registrar)
 	registerRouteUsageTool(registrar)
 	registerIngestFreshnessTool(registrar)
+	registerDbQueryVolumeTool(registrar)
+	registerIngestUsageTool(registrar)
 	registerGetInstrumentationRecommendationsTool(registrar)
 	registerAuditSetupTool(registrar)
 	registerSourceCodeTools(registrar)

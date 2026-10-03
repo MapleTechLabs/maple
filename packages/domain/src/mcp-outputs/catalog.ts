@@ -81,7 +81,13 @@ import {
 	SandboxReadFileOutput,
 	SearchSourceCodeOutput,
 } from "./setup"
-import { IngestFreshnessOutput, RouteUsageOutput, ServiceDeploymentsOutput } from "./service-activity"
+import {
+	DbQueryVolumeOutput,
+	IngestFreshnessOutput,
+	IngestUsageOutput,
+	RouteUsageOutput,
+	ServiceDeploymentsOutput,
+} from "./service-activity"
 import {
 	FindSlowTracesOutput,
 	InspectSpanOutput,
@@ -99,6 +105,7 @@ export const McpToolOutputs = {
 	compare_periods: ComparePeriodsOutput,
 	create_alert_rule: CreateAlertRuleOutput,
 	create_dashboard: CreateDashboardOutput,
+	db_query_volume: DbQueryVolumeOutput,
 	delete_alert_rule: DeleteAlertRuleOutput,
 	describe_dashboard_schema: DescribeDashboardSchemaOutput,
 	describe_warehouse_tables: DescribeWarehouseTablesOutput,
@@ -118,6 +125,7 @@ export const McpToolOutputs = {
 	get_session_traces: GetSessionTracesOutput,
 	get_session_transcript: GetSessionTranscriptOutput,
 	ingest_freshness: IngestFreshnessOutput,
+	ingest_usage: IngestUsageOutput,
 	inspect_chart_data: InspectChartDataOutput,
 	inspect_span: InspectSpanOutput,
 	inspect_trace: InspectTraceOutput,
