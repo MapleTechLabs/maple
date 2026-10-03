@@ -1,6 +1,11 @@
-import { Effect, Exit, Option, Result, Schema } from "effect"
+import { Clock, Effect, Exit, Option, Result, Schema } from "effect"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
-import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import {
+	WarehouseQueryService,
+	provideWarehouseExecutorFromTenant,
+} from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { productEventsFunnel } from "@maple/query-engine/observability"
+import { PRODUCT_EVENTS_FUNNEL_ENDPOINT } from "@maple/widgets/dashboard"
 import {
 	QuerySpec,
 	type QueryEngineResult,
@@ -318,7 +323,12 @@ export interface RawSqlInspectionData {
 	rows: ReadonlyArray<Record<string, unknown>>
 	truncated: boolean
 	timeRange: InspectWidgetTimeRange
+	/** Wall time of the run, alone; the dashboard runs every tile at once, so it only gets slower. */
+	durationMs?: number
 }
+
+/** A raw-SQL tile this slow alone tends to time out when the whole board loads together. */
+export const SLOW_RAW_SQL_MS = 3_000
 
 /** One widget's inspection: `inspect_chart_data`'s output before the tool adds which dashboard it read. */
 export type WidgetInspection = Omit<InspectChartDataData, "outcome" | "dashboardId" | "dashboardName">
@@ -326,13 +336,50 @@ export type WidgetInspection = Omit<InspectChartDataData, "outcome" | "dashboard
 export type InspectionOutcome =
 	| { kind: "supported"; data: WidgetInspection }
 	| { kind: "raw_sql"; data: RawSqlInspectionData }
-	| { kind: "unsupported"; endpoint: string }
+	| {
+			kind: "unsupported"
+			endpoint: string
+			/** A product-event funnel, checked through the same read query_funnel runs. */
+			funnel?: FunnelCheck
+	  }
 	| {
 			kind: "skipped"
 			reason: "no_params" | "no_enabled_queries" | "too_many_queries" | "decode_failed"
 			detail: string
 	  }
 	| { kind: "inspection_error"; message: string }
+
+export type FunnelCheck =
+	| { readonly ok: true; readonly steps: number; readonly first: number; readonly last: number }
+	| { readonly ok: false; readonly error: string }
+
+const checkFunnelWidget = (
+	tenant: TenantContext,
+	widget: DashboardWidget,
+	timeRange: InspectWidgetTimeRange,
+) => {
+	const funnel = widget.display.funnel
+	const funnelSteps = funnel?.steps
+	if (funnel === undefined || funnelSteps === undefined || funnelSteps.length === 0) {
+		return Effect.succeed<FunnelCheck | undefined>(undefined)
+	}
+	const steps = funnelSteps.length
+	return productEventsFunnel({
+		steps: funnelSteps,
+		keyBy: funnel.keyBy ?? "person",
+		windowSeconds: funnel.windowSeconds ?? 86_400,
+		...(funnel.filters === undefined ? undefined : { filters: funnel.filters }),
+		startTime: timeRange.startTime,
+		endTime: timeRange.endTime,
+	}).pipe(
+		provideWarehouseExecutorFromTenant(tenant),
+		Effect.map((rows): FunnelCheck => {
+			const count = (step: number) => Number(rows.find((r) => Number(r.step) === step)?.count) || 0
+			return { ok: true, steps, first: count(1), last: count(steps) }
+		}),
+		Effect.catch((error) => Effect.succeed<FunnelCheck>({ ok: false, error: error.message })),
+	)
+}
 
 export interface InspectWidgetInput {
 	tenant: TenantContext
@@ -366,6 +413,7 @@ const inspectRawSqlWidget = Effect.fn("inspectRawSqlWidget")(function* (
 	const granularitySeconds =
 		rawSql.granularitySeconds ?? autoBucketSeconds(timeRange.startTime, timeRange.endTime)
 
+	const startedAt = yield* Clock.currentTimeMillis
 	const result = yield* runRawSql({
 		tenant,
 		sql,
@@ -397,6 +445,7 @@ const inspectRawSqlWidget = Effect.fn("inspectRawSqlWidget")(function* (
 		} satisfies InspectionOutcome
 	}
 
+	const durationMs = (yield* Clock.currentTimeMillis) - startedAt
 	const rendered = result.value.rows.slice(0, RAW_SQL_INSPECT_ROWS)
 	return {
 		kind: "raw_sql",
@@ -410,6 +459,7 @@ const inspectRawSqlWidget = Effect.fn("inspectRawSqlWidget")(function* (
 			rows: rendered,
 			truncated: result.value.rowCount > rendered.length,
 			timeRange,
+			durationMs,
 		},
 	} satisfies InspectionOutcome
 })
@@ -432,9 +482,15 @@ export const inspectWidget = Effect.fn("inspectWidget")(
 		const isBreakdown = querySet?.resultShape === "breakdown"
 
 		if (querySet === null || (!isTimeseries && !isBreakdown)) {
+			const endpoint = dataSourceEndpoint(widget.dataSource) ?? "unknown"
+			const funnel =
+				endpoint === PRODUCT_EVENTS_FUNNEL_ENDPOINT
+					? yield* checkFunnelWidget(tenant, widget, timeRange)
+					: undefined
 			return {
 				kind: "unsupported",
-				endpoint: dataSourceEndpoint(widget.dataSource) ?? "unknown",
+				endpoint,
+				...(funnel === undefined ? undefined : { funnel }),
 			} satisfies InspectionOutcome
 		}
 
@@ -778,7 +834,7 @@ export const inspectWidget = Effect.fn("inspectWidget")(
 	),
 )
 
-function summarizeOutcome(widget: DashboardWidget, outcome: InspectionOutcome): WidgetInspectionEntry {
+export function summarizeOutcome(widget: DashboardWidget, outcome: InspectionOutcome): WidgetInspectionEntry {
 	if (outcome.kind === "supported") {
 		// The percent-scale note is the one note that tells the caller what to
 		// change, so it rides along on the mutation-tool summary rather than only
@@ -793,6 +849,21 @@ function summarizeOutcome(widget: DashboardWidget, outcome: InspectionOutcome): 
 			...(actionableNote !== undefined ? { note: actionableNote } : undefined),
 		}
 	}
+	if (outcome.kind === "unsupported" && outcome.funnel !== undefined) {
+		const check = outcome.funnel
+		return {
+			widgetId: widget.id,
+			...(widget.display.title !== undefined ? { title: widget.display.title } : undefined),
+			visualization: widget.visualization,
+			verdict: !check.ok ? "broken" : check.first === 0 ? "suspicious" : "looks_healthy",
+			flags: [],
+			note: !check.ok
+				? `Funnel query failed: ${check.error}`
+				: check.first === 0
+					? "Funnel step 1 matched nobody in this window; check the step names with list_product_events, or run query_funnel (an empty VisitorId/UserId shows up there)."
+					: `Funnel: ${check.first} at step 1, ${check.last} at step ${check.steps}.`,
+		}
+	}
 	if (outcome.kind === "unsupported") {
 		return {
 			widgetId: widget.id,
@@ -804,10 +875,12 @@ function summarizeOutcome(widget: DashboardWidget, outcome: InspectionOutcome): 
 		}
 	}
 	if (outcome.kind === "raw_sql") {
+		const durationMs = outcome.data.durationMs ?? 0
+		const slow = outcome.data.status === "ok" && durationMs >= SLOW_RAW_SQL_MS
 		const verdict: WidgetInspectionVerdict =
 			outcome.data.status === "error"
 				? "broken"
-				: outcome.data.rowCount === 0
+				: outcome.data.rowCount === 0 || slow
 					? "suspicious"
 					: "looks_healthy"
 		const note =
@@ -815,7 +888,9 @@ function summarizeOutcome(widget: DashboardWidget, outcome: InspectionOutcome): 
 				? `Raw SQL failed: ${outcome.data.error ?? "unknown error"}`
 				: outcome.data.rowCount === 0
 					? "Raw SQL returned no rows for this window."
-					: `Raw SQL returned ${outcome.data.rowCount} row(s).`
+					: slow
+						? `Raw SQL took ${(durationMs / 1000).toFixed(1)}s on its own; with every tile loading at once it may time out. Aggregate less raw data (a rollup table, fewer columns) or narrow the window.`
+						: `Raw SQL returned ${outcome.data.rowCount} row(s).`
 		return {
 			widgetId: widget.id,
 			...(widget.display.title !== undefined ? { title: widget.display.title } : undefined),

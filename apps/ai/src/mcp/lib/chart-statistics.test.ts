@@ -103,7 +103,8 @@ describe("computeFlags", () => {
 			computeTimeseriesStats([point("b1", { s: 0 }), point("b2", { s: 0 }), point("b3", { s: 0 })]),
 		)
 		expect(flags).toContain("ALL_ZEROS")
-		expect(verdictFromFlags(flags)).toBe("suspicious")
+		// Reported, but a zero error count is usually correct, so it does not downgrade the verdict.
+		expect(verdictFromFlags(flags)).toBe("looks_healthy")
 	})
 
 	it("flags FLAT_LINE when all non-zero values are equal", () => {
@@ -214,9 +215,12 @@ describe("verdictFromFlags", () => {
 	})
 
 	it("returns suspicious for milder flags", () => {
-		expect(verdictFromFlags(["ALL_ZEROS"])).toBe("suspicious")
-		expect(verdictFromFlags(["FLAT_LINE"])).toBe("suspicious")
 		expect(verdictFromFlags(["BUILDER_WARNINGS"])).toBe("suspicious")
+	})
+
+	it("treats all-zero and flat series as notes: a quiet error count is a correct chart", () => {
+		expect(verdictFromFlags(["ALL_ZEROS"])).toBe("looks_healthy")
+		expect(verdictFromFlags(["FLAT_LINE"])).toBe("looks_healthy")
 	})
 
 	it("treats SUSPICIOUS_GAP as informational — it never downgrades the verdict alone", () => {
@@ -225,7 +229,7 @@ describe("verdictFromFlags", () => {
 		// meaningless. The flag is still reported, just not verdict-affecting.
 		expect(verdictFromFlags(["SUSPICIOUS_GAP"])).toBe("looks_healthy")
 		// …but it doesn't suppress a real problem alongside it.
-		expect(verdictFromFlags(["SUSPICIOUS_GAP", "ALL_ZEROS"])).toBe("suspicious")
+		expect(verdictFromFlags(["SUSPICIOUS_GAP", "BUILDER_WARNINGS"])).toBe("suspicious")
 		expect(verdictFromFlags(["SUSPICIOUS_GAP", "EMPTY"])).toBe("broken")
 	})
 })
