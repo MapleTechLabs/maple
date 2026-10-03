@@ -122,7 +122,12 @@ describe("renderToolDocWithinBudget", () => {
 		title: "Big",
 		scope: [["Time range", "last 6h"]],
 		blocks: [doc.text("Summary first."), doc.table(["Name", "Value"], rows(count)), doc.text("trailer")],
-		truncation: { shown: count, total: count * 2, noun: "rows" },
+		truncation: {
+			shown: count,
+			total: count * 2,
+			noun: "rows",
+			next: doc.next("search_traces", { offset: count }, "next page"),
+		},
 		next: [doc.next("list_services", {}, "look around")],
 	})
 
@@ -136,8 +141,14 @@ describe("renderToolDocWithinBudget", () => {
 		assert.include(text, "## Big")
 		assert.include(text, "Summary first.")
 		assert.include(text, "`list_services`")
-		assert.include(text, "Showing 1000 of 2000 rows.")
-		assert.match(text, /showing \d+ of 1000 rows in the last section; 1 later section omitted/)
+		const kept = Number(
+			/showing (\d+) of 1000 rows in the last section; 1 later section omitted/.exec(text)?.[1],
+		)
+		assert.isBelow(kept, 1_000)
+		// Paging follows the rows actually sent, and no next page skips the ones that were cut.
+		assert.include(text, `Showing ${kept} of 2000 rows.`)
+		assert.notInclude(text, "Next page")
+		assert.notInclude(text, "offset=1000")
 		assert.include(text, "lower `limit`")
 		assert.notInclude(text, "trailer")
 		assert.notInclude(text, "row-999")
@@ -146,6 +157,15 @@ describe("renderToolDocWithinBudget", () => {
 			.filter((line) => line.startsWith("| row-"))
 			.at(-1)!
 		assert.match(lastRow, /\|$/)
+	})
+
+	it("keeps the hard-cut fallback, marker included, under the ceiling", () => {
+		const text = renderToolDocWithinBudget(
+			{ title: "t".repeat(5_000), blocks: [doc.text("body")] },
+			1_000,
+		)
+		assert.isAtMost(text.length, 1_000)
+		assert.include(text, "[truncated:")
 	})
 
 	it("cuts one enormous line on characters", () => {
