@@ -507,6 +507,7 @@ const makeHarness = (
 						: Effect.fail(ErrorIssueNotFoundError.forIssue(issueId))
 			},
 			countOpenIssuesByService: () => Effect.succeed([]),
+			countIssues: () => Effect.succeed(0),
 			listIssueIncidents: die,
 			listOpenIncidents: die,
 		}),

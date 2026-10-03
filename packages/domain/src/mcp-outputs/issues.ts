@@ -40,7 +40,7 @@ export const ErrorIssueRow = Schema.Struct({
 	lastResolvedAt: Schema.NullOr(Schema.String),
 })
 
-/** The `compact: true` row: identity, state and volume; no assignment, lease or notes. */
+/** The compact row (the default): identity, state and volume; no assignment, lease or notes. */
 export const ErrorIssueCompactRow = Schema.Struct({
 	id: Schema.String,
 	kind: Schema.String,
@@ -60,13 +60,20 @@ export const ErrorIssueCompactRow = Schema.Struct({
 export const ListErrorIssuesOutput = Schema.Struct({
 	compact: Schema.Boolean,
 	issues: Schema.Union([Schema.Array(ErrorIssueRow), Schema.Array(ErrorIssueCompactRow)]),
+	/** Issues on this page. */
 	total: Schema.Number,
+	/** Issues matching the filters across every page. */
+	totalMatching: Schema.optionalKey(Schema.Number),
+	/** Pass back as `cursor` for the next page; absent on the last page. */
+	nextCursor: Schema.optionalKey(Schema.String),
 	/** The filters that applied. */
 	filters: Schema.Struct({
 		workflowState: Schema.optionalKey(Schema.String),
 		severity: Schema.optionalKey(Schema.String),
 		kind: Schema.optionalKey(Schema.String),
 		service: Schema.optionalKey(Schema.String),
+		exceptionType: Schema.optionalKey(Schema.String),
+		search: Schema.optionalKey(Schema.String),
 		lastSeenAfter: Schema.optionalKey(Schema.String),
 		includeArchived: Schema.Boolean,
 		limit: Schema.Number,

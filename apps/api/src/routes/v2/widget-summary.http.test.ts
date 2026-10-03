@@ -178,6 +178,7 @@ const makeHarness = (options: {
 				options.listIssues ??
 				(() => Effect.succeed(new ErrorIssuesListResponse({ issues: [issueDocument()] }))),
 			countOpenIssuesByService: () => Effect.die(new Error("not used")),
+			countIssues: () => Effect.die(new Error("not used")),
 			getIssue: () => Effect.die(new Error("not used")),
 			listIssueIncidents: () => Effect.die(new Error("not used")),
 			listOpenIncidents: () => Effect.die(new Error("not used")),
