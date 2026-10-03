@@ -24,7 +24,13 @@ const facets = (window: Window) =>
 		Effect.map(({ data }): KnownValues => {
 			const of = (type: string) => data.filter((r) => r.facetType === type).map((r) => String(r.name))
 			const services = of("service")
-			return { services, servicesComplete: services.length < FACET_CAP, environments: of("environment") }
+			const environments = of("environment")
+			return {
+				services,
+				servicesComplete: services.length < FACET_CAP,
+				environments,
+				environmentsComplete: environments.length < FACET_CAP,
+			}
 		}),
 	)
 

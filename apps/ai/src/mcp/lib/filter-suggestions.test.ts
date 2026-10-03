@@ -47,6 +47,12 @@ describe("missingFilterHints", () => {
 			missingFilterHints({ service: "zzz" }, { services: ["api"], servicesComplete: false }),
 		).toEqual([])
 		expect(missingFilterHints({ service: "zzz" }, { services: ["api"] })[0]).toContain("list_services")
+		expect(
+			missingFilterHints(
+				{ environments: ["qa-eu-7"] },
+				{ environments: ["production"], environmentsComplete: false },
+			),
+		).toEqual([])
 	})
 
 	it("suggests an attribute key and a span name", () => {
