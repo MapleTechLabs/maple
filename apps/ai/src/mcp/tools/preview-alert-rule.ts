@@ -10,6 +10,7 @@ import { toMcpHttpError } from "../lib/map-http-error"
 import { warehouseReadToMcpHandlers } from "../lib/map-warehouse-error"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { formatCondition, ruleNotFound } from "../lib/alert-rules"
+import { minSampleCountWarning } from "../lib/alert-rule-evaluation"
 import { truncate } from "../lib/format"
 import * as P from "../lib/params"
 import { doc, type DocBlock, type NextCall } from "../lib/tool-doc"
@@ -82,6 +83,7 @@ const summarizeGroups = (preview: AlertRulePreviewResponse): Output["groups"] =>
 /** What an agent would otherwise only learn after saving the rule and waiting for checks. */
 const previewWarnings = (
 	groups: Output["groups"],
+	points: ReadonlyArray<{ readonly sampleCount: number; readonly skipReason?: string | null }>,
 	clamped: boolean,
 	rule: {
 		readonly signalType: string
@@ -91,16 +93,14 @@ const previewWarnings = (
 ): ReadonlyArray<string> => {
 	const windows = groups.reduce((sum, g) => sum + g.windows, 0)
 	const noData = groups.reduce((sum, g) => sum + g.noData, 0)
-	const belowMin = groups.reduce((sum, g) => sum + g.belowMinSamples, 0)
 	const warnings: Array<string> = []
 	if (windows > 0 && noData === windows) {
 		warnings.push(
 			`Every window had no data: the query matched nothing in this range. Saved as is, every check would be skipped, which reads as quiet, not healthy (alert_on_no_data makes it fire instead). Check the filters${clamped ? "; the range was already clamped to the preview cap, so try a longer window_minutes rather than an earlier start_time" : ", or widen start_time"}.`,
 		)
-	} else if (windows > 0 && belowMin === windows) {
-		warnings.push(
-			`Every window had fewer than ${rule.minimumSampleCount} samples, so every check would be skipped. Lower minimum_sample_count or widen window_minutes.`,
-		)
+	} else {
+		const warning = minSampleCountWarning(points, rule.minimumSampleCount)
+		if (warning !== null) warnings.push(warning)
 	}
 	if (rule.signalType === "raw_query" && rule.rawQuerySql != null) {
 		const warning = rawAlertSampleCountWarning(rule.rawQuerySql, rule.minimumSampleCount)
@@ -224,11 +224,16 @@ export function registerPreviewAlertRuleTool(server: McpToolRegistrar) {
 					end: span.end,
 				})),
 				warnings: [
-					...previewWarnings(groups, preview.truncatedToStart !== null, {
-						signalType: ruleRequest.signalType,
-						rawQuerySql: ruleRequest.rawQuerySql,
-						minimumSampleCount: ruleRequest.minimumSampleCount ?? 0,
-					}),
+					...previewWarnings(
+						groups,
+						preview.series.flatMap((series) => series.points),
+						preview.truncatedToStart !== null,
+						{
+							signalType: ruleRequest.signalType,
+							rawQuerySql: ruleRequest.rawQuerySql,
+							minimumSampleCount: ruleRequest.minimumSampleCount ?? 0,
+						},
+					),
 				],
 			}
 		}),

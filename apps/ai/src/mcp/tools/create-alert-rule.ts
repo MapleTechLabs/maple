@@ -20,6 +20,7 @@ import {
 	ruleWriteInputErrors,
 	toAlertRuleRow,
 } from "../lib/alert-rules"
+import { firstEvaluation } from "../lib/alert-rule-evaluation"
 import * as P from "../lib/params"
 
 const decodeAlertRuleRequest = Schema.decodeUnknownEffect(AlertRuleUpsertRequest)
@@ -304,9 +305,15 @@ export function registerCreateAlertRuleTool(server: McpToolRegistrar) {
 				}),
 			)
 
-			const warnings = ruleConfigWarnings(rule)
-			return { rule: toAlertRuleRow(rule), ...(warnings.length > 0 ? { warnings } : undefined) }
+			const evaluated = yield* firstEvaluation(decoded, rule.enabled)
+			const warnings = [...ruleConfigWarnings(rule), ...evaluated.warnings]
+			return {
+				rule: toAlertRuleRow(rule),
+				...(warnings.length > 0 ? { warnings } : undefined),
+				evaluation: evaluated.evaluation,
+			}
 		}),
-		render: (output) => renderRuleWrite("Alert Rule Created", output.rule, output.warnings),
+		render: (output) =>
+			renderRuleWrite("Alert Rule Created", output.rule, output.warnings, output.evaluation),
 	})
 }
