@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Exit, Layer, Schema } from "effect"
+import { ConfigProvider, Effect, Exit, Fiber, Layer, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
 import { OrgId, UserId } from "@maple/domain/http"
@@ -77,7 +77,6 @@ const decodeRequestBody = Schema.decodeUnknownSync(
 	Schema.fromJsonString(
 		Schema.Struct({
 			query: Schema.optionalKey(Schema.String),
-			variables: Schema.optionalKey(Schema.Struct({ startDate: Schema.optionalKey(Schema.String) })),
 		}),
 	),
 )
@@ -100,8 +99,8 @@ const stubFetch = (calls: StubCalls, options: StubOptions = {}) => {
 			return new Response("slow down", { status: 429, headers: { "retry-after": "60" } })
 		}
 		if (options.railway === "unauthorized") return json({ errors: [{ message: "Not Authorized" }] })
-		if (query.includes("me {")) {
-			return json({ data: { me: { workspaces: [{ id: "ws_1", name: "Acme" }] } } })
+		if (query.includes("apiToken")) {
+			return json({ data: { apiToken: { workspaces: [{ id: "ws_1", name: "Acme" }] } } })
 		}
 		if (query.includes("projects(")) {
 			return json({
@@ -112,7 +111,6 @@ const stubFetch = (calls: StubCalls, options: StubOptions = {}) => {
 								node: {
 									id: "prj_1",
 									name: "shop",
-									workspace: { id: "ws_1", name: "Acme" },
 									environments: {
 										edges: [
 											{
@@ -133,7 +131,8 @@ const stubFetch = (calls: StubCalls, options: StubOptions = {}) => {
 				},
 			})
 		}
-		const ts = Math.floor(Date.parse(body.variables?.startDate ?? "") / 1000)
+		// Inside the first poll's window [11:28, 12:28).
+		const ts = Date.UTC(2026, 9, 3, 12, 0, 0) / 1000
 		return json({
 			data: {
 				metrics: [
@@ -268,10 +267,17 @@ describe("RailwayMetricsService", () => {
 				RailwayMetricsService.use((railway) => railway.connect(orgId, userId, "rw_token_123")),
 			)
 			const limitedStub = stubFetch(calls, { railway: "rate_limited" })
+			// The SDK retries a 429 with backoff before giving up; let its sleeps elapse.
 			const summary = yield* run(
 				testDb,
 				limitedStub,
-				RailwayMetricsService.use((railway) => railway.pollOrg(orgId)),
+				Effect.gen(function* () {
+					const fiber = yield* Effect.forkChild(
+						RailwayMetricsService.use((railway) => railway.pollOrg(orgId)),
+					)
+					yield* TestClock.adjust("1 minute")
+					return yield* Fiber.join(fiber)
+				}),
 			)
 			assert.strictEqual(summary.failures, 1)
 			const rows = yield* Effect.promise(() =>

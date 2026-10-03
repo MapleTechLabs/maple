@@ -613,6 +613,7 @@
         "@clerk/backend": "^3.20.1",
         "@distilled.cloud/cloudflare": "1.0.0-rc.13",
         "@distilled.cloud/core": "1.0.0-rc.13",
+        "@distilled.cloud/railway": "1.0.0-rc.13",
         "@maple-dev/effect-clickhouse": "0.2.0",
         "@maple-dev/effect-clickhouse-http": "workspace:*",
         "@maple/alerting-core": "workspace:*",
