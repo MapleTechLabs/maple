@@ -18,6 +18,15 @@ export const FindErrorsOutput = Schema.Struct({
 	errors: Schema.Array(ErrorTypeRow),
 	/** On an empty result: filter values that do not exist in the window, with close matches. */
 	emptyHints: Schema.optionalKey(Schema.Array(Schema.String)),
+	/** Every occurrence in the window, not just the rows shown. */
+	totals: Schema.optionalKey(
+		Schema.Struct({
+			occurrences: Schema.Number,
+			fingerprints: Schema.Number,
+			/** Occurrences with status Error but no exception recorded. */
+			noExceptionCount: Schema.Number,
+		}),
+	),
 })
 
 /** The span that failed inside a sampled trace, with the attributes that say what it was doing. */
@@ -59,6 +68,33 @@ export const ErrorDetailOutput = Schema.Struct({
 			message: Schema.String,
 			serviceName: Schema.String,
 		}),
+	),
+	/** Set when the fingerprint was resolved from an error issue id. */
+	issueId: Schema.optionalKey(Schema.String),
+	/** The fingerprint across its lookback, from error_events; present whenever it occurred. */
+	summary: Schema.optionalKey(
+		Schema.Struct({
+			timeRange: OutputTimeRange,
+			occurrences: Schema.Number,
+			firstSeen: Schema.String,
+			lastSeen: Schema.String,
+			services: Schema.Array(Schema.String),
+			serviceCount: Schema.Number,
+			noExceptionCount: Schema.Number,
+		}),
+	),
+	/** True when no window was given and the samples were read around the last occurrence. */
+	anchored: Schema.optionalKey(Schema.Boolean),
+	/** Other fingerprints raised in the same sampled traces (often a wrapper and its cause). */
+	related: Schema.optionalKey(
+		Schema.Array(
+			Schema.Struct({
+				fingerprintHash: Schema.String,
+				label: Schema.String,
+				serviceName: Schema.String,
+				traces: Schema.Number,
+			}),
+		),
 	),
 	traces: Schema.Array(ErrorDetailTrace),
 	/** Error count per bucket, when include_timeseries was set. */

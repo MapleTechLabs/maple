@@ -49,7 +49,10 @@ export const labelExceptionlessFingerprints = Effect.fn("Observability.labelExce
 			endTime: input.timeRange.endTime,
 		}
 		const occurrences = yield* executor.compiledQuery(
-			CH.compile(CH.errorFingerprintOccurrencesQuery({ fingerprintHashes: input.fingerprintHashes }), params),
+			CH.compile(
+				CH.errorFingerprintOccurrencesQuery({ fingerprintHashes: input.fingerprintHashes }),
+				params,
+			),
 			{ profile: "list", context: "errorFingerprintOccurrences" },
 		)
 		const withSpan = occurrences.filter((o) => o.spanId !== "" && o.traceId !== "")

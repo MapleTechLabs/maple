@@ -1547,10 +1547,7 @@ export function errorFingerprintOccurrencesQuery(opts: { fingerprintHashes: read
 		.format("JSON")
 }
 
-export function errorOccurrenceSpansQuery(opts: {
-	traceIds: readonly string[]
-	spanIds: readonly string[]
-}) {
+export function errorOccurrenceSpansQuery(opts: { traceIds: readonly string[]; spanIds: readonly string[] }) {
 	return from(TraceDetailSpans)
 		.select(($) => ({
 			spanId: $.SpanId,

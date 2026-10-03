@@ -355,12 +355,10 @@ const relatedFingerprints = Effect.fn("Observability.errorDetail.related")(funct
 		),
 		{ profile: "list", context: "errorCooccurringFingerprints" },
 	)
-	return rows.map(
-		(row): ErrorDetailRelated => ({
-			fingerprintHash: row.fingerprintHash,
-			label: row.errorLabel,
-			serviceName: row.serviceName,
-			traces: row.traces,
-		}),
-	)
+	return rows.map((row): ErrorDetailRelated => ({
+		fingerprintHash: row.fingerprintHash,
+		label: row.errorLabel,
+		serviceName: row.serviceName,
+		traces: row.traces,
+	}))
 })

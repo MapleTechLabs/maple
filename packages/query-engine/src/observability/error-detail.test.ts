@@ -234,10 +234,7 @@ describe("errorDetail", () => {
 				result.traces[0]!.logs.map((l) => l.body),
 				["lookup failed", "Tool completed"],
 			)
-			assert.strictEqual(
-				result.traces[0]!.errorSpan?.attributes["http.response.status_code"],
-				"404",
-			)
+			assert.strictEqual(result.traces[0]!.errorSpan?.attributes["http.response.status_code"], "404")
 		}),
 	)
 
