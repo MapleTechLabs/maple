@@ -39,6 +39,7 @@ import { CloudflareAnalyticsService } from "@maple/backend/services/integrations
 import { PlanetScaleConnectionService } from "@maple/backend/services/integrations/PlanetScaleConnectionService"
 import { PlanetScaleDiscoveryService } from "@maple/backend/services/integrations/PlanetScaleDiscoveryService"
 import { PlanetScaleService } from "@maple/backend/services/integrations/PlanetScaleService"
+import { RailwayMetricsService } from "@maple/backend/services/integrations/RailwayMetricsService"
 import { ScrapeTargetsService } from "@maple/backend/services/integrations/ScrapeTargetsService"
 import { ChatWorkspaceService } from "@maple/backend/services/integrations/ChatWorkspaceService"
 import { TinybirdOrgTokenService } from "@maple/backend/services/integrations/TinybirdOrgTokenService"
@@ -106,6 +107,7 @@ export const HttpServicesLive = Layer.mergeAll(
 	ProductEventsService.layer,
 	DailySpendService.layer,
 	CloudflareAnalyticsService.layer,
+	RailwayMetricsService.layer,
 	AuditLogService.layer,
 	WarehouseQueryService.layer,
 	QueryEngineService.layer,

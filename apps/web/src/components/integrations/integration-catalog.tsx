@@ -11,6 +11,7 @@ import {
 	HazelIcon,
 	PlanetScaleIcon,
 	PrometheusIcon,
+	RailwayIcon,
 	WarpStreamIcon,
 } from "@/components/icons"
 import { Option, Schema } from "effect"
@@ -37,6 +38,7 @@ export type IntegrationId =
 	| "cloudflare"
 	| "prometheus"
 	| "planetscale"
+	| "railway"
 	| "warpstream"
 	| "hazel"
 	| "github"
@@ -90,6 +92,7 @@ export const chatConnectorIcon = (
 export const GITHUB_ACCENT = "#181717"
 export const HAZEL_ACCENT = "#F46F0F"
 export const CLOUDFLARE_ACCENT = "#F38020"
+export const RAILWAY_ACCENT = "#0B0D0E"
 
 export interface CatalogEntry {
 	readonly id: IntegrationId
@@ -147,6 +150,16 @@ const CATALOG: ReadonlyArray<CatalogEntry> = [
 		// PlanetScale's mark is monochrome — neutral wash that works in both themes.
 		accent: PLANETSCALE_COLOR,
 		docsUrl: docsUrl("planetscale"),
+	},
+	{
+		id: "railway",
+		name: "Railway",
+		description:
+			"Paste a Railway token to collect CPU, memory, network and disk metrics for every service.",
+		icon: RailwayIcon,
+		accent: RAILWAY_ACCENT,
+		// Railway's mark is near-black — render it in the foreground token, like GitHub.
+		iconClassName: "text-foreground",
 	},
 	{
 		id: "warpstream",
@@ -254,9 +267,23 @@ export function useIntegrationStatuses(): Partial<Record<IntegrationId, CardStat
 			reactivityKeys: ["githubIntegrationStatus"],
 		}),
 	)
+	const railwayResult = useAtomValue(
+		retainedQuery("integrations", "railwayStatus", {
+			reactivityKeys: ["railwayIntegrationStatus"],
+		}),
+	)
 	const chatResult = useAtomValue(
 		retainedQueryV2("chatIntegration", "connectors", { reactivityKeys: ["chatIntegration"] }),
 	)
+
+	const railway: CardStatus | null = Result.builder(railwayResult)
+		.onSuccess((status): CardStatus => {
+			if (!status.connected) return NOT_CONNECTED
+			if (status.authFailed) return { label: "Token rejected", variant: "error" }
+			return { label: plural(status.environments.length, "environment"), variant: "success" }
+		})
+		.onInitial(() => null)
+		.orElse(() => STATUS_UNAVAILABLE)
 
 	const cloudflare: CardStatus | null = Result.builder(cloudflareAccountResult)
 		.onSuccess((status): CardStatus =>
@@ -349,6 +376,7 @@ export function useIntegrationStatuses(): Partial<Record<IntegrationId, CardStat
 		cloudflare,
 		prometheus: scrapeStatus("prometheus"),
 		planetscale,
+		railway,
 		// WarpStream rides the generic Prometheus pipeline — no own target type.
 		warpstream: { label: "Via Prometheus", variant: "outline" },
 		hazel,
@@ -485,9 +513,36 @@ export function useIntegrationOverviews(): Record<IntegrationId, IntegrationOver
 			reactivityKeys: ["githubIntegrationStatus"],
 		}),
 	)
+	const railwayResult = useAtomValue(
+		retainedQuery("integrations", "railwayStatus", {
+			reactivityKeys: ["railwayIntegrationStatus"],
+		}),
+	)
 	const chatResult = useAtomValue(
 		retainedQueryV2("chatIntegration", "connectors", { reactivityKeys: ["chatIntegration"] }),
 	)
+
+	const railway: IntegrationOverview = Result.builder(railwayResult)
+		.onSuccess((status): IntegrationOverview => {
+			if (!status.connected) return CONNECT
+			const failing = status.environments.filter((environment) => environment.lastError != null).length
+			const issue = status.authFailed
+				? "Token rejected"
+				: failing > 0
+					? `${plural(failing, "environment")} failing`
+					: null
+			return {
+				kind: "connected",
+				health: issue ? "attention" : "healthy",
+				stateLabel: issue ? "Needs attention" : "Healthy",
+				context: status.workspaceNames,
+				stat: `${plural(status.environments.length, "environment")} polled`,
+				lastSyncLabel: syncedLabel(status.lastSyncedAt),
+				issue,
+			}
+		})
+		.onInitial(() => null)
+		.orElse(() => UNAVAILABLE)
 
 	const cloudflare: IntegrationOverview = Result.builder(cloudflareResult)
 		.onSuccess((status): IntegrationOverview => {
@@ -683,6 +738,7 @@ export function useIntegrationOverviews(): Record<IntegrationId, IntegrationOver
 		cloudflare,
 		prometheus: scrapeOverview("prometheus"),
 		planetscale,
+		railway,
 		// WarpStream rides the generic Prometheus pipeline — always a set-up card.
 		warpstream: SET_UP,
 		hazel,

@@ -4,7 +4,7 @@ import { env as workerEnv } from "../test/stubs/cloudflare-workers"
 import { buildLayer, catchTickFailure, selectScheduledProgram, type ScheduledTickPrograms } from "./scheduled"
 
 const cronCases = [
-	["*/5 * * * *", ["anomaly", "cloudflareAnalytics", "planetScale"]],
+	["*/5 * * * *", ["anomaly", "cloudflareAnalytics", "planetScale", "railwayMetrics"]],
 	["*/15 * * * *", ["digest"]],
 	["0 * * * *", ["serviceMapRollup"]],
 	["* * * * *", ["alert", "error", "escalation", "fixVerification"]],
@@ -28,6 +28,7 @@ describe("alerting Effect root", () => {
 				escalation: tick("escalation"),
 				fixVerification: tick("fixVerification"),
 				planetScale: tick("planetScale"),
+				railwayMetrics: tick("railwayMetrics"),
 				serviceMapRollup: tick("serviceMapRollup"),
 			} satisfies ScheduledTickPrograms
 
@@ -57,6 +58,7 @@ describe("alerting Effect root", () => {
 				escalation: record("escalation"),
 				fixVerification: record("fixVerification"),
 				planetScale: record("planetScale"),
+				railwayMetrics: record("railwayMetrics"),
 				serviceMapRollup: record("serviceMapRollup"),
 			} satisfies ScheduledTickPrograms
 			const fiber = yield* Effect.forkChild(selectScheduledProgram("* * * * *", ticks))
@@ -82,6 +84,7 @@ describe("alerting Effect root", () => {
 			escalation: tick("escalation"),
 			fixVerification: tick("fixVerification"),
 			planetScale: tick("planetScale"),
+			railwayMetrics: tick("railwayMetrics"),
 			serviceMapRollup: tick("serviceMapRollup"),
 		} satisfies ScheduledTickPrograms
 

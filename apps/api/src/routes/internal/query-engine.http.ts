@@ -18,6 +18,7 @@ import {
 	ServiceHealthBaselineResponse,
 	ServiceApdexResponse,
 	PlanetScaleInfraTimeseriesResponse,
+	RailwayInfraRowsResponse,
 	ServiceCloudflareStatsResponse,
 	ServicePlanetScaleStatsResponse,
 	CloudflareInfraZonesResponse,
@@ -777,6 +778,20 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						return new PlanetScaleInfraTimeseriesResponse({
 							data: rows.map((row) => ({ ...row })),
 						})
+					}),
+				)
+				.handle("railwayInfraServices", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const rows = yield* runQuery(Queries.railwayInfraServices, tenant, payload)
+						return new RailwayInfraRowsResponse({ data: rows.map((row) => ({ ...row })) })
+					}),
+				)
+				.handle("railwayInfraServiceTimeseries", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const rows = yield* runQuery(Queries.railwayInfraServiceTimeseries, tenant, payload)
+						return new RailwayInfraRowsResponse({ data: rows.map((row) => ({ ...row })) })
 					}),
 				)
 				.handle("cloudflareInfraZones", ({ payload }) =>

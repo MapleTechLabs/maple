@@ -11,6 +11,7 @@ import {
 import { GithubIntegrationCard } from "@/components/integrations/github-integration-card"
 import { HazelIntegrationCard } from "@/components/integrations/hazel-integration-card"
 import { PlanetScaleIntegrationCard } from "@/components/integrations/planetscale-integration-card"
+import { RailwayIntegrationCard } from "@/components/integrations/railway-integration-card"
 import { ChatIntegrationCard } from "@/components/integrations/chat-integration-card"
 import {
 	IntegrationCatalog,
@@ -254,6 +255,8 @@ function IntegrationsPage() {
 									<GithubIntegrationCard />
 								) : integration === "planetscale" ? (
 									<PlanetScaleIntegrationCard />
+								) : integration === "railway" ? (
+									<RailwayIntegrationCard />
 								) : (
 									// prometheus + warpstream share the generic scrape-target flow
 									<ScrapeTargetsSection sourceFilter="prometheus" />

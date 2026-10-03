@@ -91,6 +91,8 @@ import { Route as InfraContainersContainerNameRouteImport } from './routes/infra
 import { Route as InfraKubernetesIndexRouteImport } from './routes/infra/kubernetes/index'
 import { Route as InfraPlanetscaleIndexRouteImport } from './routes/infra/planetscale/index'
 import { Route as InfraPlanetscaleDbNameRouteImport } from './routes/infra/planetscale/$dbName'
+import { Route as InfraRailwayIndexRouteImport } from './routes/infra/railway/index'
+import { Route as InfraRailwayServiceIdRouteImport } from './routes/infra/railway/$serviceId'
 import { Route as LabBenchAgentTranscriptRouteImport } from './routes/lab/bench/agent-transcript'
 import { Route as LabBenchInfraRouteImport } from './routes/lab/bench/infra'
 import { Route as LabBenchLogsRouteImport } from './routes/lab/bench/logs'
@@ -522,6 +524,16 @@ const InfraPlanetscaleDbNameRoute = InfraPlanetscaleDbNameRouteImport.update({
   path: '/infra/planetscale/$dbName',
   getParentRoute: () => rootRouteImport,
 } as any)
+const InfraRailwayIndexRoute = InfraRailwayIndexRouteImport.update({
+  id: '/infra/railway/',
+  path: '/infra/railway/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const InfraRailwayServiceIdRoute = InfraRailwayServiceIdRouteImport.update({
+  id: '/infra/railway/$serviceId',
+  path: '/infra/railway/$serviceId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LabBenchAgentTranscriptRoute = LabBenchAgentTranscriptRouteImport.update({
   id: '/bench/agent-transcript',
   path: '/bench/agent-transcript',
@@ -689,6 +701,7 @@ export interface FileRoutesByFullPath {
   '/infra/cloudflare/$zoneName': typeof InfraCloudflareZoneNameRoute
   '/infra/containers/$containerName': typeof InfraContainersContainerNameRoute
   '/infra/planetscale/$dbName': typeof InfraPlanetscaleDbNameRoute
+  '/infra/railway/$serviceId': typeof InfraRailwayServiceIdRoute
   '/lab/bench/agent-transcript': typeof LabBenchAgentTranscriptRoute
   '/lab/bench/infra': typeof LabBenchInfraRoute
   '/lab/bench/logs': typeof LabBenchLogsRoute
@@ -702,6 +715,7 @@ export interface FileRoutesByFullPath {
   '/infra/containers/': typeof InfraContainersIndexRoute
   '/infra/kubernetes/': typeof InfraKubernetesIndexRoute
   '/infra/planetscale/': typeof InfraPlanetscaleIndexRoute
+  '/infra/railway/': typeof InfraRailwayIndexRoute
   '/dashboards/$dashboardId/widgets/$widgetId': typeof DashboardsDashboardIdWidgetsWidgetIdRoute
   '/infra/kubernetes/nodes/$nodeName': typeof InfraKubernetesNodesNodeNameRoute
   '/infra/kubernetes/pods/$podName': typeof InfraKubernetesPodsPodNameRoute
@@ -788,6 +802,7 @@ export interface FileRoutesByTo {
   '/infra/cloudflare/$zoneName': typeof InfraCloudflareZoneNameRoute
   '/infra/containers/$containerName': typeof InfraContainersContainerNameRoute
   '/infra/planetscale/$dbName': typeof InfraPlanetscaleDbNameRoute
+  '/infra/railway/$serviceId': typeof InfraRailwayServiceIdRoute
   '/lab/bench/agent-transcript': typeof LabBenchAgentTranscriptRoute
   '/lab/bench/infra': typeof LabBenchInfraRoute
   '/lab/bench/logs': typeof LabBenchLogsRoute
@@ -801,6 +816,7 @@ export interface FileRoutesByTo {
   '/infra/containers': typeof InfraContainersIndexRoute
   '/infra/kubernetes': typeof InfraKubernetesIndexRoute
   '/infra/planetscale': typeof InfraPlanetscaleIndexRoute
+  '/infra/railway': typeof InfraRailwayIndexRoute
   '/dashboards/$dashboardId/widgets/$widgetId': typeof DashboardsDashboardIdWidgetsWidgetIdRoute
   '/infra/kubernetes/nodes/$nodeName': typeof InfraKubernetesNodesNodeNameRoute
   '/infra/kubernetes/pods/$podName': typeof InfraKubernetesPodsPodNameRoute
@@ -889,6 +905,7 @@ export interface FileRoutesById {
   '/infra/cloudflare/$zoneName': typeof InfraCloudflareZoneNameRoute
   '/infra/containers/$containerName': typeof InfraContainersContainerNameRoute
   '/infra/planetscale/$dbName': typeof InfraPlanetscaleDbNameRoute
+  '/infra/railway/$serviceId': typeof InfraRailwayServiceIdRoute
   '/lab/bench/agent-transcript': typeof LabBenchAgentTranscriptRoute
   '/lab/bench/infra': typeof LabBenchInfraRoute
   '/lab/bench/logs': typeof LabBenchLogsRoute
@@ -902,6 +919,7 @@ export interface FileRoutesById {
   '/infra/containers/': typeof InfraContainersIndexRoute
   '/infra/kubernetes/': typeof InfraKubernetesIndexRoute
   '/infra/planetscale/': typeof InfraPlanetscaleIndexRoute
+  '/infra/railway/': typeof InfraRailwayIndexRoute
   '/dashboards/$dashboardId_/widgets/$widgetId': typeof DashboardsDashboardIdWidgetsWidgetIdRoute
   '/infra/kubernetes/nodes/$nodeName': typeof InfraKubernetesNodesNodeNameRoute
   '/infra/kubernetes/pods/$podName': typeof InfraKubernetesPodsPodNameRoute
@@ -991,6 +1009,7 @@ export interface FileRouteTypes {
     | '/infra/cloudflare/$zoneName'
     | '/infra/containers/$containerName'
     | '/infra/planetscale/$dbName'
+    | '/infra/railway/$serviceId'
     | '/lab/bench/agent-transcript'
     | '/lab/bench/infra'
     | '/lab/bench/logs'
@@ -1004,6 +1023,7 @@ export interface FileRouteTypes {
     | '/infra/containers/'
     | '/infra/kubernetes/'
     | '/infra/planetscale/'
+    | '/infra/railway/'
     | '/dashboards/$dashboardId/widgets/$widgetId'
     | '/infra/kubernetes/nodes/$nodeName'
     | '/infra/kubernetes/pods/$podName'
@@ -1090,6 +1110,7 @@ export interface FileRouteTypes {
     | '/infra/cloudflare/$zoneName'
     | '/infra/containers/$containerName'
     | '/infra/planetscale/$dbName'
+    | '/infra/railway/$serviceId'
     | '/lab/bench/agent-transcript'
     | '/lab/bench/infra'
     | '/lab/bench/logs'
@@ -1103,6 +1124,7 @@ export interface FileRouteTypes {
     | '/infra/containers'
     | '/infra/kubernetes'
     | '/infra/planetscale'
+    | '/infra/railway'
     | '/dashboards/$dashboardId/widgets/$widgetId'
     | '/infra/kubernetes/nodes/$nodeName'
     | '/infra/kubernetes/pods/$podName'
@@ -1190,6 +1212,7 @@ export interface FileRouteTypes {
     | '/infra/cloudflare/$zoneName'
     | '/infra/containers/$containerName'
     | '/infra/planetscale/$dbName'
+    | '/infra/railway/$serviceId'
     | '/lab/bench/agent-transcript'
     | '/lab/bench/infra'
     | '/lab/bench/logs'
@@ -1203,6 +1226,7 @@ export interface FileRouteTypes {
     | '/infra/containers/'
     | '/infra/kubernetes/'
     | '/infra/planetscale/'
+    | '/infra/railway/'
     | '/dashboards/$dashboardId_/widgets/$widgetId'
     | '/infra/kubernetes/nodes/$nodeName'
     | '/infra/kubernetes/pods/$podName'
@@ -1273,12 +1297,14 @@ export interface RootRouteChildren {
   InfraCloudflareZoneNameRoute: typeof InfraCloudflareZoneNameRoute
   InfraContainersContainerNameRoute: typeof InfraContainersContainerNameRoute
   InfraPlanetscaleDbNameRoute: typeof InfraPlanetscaleDbNameRoute
+  InfraRailwayServiceIdRoute: typeof InfraRailwayServiceIdRoute
   AgentSessionsToolsIndexRoute: typeof AgentSessionsToolsIndexRoute
   ErrorsIssuesIndexRoute: typeof ErrorsIssuesIndexRoute
   InfraCloudflareIndexRoute: typeof InfraCloudflareIndexRoute
   InfraContainersIndexRoute: typeof InfraContainersIndexRoute
   InfraKubernetesIndexRoute: typeof InfraKubernetesIndexRoute
   InfraPlanetscaleIndexRoute: typeof InfraPlanetscaleIndexRoute
+  InfraRailwayIndexRoute: typeof InfraRailwayIndexRoute
   DashboardsDashboardIdWidgetsWidgetIdRoute: typeof DashboardsDashboardIdWidgetsWidgetIdRoute
   InfraKubernetesNodesNodeNameRoute: typeof InfraKubernetesNodesNodeNameRoute
   InfraKubernetesPodsPodNameRoute: typeof InfraKubernetesPodsPodNameRoute
@@ -1866,6 +1892,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof InfraPlanetscaleDbNameRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/infra/railway/': {
+      id: '/infra/railway/'
+      path: '/infra/railway'
+      fullPath: '/infra/railway/'
+      preLoaderRoute: typeof InfraRailwayIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/infra/railway/$serviceId': {
+      id: '/infra/railway/$serviceId'
+      path: '/infra/railway/$serviceId'
+      fullPath: '/infra/railway/$serviceId'
+      preLoaderRoute: typeof InfraRailwayServiceIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/lab/bench/agent-transcript': {
       id: '/lab/bench/agent-transcript'
       path: '/bench/agent-transcript'
@@ -2100,12 +2140,14 @@ const rootRouteChildren: RootRouteChildren = {
   InfraCloudflareZoneNameRoute: InfraCloudflareZoneNameRoute,
   InfraContainersContainerNameRoute: InfraContainersContainerNameRoute,
   InfraPlanetscaleDbNameRoute: InfraPlanetscaleDbNameRoute,
+  InfraRailwayServiceIdRoute: InfraRailwayServiceIdRoute,
   AgentSessionsToolsIndexRoute: AgentSessionsToolsIndexRoute,
   ErrorsIssuesIndexRoute: ErrorsIssuesIndexRoute,
   InfraCloudflareIndexRoute: InfraCloudflareIndexRoute,
   InfraContainersIndexRoute: InfraContainersIndexRoute,
   InfraKubernetesIndexRoute: InfraKubernetesIndexRoute,
   InfraPlanetscaleIndexRoute: InfraPlanetscaleIndexRoute,
+  InfraRailwayIndexRoute: InfraRailwayIndexRoute,
   DashboardsDashboardIdWidgetsWidgetIdRoute:
     DashboardsDashboardIdWidgetsWidgetIdRoute,
   InfraKubernetesNodesNodeNameRoute: InfraKubernetesNodesNodeNameRoute,

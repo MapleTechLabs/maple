@@ -48,6 +48,14 @@ const cfUsageCompare = { ...window, currentStartTime: "2026-01-02 10:30:00", pre
 const psBranch = { ...window, database: "maple-prd", branch: "main" }
 const psBranchBucketed = { ...psBranch, bucketSeconds: 300 }
 
+const railwayWindow = { orgId: ORG_ID, startTime: START_TIME, endTime: END_TIME }
+const railwayServiceBucketed = {
+	...railwayWindow,
+	environmentId: "env_1",
+	serviceId: "svc_1",
+	bucketSeconds: 300,
+}
+
 /** The zone-slice filters the /infra/cloudflare page sends, as one bag. */
 const CF_FILTERS = { hosts: ["example.com"], statusClasses: ["5xx"], methods: ["GET"] }
 
@@ -736,6 +744,18 @@ export const integrationFixtures: ReadonlyArray<IntegrationFixture> = [
 		name: "planetscaleBranchInfraTimeseriesSQL",
 		label: "default",
 		compile: () => compileUnsafe(CH.planetscaleBranchInfraTimeseriesSQL(), psBranchBucketed),
+	},
+	{
+		module: "railway-infra",
+		name: "railwayServicesSQL",
+		label: "default",
+		compile: () => compileUnsafe(CH.railwayServicesSQL(), railwayWindow),
+	},
+	{
+		module: "railway-infra",
+		name: "railwayServiceTimeseriesSQL",
+		label: "default",
+		compile: () => compileUnsafe(CH.railwayServiceTimeseriesSQL(), railwayServiceBucketed),
 	},
 	{
 		module: "planetscale-map",

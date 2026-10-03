@@ -2816,6 +2816,82 @@ SELECT
         LIMIT 500
         FORMAT JSON
 
+-- builder:railway-infra:railwayServicesSQL:default
+SELECT
+          points.environmentId AS environmentId,
+          points.serviceId AS serviceId,
+          any(points.serviceName) AS serviceName,
+          any(points.projectName) AS projectName,
+          any(points.environmentName) AS environmentName,
+          ifNull(ifNotFinite(avg(points.cpu), 0), 0) AS cpuAvg,
+          max(points.cpu) AS cpuMax,
+          max(points.cpuLimit) AS cpuLimit,
+          ifNull(ifNotFinite(avg(points.memory), 0), 0) AS memoryAvg,
+          max(points.memory) AS memoryMax,
+          max(points.memoryLimit) AS memoryLimit,
+          max(points.replicas) AS replicas,
+          max(points.t) AS lastSeen
+        FROM (SELECT
+          metrics_gauge.ResourceAttributes['railway.environment.id'] AS environmentId,
+          metrics_gauge.ResourceAttributes['railway.service.id'] AS serviceId,
+          metrics_gauge.TimeUnix AS t,
+          any(metrics_gauge.ServiceName) AS serviceName,
+          any(metrics_gauge.ResourceAttributes['railway.project.name']) AS projectName,
+          any(metrics_gauge.ResourceAttributes['railway.environment.name']) AS environmentName,
+          sumIf(metrics_gauge.Value, metrics_gauge.MetricName = 'railway.cpu.usage') AS cpu,
+          sumIf(metrics_gauge.Value, metrics_gauge.MetricName = 'railway.cpu.limit') AS cpuLimit,
+          sumIf(metrics_gauge.Value, metrics_gauge.MetricName = 'railway.memory.usage') AS memory,
+          sumIf(metrics_gauge.Value, metrics_gauge.MetricName = 'railway.memory.limit') AS memoryLimit,
+          uniqIf(metrics_gauge.ResourceAttributes['railway.replica.id'], metrics_gauge.MetricName = 'railway.cpu.usage') AS replicas
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('railway.cpu.usage', 'railway.cpu.limit', 'railway.memory.usage', 'railway.memory.limit', 'railway.network.io', 'railway.disk.usage')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+        GROUP BY environmentId, serviceId, t) AS points
+        GROUP BY environmentId, serviceId
+        ORDER BY projectName ASC, environmentName ASC, serviceName ASC
+        LIMIT 1000
+        FORMAT JSON
+
+-- builder:railway-infra:railwayServiceTimeseriesSQL:default
+SELECT
+          toStartOfInterval(points.t, INTERVAL 300 SECOND) AS bucket,
+          ifNull(ifNotFinite(avg(points.cpu), 0), 0) AS cpuAvg,
+          max(points.cpu) AS cpuMax,
+          max(points.cpuLimit) AS cpuLimit,
+          ifNull(ifNotFinite(avg(points.memory), 0), 0) AS memoryAvg,
+          max(points.memory) AS memoryMax,
+          max(points.memoryLimit) AS memoryLimit,
+          ifNull(ifNotFinite(avg(points.networkRx), 0), 0) AS networkRx,
+          ifNull(ifNotFinite(avg(points.networkTx), 0), 0) AS networkTx,
+          max(points.diskVolume) AS diskVolume,
+          max(points.diskEphemeral) AS diskEphemeral,
+          max(points.replicas) AS replicas
+        FROM (SELECT
+          metrics_gauge.TimeUnix AS t,
+          sumIf(metrics_gauge.Value, metrics_gauge.MetricName = 'railway.cpu.usage') AS cpu,
+          sumIf(metrics_gauge.Value, metrics_gauge.MetricName = 'railway.cpu.limit') AS cpuLimit,
+          sumIf(metrics_gauge.Value, metrics_gauge.MetricName = 'railway.memory.usage') AS memory,
+          sumIf(metrics_gauge.Value, metrics_gauge.MetricName = 'railway.memory.limit') AS memoryLimit,
+          sumIf(metrics_gauge.Value, (metrics_gauge.MetricName = 'railway.network.io' AND metrics_gauge.Attributes['network.io.direction'] = 'receive')) AS networkRx,
+          sumIf(metrics_gauge.Value, (metrics_gauge.MetricName = 'railway.network.io' AND metrics_gauge.Attributes['network.io.direction'] = 'transmit')) AS networkTx,
+          maxIf(metrics_gauge.Value, (metrics_gauge.MetricName = 'railway.disk.usage' AND metrics_gauge.Attributes['railway.disk.kind'] = 'volume')) AS diskVolume,
+          sumIf(metrics_gauge.Value, (metrics_gauge.MetricName = 'railway.disk.usage' AND metrics_gauge.Attributes['railway.disk.kind'] = 'ephemeral')) AS diskEphemeral,
+          uniqIf(metrics_gauge.ResourceAttributes['railway.replica.id'], metrics_gauge.MetricName = 'railway.cpu.usage') AS replicas
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('railway.cpu.usage', 'railway.cpu.limit', 'railway.memory.usage', 'railway.memory.limit', 'railway.network.io', 'railway.disk.usage')
+          AND metrics_gauge.ResourceAttributes['railway.environment.id'] = 'env_1'
+          AND metrics_gauge.ResourceAttributes['railway.service.id'] = 'svc_1'
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+        GROUP BY t) AS points
+        GROUP BY bucket
+        ORDER BY bucket ASC
+        LIMIT 2000
+        FORMAT JSON
+
 -- builder:setup-audit:auditAttributeKeyInventoryQuery:default
 SELECT
           attribute_keys_hourly.AttributeScope AS scope,

@@ -873,6 +873,44 @@ export class VcsCommitRangesResponse extends Schema.Class<VcsCommitRangesRespons
 	},
 ) {}
 
+export class RailwayEnvironmentStatus extends Schema.Class<RailwayEnvironmentStatus>(
+	"RailwayEnvironmentStatus",
+)({
+	projectId: Schema.String,
+	projectName: Schema.String,
+	environmentId: Schema.String,
+	environmentName: Schema.String,
+	serviceCount: Schema.Number,
+	enabled: Schema.Boolean,
+	lastSyncedAt: Schema.NullOr(Schema.Number),
+	lastError: Schema.NullOr(Schema.String),
+}) {}
+
+/** Connection state of the Railway metrics integration (token-based, one per org). */
+export class RailwayIntegrationStatus extends Schema.Class<RailwayIntegrationStatus>(
+	"RailwayIntegrationStatus",
+)({
+	connected: Schema.Boolean,
+	workspaceNames: Schema.NullOr(Schema.String),
+	connectedByUserId: Schema.NullOr(UserId),
+	connectedAt: Schema.NullOr(Schema.Number),
+	/** True when Railway rejected the stored token; polling is paused until a new one is saved. */
+	authFailed: Schema.Boolean,
+	lastSyncedAt: Schema.NullOr(Schema.Number),
+	lastError: Schema.NullOr(Schema.String),
+	environments: Schema.Array(RailwayEnvironmentStatus),
+}) {}
+
+export class RailwayConnectRequest extends Schema.Class<RailwayConnectRequest>("RailwayConnectRequest")({
+	token: Schema.String.check(Schema.isTrimmed(), Schema.isMinLength(8), Schema.isMaxLength(512)),
+}) {}
+
+export class RailwayDisconnectResponse extends Schema.Class<RailwayDisconnectResponse>(
+	"RailwayDisconnectResponse",
+)({
+	disconnected: Schema.Boolean,
+}) {}
+
 export class IntegrationsForbiddenError extends HttpTaggedError<IntegrationsForbiddenError>()(
 	"@maple/http/errors/IntegrationsForbiddenError",
 	{
@@ -1133,6 +1171,31 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 		HttpApiEndpoint.get("cloudflareHyperdrives", "/cloudflare/hyperdrive", {
 			success: CloudflareHyperdrivesResponse,
 			error: IntegrationsPersistenceError,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.get("railwayStatus", "/railway/status", {
+			success: RailwayIntegrationStatus,
+			error: IntegrationsPersistenceError,
+		}),
+	)
+	.add(
+		// Validates the token against Railway (discovery + a metrics probe) before storing it.
+		HttpApiEndpoint.put("railwayConnect", "/railway", {
+			payload: RailwayConnectRequest,
+			success: RailwayIntegrationStatus,
+			error: [
+				IntegrationsForbiddenError,
+				IntegrationsValidationError,
+				IntegrationsUpstreamError,
+				IntegrationsPersistenceError,
+			],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.delete("railwayDisconnect", "/railway", {
+			success: RailwayDisconnectResponse,
+			error: [IntegrationsForbiddenError, IntegrationsPersistenceError],
 		}),
 	)
 	.add(

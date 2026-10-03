@@ -65,6 +65,7 @@ export {
 	PulseIcon,
 	PythonIcon,
 	RadioCheckedIcon,
+	RailwayIcon,
 	RedisIcon,
 	RocketIcon,
 	RubyIcon,
