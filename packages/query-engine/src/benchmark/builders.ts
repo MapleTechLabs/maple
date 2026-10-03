@@ -1105,6 +1105,27 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		label: "default",
 		compile: () => CH.compileUnionUnsafe(CH.ingestFreshnessQuery(), window),
 	},
+	{
+		module: "service-map",
+		name: "dbQueryVolumeQuery",
+		label: "allDatabases",
+		compile: () => CH.compileUnsafe(CH.dbQueryVolumeQuery({}), window),
+	},
+	{
+		module: "service-map",
+		name: "dbQueryVolumeQuery",
+		label: "scoped",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.dbQueryVolumeQuery({
+					dbSystem: "postgresql",
+					serviceName: "api",
+					deploymentEnv: "production",
+					limit: 20,
+				}),
+				window,
+			),
+	},
 
 	// Service-catalog hourly-rollup splice.
 	{

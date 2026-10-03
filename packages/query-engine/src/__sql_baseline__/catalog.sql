@@ -3225,6 +3225,199 @@ SELECT
         GROUP BY hourTs
         FORMAT JSON
 
+-- builder:service-map:dbQueryVolumeQuery:allDatabases  [b673faec]
+SELECT
+          shape.serviceName AS serviceName,
+          shape.dbSystem AS dbSystem,
+          shape.dbNamespace AS dbNamespace,
+          if(sampleStatement != '', substring(trimBoth(replaceRegexpAll(replaceRegexpAll(replaceRegexpAll(replaceRegexpAll(sampleStatement, '\'[^\']*\'', '?'), '(?i)\\bin\\s*\\([^)]*\\)', 'IN (?)'), '[0-9]+(\\.[0-9]+)?', '?'), '\\s+', ' ')), 1, 220), fallbackLabel) AS queryLabel,
+          shape.queryCount AS queryCount,
+          shape.estimatedQueryCount AS estimatedQueryCount,
+          shape.errorCount AS errorCount,
+          shape.avgDurationMs AS avgDurationMs,
+          shape.p95DurationMs AS p95DurationMs,
+          shape.lastSeen AS lastSeen
+        FROM (SELECT
+          shapes.bService AS serviceName,
+          shapes.bSystem AS dbSystem,
+          shapes.bNamespace AS dbNamespace,
+          shapes.queryKey AS queryKey,
+          any(shapes.bLabel) AS fallbackLabel,
+          anyIf(shapes.bStatement, shapes.bStatement != '') AS sampleStatement,
+          sum(shapes.bCount) AS queryCount,
+          sum(shapes.bEst) AS estimatedQueryCount,
+          sum(shapes.bErr) AS errorCount,
+          if(sum(shapes.bEst) > 0, sum(shapes.bWDur) / sum(shapes.bEst), 0) AS avgDurationMs,
+          if(sum(bCount) > 0, arrayElement(quantilesTDigestWeightedMerge(0.5, 0.95)(bQ), 2) / 1000000, 0) AS p95DurationMs,
+          toString(max(shapes.bLastSeen)) AS lastSeen
+        FROM (
+SELECT
+          service_map_db_query_shapes_hourly.ServiceName AS bService,
+          service_map_db_query_shapes_hourly.DbSystem AS bSystem,
+          if(match(service_map_db_query_shapes_hourly.DbNamespace, '^([0-9a-fA-F]{32}|.*[.]hyperdrive[.]local)$'), 'hyperdrive', service_map_db_query_shapes_hourly.DbNamespace) AS bNamespace,
+          service_map_db_query_shapes_hourly.QueryKey AS queryKey,
+          any(service_map_db_query_shapes_hourly.QueryLabel) AS bLabel,
+          any(service_map_db_query_shapes_hourly.SampleStatement) AS bStatement,
+          sum(service_map_db_query_shapes_hourly.CallCount) AS bCount,
+          sum(service_map_db_query_shapes_hourly.EstimatedCount) AS bEst,
+          sum(service_map_db_query_shapes_hourly.ErrorCount) AS bErr,
+          sum(service_map_db_query_shapes_hourly.WeightedDurationSumMs) AS bWDur,
+          quantilesTDigestWeightedMergeState(0.5, 0.95)(DurationQuantiles) AS bQ,
+          max(service_map_db_query_shapes_hourly.Hour) AS bLastSeen
+        FROM service_map_db_query_shapes_hourly
+        WHERE service_map_db_query_shapes_hourly.OrgId = 'org_sql_catalog'
+          AND service_map_db_query_shapes_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND service_map_db_query_shapes_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+        GROUP BY bService, bSystem, bNamespace, queryKey
+UNION ALL
+SELECT
+          traces.ServiceName AS bService,
+          coalesce(nullIf(traces.SpanAttributes['db.system.name'], ''), traces.SpanAttributes['db.system']) AS bSystem,
+          if(match(coalesce(nullIf(traces.SpanAttributes['db.namespace'], ''), nullIf(traces.SpanAttributes['db.name'], ''), nullIf(traces.SpanAttributes['server.address'], ''), traces.SpanAttributes['net.peer.name']), '^([0-9a-fA-F]{32}|.*[.]hyperdrive[.]local)$'), 'hyperdrive', coalesce(nullIf(traces.SpanAttributes['db.namespace'], ''), nullIf(traces.SpanAttributes['db.name'], ''), nullIf(traces.SpanAttributes['server.address'], ''), traces.SpanAttributes['net.peer.name'])) AS bNamespace,
+          coalesce(
+  nullIf(SpanAttributes['db.query.fingerprint'], ''),
+  nullIf(SpanAttributes['db.statement.fingerprint'], ''),
+  nullIf(if(coalesce(nullIf(SpanAttributes['db.query.text'], ''), SpanAttributes['db.statement']) != '', toString(cityHash64(replaceRegexpAll(replaceRegexpAll(replaceRegexpAll(replaceRegexpAll(replaceRegexpAll(lower(coalesce(nullIf(SpanAttributes['db.query.text'], ''), SpanAttributes['db.statement'])), '\'[^\']*\'', '?'), '\\bin\\s*\\([^)]*\\)', 'in (?)'), '[0-9]+(\\.[0-9]+)?', '?'), '\\s+', ' '), '^\\s+|\\s+$', ''))), ''), ''),
+  toString(cityHash64(coalesce(
+  nullIf(SpanAttributes['db.query.summary'], ''),
+  nullIf(if(SpanAttributes['db.operation.name'] != '', trimBoth(concat(SpanAttributes['db.operation.name'], if(coalesce(nullIf(SpanAttributes['db.collection.name'], ''), SpanAttributes['db.namespace']) != '', concat(' ', coalesce(nullIf(SpanAttributes['db.collection.name'], ''), SpanAttributes['db.namespace'])), ''))), ''), ''),
+  nullIf(if(coalesce(nullIf(SpanAttributes['db.query.text'], ''), SpanAttributes['db.statement']) != '', trimBoth(concat(upper(extract(coalesce(nullIf(SpanAttributes['db.query.text'], ''), SpanAttributes['db.statement']), '^\\s*(\\w+)')), if(extract(coalesce(nullIf(SpanAttributes['db.query.text'], ''), SpanAttributes['db.statement']), '(?i)(?:from|into|update|join|table)\\s+\\W?([\\w.]+)') != '', concat(' ', extract(coalesce(nullIf(SpanAttributes['db.query.text'], ''), SpanAttributes['db.statement']), '(?i)(?:from|into|update|join|table)\\s+\\W?([\\w.]+)')), ''))), ''), ''),
+  nullIf(SpanAttributes['query.context'], ''),
+  nullIf(SpanAttributes['db.operation.name'], ''),
+  nullIf(SpanAttributes['db.operation'], ''),
+  SpanName
+)))
+) AS queryKey,
+          any(substring(coalesce(
+  nullIf(SpanAttributes['db.query.summary'], ''),
+  nullIf(if(SpanAttributes['db.operation.name'] != '', trimBoth(concat(SpanAttributes['db.operation.name'], if(coalesce(nullIf(SpanAttributes['db.collection.name'], ''), SpanAttributes['db.namespace']) != '', concat(' ', coalesce(nullIf(SpanAttributes['db.collection.name'], ''), SpanAttributes['db.namespace'])), ''))), ''), ''),
+  nullIf(if(coalesce(nullIf(SpanAttributes['db.query.text'], ''), SpanAttributes['db.statement']) != '', trimBoth(concat(upper(extract(coalesce(nullIf(SpanAttributes['db.query.text'], ''), SpanAttributes['db.statement']), '^\\s*(\\w+)')), if(extract(coalesce(nullIf(SpanAttributes['db.query.text'], ''), SpanAttributes['db.statement']), '(?i)(?:from|into|update|join|table)\\s+\\W?([\\w.]+)') != '', concat(' ', extract(coalesce(nullIf(SpanAttributes['db.query.text'], ''), SpanAttributes['db.statement']), '(?i)(?:from|into|update|join|table)\\s+\\W?([\\w.]+)')), ''))), ''), ''),
+  nullIf(SpanAttributes['query.context'], ''),
+  nullIf(SpanAttributes['db.operation.name'], ''),
+  nullIf(SpanAttributes['db.operation'], ''),
+  SpanName
+), 1, 220)) AS bLabel,
+          any(substring(coalesce(nullIf(SpanAttributes['db.query.text'], ''), SpanAttributes['db.statement']), 1, 1000)) AS bStatement,
+          count() AS bCount,
+          sum(traces.SampleRate) AS bEst,
+          countIf(traces.StatusCode = 'Error') AS bErr,
+          sum(toFloat64(traces.Duration) * traces.SampleRate / 1000000) AS bWDur,
+          quantilesTDigestWeightedState(0.5, 0.95)(Duration, toUInt32(greatest(SampleRate, 1.0))) AS bQ,
+          max(toDateTime(traces.Timestamp)) AS bLastSeen
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= toDateTime('2026-01-01 10:30:00')
+          AND traces.Timestamp <= toDateTime('2026-01-03 14:15:00')
+          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND traces.SpanKind IN ('Client', 'Producer')
+          AND traces.ServiceName != ''
+          AND coalesce(nullIf(traces.SpanAttributes['db.system.name'], ''), traces.SpanAttributes['db.system']) != ''
+        GROUP BY bService, bSystem, bNamespace, queryKey
+) AS shapes
+        GROUP BY serviceName, dbSystem, dbNamespace, queryKey) AS shape
+        ORDER BY estimatedQueryCount DESC
+        LIMIT 50
+        FORMAT JSON
+
+-- builder:service-map:dbQueryVolumeQuery:scoped  [44d613e3]
+SELECT
+          shape.serviceName AS serviceName,
+          shape.dbSystem AS dbSystem,
+          shape.dbNamespace AS dbNamespace,
+          if(sampleStatement != '', substring(trimBoth(replaceRegexpAll(replaceRegexpAll(replaceRegexpAll(replaceRegexpAll(sampleStatement, '\'[^\']*\'', '?'), '(?i)\\bin\\s*\\([^)]*\\)', 'IN (?)'), '[0-9]+(\\.[0-9]+)?', '?'), '\\s+', ' ')), 1, 220), fallbackLabel) AS queryLabel,
+          shape.queryCount AS queryCount,
+          shape.estimatedQueryCount AS estimatedQueryCount,
+          shape.errorCount AS errorCount,
+          shape.avgDurationMs AS avgDurationMs,
+          shape.p95DurationMs AS p95DurationMs,
+          shape.lastSeen AS lastSeen
+        FROM (SELECT
+          shapes.bService AS serviceName,
+          shapes.bSystem AS dbSystem,
+          shapes.bNamespace AS dbNamespace,
+          shapes.queryKey AS queryKey,
+          any(shapes.bLabel) AS fallbackLabel,
+          anyIf(shapes.bStatement, shapes.bStatement != '') AS sampleStatement,
+          sum(shapes.bCount) AS queryCount,
+          sum(shapes.bEst) AS estimatedQueryCount,
+          sum(shapes.bErr) AS errorCount,
+          if(sum(shapes.bEst) > 0, sum(shapes.bWDur) / sum(shapes.bEst), 0) AS avgDurationMs,
+          if(sum(bCount) > 0, arrayElement(quantilesTDigestWeightedMerge(0.5, 0.95)(bQ), 2) / 1000000, 0) AS p95DurationMs,
+          toString(max(shapes.bLastSeen)) AS lastSeen
+        FROM (
+SELECT
+          service_map_db_query_shapes_hourly.ServiceName AS bService,
+          service_map_db_query_shapes_hourly.DbSystem AS bSystem,
+          if(match(service_map_db_query_shapes_hourly.DbNamespace, '^([0-9a-fA-F]{32}|.*[.]hyperdrive[.]local)$'), 'hyperdrive', service_map_db_query_shapes_hourly.DbNamespace) AS bNamespace,
+          service_map_db_query_shapes_hourly.QueryKey AS queryKey,
+          any(service_map_db_query_shapes_hourly.QueryLabel) AS bLabel,
+          any(service_map_db_query_shapes_hourly.SampleStatement) AS bStatement,
+          sum(service_map_db_query_shapes_hourly.CallCount) AS bCount,
+          sum(service_map_db_query_shapes_hourly.EstimatedCount) AS bEst,
+          sum(service_map_db_query_shapes_hourly.ErrorCount) AS bErr,
+          sum(service_map_db_query_shapes_hourly.WeightedDurationSumMs) AS bWDur,
+          quantilesTDigestWeightedMergeState(0.5, 0.95)(DurationQuantiles) AS bQ,
+          max(service_map_db_query_shapes_hourly.Hour) AS bLastSeen
+        FROM service_map_db_query_shapes_hourly
+        WHERE service_map_db_query_shapes_hourly.OrgId = 'org_sql_catalog'
+          AND service_map_db_query_shapes_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND service_map_db_query_shapes_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND service_map_db_query_shapes_hourly.DbSystem = 'postgresql'
+          AND service_map_db_query_shapes_hourly.ServiceName = 'api'
+          AND service_map_db_query_shapes_hourly.DeploymentEnv = 'production'
+        GROUP BY bService, bSystem, bNamespace, queryKey
+UNION ALL
+SELECT
+          traces.ServiceName AS bService,
+          coalesce(nullIf(traces.SpanAttributes['db.system.name'], ''), traces.SpanAttributes['db.system']) AS bSystem,
+          if(match(coalesce(nullIf(traces.SpanAttributes['db.namespace'], ''), nullIf(traces.SpanAttributes['db.name'], ''), nullIf(traces.SpanAttributes['server.address'], ''), traces.SpanAttributes['net.peer.name']), '^([0-9a-fA-F]{32}|.*[.]hyperdrive[.]local)$'), 'hyperdrive', coalesce(nullIf(traces.SpanAttributes['db.namespace'], ''), nullIf(traces.SpanAttributes['db.name'], ''), nullIf(traces.SpanAttributes['server.address'], ''), traces.SpanAttributes['net.peer.name'])) AS bNamespace,
+          coalesce(
+  nullIf(SpanAttributes['db.query.fingerprint'], ''),
+  nullIf(SpanAttributes['db.statement.fingerprint'], ''),
+  nullIf(if(coalesce(nullIf(SpanAttributes['db.query.text'], ''), SpanAttributes['db.statement']) != '', toString(cityHash64(replaceRegexpAll(replaceRegexpAll(replaceRegexpAll(replaceRegexpAll(replaceRegexpAll(lower(coalesce(nullIf(SpanAttributes['db.query.text'], ''), SpanAttributes['db.statement'])), '\'[^\']*\'', '?'), '\\bin\\s*\\([^)]*\\)', 'in (?)'), '[0-9]+(\\.[0-9]+)?', '?'), '\\s+', ' '), '^\\s+|\\s+$', ''))), ''), ''),
+  toString(cityHash64(coalesce(
+  nullIf(SpanAttributes['db.query.summary'], ''),
+  nullIf(if(SpanAttributes['db.operation.name'] != '', trimBoth(concat(SpanAttributes['db.operation.name'], if(coalesce(nullIf(SpanAttributes['db.collection.name'], ''), SpanAttributes['db.namespace']) != '', concat(' ', coalesce(nullIf(SpanAttributes['db.collection.name'], ''), SpanAttributes['db.namespace'])), ''))), ''), ''),
+  nullIf(if(coalesce(nullIf(SpanAttributes['db.query.text'], ''), SpanAttributes['db.statement']) != '', trimBoth(concat(upper(extract(coalesce(nullIf(SpanAttributes['db.query.text'], ''), SpanAttributes['db.statement']), '^\\s*(\\w+)')), if(extract(coalesce(nullIf(SpanAttributes['db.query.text'], ''), SpanAttributes['db.statement']), '(?i)(?:from|into|update|join|table)\\s+\\W?([\\w.]+)') != '', concat(' ', extract(coalesce(nullIf(SpanAttributes['db.query.text'], ''), SpanAttributes['db.statement']), '(?i)(?:from|into|update|join|table)\\s+\\W?([\\w.]+)')), ''))), ''), ''),
+  nullIf(SpanAttributes['query.context'], ''),
+  nullIf(SpanAttributes['db.operation.name'], ''),
+  nullIf(SpanAttributes['db.operation'], ''),
+  SpanName
+)))
+) AS queryKey,
+          any(substring(coalesce(
+  nullIf(SpanAttributes['db.query.summary'], ''),
+  nullIf(if(SpanAttributes['db.operation.name'] != '', trimBoth(concat(SpanAttributes['db.operation.name'], if(coalesce(nullIf(SpanAttributes['db.collection.name'], ''), SpanAttributes['db.namespace']) != '', concat(' ', coalesce(nullIf(SpanAttributes['db.collection.name'], ''), SpanAttributes['db.namespace'])), ''))), ''), ''),
+  nullIf(if(coalesce(nullIf(SpanAttributes['db.query.text'], ''), SpanAttributes['db.statement']) != '', trimBoth(concat(upper(extract(coalesce(nullIf(SpanAttributes['db.query.text'], ''), SpanAttributes['db.statement']), '^\\s*(\\w+)')), if(extract(coalesce(nullIf(SpanAttributes['db.query.text'], ''), SpanAttributes['db.statement']), '(?i)(?:from|into|update|join|table)\\s+\\W?([\\w.]+)') != '', concat(' ', extract(coalesce(nullIf(SpanAttributes['db.query.text'], ''), SpanAttributes['db.statement']), '(?i)(?:from|into|update|join|table)\\s+\\W?([\\w.]+)')), ''))), ''), ''),
+  nullIf(SpanAttributes['query.context'], ''),
+  nullIf(SpanAttributes['db.operation.name'], ''),
+  nullIf(SpanAttributes['db.operation'], ''),
+  SpanName
+), 1, 220)) AS bLabel,
+          any(substring(coalesce(nullIf(SpanAttributes['db.query.text'], ''), SpanAttributes['db.statement']), 1, 1000)) AS bStatement,
+          count() AS bCount,
+          sum(traces.SampleRate) AS bEst,
+          countIf(traces.StatusCode = 'Error') AS bErr,
+          sum(toFloat64(traces.Duration) * traces.SampleRate / 1000000) AS bWDur,
+          quantilesTDigestWeightedState(0.5, 0.95)(Duration, toUInt32(greatest(SampleRate, 1.0))) AS bQ,
+          max(toDateTime(traces.Timestamp)) AS bLastSeen
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= toDateTime('2026-01-01 10:30:00')
+          AND traces.Timestamp <= toDateTime('2026-01-03 14:15:00')
+          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND traces.SpanKind IN ('Client', 'Producer')
+          AND traces.ServiceName != ''
+          AND coalesce(nullIf(traces.SpanAttributes['db.system.name'], ''), traces.SpanAttributes['db.system']) = 'postgresql'
+          AND traces.ServiceName = 'api'
+          AND coalesce(nullIf(traces.ResourceAttributes['deployment.environment.name'], ''), traces.ResourceAttributes['deployment.environment']) = 'production'
+        GROUP BY bService, bSystem, bNamespace, queryKey
+) AS shapes
+        GROUP BY serviceName, dbSystem, dbNamespace, queryKey) AS shape
+        ORDER BY estimatedQueryCount DESC
+        LIMIT 20
+        FORMAT JSON
+
 -- builder:service-map:serviceDbEdgesForServiceQuery:default  [78428e9c]
 SELECT
           edges.sourceService AS sourceService,

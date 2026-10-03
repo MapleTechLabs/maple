@@ -1339,3 +1339,134 @@ export function servicePlatformsSQL(
 		endTime: params.endTime,
 	})
 }
+
+// DB query volume
+//
+// Query shapes across every service and database, not one db system's detail
+// panel: the same sealed-rollup + raw-edge splice as `serviceDbTopQueriesSQL`,
+// keyed per (service, db system, namespace, shape). The raw edge mirrors the
+// MV's write filter (`DbSystem != ''`) so both tiers count the same spans.
+
+export interface DbQueryVolumeOpts {
+	readonly dbSystem?: string
+	readonly serviceName?: string
+	readonly deploymentEnv?: string
+	readonly limit?: number
+}
+
+export interface DbQueryVolumeOutput {
+	readonly serviceName: string
+	readonly dbSystem: string
+	readonly dbNamespace: string
+	readonly queryLabel: string
+	readonly queryCount: number
+	readonly estimatedQueryCount: number
+	readonly errorCount: number
+	readonly avgDurationMs: number
+	readonly p95DurationMs: number
+	readonly lastSeen: string
+}
+
+export const dbQueryVolumeRowSchema = Schema.Struct({
+	serviceName: Schema.String,
+	dbSystem: Schema.String,
+	dbNamespace: Schema.String,
+	queryLabel: Schema.String,
+	queryCount: CHNumber,
+	estimatedQueryCount: CHNumber,
+	errorCount: CHNumber,
+	avgDurationMs: CHNumberOrZero,
+	p95DurationMs: CHNumber,
+	lastSeen: Schema.String,
+}) satisfies CompiledQueryRowSchema<DbQueryVolumeOutput>
+
+export function dbQueryVolumeQuery(opts: DbQueryVolumeOpts) {
+	const sealed = from(ServiceMapDbQuerySignaturesHourly)
+		.select(($) => ({
+			bService: $.ServiceName,
+			bSystem: $.DbSystem,
+			bNamespace: collapseHyperdriveNs($.DbNamespace),
+			queryKey: $.QueryKey,
+			bLabel: CH.any_($.QueryLabel),
+			bStatement: CH.any_($.SampleStatement),
+			bCount: CH.sum($.CallCount),
+			bEst: CH.sum($.EstimatedCount),
+			bErr: CH.sum($.ErrorCount),
+			bWDur: CH.sum($.WeightedDurationSumMs),
+			bQ: CH.rawExpr(TDIGEST_MERGE_STATE_EXPR, DB_DURATION_STATE),
+			bLastSeen: CH.max_($.Hour),
+		}))
+		.where(($) => [
+			$.OrgId.eq(param.string("orgId")),
+			...interiorConditions($.Hour),
+			opts.dbSystem ? $.DbSystem.eq(opts.dbSystem) : undefined,
+			opts.serviceName ? $.ServiceName.eq(opts.serviceName) : undefined,
+			opts.deploymentEnv ? $.DeploymentEnv.eq(opts.deploymentEnv) : undefined,
+		])
+		.groupBy("bService", "bSystem", "bNamespace", "queryKey")
+
+	const recent = from(Traces)
+		.select(($) => ({
+			bService: $.ServiceName,
+			bSystem: dbSystemExpr($),
+			bNamespace: dbNamespaceExpr($),
+			queryKey: CH.rawExpr(DB_QUERY_KEY_SQL, T.string),
+			bLabel: CH.rawExpr(`any(substring(${DB_QUERY_LABEL_SQL}, 1, 220))`, T.string),
+			bStatement: CH.rawExpr(`any(substring(${DB_STATEMENT_SQL}, 1, 1000))`, T.string),
+			bCount: CH.count(),
+			bEst: CH.sum($.SampleRate),
+			bErr: CH.countIf($.StatusCode.eq("Error")),
+			bWDur: CH.sum(_toFloat64($.Duration).mul($.SampleRate).div(1000000)),
+			bQ: CH.rawExpr(DB_DURATION_TDIGEST_STATE_EXPR, DB_DURATION_STATE),
+			bLastSeen: CH.max_(CH.toDateTime($.Timestamp)),
+		}))
+		.where(($) => [
+			$.OrgId.eq(param.string("orgId")),
+			$.Timestamp.gte(CH.toDateTime(param.dateTimeString("startTime"))),
+			$.Timestamp.lte(CH.toDateTime(param.dateTimeString("endTime"))),
+			edgeCondition("Timestamp"),
+			$.SpanKind.in_("Client", "Producer"),
+			$.ServiceName.neq(""),
+			opts.dbSystem ? dbSystemExpr($).eq(opts.dbSystem) : dbSystemExpr($).neq(""),
+			opts.serviceName ? $.ServiceName.eq(opts.serviceName) : undefined,
+			opts.deploymentEnv ? deploymentEnvExpr($.ResourceAttributes).eq(opts.deploymentEnv) : undefined,
+		])
+		.groupBy("bService", "bSystem", "bNamespace", "queryKey")
+
+	const merged = fromUnion(unionAll(sealed, recent), "shapes")
+		.select(($) => ({
+			serviceName: $.bService,
+			dbSystem: $.bSystem,
+			dbNamespace: $.bNamespace,
+			queryKey: $.queryKey,
+			fallbackLabel: CH.any_($.bLabel),
+			sampleStatement: CH.anyIf($.bStatement, $.bStatement.neq("")),
+			queryCount: CH.sum($.bCount),
+			estimatedQueryCount: CH.sum($.bEst),
+			errorCount: CH.sum($.bErr),
+			avgDurationMs: CH.if_(CH.sum($.bEst).gt(0), CH.sum($.bWDur).div(CH.sum($.bEst)), CH.lit(0)),
+			p95DurationMs: mergedQuantileExpr(2),
+			lastSeen: CH.toString_(CH.max_($.bLastSeen)),
+		}))
+		.groupBy("serviceName", "dbSystem", "dbNamespace", "queryKey")
+
+	return fromQuery(merged, "shape")
+		.select(($) => ({
+			serviceName: $.serviceName,
+			dbSystem: $.dbSystem,
+			dbNamespace: $.dbNamespace,
+			queryLabel: CH.rawExpr(
+				`if(sampleStatement != '', substring(${presentableStatementSql("sampleStatement")}, 1, 220), fallbackLabel)`,
+				T.string,
+			),
+			queryCount: $.queryCount,
+			estimatedQueryCount: $.estimatedQueryCount,
+			errorCount: $.errorCount,
+			avgDurationMs: $.avgDurationMs,
+			p95DurationMs: $.p95DurationMs,
+			lastSeen: $.lastSeen,
+		}))
+		.orderBy(["estimatedQueryCount", "desc"])
+		.limit(opts.limit ?? 50)
+		.format("JSON")
+}
