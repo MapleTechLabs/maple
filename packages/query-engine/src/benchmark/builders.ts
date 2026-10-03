@@ -904,6 +904,8 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		label: "default",
 		compile: () =>
 			CH.compileUnsafe(CH.errorFingerprintOccurrencesQuery({ fingerprintHashes: [FINGERPRINT] }), window),
+		// The branded TraceId/SpanId columns reject the synthetic "" the sweep would use.
+		sampleValues: { traceId: "0af7651916cd43dd8448eb211c80319c", spanId: "b7ad6b7169203331" },
 	},
 	{
 		module: "errors",

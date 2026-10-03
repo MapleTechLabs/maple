@@ -151,8 +151,13 @@ const identityOf = (
 	}
 }
 
-const SEVERITY_RANK: Record<string, number> = { FATAL: 0, ERROR: 1, WARN: 2, WARNING: 2 }
-const severityRank = (severity: string): number => SEVERITY_RANK[severity.toUpperCase()] ?? 3
+const SEVERITY_RANK: ReadonlyMap<string, number> = new Map([
+	["FATAL", 0],
+	["ERROR", 1],
+	["WARN", 2],
+	["WARNING", 2],
+])
+const severityRank = (severity: string): number => SEVERITY_RANK.get(severity.toUpperCase()) ?? 3
 
 /** Error-level logs first (then newest first): a trace's last Info line is rarely the clue. */
 export const errorFirstLogs = <L extends { readonly severityText: string; readonly timestamp: string }>(

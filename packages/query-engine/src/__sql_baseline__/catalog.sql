@@ -702,10 +702,10 @@ SELECT
         ORDER BY bucket ASC
         FORMAT JSON
 
--- builder:errors:errorsWindowTotalsQuery:default  [e081812a]
+-- builder:errors:errorsWindowTotalsQuery:default  [7c4fc530]
 SELECT
           count() AS occurrences,
-          uniq(error_events_by_time.FingerprintHash) AS fingerprints,
+          uniq(error_events_by_time.FingerprintHash) AS fingerprintCount,
           countIf(error_events_by_time.ExceptionType = '') AS noExceptionCount
         FROM error_events_by_time
         WHERE error_events_by_time.OrgId = 'org_sql_catalog'
@@ -12962,7 +12962,7 @@ SELECT
         ORDER BY bucket ASC, groupName ASC
         FORMAT JSON
 
--- spec:metrics-breakdown:baseline  [f2cce5fa]
+-- spec:metrics-breakdown:baseline  [bc31907a]
 SELECT
           metrics_histogram.ServiceName AS name,
           ifNull(ifNotFinite(sum(metrics_histogram.Sum) / sum(metrics_histogram.Count), 0), 0) AS avgValue,
@@ -12977,7 +12977,7 @@ SELECT
           AND metrics_histogram.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_histogram.ServiceName = 'api'
         GROUP BY name
-        ORDER BY count DESC
+        ORDER BY avgValue DESC
         LIMIT 10
         FORMAT JSON
 
@@ -13039,7 +13039,7 @@ SELECT
         ORDER BY bucket ASC
         FORMAT JSON
 
--- spec:metrics-timeseries-rate:baseline  [2e1d520f]
+-- spec:metrics-timeseries-rate:baseline  [6edd2ce8]
 WITH with_deltas AS (
 SELECT
           metrics_sum.TimeUnix AS TimeUnix,
@@ -13058,7 +13058,7 @@ SELECT
           with_deltas.ServiceName AS serviceName,
           '' AS attributeValue,
           with_deltas.ServiceName AS groupName,
-          ifNull(ifNotFinite(sum(with_deltas.delta) / 3600, 0), 0) AS rateValue,
+          ifNull(ifNotFinite(sum(with_deltas.delta) / min(least(toUnixTimestamp(toStartOfInterval(with_deltas.TimeUnix, INTERVAL 3600 SECOND)) + 3600, toUnixTimestamp(toDateTime('2026-01-03 14:15:00'))) - greatest(toUnixTimestamp(toStartOfInterval(with_deltas.TimeUnix, INTERVAL 3600 SECOND)), toUnixTimestamp(toDateTime('2026-01-01 10:30:00')))), 0), 0) AS rateValue,
           sum(with_deltas.delta) AS increaseValue,
           count() AS dataPointCount
         FROM with_deltas

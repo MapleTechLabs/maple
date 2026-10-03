@@ -314,10 +314,11 @@ describe("MCP dispatcher", () => {
 		// while the caller still receives an in-band isError result.
 		it.effect("fails the dispatcher span on a real query failure", () =>
 			Effect.gen(function* () {
+				// SAFETY: run_sql reaches only rawSqlQuery on the warehouse; no other method is called.
 				const warehouse = {
 					rawSqlQuery: () =>
 						Effect.fail(new WarehouseQueryError({ message: "boom", pipeName: "run_sql" })),
-				} as unknown as WarehouseQueryServiceApi
+				} as WarehouseQueryServiceApi
 				const executor = yield* McpToolExecutor.make.pipe(
 					Effect.provide(
 						Context.make(AuditLogService, makeMemoryAuditLog()).pipe(
