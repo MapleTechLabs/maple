@@ -54,6 +54,8 @@ export const PARTIAL_BUCKET_NOTE =
 export function formatMetricValue(metric: string, value: number): string {
 	if (metric.includes("duration")) return formatDurationFromMs(value)
 	if (metric === "error_rate") return formatPercent(value)
+	// Trace counts are sample-weighted sums; fractional spans read as noise.
+	if (metric === "count") return formatNumber(Math.round(value))
 	return formatNumber(value)
 }
 

@@ -19,8 +19,12 @@ import * as P from "../lib/params"
 import { LOG_SEVERITIES } from "./search-logs"
 import { doc, type NextCall, type ToolDoc } from "../lib/tool-doc"
 import { QUERY_BUILDER_DATA_SOURCES, type QueryResultContract } from "@maple/query-model"
+import { resolveAttributeScope } from "../lib/attribute-scope"
+import { emptyResultHints } from "../lib/empty-result-hints"
 
 const WINDOW = P.timeWindow({ defaultHours: 6 })
+const ATTRIBUTE_SCOPES = ["span", "resource"] as const
+type AttributeScope = (typeof ATTRIBUTE_SCOPES)[number]
 
 const decodeQuerySpec = Schema.decodeUnknownEffect(QuerySpec)
 
@@ -46,7 +50,7 @@ const queryDataSchema = Schema.Struct({
 			"reset-aware. sum adds raw samples. Default: count, or avg for metrics.",
 	),
 	group_by: P.optionalText(
-		"Traces: service, span_name, status_code, http_method, attribute. Logs: service, severity. " +
+		"Traces: service, span_name, status_code, http_method, attribute, resource_attribute. Logs: service, severity. " +
 			"Metrics: service, attribute, resource_attribute. " +
 			"Product events: event_name, kind, source, host, page_path, service, group, attribute. " +
 			"'attribute' and 'resource_attribute' need attribute_key (resource_attribute reads resource keys such as " +
@@ -55,10 +59,12 @@ const queryDataSchema = Schema.Struct({
 	...WINDOW.fields,
 	service: P.service(),
 	// Traces-specific
-	span_name: P.optionalText("Filter by span name (traces only)"),
+	span_name: P.optionalText(
+		"Filter by span name (traces only). Exact match first; when nothing matches exactly it is matched as a case-insensitive substring",
+	),
 	root_spans_only: P.optionalFlag("Only include root spans (traces only)"),
 	environments: P.optionalList(
-		"Only these deployment environments (traces and metrics; explore_attributes source=services lists them)",
+		"Only these deployment environments (traces, logs, metrics; explore_attributes source=services lists them)",
 	),
 	commit_shas: P.optionalList("Commit SHAs to filter (traces only)"),
 	apdex_threshold_ms: P.optionalNumber("Apdex threshold in ms (traces only; needed for metric=apdex)"),
@@ -75,8 +81,14 @@ const queryDataSchema = Schema.Struct({
 	metric_name: P.optionalText("The metric, from list_metrics (source=metrics only)"),
 	metric_type: P.optionalOneOf(MetricType.literals, "Type of `metric_name`, as list_metrics reports it"),
 	// Shared attribute filtering
-	attribute_key: P.optionalText("Attribute to filter on, or to group by with group_by=attribute"),
-	attribute_value: P.optionalText("Exact value for attribute_key"),
+	attribute_key: P.optionalText(
+		"Attribute to filter on, or to group by with group_by=attribute. Span (or log/metric label) and resource attributes both work; the scope is resolved automatically",
+	),
+	attribute_value: P.optionalText("Exact value for attribute_key. Also applies when grouping by the same key"),
+	attribute_scope: P.optionalOneOf(
+		ATTRIBUTE_SCOPES,
+		"Where attribute_key lives: 'span' (span, log or metric-datapoint attributes) or 'resource' (deployment.environment, k8s.pod.name...). Resolved from the known keys when omitted",
+	),
 	bucket_seconds: P.optionalNumber("Bucket width in seconds (timeseries only; auto-computed when omitted)"),
 	limit: P.limit({ default: 10, max: 100, description: "Max rows of a breakdown" }),
 })
@@ -112,8 +124,30 @@ const DEFAULT_GROUP_BY = {
 	},
 } as const
 
+/** No rows, or a timeseries whose every value is zero: the filters matched nothing. */
+export const isEmptyResult = (result: Output["result"]): boolean =>
+	result.kind === "breakdown"
+		? result.data.length === 0
+		: result.data.every((point) => Object.values(point.series).every((value) => value === 0))
+
+/** How the handler resolved the request before building the spec. */
+export interface ResolvedQuery {
+	readonly metric: string
+	/** The query-engine group-by token (`resource_attribute` on traces becomes `attribute`). */
+	readonly groupBy: string
+	readonly attributeScope: AttributeScope
+	readonly spanNameContains?: boolean
+}
+
+const groupsByAttribute = (params: Params) =>
+	params.group_by === "attribute" || params.group_by === "resource_attribute"
+
+/**
+ * The attribute predicate. Grouping by the key without a value adds no "exists"
+ * filter (spans without it stay in the "all" group); a value always filters.
+ */
 const attributeFilterOf = (params: Params) =>
-	params.attribute_key === undefined
+	params.attribute_key === undefined || (groupsByAttribute(params) && params.attribute_value === undefined)
 		? undefined
 		: {
 				key: params.attribute_key,
@@ -122,12 +156,23 @@ const attributeFilterOf = (params: Params) =>
 					: { value: params.attribute_value, mode: "equals" }),
 			}
 
+/** `{ attributeFilters }` or `{ resourceAttributeFilters }` for the resolved scope. */
+const scopedAttributeFilters = (params: Params, scope: AttributeScope) => {
+	const filter = attributeFilterOf(params)
+	if (filter === undefined) return undefined
+	return scope === "resource" ? { resourceAttributeFilters: [filter] } : { attributeFilters: [filter] }
+}
+
+const environmentsOf = (params: Params) =>
+	params.environments && params.environments.length > 0 ? { environments: params.environments } : undefined
+
 /**
  * The query as plain data. It is decoded against `QuerySpec` afterwards, which checks every
  * token and brand, so this stays free of casts.
  */
-const buildRawSpec = (params: Params, metric: string, groupBy: string): Record<string, unknown> => {
-	const attributeFilter = attributeFilterOf(params)
+export const buildRawSpec = (params: Params, resolved: ResolvedQuery): Record<string, unknown> => {
+	const { metric, groupBy, attributeScope } = resolved
+	const groupKey = groupsByAttribute(params) ? params.attribute_key : undefined
 	const isBreakdown = params.kind === "breakdown"
 	const queryFields = {
 		kind: params.kind,
@@ -148,20 +193,24 @@ const buildRawSpec = (params: Params, metric: string, groupBy: string): Record<s
 			return withFilters({
 				...(params.service && { serviceName: params.service }),
 				...(params.span_name && { spanName: params.span_name }),
+				...(params.span_name && resolved.spanNameContains && { matchModes: { spanName: "contains" } }),
 				...(params.root_spans_only && { rootSpansOnly: true }),
-				...(params.environments &&
-					params.environments.length > 0 && { environments: params.environments }),
+				...environmentsOf(params),
 				...(params.commit_shas &&
 					params.commit_shas.length > 0 && { commitShas: params.commit_shas }),
-				...(params.group_by === "attribute" &&
-					params.attribute_key && { groupByAttributeKeys: [params.attribute_key] }),
-				...(attributeFilter && { attributeFilters: [attributeFilter] }),
+				...(groupKey !== undefined &&
+					(attributeScope === "resource"
+						? { groupByResourceAttributeKey: groupKey }
+						: { groupByAttributeKeys: [groupKey] })),
+				...scopedAttributeFilters(params, attributeScope),
 				...(params.apdex_threshold_ms && { apdexThresholdMs: params.apdex_threshold_ms }),
 			})
 		case "logs":
 			return withFilters({
 				...(params.service && { serviceName: params.service }),
 				...(params.severity && { severity: params.severity }),
+				...environmentsOf(params),
+				...scopedAttributeFilters(params, attributeScope),
 			})
 		case "product_events":
 			return withFilters({
@@ -170,10 +219,8 @@ const buildRawSpec = (params: Params, metric: string, groupBy: string): Record<s
 				...(params.host && { hosts: [params.host] }),
 				...(params.page_path && { pagePaths: [params.page_path] }),
 				...(params.service && { serviceNames: [params.service] }),
-				...(params.group_by === "attribute" &&
-					params.attribute_key && { groupByAttributeKey: params.attribute_key }),
-				...(params.group_by !== "attribute" &&
-					attributeFilter && { attributeFilters: [attributeFilter] }),
+				...(groupKey !== undefined && { groupByAttributeKey: groupKey }),
+				...(attributeFilterOf(params) !== undefined && { attributeFilters: [attributeFilterOf(params)] }),
 			})
 		case "metrics":
 			return {
@@ -182,15 +229,12 @@ const buildRawSpec = (params: Params, metric: string, groupBy: string): Record<s
 					metricName: params.metric_name,
 					metricType: params.metric_type,
 					...(params.service && { serviceName: params.service }),
-					...(params.environments &&
-						params.environments.length > 0 && { environments: params.environments }),
-					...(params.group_by === "attribute" &&
-						params.attribute_key && { groupByAttributeKey: params.attribute_key }),
-					...(params.group_by === "resource_attribute" &&
-						params.attribute_key && { groupByResourceAttributeKey: params.attribute_key }),
-					...(params.group_by !== "attribute" &&
-						params.group_by !== "resource_attribute" &&
-						attributeFilter && { attributeFilters: [attributeFilter] }),
+					...environmentsOf(params),
+					...(groupKey !== undefined &&
+						(attributeScope === "resource"
+							? { groupByResourceAttributeKey: groupKey }
+							: { groupByAttributeKey: groupKey })),
+					...scopedAttributeFilters(params, attributeScope),
 				},
 			}
 	}
@@ -288,6 +332,18 @@ const nextCallsFor = (output: Output): ReadonlyArray<NextCall> => {
 	}
 }
 
+const isWeightedCount = (output: Output) => output.queryContext.source === "traces" && output.metric === "count"
+
+/** Trace counts are sample-weighted; latencies are not (tail sampling skews them). */
+const samplingNote = (output: Output): string | undefined => {
+	if (output.queryContext.source !== "traces") return undefined
+	if (output.metric === "count")
+		return "count is an estimate of spans that happened, weighted by each span's sample rate and rounded; it is not the number of stored spans."
+	if (output.metric.includes("duration"))
+		return "Durations are computed over the stored spans without sample-rate weighting; under tail sampling they lean toward the kept (slow or failed) spans."
+	return undefined
+}
+
 export const renderQueryData = (output: Output): ToolDoc => {
 	const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 	const title = `${capitalize(output.queryContext.source)} ${capitalize(output.kind)}: ${output.metric}`
@@ -303,11 +359,17 @@ export const renderQueryData = (output: Output): ToolDoc => {
 	if (output.warnings !== undefined && output.warnings.length > 0) {
 		decisions.unshift(doc.heading("Warnings"), doc.list(output.warnings))
 	}
+	const hints = output.emptyHints ?? []
+	const notes = [
+		...(samplingNote(output) === undefined ? [] : [doc.text(samplingNote(output) ?? "")]),
+		...(hints.length > 0 ? [doc.heading("Why this may be empty"), doc.list(hints)] : []),
+	]
+	const emptyWith = (message: string) => ({ message, ...(hints.length > 0 ? { hints } : undefined) })
 
 	if (output.result.kind === "timeseries") {
 		const points = output.result.data
 		if (points.length === 0) {
-			return { title, scope, empty: { message: "No data points found." }, blocks: decisions, next }
+			return { title, scope, empty: emptyWith("No data points found."), blocks: decisions, next }
 		}
 		const seriesKeys = [...new Set(points.flatMap((point) => Object.keys(point.series)))]
 		if (seriesKeys.length === 0) seriesKeys.push("value")
@@ -335,6 +397,7 @@ export const renderQueryData = (output: Output): ToolDoc => {
 				),
 				...(hasGaps ? [doc.text("`-`: no rows in that bucket (no data, not a measured 0).")] : []),
 				...(lastIsPartial ? [doc.text(PARTIAL_BUCKET_NOTE)] : []),
+				...notes,
 			],
 			next,
 		}
@@ -342,7 +405,7 @@ export const renderQueryData = (output: Output): ToolDoc => {
 
 	const items = output.result.data
 	if (items.length === 0) {
-		return { title, scope, empty: { message: "No data found." }, blocks: decisions, next }
+		return { title, scope, empty: emptyWith("No data found."), blocks: decisions, next }
 	}
 	return {
 		title,
@@ -350,9 +413,10 @@ export const renderQueryData = (output: Output): ToolDoc => {
 		blocks: [
 			...decisions,
 			doc.table(
-				["Name", output.metric],
+				["Name", isWeightedCount(output) ? "count (estimated)" : output.metric],
 				items.map((item) => [item.name, formatMetricValue(output.metric, item.value)]),
 			),
+			...notes,
 		],
 		next,
 	}
@@ -380,10 +444,7 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 				})
 			}
 
-			if (
-				(params.group_by === "attribute" || params.group_by === "resource_attribute") &&
-				params.attribute_key === undefined
-			) {
+			if (groupsByAttribute(params) && params.attribute_key === undefined) {
 				return yield* new McpInvalidInputError({
 					message: `\`group_by=${params.group_by}\` requires \`attribute_key\`. Use explore_attributes to discover available keys.`,
 					parameter: "attribute_key",
@@ -410,11 +471,16 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 			// Reject an out-of-vocabulary metric/group_by HERE, while we still know which source and
 			// kind were asked for. Downstream, `QuerySpec` rejects the same value as an opaque
 			// SchemaError that names neither the combination nor the alternatives.
+			// Traces have no resource_attribute token: it is group_by=attribute on the resource map.
+			const requestedGroupBy =
+				params.source === "traces" && params.group_by === "resource_attribute"
+					? "attribute"
+					: params.group_by
 			const badToken = describeInvalidQuerySpec({
 				source: params.source,
 				kind: params.kind,
 				metric: params.metric,
-				groupBy: params.group_by,
+				groupBy: requestedGroupBy,
 			})
 			if (badToken !== undefined) {
 				const percentileNote =
@@ -449,7 +515,6 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 			const [defaultMetric, availableMetrics] = DEFAULT_METRIC[params.source]
 			const [defaultGroupBy, availableGroupBys] = DEFAULT_GROUP_BY[params.source][params.kind]
 			const metric = params.metric ?? defaultMetric
-			const groupBy = params.group_by ?? defaultGroupBy
 
 			const decisions: Array<string> = []
 			if (params.start_time === undefined)
@@ -468,72 +533,107 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 				decisions.push(`group_by: defaulted to "${defaultGroupBy}" (available: ${availableGroupBys})`)
 			}
 
-			const rawSpec = buildRawSpec(params, metric, groupBy)
-			const query = yield* decodeQuerySpec(rawSpec).pipe(
-				Effect.mapError(
-					(error) =>
-						new McpInvalidInputError({
-							message: describeQuerySpecDecodeError(rawSpec, error.message),
-						}),
-				),
-			)
+			const attributeScope = yield* resolveAttributeScope(params, { startTime: st, endTime: et })
+			if (attributeScope.decision !== undefined) decisions.push(attributeScope.decision)
+			const scope = attributeScope.scope
+			const baseGroupBy = requestedGroupBy ?? defaultGroupBy
+			const groupBy =
+				params.source === "metrics" && baseGroupBy === "attribute" && scope === "resource"
+					? "resource_attribute"
+					: baseGroupBy
 
 			const tenant = yield* CurrentMcpTenant
 			const queryEngine = yield* QueryEngineService
-
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
 				source: params.source,
 				kind: params.kind,
 			})
 
-			const response = yield* queryEngine.execute(tenant, { startTime: st, endTime: et, query }).pipe(
-				Effect.catchTags({
-					"@maple/http/errors/QueryEngineValidationError": (error) =>
-						Effect.fail(
+			const run = Effect.fn("McpTool.queryData.run")(function* (resolved: ResolvedQuery) {
+				const rawSpec = buildRawSpec(params, resolved)
+				const query = yield* decodeQuerySpec(rawSpec).pipe(
+					Effect.mapError(
+						(error) =>
 							new McpInvalidInputError({
-								message:
-									error.details.length > 0
-										? `${error.message}\n${error.details.join("\n")}`
-										: error.message,
+								message: describeQuerySpecDecodeError(rawSpec, error.message),
 							}),
-						),
-					"@maple/http/errors/QueryEngineTimeoutError": () =>
-						Effect.fail(
-							new McpQueryBudgetError({
-								message:
-									"The query ran past its time limit. Narrow start_time/end_time, add filters, or use a coarser bucket_seconds.",
-								pipeName: "query_data",
-								setting: "max_execution_time",
-							}),
-						),
-					// Shared exact warehouse table; the mapping appends the schema-apply hint for drift.
-					...warehouseReadToMcpHandlers("query_data"),
-				}),
-			)
-
-			const result = response.result
-			const resolved: Output["result"] | undefined =
-				result.kind === "timeseries"
-					? {
-							kind: "timeseries",
-							data: result.data.map((point) => ({
-								bucket: point.bucket,
-								series: { ...point.series },
-							})),
-						}
-					: result.kind === "breakdown"
+					),
+				)
+				const response = yield* queryEngine
+					.execute(tenant, { startTime: st, endTime: et, query })
+					.pipe(
+						Effect.catchTags({
+							"@maple/http/errors/QueryEngineValidationError": (error) =>
+								Effect.fail(
+									new McpInvalidInputError({
+										message:
+											error.details.length > 0
+												? `${error.message}\n${error.details.join("\n")}`
+												: error.message,
+									}),
+								),
+							"@maple/http/errors/QueryEngineTimeoutError": () =>
+								Effect.fail(
+									new McpQueryBudgetError({
+										message:
+											"The query ran past its time limit. Narrow start_time/end_time, add filters, or use a coarser bucket_seconds.",
+										pipeName: "query_data",
+										setting: "max_execution_time",
+									}),
+								),
+							// Shared exact warehouse table; the mapping appends the schema-apply hint for drift.
+							...warehouseReadToMcpHandlers("query_data"),
+						}),
+					)
+				const result = response.result
+				const mapped: Output["result"] | undefined =
+					result.kind === "timeseries"
 						? {
-								kind: "breakdown",
-								data: result.data.map((item) => ({ name: item.name, value: item.value })),
+								kind: "timeseries",
+								data: result.data.map((point) => ({
+									bucket: point.bucket,
+									series: { ...point.series },
+								})),
 							}
-						: undefined
-			if (resolved === undefined) {
-				return yield* new McpQueryError({
-					message: `The query engine returned a "${result.kind}" result for a ${params.kind} query.`,
-					pipeName: "query_data",
-				})
+						: result.kind === "breakdown"
+							? {
+									kind: "breakdown",
+									data: result.data.map((item) => ({ name: item.name, value: item.value })),
+								}
+							: undefined
+				if (mapped === undefined) {
+					return yield* new McpQueryError({
+						message: `The query engine returned a "${result.kind}" result for a ${params.kind} query.`,
+						pipeName: "query_data",
+					})
+				}
+				return mapped
+			})
+
+			const resolvedQuery: ResolvedQuery = { metric, groupBy, attributeScope: scope }
+			let resolved = yield* run(resolvedQuery)
+			// Exact span names are easy to miss (`resetAudienceAssignments` vs the real
+			// `CampaignsV2Handler.resetAudienceAssignments`): retry as a substring, like search_traces.
+			if (params.source === "traces" && params.span_name !== undefined && isEmptyResult(resolved)) {
+				resolved = yield* run({ ...resolvedQuery, spanNameContains: true })
+				decisions.push(
+					`span_name: no span is named exactly "${params.span_name}"; matched as a case-insensitive substring instead`,
+				)
 			}
+
+			const emptyHints = isEmptyResult(resolved)
+				? yield* emptyResultHints(
+						{
+							service: params.service,
+							environments: params.source === "product_events" ? undefined : params.environments,
+							attributeKey: params.source === "product_events" ? undefined : params.attribute_key,
+							spanName: params.source === "traces" ? params.span_name : undefined,
+						},
+						{ startTime: st, endTime: et },
+						{ traceKeys: params.source === "traces" || params.source === "logs" },
+					)
+				: []
 
 			const queryContext = queryContextOf(params)
 			const warnings = metricsWarningsFor(params, metric)
@@ -547,6 +647,7 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 				queryContext,
 				unit: inferQueryDataUnit(params.source, metric, queryContext.metricName),
 				result: resolved,
+				...(emptyHints.length > 0 ? { emptyHints } : undefined),
 			}
 		}),
 		render: renderQueryData,

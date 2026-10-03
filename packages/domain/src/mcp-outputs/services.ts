@@ -239,6 +239,8 @@ export const QueryDataOutput = Schema.Struct({
 			data: Schema.Array(Schema.Struct({ name: Schema.String, value: Schema.Number })),
 		}),
 	]),
+	/** On an empty result: filter values that do not exist in the window, with close matches. */
+	emptyHints: Schema.optionalKey(Schema.Array(Schema.String)),
 })
 
 // run_sql

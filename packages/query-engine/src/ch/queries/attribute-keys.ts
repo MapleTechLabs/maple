@@ -221,10 +221,10 @@ export function serviceScopedAttributeValuesQuery(
 ) {
 	return fromQuery(serviceSpanSample(opts.scope), "sampled")
 		.select(($) => ({
-			attributeValue: $.attrs.get(opts.attributeKey),
+			attributeValue: CH.mapGet($.attrs, opts.attributeKey),
 			usageCount: CH.count(),
 		}))
-		.where(($) => [$.attrs.get(opts.attributeKey).neq("")])
+		.where(($) => [CH.mapGet($.attrs, opts.attributeKey).neq("")])
 		.groupBy("attributeValue")
 		.orderBy(["usageCount", "desc"])
 		.limit(opts.limit ?? 50)
