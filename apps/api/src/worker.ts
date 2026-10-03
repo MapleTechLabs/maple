@@ -78,7 +78,7 @@ const props = Effect.gen(function* () {
 	return {
 		main: import.meta.url,
 		name: resolveWorkerName("api", stage, region),
-		compatibility: { date: "2026-04-08", flags: ["nodejs_compat"] },
+		compatibility: { date: "2026-10-01" },
 		placement: resolveWorkerPlacement(region),
 		// Under `bun dev`: a sticky port the app's route follows.
 		dev: workerDev("api"),

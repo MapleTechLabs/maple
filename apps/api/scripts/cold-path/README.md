@@ -48,7 +48,7 @@ Run this Bash sequence from the repository root. Port 8797 must be free. The tem
 {
   "name": "maple-api-offline-smoke",
   "main": "./worker.js",
-  "compatibility_date": "2026-04-08",
+  "compatibility_date": "2026-10-01",
   "compatibility_flags": ["nodejs_compat"],
   "find_additional_modules": true,
   "rules": [{ "type": "ESModule", "globs": ["**/*.js"] }]

@@ -375,7 +375,7 @@ const runWorker = (explicitProfile: string | undefined, json: boolean) => {
 			main: "./worker.js",
 			find_additional_modules: true,
 			rules: [{ type: "ESModule", globs: ["**/*.js"] }],
-			compatibility_date: "2026-04-08",
+			compatibility_date: "2026-10-01",
 			compatibility_flags: ["nodejs_compat"],
 		}),
 	)

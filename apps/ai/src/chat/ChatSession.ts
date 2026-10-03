@@ -137,10 +137,9 @@ const CHAT_TURN_FAILED = "Maple couldn't complete this response."
 /**
  * How often a running turn re-arms the object's alarm.
  *
- * An outbound `fetch` never keeps a Durable Object alive, even while the response streams, and an
- * object with no incoming request or event for 70-140 seconds is evicted. A chat turn survives
- * because the open page holds a subscription; an autonomous investigation nobody is watching was
- * evicted about two minutes in, mid-run (seen 2026-09-15). The alarm is the event that prevents it.
+ * An autonomous investigation nobody is watching was evicted about two minutes in, mid-run (seen
+ * 2026-09-15). Since compat date 2026-10-01 the turn's `waitUntil` keeps the object alive, but only
+ * for 15 minutes per operation, shorter than {@link TURN_STALE_MS}; the alarm covers the rest.
  */
 const TURN_HEARTBEAT_MS = 30 * 1000
 
@@ -673,8 +672,8 @@ export class ChatSession {
 
 	/**
 	 * Run `turnId` on this activation. `waitUntil` on the DO's own context: the turn is this
-	 * object's work and outlives whatever request asked for it. `waitUntil` alone does not keep
-	 * the object in memory — the heartbeat alarm does.
+	 * object's work and outlives whatever request asked for it. `waitUntil` keeps the object in
+	 * memory for up to 15 minutes; the heartbeat alarm covers longer turns.
 	 */
 	private startTurn(turnId: string, turn: TurnInput, restart?: { readonly resume: number }): void {
 		this.liveTurn = turnId

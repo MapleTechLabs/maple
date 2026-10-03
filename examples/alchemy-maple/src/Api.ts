@@ -38,7 +38,7 @@ export default class Api extends Cloudflare.Worker<Api>()(
 	"checkout-api",
 	{
 		main: import.meta.filename,
-		compatibility: { date: "2026-04-08", flags: ["nodejs_compat"] },
+		compatibility: { date: "2026-10-01" },
 		workersDev: true,
 		env: {
 			// Alchemy resolves the resource, ships the value as a Worker secret, and
