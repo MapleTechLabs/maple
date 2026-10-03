@@ -51,6 +51,8 @@ import {
 	orgIngestKeys,
 	planetscaleConnections,
 	planetscaleIssueReceipts,
+	railwayConnections,
+	railwayEnvironments,
 	scrapeTargets,
 	vcsCommits,
 	prReviews,
@@ -140,6 +142,9 @@ const ORG_SCOPED_TABLES = [
 	// Dedupe receipts for the org's error issues, which are purged above; with the
 	// connection gone no redelivery can arrive for them to catch.
 	planetscaleIssueReceipts,
+	// The encrypted Railway token would keep the poller reading an account for a deleted org.
+	railwayConnections,
+	railwayEnvironments,
 	// APNs update tokens for running Live Activities. `mobile_devices` is purged
 	// here already; leaving these behind keeps a live push channel open.
 	liveActivities,
