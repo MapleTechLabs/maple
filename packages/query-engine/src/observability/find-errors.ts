@@ -58,7 +58,7 @@ export const findErrorsTotals = Effect.fn("Observability.findErrorsTotals")(func
 	const row = rows[0]
 	return {
 		occurrences: row?.occurrences ?? 0,
-		fingerprints: row?.fingerprints ?? 0,
+		fingerprints: row?.fingerprintCount ?? 0,
 		noExceptionCount: row?.noExceptionCount ?? 0,
 	}
 })

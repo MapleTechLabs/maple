@@ -1082,7 +1082,12 @@ const executeMetricsBreakdownRows = Effect.fnUntraced(function* <T extends Query
 	const rows = yield* executeCHQuery(
 		warehouse,
 		tenant,
-		CH.metricsBreakdownQuery({ ...shared, metricType: filters.metricType, limit: query.limit }),
+		CH.metricsBreakdownQuery({
+			...shared,
+			metricType: filters.metricType,
+			rankBy: metric,
+			limit: query.limit,
+		}),
 		params,
 		"metricsBreakdown",
 	)
