@@ -79,8 +79,10 @@ export function registerGetDashboardTool(server: McpToolRegistrar) {
 							]),
 					// Compact, one widget per line: a long dashboard is cut on whole widgets, never mid-object.
 					doc.text(
-						"Full configuration (JSON): the dashboard fields, then one widget per line in the shape " +
-							"update_dashboard_widget and replace_dashboard_widgets take (`widgets` for update_dashboard's dashboard_json).",
+						"Configuration preview, one JSON value per line: the dashboard fields, then each widget in the " +
+							"shape update_dashboard_widget and replace_dashboard_widgets take. This is not a single document: " +
+							"for update_dashboard's dashboard_json, use structuredContent.dashboard or rebuild one object " +
+							"from the first line plus a `widgets` array of the widget lines.",
 					),
 					doc.code(
 						"json",
