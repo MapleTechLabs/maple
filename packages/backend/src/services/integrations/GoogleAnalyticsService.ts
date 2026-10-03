@@ -20,10 +20,14 @@
  *   emitted as a DELTA against the ledger (see `reconcile.ts`); everything behind it is frozen and
  *   its ledger rows are pruned.
  *
- * Delivery is at-least-once in the same narrow sense as the Cloudflare poller: a crash between the
- * gateway accepting a batch and the ledger write landing re-emits that window's deltas next tick.
- * Unlike Cloudflare's replay, this one self-heals — the next successful reconcile diffs against
- * the last PERSISTED ledger, so the bucket converges on GA4's answer rather than drifting.
+ * Delivery is at-least-once, and the one gap that does NOT heal itself is a ledger write lost
+ * after the gateway has already accepted the batch: the next tick diffs against the old ledger,
+ * re-emits the same delta on top of rows that landed, and every later reconcile diffs from the
+ * same point, so the bucket stays over by that delta. `pollWindow` therefore makes the pair
+ * uninterruptible and retries the write hard; what remains is Postgres being unreachable for
+ * every attempt after a successful ingest, and closing that needs a dedupe key on the ingest
+ * path rather than another ordering of these two writes. Losing the batch instead (ingest fails,
+ * ledger untouched) is the benign direction: the window is retried whole.
  */
 import {
 	IntegrationsPersistenceError,
@@ -39,7 +43,7 @@ import {
 	type GoogleAnalyticsStateRow,
 } from "@maple/db"
 import { and, eq, gte, inArray, isNull, lt, or, sql } from "drizzle-orm"
-import { Clock, Context, Effect, Layer, Schema } from "effect"
+import { Clock, Context, Effect, Layer, Schedule, Schema } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
@@ -573,17 +577,27 @@ export class GoogleAnalyticsService extends Context.Service<
 				coveredToMs: toMs,
 			})
 
-			const ingested = yield* emitMetrics(context.ingestKey, result.rows)
-			yield* saveLedger({
-				orgId: context.orgId,
-				propertyId: context.row.propertyId,
-				dataset: dataset.id,
-				buckets: result.ledger.filter(
-					(bucket) => bucket.bucketMs >= fromMs && bucket.bucketMs < toMs,
-				),
-				now: context.now,
-			})
-			return ingested
+			// The ingest call is interruptible; the write that records what it accepted is not.
+			// A cancelled `prime` or an isolate teardown landing between the two leaves the
+			// warehouse holding deltas the ledger never saw, and that one is unrecoverable (see
+			// the header). The write is also retried past `dbExecute`'s contention policy, since
+			// by this point it is the only thing standing between an accepted batch and a bucket
+			// that is permanently wrong.
+			return yield* Effect.uninterruptibleMask((restore) =>
+				Effect.gen(function* () {
+					const ingested = yield* restore(emitMetrics(context.ingestKey, result.rows))
+					yield* saveLedger({
+						orgId: context.orgId,
+						propertyId: context.row.propertyId,
+						dataset: dataset.id,
+						buckets: result.ledger.filter(
+							(bucket) => bucket.bucketMs >= fromMs && bucket.bucketMs < toMs,
+						),
+						now: context.now,
+					}).pipe(Effect.retry({ times: 5, schedule: Schedule.exponential("100 millis") }))
+					return ingested
+				}),
+			)
 		})
 
 		/**
