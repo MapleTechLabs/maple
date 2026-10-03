@@ -1469,6 +1469,38 @@ SELECT
         ORDER BY bucket ASC
         FORMAT JSON
 
+-- builder:liveness:ingestFreshnessQuery:default  [c8463e30]
+SELECT
+          'traces' AS signal,
+          count() AS count,
+          toString(max(service_overview_spans.Timestamp)) AS lastSeen
+        FROM service_overview_spans
+        WHERE service_overview_spans.OrgId = 'org_sql_catalog'
+          AND service_overview_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND service_overview_spans.Timestamp <= '2026-01-03 14:15:00'
+UNION ALL
+SELECT
+          'logs' AS signal,
+          count() AS count,
+          toString(toDateTime(max(logs.Timestamp))) AS lastSeen
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+UNION ALL
+SELECT
+          'metrics' AS signal,
+          sum(metric_catalog.DataPointCount) AS count,
+          toString(max(metric_catalog.LastSeen)) AS lastSeen
+        FROM metric_catalog
+        WHERE metric_catalog.OrgId = 'org_sql_catalog'
+          AND metric_catalog.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+          AND metric_catalog.Hour <= toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND metric_catalog.LastSeen >= '2026-01-01 10:30:00'
+FORMAT JSON
+
 -- builder:product-events-explore:productEventAttributeKeysQuery:default  [30a1e945]
 SELECT
           arrayJoin(mapKeys(product_events.Attributes)) AS attributeKey,
@@ -2838,6 +2870,161 @@ SELECT
         LIMIT 5000
         FORMAT JSON
 
+-- builder:releases:serviceDeploymentsQuery:hourInterior  [fa954134]
+SELECT
+          service_windows.bServiceName AS serviceName,
+          service_windows.bEnvironment AS environment,
+          service_windows.bCommitSha AS commitSha,
+          min(service_windows.bFirstSeen) AS firstSeen,
+          max(service_windows.bBucket) AS lastSeen,
+          sum(service_windows.bSpanCount) AS spanCount,
+          sum(service_windows.bErrorCount) AS errorCount,
+          arrayElement(quantilesTDigestMerge(0.5, 0.95, 0.99)(bDurationQuantiles), 1) / 1000000 AS p50LatencyMs,
+          arrayElement(quantilesTDigestMerge(0.5, 0.95, 0.99)(bDurationQuantiles), 2) / 1000000 AS p95LatencyMs,
+          arrayElement(quantilesTDigestMerge(0.5, 0.95, 0.99)(bDurationQuantiles), 3) / 1000000 AS p99LatencyMs,
+          sum(service_windows.bApdexSatisfiedCount) AS apdexSatisfiedCount,
+          sum(service_windows.bApdexToleratingCount) AS apdexToleratingCount
+        FROM (
+SELECT
+          toStartOfMinute(service_overview_spans.Timestamp) AS bBucket,
+          service_overview_spans.ServiceName AS bServiceName,
+          service_overview_spans.ServiceNamespace AS bServiceNamespace,
+          service_overview_spans.DeploymentEnv AS bEnvironment,
+          service_overview_spans.CommitSha AS bCommitSha,
+          count() AS bSpanCount,
+          sum(service_overview_spans.SampleRate) AS bEstimatedSpanCount,
+          countIf(service_overview_spans.StatusCode = 'Error') AS bErrorCount,
+          sumIf(service_overview_spans.SampleRate, service_overview_spans.StatusCode = 'Error') AS bEstimatedErrorCount,
+          sum(toFloat64(Duration)) AS bDurationSum,
+          quantilesTDigestState(0.5, 0.95, 0.99)(Duration) AS bDurationQuantiles,
+          min(service_overview_spans.Timestamp) AS bFirstSeen,
+          countIf((service_overview_spans.StatusCode != 'Error' AND service_overview_spans.Duration < 500000000)) AS bApdexSatisfiedCount,
+          countIf(((service_overview_spans.StatusCode != 'Error' AND service_overview_spans.Duration >= 500000000) AND service_overview_spans.Duration < 2000000000)) AS bApdexToleratingCount
+        FROM service_overview_spans
+        WHERE service_overview_spans.OrgId = 'org_sql_catalog'
+          AND service_overview_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND service_overview_spans.Timestamp <= '2026-01-03 14:15:00'
+          AND service_overview_spans.DeploymentEnv IN ('production')
+          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 MINUTE) OR Timestamp >= toStartOfMinute(toDateTime('2026-01-03 14:15:00')))
+        GROUP BY bBucket, bServiceName, bServiceNamespace, bEnvironment, bCommitSha
+UNION ALL
+SELECT
+          service_overview_minutely.Minute AS bBucket,
+          service_overview_minutely.ServiceName AS bServiceName,
+          service_overview_minutely.ServiceNamespace AS bServiceNamespace,
+          service_overview_minutely.DeploymentEnv AS bEnvironment,
+          service_overview_minutely.CommitSha AS bCommitSha,
+          sum(service_overview_minutely.SpanCount) AS bSpanCount,
+          sum(service_overview_minutely.EstimatedSpanCount) AS bEstimatedSpanCount,
+          sum(service_overview_minutely.ErrorCount) AS bErrorCount,
+          sum(service_overview_minutely.EstimatedErrorCount) AS bEstimatedErrorCount,
+          sum(service_overview_minutely.DurationSum) AS bDurationSum,
+          quantilesTDigestMergeState(0.5, 0.95, 0.99)(DurationQuantiles) AS bDurationQuantiles,
+          min(service_overview_minutely.FirstSeen) AS bFirstSeen,
+          sum(service_overview_minutely.ApdexSatisfiedCount) AS bApdexSatisfiedCount,
+          sum(service_overview_minutely.ApdexToleratingCount) AS bApdexToleratingCount
+        FROM service_overview_minutely
+        WHERE service_overview_minutely.OrgId = 'org_sql_catalog'
+          AND service_overview_minutely.DeploymentEnv IN ('production')
+          AND service_overview_minutely.Minute >= if(toDateTime('2026-01-01 10:30:00') = toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 MINUTE)
+          AND service_overview_minutely.Minute < toStartOfMinute(toDateTime('2026-01-03 14:15:00'))
+          AND (Minute < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Minute >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+        GROUP BY bBucket, bServiceName, bServiceNamespace, bEnvironment, bCommitSha
+UNION ALL
+SELECT
+          service_overview_hourly.Hour AS bBucket,
+          service_overview_hourly.ServiceName AS bServiceName,
+          service_overview_hourly.ServiceNamespace AS bServiceNamespace,
+          service_overview_hourly.DeploymentEnv AS bEnvironment,
+          service_overview_hourly.CommitSha AS bCommitSha,
+          sum(service_overview_hourly.SpanCount) AS bSpanCount,
+          sum(service_overview_hourly.EstimatedSpanCount) AS bEstimatedSpanCount,
+          sum(service_overview_hourly.ErrorCount) AS bErrorCount,
+          sum(service_overview_hourly.EstimatedErrorCount) AS bEstimatedErrorCount,
+          sum(service_overview_hourly.DurationSum) AS bDurationSum,
+          quantilesTDigestMergeState(0.5, 0.95, 0.99)(DurationQuantiles) AS bDurationQuantiles,
+          min(service_overview_hourly.FirstSeen) AS bFirstSeen,
+          sum(service_overview_hourly.ApdexSatisfiedCount) AS bApdexSatisfiedCount,
+          sum(service_overview_hourly.ApdexToleratingCount) AS bApdexToleratingCount
+        FROM service_overview_hourly
+        WHERE service_overview_hourly.OrgId = 'org_sql_catalog'
+          AND service_overview_hourly.DeploymentEnv IN ('production')
+          AND service_overview_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND service_overview_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+        GROUP BY bBucket, bServiceName, bServiceNamespace, bEnvironment, bCommitSha
+) AS service_windows
+        WHERE service_windows.bCommitSha NOT IN ('', 'unknown', 'N/A')
+        GROUP BY serviceName, environment, commitSha
+        ORDER BY serviceName ASC, firstSeen DESC
+        LIMIT 500
+        FORMAT JSON
+
+-- builder:releases:serviceDeploymentsQuery:minutePrecision  [16886392]
+SELECT
+          service_windows.bServiceName AS serviceName,
+          service_windows.bEnvironment AS environment,
+          service_windows.bCommitSha AS commitSha,
+          min(service_windows.bFirstSeen) AS firstSeen,
+          max(service_windows.bBucket) AS lastSeen,
+          sum(service_windows.bSpanCount) AS spanCount,
+          sum(service_windows.bErrorCount) AS errorCount,
+          arrayElement(quantilesTDigestMerge(0.5, 0.95, 0.99)(bDurationQuantiles), 1) / 1000000 AS p50LatencyMs,
+          arrayElement(quantilesTDigestMerge(0.5, 0.95, 0.99)(bDurationQuantiles), 2) / 1000000 AS p95LatencyMs,
+          arrayElement(quantilesTDigestMerge(0.5, 0.95, 0.99)(bDurationQuantiles), 3) / 1000000 AS p99LatencyMs,
+          sum(service_windows.bApdexSatisfiedCount) AS apdexSatisfiedCount,
+          sum(service_windows.bApdexToleratingCount) AS apdexToleratingCount
+        FROM (
+SELECT
+          toStartOfMinute(service_overview_spans.Timestamp) AS bBucket,
+          service_overview_spans.ServiceName AS bServiceName,
+          service_overview_spans.ServiceNamespace AS bServiceNamespace,
+          service_overview_spans.DeploymentEnv AS bEnvironment,
+          service_overview_spans.CommitSha AS bCommitSha,
+          count() AS bSpanCount,
+          sum(service_overview_spans.SampleRate) AS bEstimatedSpanCount,
+          countIf(service_overview_spans.StatusCode = 'Error') AS bErrorCount,
+          sumIf(service_overview_spans.SampleRate, service_overview_spans.StatusCode = 'Error') AS bEstimatedErrorCount,
+          sum(toFloat64(Duration)) AS bDurationSum,
+          quantilesTDigestState(0.5, 0.95, 0.99)(Duration) AS bDurationQuantiles,
+          min(service_overview_spans.Timestamp) AS bFirstSeen,
+          countIf((service_overview_spans.StatusCode != 'Error' AND service_overview_spans.Duration < 500000000)) AS bApdexSatisfiedCount,
+          countIf(((service_overview_spans.StatusCode != 'Error' AND service_overview_spans.Duration >= 500000000) AND service_overview_spans.Duration < 2000000000)) AS bApdexToleratingCount
+        FROM service_overview_spans
+        WHERE service_overview_spans.OrgId = 'org_sql_catalog'
+          AND service_overview_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND service_overview_spans.Timestamp <= '2026-01-03 14:15:00'
+          AND service_overview_spans.ServiceName = 'api'
+          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 MINUTE) OR Timestamp >= toStartOfMinute(toDateTime('2026-01-03 14:15:00')))
+        GROUP BY bBucket, bServiceName, bServiceNamespace, bEnvironment, bCommitSha
+UNION ALL
+SELECT
+          service_overview_minutely.Minute AS bBucket,
+          service_overview_minutely.ServiceName AS bServiceName,
+          service_overview_minutely.ServiceNamespace AS bServiceNamespace,
+          service_overview_minutely.DeploymentEnv AS bEnvironment,
+          service_overview_minutely.CommitSha AS bCommitSha,
+          sum(service_overview_minutely.SpanCount) AS bSpanCount,
+          sum(service_overview_minutely.EstimatedSpanCount) AS bEstimatedSpanCount,
+          sum(service_overview_minutely.ErrorCount) AS bErrorCount,
+          sum(service_overview_minutely.EstimatedErrorCount) AS bEstimatedErrorCount,
+          sum(service_overview_minutely.DurationSum) AS bDurationSum,
+          quantilesTDigestMergeState(0.5, 0.95, 0.99)(DurationQuantiles) AS bDurationQuantiles,
+          min(service_overview_minutely.FirstSeen) AS bFirstSeen,
+          sum(service_overview_minutely.ApdexSatisfiedCount) AS bApdexSatisfiedCount,
+          sum(service_overview_minutely.ApdexToleratingCount) AS bApdexToleratingCount
+        FROM service_overview_minutely
+        WHERE service_overview_minutely.OrgId = 'org_sql_catalog'
+          AND service_overview_minutely.ServiceName = 'api'
+          AND service_overview_minutely.Minute >= if(toDateTime('2026-01-01 10:30:00') = toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 MINUTE)
+          AND service_overview_minutely.Minute < toStartOfMinute(toDateTime('2026-01-03 14:15:00'))
+        GROUP BY bBucket, bServiceName, bServiceNamespace, bEnvironment, bCommitSha
+) AS service_windows
+        WHERE service_windows.bCommitSha NOT IN ('', 'unknown', 'N/A')
+        GROUP BY serviceName, environment, commitSha
+        ORDER BY serviceName ASC, firstSeen DESC
+        LIMIT 500
+        FORMAT JSON
+
 -- builder:service-endpoints:serviceEndpointsSummaryQuery:default  [3decb4a7]
 SELECT
           operation_windows.bSpanName AS spanName,
@@ -3842,6 +4029,139 @@ SELECT
           AND service_map_children.DeploymentEnv = 'production') AS c ON (p.SpanId = c.ParentSpanId AND p.TraceId = c.TraceId)
         WHERE p.ServiceName != c.ServiceName
         GROUP BY OrgId, Hour, SourceService, TargetService, DeploymentEnv
+        FORMAT JSON
+
+-- builder:service-operations:routeUsageQuery:allServices  [cc7e9fe3]
+SELECT
+          route_windows.bServiceName AS serviceName,
+          route_windows.bSpanName AS spanName,
+          sum(route_windows.bSpanCount) AS spanCount,
+          sum(route_windows.bErrorCount) AS errorCount,
+          if(sum(bSpanCount) > 0, arrayElement(quantilesTDigestMerge(0.5, 0.95, 0.99)(bDurationQuantiles), 2) / 1000000, 0) AS p95DurationMs,
+          toString(min(route_windows.bFirst)) AS firstSeen,
+          toString(max(route_windows.bLast)) AS lastSeen
+        FROM (
+SELECT
+          traces.ServiceName AS bServiceName,
+          if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName) AS bSpanName,
+          count() AS bSpanCount,
+          countIf(traces.StatusCode = 'Error') AS bErrorCount,
+          quantilesTDigestState(0.5, 0.95, 0.99)(Duration) AS bDurationQuantiles,
+          min(toStartOfMinute(toDateTime(traces.Timestamp))) AS bFirst,
+          max(toStartOfMinute(toDateTime(traces.Timestamp))) AS bLast
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 MINUTE) OR Timestamp >= toStartOfMinute(toDateTime('2026-01-03 14:15:00')))
+          AND match(if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName), '^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS) ')
+        GROUP BY bServiceName, bSpanName
+UNION ALL
+SELECT
+          service_operations_minutely.ServiceName AS bServiceName,
+          service_operations_minutely.SpanName AS bSpanName,
+          sum(service_operations_minutely.SpanCount) AS bSpanCount,
+          sum(service_operations_minutely.ErrorCount) AS bErrorCount,
+          quantilesTDigestMergeState(0.5, 0.95, 0.99)(DurationQuantiles) AS bDurationQuantiles,
+          min(service_operations_minutely.Minute) AS bFirst,
+          max(service_operations_minutely.Minute) AS bLast
+        FROM service_operations_minutely
+        WHERE service_operations_minutely.OrgId = 'org_sql_catalog'
+          AND service_operations_minutely.Minute >= if(toDateTime('2026-01-01 10:30:00') = toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 MINUTE)
+          AND service_operations_minutely.Minute < toStartOfMinute(toDateTime('2026-01-03 14:15:00'))
+          AND (Minute < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Minute >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND match(service_operations_minutely.SpanName, '^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS) ')
+        GROUP BY bServiceName, bSpanName
+UNION ALL
+SELECT
+          service_operations_hourly.ServiceName AS bServiceName,
+          service_operations_hourly.SpanName AS bSpanName,
+          sum(service_operations_hourly.SpanCount) AS bSpanCount,
+          sum(service_operations_hourly.ErrorCount) AS bErrorCount,
+          quantilesTDigestMergeState(0.5, 0.95, 0.99)(DurationQuantiles) AS bDurationQuantiles,
+          min(service_operations_hourly.Hour) AS bFirst,
+          max(service_operations_hourly.Hour) AS bLast
+        FROM service_operations_hourly
+        WHERE service_operations_hourly.OrgId = 'org_sql_catalog'
+          AND service_operations_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND service_operations_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND match(service_operations_hourly.SpanName, '^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS) ')
+        GROUP BY bServiceName, bSpanName
+) AS route_windows
+        GROUP BY serviceName, spanName
+        ORDER BY spanCount DESC
+        LIMIT 50
+        FORMAT JSON
+
+-- builder:service-operations:routeUsageQuery:searchStalest  [45e0cd47]
+SELECT
+          route_windows.bServiceName AS serviceName,
+          route_windows.bSpanName AS spanName,
+          sum(route_windows.bSpanCount) AS spanCount,
+          sum(route_windows.bErrorCount) AS errorCount,
+          if(sum(bSpanCount) > 0, arrayElement(quantilesTDigestMerge(0.5, 0.95, 0.99)(bDurationQuantiles), 2) / 1000000, 0) AS p95DurationMs,
+          toString(min(route_windows.bFirst)) AS firstSeen,
+          toString(max(route_windows.bLast)) AS lastSeen
+        FROM (
+SELECT
+          traces.ServiceName AS bServiceName,
+          if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName) AS bSpanName,
+          count() AS bSpanCount,
+          countIf(traces.StatusCode = 'Error') AS bErrorCount,
+          quantilesTDigestState(0.5, 0.95, 0.99)(Duration) AS bDurationQuantiles,
+          min(toStartOfMinute(toDateTime(traces.Timestamp))) AS bFirst,
+          max(toStartOfMinute(toDateTime(traces.Timestamp))) AS bLast
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.ServiceName = 'api'
+          AND coalesce(nullIf(traces.ResourceAttributes['deployment.environment.name'], ''), traces.ResourceAttributes['deployment.environment']) IN ('production')
+          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 MINUTE) OR Timestamp >= toStartOfMinute(toDateTime('2026-01-03 14:15:00')))
+          AND match(if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName), '^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS) ')
+          AND positionCaseInsensitive(if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName), '/v1/') > 0
+        GROUP BY bServiceName, bSpanName
+UNION ALL
+SELECT
+          service_operations_minutely.ServiceName AS bServiceName,
+          service_operations_minutely.SpanName AS bSpanName,
+          sum(service_operations_minutely.SpanCount) AS bSpanCount,
+          sum(service_operations_minutely.ErrorCount) AS bErrorCount,
+          quantilesTDigestMergeState(0.5, 0.95, 0.99)(DurationQuantiles) AS bDurationQuantiles,
+          min(service_operations_minutely.Minute) AS bFirst,
+          max(service_operations_minutely.Minute) AS bLast
+        FROM service_operations_minutely
+        WHERE service_operations_minutely.OrgId = 'org_sql_catalog'
+          AND service_operations_minutely.ServiceName = 'api'
+          AND service_operations_minutely.DeploymentEnv IN ('production')
+          AND service_operations_minutely.Minute >= if(toDateTime('2026-01-01 10:30:00') = toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 MINUTE)
+          AND service_operations_minutely.Minute < toStartOfMinute(toDateTime('2026-01-03 14:15:00'))
+          AND (Minute < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Minute >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND match(service_operations_minutely.SpanName, '^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS) ')
+          AND positionCaseInsensitive(service_operations_minutely.SpanName, '/v1/') > 0
+        GROUP BY bServiceName, bSpanName
+UNION ALL
+SELECT
+          service_operations_hourly.ServiceName AS bServiceName,
+          service_operations_hourly.SpanName AS bSpanName,
+          sum(service_operations_hourly.SpanCount) AS bSpanCount,
+          sum(service_operations_hourly.ErrorCount) AS bErrorCount,
+          quantilesTDigestMergeState(0.5, 0.95, 0.99)(DurationQuantiles) AS bDurationQuantiles,
+          min(service_operations_hourly.Hour) AS bFirst,
+          max(service_operations_hourly.Hour) AS bLast
+        FROM service_operations_hourly
+        WHERE service_operations_hourly.OrgId = 'org_sql_catalog'
+          AND service_operations_hourly.ServiceName = 'api'
+          AND service_operations_hourly.DeploymentEnv IN ('production')
+          AND service_operations_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND service_operations_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND match(service_operations_hourly.SpanName, '^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS) ')
+          AND positionCaseInsensitive(service_operations_hourly.SpanName, '/v1/') > 0
+        GROUP BY bServiceName, bSpanName
+) AS route_windows
+        GROUP BY serviceName, spanName
+        ORDER BY lastSeen ASC
+        LIMIT 50
         FORMAT JSON
 
 -- builder:service-operations:serviceOperationsSummaryQuery:default  [84fbd092]

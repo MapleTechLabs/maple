@@ -257,3 +257,62 @@ export function releaseErrorFingerprintsQuery(opts: ReleaseErrorFingerprintsOpts
 		.limit(opts.limit ?? 50)
 		.format("JSON")
 }
+
+// Service deployments
+//
+// The releases list plus when each version last served, for deploy
+// verification in one call. `lastSeen` is the start of the last bucket the
+// version had traffic in: minute precision without the hourly tier, hour
+// precision for hours wholly inside the window with it.
+
+export interface ServiceDeploymentsOpts {
+	readonly serviceName?: string
+	readonly environments?: readonly string[]
+	/** Read minutely buckets for the whole window so `lastSeen` is minute-exact. */
+	readonly minutePrecision: boolean
+	readonly limit?: number
+}
+
+export interface ServiceDeploymentsOutput extends ReleasesListOutput {
+	readonly lastSeen: string
+}
+
+export const serviceDeploymentsRowSchema = Schema.Struct({
+	...releasesListRowSchema.fields,
+	lastSeen: Schema.String,
+}) satisfies CompiledQueryRowSchema<ServiceDeploymentsOutput>
+
+export function serviceDeploymentsQuery(opts: ServiceDeploymentsOpts) {
+	return serviceOverviewWindows(
+		{ serviceName: opts.serviceName, environments: opts.environments },
+		{ grain: "minute", includeHourly: !opts.minutePrecision },
+	)
+		.select(($) => ({
+			serviceName: $.bServiceName,
+			environment: $.bEnvironment,
+			commitSha: $.bCommitSha,
+			firstSeen: CH.min_($.bFirstSeen),
+			lastSeen: CH.max_($.bBucket),
+			spanCount: CH.sum($.bSpanCount),
+			errorCount: CH.sum($.bErrorCount),
+			p50LatencyMs: CH.rawExpr(
+				"arrayElement(quantilesTDigestMerge(0.5, 0.95, 0.99)(bDurationQuantiles), 1) / 1000000",
+				T.float64,
+			),
+			p95LatencyMs: CH.rawExpr(
+				"arrayElement(quantilesTDigestMerge(0.5, 0.95, 0.99)(bDurationQuantiles), 2) / 1000000",
+				T.float64,
+			),
+			p99LatencyMs: CH.rawExpr(
+				"arrayElement(quantilesTDigestMerge(0.5, 0.95, 0.99)(bDurationQuantiles), 3) / 1000000",
+				T.float64,
+			),
+			apdexSatisfiedCount: CH.sum($.bApdexSatisfiedCount),
+			apdexToleratingCount: CH.sum($.bApdexToleratingCount),
+		}))
+		.where(($) => [CH.notInList($.bCommitSha, PLACEHOLDER_COMMIT_SHAS)])
+		.groupBy("serviceName", "environment", "commitSha")
+		.orderBy(["serviceName", "asc"], ["firstSeen", "desc"])
+		.limit(opts.limit ?? RELEASES_LIST_CAP)
+		.format("JSON")
+}

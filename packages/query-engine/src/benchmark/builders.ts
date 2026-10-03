@@ -1057,6 +1057,55 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 			),
 	},
 
+	// MCP `service_deployments`, `route_usage` and `ingest_freshness`.
+	{
+		module: "releases",
+		name: "serviceDeploymentsQuery",
+		label: "minutePrecision",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.serviceDeploymentsQuery({ serviceName: "api", minutePrecision: true }),
+				window,
+			),
+	},
+	{
+		module: "releases",
+		name: "serviceDeploymentsQuery",
+		label: "hourInterior",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.serviceDeploymentsQuery({ environments: ["production"], minutePrecision: false }),
+				window,
+			),
+	},
+	{
+		module: "service-operations",
+		name: "routeUsageQuery",
+		label: "allServices",
+		compile: () => CH.compileUnsafe(CH.routeUsageQuery({}), window),
+	},
+	{
+		module: "service-operations",
+		name: "routeUsageQuery",
+		label: "searchStalest",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.routeUsageQuery({
+					serviceName: "api",
+					environments: ["production"],
+					search: "/v1/",
+					orderBy: "lastSeenAsc",
+				}),
+				window,
+			),
+	},
+	{
+		module: "liveness",
+		name: "ingestFreshnessQuery",
+		label: "default",
+		compile: () => CH.compileUnionUnsafe(CH.ingestFreshnessQuery(), window),
+	},
+
 	// Service-catalog hourly-rollup splice.
 	{
 		// routes/v2/services.http.ts — the services list.
