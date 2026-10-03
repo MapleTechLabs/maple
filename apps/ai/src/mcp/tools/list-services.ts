@@ -7,6 +7,7 @@ import { doc } from "../lib/tool-doc"
 import { Effect, Schema } from "effect"
 import { ListServicesOutput } from "@maple/domain/mcp-outputs"
 import { listServices } from "@maple/query-engine/observability"
+import { parseWarehouseDateTime } from "@maple/query-engine"
 import { provideWarehouseExecutorFromTenant } from "@maple/backend/services/warehouse/WarehouseQueryService"
 
 const WINDOW = P.timeWindow({ defaultHours: 6 })
@@ -16,7 +17,7 @@ export function registerListServicesTool(server: McpToolRegistrar) {
 		name: "list_services",
 		title: "List Services",
 		description:
-			"List all active services with key metrics (throughput, error rate, P95 latency). Use as an entry point to discover services before drilling down with diagnose_service or get_service_top_operations.",
+			"List all active services, busiest first, with request count and rate, error rate and P95 latency. Use as an entry point to discover services before drilling down with diagnose_service or get_service_top_operations.",
 		parameters: Schema.Struct({
 			...WINDOW.fields,
 			environment: P.environment(),
@@ -45,60 +46,82 @@ export function registerListServicesTool(server: McpToolRegistrar) {
 			return {
 				timeRange: { start: st, end: et },
 				total: services.length,
-				services: services.map((s) => ({
-					name: s.name,
-					throughput: s.throughput,
-					errorRate: s.errorRate,
-					p95Ms: s.p95Ms,
-				})),
+				// Busiest first, so a truncated table still shows the services that carry the traffic.
+				services: [...services]
+					.sort((a, b) => b.throughput - a.throughput)
+					.map((s) => ({
+						name: s.name,
+						throughput: s.throughput,
+						errorRate: s.errorRate,
+						p95Ms: s.p95Ms,
+					})),
 				...(params.environment === undefined ? undefined : { environment: params.environment }),
 			}
 		}),
-		render: (output) => ({
-			title: "Services",
-			scope: [
-				["Time range", `${output.timeRange.start} to ${output.timeRange.end}`],
-				["Environment", output.environment],
-			],
-			...(output.services.length === 0
-				? {
-						empty: {
-							message: "No active services found in this time range.",
-							hints: ["Widen start_time/end_time, or drop the environment filter."],
-						},
-					}
-				: undefined),
-			blocks:
-				output.services.length === 0
-					? []
-					: [
-							doc.text(`Total: ${output.total} service${output.total !== 1 ? "s" : ""}`),
-							doc.table(
-								["Service", "Throughput (rpm)", "Error Rate", "P95 Latency"],
-								output.services.map((s) => [
-									s.name,
-									formatNumber(s.throughput),
-									formatPercent(s.errorRate),
-									formatDurationFromMs(s.p95Ms),
-								]),
+		render: (output) => {
+			const minutes = windowMinutes(output.timeRange)
+			const unhealthy = output.services
+				.filter((s) => s.errorRate > 0)
+				.sort((a, b) => b.errorRate - a.errorRate || b.throughput - a.throughput)
+			return {
+				title: "Services",
+				scope: [
+					["Time range", `${output.timeRange.start} to ${output.timeRange.end}`],
+					["Environment", output.environment],
+				],
+				...(output.services.length === 0
+					? {
+							empty: {
+								message: "No active services found in this time range.",
+								hints: ["Widen start_time/end_time, or drop the environment filter."],
+							},
+						}
+					: undefined),
+				blocks:
+					output.services.length === 0
+						? []
+						: [
+								doc.text(`Total: ${output.total} service${output.total !== 1 ? "s" : ""}`),
+								doc.table(
+									["Service", "Requests", "Req/min", "Error Rate", "P95 Latency"],
+									output.services.map((s) => [
+										s.name,
+										formatNumber(s.throughput),
+										minutes > 0 ? formatRate(s.throughput / minutes) : "-",
+										formatPercent(s.errorRate),
+										formatDurationFromMs(s.p95Ms),
+									]),
+								),
+							],
+				next: [
+					...(unhealthy.length > 0 ? unhealthy : output.services)
+						.slice(0, 3)
+						.map((s) =>
+							doc.next(
+								"diagnose_service",
+								{ service: s.name },
+								s.errorRate > 0
+									? `deep-dive into ${s.name} (${formatPercent(s.errorRate)} errors)`
+									: `deep-dive into ${s.name}, the busiest service`,
 							),
-						],
-			next: [
-				...output.services
-					.slice(0, 3)
-					.map((s) =>
-						doc.next("diagnose_service", { service: s.name }, `deep-dive into ${s.name}`),
-					),
-				...output.services
-					.slice(0, 1)
-					.map((s) =>
-						doc.next(
-							"get_service_top_operations",
-							{ service: s.name },
-							"see top endpoints for a service",
 						),
-					),
-			],
-		}),
+					...output.services
+						.slice(0, 1)
+						.map((s) =>
+							doc.next(
+								"get_service_top_operations",
+								{ service: s.name },
+								`see top endpoints of ${s.name}, the busiest service`,
+							),
+						),
+				],
+			}
+		},
 	})
 }
+
+const windowMinutes = (range: { readonly start: string; readonly end: string }): number =>
+	(parseWarehouseDateTime(range.end) - parseWarehouseDateTime(range.start)) / 60_000
+
+const formatRate = (perMinute: number): string =>
+	perMinute >= 10 ? formatNumber(Math.round(perMinute)) : perMinute.toFixed(2)
