@@ -6,7 +6,12 @@ import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngin
 import { MetricType, QuerySpec } from "@maple/query-engine"
 import { ProductEventKind } from "@maple/domain/query-engine"
 import { QueryDataOutput } from "@maple/domain/mcp-outputs"
-import { formatBucket, formatMetricValue, inferQueryDataUnit } from "../lib/format-query-result"
+import {
+	bucketLabels,
+	formatMetricValue,
+	inferQueryDataUnit,
+	PARTIAL_BUCKET_NOTE,
+} from "../lib/format-query-result"
 import { warehouseReadToMcpHandlers } from "../lib/map-warehouse-error"
 import { formatNumber } from "../lib/format"
 import * as P from "../lib/params"
@@ -247,7 +252,7 @@ const nextCallsFor = (output: Output): ReadonlyArray<NextCall> => {
 	}
 }
 
-const renderQueryData = (output: Output): ToolDoc => {
+export const renderQueryData = (output: Output): ToolDoc => {
 	const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 	const title = `${capitalize(output.queryContext.source)} ${capitalize(output.kind)}: ${output.metric}`
 	const scope: ToolDoc["scope"] = [
@@ -267,6 +272,15 @@ const renderQueryData = (output: Output): ToolDoc => {
 		}
 		const seriesKeys = [...new Set(points.flatMap((point) => Object.keys(point.series)))]
 		if (seriesKeys.length === 0) seriesKeys.push("value")
+		const { labels, lastIsPartial } = bucketLabels(
+			points.map((point) => point.bucket),
+			output.timeRange.end,
+			output.queryContext.bucketSeconds,
+		)
+		// A bucket with no rows has no value: printing 0 there reads as a measured all-clear.
+		const cell = (value: number | undefined) =>
+			value === undefined ? "-" : formatMetricValue(output.metric, value)
+		const hasGaps = points.some((point) => seriesKeys.some((key) => point.series[key] === undefined))
 		return {
 			title,
 			scope,
@@ -275,11 +289,13 @@ const renderQueryData = (output: Output): ToolDoc => {
 				doc.text(`Data points: ${formatNumber(points.length)}`),
 				doc.table(
 					["Bucket", ...seriesKeys],
-					points.map((point) => [
-						formatBucket(point.bucket),
-						...seriesKeys.map((key) => formatMetricValue(output.metric, point.series[key] ?? 0)),
+					points.map((point, i) => [
+						labels[i] ?? point.bucket,
+						...seriesKeys.map((key) => cell(point.series[key])),
 					]),
 				),
+				...(hasGaps ? [doc.text("`-`: no rows in that bucket (no data, not a measured 0).")] : []),
+				...(lastIsPartial ? [doc.text(PARTIAL_BUCKET_NOTE)] : []),
 			],
 			next,
 		}
@@ -375,7 +391,9 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 
 			const decisions: Array<string> = []
 			if (params.start_time === undefined)
-				decisions.push(`start_time: defaulted to 6 hours before end_time (${st})`)
+				decisions.push(
+					`start_time: defaulted to ${WINDOW.spec.defaultHours} hours before end_time (${st})`,
+				)
 			if (params.end_time === undefined) decisions.push(`end_time: defaulted to now (${et})`)
 			if (params.metric === undefined) {
 				decisions.push(

@@ -4,6 +4,7 @@ import { formatDurationFromMs, truncate } from "../lib/format"
 import { toMcpQueryError } from "../lib/map-warehouse-error"
 import * as P from "../lib/params"
 import { doc, type DocBlock } from "../lib/tool-doc"
+import { bucketLabels, PARTIAL_BUCKET_NOTE } from "../lib/format-query-result"
 import { Effect, Schema } from "effect"
 import { ErrorDetailOutput } from "@maple/domain/mcp-outputs"
 import { errorDetail } from "@maple/query-engine/observability"
@@ -181,6 +182,10 @@ export function registerErrorDetailTool(server: McpToolRegistrar) {
 				}
 			}
 			const trend = output.timeseries ?? []
+			const trendLabels = bucketLabels(
+				trend.map((point) => point.bucket),
+				output.timeRange.end,
+			)
 			return {
 				title: `Error Detail: fingerprint ${output.fingerprintHash}`,
 				scope,
@@ -193,14 +198,13 @@ export function registerErrorDetailTool(server: McpToolRegistrar) {
 								doc.heading("Error Trend"),
 								doc.text(
 									trend
-										.map((point) => {
-											const time = point.bucket.includes("T")
-												? point.bucket.slice(11, 19)
-												: (point.bucket.split(" ")[1] ?? point.bucket)
-											return `${time}: ${point.count} errors`
-										})
+										.map(
+											(point, i) =>
+												`${trendLabels.labels[i] ?? point.bucket}: ${point.count} errors`,
+										)
 										.join("\n"),
 								),
+								...(trendLabels.lastIsPartial ? [doc.text(PARTIAL_BUCKET_NOTE)] : []),
 							]),
 				],
 				next: [
