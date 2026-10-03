@@ -530,7 +530,13 @@ const QUERY_SPEC_ARMS = new Map<string, Schema.ConstraintDecoder<unknown>>([
 	["product_events:breakdown", ProductEventsBreakdownQuery],
 ])
 
-const oneLine = (message: string): string => message.replace(/\s*\n\s*/g, " ").trim()
+// Split-and-trim instead of a whitespace regex: linear on any input.
+const oneLine = (message: string): string =>
+	message
+		.split("\n")
+		.map((line) => line.trim())
+		.filter((line) => line.length > 0)
+		.join(" ")
 
 /**
  * One actionable line for a `QuerySpec` decode failure: the targeted arm's own

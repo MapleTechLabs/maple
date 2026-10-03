@@ -73,8 +73,8 @@ const rules: FixtureRule[] = [
 		],
 	},
 	{
-		match: (sql) => isErrorEventsByTime(sql) && sql.includes("AS fingerprints"),
-		rows: [{ occurrences: 237_000, fingerprints: 40, noExceptionCount: 231_000 }],
+		match: (sql) => isErrorEventsByTime(sql) && sql.includes("AS fingerprintCount"),
+		rows: [{ occurrences: 237_000, fingerprintCount: 40, noExceptionCount: 231_000 }],
 	},
 	{
 		match: (sql) => sql.includes("sampleMessage"),
