@@ -3,10 +3,16 @@
  * and tool results run to 50k, so these paths run in production far more often than the happy one.
  */
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Schema } from "effect"
+import { Effect, Exit, Schema } from "effect"
 import { Tool } from "effect/ai"
 import { makeRecordingTracer } from "@maple/backend/testing/recording-tracer"
-import { invokeAgentAttributes, messagesJson, toolCallJson, withToolCallContent } from "./genai-spans"
+import {
+	invokeAgentAttributes,
+	messagesJson,
+	toolCallJson,
+	withReturnedToolFailuresOk,
+	withToolCallContent,
+} from "./genai-spans"
 
 const TRUNCATION_MARKER = "…[truncated]"
 
@@ -172,6 +178,47 @@ describe("withToolCallContent", () => {
 
 			assert.strictEqual(spans[0]?.attributes.get("maple_ai.session.id"), "org_1:inv-abc")
 			assert.strictEqual(spans[0]?.attributes.get("maple_ai.turn.id"), "msg_1")
+		}),
+	)
+})
+
+describe("withReturnedToolFailuresOk", () => {
+	// The engine writes `failure_handling` on the span before it ends it with a failed exit.
+	const endedSpan = (name: string, failureHandling: string) =>
+		Effect.gen(function* () {
+			const { spans, tracer } = makeRecordingTracer()
+			yield* Effect.annotateCurrentSpan({ "effect_agent.tool.failure_handling": failureHandling }).pipe(
+				Effect.andThen(Effect.fail("bad sql")),
+				Effect.withSpan(name),
+				Effect.withTracer(withReturnedToolFailuresOk(tracer)),
+				Effect.exit,
+			)
+			const span = spans[0]
+			assert.isDefined(span)
+			assert.strictEqual(span.status._tag, "Ended")
+			return { span, failed: span.status._tag === "Ended" && Exit.isFailure(span.status.exit) }
+		})
+
+	it.effect("ends a failure returned to the model as Ok, with error.type", () =>
+		Effect.gen(function* () {
+			const { span, failed } = yield* endedSpan("execute_tool run_sql", "returned-to-model")
+			assert.isFalse(failed)
+			assert.strictEqual(span.attributes.get("error.type"), "ToolCallFailed")
+		}),
+	)
+
+	it.effect("keeps a propagated failure as Error", () =>
+		Effect.gen(function* () {
+			const { span, failed } = yield* endedSpan("execute_tool run_sql", "propagated")
+			assert.isTrue(failed)
+			assert.isUndefined(span.attributes.get("error.type"))
+		}),
+	)
+
+	it.effect("leaves spans other than execute_tool alone", () =>
+		Effect.gen(function* () {
+			const { failed } = yield* endedSpan("chat.turn", "returned-to-model")
+			assert.isTrue(failed)
 		}),
 	)
 })
