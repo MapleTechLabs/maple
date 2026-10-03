@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import { Effect, Exit, Schema } from "effect"
 import { toInputSchema } from "../tools/registry"
 import * as P from "./params"
+import { CurrentWindowNotes, WindowNotes } from "./window-notes"
 
 const decode = <S extends Schema.Codec<unknown, unknown, never, unknown>>(schema: S, input: unknown) =>
 	Schema.decodeUnknownExit(schema)(input)
@@ -65,14 +66,21 @@ describe("MCP parameter vocabulary", () => {
 			expect(published).toContain("at most 1 day")
 		})
 
-		it("rejects a window wider than the cap as an input error naming the fix", async () => {
+		it("narrows a window wider than the cap and records why", async () => {
 			const params = Schema.decodeUnknownSync(schema)({
 				start_time: "2026-09-01 00:00:00",
 				end_time: "2026-09-03 00:00:00",
 			})
-			const exit = await Effect.runPromiseExit(window.resolve(params, "search_traces"))
-			expect(Exit.isFailure(exit)).toBe(true)
-			expect(JSON.stringify(exit)).toContain("Time range too large for `search_traces`")
+			const notes = new WindowNotes()
+			const range = await Effect.runPromise(
+				window
+					.resolve(params, "search_traces")
+					.pipe(Effect.provideService(CurrentWindowNotes, notes)),
+			)
+			expect(range).toEqual({ st: "2026-09-02 00:00:00", et: "2026-09-03 00:00:00" })
+			expect(notes.notices.join()).toContain("`search_traces` covers at most 1 day")
+			const rendered = notes.decorate({ title: "T", scope: [["Time range", "x"]], blocks: [] })
+			expect(rendered.scope?.at(-1)?.[0]).toBe("Now (UTC)")
 		})
 
 		it("rejects an inverted window", async () => {

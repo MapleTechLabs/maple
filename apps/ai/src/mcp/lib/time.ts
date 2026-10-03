@@ -20,14 +20,6 @@ export const MCP_LOG_PATTERN_MAX_HOURS = MAX_LOG_PATTERN_RANGE_SECONDS / 3600
 
 const DEFAULT_HOURS = 6
 
-function defaultTimeRange(hours = DEFAULT_HOURS) {
-	const nowMs = Date.now()
-	return {
-		startTime: warehouseDateTime(nowMs - hours * 3_600_000),
-		endTime: warehouseDateTime(nowMs),
-	}
-}
-
 export interface ResolveTimeRangeOptions {
 	/** Default window when the agent supplies neither bound. Defaults to 6h. */
 	readonly defaultHours?: number
@@ -57,9 +49,8 @@ export interface ResolvedTimeRange {
  * this function with a raw string it forgot to validate.
  *
  * When `maxHours` is set and the resolved window is wider, the range is returned
- * *unchanged* with `exceeded: true` — callers must reject it. This used to clamp
- * `st` forward silently, which meant an agent asking for 30 days got 7 and had no
- * way to tell that its answer was computed from a fraction of the window.
+ * *unchanged* with `exceeded: true`. Tool windows go through {@link resolveWindow},
+ * which clamps against the server clock and reports every adjustment.
  *
  * Back-compat: the third arg also accepts a bare number (treated as `defaultHours`).
  */
@@ -71,9 +62,8 @@ export function resolveTimeRange(
 	const { defaultHours = DEFAULT_HOURS, maxHours } =
 		typeof opts === "number" ? { defaultHours: opts, maxHours: undefined } : opts
 
-	const defaults = defaultTimeRange(defaultHours)
-	const st = startTime ?? defaults.startTime
-	const et = endTime ?? defaults.endTime
+	const et = endTime ?? warehouseDateTime(Date.now())
+	const st = startTime ?? warehouseDateTime(parseWarehouseDateTime(et) - defaultHours * 3_600_000)
 
 	const requestedHours = (parseWarehouseDateTime(et) - parseWarehouseDateTime(st)) / 3_600_000
 
@@ -91,19 +81,71 @@ const formatHours = (hours: number): string => {
 	return `${rounded} hour${rounded === 1 ? "" : "s"}`
 }
 
+/** Clock skew tolerated on a future end_time before it earns a notice (it is clamped either way). */
+const FUTURE_END_TOLERANCE_MS = 60_000
+/** Windows narrower than this get a warning: a near-empty window reads like "nothing happened". */
+const SHORT_WINDOW_MS = 60_000
+
+export type WindowResolution =
+	| {
+			readonly _tag: "Resolved"
+			readonly st: WarehouseDateTime
+			readonly et: WarehouseDateTime
+			readonly now: WarehouseDateTime
+			/** How the window differs from what was asked, for the model to read. */
+			readonly notices: ReadonlyArray<string>
+	  }
+	| { readonly _tag: "Rejected"; readonly message: string }
+
 /**
- * Builds the message for a range that exceeds a tool's cap. Tells the agent what
- * it asked for, what the ceiling is, and what to do instead — so it can retry
- * correctly rather than silently trusting a truncated answer.
+ * The window a time-windowed tool queries, relative to the server clock `nowMs`. A future
+ * end_time clamps to now, a start_time not in the past is rejected, and a window over
+ * `maxHours` keeps end_time and moves start_time forward. Every adjustment returns a notice.
  */
-export function rangeExceededMessage(
-	range: Pick<ResolvedTimeRange, "maxHours" | "requestedHours">,
-	toolName: string,
-): string {
-	const cap = range.maxHours === undefined ? "the supported range" : formatHours(range.maxHours)
-	return [
-		`Time range too large for \`${toolName}\`.`,
-		`Requested ${formatHours(range.requestedHours)}, maximum supported range is ${cap}.`,
-		`Narrow start_time/end_time to ${cap} or less. For wider trends use \`query_data\` with a timeseries query, which aggregates instead of scanning raw rows.`,
-	].join(" ")
+export function resolveWindow(
+	startTime: WarehouseDateTime | undefined,
+	endTime: WarehouseDateTime | undefined,
+	spec: ResolveTimeRangeOptions & { readonly tool: string },
+	nowMs: number,
+): WindowResolution {
+	const now = warehouseDateTime(nowMs)
+	const notices: Array<string> = []
+	const startMs = startTime === undefined ? undefined : parseWarehouseDateTime(startTime)
+	if (startMs !== undefined && startMs >= nowMs) {
+		return {
+			_tag: "Rejected",
+			message: `start_time (${startTime}) is not in the past: server now is ${now} UTC. Times are UTC; convert local times before querying.`,
+		}
+	}
+	let endMs = endTime === undefined ? nowMs : parseWarehouseDateTime(endTime)
+	if (endTime !== undefined && endMs > nowMs) {
+		if (endMs - nowMs > FUTURE_END_TOLERANCE_MS) {
+			notices.push(
+				`end_time ${endTime} is in the future; clamped to server now (${now} UTC). Times are UTC.`,
+			)
+		}
+		endMs = nowMs
+	}
+	const et = warehouseDateTime(endMs)
+	let st = startTime ?? warehouseDateTime(endMs - (spec.defaultHours ?? DEFAULT_HOURS) * 3_600_000)
+	const widthMs = endMs - parseWarehouseDateTime(st)
+	if (widthMs <= 0) {
+		const clamped = endTime !== undefined && et !== endTime ? " (end_time was clamped to server now)" : ""
+		return {
+			_tag: "Rejected",
+			message: `start_time (${st}) is ${widthMs === 0 ? "equal to" : "after"} end_time (${et})${clamped}.`,
+		}
+	}
+	const { maxHours } = spec
+	if (maxHours !== undefined && maxHours > 0 && widthMs > maxHours * 3_600_000) {
+		st = warehouseDateTime(endMs - maxHours * 3_600_000)
+		notices.push(
+			`Requested ${formatHours(widthMs / 3_600_000)}, but \`${spec.tool}\` covers at most ${formatHours(maxHours)}: start_time moved to ${st}, end_time kept. Query the earlier part with a separate call.`,
+		)
+	} else if (widthMs < SHORT_WINDOW_MS) {
+		notices.push(
+			`The window is only ${Math.round(widthMs / 1000)}s wide (${st} to ${et}); an empty result here does not mean nothing happened. Times are UTC.`,
+		)
+	}
+	return { _tag: "Resolved", st, et, now, notices }
 }

@@ -11,6 +11,8 @@ import { searchLogs } from "@maple/query-engine/observability"
 import { provideWarehouseExecutorFromTenant } from "@maple/backend/services/warehouse/WarehouseQueryService"
 
 const WINDOW = P.timeWindow({ defaultHours: 6, maxHours: MCP_SEARCH_MAX_HOURS })
+/** A trace or span lookup without a start_time: the trace may be older than the 6h default. */
+const TRACE_WINDOW = P.timeWindow({ defaultHours: MCP_SEARCH_MAX_HOURS, maxHours: MCP_SEARCH_MAX_HOURS })
 
 /** Severity levels a log filter takes. Matched across SDK spellings (`ERROR`, `Error`, `error`). */
 export const LOG_SEVERITIES = ["TRACE", "DEBUG", "INFO", "WARN", "ERROR", "FATAL"] as const
@@ -55,7 +57,9 @@ export function registerSearchLogsTool(server: McpToolRegistrar) {
 				"Only logs at this severity level (matches every SDK spelling of it)",
 			),
 			search: P.optionalText("Substring of the log body"),
-			trace_id: P.optionalText("Only logs under this trace"),
+			trace_id: P.optionalText(
+				"Only logs under this trace. Without start_time, searches the last 7 days instead of 6 hours.",
+			),
 			span_id: P.optionalText("Only logs under this span"),
 			offset: P.offset({ max: 10_000 }),
 			limit: P.limit({ default: 30, max: 200, noun: "logs" }),
@@ -65,7 +69,10 @@ export function registerSearchLogsTool(server: McpToolRegistrar) {
 		hints: { readOnly: true },
 		phrases: ["Searching logs", "Reading through logs"],
 		handler: Effect.fn("McpTool.searchLogs")(function* (params) {
-			const { st, et } = yield* WINDOW.resolve(params, "search_logs")
+			const byTrace =
+				(params.trace_id !== undefined || params.span_id !== undefined) &&
+				params.start_time === undefined
+			const { st, et } = yield* (byTrace ? TRACE_WINDOW : WINDOW).resolve(params, "search_logs")
 			const tenant = yield* CurrentMcpTenant
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,

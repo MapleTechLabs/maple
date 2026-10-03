@@ -6,10 +6,11 @@
  * also what renders them into the published description: a description cannot claim a
  * default the decoder does not apply.
  */
-import { Effect, Option, Schema, SchemaGetter, SchemaTransformation } from "effect"
+import { Clock, Effect, Option, Schema, SchemaGetter, SchemaTransformation } from "effect"
 import { WarehouseTimeInput, type WarehouseDateTime } from "@maple/query-engine"
 import { McpInvalidInputError } from "../tools/types"
-import { rangeExceededMessage, resolveTimeRange } from "./time"
+import { resolveWindow } from "./time"
+import { CurrentWindowNotes } from "./window-notes"
 
 /**
  * A number, or a numeric string. 12% of agent calls send `"limit":"15"`, so the string branch
@@ -183,7 +184,7 @@ const formatHours = (hours: number): string =>
 export interface TimeWindowSpec {
 	/** Window used when neither bound is given. */
 	readonly defaultHours: number
-	/** Widest window the tool accepts; wider is an input error rather than a silent clamp. */
+	/** Widest window the tool scans; a wider request keeps end_time and moves start_time, with a notice. */
 	readonly maxHours?: number
 }
 
@@ -193,7 +194,9 @@ export interface TimeWindowSpec {
  */
 export const timeWindow = (spec: TimeWindowSpec) => {
 	const cap =
-		spec.maxHours === undefined ? "" : ` The window may span at most ${formatHours(spec.maxHours)}.`
+		spec.maxHours === undefined
+			? ""
+			: ` Covers at most ${formatHours(spec.maxHours)}: a wider window keeps end_time and is narrowed to the ${formatHours(spec.maxHours)} before it.`
 	return {
 		spec,
 		fields: {
@@ -201,7 +204,7 @@ export const timeWindow = (spec: TimeWindowSpec) => {
 				description: `Start of the window, ${TIMESTAMP_FORMAT}. Default: ${formatHours(spec.defaultHours)} before end_time.${cap}`,
 			}),
 			end_time: Schema.optional(WarehouseTimeInput).annotate({
-				description: `End of the window, ${TIMESTAMP_FORMAT}. Default: now.`,
+				description: `End of the window, ${TIMESTAMP_FORMAT}. Default: now; a future time is clamped to now.`,
 			}),
 		},
 		resolve: (
@@ -213,25 +216,23 @@ export const timeWindow = (spec: TimeWindowSpec) => {
 		): Effect.Effect<
 			{ readonly st: WarehouseDateTime; readonly et: WarehouseDateTime },
 			McpInvalidInputError
-		> => {
-			const range = resolveTimeRange(params.start_time, params.end_time, spec)
-			if (range.requestedHours < 0) {
-				return Effect.fail(
-					new McpInvalidInputError({
-						message: `start_time (${range.st}) is after end_time (${range.et}).`,
-						parameter: "start_time",
-					}),
+		> =>
+			Effect.gen(function* () {
+				const resolution = resolveWindow(
+					params.start_time,
+					params.end_time,
+					{ ...spec, tool },
+					yield* Clock.currentTimeMillis,
 				)
-			}
-			if (range.exceeded) {
-				return Effect.fail(
-					new McpInvalidInputError({
-						message: rangeExceededMessage(range, tool),
+				if (resolution._tag === "Rejected") {
+					return yield* new McpInvalidInputError({
+						message: resolution.message,
 						parameter: "start_time",
-					}),
-				)
-			}
-			return Effect.succeed({ st: range.st, et: range.et })
-		},
+					})
+				}
+				const notes = yield* CurrentWindowNotes
+				notes?.record(resolution.now, resolution.notices)
+				return { st: resolution.st, et: resolution.et }
+			}),
 	}
 }

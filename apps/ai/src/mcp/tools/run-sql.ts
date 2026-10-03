@@ -123,6 +123,14 @@ const toJson = (value: unknown): Schema.Json => {
 	return String(value)
 }
 
+/** Whether a time macro put the window into the statement; otherwise the SQL picks its own range. */
+const usesWindow = (output: {
+	readonly expandedSql: string
+	readonly timeRange: { readonly start: string; readonly end: string }
+}) =>
+	output.expandedSql.includes(`toDateTime('${output.timeRange.start}')`) ||
+	output.expandedSql.includes(`toDateTime('${output.timeRange.end}')`)
+
 function cellToString(value: Schema.Json | undefined): string {
 	if (value === null || value === undefined) return "null"
 	if (typeof value === "object") return truncate(JSON.stringify(value), 60)
@@ -182,7 +190,12 @@ export function registerRunSqlTool(server: McpToolRegistrar) {
 		render: (output) => ({
 			title: "SQL result",
 			scope: [
-				["Time range", `${output.timeRange.start} to ${output.timeRange.end}`],
+				[
+					"Time range",
+					usesWindow(output)
+						? `${output.timeRange.start} to ${output.timeRange.end}`
+						: "set by the SQL (no $__timeFilter/$__startTime/$__endTime macro)",
+				],
 				["Rows", String(output.rowCount)],
 				["Columns", String(output.columns.length)],
 			],

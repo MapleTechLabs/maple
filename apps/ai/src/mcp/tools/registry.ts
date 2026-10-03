@@ -84,6 +84,7 @@ import {
 } from "../lib/decode-issues"
 import { filterNextCalls, nextCallsOf, type NextCall, type ToolDoc } from "../lib/tool-doc"
 import { renderToolDocWithinBudget } from "./tool-output"
+import { CurrentWindowNotes, WindowNotes } from "../lib/window-notes"
 import type { McpToolRequirements } from "./runtime-requirements"
 import { registerUpdateDashboardTool } from "./update-dashboard"
 import { registerUpdateDashboardWidgetTool } from "./update-dashboard-widget"
@@ -564,7 +565,13 @@ export const executeRegisteredMcpToolUnscoped = Effect.fn("McpToolRegistry.execu
 		),
 	)
 
-	const run = yield* definition.run(decoded)
+	const windowNotes = new WindowNotes()
+	const run = yield* definition.run(decoded).pipe(Effect.provideService(CurrentWindowNotes, windowNotes))
 	yield* Effect.logInfo("Tool completed")
-	return yield* finish(definition, run, argumentNotices(normalized, definition.name), surface)
+	return yield* finish(
+		definition,
+		{ ...run, doc: windowNotes.decorate(run.doc) },
+		argumentNotices(normalized, definition.name),
+		surface,
+	)
 })
