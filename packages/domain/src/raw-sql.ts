@@ -195,8 +195,8 @@ const enclosingGroup = (text: string, from: number, to: number) => {
 /**
  * Whether the org filter at `[start, end)` of the masked text can be bypassed by a
  * sibling `OR` (AND binds tighter, so `$__orgFilter AND a OR b` matches `b` in any
- * org) or negated by a `NOT`. Climbs through plain parenthesised groups; stops at
- * a clause keyword (a subquery's WHERE is its own scope) or a function call.
+ * org) or negated by a `NOT`. Climbs through plain parenthesised groups and stops at
+ * a clause keyword (a subquery's WHERE is its own scope); any function call escapes.
  */
 const orgFilterEscapes = (masked: string, start: number, end: number): boolean => {
 	let atomStart = start
@@ -215,12 +215,15 @@ const orgFilterEscapes = (masked: string, start: number, end: number): boolean =
 		if (/\bOR\b/i.test(leftClause) || /\bOR\b/i.test(rightClause) || /\bNOT\s*$/i.test(leftClause)) {
 			return true
 		}
+		// Any call form (`coalesce(...)`, `if(...)`, `not(...)`) can turn the predicate
+		// inert, so only plain grouping parens are climbed. Commas separate its
+		// arguments; a clause keyword means a subquery, which is its own scope.
+		const keywordBound =
+			(lastStart !== undefined && lastStart[0] !== ",") || (endMatch !== null && endMatch[0] !== ",")
+		const before = masked.slice(0, Math.max(open, 0))
+		const isCall = open >= 0 && /[A-Za-z0-9_]\s*$/.test(before) && !BOOLEAN_KEYWORD_RE.test(before)
+		if (!keywordBound && isCall) return true
 		if (lastStart !== undefined || endMatch !== null || open < 0) return false
-		const before = masked.slice(0, open)
-		if (/[A-Za-z0-9_]\s*$/.test(before) && !BOOLEAN_KEYWORD_RE.test(before)) {
-			// A function call: `not(...)`/`xor(...)` invert or bypass it, anything else ends the climb.
-			return /\b(?:not|xor|or)\s*$/i.test(before)
-		}
 		atomStart = open
 		atomEnd = close + 1
 	}
@@ -245,9 +248,21 @@ const aliasBindsTable = (masked: string, alias: string): boolean => {
 		`\\b(?:FROM|JOIN)\\s+(?:${IDENT}\\.)?(${IDENT})(?:\\s+(?:AS\\s+)?(${IDENT}))?(?=[\\s,)]|$)`,
 		"gi",
 	)
-	for (const m of masked.matchAll(binding)) {
-		const table = m[1] ?? ""
-		const bound = m[2]
+	// `FROM a x, b y` binds every comma-separated table; a subquery or table function item ends the run.
+	const commaItem = new RegExp(
+		`\\s*,\\s*(?:${IDENT}\\.)?(${IDENT})(?:\\s+(?:AS\\s+)?(${IDENT}))?(?=[\\s,)]|$)`,
+		"iy",
+	)
+	const bindings = [...masked.matchAll(binding)].flatMap((m) => {
+		const items: Array<readonly [string, string | undefined]> = [[m[1] ?? "", m[2]]]
+		if (!/^FROM/i.test(m[0])) return items
+		commaItem.lastIndex = (m.index ?? 0) + m[0].length
+		for (let item = commaItem.exec(masked); item !== null; item = commaItem.exec(masked)) {
+			items.push([item[1] ?? "", item[2]])
+		}
+		return items
+	})
+	for (const [table, bound] of bindings) {
 		const names =
 			bound === undefined ||
 			/^(?:WHERE|PREWHERE|FINAL|SAMPLE|ARRAY|GLOBAL|ANY|ALL|INNER|LEFT|RIGHT|FULL|CROSS|JOIN|ON|USING|GROUP|ORDER|LIMIT|UNION|SETTINGS|FORMAT)$/i.test(

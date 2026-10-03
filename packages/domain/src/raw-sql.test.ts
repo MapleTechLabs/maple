@@ -250,3 +250,37 @@ describe("rawSqlIssue org filter placement", () => {
 		)
 	})
 })
+
+describe("rawSqlIssue org filter review follow-ups", () => {
+	it.each([
+		"SELECT 1 FROM traces WHERE coalesce($__orgFilter, 0) OR SpanName = 'x'",
+		"SELECT 1 FROM traces WHERE if(SpanName = 'x', $__orgFilter, 1)",
+		"SELECT 1 FROM traces WHERE multiIf(a = 1, $__orgFilter, 1)",
+		"SELECT 1 FROM traces WHERE toUInt8($__orgFilter) AND x = 1",
+	])("rejects an org filter wrapped in a function call: %s", (sql) => {
+		expect(rawSqlIssue(sql)?.code).toBe("InvalidMacro")
+	})
+
+	it("still accepts an org filter scoped to an IN subquery", () => {
+		expect(
+			rawSqlIssue(
+				"SELECT 1 FROM traces WHERE $__orgFilter AND x IN (SELECT x FROM logs WHERE $__orgFilter)",
+			),
+		).toBeNull()
+	})
+
+	it.each([
+		"SELECT 1 FROM traces t, logs l WHERE $__orgFilter(t) AND $__orgFilter(l)",
+		"SELECT 1 FROM traces AS t, default.logs AS l, metrics_sum m WHERE $__orgFilter(t) AND $__orgFilter(l) AND $__orgFilter(m)",
+	])("binds aliases from a comma-separated FROM list: %s", (sql) => {
+		expect(rawSqlIssue(sql)).toBeNull()
+	})
+
+	it.each([
+		"SELECT 1 FROM traces t, (SELECT 1 AS OrgId) l WHERE $__orgFilter(t) AND $__orgFilter(l)",
+		"SELECT 1 FROM traces t, numbers(10) l WHERE $__orgFilter(t) AND $__orgFilter(l)",
+		"WITH c AS (SELECT 1 AS OrgId) SELECT 1 FROM traces t, c l WHERE $__orgFilter(t) AND $__orgFilter(l)",
+	])("still rejects a comma item that is not a table: %s", (sql) => {
+		expect(rawSqlIssue(sql)?.code).toBe("InvalidMacro")
+	})
+})
