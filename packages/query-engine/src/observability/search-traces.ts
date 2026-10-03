@@ -93,6 +93,9 @@ const spanLevelSearch = (
 		...(input.httpMethod && { http_method: input.httpMethod }),
 		...(input.traceId && { trace_id: input.traceId }),
 		...(input.attributeFilters?.length && { attribute_filters: input.attributeFilters }),
+		...(input.resourceAttributeFilter && {
+			resource_attribute_filters: [{ ...input.resourceAttributeFilter, mode: "equals" }],
+		}),
 	} satisfies Record<string, unknown>
 
 	return Effect.map(
@@ -136,6 +139,10 @@ const rootLevelSearch = (
 		...(input.attributeFilters?.[0]?.key && { attribute_filter_key: input.attributeFilters[0].key }),
 		...(input.attributeFilters?.[0]?.value && {
 			attribute_filter_value: input.attributeFilters[0].value,
+		}),
+		...(input.resourceAttributeFilter && {
+			resource_filter_key: input.resourceAttributeFilter.key,
+			resource_filter_value: input.resourceAttributeFilter.value,
 		}),
 	} satisfies Record<string, unknown>
 

@@ -9,6 +9,7 @@ import { Effect, Schema } from "effect"
 import { SearchLogsOutput, type LogSearchFilters } from "@maple/domain/mcp-outputs"
 import { searchLogs } from "@maple/query-engine/observability"
 import { provideWarehouseExecutorFromTenant } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { emptyResultHints } from "../lib/empty-result-hints"
 
 const WINDOW = P.timeWindow({ defaultHours: 6, maxHours: MCP_SEARCH_MAX_HOURS })
 /** A trace or span lookup without a start_time: the trace may be older than the 6h default. */
@@ -98,6 +99,10 @@ export function registerSearchLogsTool(server: McpToolRegistrar) {
 
 			yield* Effect.annotateCurrentSpan("result.rowCount", result.logs.length)
 			const hasMore = result.pagination.hasMore
+			const emptyHints =
+				result.logs.length === 0 && params.offset === 0
+					? yield* emptyResultHints({ service: params.service }, { startTime: st, endTime: et })
+					: []
 
 			return {
 				timeRange: { start: st, end: et },
@@ -118,6 +123,7 @@ export function registerSearchLogsTool(server: McpToolRegistrar) {
 					...(l.spanId ? { spanId: l.spanId } : undefined),
 				})),
 				filters: logFilters(params),
+				...(emptyHints.length > 0 ? { emptyHints } : undefined),
 			}
 		}),
 		render: (output) => {
@@ -134,6 +140,7 @@ export function registerSearchLogsTool(server: McpToolRegistrar) {
 					empty: {
 						message: "No logs found matching the filters in this window.",
 						hints: [
+							...(output.emptyHints ?? []),
 							"Widen start_time/end_time, or drop filters. `search` is a substring of the log body.",
 						],
 					},

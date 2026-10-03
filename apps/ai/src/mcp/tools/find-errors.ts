@@ -8,6 +8,7 @@ import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { formatNumber, truncate } from "../lib/format"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
+import { emptyResultHints } from "../lib/empty-result-hints"
 
 const WINDOW = P.timeWindow({ defaultHours: 6 })
 
@@ -59,6 +60,16 @@ export function registerFindErrorsTool(server: McpToolRegistrar) {
 				Effect.mapError(toMcpQueryError("errors_by_type")),
 			)
 
+			const emptyHints =
+				errors.length === 0
+					? yield* emptyResultHints(
+							{
+								service: params.service,
+								environments: params.environment === undefined ? undefined : [params.environment],
+							},
+							{ startTime: st, endTime: et },
+						)
+					: []
 			const identity: typeof FindErrorsOutput.Type.identity = params.identity ?? "all"
 			return {
 				timeRange: { start: st, end: et },
@@ -71,6 +82,7 @@ export function registerFindErrorsTool(server: McpToolRegistrar) {
 					affectedServicesCount: error.affectedServicesCount,
 					lastSeen: error.lastSeen,
 				})),
+				...(emptyHints.length > 0 ? { emptyHints } : undefined),
 			}
 		}),
 		render: (output) => {
@@ -83,6 +95,7 @@ export function registerFindErrorsTool(server: McpToolRegistrar) {
 							empty: {
 								message: `No ${noun} found in this window.`,
 								hints: [
+									...(output.emptyHints ?? []),
 									"Widen start_time/end_time, or drop the service and environment filters.",
 								],
 							},

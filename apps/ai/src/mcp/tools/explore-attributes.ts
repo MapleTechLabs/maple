@@ -148,6 +148,9 @@ const renderKeys = (output: Output): ToolDoc => {
 							["Key", "Count"],
 							keys.map((k) => [k.key, formatNumber(k.count)]),
 						),
+						...(output.service !== undefined && output.source === "traces"
+							? [doc.text("Counts are from a sample of up to 20,000 of this service's spans.")]
+							: []),
 					]),
 		],
 		next: keys.slice(0, 3).map((k) =>

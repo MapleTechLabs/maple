@@ -71,6 +71,8 @@ export const ListErrorIssuesOutput = Schema.Struct({
 		includeArchived: Schema.Boolean,
 		limit: Schema.Number,
 	}),
+	/** On an empty result: filter values that do not exist in the window, with close matches. */
+	emptyHints: Schema.optionalKey(Schema.Array(Schema.String)),
 })
 
 export const TransitionErrorIssueOutput = Schema.Struct({

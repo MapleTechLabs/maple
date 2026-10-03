@@ -16,6 +16,8 @@ export const FindErrorsOutput = Schema.Struct({
 	/** "all", or "unexpected" when the list was narrowed to policy-violating identities. */
 	identity: Schema.Literals(["all", "unexpected"]),
 	errors: Schema.Array(ErrorTypeRow),
+	/** On an empty result: filter values that do not exist in the window, with close matches. */
+	emptyHints: Schema.optionalKey(Schema.Array(Schema.String)),
 })
 
 /** The span that failed inside a sampled trace, with the attributes that say what it was doing. */

@@ -72,6 +72,29 @@ describe("compilePipeQuery", () => {
 		}
 	})
 
+	describe("attribute discovery honors service_name", () => {
+		for (const pipe of ["span_attribute_keys", "resource_attribute_keys"]) {
+			it(`${pipe} reads that service's spans, not the org-wide rollup`, () => {
+				const scoped = compilePipeQuery(pipe, { ...baseParams(), service_name: "maple-ios" })!.sql
+				expect(scoped).toContain("ServiceName = 'maple-ios'")
+				expect(scoped).not.toContain("attribute_keys_hourly")
+				const orgWide = compilePipeQuery(pipe, baseParams())!.sql
+				expect(orgWide).toContain("attribute_keys_hourly")
+			})
+		}
+	})
+
+	it("span_search and list_traces filter by deployment_env", () => {
+		for (const pipe of ["span_search", "list_traces"]) {
+			const sql = compilePipeQuery(pipe, {
+				...baseParams(),
+				span_name: "x",
+				deployment_env: "production",
+			})!.sql
+			expect(sql).toContain("'production'")
+		}
+	})
+
 	it("returns undefined for unknown pipes", () => {
 		const result = compilePipeQuery("nonexistent_pipe", baseParams())
 		expect(result).toBeUndefined()

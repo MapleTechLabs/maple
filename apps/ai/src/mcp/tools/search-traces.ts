@@ -8,6 +8,8 @@ import { doc } from "../lib/tool-doc"
 import { Effect, Schema } from "effect"
 import { SearchTracesOutput } from "@maple/domain/mcp-outputs"
 import { searchTraces } from "@maple/query-engine/observability"
+import { resolveAttributeScope } from "../lib/attribute-scope"
+import { emptyResultHints } from "../lib/empty-result-hints"
 
 const WINDOW = P.timeWindow({ defaultHours: 6, maxHours: MCP_SEARCH_MAX_HOURS })
 
@@ -22,6 +24,7 @@ export function registerSearchTracesTool(server: McpToolRegistrar) {
 			service: P.service(
 				"Only this service (exact `service.name`), matched on the entry span, or on every span when `span_name` is set",
 			),
+			environment: P.environment(),
 			has_error: P.optionalFlag("Only spans with status Error"),
 			min_duration_ms: P.optionalNumber("Minimum duration in milliseconds"),
 			max_duration_ms: P.optionalNumber("Maximum duration in milliseconds"),
@@ -31,7 +34,7 @@ export function registerSearchTracesTool(server: McpToolRegistrar) {
 			),
 			trace_id: P.optionalText("Only this trace"),
 			attribute_key: P.optionalText(
-				"Span attribute to filter on (e.g. user.id). Alone, requires the attribute to exist",
+				"Span attribute to filter on (e.g. user.id). Alone, requires the attribute to exist. With a value, a resource attribute (k8s.pod.name) also works",
 			),
 			attribute_value: P.optionalText("Exact value for `attribute_key`"),
 			root_only: P.optionalFlag("With `span_name`, still match entry spans only instead of every span"),
@@ -64,20 +67,35 @@ export function registerSearchTracesTool(server: McpToolRegistrar) {
 			}
 
 			const rootOnly = params.root_only ?? false
+			const window = { startTime: st, endTime: et }
+			// Resource keys are matched only with a value; an exists-check stays on span attributes.
+			const resourceKey =
+				params.attribute_key !== undefined && params.attribute_value !== undefined
+					? (yield* resolveAttributeScope(
+							{ source: "traces", attribute_key: params.attribute_key },
+							window,
+						)).scope === "resource"
+					: false
 			const result = yield* withTenantExecutor(
 				searchTraces({
 					timeRange: { startTime: st, endTime: et },
 					service: params.service,
 					spanName: params.span_name,
 					spanNameMatchMode: params.span_name ? "contains" : undefined,
+					environment: params.environment,
 					hasError: params.has_error,
 					minDurationMs: params.min_duration_ms,
 					maxDurationMs: params.max_duration_ms,
 					httpMethod: params.http_method,
 					traceId: params.trace_id,
-					attributeFilters: params.attribute_key
-						? [{ key: params.attribute_key, value: params.attribute_value ?? "" }]
-						: undefined,
+					attributeFilters:
+						params.attribute_key && !resourceKey
+							? [{ key: params.attribute_key, value: params.attribute_value ?? "" }]
+							: undefined,
+					resourceAttributeFilter:
+						params.attribute_key && params.attribute_value !== undefined && resourceKey
+							? { key: params.attribute_key, value: params.attribute_value }
+							: undefined,
 					rootOnly,
 					limit: params.limit,
 					offset: params.offset,
@@ -87,6 +105,17 @@ export function registerSearchTracesTool(server: McpToolRegistrar) {
 			const spans = result.spans
 			yield* Effect.annotateCurrentSpan("result.rowCount", spans.length)
 			const hasMore = result.pagination.hasMore
+			const emptyHints =
+				spans.length === 0 && params.offset === 0
+					? yield* emptyResultHints(
+							{
+								service: params.service,
+								environments: params.environment === undefined ? undefined : [params.environment],
+								attributeKey: params.attribute_key,
+							},
+							window,
+						)
+					: []
 
 			return {
 				timeRange: { start: st, end: et },
@@ -124,9 +153,11 @@ export function registerSearchTracesTool(server: McpToolRegistrar) {
 					...(params.attribute_value === undefined
 						? undefined
 						: { attributeValue: params.attribute_value }),
+					...(params.environment === undefined ? undefined : { environment: params.environment }),
 					rootOnly,
 				},
 				spanLevel: params.span_name !== undefined && !rootOnly,
+				...(emptyHints.length > 0 ? { emptyHints } : undefined),
 			}
 		}),
 		render: (output) => {
@@ -135,6 +166,7 @@ export function registerSearchTracesTool(server: McpToolRegistrar) {
 			const scope: ReadonlyArray<readonly [string, string | undefined]> = [
 				["Time range", `${output.timeRange.start} to ${output.timeRange.end}`],
 				["Service", filters.service],
+				["Environment", filters.environment],
 				["Span name", filters.spanName],
 				[
 					"Offset",
@@ -152,6 +184,7 @@ export function registerSearchTracesTool(server: McpToolRegistrar) {
 					empty: {
 						message: `No ${noun} found matching the filters in this window.`,
 						hints: [
+							...(output.emptyHints ?? []),
 							"Widen start_time/end_time, or drop filters.",
 							"span_name is a case-insensitive substring; explore_attributes lists attribute keys and values.",
 						],
@@ -197,6 +230,7 @@ export function registerSearchTracesTool(server: McpToolRegistrar) {
 										start_time: output.timeRange.start,
 										end_time: output.timeRange.end,
 										service: filters.service,
+										environment: filters.environment,
 										has_error: filters.hasError,
 										min_duration_ms: filters.minDurationMs,
 										max_duration_ms: filters.maxDurationMs,

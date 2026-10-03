@@ -7,6 +7,8 @@ import { warehouseReadToMcpHandlers } from "../lib/map-warehouse-error"
 import * as P from "../lib/params"
 import { doc, type NextCall } from "../lib/tool-doc"
 import { actorLabel } from "./error-issue-shared"
+import { emptyResultHints } from "../lib/empty-result-hints"
+import { resolveTimeRange } from "../lib/time"
 import { ErrorIssueReadModelsService } from "@maple/backend/services/errors/ErrorIssueReadModelsService"
 import { IssueKind, IssueSeverity, WorkflowState } from "@maple/domain/http"
 
@@ -230,9 +232,20 @@ export function registerListErrorIssuesTool(server: McpToolRegistrar) {
 				limit: params.limit,
 			}
 
+			// Issues have no window; check the service name against the last 7 days of telemetry.
+			const lastWeek = resolveTimeRange(undefined, undefined, 24 * 7)
+			const emptyHints =
+				issues.length === 0 && params.service !== undefined
+					? yield* emptyResultHints(
+							{ service: params.service },
+							{ startTime: lastWeek.st, endTime: lastWeek.et },
+						)
+					: []
+
 			return {
 				compact,
 				filters,
+				...(emptyHints.length > 0 ? { emptyHints } : undefined),
 				total: issues.length,
 				issues: compact
 					? issues.map((i) => ({
@@ -309,6 +322,7 @@ export function registerListErrorIssuesTool(server: McpToolRegistrar) {
 						empty: {
 							message: "No error issues found.",
 							hints: [
+								...(output.emptyHints ?? []),
 								"Drop the workflow_state, severity, kind or service filters, or move last_seen_after earlier.",
 								"Pass include_archived=true to include archived issues.",
 							],

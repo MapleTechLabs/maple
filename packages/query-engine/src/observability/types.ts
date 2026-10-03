@@ -51,6 +51,8 @@ export interface SearchTracesInput {
 		mode?: string
 		negated?: boolean
 	}>
+	/** Equality filter on a ResourceAttributes key (at most one at root level). */
+	readonly resourceAttributeFilter?: { readonly key: string; readonly value: string }
 	readonly rootOnly?: boolean
 	readonly limit?: number
 	readonly offset?: number

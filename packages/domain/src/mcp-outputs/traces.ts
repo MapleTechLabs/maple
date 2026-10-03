@@ -29,6 +29,7 @@ export const SearchTracesFilters = Schema.Struct({
 	traceId: Schema.optionalKey(Schema.String),
 	attributeKey: Schema.optionalKey(Schema.String),
 	attributeValue: Schema.optionalKey(Schema.String),
+	environment: Schema.optionalKey(Schema.String),
 	rootOnly: Schema.Boolean,
 })
 
@@ -39,6 +40,8 @@ export const SearchTracesOutput = Schema.Struct({
 	filters: SearchTracesFilters,
 	/** True when rows are matching spans (span_name without root_only), not traces. */
 	spanLevel: Schema.Boolean,
+	/** On an empty result: filter values that do not exist in the window, with close matches. */
+	emptyHints: Schema.optionalKey(Schema.Array(Schema.String)),
 })
 
 export const TraceDurationStats = Schema.Struct({
@@ -169,6 +172,8 @@ export const SearchLogsOutput = Schema.Struct({
 	pagination: Schema.optionalKey(OutputPagination),
 	logs: Schema.Array(LogEntryRow),
 	filters: Schema.optionalKey(LogSearchFilters),
+	/** On an empty result: filter values that do not exist in the window, with close matches. */
+	emptyHints: Schema.optionalKey(Schema.Array(Schema.String)),
 })
 
 export const LogPatternRow = Schema.Struct({
