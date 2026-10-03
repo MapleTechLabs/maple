@@ -56,7 +56,9 @@ export function registerDescribeWarehouseTablesTool(server: McpToolRegistrar) {
 					const names = listWarehouseTables().map((t) => t.name)
 					const suggested = suggestWarehouseTables(table)
 					const hint =
-						suggested.length === 0 ? "" : ` Did you mean ${suggested.map((t) => `"${t}"`).join(" or ")}?`
+						suggested.length === 0
+							? ""
+							: ` Did you mean ${suggested.map((t) => `"${t}"`).join(" or ")}?`
 					return yield* new McpInvalidInputError({
 						message: `No table named "${table}".${hint} Available tables: ${names.join(", ")}.`,
 						parameter: "table",
@@ -99,7 +101,12 @@ export function registerDescribeWarehouseTablesTool(server: McpToolRegistrar) {
 				blocks: [
 					doc.table(
 						["Table", "Time column", "Description", "Columns"],
-						tables.map((t) => [t.name, t.timeColumn ?? "-", t.description ?? "-", String(t.columnCount)]),
+						tables.map((t) => [
+							t.name,
+							t.timeColumn ?? "-",
+							t.description ?? "-",
+							String(t.columnCount),
+						]),
 					),
 				],
 				next: tables

@@ -50,8 +50,14 @@ describe("prepareRawSql", () => {
 			const prepared = yield* prepareOk(
 				`${branch("metrics_histogram")} UNION ALL ${branch("metrics_sum")} UNION ALL ${branch("metrics_gauge")} ORDER BY n DESC LIMIT 15`,
 			)
-			assert.strictEqual(prepared.sql.match(/TimeUnix >= toDateTime\('2026-05-14 00:00:00'\)/g)?.length, 3)
-			assert.strictEqual(prepared.sql.match(/TimeUnix <= toDateTime\('2026-05-14 06:00:00'\)/g)?.length, 3)
+			assert.strictEqual(
+				prepared.sql.match(/TimeUnix >= toDateTime\('2026-05-14 00:00:00'\)/g)?.length,
+				3,
+			)
+			assert.strictEqual(
+				prepared.sql.match(/TimeUnix <= toDateTime\('2026-05-14 06:00:00'\)/g)?.length,
+				3,
+			)
 			assert.include(prepared.sql, "FROM metrics_gauge")
 		}),
 	)
@@ -261,7 +267,10 @@ it.effect("expands $__orgFilter to a parenthesised predicate, alias-qualified wh
 		const prepared = yield* prepareOk(
 			"SELECT 1 FROM traces t JOIN logs l ON t.TraceId = l.TraceId AND $__orgFilter(l) WHERE $__orgFilter(t) AND $__orgFilter",
 		)
-		assert.include(prepared.sql, "AND (l.OrgId = 'org_abc') WHERE (t.OrgId = 'org_abc') AND (OrgId = 'org_abc')")
+		assert.include(
+			prepared.sql,
+			"AND (l.OrgId = 'org_abc') WHERE (t.OrgId = 'org_abc') AND (OrgId = 'org_abc')",
+		)
 	}),
 )
 

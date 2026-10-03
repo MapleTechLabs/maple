@@ -287,7 +287,9 @@ describe("mapWarehouseError", () => {
 describe("cleanErrorMessage", () => {
 	it("drops the vendor's plan upsell", () => {
 		expect(
-			cleanErrorMessage("[Error] Memory limit exceeded. Upgrade your plan for higher capacity. (MEMORY_LIMIT_EXCEEDED)"),
+			cleanErrorMessage(
+				"[Error] Memory limit exceeded. Upgrade your plan for higher capacity. (MEMORY_LIMIT_EXCEEDED)",
+			),
 		).toBe("[Error] Memory limit exceeded. (MEMORY_LIMIT_EXCEEDED)")
 	})
 

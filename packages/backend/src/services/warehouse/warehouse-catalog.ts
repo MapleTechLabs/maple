@@ -114,31 +114,37 @@ const timeColumnOf = (columnNames: ReadonlyArray<string>): string | undefined =>
 	TIME_COLUMN_PREFERENCE.find((name) => columnNames.includes(name))
 
 /** How to read each rollup engine; a plain read of one double counts or under-counts. */
-const ENGINE_NOTES: Record<string, string> = {
-	SummingMergeTree:
+const ENGINE_NOTES: ReadonlyMap<string, string> = new Map([
+	[
+		"SummingMergeTree",
 		"SummingMergeTree: rows for one key may not be merged yet, so always `sum()` the count columns with GROUP BY rather than reading single rows.",
-	AggregatingMergeTree:
+	],
+	[
+		"AggregatingMergeTree",
 		"AggregatingMergeTree rollup: aggregate on read with GROUP BY, `sum()` for SimpleAggregateFunction(sum) columns and `-Merge` combinators (e.g. `quantilesMerge`) for AggregateFunction columns.",
-	ReplacingMergeTree:
+	],
+	[
+		"ReplacingMergeTree",
 		"ReplacingMergeTree: superseded versions of a row may still be present; read with `FINAL` or take `argMax(col, Version)` per key.",
-}
+	],
+])
 
 // Names agents reach for from other OTel schemas, mapped to Maple's table.
-const TABLE_NAME_ALIASES: Record<string, ReadonlyArray<string>> = {
-	otel_traces: ["traces"],
-	otel_spans: ["traces"],
-	spans: ["traces"],
-	span: ["traces"],
-	trace: ["traces"],
-	otel_logs: ["logs"],
-	log: ["logs"],
-	metrics: ["metrics_sum", "metrics_gauge", "metrics_histogram"],
-	otel_metrics: ["metrics_sum", "metrics_gauge", "metrics_histogram"],
-	errors: ["error_events"],
-	exceptions: ["error_events"],
-	sessions: ["session_replays"],
-	events: ["product_events"],
-}
+const TABLE_NAME_ALIASES: ReadonlyMap<string, ReadonlyArray<string>> = new Map([
+	["otel_traces", ["traces"]],
+	["otel_spans", ["traces"]],
+	["spans", ["traces"]],
+	["span", ["traces"]],
+	["trace", ["traces"]],
+	["otel_logs", ["logs"]],
+	["log", ["logs"]],
+	["metrics", ["metrics_sum", "metrics_gauge", "metrics_histogram"]],
+	["otel_metrics", ["metrics_sum", "metrics_gauge", "metrics_histogram"]],
+	["errors", ["error_events"]],
+	["exceptions", ["error_events"]],
+	["sessions", ["session_replays"]],
+	["events", ["product_events"]],
+])
 
 /** Real tables an unknown table name most likely meant, best first; empty when nothing fits. */
 export function suggestWarehouseTables(name: string): ReadonlyArray<string> {
@@ -146,7 +152,7 @@ export function suggestWarehouseTables(name: string): ReadonlyArray<string> {
 	const bare = name.replace(/[`"]/g, "").split(".").at(-1)?.toLowerCase() ?? ""
 	for (const candidate of [bare, bare.replace(/^otel_/, "")]) {
 		if (known.has(candidate)) return [candidate]
-		const aliased = TABLE_NAME_ALIASES[candidate]?.filter((t) => known.has(t))
+		const aliased = TABLE_NAME_ALIASES.get(candidate)?.filter((t) => known.has(t))
 		if (aliased !== undefined && aliased.length > 0) return aliased
 	}
 	return []
@@ -221,7 +227,7 @@ export function describeWarehouseTable(name: string): TableInfo | null {
 		| { type?: string; sortingKey?: ReadonlyArray<string> | string; partitionKey?: string }
 		| undefined
 	const timeColumn = timeColumnOf(columns.map((c) => c.name))
-	const engineNote = engine?.type === undefined ? undefined : ENGINE_NOTES[engine.type]
+	const engineNote = engine?.type === undefined ? undefined : ENGINE_NOTES.get(engine.type)
 	const notes = [
 		...(timeColumn === undefined
 			? []

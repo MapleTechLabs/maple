@@ -239,8 +239,6 @@ export const QueryDataOutput = Schema.Struct({
 // run_sql
 
 export const RunSqlOutput = Schema.Struct({
-	/** The fully macro-expanded SQL that was executed (org filter and time bounds inlined). */
-	expandedSql: Schema.String,
 	rowCount: Schema.Number,
 	columns: Schema.Array(Schema.String),
 	/** Returned rows, capped for the response. */
@@ -248,6 +246,12 @@ export const RunSqlOutput = Schema.Struct({
 	/** True when `rows` was cut below the full result set. */
 	truncated: Schema.Boolean,
 	timeRange: OutputTimeRange,
+	/** Character cap the rendered table clips each cell to. */
+	maxCellChars: Schema.optionalKey(Schema.Number),
+	/** False when the SQL used no time macro and so picked its own range. */
+	windowApplied: Schema.optionalKey(Schema.Boolean),
+	/** The fully macro-expanded SQL that was executed, only when asked for (`show_sql`). */
+	expandedSql: Schema.optionalKey(Schema.String),
 })
 
 // describe_warehouse_tables
