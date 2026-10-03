@@ -70,7 +70,37 @@ interface StubOptions {
 	/** Response for any Railway call: "ok", a GraphQL auth error, or HTTP 429. */
 	readonly railway?: "ok" | "unauthorized" | "rate_limited"
 	readonly ingestStatus?: number
+	/** Pages of the `projects` connection, served by cursor. Defaults to one page with `shop`. */
+	readonly projectPages?: ReadonlyArray<ReadonlyArray<ProjectNode>>
 }
+
+interface ProjectNode {
+	readonly id: string
+	readonly name: string
+	readonly environments: ReadonlyArray<{
+		readonly id: string
+		readonly name: string
+		readonly isEphemeral: boolean
+	}>
+}
+
+const SHOP: ProjectNode = {
+	id: "prj_1",
+	name: "shop",
+	environments: [
+		{ id: "env_prod", name: "production", isEphemeral: false },
+		{ id: "env_pr", name: "pr-12", isEphemeral: true },
+	],
+}
+
+const projectEdge = (project: ProjectNode) => ({
+	node: {
+		id: project.id,
+		name: project.name,
+		environments: { edges: project.environments.map((node) => ({ node })) },
+		services: { edges: [{ node: { id: "svc_api", name: "api" } }] },
+	},
+})
 
 interface StubCalls {
 	readonly railway: Array<{ readonly query: string; readonly authorization: string | null }>
@@ -81,6 +111,7 @@ const decodeRequestBody = Schema.decodeUnknownSync(
 	Schema.fromJsonString(
 		Schema.Struct({
 			query: Schema.optionalKey(Schema.String),
+			variables: Schema.optionalKey(Schema.Record(Schema.String, Schema.Unknown)),
 		}),
 	),
 )
@@ -107,30 +138,17 @@ const stubFetch = (calls: StubCalls, options: StubOptions = {}) => {
 			return json({ data: { apiToken: { workspaces: [{ id: "ws_1", name: "Acme" }] } } })
 		}
 		if (query.includes("projects(")) {
+			const pages = options.projectPages ?? [[SHOP]]
+			const cursor = Object.values(body.variables ?? {}).find(
+				(value): value is string => typeof value === "string" && value.startsWith("cursor_"),
+			)
+			const page = cursor === undefined ? 0 : Number(cursor.slice("cursor_".length))
+			const hasNextPage = page + 1 < pages.length
 			return json({
 				data: {
 					projects: {
-						edges: [
-							{
-								node: {
-									id: "prj_1",
-									name: "shop",
-									environments: {
-										edges: [
-											{
-												node: {
-													id: "env_prod",
-													name: "production",
-													isEphemeral: false,
-												},
-											},
-											{ node: { id: "env_pr", name: "pr-12", isEphemeral: true } },
-										],
-									},
-									services: { edges: [{ node: { id: "svc_api", name: "api" } }] },
-								},
-							},
-						],
+						edges: (pages[page] ?? []).map(projectEdge),
+						pageInfo: { hasNextPage, endCursor: hasNextPage ? `cursor_${page + 1}` : null },
 					},
 				},
 			})
@@ -336,6 +354,63 @@ describe("RailwayMetricsService", () => {
 				RailwayMetricsService.use((railway) => railway.pollAllOrgs()),
 			)
 			assert.strictEqual(all.orgs, 0)
+		})
+	})
+
+	it.effect("discovery follows the projects cursor across pages", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls: StubCalls = { railway: [], ingest: [] }
+		const blog: ProjectNode = {
+			id: "prj_2",
+			name: "blog",
+			environments: [{ id: "env_blog", name: "production", isEphemeral: false }],
+		}
+		const stub = stubFetch(calls, { projectPages: [[SHOP], [blog]] })
+		return run(
+			testDb,
+			stub,
+			Effect.gen(function* () {
+				const railway = yield* RailwayMetricsService
+				const status = yield* railway.connect(orgId, userId, "rw_token_123")
+				assert.deepStrictEqual(
+					status.environments.map((environment) => environment.projectName),
+					["blog", "shop"],
+				)
+			}),
+		)
+	})
+
+	it.effect("a full environment page keeps the environments it could not see", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls: StubCalls = { railway: [], ingest: [] }
+		const fullPage: ProjectNode = {
+			...SHOP,
+			environments: Array.from({ length: 100 }, (_, index) => ({
+				id: `env_${index}`,
+				name: `env-${index}`,
+				isEphemeral: false,
+			})),
+		}
+		const shortPage: ProjectNode = {
+			...SHOP,
+			environments: [{ id: "env_0", name: "env-0", isEphemeral: false }],
+		}
+		const hasProd = (status: {
+			readonly environments: ReadonlyArray<{ readonly environmentId: string }>
+		}) => status.environments.some((environment) => environment.environmentId === "env_prod")
+		return Effect.gen(function* () {
+			const connect = RailwayMetricsService.use((railway) =>
+				railway.connect(orgId, userId, "rw_token_123"),
+			)
+			yield* run(testDb, stubFetch(calls), connect)
+			// A full page may be truncated, so env_prod (missing from it) stays enabled.
+			assert.isTrue(
+				hasProd(yield* run(testDb, stubFetch(calls, { projectPages: [[fullPage]] }), connect)),
+			)
+			// A short page is complete, so env_prod is disabled.
+			assert.isFalse(
+				hasProd(yield* run(testDb, stubFetch(calls, { projectPages: [[shortPage]] }), connect)),
+			)
 		})
 	})
 })

@@ -9,12 +9,13 @@ import {
 	GqlTransport,
 	GraphQLFailure,
 	GraphQLLive,
+	GraphQLPaginationError,
 	GraphQLTransportError,
 	Railway,
 	type QueryError,
 	type RailwayGlobalError,
 } from "@distilled.cloud/railway"
-import { Duration, Effect, Layer, Schema } from "effect"
+import { Duration, Effect, Layer, Schema, Stream } from "effect"
 import { HttpClient } from "effect/http"
 
 const REQUEST_TIMEOUT = Duration.seconds(30)
@@ -34,12 +35,15 @@ const isAuthMessage = (message: string) =>
 
 const AUTH_TAGS: ReadonlySet<string> = new Set(["RailwayForbidden", "RailwayUnauthenticated"])
 
-type SdkError = QueryError<RailwayGlobalError>
+type SdkError = QueryError<RailwayGlobalError> | GraphQLPaginationError
 
 const toApiError = (error: SdkError): RailwayApiError => {
 	const issues = error instanceof GraphQLFailure ? error.errors : [error]
 	const status = error instanceof GraphQLTransportError ? error.status : undefined
-	const retryAfter = error instanceof GraphQLFailure ? undefined : error.retryAfter
+	const retryAfter =
+		error instanceof GraphQLFailure || error instanceof GraphQLPaginationError
+			? undefined
+			: error.retryAfter
 	const retry = retryAfter === undefined ? undefined : { retryAfterSeconds: retryAfter }
 	if (status === 429 || issues.some((issue) => issue._tag === "RailwayRateLimited")) {
 		return new RailwayApiError({
@@ -94,24 +98,32 @@ const tokenWorkspaces = Query.fn(() =>
 	),
 )
 
-const workspaceProjects = Query.fn((workspaceId: string) =>
-	Railway.projects({ workspaceId, first: 100 }).pipe(
-		Query.map((project) => ({
-			id: project.id,
-			name: project.name,
-			environments: project.environments({ first: 100 }).pipe(
-				Query.map((environment) => ({
-					id: environment.id,
-					name: environment.name,
-					isEphemeral: environment.isEphemeral,
-				})),
-			),
-			services: project
-				.services({ first: 100 })
-				.pipe(Query.map((service) => ({ id: service.id, name: service.name }))),
-		})),
-	),
-)
+/**
+ * Nested connections read one page; following each project's cursor would cost a request per
+ * project per discovery. A full page is reported as truncated so reconciliation keeps the rest.
+ */
+const NESTED_PAGE_SIZE = 100
+
+/** Every project in the workspace, following the connection cursor page by page. */
+const workspaceProjects = (workspaceId: string) =>
+	Query.items(
+		Railway.projects({ workspaceId, first: 50 }).pipe(
+			Query.map((project) => ({
+				id: project.id,
+				name: project.name,
+				environments: project.environments({ first: NESTED_PAGE_SIZE }).pipe(
+					Query.map((environment) => ({
+						id: environment.id,
+						name: environment.name,
+						isEphemeral: environment.isEphemeral,
+					})),
+				),
+				services: project
+					.services({ first: NESTED_PAGE_SIZE })
+					.pipe(Query.map((service) => ({ id: service.id, name: service.name }))),
+			})),
+		),
+	).pipe(Stream.runCollect)
 
 export interface RailwayDiscoveredEnvironment {
 	readonly projectId: string
@@ -125,6 +137,8 @@ export interface RailwayDiscoveredEnvironment {
 export interface RailwayDiscovery {
 	readonly workspaceNames: ReadonlyArray<string>
 	readonly environments: ReadonlyArray<RailwayDiscoveredEnvironment>
+	/** Projects whose environment list filled a page and may be incomplete. */
+	readonly truncatedProjectIds: ReadonlyArray<string>
 }
 
 /**
@@ -141,8 +155,10 @@ export const discover = (httpClient: HttpClient.HttpClient, token: string) =>
 			{ concurrency: 2 },
 		)
 		const environments: Array<RailwayDiscoveredEnvironment> = []
+		const truncatedProjectIds: Array<string> = []
 		const seen = new Set<string>()
 		for (const project of pages.flat()) {
+			if (project.environments.length >= NESTED_PAGE_SIZE) truncatedProjectIds.push(project.id)
 			const services = Object.fromEntries(
 				project.services.map((service) => [service.id, service.name] as const),
 			)
@@ -161,6 +177,7 @@ export const discover = (httpClient: HttpClient.HttpClient, token: string) =>
 		return {
 			workspaceNames: workspaces.map((workspace) => workspace.name).sort(),
 			environments,
+			truncatedProjectIds,
 		} satisfies RailwayDiscovery
 	}).pipe(Effect.withSpan("RailwayApi.discover"))
 

@@ -24,7 +24,7 @@ import {
 	type RailwayEnvironmentRow,
 } from "@maple/db"
 import { and, eq, gt, isNull, lt, or } from "drizzle-orm"
-import { Cause, Clock, Context, Effect, Layer, Redacted, Ref, Schema } from "effect"
+import { Cause, Clock, Context, Duration, Effect, Layer, Redacted, Ref, Schema } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -47,6 +47,13 @@ const INITIAL_BACKFILL_MS = 60 * 60_000
 const MAX_WINDOW_MS = 6 * 60 * 60_000
 const DISCOVERY_TTL_MS = 60 * 60_000
 const LEASE_MS = 4 * 60_000
+/**
+ * A tick must finish inside its lease or the next one overlaps it. Discovery is capped at 60s,
+ * each environment at 30s (Railway) + 30s (ingest), and no environment starts after this budget.
+ */
+const TICK_BUDGET_MS = 2.5 * 60_000
+const DISCOVERY_TIMEOUT = Duration.seconds(60)
+const INGEST_TIMEOUT = Duration.seconds(30)
 const MAX_ENVIRONMENT_CALLS_PER_TICK = 15
 const RATE_LIMIT_HOLD_MS = 15 * 60_000
 const BILLING_HOLD_MS = 60 * 60_000
@@ -213,8 +220,14 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 							}),
 					)
 				}
+				// A project whose environment page came back full may have more; leave its unseen rows on.
+				const truncated = new Set(discovery.truncatedProjectIds)
 				for (const row of existing) {
-					if (row.enabled && !discoveredIds.has(row.environmentId)) {
+					if (
+						row.enabled &&
+						!discoveredIds.has(row.environmentId) &&
+						!truncated.has(row.projectId)
+					) {
 						yield* updateEnvironment(row.id, { enabled: false, updatedAt: msToDate(now) })
 					}
 				}
@@ -413,6 +426,13 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 								message: `Railway metrics ingest failed: ${error.message}`,
 							}),
 					),
+					Effect.timeoutOrElse({
+						duration: INGEST_TIMEOUT,
+						orElse: () =>
+							Effect.fail(
+								new RailwayIngestError({ message: "Railway metrics ingest timed out" }),
+							),
+					}),
 				)
 				if (response.status >= 300) {
 					const body = yield* response.text.pipe(Effect.orElseSucceed(() => ""))
@@ -494,7 +514,20 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 						now - dateToMs(claimed.discoveredAt) >= DISCOVERY_TTL_MS
 					) {
 						callsMade += 2
-						const discovery = yield* Effect.result(discover(httpClient, token))
+						const discovery = yield* Effect.result(
+							discover(httpClient, token).pipe(
+								Effect.timeoutOrElse({
+									duration: DISCOVERY_TIMEOUT,
+									orElse: () =>
+										Effect.fail(
+											new RailwayApiError({
+												message: "Railway discovery timed out",
+												kind: "upstream",
+											}),
+										),
+								}),
+							),
+						)
 						if (discovery._tag === "Success") {
 							yield* reconcileEnvironments(claimed, discovery.success, now)
 						} else if (discovery.failure.kind === "unauthorized") {
@@ -525,6 +558,8 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 
 					for (const { row, window } of environments) {
 						if (window === null) continue
+						// The rest catch up next tick; their watermarks are untouched.
+						if ((yield* Clock.currentTimeMillis) - now >= TICK_BUDGET_MS) break
 						callsMade += 1
 						const result = yield* Effect.result(
 							pollEnvironment(row, token, ingestKey.value, window),
