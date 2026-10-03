@@ -8,9 +8,12 @@ const CountMap = Schema.Record(Schema.String, Schema.Number)
 /** One trace (or, for a span-level search, one matching span) in a list. */
 export const TraceSummaryRow = Schema.Struct({
 	traceId: Schema.String,
+	/** The root span (trace rows) or the matching span (span-level rows), when known. */
+	spanId: Schema.optionalKey(Schema.String),
 	rootSpanName: Schema.String,
 	durationMs: Schema.Number,
-	spanCount: Schema.Number,
+	/** Spans in the whole trace; absent where the source row does not count them. */
+	spanCount: Schema.optionalKey(Schema.Number),
 	services: Schema.Array(Schema.String),
 	hasError: Schema.Boolean,
 	startTime: Schema.optionalKey(Schema.String),
@@ -63,6 +66,7 @@ export interface SpanNodeOutput {
 	readonly spanId: string
 	readonly parentSpanId: string
 	readonly spanName: string
+	readonly rawSpanName?: string
 	readonly serviceName: string
 	readonly spanKind?: string
 	readonly durationMs: number
@@ -78,6 +82,8 @@ export const SpanNodeOutput = Schema.Struct({
 	spanId: Schema.String,
 	parentSpanId: Schema.String,
 	spanName: Schema.String,
+	/** The stored SpanName when `spanName` is a rewritten display name; filters match this one. */
+	rawSpanName: Schema.optionalKey(Schema.String),
 	serviceName: Schema.String,
 	spanKind: Schema.optionalKey(Schema.String),
 	durationMs: Schema.Number,
@@ -95,6 +101,15 @@ export const TraceOmittedSpans = Schema.Struct({
 	parentSpanId: Schema.String,
 	count: Schema.Number,
 	totalDurationMs: Schema.Number,
+})
+
+export const TraceSpanNameRollup = Schema.Struct({
+	spanName: Schema.String,
+	serviceName: Schema.String,
+	count: Schema.Number,
+	totalDurationMs: Schema.Number,
+	maxDurationMs: Schema.Number,
+	errorCount: Schema.Number,
 })
 
 export const InspectTraceOutput = Schema.Struct({
@@ -124,6 +139,12 @@ export const InspectTraceOutput = Schema.Struct({
 	errorsOnly: Schema.Boolean,
 	/** The `timestamp` hint the scan was narrowed around, if one was given. */
 	timestamp: Schema.optionalKey(Schema.String),
+	/** The window the final read covered, and whether it was widened past the first one. */
+	scanned: Schema.optionalKey(
+		Schema.Struct({ startTime: Schema.String, endTime: Schema.String, widened: Schema.Boolean }),
+	),
+	/** Per span name totals over the whole trace, for traces larger than the overview. */
+	rollup: Schema.optionalKey(Schema.Array(TraceSpanNameRollup)),
 })
 
 /** The decoded view of an AI agent span, or why there is none. */
@@ -147,6 +168,8 @@ export const InspectSpanOutput = Schema.Struct({
 	ai: Schema.optionalKey(AiSpanDecode),
 	/** The `timestamp` hint the scan was narrowed around, if one was given. */
 	timestamp: Schema.optionalKey(Schema.String),
+	/** True when the window around `timestamp` missed and the lookup ran unbounded. */
+	widened: Schema.optionalKey(Schema.Boolean),
 })
 
 export const LogEntryRow = Schema.Struct({
@@ -156,6 +179,8 @@ export const LogEntryRow = Schema.Struct({
 	body: Schema.String,
 	traceId: Schema.optionalKey(Schema.String),
 	spanId: Schema.optionalKey(Schema.String),
+	/** Cause-bearing log attributes (`log.error`, `error.*`, `exception.*`), when present. */
+	keyAttributes: Schema.optionalKey(StringMap),
 })
 
 export const LogSearchFilters = Schema.Struct({

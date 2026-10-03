@@ -2,7 +2,7 @@ import type { McpToolRegistrar } from "./types"
 import { toMcpQueryError } from "../lib/map-warehouse-error"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { MCP_SEARCH_MAX_HOURS } from "../lib/time"
-import { truncate, formatNumber } from "../lib/format"
+import { truncate, formatNumber, toSecondTimestamp } from "../lib/format"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 import { Effect, Schema } from "effect"
@@ -49,7 +49,7 @@ export function registerSearchLogsTool(server: McpToolRegistrar) {
 		name: "search_logs",
 		title: "Search Logs",
 		description:
-			"Individual log entries, newest first, filtered by service, severity, body text, trace or span. When the match is too large to read, use mine_log_patterns instead. inspect_trace shows the full trace behind an entry.",
+			"Individual log entries, newest first, filtered by service, severity, body text, trace or span. Cause-bearing attributes (log.error, error.*, exception.*) are shown under each entry. When the match is too large to read, use mine_log_patterns instead. inspect_trace shows the full trace behind an entry.",
 		parameters: Schema.Struct({
 			...WINDOW.fields,
 			service: P.service(),
@@ -121,6 +121,9 @@ export function registerSearchLogsTool(server: McpToolRegistrar) {
 					body: l.body,
 					...(l.traceId ? { traceId: l.traceId } : undefined),
 					...(l.spanId ? { spanId: l.spanId } : undefined),
+					...(Object.keys(l.keyAttributes).length > 0
+						? { keyAttributes: l.keyAttributes }
+						: undefined),
 				})),
 				filters: logFilters(params),
 				...(emptyHints.length > 0 ? { emptyHints } : undefined),
@@ -150,18 +153,20 @@ export function registerSearchLogsTool(server: McpToolRegistrar) {
 				const time = log.timestamp.split(" ")[1] ?? log.timestamp
 				const sevUpper = log.severityText.toUpperCase()
 				const marker = sevUpper === "ERROR" || sevUpper === "FATAL" ? "●" : " "
-				// Span ref is only useful once scoped to a trace; otherwise it's noise.
-				const span =
-					filters?.traceId !== undefined && log.spanId ? ` span:${log.spanId.slice(0, 8)}` : ""
-				const ref = log.traceId ? ` [trace:${log.traceId.slice(0, 8)}${span}]` : ""
-				return `${marker} ${time} [${log.severityText.padEnd(5)}] ${log.serviceName}: ${truncate(log.body, 120)}${ref}`
+				// Full ids: a prefix cannot be passed to inspect_trace / inspect_span.
+				const span = log.spanId ? ` span=${log.spanId}` : ""
+				const ref = log.traceId ? ` [trace=${log.traceId}${span}]` : ""
+				const attrs = Object.entries(log.keyAttributes ?? {})
+					.map(([k, v]) => `\n    ${k}: ${truncate(v, 300)}`)
+					.join("")
+				return `${marker} ${time} [${log.severityText.padEnd(5)}] ${log.serviceName}: ${truncate(log.body, 120)}${ref}${attrs}`
 			})
 			const pagination = output.pagination
 			const nextOffset = pagination?.nextOffset
-			const traceIds = [...new Set(output.logs.flatMap((l) => (l.traceId ? [l.traceId] : [])))].slice(
-				0,
-				3,
-			)
+			// One log per trace, so the hint carries a timestamp from inside that trace.
+			const traceLogs = [
+				...new Map(output.logs.flatMap((l) => (l.traceId ? [[l.traceId, l] as const] : []))).values(),
+			].slice(0, 3)
 			const spanPivot = output.logs.find((l) => l.spanId && l.traceId)
 			return {
 				title: `Logs (${formatNumber(output.totalCount)} total)`,
@@ -192,14 +197,22 @@ export function registerSearchLogsTool(server: McpToolRegistrar) {
 							},
 						}),
 				next: [
-					...traceIds.map((traceId) =>
-						doc.next("inspect_trace", { trace_id: traceId }, "see full trace"),
+					...traceLogs.map((l) =>
+						doc.next(
+							"inspect_trace",
+							{ trace_id: l.traceId, timestamp: toSecondTimestamp(l.timestamp) },
+							"see full trace",
+						),
 					),
 					...(spanPivot?.traceId && spanPivot.spanId
 						? [
 								doc.next(
 									"inspect_span",
-									{ trace_id: spanPivot.traceId, span_id: spanPivot.spanId },
+									{
+										trace_id: spanPivot.traceId,
+										span_id: spanPivot.spanId,
+										timestamp: toSecondTimestamp(spanPivot.timestamp),
+									},
 									"full attributes for a span",
 								),
 							]

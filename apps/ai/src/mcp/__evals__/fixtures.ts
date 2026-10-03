@@ -20,6 +20,7 @@ export const makeLargeTraceSpans = (count = LARGE_TRACE_SPAN_COUNT): SpanHierarc
 			spanId: rootId,
 			parentSpanId: "",
 			spanName: "GET /api/checkout",
+			rawSpanName: "http.server GET",
 			serviceName: FIXTURES.service,
 			spanKind: "Server",
 			durationMs: 850,
@@ -38,6 +39,7 @@ export const makeLargeTraceSpans = (count = LARGE_TRACE_SPAN_COUNT): SpanHierarc
 			spanId: hex(0x1000 + i),
 			parentSpanId: rootId,
 			spanName: isError ? "db.query users" : `op-${i}`,
+			rawSpanName: isError ? "db.query users" : `op-${i}`,
 			serviceName: i % 3 === 0 ? "db" : FIXTURES.service,
 			spanKind: "Internal",
 			durationMs: isError ? 120 : (i % 10) + 1,
@@ -66,6 +68,7 @@ export const makeSmallTraceSpans = (): SpanHierarchyOutput[] => {
 		spanId: rootId,
 		parentSpanId: "",
 		spanName: "GET /api/orders",
+		rawSpanName: "http.server GET",
 		serviceName: FIXTURES.service,
 		spanKind: "Server",
 		durationMs: 42,
@@ -81,6 +84,7 @@ export const makeSmallTraceSpans = (): SpanHierarchyOutput[] => {
 		spanId: `aaaa00000000001${i}`,
 		parentSpanId: rootId,
 		spanName: `step-${i}`,
+		rawSpanName: `step-${i}`,
 		serviceName: FIXTURES.service,
 		spanKind: "Internal",
 		durationMs: i + 1,
@@ -257,7 +261,7 @@ export const makeTraceLogs = (): ListLogsOutput[] => [
 		// The list-logs cursor identity — a real selected column, so a row without
 		// it no longer decodes.
 		recordIdentity: "0123456789ABCDEF0123456789ABCDEF",
-		logAttributes: "{}",
+		logAttributes: JSON.stringify({ "log.error": "ECONNRESET at pool.acquire", "http.method": "POST" }),
 		resourceAttributes: "{}",
 	},
 ]

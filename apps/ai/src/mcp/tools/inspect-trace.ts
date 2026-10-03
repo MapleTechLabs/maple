@@ -14,7 +14,7 @@ import { inspectTrace } from "@maple/query-engine/observability"
  * `selectOverviewSpans` keeps errors, roots and the longest/structural spans up
  * to this budget — deeper inspection goes through `inspect_span` / `search_traces`.
  */
-const MAX_OVERVIEW_SPANS = 100
+const MAX_OVERVIEW_SPANS = 60
 /** Hard ceiling for `max_spans`; past this a single response stops being readable. */
 const MAX_OVERVIEW_SPANS_CEILING = 300
 
@@ -23,11 +23,11 @@ export function registerInspectTraceTool(server: McpToolRegistrar) {
 		name: "inspect_trace",
 		title: "Inspect Trace",
 		description:
-			"Span tree and logs for one trace: request flow, bottlenecks, error context. Large traces are bounded to an overview (errors and longest spans first); `inspect_span` gives one span's full attributes. Without `timestamp` the last 24h is scanned first, then up to 30 days back if the trace is not found.",
+			"Span tree and logs for one trace: request flow, bottlenecks, error context. Large traces are bounded to an overview (errors and longest spans first) plus a per span name rollup (count, total/max duration, errors) of every span; raise `max_spans` for more detail. `inspect_span` gives one span's full attributes. The first read covers ±1h around `timestamp` (or the last 24h without one); if the trace is not there, it is located up to 30 days back.",
 		parameters: Schema.Struct({
 			trace_id: P.text("The trace ID to inspect"),
 			timestamp: P.optionalTimestamp(
-				"Any timestamp from the trace (e.g. from search_traces). Narrows the scan to ±1h around it; required for traces older than 30 days, and faster for any trace older than 24h",
+				"Any timestamp from the trace (e.g. a search_traces Start). Narrows the scan to ±1h around it; required for traces older than 30 days, and faster for any trace older than 24h",
 			),
 			errors_only: P.optionalFlag(
 				"Render only error spans, their ancestors and the roots: the fastest way to read a large trace's failure without its healthy spans.",
@@ -35,7 +35,7 @@ export function registerInspectTraceTool(server: McpToolRegistrar) {
 			max_spans: P.limit({
 				default: MAX_OVERVIEW_SPANS,
 				max: MAX_OVERVIEW_SPANS_CEILING,
-				description: "Max spans to render; errors and roots are always kept",
+				description: "Max spans to render in the tree; errors and roots are always kept",
 			}),
 		}),
 		output: InspectTraceOutput,
@@ -66,6 +66,7 @@ export function registerInspectTraceTool(server: McpToolRegistrar) {
 				budget: max_spans,
 				options,
 				...(timestamp === undefined ? undefined : { timestamp }),
+				...(result.scanned === undefined ? undefined : { scanned: result.scanned }),
 			})
 
 			yield* Effect.annotateCurrentSpan({

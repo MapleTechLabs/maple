@@ -9,7 +9,7 @@ interface TraceListProps {
 		traceId: string
 		rootSpanName: string
 		durationMs: number
-		spanCount: number
+		spanCount?: number
 		services: ReadonlyArray<string>
 		hasError: boolean
 		startTime?: string
@@ -80,7 +80,7 @@ export function TraceList({ props }: RendererComponentProps<TraceListProps>) {
 									{formatDuration(trace.durationMs)}
 								</td>
 								<td className="py-1 pr-2 text-right text-muted-foreground">
-									{trace.spanCount}
+									{trace.spanCount ?? ""}
 								</td>
 								<td className="py-1">
 									<div className="flex flex-wrap gap-1">

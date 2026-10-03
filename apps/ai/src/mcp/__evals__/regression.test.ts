@@ -325,6 +325,20 @@ describe("inspect_span drill-down", () => {
 	})
 })
 
+describe("search_logs entries", () => {
+	it("prints full ids and the cause-bearing attributes, not the rest", async () => {
+		const result = await runToolDirect(rt, "search_logs", {
+			start_time: "2026-06-02 09:00:00",
+			end_time: "2026-06-02 11:00:00",
+		})
+		const text = markdown(result)
+		expect(text).toContain(`trace=${FIXTURES.traceId} span=${FIXTURES.spanId}`)
+		expect(text).toContain("log.error: ECONNRESET at pool.acquire")
+		expect(text).not.toContain("http.method")
+		expect(text).toContain(`inspect_trace trace_id="${FIXTURES.traceId}" timestamp="2026-06-02 10:00:00"`)
+	})
+})
+
 describe("search_logs paging", () => {
 	// A full page names the call for the next one, with the window and filters repeated so the
 	// page after is the same search.

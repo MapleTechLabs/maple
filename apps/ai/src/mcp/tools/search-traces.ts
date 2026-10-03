@@ -2,7 +2,7 @@ import { McpInvalidInputError, type McpToolRegistrar } from "./types"
 import { warehouseToMcpHandlers } from "../lib/map-warehouse-error"
 import { CurrentMcpTenant, withTenantExecutor } from "../lib/query-warehouse"
 import { MCP_SEARCH_MAX_HOURS } from "../lib/time"
-import { formatDurationFromMs, truncate } from "../lib/format"
+import { formatDurationFromMs, toSecondTimestamp, truncate } from "../lib/format"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 import { Effect, Schema } from "effect"
@@ -11,6 +11,10 @@ import { searchTraces } from "@maple/query-engine/observability"
 import { resolveAttributeScope } from "../lib/attribute-scope"
 import { emptyResultHints } from "../lib/empty-result-hints"
 
+const hintOf = (startTime: string | undefined) =>
+	startTime === undefined ? undefined : toSecondTimestamp(startTime)
+const startCell = (startTime: string | undefined) => hintOf(startTime) ?? ""
+
 const WINDOW = P.timeWindow({ defaultHours: 6, maxHours: MCP_SEARCH_MAX_HOURS })
 
 export function registerSearchTracesTool(server: McpToolRegistrar) {
@@ -18,7 +22,7 @@ export function registerSearchTracesTool(server: McpToolRegistrar) {
 		name: "search_traces",
 		title: "Search Traces",
 		description:
-			"Find traces, newest first, by service, duration, error status, HTTP method, span name, or one span attribute. Without `span_name` the filters apply to each trace's entry span and one row per trace comes back; with `span_name` every span is searched and each row is a matching span. For the slowest traces ranked by duration with percentiles, use find_slow_traces. explore_attributes lists attribute keys and values.",
+			"Find traces, newest first, by service, duration, error status, HTTP method, span name, or one span attribute. Without `span_name` the filters apply to each trace's entry span and one row per trace comes back; with `span_name` every span is searched and each row is a matching span. Each row has the full trace id, span id and start time; pass the start as inspect_trace `timestamp`. For the slowest traces ranked by duration with percentiles, use find_slow_traces. explore_attributes lists attribute keys and values.",
 		parameters: Schema.Struct({
 			...WINDOW.fields,
 			service: P.service(
@@ -125,11 +129,12 @@ export function registerSearchTracesTool(server: McpToolRegistrar) {
 					hasMore,
 					...(hasMore ? { nextOffset: params.offset + spans.length } : undefined),
 				},
+				// No spanCount: these rows read one span per trace and cannot count the rest.
 				traces: spans.map((s) => ({
 					traceId: s.traceId,
+					...(s.spanId ? { spanId: s.spanId } : undefined),
 					rootSpanName: s.spanName,
 					durationMs: s.durationMs,
-					spanCount: 1,
 					services: [s.serviceName],
 					hasError: s.statusCode === "Error",
 					...(s.timestamp ? { startTime: s.timestamp } : undefined),
@@ -198,9 +203,19 @@ export function registerSearchTracesTool(server: McpToolRegistrar) {
 				blocks: [
 					output.spanLevel
 						? doc.table(
-								["Trace ID", "Span Name", "Service", "Duration", "Status"],
+								[
+									"Start",
+									"Trace ID",
+									"Span ID",
+									"Span Name",
+									"Service",
+									"Duration",
+									"Status",
+								],
 								output.traces.map((t) => [
+									startCell(t.startTime),
 									t.traceId,
+									t.spanId ?? "",
 									truncate(t.rootSpanName, 40),
 									t.services.join(", "),
 									formatDurationFromMs(t.durationMs),
@@ -208,8 +223,9 @@ export function registerSearchTracesTool(server: McpToolRegistrar) {
 								]),
 							)
 						: doc.table(
-								["Trace ID", "Root Span", "Duration", "Service", "Error"],
+								["Start", "Trace ID", "Root Span", "Duration", "Service", "Error"],
 								output.traces.map((t) => [
+									startCell(t.startTime),
 									t.traceId,
 									truncate(t.rootSpanName, 30),
 									formatDurationFromMs(t.durationMs),
@@ -247,9 +263,34 @@ export function registerSearchTracesTool(server: McpToolRegistrar) {
 								),
 							},
 						}),
-				next: output.traces
-					.slice(0, 3)
-					.map((t) => doc.next("inspect_trace", { trace_id: t.traceId }, "full span tree")),
+				next: [
+					...output.traces
+						.slice(0, 3)
+						.map((t) =>
+							doc.next(
+								"inspect_trace",
+								{ trace_id: t.traceId, timestamp: hintOf(t.startTime) },
+								"full span tree",
+							),
+						),
+					...output.traces
+						.slice(0, output.spanLevel ? 1 : 0)
+						.flatMap((t) =>
+							t.spanId === undefined
+								? []
+								: [
+										doc.next(
+											"inspect_span",
+											{
+												trace_id: t.traceId,
+												span_id: t.spanId,
+												timestamp: hintOf(t.startTime),
+											},
+											"every attribute of the matching span",
+										),
+									],
+						),
+				],
 			}
 		},
 	})
