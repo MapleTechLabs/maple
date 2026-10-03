@@ -64,6 +64,8 @@ export interface SpanHierarchyOutput {
 	readonly spanId: string
 	readonly parentSpanId: string
 	readonly spanName: string
+	/** The stored SpanName; `spanName` is the HTTP display rewrite. */
+	readonly rawSpanName: string
 	readonly serviceName: string
 	readonly spanKind: string
 	readonly durationMs: number

@@ -408,6 +408,8 @@ export function spanHierarchyQuery(opts: SpanHierarchyOpts) {
 					spanId: $.SpanId,
 					parentSpanId: $.ParentSpanId,
 					spanName: httpRewriteExpr,
+					// The stored name, which span-name filters match; `spanName` may be rewritten.
+					rawSpanName: $.SpanName,
 					serviceName: $.ServiceName,
 					spanKind: $.SpanKind,
 					durationMs: $.Duration.div(1000000),

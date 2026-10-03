@@ -10507,12 +10507,13 @@ SELECT
         LIMIT 50
         FORMAT JSON
 
--- pipe:span_hierarchy:unwindowed:baseline  [83e6223f]
+-- pipe:span_hierarchy:unwindowed:baseline  [9349142e]
 SELECT
           trace_detail_spans.TraceId AS traceId,
           trace_detail_spans.SpanId AS spanId,
           trace_detail_spans.ParentSpanId AS parentSpanId,
           if(((trace_detail_spans.SpanName LIKE 'http.server %' OR trace_detail_spans.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (trace_detail_spans.SpanAttributes['http.route'] != '' OR trace_detail_spans.SpanAttributes['url.path'] != '')), concat(if(trace_detail_spans.SpanName LIKE 'http.server %', replaceOne(trace_detail_spans.SpanName, 'http.server ', ''), trace_detail_spans.SpanName), ' ', if(trace_detail_spans.SpanAttributes['http.route'] != '', trace_detail_spans.SpanAttributes['http.route'], trace_detail_spans.SpanAttributes['url.path'])), trace_detail_spans.SpanName) AS spanName,
+          trace_detail_spans.SpanName AS rawSpanName,
           trace_detail_spans.ServiceName AS serviceName,
           trace_detail_spans.SpanKind AS spanKind,
           trace_detail_spans.Duration / 1000000 AS durationMs,
@@ -10529,12 +10530,13 @@ SELECT
         LIMIT 5000
         FORMAT JSON
 
--- pipe:span_hierarchy:windowed:baseline  [46a6ac94]
+-- pipe:span_hierarchy:windowed:baseline  [6e432111]
 SELECT
           trace_detail_spans.TraceId AS traceId,
           trace_detail_spans.SpanId AS spanId,
           trace_detail_spans.ParentSpanId AS parentSpanId,
           if(((trace_detail_spans.SpanName LIKE 'http.server %' OR trace_detail_spans.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (trace_detail_spans.SpanAttributes['http.route'] != '' OR trace_detail_spans.SpanAttributes['url.path'] != '')), concat(if(trace_detail_spans.SpanName LIKE 'http.server %', replaceOne(trace_detail_spans.SpanName, 'http.server ', ''), trace_detail_spans.SpanName), ' ', if(trace_detail_spans.SpanAttributes['http.route'] != '', trace_detail_spans.SpanAttributes['http.route'], trace_detail_spans.SpanAttributes['url.path'])), trace_detail_spans.SpanName) AS spanName,
+          trace_detail_spans.SpanName AS rawSpanName,
           trace_detail_spans.ServiceName AS serviceName,
           trace_detail_spans.SpanKind AS spanKind,
           trace_detail_spans.Duration / 1000000 AS durationMs,

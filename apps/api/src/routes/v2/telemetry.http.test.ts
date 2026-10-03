@@ -78,6 +78,7 @@ const hierarchyRow = {
 	spanId: SPAN_ID,
 	parentSpanId: "",
 	spanName: "GET /checkout",
+	rawSpanName: "http.server GET",
 	serviceName: "api",
 	spanKind: "Server",
 	durationMs: 42.5,

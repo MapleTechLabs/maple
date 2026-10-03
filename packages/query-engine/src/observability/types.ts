@@ -72,6 +72,8 @@ export interface SpanNode {
 	readonly spanId: SpanId
 	readonly parentSpanId: string
 	readonly spanName: string
+	/** The stored SpanName when `spanName` is a display rewrite of it. */
+	readonly rawSpanName?: string
 	readonly serviceName: string
 	/** OTel span kind (e.g. "Server", "Client", "Internal"). Used to prioritise
 	 * service-entry spans when bounding a large trace to an overview. */
@@ -92,6 +94,8 @@ export interface InspectTraceOutput {
 	readonly spanCount: number
 	readonly rootDurationMs: number
 	readonly spans: ReadonlyArray<SpanNode>
+	/** The window the final read covered; `widened` when the first read found nothing. */
+	readonly scanned?: { readonly startTime: string; readonly endTime: string; readonly widened: boolean }
 	readonly logs: ReadonlyArray<{
 		readonly timestamp: string
 		readonly severityText: string
