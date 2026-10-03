@@ -148,23 +148,68 @@ describe("metricsTimeseriesRateQuery", () => {
 		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("WITH with_deltas AS")
 		expect(sql).toContain("lagInFrame")
-		// Partition must isolate each pod/series (ResourceAttributes) and
-		// accumulation epoch (StartTimeUnix) — otherwise cumulative deltas are
-		// computed across interleaved replicas and inflate by orders of magnitude.
-		// The attribute Maps are folded into cityHash64 series fingerprints so the
-		// window sort key is fixed-width instead of a serialized Map per row.
+		// Partition must isolate each pod/series (ResourceAttributes), otherwise
+		// deltas are computed across interleaved replicas. StartTimeUnix stays out
+		// of the key so a restart is visible to the reset branch.
 		expect(sql).toContain(
 			"PARTITION BY metrics_sum.ServiceName, metrics_sum.MetricName, " +
 				"cityHash64(mapKeys(metrics_sum.Attributes), mapValues(metrics_sum.Attributes)), " +
-				"cityHash64(mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes)), " +
-				"metrics_sum.StartTimeUnix",
+				"cityHash64(mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes)) " +
+				"ORDER BY metrics_sum.TimeUnix ASC",
 		)
 		expect(sql).toContain("ROWS BETWEEN 1 PRECEDING AND CURRENT ROW")
 		expect(sql).toContain("rateValue")
 		expect(sql).toContain("increaseValue")
-		expect(sql).toContain("sumIf(")
 		expect(sql).toContain("FROM with_deltas")
 		expect(sql).toContain("FORMAT JSON")
+	})
+
+	// Verified against clickhouse-local on a fixture with a value-drop reset, a
+	// StartTimeUnix restart, a StartTimeUnix == TimeUnix exporter and a delta
+	// series: increase 35 + 1030 + 20 + 7 = 1092 over one 300s bucket.
+	it("computes reset-aware per-series deltas", () => {
+		const { sql } = compileUnsafe(metricsTimeseriesRateQuery({}), baseParams)
+		const lag = (col: string) => `lagInFrame(metrics_sum.${col}, 1, metrics_sum.${col}) OVER (`
+		// Delta temporality: the sample is the increment.
+		expect(sql).toContain("multiIf(AggregationTemporality = 1, metrics_sum.Value, ")
+		// Value dropped: a reset, count the new value.
+		expect(sql).toContain(`metrics_sum.Value < ${lag("Value")}`)
+		// StartTimeUnix moved past the previous sample (and is not stamped per point).
+		expect(sql).toContain(`(metrics_sum.StartTimeUnix > ${lag("TimeUnix")}`)
+		expect(sql).toContain("AND metrics_sum.StartTimeUnix < metrics_sum.TimeUnix)")
+		// Otherwise the plain difference; a series' first sample diffs against itself (0).
+		expect(sql).toContain(`metrics_sum.Value - ${lag("Value")}`)
+	})
+
+	it("does not depend on IsMonotonic", () => {
+		const { sql } = compileUnsafe(metricsTimeseriesRateQuery({}), baseParams)
+		expect(sql).not.toContain("IsMonotonic")
+	})
+
+	it("derives rate from the bucket increase, not a sum of per-sample rates", () => {
+		const { sql } = compileUnsafe(metricsTimeseriesRateQuery({}), baseParams)
+		expect(sql).toContain("ifNotFinite(sum(with_deltas.delta) / 3600, 0)")
+		expect(sql).toContain("sum(with_deltas.delta) AS increaseValue")
+		expect(sql).not.toContain("time_delta")
+	})
+
+	it("reads metrics_gauge for counters stored as gauges", () => {
+		const { sql } = compileUnsafe(metricsTimeseriesRateQuery({ metricType: "gauge" }), baseParams)
+		expect(sql).toContain("FROM metrics_gauge")
+		expect(sql).not.toContain("AggregationTemporality")
+		expect(sql).toContain("multiIf(metrics_gauge.Value < lagInFrame(metrics_gauge.Value")
+	})
+
+	it("uses a fixed previous-sample lookback when given", () => {
+		const q = metricsTimeseriesRateQuery({ lookbackSeconds: 600 })
+		const { sql } = compileUnsafe(q, baseParams)
+		expect(sql).toContain("- INTERVAL 600 SECOND")
+	})
+
+	it("treats an attribute key with no value as 'has the label'", () => {
+		const q = metricsTimeseriesRateQuery({ attributeKey: "worker" })
+		const { sql } = compileUnsafe(q, baseParams)
+		expect(sql).toContain("metrics_sum.Attributes['worker'] != ''")
 	})
 
 	it("applies serviceName filter in CTE", () => {
@@ -377,6 +422,26 @@ describe("metricsBreakdownQuery", () => {
 		expect(sql).toContain("FROM metrics_histogram")
 		expect(sql).toContain("sum(metrics_histogram.Sum)")
 		expect(sql).toContain("sum(metrics_histogram.Count)")
+	})
+
+	it("selects min and max for breakdowns", () => {
+		const { sql } = compileUnsafe(metricsBreakdownQuery({ metricType: "gauge" }), baseParams)
+		expect(sql).toContain("min(metrics_gauge.Value) AS minValue")
+		expect(sql).toContain("max(metrics_gauge.Value) AS maxValue")
+	})
+
+	it("applies service, environment and attribute filters", () => {
+		const q = metricsBreakdownQuery({
+			metricType: "sum",
+			serviceName: "api",
+			environments: ["production"],
+			attributeKey: "state",
+			attributeValue: "idle",
+		})
+		const { sql } = compileUnsafe(q, baseParams)
+		expect(sql).toContain("metrics_sum.ServiceName = 'api'")
+		expect(sql).toContain("'production'")
+		expect(sql).toContain("metrics_sum.Attributes['state'] = 'idle'")
 	})
 
 	it("applies custom limit", () => {

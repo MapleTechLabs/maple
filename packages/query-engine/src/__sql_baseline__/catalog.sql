@@ -12257,10 +12257,12 @@ SELECT
         ORDER BY bucket ASC, groupName ASC
         FORMAT JSON
 
--- spec:metrics-breakdown:baseline  [0e861681]
+-- spec:metrics-breakdown:baseline  [f2cce5fa]
 SELECT
           metrics_histogram.ServiceName AS name,
           ifNull(ifNotFinite(sum(metrics_histogram.Sum) / sum(metrics_histogram.Count), 0), 0) AS avgValue,
+          ifNull(min(metrics_histogram.Min), 0) AS minValue,
+          ifNull(max(metrics_histogram.Max), 0) AS maxValue,
           sum(metrics_histogram.Sum) AS sumValue,
           sum(metrics_histogram.Count) AS count
         FROM metrics_histogram
@@ -12268,6 +12270,7 @@ SELECT
           AND metrics_histogram.OrgId = 'org_sql_catalog'
           AND metrics_histogram.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_histogram.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_histogram.ServiceName = 'api'
         GROUP BY name
         ORDER BY count DESC
         LIMIT 10
@@ -12331,20 +12334,17 @@ SELECT
         ORDER BY bucket ASC
         FORMAT JSON
 
--- spec:metrics-timeseries-rate:baseline  [548024db]
+-- spec:metrics-timeseries-rate:baseline  [2e1d520f]
 WITH with_deltas AS (
 SELECT
           metrics_sum.TimeUnix AS TimeUnix,
           metrics_sum.ServiceName AS ServiceName,
           metrics_sum.Attributes AS Attributes,
           '' AS resourceAttributeValue,
-          metrics_sum.Value AS Value,
-          metrics_sum.Value - lagInFrame(metrics_sum.Value, 1, metrics_sum.Value) OVER (PARTITION BY metrics_sum.ServiceName, metrics_sum.MetricName, cityHash64(mapKeys(metrics_sum.Attributes), mapValues(metrics_sum.Attributes)), cityHash64(mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes)), metrics_sum.StartTimeUnix ORDER BY metrics_sum.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS delta,
-          toFloat64(toUnixTimestamp64Nano(metrics_sum.TimeUnix) - toUnixTimestamp64Nano(lagInFrame(metrics_sum.TimeUnix, 1, metrics_sum.TimeUnix) OVER (PARTITION BY metrics_sum.ServiceName, metrics_sum.MetricName, cityHash64(mapKeys(metrics_sum.Attributes), mapValues(metrics_sum.Attributes)), cityHash64(mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes)), metrics_sum.StartTimeUnix ORDER BY metrics_sum.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW))) / 1000000000 AS time_delta
+          multiIf(AggregationTemporality = 1, metrics_sum.Value, metrics_sum.Value < lagInFrame(metrics_sum.Value, 1, metrics_sum.Value) OVER (PARTITION BY metrics_sum.ServiceName, metrics_sum.MetricName, cityHash64(mapKeys(metrics_sum.Attributes), mapValues(metrics_sum.Attributes)), cityHash64(mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes)) ORDER BY metrics_sum.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW), metrics_sum.Value, (metrics_sum.StartTimeUnix > lagInFrame(metrics_sum.TimeUnix, 1, metrics_sum.TimeUnix) OVER (PARTITION BY metrics_sum.ServiceName, metrics_sum.MetricName, cityHash64(mapKeys(metrics_sum.Attributes), mapValues(metrics_sum.Attributes)), cityHash64(mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes)) ORDER BY metrics_sum.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AND metrics_sum.StartTimeUnix < metrics_sum.TimeUnix), metrics_sum.Value, metrics_sum.Value - lagInFrame(metrics_sum.Value, 1, metrics_sum.Value) OVER (PARTITION BY metrics_sum.ServiceName, metrics_sum.MetricName, cityHash64(mapKeys(metrics_sum.Attributes), mapValues(metrics_sum.Attributes)), cityHash64(mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes)) ORDER BY metrics_sum.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)) AS delta
         FROM metrics_sum
         WHERE metrics_sum.MetricName = 'http.server.requests'
           AND metrics_sum.OrgId = 'org_sql_catalog'
-          AND IsMonotonic = 1
           AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00' - INTERVAL 3600 SECOND
           AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
 )
@@ -12353,8 +12353,8 @@ SELECT
           with_deltas.ServiceName AS serviceName,
           '' AS attributeValue,
           with_deltas.ServiceName AS groupName,
-          ifNull(ifNotFinite(sumIf(with_deltas.delta / with_deltas.time_delta, (with_deltas.delta >= 0 AND with_deltas.time_delta > 0)), 0), 0) AS rateValue,
-          sumIf(with_deltas.delta, with_deltas.delta >= 0) AS increaseValue,
+          ifNull(ifNotFinite(sum(with_deltas.delta) / 3600, 0), 0) AS rateValue,
+          sum(with_deltas.delta) AS increaseValue,
           count() AS dataPointCount
         FROM with_deltas
         WHERE with_deltas.TimeUnix >= '2026-01-01 10:30:00'

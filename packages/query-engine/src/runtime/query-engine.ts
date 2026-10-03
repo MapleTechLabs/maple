@@ -986,6 +986,7 @@ const executeMetricsTimeseriesRows = Effect.fnUntraced(function* <T extends Quer
 				...options,
 				metricName: query.filters.metricName,
 				metricNames: query.filters.metricNames,
+				metricType: query.filters.metricType,
 				bucketSeconds: range.bucketSeconds,
 			}),
 			params,
@@ -1002,6 +1003,92 @@ const executeMetricsTimeseriesRows = Effect.fnUntraced(function* <T extends Quer
 		contexts.value,
 	)
 	return { kind: "value" as const, rows, groupByKey }
+})
+
+type MetricsBreakdownSpec = Extract<QuerySpec, { readonly source: "metrics"; readonly kind: "breakdown" }>
+
+// Previous-sample lookback for a whole-window counter breakdown. A full-window
+// lookback would double the scan; 10 minutes covers common scrape intervals.
+const METRICS_BREAKDOWN_LOOKBACK_SECONDS = 600
+
+const executeMetricsBreakdownRows = Effect.fnUntraced(function* <T extends QueryTenant>(
+	warehouse: QueryEngineWarehouse<T>,
+	tenant: T,
+	query: MetricsBreakdownSpec,
+	range: { readonly startTime: string; readonly endTime: string; readonly rangeSeconds: number },
+) {
+	const filters = query.filters
+	const groupByAttributeKey = query.groupBy === "attribute" ? filters.groupByAttributeKey : undefined
+	const groupByResourceAttributeKey =
+		query.groupBy === "resource_attribute" ? filters.groupByResourceAttributeKey : undefined
+	const attributeFilter = filters.attributeFilters?.[0]
+	const shared = {
+		serviceName: filters.serviceName,
+		environments: filters.environments,
+		groupByAttributeKey,
+		groupByResourceAttributeKey,
+		attributeKey: attributeFilter?.key,
+		attributeValue: attributeFilter?.value,
+		resourceAttributeFilters: filters.resourceAttributeFilters,
+	}
+	const params = {
+		orgId: tenant.orgId,
+		metricName: filters.metricName,
+		startTime: range.startTime,
+		endTime: range.endTime,
+	}
+
+	const metric = query.metric
+	if (metric === "rate" || metric === "increase") {
+		// One bucket spanning the window, then folded per group: the same
+		// per-series, reset-aware deltas as the timeseries.
+		const windowSeconds = Math.max(1, Math.ceil(range.rangeSeconds))
+		const rows = yield* executeCHQuery(
+			warehouse,
+			tenant,
+			CH.metricsTimeseriesRateQuery({
+				...shared,
+				metricName: filters.metricName,
+				metricNames: filters.metricNames,
+				metricType: filters.metricType,
+				bucketSeconds: windowSeconds,
+				lookbackSeconds: METRICS_BREAKDOWN_LOOKBACK_SECONDS,
+			}),
+			{ ...params, bucketSeconds: windowSeconds },
+			"metricsBreakdownRateIncrease",
+		)
+		const totals = new Map<string, number>()
+		for (const row of rows) {
+			const name =
+				groupByAttributeKey || groupByResourceAttributeKey ? row.attributeValue : row.serviceName
+			if (name === "") continue
+			totals.set(name, (totals.get(name) ?? 0) + Number(row.increaseValue))
+		}
+		return [...totals]
+			.map(([name, increase]) => ({
+				name,
+				value: metric === "rate" ? increase / windowSeconds : increase,
+			}))
+			.sort((a, b) => b.value - a.value)
+			.slice(0, query.limit ?? 10)
+	}
+
+	const rows = yield* executeCHQuery(
+		warehouse,
+		tenant,
+		CH.metricsBreakdownQuery({ ...shared, metricType: filters.metricType, limit: query.limit }),
+		params,
+		"metricsBreakdown",
+	)
+	const valueField = {
+		avg: "avgValue",
+		sum: "sumValue",
+		min: "minValue",
+		max: "maxValue",
+		count: "count",
+	} as const
+	const field = valueField[metric]
+	return rows.map((row) => ({ name: row.name, value: Number(row[field]) }))
 })
 
 /** Same as executeCHQuery but for union queries. */
@@ -1723,51 +1810,13 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 		}
 
 		if (request.query.source === "metrics" && request.query.kind === "breakdown") {
-			const rows = yield* executeCHQuery(
-				warehouse,
-				tenant,
-				CH.metricsBreakdownQuery({
-					metricType: request.query.filters.metricType,
-					...(request.query.groupBy === "attribute" && request.query.filters.groupByAttributeKey
-						? {
-								groupByAttributeKey: request.query.filters.groupByAttributeKey,
-							}
-						: undefined),
-					...(request.query.groupBy === "resource_attribute" &&
-					request.query.filters.groupByResourceAttributeKey
-						? {
-								groupByResourceAttributeKey:
-									request.query.filters.groupByResourceAttributeKey,
-							}
-						: undefined),
-					resourceAttributeFilters: request.query.filters.resourceAttributeFilters,
-					limit: request.query.limit,
-				}),
-				{
-					orgId: tenant.orgId,
-					metricName: request.query.filters.metricName,
-					startTime: request.startTime,
-					endTime: request.endTime,
-				},
-				"metricsBreakdown",
-			)
-
-			const valueFieldMap = {
-				avg: "avgValue",
-				sum: "sumValue",
-				count: "count",
-			} as const
-			const valueField = valueFieldMap[request.query.metric]
-
+			const data = yield* executeMetricsBreakdownRows(warehouse, tenant, request.query, {
+				startTime: request.startTime,
+				endTime: request.endTime,
+				rangeSeconds: range.rangeSeconds,
+			})
 			return new QueryEngineExecuteResponse({
-				result: {
-					kind: "breakdown",
-					source: "metrics",
-					data: rows.map((row) => ({
-						name: row.name,
-						value: Number(row[valueField]),
-					})),
-				},
+				result: { kind: "breakdown", source: "metrics", data },
 			})
 		}
 
