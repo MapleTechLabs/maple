@@ -875,6 +875,56 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 				fingerprintHash: FINGERPRINT,
 			}),
 	},
+	{
+		// error_detail (MCP): a fingerprint's volume and identity, and the window anchor.
+		module: "errors",
+		name: "errorFingerprintSummaryQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.errorFingerprintSummaryQuery({ fingerprintHash: FINGERPRINT }), window),
+	},
+	{
+		// error_detail (MCP): other fingerprints raised inside the sampled traces.
+		module: "errors",
+		name: "errorCooccurringFingerprintsQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.errorCooccurringFingerprintsQuery({
+					fingerprintHash: FINGERPRINT,
+					traceIds: ["0af7651916cd43dd8448eb211c80319c"],
+				}),
+				window,
+			),
+	},
+	{
+		// find_errors / list_error_issues (MCP): labels for exception-less fingerprints.
+		module: "errors",
+		name: "errorFingerprintOccurrencesQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.errorFingerprintOccurrencesQuery({ fingerprintHashes: [FINGERPRINT] }), window),
+	},
+	{
+		module: "errors",
+		name: "errorOccurrenceSpansQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.errorOccurrenceSpansQuery({
+					traceIds: ["0af7651916cd43dd8448eb211c80319c"],
+					spanIds: ["b7ad6b7169203331"],
+				}),
+				window,
+			),
+	},
+	{
+		// find_errors (MCP): every occurrence in the window, beyond the top-N rows.
+		module: "errors",
+		name: "errorsWindowTotalsQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.errorsWindowTotalsQuery({}), window),
+	},
 
 	// Batch ④ — the modules the query-engine refactor touches. These exist so a
 	// refactor that claims "no SQL changed" is actually checkable: without a

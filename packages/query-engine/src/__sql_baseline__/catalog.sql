@@ -529,6 +529,37 @@ SELECT
         GROUP BY containerName, hostName) AS containers
         FORMAT JSON
 
+-- builder:errors:errorCooccurringFingerprintsQuery:default  [e257ab78]
+SELECT
+          toString(error_events_by_time.FingerprintHash) AS fingerprintHash,
+          any(error_events_by_time.ErrorLabel) AS errorLabel,
+          any(error_events_by_time.ServiceName) AS serviceName,
+          uniq(error_events_by_time.TraceId) AS traces,
+          count() AS count
+        FROM error_events_by_time
+        WHERE error_events_by_time.OrgId = 'org_sql_catalog'
+          AND error_events_by_time.Timestamp >= '2026-01-01 10:30:00'
+          AND error_events_by_time.Timestamp <= '2026-01-03 14:15:00'
+          AND error_events_by_time.TraceId IN ('0af7651916cd43dd8448eb211c80319c')
+          AND error_events_by_time.FingerprintHash != toUInt64('11640393269246331608')
+        GROUP BY fingerprintHash
+        ORDER BY traces DESC, count DESC
+        LIMIT 5
+        FORMAT JSON
+
+-- builder:errors:errorFingerprintOccurrencesQuery:default  [701c5603]
+SELECT
+          toString(error_events.FingerprintHash) AS fingerprintHash,
+          argMax(error_events.TraceId, error_events.Timestamp) AS traceId,
+          argMax(error_events.SpanId, error_events.Timestamp) AS spanId
+        FROM error_events
+        WHERE error_events.OrgId = 'org_sql_catalog'
+          AND error_events.FingerprintHash IN (toUInt64('11640393269246331608'))
+          AND error_events.Timestamp >= '2026-01-01 10:30:00'
+          AND error_events.Timestamp <= '2026-01-03 14:15:00'
+        GROUP BY fingerprintHash
+        FORMAT JSON
+
 -- builder:errors:errorFingerprintsQuery:envFiltered  [5954d669]
 SELECT
           toString(error_events_by_time.FingerprintHash) AS fingerprintHash
@@ -540,6 +571,25 @@ SELECT
           AND error_events_by_time.DeploymentEnv IN ('production')
         GROUP BY fingerprintHash
         LIMIT 1000
+        FORMAT JSON
+
+-- builder:errors:errorFingerprintSummaryQuery:default  [1673e30a]
+SELECT
+          count() AS occurrences,
+          min(error_events.Timestamp) AS firstSeen,
+          max(error_events.Timestamp) AS lastSeen,
+          argMax(error_events.ErrorLabel, error_events.Timestamp) AS errorLabel,
+          argMax(error_events.ExceptionType, error_events.Timestamp) AS exceptionType,
+          argMax(error_events.ExceptionMessage, error_events.Timestamp) AS exceptionMessage,
+          argMax(error_events.StatusMessage, error_events.Timestamp) AS statusMessage,
+          uniq(error_events.ServiceName) AS serviceCount,
+          arraySort(groupUniqArrayIf(5)(error_events.ServiceName, error_events.ServiceName != '')) AS services,
+          countIf(error_events.ExceptionType = '') AS noExceptionCount
+        FROM error_events
+        WHERE error_events.OrgId = 'org_sql_catalog'
+          AND error_events.FingerprintHash = toUInt64('11640393269246331608')
+          AND error_events.Timestamp >= '2026-01-01 10:30:00'
+          AND error_events.Timestamp <= '2026-01-03 14:15:00'
         FORMAT JSON
 
 -- builder:errors:errorIssueEnvironmentsQuery:default  [ac20faf3]
@@ -622,6 +672,22 @@ SELECT
         LIMIT 100
         FORMAT JSON
 
+-- builder:errors:errorOccurrenceSpansQuery:default  [416b86f9]
+SELECT
+          trace_detail_spans.SpanId AS spanId,
+          trace_detail_spans.SpanName AS spanName,
+          trace_detail_spans.SpanAttributes['http.request.method'] AS httpMethod,
+          trace_detail_spans.SpanAttributes['http.route'] AS httpRoute,
+          if(trace_detail_spans.SpanAttributes['http.response.status_code'] != '', trace_detail_spans.SpanAttributes['http.response.status_code'], trace_detail_spans.SpanAttributes['http.status_code']) AS httpStatus
+        FROM trace_detail_spans
+        WHERE trace_detail_spans.OrgId = 'org_sql_catalog'
+          AND trace_detail_spans.TraceId IN ('0af7651916cd43dd8448eb211c80319c')
+          AND trace_detail_spans.SpanId IN ('b7ad6b7169203331')
+          AND trace_detail_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_detail_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1
+        FORMAT JSON
+
 -- builder:errors:errorsSparkQuery:default  [b1229d72]
 SELECT
           toString(error_events.FingerprintHash) AS fingerprintHash,
@@ -634,6 +700,17 @@ SELECT
           AND error_events.Timestamp <= '2026-01-03 14:15:00'
         GROUP BY fingerprintHash, bucket
         ORDER BY bucket ASC
+        FORMAT JSON
+
+-- builder:errors:errorsWindowTotalsQuery:default  [e081812a]
+SELECT
+          count() AS occurrences,
+          uniq(error_events_by_time.FingerprintHash) AS fingerprints,
+          countIf(error_events_by_time.ExceptionType = '') AS noExceptionCount
+        FROM error_events_by_time
+        WHERE error_events_by_time.OrgId = 'org_sql_catalog'
+          AND error_events_by_time.Timestamp >= '2026-01-01 10:30:00'
+          AND error_events_by_time.Timestamp <= '2026-01-03 14:15:00'
         FORMAT JSON
 
 -- builder:errors:errorTickBootstrapIssuesQuery:bootstrap-window  [43b589c9]
@@ -7885,7 +7962,7 @@ SELECT
         ORDER BY bucket ASC, groupName ASC
         FORMAT JSON
 
--- pipe:error_detail_traces:default:baseline  [c69b9a20]
+-- pipe:error_detail_traces:default:baseline  [86726288]
 SELECT
           trace_detail_spans.TraceId AS traceId,
           min(trace_detail_spans.Timestamp) AS startTime,
@@ -7901,6 +7978,7 @@ SELECT
           anyIf(trace_detail_spans.SpanAttributes['gen_ai.tool.name'], trace_detail_spans.SpanId = occurrence.occurrenceSpanId) AS errorToolName,
           anyIf(trace_detail_spans.SpanAttributes['http.request.method'], trace_detail_spans.SpanId = occurrence.occurrenceSpanId) AS errorHttpMethod,
           anyIf(trace_detail_spans.SpanAttributes['http.route'], trace_detail_spans.SpanId = occurrence.occurrenceSpanId) AS errorHttpRoute,
+          anyIf(if(trace_detail_spans.SpanAttributes['http.response.status_code'] != '', trace_detail_spans.SpanAttributes['http.response.status_code'], trace_detail_spans.SpanAttributes['http.status_code']), trace_detail_spans.SpanId = occurrence.occurrenceSpanId) AS errorHttpStatus,
           anyIf(trace_detail_spans.SpanAttributes['query.context'], trace_detail_spans.SpanId = occurrence.occurrenceSpanId) AS errorQueryContext,
           anyIf(trace_detail_spans.SpanAttributes['error.type'], trace_detail_spans.SpanId = occurrence.occurrenceSpanId) AS errorType,
           any(occurrence.occurrenceLabel) AS errorLabel,
