@@ -207,6 +207,8 @@ describe("rawSqlIssue org filter placement", () => {
 		"SELECT 1 FROM traces WHERE NOT $__orgFilter",
 		"SELECT 1 FROM traces WHERE not($__orgFilter)",
 		"SELECT 1 FROM traces WHERE $__orgFilter OR 1 = 1 GROUP BY 1",
+		"SELECT 1 FROM traces WHERE $__orgFilter AND toStartOfHour(Timestamp) > x OR Environment = 'prod'",
+		"SELECT 1 FROM traces WHERE $__orgFilter AND (x = 1) OR y = 2",
 	])("rejects an org filter an OR can bypass: %s", (sql) => {
 		expect(rawSqlIssue(sql)?.code).toBe("InvalidMacro")
 	})
