@@ -554,18 +554,19 @@ export function AgentSessionsList({
 								<td />
 							</tr>
 						)}
-						{loadingMore && (
-							<tr>
-								<td colSpan={SESSION_COLUMNS.length} className="p-2">
-									<div className="flex items-center justify-center gap-2 py-4 text-sm text-muted-foreground">
-										<span className="size-4 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" />
-										Loading more sessions…
-									</div>
-								</td>
-							</tr>
-						)}
 					</tbody>
 				</table>
+				{/*
+				 * Below the table, not a row in it: a cell spanning every declared column adds grid
+				 * columns for the ones the container queries hide, and under table-fixed those take
+				 * their share of the width out of Session.
+				 */}
+				{loadingMore && (
+					<div className="flex items-center justify-center gap-2 px-2 py-6 text-sm text-muted-foreground">
+						<span className="size-4 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" />
+						Loading more sessions…
+					</div>
+				)}
 			</div>
 
 			{hasMore && <SessionsSentinel onReachEnd={onReachEnd} loadingMore={loadingMore} />}

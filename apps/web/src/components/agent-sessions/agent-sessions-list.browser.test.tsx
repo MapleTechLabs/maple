@@ -133,7 +133,8 @@ describe("AgentSessionsList", () => {
 			<AgentSessionsList {...sort} sessions={[session]} hasMore onReachEnd={onReachEnd} loadingMore />,
 		)
 		expect(first.disconnect).toHaveBeenCalledOnce()
-		expect(view.getByText("Loading more sessions…")).toBeTruthy()
+		// Outside the table: a row spanning the hidden columns too would squeeze Session.
+		expect(view.getByText("Loading more sessions…").closest("table")).toBeNull()
 
 		const second = MockIntersectionObserver.instances[1]!
 		second.callback([{ isIntersecting: true } as IntersectionObserverEntry], second as never)
