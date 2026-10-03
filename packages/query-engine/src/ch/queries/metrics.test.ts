@@ -188,7 +188,12 @@ describe("metricsTimeseriesRateQuery", () => {
 
 	it("derives rate from the bucket increase, not a sum of per-sample rates", () => {
 		const { sql } = compileUnsafe(metricsTimeseriesRateQuery({}), baseParams)
-		expect(sql).toContain("ifNotFinite(sum(with_deltas.delta) / 3600, 0)")
+		// Divided by the seconds of the bucket inside the window, so a partial
+		// first or last bucket is not understated.
+		expect(sql).toContain("sum(with_deltas.delta) / min(least(")
+		expect(sql).toContain(
+			"greatest(toUnixTimestamp(toStartOfInterval(with_deltas.TimeUnix, INTERVAL 3600 SECOND))",
+		)
 		expect(sql).toContain("sum(with_deltas.delta) AS increaseValue")
 		expect(sql).not.toContain("time_delta")
 	})
@@ -442,6 +447,13 @@ describe("metricsBreakdownQuery", () => {
 		expect(sql).toContain("metrics_sum.ServiceName = 'api'")
 		expect(sql).toContain("'production'")
 		expect(sql).toContain("metrics_sum.Attributes['state'] = 'idle'")
+	})
+
+	it("ranks groups by the requested aggregate before the limit", () => {
+		const { sql } = compileUnsafe(metricsBreakdownQuery({ metricType: "sum", rankBy: "max" }), baseParams)
+		expect(sql).toContain("ORDER BY maxValue DESC")
+		const byCount = compileUnsafe(metricsBreakdownQuery({ metricType: "sum" }), baseParams).sql
+		expect(byCount).toContain("ORDER BY count DESC")
 	})
 
 	it("applies custom limit", () => {

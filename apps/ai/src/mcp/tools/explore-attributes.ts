@@ -138,7 +138,16 @@ const renderKeys = (output: Output): ToolDoc => {
 	return {
 		title: "Attribute Keys",
 		scope: [["Source", sourceLabelOf(output)], ...(timeScope(output) ?? [])],
-		...(keys.length === 0 ? { empty: { message: "No attribute keys found." } } : undefined),
+		...(keys.length === 0
+			? {
+					empty: {
+						message:
+							output.metricName === undefined
+								? "No attribute keys found."
+								: `No attribute keys found for ${output.metricName}. Check the name and type with list_metrics.`,
+					},
+				}
+			: undefined),
 		blocks: [
 			...rollupNote,
 			...(keys.length === 0
@@ -158,6 +167,7 @@ const renderKeys = (output: Output): ToolDoc => {
 					key: k.key,
 					...(output.scope === undefined ? undefined : { scope: output.scope }),
 					...(output.metricName === undefined ? undefined : { metric_name: output.metricName }),
+					...(output.metricType === undefined ? undefined : { metric_type: output.metricType }),
 					...(output.service === undefined ? undefined : { service: output.service }),
 				},
 				"see values for this key",

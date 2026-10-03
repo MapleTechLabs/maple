@@ -418,25 +418,41 @@ export function metricsTimeseriesRateQuery(
 
 	const q = from(cteTable)
 		.withCTE("with_deltas", cteQuery)
-		.select(($) => ({
-			bucket: CH.toStartOfInterval($.TimeUnix, param.int("bucketSeconds")),
-			serviceName: $.ServiceName,
-			attributeValue: opts.groupByResourceAttributeKey
-				? $.resourceAttributeValue
-				: opts.groupByAttributeKey
-					? $.Attributes.get(opts.groupByAttributeKey)
-					: CH.lit(""),
-			groupName: opts.groupByResourceAttributeKey
-				? $.resourceAttributeValue
-				: opts.groupByAttributeKey
-					? $.Attributes.get(opts.groupByAttributeKey)
-					: $.ServiceName,
-			// Rate is the bucket's increase over the bucket width. Summing per-sample
-			// rates instead multiplies throughput by the samples per bucket.
-			rateValue: finiteOrZero(CH.sum($.delta).div(param.int("bucketSeconds"))),
-			increaseValue: CH.sum($.delta),
-			dataPointCount: CH.count(),
-		}))
+		.select(($) => {
+			// Seconds of the bucket inside [startTime, endTime]: the edge buckets are
+			// partial, and dividing them by the full width understates their rate.
+			const bucketStart = CH.toUnixTimestamp(
+				CH.toStartOfInterval($.TimeUnix, param.int("bucketSeconds")),
+			)
+			const coveredSeconds = CH.least_(
+				bucketStart.add(param.int("bucketSeconds")),
+				CH.toUnixTimestamp(CH.toDateTime(param.dateTimeString("endTime"))),
+			).sub(
+				CH.greatest_(
+					bucketStart,
+					CH.toUnixTimestamp(CH.toDateTime(param.dateTimeString("startTime"))),
+				),
+			)
+			return {
+				bucket: CH.toStartOfInterval($.TimeUnix, param.int("bucketSeconds")),
+				serviceName: $.ServiceName,
+				attributeValue: opts.groupByResourceAttributeKey
+					? $.resourceAttributeValue
+					: opts.groupByAttributeKey
+						? $.Attributes.get(opts.groupByAttributeKey)
+						: CH.lit(""),
+				groupName: opts.groupByResourceAttributeKey
+					? $.resourceAttributeValue
+					: opts.groupByAttributeKey
+						? $.Attributes.get(opts.groupByAttributeKey)
+						: $.ServiceName,
+				// Rate is the bucket's increase over its covered width. Summing per-sample
+				// rates instead multiplies throughput by the samples per bucket.
+				rateValue: finiteOrZero(CH.sum($.delta).div(CH.min_(coveredSeconds))),
+				increaseValue: CH.sum($.delta),
+				dataPointCount: CH.count(),
+			}
+		})
 		.where(($) => [$.TimeUnix.gte(param.dateTimeString("startTime"))])
 
 	const inner = (
@@ -501,8 +517,18 @@ export interface MetricsBreakdownOpts {
 	environments?: readonly string[]
 	attributeKey?: string
 	attributeValue?: string
+	/** Aggregate that ranks groups before `limit` applies. Default: count. */
+	rankBy?: "avg" | "sum" | "min" | "max" | "count"
 	limit?: number
 }
+
+const BREAKDOWN_RANK_COLUMN = {
+	avg: "avgValue",
+	sum: "sumValue",
+	min: "minValue",
+	max: "maxValue",
+	count: "count",
+} as const
 
 export interface MetricsBreakdownOutput {
 	readonly name: string
@@ -555,7 +581,7 @@ export function metricsBreakdownQuery(opts: MetricsBreakdownOpts) {
 			...resourceFilterConditions(opts.resourceAttributeFilters),
 		])
 		.groupBy("name")
-		.orderBy(["count", "desc"])
+		.orderBy([BREAKDOWN_RANK_COLUMN[opts.rankBy ?? "count"], "desc"])
 		.limit(limit)
 		.format("JSON")
 }
