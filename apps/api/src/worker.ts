@@ -23,6 +23,7 @@ import {
 	resolveWorkerName,
 	resolveWorkerPlacement,
 } from "@maple/infra/cloudflare"
+import { WORKER_PURE_OPTIONS } from "@maple/infra/worker-build"
 import { isolateContext } from "@maple/infra/worker-http"
 import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
 import * as Cloudflare from "alchemy/Cloudflare"
@@ -94,7 +95,7 @@ const props = Effect.gen(function* () {
 		// upstream #749 (`ScriptStartupError: Cannot access '<minified>' before
 		// initialization`), the deploy fails loudly at upload — remove this override
 		// and instead warm the DB graph off the request path.
-		build: { output: { strictExecutionOrder: false } },
+		build: { output: { strictExecutionOrder: false }, pure: WORKER_PURE_OPTIONS },
 		// Custom domain (not a zone route): routes don't create DNS records, so
 		// pr-stage hostnames would be authoritative NXDOMAIN. Custom domains
 		// provision DNS + edge certs automatically.

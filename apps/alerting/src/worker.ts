@@ -38,6 +38,7 @@ import {
 	selfObservabilityEnv,
 	tinybirdEnv,
 } from "@maple/infra/env"
+import { WORKER_PURE_OPTIONS } from "@maple/infra/worker-build"
 import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
 import { chatConnectorOutboundConfigKeys } from "@maple/chat-platform"
 import * as Cloudflare from "alchemy/Cloudflare"
@@ -135,6 +136,7 @@ const props = Effect.gen(function* () {
 		// Under `bun dev`: a sticky port the app's route follows.
 		dev: workerDev("alerting"),
 		workersDev: false,
+		build: { pure: WORKER_PURE_OPTIONS },
 		// `devEnv` last, so `.env.local` cannot override the inter-app URLs.
 		env: {
 			...makeWorkerBindings({ stage, region }),
