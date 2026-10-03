@@ -6,7 +6,7 @@ import { registerFindSlowTracesTool } from "../find-slow-traces"
 import type { McpToolRegistrar } from "../types"
 
 /** Each tool's render, fed an encoded output so the test needs no casts. */
-const renders = new Map<string, (output: unknown) => string>()
+const renders = new Map<string, (output: Schema.Json) => string>()
 const registrar: McpToolRegistrar = {
 	define: (spec) => {
 		renders.set(spec.name, (output) =>
@@ -17,7 +17,7 @@ const registrar: McpToolRegistrar = {
 registerSearchTracesTool(registrar)
 registerFindSlowTracesTool(registrar)
 
-const render = (name: string, output: unknown): string => {
+const render = (name: string, output: Schema.Json): string => {
 	const fn = renders.get(name)
 	if (fn === undefined) return expect.unreachable(`${name} not registered`)
 	return fn(output)
