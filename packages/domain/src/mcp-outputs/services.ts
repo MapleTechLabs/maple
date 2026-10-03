@@ -260,6 +260,8 @@ export const DescribeWarehouseTablesOutput = Schema.Struct({
 				name: Schema.String,
 				description: Schema.optionalKey(Schema.String),
 				columnCount: Schema.Number,
+				/** The column `$__timeFilter` belongs on. */
+				timeColumn: Schema.optionalKey(Schema.String),
 			}),
 		),
 	),
