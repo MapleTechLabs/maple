@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { Exit, Option } from "effect"
+import { Exit, Option, Schema } from "effect"
 import { Link } from "@tanstack/react-router"
 import { RailwayConnectRequest } from "@maple/domain/http"
 import { Badge } from "@maple/ui/components/ui/badge"
@@ -28,6 +28,8 @@ import {
 
 const TOKENS_URL = "https://railway.com/account/tokens"
 
+const decodeConnectRequest = Schema.decodeUnknownOption(RailwayConnectRequest)
+
 export const railwayStatusAtom = retainedQuery("integrations", "railwayStatus", {
 	reactivityKeys: ["railwayIntegrationStatus"],
 })
@@ -48,13 +50,18 @@ function RailwayTokenForm({
 	const [submitting, setSubmitting] = useState(false)
 	const [error, setError] = useState<string | null>(null)
 
+	// Decoding builds the class instance v1 payloads need (a plain object is never sent) and
+	// checks the length rules without the constructor's throw.
+	const request = decodeConnectRequest({ token: token.trim() })
+	const tokenInvalid = token.trim().length > 0 && Option.isNone(request)
+
 	async function handleSubmit(event: React.FormEvent) {
 		event.preventDefault()
+		if (Option.isNone(request)) return
 		setSubmitting(true)
 		setError(null)
 		const result = await connect({
-			// v1 payloads are Schema.Class: a plain object fails client-side encoding and is never sent.
-			payload: new RailwayConnectRequest({ token: token.trim() }),
+			payload: request.value,
 			reactivityKeys: ["railwayIntegrationStatus"],
 		})
 		setSubmitting(false)
@@ -89,7 +96,7 @@ function RailwayTokenForm({
 						Cancel
 					</Button>
 				) : null}
-				<Button type="submit" disabled={token.trim().length < 8 || submitting}>
+				<Button type="submit" disabled={Option.isNone(request) || submitting}>
 					{submitting ? (
 						<LoaderIcon size={14} className="animate-spin" />
 					) : (
@@ -101,6 +108,10 @@ function RailwayTokenForm({
 			{error !== null ? (
 				<p className="text-xs text-severity-error" role="alert">
 					{error}
+				</p>
+			) : tokenInvalid ? (
+				<p className="text-xs text-muted-foreground">
+					A Railway token is between 8 and 512 characters.
 				</p>
 			) : null}
 		</form>
