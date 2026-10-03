@@ -112,10 +112,9 @@ jobs:
             - name: Install Tinybird CLI
               run: curl https://tinybird.co | sh
 
-            # ⚠️ The deploy role's trust policy must accept this job's OIDC
-            # subject (`repo:<org>/<repo>:environment:pr-preview`). It was
-            # written for the production subject only; previews get AccessDenied
-            # until it is widened.
+            # Previews assume their own role, `maple-preview-deploy`, whose trust policy
+            # accepts this job's OIDC subject (`…:environment:pr-preview`) and whose
+            # permissions reach `*-pr-*` resources only: packages/infra/aws/preview-deploy-role/.
             - name: Deploy setup
               id: setup
               uses: ./.github/actions/deploy-setup
@@ -123,7 +122,7 @@ jobs:
                   infisical-env-slug: ${{ env.INFISICAL_ENV_SLUG }}
                   infisical-identity-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
                   infisical-project-slug: ${{ vars.INFISICAL_PROJECT_SLUG }}
-                  aws-role-arn: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+                  aws-role-arn: ${{ vars.AWS_PREVIEW_ROLE_ARN }}
                   ingest-binary: ${{ env.TEARDOWN != 'true' }}
 
             # Create/refresh an EMPTY ephemeral Tinybird branch `pr_<n>` (no production

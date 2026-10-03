@@ -1,0 +1,19 @@
+{
+	"Version": "2012-10-17",
+	"Statement": [
+		{
+			"Sid": "GitHubActionsPrPreviewEnvironment",
+			"Effect": "Allow",
+			"Principal": {
+				"Federated": "arn:aws:iam::465760687006:oidc-provider/token.actions.githubusercontent.com"
+			},
+			"Action": "sts:AssumeRoleWithWebIdentity",
+			"Condition": {
+				"StringEquals": {
+					"token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+					"token.actions.githubusercontent.com:sub": "repo:MapleTechLabs/maple:environment:pr-preview"
+				}
+			}
+		}
+	]
+}
