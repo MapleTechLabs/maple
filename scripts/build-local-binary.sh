@@ -62,19 +62,19 @@ case "$(uname -s)-$(uname -m)" in
 	Darwin-arm64)        ASSET="macos-arm64-libchdb.tar.gz" ;;
 	*) echo "ERROR: unsupported platform $(uname -s)-$(uname -m)" >&2; exit 1 ;;
 esac
-# Expected sha256 per platform asset, pinned to LIBCHDB_VERSION: release assets
-# are mutable even for a fixed tag, so this is verified before extraction.
-# Bumping LIBCHDB_VERSION means re-hashing each asset here. A `case` rather than
-# an associative array because macOS still ships bash 3.2.
+# Expected sha256 per (LIBCHDB_VERSION, platform asset): release assets are
+# mutable even for a fixed tag, so this is verified before extraction. Bumping
+# LIBCHDB_VERSION means adding each asset's hash here. A `case` rather than an
+# associative array because macOS still ships bash 3.2.
 # v26.1.0's macos-arm64 dylib put its LINKEDIT string pool at a non-8-byte-aligned
 # offset, which newer dyld rejects ("mis-aligned LINKEDIT string pool"). Check
 # `otool -l libchdb.so` (LC_SYMTAB stroff % 8 == 0) before pinning a new release.
-case "$ASSET" in
-	linux-x86_64-libchdb.tar.gz)  EXPECTED_SHA256="bc33260c32acf78eade2ac41a9115f38e00404651fa42e3bb4c419e4f011c031" ;;
-	linux-aarch64-libchdb.tar.gz) EXPECTED_SHA256="d153adad1ff39b2e3caf0417f09d8bd9edd41939c7c67a3c4978a61e73fb9227" ;;
-	macos-x86_64-libchdb.tar.gz)  EXPECTED_SHA256="af5ded3ed3e84c31af1cd198dcf459f11d2b6aad4f6ddeccc04b8a519b0300fc" ;;
-	macos-arm64-libchdb.tar.gz)   EXPECTED_SHA256="5640e50dccf711bf3dd5551333d08e43f433edf7bd94b2289f36c2539e627762" ;;
-	*) echo "ERROR: no pinned sha256 for $ASSET (LIBCHDB_VERSION=$LIBCHDB_VERSION)" >&2; exit 1 ;;
+case "$LIBCHDB_VERSION/$ASSET" in
+	v26.7.3/linux-x86_64-libchdb.tar.gz)  EXPECTED_SHA256="bc33260c32acf78eade2ac41a9115f38e00404651fa42e3bb4c419e4f011c031" ;;
+	v26.7.3/linux-aarch64-libchdb.tar.gz) EXPECTED_SHA256="d153adad1ff39b2e3caf0417f09d8bd9edd41939c7c67a3c4978a61e73fb9227" ;;
+	v26.7.3/macos-x86_64-libchdb.tar.gz)  EXPECTED_SHA256="af5ded3ed3e84c31af1cd198dcf459f11d2b6aad4f6ddeccc04b8a519b0300fc" ;;
+	v26.7.3/macos-arm64-libchdb.tar.gz)   EXPECTED_SHA256="5640e50dccf711bf3dd5551333d08e43f433edf7bd94b2289f36c2539e627762" ;;
+	*) echo "ERROR: no pinned sha256 for $ASSET at LIBCHDB_VERSION=$LIBCHDB_VERSION" >&2; exit 1 ;;
 esac
 
 URL="https://github.com/chdb-io/chdb-core/releases/download/$LIBCHDB_VERSION/$ASSET"
