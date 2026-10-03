@@ -41,7 +41,10 @@ export const toSpanResult = (t: TracesRootListOutput): SpanResult => ({
 	statusCode: t.rootSpanStatusCode || (t.hasError ? "Error" : "Unset"),
 	statusMessage: t.rootSpanStatusMessage,
 	attributes: parseProjectedAttributes(t.rootSpanAttributes),
-	resourceAttributes: {},
+	resourceAttributes: {
+		...(t.rootDeploymentEnv ? { "deployment.environment": t.rootDeploymentEnv } : undefined),
+		...(t.rootServiceVersion ? { "service.version": t.rootServiceVersion } : undefined),
+	},
 	timestamp: t.startTime,
 })
 

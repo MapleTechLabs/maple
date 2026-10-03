@@ -522,8 +522,14 @@ const validateTraceAttributeFilters = Effect.fn("QueryEngineService.validateTrac
 		if (query.kind !== "timeseries" && query.kind !== "breakdown") return
 
 		const details: string[] = []
-		if (query.groupBy?.includes("attribute") && !query.filters?.groupByAttributeKeys?.length) {
-			details.push("groupBy=attribute requires filters.groupByAttributeKeys")
+		if (
+			query.groupBy?.includes("attribute") &&
+			!query.filters?.groupByAttributeKeys?.length &&
+			!query.filters?.groupByResourceAttributeKey
+		) {
+			details.push(
+				"groupBy=attribute requires filters.groupByAttributeKeys or filters.groupByResourceAttributeKey",
+			)
 		}
 
 		if (details.length > 0) {
@@ -1219,6 +1225,7 @@ function extractTracesOpts(filters: Record<string, unknown> | undefined) {
 		attributeFilters: filters?.attributeFilters as AttrFilterArray | undefined,
 		resourceAttributeFilters: filters?.resourceAttributeFilters as AttrFilterArray | undefined,
 		groupByAttributeKeys: filters?.groupByAttributeKeys as string[] | undefined,
+		groupByResourceAttributeKey: filters?.groupByResourceAttributeKey as string | undefined,
 		excludedServiceNames: filters?.excludedServiceNames as readonly string[] | undefined,
 		excludedSpanNames: filters?.excludedSpanNames as readonly string[] | undefined,
 		excludedEnvironments: filters?.excludedEnvironments as readonly string[] | undefined,
@@ -1739,6 +1746,8 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 						groupBy: tracesQuery.groupBy,
 						groupByAttributeKey:
 							tracesQuery.groupBy === "attribute" ? opts.groupByAttributeKeys?.[0] : undefined,
+						groupByResourceAttributeKey:
+							tracesQuery.groupBy === "attribute" ? opts.groupByResourceAttributeKey : undefined,
 						limit: tracesQuery.limit,
 						apdexThresholdMs:
 							tracesQuery.metric === "apdex" ? tracesQuery.apdexThresholdMs : undefined,

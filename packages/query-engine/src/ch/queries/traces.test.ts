@@ -7,8 +7,10 @@ import {
 	traceServicesByTraceIdsQuery,
 	traceSpanStatsByTraceIdsQuery,
 	traceSummariesQuery,
+	tracesBreakdownQuery,
 	tracesListQuery,
 	tracesRootListQuery,
+	tracesTimeseriesQuery,
 } from "./traces"
 import { canUseTracesAggregatesMv } from "./query-helpers"
 
@@ -686,5 +688,47 @@ describe("commit-sha exclusion", () => {
 		expect(
 			canUseTracesAggregatesMv({ rootOnly: true, excludedCommitShas: ["abc"] }, undefined, 3600),
 		).toBe(false)
+	})
+})
+
+describe("resource-attribute group-by", () => {
+	it("breaks traces down by a ResourceAttributes key", () => {
+		const { sql } = compileUnsafe(
+			tracesBreakdownQuery({
+				metric: "count",
+				groupBy: "attribute",
+				groupByResourceAttributeKey: "deployment.environment",
+			}),
+			baseParams,
+		)
+		expect(sql).toContain("ResourceAttributes['deployment.environment'] AS name")
+		expect(sql).not.toContain("ServiceName AS name")
+	})
+
+	it("groups a timeseries by a ResourceAttributes key", () => {
+		const { sql } = compileUnsafe(
+			tracesTimeseriesQuery({
+				metric: "count",
+				needsSampling: false,
+				groupBy: ["attribute"],
+				groupByResourceAttributeKey: "k8s.pod.name",
+			}),
+			baseParams,
+		)
+		expect(sql).toContain("ResourceAttributes['k8s.pod.name']")
+	})
+
+	it("root list carries deployment environment and service.version", () => {
+		const { sql } = compileUnsafe(tracesRootListQuery({}), baseParams)
+		expect(sql).toContain("AS rootDeploymentEnv")
+		expect(sql).toContain("ResourceAttributes['service.version'] AS rootServiceVersion")
+	})
+
+	it("span search filters by deployment environment", () => {
+		const { sql } = compileUnsafe(
+			spanSearchQuery({ spanName: "x", environments: ["production"] }),
+			baseParams,
+		)
+		expect(sql).toContain("'production'")
 	})
 })

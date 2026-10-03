@@ -38,6 +38,8 @@ export interface SearchTracesInput {
 	readonly service?: string
 	readonly spanName?: string
 	readonly spanNameMatchMode?: "exact" | "contains"
+	/** Deployment environment of the matched span (either semconv spelling). */
+	readonly environment?: string
 	readonly hasError?: boolean
 	readonly minDurationMs?: number
 	readonly maxDurationMs?: number

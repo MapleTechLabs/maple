@@ -1189,6 +1189,27 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		compile: () => CH.compileUnsafe(CH.listContainersSummaryQuery({}), window),
 	},
 	{
+		// explore_attributes with a service: the hourly key rollup has no ServiceName.
+		module: "attribute-keys",
+		name: "serviceScopedAttributeKeysQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.serviceScopedAttributeKeysQuery({ scope: "span" }), {
+				...window,
+				serviceName: "checkout",
+			}),
+	},
+	{
+		module: "attribute-keys",
+		name: "serviceScopedAttributeValuesQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.serviceScopedAttributeValuesQuery({ scope: "resource", attributeKey: "k8s.pod.name" }),
+				{ ...window, serviceName: "checkout" },
+			),
+	},
+	{
 		module: "containers",
 		name: "containerDetailSummaryQuery",
 		label: "default",

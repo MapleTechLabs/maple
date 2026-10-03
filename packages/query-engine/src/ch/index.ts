@@ -68,6 +68,8 @@ export {
 	metricAttributeValuesQuery,
 	metricScopedAttributeKeysQuery,
 	metricScopedAttributeValuesQuery,
+	serviceScopedAttributeKeysQuery,
+	serviceScopedAttributeValuesQuery,
 	type MetricScopedAttributeKeysOpts,
 	type MetricScopedAttributeValuesOpts,
 	type AttributeKeysQueryOpts,

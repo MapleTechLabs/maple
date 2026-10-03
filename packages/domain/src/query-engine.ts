@@ -88,6 +88,9 @@ export const TracesFilters = Schema.Struct({
 	namespaces: Schema.optional(Schema.Array(ServiceNamespace)),
 	commitShas: Schema.optional(Schema.Array(CommitSha)),
 	groupByAttributeKeys: Schema.optional(Schema.Array(Schema.String)),
+	// Resource-attribute counterpart of `groupByAttributeKeys` for groupBy "attribute":
+	// groups by a ResourceAttributes key (deployment.environment, k8s.pod.name, ...).
+	groupByResourceAttributeKey: Schema.optional(Schema.String),
 	errorsOnly: Schema.optional(Schema.Boolean),
 	minDurationMs: Schema.optional(Schema.Number),
 	maxDurationMs: Schema.optional(Schema.Number),

@@ -159,6 +159,7 @@ function buildGroupNameExpr(
 	$: ColumnAccessor<typeof Traces.columns>,
 	groupBy: readonly string[] | undefined,
 	groupByAttributeKeys: readonly string[] | undefined,
+	groupByResourceAttributeKey?: string,
 ): CH.Expr<string> {
 	if (!groupBy || groupBy.length === 0) {
 		return CH.lit("all")
@@ -180,7 +181,9 @@ function buildGroupNameExpr(
 				parts.push(CH.toString_(httpRequestMethodExpr($.SpanAttributes)))
 				break
 			case "attribute":
-				if (groupByAttributeKeys?.length) {
+				if (groupByResourceAttributeKey) {
+					parts.push(CH.toString_($.ResourceAttributes.get(groupByResourceAttributeKey)))
+				} else if (groupByAttributeKeys?.length) {
 					const keys: CH.Expr<string>[] = groupByAttributeKeys.map((k) =>
 						CH.toString_($.SpanAttributes.get(k)),
 					)
@@ -277,6 +280,7 @@ function buildBreakdownGroupExpr(
 	$: ColumnAccessor<typeof Traces.columns>,
 	groupBy: string,
 	groupByAttributeKey: string | undefined,
+	groupByResourceAttributeKey?: string,
 ): CH.Expr<string> {
 	switch (groupBy) {
 		// One row for the whole window — the same "no dimension" shape the
@@ -302,6 +306,7 @@ function buildBreakdownGroupExpr(
 		case "http_method":
 			return httpRequestMethodExpr($.SpanAttributes)
 		case "attribute":
+			if (groupByResourceAttributeKey) return $.ResourceAttributes.get(groupByResourceAttributeKey)
 			return groupByAttributeKey ? $.SpanAttributes.get(groupByAttributeKey) : $.ServiceName
 		default:
 			return $.ServiceName
@@ -348,6 +353,7 @@ export interface TracesTimeseriesOpts extends TracesQueryOpts {
 	needsSampling: boolean
 	groupBy?: readonly string[]
 	groupByAttributeKeys?: readonly string[]
+	groupByResourceAttributeKey?: string
 	bucketSeconds?: number
 	apdexThresholdMs?: number
 	/** When true, emit all metric columns regardless of the selected metric. Used by custom charts. */
@@ -836,7 +842,12 @@ export function tracesTimeseriesQuery(
 	const raw = from(Traces)
 		.select(($) => ({
 			bucket: CH.toStartOfInterval($.Timestamp, param.int("bucketSeconds")),
-			groupName: buildGroupNameExpr($, opts.groupBy, opts.groupByAttributeKeys),
+			groupName: buildGroupNameExpr(
+				$,
+				opts.groupBy,
+				opts.groupByAttributeKeys,
+				opts.groupByResourceAttributeKey,
+			),
 			...metricSelectExprs($, opts.metric, apdexThresholdMs, opts.needsSampling, opts.allMetrics),
 		}))
 		.where(($) => buildWhereConditions($, opts))
@@ -855,6 +866,7 @@ export interface TracesBreakdownOpts extends TracesQueryOpts {
 	metric: TracesMetric
 	groupBy: string
 	groupByAttributeKey?: string
+	groupByResourceAttributeKey?: string
 	limit?: number
 	apdexThresholdMs?: number
 	/** When true, emit all metric columns regardless of the selected metric. Used by custom charts. */
@@ -913,7 +925,12 @@ export function tracesBreakdownQuery(opts: TracesBreakdownOpts) {
 				opts.allMetrics,
 			)
 			return {
-				name: buildBreakdownGroupExpr($, opts.groupBy, opts.groupByAttributeKey),
+				name: buildBreakdownGroupExpr(
+					$,
+					opts.groupBy,
+					opts.groupByAttributeKey,
+					opts.groupByResourceAttributeKey,
+				),
 				...metrics,
 			}
 		})
@@ -1275,6 +1292,9 @@ export interface TracesRootListOutput {
 	 * destination (`host/path`) instead of falling back to `http.client GET`.
 	 */
 	readonly rootSpanAttributes: string
+	/** Root span's deployment environment and service.version ('' when unset). */
+	readonly rootDeploymentEnv?: string
+	readonly rootServiceVersion?: string
 	readonly hasError: number
 }
 
@@ -1461,6 +1481,8 @@ export function tracesRootListQuery(opts: TracesRootListOpts) {
 			rootHttpRoute: $.SpanAttributes.get("http.route"),
 			rootHttpStatusCode: httpResponseStatusCodeExpr($.SpanAttributes),
 			rootSpanAttributes: CH.toJSONString(buildProjectedMapExpr(ROOT_SPAN_ATTR_KEYS, "SpanAttributes")),
+			rootDeploymentEnv: deploymentEnvExpr($.ResourceAttributes),
+			rootServiceVersion: $.ResourceAttributes.get("service.version"),
 			hasError: CH.if_($.StatusCode.eq("Error"), CH.lit(1), CH.lit(0)),
 		}))
 		.where(($) => [...baseWhere($), $.Timestamp.gte(cutoff)])

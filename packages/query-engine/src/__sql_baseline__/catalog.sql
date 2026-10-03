@@ -22,6 +22,41 @@ SELECT
         GROUP BY orgId
         FORMAT JSON
 
+-- builder:attribute-keys:serviceScopedAttributeKeysQuery:default  [c0eaf78e]
+SELECT
+          arrayJoin(mapKeys(sampled.attrs)) AS attributeKey,
+          count() AS usageCount
+        FROM (SELECT
+          traces.SpanAttributes AS attrs
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.ServiceName = 'checkout'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 20000) AS sampled
+        GROUP BY attributeKey
+        ORDER BY usageCount DESC
+        LIMIT 200
+        FORMAT JSON
+
+-- builder:attribute-keys:serviceScopedAttributeValuesQuery:default  [401cca71]
+SELECT
+          sampled.attrs['k8s.pod.name'] AS attributeValue,
+          count() AS usageCount
+        FROM (SELECT
+          traces.ResourceAttributes AS attrs
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.ServiceName = 'checkout'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 20000) AS sampled
+        WHERE sampled.attrs['k8s.pod.name'] != ''
+        GROUP BY attributeValue
+        ORDER BY usageCount DESC
+        LIMIT 50
+        FORMAT JSON
+
 -- builder:audit-log:auditLogEntriesQuery:default  [e9929192]
 SELECT
           audit_log.Id AS id,
@@ -8564,7 +8599,7 @@ SELECT
         OFFSET 0
         FORMAT JSON
 
--- pipe:list_traces:contains-match:baseline  [d9eea35a]
+-- pipe:list_traces:contains-match:baseline  [c4239d3b]
 SELECT
           traces.TraceId AS traceId,
           traces.Timestamp AS startTime,
@@ -8581,6 +8616,8 @@ SELECT
           traces.SpanAttributes['http.route'] AS rootHttpRoute,
           if(traces.SpanAttributes['http.status_code'] != '', traces.SpanAttributes['http.status_code'], traces.SpanAttributes['http.response.status_code']) AS rootHttpStatusCode,
           toJSONString(map('http.method', SpanAttributes['http.method'], 'http.request.method', SpanAttributes['http.request.method'], 'http.route', SpanAttributes['http.route'], 'http.target', SpanAttributes['http.target'], 'http.status_code', SpanAttributes['http.status_code'], 'http.response.status_code', SpanAttributes['http.response.status_code'], 'http.url', SpanAttributes['http.url'], 'url.full', SpanAttributes['url.full'], 'url.path', SpanAttributes['url.path'], 'server.address', SpanAttributes['server.address'], 'net.peer.name', SpanAttributes['net.peer.name'], 'screen.name', SpanAttributes['screen.name'])) AS rootSpanAttributes,
+          coalesce(nullIf(traces.ResourceAttributes['deployment.environment.name'], ''), traces.ResourceAttributes['deployment.environment']) AS rootDeploymentEnv,
+          traces.ResourceAttributes['service.version'] AS rootServiceVersion,
           if(traces.StatusCode = 'Error', 1, 0) AS hasError
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
@@ -8602,7 +8639,7 @@ SELECT
         LIMIT 100
         FORMAT JSON
 
--- pipe:list_traces:contains-match:bloom  [d9eea35a]
+-- pipe:list_traces:contains-match:bloom  [c4239d3b]
 SELECT
           traces.TraceId AS traceId,
           traces.Timestamp AS startTime,
@@ -8619,6 +8656,8 @@ SELECT
           traces.SpanAttributes['http.route'] AS rootHttpRoute,
           if(traces.SpanAttributes['http.status_code'] != '', traces.SpanAttributes['http.status_code'], traces.SpanAttributes['http.response.status_code']) AS rootHttpStatusCode,
           toJSONString(map('http.method', SpanAttributes['http.method'], 'http.request.method', SpanAttributes['http.request.method'], 'http.route', SpanAttributes['http.route'], 'http.target', SpanAttributes['http.target'], 'http.status_code', SpanAttributes['http.status_code'], 'http.response.status_code', SpanAttributes['http.response.status_code'], 'http.url', SpanAttributes['http.url'], 'url.full', SpanAttributes['url.full'], 'url.path', SpanAttributes['url.path'], 'server.address', SpanAttributes['server.address'], 'net.peer.name', SpanAttributes['net.peer.name'], 'screen.name', SpanAttributes['screen.name'])) AS rootSpanAttributes,
+          coalesce(nullIf(traces.ResourceAttributes['deployment.environment.name'], ''), traces.ResourceAttributes['deployment.environment']) AS rootDeploymentEnv,
+          traces.ResourceAttributes['service.version'] AS rootServiceVersion,
           if(traces.StatusCode = 'Error', 1, 0) AS hasError
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
@@ -8640,7 +8679,7 @@ SELECT
         LIMIT 100
         FORMAT JSON
 
--- pipe:list_traces:contains-match:text  [d9eea35a]
+-- pipe:list_traces:contains-match:text  [c4239d3b]
 SELECT
           traces.TraceId AS traceId,
           traces.Timestamp AS startTime,
@@ -8657,6 +8696,8 @@ SELECT
           traces.SpanAttributes['http.route'] AS rootHttpRoute,
           if(traces.SpanAttributes['http.status_code'] != '', traces.SpanAttributes['http.status_code'], traces.SpanAttributes['http.response.status_code']) AS rootHttpStatusCode,
           toJSONString(map('http.method', SpanAttributes['http.method'], 'http.request.method', SpanAttributes['http.request.method'], 'http.route', SpanAttributes['http.route'], 'http.target', SpanAttributes['http.target'], 'http.status_code', SpanAttributes['http.status_code'], 'http.response.status_code', SpanAttributes['http.response.status_code'], 'http.url', SpanAttributes['http.url'], 'url.full', SpanAttributes['url.full'], 'url.path', SpanAttributes['url.path'], 'server.address', SpanAttributes['server.address'], 'net.peer.name', SpanAttributes['net.peer.name'], 'screen.name', SpanAttributes['screen.name'])) AS rootSpanAttributes,
+          coalesce(nullIf(traces.ResourceAttributes['deployment.environment.name'], ''), traces.ResourceAttributes['deployment.environment']) AS rootDeploymentEnv,
+          traces.ResourceAttributes['service.version'] AS rootServiceVersion,
           if(traces.StatusCode = 'Error', 1, 0) AS hasError
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
@@ -8678,7 +8719,7 @@ SELECT
         LIMIT 100
         FORMAT JSON
 
--- pipe:list_traces:default:baseline  [96e8b328]
+-- pipe:list_traces:default:baseline  [09fceca9]
 SELECT
           traces.TraceId AS traceId,
           traces.Timestamp AS startTime,
@@ -8695,6 +8736,8 @@ SELECT
           traces.SpanAttributes['http.route'] AS rootHttpRoute,
           if(traces.SpanAttributes['http.status_code'] != '', traces.SpanAttributes['http.status_code'], traces.SpanAttributes['http.response.status_code']) AS rootHttpStatusCode,
           toJSONString(map('http.method', SpanAttributes['http.method'], 'http.request.method', SpanAttributes['http.request.method'], 'http.route', SpanAttributes['http.route'], 'http.target', SpanAttributes['http.target'], 'http.status_code', SpanAttributes['http.status_code'], 'http.response.status_code', SpanAttributes['http.response.status_code'], 'http.url', SpanAttributes['http.url'], 'url.full', SpanAttributes['url.full'], 'url.path', SpanAttributes['url.path'], 'server.address', SpanAttributes['server.address'], 'net.peer.name', SpanAttributes['net.peer.name'], 'screen.name', SpanAttributes['screen.name'])) AS rootSpanAttributes,
+          coalesce(nullIf(traces.ResourceAttributes['deployment.environment.name'], ''), traces.ResourceAttributes['deployment.environment']) AS rootDeploymentEnv,
+          traces.ResourceAttributes['service.version'] AS rootServiceVersion,
           if(traces.StatusCode = 'Error', 1, 0) AS hasError
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
@@ -8714,7 +8757,7 @@ SELECT
         LIMIT 100
         FORMAT JSON
 
--- pipe:list_traces:default:bloom  [96e8b328]
+-- pipe:list_traces:default:bloom  [09fceca9]
 SELECT
           traces.TraceId AS traceId,
           traces.Timestamp AS startTime,
@@ -8731,6 +8774,8 @@ SELECT
           traces.SpanAttributes['http.route'] AS rootHttpRoute,
           if(traces.SpanAttributes['http.status_code'] != '', traces.SpanAttributes['http.status_code'], traces.SpanAttributes['http.response.status_code']) AS rootHttpStatusCode,
           toJSONString(map('http.method', SpanAttributes['http.method'], 'http.request.method', SpanAttributes['http.request.method'], 'http.route', SpanAttributes['http.route'], 'http.target', SpanAttributes['http.target'], 'http.status_code', SpanAttributes['http.status_code'], 'http.response.status_code', SpanAttributes['http.response.status_code'], 'http.url', SpanAttributes['http.url'], 'url.full', SpanAttributes['url.full'], 'url.path', SpanAttributes['url.path'], 'server.address', SpanAttributes['server.address'], 'net.peer.name', SpanAttributes['net.peer.name'], 'screen.name', SpanAttributes['screen.name'])) AS rootSpanAttributes,
+          coalesce(nullIf(traces.ResourceAttributes['deployment.environment.name'], ''), traces.ResourceAttributes['deployment.environment']) AS rootDeploymentEnv,
+          traces.ResourceAttributes['service.version'] AS rootServiceVersion,
           if(traces.StatusCode = 'Error', 1, 0) AS hasError
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
@@ -8750,7 +8795,7 @@ SELECT
         LIMIT 100
         FORMAT JSON
 
--- pipe:list_traces:default:text  [96e8b328]
+-- pipe:list_traces:default:text  [09fceca9]
 SELECT
           traces.TraceId AS traceId,
           traces.Timestamp AS startTime,
@@ -8767,6 +8812,8 @@ SELECT
           traces.SpanAttributes['http.route'] AS rootHttpRoute,
           if(traces.SpanAttributes['http.status_code'] != '', traces.SpanAttributes['http.status_code'], traces.SpanAttributes['http.response.status_code']) AS rootHttpStatusCode,
           toJSONString(map('http.method', SpanAttributes['http.method'], 'http.request.method', SpanAttributes['http.request.method'], 'http.route', SpanAttributes['http.route'], 'http.target', SpanAttributes['http.target'], 'http.status_code', SpanAttributes['http.status_code'], 'http.response.status_code', SpanAttributes['http.response.status_code'], 'http.url', SpanAttributes['http.url'], 'url.full', SpanAttributes['url.full'], 'url.path', SpanAttributes['url.path'], 'server.address', SpanAttributes['server.address'], 'net.peer.name', SpanAttributes['net.peer.name'], 'screen.name', SpanAttributes['screen.name'])) AS rootSpanAttributes,
+          coalesce(nullIf(traces.ResourceAttributes['deployment.environment.name'], ''), traces.ResourceAttributes['deployment.environment']) AS rootDeploymentEnv,
+          traces.ResourceAttributes['service.version'] AS rootServiceVersion,
           if(traces.StatusCode = 'Error', 1, 0) AS hasError
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
@@ -8786,7 +8833,7 @@ SELECT
         LIMIT 100
         FORMAT JSON
 
--- pipe:list_traces:filtered:baseline  [f20e3a8c]
+-- pipe:list_traces:filtered:baseline  [83e29d35]
 SELECT
           traces.TraceId AS traceId,
           traces.Timestamp AS startTime,
@@ -8803,6 +8850,8 @@ SELECT
           traces.SpanAttributes['http.route'] AS rootHttpRoute,
           if(traces.SpanAttributes['http.status_code'] != '', traces.SpanAttributes['http.status_code'], traces.SpanAttributes['http.response.status_code']) AS rootHttpStatusCode,
           toJSONString(map('http.method', SpanAttributes['http.method'], 'http.request.method', SpanAttributes['http.request.method'], 'http.route', SpanAttributes['http.route'], 'http.target', SpanAttributes['http.target'], 'http.status_code', SpanAttributes['http.status_code'], 'http.response.status_code', SpanAttributes['http.response.status_code'], 'http.url', SpanAttributes['http.url'], 'url.full', SpanAttributes['url.full'], 'url.path', SpanAttributes['url.path'], 'server.address', SpanAttributes['server.address'], 'net.peer.name', SpanAttributes['net.peer.name'], 'screen.name', SpanAttributes['screen.name'])) AS rootSpanAttributes,
+          coalesce(nullIf(traces.ResourceAttributes['deployment.environment.name'], ''), traces.ResourceAttributes['deployment.environment']) AS rootDeploymentEnv,
+          traces.ResourceAttributes['service.version'] AS rootServiceVersion,
           if(traces.StatusCode = 'Error', 1, 0) AS hasError
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
@@ -8838,7 +8887,7 @@ SELECT
         LIMIT 25
         FORMAT JSON
 
--- pipe:list_traces:filtered:bloom  [6d102b3c]
+-- pipe:list_traces:filtered:bloom  [915ef51d]
 SELECT
           traces.TraceId AS traceId,
           traces.Timestamp AS startTime,
@@ -8855,6 +8904,8 @@ SELECT
           traces.SpanAttributes['http.route'] AS rootHttpRoute,
           if(traces.SpanAttributes['http.status_code'] != '', traces.SpanAttributes['http.status_code'], traces.SpanAttributes['http.response.status_code']) AS rootHttpStatusCode,
           toJSONString(map('http.method', SpanAttributes['http.method'], 'http.request.method', SpanAttributes['http.request.method'], 'http.route', SpanAttributes['http.route'], 'http.target', SpanAttributes['http.target'], 'http.status_code', SpanAttributes['http.status_code'], 'http.response.status_code', SpanAttributes['http.response.status_code'], 'http.url', SpanAttributes['http.url'], 'url.full', SpanAttributes['url.full'], 'url.path', SpanAttributes['url.path'], 'server.address', SpanAttributes['server.address'], 'net.peer.name', SpanAttributes['net.peer.name'], 'screen.name', SpanAttributes['screen.name'])) AS rootSpanAttributes,
+          coalesce(nullIf(traces.ResourceAttributes['deployment.environment.name'], ''), traces.ResourceAttributes['deployment.environment']) AS rootDeploymentEnv,
+          traces.ResourceAttributes['service.version'] AS rootServiceVersion,
           if(traces.StatusCode = 'Error', 1, 0) AS hasError
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
@@ -8890,7 +8941,7 @@ SELECT
         LIMIT 25
         FORMAT JSON
 
--- pipe:list_traces:filtered:text  [7a685c3c]
+-- pipe:list_traces:filtered:text  [157d158d]
 SELECT
           traces.TraceId AS traceId,
           traces.Timestamp AS startTime,
@@ -8907,6 +8958,8 @@ SELECT
           traces.SpanAttributes['http.route'] AS rootHttpRoute,
           if(traces.SpanAttributes['http.status_code'] != '', traces.SpanAttributes['http.status_code'], traces.SpanAttributes['http.response.status_code']) AS rootHttpStatusCode,
           toJSONString(map('http.method', SpanAttributes['http.method'], 'http.request.method', SpanAttributes['http.request.method'], 'http.route', SpanAttributes['http.route'], 'http.target', SpanAttributes['http.target'], 'http.status_code', SpanAttributes['http.status_code'], 'http.response.status_code', SpanAttributes['http.response.status_code'], 'http.url', SpanAttributes['http.url'], 'url.full', SpanAttributes['url.full'], 'url.path', SpanAttributes['url.path'], 'server.address', SpanAttributes['server.address'], 'net.peer.name', SpanAttributes['net.peer.name'], 'screen.name', SpanAttributes['screen.name'])) AS rootSpanAttributes,
+          coalesce(nullIf(traces.ResourceAttributes['deployment.environment.name'], ''), traces.ResourceAttributes['deployment.environment']) AS rootDeploymentEnv,
+          traces.ResourceAttributes['service.version'] AS rootServiceVersion,
           if(traces.StatusCode = 'Error', 1, 0) AS hasError
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'

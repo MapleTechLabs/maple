@@ -23,6 +23,9 @@ export interface ListTracesOutput {
 	readonly rootHttpStatusCode: string
 	/** The root span's projected attribute map, JSON-encoded. */
 	readonly rootSpanAttributes: string
+	/** Root resource's deployment environment and service.version, '' when unset. */
+	readonly rootDeploymentEnv: string
+	readonly rootServiceVersion: string
 	readonly hasError: number
 }
 

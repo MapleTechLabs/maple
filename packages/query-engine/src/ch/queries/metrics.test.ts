@@ -363,6 +363,18 @@ describe("metricsTimeseriesRateQuery", () => {
 
 // metricsBreakdownQuery
 
+describe("metricsBreakdownQuery resource group-by", () => {
+	it("groups by a resource attribute, not by service", () => {
+		const q = metricsBreakdownQuery({
+			metricType: "gauge",
+			groupByResourceAttributeKey: "deployment.environment.name",
+		})
+		const { sql } = compileUnsafe(q, baseParams)
+		expect(sql).toContain("ResourceAttributes['deployment.environment.name'] AS name")
+		expect(sql).not.toContain("ServiceName AS name")
+	})
+})
+
 // metricsSparklinesQuery
 
 describe("metricsSparklinesQuery", () => {

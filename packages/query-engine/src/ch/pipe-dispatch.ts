@@ -32,6 +32,8 @@ import {
 	metricScopedAttributeValuesQuery,
 	resourceAttributeValuesQuery,
 	spanAttributeValuesQuery,
+	serviceScopedAttributeKeysQuery,
+	serviceScopedAttributeValuesQuery,
 } from "./queries/attribute-keys"
 import {
 	errorDetailTracesQuery,
@@ -617,24 +619,48 @@ export function compilePipeQuery(
 			),
 		)
 		.pipe(
-			Match.when("span_attribute_keys", () =>
-				eraseType(
+			Match.when("span_attribute_keys", () => {
+				// The hourly rollup has no ServiceName; a service filter reads raw spans.
+				const serviceName = str("service_name")
+				if (serviceName) {
+					return eraseType(
+						compile(serviceScopedAttributeKeysQuery({ scope: "span", limit: int("limit", 200) }), {
+							orgId,
+							startTime,
+							endTime,
+							serviceName,
+						}),
+					)
+				}
+				return eraseType(
 					compile(attributeKeysQuery({ scope: "span", limit: int("limit", 200) }), {
 						orgId,
 						startTime,
 						endTime,
 					}),
-				),
-			),
-			Match.when("resource_attribute_keys", () =>
-				eraseType(
+				)
+			}),
+			Match.when("resource_attribute_keys", () => {
+				// The hourly rollup has no ServiceName; a service filter reads raw spans.
+				const serviceName = str("service_name")
+				if (serviceName) {
+					return eraseType(
+						compile(serviceScopedAttributeKeysQuery({ scope: "resource", limit: int("limit", 200) }), {
+							orgId,
+							startTime,
+							endTime,
+							serviceName,
+						}),
+					)
+				}
+				return eraseType(
 					compile(attributeKeysQuery({ scope: "resource", limit: int("limit", 200) }), {
 						orgId,
 						startTime,
 						endTime,
 					}),
-				),
-			),
+				)
+			}),
 			Match.when("metric_attribute_keys", () => {
 				// Optional per-metric scoping: reads the raw metric table (the hourly
 				// rollup carries no MetricName column).
@@ -660,8 +686,21 @@ export function compilePipeQuery(
 					}),
 				)
 			}),
-			Match.when("span_attribute_values", () =>
-				eraseType(
+			Match.when("span_attribute_values", () => {
+				const serviceName = str("service_name")
+				if (serviceName) {
+					return eraseType(
+						compile(
+							serviceScopedAttributeValuesQuery({
+								scope: "span",
+								attributeKey: String(params.attribute_key),
+								limit: int("limit", 50),
+							}),
+							{ orgId, startTime, endTime, serviceName },
+						),
+					)
+				}
+				return eraseType(
 					compile(
 						spanAttributeValuesQuery({
 							attributeKey: String(params.attribute_key),
@@ -669,10 +708,23 @@ export function compilePipeQuery(
 						}),
 						{ orgId, startTime, endTime },
 					),
-				),
-			),
-			Match.when("resource_attribute_values", () =>
-				eraseType(
+				)
+			}),
+			Match.when("resource_attribute_values", () => {
+				const serviceName = str("service_name")
+				if (serviceName) {
+					return eraseType(
+						compile(
+							serviceScopedAttributeValuesQuery({
+								scope: "resource",
+								attributeKey: String(params.attribute_key),
+								limit: int("limit", 50),
+							}),
+							{ orgId, startTime, endTime, serviceName },
+						),
+					)
+				}
+				return eraseType(
 					compile(
 						resourceAttributeValuesQuery({
 							attributeKey: String(params.attribute_key),
@@ -680,8 +732,8 @@ export function compilePipeQuery(
 						}),
 						{ orgId, startTime, endTime },
 					),
-				),
-			),
+				)
+			}),
 			Match.when("metric_attribute_values", () => {
 				const metricName = str("metric_name")
 				const metricType = parseMetricType(str("metric_type"))
@@ -774,6 +826,7 @@ export function compilePipeQuery(
 							errorsOnly: hasError,
 							minDurationMs: int("min_duration_ms"),
 							maxDurationMs: int("max_duration_ms"),
+							environments: strList("deployment_env"),
 							attributeFilters,
 							resourceAttributeFilters: Array.isArray(params.resource_attribute_filters)
 								? (params.resource_attribute_filters as AttributeFilter[])
