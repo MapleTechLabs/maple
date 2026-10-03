@@ -182,6 +182,24 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 			const last = stepData[stepData.length - 1]
 			const conversion = steps.length < 2 || last === undefined ? null : ratio(last.count, first)
 
+			// An empty VisitorId/UserId makes a visitor/user funnel match nobody and a person funnel
+			// collapse to one "person"; a per-session count of step 1 tells the two apart.
+			const sessionFirst =
+				keyBy === "session" || first > 1
+					? undefined
+					: yield* withTenantExecutor(
+							productEventsFunnel({ ...definition, keyBy: "session" }),
+						).pipe(
+							Effect.map(
+								(rows) => Number(rows.find((row) => Number(row.step) === 1)?.count) || 0,
+							),
+							Effect.orElseSucceed(() => undefined),
+						)
+			const identityNote =
+				sessionFirst !== undefined && sessionFirst > Math.max(first, 1)
+					? `Step 1 matched ${sessionFirst} sessions but ${first} ${KEY_BY_NOUN[keyBy]}: the events carry no ${keyBy === "user" ? "UserId" : keyBy === "visitor" ? "VisitorId" : "VisitorId or UserId"}, so they cannot be stitched by ${keyBy}. Use key_by="session", or send a visitor/user id with the events.`
+					: undefined
+
 			const breakdown =
 				breakdownBy === undefined || first === 0
 					? undefined
@@ -233,6 +251,7 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 				conversion,
 				...(breakdown === undefined ? undefined : { breakdown }),
 				definition: steps,
+				...(identityNote === undefined ? undefined : { identityNote }),
 			}
 		}),
 		render: (output) => {
@@ -245,12 +264,14 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 			return {
 				title: `Funnel (${steps.length} step${steps.length === 1 ? "" : "s"}, by ${output.keyBy}, within ${output.windowSeconds}s)`,
 				scope: [["Time range", `${output.timeRange.start} to ${output.timeRange.end}`]],
+				...(output.identityNote === undefined ? undefined : { notices: [output.identityNote] }),
 				...(first === undefined || first.count === 0
 					? {
 							empty: {
 								message: `Nobody matched step 1${first === undefined ? "" : ` (${first.label})`} in this window.`,
 								hints: [
-									"Widen start_time/end_time, or check the step against `list_product_events`.",
+									output.identityNote ??
+										"Widen start_time/end_time, or check the step against `list_product_events`.",
 								],
 							},
 						}

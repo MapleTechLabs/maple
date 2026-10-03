@@ -12,6 +12,16 @@ import { makeEvalRuntime, markdown, runToolDirect, type EvalRuntime } from "../.
 // Both tools run through the registry the way a client reaches them, against a fake warehouse
 // that answers the funnel read with two steps and the event-name read with one custom event.
 const fixtures: FixtureRule[] = [
+	// Events with an empty VisitorId: keyed by session step 1 matches, keyed by visitor nothing does.
+	{
+		match: (sql) => sql.includes("anon_step") && /windowFunnel/i.test(sql) && !/VisitorId/.test(sql),
+		rows: [{ step: 1, count: 7 }],
+	},
+	{ match: (sql) => sql.includes("anon_step"), rows: [] },
+	{
+		match: (sql) => /product_events/i.test(sql) && sql.includes("collapsed.test"),
+		rows: [{ eventName: "page_view", kind: "navigation", count: 40, sessions: 12, persons: 1 }],
+	},
 	// The breakdown read names the attribute it groups by.
 	{
 		match: (sql) => /windowFunnel/i.test(sql) && sql.includes("'plan'"),
@@ -62,6 +72,18 @@ describe("query_funnel / list_product_events registration", () => {
 	it("list_product_events has only optional parameters", () => {
 		const definition = mapleToolCatalog.find((d) => d.name === "list_product_events")!
 		expect(toInputSchema(definition.schema).required ?? []).toEqual([])
+	})
+})
+
+describe("query_funnel identity", () => {
+	it("names an empty VisitorId instead of reporting nobody matched", async () => {
+		const result = await call("query_funnel", {
+			steps_json: JSON.stringify([{ kind: "event", eventName: "anon_step" }]),
+			key_by: "visitor",
+		})
+		const output = Schema.decodeUnknownSync(QueryFunnelOutput)(result.structuredContent)
+		expect(output.identityNote).toContain("7 sessions but 0 visitors")
+		expect(markdown(result)).toContain('key_by="session"')
 	})
 })
 
@@ -154,6 +176,13 @@ describe("list_product_events output", () => {
 		const text = markdown(result)
 		expect(text).toContain("| signup_completed | custom |")
 		expect(text).toContain("`query_funnel steps_json=")
+	})
+
+	it("says when every event collapses onto one person", async () => {
+		const result = await call("list_product_events", { host: "collapsed.test" })
+		expect(markdown(result)).toContain("carry no VisitorId or UserId")
+		const healthy = await call("list_product_events", {})
+		expect(markdown(healthy)).not.toContain("carry no VisitorId")
 	})
 
 	it("rejects an unknown kind as a parameter error", async () => {
