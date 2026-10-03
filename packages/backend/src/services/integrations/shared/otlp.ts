@@ -1,11 +1,14 @@
 /**
  * Encode collector-shaped metric rows (`MetricSumRow` / `MetricGaugeRow`) into an OTLP/HTTP JSON
- * `ExportMetricsServiceRequest`, so the Cloudflare poller can ship its synthetic edge metrics
- * through the ingest gateway (`POST /v1/metrics`) exactly like every other telemetry source —
- * which is what gives per-org routing (managed Tinybird vs BYO ClickHouse), schema-version gating,
- * WAL durability, and Autumn metering for free. The rows are already OTel-metric-shaped, so this is
+ * `ExportMetricsServiceRequest`, so an integration poller can ship its synthetic metrics through
+ * the ingest gateway (`POST /v1/metrics`) exactly like every other telemetry source — which is
+ * what gives per-org routing (managed Tinybird vs BYO ClickHouse), schema-version gating, WAL
+ * durability, and Autumn metering for free. The rows are already OTel-metric-shaped, so this is
  * a mechanical re-expression: no query paths change (the downstream collector still lands them in
  * `metrics_sum` / `metrics_gauge`).
+ *
+ * Provider-agnostic on purpose — the Cloudflare edge-analytics poller and the Google Analytics
+ * collector both emit through it, and any future polling integration should too.
  *
  * Rows are grouped resource → scope → metric to match the OTLP envelope: sum rows become `sum`
  * metrics (carrying the row's `aggregation_temporality` — 1 = DELTA — and `is_monotonic`), gauge
@@ -106,7 +109,7 @@ const scopeKey = (row: MetricGaugeRow): string =>
 	`${row.scope_schema_url}\x00${row.scope_name}\x00${row.scope_version}\x00${stableJson(row.scope_attributes)}`
 
 /**
- * Convert Cloudflare metric rows into a single OTLP/JSON metrics request. Sum and gauge metrics
+ * Convert integration metric rows into a single OTLP/JSON metrics request. Sum and gauge metrics
  * coexist in the same envelope; the downstream collector fans them back out to
  * `metrics_sum` / `metrics_gauge`.
  */

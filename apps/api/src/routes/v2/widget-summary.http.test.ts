@@ -35,6 +35,7 @@ import {
 	ApiV2RateLimiterAllowAllLayer,
 	ConfigResourceServiceStubsLayer,
 	makeWarehouseServiceStub,
+	GoogleAnalyticsServiceStubsLayer,
 	PlanetScaleServiceStubsLayer,
 } from "./v2-test-support"
 import { compiledQueryOf } from "@maple/query-engine/execution"
@@ -189,6 +190,7 @@ const makeHarness = (options: {
 		Layer.provide(readsLive),
 		Layer.provide(V2TransportErrorBoundaryLive),
 		Layer.provide(PlanetScaleServiceStubsLayer),
+		Layer.provide(GoogleAnalyticsServiceStubsLayer),
 		Layer.provide(AlertsServiceStubLayer),
 		Layer.provide(ConfigResourceServiceStubsLayer),
 		Layer.provideMerge(ApiAuthorizationV2Layer),

@@ -24,6 +24,7 @@ import {
 	AllV2GroupLayersLive,
 	ApiV2RateLimiterAllowAllLayer,
 	ConfigResourceServiceStubsLayer,
+	GoogleAnalyticsServiceStubsLayer,
 	PlanetScaleServiceStubsLayer,
 	TelemetryServiceStubsLayer,
 } from "./v2-test-support"
@@ -66,6 +67,7 @@ const makeHarness = () => {
 		Layer.provide(AllV2GroupLayersLive),
 		Layer.provide(V2TransportErrorBoundaryLive),
 		Layer.provide(PlanetScaleServiceStubsLayer),
+		Layer.provide(GoogleAnalyticsServiceStubsLayer),
 		Layer.provide(AlertsServiceStubLayer),
 		Layer.provide(ConfigResourceServiceStubsLayer),
 		Layer.provide(TelemetryServiceStubsLayer),

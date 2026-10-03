@@ -23,6 +23,7 @@ import { kubernetesPodTemplate } from "./infrastructure/kubernetes-pod"
 import { kafkaTemplate } from "./messaging/kafka"
 import { natsTemplate } from "./messaging/nats"
 import { rabbitmqTemplate } from "./messaging/rabbitmq"
+import { googleAnalyticsTemplate } from "./product/google-analytics"
 import type { TemplateDefinition, TemplateMetadata, TemplatePreviewWidget } from "./types"
 
 export const DASHBOARD_TEMPLATES: ReadonlyArray<TemplateDefinition> = [
@@ -53,6 +54,8 @@ export const DASHBOARD_TEMPLATES: ReadonlyArray<TemplateDefinition> = [
 	kafkaTemplate,
 	natsTemplate,
 	rabbitmqTemplate,
+	// Product
+	googleAnalyticsTemplate,
 ]
 
 const TEMPLATE_BY_ID = new Map<string, TemplateDefinition>(DASHBOARD_TEMPLATES.map((t) => [t.id, t]))

@@ -30,6 +30,7 @@ import {
 	ApiV2RateLimiterAllowAllLayer,
 	makeWarehouseServiceStub,
 	Phase1ResourceStubsLayer,
+	GoogleAnalyticsServiceStubsLayer,
 	PlanetScaleServiceStubsLayer,
 	TelemetryServiceStubsLayer,
 } from "./v2-test-support"
@@ -144,6 +145,7 @@ const makeHarness = (warehouse: WarehouseQueryServiceApi = warehouseStub()) => {
 		Layer.provide(AlertsServiceStubLayer),
 		Layer.provide(Phase1ResourceStubsLayer),
 		Layer.provide(PlanetScaleServiceStubsLayer),
+		Layer.provide(GoogleAnalyticsServiceStubsLayer),
 		Layer.provide(TelemetryServiceStubsLayer),
 		Layer.provide(warehouseLive),
 		Layer.provideMerge(ApiAuthorizationV2Layer),
