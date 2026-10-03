@@ -85,12 +85,31 @@ export const ListErrorIssuesOutput = Schema.Struct({
 export const TransitionErrorIssueOutput = Schema.Struct({
 	id: Schema.String,
 	workflowState: Schema.String,
+	/** The state before this call; equal to `toState` when the issue was already there. */
+	fromState: Schema.String,
 	toState: Schema.String,
 	assignedActorId: Schema.NullOr(Schema.String),
 	leaseHolderActorId: Schema.NullOr(Schema.String),
 	snoozeUntil: Schema.NullOr(Schema.String),
 	serviceName: Schema.String,
 	exceptionType: Schema.String,
+	note: Schema.optionalKey(Schema.String),
+})
+
+/** One issue's outcome in a multi-issue call: `ok` with the move made, or the refusal. */
+export const IssueBatchResult = Schema.Struct({
+	id: Schema.String,
+	ok: Schema.Boolean,
+	fromState: Schema.optionalKey(Schema.String),
+	workflowState: Schema.optionalKey(Schema.String),
+	error: Schema.optionalKey(Schema.String),
+})
+
+export const TransitionErrorIssuesOutput = Schema.Struct({
+	toState: Schema.String,
+	succeeded: Schema.Number,
+	failed: Schema.Number,
+	results: Schema.Array(IssueBatchResult),
 	note: Schema.optionalKey(Schema.String),
 })
 
@@ -134,6 +153,8 @@ export const ProposeFixOutput = Schema.Struct({
 	issueId: Schema.String,
 	workflowState: Schema.String,
 	prUrl: Schema.NullOr(Schema.String),
+	/** Per-issue outcomes for `also_issue_ids`, the other issues the same fix covers. */
+	also: Schema.optionalKey(Schema.Array(IssueBatchResult)),
 })
 
 export const LinkPullRequestOutput = Schema.Struct({

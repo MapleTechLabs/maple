@@ -41,6 +41,7 @@ import {
 	ReleaseErrorIssueOutput,
 	SetIssueSeverityOutput,
 	TransitionErrorIssueOutput,
+	TransitionErrorIssuesOutput,
 	UpdateErrorNotificationPolicyOutput,
 } from "./issues"
 import {
@@ -159,6 +160,7 @@ export const McpToolOutputs = {
 	service_map: ServiceMapOutput,
 	set_issue_severity: SetIssueSeverityOutput,
 	transition_error_issue: TransitionErrorIssueOutput,
+	transition_error_issues: TransitionErrorIssuesOutput,
 	update_alert_rule: UpdateAlertRuleOutput,
 	update_dashboard: UpdateDashboardOutput,
 	update_dashboard_widget: UpdateDashboardWidgetOutput,

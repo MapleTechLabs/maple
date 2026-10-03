@@ -81,6 +81,8 @@ first occurrences ──> (candidate) ──> issue in \`triage\`
 - \`set_issue_severity\` — how bad it is, with a reason.
 - \`propose_fix\` / \`link_pull_request\` — attach the fix.
 - \`transition_error_issue\` — everything else, e.g. \`wontfix\` with a \`snooze_until\`.
+- \`transition_error_issues\`: the same move on many issues at once (one note, per-issue results).
+  \`propose_fix\` takes \`also_issue_ids\` when one PR fixes several issues.
 
 ## Attribute Filtering
 - Call \`explore_attributes\` before filtering by custom attributes
