@@ -30,9 +30,13 @@ describe("nextWindow", () => {
 		assert.strictEqual(nextWindow(new Date(Date.UTC(2026, 9, 3, 12, 28, 0)), now), null)
 	})
 
-	it("caps a long catch-up at six hours", () => {
-		const window = nextWindow(new Date(now - 48 * 60 * minute), now)
-		assert.strictEqual(window!.endMs - window!.startMs, 6 * 60 * minute)
+	it("catches up a long gap six hours at a time from the watermark, skipping nothing", () => {
+		const watermark = new Date(now - 48 * 60 * minute)
+		const window = nextWindow(watermark, now)
+		assert.deepStrictEqual(window, {
+			startMs: watermark.getTime(),
+			endMs: watermark.getTime() + 6 * 60 * minute,
+		})
 	})
 })
 

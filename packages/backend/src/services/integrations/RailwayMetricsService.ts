@@ -72,9 +72,10 @@ const parseServices = (json: string): Readonly<Record<string, string>> =>
 
 /** Next window for an environment, or null when it is caught up. */
 export const nextWindow = (watermarkAt: Date | null, now: number) => {
-	const endMs = floorToSample(now - SAFETY_LAG_MS)
-	const fromMs = watermarkAt === null ? endMs - INITIAL_BACKFILL_MS : dateToMs(watermarkAt)
-	const startMs = Math.max(fromMs, endMs - MAX_WINDOW_MS)
+	const horizonMs = floorToSample(now - SAFETY_LAG_MS)
+	const startMs = watermarkAt === null ? horizonMs - INITIAL_BACKFILL_MS : dateToMs(watermarkAt)
+	// Cap the end, not the start: a long gap catches up one window per tick instead of being skipped.
+	const endMs = Math.min(horizonMs, startMs + MAX_WINDOW_MS)
 	return startMs < endMs ? { startMs, endMs } : null
 }
 
