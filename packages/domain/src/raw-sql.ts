@@ -226,6 +226,42 @@ const orgFilterEscapes = (masked: string, start: number, end: number): boolean =
 	}
 }
 
+const IDENT = "[A-Za-z_][A-Za-z0-9_]*"
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+
+/**
+ * Whether `alias` names a real table read in a FROM/JOIN (`FROM traces t`, `JOIN db.logs AS l`,
+ * or the bare table name). A subquery, table function or CTE could be a constant `OrgId`,
+ * which would make the tenant predicate true for every row.
+ */
+const aliasBindsTable = (masked: string, alias: string): boolean => {
+	const ctes = new Set(
+		[...masked.matchAll(new RegExp(`(?:\\bWITH|,)\\s*(${IDENT})\\s+AS\\s*\\(`, "gi"))].map((m) =>
+			(m[1] ?? "").toLowerCase(),
+		),
+	)
+	const a = escapeRe(alias)
+	const binding = new RegExp(
+		`\\b(?:FROM|JOIN)\\s+(?:${IDENT}\\.)?(${IDENT})(?:\\s+(?:AS\\s+)?(${IDENT}))?(?=[\\s,)]|$)`,
+		"gi",
+	)
+	for (const m of masked.matchAll(binding)) {
+		const table = m[1] ?? ""
+		const bound = m[2]
+		const names =
+			bound === undefined ||
+			/^(?:WHERE|PREWHERE|FINAL|SAMPLE|ARRAY|GLOBAL|ANY|ALL|INNER|LEFT|RIGHT|FULL|CROSS|JOIN|ON|USING|GROUP|ORDER|LIMIT|UNION|SETTINGS|FORMAT)$/i.test(
+				bound,
+			)
+				? [table]
+				: [table, bound]
+		if (names.some((n) => new RegExp(`^${a}$`, "i").test(n)) && !ctes.has(table.toLowerCase())) {
+			return true
+		}
+	}
+	return false
+}
+
 /** The first org-filter problem in the query, or null. */
 const orgFilterIssue = (sql: string, masked: string): RawSqlIssue | null => {
 	for (const match of sql.matchAll(ORG_FILTER_MACRO_RE)) {
@@ -238,6 +274,12 @@ const orgFilterIssue = (sql: string, masked: string): RawSqlIssue | null => {
 		}
 		// Offsets are shared with the masked text; a macro inside a literal or comment is inert.
 		if (masked.startsWith("$__orgFilter", match.index)) {
+			if (alias !== undefined && !aliasBindsTable(masked, alias)) {
+				return issue(
+					"InvalidMacro",
+					`$__orgFilter(${alias}) must name a table read in FROM or JOIN (e.g. \`FROM traces t ... $__orgFilter(t)\`), not a subquery, table function or CTE.`,
+				)
+			}
 			if (orgFilterEscapes(masked, match.index, match.index + match[0].length)) {
 				return issue(
 					"InvalidMacro",

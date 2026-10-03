@@ -221,6 +221,25 @@ describe("rawSqlIssue org filter placement", () => {
 		expect(rawSqlIssue(sql)).toBeNull()
 	})
 
+	it.each([
+		"SELECT * FROM traces t CROSS JOIN (SELECT 'org_abc' AS OrgId) f WHERE $__orgFilter(f)",
+		"WITH f AS (SELECT 'org_abc' AS OrgId) SELECT * FROM traces t, f WHERE $__orgFilter(f)",
+		"WITH f AS (SELECT 'org_abc' AS OrgId) SELECT * FROM traces t JOIN f ON 1 = 1 WHERE $__orgFilter(f)",
+		"SELECT * FROM traces t JOIN numbers(1) n ON 1 = 1 WHERE $__orgFilter(n)",
+		"SELECT * FROM traces t WHERE $__orgFilter(x)",
+	])("rejects an alias that is not a table read in FROM/JOIN: %s", (sql) => {
+		expect(rawSqlIssue(sql)?.message).toContain("must name a table read in FROM or JOIN")
+	})
+
+	it.each([
+		"SELECT 1 FROM traces AS t WHERE $__orgFilter(t)",
+		"SELECT 1 FROM traces WHERE $__orgFilter(traces)",
+		"SELECT 1 FROM maple.traces t FINAL WHERE $__orgFilter(t)",
+		"SELECT 1 FROM traces t LEFT JOIN logs AS l ON t.TraceId = l.TraceId WHERE $__orgFilter(t) AND $__orgFilter(l)",
+	])("accepts an alias bound to a table: %s", (sql) => {
+		expect(rawSqlIssue(sql)).toBeNull()
+	})
+
 	it("rejects a non-identifier alias", () => {
 		expect(rawSqlIssue("SELECT 1 FROM traces WHERE $__orgFilter(t OR 1)")?.code).toBe("InvalidMacro")
 	})
