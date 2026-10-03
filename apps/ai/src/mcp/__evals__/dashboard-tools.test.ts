@@ -117,6 +117,38 @@ describe("dashboard tools", () => {
 		expect(markdown(result)).toContain("`panel_type`")
 	})
 
+	it("adds a markdown note with no data source, and points a taken id at update", async () => {
+		const added = await call("add_dashboard_widget", {
+			dashboard_id: dashboardId,
+			panel_type: "markdown",
+			widget_id: "w3",
+			display_json: '{"title":"Readme","markdown":{"content":"Hello"}}',
+		})
+		expect(added.isError).toBeUndefined()
+
+		const taken = await call("add_dashboard_widget", {
+			dashboard_id: dashboardId,
+			panel_type: "markdown",
+			widget_id: "w3",
+			display_json: '{"markdown":{"content":"Again"}}',
+		})
+		expect(taken.isError).toBe(true)
+		expect(markdown(taken)).toContain('update_dashboard_widget widget_id="w3"')
+	})
+
+	it("renames a widget with title alone", async () => {
+		const result = await call("update_dashboard_widget", {
+			dashboard_id: dashboardId,
+			widget_id: "w3",
+			title: "Notes",
+		})
+		expect(result.isError).toBeUndefined()
+		const board = await call("get_dashboard", { dashboard_id: dashboardId })
+		const output = Schema.decodeUnknownSync(GetDashboardOutput)(board.structuredContent)
+		const w3 = output.dashboard.widgets.find((w) => w.id === "w3")
+		expect(w3?.display).toMatchObject({ title: "Notes", markdown: { content: "Hello" } })
+	})
+
 	it("reorders, and rejects geometry off the grid", async () => {
 		const bad = await call("reorder_dashboard_widgets", {
 			dashboard_id: dashboardId,
@@ -141,7 +173,8 @@ describe("dashboard tools", () => {
 
 		const result = await call("remove_dashboard_widget", { dashboard_id: dashboardId, widget_id: "w1" })
 		const output = Schema.decodeUnknownSync(RemoveDashboardWidgetOutput)(result.structuredContent)
-		expect(output.dashboard.widgetCount).toBe(1)
+		// w2 and the note w3 remain.
+		expect(output.dashboard.widgetCount).toBe(2)
 		expect(markdown(result)).toContain("Removed Widget ID: w1")
 	})
 
