@@ -197,7 +197,8 @@ const runSqlDescription =
 	`at most ${MAX_RAW_SQL_RESULT_ROWS} are fetched and the first ${MAX_RENDERED_ROWS} rendered, with the true count reported. ` +
 	"Use it to answer what query_data cannot express, to spot-check data, or to test SQL before saving it " +
 	"as a raw_sql widget with add_dashboard_widget. For trends and top-N prefer query_data. " +
-	"Main tables (no otel_ prefix): traces, logs, metrics_sum/metrics_gauge/metrics_histogram, error_events, session_replays, product_events. " +
+	"Spans are in `traces` (there is no otel_spans, otel_traces or spans table) and log lines in `logs`. " +
+	"Main tables: traces, logs, metrics_sum/metrics_gauge/metrics_histogram, error_events, session_replays, product_events. " +
 	"Time columns: Timestamp on traces, logs, error_events and product_events; TimeUnix on metrics_*; StartTime on session_replays; " +
 	"Hour on *_hourly rollups and service_usage; Minute on *_minutely. " +
 	"service_usage is a SummingMergeTree (always sum() its counts; TraceCount counts spans); metrics_sum cumulative counters " +
