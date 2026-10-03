@@ -23,6 +23,32 @@ const unsafePath = (path: string): boolean =>
 
 const REPOSITORY = P.text("Connected repository in owner/name form")
 
+/** Matches whose line numbers are looked up: each costs one file read against the rate limit. */
+const LINE_LOOKUP_MATCHES = 3
+const MAX_LINES_PER_MATCH = 5
+/** Characters GitHub code search drops from a query, so a query leaning on them can miss. */
+const IGNORED_PUNCTUATION = /[.,:;/\\`'"=*!?#$&+^|~<>(){}[\]@]/
+
+/** GitHub's `path:` qualifier names a directory; a file path splits into `path:` plus `filename:`. */
+export const splitSearchPath = (raw: string): { readonly dir?: string; readonly filename?: string } => {
+	const path = raw.trim().replace(/^\.\//, "").replace(/\/+$/, "")
+	const slash = path.lastIndexOf("/")
+	const base = path.slice(slash + 1)
+	if (!base.includes(".")) return path === "" ? {} : { dir: path }
+	return slash === -1 ? { filename: base } : { dir: path.slice(0, slash), filename: base }
+}
+
+/** 1-based lines holding the query, else the first snippet line; at most a few. */
+export const matchLines = (content: string, query: string, snippet: string | undefined): Array<number> => {
+	const lines = content.split("\n")
+	const find = (needle: string) =>
+		lines.flatMap((line, i) => (line.toLowerCase().includes(needle) ? [i + 1] : []))
+	const byQuery = find(query.toLowerCase())
+	if (byQuery.length > 0) return byQuery.slice(0, MAX_LINES_PER_MATCH)
+	const anchor = snippet?.split("\n").find((line) => line.trim().length > 0)?.trim().toLowerCase()
+	return anchor === undefined ? [] : find(anchor).slice(0, MAX_LINES_PER_MATCH)
+}
+
 export function registerSourceCodeTools(server: McpToolRegistrar) {
 	server.define({
 		name: "list_source_repositories",
@@ -82,11 +108,11 @@ export function registerSourceCodeTools(server: McpToolRegistrar) {
 		name: "search_source_code",
 		title: "Search Source Code",
 		description:
-			"Search one connected repository through GitHub's code search: an index of the default branch, matched on whole tokens, not regex, and rate limited. It finds where a symbol or message lives, not what was deployed. Use exact exception text, function or class names, routes, span names or log fragments from telemetry, then read_source_file on promising paths. The repository comes from telemetry (vcs.repository.url.full) or list_source_repositories.",
+			"Search one connected repository through GitHub's code search: an index of the default branch only (GitHub offers no branch or ref for it), matched on whole tokens with punctuation ignored, not regex, and rate limited. It finds where a symbol or message lives, not what was deployed. Use exact exception text, function or class names, routes, span names or log fragments from telemetry, then read_source_file on promising paths. The repository comes from telemetry (vcs.repository.url.full) or list_source_repositories.",
 		parameters: Schema.Struct({
 			repository: REPOSITORY,
 			query: P.text("Plain code or text to search for, without repo:, org: or user: qualifiers"),
-			path: P.optionalText("Directory or file to restrict the search to"),
+			path: P.optionalText("Directory prefix or file path to restrict the search to"),
 			limit: P.limit({ default: 10, max: 20, noun: "matches" }),
 		}),
 		output: SearchSourceCodeOutput,
@@ -109,24 +135,40 @@ export function registerSourceCodeTools(server: McpToolRegistrar) {
 			}
 			const tenant = yield* CurrentMcpTenant
 			const source = yield* VcsSourceService
+			const repo = repository.trim()
+			const { dir, filename } = path === undefined ? {} : splitSearchPath(path)
 			const matches = yield* source
-				.searchCode(tenant.orgId, repository.trim(), trimmed, {
-					...(path === undefined ? undefined : { path }),
+				.searchCode(tenant.orgId, repo, filename === undefined ? trimmed : `${trimmed} filename:${filename}`, {
+					...(dir === undefined ? undefined : { path: dir }),
 					limit,
 				})
 				.pipe(Effect.mapError(fromVcsLookupError("search_source_code")))
+			// Code search returns no line numbers; read the top files to find them. Best effort.
+			const lines = yield* Effect.forEach(
+				matches.slice(0, LINE_LOOKUP_MATCHES),
+				(match) =>
+					source.readFile(tenant.orgId, repo, match.path).pipe(
+						Effect.map((file) => matchLines(file.content, trimmed, match.snippets[0])),
+						Effect.orElseSucceed((): Array<number> => []),
+					),
+				{ concurrency: LINE_LOOKUP_MATCHES },
+			)
 			return {
-				repository: repository.trim(),
+				repository: repo,
 				query: trimmed,
 				...(path === undefined ? undefined : { path }),
-				matches: matches.map((match) => ({
-					path: match.path,
-					sha: match.sha,
-					htmlUrl: match.htmlUrl,
-					snippets: match.snippets
-						.slice(0, 2)
-						.map((snippet) => snippet.slice(0, MAX_SNIPPET_CHARS)),
-				})),
+				matches: matches.map((match, i) => {
+					const found = lines[i] ?? []
+					return {
+						path: match.path,
+						sha: match.sha,
+						htmlUrl: match.htmlUrl,
+						snippets: match.snippets
+							.slice(0, 2)
+							.map((snippet) => snippet.slice(0, MAX_SNIPPET_CHARS)),
+						...(found.length === 0 ? undefined : { lines: found }),
+					}
+				}),
 			}
 		}),
 		render: (output) => ({
@@ -141,6 +183,16 @@ export function registerSourceCodeTools(server: McpToolRegistrar) {
 							message: "No matching source files found.",
 							hints: [
 								"Search a shorter, distinctive fragment (a symbol or a literal from the message), or drop the path filter.",
+								...(IGNORED_PUNCTUATION.test(output.query)
+									? [
+											"GitHub code search ignores punctuation such as . : / ( ) and quotes, so search the words around it.",
+										]
+									: []),
+								...(output.path === undefined
+									? []
+									: [
+											"The path filter is a directory prefix (or a file name) on the default branch; a path that only exists on another branch matches nothing.",
+										]),
 							],
 						},
 					}
@@ -150,6 +202,7 @@ export function registerSourceCodeTools(server: McpToolRegistrar) {
 				doc.fields([
 					["Blob", `\`${match.sha}\``],
 					["URL", match.htmlUrl],
+					["Lines", match.lines?.join(", ")],
 				]),
 				...match.snippets.map((snippet) => doc.code("", snippet)),
 			]),
@@ -158,7 +211,13 @@ export function registerSourceCodeTools(server: McpToolRegistrar) {
 				.map((match) =>
 					doc.next(
 						"read_source_file",
-						{ repository: output.repository, path: match.path },
+						{
+							repository: output.repository,
+							path: match.path,
+							...(match.lines?.[0] === undefined
+								? undefined
+								: { start_line: Math.max(1, match.lines[0] - 20) }),
+						},
 						"read the file",
 					),
 				),
