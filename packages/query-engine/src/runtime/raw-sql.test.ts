@@ -256,6 +256,24 @@ it.effect("does not expand replacement patterns in interpolated values", () =>
 	}),
 )
 
+it.effect("expands $__orgFilter to a parenthesised predicate, alias-qualified when given one", () =>
+	Effect.gen(function* () {
+		const prepared = yield* prepareOk(
+			"SELECT 1 FROM traces t JOIN logs l ON t.TraceId = l.TraceId AND $__orgFilter(l) WHERE $__orgFilter(t) AND $__orgFilter",
+		)
+		assert.include(prepared.sql, "AND (l.OrgId = 'org_abc') WHERE (t.OrgId = 'org_abc') AND (OrgId = 'org_abc')")
+	}),
+)
+
+it.effect("rejects an org filter a sibling OR escapes", () =>
+	Effect.gen(function* () {
+		const error = yield* prepareFail(
+			"SELECT 1 FROM traces WHERE $__orgFilter AND SpanName = 'Database.execute' OR (ServiceName = 'maple-api')",
+		)
+		assert.strictEqual(error.code, "InvalidMacro")
+	}),
+)
+
 describe("makeExecuteRawSql", () => {
 	it.effect("accepts exactly 1,000 rows and returns metadata", () =>
 		Effect.gen(function* () {

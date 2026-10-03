@@ -139,9 +139,116 @@ export const RAW_SQL_MACROS = [
 ] as const
 
 const SUPPORTED_MACROS_HELP =
-	"Supported: $__orgFilter, $__timeFilter(col), $__timeGroup(col), $__startTime, $__endTime, $__interval_s."
+	"Supported: $__orgFilter, $__orgFilter(alias), $__timeFilter(col), $__timeGroup(col), $__startTime, $__endTime, $__interval_s."
+
+/** `$__orgFilter` or `$__orgFilter(alias)`; the alias qualifies `OrgId` for joins. */
+export const ORG_FILTER_MACRO_RE = /\$__orgFilter(?:\(([^)]*)\))?/g
+
+const TABLE_ALIAS_RE = /^[A-Za-z_][A-Za-z0-9_]*$/
 
 const issue = (code: RawSqlIssueCode, message: string): RawSqlIssue => ({ code, message })
+
+// Clause keywords that bound the boolean expression an org filter sits in.
+const CLAUSE_START_RE = /\b(?:SELECT|WHERE|PREWHERE|HAVING|ON|WHEN|THEN|ELSE|QUALIFY|USING)\b|,/gi
+const CLAUSE_END_RE =
+	/\b(?:GROUP|ORDER|LIMIT|HAVING|UNION|EXCEPT|INTERSECT|WINDOW|QUALIFY|SETTINGS|FORMAT|JOIN|INNER|LEFT|RIGHT|FULL|CROSS|ARRAY|WHERE|PREWHERE|WHEN|THEN|ELSE|END|FROM|SAMPLE)\b|,/i
+const BOOLEAN_KEYWORD_RE = /\b(?:AND|OR|NOT|WHERE|PREWHERE|ON|HAVING|WHEN|THEN|ELSE|SELECT|IN)\s*$/i
+
+/** `text[lo, hi)` with every nested parenthesised group blanked, offsets preserved. */
+const flattenGroups = (text: string, lo: number, hi: number): string => {
+	let out = ""
+	let depth = 0
+	for (let i = lo; i < hi; i++) {
+		const c = text.charAt(i)
+		if (c === "(") depth++
+		else if (c === ")") depth--
+		out += c === "(" || c === ")" || depth > 0 ? " " : c
+	}
+	return out
+}
+
+/** The unmatched parens around `[from, to)`: -1 / length when there are none. */
+const enclosingGroup = (text: string, from: number, to: number) => {
+	let depth = 0
+	let open = -1
+	for (let i = from - 1; i >= 0; i--) {
+		const c = text.charAt(i)
+		if (c === ")") depth++
+		else if (c === "(" && depth-- === 0) {
+			open = i
+			break
+		}
+	}
+	depth = 0
+	let close = text.length
+	for (let i = to; i < text.length; i++) {
+		const c = text.charAt(i)
+		if (c === "(") depth++
+		else if (c === ")" && depth-- === 0) {
+			close = i
+			break
+		}
+	}
+	return { open, close }
+}
+
+/**
+ * Whether the org filter at `[start, end)` of the masked text can be bypassed by a
+ * sibling `OR` (AND binds tighter, so `$__orgFilter AND a OR b` matches `b` in any
+ * org) or negated by a `NOT`. Climbs through plain parenthesised groups; stops at
+ * a clause keyword (a subquery's WHERE is its own scope) or a function call.
+ */
+const orgFilterEscapes = (masked: string, start: number, end: number): boolean => {
+	let atomStart = start
+	let atomEnd = end
+	for (;;) {
+		const { open, close } = enclosingGroup(masked, atomStart, atomEnd)
+		const lo = open + 1
+		const flat = flattenGroups(masked, lo, close)
+		const left = flat.slice(0, atomStart - lo)
+		const right = flat.slice(atomEnd - lo)
+		const starts = [...left.matchAll(CLAUSE_START_RE)]
+		const lastStart = starts.at(-1)
+		const leftClause = lastStart === undefined ? left : left.slice(lastStart.index + lastStart[0].length)
+		const endMatch = right.match(CLAUSE_END_RE)
+		const rightClause = endMatch?.index === undefined ? right : right.slice(0, endMatch.index)
+		if (/\bOR\b/i.test(leftClause) || /\bOR\b/i.test(rightClause) || /\bNOT\s*$/i.test(leftClause)) {
+			return true
+		}
+		if (lastStart !== undefined || endMatch !== null || open < 0) return false
+		const before = masked.slice(0, open)
+		if (/[A-Za-z0-9_]\s*$/.test(before) && !BOOLEAN_KEYWORD_RE.test(before)) {
+			// A function call: `not(...)`/`xor(...)` invert or bypass it, anything else ends the climb.
+			return /\b(?:not|xor|or)\s*$/i.test(before)
+		}
+		atomStart = open
+		atomEnd = close + 1
+	}
+}
+
+/** The first org-filter problem in the query, or null. */
+const orgFilterIssue = (sql: string, masked: string): RawSqlIssue | null => {
+	for (const match of sql.matchAll(ORG_FILTER_MACRO_RE)) {
+		const alias = match[1]?.trim()
+		if (alias !== undefined && !TABLE_ALIAS_RE.test(alias)) {
+			return issue(
+				"InvalidMacro",
+				`$__orgFilter argument '${alias}' must be a table alias (letters, digits, underscores).`,
+			)
+		}
+		// Offsets are shared with the masked text; a macro inside a literal or comment is inert.
+		if (masked.startsWith("$__orgFilter", match.index)) {
+			if (orgFilterEscapes(masked, match.index, match.index + match[0].length)) {
+				return issue(
+					"InvalidMacro",
+					"$__orgFilter is combined with OR (or negated), so rows outside your org could match. " +
+						"Keep it a top-level AND condition and parenthesise the rest: `WHERE $__orgFilter AND (a OR b)`.",
+				)
+			}
+		}
+	}
+	return null
+}
 
 /**
  * Every check `prepareRawSql` makes that does not need runtime values, in the
@@ -192,6 +299,9 @@ export const rawSqlIssue = (
 		)
 	}
 
+	const orgIssue = orgFilterIssue(sql, maskedSql)
+	if (orgIssue !== null) return orgIssue
+
 	for (const macro of ["$__timeFilter", "$__timeGroup"] as const) {
 		const pattern = new RegExp(`\\${macro}\\(([^)]*)\\)`, "g")
 		for (const match of sql.matchAll(pattern)) {
@@ -222,6 +332,12 @@ export const rawSqlIssue = (
 	}
 
 	const denyMatch = masked.match(DENY_LIST_RE)
+	if (denyMatch?.[1].toUpperCase() === "SYSTEM") {
+		return issue(
+			"DisallowedStatement",
+			"System tables and SYSTEM statements are not available in raw SQL. For table and column names use describe_warehouse_tables (the warehouse table catalog).",
+		)
+	}
 	if (denyMatch) {
 		return issue(
 			"DisallowedStatement",

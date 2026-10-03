@@ -5,7 +5,7 @@ import {
 	MAX_RAW_SQL_RESULT_ROWS,
 	RawSqlValidationError,
 } from "@maple/domain/http"
-import { rawSqlIssue, type RawSqlWorkload } from "@maple/domain/raw-sql"
+import { ORG_FILTER_MACRO_RE, rawSqlIssue, type RawSqlWorkload } from "@maple/domain/raw-sql"
 import type { QueryProfileName } from "../profiles"
 import { escapeClickHouseString, splitTerminalClauses } from "@maple-dev/effect-clickhouse/sql"
 
@@ -84,7 +84,11 @@ export const prepareRawSql = Effect.fn("RawSql.prepare")(function* (input: Prepa
 	// `escapeClickHouseString` escapes quotes and backslashes but not `$`. With a
 	// string replacement, `$'` would splice the rest of the statement into the
 	// literal — quotes and all.
-	sql = sql.replaceAll("$__orgFilter", () => `OrgId = ${orgLiteral}`)
+	// Parenthesised so the predicate is one operand wherever it lands; `rawSqlIssue`
+	// already rejected an org filter that sits beside a top-level OR.
+	sql = sql.replace(ORG_FILTER_MACRO_RE, (_match, alias: string | undefined) =>
+		alias === undefined ? `(OrgId = ${orgLiteral})` : `(${alias.trim()}.OrgId = ${orgLiteral})`,
+	)
 	sql = sql.replaceAll("$__startTime", () => startLiteral)
 	sql = sql.replaceAll("$__endTime", () => endLiteral)
 	sql = sql.replaceAll("$__interval_s", () => String(granularity))

@@ -198,3 +198,36 @@ describe("rawAlertSampleCountWarning", () => {
 		).not.toBeNull()
 	})
 })
+
+describe("rawSqlIssue org filter placement", () => {
+	it.each([
+		"SELECT 1 FROM traces WHERE $__orgFilter AND SpanName = 'a' OR (ServiceName = 'b')",
+		"SELECT 1 FROM traces WHERE a = 1 OR b = 2 AND $__orgFilter",
+		"SELECT 1 FROM traces WHERE ($__orgFilter AND a = 1) OR b = 2",
+		"SELECT 1 FROM traces WHERE NOT $__orgFilter",
+		"SELECT 1 FROM traces WHERE not($__orgFilter)",
+		"SELECT 1 FROM traces WHERE $__orgFilter OR 1 = 1 GROUP BY 1",
+	])("rejects an org filter an OR can bypass: %s", (sql) => {
+		expect(rawSqlIssue(sql)?.code).toBe("InvalidMacro")
+	})
+
+	it.each([
+		"SELECT a OR b FROM traces WHERE $__orgFilter AND (x = 1 OR y = 2) GROUP BY 1",
+		"SELECT 1 FROM traces WHERE ($__orgFilter) AND x = 1",
+		"SELECT 1 FROM traces WHERE $__orgFilter AND (x IN (SELECT x FROM logs WHERE $__orgFilter) OR y = 1)",
+		"SELECT 1 FROM traces t JOIN logs l ON t.TraceId = l.TraceId AND $__orgFilter(l) WHERE $__orgFilter(t) AND (a OR b)",
+		"SELECT 1 FROM traces WHERE $__orgFilter AND $__timeFilter(Timestamp) HAVING count() > 1 OR 1 = 1",
+	])("accepts an org filter that is a top-level AND condition: %s", (sql) => {
+		expect(rawSqlIssue(sql)).toBeNull()
+	})
+
+	it("rejects a non-identifier alias", () => {
+		expect(rawSqlIssue("SELECT 1 FROM traces WHERE $__orgFilter(t OR 1)")?.code).toBe("InvalidMacro")
+	})
+
+	it("points system-table reads at the catalog", () => {
+		expect(rawSqlIssue("SELECT name FROM system.columns WHERE $__orgFilter")?.message).toContain(
+			"describe_warehouse_tables",
+		)
+	})
+})

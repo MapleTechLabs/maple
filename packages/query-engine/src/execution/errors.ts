@@ -87,7 +87,12 @@ export const cleanErrorMessage = (raw: string): string => {
 	let cleaned = redacted
 	const htmlIndex = cleaned.search(/<(!doctype|html|head|body|center|h1|hr|title)\b/i)
 	if (htmlIndex >= 0) cleaned = cleaned.slice(0, htmlIndex)
-	cleaned = cleaned.replace(HTML_TAG, " ").replace(/\s+/g, " ").trim()
+	cleaned = cleaned
+		.replace(HTML_TAG, " ")
+		// The vendor's upsell is not something an end user or agent can act on.
+		.replace(/\s*Upgrade your plan[^.\n]*\.?/gi, "")
+		.replace(/\s+/g, " ")
+		.trim()
 	if (cleaned.endsWith(":")) cleaned = cleaned.slice(0, -1).trim()
 	return cleaned || redacted.slice(0, 200)
 }
