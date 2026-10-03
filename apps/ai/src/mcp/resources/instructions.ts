@@ -93,6 +93,8 @@ first occurrences ──> (candidate) ──> issue in \`triage\`
 - For traces: available metrics are count, avg_duration, p50/p95/p99_duration, error_rate, apdex
 - For logs: only count is available
 - For custom metrics: specify both metric_name and metric_type
+- Counters (sum metrics, Prometheus \`*_total\` gauges): use metric=increase or metric=rate, computed per series and reset-aware. metric=sum adds raw cumulative samples and is not a real total
+- Histogram percentiles (p50/p95/p99) are not available for metrics in query_data; use avg, or source=traces p95_duration for request latency
 
 ## Pagination
 - Tools that return lists support pagination via offset parameter

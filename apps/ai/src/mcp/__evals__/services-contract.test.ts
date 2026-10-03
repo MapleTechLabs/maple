@@ -138,6 +138,67 @@ describe("services, metrics and query tools on define", () => {
 		expect(text).toContain('group_by="attribute" attribute_key="http.method"')
 	})
 
+	const METRIC = { ...WINDOW, source: "metrics", metric_name: "jobs_processed_total" }
+
+	it("warns that metric=sum over a counter adds running totals", async () => {
+		const result = await call("query_data", {
+			...METRIC,
+			kind: "timeseries",
+			metric: "sum",
+			metric_type: "sum",
+		})
+		const output = Schema.decodeUnknownSync(QueryDataOutput)(result.structuredContent)
+		expect(output.warnings?.[0]).toContain("metric=increase")
+		expect(markdown(result)).toContain("Warnings")
+	})
+
+	it("runs an increase breakdown per pod on a gauge-stored counter", async () => {
+		const result = await call("query_data", {
+			...METRIC,
+			kind: "breakdown",
+			metric: "increase",
+			metric_type: "gauge",
+			group_by: "resource_attribute",
+			attribute_key: "k8s.pod.name",
+			environments: ["production"],
+		})
+		expect(result.isError, markdown(result)).toBeUndefined()
+		const sql = issuedSql.join("\n")
+		expect(sql).toContain("FROM metrics_gauge")
+		expect(sql).toContain("with_deltas")
+		expect(sql).toContain("k8s.pod.name")
+		expect(sql).toContain("'production'")
+	})
+
+	it("rejects rate on a histogram with a pointer to count", async () => {
+		const result = await call("query_data", {
+			...METRIC,
+			kind: "timeseries",
+			metric: "rate",
+			metric_type: "histogram",
+		})
+		expect(result.isError).toBe(true)
+		expect(markdown(result)).toContain("needs a counter")
+	})
+
+	it("lists one metric's own labels for explore_attributes source=metrics", async () => {
+		const result = await call("explore_attributes", {
+			...WINDOW,
+			source: "metrics",
+			metric_name: "worker_busy",
+			metric_type: "gauge",
+			service: "jobs",
+		})
+		expect(result.isError, markdown(result)).toBeUndefined()
+		const sql = issuedSql.join("\n")
+		expect(sql).toContain("FROM metrics_gauge")
+		expect(sql).toContain("'worker_busy'")
+		expect(sql).toContain("'jobs'")
+		const text = markdown(result)
+		expect(text).toContain("metrics (worker_busy)")
+		expect(text).not.toContain("(span)")
+	})
+
 	it("reports SQL without the org filter as invalid input on `sql`", async () => {
 		const result = await call("run_sql", { sql: "SELECT count() FROM traces" })
 		expect(result.isError).toBe(true)

@@ -234,6 +234,10 @@ export interface ExploreAttributesInput {
 	readonly service?: string
 	readonly timeRange: TimeRange
 	readonly limit?: number
+	/** `source: "metrics"`: scope to one metric's data-point labels (raw metric table). */
+	readonly metricName?: string
+	/** Table for `metricName`; resolved from the metric catalog when omitted. */
+	readonly metricType?: string
 }
 
 export interface AttributeKeyResult {

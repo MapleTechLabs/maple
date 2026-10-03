@@ -402,17 +402,18 @@ describe("agent-recoverable error messages", () => {
 	// query_data: 22 failures, 100% of that tool's errors — all a token that is
 	// valid for one source/kind combination rejected by another, reported as a bare
 	// SchemaError that named neither the combination nor the alternatives.
-	it("names the valid metrics when the token is only valid for the other kind", async () => {
+	it("names the valid group_by values when the token is only valid for the other kind", async () => {
 		const text = markdown(
 			await runToolDirect(rt, "query_data", {
 				source: "metrics",
 				kind: "breakdown",
-				metric: "rate",
+				metric: "avg",
+				group_by: "none",
 				metric_name: "http.server.duration",
 				metric_type: "histogram",
 			}),
 		)
-		expect(text).toContain('"avg", "sum", "count"')
+		expect(text).toContain('"service", "attribute", "resource_attribute"')
 		expect(text).toContain('kind="timeseries"')
 		expect(text).not.toContain("SchemaError")
 	})

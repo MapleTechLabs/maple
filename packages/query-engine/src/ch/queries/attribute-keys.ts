@@ -109,6 +109,7 @@ export function logAttributeValuesQuery(opts: AttributeValuesOpts) {
 
 export interface MetricScopedAttributeKeysOpts {
 	metricType: MetricType
+	serviceName?: string
 	limit?: number
 }
 
@@ -124,6 +125,7 @@ export function metricScopedAttributeKeysQuery(opts: MetricScopedAttributeKeysOp
 			$.MetricName.eq(param.string("metricName")),
 			$.TimeUnix.gte(param.dateTimeString("startTime")),
 			$.TimeUnix.lte(param.dateTimeString("endTime")),
+			CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),
 		])
 		.groupBy("attributeKey")
 		.orderBy(["usageCount", "desc"])
@@ -134,6 +136,7 @@ export function metricScopedAttributeKeysQuery(opts: MetricScopedAttributeKeysOp
 export interface MetricScopedAttributeValuesOpts {
 	metricType: MetricType
 	attributeKey: string
+	serviceName?: string
 	limit?: number
 }
 
@@ -150,6 +153,7 @@ export function metricScopedAttributeValuesQuery(opts: MetricScopedAttributeValu
 			$.TimeUnix.gte(param.dateTimeString("startTime")),
 			$.TimeUnix.lte(param.dateTimeString("endTime")),
 			$.Attributes.get(opts.attributeKey).neq(""),
+			CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),
 		])
 		.groupBy("attributeValue")
 		.orderBy(["usageCount", "desc"])

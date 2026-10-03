@@ -642,12 +642,14 @@ export function compilePipeQuery(
 				const metricType = parseMetricType(str("metric_type"))
 				if (metricName && metricType) {
 					return eraseType(
-						compile(metricScopedAttributeKeysQuery({ metricType, limit: int("limit", 200) }), {
-							orgId,
-							startTime,
-							endTime,
-							metricName,
-						}),
+						compile(
+							metricScopedAttributeKeysQuery({
+								metricType,
+								serviceName: str("service_name"),
+								limit: int("limit", 200),
+							}),
+							{ orgId, startTime, endTime, metricName },
+						),
 					)
 				}
 				return eraseType(
@@ -688,6 +690,7 @@ export function compilePipeQuery(
 						compile(
 							metricScopedAttributeValuesQuery({
 								metricType,
+								serviceName: str("service_name"),
 								attributeKey: String(params.attribute_key),
 								limit: int("limit", 50),
 							}),

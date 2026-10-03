@@ -4,6 +4,7 @@ import { Effect, Schema } from "effect"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 import { MetricType, QuerySpec } from "@maple/query-engine"
+import { describeQuerySpecDecodeError } from "@maple/domain/query-engine"
 import { ProductEventKind } from "@maple/domain/query-engine"
 import { QueryDataOutput } from "@maple/domain/mcp-outputs"
 import {
@@ -40,14 +41,16 @@ const queryDataSchema = Schema.Struct({
 	metric: P.optionalText(
 		"Traces: count, avg_duration, p50_duration, p95_duration, p99_duration, error_rate (0-1 ratio), " +
 			"apdex (needs apdex_threshold_ms). Logs: count. Product events: count, sessions, persons, users, visitors. " +
-			"Metrics: avg, sum, min, max, count, rate, increase (breakdown: avg, sum, count only); " +
-			"prefer rate or increase for monotonic sums. Default: count, or avg for metrics.",
+			"Metrics: avg, sum, min, max, count, rate, increase. For counters (sum metrics, Prometheus *_total " +
+			"gauges) use increase (total over the window) or rate (per second); both are per-series and " +
+			"reset-aware. sum adds raw samples. Default: count, or avg for metrics.",
 	),
 	group_by: P.optionalText(
 		"Traces: service, span_name, status_code, http_method, attribute. Logs: service, severity. " +
 			"Metrics: service, attribute, resource_attribute. " +
 			"Product events: event_name, kind, source, host, page_path, service, group, attribute. " +
-			"'attribute' needs attribute_key. Timeseries also take 'none' (the default); breakdown defaults to service.",
+			"'attribute' and 'resource_attribute' need attribute_key (resource_attribute reads resource keys such as " +
+			"k8s.pod.name or deployment.environment). Timeseries also take 'none' (the default); breakdown defaults to service.",
 	),
 	...WINDOW.fields,
 	service: P.service(),
@@ -55,7 +58,7 @@ const queryDataSchema = Schema.Struct({
 	span_name: P.optionalText("Filter by span name (traces only)"),
 	root_spans_only: P.optionalFlag("Only include root spans (traces only)"),
 	environments: P.optionalList(
-		"Only these deployment environments (traces only; explore_attributes source=services lists them)",
+		"Only these deployment environments (traces and metrics; explore_attributes source=services lists them)",
 	),
 	commit_shas: P.optionalList("Commit SHAs to filter (traces only)"),
 	apdex_threshold_ms: P.optionalNumber("Apdex threshold in ms (traces only; needed for metric=apdex)"),
@@ -104,8 +107,8 @@ const DEFAULT_GROUP_BY = {
 		breakdown: ["event_name", "event_name, kind, source, host, page_path, service, group, attribute"],
 	},
 	metrics: {
-		timeseries: ["none", "service, attribute, none"],
-		breakdown: ["service", "service, attribute"],
+		timeseries: ["none", "service, attribute, resource_attribute, none"],
+		breakdown: ["service", "service, attribute, resource_attribute"],
 	},
 } as const
 
@@ -175,19 +178,52 @@ const buildRawSpec = (params: Params, metric: string, groupBy: string): Record<s
 		case "metrics":
 			return {
 				...queryFields,
-				// Breakdowns take `attribute` or `service` only.
-				groupBy: isBreakdown ? (groupBy === "attribute" ? "attribute" : "service") : [groupBy],
 				filters: {
 					metricName: params.metric_name,
 					metricType: params.metric_type,
 					...(params.service && { serviceName: params.service }),
+					...(params.environments &&
+						params.environments.length > 0 && { environments: params.environments }),
 					...(params.group_by === "attribute" &&
 						params.attribute_key && { groupByAttributeKey: params.attribute_key }),
+					...(params.group_by === "resource_attribute" &&
+						params.attribute_key && { groupByResourceAttributeKey: params.attribute_key }),
 					...(params.group_by !== "attribute" &&
+						params.group_by !== "resource_attribute" &&
 						attributeFilter && { attributeFilters: [attributeFilter] }),
 				},
 			}
 	}
+}
+
+// Counter names that arrive as gauges from Prometheus-style exporters.
+const COUNTER_NAME = /(_total|_count|_sum|_bucket)$/
+
+/** Caveats on numbers that are easy to misread, rendered above the result. */
+const metricsWarningsFor = (params: Params, metric: string): Array<string> => {
+	if (params.source !== "metrics") return []
+	const warnings: Array<string> = []
+	const looksLikeCounter =
+		params.metric_type === "sum" ||
+		(params.metric_type === "gauge" && COUNTER_NAME.test(params.metric_name ?? ""))
+	if (metric === "sum" && looksLikeCounter) {
+		warnings.push(
+			"metric=sum adds raw samples. On a cumulative counter (most OTel and Prometheus counters) that " +
+				"totals running counts and is not a real figure; use metric=increase for the total over the " +
+				"window or metric=rate for per-second throughput. sum is right only for delta-temporality counters.",
+		)
+	}
+	const additive = metric === "sum" || metric === "rate" || metric === "increase"
+	const splitsByEnv =
+		(params.environments !== undefined && params.environments.length > 0) ||
+		params.group_by === "resource_attribute"
+	if (additive && !splitsByEnv) {
+		warnings.push(
+			"No environments filter: series from every deployment environment are added together. Pass " +
+				"environments, or group_by=resource_attribute attribute_key=deployment.environment to split them.",
+		)
+	}
+	return warnings
 }
 
 const queryContextOf = (params: Params): Output["queryContext"] => {
@@ -243,8 +279,8 @@ const nextCallsFor = (output: Output): ReadonlyArray<NextCall> => {
 			return [
 				doc.next(
 					"explore_attributes",
-					{ source: "metrics" },
-					"discover attribute keys for filtering",
+					{ source: "metrics", metric_name: ctx.metricName, service: ctx.serviceName },
+					"discover this metric's attribute keys for filtering or grouping",
 				),
 			]
 		case "product_events":
@@ -264,6 +300,9 @@ export const renderQueryData = (output: Output): ToolDoc => {
 			? [doc.heading("Defaults applied"), doc.list(output.decisions)]
 			: []
 	const next = nextCallsFor(output)
+	if (output.warnings !== undefined && output.warnings.length > 0) {
+		decisions.unshift(doc.heading("Warnings"), doc.list(output.warnings))
+	}
 
 	if (output.result.kind === "timeseries") {
 		const points = output.result.data
@@ -341,12 +380,17 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 				})
 			}
 
-			if (params.group_by === "attribute" && params.attribute_key === undefined) {
+			if (
+				(params.group_by === "attribute" || params.group_by === "resource_attribute") &&
+				params.attribute_key === undefined
+			) {
 				return yield* new McpInvalidInputError({
-					message:
-						"`group_by=attribute` requires `attribute_key`. Use explore_attributes to discover available keys.",
+					message: `\`group_by=${params.group_by}\` requires \`attribute_key\`. Use explore_attributes to discover available keys.`,
 					parameter: "attribute_key",
-					example: 'group_by="attribute" attribute_key="http.method"',
+					example:
+						params.group_by === "attribute"
+							? 'group_by="attribute" attribute_key="http.method"'
+							: 'group_by="resource_attribute" attribute_key="k8s.pod.name"',
 				})
 			}
 
@@ -373,14 +417,32 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 				groupBy: params.group_by,
 			})
 			if (badToken !== undefined) {
+				const percentileNote =
+					params.source === "metrics" && /^p\d+/.test(params.metric ?? "")
+						? " Metric percentiles are not supported: use avg, or source=traces metric=p95_duration for request latency."
+						: ""
 				return yield* new McpInvalidInputError({
-					message: badToken.message,
+					message: badToken.message + percentileNote,
 					parameter:
 						params.metric !== undefined &&
 						!tokensFor(params.source, params.kind).metrics.includes(params.metric)
 							? "metric"
 							: "group_by",
 					example: badToken.example,
+				})
+			}
+
+			const isHistogram =
+				params.metric_type === "histogram" || params.metric_type === "exponential_histogram"
+			if (
+				params.source === "metrics" &&
+				isHistogram &&
+				(params.metric === "rate" || params.metric === "increase")
+			) {
+				return yield* new McpInvalidInputError({
+					message: `metric=${params.metric} needs a counter (metric_type sum or gauge). For a histogram use count (observations per bucket) or avg.`,
+					parameter: "metric",
+					example: `source="metrics" metric_name="${params.metric_name ?? "http.server.duration"}" metric_type="histogram" metric="count"`,
 				})
 			}
 
@@ -406,11 +468,12 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 				decisions.push(`group_by: defaulted to "${defaultGroupBy}" (available: ${availableGroupBys})`)
 			}
 
-			const query = yield* decodeQuerySpec(buildRawSpec(params, metric, groupBy)).pipe(
+			const rawSpec = buildRawSpec(params, metric, groupBy)
+			const query = yield* decodeQuerySpec(rawSpec).pipe(
 				Effect.mapError(
 					(error) =>
 						new McpInvalidInputError({
-							message: `Invalid query specification: ${error.message}`,
+							message: describeQuerySpecDecodeError(rawSpec, error.message),
 						}),
 				),
 			)
@@ -473,12 +536,14 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 			}
 
 			const queryContext = queryContextOf(params)
+			const warnings = metricsWarningsFor(params, metric)
 			return {
 				timeRange: { start: st, end: et },
 				kind: params.kind,
 				metric,
 				...(params.group_by === undefined ? undefined : { groupBy: params.group_by }),
 				...(decisions.length > 0 ? { decisions } : undefined),
+				...(warnings.length > 0 ? { warnings } : undefined),
 				queryContext,
 				unit: inferQueryDataUnit(params.source, metric, queryContext.metricName),
 				result: resolved,

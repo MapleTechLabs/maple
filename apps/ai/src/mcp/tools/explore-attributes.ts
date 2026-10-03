@@ -8,6 +8,7 @@ import { doc, type DocBlock, type NextCall, type ToolDoc } from "../lib/tool-doc
 import { Effect, Schema } from "effect"
 import { ExploreAttributesOutput } from "@maple/domain/mcp-outputs"
 import { exploreAttributeKeys, exploreAttributeValues } from "@maple/query-engine/observability"
+import { MetricType } from "@maple/query-engine"
 import { provideWarehouseExecutorFromTenant } from "@maple/backend/services/warehouse/WarehouseQueryService"
 
 const WINDOW = P.timeWindow({ defaultHours: 6, maxHours: MCP_DISCOVERY_MAX_HOURS })
@@ -25,17 +26,33 @@ const timeScope = (output: Output): ToolDoc["scope"] => [
 	["Service", output.service],
 ]
 
+// Metric labels are their own scope; span/resource scoping only applies to traces.
+const sourceLabelOf = (output: Output): string =>
+	output.source === "metrics"
+		? output.metricName === undefined
+			? "metrics (all sum metrics)"
+			: `metrics (${output.metricName})`
+		: `${output.source} (${output.scope ?? "span"})`
+
 const renderValues = (output: Output, key: string): ToolDoc => {
 	const values = output.values ?? []
-	// Metric labels are their own scope; span/resource scoping only applies to traces.
-	const sourceLabel =
-		output.source === "metrics" ? "metrics" : `${output.source} (${output.scope ?? "span"})`
+	const sourceLabel = sourceLabelOf(output)
 	const next: NextCall =
 		output.source === "metrics"
 			? doc.next(
 					"query_data",
-					{ source: "metrics", kind: "breakdown", group_by: "attribute", attribute_key: key },
-					"break a metric down by this label (add metric_name and metric_type)",
+					{
+						source: "metrics",
+						kind: "breakdown",
+						group_by: "attribute",
+						attribute_key: key,
+						metric_name: output.metricName,
+						metric_type: output.metricType,
+						service: output.service,
+					},
+					output.metricName === undefined
+						? "break a metric down by this label (add metric_name and metric_type)"
+						: "break this metric down by this label",
 				)
 			: doc.next(
 					"query_data",
@@ -109,19 +126,30 @@ const renderServices = (output: Output): ToolDoc => {
 const renderKeys = (output: Output): ToolDoc => {
 	const keys = output.keys ?? []
 	const source = output.source === "metrics" ? "metrics" : "traces"
+	const unscopedMetrics = output.source === "metrics" && output.metricName === undefined
+	const rollupNote = unscopedMetrics
+		? [
+				doc.text(
+					"Keys from an org-wide rollup of sum metrics (span-metrics labels included; gauges and " +
+						"histograms are not). Pass metric_name for one metric's own labels.",
+				),
+			]
+		: []
 	return {
 		title: "Attribute Keys",
-		scope: [["Source", `${output.source} (${output.scope ?? "span"})`], ...(timeScope(output) ?? [])],
+		scope: [["Source", sourceLabelOf(output)], ...(timeScope(output) ?? [])],
 		...(keys.length === 0 ? { empty: { message: "No attribute keys found." } } : undefined),
-		blocks:
-			keys.length === 0
+		blocks: [
+			...rollupNote,
+			...(keys.length === 0
 				? []
 				: [
 						doc.table(
 							["Key", "Count"],
 							keys.map((k) => [k.key, formatNumber(k.count)]),
 						),
-					],
+					]),
+		],
 		next: keys.slice(0, 3).map((k) =>
 			doc.next(
 				"explore_attributes",
@@ -129,6 +157,8 @@ const renderKeys = (output: Output): ToolDoc => {
 					source,
 					key: k.key,
 					...(output.scope === undefined ? undefined : { scope: output.scope }),
+					...(output.metricName === undefined ? undefined : { metric_name: output.metricName }),
+					...(output.service === undefined ? undefined : { service: output.service }),
 				},
 				"see values for this key",
 			),
@@ -152,6 +182,14 @@ export function registerExploreAttributesTool(server: McpToolRegistrar) {
 				["span", "resource"],
 				"Span or resource attributes (traces only; default span)",
 			),
+			metric_name: P.optionalText(
+				"source=metrics: list this metric's own data-point labels (any metric type). Without it, keys come " +
+					"from an org-wide rollup of sum metrics only",
+			),
+			metric_type: P.optionalOneOf(
+				MetricType.literals,
+				"Type of metric_name, as list_metrics reports it (looked up when omitted)",
+			),
 			key: P.optionalText("Return this key's values instead of the key list"),
 			service: P.service("Only this service (exact `service.name`). Not applied for source=services"),
 			...WINDOW.fields,
@@ -174,12 +212,25 @@ export function registerExploreAttributesTool(server: McpToolRegistrar) {
 			const timeRange = { start: st, end: et }
 			const serviceField = params.service === undefined ? undefined : { service: params.service }
 
+			const isMetrics = params.source === "metrics"
+			const metricField =
+				isMetrics && params.metric_name !== undefined
+					? {
+							metricName: params.metric_name,
+							...(params.metric_type === undefined
+								? undefined
+								: { metricType: params.metric_type }),
+						}
+					: undefined
+			// Span/resource scoping is a traces concept; metrics output carries none.
+			const scopeField = params.source === "traces" ? { scope } : undefined
 			const baseInput = {
 				source: params.source,
 				scope,
 				service: params.service,
 				timeRange: { startTime: st, endTime: et },
 				limit: params.limit,
+				...metricField,
 			}
 
 			if (params.key !== undefined) {
@@ -189,11 +240,12 @@ export function registerExploreAttributesTool(server: McpToolRegistrar) {
 				)
 				return {
 					source: params.source,
-					scope,
+					...scopeField,
 					key: params.key,
 					timeRange,
 					values: values.map((v) => ({ value: v.value, count: v.count })),
 					...serviceField,
+					...metricField,
 				}
 			}
 
@@ -227,10 +279,11 @@ export function registerExploreAttributesTool(server: McpToolRegistrar) {
 			)
 			return {
 				source: params.source,
-				scope,
+				...scopeField,
 				timeRange,
 				keys: keys.map((k) => ({ key: k.key, count: k.count })),
 				...serviceField,
+				...metricField,
 			}
 		}),
 		render: (output) =>

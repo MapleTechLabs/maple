@@ -14,6 +14,7 @@ import {
 	type QueryRunResult,
 } from "@maple/query-engine/formula-results"
 import { QueryBuilderFormulaSchema, QueryBuilderQueryDraftSchema } from "@maple/domain/http"
+import { describeQuerySpecDecodeError } from "@maple/domain/query-engine"
 import {
 	computeBreakdownStats,
 	computeFlags,
@@ -514,7 +515,10 @@ export const inspectWidget = Effect.fn("inspectWidget")(
 							queryId: draft.id,
 							queryName: draft.name,
 							status: "error",
-							error: `Invalid query specification: ${decodedSpecResult.failure.message}`,
+							error: describeQuerySpecDecodeError(
+								buildResult.query,
+								decodedSpecResult.failure.message,
+							),
 							stats: { rowCount: 0, seriesCount: 0, seriesStats: [] },
 							flags: ["EMPTY", ...builderWarningFlags],
 							...(builderWarnings ? { builderWarnings } : undefined),

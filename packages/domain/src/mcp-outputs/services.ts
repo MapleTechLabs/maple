@@ -138,6 +138,9 @@ export const ExploreAttributesOutput = Schema.Struct({
 	environments: Schema.optionalKey(Schema.Array(CountedName)),
 	commitShas: Schema.optionalKey(Schema.Array(CountedName)),
 	service: Schema.optionalKey(Schema.String),
+	/** source=metrics: the metric the keys/values were scoped to, and its type. */
+	metricName: Schema.optionalKey(Schema.String),
+	metricType: Schema.optionalKey(Schema.String),
 })
 
 // compare_periods
@@ -220,6 +223,8 @@ export const QueryDataOutput = Schema.Struct({
 	groupBy: Schema.optionalKey(Schema.String),
 	/** Defaults the tool applied, one line each. */
 	decisions: Schema.optionalKey(Schema.Array(Schema.String)),
+	/** Caveats that change how the numbers read (e.g. sum over a cumulative counter). */
+	warnings: Schema.optionalKey(Schema.Array(Schema.String)),
 	queryContext: QueryDataQueryContextSchema,
 	unit: QueryDataUnitSchema,
 	result: Schema.Union([
