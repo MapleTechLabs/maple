@@ -410,39 +410,37 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 						),
 				)
 
-			const emitMetrics = Effect.fn("RailwayMetricsService.emitMetrics")(function* (
-				ingestKey: string,
-				rows: ReturnType<typeof mapRailwayMetrics>,
-			) {
-				if (rows.length === 0) return 0
-				const request = HttpClientRequest.post(ingestMetricsUrl, {
-					headers: { authorization: `Bearer ${ingestKey}`, "content-type": "application/json" },
-				}).pipe(HttpClientRequest.bodyJsonUnsafe(metricRowsToOtlp([], rows)))
-				const response = yield* httpClient.execute(request).pipe(
-					Effect.annotateSpans("peer.service", "ingest"),
-					Effect.mapError(
-						(error) =>
-							new RailwayIngestError({
-								message: `Railway metrics ingest failed: ${error.message}`,
-							}),
-					),
-					Effect.timeoutOrElse({
-						duration: INGEST_TIMEOUT,
-						orElse: () =>
-							Effect.fail(
-								new RailwayIngestError({ message: "Railway metrics ingest timed out" }),
-							),
-					}),
-				)
-				if (response.status >= 300) {
-					const body = yield* response.text.pipe(Effect.orElseSucceed(() => ""))
-					return yield* new RailwayIngestError({
-						message: `Railway metrics ingest returned ${response.status}: ${body.slice(0, 300)}`,
-						status: response.status,
-					})
-				}
-				return rows.length
-			})
+			const emitMetrics = Effect.fn("RailwayMetricsService.emitMetrics")(
+				function* (ingestKey: string, rows: ReturnType<typeof mapRailwayMetrics>) {
+					if (rows.length === 0) return 0
+					const request = HttpClientRequest.post(ingestMetricsUrl, {
+						headers: { authorization: `Bearer ${ingestKey}`, "content-type": "application/json" },
+					}).pipe(HttpClientRequest.bodyJsonUnsafe(metricRowsToOtlp([], rows)))
+					const response = yield* httpClient.execute(request).pipe(
+						Effect.annotateSpans("peer.service", "ingest"),
+						Effect.mapError(
+							(error) =>
+								new RailwayIngestError({
+									message: `Railway metrics ingest failed: ${error.message}`,
+								}),
+						),
+					)
+					if (response.status >= 300) {
+						const body = yield* response.text.pipe(Effect.orElseSucceed(() => ""))
+						return yield* new RailwayIngestError({
+							message: `Railway metrics ingest returned ${response.status}: ${body.slice(0, 300)}`,
+							status: response.status,
+						})
+					}
+					return rows.length
+				},
+				// Covers the error-body read too, so a stalled body cannot outlive the lease.
+				Effect.timeoutOrElse({
+					duration: INGEST_TIMEOUT,
+					orElse: () =>
+						Effect.fail(new RailwayIngestError({ message: "Railway metrics ingest timed out" })),
+				}),
+			)
 
 			const pollEnvironment = Effect.fn("RailwayMetricsService.pollEnvironment")(function* (
 				row: RailwayEnvironmentRow,
