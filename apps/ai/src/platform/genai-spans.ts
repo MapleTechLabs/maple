@@ -18,8 +18,7 @@ import {
 	MAPLE_GENAI_INPUT_MESSAGES_DROPPED_ATTR,
 	MAPLE_GENAI_MODEL_DURATION_MS_ATTR,
 } from "@maple/domain/gen-ai"
-import { Effect, Option, Predicate, Stream } from "effect"
-import type { Tracer } from "effect"
+import { Effect, Exit, Layer, Option, Predicate, Stream, Tracer } from "effect"
 import * as AiError from "effect/ai/AiError"
 import type * as LanguageModel from "effect/ai/LanguageModel"
 import type * as Prompt from "effect/ai/Prompt"
@@ -524,6 +523,41 @@ const executeToolSpan = (span: Tracer.Span): Option.Option<Tracer.Span> =>
 	span.name.startsWith(EXECUTE_TOOL_SPAN_PREFIX)
 		? Option.some(span)
 		: Option.filter(span.parent, isExecuteToolSpan)
+
+/** A tool failure handed back to the model as the call's result: it retries, the run carries on. */
+const isReturnedToolFailure = (span: Tracer.Span, exit: Exit.Exit<unknown, unknown>): boolean =>
+	Exit.isFailure(exit) &&
+	span.name.startsWith(EXECUTE_TOOL_SPAN_PREFIX) &&
+	span.attributes.get("effect_agent.tool.failure_handling") === "returned-to-model"
+
+/**
+ * Export a returned tool failure as `Ok` + `error.type` rather than `Error`, so it stops opening error
+ * issues while Agent Sessions still counts it failed (the gateway stamps `maple_ai.error` from
+ * `error.type`). Propagated failures keep their Error span.
+ */
+export const withReturnedToolFailuresOk = (tracer: Tracer.Tracer): Tracer.Tracer =>
+	Tracer.make({
+		...(tracer.context === undefined ? undefined : { context: tracer.context }),
+		span(options) {
+			const span = tracer.span(options)
+			if (!options.name.startsWith(EXECUTE_TOOL_SPAN_PREFIX)) return span
+			const end = span.end.bind(span)
+			return Object.assign(span, {
+				end: (endTime: bigint, exit: Exit.Exit<unknown, unknown>) => {
+					if (!isReturnedToolFailure(span, exit)) return end(endTime, exit)
+					if (span.attributes.get("error.type") === undefined)
+						span.attribute("error.type", "ToolCallFailed")
+					end(endTime, Exit.void)
+				},
+			})
+		},
+	})
+
+/** Wraps the current tracer; put it over the telemetry layer with `Layer.provideMerge`. */
+export const ReturnedToolFailuresOkLayer = Layer.effect(
+	Tracer.Tracer,
+	Effect.map(Effect.tracer, withReturnedToolFailuresOk),
+)
 
 /**
  * Untraced on purpose: a span of its own would become the current span, one level further from the
