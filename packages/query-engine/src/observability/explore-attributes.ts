@@ -19,7 +19,9 @@ const byCountDesc = Order.mapInput(Order.flip(Order.Number), (r: AttributeKeyRes
 /**
  * Pipe params that scope metrics discovery to one metric, so keys come from that
  * metric's own data points (any metric type) instead of the org-wide sum rollup.
- * A missing metric type is looked up in the metric catalog.
+ * A missing metric type is looked up in the metric catalog (scoped to the
+ * service); `undefined` means the named metric was not found, so callers
+ * return nothing rather than the unscoped rollup.
  */
 const metricScopeParams = Effect.fnUntraced(function* (input: ExploreAttributesInput) {
 	if (input.source !== "metrics" || input.metricName === undefined) return {}
@@ -32,13 +34,14 @@ const metricScopeParams = Effect.fnUntraced(function* (input: ExploreAttributesI
 				start_time: input.timeRange.startTime,
 				end_time: input.timeRange.endTime,
 				search: input.metricName,
-				limit: 50,
+				...(input.service && { service: input.service }),
+				limit: 500,
 			},
 			{ profile: "discovery" },
 		)
 		metricType = catalog.data.find((row) => row.metricName === input.metricName)?.metricType
 	}
-	return metricType === undefined ? {} : { metric_name: input.metricName, metric_type: metricType }
+	return metricType === undefined ? undefined : { metric_name: input.metricName, metric_type: metricType }
 })
 
 export const exploreAttributeKeys = Effect.fn("Observability.exploreAttributeKeys")(function* (
@@ -87,13 +90,15 @@ export const exploreAttributeKeys = Effect.fn("Observability.exploreAttributeKey
 		)
 	}
 
+	const metricScope = yield* metricScopeParams(input)
+	if (metricScope === undefined) return []
 	const result = yield* executor.query<AttributeKeyRow>(
 		pipeName,
 		{
 			start_time: input.timeRange.startTime,
 			end_time: input.timeRange.endTime,
 			...(input.service && { service_name: input.service }),
-			...(yield* metricScopeParams(input)),
+			...metricScope,
 			limit: input.limit ?? 50,
 		},
 		{ profile: "discovery" },
@@ -125,6 +130,8 @@ export const exploreAttributeValues = Effect.fn("Observability.exploreAttributeV
 		pipe: pipeName,
 	})
 
+	const metricScope = yield* metricScopeParams(input)
+	if (metricScope === undefined) return []
 	const result = yield* executor.query<AttributeValueRow>(
 		pipeName,
 		{
@@ -132,7 +139,7 @@ export const exploreAttributeValues = Effect.fn("Observability.exploreAttributeV
 			start_time: input.timeRange.startTime,
 			end_time: input.timeRange.endTime,
 			...(input.service && { service_name: input.service }),
-			...(yield* metricScopeParams(input)),
+			...metricScope,
 			limit: input.limit ?? 50,
 		},
 		{ profile: "discovery" },

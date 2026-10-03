@@ -199,6 +199,21 @@ describe("services, metrics and query tools on define", () => {
 		expect(text).not.toContain("(span)")
 	})
 
+	it("returns nothing, not the org-wide rollup, for a metric missing from the catalog", async () => {
+		const result = await call("explore_attributes", {
+			...WINDOW,
+			source: "metrics",
+			metric_name: "not_a_metric",
+			service: "jobs",
+		})
+		expect(result.isError, markdown(result)).toBeUndefined()
+		const sql = issuedSql.join("\n")
+		expect(sql).toContain("FROM metric_catalog")
+		expect(sql).toContain("'jobs'")
+		expect(sql).not.toContain("attribute_keys_hourly")
+		expect(markdown(result)).toContain("No attribute keys found for not_a_metric")
+	})
+
 	it("reports SQL without the org filter as invalid input on `sql`", async () => {
 		const result = await call("run_sql", { sql: "SELECT count() FROM traces" })
 		expect(result.isError).toBe(true)
