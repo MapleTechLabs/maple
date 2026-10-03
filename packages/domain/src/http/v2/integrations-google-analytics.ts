@@ -250,7 +250,7 @@ export class V2GoogleAnalyticsIntegrationsApiGroup extends HttpApiGroup.make("go
 				identifier: "disconnectGoogleAnalyticsIntegration",
 				summary: "Disconnect Google Analytics",
 				description:
-					"Revokes the grant at Google and removes the connection along with all collection state. Metrics already collected are retained and age out with your normal retention. Requires an org-admin role and the `integrations:write` scope.",
+					"Revokes the grant at Google and removes the connection. Metrics already collected are retained and age out with your normal retention, and so is the collector's own record of what it emitted, so reconnecting the same properties resumes rather than re-reporting hours that already landed. Requires an org-admin role and the `integrations:write` scope.",
 			}),
 		),
 	)
