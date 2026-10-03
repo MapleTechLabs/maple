@@ -113,6 +113,13 @@ describe("services, metrics and query tools on define", () => {
 		expect(output.decisions?.[0]).toMatch(/^start_time: defaulted to 6 hours before end_time/)
 	})
 
+	it("does not note defaults that cannot change a query_data answer", async () => {
+		const result = await call("query_data", { ...WINDOW, source: "logs", kind: "timeseries" })
+		const output = Schema.decodeUnknownSync(QueryDataOutput)(result.structuredContent)
+		expect(output.decisions ?? []).toEqual([])
+		expect(markdown(result)).not.toContain("Defaults applied")
+	})
+
 	it("clamps the query_data breakdown limit", async () => {
 		const result = await call("query_data", {
 			...WINDOW,

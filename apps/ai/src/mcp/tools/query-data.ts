@@ -522,14 +522,11 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 					`start_time: defaulted to ${WINDOW.spec.defaultHours} hours before end_time (${st})`,
 				)
 			if (params.end_time === undefined) decisions.push(`end_time: defaulted to now (${et})`)
-			if (params.metric === undefined) {
-				decisions.push(
-					params.source === "logs"
-						? `metric: fixed to "count" (only option for logs)`
-						: `metric: defaulted to "${defaultMetric}" (available: ${availableMetrics})`,
-				)
+			// Defaults that cannot change the answer (logs' only metric, no grouping) are not noted.
+			if (params.metric === undefined && params.source !== "logs") {
+				decisions.push(`metric: defaulted to "${defaultMetric}" (available: ${availableMetrics})`)
 			}
-			if (params.group_by === undefined) {
+			if (params.group_by === undefined && defaultGroupBy !== "none") {
 				decisions.push(`group_by: defaulted to "${defaultGroupBy}" (available: ${availableGroupBys})`)
 			}
 

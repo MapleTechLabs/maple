@@ -150,6 +150,7 @@ const PeriodServiceStats = Schema.Struct({
 	errorRate: Schema.Number,
 	p95Ms: Schema.Number,
 })
+/** Summed over the same per-service entry-span rows, scoped to `service` when set. */
 const PeriodOverallStats = Schema.Struct({
 	totalSpans: Schema.Number,
 	totalErrors: Schema.Number,
