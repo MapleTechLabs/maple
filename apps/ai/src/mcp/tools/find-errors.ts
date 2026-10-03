@@ -85,7 +85,7 @@ export function registerFindErrorsTool(server: McpToolRegistrar) {
 				[
 					findErrors({ ...input, limit: params.limit }),
 					// Context for the rows, not the answer: without it the table still stands.
-					findErrorsTotals(input).pipe(Effect.catch(() => Effect.succeed(undefined))),
+					findErrorsTotals(input).pipe(Effect.orElseSucceed(() => undefined)),
 				],
 				{ concurrency: "unbounded" },
 			).pipe(
@@ -112,7 +112,7 @@ export function registerFindErrorsTool(server: McpToolRegistrar) {
 				timeRange: input.timeRange,
 			}).pipe(
 				provideWarehouseExecutorFromTenant(tenant),
-				Effect.catch(() => Effect.succeed(new Map<string, string>())),
+				Effect.orElseSucceed(() => new Map<string, string>()),
 			)
 
 			const identity: typeof FindErrorsOutput.Type.identity = params.identity ?? "all"
