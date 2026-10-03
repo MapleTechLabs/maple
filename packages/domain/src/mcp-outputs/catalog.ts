@@ -81,6 +81,7 @@ import {
 	SandboxReadFileOutput,
 	SearchSourceCodeOutput,
 } from "./setup"
+import { IngestFreshnessOutput, RouteUsageOutput, ServiceDeploymentsOutput } from "./service-activity"
 import {
 	FindSlowTracesOutput,
 	InspectSpanOutput,
@@ -116,6 +117,7 @@ export const McpToolOutputs = {
 	get_service_top_operations: GetServiceTopOperationsOutput,
 	get_session_traces: GetSessionTracesOutput,
 	get_session_transcript: GetSessionTranscriptOutput,
+	ingest_freshness: IngestFreshnessOutput,
 	inspect_chart_data: InspectChartDataOutput,
 	inspect_span: InspectSpanOutput,
 	inspect_trace: InspectTraceOutput,
@@ -147,6 +149,7 @@ export const McpToolOutputs = {
 	remove_dashboard_widget: RemoveDashboardWidgetOutput,
 	reorder_dashboard_widgets: ReorderDashboardWidgetsOutput,
 	replace_dashboard_widgets: ReplaceDashboardWidgetsOutput,
+	route_usage: RouteUsageOutput,
 	run_sql: RunSqlOutput,
 	sandbox_exec: SandboxExecOutput,
 	sandbox_grep: SandboxGrepOutput,
@@ -157,6 +160,7 @@ export const McpToolOutputs = {
 	search_source_code: SearchSourceCodeOutput,
 	search_traces: SearchTracesOutput,
 	send_maple_feedback: SendMapleFeedbackOutput,
+	service_deployments: ServiceDeploymentsOutput,
 	service_map: ServiceMapOutput,
 	set_issue_severity: SetIssueSeverityOutput,
 	transition_error_issue: TransitionErrorIssueOutput,
