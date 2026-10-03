@@ -28,7 +28,8 @@ import { HttpApiBuilder } from "effect/http-api"
 import { McpLive } from "../mcp/app"
 import { HttpChatLive } from "../routes/internal/chat.http"
 import { HttpTriageLive } from "../routes/internal/triage.http"
-import { layerDecisionModel, layerLlm } from "../platform/Llm"
+import { layerDecisionModel } from "../platform/Llm"
+import { WorkersAiGateway } from "../platform/WorkersAiHttpClient"
 import { ChatSessionsRouter } from "../routes/v1/chat-sessions.http"
 import { HealthRouter } from "../routes/health"
 import { API_CORS_OPTIONS } from "@maple/backend/http/api-cors"
@@ -76,10 +77,12 @@ const RawRoutes = rawRoutes(Layer.mergeAll(HealthRouter, ChatSessionsRouter, Mcp
 /**
  * The decision model the triage route asks, built once per isolate from the
  * Worker env — the same layers the investigation turn builds per turn in
- * `turn-runner.ts`, on the same OpenRouter key.
+ * `turn-runner.ts`, on the same AI Gateway binding.
  */
 const DecisionModelLive = Layer.unwrap(
-	Effect.map(WorkerEnvironment, (env) => layerDecisionModel(env).pipe(Layer.provide(layerLlm(env)))),
+	Effect.map(Effect.all([WorkerEnvironment, WorkersAiGateway]), ([env, workersAi]) =>
+		layerDecisionModel(env, workersAi),
+	),
 )
 
 const AiInternalRoutes = HttpApiBuilder.layer(MapleAiApi).pipe(

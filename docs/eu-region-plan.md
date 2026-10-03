@@ -184,8 +184,8 @@ plan.
   `openai/gpt-6-luna` for chat, triage and reviews. `MAPLE_TRIAGE_MODEL_OPENROUTER` and
   `MAPLE_REVIEW_MODEL_OPENROUTER` override it; any override must be in the EU catalogue
   (`GET https://eu.openrouter.ai/api/v1/models`).
-- Jev has no EU provider, so there is no decision model and the investigation gate reads "no
-  verdict" as "investigate".
+- The decision model (Clef) runs on Workers AI, which has no region pin, so the EU instance has no
+  decision model and the investigation gate reads "no verdict" as "investigate".
 - Workers AI has no region pin: `MAPLE_LLM_PROVIDER` must stay unset (OpenRouter) on `prod-eu`.
 
 ## Phase 5. Operations

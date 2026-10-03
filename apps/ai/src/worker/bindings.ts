@@ -9,11 +9,13 @@
  * than reaching resources directly. What is here is what the MCP transport and
  * the tool registry touch on their own.
  */
-import { MapleDb } from "@maple/infra/cloudflare"
+import { MapleDb, parseMapleDeployment } from "@maple/infra/cloudflare"
 import { workerEnvLayer } from "@maple/infra/worker-runtime"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { RuntimeContext } from "alchemy/RuntimeContext"
-import { Effect, Layer } from "effect"
+import { Stage } from "alchemy/Stage"
+import { Effect, Layer, Option } from "effect"
+import { isWorkersAiBinding, viaGateway, WorkersAiGateway } from "../platform/WorkersAiHttpClient"
 import { McpToolsRateLimit, RateLimitBindingError, type RateLimiter } from "@maple/backend/platform/bindings"
 import { mapleDbConnectionLayer } from "@maple/backend/platform/pg-connection-source"
 import {
@@ -42,15 +44,48 @@ export const bindAiClients = Effect.gen(function* () {
 
 type AiBindingClients = Effect.Success<typeof bindAiClients>
 
+/** Discharge alchemy's phantom color, the way alchemy's own runtime helpers do. */
+const runtime = <A, E>(effect: Effect.Effect<A, E, RuntimeContext>): Effect.Effect<A, E> =>
+	effect as Effect.Effect<A, E>
+
+/**
+ * The AI Gateway Workers AI calls route through. The logical id is the api's, unchanged: the
+ * gateway's Cloudflare id derives from it, so renaming it mints a new gateway and abandons its logs.
+ */
+const AiGateway = Cloudflare.AI.Gateway("maple-api-ai")
+
+/**
+ * Bind the gateway and resolve it to a Workers AI binding whose calls carry the gateway id.
+ *
+ * Deployed stages only: the gateway has no local emulation, so declaring it under `alchemy dev`
+ * diffs it against Cloudflare and demands a login. The stage is known only at plan time; in the
+ * isolate the binding is either on the env or not, and a dev isolate reads none.
+ */
+const bindWorkersAiGateway = Effect.gen(function* () {
+	if (!globalThis.__ALCHEMY_RUNTIME__ && parseMapleDeployment(yield* Stage).stage.kind === "dev") {
+		return Option.none()
+	}
+	const client = yield* Cloudflare.AI.QueryGateway(AiGateway)
+	if (!globalThis.__ALCHEMY_RUNTIME__) return Option.none()
+	const raw = yield* runtime(client.raw)
+	if (!isWorkersAiBinding(raw)) return Option.none()
+	return Option.some(viaGateway(raw, yield* runtime(client.id)))
+})
+
+/**
+ * The gateway binding as a service, for the fetch graph's ports and the chat Durable Object's
+ * activation alike. One layer value, so the init builds it once.
+ */
+export const WorkersAiGatewayLive = Layer.effect(WorkersAiGateway, bindWorkersAiGateway).pipe(
+	Layer.provide(Cloudflare.AI.QueryGatewayBinding),
+)
+
 /** The binding layers the init needs. */
 export const AiBindingLayers = Layer.mergeAll(
 	Cloudflare.Hyperdrive.ConnectBinding,
 	Cloudflare.Workers.RateLimitBinding,
+	WorkersAiGatewayLive,
 )
-
-/** Discharge alchemy's phantom color, the way alchemy's own runtime helpers do. */
-const runtime = <A, E>(effect: Effect.Effect<A, E, RuntimeContext>): Effect.Effect<A, E> =>
-	effect as Effect.Effect<A, E>
 
 const limiter = (client: Cloudflare.Workers.RateLimitClient): RateLimiter => ({
 	limit: (key) =>
@@ -70,8 +105,13 @@ const limiter = (client: Cloudflare.Workers.RateLimitClient): RateLimiter => ({
  * `WorkerEnvironment` and the `ConfigProvider` — the one place a graph in this
  * Worker gets its env from.
  */
-export const aiPorts = (clients: AiBindingClients, env: Record<string, unknown>) =>
+export const aiPorts = (
+	clients: AiBindingClients,
+	env: Record<string, unknown>,
+	workersAi: typeof WorkersAiGateway.Service,
+) =>
 	Layer.mergeAll(
+		Layer.succeed(WorkersAiGateway, workersAi),
 		Layer.succeed(McpToolsRateLimit, limiter(clients.mcpToolsRateLimit)),
 		mapleDbConnectionLayer(env),
 		workerEnvLayer(env),

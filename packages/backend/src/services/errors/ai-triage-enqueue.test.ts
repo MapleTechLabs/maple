@@ -186,7 +186,7 @@ const noiseVerdict = (overrides?: Partial<IncidentTriageVerdict>) =>
 		severityConfidence: 0.85,
 		userImpact: 0.05,
 		matchedPrior: null,
-		model: "~typesafe/jev-latest",
+		model: "@cf/cloudflare/clef",
 		...overrides,
 	})
 

@@ -53,6 +53,7 @@ import {
 import { type ChatSessionStub } from "@maple/domain/chat-session-stub"
 import { makeChatTranscript } from "@maple/domain/chat-transcript"
 import type { AppliedProposal, ApplyChatProposalInput } from "./apply-proposal"
+import { WorkersAiGateway } from "../platform/WorkersAiHttpClient"
 import type { RunChatSessionTurnInput } from "./turn-runner"
 
 /** What the class reads off its Durable Object state: SQLite, the alarm, and the object's own `waitUntil`. */
@@ -785,8 +786,15 @@ export const chatSessionRpc = (session: ChatSession) =>
  * first call reaches it, hibernation wakes included.
  */
 export const activateChatSession = Effect.map(
-	Effect.all([Cloudflare.DurableObjectState, Cloudflare.WorkerEnvironment]),
-	([state, env]) => Effect.sync(() => chatSessionRpc(new ChatSession(state.raw, env))),
+	Effect.all([Cloudflare.DurableObjectState, Cloudflare.WorkerEnvironment, WorkersAiGateway]),
+	([state, env, workersAi]) =>
+		Effect.sync(() =>
+			chatSessionRpc(
+				new ChatSession(state.raw, env, applyThroughWorker, (input) =>
+					runThroughWorker({ ...input, workersAi }),
+				),
+			),
+		),
 )
 
 /**
@@ -817,5 +825,5 @@ export class ChatSessionObject extends Cloudflare.DurableObject<ChatSessionObjec
 // would widen them into the layer's requirements and surface them all the way up in
 // `alchemy.run.ts`.
 export const ChatSessionLive = ChatSessionObject.make<
-	Cloudflare.DurableObjectState | Cloudflare.WorkerEnvironment
+	Cloudflare.DurableObjectState | Cloudflare.WorkerEnvironment | WorkersAiGateway
 >(activateChatSession)

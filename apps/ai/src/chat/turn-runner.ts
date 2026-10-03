@@ -24,7 +24,8 @@ import { ChatMessage, type ChatTurnOrigin, type ChatTurnTenantEncoded } from "@m
 import type { InvestigationProgress, PrReviewFailureReason } from "@maple/domain/http"
 import { workerEnvLayer } from "@maple/infra/worker-runtime"
 import { workerTelemetryConfig } from "@maple/infra/worker-telemetry"
-import { Cause, Effect, Layer, ManagedRuntime, Match, Option } from "effect"
+import { Cause, Effect, Exit, Layer, ManagedRuntime, Match, Option } from "effect"
+import type { WorkersAiBinding } from "../platform/WorkersAiHttpClient"
 import type { ChatSession } from "./ChatSession"
 import type { ChatTurnEvent } from "./events"
 import { withToolTranscript } from "./close-out"
@@ -97,6 +98,8 @@ export interface RunChatSessionTurnInput {
 	readonly session: ChatSession
 	readonly sessionId: string
 	readonly env: Record<string, unknown>
+	/** The Workers AI gateway binding, from the activation; none sends Workers AI calls over REST. */
+	readonly workersAi?: Option.Option<WorkersAiBinding>
 	readonly messageId: string
 	readonly tenant: ChatTurnTenantEncoded
 	/** Who is driving the turn, stated by whoever raised it. */
@@ -172,16 +175,16 @@ export const meterTurn = (
 			source: profileForTurn(agentForSession(input.sessionId), origin).surface,
 			idempotencyKey: `${input.sessionId}:${input.messageId}`,
 		}
-	// Bookkeeping must never fail a delivered answer. `trackTokenUsage` already swallows its own
-	// transport errors; the `catch` covers the rest so this can be an infallible Effect.
-	return Effect.promise(() =>
+	// Bookkeeping must never fail a delivered answer: a rejection or a timeout is ignored, so this
+	// is an infallible Effect.
+	return Effect.tryPromise(() =>
 		trackTokenUsage(input.env, {
 			orgId: tenant.orgId,
 			inputTokens: usage.input,
 			outputTokens: usage.output,
 			idempotencyKey: billing.idempotencyKey,
 			source: billing.source,
-		}).catch(() => undefined),
+		}),
 	).pipe(Effect.timeout(METERING_TIMEOUT), Effect.ignore)
 }
 
@@ -242,12 +245,10 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 
 	const runtime = ManagedRuntime.make(
 		InvestigationServicesLive.pipe(
-			// Decisions before the clients: `layerLlm` is what answers the OpenRouter
-			// client the decision model runs on.
-			Layer.provideMerge(layerDecisionModel(input.env)),
+			Layer.provideMerge(layerDecisionModel(input.env, input.workersAi)),
 			// Read by `PrReviewService` as it is built: the review's feedback filter.
 			Layer.provideMerge(layerFindingEmbedder(input.env)),
-			Layer.provideMerge(layerLlm(input.env)),
+			Layer.provideMerge(layerLlm(input.env, input.workersAi)),
 			Layer.provideMerge(layerPg),
 			Layer.provideMerge(mapleDbConnectionLayer(input.env)),
 			Layer.provideMerge(workerEnvLayer(input.env)),
@@ -650,21 +651,17 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 		}),
 	)
 
-	try {
-		await runtime.runPromise(program)
-	} catch {
-		// The detailed cause belongs in server logs and the failed Effect span, never in the durable
-		// event the browser reads back.
-		if (input.session.holdsTurn(input.messageId)) {
-			input.session.append({
-				type: "turn-end",
-				messageId: input.messageId,
-				reason: "error",
-				error: CHAT_TURN_FAILED,
-			})
-		}
-	} finally {
-		await runtime.dispose().catch(() => undefined)
-		await telemetry.flush(input.env).catch(() => undefined)
+	const exit = await runtime.runPromiseExit(program)
+	// The detailed cause belongs in server logs and the failed Effect span, never in the durable
+	// event the browser reads back.
+	if (Exit.isFailure(exit) && input.session.holdsTurn(input.messageId)) {
+		input.session.append({
+			type: "turn-end",
+			messageId: input.messageId,
+			reason: "error",
+			error: CHAT_TURN_FAILED,
+		})
 	}
+	await runtime.dispose().catch(() => undefined)
+	await telemetry.flush(input.env).catch(() => undefined)
 }

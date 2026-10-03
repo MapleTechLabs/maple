@@ -58,35 +58,10 @@ import * as AlchemyTelemetry from "alchemy/Telemetry"
 import { Effect, Layer, Option } from "effect"
 import { ChatSessionLive, ChatSessionObject } from "./chat/ChatSession"
 import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "./mcp/expected-failures"
-import { aiPorts, AiBindingLayers, bindAiClients } from "./worker/bindings"
+import { WorkersAiGateway } from "./platform/WorkersAiHttpClient"
+import { aiPorts, AiBindingLayers, bindAiClients, WorkersAiGatewayLive } from "./worker/bindings"
 import { buildApp, makeFetch } from "./worker/http"
 import { AiObservabilityLive } from "./worker/observability"
-
-/**
- * The AI worker's resource bindings, split from the `Config`-sourced env so
- * `InferEnv` can derive `AiWorkerEnv` below.
- *
- * Only the AI gateway: the MCP tool rate limiter is bound in the init, the
- * hosted class is yielded there rather than declared here, and the sandbox
- * Worker is a sibling this deploy creates, so `props` binds it from
- * `SandboxWorker` where a `Worker.ref` could not see it.
- */
-const makeWorkerBindings = ({ stage }: { stage: MapleStage }) => ({
-	// Workers AI, for the models the agents call. The GATEWAY NAME is api's,
-	// unchanged: renaming it mints a new gateway and abandons its logs and
-	// analytics. Only the alchemy logical id moved.
-	...(stage.kind === "dev" ? undefined : { AI: Cloudflare.AI.Gateway("maple-api-ai") }),
-})
-
-/**
- * The AI worker's runtime env, derived from the declaration above.
- *
- * `Partial` for the same reason alerting's is: a binding's absence is a real
- * runtime state. Configuration vars stay `unknown` on purpose — config is read
- * through the Effect ConfigProvider, never off `env` directly.
- */
-export type AiWorkerEnv = Partial<Cloudflare.InferEnv<ReturnType<typeof makeWorkerBindings>>> &
-	Record<string, unknown>
 
 /**
  * Everything in the AI worker's env that comes from configuration rather than
@@ -111,8 +86,8 @@ const configuredEnv = (stage: MapleStage, region: MapleRegion, domains: MapleDom
 		optionalPlain("MAPLE_TRIAGE_MODEL_WORKERS_AI"),
 		optionalPlain("MAPLE_REVIEW_MODEL_OPENROUTER"),
 		optionalSecret("OPENROUTER_API_KEY"),
-		// The decision model (Jev) rides the same OpenRouter key, on OpenRouter's
-		// separate decisions endpoint. See `layerDecisionModel` in `@/platform/Llm`.
+		// The decision model (Clef) runs on Workers AI through the AI Gateway binding.
+		// See `layerDecisionModel` in `@/platform/Llm`.
 		optionalPlain("MAPLE_DECISION_MODEL"),
 		// The chat agent authenticates to `/mcp` as an internal caller.
 		optionalSecret("INTERNAL_SERVICE_TOKEN"),
@@ -161,7 +136,6 @@ const props = Effect.gen(function* () {
 		build: { output: { strictExecutionOrder: false } },
 		// `devEnv` last, so `.env.local` cannot override the inter-app URLs.
 		env: {
-			...makeWorkerBindings({ stage }),
 			...mapleDbEnv(db, "ai"),
 			...(Option.isSome(sandbox) ? { SANDBOX: sandbox.value } : undefined),
 			...env,
@@ -181,7 +155,7 @@ export default MapleAi.make(
 		yield* ChatSessionObject
 		const clients = yield* bindAiClients
 		const env = yield* Cloudflare.WorkerEnvironment
-		const ports = aiPorts(clients, env)
+		const ports = aiPorts(clients, env, yield* WorkersAiGateway)
 		// Captured before any event exists, so a graph built inside the first
 		// request cannot leak that request's context into every later one. See
 		// `forIsolate`; `isolateContext` says what the capture must not carry.
@@ -198,7 +172,8 @@ export default MapleAi.make(
 				// The host Worker's layer also provides the Durable Object's
 				// implementation; yielding the class above is what forces this to run,
 				// so the class reaches the generated entry's exports.
-				ChatSessionLive,
+				// The gateway binding reaches the Durable Object through its activation, not the env.
+				ChatSessionLive.pipe(Layer.provide(WorkersAiGatewayLive)),
 				WorkerTelemetry({
 					serviceName: "maple-ai",
 					// Both carried over from apps/api with the surfaces they describe.

@@ -270,8 +270,8 @@ describe("EU in-region routing", () => {
 
 	it("asks no decision model in the EU unless one is configured", () => {
 		expect(resolveDecisionModel(euEnv)).toBeUndefined()
-		expect(resolveDecisionModel({ ...euEnv, MAPLE_DECISION_MODEL: "typesafe/jev-1.13" })).toBe(
-			"typesafe/jev-1.13",
+		expect(resolveDecisionModel({ ...euEnv, MAPLE_DECISION_MODEL: "@cf/cloudflare/clef-flash" })).toBe(
+			"@cf/cloudflare/clef-flash",
 		)
 		expect(resolveDecisionModel(openRouterEnv)).toBe(DEFAULT_DECISION_MODEL)
 	})
@@ -644,11 +644,13 @@ describe("streamed completion — a stream that ends without a usage block", () 
 /**
  * The decision model's own transport check.
  *
- * Jev is served from a different endpoint than chat completions, and the only honest way to check
- * that the model id, the questions and the OpenRouter credential all reach it is to watch what
+ * Clef is a native `ai/run` model rather than a chat completion, and the only honest way to check
+ * that the model id, the questions and the Cloudflare credential all reach it is to watch what
  * leaves.
  */
-describe("layerDecisionModel — Jev over OpenRouter", () => {
+describe("layerDecisionModel — Clef on Workers AI", () => {
+	const workersAiEnv: LlmEnv = { CLOUDFLARE_ACCOUNT_ID: "test-account", CLOUDFLARE_API_KEY: "cf-key" }
+
 	const ticket = Decision.make({
 		input: Schema.Struct({ message: Schema.String }),
 		decisions: {
@@ -679,7 +681,7 @@ describe("layerDecisionModel — Jev over OpenRouter", () => {
 
 			yield* DecisionModel.decide(ticket, { input: { message: "refund me" } }).pipe(
 				Effect.ignore,
-				Effect.provide(Layer.provide(layerDecisionModel(env), layerLlm(env))),
+				Effect.provide(layerDecisionModel(env)),
 				Effect.provideService(FetchHttpClient.Fetch, fakeFetch),
 			)
 
@@ -687,14 +689,16 @@ describe("layerDecisionModel — Jev over OpenRouter", () => {
 			return captured
 		})
 
-	it.live("posts the configured model and the decision's questions to the decisions endpoint", () =>
+	it.live("posts the model variant and the decision's questions to the run endpoint", () =>
 		Effect.gen(function* () {
-			const captured = yield* captureDecision(openRouterEnv)
+			const captured = yield* captureDecision(workersAiEnv)
 
-			// Not `/v1/decisions`: the alpha endpoint sits beside the versioned API, not under it.
-			assert.strictEqual(captured.url, "https://openrouter.ai/api/alpha/decisions")
-			assert.strictEqual(captured.headers.authorization, "Bearer test-key")
-			assert.strictEqual(captured.body.model, DEFAULT_DECISION_MODEL)
+			assert.strictEqual(
+				captured.url,
+				`https://api.cloudflare.com/client/v4/accounts/test-account/ai/run/${DEFAULT_DECISION_MODEL}`,
+			)
+			assert.strictEqual(captured.headers.authorization, "Bearer cf-key")
+			assert.strictEqual(captured.body.model, "clef")
 			assert.deepStrictEqual(captured.body.questions, {
 				department: {
 					type: "choice",
@@ -705,23 +709,15 @@ describe("layerDecisionModel — Jev over OpenRouter", () => {
 		}),
 	)
 
-	it.live("carries the same app attribution as a model call", () =>
-		Effect.gen(function* () {
-			const captured = yield* captureDecision(openRouterEnv)
-
-			assert.strictEqual(captured.headers["http-referer"], "https://maple.dev")
-			assert.strictEqual(captured.headers["x-title"], "Maple")
-		}),
-	)
-
 	it.live("takes the model id from the environment", () =>
 		Effect.gen(function* () {
 			const captured = yield* captureDecision({
-				...openRouterEnv,
-				MAPLE_DECISION_MODEL: "typesafe/jev-1.13",
+				...workersAiEnv,
+				MAPLE_DECISION_MODEL: "@cf/cloudflare/clef-flash",
 			})
 
-			assert.strictEqual(captured.body.model, "typesafe/jev-1.13")
+			assert.match(captured.url, /\/ai\/run\/@cf\/cloudflare\/clef-flash$/)
+			assert.strictEqual(captured.body.model, "clef-flash")
 		}),
 	)
 })

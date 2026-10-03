@@ -11,7 +11,7 @@
  * `/chat/completions`, which is what lets one shim serve the binding path.
  */
 import { OpenAiClient, OpenAiEmbeddingModel, OpenAiLanguageModel } from "@effect/ai-openai-compat"
-import { OpenRouterClient, OpenRouterDecisionModel, OpenRouterLanguageModel } from "@effect/ai-openrouter"
+import { OpenRouterClient, OpenRouterLanguageModel } from "@effect/ai-openrouter"
 import { MAPLE_NATIVE_SESSION_ID_ATTR, MAPLE_NATIVE_TURN_ID_ATTR } from "@maple/domain/gen-ai"
 import { PR_REVIEW_MODELS, type PrReviewModel } from "@maple/domain/http"
 import { FindingEmbedder, PrReviewEmbeddingError } from "@maple/backend/services/pr-review/FindingEmbedder"
@@ -21,7 +21,8 @@ import * as LanguageModel from "effect/ai/LanguageModel"
 import * as AiModel from "effect/ai/Model"
 import { FetchHttpClient, HttpBody, HttpClient, HttpClientRequest } from "effect/http"
 import { type ModelCallTelemetry, instrumentLanguageModel } from "./genai-spans"
-import { layerWorkersAi } from "./WorkersAiHttpClient"
+import * as WorkersAiDecisionModel from "./WorkersAiDecisionModel"
+import { layerWorkersAi, type WorkersAiBinding } from "./WorkersAiHttpClient"
 
 /** Default triage/chat model on OpenRouter — the provider agents run on by default. */
 export const DEFAULT_OPENROUTER_MODEL = "z-ai/glm-5.3-flash:nitro"
@@ -37,16 +38,15 @@ export const DEFAULT_OPENROUTER_MODEL = "z-ai/glm-5.3-flash:nitro"
 export const DEFAULT_REVIEW_MODEL = "deepseek/deepseek-v4.1-flash:nitro"
 
 /**
- * Default decision model: TypeSafe's Jev, reached through OpenRouter.
+ * Default decision model: Cloudflare's Clef, on Workers AI.
  *
  * A decision model answers a bounded question — pick one of these labels, rate this, how likely is
  * that — and returns the whole distribution. It is not a language model and does not replace one:
  * it is what a gate should ask when the answer is a choice rather than prose.
  *
- * The `~` alias tracks the latest Jev; `typesafe/jev-1.13` pins one, through
- * `MAPLE_DECISION_MODEL`, if a gate ever needs a fixed judge.
+ * `MAPLE_DECISION_MODEL=@cf/cloudflare/clef-flash` swaps in the smaller variant.
  */
-export const DEFAULT_DECISION_MODEL = "~typesafe/jev-latest"
+export const DEFAULT_DECISION_MODEL = "@cf/cloudflare/clef"
 
 /**
  * OpenRouter app attribution. `HTTP-Referer` is the header that actually creates the app page — a
@@ -138,14 +138,13 @@ const GEN_AI_PROVIDER_NAMES = {
 } as const satisfies Record<LlmProvider, string>
 
 /**
- * Workers AI has no per-request API key when reached through the `AI` binding, but the client still
+ * Workers AI has no per-request API key when reached through the gateway binding, but the client still
  * wants an account id for its base URL and a token for the `Authorization` header. Both are inert
  * once `layerWorkersAi` intercepts the request — the binding authenticates itself.
  */
 const BINDING_PLACEHOLDER = "workers-ai-binding"
 
 export interface LlmEnv extends Record<string, unknown> {
-	readonly AI?: unknown
 	readonly CLOUDFLARE_ACCOUNT_ID?: string
 	readonly CLOUDFLARE_API_KEY?: string
 	readonly MAPLE_LLM_PROVIDER?: string
@@ -518,14 +517,17 @@ const openRouterHttp = Layer.effect(HttpClient.HttpClient)(
  * The runnable LLM stack — both provider clients, so the switch stays a pure env flip.
  *
  * The Workers AI shim sits in the stack unconditionally: it only intercepts POSTs to the Workers AI
- * chat URL, so it is inert for OpenRouter traffic. `env` supplies the `AI` binding; when it is
- * absent the shim is a no-op and Workers AI requests go out over `fetch` to the REST endpoint.
+ * chat URL, so it is inert for OpenRouter traffic. `workersAi` is the gateway binding; without it
+ * the shim is a no-op and Workers AI requests go out over `fetch` to the REST endpoint.
  */
-export const layerLlm = (env: LlmEnv): Layer.Layer<LlmClients> => {
+export const layerLlm = (
+	env: LlmEnv,
+	workersAi: Option.Option<WorkersAiBinding> = Option.none(),
+): Layer.Layer<LlmClients> => {
 	const accountId = readString(env, "CLOUDFLARE_ACCOUNT_ID") ?? BINDING_PLACEHOLDER
-	// The binding shim wraps `fetch`: a Workers AI call the shim answers from the `AI` binding never
+	// The binding shim wraps `fetch`: a Workers AI call the shim answers from the binding never
 	// reaches it, and everything else goes out over the network as usual.
-	const http = layerWorkersAi(env).pipe(Layer.provide(FetchHttpClient.layer))
+	const http = layerWorkersAi(workersAi).pipe(Layer.provide(FetchHttpClient.layer))
 	return Layer.mergeAll(
 		OpenRouterClient.layer({
 			apiKey: Redacted.make(readString(env, "OPENROUTER_API_KEY") ?? ""),
@@ -541,22 +543,28 @@ export const layerLlm = (env: LlmEnv): Layer.Layer<LlmClients> => {
 }
 
 /**
- * The decision model, over the same OpenRouter client as everything else.
+ * The decision model, Clef on Workers AI.
  *
- * OpenRouter serves Jev from a separate endpoint (`/alpha/decisions`, not chat completions), which
- * is why this is its own layer rather than another entry in {@link resolveTriageModel}. It is not
- * its own provider though: one key, one set of app-attribution headers, and decision spend lands in
- * the same account as model spend. `layerLlm` answers the client it requires.
+ * Clef is a native `ai/run` model, not a chat completion, which is why this is its own layer rather
+ * than another entry in {@link resolveTriageModel}. It rides the same binding shim as the Workers
+ * AI chat path: keyless through the gateway binding where there is one, the REST endpoint with
+ * `CLOUDFLARE_API_KEY` where there is not (dev).
  */
 export const layerDecisionModel = (
 	env: LlmEnv,
-): Layer.Layer<DecisionModel.DecisionModel, never, OpenRouterClient.OpenRouterClient> =>
+	workersAi: Option.Option<WorkersAiBinding> = Option.none(),
+): Layer.Layer<DecisionModel.DecisionModel> =>
 	// The fallback only fills the layer: with no EU decision model the triage route never calls it.
-	OpenRouterDecisionModel.layer({ model: resolveDecisionModel(env) ?? DEFAULT_DECISION_MODEL })
+	WorkersAiDecisionModel.layer({
+		model: resolveDecisionModel(env) ?? DEFAULT_DECISION_MODEL,
+		accountId: readString(env, "CLOUDFLARE_ACCOUNT_ID") ?? BINDING_PLACEHOLDER,
+		apiKey: readString(env, "CLOUDFLARE_API_KEY") ?? BINDING_PLACEHOLDER,
+	}).pipe(Layer.provide(layerWorkersAi(workersAi).pipe(Layer.provide(FetchHttpClient.layer))))
 
 /**
  * The decision model this deploy asks, so a verdict can record what answered it. Undefined in the
- * EU unless configured: Jev has no EU provider, and the gate reads no verdict as "investigate".
+ * EU unless configured: nothing pins Workers AI inference to the EU, and the gate reads no verdict
+ * as "investigate".
  */
 export const resolveDecisionModel = (env: LlmEnv): string | undefined =>
 	readString(env, "MAPLE_DECISION_MODEL") ??

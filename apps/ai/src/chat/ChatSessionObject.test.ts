@@ -1,8 +1,9 @@
 import { assert, describe, it } from "@effect/vitest"
 import { encodeChatTurnTenant, type ChatTurnTenant } from "@maple/domain/chat-session"
 import * as Cloudflare from "alchemy/Cloudflare"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Option } from "effect"
 import { installSchedulerWait, makeFakeDurableObjectState } from "../../test/chat/fake-do-state"
+import { WorkersAiGateway } from "../platform/WorkersAiHttpClient"
 import { activateChatSession } from "./ChatSession"
 
 installSchedulerWait()
@@ -24,6 +25,7 @@ const activate = Effect.gen(function* () {
 			Layer.mergeAll(
 				Layer.succeed(Cloudflare.DurableObjectState, Cloudflare.fromDurableObjectState(raw)),
 				Layer.succeed(Cloudflare.WorkerEnvironment, {}),
+				Layer.succeed(WorkersAiGateway, Option.none()),
 			),
 		),
 	)
@@ -41,6 +43,7 @@ describe("the ChatSession Durable Object on alchemy's form", () => {
 					Layer.mergeAll(
 						Layer.succeed(Cloudflare.DurableObjectState, Cloudflare.fromDurableObjectState(mock)),
 						Layer.succeed(Cloudflare.WorkerEnvironment, {}),
+						Layer.succeed(WorkersAiGateway, Option.none()),
 					),
 				),
 			)

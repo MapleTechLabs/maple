@@ -1,6 +1,6 @@
 /**
  * The Workers AI shim — the seam that decides whether a model call is keyless and neuron-billed
- * (`env.AI.run`) or a REST request against `api.cloudflare.com` with an API token.
+ * (the binding's `run`) or a REST request against `api.cloudflare.com` with an API token.
  *
  * That distinction is invisible in types and silent at runtime: when the binding isn't recognised
  * the upstream provider just falls through to REST with `BINDING_PLACEHOLDER` credentials and 401s
@@ -11,7 +11,7 @@ import { describe, it } from "@effect/vitest"
 import { assert } from "vitest"
 import { Effect } from "effect"
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http"
-import { isWorkersAiBinding, workersAiHttpClient } from "./WorkersAiHttpClient"
+import { isWorkersAiBinding, viaGateway, workersAiHttpClient } from "./WorkersAiHttpClient"
 
 const WORKERS_AI_URL = "https://api.cloudflare.com/client/v4/accounts/abc123/ai/v1/chat/completions"
 const GATEWAY_URL = "https://gateway.ai.cloudflare.com/v1/abc/maple/compat/chat/completions"
@@ -75,6 +75,37 @@ describe("workersAiHttpClient", () => {
 		}),
 	)
 
+	it.live("routes a native `ai/run` call through the binding, model from the URL, body intact", () =>
+		Effect.gen(function* () {
+			const calls: Array<{ model: string; inputs: Record<string, unknown> }> = []
+			const binding = {
+				run: async (model: string, inputs: Record<string, unknown>) => {
+					calls.push({ model, inputs })
+					return new Response("{}", { status: 200 })
+				},
+			}
+			const { client, seen } = recordingFallback()
+
+			const response = yield* workersAiHttpClient(client, binding).execute(
+				jsonRequest(
+					"https://api.cloudflare.com/client/v4/accounts/abc123/ai/run/@cf/cloudflare/clef",
+					{
+						model: "clef",
+						state: "checkout is down",
+						questions: { urgent: { type: "noul", instructions: "Is this urgent?" } },
+					},
+				),
+			)
+
+			assert.equal(response.status, 200)
+			assert.isEmpty(seen)
+			assert.equal(calls[0]?.model, "@cf/cloudflare/clef")
+			// Clef's own `model` field is the variant selector, so it stays in the inputs.
+			assert.equal(calls[0]?.inputs.model, "clef")
+			assert.equal(calls[0]?.inputs.state, "checkout is down")
+		}),
+	)
+
 	it.live("also matches the AI Gateway compat path", () =>
 		Effect.gen(function* () {
 			let ran = false
@@ -113,7 +144,7 @@ describe("workersAiHttpClient", () => {
 
 	it.live("strips Workers AI's native accounting trailer but keeps every OpenAI chunk", () =>
 		Effect.gen(function* () {
-			// Found end-to-end, not by types: `env.AI.run` streams OpenAI-shaped deltas and then appends
+			// Found end-to-end, not by types: the binding's `run` streams OpenAI-shaped deltas and then appends
 			// one frame of its OWN native accounting, which the upstream provider rejects with
 			// "Invalid ... stream event". Because it arrives last, the whole reply streams fine and then
 			// the turn dies on the final frame — every chat turn ended in `reason: "error"`.
@@ -188,4 +219,24 @@ describe("workersAiHttpClient", () => {
 			assert.isTrue(exit._tag === "Failure", "a binding error is a typed failure, not a defect")
 		}),
 	)
+})
+
+describe("viaGateway", () => {
+	it("routes every call through the gateway, keeping the caller's options", async () => {
+		const seen: Array<Record<string, unknown>> = []
+		const binding = {
+			run: async (
+				_model: string,
+				_inputs: Record<string, unknown>,
+				options: Record<string, unknown>,
+			) => {
+				seen.push(options)
+				return new Response("{}")
+			},
+		}
+
+		await viaGateway(binding, "maple-gw").run("@cf/cloudflare/clef", {}, { returnRawResponse: true })
+
+		assert.deepEqual(seen[0], { returnRawResponse: true, gateway: { id: "maple-gw" } })
+	})
 })

@@ -7,7 +7,7 @@ import { FetchHttpClient, HttpRouter } from "effect/http"
 import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import { Env } from "@maple/backend/platform/Env"
 import { V1ErrorBoundaryLive } from "@maple/backend/http/error-boundary"
-import { layerDecisionModel, layerLlm } from "../../platform/Llm"
+import { layerDecisionModel } from "../../platform/Llm"
 import { HttpTriageLive } from "./triage.http"
 
 const INTERNAL_TOKEN = "test-internal-token"
@@ -31,27 +31,34 @@ const config = ConfigProvider.layer(
 	}),
 )
 
-const workerEnv = { OPENROUTER_API_KEY: "test-key", MAPLE_DECISION_MODEL: "typesafe/jev-1.13" }
+const workerEnv = {
+	CLOUDFLARE_ACCOUNT_ID: "test-account",
+	CLOUDFLARE_API_KEY: "test-key",
+	MAPLE_DECISION_MODEL: "@cf/cloudflare/clef",
+}
 
-/** What the decisions endpoint answers, so the decode under test is the real one. */
+/** What the Workers AI REST endpoint answers, so the decode under test is the real one. */
 const decisionsAnswer = () =>
 	new Response(
 		JSON.stringify({
-			model: "typesafe/jev-1.13",
-			answers: {
-				disposition: {
-					type: "choice",
-					choice: "noise",
-					probabilities: { investigate: 0.02, monitor: 0.08, noise: 0.9 },
+			success: true,
+			result: {
+				model: "clef",
+				answers: {
+					disposition: {
+						type: "choice",
+						choice: "noise",
+						probabilities: { investigate: 0.02, monitor: 0.08, noise: 0.9 },
+					},
+					severity: {
+						type: "score",
+						score: 0,
+						probabilities: { "0": 0.8, "1": 0.15, "2": 0.04, "3": 0.01 },
+					},
+					userImpact: { type: "noul", noul: 0.05 },
 				},
-				severity: {
-					type: "score",
-					score: 0,
-					probabilities: { "0": 0.8, "1": 0.15, "2": 0.04, "3": 0.01 },
-				},
-				userImpact: { type: "noul", noul: 0.05 },
+				usage: { input_tokens: 420, output_tokens: 30 },
 			},
-			usage: { input_tokens: 420, output_tokens: 30 },
 		}),
 		{ status: 200 },
 	)
@@ -64,7 +71,6 @@ const makeHarness = () => {
 		return decisionsAnswer()
 	}
 	const decisions = layerDecisionModel(workerEnv).pipe(
-		Layer.provide(layerLlm(workerEnv)),
 		Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetch)),
 	)
 	const routes = HttpApiBuilder.layer(TriageOnlyApi).pipe(
@@ -134,10 +140,10 @@ describe("POST /internal/triage/classify", () => {
 				disposition: "noise",
 				dispositionConfidence: 0.9,
 				severity: "low",
-				model: "typesafe/jev-1.13",
+				model: "@cf/cloudflare/clef",
 			})
 			assert.lengthOf(harness.decisionCalls, 1)
-			assert.match(harness.decisionCalls[0] ?? "", /\/alpha\/decisions$/)
+			assert.match(harness.decisionCalls[0] ?? "", /\/ai\/run\/@cf\/cloudflare\/clef$/)
 		} finally {
 			await harness.dispose()
 		}

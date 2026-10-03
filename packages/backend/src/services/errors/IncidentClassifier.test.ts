@@ -47,7 +47,7 @@ const verdict = {
 	severityConfidence: 0.7,
 	userImpact: 0.1,
 	matchedPrior: null,
-	model: "~typesafe/jev-latest",
+	model: "@cf/cloudflare/clef",
 }
 
 /** A service binding: the calls it saw, and what it answers. */

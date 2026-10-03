@@ -26,7 +26,7 @@ import { STALE_MS } from "@maple/backend/services/errors/investigation-stale"
  * How sure the model has to be before its "noise" costs an incident its pass:
  * at or above this, a floor, not a strict bound.
  *
- * Jev returns a full distribution, so this is a real threshold rather than a
+ * Clef returns a full distribution, so this is a real threshold rather than a
  * formality: a 0.55/0.45 split between `noise` and `investigate` is the model
  * saying it does not know, and the cheap mistake there is to investigate.
  */

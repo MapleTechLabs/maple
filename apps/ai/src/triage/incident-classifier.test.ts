@@ -3,10 +3,10 @@ import { IncidentTriagePriorDiagnosis, IncidentTriageRequest } from "@maple/doma
 import { InvestigationId } from "@maple/domain/primitives"
 import { Effect, Layer, Schema } from "effect"
 import { FetchHttpClient } from "effect/http"
-import { layerDecisionModel, layerLlm } from "../platform/Llm"
+import { layerDecisionModel } from "../platform/Llm"
 import { classifyIncident } from "./incident-classifier"
 
-const env = { OPENROUTER_API_KEY: "test-key" }
+const env = { CLOUDFLARE_ACCOUNT_ID: "test-account", CLOUDFLARE_API_KEY: "test-key" }
 
 const request = new IncidentTriageRequest({
 	title: "404 Not Found /wp-admin/setup-config.php",
@@ -23,13 +23,13 @@ const request = new IncidentTriageRequest({
 	thresholdValue: null,
 })
 
-/** Answers shaped like the decisions endpoint's, so the decode is the real one. */
+/** Answers shaped like Clef's output, so the decode is the real one. */
 const answering = (body: unknown): typeof globalThis.fetch =>
 	(async () => new Response(JSON.stringify(body), { status: 200 })) as typeof globalThis.fetch
 
 const run = (fetch: typeof globalThis.fetch, input: IncidentTriageRequest = request) =>
-	classifyIncident({ request: input, model: "~typesafe/jev-latest" }).pipe(
-		Effect.provide(Layer.provide(layerDecisionModel(env), layerLlm(env))),
+	classifyIncident({ request: input, model: "@cf/cloudflare/clef" }).pipe(
+		Effect.provide(layerDecisionModel(env)),
 		Effect.provideService(FetchHttpClient.Fetch, fetch),
 	)
 
@@ -38,7 +38,7 @@ describe("classifyIncident", () => {
 		Effect.gen(function* () {
 			const verdict = yield* run(
 				answering({
-					model: "~typesafe/jev-latest",
+					model: "@cf/cloudflare/clef",
 					answers: {
 						disposition: {
 							type: "choice",
@@ -61,7 +61,7 @@ describe("classifyIncident", () => {
 			assert.strictEqual(verdict.dispositionConfidence, 0.96)
 			assert.strictEqual(verdict.severity, "low")
 			assert.strictEqual(verdict.userImpact, 0.12)
-			assert.strictEqual(verdict.model, "~typesafe/jev-latest")
+			assert.strictEqual(verdict.model, "@cf/cloudflare/clef")
 		}),
 	)
 
@@ -69,7 +69,7 @@ describe("classifyIncident", () => {
 		Effect.gen(function* () {
 			const verdict = yield* run(
 				answering({
-					model: "~typesafe/jev-latest",
+					model: "@cf/cloudflare/clef",
 					answers: {
 						disposition: {
 							type: "choice",
@@ -123,7 +123,7 @@ describe("classifyIncident", () => {
 					JSON.stringify(
 						isPriorQuestion
 							? {
-									model: "~typesafe/jev-latest",
+									model: "@cf/cloudflare/clef",
 									answers: {
 										prior: {
 											type: "choice",
@@ -134,7 +134,7 @@ describe("classifyIncident", () => {
 									usage: { input_tokens: 500, output_tokens: 40 },
 								}
 							: {
-									model: "~typesafe/jev-latest",
+									model: "@cf/cloudflare/clef",
 									answers: {
 										disposition: {
 											type: "choice",
@@ -182,7 +182,7 @@ describe("classifyIncident", () => {
 					JSON.stringify(
 						body.includes("prior_1")
 							? {
-									model: "~typesafe/jev-latest",
+									model: "@cf/cloudflare/clef",
 									answers: {
 										prior: {
 											type: "choice",
@@ -193,7 +193,7 @@ describe("classifyIncident", () => {
 									usage: { input_tokens: 500, output_tokens: 40 },
 								}
 							: {
-									model: "~typesafe/jev-latest",
+									model: "@cf/cloudflare/clef",
 									answers: {
 										disposition: {
 											type: "choice",
