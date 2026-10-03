@@ -26,6 +26,7 @@ import { workerEnvLayer } from "@maple/infra/worker-runtime"
 import { workerTelemetryConfig } from "@maple/infra/worker-telemetry"
 import { Cause, Effect, Exit, Layer, ManagedRuntime, Match, Option } from "effect"
 import type { WorkersAiBinding } from "../platform/WorkersAiHttpClient"
+import { ReturnedToolFailuresOkLayer } from "../platform/genai-spans"
 import type { ChatSession } from "./ChatSession"
 import type { ChatTurnEvent } from "./events"
 import { withToolTranscript } from "./close-out"
@@ -252,7 +253,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 			Layer.provideMerge(layerPg),
 			Layer.provideMerge(mapleDbConnectionLayer(input.env)),
 			Layer.provideMerge(workerEnvLayer(input.env)),
-			Layer.provideMerge(telemetry.layer),
+			Layer.provideMerge(ReturnedToolFailuresOkLayer.pipe(Layer.provideMerge(telemetry.layer))),
 		),
 	)
 
