@@ -15,6 +15,8 @@ const WINDOW = P.timeWindow({ defaultHours: 7 * 24, maxHours: MCP_DISCOVERY_MAX_
 
 /** Windows up to this long read minutely buckets throughout, so `lastSeen` is minute-exact. */
 const MINUTE_PRECISION_MAX_MS = 7 * 24 * 3_600_000
+/** The minutely tier keeps 90 days; a window starting earlier needs the hourly tier. */
+const MINUTELY_RETENTION_MS = 89 * 24 * 3_600_000
 
 type Version = (typeof ServiceDeploymentsOutput.Type)["versions"][number]
 
@@ -41,7 +43,7 @@ export function registerServiceDeploymentsTool(server: McpToolRegistrar) {
 		name: TOOL,
 		title: "Service Deployments",
 		description:
-			"Which versions (commit SHAs from the `vcs.ref.head.revision` resource attribute) each service ran in the window: first and last seen, traffic, error rate and p50/p95 per version, and which are still live. Verifies a rollout and compares a new version against the previous one in one call. Read from rollups, so 30-day windows are cheap. Services that report no revision are not listed.",
+			"Which versions (commit SHAs from the `vcs.ref.head.revision` resource attribute) each service ran in the window: first and last seen, traffic, error rate and p50/p95 per version, and which are still live. Verifies a rollout and compares a new version against the previous one in one call. Read from rollups, so 30-day windows are cheap. Keeps the 20 most recently serving versions per service and environment. Services that report no revision are not listed.",
 		parameters: Schema.Struct({
 			...WINDOW.fields,
 			service: P.service(),
@@ -55,8 +57,10 @@ export function registerServiceDeploymentsTool(server: McpToolRegistrar) {
 		handler: Effect.fn("McpTool.serviceDeployments")(function* (params) {
 			const { st, et } = yield* WINDOW.resolve(params, TOOL)
 			const tenant = yield* CurrentMcpTenant
+			const startMs = parseWarehouseDateTime(st)
 			const minutePrecision =
-				parseWarehouseDateTime(et) - parseWarehouseDateTime(st) <= MINUTE_PRECISION_MAX_MS
+				parseWarehouseDateTime(et) - startMs <= MINUTE_PRECISION_MAX_MS &&
+				startMs >= Date.now() - MINUTELY_RETENTION_MS
 			const lastSeenPrecision: "minute" | "hour" = minutePrecision ? "minute" : "hour"
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
@@ -85,9 +89,11 @@ export function registerServiceDeploymentsTool(server: McpToolRegistrar) {
 			).pipe(Effect.catchTags(warehouseToMcpHandlers(TOOL)))
 			yield* Effect.annotateCurrentSpan("result.rowCount", rows.length)
 
+			const perGroup = new Map<string, number>()
 			const newest = new Map<string, string>()
 			for (const row of rows) {
 				const key = groupKey({ service: row.serviceName, environment: row.environment })
+				perGroup.set(key, (perGroup.get(key) ?? 0) + 1)
 				const seen = newest.get(key)
 				if (seen === undefined || row.lastSeen > seen) newest.set(key, row.lastSeen)
 			}
@@ -112,7 +118,9 @@ export function registerServiceDeploymentsTool(server: McpToolRegistrar) {
 				...(params.service === undefined ? undefined : { service: params.service }),
 				...(params.environment === undefined ? undefined : { environment: params.environment }),
 				lastSeenPrecision,
-				truncated: rows.length >= params.limit,
+				truncated:
+					rows.length >= params.limit ||
+					[...perGroup.values()].some((n) => n >= CH.DEPLOYMENTS_PER_SERVICE_CAP),
 				versions,
 			}
 		}),

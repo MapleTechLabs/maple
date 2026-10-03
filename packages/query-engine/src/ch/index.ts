@@ -325,6 +325,7 @@ export {
 	type ReleaseErrorFingerprintsOutput,
 	serviceDeploymentsQuery,
 	serviceDeploymentsRowSchema,
+	DEPLOYMENTS_PER_SERVICE_CAP,
 	type ServiceDeploymentsOpts,
 	type ServiceDeploymentsOutput,
 } from "./queries/releases"
@@ -556,6 +557,7 @@ export {
 export {
 	ingestFreshnessQuery,
 	ingestFreshnessRowSchema,
+	logsFreshnessQuery,
 	orgTelemetryPulseQuery,
 	serviceLivenessQuery,
 	type ServiceLivenessOpts,

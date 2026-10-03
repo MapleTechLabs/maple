@@ -74,7 +74,7 @@ export function registerIngestFreshnessTool(server: McpToolRegistrar) {
 		name: TOOL,
 		title: "Ingest Freshness",
 		description:
-			"Newest received timestamp per signal (traces, logs, metrics) for the whole org, with the lag behind end_time and the last hour that had data. Use it before reading silence as an outage: one service gone quiet while its signals keep arriving is the service, every signal stalled at once is ingest. Exact timestamps cover the last hour of the window; older activity is hour-grained.",
+			"Newest received timestamp per signal (traces, logs, metrics) for the whole org, with the lag behind end_time and the last hour that had data. Use it before reading silence as an outage: one service gone quiet while its signals keep arriving is the service, every signal stalled at once is ingest. Timestamps in the last hour of the window are exact for logs and metrics and minute-grained for traces; older activity is hour-grained.",
 		parameters: Schema.Struct({ ...WINDOW.fields }),
 		output: IngestFreshnessOutput,
 		hints: { readOnly: true },
@@ -86,14 +86,16 @@ export function registerIngestFreshnessTool(server: McpToolRegistrar) {
 			const tenant = yield* CurrentMcpTenant
 			yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId })
 
-			const [probe, history] = yield* withTenantExecutor(
+			const [rollupProbe, logsProbe, history] = yield* withTenantExecutor(
 				Effect.gen(function* () {
 					const executor = yield* WarehouseExecutor
-					const probeQuery = CH.compileUnion(
-						CH.ingestFreshnessQuery(),
-						{ orgId: executor.orgId, startTime: probeStart, endTime: et },
-						{ rowSchema: CH.ingestFreshnessRowSchema },
-					)
+					const probeParams = { orgId: executor.orgId, startTime: probeStart, endTime: et }
+					const rollupQuery = CH.compileUnion(CH.ingestFreshnessQuery(), probeParams, {
+						rowSchema: CH.ingestFreshnessRowSchema,
+					})
+					const logsQuery = CH.compile(CH.logsFreshnessQuery(), probeParams, {
+						rowSchema: CH.ingestFreshnessRowSchema,
+					})
 					const historyQuery = CH.compileUnion(
 						CH.signalPresenceQuery(),
 						{ orgId: executor.orgId, startTime: st, endTime: et },
@@ -101,19 +103,21 @@ export function registerIngestFreshnessTool(server: McpToolRegistrar) {
 					)
 					return yield* Effect.all(
 						[
-							executor.compiledQuery(probeQuery, {
+							executor.compiledQuery(rollupQuery, {
 								profile: "list",
 								context: "ingestFreshness",
 							}),
+							executor.compiledQuery(logsQuery, { profile: "list", context: "logsFreshness" }),
 							executor.compiledQuery(historyQuery, {
 								profile: "list",
 								context: "signalPresence",
 							}),
 						],
-						{ concurrency: 2 },
+						{ concurrency: 3 },
 					)
 				}),
 			).pipe(Effect.catchTags(warehouseToMcpHandlers(TOOL)))
+			const probe = [...rollupProbe, ...logsProbe]
 
 			return {
 				timeRange: { start: st, end: et },

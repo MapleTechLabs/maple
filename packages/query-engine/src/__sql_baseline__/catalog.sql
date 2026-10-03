@@ -1469,16 +1469,29 @@ SELECT
         ORDER BY bucket ASC
         FORMAT JSON
 
--- builder:liveness:ingestFreshnessQuery:default  [c8463e30]
+-- builder:liveness:ingestFreshnessQuery:default  [1f607e03]
 SELECT
           'traces' AS signal,
-          count() AS count,
-          toString(max(service_overview_spans.Timestamp)) AS lastSeen
-        FROM service_overview_spans
-        WHERE service_overview_spans.OrgId = 'org_sql_catalog'
-          AND service_overview_spans.Timestamp >= '2026-01-01 10:30:00'
-          AND service_overview_spans.Timestamp <= '2026-01-03 14:15:00'
+          sum(service_operations_minutely.SpanCount) AS count,
+          toString(max(service_operations_minutely.Minute)) AS lastSeen
+        FROM service_operations_minutely
+        WHERE service_operations_minutely.OrgId = 'org_sql_catalog'
+          AND service_operations_minutely.Minute >= '2026-01-01 10:30:00'
+          AND service_operations_minutely.Minute <= '2026-01-03 14:15:00'
 UNION ALL
+SELECT
+          'metrics' AS signal,
+          sum(metric_catalog.DataPointCount) AS count,
+          toString(max(if(metric_catalog.LastSeen > '2026-01-03 14:15:00', toDateTime('2026-01-03 14:15:00'), metric_catalog.LastSeen))) AS lastSeen
+        FROM metric_catalog
+        WHERE metric_catalog.OrgId = 'org_sql_catalog'
+          AND metric_catalog.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+          AND metric_catalog.Hour <= toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND metric_catalog.LastSeen >= '2026-01-01 10:30:00'
+          AND metric_catalog.FirstSeen <= '2026-01-03 14:15:00'
+FORMAT JSON
+
+-- builder:liveness:logsFreshnessQuery:default  [5aa6907d]
 SELECT
           'logs' AS signal,
           count() AS count,
@@ -1489,17 +1502,7 @@ SELECT
           AND logs.TimestampTime <= '2026-01-03 14:15:00'
           AND logs.Timestamp >= '2026-01-01 10:30:00'
           AND logs.Timestamp <= '2026-01-03 14:15:00'
-UNION ALL
-SELECT
-          'metrics' AS signal,
-          sum(metric_catalog.DataPointCount) AS count,
-          toString(max(metric_catalog.LastSeen)) AS lastSeen
-        FROM metric_catalog
-        WHERE metric_catalog.OrgId = 'org_sql_catalog'
-          AND metric_catalog.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
-          AND metric_catalog.Hour <= toStartOfHour(toDateTime('2026-01-03 14:15:00'))
-          AND metric_catalog.LastSeen >= '2026-01-01 10:30:00'
-FORMAT JSON
+        FORMAT JSON
 
 -- builder:product-events-explore:productEventAttributeKeysQuery:default  [30a1e945]
 SELECT
@@ -2870,8 +2873,35 @@ SELECT
         LIMIT 5000
         FORMAT JSON
 
--- builder:releases:serviceDeploymentsQuery:hourInterior  [fa954134]
+-- builder:releases:serviceDeploymentsQuery:hourInterior  [ae47e5db]
 SELECT
+          ranked.serviceName AS serviceName,
+          ranked.environment AS environment,
+          ranked.commitSha AS commitSha,
+          ranked.firstSeen AS firstSeen,
+          ranked.lastSeen AS lastSeen,
+          ranked.spanCount AS spanCount,
+          ranked.errorCount AS errorCount,
+          ranked.p50LatencyMs AS p50LatencyMs,
+          ranked.p95LatencyMs AS p95LatencyMs,
+          ranked.p99LatencyMs AS p99LatencyMs,
+          ranked.apdexSatisfiedCount AS apdexSatisfiedCount,
+          ranked.apdexToleratingCount AS apdexToleratingCount
+        FROM (SELECT
+          versions.serviceName AS serviceName,
+          versions.environment AS environment,
+          versions.commitSha AS commitSha,
+          versions.firstSeen AS firstSeen,
+          versions.lastSeen AS lastSeen,
+          versions.spanCount AS spanCount,
+          versions.errorCount AS errorCount,
+          versions.p50LatencyMs AS p50LatencyMs,
+          versions.p95LatencyMs AS p95LatencyMs,
+          versions.p99LatencyMs AS p99LatencyMs,
+          versions.apdexSatisfiedCount AS apdexSatisfiedCount,
+          versions.apdexToleratingCount AS apdexToleratingCount,
+          row_number() OVER (PARTITION BY serviceName, environment ORDER BY lastSeen DESC, firstSeen DESC) AS versionRank
+        FROM (SELECT
           service_windows.bServiceName AS serviceName,
           service_windows.bEnvironment AS environment,
           service_windows.bCommitSha AS commitSha,
@@ -2954,13 +2984,41 @@ SELECT
         GROUP BY bBucket, bServiceName, bServiceNamespace, bEnvironment, bCommitSha
 ) AS service_windows
         WHERE service_windows.bCommitSha NOT IN ('', 'unknown', 'N/A')
-        GROUP BY serviceName, environment, commitSha
+        GROUP BY serviceName, environment, commitSha) AS versions) AS ranked
+        WHERE ranked.versionRank <= 20
         ORDER BY serviceName ASC, firstSeen DESC
         LIMIT 500
         FORMAT JSON
 
--- builder:releases:serviceDeploymentsQuery:minutePrecision  [16886392]
+-- builder:releases:serviceDeploymentsQuery:minutePrecision  [fc7ca9dd]
 SELECT
+          ranked.serviceName AS serviceName,
+          ranked.environment AS environment,
+          ranked.commitSha AS commitSha,
+          ranked.firstSeen AS firstSeen,
+          ranked.lastSeen AS lastSeen,
+          ranked.spanCount AS spanCount,
+          ranked.errorCount AS errorCount,
+          ranked.p50LatencyMs AS p50LatencyMs,
+          ranked.p95LatencyMs AS p95LatencyMs,
+          ranked.p99LatencyMs AS p99LatencyMs,
+          ranked.apdexSatisfiedCount AS apdexSatisfiedCount,
+          ranked.apdexToleratingCount AS apdexToleratingCount
+        FROM (SELECT
+          versions.serviceName AS serviceName,
+          versions.environment AS environment,
+          versions.commitSha AS commitSha,
+          versions.firstSeen AS firstSeen,
+          versions.lastSeen AS lastSeen,
+          versions.spanCount AS spanCount,
+          versions.errorCount AS errorCount,
+          versions.p50LatencyMs AS p50LatencyMs,
+          versions.p95LatencyMs AS p95LatencyMs,
+          versions.p99LatencyMs AS p99LatencyMs,
+          versions.apdexSatisfiedCount AS apdexSatisfiedCount,
+          versions.apdexToleratingCount AS apdexToleratingCount,
+          row_number() OVER (PARTITION BY serviceName, environment ORDER BY lastSeen DESC, firstSeen DESC) AS versionRank
+        FROM (SELECT
           service_windows.bServiceName AS serviceName,
           service_windows.bEnvironment AS environment,
           service_windows.bCommitSha AS commitSha,
@@ -3020,7 +3078,8 @@ SELECT
         GROUP BY bBucket, bServiceName, bServiceNamespace, bEnvironment, bCommitSha
 ) AS service_windows
         WHERE service_windows.bCommitSha NOT IN ('', 'unknown', 'N/A')
-        GROUP BY serviceName, environment, commitSha
+        GROUP BY serviceName, environment, commitSha) AS versions) AS ranked
+        WHERE ranked.versionRank <= 20
         ORDER BY serviceName ASC, firstSeen DESC
         LIMIT 500
         FORMAT JSON

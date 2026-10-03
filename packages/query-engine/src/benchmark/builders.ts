@@ -1106,6 +1106,12 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		compile: () => CH.compileUnionUnsafe(CH.ingestFreshnessQuery(), window),
 	},
 	{
+		module: "liveness",
+		name: "logsFreshnessQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.logsFreshnessQuery(), window),
+	},
+	{
 		module: "service-map",
 		name: "dbQueryVolumeQuery",
 		label: "allDatabases",

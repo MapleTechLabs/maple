@@ -137,26 +137,55 @@ export function orgTelemetryPulseQuery(): CHUnionQuery<TelemetryPulseOutput> {
 }
 
 /**
- * Exact newest timestamp per signal (traces, logs, metrics) for one org, over a
- * short caller-bounded window. Tells "the service went quiet" apart from
- * "ingest stalled". Traces read the entry-point projection (every trace has a
- * root), metrics read `metric_catalog.LastSeen`, so no branch scans raw spans
- * or datapoints. Group-less, so each signal always returns one row.
+ * Newest timestamp per rollup-backed signal (traces, metrics) for one org, over
+ * a short caller-bounded window. Traces read `service_operations_minutely`,
+ * which counts every span, at minute grain; metrics read `metric_catalog`.
+ * Group-less, so each signal always returns one row. Logs, a raw table, are
+ * probed by `logsFreshnessQuery` so no union mixes tiers.
  */
 export function ingestFreshnessQuery(): CHUnionQuery<TelemetryPulseOutput> {
-	const traces = from(ServiceOverviewSpans)
+	const traces = from(ServiceOperationsMinutely)
 		.select(($) => ({
 			signal: CH.lit("traces"),
-			count: CH.count(),
-			lastSeen: CH.toString_(CH.max_($.Timestamp)),
+			count: CH.sum($.SpanCount),
+			lastSeen: CH.toString_(CH.max_($.Minute)),
 		}))
 		.where(($) => [
 			$.OrgId.eq(param.string("orgId")),
-			$.Timestamp.gte(param.dateTimeSeconds("startTime")),
-			$.Timestamp.lte(param.dateTimeSeconds("endTime")),
+			$.Minute.gte(param.dateTimeSeconds("startTime")),
+			$.Minute.lte(param.dateTimeSeconds("endTime")),
 		])
 
-	const logs = from(Logs)
+	const metrics = from(MetricCatalog)
+		.select(($) => ({
+			signal: CH.lit("metrics"),
+			count: CH.sum($.DataPointCount),
+			// An hour row straddling endTime had data inside the window; clamp its
+			// LastSeen so a past end_time never reads newer than itself.
+			lastSeen: CH.toString_(
+				CH.max_(
+					CH.if_(
+						$.LastSeen.gt(param.dateTimeSeconds("endTime")),
+						CH.toDateTime(param.dateTimeString("endTime")),
+						$.LastSeen,
+					),
+				),
+			),
+		}))
+		.where(($) => [
+			$.OrgId.eq(param.string("orgId")),
+			$.Hour.gte(hourFloor("startTime")),
+			$.Hour.lte(hourFloor("endTime")),
+			$.LastSeen.gte(param.dateTimeSeconds("startTime")),
+			$.FirstSeen.lte(param.dateTimeSeconds("endTime")),
+		])
+
+	return unionAll(traces, metrics).format("JSON")
+}
+
+/** Exact newest log timestamp for one org; one group-less row. */
+export function logsFreshnessQuery() {
+	return from(Logs)
 		.select(($) => ({
 			signal: CH.lit("logs"),
 			count: CH.count(),
@@ -169,21 +198,7 @@ export function ingestFreshnessQuery(): CHUnionQuery<TelemetryPulseOutput> {
 			$.Timestamp.gte(param.dateTimeString("startTime")),
 			$.Timestamp.lte(param.dateTimeString("endTime")),
 		])
-
-	const metrics = from(MetricCatalog)
-		.select(($) => ({
-			signal: CH.lit("metrics"),
-			count: CH.sum($.DataPointCount),
-			lastSeen: CH.toString_(CH.max_($.LastSeen)),
-		}))
-		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
-			$.Hour.gte(hourFloor("startTime")),
-			$.Hour.lte(hourFloor("endTime")),
-			$.LastSeen.gte(param.dateTimeSeconds("startTime")),
-		])
-
-	return unionAll(traces, logs, metrics).format("JSON")
+		.format("JSON")
 }
 
 export const ingestFreshnessRowSchema = Schema.Struct({

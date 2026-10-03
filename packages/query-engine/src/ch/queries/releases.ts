@@ -8,7 +8,13 @@
 import { Schema } from "effect"
 import * as T from "@maple-dev/effect-clickhouse/types"
 import * as CH from "@maple-dev/effect-clickhouse/expr"
-import { param, from, type CHQuery, type CompiledQueryRowSchema } from "@maple-dev/effect-clickhouse"
+import {
+	param,
+	from,
+	fromQuery,
+	type CHQuery,
+	type CompiledQueryRowSchema,
+} from "@maple-dev/effect-clickhouse"
 import type { ColumnDefs } from "@maple-dev/effect-clickhouse/types"
 import { ErrorEventsByTime, ServiceOverviewSpans } from "../tables"
 import { CHNumber } from "../schema"
@@ -271,6 +277,8 @@ export interface ServiceDeploymentsOpts {
 	/** Read minutely buckets for the whole window so `lastSeen` is minute-exact. */
 	readonly minutePrecision: boolean
 	readonly limit?: number
+	/** Versions kept per (service, environment), most recently serving first. */
+	readonly perServiceLimit?: number
 }
 
 export interface ServiceDeploymentsOutput extends ReleasesListOutput {
@@ -282,8 +290,29 @@ export const serviceDeploymentsRowSchema = Schema.Struct({
 	lastSeen: Schema.String,
 }) satisfies CompiledQueryRowSchema<ServiceDeploymentsOutput>
 
+export const DEPLOYMENTS_PER_SERVICE_CAP = 20
+
+type DeploymentKey = keyof ServiceDeploymentsOutput
+
+const deploymentColumns = <A extends { readonly [K in DeploymentKey]: unknown }>(
+	$: A,
+): Pick<A, DeploymentKey> => ({
+	serviceName: $.serviceName,
+	environment: $.environment,
+	commitSha: $.commitSha,
+	firstSeen: $.firstSeen,
+	lastSeen: $.lastSeen,
+	spanCount: $.spanCount,
+	errorCount: $.errorCount,
+	p50LatencyMs: $.p50LatencyMs,
+	p95LatencyMs: $.p95LatencyMs,
+	p99LatencyMs: $.p99LatencyMs,
+	apdexSatisfiedCount: $.apdexSatisfiedCount,
+	apdexToleratingCount: $.apdexToleratingCount,
+})
+
 export function serviceDeploymentsQuery(opts: ServiceDeploymentsOpts) {
-	return serviceOverviewWindows(
+	const versions = serviceOverviewWindows(
 		{ serviceName: opts.serviceName, environments: opts.environments },
 		{ grain: "minute", includeHourly: !opts.minutePrecision },
 	)
@@ -312,6 +341,20 @@ export function serviceDeploymentsQuery(opts: ServiceDeploymentsOpts) {
 		}))
 		.where(($) => [CH.notInList($.bCommitSha, PLACEHOLDER_COMMIT_SHAS)])
 		.groupBy("serviceName", "environment", "commitSha")
+
+	// Rank inside each (service, environment) so one fast-deploying service
+	// cannot crowd the others out of the global limit.
+	const ranked = fromQuery(versions, "versions").select(($) => ({
+		...deploymentColumns($),
+		versionRank: CH.rawExpr(
+			"row_number() OVER (PARTITION BY serviceName, environment ORDER BY lastSeen DESC, firstSeen DESC)",
+			T.uint64,
+		),
+	}))
+
+	return fromQuery(ranked, "ranked")
+		.select(($) => deploymentColumns($))
+		.where(($) => [$.versionRank.lte(opts.perServiceLimit ?? DEPLOYMENTS_PER_SERVICE_CAP)])
 		.orderBy(["serviceName", "asc"], ["firstSeen", "desc"])
 		.limit(opts.limit ?? RELEASES_LIST_CAP)
 		.format("JSON")

@@ -120,12 +120,15 @@ const fixtures: FixtureRule[] = [
 		],
 	},
 	{
-		match: (sql) => sql.includes("metric_catalog"),
+		match: (sql) => (sql.includes("metric_catalog") ? (sqlSeen.push(sql), true) : false),
 		rows: [
-			{ signal: "traces", count: "12", lastSeen: "2026-10-01 11:59:30" },
-			{ signal: "logs", count: "0", lastSeen: "1970-01-01 00:00:00" },
+			{ signal: "traces", count: "12", lastSeen: "2026-10-01 11:59:00" },
 			{ signal: "metrics", count: "0", lastSeen: "1970-01-01 00:00:00" },
 		],
+	},
+	{
+		match: (sql) => /FROM logs\b/.test(sql),
+		rows: [{ signal: "logs", count: "0", lastSeen: "1970-01-01 00:00:00" }],
 	},
 	{
 		match: (sql) => sql.includes("service_usage"),
@@ -198,6 +201,22 @@ describe("service_deployments", () => {
 		expect(output.lastSeenPrecision).toBe("hour")
 		expect(sqlSeen.at(-1)).toContain("service_overview_hourly")
 	})
+
+	it("reads the hourly tier for a short window older than the minutely retention", async () => {
+		const result = await call("service_deployments", {
+			start_time: "2026-05-01 00:00:00",
+			end_time: "2026-05-03 00:00:00",
+		})
+		const output = Schema.decodeUnknownSync(ServiceDeploymentsOutput)(result.structuredContent)
+		expect(output.lastSeenPrecision).toBe("hour")
+		expect(sqlSeen.at(-1)).toContain("service_overview_hourly")
+	})
+
+	it("caps versions per service and environment instead of only globally", async () => {
+		await call("service_deployments", { end_time: END })
+		expect(sqlSeen.at(-1)).toContain("PARTITION BY serviceName, environment")
+		expect(sqlSeen.at(-1)).toContain("versionRank <= 20")
+	})
 })
 
 describe("route_usage", () => {
@@ -233,7 +252,11 @@ describe("ingest_freshness", () => {
 			["logs", "stalled"],
 			["metrics", "none"],
 		])
-		expect(output.signals[0]?.lagSeconds).toBe(30)
+		expect(output.signals[0]?.lagSeconds).toBe(60)
+		const probeSql = sqlSeen.at(-1) ?? ""
+		expect(probeSql).toContain("FROM service_operations_minutely")
+		expect(probeSql).toContain("metric_catalog.FirstSeen <= ")
+		expect(probeSql).not.toMatch(/FROM logs\b/)
 		expect(output.signals[1]?.lastHourWithData).toBe("2026-10-01 08:00:00")
 		expect(markdown(result)).toContain("logs stopped while traces kept arriving")
 	})
