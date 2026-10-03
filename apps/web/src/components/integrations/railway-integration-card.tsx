@@ -1,6 +1,7 @@
 import { useState } from "react"
 import { Exit, Option } from "effect"
 import { Link } from "@tanstack/react-router"
+import { RailwayConnectRequest } from "@maple/domain/http"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
 import { Input } from "@maple/ui/components/ui/input"
@@ -52,7 +53,8 @@ function RailwayTokenForm({
 		setSubmitting(true)
 		setError(null)
 		const result = await connect({
-			payload: { token: token.trim() },
+			// v1 payloads are Schema.Class: a plain object fails client-side encoding and is never sent.
+			payload: new RailwayConnectRequest({ token: token.trim() }),
 			reactivityKeys: ["railwayIntegrationStatus"],
 		})
 		setSubmitting(false)
