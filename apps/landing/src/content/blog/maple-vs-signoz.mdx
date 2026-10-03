@@ -1,0 +1,185 @@
+---
+title: "SigNoz and Maple tick the same boxes. Here's where they actually differ"
+description: "Both are OpenTelemetry-native, ClickHouse-backed, one app for traces, logs and metrics, with an MCP server and usage pricing. A feature matrix is useless here, so this is the other kind of comparison: what open source means for each, what self-hosting costs you, what happens after an error, and what one month costs on both."
+date: 2026-09-07
+author: "David Granzin"
+authorRole: "Founder, Maple"
+category: "guides"
+featured: false
+draft: true
+---
+
+import StackTopology from "../../components/blog/demos/StackTopology.astro"
+
+If you put SigNoz and Maple in a feature matrix, you get two columns of checkmarks and learn nothing. Both ingest OpenTelemetry and nothing else. Both store traces, logs and metrics in ClickHouse. Both are one application rather than a stack to assemble, both ship an MCP server so an agent can work an incident, and both price on data volume with no per-seat or per-host line.
+
+So this isn't a matrix. It's the shorter list of places where the two actually diverge, with SigNoz's side checked against their own docs and pricing page this month, and an honest section on where SigNoz is ahead. If you're choosing between them, those are the only rows that will decide it.
+
+The one-paragraph version: SigNoz is the more mature self-hosting story, with an MIT core, a five-year head start and a longer list of purpose-built views. Maple is the one that keeps going after the error is found (issues with owners, browser session replay, agent sessions), costs less at the retention you'd actually run, and collapses into a single binary on your laptop. Details below.
+
+## What SigNoz is: an MIT-licensed, ClickHouse-backed OpenTelemetry APM
+
+SigNoz was started in 2021 by Pranay Prateek and Ankit Nayan, went through Y Combinator's W21 batch, and raised $6.5M from SignalFire in 2023. The GitHub repository is north of 30,000 stars, which makes it the most-starred single-application OpenTelemetry backend around. Their own description is "an open-source, OpenTelemetry-native observability platform for your team and their AI agents", and that's accurate.
+
+The product covers APM and service overviews, distributed tracing with waterfall and flamegraph views, log management with a visual query builder and log pipelines, metrics with dashboards, infrastructure monitoring for hosts and Kubernetes, an exceptions page, alerting with nine notification channel types, and a growing set of purpose-built views: trace funnels, external API monitoring, messaging queue monitoring for Kafka and Celery. There are three ways to run it: the Community edition you self-host for free, SigNoz Cloud from $49 a month, and an Enterprise tier from $4,000 a month that adds SAML, RBAC and a bring-your-own-cloud option.
+
+On the AI side, SigNoz has a hosted MCP server for Cloud users and an open-source one for self-hosters, an AI teammate called Noz that's Cloud-only, and a library of agent skills for Claude, Codex and Cursor.
+
+## What Maple is, in the same terms
+
+Maple is a younger OpenTelemetry observability platform. Traces, logs, metrics, browser sessions and product events land in one ClickHouse-backed warehouse; the query engine compiles every dashboard, alert and API call to ClickHouse SQL; and the whole thing is on GitHub under the Functional Source License, converting to Apache 2.0 two years after each release.
+
+The distinct pieces are what happens downstream of the telemetry: exceptions become issues with state, an owner and a severity that a detector maintains; browser sessions are replayed with the trace behind every click; AI agent runs are grouped into sessions with tokens, cost, tool calls and errors per session; and the MCP server exposes the product's own queries, including write tools for triage, behind org scoping. Cloud is $39 a month with 100 GB of each signal included. Local mode is one binary.
+
+## Where the architectures are the same, and where they aren't
+
+Both platforms are shaped like this: something accepts OTLP and writes ClickHouse, ClickHouse holds the telemetry, an application tier queries it and evaluates alerts, and a small relational store holds the metadata. That's the whole reason the two feel alike.
+
+<StackTopology />
+
+The differences are in the ingest tier and in how far the app tier has been consolidated.
+
+SigNoz's ingest is a distribution of the OpenTelemetry Collector, `signoz-otel-collector`, with ClickHouse exporters added. It accepts OTLP, Jaeger, Zipkin and Kafka, which matters if you have legacy tracers. On the app side, SigNoz did real work in 2025 collapsing what used to be separate query-service, frontend, alertmanager and OpAMP processes into one `signoz` binary, and the Docker guide now stands up five containers: that binary, the collector, ClickHouse, ClickHouse Keeper and PostgreSQL. Self-hosters can also use Foundry, their newer Linux install path, which manages the systemd units for you after you install ClickHouse and Postgres.
+
+Maple's ingest is a purpose-built gateway written in Rust. It accepts OTLP only, authenticates ingest keys, enriches every row with the org, and journals batches to a write-ahead log before acknowledging, with an S3 tier under it. The practical difference: if the warehouse is unreachable for ten minutes, SigNoz's collector, with default settings, retries from an in-memory queue and then drops; Maple's gateway keeps accepting and replays. The app tier is three services on the compose file (API, web, alerting) plus Postgres, and you point it at a ClickHouse you run. Maple Cloud runs the same code against a managed ClickHouse.
+
+One more shape difference. Maple's local mode compiles the API, the UI and an embedded ClickHouse (chDB) into a single `maple` binary that listens on 127.0.0.1 for OTLP. There's no SigNoz equivalent; their Linux install still expects ClickHouse and Postgres beside it, and the 4 GB Docker minimum is real.
+
+## Open source vs source-available: MIT with an ee/ folder against FSL
+
+This is the row that generates the most heat and the least light, so let's be precise.
+
+SigNoz's core is MIT, which is as permissive as OSI licenses get. The repository also has an `ee/` directory under the SigNoz Enterprise License, which forbids production use without a paid license. What sits in `ee/` has moved over time, in the good direction: dashboard and alert limits were removed from Community in v0.47, Google OAuth SSO arrived in Community in 2025. What's still enterprise-only today is SAML and OIDC SSO and fine-grained RBAC, plus the Cloud-only pieces like Noz and the hosted Ingest Guard.
+
+Maple is under FSL-1.1. That's not an OSI license: for two years after a release you can do anything with the code except offer it as a competing hosted service, then that release becomes Apache 2.0. There's no `ee/` folder. Everything in the cloud product is in the repository, and the self-hosted build has no feature flag hiding SAML behind a key.
+
+If your procurement checklist says "OSI-approved", SigNoz's core passes and Maple's doesn't. If your checklist says "can I run the whole product, including the enterprise-looking parts, without buying a license", the answer flips. Pick the question your team actually asks.
+
+## Self-hosting SigNoz vs self-hosting Maple
+
+SigNoz is ahead here, and I'd rather say it than have you find out.
+
+SigNoz has had self-hosting as the primary path for five years. There are maintained Docker Compose, Docker Swarm and Helm deployments, per-platform guides for EKS, GKE, AKS, OpenShift, ECS, Render and Railway, the Foundry installer for bare Linux, retention controls in the UI per signal, and a community of people who've hit every Keeper segfault and ClickHouse AVX2 gotcha before you. The Community edition is multi-user with viewer, editor and admin roles and Google OAuth.
+
+Maple's self-hosted path today is the repository, the compose file, a Postgres and a ClickHouse you provide, and one root password. Self-hosted mode is single-org and has no SSO. It works, it's how we develop, and it's what Enterprise runs in customers' own cloud accounts, but a one-command install with the polish of SigNoz's Helm chart is on our roadmap rather than in your terminal. If self-hosting for a team of forty is the primary requirement, SigNoz is the safer bet right now.
+
+Where Maple wins the self-hosting argument is at the two ends. On a laptop, `brew install Makisuo/tap/maple` and `maple start` gives you the full dashboard against an embedded ClickHouse in about a minute with no containers. And at the other end, the self-hosted build is the entire product: session replay, agent sessions, the issue workflow, the MCP write tools, all of it, with no enterprise tier gating any of it.
+
+## Query languages: Query Builder v5, ClickHouse SQL and PromQL vs a builder and SQL
+
+Both products default to a visual builder and both let you drop to ClickHouse SQL. The differences are at the edges.
+
+SigNoz's Query Builder v5 added an expression syntax, so a filter reads `service.name = 'frontend' AND http.status_code >= 400` rather than being assembled from dropdowns, and it works the same across logs, traces and metrics. Dashboards additionally accept raw ClickHouse SQL and PromQL, which is the feature that matters if you're arriving from Prometheus with a folder of recording rules. Full-text search is logs-only; traces and metrics take field filters. Trace Operators, from their September 2025 launch week, let you express relationships between spans within a trace (this span happened after that one, this service called that one) without writing the self-join yourself.
+
+Maple's builder is one grammar across signals too, and any draft it produces can become a chart, an alert or an MCP query. Raw SQL is available through the API, the dashboard and the `run_sql` tool, against the same tables. There is no PromQL. Existing Prometheus alert rules don't import; you rebuild them, and the MCP server will draft them if you ask. If PromQL compatibility is on your list, that's a SigNoz row.
+
+## Error tracking: an exceptions list vs an issue with an owner
+
+This is the sharpest product difference and the one I'd look at first if you're evaluating either.
+
+SigNoz's Exceptions page groups by service, exception type and message, shows count, first seen and last seen, and jumps to the trace with the failing span in context. It's a good page. It's also where the workflow ends: there's no state on a group. You can't claim it, resolve it, set a severity, or leave a note saying "this is the Stripe timeout, we're waiting on them". The next person on call re-derives that from scratch.
+
+Maple treats an exception group as an issue. The fingerprint is `exception.type` plus the message with ids, hosts and timestamps normalised out, which is what stops a UUID in the message fragmenting one bug into four hundred issues. (SigNoz has a low-cardinality grouping option for self-hosters that does something similar by dropping the message entirely.) Each issue has a state, an owner, a severity, comments, first-seen and last-seen, and regression detection: a resolved issue that fires again reopens rather than starting over. A detector runs every five minutes and sets a severity from the issue's own rate and spread; a human's setting always wins over the detector's, and the detector's over the AI's. Link a GitHub repository and an agent can go from the stack frame to the function and propose a fix that cites a line.
+
+If your team already runs Sentry next to its tracing tool for exactly this, Maple is trying to be the thing that makes that second tool unnecessary. SigNoz isn't, and doesn't claim to be.
+
+## Frontend and AI agents: session replay and agent sessions
+
+Two more places where Maple has a product surface and SigNoz has an OpenTelemetry integration.
+
+Frontend: SigNoz ingests browser traces, logs and Web Vitals over OTLP, so you can see that a page was slow. It has no session replay, and their community has said it isn't on the roadmap. Maple records the DOM in the browser, masks inputs before anything leaves the page, and plays the session back with console lines, network requests and exceptions on the same timeline, each carrying the trace id that was live. Pause on the click that failed and open the request it fired. Cloud includes 5,000 sessions a month and bills $0.002 per session after that.
+
+AI agents: both platforms accept the GenAI semantic conventions, so a LangChain or OpenAI span lands in both. SigNoz surfaces those as traces and dashboards. Maple additionally groups them into agent sessions: one row per session with model calls, tool calls, tokens, cost and whether anything errored, filterable by vendor, model, agent and tool, with the transcript readable from the session. It's the difference between finding the expensive run in a trace list and sorting by cost.
+
+## MCP servers: both have one, the tool sets differ
+
+Both companies decided in 2025 that agents were a first-class user, and both shipped MCP servers with hosted versions for cloud customers. If you connect Claude Code to either, an agent can list services, search traces and logs, and read alerts and dashboards.
+
+SigNoz's server is Go, Apache 2.0, and broad: fifty-plus tools that mirror most of their API, including create, update and delete for dashboards, alert rules, notification channels and saved views, plus a documentation search tool and a way to run Query Builder v5, PromQL or ClickHouse SQL directly. Their agent-skills repository teaches an agent SigNoz workflows through SKILL.md files. Their stated philosophy, that agents gather evidence and propose causes while humans set alert policy, is one we share.
+
+Maple's server exposes the product's own queries rather than the REST surface: `diagnose_service` returns what changed in p99 by version rather than a chart; `find_slow_traces` and `inspect_trace` return real spans with real attributes; `get_incident_timeline` and `compare_periods` do the correlation an engineer would do by hand. Write tools exist (claim an issue, set severity, open an alert rule) but are separate from the read tools and off by default. Every query is filtered by the org on the key, in the SQL, so an agent can't read across a tenant boundary because the query it runs can't express it. Authentication is a bearer key or OAuth 2.1 with dynamic client registration, so a conforming client discovers everything from the endpoint URL.
+
+Call this row even. SigNoz has more tools; Maple's are higher-level and org-scoped by construction. Try both against the same incident and see which one gets to a checkable answer in fewer calls.
+
+## What SigNoz has that Maple doesn't
+
+Beyond self-hosting maturity and PromQL, which are above, the honest list:
+
+- **Trace funnels.** Define a funnel between two or more spans and measure conversion, error and latency between steps. Maple has funnels over product events, not over spans.
+- **External API monitoring.** Every third-party domain your services call, with error rate, latency and throughput per dependency. Maple shows client spans as nodes on the service map with the same columns, but there's no dedicated view.
+- **Messaging queue monitoring.** Kafka and Celery views correlating queue metrics with traces. Maple has nothing purpose-built here.
+- **Ingest Guard.** Daily ingestion limits per signal and per team in Cloud, dropping data past the cap so a runaway logger can't write a surprise invoice. Maple has sampling guidance and alerts, not a hard cap.
+- **Notification channels.** Nine types including Opsgenie, Microsoft Teams, Incident.io, Rootly and Zenduty. Maple routes to Slack, PagerDuty, Discord, Telegram, email and webhooks.
+- **Legacy tracer ingest.** Jaeger and Zipkin come in natively. Maple takes OTLP; you'd convert with a Collector.
+- **Community and track record.** Five years, thirty thousand stars, three data-centre regions including India, SOC 2 Type II and HIPAA on the Cloud plan.
+
+## SigNoz vs Maple pricing: the same month, priced twice
+
+Both are usage-priced with unlimited users and hosts, which already puts them in a different category from the per-host incumbents. But the shapes differ, and the shape decides who's cheaper for you.
+
+SigNoz Cloud's Teams plan is $49 a month, which includes $49 of usage. Usage is $0.30 per GB of logs and traces at the default 15-day retention and $0.10 per million metric samples at one month. Longer retention raises the per-GB rate; their calculator quotes $0.40 per GB at 30 days for logs and traces and $1.40 at one year, and $0.18 per million samples for metrics at 13 months. Enterprise starts at $4,000 a month. Eligible early-stage companies get a $19 a month startup rate for a year.
+
+Maple Cloud is $39 a month with 100 GB each of logs, traces and metrics included, then $0.30 per GB, billed per signal (the allowances don't pool). Retention is 30 days on every signal and doesn't change the rate. Metrics are metered by decoded bytes like everything else, so a high-cardinality series costs what it weighs rather than what it counts. Browser sessions are 5,000 included, $0.002 each after; product events are free in beta.
+
+Here's the same workload on both, at list price, checked September 2026. The metric conversion assumes roughly 0.1 KB per decoded data point, which is the assumption our calculator uses and yours will differ.
+
+| Monthly volume | SigNoz Teams, 15-day retention | SigNoz Teams, 30-day logs and traces | Maple Startup, 30 days |
+| --- | --- | --- | --- |
+| 20 GB logs · 20 GB traces · 100M samples | $49 (minimum) | $49 (minimum) | $39 |
+| 100 GB logs · 100 GB traces · 500M samples | $110 | $130 | $39 |
+| 1 TB logs · 1 TB traces · 5B samples | $1,100 | $1,300 | $699 |
+
+Two things to read off that. At small volumes the two are within ten dollars of each other and you should choose on product. Above that, Maple's included 300 GB is the whole difference in the middle row, and the per-GB rate only equalises at 15-day retention, which is a retention we'd argue you shouldn't run: the incident you're investigating on a Monday started the Thursday before last more often than you'd like.
+
+Where SigNoz's shape wins: if your metrics are numerous but tiny (many samples, few attributes), per-sample pricing may beat per-byte pricing. Check your own ratio before believing either of us. The [pricing calculator](/pricing#calculator) runs SigNoz's model beside Maple's and lets you move the conversion.
+
+## Migrating from SigNoz to Maple, or running both for a week
+
+Because both take standard OTLP, the migration is a second exporter in the Collector you already run. SDKs, auto-instrumentation and semantic conventions carry over unchanged.
+
+```yaml
+exporters:
+  otlp:
+    endpoint: ingest.us.signoz.cloud:443
+    headers:
+      signoz-ingestion-key: ${env:SIGNOZ_INGESTION_KEY}
+  otlphttp/maple: # [!code ++]
+    endpoint: https://ingest.maple.dev # [!code ++]
+    headers: # [!code ++]
+      x-maple-ingest-key: ${env:MAPLE_INGEST_KEY} # [!code ++]
+
+service:
+  pipelines:
+    traces:
+      exporters: [otlp, otlphttp/maple] # [!code ++]
+    logs:
+      exporters: [otlp, otlphttp/maple] # [!code ++]
+    metrics:
+      exporters: [otlp, otlphttp/maple] # [!code ++]
+```
+
+Ship to both until the alerts you care about fire from Maple, then remove the first exporter. What doesn't travel over OTLP: dashboards, saved views and alert rules. SigNoz's are JSON and Maple's are a different JSON, so plan to rebuild the handful that carry the load. The MCP server will draft them from a description, and PromQL panels need a translation rather than a paste.
+
+The same recipe runs in reverse. SigNoz documents the `otlp` exporter above, and if you're leaving Maple for trace funnels or Kafka views, that's the change.
+
+## Which one to pick
+
+Pick SigNoz if self-hosting for a whole team is your primary requirement today, if you have PromQL you don't want to rewrite, if you need trace funnels or queue monitoring, or if "OSI-approved core" is a hard line.
+
+Pick Maple if you want one tool that runs from a laptop binary to a cloud tenant, if error tracking with state and ownership would let you drop Sentry, if you ship a frontend or AI agents and want their sessions in the same warehouse as the backend traces, or if your volume is past 40 GB a month at 30-day retention and the bill matters.
+
+And if none of those lines is a hard line, run both for a week with the Collector diff above. It costs you one YAML change and tells you more than this post can.
+
+## FAQ
+
+**Is SigNoz open source?** The core is MIT. The `ee/` directory is under a commercial license that forbids production use without a paid license and currently holds SAML and OIDC SSO and fine-grained RBAC. Maple is under FSL-1.1, which is source-available for two years per release and Apache 2.0 after, with no enterprise-only directory.
+
+**Does SigNoz have session replay?** No, and their community has said it isn't planned. SigNoz ingests browser traces, logs and Web Vitals over OpenTelemetry. Maple records and replays browser sessions with the trace behind each event.
+
+**Can I self-host both?** Yes. SigNoz has the more polished path today: Docker Compose, Helm, Foundry and platform guides, multi-user with roles in the Community edition. Maple self-hosts from the repository with a compose file, your ClickHouse and a root password, single-org, and runs as a single binary with an embedded ClickHouse for local development.
+
+**Which is cheaper, SigNoz or Maple?** Under about 40 GB a month they're within ten dollars. Above that, Maple's 100 GB per signal included and flat 30-day retention make it cheaper for most workloads; SigNoz's per-sample metric pricing can win if your metrics are many and small. Both have unlimited users and hosts.
+
+---
+
+_SigNoz's side of this post was checked against [signoz.io/pricing](https://signoz.io/pricing/), the [architecture](https://signoz.io/docs/architecture/), [Docker](https://signoz.io/docs/install/docker/), [Linux](https://signoz.io/docs/install/linux/), [retention](https://signoz.io/docs/userguide/retention-period/), [SSO](https://signoz.io/docs/manage/administrator-guide/sso/overview/), [exceptions](https://signoz.io/docs/userguide/exceptions/) and [AI](https://signoz.io/docs/ai/overview/) docs, the [signoz](https://github.com/SigNoz/signoz) and [signoz-mcp-server](https://github.com/SigNoz/signoz-mcp-server) repositories and the [ee/LICENSE](https://github.com/SigNoz/signoz/blob/main/ee/LICENSE) file, in September 2026. If something is out of date, [tell us](/contact) and we'll fix it. Maple's side is [the source](https://github.com/MapleTechLabs/maple)._
