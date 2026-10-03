@@ -39,7 +39,7 @@ command -v duckdb >/dev/null 2>&1 || { echo "FAIL: duckdb required" >&2; exit 1;
 [ -f "$LIBCHDB" ] || { echo "FAIL: libchdb not found at $LIBCHDB" >&2; exit 1; }
 
 CHDB_VER="$("$MAPLE" --version 2>/dev/null | grep -oE 'chdb v[^ ]+' | sed 's/chdb //')"
-[ -z "$CHDB_VER" ] && CHDB_VER="v26.1.0"
+[ -z "$CHDB_VER" ] && CHDB_VER="v26.7.3"
 BUN=(bun --define "__CHDB_VERSION__=\"${CHDB_VER}\"")
 
 pass=0
