@@ -137,7 +137,7 @@ SELECT
           AND countIf(ai_trace_index.Model IN ('gpt-5.5')) > 0
           AND countIf(ai_trace_index.AgentName IN ('billing-agent')) > 0
           AND countIf(ai_trace_index.ToolName IN ('send_email')) > 0
-          AND countIf((ai_trace_index.SessionId LIKE 'wrun\\_01%' OR ai_trace_index.TraceId LIKE 'wrun\\_01%')) > 0) AS agent_traces
+          AND countIf((ai_trace_index.SessionId LIKE '%wrun\\_01%' OR ai_trace_index.TraceId LIKE 'wrun\\_01%')) > 0) AS agent_traces
         WHERE if(agent_traces.rawSessionId = '', concat('trace:', agent_traces.traceId), agent_traces.rawSessionId) IN ('wrun_sql_catalog', 'trace:7f3a4b5c6d7e8f901234567890abcdef'))
         GROUP BY traceId) AS session_traces
         INNER JOIN (SELECT
@@ -174,7 +174,7 @@ SELECT
           AND countIf(ai_trace_index.Model IN ('gpt-5.5')) > 0
           AND countIf(ai_trace_index.AgentName IN ('billing-agent')) > 0
           AND countIf(ai_trace_index.ToolName IN ('send_email')) > 0
-          AND countIf((ai_trace_index.SessionId LIKE 'wrun\\_01%' OR ai_trace_index.TraceId LIKE 'wrun\\_01%')) > 0) AS agent_traces
+          AND countIf((ai_trace_index.SessionId LIKE '%wrun\\_01%' OR ai_trace_index.TraceId LIKE 'wrun\\_01%')) > 0) AS agent_traces
         WHERE if(agent_traces.rawSessionId = '', concat('trace:', agent_traces.traceId), agent_traces.rawSessionId) IN ('wrun_sql_catalog', 'trace:7f3a4b5c6d7e8f901234567890abcdef')) AS index_traces ON session_traces.traceId = index_traces.traceId
         GROUP BY sessionId
         ORDER BY startTime DESC
@@ -638,7 +638,7 @@ SELECT
           AND countIf(ai_trace_index.Model IN ('gpt-5.5')) > 0
           AND countIf(ai_trace_index.AgentName IN ('billing-agent')) > 0
           AND countIf(ai_trace_index.ToolName IN ('send_email')) > 0
-          AND countIf((ai_trace_index.SessionId LIKE 'wrun\\_01%' OR ai_trace_index.TraceId LIKE 'wrun\\_01%')) > 0) AS index_traces
+          AND countIf((ai_trace_index.SessionId LIKE '%wrun\\_01%' OR ai_trace_index.TraceId LIKE 'wrun\\_01%')) > 0) AS index_traces
         GROUP BY sessionId
         HAVING errorAgentSpans > 0
           AND NOT (sessionId LIKE 'trace:%')
