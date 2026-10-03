@@ -376,7 +376,6 @@ const runWorker = (explicitProfile: string | undefined, json: boolean) => {
 			find_additional_modules: true,
 			rules: [{ type: "ESModule", globs: ["**/*.js"] }],
 			compatibility_date: "2026-10-01",
-			compatibility_flags: ["nodejs_compat"],
 		}),
 	)
 	console.error("→ profiling the Alchemy/Rolldown bundle with `wrangler check startup --no-bundle`…\n")
