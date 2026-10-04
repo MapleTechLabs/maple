@@ -201,6 +201,9 @@ export function resolveMapleDomains({ stage, region }: MapleDeployment): MapleDo
 		case "prd":
 			return region === "eu" ? PRD_DOMAINS_EU : PRD_DOMAINS
 		case "pr":
+			// Previews are `us` only (`parseMapleDeployment` rejects the rest); never hand
+			// another region the US preview hostnames.
+			if (region !== DEFAULT_MAPLE_REGION) return {}
 			// Custom domains, not workers.dev: its account subdomain is masked as a secret
 			// (GitHub then rejects the env URL), and inter-app URLs must be plan-time strings.
 			return {

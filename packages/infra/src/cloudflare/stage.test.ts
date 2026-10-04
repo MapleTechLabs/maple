@@ -100,13 +100,21 @@ describe("resolveMapleDomains", () => {
 	})
 
 	it("keeps the us production hostnames exactly as they were", () => {
-		expect(resolveMapleDomains({ stage: stage("prd"), region: "us" })).toEqual(
-			resolveMapleDomains({ stage: stage("prd"), region: "us" }),
-		)
-		expect(resolveMapleDomains({ stage: stage("prd"), region: "us" }).web).toBe("app.maple.dev")
-		// A webhook connector's request URL is configured inside a chat platform's own app, so it
-		// has to be a hostname that does not change with a deploy.
-		expect(resolveMapleDomains({ stage: stage("prd"), region: "us" }).chat).toBe("chat.maple.dev")
+		// `chat` especially: a chat platform's app stores the webhook URL, so it must never move.
+		expect(resolveMapleDomains({ stage: stage("prd"), region: "us" })).toEqual({
+			web: "app.maple.dev",
+			api: "api.maple.dev",
+			ingest: "ingest.maple.dev",
+			sync: "sync.maple.dev",
+			electric: "electric.maple.dev",
+			landing: "maple.dev",
+			local: "local.maple.dev",
+			chat: "chat.maple.dev",
+		})
+	})
+
+	it("gives a PR preview outside us no hostnames rather than the us ones", () => {
+		expect(resolveMapleDomains({ stage: stage("pr-12"), region: "eu" })).toEqual({})
 	})
 
 	it("gives a PR preview no chat hostname", () => {

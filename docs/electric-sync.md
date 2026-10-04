@@ -247,7 +247,7 @@ cutover.
 ## PR previews (no Electric source)
 
 PR previews deploy without an application database (see `resolveMapleProfile` in
-`packages/infra/src/cloudflare/stage.ts`), so there is nothing for Electric to
+`packages/infra/src/profile.ts`), so there is nothing for Electric to
 replicate. `apps/electric-sync/src/worker.ts` withholds
 `ELECTRIC_URL`/`ELECTRIC_SOURCE_ID`/`ELECTRIC_SECRET` on the `pr` stage, so a
 preview can never proxy shapes at another stage's data. The sync worker deploys
