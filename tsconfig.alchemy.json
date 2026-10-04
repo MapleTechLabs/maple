@@ -18,24 +18,19 @@
 		// them inside alchemy's InferEnv .d.ts silently resolve to `any` under
 		// skipLibCheck and the assignability half of every gate passes vacuously.
 		"types": ["node", "@cloudflare/workers-types"],
-		// Every `@maple/infra` subpath the stack files import. Listing only some of
-		// them let the rest resolve through node_modules instead, so the root
-		// typecheck and turbo's disagreed about which sources they were checking.
+		// Every `@maple/infra` and `@maple/worker-runtime` subpath the stack files import.
+		// Listing only some of them let the rest resolve through node_modules instead, so
+		// the root typecheck and turbo's disagreed about which sources they were checking.
 		"paths": {
 			"@maple/infra": ["./packages/infra/src/index.ts"],
 			"@maple/infra/acm": ["./packages/infra/src/aws/acm-dns-validation.ts"],
 			"@maple/infra/aws": ["./packages/infra/src/aws/index.ts"],
-			"@maple/infra/cached-recoverable": ["./packages/infra/src/cloudflare/cached-recoverable.ts"],
 			"@maple/infra/cloudflare": ["./packages/infra/src/cloudflare/index.ts"],
-			"@maple/infra/config-helpers": ["./packages/infra/src/config-helpers.ts"],
 			"@maple/infra/dev-urls": ["./packages/infra/src/dev-urls.ts"],
 			"@maple/infra/env": ["./packages/infra/src/env.ts"],
 			"@maple/infra/r2-credentials": ["./packages/infra/src/cloudflare/r2-credentials.ts"],
 			"@maple/infra/worker-build": ["./packages/infra/src/cloudflare/worker-build.ts"],
-			"@maple/infra/worker-http": ["./packages/infra/src/cloudflare/worker-http.ts"],
-			"@maple/infra/worker-runtime": ["./packages/infra/src/cloudflare/worker-runtime.ts"],
-			"@maple/infra/worker-telemetry": ["./packages/infra/src/cloudflare/worker-telemetry.ts"],
-			"@maple/infra/workers-cache": ["./packages/infra/src/cloudflare/workers-cache.ts"],
+			"@maple/worker-runtime/*": ["./packages/worker-runtime/src/*.ts"],
 			"@maple/alchemy-portless": ["./lib/alchemy-portless/src/index.ts"],
 			// API route modules retain their app-local alias. Shared backend and
 			// AI modules use package imports or relative paths.

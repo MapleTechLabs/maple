@@ -11,6 +11,7 @@
 		"@maple/auth": "workspace:*",
 		"@maple/domain": "workspace:*",
 		"@maple/infra": "workspace:*",
+		"@maple/worker-runtime": "workspace:*",
 		"effect": "catalog:effect"
 	},
 	"devDependencies": {

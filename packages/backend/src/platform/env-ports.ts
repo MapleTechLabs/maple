@@ -9,7 +9,7 @@
  * typed port instead of reading `WorkerEnvironment`.
  */
 import { chatSessionStub } from "@maple/domain/chat-session-stub"
-import { workerEnvLayer } from "@maple/infra/worker-runtime"
+import { workerEnvLayer } from "@maple/worker-runtime/env"
 import { Layer, Option } from "effect"
 import { AiWorkerFetcher, ChatSessions, SandboxFetcher } from "./bindings"
 

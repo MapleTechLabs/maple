@@ -1,9 +1,9 @@
-import { WorkerPlatformLive, forIsolate, bridgeHandler } from "@maple/infra/worker-http"
+import { WorkerPlatformLive, forIsolate, bridgeHandler } from "@maple/worker-runtime/http"
 /**
  * The api Worker's request path: the route graph built once per isolate on
  * the first request, and the `fetch` handler the bridge serves around it.
  */
-import { cachedRecoverable } from "@maple/infra/cached-recoverable"
+import { cachedRecoverable } from "@maple/worker-runtime/cached-recoverable"
 import type { HttpEffect } from "alchemy/Http"
 import { Cause, Clock, Config, Context, Effect, Exit, Layer, Option, Scope } from "effect"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"

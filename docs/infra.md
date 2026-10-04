@@ -71,7 +71,7 @@ into `process.env`. A `process.env` read therefore silently ignores `.env` and
 also reports every missing key in one pass instead of throwing on the first, and keeps the
 failure in the typed error channel. `packages/alchemy-maple`'s `MapleEnvironment` is the
 same pattern inside a provider. The runtime Worker env schemas use
-`@maple/infra/config-helpers`, which `env.ts` builds on.
+`@maple/worker-runtime/config`, which `env.ts` builds on.
 
 ## Regions: one stack, one instance per deploy
 
@@ -233,7 +233,7 @@ What each kind of Worker keeps beside the module:
   the delete of the old row would have removed the physical consumer the new row had
   adopted. Drop the decoration once every stage has deployed past it.
 - **Background telemetry** (`api`): queue batches and cron ticks run under their own SDK
-  instance (`eventTelemetry` in `@maple/infra/worker-telemetry`, provided around the event),
+  instance (`eventTelemetry` in `@maple/worker-runtime/telemetry`, provided around the event),
   so `maple-vcs-sync` and `maple-planetscale-webhooks` keep their own service names.
   Background work sharing `maple-api` skewed its p99 to 32s (2026-09-04). The layer graphs
   those events build carry no tracer or logger of their own.
@@ -415,7 +415,7 @@ the deployed isolate). Two rules keep it honest about which one it is in:
   `apps/electric-sync/src/worker-bridge.test.ts` drives the real bridge path and pins all
   three outcomes. `apps/api/src/worker-bridge.test.ts` does the same for the api's liveness,
   preflight and graph-failure fast paths. Telemetry is one line on init,
-  `Effect.provide(WorkerTelemetry({ serviceName }))` from `@maple/infra/worker-telemetry`, on
+  `Effect.provide(WorkerTelemetry({ serviceName }))` from `@maple/worker-runtime/telemetry`, on
   the Workers that do work (api, ai, alerting, chat-bot, electric-sync). The asset Workers
   (landing, local-ui) deliberately have none: a server span per static page view is ingest
   volume spent observing a file read, and it would put the internal ingest key in a

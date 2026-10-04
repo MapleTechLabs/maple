@@ -15,7 +15,7 @@ Reference for the language-agnostic OpenTelemetry conventions Maple uses across 
 - Wiring a new query through `WarehouseQueryService.compiledQuery()` (the `context` and `profile` options become span attributes)
 - Configuring an OTLP exporter, tracer provider, or resource builder
 - Introducing a new pre-extracted MV column or a new vendor attribute under `maple.*`
-- Reviewing a PR that touches `packages/query-engine/src/execution/executor.ts`, `apps/ingest/src/main.rs`, `apps/ingest/src/otel.rs`, `apps/api/src/http/api-observability.ts`, `packages/effect-sdk/src/cloudflare/`, `packages/infra/src/cloudflare/worker-telemetry.ts`, or `packages/domain/src/tinybird/materializations.ts`
+- Reviewing a PR that touches `packages/query-engine/src/execution/executor.ts`, `apps/ingest/src/main.rs`, `apps/ingest/src/otel.rs`, `apps/api/src/http/api-observability.ts`, `packages/effect-sdk/src/cloudflare/`, `packages/worker-runtime/src/telemetry.ts`, or `packages/domain/src/tinybird/materializations.ts`
 
 ## Index
 
@@ -46,5 +46,5 @@ Reference for the language-agnostic OpenTelemetry conventions Maple uses across 
 - `apps/ingest/src/otel.rs`: resource builder (`build_resource`), platform detection, and the client-span helpers (`forward_client_span`, `export_client_span`). The canonical Rust example for resource and outbound-span attribution.
 - `apps/ingest/src/main.rs`: `handle_signal` and `handle_cloudflare_logpush` open the Server-kind `tracing::info_span!` for inbound OTLP and Logpush.
 - `apps/api/src/http/api-observability.ts`: the `TracerDisabledWhen` filter and header redaction list.
-- `packages/effect-sdk/src/cloudflare/index.ts`: `MapleCloudflareSDK` tracer setup. Maple's own Workers wrap it with `WorkerTelemetry` in `packages/infra/src/cloudflare/worker-telemetry.ts`.
+- `packages/effect-sdk/src/cloudflare/index.ts`: `MapleCloudflareSDK` tracer setup. Maple's own Workers wrap it with `WorkerTelemetry` in `packages/worker-runtime/src/telemetry.ts`.
 - `packages/domain/src/tinybird/materializations.ts`: MV `SELECT` lists that pre-extract attribute keys into columns.

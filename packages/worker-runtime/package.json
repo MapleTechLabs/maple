@@ -1,24 +1,30 @@
 {
-	"name": "@maple/chat-bot",
+	"name": "@maple/worker-runtime",
 	"private": true,
 	"type": "module",
+	"sideEffects": false,
+	"exports": {
+		"./cache": "./src/cache.ts",
+		"./cached-recoverable": "./src/cached-recoverable.ts",
+		"./config": "./src/config.ts",
+		"./env": "./src/env.ts",
+		"./http": "./src/http.ts",
+		"./maple-db": "./src/maple-db.ts",
+		"./telemetry": "./src/telemetry.ts"
+	},
 	"scripts": {
 		"test": "vitest run",
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
+		"@maple-dev/alchemy": "workspace:*",
 		"@maple-dev/effect-sdk": "workspace:*",
-		"@maple/backend": "workspace:*",
-		"@maple/chat-platform": "workspace:*",
 		"@maple/domain": "workspace:*",
-		"@maple/infra": "workspace:*",
-		"@maple/worker-runtime": "workspace:*",
 		"alchemy": "catalog:alchemy",
 		"effect": "catalog:effect"
 	},
 	"devDependencies": {
 		"@cloudflare/workers-types": "catalog:alchemy",
-		"@effect/language-service": "catalog:effect",
 		"@types/node": "catalog:tooling",
 		"typescript": "catalog:tooling",
 		"vitest": "catalog:"

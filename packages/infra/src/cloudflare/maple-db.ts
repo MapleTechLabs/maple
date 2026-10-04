@@ -3,12 +3,11 @@
  * Worker init (`ref` via raw `host.bind`, as alchemy has no `env` form for an external config);
  * `declared` binds from props via `mapleDbEnv`; `none` binds nothing.
  */
+import { MAPLE_DB_BINDING } from "@maple/worker-runtime/maple-db"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Stage } from "alchemy/Stage"
 import * as Effect from "effect/Effect"
-import type * as Option from "effect/Option"
 import * as Redacted from "effect/Redacted"
-import * as Schema from "effect/Schema"
 import { requiredPlain } from "../env.ts"
 import { resolveMapleProfile } from "../profile.ts"
 import type { MapleDbResources } from "./stack.ts"
@@ -19,8 +18,8 @@ import {
 	resolveWorkerName,
 } from "./stage.ts"
 
-/** The binding's name — also the managed Connection's logical id, so both flavors bind under it. */
-export const MAPLE_DB_BINDING = "MAPLE_DB"
+// Also the managed Connection's logical id, so both flavors bind under it.
+export { MAPLE_DB_BINDING }
 
 /** This deploy's stage; the root stack already failed typed on a bad one, so here it is a defect. */
 const stageDeployment = Effect.gen(function* () {
@@ -105,16 +104,3 @@ export const MapleDb = (consumer: MapleDbConsumer) =>
 				return
 		}
 	})
-
-/** What a Worker reads off the `MAPLE_DB` binding: the runtime `Hyperdrive` object's connection facts. */
-const MapleDbBinding = Schema.Struct({
-	connectionString: Schema.String.check(Schema.isNonEmpty()),
-	host: Schema.String,
-	port: Schema.Number,
-	database: Schema.String,
-})
-export type MapleDbBinding = typeof MapleDbBinding.Type
-
-/** The `MAPLE_DB` binding off a Worker env, or `None` when absent or not a Hyperdrive object. */
-export const readMapleDbBinding = (env: Record<string, unknown>): Option.Option<MapleDbBinding> =>
-	Schema.decodeUnknownOption(MapleDbBinding)(env[MAPLE_DB_BINDING])

@@ -6,7 +6,6 @@
  */
 import { connectors } from "@maple/chat-platform/connectors"
 import {
-	cachedRecoverable,
 	chatSessionBinding,
 	MapleDb,
 	mapleDbEnv,
@@ -16,9 +15,10 @@ import {
 	type MapleStage,
 	mapleWorkerProps,
 } from "@maple/infra/cloudflare"
+import { cachedRecoverable } from "@maple/worker-runtime/cached-recoverable"
 import { merge, optionalSecret, plainWithDefault, selfObservabilityEnv } from "@maple/infra/env"
-import { workerEnvLayer } from "@maple/infra/worker-runtime"
-import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
+import { workerEnvLayer } from "@maple/worker-runtime/env"
+import { WorkerTelemetry } from "@maple/worker-runtime/telemetry"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Effect, Layer, Ref, Scope } from "effect"
 import { HttpRouter } from "effect/http"

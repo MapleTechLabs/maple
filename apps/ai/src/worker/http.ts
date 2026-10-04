@@ -1,10 +1,10 @@
-import { WorkerPlatformLive, forIsolate, bridgeHandler } from "@maple/infra/worker-http"
+import { WorkerPlatformLive, forIsolate, bridgeHandler } from "@maple/worker-runtime/http"
 /**
  * The AI Worker's request path: the route graph built once per isolate on the
  * first request, and the `fetch` handler the bridge serves around it.
  *
  * Request handling belongs to this Worker; platform and isolate context ownership
- * are shared with the API through @maple/infra/worker-http.
+ * are shared with the API through @maple/worker-runtime/http.
  */
 import type { HttpEffect } from "alchemy/Http"
 import { type Context, Effect, Exit, Layer } from "effect"

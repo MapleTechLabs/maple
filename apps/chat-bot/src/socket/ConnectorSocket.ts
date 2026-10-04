@@ -37,7 +37,7 @@ import type {
 } from "@maple/chat-platform"
 import { connectors } from "@maple/chat-platform/connectors"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
-import { workerEnvLayer } from "@maple/infra/worker-runtime"
+import { workerEnvLayer } from "@maple/worker-runtime/env"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Effect, Layer, Schema } from "effect"
 import { FetchHttpClient } from "effect/http"

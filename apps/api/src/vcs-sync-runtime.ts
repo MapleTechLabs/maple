@@ -1,5 +1,5 @@
 import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
-import { eventTelemetry } from "@maple/infra/worker-telemetry"
+import { eventTelemetry } from "@maple/worker-runtime/telemetry"
 import { Cause, Effect, Layer, Option } from "effect"
 import { EventBaseLive } from "@maple/backend/platform/DatabasePgLive"
 

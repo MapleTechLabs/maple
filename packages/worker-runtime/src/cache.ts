@@ -10,7 +10,9 @@ declare global {
 }
 
 /** `caches.default` as a service, or `null` outside a Workers runtime. */
-export class WorkersCache extends Context.Service<WorkersCache, Cache | null>()("@maple/infra/WorkersCache") {
+export class WorkersCache extends Context.Service<WorkersCache, Cache | null>()(
+	"@maple/worker-runtime/WorkersCache",
+) {
 	static readonly layer: Layer.Layer<WorkersCache> = Layer.sync(this, () =>
 		typeof caches !== "undefined" ? caches.default : null,
 	)

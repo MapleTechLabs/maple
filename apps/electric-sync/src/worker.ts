@@ -3,14 +3,14 @@
  * authenticates the session bearer, pins each shape's org scope and forwards.
  */
 import {
-	cachedRecoverable,
 	type MapleRegion,
 	MapleStack,
 	type MapleStage,
 	mapleWorkerProps,
 } from "@maple/infra/cloudflare"
+import { cachedRecoverable } from "@maple/worker-runtime/cached-recoverable"
 import { authEnv, merge, optionalPlain, optionalSecret, selfObservabilityEnv } from "@maple/infra/env"
-import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
+import { WorkerTelemetry } from "@maple/worker-runtime/telemetry"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Effect, Layer, Scope } from "effect"
 import { FetchHttpClient, HttpRouter } from "effect/http"

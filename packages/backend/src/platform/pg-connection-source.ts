@@ -5,7 +5,7 @@
  * Hyperdrive: request-scoped sockets make direct PSBouncer connections pay a
  * handshake per execute (measured 679ms + 158ms versus Hyperdrive's 11ms + 14ms).
  */
-import { readMapleDbBinding } from "@maple/infra/cloudflare"
+import { readMapleDbBinding } from "@maple/worker-runtime/maple-db"
 import { Layer, Option } from "effect"
 import { type DatabaseConnection, MapleDbConnection } from "./bindings"
 

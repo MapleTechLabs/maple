@@ -1,6 +1,6 @@
 // BOUNDARY: The Workers cache returns unparsed JSON; `EdgeCacheService` decodes it before domain use.
 import { Effect, Layer, Metric } from "effect"
-import { WorkersCache } from "@maple/infra/workers-cache"
+import { WorkersCache } from "@maple/worker-runtime/cache"
 import {
 	CacheBackend,
 	type EdgeCacheBackend,
@@ -16,7 +16,7 @@ import * as QueryEngineMetrics from "@maple/backend/observability/QueryEngineMet
 // `@maple/cache`; only the Cloudflare Workers backend lives here,
 // so the Workers runtime API never enters the query-engine package (and thus
 // never the web/cli bundles). The default cache is obtained via the
-// `WorkersCache` Effect service from `@maple/infra/workers-cache` — prod gets the
+// `WorkersCache` Effect service from `@maple/worker-runtime/cache` — prod gets the
 // Workers cache; tests/dev get `null` and fall back to the in-memory backend.
 
 const SYNTHETIC_HOST = "https://maple-api.internal"

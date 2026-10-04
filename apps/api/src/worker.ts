@@ -12,8 +12,8 @@ import {
 	mapleWorkerProps,
 } from "@maple/infra/cloudflare"
 import { WORKER_PURE_OPTIONS } from "@maple/infra/worker-build"
-import { isolateContext } from "@maple/infra/worker-http"
-import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
+import { isolateContext } from "@maple/worker-runtime/http"
+import { WorkerTelemetry } from "@maple/worker-runtime/telemetry"
 import * as Cloudflare from "alchemy/Cloudflare"
 import * as AlchemyTelemetry from "alchemy/Telemetry"
 import { Effect, Layer } from "effect"
