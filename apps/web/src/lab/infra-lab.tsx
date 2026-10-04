@@ -59,10 +59,10 @@ const HOSTS: ReadonlyArray<HostRow> = [
 	host("api-eu-02", 0.81, 0.74, 0.33),
 	host("ingest-eu-01", 0.66, 0.58, 0.29),
 	host("db-proxy-eu-01", 0.47, 0.58, 0.19),
-	host("edge-eu-03", 0.22, 0.31, 0.12),
-	host("edge-eu-04", 0.19, 0.28, 0.12),
+	{ ...host("edge-eu-03", 0.22, 0.31, 0.12), cloudProvider: "gcp" },
+	{ ...host("win-agent-01", 0.19, 0.28, 0.12), osType: "windows", cloudProvider: "azure" },
 	host("scheduler-eu-01", 0.11, 0.24, 0.31),
-	host("build-runner-03", 0.05, 0.12, 0.44, 2 * 60 * 60 * 1000),
+	{ ...host("build-runner-03", 0.05, 0.12, 0.44, 2 * 60 * 60 * 1000), osType: "darwin", hostArch: "arm64" },
 ]
 
 const railway = (

@@ -16,18 +16,20 @@ export type PlatformKind = "os" | "arch" | "cloud"
 interface Known {
 	readonly icon?: IconComponent
 	readonly label: string
+	/** Brand colour for the mark. Omitted for marks that are monochrome by design (Apple, the chip). */
+	readonly color?: string
 }
 
 const OS = new Map<string, Known>([
-	["linux", { icon: LinuxIcon, label: "Linux" }],
+	["linux", { icon: LinuxIcon, label: "Linux", color: "#FCC624" }],
 	["darwin", { icon: AppleIcon, label: "macOS" }],
-	["windows", { icon: MicrosoftIcon, label: "Windows" }],
+	["windows", { icon: MicrosoftIcon, label: "Windows", color: "#0078D4" }],
 ])
 
 const CLOUD = new Map<string, Known>([
-	["aws", { icon: AmazonIcon, label: "AWS" }],
-	["gcp", { icon: GoogleIcon, label: "GCP" }],
-	["azure", { icon: MicrosoftIcon, label: "Azure" }],
+	["aws", { icon: AmazonIcon, label: "AWS", color: "#FF9900" }],
+	["gcp", { icon: GoogleIcon, label: "GCP", color: "#4285F4" }],
+	["azure", { icon: MicrosoftIcon, label: "Azure", color: "#0078D4" }],
 ])
 
 function resolve(kind: PlatformKind, value: string): Known {
@@ -46,10 +48,16 @@ export function PlatformLabel({
 	value: string
 	className?: string
 }) {
-	const { icon: Icon, label } = resolve(kind, value)
+	const { icon: Icon, label, color } = resolve(kind, value)
 	return (
 		<span className={cn("inline-flex items-center gap-1", className)}>
-			{Icon ? <Icon size={11} className="shrink-0 opacity-80" /> : null}
+			{Icon ? (
+				<Icon
+					size={11}
+					className={cn("shrink-0", color ? undefined : "text-foreground/70")}
+					style={color ? { color } : undefined}
+				/>
+			) : null}
 			{label}
 		</span>
 	)
