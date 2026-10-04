@@ -319,7 +319,13 @@ const articleJsonLd = {
                     <p class="guide-eyebrow">04 · Outside probes</p>
                     <h2>Failures only an outside uptime probe can see</h2>
                     <p>
-                        Our position is that uptime monitoring is a narrow tool that gets bought by default. A probe is the right addition when one of these applies:
+                        Our position is that uptime monitoring is a narrow tool that gets bought by default. It is often the first monitoring a team sets up, because it takes a URL and five minutes. It then stays in place long after the service has outgrown what one request a minute can describe.
+                    </p>
+                    <p>
+                        The cost is a false sense of security. A status board that shows 100% for the month proves that <code>/health</code> answered 43,200 times. It is easy to read that as proof the service was healthy, and the 2% of failed requests from the earlier example never appear on it. A team that relies on the board alone hears about that incident from its users.
+                    </p>
+                    <p>
+                        A probe is the right addition when one of these applies:
                     </p>
 
                     <div class="guide-checklist">
