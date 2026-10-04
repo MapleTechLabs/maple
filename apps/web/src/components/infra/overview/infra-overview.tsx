@@ -4,7 +4,17 @@ import { Link } from "@tanstack/react-router"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { cn } from "@maple/ui/lib/utils"
 
-import { ChevronRightIcon } from "@/components/icons"
+import {
+	ChevronRightIcon,
+	CloudflareIcon,
+	DockerIcon,
+	KubernetesIcon,
+	PlanetScaleIcon,
+	RailwayIcon,
+	ServerIcon,
+	type IconComponent,
+} from "@/components/icons"
+import { PLANETSCALE_COLOR } from "@/components/infra/planetscale/metrics"
 import type { NavSurface } from "@/components/dashboard/nav-items"
 import type { TimeRangeSearch } from "@/components/time-range-picker/search"
 import { Result, useAtomValue } from "@/lib/effect-atom"
@@ -54,6 +64,21 @@ export const SOURCE_TITLE: Record<SourceId, string> = {
 	railway: "Railway",
 	planetscale: "PlanetScale",
 } satisfies Record<SourceId, string>
+
+/** The sidebar's marks, so a source reads the same here as in the nav. */
+const SOURCE_ICON: Record<SourceId, { icon: IconComponent; color?: string }> = {
+	hosts: { icon: ServerIcon },
+	containers: { icon: DockerIcon },
+	kubernetes: { icon: KubernetesIcon },
+	cloudflare: { icon: CloudflareIcon },
+	railway: { icon: RailwayIcon },
+	planetscale: { icon: PlanetScaleIcon, color: PLANETSCALE_COLOR },
+} satisfies Record<SourceId, { icon: IconComponent; color?: string }>
+
+function SourceMark({ id, size }: { id: SourceId; size: number }) {
+	const { icon: Icon, color } = SOURCE_ICON[id]
+	return <Icon size={size} className="shrink-0" style={color ? { color } : undefined} />
+}
 
 const SOURCE_SURFACES: Record<SourceId, ReadonlyArray<NavSurface>> = {
 	hosts: ["hosts"],
@@ -259,7 +284,8 @@ export function FindingRow({ finding, timeSearch }: { finding: Finding; timeSear
 			className={cn(ROW_CLASS, FINDINGS_ROW_CLASS, FINDING_ORDER[finding.tone])}
 		>
 			<span className={cn("size-2 shrink-0 rounded-full", FINDING_DOT[finding.tone])} />
-			<span className="w-28 shrink-0 text-xs text-muted-foreground">
+			<span className="flex w-32 shrink-0 items-center gap-2 text-xs text-muted-foreground">
+				<SourceMark id={finding.source} size={14} />
 				{SOURCE_TITLE[finding.source]}
 			</span>
 			<span className="flex min-w-0 flex-1 flex-col gap-0.5">
@@ -288,7 +314,10 @@ function FindingRowError({ id }: { id: SourceId }) {
 	return (
 		<div className={cn("flex items-center gap-4 px-4 py-3", FINDINGS_ROW_CLASS, FINDING_ORDER.error)}>
 			<span className="size-2 shrink-0 rounded-full bg-muted-foreground/60" />
-			<span className="w-28 shrink-0 text-xs text-muted-foreground">{SOURCE_TITLE[id]}</span>
+			<span className="flex w-32 shrink-0 items-center gap-2 text-xs text-muted-foreground">
+				<SourceMark id={id} size={14} />
+				{SOURCE_TITLE[id]}
+			</span>
 			<span className="text-sm text-muted-foreground">
 				Couldn't check this source. Its page shows the error.
 			</span>
@@ -446,14 +475,19 @@ export function SourceLink({
 export function SourceRowBody({ id, state }: { id: SourceId; state: SourceState }) {
 	return (
 		<>
-			<span className="flex w-52 shrink-0 flex-col gap-0.5">
-				<span className="text-sm text-foreground group-hover:text-primary">{SOURCE_TITLE[id]}</span>
-				<span className="text-xs text-muted-foreground">
-					{state.status === "ready"
-						? state.summary.resources
-						: state.status === "error"
-							? "Couldn't load"
-							: " "}
+			<span className="flex w-52 shrink-0 items-center gap-3">
+				<SourceMark id={id} size={18} />
+				<span className="flex min-w-0 flex-col gap-0.5">
+					<span className="text-sm text-foreground group-hover:text-primary">
+						{SOURCE_TITLE[id]}
+					</span>
+					<span className="text-xs text-muted-foreground">
+						{state.status === "ready"
+							? state.summary.resources
+							: state.status === "error"
+								? "Couldn't load"
+								: " "}
+					</span>
 				</span>
 			</span>
 			<span className="hidden min-w-0 flex-1 pr-6 md:block">
