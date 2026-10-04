@@ -241,6 +241,9 @@ export class ChatSession {
 	 */
 	private waiters = new Set<() => void>()
 
+	/** Bumped on every append. A reader snapshots it before reading so it can never park past one. */
+	private appends = 0
+
 	/**
 	 * The turn this activation is actually running. SQL says which turn holds the slot; only this
 	 * says its fiber still exists — an evicted object comes back with the claim and without the turn.
@@ -360,28 +363,26 @@ export class ChatSession {
 
 	/** Wake every parked subscriber. Cheap and unconditional — the list is empty when nobody reads. */
 	private notify(): void {
+		this.appends++
 		if (this.waiters.size === 0) return
 		const parked = this.waiters
 		this.waiters = new Set()
 		for (const wake of parked) wake()
 	}
 
-	/** Resolve `true` when an event lands, `false` if `timeoutMs` elapses first. */
-	private waitForAppend(timeoutMs: number): Promise<boolean> {
-		return new Promise<boolean>((resolve) => {
-			let settled = false
-			const wake = () => settle(true)
-			const settle = (appended: boolean) => {
-				if (settled) return
-				settled = true
-				resolve(appended)
-			}
+	/**
+	 * `true` once an append lands after the `seen` snapshot, `false` if `timeoutMs` elapses first.
+	 * Re-checking the version before parking closes the window where an append slips in mid-write.
+	 */
+	private waitForAppend(seen: number, timeoutMs: number): Effect.Effect<boolean> {
+		return Effect.callback<boolean>((resume) => {
+			const wake = () => resume(Effect.succeed(true))
+			if (this.appends !== seen) return wake()
 			this.waiters.add(wake)
-			void scheduler.wait(timeoutMs).then(() => {
+			return Effect.sync(() => {
 				this.waiters.delete(wake)
-				settle(false)
 			})
-		})
+		}).pipe(Effect.timeoutOrElse({ duration: timeoutMs, orElse: () => Effect.succeed(false) }))
 	}
 
 	/** Every event after `cursor`, oldest first. */
@@ -422,11 +423,13 @@ export class ChatSession {
 		const write = (frame: string) =>
 			attempt("Could not write to the subscription", () => writer.write(encoder.encode(frame)))
 		const since = (position: number) => this.since(position)
-		const waitForAppend = (timeoutMs: number) => this.waitForAppend(timeoutMs)
+		const appends = () => this.appends
+		const waitForAppend = (seen: number, timeoutMs: number) => this.waitForAppend(seen, timeoutMs)
 		const stream = Effect.gen(function* () {
 			let position = cursor
 			yield* write(RETRY_HINT)
 			for (;;) {
+				const seen = appends()
 				const events = since(position)
 				for (const event of events) {
 					yield* write(frameChatEvent(event))
@@ -439,7 +442,7 @@ export class ChatSession {
 				if (events.some((event) => event.type === "turn-end" && event.task === undefined)) return
 				// The idle budget is spent on silence only: a batch that went out resets it, so a
 				// long turn streams over one connection instead of being recycled mid-answer.
-				if (!(yield* Effect.promise(() => waitForAppend(SUBSCRIBE_IDLE_MS)))) return
+				if (!(yield* waitForAppend(seen, SUBSCRIBE_IDLE_MS))) return
 			}
 		})
 		return Effect.runPromise(

@@ -2,11 +2,9 @@ import { assert, describe, it } from "@effect/vitest"
 import { encodeChatTurnTenant, type ChatTurnTenant } from "@maple/domain/chat-session"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Effect, Layer, Option } from "effect"
-import { installSchedulerWait, makeFakeDurableObjectState } from "../../test/chat/fake-do-state"
+import { makeFakeDurableObjectState } from "../../test/chat/fake-do-state"
 import { WorkersAiGateway } from "../platform/WorkersAiHttpClient"
 import { activateChatSession } from "./ChatSession"
-
-installSchedulerWait()
 
 const TENANT = encodeChatTurnTenant({
 	orgId: "org_test" as ChatTurnTenant["orgId"],
