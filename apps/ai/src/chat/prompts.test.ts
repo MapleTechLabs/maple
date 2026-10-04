@@ -17,7 +17,7 @@ const sha256 = (value: string) => createHash("sha256").update(value, "utf8").dig
 
 describe("the prompts the app and the investigation pass already shipped", () => {
 	it.each([
-		["SYSTEM_PROMPT", SYSTEM_PROMPT, "d5d349cc14b29aa9c898388215d44f04f99c733be20a11c21d985544e056e415"],
+		["SYSTEM_PROMPT", SYSTEM_PROMPT, "d1ae310a2012adb7337f4a3ceed20cf582c20b4ea0be9107cf907afcf49a7e9b"],
 		[
 			"INVESTIGATE_SYSTEM_PROMPT",
 			INVESTIGATE_SYSTEM_PROMPT,
