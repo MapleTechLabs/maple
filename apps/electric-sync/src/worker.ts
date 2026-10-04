@@ -76,41 +76,44 @@ const props = Effect.gen(function* () {
 // here rather than at module scope: Cloudflare runs only the top level during
 // upload validation, against the fixed startup-CPU budget.
 const AppLayer = Layer.unwrap(
-	Effect.promise(async () => {
-		const [{ ElectricSyncRouter }, { ElectricClient }, { TenantResolver }, { SyncConfig }] =
-			await Promise.all([
-				import("./routes/shape.http"),
-				import("./electric/ElectricClient"),
-				import("./auth/TenantResolver"),
-				import("./config"),
-			])
-		return ElectricSyncRouter.pipe(
-			Layer.provideMerge(
-				HttpRouter.cors({
-					allowedOrigins: ["*"],
-					allowedMethods: ["GET", "OPTIONS"],
-					allowedHeaders: ["*"],
-					// Load-bearing, not hygiene: without these exposed headers
-					// @electric-sql/client cannot advance the shape cursor through the
-					// proxy, and every stream stalls after its first chunk.
-					exposedHeaders: [
-						"electric-handle",
-						"electric-offset",
-						"electric-schema",
-						"electric-cursor",
-						"electric-up-to-date",
-					],
-				}),
+	Effect.all(
+		[
+			Effect.promise(() => import("./routes/shape.http")),
+			Effect.promise(() => import("./electric/ElectricClient")),
+			Effect.promise(() => import("./auth/TenantResolver")),
+			Effect.promise(() => import("./config")),
+		],
+		{ concurrency: "unbounded" },
+	).pipe(
+		Effect.map(([{ ElectricSyncRouter }, { ElectricClient }, { TenantResolver }, { SyncConfig }]) =>
+			ElectricSyncRouter.pipe(
+				Layer.provideMerge(
+					HttpRouter.cors({
+						allowedOrigins: ["*"],
+						allowedMethods: ["GET", "OPTIONS"],
+						allowedHeaders: ["*"],
+						// Load-bearing, not hygiene: without these exposed headers
+						// @electric-sql/client cannot advance the shape cursor through the
+						// proxy, and every stream stalls after its first chunk.
+						exposedHeaders: [
+							"electric-handle",
+							"electric-offset",
+							"electric-schema",
+							"electric-cursor",
+							"electric-up-to-date",
+						],
+					}),
+				),
+				// The route depends on these two services rather than constructing them,
+				// so tests can substitute either one; this is the only place the real
+				// implementations (and the real `fetch`) are wired in.
+				Layer.provideMerge(ElectricClient.layer.pipe(Layer.provide(FetchHttpClient.layer))),
+				Layer.provideMerge(TenantResolver.layer),
+				Layer.provideMerge(SyncConfig.layer),
+				Layer.provideMerge(HttpRouter.layer),
 			),
-			// The route depends on these two services rather than constructing them,
-			// so tests can substitute either one; this is the only place the real
-			// implementations (and the real `fetch`) are wired in.
-			Layer.provideMerge(ElectricClient.layer.pipe(Layer.provide(FetchHttpClient.layer))),
-			Layer.provideMerge(TenantResolver.layer),
-			Layer.provideMerge(SyncConfig.layer),
-			Layer.provideMerge(HttpRouter.layer),
-		)
-	}),
+		),
+	),
 )
 
 export default class ElectricSync extends Cloudflare.Worker<ElectricSync>()(
