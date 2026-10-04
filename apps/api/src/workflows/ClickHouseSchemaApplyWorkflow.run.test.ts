@@ -10,6 +10,7 @@ import {
 	type TestDb,
 } from "@maple/backend/platform/test-pglite"
 import { durableStep } from "@maple/backend/platform/durable-step"
+import { workerEnvLayer } from "@maple/infra/worker-runtime"
 import { loadOptionalFeatureState, runClickHouseSchemaApply } from "./ClickHouseSchemaApplyWorkflow.run"
 
 /** The step's Effect as `task` hands it over, with the body context already provided. */
@@ -82,14 +83,14 @@ describe("runClickHouseSchemaApply failure bookkeeping", () => {
 
 	const ENCRYPTION_KEY = Buffer.alloc(32, 5).toString("base64")
 
-	/** The run as the alchemy class provides it, minus the connection scope and telemetry. */
+	/** The run as the alchemy class provides it (env as `ConfigProvider`), minus the connection scope and telemetry. */
 	const runFor = (testDb: TestDb, env: Record<string, unknown>, orgId: string) =>
 		runClickHouseSchemaApply({ orgId }).pipe(
 			Effect.provide(
 				Layer.mergeAll(
 					testDb.layer,
 					Layer.succeed(Cloudflare.WorkflowStep, inlineStep),
-					Layer.succeed(Cloudflare.WorkerEnvironment, env),
+					workerEnvLayer(env),
 				),
 			),
 			Effect.scoped,
@@ -115,10 +116,11 @@ describe("runClickHouseSchemaApply failure bookkeeping", () => {
 			),
 		)
 
-	const defectMessage = (exit: Exit.Exit<unknown, never>): string => {
+	/** A step that spent its retries is a defect; a typed failure outside the steps stays in the error channel. */
+	const failureMessage = (exit: Exit.Exit<unknown, unknown>, kind: "die" | "fail"): string => {
 		assert.isTrue(Exit.isFailure(exit))
 		if (!Exit.isFailure(exit)) return ""
-		assert.isDefined(exit.cause.reasons.find(Cause.isDieReason))
+		assert.isDefined(exit.cause.reasons.find(kind === "die" ? Cause.isDieReason : Cause.isFailReason))
 		const error = Cause.squash(exit.cause)
 		return error instanceof Error ? error.message : String(error)
 	}
@@ -135,7 +137,7 @@ describe("runClickHouseSchemaApply failure bookkeeping", () => {
 				{ MAPLE_INGEST_KEY_ENCRYPTION_KEY: ENCRYPTION_KEY },
 				"org_wf_cfg",
 			)
-			assert.include(defectMessage(exit), "No ClickHouse settings configured")
+			assert.include(failureMessage(exit, "die"), "No ClickHouse settings configured")
 
 			// Without the failed transition, OrgClickHouseSettingsService reads the
 			// leftover "queued" as already_running forever.
@@ -151,7 +153,7 @@ describe("runClickHouseSchemaApply failure bookkeeping", () => {
 			yield* seedQueuedRun(testDb, "org_wf_nokey")
 
 			const exit = yield* runFor(testDb, {}, "org_wf_nokey")
-			assert.include(defectMessage(exit), "MAPLE_INGEST_KEY_ENCRYPTION_KEY")
+			assert.include(failureMessage(exit, "fail"), "MAPLE_INGEST_KEY_ENCRYPTION_KEY")
 
 			const row = yield* readRun(testDb, "org_wf_nokey")
 			assert.strictEqual(row?.status, "failed")

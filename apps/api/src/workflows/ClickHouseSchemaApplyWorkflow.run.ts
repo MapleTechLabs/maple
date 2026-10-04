@@ -32,7 +32,7 @@ import {
 import { OrgId } from "@maple/domain/http"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { eq } from "drizzle-orm"
-import { Cause, Clock, Effect, Option, Schema } from "effect"
+import { Cause, Clock, Config, Effect, Option, Redacted, Schema } from "effect"
 import { EdgeCacheService } from "@maple/cache"
 import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
 import { Database, type DatabaseApi, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
@@ -80,8 +80,8 @@ export interface SchemaApplyWorkflowResult {
 	readonly appliedVersions: ReadonlyArray<number>
 }
 
-/** The one secret the run needs, read off alchemy's untyped Worker env. */
-const SchemaApplyEnv = Schema.Struct({ MAPLE_INGEST_KEY_ENCRYPTION_KEY: Schema.String })
+/** The one secret the run needs, resolved by the `ConfigProvider` the Workflow class builds on the env. */
+const ENCRYPTION_KEY_CONFIG = "MAPLE_INGEST_KEY_ENCRYPTION_KEY"
 
 interface LoadOptionalFeatureStateOptions<R> {
 	readonly ensureBookkeeping: Effect.Effect<void, unknown, R>
@@ -280,6 +280,12 @@ const normalizeExpression = (value: string): string =>
 
 // --- config load + decrypt (mirror of the service helper) -------------------
 
+/** The Workflow was started with an `orgId` that is not one. */
+export class SchemaApplyPayloadError extends Schema.TaggedError<SchemaApplyPayloadError>()(
+	"@maple/api/workflows/SchemaApplyPayloadError",
+	{ message: Schema.String, rawOrgId: Schema.String },
+) {}
+
 /** A settings row that cannot be turned into a usable ClickHouse target. */
 export class SchemaApplyConfigError extends Schema.TaggedError<SchemaApplyConfigError>()(
 	"@maple/api/workflows/SchemaApplyConfigError",
@@ -472,17 +478,24 @@ interface SkippedFeature {
 	readonly reason: string
 }
 
+/**
+ * Typed failures (a bad payload, a missing encryption key) propagate rather than
+ * die: alchemy's bridge rejects the run with either, and steps already retry on their own.
+ */
 export const runClickHouseSchemaApply = (
 	payload: SchemaApplyWorkflowPayload,
 ): Effect.Effect<
 	SchemaApplyWorkflowResult,
-	never,
-	Database | Cloudflare.WorkflowStep | Cloudflare.WorkerEnvironment
+	SchemaApplyPayloadError | SchemaApplyConfigError,
+	Database | Cloudflare.WorkflowStep
 > =>
 	Effect.gen(function* () {
-		const orgId = yield* Schema.decodeUnknownEffect(OrgId)(payload.orgId)
+		const orgId = yield* Schema.decodeUnknownEffect(OrgId)(payload.orgId).pipe(
+			Effect.mapError(
+				(error) => new SchemaApplyPayloadError({ message: error.message, rawOrgId: String(payload.orgId) }),
+			),
+		)
 		const database = yield* Database
-		const env = yield* Cloudflare.WorkerEnvironment
 
 		// Inside the protected region below: a config-load failure (settings row
 		// deleted, missing encryption key, decrypt failure, invalid URL) must still
@@ -512,15 +525,20 @@ export const runClickHouseSchemaApply = (
 				yield* bustRuntimeConfigCache(orgId)
 			})
 
-		return yield* applySchema(database, env, orgId).pipe(
+		return yield* applySchema(database, orgId).pipe(
 			Effect.catchCause((cause) => markFailed(cause).pipe(Effect.andThen(Effect.failCause(cause)))),
 		)
-	}).pipe(Effect.orDie)
+	})
 
-const applySchema = (database: DatabaseApi, env: Record<string, unknown>, orgId: OrgId) =>
+const applySchema = (database: DatabaseApi, orgId: OrgId) =>
 	Effect.gen(function* () {
-		const { MAPLE_INGEST_KEY_ENCRYPTION_KEY } = yield* Schema.decodeUnknownEffect(SchemaApplyEnv)(env)
-		const encryptionKey = Buffer.from(MAPLE_INGEST_KEY_ENCRYPTION_KEY.trim(), "base64")
+		const encryptionKeyText = yield* Config.Redacted(ENCRYPTION_KEY_CONFIG).pipe(
+			Effect.mapError(
+				(error) =>
+					new SchemaApplyConfigError({ message: `${ENCRYPTION_KEY_CONFIG} is not configured: ${error.message}` }),
+			),
+		)
+		const encryptionKey = Buffer.from(Redacted.value(encryptionKeyText).trim(), "base64")
 		const appliedVersions: number[] = []
 		const skippedFeatures: SkippedFeature[] = []
 
