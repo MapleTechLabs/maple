@@ -853,26 +853,23 @@ const execClickHouseWithClient = (client: HttpClient.HttpClient, config: ClickHo
 export const execClickHouse = (config: ClickHouseExecConfig, sql: string) =>
 	HttpClient.HttpClient.use((client) => execClickHouseWithClient(client, config, sql))
 
-interface ClickHouseTableRow {
-	readonly name: string
-	readonly engine: string
-}
-interface ClickHouseColumnRow {
-	readonly table: string
-	readonly name: string
-	readonly type: string
-}
+const decodeTableRow = Schema.decodeUnknownOption(
+	Schema.fromJsonString(Schema.Struct({ name: Schema.String, engine: Schema.String })),
+)
+const decodeColumnRow = Schema.decodeUnknownOption(
+	Schema.fromJsonString(Schema.Struct({ table: Schema.String, name: Schema.String, type: Schema.String })),
+)
 
 const fetchActualSchema = (client: HttpClient.HttpClient, config: ClickHouseExecConfig) =>
 	Effect.gen(function* () {
 		// Tables: name + engine. Engine="MaterializedView" → MV; everything else → table.
 		const tablesSql = `SELECT name, engine FROM system.tables WHERE database = '${config.database.replace(/'/g, "''")}' FORMAT JSONEachRow`
 		const tablesText = yield* execClickHouseWithClient(client, config, tablesSql)
-		const tableRows = parseJsonEachRow<ClickHouseTableRow>(tablesText)
+		const tableRows = parseJsonEachRow(tablesText, decodeTableRow)
 
 		const columnsSql = `SELECT table, name, type FROM system.columns WHERE database = '${config.database.replace(/'/g, "''")}' FORMAT JSONEachRow`
 		const columnsText = yield* execClickHouseWithClient(client, config, columnsSql)
-		const columnRows = parseJsonEachRow<ClickHouseColumnRow>(columnsText)
+		const columnRows = parseJsonEachRow(columnsText, decodeColumnRow)
 
 		const colsByTable = new Map<string, Array<{ name: string; type: string }>>()
 		for (const row of columnRows) {
@@ -892,20 +889,13 @@ const fetchActualSchema = (client: HttpClient.HttpClient, config: ClickHouseExec
 		return result
 	})
 
-const parseJsonEachRow = <T>(text: string): ReadonlyArray<T> => {
-	const out: T[] = []
-	for (const line of text.split("\n")) {
-		const trimmed = line.trim()
-		if (trimmed.length === 0) continue
-		try {
-			out.push(JSON.parse(trimmed) as T)
-		} catch {
-			// Skip malformed rows — the entire response is from us-controlled
-			// queries against system.* tables, so this is defence-in-depth.
-		}
-	}
-	return out
-}
+// Malformed rows are skipped: the response comes from our own queries against system.* tables.
+const parseJsonEachRow = <A>(text: string, decode: (line: string) => Option.Option<A>): ReadonlyArray<A> =>
+	text
+		.split("\n")
+		.map((line) => line.trim())
+		.filter((line) => line.length > 0)
+		.flatMap((line) => Option.toArray(decode(line)))
 
 // The migration runner + backfill chunking now live in the background
 // schema-apply Workflow (apps/api/src/workflows/ClickHouseSchemaApplyWorkflow.run.ts),
@@ -922,9 +912,7 @@ export class OrgClickHouseSettingsService extends Context.Service<
 		const httpClient = yield* HttpClient.HttpClient
 		const encryptionKey = yield* parseEncryptionKey(Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY))
 		// Dev-only way past a per-org BYO row; the environment gate keeps it off deploys.
-		const ignoreOrgClickHouse =
-			env.MAPLE_ENVIRONMENT === "development" &&
-			(env.MAPLE_IGNORE_ORG_CLICKHOUSE === "1" || env.MAPLE_IGNORE_ORG_CLICKHOUSE === "true")
+		const ignoreOrgClickHouse = env.MAPLE_ENVIRONMENT === "development" && env.MAPLE_IGNORE_ORG_CLICKHOUSE
 		// The background schema-apply Workflow, bound only by the api Worker that hosts it.
 		// Read optionally so other hosts and tests still construct the service.
 		const schemaApplyWorkflow = yield* Effect.serviceOption(SchemaApplyWorkflow)

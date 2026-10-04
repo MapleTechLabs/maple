@@ -34,8 +34,7 @@ export class EmailService extends Context.Service<EmailService, EmailServiceApi>
 			// duplicate copies of every cron-driven email. The alchemy configs no
 			// longer attach EMAIL outside prd; this guard covers any binding that
 			// still reaches a non-prod worker (`alchemy dev`, manual deploys).
-			const emailAllowed =
-				env.MAPLE_ENVIRONMENT === "production" || env.MAPLE_EMAIL_ALLOW_NONPROD === "true"
+			const emailAllowed = env.MAPLE_ENVIRONMENT === "production" || env.MAPLE_EMAIL_ALLOW_NONPROD
 			const isConfigured = Option.isSome(sender) && emailAllowed
 
 			const send = Effect.fn("EmailService.send")(function* (
