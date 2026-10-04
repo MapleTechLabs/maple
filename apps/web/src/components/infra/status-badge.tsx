@@ -22,9 +22,8 @@ interface HostStatusBadgeProps {
 	 *
 	 * For a badge sitting INLINE beside a name, "Active" on every row is not a
 	 * status, it is wallpaper — the Last seen column already carries freshness.
-	 * Quiet mode turns it back into what a badge is for: the exception. A badge
-	 * filling a dedicated Status COLUMN stays loud, because a column with a
-	 * header needs a value in every cell.
+	 * Quiet mode turns it back into what a badge is for: the exception. Every
+	 * infra table uses it; only a detail page's title shows the loud form.
 	 */
 	quiet?: boolean
 	className?: string

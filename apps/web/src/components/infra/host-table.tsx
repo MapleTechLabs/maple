@@ -36,7 +36,6 @@ function HostColumns({ sort }: { sort?: SortControls<SortKey> }) {
 	return (
 		<>
 			<ColumnHead<SortKey> label="Host" sortKey="hostName" {...sort} width="w-0 flex-1 min-w-[260px]" />
-			<ColumnHead label="Status" width="w-[88px]" />
 			<ColumnHead label="Usage" width="w-[200px]" />
 			<ColumnHead<SortKey>
 				label="Load 15m"
@@ -68,7 +67,6 @@ export function HostTableLoading() {
 					<Skeleton className="h-4 w-40" />
 					<Skeleton className="mt-1.5 h-3 w-32" />
 				</div>
-				<Skeleton className="h-3 w-[88px]" />
 				<Skeleton className="h-9 w-[200px]" />
 				<Skeleton className="ml-auto hidden h-3 w-[80px] lg:block" />
 				<Skeleton className="h-3 w-[100px]" />
@@ -97,13 +95,13 @@ export function HostTable({ hosts, waiting }: HostTableProps) {
 					className={ROW_LINK_CLASS}
 				>
 					<div className="w-0 min-w-[260px] flex-1">
-						<div className="truncate font-mono text-[13px] font-medium text-foreground transition-colors group-hover:text-primary">
-							{host.hostName}
+						<div className="flex items-center gap-2">
+							<span className="truncate font-mono text-[13px] font-medium text-foreground transition-colors group-hover:text-primary">
+								{host.hostName}
+							</span>
+							<HostStatusBadge quiet lastSeen={host.lastSeen} />
 						</div>
 						<MetaLine items={[host.osType, host.hostArch, host.cloudProvider]} />
-					</div>
-					<div className="w-[88px]">
-						<HostStatusBadge lastSeen={host.lastSeen} />
 					</div>
 					<div className="w-[200px]">
 						<MeterRows
