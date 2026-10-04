@@ -8,6 +8,7 @@ import type { ListHostsResponse } from "@maple/domain/http"
 import { HostStatusBadge } from "./status-badge"
 import { MeterRows } from "./primitives/meter-rows"
 import { MetaLine } from "./primitives/meta-line"
+import { PlatformLabel } from "./platform-label"
 import {
 	ColumnHead,
 	DataTable,
@@ -101,7 +102,15 @@ export function HostTable({ hosts, waiting }: HostTableProps) {
 							</span>
 							<HostStatusBadge quiet lastSeen={host.lastSeen} />
 						</div>
-						<MetaLine items={[host.osType, host.hostArch, host.cloudProvider]} />
+						<MetaLine
+							items={[
+								host.osType && <PlatformLabel kind="os" value={host.osType} />,
+								host.hostArch && <PlatformLabel kind="arch" value={host.hostArch} />,
+								host.cloudProvider && (
+									<PlatformLabel kind="cloud" value={host.cloudProvider} />
+								),
+							]}
+						/>
 					</div>
 					<div className="w-[200px]">
 						<MeterRows
