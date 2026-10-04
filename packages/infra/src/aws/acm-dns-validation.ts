@@ -334,9 +334,13 @@ export class CloudflareRangesError extends Schema.TaggedError<CloudflareRangesEr
 	},
 ) {}
 
+/** AWS's default inbound-rule quota per security group; each range is one rule. */
+const SECURITY_GROUP_INBOUND_RULE_LIMIT = 60
+
 /**
  * Cloudflare's IPv4 edge ranges, read at plan time so an origin's security group follows them.
- * An empty list fails the deploy: it would lock every proxied request out.
+ * An empty list fails the deploy (it would lock every proxied request out), and so does one
+ * that would not fit a security group: dropping ranges would block part of Cloudflare's edge.
  */
 export const cloudflareIpv4Ranges = ips.listIps({}).pipe(
 	Effect.mapError(
@@ -348,8 +352,16 @@ export const cloudflareIpv4Ranges = ips.listIps({}).pipe(
 	),
 	Effect.flatMap((result) => {
 		const cidrs = result.ipv4Cidrs ?? []
-		return cidrs.length > 0
-			? Effect.succeed(cidrs)
-			: Effect.fail(new CloudflareRangesError({ message: "Cloudflare returned no IPv4 ranges" }))
+		if (cidrs.length === 0) {
+			return Effect.fail(new CloudflareRangesError({ message: "Cloudflare returned no IPv4 ranges" }))
+		}
+		if (cidrs.length > SECURITY_GROUP_INBOUND_RULE_LIMIT) {
+			return Effect.fail(
+				new CloudflareRangesError({
+					message: `Cloudflare publishes ${cidrs.length} IPv4 ranges, more than the ${SECURITY_GROUP_INBOUND_RULE_LIMIT} inbound rules a security group allows by default`,
+				}),
+			)
+		}
+		return Effect.succeed(cidrs)
 	}),
 )
