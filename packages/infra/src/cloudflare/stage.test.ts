@@ -6,9 +6,6 @@ import {
 	parseMapleDeployment,
 	parseMapleDeploymentEffect,
 	parseMapleStage,
-	resolveMapleDomainsEffect,
-	regionHostsSharedApps,
-	resolveDatabaseMode,
 	resolveHyperdriveRefId,
 	resolveMapleDomains,
 	resolvePlanetscaleDatabase,
@@ -16,8 +13,6 @@ import {
 	resolveStorageJurisdiction,
 	resolveWorkerName,
 	resolveWorkerPlacement,
-	stageDeploysSandbox,
-	stageMigratesDatabase,
 } from "./stage.ts"
 
 const stage = (name: string) => parseMapleStage(name)
@@ -69,12 +64,10 @@ describe("parseMapleDeployment", () => {
 		expect(() => parseMapleDeployment("stg-eu")).toThrow(/"stg" stage was removed/)
 	})
 
-	it("fails the Effect variants with a typed MapleStageError instead of throwing", () => {
+	it("fails the Effect variant with a typed MapleStageError instead of throwing", () => {
 		const error = Effect.runSync(Effect.flip(parseMapleDeploymentEffect("pr-12-eu")))
 		expect(error).toBeInstanceOf(MapleStageError)
 		expect(error.rawStage).toBe("pr-12-eu")
-		const domains = Effect.runSync(Effect.flip(resolveMapleDomainsEffect(stage("pr-12"), "eu")))
-		expect(domains.message).toMatch(/PR previews have no eu hostnames/)
 	})
 })
 
@@ -93,7 +86,7 @@ describe("resolveWorkerName", () => {
 
 describe("resolveMapleDomains", () => {
 	it("gives the EU instance its own hostnames under eu.maple.dev, and no shared apps", () => {
-		const eu = resolveMapleDomains(stage("prd"), "eu")
+		const eu = resolveMapleDomains({ stage: stage("prd"), region: "eu" })
 		expect(eu).toEqual({
 			web: "app.eu.maple.dev",
 			api: "api.eu.maple.dev",
@@ -104,24 +97,20 @@ describe("resolveMapleDomains", () => {
 		})
 		expect(eu.landing).toBeUndefined()
 		expect(eu.local).toBeUndefined()
-		expect(regionHostsSharedApps("eu")).toBe(false)
-		expect(regionHostsSharedApps("us")).toBe(true)
 	})
 
 	it("keeps the us production hostnames exactly as they were", () => {
-		expect(resolveMapleDomains(stage("prd"))).toEqual(resolveMapleDomains(stage("prd"), "us"))
-		expect(resolveMapleDomains(stage("prd")).web).toBe("app.maple.dev")
+		expect(resolveMapleDomains({ stage: stage("prd"), region: "us" })).toEqual(
+			resolveMapleDomains({ stage: stage("prd"), region: "us" }),
+		)
+		expect(resolveMapleDomains({ stage: stage("prd"), region: "us" }).web).toBe("app.maple.dev")
 		// A webhook connector's request URL is configured inside a chat platform's own app, so it
 		// has to be a hostname that does not change with a deploy.
-		expect(resolveMapleDomains(stage("prd")).chat).toBe("chat.maple.dev")
+		expect(resolveMapleDomains({ stage: stage("prd"), region: "us" }).chat).toBe("chat.maple.dev")
 	})
 
 	it("gives a PR preview no chat hostname", () => {
-		expect(resolveMapleDomains(stage("pr-12")).chat).toBeUndefined()
-	})
-
-	it("has no eu hostnames for a PR preview", () => {
-		expect(() => resolveMapleDomains(stage("pr-12"), "eu")).toThrow(/PR previews have no eu hostnames/)
+		expect(resolveMapleDomains({ stage: stage("pr-12"), region: "us" }).chat).toBeUndefined()
 	})
 
 	it("lists every region's dashboard on prd only", () => {
@@ -147,23 +136,6 @@ describe("region-bound Cloudflare settings", () => {
 	})
 })
 
-describe("stageDeploysSandbox", () => {
-	it("runs the agents' repository sandbox on prd, the only stage with a database", () => {
-		expect(stageDeploysSandbox(stage("prd"))).toBe(true)
-	})
-
-	it("skips a PR preview, which has no database to resolve a repository with", () => {
-		const preview = stage("pr-123")
-		expect(stageDeploysSandbox(preview)).toBe(false)
-		// The reason, pinned: a preview cannot use one even if it had it.
-		expect(resolveDatabaseMode(preview)).toBe("none")
-	})
-
-	it("skips dev stages, where the container would be a multi-gigabyte local pull", () => {
-		expect(stageDeploysSandbox(stage("dev_makisuo"))).toBe(false)
-	})
-})
-
 describe("resolveHyperdriveRefId", () => {
 	it("hands the production configs to prd and to nothing else", () => {
 		// These ids are the live dashboard configs for the production database.
@@ -176,22 +148,7 @@ describe("resolveHyperdriveRefId", () => {
 	})
 })
 
-describe("resolveDatabaseMode", () => {
-	it("binds the US prd's dashboard configs by id and declares the EU prd's from the deploy", () => {
-		expect(resolveDatabaseMode({ kind: "prd" })).toBe("ref")
-		expect(resolveDatabaseMode({ kind: "prd" }, "us")).toBe("ref")
-		expect(resolveDatabaseMode({ kind: "prd" }, "eu")).toBe("declared")
-		// Both prd modes adopt the branch and migrate it; neither of the others has one.
-		expect(stageMigratesDatabase("ref")).toBe(true)
-		expect(stageMigratesDatabase("declared")).toBe(true)
-		expect(stageMigratesDatabase("managed")).toBe(false)
-		expect(stageMigratesDatabase("none")).toBe(false)
-	})
-
-	it("keeps dev stages on the managed Hyperdrive in either region", () => {
-		expect(resolveDatabaseMode(stage("dev_makisuo"), "eu")).toBe("managed")
-	})
-
+describe("resolvePlanetscaleDatabase", () => {
 	it("names each instance's PlanetScale database, us unsuffixed", () => {
 		expect(resolvePlanetscaleDatabase()).toBe("maple")
 		expect(resolvePlanetscaleDatabase("us")).toBe("maple")

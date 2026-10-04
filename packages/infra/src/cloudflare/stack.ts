@@ -1,10 +1,11 @@
-import type * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "alchemy/Cloudflare"
 import type * as Planetscale from "alchemy/Planetscale"
 import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import type { WorkerDev } from "@maple/alchemy-portless"
-import type { DevApp } from "../dev-urls.ts"
+import { type DevApp, isDevApp } from "../dev-urls.ts"
 import { Stage } from "alchemy/Stage"
+import type { MapleProfile } from "../profile.ts"
 import type { MapleRegion } from "../region.ts"
 import {
 	type MapleDbConsumer,
@@ -13,6 +14,7 @@ import {
 	type MapleStage,
 	parseMapleDeployment,
 	resolveWorkerName,
+	resolveWorkerPlacement,
 } from "./stage.ts"
 
 /**
@@ -36,6 +38,8 @@ export interface MapleStackContext {
 	/** The instance this deploy belongs to; `us` unless the stage string says `-eu`. */
 	readonly region: MapleRegion
 	readonly domains: MapleDomains
+	/** What this deployment runs and how big (`resolveMapleProfile`). */
+	readonly profile: MapleProfile
 	readonly urls: MapleUrls
 	/** A Worker's `dev` block under `bun dev` (served, or left `external`); undefined on a deploy. */
 	readonly workerDev: (app: DevApp) => WorkerDev | undefined
@@ -78,3 +82,27 @@ export const stageProps = <Props extends object>(
 
 /** {@link stageProps} for the common case: a resource whose only stage-derived prop is `name`. */
 export const stageNamed = (base: string) => stageProps(base, (name) => ({ name }))
+
+/** Workers runtime compatibility date for every Maple Worker. */
+export const WORKER_COMPATIBILITY_DATE = "2026-10-01"
+
+/**
+ * The props every Maple Worker shares: its physical name, compatibility date, placement and
+ * `bun dev` block. `app` is also the name base, so it must match the Worker's existing name.
+ */
+export const mapleWorkerProps = (app: string, { stage, region, workerDev }: MapleStackContext) => ({
+	name: resolveWorkerName(app, stage, region),
+	compatibility: { date: WORKER_COMPATIBILITY_DATE },
+	placement: resolveWorkerPlacement(region),
+	...(isDevApp(app) && { dev: workerDev(app) }),
+})
+
+/**
+ * maple-ai's `ChatSession` Durable Object, bound by class name from another Worker. By name,
+ * not by ai's output, so the binder's deploy does not wait on ai's.
+ */
+export const chatSessionBinding = ({ stage, region }: MapleDeployment) =>
+	Cloudflare.DurableObject("ChatSession", {
+		className: "ChatSession",
+		scriptName: resolveWorkerName("ai", stage, region),
+	})

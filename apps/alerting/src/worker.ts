@@ -6,14 +6,15 @@
 import {
 	AiWorker,
 	cachedRecoverable,
+	chatSessionBinding,
 	MapleDb,
 	mapleDbEnv,
-	MapleStack,
+	type MapleDeployment,
 	type MapleDomains,
 	type MapleRegion,
+	MapleStack,
 	type MapleStage,
-	resolveWorkerName,
-	resolveWorkerPlacement,
+	mapleWorkerProps,
 } from "@maple/infra/cloudflare"
 import {
 	apnsEnv,
@@ -38,12 +39,9 @@ import { Cause, Config, Effect, Layer, Option, Ref } from "effect"
 import { HttpServerResponse } from "effect/http"
 
 /** Resource bindings, split from config so `InferEnv` can derive `AlertingWorkerEnv`. */
-const makeWorkerBindings = ({ stage, region }: { stage: MapleStage; region: MapleRegion }) => ({
+const makeWorkerBindings = (deployment: MapleDeployment) => ({
 	// maple-ai's chat DO, where ticks start investigations; read off `env` by class name.
-	ChatSession: Cloudflare.DurableObject("ChatSession", {
-		className: "ChatSession",
-		scriptName: resolveWorkerName("ai", stage, region),
-	}),
+	ChatSession: chatSessionBinding(deployment),
 })
 
 /**
@@ -83,16 +81,14 @@ const configuredEnv = (stage: MapleStage, region: MapleRegion, domains: MapleDom
 /** `__ALCHEMY_RUNTIME__` folds to `true` in the bundle, so the stack-side branch is tree-shaken. */
 const props = Effect.gen(function* () {
 	if (globalThis.__ALCHEMY_RUNTIME__) return { main: import.meta.url }
-	const { stage, region, domains, workerDev, devEnv, db } = yield* MapleStack
+	const stack = yield* MapleStack
+	const { stage, region, domains, devEnv, db } = stack
 	// For `IncidentClassifier`. Yielded, not `Worker.ref`: a ref cannot see a sibling this deploy creates.
 	const ai = yield* AiWorker
 	const env = yield* configuredEnv(stage, region, domains)
 	return {
 		main: import.meta.url,
-		name: resolveWorkerName("alerting", stage, region),
-		compatibility: { date: "2026-10-01" },
-		placement: resolveWorkerPlacement(region),
-		dev: workerDev("alerting"),
+		...mapleWorkerProps("alerting", stack),
 		workersDev: false,
 		build: { pure: WORKER_PURE_OPTIONS },
 		// `devEnv` last, so `.env.local` cannot override the inter-app URLs.

@@ -4,12 +4,12 @@
  */
 import { createHash } from "node:crypto"
 import {
-	MapleStack,
-	WorkersObservabilityDestinations,
 	assetWorkerObservability,
+	MapleStack,
+	mapleWorkerProps,
 	resolveStorageJurisdiction,
 	resolveWorkerName,
-	resolveWorkerPlacement,
+	WorkersObservabilityDestinations,
 } from "@maple/infra/cloudflare"
 import { requireSecretEntry } from "@maple/infra/env"
 import * as Cloudflare from "alchemy/Cloudflare"
@@ -83,15 +83,13 @@ const mirrorBackups = Effect.gen(function* () {
 
 const props = Effect.gen(function* () {
 	if (globalThis.__ALCHEMY_RUNTIME__) return { main: `${import.meta.dirname}/src/worker.ts` }
-	const { stage, region } = yield* MapleStack
-	const production = stage.kind === "prd"
+	const stack = yield* MapleStack
+	const production = stack.stage.kind === "prd"
 	// No OTel SDK in this Worker, so platform logs are its only telemetry. Keep them on.
 	const destinations = yield* WorkersObservabilityDestinations
 	return {
 		main: `${import.meta.dirname}/src/worker.ts`,
-		name: resolveWorkerName("sandbox", stage, region),
-		compatibility: { date: "2026-10-01" },
-		placement: resolveWorkerPlacement(region),
+		...mapleWorkerProps("sandbox", stack),
 		// Reached only over a service binding: no route, no hostname.
 		workersDev: false,
 		observability: assetWorkerObservability(destinations),

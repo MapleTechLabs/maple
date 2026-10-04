@@ -4,16 +4,9 @@ import type * as Output from "alchemy/Output"
 import type * as Planetscale from "alchemy/Planetscale"
 import * as Effect from "effect/Effect"
 import * as Redacted from "effect/Redacted"
-import type { MapleRegion } from "@maple/infra/aws"
-import {
-	pgUrlRequireSsl,
-	resolveAwsRegion,
-	resolveAwsResourceName,
-	resolveElectricDbPoolSize,
-	resolveElectricTaskSize,
-} from "@maple/infra/aws"
+import { pgUrlRequireSsl, resolveAwsRegion, resolveAwsResourceName } from "@maple/infra/aws"
 import { issueCertificateViaCloudflare, publishProxiedCname } from "@maple/infra/acm"
-import type { MapleDomains, MapleStage } from "@maple/infra/cloudflare"
+import type { MapleStackContext } from "@maple/infra/cloudflare"
 import { requiredPlain } from "@maple/infra/env"
 
 /** Port Electric's HTTP API binds (`ELECTRIC_PORT`, whose own default is 3000). */
@@ -22,11 +15,10 @@ const ELECTRIC_PORT = 3000
 /** Absolute: alchemy has changed how a relative `dockerfile` resolves between releases. */
 const DOCKERFILE = resolve("apps/electric/Dockerfile")
 
-export interface CreateMapleElectricOptions {
-	stage: MapleStage
-	domains: MapleDomains
-	/** Geographic instance. Every AWS resource here is scoped to it. */
-	region: MapleRegion
+export interface CreateMapleElectricOptions extends Pick<
+	MapleStackContext,
+	"stage" | "region" | "domains" | "profile"
+> {
 	/** The ingest VPC: a second `AWS.EC2.Network` in one stack fights over the internet gateway. */
 	network: Pick<AWS.EC2.Network, "vpcId" | "publicSubnetIds">
 	/** The replication role on the instance's branch (`withReplication`), minted by the root. */
@@ -40,14 +32,14 @@ export interface CreateMapleElectricOptions {
  */
 export const createMapleElectric = ({
 	stage,
-	domains,
 	region,
+	domains,
+	profile,
 	network,
 	dbRole,
 }: CreateMapleElectricOptions) =>
 	Effect.gen(function* () {
-		const taskSize = resolveElectricTaskSize(stage)
-		const dbPoolSize = resolveElectricDbPoolSize(region)
+		const { taskSize, dbPoolSize } = profile.electric
 		const name = (base: string) => resolveAwsResourceName(base, stage, region)
 
 		// Alchemy keys state by logical id: renaming these ids replaces live groups, and a

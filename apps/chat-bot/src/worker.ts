@@ -7,14 +7,14 @@
 import { connectors } from "@maple/chat-platform/connectors"
 import {
 	cachedRecoverable,
+	chatSessionBinding,
 	MapleDb,
 	mapleDbEnv,
-	MapleStack,
 	type MapleDomains,
 	type MapleRegion,
+	MapleStack,
 	type MapleStage,
-	resolveWorkerName,
-	resolveWorkerPlacement,
+	mapleWorkerProps,
 } from "@maple/infra/cloudflare"
 import { merge, optionalSecret, plainWithDefault, selfObservabilityEnv } from "@maple/infra/env"
 import { workerEnvLayer } from "@maple/infra/worker-runtime"
@@ -44,24 +44,19 @@ const configuredEnv = (stage: MapleStage, region: MapleRegion, domains: MapleDom
 /** `__ALCHEMY_RUNTIME__` folds to `true` in the bundle, so the stack-side branch is tree-shaken. */
 const props = Effect.gen(function* () {
 	if (globalThis.__ALCHEMY_RUNTIME__) return { main: import.meta.url }
-	const { stage, region, domains, workerDev, devEnv, db } = yield* MapleStack
+	const stack = yield* MapleStack
+	const { stage, region, domains, devEnv, db } = stack
 	const env = yield* configuredEnv(stage, region, domains)
 	return {
 		main: import.meta.url,
-		name: resolveWorkerName("chat-bot", stage, region),
-		compatibility: { date: "2026-10-01" },
-		placement: resolveWorkerPlacement(region),
-		dev: workerDev("chat-bot"),
+		...mapleWorkerProps("chat-bot", stack),
 		// Vendors store this webhook URL, so it must stay stable across deploys (prod only).
 		workersDev: false,
 		domain: domains.chat,
 		// `devEnv` last, so `.env.local` cannot override the inter-app URLs.
 		env: {
 			// maple-ai's chat DO; mentions become turns on it (read off `env` by class name).
-			ChatSession: Cloudflare.DurableObject("ChatSession", {
-				className: "ChatSession",
-				scriptName: resolveWorkerName("ai", stage, region),
-			}),
+			ChatSession: chatSessionBinding(stack),
 			...mapleDbEnv(db, "chat-bot"),
 			...env,
 			...devEnv,

@@ -1,0 +1,183 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`resolveMapleProfile > pins every deployment's profile 1`] = `
+{
+  "dev-alice": {
+    "database": "managed",
+    "deploys": {
+      "collector": false,
+      "electric": false,
+      "ingest": false,
+      "replayBlobs": false,
+      "sandbox": false,
+      "sharedApps": true,
+    },
+    "electric": {
+      "dbPoolSize": undefined,
+      "taskSize": {
+        "cpu": 256,
+        "memory": 512,
+      },
+    },
+    "ingest": {
+      "collectorTaskSize": {
+        "cpu": 256,
+        "memory": 1024,
+      },
+      "desiredCount": 1,
+      "instanceType": "c7gd.large",
+      "scaling": undefined,
+      "selfTraceSampleRatio": undefined,
+      "taskSize": {
+        "cpu": 2048,
+        "memory": 3072,
+      },
+    },
+    "migratesDatabase": false,
+  },
+  "dev-alice-eu": {
+    "database": "managed",
+    "deploys": {
+      "collector": false,
+      "electric": false,
+      "ingest": false,
+      "replayBlobs": false,
+      "sandbox": false,
+      "sharedApps": false,
+    },
+    "electric": {
+      "dbPoolSize": 4,
+      "taskSize": {
+        "cpu": 256,
+        "memory": 512,
+      },
+    },
+    "ingest": {
+      "collectorTaskSize": {
+        "cpu": 256,
+        "memory": 1024,
+      },
+      "desiredCount": 1,
+      "instanceType": "c7gd.large",
+      "scaling": undefined,
+      "selfTraceSampleRatio": undefined,
+      "taskSize": {
+        "cpu": 2048,
+        "memory": 3072,
+      },
+    },
+    "migratesDatabase": false,
+  },
+  "pr-12": {
+    "database": "none",
+    "deploys": {
+      "collector": false,
+      "electric": false,
+      "ingest": true,
+      "replayBlobs": false,
+      "sandbox": false,
+      "sharedApps": true,
+    },
+    "electric": {
+      "dbPoolSize": undefined,
+      "taskSize": {
+        "cpu": 256,
+        "memory": 512,
+      },
+    },
+    "ingest": {
+      "collectorTaskSize": {
+        "cpu": 256,
+        "memory": 1024,
+      },
+      "desiredCount": 1,
+      "instanceType": "c7gd.large",
+      "scaling": undefined,
+      "selfTraceSampleRatio": undefined,
+      "taskSize": {
+        "cpu": 2048,
+        "memory": 3072,
+      },
+    },
+    "migratesDatabase": false,
+  },
+  "prd": {
+    "database": "ref",
+    "deploys": {
+      "collector": true,
+      "electric": true,
+      "ingest": true,
+      "replayBlobs": true,
+      "sandbox": true,
+      "sharedApps": true,
+    },
+    "electric": {
+      "dbPoolSize": undefined,
+      "taskSize": {
+        "cpu": 512,
+        "memory": 1024,
+      },
+    },
+    "ingest": {
+      "collectorTaskSize": {
+        "cpu": 512,
+        "memory": 1024,
+      },
+      "desiredCount": 2,
+      "instanceType": "c7gd.large",
+      "scaling": {
+        "cpuUtilization": 60,
+        "max": 6,
+        "min": 2,
+        "scaleInCooldown": "5 minutes",
+        "scaleOutCooldown": "60 seconds",
+      },
+      "selfTraceSampleRatio": "0.05",
+      "taskSize": {
+        "cpu": 2048,
+        "memory": 3072,
+      },
+    },
+    "migratesDatabase": true,
+  },
+  "prd-eu": {
+    "database": "declared",
+    "deploys": {
+      "collector": true,
+      "electric": true,
+      "ingest": true,
+      "replayBlobs": true,
+      "sandbox": true,
+      "sharedApps": false,
+    },
+    "electric": {
+      "dbPoolSize": 4,
+      "taskSize": {
+        "cpu": 512,
+        "memory": 1024,
+      },
+    },
+    "ingest": {
+      "collectorTaskSize": {
+        "cpu": 256,
+        "memory": 1024,
+      },
+      "desiredCount": 1,
+      "instanceType": "c7gd.medium",
+      "scaling": {
+        "cpuUtilization": 60,
+        "max": 3,
+        "min": 1,
+        "scaleInCooldown": "5 minutes",
+        "scaleOutCooldown": "60 seconds",
+      },
+      "selfTraceSampleRatio": "0.05",
+      "taskSize": {
+        "cpu": 1024,
+        "memory": 1536,
+      },
+    },
+    "migratesDatabase": true,
+  },
+}
+`;

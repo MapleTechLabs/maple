@@ -12,7 +12,7 @@
 #     directory cannot even be created without running as root or adding EFS.
 #     The exporter also gives up after `max_elapsed_time` regardless, so a long
 #     Tinybird outage drops data with or without the file. In-memory queue only.
-#   - `memory_limiter` is sized for the 1 GiB task in `resolveCollectorTaskSize`
+#   - `memory_limiter` is sized for the 1 GiB task in `resolveMapleProfile` (`ingest.collectorTaskSize`)
 #     (~75% hard limit, ~25% spike) — a limit above task memory never fires.
 #
 # The Railway file goes away with the Railway decommission; this one stays.

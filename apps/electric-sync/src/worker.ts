@@ -4,11 +4,10 @@
  */
 import {
 	cachedRecoverable,
-	MapleStack,
 	type MapleRegion,
+	MapleStack,
 	type MapleStage,
-	resolveWorkerName,
-	resolveWorkerPlacement,
+	mapleWorkerProps,
 } from "@maple/infra/cloudflare"
 import { authEnv, merge, optionalPlain, optionalSecret, selfObservabilityEnv } from "@maple/infra/env"
 import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
@@ -35,13 +34,11 @@ const configuredEnv = (stage: MapleStage, region: MapleRegion) =>
 /** `__ALCHEMY_RUNTIME__` folds to `true` in the bundle, so the stack-side branch is tree-shaken. */
 const props = Effect.gen(function* () {
 	if (globalThis.__ALCHEMY_RUNTIME__) return { main: import.meta.url }
-	const { stage, region, domains, workerDev } = yield* MapleStack
+	const stack = yield* MapleStack
+	const { stage, region, domains } = stack
 	return {
 		main: import.meta.url,
-		name: resolveWorkerName("electric-sync", stage, region),
-		compatibility: { date: "2026-10-01" },
-		placement: resolveWorkerPlacement(region),
-		dev: workerDev("electric-sync"),
+		...mapleWorkerProps("electric-sync", stack),
 		workersDev: true,
 		// Custom domain, not a zone route: routes create no DNS, so pr hosts would NXDOMAIN.
 		domain: domains.sync,

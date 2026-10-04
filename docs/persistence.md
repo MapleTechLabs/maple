@@ -122,7 +122,7 @@ every role URL with `sslmode=verify-full`, which neither ECS client accepts, so 
 The EU instance's Worker credentials are declared the same way: `declareMapleDb` in `alchemy.run.ts`
 mints one role per consumer on `maple-eu` and a Hyperdrive config on each role's direct origin, and
 the Workers bind them from their props. No dashboard config and no hand-minted role exist there
-(`resolveDatabaseMode` is `"declared"`); the US prd keeps its dashboard-managed configs, bound by id.
+(its `resolveMapleProfile` database mode is `"declared"`); the US prd keeps its dashboard-managed configs, bound by id.
 
 The deploy reads `PLANETSCALE_API_TOKEN_ID` / `PLANETSCALE_API_TOKEN` /
 `PLANETSCALE_ORGANIZATION` from the instance's Infisical environment. `bun dev` leaves the

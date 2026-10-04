@@ -7,7 +7,6 @@ import * as Output from "alchemy/Output"
 import type * as Planetscale from "alchemy/Planetscale"
 import * as Effect from "effect/Effect"
 import * as Redacted from "effect/Redacted"
-import type { MapleRegion } from "@maple/infra/aws"
 import {
 	COLLECTOR_DNS_LABEL,
 	COLLECTOR_OTLP_HTTP_PORT,
@@ -15,20 +14,12 @@ import {
 	resolveAwsRegion,
 	resolveAwsResourceName,
 	resolveCollectorEndpoint,
-	resolveCollectorTaskSize,
 	resolveIngestCidrBlock,
-	resolveIngestDesiredCount,
-	resolveIngestEc2InstanceType,
-	resolveIngestEc2TaskSize,
 	resolveIngestNamespaceName,
-	resolveIngestScaling,
-	resolveIngestSelfTraceSampleRatio,
-	stageDeploysCollector,
-	stageEnablesReplayBlobs,
 } from "@maple/infra/aws"
 import { ReplayBlobs } from "../api/src/resources/replay-blobs.ts"
 import { issueCertificateViaCloudflare, publishProxiedCname } from "@maple/infra/acm"
-import type { MapleDomains, MapleStage } from "@maple/infra/cloudflare"
+import type { MapleRegion, MapleStackContext, MapleStage } from "@maple/infra/cloudflare"
 import {
 	resolveDeploymentEnvironment,
 	resolveStorageJurisdiction,
@@ -91,11 +82,10 @@ ECS_CONTAINER_STOP_TIMEOUT=120s
 CONFIG
 `
 
-export interface CreateMapleIngestOptions {
-	stage: MapleStage
-	domains: MapleDomains
-	/** Geographic instance. Every AWS resource here is scoped to it. */
-	region: MapleRegion
+export interface CreateMapleIngestOptions extends Pick<
+	MapleStackContext,
+	"stage" | "region" | "domains" | "profile"
+> {
 	/** prd's gateway role; a stage without a database branch reads `MAPLE_INGEST_PG_URL` instead. */
 	dbRole?: Planetscale.PostgresRole
 }
@@ -109,11 +99,11 @@ const deriveSecretAccessKey = (value: Output.Output<Redacted.Redacted<string>>) 
 /**
  * The gateway's write credentials for the replay payload store
  * (`apps/api/src/resources/replay-blobs.ts`), or `undefined` on a stage that
- * keeps payloads inline (`stageEnablesReplayBlobs`).
+ * keeps payloads inline (`profile.deploys.replayBlobs`).
  */
-const replayBlobWriterCredentials = (stage: MapleStage, region: MapleRegion) =>
+const replayBlobWriterCredentials = (stage: MapleStage, region: MapleRegion, enabled: boolean) =>
 	Effect.gen(function* () {
-		if (!stageEnablesReplayBlobs(stage)) return undefined
+		if (!enabled) return undefined
 		// Yielded so the token is ordered behind the bucket.
 		yield* ReplayBlobs
 		const bucketName = resolveWorkerName("replay-blobs", stage, region)
@@ -152,12 +142,11 @@ const replayBlobWriterCredentials = (stage: MapleStage, region: MapleRegion) =>
  * ARM64 EC2 hosts with the WAL on local NVMe, behind a public ALB, plus an OTel
  * collector for the gateway's own telemetry, reached by Cloud Map private DNS.
  */
-export const createMapleIngest = ({ stage, domains, region, dbRole }: CreateMapleIngestOptions) =>
+export const createMapleIngest = ({ stage, region, domains, profile, dbRole }: CreateMapleIngestOptions) =>
 	Effect.gen(function* () {
-		const replayBlobs = yield* replayBlobWriterCredentials(stage, region)
-		const selfTraceSampleRatio = resolveIngestSelfTraceSampleRatio(stage)
-		const scaling = resolveIngestScaling(stage, region)
-		const taskSize = resolveIngestEc2TaskSize(stage, region)
+		const replayBlobs = yield* replayBlobWriterCredentials(stage, region, profile.deploys.replayBlobs)
+		const { desiredCount, scaling, instanceType, taskSize, collectorTaskSize, selfTraceSampleRatio } =
+			profile.ingest
 		const name = (base: string) => resolveAwsResourceName(base, stage, region)
 		const tags = { Service: "maple-ingest", Region: region }
 
@@ -251,7 +240,7 @@ export const createMapleIngest = ({ stage, domains, region, dbRole }: CreateMapl
 		const launchTemplate = yield* AWS.AutoScaling.LaunchTemplate("ingest-ec2-launch-template", {
 			launchTemplateName: name("ingest-ec2"),
 			imageId,
-			instanceType: resolveIngestEc2InstanceType(stage, region),
+			instanceType,
 			securityGroupIds: [instanceSecurityGroup.groupId],
 			instanceProfileName: instanceProfile.instanceProfileName,
 			associatePublicIpAddress: true,
@@ -261,7 +250,7 @@ export const createMapleIngest = ({ stage, domains, region, dbRole }: CreateMapl
 
 		// ECS managed scaling owns the instance count (the patch keeps a redeploy from
 		// resetting it to `minSize`). Max is doubled so a rolling deploy can overlap hosts.
-		const maxTasks = scaling?.max ?? resolveIngestDesiredCount(stage, region)
+		const maxTasks = scaling?.max ?? desiredCount
 		const autoScalingGroup = yield* AWS.AutoScaling.AutoScalingGroup("ingest-ec2-asg", {
 			autoScalingGroupName: name("ingest-ec2"),
 			launchTemplate,
@@ -335,10 +324,10 @@ export const createMapleIngest = ({ stage, domains, region, dbRole }: CreateMapl
 			: undefined
 
 		// ── OTel collector ──────────────────────────────────────────────────
-		// prd only (`stageDeploysCollector`); MAPLE_DEPLOY_AWS_COLLECTOR=1 forces it
+		// prd only (`profile.deploys.collector`); MAPLE_DEPLOY_AWS_COLLECTOR=1 forces it
 		// on for one deploy, which is how a preview tests it.
 		const deployCollector =
-			stageDeploysCollector(stage) ||
+			profile.deploys.collector ||
 			(yield* optionalPlain("MAPLE_DEPLOY_AWS_COLLECTOR")).MAPLE_DEPLOY_AWS_COLLECTOR === "1"
 		const collectorEndpoint = deployCollector ? resolveCollectorEndpoint(stage, region) : undefined
 		if (deployCollector) {
@@ -377,7 +366,6 @@ export const createMapleIngest = ({ stage, domains, region, dbRole }: CreateMapl
 				tags,
 			})
 
-			const collectorTaskSize = resolveCollectorTaskSize(stage, region)
 			yield* AWS.ECS.Service("otel-collector", {
 				cluster,
 				serviceName: name("otel-collector"),
@@ -525,7 +513,7 @@ export const createMapleIngest = ({ stage, domains, region, dbRole }: CreateMapl
 				mountPoints: [{ sourceVolume: "wal", containerPath: WAL_CONTAINER_DIR }],
 			},
 
-			desiredCount: resolveIngestDesiredCount(stage, region),
+			desiredCount,
 			// alchemy stops pinning desiredCount while `scaling` is set.
 			...(scaling ? { scaling } : undefined),
 			vpcId: network.vpcId,

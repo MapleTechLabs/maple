@@ -1,5 +1,5 @@
 /**
- * The `MAPLE_DB` Hyperdrive binding per `resolveDatabaseMode`: `managed` and `ref` bind from the
+ * The `MAPLE_DB` Hyperdrive binding per the profile's database mode: `managed` and `ref` bind from the
  * Worker init (`ref` via raw `host.bind`, as alchemy has no `env` form for an external config);
  * `declared` binds from props via `mapleDbEnv`; `none` binds nothing.
  */
@@ -10,11 +10,11 @@ import type * as Option from "effect/Option"
 import * as Redacted from "effect/Redacted"
 import * as Schema from "effect/Schema"
 import { requiredPlain } from "../env.ts"
+import { resolveMapleProfile } from "../profile.ts"
 import type { MapleDbResources } from "./stack.ts"
 import {
 	type MapleDbConsumer,
 	parseMapleDeploymentEffect,
-	resolveDatabaseMode,
 	resolveHyperdriveRefId,
 	resolveWorkerName,
 } from "./stage.ts"
@@ -83,8 +83,9 @@ export const mapleDbEnv = (db: MapleDbResources | undefined, consumer: MapleDbCo
 export const MapleDb = (consumer: MapleDbConsumer) =>
 	Effect.gen(function* () {
 		if (globalThis.__ALCHEMY_RUNTIME__) return
-		const { stage, region } = yield* stageDeployment
-		switch (resolveDatabaseMode(stage, region)) {
+		const deployment = yield* stageDeployment
+		const { stage } = deployment
+		switch (resolveMapleProfile(deployment).database) {
 			case "managed": {
 				yield* Cloudflare.Hyperdrive.Connect(ManagedMapleDb)
 				return

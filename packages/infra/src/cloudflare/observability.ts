@@ -3,7 +3,6 @@ import * as RemovalPolicy from "alchemy/RemovalPolicy"
 import * as Effect from "effect/Effect"
 import { plainWithDefault, requiredPlain } from "../env.ts"
 import { MapleStack } from "./stack.ts"
-import { regionHostsSharedApps } from "./stage.ts"
 
 /** prd destination slugs (derived from their names), referenced by non-owning stages. */
 const PRD_LOGS_DESTINATION = "maple-workers-logs"
@@ -14,8 +13,8 @@ const PRD_TRACES_DESTINATION = "maple-workers-traces"
  * prd; every other stage references the slugs (the deploy token cannot list them to adopt).
  */
 export const WorkersObservabilityDestinations = Effect.gen(function* () {
-	const { stage, region } = yield* MapleStack
-	if (stage.kind !== "prd" || !regionHostsSharedApps(region)) {
+	const { stage, profile } = yield* MapleStack
+	if (stage.kind !== "prd" || !profile.deploys.sharedApps) {
 		return { logsDestination: undefined, tracesDestination: undefined }
 	}
 

@@ -6,15 +6,11 @@
  */
 import {
 	cachedRecoverable,
-	MapleStack,
-	type MapleDomains,
-	type MapleRegion,
-	type MapleStage,
 	mapleDbEnv,
-	resolveWorkerName,
-	resolveWorkerPlacement,
+	MapleStack,
+	type MapleStackContext,
+	mapleWorkerProps,
 	SandboxWorker,
-	stageDeploysSandbox,
 } from "@maple/infra/cloudflare"
 import {
 	appUrlsEnv,
@@ -41,7 +37,7 @@ import { buildApp, makeFetch } from "./worker/http"
 import { AiObservabilityLive } from "./worker/observability"
 
 /** Config-sourced env. The tools query the warehouse as the calling org, so this is largely api's set. */
-const configuredEnv = (stage: MapleStage, region: MapleRegion, domains: MapleDomains) =>
+const configuredEnv = ({ stage, region, domains, profile }: MapleStackContext) =>
 	merge(
 		tinybirdEnv,
 		authEnv,
@@ -62,7 +58,7 @@ const configuredEnv = (stage: MapleStage, region: MapleRegion, domains: MapleDom
 		// they need its reader credentials here too, not only on api.
 		githubAppSourceEnv,
 		// Required wherever a sandbox Worker deploys: without it every sandbox call is refused.
-		...(stageDeploysSandbox(stage) ? [requireSecretEntry("SANDBOX_INTERNAL_SERVICE_TOKEN")] : []),
+		...(profile.deploys.sandbox ? [requireSecretEntry("SANDBOX_INTERNAL_SERVICE_TOKEN")] : []),
 		// Dev-only escape hatch from per-org BYO rows (see apps/api/src/resources/env.ts).
 		optionalPlain("MAPLE_IGNORE_ORG_CLICKHOUSE"),
 	)
@@ -70,16 +66,14 @@ const configuredEnv = (stage: MapleStage, region: MapleRegion, domains: MapleDom
 /** `__ALCHEMY_RUNTIME__` folds to `true` in the bundle, so the stack-side branch is tree-shaken. */
 const props = Effect.gen(function* () {
 	if (globalThis.__ALCHEMY_RUNTIME__) return { main: import.meta.url }
-	const { stage, region, domains, workerDev, devEnv, db } = yield* MapleStack
+	const stack = yield* MapleStack
+	const { devEnv, db } = stack
 	// Absent on stages without a sandbox; `SandboxClient` then reports the tools unavailable.
 	const sandbox = yield* Effect.serviceOption(SandboxWorker)
-	const env = yield* configuredEnv(stage, region, domains)
+	const env = yield* configuredEnv(stack)
 	return {
 		main: import.meta.url,
-		name: resolveWorkerName("ai", stage, region),
-		compatibility: { date: "2026-10-01" },
-		placement: resolveWorkerPlacement(region),
-		dev: workerDev("ai"),
+		...mapleWorkerProps("ai", stack),
 		// No public hostname: reached only over api's service binding.
 		workersDev: false,
 		// Same as api: keeps DB graph init off the first Postgres dial (docs/infra.md).

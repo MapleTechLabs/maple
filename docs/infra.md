@@ -98,14 +98,14 @@ because the EU Workers are bound to none. Plan and rationale: `docs/eu-region-pl
   Regional Services, the contractual execution guarantee, is an Enterprise add-on the
   account does not carry. The residency claim says so.
 - **Shared apps stay on `us`.** The marketing site and the local-mode SPA hold no customer
-  data and there is one `maple.dev`, so `regionHostsSharedApps` keeps them off the EU
+  data and there is one `maple.dev`, so `profile.deploys.sharedApps` keeps them off the EU
   deploy.
 - **Secrets** come from a per-instance Infisical environment (`prod`, `prod-eu`) holding the
   same variable names with that instance's values. `deploy-prd-instance.yml` picks the
   environment, the stage and the AWS region from one `region` input, and the stack refuses
   an `AWS_REGION` that disagrees with the stage. The EU deploy is opt-in through the
   `MAPLE_DEPLOY_EU` repository variable until its accounts exist.
-- **The EU database is declared, not pasted.** `resolveDatabaseMode` is `"declared"` for the
+- **The EU database is declared, not pasted.** The `database` in `resolveMapleProfile` is `"declared"` for the
   EU prd. The deploy adopts `maple-eu`'s `main` branch, declares a `Planetscale.PostgresRole`
   per consumer on it and a `Cloudflare.Hyperdrive.Connection` on each role's direct origin
   (`declareMapleDb`), and the Workers bind theirs from their props (`mapleDbEnv`). The US
@@ -343,7 +343,7 @@ What each kind of Worker keeps beside the module:
   `SANDBOX_INTERNAL_SERVICE_TOKEN`, deliberately not the shared `INTERNAL_SERVICE_TOKEN`,
   which lets its holder act as any organization.
 
-    Only `prd` gets one (`stageDeploysSandbox`). A PR preview has no application database,
+    Only `prd` gets one (`profile.deploys.sandbox`). A PR preview has no application database,
     so no repository resolves there. On a dev stage, `alchemy dev` would put a
     multi-gigabyte `docker pull` between every developer and `bun dev`.
 
@@ -486,9 +486,9 @@ services.
 
 - `AWS.providers()` is registered unconditionally: the `Alchemy.Stack` options are evaluated
   before `Alchemy.Stage` is readable, so it cannot be stage-derived.
-- `stageDeploysIngest` alone decides which stages get a fleet: prd **and PR previews**. Dev
+- `profile.deploys.ingest` alone decides which stages get a fleet: prd **and PR previews**. Dev
   stages run the gateway through `cargo run` under `bun dev`. Do not reintroduce a global
-  on/off env flag; say it in `stageDeploysIngest`, where it is typed and unit-tested.
+  on/off env flag; say it in `profile.deploys.ingest`, where it is typed and unit-tested.
 - **Every workflow that deploys the stack must set `AWS_ACCOUNT_ID`.** Without it alchemy's
   `CI=true` credential path self-deadlocks on an STS lookup with no log line (#378).
 - **The binary is compiled outside the image build** (`build-ingest-binary.yml`, native
@@ -540,19 +540,18 @@ architecture.
   hosts is load-bearing. The S3 gateway endpoint keeps ECR image pulls off the public path.
 - **Same-region Tinybird.** Same-region egress is $0.01/GB vs $0.09/GB to the internet, and
   export dominates the bill. Verify `TINYBIRD_HOST` before changing `resolveAwsRegion`.
-- **The OTel collector is prd-only** (`stageDeploysCollector`). The intent is every stage
+- **The OTel collector is prd-only** (`profile.deploys.collector`). The intent is every stage
   that deploys the gateway. The `preview:collector` label sets `MAPLE_DEPLOY_AWS_COLLECTOR=1`
   for one preview, and `scripts/ingest-preview-verify.sh` checks it.
-- **PR previews get an ingest fleet, but no database.** `resolveDatabaseMode` returns
-  `"none"` for `pr`, so DB-backed routes 500 and the rest of the preview works; the reverse
-  path is documented on that function. The AWS half costs real money, so a preview only
+- **PR previews get an ingest fleet, but no database.** The `pr` profile's `database` is
+  `"none"`, so DB-backed routes 500 and the rest of the preview works. The AWS half costs real money, so a preview only
   exists while the PR carries the `preview` label. It has no ingest domain: its ALB answers
   plain HTTP on 80 with no certificate, and the URL is posted on the PR comment.
   `cleanup-preview-orphans.yml` sweeps what a missed teardown leaves.
-- **The EU ingest fleet is sized to EU traffic** (`isEuPrd` in `packages/infra/src/aws/stage.ts`):
+- **The EU ingest fleet is sized to EU traffic** (`EU_PRD` in `packages/infra/src/profile.ts`):
   one c7gd.medium (autoscaling 1-3) and the collector at the non-prd size; Electric keeps
   the prd size. Managed scaling adds a host to roll a deploy. To scale it, raise the EU
-  branches there or drop `isEuPrd`.
+  values there, or point `prd-eu` at `US_PRD`.
 - **Graviton (ARM64).** The gateway, collector and Electric run `cpuArchitecture: "ARM64"`
   (`runtimePlatform`), cheaper than x86_64. `build-ingest-binary.yml` compiles natively on
   an arm64 runner.

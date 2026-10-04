@@ -52,7 +52,7 @@ callback, both on `api.maple.dev`, so an EU install lands on the US API (whose d
 connect session for it) and EU repositories' push and pull request events are delivered to the US.
 
 The sandbox clones the customer's repository, so it deploys per instance from day one:
-`stageDeploysSandbox` already gates it to prd, and the EU deploy is prd (stage `prd-eu`), so the
+`profile.deploys.sandbox` already gates it to prd, and the EU deploy is prd (stage `prd-eu`), so the
 only work is the region-suffixed name. Cloudflare's Sandbox container has no jurisdiction setting, so it sits under the same best-effort placement as the Workers.
 
 ## Why `app.eu.maple.dev` and not a shared app
@@ -131,7 +131,7 @@ Built on the `worktree-eu-region` branch; `docs/infra.md` § Regions is the refe
   other's resources. `MAPLE_REGION` as a deploy env var is gone.
 - `resolveWorkerName(base, stage, region)` and `resolveMapleDomains(stage, region)`; `us` stays
   unsuffixed so nothing in prod renames. EU prd domains: `app`, `api`, `ingest`, `sync`,
-  `electric` under `eu.maple.dev`; no landing or local-ui (`regionHostsSharedApps`).
+  `electric` under `eu.maple.dev`; no landing or local-ui (`profile.deploys.sharedApps`).
 - `resolveWorkerPlacement(region)` replaces the placement constant.
 - `resolveStorageJurisdiction(region)` pins the EU replay bucket to the `eu` jurisdiction at
   creation (a new bucket, never a replace) and the ingest gateway's writer token and S3 endpoint
@@ -139,7 +139,7 @@ Built on the `worktree-eu-region` branch; `docs/infra.md` § Regions is the refe
   applied where ids are minted: `chatSessionStub` reads the stack-derived `MAPLE_REGION`.
 - `MapleStack` carries `region`; every Worker module reads it from there. `appUrlsEnv` defaults
   to the deploy's own hostnames, so EU emails and share links point at the EU app.
-- `resolveDatabaseMode(stage, region)` is `"declared"` for the EU prd: the Workers bind the
+- The EU prd profile's `database` is `"declared"`: the Workers bind the
   Hyperdrive configs the deploy created, from their props, so there are no dashboard ids to
   paste and no way to deploy the instance with no `MAPLE_DB`. The US prd stays `"ref"`.
 - `MAPLE_INTERNAL_ORG_ID` comes from the environment already, so the EU value is an org created

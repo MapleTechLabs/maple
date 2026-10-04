@@ -73,11 +73,6 @@ export function resolveStorageJurisdiction(region: MapleRegion): "eu" | undefine
 	return region === "eu" ? "eu" : undefined
 }
 
-/** Whether an instance hosts the cross-region apps (landing, local-ui): `us` only. */
-export function regionHostsSharedApps(region: MapleRegion): boolean {
-	return region === DEFAULT_MAPLE_REGION
-}
-
 const PRD_DOMAINS: MapleDomains = {
 	web: "app.maple.dev",
 	api: "api.maple.dev",
@@ -89,7 +84,7 @@ const PRD_DOMAINS: MapleDomains = {
 	chat: "chat.maple.dev",
 }
 
-/** EU hostnames under `eu.maple.dev`. No landing or local-ui ({@link regionHostsSharedApps}). */
+/** EU hostnames under `eu.maple.dev`. No landing or local-ui (shared apps run in `us` only). */
 const PRD_DOMAINS_EU: MapleDomains = {
 	web: "app.eu.maple.dev",
 	api: "api.eu.maple.dev",
@@ -137,11 +132,7 @@ const mapleStageResult = (stage: string): Result.Result<MapleStage, MapleStageEr
 	)
 }
 
-/** Parse a stage name, failing with {@link MapleStageError}. */
-export const parseMapleStageEffect = (stage: string): Effect.Effect<MapleStage, MapleStageError> =>
-	Effect.fromResult(mapleStageResult(stage))
-
-/** Synchronous {@link parseMapleStageEffect}: throws the `MapleStageError`. For non-Effect callers only. */
+/** Parse a stage name; throws the `MapleStageError`. For non-Effect callers only. */
 export function parseMapleStage(stage: string): MapleStage {
 	return Result.getOrThrow(mapleStageResult(stage))
 }
@@ -204,94 +195,36 @@ export function resolveDeploymentEnvironment(stage: MapleStage): string {
 	}
 }
 
-const mapleDomainsResult = (
-	stage: MapleStage,
-	region: MapleRegion,
-): Result.Result<MapleDomains, MapleStageError> => {
+/** A deployment's public hostnames. Dev stages have none: they run through portless. */
+export function resolveMapleDomains({ stage, region }: MapleDeployment): MapleDomains {
 	switch (stage.kind) {
 		case "prd":
-			return Result.succeed(region === "eu" ? PRD_DOMAINS_EU : PRD_DOMAINS)
+			return region === "eu" ? PRD_DOMAINS_EU : PRD_DOMAINS
 		case "pr":
-			if (region !== DEFAULT_MAPLE_REGION) {
-				return Result.fail(
-					new MapleStageError({
-						message: `PR previews have no ${region} hostnames; see parseMapleDeployment.`,
-						rawStage: formatMapleDeployment({ stage, region }),
-					}),
-				)
-			}
 			// Custom domains, not workers.dev: its account subdomain is masked as a secret
 			// (GitHub then rejects the env URL), and inter-app URLs must be plan-time strings.
-			return Result.succeed({
+			return {
 				web: `app-pr-${stage.prNumber}.maple.dev`,
 				api: `api-pr-${stage.prNumber}.maple.dev`,
 				sync: `sync-pr-${stage.prNumber}.maple.dev`,
 				landing: `landing-pr-${stage.prNumber}.maple.dev`,
-			})
+			}
 		case "dev":
-			return Result.succeed({})
+			return {}
 	}
-}
-
-/** A deployment's public hostnames, failing with {@link MapleStageError} for a PR preview outside `us`. */
-export const resolveMapleDomainsEffect = (
-	stage: MapleStage,
-	region: MapleRegion = DEFAULT_MAPLE_REGION,
-): Effect.Effect<MapleDomains, MapleStageError> => Effect.fromResult(mapleDomainsResult(stage, region))
-
-/** Synchronous {@link resolveMapleDomainsEffect}: throws the `MapleStageError`. For non-Effect callers only. */
-export function resolveMapleDomains(
-	stage: MapleStage,
-	region: MapleRegion = DEFAULT_MAPLE_REGION,
-): MapleDomains {
-	return Result.getOrThrow(mapleDomainsResult(stage, region))
 }
 
 /** Every regional instance's dashboard URL (prd only), for cross-region org redirects. */
 export function resolveRegionAppUrls(stage: MapleStage): Partial<Record<MapleRegion, string>> {
 	if (stage.kind !== "prd") return {}
 	return Object.fromEntries(
-		MAPLE_REGIONS.map((region) => [region, `https://${resolveMapleDomains(stage, region).web}`]),
+		MAPLE_REGIONS.map((region) => [region, `https://${resolveMapleDomains({ stage, region }).web}`]),
 	)
-}
-
-export type MapleDatabaseMode = "ref" | "declared" | "managed" | "none"
-
-/**
- * How a stage reaches the app database: `ref` (dashboard Hyperdrive by id, US prd), `declared`
- * (deploy-declared roles + configs, EU prd), `managed` (from `MAPLE_PG_URL`, dev), `none` (PR
- * previews; DB-backed routes 500). See docs/infra.md.
- */
-export function resolveDatabaseMode(
-	stage: MapleStage,
-	region: MapleRegion = DEFAULT_MAPLE_REGION,
-): MapleDatabaseMode {
-	switch (stage.kind) {
-		case "prd":
-			return region === DEFAULT_MAPLE_REGION ? "ref" : "declared"
-		case "pr":
-			return "none"
-		case "dev":
-			return "managed"
-	}
-}
-
-/** Whether the deploy adopts the instance's PlanetScale branch and applies the migrations. */
-export function stageMigratesDatabase(mode: MapleDatabaseMode): boolean {
-	return mode === "ref" || mode === "declared"
 }
 
 /** The instance's PlanetScale database, created by hand and adopted by name; everything on it is declared. */
 export function resolvePlanetscaleDatabase(region: MapleRegion = DEFAULT_MAPLE_REGION): string {
 	return `maple${regionSuffix(region)}`
-}
-
-/**
- * Which stages get the agents' repository sandbox: prd only. Previews have no database, and on
- * dev `alchemy dev` would pull the multi-gigabyte image locally.
- */
-export function stageDeploysSandbox(stage: MapleStage): boolean {
-	return stage.kind === "prd"
 }
 
 /** Which worker is binding `MAPLE_DB`. prd gives each its own Hyperdrive config — see docs/infra.md. */

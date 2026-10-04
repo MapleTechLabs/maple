@@ -20,7 +20,7 @@ import {
 	tinybirdEnv,
 	type WorkerEnv,
 } from "./env.ts"
-import { stageDeploysElectric, stageDeploysIngest } from "./aws/stage.ts"
+import { resolveMapleProfile } from "./profile.ts"
 
 /**
  * These groups replaced per-worker copies of the same expressions. The parity
@@ -238,8 +238,8 @@ describe("the prd revision lockstep the skew alert depends on", () => {
 		// predicate. Flip either away from prd and it stops tracking the other
 		// three, so it has to leave the list — and the rule's SQL — in the same
 		// change.
-		const prd = { kind: "prd" } as const
-		expect(PRD_LOCKSTEP_REVISION_SERVICES.includes("ingest")).toBe(stageDeploysIngest(prd))
-		expect(PRD_LOCKSTEP_REVISION_SERVICES.includes("electric-sync")).toBe(stageDeploysElectric(prd))
+		const { deploys } = resolveMapleProfile({ stage: { kind: "prd" }, region: "us" })
+		expect(PRD_LOCKSTEP_REVISION_SERVICES.includes("ingest")).toBe(deploys.ingest)
+		expect(PRD_LOCKSTEP_REVISION_SERVICES.includes("electric-sync")).toBe(deploys.electric)
 	})
 })
