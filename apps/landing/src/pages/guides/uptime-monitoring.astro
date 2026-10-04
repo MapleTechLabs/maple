@@ -285,6 +285,9 @@ const articleJsonLd = {
                     <p>
                         Maple alerts on the traces your services already send, and it accepts check results from the OpenTelemetry Collector as metrics. It does not run hosted probes of its own.
                     </p>
+                    <p>
+                        The <a href="/docs/alerting/uptime-monitoring#alert-on-real-traffic">uptime monitoring docs</a> walk through each rule below with screenshots.
+                    </p>
 
                     <ol class="guide-steps">
                         <li>
@@ -320,6 +323,9 @@ const articleJsonLd = {
                     <h2>HTTP uptime checks with the OpenTelemetry Collector</h2>
                     <p>
                         For the endpoints that need a probe, the Collector's <code>http_check</code> receiver requests a list of URLs on an interval and reports each result as metrics: the status class of the response, the request duration, connection errors, and the seconds left on the TLS certificate. Maple stores them like any other metric, so you can chart them and alert on them.
+                    </p>
+                    <p>
+                        The Collector config and the settings for each rule are in the <a href="/docs/alerting/uptime-monitoring#add-http-checks">uptime monitoring docs</a>.
                     </p>
 
                     <h3>Rules to build on the check metrics</h3>

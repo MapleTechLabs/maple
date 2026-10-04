@@ -7,7 +7,9 @@ order: 5
 
 Maple monitors availability from two sources. Alert rules on your traces fire when a service stops receiving requests or starts failing them. HTTP checks from the OpenTelemetry Collector cover what real traffic cannot: endpoints with little traffic, and failures that happen before a request reaches your code, such as a DNS change or an expired certificate.
 
-Maple does not run hosted probes. The checks run in a Collector you operate. [Uptime monitoring with traces and HTTP checks](/guides/uptime-monitoring) explains which failures each source catches.
+Maple does not run hosted probes. The checks run in a Collector you operate.
+
+> **Recommended reading first.** [Uptime monitoring with traces and HTTP checks](/guides/uptime-monitoring) is the background for this page: which failures a probe catches, which ones only traces see, and when a probe is worth adding. This page is the setup.
 
 ## Prerequisites
 
@@ -167,4 +169,4 @@ For probes from several regions, a public status page, or an availability report
 - [Alert rules](/docs/alerting/alert-rules): every signal, field and template.
 - [Incidents](/docs/alerting/incidents): what happens after a rule fires.
 - [Metrics](/docs/explore/metrics): chart `httpcheck.duration` and the other check metrics.
-- [Uptime monitoring with traces and HTTP checks](/guides/uptime-monitoring): what a probe catches and what traces catch.
+- [Uptime monitoring with traces and HTTP checks](/guides/uptime-monitoring): the reasoning behind this setup.
