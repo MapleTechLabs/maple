@@ -9,6 +9,7 @@
  * here reaches for `cloudflare:workers`: the env comes from whoever holds it —
  * the Worker's init, a Durable Object's constructor, a cron fire, a test.
  */
+import { reifyBoundConfigProvider } from "alchemy/Runtime"
 import * as ConfigProvider from "effect/ConfigProvider"
 import * as Context from "effect/Context"
 import * as Layer from "effect/Layer"
@@ -18,9 +19,12 @@ export class WorkerEnvironment extends Context.Service<WorkerEnvironment, Record
 	"Cloudflare.Workers.WorkerEnvironment",
 ) {}
 
-/** The env as `WorkerEnvironment` plus Effect's `ConfigProvider`, so `Config.String("FOO")` resolves against the bindings. */
+/**
+ * The env as `WorkerEnvironment` plus Effect's `ConfigProvider`, so `Config.String("FOO")` resolves against the bindings.
+ * Alchemy's reifier unwraps the Redacted markers its deploy-time `Config` auto-binding leaves on the env.
+ */
 export const workerEnvLayer = (env: Record<string, unknown>): Layer.Layer<WorkerEnvironment> =>
 	Layer.mergeAll(
 		Layer.succeed(WorkerEnvironment, env),
-		ConfigProvider.layer(ConfigProvider.fromUnknown(env)),
+		ConfigProvider.layer(reifyBoundConfigProvider(ConfigProvider.fromUnknown(env), env)),
 	)

@@ -15,7 +15,6 @@
 import {
 	AiWorker,
 	cachedRecoverable,
-	emailBinding,
 	MapleDb,
 	mapleDbEnv,
 	MapleStack,
@@ -40,6 +39,7 @@ import {
 } from "@maple/infra/env"
 import { WORKER_PURE_OPTIONS } from "@maple/infra/worker-build"
 import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
+import { bindEmailSender } from "@maple/backend/platform/email-sender"
 import { chatConnectorOutboundConfigKeys } from "@maple/chat-platform"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Cause, Effect, Layer, Ref } from "effect"
@@ -57,7 +57,6 @@ const makeWorkerBindings = ({ stage, region }: { stage: MapleStage; region: Mapl
 		className: "ChatSession",
 		scriptName: resolveWorkerName("ai", stage, region),
 	}),
-	...emailBinding(stage),
 })
 
 /**
@@ -183,6 +182,8 @@ export default class Alerting extends Cloudflare.Worker<Alerting>()(
 		// starving the api's connection pool when the two shared one. The ticks
 		// read it off the fire's env.
 		yield* MapleDb("alerting")
+		// `send_email`, prd only; handed to each fire's graph as `EmailSender`.
+		const email = yield* bindEmailSender
 		// Once per isolate, not once per fire.
 		const loggedNonProdSkip = yield* Ref.make(false)
 
@@ -206,7 +207,7 @@ export default class Alerting extends Cloudflare.Worker<Alerting>()(
 				const { runScheduled } = yield* scheduled
 				// The tick's spans and logs go to the SDK the bridge built into this
 				// fire's scope; the flush is that scope's finalizer, after the fire.
-				yield* runScheduled(controller.cron, env).pipe(
+				yield* runScheduled(controller.cron, env, email).pipe(
 					// Interrupts are isolate teardown: the schedule re-fires anyway, and
 					// they must not be logged as a failed run (same rule as the ticks').
 					Effect.catchCause((cause) =>
@@ -234,6 +235,7 @@ export default class Alerting extends Cloudflare.Worker<Alerting>()(
 		Effect.provide(
 			Layer.mergeAll(
 				Cloudflare.Hyperdrive.ConnectBinding,
+				Cloudflare.Email.SendBinding,
 				Cloudflare.Workers.CronEventSourceLive,
 				WorkerTelemetry({ serviceName: "alerting" }),
 			),

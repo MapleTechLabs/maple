@@ -7,6 +7,7 @@
  * the CLI) provides nothing — services that can degrade read the tag through
  * `Effect.serviceOption`. Every method keeps its failure in the typed channel.
  */
+import type { ChatSessionStub } from "@maple/domain/chat-session-stub"
 import { Context, type Effect, type Option, Schema } from "effect"
 
 // ── Queues ───────────────────────────────────────────────────────────────────
@@ -111,3 +112,74 @@ export class MapleDbConnection extends Context.Service<
 	MapleDbConnection,
 	Option.Option<DatabaseConnection>
 >()("@maple/api/platform/MapleDbConnection") {}
+
+// ── Workflows ────────────────────────────────────────────────────────────────
+
+export class WorkflowStartError extends Schema.TaggedError<WorkflowStartError>()(
+	"@maple/api/platform/WorkflowStartError",
+	{
+		message: Schema.String,
+		cause: Schema.Defect(),
+	},
+) {}
+
+/** Starts instances of one Cloudflare Workflow. */
+export interface WorkflowStarter<Params> {
+	readonly create: (params: Params) => Effect.Effect<void, WorkflowStartError>
+}
+
+/** The per-org ClickHouse schema apply, hosted by the api Worker. */
+export class SchemaApplyWorkflow extends Context.Service<
+	SchemaApplyWorkflow,
+	WorkflowStarter<{ readonly orgId: string }>
+>()("@maple/api/platform/SchemaApplyWorkflow") {}
+
+// ── Email (send_email) ───────────────────────────────────────────────────────
+
+export class EmailSendError extends Schema.TaggedError<EmailSendError>()(
+	"@maple/api/platform/EmailSendError",
+	{
+		message: Schema.String,
+		cause: Schema.Defect(),
+	},
+) {}
+
+export interface EmailMessage {
+	readonly from: string
+	readonly to: string
+	readonly subject: string
+	readonly html: string
+	readonly replyTo?: string | undefined
+}
+
+export interface EmailSenderClient {
+	readonly send: (message: EmailMessage) => Effect.Effect<{ readonly messageId: string }, EmailSendError>
+}
+
+/** The `send_email` binding, or `None` on a stage that does not bind it (everything but prd). */
+export class EmailSender extends Context.Service<EmailSender, Option.Option<EmailSenderClient>>()(
+	"@maple/api/platform/EmailSender",
+) {}
+
+// ── Service bindings to other Maple Workers ─────────────────────────────────
+
+/** maple-ai, which serves `/mcp`, the chat surface and incident triage. `None` where the Worker does not bind it. */
+export class AiWorkerFetcher extends Context.Service<AiWorkerFetcher, Option.Option<Fetcher>>()(
+	"@maple/api/platform/AiWorkerFetcher",
+) {}
+
+/** The repository sandbox Worker. `None` on a deployment that did not provision one. */
+export class SandboxFetcher extends Context.Service<SandboxFetcher, Option.Option<Fetcher>>()(
+	"@maple/api/platform/SandboxFetcher",
+) {}
+
+// ── Chat sessions (Durable Object) ───────────────────────────────────────────
+
+/** Addresses `ChatSession` Durable Objects; `stub` is `undefined` when this Worker has no `ChatSession` binding. */
+export interface ChatSessionsApi {
+	readonly stub: (sessionId: string) => ChatSessionStub | undefined
+}
+
+export class ChatSessions extends Context.Service<ChatSessions, ChatSessionsApi>()(
+	"@maple/api/platform/ChatSessions",
+) {}

@@ -22,7 +22,7 @@ import { FetchHttpClient } from "effect/http"
 import type { TableDiffEntry } from "@maple/domain/clickhouse"
 import { Env } from "@maple/backend/platform/Env"
 import { encryptAes256Gcm } from "@maple/backend/platform/Crypto"
-import { WorkerEnvironment } from "@maple/infra/worker-runtime"
+import { SchemaApplyWorkflow, WorkflowStartError } from "@maple/backend/platform/bindings"
 import {
 	cleanupTestDbs,
 	createTestDb,
@@ -989,7 +989,17 @@ describe("applySchema claim lifecycle", () => {
 		delete: () => Promise.resolve(),
 	}
 
-	const buildApplyLayer = (testDb: TestDb, workerEnv: Record<string, unknown>) => {
+	/** The Workflow binding as a port, over a fake whose `create` may reject. */
+	const workflowPort = (binding: { readonly create: () => Promise<unknown> }) =>
+		Layer.succeed(SchemaApplyWorkflow)({
+			create: () =>
+				Effect.tryPromise({
+					try: () => binding.create(),
+					catch: (cause) => new WorkflowStartError({ message: String(cause), cause }),
+				}).pipe(Effect.asVoid),
+		})
+
+	const buildApplyLayer = (testDb: TestDb, workflow?: { readonly create: () => Promise<unknown> }) => {
 		const envLive = Env.layer.pipe(Layer.provide(applyConfigLive))
 		const edgeCacheLive = Layer.succeed(EdgeCacheService)(makeEdgeCacheService(missBackend))
 		return OrgClickHouseSettingsService.layer.pipe(
@@ -998,7 +1008,7 @@ describe("applySchema claim lifecycle", () => {
 					envLive,
 					testDb.layer,
 					edgeCacheLive,
-					Layer.succeed(WorkerEnvironment)(workerEnv),
+					workflow === undefined ? Layer.empty : workflowPort(workflow),
 				),
 			),
 		)
@@ -1047,7 +1057,7 @@ describe("applySchema claim lifecycle", () => {
 			const second = yield* service.applySchema(asOrgId(orgId), asUserIdApply("user_a"), ADMIN)
 			expect(second.status).toBe("started")
 			expect(attempts).toBe(2)
-		}).pipe(Effect.provide(buildApplyLayer(testDb, { ClickHouseSchemaApplyWorkflow: binding })))
+		}).pipe(Effect.provide(buildApplyLayer(testDb, binding)))
 	})
 
 	it.effect("a missing workflow binding fails before any claim is written", () => {
@@ -1062,7 +1072,7 @@ describe("applySchema claim lifecycle", () => {
 			expect(Exit.isFailure(exit)).toBe(true)
 			// No leftover queued row — the next attempt starts from idle.
 			expect(yield* Effect.promise(() => runStatus(testDb, orgId))).toBeUndefined()
-		}).pipe(Effect.provide(buildApplyLayer(testDb, {})))
+		}).pipe(Effect.provide(buildApplyLayer(testDb)))
 	})
 
 	it.effect("an active claim blocks a second start, and a stale one is reclaimed", () => {
@@ -1100,6 +1110,6 @@ describe("applySchema claim lifecycle", () => {
 			const third = yield* service.applySchema(asOrgId(orgId), asUserIdApply("user_a"), ADMIN)
 			expect(third.status).toBe("started")
 			expect(creates).toBe(2)
-		}).pipe(Effect.provide(buildApplyLayer(testDb, { ClickHouseSchemaApplyWorkflow: binding })))
+		}).pipe(Effect.provide(buildApplyLayer(testDb, binding)))
 	})
 })

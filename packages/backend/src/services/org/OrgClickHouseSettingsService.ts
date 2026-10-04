@@ -33,7 +33,6 @@ import {
 import { EdgeCacheService } from "@maple/cache"
 import { orgClickHouseSchemaApplyRuns, orgClickHouseSettings } from "@maple/db"
 import { and, eq, inArray, lt, notInArray, or } from "drizzle-orm"
-import { WorkerEnvironment } from "@maple/infra/worker-runtime"
 import {
 	Array as Arr,
 	Clock,
@@ -54,6 +53,7 @@ import {
 	parseBase64Aes256GcmKey,
 	type EncryptedValue,
 } from "@maple/backend/platform/Crypto"
+import { SchemaApplyWorkflow } from "@maple/backend/platform/bindings"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
 import { forkRequestScoped } from "@maple/backend/platform/fork-request-scoped"
@@ -403,10 +403,6 @@ const toPersistenceError = (error: unknown) =>
 		message: error instanceof Error ? error.message : "Org ClickHouse settings persistence failed",
 	})
 
-// Cloudflare Workflow binding that runs the actual (chunked, long-running)
-// schema apply. Resolved off the worker env at runtime — see `apply-schema`.
-const SCHEMA_APPLY_WORKFLOW_BINDING = "ClickHouseSchemaApplyWorkflow"
-
 /**
  * A queued/running apply-run row whose `updatedAt` is older than this is
  * treated as abandoned and may be reclaimed by a new applySchema call. The
@@ -414,18 +410,6 @@ const SCHEMA_APPLY_WORKFLOW_BINDING = "ClickHouseSchemaApplyWorkflow"
  * means the instance died somewhere its catch could not reach.
  */
 const STALE_APPLY_RUN_MS = 30 * 60_000
-
-interface WorkflowBinding {
-	readonly create: (options?: {
-		readonly id?: string
-		readonly params?: { readonly orgId: string }
-	}) => Promise<unknown>
-}
-
-const isWorkflowBinding = (value: unknown): value is WorkflowBinding =>
-	typeof value === "object" &&
-	value !== null &&
-	typeof (value as { create?: unknown }).create === "function"
 
 const toEncryptionError = (message: string) => new OrgClickHouseSettingsEncryptionError({ message })
 
@@ -941,10 +925,9 @@ export class OrgClickHouseSettingsService extends Context.Service<
 		const ignoreOrgClickHouse =
 			env.MAPLE_ENVIRONMENT === "development" &&
 			(env.MAPLE_IGNORE_ORG_CLICKHOUSE === "1" || env.MAPLE_IGNORE_ORG_CLICKHOUSE === "true")
-		// Optional: present only inside a Worker isolate. Used to kick off the
-		// background schema-apply Workflow. Read optionally so non-worker/test
-		// contexts (where the binding is absent) still construct the service.
-		const workerEnv = yield* Effect.serviceOption(WorkerEnvironment)
+		// The background schema-apply Workflow, bound only by the api Worker that hosts it.
+		// Read optionally so other hosts and tests still construct the service.
+		const schemaApplyWorkflow = yield* Effect.serviceOption(SchemaApplyWorkflow)
 		const edgeCache = yield* EdgeCacheService
 
 		// Memoize the parsed desired-schema snapshot per service instance. The
@@ -1313,17 +1296,14 @@ export class OrgClickHouseSettingsService extends Context.Service<
 
 			// Resolve the binding BEFORE claiming: a missing binding must not leave
 			// a queued row behind that every later attempt reads as already_running.
-			const binding = Option.match(workerEnv, {
-				onNone: () => undefined,
-				onSome: (e) => e[SCHEMA_APPLY_WORKFLOW_BINDING],
-			})
-			if (!isWorkflowBinding(binding)) {
+			if (Option.isNone(schemaApplyWorkflow)) {
 				return yield* Effect.fail(
 					new OrgClickHouseSettingsPersistenceError({
-						message: `Schema-apply workflow binding (${SCHEMA_APPLY_WORKFLOW_BINDING}) unavailable`,
+						message: "Schema-apply workflow binding unavailable",
 					}),
 				)
 			}
+			const workflow = schemaApplyWorkflow.value
 
 			// Atomic claim: the conflict-update is gated so exactly one of two
 			// concurrent applySchema calls wins (interleaved workflow instances
@@ -1382,13 +1362,13 @@ export class OrgClickHouseSettingsService extends Context.Service<
 				return new OrgClickHouseApplySchemaStarted({ status: "already_running" })
 			}
 
-			yield* Effect.tryPromise({
-				try: () => binding.create({ params: { orgId } }),
-				catch: (error) =>
-					new OrgClickHouseSettingsPersistenceError({
-						message: `Failed to start schema-apply workflow: ${error instanceof Error ? error.message : String(error)}`,
-					}),
-			}).pipe(
+			yield* workflow.create({ orgId }).pipe(
+				Effect.mapError(
+					(error) =>
+						new OrgClickHouseSettingsPersistenceError({
+							message: `Failed to start schema-apply workflow: ${error.message}`,
+						}),
+				),
 				// No workflow exists to move the claim off "queued", so release it
 				// here (best-effort) — otherwise the org is wedged on already_running
 				// until manual database repair.

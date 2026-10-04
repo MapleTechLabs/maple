@@ -10,13 +10,13 @@
  * the tool registry touch on their own.
  */
 import { MapleDb, parseMapleDeployment } from "@maple/infra/cloudflare"
-import { workerEnvLayer } from "@maple/infra/worker-runtime"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { RuntimeContext } from "alchemy/RuntimeContext"
 import { Stage } from "alchemy/Stage"
 import { Effect, Layer, Option } from "effect"
 import { isWorkersAiBinding, viaGateway, WorkersAiGateway } from "../platform/WorkersAiHttpClient"
 import { McpToolsRateLimit, RateLimitBindingError, type RateLimiter } from "@maple/backend/platform/bindings"
+import { envPorts } from "@maple/backend/platform/env-ports"
 import { mapleDbConnectionLayer } from "@maple/backend/platform/pg-connection-source"
 import {
 	MCP_TOOLS_RATE_LIMIT_PERIOD_SECONDS,
@@ -46,7 +46,8 @@ type AiBindingClients = Effect.Success<typeof bindAiClients>
 
 /** Discharge alchemy's phantom color, the way alchemy's own runtime helpers do. */
 const runtime = <A, E>(effect: Effect.Effect<A, E, RuntimeContext>): Effect.Effect<A, E> =>
-	effect as Effect.Effect<A, E>
+	// oxlint-disable-next-line effecttsgo/strict-effect-provide
+	Effect.provide(effect, RuntimeContext.phantom)
 
 /**
  * The AI Gateway Workers AI calls route through. The logical id is the api's, unchanged: the
@@ -101,9 +102,9 @@ const limiter = (client: Cloudflare.Workers.RateLimitClient): RateLimiter => ({
 })
 
 /**
- * The ports the service graph depends on, plus the env itself as
- * `WorkerEnvironment` and the `ConfigProvider` — the one place a graph in this
- * Worker gets its env from.
+ * The ports the service graph depends on, plus the env-backed ports
+ * (`envPorts`: the env itself, the `ConfigProvider`, chat sessions, the sandbox
+ * service binding) — the one place a graph in this Worker gets its env from.
  */
 export const aiPorts = (
 	clients: AiBindingClients,
@@ -114,7 +115,7 @@ export const aiPorts = (
 		Layer.succeed(WorkersAiGateway, workersAi),
 		Layer.succeed(McpToolsRateLimit, limiter(clients.mcpToolsRateLimit)),
 		mapleDbConnectionLayer(env),
-		workerEnvLayer(env),
+		envPorts(env),
 	)
 
 export type AiPortsLayer = ReturnType<typeof aiPorts>

@@ -14,7 +14,6 @@
  * from those yields.
  */
 import {
-	emailBinding,
 	mapleDbEnv,
 	MapleStack,
 	AiWorker,
@@ -38,18 +37,12 @@ import { makeAppGraphs, makeFetch } from "./worker/http"
 import ClickHouseSchemaApplyWorkflow from "./workflows/ClickHouseSchemaApplyWorkflow"
 
 /**
- * The bindings that stay declared on `env`. Everything the services reach at
- * runtime is bound by the init instead (`bindApiClients`); what is left here
- * is bound by stage — alchemy's capabilities have no "on some stages" form —
- * or read by name by code the Worker does not own (the LLM shim's `AI`).
+ * The bindings that stay declared on `env`. Everything else the services reach
+ * is bound by the init (`bindApiClients`). What is left needs a form alchemy's
+ * clients lack: the EU jurisdiction on the cross-script Durable Object, and a
+ * service binding whose target Worker the init cannot reach (`envPorts`).
  */
 const makeWorkerBindings = ({ stage, region }: { stage: MapleStage; region: MapleRegion }) => ({
-	// Workers AI (`env.AI`) behind an AI Gateway, driving the AI-triage agent.
-	// NOTE: the deploy token needs the account-level "AI Gateway: Edit" permission
-	// for this resource. Deployed stages only: the gateway has no local emulation,
-	// so declaring it under `alchemy dev` diffs it against Cloudflare and demands
-	// an `alchemy login`; without the binding the Llm shim is a no-op.
-	...emailBinding(stage),
 	// The chat Durable Object maple-ai hosts, bound cross-script under its CLASS
 	// name — which is what `chatSessionStub` reads off `env`. `resolveWorkerName`
 	// rather than the yielded Worker's output on purpose: consuming the output
@@ -118,9 +111,9 @@ export default class MapleApi extends Cloudflare.Worker<MapleApi>()(
 		// The Durable Object and the Workflows this Worker hosts: yielding each
 		// binds it under the class name, registers it at plan time and exports
 		// the class from the generated entry.
-		yield* ClickHouseSchemaApplyWorkflow
+		const schemaApply = yield* ClickHouseSchemaApplyWorkflow
 		const clients = yield* bindApiClients
-		const ports = apiPorts(clients, yield* Cloudflare.WorkerEnvironment)
+		const ports = apiPorts(clients, schemaApply, yield* Cloudflare.WorkerEnvironment)
 		// The service graphs are built on the first event, not here: init also
 		// runs at plan time, where alchemy auto-binds every `Config` it sees read
 		// onto the Worker, and this Worker's env is declared in full by `props`.

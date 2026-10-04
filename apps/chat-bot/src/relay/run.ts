@@ -14,7 +14,7 @@ import { chatSessionStub } from "@maple/domain/chat-session-stub"
 import type { ChatConnectorId, OrgId } from "@maple/domain/primitives"
 import type { IntegrationsPersistenceError } from "@maple/domain/http"
 import { workerTelemetryConfig } from "@maple/infra/worker-telemetry"
-import { workerEnvLayer } from "@maple/infra/worker-runtime"
+import { envPorts } from "@maple/backend/platform/env-ports"
 import { Cause, Effect, Layer, Option, Schema } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
@@ -268,7 +268,7 @@ const inRuntime =
 	<A>(program: Effect.Effect<A, never, HttpClient.HttpClient>) =>
 		program.pipe(
 			// oxlint-disable-next-line effecttsgo/strict-effect-provide
-			Effect.provide(Layer.mergeAll(FetchHttpClient.layer, workerEnvLayer(env), telemetry.layer)),
+			Effect.provide(Layer.mergeAll(FetchHttpClient.layer, envPorts(env), telemetry.layer)),
 			// On the fiber rather than in a `finally`: the flush is what exports this event's spans,
 			// so it belongs to the same interruption and failure handling they do.
 			Effect.ensuring(Effect.promise(() => telemetry.flush(env).catch(() => undefined))),
