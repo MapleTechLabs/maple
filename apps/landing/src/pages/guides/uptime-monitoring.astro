@@ -483,11 +483,12 @@ const articleJsonLd = {
 </Layout>
 
 <style is:global>
+    .uptime-guide { max-width: 46rem; }
     .uptime-guide section + section { margin-top: 5.5rem; }
     .uptime-guide .guide-eyebrow { margin: 0 0 0.9rem; font-family: var(--font-mono); font-size: 10px; line-height: 1.4; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted-foreground); }
-    .uptime-guide h2 { max-width: 21ch; margin: 0 0 1.5rem; font-family: var(--font-display); font-size: clamp(1.75rem, 4vw, 2.5rem); font-weight: 500; line-height: 1.08; letter-spacing: -0.03em; color: var(--foreground); text-wrap: balance; }
+    .uptime-guide h2 { margin: 0 0 1.5rem; font-family: var(--font-display); font-size: clamp(1.75rem, 4vw, 2.5rem); font-weight: 500; line-height: 1.08; letter-spacing: -0.03em; color: var(--foreground); text-wrap: balance; }
     .uptime-guide h3 { margin: 2.5rem 0 0.8rem; font-family: var(--font-display); font-size: 1.15rem; font-weight: 550; line-height: 1.3; letter-spacing: -0.015em; color: var(--foreground); }
-    .uptime-guide > section > p:not(.guide-eyebrow, .guide-kicker), .uptime-guide .guide-answer p { max-width: 70ch; margin: 0 0 1.15rem; font-size: 15px; line-height: 1.8; color: var(--muted-foreground); }
+    .uptime-guide > section > p:not(.guide-eyebrow, .guide-kicker), .uptime-guide .guide-answer p { margin: 0 0 1.15rem; font-size: 15px; line-height: 1.8; color: var(--muted-foreground); }
     .uptime-guide strong { font-weight: 600; color: var(--foreground); }
     .uptime-guide code:not(pre code) { border: 1px solid var(--border); background: var(--bg-elevated); padding: 0.1rem 0.35rem; font-family: var(--font-mono); font-size: 12px; color: var(--foreground); }
     .uptime-guide pre { max-width: 100%; margin: 1.5rem 0 1.75rem; overflow-x: auto; border: 1px solid var(--border); border-left: 2px solid var(--primary); background: var(--bg-deep); padding: 1rem 1.1rem; font-family: var(--font-mono); font-size: 12px; line-height: 1.75; color: var(--foreground); }
@@ -500,7 +501,7 @@ const articleJsonLd = {
     .uptime-guide td { border-bottom: 1px solid var(--border); padding: 0.9rem; vertical-align: top; }
     .uptime-guide .guide-kicker { margin: 0; font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--primary); }
     .uptime-guide .guide-callout { margin: 2rem 0; border: 1px solid var(--border); border-left: 2px solid var(--warning); border-radius: 0.5rem; background: var(--bg-deep); padding: 1.25rem 1.35rem; }
-    .uptime-guide .guide-callout p:not(.guide-kicker) { max-width: 68ch; margin: 0.6rem 0 0; font-size: 14px; line-height: 1.75; color: var(--muted-foreground); }
+    .uptime-guide .guide-callout p:not(.guide-kicker) { margin: 0.6rem 0 0; font-size: 14px; line-height: 1.75; color: var(--muted-foreground); }
     .uptime-guide .guide-steps { margin: 2rem 0; padding: 0; list-style: none; border-top: 1px solid var(--border); }
     .uptime-guide .guide-steps li { display: grid; grid-template-columns: 2.5rem 1fr; gap: 1rem; border-bottom: 1px solid var(--border); padding: 1.35rem 0; }
     .uptime-guide .guide-steps > li > span { padding-top: 0.2rem; font-family: var(--font-mono); font-size: 10px; color: var(--primary); }
@@ -517,7 +518,7 @@ const articleJsonLd = {
     .uptime-guide .guide-checklist h3, .uptime-guide .guide-checklist p { margin: 0; }
     .uptime-guide .guide-checklist h3 { font-size: 0.95rem; }
     .uptime-guide .guide-checklist p { margin-top: 0.35rem; font-size: 12px; line-height: 1.6; color: var(--muted-foreground); }
-    .uptime-guide .guide-notes { max-width: 70ch; margin: 0 0 1.15rem; padding-left: 1.1rem; font-size: 14px; line-height: 1.75; color: var(--muted-foreground); }
+    .uptime-guide .guide-notes { margin: 0 0 1.15rem; padding-left: 1.1rem; font-size: 14px; line-height: 1.75; color: var(--muted-foreground); }
     .uptime-guide .guide-notes li + li { margin-top: 0.4rem; }
     .uptime-path { margin: 2rem 0 0; overflow-x: auto; }
     .uptime-path svg { min-width: 620px; }
