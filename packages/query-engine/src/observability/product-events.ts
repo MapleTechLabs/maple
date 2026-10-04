@@ -29,13 +29,15 @@ export interface ProductEventNamesInput extends CH.ProductEventNamesOpts {
 }
 
 const build = <A>(make: () => A): Effect.Effect<A, CH.ProductEventsFunnelError> =>
-	Effect.try({
-		try: make,
-		catch: (error) => {
-			if (error instanceof CH.ProductEventsFunnelError) return error
-			throw error
-		},
-	})
+	Effect.try({ try: make, catch: (error) => error }).pipe(
+		Effect.catch((error) =>
+			// Anything other than the builder's own tagged error is a bug in the builder.
+			error instanceof CH.ProductEventsFunnelError
+				? Effect.fail(error)
+				: // oxlint-disable-next-line maple/no-effect-die
+					Effect.die(error),
+		),
+	)
 
 /** Run a funnel: exactly one `{ step, count }` row per step, in step order. */
 export const productEventsFunnel = Effect.fn("Observability.productEventsFunnel")(function* (
