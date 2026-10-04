@@ -16,6 +16,7 @@ import {
 	PlanetScaleIcon,
 	PlayRotateClockwiseIcon,
 	PulseIcon,
+	RailwayIcon,
 	RocketIcon,
 	ServerIcon,
 	SquareSparkleIcon,
@@ -26,8 +27,8 @@ import type { OrganizationFeatureFlags } from "@/lib/organization-feature-flags"
 
 /**
  * What a nav child needs from the org before it's worth a row. The five OTel
- * surfaces come from the warehouse presence probe; Cloudflare and PlanetScale
- * are integration pages, so their gate is whether the integration is connected.
+ * surfaces come from the warehouse presence probe; Cloudflare, PlanetScale and
+ * Railway are integration pages, so their gate is whether the integration is connected.
  */
 export type NavSurface =
 	| "hosts"
@@ -37,6 +38,7 @@ export type NavSurface =
 	| "k8sWorkloads"
 	| "cloudflare"
 	| "planetscale"
+	| "railway"
 
 export interface NavSubItem {
 	title: string
@@ -106,9 +108,9 @@ const overviewItem: NavItem = {
  * Kubernetes is one row. It used to be four (Pods, Nodes, Workloads, Services)
  * and the section read as a Kubernetes menu with some other things in it; the
  * four are views of one section now, switched by tabs on the page, and the
- * palette keeps each one typeable through `views`. Five children means five
+ * palette keeps each one typeable through `views`. Six children means six
  * unique glyphs — exactly `NavRow`'s all-or-nothing preview cap (each glyph
- * costs the label ~14px), so a sixth would drop the miniatures entirely. The
+ * costs the label ~14px), so a seventh would drop the miniatures entirely. The
  * preview reads this whole list, not the org's pruned one: it advertises what
  * the section covers, which is the part `partitionInfraSubItems` hides.
  */
@@ -137,8 +139,12 @@ const infrastructureItem: NavItem = {
 			iconColor: PLANETSCALE_COLOR,
 			surfaces: ["planetscale"],
 		},
+		{ title: "Railway", href: "/infra/railway", icon: RailwayIcon, surfaces: ["railway"] },
 	],
 }
+
+/** Most brand glyphs a closed section previews; past this the preview is dropped. */
+export const NAV_PREVIEW_MAX_GLYPHS = 6
 
 /**
  * The section never renders fewer rows than this. An org reporting one source

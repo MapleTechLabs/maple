@@ -1193,6 +1193,13 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 		}),
 	)
 	.add(
+		// Polls now instead of waiting for the 5-minute cron; returns the refreshed status.
+		HttpApiEndpoint.post("railwaySync", "/railway/sync", {
+			success: RailwayIntegrationStatus,
+			error: IntegrationsPersistenceError,
+		}),
+	)
+	.add(
 		HttpApiEndpoint.delete("railwayDisconnect", "/railway", {
 			success: RailwayDisconnectResponse,
 			error: [IntegrationsForbiddenError, IntegrationsPersistenceError],

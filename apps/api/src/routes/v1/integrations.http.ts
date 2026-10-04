@@ -531,6 +531,12 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleApi, "integrations
 						return yield* railway.connect(tenant.orgId, tenant.userId, payload.token)
 					}),
 				)
+				.handle("railwaySync", () =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						return yield* railway.sync(tenant.orgId)
+					}),
+				)
 				.handle("railwayDisconnect", () =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context

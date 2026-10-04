@@ -17,6 +17,7 @@ import {
 import {
 	isNavItemActive,
 	isPathActive,
+	NAV_PREVIEW_MAX_GLYPHS,
 	navGroups,
 	partitionInfraSubItems,
 	type NavGroup,
@@ -316,9 +317,9 @@ function NavRow({
 		}
 		// Truncating by position would silently drop whichever brand lands last
 		// — the same partial-run problem as the every-child guard above — so the
-		// preview is all or nothing. Five fits both sections we ship (Explore
+		// preview is all or nothing. Six fits both sections we ship (Explore
 		// with Agent Sessions on, Infrastructure) at the tightened gap below.
-		return unique.length > 5 ? undefined : unique
+		return unique.length > NAV_PREVIEW_MAX_GLYPHS ? undefined : unique
 	}, [isOpen, item.subItems])
 
 	// The sub-list can't render at 48px, so the rail turns the row into a menu.

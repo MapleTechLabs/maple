@@ -27,7 +27,7 @@ interface InfraSource {
 	 * Where a *connected* source drills in. Absent for Prometheus — its targets
 	 * feed metrics rather than an infra page, so it stays on the integration.
 	 */
-	readonly to?: "/infra/cloudflare" | "/infra/planetscale"
+	readonly to?: "/infra/cloudflare" | "/infra/planetscale" | "/infra/railway"
 	/** One line of what the source contributes, shown before it is connected. */
 	readonly blurb: string
 }
@@ -37,6 +37,7 @@ interface InfraSource {
 const INFRA_SOURCES: ReadonlyArray<InfraSource> = [
 	{ id: "cloudflare", to: "/infra/cloudflare", blurb: "Zone traffic and Workers" },
 	{ id: "planetscale", to: "/infra/planetscale", blurb: "Database branch metrics" },
+	{ id: "railway", to: "/infra/railway", blurb: "CPU, memory and network per service" },
 	{ id: "prometheus", blurb: "Scrape any metrics endpoint" },
 ]
 
@@ -59,7 +60,7 @@ export function InfraIntegrations() {
 					All integrations
 				</Link>
 			</div>
-			<div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+			<div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
 				{INFRA_SOURCES.map((source) => (
 					<InfraSourceCard key={source.id} source={source} overview={overviews[source.id]} />
 				))}

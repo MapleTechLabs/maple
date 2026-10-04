@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import {
 	isNavItemActive,
+	NAV_PREVIEW_MAX_GLYPHS,
 	isPathActive,
 	navGroups,
 	paletteNavItems,
@@ -122,8 +123,8 @@ describe("navGroups", () => {
 		}
 	})
 
-	it("keeps Infrastructure at five children with five unique glyphs", () => {
-		// Five is exactly NavRow's all-or-nothing preview cap, so a sixth unique
+	it("keeps Infrastructure at six children with six unique glyphs", () => {
+		// Six is exactly NavRow's all-or-nothing preview cap, so a seventh unique
 		// glyph here would drop the closed row's miniatures entirely rather than
 		// truncate them. A new Kubernetes view goes in `views` (free); a new
 		// child with a new glyph is not free.
@@ -134,8 +135,9 @@ describe("navGroups", () => {
 			"Kubernetes",
 			"Cloudflare",
 			"PlanetScale",
+			"Railway",
 		])
-		expect(new Set(infra.subItems?.map((sub) => sub.icon)).size).toBe(5)
+		expect(new Set(infra.subItems?.map((sub) => sub.icon)).size).toBe(NAV_PREVIEW_MAX_GLYPHS)
 	})
 
 	it("folds the Kubernetes views behind one row that points at the section root", () => {
@@ -211,7 +213,7 @@ describe("partitionInfraSubItems", () => {
 
 	it("shows every child while the org's surfaces are unknown", () => {
 		const { shown, suggested, hidden } = partitionInfraSubItems(subItems(), null, "/infra")
-		expect(shown).toHaveLength(5)
+		expect(shown).toHaveLength(6)
 		expect(suggested).toEqual([])
 		expect(hidden).toEqual([])
 	})
@@ -224,10 +226,10 @@ describe("partitionInfraSubItems", () => {
 		)
 		expect(titles(shown)).toEqual(["Hosts", "Containers"])
 		expect(titles(suggested)).toEqual(["Kubernetes", "Cloudflare"])
-		expect(titles(hidden)).toEqual(["PlanetScale"])
+		expect(titles(hidden)).toEqual(["PlanetScale", "Railway"])
 	})
 
-	// The floor is a floor, not a cap: five reporting sources are five rows.
+	// The floor is a floor, not a cap: six reporting sources are six rows.
 	it("never pads a section that already has four rows", () => {
 		const { shown, suggested, hidden } = partitionInfraSubItems(
 			subItems(),
@@ -236,14 +238,14 @@ describe("partitionInfraSubItems", () => {
 		)
 		expect(titles(shown)).toEqual(["Hosts", "Containers", "Kubernetes", "Cloudflare"])
 		expect(suggested).toEqual([])
-		expect(titles(hidden)).toEqual(["PlanetScale"])
+		expect(titles(hidden)).toEqual(["PlanetScale", "Railway"])
 
 		const all = partitionInfraSubItems(
 			subItems(),
-			present("hosts", "containers", "k8sPods", "cloudflare", "planetscale"),
+			present("hosts", "containers", "k8sPods", "cloudflare", "planetscale", "railway"),
 			"/infra",
 		)
-		expect(all.shown).toHaveLength(5)
+		expect(all.shown).toHaveLength(6)
 		expect(all.suggested).toEqual([])
 		expect(all.hidden).toEqual([])
 	})
@@ -269,7 +271,7 @@ describe("partitionInfraSubItems", () => {
 		)
 		expect(titles(shown)).toEqual(["Hosts", "Kubernetes"])
 		expect(titles(suggested)).toEqual(["Containers", "Cloudflare"])
-		expect(titles(hidden)).toEqual(["PlanetScale"])
+		expect(titles(hidden)).toEqual(["PlanetScale", "Railway"])
 	})
 
 	// Off the section (say, on /services) nothing is the current route, so all
@@ -278,7 +280,7 @@ describe("partitionInfraSubItems", () => {
 		const away = partitionInfraSubItems(subItems(), present(), "/services")
 		expect(away.shown).toEqual([])
 		expect(titles(away.suggested)).toEqual(["Hosts", "Containers", "Kubernetes", "Cloudflare"])
-		expect(titles(away.hidden)).toEqual(["PlanetScale"])
+		expect(titles(away.hidden)).toEqual(["PlanetScale", "Railway"])
 
 		const home = partitionInfraSubItems(subItems(), present(), "/infra")
 		expect(titles(home.shown)).toEqual(["Hosts"])

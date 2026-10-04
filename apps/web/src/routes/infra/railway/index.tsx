@@ -10,14 +10,19 @@ import { cn } from "@maple/ui/lib/utils"
 import { EmptyActions } from "@/components/common/docs-link"
 import { QueryErrorState } from "@/components/common/query-error-state"
 import { RailwayIcon } from "@/components/icons"
-import { RailwayIntegrationCard, railwayStatusAtom } from "@/components/integrations/railway-integration-card"
+import {
+	RailwayIntegrationCard,
+	railwayStatusAtom,
+	unsyncedEnvironments,
+} from "@/components/integrations/railway-integration-card"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { PageHero } from "@/components/infra/primitives/page-hero"
 import { formatCores, shareOfLimit } from "@/components/infra/railway/format"
 import { StatRail, StatRailItem, StatRailLoading } from "@/components/infra/primitives/stat-rail"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
+import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
-import { Result, useAtomValue } from "@/lib/effect-atom"
+import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
 import { railwayServicesResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import type { RailwayServiceRow } from "@/api/warehouse/railway-infra"
 import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
@@ -88,7 +93,13 @@ function RailwayPage() {
 									.onError((error) => <QueryErrorState error={error} />)
 									.onSuccess((status) =>
 										status.connected ? (
-											<RailwayServices startTime={startTime} endTime={endTime} />
+											<RailwayServices
+												startTime={startTime}
+												endTime={endTime}
+												syncing={
+													!status.authFailed && unsyncedEnvironments(status) > 0
+												}
+											/>
 										) : (
 											<RailwayIntegrationCard />
 										),
@@ -103,13 +114,28 @@ function RailwayPage() {
 	)
 }
 
-function RailwayServices({ startTime, endTime }: { startTime: string; endTime: string }) {
-	const servicesResult = useRefreshableAtomValue(
-		railwayServicesResultAtom({ data: { startTime, endTime } }),
-	)
+/** Re-reads while the page is empty, so a just-connected account fills in without a reload. */
+const EMPTY_REFRESH_MS = 15_000
+
+function RailwayServices({
+	startTime,
+	endTime,
+	syncing,
+}: {
+	startTime: string
+	endTime: string
+	syncing: boolean
+}) {
+	const servicesAtom = railwayServicesResultAtom({ data: { startTime, endTime } })
+	const servicesResult = useRefreshableAtomValue(servicesAtom)
+	const refreshServices = useAtomRefresh(servicesAtom)
+	const refreshStatus = useAtomRefresh(railwayStatusAtom)
 	const services = Result.builder(servicesResult)
 		.onSuccess((response) => response.services)
 		.orElse(() => NO_SERVICES)
+	const empty = Result.isSuccess(servicesResult) && services.length === 0
+	useIntervalRefresh(refreshServices, { intervalMs: EMPTY_REFRESH_MS, enabled: empty })
+	useIntervalRefresh(refreshStatus, { intervalMs: EMPTY_REFRESH_MS, enabled: empty && syncing })
 
 	const totals = useMemo(() => {
 		let cpu = 0
@@ -141,10 +167,13 @@ function RailwayServices({ startTime, endTime }: { startTime: string; endTime: s
 					<EmptyMedia variant="icon">
 						<RailwayIcon size={16} />
 					</EmptyMedia>
-					<EmptyTitle>No Railway metrics in this time range</EmptyTitle>
+					<EmptyTitle>
+						{syncing ? "Pulling your Railway metrics" : "No Railway metrics in this time range"}
+					</EmptyTitle>
 					<EmptyDescription>
-						Maple polls Railway every 5 minutes, so a new connection takes a few minutes to fill
-						in. If this persists, check the connection for errors.
+						{syncing
+							? "Some environments haven't finished their first sync. This page updates on its own as they land."
+							: "Services that ran in this window show up here. Try a wider time range, or check the connection for errors."}
 					</EmptyDescription>
 				</EmptyHeader>
 				<EmptyActions>

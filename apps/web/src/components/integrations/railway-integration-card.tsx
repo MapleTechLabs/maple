@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { Exit, Option, Schema } from "effect"
 import { Link } from "@tanstack/react-router"
-import { RailwayConnectRequest } from "@maple/domain/http"
+import { RailwayConnectRequest, type RailwayIntegrationStatus } from "@maple/domain/http"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
 import { Input } from "@maple/ui/components/ui/input"
@@ -12,6 +12,7 @@ import { formatRelativeTime } from "@maple/ui/lib/time-format"
 
 import { ErrorState } from "@/components/common/error-state"
 import { ExternalLinkIcon, LoaderIcon, RailwayIcon } from "@/components/icons"
+import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { errorMessage } from "@/lib/error-toast"
 import { MapleApiAtomClient, retainedQuery } from "@/lib/services/common/atom-client"
@@ -33,6 +34,32 @@ const decodeConnectRequest = Schema.decodeUnknownOption(RailwayConnectRequest)
 export const railwayStatusAtom = retainedQuery("integrations", "railwayStatus", {
 	reactivityKeys: ["railwayIntegrationStatus"],
 })
+
+/** Fast enough to see a queued environment land, slow enough to be free next to the poller. */
+const SETTLING_REFRESH_MS = 15_000
+
+/** Environments the poller hasn't completed a first sync for yet (and hasn't failed on). */
+export const unsyncedEnvironments = (status: RailwayIntegrationStatus) =>
+	status.environments.filter(
+		(environment) => environment.lastSyncedAt === null && environment.lastError === null,
+	).length
+
+function connectedToast(status: RailwayIntegrationStatus, mode: "connect" | "rotate") {
+	const synced = status.environments.length - unsyncedEnvironments(status)
+	const queued = status.environments.length - synced
+	return {
+		title: mode === "rotate" ? "Railway token updated" : "Railway connected",
+		description:
+			status.environments.length === 0
+				? "This token can't see any projects yet."
+				: queued === 0
+					? `Pulled the last hour of metrics for ${plural(synced, "environment")}.`
+					: `${plural(synced, "environment")} synced, ${queued} more within 5 minutes.`,
+		type: "success" as const,
+	}
+}
+
+const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`
 
 function RailwayTokenForm({
 	mode,
@@ -66,10 +93,7 @@ function RailwayTokenForm({
 		})
 		setSubmitting(false)
 		if (Exit.isSuccess(result)) {
-			toastManager.add({
-				title: mode === "rotate" ? "Railway token updated" : "Railway connected",
-				type: "success",
-			})
+			toastManager.add(connectedToast(result.value, mode))
 			setToken("")
 			onSaved?.()
 			return
@@ -102,10 +126,14 @@ function RailwayTokenForm({
 					) : (
 						<RailwayIcon size={14} />
 					)}
-					{mode === "rotate" ? "Update token" : "Connect Railway"}
+					{submitting ? "Connecting…" : mode === "rotate" ? "Update token" : "Connect Railway"}
 				</Button>
 			</div>
-			{error !== null ? (
+			{submitting ? (
+				<p className="text-xs text-muted-foreground" aria-live="polite">
+					Checking the token and pulling the last hour of metrics. This takes a few seconds.
+				</p>
+			) : error !== null ? (
 				<p className="text-xs text-severity-error" role="alert">
 					{error}
 				</p>
@@ -124,7 +152,11 @@ export function RailwayIntegrationCard() {
 	const disconnect = useAtomSet(MapleApiAtomClient.mutation("integrations", "railwayDisconnect"), {
 		mode: "promiseExit",
 	})
+	const sync = useAtomSet(MapleApiAtomClient.mutation("integrations", "railwaySync"), {
+		mode: "promiseExit",
+	})
 	const [disconnectBusy, setDisconnectBusy] = useState(false)
+	const [syncBusy, setSyncBusy] = useState(false)
 	const [rotating, setRotating] = useState(false)
 
 	const status = Result.builder(statusResult)
@@ -134,6 +166,10 @@ export function RailwayIntegrationCard() {
 				? Option.getOrNull(Option.map(statusResult.previousSuccess, (previous) => previous.value))
 				: null,
 		)
+
+	const queued = status?.connected && !status.authFailed ? unsyncedEnvironments(status) : 0
+	// Poll while environments are still waiting on their first sync so the rows land on their own.
+	useIntervalRefresh(refreshStatus, { intervalMs: SETTLING_REFRESH_MS, enabled: queued > 0 })
 
 	if (Result.isInitial(statusResult) && status === null) {
 		return <Skeleton className="h-32 w-full rounded-lg" />
@@ -159,6 +195,15 @@ export function RailwayIntegrationCard() {
 		)
 	}
 
+	async function handleSync() {
+		setSyncBusy(true)
+		const result = await sync({ reactivityKeys: ["railwayIntegrationStatus"] })
+		setSyncBusy(false)
+		if (Exit.isFailure(result)) {
+			toastManager.add({ title: "Failed to sync Railway", type: "error" })
+		}
+	}
+
 	if (status === null || !status.connected) {
 		return (
 			<IntegrationEmpty icon={RailwayIcon} accent={RAILWAY_ACCENT} iconClassName="text-foreground">
@@ -182,8 +227,8 @@ export function RailwayIntegrationCard() {
 				<IntegrationEmptyCard>
 					<IntegrationEmptyMedia />
 					<IntegrationEmptyHint>
-						Maple polls Railway every 5 minutes. Projects and environments appear here after
-						connecting.
+						Connecting pulls the last hour of metrics right away, then Maple keeps it fresh every
+						5 minutes.
 					</IntegrationEmptyHint>
 					<RailwayTokenForm mode="connect" />
 					<IntegrationEmptyFooter>
@@ -225,9 +270,11 @@ export function RailwayIntegrationCard() {
 					</div>
 					<p className="text-xs text-muted-foreground">
 						{status.workspaceNames ? `${status.workspaceNames} · ` : ""}
+						{plural(status.environments.length, "environment")}
 						{status.lastSyncedAt !== null
-							? `synced ${formatRelativeTime(new Date(status.lastSyncedAt).toISOString())}`
-							: "Waiting for the first poll (up to 5 minutes)"}
+							? ` · synced ${formatRelativeTime(new Date(status.lastSyncedAt).toISOString())}`
+							: ""}
+						{queued > 0 ? ` · ${queued} waiting for their first sync` : ""}
 					</p>
 					{status.authFailed ? (
 						<p className="text-xs text-severity-error" role="alert">
@@ -245,11 +292,11 @@ export function RailwayIntegrationCard() {
 						/>
 					) : (
 						<div className="flex flex-wrap gap-2">
-							<Button
-								size="sm"
-								variant="outline"
-								render={<Link to="/infra/railway">View metrics</Link>}
-							/>
+							<Button size="sm" render={<Link to="/infra/railway">View metrics</Link>} />
+							<Button size="sm" variant="outline" onClick={handleSync} disabled={syncBusy}>
+								{syncBusy ? <LoaderIcon size={14} className="animate-spin" /> : null}
+								Sync now
+							</Button>
 							<Button size="sm" variant="outline" onClick={() => setRotating(true)}>
 								Replace token
 							</Button>
@@ -301,9 +348,16 @@ export function RailwayIntegrationCard() {
 								{environment.serviceCount}
 							</span>
 							<span className="w-32 text-right text-xs text-muted-foreground">
-								{environment.lastSyncedAt !== null
-									? formatRelativeTime(new Date(environment.lastSyncedAt).toISOString())
-									: "pending"}
+								{environment.lastSyncedAt !== null ? (
+									formatRelativeTime(new Date(environment.lastSyncedAt).toISOString())
+								) : environment.lastError !== null ? (
+									"Failed"
+								) : (
+									<span className="inline-flex items-center gap-1">
+										<LoaderIcon size={12} className="animate-spin" />
+										Syncing
+									</span>
+								)}
 							</span>
 						</div>
 					))

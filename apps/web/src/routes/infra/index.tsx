@@ -57,6 +57,12 @@ function InfraPage() {
 		}),
 	)
 
+	// With no hosts, the connected providers are what this org actually has, so they lead the page
+	// instead of sitting under a "No hosts reporting yet" block that reads as "nothing connected".
+	const sourcesFirst = Result.builder(hostsResult)
+		.onSuccess((response) => response.data.length === 0)
+		.orElse(() => false)
+
 	const heroActions = (
 		<Button size="sm" onClick={() => setInstallOpen(true)}>
 			<PlusIcon size={14} />
@@ -73,9 +79,11 @@ function InfraPage() {
 						<div className="space-y-6">
 							<PageHero
 								title="Infrastructure"
-								description="Hosts, containers, and Kubernetes nodes reporting to Maple."
+								description="Hosts, containers, Kubernetes nodes and connected providers reporting to Maple."
 								actions={heroActions}
 							/>
+
+							{sourcesFirst && <InfraIntegrations />}
 
 							{Result.builder(hostsResult)
 								.onInitial(() => (
@@ -123,7 +131,7 @@ function InfraPage() {
 								})
 								.render()}
 
-							<InfraIntegrations />
+							{!sourcesFirst && <InfraIntegrations />}
 						</div>
 
 						<InstallHostModal
