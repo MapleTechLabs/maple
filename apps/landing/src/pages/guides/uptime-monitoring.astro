@@ -8,9 +8,9 @@ import FAQ from "../../components/FAQ.astro";
 import SeoHead from "../../components/SeoHead.astro";
 import TableOfContents from "../../components/TableOfContents.astro";
 
-const pageTitle = "Uptime monitoring with OpenTelemetry: traces first, HTTP checks for the gaps";
+const pageTitle = "Uptime monitoring with OpenTelemetry: alerts from traces and HTTP checks";
 const pageDescription =
-    "An uptime monitor checks one URL once a minute, while traces record every real request. Learn which failures each one catches, when an outside probe is still needed, and how to set up both with OpenTelemetry and Maple.";
+    "Monitor uptime with the telemetry you already send. Alert on error rate, throughput and Apdex from traces, add OpenTelemetry Collector HTTP checks for endpoints and certificates, and learn which failures each one catches.";
 const published = "2026-10-04";
 const updatedLabel = "October 4, 2026";
 
@@ -92,7 +92,7 @@ const siteUrl = Astro.site?.toString().replace(/\/$/, "") ?? "https://maple.dev"
 const articleJsonLd = {
     "@context": "https://schema.org",
     "@type": "TechArticle",
-    headline: "Uptime monitoring when you already have tracing",
+    headline: "Uptime monitoring with traces and HTTP checks",
     description: pageDescription,
     datePublished: published,
     dateModified: published,
@@ -133,10 +133,10 @@ const articleJsonLd = {
                         <span>9 min read</span>
                     </div>
                     <h1 class="mt-6 max-w-[16ch] font-display text-[clamp(40px,6.3vw,72px)] font-medium leading-[0.98] tracking-[-0.045em] text-fg">
-                        Uptime monitoring when you already have tracing
+                        Uptime monitoring with traces and HTTP checks
                     </h1>
                     <p class="mt-7 max-w-[62ch] text-[15px] leading-[1.75] text-fg-muted md:text-base">
-                        An uptime monitor requests one URL on a schedule and alerts when the request fails. A service that emits traces already records the outcome of every real request. With steady traffic, alerts on those traces cover most of what a probe is bought for, and a short list of failures still takes a probe to see.
+                        Find out within minutes when a service stops answering or starts failing requests. Alert on the traces your services already send, then add OpenTelemetry Collector HTTP checks for the endpoints and certificates that real traffic cannot cover.
                     </p>
                     <div class="mt-7 flex flex-wrap gap-x-5 gap-y-2 font-mono text-[10px] text-fg-muted">
                         <span>By Maple</span>
@@ -147,15 +147,15 @@ const articleJsonLd = {
                 <div class="rounded-xl border border-border bg-bg-deep p-4 shadow-2xl shadow-black/20 md:p-5" aria-label="Uptime monitoring at a glance">
                     <div class="flex items-center justify-between border-b border-border pb-3 font-mono text-[10px] text-fg-muted">
                         <span>uptime / at a glance</span>
-                        <span class="text-primary">probe + traces</span>
+                        <span class="text-primary">traces + checks</span>
                     </div>
                     <ol class="divide-y divide-border">
                         {[
-                            ["01", "Probe", "One request per URL, per interval", "from outside"],
-                            ["02", "Traces", "Every real request, on every route", "from your services"],
-                            ["03", "A probe misses", "Partial errors and slow requests", "inside the application"],
-                            ["04", "Traces miss", "DNS, TLS and edge failures, idle hours", "before your code"],
-                            ["05", "In Maple", "Trace alerts, plus Collector HTTP checks", "no hosted probes"],
+                            ["01", "Signals", "Error rate, throughput and Apdex", "from traces"],
+                            ["02", "Outage alert", "Throughput drops to zero", "5 minute window"],
+                            ["03", "HTTP checks", "Collector http_check receiver", "every 60 seconds"],
+                            ["04", "Certificates", "Alert 14 days before expiry", "from the same checks"],
+                            ["05", "Several regions", "Pair with a dedicated uptime product", "status pages too"],
                         ].map(([number, label, headline, detail]) => (
                             <li class="grid grid-cols-[2rem_1fr] gap-3 py-3.5">
                                 <span class="font-mono text-[10px] text-primary">{number}</span>
@@ -340,7 +340,7 @@ const articleJsonLd = {
                     <p class="guide-eyebrow">05 · In Maple</p>
                     <h2>Availability alerts from traces in Maple</h2>
                     <p>
-                        Maple does not run a hosted uptime monitor, and we do not label an alert rule as one. Maple alerts on the traces your services already send, and it accepts check results from the OpenTelemetry Collector as metrics.
+                        Maple alerts on the traces your services already send, and it accepts check results from the OpenTelemetry Collector as metrics. It does not run hosted probes of its own.
                     </p>
 
                     <ol class="guide-steps">
