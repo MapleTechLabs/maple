@@ -1,9 +1,10 @@
 import { cn } from "@maple/ui/lib/utils"
 
 import {
-	AmazonIcon,
 	AppleIcon,
-	GoogleIcon,
+	AwsIcon,
+	AzureIcon,
+	GoogleCloudIcon,
 	LinuxIcon,
 	MicrochipIcon,
 	MicrosoftIcon,
@@ -16,20 +17,24 @@ export type PlatformKind = "os" | "arch" | "cloud"
 interface Known {
 	readonly icon?: IconComponent
 	readonly label: string
-	/** Brand colour for the mark. Omitted for marks that are monochrome by design (Apple, the chip). */
+	/**
+	 * Single-colour marks drawn in `currentColor` take this brand colour. Marks that
+	 * carry their own palette (Tux, AWS, GCP, Azure) and monochrome ones (Apple,
+	 * the chip) leave it unset.
+	 */
 	readonly color?: string
 }
 
 const OS = new Map<string, Known>([
-	["linux", { icon: LinuxIcon, label: "Linux", color: "#FCC624" }],
+	["linux", { icon: LinuxIcon, label: "Linux" }],
 	["darwin", { icon: AppleIcon, label: "macOS" }],
 	["windows", { icon: MicrosoftIcon, label: "Windows", color: "#0078D4" }],
 ])
 
 const CLOUD = new Map<string, Known>([
-	["aws", { icon: AmazonIcon, label: "AWS", color: "#FF9900" }],
-	["gcp", { icon: GoogleIcon, label: "GCP", color: "#4285F4" }],
-	["azure", { icon: MicrosoftIcon, label: "Azure", color: "#0078D4" }],
+	["aws", { icon: AwsIcon, label: "AWS" }],
+	["gcp", { icon: GoogleCloudIcon, label: "GCP" }],
+	["azure", { icon: AzureIcon, label: "Azure" }],
 ])
 
 function resolve(kind: PlatformKind, value: string): Known {
