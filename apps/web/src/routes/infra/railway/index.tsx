@@ -1,10 +1,7 @@
-import { useMemo } from "react"
 import { Link, createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Schema } from "effect"
 import { Button } from "@maple/ui/components/ui/button"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import { formatBytes } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 
 import { EmptyActions } from "@/components/common/docs-link"
@@ -17,8 +14,17 @@ import {
 } from "@/components/integrations/railway-integration-card"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { PageHero } from "@/components/infra/primitives/page-hero"
-import { formatCores, shareOfLimit } from "@/components/infra/railway/format"
-import { StatRail, StatRailItem, StatRailLoading } from "@/components/infra/primitives/stat-rail"
+import { DataTable } from "@/components/infra/primitives/data-table"
+import { FLEET_BAND_BOXED } from "@/components/infra/primitives/fleet-band"
+import { ListToolbar, countLabel } from "@/components/infra/primitives/list-toolbar"
+import {
+	RailwayServiceTable,
+	RailwayServiceTableLoading,
+	RailwaySummaryBand,
+	RailwaySummaryBandLoading,
+	railwayInScope,
+	type RailwayScope,
+} from "@/components/infra/railway/railway-service-table"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
@@ -31,8 +37,12 @@ import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh
 import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
 
 const railwaySearchSchema = Schema.Struct({
+	q: Schema.optional(Schema.String),
+	scope: Schema.optional(Schema.Literals(["saturated", "elevated"])),
 	...TimeRangeSearchFields,
 })
+
+type RailwaySearchParams = Schema.Schema.Type<typeof railwaySearchSchema>
 
 export const Route = createFileRoute("/infra/railway/")({
 	component: RailwayPage,
@@ -51,6 +61,10 @@ function RailwayPage() {
 		search.timePreset ?? DEFAULT_PRESET,
 	)
 	const statusResult = useAtomValue(railwayStatusAtom)
+
+	const patchSearch = (patch: Partial<RailwaySearchParams>) => {
+		navigate({ search: (prev) => ({ ...prev, ...patch }) })
+	}
 
 	const handleTimeChange = (
 		range: { startTime?: string; endTime?: string; presetValue?: string },
@@ -89,7 +103,9 @@ function RailwayPage() {
 									description="CPU, memory, network and disk for every Railway service, polled from Railway's metrics API."
 								/>
 								{Result.builder(statusResult)
-									.onInitial(() => <StatRailLoading />)
+									.onInitial(() => (
+										<RailwaySummaryBandLoading className={FLEET_BAND_BOXED} />
+									))
 									.onError((error) => <QueryErrorState error={error} />)
 									.onSuccess((status) =>
 										status.connected ? (
@@ -99,6 +115,10 @@ function RailwayPage() {
 												syncing={
 													!status.authFailed && unsyncedEnvironments(status) > 0
 												}
+												query={search.q ?? ""}
+												scope={search.scope}
+												onQueryChange={(q) => patchSearch({ q: q || undefined })}
+												onScopeChange={(scope) => patchSearch({ scope })}
 											/>
 										) : (
 											<RailwayIntegrationCard />
@@ -121,10 +141,18 @@ function RailwayServices({
 	startTime,
 	endTime,
 	syncing,
+	query,
+	scope,
+	onQueryChange,
+	onScopeChange,
 }: {
 	startTime: string
 	endTime: string
 	syncing: boolean
+	query: string
+	scope: RailwayScope | undefined
+	onQueryChange: (query: string) => void
+	onScopeChange: (scope: RailwayScope | undefined) => void
 }) {
 	const servicesAtom = railwayServicesResultAtom({ data: { startTime, endTime } })
 	const servicesResult = useRefreshableAtomValue(servicesAtom)
@@ -137,23 +165,11 @@ function RailwayServices({
 	useIntervalRefresh(refreshServices, { intervalMs: EMPTY_REFRESH_MS, enabled: empty })
 	useIntervalRefresh(refreshStatus, { intervalMs: EMPTY_REFRESH_MS, enabled: empty && syncing })
 
-	const totals = useMemo(() => {
-		let cpu = 0
-		let memory = 0
-		let replicas = 0
-		for (const row of services) {
-			cpu += row.cpuAvg
-			memory += row.memoryAvg
-			replicas += row.replicas
-		}
-		return { cpu, memory, replicas }
-	}, [services])
-
 	if (Result.isInitial(servicesResult)) {
 		return (
 			<div className="space-y-4">
-				<StatRailLoading />
-				<Skeleton className="h-48 w-full rounded-md" />
+				<RailwaySummaryBandLoading className={FLEET_BAND_BOXED} />
+				<RailwayServiceTableLoading />
 			</div>
 		)
 	}
@@ -189,100 +205,40 @@ function RailwayServices({
 		)
 	}
 
-	return (
-		<div className={cn("space-y-6 transition-opacity", servicesResult.waiting && "opacity-60")}>
-			<StatRail>
-				<StatRailItem compact eyebrow="Services" value={String(services.length)} />
-				<StatRailItem compact eyebrow="Replicas" value={String(totals.replicas)} />
-				<StatRailItem compact eyebrow="Avg CPU in use" value={formatCores(totals.cpu)} />
-				<StatRailItem compact eyebrow="Avg memory in use" value={formatBytes(totals.memory)} />
-			</StatRail>
-			<RailwayServiceTable services={services} />
-		</div>
+	const q = query.trim().toLowerCase()
+	const filtered = services.filter(
+		(row) =>
+			(!scope || railwayInScope(row, scope)) &&
+			(!q || `${row.serviceName} ${row.projectName} ${row.environmentName}`.toLowerCase().includes(q)),
 	)
-}
 
-function UsageCell({
-	value,
-	limit,
-	format,
-}: {
-	value: number
-	limit: number
-	format: (v: number) => string
-}) {
-	const share = shareOfLimit(value, limit)
 	return (
-		<div className="flex flex-col items-end gap-1">
-			<span className="font-mono text-xs tabular-nums">
-				{format(value)}
-				{limit > 0 ? <span className="text-muted-foreground"> / {format(limit)}</span> : null}
-			</span>
-			{share !== null ? (
-				<span className="h-1 w-24 overflow-hidden rounded-full bg-muted">
-					<span
-						className={cn(
-							"block h-full rounded-full",
-							share >= 90 ? "bg-severity-error" : share >= 75 ? "bg-warning" : "bg-primary",
-						)}
-						style={{ width: `${Math.min(100, Math.max(share, 1))}%` }}
-					/>
-				</span>
-			) : null}
-		</div>
-	)
-}
-
-function RailwayServiceTable({ services }: { services: ReadonlyArray<RailwayServiceRow> }) {
-	return (
-		<div className="overflow-x-auto rounded-md border bg-card">
-			<table className="w-full min-w-[640px] text-sm">
-				<thead>
-					<tr className="border-b text-[11px] font-medium text-muted-foreground">
-						<th className="px-3 py-2 text-left font-medium">Service</th>
-						<th className="px-3 py-2 text-right font-medium">CPU (avg / limit)</th>
-						<th className="px-3 py-2 text-right font-medium">Memory (avg / limit)</th>
-						<th className="px-3 py-2 text-right font-medium">Replicas</th>
-					</tr>
-				</thead>
-				<tbody>
-					{services.map((row) => (
-						<tr
-							key={`${row.environmentId}:${row.serviceId}`}
-							className="border-b last:border-b-0 hover:bg-muted/40"
-						>
-							<td className="px-3 py-2.5">
-								<Link
-									to="/infra/railway/$serviceId"
-									params={{ serviceId: row.serviceId }}
-									search={{ environmentId: row.environmentId }}
-									className="flex min-w-0 flex-col hover:underline"
-								>
-									<span className="truncate font-medium">
-										{row.serviceName || row.serviceId}
-									</span>
-									<span className="truncate text-xs text-muted-foreground">
-										{row.projectName} / {row.environmentName}
-									</span>
-								</Link>
-							</td>
-							<td className="px-3 py-2.5">
-								<UsageCell value={row.cpuAvg} limit={row.cpuLimit} format={formatCores} />
-							</td>
-							<td className="px-3 py-2.5">
-								<UsageCell
-									value={row.memoryAvg}
-									limit={row.memoryLimit}
-									format={formatBytes}
-								/>
-							</td>
-							<td className="px-3 py-2.5 text-right font-mono text-xs tabular-nums">
-								{row.replicas}
-							</td>
-						</tr>
-					))}
-				</tbody>
-			</table>
+		<div className={cn("space-y-4 transition-opacity", servicesResult.waiting && "opacity-60")}>
+			<RailwaySummaryBand
+				services={services}
+				activeScope={scope}
+				onScopeChange={onScopeChange}
+				className={FLEET_BAND_BOXED}
+			/>
+			<ListToolbar
+				value={query}
+				onChange={onQueryChange}
+				placeholder="Search services…"
+				trailing={
+					filtered.length === services.length
+						? countLabel(services.length, services.length, "service")
+						: `${filtered.length} of ${services.length} services`
+				}
+			/>
+			{filtered.length === 0 ? (
+				<DataTable.Root ariaLabel="Railway services">
+					<DataTable.Empty>
+						No services match. Clear the search or scope to see them all.
+					</DataTable.Empty>
+				</DataTable.Root>
+			) : (
+				<RailwayServiceTable services={filtered} />
+			)}
 		</div>
 	)
 }

@@ -31,7 +31,7 @@ export function HostDetailHeader({ summary, hostName, onWidenRange }: HostDetail
 								Show last 7 days
 							</Button>
 						) : null}
-						<Button variant="outline" size="sm" render={<Link to="/infra" />}>
+						<Button variant="outline" size="sm" render={<Link to="/infra/hosts" />}>
 							Back to hosts
 						</Button>
 					</>

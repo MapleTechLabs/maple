@@ -7,9 +7,9 @@ import {
 	CodeIcon,
 	ComputerIcon,
 	FileIcon,
+	GridIcon,
 	GridSquareCirclePlusIcon,
 	HouseIcon,
-	DockerIcon,
 	KubernetesIcon,
 	LayersIcon,
 	NetworkNodesIcon,
@@ -62,7 +62,9 @@ export interface NavSubItem {
 	 * is the point of folding — but each stays typeable in ⌘K, prefixed with the
 	 * row's title so "pods" still finds Kubernetes Pods.
 	 */
-	views?: ReadonlyArray<{ title: string; href: string }>
+	views?: ReadonlyArray<{ title: string; href: string; paletteTitle?: string }>
+	/** The ⌘K title when the row's own title only makes sense inside its section. */
+	paletteTitle?: string
 }
 
 export interface NavItem {
@@ -77,12 +79,6 @@ export interface NavItem {
 	 */
 	subItems?: NavSubItem[]
 	badge?: string
-	/**
-	 * Where the section sends you for the children it isn't showing. Present only
-	 * on sections whose hidden children are offers rather than destinations — a
-	 * page you don't have yet is a setup step, and a page is where that belongs.
-	 */
-	discoverTo?: "/infra/discover"
 }
 
 export interface NavGroup {
@@ -100,28 +96,26 @@ const overviewItem: NavItem = {
 }
 
 /**
- * Every child carries an icon for the same two reasons as Explore: the closed
- * row previews what's inside it (see `NavRow`), and the expanded sub-list stops
- * being ragged — before this only Cloudflare and PlanetScale had marks, so the
- * host/k8s rows sat text-only beside two brand glyphs.
- *
- * Kubernetes is one row. It used to be four (Pods, Nodes, Workloads, Services)
- * and the section read as a Kubernetes menu with some other things in it; the
- * four are views of one section now, switched by tabs on the page, and the
- * palette keeps each one typeable through `views`. Six children means six
- * unique glyphs — exactly `NavRow`'s all-or-nothing preview cap (each glyph
- * costs the label ~14px), so a seventh would drop the miniatures entirely. The
- * preview reads this whole list, not the org's pruned one: it advertises what
- * the section covers, which is the part `partitionInfraSubItems` hides.
+ * Overview is the section's front door: what needs a look across every source,
+ * then one row per source. The rest are the sources an org reports or has
+ * connected; the ones it doesn't have are offered on the Overview instead of
+ * padded into the nav. Containers folds into Hosts as a view, the way Pods,
+ * Nodes and Workloads fold into Kubernetes, and stays typeable in the palette
+ * through `views`. Six children with six unique marks fits `NavRow`'s preview cap.
  */
 const infrastructureItem: NavItem = {
 	title: "Infrastructure",
 	href: "/infra",
 	icon: ComputerIcon,
-	discoverTo: "/infra/discover",
 	subItems: [
-		{ title: "Hosts", href: "/infra", icon: ServerIcon, surfaces: ["hosts"] },
-		{ title: "Containers", href: "/infra/containers", icon: DockerIcon, surfaces: ["containers"] },
+		{ title: "Overview", href: "/infra", icon: GridIcon, paletteTitle: "Infrastructure overview" },
+		{
+			title: "Hosts",
+			href: "/infra/hosts",
+			icon: ServerIcon,
+			surfaces: ["hosts", "containers"],
+			views: [{ title: "Containers", href: "/infra/containers", paletteTitle: "Containers" }],
+		},
 		{
 			title: "Kubernetes",
 			href: KUBERNETES_ROOT,
@@ -146,67 +140,52 @@ const infrastructureItem: NavItem = {
 /** Most brand glyphs a closed section previews; past this the preview is dropped. */
 export const NAV_PREVIEW_MAX_GLYPHS = 6
 
-/**
- * The section never renders fewer rows than this. An org reporting one source
- * gets its row plus three suggestions; the padding is what turns "you have
- * hosts" into "you have hosts, and here is what else you could plug in".
- */
-export const INFRA_MIN_ROWS = 4
-
 export interface InfraSubItemSplit {
-	/** What the org has — rendered directly under the section. */
+	/** What the org has, rendered directly under the section. */
 	readonly shown: NavSubItem[]
-	/**
-	 * Padding up to `INFRA_MIN_ROWS`: sources the org doesn't report yet, offered
-	 * as rows to explore. Rendered after `shown`, muted, so they read as an
-	 * invitation rather than a claim.
-	 */
-	readonly suggested: NavSubItem[]
-	/** Behind the section's reveal — reachable, just not by default. */
+	/** Sources the org doesn't report. Only the collapsed rail's menu lists them. */
 	readonly hidden: NavSubItem[]
 }
 
 /**
- * Splits Infrastructure's children into what an org has, what it's offered,
- * and what it isn't shown.
- *
- * Five rows is the whole section, and almost nobody runs all five — a Docker
- * shop scrolls past Kubernetes every time. So the ones reporting telemetry (or
- * connected, for the two integration pages) render first, and the rest wait
- * behind the reveal.
- *
- * But a section with one row under it looks like a product with one feature.
- * So the list is padded to `INFRA_MIN_ROWS` with `suggested` rows — the
- * sources the org doesn't have, in the order they appear in the section, which
- * runs from the broadest collector targets to the two that need an OAuth
- * handshake first. Suggestions are still real links: each lands on the page's
- * own empty state, which is where the install instructions live.
+ * The most specific of `sub`'s pages (its own href or a folded view) that the
+ * path sits under, or undefined. Callers compare lengths, so Overview
+ * (`/infra`, which prefixes every sibling) only wins on its own page.
+ */
+export function matchSubItem(currentPath: string, sub: NavSubItem): string | undefined {
+	let best: string | undefined
+	for (const href of [sub.href, ...(sub.views ?? []).map((view) => view.href)]) {
+		if (!isPathActive(currentPath, href)) continue
+		if (best === undefined || href.length > best.length) best = href
+	}
+	return best
+}
+
+/**
+ * Splits Infrastructure's children into what an org has and what it doesn't.
  *
  * Two rules keep that from ever costing someone a page:
  *
  *  - `present: null` means the probe hasn't answered or has failed. Everything
  *    shows. A nav that hides rows because a query 500'd is worse than one
  *    listing a page you don't use.
- *  - The route you're on always shows, gate or no gate. Otherwise you land on
- *    /infra/kubernetes/pods and the section has no row for where you are.
+ *  - The route you're on always shows, gate or no gate.
  */
 export function partitionInfraSubItems(
 	subItems: ReadonlyArray<NavSubItem>,
 	present: ReadonlySet<NavSurface> | null,
 	currentPath: string,
 ): InfraSubItemSplit {
-	if (present === null) return { shown: [...subItems], suggested: [], hidden: [] }
+	if (present === null) return { shown: [...subItems], hidden: [] }
 
 	const reports = (sub: NavSubItem) => sub.surfaces?.some((surface) => present.has(surface)) ?? false
 	const keep = (sub: NavSubItem): boolean =>
-		isPathActive(currentPath, sub.href) || !sub.surfaces || reports(sub)
+		!sub.surfaces || reports(sub) || matchSubItem(currentPath, sub) !== undefined
 
 	const shown: NavSubItem[] = []
-	const rest: NavSubItem[] = []
-	for (const sub of subItems) (keep(sub) ? shown : rest).push(sub)
-
-	const room = Math.max(0, INFRA_MIN_ROWS - shown.length)
-	return { shown, suggested: rest.slice(0, room), hidden: rest.slice(room) }
+	const hidden: NavSubItem[] = []
+	for (const sub of subItems) (keep(sub) ? shown : hidden).push(sub)
+	return { shown, hidden }
 }
 
 /**
@@ -297,7 +276,7 @@ export function isPathActive(currentPath: string, href: string): boolean {
 /** A section is active on its own href or on any of its children's. */
 export function isNavItemActive(currentPath: string, item: NavItem): boolean {
 	if (isPathActive(currentPath, item.href)) return true
-	return item.subItems?.some((sub) => isPathActive(currentPath, sub.href)) ?? false
+	return item.subItems?.some((sub) => matchSubItem(currentPath, sub) !== undefined) ?? false
 }
 
 export interface PaletteNavEntry {
@@ -329,14 +308,14 @@ export function paletteNavItems(flags?: OrganizationFeatureFlags): PaletteNavEnt
 			for (const sub of item.subItems ?? []) {
 				push({
 					id: `nav:${item.title}:${sub.title}`,
-					title: sub.title,
+					title: sub.paletteTitle ?? sub.title,
 					href: sub.href,
 					icon: sub.icon ?? item.icon,
 				})
 				for (const view of sub.views ?? []) {
 					push({
 						id: `nav:${item.title}:${sub.title}:${view.title}`,
-						title: `${sub.title} ${view.title}`,
+						title: view.paletteTitle ?? `${sub.title} ${view.title}`,
 						href: view.href,
 						icon: sub.icon ?? item.icon,
 					})

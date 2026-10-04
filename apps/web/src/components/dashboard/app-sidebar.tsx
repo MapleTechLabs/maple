@@ -11,13 +11,13 @@ import {
 	GridSquareCirclePlusIcon,
 	KeyboardIcon,
 	LogoutIcon,
-	CompassIcon,
 	MagnifierIcon,
 	UserIcon,
 } from "@/components/icons"
 import {
 	isNavItemActive,
 	isPathActive,
+	matchSubItem,
 	NAV_PREVIEW_MAX_GLYPHS,
 	navGroups,
 	partitionInfraSubItems,
@@ -250,41 +250,27 @@ function NavRow({
 
 	// Applied to every section, not just Infrastructure: a section whose children
 	// carry no `surface` comes back whole, so there is nothing to special-case.
-	const discoverTo = item.discoverTo
-	const { shown, suggested, hidden } = useMemo(
+	const { shown, hidden } = useMemo(
 		() =>
 			item.subItems
 				? partitionInfraSubItems(item.subItems, surfaces, currentPath)
-				: { shown: [], suggested: [], hidden: [] },
+				: { shown: [], hidden: [] },
 		[item.subItems, surfaces, currentPath],
 	)
-	// Suggestions are rows like any other for activity and layout; only their
-	// ink differs, so the split is a Set the renderer consults rather than a
-	// second list it has to keep in step.
-	const subItems = useMemo(
-		() => (item.subItems ? [...shown, ...suggested] : undefined),
-		[item.subItems, shown, suggested],
-	)
-	const isSuggested = useMemo(() => new Set(suggested), [suggested])
+	const subItems = item.subItems ? shown : undefined
 
-	// Longest match wins: Infrastructure's Hosts child is `/infra`, which
-	// prefixes every one of its siblings, so a plain match would light up two
-	// rows on /infra/kubernetes/pods.
-	// The discover page lives under the section's own href, so it would otherwise
-	// light up the child that owns the section root — Hosts is `/infra`, and
-	// `/infra/discover` prefixes it. It's a sibling row here, not a child, so it
-	// takes the selection off them entirely.
-	const discoverActive = discoverTo ? isPathActive(currentPath, discoverTo) : false
-
+	// Longest match wins, views included: Overview is `/infra`, which prefixes
+	// every sibling, and Hosts owns `/infra/containers` as a folded view.
 	const activeSubHref = useMemo(() => {
-		if (discoverActive) return undefined
-		let best: string | undefined
+		let best: { href: string; length: number } | undefined
 		for (const sub of subItems ?? []) {
-			if (!isPathActive(currentPath, sub.href)) continue
-			if (best === undefined || sub.href.length > best.length) best = sub.href
+			const matched = matchSubItem(currentPath, sub)
+			if (matched === undefined) continue
+			if (best === undefined || matched.length > best.length)
+				best = { href: sub.href, length: matched.length }
 		}
-		return best
-	}, [subItems, currentPath, discoverActive])
+		return best?.href
+	}, [subItems, currentPath])
 
 	// While a section is open the rail belongs to the child you're actually on,
 	// not the parent — otherwise two amber bars compete and neither points at
@@ -340,11 +326,7 @@ function NavRow({
 						<DropdownMenuGroup>
 							<DropdownMenuLabel>{item.title}</DropdownMenuLabel>
 							{subItems.map((sub) => (
-								<DropdownMenuItem
-									className={isSuggested.has(sub) ? "text-muted-foreground" : undefined}
-									key={sub.title}
-									render={<Link to={sub.href} />}
-								>
+								<DropdownMenuItem key={sub.title} render={<Link to={sub.href} />}>
 									{sub.icon ? (
 										<sub.icon size={16} style={{ color: sub.iconColor }} />
 									) : null}
@@ -357,7 +339,7 @@ function NavRow({
 						    exists to shorten a list you look at, not to lock pages away.
 						    This is also the only nav the collapsed rail has, so a source
 						    the probe got wrong must still be one click away. */}
-						{hidden.length > 0 || discoverTo ? (
+						{hidden.length > 0 ? (
 							<>
 								<DropdownMenuSeparator />
 								<DropdownMenuGroup>
@@ -369,12 +351,6 @@ function NavRow({
 											{sub.title}
 										</DropdownMenuItem>
 									))}
-									{discoverTo ? (
-										<DropdownMenuItem render={<Link to={discoverTo} />}>
-											<CompassIcon size={16} />
-											Add sources
-										</DropdownMenuItem>
-									) : null}
 								</DropdownMenuGroup>
 							</>
 						) : null}
@@ -434,17 +410,8 @@ function NavRow({
 							}
 							key={sub.title}
 						>
-							{/* A suggested row wears the same muted ink as "Add sources"
-							    below it: it is an offer, not a page that has data, and
-							    the two kinds of row must not read as one list of things
-							    you have. Brand marks keep their own color either way —
-							    a greyed Kubernetes wheel is not a recognisable one. */}
 							<SidebarMenuSubButton
-								className={
-									isSuggested.has(sub)
-										? "translate-x-0 text-muted-foreground data-[active=true]:text-sidebar-primary hover:text-foreground [&>svg]:text-current"
-										: "translate-x-0 data-[active=true]:text-sidebar-primary [&>svg]:text-current"
-								}
+								className="translate-x-0 data-[active=true]:text-sidebar-primary [&>svg]:text-current"
 								isActive={sub.href === activeSubHref}
 								render={<Link to={sub.href} />}
 							>
@@ -455,31 +422,6 @@ function NavRow({
 							</SidebarMenuSubButton>
 						</SidebarMenuSubItem>
 					))}
-					{discoverTo ? (
-						<SidebarMenuSubItem
-							className={
-								discoverActive
-									? "border-sidebar-primary border-l-2 ps-2.5"
-									: "border-sidebar-border border-l-2 ps-2.5"
-							}
-						>
-							<SidebarMenuSubButton
-								className="translate-x-0 text-muted-foreground data-[active=true]:text-sidebar-primary hover:text-foreground"
-								isActive={discoverActive}
-								render={<Link to={discoverTo} />}
-							>
-								{/* One neutral mark in the same slot the sibling rows use,
-								    so the row sits on their rhythm instead of breaking it.
-								    A stack of the missing sources' own logos was the first
-								    idea and the wrong one: three brand marks at 14px collide
-								    into a smudge, and the column already carries one mark per
-								    child. A compass says "go look" where a plus says "add
-								    one" — the page behind this row is both. */}
-								<CompassIcon className="size-3.5" />
-								<span className="text-xs">Add sources</span>
-							</SidebarMenuSubButton>
-						</SidebarMenuSubItem>
-					) : null}
 				</SidebarMenuSub>
 			) : null}
 		</SidebarMenuItem>

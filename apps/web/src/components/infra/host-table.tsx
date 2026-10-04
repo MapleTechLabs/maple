@@ -92,7 +92,7 @@ export function HostTable({ hosts, waiting }: HostTableProps) {
 			{sorted.map((host) => (
 				<Link
 					key={host.hostName}
-					to="/infra/$hostName"
+					to="/infra/hosts/$hostName"
 					params={{ hostName: host.hostName }}
 					className={ROW_LINK_CLASS}
 				>
