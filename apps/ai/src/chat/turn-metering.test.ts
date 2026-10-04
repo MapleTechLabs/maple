@@ -19,6 +19,7 @@ import {
 } from "@maple/domain/chat-session"
 import { ExternalUserId, OrgId } from "@maple/domain/primitives"
 import { ConfigProvider, Effect, Schema } from "effect"
+import { FetchHttpClient } from "effect/http"
 import { afterEach, assert, beforeEach, describe, it } from "vitest"
 import { meterTurn } from "./turn-runner"
 
@@ -68,7 +69,11 @@ beforeEach(() => {
 	tracked = []
 	realFetch = globalThis.fetch
 	globalThis.fetch = async (_input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-		tracked.push(trackedFrom(JSON.parse(typeof init?.body === "string" ? init.body : "{}")))
+		// The HttpClient sends the JSON body as bytes.
+		const body = init?.body
+		const text =
+			typeof body === "string" ? body : body instanceof Uint8Array ? new TextDecoder().decode(body) : "{}"
+		tracked.push(trackedFrom(JSON.parse(text)))
 		return new Response("{}", { status: 200 })
 	}
 })
@@ -85,7 +90,11 @@ const meter = (
 	origin: ChatTurnOrigin = { kind: "app" },
 ) =>
 	Effect.runPromise(
-		meterTurn(turn(sessionId, messageId), tenant, origin, { input, output }).pipe(Effect.provide(config)),
+		meterTurn(turn(sessionId, messageId), tenant, origin, { input, output }).pipe(
+			Effect.provide(config),
+			// Read the global per call: the tests swap `globalThis.fetch`, and the default reference caches it.
+			Effect.provideService(FetchHttpClient.Fetch, (input, init) => globalThis.fetch(input, init)),
+		),
 	)
 
 const keysFor = (featureId: string) => tracked.filter((t) => t.featureId === featureId).map((t) => t.key)

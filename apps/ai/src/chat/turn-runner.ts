@@ -24,7 +24,8 @@ import { ChatMessage, type ChatTurnOrigin, type ChatTurnTenantEncoded } from "@m
 import type { InvestigationProgress, PrReviewFailureReason } from "@maple/domain/http"
 import { envPorts } from "@maple/backend/platform/env-ports"
 import { workerTelemetryConfig } from "@maple/infra/worker-telemetry"
-import { Cause, Config, Effect, Exit, Layer, ManagedRuntime, Match, Option, Redacted } from "effect"
+import { Cause, Effect, Exit, Layer, ManagedRuntime, Match, Option } from "effect"
+import { FetchHttpClient } from "effect/http"
 import type { WorkersAiBinding } from "../platform/WorkersAiHttpClient"
 import { ReturnedToolFailuresOkLayer } from "../platform/genai-spans"
 import type { ChatSession } from "./ChatSession"
@@ -176,36 +177,21 @@ export const meterTurn = (
 			source: profileForTurn(agentForSession(input.sessionId), origin).surface,
 			idempotencyKey: `${input.sessionId}:${input.messageId}`,
 		}
-	// Bookkeeping must never fail a delivered answer: a rejection or a timeout is ignored, so this
-	// is an infallible Effect.
-	return Effect.flatMap(meteringConfig, (config) =>
-		Effect.tryPromise(() =>
-			trackTokenUsage(config, {
-				orgId: tenant.orgId,
-				inputTokens: usage.input,
-				outputTokens: usage.output,
-				idempotencyKey: billing.idempotencyKey,
-				source: billing.source,
-			}),
-		),
-	).pipe(Effect.timeout(METERING_TIMEOUT), Effect.ignore)
-}
-
-const optionalConfigString = (key: string) =>
-	Config.option(Config.String(key)).pipe(
-		Config.map(Option.getOrUndefined),
-		Config.orElse(() => Config.succeed(undefined)),
+	// Bookkeeping must never fail a delivered answer: the tracker is infallible and bounded here too.
+	// It runs as a finalizer, outside any graph that is sure to carry an HttpClient, so it brings its own.
+	return trackTokenUsage({
+		orgId: tenant.orgId,
+		inputTokens: usage.input,
+		outputTokens: usage.output,
+		idempotencyKey: billing.idempotencyKey,
+		source: billing.source,
+	}).pipe(
+		Effect.timeout(METERING_TIMEOUT),
+		Effect.ignore,
+		// oxlint-disable-next-line effecttsgo/strict-effect-provide
+		Effect.provide(FetchHttpClient.layer),
 	)
-
-/** The tracker's three settings, from `Config` rather than the raw env it still takes as a record. */
-const meteringConfig = Config.all({
-	AUTUMN_SECRET_KEY: Config.option(Config.Redacted("AUTUMN_SECRET_KEY")).pipe(
-		Config.map((key) => Option.getOrUndefined(Option.map(key, Redacted.value))),
-		Config.orElse(() => Config.succeed(undefined)),
-	),
-	MAPLE_DEFAULT_ORG_ID: optionalConfigString("MAPLE_DEFAULT_ORG_ID"),
-	AUTUMN_API_URL: optionalConfigString("AUTUMN_API_URL"),
-})
+}
 
 /**
  * `triage` billing coordinates for an investigation session, or `undefined` if this is not one.
