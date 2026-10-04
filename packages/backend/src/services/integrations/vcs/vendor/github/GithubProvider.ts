@@ -274,6 +274,8 @@ const toVcsCommitError = (
 
 const finiteOrNull = (value: number) => (Number.isFinite(value) ? value : null)
 
+const decodeJsonBody = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown))
+
 // GitHub serves a stable avatar for any login at `<host>/<login>.png`, redirecting
 // to that user's current avatar. Derive one from a login so commits whose ingestion
 // path carries no avatar URL still resolve to a picture. The host is taken from the
@@ -283,11 +285,9 @@ const finiteOrNull = (value: number) => (Number.isFinite(value) ? value : null)
 // dashboard renders with an initials fallback.
 const githubAvatarUrl = (htmlUrl: string, login: string | null): string | null => {
 	if (!login) return null
-	try {
-		return new URL(`/${encodeURIComponent(login)}.png?size=64`, htmlUrl).href
-	} catch {
-		return null
-	}
+	return Option.liftThrowable(
+		() => new URL(`/${encodeURIComponent(login)}.png?size=64`, htmlUrl).href,
+	)().pipe(Option.getOrNull)
 }
 
 const installationReason = (action: string): VcsInstallationSyncReason | null => {
@@ -777,10 +777,8 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 			const webhookToJobs = (input: VcsWebhookRequest) =>
 				Effect.gen(function* () {
 					yield* verifySignature(input.rawBody, input.headers["x-hub-signature-256"])
-					const parsed = yield* Effect.try({
-						try: () => JSON.parse(input.rawBody) as unknown,
-						catch: () => parseError("Invalid JSON body"),
-					}).pipe(
+					const parsed = yield* decodeJsonBody(input.rawBody).pipe(
+						Effect.mapError(() => parseError("Invalid JSON body")),
 						Effect.tapError(() =>
 							Effect.annotateCurrentSpan({
 								"vcs.webhook.outcome": "rejected",

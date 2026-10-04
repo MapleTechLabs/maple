@@ -33,18 +33,16 @@ const apiKeyDefaultRoles = [decodeRoleNameSync("root")]
 
 const AGENT_ACTOR_HEADER = "x-maple-agent-id"
 
+const decodeAgentActorMetadata = Schema.decodeUnknownOption(
+	Schema.fromJsonString(Schema.Struct({ agentActorId: Schema.String })),
+)
+
 const extractAgentActorIdFromMetadata = (metadataJson: string | null): string | null => {
 	if (!metadataJson) return null
-	try {
-		const parsed = JSON.parse(metadataJson)
-		if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-			const candidate = (parsed as Record<string, unknown>).agentActorId
-			return typeof candidate === "string" ? candidate : null
-		}
-	} catch {
-		// fall through
-	}
-	return null
+	return Option.match(decodeAgentActorMetadata(metadataJson), {
+		onNone: () => null,
+		onSome: (metadata) => metadata.agentActorId,
+	})
 }
 
 const toHeaderRecord = (headers: Headers): Record<string, string> => {

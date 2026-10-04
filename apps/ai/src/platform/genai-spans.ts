@@ -58,13 +58,8 @@ const truncated = (text: string, cap: number): string =>
 	text.length > cap ? text.slice(0, cap) + TRUNCATION_MARKER : text
 
 /** `JSON.stringify` that reports an unserializable value (a cycle, a bigint) as nothing. */
-const stringify = (value: unknown): string | undefined => {
-	try {
-		return JSON.stringify(value)
-	} catch {
-		return undefined
-	}
-}
+const stringify = (value: unknown): string | undefined =>
+	Option.getOrUndefined(Option.liftThrowable((input: unknown) => JSON.stringify(input))(value))
 
 /**
  * The convention's message part for one prompt part. Media is size and reasoning is
@@ -459,15 +454,14 @@ const toolDefinitionsJson = (tools: ReadonlyArray<Tool.Any>): string | undefined
 		name: tool.name,
 		description: Tool.getDescription(tool) ?? "",
 	}))
-	let full: string | undefined
-	try {
-		// A schema that cannot be expressed as JSON Schema throws here; it degrades to the compact form.
-		full = JSON.stringify(
-			tools.map((tool, index) => ({ ...described[index], parameters: Tool.getJsonSchema(tool) })),
-		)
-	} catch {
-		full = undefined
-	}
+	// A schema that cannot be expressed as JSON Schema throws here; it degrades to the compact form.
+	const full = Option.getOrUndefined(
+		Option.liftThrowable(() =>
+			JSON.stringify(
+				tools.map((tool, index) => ({ ...described[index], parameters: Tool.getJsonSchema(tool) })),
+			),
+		)(),
+	)
 	if (full !== undefined && full.length <= TOOL_DEFINITIONS_BUDGET) return full
 	return JSON.stringify(
 		described.map((tool) => ({ ...tool, description: truncated(tool.description, 128) })),

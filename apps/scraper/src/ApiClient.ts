@@ -25,6 +25,7 @@ export interface ApiClientApi {
 }
 
 const decodeTargets = Schema.decodeUnknownEffect(InternalScrapeTargetList)
+const decodeJson = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown))
 
 export class ApiClient extends Context.Service<ApiClient, ApiClientApi>()("@maple/scraper/ApiClient", {
 	make: Effect.gen(function* () {
@@ -63,11 +64,14 @@ export class ApiClient extends Context.Service<ApiClient, ApiClientApi>()("@mapl
 					}),
 				)
 			}
-			return yield* Effect.try({
-				try: () => JSON.parse(text) as unknown,
-				catch: () =>
-					new ApiRequestError({ message: "scrape-targets returned invalid JSON", status: null }),
-			}).pipe(
+			return yield* decodeJson(text).pipe(
+				Effect.mapError(
+					() =>
+						new ApiRequestError({
+							message: "scrape-targets returned invalid JSON",
+							status: null,
+						}),
+				),
 				Effect.flatMap((json) =>
 					decodeTargets(json).pipe(
 						Effect.mapError(

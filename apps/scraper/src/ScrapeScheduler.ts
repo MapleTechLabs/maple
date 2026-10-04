@@ -240,13 +240,11 @@ export const initialJitterMs = (key: string, baseMs: number): number => {
 	return (hash >>> 0) % baseMs
 }
 
-const hostFromUrl = (url: string): string => {
-	try {
-		return new URL(url).host
-	} catch {
-		return url
-	}
-}
+const hostFromUrl = (url: string): string =>
+	Result.getOrElse(
+		Result.try(() => new URL(url).host),
+		() => url,
+	)
 
 /**
  * Fiber-map key: discovered sub-targets (PlanetScale branches) share one

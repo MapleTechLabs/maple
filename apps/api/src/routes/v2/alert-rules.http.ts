@@ -18,7 +18,7 @@ import type {
 } from "@maple/domain/http/v2"
 import { MapleApiV2, paginateArray, scopeAllows, timestamp, V2ParameterInvalid } from "@maple/domain/http/v2"
 import { AlertForbiddenError } from "@maple/domain/http"
-import { Effect, Result, Schema } from "effect"
+import { Effect, Option, Result, Schema } from "effect"
 import { Base64Url } from "effect/encoding"
 import { auditDiff } from "@/routes/v2/audit-changes"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
@@ -27,6 +27,9 @@ import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertRead
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
 
 const decodeIsoDateTime = Schema.decodeUnknownSync(IsoDateTimeString)
+const decodeChecksCursorParts = Schema.decodeUnknownOption(
+	Schema.fromJsonString(Schema.Tuple([Schema.String, Schema.String])),
+)
 
 const encodeChecksCursor = (check: AlertCheckDocument): string =>
 	`chk_${Base64Url.encode(JSON.stringify([check.timestamp, check.groupKey]))}`
@@ -40,21 +43,16 @@ const decodeChecksCursor = (value: string | undefined) => {
 	if (Result.isFailure(decoded)) {
 		return Effect.fail(V2ParameterInvalid.make("Invalid pagination cursor.", { param: "cursor" }))
 	}
-	try {
-		const parts = JSON.parse(decoded.success) as unknown
-		if (
-			!Array.isArray(parts) ||
-			parts.length !== 2 ||
-			typeof parts[0] !== "string" ||
-			typeof parts[1] !== "string" ||
-			!Number.isFinite(Date.parse(parts[0]))
-		) {
-			throw new Error("invalid")
-		}
-		return Effect.succeed([parts[0], parts[1]] as const)
-	} catch {
-		return Effect.fail(V2ParameterInvalid.make("Invalid pagination cursor.", { param: "cursor" }))
-	}
+	return Option.match(
+		decodeChecksCursorParts(decoded.success).pipe(
+			Option.filter(([ts]) => Number.isFinite(Date.parse(ts))),
+		),
+		{
+			onNone: () =>
+				Effect.fail(V2ParameterInvalid.make("Invalid pagination cursor.", { param: "cursor" })),
+			onSome: (parts) => Effect.succeed(parts),
+		},
+	)
 }
 
 const summaryTimestamp = (value: string) =>

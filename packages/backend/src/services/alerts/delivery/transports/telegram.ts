@@ -34,6 +34,8 @@ const TelegramResponseSchema = Schema.Struct({
 	result: Schema.optionalKey(Schema.Struct({ message_id: Schema.optionalKey(Schema.Number) })),
 })
 const decodeTelegramResponse = Schema.decodeUnknownResult(TelegramResponseSchema)
+const decodeTelegramResponseJson = Schema.decodeUnknownResult(Schema.fromJsonString(TelegramResponseSchema))
+const decodeJson = Schema.decodeUnknownResult(Schema.fromJsonString(Schema.Unknown))
 
 const telegramError = (message: string) => new AlertDeliveryError({ message, destinationType: "telegram" })
 
@@ -99,11 +101,9 @@ export const telegramTransport: HttpTransport<Config> = {
 		}
 	},
 	interpret: (input, rawBody): Result.Result<ProviderAck, AlertDeliveryFailure> => {
-		const parsed = Result.try({
-			try: (): unknown => JSON.parse(rawBody),
-			catch: () => telegramError("Telegram returned a non-JSON response"),
-		})
-		if (Result.isFailure(parsed)) return Result.fail(parsed.failure)
+		const parsed = decodeJson(rawBody)
+		if (Result.isFailure(parsed))
+			return Result.fail(telegramError("Telegram returned a non-JSON response"))
 
 		const decoded = decodeTelegramResponse(parsed.success)
 		if (Result.isFailure(decoded)) {
@@ -149,12 +149,7 @@ const telegramApiCall = (
 		Effect.flatMap((response) =>
 			Effect.promise(() => response.text().catch(() => "")).pipe(
 				Effect.map((body) => {
-					const decoded = decodeTelegramResponse(
-						Result.getOrElse(
-							Result.try({ try: (): unknown => JSON.parse(body), catch: () => null }),
-							() => null,
-						),
-					)
+					const decoded = decodeTelegramResponseJson(body)
 					const description = Result.getOrElse(
 						Result.map(decoded, (payload) => payload.description ?? ""),
 						() => "",
@@ -266,7 +261,7 @@ const GetUpdatesResponseSchema = Schema.Struct({
 	error_code: Schema.optionalKey(Schema.Number),
 	result: Schema.optionalKey(Schema.Array(TelegramUpdateSchema)),
 })
-const decodeGetUpdates = Schema.decodeUnknownResult(GetUpdatesResponseSchema)
+const decodeGetUpdates = Schema.decodeUnknownResult(Schema.fromJsonString(GetUpdatesResponseSchema))
 
 const CHAT_TYPES = ["private", "group", "supergroup", "channel"] as const
 
@@ -311,8 +306,7 @@ export const fetchTelegramChats = (
 		Effect.flatMap((response) =>
 			Effect.promise(() => response.text().catch(() => "")).pipe(
 				Effect.map((raw): TelegramChatDiscovery => {
-					const parsed = Result.try({ try: (): unknown => JSON.parse(raw), catch: () => null })
-					const decoded = decodeGetUpdates(Result.getOrElse(parsed, () => null))
+					const decoded = decodeGetUpdates(raw)
 					if (Result.isFailure(decoded)) {
 						return response.ok
 							? { status: "invalid", reason: "Telegram returned an unexpected response" }

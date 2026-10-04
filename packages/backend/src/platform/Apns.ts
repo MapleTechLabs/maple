@@ -196,7 +196,9 @@ const resolveConfig = (env: EnvConfig): ApnsConfig | null => {
 	return { teamId, keyId, privateKeyPem: Redacted.value(key) }
 }
 
-const decodeReason = Schema.decodeUnknownOption(Schema.Struct({ reason: Schema.String }))
+const decodeReason = Schema.decodeUnknownOption(
+	Schema.fromJsonString(Schema.Struct({ reason: Schema.String })),
+)
 
 /**
  * TTL cache around `mint` with single-flight refresh. MobilePushService fans
@@ -417,13 +419,7 @@ export class ApnsClient extends Context.Service<ApnsClient, ApnsClientApi>()(
 				}
 
 				const text = yield* response.text.pipe(Effect.orElseSucceed(() => ""))
-				const parsed = (() => {
-					try {
-						return decodeReason(JSON.parse(text))
-					} catch {
-						return Option.none()
-					}
-				})()
+				const parsed = decodeReason(text)
 				const reason = Option.map(parsed, (r) => r.reason).pipe(
 					Option.getOrElse(() => `HTTP ${response.status}`),
 				)

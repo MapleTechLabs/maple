@@ -80,11 +80,7 @@ const sessionCall = <A>(operation: string, run: () => Promise<A>) =>
 const sessionIdFromPath = (pathname: string): string | undefined => {
 	const match = /^\/api\/chat\/sessions\/([^/]+)\/[a-z]+$/.exec(pathname)
 	if (!match?.[1]) return undefined
-	try {
-		return decodeURIComponent(match[1])
-	} catch {
-		return undefined
-	}
+	return Option.getOrUndefined(Option.liftThrowable(decodeURIComponent)(match[1]))
 }
 
 /**
@@ -162,8 +158,13 @@ export const ChatSessionsRouter = HttpRouter.use((router) =>
 				const resolved = yield* resolveSession(request)
 				if (!resolved.ok) return resolved.failure
 				const { stub } = resolved.session
-				const result = yield* sessionCall("history", () =>
-					Promise.all([stub.history(), stub.cursor(), stub.running()]),
+				const result = yield* Effect.all(
+					[
+						sessionCall("history", () => stub.history()),
+						sessionCall("history", () => stub.cursor()),
+						sessionCall("history", () => stub.running()),
+					],
+					{ concurrency: "unbounded" },
 				).pipe(Effect.option)
 				if (Option.isNone(result)) return problem("The chat session is unavailable", 503)
 				const [messages, cursor, running] = result.value
