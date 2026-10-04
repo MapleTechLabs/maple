@@ -92,10 +92,11 @@ const meter = (
 	input: number,
 	output: number,
 	origin: ChatTurnOrigin = { kind: "app" },
+	configLayer: typeof config = config,
 ) =>
 	Effect.runPromise(
 		meterTurn(turn(sessionId, messageId), tenant, origin, { input, output }).pipe(
-			Effect.provide(config),
+			Effect.provide(configLayer),
 			// Read the global per call: the tests swap `globalThis.fetch`, and the default reference caches it.
 			Effect.provideService(FetchHttpClient.Fetch, (input, init) => globalThis.fetch(input, init)),
 		),
@@ -204,6 +205,15 @@ describe("meterTurn", () => {
 
 		assert.deepEqual(keysFor("ai_input_tokens"), [`${INVESTIGATION}:turn-msg-1:triage:input`])
 		assert.deepEqual(keysFor("ai_output_tokens"), [`${INVESTIGATION}:turn-msg-1:triage:output`])
+	})
+
+	it("skips tracking when the secret key is set but blank", async () => {
+		// A blank key reads as unset, as an absent one does: no request with an empty bearer.
+		const blankKey = ConfigProvider.layer(ConfigProvider.fromUnknown({ AUTUMN_SECRET_KEY: "  " }))
+
+		await meter(`${ORG}:default`, "msg-1", 1000, 100, { kind: "app" }, blankKey)
+
+		assert.deepEqual(tracked, [])
 	})
 
 	it("survives a tracker that rejects, rather than failing a delivered answer", async () => {
