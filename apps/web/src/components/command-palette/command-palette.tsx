@@ -19,6 +19,7 @@ import { Kbd } from "@maple/ui/components/ui/kbd"
 import {
 	ChatBubbleSparkleIcon,
 	GearIcon,
+	GridIcon,
 	GridSquareCirclePlusIcon,
 	KeyboardIcon,
 	MoonIcon,
@@ -28,6 +29,11 @@ import {
 import { isClerkAuthEnabled } from "@/lib/services/common/auth-mode"
 import { openGlobalChat } from "@/components/chat/global-chat-sheet"
 import { paletteNavItems } from "@/components/dashboard/nav-items"
+import {
+	catalogEntry,
+	useVisibleCatalog,
+	type IntegrationId,
+} from "@/components/integrations/integration-catalog"
 import { useDashboardPreferences } from "@/hooks/use-dashboard-preferences"
 import { useDashboardsRead } from "@/hooks/use-dashboard-store"
 import { useOrganizationFeatureFlags } from "@/hooks/use-organization-feature-flags"
@@ -41,13 +47,15 @@ const MAX_RESULTS = 12
 interface PaletteEntry {
 	id: string
 	title: string
-	group: "Navigation" | "Services" | "Dashboards" | "Actions"
+	group: "Navigation" | "Services" | "Dashboards" | "Integrations" | "Actions"
 	keywords?: string
-	icon?: typeof GearIcon
+	icon?: React.ComponentType<{ size?: number; className?: string }>
 	/** Static route to navigate to (rendered as a router Link). */
 	href?: string
 	/** Dashboard id for /dashboards/$dashboardId entries. */
 	dashboardId?: string
+	/** Catalog id for /integrations?integration= entries. */
+	integrationId?: IntegrationId
 	/** Service name for /services/$serviceName entries (renders a ServiceDot). */
 	serviceName?: string
 	/** Imperative action (theme toggle, open shortcuts dialog, …). */
@@ -65,7 +73,13 @@ const FUSE_OPTIONS: IFuseOptions<PaletteEntry> = {
 	threshold: 0.35,
 }
 
-const GROUP_ORDER: ReadonlyArray<PaletteEntry["group"]> = ["Navigation", "Services", "Dashboards", "Actions"]
+const GROUP_ORDER: ReadonlyArray<PaletteEntry["group"]> = [
+	"Navigation",
+	"Services",
+	"Dashboards",
+	"Integrations",
+	"Actions",
+]
 
 function groupEntries(entries: PaletteEntry[]): [PaletteEntry["group"], PaletteEntry[]][] {
 	const groups = new Map<PaletteEntry["group"], PaletteEntry[]>()
@@ -136,6 +150,7 @@ function PaletteContent({
 	// Flagged-off pages must not be findable by name either, so the palette reads
 	// the same flags the sidebar does and passes them to the same builder.
 	const { flags: featureFlags } = useOrganizationFeatureFlags()
+	const catalog = useVisibleCatalog()
 
 	const entries = useMemo<PaletteEntry[]>(() => {
 		// Sections *and* their children — Traces, Logs, Metrics, Replays, Hosts,
@@ -150,6 +165,14 @@ function PaletteContent({
 				icon: item.icon,
 				href: item.href,
 			})),
+			{
+				id: "nav:/integrations",
+				title: "Integrations",
+				group: "Navigation",
+				keywords: "go to integrations connect providers sources add",
+				icon: GridIcon,
+				href: "/integrations",
+			},
 			{
 				id: "nav:/settings",
 				title: "Settings",
@@ -173,6 +196,16 @@ function PaletteContent({
 					]
 				: []),
 		]
+
+		// Every provider is typeable as "Connect <name>", so trying "railway" finds it from anywhere.
+		const integrationEntries: PaletteEntry[] = catalog.map((entry) => ({
+			id: `integration:${entry.id}`,
+			title: `Connect ${entry.name}`,
+			group: "Integrations",
+			keywords: `integration connect add source ${entry.name} ${entry.category}`,
+			icon: entry.monoIcon ?? entry.icon,
+			integrationId: entry.id,
+		}))
 
 		const serviceEntries: PaletteEntry[] = serviceNames.map((name) => ({
 			id: `service:${name}`,
@@ -226,14 +259,19 @@ function PaletteContent({
 			},
 		]
 
-		return [...navigation, ...serviceEntries, ...dashboardEntries, ...actions]
-	}, [dashboards, favorites, serviceNames, theme, setTheme, onShowShortcuts, featureFlags])
+		return [...navigation, ...serviceEntries, ...dashboardEntries, ...integrationEntries, ...actions]
+	}, [dashboards, favorites, serviceNames, theme, setTheme, onShowShortcuts, featureFlags, catalog])
 
 	// Browse mode shows only a taste of the services list — the full set stays
 	// searchable, but dozens of service rows shouldn't bury Dashboards/Actions.
 	const browseEntries = useMemo(() => {
 		let serviceCount = 0
-		return entries.filter((entry) => entry.group !== "Services" || serviceCount++ < 5)
+		return entries.filter((entry) =>
+			entry.group === "Services"
+				? serviceCount++ < 5
+				: // Only new providers are advertised while browsing; every one is a search away.
+					entry.integrationId === undefined || (catalogEntry(entry.integrationId).isNew ?? false),
+		)
 	}, [entries])
 	const fuse = useMemo(() => new Fuse(entries, FUSE_OPTIONS), [entries])
 
@@ -278,6 +316,20 @@ function PaletteContent({
 					value={entry.id}
 					className="flex items-center gap-2"
 					render={<Link to="/dashboards/$dashboardId" params={{ dashboardId }} />}
+					onClick={close}
+				>
+					{content}
+				</CommandItem>
+			)
+		}
+		if (entry.integrationId !== undefined) {
+			const integration = entry.integrationId
+			return (
+				<CommandItem
+					key={entry.id}
+					value={entry.id}
+					className="flex items-center gap-2"
+					render={<Link to="/integrations" search={{ integration }} />}
 					onClick={close}
 				>
 					{content}

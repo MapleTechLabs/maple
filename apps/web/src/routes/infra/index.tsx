@@ -13,7 +13,7 @@ import {
 import { cn } from "@maple/ui/lib/utils"
 
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
-import { MagnifierIcon, PlusIcon, ServerIcon, XmarkIcon } from "@/components/icons"
+import { CompassIcon, MagnifierIcon, PlusIcon, ServerIcon, XmarkIcon } from "@/components/icons"
 import { QueryErrorState } from "@/components/common/query-error-state"
 import { FleetGrid } from "@/components/infra/fleet-grid"
 import { HostTable, HostTableLoading, type HostRow } from "@/components/infra/host-table"
@@ -64,10 +64,16 @@ function InfraPage() {
 		.orElse(() => false)
 
 	const heroActions = (
-		<Button size="sm" onClick={() => setInstallOpen(true)}>
-			<PlusIcon size={14} />
-			Add host
-		</Button>
+		<div className="flex items-center gap-2">
+			<Button size="sm" variant="outline" render={<Link to="/infra/discover" />}>
+				<CompassIcon size={14} />
+				Add source
+			</Button>
+			<Button size="sm" onClick={() => setInstallOpen(true)}>
+				<PlusIcon size={14} />
+				Add host
+			</Button>
+		</div>
 	)
 
 	return (

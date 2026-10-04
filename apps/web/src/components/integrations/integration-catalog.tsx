@@ -1,10 +1,7 @@
-import { useState } from "react"
 import { Badge } from "@maple/ui/components/ui/badge"
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@maple/ui/components/ui/collapsible"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { cn } from "@maple/ui/lib/utils"
 import {
-	ChevronDownIcon,
 	ChevronRightIcon,
 	CloudflareIcon,
 	GithubIcon,
@@ -109,7 +106,23 @@ export interface CatalogEntry {
 	/** `icon` in `currentColor`, for a multicolor mark on a surface that owns the color. */
 	readonly monoIcon?: React.ComponentType<{ size?: number; className?: string }>
 	readonly docsUrl?: string
+	/** Which shelf of the hub it sits on. */
+	readonly category: IntegrationCategory
+	/** Recently shipped: badged on the hub and /infra so it gets noticed. Drop it after a release or two. */
+	readonly isNew?: boolean
 }
+
+export type IntegrationCategory = "infrastructure" | "code" | "notifications"
+
+/** Hub shelves, in display order. */
+export const INTEGRATION_CATEGORIES: ReadonlyArray<{
+	readonly id: IntegrationCategory
+	readonly label: string
+}> = [
+	{ id: "infrastructure", label: "Infrastructure" },
+	{ id: "code", label: "Code & deploys" },
+	{ id: "notifications", label: "Chat & alerts" },
+]
 
 /**
  * Chat connectors, straight from their manifests: name, description, mark and
@@ -122,11 +135,13 @@ const CHAT_ENTRIES: ReadonlyArray<CatalogEntry> = chatConnectorManifests.map((ma
 	icon: chatConnectorIcon(manifest.icon),
 	monoIcon: chatConnectorIcon(manifest.icon, true),
 	accent: manifest.accent,
+	category: "notifications",
 }))
 
 const CATALOG: ReadonlyArray<CatalogEntry> = [
 	{
 		id: "cloudflare",
+		category: "infrastructure",
 		name: "Cloudflare",
 		description: "Connect your Cloudflare account via OAuth to collect zone and Workers analytics.",
 		icon: CloudflareIcon,
@@ -135,6 +150,7 @@ const CATALOG: ReadonlyArray<CatalogEntry> = [
 	},
 	{
 		id: "prometheus",
+		category: "infrastructure",
 		name: "Prometheus",
 		description: "Scrape any Prometheus-compatible endpoint on a schedule. No collector required.",
 		icon: PrometheusIcon,
@@ -143,6 +159,7 @@ const CATALOG: ReadonlyArray<CatalogEntry> = [
 	},
 	{
 		id: "planetscale",
+		category: "infrastructure",
 		name: "PlanetScale",
 		description:
 			"Authorize your organization with one click. Maple tracks every database branch automatically.",
@@ -153,6 +170,8 @@ const CATALOG: ReadonlyArray<CatalogEntry> = [
 	},
 	{
 		id: "railway",
+		category: "infrastructure",
+		isNew: true,
 		name: "Railway",
 		description:
 			"Paste a Railway token to collect CPU, memory, network and disk metrics for every service.",
@@ -163,6 +182,7 @@ const CATALOG: ReadonlyArray<CatalogEntry> = [
 	},
 	{
 		id: "warpstream",
+		category: "infrastructure",
 		name: "WarpStream",
 		description: "Monitor WarpStream clusters via agent metrics or the hosted Prometheus endpoint.",
 		icon: WarpStreamIcon,
@@ -172,6 +192,7 @@ const CATALOG: ReadonlyArray<CatalogEntry> = [
 	},
 	{
 		id: "hazel",
+		category: "notifications",
 		name: "Hazel",
 		description:
 			"Forward Maple alerts into a Hazel workspace via OAuth. Pick destinations per notification.",
@@ -181,6 +202,7 @@ const CATALOG: ReadonlyArray<CatalogEntry> = [
 	},
 	{
 		id: "github",
+		category: "code",
 		name: "GitHub",
 		description: "Install the Maple GitHub App to sync repositories and commits from your org.",
 		icon: GithubIcon,
@@ -192,21 +214,13 @@ const CATALOG: ReadonlyArray<CatalogEntry> = [
 	...CHAT_ENTRIES,
 ]
 
-/**
- * The ones shown up front on an empty hub: Cloudflare, GitHub and every chat
- * connector. Every other entry serves a specific piece of infrastructure and only
- * matters to the orgs running it, so it waits behind "Discover more integrations"
- * rather than padding the first screen.
- *
- * Order is the order they appear in.
- */
-const RECOMMENDED: ReadonlyArray<IntegrationId> = [
-	"cloudflare",
-	"github",
-	...CHAT_ENTRIES.map((entry) => entry.id),
-]
-
 export const catalogEntry = (id: IntegrationId): CatalogEntry => CATALOG.find((entry) => entry.id === id)!
+
+/** The catalog this org is shown, in catalog order. */
+export function useVisibleCatalog(): ReadonlyArray<CatalogEntry> {
+	const isVisible = useIsIntegrationVisible()
+	return CATALOG.filter((entry) => isVisible(entry.id))
+}
 
 /**
  * Whether a value names an integration in the catalog. External OAuth callbacks
@@ -870,7 +884,10 @@ function AvailableCard({
 				size={20}
 			/>
 			<span className="flex min-w-0 flex-1 flex-col gap-0.5">
-				<span className="truncate text-sm font-semibold">{entry.name}</span>
+				<span className="flex min-w-0 items-center gap-2">
+					<span className="truncate text-sm font-semibold">{entry.name}</span>
+					{entry.isNew ? <NewBadge /> : null}
+				</span>
 				<span className="line-clamp-2 text-xs text-muted-foreground">{entry.description}</span>
 			</span>
 			{/* Styled as a button, but the whole card is the interactive element. */}
@@ -907,56 +924,17 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 	)
 }
 
-/**
- * The collapsed shelf for everything not connected and not recommended. The
- * overlapping marks are the preview — they say which integrations are inside
- * without spending a row each.
- */
-function DiscoverMore({
-	entries,
-	onSelect,
-}: {
-	entries: ReadonlyArray<{ entry: CatalogEntry; overview: AvailableOverview }>
-	onSelect: (id: IntegrationId) => void
-}) {
-	const [open, setOpen] = useState(false)
+export function NewBadge() {
 	return (
-		<Collapsible open={open} onOpenChange={setOpen}>
-			<CollapsibleTrigger className="group flex w-full cursor-pointer items-center gap-3 rounded-lg border border-border/60 border-dashed bg-card/50 px-4 py-3 text-left outline-none transition-colors hover:border-border hover:bg-muted/40 focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40 data-panel-open:border-solid">
-				<span className="flex shrink-0 items-center -space-x-2" aria-hidden>
-					{entries.map(({ entry }) => (
-						<IntegrationIconPlate
-							key={entry.id}
-							icon={entry.icon}
-							accent={entry.accent}
-							iconClassName={entry.iconClassName}
-							plateClassName="size-7 rounded-md"
-							size={14}
-						/>
-					))}
-				</span>
-				<span className="truncate text-sm font-medium">Discover more integrations</span>
-				<span className="hidden text-xs text-muted-foreground sm:inline">
-					{entries.length} available
-				</span>
-				<ChevronDownIcon
-					size={14}
-					className="ml-auto shrink-0 text-muted-foreground/70 transition-transform duration-200 group-hover:text-foreground group-data-panel-open:rotate-180 motion-reduce:transition-none"
-				/>
-			</CollapsibleTrigger>
-			<CollapsibleContent className="grid grid-cols-1 gap-3 pt-3 lg:grid-cols-2">
-				{entries.map(({ entry, overview }) => (
-					<AvailableCard key={entry.id} entry={entry} cta={overview.cta} onSelect={onSelect} />
-				))}
-			</CollapsibleContent>
-		</Collapsible>
+		<Badge variant="info" size="sm">
+			New
+		</Badge>
 	)
 }
 
 export function IntegrationCatalog({ onSelect }: { onSelect: (id: IntegrationId) => void }) {
 	const overviews = useIntegrationOverviews()
-	const isVisible = useIsIntegrationVisible()
-	const catalog = CATALOG.filter((entry) => isVisible(entry.id))
+	const catalog = useVisibleCatalog()
 
 	const connected = catalog.flatMap((entry) => {
 		const overview = overviews[entry.id]
@@ -970,14 +948,14 @@ export function IntegrationCatalog({ onSelect }: { onSelect: (id: IntegrationId)
 	})
 	const loading = catalog.filter((entry) => overviews[entry.id] === null)
 
-	// Nothing connected yet, and nothing still resolving that could change that:
-	// lead with the broadly useful integrations so the hub opens on a
-	// choice rather than a catalog. A partially loaded hub isn't empty — wait.
-	const showRecommended = connected.length === 0 && loading.length === 0
-	const recommended = showRecommended
-		? RECOMMENDED.flatMap((id) => available.filter(({ entry }) => entry.id === id))
-		: []
-	const more = available.filter(({ entry }) => !recommended.some((r) => r.entry.id === entry.id))
+	// Every provider is on screen: a shelf you have to expand is one most people never open, and
+	// grouping by what the integration feeds keeps the full list scannable. New ones lead their shelf.
+	const shelves = INTEGRATION_CATEGORIES.map((category) => ({
+		...category,
+		entries: available
+			.filter(({ entry }) => entry.category === category.id)
+			.sort((a, b) => Number(b.entry.isNew ?? false) - Number(a.entry.isNew ?? false)),
+	})).filter((shelf) => shelf.entries.length > 0)
 
 	return (
 		<div className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-1 [animation-duration:300ms] motion-reduce:animate-none">
@@ -999,11 +977,11 @@ export function IntegrationCatalog({ onSelect }: { onSelect: (id: IntegrationId)
 					</div>
 				</section>
 			)}
-			{recommended.length > 0 && (
-				<section className="flex flex-col gap-2">
-					<SectionLabel>Start here</SectionLabel>
+			{shelves.map((shelf) => (
+				<section key={shelf.id} className="flex flex-col gap-2">
+					<SectionLabel>{shelf.label}</SectionLabel>
 					<div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-						{recommended.map(({ entry, overview }) => (
+						{shelf.entries.map(({ entry, overview }) => (
 							<AvailableCard
 								key={entry.id}
 								entry={entry}
@@ -1013,8 +991,7 @@ export function IntegrationCatalog({ onSelect }: { onSelect: (id: IntegrationId)
 						))}
 					</div>
 				</section>
-			)}
-			{more.length > 0 && <DiscoverMore entries={more} onSelect={onSelect} />}
+			))}
 		</div>
 	)
 }

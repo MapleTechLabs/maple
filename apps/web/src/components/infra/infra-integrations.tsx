@@ -15,6 +15,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { ChevronRightIcon } from "@/components/icons"
 import {
 	IntegrationIconPlate,
+	NewBadge,
 	catalogEntry,
 	useIntegrationOverviews,
 	type IntegrationId,
@@ -85,7 +86,10 @@ function InfraSourceCard({ source, overview }: { source: InfraSource; overview: 
 				size={20}
 			/>
 			<span className="flex min-w-0 flex-1 flex-col gap-0.5">
-				<span className="truncate text-sm font-semibold">{entry.name}</span>
+				<span className="flex min-w-0 items-center gap-2">
+					<span className="truncate text-sm font-semibold">{entry.name}</span>
+					{entry.isNew && !connected ? <NewBadge /> : null}
+				</span>
 				<span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
 					{connected ? (
 						<>
