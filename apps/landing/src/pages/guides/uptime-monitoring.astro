@@ -274,8 +274,8 @@ const articleJsonLd = {
                                 <tr><td>2% of checkout requests return 500 after a deploy</td><td>Passes</td><td>Error rate fires</td></tr>
                                 <tr><td>A dependency slows every request to 4 s</td><td>Passes, unless it has a latency limit</td><td>Apdex and p95 fire</td></tr>
                                 <tr><td>The process crashes and the load balancer returns 502</td><td>Fails</td><td>Throughput drops to zero and fires</td></tr>
-                                <tr><td>The TLS certificate expires</td><td>Fails, and can warn weeks ahead</td><td>Throughput drops afterwards, with no cause</td></tr>
-                                <tr><td>A DNS change points the domain nowhere</td><td>Fails</td><td>Throughput drops, with no cause</td></tr>
+                                <tr><td>The TLS certificate expires</td><td>Fails, and can warn weeks ahead</td><td>Throughput drops after expiry and an alert fires</td></tr>
+                                <tr><td>A DNS change points the domain nowhere</td><td>Fails</td><td>Throughput drops and an alert fires</td></tr>
                                 <tr><td>An outage at 3am on a service with no night traffic</td><td>Fails</td><td>Nothing to measure</td></tr>
                                 <tr><td>Users in one region cannot reach you</td><td>Fails only from a prober in that region</td><td>A partial dip, often under the threshold</td></tr>
                             </tbody>
