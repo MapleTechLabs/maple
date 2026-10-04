@@ -349,7 +349,10 @@ const SEGMENT_CLASS: Record<HealthSegment["key"], string> = {
 	ok: "bg-muted-foreground/35",
 	elevated: "bg-[var(--severity-warn)]",
 	saturated: "bg-[var(--severity-error)]",
-	unbounded: "bg-muted",
+	// Hatched, not a fill: there is no limit to measure against, and a plain
+	// `bg-muted` vanished into the track.
+	unbounded:
+		"bg-[repeating-linear-gradient(135deg,var(--muted-foreground)_0_1.5px,transparent_1.5px_4px)] opacity-60",
 } satisfies Record<HealthSegment["key"], string>
 
 const SEGMENT_LABEL: Record<HealthSegment["key"], string> = {

@@ -93,7 +93,7 @@ const RAILWAY: ReadonlyArray<RailwayServiceRow> = [
 	railway("worker", 1.52, 4, 4.2, 8, 2),
 	railway("web", 0.21, 1, 0.33, 1, 4),
 	railway("postgres", 0.24, 2, 1.8, 4, 1),
-	railway("nightly-export", 0.04, 1, 0.1, 1, 1),
+	railway("nightly-export", 0.04, 0, 0.1, 0, 1),
 ]
 
 const zone = (
