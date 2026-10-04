@@ -69,7 +69,7 @@ export function presentSources(surfaces: ReadonlySet<NavSurface> | null): Readon
 	return SOURCE_ORDER.filter((id) => SOURCE_SURFACES[id].some((surface) => surfaces.has(surface)))
 }
 
-type SourceState =
+export type SourceState =
 	| { readonly status: "loading" }
 	| { readonly status: "error" }
 	| { readonly status: "ready"; readonly summary: SourceSummary }
@@ -229,7 +229,7 @@ function FindingLink({
 	}
 }
 
-function FindingRow({ finding, timeSearch }: { finding: Finding; timeSearch: TimeRangeSearch }) {
+export function FindingRow({ finding, timeSearch }: { finding: Finding; timeSearch: TimeRangeSearch }) {
 	return (
 		<FindingLink target={finding.target} timeSearch={timeSearch}>
 			<span className={cn("size-2 shrink-0 rounded-full", FINDING_DOT[finding.tone])} />
@@ -349,7 +349,7 @@ function HealthBar({ segments }: { segments: ReadonlyArray<HealthSegment> }) {
 	)
 }
 
-function SourceLink({
+export function SourceLink({
 	id,
 	timeSearch,
 	children,
@@ -399,7 +399,7 @@ function SourceLink({
 	}
 }
 
-function SourceRowBody({ id, state }: { id: SourceId; state: SourceState }) {
+export function SourceRowBody({ id, state }: { id: SourceId; state: SourceState }) {
 	return (
 		<>
 			<span className="flex w-52 shrink-0 flex-col gap-0.5">
