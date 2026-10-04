@@ -110,29 +110,6 @@ jobs:
             - name: Install dependencies
               run: bun install --frozen-lockfile
 
-            - name: Install PlanetScale CLI
-              if: ${{ env.PLANETSCALE_SERVICE_TOKEN != '' }}
-              uses: planetscale/setup-pscale-action@b6a50ee45b4b24944e1d8de6e57b3a5f6476a1af # v1
-
-            # Residual net: previews no longer create `pr-<n>` branches, so this
-            # should find nothing. Gated on the service token, so it SKIPs cleanly
-            # rather than failing on every schedule tick when the token is absent.
-            - name: Sweep orphaned PlanetScale PR branches
-              if: ${{ env.PLANETSCALE_SERVICE_TOKEN != '' }}
-              env:
-                  GITHUB_TOKEN: ${{ github.token }}
-              run: bun scripts/planetscale-pr-branch.ts sweep
-
-            # Gated like the deploy workflow's Electric steps: until Infisical
-            # carries ELECTRIC_API_TOKEN (+ ELECTRIC_PROJECT_ID), skip cleanly.
-            # `!cancelled()` keeps the later sweeps running even when an earlier
-            # one fails — the sweeps are independent safety nets.
-            - name: Sweep orphaned Electric Cloud PR environments
-              if: ${{ !cancelled() && env.ELECTRIC_API_TOKEN != '' }}
-              env:
-                  GITHUB_TOKEN: ${{ github.token }}
-              run: bun scripts/electric-pr-branch.ts sweep
-
             - name: Sweep orphaned Tinybird PR branches
               if: ${{ !cancelled() && env.TINYBIRD_TOKEN != '' && steps.install-tinybird-cli.outcome == 'success' }}
               env:

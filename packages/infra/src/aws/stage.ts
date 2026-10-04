@@ -1,5 +1,4 @@
 import type { RegionName } from "@distilled.cloud/aws/Region"
-import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import type { MapleStage } from "../cloudflare/stage.ts"
 import { DEFAULT_MAPLE_REGION, type MapleRegion, regionSuffix } from "../region.ts"
@@ -139,22 +138,10 @@ export function resolveIngestScaling(stage: MapleStage, region: MapleRegion): In
 }
 
 export interface IngestTaskSize {
-	/** Fargate CPU units. 1024 = 1 vCPU. */
+	/** ECS CPU units. 1024 = 1 vCPU. */
 	cpu: number
-	/** Fargate memory in MiB. Must be a legal pairing with `cpu`. */
+	/** ECS memory in MiB. */
 	memory: number
-}
-
-/**
- * Fargate task size per stage.
- *
- * Sized from ~1,300 req/s per vCPU — gzip level 6 on the export path
- * (`apps/ingest/src/telemetry.rs`) is the binding constraint, not protobuf
- * decode. prd gets 1 vCPU x 2 tasks, which carries today's ~500 req/s with
- * roughly 4x headroom for bursts.
- */
-export function resolveIngestTaskSize(stage: MapleStage): IngestTaskSize {
-	return stage.kind === "prd" ? { cpu: 1024, memory: 2048 } : { cpu: 512, memory: 1024 }
 }
 
 /**
@@ -164,51 +151,6 @@ export function resolveIngestTaskSize(stage: MapleStage): IngestTaskSize {
  */
 export function resolveIngestSelfTraceSampleRatio(stage: MapleStage): string | undefined {
 	return stage.kind === "prd" ? "0.05" : undefined
-}
-
-/**
- * Which fleets run the gateway. Both can run at once, each behind its own ALB,
- * which is how a fleet cutover works: bring the new one up beside the old,
- * flip the proxied `ingest` CNAME, then drop the old one. The CNAME is declared
- * in `apps/ingest/alchemy.run.ts` and follows EC2 whenever EC2 runs.
- */
-export interface IngestFleets {
-	fargate: boolean
-	ec2: boolean
-}
-
-/** `MAPLE_INGEST_FLEETS` names a fleet that does not exist. */
-export class IngestFleetsError extends Schema.TaggedError<IngestFleetsError>()(
-	"@maple/infra/IngestFleetsError",
-	{
-		message: Schema.String,
-		rawFleets: Schema.String,
-	},
-) {}
-
-/**
- * Parses `MAPLE_INGEST_FLEETS` (`fargate`, `ec2`, or `fargate,ec2`). Unset is
- * EC2 only, where prd has run since the 2026-09-21 cutover; the variable is
- * only set to bring Fargate back beside it.
- */
-export const parseIngestFleets = (
-	value: string | undefined,
-): Effect.Effect<IngestFleets, IngestFleetsError> => {
-	const requested = (value ?? "")
-		.split(",")
-		.map((fleet) => fleet.trim())
-		.filter((fleet) => fleet !== "")
-	if (requested.length === 0) return Effect.succeed({ fargate: false, ec2: true })
-	const unknown = requested.filter((fleet) => fleet !== "fargate" && fleet !== "ec2")
-	if (unknown.length > 0) {
-		return Effect.fail(
-			new IngestFleetsError({
-				message: `MAPLE_INGEST_FLEETS: unknown fleet(s) "${unknown.join(", ")}" (expected fargate, ec2)`,
-				rawFleets: value ?? "",
-			}),
-		)
-	}
-	return Effect.succeed({ fargate: requested.includes("fargate"), ec2: requested.includes("ec2") })
 }
 
 /**

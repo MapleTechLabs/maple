@@ -39,5 +39,5 @@
 			"@/*": ["./apps/api/src/*"]
 		}
 	},
-	"include": ["alchemy.run.ts", "apps/*/alchemy.run.ts", "scripts/aws-probe.run.ts"]
+	"include": ["alchemy.run.ts", "apps/*/alchemy.run.ts"]
 }

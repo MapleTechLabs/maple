@@ -1,9 +1,7 @@
-import * as Effect from "effect/Effect"
 import { describe, expect, it } from "vitest"
 import { parseMapleStage } from "../cloudflare/stage.ts"
 import {
 	type MapleRegion,
-	parseIngestFleets,
 	parseMapleRegion,
 	resolveAwsRegion,
 	resolveAwsResourceName,
@@ -177,26 +175,6 @@ describe("resolveIngestSelfTraceSampleRatio", () => {
 		expect(resolveIngestSelfTraceSampleRatio(parseMapleStage("prd"))).toBe("0.05")
 		expect(resolveIngestSelfTraceSampleRatio(parseMapleStage("pr-12"))).toBeUndefined()
 		expect(resolveIngestSelfTraceSampleRatio(parseMapleStage("dev-alice"))).toBeUndefined()
-	})
-})
-
-describe("parseIngestFleets", () => {
-	const parse = (value: string | undefined) => Effect.runSync(parseIngestFleets(value))
-
-	it("is EC2 only when unset", () => {
-		expect(parse(undefined)).toEqual({ fargate: false, ec2: true })
-		expect(parse("")).toEqual({ fargate: false, ec2: true })
-	})
-
-	it("can bring Fargate back beside EC2, or alone", () => {
-		expect(parse("fargate, ec2")).toEqual({ fargate: true, ec2: true })
-		expect(parse("fargate")).toEqual({ fargate: true, ec2: false })
-	})
-
-	it("rejects a fleet it does not know rather than deploying neither", () => {
-		const error = Effect.runSync(Effect.flip(parseIngestFleets("ec2,metal")))
-		expect(error._tag).toBe("@maple/infra/IngestFleetsError")
-		expect(error.message).toMatch(/metal/)
 	})
 })
 

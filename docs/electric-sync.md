@@ -244,55 +244,16 @@ Electric Cloud never used that pair. It created its own generated
 service could run beside Cloud on the same database with no collision during the
 cutover.
 
-## PR previews (no Electric source; dormant since 2026-08, now also Cloud-less)
+## PR previews (no Electric source)
 
-**PR previews no longer have an Electric source.** They stopped provisioning a
-PlanetScale branch (see `resolveDatabaseMode` in
-`packages/infra/src/cloudflare/stage.ts`), and with no Postgres to replicate from
-there is nothing for Electric to point at. `apps/electric-sync/src/worker.ts`
-therefore withholds `ELECTRIC_URL`/`ELECTRIC_SOURCE_ID`/`ELECTRIC_SECRET` on the
-`pr` stage. This is deliberate: a preview can never inherit the shared `dev`
-credentials and proxy its shapes at another stage's data. The sync worker deploys
-unconfigured and returns 503, so `/dashboards` falls back to its HTTP snapshot and
-the alerts lists show `SyncUnavailable`.
-
-Every path of `scripts/electric-pr-branch.ts` is now dead, not just `up`. The
-workflows still call `down` (on PR close) and `sweep` (from
-`cleanup-preview-orphans.yml`), but Electric Cloud is gone, so there are no
-environments left to reap. What follows is kept as the record of what previews used
-to do. Restoring live sync in a preview means pointing it at a self-hosted Electric,
-not at Cloud.
-
-The former lifecycle: an ephemeral Electric Cloud **environment** `pr-<n>` + a
-Postgres **source** per PR, mirroring the PlanetScale/Tinybird branch lifecycle.
-`scripts/electric-pr-branch.ts` (`up`/`down <pr-number>`, driven from
-`.github/workflows/deploy-pr-preview.yml`) used `@electric-sql/cli`
-(`ELECTRIC_API_TOKEN` auth). On open/synchronize it reused (or created under
-`ELECTRIC_PROJECT_ID`) the `pr-<n>` environment, reset its services, and created a
-fresh `postgres` source pointed at the PR branch's `MAPLE_PG_ELECTRIC_URL`. That URL
-was direct 5432 through a dedicated `--with-replication` role: Electric requires
-the REPLICATION role _attribute_, which is never inherited, and the main CI role
-stays non-replication because PlanetScale replication roles aren't grantable, which
-would break the in-place reset's role assumption. The script polled the source until
-active and exported `ELECTRIC_URL`/`ELECTRIC_SOURCE_ID`/`ELECTRIC_SECRET` to
-`$GITHUB_ENV`, where alchemy bound them to the electric-sync worker. On close it
-deleted the environment (cascading the source). Steps were gated on
-`ELECTRIC_API_TOKEN`, so previews stayed green (and the worker 503'd) until the token
-landed in Infisical.
-
-- The web build always reads through the sync path. Provisioning a source is what
-  would make live sync work in previews again.
-- **Publication:** the migrate step ran `0009` (creates
-  `electric_publication_default`) before the source was created. The script passed
-  `--manual-table-publishing` by default (prod parity: Electric reads that
-  migration-owned publication, its default name, instead of owning the tables).
-  `ELECTRIC_MANUAL_TABLE_PUBLISHING=false` let Electric auto-manage publishing
-  instead; `ELECTRIC_SERVICE_EXTRA_ARGS` was the flag escape hatch.
-  The script pins `@electric-sql/cli@0.0.10` (interface verified: `--json` is a
-  global flag, `environments create` returns `environmentId`, the postgres service
-  id is the shape-API `source_id`). Re-verify before bumping the pin.
-- **Caps:** each source counted against the Electric plan's max-databases limit and
-  held a PlanetScale replication slot, so teardown on close was mandatory.
+PR previews deploy without an application database (see `resolveDatabaseMode` in
+`packages/infra/src/cloudflare/stage.ts`), so there is nothing for Electric to
+replicate. `apps/electric-sync/src/worker.ts` withholds
+`ELECTRIC_URL`/`ELECTRIC_SOURCE_ID`/`ELECTRIC_SECRET` on the `pr` stage, so a
+preview can never proxy shapes at another stage's data. The sync worker deploys
+unconfigured and returns 503: `/dashboards` falls back to its HTTP snapshot and the
+alerts lists show `SyncUnavailable`. Restoring live sync in a preview means pointing
+it at a self-hosted Electric.
 
 ## Adding a synced table later
 

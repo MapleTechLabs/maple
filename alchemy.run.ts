@@ -462,14 +462,9 @@ export default Alchemy.Stack(
 						}),
 					)(ingest.serviceUrl)
 				: undefined,
-			// Both fleets' ALBs while the Fargate → EC2 cutover runs them side by side.
-			ingestFargateServiceUrl: ingest?.fargateServiceUrl,
-			ingestEc2ServiceUrl: ingest?.ec2ServiceUrl,
 			ingestCollectorEndpoint: ingest?.collectorEndpoint,
 			// Same as ingest: the electric stack declares both of its DNS records.
 			electricServiceUrl: electric?.serviceUrl,
-			electricCertificateValidation: electric?.certificateValidation,
-			ingestCertificateValidation: ingest?.certificateValidation,
 			apiWorker: api.workerName,
 			electricSyncWorker: electricSync.workerName,
 			webWorker: web?.workerName,
@@ -483,11 +478,10 @@ export default Alchemy.Stack(
 		// oxlint-disable-next-line effecttsgo/strict-effect-provide
 		Effect.provide(MapleStackLive),
 		// `Alchemy.Stack` admits only `ConfigError`, and each of these is a misread
-		// deploy setting (the stage string, AWS_REGION, MAPLE_INGEST_FLEETS).
+		// deploy setting (the stage string, AWS_REGION).
 		Effect.catchTags({
 			"@maple/infra/MapleStageError": asConfigError,
 			"@maple/infra/AwsRegionMismatchError": asConfigError,
-			"@maple/infra/IngestFleetsError": asConfigError,
 		}),
 	),
 )

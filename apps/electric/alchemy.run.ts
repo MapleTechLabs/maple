@@ -261,10 +261,5 @@ export const createMapleElectric = ({
 			})
 		}
 
-		return {
-			serviceUrl: service.url,
-			// What `issueCertificateViaCloudflare` published, kept for diagnosing a
-			// certificate stuck short of ISSUED.
-			certificateValidation: certificate?.domainValidationOptions,
-		}
+		return { serviceUrl: service.url }
 	})
