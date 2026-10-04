@@ -702,10 +702,10 @@ SELECT
         ORDER BY bucket ASC
         FORMAT JSON
 
--- builder:errors:errorsWindowTotalsQuery:default  [7c4fc530]
+-- builder:errors:errorsWindowTotalsQuery:default  [84de4d36]
 SELECT
           count() AS occurrences,
-          uniq(error_events_by_time.FingerprintHash) AS fingerprintCount,
+          uniq(error_events_by_time.FingerprintHash) AS distinctErrorCount,
           countIf(error_events_by_time.ExceptionType = '') AS noExceptionCount
         FROM error_events_by_time
         WHERE error_events_by_time.OrgId = 'org_sql_catalog'

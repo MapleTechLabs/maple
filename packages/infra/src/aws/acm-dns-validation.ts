@@ -291,7 +291,7 @@ const resolveCloudflareZoneId = Effect.fn(function* (hostname: string) {
 
 /** `https://host[:port]/path` to `host`: a load balancer's URL as a CNAME target. */
 export const urlHost = (url: string | undefined): string =>
-	(url ?? "").replace(/^[a-z][a-z0-9+.-]*:\/\//i, "").replace(/[:/].*$/, "")
+	url !== undefined && URL.canParse(url) ? new URL(url).hostname : ""
 
 /**
  * Point `hostname` at a load balancer through Cloudflare's proxy: a proxied

@@ -1577,8 +1577,8 @@ export function errorsWindowTotalsQuery(opts: Omit<ErrorsByTypeOpts, "limit" | "
 	return from(ErrorEventsByTime)
 		.select(($) => ({
 			occurrences: CH.count(),
-			// Not `fingerprints`: a name matching hash/fingerprint reads as an identity column.
-			fingerprintCount: CH.uniq($.FingerprintHash),
+			// Not `fingerprints`: any name containing hash/fingerprint reads as an identity column.
+			distinctErrorCount: CH.uniq($.FingerprintHash),
 			noExceptionCount: CH.countIf($.ExceptionType.eq("")),
 		}))
 		.where(($) => [

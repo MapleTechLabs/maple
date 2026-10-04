@@ -968,9 +968,9 @@ export const createMapleIngest = ({ stage, domains, region, dbRole }: CreateMapl
 		}
 
 		return {
-			// Fargate's ALB when that fleet runs, else EC2's: a PR preview has no
-			// ingest domain and is reached here. Both ALB hostnames are returned too.
-			serviceUrl: (fargateService ?? ec2Service)?.url,
+			// The serving fleet's ALB, the one the public CNAME targets: a PR preview
+			// has no ingest domain and is reached here. Both ALB hostnames are returned too.
+			serviceUrl: servingFleet?.url,
 			fargateServiceUrl: fargateService?.url,
 			ec2ServiceUrl: ec2Service?.url,
 			// Shared with `apps/electric`, which runs in THIS VPC rather than one of

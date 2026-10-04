@@ -871,6 +871,8 @@ export const reviewLocally = async (
 	const env = { ...process.env }
 	if (args.model !== undefined) env.MAPLE_REVIEW_MODEL_OPENROUTER = args.model
 	const settings = await Effect.runPromise(
+		// A CLI script: this is its entry point.
+		// oxlint-disable-next-line effecttsgo/strict-effect-provide
 		loadLlmSettings.pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(env)))),
 	)
 	const model =
