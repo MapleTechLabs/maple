@@ -52,6 +52,13 @@ const investigationGuides = [
         description: "Measure the right latency clock, isolate the slow population, and trace a regression to the release and operation responsible.",
         read: "14 min",
     },
+    {
+        href: "/guides/uptime-monitoring",
+        label: "Availability",
+        title: "Uptime monitoring when you already have tracing",
+        description: "Compare what an outside probe and trace-based alerts each catch, then set up both with OpenTelemetry: alerts on real traffic, and Collector HTTP checks for the gaps.",
+        read: "9 min",
+    },
 ];
 
 const fieldNotes = (await getCollection("blog") as BlogPost[])
