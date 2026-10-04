@@ -352,7 +352,12 @@ const articleJsonLd = {
                     <ol class="guide-steps">
                         <li>
                             <span>01</span>
-                            <div><h3>Alert on traffic stopping</h3><p>Create a rule from the <strong>Throughput drop</strong> template and scope it to the service and its production environment. The template sets <strong>Min samples</strong> to 0, so a window with no requests counts as zero and fires. Set the threshold below the quietest five minutes of a normal day.</p></div>
+                            <div><h3>Alert on traffic stopping</h3><p>Create a rule from the <strong>Throughput drop</strong> template and scope it to the service and its production environment. The template sets <strong>Min samples</strong> to 0, so a window with no requests counts as zero and fires. Set the threshold below the quietest five minutes of a normal day.</p>
+                                <figure class="guide-figure">
+                                    <img src="/screenshots/guides/uptime-01-throughput-rule.webp" data-zoomable alt="The Maple alert rule form with the Throughput signal selected, condition below 100, the checkout service in scope, and Evaluation timing opened to show a 5 minute window and Min samples 0." width="2248" height="1770" loading="lazy" />
+                                    <figcaption>A Throughput drop rule scoped to the checkout service, with Evaluation timing opened to show Min samples at 0.</figcaption>
+                                </figure>
+                            </div>
                         </li>
                         <li>
                             <span>02</span>
@@ -364,7 +369,12 @@ const articleJsonLd = {
                         </li>
                         <li>
                             <span>04</span>
-                            <div><h3>Replay the rule against last week</h3><p><strong>Test rule</strong> replays a rule over a past range and shades the periods where it would have held an incident open. A threshold that would have fired on a normal Tuesday needs to move.</p></div>
+                            <div><h3>Replay the rule against last week</h3><p><strong>Test rule</strong> replays a rule over a past range and shades the periods where it would have held an incident open. A threshold that would have fired on a normal Tuesday needs to move.</p>
+                                <figure class="guide-figure">
+                                    <img src="/screenshots/guides/uptime-02-throughput-preview.webp" data-zoomable alt="The rule preview chart over the last hour: throughput near 200 requests per window, a drop to zero for about 15 minutes, and a shaded band marked Would have fired 1 time, longest 25 minutes." width="2248" height="878" loading="lazy" />
+                                    <figcaption>The same rule replayed over the last hour. Requests stopped for about 15 minutes, and the shaded band marks the period the rule would have held an incident open.</figcaption>
+                                </figure>
+                            </div>
                         </li>
                     </ol>
 
@@ -420,7 +430,12 @@ const articleJsonLd = {
                     <ol class="guide-steps">
                         <li>
                             <span>01</span>
-                            <div><h3>Chart the check</h3><p>Open <strong>Metrics</strong> and open <code>httpcheck.status</code>. Set <strong>Aggregate</strong> to <code>max</code>, <strong>Where</strong> to <code>http.status_class = "2xx"</code>, and <strong>Group by</strong> to <code>attr.http.url</code>.</p></div>
+                            <div><h3>Chart the check</h3><p>Open <strong>Metrics</strong> and open <code>httpcheck.status</code>. Set <strong>Aggregate</strong> to <code>max</code>, <strong>Where</strong> to <code>attr.http.status_class = "2xx"</code>, and <strong>Group by</strong> to <code>attr.http.url</code>. Keep the <code>attr.</code> prefix on the filter, or it is dropped when the chart becomes a rule.</p>
+                                <figure class="guide-figure">
+                                    <img src="/screenshots/guides/uptime-03-httpcheck-metric.webp" data-zoomable alt="The Maple metric page for httpcheck.status with Aggregate max, the filter attr.http.status_class equals 2xx and Group by attr.http.url. The chart shows two URLs at 1, and one of them at 0 for five minutes." width="2368" height="1480" loading="lazy" />
+                                    <figcaption>The check charted per URL. One endpoint returned 503 for five checks while the other stayed up.</figcaption>
+                                </figure>
+                            </div>
                         </li>
                         <li>
                             <span>02</span>
@@ -428,11 +443,21 @@ const articleJsonLd = {
                         </li>
                         <li>
                             <span>03</span>
-                            <div><h3>Lower Min samples to 1</h3><p>A two-minute window holds two data points per URL. The form's default of 50 would skip every check.</p></div>
+                            <div><h3>Lower Min samples to 1</h3><p>A two-minute window holds two data points per URL. The form's default of 50 would skip every check.</p>
+                                <figure class="guide-figure guide-figure--narrow">
+                                    <img src="/screenshots/guides/uptime-04-httpcheck-rule.webp" data-zoomable alt="The Signal and threshold section of the alert rule form: a Metrics query on httpcheck.status filtered to the 2xx status class and grouped by attr.http.url, condition below 1, window 2 minutes, breaches to fire 2, Min samples 1." width="1382" height="1818" loading="lazy" />
+                                    <figcaption>The rule that Create alert opens, with the condition, the window and Min samples set.</figcaption>
+                                </figure>
+                            </div>
                         </li>
                         <li>
                             <span>04</span>
-                            <div><h3>Keep Breaches to fire at 2</h3><p>The rule opens an incident about three minutes into an outage, and one failed check on its own does not page anyone.</p></div>
+                            <div><h3>Keep Breaches to fire at 2</h3><p>The rule opens an incident about three minutes into an outage, and one failed check on its own does not page anyone. The chart at the top of the form replays the rule over the range you pick.</p>
+                                <figure class="guide-figure">
+                                    <img src="/screenshots/guides/uptime-05-httpcheck-preview.webp" data-zoomable alt="The rule preview chart over the last 30 minutes, grouped by URL. One URL drops from 1 to 0 for about five minutes inside a shaded band marked Would have fired 1 time, longest 8 minutes." width="2248" height="990" loading="lazy" />
+                                    <figcaption>The rule replayed over the last 30 minutes. It would have fired once, for the endpoint that returned 503.</figcaption>
+                                </figure>
+                            </div>
                         </li>
                     </ol>
 
@@ -526,6 +551,10 @@ const articleJsonLd = {
     .uptime-guide .guide-checklist p { margin-top: 0.35rem; font-size: 12px; line-height: 1.6; color: var(--muted-foreground); }
     .uptime-guide .guide-notes { margin: 0 0 1.15rem; padding-left: 1.1rem; font-size: 14px; line-height: 1.75; color: var(--muted-foreground); }
     .uptime-guide .guide-notes li + li { margin-top: 0.4rem; }
+    .uptime-guide .guide-figure { margin: 1.25rem 0 0.25rem; }
+    .uptime-guide .guide-figure--narrow { max-width: 30rem; }
+    .uptime-guide .guide-figure img { display: block; width: 100%; height: auto; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--bg-deep); }
+    .uptime-guide .guide-figure figcaption { margin-top: 0.6rem; font-family: var(--font-mono); font-size: 10px; line-height: 1.6; color: var(--muted-foreground); }
     .uptime-path { margin: 2rem 0 0; overflow-x: auto; }
     .uptime-path svg { min-width: 620px; }
     .uptime-guide .guide-maple { margin-top: 3.5rem; border: 1px solid var(--primary); border-radius: 0.75rem; background: var(--bg-deep); padding: 1.5rem; }
