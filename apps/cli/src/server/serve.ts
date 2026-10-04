@@ -3,7 +3,7 @@
 // SPA, all on one port, backed by an embedded chDB. Replaces the Rust
 // `apps/ingest/src/bin/local.rs`. `maple start` calls `startServer`.
 
-import { Context, Effect, Exit, Layer, Result, Schema, type Scope } from "effect"
+import { Clock, Context, Effect, Exit, Layer, Result, Schema, type Scope } from "effect"
 import * as ManagedRuntime from "effect/ManagedRuntime"
 import { resolve } from "node:path"
 import { gunzipSync } from "node:zlib"
@@ -633,7 +633,7 @@ const ingestSpan = (
 	recoverResponse(
 		Effect.gen(function* () {
 			const { response, accepted, requestBytes } = yield* ingest(db, authority, signal, req, readiness)
-			if (accepted > 0 && response.status < 300) status.lastIngestAtMs = Date.now()
+			if (accepted > 0 && response.status < 300) status.lastIngestAtMs = yield* Clock.currentTimeMillis
 			yield* Effect.annotateCurrentSpan({
 				"http.request.body.size": requestBytes,
 				"maple.ingest.item_count": accepted,
@@ -977,7 +977,13 @@ const handleScopedDelete = (
 			dryRun
 				? work
 				: // Even a failed delete may have changed rows, so the next checkpoint refresh must run.
-					work.pipe(Effect.ensuring(Effect.sync(() => (status.lastDeleteAtMs = Date.now())))),
+					work.pipe(
+						Effect.ensuring(
+							Effect.map(Clock.currentTimeMillis, (nowMs) => {
+								status.lastDeleteAtMs = nowMs
+							}),
+						),
+					),
 		)
 		return json(report)
 	}).pipe(

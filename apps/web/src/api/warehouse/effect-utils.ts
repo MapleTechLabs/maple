@@ -7,7 +7,7 @@ import {
 	type DurationStats,
 	type AttributeValueItem,
 } from "@maple/query-engine"
-import { Effect, Layer, Schema } from "effect"
+import { Clock, Effect, Layer, Schema } from "effect"
 import { HttpClientError } from "effect/http"
 import { PublicHttpErrorBodySchema, type AnyPublicHttpErrorBody } from "@maple/domain/http"
 import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
@@ -289,9 +289,13 @@ export function querySetFailure(
 	operation: string,
 	message: string,
 ): Effect.Effect<never, WarehouseInvalidInputError | WarehouseUnreachableError> {
-	return isBlipping(originOf(apiBaseUrl), Date.now())
-		? Effect.fail(new WarehouseUnreachableError({ operation, message }))
-		: invalidWarehouseInput(operation, message)
+	return Effect.flatMap(
+		Clock.currentTimeMillis,
+		(nowMs): Effect.Effect<never, WarehouseInvalidInputError | WarehouseUnreachableError> =>
+			isBlipping(originOf(apiBaseUrl), nowMs)
+				? Effect.fail(new WarehouseUnreachableError({ operation, message }))
+				: invalidWarehouseInput(operation, message),
+	)
 }
 
 export function invalidWarehouseInput(

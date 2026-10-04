@@ -13,7 +13,7 @@ import {
 } from "@maple/domain/http/v2"
 import { CH, formatWarehouseDateTime, QueryEngineExecuteRequest } from "@maple/query-engine"
 import { computeBucketSeconds } from "@maple/query-engine/runtime"
-import { Effect, Schema } from "effect"
+import { Clock, Effect, Schema } from "effect"
 import { ErrorIssueReadModelsService } from "@maple/backend/services/errors/ErrorIssueReadModelsService"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
@@ -85,11 +85,11 @@ export const HttpV2WidgetSummaryLive = HttpApiBuilder.group(MapleApiV2, "widgetS
 				// half filtered to staging next to a half that is not would render as
 				// an error rate the traffic underneath it cannot produce.
 				const deploymentEnv = query.deployment_environment
-				// One clock for the whole response. Two `Date.now()` calls would let
+				// One clock read for the whole response. Two reads would let
 				// the issues window and the throughput window describe times that do
 				// not line up, which is the sort of skew a widget renders as a
 				// contradiction between its two halves.
-				const nowMs = Date.now()
+				const nowMs = yield* Clock.currentTimeMillis
 				const issuesStartMs = nowMs - WIDGET_SUMMARY_ISSUES_WINDOW_SECONDS * 1000
 				const throughputStartMs = nowMs - WIDGET_SUMMARY_THROUGHPUT_WINDOW_SECONDS * 1000
 

@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect"
+import { Clock, Effect, Schema } from "effect"
 import { ServiceDeploymentsOutput } from "@maple/domain/mcp-outputs"
 import { CH, parseWarehouseDateTime } from "@maple/query-engine"
 import { WarehouseExecutor } from "@maple/query-engine/observability"
@@ -58,9 +58,10 @@ export function registerServiceDeploymentsTool(server: McpToolRegistrar) {
 			const { st, et } = yield* WINDOW.resolve(params, TOOL)
 			const tenant = yield* CurrentMcpTenant
 			const startMs = parseWarehouseDateTime(st)
+			const nowMs = yield* Clock.currentTimeMillis
 			const minutePrecision =
 				parseWarehouseDateTime(et) - startMs <= MINUTE_PRECISION_MAX_MS &&
-				startMs >= Date.now() - MINUTELY_RETENTION_MS
+				startMs >= nowMs - MINUTELY_RETENTION_MS
 			const lastSeenPrecision: "minute" | "hour" = minutePrecision ? "minute" : "hour"
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,

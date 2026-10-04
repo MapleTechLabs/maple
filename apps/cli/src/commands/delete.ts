@@ -1,4 +1,4 @@
-import { Effect, Option, Schema } from "effect"
+import { Clock, Effect, Option, Schema } from "effect"
 import * as Command from "effect/cli/Command"
 import * as Flag from "effect/cli/Flag"
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http"
@@ -217,7 +217,8 @@ export const deleteCommand = Command.make("delete", {
 		Effect.fnUntraced(function* (a) {
 			const baseUrl = yield* resolveDeleteBaseUrl
 			const rawBefore = Option.getOrUndefined(a.before)
-			const beforeMs = rawBefore === undefined ? undefined : parseBefore(rawBefore, Date.now())
+			const beforeMs =
+				rawBefore === undefined ? undefined : parseBefore(rawBefore, yield* Clock.currentTimeMillis)
 			if (beforeMs === null)
 				return yield* failure(
 					`invalid --before: ${rawBefore}`,

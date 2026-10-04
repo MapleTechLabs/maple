@@ -1,5 +1,5 @@
 // BOUNDARY: activation candidates and decoded OTLP bodies arrive unparsed; this runtime decodes them.
-import { Context, Duration, Effect, Exit, Layer, Result, Schema, SynchronizedRef } from "effect"
+import { Clock, Context, Duration, Effect, Exit, Layer, Result, Schema, SynchronizedRef } from "effect"
 import { createHash } from "node:crypto"
 import {
 	canonicalJson,
@@ -324,7 +324,7 @@ export class LocalEventingRuntime extends Context.Service<LocalEventingRuntime, 
 				!(yield* store.hasStagedSourceKind(TENANT_ID, sourceKind))
 			)
 				return emptyEvaluation()
-			const acceptedAt = new Date().toISOString()
+			const acceptedAt = new Date(yield* Clock.currentTimeMillis).toISOString()
 			const [elapsed, normalization] = yield* Effect.timed(
 				Effect.exit(
 					signal === "logs"

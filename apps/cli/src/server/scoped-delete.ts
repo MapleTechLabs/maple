@@ -2,7 +2,7 @@
 // telemetry (optionally one deployment.environment and/or everything before an
 // hour) leaves the raw tables and every table derived from them. See docs/local-mode.md.
 
-import { Effect, Option, Schema } from "effect"
+import { Clock, Effect, Option, Schema } from "effect"
 import { existsSync } from "node:fs"
 import type { Chdb } from "./chdb"
 import { decodeJsonEachRow, decodeRowCounts } from "./chdb-rows"
@@ -300,12 +300,16 @@ const resolvePlan = (
 			method: entry.recompute,
 			// The rollup recomputes whole hours, so its clear is never narrowed.
 			scope:
-				entry.recompute === "views" ? requested.filter((dimension) => declares(entry, dimension)) : [],
+				entry.recompute === "views"
+					? requested.filter((dimension) => declares(entry, dimension))
+					: [],
 			views: views
 				.filter((view) => view.target === table)
 				.flatMap((view) => {
 					const source = view.sources[0]
-					return source !== undefined && plans[source] !== undefined && plans[source]!.strategy !== "excluded"
+					return source !== undefined &&
+						plans[source] !== undefined &&
+						plans[source]!.strategy !== "excluded"
 						? [{ ...view, source }]
 						: []
 				}),
@@ -315,7 +319,9 @@ const resolvePlan = (
 	while (pending.length > 0) {
 		const ready = pending.findIndex(
 			(rebuild) =>
-				!rebuild.views.some((view) => pending.some((other) => other !== rebuild && other.table === view.source)),
+				!rebuild.views.some((view) =>
+					pending.some((other) => other !== rebuild && other.table === view.source),
+				),
 		)
 		rebuilds.push(...pending.splice(ready === -1 ? 0 : ready, 1))
 	}
@@ -355,36 +361,50 @@ export const validateDeletePlan = (
 
 	for (const [name, entry] of Object.entries(plans)) {
 		const table = tables.get(name)
-		if (table !== undefined && entry.strategy === "scoped") problems.push(...columnProblems(name, table, entry))
+		if (table !== undefined && entry.strategy === "scoped")
+			problems.push(...columnProblems(name, table, entry))
 	}
 
 	for (const request of DELETE_SCOPES) {
 		const label = scopeFlags(request)
 		const plan = resolvePlan(manifest, request, plans)
-		for (const table of plan.unsupported) problems.push(`${table}: cannot delete ${label} and has no recompute`)
+		for (const table of plan.unsupported)
+			problems.push(`${table}: cannot delete ${label} and has no recompute`)
 		const rebuilt = new Map(plan.rebuilds.map((rebuild) => [rebuild.table, rebuild]))
 		for (const rebuild of plan.rebuilds) {
 			if (rebuild.method === "service-map-rollup") continue
-			if (rebuild.views.length === 0) problems.push(`${rebuild.table}: recomputed for ${label} but no view writes it`)
+			if (rebuild.views.length === 0)
+				problems.push(`${rebuild.table}: recomputed for ${label} but no view writes it`)
 			const target = plans[rebuild.table]
-			if (rebuild.scope.includes("service") && target?.strategy === "scoped" && target.service?.join() !== "ServiceName")
+			if (
+				rebuild.scope.includes("service") &&
+				target?.strategy === "scoped" &&
+				target.service?.join() !== "ServiceName"
+			)
 				problems.push(`${rebuild.table}: a service-scoped recompute must key on ServiceName alone`)
 			for (const view of rebuild.views) {
-				if (view.sources.length !== 1) problems.push(`${view.name}: recomputing needs exactly one source table`)
+				if (view.sources.length !== 1)
+					problems.push(`${view.name}: recomputing needs exactly one source table`)
 				if (sourceReferences(view.body, view.source) !== 1)
 					problems.push(`${view.name}: recomputing needs exactly one FROM ${view.source}`)
 				const source = plans[view.source]
 				for (const dimension of rebuild.scope)
 					if (source?.strategy !== "scoped" || !declares(source, dimension))
-						problems.push(`${view.name}: source ${view.source} cannot scope ${dimension} for ${label}`)
+						problems.push(
+							`${view.name}: source ${view.source} cannot scope ${dimension} for ${label}`,
+						)
 			}
 			// Re-inserting fires the views this table feeds; their own recompute must wipe that.
 			for (const view of views.filter((candidate) => candidate.sources.includes(rebuild.table))) {
 				const downstream = rebuilt.get(view.target)
 				if (downstream === undefined)
-					problems.push(`${view.name}: recomputing ${rebuild.table} for ${label} leaks into ${view.target}`)
+					problems.push(
+						`${view.name}: recomputing ${rebuild.table} for ${label} leaks into ${view.target}`,
+					)
 				else if (!downstream.scope.every((dimension) => rebuild.scope.includes(dimension)))
-					problems.push(`${view.target}: recompute scope for ${label} is wider than ${rebuild.table}'s`)
+					problems.push(
+						`${view.target}: recompute scope for ${label} is wider than ${rebuild.table}'s`,
+					)
 			}
 		}
 	}
@@ -493,7 +513,9 @@ const affectedHours = (
 ) =>
 	Effect.gen(function* () {
 		const sources =
-			rebuild.method === "service-map-rollup" ? [ROLLUP_SOURCE] : rebuild.views.map((view) => view.source)
+			rebuild.method === "service-map-rollup"
+				? [ROLLUP_SOURCE]
+				: rebuild.views.map((view) => view.source)
 		const hours = new Set<number>()
 		for (const source of new Set(sources)) {
 			const filter = plan.filters.find((candidate) => candidate.table === source)
@@ -506,7 +528,12 @@ const affectedHours = (
 		if (rebuild.method === "service-map-rollup" && hours.size > 0) {
 			// Only sealed hours: an open hour is still the rollup loop's to seal.
 			const sealed = new Set(
-				yield* distinctHours(db, "service_map_edges_hourly", "Hour", `${hourOf("Hour")} IN (${hourList([...hours])})`),
+				yield* distinctHours(
+					db,
+					"service_map_edges_hourly",
+					"Hour",
+					`${hourOf("Hour")} IN (${hourList([...hours])})`,
+				),
 			)
 			for (const hour of hours) if (!sealed.has(hour)) hours.delete(hour)
 		}
@@ -543,7 +570,11 @@ const rebuildTargetPredicate = (
 	rebuild: Rebuild,
 	request: ScopedDeleteRequest,
 	hours: ReadonlyArray<number>,
-) => [...scopePredicates(entry, request, rebuild.scope), `${hourOf(rebuild.time)} IN (${hourList(hours)})`].join(" AND ")
+) =>
+	[
+		...scopePredicates(entry, request, rebuild.scope),
+		`${hourOf(rebuild.time)} IN (${hourList(hours)})`,
+	].join(" AND ")
 
 const clearHours = (db: Db, rebuild: Rebuild, request: ScopedDeleteRequest, hours: ReadonlyArray<number>) =>
 	Effect.gen(function* () {
@@ -578,7 +609,9 @@ const recomputeViaViews = (
 				.join(", ")
 			const source = yield* scopedPlan(view.source)
 			if (sourceColumns === undefined)
-				return yield* new ScopedDeleteError({ message: `${view.name}: unknown source ${view.source}` })
+				return yield* new ScopedDeleteError({
+					message: `${view.name}: unknown source ${view.source}`,
+				})
 			// The view's own output columns, so the INSERT matches by name, not position.
 			const columns = yield* run(`columns of ${view.name}`, () =>
 				decodeNames(
@@ -622,7 +655,8 @@ const recomputeServiceMap = (
 		for (const hour of hours) {
 			const statements = yield* serviceMapRollupInserts(hour * 1000).pipe(
 				Effect.mapError(
-					(cause) => new ScopedDeleteError({ message: `service map rollup: ${cause.message}`, cause }),
+					(cause) =>
+						new ScopedDeleteError({ message: `service map rollup: ${cause.message}`, cause }),
 				),
 			)
 			for (const statement of statements) yield* run("recompute service map", () => db.exec(statement))
@@ -639,7 +673,9 @@ const applyFilters = (db: Db, filters: ResolvedPlan["filters"]) =>
 				)
 				const left = yield* countRows(db, table, predicate)
 				if (left !== 0)
-					return yield* new ScopedDeleteError({ message: `${left} matching row(s) remain in ${table}` })
+					return yield* new ScopedDeleteError({
+						message: `${left} matching row(s) remain in ${table}`,
+					})
 			}),
 		{ discard: true },
 	)
@@ -684,7 +720,9 @@ const assertPlanSound = (manifest: LocalSchemaManifest) => {
 	return problems.length === 0
 		? Effect.void
 		: Effect.fail(
-				new ScopedDeleteError({ message: `scoped delete plan does not match the schema: ${problems.join("; ")}` }),
+				new ScopedDeleteError({
+					message: `scoped delete plan does not match the schema: ${problems.join("; ")}`,
+				}),
 			)
 }
 
@@ -723,7 +761,13 @@ const applyPending = (db: Db, manifest: LocalSchemaManifest, dataDir: string, pe
 		// Views in dependency order, so each recompute wipes what its source's re-insert cascaded.
 		for (const rebuild of plan.rebuilds)
 			if (rebuild.method === "views")
-				yield* recomputeViaViews(db, manifest, rebuild, pending.request, pending.rebuildHours[rebuild.table] ?? [])
+				yield* recomputeViaViews(
+					db,
+					manifest,
+					rebuild,
+					pending.request,
+					pending.rebuildHours[rebuild.table] ?? [],
+				)
 		yield* recomputeServiceMap(
 			db,
 			plan.rebuilds.filter((rebuild) => rebuild.method === "service-map-rollup"),
@@ -741,9 +785,18 @@ export const resumePendingDelete = (db: Db, manifest: LocalSchemaManifest, dataD
 		yield* assertPlanSound(manifest)
 		yield* assertSubject(pending.value.request)
 		// A restored checkpoint can bring the rows back; recompute their hours too.
-		const current = yield* planHours(db, manifest, resolvePlan(manifest, pending.value.request), pending.value.request, Date.now())
+		const current = yield* planHours(
+			db,
+			manifest,
+			resolvePlan(manifest, pending.value.request),
+			pending.value.request,
+			yield* Clock.currentTimeMillis,
+		)
 		const rebuildHours: Record<string, number[]> = {}
-		for (const table of new Set([...Object.keys(pending.value.rebuildHours), ...Object.keys(current.kept)]))
+		for (const table of new Set([
+			...Object.keys(pending.value.rebuildHours),
+			...Object.keys(current.kept),
+		]))
 			rebuildHours[table] = [
 				...new Set([...(pending.value.rebuildHours[table] ?? []), ...(current.kept[table] ?? [])]),
 			].sort((a, b) => a - b)
@@ -765,7 +818,7 @@ export const runScopedDelete = (
 	Effect.gen(function* () {
 		yield* assertPlanSound(manifest)
 		yield* assertSubject(input)
-		const nowMs = options.nowMs ?? Date.now()
+		const nowMs = options.nowMs ?? (yield* Clock.currentTimeMillis)
 		const request: ScopedDeleteRequest =
 			input.beforeMs === undefined ? input : { ...input, beforeMs: floorToHour(input.beforeMs) }
 		if (!options.dryRun) yield* resumePendingDelete(db, manifest, dataDir)
@@ -788,12 +841,17 @@ export const runScopedDelete = (
 				rows:
 					kept.length === 0
 						? 0
-						: yield* countRows(db, rebuild.table, rebuildTargetPredicate(entry, rebuild, request, kept)),
+						: yield* countRows(
+								db,
+								rebuild.table,
+								rebuildTargetPredicate(entry, rebuild, request, kept),
+							),
 				rebuiltHours: kept.length,
 				skippedHours: hours.skipped[rebuild.table] ?? 0,
 			})
 		}
-		for (const { table, reason } of plan.excluded) tables.push({ table, strategy: "excluded", rows: 0, reason })
+		for (const { table, reason } of plan.excluded)
+			tables.push({ table, strategy: "excluded", rows: 0, reason })
 		tables.sort((a, b) => a.table.localeCompare(b.table))
 		const report: ScopedDeleteReport = {
 			request,
@@ -804,7 +862,9 @@ export const runScopedDelete = (
 		if (options.dryRun) return report
 
 		const pending: PendingDelete = { formatVersion: 1, request, rebuildHours: hours.kept }
-		yield* writeFile("write pending delete journal", () => durableJson(pendingDeletePath(dataDir), pending))
+		yield* writeFile("write pending delete journal", () =>
+			durableJson(pendingDeletePath(dataDir), pending),
+		)
 		yield* applyPending(db, manifest, dataDir, pending)
 		return report
 	})

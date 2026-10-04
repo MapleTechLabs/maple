@@ -1,7 +1,7 @@
 import * as os from "node:os"
 import * as Command from "effect/cli/Command"
 import * as Flag from "effect/cli/Flag"
-import { Console, Duration, Effect, Fiber, Option, Redacted, Schema, Stream } from "effect"
+import { Clock, Console, Duration, Effect, Fiber, Option, Redacted, Schema, Stream } from "effect"
 import { Stdio } from "effect/Stdio"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { MapleConfig } from "../core/config"
@@ -224,9 +224,9 @@ const loginHandler = Effect.fnUntraced(function* (a: {
 
 /** Poll until the browser approves, denies, or the code expires. */
 const pollDeviceToken = Effect.fnUntraced(function* (apiUrl: string, started: DeviceStart) {
-	const deadline = Date.now() + started.expiresIn * 1000
+	const deadline = (yield* Clock.currentTimeMillis) + started.expiresIn * 1000
 	let interval = Math.max(1, started.interval)
-	while (Date.now() < deadline) {
+	while ((yield* Clock.currentTimeMillis) < deadline) {
 		yield* Effect.sleep(Duration.seconds(interval))
 		const result = yield* requestJson<DevicePoll>(`${apiUrl}/api/auth/cli/device/token`, {
 			method: "POST",
