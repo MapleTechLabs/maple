@@ -482,8 +482,5 @@ export class ConnectorSocketObject extends Cloudflare.DurableObject<
 // `Worker` and `ConnectorRelayObject` come with yielding the relay class: the first is discharged
 // the same way, the second the Worker provides (`worker.ts`).
 export const ConnectorSocketLive = ConnectorSocketObject.make<
-	| Cloudflare.DurableObjectState
-	| Cloudflare.WorkerEnvironment
-	| Cloudflare.Worker
-	| ConnectorRelayObject
+	Cloudflare.DurableObjectState | Cloudflare.WorkerEnvironment | Cloudflare.Worker | ConnectorRelayObject
 >(activateConnectorSocket)

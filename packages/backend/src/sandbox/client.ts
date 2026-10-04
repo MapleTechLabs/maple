@@ -57,7 +57,8 @@ export class SandboxClient extends Context.Service<SandboxClient, SandboxClientA
 			}
 
 			const httpClient = Cloudflare.toHttpClient(Cloudflare.fromCloudflareFetcher(binding.value))
-			const toClientError = (message: string) => (cause: unknown) => new SandboxClientError({ message, cause })
+			const toClientError = (message: string) => (cause: unknown) =>
+				new SandboxClientError({ message, cause })
 
 			const exec: SandboxClientApi["exec"] = Effect.fn("SandboxClient.exec")(function* (request) {
 				// The origin is a formality on a service binding, which routes by binding rather than by host.

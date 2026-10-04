@@ -72,7 +72,11 @@ beforeEach(() => {
 		// The HttpClient sends the JSON body as bytes.
 		const body = init?.body
 		const text =
-			typeof body === "string" ? body : body instanceof Uint8Array ? new TextDecoder().decode(body) : "{}"
+			typeof body === "string"
+				? body
+				: body instanceof Uint8Array
+					? new TextDecoder().decode(body)
+					: "{}"
 		tracked.push(trackedFrom(JSON.parse(text)))
 		return new Response("{}", { status: 200 })
 	}

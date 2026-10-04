@@ -1,8 +1,12 @@
+import * as Effect from "effect/Effect"
 import { describe, expect, it } from "vitest"
 import {
 	formatMapleDeployment,
+	MapleStageError,
 	parseMapleDeployment,
+	parseMapleDeploymentEffect,
 	parseMapleStage,
+	resolveMapleDomainsEffect,
 	regionHostsSharedApps,
 	resolveDatabaseMode,
 	resolveHyperdriveRefId,
@@ -63,6 +67,14 @@ describe("parseMapleDeployment", () => {
 
 	it("still rejects the removed stg stage under either region", () => {
 		expect(() => parseMapleDeployment("stg-eu")).toThrow(/"stg" stage was removed/)
+	})
+
+	it("fails the Effect variants with a typed MapleStageError instead of throwing", () => {
+		const error = Effect.runSync(Effect.flip(parseMapleDeploymentEffect("pr-12-eu")))
+		expect(error).toBeInstanceOf(MapleStageError)
+		expect(error.rawStage).toBe("pr-12-eu")
+		const domains = Effect.runSync(Effect.flip(resolveMapleDomainsEffect(stage("pr-12"), "eu")))
+		expect(domains.message).toMatch(/PR previews have no eu hostnames/)
 	})
 })
 

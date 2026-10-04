@@ -1,3 +1,4 @@
+import * as Effect from "effect/Effect"
 import { describe, expect, it } from "vitest"
 import { parseMapleStage } from "../cloudflare/stage.ts"
 import {
@@ -180,18 +181,22 @@ describe("resolveIngestSelfTraceSampleRatio", () => {
 })
 
 describe("parseIngestFleets", () => {
+	const parse = (value: string | undefined) => Effect.runSync(parseIngestFleets(value))
+
 	it("is EC2 only when unset", () => {
-		expect(parseIngestFleets(undefined)).toEqual({ fargate: false, ec2: true })
-		expect(parseIngestFleets("")).toEqual({ fargate: false, ec2: true })
+		expect(parse(undefined)).toEqual({ fargate: false, ec2: true })
+		expect(parse("")).toEqual({ fargate: false, ec2: true })
 	})
 
 	it("can bring Fargate back beside EC2, or alone", () => {
-		expect(parseIngestFleets("fargate, ec2")).toEqual({ fargate: true, ec2: true })
-		expect(parseIngestFleets("fargate")).toEqual({ fargate: true, ec2: false })
+		expect(parse("fargate, ec2")).toEqual({ fargate: true, ec2: true })
+		expect(parse("fargate")).toEqual({ fargate: true, ec2: false })
 	})
 
 	it("rejects a fleet it does not know rather than deploying neither", () => {
-		expect(() => parseIngestFleets("ec2,metal")).toThrow(/metal/)
+		const error = Effect.runSync(Effect.flip(parseIngestFleets("ec2,metal")))
+		expect(error._tag).toBe("@maple/infra/IngestFleetsError")
+		expect(error.message).toMatch(/metal/)
 	})
 })
 

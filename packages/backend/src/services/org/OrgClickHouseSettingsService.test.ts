@@ -322,9 +322,9 @@ describe("resolveRuntimeConfig caching", () => {
 	// (it is a required dependency) while making its backend a deliberate miss.
 	const missOnlyBackend: EdgeCacheBackend = {
 		name: "memory",
-		get: () => Promise.resolve(undefined),
-		put: () => Promise.resolve(),
-		delete: () => Promise.resolve(),
+		get: () => Effect.succeed(undefined),
+		put: () => Effect.void,
+		delete: () => Effect.void,
 	}
 
 	const buildLayer = (testDb: TestDb) => {
@@ -617,22 +617,25 @@ describe("resolveRuntimeConfig caching", () => {
 		const stats = { puts: 0, hits: 0, misses: 0 }
 		const backend: EdgeCacheBackend = {
 			name: "memory",
-			get: async (bucket, hash) => {
-				const raw = store.get(`${bucket}/${hash}`)
-				if (raw === undefined) {
-					stats.misses += 1
-					return undefined
-				}
-				stats.hits += 1
-				return JSON.parse(raw) as unknown
-			},
-			put: async (bucket, hash, value) => {
-				stats.puts += 1
-				store.set(`${bucket}/${hash}`, JSON.stringify(value))
-			},
-			delete: async (bucket, hash) => {
-				store.delete(`${bucket}/${hash}`)
-			},
+			get: (bucket, hash) =>
+				Effect.sync(() => {
+					const raw = store.get(`${bucket}/${hash}`)
+					if (raw === undefined) {
+						stats.misses += 1
+						return undefined
+					}
+					stats.hits += 1
+					return JSON.parse(raw) as unknown
+				}),
+			put: (bucket, hash, value) =>
+				Effect.sync(() => {
+					stats.puts += 1
+					store.set(`${bucket}/${hash}`, JSON.stringify(value))
+				}),
+			delete: (bucket, hash) =>
+				Effect.sync(() => {
+					store.delete(`${bucket}/${hash}`)
+				}),
 		}
 		return { backend, stats }
 	}
@@ -984,9 +987,9 @@ describe("applySchema claim lifecycle", () => {
 
 	const missBackend: EdgeCacheBackend = {
 		name: "memory",
-		get: () => Promise.resolve(undefined),
-		put: () => Promise.resolve(),
-		delete: () => Promise.resolve(),
+		get: () => Effect.succeed(undefined),
+		put: () => Effect.void,
+		delete: () => Effect.void,
 	}
 
 	/** The Workflow binding as a port, over a fake whose `create` may reject. */

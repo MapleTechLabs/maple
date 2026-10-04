@@ -274,7 +274,9 @@ export class ChatSession {
 			"running_resumes INTEGER",
 		]) {
 			// A failure means the column is already present.
-			Effect.runSync(Effect.ignore(Effect.try(() => this.sql.exec(`ALTER TABLE session ADD COLUMN ${column}`))))
+			Effect.runSync(
+				Effect.ignore(Effect.try(() => this.sql.exec(`ALTER TABLE session ADD COLUMN ${column}`))),
+			)
 		}
 	}
 
@@ -442,7 +444,9 @@ export class ChatSession {
 		})
 		return Effect.runPromise(
 			stream.pipe(
-				Effect.ensuring(Effect.ignore(attempt("Could not close the subscription", () => writer.close()))),
+				Effect.ensuring(
+					Effect.ignore(attempt("Could not close the subscription", () => writer.close())),
+				),
 				// The reader went away, or the stream was already closed. Either way the client resumes
 				// from its own cursor, so a dropped subscription costs a reconnect, not the conversation.
 				Effect.ignoreCause,
@@ -566,7 +570,10 @@ export class ChatSession {
 	 * way, because leaving live controls on a mutation that may or may not have run is the worse of
 	 * the two — the reader is told it failed and can act in Maple.
 	 */
-	private applyProposal(settlement: ChatProposalSettlement, proposal: Proposal): Effect.Effect<AppliedProposal> {
+	private applyProposal(
+		settlement: ChatProposalSettlement,
+		proposal: Proposal,
+	): Effect.Effect<AppliedProposal> {
 		return attempt("Failed to apply a proposal", () =>
 			this.applier({
 				...settlement,
@@ -721,7 +728,9 @@ export class ChatSession {
 		const scheduledTime = Date.now() + TURN_HEARTBEAT_MS
 		this.ctx.waitUntil(
 			Effect.runPromise(
-				Effect.ignore(attempt("Could not arm the heartbeat", () => this.ctx.storage.setAlarm(scheduledTime))),
+				Effect.ignore(
+					attempt("Could not arm the heartbeat", () => this.ctx.storage.setAlarm(scheduledTime)),
+				),
 			),
 		)
 	}

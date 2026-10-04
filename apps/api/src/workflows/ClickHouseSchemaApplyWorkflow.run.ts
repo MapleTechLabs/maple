@@ -492,7 +492,8 @@ export const runClickHouseSchemaApply = (
 	Effect.gen(function* () {
 		const orgId = yield* Schema.decodeUnknownEffect(OrgId)(payload.orgId).pipe(
 			Effect.mapError(
-				(error) => new SchemaApplyPayloadError({ message: error.message, rawOrgId: String(payload.orgId) }),
+				(error) =>
+					new SchemaApplyPayloadError({ message: error.message, rawOrgId: String(payload.orgId) }),
 			),
 		)
 		const database = yield* Database
@@ -535,7 +536,9 @@ const applySchema = (database: DatabaseApi, orgId: OrgId) =>
 		const encryptionKeyText = yield* Config.Redacted(ENCRYPTION_KEY_CONFIG).pipe(
 			Effect.mapError(
 				(error) =>
-					new SchemaApplyConfigError({ message: `${ENCRYPTION_KEY_CONFIG} is not configured: ${error.message}` }),
+					new SchemaApplyConfigError({
+						message: `${ENCRYPTION_KEY_CONFIG} is not configured: ${error.message}`,
+					}),
 			),
 		)
 		const encryptionKey = Buffer.from(Redacted.value(encryptionKeyText).trim(), "base64")

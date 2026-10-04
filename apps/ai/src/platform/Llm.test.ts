@@ -650,7 +650,10 @@ describe("streamed completion — a stream that ends without a usage block", () 
  * leaves.
  */
 describe("layerDecisionModel — Clef on Workers AI", () => {
-	const workersAiEnv: LlmSettings = { CLOUDFLARE_ACCOUNT_ID: "test-account", CLOUDFLARE_API_KEY: Redacted.make("cf-key") }
+	const workersAiEnv: LlmSettings = {
+		CLOUDFLARE_ACCOUNT_ID: "test-account",
+		CLOUDFLARE_API_KEY: Redacted.make("cf-key"),
+	}
 
 	const ticket = Decision.make({
 		input: Schema.Struct({ message: Schema.String }),

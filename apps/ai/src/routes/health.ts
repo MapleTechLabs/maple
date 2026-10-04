@@ -21,6 +21,4 @@ export const healthResponse = Effect.map(
 		}),
 )
 
-export const HealthRouter = HttpRouter.use((router) =>
-	router.add("GET", "/health", () => healthResponse),
-)
+export const HealthRouter = HttpRouter.use((router) => router.add("GET", "/health", () => healthResponse))

@@ -1,4 +1,6 @@
 import type { RegionName } from "@distilled.cloud/aws/Region"
+import * as Effect from "effect/Effect"
+import * as Schema from "effect/Schema"
 import type { MapleStage } from "../cloudflare/stage.ts"
 import { DEFAULT_MAPLE_REGION, type MapleRegion, regionSuffix } from "../region.ts"
 
@@ -34,6 +36,17 @@ export function resolveAwsRegion(region: MapleRegion): AwsRegionName {
 			return "eu-central-1"
 	}
 }
+
+/** The deploy's `AWS_REGION` is not the region its Maple instance runs in. */
+export class AwsRegionMismatchError extends Schema.TaggedError<AwsRegionMismatchError>()(
+	"@maple/infra/AwsRegionMismatchError",
+	{
+		message: Schema.String,
+		awsRegion: Schema.String,
+		mapleRegion: Schema.String,
+		expectedAwsRegion: Schema.String,
+	},
+) {}
 
 /**
  * VPC CIDR per Maple region, kept non-overlapping so two instances can be
@@ -156,31 +169,46 @@ export function resolveIngestSelfTraceSampleRatio(stage: MapleStage): string | u
 /**
  * Which fleets run the gateway. Both can run at once, each behind its own ALB,
  * which is how a fleet cutover works: bring the new one up beside the old,
- * flip the proxied `ingest` CNAME, then drop the old one.
+ * flip the proxied `ingest` CNAME, then drop the old one. The CNAME is declared
+ * in `apps/ingest/alchemy.run.ts` and follows EC2 whenever EC2 runs.
  */
 export interface IngestFleets {
 	fargate: boolean
 	ec2: boolean
 }
 
+/** `MAPLE_INGEST_FLEETS` names a fleet that does not exist. */
+export class IngestFleetsError extends Schema.TaggedError<IngestFleetsError>()(
+	"@maple/infra/IngestFleetsError",
+	{
+		message: Schema.String,
+		rawFleets: Schema.String,
+	},
+) {}
+
 /**
  * Parses `MAPLE_INGEST_FLEETS` (`fargate`, `ec2`, or `fargate,ec2`). Unset is
  * EC2 only, where prd has run since the 2026-09-21 cutover; the variable is
  * only set to bring Fargate back beside it.
  */
-export function parseIngestFleets(value: string | undefined): IngestFleets {
+export const parseIngestFleets = (
+	value: string | undefined,
+): Effect.Effect<IngestFleets, IngestFleetsError> => {
 	const requested = (value ?? "")
 		.split(",")
 		.map((fleet) => fleet.trim())
 		.filter((fleet) => fleet !== "")
-	if (requested.length === 0) return { fargate: false, ec2: true }
+	if (requested.length === 0) return Effect.succeed({ fargate: false, ec2: true })
 	const unknown = requested.filter((fleet) => fleet !== "fargate" && fleet !== "ec2")
 	if (unknown.length > 0) {
-		throw new Error(
-			`MAPLE_INGEST_FLEETS: unknown fleet(s) "${unknown.join(", ")}" (expected fargate, ec2)`,
+		return Effect.fail(
+			new IngestFleetsError({
+				message: `MAPLE_INGEST_FLEETS: unknown fleet(s) "${unknown.join(", ")}" (expected fargate, ec2)`,
+				rawFleets: value ?? "",
+			}),
 		)
 	}
-	return { fargate: requested.includes("fargate"), ec2: requested.includes("ec2") }
+	return Effect.succeed({ fargate: requested.includes("fargate"), ec2: requested.includes("ec2") })
 }
 
 /**

@@ -29,7 +29,7 @@ import {
 	stageEnablesReplayBlobs,
 } from "@maple/infra/aws"
 import { ReplayBlobs } from "../api/src/resources/replay-blobs.ts"
-import { issueCertificateViaCloudflare } from "@maple/infra/acm"
+import { issueCertificateViaCloudflare, publishProxiedCname } from "@maple/infra/acm"
 import type { MapleDomains, MapleStage } from "@maple/infra/cloudflare"
 import {
 	resolveDeploymentEnvironment,
@@ -230,7 +230,9 @@ export const createMapleIngest = ({ stage, domains, region, dbRole }: CreateMapl
 		const scaling = resolveIngestScaling(stage, region)
 		const ec2TaskSize = resolveIngestEc2TaskSize(stage, region)
 		const name = (base: string) => resolveAwsResourceName(base, stage, region)
-		const fleets = parseIngestFleets((yield* optionalPlain("MAPLE_INGEST_FLEETS")).MAPLE_INGEST_FLEETS)
+		const fleets = yield* parseIngestFleets(
+			(yield* optionalPlain("MAPLE_INGEST_FLEETS")).MAPLE_INGEST_FLEETS,
+		)
 
 		// Public subnets with public IPs on the tasks, and NO NAT gateway. NAT
 		// bills $0.045/GB PROCESSED on top of egress, and this service exists to
@@ -953,9 +955,21 @@ export const createMapleIngest = ({ stage, domains, region, dbRole }: CreateMapl
 				})
 			: undefined
 
+		// The public name, proxied through Cloudflare to the serving fleet's ALB.
+		// EC2 first: it has served prd since the 2026-09-21 cutover, so bringing
+		// Fargate back beside it (`MAPLE_INGEST_FLEETS`) must not move the traffic.
+		const servingFleet = ec2Service ?? fargateService
+		if (domains.ingest && servingFleet) {
+			yield* publishProxiedCname({
+				id: "ingest-public-cname",
+				hostname: domains.ingest,
+				serviceUrl: servingFleet.url,
+			})
+		}
+
 		return {
-			// The fleet `domains.ingest` should point at: Fargate until it is
-			// removed, EC2 after. Both ALB hostnames are returned for the cutover.
+			// Fargate's ALB when that fleet runs, else EC2's: a PR preview has no
+			// ingest domain and is reached here. Both ALB hostnames are returned too.
 			serviceUrl: (fargateService ?? ec2Service)?.url,
 			fargateServiceUrl: fargateService?.url,
 			ec2ServiceUrl: ec2Service?.url,
@@ -971,11 +985,8 @@ export const createMapleIngest = ({ stage, domains, region, dbRole }: CreateMapl
 			// VPC; surfaced so a preview's logs say where the gateway is pointing.
 			collectorEndpoint,
 			collectorServiceName: collector?.serviceName,
-			// The validation CNAME is published by the stack now
-			// (`issueCertificateViaCloudflare`); this stays as the record of what
-			// was published, and for diagnosing a certificate stuck short of
-			// ISSUED. The one record still added by hand is a proxied CNAME for
-			// `domains.ingest` at `serviceUrl` (the ALB).
+			// What `issueCertificateViaCloudflare` published, kept for diagnosing a
+			// certificate stuck short of ISSUED.
 			certificateValidation: certificate?.domainValidationOptions,
 		}
 	})

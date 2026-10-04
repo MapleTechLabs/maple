@@ -117,7 +117,8 @@ const deployment = () => {
 	env.ConnectorRelay = {
 		idFromName: (name: string) => name,
 		get: (name: unknown) => ({
-			remember: (conversationKey: string) => Effect.runPromise(at(String(name)).remember(conversationKey)),
+			remember: (conversationKey: string) =>
+				Effect.runPromise(at(String(name)).remember(conversationKey)),
 		}),
 	}
 	return {

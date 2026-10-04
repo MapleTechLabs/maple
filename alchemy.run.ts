@@ -16,9 +16,16 @@ import * as Command from "alchemy/Command"
 import * as Output from "alchemy/Output"
 import * as Planetscale from "alchemy/Planetscale"
 import * as RemovalPolicy from "alchemy/RemovalPolicy"
+import { ConfigError } from "effect/Config"
+import { SourceError } from "effect/ConfigProvider"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
-import { resolveAwsRegion, stageDeploysElectric, stageDeploysIngest } from "@maple/infra/aws"
+import {
+	AwsRegionMismatchError,
+	resolveAwsRegion,
+	stageDeploysElectric,
+	stageDeploysIngest,
+} from "@maple/infra/aws"
 import {
 	ApiWorker,
 	AiWorker,
@@ -31,10 +38,10 @@ import {
 	MapleStack,
 	type MapleStackContext,
 	type MapleStage,
-	parseMapleDeployment,
+	parseMapleDeploymentEffect,
 	regionHostsSharedApps,
 	resolveDatabaseMode,
-	resolveMapleDomains,
+	resolveMapleDomainsEffect,
 	resolvePlanetscaleDatabase,
 	resolveWorkerName,
 	stageMigratesDatabase,
@@ -72,6 +79,10 @@ const resolveUrl = (domain: string | undefined, envKey: string, fallback = "") =
 	domain
 		? Effect.succeed(`https://${domain}`)
 		: Effect.map(plainWithDefault(envKey, fallback), (record) => record[envKey] ?? fallback)
+
+/** A typed deploy-setting failure as the `ConfigError` the stack can surface; the original is the cause. */
+const asConfigError = (error: { readonly message: string }) =>
+	Effect.fail(new ConfigError(new SourceError({ message: error.message, cause: error })))
 
 /** Append `key=value` lines to the GitHub Actions step-output file, if any. */
 const appendStepOutputs = (lines: string[]): void => {
@@ -155,8 +166,8 @@ const MapleStackLive = Layer.effect(
 	Effect.gen(function* () {
 		// `prd` or `prd-eu`: the stage string names the instance too, and alchemy's
 		// state is keyed by it, so the two instances never share a plan.
-		const { stage, region } = parseMapleDeployment(yield* Alchemy.Stage)
-		const domains = resolveMapleDomains(stage, region)
+		const { stage, region } = yield* parseMapleDeploymentEffect(yield* Alchemy.Stage)
+		const domains = yield* resolveMapleDomainsEffect(stage, region)
 		const context: MapleStackContext = {
 			stage,
 			region,
@@ -269,9 +280,12 @@ export default Alchemy.Stack(
 		const { AWS_REGION } = yield* optionalPlain("AWS_REGION")
 		const expectedAwsRegion = resolveAwsRegion(region)
 		if (AWS_REGION && AWS_REGION !== expectedAwsRegion) {
-			throw new Error(
-				`AWS_REGION="${AWS_REGION}" does not match the "${region}" instance (expects "${expectedAwsRegion}").`,
-			)
+			return yield* new AwsRegionMismatchError({
+				message: `AWS_REGION="${AWS_REGION}" does not match the "${region}" instance (expects "${expectedAwsRegion}").`,
+				awsRegion: AWS_REGION,
+				mapleRegion: region,
+				expectedAwsRegion,
+			})
 		}
 
 		// The Rust OTLP gateway on ECS Fargate (prd/pr — dev stages run it
@@ -356,9 +370,9 @@ export default Alchemy.Stack(
 				: undefined
 
 		// Standalone ElectricSQL shape-proxy worker (DB-free); its public origin is
-		// baked into the web build (VITE_ELECTRIC_SYNC_URL). Like alerting, landing
-		// and local-ui below, a single module: its props read `MapleStack` and the
-		// module is also the bundle entry.
+		// baked into the web build (VITE_ELECTRIC_SYNC_URL). Like alerting below, a
+		// single module: its props read `MapleStack` and the module is also the
+		// bundle entry.
 		const electricSync = yield* ElectricSync
 		yield* serveWorker("electric-sync", electricSync)
 
@@ -370,9 +384,10 @@ export default Alchemy.Stack(
 		const web = yield* Effect.provideService(Web, ApiWorker, api)
 		yield* serveWorker("web", web)
 
-		// Still gated on a production `Command.Build`, so including them would make
-		// `alchemy dev` build the whole frontend before serving anything. Both run
-		// their own dev script under `Command.Dev` instead (`DEV_PROCESS_APPS`).
+		// `Website.StaticSite`s, which run their production build on `alchemy dev`
+		// too, so including them would build the whole frontend before serving
+		// anything. Both run their own dev script under `Command.Dev` instead
+		// (`DEV_PROCESS_APPS`), which also hands them their portless route.
 		// The marketing site and the local-mode SPA are also shared across
 		// instances and hold no customer data: one `maple.dev`, deployed by `us` alone.
 		const sharedApps = !isDevServer && regionHostsSharedApps(region)
@@ -431,10 +446,9 @@ export default Alchemy.Stack(
 		// The Workers' names, for the CLI summary.
 		return {
 			...summary,
-			// ALB hostname to CNAME `domains.ingest` at, plus the one-time ACM
-			// validation record — both are manual entries in the Cloudflare
-			// `maple.dev` zone, surfaced here so they come out of the deploy rather
-			// than the AWS console.
+			// The ALB hostname behind `domains.ingest`. The proxied CNAME and the ACM
+			// validation record are both declared by the ingest stack; these are
+			// surfaced for diagnosis.
 			// The ALB hostname only exists once the service does, so `ingest_url`
 			// is emitted as this output resolves — after apply — rather than at
 			// plan time with the URLs above. On a PR preview this is the ALB's
@@ -452,8 +466,7 @@ export default Alchemy.Stack(
 			ingestFargateServiceUrl: ingest?.fargateServiceUrl,
 			ingestEc2ServiceUrl: ingest?.ec2ServiceUrl,
 			ingestCollectorEndpoint: ingest?.collectorEndpoint,
-			// Same manual-DNS story as ingest: CNAME `domains.electric` at this ALB
-			// (proxied), and add the ACM validation record once.
+			// Same as ingest: the electric stack declares both of its DNS records.
 			electricServiceUrl: electric?.serviceUrl,
 			electricCertificateValidation: electric?.certificateValidation,
 			ingestCertificateValidation: ingest?.certificateValidation,
@@ -465,7 +478,16 @@ export default Alchemy.Stack(
 			alertingWorker: alerting.workerName,
 			chatBotWorker: chatBot.workerName,
 		}
+	}).pipe(
 		// The stack IS the entry point: the one place `MapleStack` is provided.
 		// oxlint-disable-next-line effecttsgo/strict-effect-provide
-	}).pipe(Effect.provide(MapleStackLive)),
+		Effect.provide(MapleStackLive),
+		// `Alchemy.Stack` admits only `ConfigError`, and each of these is a misread
+		// deploy setting (the stage string, AWS_REGION, MAPLE_INGEST_FLEETS).
+		Effect.catchTags({
+			"@maple/infra/MapleStageError": asConfigError,
+			"@maple/infra/AwsRegionMismatchError": asConfigError,
+			"@maple/infra/IngestFleetsError": asConfigError,
+		}),
+	),
 )

@@ -1,6 +1,13 @@
+// BOUNDARY: The Workers cache returns unparsed JSON; `EdgeCacheService` decodes it before domain use.
 import { Effect, Layer, Metric } from "effect"
 import { WorkersCache } from "@maple/infra/workers-cache"
-import { CacheBackend, type EdgeCacheBackend, EdgeCacheService, makeMemoryBackend } from "@maple/cache"
+import {
+	CacheBackend,
+	type EdgeCacheBackend,
+	EdgeCacheBackendError,
+	EdgeCacheService,
+	makeMemoryBackend,
+} from "@maple/cache"
 import * as QueryEngineMetrics from "@maple/backend/observability/QueryEngineMetrics"
 
 // Concrete `CacheBackend` implementation for the API runtime.
@@ -16,30 +23,48 @@ const SYNTHETIC_HOST = "https://maple-api.internal"
 
 const buildCacheUrl = (bucket: string, hash: string): string => `${SYNTHETIC_HOST}/cache/${bucket}/${hash}`
 
+const backendError = (op: EdgeCacheBackendError["op"]) => (cause: unknown) =>
+	new EdgeCacheBackendError({
+		op,
+		message: cause instanceof Error ? cause.message : String(cause),
+		cause,
+	})
+
 const makeWorkersBackend = (cache: Cache): EdgeCacheBackend => ({
 	name: "workers-cache",
-	get: async (bucket, hash) => {
-		const response = await cache.match(buildCacheUrl(bucket, hash))
-		if (!response) return undefined
-		try {
-			return (await response.json()) as unknown
-		} catch {
-			return undefined
-		}
-	},
-	put: async (bucket, hash, value, ttlSeconds) => {
-		const body = JSON.stringify(value)
-		const response = new Response(body, {
-			headers: {
-				"Content-Type": "application/json",
-				"Cache-Control": `max-age=${ttlSeconds}`,
-			},
-		})
-		await cache.put(buildCacheUrl(bucket, hash), response)
-	},
-	delete: async (bucket, hash) => {
-		await cache.delete(buildCacheUrl(bucket, hash))
-	},
+	get: (bucket, hash) =>
+		Effect.tryPromise({
+			try: () => cache.match(buildCacheUrl(bucket, hash)),
+			catch: backendError("get"),
+		}).pipe(
+			Effect.flatMap((response) =>
+				response
+					? // An unreadable body is an entry we cannot use: a miss, not a failure.
+						Effect.tryPromise((): Promise<unknown> => response.json()).pipe(
+							Effect.orElseSucceed(() => undefined),
+						)
+					: Effect.succeed(undefined),
+			),
+		),
+	put: (bucket, hash, value, ttlSeconds) =>
+		Effect.tryPromise({
+			try: () =>
+				cache.put(
+					buildCacheUrl(bucket, hash),
+					new Response(JSON.stringify(value), {
+						headers: {
+							"Content-Type": "application/json",
+							"Cache-Control": `max-age=${ttlSeconds}`,
+						},
+					}),
+				),
+			catch: backendError("put"),
+		}),
+	delete: (bucket, hash) =>
+		Effect.tryPromise({
+			try: () => cache.delete(buildCacheUrl(bucket, hash)),
+			catch: backendError("delete"),
+		}).pipe(Effect.asVoid),
 })
 
 /**

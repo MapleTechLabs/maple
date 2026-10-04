@@ -76,7 +76,11 @@ const postTrack = (
 							Effect.orElseSucceed(() => ""),
 							Effect.flatMap((body) =>
 								Effect.logWarning("autumn track failed").pipe(
-									Effect.annotateLogs({ status: response.status, feature: event.featureId, body }),
+									Effect.annotateLogs({
+										status: response.status,
+										feature: event.featureId,
+										body,
+									}),
 								),
 							),
 						),

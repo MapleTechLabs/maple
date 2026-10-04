@@ -470,7 +470,9 @@ export const resolveTriageModel = (settings: LlmSettings, tags?: LlmCallTags): R
 		: openRouterModel(
 				settings,
 				readString(settings, "MAPLE_TRIAGE_MODEL_OPENROUTER") ??
-					(openRouterRegion(settings) === "eu" ? EU_DEFAULT_OPENROUTER_MODEL : DEFAULT_OPENROUTER_MODEL),
+					(openRouterRegion(settings) === "eu"
+						? EU_DEFAULT_OPENROUTER_MODEL
+						: DEFAULT_OPENROUTER_MODEL),
 				"MAPLE_TRIAGE_REASONING_EFFORT",
 				// No default. This resolver serves chat, AI triage *and* the validator, so a number
 				// picked here would retune three stages with different shapes at once.
@@ -507,7 +509,9 @@ export const resolveReviewModel = (
 					servedReviewModel(settings, chosen),
 					() =>
 						readString(settings, "MAPLE_REVIEW_MODEL_OPENROUTER") ??
-						(openRouterRegion(settings) === "eu" ? EU_DEFAULT_REVIEW_MODEL : DEFAULT_REVIEW_MODEL),
+						(openRouterRegion(settings) === "eu"
+							? EU_DEFAULT_REVIEW_MODEL
+							: DEFAULT_REVIEW_MODEL),
 				),
 				"MAPLE_TRIAGE_REASONING_EFFORT",
 				undefined,
@@ -617,7 +621,9 @@ export const layerDecisionModel = (
 	WorkersAiDecisionModel.layer({
 		model: resolveDecisionModel(settings) ?? DEFAULT_DECISION_MODEL,
 		accountId: readString(settings, "CLOUDFLARE_ACCOUNT_ID") ?? BINDING_PLACEHOLDER,
-		apiKey: Redacted.value(readSecret(settings, "CLOUDFLARE_API_KEY") ?? Redacted.make(BINDING_PLACEHOLDER)),
+		apiKey: Redacted.value(
+			readSecret(settings, "CLOUDFLARE_API_KEY") ?? Redacted.make(BINDING_PLACEHOLDER),
+		),
 	}).pipe(Layer.provide(layerWorkersAi(workersAi).pipe(Layer.provide(FetchHttpClient.layer))))
 
 /**
@@ -665,7 +671,8 @@ export const layerFindingEmbedder = (
 /** {@link layerLlm} on the settings the graph's ConfigProvider holds. */
 export const layerLlmFromConfig = (
 	workersAi: Option.Option<WorkersAiBinding> = Option.none(),
-): Layer.Layer<LlmClients> => Layer.unwrap(Effect.map(loadLlmSettings, (settings) => layerLlm(settings, workersAi)))
+): Layer.Layer<LlmClients> =>
+	Layer.unwrap(Effect.map(loadLlmSettings, (settings) => layerLlm(settings, workersAi)))
 
 /** {@link layerDecisionModel} on the settings the graph's ConfigProvider holds. */
 export const layerDecisionModelFromConfig = (

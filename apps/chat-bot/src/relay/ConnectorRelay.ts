@@ -257,7 +257,9 @@ export class ConnectorRelay {
 				storageCall("getAlarm", () => this.ctx.storage.getAlarm()).pipe(
 					Effect.flatMap((pending) =>
 						pending === null
-							? storageCall("setAlarm", () => this.ctx.storage.setAlarm(Date.now() + KEEP_ALIVE_MS))
+							? storageCall("setAlarm", () =>
+									this.ctx.storage.setAlarm(Date.now() + KEEP_ALIVE_MS),
+								)
 							: Effect.void,
 					),
 					Effect.catchTag(STORAGE_ERROR, logStorageFailure),
@@ -301,7 +303,10 @@ export class ConnectorRelay {
 	private settle(key: string, checkpoint: unknown): Effect.Effect<void> {
 		return runtimeCall("settle", async () => {
 			const { settleInboundTurn } = await this.runtime()
-			return settleInboundTurn({ env: this.env, recordTurn: (next) => this.recordTurn(next) }, checkpoint)
+			return settleInboundTurn(
+				{ env: this.env, recordTurn: (next) => this.recordTurn(next) },
+				checkpoint,
+			)
 		}).pipe(
 			// A settle that failed is cleared like a finished one, as it always was.
 			Effect.catchCause((cause) =>

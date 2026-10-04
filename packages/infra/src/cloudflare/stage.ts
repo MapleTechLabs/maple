@@ -1,3 +1,6 @@
+import * as Effect from "effect/Effect"
+import * as Result from "effect/Result"
+import * as Schema from "effect/Schema"
 import {
 	DEFAULT_MAPLE_REGION,
 	isMapleRegion,
@@ -5,6 +8,12 @@ import {
 	type MapleRegion,
 	regionSuffix,
 } from "../region.ts"
+
+/** An alchemy stage string that names no deployable Maple stage or instance. */
+export class MapleStageError extends Schema.TaggedError<MapleStageError>()("@maple/infra/MapleStageError", {
+	message: Schema.String,
+	rawStage: Schema.String,
+}) {}
 
 export type MapleStage = { kind: "prd" } | { kind: "pr"; prNumber: number } | { kind: "dev"; name: string }
 
@@ -122,11 +131,11 @@ const PRD_DOMAINS_EU: MapleDomains = {
 	chat: "chat.eu.maple.dev",
 }
 
-export function parseMapleStage(stage: string): MapleStage {
+const mapleStageResult = (stage: string): Result.Result<MapleStage, MapleStageError> => {
 	const normalized = stage.trim().toLowerCase()
 
 	if (normalized === "prd") {
-		return { kind: "prd" }
+		return Result.succeed({ kind: "prd" })
 	}
 
 	// These are rejected rather than left to fall through to the dev-stage
@@ -136,8 +145,11 @@ export function parseMapleStage(stage: string): MapleStage {
 	// `maple-*-dev-stg` is not the failure anyone typing it wants — and someone
 	// typing it from memory is as likely to write `staging`.
 	if (REMOVED_STAGE_NAMES.has(normalized)) {
-		throw new Error(
-			`The "${normalized}" stage was removed. Deploy prd, a pr-<number> preview, or a dev stage name.`,
+		return Result.fail(
+			new MapleStageError({
+				message: `The "${normalized}" stage was removed. Deploy prd, a pr-<number> preview, or a dev stage name.`,
+				rawStage: stage,
+			}),
 		)
 	}
 
@@ -145,7 +157,7 @@ export function parseMapleStage(stage: string): MapleStage {
 	if (prMatch) {
 		const prNumber = Number(prMatch[1])
 		if (Number.isSafeInteger(prNumber) && prNumber > 0) {
-			return { kind: "pr", prNumber }
+			return Result.succeed({ kind: "pr", prNumber })
 		}
 	}
 
@@ -153,12 +165,24 @@ export function parseMapleStage(stage: string): MapleStage {
 		// Underscores are accepted (alchemy's default stage is `dev_${USER}`) but
 		// normalized to hyphens: `name` flows into Cloudflare worker/Hyperdrive
 		// names, which only allow [a-z0-9-].
-		return { kind: "dev", name: normalized.replaceAll("_", "-") }
+		return Result.succeed({ kind: "dev", name: normalized.replaceAll("_", "-") })
 	}
 
-	throw new Error(
-		`Unsupported deployment stage "${stage}". Expected prd, pr-<number>, or a dev stage name matching [a-z0-9][a-z0-9_-]*.`,
+	return Result.fail(
+		new MapleStageError({
+			message: `Unsupported deployment stage "${stage}". Expected prd, pr-<number>, or a dev stage name matching [a-z0-9][a-z0-9_-]*.`,
+			rawStage: stage,
+		}),
 	)
+}
+
+/** Parse a stage name, failing with {@link MapleStageError}. */
+export const parseMapleStageEffect = (stage: string): Effect.Effect<MapleStage, MapleStageError> =>
+	Effect.fromResult(mapleStageResult(stage))
+
+/** Synchronous {@link parseMapleStageEffect}: throws the `MapleStageError`. For non-Effect callers only. */
+export function parseMapleStage(stage: string): MapleStage {
+	return Result.getOrThrow(mapleStageResult(stage))
 }
 
 /**
@@ -174,18 +198,35 @@ export function parseMapleStage(stage: string): MapleStage {
  * and reviews code, not residency, and a second preview fleet per PR is real
  * money for nothing.
  */
-export function parseMapleDeployment(raw: string): MapleDeployment {
+const mapleDeploymentResult = (raw: string): Result.Result<MapleDeployment, MapleStageError> => {
 	const normalized = raw.trim().toLowerCase()
 	const match = normalized.match(REGION_STAGE_SUFFIX_RE)
 	const suffix = match?.[1]
 	const region: MapleRegion = suffix !== undefined && isMapleRegion(suffix) ? suffix : DEFAULT_MAPLE_REGION
-	const stage = parseMapleStage(match ? normalized.slice(0, -match[0].length) : normalized)
-	if (stage.kind === "pr" && region !== DEFAULT_MAPLE_REGION) {
-		throw new Error(
-			`PR previews deploy to the ${DEFAULT_MAPLE_REGION} instance only; "${raw}" asks for "${region}".`,
-		)
-	}
-	return { stage, region }
+	return Result.flatMap(
+		mapleStageResult(match ? normalized.slice(0, -match[0].length) : normalized),
+		(stage): Result.Result<MapleDeployment, MapleStageError> =>
+			stage.kind === "pr" && region !== DEFAULT_MAPLE_REGION
+				? Result.fail(
+						new MapleStageError({
+							message: `PR previews deploy to the ${DEFAULT_MAPLE_REGION} instance only; "${raw}" asks for "${region}".`,
+							rawStage: raw,
+						}),
+					)
+				: Result.succeed({ stage, region }),
+	)
+}
+
+/** Parse an alchemy stage string, failing with {@link MapleStageError}. */
+export const parseMapleDeploymentEffect = (raw: string): Effect.Effect<MapleDeployment, MapleStageError> =>
+	Effect.fromResult(mapleDeploymentResult(raw))
+
+/**
+ * Synchronous {@link parseMapleDeploymentEffect}: throws the `MapleStageError`.
+ * For non-Effect callers only; Effect code uses the Effect variant.
+ */
+export function parseMapleDeployment(raw: string): MapleDeployment {
+	return Result.getOrThrow(mapleDeploymentResult(raw))
 }
 
 export function formatMapleDeployment({ stage, region }: MapleDeployment): string {
@@ -214,16 +255,21 @@ export function resolveDeploymentEnvironment(stage: MapleStage): string {
 	}
 }
 
-export function resolveMapleDomains(
+const mapleDomainsResult = (
 	stage: MapleStage,
-	region: MapleRegion = DEFAULT_MAPLE_REGION,
-): MapleDomains {
+	region: MapleRegion,
+): Result.Result<MapleDomains, MapleStageError> => {
 	switch (stage.kind) {
 		case "prd":
-			return region === "eu" ? PRD_DOMAINS_EU : PRD_DOMAINS
+			return Result.succeed(region === "eu" ? PRD_DOMAINS_EU : PRD_DOMAINS)
 		case "pr":
 			if (region !== DEFAULT_MAPLE_REGION) {
-				throw new Error(`PR previews have no ${region} hostnames; see parseMapleDeployment.`)
+				return Result.fail(
+					new MapleStageError({
+						message: `PR previews have no ${region} hostnames; see parseMapleDeployment.`,
+						rawStage: formatMapleDeployment({ stage, region }),
+					}),
+				)
 			}
 			// Give PR previews stable, secret-free URLs. The default workers.dev URL
 			// embeds the Cloudflare account subdomain, which Infisical masks as a
@@ -234,15 +280,29 @@ export function resolveMapleDomains(
 			// string-interpolated into another worker's env. local-ui has no pr
 			// domain (nothing links to it from previews); landing gets one so
 			// marketing-page changes are reviewable on a stable URL.
-			return {
+			return Result.succeed({
 				web: `app-pr-${stage.prNumber}.maple.dev`,
 				api: `api-pr-${stage.prNumber}.maple.dev`,
 				sync: `sync-pr-${stage.prNumber}.maple.dev`,
 				landing: `landing-pr-${stage.prNumber}.maple.dev`,
-			}
+			})
 		case "dev":
-			return {}
+			return Result.succeed({})
 	}
+}
+
+/** A deployment's public hostnames, failing with {@link MapleStageError} for a PR preview outside `us`. */
+export const resolveMapleDomainsEffect = (
+	stage: MapleStage,
+	region: MapleRegion = DEFAULT_MAPLE_REGION,
+): Effect.Effect<MapleDomains, MapleStageError> => Effect.fromResult(mapleDomainsResult(stage, region))
+
+/** Synchronous {@link resolveMapleDomainsEffect}: throws the `MapleStageError`. For non-Effect callers only. */
+export function resolveMapleDomains(
+	stage: MapleStage,
+	region: MapleRegion = DEFAULT_MAPLE_REGION,
+): MapleDomains {
+	return Result.getOrThrow(mapleDomainsResult(stage, region))
 }
 
 /**

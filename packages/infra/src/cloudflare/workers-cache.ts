@@ -23,9 +23,7 @@ declare global {
  * first request), so the read is allowed and cannot throw; the `typeof` guard
  * handles non-Workers runtimes where the global is absent.
  */
-export class WorkersCache extends Context.Service<WorkersCache, Cache | null>()(
-	"Cloudflare.Workers.WorkersCache",
-) {
+export class WorkersCache extends Context.Service<WorkersCache, Cache | null>()("@maple/infra/WorkersCache") {
 	static readonly layer: Layer.Layer<WorkersCache> = Layer.sync(this, () =>
 		typeof caches !== "undefined" ? caches.default : null,
 	)

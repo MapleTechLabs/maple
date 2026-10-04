@@ -58,11 +58,7 @@ const handleAndRecord = async (
 				delivered.push(inbound)
 			}),
 	}
-	await Effect.runPromise(
-		inboundHandler(relay)
-			.handle(event)
-			.pipe(Effect.provideContext(context)),
-	)
+	await Effect.runPromise(inboundHandler(relay).handle(event).pipe(Effect.provideContext(context)))
 	const everything = JSON.stringify({
 		logs: recorded.logs,
 		spans: recorded.spans.map((span) => ({

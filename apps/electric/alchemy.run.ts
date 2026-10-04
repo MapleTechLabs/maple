@@ -12,7 +12,7 @@ import {
 	resolveElectricDbPoolSize,
 	resolveElectricTaskSize,
 } from "@maple/infra/aws"
-import { issueCertificateViaCloudflare } from "@maple/infra/acm"
+import { issueCertificateViaCloudflare, publishProxiedCname } from "@maple/infra/acm"
 import type { MapleDomains, MapleStage } from "@maple/infra/cloudflare"
 import { requiredPlain } from "@maple/infra/env"
 
@@ -251,11 +251,20 @@ export const createMapleElectric = ({
 			tags: { Service: "maple-electric", Region: region },
 		})
 
+		// The public name, proxied through Cloudflare to the ALB. Only on a stage
+		// with an electric domain; the validation CNAME is `issueCertificateViaCloudflare`'s.
+		if (domains.electric) {
+			yield* publishProxiedCname({
+				id: "electric-public-cname",
+				hostname: domains.electric,
+				serviceUrl: service.url,
+			})
+		}
+
 		return {
 			serviceUrl: service.url,
-			// The ACM validation CNAME is published by the stack now
-			// (`issueCertificateViaCloudflare`); what is still added by hand is a
-			// proxied CNAME for `domains.electric` at the ALB.
+			// What `issueCertificateViaCloudflare` published, kept for diagnosing a
+			// certificate stuck short of ISSUED.
 			certificateValidation: certificate?.domainValidationOptions,
 		}
 	})

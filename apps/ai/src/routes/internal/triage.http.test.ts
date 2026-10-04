@@ -2,7 +2,7 @@
 import { assert, describe, it } from "@effect/vitest"
 import { IncidentTriageApiGroup, V1SchemaErrors, V1UnexpectedErrors } from "@maple/domain/http"
 import { workerEnvLayer } from "@maple/infra/worker-runtime"
-import { ConfigProvider, Context, Effect, Layer, Redacted } from "effect"
+import { ConfigProvider, Context, Layer, Redacted } from "effect"
 import { FetchHttpClient, HttpRouter } from "effect/http"
 import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import { Env } from "@maple/backend/platform/Env"

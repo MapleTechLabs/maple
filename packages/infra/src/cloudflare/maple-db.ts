@@ -29,7 +29,7 @@ import { requiredPlain } from "../env.ts"
 import type { MapleDbResources } from "./stack.ts"
 import {
 	type MapleDbConsumer,
-	parseMapleDeployment,
+	parseMapleDeploymentEffect,
 	resolveDatabaseMode,
 	resolveHyperdriveRefId,
 	resolveWorkerName,
@@ -37,6 +37,14 @@ import {
 
 /** The binding's name — also the managed Connection's logical id, so both flavors bind under it. */
 export const MAPLE_DB_BINDING = "MAPLE_DB"
+
+/**
+ * This deploy's stage. The root stack parses the same string first and fails
+ * typed there (`MapleStackLive`), so an unparseable stage reaching here is a defect.
+ */
+const stageDeployment = Effect.gen(function* () {
+	return yield* parseMapleDeploymentEffect(yield* Stage)
+}).pipe(Effect.orDie)
 
 /**
  * The alchemy-managed Hyperdrive of dev stages, origin parsed from
@@ -50,9 +58,10 @@ export const MAPLE_DB_BINDING = "MAPLE_DB"
 export const ManagedMapleDb = Cloudflare.Hyperdrive.Connection(
 	MAPLE_DB_BINDING,
 	Effect.gen(function* () {
-		const { stage, region } = parseMapleDeployment(yield* Stage)
+		const { stage, region } = yield* stageDeployment
 		// A dev stage without its database URL cannot be planned: a defect, not a branch.
-		const pgUrl = new URL(yield* Effect.orDie(requiredPlain("MAPLE_PG_URL")))
+		const rawPgUrl = yield* Effect.orDie(requiredPlain("MAPLE_PG_URL"))
+		const pgUrl = yield* Effect.try(() => new URL(rawPgUrl)).pipe(Effect.orDie)
 		const props: Cloudflare.Hyperdrive.Props = {
 			name: resolveWorkerName("db", stage, region),
 			origin: {
@@ -105,7 +114,7 @@ export const mapleDbEnv = (db: MapleDbResources | undefined, consumer: MapleDbCo
 export const MapleDb = (consumer: MapleDbConsumer) =>
 	Effect.gen(function* () {
 		if (globalThis.__ALCHEMY_RUNTIME__) return
-		const { stage, region } = parseMapleDeployment(yield* Stage)
+		const { stage, region } = yield* stageDeployment
 		switch (resolveDatabaseMode(stage, region)) {
 			case "managed": {
 				yield* Cloudflare.Hyperdrive.Connect(ManagedMapleDb)

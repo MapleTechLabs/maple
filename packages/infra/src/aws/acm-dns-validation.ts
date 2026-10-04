@@ -37,8 +37,10 @@
  */
 import * as acm from "@distilled.cloud/aws/acm"
 import * as AwsRegion from "@distilled.cloud/aws/Region"
+import { adopt } from "alchemy/AdoptPolicy"
 import * as Cloudflare from "alchemy/Cloudflare"
 import type { Input } from "alchemy/Input"
+import * as Output from "alchemy/Output"
 import * as Provider from "alchemy/Provider"
 import { Resource } from "alchemy/Resource"
 import * as Effect from "effect/Effect"
@@ -267,6 +269,61 @@ export const AcmCertificateIssuedProvider = () =>
 export const providers = () => Layer.mergeAll(AcmValidationRecordProvider(), AcmCertificateIssuedProvider())
 
 /**
+ * The Cloudflare zone a hostname lives in, resolved by name: this stack reads
+ * the zone but never manages it. A hostname whose zone this account cannot see
+ * is a misconfigured stack, not a runtime condition, so it dies rather than
+ * failing later and less clearly.
+ */
+const resolveCloudflareZoneId = Effect.fn(function* (hostname: string) {
+	const accountId = yield* requiredPlain("CLOUDFLARE_ACCOUNT_ID")
+	return yield* Cloudflare.Zone.resolveZoneId({ accountId, zone: undefined, hostname }).pipe(
+		Effect.catch((cause: Error) =>
+			// oxlint-disable-next-line maple/no-effect-die -- stack wiring invariant, see above
+			Effect.die(
+				new AcmValidationError({
+					hostname,
+					message: `no Cloudflare zone for ${hostname}: ${cause.message}`,
+				}),
+			),
+		),
+	)
+})
+
+/** `https://host[:port]/path` to `host`: a load balancer's URL as a CNAME target. */
+export const urlHost = (url: string | undefined): string =>
+	(url ?? "").replace(/^[a-z][a-z0-9+.-]*:\/\//i, "").replace(/[:/].*$/, "")
+
+/**
+ * Point `hostname` at a load balancer through Cloudflare's proxy: a proxied
+ * CNAME to the host part of `serviceUrl` (an `AWS.ECS.Service`'s `url`).
+ *
+ * `adopt(true)` because these records predate the stack (they were added by
+ * hand). Cloudflare records carry no ownership marker, so without it the first
+ * deploy refuses the existing `(name, type)` match; once in state it is a no-op.
+ */
+export const publishProxiedCname = Effect.fn(function* ({
+	id,
+	hostname,
+	serviceUrl,
+}: {
+	/** Logical id of the record. */
+	id: string
+	/** The public name, e.g. `ingest.maple.dev`; also selects the zone. */
+	hostname: string
+	/** The load balancer's URL, scheme and all. */
+	serviceUrl: Output.Output<string | undefined>
+}) {
+	const zoneId = yield* resolveCloudflareZoneId(hostname)
+	return yield* Cloudflare.DNS.Record(id, {
+		zoneId,
+		type: "CNAME",
+		name: hostname,
+		content: Output.map(serviceUrl, urlHost),
+		proxied: true,
+	}).pipe(adopt(true))
+})
+
+/**
  * Issue an ACM certificate whose DNS lives in the Cloudflare zone: publish the
  * validation CNAME, wait for ACM to see it, and hand back the ARN of the
  * ISSUED certificate.
@@ -294,25 +351,7 @@ export const issueCertificateViaCloudflare = Effect.fn(function* ({
 	hostname: string
 	region: AwsRegionName
 }) {
-	const accountId = yield* requiredPlain("CLOUDFLARE_ACCOUNT_ID")
-	// A certificate-bearing domain whose zone this account cannot see is a
-	// misconfigured stack, not a runtime condition — there is nothing to fall
-	// back to, and the deploy would otherwise fail later and less clearly.
-	const zoneId = yield* Cloudflare.Zone.resolveZoneId({
-		accountId,
-		zone: undefined,
-		hostname,
-	}).pipe(
-		Effect.catch((cause: Error) =>
-			// oxlint-disable-next-line maple/no-effect-die -- stack wiring invariant, see above
-			Effect.die(
-				new AcmValidationError({
-					hostname,
-					message: `no Cloudflare zone for ${hostname}: ${cause.message}`,
-				}),
-			),
-		),
-	)
+	const zoneId = yield* resolveCloudflareZoneId(hostname)
 
 	const validation = yield* AcmValidationRecord(`${id}-validation`, {
 		certificateArn,

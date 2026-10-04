@@ -1,7 +1,7 @@
 import { assert, describe, it } from "@effect/vitest"
 import { IncidentTriagePriorDiagnosis, IncidentTriageRequest } from "@maple/domain/http"
 import { InvestigationId } from "@maple/domain/primitives"
-import { Effect, Layer, Redacted, Schema } from "effect"
+import { Effect, Redacted, Schema } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { layerDecisionModel } from "../platform/Llm"
 import { classifyIncident } from "./incident-classifier"

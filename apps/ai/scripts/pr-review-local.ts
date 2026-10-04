@@ -874,7 +874,8 @@ export const reviewLocally = async (
 		loadLlmSettings.pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(env)))),
 	)
 	const model =
-		injected.model ?? resolveReviewModel(settings, { surface: "chat", orgId, sessionId, turnId: messageId })
+		injected.model ??
+		resolveReviewModel(settings, { surface: "chat", orgId, sessionId, turnId: messageId })
 	const kickoff = buildReviewKickoff({
 		repository,
 		number: args.number,

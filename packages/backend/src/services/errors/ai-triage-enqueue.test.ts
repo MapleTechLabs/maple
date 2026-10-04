@@ -421,11 +421,16 @@ describe("maybeEnqueueTriage", () => {
 		Effect.gen(function* () {
 			yield* enableWithLimits(50, 1)
 			const chat = fakeChatSession()
-			assert.isTrue((yield* maybeEnqueueTriage(criticalInput(chat.chatSessions, "incident-1"))).enqueued)
-			assert.deepStrictEqual(yield* maybeEnqueueTriage(criticalInput(chat.chatSessions, "incident-2")), {
-				enqueued: false,
-				reason: "daily_cap",
-			})
+			assert.isTrue(
+				(yield* maybeEnqueueTriage(criticalInput(chat.chatSessions, "incident-1"))).enqueued,
+			)
+			assert.deepStrictEqual(
+				yield* maybeEnqueueTriage(criticalInput(chat.chatSessions, "incident-2")),
+				{
+					enqueued: false,
+					reason: "daily_cap",
+				},
+			)
 		}).pipe(Effect.provide(makeLayer())),
 	)
 
@@ -549,9 +554,9 @@ describe("maybeEnqueueTriage", () => {
 			const issueId = asIssueId("00000000-0000-4000-8000-000000000004")
 			yield* seedIssue(issueId, { severity: "high", severitySource: "manual" })
 
-			const result = yield* maybeEnqueueTriage(issueInput("incident-1", issueId, chat.chatSessions)).pipe(
-				Effect.provide(classifier.layer),
-			)
+			const result = yield* maybeEnqueueTriage(
+				issueInput("incident-1", issueId, chat.chatSessions),
+			).pipe(Effect.provide(classifier.layer))
 			assert.strictEqual(result.reason, "noise")
 			const issue = yield* database.execute((db) =>
 				db.select().from(errorIssues).where(eq(errorIssues.id, issueId)),
@@ -607,9 +612,9 @@ describe("maybeEnqueueTriage", () => {
 					}),
 				}),
 			])
-			const result = yield* maybeEnqueueTriage(issueInput("incident-2", lookalike, chat.chatSessions)).pipe(
-				Effect.provide(classifier.layer),
-			)
+			const result = yield* maybeEnqueueTriage(
+				issueInput("incident-2", lookalike, chat.chatSessions),
+			).pipe(Effect.provide(classifier.layer))
 			assert.deepStrictEqual(result, {
 				enqueued: false,
 				reason: "covered_by_prior",

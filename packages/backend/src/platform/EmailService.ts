@@ -66,7 +66,10 @@ export class EmailService extends Context.Service<EmailService, EmailServiceApi>
 
 				const result = yield* sender.value.send({ from: fromEmail, to, subject, html, replyTo }).pipe(
 					Effect.mapError(
-						(error) => new EmailDeliveryError({ message: `Cloudflare Email send failed: ${error.message}` }),
+						(error) =>
+							new EmailDeliveryError({
+								message: `Cloudflare Email send failed: ${error.message}`,
+							}),
 					),
 					Effect.timeoutOrElse({
 						duration: EMAIL_TIMEOUT,
