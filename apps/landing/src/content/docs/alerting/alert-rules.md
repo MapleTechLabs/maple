@@ -179,4 +179,5 @@ The response lists the value and status of each window per group in `series`, an
 
 - [Incidents](/docs/alerting/incidents): what happens after a rule fires.
 - [Apdex alerts](/docs/alerting/apdex-alerts): choosing the target and threshold for an Apdex rule.
+- [Uptime monitoring](/docs/alerting/uptime-monitoring): availability alerts from traces, and HTTP checks from the OpenTelemetry Collector.
 - [Notification destinations](/docs/alerting/notification-destinations): where notifications go.

@@ -81,4 +81,5 @@ The [MCP server](/docs/reference/mcp) exposes the same data:
 
 - [Build dashboards](/docs/dashboards/build-dashboards): combine metric charts with trace and log queries.
 - [Prometheus scraping](/docs/integrations/prometheus): pull metrics from exporters.
+- [Uptime monitoring](/docs/alerting/uptime-monitoring): alert on HTTP check metrics from the OpenTelemetry Collector.
 - [Services](/docs/explore/services): latency and error metrics derived from traces.
