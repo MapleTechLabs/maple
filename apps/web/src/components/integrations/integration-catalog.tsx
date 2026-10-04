@@ -218,12 +218,16 @@ const CATALOG: ReadonlyArray<CatalogEntry> = [
 	},
 	{
 		id: "google-analytics",
+		// Collected GA4 metrics chart beside the other collectors, so it shelves with them.
+		category: "infrastructure",
+		isNew: true,
 		name: "Google Analytics",
 		description:
 			"Connect a Google account to chart GA4 sessions, users and page views next to your traces and errors.",
 		icon: GoogleAnalyticsIcon,
 		accent: GOOGLE_ANALYTICS_ACCENT,
-		docsUrl: "https://maple.dev/docs/integrations/google-analytics",
+		// No docsUrl until docs/integrations/google-analytics exists; `DOCS` is gated on the
+		// landing content collection, and a hardcoded link here would just 404.
 	},
 	...CHAT_ENTRIES,
 ]
