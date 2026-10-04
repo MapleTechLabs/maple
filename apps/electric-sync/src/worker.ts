@@ -1,13 +1,6 @@
 /**
- * The electric-sync Worker in alchemy's single-module form: this file is both
- * the resource the root stack yields (`yield* ElectricSync`) and the bundle
- * alchemy deploys (`main: import.meta.url`). Stage-derived props come from
- * `MapleStack`, which the stack provides; `impl` runs once per isolate, on the
- * first event.
- *
- * A standalone ElectricSQL shape proxy, deliberately DB-free: it authenticates
- * callers from the Clerk / self-hosted session bearer only (no Hyperdrive /
- * MAPLE_DB binding), pins each shape's org scope, and forwards to Electric.
+ * The electric-sync Worker: an ElectricSQL shape proxy, deliberately DB-free. It
+ * authenticates the session bearer, pins each shape's org scope and forwards.
  */
 import {
 	cachedRecoverable,
@@ -25,17 +18,10 @@ import { FetchHttpClient, HttpRouter } from "effect/http"
 
 const configuredEnv = (stage: MapleStage, region: MapleRegion) =>
 	merge(
-		// Auth (same AuthEnv subset the api worker sets; no DB).
 		authEnv,
 		optionalPlain("MAPLE_ORG_ID_OVERRIDE"),
-		// ElectricSQL upstream: base URL (Electric Cloud in prod) + Cloud source
-		// credentials. The shape proxy 503s if URL is unset.
-		//
-		// PR previews get none of the three on purpose: they no longer have a
-		// PlanetScale branch, so there is no per-PR Electric source to point at, and
-		// inheriting the shared `dev` credentials would proxy preview shapes against
-		// another stage's data. Absent ELECTRIC_URL → 503 → the web app falls back
-		// to its effect-atom fetches.
+		// PR previews get no Electric config: shared `dev` credentials would serve another
+		// stage's data. Unset ELECTRIC_URL means 503 and the web app falls back to fetches.
 		...(stage.kind === "pr"
 			? []
 			: [
@@ -43,16 +29,10 @@ const configuredEnv = (stage: MapleStage, region: MapleRegion) =>
 					optionalPlain("ELECTRIC_SOURCE_ID"),
 					optionalSecret("ELECTRIC_SECRET"),
 				]),
-		// Self-observability (OTLP export through the ingest gateway).
 		selfObservabilityEnv(stage, region),
 	)
 
-/**
- * Alchemy evaluates a Worker's props wherever the class is yielded — the
- * deployed bundle included, where they are inert. `__ALCHEMY_RUNTIME__` folds to
- * `true` there, so the stack-side branch below, and the `@maple/infra` modules
- * only it reaches, are dead-code-eliminated from what ships.
- */
+/** `__ALCHEMY_RUNTIME__` folds to `true` in the bundle, so the stack-side branch is tree-shaken. */
 const props = Effect.gen(function* () {
 	if (globalThis.__ALCHEMY_RUNTIME__) return { main: import.meta.url }
 	const { stage, region, domains, workerDev } = yield* MapleStack
@@ -61,20 +41,15 @@ const props = Effect.gen(function* () {
 		name: resolveWorkerName("electric-sync", stage, region),
 		compatibility: { date: "2026-10-01" },
 		placement: resolveWorkerPlacement(region),
-		// Under `bun dev`: a sticky port the app's route follows.
 		dev: workerDev("electric-sync"),
 		workersDev: true,
-		// Custom domain (not a zone route): routes don't create DNS records, so
-		// pr-stage hostnames would be authoritative NXDOMAIN. Custom domains
-		// provision DNS + edge certs automatically.
+		// Custom domain, not a zone route: routes create no DNS, so pr hosts would NXDOMAIN.
 		domain: domains.sync,
 		env: yield* configuredEnv(stage, region),
 	}
 })
 
-// The route graph builds `@maple/domain` Schema ASTs eagerly, so it is imported
-// here rather than at module scope: Cloudflare runs only the top level during
-// upload validation, against the fixed startup-CPU budget.
+// Dynamic imports keep the route graph's Schema ASTs out of the startup-CPU budget.
 const AppLayer = Layer.unwrap(
 	Effect.all(
 		[
@@ -92,9 +67,7 @@ const AppLayer = Layer.unwrap(
 						allowedOrigins: ["*"],
 						allowedMethods: ["GET", "OPTIONS"],
 						allowedHeaders: ["*"],
-						// Load-bearing, not hygiene: without these exposed headers
-						// @electric-sql/client cannot advance the shape cursor through the
-						// proxy, and every stream stalls after its first chunk.
+						// Required: without them the Electric client stalls after the first chunk.
 						exposedHeaders: [
 							"electric-handle",
 							"electric-offset",
@@ -104,9 +77,7 @@ const AppLayer = Layer.unwrap(
 						],
 					}),
 				),
-				// The route depends on these two services rather than constructing them,
-				// so tests can substitute either one; this is the only place the real
-				// implementations (and the real `fetch`) are wired in.
+				// The only place the real implementations are wired; tests substitute them.
 				Layer.provideMerge(ElectricClient.layer.pipe(Layer.provide(FetchHttpClient.layer))),
 				Layer.provideMerge(TenantResolver.layer),
 				Layer.provideMerge(SyncConfig.layer),
@@ -120,18 +91,9 @@ export default class ElectricSync extends Cloudflare.Worker<ElectricSync>()(
 	"electric-sync",
 	props,
 	Effect.gen(function* () {
-		// Built on the first request and kept for the isolate — not here, in init:
-		// init also runs at plan time, where alchemy auto-binds every `Config` it
-		// sees read onto the Worker, and this Worker's env is declared in full by
-		// `props`. The build scope is never closed (workerd has no isolate
-		// teardown), so everything in the layer stays value-shaped.
-		//
-		// A `ConfigError` here is a misconfigured deploy — `SyncConfig` already dies
-		// on the fatal ones — so the build dies too: the bridge answers 500 and the
-		// next request rebuilds. The handler itself keeps the router's
-		// typed failures: the bridge renders them before its tracer runs, so an
-		// unmatched route is an Ok span with a 404, and a defect a 500 that the SDK
-		// records as an Error server span (`worker-bridge.test.ts` pins both).
+		// Built on the first request, not in init (plan time would auto-bind every `Config`).
+		// The scope is never closed, so the layer must stay value-shaped. A failed build
+		// answers 500 and the next request rebuilds.
 		const app = yield* cachedRecoverable(
 			Effect.gen(function* () {
 				const scope = yield* Scope.make()
@@ -141,8 +103,6 @@ export default class ElectricSync extends Cloudflare.Worker<ElectricSync>()(
 
 		return { fetch: app }
 	}).pipe(
-		// The Worker init is the entry point; the bridge builds the telemetry into
-		// each event's scope and flushes it after the response.
 		// oxlint-disable-next-line effecttsgo/strict-effect-provide
 		Effect.provide(WorkerTelemetry({ serviceName: "electric-sync" })),
 	),

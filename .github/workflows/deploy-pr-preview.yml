@@ -1,23 +1,9 @@
 name: Deploy PR Preview (Cloudflare + AWS via Alchemy)
 
-# PREVIEW DEPLOYS ARE LABEL-GATED. A pull request gets a preview only while it
-# carries the `preview` label; the stack is torn down when the label is removed
-# or the PR closes. The label is the spend gate: a preview is now the FULL
-# stack, AWS half included — its own VPC, ALB and ECS ingest fleet
-# (`stageDeploysIngest` covers `pr`), which is real money for as long as the
-# label is on.
-#
-# Add `preview:collector` alongside it to also get the in-VPC OTel collector
-# (prd-only by default — see `stageDeploysCollector`); that is how the collector
-# is verified on Fargate before it reaches prod.
-#
-# Previews deploy without an application database — see the comment further down
-# and `resolveDatabaseMode` in packages/infra/src/cloudflare/stage.ts.
-#
-# cleanup-preview-orphans.yml stays the backstop: its 6-hourly sweeps reap any
-# preview worker, queue, Tinybird branch or Hyperdrive config whose PR closes
-# without a teardown run (GitHub creates no `closed` run for a PR that conflicts
-# with its base branch).
+# Label-gated: a PR gets the full stack (AWS ingest included) only while it carries
+# `preview`, torn down when the label comes off or the PR closes. `preview:collector`
+# adds the in-VPC OTel collector. Previews have no application database.
+# cleanup-preview-orphans.yml reaps anything a missed teardown leaves behind.
 on:
     pull_request:
         types:
@@ -39,8 +25,7 @@ permissions:
     pull-requests: write
 
 jobs:
-    # Separate job because it needs an arm64 runner — see the workflow itself.
-    # Skipped on a teardown: there is nothing to deploy, so nothing to compile.
+    # Separate job for the arm64 runner; skipped on teardown.
     ingest-binary:
         if: >-
             ${{ github.event.pull_request.head.repo.full_name == github.repository
@@ -50,16 +35,9 @@ jobs:
         uses: ./.github/workflows/build-ingest-binary.yml
 
     deploy-pr-preview:
-        # Deploy while the `preview` label is on; tear down when it comes off or
-        # a labelled PR closes. On an `unlabeled` event the payload's label list
-        # already excludes the removed label, so the clauses do not overlap. A
-        # PR that never carried the label closes without a run: there is no
-        # stack, and the orphan sweep is the backstop for anything missed.
-        #
-        # `!cancelled()` rather than a plain `needs`: a teardown skips the binary
-        # build, and a skipped dependency would otherwise skip the teardown with
-        # it. The explicit `result != 'failure'` keeps a BROKEN build from
-        # deploying anyway.
+        # `!cancelled()`: teardown skips the binary build, and a skipped `needs` would
+        # skip teardown too; `!= 'failure'` still blocks a broken build. On `unlabeled`
+        # the payload's labels already exclude the removed one, so the clauses don't overlap.
         needs: ingest-binary
         if: >-
             ${{ !cancelled() && needs.ingest-binary.result != 'failure'
@@ -69,53 +47,33 @@ jobs:
                     && contains(github.event.pull_request.labels.*.name, 'preview'))) }}
         runs-on: ubuntu-latest
         timeout-minutes: 45
-        # `pr-preview` environment must require manual approval in repo settings.
-        # This blocks PR-controlled code (install scripts, build steps) from
-        # accessing Infisical secrets until a maintainer reviews the diff.
-        #
-        # ⚠️ NOT CURRENTLY CONFIGURED, and adding it right now would break the
-        # scheduled orphan sweep: cleanup-preview-orphans.yml temporarily borrows
-        # this environment to satisfy the Infisical OIDC subject allowlist, and a
-        # cron run has no human to approve it — it would park in `waiting` until
-        # the deployment expires. Decouple that job first (allowlist the subject
-        # `repo:<org>/<repo>:ref:refs/heads/main` in Infisical and drop its
-        # `environment:` line), THEN add required reviewers here.
-        # `url` surfaces the deployed web app as a clickable deployment on the PR
-        # (empty on `closed`, when the deploy step is skipped).
+        # TODO: `pr-preview` should require reviewer approval before secrets load, but the
+        # cron orphan sweep borrows this environment for Infisical OIDC and would park
+        # waiting. Allowlist the sweep's `ref:refs/heads/main` subject first.
         environment:
             name: pr-preview
             url: ${{ steps.deploy.outputs.web_url }}
         env:
-            # Uses Infisical's default `dev` environment for now; swap to a
-            # dedicated `preview` env later if PR previews need isolated secrets.
+            # Infisical `dev` environment; no dedicated preview env yet.
             INFISICAL_ENV_SLUG: dev
-            # The job runs on `unlabeled` only when the removed label was
-            # `preview` (see the `if` above), so both actions mean "tear down".
+            # `unlabeled` only reaches here for the `preview` label, so both mean teardown.
             TEARDOWN: ${{ (github.event.action == 'closed' || github.event.action == 'unlabeled') && 'true' || 'false' }}
-            # Opt the preview into the in-VPC OTel collector (prd-only otherwise —
-            # a cash-flow call, see `stageDeploysCollector`).
+            # Opt-in collector (prd-only otherwise, see `stageDeploysCollector`).
             MAPLE_DEPLOY_AWS_COLLECTOR: ${{ contains(github.event.pull_request.labels.*.name, 'preview:collector') && '1' || '' }}
             PR_NUMBER: ${{ github.event.pull_request.number }}
             PR_BRANCH: ${{ github.head_ref }}
-            # Stamped onto deployed telemetry as `vcs.ref.head.revision`. Use the PR
-            # head SHA (github.sha is the merge commit on pull_request events).
+            # PR head SHA (github.sha is the merge commit on pull_request events).
             COMMIT_SHA: ${{ github.event.pull_request.head.sha }}
             VITE_COMMIT_SHA: ${{ github.event.pull_request.head.sha }}
         steps:
             - name: Checkout
               uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
-            # Needed for both branch create (deploy) and rm (close). `tb` is the
-            # real Tinybird CLI (branch commands live there, not in `bunx tinybird`).
-            # Runs BEFORE secrets are loaded so a compromised installer never sees
-            # the job's exported Infisical secrets.
+            # `tb` for branch up/down. Installed BEFORE secrets load so the installer never sees them.
             - name: Install Tinybird CLI
               run: curl https://tinybird.co | sh
 
-            # ⚠️ The deploy role's trust policy must accept this job's OIDC
-            # subject (`repo:<org>/<repo>:environment:pr-preview`). It was
-            # written for the production subject only; previews get AccessDenied
-            # until it is widened.
+            # The AWS deploy role must trust `repo:<org>/<repo>:environment:pr-preview`.
             - name: Deploy setup
               id: setup
               uses: ./.github/actions/deploy-setup
@@ -126,10 +84,8 @@ jobs:
                   aws-role-arn: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
                   ingest-binary: ${{ env.TEARDOWN != 'true' }}
 
-            # Create/refresh an EMPTY ephemeral Tinybird branch `pr_<n>` (no production
-            # data — see docs/tinybird-pr-branches.md), deploy this PR's schema into it, and override
-            # TINYBIRD_HOST/TINYBIRD_TOKEN (from Infisical `dev`) with the branch's
-            # values so the Alchemy deploy below binds the whole stack to the branch.
+            # Empty Tinybird branch `pr_<n>` with this PR's schema; overrides TINYBIRD_HOST/TOKEN
+            # so the deploy binds to it (docs/tinybird-pr-branches.md).
             - name: Create/refresh Tinybird PR branch
               if: ${{ env.TEARDOWN != 'true' }}
               run: bun scripts/tinybird-pr-branch.ts up "$PR_NUMBER"
@@ -137,8 +93,7 @@ jobs:
             # No database step: previews deploy without an application database
             # (`resolveDatabaseMode` returns "none" for `pr`), so DB-backed routes 500.
 
-            # AWS_ACCOUNT_ID: see the note in deploy-prd.yml — without it alchemy's
-            # env-credential path deadlocks silently.
+            # AWS_ACCOUNT_ID avoids alchemy's silent STS deadlock (see deploy-prd-instance.yml).
             - name: Deploy PR preview stack with Alchemy
               id: deploy
               if: ${{ env.TEARDOWN != 'true' }}
@@ -153,23 +108,15 @@ jobs:
                   AWS_ACCOUNT_ID: ${{ steps.setup.outputs.aws-account-id }}
               run: bun run alchemy:destroy:pr
 
-            # Is the collector running, discoverable by the name the gateway was
-            # given, and exporting — and did the gateway's own telemetry land in
-            # the stage's warehouse? Fails the job if the collector is missing or
-            # logs export errors.
+            # Fails if the collector is missing, undiscoverable, or logging export errors.
             - name: Verify the collector beside the gateway
               if: ${{ env.TEARDOWN != 'true' && env.MAPLE_DEPLOY_AWS_COLLECTOR == '1' }}
               env:
                   AWS_REGION: us-east-1
               run: bash scripts/ingest-preview-verify.sh
 
-            # `!cancelled()` keeps each teardown step running even when a sibling
-            # teardown step fails — a failed `alchemy destroy` must not leave the
-            # Tinybird branch behind (that skip-chain is how the
-            # pre-#215 orphan fleet accumulated).
-
-            # Tear the branch down after the stack — branches share compute with
-            # production, so this must run on every PR close.
+            # `!cancelled()`: a failed destroy must not leave the Tinybird branch behind
+            # (branches share compute with production).
             - name: Remove Tinybird PR branch
               if: ${{ !cancelled() && env.TEARDOWN == 'true' }}
               run: bun scripts/tinybird-pr-branch.ts down "$PR_NUMBER"

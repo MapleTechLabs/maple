@@ -19,10 +19,7 @@ import { requiredPlain } from "@maple/infra/env"
 /** Port Electric's HTTP API binds (`ELECTRIC_PORT`, whose own default is 3000). */
 const ELECTRIC_PORT = 3000
 
-/**
- * Absolute for the same reason the ingest stack's is: alchemy has flipped how a
- * relative `dockerfile` resolves between releases, and each flip broke a deploy.
- */
+/** Absolute: alchemy has changed how a relative `dockerfile` resolves between releases. */
 const DOCKERFILE = resolve("apps/electric/Dockerfile")
 
 export interface CreateMapleElectricOptions {
@@ -30,26 +27,16 @@ export interface CreateMapleElectricOptions {
 	domains: MapleDomains
 	/** Geographic instance. Every AWS resource here is scoped to it. */
 	region: MapleRegion
-	/**
-	 * The ingest fleet's VPC — see `createMapleIngest`'s return for why this is
-	 * shared rather than a second `AWS.EC2.Network`.
-	 */
+	/** The ingest VPC: a second `AWS.EC2.Network` in one stack fights over the internet gateway. */
 	network: Pick<AWS.EC2.Network, "vpcId" | "publicSubnetIds">
 	/** The replication role on the instance's branch (`withReplication`), minted by the root. */
 	dbRole: Planetscale.PostgresRole
 }
 
 /**
- * Self-hosted ElectricSQL (`electricsql/electric`) on ECS Fargate — the upstream
- * behind the `apps/electric-sync` Worker.
- *
- * Runs in the ingest fleet's VPC with its OWN cluster, ALB, security groups and
- * certificate. The shared VPC is not an economy — it is forced: two
- * `AWS.EC2.Network`s in one stack fight over the internet gateway, and the
- * second one's create tries to detach the first's from a VPC full of public
- * IPs. The two services want the same network anyway.
- *
- * See `docs/electric-sync.md` for the runbook and the cutover.
+ * Self-hosted ElectricSQL on ECS Fargate, the upstream behind `apps/electric-sync`.
+ * Shares ingest's VPC but has its own cluster, ALB, security groups and certificate.
+ * Runbook: `docs/electric-sync.md`.
  */
 export const createMapleElectric = ({
 	stage,
@@ -63,22 +50,10 @@ export const createMapleElectric = ({
 		const dbPoolSize = resolveElectricDbPoolSize(region)
 		const name = (base: string) => resolveAwsResourceName(base, stage, region)
 
-		// Ids are `electric-lb-sg` / `electric-task-sg`, NOT `electric-alb-sg` /
-		// `electric-sg`: those two were created in the short-lived VPC this service
-		// used to have, and a security group cannot change VPC. Alchemy planned the
-		// task group as an in-place `update`, which left it pointing at an ALB group
-		// in another network — `InvalidGroup.NotFound: You have specified two
-		// resources that belong to different networks`. New ids create them fresh
-		// here — and their PHYSICAL `groupName`s change with them. Renaming only the
-		// logical id was not enough: the previous run had already created
-		// `maple-electric-alb` in the ingest VPC, so the new resource collided with
-		// it (`InvalidGroup.Duplicate`) before alchemy got to delete the old one.
-		//
-		// Two groups because `AWS.ECS.Service` applies `securityGroups` to BOTH the
-		// ALB and the tasks, so the split has to live in the rules: the internet
-		// reaches the listener, and ELECTRIC_PORT only the ALB's group. Tasks carry
-		// public IPs, so without that second rule a task's own address would serve
-		// Electric over plaintext HTTP, around the certificate.
+		// Alchemy keys state by logical id: renaming these ids replaces live groups, and a
+		// new group must also get a new `groupName` or it collides with the old one.
+		// `securityGroups` apply to both ALB and tasks, so only the ALB's group may reach
+		// ELECTRIC_PORT; otherwise a task's public IP serves plaintext around the cert.
 		const listenerPort = domains.electric ? 443 : 80
 		const albSecurityGroup = yield* AWS.EC2.SecurityGroup("electric-lb-sg", {
 			vpcId: network.vpcId,
@@ -89,10 +64,7 @@ export const createMapleElectric = ({
 					ipProtocol: "tcp",
 					fromPort: listenerPort,
 					toPort: listenerPort,
-					// Not narrowed to Cloudflare's published ranges even though a Worker
-					// is the only caller: those rotate, and a rotation would become a
-					// total sync outage with nothing pointing here. ELECTRIC_SECRET is
-					// the control that authorizes a request.
+					// Not narrowed to Cloudflare ranges (they rotate); ELECTRIC_SECRET authorizes.
 					cidrIpv4: "0.0.0.0/0",
 					description: "Shape requests from the electric-sync Worker",
 				},
@@ -134,20 +106,14 @@ export const createMapleElectric = ({
 				tags: { Service: "maple-electric", Region: region },
 			})
 
-		// The DIRECT connection (5432), never PSBouncer or Hyperdrive — logical
-		// replication cannot run through a transaction pooler. The role carries the
-		// REPLICATION *attribute*, which Postgres never grants through membership;
-		// Electric's database validation rejects one without it, and does not say so.
+		// Direct connection (5432), never a pooler: logical replication needs it. The role
+		// must carry the REPLICATION attribute itself (membership does not grant it).
 		const databaseUrl = yield* secretFrom("database-url", pgUrlRequireSsl(dbRole.connectionUrl))
-		// The same value the electric-sync Worker holds — one secret, both ends of
-		// the hop. Rotating it means redeploying this first, then the worker.
+		// Shared with the electric-sync Worker; rotate by redeploying this first, then the Worker.
 		const apiSecret = yield* secret("api-secret", yield* requiredPlain("ELECTRIC_SECRET"))
 
-		// An ALB can only use a certificate from its own region, and ACM otherwise
-		// defaults to us-east-1. `hostedZoneId` is Route53-only and Maple's zone is
-		// on Cloudflare, so the provider does not block on issuance;
-		// `issueCertificateViaCloudflare` below publishes the validation CNAME into
-		// the zone and waits for ACM to mark the certificate ISSUED.
+		// An ALB needs a certificate from its own region. The zone is on Cloudflare, so
+		// `issueCertificateViaCloudflare` publishes validation and waits for ISSUED.
 		const certificate = domains.electric
 			? yield* AWS.ACM.Certificate("electric-cert", {
 					domainName: domains.electric,
@@ -157,8 +123,7 @@ export const createMapleElectric = ({
 				})
 			: undefined
 
-		// The ISSUED certificate's ARN — see the ingest stack for why the listener
-		// must consume this rather than `certificate.certificateArn`.
+		// The listener must consume the issued ARN, not `certificate.certificateArn`.
 		const issuedCertificateArn =
 			certificate && domains.electric
 				? yield* issueCertificateViaCloudflare({
@@ -171,23 +136,13 @@ export const createMapleElectric = ({
 
 		const baseEnv = {
 			ELECTRIC_PORT: String(ELECTRIC_PORT),
-			// A replaced role changes this, so the task definition changes and the
-			// singleton restarts on the new secret before alchemy deletes the old role.
+			// A replaced role restarts the task on the new secret before the old role is deleted.
 			MAPLE_PG_ROLE_ID: dbRole.id,
-			// The publication is owned by a Drizzle migration: PlanetScale cannot
-			// reassign table ownership, so Electric can never be the owner it would
-			// need to be to manage publishing itself. Prod parity with local docker.
-			//
-			// ELECTRIC_REPLICATION_STREAM_ID is left at Electric's `default`, which
-			// resolves to `electric_publication_default` — the publication those
-			// migrations already own and keep correct.
+			// A Drizzle migration owns `electric_publication_default` (Electric cannot own
+			// tables on PlanetScale); the stream id stays `default` to match it.
 			ELECTRIC_MANUAL_TABLE_PUBLISHING: "true",
-			// ELECTRIC_STORAGE_DIR is left at the image's default, on task-local
-			// storage that dies with the task. Losing it costs a re-snapshot of
-			// eight small tables plus a `must-refetch` for connected clients, and
-			// the alternatives are worse: alchemy's only volume sugar is EFS, the
-			// networked filesystem Electric's guidance warns against, and an
-			// EBS-backed task pins the service to one AZ.
+			// ELECTRIC_STORAGE_DIR stays task-local: losing it costs only a re-snapshot,
+			// while EFS is discouraged and EBS pins one AZ.
 		} satisfies Record<string, string | Output.Output<string>>
 		const env =
 			dbPoolSize === undefined ? baseEnv : { ...baseEnv, ELECTRIC_DB_POOL_SIZE: String(dbPoolSize) }
@@ -196,24 +151,15 @@ export const createMapleElectric = ({
 			cluster,
 			serviceName: name("electric"),
 
-			// Upstream's image, pinned, rebuilt into ECR — see the Dockerfile.
 			context: "apps/electric",
 			dockerfile: DOCKERFILE,
-			// Graviton, as with the gateway: the image is published multi-arch, so
-			// this is ~20% off per vCPU-hour for nothing. A mismatch here is not a
-			// build failure — the task pulls, starts, and dies with `exec format
-			// error`.
+			// Must match the image arch: a mismatch dies at start with `exec format error`.
 			runtimePlatform: { cpuArchitecture: "ARM64", operatingSystemFamily: "LINUX" },
 			cpu: taskSize.cpu,
 			memory: taskSize.memory,
 
-			// A SINGLETON, and the deployment config is the load-bearing half. Two
-			// tasks cannot share a Postgres replication slot — the second is refused
-			// with `replication slot is active` — so the ECS default of 100%/200%
-			// would crash-loop every replacement. 0%/100% stops the old task first,
-			// at the cost of a ~60s window per deploy in which shapes fail (see
-			// docs/electric-sync.md). The circuit breaker bounds a bad image to that
-			// window instead of leaving the service down until the deploy times out.
+			// Singleton: two tasks cannot share a replication slot, so 0%/100% stops the old
+			// task first (~60s of failed shapes per deploy, docs/electric-sync.md).
 			desiredCount: 1,
 			deploymentConfiguration: {
 				minimumHealthyPercent: 0,
@@ -226,17 +172,13 @@ export const createMapleElectric = ({
 			securityGroups: [albSecurityGroup.groupId, taskSecurityGroup.groupId],
 			assignPublicIp: true,
 
-			// Public because the only caller is a Worker at the Cloudflare edge, with
-			// no private route into a VPC; ELECTRIC_SECRET is what guards it. `port`
-			// is the CONTAINER port — the listener is separate and defaults to 443
-			// once `certificateArn` is set, which is what a Cloudflare-proxied origin
-			// needs.
+			// Public: the caller is a Worker with no route into the VPC; ELECTRIC_SECRET guards it.
+			// `port` is the container port; the listener goes to 443 once `certificateArn` is set.
 			public: true,
 			port: ELECTRIC_PORT,
 			healthCheckPath: "/v1/health",
 			...(issuedCertificateArn ? { certificateArn: issuedCertificateArn } : undefined),
-			// Covers the replication connect and, on a cold task, the first snapshot
-			// of the published tables.
+			// Covers the replication connect and a cold task's first snapshot.
 			healthCheckGracePeriod: "120 seconds",
 
 			logging: { retention: "30 days" },
@@ -251,8 +193,7 @@ export const createMapleElectric = ({
 			tags: { Service: "maple-electric", Region: region },
 		})
 
-		// The public name, proxied through Cloudflare to the ALB. Only on a stage
-		// with an electric domain; the validation CNAME is `issueCertificateViaCloudflare`'s.
+		// The public name, proxied through Cloudflare to the ALB.
 		if (domains.electric) {
 			yield* publishProxiedCname({
 				id: "electric-public-cname",

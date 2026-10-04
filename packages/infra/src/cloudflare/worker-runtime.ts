@@ -1,13 +1,6 @@
 /**
- * The Worker env inside an Effect graph: the `WorkerEnvironment` service and
- * the `ConfigProvider` built on the same record.
- *
- * The tag carries alchemy's exact key, so it IS alchemy's
- * `Cloudflare.WorkerEnvironment` — Effect resolves a service by that string —
- * under a stricter type: `Record<string, unknown>` rather than alchemy's
- * `Record<string, any>`, which forces every binding read to narrow. Nothing
- * here reaches for `cloudflare:workers`: the env comes from whoever holds it —
- * the Worker's init, a Durable Object's constructor, a cron fire, a test.
+ * The Worker env as an Effect service. Same key as alchemy's `Cloudflare.WorkerEnvironment`, so
+ * it is the same service, typed `Record<string, unknown>` so binding reads must narrow.
  */
 import { reifyBoundConfigProvider } from "alchemy/Runtime"
 import * as ConfigProvider from "effect/ConfigProvider"

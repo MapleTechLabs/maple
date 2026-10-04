@@ -1,23 +1,7 @@
 /**
- * The application database as the `MAPLE_DB` Hyperdrive binding, in the one
- * shape `resolveDatabaseMode` picks for the stage — bound from the Worker's own
- * init, the way alchemy's `Hyperdrive.ConnectBinding` binds its resource:
- *
- * - `"managed"` (dev stages): `ManagedMapleDb`, the alchemy-managed Hyperdrive
- *   below, bound through `Hyperdrive.Connect`.
- * - `"ref"` (the US prd): a dashboard-managed config, attached by id. Alchemy
- *   has no `env` form for a Hyperdrive it did not create; its own
- *   `ConnectBinding` attaches the same raw metadata with `host.bind`, so this
- *   does too. The origin and credentials live only in the Cloudflare dashboard.
- * - `"declared"` (the EU prd): the root declares a role and a Hyperdrive config
- *   per consumer on the instance's branch (`MapleDbResources`), and the
- *   Worker's props bind its own through `mapleDbEnv` — a Hyperdrive the deploy
- *   created has an `env` form. Nothing to do from the init.
- * - `"none"` (PR previews): no binding at all; the Worker still boots and
- *   DB-backed routes 500 while everything else works.
- *
- * `readMapleDbBinding` is the runtime side: what a Worker (or a Workflow run)
- * reads off its env under the same name, on every stage.
+ * The `MAPLE_DB` Hyperdrive binding per `resolveDatabaseMode`: `managed` and `ref` bind from the
+ * Worker init (`ref` via raw `host.bind`, as alchemy has no `env` form for an external config);
+ * `declared` binds from props via `mapleDbEnv`; `none` binds nothing.
  */
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Stage } from "alchemy/Stage"
@@ -38,22 +22,14 @@ import {
 /** The binding's name — also the managed Connection's logical id, so both flavors bind under it. */
 export const MAPLE_DB_BINDING = "MAPLE_DB"
 
-/**
- * This deploy's stage. The root stack parses the same string first and fails
- * typed there (`MapleStackLive`), so an unparseable stage reaching here is a defect.
- */
+/** This deploy's stage; the root stack already failed typed on a bad one, so here it is a defect. */
 const stageDeployment = Effect.gen(function* () {
 	return yield* parseMapleDeploymentEffect(yield* Stage)
 }).pipe(Effect.orDie)
 
 /**
- * The alchemy-managed Hyperdrive of dev stages, origin parsed from
- * `MAPLE_PG_URL` (Hyperdrive wants a structured origin). Declared once here;
- * the root stack yields it first on managed stages so the `MAPLE_PG_URL` read
- * happens outside a Worker init, where alchemy's plan-time ConfigProvider
- * would bind every `Config` it sees onto the Worker as a secret. Plan-time
- * only: `MapleDb` yields it behind the runtime guard, so these props never run
- * in the bundle and need no guard of their own.
+ * Dev stages' managed Hyperdrive, origin from `MAPLE_PG_URL`. The root yields it first so that
+ * read happens outside a Worker init (where alchemy would bind it as a secret). Plan-time only.
  */
 export const ManagedMapleDb = Cloudflare.Hyperdrive.Connection(
 	MAPLE_DB_BINDING,
@@ -68,14 +44,12 @@ export const ManagedMapleDb = Cloudflare.Hyperdrive.Connection(
 				scheme: "postgres",
 				host: pgUrl.hostname,
 				port: Number(pgUrl.port || "5432"),
-				// Connect-time db (`postgres`, the PlanetScale cluster default),
-				// not the PS resource name.
+				// Connect-time db, not the PlanetScale resource name.
 				database: pgUrl.pathname.replace(/^\//, "") || "postgres",
 				user: decodeURIComponent(pgUrl.username),
 				password: Redacted.make(decodeURIComponent(pgUrl.password)),
 			},
-			// Read-after-write everywhere (alert state CAS, dashboard versioning) —
-			// revisit caching once read paths that tolerate staleness are identified.
+			// Read-after-write everywhere (alert state CAS, dashboard versioning).
 			caching: { disabled: true },
 			dev: {
 				scheme: "postgres",
@@ -84,8 +58,7 @@ export const ManagedMapleDb = Cloudflare.Hyperdrive.Connection(
 				database: "maple",
 				user: "maple",
 				password: Redacted.make("maple"),
-				// Alchemy defaults dev origins to `sslmode=prefer`; the docker Postgres has
-				// no TLS and the dial would stall until the timeout.
+				// Docker Postgres has no TLS; alchemy's default `prefer` stalls until timeout.
 				sslmode: "disable",
 			},
 		}
@@ -94,9 +67,8 @@ export const ManagedMapleDb = Cloudflare.Hyperdrive.Connection(
 )
 
 /**
- * A Worker's env for prd's database: the branch name, so it uploads after the migrations
- * (a config bound by id gives alchemy no ordering edge), and on a `"declared"` stage the
- * consumer's Hyperdrive config as `MAPLE_DB`.
+ * A Worker's env for prd's database. `MAPLE_DB_BRANCH` orders the upload after migrations (an
+ * id-bound config gives alchemy no edge); on `"declared"` also the consumer's `MAPLE_DB`.
  */
 export const mapleDbEnv = (db: MapleDbResources | undefined, consumer: MapleDbConsumer) =>
 	db && {
@@ -105,11 +77,8 @@ export const mapleDbEnv = (db: MapleDbResources | undefined, consumer: MapleDbCo
 	}
 
 /**
- * Bind `MAPLE_DB` to the Worker this runs in, for the stage's flavor. Yield it
- * from the Worker's init (and from a Workflow's outer phase, which binds the
- * same name again — alchemy keys bindings by name). Plan-time only: in the
- * isolate the binding is already on the env, see {@link readMapleDbBinding}.
- * Needs `Cloudflare.Hyperdrive.ConnectBinding` on the init.
+ * Bind `MAPLE_DB` from a Worker init (or a Workflow's outer phase; bindings are keyed by name).
+ * Plan-time only. Needs `Cloudflare.Hyperdrive.ConnectBinding` on the init.
  */
 export const MapleDb = (consumer: MapleDbConsumer) =>
 	Effect.gen(function* () {
@@ -145,10 +114,6 @@ const MapleDbBinding = Schema.Struct({
 })
 export type MapleDbBinding = typeof MapleDbBinding.Type
 
-/**
- * The `MAPLE_DB` binding off a Worker env, or `None` on a stage without a
- * database. The one place the binding's shape is checked: a value that is not
- * a Hyperdrive object reads as absent rather than throwing.
- */
+/** The `MAPLE_DB` binding off a Worker env, or `None` when absent or not a Hyperdrive object. */
 export const readMapleDbBinding = (env: Record<string, unknown>): Option.Option<MapleDbBinding> =>
 	Schema.decodeUnknownOption(MapleDbBinding)(env[MAPLE_DB_BINDING])

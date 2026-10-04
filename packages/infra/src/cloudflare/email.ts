@@ -1,8 +1,6 @@
 /**
- * The `send_email` descriptor shared by the api and alerting Workers. Bound from
- * their inits on prd only (`bindEmailSender` in `@maple/backend/platform/email-sender`):
- * every other stage runs the same email crons against live org data, so a binding
- * there would send real users a second copy.
+ * The `send_email` descriptor for api and alerting. Bind on prd only (`bindEmailSender`): other
+ * stages run the same crons against live data and would email real users twice.
  */
 import * as Cloudflare from "alchemy/Cloudflare"
 

@@ -1,12 +1,9 @@
 # Infrastructure notes
 
-Background for the Alchemy stack (`alchemy.run.ts`, the per-app Worker modules and
-factories, and `packages/infra`). The stack files keep the rationale a reader needs **in
-order not to break the code**. The history behind those decisions lives here, so the config
-stays readable and the incidents stay findable.
-
-If you are about to delete a comment in a stack file because "the history is in git", put
-it here instead. Git blame does not survive a refactor of the line it annotates.
+Operational reference for the Alchemy stack (`alchemy.run.ts`, the per-app Worker modules
+and factories, and `packages/infra`). Stack files keep only the rationale a reader needs in
+order not to break the code; incidents, measurements and retired designs live in
+`docs/infra-history.md`.
 
 ## The AI Worker (`maple-ai`)
 
@@ -16,19 +13,6 @@ hostname and forwards `/mcp`, `/api/chat/*` and `/internal/chat/*` to it over a 
 binding, so the OAuth issuer and the RFC 8707 resource identifiers never move off api's
 origin.
 
-Measured before committing to the split (rolldown, unminified, same tree), dropping the MCP
-registry, the chat routes and the two hosted classes from api:
-
-|                   | with AI  | without |
-| ----------------- | -------- | ------- |
-| worker bundle     | 11.74 MB | 9.34 MB |
-| bundle chunks     | 85       | 50      |
-| module evaluation | ~336 ms  | ~278 ms |
-
-The per-request half is not in that table: a `/mcp` call no longer builds `AllRoutes` and
-`ApiAuthLive`, and a `/v2` call no longer builds 47 tool schemas. A 2026-09-08 attempt that
-moved only the transport measured 1.0%. Moving the registry too is what avoids that.
-
 Two things a future change here needs to know:
 
 - **The `ChatSession` class carries `transferredFrom: "api"`.** Dropping a locally hosted
@@ -36,8 +20,7 @@ Two things a future change here needs to know:
   namespace, and alchemy refuses it before uploading. The property is inert once a stage
   has transferred, so it stays.
 - **A Workflow has no equivalent.** Moving one to a new script mints a new physical
-  workflow and orphans in-flight runs. (The investigation fan-out Workflow that used to
-  live here was retired in 2026-09. `ClickHouseSchemaApplyWorkflow` stays on `api`.)
+  workflow and orphans in-flight runs. `ClickHouseSchemaApplyWorkflow` stays on `api`.
 
 ## Layout
 
@@ -64,8 +47,10 @@ Two things a future change here needs to know:
     - `cloudflare/observability.ts`: the Workers Observability destinations, declared once
       and yielded from every module that binds them (alchemy registers a resource by id, so
       a second yield returns the first's).
-    - `aws/stage.ts`: AWS region, naming, task sizing, Cloud Map, and which stages get an
-      ingest fleet or a collector.
+    - `aws/stage.ts`: AWS region, naming, EC2 and task sizing, Cloud Map, and which stages
+      get an ingest fleet, a collector or Electric.
+    - `aws/acm-dns-validation.ts` (`@maple/infra/acm`): ACM validation through the
+      Cloudflare zone, and `publishProxiedCname` for each ALB's public hostname.
     - `env.ts`: the deploy-time env primitives and the shared groups the Workers spread.
     - `cloudflare/maple-db.ts`: `MAPLE_DB` in the stage's flavor (`MapleDb`, yielded from a
       Worker's init, or `mapleDbEnv` from its props) and the runtime read of the binding
@@ -179,23 +164,13 @@ them.
 and `MAPLE_DEV_APPS` narrows it to the requested apps. Neither is stage-derived: a dev
 _stage_ can still be deployed to the cloud, and a deploy is never partial.
 
-What this buys over the old per-app `wrangler dev` under turbo + portless:
-
-- **One definition.** Bindings, crons and exported classes come from the stack, for dev and
-  deploy alike. There are no `wrangler.jsonc` files any more, and the crons/DO/KV/
-  rate-limiter mirroring that used to drift between the two went with them. `wrangler`
-  survives only as an `apps/api` devDependency for `bench:startup-cpu`, whose `worker` mode
-  writes a throwaway config for `wrangler check startup`.
-- **One process tree.** No turbo fan-out, no per-app `portless` wrapper, no `dev:app`
-  indirection. `bun dev` is the stack, and Ctrl-C stops all of it.
-- **Crons fire on their real schedule.** `alchemy dev` runs each Worker's declared crons
-  itself, and `/cdn-cgi/handler/scheduled` triggers one on demand (Miniflare's path, always
-  on, no `--test-scheduled` flag).
-- **Almost everything is emulated locally.** Workers, KV, R2, Hyperdrive, queues and
-  consumers, Durable Objects, Workflows, rate limiters and `send_email` (written as `.eml`
-  files under `.alchemy/local/email/`) all come up `(local)`. Storage lives under
-  `.alchemy/local/`. The AI Gateway is declared on deployed stages only, since it has no
-  local emulation.
+Bindings, crons and exported classes come from the stack for dev and deploy alike; there are
+no `wrangler.jsonc` files. `alchemy dev` runs each Worker's declared crons on their real
+schedule, and `/cdn-cgi/handler/scheduled` triggers one on demand. Workers, KV, R2,
+Hyperdrive, queues and consumers, Durable Objects, Workflows, rate limiters and `send_email`
+(written as `.eml` files under `.alchemy/local/email/`) all come up `(local)`, with storage
+under `.alchemy/local/`. The AI Gateway is declared on deployed stages only, since it has no
+local emulation.
 
 Gotchas:
 
@@ -210,7 +185,7 @@ Gotchas:
   job is exporting the Worker's own telemetry.
 - Dev stacks run with `ALCHEMY_LOCAL_STATE=1`, so they never touch the account state store.
 - `--env-file .env.local` is read once at start. A changed variable needs a restart.
-- The children's logs share one terminal. There are no per-app panes as under turbo's TUI.
+- The children's logs share one terminal.
 - A harness that cannot resolve `*.localhost` (the browser-verification preview) uses the
   sticky raw ports `bun dev` prints. `Portless.Route`'s `port` prop pins one outright.
 - Ctrl-C stops the whole tree. The shim runs alchemy in its own process group and forwards
@@ -278,8 +253,8 @@ What each kind of Worker keeps beside the module:
   `Cloudflare.WorkflowStep` as services. The class wraps a run in `withPgConnectionScope` +
   `layerPg` (one Postgres connection per run) and the run's own `eventTelemetry`
   (`maple-schema-apply`), which flushes when alchemy closes the run's scope. The Workflow is
-  imported statically: the Worker evaluated in ~80 ms of the 1 s startup-CPU budget on
-  alchemy's bundle (`apps/api/scripts/bench-startup-cpu.ts`, 2026-09-07). The yield is the
+  imported statically (check startup CPU with `apps/api/scripts/bench-startup-cpu.ts`). The
+  yield is the
   whole declaration: the binding (named after the class, `ChatSession` or
   `ClickHouseSchemaApplyWorkflow`, which is what the services read off the env), the
   namespace, the physical workflow (`<worker>-<class>-<hash>`, alchemy's
@@ -452,11 +427,15 @@ the deployed isolate). Two rules keep it honest about which one it is in:
   shim. The key/endpoint bindings `Maple.Telemetry` can add stay off for our Workers:
   `selfObservabilityEnv(stage)` owns those, with the PR-preview rules.
 
-What it costs: the root stack imports the Worker modules, so the Alchemy-entrypoints
-typecheck (`tsconfig.alchemy.json`) covers their runtime graphs and needs
-`@maple-dev/effect-sdk` built first (`ci.yml`). Measured on the electric-sync pilot (#745,
-local workerd A/B): +15ms startup CPU (41 to 56ms, budget ~1s), ~+8ms cold first request,
-~+0.2ms/request warm.
+The root stack imports the Worker modules, so the Alchemy-entrypoints typecheck
+(`tsconfig.alchemy.json`) covers their runtime graphs and needs `@maple-dev/effect-sdk`
+built first (`ci.yml`).
+
+`apps/api/src/worker.ts` and `apps/ai/src/worker.ts` set rolldown
+`strictExecutionOrder: false` so the DB module graph evaluates at script startup, not inside
+the first Postgres call of each isolate. If chunking ever regresses into upstream #749
+(`ScriptStartupError: Cannot access '<minified>' before initialization`), the deploy fails
+loudly at upload: remove the override and warm the DB graph off the request path instead.
 
 ### The api Worker's layout (2026-09-07)
 
@@ -480,7 +459,7 @@ list of yields. What it composes lives beside it:
   `Cloudflare.RateLimit(...)`s (`worker/bindings.ts`). Each yield attaches the native
   binding at plan time, under the resource's logical id (so the queue and bucket bindings
   are `vcs-sync`, `replay-blobs`, …), and resolves it from the env in the isolate. The
-  clients become the ports in `platform/bindings.ts` (`VcsSyncQueueProducer`,
+  clients become the ports in `packages/backend/src/platform/bindings.ts` (`VcsSyncQueueProducer`,
   `ApiV2RateLimit`, `ReplayBlobBucket`, `McpSessionStore`, …), which is what the services
   depend on. No service reads a binding off `WorkerEnvironment` by name any more, tests
   provide fakes, and a host without the binding (alerting, the CLI) provides nothing. The
@@ -498,42 +477,27 @@ list of yields. What it composes lives beside it:
   and `ConfigProvider` as requirements and wire neither. A Durable Object or a Workflow run
   hands its own env record to the same helper.
 
-## The retired AWS opt-in flag (`MAPLE_DEPLOY_AWS_INGEST`)
+## AWS: ingest, collector and Electric
 
-The Rust OTLP gateway (`apps/ingest`) moved from Railway to ECS Fargate, and on 2026-09-21
-to an ECS EC2 fleet on c7gd instances with local NVMe. While the Railway cut-over was in
-flight, `MAPLE_DEPLOY_AWS_INGEST=1` gated both `AWS.providers()` and the ingest resources,
-so an unset variable produced a byte-identical pure-Cloudflare stack.
+The Rust OTLP gateway (`apps/ingest`) runs on an ECS EC2 fleet of Graviton c7gd instances,
+one task per host in host networking, with the WAL on the local NVMe instance store. That is
+the only ingest path. The OTel collector and Electric (`apps/electric`) run as ECS Fargate
+services.
 
-**The flag is gone (2026-08).** ECS is the only ingest path now, so the gate had nothing
-left to protect. `AWS.providers()` is registered unconditionally. It cannot be
-stage-derived, because the `Alchemy.Stack` options are evaluated before `Alchemy.Stage` is
-readable inside the stack effect. `stageDeploysIngest` alone decides which stages get a
-fleet. It covers prd **and PR previews**. Dev stages run the gateway through `cargo run`
-under `bun dev`. The spend gate moved to where the spend is: a preview only exists while its
-PR carries the `preview` label.
-
-Do not reintroduce a global on/off env flag for this. If a stage should not have a fleet,
-say so in `stageDeploysIngest`, where it is typed, unit-tested and visible in review.
-
-**The #378 hang.** The flag was _also_ introduced because turning the AWS half on wedged
-every production deploy with no log line and no network I/O. The cause was alchemy's
-env-credential path (`CI=true`). It discovered the account with an STS `GetCallerIdentity`
-issued while its own `AWSEnvironment` was still being constructed, and that call waited on
-the half-built environment for its endpoint resolver: a self-deadlock. Supplying
-`AWS_ACCOUNT_ID` skips the lookup. Reproduced locally with `CI=true` and the id unset, on
-alchemy 2.0.0-beta.64 through beta.74. The deploy workflows now set it. **Every workflow
-that deploys the stack must**, including `deploy-pr-preview.yml`.
-
-**Why the binary is compiled outside the image build.** Alchemy's docker build passes no
-`--cache-from`, and a fresh runner's layer cache is empty, so a Dockerfile that runs
-`cargo build` recompiles all 385 crates on every deploy however the layers are arranged.
-Cold cost is **2m54s, measured**. An earlier version of this note guessed ~20 minutes, which
-was wrong by ~7x and had already been quoted back as fact in a code review, so treat the
-number as load-bearing. `build-ingest-binary.yml` compiles on a native arm64 runner
-(`ubuntu-24.04-arm`) inside `rust:1.94-bookworm` rather than on the host, because the
-runtime base is `debian:bookworm-slim` (glibc 2.36) while `ubuntu-24.04` ships 2.39. A
-host-built binary dies with `version 'GLIBC_2.39' not found`.
+- `AWS.providers()` is registered unconditionally: the `Alchemy.Stack` options are evaluated
+  before `Alchemy.Stage` is readable, so it cannot be stage-derived.
+- `stageDeploysIngest` alone decides which stages get a fleet: prd **and PR previews**. Dev
+  stages run the gateway through `cargo run` under `bun dev`. Do not reintroduce a global
+  on/off env flag; say it in `stageDeploysIngest`, where it is typed and unit-tested.
+- **Every workflow that deploys the stack must set `AWS_ACCOUNT_ID`.** Without it alchemy's
+  `CI=true` credential path self-deadlocks on an STS lookup with no log line (#378).
+- **The binary is compiled outside the image build** (`build-ingest-binary.yml`, native
+  `ubuntu-24.04-arm` runner, inside `rust:1.94-bookworm` to match the runtime's glibc 2.36),
+  because alchemy's docker build has no layer cache and would recompile every crate on each
+  deploy. `apps/ingest/Dockerfile.prebuilt` copies the result.
+- Public hostnames (`ingest`, `electric`) are proxied Cloudflare CNAMEs to the ALB, created
+  by `publishProxiedCname`; their ACM certificates are validated in-stack by
+  `issueCertificateViaCloudflare` (both in `@maple/infra/acm`).
 
 ## Schema migrations run in the deploy
 
@@ -547,147 +511,67 @@ and Electric's Postgres credentials are `Planetscale.PostgresRole`s on the same 
 
 ## Hyperdrive: why api and alerting have separate configs
 
-Measured over 6h on prd: `alerting` issued 60,688 Postgres queries/hour against the api's
-1,415 (97% versus 2%). Sharing one Hyperdrive config meant sharing one origin connection
-pool, and the api spent its time queueing behind the alerting crons. A dial that found a
-free slot took 12ms. One that did not stalled until Hyperdrive's 15s connection timeout,
-which is what put `maple-api`'s p99 at 15.4s.
+`alerting` issues the large majority of Postgres queries, and sharing one config meant
+sharing one origin pool, so the api queued behind the alerting crons. They now have
+separate configs.
 
-The two configs **partition** the origin's connections rather than creating more. The
+The configs **partition** the origin's connections rather than creating more. The
 per-config `origin_connection_limit`s sum against the branch's `max_connections`, and
 Hyperdrive does not coordinate between them, so over-provisioning one starves the other at
 the database rather than at the pool.
 
-**Resolved by deletion: staging pointed at production.** `resolveHyperdriveRefId` used to
-return the prd config for `stg` (owner decision, 2026-07-14), so stg Workers read and wrote
-the production database and the stg alerting crons overlapped prod's. The stage was removed
-in full (2026-09). Its deploy workflow had been disabled with no run history and neither
-`api-staging.maple.dev` nor `ingest-staging.maple.dev` resolved, so the hazard was the only
-thing it still cost. `prd` is now the only stage `resolveHyperdriveRefId` answers for, and
-`parseMapleStage` rejects `stg` outright rather than letting it fall through to a dev stage.
-A future staging stage needs its own PlanetScale branch and its own dashboard configs, split
-per consumer the way prd is, before it gets a `MAPLE_DB` binding at all.
+`prd` is the only stage `resolveHyperdriveRefId` answers for, and `parseMapleStage` rejects
+`stg`. A new shared stage needs its own PlanetScale branch and per-consumer configs before
+it gets a `MAPLE_DB` binding at all.
 
-## The cold-start regression (`strictExecutionOrder: false`)
-
-alchemy ≥ beta.70 sets rolldown `strictExecutionOrder: true`, which wraps ~every chunk in a
-lazy `__esmMin` initializer. The DB module graph (drizzle `pgTable` schemas + Effect Schema
-ASTs) then evaluates on first use, inside the first Postgres call of each fresh isolate,
-instead of at script startup. That stepped the cold dial from ~2s to ~9-11s on 2026-08-08
-(deploy 2679ba80) and produced the CONNECT_TIMEOUT incident. See the 2026-08-11
-investigation.
-
-The override in `apps/api/src/worker.ts` (and `apps/ai/src/worker.ts`) moves that cost back
-to script startup, off the request path. If chunking ever regresses into upstream #749
-(`ScriptStartupError: Cannot access '<minified>' before initialization`), the deploy fails
-loudly at upload. Remove the override and warm the DB graph off the request path instead.
-
-## Alchemy v1 → v2 notes
-
-The stack was written against alchemy v1 and migrated to v2. Equivalences worth knowing
-when reading old code or docs:
-
-- **`HyperdriveRef` has no v2 equivalent.** Binding a dashboard-managed config by ID is
-  done by attaching raw `{ type: "hyperdrive", name, id }` binding metadata from the Worker's
-  init (`host.bind` inside `MapleDb`, `cloudflare/maple-db.ts`), the same mechanism the env
-  binder uses. No cloud resource is created and the origin credentials stay in the
-  dashboard.
-- **`Ai()` became an AI Gateway resource.** v2 emits the `{ type: "ai" }` binding by
-  attaching `Cloudflare.AI.Gateway`, which also fronts model calls with caching, rate limits
-  and logging. The deploy token needs account-level "AI Gateway: Edit".
-- **`eventSources` became `Queues.Consumer`.** The consumer is a sibling resource pointing
-  at the Worker by `scriptName`.
-- **Resource attributes are lazy Outputs.** `worker.url` and friends cannot be
-  string-interpolated at plan time. This is why every deployed stage gets custom domains
-  (`resolveMapleDomains`) and why inter-app URLs are plain strings chosen by the stack
-  rather than read off resources.
-- **DO classes are SQLite-backed by default** in v2.
-- **The vendored runtime lib is gone.** `lib/effect-cloudflare` was a hand-copied subset of
-  `alchemy-effect`'s `Cloudflare/Workers/*`, from before that package shipped. ~1600 of its
-  2520 lines had no consumer at all (the DO/Workflow/RPC/KV/fetcher/websocket cluster). It
-  was deleted (#760). The ~250 lines with consumers live in `packages/infra` behind
-  runtime-only subpaths (`/worker-runtime`, `/workers-cache`, `/config-helpers`).
-- **Alchemy's runtime services were not importable from a hand-written Worker entry.** Its
-  exports map has no entry finer than a directory, and the `Cloudflare/Workers` barrel drags
-  `fdir`, rolldown glue and `node:module` into a bundle (426 KB against 14 KB for the tag
-  alone). That is why `packages/infra` carried its own `WorkerEnvironment` and R2 client.
-  With api and alerting on the class form (2026-09-07) the Workers use alchemy's binding
-  capabilities directly (`Queues.WriteQueue`, `KV.ReadWriteNamespace`, `R2.ReadBucket`,
-  `RateLimit`, `Hyperdrive.Connect`), and the R2 client is gone. The `WorkerEnvironment` tag
-  stays only for its stricter type (alchemy's is `Record<string, any>`), under alchemy's
-  exact key, so both resolve to the same service.
+Binding a dashboard-managed config by id attaches raw `{ type: "hyperdrive", name, id }`
+metadata from the Worker's init (`host.bind` inside `MapleDb`,
+`packages/infra/src/cloudflare/maple-db.ts`); no cloud resource is created and the origin
+credentials stay in the dashboard.
 
 ## Cost decisions
 
 These are cash-flow calls, not design ones. Revisit them rather than treating them as
 architecture.
 
-- **No NAT gateway** in the ingest VPC. NAT bills $0.045/GB _processed_ on top of egress,
-  and the gateway exists to push gzipped telemetry outbound. At current volume NAT alone
-  would cost more than the compute and the egress combined, and it scales linearly with
-  growth. Tasks (and, on the EC2 fleet, the hosts, which run tasks in host networking)
+- **No NAT gateway** in the ingest VPC. NAT bills per GB processed on top of egress, and the
+  gateway exists to push telemetry outbound. The EC2 hosts (tasks run in host networking)
   therefore carry public IPs, which is why the security-group split between the ALB and the
-  tasks is load-bearing rather than tidy. The S3 gateway endpoint keeps ECR image pulls off
-  the public path and is free.
-- **Same-region Tinybird.** AWS bills $0.09/GB to the public internet but $0.01/GB to a
-  public IP in the same region, and export traffic dwarfs every other line item. At 200k
-  req/s that is ~$83k/mo vs ~$16k/mo. A workspace on `https://api.tinybird.co` is GCP
-  Frankfurt, where no AWS region colocates, and the move costs more than Railway did.
-  Verify `TINYBIRD_HOST` before changing `resolveAwsRegion`.
+  hosts is load-bearing. The S3 gateway endpoint keeps ECR image pulls off the public path.
+- **Same-region Tinybird.** Same-region egress is $0.01/GB vs $0.09/GB to the internet, and
+  export dominates the bill. Verify `TINYBIRD_HOST` before changing `resolveAwsRegion`.
 - **The OTel collector is prd-only** (`stageDeploysCollector`). The intent is every stage
-  that deploys the gateway, at ~$13.5/mo per stage at the non-prd size. Adding the
-  `preview:collector` label to a PR sets `MAPLE_DEPLOY_AWS_COLLECTOR=1` for that preview,
-  which is how it was verified on Fargate before it reached prod.
-- **PR previews get an ingest fleet, but no database.** PlanetScale PR branches billed
-  continuously and consumed the account's Hyperdrive config cap, so `resolveDatabaseMode`
-  returns `"none"` for `pr`. DB-backed routes 500 and the rest of the preview works. The
-  reverse path is documented on that function. The AWS half _is_ deployed: a preview gets
-  its own VPC + ALB + ECS fleet, which is real money, so it only runs while the PR carries
-  the `preview` label and is destroyed the moment the label comes off or the PR closes. A
-  preview has no ingest domain, so its ALB answers plain HTTP on 80 with no ACM certificate.
-  The URL is posted on the PR comment. There is no longer a separate on-demand ingest
-  preview stack (`scripts/ingest-preview.run.ts` and `deploy-pr-ingest.yml` are deleted).
-  Two alchemy stacks claiming the same `maple-ingest-pr-<n>` physical names is how orphan
-  fleets accumulate.
-- **The EU ingest fleet is sized to EU traffic** (`isEuPrd` in `packages/infra/src/aws/stage.ts`).
-  Over 30 days the EU ALB served 34k requests (~2 GB) against the US's 136M (~2.3 TB in),
-  yet ran the US footprint at ~$300/mo. EU prd runs one c7gd.medium (autoscaling 1-3, same
-  CPU target) and the collector at the non-prd size; Electric keeps the prd size. One host
-  still rolls a deploy: managed scaling adds a host for the new task, as in the US. To scale
-  it with traffic, raise the EU branches there or drop `isEuPrd` to inherit US sizing.
-- **Graviton (ARM64).** The gateway and collector tasks run `cpuArchitecture: "ARM64"`
-  (`runtimePlatform` in `apps/ingest/alchemy.run.ts`), ~20% cheaper than x86_64. The
-  blocker used to be the builder: cross-compiling Rust under QEMU is 10-30 min a build.
-  `build-ingest-binary.yml` now compiles natively on an arm64 runner.
+  that deploys the gateway. The `preview:collector` label sets `MAPLE_DEPLOY_AWS_COLLECTOR=1`
+  for one preview, and `scripts/ingest-preview-verify.sh` checks it.
+- **PR previews get an ingest fleet, but no database.** `resolveDatabaseMode` returns
+  `"none"` for `pr`, so DB-backed routes 500 and the rest of the preview works; the reverse
+  path is documented on that function. The AWS half costs real money, so a preview only
+  exists while the PR carries the `preview` label. It has no ingest domain: its ALB answers
+  plain HTTP on 80 with no certificate, and the URL is posted on the PR comment.
+  `cleanup-preview-orphans.yml` sweeps what a missed teardown leaves.
+- **The EU ingest fleet is sized to EU traffic** (`isEuPrd` in `packages/infra/src/aws/stage.ts`):
+  one c7gd.medium (autoscaling 1-3) and the collector at the non-prd size; Electric keeps
+  the prd size. Managed scaling adds a host to roll a deploy. To scale it, raise the EU
+  branches there or drop `isEuPrd`.
+- **Graviton (ARM64).** The gateway, collector and Electric run `cpuArchitecture: "ARM64"`
+  (`runtimePlatform`), cheaper than x86_64. `build-ingest-binary.yml` compiles natively on
+  an arm64 runner.
 
 ## Things that have broken a deploy before
 
-Short list. Each has a comment at the site.
+Each has a comment at the site.
 
-- A **relative `dockerfile`** path. Alchemy has flipped how it resolves one between
-  releases (`ECR.Image` joins it onto `context`; the ECS image source, beta.73+, resolves it
-  against the cwd), and each flip broke the deploy. Absolute paths pass through both.
-- **`listenerPort` vs `port`** on `ECS.Service`. `port` is the container port. The listener
-  defaults to 443 once `certificateArn` is set. Setting `listenerPort: INGEST_PORT` puts the
-  listener on 3474, which Cloudflare's proxy does not forward to, _and_ drops `port` back to
-  alchemy's default 3000 while the gateway binds 3474, so no target ever passes `/health`.
-- **A security group that does not admit the listener port.** A stage without an ingest
-  domain gets an HTTP listener on 80, not 443. The first preview deploy came up healthy and
-  timed out on every request for exactly this reason.
-- **An image whose architecture does not match the task.** It fails at start with "image
-  Manifest does not contain descriptor matching platform 'linux/amd64'" (or the arm64
-  equivalent). Hence the explicit `runtimePlatform`.
-- **A cargo `--target-dir` inside the image context.** Alchemy hashes the context with
-  `hashDirectory`, which has no `.dockerignore` support and derives exclusions from
-  gitignore rules _without_ rebasing root-anchored ones onto the context dir.
-  `/apps/ingest/target` becomes the glob `apps/ingest/target/**` evaluated with
-  `cwd=apps/ingest`, matching nothing. The whole target dir would be walked and hashed on
+- **A relative `dockerfile` path.** Alchemy has flipped how it resolves one between
+  releases. Use absolute paths.
+- **`listenerPort` vs `port` on `ECS.Service`.** `port` is the container port; the listener
+  defaults to 443 once `certificateArn` is set. Setting `listenerPort` to the container port
+  breaks both the Cloudflare proxy and the health check.
+- **A security group that does not admit the listener port.** A stage without a domain gets
+  an HTTP listener on 80, not 443.
+- **An image whose architecture does not match the task.** Keep `runtimePlatform` explicit.
+- **A cargo `--target-dir` inside the image context.** Alchemy's `hashDirectory` ignores
+  `.dockerignore` and root-anchored gitignore rules, so the target dir would be hashed on
   every deploy.
-- **A first deploy of a new stage with the AWS half on** used to fail. Each service's ACM
-  certificate landed `PENDING_VALIDATION` and its 443 listener refused it, and the
-  workflows recovered by publishing the validation CNAMEs with a script and deploying
-  again. `@maple/infra/acm` now does that inside the stack: it resolves the Cloudflare zone
-  from the certificate's own hostname, publishes the CNAME ACM asks for, and blocks the
-  listener on `ISSUED`. A new certificate-bearing service needs no registration anywhere
-  and no second pass. The remaining manual record is the **proxied CNAME at the ALB** for
-  each public service, which the deploy output names.
+- **An unvalidated ACM certificate.** Feed the listener the ARN returned by
+  `issueCertificateViaCloudflare`, not the certificate's own, so it waits for `ISSUED`.
+- **A missing `AWS_ACCOUNT_ID`** in a deploy workflow (#378 deadlock, see above).
