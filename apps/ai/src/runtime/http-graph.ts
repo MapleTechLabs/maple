@@ -21,14 +21,13 @@ import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
  * MCP client.
  */
 import { MapleAiApi } from "@maple/domain/http"
-import { WorkerEnvironment } from "@maple/infra/worker-runtime"
 import { Effect, Layer } from "effect"
 import { HttpRouter } from "effect/http"
 import { HttpApiBuilder } from "effect/http-api"
 import { McpLive } from "../mcp/app"
 import { HttpChatLive } from "../routes/internal/chat.http"
 import { HttpTriageLive } from "../routes/internal/triage.http"
-import { layerDecisionModel } from "../platform/Llm"
+import { layerDecisionModelFromConfig } from "../platform/Llm"
 import { WorkersAiGateway } from "../platform/WorkersAiHttpClient"
 import { ChatSessionsRouter } from "../routes/v1/chat-sessions.http"
 import { HealthRouter } from "../routes/health"
@@ -76,14 +75,10 @@ const RawRoutes = rawRoutes(Layer.mergeAll(HealthRouter, ChatSessionsRouter, Mcp
 
 /**
  * The decision model the triage route asks, built once per isolate from the
- * Worker env — the same layers the investigation turn builds per turn in
+ * Worker's config: the same layers the investigation turn builds per turn in
  * `turn-runner.ts`, on the same AI Gateway binding.
  */
-const DecisionModelLive = Layer.unwrap(
-	Effect.map(Effect.all([WorkerEnvironment, WorkersAiGateway]), ([env, workersAi]) =>
-		layerDecisionModel(env, workersAi),
-	),
-)
+const DecisionModelLive = Layer.unwrap(Effect.map(WorkersAiGateway, layerDecisionModelFromConfig))
 
 const AiInternalRoutes = HttpApiBuilder.layer(MapleAiApi).pipe(
 	Layer.provide(HttpChatLive),

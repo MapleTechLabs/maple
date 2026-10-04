@@ -10,7 +10,7 @@
  * The fake responds 400, which the provider classifies as a non-retryable invalid request. That
  * keeps the run to a single request with no backoff; the resulting failure is expected and ignored.
  */
-import { Effect, Layer, Option, Schema, Stream } from "effect"
+import { ConfigProvider, Effect, Layer, Option, Redacted, Schema, Stream } from "effect"
 import { Decision, DecisionModel, LanguageModel, Tool, Toolkit } from "effect/ai"
 import { FetchHttpClient } from "effect/http"
 import { assert, describe, it } from "@effect/vitest"
@@ -21,11 +21,12 @@ import {
 	layerDecisionModel,
 	DEFAULT_REVIEW_MODEL,
 	layerLlm,
+	loadLlmSettings,
 	resolveDecisionModel,
 	resolveReviewModel,
 	resolveTriageModel,
 	type LlmCallTags,
-	type LlmEnv,
+	type LlmSettings,
 	type ResolvedModel,
 } from "./Llm"
 
@@ -42,9 +43,9 @@ interface CapturedRequest {
  * defaults and the only honest way to check a default is to watch what leaves.
  */
 const captureRequest = (
-	env: LlmEnv,
+	env: LlmSettings,
 	tags?: LlmCallTags,
-	resolve: (env: LlmEnv, tags?: LlmCallTags) => ResolvedModel = resolveTriageModel,
+	resolve: (env: LlmSettings, tags?: LlmCallTags) => ResolvedModel = resolveTriageModel,
 ): Effect.Effect<CapturedRequest> =>
 	Effect.gen(function* () {
 		let captured: CapturedRequest | undefined
@@ -79,7 +80,7 @@ const captureRequest = (
 		return captured
 	})
 
-const openRouterEnv: LlmEnv = { OPENROUTER_API_KEY: "test-key" }
+const openRouterEnv: LlmSettings = { OPENROUTER_API_KEY: Redacted.make("test-key") }
 
 /** `DEFAULT_MODEL_LIMITS.context` in Llm.ts — what a model absent from the table falls back to. */
 const DEFAULT_MODEL_LIMITS_CONTEXT = 128_000
@@ -146,7 +147,7 @@ describe("resolveTriageModel — OpenRouter attribution", () => {
 	it.live("keeps the headers and tags off the Workers AI path", () =>
 		Effect.gen(function* () {
 			const captured = yield* captureRequest(
-				{ MAPLE_LLM_PROVIDER: "workers-ai", CLOUDFLARE_API_KEY: "test-key" },
+				{ MAPLE_LLM_PROVIDER: "workers-ai", CLOUDFLARE_API_KEY: Redacted.make("test-key") },
 				tags,
 			)
 
@@ -186,7 +187,7 @@ describe("reasoning effort", () => {
 	it.live("keeps reasoning off the Workers AI path", () =>
 		Effect.gen(function* () {
 			const captured = yield* captureRequest(
-				{ MAPLE_LLM_PROVIDER: "workers-ai", CLOUDFLARE_API_KEY: "test-key" },
+				{ MAPLE_LLM_PROVIDER: "workers-ai", CLOUDFLARE_API_KEY: Redacted.make("test-key") },
 				tags,
 			)
 
@@ -249,7 +250,7 @@ describe("resolveReviewModel", () => {
 })
 
 describe("EU in-region routing", () => {
-	const euEnv: LlmEnv = { ...openRouterEnv, MAPLE_REGION: "eu" }
+	const euEnv: LlmSettings = { ...openRouterEnv, MAPLE_REGION: "eu" }
 
 	it.effect("sends the EU instance's calls to OpenRouter's EU endpoint, on an EU-served model", () =>
 		Effect.gen(function* () {
@@ -649,7 +650,7 @@ describe("streamed completion — a stream that ends without a usage block", () 
  * leaves.
  */
 describe("layerDecisionModel — Clef on Workers AI", () => {
-	const workersAiEnv: LlmEnv = { CLOUDFLARE_ACCOUNT_ID: "test-account", CLOUDFLARE_API_KEY: "cf-key" }
+	const workersAiEnv: LlmSettings = { CLOUDFLARE_ACCOUNT_ID: "test-account", CLOUDFLARE_API_KEY: Redacted.make("cf-key") }
 
 	const ticket = Decision.make({
 		input: Schema.Struct({ message: Schema.String }),
@@ -661,7 +662,7 @@ describe("layerDecisionModel — Clef on Workers AI", () => {
 		},
 	})
 
-	const captureDecision = (env: LlmEnv): Effect.Effect<CapturedRequest> =>
+	const captureDecision = (env: LlmSettings): Effect.Effect<CapturedRequest> =>
 		Effect.gen(function* () {
 			let captured: CapturedRequest | undefined
 
@@ -718,6 +719,35 @@ describe("layerDecisionModel — Clef on Workers AI", () => {
 
 			assert.match(captured.url, /\/ai\/run\/@cf\/cloudflare\/clef-flash$/)
 			assert.strictEqual(captured.body.model, "clef-flash")
+		}),
+	)
+})
+
+describe("loadLlmSettings", () => {
+	const load = (env: Record<string, unknown>) =>
+		loadLlmSettings.pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(env))))
+
+	it.effect("reads the env through the ConfigProvider, trimmed, with blanks treated as unset", () =>
+		Effect.gen(function* () {
+			const settings = yield* load({
+				OPENROUTER_API_KEY: " or-key ",
+				MAPLE_REGION: " eu ",
+				MAPLE_TRIAGE_MODEL_OPENROUTER: "   ",
+			})
+
+			assert.strictEqual(Redacted.value(settings.OPENROUTER_API_KEY ?? Redacted.make("")), "or-key")
+			assert.strictEqual(settings.MAPLE_REGION, "eu")
+			assert.strictEqual(settings.MAPLE_TRIAGE_MODEL_OPENROUTER, undefined)
+			assert.strictEqual(resolveTriageModel(settings).name, "openai/gpt-6-luna")
+		}),
+	)
+
+	it.effect("falls back to the defaults when nothing is configured", () =>
+		Effect.gen(function* () {
+			const settings = yield* load({})
+
+			assert.strictEqual(settings.OPENROUTER_API_KEY, undefined)
+			assert.strictEqual(resolveDecisionModel(settings), DEFAULT_DECISION_MODEL)
 		}),
 	)
 })

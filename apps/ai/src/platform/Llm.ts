@@ -15,7 +15,7 @@ import { OpenRouterClient, OpenRouterLanguageModel } from "@effect/ai-openrouter
 import { MAPLE_NATIVE_SESSION_ID_ATTR, MAPLE_NATIVE_TURN_ID_ATTR } from "@maple/domain/gen-ai"
 import { PR_REVIEW_MODELS, type PrReviewModel } from "@maple/domain/http"
 import { FindingEmbedder, PrReviewEmbeddingError } from "@maple/backend/services/pr-review/FindingEmbedder"
-import { Effect, Layer, Option, Redacted, Schema } from "effect"
+import { Config, Effect, Layer, Option, Redacted, Schema } from "effect"
 import type * as DecisionModel from "effect/ai/DecisionModel"
 import * as LanguageModel from "effect/ai/LanguageModel"
 import * as AiModel from "effect/ai/Model"
@@ -70,10 +70,11 @@ const OPENROUTER_API_URLS = {
 /** `us` is OpenRouter's global catalogue, not its US in-region endpoint, which serves fewer models. */
 type OpenRouterRegion = "us" | "eu"
 
-const openRouterRegion = (env: LlmEnv): OpenRouterRegion =>
-	readString(env, "MAPLE_REGION")?.toLowerCase() === "eu" ? "eu" : "us"
+const openRouterRegion = (settings: LlmSettings): OpenRouterRegion =>
+	readString(settings, "MAPLE_REGION")?.toLowerCase() === "eu" ? "eu" : "us"
 
-export const openRouterApiUrl = (env: LlmEnv): string => OPENROUTER_API_URLS[openRouterRegion(env)]
+export const openRouterApiUrl = (settings: LlmSettings): string =>
+	OPENROUTER_API_URLS[openRouterRegion(settings)]
 
 /**
  * The EU catalogue is a subset (66 models on 2026-09-25) and serves none of the US defaults, so
@@ -144,28 +145,66 @@ const GEN_AI_PROVIDER_NAMES = {
  */
 const BINDING_PLACEHOLDER = "workers-ai-binding"
 
-export interface LlmEnv extends Record<string, unknown> {
-	readonly CLOUDFLARE_ACCOUNT_ID?: string
-	readonly CLOUDFLARE_API_KEY?: string
-	readonly MAPLE_LLM_PROVIDER?: string
+/** The deployment's LLM configuration, keyed by the variable each field is read from. */
+export interface LlmSettings {
+	readonly CLOUDFLARE_ACCOUNT_ID?: string | undefined
+	readonly CLOUDFLARE_API_KEY?: Redacted.Redacted<string> | undefined
+	readonly MAPLE_LLM_PROVIDER?: string | undefined
 	/** The instance this Worker runs in. `eu` sends every OpenRouter call to its EU endpoint. */
-	readonly MAPLE_REGION?: string
-	readonly MAPLE_TRIAGE_MODEL_OPENROUTER?: string
-	readonly MAPLE_TRIAGE_MODEL_WORKERS_AI?: string
+	readonly MAPLE_REGION?: string | undefined
+	readonly MAPLE_TRIAGE_MODEL_OPENROUTER?: string | undefined
+	readonly MAPLE_TRIAGE_MODEL_WORKERS_AI?: string | undefined
 	/** OpenRouter model id for pull request reviews and replies, overriding {@link DEFAULT_REVIEW_MODEL}. */
-	readonly MAPLE_REVIEW_MODEL_OPENROUTER?: string
+	readonly MAPLE_REVIEW_MODEL_OPENROUTER?: string | undefined
 	/** Context window in tokens, overriding {@link MODEL_LIMITS} for the configured model. */
-	readonly MAPLE_TRIAGE_MODEL_CONTEXT?: string
+	readonly MAPLE_TRIAGE_MODEL_CONTEXT?: string | undefined
 	/** Max completion tokens, overriding {@link MODEL_LIMITS} for the configured model. */
-	readonly MAPLE_TRIAGE_MODEL_OUTPUT?: string
+	readonly MAPLE_TRIAGE_MODEL_OUTPUT?: string | undefined
 	/** `low` | `medium` | `high` | `off`. See {@link ReasoningEffort}. */
-	readonly MAPLE_TRIAGE_REASONING_EFFORT?: string
-	readonly OPENROUTER_API_KEY?: string
+	readonly MAPLE_TRIAGE_REASONING_EFFORT?: string | undefined
+	readonly OPENROUTER_API_KEY?: Redacted.Redacted<string> | undefined
 	/** Decision model id, overriding {@link DEFAULT_DECISION_MODEL}. */
-	readonly MAPLE_DECISION_MODEL?: string
+	readonly MAPLE_DECISION_MODEL?: string | undefined
 	/** Embedding model id, overriding {@link DEFAULT_EMBEDDING_MODEL}. */
-	readonly MAPLE_EMBEDDING_MODEL?: string
+	readonly MAPLE_EMBEDDING_MODEL?: string | undefined
 }
+
+/** A trimmed, non-blank value, or `undefined`; a malformed one falls back like an unset one. */
+const optionalTrimmed = (key: string): Config.Config<string | undefined> =>
+	Config.option(Config.String(key)).pipe(
+		Config.map((value) =>
+			Option.getOrUndefined(
+				Option.filter(
+					Option.map(value, (raw) => raw.trim()),
+					(trimmed) => trimmed !== "",
+				),
+			),
+		),
+		Config.orElse(() => Config.succeed(undefined)),
+	)
+
+const optionalSecret = (key: string): Config.Config<Redacted.Redacted<string> | undefined> =>
+	optionalTrimmed(key).pipe(Config.map((value) => (value === undefined ? undefined : Redacted.make(value))))
+
+/** {@link LlmSettings} from Effect `Config`, so the Worker env reaches it through the ConfigProvider. */
+export const llmSettingsConfig: Config.Config<LlmSettings> = Config.all({
+	CLOUDFLARE_ACCOUNT_ID: optionalTrimmed("CLOUDFLARE_ACCOUNT_ID"),
+	CLOUDFLARE_API_KEY: optionalSecret("CLOUDFLARE_API_KEY"),
+	MAPLE_LLM_PROVIDER: optionalTrimmed("MAPLE_LLM_PROVIDER"),
+	MAPLE_REGION: optionalTrimmed("MAPLE_REGION"),
+	MAPLE_TRIAGE_MODEL_OPENROUTER: optionalTrimmed("MAPLE_TRIAGE_MODEL_OPENROUTER"),
+	MAPLE_TRIAGE_MODEL_WORKERS_AI: optionalTrimmed("MAPLE_TRIAGE_MODEL_WORKERS_AI"),
+	MAPLE_REVIEW_MODEL_OPENROUTER: optionalTrimmed("MAPLE_REVIEW_MODEL_OPENROUTER"),
+	MAPLE_TRIAGE_MODEL_CONTEXT: optionalTrimmed("MAPLE_TRIAGE_MODEL_CONTEXT"),
+	MAPLE_TRIAGE_MODEL_OUTPUT: optionalTrimmed("MAPLE_TRIAGE_MODEL_OUTPUT"),
+	MAPLE_TRIAGE_REASONING_EFFORT: optionalTrimmed("MAPLE_TRIAGE_REASONING_EFFORT"),
+	OPENROUTER_API_KEY: optionalSecret("OPENROUTER_API_KEY"),
+	MAPLE_DECISION_MODEL: optionalTrimmed("MAPLE_DECISION_MODEL"),
+	MAPLE_EMBEDDING_MODEL: optionalTrimmed("MAPLE_EMBEDDING_MODEL"),
+})
+
+/** Every key falls back on its own, so loading never fails: an unreadable value means the default. */
+export const loadLlmSettings: Effect.Effect<LlmSettings> = Effect.orElseSucceed(llmSettingsConfig, () => ({}))
 
 /**
  * How hard the model should think before answering.
@@ -180,8 +219,8 @@ export type ReasoningEffort = "low" | "medium" | "high" | "off"
 
 const REASONING_EFFORTS: ReadonlySet<string> = new Set(["low", "medium", "high", "off"])
 
-const readReasoningEffort = (env: LlmEnv, key: keyof LlmEnv): ReasoningEffort | undefined => {
-	const raw = readString(env, key)?.toLowerCase()
+const readReasoningEffort = (settings: LlmSettings, key: StringKey): ReasoningEffort | undefined => {
+	const raw = readString(settings, key)?.toLowerCase()
 	// An unrecognized value falls through to the caller's default rather than throwing. This is read
 	// on a request path in a Worker; a typo'd env var must not take the agent down.
 	return raw !== undefined && REASONING_EFFORTS.has(raw) ? (raw as ReasoningEffort) : undefined
@@ -220,16 +259,29 @@ const MODEL_LIMITS: Record<string, { readonly context: number; readonly output: 
 /** For a model not in the table at all. Low enough that an unknown model compacts rather than fails. */
 const DEFAULT_MODEL_LIMITS = { context: 128_000, output: 8_000 } as const
 
-const readPositiveInt = (env: LlmEnv, key: keyof LlmEnv): number | undefined => {
-	const raw = readString(env, key)
+const readPositiveInt = (settings: LlmSettings, key: StringKey): number | undefined => {
+	const raw = readString(settings, key)
 	if (raw === undefined) return undefined
 	const value = Number(raw)
 	return Number.isSafeInteger(value) && value > 0 ? value : undefined
 }
 
-const readString = (env: LlmEnv, key: keyof LlmEnv): string | undefined => {
-	const value = env[key]
-	return typeof value === "string" && value.trim() !== "" ? value.trim() : undefined
+/** The plain-string fields of {@link LlmSettings}; the secrets are read where they are used. */
+type StringKey = {
+	[K in keyof LlmSettings]-?: NonNullable<LlmSettings[K]> extends string ? K : never
+}[keyof LlmSettings]
+
+const readString = (settings: LlmSettings, key: StringKey): string | undefined => {
+	const value = settings[key]
+	return value !== undefined && value.trim() !== "" ? value.trim() : undefined
+}
+
+const readSecret = (
+	settings: LlmSettings,
+	key: "OPENROUTER_API_KEY" | "CLOUDFLARE_API_KEY",
+): Redacted.Redacted<string> | undefined => {
+	const value = settings[key]
+	return value !== undefined && Redacted.value(value).trim() !== "" ? value : undefined
 }
 
 /** The client services a resolved model needs. `layerLlm` provides both, so either branch runs. */
@@ -261,15 +313,15 @@ export interface ResolvedModel {
 
 /** The triage overrides describe the triage model, so a review model reads only the table. */
 const limitsFor = (
-	env: LlmEnv,
+	settings: LlmSettings,
 	name: string,
 	overridable = true,
 ): { readonly context: number; readonly output: number } => {
 	const known = MODEL_LIMITS[name] ?? DEFAULT_MODEL_LIMITS
 	if (!overridable) return known
 	return {
-		context: readPositiveInt(env, "MAPLE_TRIAGE_MODEL_CONTEXT") ?? known.context,
-		output: readPositiveInt(env, "MAPLE_TRIAGE_MODEL_OUTPUT") ?? known.output,
+		context: readPositiveInt(settings, "MAPLE_TRIAGE_MODEL_CONTEXT") ?? known.context,
+		output: readPositiveInt(settings, "MAPLE_TRIAGE_MODEL_OUTPUT") ?? known.output,
 	}
 }
 
@@ -278,8 +330,8 @@ const limitsFor = (
  * only meaningful to one provider, so a single shared `MAPLE_TRIAGE_MODEL` would send `@cf/…` to
  * OpenRouter the moment someone flipped the switch.
  */
-export const resolveLlmProvider = (env: LlmEnv): LlmProvider =>
-	readString(env, "MAPLE_LLM_PROVIDER")?.toLowerCase() === "workers-ai"
+export const resolveLlmProvider = (settings: LlmSettings): LlmProvider =>
+	readString(settings, "MAPLE_LLM_PROVIDER")?.toLowerCase() === "workers-ai"
 		? "workers-ai"
 		: DEFAULT_LLM_PROVIDER
 
@@ -357,16 +409,16 @@ const instrumentedModel = <R>(
 	)
 
 const openRouterModel = (
-	env: LlmEnv,
+	settings: LlmSettings,
 	name: string,
-	effortKey: keyof LlmEnv,
+	effortKey: StringKey,
 	fallbackEffort: ReasoningEffort | undefined,
 	tags: LlmCallTags | undefined,
 	overridableLimits = true,
 	/** Nobody watches the run stream, so its deltas are joined; see `coalesceDeltas`. */
 	unattended = false,
 ): ResolvedModel => {
-	const effort = readReasoningEffort(env, effortKey) ?? fallbackEffort
+	const effort = readReasoningEffort(settings, effortKey) ?? fallbackEffort
 	return {
 		provider: "openrouter",
 		name,
@@ -380,19 +432,23 @@ const openRouterModel = (
 			},
 			{ coalesceDeltas: unattended },
 		),
-		limits: limitsFor(env, name, overridableLimits),
+		limits: limitsFor(settings, name, overridableLimits),
 		tags,
 	}
 }
 
-const workersAiModel = (env: LlmEnv, name: string, tags: LlmCallTags | undefined): ResolvedModel => ({
+const workersAiModel = (
+	settings: LlmSettings,
+	name: string,
+	tags: LlmCallTags | undefined,
+): ResolvedModel => ({
 	provider: "workers-ai",
 	name,
 	layer: instrumentedModel(name, OpenAiLanguageModel.make({ model: name }), {
 		providerName: genAiProviderName("workers-ai"),
 		sessionAttributes: agentSessionSpanAttributes(tags),
 	}),
-	limits: limitsFor(env, name),
+	limits: limitsFor(settings, name),
 	tags,
 })
 
@@ -404,17 +460,17 @@ const workersAiModel = (env: LlmEnv, name: string, tags: LlmCallTags | undefined
  * branch sends none of them — they are OpenRouter's fields and mean nothing to Cloudflare — but both
  * branches stamp the session onto their model-call spans.
  */
-export const resolveTriageModel = (env: LlmEnv, tags?: LlmCallTags): ResolvedModel =>
-	resolveLlmProvider(env) === "workers-ai"
+export const resolveTriageModel = (settings: LlmSettings, tags?: LlmCallTags): ResolvedModel =>
+	resolveLlmProvider(settings) === "workers-ai"
 		? workersAiModel(
-				env,
-				readString(env, "MAPLE_TRIAGE_MODEL_WORKERS_AI") ?? DEFAULT_WORKERS_AI_MODEL,
+				settings,
+				readString(settings, "MAPLE_TRIAGE_MODEL_WORKERS_AI") ?? DEFAULT_WORKERS_AI_MODEL,
 				tags,
 			)
 		: openRouterModel(
-				env,
-				readString(env, "MAPLE_TRIAGE_MODEL_OPENROUTER") ??
-					(openRouterRegion(env) === "eu" ? EU_DEFAULT_OPENROUTER_MODEL : DEFAULT_OPENROUTER_MODEL),
+				settings,
+				readString(settings, "MAPLE_TRIAGE_MODEL_OPENROUTER") ??
+					(openRouterRegion(settings) === "eu" ? EU_DEFAULT_OPENROUTER_MODEL : DEFAULT_OPENROUTER_MODEL),
 				"MAPLE_TRIAGE_REASONING_EFFORT",
 				// No default. This resolver serves chat, AI triage *and* the validator, so a number
 				// picked here would retune three stages with different shapes at once.
@@ -423,10 +479,13 @@ export const resolveTriageModel = (env: LlmEnv, tags?: LlmCallTags): ResolvedMod
 			)
 
 /** The organization's pick, when this region serves it: the EU endpoint 404s a model it lacks. */
-const servedReviewModel = (env: LlmEnv, chosen: Option.Option<PrReviewModel>): Option.Option<string> =>
+const servedReviewModel = (
+	settings: LlmSettings,
+	chosen: Option.Option<PrReviewModel>,
+): Option.Option<string> =>
 	chosen.pipe(
 		Option.flatMap((id) => Option.fromUndefinedOr(PR_REVIEW_MODELS.find((model) => model.id === id))),
-		Option.filter((model) => openRouterRegion(env) !== "eu" || model.eu),
+		Option.filter((model) => openRouterRegion(settings) !== "eu" || model.eu),
 		Option.map((model) => model.id),
 	)
 
@@ -436,19 +495,19 @@ const servedReviewModel = (env: LlmEnv, chosen: Option.Option<PrReviewModel>): O
  * deployment reviews on its triage model rather than sending it one.
  */
 export const resolveReviewModel = (
-	env: LlmEnv,
+	settings: LlmSettings,
 	tags?: LlmCallTags,
 	chosen: Option.Option<PrReviewModel> = Option.none(),
 ): ResolvedModel =>
-	resolveLlmProvider(env) === "workers-ai"
-		? resolveTriageModel(env, tags)
+	resolveLlmProvider(settings) === "workers-ai"
+		? resolveTriageModel(settings, tags)
 		: openRouterModel(
-				env,
+				settings,
 				Option.getOrElse(
-					servedReviewModel(env, chosen),
+					servedReviewModel(settings, chosen),
 					() =>
-						readString(env, "MAPLE_REVIEW_MODEL_OPENROUTER") ??
-						(openRouterRegion(env) === "eu" ? EU_DEFAULT_REVIEW_MODEL : DEFAULT_REVIEW_MODEL),
+						readString(settings, "MAPLE_REVIEW_MODEL_OPENROUTER") ??
+						(openRouterRegion(settings) === "eu" ? EU_DEFAULT_REVIEW_MODEL : DEFAULT_REVIEW_MODEL),
 				),
 				"MAPLE_TRIAGE_REASONING_EFFORT",
 				undefined,
@@ -521,22 +580,22 @@ const openRouterHttp = Layer.effect(HttpClient.HttpClient)(
  * the shim is a no-op and Workers AI requests go out over `fetch` to the REST endpoint.
  */
 export const layerLlm = (
-	env: LlmEnv,
+	settings: LlmSettings,
 	workersAi: Option.Option<WorkersAiBinding> = Option.none(),
 ): Layer.Layer<LlmClients> => {
-	const accountId = readString(env, "CLOUDFLARE_ACCOUNT_ID") ?? BINDING_PLACEHOLDER
+	const accountId = readString(settings, "CLOUDFLARE_ACCOUNT_ID") ?? BINDING_PLACEHOLDER
 	// The binding shim wraps `fetch`: a Workers AI call the shim answers from the binding never
 	// reaches it, and everything else goes out over the network as usual.
 	const http = layerWorkersAi(workersAi).pipe(Layer.provide(FetchHttpClient.layer))
 	return Layer.mergeAll(
 		OpenRouterClient.layer({
-			apiKey: Redacted.make(readString(env, "OPENROUTER_API_KEY") ?? ""),
-			apiUrl: openRouterApiUrl(env),
+			apiKey: readSecret(settings, "OPENROUTER_API_KEY") ?? Redacted.make(""),
+			apiUrl: openRouterApiUrl(settings),
 			transformClient: withPerCallFields,
 		}).pipe(Layer.provide(openRouterHttp.pipe(Layer.provide(http)))),
 		// The URL the shim already matches: `.../ai/v1/chat/completions`.
 		OpenAiClient.layer({
-			apiKey: Redacted.make(readString(env, "CLOUDFLARE_API_KEY") ?? BINDING_PLACEHOLDER),
+			apiKey: readSecret(settings, "CLOUDFLARE_API_KEY") ?? Redacted.make(BINDING_PLACEHOLDER),
 			apiUrl: `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/v1`,
 		}).pipe(Layer.provide(http)),
 	)
@@ -551,14 +610,14 @@ export const layerLlm = (
  * `CLOUDFLARE_API_KEY` where there is not (dev).
  */
 export const layerDecisionModel = (
-	env: LlmEnv,
+	settings: LlmSettings,
 	workersAi: Option.Option<WorkersAiBinding> = Option.none(),
 ): Layer.Layer<DecisionModel.DecisionModel> =>
 	// The fallback only fills the layer: with no EU decision model the triage route never calls it.
 	WorkersAiDecisionModel.layer({
-		model: resolveDecisionModel(env) ?? DEFAULT_DECISION_MODEL,
-		accountId: readString(env, "CLOUDFLARE_ACCOUNT_ID") ?? BINDING_PLACEHOLDER,
-		apiKey: readString(env, "CLOUDFLARE_API_KEY") ?? BINDING_PLACEHOLDER,
+		model: resolveDecisionModel(settings) ?? DEFAULT_DECISION_MODEL,
+		accountId: readString(settings, "CLOUDFLARE_ACCOUNT_ID") ?? BINDING_PLACEHOLDER,
+		apiKey: Redacted.value(readSecret(settings, "CLOUDFLARE_API_KEY") ?? Redacted.make(BINDING_PLACEHOLDER)),
 	}).pipe(Layer.provide(layerWorkersAi(workersAi).pipe(Layer.provide(FetchHttpClient.layer))))
 
 /**
@@ -566,9 +625,9 @@ export const layerDecisionModel = (
  * EU unless configured: nothing pins Workers AI inference to the EU, and the gate reads no verdict
  * as "investigate".
  */
-export const resolveDecisionModel = (env: LlmEnv): string | undefined =>
-	readString(env, "MAPLE_DECISION_MODEL") ??
-	(openRouterRegion(env) === "eu" ? undefined : DEFAULT_DECISION_MODEL)
+export const resolveDecisionModel = (settings: LlmSettings): string | undefined =>
+	readString(settings, "MAPLE_DECISION_MODEL") ??
+	(openRouterRegion(settings) === "eu" ? undefined : DEFAULT_DECISION_MODEL)
 
 /**
  * The embedder the PR review's feedback filter compares findings with, on OpenRouter whichever
@@ -576,10 +635,12 @@ export const resolveDecisionModel = (env: LlmEnv): string | undefined =>
  * private to this layer, so it never replaces the Workers AI one `layerLlm` provides. Without an
  * OpenRouter key there is no embedder, and the filter is off.
  */
-export const layerFindingEmbedder = (env: LlmEnv): Layer.Layer<FindingEmbedder> | Layer.Layer<never> => {
-	const apiKey = readString(env, "OPENROUTER_API_KEY")
+export const layerFindingEmbedder = (
+	settings: LlmSettings,
+): Layer.Layer<FindingEmbedder> | Layer.Layer<never> => {
+	const apiKey = readSecret(settings, "OPENROUTER_API_KEY")
 	if (apiKey === undefined) return Layer.empty
-	const model = readString(env, "MAPLE_EMBEDDING_MODEL") ?? DEFAULT_EMBEDDING_MODEL
+	const model = readString(settings, "MAPLE_EMBEDDING_MODEL") ?? DEFAULT_EMBEDDING_MODEL
 	return Layer.effect(FindingEmbedder)(
 		Effect.map(OpenAiEmbeddingModel.make({ model }), (embeddings) => ({
 			model,
@@ -594,9 +655,25 @@ export const layerFindingEmbedder = (env: LlmEnv): Layer.Layer<FindingEmbedder> 
 		})),
 	).pipe(
 		Layer.provide(
-			OpenAiClient.layer({ apiKey: Redacted.make(apiKey), apiUrl: openRouterApiUrl(env) }).pipe(
+			OpenAiClient.layer({ apiKey, apiUrl: openRouterApiUrl(settings) }).pipe(
 				Layer.provide(openRouterHttp.pipe(Layer.provide(FetchHttpClient.layer))),
 			),
 		),
 	)
 }
+
+/** {@link layerLlm} on the settings the graph's ConfigProvider holds. */
+export const layerLlmFromConfig = (
+	workersAi: Option.Option<WorkersAiBinding> = Option.none(),
+): Layer.Layer<LlmClients> => Layer.unwrap(Effect.map(loadLlmSettings, (settings) => layerLlm(settings, workersAi)))
+
+/** {@link layerDecisionModel} on the settings the graph's ConfigProvider holds. */
+export const layerDecisionModelFromConfig = (
+	workersAi: Option.Option<WorkersAiBinding> = Option.none(),
+): Layer.Layer<DecisionModel.DecisionModel> =>
+	Layer.unwrap(Effect.map(loadLlmSettings, (settings) => layerDecisionModel(settings, workersAi)))
+
+/** {@link layerFindingEmbedder} on the settings the graph's ConfigProvider holds. */
+export const layerFindingEmbedderFromConfig: Layer.Layer<FindingEmbedder> | Layer.Layer<never> = Layer.unwrap(
+	Effect.map(loadLlmSettings, layerFindingEmbedder),
+)

@@ -1,12 +1,12 @@
 import { assert, describe, it } from "@effect/vitest"
 import { IncidentTriagePriorDiagnosis, IncidentTriageRequest } from "@maple/domain/http"
 import { InvestigationId } from "@maple/domain/primitives"
-import { Effect, Layer, Schema } from "effect"
+import { Effect, Layer, Redacted, Schema } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { layerDecisionModel } from "../platform/Llm"
 import { classifyIncident } from "./incident-classifier"
 
-const env = { CLOUDFLARE_ACCOUNT_ID: "test-account", CLOUDFLARE_API_KEY: "test-key" }
+const env = { CLOUDFLARE_ACCOUNT_ID: "test-account", CLOUDFLARE_API_KEY: Redacted.make("test-key") }
 
 const request = new IncidentTriageRequest({
 	title: "404 Not Found /wp-admin/setup-config.php",

@@ -24,7 +24,7 @@ import { ChatMessage, type ChatTurnOrigin, type ChatTurnTenantEncoded } from "@m
 import type { InvestigationProgress, PrReviewFailureReason } from "@maple/domain/http"
 import { envPorts } from "@maple/backend/platform/env-ports"
 import { workerTelemetryConfig } from "@maple/infra/worker-telemetry"
-import { Cause, Effect, Exit, Layer, ManagedRuntime, Match, Option } from "effect"
+import { Cause, Config, Effect, Exit, Layer, ManagedRuntime, Match, Option, Redacted } from "effect"
 import type { WorkersAiBinding } from "../platform/WorkersAiHttpClient"
 import { ReturnedToolFailuresOkLayer } from "../platform/genai-spans"
 import type { ChatSession } from "./ChatSession"
@@ -165,7 +165,7 @@ const NO_REPLY_ERROR = "no_reply: the agent ended its pass without submitting an
  * unbillable rather than unbilled.)
  */
 export const meterTurn = (
-	input: Pick<RunChatSessionTurnInput, "sessionId" | "messageId" | "env">,
+	input: Pick<RunChatSessionTurnInput, "sessionId" | "messageId">,
 	tenant: Pick<TenantContext, "orgId">,
 	origin: ChatTurnOrigin,
 	usage: { readonly input: number; readonly output: number },
@@ -178,16 +178,34 @@ export const meterTurn = (
 		}
 	// Bookkeeping must never fail a delivered answer: a rejection or a timeout is ignored, so this
 	// is an infallible Effect.
-	return Effect.tryPromise(() =>
-		trackTokenUsage(input.env, {
-			orgId: tenant.orgId,
-			inputTokens: usage.input,
-			outputTokens: usage.output,
-			idempotencyKey: billing.idempotencyKey,
-			source: billing.source,
-		}),
+	return Effect.flatMap(meteringConfig, (config) =>
+		Effect.tryPromise(() =>
+			trackTokenUsage(config, {
+				orgId: tenant.orgId,
+				inputTokens: usage.input,
+				outputTokens: usage.output,
+				idempotencyKey: billing.idempotencyKey,
+				source: billing.source,
+			}),
+		),
 	).pipe(Effect.timeout(METERING_TIMEOUT), Effect.ignore)
 }
+
+const optionalConfigString = (key: string) =>
+	Config.option(Config.String(key)).pipe(
+		Config.map(Option.getOrUndefined),
+		Config.orElse(() => Config.succeed(undefined)),
+	)
+
+/** The tracker's three settings, from `Config` rather than the raw env it still takes as a record. */
+const meteringConfig = Config.all({
+	AUTUMN_SECRET_KEY: Config.option(Config.Redacted("AUTUMN_SECRET_KEY")).pipe(
+		Config.map((key) => Option.getOrUndefined(Option.map(key, Redacted.value))),
+		Config.orElse(() => Config.succeed(undefined)),
+	),
+	MAPLE_DEFAULT_ORG_ID: optionalConfigString("MAPLE_DEFAULT_ORG_ID"),
+	AUTUMN_API_URL: optionalConfigString("AUTUMN_API_URL"),
+})
 
 /**
  * `triage` billing coordinates for an investigation session, or `undefined` if this is not one.
@@ -230,7 +248,14 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 		{ InvestigationServicesLive },
 		{ layerPg },
 		{ mapleDbConnectionLayer },
-		{ layerDecisionModel, layerFindingEmbedder, layerLlm, resolveReviewModel, resolveTriageModel },
+		{
+			layerDecisionModelFromConfig,
+			layerFindingEmbedderFromConfig,
+			layerLlmFromConfig,
+			loadLlmSettings,
+			resolveReviewModel,
+			resolveTriageModel,
+		},
 		{ McpToolExecutor },
 	] = await Promise.all([
 		import("../runtime/mcp-service-graph"),
@@ -246,10 +271,10 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 
 	const runtime = ManagedRuntime.make(
 		InvestigationServicesLive.pipe(
-			Layer.provideMerge(layerDecisionModel(input.env, input.workersAi)),
+			Layer.provideMerge(layerDecisionModelFromConfig(input.workersAi)),
 			// Read by `PrReviewService` as it is built: the review's feedback filter.
-			Layer.provideMerge(layerFindingEmbedder(input.env)),
-			Layer.provideMerge(layerLlm(input.env, input.workersAi)),
+			Layer.provideMerge(layerFindingEmbedderFromConfig),
+			Layer.provideMerge(layerLlmFromConfig(input.workersAi)),
 			Layer.provideMerge(layerPg),
 			Layer.provideMerge(mapleDbConnectionLayer(input.env)),
 			Layer.provideMerge(envPorts(input.env)),
@@ -294,7 +319,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 		if (record === undefined || investigationId === undefined) return
 		progressWrites = progressWrites.then((): Promise<void> =>
 			runtime
-				.runPromise(
+				.runPromiseExit(
 					InvestigationService.pipe(
 						Effect.flatMap((service) =>
 							service.recordProgress(tenant.orgId, investigationId, record),
@@ -306,7 +331,8 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 						),
 					),
 				)
-				.catch(() => undefined),
+				// An Exit never rejects, so a write that died (or a graph that never built) is dropped.
+				.then(() => undefined),
 		)
 	}
 
@@ -386,12 +412,13 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 		}
 		const history = input.session.history()
 		const tags = { surface, orgId: tenant.orgId, sessionId: input.sessionId, turnId: input.messageId }
+		const settings = yield* loadLlmSettings
 		const model = yield* Match.value(agent.model).pipe(
-			Match.when("triage", () => Effect.succeed(resolveTriageModel(input.env, tags))),
+			Match.when("triage", () => Effect.succeed(resolveTriageModel(settings, tags))),
 			Match.when("review", () =>
 				reviews
 					.reviewModel(tenant.orgId)
-					.pipe(Effect.map((chosen) => resolveReviewModel(input.env, tags, chosen))),
+					.pipe(Effect.map((chosen) => resolveReviewModel(settings, tags, chosen))),
 			),
 			Match.exhaustive,
 		)
@@ -663,6 +690,18 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 			error: CHAT_TURN_FAILED,
 		})
 	}
-	await runtime.dispose().catch(() => undefined)
-	await telemetry.flush(input.env).catch(() => undefined)
+	await Effect.runPromise(releaseQuietly(runtime, () => telemetry.flush(input.env)))
 }
+
+/**
+ * Dispose the turn's runtime, then flush its spans. Best effort: the turn's outcome is already in
+ * the log, so a failed dispose or export is dropped rather than failing the caller.
+ */
+const releaseQuietly = (
+	runtime: { readonly dispose: () => Promise<void> },
+	flush: () => Promise<void>,
+): Effect.Effect<void> =>
+	Effect.tryPromise(() => runtime.dispose()).pipe(
+		Effect.ignore,
+		Effect.andThen(Effect.tryPromise(flush).pipe(Effect.ignore)),
+	)

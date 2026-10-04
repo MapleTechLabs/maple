@@ -242,10 +242,13 @@ export const applyChatProposal = async (input: ApplyChatProposalInput): Promise<
 		),
 	)
 
-	try {
-		return await runtime.runPromise(program)
-	} finally {
-		await runtime.dispose().catch(() => undefined)
-		await telemetry.flush(input.env).catch(() => undefined)
-	}
+	// The outcome (an interrupt included, which the session settles with its own copy) is replayed
+	// after the runtime is disposed and the spans flushed, both best effort.
+	return Effect.runPromise(
+		Effect.promise(() => runtime.runPromiseExit(program)).pipe(
+			Effect.ensuring(Effect.tryPromise(() => runtime.dispose()).pipe(Effect.ignore)),
+			Effect.ensuring(Effect.tryPromise(() => telemetry.flush(input.env)).pipe(Effect.ignore)),
+			Effect.flatMap((exit) => exit),
+		),
+	)
 }

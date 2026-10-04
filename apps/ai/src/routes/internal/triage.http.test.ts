@@ -1,8 +1,8 @@
 // SAFETY-FILE: JSON in this test is emitted by the fixture or unit under test before its fields are asserted.
 import { assert, describe, it } from "@effect/vitest"
 import { IncidentTriageApiGroup, V1SchemaErrors, V1UnexpectedErrors } from "@maple/domain/http"
-import { WorkerEnvironment } from "@maple/infra/worker-runtime"
-import { ConfigProvider, Context, Effect, Layer } from "effect"
+import { workerEnvLayer } from "@maple/infra/worker-runtime"
+import { ConfigProvider, Context, Effect, Layer, Redacted } from "effect"
 import { FetchHttpClient, HttpRouter } from "effect/http"
 import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import { Env } from "@maple/backend/platform/Env"
@@ -35,6 +35,12 @@ const workerEnv = {
 	CLOUDFLARE_ACCOUNT_ID: "test-account",
 	CLOUDFLARE_API_KEY: "test-key",
 	MAPLE_DECISION_MODEL: "@cf/cloudflare/clef",
+}
+
+const llmSettings = {
+	CLOUDFLARE_ACCOUNT_ID: workerEnv.CLOUDFLARE_ACCOUNT_ID,
+	CLOUDFLARE_API_KEY: Redacted.make(workerEnv.CLOUDFLARE_API_KEY),
+	MAPLE_DECISION_MODEL: workerEnv.MAPLE_DECISION_MODEL,
 }
 
 /** What the Workers AI REST endpoint answers, so the decode under test is the real one. */
@@ -70,14 +76,14 @@ const makeHarness = () => {
 		void init
 		return decisionsAnswer()
 	}
-	const decisions = layerDecisionModel(workerEnv).pipe(
+	const decisions = layerDecisionModel(llmSettings).pipe(
 		Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetch)),
 	)
 	const routes = HttpApiBuilder.layer(TriageOnlyApi).pipe(
 		Layer.provide(HttpTriageLive.pipe(Layer.provide(decisions))),
 		Layer.provide(V1ErrorBoundaryLive),
 		Layer.provideMerge(Env.layer.pipe(Layer.provide(config))),
-		Layer.provideMerge(Layer.succeed(WorkerEnvironment, workerEnv)),
+		Layer.provideMerge(workerEnvLayer(workerEnv)),
 	)
 	const { handler, dispose } = HttpRouter.toWebHandler(routes as never, { disableLogger: true })
 

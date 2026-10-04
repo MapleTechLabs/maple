@@ -189,6 +189,16 @@ const runThroughWorker: TurnRunner = async (input) => {
 /** What the copy says when applying an approved mutation fell over rather than failing in-band. */
 const PROPOSAL_FAILED = "Maple couldn't apply this change. Check whether it went through in Maple."
 
+/** A promise the session awaits (a stream write, the turn runner, the applier) rejected. */
+class ChatSessionError extends Schema.TaggedError<ChatSessionError>()("@maple/ai/chat/ChatSessionError", {
+	message: Schema.String,
+	cause: Schema.Defect(),
+}) {}
+
+/** `thunk`'s rejection, or its synchronous throw, as a {@link ChatSessionError}. */
+const attempt = <A>(message: string, thunk: () => Promise<A>): Effect.Effect<A, ChatSessionError> =>
+	Effect.tryPromise({ try: thunk, catch: (cause) => new ChatSessionError({ message, cause }) })
+
 /**
  * How a session runs a mutation somebody approved.
  *
@@ -263,11 +273,8 @@ export class ChatSession {
 			"running_input TEXT",
 			"running_resumes INTEGER",
 		]) {
-			try {
-				this.sql.exec(`ALTER TABLE session ADD COLUMN ${column}`)
-			} catch {
-				// Already present.
-			}
+			// A failure means the column is already present.
+			Effect.runSync(Effect.ignore(Effect.try(() => this.sql.exec(`ALTER TABLE session ADD COLUMN ${column}`))))
 		}
 	}
 
@@ -407,33 +414,40 @@ export class ChatSession {
 		return readable
 	}
 
-	private async pump(writable: WritableStream<Uint8Array>, cursor: number): Promise<void> {
+	private pump(writable: WritableStream<Uint8Array>, cursor: number): Promise<void> {
 		const encoder = new TextEncoder()
 		const writer = writable.getWriter()
-		let position = cursor
-		try {
-			await writer.write(encoder.encode(RETRY_HINT))
+		const write = (frame: string) =>
+			attempt("Could not write to the subscription", () => writer.write(encoder.encode(frame)))
+		const since = (position: number) => this.since(position)
+		const waitForAppend = (timeoutMs: number) => this.waitForAppend(timeoutMs)
+		const stream = Effect.gen(function* () {
+			let position = cursor
+			yield* write(RETRY_HINT)
 			for (;;) {
-				const events = this.since(position)
+				const events = since(position)
 				for (const event of events) {
-					await writer.write(encoder.encode(frameChatEvent(event)))
+					yield* write(frameChatEvent(event))
 					position = event.seq
 				}
 				// Only the *conversation's* turn ending closes the stream. A sub-agent's `turn-end`
 				// is tagged with `task` and merely closes its card — treating it as terminal would
 				// cut the connection the moment the first delegated search finished, and the rest of
 				// the parent's answer would only arrive on the client's next reconnect.
-				if (events.some((event) => event.type === "turn-end" && event.task === undefined)) break
+				if (events.some((event) => event.type === "turn-end" && event.task === undefined)) return
 				// The idle budget is spent on silence only: a batch that went out resets it, so a
 				// long turn streams over one connection instead of being recycled mid-answer.
-				if (!(await this.waitForAppend(SUBSCRIBE_IDLE_MS))) break
+				if (!(yield* Effect.promise(() => waitForAppend(SUBSCRIBE_IDLE_MS)))) return
 			}
-		} catch {
-			// The reader went away, or the stream was already closed. Either way the client resumes
-			// from its own cursor, so a dropped subscription costs a reconnect, not the conversation.
-		} finally {
-			await writer.close().catch(() => undefined)
-		}
+		})
+		return Effect.runPromise(
+			stream.pipe(
+				Effect.ensuring(Effect.ignore(attempt("Could not close the subscription", () => writer.close()))),
+				// The reader went away, or the stream was already closed. Either way the client resumes
+				// from its own cursor, so a dropped subscription costs a reconnect, not the conversation.
+				Effect.ignoreCause,
+			),
+		)
 	}
 
 	/**
@@ -503,27 +517,30 @@ export class ChatSession {
 		// its result, and the in-memory half catches it while the first is still running the tool.
 		if (proposal.settled || this.settling.has(input.toolCallId)) return "settled"
 		this.settling.add(input.toolCallId)
-		try {
-			const result =
-				input.decision === "deny"
-					? {
-							output: `Declined ${decidedBy(input.approver)}. The tool did not run.`,
-							isError: true,
-						}
-					: await this.applyProposal(input, proposal)
-			this.append({
-				type: "tool-result",
-				// The assistant message that issued the proposal: the transcript fold opens a message
-				// by id and only then finds the call in it, so anything else leaves the proposal open.
-				messageId: proposal.messageId,
-				callId: input.toolCallId,
-				output: result.output,
-				...(result.isError ? { isError: true } : undefined),
-			})
-			return "decided"
-		} finally {
-			this.settling.delete(input.toolCallId)
-		}
+		const decided: Effect.Effect<AppliedProposal> =
+			input.decision === "deny"
+				? Effect.succeed({
+						output: `Declined ${decidedBy(input.approver)}. The tool did not run.`,
+						isError: true,
+					})
+				: this.applyProposal(input, proposal)
+		return Effect.runPromise(
+			decided.pipe(
+				Effect.map((result): ChatProposalOutcome => {
+					this.append({
+						type: "tool-result",
+						// The assistant message that issued the proposal: the transcript fold opens a message
+						// by id and only then finds the call in it, so anything else leaves the proposal open.
+						messageId: proposal.messageId,
+						callId: input.toolCallId,
+						output: result.output,
+						...(result.isError ? { isError: true } : undefined),
+					})
+					return "decided"
+				}),
+				Effect.ensuring(Effect.sync(() => this.settling.delete(input.toolCallId))),
+			),
+		)
 	}
 
 	/** The open proposal with this call id, whether it is still open, and what it asked for. */
@@ -549,21 +566,21 @@ export class ChatSession {
 	 * way, because leaving live controls on a mutation that may or may not have run is the worse of
 	 * the two — the reader is told it failed and can act in Maple.
 	 */
-	private async applyProposal(
-		settlement: ChatProposalSettlement,
-		proposal: Proposal,
-	): Promise<AppliedProposal> {
-		try {
-			return await this.applier({
+	private applyProposal(settlement: ChatProposalSettlement, proposal: Proposal): Effect.Effect<AppliedProposal> {
+		return attempt("Failed to apply a proposal", () =>
+			this.applier({
 				...settlement,
 				env: this.env,
 				tool: proposal.name,
 				input: proposal.input,
-			})
-		} catch (cause) {
-			console.error("[chat.approval] Failed to apply a proposal", cause)
-			return { output: PROPOSAL_FAILED, isError: true }
-		}
+			}),
+		).pipe(
+			Effect.catchTag("@maple/ai/chat/ChatSessionError", (error) =>
+				Effect.logError("[chat.approval] Failed to apply a proposal", error.cause).pipe(
+					Effect.as({ output: PROPOSAL_FAILED, isError: true }),
+				),
+			),
+		)
 	}
 
 	/**
@@ -652,9 +669,14 @@ export class ChatSession {
 		this.clearRunning()
 		this.append({ type: "turn-end", messageId, reason: "error", error: CHAT_TURN_FAILED })
 		if (Option.isSome(turn) && resumable(turn.value)) {
+			const input = { ...this.turnRunInput(messageId, turn.value), abandoned: true as const }
 			this.ctx.waitUntil(
-				this.runner({ ...this.turnRunInput(messageId, turn.value), abandoned: true }).catch((cause) =>
-					console.error("[chat.turn] Failed to record an abandoned turn", cause),
+				Effect.runPromise(
+					attempt("Failed to record an abandoned turn", () => this.runner(input)).pipe(
+						Effect.catchTag("@maple/ai/chat/ChatSessionError", (error) =>
+							Effect.logError("[chat.turn] Failed to record an abandoned turn", error.cause),
+						),
+					),
 				),
 			)
 		}
@@ -696,7 +718,12 @@ export class ChatSession {
 	}
 
 	private armHeartbeat(): void {
-		this.ctx.waitUntil(this.ctx.storage.setAlarm(Date.now() + TURN_HEARTBEAT_MS).catch(() => undefined))
+		const scheduledTime = Date.now() + TURN_HEARTBEAT_MS
+		this.ctx.waitUntil(
+			Effect.runPromise(
+				Effect.ignore(attempt("Could not arm the heartbeat", () => this.ctx.storage.setAlarm(scheduledTime))),
+			),
+		)
 	}
 
 	/**
@@ -707,24 +734,33 @@ export class ChatSession {
 	 * terminal event rather than thrown: the log is what the client reads, so a turn that dies
 	 * silently is indistinguishable from one that hung.
 	 */
-	private async runTurn(input: RunChatSessionTurnInput): Promise<void> {
+	private runTurn(input: RunChatSessionTurnInput): Promise<void> {
 		const messageId = input.messageId
-		try {
-			await this.runner(input)
-		} catch (cause) {
-			console.error("[chat.turn] Failed to start turn runner", cause)
-			if (this.holdsTurn(messageId)) {
-				this.append({
-					type: "turn-end",
-					messageId,
-					reason: "error",
-					error: CHAT_TURN_FAILED,
-				})
-			}
-		} finally {
-			if (this.liveTurn === messageId) this.liveTurn = undefined
-			this.endTurn(messageId)
-		}
+		return Effect.runPromise(
+			attempt("Failed to start turn runner", () => this.runner(input)).pipe(
+				Effect.catchTag("@maple/ai/chat/ChatSessionError", (error) =>
+					Effect.logError("[chat.turn] Failed to start turn runner", error.cause).pipe(
+						Effect.andThen(
+							Effect.sync(() => {
+								if (!this.holdsTurn(messageId)) return
+								this.append({
+									type: "turn-end",
+									messageId,
+									reason: "error",
+									error: CHAT_TURN_FAILED,
+								})
+							}),
+						),
+					),
+				),
+				Effect.ensuring(
+					Effect.sync(() => {
+						if (this.liveTurn === messageId) this.liveTurn = undefined
+						this.endTurn(messageId)
+					}),
+				),
+			),
+		)
 	}
 
 	/**

@@ -18,7 +18,7 @@ import {
 	connectorSessionId,
 } from "@maple/domain/chat-session"
 import { ExternalUserId, OrgId } from "@maple/domain/primitives"
-import { Effect, Schema } from "effect"
+import { ConfigProvider, Effect, Schema } from "effect"
 import { afterEach, assert, beforeEach, describe, it } from "vitest"
 import { meterTurn } from "./turn-runner"
 
@@ -41,9 +41,9 @@ const CONNECTOR_ORIGIN: ChatTurnOrigin = {
 	displayName: "Ada",
 }
 
-const env = { AUTUMN_SECRET_KEY: "sk_test" }
+const config = ConfigProvider.layer(ConfigProvider.fromUnknown({ AUTUMN_SECRET_KEY: "sk_test" }))
 
-const turn = (sessionId: string, messageId: string) => ({ sessionId, messageId, env })
+const turn = (sessionId: string, messageId: string) => ({ sessionId, messageId })
 
 interface Tracked {
 	readonly featureId: string
@@ -83,7 +83,10 @@ const meter = (
 	input: number,
 	output: number,
 	origin: ChatTurnOrigin = { kind: "app" },
-) => Effect.runPromise(meterTurn(turn(sessionId, messageId), tenant, origin, { input, output }))
+) =>
+	Effect.runPromise(
+		meterTurn(turn(sessionId, messageId), tenant, origin, { input, output }).pipe(Effect.provide(config)),
+	)
 
 const keysFor = (featureId: string) => tracked.filter((t) => t.featureId === featureId).map((t) => t.key)
 
