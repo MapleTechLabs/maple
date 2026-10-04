@@ -14,7 +14,6 @@ import {
 	ServerIcon,
 	type IconComponent,
 } from "@/components/icons"
-import { PLANETSCALE_COLOR } from "@/components/infra/planetscale/metrics"
 import type { NavSurface } from "@/components/dashboard/nav-items"
 import type { TimeRangeSearch } from "@/components/time-range-picker/search"
 import { Result, useAtomValue } from "@/lib/effect-atom"
@@ -65,19 +64,23 @@ export const SOURCE_TITLE: Record<SourceId, string> = {
 	planetscale: "PlanetScale",
 } satisfies Record<SourceId, string>
 
-/** The sidebar's marks, so a source reads the same here as in the nav. */
-const SOURCE_ICON: Record<SourceId, { icon: IconComponent; color?: string }> = {
-	hosts: { icon: ServerIcon },
-	containers: { icon: DockerIcon },
-	kubernetes: { icon: KubernetesIcon },
-	cloudflare: { icon: CloudflareIcon },
-	railway: { icon: RailwayIcon },
-	planetscale: { icon: PlanetScaleIcon, color: PLANETSCALE_COLOR },
-} satisfies Record<SourceId, { icon: IconComponent; color?: string }>
+/**
+ * The sidebar's marks, so a source reads the same here as in the nav. Railway,
+ * PlanetScale and the server glyph are monochrome and draw in full text ink;
+ * the sidebar's grey PlanetScale tint read as disabled beside the coloured ones.
+ */
+const SOURCE_ICON: Record<SourceId, IconComponent> = {
+	hosts: ServerIcon,
+	containers: DockerIcon,
+	kubernetes: KubernetesIcon,
+	cloudflare: CloudflareIcon,
+	railway: RailwayIcon,
+	planetscale: PlanetScaleIcon,
+} satisfies Record<SourceId, IconComponent>
 
 function SourceMark({ id, size }: { id: SourceId; size: number }) {
-	const { icon: Icon, color } = SOURCE_ICON[id]
-	return <Icon size={size} className="shrink-0" style={color ? { color } : undefined} />
+	const Icon = SOURCE_ICON[id]
+	return <Icon size={size} className="shrink-0 text-foreground" />
 }
 
 const SOURCE_SURFACES: Record<SourceId, ReadonlyArray<NavSurface>> = {
