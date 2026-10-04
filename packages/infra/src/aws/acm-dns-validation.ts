@@ -12,6 +12,7 @@
 import * as acm from "@distilled.cloud/aws/acm"
 import * as AwsRegion from "@distilled.cloud/aws/Region"
 import { adopt } from "alchemy/AdoptPolicy"
+import * as AWS from "alchemy/AWS"
 import * as Cloudflare from "alchemy/Cloudflare"
 import type { Input } from "alchemy/Input"
 import * as Output from "alchemy/Output"
@@ -290,4 +291,35 @@ export const issueCertificateViaCloudflare = Effect.fn(function* ({
 	})
 
 	return issued.certificateArn
+})
+
+/**
+ * A certificate for an ALB in `region` (an ALB only takes one from its own region), validated
+ * through Cloudflare. Returns the ISSUED ARN for the listener, or `undefined` with no hostname.
+ * `id` is the certificate's logical id and the prefix of the validation resources.
+ */
+export const issueRegionalCertificate = Effect.fn(function* ({
+	id,
+	hostname,
+	region,
+	tags,
+}: {
+	id: string
+	hostname: string | undefined
+	region: AwsRegionName
+	tags: Record<string, string>
+}) {
+	if (hostname === undefined) return undefined
+	const certificate = yield* AWS.ACM.Certificate(id, {
+		domainName: hostname,
+		validationMethod: "DNS",
+		region,
+		tags,
+	})
+	return yield* issueCertificateViaCloudflare({
+		id,
+		certificateArn: certificate.certificateArn,
+		hostname,
+		region,
+	})
 })

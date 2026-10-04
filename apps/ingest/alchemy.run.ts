@@ -1,15 +1,13 @@
-import { createHash } from "node:crypto"
 import { existsSync } from "node:fs"
 import { resolve } from "node:path"
 import * as AWS from "alchemy/AWS"
-import * as Cloudflare from "alchemy/Cloudflare"
 import * as Output from "alchemy/Output"
 import type * as Planetscale from "alchemy/Planetscale"
 import * as Effect from "effect/Effect"
-import * as Redacted from "effect/Redacted"
 import {
 	COLLECTOR_DNS_LABEL,
 	COLLECTOR_OTLP_HTTP_PORT,
+	ecsSecrets,
 	pgUrlRequireSsl,
 	resolveAwsRegion,
 	resolveAwsResourceName,
@@ -18,13 +16,14 @@ import {
 	resolveIngestNamespaceName,
 } from "@maple/infra/aws"
 import { ReplayBlobs } from "../api/src/resources/replay-blobs.ts"
-import { issueCertificateViaCloudflare, publishProxiedCname } from "@maple/infra/acm"
+import { issueRegionalCertificate, publishProxiedCname } from "@maple/infra/acm"
 import type { MapleRegion, MapleStackContext, MapleStage } from "@maple/infra/cloudflare"
 import {
 	resolveDeploymentEnvironment,
 	resolveStorageJurisdiction,
 	resolveWorkerName,
 } from "@maple/infra/cloudflare"
+import { r2BucketCredentials } from "@maple/infra/r2-credentials"
 // Only the primitives: these values feed ECS `env:` and Secrets Manager, not Worker bindings.
 import { optionalPlain, requiredPlain } from "@maple/infra/env"
 
@@ -90,12 +89,6 @@ export interface CreateMapleIngestOptions extends Pick<
 	dbRole?: Planetscale.PostgresRole
 }
 
-/** R2 renders an API token as S3 credentials: key id = token id, secret = SHA-256 of its value. */
-const deriveSecretAccessKey = (value: Output.Output<Redacted.Redacted<string>>) =>
-	Output.map(value, (token) =>
-		Redacted.make(createHash("sha256").update(Redacted.value(token)).digest("hex")),
-	)
-
 /**
  * The gateway's write credentials for the replay payload store
  * (`apps/api/src/resources/replay-blobs.ts`), or `undefined` on a stage that
@@ -106,35 +99,15 @@ const replayBlobWriterCredentials = (stage: MapleStage, region: MapleRegion, ena
 		if (!enabled) return undefined
 		// Yielded so the token is ordered behind the bucket.
 		yield* ReplayBlobs
-		const bucketName = resolveWorkerName("replay-blobs", stage, region)
-		// `default` is the non-jurisdictional US bucket.
-		const jurisdiction = resolveStorageJurisdiction(region) ?? "default"
-		const { accountId } = yield* yield* Cloudflare.CloudflareEnvironment
-
-		// Bucket-scoped. Minting it needs the deploy token to carry account-level `API Tokens > Write`.
-		const token = yield* Cloudflare.ApiToken.AccountApiToken("replay-blobs-writer", {
-			name: `${bucketName}-writer`,
-			accountId,
-			policies: [
-				{
-					effect: "allow",
-					permissionGroups: ["Workers R2 Storage Bucket Item Write"],
-					resources: {
-						[`com.cloudflare.edge.r2.bucket.${accountId}_${jurisdiction}_${bucketName}`]: "*",
-					},
-				},
-			],
+		const bucket = resolveWorkerName("replay-blobs", stage, region)
+		const credentials = yield* r2BucketCredentials({
+			id: "replay-blobs-writer",
+			tokenName: `${bucket}-writer`,
+			bucketName: bucket,
+			jurisdiction: resolveStorageJurisdiction(region),
+			permissions: ["Workers R2 Storage Bucket Item Write"],
 		})
-
-		return {
-			endpoint:
-				jurisdiction === "default"
-					? `https://${accountId}.r2.cloudflarestorage.com`
-					: `https://${accountId}.${jurisdiction}.r2.cloudflarestorage.com`,
-			bucket: bucketName,
-			accessKeyId: Output.asOutput(token.tokenId),
-			secretAccessKey: deriveSecretAccessKey(Output.asOutput(token.value)),
-		}
+		return { ...credentials, bucket }
 	})
 
 /**
@@ -286,14 +259,7 @@ export const createMapleIngest = ({ stage, region, domains, profile, dbRole }: C
 			tags,
 		})
 
-		// Secrets Manager, not `env`: task definition env is readable by anyone with
-		// `ecs:DescribeTaskDefinition`. Alchemy grants the execution role these ARNs.
-		const secret = (id: string, value: string | Output.Output<Redacted.Redacted<string>>) =>
-			AWS.SecretsManager.Secret(id, {
-				name: `${name("ingest")}/${id}`,
-				secretString: typeof value === "string" ? Redacted.make(value) : value,
-				tags,
-			})
+		const secret = ecsSecrets(name("ingest"), tags)
 
 		const tinybirdToken = yield* secret("tinybird-token", yield* requiredPlain("TINYBIRD_TOKEN"))
 		// NOT `MAPLE_PG_URL`: that is the migration admin's URL. The gateway reads
@@ -320,7 +286,7 @@ export const createMapleIngest = ({ stage, region, domains, profile, dbRole }: C
 			? yield* secret("replay-r2-secret-access-key", replayBlobs.secretAccessKey)
 			: undefined
 		const replayR2AccessKeyId = replayBlobs
-			? yield* secret("replay-r2-access-key-id", Output.map(replayBlobs.accessKeyId, Redacted.make))
+			? yield* secret("replay-r2-access-key-id", replayBlobs.accessKeyId)
 			: undefined
 
 		// ── OTel collector ──────────────────────────────────────────────────
@@ -394,26 +360,12 @@ export const createMapleIngest = ({ stage, region, domains, profile, dbRole }: C
 			})
 		}
 
-		// An ALB can only use a certificate from its own region. Maple's zone is on
-		// Cloudflare, so `issueCertificateViaCloudflare` publishes the validation
-		// record and returns the ARN only once ACM has issued it.
-		const certificate = domains.ingest
-			? yield* AWS.ACM.Certificate("ingest-cert", {
-					domainName: domains.ingest,
-					validationMethod: "DNS",
-					region: resolveAwsRegion(region),
-					tags,
-				})
-			: undefined
-		const issuedCertificateArn =
-			certificate && domains.ingest
-				? yield* issueCertificateViaCloudflare({
-						id: "ingest-cert",
-						certificateArn: certificate.certificateArn,
-						hostname: domains.ingest,
-						region: resolveAwsRegion(region),
-					})
-				: undefined
+		const issuedCertificateArn = yield* issueRegionalCertificate({
+			id: "ingest-cert",
+			hostname: domains.ingest,
+			region: resolveAwsRegion(region),
+			tags,
+		})
 
 		// Durability tier for the WAL (`apps/ingest/src/wal_store.rs`): sealed,
 		// unexported segments, claimed by the next task if their owner dies.

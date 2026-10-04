@@ -2,7 +2,6 @@
  * The sandbox Worker's declaration, kept out of `src/worker.ts` so that module stays
  * a plain bundle entry and its `Sandbox` class export survives into the script.
  */
-import { createHash } from "node:crypto"
 import {
 	assetWorkerObservability,
 	MapleStack,
@@ -12,9 +11,9 @@ import {
 	WorkersObservabilityDestinations,
 } from "@maple/infra/cloudflare"
 import { requireSecretEntry } from "@maple/infra/env"
+import { r2BucketCredentials } from "@maple/infra/r2-credentials"
 import * as Cloudflare from "alchemy/Cloudflare"
-import * as Output from "alchemy/Output"
-import { Effect, Redacted } from "effect"
+import { Effect } from "effect"
 import type { Sandbox } from "./src/worker.ts"
 
 /** Pinned; alchemy re-pushes it to the account registry, so a bump is a deploy step. */
@@ -29,8 +28,6 @@ const mirrorBackups = Effect.gen(function* () {
 	const { stage, region } = yield* MapleStack
 	const bucketName = resolveWorkerName("sandbox-mirrors", stage, region)
 	const jurisdiction = resolveStorageJurisdiction(region)
-	// Plan-time: it keys the token's resource and the endpoint.
-	const { accountId } = yield* yield* Cloudflare.CloudflareEnvironment
 	const bucket = yield* Cloudflare.R2.Bucket("sandbox-mirrors", {
 		name: bucketName,
 		jurisdiction,
@@ -46,38 +43,20 @@ const mirrorBackups = Effect.gen(function* () {
 		// A cache: every archive can be rebuilt by one clone, so a teardown may empty it.
 		forceDestroy: true,
 	})
-	// Bucket-scoped; minting needs account-level `API Tokens > Write` on the deploy token.
-	const token = yield* Cloudflare.ApiToken.AccountApiToken("sandbox-mirrors-rw", {
-		name: `${bucketName}-rw`,
-		accountId,
-		policies: [
-			{
-				effect: "allow",
-				permissionGroups: [
-					"Workers R2 Storage Bucket Item Read",
-					"Workers R2 Storage Bucket Item Write",
-				],
-				resources: {
-					[`com.cloudflare.edge.r2.bucket.${accountId}_${jurisdiction ?? "default"}_${bucketName}`]:
-						"*",
-				},
-			},
-		],
+	const credentials = yield* r2BucketCredentials({
+		id: "sandbox-mirrors-rw",
+		tokenName: `${bucketName}-rw`,
+		bucketName,
+		jurisdiction,
+		permissions: ["Workers R2 Storage Bucket Item Read", "Workers R2 Storage Bucket Item Write"],
 	})
 	return {
 		BACKUP_BUCKET: bucket,
 		BACKUP_BUCKET_NAME: bucketName,
-		CLOUDFLARE_ACCOUNT_ID: accountId,
-		// A jurisdictional bucket answers only on its own S3 endpoint; the SDK derives the default one.
-		BACKUP_BUCKET_ENDPOINT:
-			jurisdiction === undefined
-				? `https://${accountId}.r2.cloudflarestorage.com`
-				: `https://${accountId}.${jurisdiction}.r2.cloudflarestorage.com`,
-		// R2 renders an API token as S3 credentials: key id = token id, secret = SHA-256 of its value.
-		R2_ACCESS_KEY_ID: Output.map(Output.asOutput(token.tokenId), (id) => Redacted.make(id)),
-		R2_SECRET_ACCESS_KEY: Output.map(Output.asOutput(token.value), (value) =>
-			Redacted.make(createHash("sha256").update(Redacted.value(value)).digest("hex")),
-		),
+		CLOUDFLARE_ACCOUNT_ID: credentials.accountId,
+		BACKUP_BUCKET_ENDPOINT: credentials.endpoint,
+		R2_ACCESS_KEY_ID: credentials.accessKeyId,
+		R2_SECRET_ACCESS_KEY: credentials.secretAccessKey,
 	}
 })
 

@@ -3,9 +3,8 @@ import * as AWS from "alchemy/AWS"
 import type * as Output from "alchemy/Output"
 import type * as Planetscale from "alchemy/Planetscale"
 import * as Effect from "effect/Effect"
-import * as Redacted from "effect/Redacted"
-import { pgUrlRequireSsl, resolveAwsRegion, resolveAwsResourceName } from "@maple/infra/aws"
-import { issueCertificateViaCloudflare, publishProxiedCname } from "@maple/infra/acm"
+import { ecsSecrets, pgUrlRequireSsl, resolveAwsRegion, resolveAwsResourceName } from "@maple/infra/aws"
+import { issueRegionalCertificate, publishProxiedCname } from "@maple/infra/acm"
 import type { MapleStackContext } from "@maple/infra/cloudflare"
 import { requiredPlain } from "@maple/infra/env"
 
@@ -41,6 +40,7 @@ export const createMapleElectric = ({
 	Effect.gen(function* () {
 		const { taskSize, dbPoolSize } = profile.electric
 		const name = (base: string) => resolveAwsResourceName(base, stage, region)
+		const tags = { Service: "maple-electric", Region: region }
 
 		// Alchemy keys state by logical id: renaming these ids replaces live groups, and a
 		// new group must also get a new `groupName` or it collides with the old one.
@@ -80,51 +80,23 @@ export const createMapleElectric = ({
 
 		const cluster = yield* AWS.ECS.Cluster("electric-cluster", {
 			clusterName: name("electric"),
-			tags: { Service: "maple-electric", Region: region },
+			tags,
 		})
 
-		// Through Secrets Manager, not `env`: ECS stores task-definition environment
-		// variables in plaintext, readable with `ecs:DescribeTaskDefinition`.
-		const secret = (id: string, value: string) =>
-			AWS.SecretsManager.Secret(id, {
-				name: `${name("electric")}/${id}`,
-				secretString: Redacted.make(value),
-				tags: { Service: "maple-electric", Region: region },
-			})
-		const secretFrom = (id: string, value: Output.Output<Redacted.Redacted<string>>) =>
-			AWS.SecretsManager.Secret(id, {
-				name: `${name("electric")}/${id}`,
-				secretString: value,
-				tags: { Service: "maple-electric", Region: region },
-			})
+		const secret = ecsSecrets(name("electric"), tags)
 
 		// Direct connection (5432), never a pooler: logical replication needs it. The role
 		// must carry the REPLICATION attribute itself (membership does not grant it).
-		const databaseUrl = yield* secretFrom("database-url", pgUrlRequireSsl(dbRole.connectionUrl))
+		const databaseUrl = yield* secret("database-url", pgUrlRequireSsl(dbRole.connectionUrl))
 		// Shared with the electric-sync Worker; rotate by redeploying this first, then the Worker.
 		const apiSecret = yield* secret("api-secret", yield* requiredPlain("ELECTRIC_SECRET"))
 
-		// An ALB needs a certificate from its own region. The zone is on Cloudflare, so
-		// `issueCertificateViaCloudflare` publishes validation and waits for ISSUED.
-		const certificate = domains.electric
-			? yield* AWS.ACM.Certificate("electric-cert", {
-					domainName: domains.electric,
-					validationMethod: "DNS",
-					region: resolveAwsRegion(region),
-					tags: { Service: "maple-electric", Region: region },
-				})
-			: undefined
-
-		// The listener must consume the issued ARN, not `certificate.certificateArn`.
-		const issuedCertificateArn =
-			certificate && domains.electric
-				? yield* issueCertificateViaCloudflare({
-						id: "electric-cert",
-						certificateArn: certificate.certificateArn,
-						hostname: domains.electric,
-						region: resolveAwsRegion(region),
-					})
-				: undefined
+		const issuedCertificateArn = yield* issueRegionalCertificate({
+			id: "electric-cert",
+			hostname: domains.electric,
+			region: resolveAwsRegion(region),
+			tags,
+		})
 
 		const baseEnv = {
 			ELECTRIC_PORT: String(ELECTRIC_PORT),
@@ -182,7 +154,7 @@ export const createMapleElectric = ({
 
 			env,
 
-			tags: { Service: "maple-electric", Region: region },
+			tags,
 		})
 
 		// The public name, proxied through Cloudflare to the ALB.
