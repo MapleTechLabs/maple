@@ -1,10 +1,17 @@
 import { describe, expect, it } from "vitest"
 
 import type { CloudflareZoneRow } from "@/api/warehouse/cloudflare-infra"
+import type { RailwayServiceRow } from "@/api/warehouse/railway-infra"
 import type { PlanetScaleDatabaseStat } from "@/api/warehouse/service-map"
 
 import type { HostRow } from "../host-table"
-import { summarizeCloudflare, summarizeHosts, summarizePlanetScale, summarizePods } from "./summaries"
+import {
+	summarizeCloudflare,
+	summarizeHosts,
+	summarizePlanetScale,
+	summarizePods,
+	summarizeRailway,
+} from "./summaries"
 
 const END = "2026-10-04T12:00:00Z"
 
@@ -90,6 +97,47 @@ describe("summarizePlanetScale", () => {
 		expect(findings.map((f) => [f.tone, f.title])).toEqual([
 			["crit", "ledger storage at 85%"],
 			["warn", "ledger replica 2.0s behind primary"],
+		])
+	})
+})
+
+describe("summarizePlanetScale CPU", () => {
+	it("flags a CPU spike even when lag and storage are fine", () => {
+		const summary = summarizePlanetScale([{ ...db("ledger", 0, 20), cpuMaxPercent: 95 }])
+		expect(summary.findings.map((f) => [f.tone, f.title])).toEqual([["crit", "ledger CPU peaked at 95%"]])
+		expect(summary.segments.find((s) => s.key === "ok")?.count).toBe(0)
+	})
+})
+
+describe("summarizeRailway", () => {
+	const service = (
+		serviceName: string,
+		cpuMax: number,
+		cpuLimit: number,
+		memoryLimit: number,
+	): RailwayServiceRow => ({
+		environmentId: "env",
+		serviceId: serviceName,
+		serviceName,
+		projectName: "p",
+		environmentName: "production",
+		cpuAvg: cpuMax,
+		cpuMax,
+		cpuLimit,
+		memoryAvg: 1,
+		memoryMax: 1,
+		memoryLimit,
+		replicas: 1,
+		lastSeen: END,
+	})
+
+	it("counts a service with no limits as unmeasured, not healthy", () => {
+		const { segments } = summarizeRailway([service("api", 0.5, 0, 0), service("web", 0.1, 1, 10)])
+		expect(segments).toEqual([
+			{ key: "ok", count: 1 },
+			{ key: "elevated", count: 0 },
+			{ key: "saturated", count: 0 },
+			{ key: "unbounded", count: 1 },
 		])
 	})
 })

@@ -17,6 +17,7 @@ import {
 	railwayServicesResultAtom,
 } from "@/lib/services/atoms/warehouse-query-atoms"
 
+import { HOST_LIST_LIMIT } from "../host-summary-band"
 import {
 	type Finding,
 	type FindingTarget,
@@ -84,7 +85,7 @@ function toState<A>(result: Result.Result<A, unknown>, summarize: (value: A) => 
 }
 
 function HostsData({ window, render }: { window: OverviewWindow; render: RenderState }) {
-	const result = useAtomValue(listHostsResultAtom({ data: window }))
+	const result = useAtomValue(listHostsResultAtom({ data: { ...window, limit: HOST_LIST_LIMIT } }))
 	return render(toState(result, (response) => summarizeHosts(response.data, window.endTime)))
 }
 
@@ -147,19 +148,39 @@ const FINDING_DOT: Record<Finding["tone"], string> = {
 const ROW_CLASS =
 	"group flex items-center gap-4 px-4 py-3 transition-colors hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none"
 
+/**
+ * The findings list. Each source renders its own rows, so no parent can sort
+ * them; flex `order` does it instead, worst first across every source. Rows
+ * carry a top border pulled up a pixel, which `overflow-hidden` clips on
+ * whichever row lands first.
+ */
+export const FINDINGS_LIST_CLASS = "flex flex-col overflow-hidden rounded-lg border"
+const FINDINGS_ROW_CLASS = "-mt-px border-t"
+
+/** Errors sit after warnings: a source we couldn't check outranks one that went quiet. */
+const FINDING_ORDER = {
+	crit: "order-1",
+	warn: "order-2",
+	error: "order-3",
+	stale: "order-4",
+	loading: "order-5",
+} as const
+
 function FindingLink({
 	target,
 	timeSearch,
+	className,
 	children,
 }: {
 	target: FindingTarget
 	timeSearch: TimeRangeSearch
+	className: string
 	children: ReactNode
 }) {
 	switch (target.kind) {
 		case "hosts":
 			return (
-				<Link to="/infra/hosts" search={{ ...timeSearch, scope: target.scope }} className={ROW_CLASS}>
+				<Link to="/infra/hosts" search={{ ...timeSearch, scope: target.scope }} className={className}>
 					{children}
 				</Link>
 			)
@@ -168,7 +189,8 @@ function FindingLink({
 				<Link
 					to="/infra/hosts/$hostName"
 					params={{ hostName: target.hostName }}
-					className={ROW_CLASS}
+					search={timeSearch}
+					className={className}
 				>
 					{children}
 				</Link>
@@ -178,7 +200,7 @@ function FindingLink({
 				<Link
 					to="/infra/containers"
 					search={{ ...timeSearch, scope: target.scope }}
-					className={ROW_CLASS}
+					className={className}
 				>
 					{children}
 				</Link>
@@ -188,7 +210,7 @@ function FindingLink({
 				<Link
 					to="/infra/kubernetes/pods"
 					search={{ ...timeSearch, scope: target.scope }}
-					className={ROW_CLASS}
+					className={className}
 				>
 					{children}
 				</Link>
@@ -199,7 +221,7 @@ function FindingLink({
 					to="/infra/cloudflare/$zoneName"
 					params={{ zoneName: target.zoneName }}
 					search={timeSearch}
-					className={ROW_CLASS}
+					className={className}
 				>
 					{children}
 				</Link>
@@ -210,7 +232,7 @@ function FindingLink({
 					to="/infra/railway/$serviceId"
 					params={{ serviceId: target.serviceId }}
 					search={{ ...timeSearch, environmentId: target.environmentId }}
-					className={ROW_CLASS}
+					className={className}
 				>
 					{children}
 				</Link>
@@ -221,7 +243,7 @@ function FindingLink({
 					to="/infra/planetscale/$dbName"
 					params={{ dbName: target.database }}
 					search={timeSearch}
-					className={ROW_CLASS}
+					className={className}
 				>
 					{children}
 				</Link>
@@ -231,7 +253,11 @@ function FindingLink({
 
 export function FindingRow({ finding, timeSearch }: { finding: Finding; timeSearch: TimeRangeSearch }) {
 	return (
-		<FindingLink target={finding.target} timeSearch={timeSearch}>
+		<FindingLink
+			target={finding.target}
+			timeSearch={timeSearch}
+			className={cn(ROW_CLASS, FINDINGS_ROW_CLASS, FINDING_ORDER[finding.tone])}
+		>
 			<span className={cn("size-2 shrink-0 rounded-full", FINDING_DOT[finding.tone])} />
 			<span className="w-28 shrink-0 text-xs text-muted-foreground">
 				{SOURCE_TITLE[finding.source]}
@@ -249,10 +275,23 @@ export function FindingRow({ finding, timeSearch }: { finding: Finding; timeSear
 
 function FindingRowLoading() {
 	return (
-		<div className="flex items-center gap-4 px-4 py-3">
+		<div className={cn("flex items-center gap-4 px-4 py-3", FINDINGS_ROW_CLASS, FINDING_ORDER.loading)}>
 			<Skeleton className="size-2 rounded-full" />
 			<Skeleton className="h-3 w-28" />
 			<Skeleton className="h-4 w-64" />
+		</div>
+	)
+}
+
+/** A source we couldn't read is not an all-clear, so it gets a row of its own. */
+function FindingRowError({ id }: { id: SourceId }) {
+	return (
+		<div className={cn("flex items-center gap-4 px-4 py-3", FINDINGS_ROW_CLASS, FINDING_ORDER.error)}>
+			<span className="size-2 shrink-0 rounded-full bg-muted-foreground/60" />
+			<span className="w-28 shrink-0 text-xs text-muted-foreground">{SOURCE_TITLE[id]}</span>
+			<span className="text-sm text-muted-foreground">
+				Couldn't check this source. Its page shows the error.
+			</span>
 		</div>
 	)
 }
@@ -274,7 +313,7 @@ export function NeedsAttention({
 	return (
 		<section className="space-y-3">
 			<SectionHeading title="Needs attention" hint="across every source, worst first" />
-			<div className="peer divide-y overflow-hidden rounded-lg border empty:hidden">
+			<div className={cn("peer empty:hidden", FINDINGS_LIST_CLASS)}>
 				{sources.map((id) => (
 					<SourceData
 						key={id}
@@ -288,7 +327,9 @@ export function NeedsAttention({
 							) : state.status === "loading" ? (
 								// Holds the list open so the all-clear line can't show before the data does.
 								<FindingRowLoading />
-							) : null
+							) : (
+								<FindingRowError id={id} />
+							)
 						}
 					/>
 				))}
@@ -308,14 +349,14 @@ const SEGMENT_CLASS: Record<HealthSegment["key"], string> = {
 	ok: "bg-muted-foreground/35",
 	elevated: "bg-[var(--severity-warn)]",
 	saturated: "bg-[var(--severity-error)]",
-	stale: "bg-muted",
+	unbounded: "bg-muted",
 } satisfies Record<HealthSegment["key"], string>
 
 const SEGMENT_LABEL: Record<HealthSegment["key"], string> = {
 	ok: "ok",
 	elevated: "elevated",
 	saturated: "saturated",
-	stale: "stale",
+	unbounded: "no limit",
 } satisfies Record<HealthSegment["key"], string>
 
 const HEADLINE_TONE: Record<SourceSummary["headlineTone"], string> = {

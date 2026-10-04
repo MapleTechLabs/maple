@@ -1,11 +1,17 @@
 // The hosts list's fleet band: the container band's shape, counted client-side
-// because the hosts list already carries every host in the window.
+// because the hosts list already carries the fleet (up to `HOST_LIST_LIMIT`).
 
 import { deriveHostStatus, severityLevel } from "./format"
 import type { HostRow } from "./host-table"
 import { FleetBand, FleetBandLoading } from "./primitives/fleet-band"
 
 export type HostScope = "saturated" | "elevated" | "stale"
+
+/**
+ * Hosts the list asks for. The query orders by last seen, so past this the
+ * oldest hosts drop first; the page says so rather than counting a sample.
+ */
+export const HOST_LIST_LIMIT = 1000
 
 /** A host's worst utilization across CPU, memory and disk, 0..1. */
 export function hostPeak(host: HostRow): number {

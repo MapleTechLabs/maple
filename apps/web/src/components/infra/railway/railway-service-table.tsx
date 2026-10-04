@@ -19,7 +19,7 @@ import { FleetBand, FleetBandLoading } from "../primitives/fleet-band"
 import { MetaLine } from "../primitives/meta-line"
 import { MeterRows } from "../primitives/meter-rows"
 
-export type RailwayScope = "saturated" | "elevated"
+export type RailwayScope = "saturated" | "elevated" | "unbounded"
 
 /** Peak use against the service's own limit, 0..1, or NaN when Railway reported no limit. */
 const ofLimit = (peak: number, limit: number) => (limit > 0 ? peak / limit : Number.NaN)
@@ -45,7 +45,11 @@ function toView(row: RailwayServiceRow): RailwayRowView {
 }
 
 export function railwayInScope(row: RailwayServiceRow, scope: RailwayScope): boolean {
-	const level = severityLevel(toView(row).peakOfLimit)
+	const view = toView(row)
+	const bounded = Number.isFinite(view.cpuOfLimit) || Number.isFinite(view.memoryOfLimit)
+	if (scope === "unbounded") return !bounded
+	if (!bounded) return false
+	const level = severityLevel(view.peakOfLimit)
 	return scope === "saturated" ? level === "crit" : level === "warn"
 }
 
@@ -62,6 +66,7 @@ export function RailwaySummaryBand({
 }) {
 	const saturated = services.filter((row) => railwayInScope(row, "saturated")).length
 	const elevated = services.filter((row) => railwayInScope(row, "elevated")).length
+	const unbounded = services.filter((row) => railwayInScope(row, "unbounded")).length
 	return (
 		<FleetBand<RailwayScope>
 			total={services.length}
@@ -70,7 +75,7 @@ export function RailwaySummaryBand({
 			segments={[
 				{
 					key: "healthy",
-					count: Math.max(services.length - saturated - elevated, 0),
+					count: Math.max(services.length - saturated - elevated - unbounded, 0),
 					className: "bg-muted-foreground/35",
 				},
 				{ key: "elevated", count: elevated, className: "bg-[var(--severity-warn)]" },
@@ -79,6 +84,13 @@ export function RailwaySummaryBand({
 			cells={[
 				{ scope: "saturated", label: "Saturated", hint: "≥90%", value: saturated, tone: "crit" },
 				{ scope: "elevated", label: "Elevated", hint: "≥60%", value: elevated, tone: "warn" },
+				{
+					scope: "unbounded",
+					label: "No limit",
+					hint: "unmeasured",
+					value: unbounded,
+					tone: "neutral",
+				},
 			]}
 			activeScope={activeScope}
 			onScopeChange={onScopeChange}
@@ -88,7 +100,7 @@ export function RailwaySummaryBand({
 }
 
 export function RailwaySummaryBandLoading({ className }: { className?: string }) {
-	return <FleetBandLoading cells={2} className={className} />
+	return <FleetBandLoading cells={3} className={className} />
 }
 
 type SortKey = "displayName" | "peakOfLimit" | "replicas" | "lastSeen"

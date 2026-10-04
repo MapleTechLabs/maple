@@ -31,18 +31,26 @@ const BUCKET_MS = 5 * 60 * 1000
  * integrations hub uses. Only those three are mounted here: this hook lives in
  * the sidebar, so every atom it touches is a request on every page.
  *
+ * Pass `window` to ask about a specific range instead of the last hour: the
+ * infra overview does, so a source that went quiet yesterday still shows when
+ * you look at yesterday.
+ *
  * `null` means "don't know yet" — the probe is in flight, or it failed.
  * Callers must show their full list in that case; a nav that hides rows
  * because a query errored is worse than one that lists a page you don't use.
  */
-export function useInfraSurfaces(): ReadonlySet<NavSurface> | null {
-	const { startTime, endTime } = useMemo(() => {
+export function useInfraSurfaces(window?: {
+	readonly startTime: string
+	readonly endTime: string
+}): ReadonlySet<NavSurface> | null {
+	const lastHour = useMemo(() => {
 		const end = Math.floor(Date.now() / BUCKET_MS) * BUCKET_MS
 		return {
 			startTime: formatWarehouseDateTime(end - PRESENCE_WINDOW_MS),
 			endTime: formatWarehouseDateTime(end),
 		}
 	}, [])
+	const { startTime, endTime } = window ?? lastHour
 
 	const presenceResult = useAtomValue(infraPresenceResultAtom({ data: { startTime, endTime } }))
 	const cloudflareResult = useAtomValue(

@@ -11,7 +11,12 @@ import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { MagnifierIcon, PlusIcon, ServerIcon } from "@/components/icons"
 import { QueryErrorState } from "@/components/common/query-error-state"
 import { HostTable, HostTableLoading, type HostRow } from "@/components/infra/host-table"
-import { HostSummaryBand, HostSummaryBandLoading, hostInScope } from "@/components/infra/host-summary-band"
+import {
+	HOST_LIST_LIMIT,
+	HostSummaryBand,
+	HostSummaryBandLoading,
+	hostInScope,
+} from "@/components/infra/host-summary-band"
 import { HostsViewTabs } from "@/components/infra/hosts-view-tabs"
 import { InfraSetupEmpty } from "@/components/infra/infra-empty-state"
 import { InstallHostModal } from "@/components/infra/install-modal"
@@ -52,7 +57,9 @@ function HostsPage() {
 		search.timePreset ?? DEFAULT_PRESET,
 	)
 
-	const hostsResult = useAtomValue(listHostsResultAtom({ data: { startTime, endTime } }))
+	const hostsResult = useAtomValue(
+		listHostsResultAtom({ data: { startTime, endTime, limit: HOST_LIST_LIMIT } }),
+	)
 
 	const patchSearch = (patch: Partial<HostsSearchParams>) => {
 		navigate({ search: (prev) => ({ ...prev, ...patch }) })
@@ -204,9 +211,11 @@ function HostList({
 				onChange={onQueryChange}
 				placeholder="Search hosts…"
 				trailing={
-					filtered.length === hosts.length
-						? countLabel(hosts.length, hosts.length, "host")
-						: `${filtered.length} of ${hosts.length} hosts`
+					hosts.length >= HOST_LIST_LIMIT
+						? `${filtered.length.toLocaleString()} of the ${HOST_LIST_LIMIT.toLocaleString()} most recently seen hosts`
+						: filtered.length === hosts.length
+							? countLabel(hosts.length, hosts.length, "host")
+							: `${filtered.length} of ${hosts.length} hosts`
 				}
 			/>
 			{filtered.length === 0 ? (

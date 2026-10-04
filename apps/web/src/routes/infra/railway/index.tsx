@@ -38,7 +38,7 @@ import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-ran
 
 const railwaySearchSchema = Schema.Struct({
 	q: Schema.optional(Schema.String),
-	scope: Schema.optional(Schema.Literals(["saturated", "elevated"])),
+	scope: Schema.optional(Schema.Literals(["saturated", "elevated", "unbounded"])),
 	...TimeRangeSearchFields,
 })
 

@@ -9,7 +9,7 @@ import { formatPercent } from "@maple/ui/lib/format"
 
 import { errorRateTone } from "../cloudflare/constants"
 import type { ContainerScopeCounts } from "../container-summary-band"
-import { countHostScopes, hostPeak } from "../host-summary-band"
+import { HOST_LIST_LIMIT, countHostScopes, hostPeak } from "../host-summary-band"
 import type { HostRow } from "../host-table"
 import { formatLag, formatStoragePercent, lagTone, utilizationTone } from "../planetscale/metrics"
 import { railwayInScope } from "../railway/railway-service-table"
@@ -39,7 +39,8 @@ export interface Finding {
 }
 
 export interface HealthSegment {
-	readonly key: "ok" | "elevated" | "saturated" | "stale"
+	/** `unbounded`: no limit to measure against, so neither ok nor at risk. */
+	readonly key: "ok" | "elevated" | "saturated" | "unbounded"
 	readonly count: number
 }
 
@@ -109,7 +110,8 @@ export function summarizeHosts(hosts: ReadonlyArray<HostRow>, referenceTime: str
 
 	const busiest = byPeak[0]
 	return {
-		resources: plural(total, "host"),
+		// At the cap the list is a sample, so the count is a floor.
+		resources: total >= HOST_LIST_LIMIT ? `${total.toLocaleString()}+ hosts` : plural(total, "host"),
 		segments: [
 			{ key: "ok", count: okCount(total, saturated, elevated) },
 			{ key: "elevated", count: elevated },
@@ -247,6 +249,7 @@ export function summarizeCloudflare(zones: ReadonlyArray<CloudflareZoneRow>): So
 export function summarizeRailway(services: ReadonlyArray<RailwayServiceRow>): SourceSummary {
 	const saturated = services.filter((row) => railwayInScope(row, "saturated"))
 	const elevated = services.filter((row) => railwayInScope(row, "elevated")).length
+	const unbounded = services.filter((row) => railwayInScope(row, "unbounded")).length
 	const findings: Finding[] = saturated.slice(0, MAX_FINDINGS_PER_SOURCE).map((row) => ({
 		key: `railway:${row.environmentId}:${row.serviceId}`,
 		source: "railway",
@@ -258,9 +261,10 @@ export function summarizeRailway(services: ReadonlyArray<RailwayServiceRow>): So
 	return {
 		resources: plural(services.length, "service"),
 		segments: [
-			{ key: "ok", count: okCount(services.length, saturated.length, elevated) },
+			{ key: "ok", count: okCount(services.length, saturated.length, elevated, unbounded) },
 			{ key: "elevated", count: elevated },
 			{ key: "saturated", count: saturated.length },
+			{ key: "unbounded", count: unbounded },
 		],
 		headline:
 			saturated.length + elevated > 0
@@ -280,28 +284,45 @@ export function summarizePlanetScale(databases: ReadonlyArray<PlanetScaleDatabas
 	let elevated = 0
 	let saturated = 0
 	for (const db of databases) {
-		const lag = findingTone(lagTone(db.replicaLagMaxSeconds))
-		const storage =
-			db.storageUsedPercent === null ? undefined : findingTone(utilizationTone(db.storageUsedPercent))
-		if (lag === "crit" || storage === "crit") saturated++
-		else if (lag === "warn" || storage === "warn") elevated++
-		if (lag) {
-			findings.push({
-				key: `planetscale:${db.database}:lag`,
-				source: "planetscale",
-				tone: lag,
+		const gauges = [
+			{
+				id: "lag",
+				tone: findingTone(lagTone(db.replicaLagMaxSeconds)),
 				title: `${db.database} replica ${formatLag(db.replicaLagMaxSeconds)} behind primary`,
 				detail: "Peak replica lag in the window",
-				target: { kind: "planetscale", database: db.database },
-			})
-		}
-		if (db.storageUsedPercent !== null && storage) {
-			findings.push({
-				key: `planetscale:${db.database}:storage`,
-				source: "planetscale",
-				tone: storage,
-				title: `${db.database} storage at ${formatStoragePercent(db.storageUsedPercent)}`,
+			},
+			{
+				id: "cpu",
+				tone: findingTone(utilizationTone(db.cpuMaxPercent)),
+				title: `${db.database} CPU peaked at ${formatPercent(db.cpuMaxPercent / 100)}`,
+				detail: "Busiest branch in the window",
+			},
+			{
+				id: "memory",
+				tone: findingTone(utilizationTone(db.memMaxPercent)),
+				title: `${db.database} memory peaked at ${formatPercent(db.memMaxPercent / 100)}`,
+				detail: "Busiest branch in the window",
+			},
+			{
+				id: "storage",
+				tone:
+					db.storageUsedPercent === null
+						? undefined
+						: findingTone(utilizationTone(db.storageUsedPercent)),
+				title: `${db.database} storage at ${formatStoragePercent(db.storageUsedPercent ?? 0)}`,
 				detail: "Share of the plan's storage in use",
+			},
+		] as const
+		if (gauges.some((gauge) => gauge.tone === "crit")) saturated++
+		else if (gauges.some((gauge) => gauge.tone === "warn")) elevated++
+		for (const gauge of gauges) {
+			if (!gauge.tone) continue
+			findings.push({
+				key: `planetscale:${db.database}:${gauge.id}`,
+				source: "planetscale",
+				tone: gauge.tone,
+				title: gauge.title,
+				detail: gauge.detail,
 				target: { kind: "planetscale", database: db.database },
 			})
 		}

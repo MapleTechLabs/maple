@@ -6,6 +6,7 @@ import type { PlanetScaleDatabaseStat } from "@/api/warehouse/service-map"
 import { HostSummaryBand, type HostScope, hostInScope } from "@/components/infra/host-summary-band"
 import { HostTable, type HostRow } from "@/components/infra/host-table"
 import {
+	FINDINGS_LIST_CLASS,
 	FindingRow,
 	SectionHeading,
 	SourceLink,
@@ -204,7 +205,7 @@ export function InfraLab() {
 				/>
 				<div className="space-y-3">
 					<SectionHeading title="Needs attention" hint="across every source, worst first" />
-					<div className="divide-y overflow-hidden rounded-lg border">
+					<div className={FINDINGS_LIST_CLASS}>
 						{findings.map((finding) => (
 							<FindingRow key={finding.key} finding={finding} timeSearch={{}} />
 						))}

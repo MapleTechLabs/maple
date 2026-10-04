@@ -51,7 +51,7 @@ function InfraOverviewPage() {
 	const window = { startTime, endTime }
 	const timeSearch = pickTimeRangeSearch(search)
 
-	const surfaces = useInfraSurfaces()
+	const surfaces = useInfraSurfaces(window)
 	const sources = presentSources(surfaces)
 	const missing = SOURCE_ORDER.filter((id) => !sources.includes(id))
 
