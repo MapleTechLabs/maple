@@ -24,7 +24,7 @@ import { withPgConnectionScope } from "@maple/backend/platform/pg-connection-sco
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { OrgMembershipService } from "@maple/backend/services/auth/OrgMembershipService"
 import { envPorts } from "@maple/backend/platform/env-ports"
-import { workerTelemetryConfig } from "@maple/infra/worker-telemetry"
+import { workerTelemetryConfig } from "@maple/worker-runtime/telemetry"
 import { Cause, Effect, Layer, ManagedRuntime, Option, Schema } from "effect"
 import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "../mcp/expected-failures"
 import { MUTATING_TOOL_NAMES } from "../mcp/tools/mutating"

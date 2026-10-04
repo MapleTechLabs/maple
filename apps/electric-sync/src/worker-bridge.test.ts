@@ -1,6 +1,6 @@
 import { assert, describe, it } from "@effect/vitest"
 import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
-import { workerTelemetryConfig } from "@maple/infra/worker-telemetry"
+import { workerTelemetryConfig } from "@maple/worker-runtime/telemetry"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Effect, Exit, Layer, Schema, Scope } from "effect"
 import { HttpRouter } from "effect/http"

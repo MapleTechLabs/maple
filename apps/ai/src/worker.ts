@@ -5,13 +5,13 @@
  * Heavy graphs stay behind dynamic imports (startup CPU limit, error 10021).
  */
 import {
-	cachedRecoverable,
 	mapleDbEnv,
 	MapleStack,
 	type MapleStackContext,
 	mapleWorkerProps,
 	SandboxWorker,
 } from "@maple/infra/cloudflare"
+import { cachedRecoverable } from "@maple/worker-runtime/cached-recoverable"
 import {
 	appUrlsEnv,
 	authEnv,
@@ -24,8 +24,8 @@ import {
 	selfObservabilityEnv,
 	tinybirdEnv,
 } from "@maple/infra/env"
-import { isolateContext } from "@maple/infra/worker-http"
-import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
+import { isolateContext } from "@maple/worker-runtime/http"
+import { WorkerTelemetry } from "@maple/worker-runtime/telemetry"
 import * as Cloudflare from "alchemy/Cloudflare"
 import * as AlchemyTelemetry from "alchemy/Telemetry"
 import { Effect, Layer, Option } from "effect"

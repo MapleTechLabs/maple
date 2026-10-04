@@ -5,7 +5,6 @@
  */
 import {
 	AiWorker,
-	cachedRecoverable,
 	chatSessionBinding,
 	MapleDb,
 	mapleDbEnv,
@@ -16,6 +15,7 @@ import {
 	type MapleStage,
 	mapleWorkerProps,
 } from "@maple/infra/cloudflare"
+import { cachedRecoverable } from "@maple/worker-runtime/cached-recoverable"
 import {
 	apnsEnv,
 	appUrlsEnv,
@@ -30,8 +30,8 @@ import {
 	tinybirdEnv,
 } from "@maple/infra/env"
 import { WORKER_PURE_OPTIONS } from "@maple/infra/worker-build"
-import { workerEnvLayer } from "@maple/infra/worker-runtime"
-import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
+import { workerEnvLayer } from "@maple/worker-runtime/env"
+import { WorkerTelemetry } from "@maple/worker-runtime/telemetry"
 import { bindEmailSender } from "@maple/backend/platform/email-sender"
 import { chatConnectorOutboundConfigKeys } from "@maple/chat-platform"
 import * as Cloudflare from "alchemy/Cloudflare"

@@ -27,7 +27,7 @@ Use `Maple.layer({ serviceName, serviceVersion })` from `packages/effect-sdk/src
 
 ### TypeScript (Cloudflare Workers)
 
-Use `MapleCloudflareSDK` from `packages/effect-sdk/src/cloudflare/index.ts` (Maple's own Workers go through `WorkerTelemetry` in `packages/infra/src/cloudflare/worker-telemetry.ts`). On workerd it resolves `cloud.provider="cloudflare"`, `cloud.platform="cloudflare.workers"`, `process.runtime.name="workerd"`, and sets `maple.sdk.type="cloudflare"`.
+Use `MapleCloudflareSDK` from `packages/effect-sdk/src/cloudflare/index.ts` (Maple's own Workers go through `WorkerTelemetry` in `packages/worker-runtime/src/telemetry.ts`). On workerd it resolves `cloud.provider="cloudflare"`, `cloud.platform="cloudflare.workers"`, `process.runtime.name="workerd"`, and sets `maple.sdk.type="cloudflare"`.
 
 ### Rust
 

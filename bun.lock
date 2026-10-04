@@ -42,6 +42,7 @@
         "@maple/query-engine-integrations": "workspace:*",
         "@maple/query-model": "workspace:*",
         "@maple/widgets": "workspace:*",
+        "@maple/worker-runtime": "workspace:*",
         "@yielded/agent": "0.1.0-beta.166",
         "effect": "catalog:effect",
       },
@@ -64,6 +65,7 @@
         "@maple/backend": "workspace:*",
         "@maple/chat-platform": "workspace:*",
         "@maple/infra": "workspace:*",
+        "@maple/worker-runtime": "workspace:*",
         "effect": "catalog:effect",
       },
       "devDependencies": {
@@ -93,6 +95,7 @@
         "@maple/query-engine": "workspace:*",
         "@maple/query-engine-integrations": "workspace:*",
         "@maple/widgets": "workspace:*",
+        "@maple/worker-runtime": "workspace:*",
         "@tinybirdco/sdk": "catalog:tinybird",
         "alchemy": "catalog:alchemy",
         "drizzle-orm": "1.0.0-rc.5-5935859",
@@ -117,6 +120,7 @@
         "@maple/chat-platform": "workspace:*",
         "@maple/domain": "workspace:*",
         "@maple/infra": "workspace:*",
+        "@maple/worker-runtime": "workspace:*",
         "alchemy": "catalog:alchemy",
         "effect": "catalog:effect",
       },
@@ -184,6 +188,7 @@
         "@maple/auth": "workspace:*",
         "@maple/domain": "workspace:*",
         "@maple/infra": "workspace:*",
+        "@maple/worker-runtime": "workspace:*",
         "effect": "catalog:effect",
       },
       "devDependencies": {
@@ -630,6 +635,7 @@
         "@maple/query-model": "workspace:*",
         "@maple/safe-fetch": "workspace:*",
         "@maple/widgets": "workspace:*",
+        "@maple/worker-runtime": "workspace:*",
         "@tinybirdco/sdk": "catalog:tinybird",
         "@yielded/agent": "0.1.0-beta.166",
         "alchemy": "catalog:alchemy",
@@ -818,10 +824,8 @@
       "dependencies": {
         "@distilled.cloud/aws": "1.0.0-rc.13",
         "@distilled.cloud/cloudflare": "1.0.0-rc.13",
-        "@maple-dev/alchemy": "workspace:*",
-        "@maple-dev/effect-sdk": "workspace:*",
         "@maple/alchemy-portless": "workspace:*",
-        "@maple/domain": "workspace:*",
+        "@maple/worker-runtime": "workspace:*",
         "alchemy": "catalog:alchemy",
         "effect": "catalog:effect",
       },
@@ -959,6 +963,22 @@
       },
       "devDependencies": {
         "@effect/language-service": "catalog:effect",
+        "@types/node": "catalog:tooling",
+        "typescript": "catalog:tooling",
+        "vitest": "catalog:",
+      },
+    },
+    "packages/worker-runtime": {
+      "name": "@maple/worker-runtime",
+      "dependencies": {
+        "@maple-dev/alchemy": "workspace:*",
+        "@maple-dev/effect-sdk": "workspace:*",
+        "@maple/domain": "workspace:*",
+        "alchemy": "catalog:alchemy",
+        "effect": "catalog:effect",
+      },
+      "devDependencies": {
+        "@cloudflare/workers-types": "catalog:alchemy",
         "@types/node": "catalog:tooling",
         "typescript": "catalog:tooling",
         "vitest": "catalog:",
@@ -1638,6 +1658,8 @@
     "@maple/web": ["@maple/web@workspace:apps/web"],
 
     "@maple/widgets": ["@maple/widgets@workspace:packages/widgets"],
+
+    "@maple/worker-runtime": ["@maple/worker-runtime@workspace:packages/worker-runtime"],
 
     "@mdit-vue/plugin-component": ["@mdit-vue/plugin-component@3.0.2", "", { "dependencies": { "@types/markdown-it": "^14.1.2", "markdown-it": "^14.1.0" } }, "sha512-Fu53MajrZMOAjOIPGMTdTXgHLgGU9KwTqKtYc6WNYtFZNKw04euSfJ/zFg8eBY/2MlciVngkF7Gyc2IL7e8Bsw=="],
 

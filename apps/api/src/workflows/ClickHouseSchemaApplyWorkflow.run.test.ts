@@ -11,7 +11,7 @@ import {
 	type TestDb,
 } from "@maple/backend/platform/test-pglite"
 import { durableStep } from "@maple/backend/platform/durable-step"
-import { workerEnvLayer } from "@maple/infra/worker-runtime"
+import { workerEnvLayer } from "@maple/worker-runtime/env"
 import { loadOptionalFeatureState, runClickHouseSchemaApply } from "./ClickHouseSchemaApplyWorkflow.run"
 
 /** The step's Effect as `task` hands it over, with the body context already provided. */

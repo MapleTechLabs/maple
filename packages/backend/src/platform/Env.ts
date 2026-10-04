@@ -9,7 +9,7 @@ import {
 	type ChatConnectorConfig,
 	type ConnectorConfig,
 } from "@maple/chat-platform"
-import { optionalRedacted, optionalString, stringWithDefault } from "@maple/infra/config-helpers"
+import { optionalRedacted, optionalString, stringWithDefault } from "@maple/worker-runtime/config"
 import { Config, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { type MapleRegion, parseMapleRegion } from "@maple/domain/organization-regions"
 

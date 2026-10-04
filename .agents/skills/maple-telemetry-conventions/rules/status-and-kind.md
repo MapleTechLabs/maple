@@ -16,7 +16,7 @@ Tinybird MVs and dashboard widgets filter on the literal string. The error path 
 
 ### How status is set
 
-**TypeScript (Effect):** The tracer maps an effect's outcome to span status. `Effect.fail(...)` or a defect records `Error`; success records `Ok`. Do not set the string manually. One exception is handled for you: `@maple-dev/effect-sdk` exports a span as `Ok` (no `exception` event) when its failure is entirely an anticipated 4xx error. Maple's Workers pass `ANTICIPATED_ERROR_IDENTIFIERS` (`packages/domain/src/anticipated-errors.ts`, generated from every domain error annotated with a 4xx `httpApiStatus`) through `workerTelemetryConfig` in `packages/infra/src/cloudflare/worker-telemetry.ts`. A new 4xx domain error needs a 4xx `httpApiStatus` and a regenerated identifier list (a drift test in `anticipated-errors.test.ts` catches a stale one).
+**TypeScript (Effect):** The tracer maps an effect's outcome to span status. `Effect.fail(...)` or a defect records `Error`; success records `Ok`. Do not set the string manually. One exception is handled for you: `@maple-dev/effect-sdk` exports a span as `Ok` (no `exception` event) when its failure is entirely an anticipated 4xx error. Maple's Workers pass `ANTICIPATED_ERROR_IDENTIFIERS` (`packages/domain/src/anticipated-errors.ts`, generated from every domain error annotated with a 4xx `httpApiStatus`) through `workerTelemetryConfig` in `packages/worker-runtime/src/telemetry.ts`. A new 4xx domain error needs a 4xx `httpApiStatus` and a regenerated identifier list (a drift test in `anticipated-errors.test.ts` catches a stale one).
 
 **Rust (ingest gateway):** Status is set explicitly through the `otel.status_code` field:
 

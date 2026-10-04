@@ -1,4 +1,4 @@
-import { eventTelemetry } from "@maple/infra/worker-telemetry"
+import { eventTelemetry } from "@maple/worker-runtime/telemetry"
 import { Effect, Schema } from "effect"
 import type { Database, DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import type { QueueBatch } from "@maple/backend/platform/queue-batch"

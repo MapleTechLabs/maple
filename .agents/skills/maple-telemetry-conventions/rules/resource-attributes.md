@@ -7,7 +7,7 @@ Resource attributes are set once per process on the OTel `Resource` and apply to
 | Key | Type | Source | Example | Notes |
 |---|---|---|---|---|
 | `service.name` | string | static (per service) | `"ingest"`, `"maple-api"`, `"alerting"` | Canonical name. The Rust gateway hard-codes `"ingest"`. |
-| `service.namespace` | string | static (per service) | `"core"` | Optional logical group for `service.name`. Extracted to the `ServiceNamespace` column (`service_overview_spans`, `service_overview_hourly`/`_minutely`, `trace_list_mv`, `logs_aggregates_hourly`) and surfaced in the services table and trace/log filters. Maple's own services all use `core`: Workers get it from `workerTelemetryConfig` (`packages/infra/src/cloudflare/worker-telemetry.ts`), the Rust gateway from `ResourceConfig.service_namespace`. Set it through the SDK `serviceNamespace` config field in TS. It is not defaulted; external apps choose their own. |
+| `service.namespace` | string | static (per service) | `"core"` | Optional logical group for `service.name`. Extracted to the `ServiceNamespace` column (`service_overview_spans`, `service_overview_hourly`/`_minutely`, `trace_list_mv`, `logs_aggregates_hourly`) and surfaced in the services table and trace/log filters. Maple's own services all use `core`: Workers get it from `workerTelemetryConfig` (`packages/worker-runtime/src/telemetry.ts`), the Rust gateway from `ResourceConfig.service_namespace`. Set it through the SDK `serviceNamespace` config field in TS. It is not defaulted; external apps choose their own. |
 | `service.version` | string | build time | `env!("CARGO_PKG_VERSION")` in Rust, package version in TS | Used for release correlation. |
 | `service.instance.id` | string | runtime | one UUID per process | Generated at startup. Lets dashboards distinguish replicas. |
 
@@ -87,7 +87,7 @@ TypeScript Workers get resource attributes from `MapleCloudflareSDK.make(config)
 
 When wiring a new Maple Worker:
 
-- Use `WorkerTelemetry({ serviceName })` (or `eventTelemetry` for background work) from `packages/infra/src/cloudflare/worker-telemetry.ts`. It sets `serviceNamespace: "core"`, the repo URL, and the anticipated-4xx list.
+- Use `WorkerTelemetry({ serviceName })` (or `eventTelemetry` for background work) from `packages/worker-runtime/src/telemetry.ts`. It sets `serviceNamespace: "core"`, the repo URL, and the anticipated-4xx list.
 - Deploy it with `selfObservabilityEnv(stage)` in its env so `MAPLE_ENVIRONMENT`, the ingest key, and `OTEL_RESOURCE_ATTRIBUTES=maple.region=<region>` resolve. The SDK then dual-emits `deployment.environment(.name)` itself.
 - Do not pass `deployment.environment*` or `maple_org_id` through `attributes`.
 

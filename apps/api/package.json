@@ -34,6 +34,7 @@
 		"@maple/query-engine": "workspace:*",
 		"@maple/query-engine-integrations": "workspace:*",
 		"@maple/widgets": "workspace:*",
+		"@maple/worker-runtime": "workspace:*",
 		"@tinybirdco/sdk": "catalog:tinybird",
 		"alchemy": "catalog:alchemy",
 		"drizzle-orm": "1.0.0-rc.5-5935859",
