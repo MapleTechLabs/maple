@@ -1196,7 +1196,7 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 		// Polls now instead of waiting for the 5-minute cron; returns the refreshed status.
 		HttpApiEndpoint.post("railwaySync", "/railway/sync", {
 			success: RailwayIntegrationStatus,
-			error: IntegrationsPersistenceError,
+			error: [IntegrationsForbiddenError, IntegrationsPersistenceError],
 		}),
 	)
 	.add(

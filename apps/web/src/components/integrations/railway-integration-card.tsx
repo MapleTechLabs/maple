@@ -45,16 +45,22 @@ export const unsyncedEnvironments = (status: RailwayIntegrationStatus) =>
 	).length
 
 function connectedToast(status: RailwayIntegrationStatus, mode: "connect" | "rotate") {
-	const synced = status.environments.length - unsyncedEnvironments(status)
-	const queued = status.environments.length - synced
+	const synced = status.environments.filter((environment) => environment.lastSyncedAt !== null).length
+	// A first sync that failed has an error but no sync time; it is neither synced nor waiting.
+	const failed = status.environments.filter(
+		(environment) => environment.lastSyncedAt === null && environment.lastError !== null,
+	).length
+	const queued = unsyncedEnvironments(status)
 	return {
 		title: mode === "rotate" ? "Railway token updated" : "Railway connected",
 		description:
 			status.environments.length === 0
 				? "This token can't see any projects yet."
-				: queued === 0
-					? `Pulled the last hour of metrics for ${plural(synced, "environment")}.`
-					: `${plural(synced, "environment")} synced, ${queued} more within 5 minutes.`,
+				: failed > 0
+					? `${plural(synced, "environment")} synced, ${failed} failed. The rows below say why.`
+					: queued === 0
+						? `Pulled the last hour of metrics for ${plural(synced, "environment")}.`
+						: `${plural(synced, "environment")} synced, ${queued} more within 5 minutes.`,
 		type: "success" as const,
 	}
 }
@@ -200,7 +206,12 @@ export function RailwayIntegrationCard() {
 		const result = await sync({ reactivityKeys: ["railwayIntegrationStatus"] })
 		setSyncBusy(false)
 		if (Exit.isFailure(result)) {
-			toastManager.add({ title: "Failed to sync Railway", type: "error" })
+			// Non-admins are refused; the reason says so instead of a bare failure.
+			toastManager.add({
+				title: "Failed to sync Railway",
+				description: errorMessage(result, "Try again in a moment."),
+				type: "error",
+			})
 		}
 	}
 

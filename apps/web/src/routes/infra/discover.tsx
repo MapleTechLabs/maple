@@ -1,7 +1,6 @@
 import { useState } from "react"
 import { createFileRoute, Link } from "@tanstack/react-router"
 
-import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
 import { cn } from "@maple/ui/lib/utils"
 
@@ -9,7 +8,7 @@ import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { ChevronRightIcon, DockerIcon, KubernetesIcon, PlusIcon, ServerIcon } from "@/components/icons"
 import { PageHero } from "@/components/infra/primitives/page-hero"
 import { InstallHostModal, type InstallTab } from "@/components/infra/install-modal"
-import { InfraIntegrations } from "@/components/infra/infra-integrations"
+import { InfraIntegrations, SourceCardAction } from "@/components/infra/infra-integrations"
 import { useInfraSurfaces } from "@/hooks/use-infra-surfaces"
 import type { NavSurface } from "@/components/dashboard/nav-items"
 
@@ -176,11 +175,7 @@ function CollectorCard({
 					)}
 				</span>
 			</span>
-			{reporting === false ? (
-				<Badge variant="outline" size="sm">
-					Install
-				</Badge>
-			) : null}
+			{reporting === false ? <SourceCardAction label="Install" /> : null}
 			<ChevronRightIcon
 				size={14}
 				className="shrink-0 text-muted-foreground/70 transition-colors group-hover:text-foreground"

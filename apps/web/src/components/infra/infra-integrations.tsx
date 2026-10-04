@@ -9,7 +9,6 @@
 
 import { Link } from "@tanstack/react-router"
 
-import { Badge } from "@maple/ui/components/ui/badge"
 import { cn } from "@maple/ui/lib/utils"
 
 import { ChevronRightIcon } from "@/components/icons"
@@ -73,8 +72,8 @@ export function InfraIntegrations() {
 function InfraSourceCard({ source, overview }: { source: InfraSource; overview: IntegrationOverview }) {
 	const entry = catalogEntry(source.id)
 	const connected = overview?.kind === "connected" ? overview : null
-	// `overview === null` is "still loading" — neither badge branch fires, so the
-	// card says nothing rather than claiming the source is disconnected.
+	// `overview === null` is "still loading": no action and the blurb, rather
+	// than claiming the source is disconnected.
 	const available = overview?.kind === "available" ? overview : null
 	const body = (
 		<>
@@ -90,38 +89,9 @@ function InfraSourceCard({ source, overview }: { source: InfraSource; overview: 
 					<span className="truncate text-sm font-semibold">{entry.name}</span>
 					{entry.isNew && !connected ? <NewBadge /> : null}
 				</span>
-				<span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
-					{connected ? (
-						<>
-							<span
-								aria-hidden
-								className={cn(
-									"size-1.5 shrink-0 rounded-full",
-									connected.health === "healthy" ? "bg-success" : "bg-warning",
-								)}
-							/>
-							<span className="truncate">
-								{connected.stat ?? connected.context ?? connected.stateLabel}
-							</span>
-						</>
-					) : (
-						<span className="truncate">{source.blurb}</span>
-					)}
-				</span>
+				<SourceStatusLine source={source} overview={overview} />
 			</span>
-			{connected?.issue ? (
-				<Badge variant="warning" size="sm">
-					{connected.issue}
-				</Badge>
-			) : available ? (
-				<Badge variant="outline" size="sm">
-					{available.cta}
-				</Badge>
-			) : overview?.kind === "unavailable" ? (
-				<Badge variant="outline" size="sm">
-					Status unavailable
-				</Badge>
-			) : null}
+			{available ? <SourceCardAction label={available.cta} /> : null}
 			<ChevronRightIcon
 				size={14}
 				className="shrink-0 text-muted-foreground/70 transition-colors group-hover:text-foreground"
@@ -140,5 +110,42 @@ function InfraSourceCard({ source, overview }: { source: InfraSource; overview: 
 		<Link to="/integrations" search={{ integration: entry.id }} className={className}>
 			{body}
 		</Link>
+	)
+}
+
+/**
+ * Every state reads on one line under the name, as a dot and a few words: a row of boxed pills
+ * ("Connect", "Status unavailable") competed with the name and squeezed it to a letter.
+ */
+function SourceStatusLine({ source, overview }: { source: InfraSource; overview: IntegrationOverview }) {
+	const state =
+		overview?.kind === "connected"
+			? {
+					dot: overview.issue || overview.health !== "healthy" ? "bg-warning" : "bg-success",
+					text: overview.issue ?? overview.stat ?? overview.context ?? overview.stateLabel,
+				}
+			: overview?.kind === "unavailable"
+				? { dot: "bg-muted-foreground/50", text: "Status unavailable" }
+				: null
+	return (
+		<span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+			{state ? (
+				<>
+					<span aria-hidden className={cn("size-1.5 shrink-0 rounded-full", state.dot)} />
+					<span className="truncate">{state.text}</span>
+				</>
+			) : (
+				<span className="truncate">{source.blurb}</span>
+			)}
+		</span>
+	)
+}
+
+/** The next step for a source you don't have yet, as a quiet label that lights up with the card. */
+export function SourceCardAction({ label }: { label: string }) {
+	return (
+		<span className="shrink-0 text-xs font-medium text-muted-foreground transition-colors group-hover:text-primary">
+			{label}
+		</span>
 	)
 }
