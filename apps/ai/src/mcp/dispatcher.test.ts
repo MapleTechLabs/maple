@@ -104,21 +104,24 @@ describe("MCP dispatcher", () => {
 	)
 
 	describe("tool audience", () => {
-		// The sandbox tools execute code inside a container holding the org's source.
-		// They are for Maple's own agents; a third-party MCP client never sees them.
-		const INTERNAL_TOOLS = [
-			"pr_changed_files",
-			"pr_context",
-			"pr_file_diff",
-			"sandbox_grep",
-			"sandbox_list_files",
-			"sandbox_read_file",
-			"sandbox_exec",
-		]
+		// The sandbox tools execute code inside a container holding the org's source, and the
+		// pull request tools act on the org's behalf. A third-party MCP client sees neither.
+		const AGENT_TOOLS = ["sandbox_grep", "sandbox_list_files", "sandbox_read_file", "sandbox_exec"]
+		const INTERNAL_TOOLS = ["pr_changed_files", "pr_context", "pr_file_diff", ...AGENT_TOOLS]
 
-		it("keeps the sandbox and pull request tools internal", () => {
+		it("keeps the sandbox tools agent-only and the pull request tools internal", () => {
+			const agent = mapleToolCatalog.filter((d) => d.audience === "agent").map((d) => d.name)
 			const internal = mapleToolCatalog.filter((d) => d.audience === "internal").map((d) => d.name)
-			expect(internal.sort()).toEqual([...INTERNAL_TOOLS].sort())
+			expect(agent.sort()).toEqual([...AGENT_TOOLS].sort())
+			expect(internal.sort()).toEqual(["pr_changed_files", "pr_context", "pr_file_diff"])
+		})
+
+		it("offers the bot the sandbox but not the pull request tools", () => {
+			const bot = new Set(mapleToolCatalogFor("bot").map((d) => d.name))
+			expect(AGENT_TOOLS.filter((name) => !bot.has(name))).toEqual([])
+			expect(
+				["pr_changed_files", "pr_context", "pr_file_diff"].filter((name) => bot.has(name)),
+			).toEqual([])
 		})
 
 		it.effect("does not list an internal tool on the public transport", () =>
@@ -336,7 +339,8 @@ describe("MCP dispatcher", () => {
 				const dispatchSpan = spans.find((s) => s.name === "McpToolDispatcher.call")
 				assert.isDefined(dispatchSpan)
 				expect(dispatchSpan.status._tag).toBe("Ended")
-				if (dispatchSpan.status._tag === "Ended") expect(dispatchSpan.status.exit._tag).toBe("Failure")
+				if (dispatchSpan.status._tag === "Ended")
+					expect(dispatchSpan.status.exit._tag).toBe("Failure")
 				expect(dispatchSpan.attributes.get("maple.mcp.error.category")).toBe("query")
 			}),
 		)

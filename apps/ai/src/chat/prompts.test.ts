@@ -17,7 +17,7 @@ const sha256 = (value: string) => createHash("sha256").update(value, "utf8").dig
 
 describe("the prompts the app and the investigation pass already shipped", () => {
 	it.each([
-		["SYSTEM_PROMPT", SYSTEM_PROMPT, "402c5f7f6af420f83fe3d3928a8cb41c677d435270cf2f3667f02677b32712cd"],
+		["SYSTEM_PROMPT", SYSTEM_PROMPT, "d5d349cc14b29aa9c898388215d44f04f99c733be20a11c21d985544e056e415"],
 		[
 			"INVESTIGATE_SYSTEM_PROMPT",
 			INVESTIGATE_SYSTEM_PROMPT,
@@ -43,6 +43,11 @@ describe("CONNECTOR_SYSTEM_PROMPT", () => {
 		// which the connector does. The prohibition quotes "[Approve]" on purpose.
 		assert.include(CONNECTOR_SYSTEM_PROMPT, "approved before they take effect")
 		assert.include(CONNECTOR_SYSTEM_PROMPT, 'NEVER emit "[Approve]"')
+	})
+
+	it("reads the deployed code through the repository sandbox", () => {
+		assert.include(CONNECTOR_SYSTEM_PROMPT, "sandbox_grep")
+		assert.include(CONNECTOR_SYSTEM_PROMPT, "vcs.ref.head.revision")
 	})
 
 	it("sends nobody to the Maple app, because it can act from the channel", () => {
