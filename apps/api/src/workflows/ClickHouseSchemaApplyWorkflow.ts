@@ -13,6 +13,7 @@ import { workerEnvLayer } from "@maple/infra/worker-runtime"
 import { eventTelemetry } from "@maple/infra/worker-telemetry"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Effect, Layer } from "effect"
+import { FetchHttpClient } from "effect/http"
 import {
 	runClickHouseSchemaApply,
 	type SchemaApplyWorkflowPayload,
@@ -37,9 +38,12 @@ export default class ClickHouseSchemaApplyWorkflow extends Cloudflare.Workflow<C
 				// The Workflow class IS the entry point these layers belong to.
 				// oxlint-disable-next-line effecttsgo/strict-effect-provide
 				Effect.provide(
-					Layer.mergeAll(layerPg, schemaApplyTelemetry, workerEnvLayer(env)).pipe(
-						Layer.provideMerge(mapleDbConnectionLayer(env)),
-					),
+					Layer.mergeAll(
+						layerPg,
+						schemaApplyTelemetry,
+						workerEnvLayer(env),
+						FetchHttpClient.layer,
+					).pipe(Layer.provideMerge(mapleDbConnectionLayer(env))),
 				),
 			)
 		})

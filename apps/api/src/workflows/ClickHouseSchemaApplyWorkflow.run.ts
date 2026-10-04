@@ -33,6 +33,7 @@ import { OrgId } from "@maple/domain/http"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { eq } from "drizzle-orm"
 import { Cause, Clock, Config, Effect, Option, Redacted, Schema } from "effect"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { EdgeCacheService } from "@maple/cache"
 import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
 import { Database, type DatabaseApi, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
@@ -148,51 +149,58 @@ const toClickHouseExecError = (cause: unknown): ClickHouseExecError =>
 		? cause
 		: new ClickHouseExecError({ message: cause instanceof Error ? cause.message : String(cause) })
 
-/**
- * The one ClickHouse HTTP implementation, Promise-shaped because
- * `expandMigrationToSteps` takes a Promise `exec`; `execClickHouse` lifts it.
- */
-const execClickHousePromise = (cfg: ChConfig, sql: string): Promise<string> => {
-	const url = `${cfg.url.replace(/\/$/, "")}/?database=${encodeURIComponent(cfg.database)}`
-	const headers = new Headers({
-		"Content-Type": "text/plain",
-		"X-ClickHouse-User": cfg.user,
-		"X-ClickHouse-Database": cfg.database,
-	})
-	if (cfg.password.length > 0) headers.set("X-ClickHouse-Key", cfg.password)
-	return fetch(url, { method: "POST", headers, body: sql, redirect: "manual" }).then((response) =>
-		response.text().then((text) => {
-			if (response.status >= 300 && response.status < 400) {
-				return Promise.reject(
-					new ClickHouseExecError({
-						status: response.status,
-						message: `ClickHouse redirect responses are not allowed (${response.status})`,
-					}),
-				)
-			}
-			if (!response.ok) {
-				return Promise.reject(
-					new ClickHouseExecError({
-						status: response.status,
-						message: `ClickHouse ${response.status}: ${text.split("\n")[0]?.slice(0, 500) ?? ""}`,
-					}),
-				)
-			}
-			return text
-		}),
-	)
-}
+/** The one ClickHouse HTTP implementation; redirects are refused, never followed. */
+const execClickHouse = (
+	cfg: ChConfig,
+	sql: string,
+): Effect.Effect<string, ClickHouseExecError, HttpClient.HttpClient> =>
+	Effect.gen(function* () {
+		const client = yield* HttpClient.HttpClient
+		const url = `${cfg.url.replace(/\/$/, "")}/?database=${encodeURIComponent(cfg.database)}`
+		const base = HttpClientRequest.post(url, {
+			headers: {
+				"Content-Type": "text/plain",
+				"X-ClickHouse-User": cfg.user,
+				"X-ClickHouse-Database": cfg.database,
+			},
+		}).pipe(HttpClientRequest.bodyText(sql))
+		const request =
+			cfg.password.length > 0
+				? HttpClientRequest.setHeader(base, "X-ClickHouse-Key", cfg.password)
+				: base
+		const response = yield* client
+			.execute(request)
+			.pipe(Effect.provideService(FetchHttpClient.RequestInit, { redirect: "manual" }))
+		const text = yield* response.text
+		if (response.status >= 300 && response.status < 400) {
+			return yield* new ClickHouseExecError({
+				status: response.status,
+				message: `ClickHouse redirect responses are not allowed (${response.status})`,
+			})
+		}
+		if (response.status < 200 || response.status >= 300) {
+			return yield* new ClickHouseExecError({
+				status: response.status,
+				message: `ClickHouse ${response.status}: ${text.split("\n")[0]?.slice(0, 500) ?? ""}`,
+			})
+		}
+		return text
+	}).pipe(Effect.catchTag("HttpClientError", (error) => Effect.fail(toClickHouseExecError(error))))
 
-const execClickHouse = (cfg: ChConfig, sql: string): Effect.Effect<string, ClickHouseExecError> =>
-	Effect.tryPromise({ try: () => execClickHousePromise(cfg, sql), catch: toClickHouseExecError })
-
+/** `expandMigrationToSteps` takes a Promise `exec`, so each call runs back through `execClickHouse`. */
 const planMigrationSteps = (
 	cfg: ChConfig,
 	migration: (typeof clickHouseMigrations)[number],
-): Effect.Effect<ReadonlyArray<ApplyStep>, ClickHouseExecError> =>
-	Effect.tryPromise({
-		try: () => expandMigrationToSteps(migration, cfg.database, (sql) => execClickHousePromise(cfg, sql)),
-		catch: toClickHouseExecError,
+): Effect.Effect<ReadonlyArray<ApplyStep>, ClickHouseExecError, HttpClient.HttpClient> =>
+	Effect.gen(function* () {
+		const run = Effect.runPromiseWith(yield* Effect.context<HttpClient.HttpClient>())
+		return yield* Effect.tryPromise({
+			try: (signal) =>
+				expandMigrationToSteps(migration, cfg.database, (sql) =>
+					run(execClickHouse(cfg, sql), { signal }),
+				),
+			catch: toClickHouseExecError,
+		})
 	})
 
 /**
@@ -249,7 +257,9 @@ const ensureFeaturesTable = (cfg: ChConfig) =>
 ) ENGINE = ReplacingMergeTree(revision) ORDER BY id`,
 	).pipe(Effect.asVoid)
 
-const readAppliedVersions = (cfg: ChConfig): Effect.Effect<ReadonlyArray<number>, ClickHouseExecError> =>
+const readAppliedVersions = (
+	cfg: ChConfig,
+): Effect.Effect<ReadonlyArray<number>, ClickHouseExecError, HttpClient.HttpClient> =>
 	execClickHouse(cfg, `SELECT version FROM ${quote(MIGRATIONS_TABLE)} FORMAT JSONEachRow`).pipe(
 		Effect.map((text) => [...new Set(parseVersionRows(text).map((r) => r.version))]),
 	)
@@ -263,7 +273,7 @@ const recordVersion = (cfg: ChConfig, version: number, description: string) =>
 /** Entries rather than a Map: a step's value must survive Cloudflare's JSON persistence. */
 const readAppliedFeatureRevisions = (
 	cfg: ChConfig,
-): Effect.Effect<ReadonlyArray<readonly [string, number]>, ClickHouseExecError> =>
+): Effect.Effect<ReadonlyArray<readonly [string, number]>, ClickHouseExecError, HttpClient.HttpClient> =>
 	execClickHouse(
 		cfg,
 		`SELECT id, max(revision) AS revision FROM ${quote(FEATURES_TABLE)} GROUP BY id FORMAT JSONEachRow`,
@@ -409,7 +419,9 @@ const parseDesiredTables = (): ReadonlyArray<DesiredTable> => {
 	return out
 }
 
-const fetchActualSchema = (cfg: ChConfig): Effect.Effect<Map<string, ActualTable>, ClickHouseExecError> =>
+const fetchActualSchema = (
+	cfg: ChConfig,
+): Effect.Effect<Map<string, ActualTable>, ClickHouseExecError, HttpClient.HttpClient> =>
 	Effect.gen(function* () {
 		const dbLit = cfg.database.replace(/'/g, "''")
 		const tableRows = parseTableRows(
@@ -441,7 +453,9 @@ const fetchActualSchema = (cfg: ChConfig): Effect.Effect<Map<string, ActualTable
 		return result
 	})
 
-const reconcileSchemaSnapshot = (cfg: ChConfig): Effect.Effect<void, ClickHouseExecError> =>
+const reconcileSchemaSnapshot = (
+	cfg: ChConfig,
+): Effect.Effect<void, ClickHouseExecError, HttpClient.HttpClient> =>
 	Effect.gen(function* () {
 		const desired = parseDesiredTables()
 		const desiredByName = new Map(desired.map((t) => [t.name, t]))
@@ -487,7 +501,7 @@ export const runClickHouseSchemaApply = (
 ): Effect.Effect<
 	SchemaApplyWorkflowResult,
 	SchemaApplyPayloadError | SchemaApplyConfigError,
-	Database | Cloudflare.WorkflowStep
+	Database | Cloudflare.WorkflowStep | HttpClient.HttpClient
 > =>
 	Effect.gen(function* () {
 		const orgId = yield* Schema.decodeUnknownEffect(OrgId)(payload.orgId).pipe(

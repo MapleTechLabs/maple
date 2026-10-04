@@ -1,6 +1,7 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Cause, Effect, Exit, Layer, Schema } from "effect"
+import { FetchHttpClient } from "effect/http"
 
 import {
 	cleanupTestDbs,
@@ -91,6 +92,7 @@ describe("runClickHouseSchemaApply failure bookkeeping", () => {
 					testDb.layer,
 					Layer.succeed(Cloudflare.WorkflowStep, inlineStep),
 					workerEnvLayer(env),
+					FetchHttpClient.layer,
 				),
 			),
 			Effect.scoped,
