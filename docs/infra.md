@@ -498,6 +498,10 @@ services.
 - Public hostnames (`ingest`, `electric`) are proxied Cloudflare CNAMEs to the ALB, created
   by `publishProxiedCname`; their ACM certificates are validated in-stack by
   `issueCertificateViaCloudflare` (both in `@maple/infra/acm`).
+- **The ingest ALB admits only Cloudflare's edge** (`cloudflareIpv4Ranges`, read at plan time
+  from Cloudflare's published list), so `Cf-IPCountry` cannot be forged and
+  `MAPLE_INGEST_TRUST_PROXY_GEO` is safe. A range change lands on the next deploy. PR previews
+  have no proxied domain: their ALB stays open on 80 and does not trust the header.
 
 ## Schema migrations run in the deploy
 

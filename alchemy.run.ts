@@ -349,6 +349,7 @@ export default Alchemy.Stack(
 		Effect.catchTags({
 			"@maple/infra/MapleStageError": asConfigError,
 			"@maple/infra/AwsRegionMismatchError": asConfigError,
+			"@maple/infra/CloudflareRangesError": asConfigError,
 		}),
 	),
 )

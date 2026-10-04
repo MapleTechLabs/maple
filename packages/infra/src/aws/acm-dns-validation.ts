@@ -11,6 +11,7 @@
  */
 import * as acm from "@distilled.cloud/aws/acm"
 import * as AwsRegion from "@distilled.cloud/aws/Region"
+import * as ips from "@distilled.cloud/cloudflare/ips"
 import { adopt } from "alchemy/AdoptPolicy"
 import * as AWS from "alchemy/AWS"
 import * as Cloudflare from "alchemy/Cloudflare"
@@ -323,3 +324,32 @@ export const issueRegionalCertificate = Effect.fn(function* ({
 		region,
 	})
 })
+
+/** Cloudflare's published edge ranges could not be read, or came back empty. */
+export class CloudflareRangesError extends Schema.TaggedError<CloudflareRangesError>()(
+	"@maple/infra/CloudflareRangesError",
+	{
+		message: Schema.String,
+		cause: Schema.optionalKey(Schema.Defect()),
+	},
+) {}
+
+/**
+ * Cloudflare's IPv4 edge ranges, read at plan time so an origin's security group follows them.
+ * An empty list fails the deploy: it would lock every proxied request out.
+ */
+export const cloudflareIpv4Ranges = ips.listIps({}).pipe(
+	Effect.mapError(
+		(cause) =>
+			new CloudflareRangesError({
+				message: `could not read Cloudflare's IP ranges: ${cause.message}`,
+				cause,
+			}),
+	),
+	Effect.flatMap((result) => {
+		const cidrs = result.ipv4Cidrs ?? []
+		return cidrs.length > 0
+			? Effect.succeed(cidrs)
+			: Effect.fail(new CloudflareRangesError({ message: "Cloudflare returned no IPv4 ranges" }))
+	}),
+)

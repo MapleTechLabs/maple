@@ -16,7 +16,7 @@ import {
 	resolveIngestNamespaceName,
 } from "@maple/infra/aws"
 import { ReplayBlobs } from "../api/src/resources/replay-blobs.ts"
-import { issueRegionalCertificate, publishProxiedCname } from "@maple/infra/acm"
+import { cloudflareIpv4Ranges, issueRegionalCertificate, publishProxiedCname } from "@maple/infra/acm"
 import type { MapleRegion, MapleStackContext, MapleStage } from "@maple/infra/cloudflare"
 import {
 	resolveDeploymentEnvironment,
@@ -133,25 +133,28 @@ export const createMapleIngest = ({ stage, region, domains, profile, dbRole }: C
 			tags,
 		})
 
-		// With an ingest domain the ALB terminates TLS on 443; a stage without one
-		// (PR previews) gets alchemy's default HTTP listener on 80.
+		// With an ingest domain the ALB terminates TLS on 443 behind Cloudflare's proxy, and
+		// admits only Cloudflare's edge: that is what makes `Cf-IPCountry` trustworthy. A stage
+		// without one (PR previews) gets alchemy's default HTTP listener on 80, open to all.
+		// The group's `description` must not change: AWS treats it as immutable (a replace).
 		const listenerPort = domains.ingest ? 443 : 80
+		const albSources = domains.ingest
+			? (yield* cloudflareIpv4Ranges).map((cidr) => ({
+					cidr,
+					description: "OTLP over HTTPS from Cloudflare",
+				}))
+			: [{ cidr: "0.0.0.0/0", description: "OTLP over HTTP (no ingest domain, no certificate)" }]
 		const albSecurityGroup = yield* AWS.EC2.SecurityGroup("ingest-alb-sg", {
 			vpcId: network.vpcId,
 			groupName: name("ingest-alb"),
 			description: `Maple OTLP ingest - public ${listenerPort === 443 ? "HTTPS" : "HTTP"} to the load balancer`,
-			ingress: [
-				{
-					ipProtocol: "tcp",
-					fromPort: listenerPort,
-					toPort: listenerPort,
-					cidrIpv4: "0.0.0.0/0",
-					description:
-						listenerPort === 443
-							? "OTLP over HTTPS"
-							: "OTLP over HTTP (no ingest domain, no certificate)",
-				},
-			],
+			ingress: albSources.map(({ cidr, description }) => ({
+				ipProtocol: "tcp",
+				fromPort: listenerPort,
+				toPort: listenerPort,
+				cidrIpv4: cidr,
+				description,
+			})),
 		})
 
 		// ── Capacity ────────────────────────────────────────────────────────
@@ -513,8 +516,9 @@ export const createMapleIngest = ({ stage, region, domains, profile, dbRole }: C
 				// new secret before alchemy deletes the old role.
 				...(dbRole && { MAPLE_PG_ROLE_ID: dbRole.id }),
 
-				// Trust `Cf-IPCountry`, which fills `session_replays.Country`.
-				MAPLE_INGEST_TRUST_PROXY_GEO: "true",
+				// Trust `Cf-IPCountry` (fills `session_replays.Country`) only where the ALB admits
+				// nothing but Cloudflare; a preview's open ALB would let any client set it.
+				...(domains.ingest && { MAPLE_INGEST_TRUST_PROXY_GEO: "true" }),
 
 				INGEST_QUEUE_MAX_BYTES: String(WAL_MAX_BYTES),
 				INGEST_WAL_SHARDS: String(WAL_SHARDS),
