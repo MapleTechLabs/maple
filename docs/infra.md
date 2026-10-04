@@ -66,6 +66,8 @@ Two things a future change here needs to know:
       a second yield returns the first's).
     - `aws/stage.ts`: AWS region, naming, task sizing, Cloud Map, and which stages get an
       ingest fleet or a collector.
+    - `aws/preview-deploy-role/` (outside `src`): the IAM trust and permission policies for
+      `maple-preview-deploy`, the role PR previews deploy with, and how to apply them by hand.
     - `env.ts`: the deploy-time env primitives and the shared groups the Workers spread.
     - `cloudflare/maple-db.ts`: `MAPLE_DB` in the stage's flavor (`MapleDb`, yielded from a
       Worker's init, or `mapleDbEnv` from its props) and the runtime read of the binding

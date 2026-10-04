@@ -1,0 +1,213 @@
+{
+	"Version": "2012-10-17",
+	"Statement": [
+		{
+			"Sid": "ReadOnlyUnscoped",
+			"Effect": "Allow",
+			"Action": [
+				"sts:GetCallerIdentity",
+				"ec2:DescribeAccountAttributes",
+				"ec2:DescribeAvailabilityZones",
+				"ec2:DescribeRegions",
+				"ec2:DescribeVpcs",
+				"ec2:DescribeVpcAttribute",
+				"ec2:DescribeSubnets",
+				"ec2:DescribeRouteTables",
+				"ec2:DescribeInternetGateways",
+				"ec2:DescribeVpcEndpoints",
+				"ec2:DescribeSecurityGroups",
+				"ec2:DescribeSecurityGroupRules",
+				"ec2:DescribeNetworkInterfaces",
+				"ec2:DescribeLaunchTemplates",
+				"ec2:DescribeLaunchTemplateVersions",
+				"ec2:DescribeImages",
+				"ec2:DescribeInstances",
+				"ec2:DescribeTags",
+				"ecs:DescribeClusters",
+				"ecs:DescribeServices",
+				"ecs:DescribeTasks",
+				"ecs:DescribeTaskDefinition",
+				"ecs:DescribeCapacityProviders",
+				"ecs:DescribeContainerInstances",
+				"ecs:ListClusters",
+				"ecs:ListServices",
+				"ecs:ListTasks",
+				"ecs:ListContainerInstances",
+				"ecs:ListTagsForResource",
+				"elasticloadbalancing:DescribeLoadBalancers",
+				"elasticloadbalancing:DescribeLoadBalancerAttributes",
+				"elasticloadbalancing:DescribeTargetGroups",
+				"elasticloadbalancing:DescribeTargetGroupAttributes",
+				"elasticloadbalancing:DescribeTargetHealth",
+				"elasticloadbalancing:DescribeListeners",
+				"elasticloadbalancing:DescribeListenerAttributes",
+				"elasticloadbalancing:DescribeListenerCertificates",
+				"elasticloadbalancing:DescribeRules",
+				"elasticloadbalancing:DescribeTags",
+				"autoscaling:DescribeAutoScalingGroups",
+				"autoscaling:DescribeScalingActivities",
+				"ecr:GetAuthorizationToken",
+				"ecr:DescribeRepositories",
+				"logs:DescribeLogGroups",
+				"servicediscovery:GetNamespace",
+				"servicediscovery:GetService",
+				"servicediscovery:GetServiceAttributes",
+				"servicediscovery:GetOperation",
+				"servicediscovery:ListNamespaces",
+				"servicediscovery:ListServices",
+				"servicediscovery:ListTagsForResource",
+				"servicediscovery:DiscoverInstances",
+				"route53:GetHostedZone",
+				"route53:ListHostedZonesByName",
+				"route53:GetChange"
+			],
+			"Resource": "*"
+		},
+		{
+			"Sid": "EcsOptimizedAmiParameter",
+			"Effect": "Allow",
+			"Action": ["ssm:GetParameter", "ssm:GetParameters"],
+			"Resource": "arn:aws:ssm:us-east-1::parameter/aws/service/ecs/optimized-ami/*"
+		},
+		{
+			"Sid": "EcsCreateTagged",
+			"Effect": "Allow",
+			"Action": ["ecs:CreateCluster", "ecs:RegisterTaskDefinition", "ecs:CreateCapacityProvider"],
+			"Resource": "*",
+			"Condition": {
+				"StringEquals": {
+					"aws:RequestedRegion": "us-east-1"
+				},
+				"StringLike": {
+					"aws:RequestTag/alchemy::stage": "pr-*"
+				}
+			}
+		},
+		{
+			"Sid": "EcsPreviewClustersAndServices",
+			"Effect": "Allow",
+			"Action": [
+				"ecs:UpdateCluster",
+				"ecs:DeleteCluster",
+				"ecs:PutClusterCapacityProviders",
+				"ecs:CreateService",
+				"ecs:UpdateService",
+				"ecs:DeleteService",
+				"ecs:StopTask",
+				"ecs:UpdateTaskProtection",
+				"ecs:DeregisterContainerInstance",
+				"ecs:UpdateContainerInstancesState",
+				"ecs:UpdateCapacityProvider",
+				"ecs:DeleteCapacityProvider",
+				"ecs:DeregisterTaskDefinition",
+				"ecs:DeleteTaskDefinitions",
+				"ecs:TagResource",
+				"ecs:UntagResource"
+			],
+			"Resource": [
+				"arn:aws:ecs:us-east-1:465760687006:cluster/maple-*-pr-*",
+				"arn:aws:ecs:us-east-1:465760687006:service/maple-*-pr-*/*",
+				"arn:aws:ecs:us-east-1:465760687006:task/maple-*-pr-*/*",
+				"arn:aws:ecs:us-east-1:465760687006:container-instance/maple-*-pr-*/*",
+				"arn:aws:ecs:us-east-1:465760687006:task-definition/maple-*-pr-*:*",
+				"arn:aws:ecs:us-east-1:465760687006:capacity-provider/maple-*-pr-*"
+			]
+		},
+		{
+			"Sid": "EcrPreviewRepositories",
+			"Effect": "Allow",
+			"Action": [
+				"ecr:CreateRepository",
+				"ecr:DeleteRepository",
+				"ecr:DescribeImages",
+				"ecr:ListImages",
+				"ecr:BatchGetImage",
+				"ecr:BatchCheckLayerAvailability",
+				"ecr:InitiateLayerUpload",
+				"ecr:UploadLayerPart",
+				"ecr:CompleteLayerUpload",
+				"ecr:PutImage",
+				"ecr:BatchDeleteImage",
+				"ecr:PutImageTagMutability",
+				"ecr:PutImageScanningConfiguration",
+				"ecr:PutLifecyclePolicy",
+				"ecr:GetLifecyclePolicy",
+				"ecr:DeleteLifecyclePolicy",
+				"ecr:SetRepositoryPolicy",
+				"ecr:GetRepositoryPolicy",
+				"ecr:DeleteRepositoryPolicy",
+				"ecr:TagResource",
+				"ecr:UntagResource",
+				"ecr:ListTagsForResource"
+			],
+			"Resource": "arn:aws:ecr:us-east-1:465760687006:repository/maple-*-pr-*"
+		},
+		{
+			"Sid": "LogsPreviewGroups",
+			"Effect": "Allow",
+			"Action": [
+				"logs:CreateLogGroup",
+				"logs:DeleteLogGroup",
+				"logs:PutRetentionPolicy",
+				"logs:DeleteRetentionPolicy",
+				"logs:PutLogGroupDeletionProtection",
+				"logs:AssociateKmsKey",
+				"logs:DisassociateKmsKey",
+				"logs:TagResource",
+				"logs:UntagResource",
+				"logs:ListTagsForResource",
+				"logs:DescribeLogStreams",
+				"logs:GetLogEvents",
+				"logs:FilterLogEvents",
+				"logs:StartLiveTail"
+			],
+			"Resource": [
+				"arn:aws:logs:us-east-1:465760687006:log-group:maple-*-pr-*",
+				"arn:aws:logs:us-east-1:465760687006:log-group:maple-*-pr-*:*"
+			]
+		},
+		{
+			"Sid": "CloudMapCreateTaggedCollectorOptIn",
+			"Effect": "Allow",
+			"Action": ["servicediscovery:CreatePrivateDnsNamespace", "servicediscovery:CreateService"],
+			"Resource": "*",
+			"Condition": {
+				"StringEquals": {
+					"aws:RequestedRegion": "us-east-1"
+				},
+				"StringLike": {
+					"aws:RequestTag/alchemy::stage": "pr-*"
+				}
+			}
+		},
+		{
+			"Sid": "CloudMapMutateTaggedCollectorOptIn",
+			"Effect": "Allow",
+			"Action": [
+				"servicediscovery:UpdatePrivateDnsNamespace",
+				"servicediscovery:DeleteNamespace",
+				"servicediscovery:UpdateService",
+				"servicediscovery:UpdateServiceAttributes",
+				"servicediscovery:DeleteServiceAttributes",
+				"servicediscovery:DeleteService",
+				"servicediscovery:TagResource",
+				"servicediscovery:UntagResource"
+			],
+			"Resource": [
+				"arn:aws:servicediscovery:us-east-1:465760687006:namespace/*",
+				"arn:aws:servicediscovery:us-east-1:465760687006:service/*"
+			],
+			"Condition": {
+				"StringLike": {
+					"aws:ResourceTag/alchemy::stage": "pr-*"
+				}
+			}
+		},
+		{
+			"Sid": "Route53PrivateZoneForCloudMapCollectorOptIn",
+			"Effect": "Allow",
+			"Action": ["route53:CreateHostedZone"],
+			"Resource": "*"
+		}
+	]
+}
