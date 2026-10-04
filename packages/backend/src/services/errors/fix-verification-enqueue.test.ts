@@ -17,6 +17,8 @@ import {
 } from "@maple/db"
 import { eq } from "drizzle-orm"
 import { Database } from "@maple/backend/platform/DatabaseLive"
+import type { ChatSessionsApi } from "@maple/backend/platform/bindings"
+import { chatSessionStub } from "@maple/domain/chat-session-stub"
 import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { enqueueFixVerification } from "./fix-verification-enqueue"
@@ -63,7 +65,10 @@ const fakeChatSession = () => {
 			},
 		}),
 	}
-	return { turns, env: { ChatSession: namespace } }
+	const chatSessions: ChatSessionsApi = {
+		stub: (sessionId) => chatSessionStub({ ChatSession: namespace }, sessionId),
+	}
+	return { turns, chatSessions }
 }
 
 const enableAutomation = (maxRunsPerDay = 20, maxPassesPerDay = 200) =>
@@ -136,12 +141,12 @@ const seedVerification = (options: { readonly withIssue?: boolean } = {}) =>
 		return { issueId, verification }
 	})
 
-const input = (verification: ErrorIssueVerificationRow, workerEnv?: Record<string, unknown>) => ({
+const input = (verification: ErrorIssueVerificationRow, chatSessions?: ChatSessionsApi) => ({
 	verification,
 	pullRequestUrl: PR_URL,
 	postMergeOccurrences: 0,
 	staleClientOccurrences: 3,
-	workerEnv,
+	chatSessions,
 })
 
 /**
@@ -157,7 +162,7 @@ describe("enqueueFixVerification", () => {
 			const { verification } = yield* seedVerification()
 			const chat = fakeChatSession()
 
-			const result = yield* enqueueFixVerification(input(verification, chat.env))
+			const result = yield* enqueueFixVerification(input(verification, chat.chatSessions))
 
 			assert.strictEqual(result.enqueued, true)
 			if (!result.enqueued) return
@@ -220,7 +225,7 @@ describe("enqueueFixVerification", () => {
 				}),
 			)
 
-			const result = yield* enqueueFixVerification(input(verification, chat.env))
+			const result = yield* enqueueFixVerification(input(verification, chat.chatSessions))
 
 			assert.strictEqual(result.enqueued, false)
 			if (result.enqueued) return
@@ -235,7 +240,7 @@ describe("enqueueFixVerification", () => {
 			const { verification } = yield* seedVerification({ withIssue: false })
 			const chat = fakeChatSession()
 
-			const result = yield* enqueueFixVerification(input(verification, chat.env))
+			const result = yield* enqueueFixVerification(input(verification, chat.chatSessions))
 
 			assert.strictEqual(result.enqueued, false)
 			if (result.enqueued) return

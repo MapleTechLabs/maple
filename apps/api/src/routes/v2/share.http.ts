@@ -39,8 +39,7 @@ import {
 import { MapleApiV2 } from "@maple/domain/http/v2"
 import { MAX_LIST_RANGE_SECONDS, MAX_QUERY_RANGE_SECONDS } from "@maple/query-engine"
 import { hashShareToken, shareOgId, verifyAlertChartId, verifyChatChartId, verifyShareOgId } from "@maple/db"
-import { chatSessionStub } from "@maple/domain/chat-session-stub"
-import { WorkerEnvironment } from "@maple/infra/worker-runtime"
+import { ChatSessions } from "@maple/backend/platform/bindings"
 import { redactForShare } from "@maple/widgets/dashboard"
 import { Effect, Option, Redacted, Schema } from "effect"
 import { Env } from "@maple/backend/platform/Env"
@@ -464,9 +463,9 @@ export const HttpV2SharePublicLive = HttpApiBuilder.group(MapleApiV2, "sharePubl
 					// The conversation's own Durable Object, bound cross-script. No
 					// binding — an `alchemy dev` stack without the ai Worker — reads as
 					// no such chart, like every other reason this can fail.
-					const workerEnv = yield* Effect.serviceOption(WorkerEnvironment)
-					if (Option.isNone(workerEnv)) return yield* notFound
-					const stub = chatSessionStub(workerEnv.value, sessionId)
+					const chatSessions = yield* Effect.serviceOption(ChatSessions)
+					if (Option.isNone(chatSessions)) return yield* notFound
+					const stub = chatSessions.value.stub(sessionId)
 					if (stub === undefined) return yield* notFound
 
 					// The uniform not-found is the answer, not the diagnosis: a cross-script

@@ -56,7 +56,7 @@ import {
 } from "effect"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { isTriageSkipReason, maybeEnqueueTriage } from "@maple/backend/services/errors/ai-triage-enqueue"
-import { WorkerEnvironment } from "@maple/infra/worker-runtime"
+import { ChatSessions } from "@maple/backend/platform/bindings"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
@@ -251,7 +251,7 @@ const make: Effect.Effect<
 	const env = yield* Env
 	// Optional: present only inside a Worker isolate. Used to start the
 	// investigation agent when an incident opens (org opt-in).
-	const workerEnv = Option.getOrUndefined(yield* Effect.serviceOption(WorkerEnvironment))
+	const chatSessions = Option.getOrUndefined(yield* Effect.serviceOption(ChatSessions))
 
 	const dbExecute = makeDbExecute(database, "AnomalyDetectionService", makePersistenceError)
 
@@ -1702,7 +1702,7 @@ const make: Effect.Effect<
 								sampleCount: evaluation.sampleCount,
 								detectedAt: new Date(nowMs).toISOString(),
 							},
-							workerEnv,
+							chatSessions,
 						}).pipe(Effect.provideService(Database, database))
 						// A gate skip is recorded as `skipped`, not left at `none`: the
 						// incident was judged, and the hub should say so rather than

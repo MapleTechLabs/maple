@@ -3,7 +3,7 @@
  * agent is told, where the answer is posted, and when a fix is committed and when it is not.
  *
  * The provider is a fake at the `VcsProviderRegistry` seam, the Durable Object at the
- * `WorkerEnvironment` seam; each records what it was asked to do.
+ * `ChatSessions` seam; each records what it was asked to do.
  */
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import {
@@ -12,7 +12,7 @@ import {
 	type PullRequestHead,
 	PrReviewReplyId,
 } from "@maple/domain/http"
-import { WorkerEnvironment } from "@maple/infra/worker-runtime"
+import { envPorts } from "@maple/backend/platform/env-ports"
 import { Effect, Layer, Option, Schema } from "effect"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import {
@@ -140,7 +140,7 @@ const layerFor = (
 		ids: ["github"],
 		resolve: () => Effect.succeed(provider),
 	} satisfies VcsProviderRegistryApi)
-	const workerEnv = Layer.succeed(WorkerEnvironment, {
+	const workerEnv = envPorts({
 		ChatSession: {
 			idFromName: (name: string) => name,
 			get: () => ({

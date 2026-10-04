@@ -8,7 +8,7 @@ import {
 	type ChatProposalSettlement,
 } from "@maple/domain/chat-session"
 import type { ChatSessionStub } from "@maple/domain/chat-session-stub"
-import { WorkerEnvironment } from "@maple/infra/worker-runtime"
+import { envPorts } from "@maple/backend/platform/env-ports"
 import { Context, Effect, Layer } from "effect"
 import { HttpRouter } from "effect/http"
 import { HttpApi, HttpApiBuilder } from "effect/http-api"
@@ -80,7 +80,7 @@ const makeHarness = (session: {
 		Layer.provide(HttpChatLive),
 		Layer.provide(V1ErrorBoundaryLive),
 		Layer.provideMerge(AuthorizationStubLayer),
-		Layer.provideMerge(Layer.succeed(WorkerEnvironment, env as never)),
+		Layer.provideMerge(envPorts(env)),
 	)
 	const { handler, dispose } = HttpRouter.toWebHandler(routes as never, { disableLogger: true })
 

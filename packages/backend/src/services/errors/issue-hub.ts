@@ -10,6 +10,7 @@ import {
 import { actors, alertIncidents, errorIssues, errorIssueEvents, type ErrorIssueRow } from "@maple/db"
 import { and, eq, sql } from "drizzle-orm"
 import { Clock, Effect, Schema } from "effect"
+import type { ChatSessionsApi } from "@maple/backend/platform/bindings"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { maybeEnqueueTriage } from "./ai-triage-enqueue"
 import { issueSeverityFromAlert } from "./severity-map"
@@ -54,8 +55,8 @@ export interface UpsertAlertIssueInput {
 	readonly incidentId: AlertIncidentId
 	readonly serviceName: string
 	readonly timestamp: number
-	/** The Worker env, for the `ChatSession` binding the investigation agent runs on. */
-	readonly workerEnv?: Record<string, unknown>
+	/** The `ChatSession` port the investigation agent runs on. */
+	readonly chatSessions?: ChatSessionsApi
 }
 
 export interface UpsertAlertIssueResult {
@@ -354,7 +355,7 @@ export const upsertAlertIssue: (
 				lastTriggeredAt: new Date(input.timestamp).toISOString(),
 				issueId,
 			},
-			workerEnv: input.workerEnv,
+			chatSessions: input.chatSessions,
 		})
 
 		return { issueId, action }

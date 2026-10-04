@@ -27,12 +27,11 @@ import {
 } from "@maple/domain/http"
 import { wrapChatContext } from "@maple/domain/chat-preamble"
 import { encodeChatTurnTenant, prReplySessionId } from "@maple/domain/chat-session"
-import { chatSessionStub } from "@maple/domain/chat-session-stub"
 import { UserId } from "@maple/domain/primitives"
 import { prReviewEdits, prReviewFindings, prReviewReplies, prReviews, type PrReviewReplyRow } from "@maple/db"
-import { WorkerEnvironment } from "@maple/infra/worker-runtime"
 import { and, count, desc, eq, gte, inArray } from "drizzle-orm"
 import { Clock, Context, Effect, Exit, Layer, Option, Result, Schema } from "effect"
+import { ChatSessions } from "@maple/backend/platform/bindings"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { msToDate } from "@maple/backend/platform/time"
@@ -204,7 +203,7 @@ export class PrReviewConversationService extends Context.Service<
 		const providers = yield* VcsProviderRegistry
 		const featureFlags = yield* OrganizationFeatureFlagsService
 		const reviews = yield* PrReviewService
-		const workerEnv = Option.getOrUndefined(yield* Effect.serviceOption(WorkerEnvironment))
+		const chatSessions = Option.getOrUndefined(yield* Effect.serviceOption(ChatSessions))
 
 		const skip = (reason: string): PrReplyOutcome => ({
 			replyId: null,
@@ -531,7 +530,7 @@ export class PrReviewConversationService extends Context.Service<
 				.pipe(Effect.mapError(toPersistence))
 
 			const sessionId = prReplySessionId(orgId, replyId)
-			const stub = workerEnv === undefined ? undefined : chatSessionStub(workerEnv, sessionId)
+			const stub = chatSessions?.stub(sessionId)
 			if (stub === undefined) return yield* fail("agent_unavailable")
 			const kickoff = buildReplyKickoff({
 				repository: repo.fullName,

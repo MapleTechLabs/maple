@@ -48,7 +48,6 @@ import {
 } from "@maple/domain/http"
 import { wrapChatContext } from "@maple/domain/chat-preamble"
 import { encodeChatTurnTenant, prReviewSessionId } from "@maple/domain/chat-session"
-import { chatSessionStub } from "@maple/domain/chat-session-stub"
 import { UserId } from "@maple/domain/primitives"
 import {
 	prReviewFindingEmbeddings,
@@ -57,9 +56,9 @@ import {
 	type PrReviewFindingRow,
 	type PrReviewRow,
 } from "@maple/db"
-import { WorkerEnvironment } from "@maple/infra/worker-runtime"
 import { and, count, desc, eq, gt, gte, inArray, ne, or, sql } from "drizzle-orm"
 import { Cause, Clock, Context, Effect, Exit, Layer, Option, Result, Schema } from "effect"
+import { ChatSessions } from "@maple/backend/platform/bindings"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { dateToMs, msToDate } from "@maple/backend/platform/time"
@@ -878,7 +877,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 			const providers = yield* VcsProviderRegistry
 			const featureFlags = yield* OrganizationFeatureFlagsService
 			// Present inside a Worker, absent in tests; without it a trigger records `agent_unavailable`.
-			const workerEnv = Option.getOrUndefined(yield* Effect.serviceOption(WorkerEnvironment))
+			const chatSessions = Option.getOrUndefined(yield* Effect.serviceOption(ChatSessions))
 			// Present where webhooks are consumed; without it a push's review starts at once.
 			const syncQueue = Option.getOrUndefined(yield* Effect.serviceOption(VcsSyncQueue))
 			// Present where the agent runs; without it the feedback filter is off.
@@ -1377,8 +1376,8 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					.pipe(Effect.mapError(toPersistence))
 				for (const row of rows) {
 					if (row.headSha === headSha) continue
-					if (row.sessionId !== null && workerEnv !== undefined) {
-						const stub = chatSessionStub(workerEnv, row.sessionId)
+					if (row.sessionId !== null && chatSessions !== undefined) {
+						const stub = chatSessions.stub(row.sessionId)
 						if (stub !== undefined) {
 							yield* Effect.tryPromise(() => stub.abort()).pipe(
 								Effect.catchCause((cause) =>
@@ -1486,7 +1485,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						...extra,
 					})
 
-				const stub = workerEnv === undefined ? undefined : chatSessionStub(workerEnv, sessionId)
+				const stub = chatSessions?.stub(sessionId)
 				if (stub === undefined) {
 					yield* updateWhere(orgId, reviewId, ACTIVE_STATUSES, {
 						status: "failed",

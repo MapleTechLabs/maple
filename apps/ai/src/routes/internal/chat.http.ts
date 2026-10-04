@@ -8,9 +8,8 @@ import {
 	MapleAiApi,
 } from "@maple/domain/http"
 import { Effect } from "effect"
-import { WorkerEnvironment } from "@maple/infra/worker-runtime"
 import { encodeChatTurnTenant, orgIdFromChatSessionId } from "@maple/domain/chat-session"
-import { chatSessionStub } from "@maple/domain/chat-session-stub"
+import { ChatSessions } from "@maple/backend/platform/bindings"
 import { describeCause } from "@maple/backend/platform/describe-cause"
 
 /** A session call that did not complete. It may have got as far as running the tool, so the copy hedges. */
@@ -49,7 +48,7 @@ export const HttpChatLive = HttpApiBuilder.group(MapleAiApi, "chat", (handlers) 
 			// Another org's conversation reads as missing: confirming it exists is itself a leak.
 			if (orgIdFromChatSessionId(sessionId) !== tenant.orgId) return yield* notFound
 
-			const stub = chatSessionStub(yield* WorkerEnvironment, sessionId)
+			const stub = (yield* ChatSessions).stub(sessionId)
 			if (stub === undefined) {
 				return yield* new ChatToolExecutionError({
 					toolCallId,
