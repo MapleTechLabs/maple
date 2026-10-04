@@ -41,6 +41,7 @@ import {
 	resolveWorkerPlacement,
 } from "@maple/infra/cloudflare"
 import { merge, optionalSecret, plainWithDefault, selfObservabilityEnv } from "@maple/infra/env"
+import { workerEnvLayer } from "@maple/infra/worker-runtime"
 import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Effect, Layer, Ref, Scope } from "effect"
@@ -99,7 +100,7 @@ const props = Effect.gen(function* () {
 		// `devEnv` last, so `.env.local` cannot override the inter-app URLs.
 		env: {
 			// Cross-script reference to the chat Durable Object the AI Worker hosts: a mention
-			// becomes a turn on it, and `chatSessionStub` reads it off `env` under the class name.
+			// becomes a turn on it, and the `ChatSessions` port (`envPorts`) reads it off `env`.
 			ChatSession: Cloudflare.DurableObject("ChatSession", {
 				className: "ChatSession",
 				scriptName: resolveWorkerName("ai", stage, region),
@@ -134,9 +135,9 @@ export default ChatBot.make(
 		// Yielding the class is what binds it, registers it at plan time and
 		// exports it from the generated entry.
 		const sockets = yield* ConnectorSocketObject
-		// Bound but never called from here: the socket object reaches a conversation's relay off its
-		// own env, and this is what puts the namespace there and the class in the entry's exports.
-		yield* ConnectorRelayObject
+		// The webhook route's way to a conversation's relay; the socket object yields the same
+		// client in its own activation.
+		const relays = yield* ConnectorRelayObject
 		// `MAPLE_DB` in the stage's flavor. One row per mention — the workspace this event's
 		// conversation belongs to — so it shares the api's Hyperdrive config rather than taking one.
 		yield* MapleDb("chat-bot")
@@ -162,13 +163,17 @@ export default ChatBot.make(
 		yield* Cloudflare.Workers.cron(CONNECT_CRON, () =>
 			Effect.forEach(
 				socketConnectors(connectors),
-				(connector) => {
-					const config = resolveConnectorConfig(env, connector)
-					return config._tag === "missing"
-						? announceSkip(connector, config.names)
-						: sockets.getByName(connector.id).ensureConnected(connector.id)
-				},
+				(connector) =>
+					Effect.flatMap(resolveConnectorConfig(connector), (config) =>
+						config._tag === "missing"
+							? announceSkip(connector, config.names)
+							: sockets.getByName(connector.id).ensureConnected(connector.id),
+					),
 				{ discard: true },
+			).pipe(
+				// Per fire, never in init: alchemy binds every `Config` it sees read at plan time.
+				// oxlint-disable-next-line effecttsgo/strict-effect-provide
+				Effect.provide(workerEnvLayer(env)),
 			),
 		)
 
@@ -181,9 +186,10 @@ export default ChatBot.make(
 			Effect.gen(function* () {
 				const scope = yield* Scope.make()
 				return yield* HttpRouter.toHttpEffect(
-					connectorWebhookRouter(env).pipe(
-						Layer.provideMerge(InboundHandler.layer(env)),
+					connectorWebhookRouter().pipe(
+						Layer.provideMerge(InboundHandler.layer(relays)),
 						Layer.provideMerge(HttpRouter.layer),
+						Layer.provideMerge(workerEnvLayer(env)),
 					),
 				).pipe(Scope.provide(scope))
 			}).pipe(Effect.orDie),
@@ -200,8 +206,8 @@ export default ChatBot.make(
 				// The host Worker's layer also provides the Durable Objects'
 				// implementations; yielding the classes above is what forces this to run,
 				// so they reach the generated entry's exports.
-				ConnectorSocketLive,
-				ConnectorRelayLive,
+				// The socket object's activation yields the relay namespace, so it is built on it.
+				ConnectorSocketLive.pipe(Layer.provideMerge(ConnectorRelayLive)),
 				Cloudflare.Hyperdrive.ConnectBinding,
 				Cloudflare.Workers.CronEventSourceLive,
 				WorkerTelemetry({ serviceName: "maple-chat-bot" }),
