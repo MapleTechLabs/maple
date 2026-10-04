@@ -45,7 +45,8 @@ const withSecurityHeaders = (response: Response): Response => {
 const serve = async (request: Request, assets: AssetsBinding): Promise<Response> => {
 	const asset = await assets.fetch(request)
 	if (asset.status !== 404) return withSecurityHeaders(asset)
-	return withSecurityHeaders(await assets.fetch(new Request(new URL("/index.html", request.url), request)))
+	// A fresh GET: the first fetch may have consumed the original request's body.
+	return withSecurityHeaders(await assets.fetch(new Request(new URL("/index.html", request.url))))
 }
 
 export default {

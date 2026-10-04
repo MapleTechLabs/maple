@@ -42,10 +42,14 @@ interface TrackEvent {
 const optional = <A>(config: Config.Config<A>) =>
 	Config.option(config).pipe(Config.orElse(() => Config.succeed(Option.none<A>())))
 
+const notBlank = (value: string) => value.trim() !== ""
+
 const trackerConfig = Config.all({
-	secretKey: optional(Config.Redacted("AUTUMN_SECRET_KEY")),
-	defaultOrgId: optional(Config.String("MAPLE_DEFAULT_ORG_ID")),
-	apiUrl: optional(Config.String("AUTUMN_API_URL")),
+	secretKey: optional(Config.Redacted("AUTUMN_SECRET_KEY")).pipe(
+		Config.map(Option.filter((key) => notBlank(Redacted.value(key)))),
+	),
+	defaultOrgId: optional(Config.String("MAPLE_DEFAULT_ORG_ID")).pipe(Config.map(Option.filter(notBlank))),
+	apiUrl: optional(Config.String("AUTUMN_API_URL")).pipe(Config.map(Option.filter(notBlank))),
 })
 
 const postTrack = (

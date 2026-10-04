@@ -542,6 +542,12 @@ const applySchema = (database: DatabaseApi, orgId: OrgId) =>
 			),
 		)
 		const encryptionKey = Buffer.from(Redacted.value(encryptionKeyText).trim(), "base64")
+		// AES-256-GCM: anything else fails later as a misleading password-decryption error.
+		if (encryptionKey.length !== 32) {
+			return yield* new SchemaApplyConfigError({
+				message: `${ENCRYPTION_KEY_CONFIG} must be base64 for exactly 32 bytes`,
+			})
+		}
 		const appliedVersions: number[] = []
 		const skippedFeatures: SkippedFeature[] = []
 

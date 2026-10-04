@@ -271,10 +271,17 @@ export const makeEdgeCacheService = (
 			// connection slot long after the deadline gave up on it. The read runs in
 			// a detached fiber that the deadline abandons rather than interrupts, so
 			// `slots.held()` reflects that zombie for exactly as long as it is real.
-			yield* Effect.sync(() => slots.acquire())
-			const read = yield* backend
-				.get(bucket, key, nowMs)
-				.pipe(Effect.ensuring(Effect.sync(() => slots.release())), Effect.forkDetach)
+			// Acquire and fork as one step, so an interrupt between them cannot leak the slot.
+			const read = yield* Effect.uninterruptible(
+				Effect.sync(() => slots.acquire()).pipe(
+					Effect.andThen(
+						Effect.interruptible(backend.get(bucket, key, nowMs)).pipe(
+							Effect.ensuring(Effect.sync(() => slots.release())),
+							Effect.forkDetach,
+						),
+					),
+				),
+			)
 			return yield* Fiber.join(read).pipe(
 				Effect.map((value) => ({ value, timedOut: false as const })),
 				Effect.timeoutOrElse({
