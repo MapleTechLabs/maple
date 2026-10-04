@@ -850,7 +850,9 @@ describe("POST /internal/ai-sessions/list", () => {
 				"countIf(ai_trace_index.Model IN ('claude-sonnet-5')) > 0",
 				"countIf(ai_trace_index.AgentName IN ('slack-agent')) > 0",
 				"countIf(ai_trace_index.ToolName IN ('search_traces')) > 0",
-				"SessionId LIKE 'wrun01%'",
+				// Session ids match as a substring (their key sits mid-string); trace ids as a prefix.
+				"SessionId LIKE '%wrun01%'",
+				"TraceId LIKE 'wrun01%'",
 				"errorAgentSpans > 0",
 				"NOT (sessionId LIKE 'trace:%')",
 				"agentDurationMs >= 1000",
