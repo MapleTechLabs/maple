@@ -137,35 +137,36 @@ const isPrivateHost = (hostname: string): boolean => {
 	return false
 }
 
-export const validateExternalUrlSync = (raw: string): URL => {
+/** The validation itself: returns the failure rather than throwing it. */
+const checkExternalUrl = (raw: string): URL | UrlValidationError => {
 	const trimmed = raw.trim()
 	if (trimmed.length === 0) {
-		throw new UrlValidationError({ message: "URL is required" })
+		return new UrlValidationError({ message: "URL is required" })
 	}
 	if (!URL.canParse(trimmed)) {
-		throw new UrlValidationError({ message: `Invalid URL: ${trimmed}`, url: trimmed })
+		return new UrlValidationError({ message: `Invalid URL: ${trimmed}`, url: trimmed })
 	}
 	const parsed = new URL(trimmed)
 	if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-		throw new UrlValidationError({
+		return new UrlValidationError({
 			message: `URL scheme '${parsed.protocol}' is not allowed; use http or https`,
 			url: trimmed,
 		})
 	}
 	if (parsed.hostname.length === 0) {
-		throw new UrlValidationError({ message: "URL must include a hostname", url: trimmed })
+		return new UrlValidationError({ message: "URL must include a hostname", url: trimmed })
 	}
 	// Credentials in the URL are both a way to smuggle a second host past a
 	// reader (`https://real.example.com@internal/`, where the parser's host is
 	// `internal`) and a way to have Maple replay them at the destination.
 	if (parsed.username !== "" || parsed.password !== "") {
-		throw new UrlValidationError({
+		return new UrlValidationError({
 			message: "URL must not embed credentials",
 			url: trimmed,
 		})
 	}
 	if (isPrivateHost(parsed.hostname)) {
-		throw new UrlValidationError({
+		return new UrlValidationError({
 			message: `URL host '${parsed.hostname}' is not allowed (loopback, private, or metadata range)`,
 			url: trimmed,
 		})
@@ -173,16 +174,16 @@ export const validateExternalUrlSync = (raw: string): URL => {
 	return parsed
 }
 
+export const validateExternalUrlSync = (raw: string): URL => {
+	const result = checkExternalUrl(raw)
+	if (result instanceof UrlValidationError) throw result
+	return result
+}
+
 export const validateExternalUrl = (raw: string): Effect.Effect<URL, UrlValidationError> =>
-	Effect.try({
-		try: () => validateExternalUrlSync(raw),
-		catch: (error) =>
-			error instanceof UrlValidationError
-				? error
-				: new UrlValidationError({
-						message: error instanceof Error ? error.message : "URL validation failed",
-						url: raw,
-					}),
+	Effect.suspend(() => {
+		const result = checkExternalUrl(raw)
+		return result instanceof UrlValidationError ? Effect.fail(result) : Effect.succeed(result)
 	})
 
 const MAX_REDIRECTS = 5

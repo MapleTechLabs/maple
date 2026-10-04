@@ -7,12 +7,11 @@
  * headline one on the first run.
  */
 import { assert, beforeEach, describe, it } from "vitest"
+import { Effect } from "effect"
 import { encodeChatTurnTenant, type ChatTurnOrigin, type ChatTurnTenant } from "@maple/domain/chat-session"
 import { ChatSession, MAX_TURN_RESUMES, TURN_STALE_MS } from "./ChatSession"
 import type { RunChatSessionTurnInput } from "./turn-runner"
-import { installSchedulerWait, makeFakeDurableObjectState } from "../../test/chat/fake-do-state"
-
-installSchedulerWait()
+import { makeFakeDurableObjectState } from "../../test/chat/fake-do-state"
 
 // Encoded, because that is what actually crosses the Durable Object boundary: RPC serializes with
 // structured clone, which refuses class instances.
@@ -48,12 +47,13 @@ const makeSession = () => {
 
 interface ChatSessionWaiterHarness {
 	readonly waiters: Set<() => void>
-	readonly waitForAppend: (timeoutMs: number) => Promise<boolean>
+	readonly appends: number
+	readonly waitForAppend: (seen: number, timeoutMs: number) => Effect.Effect<boolean>
 }
 
 const waiterHarness = (session: ChatSession): ChatSessionWaiterHarness => {
 	// SAFETY: this test intentionally exercises ChatSession's private waiter lifecycle; the
-	// interface mirrors the two members declared by ChatSession and never escapes the test.
+	// interface mirrors the three members declared by ChatSession and never escapes the test.
 	return session as ChatSessionWaiterHarness
 }
 
@@ -655,7 +655,9 @@ describe("ChatSession.subscribe", () => {
 		const harness = waiterHarness(session)
 
 		for (let reconnect = 0; reconnect < 3; reconnect++) {
-			assert.isFalse(await harness.waitForAppend.call(session, 0))
+			assert.isFalse(
+				await Effect.runPromise(harness.waitForAppend.call(session, harness.appends, 0)),
+			)
 			assert.equal(harness.waiters.size, 0)
 		}
 	})

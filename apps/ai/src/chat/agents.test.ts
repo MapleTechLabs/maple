@@ -98,14 +98,16 @@ describe("profileForTurn", () => {
 		}
 	})
 
-	it("offers a connector no internal-audience tool, so a channel cannot reach the sandbox", () => {
-		// `sandbox_exec` is code execution against the org's checkout, answering into a thread
-		// anyone can read, and nothing proposes it for approval first.
+	it("offers a connector the repository sandbox but no internal-audience tool", () => {
+		// The reviewer's pull request tools act on the org's behalf; a channel never reaches them.
 		const { tools } = toolsFor(connectorSession, CONNECTOR_ORIGIN)
 		const internal = mapleToolCatalog.filter((definition) => definition.audience === "internal")
 		assert.isNotEmpty(internal, "no internal tools in the catalog — this test would pass vacuously")
 		for (const definition of internal) {
 			assert.notProperty(tools, definition.name, `${definition.name} was offered to the connector`)
+		}
+		for (const name of ["sandbox_grep", "sandbox_list_files", "sandbox_read_file", "sandbox_exec"]) {
+			assert.property(tools, name, `${name} was withheld from the connector`)
 		}
 	})
 

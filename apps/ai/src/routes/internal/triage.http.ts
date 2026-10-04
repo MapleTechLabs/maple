@@ -14,11 +14,10 @@ import {
 	IncidentTriageUnauthorizedError,
 	MapleAiApi,
 } from "@maple/domain/http"
-import { WorkerEnvironment } from "@maple/infra/worker-runtime"
 import { Effect, Option, Redacted } from "effect"
 import { HttpApiBuilder } from "effect/http-api"
 import { Env } from "@maple/backend/platform/Env"
-import { resolveDecisionModel } from "../../platform/Llm"
+import { loadLlmSettings, resolveDecisionModel } from "../../platform/Llm"
 import { classifyIncident } from "../../triage/incident-classifier"
 
 /**
@@ -52,8 +51,7 @@ export const HttpTriageLive = HttpApiBuilder.group(MapleAiApi, "triage", (handle
 				})
 			}
 
-			const env = yield* WorkerEnvironment
-			const model = resolveDecisionModel(env)
+			const model = resolveDecisionModel(yield* loadLlmSettings)
 			if (model === undefined) {
 				return yield* new IncidentTriageModelError({
 					message: "no decision model is served in this region",

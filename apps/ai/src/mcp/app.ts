@@ -71,7 +71,7 @@ const negotiateProtocolVersion = (request: HttpServerRequest.HttpServerRequest) 
 	})
 }
 
-const mcpChallenge = (invalid: boolean) =>
+const mcpChallenge = (invalid: boolean, message = "Authenticate with Maple to access this MCP server.") =>
 	Effect.gen(function* () {
 		const request = yield* HttpServerRequest.HttpServerRequest
 		const proto = request.headers["x-forwarded-proto"]?.split(",")[0]?.trim() ?? "https"
@@ -85,7 +85,7 @@ const mcpChallenge = (invalid: boolean) =>
 			...(invalid ? ['error="invalid_token"'] : []),
 		].join(", ")}`
 		return HttpServerResponse.jsonUnsafe(
-			{ error: "unauthorized", message: "Authenticate with Maple to access this MCP server." },
+			{ error: "unauthorized", message },
 			{
 				status: 401,
 				headers: { "www-authenticate": challenge, "cache-control": "no-store" },
@@ -175,7 +175,11 @@ const McpAuthorizationMiddleware = HttpRouter.middleware<{ provides: CurrentMcpT
 					),
 					Effect.catchTags({
 						"@maple/mcp/errors/McpAuthMissingError": () => mcpChallenge(false),
-						"@maple/mcp/errors/McpAuthInvalidError": () => mcpChallenge(true),
+						// A malformed bearer gets its specific fix; other reasons keep the generic text.
+						"@maple/mcp/errors/McpAuthInvalidError": (error) =>
+							error.reason === "malformed_token"
+								? mcpChallenge(true, error.message)
+								: mcpChallenge(true),
 						"@maple/mcp/errors/McpAuthUnavailableError": mcpUnavailable,
 						"@maple/mcp/errors/McpInvalidTenantError": () => mcpChallenge(true),
 					}),

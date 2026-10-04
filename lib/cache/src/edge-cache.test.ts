@@ -1,6 +1,12 @@
 import { assert, describe, it } from "@effect/vitest"
 import { Effect, Layer, Option, Schema } from "effect"
-import { EdgeCacheIOError, EdgeCacheService, makeEdgeCacheService, type EdgeCacheBackend } from "./edge-cache"
+import {
+	EdgeCacheBackendError,
+	EdgeCacheIOError,
+	EdgeCacheService,
+	makeEdgeCacheService,
+	type EdgeCacheBackend,
+} from "./edge-cache"
 import { makeOutboundSlotsCell, trackOutboundSlot, type OutboundSlotsCell } from "./outbound-slots"
 
 // A stand-in for whatever a caller caches. These tests used to reach for
@@ -34,17 +40,20 @@ const makeJsonRoundtripBackend = (): EdgeCacheBackend & {
 	return {
 		name: "memory",
 		store,
-		get: async (bucket, hash) => {
-			const raw = store.get(composite(bucket, hash))
-			if (raw === undefined) return undefined
-			return JSON.parse(raw) as unknown
-		},
-		put: async (bucket, hash, value) => {
-			store.set(composite(bucket, hash), JSON.stringify(value))
-		},
-		delete: async (bucket, hash) => {
-			store.delete(composite(bucket, hash))
-		},
+		get: (bucket, hash) =>
+			Effect.sync(() => {
+				const raw = store.get(composite(bucket, hash))
+				if (raw === undefined) return undefined
+				return JSON.parse(raw) as unknown
+			}),
+		put: (bucket, hash, value) =>
+			Effect.sync(() => {
+				store.set(composite(bucket, hash), JSON.stringify(value))
+			}),
+		delete: (bucket, hash) =>
+			Effect.sync(() => {
+				store.delete(composite(bucket, hash))
+			}),
 	}
 }
 
@@ -56,9 +65,9 @@ describe("EdgeCacheService.getOrCompute (no schema)", () => {
 		let computeCalls = 0
 		const backend: EdgeCacheBackend = {
 			name: "memory",
-			get: async () => await new Promise<never>(() => {}),
-			put: async () => {},
-			delete: async () => {},
+			get: () => Effect.never,
+			put: () => Effect.void,
+			delete: () => Effect.void,
 		}
 
 		return Effect.gen(function* () {
@@ -81,12 +90,13 @@ describe("EdgeCacheService.getOrCompute (no schema)", () => {
 		let computeCalls = 0
 		const backend: EdgeCacheBackend = {
 			name: "memory",
-			get: async () => {
-				getCalls += 1
-				return await new Promise<never>(() => {})
-			},
-			put: async () => {},
-			delete: async () => {},
+			get: () =>
+				Effect.gen(function* () {
+					getCalls += 1
+					return yield* Effect.never
+				}),
+			put: () => Effect.void,
+			delete: () => Effect.void,
 		}
 
 		return Effect.gen(function* () {
@@ -137,11 +147,12 @@ describe("EdgeCacheService.getOrCompute (no schema)", () => {
 		const puts: number[] = []
 		const backend: EdgeCacheBackend = {
 			name: "memory",
-			get: async () => undefined, // force a miss → always computes → always writes
-			put: async (_bucket, _hash, _value, ttlSeconds) => {
-				puts.push(ttlSeconds)
-			},
-			delete: async () => {},
+			get: () => Effect.succeed(undefined), // force a miss → always computes → always writes
+			put: (_bucket, _hash, _value, ttlSeconds) =>
+				Effect.sync(() => {
+					puts.push(ttlSeconds)
+				}),
+			delete: () => Effect.void,
 		}
 		const ttlBySize = (value: { n: number }) => (value.n > 10 ? 300 : 15)
 
@@ -166,13 +177,14 @@ describe("EdgeCacheService.rawGet", () => {
 	it.live("reports hit, miss, and timeout outcomes without collapsing them", () => {
 		const backend: EdgeCacheBackend = {
 			name: "memory",
-			get: async (bucket) => {
-				if (bucket === "hit") return { value: 42 }
-				if (bucket === "slow") return await new Promise<never>(() => {})
-				return undefined
-			},
-			put: async () => {},
-			delete: async () => {},
+			get: (bucket) =>
+				Effect.gen(function* () {
+					if (bucket === "hit") return { value: 42 }
+					if (bucket === "slow") return yield* Effect.never
+					return undefined
+				}),
+			put: () => Effect.void,
+			delete: () => Effect.void,
 		}
 
 		return Effect.gen(function* () {
@@ -193,9 +205,9 @@ describe("EdgeCacheService.rawGet", () => {
 	it.live("treats a backend read timeout as a cache miss", () => {
 		const backend: EdgeCacheBackend = {
 			name: "memory",
-			get: async () => await new Promise<never>(() => {}),
-			put: async () => {},
-			delete: async () => {},
+			get: () => Effect.never,
+			put: () => Effect.void,
+			delete: () => Effect.void,
 		}
 
 		return Effect.gen(function* () {
@@ -208,11 +220,9 @@ describe("EdgeCacheService.rawGet", () => {
 	it.effect("retains EdgeCacheIOError for backend failures", () => {
 		const backend: EdgeCacheBackend = {
 			name: "memory",
-			get: async () => {
-				throw new Error("kv unavailable")
-			},
-			put: async () => {},
-			delete: async () => {},
+			get: () => Effect.fail(new EdgeCacheBackendError({ op: "get", message: "kv unavailable" })),
+			put: () => Effect.void,
+			delete: () => Effect.void,
 		}
 
 		return Effect.gen(function* () {
@@ -262,11 +272,9 @@ describe("EdgeCacheService.invalidate", () => {
 	it.effect("swallows backend delete failures (best-effort)", () => {
 		const failing: EdgeCacheBackend = {
 			name: "memory",
-			get: async () => undefined,
-			put: async () => {},
-			delete: async () => {
-				throw new Error("kv unavailable")
-			},
+			get: () => Effect.succeed(undefined),
+			put: () => Effect.void,
+			delete: () => Effect.fail(new EdgeCacheBackendError({ op: "delete", message: "kv unavailable" })),
 		}
 		return Effect.gen(function* () {
 			const cache = yield* EdgeCacheService
@@ -429,17 +437,20 @@ describe("EdgeCacheService read deadline", () => {
 		let getCalls = 0
 		const backend: EdgeCacheBackend = {
 			name: "memory",
-			get: async (bucket, hash) => {
-				getCalls += 1
-				if (getCalls <= hangCount) return await new Promise<never>(() => {})
-				return store.get(composite(bucket, hash))
-			},
-			put: async (bucket, hash, value) => {
-				store.set(composite(bucket, hash), value)
-			},
-			delete: async (bucket, hash) => {
-				store.delete(composite(bucket, hash))
-			},
+			get: (bucket, hash) =>
+				Effect.gen(function* () {
+					getCalls += 1
+					if (getCalls <= hangCount) return yield* Effect.never
+					return store.get(composite(bucket, hash))
+				}),
+			put: (bucket, hash, value) =>
+				Effect.sync(() => {
+					store.set(composite(bucket, hash), value)
+				}),
+			delete: (bucket, hash) =>
+				Effect.sync(() => {
+					store.delete(composite(bucket, hash))
+				}),
 		}
 		return { backend, store, getCalls: () => getCalls }
 	}
@@ -451,16 +462,19 @@ describe("EdgeCacheService read deadline", () => {
 		const composite = (bucket: string, hash: string) => `${bucket}:${hash}`
 		return {
 			name: "memory",
-			get: async (bucket, hash) => {
-				await new Promise((resolve) => setTimeout(resolve, readDelayMs))
-				return store.get(composite(bucket, hash))
-			},
-			put: async (bucket, hash, value) => {
-				store.set(composite(bucket, hash), value)
-			},
-			delete: async (bucket, hash) => {
-				store.delete(composite(bucket, hash))
-			},
+			get: (bucket, hash) =>
+				Effect.gen(function* () {
+					yield* Effect.sleep(readDelayMs)
+					return store.get(composite(bucket, hash))
+				}),
+			put: (bucket, hash, value) =>
+				Effect.sync(() => {
+					store.set(composite(bucket, hash), value)
+				}),
+			delete: (bucket, hash) =>
+				Effect.sync(() => {
+					store.delete(composite(bucket, hash))
+				}),
 		}
 	}
 
@@ -532,18 +546,21 @@ describe("EdgeCacheService read deadline", () => {
 		const store = new Map<string, unknown>()
 		const backend: EdgeCacheBackend = {
 			name: "memory",
-			get: async (bucket, hash) => {
-				call += 1
-				// Odd calls hang (timeout), even calls answer — T,S,T,S,T.
-				if (call % 2 === 1) return await new Promise<never>(() => {})
-				return store.get(`${bucket}:${hash}`)
-			},
-			put: async (bucket, hash, value) => {
-				store.set(`${bucket}:${hash}`, value)
-			},
-			delete: async (bucket, hash) => {
-				store.delete(`${bucket}:${hash}`)
-			},
+			get: (bucket, hash) =>
+				Effect.gen(function* () {
+					call += 1
+					// Odd calls hang (timeout), even calls answer — T,S,T,S,T.
+					if (call % 2 === 1) return yield* Effect.never
+					return store.get(`${bucket}:${hash}`)
+				}),
+			put: (bucket, hash, value) =>
+				Effect.sync(() => {
+					store.set(`${bucket}:${hash}`, value)
+				}),
+			delete: (bucket, hash) =>
+				Effect.sync(() => {
+					store.delete(`${bucket}:${hash}`)
+				}),
 		}
 
 		return Effect.gen(function* () {
@@ -566,12 +583,13 @@ describe("EdgeCacheService read deadline", () => {
 		let getCalls = 0
 		const backend: EdgeCacheBackend = {
 			name: "memory",
-			get: async () => {
-				getCalls += 1
-				return { cached: true }
-			},
-			put: async () => {},
-			delete: async () => {},
+			get: () =>
+				Effect.sync(() => {
+					getCalls += 1
+					return { cached: true }
+				}),
+			put: () => Effect.void,
+			delete: () => Effect.void,
 		}
 
 		return Effect.gen(function* () {
@@ -610,20 +628,21 @@ describe("EdgeCacheService read deadline", () => {
 		let settleFirstRead: (() => void) | undefined
 		const backend: EdgeCacheBackend = {
 			name: "memory",
-			get: async () => {
-				getCalls += 1
-				if (getCalls === 1) {
-					// Hangs past the deadline; the test settles it explicitly later —
-					// the shape of an uncancellable cache.match that resolves long
-					// after the read abandoned it.
-					return await new Promise<undefined>((resolve) => {
-						settleFirstRead = () => resolve(undefined)
-					})
-				}
-				return undefined
-			},
-			put: async () => {},
-			delete: async () => {},
+			get: () =>
+				Effect.suspend(() => {
+					getCalls += 1
+					if (getCalls === 1) {
+						// Hangs past the deadline; the test settles it explicitly later —
+						// the shape of an uncancellable cache.match that resolves long
+						// after the read abandoned it.
+						return Effect.callback<undefined>((resume) => {
+							settleFirstRead = () => resume(Effect.succeed(undefined))
+						})
+					}
+					return Effect.succeed(undefined)
+				}),
+			put: () => Effect.void,
+			delete: () => Effect.void,
 		}
 		const opts = { bucket: "cfg", key: "k", ttlSeconds: 30, skipReadWhenSlotsHeld: true } as const
 

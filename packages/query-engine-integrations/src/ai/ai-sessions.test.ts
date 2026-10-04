@@ -350,7 +350,7 @@ describe("aiSessionPageQuery", () => {
 		expect(having).toContain("countIf(ai_trace_index.AgentName IN ('billing-agent')) > 0")
 		expect(having).toContain("countIf(ai_trace_index.ToolName IN ('send_email')) > 0")
 		expect(having).toContain(
-			"countIf((ai_trace_index.SessionId LIKE 'wrun01M0%' OR ai_trace_index.TraceId LIKE 'wrun01M0%')) > 0",
+			"countIf((ai_trace_index.SessionId LIKE '%wrun01M0%' OR ai_trace_index.TraceId LIKE 'wrun01M0%')) > 0",
 		)
 		expect(where).not.toContain(" IN ('")
 		expect(where).not.toContain("LIKE")

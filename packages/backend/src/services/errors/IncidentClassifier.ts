@@ -14,14 +14,12 @@ import {
 	MapleAiApi,
 	internalServiceBearer,
 } from "@maple/domain/http"
-import { WorkerEnvironment } from "@maple/infra/worker-runtime"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Cause, Context, Duration, Effect, Layer, Option, Redacted } from "effect"
 import { HttpApiClient } from "effect/http-api"
+import { AiWorkerFetcher } from "@maple/backend/platform/bindings"
 import { Env } from "@maple/backend/platform/Env"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
-
-export const AI_WORKER_BINDING = "AI_WORKER"
 
 /**
  * Bounded so a slow model can never stretch an alerting tick past its cron
@@ -29,13 +27,6 @@ export const AI_WORKER_BINDING = "AI_WORKER"
  * "investigate", which is what the tick would have done without it.
  */
 export const CLASSIFY_TIMEOUT = Duration.seconds(10)
-
-/**
- * The service binding off `env`, narrowed rather than cast. Only `fetch` is
- * checked, because that is all the client calls.
- */
-const isServiceBinding = (value: unknown): value is Fetcher =>
-	typeof value === "object" && value !== null && typeof (value as { fetch?: unknown }).fetch === "function"
 
 export interface IncidentClassifierApi {
 	/**
@@ -52,15 +43,14 @@ export class IncidentClassifier extends Context.Service<IncidentClassifier, Inci
 	"@maple/backend/errors/IncidentClassifier",
 	{
 		make: Effect.gen(function* () {
-			const env = yield* WorkerEnvironment
+			const binding = Option.flatten(yield* Effect.serviceOption(AiWorkerFetcher))
 			const config = yield* Env
-			const binding = env[AI_WORKER_BINDING]
 			const token = Option.map(config.INTERNAL_SERVICE_TOKEN, Redacted.value)
 
-			if (!isServiceBinding(binding) || Option.isNone(token)) {
+			if (Option.isNone(binding) || Option.isNone(token)) {
 				yield* Effect.logWarning("incident classifier is not available").pipe(
 					Effect.annotateLogs({
-						"maple.triage.reason": isServiceBinding(binding)
+						"maple.triage.reason": Option.isSome(binding)
 							? "INTERNAL_SERVICE_TOKEN is not configured"
 							: "no AI_WORKER service binding on this deployment",
 					}),
@@ -71,7 +61,7 @@ export class IncidentClassifier extends Context.Service<IncidentClassifier, Inci
 			const authorization = internalServiceBearer(token.value)
 			// The binding routes by name rather than by host; the origin below is the
 			// formality `Request` insists on, and the transport is the binding's own.
-			const httpClient = Cloudflare.toHttpClient(Cloudflare.fromCloudflareFetcher(binding))
+			const httpClient = Cloudflare.toHttpClient(Cloudflare.fromCloudflareFetcher(binding.value))
 			const client = yield* HttpApiClient.group(MapleAiApi, {
 				group: "triage",
 				httpClient,

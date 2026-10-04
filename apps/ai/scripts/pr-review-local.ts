@@ -47,7 +47,7 @@ import {
 	type RepositoryRuleFile,
 } from "@maple/backend/services/pr-review/PrReviewService"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
-import { Effect, Option, References, Schema } from "effect"
+import { ConfigProvider, Effect, Option, References, Schema } from "effect"
 import { AGENTS } from "@/chat/agents"
 import type { ChatTurnEvent } from "@/chat/events"
 import { withToolTranscript } from "@/chat/close-out"
@@ -66,7 +66,7 @@ import {
 	renderPullRequestContext,
 } from "@/mcp/tools/pull-request"
 import type { McpToolResult } from "@/mcp/tools/types"
-import { layerLlm, resolveReviewModel, type ResolvedModel } from "@/platform/Llm"
+import { layerLlm, loadLlmSettings, resolveReviewModel, type ResolvedModel } from "@/platform/Llm"
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url))
 
@@ -870,8 +870,14 @@ export const reviewLocally = async (
 	}
 	const env = { ...process.env }
 	if (args.model !== undefined) env.MAPLE_REVIEW_MODEL_OPENROUTER = args.model
+	const settings = await Effect.runPromise(
+		// A CLI script: this is its entry point.
+		// oxlint-disable-next-line effecttsgo/strict-effect-provide
+		loadLlmSettings.pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(env)))),
+	)
 	const model =
-		injected.model ?? resolveReviewModel(env, { surface: "chat", orgId, sessionId, turnId: messageId })
+		injected.model ??
+		resolveReviewModel(settings, { surface: "chat", orgId, sessionId, turnId: messageId })
 	const kickoff = buildReviewKickoff({
 		repository,
 		number: args.number,
@@ -966,7 +972,7 @@ export const reviewLocally = async (
 			holdsTurn: () => true,
 			append,
 		}).pipe(
-			Effect.provide(layerLlm(env)),
+			Effect.provide(layerLlm(settings)),
 			// The engine logs every tool execution at info; the progress lines above are the readable view.
 			Effect.provideService(References.MinimumLogLevel, "Warn"),
 			Effect.catchCause((cause) =>

@@ -73,6 +73,6 @@ export function ContainerSummaryBand({
 	)
 }
 
-export function ContainerSummaryBandLoading() {
-	return <FleetBandLoading cells={3} />
+export function ContainerSummaryBandLoading({ className }: { className?: string }) {
+	return <FleetBandLoading cells={3} className={className} />
 }

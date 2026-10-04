@@ -1,5 +1,5 @@
 /**
- * The pre-LLM incident triage: one Jev decision, before an investigation is
+ * The pre-LLM incident triage: one Clef decision, before an investigation is
  * allowed to spend a model pass.
  *
  * This is deliberately NOT an agent turn. An investigation is one turn

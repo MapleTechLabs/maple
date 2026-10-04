@@ -4,7 +4,13 @@ import { Effect, Schema } from "effect"
 import { ListAlertRulesOutput } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
-import { ALERT_SEVERITIES, ALERT_SIGNAL_TYPES, formatCondition, toAlertRuleRow } from "../lib/alert-rules"
+import {
+	ALERT_SEVERITIES,
+	ALERT_SIGNAL_TYPES,
+	formatCondition,
+	ruleServiceMatch,
+	toAlertRuleRow,
+} from "../lib/alert-rules"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 
@@ -15,7 +21,9 @@ export function registerListAlertRulesTool(server: McpToolRegistrar) {
 		description:
 			"List configured alert rules with severity, signal type and condition. Use list_alert_incidents for what has fired.",
 		parameters: Schema.Struct({
-			services: P.optionalList("Only rules scoped to any of these services"),
+			services: P.optionalList(
+				"Only rules covering any of these services: scoped to them, scoped to every service, or raw_query rules whose SQL or name mentions them",
+			),
 			signal_type: P.optionalOneOf(ALERT_SIGNAL_TYPES, "Only rules on this signal type"),
 			severity: P.optionalOneOf(ALERT_SEVERITIES, "Only rules with this severity"),
 			enabled_only: P.optionalFlag("Only enabled rules"),
@@ -37,7 +45,7 @@ export function registerListAlertRulesTool(server: McpToolRegistrar) {
 			const rules = result.rules.filter(
 				(r) =>
 					(services === undefined ||
-						services.some((service) => r.serviceNames.includes(service))) &&
+						services.some((service) => ruleServiceMatch(r, service) !== undefined)) &&
 					(params.signal_type === undefined || r.signalType === params.signal_type) &&
 					(params.severity === undefined || r.severity === params.severity) &&
 					(params.enabled_only !== true || r.enabled),
@@ -67,6 +75,13 @@ export function registerListAlertRulesTool(server: McpToolRegistrar) {
 				["Severity", output.severity],
 				["Enabled only", output.enabledOnly === true ? "yes" : undefined],
 			],
+			...(output.services === undefined
+				? undefined
+				: {
+						notices: [
+							"Service filter includes rules scoped to every service (Services: all) and raw_query rules whose SQL or name mentions the service.",
+						],
+					}),
 			...(output.rules.length === 0
 				? {
 						empty: {
@@ -83,10 +98,24 @@ export function registerListAlertRulesTool(server: McpToolRegistrar) {
 					: [
 							doc.text(`Total: ${output.total} rule${output.total !== 1 ? "s" : ""}`),
 							doc.table(
-								["ID", "Name", "Severity", "Signal", "Condition", "Enabled", "Destinations"],
+								[
+									"ID",
+									"Name",
+									"Services",
+									"Severity",
+									"Signal",
+									"Condition",
+									"Enabled",
+									"Destinations",
+								],
 								output.rules.map((r) => [
 									r.id,
 									r.name,
+									r.signalType === "raw_query"
+										? "(raw SQL)"
+										: r.serviceNames.length > 0
+											? r.serviceNames.join(", ")
+											: "all",
 									r.severity,
 									r.signalType,
 									formatCondition(r),

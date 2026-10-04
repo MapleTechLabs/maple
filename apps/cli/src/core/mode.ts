@@ -1,4 +1,4 @@
-import { Context, Duration, Effect, Layer, Option, Predicate, Redacted, Schema } from "effect"
+import { Config, Context, Duration, Effect, Layer, Option, Predicate, Redacted, Schema } from "effect"
 import { FileSystem } from "effect/FileSystem"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import * as os from "node:os"
@@ -187,6 +187,9 @@ export class Mode extends Context.Service<Mode, ModeApi>()("@maple/cli/Mode", {
 		const config = yield* MapleConfig
 		const client = yield* HttpClient.HttpClient
 		const fs = yield* FileSystem
+		const localUrlFromEnv = yield* Config.option(Config.String("MAPLE_LOCAL_URL")).pipe(
+			Config.map(Option.isSome),
+		)
 
 		const remoteConfig = Option.map(
 			Option.all({ apiUrl: config.apiUrl, token: config.token }),
@@ -201,19 +204,18 @@ export class Mode extends Context.Service<Mode, ModeApi>()("@maple/cli/Mode", {
 
 		// MAPLE_LOCAL_URL wins; otherwise a running `maple start` on a non-default
 		// port is found through its discovery file.
-		const localUrl: Effect.Effect<string> =
-			process.env.MAPLE_LOCAL_URL === undefined
-				? Effect.flatMap(discoverServers(fs), (found) =>
-						Effect.sync(() => {
-							if (found.ambiguous.length > 1) {
-								process.stderr.write(
-									`note: several Maple servers are running (${found.ambiguous.join(", ")}); using ${config.localUrl}. Set MAPLE_LOCAL_URL to pick one.\n`,
-								)
-							}
-							return Option.getOrElse(found.url, () => config.localUrl)
-						}),
-					)
-				: Effect.succeed(config.localUrl)
+		const localUrl: Effect.Effect<string> = !localUrlFromEnv
+			? Effect.flatMap(discoverServers(fs), (found) =>
+					Effect.sync(() => {
+						if (found.ambiguous.length > 1) {
+							process.stderr.write(
+								`note: several Maple servers are running (${found.ambiguous.join(", ")}); using ${config.localUrl}. Set MAPLE_LOCAL_URL to pick one.\n`,
+							)
+						}
+						return Option.getOrElse(found.url, () => config.localUrl)
+					}),
+				)
+			: Effect.succeed(config.localUrl)
 		const local = Effect.map(localUrl, (baseUrl): ResolvedMode => ({ _tag: "local", baseUrl }))
 
 		const resolveOnce: Effect.Effect<ResolvedMode, ModeError> = Effect.gen(function* () {
@@ -242,7 +244,7 @@ export class Mode extends Context.Service<Mode, ModeApi>()("@maple/cli/Mode", {
 			if (Option.contains(config.defaultMode, "local")) return yield* local
 
 			const pick = autoBackend({
-				localUrlFromEnv: process.env.MAPLE_LOCAL_URL !== undefined,
+				localUrlFromEnv,
 				remoteConfigured: remote !== undefined,
 			})
 			if (pick === "local") return yield* local

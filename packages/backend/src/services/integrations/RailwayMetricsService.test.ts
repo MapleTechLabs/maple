@@ -189,6 +189,11 @@ const run = <A, E>(testDb: TestDb, stub: typeof fetch, effect: Effect.Effect<A, 
 		return yield* effect
 	}).pipe(Effect.provideService(FetchHttpClient.Fetch, stub), Effect.provide(makeLayer(testDb, stub)))
 
+const resetWatermarks = (testDb: TestDb) =>
+	Effect.promise(() =>
+		queryFirstRow(testDb, "UPDATE railway_environments SET watermark_at = NULL RETURNING id"),
+	)
+
 describe("RailwayMetricsService", () => {
 	const orgId = asOrgId("org_railway")
 	const userId = asUserId("user_1")
@@ -215,6 +220,9 @@ describe("RailwayMetricsService", () => {
 				assert.isTrue(calls.railway.every((call) => call.authorization === "Bearer rw_token_123"))
 				// The metrics probe ran before the token was saved.
 				assert.isTrue(calls.railway.some((call) => call.query.includes("metrics(")))
+				// The first hour was pulled inline, so nothing waits on the cron.
+				assert.isNotNull(status.environments[0]!.lastSyncedAt)
+				assert.isNotNull(status.lastSyncedAt)
 				const row = yield* Effect.promise(() =>
 					queryFirstRow<{ token_ciphertext: string }>(
 						testDb,
@@ -243,7 +251,7 @@ describe("RailwayMetricsService", () => {
 		)
 	})
 
-	it.effect("pollOrg ships in-window samples to ingest and advances the watermark", () => {
+	it.effect("connect ships the first hour to ingest and advances the watermark", () => {
 		const testDb = createTestDb(trackedDbs)
 		const calls: StubCalls = { railway: [], ingest: [] }
 		const stub = stubFetch(calls)
@@ -253,9 +261,6 @@ describe("RailwayMetricsService", () => {
 			Effect.gen(function* () {
 				const railway = yield* RailwayMetricsService
 				yield* railway.connect(orgId, userId, "rw_token_123")
-				const summary = yield* railway.pollOrg(orgId)
-				assert.strictEqual(summary.skipped, null)
-				assert.strictEqual(summary.rowsIngested, 2)
 				assert.strictEqual(calls.ingest.length, 1)
 				assert.match(calls.ingest[0]!.authorization ?? "", /^Bearer maple_pk_/)
 
@@ -270,10 +275,28 @@ describe("RailwayMetricsService", () => {
 					Date.UTC(2026, 9, 3, 12, 28, 0),
 				)
 
-				// Caught up: a second poll in the same minute makes no Railway calls.
+				// Caught up: a poll in the same minute makes no Railway calls.
 				const again = yield* railway.pollOrg(orgId)
 				assert.strictEqual(again.callsMade, 0)
 				assert.strictEqual(calls.ingest.length, 1)
+			}),
+		)
+	})
+
+	it.effect("sync polls a behind environment now and returns the refreshed status", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls: StubCalls = { railway: [], ingest: [] }
+		const stub = stubFetch(calls)
+		return run(
+			testDb,
+			stub,
+			Effect.gen(function* () {
+				const railway = yield* RailwayMetricsService
+				yield* railway.connect(orgId, userId, "rw_token_123")
+				yield* resetWatermarks(testDb)
+				const status = yield* railway.sync(orgId)
+				assert.strictEqual(calls.ingest.length, 2)
+				assert.isNotNull(status.environments[0]!.lastSyncedAt)
 			}),
 		)
 	})
@@ -288,6 +311,8 @@ describe("RailwayMetricsService", () => {
 				okStub,
 				RailwayMetricsService.use((railway) => railway.connect(orgId, userId, "rw_token_123")),
 			)
+			// Connect already caught up; put the environment behind so the poll has work to do.
+			yield* resetWatermarks(testDb)
 			const limitedStub = stubFetch(calls, { railway: "rate_limited" })
 			// The SDK retries a 429 with backoff before giving up; let its sleeps elapse.
 			const summary = yield* run(
@@ -336,6 +361,8 @@ describe("RailwayMetricsService", () => {
 				okStub,
 				RailwayMetricsService.use((railway) => railway.connect(orgId, userId, "rw_token_123")),
 			)
+			// Connect already caught up; put the environment behind so the poll has work to do.
+			yield* resetWatermarks(testDb)
 			const revokedStub = stubFetch(calls, { railway: "unauthorized" })
 			yield* run(
 				testDb,

@@ -98,7 +98,17 @@ export function registerListProductEventsTool(server: McpToolRegistrar) {
 				.slice(0, 2)
 				.map((event) => ({ kind: "event", eventName: event.eventName }))
 			const expectsCustom = output.kind === undefined || output.kind === "custom"
+			// Every event on one "person" across many sessions means the identity keys are empty.
+			const maxSessions = Math.max(0, ...events.map((event) => event.sessions))
+			const collapsed = maxSessions > 1 && events.every((event) => event.persons <= 1)
 			return {
+				...(collapsed
+					? {
+							notices: [
+								'Persons is at most 1 while events span many sessions: the events carry no VisitorId or UserId, so they all count as one person. Person, visitor and user funnels cannot stitch them; use query_funnel key_by="session", or send a visitor/user id with the events.',
+							],
+						}
+					: undefined),
 				title: output.narrowed ? "Product events (matching)" : "Product events",
 				scope: [
 					["Time range", `${output.timeRange.start} to ${output.timeRange.end}`],

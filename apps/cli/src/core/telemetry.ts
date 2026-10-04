@@ -1,5 +1,5 @@
 import { getAutoPlatformAttributes } from "@maple-dev/effect-sdk/server"
-import { Layer } from "effect"
+import { Config, Effect, Layer, Option, Redacted } from "effect"
 import { FetchHttpClient, HttpBody } from "effect/http"
 import { OtlpMetrics, OtlpResource, OtlpSerialization, OtlpTracer } from "effect/observability"
 import { MAPLE_VERSION } from "../version"
@@ -10,6 +10,10 @@ import { MAPLE_VERSION } from "../version"
 // Maple's internal workspace, never a privileged key. Rotation means shipping a
 // new CLI release. An explicit `MAPLE_INGEST_KEY` still wins (see below).
 const DEFAULT_INGEST_KEY = "maple_pk_bwGJomBwDO4B15sopcuinQVqNFCDjhE2"
+
+/** Unset and empty both read as absent, matching the old truthiness checks. */
+const nonEmptyString = (key: string) =>
+	Config.option(Config.String(key)).pipe(Config.map(Option.filter((value) => value.length > 0)))
 
 /**
  * Where this invocation is running.
@@ -24,19 +28,34 @@ const DEFAULT_INGEST_KEY = "maple_pk_bwGJomBwDO4B15sopcuinQVqNFCDjhE2"
  * `CI` is the de-facto standard variable, set by GitHub Actions, GitLab, CircleCI
  * and Buildkite alike. An explicit `MAPLE_ENVIRONMENT` still wins.
  */
-const resolveEnvironment = (): string => {
-	if (process.env.MAPLE_ENVIRONMENT) return process.env.MAPLE_ENVIRONMENT
-	return process.env.CI ? "ci" : "cli"
-}
+const resolveEnvironment = Config.all({
+	environment: nonEmptyString("MAPLE_ENVIRONMENT"),
+	ci: nonEmptyString("CI"),
+}).pipe(
+	Config.map(({ environment, ci }) =>
+		Option.getOrElse(environment, () => (Option.isSome(ci) ? "ci" : "cli")),
+	),
+)
 
 /** Same precedence as the SDK: an explicit endpoint, then the region's ingest. */
-const resolveEndpoint = (): string => {
-	const explicit = process.env.MAPLE_ENDPOINT || process.env.OTEL_EXPORTER_OTLP_ENDPOINT
-	if (explicit) return explicit.replace(/\/+$/, "")
-	return process.env.MAPLE_REGION?.trim().toLowerCase() === "eu"
-		? "https://ingest.eu.maple.dev"
-		: "https://ingest.maple.dev"
-}
+const resolveEndpoint = Config.all({
+	maple: nonEmptyString("MAPLE_ENDPOINT"),
+	otel: nonEmptyString("OTEL_EXPORTER_OTLP_ENDPOINT"),
+	region: Config.String("MAPLE_REGION").pipe(Config.withDefault("")),
+}).pipe(
+	Config.map(({ maple, otel, region }) =>
+		Option.match(
+			Option.orElse(maple, () => otel),
+			{
+				onSome: (explicit) => explicit.replace(/\/+$/, ""),
+				onNone: () =>
+					region.trim().toLowerCase() === "eu"
+						? "https://ingest.eu.maple.dev"
+						: "https://ingest.maple.dev",
+			},
+		),
+	),
+)
 
 // Scrubbing. The CLI exports to Maple's cloud, so nothing a user typed or
 // stored may leave: SQL text, filter values, error messages (chDB quotes rows
@@ -152,11 +171,19 @@ const ScrubbedSerialization = Layer.succeed(OtlpSerialization.OtlpSerialization,
  * errors hub as a `maple-cli` issue (hundreds of `deployment.environment=ci`
  * events a week nobody could act on). Ordinary CI use of the CLI stays on.
  */
-const telemetryOff = process.env.MAPLE_TELEMETRY === "off"
+const telemetryOff = Config.String("MAPLE_TELEMETRY").pipe(
+	Config.map((value) => value === "off"),
+	Config.withDefault(false),
+)
 
-const makeTelemetryLayer = (): Layer.Layer<never> => {
-	const endpoint = resolveEndpoint()
-	const environment = resolveEnvironment()
+const ingestKey = Config.Redacted("MAPLE_INGEST_KEY").pipe(
+	Config.withDefault(Redacted.make(DEFAULT_INGEST_KEY)),
+)
+
+const makeTelemetryLayer = Effect.gen(function* () {
+	const endpoint = yield* resolveEndpoint
+	const environment = yield* resolveEnvironment
+	const key = yield* ingestKey
 	const resource = {
 		serviceName: "maple-cli",
 		serviceVersion: MAPLE_VERSION,
@@ -170,12 +197,12 @@ const makeTelemetryLayer = (): Layer.Layer<never> => {
 			"vcs.repository.url.full": "https://github.com/MapleTechLabs/maple",
 		},
 	}
-	const headers = { Authorization: `Bearer ${process.env.MAPLE_INGEST_KEY ?? DEFAULT_INGEST_KEY}` }
+	const headers = { Authorization: `Bearer ${Redacted.value(key)}` }
 	return Layer.mergeAll(
 		OtlpTracer.layer({ url: `${endpoint}/v1/traces`, resource, headers, shutdownTimeout: "3 seconds" }),
 		OtlpMetrics.layer({ url: `${endpoint}/v1/metrics`, resource, headers, shutdownTimeout: "3 seconds" }),
 	).pipe(Layer.provide(ScrubbedSerialization), Layer.provide(FetchHttpClient.layer))
-}
+})
 
 /**
  * OpenTelemetry layer for the CLI: traces and metrics about the CLI itself and,
@@ -184,4 +211,8 @@ const makeTelemetryLayer = (): Layer.Layer<never> => {
  * `OTEL_EXPORTER_OTLP_ENDPOINT` redirect it, `MAPLE_INGEST_KEY` replaces the
  * key). Spans pass through the scrubber above; logs are not exported.
  */
-export const TelemetryLayer: Layer.Layer<never> = telemetryOff ? Layer.empty : makeTelemetryLayer()
+export const TelemetryLayer: Layer.Layer<never> = Layer.unwrap(
+	Effect.gen(function* () {
+		return (yield* telemetryOff) ? Layer.empty : yield* makeTelemetryLayer
+	}).pipe(Effect.orElseSucceed(() => Layer.empty)),
+)

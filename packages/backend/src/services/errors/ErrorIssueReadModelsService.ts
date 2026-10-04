@@ -24,7 +24,7 @@ import {
 	type WarehouseReadError,
 } from "@maple/domain/http"
 import { errorIncidents, type ErrorIncidentRow, errorIssues } from "@maple/db"
-import { and, desc, eq, gt, gte, inArray, isNull, lt, or, sql } from "drizzle-orm"
+import { and, desc, eq, gt, gte, ilike, inArray, isNull, lt, or, type SQL, sql } from "drizzle-orm"
 import {
 	CH,
 	formatWarehouseDateTime,
@@ -82,34 +82,46 @@ const severitySortRank = (severity: IssueSeverity | null): number =>
 		Match.exhaustive,
 	)
 
+export interface IssueListFilters {
+	readonly workflowState?: WorkflowState
+	readonly severity?: IssueSeverity | "unset"
+	readonly kind?: IssueKind
+	readonly service?: string
+	/** Exact exception type or display label. */
+	readonly exceptionType?: string
+	/** Case-insensitive substring of the type, message, label or service. */
+	readonly search?: string
+	/** Restrict to these fingerprint hashes (volume-ranked lists ask for an
+	 *  explicit set). An empty array matches nothing, as it should. */
+	readonly fingerprintHashes?: ReadonlyArray<string>
+	/** Only issues whose fingerprint the warehouse observed in this
+	 * deployment environment (within startTime/endTime, defaulting to the
+	 * trailing 30d). Costs one warehouse round-trip; excludes alert-kind
+	 * issues (synthetic fingerprints carry no environment). */
+	readonly deploymentEnv?: string
+	readonly assignedActorId?: ActorId
+	readonly includeArchived?: boolean
+	readonly startTime?: string
+	readonly endTime?: string
+	/** First seen or last regressed at or after this instant. */
+	readonly introducedAfter?: string
+	readonly actionable?: boolean
+}
+
 export interface ErrorIssueReadModelsPublicApi {
 	readonly listIssues: (
 		orgId: OrgId,
-		opts: {
-			readonly workflowState?: WorkflowState
-			readonly severity?: IssueSeverity | "unset"
-			readonly kind?: IssueKind
-			readonly service?: string
-			/** Restrict to these fingerprint hashes (volume-ranked lists ask for an
-			 *  explicit set). An empty array matches nothing, as it should. */
-			readonly fingerprintHashes?: ReadonlyArray<string>
-			/** Only issues whose fingerprint the warehouse observed in this
-			 * deployment environment (within startTime/endTime, defaulting to the
-			 * trailing 30d). Costs one warehouse round-trip; excludes alert-kind
-			 * issues (synthetic fingerprints carry no environment). */
-			readonly deploymentEnv?: string
-			readonly assignedActorId?: ActorId
-			readonly includeArchived?: boolean
-			readonly startTime?: string
-			readonly endTime?: string
-			/** First seen or last regressed at or after this instant. */
-			readonly introducedAfter?: string
+		opts: IssueListFilters & {
 			readonly limit?: number
 			readonly cursor?: IssueListCursorFields | IssueSeverityListCursorFields
-			readonly actionable?: boolean
 			readonly sort?: "last_seen" | "severity"
 		},
 	) => Effect.Effect<ErrorIssuesListResponse, ErrorPersistenceError | WarehouseReadError>
+	/** How many issues match the list filters, across every page. */
+	readonly countIssues: (
+		orgId: OrgId,
+		opts: IssueListFilters,
+	) => Effect.Effect<number, ErrorPersistenceError | WarehouseReadError>
 	/** Fleet-level open (actionable-state) error-issue counts grouped by service. */
 	readonly countOpenIssuesByService: (
 		orgId: OrgId,
@@ -171,6 +183,92 @@ const make: Effect.Effect<
 			occurrenceCount: row.occurrenceCount,
 		})
 
+	/** The filter half of the issue list, shared by the page and its count. `undefined` = matches nothing. */
+	const issueListConditions = Effect.fn("ErrorsService.issueListConditions")(function* (
+		orgId: OrgId,
+		opts: IssueListFilters,
+	) {
+		const conditions: Array<SQL> = [eq(errorIssues.orgId, orgId)]
+		if (opts.workflowState) conditions.push(eq(errorIssues.workflowState, opts.workflowState))
+		if (opts.actionable) conditions.push(inArray(errorIssues.workflowState, ACTIONABLE_WORKFLOW_STATES))
+		if (opts.severity === "unset") conditions.push(isNull(errorIssues.severity))
+		else if (opts.severity) conditions.push(eq(errorIssues.severity, opts.severity))
+		if (opts.kind) conditions.push(eq(errorIssues.kind, opts.kind))
+		if (opts.service) conditions.push(eq(errorIssues.serviceName, opts.service))
+		if (opts.exceptionType)
+			conditions.push(
+				or(
+					eq(errorIssues.exceptionType, opts.exceptionType),
+					eq(errorIssues.errorLabel, opts.exceptionType),
+				) ?? sql`false`,
+			)
+		if (opts.search) {
+			const pattern = `%${opts.search.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`
+			conditions.push(
+				or(
+					ilike(errorIssues.exceptionType, pattern),
+					ilike(errorIssues.exceptionMessage, pattern),
+					ilike(errorIssues.errorLabel, pattern),
+					ilike(errorIssues.serviceName, pattern),
+				) ?? sql`false`,
+			)
+		}
+		if (opts.fingerprintHashes !== undefined)
+			conditions.push(inArray(errorIssues.fingerprintHash, opts.fingerprintHashes))
+
+		// `""` is a real filter (raw spans without a deployment env), so check
+		// for undefined rather than truthiness.
+		if (opts.deploymentEnv !== undefined) {
+			const nowMs = yield* Clock.currentTimeMillis
+			const endMs = opts.endTime ? parseWarehouseDateTime(opts.endTime) : Number.NaN
+			const startMs = opts.startTime ? parseWarehouseDateTime(opts.startTime) : Number.NaN
+			const scanEndMs = Number.isFinite(endMs) ? endMs : nowMs
+			const scanStartMs = Number.isFinite(startMs)
+				? startMs
+				: scanEndMs - ENV_FINGERPRINT_DEFAULT_WINDOW_MS
+			const compiled = CH.compile(
+				CH.errorFingerprintsQuery({
+					services: opts.service ? [opts.service] : undefined,
+					deploymentEnvs: [opts.deploymentEnv],
+				}),
+				{
+					orgId,
+					startTime: formatWarehouseDateTime(scanStartMs),
+					endTime: formatWarehouseDateTime(scanEndMs),
+				},
+			)
+			const fingerprintRows = yield* warehouse.compiledQuery(systemTenant(orgId), compiled, {
+				context: "errorIssueEnvFingerprints",
+			})
+			const hashes = fingerprintRows.map((row) => row.fingerprintHash).filter((hash) => hash.length > 0)
+			if (hashes.length === 0) return undefined
+			conditions.push(inArray(errorIssues.fingerprintHash, hashes))
+		}
+
+		if (opts.assignedActorId) conditions.push(eq(errorIssues.assignedActorId, opts.assignedActorId))
+		if (!opts.includeArchived) conditions.push(isNull(errorIssues.archivedAt))
+		if (opts.endTime) {
+			const endMs = parseWarehouseDateTime(opts.endTime)
+			if (Number.isFinite(endMs)) conditions.push(lt(errorIssues.firstSeenAt, msToDate(endMs)))
+		}
+		if (opts.startTime) {
+			const startMs = parseWarehouseDateTime(opts.startTime)
+			if (Number.isFinite(startMs)) conditions.push(gt(errorIssues.lastSeenAt, msToDate(startMs)))
+		}
+		if (opts.introducedAfter) {
+			const sinceMs = parseWarehouseDateTime(opts.introducedAfter)
+			if (Number.isFinite(sinceMs)) {
+				const since = msToDate(sinceMs)
+				const introduced = or(
+					gte(errorIssues.firstSeenAt, since),
+					gte(errorIssues.lastRegressedAt, since),
+				)
+				if (introduced) conditions.push(introduced)
+			}
+		}
+		return conditions
+	})
+
 	const listIssues: ErrorIssueReadModelsServiceApi["listIssues"] = Effect.fn("ErrorsService.listIssues")(
 		function* (orgId, opts) {
 			const sort = opts.sort ?? "last_seen"
@@ -181,72 +279,12 @@ const make: Effect.Effect<
 				sort,
 				...(opts.deploymentEnv ? { deploymentEnv: opts.deploymentEnv } : undefined),
 			})
-			const conditions = [eq(errorIssues.orgId, orgId)]
-			if (opts.workflowState) conditions.push(eq(errorIssues.workflowState, opts.workflowState))
-			if (opts.actionable)
-				conditions.push(inArray(errorIssues.workflowState, ACTIONABLE_WORKFLOW_STATES))
-			if (opts.severity === "unset") conditions.push(isNull(errorIssues.severity))
-			else if (opts.severity) conditions.push(eq(errorIssues.severity, opts.severity))
-			if (opts.kind) conditions.push(eq(errorIssues.kind, opts.kind))
-			if (opts.service) conditions.push(eq(errorIssues.serviceName, opts.service))
-			if (opts.fingerprintHashes !== undefined)
-				conditions.push(inArray(errorIssues.fingerprintHash, opts.fingerprintHashes))
-
-			// `""` is a real filter (raw spans without a deployment env), so check
-			// for undefined rather than truthiness.
-			if (opts.deploymentEnv !== undefined) {
-				const nowMs = yield* Clock.currentTimeMillis
-				const endMs = opts.endTime ? parseWarehouseDateTime(opts.endTime) : Number.NaN
-				const startMs = opts.startTime ? parseWarehouseDateTime(opts.startTime) : Number.NaN
-				const scanEndMs = Number.isFinite(endMs) ? endMs : nowMs
-				const scanStartMs = Number.isFinite(startMs)
-					? startMs
-					: scanEndMs - ENV_FINGERPRINT_DEFAULT_WINDOW_MS
-				const compiled = CH.compile(
-					CH.errorFingerprintsQuery({
-						services: opts.service ? [opts.service] : undefined,
-						deploymentEnvs: [opts.deploymentEnv],
-					}),
-					{
-						orgId,
-						startTime: formatWarehouseDateTime(scanStartMs),
-						endTime: formatWarehouseDateTime(scanEndMs),
-					},
-				)
-				const fingerprintRows = yield* warehouse.compiledQuery(systemTenant(orgId), compiled, {
-					context: "errorIssueEnvFingerprints",
-				})
-				const hashes = fingerprintRows
-					.map((row) => row.fingerprintHash)
-					.filter((hash) => hash.length > 0)
-				if (hashes.length === 0) {
-					yield* Effect.annotateCurrentSpan({ issueCount: 0, hasMore: false })
-					return new ErrorIssuesListResponse({ issues: [] })
-				}
-				conditions.push(inArray(errorIssues.fingerprintHash, hashes))
+			const base = yield* issueListConditions(orgId, opts)
+			if (base === undefined) {
+				yield* Effect.annotateCurrentSpan({ issueCount: 0, hasMore: false })
+				return new ErrorIssuesListResponse({ issues: [] })
 			}
-
-			if (opts.assignedActorId) conditions.push(eq(errorIssues.assignedActorId, opts.assignedActorId))
-			if (!opts.includeArchived) conditions.push(isNull(errorIssues.archivedAt))
-			if (opts.endTime) {
-				const endMs = parseWarehouseDateTime(opts.endTime)
-				if (Number.isFinite(endMs)) conditions.push(lt(errorIssues.firstSeenAt, msToDate(endMs)))
-			}
-			if (opts.startTime) {
-				const startMs = parseWarehouseDateTime(opts.startTime)
-				if (Number.isFinite(startMs)) conditions.push(gt(errorIssues.lastSeenAt, msToDate(startMs)))
-			}
-			if (opts.introducedAfter) {
-				const sinceMs = parseWarehouseDateTime(opts.introducedAfter)
-				if (Number.isFinite(sinceMs)) {
-					const since = msToDate(sinceMs)
-					const introduced = or(
-						gte(errorIssues.firstSeenAt, since),
-						gte(errorIssues.lastRegressedAt, since),
-					)
-					if (introduced) conditions.push(introduced)
-				}
-			}
+			const conditions = [...base]
 			if (opts.cursor) {
 				const cursorSeenAt = msToDate(opts.cursor.lastSeenAt)
 				const keyset =
@@ -310,6 +348,22 @@ const make: Effect.Effect<
 							})
 					: undefined
 			return new ErrorIssuesListResponse(nextCursor === undefined ? { issues } : { issues, nextCursor })
+		},
+	)
+
+	const countIssues: ErrorIssueReadModelsServiceApi["countIssues"] = Effect.fn("ErrorsService.countIssues")(
+		function* (orgId, opts) {
+			const conditions = yield* issueListConditions(orgId, opts)
+			if (conditions === undefined) return 0
+			const rows = yield* dbExecute((db) =>
+				db
+					.select({ total: sql<number>`count(*)::int` })
+					.from(errorIssues)
+					.where(and(...conditions)),
+			)
+			const total = rows[0]?.total ?? 0
+			yield* Effect.annotateCurrentSpan({ orgId, issueTotal: total })
+			return total
 		},
 	)
 
@@ -475,6 +529,7 @@ const make: Effect.Effect<
 
 	return ErrorIssueReadModelsService.of({
 		listIssues,
+		countIssues,
 		countOpenIssuesByService,
 		getIssue,
 		listIssueIncidents,

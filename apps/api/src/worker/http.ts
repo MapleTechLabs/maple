@@ -4,16 +4,15 @@ import { WorkerPlatformLive, forIsolate, bridgeHandler } from "@maple/infra/work
  * the first request, and the `fetch` handler the bridge serves around it.
  */
 import { cachedRecoverable } from "@maple/infra/cached-recoverable"
-import * as Cloudflare from "alchemy/Cloudflare"
 import type { HttpEffect } from "alchemy/Http"
-import { Cause, Clock, Context, Effect, Exit, Layer, Scope } from "effect"
+import { Cause, Clock, Config, Context, Effect, Exit, Layer, Option, Scope } from "effect"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
 import * as Etag from "effect/http/Etag"
 import * as HttpPlatform from "effect/http/HttpPlatform"
 import { API_CORS_RESPONSE_HEADERS, apiCorsPreflightResponse } from "@maple/backend/http/api-cors"
-import { aiUnavailableResponse, forwardsToAi, forwardToAi, isCloudflareFetcher } from "./ai-forward"
+import { aiUnavailableResponse, forwardsToAi, forwardToAi } from "./ai-forward"
 import { v2WorkerUnavailableResponse } from "../http/v2-worker-unavailable"
-import type { MapleDbConnection } from "@maple/backend/platform/bindings"
+import { AiWorkerFetcher, type MapleDbConnection } from "@maple/backend/platform/bindings"
 import { layerPg } from "@maple/backend/platform/DatabasePgLive"
 import { recordRenderedFailure } from "@maple/backend/http/rendered-failure"
 import { withPgConnectionScope } from "@maple/backend/platform/pg-connection-scope"
@@ -182,7 +181,7 @@ const recordIsolateAge = (isolate: { readonly ageMs: number; readonly ordinal: n
  */
 export const makeFetch = (
 	app: Effect.Effect<HttpEffect, unknown>,
-	ports: Layer.Layer<MapleDbConnection>,
+	ports: Layer.Layer<MapleDbConnection | AiWorkerFetcher>,
 	queryApp: Effect.Effect<HttpEffect, unknown> = app,
 ) => {
 	// Isolate-scoped: the Worker's init calls `makeFetch` once. The unattributed 500s all landed
@@ -198,11 +197,15 @@ export const makeFetch = (
 			// Alchemy isolates per-resource failures, so a red deploy still
 			// leaves every sibling Worker updated and this one on the old
 			// bundle — the body stays `OK` and the answer stays graph-free.
-			const revision = (yield* Cloudflare.WorkerEnvironment).COMMIT_SHA
+			const revision = yield* Config.option(Config.String("COMMIT_SHA")).pipe(
+				Effect.map(Option.filter((sha) => sha.length > 0)),
+				Effect.orElseSucceed(Option.none<string>),
+			)
 			return HttpServerResponse.text("OK", {
-				headers: revision
-					? { ...API_CORS_RESPONSE_HEADERS, "x-maple-revision": revision }
-					: API_CORS_RESPONSE_HEADERS,
+				headers: Option.match(revision, {
+					onNone: () => API_CORS_RESPONSE_HEADERS,
+					onSome: (sha) => ({ ...API_CORS_RESPONSE_HEADERS, "x-maple-revision": sha }),
+				}),
 			})
 		}
 		if (request.method === "OPTIONS") return HttpServerResponse.fromWeb(apiCorsPreflightResponse())
@@ -213,14 +216,14 @@ export const makeFetch = (
 		// What the forward preserves, and the one header it replaces, is spelled
 		// out in `ai-forward.ts`.
 		if (forwardsToAi(path)) {
-			const aiWorker = (yield* Cloudflare.WorkerEnvironment).AI_WORKER
-			if (!isCloudflareFetcher(aiWorker)) {
+			const aiWorker = yield* AiWorkerFetcher
+			if (Option.isNone(aiWorker)) {
 				yield* Effect.logError("AI worker binding is missing").pipe(
 					Effect.annotateLogs({ method: request.method, path }),
 				)
 				return aiUnavailableResponse()
 			}
-			return yield* forwardToAi(aiWorker, request)
+			return yield* forwardToAi(aiWorker.value, request)
 		}
 
 		const startedAt = yield* Clock.currentTimeMillis

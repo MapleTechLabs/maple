@@ -285,6 +285,14 @@ describe("mapWarehouseError", () => {
 })
 
 describe("cleanErrorMessage", () => {
+	it("drops the vendor's plan upsell", () => {
+		expect(
+			cleanErrorMessage(
+				"[Error] Memory limit exceeded. Upgrade your plan for higher capacity. (MEMORY_LIMIT_EXCEEDED)",
+			),
+		).toBe("[Error] Memory limit exceeded. (MEMORY_LIMIT_EXCEEDED)")
+	})
+
 	it("retains the authentication diagnostic without the echoed token", () => {
 		const message =
 			"invalid authentication token. Invalid token b'opaque-secret': Signature verification failed"

@@ -86,6 +86,24 @@ const VALID_GROUP_BY: Record<string, readonly string[]> = {
 /** Sources whose query builder also groups by an attribute key, `attr.<key>`. */
 const ATTR_GROUP_BY_SOURCES: ReadonlySet<string> = new Set(["metrics", "product_events"])
 
+/** query_data's group_by spellings, accepted here too so one vocabulary works in both tools. */
+const QUERY_DATA_GROUP_BY_ALIASES: ReadonlyMap<string, string> = new Map([
+	["service", "service.name"],
+	["span_name", "span.name"],
+	["status_code", "status.code"],
+	["http_method", "http.method"],
+	["event_name", "event.name"],
+	["kind", "event.kind"],
+	["page_path", "page.path"],
+	["group", "group.id"],
+])
+
+/** The builder token for a query_data alias valid on this source; otherwise the input unchanged. */
+export function normalizeGroupBy(rawGroupBy: string, source: string): string {
+	const alias = QUERY_DATA_GROUP_BY_ALIASES.get(rawGroupBy)
+	return alias !== undefined && (VALID_GROUP_BY[source] ?? []).includes(alias) ? alias : rawGroupBy
+}
+
 function validateGroupBy(rawGroupBy: string, source: string, widgetTitle: string): string | null {
 	const validOptions = VALID_GROUP_BY[source] ?? []
 	const allowsAttr = ATTR_GROUP_BY_SOURCES.has(source)
@@ -117,9 +135,10 @@ function simpleSpecToWidget(
 
 	let groupBy: string[]
 	if (spec.group_by) {
-		const validationError = validateGroupBy(spec.group_by, source, spec.title)
+		const normalized = normalizeGroupBy(spec.group_by, source)
+		const validationError = validateGroupBy(normalized, source, spec.title)
 		if (validationError) return validationError
-		groupBy = [spec.group_by]
+		groupBy = [normalized]
 	} else {
 		groupBy = viz === "stat" ? [] : ["service.name"]
 	}

@@ -18,8 +18,7 @@ import {
 	MAPLE_GENAI_INPUT_MESSAGES_DROPPED_ATTR,
 	MAPLE_GENAI_MODEL_DURATION_MS_ATTR,
 } from "@maple/domain/gen-ai"
-import { Effect, Option, Predicate, Stream } from "effect"
-import type { Tracer } from "effect"
+import { Effect, Exit, Layer, Option, Predicate, Stream, Tracer } from "effect"
 import * as AiError from "effect/ai/AiError"
 import type * as LanguageModel from "effect/ai/LanguageModel"
 import type * as Prompt from "effect/ai/Prompt"
@@ -59,13 +58,8 @@ const truncated = (text: string, cap: number): string =>
 	text.length > cap ? text.slice(0, cap) + TRUNCATION_MARKER : text
 
 /** `JSON.stringify` that reports an unserializable value (a cycle, a bigint) as nothing. */
-const stringify = (value: unknown): string | undefined => {
-	try {
-		return JSON.stringify(value)
-	} catch {
-		return undefined
-	}
-}
+const stringify = (value: unknown): string | undefined =>
+	Option.getOrUndefined(Option.liftThrowable((input: unknown) => JSON.stringify(input))(value))
 
 /**
  * The convention's message part for one prompt part. Media is size and reasoning is
@@ -460,15 +454,14 @@ const toolDefinitionsJson = (tools: ReadonlyArray<Tool.Any>): string | undefined
 		name: tool.name,
 		description: Tool.getDescription(tool) ?? "",
 	}))
-	let full: string | undefined
-	try {
-		// A schema that cannot be expressed as JSON Schema throws here; it degrades to the compact form.
-		full = JSON.stringify(
-			tools.map((tool, index) => ({ ...described[index], parameters: Tool.getJsonSchema(tool) })),
-		)
-	} catch {
-		full = undefined
-	}
+	// A schema that cannot be expressed as JSON Schema throws here; it degrades to the compact form.
+	const full = Option.getOrUndefined(
+		Option.liftThrowable(() =>
+			JSON.stringify(
+				tools.map((tool, index) => ({ ...described[index], parameters: Tool.getJsonSchema(tool) })),
+			),
+		)(),
+	)
 	if (full !== undefined && full.length <= TOOL_DEFINITIONS_BUDGET) return full
 	return JSON.stringify(
 		described.map((tool) => ({ ...tool, description: truncated(tool.description, 128) })),
@@ -524,6 +517,41 @@ const executeToolSpan = (span: Tracer.Span): Option.Option<Tracer.Span> =>
 	span.name.startsWith(EXECUTE_TOOL_SPAN_PREFIX)
 		? Option.some(span)
 		: Option.filter(span.parent, isExecuteToolSpan)
+
+/** A tool failure handed back to the model as the call's result: it retries, the run carries on. */
+const isReturnedToolFailure = (span: Tracer.Span, exit: Exit.Exit<unknown, unknown>): boolean =>
+	Exit.isFailure(exit) &&
+	span.name.startsWith(EXECUTE_TOOL_SPAN_PREFIX) &&
+	span.attributes.get("effect_agent.tool.failure_handling") === "returned-to-model"
+
+/**
+ * Export a returned tool failure as `Ok` + `error.type` rather than `Error`, so it stops opening error
+ * issues while Agent Sessions still counts it failed (the gateway stamps `maple_ai.error` from
+ * `error.type`). Propagated failures keep their Error span.
+ */
+export const withReturnedToolFailuresOk = (tracer: Tracer.Tracer): Tracer.Tracer =>
+	Tracer.make({
+		...(tracer.context === undefined ? undefined : { context: tracer.context }),
+		span(options) {
+			const span = tracer.span(options)
+			if (!options.name.startsWith(EXECUTE_TOOL_SPAN_PREFIX)) return span
+			const end = span.end.bind(span)
+			return Object.assign(span, {
+				end: (endTime: bigint, exit: Exit.Exit<unknown, unknown>) => {
+					if (!isReturnedToolFailure(span, exit)) return end(endTime, exit)
+					if (span.attributes.get("error.type") === undefined)
+						span.attribute("error.type", "ToolCallFailed")
+					end(endTime, Exit.void)
+				},
+			})
+		},
+	})
+
+/** Wraps the current tracer; put it over the telemetry layer with `Layer.provideMerge`. */
+export const ReturnedToolFailuresOkLayer = Layer.effect(
+	Tracer.Tracer,
+	Effect.map(Effect.tracer, withReturnedToolFailuresOk),
+)
 
 /**
  * Untraced on purpose: a span of its own would become the current span, one level further from the

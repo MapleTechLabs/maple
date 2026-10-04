@@ -3,7 +3,7 @@
  * message carries, and what a submitted report becomes on the provider.
  *
  * The provider is a fake at the `VcsProviderRegistry` seam and the Durable Object is a fake at
- * the `WorkerEnvironment` seam, so the test sees exactly what each would have been asked to do.
+ * the `ChatSessions` seam, so the test sees exactly what each would have been asked to do.
  */
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import {
@@ -22,7 +22,7 @@ import {
 	VcsRepositoryId,
 } from "@maple/domain/http"
 import { prReviewFindingEmbeddings, prReviewFindings } from "@maple/db"
-import { WorkerEnvironment } from "@maple/infra/worker-runtime"
+import { envPorts } from "@maple/backend/platform/env-ports"
 import { Effect, Layer, Option, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
@@ -187,7 +187,7 @@ const layerFor = (
 	const workerEnv =
 		options.withWorkerEnv === false
 			? Layer.empty
-			: Layer.succeed(WorkerEnvironment, {
+			: envPorts({
 					ChatSession: fakeChatSessions(options.begun ?? [], options.aborted ?? [], {
 						busy: options.busy,
 					}),

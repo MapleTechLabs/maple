@@ -19,6 +19,7 @@ const spanRow = {
 	spanId: "b7ad6b7169203331",
 	parentSpanId: "",
 	spanName: "GET /orders",
+	rawSpanName: "http.server GET",
 	serviceName: "api",
 	spanKind: "Server",
 	durationMs: 12,
@@ -115,6 +116,41 @@ describe("inspectTrace", () => {
 			assert.strictEqual(result.spanCount, 0)
 			assert.lengthOf(captured.probes, 1)
 			assert.lengthOf(hierarchyCalls(captured), 1)
+			assert.deepStrictEqual(result.scanned, {
+				startTime: "2026-03-11 00:00:00",
+				endTime: "2026-04-10 00:00:00",
+				widened: true,
+			})
+		}),
+	)
+
+	it.effect("widens when a timestamp hint misses the trace and reports what it scanned", () =>
+		Effect.gen(function* () {
+			const captured: Captured = { pipeCalls: [], probes: [] }
+			const result = yield* run(
+				makeExecutor(captured, {
+					window: { start: "2026-03-20 08:00:00", end: "2026-03-20 08:00:00" },
+					probeTimestamp: "2026-03-20 08:00:00.250000000",
+				}),
+				{ timestampHint: new Date("2026-04-05T12:00:00Z") },
+			)
+			assert.strictEqual(result.spanCount, 1)
+			assert.lengthOf(captured.probes, 1)
+			assert.strictEqual(hierarchyCalls(captured)[0]?.params.start_time, "2026-04-05 11:00:00")
+			assert.deepStrictEqual(result.scanned, {
+				startTime: "2026-03-20 07:00:00",
+				endTime: "2026-03-20 09:00:00",
+				widened: true,
+			})
+		}),
+	)
+
+	it.effect("keeps the stored span name beside a rewritten display name", () =>
+		Effect.gen(function* () {
+			const window = { start: "2026-04-09 12:00:00", end: "2026-04-09 12:00:00" }
+			const result = yield* run(makeExecutor({ pipeCalls: [], probes: [] }, { window }))
+			assert.strictEqual(result.spans[0]?.spanName, "GET /orders")
+			assert.strictEqual(result.spans[0]?.rawSpanName, "http.server GET")
 		}),
 	)
 

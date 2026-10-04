@@ -62,6 +62,7 @@ export const OAuthTokenResponseSchema = Schema.Struct({
 export type OAuthTokenResponse = typeof OAuthTokenResponseSchema.Type
 
 const decodeTokenResponse = Schema.decodeUnknownEffect(OAuthTokenResponseSchema)
+const decodeJsonUnknown = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown))
 
 /**
  * RFC 6749 §5.2 error body. Token endpoints answer 400/401 for many reasons —
@@ -320,10 +321,10 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 		)
 
 		const parseTokenPayload = (text: string) =>
-			Effect.try({
-				try: () => JSON.parse(text) as unknown,
-				catch: () => toUpstreamError(`${providerLabel} token endpoint returned a non-JSON response`),
-			}).pipe(
+			decodeJsonUnknown(text).pipe(
+				Effect.mapError(() =>
+					toUpstreamError(`${providerLabel} token endpoint returned a non-JSON response`),
+				),
 				Effect.flatMap((json) =>
 					decodeTokenResponse(json).pipe(
 						Effect.mapError(() =>

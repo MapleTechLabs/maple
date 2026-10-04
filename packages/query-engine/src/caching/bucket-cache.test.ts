@@ -604,14 +604,16 @@ describe("BucketCacheService.getOrComputeBuckets", () => {
 		const writes: Array<{ key: string; value: unknown }> = []
 		const backend: EdgeCacheBackend = {
 			name: "memory",
-			get: async (_bucket, key) => {
-				reads.push(key)
-				return undefined
-			},
-			put: async (_bucket, key, value) => {
-				writes.push({ key, value })
-			},
-			delete: async () => {},
+			get: (_bucket, key) =>
+				Effect.sync(() => {
+					reads.push(key)
+					return undefined
+				}),
+			put: (_bucket, key, value) =>
+				Effect.sync(() => {
+					writes.push({ key, value })
+				}),
+			delete: () => Effect.void,
 		}
 		const request = {
 			orgId,
@@ -650,11 +652,12 @@ describe("BucketCacheService.getOrComputeBuckets", () => {
 		let computes = 0
 		const backend: EdgeCacheBackend = {
 			name: "memory",
-			get: async () => await new Promise<never>(() => {}),
-			put: async (_bucket, _hash, value) => {
-				writes.push(value as BucketCacheSegmentData)
-			},
-			delete: async () => {},
+			get: () => Effect.never,
+			put: (_bucket, _hash, value) =>
+				Effect.sync(() => {
+					writes.push(value as BucketCacheSegmentData)
+				}),
+			delete: () => Effect.void,
 		}
 		const request = {
 			orgId,

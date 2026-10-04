@@ -378,3 +378,127 @@ export function serviceOperationsTimeseriesQuery(opts: ServiceOperationsTimeseri
 		.limit(10_000)
 		.format("JSON")
 }
+
+// Route usage
+//
+// HTTP endpoints across one or every service with first/last seen, off the same
+// three-tier splice as the summary. `firstSeen`/`lastSeen` are bucket starts:
+// minute-exact at the window ends, hour-grained for hours inside the window.
+
+export type RouteUsageOrder = "count" | "lastSeenAsc" | "lastSeenDesc"
+
+export interface RouteUsageOpts {
+	readonly serviceName?: string
+	readonly environments?: readonly string[]
+	/** Case-insensitive substring of the normalized `METHOD /route` name. */
+	readonly search?: string
+	readonly orderBy?: RouteUsageOrder
+	readonly limit?: number
+}
+
+export interface RouteUsageOutput {
+	readonly serviceName: string
+	readonly spanName: string
+	readonly spanCount: number
+	readonly errorCount: number
+	readonly p95DurationMs: number
+	readonly firstSeen: string
+	readonly lastSeen: string
+}
+
+export const routeUsageRowSchema = Schema.Struct({
+	serviceName: Schema.String,
+	spanName: Schema.String,
+	spanCount: CHNumber,
+	errorCount: CHNumber,
+	p95DurationMs: CHNumber,
+	firstSeen: Schema.String,
+	lastSeen: Schema.String,
+})
+
+const searchCondition = (name: CH.Expr<string>, search: string | undefined) =>
+	search ? CH.positionCaseInsensitive(name, CH.lit(search)).gt(0) : undefined
+
+export function routeUsageQuery(opts: RouteUsageOpts) {
+	const rawEdges = from(Traces)
+		.select(($) => ({
+			bServiceName: $.ServiceName,
+			bSpanName: displaySpanName($),
+			bSpanCount: CH.count(),
+			bErrorCount: CH.countIf($.StatusCode.eq("Error")),
+			bDurationQuantiles: CH.rawExpr(RAW_DURATION_STATE, DURATION_STATE),
+			bFirst: CH.min_(CH.toStartOfMinute(CH.toDateTime($.Timestamp))),
+			bLast: CH.max_(CH.toStartOfMinute(CH.toDateTime($.Timestamp))),
+		}))
+		.where(($) => [
+			...tracesBaseWhereConditions($, {
+				serviceName: opts.serviceName,
+				environments: opts.environments,
+			}),
+			edgeCondition("Timestamp", minuteGrain),
+			httpEndpointCondition(displaySpanName($), true),
+			searchCondition(displaySpanName($), opts.search),
+		])
+		.groupBy("bServiceName", "bSpanName")
+
+	const minutelyEdges = from(ServiceOperationsMinutely)
+		.select(($) => ({
+			bServiceName: $.ServiceName,
+			bSpanName: $.SpanName,
+			bSpanCount: CH.sum($.SpanCount),
+			bErrorCount: CH.sum($.ErrorCount),
+			bDurationQuantiles: CH.rawExpr(ROLLUP_DURATION_STATE, DURATION_STATE),
+			bFirst: CH.min_($.Minute),
+			bLast: CH.max_($.Minute),
+		}))
+		.where(($) => [
+			$.OrgId.eq(param.string("orgId")),
+			CH.when(opts.serviceName, (value: string) => $.ServiceName.eq(value)),
+			rollupEnvironmentCondition($, opts.environments),
+			...interiorConditions($.Minute, minuteGrain),
+			edgeCondition("Minute", hourGrain),
+			httpEndpointCondition($.SpanName, true),
+			searchCondition($.SpanName, opts.search),
+		])
+		.groupBy("bServiceName", "bSpanName")
+
+	const hourlyInterior = from(ServiceOperationsHourly)
+		.select(($) => ({
+			bServiceName: $.ServiceName,
+			bSpanName: $.SpanName,
+			bSpanCount: CH.sum($.SpanCount),
+			bErrorCount: CH.sum($.ErrorCount),
+			bDurationQuantiles: CH.rawExpr(ROLLUP_DURATION_STATE, DURATION_STATE),
+			bFirst: CH.min_($.Hour),
+			bLast: CH.max_($.Hour),
+		}))
+		.where(($) => [
+			$.OrgId.eq(param.string("orgId")),
+			CH.when(opts.serviceName, (value: string) => $.ServiceName.eq(value)),
+			hourlyEnvironmentCondition($, opts.environments),
+			...interiorConditions($.Hour, hourGrain),
+			httpEndpointCondition($.SpanName, true),
+			searchCondition($.SpanName, opts.search),
+		])
+		.groupBy("bServiceName", "bSpanName")
+
+	const order = opts.orderBy ?? "count"
+	return fromUnion(unionAll(rawEdges, minutelyEdges, hourlyInterior), "route_windows")
+		.select(($) => ({
+			serviceName: $.bServiceName,
+			spanName: $.bSpanName,
+			spanCount: CH.sum($.bSpanCount),
+			errorCount: CH.sum($.bErrorCount),
+			p95DurationMs: mergedDurationQuantile(2),
+			firstSeen: CH.toString_(CH.min_($.bFirst)),
+			lastSeen: CH.toString_(CH.max_($.bLast)),
+		}))
+		.groupBy("serviceName", "spanName")
+		.orderBy(
+			order === "count"
+				? ["spanCount", "desc"]
+				: ["lastSeen", order === "lastSeenAsc" ? "asc" : "desc"],
+		)
+		.limit(opts.limit ?? 50)
+		.format("JSON")
+}

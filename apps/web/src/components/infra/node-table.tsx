@@ -26,7 +26,6 @@ export function NodeTableLoading() {
 		<DataTable.Root ariaLabel="Nodes">
 			<DataTable.Head>
 				<ColumnHead label="Node" width="w-0 flex-1 min-w-[260px]" />
-				<ColumnHead label="Status" width="w-[88px]" />
 				<ColumnHead label="CPU cores" align="right" width="w-[110px]" hidden="hidden md:flex" />
 				<ColumnHead label="Uptime" align="right" width="w-[100px]" hidden="hidden md:flex" />
 				<ColumnHead label="Last seen" align="right" width="w-[100px]" />
@@ -36,7 +35,6 @@ export function NodeTableLoading() {
 					<Skeleton className="h-4 w-48" />
 					<Skeleton className="mt-1.5 h-3 w-32" />
 				</div>
-				<Skeleton className="h-3 w-[88px]" />
 				<Skeleton className="hidden h-3 w-[110px] md:block" />
 				<Skeleton className="hidden h-3 w-[100px] md:block" />
 				<Skeleton className="h-3 w-[100px]" />
@@ -62,7 +60,6 @@ export function NodeTable({ nodes, waiting, referenceTime }: NodeTableProps) {
 					onSort={handleSort}
 					width="w-0 flex-1 min-w-[260px]"
 				/>
-				<ColumnHead label="Status" width="w-[88px]" />
 				<ColumnHead<SortKey>
 					label="CPU cores"
 					sortKey="cpuUsage"
@@ -103,13 +100,13 @@ export function NodeTable({ nodes, waiting, referenceTime }: NodeTableProps) {
 					className={ROW_LINK_CLASS}
 				>
 					<div className="w-0 min-w-[260px] flex-1">
-						<div className="truncate font-mono text-[13px] font-medium text-foreground transition-colors group-hover:text-primary">
-							{node.nodeName}
+						<div className="flex items-center gap-2">
+							<span className="truncate font-mono text-[13px] font-medium text-foreground transition-colors group-hover:text-primary">
+								{node.nodeName}
+							</span>
+							<HostStatusBadge quiet lastSeen={node.lastSeen} referenceTime={referenceTime} />
 						</div>
 						<MetaLine items={[node.kubeletVersion && `kubelet ${node.kubeletVersion}`]} />
-					</div>
-					<div className="w-[88px]">
-						<HostStatusBadge lastSeen={node.lastSeen} referenceTime={referenceTime} />
 					</div>
 					<div className="hidden w-[110px] text-right font-mono text-[12px] tabular-nums text-foreground/80 md:block">
 						{Number.isFinite(node.cpuUsage) ? node.cpuUsage.toFixed(2) : "—"}

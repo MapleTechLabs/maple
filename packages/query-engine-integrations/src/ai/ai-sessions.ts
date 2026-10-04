@@ -568,8 +568,9 @@ const indexTracesOf = <Row extends { readonly traceId: CH.Expr<string> }>(
 			CH.when(values(opts.agentNames), (v) => carries(CH.inList($.AgentName, v))),
 			CH.when(values(opts.toolNames), (v) => carries(CH.inList($.ToolName, v))),
 			CH.when(search, (needle) => {
+				// Session ids embed their key mid-string (`agent:pr-<sha>-...`), so they match anywhere.
 				const pattern = idSearchPattern(needle)
-				return carries($.SessionId.like(pattern).or($.TraceId.like(pattern)))
+				return carries($.SessionId.like(`%${pattern}`).or($.TraceId.like(pattern)))
 			}),
 		])
 }

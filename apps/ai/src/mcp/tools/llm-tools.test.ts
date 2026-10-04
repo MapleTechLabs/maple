@@ -40,14 +40,18 @@ const handlerFor = (executor: McpToolExecutorApi, name: string) => {
 }
 
 describe("buildMapleToolkit", () => {
-	it("offers internal tools to the agents and to no other surface", () => {
+	it("offers agent tools to the agents and the bot, internal tools to the agents only", () => {
 		const { executor } = countingExecutor()
 		const chat = buildMapleToolkit(executor, TENANT, { surface: "chat" }).handlers
 		const workflow = buildMapleToolkit(executor, TENANT, { surface: "workflow" }).handlers
+		const bot = buildMapleToolkit(executor, TENANT, { surface: "bot" }).handlers
 		const mcp = buildMapleToolkit(executor, TENANT, { surface: "mcp" }).handlers
 		assert.isDefined(chat.sandbox_exec)
 		assert.isDefined(workflow.sandbox_exec)
+		assert.isDefined(bot.sandbox_exec)
 		assert.isUndefined(mcp.sandbox_exec)
+		assert.isDefined(chat.pr_file_diff)
+		assert.isUndefined(bot.pr_file_diff)
 		// A ruleset allowing everything does not widen a build past its audience.
 		assert.isUndefined(
 			buildMapleToolkit(executor, TENANT, { surface: "mcp", include: () => true }).handlers

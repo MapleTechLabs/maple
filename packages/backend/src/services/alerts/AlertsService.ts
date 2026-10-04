@@ -100,7 +100,7 @@ import {
 	probeLiveness,
 } from "@maple/backend/services/alerts/telemetry-liveness"
 import { simulateFiringSpans } from "./alert-firing-spans"
-import { WorkerEnvironment } from "@maple/infra/worker-runtime"
+import { ChatSessions } from "@maple/backend/platform/bindings"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { formatComparator } from "./alert-formatting"
 import { makeIncidentPushBudget, type IncidentPushBudget } from "./alert-push-budget"
@@ -430,7 +430,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			} = destinationDelivery
 			// Optional: present only inside a Worker isolate. Used to kick off the
 			// AI triage Workflow for issues created from freshly opened incidents.
-			const workerEnv = Option.getOrUndefined(yield* Effect.serviceOption(WorkerEnvironment))
+			const chatSessions = Option.getOrUndefined(yield* Effect.serviceOption(ChatSessions))
 			const now = runtime.now
 			const makeUuid = () => runtime.makeUuid()
 			const workerId = makeUuid()
@@ -2307,7 +2307,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 									? groupKey
 									: (normalized.serviceNames[0] ?? ""),
 							timestamp,
-							workerEnv,
+							chatSessions,
 						}).pipe(Effect.provideService(Database, database))
 					} else {
 						yield* Effect.logWarning(

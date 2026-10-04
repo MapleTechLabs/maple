@@ -235,7 +235,7 @@ function CorrelationLink({ correlation }: { correlation: InfraCorrelation }) {
 		case "host":
 			return (
 				<Link
-					to="/infra/$hostName"
+					to="/infra/hosts/$hostName"
 					params={{ hostName: correlation.identifier }}
 					className={className}
 				>

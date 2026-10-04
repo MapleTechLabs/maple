@@ -1,6 +1,11 @@
 import { Effect, Schema } from "effect"
 import { FindErrorsOutput } from "@maple/domain/mcp-outputs"
-import { findErrors } from "@maple/query-engine/observability"
+import {
+	findErrors,
+	findErrorsTotals,
+	isUnlabelledError,
+	labelExceptionlessFingerprints,
+} from "@maple/query-engine/observability"
 import { provideWarehouseExecutorFromTenant } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import type { McpToolRegistrar } from "./types"
 import { toMcpQueryError } from "../lib/map-warehouse-error"
@@ -8,8 +13,30 @@ import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { formatNumber, truncate } from "../lib/format"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
+import { emptyResultHints } from "../lib/empty-result-hints"
 
 const WINDOW = P.timeWindow({ defaultHours: 6 })
+
+/**
+ * Rows shown against everything in the window. Summing the top rows and comparing it with an
+ * error-rate chart read as "find_errors misses errors"; the totals say what is and is not here.
+ */
+const totalsLine = (output: typeof FindErrorsOutput.Type): string => {
+	const shownCount = output.errors.reduce((sum, e) => sum + e.count, 0)
+	const totals = output.totals
+	if (totals === undefined) return `Total: ${output.errors.length} error types`
+	const lines = [
+		`Showing ${output.errors.length} of ${formatNumber(totals.fingerprints)} fingerprints, ${formatNumber(shownCount)} of ${formatNumber(totals.occurrences)} error occurrences in the window.`,
+	]
+	if (totals.noExceptionCount > 0)
+		lines.push(
+			`${formatNumber(totals.noExceptionCount)} occurrences are error spans without an exception (status Error only); those rows are labelled by span name and HTTP status where known.`,
+		)
+	lines.push(
+		"Source: spans with status Error. 4xx client spans without an exception are not counted as errors here, though query_data's error_rate counts them.",
+	)
+	return lines.join("\n")
+}
 
 export function registerFindErrorsTool(server: McpToolRegistrar) {
 	server.define({
@@ -47,16 +74,45 @@ export function registerFindErrorsTool(server: McpToolRegistrar) {
 				identity: params.identity ?? "all",
 			})
 
-			const errors = yield* findErrors({
+			const input = {
 				timeRange: { startTime: st, endTime: et },
 				service: params.service,
 				environment: params.environment,
 				identity: params.identity,
 				namespacePrefix: params.namespace_prefix,
-				limit: params.limit,
-			}).pipe(
+			}
+			const [errors, totals] = yield* Effect.all(
+				[
+					findErrors({ ...input, limit: params.limit }),
+					// Context for the rows, not the answer: without it the table still stands.
+					findErrorsTotals(input).pipe(Effect.orElseSucceed(() => undefined)),
+				],
+				{ concurrency: "unbounded" },
+			).pipe(
 				provideWarehouseExecutorFromTenant(tenant),
 				Effect.mapError(toMcpQueryError("errors_by_type")),
+			)
+
+			const emptyHints =
+				errors.length === 0
+					? yield* emptyResultHints(
+							{
+								service: params.service,
+								environments: params.environment === undefined ? undefined : [params.environment],
+							},
+							{ startTime: st, endTime: et },
+						)
+					: []
+			// "Unknown Error" hid what these were (22k bot 404s on one service); name them by span.
+			// Cosmetic, so a failed lookup keeps the stored label rather than failing the call.
+			const labels = yield* labelExceptionlessFingerprints({
+				fingerprintHashes: errors
+					.filter((e) => isUnlabelledError(e.label))
+					.map((e) => e.fingerprintHash),
+				timeRange: input.timeRange,
+			}).pipe(
+				provideWarehouseExecutorFromTenant(tenant),
+				Effect.orElseSucceed(() => new Map<string, string>()),
 			)
 
 			const identity: typeof FindErrorsOutput.Type.identity = params.identity ?? "all"
@@ -65,12 +121,14 @@ export function registerFindErrorsTool(server: McpToolRegistrar) {
 				identity,
 				errors: errors.map((error) => ({
 					fingerprintHash: error.fingerprintHash,
-					label: error.label,
+					label: labels.get(error.fingerprintHash) ?? error.label,
 					sampleMessage: error.sampleMessage,
 					count: error.count,
 					affectedServicesCount: error.affectedServicesCount,
 					lastSeen: error.lastSeen,
 				})),
+				...(emptyHints.length > 0 ? { emptyHints } : undefined),
+				...(totals === undefined ? undefined : { totals }),
 			}
 		}),
 		render: (output) => {
@@ -83,6 +141,7 @@ export function registerFindErrorsTool(server: McpToolRegistrar) {
 							empty: {
 								message: `No ${noun} found in this window.`,
 								hints: [
+									...(output.emptyHints ?? []),
 									"Widen start_time/end_time, or drop the service and environment filters.",
 								],
 							},
@@ -112,7 +171,7 @@ export function registerFindErrorsTool(server: McpToolRegistrar) {
 										error.lastSeen,
 									]),
 								),
-								doc.text(`Total: ${output.errors.length} error types`),
+								doc.text(totalsLine(output)),
 							],
 				next: [
 					...output.errors

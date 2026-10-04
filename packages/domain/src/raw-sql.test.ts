@@ -198,3 +198,91 @@ describe("rawAlertSampleCountWarning", () => {
 		).not.toBeNull()
 	})
 })
+
+describe("rawSqlIssue org filter placement", () => {
+	it.each([
+		"SELECT 1 FROM traces WHERE $__orgFilter AND SpanName = 'a' OR (ServiceName = 'b')",
+		"SELECT 1 FROM traces WHERE a = 1 OR b = 2 AND $__orgFilter",
+		"SELECT 1 FROM traces WHERE ($__orgFilter AND a = 1) OR b = 2",
+		"SELECT 1 FROM traces WHERE NOT $__orgFilter",
+		"SELECT 1 FROM traces WHERE not($__orgFilter)",
+		"SELECT 1 FROM traces WHERE $__orgFilter OR 1 = 1 GROUP BY 1",
+		"SELECT 1 FROM traces WHERE $__orgFilter AND toStartOfHour(Timestamp) > x OR Environment = 'prod'",
+		"SELECT 1 FROM traces WHERE $__orgFilter AND (x = 1) OR y = 2",
+	])("rejects an org filter an OR can bypass: %s", (sql) => {
+		expect(rawSqlIssue(sql)?.code).toBe("InvalidMacro")
+	})
+
+	it.each([
+		"SELECT a OR b FROM traces WHERE $__orgFilter AND (x = 1 OR y = 2) GROUP BY 1",
+		"SELECT 1 FROM traces WHERE ($__orgFilter) AND x = 1",
+		"SELECT 1 FROM traces WHERE $__orgFilter AND (x IN (SELECT x FROM logs WHERE $__orgFilter) OR y = 1)",
+		"SELECT 1 FROM traces t JOIN logs l ON t.TraceId = l.TraceId AND $__orgFilter(l) WHERE $__orgFilter(t) AND (a OR b)",
+		"SELECT 1 FROM traces WHERE $__orgFilter AND $__timeFilter(Timestamp) HAVING count() > 1 OR 1 = 1",
+	])("accepts an org filter that is a top-level AND condition: %s", (sql) => {
+		expect(rawSqlIssue(sql)).toBeNull()
+	})
+
+	it.each([
+		"SELECT * FROM traces t CROSS JOIN (SELECT 'org_abc' AS OrgId) f WHERE $__orgFilter(f)",
+		"WITH f AS (SELECT 'org_abc' AS OrgId) SELECT * FROM traces t, f WHERE $__orgFilter(f)",
+		"WITH f AS (SELECT 'org_abc' AS OrgId) SELECT * FROM traces t JOIN f ON 1 = 1 WHERE $__orgFilter(f)",
+		"SELECT * FROM traces t JOIN numbers(1) n ON 1 = 1 WHERE $__orgFilter(n)",
+		"SELECT * FROM traces t WHERE $__orgFilter(x)",
+	])("rejects an alias that is not a table read in FROM/JOIN: %s", (sql) => {
+		expect(rawSqlIssue(sql)?.message).toContain("must name a table read in FROM or JOIN")
+	})
+
+	it.each([
+		"SELECT 1 FROM traces AS t WHERE $__orgFilter(t)",
+		"SELECT 1 FROM traces WHERE $__orgFilter(traces)",
+		"SELECT 1 FROM maple.traces t FINAL WHERE $__orgFilter(t)",
+		"SELECT 1 FROM traces t LEFT JOIN logs AS l ON t.TraceId = l.TraceId WHERE $__orgFilter(t) AND $__orgFilter(l)",
+	])("accepts an alias bound to a table: %s", (sql) => {
+		expect(rawSqlIssue(sql)).toBeNull()
+	})
+
+	it("rejects a non-identifier alias", () => {
+		expect(rawSqlIssue("SELECT 1 FROM traces WHERE $__orgFilter(t OR 1)")?.code).toBe("InvalidMacro")
+	})
+
+	it("points system-table reads at the catalog", () => {
+		expect(rawSqlIssue("SELECT name FROM system.columns WHERE $__orgFilter")?.message).toContain(
+			"describe_warehouse_tables",
+		)
+	})
+})
+
+describe("rawSqlIssue org filter review follow-ups", () => {
+	it.each([
+		"SELECT 1 FROM traces WHERE coalesce($__orgFilter, 0) OR SpanName = 'x'",
+		"SELECT 1 FROM traces WHERE if(SpanName = 'x', $__orgFilter, 1)",
+		"SELECT 1 FROM traces WHERE multiIf(a = 1, $__orgFilter, 1)",
+		"SELECT 1 FROM traces WHERE toUInt8($__orgFilter) AND x = 1",
+	])("rejects an org filter wrapped in a function call: %s", (sql) => {
+		expect(rawSqlIssue(sql)?.code).toBe("InvalidMacro")
+	})
+
+	it("still accepts an org filter scoped to an IN subquery", () => {
+		expect(
+			rawSqlIssue(
+				"SELECT 1 FROM traces WHERE $__orgFilter AND x IN (SELECT x FROM logs WHERE $__orgFilter)",
+			),
+		).toBeNull()
+	})
+
+	it.each([
+		"SELECT 1 FROM traces t, logs l WHERE $__orgFilter(t) AND $__orgFilter(l)",
+		"SELECT 1 FROM traces AS t, default.logs AS l, metrics_sum m WHERE $__orgFilter(t) AND $__orgFilter(l) AND $__orgFilter(m)",
+	])("binds aliases from a comma-separated FROM list: %s", (sql) => {
+		expect(rawSqlIssue(sql)).toBeNull()
+	})
+
+	it.each([
+		"SELECT 1 FROM traces t, (SELECT 1 AS OrgId) l WHERE $__orgFilter(t) AND $__orgFilter(l)",
+		"SELECT 1 FROM traces t, numbers(10) l WHERE $__orgFilter(t) AND $__orgFilter(l)",
+		"WITH c AS (SELECT 1 AS OrgId) SELECT 1 FROM traces t, c l WHERE $__orgFilter(t) AND $__orgFilter(l)",
+	])("still rejects a comma item that is not a table: %s", (sql) => {
+		expect(rawSqlIssue(sql)?.code).toBe("InvalidMacro")
+	})
+})

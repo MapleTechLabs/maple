@@ -156,20 +156,17 @@ const partitionWindow = (value: string) => {
 	}
 }
 
+const decodeJsonUnknown = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown))
+
 const parseStringRecord = (value: unknown): Record<string, string> => {
-	if (typeof value !== "string") return {}
-	try {
-		const parsed = JSON.parse(value) as unknown
-		if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return {}
-		return Object.fromEntries(
-			Object.entries(parsed).map(([key, entry]) => [
-				key,
-				typeof entry === "string" ? entry : String(entry),
-			]),
-		)
-	} catch {
-		return {}
-	}
+	const parsed = Option.getOrUndefined(decodeJsonUnknown(value))
+	if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return {}
+	return Object.fromEntries(
+		Object.entries(parsed).map(([key, entry]) => [
+			key,
+			typeof entry === "string" ? entry : String(entry),
+		]),
+	)
 }
 
 type LogKey = readonly [timestamp: string, recordIdentity: string]
@@ -194,35 +191,34 @@ const compactHexId = (value: string) => {
 	)
 	return `~${Base64Url.encode(bytes)}`
 }
-const expandHexId = (value: string) => {
-	if (!value.startsWith("~")) return value
+const expandHexId = (value: string): Option.Option<string> => {
+	if (!value.startsWith("~")) return Option.some(value)
 	const decoded = Base64Url.decode(value.slice(1))
-	if (Result.isFailure(decoded)) throw new Error("invalid compact identifier")
-	return [...decoded.success].map((byte) => byte.toString(16).padStart(2, "0")).join("")
+	if (Result.isFailure(decoded)) return Option.none()
+	return Option.some([...decoded.success].map((byte) => byte.toString(16).padStart(2, "0")).join(""))
 }
 const logKey = (row: { timestamp: string; recordIdentity: string }) =>
 	JSON.stringify([compactTimestamp(row.timestamp), compactHexId(row.recordIdentity)] satisfies LogKey)
 
-const parseLogKey = (value: string) => {
-	try {
-		const parsed = JSON.parse(value) as unknown
-		if (
-			!Array.isArray(parsed) ||
-			parsed.length !== 2 ||
-			parsed.some((part) => typeof part !== "string") ||
-			Number.isNaN(Date.parse(expandTimestamp(parsed[0] as string).replace(" ", "T") + "Z")) ||
-			!/^[0-9A-F]{32}$/i.test(expandHexId(parsed[1] as string))
-		) {
-			throw new Error("invalid")
-		}
-		return Effect.succeed([
-			expandTimestamp(parsed[0] as string),
-			expandHexId(parsed[1] as string).toUpperCase(),
-		] as const)
-	} catch {
-		return Effect.fail(V2LogIdInvalid.make(undefined, { param: "id" }))
-	}
-}
+const decodeLogKeyParts = Schema.decodeUnknownOption(
+	Schema.fromJsonString(Schema.Tuple([Schema.String, Schema.String])),
+)
+
+const parseLogKey = (value: string) =>
+	Option.match(
+		Option.flatMap(decodeLogKeyParts(value), ([rawTimestamp, rawIdentity]) => {
+			const logTimestamp = expandTimestamp(rawTimestamp)
+			if (Number.isNaN(Date.parse(logTimestamp.replace(" ", "T") + "Z"))) return Option.none()
+			return expandHexId(rawIdentity).pipe(
+				Option.filter((hex) => /^[0-9A-F]{32}$/i.test(hex)),
+				Option.map((hex) => [logTimestamp, hex.toUpperCase()] as const),
+			)
+		}),
+		{
+			onNone: () => Effect.fail(V2LogIdInvalid.make(undefined, { param: "id" })),
+			onSome: (key) => Effect.succeed(key),
+		},
+	)
 
 const toLog = (row: {
 	timestamp: string

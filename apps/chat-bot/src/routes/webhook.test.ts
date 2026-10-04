@@ -1,7 +1,7 @@
 import type { InboundEvent } from "@maple/chat-platform"
 import type { IngressConnector } from "../config.ts"
 import { chatConnectorId } from "@maple/chat-platform"
-import { Context, Effect, Exit, Layer, Tracer } from "effect"
+import { ConfigProvider, Context, Effect, Exit, Layer, Tracer } from "effect"
 import { HttpRouter, HttpServerResponse } from "effect/http"
 import { describe, expect, it } from "vitest"
 import { InboundHandler, type InboundHandlerApi } from "../inbound.ts"
@@ -69,9 +69,10 @@ const call = async (
 	}
 	const { ended, context } = capturingTracer()
 	const web = HttpRouter.toWebHandler(
-		connectorWebhookRouter(env, registry).pipe(
+		connectorWebhookRouter(registry).pipe(
 			Layer.provideMerge(Layer.succeed(InboundHandler)(inbound)),
 			Layer.provideMerge(HttpRouter.layer),
+			Layer.provideMerge(ConfigProvider.layer(ConfigProvider.fromUnknown(env))),
 			Layer.provideMerge(Layer.succeedContext(context)),
 		),
 	)

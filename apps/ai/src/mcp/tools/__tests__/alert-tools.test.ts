@@ -25,6 +25,7 @@ import {
 	ListAlertIncidentsOutput,
 	ListAlertRulesOutput,
 	PreviewAlertRuleOutput,
+	UpdateAlertRuleOutput,
 } from "@maple/domain/mcp-outputs"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
 import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
@@ -74,6 +75,30 @@ const rule = Schema.decodeUnknownSync(AlertRuleDocument)({
 	updatedBy: "user_tools",
 })
 
+const ALL_ID = "8a1c2d3e-4b5a-4c6d-8e9f-0a1b2c3d4e5f"
+const RAW_ID = "9b1c2d3e-4b5a-4c6d-8e9f-0a1b2c3d4e5f"
+const OTHER_RAW_ID = "ab1c2d3e-4b5a-4c6d-8e9f-0a1b2c3d4e5f"
+/** An unscoped rule (every service) and two raw-SQL rules, one naming maple-api in its SQL. */
+const extraRules = [
+	{ ...rule, id: ALL_ID, name: "Latency", serviceNames: [], signalType: "p95_latency" },
+	{
+		...rule,
+		id: RAW_ID,
+		name: "Raw api",
+		serviceNames: [],
+		signalType: "raw_query",
+		rawQuerySql: "SELECT count() AS value FROM traces WHERE ServiceName = 'maple-api'",
+	},
+	{
+		...rule,
+		id: OTHER_RAW_ID,
+		name: "Raw web",
+		serviceNames: [],
+		signalType: "raw_query",
+		rawQuerySql: "SELECT 1",
+	},
+].map((r) => Schema.decodeUnknownSync(AlertRuleDocument)(r))
+
 const incident = (overrides: Record<string, unknown>) => ({
 	id: INCIDENT_ID,
 	ruleId: RULE_ID,
@@ -105,6 +130,8 @@ interface Seen {
 	previewed?: AlertRulePreviewRequest
 	incidentOptions?: unknown
 	checkOptions?: unknown
+	extraIncidents?: ReadonlyArray<Record<string, unknown>>
+	updatedIds?: Array<string>
 }
 
 const layer = (seen: Seen) =>
@@ -116,7 +143,7 @@ const layer = (seen: Seen) =>
 			authMode: "self_hosted",
 		} as never),
 		Layer.succeed(AlertRulesService, {
-			listRules: () => Effect.succeed(new AlertRulesListResponse({ rules: [rule] })),
+			listRules: () => Effect.succeed(new AlertRulesListResponse({ rules: [rule, ...extraRules] })),
 			createRule: (_org: unknown, _user: unknown, _roles: unknown, request: AlertRuleUpsertRequest) => {
 				seen.created = request
 				// Echo the fields the write warnings read, so a raw-SQL create reads back as one.
@@ -172,11 +199,16 @@ const layer = (seen: Seen) =>
 				_o: unknown,
 				_u: unknown,
 				_r: unknown,
-				_id: unknown,
+				id: string,
 				request: AlertRuleUpsertRequest,
 			) => {
 				seen.updated = request
-				return Effect.succeed(rule)
+				seen.updatedIds = [...(seen.updatedIds ?? []), id]
+				return Effect.succeed(
+					id === RULE_ID
+						? rule
+						: { ...rule, id, name: "Latency", destinationIds: request.destinationIds },
+				)
 			},
 			listDestinations: () =>
 				Effect.succeed(
@@ -200,14 +232,18 @@ const layer = (seen: Seen) =>
 				),
 		} as never),
 		Layer.succeed(AlertReadModelsService, {
-			listIncidents: (_org: unknown, options: unknown) => {
-				seen.incidentOptions = options
+			listIncidents: (_org: unknown, options: { readonly status?: string }) => {
+				seen.incidentOptions ??= options
+				const all = [
+					incident({}),
+					incident({ id: "22222222-2222-4333-8444-555555555555", severity: "warning" }),
+					...(seen.extraIncidents ?? []),
+				]
 				return Effect.succeed(
 					Schema.decodeUnknownSync(AlertIncidentsListResponse)({
-						incidents: [
-							incident({}),
-							incident({ id: "22222222-2222-4333-8444-555555555555", severity: "warning" }),
-						],
+						incidents: all.filter(
+							(i) => options.status === undefined || i.status === options.status,
+						),
 					}),
 				)
 			},
@@ -300,7 +336,8 @@ describe("alert tools", () => {
 			severity: "critical",
 		})
 		const output = Schema.decodeUnknownSync(ListAlertRulesOutput)(result.structuredContent)
-		expect(output.rules.map((r) => r.id)).toEqual([RULE_ID])
+		// The unscoped rule covers checkout too; raw-SQL rules not naming it do not.
+		expect(output.rules.map((r) => r.id)).toEqual([RULE_ID, ALL_ID])
 		expect(output.services).toEqual(["checkout", "billing"])
 		expect(text(result)).toContain("## Alert Rules")
 		expect(text(result)).toContain("Services: checkout, billing")
@@ -560,5 +597,87 @@ describe("alert tools", () => {
 
 		const missing = await run("delete_alert_rule", { rule_id: INCIDENT_ID, confirm: true })
 		expect(missing._tag === "Failure" && missing.failure.parameter).toBe("rule_id")
+	})
+	it("list_alert_rules by service includes unscoped rules and raw_query rules naming it", async () => {
+		const result = await ok("list_alert_rules", { service_names: "maple-api" })
+		const output = Schema.decodeUnknownSync(ListAlertRulesOutput)(result.structuredContent)
+		expect(output.rules.map((r) => r.id)).toEqual([ALL_ID, RAW_ID])
+		expect(text(result)).toContain("Services: all")
+		expect(text(result)).toContain("| all |")
+		expect(text(result)).toContain("(raw SQL)")
+	})
+
+	it("list_alert_rules names the valid signal types when given an unknown one", async () => {
+		const result = await run("list_alert_rules", { signal_type: "query" })
+		expect(result._tag === "Failure" && JSON.stringify(result.failure)).toContain("raw_query")
+	})
+
+	it("list_alert_incidents status=open counts incidents resolved in the last day", async () => {
+		const seen: Seen = {
+			extraIncidents: [
+				incident({
+					id: "33333333-2222-4333-8444-555555555555",
+					status: "resolved",
+					resolvedAt: new Date().toISOString(),
+				}),
+				incident({
+					id: "44444444-2222-4333-8444-555555555555",
+					status: "resolved",
+					resolvedAt: "2020-01-01T00:00:00.000Z",
+				}),
+			],
+		}
+		const result = await ok("list_alert_incidents", { status: "open", group_key: "nope" }, seen)
+		const output = Schema.decodeUnknownSync(ListAlertIncidentsOutput)(result.structuredContent)
+		expect(output.total).toBe(0)
+		expect(output.recentlyResolvedCount).toBe(0)
+
+		const recent = await ok("list_alert_incidents", { status: "open", severity: "critical" }, seen)
+		const recentOut = Schema.decodeUnknownSync(ListAlertIncidentsOutput)(recent.structuredContent)
+		expect(recentOut.recentlyResolvedCount).toBe(1)
+		expect(text(recent)).toContain("1 resolved in the last 24h")
+		expect(text(recent)).toContain('`list_alert_incidents status="resolved" severity="critical"`')
+	})
+
+	it("create_alert_rule reports the first evaluation and the latest window", async () => {
+		const result = await ok("create_alert_rule", {
+			name: "Errors",
+			template: "high_error_rate",
+			destination_ids: [DEST_ID],
+		})
+		const output = Schema.decodeUnknownSync(CreateAlertRuleOutput)(result.structuredContent)
+		expect(output.evaluation?.nextEvaluationAt).toMatch(/:00\.000Z$/)
+		expect(output.evaluation?.current[0]).toMatchObject({ groupKey: "__total__", status: "skipped" })
+		expect(text(result)).toContain("First scheduled evaluation by")
+		expect(text(result)).toContain("skipped (no_data)")
+	})
+
+	it("get_alert_rule names its destinations", async () => {
+		const result = await ok("get_alert_rule", { rule_id: RULE_ID })
+		const output = Schema.decodeUnknownSync(GetAlertRuleOutput)(result.structuredContent)
+		expect(output.rule.destinations).toEqual([
+			{ id: DEST_ID, name: "On-call", type: "pagerduty", enabled: true },
+		])
+		expect(text(result)).toContain("| On-call | pagerduty | Yes |")
+	})
+
+	it("update_alert_rule adds a destination to every rule with rule_ids=[*]", async () => {
+		const seen: Seen = {}
+		const NEW_DEST = "1e1d2c3b-4a59-4687-9a0b-1c2d3e4f5a6b"
+		const result = await ok(
+			"update_alert_rule",
+			{ rule_ids: ["*"], add_destination_ids: [NEW_DEST], remove_destination_ids: [DEST_ID] },
+			seen,
+		)
+		expect(seen.updatedIds).toEqual([RULE_ID, ALL_ID, RAW_ID, OTHER_RAW_ID])
+		expect(seen.updated?.destinationIds).toEqual([NEW_DEST])
+		const output = Schema.decodeUnknownSync(UpdateAlertRuleOutput)(result.structuredContent)
+		expect(output.rules).toHaveLength(4)
+		expect(text(result)).toContain("Updated 4 Alert Rules")
+
+		const named = await run("update_alert_rule", { rule_ids: [RULE_ID, ALL_ID], name: "Same" })
+		expect(named._tag === "Failure" && named.failure.parameter).toBe("name")
+		const none = await run("update_alert_rule", { threshold: 1 })
+		expect(none._tag === "Failure" && none.failure.parameter).toBe("rule_id")
 	})
 })

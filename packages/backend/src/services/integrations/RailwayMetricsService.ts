@@ -58,6 +58,12 @@ const MAX_ENVIRONMENT_CALLS_PER_TICK = 15
 const RATE_LIMIT_HOLD_MS = 15 * 60_000
 const BILLING_HOLD_MS = 60 * 60_000
 const ORG_CONCURRENCY = 3
+/**
+ * Connect runs the first poll inline so the page has an hour of data when it loads, instead of
+ * every environment sitting at "pending" until the next cron tick. What doesn't finish in time is
+ * left to that tick; its watermarks are untouched.
+ */
+const POLL_NOW_TIMEOUT = Duration.seconds(20)
 
 const decodeOrgId = Schema.decodeUnknownSync(OrgId)
 const decodeUserId = Schema.decodeUnknownSync(UserId)
@@ -121,6 +127,8 @@ export interface RailwayMetricsServiceApi {
 	readonly disconnect: (
 		orgId: OrgId,
 	) => Effect.Effect<{ readonly disconnected: boolean }, IntegrationsPersistenceError>
+	/** Polls now instead of waiting for the cron. Caught-up environments cost no Railway call. */
+	readonly sync: (orgId: OrgId) => Effect.Effect<RailwayIntegrationStatus, IntegrationsPersistenceError>
 	readonly pollOrg: (orgId: OrgId) => Effect.Effect<RailwayPollOrgSummary, IntegrationsPersistenceError>
 	readonly pollAllOrgs: () => Effect.Effect<RailwayPollAllOrgsSummary, IntegrationsPersistenceError>
 }
@@ -353,6 +361,7 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 					})
 				}
 				yield* reconcileEnvironments(connection, discovery, now)
+				yield* pollNow(orgId)
 				return yield* getStatus(orgId)
 			})
 
@@ -681,7 +690,35 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 				} satisfies RailwayPollAllOrgsSummary
 			})
 
-			return { getStatus, connect, disconnect, pollOrg, pollAllOrgs } satisfies RailwayMetricsServiceApi
+			/** Best effort: a failed or slow poll still leaves the connection for the cron to catch up. */
+			const pollNow = (orgId: OrgId) =>
+				pollOrg(orgId).pipe(
+					Effect.timeoutOption(POLL_NOW_TIMEOUT),
+					Effect.catchCause((cause) =>
+						Cause.hasInterruptsOnly(cause)
+							? Effect.interrupt
+							: Effect.logWarning("railway on-demand poll failed", {
+									orgId,
+									error: summarizeCause(cause),
+								}),
+					),
+					Effect.asVoid,
+				)
+
+			const sync = Effect.fn("RailwayMetricsService.sync")(function* (orgId: OrgId) {
+				yield* Effect.annotateCurrentSpan({ orgId })
+				yield* pollNow(orgId)
+				return yield* getStatus(orgId)
+			})
+
+			return {
+				getStatus,
+				connect,
+				disconnect,
+				sync,
+				pollOrg,
+				pollAllOrgs,
+			} satisfies RailwayMetricsServiceApi
 		}),
 	},
 ) {

@@ -20,6 +20,7 @@ import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platfo
 import { dataSourceJson, widgetJson, withDashboardMutation } from "./dashboard-mutations"
 import { CurrentMcpTenant } from "./query-warehouse"
 import { registerUpdateDashboardTool } from "../tools/update-dashboard"
+import { registerUpdateDashboardWidgetTool } from "../tools/update-dashboard-widget"
 import type { McpToolError, McpToolRegistrar } from "../tools/types"
 import type { McpToolRequirements } from "../tools/runtime-requirements"
 
@@ -202,6 +203,62 @@ describe("dashboard mutations on tag-less / description-less dashboards", () => 
 			assert.strictEqual(listed.dashboards[0]!.name, "Renamed")
 		}).pipe(Effect.provide(layer))
 	})
+
+	it.effect("update_dashboard_widget patches a title and chart style without the whole widget", () => {
+		const testDb = createTestDb(trackedDbs)
+		const layer = makeLayer(testDb)
+
+		let handler: ToolHandler | null = null
+		const registrar: McpToolRegistrar = {
+			tool: () => {},
+			define: (spec) => {
+				handler = (params) =>
+					Schema.decodeUnknownEffect(spec.parameters)(params).pipe(
+						Effect.orDie,
+						Effect.flatMap(spec.handler),
+					)
+			},
+		}
+		registerUpdateDashboardWidgetTool(registrar)
+		assert.isNotNull(handler)
+		const invoke = handler as ToolHandler
+
+		return Effect.gen(function* () {
+			yield* DashboardPersistenceService.upsert(
+				asOrgId(ORG),
+				asUserId("seed-user"),
+				new DashboardDocument({
+					...seed(),
+					widgets: [{ ...widget("w-1"), display: { title: "A very long title", unit: "ms" } }],
+				}),
+			)
+
+			yield* invoke({ dashboard_id: DASHBOARD, widget_id: "w-1", title: "Short" })
+			yield* invoke({
+				dashboard_id: DASHBOARD,
+				widget_id: "w-1",
+				patch_json: '{"display":{"unit":null,"chartId":"bar-chart"}}',
+			})
+
+			const [stored] = (yield* DashboardPersistenceService.list(asOrgId(ORG))).dashboards
+			assert.deepStrictEqual(stored!.widgets[0]!.display, { title: "Short", chartId: "bar-chart" })
+			assert.deepStrictEqual(stored!.widgets[0]!.layout, widget("w-1").layout)
+
+			const both = yield* Effect.flip(
+				invoke({
+					dashboard_id: DASHBOARD,
+					widget_id: "w-1",
+					title: "x",
+					widget_json: JSON.stringify(widget("w-1")),
+				}),
+			)
+			assert.include(both.message, "not both")
+			const missing = yield* Effect.flip(
+				invoke({ dashboard_id: DASHBOARD, widget_id: "nope", title: "x" }),
+			)
+			assert.include(missing.message, "Widget not found: nope")
+		}).pipe(Effect.provide(layer))
+	})
 })
 
 // The payloads the OLD documentation taught. Each one is what an agent trained
@@ -270,6 +327,34 @@ describe("legacy v2 payloads get a corrective error", () => {
 				),
 			)
 			assert.include(error.message, '{"kind":"static"}')
+		}),
+	)
+
+	it.effect("a source with no or an unknown kind lists every valid shape, static included", () =>
+		Effect.gen(function* () {
+			const noKind = yield* decodeErrorOf('{"type":"markdown"}')
+			assert.include(noKind, "has no `kind`")
+			assert.include(noKind, '{"kind":"static"}')
+			const unknown = yield* decodeErrorOf('{"kind":"markdown"}')
+			assert.include(unknown, 'Unknown data-source kind "markdown"')
+			assert.include(unknown, '"kind":"raw_sql"')
+		}),
+	)
+
+	it.effect("a widget with endpoint/params on itself instead of a dataSource is named", () =>
+		Effect.gen(function* () {
+			const error = yield* Effect.flip(
+				Schema.decodeUnknownEffect(widgetJson("test"))(
+					JSON.stringify({
+						visualization: "chart",
+						endpoint: "service_overview",
+						params: {},
+						display: {},
+					}),
+				),
+			)
+			assert.include(error.message, "has no `dataSource`")
+			assert.include(error.message, '"kind":"route"')
 		}),
 	)
 

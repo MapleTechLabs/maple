@@ -72,8 +72,7 @@ export class WorkerUrlError extends Schema.TaggedError<WorkerUrlError>()("Portle
 }) {}
 
 export const workerPort = (url: string | undefined | Output.Output<string | undefined>) =>
-	// `Output.mapEffect` has no failure channel, and a served Worker without a
-	// local URL is a broken stack invariant, so both cases are defects.
+	// `Output.mapEffect` has no failure channel, and a missing URL is a stack invariant.
 	Output.mapEffect((value: string | undefined) => {
 		if (!value) {
 			// oxlint-disable-next-line maple/no-effect-die -- stack wiring invariant, see above

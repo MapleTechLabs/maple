@@ -88,6 +88,9 @@ export const TracesFilters = Schema.Struct({
 	namespaces: Schema.optional(Schema.Array(ServiceNamespace)),
 	commitShas: Schema.optional(Schema.Array(CommitSha)),
 	groupByAttributeKeys: Schema.optional(Schema.Array(Schema.String)),
+	// Resource-attribute counterpart of `groupByAttributeKeys` for groupBy "attribute":
+	// groups by a ResourceAttributes key (deployment.environment, k8s.pod.name, ...).
+	groupByResourceAttributeKey: Schema.optional(Schema.String),
 	errorsOnly: Schema.optional(Schema.Boolean),
 	minDurationMs: Schema.optional(Schema.Number),
 	maxDurationMs: Schema.optional(Schema.Number),
@@ -316,7 +319,7 @@ export type LogsBreakdownQuery = Schema.Schema.Type<typeof LogsBreakdownQuery>
 export const MetricsBreakdownQuery = Schema.Struct({
 	kind: Schema.Literal("breakdown"),
 	source: Schema.Literal("metrics"),
-	metric: Schema.Literals(["avg", "sum", "count"]),
+	metric: MetricsMetric,
 	groupBy: Schema.Literals(["service", "attribute", "resource_attribute"]),
 	filters: MetricsFilters,
 	limit: Schema.optional(
@@ -513,6 +516,41 @@ export const QuerySpec = Schema.Union([
 	LogsCountQuery,
 ])
 export type QuerySpec = Schema.Schema.Type<typeof QuerySpec>
+
+// The aggregation arms by `source:kind`, so a decode failure can be reported
+// against the arm the caller targeted instead of a dump of every union member.
+const QUERY_SPEC_ARMS = new Map<string, Schema.ConstraintDecoder<unknown>>([
+	["traces:timeseries", TracesTimeseriesQuery],
+	["logs:timeseries", LogsTimeseriesQuery],
+	["metrics:timeseries", MetricsTimeseriesQuery],
+	["product_events:timeseries", ProductEventsTimeseriesQuery],
+	["traces:breakdown", TracesBreakdownQuery],
+	["logs:breakdown", LogsBreakdownQuery],
+	["metrics:breakdown", MetricsBreakdownQuery],
+	["product_events:breakdown", ProductEventsBreakdownQuery],
+])
+
+// Split-and-trim instead of a whitespace regex: linear on any input.
+const oneLine = (message: string): string =>
+	message
+		.split("\n")
+		.map((line) => line.trim())
+		.filter((line) => line.length > 0)
+		.join(" ")
+
+/**
+ * One actionable line for a `QuerySpec` decode failure: the targeted arm's own
+ * issue (`for source=metrics kind=breakdown: Expected ... at ["metric"]`).
+ */
+export const describeQuerySpecDecodeError = (raw: unknown, unionMessage: string): string => {
+	const source = typeof raw === "object" && raw !== null && "source" in raw ? raw.source : undefined
+	const kind = typeof raw === "object" && raw !== null && "kind" in raw ? raw.kind : undefined
+	const arm = QUERY_SPEC_ARMS.get(`${String(source)}:${String(kind)}`)
+	if (arm === undefined) return `Invalid query specification: ${oneLine(unionMessage)}`
+	const result = Schema.decodeUnknownResult(arm)(raw)
+	const detail = result._tag === "Failure" ? oneLine(result.failure.message) : oneLine(unionMessage)
+	return `Invalid query for source=${String(source)} kind=${String(kind)}: ${detail}`
+}
 
 export class QueryEngineExecuteRequest extends Schema.Class<QueryEngineExecuteRequest>(
 	"QueryEngineExecuteRequest",

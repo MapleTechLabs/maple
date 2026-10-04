@@ -36,12 +36,16 @@ import type {
 	SocketStep,
 } from "@maple/chat-platform"
 import { connectors } from "@maple/chat-platform/connectors"
+import { summarizeCause } from "@maple/backend/platform/describe-cause"
+import { workerEnvLayer } from "@maple/infra/worker-runtime"
 import * as Cloudflare from "alchemy/Cloudflare"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Schema } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { resolveConnectorConfig, type IngressConnector } from "../config.ts"
 import { InboundHandler } from "../inbound.ts"
-import { applyStep, reconnectDelayMs } from "./driver.ts"
+import { ConnectorRelayObject } from "../relay/ConnectorRelay.ts"
+import type { ConnectorRelayClient } from "../relay/stub.ts"
+import { applyStep, reconnectDelayMs, SocketStateNotWritten } from "./driver.ts"
 
 /** What this object reads off its Durable Object state. */
 interface ConnectorSocketState {
@@ -101,8 +105,25 @@ const STOP_RETRY_MS = 6 * 60 * 60 * 1_000
 const NORMAL_CLOSE = 1_000
 
 /** The services one step needs. Rebuilt per step, and both are a value each. */
-const stepLayer = (env: Record<string, unknown>) =>
-	Layer.mergeAll(FetchHttpClient.layer, InboundHandler.layer(env))
+const stepLayer = (relays: ConnectorRelayClient) =>
+	Layer.mergeAll(FetchHttpClient.layer, InboundHandler.layer(relays))
+
+/** A call into the object that rejected: the RPC caller (the cron) sees it as a typed failure. */
+export class ConnectorSocketCallFailed extends Schema.TaggedError<ConnectorSocketCallFailed>()(
+	"@maple/chat-bot/ConnectorSocketCallFailed",
+	{ operation: Schema.String, message: Schema.String, cause: Schema.Defect() },
+) {}
+
+const socketCall = (operation: string, call: () => Promise<void>) =>
+	Effect.tryPromise({
+		try: call,
+		catch: (cause) =>
+			new ConnectorSocketCallFailed({
+				operation,
+				message: `The connector socket's ${operation} failed`,
+				cause,
+			}),
+	})
 
 /**
  * The frame, if it is one this host can carry.
@@ -176,10 +197,16 @@ export class ConnectorSocket {
 	 */
 	private steps: Promise<void> = Promise.resolve()
 
+	/** The Worker env's `ConfigProvider`, which connector configuration resolves through. */
+	private readonly configLayer: ReturnType<typeof workerEnvLayer>
+
 	constructor(
 		private readonly ctx: ConnectorSocketState,
-		private readonly env: Record<string, unknown>,
-	) {}
+		env: Record<string, unknown>,
+		private readonly relays: ConnectorRelayClient,
+	) {
+		this.configLayer = workerEnvLayer(env)
+	}
 
 	/**
 	 * Bring the connection up if it is not up, and make sure a timer is armed.
@@ -318,7 +345,16 @@ export class ConnectorSocket {
 					},
 				},
 				store: {
-					write: (next) => Effect.promise(() => this.ctx.storage.put(KEY.protocol, next)),
+					write: (next) =>
+						Effect.tryPromise({
+							try: () => this.ctx.storage.put(KEY.protocol, next),
+							catch: (cause) =>
+								new SocketStateNotWritten({
+									connector: resolved.connector.id,
+									message: "The connector's socket state could not be stored",
+									cause,
+								}),
+						}),
 				},
 			},
 			step,
@@ -326,10 +362,21 @@ export class ConnectorSocket {
 		// This object is the entry point for everything a socket frame causes:
 		// nothing above it is running an Effect, so the layer is composed and
 		// provided here or nowhere.
-		// oxlint-disable-next-line effecttsgo/strict-effect-provide
-		await Effect.runPromise(program.pipe(Effect.provide(stepLayer(this.env)))).catch((cause: unknown) => {
-			console.error("[chat-bot.socket] step failed", cause)
-		})
+		// A failed step is logged and the object carries on, exactly as it always did.
+		await Effect.runPromise(
+			program.pipe(
+				// oxlint-disable-next-line effecttsgo/strict-effect-provide
+				Effect.provide(stepLayer(this.relays)),
+				Effect.catchCause((cause) =>
+					Effect.logError("Chat socket step failed").pipe(
+						Effect.annotateLogs({
+							"maple.chat.connector": resolved.connector.id,
+							"error.type": summarizeCause(cause),
+						}),
+					),
+				),
+			),
+		)
 		if (step.heartbeatAt !== undefined) {
 			await this.ctx.storage.put(KEY.heartbeatAt, step.heartbeatAt)
 		}
@@ -388,15 +435,18 @@ export class ConnectorSocket {
 		if (connectorId === undefined) return undefined
 		const connector = connectors.find((candidate) => candidate.id === connectorId)
 		if (connector === undefined || connector.ingress.kind !== "socket") return undefined
-		const config = resolveConnectorConfig(this.env, connector)
+		const config = await Effect.runPromise(
+			// oxlint-disable-next-line effecttsgo/strict-effect-provide
+			resolveConnectorConfig(connector).pipe(Effect.provide(this.configLayer)),
+		)
 		if (config._tag === "missing") return undefined
 		return { connector, ingress: connector.ingress, config: config.config }
 	}
 }
 
 export interface ConnectorSocketApi {
-	readonly ensureConnected: (connectorId: ChatConnectorId) => Effect.Effect<void>
-	readonly alarm: () => Effect.Effect<void>
+	readonly ensureConnected: (connectorId: ChatConnectorId) => Effect.Effect<void, ConnectorSocketCallFailed>
+	readonly alarm: () => Effect.Effect<void, ConnectorSocketCallFailed>
 }
 
 /**
@@ -406,13 +456,15 @@ export interface ConnectorSocketApi {
  * alchemy's bridge runs per RPC call.
  */
 export const activateConnectorSocket = Effect.map(
-	Effect.all([Cloudflare.DurableObjectState, Cloudflare.WorkerEnvironment]),
-	([state, env]) =>
+	// The relay namespace is alchemy's client, provided by the Worker's layer (`worker.ts`).
+	Effect.all([Cloudflare.DurableObjectState, Cloudflare.WorkerEnvironment, ConnectorRelayObject]),
+	([state, env, relays]) =>
 		Effect.sync(() => {
-			const socket = new ConnectorSocket(state.raw, env)
+			const socket = new ConnectorSocket(state.raw, env, relays)
 			return {
-				ensureConnected: (connectorId) => Effect.promise(() => socket.ensureConnected(connectorId)),
-				alarm: () => Effect.promise(() => socket.alarm()),
+				ensureConnected: (connectorId) =>
+					socketCall("ensureConnected", () => socket.ensureConnected(connectorId)),
+				alarm: () => socketCall("alarm", () => socket.alarm()),
 			} satisfies ConnectorSocketApi
 		}),
 )
@@ -427,6 +479,8 @@ export class ConnectorSocketObject extends Cloudflare.DurableObject<
 // `ChatSessionObject`'s are: `.make` discharges `DurableObjectServices` (both of
 // these) through its own `Exclude`, while inference would widen them into the
 // layer's requirements and surface them all the way up in `alchemy.run.ts`.
+// `Worker` and `ConnectorRelayObject` come with yielding the relay class: the first is discharged
+// the same way, the second the Worker provides (`worker.ts`).
 export const ConnectorSocketLive = ConnectorSocketObject.make<
-	Cloudflare.DurableObjectState | Cloudflare.WorkerEnvironment
+	Cloudflare.DurableObjectState | Cloudflare.WorkerEnvironment | Cloudflare.Worker | ConnectorRelayObject
 >(activateConnectorSocket)

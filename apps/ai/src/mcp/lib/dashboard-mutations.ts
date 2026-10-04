@@ -19,6 +19,7 @@ import {
 	withWidgets,
 } from "@maple/domain/http"
 import type { DashboardRow } from "@maple/domain/mcp-outputs"
+import { WIDGET_DATA_SOURCE_KINDS } from "@maple/widgets/dashboard"
 import { CurrentMcpTenant } from "./query-warehouse"
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
 import { McpInvalidInputError, McpQueryError } from "../tools/types"
@@ -110,7 +111,7 @@ export const legacyDataSourceHint = (value: unknown): string | undefined => {
 
 	const { endpoint } = decoded.success
 	const equivalent =
-		endpoint === "markdown_static"
+		endpoint === "markdown_static" || endpoint === "markdown"
 			? '{"kind":"static"}'
 			: endpoint === "raw_sql_chart"
 				? '{"kind":"raw_sql","sql":"SELECT …"}'
@@ -126,24 +127,52 @@ export const legacyDataSourceHint = (value: unknown): string | undefined => {
 	)
 }
 
+/** Every data-source arm with its minimal shape, for errors that would otherwise list union failures. */
+export const DATA_SOURCE_VARIANTS =
+	'`{"kind":"query","resultShape":"timeseries"|"breakdown"|"list"|...,"queries":[...]}` (query builder), ' +
+	'`{"kind":"raw_sql","sql":"SELECT ... WHERE $__orgFilter"}`, `{"kind":"route","endpoint":"...","params":{...}}`, ' +
+	'or `{"kind":"static"}` (markdown note: panel_type markdown with display `{"markdown":{"content":"..."}}`)'
+
+const decodeKindField = Schema.decodeUnknownResult(Schema.Struct({ kind: Schema.Unknown }))
+const decodeObject = Schema.decodeUnknownResult(Schema.Record(Schema.String, Schema.Unknown))
+
+/** A data source whose `kind` is missing or unknown: name the arms instead of four union failures. */
+export const dataSourceKindHint = (value: unknown): string | undefined => {
+	const legacy = legacyDataSourceHint(value)
+	if (legacy !== undefined) return legacy
+	if (Result.isFailure(decodeObject(value))) return undefined
+	const decoded = decodeKindField(value)
+	const kind = Result.isFailure(decoded) ? undefined : decoded.success.kind
+	if (WIDGET_DATA_SOURCE_KINDS.some((known) => known === kind)) return undefined
+	return `${kind === undefined ? "The data source has no `kind`" : `Unknown data-source kind ${JSON.stringify(kind)}`}. Valid shapes: ${DATA_SOURCE_VARIANTS}.`
+}
+
 /** The same hint, one level in: a whole widget whose `dataSource` is the v2 shape. */
 const decodeWidgetDataSourceField = Schema.decodeUnknownResult(Schema.Struct({ dataSource: Schema.Unknown }))
 
 export const legacyWidgetDataSourceHint = (value: unknown): string | undefined => {
 	const decoded = decodeWidgetDataSourceField(value)
-	return Result.isFailure(decoded) ? undefined : legacyDataSourceHint(decoded.success.dataSource)
+	if (Result.isSuccess(decoded)) return dataSourceKindHint(decoded.success.dataSource)
+	// The oldest shape put `endpoint`/`params` on the widget itself, with no `dataSource` at all.
+	const legacy = legacyDataSourceHint(value)
+	return legacy === undefined
+		? undefined
+		: `The widget has no \`dataSource\`; its \`endpoint\` sits on the widget itself. ${legacy}`
 }
 
 /** `data_source_json`: a v3 data source, with the v2 shape rejected by name. */
 export const dataSourceJson = (description: string) =>
-	jsonText(WidgetDataSourceSchema, description, legacyDataSourceHint)
+	jsonText(WidgetDataSourceSchema, description, dataSourceKindHint)
 
 export const optionalDataSourceJson = (description: string) =>
-	optionalJsonText(WidgetDataSourceSchema, description, legacyDataSourceHint)
+	optionalJsonText(WidgetDataSourceSchema, description, dataSourceKindHint)
 
 /** `widget_json`: one whole widget. */
 export const widgetJson = (description: string) =>
 	jsonText(DashboardWidgetSchema, description, legacyWidgetDataSourceHint)
+
+export const optionalWidgetJson = (description: string) =>
+	optionalJsonText(DashboardWidgetSchema, description, legacyWidgetDataSourceHint)
 
 /** The {@link DashboardRow} every dashboard tool reports. */
 export const toDashboardRow = (dashboard: DashboardDocument): typeof DashboardRow.Type => ({

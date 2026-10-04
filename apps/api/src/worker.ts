@@ -1,28 +1,17 @@
 /**
- * The api Worker in alchemy's single-module form: this file is the resource
- * the root stack yields (`yield* MapleApi`) and the init the deployed isolate
- * runs. Stage-derived props read `MapleStack`; `impl` runs once per isolate,
- * on the first event, and yields the pieces the Worker hosts and serves —
- * each in its own module under `./worker`. The bridge builds the telemetry
- * into every event's scope and flushes it after: the request path as
- * `maple-api`, background work under its own service names (`eventTelemetry`).
- *
- * The bundle entry is the one alchemy generates around this module: the
- * default export is the Worker, and the chat Durable Object and the
- * Workflow are alchemy classes the init yields — their bindings, the
- * namespace, the physical workflows and the entry's class exports all derive
- * from those yields.
+ * The api Worker (alchemy single-module form): both the resource the root stack
+ * yields and the init the deployed isolate runs. Hosted classes (the Workflow)
+ * are exported from the generated entry because the init yields them.
  */
 import {
-	emailBinding,
-	mapleDbEnv,
-	MapleStack,
 	AiWorker,
-	type MapleRegion,
-	type MapleStage,
-	resolveWorkerName,
-	resolveWorkerPlacement,
+	chatSessionBinding,
+	mapleDbEnv,
+	type MapleDeployment,
+	MapleStack,
+	mapleWorkerProps,
 } from "@maple/infra/cloudflare"
+import { WORKER_PURE_OPTIONS } from "@maple/infra/worker-build"
 import { isolateContext } from "@maple/infra/worker-http"
 import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
 import * as Cloudflare from "alchemy/Cloudflare"
@@ -36,68 +25,29 @@ import { registerCrons } from "./worker/crons"
 import { makeAppGraphs, makeFetch } from "./worker/http"
 import ClickHouseSchemaApplyWorkflow from "./workflows/ClickHouseSchemaApplyWorkflow"
 
-/**
- * The bindings that stay declared on `env`. Everything the services reach at
- * runtime is bound by the init instead (`bindApiClients`); what is left here
- * is bound by stage — alchemy's capabilities have no "on some stages" form —
- * or read by name by code the Worker does not own (the LLM shim's `AI`).
- */
-const makeWorkerBindings = ({ stage, region }: { stage: MapleStage; region: MapleRegion }) => ({
-	// Workers AI (`env.AI`) behind an AI Gateway, driving the AI-triage agent.
-	// NOTE: the deploy token needs the account-level "AI Gateway: Edit" permission
-	// for this resource. Deployed stages only: the gateway has no local emulation,
-	// so declaring it under `alchemy dev` diffs it against Cloudflare and demands
-	// an `alchemy login`; without the binding the Llm shim is a no-op.
-	...emailBinding(stage),
-	// The chat Durable Object maple-ai hosts, bound cross-script under its CLASS
-	// name — which is what `chatSessionStub` reads off `env`. `resolveWorkerName`
-	// rather than the yielded Worker's output on purpose: consuming the output
-	// would make api's deploy wait on ai's, and this is a reference-only binding
-	// that needs no such ordering.
-	ChatSession: Cloudflare.DurableObject("ChatSession", {
-		className: "ChatSession",
-		scriptName: resolveWorkerName("ai", stage, region),
-	}),
+/** Bindings alchemy's init clients cannot express; the rest come from `bindApiClients`. */
+const makeWorkerBindings = (deployment: MapleDeployment) => ({
+	// maple-ai's chat DO, bound under its class name (`chatSessionStub` reads it).
+	ChatSession: chatSessionBinding(deployment),
 })
 
-/**
- * Alchemy evaluates a Worker's props wherever the class is yielded — the
- * deployed bundle included, where they are inert. `__ALCHEMY_RUNTIME__` folds to
- * `true` there, so the stack-side branch below, and the `@maple/infra` modules
- * only it reaches, are dead-code-eliminated from what ships.
- */
+/** `__ALCHEMY_RUNTIME__` folds to `true` in the bundle, so the stack-side branch is tree-shaken. */
 const props = Effect.gen(function* () {
 	if (globalThis.__ALCHEMY_RUNTIME__) return { main: import.meta.url }
-	const { stage, region, domains, workerDev, devEnv, db } = yield* MapleStack
-	// maple-ai, which serves `/mcp` and the chat surface. api keeps the hostname
-	// and forwards, so the public address and the OAuth identity do not move.
+	const stack = yield* MapleStack
+	const { stage, region, domains, devEnv, db } = stack
+	// api keeps the hostname and OAuth, and forwards `/mcp` and chat to maple-ai.
 	const ai = yield* AiWorker
-	// Resolved before any resource is created, so a misconfigured deploy fails
-	// with the full list of missing vars rather than part-way through applying.
+	// Resolved up front so a misconfigured deploy fails before applying anything.
 	const configuredEnv = yield* apiConfiguredEnv(stage, region, domains)
 	return {
 		main: import.meta.url,
-		name: resolveWorkerName("api", stage, region),
-		compatibility: { date: "2026-10-01" },
-		placement: resolveWorkerPlacement(region),
-		// Under `bun dev`: a sticky port the app's route follows.
-		dev: workerDev("api"),
+		...mapleWorkerProps("api", stack),
 		workersDev: true,
-		// alchemy ≥ beta.70 sets rolldown `strictExecutionOrder: true`, which wraps
-		// ~every chunk in a lazy `__esmMin` initializer. The DB module graph (drizzle
-		// pgTable schemas + Effect Schema ASTs) then evaluates on first use — inside
-		// the first Postgres call of each fresh isolate — instead of at script
-		// startup. That is what stepped the cold dial from ~2s to ~9-11s on
-		// 2026-08-08 (deploy 2679ba80) and produced the CONNECT_TIMEOUT incident;
-		// see the 2026-08-11 investigation. Eager evaluation moves that cost back to
-		// script startup, off the request path. If chunking ever regresses into
-		// upstream #749 (`ScriptStartupError: Cannot access '<minified>' before
-		// initialization`), the deploy fails loudly at upload — remove this override
-		// and instead warm the DB graph off the request path.
-		build: { output: { strictExecutionOrder: false } },
-		// Custom domain (not a zone route): routes don't create DNS records, so
-		// pr-stage hostnames would be authoritative NXDOMAIN. Custom domains
-		// provision DNS + edge certs automatically.
+		// Eager module evaluation keeps the DB graph's init off the first Postgres
+		// dial of a cold isolate (docs/infra-history.md, "The cold-start regression").
+		build: { output: { strictExecutionOrder: false }, pure: WORKER_PURE_OPTIONS },
+		// Custom domain, not a zone route: routes create no DNS, so pr hosts would NXDOMAIN.
 		domain: domains.api,
 		// `devEnv` last, so `.env.local` cannot override the inter-app URLs.
 		env: {
@@ -114,37 +64,27 @@ export default class MapleApi extends Cloudflare.Worker<MapleApi>()(
 	"api",
 	props,
 	Effect.gen(function* () {
-		// The Durable Object and the Workflows this Worker hosts: yielding each
-		// binds it under the class name, registers it at plan time and exports
-		// the class from the generated entry.
-		yield* ClickHouseSchemaApplyWorkflow
+		// Yielding a hosted class binds, registers and exports it; do not move it to another Worker.
+		const schemaApply = yield* ClickHouseSchemaApplyWorkflow
 		const clients = yield* bindApiClients
-		const ports = apiPorts(clients, yield* Cloudflare.WorkerEnvironment)
-		// The service graphs are built on the first event, not here: init also
-		// runs at plan time, where alchemy auto-binds every `Config` it sees read
-		// onto the Worker, and this Worker's env is declared in full by `props`.
-		// `cachedRecoverable` rather than building eagerly is what lets `/health`
-		// and preflights answer while the graph cannot build. `isolateContext`
-		// says what the captured context must not carry into the graph.
+		const ports = apiPorts(clients, schemaApply, yield* Cloudflare.WorkerEnvironment)
+		// Graphs build on the first event, not here: init also runs at plan time, where
+		// alchemy would auto-bind every `Config` read. Lazy build keeps `/health` answering.
 		const isolate = isolateContext(yield* Effect.context())
 		const { app, queryApp } = yield* makeAppGraphs(isolate, ports)
 		yield* registerCrons(ports)
 		yield* registerQueueConsumers(ports)
 		return { fetch: makeFetch(app, ports, queryApp) }
 	}).pipe(
-		// The init IS the entry point: the cron and queue sources need the host
-		// Worker, which exists only here.
+		// The init is the entry point: cron and queue sources need the host Worker.
 		// oxlint-disable-next-line effecttsgo/strict-effect-provide
 		Effect.provide(
 			Layer.mergeAll(
 				ApiBindingLayers,
 				Cloudflare.Workers.CronEventSourceLive,
 				Cloudflare.Queues.EventSourceLive,
-				// No `dropSpanNames`: the MCP server's notification spans are maple-ai's
-				// to drop now, and its telemetry config is where that option lives.
 				WorkerTelemetry({ serviceName: "maple-api" }),
-				// The references the bridge's `HttpMiddleware.tracer` reads, built into
-				// every event beside the SDK; they cannot live in the app graph.
+				// Read by the bridge's `HttpMiddleware.tracer`; cannot live in the app graph.
 				AlchemyTelemetry.layer(ApiObservabilityLive),
 			),
 		),

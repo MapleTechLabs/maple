@@ -12,6 +12,7 @@ import {
 	persistenceFailed,
 	transitionRefused,
 } from "./error-issue-shared"
+import { MAX_BATCH_ISSUES, decodeIssueIds, runIssueBatch } from "./error-issue-batch"
 import { ErrorsService } from "@maple/backend/services/errors/ErrorsService"
 
 export function registerProposeFixTool(server: McpToolRegistrar) {
@@ -23,12 +24,16 @@ export function registerProposeFixTool(server: McpToolRegistrar) {
 			"Claims the issue and walks it there from wherever it is, so no claim_error_issue or transition_error_issue call is needed first; it fails if another agent holds the issue.",
 			"Pass `pr_url` when you have just opened the PR: it is linked, and once it merges Maple verifies the fix against traffic and closes the issue itself. Use link_pull_request for a PR that already exists and needs no new proposal.",
 			"Do not move the issue to `done` by hand.",
+			"When one fix covers several issues, pass the others in `also_issue_ids`: each is claimed, linked and moved the same way, with per-issue results.",
 		].join(" "),
 		parameters: Schema.Struct({
 			issue_id: issueIdParam(),
 			patch_summary: P.text("What the fix changes and why, in a few sentences"),
 			pr_url: P.optionalText(
 				"The GitHub pull request URL for the fix, e.g. https://github.com/owner/repo/pull/123. Anything else is rejected",
+			),
+			also_issue_ids: P.optionalList(
+				`Other error issue IDs the same fix and PR resolve, at most ${MAX_BATCH_ISSUES}. A refusal on one of them does not undo the others`,
 			),
 			artifacts_json: P.optionalJson(
 				Schema.Array(Schema.String),
@@ -47,28 +52,44 @@ export function registerProposeFixTool(server: McpToolRegistrar) {
 				})
 			}
 
+			const others = (params.also_issue_ids ?? []).filter((id) => id.trim() !== params.issue_id)
+			const alsoEntries =
+				others.length === 0 ? undefined : yield* decodeIssueIds(others, "also_issue_ids")
 			const actorId = yield* resolveActorId(tenant)
 			const errors = yield* ErrorsService
-			const issue = yield* errors
-				.proposeFix(tenant.orgId, actorId, params.issue_id, {
-					patchSummary: params.patch_summary,
-					prUrl: params.pr_url,
-					artifacts: params.artifacts_json ?? [],
-				})
-				.pipe(
-					Effect.catchTags({
-						"@maple/http/errors/ErrorIssueNotFoundError": issueNotFound,
-						"@maple/http/errors/ErrorIssueLeaseConflictError": leaseConflict,
-						"@maple/http/errors/ErrorIssueTransitionError": transitionRefused("issue_id"),
-						"@maple/http/errors/ErrorIssuePullRequestInvalidError": (error) =>
-							Effect.fail(
-								new McpInvalidInputError({ message: error.message, parameter: "pr_url" }),
-							),
-						"@maple/http/errors/ErrorPersistenceError": persistenceFailed("propose_fix"),
-					}),
-				)
+			const request = {
+				patchSummary: params.patch_summary,
+				prUrl: params.pr_url,
+				artifacts: params.artifacts_json ?? [],
+			}
+			const issue = yield* errors.proposeFix(tenant.orgId, actorId, params.issue_id, request).pipe(
+				Effect.catchTags({
+					"@maple/http/errors/ErrorIssueNotFoundError": issueNotFound,
+					"@maple/http/errors/ErrorIssueLeaseConflictError": leaseConflict,
+					"@maple/http/errors/ErrorIssueTransitionError": transitionRefused("issue_id"),
+					"@maple/http/errors/ErrorIssuePullRequestInvalidError": (error) =>
+						Effect.fail(
+							new McpInvalidInputError({ message: error.message, parameter: "pr_url" }),
+						),
+					"@maple/http/errors/ErrorPersistenceError": persistenceFailed("propose_fix"),
+				}),
+			)
 
-			return { issueId: issue.id, workflowState: issue.workflowState, prUrl: params.pr_url ?? null }
+			// After the primary succeeds, so a bad pr_url or a held issue fails before any of these.
+			const also =
+				alsoEntries === undefined
+					? undefined
+					: yield* runIssueBatch(alsoEntries, (id) =>
+							errors
+								.proposeFix(tenant.orgId, actorId, id, request)
+								.pipe(Effect.map((other) => ({ workflowState: other.workflowState }))),
+						)
+			return {
+				issueId: issue.id,
+				workflowState: issue.workflowState,
+				prUrl: params.pr_url ?? null,
+				...(also === undefined ? undefined : { also }),
+			}
 		}),
 		// Say what happens next: "State: in_review" does not convey that nobody should touch
 		// the issue again until the PR merges.
@@ -81,6 +102,18 @@ export function registerProposeFixTool(server: McpToolRegistrar) {
 					["Held by", "you, until you release it or the issue closes"],
 					["PR", output.prUrl ?? undefined],
 				]),
+				...(output.also === undefined
+					? []
+					: [
+							doc.table(
+								["Also", "Result"],
+								output.also.map((result) =>
+									result.ok
+										? [result.id, result.workflowState ?? "ok"]
+										: [result.id, `failed: ${result.error ?? ""}`],
+								),
+							),
+						]),
 				doc.text(
 					output.prUrl === null
 						? "No PR attached, so nothing will verify this fix. Call link_pull_request when you open one."

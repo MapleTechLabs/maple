@@ -1,37 +1,12 @@
 name: Cleanup Preview Orphans
 
-# Safety net for PR-preview resources the close-event teardown misses.
-# The `pull_request: closed` teardown in deploy-pr-preview.yml is best-effort:
-#   - GitHub silently creates NO workflow run for the `closed` event of a PR
-#     that conflicts with its base branch (stale PRs closed without merging —
-#     e.g. #111/#143/#168 never got a close run at all).
-#   - `pull_request` events execute the PR branch's OWN workflow-file version,
-#     so teardown fixes on main never retro-apply to already-open PRs
-#     (e.g. #211/#214 closed with the pre-#215 skip-chain and orphaned).
-#   - A deploy landing after close (delayed event / re-run) can recreate the
-#     branch right after teardown deleted it (e.g. #180).
-# These failure modes leak Tinybird `pr_<n>` branches (they share compute with
-# production), Cloudflare workers/queues, and `maple-db-pr-*` Hyperdrive configs
-# (capped at 25 per account), so each lifecycle script runs its `sweep`
-# subcommand here.
-#
-# The PlanetScale and Electric sweeps are RESIDUAL as of 2026-08: PR previews no
-# longer provision a PlanetScale branch or an Electric source at all (see the
-# comment in deploy-pr-preview.yml and `resolveDatabaseMode` in
-# packages/infra/src/cloudflare/stage.ts). They stay as a safety net for anything
-# left over from before the cutover, and would come straight back into force if
-# per-PR databases are ever restored. The Hyperdrive sweep is now what reaps the
-# `maple-db-pr-*` configs those previews left behind.
-#
-# Caveat: sweep maps `pr-<n>` resource names to THIS repo's PR numbers
-# (GITHUB_REPOSITORY). If the PlanetScale database / Electric project /
-# Tinybird workspace is ever shared with another repo using the same naming
-# convention, a closed PR #N here could delete that repo's live pr-N resource.
+# Backstop for preview resources the close-event teardown misses (no `closed` run
+# for a conflicting PR, PRs running an old workflow file, a deploy landing after close).
+# Sweeps map `pr-<n>` names to THIS repo's PR numbers: never share these accounts with another repo.
 
 on:
     schedule:
-        # Every 6 hours — orphaned Tinybird branches share production compute
-        # and orphaned Hyperdrive configs eat the 25-per-account cap.
+        # Orphaned Tinybird branches share production compute.
         - cron: "17 */6 * * *"
     workflow_dispatch:
 
@@ -48,30 +23,10 @@ jobs:
     sweep:
         runs-on: ubuntu-latest
         timeout-minutes: 20
-        # ⚠️ STOPGAP. This job borrows `pr-preview` purely to shape its Infisical
-        # OIDC subject — it deploys nothing and reads no environment secrets.
-        #
-        # GitHub derives the token's `sub` claim from the job shape:
-        #     with `environment: <name>` -> repo:<org>/<repo>:environment:<name>
-        #     without                    -> repo:<org>/<repo>:ref:refs/heads/<branch>
-        # Only the environment form is allowlisted on the machine identity, so an
-        # environment-less job fails the secrets step with 403 "Access denied:
-        # OIDC subject not allowed" — and because that step is FIRST, every sweep
-        # below is skipped while orphaned PS-DEV branches keep billing.
-        #
-        # ⚠️ This creates a CONFLICT with deploy-pr-preview.yml, which requires
-        # `pr-preview` to be approval-gated so PR-controlled code can't reach
-        # these secrets unreviewed. This job requires the opposite: no required
-        # reviewers. A cron run has no human to approve it, so a gate parks it in
-        # `waiting` until the deployment expires — silently restoring the exact
-        # breakage this workflow exists to prevent. Both cannot hold at once.
-        #
-        # PROPER FIX (needs Infisical dashboard access): allowlist the subject
-        # `repo:<org>/<repo>:ref:refs/heads/main`, then delete the `environment:`
-        # line below. The job then needs no environment at all and `pr-preview`
-        # is free to regain its gate. Until then, do not add required reviewers
-        # to `pr-preview`.
-        environment: pr-preview # STOPGAP — remove once the ref subject is allowlisted
+        # STOPGAP: borrows `pr-preview` only so the OIDC subject matches Infisical's allowlist.
+        # Do not add required reviewers to `pr-preview` (cron would park). Fix: allowlist
+        # `repo:<org>/<repo>:ref:refs/heads/main`, then drop this line.
+        environment: pr-preview # stopgap: remove once the ref subject is allowlisted
         env:
             INFISICAL_ENV_SLUG: dev
         steps:
@@ -81,17 +36,8 @@ jobs:
             - name: Setup mise (toolchain)
               uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
 
-            # The single-file installer used by deploy-pr-preview.yml — branch
-            # commands live in the real `tb` CLI, not `bunx tinybird`. Runs BEFORE
-            # secrets are loaded so a compromised installer never sees the job's
-            # exported Infisical secrets. Unconditional (unlike the sweep step
-            # below) since the gate on TINYBIRD_TOKEN can't be evaluated yet.
-            #
-            # `continue-on-error` because this step is now FIRST: a tinybird.co
-            # outage would otherwise fail it, skip the `success()`-gated secrets
-            # step, blank every `env.X != ''` guard below, and silently skip ALL
-            # sweeps while orphaned previews keep billing. Only the Tinybird sweep
-            # needs `tb`, so only it is gated on this step's outcome.
+            # Before secrets load, so the installer never sees them. `continue-on-error` so a
+            # tinybird.co outage skips only the Tinybird sweep, not all of them.
             - name: Install Tinybird CLI
               id: install-tinybird-cli
               continue-on-error: true
@@ -110,57 +56,22 @@ jobs:
             - name: Install dependencies
               run: bun install --frozen-lockfile
 
-            - name: Install PlanetScale CLI
-              if: ${{ env.PLANETSCALE_SERVICE_TOKEN != '' }}
-              uses: planetscale/setup-pscale-action@b6a50ee45b4b24944e1d8de6e57b3a5f6476a1af # v1
-
-            # Residual net: previews no longer create `pr-<n>` branches, so this
-            # should find nothing. Gated on the service token, so it SKIPs cleanly
-            # rather than failing on every schedule tick when the token is absent.
-            - name: Sweep orphaned PlanetScale PR branches
-              if: ${{ env.PLANETSCALE_SERVICE_TOKEN != '' }}
-              env:
-                  GITHUB_TOKEN: ${{ github.token }}
-              run: bun scripts/planetscale-pr-branch.ts sweep
-
-            # Gated like the deploy workflow's Electric steps: until Infisical
-            # carries ELECTRIC_API_TOKEN (+ ELECTRIC_PROJECT_ID), skip cleanly.
-            # `!cancelled()` keeps the later sweeps running even when an earlier
-            # one fails — the sweeps are independent safety nets.
-            - name: Sweep orphaned Electric Cloud PR environments
-              if: ${{ !cancelled() && env.ELECTRIC_API_TOKEN != '' }}
-              env:
-                  GITHUB_TOKEN: ${{ github.token }}
-              run: bun scripts/electric-pr-branch.ts sweep
-
             - name: Sweep orphaned Tinybird PR branches
               if: ${{ !cancelled() && env.TINYBIRD_TOKEN != '' && steps.install-tinybird-cli.outcome == 'success' }}
               env:
                   GITHUB_TOKEN: ${{ github.token }}
               run: bun scripts/tinybird-pr-branch.ts sweep
 
-            # Leaked preview WORKERS must go before their resources: zombie
-            # `maple-alerting-pr-<n>` workers keep cron triggers (pre-#239
-            # deploys have no non-prod gate), and once a sibling sweep deletes
-            # the Hyperdrive config they bind, every tick floods
-            # self-observability with "Hyperdrive config deleted." as
-            # service.name="alerting" (observed 2026-07-27..29). Sweeping the
-            # workers first closes that window for future leaks. Sweeps the
-            # stage's Queues before its Workers: a worker that is still a
-            # registered queue consumer cannot be deleted (error 10064, not
-            # covered by ?force=true — run 30406588392).
+            # Workers before Hyperdrive (zombie crons on a deleted config flood logs), and
+            # Queues before Workers (a registered consumer can't be deleted, error 10064).
             - name: Sweep orphaned preview Queues and Workers
               if: ${{ !cancelled() && env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != '' }}
               env:
                   GITHUB_TOKEN: ${{ github.token }}
               run: bun scripts/cloudflare-worker-orphan-sweep.ts
 
-            # Hyperdrive is the one preview resource `alchemy destroy` alone
-            # owns — and close runs execute the PR branch's OLD workflow, so
-            # branches predating the placeholder-MAPLE_PG_URL destroy fix can
-            # NEVER tear down (rerunning them fails identically forever). The
-            # account caps Hyperdrive configs at 25; leaked maple-db-pr-*
-            # configs eventually block every new PR preview.
+            # Residual: previews no longer create Hyperdrive configs, but leaked
+            # `maple-db-pr-*` configs count against the 25-per-account cap.
             - name: Sweep orphaned Hyperdrive PR configs
               if: ${{ !cancelled() && env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != '' }}
               env:

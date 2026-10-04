@@ -25,9 +25,18 @@
 // row schemas are built from `CHNumber` — compile with them or BYO-CH orgs get
 // arithmetic over strings.
 
+import { Schema } from "effect"
 import * as CH from "@maple-dev/effect-clickhouse/expr"
-import { from, param, unionAll, type CHUnionQuery } from "@maple-dev/effect-clickhouse"
-import { Logs, ServiceOperationsMinutely, ServiceOverviewSpans } from "../tables"
+import {
+	from,
+	param,
+	unionAll,
+	type CHUnionQuery,
+	type CompiledQueryRowSchema,
+} from "@maple-dev/effect-clickhouse"
+import { CHNumber } from "../schema"
+import { Logs, MetricCatalog, ServiceOperationsMinutely, ServiceOverviewSpans } from "../tables"
+import { hourFloor } from "./query-helpers"
 
 export interface ServiceLivenessOutput {
 	/** Distinct minutes in the window that carried at least one span. */
@@ -126,3 +135,74 @@ export function orgTelemetryPulseQuery(): CHUnionQuery<TelemetryPulseOutput> {
 
 	return unionAll(spans, logs).format("JSON")
 }
+
+/**
+ * Newest timestamp per rollup-backed signal (traces, metrics) for one org, over
+ * a short caller-bounded window. Traces read `service_operations_minutely`,
+ * which counts every span, at minute grain; metrics read `metric_catalog`.
+ * Group-less, so each signal always returns one row. Logs, a raw table, are
+ * probed by `logsFreshnessQuery` so no union mixes tiers.
+ */
+export function ingestFreshnessQuery(): CHUnionQuery<TelemetryPulseOutput> {
+	const traces = from(ServiceOperationsMinutely)
+		.select(($) => ({
+			signal: CH.lit("traces"),
+			count: CH.sum($.SpanCount),
+			lastSeen: CH.toString_(CH.max_($.Minute)),
+		}))
+		.where(($) => [
+			$.OrgId.eq(param.string("orgId")),
+			$.Minute.gte(param.dateTimeSeconds("startTime")),
+			$.Minute.lte(param.dateTimeSeconds("endTime")),
+		])
+
+	const metrics = from(MetricCatalog)
+		.select(($) => ({
+			signal: CH.lit("metrics"),
+			count: CH.sum($.DataPointCount),
+			// An hour row straddling endTime had data inside the window; clamp its
+			// LastSeen so a past end_time never reads newer than itself.
+			lastSeen: CH.toString_(
+				CH.max_(
+					CH.if_(
+						$.LastSeen.gt(param.dateTimeSeconds("endTime")),
+						CH.toDateTime(param.dateTimeString("endTime")),
+						$.LastSeen,
+					),
+				),
+			),
+		}))
+		.where(($) => [
+			$.OrgId.eq(param.string("orgId")),
+			$.Hour.gte(hourFloor("startTime")),
+			$.Hour.lte(hourFloor("endTime")),
+			$.LastSeen.gte(param.dateTimeSeconds("startTime")),
+			$.FirstSeen.lte(param.dateTimeSeconds("endTime")),
+		])
+
+	return unionAll(traces, metrics).format("JSON")
+}
+
+/** Exact newest log timestamp for one org; one group-less row. */
+export function logsFreshnessQuery() {
+	return from(Logs)
+		.select(($) => ({
+			signal: CH.lit("logs"),
+			count: CH.count(),
+			lastSeen: CH.toString_(CH.toDateTime(CH.max_($.Timestamp))),
+		}))
+		.where(($) => [
+			$.OrgId.eq(param.string("orgId")),
+			$.TimestampTime.gte(param.dateTimeSeconds("startTime")),
+			$.TimestampTime.lte(param.dateTimeSeconds("endTime")),
+			$.Timestamp.gte(param.dateTimeString("startTime")),
+			$.Timestamp.lte(param.dateTimeString("endTime")),
+		])
+		.format("JSON")
+}
+
+export const ingestFreshnessRowSchema = Schema.Struct({
+	signal: Schema.String,
+	count: CHNumber,
+	lastSeen: Schema.String,
+}) satisfies CompiledQueryRowSchema<TelemetryPulseOutput>

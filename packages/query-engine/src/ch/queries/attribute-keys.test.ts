@@ -7,6 +7,8 @@ import {
 	metricScopedAttributeKeysQuery,
 	metricScopedAttributeValuesQuery,
 	resourceAttributeValuesQuery,
+	serviceScopedAttributeKeysQuery,
+	serviceScopedAttributeValuesQuery,
 	spanAttributeValuesQuery,
 } from "./attribute-keys"
 
@@ -173,5 +175,34 @@ describe("metricScopedAttributeValuesQuery", () => {
 		expect(sql).toContain("ORDER BY usageCount DESC")
 		expect(sql).toContain("LIMIT 50")
 		expect(sql).not.toMatch(/__PARAM_\w+__/)
+	})
+})
+
+describe("serviceScopedAttributeKeysQuery", () => {
+	it("reads only the named service's spans, capped, from raw traces", () => {
+		const q = serviceScopedAttributeKeysQuery({ scope: "span" })
+		const { sql } = compileUnsafe(q, { ...baseParams, serviceName: "maple-ios" })
+		expect(sql).toContain("FROM traces")
+		expect(sql).toContain("ServiceName = 'maple-ios'")
+		expect(sql).toContain("OrgId = 'org_1'")
+		expect(sql).toContain("LIMIT 20000")
+		expect(sql).toContain("mapKeys(")
+		expect(sql).not.toContain("attribute_keys_hourly")
+	})
+
+	it("reads ResourceAttributes for the resource scope", () => {
+		const q = serviceScopedAttributeKeysQuery({ scope: "resource" })
+		const { sql } = compileUnsafe(q, { ...baseParams, serviceName: "api" })
+		expect(sql).toContain("ResourceAttributes")
+		expect(sql).not.toContain("SpanAttributes")
+	})
+})
+
+describe("serviceScopedAttributeValuesQuery", () => {
+	it("lists one key's values for the service", () => {
+		const q = serviceScopedAttributeValuesQuery({ scope: "span", attributeKey: "http.route" })
+		const { sql } = compileUnsafe(q, { ...baseParams, serviceName: "api" })
+		expect(sql).toContain("ServiceName = 'api'")
+		expect(sql).toContain("['http.route']")
 	})
 })

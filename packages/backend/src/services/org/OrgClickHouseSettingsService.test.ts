@@ -22,7 +22,7 @@ import { FetchHttpClient } from "effect/http"
 import type { TableDiffEntry } from "@maple/domain/clickhouse"
 import { Env } from "@maple/backend/platform/Env"
 import { encryptAes256Gcm } from "@maple/backend/platform/Crypto"
-import { WorkerEnvironment } from "@maple/infra/worker-runtime"
+import { SchemaApplyWorkflow, WorkflowStartError } from "@maple/backend/platform/bindings"
 import {
 	cleanupTestDbs,
 	createTestDb,
@@ -322,9 +322,9 @@ describe("resolveRuntimeConfig caching", () => {
 	// (it is a required dependency) while making its backend a deliberate miss.
 	const missOnlyBackend: EdgeCacheBackend = {
 		name: "memory",
-		get: () => Promise.resolve(undefined),
-		put: () => Promise.resolve(),
-		delete: () => Promise.resolve(),
+		get: () => Effect.succeed(undefined),
+		put: () => Effect.void,
+		delete: () => Effect.void,
 	}
 
 	const buildLayer = (testDb: TestDb) => {
@@ -617,22 +617,25 @@ describe("resolveRuntimeConfig caching", () => {
 		const stats = { puts: 0, hits: 0, misses: 0 }
 		const backend: EdgeCacheBackend = {
 			name: "memory",
-			get: async (bucket, hash) => {
-				const raw = store.get(`${bucket}/${hash}`)
-				if (raw === undefined) {
-					stats.misses += 1
-					return undefined
-				}
-				stats.hits += 1
-				return JSON.parse(raw) as unknown
-			},
-			put: async (bucket, hash, value) => {
-				stats.puts += 1
-				store.set(`${bucket}/${hash}`, JSON.stringify(value))
-			},
-			delete: async (bucket, hash) => {
-				store.delete(`${bucket}/${hash}`)
-			},
+			get: (bucket, hash) =>
+				Effect.sync(() => {
+					const raw = store.get(`${bucket}/${hash}`)
+					if (raw === undefined) {
+						stats.misses += 1
+						return undefined
+					}
+					stats.hits += 1
+					return JSON.parse(raw) as unknown
+				}),
+			put: (bucket, hash, value) =>
+				Effect.sync(() => {
+					stats.puts += 1
+					store.set(`${bucket}/${hash}`, JSON.stringify(value))
+				}),
+			delete: (bucket, hash) =>
+				Effect.sync(() => {
+					store.delete(`${bucket}/${hash}`)
+				}),
 		}
 		return { backend, stats }
 	}
@@ -984,12 +987,22 @@ describe("applySchema claim lifecycle", () => {
 
 	const missBackend: EdgeCacheBackend = {
 		name: "memory",
-		get: () => Promise.resolve(undefined),
-		put: () => Promise.resolve(),
-		delete: () => Promise.resolve(),
+		get: () => Effect.succeed(undefined),
+		put: () => Effect.void,
+		delete: () => Effect.void,
 	}
 
-	const buildApplyLayer = (testDb: TestDb, workerEnv: Record<string, unknown>) => {
+	/** The Workflow binding as a port, over a fake whose `create` may reject. */
+	const workflowPort = (binding: { readonly create: () => Promise<unknown> }) =>
+		Layer.succeed(SchemaApplyWorkflow)({
+			create: () =>
+				Effect.tryPromise({
+					try: () => binding.create(),
+					catch: (cause) => new WorkflowStartError({ message: String(cause), cause }),
+				}).pipe(Effect.asVoid),
+		})
+
+	const buildApplyLayer = (testDb: TestDb, workflow?: { readonly create: () => Promise<unknown> }) => {
 		const envLive = Env.layer.pipe(Layer.provide(applyConfigLive))
 		const edgeCacheLive = Layer.succeed(EdgeCacheService)(makeEdgeCacheService(missBackend))
 		return OrgClickHouseSettingsService.layer.pipe(
@@ -998,7 +1011,7 @@ describe("applySchema claim lifecycle", () => {
 					envLive,
 					testDb.layer,
 					edgeCacheLive,
-					Layer.succeed(WorkerEnvironment)(workerEnv),
+					workflow === undefined ? Layer.empty : workflowPort(workflow),
 				),
 			),
 		)
@@ -1047,7 +1060,7 @@ describe("applySchema claim lifecycle", () => {
 			const second = yield* service.applySchema(asOrgId(orgId), asUserIdApply("user_a"), ADMIN)
 			expect(second.status).toBe("started")
 			expect(attempts).toBe(2)
-		}).pipe(Effect.provide(buildApplyLayer(testDb, { ClickHouseSchemaApplyWorkflow: binding })))
+		}).pipe(Effect.provide(buildApplyLayer(testDb, binding)))
 	})
 
 	it.effect("a missing workflow binding fails before any claim is written", () => {
@@ -1062,7 +1075,7 @@ describe("applySchema claim lifecycle", () => {
 			expect(Exit.isFailure(exit)).toBe(true)
 			// No leftover queued row — the next attempt starts from idle.
 			expect(yield* Effect.promise(() => runStatus(testDb, orgId))).toBeUndefined()
-		}).pipe(Effect.provide(buildApplyLayer(testDb, {})))
+		}).pipe(Effect.provide(buildApplyLayer(testDb)))
 	})
 
 	it.effect("an active claim blocks a second start, and a stale one is reclaimed", () => {
@@ -1100,6 +1113,6 @@ describe("applySchema claim lifecycle", () => {
 			const third = yield* service.applySchema(asOrgId(orgId), asUserIdApply("user_a"), ADMIN)
 			expect(third.status).toBe("started")
 			expect(creates).toBe(2)
-		}).pipe(Effect.provide(buildApplyLayer(testDb, { ClickHouseSchemaApplyWorkflow: binding })))
+		}).pipe(Effect.provide(buildApplyLayer(testDb, binding)))
 	})
 })

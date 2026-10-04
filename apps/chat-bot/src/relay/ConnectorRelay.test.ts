@@ -113,9 +113,13 @@ const deployment = () => {
 		relays.set(name, relay)
 		return relay
 	}
+	// What workerd hands back for an RPC call: the method's Effect, run on the target object.
 	env.ConnectorRelay = {
 		idFromName: (name: string) => name,
-		get: (name: unknown) => at(String(name)),
+		get: (name: unknown) => ({
+			remember: (conversationKey: string) =>
+				Effect.runPromise(at(String(name)).remember(conversationKey)),
+		}),
 	}
 	return {
 		objects,
@@ -209,7 +213,7 @@ describe("waking after an eviction", () => {
 	it("does nothing on an alarm with no turn recorded", async () => {
 		const state = objectState()
 		state.stored.set("opened:thread_7", true)
-		await new ConnectorRelay(state, {}).alarm()
+		await Effect.runPromise(new ConnectorRelay(state, {}).alarm())
 
 		expect(state.pending).toEqual([])
 		expect(state.alarms).toEqual([])
@@ -235,11 +239,11 @@ describe("waking after an eviction", () => {
 		})
 		const relay = new ConnectorRelay(state, {}, run.load)
 
-		await relay.deliver(message)
+		await Effect.runPromise(relay.deliver(message))
 		await recorded
 		expect([...state.stored.keys()]).toEqual([TURN_KEY])
 		// The keep-alive lands mid-turn: the checkpoint is this activation's own, not an orphan.
-		await relay.alarm()
+		await Effect.runPromise(relay.alarm())
 
 		finish()
 		await Promise.all(state.pending)
@@ -251,7 +255,7 @@ describe("waking after an eviction", () => {
 		const state = objectState()
 		const run = heavy({ settle: "done" })
 		state.stored.set(TURN_KEY, checkpoint())
-		await new ConnectorRelay(state, {}, run.load).alarm()
+		await Effect.runPromise(new ConnectorRelay(state, {}, run.load).alarm())
 
 		await Promise.all(state.pending)
 		// Kept resident while it works, like any turn this object relays.
@@ -266,9 +270,9 @@ describe("waking after an eviction", () => {
 		state.stored.set(TURN_KEY, checkpoint())
 		const relay = new ConnectorRelay(state, {}, run.load)
 
-		await relay.alarm()
+		await Effect.runPromise(relay.alarm())
 		await Promise.all(state.pending)
-		await relay.alarm()
+		await Effect.runPromise(relay.alarm())
 		await Promise.all(state.pending)
 
 		expect(run.settled).toEqual([checkpoint(), checkpoint()])
@@ -282,8 +286,8 @@ describe("waking after an eviction", () => {
 		state.scheduled.at = 1
 		const relay = new ConnectorRelay(state, {}, heavy({ event: () => Promise.resolve() }).load)
 
-		await relay.deliver(message)
-		await relay.deliver(message)
+		await Effect.runPromise(relay.deliver(message))
+		await Effect.runPromise(relay.deliver(message))
 		await Promise.all(state.pending)
 
 		expect(state.alarms).toEqual([])
@@ -293,7 +297,7 @@ describe("waking after an eviction", () => {
 		// One an older build wrote: dropped rather than thrown on.
 		const state = objectState()
 		state.stored.set(TURN_KEY, { sessionId: "org_1:bot-testchat-thread_7" })
-		await new ConnectorRelay(state, {}).alarm()
+		await Effect.runPromise(new ConnectorRelay(state, {}).alarm())
 
 		await Promise.all(state.pending)
 		expect([...state.stored]).toEqual([])

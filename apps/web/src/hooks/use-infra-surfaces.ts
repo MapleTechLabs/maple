@@ -25,25 +25,32 @@ const BUCKET_MS = 5 * 60 * 1000
  * Which Infrastructure surfaces this org actually has.
  *
  * Two sources, because the section mixes two kinds of page. The five OTel
- * surfaces come from the warehouse probe. Cloudflare and PlanetScale are
+ * surfaces come from the warehouse probe. Cloudflare, PlanetScale and Railway are
  * integration pages — you have them because you connected the integration, not
- * because a metric arrived — so they read the same two status atoms the
- * integrations hub uses. Only those two of the hub's six are mounted here: this
- * hook lives in the sidebar, so every atom it touches is a request on every
- * page.
+ * because a metric arrived — so they read the same status atoms the
+ * integrations hub uses. Only those three are mounted here: this hook lives in
+ * the sidebar, so every atom it touches is a request on every page.
+ *
+ * Pass `window` to ask about a specific range instead of the last hour: the
+ * infra overview does, so a source that went quiet yesterday still shows when
+ * you look at yesterday.
  *
  * `null` means "don't know yet" — the probe is in flight, or it failed.
  * Callers must show their full list in that case; a nav that hides rows
  * because a query errored is worse than one that lists a page you don't use.
  */
-export function useInfraSurfaces(): ReadonlySet<NavSurface> | null {
-	const { startTime, endTime } = useMemo(() => {
+export function useInfraSurfaces(window?: {
+	readonly startTime: string
+	readonly endTime: string
+}): ReadonlySet<NavSurface> | null {
+	const lastHour = useMemo(() => {
 		const end = Math.floor(Date.now() / BUCKET_MS) * BUCKET_MS
 		return {
 			startTime: formatWarehouseDateTime(end - PRESENCE_WINDOW_MS),
 			endTime: formatWarehouseDateTime(end),
 		}
 	}, [])
+	const { startTime, endTime } = window ?? lastHour
 
 	const presenceResult = useAtomValue(infraPresenceResultAtom({ data: { startTime, endTime } }))
 	const cloudflareResult = useAtomValue(
@@ -54,6 +61,11 @@ export function useInfraSurfaces(): ReadonlySet<NavSurface> | null {
 	const planetscaleResult = useAtomValue(
 		retainedQueryV2("planetscaleIntegration", "status", {
 			reactivityKeys: ["planetscaleIntegration"],
+		}),
+	)
+	const railwayResult = useAtomValue(
+		retainedQuery("integrations", "railwayStatus", {
+			reactivityKeys: ["railwayIntegrationStatus"],
 		}),
 	)
 
@@ -71,12 +83,16 @@ export function useInfraSurfaces(): ReadonlySet<NavSurface> | null {
 	const planetscale = Result.builder(planetscaleResult)
 		.onSuccess((status) => status.connected)
 		.orElse(() => false)
+	const railway = Result.builder(railwayResult)
+		.onSuccess((status) => status.connected)
+		.orElse(() => false)
 
 	return useMemo(() => {
 		if (telemetry === null) return null
 		const surfaces = new Set<NavSurface>(telemetry)
 		if (cloudflare) surfaces.add("cloudflare")
 		if (planetscale) surfaces.add("planetscale")
+		if (railway) surfaces.add("railway")
 		return surfaces
-	}, [telemetry, cloudflare, planetscale])
+	}, [telemetry, cloudflare, planetscale, railway])
 }

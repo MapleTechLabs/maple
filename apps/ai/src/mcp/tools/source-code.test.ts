@@ -9,7 +9,7 @@ import {
 import { Effect, Layer, Schema } from "effect"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { renderToolDoc } from "../lib/tool-doc"
-import { registerSourceCodeTools } from "./source-code"
+import { matchLines, registerSourceCodeTools, splitSearchPath } from "./source-code"
 import type { McpToolError, McpToolRegistrar } from "./types"
 
 interface Answer {
@@ -97,6 +97,35 @@ describe("the source-code tools", () => {
 				assert.strictEqual(error.parameter, "end_line")
 		}),
 	)
+
+	it.effect("splits a file path filter and reports the lines of the top match", () =>
+		Effect.gen(function* () {
+			const seen: Array<{ query: string; path: string | undefined }> = []
+			const answer = yield* call(
+				"search_source_code",
+				{ repository: "octo/shop", query: "three", path: "./src/a.ts" },
+				{
+					searchCode: (_org, _repo, query, opts) => {
+						seen.push({ query, path: opts.path })
+						return Effect.succeed([
+							{ path: "src/a.ts", sha: "blob1", htmlUrl: file.htmlUrl, snippets: ["three"] },
+						])
+					},
+					readFile: () => Effect.succeed(file),
+				},
+			)
+			assert.deepStrictEqual(seen, [{ query: "three filename:a.ts", path: "src" }])
+			assert.include(answer.text, "Lines: 3")
+			assert.include(answer.text, "start_line=1")
+		}),
+	)
+
+	it("splits search paths and finds match lines", () => {
+		assert.deepStrictEqual(splitSearchPath("apps/api/"), { dir: "apps/api" })
+		assert.deepStrictEqual(splitSearchPath("README.md"), { filename: "README.md" })
+		assert.deepStrictEqual(matchLines("a\nFoo()\nb\nfoo", "foo", undefined), [2, 4])
+		assert.deepStrictEqual(matchLines("x\n  bar(1)\n", "bar 1", "bar(1)"), [2])
+	})
 
 	it.effect("points an unconnected repository back at list_source_repositories", () =>
 		Effect.gen(function* () {

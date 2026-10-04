@@ -39,6 +39,8 @@ export interface SpanDetailResult {
 	/** Full span attribute map (not the trimmed set the trace tree renders). */
 	readonly spanAttributes: Record<string, string>
 	readonly resourceAttributes: Record<string, string>
+	/** True when the hinted window missed and the lookup was retried unbounded. */
+	readonly widened?: boolean
 }
 
 /**
@@ -64,16 +66,21 @@ export const spanDetail = Effect.fn("Observability.spanDetail")(function* (input
 			})()
 		: undefined
 
-	const compiled = CH.compile(
-		CH.spanDetailQuery({ traceId: input.traceId, spanId: input.spanId, narrowByTime }),
-		range
-			? { orgId: executor.orgId, startTime: range.startTime, endTime: range.endTime }
-			: { orgId: executor.orgId },
-	)
-	const maybeRow = yield* executor.compiledQueryFirst(compiled, {
-		profile: "discovery",
-		context: "spanDetail",
-	})
+	const lookup = (bounded: boolean) =>
+		executor.compiledQueryFirst(
+			CH.compile(
+				CH.spanDetailQuery({ traceId: input.traceId, spanId: input.spanId, narrowByTime: bounded }),
+				bounded && range
+					? { orgId: executor.orgId, startTime: range.startTime, endTime: range.endTime }
+					: { orgId: executor.orgId },
+			),
+			{ profile: "discovery", context: "spanDetail" },
+		)
+	const firstRow = yield* lookup(narrowByTime)
+	// A wrong hint should not hide the span: retry once without the time bound.
+	const widened = Option.isNone(firstRow) && narrowByTime
+	const maybeRow = widened ? yield* lookup(false) : firstRow
+	yield* Effect.annotateCurrentSpan("widened", widened)
 
 	if (Option.isNone(maybeRow)) {
 		return {
@@ -82,6 +89,7 @@ export const spanDetail = Effect.fn("Observability.spanDetail")(function* (input
 			spanId: input.spanId,
 			spanAttributes: {},
 			resourceAttributes: {},
+			widened,
 		} satisfies SpanDetailResult
 	}
 
@@ -94,5 +102,6 @@ export const spanDetail = Effect.fn("Observability.spanDetail")(function* (input
 		spanId: row.spanId,
 		spanAttributes,
 		resourceAttributes,
+		widened,
 	} satisfies SpanDetailResult
 })

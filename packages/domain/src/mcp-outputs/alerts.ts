@@ -57,9 +57,39 @@ export const ListAlertDestinationsOutput = Schema.Struct({
 /** Configuration that saved but probably does not do what the caller meant. */
 const RuleWriteWarnings = Schema.optionalKey(Schema.Array(Schema.String))
 
-export const CreateAlertRuleOutput = Schema.Struct({ rule: AlertRuleRow, warnings: RuleWriteWarnings })
+/** When the saved rule first runs, and what a preview of its latest window observes right now. */
+export const AlertRuleFirstEvaluation = Schema.Struct({
+	/** Next scheduler tick (every minute); null for a disabled rule. */
+	nextEvaluationAt: NullableString,
+	current: Schema.Array(
+		Schema.Struct({
+			groupKey: Schema.String,
+			window: Schema.String,
+			status: Schema.String,
+			skipReason: NullableString,
+			value: NullableNumber,
+			sampleCount: Schema.Number,
+		}),
+	),
+	/** Set when the preview could not run; the rule saved regardless. */
+	previewError: Schema.optionalKey(Schema.String),
+})
 
-export const UpdateAlertRuleOutput = Schema.Struct({ rule: AlertRuleRow, warnings: RuleWriteWarnings })
+const FirstEvaluation = Schema.optionalKey(AlertRuleFirstEvaluation)
+
+export const CreateAlertRuleOutput = Schema.Struct({
+	rule: AlertRuleRow,
+	warnings: RuleWriteWarnings,
+	evaluation: FirstEvaluation,
+})
+
+export const UpdateAlertRuleOutput = Schema.Struct({
+	rule: AlertRuleRow,
+	/** Every rule a bulk (`rule_ids`) update changed; `rule` is the first of them. */
+	rules: Schema.optionalKey(Schema.Array(AlertRuleRow)),
+	warnings: RuleWriteWarnings,
+	evaluation: FirstEvaluation,
+})
 
 export const DeleteAlertRuleOutput = Schema.Struct({ id: Schema.String })
 
@@ -84,6 +114,17 @@ export const AlertRuleDetailRow = Schema.Struct({
 	/** Most recent evaluation failure, if the rule's last check errored. */
 	lastEvaluationError: Schema.optionalKey(NullableString),
 	lastEvaluatedAt: Schema.optionalKey(NullableString),
+	/** `destinationIds` resolved to their names; an id with no match is a deleted destination. */
+	destinations: Schema.optionalKey(
+		Schema.Array(
+			Schema.Struct({
+				id: Schema.String,
+				name: NullableString,
+				type: NullableString,
+				enabled: Schema.Boolean,
+			}),
+		),
+	),
 })
 
 export const GetAlertRuleOutput = Schema.Struct({ rule: AlertRuleDetailRow })
@@ -166,6 +207,8 @@ export const ListAlertIncidentsOutput = Schema.Struct({
 	total: Schema.Number,
 	openCount: Schema.Number,
 	resolvedCount: Schema.Number,
+	/** With status=open: incidents of the same filters resolved in the last 24 hours. */
+	recentlyResolvedCount: Schema.optionalKey(Schema.Number),
 	...IncidentFilters,
 })
 

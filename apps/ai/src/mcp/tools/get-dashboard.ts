@@ -58,27 +58,47 @@ export function registerGetDashboardTool(server: McpToolRegistrar) {
 				},
 			}
 		}),
-		render: ({ dashboard }) => ({
-			title: `Dashboard: ${dashboard.name}`,
-			blocks: [
-				doc.fields([
-					["ID", dashboard.id],
-					["Widgets", dashboard.widgets.length],
-					["Created", dashboard.createdAt.slice(0, 19)],
-					["Updated", dashboard.updatedAt.slice(0, 19)],
-				]),
-				doc.text("Full configuration (JSON):"),
-				doc.code("json", JSON.stringify(dashboard, null, 2)),
-			],
-			next: dashboard.widgets
-				.slice(0, 1)
-				.map((w) =>
-					doc.next(
-						"inspect_chart_data",
-						{ dashboard_id: dashboard.id, widget_id: w.id },
-						"check the data a widget renders",
+		render: ({ dashboard }) => {
+			const { widgets, ...header } = dashboard
+			return {
+				title: `Dashboard: ${dashboard.name}`,
+				blocks: [
+					doc.fields([
+						["ID", dashboard.id],
+						["Widgets", widgets.length],
+						["Created", dashboard.createdAt.slice(0, 19)],
+						["Updated", dashboard.updatedAt.slice(0, 19)],
+					]),
+					...(widgets.length === 0
+						? []
+						: [
+								doc.table(
+									["Widget", "Visualization", "Title"],
+									widgets.map((w) => [w.id, w.visualization, w.display.title ?? ""]),
+								),
+							]),
+					// Compact, one widget per line: a long dashboard is cut on whole widgets, never mid-object.
+					doc.text(
+						"Configuration preview, one JSON value per line: the dashboard fields, then each widget in the " +
+							"shape update_dashboard_widget and replace_dashboard_widgets take. This is not a single document: " +
+							"for update_dashboard's dashboard_json, use structuredContent.dashboard or rebuild one object " +
+							"from the first line plus a `widgets` array of the widget lines.",
 					),
-				),
-		}),
+					doc.code(
+						"json",
+						[JSON.stringify(header), ...widgets.map((w) => JSON.stringify(w))].join("\n"),
+					),
+				],
+				next: dashboard.widgets
+					.slice(0, 1)
+					.map((w) =>
+						doc.next(
+							"inspect_chart_data",
+							{ dashboard_id: dashboard.id, widget_id: w.id },
+							"check the data a widget renders",
+						),
+					),
+			}
+		},
 	})
 }

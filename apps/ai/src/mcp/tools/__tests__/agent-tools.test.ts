@@ -276,12 +276,7 @@ const REJECTED: Array<[string, string, ToolParams, Array<string>]> = [
 		{ ...WINDOW, tool: "   ", fingerprint: FINGERPRINT },
 		["Invalid tool", 'tool="search_docs"'],
 	],
-	[
-		"a window wider than the search cap",
-		OVERVIEW,
-		{ start_time: "2026-01-01 00:00:00", end_time: "2026-09-12 00:00:00" },
-		["Time range too large"],
-	],
+	["a start_time in the future", OVERVIEW, { start_time: "2099-01-01 00:00:00" }, ["is not in the past"]],
 ]
 
 it.each(REJECTED)("rejects %s with a message naming the fix", async (_case, name, params, phrases) => {

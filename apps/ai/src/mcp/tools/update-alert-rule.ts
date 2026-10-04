@@ -15,6 +15,7 @@ import {
 	ALERT_REDUCERS,
 	ALERT_SEVERITIES,
 	ALERT_SIGNAL_TYPES,
+	renderBulkRuleWrite,
 	renderRuleWrite,
 	ruleConfigWarnings,
 	ruleNotFound,
@@ -22,12 +23,16 @@ import {
 	ruleWriteInputErrors,
 	toAlertRuleRow,
 } from "../lib/alert-rules"
+import { firstEvaluation } from "../lib/alert-rule-evaluation"
 import * as P from "../lib/params"
 
 const decodeAlertRuleRequest = Schema.decodeUnknownEffect(AlertRuleUpsertRequest)
 
 export const UpdateAlertRuleParameters = Schema.Struct({
-	rule_id: P.text("Alert rule ID to update (use list_alert_rules to find IDs)"),
+	rule_id: P.optionalText("Alert rule ID to update (use list_alert_rules to find IDs)"),
+	rule_ids: P.optionalList(
+		'Apply the same change to several rules in one call instead of rule_id; ["*"] means every rule. name cannot be set in bulk.',
+	),
 	name: P.optionalText("New rule name"),
 	severity: P.optionalOneOf(ALERT_SEVERITIES, "Alert severity"),
 	threshold: P.optionalNumber("Threshold value. E.g. 0.05 for 5% error rate, 1000 for 1s latency"),
@@ -40,6 +45,8 @@ export const UpdateAlertRuleParameters = Schema.Struct({
 	destination_ids: P.optionalList(
 		"Destination IDs to notify (replaces the current destinations; use list_alert_destinations to find IDs)",
 	),
+	add_destination_ids: P.optionalList("Destination IDs to add, keeping the current ones"),
+	remove_destination_ids: P.optionalList("Destination IDs to remove, keeping the rest"),
 	signal_type: P.optionalOneOf(
 		ALERT_SIGNAL_TYPES,
 		"What the rule measures. builder_query takes query_builder_draft, raw_query takes raw_query_sql.",
@@ -132,8 +139,40 @@ export function buildUpdatedRequest(
 		rawQuerySql: params.raw_query_sql ?? current.rawQuerySql,
 		rawQueryReducer: params.raw_query_reducer ?? current.rawQueryReducer,
 		alertOnNoData: params.alert_on_no_data ?? current.noDataBehavior === "alert",
-		destinationIds: [...(params.destination_ids ?? current.destinationIds)],
+		destinationIds: mergeDestinations(current.destinationIds, params),
 	}
+}
+
+/** `destination_ids` replaces; add/remove edit the current (or replaced) list in place. */
+const mergeDestinations = (
+	current: ReadonlyArray<string>,
+	params: Pick<
+		typeof UpdateAlertRuleParameters.Type,
+		"destination_ids" | "add_destination_ids" | "remove_destination_ids"
+	>,
+): Array<string> => {
+	const base = params.destination_ids ?? current
+	const removed = new Set(params.remove_destination_ids ?? [])
+	return [...new Set([...base, ...(params.add_destination_ids ?? [])])].filter((id) => !removed.has(id))
+}
+
+const noTargets = new McpInvalidInputError({
+	message: "Pass rule_id, or rule_ids for several rules (list_alert_rules has the IDs).",
+	parameter: "rule_id",
+})
+
+/** The rules a call targets: `rule_id` and/or `rule_ids`, where `"*"` is every rule. */
+const resolveTargets = (
+	rules: ReadonlyArray<AlertRuleDocument>,
+	params: Pick<typeof UpdateAlertRuleParameters.Type, "rule_id" | "rule_ids">,
+): Effect.Effect<ReadonlyArray<AlertRuleDocument>, McpInvalidInputError> => {
+	const ids = [...(params.rule_id === undefined ? [] : [params.rule_id]), ...(params.rule_ids ?? [])]
+	if (ids.length === 0) return Effect.fail(noTargets)
+	if (ids.includes("*")) return rules.length > 0 ? Effect.succeed(rules) : Effect.fail(noTargets)
+	const unique = [...new Set(ids)]
+	const missing = unique.find((id) => !rules.some((r) => r.id === id))
+	if (missing !== undefined) return Effect.fail(ruleNotFound(missing))
+	return Effect.succeed(rules.filter((r) => unique.includes(r.id)))
 }
 
 export function registerUpdateAlertRuleTool(server: McpToolRegistrar) {
@@ -142,6 +181,7 @@ export function registerUpdateAlertRuleTool(server: McpToolRegistrar) {
 		title: "Update Alert Rule",
 		description:
 			"Update an alert rule. Pass only the fields to change; the rest keep their current value (get_alert_rule shows it). " +
+			'rule_ids applies one change to many rules (e.g. add_destination_ids on every rule with rule_ids=["*"]). ' +
 			"Ids from list_alert_rules and list_alert_destinations.",
 		parameters: UpdateAlertRuleParameters,
 		aliases: { service_names: "services" },
@@ -157,18 +197,29 @@ export function registerUpdateAlertRuleTool(server: McpToolRegistrar) {
 				.listRules(tenant.orgId)
 				.pipe(Effect.mapError(toMcpHttpError("update_alert_rule")))
 
-			const current = list.rules.find((r) => r.id === params.rule_id)
-			if (!current) return yield* ruleNotFound(params.rule_id)
+			const targets = yield* resolveTargets(list.rules, params)
+			if (targets.length > 1 && params.name !== undefined) {
+				return yield* new McpInvalidInputError({
+					message: "name cannot be set on several rules at once; update them one by one.",
+					parameter: "name",
+				})
+			}
 
-			const decoded = yield* decodeAlertRuleRequest(buildUpdatedRequest(current, params)).pipe(
-				Effect.mapError(
-					(error) => new McpInvalidInputError({ message: `Invalid alert rule: ${String(error)}` }),
+			// Decode every merged request before writing any, so a bad overlay saves nothing.
+			const requests = yield* Effect.forEach(targets, (current) =>
+				decodeAlertRuleRequest(buildUpdatedRequest(current, params)).pipe(
+					Effect.map((request) => ({ current, request })),
+					Effect.mapError(
+						(error) =>
+							new McpInvalidInputError({
+								message: `Invalid alert rule${targets.length > 1 ? ` "${current.name}"` : ""}: ${String(error)}`,
+							}),
+					),
 				),
 			)
 
-			const rule = yield* alerts
-				.updateRule(tenant.orgId, tenant.userId, tenant.roles, current.id, decoded)
-				.pipe(
+			const saved = yield* Effect.forEach(requests, ({ current, request }) =>
+				alerts.updateRule(tenant.orgId, tenant.userId, tenant.roles, current.id, request).pipe(
 					Effect.catchTags(ruleWriteInputErrors),
 					Effect.catchTags({
 						"@maple/http/errors/AlertRuleNotFoundError": ruleNotFoundFromError,
@@ -179,11 +230,29 @@ export function registerUpdateAlertRuleTool(server: McpToolRegistrar) {
 						"@maple/http/errors/AlertRuleStoredConfigInvalidError": (error) =>
 							Effect.fail(toMcpHttpError("update_alert_rule")(error)),
 					}),
-				)
+					Effect.map((rule) => ({ rule, request })),
+				),
+			)
 
-			const warnings = ruleConfigWarnings(rule)
-			return { rule: toAlertRuleRow(rule), ...(warnings.length > 0 ? { warnings } : undefined) }
+			const head = saved[0]
+			if (head === undefined) return yield* noTargets
+			const bulk = saved.length > 1
+			const configWarnings = saved.flatMap(({ rule }) =>
+				ruleConfigWarnings(rule).map((w) => (bulk ? `${rule.name}: ${w}` : w)),
+			)
+			// One rule gets a first-evaluation preview; a bulk change would run one per rule.
+			const evaluated = bulk ? undefined : yield* firstEvaluation(head.request, head.rule.enabled)
+			const warnings = [...configWarnings, ...(evaluated?.warnings ?? [])]
+			return {
+				rule: toAlertRuleRow(head.rule),
+				...(bulk ? { rules: saved.map(({ rule }) => toAlertRuleRow(rule)) } : undefined),
+				...(warnings.length > 0 ? { warnings } : undefined),
+				...(evaluated === undefined ? undefined : { evaluation: evaluated.evaluation }),
+			}
 		}),
-		render: (output) => renderRuleWrite("Alert Rule Updated", output.rule, output.warnings),
+		render: (output) =>
+			output.rules === undefined
+				? renderRuleWrite("Alert Rule Updated", output.rule, output.warnings, output.evaluation)
+				: renderBulkRuleWrite(output.rules, output.warnings),
 	})
 }

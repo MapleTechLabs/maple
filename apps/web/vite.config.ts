@@ -43,6 +43,13 @@ export default defineConfig(({ mode }) => {
 		process.env.VITE_MAPLE_COOKIE_DOMAIN = env.PUBLIC_MAPLE_COOKIE_DOMAIN?.trim() || ""
 	}
 
+	// Under Vitest the first `tracedFetch` builds the telemetry layer, whose replay
+	// session POSTs to ingest mid-test and lands in tests' `window.fetch` spies.
+	if (process.env.VITEST) {
+		process.env.VITE_MAPLE_REPLAY ||= "off"
+		process.env.VITE_MAPLE_CAPTURE ||= "off"
+	}
+
 	// Vite's loadEnv gives `.env*` files higher precedence than `process.env` for
 	// VITE_* keys. During a deploy build we inject VITE_* via process.env, so
 	// override the Vite default with `define` to make process.env win.

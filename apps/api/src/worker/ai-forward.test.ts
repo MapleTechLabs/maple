@@ -1,7 +1,7 @@
 import { assert, describe, it } from "@effect/vitest"
 import { Effect } from "effect"
 import { HttpServerRequest } from "effect/http"
-import { forwardsToAi, forwardToAi, isCloudflareFetcher } from "./ai-forward"
+import { forwardsToAi, forwardToAi } from "./ai-forward"
 
 /**
  * The predicate IS the contract between the two Workers: a path it misses 404s
@@ -39,15 +39,6 @@ describe("forwardsToAi", () => {
 			"/v2/errors",
 		]) {
 			assert.isFalse(forwardsToAi(path), path)
-		}
-	})
-})
-
-describe("isCloudflareFetcher", () => {
-	it("accepts a binding exposing fetch and rejects everything else", () => {
-		assert.isTrue(isCloudflareFetcher({ fetch: () => new Response("ok") }))
-		for (const value of [undefined, null, {}, "AI_WORKER", { fetch: "nope" }]) {
-			assert.isFalse(isCloudflareFetcher(value), JSON.stringify(value))
 		}
 	})
 })

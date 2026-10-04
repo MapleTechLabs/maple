@@ -10,7 +10,7 @@ import * as T from "@maple-dev/effect-clickhouse/types"
 import { param } from "@maple-dev/effect-clickhouse"
 import { from, type CHQuery } from "@maple-dev/effect-clickhouse"
 import { table } from "@maple-dev/effect-clickhouse"
-import { MetricsSum, MetricCatalog, SpanMetricsCallsHourly } from "../tables"
+import { MetricsSum, MetricsGauge, MetricCatalog, SpanMetricsCallsHourly } from "../tables"
 import { resolveMetricTable, metricsSelectExprs } from "./query-helpers"
 import { deploymentEnvExpr } from "@maple/domain/tinybird/semconv-renames"
 import { buildAttrFilterCondition } from "../../traces-shared"
@@ -26,6 +26,11 @@ function resourceFilterConditions(
 	filters: readonly AttributeFilter[] | undefined,
 ): ReadonlyArray<CH.Condition> {
 	return (filters ?? []).map((rf) => buildAttrFilterCondition(rf, "ResourceAttributes"))
+}
+
+// A key with no value means "has the label": `.eq("")` would match its absence.
+function datapointAttrCondition(column: CH.Expr<string>, value: string | undefined): CH.Condition {
+	return value === undefined ? column.neq("") : column.eq(value)
 }
 
 // Shared options & output types
@@ -101,7 +106,9 @@ export function metricsTimeseriesQuery(opts: MetricsTimeseriesOpts) {
 			$.TimeUnix.gte(param.dateTimeString("startTime")),
 			$.TimeUnix.lte(param.dateTimeString("endTime")),
 			CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),
-			CH.when(opts.attributeKey, (k: string) => $.Attributes.get(k).eq(opts.attributeValue ?? "")),
+			CH.when(opts.attributeKey, (k: string) =>
+				datapointAttrCondition($.Attributes.get(k), opts.attributeValue),
+			),
 			opts.environments?.length
 				? CH.inList(deploymentEnvExpr($.ResourceAttributes), opts.environments)
 				: undefined,
@@ -125,7 +132,11 @@ export interface MetricsRateTimeseriesOpts {
 	// non-empty) it replaces the scalar `metricName` equality in the WHERE clause,
 	// so a metric with one of a few known spellings resolves in a single query.
 	metricNames?: ReadonlyArray<string>
+	/** Source table: `gauge` reads metrics_gauge (Prometheus counters often land there). Default `sum`. */
+	metricType?: MetricType
 	bucketSeconds?: number
+	/** How far before startTime to read for each series' previous sample. Default: bucketSeconds. */
+	lookbackSeconds?: number
 	serviceName?: string
 	/** Deployment environments to scope to. Empty/undefined means all. */
 	environments?: readonly string[]
@@ -300,30 +311,49 @@ function metricsTimeseriesRateFromSpanMetricsCallsHourly(
 	return finalizeTimeseries(inner, metricsRateTimeseriesColumns, "dataPointCount", opts)
 }
 
+/**
+ * Per-sample increment of one counter series, given the previous sample of the
+ * same series (`lagInFrame` defaults to the current row, so a series' first
+ * sample yields 0 instead of its lifetime total).
+ *
+ * - delta temporality: the sample already is the increment.
+ * - value dropped: the counter reset; the new value is what accrued since.
+ * - StartTimeUnix moved past the previous sample (a restart that has already
+ *   counted back above the old value): also a reset. `startTime < time` skips
+ *   exporters that stamp StartTimeUnix = TimeUnix on every point.
+ */
+export function metricDeltaExpr(args: {
+	readonly value: CH.Expr<number>
+	readonly previousValue: CH.Expr<number>
+	readonly startTime: CH.Expr<string>
+	readonly previousTime: CH.Expr<string>
+	readonly time: CH.Expr<string>
+	readonly isDeltaTemporality?: CH.Condition
+}): CH.Expr<number> {
+	const restarted = args.startTime.gt(args.previousTime).and(args.startTime.lt(args.time))
+	const cases: Array<[CH.Condition, CH.Expr<number>]> = []
+	if (args.isDeltaTemporality) cases.push([args.isDeltaTemporality, args.value])
+	cases.push([args.value.lt(args.previousValue), args.value], [restarted, args.value])
+	return CH.multiIf(cases, args.value.sub(args.previousValue))
+}
+
 export function metricsTimeseriesRateQuery(
 	opts: MetricsRateTimeseriesOpts,
 ): CHQuery<any, MetricsRateTimeseriesOutput, {}> {
 	if (canUseSpanMetricsCallsHourly(opts)) return metricsTimeseriesRateFromSpanMetricsCallsHourly(opts)
 
-	// CTE: compute deltas using window functions.
-	//
-	// The PARTITION BY must isolate each emitting process: a cumulative counter
-	// is monotonic only *within one series of one pod*. `ResourceAttributes`
-	// (carries k8s.pod.name / service.instance.id) separates replicas, and
-	// `StartTimeUnix` separates accumulation epochs (counter resets) within a
-	// pod. Omitting them merges every replica's series into one partition, so
-	// `lagInFrame` computes deltas across interleaved pods — each step from a
-	// low-counter pod to a high-counter one books that pod's entire accumulated
-	// value as a bogus increase, inflating the result by orders of magnitude on
-	// any multi-replica service.
-	//
-	// The two attribute Maps are folded into fixed-width `cityHash64` series
-	// fingerprints rather than partitioning by the raw `Map` columns: the window
-	// must sort every row by the partition key, and comparing serialized Maps per
-	// row dominates the query cost (raw `metrics_sum` scans of span.metrics.calls
-	// ran ~7s p95). Hashing keeps per-series identity — points of one series share
-	// one exporter, so map key order is stable — at a ~2^-64 collision risk.
-	const cteQuery = from(MetricsSum)
+	// Prometheus-style counters often land as gauges (or as sums flagged
+	// non-monotonic), so the source table follows `metricType` and IsMonotonic
+	// is not a filter: the reset-aware delta below is what makes it a counter.
+	const isGauge = opts.metricType === "gauge"
+	const tbl = isGauge ? MetricsGauge : MetricsSum
+
+	// One partition per emitting series: datapoint labels plus the resource
+	// (pod, instance, environment). The Maps are folded into `cityHash64`
+	// fingerprints because sorting by raw Maps dominated the query cost.
+	// StartTimeUnix is deliberately NOT in the key: a restart must stay in the
+	// same partition so `metricDeltaExpr` can see it and count the new value.
+	const cteQuery = from(tbl as typeof MetricsSum)
 		.select(($) => {
 			const onePrecedingFrame = CH.windowSpec({
 				partitionBy: [
@@ -331,29 +361,28 @@ export function metricsTimeseriesRateQuery(
 					$.MetricName,
 					CH.cityHash64(CH.mapKeys($.Attributes), CH.mapValues($.Attributes)),
 					CH.cityHash64(CH.mapKeys($.ResourceAttributes), CH.mapValues($.ResourceAttributes)),
-					$.StartTimeUnix,
 				],
 				orderBy: [[$.TimeUnix, "asc"]],
 				frame: CH.rowsBetween(CH.preceding(1), CH.currentRow),
 			})
-			const previousValue = CH.over(CH.lagInFrame($.Value, 1, $.Value), onePrecedingFrame)
-			const previousTimeUnix = CH.over(CH.lagInFrame($.TimeUnix, 1, $.TimeUnix), onePrecedingFrame)
-
 			return {
 				TimeUnix: $.TimeUnix,
 				ServiceName: $.ServiceName,
 				Attributes: $.Attributes,
-				// Project just the requested resource group value through the CTE —
-				// carrying the whole ResourceAttributes map per row would be pure
-				// overhead for the (common) non-resource-grouped case.
+				// Project just the requested resource group value through the CTE.
 				resourceAttributeValue: opts.groupByResourceAttributeKey
 					? $.ResourceAttributes.get(opts.groupByResourceAttributeKey)
 					: CH.lit(""),
-				Value: $.Value,
-				delta: $.Value.sub(previousValue),
-				time_delta: CH.toFloat64(
-					CH.toUnixTimestamp64Nano($.TimeUnix).sub(CH.toUnixTimestamp64Nano(previousTimeUnix)),
-				).div(1000000000),
+				delta: metricDeltaExpr({
+					value: $.Value,
+					previousValue: CH.over(CH.lagInFrame($.Value, 1, $.Value), onePrecedingFrame),
+					startTime: $.StartTimeUnix,
+					previousTime: CH.over(CH.lagInFrame($.TimeUnix, 1, $.TimeUnix), onePrecedingFrame),
+					time: $.TimeUnix,
+					isDeltaTemporality: isGauge
+						? undefined
+						: CH.dynamicColumn<number>("AggregationTemporality").eq(1),
+				}),
 			}
 		})
 		.where(($) => [
@@ -361,11 +390,17 @@ export function metricsTimeseriesRateQuery(
 				? $.MetricName.in_(...opts.metricNames)
 				: $.MetricName.eq(param.string("metricName")),
 			$.OrgId.eq(param.string("orgId")),
-			CH.dynamicColumn<number>("IsMonotonic").eq(1),
-			$.TimeUnix.gte(CH.intervalSub(param.dateTimeString("startTime"), param.int("bucketSeconds"))),
+			$.TimeUnix.gte(
+				CH.intervalSub(
+					param.dateTimeString("startTime"),
+					opts.lookbackSeconds ?? param.int("bucketSeconds"),
+				),
+			),
 			$.TimeUnix.lte(param.dateTimeString("endTime")),
 			CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),
-			CH.when(opts.attributeKey, (k: string) => $.Attributes.get(k).eq(opts.attributeValue ?? "")),
+			CH.when(opts.attributeKey, (k: string) =>
+				datapointAttrCondition($.Attributes.get(k), opts.attributeValue),
+			),
 			opts.environments?.length
 				? CH.inList(deploymentEnvExpr($.ResourceAttributes), opts.environments)
 				: undefined,
@@ -378,32 +413,46 @@ export function metricsTimeseriesRateQuery(
 		ServiceName: T.string,
 		Attributes: T.map(T.string, T.string),
 		resourceAttributeValue: T.string,
-		Value: T.float64,
 		delta: T.float64,
-		time_delta: T.float64,
 	})
 
 	const q = from(cteTable)
 		.withCTE("with_deltas", cteQuery)
-		.select(($) => ({
-			bucket: CH.toStartOfInterval($.TimeUnix, param.int("bucketSeconds")),
-			serviceName: $.ServiceName,
-			attributeValue: opts.groupByResourceAttributeKey
-				? $.resourceAttributeValue
-				: opts.groupByAttributeKey
-					? $.Attributes.get(opts.groupByAttributeKey)
-					: CH.lit(""),
-			groupName: opts.groupByResourceAttributeKey
-				? $.resourceAttributeValue
-				: opts.groupByAttributeKey
-					? $.Attributes.get(opts.groupByAttributeKey)
-					: $.ServiceName,
-			rateValue: finiteOrZero(
-				CH.sumIf($.delta.div($.time_delta), $.delta.gte(0).and($.time_delta.gt(0))),
-			),
-			increaseValue: CH.sumIf($.delta, $.delta.gte(0)),
-			dataPointCount: CH.count(),
-		}))
+		.select(($) => {
+			// Seconds of the bucket inside [startTime, endTime]: the edge buckets are
+			// partial, and dividing them by the full width understates their rate.
+			const bucketStart = CH.toUnixTimestamp(
+				CH.toStartOfInterval($.TimeUnix, param.int("bucketSeconds")),
+			)
+			const coveredSeconds = CH.least_(
+				bucketStart.add(param.int("bucketSeconds")),
+				CH.toUnixTimestamp(CH.toDateTime(param.dateTimeString("endTime"))),
+			).sub(
+				CH.greatest_(
+					bucketStart,
+					CH.toUnixTimestamp(CH.toDateTime(param.dateTimeString("startTime"))),
+				),
+			)
+			return {
+				bucket: CH.toStartOfInterval($.TimeUnix, param.int("bucketSeconds")),
+				serviceName: $.ServiceName,
+				attributeValue: opts.groupByResourceAttributeKey
+					? $.resourceAttributeValue
+					: opts.groupByAttributeKey
+						? $.Attributes.get(opts.groupByAttributeKey)
+						: CH.lit(""),
+				groupName: opts.groupByResourceAttributeKey
+					? $.resourceAttributeValue
+					: opts.groupByAttributeKey
+						? $.Attributes.get(opts.groupByAttributeKey)
+						: $.ServiceName,
+				// Rate is the bucket's increase over its covered width. Summing per-sample
+				// rates instead multiplies throughput by the samples per bucket.
+				rateValue: finiteOrZero(CH.sum($.delta).div(CH.min_(coveredSeconds))),
+				increaseValue: CH.sum($.delta),
+				dataPointCount: CH.count(),
+			}
+		})
 		.where(($) => [$.TimeUnix.gte(param.dateTimeString("startTime"))])
 
 	const inner = (
@@ -464,12 +513,28 @@ export interface MetricsBreakdownOpts {
 	/** Break down by a ResourceAttributes key instead of a datapoint Attributes key. */
 	groupByResourceAttributeKey?: string
 	resourceAttributeFilters?: readonly AttributeFilter[]
+	serviceName?: string
+	environments?: readonly string[]
+	attributeKey?: string
+	attributeValue?: string
+	/** Aggregate that ranks groups before `limit` applies. Default: count. */
+	rankBy?: "avg" | "sum" | "min" | "max" | "count"
 	limit?: number
 }
+
+const BREAKDOWN_RANK_COLUMN = {
+	avg: "avgValue",
+	sum: "sumValue",
+	min: "minValue",
+	max: "maxValue",
+	count: "count",
+} as const
 
 export interface MetricsBreakdownOutput {
 	readonly name: string
 	readonly avgValue: number
+	readonly minValue: number
+	readonly maxValue: number
 	readonly sumValue: number
 	readonly count: number
 }
@@ -492,6 +557,8 @@ export function metricsBreakdownQuery(opts: MetricsBreakdownOpts) {
 						? $.Attributes.get(groupKey)
 						: $.ServiceName,
 				avgValue: exprs.avgValue,
+				minValue: exprs.minValue,
+				maxValue: exprs.maxValue,
 				sumValue: exprs.sumValue,
 				count: exprs.dataPointCount,
 			}
@@ -504,10 +571,17 @@ export function metricsBreakdownQuery(opts: MetricsBreakdownOpts) {
 			// Drop datapoints missing the label so an empty bucket doesn't dominate.
 			CH.when(groupKey, (k: string) => $.Attributes.get(k).neq("")),
 			CH.when(resourceGroupKey, (k: string) => $.ResourceAttributes.get(k).neq("")),
+			CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),
+			CH.when(opts.attributeKey, (k: string) =>
+				datapointAttrCondition($.Attributes.get(k), opts.attributeValue),
+			),
+			opts.environments?.length
+				? CH.inList(deploymentEnvExpr($.ResourceAttributes), opts.environments)
+				: undefined,
 			...resourceFilterConditions(opts.resourceAttributeFilters),
 		])
 		.groupBy("name")
-		.orderBy(["count", "desc"])
+		.orderBy([BREAKDOWN_RANK_COLUMN[opts.rankBy ?? "count"], "desc"])
 		.limit(limit)
 		.format("JSON")
 }

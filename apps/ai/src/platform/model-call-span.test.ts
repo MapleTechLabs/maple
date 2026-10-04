@@ -14,7 +14,7 @@
  */
 import { assert, describe, it } from "@effect/vitest"
 import { MAPLE_NATIVE_SESSION_ID_ATTR, MAPLE_NATIVE_TURN_ID_ATTR } from "@maple/domain/gen-ai"
-import { Cause, Effect, Exit, Layer, Option, Schema, Stream } from "effect"
+import { Cause, Effect, Exit, Layer, Option, Redacted, Schema, Stream } from "effect"
 import type { Tracer } from "effect"
 import { AiError, LanguageModel, Tool, Toolkit } from "effect/ai"
 import type { Response as AiResponse } from "effect/ai"
@@ -34,7 +34,7 @@ const SSE = [
 	"",
 ].join("\n")
 
-const ENV = { OPENROUTER_API_KEY: "test-key" }
+const ENV = { OPENROUTER_API_KEY: Redacted.make("test-key") }
 
 const sseFetch: typeof globalThis.fetch = () =>
 	Promise.resolve(new Response(SSE, { status: 200, headers: { "content-type": "text/event-stream" } }))

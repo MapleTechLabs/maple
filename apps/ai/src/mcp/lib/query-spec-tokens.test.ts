@@ -99,16 +99,28 @@ describe("describeInvalidQuerySpec", () => {
 		).toBeUndefined()
 	})
 
-	// The production failure: `rate` is a real metrics metric, just not for breakdown.
+	it("accepts every metrics aggregation for a breakdown", () => {
+		for (const metric of ["min", "max", "rate", "increase"]) {
+			expect(
+				describeInvalidQuerySpec({
+					source: "metrics",
+					kind: "breakdown",
+					metric,
+					groupBy: undefined,
+				}),
+			).toBeUndefined()
+		}
+	})
+
 	it("names the narrowing when the token is valid for the other kind", () => {
 		const result = describeInvalidQuerySpec({
 			source: "metrics",
 			kind: "breakdown",
-			metric: "rate",
-			groupBy: undefined,
+			metric: "avg",
+			groupBy: "none",
 		})
 		expect(result?.message).toContain('valid for kind="timeseries"')
-		expect(result?.message).toContain('"avg", "sum", "count"')
+		expect(result?.message).toContain('"service", "attribute", "resource_attribute"')
 	})
 
 	it("lists the valid group_by values for the chosen combination", () => {

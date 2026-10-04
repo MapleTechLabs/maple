@@ -22,6 +22,41 @@ SELECT
         GROUP BY orgId
         FORMAT JSON
 
+-- builder:attribute-keys:serviceScopedAttributeKeysQuery:default  [c0eaf78e]
+SELECT
+          arrayJoin(mapKeys(sampled.attrs)) AS attributeKey,
+          count() AS usageCount
+        FROM (SELECT
+          traces.SpanAttributes AS attrs
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.ServiceName = 'checkout'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 20000) AS sampled
+        GROUP BY attributeKey
+        ORDER BY usageCount DESC
+        LIMIT 200
+        FORMAT JSON
+
+-- builder:attribute-keys:serviceScopedAttributeValuesQuery:default  [401cca71]
+SELECT
+          sampled.attrs['k8s.pod.name'] AS attributeValue,
+          count() AS usageCount
+        FROM (SELECT
+          traces.ResourceAttributes AS attrs
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.ServiceName = 'checkout'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 20000) AS sampled
+        WHERE sampled.attrs['k8s.pod.name'] != ''
+        GROUP BY attributeValue
+        ORDER BY usageCount DESC
+        LIMIT 50
+        FORMAT JSON
+
 -- builder:audit-log:auditLogEntriesQuery:default  [e9929192]
 SELECT
           audit_log.Id AS id,
@@ -494,6 +529,37 @@ SELECT
         GROUP BY containerName, hostName) AS containers
         FORMAT JSON
 
+-- builder:errors:errorCooccurringFingerprintsQuery:default  [e257ab78]
+SELECT
+          toString(error_events_by_time.FingerprintHash) AS fingerprintHash,
+          any(error_events_by_time.ErrorLabel) AS errorLabel,
+          any(error_events_by_time.ServiceName) AS serviceName,
+          uniq(error_events_by_time.TraceId) AS traces,
+          count() AS count
+        FROM error_events_by_time
+        WHERE error_events_by_time.OrgId = 'org_sql_catalog'
+          AND error_events_by_time.Timestamp >= '2026-01-01 10:30:00'
+          AND error_events_by_time.Timestamp <= '2026-01-03 14:15:00'
+          AND error_events_by_time.TraceId IN ('0af7651916cd43dd8448eb211c80319c')
+          AND error_events_by_time.FingerprintHash != toUInt64('11640393269246331608')
+        GROUP BY fingerprintHash
+        ORDER BY traces DESC, count DESC
+        LIMIT 5
+        FORMAT JSON
+
+-- builder:errors:errorFingerprintOccurrencesQuery:default  [701c5603]
+SELECT
+          toString(error_events.FingerprintHash) AS fingerprintHash,
+          argMax(error_events.TraceId, error_events.Timestamp) AS traceId,
+          argMax(error_events.SpanId, error_events.Timestamp) AS spanId
+        FROM error_events
+        WHERE error_events.OrgId = 'org_sql_catalog'
+          AND error_events.FingerprintHash IN (toUInt64('11640393269246331608'))
+          AND error_events.Timestamp >= '2026-01-01 10:30:00'
+          AND error_events.Timestamp <= '2026-01-03 14:15:00'
+        GROUP BY fingerprintHash
+        FORMAT JSON
+
 -- builder:errors:errorFingerprintsQuery:envFiltered  [5954d669]
 SELECT
           toString(error_events_by_time.FingerprintHash) AS fingerprintHash
@@ -505,6 +571,25 @@ SELECT
           AND error_events_by_time.DeploymentEnv IN ('production')
         GROUP BY fingerprintHash
         LIMIT 1000
+        FORMAT JSON
+
+-- builder:errors:errorFingerprintSummaryQuery:default  [1673e30a]
+SELECT
+          count() AS occurrences,
+          min(error_events.Timestamp) AS firstSeen,
+          max(error_events.Timestamp) AS lastSeen,
+          argMax(error_events.ErrorLabel, error_events.Timestamp) AS errorLabel,
+          argMax(error_events.ExceptionType, error_events.Timestamp) AS exceptionType,
+          argMax(error_events.ExceptionMessage, error_events.Timestamp) AS exceptionMessage,
+          argMax(error_events.StatusMessage, error_events.Timestamp) AS statusMessage,
+          uniq(error_events.ServiceName) AS serviceCount,
+          arraySort(groupUniqArrayIf(5)(error_events.ServiceName, error_events.ServiceName != '')) AS services,
+          countIf(error_events.ExceptionType = '') AS noExceptionCount
+        FROM error_events
+        WHERE error_events.OrgId = 'org_sql_catalog'
+          AND error_events.FingerprintHash = toUInt64('11640393269246331608')
+          AND error_events.Timestamp >= '2026-01-01 10:30:00'
+          AND error_events.Timestamp <= '2026-01-03 14:15:00'
         FORMAT JSON
 
 -- builder:errors:errorIssueEnvironmentsQuery:default  [ac20faf3]
@@ -587,6 +672,22 @@ SELECT
         LIMIT 100
         FORMAT JSON
 
+-- builder:errors:errorOccurrenceSpansQuery:default  [416b86f9]
+SELECT
+          trace_detail_spans.SpanId AS spanId,
+          trace_detail_spans.SpanName AS spanName,
+          trace_detail_spans.SpanAttributes['http.request.method'] AS httpMethod,
+          trace_detail_spans.SpanAttributes['http.route'] AS httpRoute,
+          if(trace_detail_spans.SpanAttributes['http.response.status_code'] != '', trace_detail_spans.SpanAttributes['http.response.status_code'], trace_detail_spans.SpanAttributes['http.status_code']) AS httpStatus
+        FROM trace_detail_spans
+        WHERE trace_detail_spans.OrgId = 'org_sql_catalog'
+          AND trace_detail_spans.TraceId IN ('0af7651916cd43dd8448eb211c80319c')
+          AND trace_detail_spans.SpanId IN ('b7ad6b7169203331')
+          AND trace_detail_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_detail_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1
+        FORMAT JSON
+
 -- builder:errors:errorsSparkQuery:default  [b1229d72]
 SELECT
           toString(error_events.FingerprintHash) AS fingerprintHash,
@@ -599,6 +700,17 @@ SELECT
           AND error_events.Timestamp <= '2026-01-03 14:15:00'
         GROUP BY fingerprintHash, bucket
         ORDER BY bucket ASC
+        FORMAT JSON
+
+-- builder:errors:errorsWindowTotalsQuery:default  [84de4d36]
+SELECT
+          count() AS occurrences,
+          uniq(error_events_by_time.FingerprintHash) AS distinctErrorCount,
+          countIf(error_events_by_time.ExceptionType = '') AS noExceptionCount
+        FROM error_events_by_time
+        WHERE error_events_by_time.OrgId = 'org_sql_catalog'
+          AND error_events_by_time.Timestamp >= '2026-01-01 10:30:00'
+          AND error_events_by_time.Timestamp <= '2026-01-03 14:15:00'
         FORMAT JSON
 
 -- builder:errors:errorTickBootstrapIssuesQuery:bootstrap-window  [43b589c9]
@@ -1355,6 +1467,41 @@ SELECT
           AND metrics_gauge.MetricName = 'k8s.pod.memory.usage'
         GROUP BY bucket, attributeValue
         ORDER BY bucket ASC
+        FORMAT JSON
+
+-- builder:liveness:ingestFreshnessQuery:default  [1f607e03]
+SELECT
+          'traces' AS signal,
+          sum(service_operations_minutely.SpanCount) AS count,
+          toString(max(service_operations_minutely.Minute)) AS lastSeen
+        FROM service_operations_minutely
+        WHERE service_operations_minutely.OrgId = 'org_sql_catalog'
+          AND service_operations_minutely.Minute >= '2026-01-01 10:30:00'
+          AND service_operations_minutely.Minute <= '2026-01-03 14:15:00'
+UNION ALL
+SELECT
+          'metrics' AS signal,
+          sum(metric_catalog.DataPointCount) AS count,
+          toString(max(if(metric_catalog.LastSeen > '2026-01-03 14:15:00', toDateTime('2026-01-03 14:15:00'), metric_catalog.LastSeen))) AS lastSeen
+        FROM metric_catalog
+        WHERE metric_catalog.OrgId = 'org_sql_catalog'
+          AND metric_catalog.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+          AND metric_catalog.Hour <= toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND metric_catalog.LastSeen >= '2026-01-01 10:30:00'
+          AND metric_catalog.FirstSeen <= '2026-01-03 14:15:00'
+FORMAT JSON
+
+-- builder:liveness:logsFreshnessQuery:default  [5aa6907d]
+SELECT
+          'logs' AS signal,
+          count() AS count,
+          toString(toDateTime(max(logs.Timestamp))) AS lastSeen
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
         FORMAT JSON
 
 -- builder:product-events-explore:productEventAttributeKeysQuery:default  [30a1e945]
@@ -2726,6 +2873,217 @@ SELECT
         LIMIT 5000
         FORMAT JSON
 
+-- builder:releases:serviceDeploymentsQuery:hourInterior  [ae47e5db]
+SELECT
+          ranked.serviceName AS serviceName,
+          ranked.environment AS environment,
+          ranked.commitSha AS commitSha,
+          ranked.firstSeen AS firstSeen,
+          ranked.lastSeen AS lastSeen,
+          ranked.spanCount AS spanCount,
+          ranked.errorCount AS errorCount,
+          ranked.p50LatencyMs AS p50LatencyMs,
+          ranked.p95LatencyMs AS p95LatencyMs,
+          ranked.p99LatencyMs AS p99LatencyMs,
+          ranked.apdexSatisfiedCount AS apdexSatisfiedCount,
+          ranked.apdexToleratingCount AS apdexToleratingCount
+        FROM (SELECT
+          versions.serviceName AS serviceName,
+          versions.environment AS environment,
+          versions.commitSha AS commitSha,
+          versions.firstSeen AS firstSeen,
+          versions.lastSeen AS lastSeen,
+          versions.spanCount AS spanCount,
+          versions.errorCount AS errorCount,
+          versions.p50LatencyMs AS p50LatencyMs,
+          versions.p95LatencyMs AS p95LatencyMs,
+          versions.p99LatencyMs AS p99LatencyMs,
+          versions.apdexSatisfiedCount AS apdexSatisfiedCount,
+          versions.apdexToleratingCount AS apdexToleratingCount,
+          row_number() OVER (PARTITION BY serviceName, environment ORDER BY lastSeen DESC, firstSeen DESC) AS versionRank
+        FROM (SELECT
+          service_windows.bServiceName AS serviceName,
+          service_windows.bEnvironment AS environment,
+          service_windows.bCommitSha AS commitSha,
+          min(service_windows.bFirstSeen) AS firstSeen,
+          max(service_windows.bBucket) AS lastSeen,
+          sum(service_windows.bSpanCount) AS spanCount,
+          sum(service_windows.bErrorCount) AS errorCount,
+          arrayElement(quantilesTDigestMerge(0.5, 0.95, 0.99)(bDurationQuantiles), 1) / 1000000 AS p50LatencyMs,
+          arrayElement(quantilesTDigestMerge(0.5, 0.95, 0.99)(bDurationQuantiles), 2) / 1000000 AS p95LatencyMs,
+          arrayElement(quantilesTDigestMerge(0.5, 0.95, 0.99)(bDurationQuantiles), 3) / 1000000 AS p99LatencyMs,
+          sum(service_windows.bApdexSatisfiedCount) AS apdexSatisfiedCount,
+          sum(service_windows.bApdexToleratingCount) AS apdexToleratingCount
+        FROM (
+SELECT
+          toStartOfMinute(service_overview_spans.Timestamp) AS bBucket,
+          service_overview_spans.ServiceName AS bServiceName,
+          service_overview_spans.ServiceNamespace AS bServiceNamespace,
+          service_overview_spans.DeploymentEnv AS bEnvironment,
+          service_overview_spans.CommitSha AS bCommitSha,
+          count() AS bSpanCount,
+          sum(service_overview_spans.SampleRate) AS bEstimatedSpanCount,
+          countIf(service_overview_spans.StatusCode = 'Error') AS bErrorCount,
+          sumIf(service_overview_spans.SampleRate, service_overview_spans.StatusCode = 'Error') AS bEstimatedErrorCount,
+          sum(toFloat64(Duration)) AS bDurationSum,
+          quantilesTDigestState(0.5, 0.95, 0.99)(Duration) AS bDurationQuantiles,
+          min(service_overview_spans.Timestamp) AS bFirstSeen,
+          countIf((service_overview_spans.StatusCode != 'Error' AND service_overview_spans.Duration < 500000000)) AS bApdexSatisfiedCount,
+          countIf(((service_overview_spans.StatusCode != 'Error' AND service_overview_spans.Duration >= 500000000) AND service_overview_spans.Duration < 2000000000)) AS bApdexToleratingCount
+        FROM service_overview_spans
+        WHERE service_overview_spans.OrgId = 'org_sql_catalog'
+          AND service_overview_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND service_overview_spans.Timestamp <= '2026-01-03 14:15:00'
+          AND service_overview_spans.DeploymentEnv IN ('production')
+          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 MINUTE) OR Timestamp >= toStartOfMinute(toDateTime('2026-01-03 14:15:00')))
+        GROUP BY bBucket, bServiceName, bServiceNamespace, bEnvironment, bCommitSha
+UNION ALL
+SELECT
+          service_overview_minutely.Minute AS bBucket,
+          service_overview_minutely.ServiceName AS bServiceName,
+          service_overview_minutely.ServiceNamespace AS bServiceNamespace,
+          service_overview_minutely.DeploymentEnv AS bEnvironment,
+          service_overview_minutely.CommitSha AS bCommitSha,
+          sum(service_overview_minutely.SpanCount) AS bSpanCount,
+          sum(service_overview_minutely.EstimatedSpanCount) AS bEstimatedSpanCount,
+          sum(service_overview_minutely.ErrorCount) AS bErrorCount,
+          sum(service_overview_minutely.EstimatedErrorCount) AS bEstimatedErrorCount,
+          sum(service_overview_minutely.DurationSum) AS bDurationSum,
+          quantilesTDigestMergeState(0.5, 0.95, 0.99)(DurationQuantiles) AS bDurationQuantiles,
+          min(service_overview_minutely.FirstSeen) AS bFirstSeen,
+          sum(service_overview_minutely.ApdexSatisfiedCount) AS bApdexSatisfiedCount,
+          sum(service_overview_minutely.ApdexToleratingCount) AS bApdexToleratingCount
+        FROM service_overview_minutely
+        WHERE service_overview_minutely.OrgId = 'org_sql_catalog'
+          AND service_overview_minutely.DeploymentEnv IN ('production')
+          AND service_overview_minutely.Minute >= if(toDateTime('2026-01-01 10:30:00') = toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 MINUTE)
+          AND service_overview_minutely.Minute < toStartOfMinute(toDateTime('2026-01-03 14:15:00'))
+          AND (Minute < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Minute >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+        GROUP BY bBucket, bServiceName, bServiceNamespace, bEnvironment, bCommitSha
+UNION ALL
+SELECT
+          service_overview_hourly.Hour AS bBucket,
+          service_overview_hourly.ServiceName AS bServiceName,
+          service_overview_hourly.ServiceNamespace AS bServiceNamespace,
+          service_overview_hourly.DeploymentEnv AS bEnvironment,
+          service_overview_hourly.CommitSha AS bCommitSha,
+          sum(service_overview_hourly.SpanCount) AS bSpanCount,
+          sum(service_overview_hourly.EstimatedSpanCount) AS bEstimatedSpanCount,
+          sum(service_overview_hourly.ErrorCount) AS bErrorCount,
+          sum(service_overview_hourly.EstimatedErrorCount) AS bEstimatedErrorCount,
+          sum(service_overview_hourly.DurationSum) AS bDurationSum,
+          quantilesTDigestMergeState(0.5, 0.95, 0.99)(DurationQuantiles) AS bDurationQuantiles,
+          min(service_overview_hourly.FirstSeen) AS bFirstSeen,
+          sum(service_overview_hourly.ApdexSatisfiedCount) AS bApdexSatisfiedCount,
+          sum(service_overview_hourly.ApdexToleratingCount) AS bApdexToleratingCount
+        FROM service_overview_hourly
+        WHERE service_overview_hourly.OrgId = 'org_sql_catalog'
+          AND service_overview_hourly.DeploymentEnv IN ('production')
+          AND service_overview_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND service_overview_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+        GROUP BY bBucket, bServiceName, bServiceNamespace, bEnvironment, bCommitSha
+) AS service_windows
+        WHERE service_windows.bCommitSha NOT IN ('', 'unknown', 'N/A')
+        GROUP BY serviceName, environment, commitSha) AS versions) AS ranked
+        WHERE ranked.versionRank <= 20
+        ORDER BY serviceName ASC, firstSeen DESC
+        LIMIT 500
+        FORMAT JSON
+
+-- builder:releases:serviceDeploymentsQuery:minutePrecision  [fc7ca9dd]
+SELECT
+          ranked.serviceName AS serviceName,
+          ranked.environment AS environment,
+          ranked.commitSha AS commitSha,
+          ranked.firstSeen AS firstSeen,
+          ranked.lastSeen AS lastSeen,
+          ranked.spanCount AS spanCount,
+          ranked.errorCount AS errorCount,
+          ranked.p50LatencyMs AS p50LatencyMs,
+          ranked.p95LatencyMs AS p95LatencyMs,
+          ranked.p99LatencyMs AS p99LatencyMs,
+          ranked.apdexSatisfiedCount AS apdexSatisfiedCount,
+          ranked.apdexToleratingCount AS apdexToleratingCount
+        FROM (SELECT
+          versions.serviceName AS serviceName,
+          versions.environment AS environment,
+          versions.commitSha AS commitSha,
+          versions.firstSeen AS firstSeen,
+          versions.lastSeen AS lastSeen,
+          versions.spanCount AS spanCount,
+          versions.errorCount AS errorCount,
+          versions.p50LatencyMs AS p50LatencyMs,
+          versions.p95LatencyMs AS p95LatencyMs,
+          versions.p99LatencyMs AS p99LatencyMs,
+          versions.apdexSatisfiedCount AS apdexSatisfiedCount,
+          versions.apdexToleratingCount AS apdexToleratingCount,
+          row_number() OVER (PARTITION BY serviceName, environment ORDER BY lastSeen DESC, firstSeen DESC) AS versionRank
+        FROM (SELECT
+          service_windows.bServiceName AS serviceName,
+          service_windows.bEnvironment AS environment,
+          service_windows.bCommitSha AS commitSha,
+          min(service_windows.bFirstSeen) AS firstSeen,
+          max(service_windows.bBucket) AS lastSeen,
+          sum(service_windows.bSpanCount) AS spanCount,
+          sum(service_windows.bErrorCount) AS errorCount,
+          arrayElement(quantilesTDigestMerge(0.5, 0.95, 0.99)(bDurationQuantiles), 1) / 1000000 AS p50LatencyMs,
+          arrayElement(quantilesTDigestMerge(0.5, 0.95, 0.99)(bDurationQuantiles), 2) / 1000000 AS p95LatencyMs,
+          arrayElement(quantilesTDigestMerge(0.5, 0.95, 0.99)(bDurationQuantiles), 3) / 1000000 AS p99LatencyMs,
+          sum(service_windows.bApdexSatisfiedCount) AS apdexSatisfiedCount,
+          sum(service_windows.bApdexToleratingCount) AS apdexToleratingCount
+        FROM (
+SELECT
+          toStartOfMinute(service_overview_spans.Timestamp) AS bBucket,
+          service_overview_spans.ServiceName AS bServiceName,
+          service_overview_spans.ServiceNamespace AS bServiceNamespace,
+          service_overview_spans.DeploymentEnv AS bEnvironment,
+          service_overview_spans.CommitSha AS bCommitSha,
+          count() AS bSpanCount,
+          sum(service_overview_spans.SampleRate) AS bEstimatedSpanCount,
+          countIf(service_overview_spans.StatusCode = 'Error') AS bErrorCount,
+          sumIf(service_overview_spans.SampleRate, service_overview_spans.StatusCode = 'Error') AS bEstimatedErrorCount,
+          sum(toFloat64(Duration)) AS bDurationSum,
+          quantilesTDigestState(0.5, 0.95, 0.99)(Duration) AS bDurationQuantiles,
+          min(service_overview_spans.Timestamp) AS bFirstSeen,
+          countIf((service_overview_spans.StatusCode != 'Error' AND service_overview_spans.Duration < 500000000)) AS bApdexSatisfiedCount,
+          countIf(((service_overview_spans.StatusCode != 'Error' AND service_overview_spans.Duration >= 500000000) AND service_overview_spans.Duration < 2000000000)) AS bApdexToleratingCount
+        FROM service_overview_spans
+        WHERE service_overview_spans.OrgId = 'org_sql_catalog'
+          AND service_overview_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND service_overview_spans.Timestamp <= '2026-01-03 14:15:00'
+          AND service_overview_spans.ServiceName = 'api'
+          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 MINUTE) OR Timestamp >= toStartOfMinute(toDateTime('2026-01-03 14:15:00')))
+        GROUP BY bBucket, bServiceName, bServiceNamespace, bEnvironment, bCommitSha
+UNION ALL
+SELECT
+          service_overview_minutely.Minute AS bBucket,
+          service_overview_minutely.ServiceName AS bServiceName,
+          service_overview_minutely.ServiceNamespace AS bServiceNamespace,
+          service_overview_minutely.DeploymentEnv AS bEnvironment,
+          service_overview_minutely.CommitSha AS bCommitSha,
+          sum(service_overview_minutely.SpanCount) AS bSpanCount,
+          sum(service_overview_minutely.EstimatedSpanCount) AS bEstimatedSpanCount,
+          sum(service_overview_minutely.ErrorCount) AS bErrorCount,
+          sum(service_overview_minutely.EstimatedErrorCount) AS bEstimatedErrorCount,
+          sum(service_overview_minutely.DurationSum) AS bDurationSum,
+          quantilesTDigestMergeState(0.5, 0.95, 0.99)(DurationQuantiles) AS bDurationQuantiles,
+          min(service_overview_minutely.FirstSeen) AS bFirstSeen,
+          sum(service_overview_minutely.ApdexSatisfiedCount) AS bApdexSatisfiedCount,
+          sum(service_overview_minutely.ApdexToleratingCount) AS bApdexToleratingCount
+        FROM service_overview_minutely
+        WHERE service_overview_minutely.OrgId = 'org_sql_catalog'
+          AND service_overview_minutely.ServiceName = 'api'
+          AND service_overview_minutely.Minute >= if(toDateTime('2026-01-01 10:30:00') = toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 MINUTE)
+          AND service_overview_minutely.Minute < toStartOfMinute(toDateTime('2026-01-03 14:15:00'))
+        GROUP BY bBucket, bServiceName, bServiceNamespace, bEnvironment, bCommitSha
+) AS service_windows
+        WHERE service_windows.bCommitSha NOT IN ('', 'unknown', 'N/A')
+        GROUP BY serviceName, environment, commitSha) AS versions) AS ranked
+        WHERE ranked.versionRank <= 20
+        ORDER BY serviceName ASC, firstSeen DESC
+        LIMIT 500
+        FORMAT JSON
+
 -- builder:service-endpoints:serviceEndpointsSummaryQuery:default  [3decb4a7]
 SELECT
           operation_windows.bSpanName AS spanName,
@@ -2924,6 +3282,199 @@ SELECT
           AND service_address_resolutions_hourly.Hour >= '2026-01-01 10:30:00'
           AND service_address_resolutions_hourly.Hour < '2026-01-03 14:15:00'
         GROUP BY hourTs
+        FORMAT JSON
+
+-- builder:service-map:dbQueryVolumeQuery:allDatabases  [b673faec]
+SELECT
+          shape.serviceName AS serviceName,
+          shape.dbSystem AS dbSystem,
+          shape.dbNamespace AS dbNamespace,
+          if(sampleStatement != '', substring(trimBoth(replaceRegexpAll(replaceRegexpAll(replaceRegexpAll(replaceRegexpAll(sampleStatement, '\'[^\']*\'', '?'), '(?i)\\bin\\s*\\([^)]*\\)', 'IN (?)'), '[0-9]+(\\.[0-9]+)?', '?'), '\\s+', ' ')), 1, 220), fallbackLabel) AS queryLabel,
+          shape.queryCount AS queryCount,
+          shape.estimatedQueryCount AS estimatedQueryCount,
+          shape.errorCount AS errorCount,
+          shape.avgDurationMs AS avgDurationMs,
+          shape.p95DurationMs AS p95DurationMs,
+          shape.lastSeen AS lastSeen
+        FROM (SELECT
+          shapes.bService AS serviceName,
+          shapes.bSystem AS dbSystem,
+          shapes.bNamespace AS dbNamespace,
+          shapes.queryKey AS queryKey,
+          any(shapes.bLabel) AS fallbackLabel,
+          anyIf(shapes.bStatement, shapes.bStatement != '') AS sampleStatement,
+          sum(shapes.bCount) AS queryCount,
+          sum(shapes.bEst) AS estimatedQueryCount,
+          sum(shapes.bErr) AS errorCount,
+          if(sum(shapes.bEst) > 0, sum(shapes.bWDur) / sum(shapes.bEst), 0) AS avgDurationMs,
+          if(sum(bCount) > 0, arrayElement(quantilesTDigestWeightedMerge(0.5, 0.95)(bQ), 2) / 1000000, 0) AS p95DurationMs,
+          toString(max(shapes.bLastSeen)) AS lastSeen
+        FROM (
+SELECT
+          service_map_db_query_shapes_hourly.ServiceName AS bService,
+          service_map_db_query_shapes_hourly.DbSystem AS bSystem,
+          if(match(service_map_db_query_shapes_hourly.DbNamespace, '^([0-9a-fA-F]{32}|.*[.]hyperdrive[.]local)$'), 'hyperdrive', service_map_db_query_shapes_hourly.DbNamespace) AS bNamespace,
+          service_map_db_query_shapes_hourly.QueryKey AS queryKey,
+          any(service_map_db_query_shapes_hourly.QueryLabel) AS bLabel,
+          any(service_map_db_query_shapes_hourly.SampleStatement) AS bStatement,
+          sum(service_map_db_query_shapes_hourly.CallCount) AS bCount,
+          sum(service_map_db_query_shapes_hourly.EstimatedCount) AS bEst,
+          sum(service_map_db_query_shapes_hourly.ErrorCount) AS bErr,
+          sum(service_map_db_query_shapes_hourly.WeightedDurationSumMs) AS bWDur,
+          quantilesTDigestWeightedMergeState(0.5, 0.95)(DurationQuantiles) AS bQ,
+          max(service_map_db_query_shapes_hourly.Hour) AS bLastSeen
+        FROM service_map_db_query_shapes_hourly
+        WHERE service_map_db_query_shapes_hourly.OrgId = 'org_sql_catalog'
+          AND service_map_db_query_shapes_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND service_map_db_query_shapes_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+        GROUP BY bService, bSystem, bNamespace, queryKey
+UNION ALL
+SELECT
+          traces.ServiceName AS bService,
+          coalesce(nullIf(traces.SpanAttributes['db.system.name'], ''), traces.SpanAttributes['db.system']) AS bSystem,
+          if(match(coalesce(nullIf(traces.SpanAttributes['db.namespace'], ''), nullIf(traces.SpanAttributes['db.name'], ''), nullIf(traces.SpanAttributes['server.address'], ''), traces.SpanAttributes['net.peer.name']), '^([0-9a-fA-F]{32}|.*[.]hyperdrive[.]local)$'), 'hyperdrive', coalesce(nullIf(traces.SpanAttributes['db.namespace'], ''), nullIf(traces.SpanAttributes['db.name'], ''), nullIf(traces.SpanAttributes['server.address'], ''), traces.SpanAttributes['net.peer.name'])) AS bNamespace,
+          coalesce(
+  nullIf(SpanAttributes['db.query.fingerprint'], ''),
+  nullIf(SpanAttributes['db.statement.fingerprint'], ''),
+  nullIf(if(coalesce(nullIf(SpanAttributes['db.query.text'], ''), SpanAttributes['db.statement']) != '', toString(cityHash64(replaceRegexpAll(replaceRegexpAll(replaceRegexpAll(replaceRegexpAll(replaceRegexpAll(lower(coalesce(nullIf(SpanAttributes['db.query.text'], ''), SpanAttributes['db.statement'])), '\'[^\']*\'', '?'), '\\bin\\s*\\([^)]*\\)', 'in (?)'), '[0-9]+(\\.[0-9]+)?', '?'), '\\s+', ' '), '^\\s+|\\s+$', ''))), ''), ''),
+  toString(cityHash64(coalesce(
+  nullIf(SpanAttributes['db.query.summary'], ''),
+  nullIf(if(SpanAttributes['db.operation.name'] != '', trimBoth(concat(SpanAttributes['db.operation.name'], if(coalesce(nullIf(SpanAttributes['db.collection.name'], ''), SpanAttributes['db.namespace']) != '', concat(' ', coalesce(nullIf(SpanAttributes['db.collection.name'], ''), SpanAttributes['db.namespace'])), ''))), ''), ''),
+  nullIf(if(coalesce(nullIf(SpanAttributes['db.query.text'], ''), SpanAttributes['db.statement']) != '', trimBoth(concat(upper(extract(coalesce(nullIf(SpanAttributes['db.query.text'], ''), SpanAttributes['db.statement']), '^\\s*(\\w+)')), if(extract(coalesce(nullIf(SpanAttributes['db.query.text'], ''), SpanAttributes['db.statement']), '(?i)(?:from|into|update|join|table)\\s+\\W?([\\w.]+)') != '', concat(' ', extract(coalesce(nullIf(SpanAttributes['db.query.text'], ''), SpanAttributes['db.statement']), '(?i)(?:from|into|update|join|table)\\s+\\W?([\\w.]+)')), ''))), ''), ''),
+  nullIf(SpanAttributes['query.context'], ''),
+  nullIf(SpanAttributes['db.operation.name'], ''),
+  nullIf(SpanAttributes['db.operation'], ''),
+  SpanName
+)))
+) AS queryKey,
+          any(substring(coalesce(
+  nullIf(SpanAttributes['db.query.summary'], ''),
+  nullIf(if(SpanAttributes['db.operation.name'] != '', trimBoth(concat(SpanAttributes['db.operation.name'], if(coalesce(nullIf(SpanAttributes['db.collection.name'], ''), SpanAttributes['db.namespace']) != '', concat(' ', coalesce(nullIf(SpanAttributes['db.collection.name'], ''), SpanAttributes['db.namespace'])), ''))), ''), ''),
+  nullIf(if(coalesce(nullIf(SpanAttributes['db.query.text'], ''), SpanAttributes['db.statement']) != '', trimBoth(concat(upper(extract(coalesce(nullIf(SpanAttributes['db.query.text'], ''), SpanAttributes['db.statement']), '^\\s*(\\w+)')), if(extract(coalesce(nullIf(SpanAttributes['db.query.text'], ''), SpanAttributes['db.statement']), '(?i)(?:from|into|update|join|table)\\s+\\W?([\\w.]+)') != '', concat(' ', extract(coalesce(nullIf(SpanAttributes['db.query.text'], ''), SpanAttributes['db.statement']), '(?i)(?:from|into|update|join|table)\\s+\\W?([\\w.]+)')), ''))), ''), ''),
+  nullIf(SpanAttributes['query.context'], ''),
+  nullIf(SpanAttributes['db.operation.name'], ''),
+  nullIf(SpanAttributes['db.operation'], ''),
+  SpanName
+), 1, 220)) AS bLabel,
+          any(substring(coalesce(nullIf(SpanAttributes['db.query.text'], ''), SpanAttributes['db.statement']), 1, 1000)) AS bStatement,
+          count() AS bCount,
+          sum(traces.SampleRate) AS bEst,
+          countIf(traces.StatusCode = 'Error') AS bErr,
+          sum(toFloat64(traces.Duration) * traces.SampleRate / 1000000) AS bWDur,
+          quantilesTDigestWeightedState(0.5, 0.95)(Duration, toUInt32(greatest(SampleRate, 1.0))) AS bQ,
+          max(toDateTime(traces.Timestamp)) AS bLastSeen
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= toDateTime('2026-01-01 10:30:00')
+          AND traces.Timestamp <= toDateTime('2026-01-03 14:15:00')
+          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND traces.SpanKind IN ('Client', 'Producer')
+          AND traces.ServiceName != ''
+          AND coalesce(nullIf(traces.SpanAttributes['db.system.name'], ''), traces.SpanAttributes['db.system']) != ''
+        GROUP BY bService, bSystem, bNamespace, queryKey
+) AS shapes
+        GROUP BY serviceName, dbSystem, dbNamespace, queryKey) AS shape
+        ORDER BY estimatedQueryCount DESC
+        LIMIT 50
+        FORMAT JSON
+
+-- builder:service-map:dbQueryVolumeQuery:scoped  [44d613e3]
+SELECT
+          shape.serviceName AS serviceName,
+          shape.dbSystem AS dbSystem,
+          shape.dbNamespace AS dbNamespace,
+          if(sampleStatement != '', substring(trimBoth(replaceRegexpAll(replaceRegexpAll(replaceRegexpAll(replaceRegexpAll(sampleStatement, '\'[^\']*\'', '?'), '(?i)\\bin\\s*\\([^)]*\\)', 'IN (?)'), '[0-9]+(\\.[0-9]+)?', '?'), '\\s+', ' ')), 1, 220), fallbackLabel) AS queryLabel,
+          shape.queryCount AS queryCount,
+          shape.estimatedQueryCount AS estimatedQueryCount,
+          shape.errorCount AS errorCount,
+          shape.avgDurationMs AS avgDurationMs,
+          shape.p95DurationMs AS p95DurationMs,
+          shape.lastSeen AS lastSeen
+        FROM (SELECT
+          shapes.bService AS serviceName,
+          shapes.bSystem AS dbSystem,
+          shapes.bNamespace AS dbNamespace,
+          shapes.queryKey AS queryKey,
+          any(shapes.bLabel) AS fallbackLabel,
+          anyIf(shapes.bStatement, shapes.bStatement != '') AS sampleStatement,
+          sum(shapes.bCount) AS queryCount,
+          sum(shapes.bEst) AS estimatedQueryCount,
+          sum(shapes.bErr) AS errorCount,
+          if(sum(shapes.bEst) > 0, sum(shapes.bWDur) / sum(shapes.bEst), 0) AS avgDurationMs,
+          if(sum(bCount) > 0, arrayElement(quantilesTDigestWeightedMerge(0.5, 0.95)(bQ), 2) / 1000000, 0) AS p95DurationMs,
+          toString(max(shapes.bLastSeen)) AS lastSeen
+        FROM (
+SELECT
+          service_map_db_query_shapes_hourly.ServiceName AS bService,
+          service_map_db_query_shapes_hourly.DbSystem AS bSystem,
+          if(match(service_map_db_query_shapes_hourly.DbNamespace, '^([0-9a-fA-F]{32}|.*[.]hyperdrive[.]local)$'), 'hyperdrive', service_map_db_query_shapes_hourly.DbNamespace) AS bNamespace,
+          service_map_db_query_shapes_hourly.QueryKey AS queryKey,
+          any(service_map_db_query_shapes_hourly.QueryLabel) AS bLabel,
+          any(service_map_db_query_shapes_hourly.SampleStatement) AS bStatement,
+          sum(service_map_db_query_shapes_hourly.CallCount) AS bCount,
+          sum(service_map_db_query_shapes_hourly.EstimatedCount) AS bEst,
+          sum(service_map_db_query_shapes_hourly.ErrorCount) AS bErr,
+          sum(service_map_db_query_shapes_hourly.WeightedDurationSumMs) AS bWDur,
+          quantilesTDigestWeightedMergeState(0.5, 0.95)(DurationQuantiles) AS bQ,
+          max(service_map_db_query_shapes_hourly.Hour) AS bLastSeen
+        FROM service_map_db_query_shapes_hourly
+        WHERE service_map_db_query_shapes_hourly.OrgId = 'org_sql_catalog'
+          AND service_map_db_query_shapes_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND service_map_db_query_shapes_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND service_map_db_query_shapes_hourly.DbSystem = 'postgresql'
+          AND service_map_db_query_shapes_hourly.ServiceName = 'api'
+          AND service_map_db_query_shapes_hourly.DeploymentEnv = 'production'
+        GROUP BY bService, bSystem, bNamespace, queryKey
+UNION ALL
+SELECT
+          traces.ServiceName AS bService,
+          coalesce(nullIf(traces.SpanAttributes['db.system.name'], ''), traces.SpanAttributes['db.system']) AS bSystem,
+          if(match(coalesce(nullIf(traces.SpanAttributes['db.namespace'], ''), nullIf(traces.SpanAttributes['db.name'], ''), nullIf(traces.SpanAttributes['server.address'], ''), traces.SpanAttributes['net.peer.name']), '^([0-9a-fA-F]{32}|.*[.]hyperdrive[.]local)$'), 'hyperdrive', coalesce(nullIf(traces.SpanAttributes['db.namespace'], ''), nullIf(traces.SpanAttributes['db.name'], ''), nullIf(traces.SpanAttributes['server.address'], ''), traces.SpanAttributes['net.peer.name'])) AS bNamespace,
+          coalesce(
+  nullIf(SpanAttributes['db.query.fingerprint'], ''),
+  nullIf(SpanAttributes['db.statement.fingerprint'], ''),
+  nullIf(if(coalesce(nullIf(SpanAttributes['db.query.text'], ''), SpanAttributes['db.statement']) != '', toString(cityHash64(replaceRegexpAll(replaceRegexpAll(replaceRegexpAll(replaceRegexpAll(replaceRegexpAll(lower(coalesce(nullIf(SpanAttributes['db.query.text'], ''), SpanAttributes['db.statement'])), '\'[^\']*\'', '?'), '\\bin\\s*\\([^)]*\\)', 'in (?)'), '[0-9]+(\\.[0-9]+)?', '?'), '\\s+', ' '), '^\\s+|\\s+$', ''))), ''), ''),
+  toString(cityHash64(coalesce(
+  nullIf(SpanAttributes['db.query.summary'], ''),
+  nullIf(if(SpanAttributes['db.operation.name'] != '', trimBoth(concat(SpanAttributes['db.operation.name'], if(coalesce(nullIf(SpanAttributes['db.collection.name'], ''), SpanAttributes['db.namespace']) != '', concat(' ', coalesce(nullIf(SpanAttributes['db.collection.name'], ''), SpanAttributes['db.namespace'])), ''))), ''), ''),
+  nullIf(if(coalesce(nullIf(SpanAttributes['db.query.text'], ''), SpanAttributes['db.statement']) != '', trimBoth(concat(upper(extract(coalesce(nullIf(SpanAttributes['db.query.text'], ''), SpanAttributes['db.statement']), '^\\s*(\\w+)')), if(extract(coalesce(nullIf(SpanAttributes['db.query.text'], ''), SpanAttributes['db.statement']), '(?i)(?:from|into|update|join|table)\\s+\\W?([\\w.]+)') != '', concat(' ', extract(coalesce(nullIf(SpanAttributes['db.query.text'], ''), SpanAttributes['db.statement']), '(?i)(?:from|into|update|join|table)\\s+\\W?([\\w.]+)')), ''))), ''), ''),
+  nullIf(SpanAttributes['query.context'], ''),
+  nullIf(SpanAttributes['db.operation.name'], ''),
+  nullIf(SpanAttributes['db.operation'], ''),
+  SpanName
+)))
+) AS queryKey,
+          any(substring(coalesce(
+  nullIf(SpanAttributes['db.query.summary'], ''),
+  nullIf(if(SpanAttributes['db.operation.name'] != '', trimBoth(concat(SpanAttributes['db.operation.name'], if(coalesce(nullIf(SpanAttributes['db.collection.name'], ''), SpanAttributes['db.namespace']) != '', concat(' ', coalesce(nullIf(SpanAttributes['db.collection.name'], ''), SpanAttributes['db.namespace'])), ''))), ''), ''),
+  nullIf(if(coalesce(nullIf(SpanAttributes['db.query.text'], ''), SpanAttributes['db.statement']) != '', trimBoth(concat(upper(extract(coalesce(nullIf(SpanAttributes['db.query.text'], ''), SpanAttributes['db.statement']), '^\\s*(\\w+)')), if(extract(coalesce(nullIf(SpanAttributes['db.query.text'], ''), SpanAttributes['db.statement']), '(?i)(?:from|into|update|join|table)\\s+\\W?([\\w.]+)') != '', concat(' ', extract(coalesce(nullIf(SpanAttributes['db.query.text'], ''), SpanAttributes['db.statement']), '(?i)(?:from|into|update|join|table)\\s+\\W?([\\w.]+)')), ''))), ''), ''),
+  nullIf(SpanAttributes['query.context'], ''),
+  nullIf(SpanAttributes['db.operation.name'], ''),
+  nullIf(SpanAttributes['db.operation'], ''),
+  SpanName
+), 1, 220)) AS bLabel,
+          any(substring(coalesce(nullIf(SpanAttributes['db.query.text'], ''), SpanAttributes['db.statement']), 1, 1000)) AS bStatement,
+          count() AS bCount,
+          sum(traces.SampleRate) AS bEst,
+          countIf(traces.StatusCode = 'Error') AS bErr,
+          sum(toFloat64(traces.Duration) * traces.SampleRate / 1000000) AS bWDur,
+          quantilesTDigestWeightedState(0.5, 0.95)(Duration, toUInt32(greatest(SampleRate, 1.0))) AS bQ,
+          max(toDateTime(traces.Timestamp)) AS bLastSeen
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= toDateTime('2026-01-01 10:30:00')
+          AND traces.Timestamp <= toDateTime('2026-01-03 14:15:00')
+          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND traces.SpanKind IN ('Client', 'Producer')
+          AND traces.ServiceName != ''
+          AND coalesce(nullIf(traces.SpanAttributes['db.system.name'], ''), traces.SpanAttributes['db.system']) = 'postgresql'
+          AND traces.ServiceName = 'api'
+          AND coalesce(nullIf(traces.ResourceAttributes['deployment.environment.name'], ''), traces.ResourceAttributes['deployment.environment']) = 'production'
+        GROUP BY bService, bSystem, bNamespace, queryKey
+) AS shapes
+        GROUP BY serviceName, dbSystem, dbNamespace, queryKey) AS shape
+        ORDER BY estimatedQueryCount DESC
+        LIMIT 20
         FORMAT JSON
 
 -- builder:service-map:serviceDbEdgesForServiceQuery:default  [78428e9c]
@@ -3730,6 +4281,139 @@ SELECT
           AND service_map_children.DeploymentEnv = 'production') AS c ON (p.SpanId = c.ParentSpanId AND p.TraceId = c.TraceId)
         WHERE p.ServiceName != c.ServiceName
         GROUP BY OrgId, Hour, SourceService, TargetService, DeploymentEnv
+        FORMAT JSON
+
+-- builder:service-operations:routeUsageQuery:allServices  [cc7e9fe3]
+SELECT
+          route_windows.bServiceName AS serviceName,
+          route_windows.bSpanName AS spanName,
+          sum(route_windows.bSpanCount) AS spanCount,
+          sum(route_windows.bErrorCount) AS errorCount,
+          if(sum(bSpanCount) > 0, arrayElement(quantilesTDigestMerge(0.5, 0.95, 0.99)(bDurationQuantiles), 2) / 1000000, 0) AS p95DurationMs,
+          toString(min(route_windows.bFirst)) AS firstSeen,
+          toString(max(route_windows.bLast)) AS lastSeen
+        FROM (
+SELECT
+          traces.ServiceName AS bServiceName,
+          if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName) AS bSpanName,
+          count() AS bSpanCount,
+          countIf(traces.StatusCode = 'Error') AS bErrorCount,
+          quantilesTDigestState(0.5, 0.95, 0.99)(Duration) AS bDurationQuantiles,
+          min(toStartOfMinute(toDateTime(traces.Timestamp))) AS bFirst,
+          max(toStartOfMinute(toDateTime(traces.Timestamp))) AS bLast
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 MINUTE) OR Timestamp >= toStartOfMinute(toDateTime('2026-01-03 14:15:00')))
+          AND match(if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName), '^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS) ')
+        GROUP BY bServiceName, bSpanName
+UNION ALL
+SELECT
+          service_operations_minutely.ServiceName AS bServiceName,
+          service_operations_minutely.SpanName AS bSpanName,
+          sum(service_operations_minutely.SpanCount) AS bSpanCount,
+          sum(service_operations_minutely.ErrorCount) AS bErrorCount,
+          quantilesTDigestMergeState(0.5, 0.95, 0.99)(DurationQuantiles) AS bDurationQuantiles,
+          min(service_operations_minutely.Minute) AS bFirst,
+          max(service_operations_minutely.Minute) AS bLast
+        FROM service_operations_minutely
+        WHERE service_operations_minutely.OrgId = 'org_sql_catalog'
+          AND service_operations_minutely.Minute >= if(toDateTime('2026-01-01 10:30:00') = toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 MINUTE)
+          AND service_operations_minutely.Minute < toStartOfMinute(toDateTime('2026-01-03 14:15:00'))
+          AND (Minute < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Minute >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND match(service_operations_minutely.SpanName, '^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS) ')
+        GROUP BY bServiceName, bSpanName
+UNION ALL
+SELECT
+          service_operations_hourly.ServiceName AS bServiceName,
+          service_operations_hourly.SpanName AS bSpanName,
+          sum(service_operations_hourly.SpanCount) AS bSpanCount,
+          sum(service_operations_hourly.ErrorCount) AS bErrorCount,
+          quantilesTDigestMergeState(0.5, 0.95, 0.99)(DurationQuantiles) AS bDurationQuantiles,
+          min(service_operations_hourly.Hour) AS bFirst,
+          max(service_operations_hourly.Hour) AS bLast
+        FROM service_operations_hourly
+        WHERE service_operations_hourly.OrgId = 'org_sql_catalog'
+          AND service_operations_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND service_operations_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND match(service_operations_hourly.SpanName, '^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS) ')
+        GROUP BY bServiceName, bSpanName
+) AS route_windows
+        GROUP BY serviceName, spanName
+        ORDER BY spanCount DESC
+        LIMIT 50
+        FORMAT JSON
+
+-- builder:service-operations:routeUsageQuery:searchStalest  [45e0cd47]
+SELECT
+          route_windows.bServiceName AS serviceName,
+          route_windows.bSpanName AS spanName,
+          sum(route_windows.bSpanCount) AS spanCount,
+          sum(route_windows.bErrorCount) AS errorCount,
+          if(sum(bSpanCount) > 0, arrayElement(quantilesTDigestMerge(0.5, 0.95, 0.99)(bDurationQuantiles), 2) / 1000000, 0) AS p95DurationMs,
+          toString(min(route_windows.bFirst)) AS firstSeen,
+          toString(max(route_windows.bLast)) AS lastSeen
+        FROM (
+SELECT
+          traces.ServiceName AS bServiceName,
+          if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName) AS bSpanName,
+          count() AS bSpanCount,
+          countIf(traces.StatusCode = 'Error') AS bErrorCount,
+          quantilesTDigestState(0.5, 0.95, 0.99)(Duration) AS bDurationQuantiles,
+          min(toStartOfMinute(toDateTime(traces.Timestamp))) AS bFirst,
+          max(toStartOfMinute(toDateTime(traces.Timestamp))) AS bLast
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.ServiceName = 'api'
+          AND coalesce(nullIf(traces.ResourceAttributes['deployment.environment.name'], ''), traces.ResourceAttributes['deployment.environment']) IN ('production')
+          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 MINUTE) OR Timestamp >= toStartOfMinute(toDateTime('2026-01-03 14:15:00')))
+          AND match(if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName), '^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS) ')
+          AND positionCaseInsensitive(if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName), '/v1/') > 0
+        GROUP BY bServiceName, bSpanName
+UNION ALL
+SELECT
+          service_operations_minutely.ServiceName AS bServiceName,
+          service_operations_minutely.SpanName AS bSpanName,
+          sum(service_operations_minutely.SpanCount) AS bSpanCount,
+          sum(service_operations_minutely.ErrorCount) AS bErrorCount,
+          quantilesTDigestMergeState(0.5, 0.95, 0.99)(DurationQuantiles) AS bDurationQuantiles,
+          min(service_operations_minutely.Minute) AS bFirst,
+          max(service_operations_minutely.Minute) AS bLast
+        FROM service_operations_minutely
+        WHERE service_operations_minutely.OrgId = 'org_sql_catalog'
+          AND service_operations_minutely.ServiceName = 'api'
+          AND service_operations_minutely.DeploymentEnv IN ('production')
+          AND service_operations_minutely.Minute >= if(toDateTime('2026-01-01 10:30:00') = toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 MINUTE)
+          AND service_operations_minutely.Minute < toStartOfMinute(toDateTime('2026-01-03 14:15:00'))
+          AND (Minute < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Minute >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND match(service_operations_minutely.SpanName, '^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS) ')
+          AND positionCaseInsensitive(service_operations_minutely.SpanName, '/v1/') > 0
+        GROUP BY bServiceName, bSpanName
+UNION ALL
+SELECT
+          service_operations_hourly.ServiceName AS bServiceName,
+          service_operations_hourly.SpanName AS bSpanName,
+          sum(service_operations_hourly.SpanCount) AS bSpanCount,
+          sum(service_operations_hourly.ErrorCount) AS bErrorCount,
+          quantilesTDigestMergeState(0.5, 0.95, 0.99)(DurationQuantiles) AS bDurationQuantiles,
+          min(service_operations_hourly.Hour) AS bFirst,
+          max(service_operations_hourly.Hour) AS bLast
+        FROM service_operations_hourly
+        WHERE service_operations_hourly.OrgId = 'org_sql_catalog'
+          AND service_operations_hourly.ServiceName = 'api'
+          AND service_operations_hourly.DeploymentEnv IN ('production')
+          AND service_operations_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND service_operations_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND match(service_operations_hourly.SpanName, '^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS) ')
+          AND positionCaseInsensitive(service_operations_hourly.SpanName, '/v1/') > 0
+        GROUP BY bServiceName, bSpanName
+) AS route_windows
+        GROUP BY serviceName, spanName
+        ORDER BY lastSeen ASC
+        LIMIT 50
         FORMAT JSON
 
 -- builder:service-operations:serviceOperationsSummaryQuery:default  [84fbd092]
@@ -7850,7 +8534,7 @@ SELECT
         ORDER BY bucket ASC, groupName ASC
         FORMAT JSON
 
--- pipe:error_detail_traces:default:baseline  [c69b9a20]
+-- pipe:error_detail_traces:default:baseline  [86726288]
 SELECT
           trace_detail_spans.TraceId AS traceId,
           min(trace_detail_spans.Timestamp) AS startTime,
@@ -7866,6 +8550,7 @@ SELECT
           anyIf(trace_detail_spans.SpanAttributes['gen_ai.tool.name'], trace_detail_spans.SpanId = occurrence.occurrenceSpanId) AS errorToolName,
           anyIf(trace_detail_spans.SpanAttributes['http.request.method'], trace_detail_spans.SpanId = occurrence.occurrenceSpanId) AS errorHttpMethod,
           anyIf(trace_detail_spans.SpanAttributes['http.route'], trace_detail_spans.SpanId = occurrence.occurrenceSpanId) AS errorHttpRoute,
+          anyIf(if(trace_detail_spans.SpanAttributes['http.response.status_code'] != '', trace_detail_spans.SpanAttributes['http.response.status_code'], trace_detail_spans.SpanAttributes['http.status_code']), trace_detail_spans.SpanId = occurrence.occurrenceSpanId) AS errorHttpStatus,
           anyIf(trace_detail_spans.SpanAttributes['query.context'], trace_detail_spans.SpanId = occurrence.occurrenceSpanId) AS errorQueryContext,
           anyIf(trace_detail_spans.SpanAttributes['error.type'], trace_detail_spans.SpanId = occurrence.occurrenceSpanId) AS errorType,
           any(occurrence.occurrenceLabel) AS errorLabel,
@@ -8564,7 +9249,7 @@ SELECT
         OFFSET 0
         FORMAT JSON
 
--- pipe:list_traces:contains-match:baseline  [d9eea35a]
+-- pipe:list_traces:contains-match:baseline  [c4239d3b]
 SELECT
           traces.TraceId AS traceId,
           traces.Timestamp AS startTime,
@@ -8581,6 +9266,8 @@ SELECT
           traces.SpanAttributes['http.route'] AS rootHttpRoute,
           if(traces.SpanAttributes['http.status_code'] != '', traces.SpanAttributes['http.status_code'], traces.SpanAttributes['http.response.status_code']) AS rootHttpStatusCode,
           toJSONString(map('http.method', SpanAttributes['http.method'], 'http.request.method', SpanAttributes['http.request.method'], 'http.route', SpanAttributes['http.route'], 'http.target', SpanAttributes['http.target'], 'http.status_code', SpanAttributes['http.status_code'], 'http.response.status_code', SpanAttributes['http.response.status_code'], 'http.url', SpanAttributes['http.url'], 'url.full', SpanAttributes['url.full'], 'url.path', SpanAttributes['url.path'], 'server.address', SpanAttributes['server.address'], 'net.peer.name', SpanAttributes['net.peer.name'], 'screen.name', SpanAttributes['screen.name'])) AS rootSpanAttributes,
+          coalesce(nullIf(traces.ResourceAttributes['deployment.environment.name'], ''), traces.ResourceAttributes['deployment.environment']) AS rootDeploymentEnv,
+          traces.ResourceAttributes['service.version'] AS rootServiceVersion,
           if(traces.StatusCode = 'Error', 1, 0) AS hasError
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
@@ -8602,7 +9289,7 @@ SELECT
         LIMIT 100
         FORMAT JSON
 
--- pipe:list_traces:contains-match:bloom  [d9eea35a]
+-- pipe:list_traces:contains-match:bloom  [c4239d3b]
 SELECT
           traces.TraceId AS traceId,
           traces.Timestamp AS startTime,
@@ -8619,6 +9306,8 @@ SELECT
           traces.SpanAttributes['http.route'] AS rootHttpRoute,
           if(traces.SpanAttributes['http.status_code'] != '', traces.SpanAttributes['http.status_code'], traces.SpanAttributes['http.response.status_code']) AS rootHttpStatusCode,
           toJSONString(map('http.method', SpanAttributes['http.method'], 'http.request.method', SpanAttributes['http.request.method'], 'http.route', SpanAttributes['http.route'], 'http.target', SpanAttributes['http.target'], 'http.status_code', SpanAttributes['http.status_code'], 'http.response.status_code', SpanAttributes['http.response.status_code'], 'http.url', SpanAttributes['http.url'], 'url.full', SpanAttributes['url.full'], 'url.path', SpanAttributes['url.path'], 'server.address', SpanAttributes['server.address'], 'net.peer.name', SpanAttributes['net.peer.name'], 'screen.name', SpanAttributes['screen.name'])) AS rootSpanAttributes,
+          coalesce(nullIf(traces.ResourceAttributes['deployment.environment.name'], ''), traces.ResourceAttributes['deployment.environment']) AS rootDeploymentEnv,
+          traces.ResourceAttributes['service.version'] AS rootServiceVersion,
           if(traces.StatusCode = 'Error', 1, 0) AS hasError
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
@@ -8640,7 +9329,7 @@ SELECT
         LIMIT 100
         FORMAT JSON
 
--- pipe:list_traces:contains-match:text  [d9eea35a]
+-- pipe:list_traces:contains-match:text  [c4239d3b]
 SELECT
           traces.TraceId AS traceId,
           traces.Timestamp AS startTime,
@@ -8657,6 +9346,8 @@ SELECT
           traces.SpanAttributes['http.route'] AS rootHttpRoute,
           if(traces.SpanAttributes['http.status_code'] != '', traces.SpanAttributes['http.status_code'], traces.SpanAttributes['http.response.status_code']) AS rootHttpStatusCode,
           toJSONString(map('http.method', SpanAttributes['http.method'], 'http.request.method', SpanAttributes['http.request.method'], 'http.route', SpanAttributes['http.route'], 'http.target', SpanAttributes['http.target'], 'http.status_code', SpanAttributes['http.status_code'], 'http.response.status_code', SpanAttributes['http.response.status_code'], 'http.url', SpanAttributes['http.url'], 'url.full', SpanAttributes['url.full'], 'url.path', SpanAttributes['url.path'], 'server.address', SpanAttributes['server.address'], 'net.peer.name', SpanAttributes['net.peer.name'], 'screen.name', SpanAttributes['screen.name'])) AS rootSpanAttributes,
+          coalesce(nullIf(traces.ResourceAttributes['deployment.environment.name'], ''), traces.ResourceAttributes['deployment.environment']) AS rootDeploymentEnv,
+          traces.ResourceAttributes['service.version'] AS rootServiceVersion,
           if(traces.StatusCode = 'Error', 1, 0) AS hasError
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
@@ -8678,7 +9369,7 @@ SELECT
         LIMIT 100
         FORMAT JSON
 
--- pipe:list_traces:default:baseline  [96e8b328]
+-- pipe:list_traces:default:baseline  [09fceca9]
 SELECT
           traces.TraceId AS traceId,
           traces.Timestamp AS startTime,
@@ -8695,6 +9386,8 @@ SELECT
           traces.SpanAttributes['http.route'] AS rootHttpRoute,
           if(traces.SpanAttributes['http.status_code'] != '', traces.SpanAttributes['http.status_code'], traces.SpanAttributes['http.response.status_code']) AS rootHttpStatusCode,
           toJSONString(map('http.method', SpanAttributes['http.method'], 'http.request.method', SpanAttributes['http.request.method'], 'http.route', SpanAttributes['http.route'], 'http.target', SpanAttributes['http.target'], 'http.status_code', SpanAttributes['http.status_code'], 'http.response.status_code', SpanAttributes['http.response.status_code'], 'http.url', SpanAttributes['http.url'], 'url.full', SpanAttributes['url.full'], 'url.path', SpanAttributes['url.path'], 'server.address', SpanAttributes['server.address'], 'net.peer.name', SpanAttributes['net.peer.name'], 'screen.name', SpanAttributes['screen.name'])) AS rootSpanAttributes,
+          coalesce(nullIf(traces.ResourceAttributes['deployment.environment.name'], ''), traces.ResourceAttributes['deployment.environment']) AS rootDeploymentEnv,
+          traces.ResourceAttributes['service.version'] AS rootServiceVersion,
           if(traces.StatusCode = 'Error', 1, 0) AS hasError
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
@@ -8714,7 +9407,7 @@ SELECT
         LIMIT 100
         FORMAT JSON
 
--- pipe:list_traces:default:bloom  [96e8b328]
+-- pipe:list_traces:default:bloom  [09fceca9]
 SELECT
           traces.TraceId AS traceId,
           traces.Timestamp AS startTime,
@@ -8731,6 +9424,8 @@ SELECT
           traces.SpanAttributes['http.route'] AS rootHttpRoute,
           if(traces.SpanAttributes['http.status_code'] != '', traces.SpanAttributes['http.status_code'], traces.SpanAttributes['http.response.status_code']) AS rootHttpStatusCode,
           toJSONString(map('http.method', SpanAttributes['http.method'], 'http.request.method', SpanAttributes['http.request.method'], 'http.route', SpanAttributes['http.route'], 'http.target', SpanAttributes['http.target'], 'http.status_code', SpanAttributes['http.status_code'], 'http.response.status_code', SpanAttributes['http.response.status_code'], 'http.url', SpanAttributes['http.url'], 'url.full', SpanAttributes['url.full'], 'url.path', SpanAttributes['url.path'], 'server.address', SpanAttributes['server.address'], 'net.peer.name', SpanAttributes['net.peer.name'], 'screen.name', SpanAttributes['screen.name'])) AS rootSpanAttributes,
+          coalesce(nullIf(traces.ResourceAttributes['deployment.environment.name'], ''), traces.ResourceAttributes['deployment.environment']) AS rootDeploymentEnv,
+          traces.ResourceAttributes['service.version'] AS rootServiceVersion,
           if(traces.StatusCode = 'Error', 1, 0) AS hasError
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
@@ -8750,7 +9445,7 @@ SELECT
         LIMIT 100
         FORMAT JSON
 
--- pipe:list_traces:default:text  [96e8b328]
+-- pipe:list_traces:default:text  [09fceca9]
 SELECT
           traces.TraceId AS traceId,
           traces.Timestamp AS startTime,
@@ -8767,6 +9462,8 @@ SELECT
           traces.SpanAttributes['http.route'] AS rootHttpRoute,
           if(traces.SpanAttributes['http.status_code'] != '', traces.SpanAttributes['http.status_code'], traces.SpanAttributes['http.response.status_code']) AS rootHttpStatusCode,
           toJSONString(map('http.method', SpanAttributes['http.method'], 'http.request.method', SpanAttributes['http.request.method'], 'http.route', SpanAttributes['http.route'], 'http.target', SpanAttributes['http.target'], 'http.status_code', SpanAttributes['http.status_code'], 'http.response.status_code', SpanAttributes['http.response.status_code'], 'http.url', SpanAttributes['http.url'], 'url.full', SpanAttributes['url.full'], 'url.path', SpanAttributes['url.path'], 'server.address', SpanAttributes['server.address'], 'net.peer.name', SpanAttributes['net.peer.name'], 'screen.name', SpanAttributes['screen.name'])) AS rootSpanAttributes,
+          coalesce(nullIf(traces.ResourceAttributes['deployment.environment.name'], ''), traces.ResourceAttributes['deployment.environment']) AS rootDeploymentEnv,
+          traces.ResourceAttributes['service.version'] AS rootServiceVersion,
           if(traces.StatusCode = 'Error', 1, 0) AS hasError
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
@@ -8786,7 +9483,7 @@ SELECT
         LIMIT 100
         FORMAT JSON
 
--- pipe:list_traces:filtered:baseline  [f20e3a8c]
+-- pipe:list_traces:filtered:baseline  [83e29d35]
 SELECT
           traces.TraceId AS traceId,
           traces.Timestamp AS startTime,
@@ -8803,6 +9500,8 @@ SELECT
           traces.SpanAttributes['http.route'] AS rootHttpRoute,
           if(traces.SpanAttributes['http.status_code'] != '', traces.SpanAttributes['http.status_code'], traces.SpanAttributes['http.response.status_code']) AS rootHttpStatusCode,
           toJSONString(map('http.method', SpanAttributes['http.method'], 'http.request.method', SpanAttributes['http.request.method'], 'http.route', SpanAttributes['http.route'], 'http.target', SpanAttributes['http.target'], 'http.status_code', SpanAttributes['http.status_code'], 'http.response.status_code', SpanAttributes['http.response.status_code'], 'http.url', SpanAttributes['http.url'], 'url.full', SpanAttributes['url.full'], 'url.path', SpanAttributes['url.path'], 'server.address', SpanAttributes['server.address'], 'net.peer.name', SpanAttributes['net.peer.name'], 'screen.name', SpanAttributes['screen.name'])) AS rootSpanAttributes,
+          coalesce(nullIf(traces.ResourceAttributes['deployment.environment.name'], ''), traces.ResourceAttributes['deployment.environment']) AS rootDeploymentEnv,
+          traces.ResourceAttributes['service.version'] AS rootServiceVersion,
           if(traces.StatusCode = 'Error', 1, 0) AS hasError
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
@@ -8838,7 +9537,7 @@ SELECT
         LIMIT 25
         FORMAT JSON
 
--- pipe:list_traces:filtered:bloom  [6d102b3c]
+-- pipe:list_traces:filtered:bloom  [915ef51d]
 SELECT
           traces.TraceId AS traceId,
           traces.Timestamp AS startTime,
@@ -8855,6 +9554,8 @@ SELECT
           traces.SpanAttributes['http.route'] AS rootHttpRoute,
           if(traces.SpanAttributes['http.status_code'] != '', traces.SpanAttributes['http.status_code'], traces.SpanAttributes['http.response.status_code']) AS rootHttpStatusCode,
           toJSONString(map('http.method', SpanAttributes['http.method'], 'http.request.method', SpanAttributes['http.request.method'], 'http.route', SpanAttributes['http.route'], 'http.target', SpanAttributes['http.target'], 'http.status_code', SpanAttributes['http.status_code'], 'http.response.status_code', SpanAttributes['http.response.status_code'], 'http.url', SpanAttributes['http.url'], 'url.full', SpanAttributes['url.full'], 'url.path', SpanAttributes['url.path'], 'server.address', SpanAttributes['server.address'], 'net.peer.name', SpanAttributes['net.peer.name'], 'screen.name', SpanAttributes['screen.name'])) AS rootSpanAttributes,
+          coalesce(nullIf(traces.ResourceAttributes['deployment.environment.name'], ''), traces.ResourceAttributes['deployment.environment']) AS rootDeploymentEnv,
+          traces.ResourceAttributes['service.version'] AS rootServiceVersion,
           if(traces.StatusCode = 'Error', 1, 0) AS hasError
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
@@ -8890,7 +9591,7 @@ SELECT
         LIMIT 25
         FORMAT JSON
 
--- pipe:list_traces:filtered:text  [7a685c3c]
+-- pipe:list_traces:filtered:text  [157d158d]
 SELECT
           traces.TraceId AS traceId,
           traces.Timestamp AS startTime,
@@ -8907,6 +9608,8 @@ SELECT
           traces.SpanAttributes['http.route'] AS rootHttpRoute,
           if(traces.SpanAttributes['http.status_code'] != '', traces.SpanAttributes['http.status_code'], traces.SpanAttributes['http.response.status_code']) AS rootHttpStatusCode,
           toJSONString(map('http.method', SpanAttributes['http.method'], 'http.request.method', SpanAttributes['http.request.method'], 'http.route', SpanAttributes['http.route'], 'http.target', SpanAttributes['http.target'], 'http.status_code', SpanAttributes['http.status_code'], 'http.response.status_code', SpanAttributes['http.response.status_code'], 'http.url', SpanAttributes['http.url'], 'url.full', SpanAttributes['url.full'], 'url.path', SpanAttributes['url.path'], 'server.address', SpanAttributes['server.address'], 'net.peer.name', SpanAttributes['net.peer.name'], 'screen.name', SpanAttributes['screen.name'])) AS rootSpanAttributes,
+          coalesce(nullIf(traces.ResourceAttributes['deployment.environment.name'], ''), traces.ResourceAttributes['deployment.environment']) AS rootDeploymentEnv,
+          traces.ResourceAttributes['service.version'] AS rootServiceVersion,
           if(traces.StatusCode = 'Error', 1, 0) AS hasError
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
@@ -10454,12 +11157,13 @@ SELECT
         LIMIT 50
         FORMAT JSON
 
--- pipe:span_hierarchy:unwindowed:baseline  [83e6223f]
+-- pipe:span_hierarchy:unwindowed:baseline  [9349142e]
 SELECT
           trace_detail_spans.TraceId AS traceId,
           trace_detail_spans.SpanId AS spanId,
           trace_detail_spans.ParentSpanId AS parentSpanId,
           if(((trace_detail_spans.SpanName LIKE 'http.server %' OR trace_detail_spans.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (trace_detail_spans.SpanAttributes['http.route'] != '' OR trace_detail_spans.SpanAttributes['url.path'] != '')), concat(if(trace_detail_spans.SpanName LIKE 'http.server %', replaceOne(trace_detail_spans.SpanName, 'http.server ', ''), trace_detail_spans.SpanName), ' ', if(trace_detail_spans.SpanAttributes['http.route'] != '', trace_detail_spans.SpanAttributes['http.route'], trace_detail_spans.SpanAttributes['url.path'])), trace_detail_spans.SpanName) AS spanName,
+          trace_detail_spans.SpanName AS rawSpanName,
           trace_detail_spans.ServiceName AS serviceName,
           trace_detail_spans.SpanKind AS spanKind,
           trace_detail_spans.Duration / 1000000 AS durationMs,
@@ -10476,12 +11180,13 @@ SELECT
         LIMIT 5000
         FORMAT JSON
 
--- pipe:span_hierarchy:windowed:baseline  [46a6ac94]
+-- pipe:span_hierarchy:windowed:baseline  [6e432111]
 SELECT
           trace_detail_spans.TraceId AS traceId,
           trace_detail_spans.SpanId AS spanId,
           trace_detail_spans.ParentSpanId AS parentSpanId,
           if(((trace_detail_spans.SpanName LIKE 'http.server %' OR trace_detail_spans.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (trace_detail_spans.SpanAttributes['http.route'] != '' OR trace_detail_spans.SpanAttributes['url.path'] != '')), concat(if(trace_detail_spans.SpanName LIKE 'http.server %', replaceOne(trace_detail_spans.SpanName, 'http.server ', ''), trace_detail_spans.SpanName), ' ', if(trace_detail_spans.SpanAttributes['http.route'] != '', trace_detail_spans.SpanAttributes['http.route'], trace_detail_spans.SpanAttributes['url.path'])), trace_detail_spans.SpanName) AS spanName,
+          trace_detail_spans.SpanName AS rawSpanName,
           trace_detail_spans.ServiceName AS serviceName,
           trace_detail_spans.SpanKind AS spanKind,
           trace_detail_spans.Duration / 1000000 AS durationMs,
@@ -12257,10 +12962,12 @@ SELECT
         ORDER BY bucket ASC, groupName ASC
         FORMAT JSON
 
--- spec:metrics-breakdown:baseline  [0e861681]
+-- spec:metrics-breakdown:baseline  [bc31907a]
 SELECT
           metrics_histogram.ServiceName AS name,
           ifNull(ifNotFinite(sum(metrics_histogram.Sum) / sum(metrics_histogram.Count), 0), 0) AS avgValue,
+          ifNull(min(metrics_histogram.Min), 0) AS minValue,
+          ifNull(max(metrics_histogram.Max), 0) AS maxValue,
           sum(metrics_histogram.Sum) AS sumValue,
           sum(metrics_histogram.Count) AS count
         FROM metrics_histogram
@@ -12268,8 +12975,9 @@ SELECT
           AND metrics_histogram.OrgId = 'org_sql_catalog'
           AND metrics_histogram.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_histogram.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_histogram.ServiceName = 'api'
         GROUP BY name
-        ORDER BY count DESC
+        ORDER BY avgValue DESC
         LIMIT 10
         FORMAT JSON
 
@@ -12331,20 +13039,17 @@ SELECT
         ORDER BY bucket ASC
         FORMAT JSON
 
--- spec:metrics-timeseries-rate:baseline  [548024db]
+-- spec:metrics-timeseries-rate:baseline  [6edd2ce8]
 WITH with_deltas AS (
 SELECT
           metrics_sum.TimeUnix AS TimeUnix,
           metrics_sum.ServiceName AS ServiceName,
           metrics_sum.Attributes AS Attributes,
           '' AS resourceAttributeValue,
-          metrics_sum.Value AS Value,
-          metrics_sum.Value - lagInFrame(metrics_sum.Value, 1, metrics_sum.Value) OVER (PARTITION BY metrics_sum.ServiceName, metrics_sum.MetricName, cityHash64(mapKeys(metrics_sum.Attributes), mapValues(metrics_sum.Attributes)), cityHash64(mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes)), metrics_sum.StartTimeUnix ORDER BY metrics_sum.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS delta,
-          toFloat64(toUnixTimestamp64Nano(metrics_sum.TimeUnix) - toUnixTimestamp64Nano(lagInFrame(metrics_sum.TimeUnix, 1, metrics_sum.TimeUnix) OVER (PARTITION BY metrics_sum.ServiceName, metrics_sum.MetricName, cityHash64(mapKeys(metrics_sum.Attributes), mapValues(metrics_sum.Attributes)), cityHash64(mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes)), metrics_sum.StartTimeUnix ORDER BY metrics_sum.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW))) / 1000000000 AS time_delta
+          multiIf(AggregationTemporality = 1, metrics_sum.Value, metrics_sum.Value < lagInFrame(metrics_sum.Value, 1, metrics_sum.Value) OVER (PARTITION BY metrics_sum.ServiceName, metrics_sum.MetricName, cityHash64(mapKeys(metrics_sum.Attributes), mapValues(metrics_sum.Attributes)), cityHash64(mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes)) ORDER BY metrics_sum.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW), metrics_sum.Value, (metrics_sum.StartTimeUnix > lagInFrame(metrics_sum.TimeUnix, 1, metrics_sum.TimeUnix) OVER (PARTITION BY metrics_sum.ServiceName, metrics_sum.MetricName, cityHash64(mapKeys(metrics_sum.Attributes), mapValues(metrics_sum.Attributes)), cityHash64(mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes)) ORDER BY metrics_sum.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AND metrics_sum.StartTimeUnix < metrics_sum.TimeUnix), metrics_sum.Value, metrics_sum.Value - lagInFrame(metrics_sum.Value, 1, metrics_sum.Value) OVER (PARTITION BY metrics_sum.ServiceName, metrics_sum.MetricName, cityHash64(mapKeys(metrics_sum.Attributes), mapValues(metrics_sum.Attributes)), cityHash64(mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes)) ORDER BY metrics_sum.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)) AS delta
         FROM metrics_sum
         WHERE metrics_sum.MetricName = 'http.server.requests'
           AND metrics_sum.OrgId = 'org_sql_catalog'
-          AND IsMonotonic = 1
           AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00' - INTERVAL 3600 SECOND
           AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
 )
@@ -12353,8 +13058,8 @@ SELECT
           with_deltas.ServiceName AS serviceName,
           '' AS attributeValue,
           with_deltas.ServiceName AS groupName,
-          ifNull(ifNotFinite(sumIf(with_deltas.delta / with_deltas.time_delta, (with_deltas.delta >= 0 AND with_deltas.time_delta > 0)), 0), 0) AS rateValue,
-          sumIf(with_deltas.delta, with_deltas.delta >= 0) AS increaseValue,
+          ifNull(ifNotFinite(sum(with_deltas.delta) / min(least(toUnixTimestamp(toStartOfInterval(with_deltas.TimeUnix, INTERVAL 3600 SECOND)) + 3600, toUnixTimestamp(toDateTime('2026-01-03 14:15:00'))) - greatest(toUnixTimestamp(toStartOfInterval(with_deltas.TimeUnix, INTERVAL 3600 SECOND)), toUnixTimestamp(toDateTime('2026-01-01 10:30:00')))), 0), 0) AS rateValue,
+          sum(with_deltas.delta) AS increaseValue,
           count() AS dataPointCount
         FROM with_deltas
         WHERE with_deltas.TimeUnix >= '2026-01-01 10:30:00'

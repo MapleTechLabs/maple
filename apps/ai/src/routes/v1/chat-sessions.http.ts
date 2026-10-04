@@ -32,8 +32,8 @@ import {
 	originForTenant,
 	type ChatTurnTenantEncoded,
 } from "@maple/domain/chat-session"
-import { chatSessionStub, type ChatSessionStub } from "@maple/domain/chat-session-stub"
-import { WorkerEnvironment } from "@maple/infra/worker-runtime"
+import type { ChatSessionStub } from "@maple/domain/chat-session-stub"
+import { ChatSessions } from "@maple/backend/platform/bindings"
 import { Effect, Layer, Option, Schema, Stream } from "effect"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
@@ -80,11 +80,7 @@ const sessionCall = <A>(operation: string, run: () => Promise<A>) =>
 const sessionIdFromPath = (pathname: string): string | undefined => {
 	const match = /^\/api\/chat\/sessions\/([^/]+)\/[a-z]+$/.exec(pathname)
 	if (!match?.[1]) return undefined
-	try {
-		return decodeURIComponent(match[1])
-	} catch {
-		return undefined
-	}
+	return Option.getOrUndefined(Option.liftThrowable(decodeURIComponent)(match[1]))
 }
 
 /**
@@ -138,8 +134,7 @@ const resolveSession = Effect.fn("chat.resolveSession")(function* (
 		return { ok: false, failure: problem("Chat session not found", 404) } as const
 	}
 
-	const env = yield* WorkerEnvironment
-	const stub = chatSessionStub(env, sessionId)
+	const stub = (yield* ChatSessions).stub(sessionId)
 	if (!stub) {
 		return {
 			ok: false,
@@ -163,8 +158,13 @@ export const ChatSessionsRouter = HttpRouter.use((router) =>
 				const resolved = yield* resolveSession(request)
 				if (!resolved.ok) return resolved.failure
 				const { stub } = resolved.session
-				const result = yield* sessionCall("history", () =>
-					Promise.all([stub.history(), stub.cursor(), stub.running()]),
+				const result = yield* Effect.all(
+					[
+						sessionCall("history", () => stub.history()),
+						sessionCall("history", () => stub.cursor()),
+						sessionCall("history", () => stub.running()),
+					],
+					{ concurrency: "unbounded" },
 				).pipe(Effect.option)
 				if (Option.isNone(result)) return problem("The chat session is unavailable", 503)
 				const [messages, cursor, running] = result.value
@@ -286,6 +286,6 @@ export const ChatSessionsRouter = HttpRouter.use((router) =>
 	// these per request, so hand them over from the build — reading them inside a handler
 	// answered every chat request with a 500 ("Service not found") until 2026-09-08.
 	HttpRouter.provideRequest(
-		Layer.effectContext(Effect.context<ApiKeysService | AuthService | Env | WorkerEnvironment>()),
+		Layer.effectContext(Effect.context<ApiKeysService | AuthService | Env | ChatSessions>()),
 	),
 )

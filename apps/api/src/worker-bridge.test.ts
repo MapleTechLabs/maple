@@ -8,7 +8,8 @@ import type { HttpEffect } from "alchemy/Http"
 import { Context, Effect, Exit, Layer, Logger, Option, Schema, Scope } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { HttpApi, HttpApiBuilder, HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
-import { MapleDbConnection } from "@maple/backend/platform/bindings"
+import { AiWorkerFetcher, MapleDbConnection } from "@maple/backend/platform/bindings"
+import { workerEnvLayer } from "@maple/infra/worker-runtime"
 import { cachedRecoverable } from "@maple/infra/cached-recoverable"
 import { recordRenderedFailure } from "@maple/backend/http/rendered-failure"
 import { buildIsolateHandler, makeFetch } from "./worker/http"
@@ -106,14 +107,18 @@ const exceptionTypeOf = (span: ExportedSpan | undefined): string | undefined => 
 	return rendered === undefined ? undefined : String(rendered)
 }
 
-/** No stage database exists in these requests, so the port is never reached. */
-const noPorts = Layer.succeed(MapleDbConnection, Option.none())
-
 const env = {
 	MAPLE_INGEST_KEY: "maple_sk_test",
 	MAPLE_ENDPOINT: "http://ingest.test",
 	COMMIT_SHA: "deadbeefcafe",
 }
+
+/** No stage database or AI Worker exists in these requests; `Config` reads resolve against `env`. */
+const noPorts = Layer.mergeAll(
+	Layer.succeed(MapleDbConnection, Option.none()),
+	Layer.succeed(AiWorkerFetcher, Option.none()),
+	workerEnvLayer(env),
+)
 
 class GraphBuildFailure extends Schema.TaggedError<GraphBuildFailure>()("GraphBuildFailure", {
 	message: Schema.String,

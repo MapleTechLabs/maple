@@ -18,7 +18,7 @@ import {
 } from "@maple/domain/http"
 import { ErrorIssueId } from "@maple/domain/primitives"
 import { aiTriageSettings, errorIssues, errorIssueEvents, investigations } from "@maple/db"
-import { WorkerEnvironment } from "@maple/infra/worker-runtime"
+import { envPorts } from "@maple/backend/platform/env-ports"
 import { eq } from "drizzle-orm"
 import { Env } from "@maple/backend/platform/Env"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -52,7 +52,7 @@ const makeHarness = (workerEnvironment?: Record<string, unknown>) => {
 		Layer.provide(testConfig()),
 	)
 	if (workerEnvironment !== undefined) {
-		layer = layer.pipe(Layer.provideMerge(Layer.succeed(WorkerEnvironment, workerEnvironment)))
+		layer = layer.pipe(Layer.provideMerge(envPorts(workerEnvironment)))
 	}
 	return { testDb, layer }
 }

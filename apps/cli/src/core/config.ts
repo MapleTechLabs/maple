@@ -1,4 +1,4 @@
-import { Clock, Context, Effect, Layer, Option, Redacted, Result, Schema } from "effect"
+import { Clock, Config, Context, Effect, Layer, Option, Redacted, Result, Schema } from "effect"
 import { FileSystem } from "effect/FileSystem"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import * as os from "node:os"
@@ -179,6 +179,19 @@ export interface MapleConfigValues {
 	readonly recordUpdateCheck: (latestTag?: string) => Effect.Effect<void, ConfigFileError>
 }
 
+const optionalEnv = (key: string) => Config.String(key).pipe(Config.option, Config.map(Option.getOrUndefined))
+
+const envConfig = Config.all({
+	MAPLE_API_URL: optionalEnv("MAPLE_API_URL"),
+	MAPLE_API_TOKEN: Config.Redacted("MAPLE_API_TOKEN").pipe(
+		Config.option,
+		Config.map(Option.getOrUndefined),
+	),
+	MAPLE_ORG_ID: optionalEnv("MAPLE_ORG_ID"),
+	MAPLE_LOCAL_URL: optionalEnv("MAPLE_LOCAL_URL"),
+	MAPLE_LOCAL_BIND_HOST: optionalEnv("MAPLE_LOCAL_BIND_HOST"),
+})
+
 export class MapleConfig extends Context.Service<MapleConfig, MapleConfigValues>()("@maple/cli/MapleConfig", {
 	make: Effect.gen(function* () {
 		const fs = yield* FileSystem
@@ -194,9 +207,9 @@ export class MapleConfig extends Context.Service<MapleConfig, MapleConfigValues>
 				Effect.logWarning(error.message).pipe(Effect.as<StoredConfig>({})),
 			),
 		)
-		const env = process.env
+		const env = yield* envConfig
 		const resolvedApiUrl = env.MAPLE_API_URL ?? stored.apiUrl
-		const envToken = env.MAPLE_API_TOKEN
+		const envToken = env.MAPLE_API_TOKEN === undefined ? undefined : Redacted.value(env.MAPLE_API_TOKEN)
 		const fileToken = storedTokenFor(stored, resolvedApiUrl)
 		const nativeToken =
 			!envToken && !fileToken && stored.credentialStore === "keychain" && resolvedApiUrl

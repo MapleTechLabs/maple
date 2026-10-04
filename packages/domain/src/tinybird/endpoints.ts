@@ -23,6 +23,9 @@ export interface ListTracesOutput {
 	readonly rootHttpStatusCode: string
 	/** The root span's projected attribute map, JSON-encoded. */
 	readonly rootSpanAttributes: string
+	/** Root resource's deployment environment and service.version, '' when unset. */
+	readonly rootDeploymentEnv: string
+	readonly rootServiceVersion: string
 	readonly hasError: number
 }
 
@@ -61,6 +64,8 @@ export interface SpanHierarchyOutput {
 	readonly spanId: string
 	readonly parentSpanId: string
 	readonly spanName: string
+	/** The stored SpanName; `spanName` is the HTTP display rewrite. */
+	readonly rawSpanName: string
 	readonly serviceName: string
 	readonly spanKind: string
 	readonly durationMs: number
@@ -459,6 +464,7 @@ export interface ErrorDetailTracesOutput {
 	readonly errorToolName: string
 	readonly errorHttpMethod: string
 	readonly errorHttpRoute: string
+	readonly errorHttpStatus: string
 	readonly errorQueryContext: string
 	readonly errorType: string
 	readonly errorLabel: string

@@ -12,7 +12,7 @@
  * `../worker.ts`.
  */
 import { connectors as registeredConnectors } from "@maple/chat-platform/connectors"
-import { Effect, Schema } from "effect"
+import { ConfigProvider, Effect, Schema } from "effect"
 import { HttpRouter, HttpServerResponse } from "effect/http"
 import { resolveConnectorConfig, type IngressConnector } from "../config.ts"
 import { InboundHandler } from "../inbound.ts"
@@ -42,13 +42,16 @@ const problem = (status: number, detail: string) =>
 const rejectCaller = (status: number, errorType: string, detail: string) =>
 	Effect.annotateCurrentSpan("error.type", errorType).pipe(Effect.andThen(problem(status, detail)))
 
-export const connectorWebhookRouter = (
-	env: Record<string, unknown>,
-	registry: ReadonlyArray<IngressConnector> = registeredConnectors,
-) =>
+/**
+ * Connector configuration resolves through the `ConfigProvider` the router's layer was built with
+ * (the Worker env's, via `workerEnvLayer`), captured here because route handlers run on the
+ * request's fiber rather than the layer's.
+ */
+export const connectorWebhookRouter = (registry: ReadonlyArray<IngressConnector> = registeredConnectors) =>
 	HttpRouter.use((router) =>
 		Effect.gen(function* () {
 			const inbound = yield* InboundHandler
+			const configProvider = yield* ConfigProvider.ConfigProvider
 
 			yield* router.add("POST", "/connectors/:connectorId/webhook", (request) =>
 				Effect.gen(function* () {
@@ -63,7 +66,9 @@ export const connectorWebhookRouter = (
 						return yield* rejectCaller(404, "ConnectorNotFound", "No such connector")
 					}
 
-					const config = resolveConnectorConfig(env, connector)
+					const config = yield* resolveConnectorConfig(connector).pipe(
+						Effect.provideService(ConfigProvider.ConfigProvider, configProvider),
+					)
 					if (config._tag === "missing") {
 						return yield* new ConnectorUnavailable({
 							connector: connectorId,

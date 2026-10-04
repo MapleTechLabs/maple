@@ -408,6 +408,8 @@ export function spanHierarchyQuery(opts: SpanHierarchyOpts) {
 					spanId: $.SpanId,
 					parentSpanId: $.ParentSpanId,
 					spanName: httpRewriteExpr,
+					// The stored name, which span-name filters match; `spanName` may be rewritten.
+					rawSpanName: $.SpanName,
 					serviceName: $.ServiceName,
 					spanKind: $.SpanKind,
 					durationMs: $.Duration.div(1000000),
@@ -1342,6 +1344,10 @@ export function errorIssueEnvironmentsQuery(opts: { limit?: number } = {}) {
 		.format("JSON")
 }
 
+/** The response status from either semconv spelling; the current key wins. */
+const httpStatusOf = (current: CH.Expr<string>, legacy: CH.Expr<string>) =>
+	CH.if_(current.neq(""), current, legacy)
+
 // Error detail traces (INNER JOIN with error subquery)
 
 export interface ErrorDetailTracesOpts {
@@ -1367,6 +1373,7 @@ export interface ErrorDetailTracesOutput {
 	readonly errorToolName: string
 	readonly errorHttpMethod: string
 	readonly errorHttpRoute: string
+	readonly errorHttpStatus: string
 	readonly errorQueryContext: string
 	readonly errorType: string
 	/** The fingerprint's own occurrence in this trace, as `error_events` recorded it. */
@@ -1428,6 +1435,13 @@ export function errorDetailTracesQuery(opts: ErrorDetailTracesOpts) {
 				errorToolName: CH.anyIf($.SpanAttributes.get("gen_ai.tool.name"), isOccurrence),
 				errorHttpMethod: CH.anyIf($.SpanAttributes.get("http.request.method"), isOccurrence),
 				errorHttpRoute: CH.anyIf($.SpanAttributes.get("http.route"), isOccurrence),
+				errorHttpStatus: CH.anyIf(
+					httpStatusOf(
+						$.SpanAttributes.get("http.response.status_code"),
+						$.SpanAttributes.get("http.status_code"),
+					),
+					isOccurrence,
+				),
 				errorQueryContext: CH.anyIf($.SpanAttributes.get("query.context"), isOccurrence),
 				errorType: CH.anyIf($.SpanAttributes.get("error.type"), isOccurrence),
 				errorLabel: CH.any_($.occurrence.occurrenceLabel),
@@ -1446,5 +1460,138 @@ export function errorDetailTracesQuery(opts: ErrorDetailTracesOpts) {
 		])
 		.groupBy("traceId")
 		.orderBy(["startTime", "desc"])
+		.format("JSON")
+}
+
+// One fingerprint's identity and volume, read from error_events alone. It answers even
+// when the sampled traces aged out of trace_detail_spans or fall outside the window.
+
+export interface ErrorFingerprintSummaryOpts {
+	fingerprintHash: string
+	services?: readonly string[]
+}
+
+export function errorFingerprintSummaryQuery(opts: ErrorFingerprintSummaryOpts) {
+	return from(ErrorEvents)
+		.select(($) => ({
+			occurrences: CH.count(),
+			firstSeen: CH.min_($.Timestamp),
+			lastSeen: CH.max_($.Timestamp),
+			errorLabel: CH.argMax($.ErrorLabel, $.Timestamp),
+			exceptionType: CH.argMax($.ExceptionType, $.Timestamp),
+			exceptionMessage: CH.argMax($.ExceptionMessage, $.Timestamp),
+			statusMessage: CH.argMax($.StatusMessage, $.Timestamp),
+			serviceCount: CH.uniq($.ServiceName),
+			services: CH.arraySort(CH.groupUniqArrayIf(5)($.ServiceName, $.ServiceName.neq(""))),
+			noExceptionCount: CH.countIf($.ExceptionType.eq("")),
+		}))
+		.where(($) => [
+			$.OrgId.eq(param.string("orgId")),
+			fingerprintHashEq($.FingerprintHash, opts.fingerprintHash),
+			$.Timestamp.gte(param.dateTimeSeconds("startTime")),
+			$.Timestamp.lte(param.dateTimeSeconds("endTime")),
+			opts.services?.length ? CH.inList($.ServiceName, opts.services) : undefined,
+		])
+		.format("JSON")
+}
+
+// Other fingerprints raised inside the same traces. A wrapped error (a parent span's
+// tagged failure and the cause a child span recorded) shows up as two fingerprints that
+// always fire together; this is how error_detail names the partner.
+
+export interface ErrorCooccurringFingerprintsOpts {
+	fingerprintHash: string
+	traceIds: readonly string[]
+	limit?: number
+}
+
+export function errorCooccurringFingerprintsQuery(opts: ErrorCooccurringFingerprintsOpts) {
+	return from(ErrorEventsByTime)
+		.select(($) => ({
+			fingerprintHash: CH.toString_($.FingerprintHash),
+			errorLabel: CH.any_($.ErrorLabel),
+			serviceName: CH.any_($.ServiceName),
+			traces: CH.uniq($.TraceId),
+			count: CH.count(),
+		}))
+		.where(($) => [
+			$.OrgId.eq(param.string("orgId")),
+			$.Timestamp.gte(param.dateTimeSeconds("startTime")),
+			$.Timestamp.lte(param.dateTimeSeconds("endTime")),
+			opts.traceIds.length ? CH.inList($.TraceId, opts.traceIds) : CH.rawCond("1 = 0"),
+			$.FingerprintHash.neq(fingerprintHashLiteral(opts.fingerprintHash)),
+		])
+		.groupBy("fingerprintHash")
+		.orderBy(["traces", "desc"], ["count", "desc"])
+		.limit(opts.limit ?? 5)
+		.format("JSON")
+}
+
+// The newest occurrence span of each fingerprint, to label exception-less errors by what
+// the span was doing ("GET 404 /api/org") instead of "Unknown Error".
+
+export function errorFingerprintOccurrencesQuery(opts: { fingerprintHashes: readonly string[] }) {
+	return from(ErrorEvents)
+		.select(($) => ({
+			fingerprintHash: CH.toString_($.FingerprintHash),
+			traceId: CH.argMax($.TraceId, $.Timestamp),
+			spanId: CH.argMax($.SpanId, $.Timestamp),
+		}))
+		.where(($) => [
+			$.OrgId.eq(param.string("orgId")),
+			fingerprintHashIn($.FingerprintHash, opts.fingerprintHashes),
+			$.Timestamp.gte(param.dateTimeSeconds("startTime")),
+			$.Timestamp.lte(param.dateTimeSeconds("endTime")),
+		])
+		.groupBy("fingerprintHash")
+		.format("JSON")
+}
+
+export function errorOccurrenceSpansQuery(opts: { traceIds: readonly string[]; spanIds: readonly string[] }) {
+	return from(TraceDetailSpans)
+		.select(($) => ({
+			spanId: $.SpanId,
+			spanName: $.SpanName,
+			httpMethod: $.SpanAttributes.get("http.request.method"),
+			httpRoute: $.SpanAttributes.get("http.route"),
+			httpStatus: httpStatusOf(
+				$.SpanAttributes.get("http.response.status_code"),
+				$.SpanAttributes.get("http.status_code"),
+			),
+		}))
+		.where(($) => [
+			$.OrgId.eq(param.string("orgId")),
+			opts.traceIds.length ? CH.inList($.TraceId, opts.traceIds) : CH.rawCond("1 = 0"),
+			opts.spanIds.length ? CH.inList($.SpanId, opts.spanIds) : CH.rawCond("1 = 0"),
+			$.Timestamp.gte(param.dateTimeString("startTime")),
+			$.Timestamp.lte(param.dateTimeString("endTime")),
+		])
+		.limit(Math.max(opts.spanIds.length, 1))
+		.format("JSON")
+}
+
+// find_errors' denominators: every occurrence in the window, not just the top-N rows, and
+// how many of them carried no exception (a span with status Error and nothing else).
+
+export function errorsWindowTotalsQuery(opts: Omit<ErrorsByTypeOpts, "limit" | "fingerprintHashes">) {
+	return from(ErrorEventsByTime)
+		.select(($) => ({
+			occurrences: CH.count(),
+			// Not `fingerprints`: any name containing hash/fingerprint reads as an identity column.
+			distinctErrorCount: CH.uniq($.FingerprintHash),
+			noExceptionCount: CH.countIf($.ExceptionType.eq("")),
+		}))
+		.where(($) => [
+			$.OrgId.eq(param.string("orgId")),
+			$.Timestamp.gte(param.dateTimeSeconds("startTime")),
+			$.Timestamp.lte(param.dateTimeSeconds("endTime")),
+			CH.whenTrue(!!opts.rootOnly, () => $.ParentSpanId.eq("")),
+			...sharedFilterConditions($, opts),
+			opts.unexpectedIdentity
+				? $.ErrorLabel.notLike(`${likeLiteral(opts.unexpectedIdentity.namespacePrefix)}%`).or(
+						CH.inList($.ErrorLabel, opts.unexpectedIdentity.markerLabels),
+					)
+				: undefined,
+		])
 		.format("JSON")
 }

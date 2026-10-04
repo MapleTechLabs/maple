@@ -49,7 +49,6 @@ const requireEnv = (key: string): string => {
 /**
  * PR state via the GitHub REST API. Returns "unknown" when the API call
  * fails — callers must treat "unknown" as "don't delete", never as "closed".
- * Same contract as the sibling sweeps in scripts/planetscale-pr-branch.ts.
  */
 const fetchPrState = async (prNumber: string): Promise<"open" | "closed" | "unknown"> => {
 	const repo = process.env.GITHUB_REPOSITORY?.trim()

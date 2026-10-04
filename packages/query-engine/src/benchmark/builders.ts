@@ -875,6 +875,58 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 				fingerprintHash: FINGERPRINT,
 			}),
 	},
+	{
+		// error_detail (MCP): a fingerprint's volume and identity, and the window anchor.
+		module: "errors",
+		name: "errorFingerprintSummaryQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.errorFingerprintSummaryQuery({ fingerprintHash: FINGERPRINT }), window),
+	},
+	{
+		// error_detail (MCP): other fingerprints raised inside the sampled traces.
+		module: "errors",
+		name: "errorCooccurringFingerprintsQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.errorCooccurringFingerprintsQuery({
+					fingerprintHash: FINGERPRINT,
+					traceIds: ["0af7651916cd43dd8448eb211c80319c"],
+				}),
+				window,
+			),
+	},
+	{
+		// find_errors / list_error_issues (MCP): labels for exception-less fingerprints.
+		module: "errors",
+		name: "errorFingerprintOccurrencesQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.errorFingerprintOccurrencesQuery({ fingerprintHashes: [FINGERPRINT] }), window),
+		// The branded TraceId/SpanId columns reject the synthetic "" the sweep would use.
+		sampleValues: { traceId: "0af7651916cd43dd8448eb211c80319c", spanId: "b7ad6b7169203331" },
+	},
+	{
+		module: "errors",
+		name: "errorOccurrenceSpansQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.errorOccurrenceSpansQuery({
+					traceIds: ["0af7651916cd43dd8448eb211c80319c"],
+					spanIds: ["b7ad6b7169203331"],
+				}),
+				window,
+			),
+	},
+	{
+		// find_errors (MCP): every occurrence in the window, beyond the top-N rows.
+		module: "errors",
+		name: "errorsWindowTotalsQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.errorsWindowTotalsQuery({}), window),
+	},
 
 	// Batch ④ — the modules the query-engine refactor touches. These exist so a
 	// refactor that claims "no SQL changed" is actually checkable: without a
@@ -1004,6 +1056,82 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 			CH.compileUnsafe(
 				CH.releaseErrorFingerprintsQuery({ serviceName: "api", environments: ["production"] }),
 				{ ...window, serviceVersion: "0af7651916cd43dd8448eb211c80319c0af76519" },
+			),
+	},
+
+	// MCP `service_deployments`, `route_usage` and `ingest_freshness`.
+	{
+		module: "releases",
+		name: "serviceDeploymentsQuery",
+		label: "minutePrecision",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.serviceDeploymentsQuery({ serviceName: "api", minutePrecision: true }),
+				window,
+			),
+	},
+	{
+		module: "releases",
+		name: "serviceDeploymentsQuery",
+		label: "hourInterior",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.serviceDeploymentsQuery({ environments: ["production"], minutePrecision: false }),
+				window,
+			),
+	},
+	{
+		module: "service-operations",
+		name: "routeUsageQuery",
+		label: "allServices",
+		compile: () => CH.compileUnsafe(CH.routeUsageQuery({}), window),
+	},
+	{
+		module: "service-operations",
+		name: "routeUsageQuery",
+		label: "searchStalest",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.routeUsageQuery({
+					serviceName: "api",
+					environments: ["production"],
+					search: "/v1/",
+					orderBy: "lastSeenAsc",
+				}),
+				window,
+			),
+	},
+	{
+		module: "liveness",
+		name: "ingestFreshnessQuery",
+		label: "default",
+		compile: () => CH.compileUnionUnsafe(CH.ingestFreshnessQuery(), window),
+	},
+	{
+		module: "liveness",
+		name: "logsFreshnessQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.logsFreshnessQuery(), window),
+	},
+	{
+		module: "service-map",
+		name: "dbQueryVolumeQuery",
+		label: "allDatabases",
+		compile: () => CH.compileUnsafe(CH.dbQueryVolumeQuery({}), window),
+	},
+	{
+		module: "service-map",
+		name: "dbQueryVolumeQuery",
+		label: "scoped",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.dbQueryVolumeQuery({
+					dbSystem: "postgresql",
+					serviceName: "api",
+					deploymentEnv: "production",
+					limit: 20,
+				}),
+				window,
 			),
 	},
 
@@ -1187,6 +1315,27 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		name: "listContainersSummaryQuery",
 		label: "default",
 		compile: () => CH.compileUnsafe(CH.listContainersSummaryQuery({}), window),
+	},
+	{
+		// explore_attributes with a service: the hourly key rollup has no ServiceName.
+		module: "attribute-keys",
+		name: "serviceScopedAttributeKeysQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.serviceScopedAttributeKeysQuery({ scope: "span" }), {
+				...window,
+				serviceName: "checkout",
+			}),
+	},
+	{
+		module: "attribute-keys",
+		name: "serviceScopedAttributeValuesQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.serviceScopedAttributeValuesQuery({ scope: "resource", attributeKey: "k8s.pod.name" }),
+				{ ...window, serviceName: "checkout" },
+			),
 	},
 	{
 		module: "containers",

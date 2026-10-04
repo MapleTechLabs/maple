@@ -1,11 +1,6 @@
 /**
- * Maple's own Workers' telemetry: `@maple-dev/alchemy`'s `Maple.Telemetry` with
- * the defaults every Maple Worker shares. Provide it on a class-form Worker's
- * init Effect; the bridge builds the SDK into every event's request scope and
- * flushes it after the response. The ingest key, endpoint and environment are
- * not bound here — `selfObservabilityEnv(stage)` puts them in the Worker's env
- * from the stage, with the PR-preview rules, and the SDK reads them there.
- *
+ * Maple's own Workers' telemetry defaults. Ingest key, endpoint and environment come from the
+ * Worker env (`selfObservabilityEnv(stage)`), not from here.
  */
 import { Telemetry, type TelemetrySdkOptions } from "@maple-dev/alchemy/telemetry"
 import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
@@ -39,13 +34,8 @@ export const WorkerTelemetry = (options: WorkerTelemetryOptions): Layer.Layer<ne
 	Telemetry(workerTelemetryConfig(options))
 
 /**
- * The SDK under another service name, built into the event it is provided
- * around and flushed when that event's scope closes. For background work the
- * bridge runs inside a request-facing Worker — a queue batch, a cron tick —
- * whose spans must not share the request service's percentiles (`maple-api`'s
- * p99 read 32s while they did, 2026-09-04). Call it once at module scope: the
- * instance's buffers are the isolate's, and a per-event instance would flush
- * from a fresh one each time.
+ * The SDK under another service name, for background work (queue, cron) whose spans must not
+ * skew the request service's percentiles. Call once at module scope: buffers are per isolate.
  */
 export const eventTelemetry = (
 	options: WorkerTelemetryOptions,

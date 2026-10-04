@@ -10,12 +10,12 @@
 import type { ChatConnector, ConnectorCredentials, InboundEvent } from "@maple/chat-platform"
 import { connectors } from "@maple/chat-platform/connectors"
 import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
-import { chatSessionStub } from "@maple/domain/chat-session-stub"
 import type { ChatConnectorId, OrgId } from "@maple/domain/primitives"
 import type { IntegrationsPersistenceError } from "@maple/domain/http"
 import { workerTelemetryConfig } from "@maple/infra/worker-telemetry"
-import { workerEnvLayer } from "@maple/infra/worker-runtime"
-import { Cause, Effect, Layer, Option, Schema } from "effect"
+import { ChatSessions, type ChatSessionsApi } from "@maple/backend/platform/bindings"
+import { envPorts } from "@maple/backend/platform/env-ports"
+import { Cause, Config, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
@@ -29,7 +29,7 @@ import {
 	forgetChatWorkspace,
 	resolveChatWorkspace,
 } from "@maple/backend/services/integrations/chat-workspace-rows"
-import { resolveConnectorConfig } from "../config.ts"
+import { optionalSecret, optionalSetting, resolveConnectorConfig } from "../config.ts"
 import { decodeRelayTurnCheckpoint, settleRelayedTurn, type SettleOutcome } from "./settle.ts"
 import {
 	relayWithWorkspace,
@@ -48,16 +48,21 @@ import {
  */
 const telemetry = MapleCloudflareSDK.make(workerTelemetryConfig({ serviceName: "maple-chat-bot" }))
 
-/** A plain string off the Worker env, treating blank as absent, the way connector config is read. */
-const setting = (env: Record<string, unknown>, name: string): string | undefined => {
-	const value = env[name]
-	return typeof value === "string" && value.trim() !== "" ? value.trim() : undefined
-}
-
 const APP_BASE_URL_FALLBACK = "https://app.maple.dev"
 
-const appBaseUrl = (env: Record<string, unknown>): string =>
-	setting(env, "MAPLE_APP_BASE_URL") ?? APP_BASE_URL_FALLBACK
+/**
+ * The Worker settings a relayed event reads, through the env's `ConfigProvider` (`envPorts`).
+ * Blank counts as absent, the way connector config is read; the two keys stay `Redacted`.
+ */
+const relaySettings = Config.all({
+	appBaseUrl: optionalSetting("MAPLE_APP_BASE_URL").pipe(
+		Config.map(Option.getOrElse(() => APP_BASE_URL_FALLBACK)),
+	),
+	shareTokenHmacKey: optionalSecret("MAPLE_SHARE_TOKEN_HMAC_KEY"),
+	credentialKey: optionalSecret("MAPLE_INGEST_KEY_ENCRYPTION_KEY"),
+})
+
+type RelaySettings = Config.Success<typeof relaySettings>
 
 /** `MAPLE_INGEST_KEY_ENCRYPTION_KEY` is set on this deployment but is not a usable key. */
 class CredentialKeyUnusable extends Schema.TaggedError<CredentialKeyUnusable>()(
@@ -74,16 +79,16 @@ class CredentialKeyUnusable extends Schema.TaggedError<CredentialKeyUnusable>()(
  * A workspace that DID store one then fails its lookup rather than resolving without its token —
  * see `chat-workspace-rows.ts`.
  */
-const credentialKey = (env: Record<string, unknown>): Effect.Effect<Buffer | null> =>
+const credentialKey = (settings: RelaySettings): Effect.Effect<Buffer | null> =>
 	parseBase64Aes256GcmKey(
-		setting(env, "MAPLE_INGEST_KEY_ENCRYPTION_KEY") ?? "",
+		Option.match(settings.credentialKey, { onNone: () => "", onSome: Redacted.value }),
 		(message) => new CredentialKeyUnusable({ message }),
 	).pipe(
 		// Absent is the ordinary case on a stage running no connector that stores a credential, so
 		// it is not an error — but a key that IS set and unusable is a deployment mistake that
 		// would otherwise surface only as an unreadable workspace on every mention, reason nowhere.
 		Effect.tapError((error) =>
-			setting(env, "MAPLE_INGEST_KEY_ENCRYPTION_KEY") === undefined
+			Option.isNone(settings.credentialKey)
 				? Effect.void
 				: Effect.logError("Chat workspace credential key is unusable").pipe(
 						Effect.annotateLogs({ "error.type": error._tag, "error.message": error.message }),
@@ -152,12 +157,13 @@ const lookupFailed =
  */
 const lookupWorkspace = (
 	host: RelayHost,
+	settings: RelaySettings,
 	connector: ChatConnector<HttpClient.HttpClient | ConnectorCredentials>,
 	connectorId: ChatConnectorId,
 	workspaceId: string,
 	externalUserId: string | undefined,
 ) =>
-	Effect.flatMap(credentialKey(host.env), (key) =>
+	Effect.flatMap(credentialKey(settings), (key) =>
 		withDatabase(
 			host.env,
 			Effect.gen(function* () {
@@ -189,8 +195,23 @@ const lookupWorkspace = (
 		).pipe(lookupFailed(connectorId, "The chat workspace could not be read")),
 	)
 
+/** What a relayed event reads from the graph rather than the object: settings and the chat-session port. */
+interface RelayEnvironment {
+	readonly settings: RelaySettings
+	readonly chatSessions: ChatSessionsApi
+}
+
+const relayEnvironment: Effect.Effect<RelayEnvironment, never, ChatSessions> = Effect.gen(function* () {
+	return {
+		// Every setting recovers its own ConfigError (`optionalSetting`), so this cannot fail.
+		settings: yield* Effect.orDie(relaySettings),
+		chatSessions: yield* ChatSessions,
+	}
+})
+
 const ports = (
 	host: RelayHost,
+	{ settings, chatSessions }: RelayEnvironment,
 	connector: ChatConnector<HttpClient.HttpClient | ConnectorCredentials>,
 	resolveWorkspace: RelayPorts["resolveWorkspace"],
 ): RelayPorts<HttpClient.HttpClient | ConnectorCredentials> => ({
@@ -215,12 +236,12 @@ const ports = (
 				),
 			),
 		),
-	chatSession: (sessionId) => chatSessionStub(host.env, sessionId),
-	appBaseUrl: appBaseUrl(host.env),
+	chatSession: (sessionId) => chatSessions.stub(sessionId),
+	appBaseUrl: settings.appBaseUrl,
 	chartImageUrl: (orgId: OrgId, ref) =>
 		chatChartImageUrl({
-			appBaseUrl: appBaseUrl(host.env),
-			hmacKey: setting(host.env, "MAPLE_SHARE_TOKEN_HMAC_KEY") ?? null,
+			appBaseUrl: settings.appBaseUrl,
+			hmacKey: Option.match(settings.shareTokenHmacKey, { onNone: () => null, onSome: Redacted.value }),
 			orgId,
 			sessionId: ref.sessionId,
 			messageId: ref.messageId,
@@ -242,33 +263,37 @@ const ports = (
 export const runInboundEvent = async (host: RelayHost, event: InboundEvent): Promise<void> => {
 	const connector = connectors.find((candidate) => candidate.id === event.connector)
 	if (connector === undefined) return
-	const config = resolveConnectorConfig(host.env, connector)
-	if (config._tag === "missing") return
 
 	await Effect.runPromise(
-		relayWithWorkspace(
-			event,
-			config.config,
-			lookupWorkspace(
-				host,
-				connector,
-				event.connector,
-				event.workspaceId,
-				// Only a click names a person; a message is answered for the workspace.
-				event.type === "action" ? event.actor.id : undefined,
-			),
-			(resolveWorkspace) => ports(host, connector, resolveWorkspace),
-		).pipe(inRuntime(host.env)),
+		Effect.gen(function* () {
+			const config = yield* resolveConnectorConfig(connector)
+			if (config._tag === "missing") return
+			const environment = yield* relayEnvironment
+			yield* relayWithWorkspace(
+				event,
+				config.config,
+				lookupWorkspace(
+					host,
+					environment.settings,
+					connector,
+					event.connector,
+					event.workspaceId,
+					// Only a click names a person; a message is answered for the workspace.
+					event.type === "action" ? event.actor.id : undefined,
+				),
+				(resolveWorkspace) => ports(host, environment, connector, resolveWorkspace),
+			)
+		}).pipe(inRuntime(host.env)),
 	)
 }
 
 /** This Worker's runtime for an event's or a settle's Effect, and the flush that exports its spans. */
 const inRuntime =
 	(env: Record<string, unknown>) =>
-	<A>(program: Effect.Effect<A, never, HttpClient.HttpClient>) =>
+	<A>(program: Effect.Effect<A, never, HttpClient.HttpClient | ChatSessions>) =>
 		program.pipe(
 			// oxlint-disable-next-line effecttsgo/strict-effect-provide
-			Effect.provide(Layer.mergeAll(FetchHttpClient.layer, workerEnvLayer(env), telemetry.layer)),
+			Effect.provide(Layer.mergeAll(FetchHttpClient.layer, envPorts(env), telemetry.layer)),
 			// On the fiber rather than in a `finally`: the flush is what exports this event's spans,
 			// so it belongs to the same interruption and failure handling they do.
 			Effect.ensuring(Effect.promise(() => telemetry.flush(env).catch(() => undefined))),
@@ -286,28 +311,34 @@ export const settleInboundTurn = async (
 	const connector = Option.isNone(checkpoint)
 		? undefined
 		: connectors.find((candidate) => candidate.id === checkpoint.value.connector)
-	const config = connector === undefined ? undefined : resolveConnectorConfig(host.env, connector)
-	if (Option.isNone(checkpoint) || connector === undefined || config?._tag !== "ready") {
-		return Effect.runPromise(
-			Effect.logWarning("A turn checkpoint this build cannot settle was dropped").pipe(
-				Effect.as<SettleOutcome>("done"),
-				inRuntime(host.env),
-			),
-		)
-	}
 	const relayHost: RelayHost = {
 		...host,
 		announceUnlinked: Effect.succeed(false),
 		ownsConversation: () => Effect.succeed(false),
 		rememberConversation: () => Effect.void,
 	}
-	const { target } = checkpoint.value
 	return Effect.runPromise(
-		withWorkspace(
-			config.config,
-			lookupWorkspace(relayHost, connector, checkpoint.value.connector, target.workspaceId, undefined),
-			(resolveWorkspace) => ports(relayHost, connector, resolveWorkspace),
-			(settlePorts) => settleRelayedTurn(checkpoint.value, settlePorts),
-		).pipe(inRuntime(host.env)),
+		Effect.gen(function* () {
+			const config = connector === undefined ? undefined : yield* resolveConnectorConfig(connector)
+			if (Option.isNone(checkpoint) || connector === undefined || config?._tag !== "ready") {
+				yield* Effect.logWarning("A turn checkpoint this build cannot settle was dropped")
+				return "done" satisfies SettleOutcome
+			}
+			const environment = yield* relayEnvironment
+			const { target } = checkpoint.value
+			return yield* withWorkspace(
+				config.config,
+				lookupWorkspace(
+					relayHost,
+					environment.settings,
+					connector,
+					checkpoint.value.connector,
+					target.workspaceId,
+					undefined,
+				),
+				(resolveWorkspace) => ports(relayHost, environment, connector, resolveWorkspace),
+				(settlePorts) => settleRelayedTurn(checkpoint.value, settlePorts),
+			)
+		}).pipe(inRuntime(host.env)),
 	)
 }

@@ -15,6 +15,9 @@ import { cn } from "@maple/ui/lib/utils"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import type { Tone } from "../severity-tokens"
 
+/** A band that stands alone on a page body rather than flush under a shell's header. */
+export const FLEET_BAND_BOXED = "overflow-hidden rounded-lg border"
+
 /** One slice of the proportional strip. */
 export interface FleetBandSegment {
 	readonly key: string
@@ -164,9 +167,9 @@ function ScopeCell<S extends string>({
 	)
 }
 
-export function FleetBandLoading({ cells }: { cells: number }) {
+export function FleetBandLoading({ cells, className }: { cells: number; className?: string }) {
 	return (
-		<div className="flex flex-col border-b bg-background md:flex-row md:items-stretch">
+		<div className={cn("flex flex-col border-b bg-background md:flex-row md:items-stretch", className)}>
 			<div className="flex w-full flex-col justify-center gap-2 px-4 py-3 md:w-72 md:shrink-0">
 				<Skeleton className="h-4 w-28" />
 				<Skeleton className="h-1.5 w-full rounded-full" />

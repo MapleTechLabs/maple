@@ -1,4 +1,4 @@
-import { Effect, Option, Predicate } from "effect"
+import { Config, Effect, Option, Predicate } from "effect"
 import * as Flag from "effect/cli/Flag"
 import * as GlobalFlag from "effect/cli/GlobalFlag"
 import { bold, dim } from "./style"
@@ -41,17 +41,19 @@ export const argvFormat = (argv: ReadonlyArray<string>): OutputFormat | undefine
 }
 
 /** Parsed `--format` when the setting is registered, else argv, then MAPLE_FORMAT, then json. */
-export const resolveFormat: Effect.Effect<OutputFormat> = Effect.map(
-	Effect.serviceOption(OutputFormatSetting),
-	(setting) => {
-		const explicit = Option.match(setting, {
-			onSome: Option.getOrUndefined,
-			onNone: () => argvFormat(process.argv),
-		})
-		const env = process.env.MAPLE_FORMAT
-		return explicit ?? (isFormat(env) ? env : "json")
-	},
-)
+export const resolveFormat: Effect.Effect<OutputFormat> = Effect.gen(function* () {
+	const setting = yield* Effect.serviceOption(OutputFormatSetting)
+	const explicit = Option.match(setting, {
+		onSome: Option.getOrUndefined,
+		onNone: () => argvFormat(process.argv),
+	})
+	const env = yield* Config.String("MAPLE_FORMAT").pipe(
+		Config.option,
+		Effect.map(Option.getOrUndefined),
+		Effect.orElseSucceed(() => undefined),
+	)
+	return explicit ?? (isFormat(env) ? env : "json")
+})
 
 // ---------------------------------------------------------------------------
 // Cell formatting (table mode only; JSON keeps raw numbers)

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { describeWarehouseTable, listWarehouseTables } from "./warehouse-catalog"
+import { describeWarehouseTable, listWarehouseTables, suggestWarehouseTables } from "./warehouse-catalog"
 
 describe("listWarehouseTables", () => {
 	it("includes the canonical maple tables", () => {
@@ -56,5 +56,36 @@ describe("describeWarehouseTable", () => {
 		expect(key).toContain("OrgId")
 		expect(key).toContain("ServiceName")
 		expect(key).toContain("Timestamp")
+	})
+})
+
+describe("time columns and engine notes", () => {
+	it.each([
+		["traces", "Timestamp"],
+		["session_replays", "StartTime"],
+		["metrics_sum", "TimeUnix"],
+		["service_operations_hourly", "Hour"],
+		["service_operations_minutely", "Minute"],
+	])("names %s's time column as %s", (table, column) => {
+		expect(listWarehouseTables().find((t) => t.name === table)?.timeColumn).toBe(column)
+		expect(describeWarehouseTable(table)?.notes?.[0]).toContain(`$__timeFilter(${column})`)
+	})
+
+	it("tells readers of a SummingMergeTree to sum", () => {
+		expect(describeWarehouseTable("service_usage")?.notes?.join("\n")).toContain("SummingMergeTree")
+	})
+})
+
+describe("suggestWarehouseTables", () => {
+	it.each([
+		["otel_traces", ["traces"]],
+		["Spans", ["traces"]],
+		["otel_logs", ["logs"]],
+		["otel_metrics_sum", ["metrics_sum"]],
+		["default.Traces", ["traces"]],
+		["metrics", ["metrics_sum", "metrics_gauge", "metrics_histogram"]],
+		["nonsense", []],
+	])("maps %s to %j", (name, expected) => {
+		expect(suggestWarehouseTables(name)).toEqual(expected)
 	})
 })

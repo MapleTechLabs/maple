@@ -1,44 +1,22 @@
 /**
- * DNS validation for ACM certificates whose zone lives in Cloudflare.
+ * DNS validation for ACM certificates whose zone is on Cloudflare. alchemy's
+ * `AWS.ACM.Certificate` only auto-validates via a Route53 `hostedZoneId`.
  *
- * alchemy's `AWS.ACM.Certificate` validates itself only when it is given a
- * Route53 `hostedZoneId` (`Certificate.ts`, `shouldAutoValidate`). Maple's zone
- * is `maple.dev` on Cloudflare, so the certificate lands PENDING_VALIDATION and
- * the ALB's 443 listener then refuses it — the first deploy of any new
- * certificate-bearing domain fails. That gap used to be filled out of band by
- * `scripts/acm-cert-validate.sh` (curl + jq against both APIs, run after a
- * failed deploy, followed by a retry of the deploy).
+ * Chain: `AcmValidationRecord` (read the CNAME ACM wants), `Cloudflare.DNS.Record`
+ * (publish it), `AcmCertificateIssued` (wait for ISSUED; consumes the record's
+ * name so it runs after it). Both are read-only against AWS.
  *
- * These two resources close it inside the stack, as a chain:
- *
- *   1. `AcmValidationRecord` — describes the certificate until ACM has filled
- *      in the CNAME it wants, and returns it.
- *   2. `Cloudflare.DNS.Record` — publishes that CNAME (the caller's job; it is
- *      a stock alchemy resource).
- *   3. `AcmCertificateIssued` — waits for ACM to observe the record and mark
- *      the certificate ISSUED, and re-emits the ARN so the listener can depend
- *      on the *issued* certificate rather than the requested one.
- *
- * Step 3 is a separate resource rather than part of step 1 because the wait has
- * to happen AFTER the record exists, and an alchemy resource orders itself by
- * the Outputs it consumes: it takes the published record's name, so it cannot
- * run early.
- *
- * Both are read-only against AWS — they create nothing and delete nothing, so
- * teardown is a no-op and re-running them is free.
- *
- * They are nonetheless RESOURCES rather than `Output.mapEffect` transforms over
- * the certificate's ARN, which is the shorter way to write "await something and
- * hand on a value" and is the wrong one here. `Plan.ts` resolves an `EffectExpr`
- * during PLANNING as soon as its upstream is resolved (`resolveOutput`), so
- * once the certificate exists in state, a plain `alchemy plan` — a dry run that
- * should touch nothing — would sit inside the ISSUED wait for up to ten
- * minutes. A resource's `reconcile` runs at apply only.
+ * Resources, not `Output.mapEffect`: an `EffectExpr` resolves during `alchemy
+ * plan`, which would then block in the ISSUED wait. `reconcile` runs at apply only.
  */
 import * as acm from "@distilled.cloud/aws/acm"
 import * as AwsRegion from "@distilled.cloud/aws/Region"
+import * as ips from "@distilled.cloud/cloudflare/ips"
+import { adopt } from "alchemy/AdoptPolicy"
+import * as AWS from "alchemy/AWS"
 import * as Cloudflare from "alchemy/Cloudflare"
 import type { Input } from "alchemy/Input"
+import * as Output from "alchemy/Output"
 import * as Provider from "alchemy/Provider"
 import { Resource } from "alchemy/Resource"
 import * as Effect from "effect/Effect"
@@ -48,39 +26,20 @@ import * as Schema from "effect/Schema"
 import { requiredPlain } from "../env.ts"
 import type { AwsRegionName } from "./stage.ts"
 
-/**
- * ACM fills `ResourceRecord` in asynchronously, seconds after the request. The
- * bound matches alchemy's own internal wait (`waitForValidationRecords`): 2s
- * apart, 60 attempts.
- */
+/** ACM fills `ResourceRecord` in asynchronously; matches alchemy's `waitForValidationRecords`. */
 const RECORD_POLL = Schedule.max([Schedule.fixed("2 seconds"), Schedule.recurs(60)])
 
 /**
- * Issuance follows the DNS record's propagation, which is Cloudflare-fast, but
- * ACM's own re-check interval is much coarser and a first issuance regularly
- * takes several minutes. Matches alchemy's own `waitForIssued` — 10s apart for
- * 10 minutes; a first deploy that gives up early is a deploy that has to be
- * re-run for no reason.
- *
- * `Schedule.max` recurs while EVERY schedule still wants to, so the `recurs`
- * arm is what bounds this — it cannot spin forever.
+ * First issuance regularly takes minutes; matches alchemy's `waitForIssued`
+ * (10 minutes). `Schedule.max` stops when any arm stops, so `recurs` bounds it.
  */
 const ISSUED_POLL = Schedule.max([Schedule.fixed("10 seconds"), Schedule.recurs(60)])
 
-/**
- * A certificate in one of these is never going to issue, so the wait above
- * must not burn its full window on it — the deploy should fail immediately,
- * naming the status.
- */
+/** Statuses that never issue: fail immediately rather than burn the wait window. */
 const isTerminalFailure = (status: string | undefined): boolean =>
 	status === "FAILED" || status === "VALIDATION_TIMED_OUT"
 
-/**
- * Context is `optionalKey` because the two failure sites know different things:
- * a certificate read has an ARN and no hostname, a zone lookup the reverse.
- * Carrying a hostname in a field named `certificateArn` would read as an ARN in
- * every log line that printed it.
- */
+/** A certificate read knows the ARN, a zone lookup knows the hostname; hence both optional. */
 export class AcmValidationError extends Schema.TaggedError<AcmValidationError>()(
 	"Maple.ACM.ValidationError",
 	{
@@ -118,11 +77,8 @@ export interface AcmCertificateIssuedProps {
 	/** The region the certificate was requested in. */
 	region: AwsRegionName
 	/**
-	 * The validation record's name, as published. Never read — it is consumed
-	 * purely to order this resource AFTER the `Cloudflare.DNS.Record`, which is
-	 * how alchemy expresses a dependency: a resource waits for every Output its
-	 * props consume. Naming the published record (rather than an opaque id)
-	 * also puts it in the plan output, where a stuck certificate is diagnosed.
+	 * Never read: consuming it orders this resource after the published
+	 * `Cloudflare.DNS.Record`, and puts the record name in the plan output.
 	 */
 	publishedRecordName: string
 }
@@ -140,17 +96,11 @@ export type AcmCertificateIssued = Resource<
 
 export const AcmCertificateIssued = Resource<AcmCertificateIssued>("Maple.ACM.CertificateIssued")
 
-/**
- * A certificate lives in one region and must be described there — an ALB can
- * only use a certificate from its own region, so this is the same region the
- * `AWS.ACM.Certificate` was requested in, and the caller passes it rather than
- * parsing it back out of the ARN.
- */
+/** A certificate must be described in the region it was requested in (the ALB's region). */
 const describe = (certificateArn: string, region: AwsRegionName) =>
 	acm.describeCertificate({ CertificateArn: certificateArn }).pipe(
 		Effect.map((response) => response.Certificate),
-		// A per-call region override, not application wiring: `Region`'s service
-		// value is an `Effect<RegionName>`, so it is provided as an effect.
+		// Per-call region override; `Region`'s service value is an `Effect<RegionName>`.
 		Effect.provideService(AwsRegion.Region, Effect.succeed(region)),
 	)
 
@@ -159,17 +109,10 @@ const stripTrailingDot = (name: string): string => name.replace(/\.$/, "")
 
 export const AcmValidationRecordProvider = () =>
 	Provider.succeed(AcmValidationRecord, {
-		// Nothing to delete, so `alchemy unsafe nuke` must not try — otherwise it
-		// reports the "deleted but still there" loop alchemy documents for
-		// existence-only resources.
+		// Nothing to delete; without the skip, nuke loops on "deleted but still there".
 		nuke: { skip: true },
-		// No `stables`. `certificateArn` mirrors the prop, so it is precisely
-		// what changes when the certificate is REPLACED (a new domain, a new
-		// SAN, a region change) — and a stable attribute's OLD value is what
-		// alchemy feeds downstream consumers while this resource updates
-		// (`withStables` in `Plan.ts`). Declaring it stable would plan the ALB
-		// listener against the ARN of the certificate that just went away.
-		// Read-only: there is no such thing as listing "validation reads".
+		// No `stables`: `certificateArn` changes when the certificate is replaced, and
+		// a stable's OLD value would plan the ALB listener against the deleted cert.
 		list: () => Effect.succeed([]),
 		delete: () => Effect.void,
 		reconcile: Effect.fn(function* ({ news }) {
@@ -181,7 +124,7 @@ export const AcmValidationRecordProvider = () =>
 							? [{ name: option.ResourceRecord.Name, value: option.ResourceRecord.Value }]
 							: [],
 					)
-					// Not yet published — retry.
+					// Not yet published, retry.
 					if (records.length === 0 || records.length < options.length) {
 						return Effect.fail(
 							new AcmValidationError({
@@ -190,13 +133,8 @@ export const AcmValidationRecordProvider = () =>
 							}),
 						)
 					}
-					// A multi-name certificate has one validation option per name, and
-					// ACM frequently gives them the SAME record (a domain and its
-					// `www` SAN share one). Distinct ones would each need their own
-					// CNAME, which this resource does not model — publishing only the
-					// first would leave the certificate stuck short of ISSUED until
-					// the wait below times out, with nothing saying why. Say why here
-					// instead. Both of Maple's certificates are single-name today.
+					// SANs often share one record. Distinct records are not modeled: publishing
+					// only the first would stall short of ISSUED with no reason given.
 					const distinct = new Map(records.map((record) => [record.name, record]))
 					const [first] = [...distinct.values()]
 					if (distinct.size > 1 || first === undefined) {
@@ -226,15 +164,14 @@ export const AcmValidationRecordProvider = () =>
 export const AcmCertificateIssuedProvider = () =>
 	Provider.succeed(AcmCertificateIssued, {
 		nuke: { skip: true },
-		// No `stables` — see `AcmValidationRecordProvider`.
+		// No `stables`, see `AcmValidationRecordProvider`.
 		list: () => Effect.succeed([]),
 		delete: () => Effect.void,
 		reconcile: Effect.fn(function* ({ news }) {
 			const status = yield* describe(news.certificateArn, news.region).pipe(
 				Effect.flatMap((detail) => {
 					if (detail?.Status === "ISSUED") return Effect.succeed(detail.Status)
-					// Terminal: retrying for the full window would only delay the
-					// failure and bury the reason ACM gave for it.
+					// Terminal: fail now with ACM's reason instead of retrying.
 					if (isTerminalFailure(detail?.Status)) {
 						// oxlint-disable-next-line maple/no-effect-die -- the certificate can never issue, see above
 						return Effect.die(
@@ -260,25 +197,62 @@ export const AcmCertificateIssuedProvider = () =>
 		}),
 	})
 
-/**
- * Register both providers; merge into the stack's `providers` layer alongside
- * `AWS.providers()`, whose credentials and HTTP client these reads use.
- */
+/** Merge alongside `AWS.providers()`, whose credentials and HTTP client these reads use. */
 export const providers = () => Layer.mergeAll(AcmValidationRecordProvider(), AcmCertificateIssuedProvider())
 
 /**
- * Issue an ACM certificate whose DNS lives in the Cloudflare zone: publish the
- * validation CNAME, wait for ACM to see it, and hand back the ARN of the
- * ISSUED certificate.
- *
- * Feed the RESULT to the ALB listener rather than `certificate.certificateArn`.
- * Both are the same string, but consuming this one is what makes the listener
- * wait for issuance — attaching the requested certificate is the failure this
- * whole module exists to remove ("certificate must have a fully-qualified
- * domain name…", which is ACM's way of saying PENDING_VALIDATION).
- *
- * The zone is resolved by name from the hostname, so this stack reads the
- * Cloudflare zone but never manages it — the zone itself stays outside alchemy.
+ * Resolve the Cloudflare zone by hostname (read, never managed). A missing zone
+ * is a misconfigured stack, so it dies.
+ */
+const resolveCloudflareZoneId = Effect.fn(function* (hostname: string) {
+	const accountId = yield* requiredPlain("CLOUDFLARE_ACCOUNT_ID")
+	return yield* Cloudflare.Zone.resolveZoneId({ accountId, zone: undefined, hostname }).pipe(
+		Effect.catch((cause: Error) =>
+			// oxlint-disable-next-line maple/no-effect-die -- stack wiring invariant, see above
+			Effect.die(
+				new AcmValidationError({
+					hostname,
+					message: `no Cloudflare zone for ${hostname}: ${cause.message}`,
+				}),
+			),
+		),
+	)
+})
+
+/** `https://host[:port]/path` to `host`: a load balancer's URL as a CNAME target. */
+export const urlHost = (url: string | undefined): string =>
+	url !== undefined && URL.canParse(url) ? new URL(url).hostname : ""
+
+/**
+ * Proxied CNAME from `hostname` to the host part of `serviceUrl`. `adopt(true)`
+ * because the records predate the stack and Cloudflare has no ownership marker.
+ */
+export const publishProxiedCname = Effect.fn(function* ({
+	id,
+	hostname,
+	serviceUrl,
+}: {
+	/** Logical id of the record. */
+	id: string
+	/** The public name, e.g. `ingest.maple.dev`; also selects the zone. */
+	hostname: string
+	/** The load balancer's URL, scheme and all. */
+	serviceUrl: Output.Output<string | undefined>
+}) {
+	const zoneId = yield* resolveCloudflareZoneId(hostname)
+	return yield* Cloudflare.DNS.Record(id, {
+		zoneId,
+		type: "CNAME",
+		name: hostname,
+		content: Output.map(serviceUrl, urlHost),
+		proxied: true,
+	}).pipe(adopt(true))
+})
+
+/**
+ * Publish the validation CNAME, wait for ISSUED, and return the ARN. Feed the
+ * RESULT (not `certificate.certificateArn`) to the ALB listener so it waits for
+ * issuance; a PENDING_VALIDATION cert fails the listener.
  */
 export const issueCertificateViaCloudflare = Effect.fn(function* ({
 	id,
@@ -294,35 +268,14 @@ export const issueCertificateViaCloudflare = Effect.fn(function* ({
 	hostname: string
 	region: AwsRegionName
 }) {
-	const accountId = yield* requiredPlain("CLOUDFLARE_ACCOUNT_ID")
-	// A certificate-bearing domain whose zone this account cannot see is a
-	// misconfigured stack, not a runtime condition — there is nothing to fall
-	// back to, and the deploy would otherwise fail later and less clearly.
-	const zoneId = yield* Cloudflare.Zone.resolveZoneId({
-		accountId,
-		zone: undefined,
-		hostname,
-	}).pipe(
-		Effect.catch((cause: Error) =>
-			// oxlint-disable-next-line maple/no-effect-die -- stack wiring invariant, see above
-			Effect.die(
-				new AcmValidationError({
-					hostname,
-					message: `no Cloudflare zone for ${hostname}: ${cause.message}`,
-				}),
-			),
-		),
-	)
+	const zoneId = yield* resolveCloudflareZoneId(hostname)
 
 	const validation = yield* AcmValidationRecord(`${id}-validation`, {
 		certificateArn,
 		region,
 	})
 
-	// Never proxied: this record is read by ACM's validator, not by browsers,
-	// and Cloudflare's proxy would answer with its own edge address instead of
-	// the CNAME target. TTL 60 so a re-issued certificate's record converges
-	// quickly; ACM reuses the same record across renewals.
+	// Never proxied: the proxy would hide the CNAME target from ACM's validator.
 	const record = yield* Cloudflare.DNS.Record(`${id}-validation-record`, {
 		zoneId,
 		type: "CNAME",
@@ -340,3 +293,75 @@ export const issueCertificateViaCloudflare = Effect.fn(function* ({
 
 	return issued.certificateArn
 })
+
+/**
+ * A certificate for an ALB in `region` (an ALB only takes one from its own region), validated
+ * through Cloudflare. Returns the ISSUED ARN for the listener, or `undefined` with no hostname.
+ * `id` is the certificate's logical id and the prefix of the validation resources.
+ */
+export const issueRegionalCertificate = Effect.fn(function* ({
+	id,
+	hostname,
+	region,
+	tags,
+}: {
+	id: string
+	hostname: string | undefined
+	region: AwsRegionName
+	tags: Record<string, string>
+}) {
+	if (hostname === undefined) return undefined
+	const certificate = yield* AWS.ACM.Certificate(id, {
+		domainName: hostname,
+		validationMethod: "DNS",
+		region,
+		tags,
+	})
+	return yield* issueCertificateViaCloudflare({
+		id,
+		certificateArn: certificate.certificateArn,
+		hostname,
+		region,
+	})
+})
+
+/** Cloudflare's published edge ranges could not be read, or came back empty. */
+export class CloudflareRangesError extends Schema.TaggedError<CloudflareRangesError>()(
+	"@maple/infra/CloudflareRangesError",
+	{
+		message: Schema.String,
+		cause: Schema.optionalKey(Schema.Defect()),
+	},
+) {}
+
+/** AWS's default inbound-rule quota per security group; each range is one rule. */
+const SECURITY_GROUP_INBOUND_RULE_LIMIT = 60
+
+/**
+ * Cloudflare's IPv4 edge ranges, read at plan time so an origin's security group follows them.
+ * An empty list fails the deploy (it would lock every proxied request out), and so does one
+ * that would not fit a security group: dropping ranges would block part of Cloudflare's edge.
+ */
+export const cloudflareIpv4Ranges = ips.listIps({}).pipe(
+	Effect.mapError(
+		(cause) =>
+			new CloudflareRangesError({
+				message: `could not read Cloudflare's IP ranges: ${cause.message}`,
+				cause,
+			}),
+	),
+	Effect.flatMap((result) => {
+		const cidrs = result.ipv4Cidrs ?? []
+		if (cidrs.length === 0) {
+			return Effect.fail(new CloudflareRangesError({ message: "Cloudflare returned no IPv4 ranges" }))
+		}
+		if (cidrs.length > SECURITY_GROUP_INBOUND_RULE_LIMIT) {
+			return Effect.fail(
+				new CloudflareRangesError({
+					message: `Cloudflare publishes ${cidrs.length} IPv4 ranges, more than the ${SECURITY_GROUP_INBOUND_RULE_LIMIT} inbound rules a security group allows by default`,
+				}),
+			)
+		}
+		return Effect.succeed(cidrs)
+	}),
+)

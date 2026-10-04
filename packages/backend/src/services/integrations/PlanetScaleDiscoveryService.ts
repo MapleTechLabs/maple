@@ -143,9 +143,7 @@ export const subTargetsFromGroup = (group: {
 	const dropped: Array<string> = []
 	for (const hostPort of group.targets) {
 		const url = `${scheme}://${hostPort}${path}`
-		try {
-			validateExternalUrlSync(url)
-		} catch {
+		if (Option.isNone(Option.liftThrowable(validateExternalUrlSync)(url))) {
 			dropped.push(url)
 			continue
 		}

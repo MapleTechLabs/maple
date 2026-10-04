@@ -1,3 +1,4 @@
+// BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
 import { assert, describe, expect, it } from "@effect/vitest"
 import { ConfigProvider, Effect, Layer } from "effect"
 import { OrgId } from "@maple/domain"
@@ -5,6 +6,7 @@ import type { TimeseriesPoint } from "@maple/domain/query-engine"
 import { Schema } from "effect"
 import { BucketCacheService, type BucketCacheOutcome } from "./bucket-cache"
 import {
+	EdgeCacheBackendError,
 	EdgeCacheService,
 	makeEdgeCacheService,
 	makeMemoryBackend,
@@ -80,20 +82,21 @@ const makeInstrumentedBackend = (inner: EdgeCacheBackend = makeMemoryBackend()) 
 
 	const backend: EdgeCacheBackend = {
 		name: inner.name,
-		get: async (bucket, hash, nowMs) => {
-			calls.push({ op: "get", key: hash })
-			inFlight++
-			peakInFlight = Math.max(peakInFlight, inFlight)
-			try {
-				return await inner.get(bucket, hash, nowMs)
-			} finally {
-				inFlight--
-			}
-		},
-		put: async (bucket, hash, value, ttlSeconds, nowMs) => {
-			calls.push({ op: "put", key: hash })
-			return inner.put(bucket, hash, value, ttlSeconds, nowMs)
-		},
+		get: (bucket, hash, nowMs) =>
+			Effect.sync(() => {
+				calls.push({ op: "get", key: hash })
+				inFlight++
+				peakInFlight = Math.max(peakInFlight, inFlight)
+			}).pipe(
+				// Yield so concurrent reads overlap, as a real backend's I/O would.
+				Effect.andThen(Effect.yieldNow),
+				Effect.andThen(inner.get(bucket, hash, nowMs)),
+				Effect.ensuring(Effect.sync(() => inFlight--)),
+			),
+		put: (bucket, hash, value, ttlSeconds, nowMs) =>
+			Effect.sync(() => calls.push({ op: "put", key: hash })).pipe(
+				Effect.andThen(inner.put(bucket, hash, value, ttlSeconds, nowMs)),
+			),
 		delete: inner.delete,
 	}
 
@@ -419,7 +422,7 @@ describe("bucket cache hit rate — degraded backends", () => {
 	const hangingReads = (inner: EdgeCacheBackend): EdgeCacheBackend => ({
 		...inner,
 		name: inner.name,
-		get: () => new Promise<never>(() => {}),
+		get: () => Effect.never,
 	})
 
 	const READ_TIMEOUT_MS = 20
@@ -473,13 +476,9 @@ describe("bucket cache hit rate — degraded backends", () => {
 	it.live("survives a backend that throws on both read and write", () => {
 		const exploding: EdgeCacheBackend = {
 			name: "memory",
-			get: async () => {
-				throw new Error("read exploded")
-			},
-			put: async () => {
-				throw new Error("write exploded")
-			},
-			delete: async () => {},
+			get: () => Effect.fail(new EdgeCacheBackendError({ op: "get", message: "read exploded" })),
+			put: () => Effect.fail(new EdgeCacheBackendError({ op: "put", message: "write exploded" })),
+			delete: () => Effect.void,
 		}
 		const fixed = { startMs: BASE_MS - 4 * MIN, endMs: BASE_MS }
 
@@ -504,10 +503,14 @@ describe("bucket cache hit rate — degraded backends", () => {
 		const inner = makeMemoryBackend()
 		const jsonRoundTrip: EdgeCacheBackend = {
 			name: "workers-cache",
-			get: async (bucket, hash, nowMs) => {
-				const value = await inner.get(bucket, hash, nowMs)
-				return value === undefined ? undefined : JSON.parse(JSON.stringify(value))
-			},
+			get: (bucket, hash, nowMs) =>
+				inner
+					.get(bucket, hash, nowMs)
+					.pipe(
+						Effect.map((value): unknown =>
+							value === undefined ? undefined : JSON.parse(JSON.stringify(value)),
+						),
+					),
 			put: (bucket, hash, value, ttlSeconds, nowMs) =>
 				inner.put(bucket, hash, JSON.parse(JSON.stringify(value)), ttlSeconds, nowMs),
 			delete: inner.delete,

@@ -81,6 +81,8 @@ first occurrences ──> (candidate) ──> issue in \`triage\`
 - \`set_issue_severity\` — how bad it is, with a reason.
 - \`propose_fix\` / \`link_pull_request\` — attach the fix.
 - \`transition_error_issue\` — everything else, e.g. \`wontfix\` with a \`snooze_until\`.
+- \`transition_error_issues\`: the same move on many issues at once (one note, per-issue results).
+  \`propose_fix\` takes \`also_issue_ids\` when one PR fixes several issues.
 
 ## Attribute Filtering
 - Call \`explore_attributes\` before filtering by custom attributes
@@ -93,6 +95,8 @@ first occurrences ──> (candidate) ──> issue in \`triage\`
 - For traces: available metrics are count, avg_duration, p50/p95/p99_duration, error_rate, apdex
 - For logs: only count is available
 - For custom metrics: specify both metric_name and metric_type
+- Counters (sum metrics, Prometheus \`*_total\` gauges): use metric=increase or metric=rate, computed per series and reset-aware. metric=sum adds raw cumulative samples and is not a real total
+- Histogram percentiles (p50/p95/p99) are not available for metrics in query_data; use avg, or source=traces p95_duration for request latency
 
 ## Pagination
 - Tools that return lists support pagination via offset parameter
@@ -105,6 +109,7 @@ first occurrences ──> (candidate) ──> issue in \`triage\`
 - Performance analysis: find_slow_traces -> inspect_trace -> get_service_top_operations
 - Trend analysis: query_data (timeseries or breakdown)
 - Service discovery: list_services -> diagnose_service
+- Deploy verification: service_deployments (versions per service, newest vs previous) -> compare_periods around the rollout. Route usage over up to 90 days: route_usage. Silence check before calling an outage: ingest_freshness. Volume per service: ingest_usage. Database query shapes by volume: db_query_volume
 - Alert management: list_alert_rules / list_alert_destinations -> get_alert_rule -> preview_alert_rule (dry-run before saving; a window with no data is a blind rule, not a healthy one) -> create_alert_rule / update_alert_rule / delete_alert_rule -> list_alert_incidents
 - AI agent sessions (LLM agent traces — NOT browser replays): list_agent_sessions -> get_agent_session -> inspect_span (decodes an AI span's messages and tool calls)
 - Agent tool health: get_agent_tools_overview -> get_agent_tools_overview tool="<tool>" (its failure groups) -> get_agent_tool_error

@@ -1,9 +1,27 @@
-import { Array as Arr, Effect, pipe } from "effect"
+import { Effect, Schema } from "effect"
 import type { ListLogsOutput, LogsCountOutput } from "@maple/domain/tinybird"
 import { LOGS_BODY_SEARCH_SETTINGS } from "../profiles"
 import { WarehouseExecutor } from "./WarehouseExecutor"
 import type { SearchLogsInput } from "./types"
 import { toLogEntry } from "./row-mappers"
+
+const StringRecordFromJson = Schema.fromJsonString(Schema.Record(Schema.String, Schema.String))
+
+/** Attribute keys that usually carry a log's real cause when the body is generic. */
+export const isKeyLogAttribute = (key: string): boolean =>
+	key === "log.error" ||
+	key === "error" ||
+	key.endsWith(".error") ||
+	key.startsWith("error.") ||
+	key.startsWith("exception.")
+
+const keyLogAttributes = (raw: string | undefined): Effect.Effect<Record<string, string>> =>
+	Schema.decodeUnknownEffect(StringRecordFromJson)(raw ?? "{}").pipe(
+		Effect.map((parsed) =>
+			Object.fromEntries(Object.entries(parsed).filter(([k, v]) => v !== "" && isKeyLogAttribute(k))),
+		),
+		Effect.orElseSucceed(() => ({})),
+	)
 
 export const searchLogs = Effect.fn("Observability.searchLogs")(function* (input: SearchLogsInput) {
 	const executor = yield* WarehouseExecutor
@@ -50,7 +68,12 @@ export const searchLogs = Effect.fn("Observability.searchLogs")(function* (input
 		{ concurrency: "unbounded" },
 	)
 
-	const logs = pipe(logsResult.data, Arr.map(toLogEntry))
+	const logs = yield* Effect.forEach(logsResult.data, (row) =>
+		Effect.map(keyLogAttributes(row.logAttributes), (keyAttributes) => ({
+			...toLogEntry(row),
+			keyAttributes,
+		})),
+	)
 	const total = Number(countResult.data[0]?.total ?? 0)
 
 	return {

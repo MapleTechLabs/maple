@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect"
+import { Effect, Option, Schema } from "effect"
 
 /**
  * Svix (Standard Webhooks) signature verification, shared by the Clerk and
@@ -42,16 +42,15 @@ export const readSvixHeaders = (headers: Readonly<Record<string, string | undefi
 	signature: headers["svix-signature"],
 })
 
-const decodeBase64 = (value: string): Uint8Array<ArrayBuffer> | undefined => {
-	try {
-		const binary = atob(value)
-		const bytes = new Uint8Array(new ArrayBuffer(binary.length))
-		for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
-		return bytes
-	} catch {
-		return undefined
-	}
-}
+const decodeBase64 = (value: string): Uint8Array<ArrayBuffer> | undefined =>
+	Option.liftThrowable(atob)(value).pipe(
+		Option.map((binary) => {
+			const bytes = new Uint8Array(new ArrayBuffer(binary.length))
+			for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+			return bytes
+		}),
+		Option.getOrUndefined,
+	)
 
 const encodeBase64 = (bytes: ArrayBuffer): string => {
 	let binary = ""
