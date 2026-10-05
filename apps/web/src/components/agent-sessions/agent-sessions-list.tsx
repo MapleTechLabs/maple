@@ -10,6 +10,9 @@ import {
 import { useVirtualizer } from "@tanstack/react-virtual"
 import type { AiSessionSortDir, AiSessionSortKey } from "@maple/domain/http"
 
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
+import { InlineCode } from "@maple/ui/components/ui/inline-code"
+import { Spinner } from "@maple/ui/components/ui/spinner"
 import { TableSkeleton } from "@maple/ui/components/ui/table-skeleton"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
 import { formatRelativeTimeOrDate, toEpochMs } from "@maple/ui/lib/time-format"
@@ -38,10 +41,9 @@ function AgentSessionsSourceDetail() {
 	return (
 		<p className="max-w-md text-sm text-muted-foreground">
 			Trace your AI agents with a supported framework, or emit OpenTelemetry{" "}
-			<code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[0.8em]">gen_ai</code> spans. A
-			framework that groups its turns with a{" "}
-			<code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[0.8em]">maple_ai.session.id</code>{" "}
-			attribute gets one session across every trace; anything else gets one per trace.
+			<InlineCode>gen_ai</InlineCode> spans. A framework that groups its turns with a{" "}
+			<InlineCode>maple_ai.session.id</InlineCode> attribute gets one session across every trace;
+			anything else gets one per trace.
 		</p>
 	)
 }
@@ -558,7 +560,7 @@ export function AgentSessionsList({
 							<tr>
 								<td colSpan={SESSION_COLUMNS.length} className="p-2">
 									<div className="flex items-center justify-center gap-2 py-4 text-sm text-muted-foreground">
-										<span className="size-4 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" />
+										<Spinner className="size-4" />
 										Loading more sessions…
 									</div>
 								</td>
@@ -891,7 +893,7 @@ function ErrorChip({
 			{Icon ? (
 				<Icon size={10} className="shrink-0" aria-hidden />
 			) : (
-				<span className="size-1 rounded-full bg-current" aria-hidden />
+				<StatusDot tone="custom" size="sm" className="bg-current" />
 			)}
 			{/* Two digits of room, and the noun always as wide as its plural: a
 			    row's "1 tool" above the next row's "12 tools" otherwise makes two

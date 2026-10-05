@@ -1,3 +1,4 @@
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { cn } from "@maple/ui/lib/utils"
 
 export function AnomalyLiveIndicator({
@@ -23,17 +24,7 @@ export function AnomalyLiveIndicator({
 					: "border-border/70 text-muted-foreground hover:text-foreground",
 			)}
 		>
-			<span className="relative inline-flex size-1.5">
-				{live ? (
-					<span className="absolute inline-flex size-full animate-ping rounded-full bg-success opacity-60" />
-				) : null}
-				<span
-					className={cn(
-						"relative inline-flex size-full rounded-full",
-						live ? "bg-success" : "bg-muted-foreground/50",
-					)}
-				/>
-			</span>
+			<StatusDot tone={live ? "success" : "neutral"} pulse={live} />
 			{live ? "Live" : "Paused"}
 		</button>
 	)

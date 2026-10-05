@@ -110,3 +110,23 @@ export function EmptyContent({ className, ...props }: React.ComponentProps<"div"
 		/>
 	)
 }
+
+// The compact in-panel "nothing here" line: a table with no rows, a chart with no series.
+// `dashed` frames it as a placeholder box. Use `Empty` for page-level states with media and actions.
+export function EmptyMessage({
+	className,
+	dashed,
+	...props
+}: React.ComponentProps<"div"> & { dashed?: boolean }): React.ReactElement {
+	return (
+		<div
+			className={cn(
+				"px-4 py-8 text-center text-muted-foreground text-xs",
+				dashed && "rounded-md border border-dashed text-sm",
+				className,
+			)}
+			data-slot="empty-message"
+			{...props}
+		/>
+	)
+}

@@ -31,6 +31,7 @@ import {
 	type ReleaseIssueCounts,
 	type ReleaseServiceImpact,
 } from "./release-model"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 
 /** The bulk VCS lookup takes one page of shas; rows past it fall back to the sha. */
 const COMMIT_RESOLVE_LIMIT = 50
@@ -296,12 +297,12 @@ function ReleasesTableRows({
 							<Fragment key={group.commitSha}>
 								{showDay ? (
 									<TableRow className="hover:bg-transparent">
-										<TableCell
-											colSpan={6}
-											className="bg-muted/40 py-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground"
+										<Eyebrow
+											render={<TableCell colSpan={6} />}
+											className="bg-muted/40 py-1"
 										>
 											{day}
-										</TableCell>
+										</Eyebrow>
 									</TableRow>
 								) : null}
 								<TableRow className="group/row">

@@ -1,11 +1,12 @@
 import { Result } from "@/lib/effect-atom"
 import { formatNumber, formatPercent } from "@maple/ui/lib/format"
+import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 
 import type { WebAnalyticsAiCrawlers } from "@/api/warehouse/web-analytics"
 import { DocsLink } from "@/components/common/docs-link"
-import { QueryErrorState } from "@/components/common/query-error-state"
-import { StatRail, StatRailItem } from "@/components/infra/primitives/stat-rail"
+import { ErrorState } from "@/components/common/error-state"
+import { StatRail, StatRailItem } from "@/components/common/stat-rail"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import {
 	webAnalyticsAiCrawlersResultAtom,
@@ -54,8 +55,9 @@ const VISITOR_ONLY_FILTERS: ReadonlyArray<AnalyticsFilterKey> = [
 const NO_CRAWLS_MESSAGE = (
 	<>
 		AI crawlers fetch pages without running JavaScript, so the browser SDK never sees them. They are
-		counted from your server&apos;s traces: HTTP server spans whose <code>user_agent.original</code> names
-		GPTBot, ClaudeBot, PerplexityBot or another AI fetcher.
+		counted from your server&apos;s traces: HTTP server spans whose{" "}
+		<InlineCode>user_agent.original</InlineCode> names GPTBot, ClaudeBot, PerplexityBot or another AI
+		fetcher.
 		<span className="mt-2 flex justify-center">
 			<DocsLink page="traces" />
 		</span>
@@ -133,7 +135,7 @@ export function AnalyticsAiTab({
 						))}
 					</div>
 				))
-				.onError((error) => <QueryErrorState error={error} />)
+				.onError((error) => <ErrorState error={error} />)
 				.onSuccess(() => (
 					<div className="grid gap-3 @min-[560px]/page:grid-cols-2 @min-[880px]/page:grid-cols-3">
 						{CARD_PRODUCTS.map((product, index) => (
@@ -157,7 +159,7 @@ export function AnalyticsAiTab({
 				)}
 				{Result.builder(crawlersResult)
 					.onInitial(() => <Skeleton className="h-64 w-full" />)
-					.onError((error) => <QueryErrorState error={error} />)
+					.onError((error) => <ErrorState error={error} />)
 					.onSuccess((data) => (
 						<AiCrawlerTable crawlers={data.crawlers} emptyMessage={NO_CRAWLS_MESSAGE} />
 					))

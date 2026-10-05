@@ -1,18 +1,14 @@
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { useMemo, useState, type ReactNode } from "react"
 import { Link } from "@tanstack/react-router"
 import type { CloudflareServiceUsage, CloudflareUsageResponse } from "@maple/domain/http"
 import { StatSparkline } from "@maple/ui/components/charts/sparkline/stat-sparkline"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
-import {
-	InputGroup,
-	InputGroupAddon,
-	InputGroupButton,
-	InputGroupInput,
-} from "@maple/ui/components/ui/input-group"
+import { SearchInput } from "@maple/ui/components/ui/search-input"
 import { cn } from "@maple/ui/lib/utils"
 
 import { ColumnHead, type SortDir } from "@/components/infra/primitives/data-table"
-import { MagnifierIcon, XmarkIcon } from "@/components/icons"
 import { formatNumber } from "@maple/ui/lib/format"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { CLOUDFLARE_ACCENT } from "./integration-catalog"
@@ -285,7 +281,7 @@ function ResourceRow({
 
 	const body = (
 		<>
-			<span className={cn("mt-[5px] size-1.5 shrink-0 rounded-full", status.dot)} aria-hidden />
+			<StatusDot tone="custom" className={cn("mt-[5px]", status.dot)} />
 			<div className="min-w-0 flex-1">
 				<span
 					className={cn(
@@ -374,7 +370,7 @@ function ZoneChip({
 					: "border border-border/60 text-muted-foreground hover:bg-muted/60 hover:text-foreground",
 			)}
 		>
-			{dot ? <span aria-hidden className={cn("size-1.5 rounded-full", dot)} /> : null}
+			{dot ? <StatusDot tone="custom" className={dot} /> : null}
 			{label}
 			<span
 				className={cn("tabular-nums", active ? "text-muted-foreground" : "text-muted-foreground/70")}
@@ -501,25 +497,13 @@ export function CloudflareZoneBoard({
 						/>
 					))}
 				</div>
-				<InputGroup className="w-full sm:w-[170px]">
-					<InputGroupAddon>
-						<MagnifierIcon />
-					</InputGroupAddon>
-					<InputGroupInput
-						size="sm"
-						value={search}
-						onChange={(e) => setSearch(e.target.value)}
-						placeholder="Filter zones…"
-						aria-label="Filter zones by name"
-					/>
-					{search ? (
-						<InputGroupAddon align="inline-end">
-							<InputGroupButton aria-label="Clear filter" onClick={() => setSearch("")}>
-								<XmarkIcon />
-							</InputGroupButton>
-						</InputGroupAddon>
-					) : null}
-				</InputGroup>
+				<SearchInput
+					className="w-full sm:w-[170px]"
+					value={search}
+					onValueChange={setSearch}
+					placeholder="Filter zones…"
+					aria-label="Filter zones by name"
+				/>
 			</div>
 
 			{banner ? <div className="px-3 pt-3">{banner}</div> : null}
@@ -556,9 +540,9 @@ export function CloudflareZoneBoard({
 				</div>
 
 				{sorted.length === 0 ? (
-					<div className="px-3 py-10 text-center text-[12px] text-muted-foreground">
+					<EmptyMessage className="px-3 py-10">
 						{query ? `No zones match "${search.trim()}".` : "No zones in this state."}
-					</div>
+					</EmptyMessage>
 				) : (
 					// Plain max-height + overflow container (not the Base UI ScrollArea, whose `h-full`
 					// viewport needs a definite-height ancestor — with only a max-height it clips without
@@ -633,7 +617,7 @@ export function CloudflareWorkersCard({
 
 			{scripts.length === 0 ? (
 				<div className="flex items-center gap-2.5 px-4 py-3">
-					<span className={cn("size-1.5 shrink-0 rounded-full", aggregate.dot)} aria-hidden />
+					<StatusDot tone="custom" className={aggregate.dot} />
 					<span className={cn("text-[11px]", aggregate.detailClass)}>{aggregate.detail}</span>
 				</div>
 			) : (
@@ -644,12 +628,11 @@ export function CloudflareWorkersCard({
 							className="flex items-center justify-between gap-3 border-b border-border/40 py-2.5 last:border-0"
 						>
 							<span className="flex min-w-0 items-center gap-2.5">
-								<span
-									className={cn(
-										"size-1.5 shrink-0 rounded-full",
-										service.totalRequests > 0 ? "bg-success" : "bg-muted-foreground/40",
-									)}
-									aria-hidden
+								<StatusDot
+									tone="custom"
+									className={
+										service.totalRequests > 0 ? "bg-success" : "bg-muted-foreground/40"
+									}
 								/>
 								<span
 									className="truncate text-xs font-medium text-foreground"

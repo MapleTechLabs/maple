@@ -1,3 +1,5 @@
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import { useRef, type KeyboardEvent as ReactKeyboardEvent } from "react"
 import { Link } from "@tanstack/react-router"
 import { useHotkeys } from "@tanstack/react-hotkeys"
@@ -19,13 +21,13 @@ import { formatRelativeTime } from "@maple/ui/lib/time-format"
 
 import type { PodInfraMetric } from "@/api/warehouse/infra"
 import { ArrowDownIcon, ArrowRightIcon, ArrowUpIcon } from "@/components/icons"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { bucketSecondsForRange } from "@/components/infra/constants"
 import { severityLevel } from "@/components/infra/format"
 import { PodDetailChart } from "@/components/infra/k8s-detail-chart"
 import { podKey, type PodRow } from "@/components/infra/pod-table"
 import { HeroChip } from "@/components/infra/primitives/page-hero"
-import { StatRail, StatRailItem } from "@/components/infra/primitives/stat-rail"
+import { StatRail, StatRailItem } from "@/components/common/stat-rail"
 import { HostStatusBadge } from "@/components/infra/status-badge"
 import type { TimeRangeSearch } from "@/components/time-range-picker/search"
 import { Result, useAtomMount, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
@@ -168,9 +170,7 @@ export function PodPeekSheet({
 				{pod ? (
 					<>
 						<SheetHeader className="gap-1.5 pr-14">
-							<span className="text-[10px] font-medium uppercase tracking-[0.1em] text-muted-foreground">
-								Pod
-							</span>
+							<Eyebrow>Pod</Eyebrow>
 							<SheetTitle className="flex flex-wrap items-center gap-2 font-mono text-[15px] leading-tight">
 								<span className="min-w-0 break-all">{pod.podName}</span>
 								<HostStatusBadge
@@ -347,17 +347,11 @@ function PeekSummary({ pod, startTime, endTime }: { pod: PodRow; startTime: stri
 
 	return Result.builder(result)
 		.onInitial(() => <Skeleton className="h-[88px] w-full rounded-md" />)
-		.onError((error) => (
-			<QueryErrorState error={error} titleOverride="Failed to load pod metrics" onRetry={refresh} />
-		))
+		.onError((error) => <ErrorState error={error} title="Failed to load pod metrics" onRetry={refresh} />)
 		.onSuccess((response, holder) => {
 			const summary = response.data
 			if (!summary) {
-				return (
-					<div className="rounded-md border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
-						No metrics arrived for this pod in this window.
-					</div>
-				)
+				return <EmptyMessage dashed>No metrics arrived for this pod in this window.</EmptyMessage>
 			}
 			return (
 				<StatRail className={holder.waiting ? "opacity-60 transition-opacity" : "transition-opacity"}>

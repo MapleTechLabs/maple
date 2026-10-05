@@ -1,9 +1,12 @@
 import { createContext, use, type ReactNode } from "react"
 
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { Button } from "@maple/ui/components/ui/button"
 import { Checkbox } from "@maple/ui/components/ui/checkbox"
 import { Input } from "@maple/ui/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
 import { Textarea } from "@maple/ui/components/ui/textarea"
+import { ToggleGroup, ToggleGroupItem } from "@maple/ui/components/ui/toggle-group"
 import { cn } from "@maple/ui/lib/utils"
 import {
 	DEFAULT_HEATMAP_COLOR_SCALE,
@@ -65,7 +68,9 @@ function useSettings() {
 function Field({ label, children }: { label: string; children: ReactNode }) {
 	return (
 		<div className="space-y-1.5">
-			<p className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</p>
+			<Eyebrow variant="label" as="p">
+				{label}
+			</Eyebrow>
 			{children}
 		</div>
 	)
@@ -84,24 +89,22 @@ function Segments<T extends string>({
 	className?: string
 }) {
 	return (
-		<div className={cn("flex h-9 rounded-md border bg-muted/40 p-0.5", className)}>
+		<ToggleGroup
+			variant="outline"
+			size="sm"
+			value={[value]}
+			onValueChange={(values) => {
+				const next = options.find((option) => option.value === values[0])
+				if (next) onSelect(next.value)
+			}}
+			className={cn("w-full", className)}
+		>
 			{options.map((option) => (
-				<button
-					key={option.value}
-					type="button"
-					onClick={() => onSelect(option.value)}
-					aria-pressed={value === option.value}
-					className={cn(
-						"flex-1 text-xs rounded-sm transition-colors",
-						value === option.value
-							? "bg-background text-foreground shadow-sm"
-							: "text-muted-foreground hover:text-foreground",
-					)}
-				>
+				<ToggleGroupItem key={option.value} value={option.value} className="flex-1 text-xs">
 					{option.label}
-				</button>
+				</ToggleGroupItem>
 			))}
-		</div>
+		</ToggleGroup>
 	)
 }
 
@@ -169,24 +172,22 @@ function TypePicker() {
 		<Field label="Type">
 			{/* Three columns, not four: "Histogram" overflows a quarter of the
 			    272px rail and collides with its neighbour. */}
-			<div className="grid grid-cols-3 gap-1 rounded-md border bg-muted/40 p-1">
+			<ToggleGroup
+				variant="outline"
+				size="sm"
+				value={[panelType]}
+				onValueChange={(values) => {
+					const next = PANEL_TYPES.find((option) => option.value === values[0])
+					if (next) set(fromPanelType(next.value, state.chartId))
+				}}
+				className="grid w-full grid-cols-3"
+			>
 				{PANEL_TYPES.map((option) => (
-					<button
-						key={option.value}
-						type="button"
-						onClick={() => set(fromPanelType(option.value, state.chartId))}
-						aria-pressed={panelType === option.value}
-						className={cn(
-							"h-7 rounded-sm text-xs transition-colors",
-							panelType === option.value
-								? "bg-background text-foreground shadow-sm"
-								: "text-muted-foreground hover:text-foreground",
-						)}
-					>
+					<ToggleGroupItem key={option.value} value={option.value} className="text-xs">
 						{option.label}
-					</button>
+					</ToggleGroupItem>
 				))}
-			</div>
+			</ToggleGroup>
 		</Field>
 	)
 }
@@ -539,14 +540,15 @@ function Thresholds() {
 							}}
 							className="h-8"
 						/>
-						<button
-							type="button"
+						<Button
+							variant="outline"
+							size="icon"
 							onClick={() => replace(thresholds.filter((_, i) => i !== index))}
-							className="flex h-8 w-8 shrink-0 items-center justify-center rounded border text-muted-foreground transition-colors hover:text-foreground"
+							className="text-muted-foreground hover:text-foreground"
 							aria-label="Remove threshold"
 						>
 							×
-						</button>
+						</Button>
 					</div>
 				))}
 				<button

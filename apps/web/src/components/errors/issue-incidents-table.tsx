@@ -1,3 +1,4 @@
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { ERROR_INCIDENT_AUTO_RESOLVE_MINUTES, type ErrorIncidentDocument } from "@maple/domain/http"
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
@@ -74,16 +75,11 @@ export function IssueIncidentsTable({ incidents }: IssueIncidentsTableProps) {
 											<span className="inline-flex cursor-default items-center gap-2" />
 										}
 									>
-										<span className="relative inline-flex size-1.5">
-											{isOpen ? (
-												<>
-													<span className="absolute inline-flex size-full animate-ping rounded-full bg-destructive opacity-60" />
-													<span className="relative inline-flex size-full rounded-full bg-destructive" />
-												</>
-											) : (
-												<span className="relative inline-flex size-full rounded-full bg-muted-foreground/60" />
-											)}
-										</span>
+										{isOpen ? (
+											<StatusDot tone="error" pulse />
+										) : (
+											<StatusDot tone="custom" className="bg-muted-foreground/60" />
+										)}
 										<span
 											className={cn(
 												"text-xs font-medium uppercase tracking-wide",

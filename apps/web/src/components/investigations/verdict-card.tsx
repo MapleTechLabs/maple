@@ -1,3 +1,5 @@
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import type { ReactNode } from "react"
 import type { V2Investigation } from "@maple/domain/http/v2"
 import { cn } from "@maple/ui/lib/utils"
@@ -82,9 +84,7 @@ function Stat({ label, children, last }: { label: string; children: ReactNode; l
 				last ? null : "border-b max-lg:border-r",
 			)}
 		>
-			<span className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
-				{label}
-			</span>
+			<Eyebrow>{label}</Eyebrow>
 			<div className="text-sm">{children}</div>
 		</div>
 	)
@@ -99,19 +99,6 @@ function BigStat({ value, unit }: { value: string; unit: string }) {
 			</span>
 			<span className="text-sm text-muted-foreground">{unit}</span>
 		</span>
-	)
-}
-
-function Eyebrow({ children, tone }: { children: ReactNode; tone: string }) {
-	return (
-		<div
-			className={cn(
-				"flex flex-wrap items-center gap-2 text-[10px] font-medium uppercase tracking-[0.12em]",
-				tone,
-			)}
-		>
-			{children}
-		</div>
 	)
 }
 
@@ -132,7 +119,7 @@ function DiagnosedVerdict({ investigation }: { investigation: V2Investigation })
 					</Stat>
 				}
 			>
-				<Eyebrow tone="text-muted-foreground">No diagnosis recorded</Eyebrow>
+				<Eyebrow as="div">No diagnosis recorded</Eyebrow>
 				<p className="text-sm text-muted-foreground">
 					The pass finished without attaching a report. Run it again to try for a cause.
 				</p>
@@ -174,7 +161,9 @@ function DiagnosedVerdict({ investigation }: { investigation: V2Investigation })
 				</>
 			}
 		>
-			<Eyebrow tone="text-primary">Suspected cause</Eyebrow>
+			<Eyebrow as="div" className="text-primary">
+				Suspected cause
+			</Eyebrow>
 			{/* `headline` is the only field prompted to be one line; `reportHeadline` falls back for older reports. */}
 			<h2 className="font-display text-xl font-semibold leading-7 tracking-[-0.01em] text-foreground">
 				{heading}
@@ -212,9 +201,7 @@ function NextActions({ actions }: { actions: ReadonlyArray<string> }) {
 	if (actions.length === 0) return null
 	return (
 		<div className="mt-2 flex flex-col gap-2.5 border-t pt-4">
-			<span className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
-				What to do
-			</span>
+			<Eyebrow>What to do</Eyebrow>
 			{/* Ordered, because the report is prompted for ordered steps. */}
 			<ol className="flex flex-col gap-2">
 				{actions.map((action, index) => (
@@ -258,9 +245,9 @@ function InvestigatingVerdict({ investigation }: { investigation: V2Investigatio
 				</>
 			}
 		>
-			<Eyebrow tone="text-primary">
+			<Eyebrow as="div" className="flex flex-wrap items-center gap-2 text-primary">
 				<span className="flex items-center gap-1.5">
-					<span aria-hidden className="size-1.5 animate-pulse rounded-full bg-primary" />
+					<StatusDot tone="custom" className="animate-pulse bg-primary" />
 					Investigating
 				</span>
 			</Eyebrow>
@@ -307,7 +294,9 @@ function FailedVerdict({ investigation }: { investigation: V2Investigation }) {
 				</>
 			}
 		>
-			<Eyebrow tone="text-destructive">No diagnosis</Eyebrow>
+			<Eyebrow as="div" className="text-destructive">
+				No diagnosis
+			</Eyebrow>
 			<h2 className="font-display text-xl font-semibold leading-7 tracking-[-0.01em] text-foreground">
 				The pass ended without a diagnosis
 			</h2>
@@ -395,7 +384,7 @@ function InconclusiveVerdict({ investigation }: { investigation: V2Investigation
 				</>
 			}
 		>
-			<Eyebrow tone="text-severity-warn">
+			<Eyebrow as="div" className="flex flex-wrap items-center gap-2 text-severity-warn">
 				Partial result
 				<span aria-hidden className="text-muted-foreground/40">
 					·
@@ -453,9 +442,7 @@ function PartialList({
 	const hidden = items.length - visible.length
 	return (
 		<div className="flex min-w-0 flex-col gap-2">
-			<span className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
-				{label}
-			</span>
+			<Eyebrow>{label}</Eyebrow>
 			<ul className="flex flex-col gap-1.5">
 				{visible.map((item) => (
 					<li key={item} className={cn("flex gap-2 text-sm leading-6", tone)}>

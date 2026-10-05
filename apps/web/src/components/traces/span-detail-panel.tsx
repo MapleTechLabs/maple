@@ -29,6 +29,7 @@ import { formatTimestampInTimezone } from "@/lib/timezone-format"
 import { HttpSpanLabel } from "@maple/ui/components/traces/http-span-label"
 import { getActiveInfraCorrelations } from "@/components/infra/infra-correlations"
 import { InfraCorrelationPanel, infraCorrelationWindow } from "@/components/infra/infra-correlation-panel"
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
 
 interface SpanDetailPanelProps {
 	span: SpanNode
@@ -174,11 +175,11 @@ export function SpanLogs({
 
 					if (logs.length === 0) {
 						return (
-							<div className="flex flex-col items-center gap-2 p-4 text-center text-sm text-muted-foreground">
+							<EmptyMessage className="flex flex-col items-center gap-2">
 								No logs carry this span&apos;s trace context. Logs link here when your log
 								bridge runs inside the active span.
 								<DocsLink page="logs" />
-							</div>
+							</EmptyMessage>
 						)
 					}
 

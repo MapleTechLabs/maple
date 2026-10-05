@@ -1,3 +1,4 @@
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import { useState } from "react"
 import { DetailRail } from "@maple/ui/components/detail-rail"
 import { createFileRoute, Link } from "@tanstack/react-router"
@@ -7,15 +8,15 @@ import { Schema } from "effect"
 import { Button } from "@maple/ui/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
 import { Card, CardContent, CardHeader, CardTitle } from "@maple/ui/components/ui/card"
-import { cn } from "@maple/ui/lib/utils"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { DockerIcon } from "@/components/icons"
 import { ContainerDetailChart } from "@/components/infra/container-detail-chart"
 import { PageHero, HeroChip } from "@/components/infra/primitives/page-hero"
-import { StatRail, StatRailItem } from "@/components/infra/primitives/stat-rail"
+import { SegmentPivot } from "@/components/infra/primitives/segment-pivot"
+import { StatRail, StatRailItem } from "@/components/common/stat-rail"
 import { containerDetailSummaryResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { TIME_PRESETS, bucketSecondsFor } from "@/components/infra/constants"
 import { formatSeconds } from "@/components/infra/chart-utils"
@@ -129,9 +130,9 @@ function ContainerDetailPage() {
 							{Result.isInitial(summaryResult) ? (
 								<Skeleton className="h-24 w-full rounded-md" />
 							) : Result.isFailure(summaryResult) ? (
-								<QueryErrorState
+								<ErrorState
 									error={summaryResult.cause}
-									titleOverride="Failed to load container metrics"
+									title="Failed to load container metrics"
 									onRetry={refreshSummary}
 								/>
 							) : summary ? (
@@ -166,7 +167,7 @@ function ContainerDetailPage() {
 									/>
 								</StatRail>
 							) : (
-								<div className="flex flex-col items-center gap-3 rounded-md border border-dashed px-4 py-12 text-center text-sm text-muted-foreground">
+								<EmptyMessage dashed className="flex flex-col items-center gap-3 py-12">
 									<p>
 										This container sent no metrics in the selected window. It may have
 										stopped earlier: try a wider range, or go back to the containers list.
@@ -189,30 +190,16 @@ function ContainerDetailPage() {
 											Back to containers
 										</Button>
 									</div>
-								</div>
+								</EmptyMessage>
 							)}
 
 							<div className="space-y-3">
-								<div className="flex flex-wrap items-center gap-1 rounded-md border bg-background p-0.5 self-start w-fit">
-									{METRIC_TABS.map((tab) => {
-										const active = metric === tab.value
-										return (
-											<button
-												key={tab.value}
-												type="button"
-												onClick={() => setMetric(tab.value)}
-												className={cn(
-													"rounded-sm px-2.5 py-1 text-[11px] font-medium transition-colors",
-													active
-														? "bg-foreground text-background"
-														: "text-muted-foreground hover:text-foreground",
-												)}
-											>
-												{tab.label}
-											</button>
-										)
-									})}
-								</div>
+								<SegmentPivot<ContainerInfraMetric>
+									ariaLabel="Metric"
+									options={METRIC_TABS}
+									value={metric}
+									onChange={setMetric}
+								/>
 								<ContainerDetailChart
 									containerName={containerName}
 									hostName={hostName}

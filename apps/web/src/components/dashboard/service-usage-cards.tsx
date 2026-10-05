@@ -10,6 +10,7 @@ import type { ServiceUsageResponse, ServiceUsageTotals } from "@/api/warehouse/s
 import { normalizeTimestampInput } from "@/lib/timezone-format"
 
 import { formatWarehouseDateTime } from "@maple/query-engine"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 type CardKey = "logs" | "traces" | "metrics" | "dataSize"
 
 const cardConfig: Array<{
@@ -121,9 +122,9 @@ export function ServiceUsageCards({ startTime, endTime }: ServiceUsageCardsProps
 				{cardConfig.map((card) => (
 					<Card key={card.title}>
 						<CardHeader className="flex flex-row items-center justify-between gap-y-0 pb-1">
-							<CardTitle className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+							<Eyebrow variant="label" render={<CardTitle />}>
 								{card.title}
-							</CardTitle>
+							</Eyebrow>
 							<card.icon size={14} className="text-muted-foreground/70" />
 						</CardHeader>
 						<CardContent className="pt-0 pb-4">
@@ -152,9 +153,9 @@ export function ServiceUsageCards({ startTime, endTime }: ServiceUsageCardsProps
 								className="relative overflow-hidden transition-colors hover:border-foreground/20"
 							>
 								<CardHeader className="flex flex-row items-center justify-between gap-y-0 pb-1">
-									<CardTitle className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+									<Eyebrow variant="label" render={<CardTitle />}>
 										{card.title}
-									</CardTitle>
+									</Eyebrow>
 									<card.icon size={14} className="text-muted-foreground/70" />
 								</CardHeader>
 								<CardContent className="pt-0 pb-4">

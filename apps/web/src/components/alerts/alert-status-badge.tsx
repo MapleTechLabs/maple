@@ -1,3 +1,4 @@
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { cn } from "@maple/ui/lib/utils"
 
 export type AlertStatusState =
@@ -38,7 +39,7 @@ export function AlertStatusBadge({
 	const tone = toneByState[state]
 	return (
 		<span className={cn("inline-flex items-center gap-1.5 text-xs", tone.text, className)}>
-			<span className={cn("size-1.5 rounded-full", tone.dot)} />
+			<StatusDot tone="custom" className={tone.dot} />
 			<span>{label ?? tone.label}</span>
 		</span>
 	)

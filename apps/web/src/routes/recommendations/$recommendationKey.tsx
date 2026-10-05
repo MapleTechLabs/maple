@@ -1,3 +1,4 @@
+import { SectionHeader } from "@/components/layout/section-header"
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { Exit } from "effect"
@@ -645,17 +646,5 @@ function InactiveShell() {
 				</EmptyContent>
 			</Empty>
 		</ShellLayout>
-	)
-}
-
-/* -------------------------------------------------------------------------------------------------
- * Small shared pieces
- * -------------------------------------------------------------------------------------------------*/
-
-function SectionHeader({ label }: { label: string }) {
-	return (
-		<h2 className="mb-3 text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
-			{label}
-		</h2>
 	)
 }

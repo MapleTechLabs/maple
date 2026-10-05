@@ -1,3 +1,4 @@
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { displayError } from "@/lib/error-messages"
 import { Result, useAtomSet, useAtomValue } from "@/lib/effect-atom"
@@ -649,9 +650,9 @@ function RuleDetailContent() {
 								<div className="space-y-3">
 									<div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
 										<div className="space-y-1">
-											<h2 className="text-muted-foreground text-xs font-medium uppercase tracking-wider">
+											<Eyebrow variant="label" as="h2">
 												{signalLabels[rule.signalType]}: {rangeLabel}
-											</h2>
+											</Eyebrow>
 											<p className="text-muted-foreground text-xs">
 												{SIGNAL_SOURCE_DESCRIPTION[signalSource]}
 											</p>
@@ -704,9 +705,9 @@ function RuleDetailContent() {
 								) : overviewIncident ? (
 									<div className="flex items-center justify-between gap-4 border border-border px-4 py-3">
 										<div className="min-w-0">
-											<p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+											<Eyebrow variant="label" as="p">
 												Investigation
-											</p>
+											</Eyebrow>
 											<p className="truncate text-sm">
 												Review the latest incident in a durable evidence workspace.
 											</p>

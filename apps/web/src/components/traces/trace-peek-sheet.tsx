@@ -23,7 +23,7 @@ import { getHttpInfo } from "@maple/ui/lib/http"
 
 import type { Span, SpanHierarchyResponse, SpanNode } from "@/api/warehouse/traces"
 import { ArrowDownIcon, ArrowUpIcon } from "@/components/icons"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { TraceReplayLink } from "@/components/replays/trace-replay-link"
 import { SpanDetailPanel } from "@/components/traces/span-detail-panel"
 import { TraceAnatomyStrip } from "@/components/traces/trace-anatomy-strip"
@@ -32,6 +32,7 @@ import { TraceLogsLink } from "@/components/traces/trace-logs-link"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { getSpanHierarchyResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import type { PeekTarget } from "@/lib/traces/peek"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 
 /**
  * The peek: a trace's page, in a sheet, without leaving the list.
@@ -254,9 +255,7 @@ function TracePeekBody({
 		.onInitial(() => (
 			<>
 				<SheetHeader className="gap-1.5 pr-14">
-					<span className="text-[10px] font-medium uppercase tracking-[0.1em] text-muted-foreground">
-						Trace
-					</span>
+					<Eyebrow>Trace</Eyebrow>
 					<SheetTitle className="font-mono text-[15px]">{target.traceId.slice(0, 8)}</SheetTitle>
 					<SheetDescription className="sr-only">Loading trace details</SheetDescription>
 				</SheetHeader>
@@ -282,7 +281,7 @@ function TracePeekBody({
 					<SheetDescription className="sr-only">Failed to load trace</SheetDescription>
 				</SheetHeader>
 				<div className="flex-1 overflow-auto p-4">
-					<QueryErrorState error={error} titleOverride="Failed to load trace details" />
+					<ErrorState error={error} title="Failed to load trace details" />
 				</div>
 			</>
 		))
@@ -359,9 +358,7 @@ function TracePeekLoaded({
 	return (
 		<div className={`flex min-h-0 flex-1 flex-col transition-opacity ${waiting ? "opacity-50" : ""}`}>
 			<SheetHeader className="gap-1.5 pr-14">
-				<span className="text-[10px] font-medium uppercase tracking-[0.1em] text-muted-foreground">
-					Trace
-				</span>
+				<Eyebrow>Trace</Eyebrow>
 				<SheetTitle className="min-w-0 text-[15px] leading-tight">
 					<HttpSpanLabel
 						spanName={rootSpan.spanName}

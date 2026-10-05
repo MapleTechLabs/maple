@@ -1,3 +1,5 @@
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { useMemo, useState } from "react"
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { Exit, Schema } from "effect"
@@ -490,9 +492,7 @@ function TriageStat({
 		<div className="flex min-w-0 flex-col gap-2.5">
 			<div className="flex items-center gap-1.75">
 				<span aria-hidden className={`size-1.5 shrink-0 rounded-[3px] ${dot}`} />
-				<span className={`text-[10px] font-medium uppercase tracking-[0.12em] ${labelTone}`}>
-					{label}
-				</span>
+				<Eyebrow className={labelTone}>{label}</Eyebrow>
 			</div>
 			<div className="flex items-baseline gap-2.5">
 				<span
@@ -525,9 +525,7 @@ function HubHero({ onSubmit, busy }: { onSubmit: (title: string) => void | Promi
 	const tracePresence = useSignalPresence("traces")
 	return (
 		<div className="mx-auto flex min-h-full w-full max-w-2xl flex-col justify-center gap-5 py-16">
-			<span className="text-[10px] font-medium uppercase tracking-[0.12em] text-primary">
-				Investigations
-			</span>
+			<Eyebrow className="text-primary">Investigations</Eyebrow>
 			<h1 className="font-display text-[28px] font-semibold leading-9 tracking-tight text-foreground">
 				Ask, and Maple goes and finds out.
 			</h1>
@@ -575,10 +573,7 @@ function HubHero({ onSubmit, busy }: { onSubmit: (title: string) => void | Promi
 			</ul>
 			<div className="flex flex-wrap items-baseline gap-x-4 gap-y-2 text-sm text-muted-foreground">
 				<p className="flex items-baseline gap-2">
-					<span
-						aria-hidden
-						className="size-1.5 shrink-0 translate-y-[-2px] rounded-full bg-primary"
-					/>
+					<StatusDot tone="custom" className="translate-y-[-2px] bg-primary" />
 					When an alert rule fires, Maple opens an investigation on its own. Those land here too.
 				</p>
 				<Link to="/alerts/create" className="text-foreground underline-offset-4 hover:underline">

@@ -1,3 +1,4 @@
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import { useState } from "react"
 import { DetailRail } from "@maple/ui/components/detail-rail"
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
@@ -15,7 +16,7 @@ import { PodTable } from "@/components/infra/pod-table"
 import { bucketSecondsForRange } from "@/components/infra/constants"
 import { PageHero, HeroChip } from "@/components/infra/primitives/page-hero"
 import { SegmentPivot } from "@/components/infra/primitives/segment-pivot"
-import { StatRail, StatRailItem } from "@/components/infra/primitives/stat-rail"
+import { StatRail, StatRailItem } from "@/components/common/stat-rail"
 import {
 	TimeRangeSearchFields,
 	applyTimeRangeSearch,
@@ -126,9 +127,9 @@ function NodeDetailPage() {
 						<StatRailItem eyebrow="Kubelet" value={summary.kubeletVersion || "—"} compact />
 					</StatRail>
 				) : (
-					<div className="rounded-md border border-dashed px-4 py-12 text-center text-sm text-muted-foreground">
+					<EmptyMessage dashed className="py-12">
 						No metrics arrived for this node in the selected window.
-					</div>
+					</EmptyMessage>
 				)}
 
 				<div className="space-y-3">
@@ -154,9 +155,9 @@ function NodeDetailPage() {
 							const pods = r.data
 							if (pods.length === 0) {
 								return (
-									<div className="rounded-md border border-dashed px-4 py-12 text-center text-sm text-muted-foreground">
+									<EmptyMessage dashed className="py-12">
 										No pods reporting on this node in the selected window.
-									</div>
+									</EmptyMessage>
 								)
 							}
 							return (

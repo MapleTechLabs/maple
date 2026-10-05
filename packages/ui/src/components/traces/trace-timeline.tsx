@@ -25,7 +25,7 @@ import { useTimelineInteractions } from "./use-timeline-interactions"
 import { TraceTimelineSearch } from "./trace-timeline-search"
 import { TraceTimelineMinimap } from "./trace-timeline-minimap"
 import { TraceTimelineTimeAxis } from "./trace-timeline-time-axis"
-import { TraceTimelineTooltipContent } from "./trace-timeline-tooltip"
+import { SpanTooltipContent } from "./span-tooltip"
 import { SidebarResizeHandle } from "./trace-timeline-sidebar"
 import { TraceTimelineRow } from "./trace-timeline-row"
 import { ColorByPicker } from "./color-by-picker"
@@ -772,7 +772,7 @@ export function TraceTimeline() {
 						style={{ visibility: tooltipPosRef.current ? undefined : "hidden" }}
 					>
 						<div className="bg-popover text-popover-foreground border border-border shadow-lg p-2.5 max-w-sm">
-							<TraceTimelineTooltipContent
+							<SpanTooltipContent
 								span={hoveredSpan}
 								totalDurationMs={totalDurationMs}
 								traceStartTime={traceStartTime}

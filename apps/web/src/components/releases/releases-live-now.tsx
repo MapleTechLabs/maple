@@ -4,6 +4,7 @@ import { cn } from "@maple/ui/lib/utils"
 
 import type { TimeRangeSearch } from "@/components/time-range-picker/search"
 import { ROLLOUT_COMPLETE_SHARE, shortReleaseLabel, type LiveVersion } from "./release-model"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 
 /** Services past this fold into a count; the behind ones sort first so they never fold. */
 const MAX_SHOWN = 16
@@ -24,9 +25,7 @@ export function ReleasesLiveNow({ live, timeSearch, environments }: ReleasesLive
 	return (
 		<div className="flex flex-col gap-2 rounded-md border bg-card px-3 py-2.5">
 			<div className="flex items-baseline justify-between gap-3">
-				<span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-					Live now
-				</span>
+				<Eyebrow>Live now</Eyebrow>
 				{behind > 0 ? (
 					<span className="text-[11px] text-severity-warn">
 						{behind === 1 ? "1 service" : `${behind} services`} not on the latest release

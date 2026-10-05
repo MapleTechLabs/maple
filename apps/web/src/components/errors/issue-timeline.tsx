@@ -1,3 +1,4 @@
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import type {
 	ActorDocument,
 	ErrorIssueEventDocument,
@@ -276,12 +277,12 @@ export function IssueTimeline({
 
 	if (items.length === 0) {
 		return (
-			<div className="rounded-xl border border-dashed py-10 text-center">
+			<EmptyMessage dashed className="rounded-xl py-10">
 				<p className="text-sm font-medium text-foreground">No activity yet</p>
-				<p className="mt-1 text-xs text-muted-foreground">
+				<p className="mt-1 text-xs">
 					Comments from your team and notes from agents working this issue land here.
 				</p>
-			</div>
+			</EmptyMessage>
 		)
 	}
 

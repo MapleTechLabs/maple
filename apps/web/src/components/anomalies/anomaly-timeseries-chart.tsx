@@ -1,3 +1,4 @@
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import * as React from "react"
 import { areaY, d3Curve, defineChart, lineY, rect } from "@tanstack/charts"
 import { decorative } from "@tanstack/charts/mark/decorative"
@@ -218,14 +219,15 @@ export function AnomalyTimeseriesChart({
 
 	if (data.length === 0) {
 		return (
-			<div
+			<EmptyMessage
+				dashed
 				className={cn(
-					"flex h-64 w-full items-center justify-center rounded-md border border-dashed border-border/50 text-xs text-muted-foreground",
+					"flex h-64 w-full items-center justify-center border-border/50 py-0 text-xs",
 					className,
 				)}
 			>
 				No signal data in window
-			</div>
+			</EmptyMessage>
 		)
 	}
 

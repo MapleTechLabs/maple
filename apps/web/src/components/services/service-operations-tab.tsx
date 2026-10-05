@@ -1,9 +1,12 @@
 import { useMemo, useState } from "react"
 import { useNavigate } from "@tanstack/react-router"
 import { cn } from "@maple/ui/lib/utils"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
+import { Table, TableBody, TableCell, TableHeader, TableRow } from "@maple/ui/components/ui/table"
 import {
 	BarCell,
+	HeadLabel,
+	MobileListRow,
+	MobileSortBar,
 	SortableHead,
 	errorTone,
 	formatErrorRate,
@@ -11,13 +14,13 @@ import {
 	type SortDir,
 } from "./service-table-cells"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import { Sparkline } from "@maple/ui/components/ui/gradient-chart"
 import { LatencyValue } from "@maple/ui/components/latency-value"
-import { ChevronDownIcon, ChevronUpIcon, ChevronExpandYIcon } from "@/components/icons"
 import { Result } from "@/lib/effect-atom"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { getServiceOperationsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import type { ServiceOperation } from "@/api/warehouse/service-operations"
 import {
 	callsPerSecond,
@@ -140,7 +143,7 @@ export function ServiceOperationsTab({
 
 	if (!Result.isSuccess(result)) {
 		return Result.builder(result)
-			.onError((error) => <QueryErrorState error={error} />)
+			.onError((error) => <ErrorState error={error} />)
 			.orElse(() => <OperationsLoadingState />)
 	}
 
@@ -159,9 +162,7 @@ export function ServiceOperationsTab({
 				<Table>
 					<TableHeader>
 						<TableRow className="hover:bg-transparent border-b">
-							<TableHead className="h-8 pl-3 text-[10px] uppercase tracking-wider text-muted-foreground/70 font-medium">
-								Operation
-							</TableHead>
+							<HeadLabel className="pl-3">Operation</HeadLabel>
 							<SortableHead
 								label="Calls /s"
 								align="right"
@@ -190,19 +191,14 @@ export function ServiceOperationsTab({
 								dir={sortDir}
 								onClick={() => toggleSort("p95")}
 							/>
-							<TableHead className="h-8 w-[140px] pr-3 text-right text-[10px] uppercase tracking-wider text-muted-foreground/70 font-medium">
-								Activity
-							</TableHead>
+							<HeadLabel className="w-[140px] pr-3 text-right">Activity</HeadLabel>
 						</TableRow>
 					</TableHeader>
 					<TableBody>
 						{sorted.length === 0 ? (
 							<TableRow>
-								<TableCell
-									colSpan={6}
-									className="py-12 text-center text-xs text-muted-foreground"
-								>
-									No operations recorded in this window.
+								<TableCell colSpan={6} className="p-0">
+									<EmptyMessage>No operations recorded in this window.</EmptyMessage>
 								</TableCell>
 							</TableRow>
 						) : (
@@ -280,57 +276,26 @@ export function ServiceOperationsTab({
 
 			{/* Mobile: tap-to-trace list with a compact sort control. */}
 			<div className="space-y-2 md:hidden">
-				<div className="flex items-center gap-1.5 text-[11px]">
-					<span className="uppercase tracking-wider text-muted-foreground/60">Sort</span>
-					{(
+				<MobileSortBar
+					options={
 						[
 							["calls", "Calls"],
 							["errorRate", "Errors"],
 							["p95", "p95"],
 						] as const
-					).map(([key, label]) => {
-						const active = sortKey === key
-						const Icon = active
-							? sortDir === "desc"
-								? ChevronDownIcon
-								: ChevronUpIcon
-							: ChevronExpandYIcon
-						return (
-							<button
-								key={key}
-								type="button"
-								onClick={() => toggleSort(key)}
-								className={cn(
-									"inline-flex items-center gap-1 rounded-md border px-2 py-1 font-mono transition-colors",
-									active
-										? "border-border bg-muted text-foreground"
-										: "border-transparent text-muted-foreground hover:text-foreground",
-								)}
-							>
-								{label}
-								<Icon
-									size={11}
-									className={active ? "text-foreground" : "text-muted-foreground/40"}
-								/>
-							</button>
-						)
-					})}
-				</div>
+					}
+					sortKey={sortKey}
+					sortDir={sortDir}
+					onSort={toggleSort}
+				/>
 				<div className="overflow-hidden rounded-lg border bg-card">
 					{sorted.length === 0 ? (
-						<div className="py-12 text-center text-xs text-muted-foreground">
-							No operations recorded in this window.
-						</div>
+						<EmptyMessage>No operations recorded in this window.</EmptyMessage>
 					) : (
 						sorted.map((op) => {
 							const tone = errorTone(op.errorRate)
 							return (
-								<button
-									key={op.spanName}
-									type="button"
-									onClick={() => handleRowClick(op)}
-									className="flex w-full flex-col gap-1 border-b px-3 py-2.5 text-left last:border-b-0 hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
-								>
+								<MobileListRow key={op.spanName} onClick={() => handleRowClick(op)}>
 									<span className="truncate font-mono text-[13px] text-foreground">
 										{op.spanName}
 									</span>
@@ -359,7 +324,7 @@ export function ServiceOperationsTab({
 											<LatencyValue ms={op.p95DurationMs} scale="p95" />
 										</span>
 									</div>
-								</button>
+								</MobileListRow>
 							)
 						})
 					)}

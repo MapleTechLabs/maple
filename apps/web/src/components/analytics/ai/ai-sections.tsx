@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from "react"
 
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import { cn } from "@maple/ui/lib/utils"
 import {
 	Dialog,
@@ -14,7 +15,7 @@ import type { AiContentFormat, AiCrawlPurpose, AiProduct } from "@maple/domain/a
 
 import { ColumnHead, DataTable } from "../../infra/primitives/data-table"
 import { shareBar } from "../../infra/primitives/share-bar"
-import { BarSpark } from "../../infra/primitives/stat-rail"
+import { BarSpark } from "@/components/common/stat-rail"
 import { SPARK_COLOR } from "../../infra/severity-tokens"
 import {
 	FileCodeIcon,
@@ -109,11 +110,7 @@ export function AiPanel({
 }
 
 export function AiEmpty({ children }: { children: ReactNode }) {
-	return (
-		<div className="px-6 pt-4 pb-8 text-center text-[12px] leading-relaxed text-muted-foreground">
-			{children}
-		</div>
-	)
+	return <EmptyMessage className="px-6 leading-relaxed">{children}</EmptyMessage>
 }
 
 // Product cards

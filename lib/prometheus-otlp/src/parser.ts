@@ -176,14 +176,15 @@ const parseSampleLine = (line: string): ParsedSample | null => {
 	if (exemplarStart >= 0) rest = rest.slice(0, exemplarStart).trim()
 
 	const tokens = rest.split(/[ \t]+/)
-	if (tokens.length === 0 || tokens.length > 2) return null
+	const [valueToken, timestampToken] = tokens
+	if (valueToken === undefined || tokens.length > 2) return null
 
-	const value = parseSampleValue(tokens[0]!)
+	const value = parseSampleValue(valueToken)
 	if (value === null) return null
 
 	let timestampMs: number | null = null
-	if (tokens.length === 2) {
-		const rawTs = Number(tokens[1])
+	if (timestampToken !== undefined) {
+		const rawTs = Number(timestampToken)
 		if (Number.isNaN(rawTs)) return null
 		timestampMs = normalizeTimestamp(rawTs)
 	}
@@ -299,3 +300,7 @@ export const parsePrometheusText = (body: string): PromParseResult => {
 		skippedLineCount,
 	}
 }
+
+/** Total samples across every family of a parse. */
+export const countSamples = (families: ReadonlyArray<PromMetricFamily>): number =>
+	families.reduce((total, family) => total + family.samples.length, 0)

@@ -8,8 +8,9 @@ import { Skeleton } from "@maple/ui/components/ui/skeleton"
 
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { DocsLink } from "@/components/common/docs-link"
-import { QueryErrorState } from "@/components/common/query-error-state"
-import { CloudflareIcon, MagnifierIcon, XmarkIcon } from "@/components/icons"
+import { ErrorState } from "@/components/common/error-state"
+import { CloudflareIcon } from "@/components/icons"
+import { CompactFilterInput } from "@/components/infra/cloudflare/compact-filter-input"
 import type { CloudflareZoneRow } from "@/api/warehouse/cloudflare-infra"
 import {
 	CloudflareKpiCards,
@@ -110,7 +111,7 @@ function CloudflarePage() {
 											<Skeleton className="h-64 w-full" />
 										</div>
 									))
-									.onError((err) => <QueryErrorState error={err} />)
+									.onError((err) => <ErrorState error={err} />)
 									.onSuccess((status) => {
 										if (!status.connected)
 											return <CloudflareNotConnected variant="not-connected" />
@@ -228,7 +229,7 @@ function CloudflareData({
 						<CloudflareZoneTableLoading />
 					</div>
 				))
-				.onError((err) => <QueryErrorState error={err} />)
+				.onError((err) => <ErrorState error={err} />)
 				.onSuccess((response, result) => {
 					return (
 						<div className={`space-y-6 transition-opacity ${result.waiting ? "opacity-60" : ""}`}>
@@ -308,7 +309,8 @@ function CloudflareData({
 									</div>
 								)}
 							<ZonesSection zones={response.zones} query={zoneQuery} waiting={result.waiting}>
-								<SectionFilter
+								<CompactFilterInput
+									className="w-56"
 									value={zoneFilter}
 									onChange={setZoneFilter}
 									placeholder={`Filter ${response.zones.length} zones`}
@@ -332,7 +334,7 @@ function CloudflareData({
 				</h2>
 				{Result.builder(workersResult)
 					.onInitial(() => <CloudflareWorkerTableLoading />)
-					.onError((err) => <QueryErrorState error={err} />)
+					.onError((err) => <ErrorState error={err} />)
 					.onSuccess((response, result) => (
 						<CloudflareWorkerTable workers={response.workers} waiting={result.waiting} />
 					))
@@ -383,42 +385,5 @@ function ZonesSection({
 				emptyMessage={query === "" ? undefined : `No zones match "${query}" in the selected window.`}
 			/>
 		</section>
-	)
-}
-
-/** Compact filter field for a section header. Same chrome as the breakdown panel's toolbar. */
-function SectionFilter({
-	value,
-	onChange,
-	placeholder,
-	label,
-}: {
-	value: string
-	onChange: (value: string) => void
-	placeholder: string
-	label: string
-}) {
-	return (
-		<label className="flex h-6 w-56 items-center gap-1.5 rounded-sm border border-border/70 bg-background/60 px-2 transition-colors focus-within:border-ring">
-			<MagnifierIcon size={11} className="shrink-0 text-muted-foreground" />
-			<input
-				type="search"
-				value={value}
-				onChange={(event) => onChange(event.target.value)}
-				placeholder={placeholder}
-				aria-label={label}
-				className="min-w-0 flex-1 bg-transparent font-mono text-[11px] text-foreground placeholder:text-muted-foreground focus-visible:outline-none [&::-webkit-search-cancel-button]:hidden"
-			/>
-			{value ? (
-				<button
-					type="button"
-					onClick={() => onChange("")}
-					aria-label="Clear filter"
-					className="shrink-0 rounded-xs p-0.5 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-1 focus-visible:outline-ring"
-				>
-					<XmarkIcon size={9} />
-				</button>
-			) : null}
-		</label>
 	)
 }

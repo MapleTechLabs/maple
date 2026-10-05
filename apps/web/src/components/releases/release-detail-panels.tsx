@@ -10,6 +10,8 @@ import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { formatTimestampInTimezone } from "@/lib/timezone-format"
 import { ReleaseHealthPill, releaseHealthFigure } from "./release-health"
 import { MIN_COMPARE_SPANS, shortReleaseLabel, type ReleaseServiceImpact } from "./release-model"
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 
 interface ComparisonRow {
 	label: string
@@ -125,14 +127,14 @@ export function ReleaseComparison({ impact }: { impact: ReleaseServiceImpact }) 
 			}
 		>
 			{baseline === undefined ? (
-				<div className="px-4 py-6 text-center text-xs text-muted-foreground">
+				<EmptyMessage>
 					This is the oldest version of the service in the window, so there is nothing to compare
 					against. Widen the time range to include the version it replaced.
-				</div>
+				</EmptyMessage>
 			) : (
 				<table className="w-full text-xs">
 					<thead>
-						<tr className="text-[10px] uppercase tracking-wider text-muted-foreground">
+						<Eyebrow as="tr">
 							<th className="px-4 py-1.5 text-left font-medium" />
 							<th className="px-2 py-1.5 text-right font-medium">
 								<span className="font-mono normal-case tracking-normal">
@@ -145,7 +147,7 @@ export function ReleaseComparison({ impact }: { impact: ReleaseServiceImpact }) 
 								</span>
 							</th>
 							<th className="px-4 py-1.5 text-right font-medium">Change</th>
-						</tr>
+						</Eyebrow>
 					</thead>
 					<tbody>
 						{rows.map((row) => (

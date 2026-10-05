@@ -12,6 +12,8 @@
  * for is pan, zoom and fit — a seven-action report is wider than any column this
  * page has.
  */
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
 	ReactFlow,
@@ -130,18 +132,16 @@ function Caption({ graph }: { graph: ProvenanceGraph }) {
 
 	return (
 		<div className="flex items-center gap-2.5">
-			<span className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
-				Provenance
-			</span>
+			<Eyebrow>Provenance</Eyebrow>
 			<span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
 				what produced this investigation, and what it produced
 			</span>
 			{graph.caption ? (
 				<span className="flex shrink-0 items-center gap-1.5 font-mono text-xs text-muted-foreground tabular-nums">
 					{running ? (
-						<span
-							aria-hidden
-							className="size-1.5 shrink-0 animate-pulse rounded-full bg-primary motion-reduce:animate-none"
+						<StatusDot
+							tone="custom"
+							className="animate-pulse bg-primary motion-reduce:animate-none"
 						/>
 					) : null}
 					{graph.caption}

@@ -1,5 +1,6 @@
 import type { ReactNode } from "react"
 import { Card, CardContent } from "@maple/ui/components/ui/card"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { cn } from "@maple/ui/lib/utils"
 
 type Tone = "default" | "critical" | "emerald" | "amber"
@@ -22,10 +23,9 @@ export type AlertStatItem = {
  * Flat, divider-separated summary row. Replaces the old "one card per single
  * value" grid (the hero-metric / identical-card-grid pattern the design system
  * rejects). Hairlines come from a `bg-border` backplate showing through a 1px
- * gap; cells stack on mobile and sit in a row from `sm` up. Numerals stay at a
- * restrained `text-xl` semibold — dense and numerical, not a marketing tile.
+ * gap; cells stack on mobile and sit in a row from `sm` up.
  */
-export function AlertStatStrip({ items, className }: { items: AlertStatItem[]; className?: string }) {
+export function AlertStatShell({ children, className }: { children: ReactNode; className?: string }) {
 	return (
 		<div
 			className={cn(
@@ -33,25 +33,71 @@ export function AlertStatStrip({ items, className }: { items: AlertStatItem[]; c
 				className,
 			)}
 		>
-			{items.map((item) => (
-				<div key={item.label} className="flex flex-1 flex-col gap-2 bg-card px-5 py-4">
-					<span className="text-muted-foreground text-xs font-medium uppercase tracking-wider">
-						{item.label}
-					</span>
-					<div className="flex items-baseline gap-2">
-						<span
-							className={cn(
-								"text-xl font-semibold tabular-nums leading-none",
-								valueToneClass[item.tone ?? "default"],
-							)}
-						>
-							{item.value}
-						</span>
-						{item.hint && <span className="text-muted-foreground text-xs">{item.hint}</span>}
-					</div>
-				</div>
-			))}
+			{children}
 		</div>
+	)
+}
+
+/** One strip cell. Given `onSelect` it renders as a toggle button. */
+export function AlertStatCell({
+	label,
+	value,
+	hint,
+	valueClassName,
+	onSelect,
+	selected,
+	selectedClassName,
+}: {
+	label: string
+	value: ReactNode
+	hint?: ReactNode
+	valueClassName?: string
+	onSelect?: () => void
+	selected?: boolean
+	selectedClassName?: string
+}) {
+	const body = (
+		<>
+			<Eyebrow variant="label">{label}</Eyebrow>
+			<div className="flex items-baseline gap-2">
+				<span className={cn("text-xl font-semibold tabular-nums leading-none", valueClassName)}>
+					{value}
+				</span>
+				{hint && <span className="text-muted-foreground text-xs">{hint}</span>}
+			</div>
+		</>
+	)
+	if (!onSelect) {
+		return <div className="flex flex-1 flex-col gap-2 bg-card px-5 py-4">{body}</div>
+	}
+	return (
+		<button
+			type="button"
+			aria-pressed={selected}
+			onClick={onSelect}
+			className={cn(
+				"flex flex-1 flex-col gap-2 bg-card px-5 py-4 text-left transition-colors hover:bg-accent/50",
+				selected && cn("ring-1 ring-inset", selectedClassName),
+			)}
+		>
+			{body}
+		</button>
+	)
+}
+
+export function AlertStatStrip({ items, className }: { items: AlertStatItem[]; className?: string }) {
+	return (
+		<AlertStatShell className={className}>
+			{items.map((item) => (
+				<AlertStatCell
+					key={item.label}
+					label={item.label}
+					value={item.value}
+					hint={item.hint}
+					valueClassName={valueToneClass[item.tone ?? "default"]}
+				/>
+			))}
+		</AlertStatShell>
 	)
 }
 

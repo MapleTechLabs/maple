@@ -1,3 +1,4 @@
+import { Spinner } from "@maple/ui/components/ui/spinner"
 import { useState } from "react"
 import { Exit } from "effect"
 
@@ -6,7 +7,7 @@ import { Input } from "@maple/ui/components/ui/input"
 import { Label } from "@maple/ui/components/ui/label"
 import { toastManager } from "@maple/ui/components/ui/toast"
 
-import { ExternalLinkIcon, LoaderIcon } from "@/components/icons"
+import { ExternalLinkIcon } from "@/components/icons"
 import { useAtomSet } from "@/lib/effect-atom"
 import { errorMessage } from "@/lib/error-toast"
 import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
@@ -173,7 +174,7 @@ export function PlanetScaleMetricsTokenForm({
 						</Button>
 					) : null}
 					<Button onClick={handleSubmit} disabled={!canSubmit}>
-						{submitting ? <LoaderIcon size={14} className="animate-spin" /> : null}
+						{submitting ? <Spinner size={14} /> : null}
 						{mode === "rotate" ? "Update token" : "Enable metrics"}
 					</Button>
 				</div>

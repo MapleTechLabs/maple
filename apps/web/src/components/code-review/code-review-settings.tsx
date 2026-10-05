@@ -26,7 +26,7 @@ import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { Switch } from "@maple/ui/components/ui/switch"
 import { toastManager } from "@maple/ui/components/ui/toast"
 
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { ExternalLinkIcon, GearIcon, GithubIcon } from "@/components/icons"
 import { useIsOrgAdmin } from "@/hooks/use-is-org-admin"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
@@ -68,7 +68,7 @@ export function CodeReviewSettingsView() {
 			</div>
 		))
 		.onError((error) => (
-			<QueryErrorState error={error} titleOverride="Failed to load review settings" onRetry={refresh} />
+			<ErrorState error={error} title="Failed to load review settings" onRetry={refresh} />
 		))
 		.onSuccess((response) => (
 			<div className="flex flex-col gap-8">
@@ -216,7 +216,7 @@ function RepositoriesSection({ inherited }: { inherited: PrReviewRepositoryConfi
 	return Result.builder(result)
 		.onInitial(() => <Skeleton className="h-40 w-full rounded-xl" />)
 		.onError((error) => (
-			<QueryErrorState error={error} titleOverride="Failed to load repositories" onRetry={refresh} />
+			<ErrorState error={error} title="Failed to load repositories" onRetry={refresh} />
 		))
 		.onSuccess((status) => {
 			const repositories = status.repositories.filter((repo) => repo.status === "active")

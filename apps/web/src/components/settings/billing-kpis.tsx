@@ -1,4 +1,5 @@
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { cn } from "@maple/ui/lib/utils"
 
 import { formatCurrency } from "@maple/domain/format"
@@ -25,9 +26,7 @@ function KpiCard({
 }) {
 	return (
 		<div className={cn("border border-border/60 bg-card/40 p-4", className)}>
-			<span className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground/70">
-				{label}
-			</span>
+			<Eyebrow>{label}</Eyebrow>
 			<div className="mt-2">{children}</div>
 		</div>
 	)

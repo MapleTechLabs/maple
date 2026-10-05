@@ -18,6 +18,8 @@ import { normalizeTimestampInput } from "@/lib/timezone-format"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { SectionCard } from "./section-card"
 import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
+import { InlineCode } from "@maple/ui/components/ui/inline-code"
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
 
 const RAIL_LIMIT = 8
 // Expanded ceiling: bounds mounted commit-resolution subscriptions when a window
@@ -300,19 +302,16 @@ export function ServiceRecentDeploys({ releases, isLoading = false }: ServiceRec
 			}
 		>
 			{deploys.length === 0 ? (
-				<div className="flex flex-col items-center gap-1 px-4 py-6 text-center text-xs text-muted-foreground">
+				<EmptyMessage className="flex flex-col items-center gap-1">
 					<span>No deploys detected in this window.</span>
 					<span className="text-muted-foreground/70">
 						Deploy tracking needs spans to carry the{" "}
-						<code className="rounded bg-muted px-1 py-px font-mono text-[11px]">
-							vcs.ref.head.revision
-						</code>{" "}
-						resource attribute.
+						<InlineCode>vcs.ref.head.revision</InlineCode> resource attribute.
 					</span>
 					<span className="mt-1">
 						<DocsLink page="github" />
 					</span>
-				</div>
+				</EmptyMessage>
 			) : (
 				<>
 					<div className={cn("space-y-px p-2", expanded && "max-h-96 overflow-y-auto")}>

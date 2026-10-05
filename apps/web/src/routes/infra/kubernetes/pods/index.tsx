@@ -9,7 +9,7 @@ import { useDebouncedValue } from "@maple/ui/hooks/use-debounced-value"
 
 import type { PodSortKey, SortDirection } from "@/api/warehouse/infra"
 import { OptionalStringArrayParam } from "@/lib/search-params"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { FolderIcon, MagnifierIcon } from "@/components/icons"
 import { InfraSetupEmpty } from "@/components/infra/infra-empty-state"
 import { KubernetesShell } from "@/components/infra/kubernetes/kubernetes-shell"
@@ -311,7 +311,7 @@ function PodsPage() {
 
 				{Result.builder(podsResult)
 					.onInitial(() => <PodTableLoading />)
-					.onError((err) => <QueryErrorState error={err} />)
+					.onError((err) => <ErrorState error={err} />)
 					.onSuccess((response, result) => {
 						const page = response.data
 						const total = response.totalCount

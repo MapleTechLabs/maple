@@ -9,7 +9,7 @@ import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { useAppHotkey } from "@/hooks/use-app-hotkey"
 import { TraceReplayLink } from "@/components/replays/trace-replay-link"
 import { TraceLogsLink } from "@/components/traces/trace-logs-link"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { DocsLink } from "@/components/common/docs-link"
 import { TraceViewTabs } from "@maple/ui/components/traces/trace-view-tabs"
 import { SpanDetailPanel } from "@/components/traces/span-detail-panel"
@@ -114,7 +114,7 @@ function TraceDetailPage() {
 				<DashboardLayout.Body>
 					<DashboardLayout.Content>
 						<DashboardLayout.Scroll>
-							<QueryErrorState error={error} titleOverride="Failed to load trace details" />
+							<ErrorState error={error} title="Failed to load trace details" />
 						</DashboardLayout.Scroll>
 					</DashboardLayout.Content>
 				</DashboardLayout.Body>

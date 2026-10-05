@@ -9,10 +9,10 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@m
 
 import { DocsLink, EmptyActions } from "@/components/common/docs-link"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { PlanetScaleIcon } from "@/components/icons"
 import { PageHero } from "@/components/infra/primitives/page-hero"
-import { StatRail, StatRailItem, StatRailLoading } from "@/components/infra/primitives/stat-rail"
+import { StatRail, StatRailItem, StatRailLoading } from "@/components/common/stat-rail"
 import {
 	PlanetScaleDatabaseTable,
 	PlanetScaleDatabaseTableLoading,
@@ -116,7 +116,7 @@ function PlanetScalePage() {
 											<PlanetScaleDatabaseTableLoading />
 										</div>
 									))
-									.onError((err) => <QueryErrorState error={err} />)
+									.onError((err) => <ErrorState error={err} />)
 									.onSuccess((status) => {
 										if (!status.connected) return <PlanetScaleNotConnected />
 										return (
@@ -205,7 +205,7 @@ function PlanetScaleData({
 				<PlanetScaleDatabaseTableLoading />
 			</div>
 		))
-		.onError((err) => <QueryErrorState error={err} />)
+		.onError((err) => <ErrorState error={err} />)
 		.onSuccess((inventory) => {
 			const branchTotal = inventory.databases.reduce((sum, db) => sum + db.branches.length, 0)
 			const showInventoryNotice =
@@ -224,7 +224,7 @@ function PlanetScaleData({
 						/>
 					) : null}
 					{Result.isFailure(statsResult) ? (
-						<QueryErrorState
+						<ErrorState
 							error={statsResult.cause}
 							className="flex flex-col gap-1 rounded-md border border-destructive/20 bg-destructive/5 px-3 py-2 text-xs"
 						/>

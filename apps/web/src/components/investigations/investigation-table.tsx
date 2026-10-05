@@ -1,3 +1,4 @@
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import type { MouseEvent } from "react"
 import { Link, useNavigate } from "@tanstack/react-router"
 import type { V2Investigation } from "@maple/domain/http/v2"
@@ -101,7 +102,7 @@ function RowFinding({ finding }: { finding: ReturnType<typeof investigationFindi
 	if (finding.kind === "pending") {
 		return (
 			<span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
-				<span aria-hidden className="size-1.5 shrink-0 animate-pulse rounded-full bg-primary" />
+				<StatusDot tone="custom" className="animate-pulse bg-primary" />
 				{/* The finding carries the running pass's last step when it has one, so
 				    the row is not free to print a fixed string over the top of it. */}
 				<span className="truncate" title={finding.text}>

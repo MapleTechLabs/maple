@@ -2,7 +2,9 @@ import { cn } from "@maple/ui/lib/utils"
 import { formatPercent } from "@maple/ui/lib/format"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 
-import { BarSpark } from "@/components/infra/primitives/stat-rail"
+import { ToggleGroup, ToggleGroupItem } from "@maple/ui/components/ui/toggle-group"
+
+import { StatRailItem } from "@/components/common/stat-rail"
 import {
 	TOOL_PERCENTILES,
 	formatToolCount,
@@ -41,17 +43,8 @@ interface ToolMetricStripProps {
 	allSessions: number
 }
 
-/**
- * The active-tile marker: a 2px lane reserved on every tile, painted only on
- * the selected one, so the contents never shift sideways as the selection
- * moves. The same mark the picked table rows use — it is the same gesture.
- */
-const TILE =
-	"relative flex min-w-0 flex-1 flex-col gap-[7px] border-l border-border py-4 pl-[22px] pr-5 text-left transition-colors first:border-l-0 before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
-const TILE_SELECTED = "bg-primary/10 before:bg-primary"
-const TILE_IDLE = "before:bg-transparent hover:bg-muted/25"
-
-const EYEBROW = "font-mono text-[10.5px] uppercase leading-5 tracking-[0.09em] transition-colors"
+/** Tiles sit edge to edge under the page header rather than in a framed rail. */
+const TILE = "min-w-0 flex-1 border-l border-border first:border-l-0"
 
 /**
  * Four tiles that are also the chart's selector: whichever one is lit is what
@@ -72,47 +65,37 @@ export function ToolMetricStrip({
 	allSessions,
 }: ToolMetricStripProps) {
 	const tile = (key: Exclude<ToolMetric, "duration">, eyebrow: string) => {
-		const selected = metric === key
 		const delta = toolDelta(totals, previous, key, percentile)
 		// The Sessions tile compares against the window's whole session
 		// population rather than against the previous window: "142 of 1,284" is
 		// what makes a tool's reach legible, and the movement of a session count
 		// under a tool filter is not.
 		const share = key === "sessions" && allSessions > 0 ? totals.sessions / allSessions : undefined
-		const spark = metricSpark(series, key, percentile).slice(-SPARK_WINDOW)
 		return (
-			<button
+			<StatRailItem
 				key={key}
-				type="button"
-				aria-pressed={selected}
-				onClick={() => onSelectMetric(key)}
-				className={cn(TILE, selected ? TILE_SELECTED : TILE_IDLE)}
-			>
-				<span className={cn(EYEBROW, selected ? "text-primary" : "text-muted-foreground/80")}>
-					{eyebrow}
-				</span>
-				<span className="flex items-end justify-between gap-3">
-					<Value selected={selected}>
-						{formatToolMetric(metricValue(totals, key, percentile), key)}
-					</Value>
-					<Spark values={spark} />
-				</span>
-				<span className="flex h-3.5 items-center gap-[5px] font-mono text-[11.5px] tabular-nums">
-					{share !== undefined ? (
-						<>
-							<span className="text-muted-foreground">{formatPercent(share)}</span>
+				eyebrow={eyebrow}
+				value={formatToolMetric(metricValue(totals, key, percentile), key)}
+				spark={metricSpark(series, key, percentile).slice(-SPARK_WINDOW)}
+				subline={
+					share !== undefined ? (
+						<SublineText>
+							<span>{formatPercent(share)}</span>
 							<span className="text-muted-foreground/60">
 								of all {formatToolCount(allSessions)} sessions
 							</span>
-						</>
+						</SublineText>
 					) : delta === null ? null : (
-						<>
+						<SublineText>
 							<Delta delta={delta} />
 							<span className="text-muted-foreground/60">vs prev {windowLabel}</span>
-						</>
-					)}
-				</span>
-			</button>
+						</SublineText>
+					)
+				}
+				onSelect={() => onSelectMetric(key)}
+				selected={metric === key}
+				className={TILE}
+			/>
 		)
 	}
 
@@ -135,34 +118,14 @@ export function ToolMetricStrip({
 	)
 }
 
-function Value({ selected, children }: { selected: boolean; children: React.ReactNode }) {
-	return (
-		<span
-			className={cn(
-				"shrink-0 whitespace-nowrap text-[26px] font-semibold leading-7 tracking-[-0.02em] tabular-nums",
-				selected ? "text-foreground" : "text-foreground/75",
-			)}
-		>
-			{children}
-		</span>
-	)
-}
-
-/** Every spark is drawn in the primary: the tiles are one instrument, not four readouts. */
-function Spark({ values }: { values: ReadonlyArray<number> }) {
-	return values.length > 1 ? (
-		<BarSpark values={values} color="var(--primary)" className="h-7 w-24 min-w-0 shrink" />
-	) : (
-		<span className="h-7 w-24 min-w-0 shrink" />
-	)
+function SublineText({ children }: { children: React.ReactNode }) {
+	return <span className="inline-flex items-center gap-[5px] font-mono tabular-nums">{children}</span>
 }
 
 /**
  * Duration: the same tile as the other three, keyed on one percentile. The
- * P50 | P90 | P95 picker sits in the eyebrow row, always visible and always
- * the same size, so choosing a percentile never changes the tile's shape.
- * The picker is a sibling of the select button rather than a child — nested
- * buttons are invalid HTML — and the select button covers the tile behind it.
+ * picker is a sibling of the tile's select button rather than a child (nested
+ * buttons are invalid HTML), laid over the tile's top-right corner.
  */
 function DurationTile({
 	totals,
@@ -183,58 +146,47 @@ function DurationTile({
 	onSelectPercentile: (percentile: ToolPercentile) => void
 	windowLabel: string
 }) {
-	const spark = metricSpark(series, "duration", percentile).slice(-SPARK_WINDOW)
 	const delta = toolDelta(totals, previous, "duration", percentile)
 	return (
-		<div className={cn(TILE, selected ? TILE_SELECTED : TILE_IDLE)}>
-			<button
-				type="button"
-				aria-pressed={selected}
-				aria-label={toolMetricLabel("duration", percentile)}
-				onClick={() => onSelectMetric("duration")}
-				className="absolute inset-0 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
+		<div className={cn("relative", TILE)}>
+			<StatRailItem
+				eyebrow="Duration"
+				value={formatToolMetric(totals[percentile], "duration")}
+				spark={metricSpark(series, "duration", percentile).slice(-SPARK_WINDOW)}
+				subline={
+					delta === null ? null : (
+						<SublineText>
+							<Delta delta={delta} />
+							<span className="text-muted-foreground/60">vs prev {windowLabel}</span>
+						</SublineText>
+					)
+				}
+				onSelect={() => onSelectMetric("duration")}
+				ariaLabel={toolMetricLabel("duration", percentile)}
+				selected={selected}
+				className="h-full"
 			/>
-			<span className="pointer-events-none relative flex h-5 items-center justify-between gap-2">
-				<span className={cn(EYEBROW, selected ? "text-primary" : "text-muted-foreground/80")}>
-					Duration
-				</span>
-				<span
-					aria-label="Percentile"
-					className="pointer-events-auto flex items-center gap-px rounded-sm border border-border bg-background/60 p-px"
-				>
-					{TOOL_PERCENTILES.map((candidate) => {
-						const driving = candidate === percentile
-						return (
-							<button
-								key={candidate}
-								type="button"
-								aria-pressed={driving}
-								onClick={() => onSelectPercentile(candidate)}
-								className={cn(
-									"rounded-[3px] px-1.5 font-mono text-[10px] uppercase leading-4 tracking-[0.04em] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-									driving
-										? "bg-muted text-foreground"
-										: "text-muted-foreground/70 hover:text-foreground",
-								)}
-							>
-								{candidate}
-							</button>
-						)
-					})}
-				</span>
-			</span>
-			<span className="pointer-events-none relative flex items-end justify-between gap-3">
-				<Value selected={selected}>{formatToolMetric(totals[percentile], "duration")}</Value>
-				<Spark values={spark} />
-			</span>
-			<span className="pointer-events-none relative flex h-3.5 items-center gap-[5px] font-mono text-[11.5px] tabular-nums">
-				{delta === null ? null : (
-					<>
-						<Delta delta={delta} />
-						<span className="text-muted-foreground/60">vs prev {windowLabel}</span>
-					</>
-				)}
-			</span>
+			<ToggleGroup
+				variant="outline"
+				size="sm"
+				aria-label="Percentile"
+				value={[percentile]}
+				onValueChange={(next: ReadonlyArray<unknown>) => {
+					const picked = TOOL_PERCENTILES.find((candidate) => candidate === next[0])
+					if (picked) onSelectPercentile(picked)
+				}}
+				className="absolute top-3 right-5 p-px"
+			>
+				{TOOL_PERCENTILES.map((candidate) => (
+					<ToggleGroupItem
+						key={candidate}
+						value={candidate}
+						className="h-5 min-w-0 px-1.5 font-mono text-[10px] uppercase sm:h-5 sm:min-w-0 sm:text-[10px]"
+					>
+						{candidate}
+					</ToggleGroupItem>
+				))}
+			</ToggleGroup>
 		</div>
 	)
 }
@@ -271,7 +223,7 @@ export function ToolMetricStripLoading() {
 	return (
 		<div className="flex border-b border-border">
 			{Array.from({ length: 4 }).map((_, index) => (
-				<div key={index} className={TILE}>
+				<div key={index} className={cn("flex flex-col gap-[7px] px-5 py-4", TILE)}>
 					<Skeleton className="h-3 w-16" />
 					<div className="flex items-end justify-between gap-3">
 						<Skeleton className="h-7 w-20" />

@@ -16,7 +16,7 @@ import { formatTimestampInTimezone } from "@/lib/timezone-format"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { getReleaseDetailResultAtom, getReleasesResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { MetricsGrid } from "@/components/dashboard/metrics-grid"
 import { APDEX_HINT } from "@/components/dashboard/chart-hints"
 import type { ChartLegendMode, ChartTooltipMode } from "@maple/ui/components/charts/_shared/chart-types"
@@ -44,6 +44,7 @@ import { ReleaseChangeset } from "@/components/releases/release-changeset"
 import { ReleaseDeployOverview } from "@/components/releases/release-deploy-overview"
 import { ReleaseHealthPill, releaseHealthFigure } from "@/components/releases/release-health"
 import { deriveReleaseImpacts, shortReleaseLabel } from "@/components/releases/release-model"
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
 
 const ONE_YEAR_SECONDS = 365 * 24 * 60 * 60
 const DEFAULT_PRESET = "7d"
@@ -385,9 +386,7 @@ function ReleaseBodyLoaded({
 	)
 
 	if (Result.isFailure(result)) {
-		return (
-			<QueryErrorState error={result.cause} titleOverride="Failed to load release" onRetry={refresh} />
-		)
+		return <ErrorState error={result.cause} title="Failed to load release" onRetry={refresh} />
 	}
 	if (derived === undefined) return <ReleaseBodySkeleton />
 
@@ -398,10 +397,10 @@ function ReleaseBodyLoaded({
 	if (impact === undefined) {
 		return (
 			<div className="flex flex-col gap-3">
-				<div className="rounded-md border bg-card px-4 py-8 text-center text-sm text-muted-foreground">
+				<EmptyMessage className="rounded-md border bg-card text-sm">
 					<span className="font-mono">{shortReleaseLabel(commitSha)}</span> served no traffic on{" "}
 					{serviceName} in this window. Widen the time range to include its deploy.
-				</div>
+				</EmptyMessage>
 				<ReleaseVersionsRail
 					impacts={impacts}
 					currentSha={commitSha}

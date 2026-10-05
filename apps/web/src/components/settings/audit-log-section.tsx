@@ -16,11 +16,13 @@ import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
 import { CopyButton } from "@maple/ui/components/ui/copy-button"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
+import { Eyebrow, eyebrowVariants } from "@maple/ui/components/ui/eyebrow"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { trySync } from "@maple/ui/lib/try-sync"
 import { cn } from "@maple/ui/lib/utils"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { AlertWarningIcon, ArrowPathIcon, ChevronRightIcon, HistoryIcon } from "@/components/icons"
+import { FilterTab, FilterTabs } from "./filter-tab"
 
 type ActorFilter = AuditActorType | "all"
 type OutcomeFilter = AuditOutcome | "all"
@@ -67,7 +69,6 @@ const COL = {
 	// 52rem: the card's width at a 1440px window, the narrowest desktop that should still show it.
 	source: "hidden w-[104px] shrink-0 @min-[52rem]:block",
 }
-const COL_HEADER = "text-muted-foreground/70 font-mono text-[10px] uppercase tracking-[0.12em]"
 
 /**
  * Up to two initials from a display name, for the moment before the avatar
@@ -258,7 +259,7 @@ export function AuditLogSection() {
 			</p>
 
 			<div className="flex flex-wrap items-center gap-3">
-				<div className="border-border flex items-center gap-0.5 rounded-md border p-0.5">
+				<FilterTabs>
 					{ACTOR_FILTERS.map((filter) => (
 						<FilterTab
 							key={filter.value}
@@ -268,8 +269,8 @@ export function AuditLogSection() {
 							{filter.label}
 						</FilterTab>
 					))}
-				</div>
-				<div className="border-border flex items-center gap-0.5 rounded-md border p-0.5">
+				</FilterTabs>
+				<FilterTabs>
 					{OUTCOME_FILTERS.map((filter) => (
 						<FilterTab
 							key={filter.value}
@@ -279,7 +280,7 @@ export function AuditLogSection() {
 							{filter.label}
 						</FilterTab>
 					))}
-				</div>
+				</FilterTabs>
 				<div className="flex-1" />
 				<Button
 					variant="ghost"
@@ -351,15 +352,23 @@ export function AuditLogSection() {
 				) : (
 					<div className="divide-border divide-y">
 						<div className="hidden items-center gap-3 px-4 py-2 @md:flex" aria-hidden="true">
-							<span className={cn(COL_HEADER, COL.time)}>
+							<Eyebrow variant="mono" className={COL.time}>
 								{/* Holds the chevron's lane so "Time" sits over the timestamps. */}
 								<span className="w-3 shrink-0" />
 								Time
-							</span>
-							<span className={cn(COL_HEADER, COL.actor)}>Actor</span>
-							<span className={cn(COL_HEADER, COL.action)}>Action</span>
-							<span className={cn(COL_HEADER, COL.resource)}>Resource</span>
-							<span className={cn(COL_HEADER, COL.source)}>Source</span>
+							</Eyebrow>
+							<Eyebrow variant="mono" className={COL.actor}>
+								Actor
+							</Eyebrow>
+							<Eyebrow variant="mono" className={COL.action}>
+								Action
+							</Eyebrow>
+							<Eyebrow variant="mono" className={COL.resource}>
+								Resource
+							</Eyebrow>
+							<Eyebrow variant="mono" className={COL.source}>
+								Source
+							</Eyebrow>
 						</div>
 						{view.entries.map((entry) => (
 							<AuditLogRow key={entry.id} entry={entry} />
@@ -392,33 +401,6 @@ export function AuditLogSection() {
 				</div>
 			)}
 		</div>
-	)
-}
-
-function FilterTab({
-	active,
-	onClick,
-	children,
-}: {
-	active: boolean
-	onClick: () => void
-	children: ReactNode
-}) {
-	return (
-		<button
-			type="button"
-			aria-pressed={active}
-			onClick={onClick}
-			className={cn(
-				"rounded px-2.5 py-1 font-mono text-[11px] leading-4 transition-colors",
-				"focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-1",
-				active
-					? "bg-accent text-foreground font-medium"
-					: "text-muted-foreground hover:text-foreground",
-			)}
-		>
-			{children}
-		</button>
 	)
 }
 
@@ -562,7 +544,9 @@ function ResourceCell({ entry }: { entry: V2AuditLogEntry }) {
 function DetailField({ label, children }: { label: string; children: ReactNode }) {
 	return (
 		<>
-			<dt className={cn(COL_HEADER, "pt-0.5")}>{label}</dt>
+			<Eyebrow variant="mono" className="pt-0.5" as="dt">
+				{label}
+			</Eyebrow>
 			<dd className="min-w-0 text-xs">{children}</dd>
 		</>
 	)
@@ -593,7 +577,7 @@ function ChangesTable({ changes }: { changes: V2AuditChanges }) {
 		<div className="overflow-x-auto">
 			<table className="w-full font-mono text-[11px]">
 				<thead>
-					<tr className={cn(COL_HEADER, "text-left")}>
+					<tr className={cn(eyebrowVariants({ variant: "mono" }), "text-left")}>
 						<th className="w-[160px] pb-1 font-normal">Field</th>
 						<th className="pb-1 font-normal">Before</th>
 						<th className="pb-1 font-normal">After</th>
@@ -731,14 +715,18 @@ function AuditLogDetail({ entry }: { entry: V2AuditLogEntry }) {
 
 			{hasChanges && entry.changes !== null && (
 				<section className="space-y-1.5">
-					<h4 className={COL_HEADER}>Changes</h4>
+					<Eyebrow variant="mono" as="h4">
+						Changes
+					</Eyebrow>
 					<ChangesTable changes={entry.changes} />
 				</section>
 			)}
 
 			{hasMetadata && entry.metadata !== null && (
 				<section className="space-y-1.5">
-					<h4 className={COL_HEADER}>Details</h4>
+					<Eyebrow variant="mono" as="h4">
+						Details
+					</Eyebrow>
 					<MetadataList metadata={entry.metadata} />
 				</section>
 			)}

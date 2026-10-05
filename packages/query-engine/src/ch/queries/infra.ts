@@ -193,43 +193,6 @@ export interface HostNetworkTimeseriesOutput {
 	readonly sumValue: number
 }
 
-// Fleet utilization time-series — bucketed averages of CPU + memory across all
-// hosts in the org, plus an active-host count per bucket. Powers the small
-// sparklines on the overview KPI cards.
-
-export interface FleetUtilizationTimeseriesOutput {
-	readonly bucket: string
-	readonly avgCpu: number
-	readonly avgMemory: number
-	readonly activeHosts: number
-}
-
-export function fleetUtilizationTimeseriesQuery() {
-	return from(MetricsGauge)
-		.select(($) => ({
-			bucket: CH.toStartOfInterval($.TimeUnix, param.int("bucketSeconds")),
-			avgCpu: avgIfOrZero(
-				$.Value,
-				$.MetricName.eq("system.cpu.utilization").and($.Attributes.get("state").neq("idle")),
-			),
-			avgMemory: avgIfOrZero(
-				$.Value,
-				$.MetricName.eq("system.memory.utilization").and($.Attributes.get("state").eq("used")),
-			),
-			activeHosts: CH.uniq($.ResourceAttributes.get("host.name")),
-		}))
-		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
-			$.TimeUnix.gte(param.dateTimeString("startTime")),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
-			$.ResourceAttributes.get("host.name").neq(""),
-			$.MetricName.in_("system.cpu.utilization", "system.memory.utilization"),
-		])
-		.groupBy("bucket")
-		.orderBy(["bucket", "asc"])
-		.format("JSON")
-}
-
 export function hostNetworkTimeseriesQuery(opts: HostNetworkTimeseriesOpts) {
 	return from(MetricsSum)
 		.select(($) => ({

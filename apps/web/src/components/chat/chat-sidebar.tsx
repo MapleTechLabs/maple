@@ -2,6 +2,7 @@ import { useMemo, useRef, useState, useEffect, type KeyboardEvent } from "react"
 import type { ChatTab } from "@/hooks/use-chat-tabs"
 import { cn } from "@maple/ui/lib/utils"
 import { Button } from "@maple/ui/components/ui/button"
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import {
 	DropdownMenu,
 	DropdownMenuContent,
@@ -112,9 +113,9 @@ export function ChatSidebar({
 				</div>
 				<div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
 					{groups.length === 0 ? (
-						<div className="px-2 py-6 text-center text-xs text-sidebar-foreground/60">
+						<EmptyMessage className="px-2 py-6 text-sidebar-foreground/60">
 							No conversations yet
-						</div>
+						</EmptyMessage>
 					) : (
 						groups.map((group) => (
 							<div key={group.label} className="mb-3">

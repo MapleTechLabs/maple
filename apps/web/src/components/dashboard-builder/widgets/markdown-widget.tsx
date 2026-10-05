@@ -1,3 +1,4 @@
+import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import { memo } from "react"
 
 import { WidgetShell } from "@/components/dashboard-builder/widgets/widget-shell"
@@ -61,11 +62,7 @@ function renderInline(text: string): React.ReactNode[] {
 		} else if (segment.startsWith("*")) {
 			tokens.push(<em key={`i-${key++}`}>{segment.slice(1, -1)}</em>)
 		} else if (segment.startsWith("`")) {
-			tokens.push(
-				<code key={`c-${key++}`} className="px-1 py-0.5 rounded bg-muted text-[0.85em] font-mono">
-					{segment.slice(1, -1)}
-				</code>,
-			)
+			tokens.push(<InlineCode key={`c-${key++}`}>{segment.slice(1, -1)}</InlineCode>)
 		}
 		cursor = pattern.lastIndex
 	}

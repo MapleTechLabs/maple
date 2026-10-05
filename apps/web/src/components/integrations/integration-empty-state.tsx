@@ -1,3 +1,4 @@
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Children, createContext, isValidElement, use } from "react"
 import type React from "react"
 
@@ -109,7 +110,7 @@ export function IntegrationEmptyFeatures({ children }: { children: React.ReactNo
 export function IntegrationEmptyFeature({ label, title, description }: IntegrationFeatureCopy) {
 	return (
 		<>
-			<span className="text-xs uppercase tracking-wide text-muted-foreground">{label}</span>
+			<Eyebrow variant="label">{label}</Eyebrow>
 			<span className="text-base/5 font-semibold tracking-tight">{title}</span>
 			<p className="text-xs/4 text-muted-foreground">{description}</p>
 		</>

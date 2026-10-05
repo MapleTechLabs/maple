@@ -1,5 +1,6 @@
 import { MapleMark } from "@maple/ui/components/icons/maple-mark"
 import { Button } from "@maple/ui/components/ui/button"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Input } from "@maple/ui/components/ui/input"
 import { Label } from "@maple/ui/components/ui/label"
 import { cn } from "@maple/ui/lib/utils"
@@ -41,9 +42,9 @@ export function StepRole({
 					<div aria-hidden="true" className="mx-auto mb-6 w-fit text-primary">
 						<MapleMark size={56} />
 					</div>
-					<span className="text-[11px] font-semibold uppercase tracking-widest text-primary">
+					<Eyebrow variant="label" className="text-primary">
 						Welcome to Maple
-					</span>
+					</Eyebrow>
 					<h1 className="text-3xl font-semibold tracking-tight">What's your role?</h1>
 					<p className="mx-auto max-w-md text-sm leading-relaxed text-muted-foreground">
 						Sets the default SDK snippet and the first pages we point you at.

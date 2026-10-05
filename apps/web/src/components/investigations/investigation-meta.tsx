@@ -13,6 +13,7 @@
  * under the finding, and an unaudited diagnosis is the thing to avoid — not an
  * unread one.
  */
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import type { ReactNode } from "react"
 import { Link } from "@tanstack/react-router"
 import type { V2Investigation } from "@maple/domain/http/v2"
@@ -30,9 +31,7 @@ export function InvestigationMeta({ investigation }: { investigation: V2Investig
 
 	return (
 		<section className="flex shrink-0 flex-col gap-3 border-t pt-5">
-			<h2 className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
-				Linked
-			</h2>
+			<Eyebrow as="h2">Linked</Eyebrow>
 			{/*
 			 * A wrapping row of labelled pairs rather than the rail's stacked list.
 			 * The rail stacked them because it was 320px wide; across the full page a

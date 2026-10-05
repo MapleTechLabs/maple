@@ -4,6 +4,8 @@ import { useVirtualizer } from "@tanstack/react-virtual"
 
 import type { AiSessionSpan } from "@maple/domain/http"
 import { ChevronDownIcon, ChevronRightIcon, CircleXmarkIcon } from "@/components/icons"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import { formatDuration, formatNumber } from "@maple/ui/lib/format"
 import { formatSessionDuration } from "@maple/ui/lib/replay-format"
 import { cn } from "@maple/ui/lib/utils"
@@ -234,7 +236,11 @@ export function SessionWaterfall({
 			{/* Stacks under the views' sticky control bar, whose height that bar
 			    publishes as a variable, so the ruler stays readable while scrolling. */}
 			<div className="sticky top-[var(--session-controls-height,0px)] z-10 bg-background">
-				<div className="flex h-7 items-center border-border border-b px-2.5 font-medium text-[11px] text-muted-foreground uppercase tracking-wider">
+				<Eyebrow
+					variant="label"
+					as="div"
+					className="flex h-7 items-center border-border border-b px-2.5"
+				>
 					<span className={COL_SPAN}>Span</span>
 					<span className={COL_MODEL}>Model / target</span>
 					<span className={COL_TOKENS}>Tokens</span>
@@ -264,7 +270,7 @@ export function SessionWaterfall({
 						))}
 					</span>
 					<span className={COL_DUR}>Dur</span>
-				</div>
+				</Eyebrow>
 
 				{axis.removedGapCount > 0 && (
 					<p className="border-border border-b px-2.5 py-1 text-[11px] text-muted-foreground">
@@ -276,9 +282,7 @@ export function SessionWaterfall({
 
 			<div ref={listRef}>
 				{rows.length === 0 ? (
-					<p className="px-2.5 py-8 text-center text-muted-foreground text-sm">
-						No spans match this filter.
-					</p>
+					<EmptyMessage>No spans match this filter.</EmptyMessage>
 				) : (
 					<div className="relative w-full" style={{ height: virtualizer.getTotalSize() }}>
 						{virtualizer.getVirtualItems().map((item) => {

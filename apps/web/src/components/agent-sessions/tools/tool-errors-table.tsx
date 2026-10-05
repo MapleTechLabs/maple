@@ -1,11 +1,13 @@
 import { useMemo, useState } from "react"
 
 import { cn } from "@maple/ui/lib/utils"
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
 
 import { useTableSort } from "@/components/infra/primitives/data-table"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { ChevronDownIcon, ChevronRightIcon } from "@/components/icons"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import {
@@ -232,10 +234,7 @@ export function ToolErrorsTable({
 			{empty ? (
 				<div className="flex flex-col gap-2 border-t border-border px-2.5 pt-[22px] pb-5 font-mono">
 					<span className="flex items-center gap-2 text-[12.5px] text-foreground">
-						<span
-							aria-hidden
-							className="size-1.5 shrink-0 rounded-full bg-[var(--severity-info)]"
-						/>
+						<StatusDot tone="custom" className="bg-[var(--severity-info)]" />
 						No failed calls between{" "}
 						{windowRangeLabel(window.startMs, window.startMs, effectiveTimezone)} and{" "}
 						{windowRangeLabel(window.endMs, window.endMs, effectiveTimezone)}
@@ -250,9 +249,7 @@ export function ToolErrorsTable({
 				<Table>
 					<TableHead>
 						<div className="flex w-0 min-w-0 flex-1 items-baseline gap-2.5 font-mono text-[10.5px] leading-3.5">
-							<span className="uppercase tracking-[0.07em] text-muted-foreground/80">
-								Error
-							</span>
+							<Eyebrow variant="mono">Error</Eyebrow>
 							{headHint === "" ? null : (
 								<span className="truncate text-muted-foreground/60" title={headHint}>
 									{headHint}
@@ -299,10 +296,7 @@ export function ToolErrorsTable({
 
 					<TableBody waiting={waiting} maxHeight={expanded ? 760 : 460}>
 						{failure !== undefined ? (
-							<QueryErrorState
-								error={failure}
-								titleOverride={`Failed to load ${tool} errors`}
-							/>
+							<ErrorState error={failure} title={`Failed to load ${tool} errors`} />
 						) : loading ? (
 							<LoadingRows />
 						) : (

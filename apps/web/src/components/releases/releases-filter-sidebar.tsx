@@ -13,7 +13,6 @@ import {
 } from "@/components/filters/filter-sidebar"
 import { getReleasesResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { releasesQueryInput } from "./releases-query-input"
-import { cn } from "@maple/ui/lib/utils"
 
 import { RELEASE_HEALTH_DESCRIPTION, RELEASE_HEALTH_DOT_CLASS, RELEASE_HEALTH_LABEL } from "./release-health"
 import {
@@ -23,6 +22,7 @@ import {
 	isReleaseHealth,
 	releaseFacetCounts,
 } from "./release-model"
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
 
 const routeApi = getRouteApi("/releases/")
 
@@ -94,12 +94,7 @@ export function ReleasesFilterSidebar() {
 					}
 					renderOptionIcon={(name) =>
 						isReleaseHealth(name) ? (
-							<span
-								className={cn(
-									"inline-block size-2 shrink-0 rounded-full",
-									RELEASE_HEALTH_DOT_CLASS[name],
-								)}
-							/>
+							<StatusDot tone="custom" size="lg" className={RELEASE_HEALTH_DOT_CLASS[name]} />
 						) : null
 					}
 				/>

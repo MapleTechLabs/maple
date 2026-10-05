@@ -40,6 +40,7 @@ import {
 	TokenCredentialsSchema,
 } from "@maple/backend/services/auth/scrape-auth"
 import { describeHttpClientError, guard, validateExternalUrl } from "@maple/safe-fetch"
+import { countSamples, parsePrometheusText } from "@maple/prometheus-otlp"
 import { DiscoveryConfigSchema } from "./planetscale/discovery-config"
 import { PlanetScaleDiscoveryService, planetScaleDiscoveryUrl } from "./PlanetScaleDiscoveryService"
 import {
@@ -1227,16 +1228,36 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 									}),
 								),
 						}),
-						Effect.flatMap((response) =>
-							response.status >= 200 && response.status < 300
-								? Effect.void
-								: Effect.fail(
+						Effect.flatMap((response) => {
+							if (response.status < 200 || response.status >= 300) {
+								return Effect.fail(
+									new ScrapeTargetUpstreamError({
+										message: `HTTP ${response.status}`,
+										status: response.status,
+									}),
+								)
+							}
+							// A PlanetScale row's url is its discovery endpoint (JSON); anything else
+							// must parse the way the scraper will, so an HTML 200 doesn't pass.
+							if (row.targetType === "planetscale") return Effect.void
+							return response.text.pipe(
+								Effect.mapError(
+									() =>
 										new ScrapeTargetUpstreamError({
-											message: `HTTP ${response.status}`,
-											status: response.status,
+											message: "Failed to read response body",
 										}),
-									),
-						),
+								),
+								Effect.flatMap((body) =>
+									countSamples(parsePrometheusText(body).families) > 0
+										? Effect.void
+										: Effect.fail(
+												new ScrapeTargetUpstreamError({
+													message: "Response contained no Prometheus metrics",
+												}),
+											),
+								),
+							)
+						}),
 						Effect.timeout(10_000),
 						Effect.catchTag("TimeoutError", () =>
 							Effect.fail(new ScrapeTargetUpstreamError({ message: "Connection failed" })),

@@ -3,6 +3,8 @@ import { useMemo } from "react"
 import { createFileRoute } from "@tanstack/react-router"
 import { Schema } from "effect"
 
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
+import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { ReplayStudio } from "@/components/replays/replay-studio"
 import { Result, useAtomValue } from "@/lib/effect-atom"
@@ -11,7 +13,7 @@ import {
 	getReplayResultAtom,
 	getSessionTranscriptResultAtom,
 } from "@/lib/services/atoms/warehouse-query-atoms"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { ReplayDetailSkeleton } from "@/components/replays/session-detail-parts"
 import { replayPartitionWindow } from "@/components/replays/replay-format"
 
@@ -73,7 +75,7 @@ function ReplayDetailPage() {
 				<DashboardLayout.Body>
 					<DashboardLayout.Content>
 						<DashboardLayout.Scroll>
-							<QueryErrorState error={error} titleOverride="Failed to load session replay" />
+							<ErrorState error={error} title="Failed to load session replay" />
 						</DashboardLayout.Scroll>
 					</DashboardLayout.Content>
 				</DashboardLayout.Body>
@@ -88,10 +90,10 @@ function ReplayDetailPage() {
 						<DashboardLayout.Body>
 							<DashboardLayout.Content>
 								<DashboardLayout.Scroll>
-									<div className="rounded-xl border border-dashed border-border p-12 text-center text-sm text-muted-foreground">
-										No metadata for session <span className="font-mono">{sessionId}</span>
-										. It may have expired or not been ingested yet.
-									</div>
+									<EmptyMessage dashed className="p-12">
+										No metadata for session <InlineCode>{sessionId}</InlineCode>. It may
+										have expired or not been ingested yet.
+									</EmptyMessage>
 								</DashboardLayout.Scroll>
 							</DashboardLayout.Content>
 						</DashboardLayout.Body>

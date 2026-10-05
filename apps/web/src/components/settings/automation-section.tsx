@@ -10,6 +10,8 @@ import {
 import { toastManager } from "@maple/ui/components/ui/toast"
 import { Button } from "@maple/ui/components/ui/button"
 import { Badge } from "@maple/ui/components/ui/badge"
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
+import { NativeSelect, NativeSelectOption } from "@maple/ui/components/ui/native-select"
 
 import { SeverityBadge } from "@/components/errors/severity-badge"
 import { SeveritySelect } from "@/components/errors/severity-select"
@@ -91,8 +93,6 @@ function PolicySimulator() {
 			<div className="border bg-card/20 p-4">
 				<div className="grid gap-4 md:grid-cols-3">
 					<SimulatorField label="Severity">
-						{/* The two sibling fields are still native <select>s. They are a
-						    separate design-system gap, not a severity one. */}
 						<SeveritySelect
 							value={severity}
 							onChange={(next) => setSeverity(next ?? "high")}
@@ -100,28 +100,32 @@ function PolicySimulator() {
 						/>
 					</SimulatorField>
 					<SimulatorField label="Decision source">
-						<select
+						<NativeSelect
 							value={source}
-							onChange={(event) => setSource(event.target.value as "ai" | "manual")}
-							className="h-8 w-full border bg-background px-2 text-sm"
+							onChange={(event) => setSource(event.target.value === "manual" ? "manual" : "ai")}
+							className="w-full"
 						>
-							<option value="ai">AI diagnosis</option>
-							<option value="manual">Manual change</option>
-						</select>
+							<NativeSelectOption value="ai">AI diagnosis</NativeSelectOption>
+							<NativeSelectOption value="manual">Manual change</NativeSelectOption>
+						</NativeSelect>
 					</SimulatorField>
 					<SimulatorField label="AI confidence">
-						<select
+						<NativeSelect
 							value={confidence}
-							onChange={(event) => setConfidence(event.target.value as EscalationConfidence)}
+							onChange={(event) =>
+								setConfidence(
+									CONFIDENCES.find((value) => value === event.target.value) ?? "high",
+								)
+							}
 							disabled={source === "manual"}
-							className="h-8 w-full border bg-background px-2 text-sm disabled:opacity-50"
+							className="w-full"
 						>
 							{CONFIDENCES.map((value) => (
-								<option key={value} value={value}>
+								<NativeSelectOption key={value} value={value}>
 									{value}
-								</option>
+								</NativeSelectOption>
 							))}
-						</select>
+						</NativeSelect>
 					</SimulatorField>
 				</div>
 				<div className="mt-4 flex flex-wrap items-center gap-3 border-t pt-4">
@@ -178,9 +182,9 @@ function RecentDeliveries() {
 			{Result.builder(result)
 				.onSuccess((response) =>
 					response.attempts.length === 0 ? (
-						<div className="border px-4 py-8 text-center text-sm text-muted-foreground">
+						<EmptyMessage className="border text-sm">
 							No escalation attempts have been recorded.
-						</div>
+						</EmptyMessage>
 					) : (
 						<div className="divide-y border">
 							{response.attempts.map((attempt) => (
@@ -214,9 +218,9 @@ function RecentDeliveries() {
 					),
 				)
 				.orElse(() => (
-					<div className="border px-4 py-8 text-center text-sm text-muted-foreground">
+					<EmptyMessage className="border text-sm">
 						Recent escalation activity could not be loaded.
-					</div>
+					</EmptyMessage>
 				))}
 		</section>
 	)

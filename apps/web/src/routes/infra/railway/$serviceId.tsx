@@ -4,13 +4,13 @@ import { Schema } from "effect"
 import { formatBytes } from "@maple/ui/lib/format"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { chartBucketSeconds, type ChartUnit } from "@/components/infra/chart-utils"
 import { ChartCard } from "@/components/infra/primitives/chart-card"
 import { InfraMetricChart } from "@/components/infra/primitives/infra-metric-chart"
 import { HeroChip, PageHero } from "@/components/infra/primitives/page-hero"
-import { StatRail, StatRailItem } from "@/components/infra/primitives/stat-rail"
+import { StatRail, StatRailItem } from "@/components/common/stat-rail"
 import { formatCores, shareOfLimit } from "@/components/infra/railway/format"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
@@ -201,7 +201,7 @@ function RailwayServicePage() {
 									</StatRail>
 								) : null}
 								{Result.isFailure(timeseriesResult) && buckets.length === 0 ? (
-									<QueryErrorState error={timeseriesResult.cause} />
+									<ErrorState error={timeseriesResult.cause} />
 								) : Result.isInitial(timeseriesResult) ? (
 									<div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
 										{CHARTS.map((chart) => (

@@ -1,3 +1,4 @@
+import { Spinner } from "@maple/ui/components/ui/spinner"
 import { useState } from "react"
 import { Exit, Option } from "effect"
 import { Badge } from "@maple/ui/components/ui/badge"
@@ -6,7 +7,7 @@ import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { toastManager } from "@maple/ui/components/ui/toast"
 
 import { ErrorState } from "@/components/common/error-state"
-import { HazelIcon, LoaderIcon } from "@/components/icons"
+import { HazelIcon } from "@/components/icons"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { MapleApiAtomClient, retainedQuery } from "@/lib/services/common/atom-client"
 import { HAZEL_ACCENT, IntegrationIconPlate } from "./integration-catalog"
@@ -104,11 +105,7 @@ export function HazelIntegrationCard() {
 						Alert destinations will appear here after connecting your workspace.
 					</IntegrationEmptyHint>
 					<Button onClick={connectFlow.connect} disabled={actionBusy}>
-						{connectFlow.busy ? (
-							<LoaderIcon size={16} className="animate-spin" />
-						) : (
-							<HazelIcon size={16} />
-						)}
+						{connectFlow.busy ? <Spinner size={16} /> : <HazelIcon size={16} />}
 						Connect Hazel
 					</Button>
 					<IntegrationEmptyFooter>
@@ -151,11 +148,11 @@ export function HazelIntegrationCard() {
 
 				<div className="flex flex-wrap gap-2">
 					<Button size="sm" onClick={connectFlow.connect} disabled={actionBusy} variant="outline">
-						{connectFlow.busy ? <LoaderIcon size={14} className="animate-spin" /> : null}
+						{connectFlow.busy ? <Spinner size={14} /> : null}
 						Reconnect
 					</Button>
 					<Button size="sm" onClick={handleDisconnect} disabled={actionBusy} variant="outline">
-						{disconnectBusy ? <LoaderIcon size={14} className="animate-spin" /> : null}
+						{disconnectBusy ? <Spinner size={14} /> : null}
 						Disconnect
 					</Button>
 				</div>

@@ -1,6 +1,7 @@
 import type { ReactNode } from "react"
 
 import { Badge } from "@maple/ui/components/ui/badge"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
 
 import { traceSessionTraceId } from "@maple/domain/gen-ai"
@@ -111,9 +112,9 @@ function Fact({
 }) {
 	return (
 		<div className="flex min-w-0 max-w-full items-baseline gap-1.5" title={title}>
-			<dt className="shrink-0 font-semibold text-[10px] text-muted-foreground uppercase tracking-[0.08em]">
+			<Eyebrow as="dt" className="shrink-0">
 				{label}
-			</dt>
+			</Eyebrow>
 			<dd className={mono ? "min-w-0 truncate font-mono" : "min-w-0 truncate"}>{children}</dd>
 		</div>
 	)

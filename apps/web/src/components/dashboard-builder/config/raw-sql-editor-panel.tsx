@@ -8,6 +8,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { useDashboardVariablesOptional } from "@/components/dashboard-builder/dashboard-variables-context"
 import type { DashboardWidget } from "@/components/dashboard-builder/types"
 import { tokenizeSql } from "@/lib/sql-highlight"
+import { CollapseToggle } from "@/components/dashboard-builder/config/query-panel-shell"
 
 const MACRO_HINTS: Array<{ token: string; description: string }> = [
 	{ token: "$__orgFilter", description: "Required: expands to OrgId = '<your org>'" },
@@ -75,14 +76,11 @@ export function RawSqlEditorPanel({
 			<div className="border rounded-md">
 				{/* Header follows QueryPanel's compact query row. */}
 				<div className="flex items-center gap-2 px-3 py-2 bg-muted/30">
-					<button
-						type="button"
-						onClick={() => setCollapsed((c) => !c)}
-						className="text-muted-foreground hover:text-foreground transition-colors text-xs shrink-0"
-						aria-label={collapsed ? "Expand SQL" : "Collapse SQL"}
-					>
-						{collapsed ? "▶" : "▼"}
-					</button>
+					<CollapseToggle
+						collapsed={collapsed}
+						onToggle={() => setCollapsed((c) => !c)}
+						noun="SQL"
+					/>
 
 					<Badge
 						variant="outline"

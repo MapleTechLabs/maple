@@ -4,6 +4,7 @@ import type { GetAiSessionSummaryResponse } from "@maple/domain/http"
 
 import { ArrowRightIcon, ChevronRightIcon } from "@/components/icons"
 import { Button } from "@maple/ui/components/ui/button"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Separator } from "@maple/ui/components/ui/separator"
 import { formatNumber, formatPercent } from "@maple/ui/lib/format"
 import { formatSessionDuration } from "@maple/ui/lib/replay-format"
@@ -209,9 +210,7 @@ function TimeComposition({ summary }: { summary: SessionSummary }) {
 function Clock({ label, value, className }: { label: string; value: string; className?: string }) {
 	return (
 		<span className="flex items-baseline gap-1.5">
-			<span className="font-semibold text-[10px] text-muted-foreground uppercase tracking-[0.08em]">
-				{label}
-			</span>
+			<Eyebrow>{label}</Eyebrow>
 			<span className={cn("font-mono font-semibold text-xs tabular-nums", className)}>{value}</span>
 		</span>
 	)
@@ -417,9 +416,9 @@ function ToolLedgerHeader({ summary }: { summary: SessionSummary }) {
 
 	return (
 		<div className="flex flex-wrap items-baseline justify-between gap-x-5 gap-y-2">
-			<h3 className="font-semibold text-[11px] text-muted-foreground uppercase tracking-[0.09em]">
+			<Eyebrow variant="label" as="h3">
 				Tools
-			</h3>
+			</Eyebrow>
 			{summary.tools.length > 0 && (
 				<div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
 					<LedgerStat label="Distinct" value={formatNumber(summary.tools.length)} />
@@ -442,9 +441,7 @@ function ToolLedgerHeader({ summary }: { summary: SessionSummary }) {
 function LedgerStat({ label, value, tone }: { label: string; value: string; tone?: string }) {
 	return (
 		<span className="flex items-baseline gap-1.5">
-			<span className="font-semibold text-[10px] text-muted-foreground uppercase tracking-[0.08em]">
-				{label}
-			</span>
+			<Eyebrow>{label}</Eyebrow>
 			<span className={cn("font-mono font-semibold text-xs tabular-nums", tone ?? "text-foreground")}>
 				{value}
 			</span>
@@ -460,7 +457,7 @@ const LEDGER_TIME = "w-16 shrink-0 text-right"
 
 function ToolLedgerColumns({ axis }: { axis: SessionAxis }) {
 	return (
-		<div className="flex items-end gap-4 border-border border-b pb-2 font-semibold text-[10px] text-muted-foreground uppercase tracking-[0.08em]">
+		<Eyebrow as="div" className="flex items-end gap-4 border-border border-b pb-2">
 			<span className={LEDGER_NAME}>Tool</span>
 			<span className={LEDGER_COUNT}>Calls</span>
 			<span className={LEDGER_COUNT}>Fail</span>
@@ -488,7 +485,7 @@ function ToolLedgerColumns({ axis }: { axis: SessionAxis }) {
 					),
 				)}
 			</span>
-		</div>
+		</Eyebrow>
 	)
 }
 
@@ -700,9 +697,9 @@ function RailSection({ title, aside, children }: { title: string; aside?: ReactN
 	return (
 		<section className="flex flex-col gap-3 border-border border-t pt-6 first:border-t-0 first:pt-0">
 			<div className="flex items-baseline justify-between gap-2">
-				<h3 className="font-semibold text-[11px] text-muted-foreground uppercase tracking-[0.09em]">
+				<Eyebrow variant="label" as="h3">
 					{title}
-				</h3>
+				</Eyebrow>
 				{aside}
 			</div>
 			{children}

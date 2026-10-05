@@ -4,7 +4,6 @@ import { compileUnionUnsafe } from "@maple-dev/effect-clickhouse"
 import {
 	listHostsQuery,
 	hostDetailSummaryQuery,
-	fleetUtilizationTimeseriesQuery,
 	listPodsQuery,
 	listPodsSummaryQuery,
 	podDetailSummaryQuery,
@@ -529,7 +528,6 @@ describe("conditional aggregates are NaN-guarded", () => {
 	const queries: ReadonlyArray<[string, string]> = [
 		["listHostsQuery", compileUnsafe(listHostsQuery({}), baseParams).sql],
 		["hostDetailSummaryQuery", compileUnsafe(hostDetailSummaryQuery({ hostName: "h1" }), baseParams).sql],
-		["fleetUtilizationTimeseriesQuery", compileUnsafe(fleetUtilizationTimeseriesQuery(), baseParams).sql],
 		["listPodsQuery", compileUnsafe(listPodsQuery({}), baseParams).sql],
 		["listPodsSummaryQuery", compileUnsafe(listPodsSummaryQuery({}), baseParams).sql],
 		["podDetailSummaryQuery", compileUnsafe(podDetailSummaryQuery({ podName: "p1" }), baseParams).sql],

@@ -5,7 +5,7 @@ import { Result } from "@/lib/effect-atom"
 import { getChartById } from "@maple/ui/components/charts/registry"
 import { ChartSkeleton } from "@maple/ui/components/charts/_shared/chart-skeleton"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { DocsLink } from "@/components/common/docs-link"
 import { MetricQueryControls, type MetricQueryPatch } from "./metric-query-controls"
 import { MetricBreakdown, appendWhereFilter } from "./metric-breakdown"
@@ -22,6 +22,7 @@ import {
 	type MetricsQueryDraft,
 	type QueryBuilderMetricType,
 } from "@maple/query-engine/query-builder"
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
 
 export interface MetricDetailQueryState {
 	type?: QueryBuilderMetricType
@@ -165,7 +166,7 @@ export function MetricDetail({ metricName, state, startTime, endTime, onPatch }:
 				<Skeleton className="h-80 w-full" />
 			</div>
 		))
-		.onError((error) => <QueryErrorState error={error} titleOverride="Failed to load metric" />)
+		.onError((error) => <ErrorState error={error} title="Failed to load metric" />)
 		.onSuccess((response) => {
 			const summary = summarizeCatalogRows(response.data, metricName, state.type)
 			if (!summary) {
@@ -283,14 +284,12 @@ function MetricChart({
 			<div className="h-80 p-3">
 				{Result.builder(result)
 					.onInitial(() => <ChartSkeleton variant="area" />)
-					.onError((error) => (
-						<QueryErrorState error={error} titleOverride="Failed to load metric data" />
-					))
+					.onError((error) => <ErrorState error={error} title="Failed to load metric data" />)
 					.onSuccess((response) =>
 						response.data.length === 0 ? (
-							<div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+							<EmptyMessage className="flex h-full items-center justify-center">
 								No datapoints match this query in the selected range.
-							</div>
+							</EmptyMessage>
 						) : (
 							<Suspense fallback={<ChartSkeleton variant="area" />}>
 								<ChartComponent

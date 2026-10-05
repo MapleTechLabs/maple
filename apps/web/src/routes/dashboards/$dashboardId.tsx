@@ -1,3 +1,4 @@
+import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { Schema } from "effect"
 import { DashboardId, DashboardVersionId } from "@maple/domain/http"
@@ -284,9 +285,7 @@ function DashboardViewPage() {
 								<p className="text-sm font-medium text-foreground">Dashboard not found</p>
 								<p className="text-xs text-muted-foreground">
 									No dashboard with id{" "}
-									<code className="break-all rounded bg-muted px-1.5 py-0.5 text-foreground">
-										{dashboardId}
-									</code>
+									<InlineCode className="break-all px-1.5 py-0.5">{dashboardId}</InlineCode>
 								</p>
 								<Link
 									to="/dashboards"

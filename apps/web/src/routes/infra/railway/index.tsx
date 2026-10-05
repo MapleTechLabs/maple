@@ -5,7 +5,7 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@m
 import { cn } from "@maple/ui/lib/utils"
 
 import { EmptyActions } from "@/components/common/docs-link"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { RailwayIcon } from "@/components/icons"
 import {
 	RailwayIntegrationCard,
@@ -106,7 +106,7 @@ function RailwayPage() {
 									.onInitial(() => (
 										<RailwaySummaryBandLoading className={FLEET_BAND_BOXED} />
 									))
-									.onError((error) => <QueryErrorState error={error} />)
+									.onError((error) => <ErrorState error={error} />)
 									.onSuccess((status) =>
 										status.connected ? (
 											<RailwayServices
@@ -174,7 +174,7 @@ function RailwayServices({
 		)
 	}
 	if (Result.isFailure(servicesResult) && services.length === 0) {
-		return <QueryErrorState error={servicesResult.cause} />
+		return <ErrorState error={servicesResult.cause} />
 	}
 	if (services.length === 0) {
 		return (

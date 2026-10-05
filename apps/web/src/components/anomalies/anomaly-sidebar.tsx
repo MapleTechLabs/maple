@@ -1,3 +1,4 @@
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { Link } from "@tanstack/react-router"
 import type { AnomalyIncidentDocument } from "@maple/domain/http"
 import { Button } from "@maple/ui/components/ui/button"
@@ -169,16 +170,15 @@ export function AnomalySidebar({
 							title={fingerprint.fingerprintHash}
 						>
 							<span className="flex min-w-0 items-center gap-1.5">
-								<span
-									aria-hidden
-									className={cn(
-										"size-1.5 shrink-0 rounded-full",
+								<StatusDot
+									tone="custom"
+									className={
 										fingerprint.resolvedAt !== null
 											? "bg-border"
 											: fingerprint.severity === "critical"
 												? SEVERITY_TONE.critical.accent
-												: SEVERITY_TONE.warning.accent,
-									)}
+												: SEVERITY_TONE.warning.accent
+									}
 								/>
 								{fingerprint.errorIssueId !== null ? (
 									<Link

@@ -21,7 +21,7 @@ import { ChartEmpty } from "@maple/ui/components/charts"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { cn } from "@maple/ui/lib/utils"
 
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { CHART_EMPTY_MESSAGE, bucketDate, makeBucketAxis } from "@/components/infra/chart-utils"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import {
@@ -238,7 +238,7 @@ export function ToolSeriesChart({
 			) : null}
 
 			{failure !== undefined ? (
-				<QueryErrorState error={failure} titleOverride={`Failed to load ${title}`} />
+				<ErrorState error={failure} title={`Failed to load ${title}`} />
 			) : loading && rows.length === 0 ? (
 				<Skeleton className="w-full" style={{ height: PLOT_HEIGHT }} />
 			) : rows.length === 0 ? (

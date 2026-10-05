@@ -5,7 +5,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
 
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { useTableSort, type SortDir } from "@/components/infra/primitives/data-table"
 import { relativeRatio } from "@/components/infra/primitives/share-bar"
 import { ArrowUpDownIcon, ChevronRightIcon } from "@/components/icons"
@@ -403,7 +403,7 @@ export function ToolsTable({
 
 				<TableBody waiting={waiting}>
 					{failure !== undefined ? (
-						<QueryErrorState error={failure} titleOverride="Failed to load tools" />
+						<ErrorState error={failure} title="Failed to load tools" />
 					) : loading ? (
 						<div className="flex flex-col gap-1.5 px-2.5 py-3">
 							<Skeleton className="h-[38px]" />

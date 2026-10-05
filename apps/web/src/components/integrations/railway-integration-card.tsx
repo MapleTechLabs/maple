@@ -1,3 +1,6 @@
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { Spinner } from "@maple/ui/components/ui/spinner"
 import { useState } from "react"
 import { Exit, Option, Schema } from "effect"
 import { Link } from "@tanstack/react-router"
@@ -11,7 +14,7 @@ import { toastManager } from "@maple/ui/components/ui/toast"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
 
 import { ErrorState } from "@/components/common/error-state"
-import { ExternalLinkIcon, LoaderIcon, RailwayIcon } from "@/components/icons"
+import { ExternalLinkIcon, RailwayIcon } from "@/components/icons"
 import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { errorMessage } from "@/lib/error-toast"
@@ -127,11 +130,7 @@ function RailwayTokenForm({
 					</Button>
 				) : null}
 				<Button type="submit" disabled={Option.isNone(request) || submitting}>
-					{submitting ? (
-						<LoaderIcon size={14} className="animate-spin" />
-					) : (
-						<RailwayIcon size={14} />
-					)}
+					{submitting ? <Spinner size={14} /> : <RailwayIcon size={14} />}
 					{submitting ? "Connecting…" : mode === "rotate" ? "Update token" : "Connect Railway"}
 				</Button>
 			</div>
@@ -305,7 +304,7 @@ export function RailwayIntegrationCard() {
 						<div className="flex flex-wrap gap-2">
 							<Button size="sm" render={<Link to="/infra/railway">View metrics</Link>} />
 							<Button size="sm" variant="outline" onClick={handleSync} disabled={syncBusy}>
-								{syncBusy ? <LoaderIcon size={14} className="animate-spin" /> : null}
+								{syncBusy ? <Spinner size={14} /> : null}
 								Sync now
 							</Button>
 							<Button size="sm" variant="outline" onClick={() => setRotating(true)}>
@@ -317,7 +316,7 @@ export function RailwayIntegrationCard() {
 								onClick={handleDisconnect}
 								disabled={disconnectBusy}
 							>
-								{disconnectBusy ? <LoaderIcon size={14} className="animate-spin" /> : null}
+								{disconnectBusy ? <Spinner size={14} /> : null}
 								Disconnect
 							</Button>
 						</div>
@@ -326,15 +325,17 @@ export function RailwayIntegrationCard() {
 			</div>
 
 			<div className="overflow-hidden rounded-lg border border-border/60 bg-card">
-				<div className="grid grid-cols-[1fr_auto_auto] gap-4 border-b border-border/60 px-4 py-2 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+				<Eyebrow
+					variant="label"
+					as="div"
+					className="grid grid-cols-[1fr_auto_auto] gap-4 border-b border-border/60 px-4 py-2"
+				>
 					<span>Environment</span>
 					<span className="w-20 text-right">Services</span>
 					<span className="w-32 text-right">Last sync</span>
-				</div>
+				</Eyebrow>
 				{status.environments.length === 0 ? (
-					<p className="px-4 py-6 text-center text-xs text-muted-foreground">
-						This token can't see any projects yet.
-					</p>
+					<EmptyMessage className="py-6">This token can't see any projects yet.</EmptyMessage>
 				) : (
 					status.environments.map((environment) => (
 						<div
@@ -365,7 +366,7 @@ export function RailwayIntegrationCard() {
 									"Failed"
 								) : (
 									<span className="inline-flex items-center gap-1">
-										<LoaderIcon size={12} className="animate-spin" />
+										<Spinner size={12} />
 										Syncing
 									</span>
 								)}

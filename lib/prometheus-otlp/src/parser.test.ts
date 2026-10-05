@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { parsePrometheusText, type PromMetricFamily } from "./parser"
+import { countSamples, parsePrometheusText, type PromMetricFamily } from "./parser"
 
 const familyByName = (families: ReadonlyArray<PromMetricFamily>, name: string): PromMetricFamily => {
 	const family = families.find((f) => f.name === name)
@@ -176,5 +176,15 @@ describe("parsePrometheusText", () => {
 	it("drops families that end up with no samples (TYPE/HELP only)", () => {
 		const result = parsePrometheusText("# TYPE ghost counter\n# HELP ghost Never emitted.")
 		expect(result.families).toEqual([])
+	})
+})
+
+describe("countSamples", () => {
+	it("sums samples across families", () => {
+		const { families } = parsePrometheusText(
+			'# TYPE a gauge\na 1\n# TYPE b counter\nb_total 2\nb_total{x="y"} 3\n',
+		)
+		expect(countSamples(families)).toBe(3)
+		expect(countSamples([])).toBe(0)
 	})
 })

@@ -1,3 +1,4 @@
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import type { V2Investigation } from "@maple/domain/http/v2"
 
 /**
@@ -16,9 +17,7 @@ export function CauseRecap({ investigation }: { investigation: V2Investigation }
 	return (
 		<div className="flex shrink-0 items-baseline gap-3 overflow-hidden rounded-r-xl border bg-card py-3 pl-0 pr-5">
 			<span aria-hidden className="h-full w-[3px] shrink-0 self-stretch bg-primary" />
-			<span className="shrink-0 pl-4 text-[10px] font-medium uppercase tracking-[0.12em] text-primary">
-				Cause
-			</span>
+			<Eyebrow className="shrink-0 pl-4 text-primary">Cause</Eyebrow>
 			<p className="min-w-0 flex-1 text-sm text-foreground">{cause}</p>
 		</div>
 	)

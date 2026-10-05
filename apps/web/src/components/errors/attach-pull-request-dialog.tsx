@@ -1,3 +1,4 @@
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import { useMemo, useState } from "react"
 import { Link } from "@tanstack/react-router"
 
@@ -234,17 +235,17 @@ export function AttachPullRequestDialog({
 									/>
 									<ComboboxContent>
 										{loadingPullRequests ? (
-											<div className="py-4 text-center text-xs text-muted-foreground">
+											<EmptyMessage className="py-4">
 												Loading pull requests…
-											</div>
+											</EmptyMessage>
 										) : visible.length === 0 ? (
-											<div className="py-4 text-center text-xs text-muted-foreground">
+											<EmptyMessage className="py-4">
 												{typedUrl !== null
 													? "Press Enter to attach the pull request you typed."
 													: pullRequests.length === 0
 														? "No pull requests in this repository yet."
 														: "Nothing matches that search."}
-											</div>
+											</EmptyMessage>
 										) : (
 											<ComboboxList>
 												{visible.map((pr) => (

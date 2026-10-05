@@ -5,17 +5,13 @@ import { getSpanKindLabel } from "../../lib/span-kind"
 import { spanStartMs } from "../../lib/span-tree"
 import type { SpanNode } from "../../lib/types"
 
-interface TraceTimelineTooltipProps {
+interface SpanTooltipProps {
 	span: SpanNode
 	totalDurationMs?: number
 	traceStartTime?: string
 }
 
-export function TraceTimelineTooltipContent({
-	span,
-	totalDurationMs,
-	traceStartTime,
-}: TraceTimelineTooltipProps) {
+export function SpanTooltipContent({ span, totalDurationMs, traceStartTime }: SpanTooltipProps) {
 	const kindLabel = getSpanKindLabel(span.spanKind)
 
 	const serviceColor = getServiceColor(span.serviceName)
@@ -29,15 +25,13 @@ export function TraceTimelineTooltipContent({
 
 	return (
 		<div className="space-y-2 font-mono text-xs">
-			{/* Header */}
 			<div className="flex items-center gap-2">
 				{serviceColor && (
-					<div className="size-2.5 shrink-0" style={{ backgroundColor: serviceColor }} />
+					<div className="h-2.5 w-2.5 shrink-0" style={{ backgroundColor: serviceColor }} />
 				)}
 				<span className="font-medium truncate">{span.spanName}</span>
 			</div>
 
-			{/* Duration bar */}
 			{durationPercent !== null && (
 				<div className="space-y-1">
 					<div className="flex items-center justify-between text-[10px]">
@@ -55,7 +49,6 @@ export function TraceTimelineTooltipContent({
 				</div>
 			)}
 
-			{/* Self time */}
 			{span.children.length > 0 && (
 				<div className="flex items-center justify-between text-[10px]">
 					<span className="text-muted-foreground">Self time</span>
@@ -65,28 +58,23 @@ export function TraceTimelineTooltipContent({
 				</div>
 			)}
 
-			{/* Details grid */}
 			<div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-[10px]">
 				<span className="text-muted-foreground">Service</span>
 				<span>{span.serviceName}</span>
-
 				<span className="text-muted-foreground">Kind</span>
 				<span>{kindLabel}</span>
-
 				{startOffset !== null && (
 					<>
 						<span className="text-muted-foreground">Start offset</span>
 						<span>+{formatDuration(startOffset)}</span>
 					</>
 				)}
-
 				{durationPercent === null && (
 					<>
 						<span className="text-muted-foreground">Duration</span>
 						<span>{formatDuration(span.durationMs)}</span>
 					</>
 				)}
-
 				<span className="text-muted-foreground">Status</span>
 				<span
 					className={
@@ -101,7 +89,6 @@ export function TraceTimelineTooltipContent({
 				</span>
 			</div>
 
-			{/* HTTP details */}
 			{httpInfo && (
 				<div className="border-t border-border pt-1.5 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-[10px]">
 					<span className="text-muted-foreground">Method</span>
@@ -131,7 +118,6 @@ export function TraceTimelineTooltipContent({
 				</div>
 			)}
 
-			{/* Status message */}
 			{span.statusMessage && (
 				<div className="border-t border-border pt-1.5 text-[10px]">
 					<span className="text-muted-foreground">Message: </span>

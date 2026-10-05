@@ -1,3 +1,4 @@
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import type { IssueSeverity } from "@maple/domain/http"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { cn } from "@maple/ui/lib/utils"
@@ -41,10 +42,10 @@ export const SEVERITY_TEXT: Record<IssueSeverity, string> = {
  */
 export function SeverityDot({ severity, className }: { severity: IssueSeverity | null; className?: string }) {
 	return (
-		<span
-			aria-hidden="true"
+		<StatusDot
+			tone="custom"
+			size="lg"
 			className={cn(
-				"size-2 shrink-0 rounded-full",
 				severity === null ? "border border-muted-foreground/50" : SEVERITY_FILL[severity],
 				className,
 			)}

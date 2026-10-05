@@ -1,3 +1,4 @@
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import { addMinutes, subMinutes } from "date-fns"
 import { Link } from "@tanstack/react-router"
 
@@ -66,14 +67,14 @@ export function InfraCorrelationPanel({
 
 	if (correlations.length === 0) {
 		return (
-			<div className="flex flex-col items-center gap-2 rounded-md border border-dashed px-4 py-12 text-center text-sm text-muted-foreground">
+			<EmptyMessage dashed className="flex flex-col items-center gap-2 py-12">
 				<p>No Kubernetes, container, or host metadata on this record.</p>
 				<p className="text-xs">
 					Set host.name, container.id or k8s.pod.name as resource attributes to link records to
 					infrastructure.
 				</p>
 				<DocsLink page="otelConventions" />
-			</div>
+			</EmptyMessage>
 		)
 	}
 

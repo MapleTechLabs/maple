@@ -15,6 +15,7 @@ import "@xyflow/react/dist/style.css"
 
 import type { AiSessionSpan } from "@maple/domain/http"
 import { CircleXmarkIcon, MaximizeIcon, MinusIcon, PlusIcon } from "@/components/icons"
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import { Button } from "@maple/ui/components/ui/button"
 import { formatDuration, formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
@@ -294,9 +295,7 @@ export function SessionFlow({
 			    canvas rather than inside its transformed pane. */}
 			<div className="relative flex grow flex-col">
 				{lanes.length === 0 ? (
-					<p className="px-2.5 py-8 text-center text-muted-foreground text-sm">
-						No spans match this filter.
-					</p>
+					<EmptyMessage>No spans match this filter.</EmptyMessage>
 				) : (
 					<div ref={paneRef} className="relative min-h-48 grow">
 						<ReactFlow

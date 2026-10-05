@@ -4,6 +4,7 @@ import { format } from "date-fns"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { Button } from "@maple/ui/components/ui/button"
 import { Badge } from "@maple/ui/components/ui/badge"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { cn } from "@maple/ui/lib/utils"
 
 import { Result, useAtomValue } from "@/lib/effect-atom"
@@ -53,9 +54,7 @@ function DataPoint({
 }) {
 	return (
 		<div className="flex flex-col gap-0.5">
-			<span className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground/60">
-				{label}
-			</span>
+			<Eyebrow>{label}</Eyebrow>
 			<span className="flex items-center gap-2">
 				<span className={cn("text-sm tabular-nums", accent && "text-primary", className)}>
 					{value}
@@ -69,9 +68,7 @@ function DataPoint({
 function SectionHeader({ title, subtitle }: { title: string; subtitle?: string }) {
 	return (
 		<div className="flex items-baseline justify-between gap-4 border-b border-border/60 pb-2">
-			<h2 className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground/80">
-				{title}
-			</h2>
+			<Eyebrow as="h2">{title}</Eyebrow>
 			{subtitle && <span className="text-xs tabular-nums text-muted-foreground/60">{subtitle}</span>}
 		</div>
 	)

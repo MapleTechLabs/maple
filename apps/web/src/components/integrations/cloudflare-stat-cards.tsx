@@ -2,6 +2,7 @@ import type { ReactNode } from "react"
 import { Link } from "@tanstack/react-router"
 import type { CloudflareServiceUsage, CloudflareUsageResponse } from "@maple/domain/http"
 import { StatSparkline } from "@maple/ui/components/charts/sparkline/stat-sparkline"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { cn } from "@maple/ui/lib/utils"
 
@@ -25,9 +26,7 @@ function StatCard({
 }) {
 	const body = (
 		<>
-			<span className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
-				{eyebrow}
-			</span>
+			<Eyebrow variant="label">{eyebrow}</Eyebrow>
 			<span className="flex items-end justify-between gap-3">
 				<span className="text-[22px]/7 font-semibold tracking-tight text-foreground">{value}</span>
 				{sparkline}

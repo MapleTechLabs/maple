@@ -6,15 +6,16 @@ import { Button } from "@maple/ui/components/ui/button"
 import { Table, TableBody, TableCell, TableHeader, TableRow } from "@maple/ui/components/ui/table"
 import { LatencyValue } from "@maple/ui/components/latency-value"
 import { formatLatency } from "@maple/ui/lib/format"
-import { ChevronDownIcon, ChevronUpIcon, ChevronExpandYIcon } from "@/components/icons"
 import { Result } from "@/lib/effect-atom"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { getServiceEndpointsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { DocsLink } from "@/components/common/docs-link"
 import type { ServiceEndpoint } from "@/api/warehouse/service-endpoints"
 import {
 	BarCell,
+	MobileListRow,
+	MobileSortBar,
 	SortableHead,
 	errorTone,
 	formatErrorRate,
@@ -171,7 +172,7 @@ export function ServiceApiTab({
 
 	if (!Result.isSuccess(result)) {
 		return Result.builder(result)
-			.onError((error) => <QueryErrorState error={error} />)
+			.onError((error) => <ErrorState error={error} />)
 			.orElse(() => <ApiLoadingState />)
 	}
 
@@ -281,43 +282,19 @@ export function ServiceApiTab({
 
 			{/* Mobile: tap-to-trace list with a compact sort control. */}
 			<div className="space-y-2 md:hidden">
-				<div className="flex items-center gap-1.5 text-[11px]">
-					<span className="uppercase tracking-wider text-muted-foreground/60">Sort</span>
-					{(
+				<MobileSortBar
+					options={
 						[
 							["traffic", "Traffic"],
 							["errorRate", "Errors"],
 							["p95", "p95"],
 							["path", "Path"],
 						] as const
-					).map(([key, label]) => {
-						const active = sortKey === key
-						const Icon = active
-							? sortDir === "desc"
-								? ChevronDownIcon
-								: ChevronUpIcon
-							: ChevronExpandYIcon
-						return (
-							<button
-								key={key}
-								type="button"
-								onClick={() => toggleSort(key)}
-								className={cn(
-									"inline-flex items-center gap-1 rounded-md border px-2 py-1 font-mono transition-colors",
-									active
-										? "border-border bg-muted text-foreground"
-										: "border-transparent text-muted-foreground hover:text-foreground",
-								)}
-							>
-								{label}
-								<Icon
-									size={11}
-									className={active ? "text-foreground" : "text-muted-foreground/40"}
-								/>
-							</button>
-						)
-					})}
-				</div>
+					}
+					sortKey={sortKey}
+					sortDir={sortDir}
+					onSort={toggleSort}
+				/>
 				<div className="overflow-hidden rounded-lg border bg-card">
 					{groups.map((group) => (
 						<MobileGroup
@@ -634,12 +611,7 @@ function MobileGroup({
 				? group.endpoints.map((endpoint) => {
 						const { head, tail } = leafLabel(endpoint.route, collapsed ? "" : group.stem)
 						return (
-							<button
-								key={endpoint.spanName}
-								type="button"
-								onClick={() => onSelect(endpoint)}
-								className="flex w-full flex-col gap-1 border-b px-3 py-2.5 text-left last:border-b-0 hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
-							>
+							<MobileListRow key={endpoint.spanName} onClick={() => onSelect(endpoint)}>
 								<span className="flex min-w-0 items-center gap-2">
 									<MethodLabel method={endpoint.method} />
 									<span className="truncate font-mono text-[13px]">
@@ -667,7 +639,7 @@ function MobileGroup({
 										<LatencyValue ms={endpoint.p95DurationMs} scale="p95" />
 									</span>
 								</div>
-							</button>
+							</MobileListRow>
 						)
 					})
 				: null}

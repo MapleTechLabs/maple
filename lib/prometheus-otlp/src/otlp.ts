@@ -1,29 +1,24 @@
 /**
  * Converts parsed Prometheus metric families into an OTLP/JSON
- * `ExportMetricsServiceRequest` for the Maple ingest gateway
- * (`POST /v1/metrics`, `Content-Type: application/json`).
+ * `ExportMetricsServiceRequest`.
  *
- * Sending OTLP through the gateway (instead of writing warehouse rows
- * directly) means scraped metrics are billed (Autumn byte metering +
- * enforcement) and routed per org (Tinybird vs self-managed ClickHouse)
- * exactly like customer OTLP traffic.
- *
- * JSON shape contract — pinned by the Rust deserializer
- * (`opentelemetry-proto` 0.31 `with-serde`, used in `apps/ingest`; see the
- * `scraper_contract` test in `apps/ingest/src/telemetry.rs`):
+ * JSON shape, chosen to match `opentelemetry-proto`'s `with-serde` types:
  * - camelCase field names; oneofs flattened (`asDouble`, `gauge`/`sum`/`histogram`)
- * - `timeUnixNano`/`startTimeUnixNano` MUST be strings (custom u64-from-string)
- * - histogram `count`/`bucketCounts` MUST be JSON numbers (plain serde u64 —
- *   deviates from the OTLP/JSON spec, which would use strings)
+ * - `timeUnixNano`/`startTimeUnixNano` are strings (ns epochs exceed 2^53)
+ * - histogram `count`/`bucketCounts` are JSON numbers, not the spec's strings
  * - attribute values as `{ "stringValue": "…" }`
+ *
+ * `__fixtures__/otlp-export.json` pins that shape; consumers assert against it.
  */
 import type { PromMetricFamily, PromSample } from "./parser"
 
 export interface ScrapeOtlpContext {
-	readonly targetId: string
-	readonly targetName: string
-	/** `job` data-point attribute and `service.name` resource attribute. */
-	readonly serviceName: string
+	/** Resource attributes, emitted in insertion order. */
+	readonly resource: Readonly<Record<string, string>>
+	/** Instrumentation scope name. */
+	readonly scopeName: string
+	/** `job` data-point attribute. */
+	readonly job: string
 	/** `instance` data-point attribute: host of the target URL. */
 	readonly instance: string
 	/** Extra labels configured on the target (parsed `labelsJson`). */
@@ -93,8 +88,6 @@ const CUMULATIVE = 2
 /** OTLP "unknown start time": zero nanos. */
 const EPOCH_NANO = "0"
 
-const SCOPE_NAME = "maple-prometheus-scraper"
-
 /**
  * Epoch ms → ns string. Nanosecond epochs exceed `Number.MAX_SAFE_INTEGER`
  * (~9.0e15 < 1.7e18), so this must go through BigInt.
@@ -112,7 +105,7 @@ const mergeAttributes = (
 	const merged: Record<string, string> = {
 		...ctx.targetLabels,
 		...sampleLabels,
-		job: ctx.serviceName,
+		job: ctx.job,
 		instance: ctx.instance,
 	} satisfies Record<string, string>
 	return Object.entries(merged).map(([key, value]) => ({ key, value: { stringValue: value } }))
@@ -293,7 +286,7 @@ const convertHistogramFamily = (
 }
 
 /**
- * The gateway drops OTLP Summary metrics (no warehouse table), so summaries
+ * Many OTLP backends drop Summary metrics, so summaries
  * degrade here: `_sum`/`_count` as cumulative sums, quantile series as a
  * gauge keeping the `quantile` attribute — same shape the contrib exporter
  * uses when summaries are unsupported.
@@ -384,19 +377,12 @@ export const convertFamiliesToOtlp = (
 					resourceMetrics: [
 						{
 							resource: {
-								attributes: [
-									// maple_org_id is intentionally NOT set: the gateway strips
-									// any client-supplied org attribution and injects it from
-									// the ingest key.
-									{ key: "service.name", value: { stringValue: ctx.serviceName } },
-									{ key: "maple_scrape_target_id", value: { stringValue: ctx.targetId } },
-									{
-										key: "maple_scrape_target_name",
-										value: { stringValue: ctx.targetName },
-									},
-								],
+								attributes: Object.entries(ctx.resource).map(([key, value]) => ({
+									key,
+									value: { stringValue: value },
+								})),
 							},
-							scopeMetrics: [{ scope: { name: SCOPE_NAME }, metrics: state.metrics }],
+							scopeMetrics: [{ scope: { name: ctx.scopeName }, metrics: state.metrics }],
 						},
 					],
 				}
@@ -470,10 +456,8 @@ const slicerFor = (metric: OtlpMetric): MetricSlicer => {
 
 /**
  * Split an export request into requests of at most `maxDataPoints` data points
- * each, so no single POST can exceed the ingest gateway's body limit
- * (`INGEST_MAX_REQUEST_BODY_BYTES`). The gateway rejects an oversized body
- * whole with HTTP 413, which loses the entire scrape — a large ScyllaDB
- * cluster crossed 20 MB in one export and went blind rather than degrading.
+ * each, so no single POST can exceed a receiver's body limit. A receiver that
+ * rejects an oversized body whole loses the entire scrape.
  *
  * Splitting happens at the data-point level, not the metric level: one
  * Prometheus family fans out to a series per shard per table, so a single

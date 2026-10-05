@@ -1,13 +1,13 @@
 import * as React from "react"
 
 import { Input } from "@maple/ui/components/ui/input"
-import { Button } from "@maple/ui/components/ui/button"
 import { GridIcon, MenuIcon } from "@/components/icons"
 import { MetricsSummaryCards, type MetricType } from "./metrics-summary-cards"
 import { MetricsTable } from "./metrics-table"
 import { MetricPreviewGrid } from "./metric-preview-grid"
 import type { Metric } from "@/api/warehouse/metrics"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
+import { ToggleGroup, ToggleGroupItem } from "@maple/ui/components/ui/toggle-group"
 
 export type MetricsBrowseView = "grid" | "table"
 
@@ -87,26 +87,24 @@ export function MetricsBrowse({
 						Filtered by: <span className="font-medium">{type}</span>
 					</span>
 				)}
-				<div className="ml-auto flex items-center gap-1">
-					<Button
-						variant={view === "grid" ? "secondary" : "ghost"}
-						size="sm"
-						onClick={() => onPatch({ view: "grid" })}
-						aria-pressed={view === "grid"}
-						aria-label="Grid view"
-					>
+				<ToggleGroup
+					variant="outline"
+					size="sm"
+					aria-label="View"
+					className="ml-auto"
+					value={[view]}
+					onValueChange={(values) => {
+						const next = values[0]
+						if (next === "grid" || next === "table") onPatch({ view: next })
+					}}
+				>
+					<ToggleGroupItem value="grid" aria-label="Grid view">
 						<GridIcon size={14} />
-					</Button>
-					<Button
-						variant={view === "table" ? "secondary" : "ghost"}
-						size="sm"
-						onClick={() => onPatch({ view: "table" })}
-						aria-pressed={view === "table"}
-						aria-label="Table view"
-					>
+					</ToggleGroupItem>
+					<ToggleGroupItem value="table" aria-label="Table view">
 						<MenuIcon size={14} />
-					</Button>
-				</div>
+					</ToggleGroupItem>
+				</ToggleGroup>
 			</div>
 
 			{view === "grid" ? (

@@ -160,31 +160,9 @@ export class ErrorsByTypeResponse extends Schema.Class<ErrorsByTypeResponse>("Er
 	),
 }) {}
 
-export class ErrorsTimeseriesRequest extends Schema.Class<ErrorsTimeseriesRequest>("ErrorsTimeseriesRequest")(
-	{
-		startTime: TinybirdDateTime,
-		endTime: TinybirdDateTime,
-		fingerprintHash: FingerprintHash,
-		services: OptionalServiceNames,
-		bucketSeconds: Schema.optional(BucketSeconds),
-	},
-) {}
-
-export class ErrorsTimeseriesResponse extends Schema.Class<ErrorsTimeseriesResponse>(
-	"ErrorsTimeseriesResponse",
-)({
-	data: Schema.Array(
-		Schema.Struct({
-			bucket: Schema.String,
-			count: Schema.Number,
-		}),
-	),
-}) {}
-
 /**
  * Bucketed counts for MANY fingerprints at once — the trend shape drawn on
- * every row of the unified errors list. `ErrorsTimeseriesRequest` answers the
- * same question for a single fingerprint on its detail page.
+ * every row of the unified errors list.
  */
 export class ErrorsSparkRequest extends Schema.Class<ErrorsSparkRequest>("ErrorsSparkRequest")({
 	startTime: TinybirdDateTime,
@@ -1294,27 +1272,6 @@ export class HostInfraTimeseriesResponse extends Schema.Class<HostInfraTimeserie
 	),
 	groupByAttributeKey: Schema.optional(Schema.String),
 	unit: Schema.Literals(["percent", "load", "bytes_per_second"]),
-}) {}
-
-export class FleetUtilizationTimeseriesRequest extends Schema.Class<FleetUtilizationTimeseriesRequest>(
-	"FleetUtilizationTimeseriesRequest",
-)({
-	startTime: TinybirdDateTime,
-	endTime: TinybirdDateTime,
-	bucketSeconds: Schema.optional(BucketSeconds),
-}) {}
-
-export class FleetUtilizationTimeseriesResponse extends Schema.Class<FleetUtilizationTimeseriesResponse>(
-	"FleetUtilizationTimeseriesResponse",
-)({
-	data: Schema.Array(
-		Schema.Struct({
-			bucket: Schema.String,
-			avgCpu: Schema.Number,
-			avgMemory: Schema.Number,
-			activeHosts: Schema.Number,
-		}),
-	),
 }) {}
 
 // Kubernetes (pods / nodes / workloads)
@@ -2571,13 +2528,6 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 		}),
 	)
 	.add(
-		HttpApiEndpoint.post("errorsTimeseries", "/errors-timeseries", {
-			payload: ErrorsTimeseriesRequest,
-			success: ErrorsTimeseriesResponse,
-			error: queryEngineEndpointErrors,
-		}),
-	)
-	.add(
 		HttpApiEndpoint.post("errorsSpark", "/errors-spark", {
 			payload: ErrorsSparkRequest,
 			success: ErrorsSparkResponse,
@@ -2856,13 +2806,6 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 		HttpApiEndpoint.post("hostInfraTimeseries", "/host-infra-timeseries", {
 			payload: HostInfraTimeseriesRequest,
 			success: HostInfraTimeseriesResponse,
-			error: queryEngineEndpointErrors,
-		}),
-	)
-	.add(
-		HttpApiEndpoint.post("fleetUtilizationTimeseries", "/fleet-utilization-timeseries", {
-			payload: FleetUtilizationTimeseriesRequest,
-			success: FleetUtilizationTimeseriesResponse,
 			error: queryEngineEndpointErrors,
 		}),
 	)

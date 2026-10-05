@@ -3,6 +3,7 @@ import { Link } from "@tanstack/react-router"
 import type { CodeReviewAnalytics, CodeReviewTotals, PrReviewSeverity } from "@maple/domain/http"
 import { QueryBuilderBarChart } from "@maple/ui/components/charts"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { cn } from "@maple/ui/lib/utils"
 
@@ -181,7 +182,7 @@ function DeltaBadge({ delta }: { delta: Delta }) {
 
 /* ---------------------------------------------------------------------------------------------- */
 
-function Card({
+function Panel({
 	title,
 	control,
 	children,
@@ -208,9 +209,9 @@ function Card({
 
 function ChartFrame({ empty, children }: { empty: boolean; children: ReactNode }) {
 	return empty ? (
-		<div className="flex h-56 items-center justify-center rounded-lg border border-dashed text-sm text-muted-foreground">
+		<EmptyMessage dashed className="flex h-56 items-center justify-center">
 			Nothing in this window
-		</div>
+		</EmptyMessage>
 	) : (
 		<div className="h-56 w-full">{children}</div>
 	)
@@ -229,7 +230,7 @@ function VolumeCard({ analytics }: { analytics: CodeReviewAnalytics }) {
 		.slice(0, 5)
 
 	return (
-		<Card
+		<Panel
 			title="Pull requests reviewed"
 			control={
 				<Select
@@ -262,7 +263,7 @@ function VolumeCard({ analytics }: { analytics: CodeReviewAnalytics }) {
 			<ChartFrame empty={analytics.current.reviews === 0}>
 				<QueryBuilderBarChart data={rows} legend="hidden" className="h-full w-full" />
 			</ChartFrame>
-		</Card>
+		</Panel>
 	)
 }
 
@@ -288,7 +289,7 @@ function IssuesCard({ analytics, search }: { analytics: CodeReviewAnalytics; sea
 		.slice(0, 5)
 
 	return (
-		<Card
+		<Panel
 			title="Issues caught"
 			control={
 				<Select
@@ -335,7 +336,7 @@ function IssuesCard({ analytics, search }: { analytics: CodeReviewAnalytics; sea
 			<ChartFrame empty={analytics.current.findings === 0}>
 				<QueryBuilderBarChart data={rows} stacked legend="hidden" className="h-full w-full" />
 			</ChartFrame>
-		</Card>
+		</Panel>
 	)
 }
 
@@ -378,8 +379,7 @@ function BarList({
 	emptyLabel: string
 }) {
 	const max = Math.max(...rows.map((row) => row.value), 1)
-	if (rows.length === 0)
-		return <p className="py-6 text-center text-sm text-muted-foreground">{emptyLabel}</p>
+	if (rows.length === 0) return <EmptyMessage>{emptyLabel}</EmptyMessage>
 	return (
 		<ul className="flex flex-col gap-2.5">
 			{rows.map((row) => (
@@ -402,7 +402,7 @@ function BarList({
 
 function CategoriesCard({ analytics }: { analytics: CodeReviewAnalytics }) {
 	return (
-		<Card title="Issues by category">
+		<Panel title="Issues by category">
 			<BarList
 				emptyLabel="No issues in this window"
 				rows={analytics.categories.map((row) => ({
@@ -411,13 +411,13 @@ function CategoriesCard({ analytics }: { analytics: CodeReviewAnalytics }) {
 					value: row.findings,
 				}))}
 			/>
-		</Card>
+		</Panel>
 	)
 }
 
 function OutcomesCard({ current, analytics }: { current: CodeReviewTotals; analytics: CodeReviewAnalytics }) {
 	return (
-		<Card title="Review outcomes">
+		<Panel title="Review outcomes">
 			<BarList
 				emptyLabel="No reviews in this window"
 				rows={[
@@ -453,15 +453,15 @@ function OutcomesCard({ current, analytics }: { current: CodeReviewTotals; analy
 					},
 				].filter((row) => row.value > 0)}
 			/>
-		</Card>
+		</Panel>
 	)
 }
 
 function AuthorsCard({ analytics }: { analytics: CodeReviewAnalytics }) {
 	return (
-		<Card title="Top authors">
+		<Panel title="Top authors">
 			{analytics.authors.length === 0 ? (
-				<p className="py-6 text-center text-sm text-muted-foreground">No authors in this window</p>
+				<EmptyMessage>No authors in this window</EmptyMessage>
 			) : (
 				<table className="w-full text-sm">
 					<thead>
@@ -488,7 +488,7 @@ function AuthorsCard({ analytics }: { analytics: CodeReviewAnalytics }) {
 					</tbody>
 				</table>
 			)}
-		</Card>
+		</Panel>
 	)
 }
 

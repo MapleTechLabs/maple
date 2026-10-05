@@ -20,7 +20,7 @@ import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker
 import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
 import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
 import type { TimeRange } from "@/components/time-range-picker/types"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { ToolbarStat } from "@maple/ui/components/toolbar"
 import { Button } from "@maple/ui/components/ui/button"
@@ -298,10 +298,7 @@ function ReplaysPage() {
 									</div>
 								))
 								.onError((error) => (
-									<QueryErrorState
-										error={error}
-										titleOverride="Failed to load session replays"
-									/>
+									<ErrorState error={error} title="Failed to load session replays" />
 								))
 								.onSuccess(() => (
 									<SessionsList

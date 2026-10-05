@@ -21,7 +21,7 @@ import { SortableHeader } from "@/components/common/sortable-header"
 import { type Trace } from "@/api/warehouse/traces"
 import type { TracesSearchParams } from "@/routes/traces"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { formatTimestampInTimezone } from "@/lib/timezone-format"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { HttpSpanLabel } from "@maple/ui/components/traces/http-span-label"
@@ -693,7 +693,7 @@ export function TracesTable({ filters }: TracesTableProps) {
 
 	const table = Result.builder(firstPageResult)
 		.onInitial(() => <LoadingState />)
-		.onError((error) => <QueryErrorState error={error} />)
+		.onError((error) => <ErrorState error={error} />)
 		.onSuccess((_response, result) => (
 			<TracesTableView
 				allData={allData}

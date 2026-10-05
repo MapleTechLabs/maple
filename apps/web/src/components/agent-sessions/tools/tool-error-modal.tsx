@@ -1,6 +1,9 @@
 import { useEffectEvent, useMemo, useRef, useState, type ReactNode } from "react"
 import { Link } from "@tanstack/react-router"
 
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { Button } from "@maple/ui/components/ui/button"
 import { Dialog, DialogPopup } from "@maple/ui/components/ui/dialog"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { formatWarehouseDateTime } from "@maple/query-engine"
@@ -17,7 +20,7 @@ import {
 	LinkIcon,
 	XmarkIcon,
 } from "@/components/icons"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { useMountEffect } from "@/hooks/use-mount-effect"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { formatTimestampInTimezone } from "@/lib/timezone-format"
@@ -304,9 +307,9 @@ export function ToolErrorModal({
 							</div>
 							<div className="flex w-[340px] flex-col gap-1.5">
 								<div className="flex items-baseline justify-between font-mono">
-									<span className="text-[10.5px] uppercase leading-3.5 tracking-[0.07em] text-muted-foreground/80">
+									<Eyebrow variant="mono" className="leading-3.5">
 										Failed calls / {bucket.unit}
-									</span>
+									</Eyebrow>
 									<span className="text-[11px] leading-3.5 tabular-nums text-muted-foreground/70">
 										max {formatToolCount(Math.max(0, ...group.spark))}
 									</span>
@@ -340,9 +343,9 @@ export function ToolErrorModal({
 					<div className="flex min-h-0 grow max-md:flex-col">
 						<aside className="flex w-[340px] shrink-0 flex-col overflow-y-auto overscroll-contain border-r border-border bg-sidebar max-md:h-56 max-md:w-full max-md:border-r-0 max-md:border-b">
 							{detailFailure !== undefined ? (
-								<QueryErrorState
+								<ErrorState
 									error={detailFailure}
-									titleOverride="Failed to load this error's details"
+									title="Failed to load this error's details"
 								/>
 							) : (
 								<>
@@ -413,21 +416,21 @@ function IconButton({
 	children: ReactNode
 }) {
 	return (
-		<button
-			type="button"
+		<Button
+			variant="outline"
+			size="icon-sm"
 			aria-label={label}
 			title={label}
 			disabled={disabled}
 			onClick={onClick}
-			className="inline-flex size-[30px] shrink-0 items-center justify-center rounded-md border border-border bg-card text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40 disabled:hover:text-muted-foreground"
+			className="text-muted-foreground hover:text-foreground"
 		>
 			{children}
-		</button>
+		</Button>
 	)
 }
 
 const railTitle = "font-mono text-[12.5px] font-medium text-foreground"
-const railLabel = "font-mono text-[10.5px] uppercase leading-3.5 tracking-[0.07em] text-muted-foreground/80"
 
 /** The raw texts a group folded, where there is more than one. Picking one
  *  narrows the samples to it. */
@@ -554,7 +557,9 @@ function Breakdown({
 	const max = rows[0]?.[1] ?? 1
 	return (
 		<div className="flex flex-col gap-1.5">
-			<span className={railLabel}>{label}</span>
+			<Eyebrow variant="mono" className="leading-3.5">
+				{label}
+			</Eyebrow>
 			{rows.map(([key, calls], index) => (
 				<div key={key} className="flex items-center gap-2.5 font-mono text-xs leading-4">
 					<span
@@ -664,16 +669,15 @@ function SessionsSection({
 					{formatToolCount(total)}
 				</span>
 			</div>
-			<div
-				className={cn(
-					"flex h-[30px] shrink-0 items-center gap-3 border-y border-border px-4",
-					railLabel,
-				)}
+			<Eyebrow
+				variant="mono"
+				as="div"
+				className="flex h-[30px] shrink-0 items-center gap-3 border-y border-border px-4"
 			>
 				<span className="grow">Session</span>
 				<span className="w-10 shrink-0 text-right">Hits</span>
 				<span className="w-14 shrink-0 text-right">Last</span>
-			</div>
+			</Eyebrow>
 			<button
 				type="button"
 				aria-pressed={selected === undefined}
@@ -792,33 +796,35 @@ function SamplesPane({
 				</div>
 				<div className="flex items-center gap-2">
 					<span className="pr-1 text-[11px] text-muted-foreground/60 max-md:hidden">j / k</span>
-					<button
-						type="button"
+					<Button
+						variant="outline"
+						size="icon-xs"
 						aria-label="Newer sample"
 						disabled={current === 0}
 						onClick={() => select(current - 1)}
-						className="inline-flex size-[26px] items-center justify-center rounded-md border border-border bg-card text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
+						className="text-muted-foreground hover:text-foreground"
 					>
 						<ChevronLeftIcon size={12} aria-hidden />
-					</button>
+					</Button>
 					<span className="w-[72px] text-center text-xs tabular-nums text-foreground">
 						{rows.length === 0 ? 0 : current + 1} of {formatToolCount(total)}
 					</span>
-					<button
-						type="button"
+					<Button
+						variant="outline"
+						size="icon-xs"
 						aria-label="Older sample"
 						disabled={current >= rows.length - 1 && samples.paging !== "more"}
 						onClick={() => select(current + 1)}
-						className="inline-flex size-[26px] items-center justify-center rounded-md border border-border bg-card text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
+						className="text-muted-foreground hover:text-foreground"
 					>
 						<ChevronRightIcon size={12} aria-hidden />
-					</button>
+					</Button>
 				</div>
 			</div>
 
 			<div className="min-h-0 grow overflow-y-auto overscroll-contain">
 				{samples.failure !== undefined ? (
-					<QueryErrorState error={samples.failure} titleOverride="Failed to load samples" />
+					<ErrorState error={samples.failure} title="Failed to load samples" />
 				) : samples.loading && rows.length === 0 ? (
 					<div className="flex flex-col gap-1.5 px-6 py-3">
 						<Skeleton className="h-10" />
@@ -989,10 +995,7 @@ function SampleBody({ row }: { row: ToolErrorOccurrenceRow }) {
 			)}
 			{row.arguments === "" && row.result === "" ? (
 				<div className="flex items-start gap-3 rounded-md border border-border bg-sidebar px-3.5 py-3 font-mono">
-					<span
-						aria-hidden
-						className="mt-[5px] size-1.5 shrink-0 rounded-full bg-muted-foreground"
-					/>
+					<StatusDot tone="custom" className="mt-[5px] bg-muted-foreground" />
 					<span className="flex flex-col gap-1">
 						<span className="text-[12.5px] leading-4 text-foreground">
 							The tool reported no error detail
@@ -1025,9 +1028,7 @@ function PayloadHead({
 }) {
 	return (
 		<div className="flex items-center gap-2 font-mono leading-3.5">
-			<span className="text-[10.5px] uppercase tracking-[0.07em] text-muted-foreground/80">
-				{label}
-			</span>
+			<Eyebrow variant="mono">{label}</Eyebrow>
 			<span className="truncate text-[10.5px] text-muted-foreground/50">
 				{attribute}
 				{bytes > 0 ? ` · ${formatToolCount(bytes)} B` : null}

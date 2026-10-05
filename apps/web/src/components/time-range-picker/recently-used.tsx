@@ -1,3 +1,4 @@
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { HistoryIcon } from "@/components/icons"
 import type { RecentTimeRange } from "@/hooks/use-recently-used-times"
 
@@ -17,9 +18,7 @@ export function RecentlyUsed({ recentTimes, onSelect }: RecentlyUsedProps) {
 
 	return (
 		<div className="space-y-2">
-			<div className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground/80">
-				Recent
-			</div>
+			<Eyebrow as="div">Recent</Eyebrow>
 			<div className="flex flex-col">
 				{visible.map((item) => (
 					<button

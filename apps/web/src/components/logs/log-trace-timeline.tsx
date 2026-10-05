@@ -9,6 +9,7 @@ import { listLogsResultAtom, getSpanHierarchyResultAtom } from "@/lib/services/a
 import { disabledResultAtom } from "@/lib/services/atoms/disabled-result-atom"
 import { computeTraceTimeWindow } from "@/lib/trace-time-window"
 import { ServiceDot } from "@maple/ui/components/service-dot"
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
 
 /** Span offset within the trace (`+123ms`) — not a relative-time label. */
 function formatTimelineOffset(ms: number): string {
@@ -98,9 +99,7 @@ export function LogTraceTimeline({ currentLog, onLogSelect }: LogTraceTimelinePr
 						return (
 							<>
 								<h4 className="text-xs font-medium text-muted-foreground">Trace Timeline</h4>
-								<div className="p-3 text-center text-xs text-muted-foreground">
-									No other logs in this trace
-								</div>
+								<EmptyMessage>No other logs in this trace</EmptyMessage>
 							</>
 						)
 					}

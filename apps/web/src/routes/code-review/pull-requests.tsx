@@ -21,7 +21,7 @@ import {
 } from "@/components/code-review/code-review-search"
 import { AuthorLabel } from "@/components/code-review/author-avatar"
 import { ReviewDetailSheet } from "@/components/code-review/review-detail-sheet"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { CircleCheckIcon, CircleWarningIcon, ClockIcon, LoaderIcon } from "@/components/icons"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
@@ -125,7 +125,7 @@ function CodeReviewPullRequestsPage() {
 					</div>
 				))
 				.onError((error) => (
-					<QueryErrorState error={error} titleOverride="Failed to load reviews" onRetry={refresh} />
+					<ErrorState error={error} title="Failed to load reviews" onRetry={refresh} />
 				))
 				.onSuccess((response) =>
 					response.reviews.length === 0 ? (

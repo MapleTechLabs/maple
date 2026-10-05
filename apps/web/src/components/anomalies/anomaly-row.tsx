@@ -1,3 +1,5 @@
+import { MetaChip } from "./meta-chip"
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { Link } from "@tanstack/react-router"
 import type { AnomalyIncidentDocument } from "@maple/domain/http"
 import { cn } from "@maple/ui/lib/utils"
@@ -61,18 +63,16 @@ export function AnomalyRow({ incident, focused = false, onFocus, variant = "defa
 
 			<span className="relative z-10 flex w-3 shrink-0 items-center justify-center">
 				{isLive ? (
-					<span className="relative inline-flex size-1.5" title={`Open · ${incident.severity}`}>
-						<span
-							className={cn(
-								"absolute inline-flex size-full animate-ping rounded-full opacity-60",
-								tone.accent,
-							)}
-						/>
-						<span className={cn("relative inline-flex size-full rounded-full", tone.accent)} />
-					</span>
+					<StatusDot
+						tone="custom"
+						pulse
+						className={tone.accent}
+						title={`Open · ${incident.severity}`}
+					/>
 				) : (
-					<span
-						className="inline-flex size-1.5 rounded-full bg-border"
+					<StatusDot
+						tone="custom"
+						className="bg-border"
 						title={isStale ? "Stale detector state" : "Resolved"}
 					/>
 				)}
@@ -100,13 +100,13 @@ export function AnomalyRow({ incident, focused = false, onFocus, variant = "defa
 			</span>
 
 			{!compact ? (
-				<span
-					className="relative z-10 hidden h-5 min-w-0 shrink items-center gap-1.5 rounded-full border border-border/70 bg-background px-2 text-[11px] text-muted-foreground md:inline-flex"
+				<MetaChip
+					className="relative z-10 hidden min-w-0 shrink md:inline-flex"
 					title={incident.serviceName}
 				>
 					<ServiceDot serviceName={incident.serviceName} className="size-1.5" />
 					<span className="max-w-[140px] truncate">{incident.serviceName}</span>
-				</span>
+				</MetaChip>
 			) : null}
 
 			<span className="relative z-10 hidden shrink-0 text-xs text-muted-foreground xl:inline-block">
@@ -116,21 +116,21 @@ export function AnomalyRow({ incident, focused = false, onFocus, variant = "defa
 			<span className="relative z-0 hidden min-w-0 flex-1 sm:block" />
 
 			{activeFingerprints > 1 ? (
-				<span
-					className="relative z-10 hidden h-5 shrink-0 items-center rounded-full border border-border/70 bg-background px-2 text-[11px] text-muted-foreground sm:inline-flex"
+				<MetaChip
+					className="relative z-10 hidden sm:inline-flex"
 					title={`${activeFingerprints} error fingerprints grouped into this incident`}
 				>
 					{activeFingerprints} errors
-				</span>
+				</MetaChip>
 			) : null}
 
 			{incident.reopenCount > 0 ? (
-				<span
-					className="relative z-10 hidden h-5 shrink-0 items-center rounded-full border border-border/70 bg-background px-2 text-[11px] text-muted-foreground sm:inline-flex"
+				<MetaChip
+					className="relative z-10 hidden sm:inline-flex"
 					title="This anomaly re-breached and reopened after resolving"
 				>
 					reopened{incident.reopenCount > 1 ? ` ×${incident.reopenCount}` : ""}
-				</span>
+				</MetaChip>
 			) : null}
 
 			{triageChip ? (

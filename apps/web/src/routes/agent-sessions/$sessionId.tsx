@@ -11,7 +11,7 @@ import { SquareSparkleIcon } from "@/components/icons"
 import { Button } from "@maple/ui/components/ui/button"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { SessionHeader } from "@/components/agent-sessions/session-detail/session-header"
 import { SessionLoadIndicator } from "@/components/agent-sessions/session-detail/session-load-indicator"
 import {
@@ -118,12 +118,12 @@ function AgentSessionDetailPage() {
 			<SessionShell sessionId={sessionId}>
 				<DashboardLayout.Content>
 					<DashboardLayout.Scroll>
-						<QueryErrorState
+						<ErrorState
 							error={error}
 							// The 413 describes itself precisely ("Session is too large to
 							// load"); overriding it would replace a specific, actionable
 							// message with a generic one.
-							titleOverride={
+							title={
 								displayError(error)._tag === SESSION_TOO_LARGE_TAG
 									? undefined
 									: "Failed to load this agent session"

@@ -2,22 +2,13 @@ import { lazy, Suspense, useState } from "react"
 import { useMountEffect } from "@/hooks/use-mount-effect"
 import { useMapleOrganizationId } from "@/hooks/use-maple-organization"
 import { isDialogOpen, isEditableTarget } from "@maple/ui/lib/keyboard"
+import { ChatContentFallback } from "./chat-content-fallback"
 
 const OPEN_CHAT_EVENT = "maple:open-chat-sheet"
 
 const GlobalChatPanel = lazy(() =>
 	import("./global-chat-panel").then((module) => ({ default: module.GlobalChatPanel })),
 )
-
-function ChatContentFallback() {
-	return (
-		<div className="flex flex-1 flex-col gap-3 p-4" aria-label="Loading chat">
-			<div className="h-16 w-3/4 animate-pulse rounded-md bg-muted motion-reduce:animate-none" />
-			<div className="h-20 w-4/5 animate-pulse self-end rounded-md bg-muted motion-reduce:animate-none" />
-			<div className="mt-auto h-20 animate-pulse rounded-md bg-muted motion-reduce:animate-none" />
-		</div>
-	)
-}
 
 /** Open the global chat slide-over from anywhere (header button, ⌘K action). */
 export function openGlobalChat() {
@@ -59,7 +50,7 @@ export function GlobalChatSheet() {
 	if (!open) return null
 
 	return (
-		<Suspense fallback={<ChatContentFallback />}>
+		<Suspense fallback={<ChatContentFallback label="Loading chat" />}>
 			<GlobalChatPanel key={orgId} orgId={orgId} onOpenChange={setOpen} />
 		</Suspense>
 	)
