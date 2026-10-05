@@ -28,7 +28,7 @@
 		"@maple/domain": "workspace:*",
 		"drizzle-orm": "1.0.0-rc.5-5935859",
 		"effect": "catalog:effect",
-		"pg": "^8.23.0",
+		"pg": "^8.23.1",
 		"postgres": "^3.4.9"
 	},
 	"devDependencies": {

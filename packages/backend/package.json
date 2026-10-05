@@ -19,7 +19,7 @@
 		"typecheck:test": "tsc --noEmit -p tsconfig.test.json"
 	},
 	"dependencies": {
-		"@clerk/backend": "^3.20.1",
+		"@clerk/backend": "^3.23.0",
 		"@distilled.cloud/cloudflare": "1.0.0-rc.13",
 		"@distilled.cloud/core": "1.0.0-rc.13",
 		"@distilled.cloud/railway": "1.0.0-rc.13",
