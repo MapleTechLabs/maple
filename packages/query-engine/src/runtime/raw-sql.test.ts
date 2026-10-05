@@ -9,9 +9,10 @@ import {
 	RawSqlValidationError,
 } from "@maple/domain/http"
 import { makeExecuteRawSql, prepareRawSql } from "./raw-sql"
+import { OrgId } from "@maple/domain"
 
 const baseInput = {
-	orgId: "org_abc",
+	orgId: OrgId.make("org_abc"),
 	startTime: "2026-05-14 00:00:00",
 	endTime: "2026-05-14 06:00:00",
 	granularitySeconds: 60,
@@ -184,7 +185,7 @@ describe("prepareRawSql", () => {
 		Effect.gen(function* () {
 			const result = yield* prepareRawSql({
 				...baseInput,
-				orgId: "org'); DROP TABLE Logs --",
+				orgId: OrgId.make("org'); DROP TABLE Logs --"),
 				sql: "SELECT 1 FROM Logs WHERE $__orgFilter",
 			})
 			assert.include(result.sql, "OrgId = 'org\\')\\x3B DROP TABLE Logs --'")
@@ -255,7 +256,7 @@ it.effect("does not expand replacement patterns in interpolated values", () =>
 	Effect.gen(function* () {
 		const prepared = yield* prepareRawSql({
 			...baseInput,
-			orgId: "org_$'_$&",
+			orgId: OrgId.make("org_$'_$&"),
 			sql: "SELECT count() FROM Logs WHERE $__orgFilter AND Body = 'tail'",
 		})
 		assert.include(prepared.sql, "OrgId = 'org_$\\'_$&'")

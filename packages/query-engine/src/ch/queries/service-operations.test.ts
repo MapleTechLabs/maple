@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { Schema } from "effect"
-import { compileUnsafe } from "@maple-dev/effect-clickhouse"
+import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import { NORMALIZED_SPAN_NAME_SQL } from "@maple/domain/tinybird/span-display-name"
 import {
 	serviceOperationsSummaryQuery,
@@ -10,9 +10,10 @@ import {
 	serviceOperationsTimeseriesRawQuery,
 	serviceOperationsTimeseriesRowSchema,
 } from "./service-operations"
+import { OrgId } from "@maple/domain"
 
 const baseParams = {
-	orgId: "org_1",
+	orgId: OrgId.make("org_1"),
 	startTime: "2024-01-01 00:00:00",
 	endTime: "2024-01-02 00:00:00",
 }
@@ -105,7 +106,7 @@ describe("serviceOperationsSummaryQuery", () => {
 	it("uses disjoint raw and rollup boundaries for partial edge minutes", () => {
 		const q = serviceOperationsSummaryQuery({ serviceName: "api" })
 		const { sql } = compileUnsafe(q, {
-			orgId: "org_1",
+			orgId: OrgId.make("org_1"),
 			startTime: "2024-01-01 00:00:30",
 			endTime: "2024-01-01 00:02:15",
 		})
@@ -121,7 +122,7 @@ describe("serviceOperationsSummaryQuery", () => {
 			["2024-01-01 00:00:10", "2024-01-01 00:00:10"],
 		] as const) {
 			const { sql } = compileUnsafe(serviceOperationsSummaryQuery({ serviceName: "api" }), {
-				orgId: "org_1",
+				orgId: OrgId.make("org_1"),
 				startTime,
 				endTime,
 			})

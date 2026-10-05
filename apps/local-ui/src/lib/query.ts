@@ -43,7 +43,7 @@ export async function executeLocalCompiledFirstRow<T>(
 }
 
 /** The org + window params nearly every local query compiles with. */
-export function localParams(bounds: TimeBounds): { orgId: string; startTime: string; endTime: string } {
+export function localParams(bounds: TimeBounds) {
 	return { orgId: LOCAL_ORG_ID, startTime: bounds.startTime, endTime: bounds.endTime }
 }
 

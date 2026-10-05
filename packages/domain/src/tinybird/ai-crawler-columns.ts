@@ -2,9 +2,9 @@
 // fetches, and the request facts it keeps from them. Compiled from the catalog
 // in `../ai-traffic.ts` so the write filter and the read-side labels share one list.
 
-import type { Expr } from "@maple-dev/effect-clickhouse/expr"
-import * as CH from "@maple-dev/effect-clickhouse/expr"
-import { compile } from "@maple-dev/effect-clickhouse/sql"
+import type { Expr } from "@maple-dev/effect-orm/expr"
+import * as CH from "@maple-dev/effect-orm/expr"
+import { compile } from "@maple-dev/effect-orm/sql"
 import { AI_CRAWLERS } from "../ai-traffic"
 
 interface MapColumnLike {

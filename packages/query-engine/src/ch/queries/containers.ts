@@ -21,11 +21,11 @@
 // they are excluded by requiring `k8s.pod.name = ''` (same trick as the node
 // queries).
 
-import * as CH from "@maple-dev/effect-clickhouse/expr"
-import { param } from "@maple-dev/effect-clickhouse"
-import { from, fromQuery, type ColumnAccessor } from "@maple-dev/effect-clickhouse"
-import { unionAll, type CHUnionQuery } from "@maple-dev/effect-clickhouse"
-import { MetricsGauge, MetricsSum } from "../tables"
+import * as CH from "@maple-dev/effect-orm/expr"
+import { param } from "@maple-dev/effect-orm/clickhouse"
+import { from, fromQuery, type ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
+import { unionAll, type CHUnionQuery } from "@maple-dev/effect-orm/clickhouse"
+import { MetricsGauge, MetricsSum, orgIdParam } from "../tables"
 import { containerRuntimeExpr, deploymentEnvExpr } from "@maple/domain/tinybird/semconv-renames"
 import { avgIfOrZero, facetAttrExpr, maxIfOrZero, type FacetOutput } from "./query-helpers"
 import type { SortDirection } from "./infra"
@@ -116,7 +116,7 @@ const containerBaseConditions = (
 	$: ColumnAccessor<typeof MetricsGauge.columns>,
 	metricNames: ReadonlyArray<string> = CONTAINER_METRIC_NAMES,
 ): Array<CH.Condition | undefined> => [
-	$.OrgId.eq(param.string("orgId")),
+	$.OrgId.eq(orgIdParam),
 	$.TimeUnix.gte(param.dateTimeString("startTime")),
 	$.TimeUnix.lte(param.dateTimeString("endTime")),
 	$.ResourceAttributes.get("container.name").neq(""),
@@ -325,7 +325,7 @@ export function containerDetailSummaryQuery(opts: ContainerDetailSummaryOpts) {
 			uptimeSeconds: maxIfOrZero($.Value, $.MetricName.eq("container.uptime")),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.TimeUnix.gte(param.dateTimeString("startTime")),
 			$.TimeUnix.lte(param.dateTimeString("endTime")),
 			$.ResourceAttributes.get("container.name").eq(opts.containerName),
@@ -372,7 +372,7 @@ export function containerCountersSummaryQuery(opts: ContainerCountersSummaryOpts
 			pidsAvg: avgIfOrZero($.Value, $.MetricName.eq("container.pids.count")),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.TimeUnix.gte(param.dateTimeString("startTime")),
 			$.TimeUnix.lte(param.dateTimeString("endTime")),
 			$.ResourceAttributes.get("container.name").eq(opts.containerName),
@@ -423,7 +423,7 @@ export function containerGaugeTimeseriesQuery(opts: ContainerGaugeTimeseriesOpts
 			avgValue: opts.divideBy ? CH.avg($.Value).div(opts.divideBy) : CH.avg($.Value),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.TimeUnix.gte(param.dateTimeString("startTime")),
 			$.TimeUnix.lte(param.dateTimeString("endTime")),
 			$.ResourceAttributes.get("container.name").eq(opts.containerName),
@@ -475,7 +475,7 @@ export function containerSumTimeseriesQuery(opts: ContainerSumTimeseriesOpts) {
 			sumValue: opts.average ? CH.avg($.Value) : CH.sum($.Value),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.TimeUnix.gte(param.dateTimeString("startTime")),
 			$.TimeUnix.lte(param.dateTimeString("endTime")),
 			$.ResourceAttributes.get("container.name").eq(opts.containerName),

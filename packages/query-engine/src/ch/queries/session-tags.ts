@@ -5,9 +5,9 @@
 // column each list row carries. Nothing is stored, so changing a threshold
 // re-tags history. Tags that need `session_events` belong in a rollup, not here.
 
-import * as CH from "@maple-dev/effect-clickhouse/expr"
-import * as T from "@maple-dev/effect-clickhouse/types"
-import { from, fromQuery, type ColumnAccessor } from "@maple-dev/effect-clickhouse"
+import * as CH from "@maple-dev/effect-orm/expr"
+import * as T from "@maple-dev/effect-orm/clickhouse"
+import { from, fromQuery, type ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
 import { SESSION_QUALITY_TAGS, SESSION_TAG_THRESHOLDS, type SessionTag } from "@maple/domain/query-engine"
 import { SessionReplays } from "../tables"
 import { isBotCond } from "../user-agent"
@@ -17,7 +17,7 @@ type ReplaysWhere = ($: ReplaysAccessor) => Array<CH.Condition | undefined>
 
 // dateDiff(unit, start, end) as whole units; the DSL has no typed wrapper.
 function dateDiffMs(start: CH.Expr<string>, end: CH.Expr<string>): CH.Expr<number> {
-	return CH.compileTypedFnCall<number>("dateDiff", T.int64.schema, CH.lit("millisecond"), start, end)
+	return CH.compileTypedFnCall("dateDiff", T.int64.schema, CH.lit("millisecond"), start, end)
 }
 
 // Only the ended row carries DurationMs. A tab killed without its unload row has

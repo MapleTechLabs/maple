@@ -1,8 +1,8 @@
 import type { MetricType } from "@maple/domain/query-engine"
-import * as CH from "@maple-dev/effect-clickhouse/expr"
-import { param } from "@maple-dev/effect-clickhouse"
-import { from, fromQuery } from "@maple-dev/effect-clickhouse"
-import { AttributeKeysHourly, AttributeValuesHourly, MetricsSum, Traces } from "../tables"
+import * as CH from "@maple-dev/effect-orm/expr"
+import { param } from "@maple-dev/effect-orm/clickhouse"
+import { from, fromQuery } from "@maple-dev/effect-orm/clickhouse"
+import { AttributeKeysHourly, AttributeValuesHourly, MetricsSum, Traces, orgIdParam } from "../tables"
 import { resolveMetricTable } from "./query-helpers"
 
 export interface AttributeKeysQueryOpts {
@@ -22,7 +22,7 @@ export function attributeKeysQuery(opts: AttributeKeysQueryOpts) {
 			usageCount: CH.sum($.UsageCount),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.Hour.gte(param.dateTimeSeconds("startTime")),
 			$.Hour.lte(param.dateTimeSeconds("endTime")),
 			$.AttributeScope.eq(opts.scope),
@@ -52,7 +52,7 @@ export function spanAttributeValuesQuery(opts: AttributeValuesOpts) {
 			usageCount: CH.sum($.UsageCount),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.Hour.gte(param.dateTimeSeconds("startTime")),
 			$.Hour.lte(param.dateTimeSeconds("endTime")),
 			$.AttributeScope.eq("span"),
@@ -71,7 +71,7 @@ export function resourceAttributeValuesQuery(opts: AttributeValuesOpts) {
 			usageCount: CH.sum($.UsageCount),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.Hour.gte(param.dateTimeSeconds("startTime")),
 			$.Hour.lte(param.dateTimeSeconds("endTime")),
 			$.AttributeScope.eq("resource"),
@@ -90,7 +90,7 @@ export function logAttributeValuesQuery(opts: AttributeValuesOpts) {
 			usageCount: CH.sum($.UsageCount),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.Hour.gte(param.dateTimeSeconds("startTime")),
 			$.Hour.lte(param.dateTimeSeconds("endTime")),
 			$.AttributeScope.eq("log"),
@@ -121,7 +121,7 @@ export function metricScopedAttributeKeysQuery(opts: MetricScopedAttributeKeysOp
 			usageCount: CH.count(),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.MetricName.eq(param.string("metricName")),
 			$.TimeUnix.gte(param.dateTimeString("startTime")),
 			$.TimeUnix.lte(param.dateTimeString("endTime")),
@@ -148,7 +148,7 @@ export function metricScopedAttributeValuesQuery(opts: MetricScopedAttributeValu
 			usageCount: CH.count(),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.MetricName.eq(param.string("metricName")),
 			$.TimeUnix.gte(param.dateTimeString("startTime")),
 			$.TimeUnix.lte(param.dateTimeString("endTime")),
@@ -168,7 +168,7 @@ export function metricAttributeValuesQuery(opts: AttributeValuesOpts) {
 			usageCount: CH.sum($.UsageCount),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.Hour.gte(param.dateTimeSeconds("startTime")),
 			$.Hour.lte(param.dateTimeSeconds("endTime")),
 			$.AttributeScope.eq("metric"),
@@ -197,7 +197,7 @@ const serviceSpanSample = (scope: "span" | "resource") =>
 			attrs: scope === "resource" ? $.ResourceAttributes : $.SpanAttributes,
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.ServiceName.eq(param.string("serviceName")),
 			$.Timestamp.gte(param.dateTimeString("startTime")),
 			$.Timestamp.lte(param.dateTimeString("endTime")),

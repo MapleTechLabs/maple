@@ -6,17 +6,17 @@
 // splice the services list already reads. Nothing scans the raw traces table.
 
 import { Schema } from "effect"
-import * as T from "@maple-dev/effect-clickhouse/types"
-import * as CH from "@maple-dev/effect-clickhouse/expr"
+import * as T from "@maple-dev/effect-orm/clickhouse"
+import * as CH from "@maple-dev/effect-orm/expr"
 import {
 	param,
 	from,
 	fromQuery,
 	type CHQuery,
 	type CompiledQueryRowSchema,
-} from "@maple-dev/effect-clickhouse"
-import type { ColumnDefs } from "@maple-dev/effect-clickhouse/types"
-import { ErrorEventsByTime, ServiceOverviewSpans } from "../tables"
+} from "@maple-dev/effect-orm/clickhouse"
+import type { ColumnDefs } from "@maple-dev/effect-orm/clickhouse"
+import { ErrorEventsByTime, ServiceOverviewSpans, orgIdParam } from "../tables"
 import { CHNumber } from "../schema"
 import { serviceOverviewWhereConditions } from "./query-helpers"
 import { serviceOverviewWindows, serviceWindowTiersForBucket } from "./services"
@@ -251,7 +251,7 @@ export function releaseErrorFingerprintsQuery(opts: ReleaseErrorFingerprintsOpts
 			firstSeen: CH.min_($.Timestamp),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.ServiceName.eq(opts.serviceName),
 			$.ServiceVersion.eq(param.string("serviceVersion")),
 			$.Timestamp.gte(param.dateTimeSeconds("startTime")),

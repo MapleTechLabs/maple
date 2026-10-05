@@ -1,15 +1,16 @@
 import { describe, expect, it } from "vitest"
 import { Effect } from "effect"
-import { compileUnsafe } from "@maple-dev/effect-clickhouse"
+import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import {
 	planetscaleBranchStorageRowSchema,
 	planetscaleBranchStorageSQL,
 	planetscaleStorageRowSchema,
 	planetscaleStorageSQL,
 } from "./planetscale-map"
+import { OrgId } from "@maple/domain"
 
 const params = {
-	orgId: "org_1",
+	orgId: OrgId.make("org_1"),
 	startTime: "2026-07-02 00:00:00.000",
 	endTime: "2026-07-03 00:00:00.000",
 }

@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest"
 import { compileUnsafe } from "../index"
-import { compile as compileFragment } from "@maple-dev/effect-clickhouse/sql"
+import { compile as compileFragment } from "@maple-dev/effect-orm/sql"
 import * as CH from "../index"
 import { edgeCondition, hourGrain, interiorBounds, interiorConditions, minuteGrain } from "./rollup-splice"
-import { paramPlaceholder } from "@maple-dev/effect-clickhouse"
-import * as T from "@maple-dev/effect-clickhouse/types"
+import { paramPlaceholder } from "@maple-dev/effect-orm/clickhouse"
+import * as T from "@maple-dev/effect-orm/clickhouse"
 
 // These pin the tiling invariant: the raw edge and the aggregate interior must
 // cover the window exactly once. Getting it wrong does not raise — it inflates
@@ -21,7 +21,10 @@ const sqlOf = (cond: CH.Condition) => compileFragment(cond.toFragment())
 
 /** Compile a trivial query carrying `conds` so the WHERE text can be inspected. */
 const whereSql = (conds: ReadonlyArray<CH.Condition>) => {
-	const t = CH.table("t", { OrgId: CH.string, Hour: CH.dateTime, Minute: CH.dateTime })
+	const t = CH.table("t", {
+		external: true,
+		columns: { OrgId: CH.string, Hour: CH.dateTime, Minute: CH.dateTime },
+	})
 	return compileUnsafe(
 		CH.from(t)
 			.select(($) => ({ c: $.OrgId }))

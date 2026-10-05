@@ -11,11 +11,11 @@
 //
 // Host identity is carried on the ResourceAttributes map under `host.name`.
 
-import * as CH from "@maple-dev/effect-clickhouse/expr"
-import { param } from "@maple-dev/effect-clickhouse"
-import { from, fromQuery, type ColumnAccessor } from "@maple-dev/effect-clickhouse"
-import { unionAll, type CHUnionQuery } from "@maple-dev/effect-clickhouse"
-import { MetricsGauge, MetricsSum } from "../tables"
+import * as CH from "@maple-dev/effect-orm/expr"
+import { param } from "@maple-dev/effect-orm/clickhouse"
+import { from, fromQuery, type ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
+import { unionAll, type CHUnionQuery } from "@maple-dev/effect-orm/clickhouse"
+import { MetricsGauge, MetricsSum, orgIdParam } from "../tables"
 import { containerRuntimeExpr, deploymentEnvExpr } from "@maple/domain/tinybird/semconv-renames"
 import { avgIfOrZero, facetAttrExpr, maxIfOrZero, type FacetOutput } from "./query-helpers"
 
@@ -69,7 +69,7 @@ export function listHostsQuery(opts: ListHostsOpts = {}) {
 			load15: avgIfOrZero($.Value, $.MetricName.eq("system.cpu.load_average.15m")),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.TimeUnix.gte(param.dateTimeString("startTime")),
 			$.TimeUnix.lte(param.dateTimeString("endTime")),
 			$.ResourceAttributes.get("host.name").neq(""),
@@ -130,7 +130,7 @@ export function hostDetailSummaryQuery(opts: HostDetailSummaryOpts) {
 			load15: avgIfOrZero($.Value, $.MetricName.eq("system.cpu.load_average.15m")),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.TimeUnix.gte(param.dateTimeString("startTime")),
 			$.TimeUnix.lte(param.dateTimeString("endTime")),
 			$.ResourceAttributes.get("host.name").eq(opts.hostName),
@@ -165,7 +165,7 @@ export function hostGaugeTimeseriesQuery(opts: HostGaugeTimeseriesOpts) {
 			avgValue: CH.avg($.Value),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.TimeUnix.gte(param.dateTimeString("startTime")),
 			$.TimeUnix.lte(param.dateTimeString("endTime")),
 			$.ResourceAttributes.get("host.name").eq(opts.hostName),
@@ -201,7 +201,7 @@ export function hostNetworkTimeseriesQuery(opts: HostNetworkTimeseriesOpts) {
 			sumValue: CH.sum($.Value),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.TimeUnix.gte(param.dateTimeString("startTime")),
 			$.TimeUnix.lte(param.dateTimeString("endTime")),
 			$.ResourceAttributes.get("host.name").eq(opts.hostName),
@@ -359,7 +359,7 @@ const podBaseConditions = (
 	$: ColumnAccessor<typeof MetricsGauge.columns>,
 	metricNames: ReadonlyArray<string> = POD_METRIC_NAMES,
 ): Array<CH.Condition | undefined> => [
-	$.OrgId.eq(param.string("orgId")),
+	$.OrgId.eq(orgIdParam),
 	$.TimeUnix.gte(param.dateTimeString("startTime")),
 	$.TimeUnix.lte(param.dateTimeString("endTime")),
 	$.ResourceAttributes.get("k8s.pod.name").neq(""),
@@ -663,7 +663,7 @@ export function podDetailSummaryQuery(opts: PodDetailSummaryOpts) {
 			memoryRequestPct: avgIfOrZero($.Value, $.MetricName.eq("k8s.pod.memory_request_utilization")),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.TimeUnix.gte(param.dateTimeString("startTime")),
 			$.TimeUnix.lte(param.dateTimeString("endTime")),
 			$.ResourceAttributes.get("k8s.pod.name").eq(opts.podName),
@@ -694,7 +694,7 @@ export function podGaugeTimeseriesQuery(opts: PodGaugeTimeseriesOpts) {
 			avgValue: CH.avg($.Value),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.TimeUnix.gte(param.dateTimeString("startTime")),
 			$.TimeUnix.lte(param.dateTimeString("endTime")),
 			$.ResourceAttributes.get("k8s.pod.name").eq(opts.podName),
@@ -741,7 +741,7 @@ const nodeBaseConditions = (
 	$: ColumnAccessor<typeof MetricsGauge.columns>,
 	metricNames: ReadonlyArray<string> = NODE_METRIC_NAMES,
 ): Array<CH.Condition | undefined> => [
-	$.OrgId.eq(param.string("orgId")),
+	$.OrgId.eq(orgIdParam),
 	$.TimeUnix.gte(param.dateTimeString("startTime")),
 	$.TimeUnix.lte(param.dateTimeString("endTime")),
 	$.ResourceAttributes.get("k8s.node.name").neq(""),
@@ -813,7 +813,7 @@ export function nodeDetailSummaryQuery(opts: NodeDetailSummaryOpts) {
 			uptime: maxIfOrZero($.Value, $.MetricName.eq("k8s.node.uptime")),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.TimeUnix.gte(param.dateTimeString("startTime")),
 			$.TimeUnix.lte(param.dateTimeString("endTime")),
 			$.ResourceAttributes.get("k8s.node.name").eq(opts.nodeName),
@@ -837,7 +837,7 @@ export function nodeGaugeTimeseriesQuery(opts: NodeGaugeTimeseriesOpts) {
 			avgValue: CH.avg($.Value),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.TimeUnix.gte(param.dateTimeString("startTime")),
 			$.TimeUnix.lte(param.dateTimeString("endTime")),
 			$.ResourceAttributes.get("k8s.node.name").eq(opts.nodeName),
@@ -916,7 +916,7 @@ export function listWorkloadsQuery(opts: ListWorkloadsOpts) {
 			avgCpuUsage: avgIfOrZero($.Value, $.MetricName.eq("k8s.pod.cpu.usage")),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.TimeUnix.gte(param.dateTimeString("startTime")),
 			$.TimeUnix.lte(param.dateTimeString("endTime")),
 			$.ResourceAttributes.get(attrKey).neq(""),
@@ -962,7 +962,7 @@ export function workloadDetailSummaryQuery(opts: WorkloadDetailSummaryOpts) {
 			avgCpuUsage: avgIfOrZero($.Value, $.MetricName.eq("k8s.pod.cpu.usage")),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.TimeUnix.gte(param.dateTimeString("startTime")),
 			$.TimeUnix.lte(param.dateTimeString("endTime")),
 			$.ResourceAttributes.get(attrKey).eq(opts.workloadName),
@@ -990,7 +990,7 @@ export function workloadGaugeTimeseriesQuery(opts: WorkloadGaugeTimeseriesOpts) 
 			avgValue: CH.avg($.Value),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.TimeUnix.gte(param.dateTimeString("startTime")),
 			$.TimeUnix.lte(param.dateTimeString("endTime")),
 			$.ResourceAttributes.get(attrKey).eq(opts.workloadName),
@@ -1084,7 +1084,7 @@ const makeWorkloadFacet = (
 			facetType: CH.lit(facetType),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.TimeUnix.gte(param.dateTimeString("startTime")),
 			$.TimeUnix.lte(param.dateTimeString("endTime")),
 			$.ResourceAttributes.get(ownerKey).neq(""),
@@ -1152,7 +1152,7 @@ const presenceBranch = (
 	from(MetricsGauge)
 		.select(() => ({ surface: CH.lit(surface) }))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.TimeUnix.gte(param.dateTimeString("startTime")),
 			$.TimeUnix.lte(param.dateTimeString("endTime")),
 			$.MetricName.eq(metricName),

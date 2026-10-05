@@ -8,10 +8,10 @@
 // use `uniq[If](SessionId)`. Page views come from append-only navigation events.
 // WHERE clauses use only columns written identically to both session versions.
 
-import * as CH from "@maple-dev/effect-clickhouse/expr"
-import { param, from, inSubquery, unionAll, compileFnCall } from "@maple-dev/effect-clickhouse"
-import type { ColumnAccessor, CHQuery, CHUnionQuery } from "@maple-dev/effect-clickhouse"
-import { SessionReplays, SessionEvents, ProductEvents } from "../tables"
+import * as CH from "@maple-dev/effect-orm/expr"
+import { param, from, inSubquery, unionAll, compileFnCall } from "@maple-dev/effect-orm/clickhouse"
+import type { ColumnAccessor, CHQuery, CHUnionQuery } from "@maple-dev/effect-orm/clickhouse"
+import { SessionReplays, SessionEvents, ProductEvents, orgIdParam } from "../tables"
 import { isBotCond } from "../user-agent"
 import type { FacetOutput } from "./query-helpers"
 import { SESSION_LIVE_WINDOW_SECONDS, WEB_ANALYTICS_UNSET } from "@maple/domain/query-engine"
@@ -161,7 +161,7 @@ function eventConditionsRaw(
 	only?: "host" | "pagePath",
 ): Array<CH.Condition | undefined> {
 	return [
-		$.OrgId.eq(param.string("orgId")),
+		$.OrgId.eq(orgIdParam),
 		$.Timestamp.gte(param.dateTimeString("startTime")),
 		$.Timestamp.lte(param.dateTimeString("endTime")),
 		$.Type.eq(kind),
@@ -196,7 +196,7 @@ function eventConditionsRollup(
 	only?: "host" | "pagePath",
 ): Array<CH.Condition | undefined> {
 	return [
-		$.OrgId.eq(param.string("orgId")),
+		$.OrgId.eq(orgIdParam),
 		$.Timestamp.gte(param.dateTimeString("startTime")),
 		$.Timestamp.lte(param.dateTimeString("endTime")),
 		$.Kind.eq(kind),
@@ -336,7 +336,7 @@ export function replaysWhere(
 			: undefined
 
 	return [
-		$.OrgId.eq(param.string("orgId")),
+		$.OrgId.eq(orgIdParam),
 		$.StartTime.gte(param.dateTimeString("startTime")),
 		$.StartTime.lte(param.dateTimeString("endTime")),
 		navigationFilter,

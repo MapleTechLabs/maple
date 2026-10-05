@@ -1,9 +1,14 @@
 import { describe, expect, it } from "vitest"
-import { compileUnsafe } from "@maple-dev/effect-clickhouse"
+import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import { ProductEventsFunnelError } from "./product-events"
 import { productEventsPathsQuery, type ProductEventsPathsOpts } from "./product-events-paths"
+import { OrgId } from "@maple/domain"
 
-const params = { orgId: "org_1", startTime: "2026-06-24 04:00:00", endTime: "2026-06-25 06:00:00" }
+const params = {
+	orgId: OrgId.make("org_1"),
+	startTime: "2026-06-24 04:00:00",
+	endTime: "2026-06-25 06:00:00",
+}
 
 const base: ProductEventsPathsOpts = {
 	anchor: { kind: "event", eventName: "signup_completed" },

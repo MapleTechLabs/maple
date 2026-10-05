@@ -26,16 +26,16 @@
 // arithmetic over strings.
 
 import { Schema } from "effect"
-import * as CH from "@maple-dev/effect-clickhouse/expr"
+import * as CH from "@maple-dev/effect-orm/expr"
 import {
 	from,
 	param,
 	unionAll,
 	type CHUnionQuery,
 	type CompiledQueryRowSchema,
-} from "@maple-dev/effect-clickhouse"
+} from "@maple-dev/effect-orm/clickhouse"
 import { CHNumber } from "../schema"
-import { Logs, MetricCatalog, ServiceOperationsMinutely, ServiceOverviewSpans } from "../tables"
+import { Logs, MetricCatalog, ServiceOperationsMinutely, ServiceOverviewSpans, orgIdParam } from "../tables"
 import { hourFloor } from "./query-helpers"
 
 export interface ServiceLivenessOutput {
@@ -73,11 +73,11 @@ export function serviceLivenessQuery(opts: ServiceLivenessOpts = {}) {
 			lastSeen: CH.toString_(CH.max_($.Minute)),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.ServiceName.eq(param.string("serviceName")),
 			$.Minute.gte(param.dateTimeSeconds("startTime")),
 			$.Minute.lte(param.dateTimeSeconds("endTime")),
-			opts.scopeToEnvironment ? $.DeploymentEnv.eq(param.string("deploymentEnv")) : undefined,
+			CH.whenTrue(!!opts.scopeToEnvironment, () => $.DeploymentEnv.eq(param.string("deploymentEnv"))),
 		])
 		.format("JSON")
 }
@@ -114,7 +114,7 @@ export function orgTelemetryPulseQuery(): CHUnionQuery<TelemetryPulseOutput> {
 			lastSeen: CH.toString_(CH.max_($.Timestamp)),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.Timestamp.gte(param.dateTimeSeconds("startTime")),
 			$.Timestamp.lte(param.dateTimeSeconds("endTime")),
 		])
@@ -126,7 +126,7 @@ export function orgTelemetryPulseQuery(): CHUnionQuery<TelemetryPulseOutput> {
 			lastSeen: CH.toString_(CH.max_($.Timestamp)),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.TimestampTime.gte(param.dateTimeSeconds("startTime")),
 			$.TimestampTime.lte(param.dateTimeSeconds("endTime")),
 			$.Timestamp.gte(param.dateTimeString("startTime")),
@@ -151,7 +151,7 @@ export function ingestFreshnessQuery(): CHUnionQuery<TelemetryPulseOutput> {
 			lastSeen: CH.toString_(CH.max_($.Minute)),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.Minute.gte(param.dateTimeSeconds("startTime")),
 			$.Minute.lte(param.dateTimeSeconds("endTime")),
 		])
@@ -173,7 +173,7 @@ export function ingestFreshnessQuery(): CHUnionQuery<TelemetryPulseOutput> {
 			),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.Hour.gte(hourFloor("startTime")),
 			$.Hour.lte(hourFloor("endTime")),
 			$.LastSeen.gte(param.dateTimeSeconds("startTime")),
@@ -192,7 +192,7 @@ export function logsFreshnessQuery() {
 			lastSeen: CH.toString_(CH.toDateTime(CH.max_($.Timestamp))),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.TimestampTime.gte(param.dateTimeSeconds("startTime")),
 			$.TimestampTime.lte(param.dateTimeSeconds("endTime")),
 			$.Timestamp.gte(param.dateTimeString("startTime")),

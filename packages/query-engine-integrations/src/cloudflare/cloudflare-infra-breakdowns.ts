@@ -9,9 +9,9 @@
 // metric emit literal 0 for those columns, so the response schema and the UI
 // table stay generic.
 
-import * as CH from "@maple-dev/effect-clickhouse/expr"
-import { from, param, unionAll, type CHUnionQuery } from "@maple-dev/effect-clickhouse"
-import { MetricsSum } from "@maple/query-engine/ch/tables"
+import * as CH from "@maple-dev/effect-orm/expr"
+import { from, param, unionAll, type CHUnionQuery } from "@maple-dev/effect-orm/clickhouse"
+import { MetricsSum, orgIdParam } from "@maple/query-engine/ch/tables"
 import { ISO_Z_FORMAT, isoBucket } from "@maple/query-engine/ch/format"
 import {
 	CF_ATTR,
@@ -180,7 +180,7 @@ export function cloudflareZoneBreakdownTotalsSQL(
 	return from(MetricsSum)
 		.select(($) => ({ key: keyExpr($, dimension), ...measures($, spec) }))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.ServiceName.eq(param.string("serviceName")),
 			$.MetricName.in_(...cloudflareBreakdownMetrics(dimension)),
 			$.TimeUnix.gte(param.dateTimeString("startTime")),
@@ -220,7 +220,7 @@ export function cloudflareZoneBreakdownTimeseriesSQL(
 			requests: CH.sum($.Value),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.ServiceName.eq(param.string("serviceName")),
 			$.MetricName.eq(spec.requestsMetric),
 			$.TimeUnix.gte(param.dateTimeString("startTime")),
@@ -245,7 +245,7 @@ export function cloudflareZoneBreakdownCoverageSQL(dimension: CloudflareBreakdow
 			attributedRequests: CH.sum($.Value),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.ServiceName.eq(param.string("serviceName")),
 			$.MetricName.eq(spec.requestsMetric),
 			$.TimeUnix.gte(param.dateTimeString("startTime")),
@@ -290,7 +290,7 @@ const makeCfFacet = (
 			facetType: CH.lit(facetType),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.ServiceName.eq(param.string("serviceName")),
 			$.MetricName.eq(metricName),
 			$.TimeUnix.gte(param.dateTimeString("startTime")),

@@ -7,7 +7,8 @@ import {
 } from "@maple/domain/http"
 import { ORG_FILTER_MACRO_RE, rawSqlIssue, type RawSqlWorkload } from "@maple/domain/raw-sql"
 import type { QueryProfileName } from "../profiles"
-import { escapeClickHouseString, splitTerminalClauses } from "@maple-dev/effect-clickhouse/sql"
+import { escapeClickHouseString, splitTerminalClauses } from "@maple-dev/effect-orm/sql"
+import type { OrgId } from "@maple/domain"
 
 // User-authored ClickHouse SQL: validation, macro expansion, and execution.
 //
@@ -24,7 +25,7 @@ export type { RawSqlWorkload }
 
 export interface PrepareRawSqlInput {
 	readonly sql: string
-	readonly orgId: string
+	readonly orgId: OrgId
 	readonly startTime: string
 	readonly endTime: string
 	readonly granularitySeconds: number

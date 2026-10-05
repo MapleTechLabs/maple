@@ -4,6 +4,7 @@ import { errorDetail } from "./error-detail"
 import { WarehouseExecutor } from "./WarehouseExecutor"
 import type { WarehouseExecutorApi } from "./WarehouseExecutor"
 import { compiledQueryOf } from "../execution/compiled-input"
+import { OrgId } from "@maple/domain"
 
 interface CapturedCalls {
 	pipeCalls: Array<{ pipe: string; params: Record<string, unknown> }>
@@ -40,7 +41,7 @@ const makeMockExecutor = (
 	compiledRows: CompiledRows = {},
 	logsData: ReadonlyArray<unknown> = [],
 ): WarehouseExecutorApi => ({
-	orgId: "org_test",
+	orgId: OrgId.make("org_test"),
 	compiledQuery: (compiled, options) => {
 		const query = compiledQueryOf(compiled)
 		captured.pipeCalls.push({ pipe: options?.context ?? "compiled", params: { sql: query.sql } })

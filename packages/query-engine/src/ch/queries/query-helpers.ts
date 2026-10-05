@@ -5,15 +5,15 @@
 
 import { finiteOrZero } from "./format"
 import type { AttributeFilter, MetricType } from "@maple/domain/query-engine"
-import * as CH from "@maple-dev/effect-clickhouse/expr"
-import { param } from "@maple-dev/effect-clickhouse"
-import type { ColumnAccessor } from "@maple-dev/effect-clickhouse"
+import * as CH from "@maple-dev/effect-orm/expr"
+import { param } from "@maple-dev/effect-orm/clickhouse"
+import type { ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
 import type { ServiceOverviewSpans, Traces, TracesAggregatesHourly } from "../tables"
-import { MetricsSum, MetricsGauge, MetricsHistogram, MetricsExpHistogram } from "../tables"
+import { MetricsSum, MetricsGauge, MetricsHistogram, MetricsExpHistogram, orgIdParam } from "../tables"
 import { deploymentEnvExpr } from "@maple/domain/tinybird/semconv-renames"
 import { buildAttrFilterCondition, httpDisplaySpanName } from "../../traces-shared"
 import type { AttributeIndexMode } from "../../capabilities"
-import * as T from "@maple-dev/effect-clickhouse/types"
+import * as T from "@maple-dev/effect-orm/clickhouse"
 
 // APDEX expressions
 
@@ -276,7 +276,7 @@ export function tracesBaseWhereConditions(
 	const services = inclusionValues(opts.serviceName, opts.serviceNames)
 	const spanNames = inclusionValues(opts.spanName, opts.spanNames)
 	const conditions: Array<CH.Condition | undefined> = [
-		$.OrgId.eq(param.string("orgId")),
+		$.OrgId.eq(orgIdParam),
 		$.Timestamp.gte(param.dateTimeString("startTime")),
 		$.Timestamp.lte(param.dateTimeString("endTime")),
 		CH.when(services, (v: readonly string[]) =>
@@ -427,7 +427,7 @@ export function serviceOverviewWhereConditions(
 	const mm = opts.matchModes
 	const services = inclusionValues(opts.serviceName, opts.serviceNames)
 	const conditions: Array<CH.Condition | undefined> = [
-		$.OrgId.eq(param.string("orgId")),
+		$.OrgId.eq(orgIdParam),
 		$.Timestamp.gte(param.dateTimeSeconds("startTime")),
 		$.Timestamp.lte(param.dateTimeSeconds("endTime")),
 		CH.when(services, (v: readonly string[]) =>
@@ -531,7 +531,7 @@ export function tracesAggregatesWhereConditions(
 	const services = inclusionValues(opts.serviceName, opts.serviceNames)
 	const spanNames = inclusionValues(opts.spanName, opts.spanNames)
 	const conditions: Array<CH.Condition | undefined> = [
-		$.OrgId.eq(param.string("orgId")),
+		$.OrgId.eq(orgIdParam),
 		hourBounds
 			? $.Hour.gte(CH.rawExpr(hourBounds.gte, T.dateTimeString))
 			: $.Hour.gte(param.dateTimeSeconds("startTime")),
