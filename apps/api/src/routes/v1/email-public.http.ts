@@ -9,6 +9,24 @@ export const HttpEmailPublicLive = HttpApiBuilder.group(MapleApi, "emailPublic",
 	Effect.gen(function* () {
 		const digest = yield* DigestService
 
-		return handlers.handle("unsubscribe", ({ query }) => digest.unsubscribeByToken(query.token))
+		// Server-kind with the HTTP identity stamped by hand: the auto server span is
+		// suppressed for this path (it would record the token in `url.query`, see
+		// ApiObservabilityLive), so this span is the request's trace root.
+		const unsubscribe = Effect.fn("email.unsubscribe", {
+			kind: "server",
+			attributes: { "http.route": "/api/email/unsubscribe", "http.request.method": "POST" },
+		})(function* (token: string) {
+			return yield* digest.unsubscribeByToken(token).pipe(
+				Effect.tap(() => Effect.annotateCurrentSpan("http.response.status_code", 200)),
+				Effect.tapError((error) =>
+					Effect.annotateCurrentSpan(
+						"http.response.status_code",
+						error._tag === "@maple/http/errors/DigestUnsubscribeTokenInvalidError" ? 400 : 503,
+					),
+				),
+			)
+		})
+
+		return handlers.handle("unsubscribe", ({ query }) => unsubscribe(query.token))
 	}),
 )
