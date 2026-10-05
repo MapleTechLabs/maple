@@ -10,7 +10,7 @@ import { Env, type EnvConfig } from "./Env"
  * production, so this is a plain HTTP client; the known gap is *local*
  * `workerd`, which speaks HTTP/1.1 outbound and gets the connection dropped
  * — hence `ApnsUnavailable` rather than a hard failure when the send blows up
- * in dev. Do not route this through the SSRF-guarded `safeFetch`: the host is
+ * in dev. Do not route this through the SSRF `guard` client: the host is
  * ours, fixed, and must be reachable over HTTP/2.
  *
  * Auth is an ES256 JWT (`iss` = team id, `kid` = key id) minted at most once

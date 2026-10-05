@@ -23,6 +23,7 @@ import {
 import { scrapeTargetChecks, scrapeTargets, type ScrapeTargetCheckRow } from "@maple/db"
 import { and, desc, eq, gte, inArray, lte } from "drizzle-orm"
 import { Cause, Clock, Context, Effect, Exit, Layer, Option, Redacted, Schema } from "effect"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import {
 	encryptAes256Gcm,
 	parseBase64Aes256GcmKey,
@@ -38,7 +39,7 @@ import {
 	buildScrapeAuthHeaders,
 	TokenCredentialsSchema,
 } from "@maple/backend/services/auth/scrape-auth"
-import { safeFetch, validateExternalUrl } from "@maple/safe-fetch"
+import { describeHttpClientError, guard, validateExternalUrl } from "@maple/safe-fetch"
 import { DiscoveryConfigSchema } from "./planetscale/discovery-config"
 import { PlanetScaleDiscoveryService, planetScaleDiscoveryUrl } from "./PlanetScaleDiscoveryService"
 import {
@@ -508,6 +509,7 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 			const env = yield* Env
 			const discovery = yield* PlanetScaleDiscoveryService
 			const psOAuth = yield* PlanetScaleOAuthService
+			const probeClient = guard(yield* HttpClient.HttpClient)
 			const encryptionKey = yield* parseEncryptionKey(
 				Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
 			)
@@ -1209,38 +1211,38 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 				const headers = yield* authHeadersForRow(row)
 
 				const now = yield* Clock.currentTimeMillis
-				// `safeFetch` is retained for SSRF protection + redirect re-validation. The
-				// manual AbortController/setTimeout is replaced by the interruption-aware
-				// signal plus a fixed 10s `Effect.timeout`; the timeout lands as a failure
-				// in the captured Exit (→ success: false), matching the old abort path.
-				const requestExit = yield* Effect.tryPromise({
-					try: (signal) =>
-						safeFetch(row.url, {
-							method: "GET",
-							headers,
-							signal,
-						}),
-					catch: (cause) =>
-						new ScrapeTargetUpstreamError({
-							message: cause instanceof Error ? cause.message : "Connection failed",
-						}),
-				}).pipe(
-					Effect.flatMap((response) =>
-						response.ok
-							? Effect.void
-							: Effect.fail(
+				// `guard` supplies SSRF protection + redirect re-validation; the 10s
+				// timeout interrupts (and aborts) the request and lands as a failure in
+				// the captured Exit (→ success: false).
+				const requestExit = yield* probeClient
+					.execute(HttpClientRequest.get(row.url, { headers }))
+					.pipe(
+						Effect.catchTags({
+							"@maple/safe-fetch/UrlValidationError": (cause) =>
+								Effect.fail(new ScrapeTargetUpstreamError({ message: cause.message })),
+							HttpClientError: (cause) =>
+								Effect.fail(
 									new ScrapeTargetUpstreamError({
-										message: `HTTP ${response.status} ${response.statusText}`,
-										status: response.status,
+										message: describeHttpClientError(cause),
 									}),
 								),
-					),
-					Effect.timeout(10_000),
-					Effect.catchTag("TimeoutError", () =>
-						Effect.fail(new ScrapeTargetUpstreamError({ message: "Connection failed" })),
-					),
-					Effect.exit,
-				)
+						}),
+						Effect.flatMap((response) =>
+							response.status >= 200 && response.status < 300
+								? Effect.void
+								: Effect.fail(
+										new ScrapeTargetUpstreamError({
+											message: `HTTP ${response.status}`,
+											status: response.status,
+										}),
+									),
+						),
+						Effect.timeout(10_000),
+						Effect.catchTag("TimeoutError", () =>
+							Effect.fail(new ScrapeTargetUpstreamError({ message: "Connection failed" })),
+						),
+						Effect.exit,
+					)
 				const requestError = Exit.isFailure(requestExit)
 					? Option.match(Cause.findErrorOption(requestExit.cause), {
 							onNone: () => "Connection failed",
@@ -1302,6 +1304,12 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 	},
 ) {
 	static readonly layer = Layer.effect(this, this.make).pipe(
-		Layer.provide(Layer.mergeAll(PlanetScaleOAuthService.layer, PlanetScaleDiscoveryService.layer)),
+		Layer.provide(
+			Layer.mergeAll(
+				PlanetScaleOAuthService.layer,
+				PlanetScaleDiscoveryService.layer,
+				FetchHttpClient.layer,
+			),
+		),
 	)
 }

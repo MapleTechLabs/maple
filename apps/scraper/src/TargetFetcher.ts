@@ -1,7 +1,7 @@
 import { Context, Effect, Layer, Option, Schema } from "effect"
-import { FetchHttpClient } from "effect/http"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import type { InternalScrapeTarget } from "@maple/domain/http"
-import { safeFetch, UrlValidationError } from "@maple/safe-fetch"
+import { describeHttpClientError, guard } from "@maple/safe-fetch"
 
 /**
  * Why the upstream request produced no usable response. `timeout` and
@@ -58,6 +58,10 @@ export class TargetFetcher extends Context.Service<TargetFetcher, TargetFetcherA
 	"@maple/scraper/TargetFetcher",
 	{
 		make: Effect.gen(function* () {
+			// `guard` supplies the SSRF protection + per-hop redirect re-validation.
+			// `Effect.timeout` interrupts the request, which aborts the in-flight fetch.
+			const client = guard(yield* HttpClient.HttpClient)
+
 			// `server.address` + `url.path`, never `url.full`: PlanetScale authenticates
 			// its metrics data plane with `?sig=&exp=` query params, i.e. credentials.
 			// `pathname` drops the query, so the signed URL cannot leak into telemetry.
@@ -68,7 +72,6 @@ export class TargetFetcher extends Context.Service<TargetFetcher, TargetFetcherA
 			const fetchTarget = Effect.fn("scraper.fetch_target", { kind: "client" })(function* (
 				target: InternalScrapeTarget,
 			) {
-				const fetchFn = yield* FetchHttpClient.Fetch
 				const parsed = Option.liftThrowable(() => new URL(target.scrapeUrl))()
 				// Annotated before the fetch so a failed or timed-out scrape still
 				// draws its service-map edge.
@@ -82,43 +85,45 @@ export class TargetFetcher extends Context.Service<TargetFetcher, TargetFetcherA
 						: undefined),
 				})
 
-				// `safeFetch` supplies the SSRF protection + per-hop redirect re-validation
-				// the Effect HttpClient transport lacks. The interruption-aware signal from
-				// `Effect.tryPromise` plus `Effect.timeout` aborts the in-flight request
-				// when the ceiling passes.
-				const result = yield* Effect.tryPromise({
-					try: async (signal) => {
-						const response = await safeFetch(target.scrapeUrl, {
-							method: "GET",
+				const result = yield* client
+					.execute(
+						HttpClientRequest.get(target.scrapeUrl, {
 							headers: { ...DEFAULT_HEADERS, ...target.authHeaders },
-							signal,
-							fetchFn,
-						})
-						return {
-							status: response.status,
-							body: await response.text(),
-							retryAfterSeconds: parseRetryAfterSeconds(response.headers.get("retry-after")),
-						} satisfies TargetResponse
-					},
-					// Messages are fragments: the scheduler prefixes the target's identity.
-					catch: (cause) =>
-						cause instanceof UrlValidationError
-							? new TargetFetchError({
-									message: `url rejected: ${cause.message}`,
-									reason: "invalid_url",
-								})
-							: new TargetFetchError({
-									message: `request failed: ${cause instanceof Error ? cause.message : String(cause)}`,
-									reason: "transport",
-								}),
-				}).pipe(
-					Effect.timeout(scrapeTimeoutMs(target.scrapeIntervalSeconds)),
-					Effect.catchTag("TimeoutError", () =>
-						Effect.fail(
-							new TargetFetchError({ message: "request timed out", reason: "timeout" }),
+						}),
+					)
+					.pipe(
+						Effect.flatMap((response) =>
+							Effect.map(response.text, (body): TargetResponse => ({
+								status: response.status,
+								body,
+								retryAfterSeconds: parseRetryAfterSeconds(
+									response.headers["retry-after"] ?? null,
+								),
+							})),
 						),
-					),
-				)
+						Effect.timeout(scrapeTimeoutMs(target.scrapeIntervalSeconds)),
+						// Messages are fragments: the scheduler prefixes the target's identity.
+						Effect.catchTags({
+							"@maple/safe-fetch/UrlValidationError": (cause) =>
+								Effect.fail(
+									new TargetFetchError({
+										message: `url rejected: ${cause.message}`,
+										reason: "invalid_url",
+									}),
+								),
+							HttpClientError: (cause) =>
+								Effect.fail(
+									new TargetFetchError({
+										message: `request failed: ${describeHttpClientError(cause)}`,
+										reason: "transport",
+									}),
+								),
+							TimeoutError: () =>
+								Effect.fail(
+									new TargetFetchError({ message: "request timed out", reason: "timeout" }),
+								),
+						}),
+					)
 
 				yield* Effect.annotateCurrentSpan({
 					"http.response.status_code": result.status,
@@ -133,5 +138,5 @@ export class TargetFetcher extends Context.Service<TargetFetcher, TargetFetcherA
 		}),
 	},
 ) {
-	static readonly layer = Layer.effect(this, this.make)
+	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(FetchHttpClient.layer))
 }

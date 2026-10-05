@@ -11,7 +11,10 @@ import {
 	type AlertDestinationType,
 } from "@maple/domain/http"
 import { Duration, Effect, Option, Result } from "effect"
-import { safeFetch } from "@maple/safe-fetch"
+import { constTrue } from "effect/Function"
+import { FetchHttpClient, HttpBody, HttpClient, HttpClientRequest } from "effect/http"
+import type { HttpClientResponse } from "effect/http"
+import { describeHttpClientError, guard } from "@maple/safe-fetch"
 import type {
 	EffectTransport,
 	EffectTransportDeps,
@@ -34,17 +37,17 @@ export const makeDeliveryError = (message: string, destinationType?: AlertDestin
  * whitespace-collapsed: this ends up in a delivery row and a log line, and some
  * providers answer with an HTML error page.
  */
-const readErrorBody = (response: Response) =>
-	Effect.tryPromise({ try: () => response.text(), catch: () => null }).pipe(
+const readErrorBody = (response: HttpClientResponse.HttpClientResponse) =>
+	response.text.pipe(
 		Effect.map((text) => {
-			const detail = (text ?? "").replace(/\s+/g, " ").trim().slice(0, 500)
+			const detail = text.replace(/\s+/g, " ").trim().slice(0, 500)
 			if (detail.length > 0) return detail
 			// An empty body used to render as `"<Provider> delivery failed with 400"`
 			// with nothing after it, which reads like we dropped the reason rather
 			// than the provider never having sent one. Saying so — with the
 			// content-type the provider did declare — is the difference between
 			// "our bug" and "ask the provider".
-			const contentType = response.headers.get("content-type")
+			const contentType = response.headers["content-type"]
 			return contentType ? `<empty body> (content-type: ${contentType})` : "<empty body>"
 		}),
 		Effect.orElseSucceed(() => ""),
@@ -116,40 +119,30 @@ const sendHttp = Effect.fn("AlertDelivery.http", { kind: "client" })(function* (
 		...(Option.isSome(parsed) && !spec.sensitivePath ? { "url.path": parsed.value.pathname } : undefined),
 	})
 
-	// Detached from `runtime` on purpose: `runtime.fetchFn(...)` is a METHOD
-	// call, so workerd's global `fetch` runs with `this === runtime` and throws
-	// "Illegal invocation". Only the unguarded transports (pagerduty, telegram)
-	// hit it — the guarded ones already launder `fetch` through `safeFetch`,
-	// which calls it as a bare local.
-	const { fetchFn } = runtime
+	// Built from the bare body first, then `spec.headers`, so the transport's own
+	// `content-type` is what goes out rather than one inferred from the body.
+	const request = HttpClientRequest.post(spec.url).pipe(
+		HttpClientRequest.setBody(HttpBody.raw(spec.body)),
+		HttpClientRequest.setHeaders(spec.headers),
+	)
 
-	// The signal is what makes the timeout below real: `timeoutOrElse` interrupts
-	// this Effect, and without wiring the interruption to `RequestInit.signal`
-	// the POST would keep running and could still deliver after we reported a
-	// retryable timeout — a duplicate page once the retry lands.
-	const response = yield* Effect.tryPromise({
-		try: (signal) =>
-			spec.guarded
-				? safeFetch(spec.url, {
-						method: "POST",
-						headers: { ...spec.headers },
-						body: spec.body,
-						signal,
-						fetchFn,
-					})
-				: fetchFn(spec.url, {
-						method: "POST",
-						headers: { ...spec.headers },
-						body: spec.body,
-						signal,
-					}),
-		catch: (error) =>
-			makeDeliveryError(
-				error instanceof Error ? error.message : `${transport.providerLabel} delivery failed`,
-				transport.type,
-				error,
-			),
-	}).pipe(
+	// The timeout interrupts this Effect, and the client aborts the in-flight
+	// POST on interruption: without that it could still deliver after we
+	// reported a retryable timeout — a duplicate page once the retry lands.
+	const response = yield* HttpClient.HttpClient.pipe(
+		Effect.flatMap((client) => (spec.guarded ? guard(client) : client).execute(request)),
+		Effect.provide(FetchHttpClient.layer),
+		Effect.provideService(FetchHttpClient.Fetch, runtime.fetchFn),
+		// The client's own span records `url.full`, and Discord, Hazel and
+		// Telegram carry their delivery token in the URL path. This span is the
+		// client span.
+		Effect.provideService(HttpClient.TracerDisabledWhen, constTrue),
+		Effect.catchTags({
+			"@maple/safe-fetch/UrlValidationError": (error) =>
+				Effect.fail(makeDeliveryError(error.message, transport.type, error)),
+			HttpClientError: (error) =>
+				Effect.fail(makeDeliveryError(describeHttpClientError(error), transport.type, error)),
+		}),
 		Effect.timeoutOrElse({
 			duration: Duration.millis(runtime.timeoutMs),
 			orElse: () =>
@@ -175,7 +168,7 @@ export const runHttpTransport = <Config>(
 		const spec = transport.render(input)
 		const response = yield* sendHttp(spec, transport, runtime)
 
-		if (!response.ok) {
+		if (response.status < 200 || response.status >= 300) {
 			const detail = yield* readErrorBody(response)
 			// A transport may supply a better sentence for a status it knows well;
 			// it does not get to change whether the failure is retryable.
@@ -200,15 +193,15 @@ export const runHttpTransport = <Config>(
 		// A 2xx is not proof of delivery for every provider — Telegram answers 200
 		// with `{ ok: false }` — so a transport may claim the body.
 		if (transport.interpret) {
-			const rawBody = yield* Effect.tryPromise({
-				try: () => response.text(),
-				catch: (error) =>
+			const rawBody = yield* response.text.pipe(
+				Effect.mapError((error) =>
 					makeDeliveryError(
 						`${transport.providerLabel} returned an unreadable response`,
 						transport.type,
 						error,
 					),
-			})
+				),
+			)
 			const ack = yield* Result.match(transport.interpret(input, rawBody), {
 				onSuccess: (value) => Effect.succeed(value),
 				onFailure: (error) => Effect.fail(error),
