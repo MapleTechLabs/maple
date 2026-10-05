@@ -1,16 +1,17 @@
 import { describe, expect, it } from "vitest"
 import { Effect } from "effect"
-import { compileUnsafe, compileUnionUnsafe, type CompiledQuery } from "@maple-dev/effect-clickhouse"
+import { compileUnsafe, compileUnionUnsafe, type CompiledQuery } from "@maple-dev/effect-orm/clickhouse"
 import { orgTelemetryPulseQuery, serviceLivenessQuery } from "./liveness"
+import { OrgId } from "@maple/domain"
 
 const pulseParams = {
-	orgId: "org_123",
+	orgId: OrgId.make("org_123"),
 	startTime: "2024-01-01 00:00:00",
 	endTime: "2024-01-01 00:10:00",
 }
 
 const livenessParams = {
-	orgId: "org_123",
+	orgId: OrgId.make("org_123"),
 	serviceName: "checkout",
 	startTime: "2024-01-01 00:00:00",
 	endTime: "2024-01-01 00:30:00",

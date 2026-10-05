@@ -17,12 +17,12 @@
 // user-supplied value (the anchor, the excluded names) enters through a typed
 // condition, never a string.
 
-import * as CH from "@maple-dev/effect-clickhouse/expr"
-import { param, from, fromQuery, inSubquery, table } from "@maple-dev/effect-clickhouse"
-import type { CHQuery } from "@maple-dev/effect-clickhouse"
-import * as T from "@maple-dev/effect-clickhouse/types"
+import * as CH from "@maple-dev/effect-orm/expr"
+import { param, from, fromQuery, inSubquery, table } from "@maple-dev/effect-orm/clickhouse"
+import type { CHQuery } from "@maple-dev/effect-orm/clickhouse"
+import * as T from "@maple-dev/effect-orm/clickhouse"
 import { Schema } from "effect"
-import { ProductEvents } from "../tables"
+import { ProductEvents, orgIdParam } from "../tables"
 import { CHNumber } from "../schema"
 import {
 	LINK_ALIAS,
@@ -147,7 +147,7 @@ function pathEventsBranch(opts: ProductEventsPathsOpts, filters: ProductEventsFi
 	const keyOf = ($: OpenJoinAccessor<typeof ProductEvents.columns>) =>
 		personKey(keyBy, $, keyBy === "person" ? $[LINK_ALIAS] : undefined)
 	const inRange = ($: OpenJoinAccessor<typeof ProductEvents.columns>) => [
-		$.OrgId.eq(param.string("orgId")),
+		$.OrgId.eq(orgIdParam),
 		$.Timestamp.gte(param.dateTimeString("startTime")),
 		$.Timestamp.lte(param.dateTimeString("endTime")),
 		keyOf($).neq(""),
@@ -267,10 +267,13 @@ export function productEventsPathsQuery(
 	// The hop rows are read three times below (ranking, and both sides of the
 	// mapping join); a CTE evaluates the per-person sequencing once.
 	const flat = table("path_hops", {
-		key: T.string,
-		hop: T.uint32,
-		fromNode: T.string,
-		toNode: T.string,
+		external: true,
+		columns: {
+			key: T.string,
+			hop: T.uint32,
+			fromNode: T.string,
+			toNode: T.string,
+		},
 	})
 
 	// The named nodes: per column (a `toNode` at `hop`), the `branches` most

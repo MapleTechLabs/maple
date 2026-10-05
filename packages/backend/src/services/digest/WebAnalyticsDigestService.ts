@@ -12,7 +12,7 @@ import type { RoleName as RoleNameType } from "@maple/domain/http"
 import { AI_CRAWLERS, AI_PRODUCTS, aiProductById } from "@maple/domain/ai-traffic"
 import { WEB_ANALYTICS_UNSET } from "@maple/domain/query-engine"
 import { and, eq, inArray, isNull, lt, or } from "drizzle-orm"
-import { Array as Arr, Cause, Clock, Context, Effect, Layer } from "effect"
+import { Array as Arr, Cause, Clock, Context, Effect, Layer, Redacted } from "effect"
 import {
 	aiProductIcon,
 	computeDelta,
@@ -43,6 +43,7 @@ import {
 	quarantineOnConfigClassCause,
 } from "@maple/backend/services/warehouse/warehouse-org-quarantine"
 import { resolveOrgName } from "./resolve-org-name"
+import { unsubscribeLinks } from "./unsubscribe-token"
 
 const DAY_MS = 24 * 60 * 60 * 1000
 /** The email is a glance: three rows per list, the app has the rest. */
@@ -103,6 +104,11 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 			const env = yield* Env
 			const warehouse = yield* WarehouseQueryService
 			const edgeCache = yield* EdgeCacheService
+			const linkConfig = {
+				secret: Redacted.value(env.MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY),
+				appBaseUrl: env.MAPLE_APP_BASE_URL,
+				apiBaseUrl: env.MAPLE_API_BASE_URL,
+			}
 
 			const generateData = Effect.fn("WebAnalyticsDigestService.generateData")(function* (
 				orgId: OrgId,
@@ -410,7 +416,7 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 					baseUrl: env.MAPLE_APP_BASE_URL,
 					analyticsUrl,
 					aiUrl: `${analyticsUrl}&tab=ai`,
-					unsubscribeUrl: `${env.MAPLE_APP_BASE_URL}/settings/notifications`,
+					unsubscribeUrl: `${env.MAPLE_APP_BASE_URL}/settings?tab=notifications`,
 				}
 
 				yield* Effect.annotateCurrentSpan({
@@ -514,13 +520,21 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 							// Only orgs whose browser SDK reported visits hear from us.
 							if (!hasWebAnalyticsContent(props)) return []
 
-							const html = yield* render(props)
 							const { subject } = deriveWebAnalyticsHeadline(props)
 
 							return yield* Effect.forEach(
 								claimedSubs,
 								(sub) =>
-									email.send(sub.email, subject, html).pipe(
+									Effect.gen(function* () {
+										const links = unsubscribeLinks(linkConfig, "web-analytics", sub.id)
+										const html = yield* render({
+											...props,
+											unsubscribeUrl: links.pageUrl,
+										})
+										yield* email.send(sub.email, subject, html, {
+											headers: links.headers,
+										})
+									}).pipe(
 										Effect.tap(() =>
 											Clock.currentTimeMillis.pipe(
 												Effect.flatMap((sentAt) =>

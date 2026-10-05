@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest"
-import { compileUnsafe } from "@maple-dev/effect-clickhouse"
+import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import { cloudflareServiceCountersSQL, cloudflareServiceLatencySQL } from "./cloudflare-map"
+import { OrgId } from "@maple/domain"
 
 const baseParams = {
-	orgId: "org_1",
+	orgId: OrgId.make("org_1"),
 	startTime: "2026-07-02 00:00:00.000",
 	endTime: "2026-07-03 00:00:00.000",
 }
@@ -28,7 +29,10 @@ describe("cloudflareServiceCountersSQL", () => {
 	})
 
 	it("escapes single quotes in orgId", () => {
-		const { sql } = compileUnsafe(cloudflareServiceCountersSQL(), { ...baseParams, orgId: "org'evil" })
+		const { sql } = compileUnsafe(cloudflareServiceCountersSQL(), {
+			...baseParams,
+			orgId: OrgId.make("org'evil"),
+		})
 		expect(sql).toContain("OrgId = 'org\\'evil'")
 	})
 })

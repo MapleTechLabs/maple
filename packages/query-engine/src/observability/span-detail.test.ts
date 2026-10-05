@@ -3,6 +3,7 @@ import { Effect, Layer } from "effect"
 import { spanDetail } from "./span-detail"
 import { WarehouseExecutor, type WarehouseExecutorApi } from "./WarehouseExecutor"
 import { compiledQueryOf } from "../execution/compiled-input"
+import { OrgId } from "@maple/domain"
 
 const TRACE_ID = "0af7651916cd43dd8448eb211c80319c"
 const SPAN_ID = "b7ad6b7169203331"
@@ -24,7 +25,7 @@ const detailRow = {
 
 /** Answers only unbounded lookups, as if the hinted window missed the span. */
 const makeExecutor = (sqls: string[]): WarehouseExecutorApi => ({
-	orgId: "org_test",
+	orgId: OrgId.make("org_test"),
 	compiledQuery: (compiled) => compiledQueryOf(compiled).decodeRows([]).pipe(Effect.orDie),
 	compiledQueryFirst: (compiled) => {
 		const query = compiledQueryOf(compiled)

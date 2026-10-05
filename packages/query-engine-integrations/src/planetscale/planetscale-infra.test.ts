@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest"
 import { Effect } from "effect"
-import { compileUnsafe } from "@maple-dev/effect-clickhouse"
+import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import { planetscaleBranchInfraTimeseriesSQL, planetscaleInfraTimeseriesSQL } from "./planetscale-infra"
+import { OrgId } from "@maple/domain"
 
 describe("planetscaleInfraTimeseriesSQL", () => {
 	it("buckets per-timestamp totals for one database", () => {
 		const { sql } = compileUnsafe(planetscaleInfraTimeseriesSQL(), {
-			orgId: "org_1",
+			orgId: OrgId.make("org_1"),
 			startTime: "2026-07-02 00:00:00.000",
 			endTime: "2026-07-03 00:00:00.000",
 			bucketSeconds: 300,
@@ -28,7 +29,7 @@ describe("planetscaleInfraTimeseriesSQL", () => {
 
 	it("decodes ClickHouse numeric strings through the row schema", () => {
 		const compiled = compileUnsafe(planetscaleInfraTimeseriesSQL(), {
-			orgId: "org_1",
+			orgId: OrgId.make("org_1"),
 			startTime: "2026-07-02 00:00:00.000",
 			endTime: "2026-07-03 00:00:00.000",
 			bucketSeconds: 300,
@@ -64,7 +65,7 @@ describe("planetscaleInfraTimeseriesSQL", () => {
 
 	it("aggregates volume gauges without counting unsampled buckets as full", () => {
 		const { sql } = compileUnsafe(planetscaleInfraTimeseriesSQL(), {
-			orgId: "org_1",
+			orgId: OrgId.make("org_1"),
 			startTime: "2026-07-02 00:00:00.000",
 			endTime: "2026-07-03 00:00:00.000",
 			bucketSeconds: 300,
@@ -83,7 +84,7 @@ describe("planetscaleInfraTimeseriesSQL", () => {
 describe("planetscaleBranchInfraTimeseriesSQL", () => {
 	it("scopes the same rollup to a single branch", () => {
 		const { sql } = compileUnsafe(planetscaleBranchInfraTimeseriesSQL(), {
-			orgId: "org_1",
+			orgId: OrgId.make("org_1"),
 			startTime: "2026-07-02 00:00:00.000",
 			endTime: "2026-07-03 00:00:00.000",
 			bucketSeconds: 300,

@@ -3,11 +3,22 @@
 // DSL-based query definitions for traces timeseries, breakdown, and list.
 
 import type { TracesMetric } from "@maple/domain/query-engine"
-import { compileFnCall, subqueryCond, subqueryExpr, untypedSubqueryExpr } from "@maple-dev/effect-clickhouse"
-import * as CH from "@maple-dev/effect-clickhouse/expr"
-import { param } from "@maple-dev/effect-clickhouse"
-import { from, fromUnion, unionAll, type CHQuery, type ColumnAccessor } from "@maple-dev/effect-clickhouse"
-import type { Table } from "@maple-dev/effect-clickhouse"
+import {
+	compileFnCall,
+	subqueryCond,
+	subqueryExpr,
+	untypedSubqueryExpr,
+} from "@maple-dev/effect-orm/clickhouse"
+import * as CH from "@maple-dev/effect-orm/expr"
+import { param } from "@maple-dev/effect-orm/clickhouse"
+import {
+	from,
+	fromUnion,
+	unionAll,
+	type CHQuery,
+	type ColumnAccessor,
+} from "@maple-dev/effect-orm/clickhouse"
+import type { Table } from "@maple-dev/effect-orm/clickhouse"
 import {
 	ServiceMapSpans,
 	ServiceOverviewSpans,
@@ -17,6 +28,7 @@ import {
 	TraceListMv,
 	Traces,
 	TracesAggregatesHourly,
+	orgIdParam,
 } from "../tables"
 import {
 	deploymentEnvExpr,
@@ -24,8 +36,8 @@ import {
 	httpResponseStatusCodeExpr,
 } from "@maple/domain/tinybird/semconv-renames"
 import { METRIC_NEEDS } from "../../traces-shared"
-import type { ColumnDefs } from "@maple-dev/effect-clickhouse/types"
-import * as T from "@maple-dev/effect-clickhouse/types"
+import type { ColumnDefs } from "@maple-dev/effect-orm/clickhouse"
+import * as T from "@maple-dev/effect-orm/clickhouse"
 import { finalizeTimeseries } from "./series-cap"
 import { edgeCondition, hourGrain, interiorBounds, interiorConditions, minuteGrain } from "./rollup-splice"
 import {
@@ -544,7 +556,7 @@ export function tracesTimeseriesQuery(
 		>(
 			$: A,
 		) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			opts.serviceName ? $.ServiceName.eq(opts.serviceName) : undefined,
 			opts.environments?.length ? CH.inList($.DeploymentEnv, opts.environments) : undefined,
 			opts.namespaces?.length ? CH.inList($.ServiceNamespace, opts.namespaces) : undefined,
@@ -1139,7 +1151,7 @@ export function slowTracesQuery(opts: SlowTracesOpts) {
 			timestamp: CH.toString_($.Timestamp),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.Timestamp.gte(param.dateTimeSeconds("startTime")),
 			$.Timestamp.lte(param.dateTimeSeconds("endTime")),
 			CH.when(opts.service, (v: string) => $.ServiceName.eq(v)),
@@ -1392,7 +1404,7 @@ export function traceSummariesQuery(opts: TraceSummariesOpts) {
 			httpStatusCode: argMin($.HttpStatusCode, $.Timestamp),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.Timestamp.gte(param.dateTimeSeconds("startTime")),
 			$.Timestamp.lte(param.dateTimeSeconds("endTime")),
 			matchingTraceIds ? subqueryCond(matchingTraceIds, (sql) => `TraceId IN (${sql})`) : undefined,
@@ -1552,7 +1564,7 @@ export interface TraceListOutput {
 // `compileFnCall`) did not, which cost every query selecting one its row schema.
 
 const fromUnixTimestamp64Nano = (nanos: CH.Expr<number>): CH.Expr<string> =>
-	CH.compileTypedFnCall<string>("fromUnixTimestamp64Nano", T.dateTime64String.schema, nanos)
+	CH.compileTypedFnCall("fromUnixTimestamp64Nano", T.dateTime64String.schema, nanos)
 
 const subtractHours = (d: CH.Expr<string>, hours: CH.Expr<number>): CH.Expr<string> =>
 	compileFnCall<string>("subtractHours", d, hours)
@@ -1610,7 +1622,7 @@ function traceListMvWhereConditions(
 	const services = inclusionValues(opts.serviceName, opts.serviceNames)
 	const spanNames = inclusionValues(opts.spanName, opts.spanNames)
 	const conditions: Array<CH.Condition | undefined> = [
-		$.OrgId.eq(param.string("orgId")),
+		$.OrgId.eq(orgIdParam),
 		$.Timestamp.gte(param.dateTimeSeconds("startTime")),
 		$.Timestamp.lte(param.dateTimeSeconds("endTime")),
 		CH.when(services, (v: readonly string[]) =>
@@ -1799,7 +1811,7 @@ export function traceListQuery(opts: TraceListOpts) {
 			}
 		})
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			// Padded, not exact: children can start slightly before their root
 			// (clock skew) or outlive the window, but they cannot drift a full
 			// hour — the same ±1h convention as the trace-detail partition hint
@@ -1864,7 +1876,7 @@ export function traceServicesByTraceIdsQuery(opts: TraceServicesByTraceIdsOpts) 
 			}
 		})
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.TraceId.in_(...opts.traceIds),
 			$.Timestamp.gte(param.dateTimeSeconds("startTime")),
 			$.Timestamp.lte(param.dateTimeSeconds("endTime")),
@@ -1908,7 +1920,7 @@ export function traceSpanStatsByTraceIdsQuery(opts: TraceSpanStatsByTraceIdsOpts
 			}
 		})
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.TraceId.in_(...opts.traceIds),
 			$.Timestamp.gte(subtractHours(CH.toDateTime(param.dateTimeString("startTime")), CH.lit(1))),
 			$.Timestamp.lte(addHours(CH.toDateTime(param.dateTimeString("endTime")), CH.lit(1))),

@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest"
 import { Effect } from "effect"
-import { compileUnsafe } from "@maple-dev/effect-clickhouse"
+import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import { cloudflareUsageQuery, cloudflareUsageStatsQuery } from "./cloudflare-usage"
+import { OrgId } from "@maple/domain"
 
 const baseParams = {
-	orgId: "org_1",
+	orgId: OrgId.make("org_1"),
 	bucketSeconds: 3600,
 	startTime: "2026-07-02 00:00:00.000",
 	endTime: "2026-07-03 00:00:00.000",
@@ -30,13 +31,16 @@ describe("cloudflareUsageQuery", () => {
 	})
 
 	it("escapes single quotes in orgId", () => {
-		const { sql } = compileUnsafe(cloudflareUsageQuery(), { ...baseParams, orgId: "org'evil" })
+		const { sql } = compileUnsafe(cloudflareUsageQuery(), {
+			...baseParams,
+			orgId: OrgId.make("org'evil"),
+		})
 		expect(sql).toContain("OrgId = 'org\\'evil'")
 	})
 })
 
 const statsParams = {
-	orgId: "org_1",
+	orgId: OrgId.make("org_1"),
 	prevStartTime: "2026-07-01 00:00:00.000",
 	currentStartTime: "2026-07-02 00:00:00.000",
 	endTime: "2026-07-03 00:00:00.000",
@@ -68,7 +72,10 @@ describe("cloudflareUsageStatsQuery", () => {
 	})
 
 	it("escapes single quotes in orgId", () => {
-		const { sql } = compileUnsafe(cloudflareUsageStatsQuery(), { ...statsParams, orgId: "org'evil" })
+		const { sql } = compileUnsafe(cloudflareUsageStatsQuery(), {
+			...statsParams,
+			orgId: OrgId.make("org'evil"),
+		})
 		expect(sql).toContain("OrgId = 'org\\'evil'")
 	})
 

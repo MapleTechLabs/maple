@@ -3,9 +3,9 @@
 // DSL-based query definitions for service overview, releases, apdex, and usage.
 
 import { Schema } from "effect"
-import * as T from "@maple-dev/effect-clickhouse/types"
-import * as CH from "@maple-dev/effect-clickhouse/expr"
-import { param } from "@maple-dev/effect-clickhouse"
+import * as T from "@maple-dev/effect-orm/clickhouse"
+import * as CH from "@maple-dev/effect-orm/expr"
+import { param } from "@maple-dev/effect-orm/clickhouse"
 import {
 	from,
 	fromQuery,
@@ -13,15 +13,16 @@ import {
 	type CHQuery,
 	type ColumnAccessor,
 	type CompiledQueryRowSchema,
-} from "@maple-dev/effect-clickhouse"
-import { unionAll, type CHUnionQuery } from "@maple-dev/effect-clickhouse"
-import type { ColumnDefs } from "@maple-dev/effect-clickhouse/types"
+} from "@maple-dev/effect-orm/clickhouse"
+import { unionAll, type CHUnionQuery } from "@maple-dev/effect-orm/clickhouse"
+import type { ColumnDefs } from "@maple-dev/effect-orm/clickhouse"
 import {
 	ServiceOverviewHourly,
 	ServiceOverviewMinutely,
 	ServiceOverviewSpans,
 	ServiceUsage,
 	TracesAggregatesHourly,
+	orgIdParam,
 } from "../tables"
 import { CHNumber } from "../schema"
 import { apdexExprs, serviceOverviewWhereConditions, hourFloor, type FacetOutput } from "./query-helpers"
@@ -135,7 +136,7 @@ export function serviceOverviewWindows(filters: ServiceWindowFilters, tiers: Ser
 	>(
 		$: A,
 	) => [
-		$.OrgId.eq(param.string("orgId")),
+		$.OrgId.eq(orgIdParam),
 		CH.when(filters.serviceName, (value: string) => $.ServiceName.eq(value)),
 		filters.environments?.length ? CH.inList($.DeploymentEnv, filters.environments) : undefined,
 		filters.namespaces?.length ? CH.inList($.ServiceNamespace, filters.namespaces) : undefined,
@@ -501,7 +502,7 @@ export function serviceHealthSnapshotQuery(opts: ServiceHealthSnapshotOpts) {
 			),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.IsEntryPoint.eq(1),
 			$.Hour.gte(hourFloor("startTime")),
 			$.Hour.lte(hourFloor("endTime")),
@@ -809,7 +810,7 @@ export function serviceUsageQuery(opts: ServiceUsageOpts) {
 				.add(CH.sum($.ExpHistogramMetricSizeBytes)),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			// `service_usage` is keyed on top-of-hour `Hour`. Comparing to the raw
 			// `startTime` / `endTime` literals misses every sub-hour window — e.g.
 			// "last 15 min" at 22:23–22:38 returns no rows because `Hour=22:00 <
@@ -888,7 +889,7 @@ export function serviceUsageWithPreviousQuery(opts: ServiceUsageOpts) {
 				.add(CH.sumIf($.ExpHistogramMetricSizeBytes, inPrevious($))),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			// Scan the union window [previousStartTime, endTime] once; sumIf splits
 			// it into the two periods. Hour-floored bounds match serviceUsageQuery.
 			$.Hour.gte(hourFloor("previousStartTime")),

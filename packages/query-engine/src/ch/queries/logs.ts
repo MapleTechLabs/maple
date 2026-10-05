@@ -3,14 +3,14 @@
 // DSL-based query definitions for logs timeseries and breakdown.
 
 import { finiteOrZero } from "./format"
-import { compileFnCall, subqueryExpr } from "@maple-dev/effect-clickhouse"
-import * as CH from "@maple-dev/effect-clickhouse/expr"
-import { param } from "@maple-dev/effect-clickhouse"
-import { from, fromUnion, type CHQuery, type ColumnAccessor } from "@maple-dev/effect-clickhouse"
-import type { ColumnDefs } from "@maple-dev/effect-clickhouse/types"
-import * as T from "@maple-dev/effect-clickhouse/types"
-import { unionAll, type CHUnionQuery } from "@maple-dev/effect-clickhouse"
-import { Logs, LogsAggregatesHourly } from "../tables"
+import { compileFnCall, subqueryExpr } from "@maple-dev/effect-orm/clickhouse"
+import * as CH from "@maple-dev/effect-orm/expr"
+import { param } from "@maple-dev/effect-orm/clickhouse"
+import { from, fromUnion, type CHQuery, type ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
+import type { ColumnDefs } from "@maple-dev/effect-orm/clickhouse"
+import * as T from "@maple-dev/effect-orm/clickhouse"
+import { unionAll, type CHUnionQuery } from "@maple-dev/effect-orm/clickhouse"
+import { Logs, LogsAggregatesHourly, orgIdParam } from "../tables"
 import { finalizeTimeseries } from "./series-cap"
 import type { AttributeFilter } from "@maple/domain/query-engine"
 import { deploymentEnvExpr } from "@maple/domain/tinybird/semconv-renames"
@@ -346,7 +346,7 @@ export function logsTimeseriesQuery(opts: LogsTimeseriesOpts): CHQuery<ColumnDef
 				count: CH.sum($.Count),
 			}))
 			.where(($) => [
-				$.OrgId.eq(param.string("orgId")),
+				$.OrgId.eq(orgIdParam),
 				$.Hour.gte(param.dateTimeSeconds("startTime")),
 				// `param.dateTimeString("endTime")` substitutes as a quoted string literal;
 				// `toStartOfHour` only accepts Date/DateTime, so wrap with `toDateTime`.
@@ -369,7 +369,7 @@ export function logsTimeseriesQuery(opts: LogsTimeseriesOpts): CHQuery<ColumnDef
 			count: CH.count(),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			// TimestampTime is the partition/index key; this filter unlocks
 			// partition pruning. Timestamp filter retained for sub-second accuracy.
 			$.TimestampTime.gte(param.dateTimeSeconds("startTime")),
@@ -444,7 +444,7 @@ export function logsBreakdownQuery(opts: LogsBreakdownOpts): CHQuery<ColumnDefs,
 				count: CH.count(),
 			}))
 			.where(($) => [
-				$.OrgId.eq(param.string("orgId")),
+				$.OrgId.eq(orgIdParam),
 				...rawLogsTimeRange($),
 				...serviceSeverityConditions($, opts),
 				opts.minSeverity !== undefined ? $.SeverityNumber.gte(opts.minSeverity) : undefined,
@@ -466,7 +466,7 @@ export function logsBreakdownQuery(opts: LogsBreakdownOpts): CHQuery<ColumnDefs,
 			count: CH.count(),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			...rawLogsTimeRange($),
 			rawLogEdgeCondition(),
 			...serviceSeverityConditions($, opts),
@@ -484,11 +484,7 @@ export function logsBreakdownQuery(opts: LogsBreakdownOpts): CHQuery<ColumnDefs,
 			name: logsBreakdownName($, opts.groupBy),
 			count: CH.sum($.Count),
 		}))
-		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
-			...interiorConditions($.Hour),
-			...mvFacetConditions($, opts),
-		])
+		.where(($) => [$.OrgId.eq(orgIdParam), ...interiorConditions($.Hour), ...mvFacetConditions($, opts)])
 		.groupBy("name")
 
 	const combined = fromUnion(unionAll(rawEdges, mvInterior), "breakdown")
@@ -516,7 +512,7 @@ export function logsCountQuery(opts: LogsQueryOpts): CHQuery<ColumnDefs, LogsCou
 				total: CH.count(),
 			}))
 			.where(($) => [
-				$.OrgId.eq(param.string("orgId")),
+				$.OrgId.eq(orgIdParam),
 				...rawLogsTimeRange($),
 				...serviceSeverityConditions($, opts),
 				opts.minSeverity !== undefined ? $.SeverityNumber.gte(opts.minSeverity) : undefined,
@@ -535,7 +531,7 @@ export function logsCountQuery(opts: LogsQueryOpts): CHQuery<ColumnDefs, LogsCou
 			total: CH.count(),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			...rawLogsTimeRange($),
 			rawLogEdgeCondition(),
 			...serviceSeverityConditions($, opts),
@@ -546,11 +542,7 @@ export function logsCountQuery(opts: LogsQueryOpts): CHQuery<ColumnDefs, LogsCou
 		.select(($) => ({
 			total: CH.sum($.Count),
 		}))
-		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
-			...interiorConditions($.Hour),
-			...mvFacetConditions($, opts),
-		])
+		.where(($) => [$.OrgId.eq(orgIdParam), ...interiorConditions($.Hour), ...mvFacetConditions($, opts)])
 
 	const combined = fromUnion(unionAll(rawEdges, mvInterior), "counts")
 		.select(($) => ({
@@ -608,7 +600,7 @@ export function logsListQuery(opts: LogsListOpts) {
 	const offset = opts.offset ?? 0
 
 	const baseWhere = ($: ColumnAccessor<typeof Logs.columns>): Array<CH.Condition | undefined> => [
-		$.OrgId.eq(param.string("orgId")),
+		$.OrgId.eq(orgIdParam),
 		$.TimestampTime.gte(param.dateTimeSeconds("startTime")),
 		$.TimestampTime.lte(param.dateTimeSeconds("endTime")),
 		$.Timestamp.gte(param.dateTimeString("startTime")),
@@ -710,7 +702,7 @@ export function getLogByKeyQuery(opts: LogByKeyOpts) {
 			resourceAttributes: CH.toJSONString($.ResourceAttributes),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			// TimestampTime is the partition/index key; bounding it unlocks
 			// partition pruning. Timestamp.eq pins the exact sub-second row.
 			$.TimestampTime.gte(param.dateTimeSeconds("startTime")),
@@ -742,7 +734,7 @@ export function errorRateByServiceQuery() {
 			bucketErrorLogs: CH.countIf(CH.inList($.SeverityText, ["ERROR", "FATAL"])),
 			errorRate: CH.lit(0),
 		}))
-		.where(($) => [$.OrgId.eq(param.string("orgId")), ...rawLogsTimeRange($), rawLogEdgeCondition()])
+		.where(($) => [$.OrgId.eq(orgIdParam), ...rawLogsTimeRange($), rawLogEdgeCondition()])
 		.groupBy("serviceName")
 
 	const mvInterior = from(LogsAggregatesHourly)
@@ -752,7 +744,7 @@ export function errorRateByServiceQuery() {
 			bucketErrorLogs: CH.sumIf($.Count, CH.inList($.SeverityText, ["ERROR", "FATAL"])),
 			errorRate: CH.lit(0),
 		}))
-		.where(($) => [$.OrgId.eq(param.string("orgId")), ...interiorConditions($.Hour)])
+		.where(($) => [$.OrgId.eq(orgIdParam), ...interiorConditions($.Hour)])
 		.groupBy("serviceName")
 
 	return fromUnion(unionAll(rawEdges, mvInterior), "rates")
@@ -803,7 +795,7 @@ function logsFacetsQueryFromMv(
 	const baseWhere = (
 		$: ColumnAccessor<typeof LogsAggregatesHourly.columns>,
 	): Array<CH.Condition | undefined> => [
-		$.OrgId.eq(param.string("orgId")),
+		$.OrgId.eq(orgIdParam),
 		$.Hour.gte(param.dateTimeSeconds("startTime")),
 		$.Hour.lte(param.dateTimeSeconds("endTime")),
 		CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),
@@ -866,11 +858,10 @@ function logsFacetsQueryFromMv(
 		deploymentEnv: envQuery,
 		namespace: namespaceQuery,
 	}
-	const branches = facet ? [byFacet[facet]] : [severityQuery, serviceQuery, envQuery, namespaceQuery]
-	return unionAll(...branches)
-		.orderBy(["count", "desc"])
-		.limit(500)
-		.format("JSON")
+	const union = facet
+		? unionAll(byFacet[facet])
+		: unionAll(severityQuery, serviceQuery, envQuery, namespaceQuery)
+	return union.orderBy(["count", "desc"]).limit(500).format("JSON")
 }
 
 function logsFacetsQueryFromRaw(
@@ -878,7 +869,7 @@ function logsFacetsQueryFromRaw(
 	facet?: LogsFacetDimension,
 ): CHUnionQuery<LogsFacetsOutput> {
 	const baseWhere = ($: ColumnAccessor<typeof Logs.columns>): Array<CH.Condition | undefined> => [
-		$.OrgId.eq(param.string("orgId")),
+		$.OrgId.eq(orgIdParam),
 		$.TimestampTime.gte(param.dateTimeSeconds("startTime")),
 		$.TimestampTime.lte(param.dateTimeSeconds("endTime")),
 		$.Timestamp.gte(param.dateTimeString("startTime")),
@@ -943,9 +934,8 @@ function logsFacetsQueryFromRaw(
 		deploymentEnv: envQuery,
 		namespace: namespaceQuery,
 	}
-	const branches = facet ? [byFacet[facet]] : [severityQuery, serviceQuery, envQuery, namespaceQuery]
-	return unionAll(...branches)
-		.orderBy(["count", "desc"])
-		.limit(500)
-		.format("JSON")
+	const union = facet
+		? unionAll(byFacet[facet])
+		: unionAll(severityQuery, serviceQuery, envQuery, namespaceQuery)
+	return union.orderBy(["count", "desc"]).limit(500).format("JSON")
 }

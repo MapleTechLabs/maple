@@ -915,6 +915,9 @@ const annotateWarehouseError = <A, Error extends { readonly _tag: string; readon
 		),
 	)
 
+/** A query `compile` accepts, for helpers generic over its output. */
+type SelectQuery<Output extends Record<string, unknown>> = CH.CHQuery<any, Output> & CH.NeedsSelect<Output>
+
 /**
  * Compile a CHQuery, execute it via the warehouse SQL executor, and return typed rows.
  * The inner WarehouseQueryService.executeSql span carries the full SQL, fingerprint,
@@ -928,7 +931,7 @@ const executeCHQuery = Effect.fnUntraced(function* <
 >(
 	warehouse: QueryEngineWarehouse<T>,
 	tenant: T,
-	query: CH.CHQuery<any, Output> | ((capabilities: WarehouseCapabilities) => CH.CHQuery<any, Output>),
+	query: SelectQuery<Output> | ((capabilities: WarehouseCapabilities) => SelectQuery<Output>),
 	params: Params,
 	context: string,
 	profile: QueryProfileName = "aggregation",
@@ -1396,7 +1399,7 @@ const isMissingTraceFacetsRollup = (error: unknown): boolean => {
  * Only a read that actually included the rollup can be missing it.
  */
 const withTraceFacetsFallback = <A, E, R>(
-	orgId: string,
+	orgId: OrgId,
 	usesRollup: boolean,
 	run: (rawOnly: boolean) => Effect.Effect<A, E, R>,
 ): Effect.Effect<A, E, R> =>
@@ -1752,7 +1755,9 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 						groupByAttributeKey:
 							tracesQuery.groupBy === "attribute" ? opts.groupByAttributeKeys?.[0] : undefined,
 						groupByResourceAttributeKey:
-							tracesQuery.groupBy === "attribute" ? opts.groupByResourceAttributeKey : undefined,
+							tracesQuery.groupBy === "attribute"
+								? opts.groupByResourceAttributeKey
+								: undefined,
 						limit: tracesQuery.limit,
 						apdexThresholdMs:
 							tracesQuery.metric === "apdex" ? tracesQuery.apdexThresholdMs : undefined,

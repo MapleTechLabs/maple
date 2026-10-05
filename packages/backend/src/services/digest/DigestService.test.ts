@@ -139,11 +139,13 @@ const makeHarness = (
 	failing?: ReadonlySet<string>,
 ) => {
 	const sends: string[] = []
+	const messages: Array<{ to: string; html: string; headers: Readonly<Record<string, string>> }> = []
 	const emailStub = Layer.succeed(EmailService, {
 		isConfigured: true,
-		send: (to) =>
+		send: (to, _subject, html, options) =>
 			Effect.sync(() => {
 				sends.push(to)
+				messages.push({ to, html, headers: options?.headers ?? {} })
 			}),
 	})
 	const testDb = createTestDb(createdDbs)
@@ -158,7 +160,7 @@ const makeHarness = (
 		),
 		Layer.provideMerge(base),
 	)
-	return { sends, layer }
+	return { sends, messages, layer }
 }
 
 const seedSub = (overrides: Partial<typeof digestSubscriptions.$inferInsert> & { email: string }) =>
@@ -292,6 +294,51 @@ describe("DigestService.runDigestTick", () => {
 			assert.deepStrictEqual(sends, ["a@example.com"])
 			assert.strictEqual(second.sentCount, 0)
 			assert.strictEqual(second.errorCount, 0)
+		}).pipe(Effect.provide(layer))
+	})
+})
+
+describe("DigestService.unsubscribeByToken", () => {
+	it.effect("each recipient gets their own link, and it opts them out without a session", () => {
+		const { messages, layer } = makeHarness()
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(TICK_MS)
+			const aId = yield* seedSub({ email: "a@example.com" })
+			const bId = yield* seedSub({ email: "b@example.com" })
+
+			const digest = yield* DigestService
+			yield* digest.runDigestTick()
+
+			const toA = messages.find((m) => m.to === "a@example.com")
+			assert.isDefined(toA)
+			const header = toA.headers["List-Unsubscribe"] ?? ""
+			assert.strictEqual(toA.headers["List-Unsubscribe-Post"], "List-Unsubscribe=One-Click")
+			const token = decodeURIComponent(/token=([^>]+)>/.exec(header)?.[1] ?? "")
+			assert.include(toA.html, `/unsubscribe?token=${encodeURIComponent(token)}`)
+			assert.notInclude(
+				messages.find((m) => m.to === "b@example.com")?.html ?? "",
+				encodeURIComponent(token),
+			)
+
+			const result = yield* digest.unsubscribeByToken(token)
+			assert.strictEqual(result.kind, "digest")
+			// Idempotent: a mail client and a human click may both arrive.
+			yield* digest.unsubscribeByToken(token)
+
+			const a = yield* getSub(aId)
+			assert.strictEqual(a.enabled, false)
+			assert.isNotNull(a.optedOutAt)
+			assert.strictEqual(a.webAnalyticsEnabled, true)
+			assert.strictEqual((yield* getSub(bId)).enabled, true)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("rejects a tampered token", () => {
+		const { layer } = makeHarness()
+		return Effect.gen(function* () {
+			const digest = yield* DigestService
+			const error = yield* digest.unsubscribeByToken(`digest.${randomUUID()}.forged`).pipe(Effect.flip)
+			assert.strictEqual(error._tag, "@maple/http/errors/DigestUnsubscribeTokenInvalidError")
 		}).pipe(Effect.provide(layer))
 	})
 })

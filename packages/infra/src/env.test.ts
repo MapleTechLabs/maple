@@ -139,6 +139,17 @@ describe("appUrlsEnv", () => {
 			"https://app.example.test",
 		)
 	})
+
+	it("derives the API origin from the deploy's API host, so email links reach the right region", () => {
+		const env = { MAPLE_API_BASE_URL: "https://api.example.test" }
+		// A deploy's own API host wins over the provider, like MAPLE_ENVIRONMENT.
+		expect(run(appUrlsEnv({ api: "api.eu.maple.dev" }), env).MAPLE_API_BASE_URL).toBe(
+			"https://api.eu.maple.dev",
+		)
+		// Without a host the provider may override, else production's.
+		expect(run(appUrlsEnv({}), env).MAPLE_API_BASE_URL).toBe("https://api.example.test")
+		expect(run(appUrlsEnv({}), {}).MAPLE_API_BASE_URL).toBe("https://api.maple.dev")
+	})
 })
 
 describe("selfObservabilityEnv", () => {

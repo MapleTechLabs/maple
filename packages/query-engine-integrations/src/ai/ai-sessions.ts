@@ -121,9 +121,9 @@
 // and inherits `org` scope from it.
 
 import { Schema } from "effect"
-import * as CH from "@maple-dev/effect-clickhouse/expr"
-import * as T from "@maple-dev/effect-clickhouse/types"
-import { compile } from "@maple-dev/effect-clickhouse/sql"
+import * as CH from "@maple-dev/effect-orm/expr"
+import * as T from "@maple-dev/effect-orm/clickhouse"
+import { compile } from "@maple-dev/effect-orm/sql"
 import {
 	compileFnCall,
 	from,
@@ -135,8 +135,8 @@ import {
 	type CHUnionQuery,
 	type ColumnAccessor,
 	type CompiledQueryRowSchema,
-} from "@maple-dev/effect-clickhouse"
-import { AiTraceIndex, TraceDetailSpans, Traces } from "@maple/query-engine/ch/tables"
+} from "@maple-dev/effect-orm/clickhouse"
+import { AiTraceIndex, TraceDetailSpans, Traces, orgIdParam } from "@maple/query-engine/ch/tables"
 import { CHNumber } from "@maple/query-engine/ch/schema"
 import {
 	AI_SESSION_SPANS_MAX_SPANS,
@@ -303,7 +303,7 @@ const deepestFailureCount = (failedSpans: string, kind: "tool" | "turn"): CH.Exp
  *
  * The predicate is built from the lambda's key parameter, so it can use every
  * condition the DSL has (`in_`, `like`, `or`, …); values are not inspected.
- * Lives here until `@maple-dev/effect-clickhouse` ships a `mapFilter`.
+ * Lives here until `@maple-dev/effect-orm` ships a `mapFilter`.
  */
 const mapFilterKeys = (
 	mapExpr: CH.Expr<Record<string, string>>,
@@ -437,6 +437,12 @@ export interface AiSessionDetailsOpts extends AiSessionFilterOpts {
  *  (`startTime`/`endTime`) or the page's (`fanOutStart`/`fanOutEnd`). */
 type IndexBounds = "window" | "page"
 
+/** The param names of each pair of bounds, so a read's params name only its own pair. */
+const boundParams = {
+	window: { start: "startTime", end: "endTime" },
+	page: { start: "fanOutStart", end: "fanOutEnd" },
+} as const
+
 /** What the index cannot answer about a session: the facts of its traces'
  *  other spans. Each replaces the page row's agent-only figure of the same name. */
 export interface AiSessionDetailsOutput {
@@ -535,9 +541,9 @@ const traceRankColumns = ($: IndexColumns) => ({
 /** The agent traces of the window (or of a ranked page's bounds, and then of
  *  its sessions alone), one row each, with whatever `select` measures — the
  *  rows and the filters `indexTraces` documents. */
-const indexTracesOf = <Row extends { readonly traceId: CH.Expr<string> }>(
+const indexTracesOf = <Bounds extends IndexBounds, Row extends { readonly traceId: CH.Expr<string> }>(
 	opts: AiSessionFilterOpts,
-	bounds: IndexBounds,
+	bounds: Bounds,
 	sessionIds: readonly string[] | undefined,
 	select: ($: IndexColumns) => Row,
 ) => {
@@ -547,9 +553,9 @@ const indexTracesOf = <Row extends { readonly traceId: CH.Expr<string> }>(
 	return from(AiTraceIndex)
 		.select(select)
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
-			$.Timestamp.gte(param.dateTimeString(bounds === "window" ? "startTime" : "fanOutStart")),
-			$.Timestamp.lte(param.dateTimeString(bounds === "window" ? "endTime" : "fanOutEnd")),
+			$.OrgId.eq(orgIdParam),
+			$.Timestamp.gte(param.dateTimeString(boundParams[bounds].start)),
+			$.Timestamp.lte(param.dateTimeString(boundParams[bounds].end)),
 			// A ranked page's rows are the window's: `fanOutEnd` is where the
 			// page's last span ENDED, and a span that started past the window
 			// but before that is one the ranking never counted.
@@ -575,7 +581,11 @@ const indexTracesOf = <Row extends { readonly traceId: CH.Expr<string> }>(
 		])
 }
 
-const indexTraces = (opts: AiSessionFilterOpts, bounds: IndexBounds, sessionIds?: readonly string[]) =>
+const indexTraces = <Bounds extends IndexBounds>(
+	opts: AiSessionFilterOpts,
+	bounds: Bounds,
+	sessionIds?: readonly string[],
+) =>
 	indexTracesOf(opts, bounds, sessionIds, ($) => {
 		// Ranks the trace's spans for the agent-name `argMin`: a span that
 		// names an agent sorts at its own timestamp, one that does not sorts
@@ -691,8 +701,12 @@ const sessionRankColumns = ($: {
  * netting reads — the session level of the page and of the distributions,
  * so a session measures the same in the row and in the histogram above it.
  */
-const indexSessions = (opts: AiSessionFilterOpts, sessionIds?: readonly string[]) =>
-	fromQuery(indexTraces(opts, sessionIds ? "page" : "window", sessionIds), "index_traces")
+const indexSessions = <Bounds extends IndexBounds>(
+	opts: AiSessionFilterOpts,
+	bounds: Bounds,
+	sessionIds?: readonly string[],
+) =>
+	fromQuery(indexTraces(opts, bounds, sessionIds), "index_traces")
 		.select(($) => ({
 			...sessionRankColumns($),
 			// Across traces the same ordering resolves the session's vendor: its
@@ -880,9 +894,9 @@ export function aiSessionPageQuery(opts: AiSessionPageOpts = {}) {
 	}
 	// A page already ranked is read as it is: its sessions passed the filters
 	// and the cut when `aiSessionRankQuery` made them.
-	const sessions = opts.sessionIds
-		? indexSessions(opts, opts.sessionIds)
-		: indexSessions(opts).having(sessionFilters)
+	const bounds: IndexBounds = opts.sessionIds ? "page" : "window"
+	const indexed = indexSessions(opts, bounds, opts.sessionIds)
+	const sessions = opts.sessionIds ? indexed : indexed.having(sessionFilters)
 	// A String order, and a correct one: the literal is fixed-width
 	// `YYYY-MM-DD hh:mm:ss.nnnnnnnnn`, so it sorts as the instant does.
 	const cutsOnSession = !opts.sessionIds && ranksOnSession(order)
@@ -1016,7 +1030,7 @@ export function aiSessionDetailsQuery(opts: AiSessionDetailsOpts) {
 			}
 		})
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.Timestamp.gte(param.dateTimeString("spansStart")),
 			$.Timestamp.lte(param.dateTimeString("spansEnd")),
 			inSubquery($.TraceId, pageTraceIds),
@@ -1207,7 +1221,7 @@ export function aiSessionFacetsQuery(): CHUnionQuery<AiSessionFacetsOutput> {
 			.where(($) => [
 				// Every UNION ALL branch reads a table, so every branch carries the org
 				// predicate itself — see this file's header.
-				$.OrgId.eq(param.string("orgId")),
+				$.OrgId.eq(orgIdParam),
 				$.Timestamp.gte(param.dateTimeString("startTime")),
 				$.Timestamp.lte(param.dateTimeString("endTime")),
 			])
@@ -1295,7 +1309,7 @@ const DISTRIBUTION_BUCKET_FLOORS = {
  */
 export function aiSessionDistributionsQuery() {
 	// The page's netting and sums, less every column the histograms do not read.
-	const netted = fromQuery(indexSessions({}), "window_sessions").select(($) => ({
+	const netted = fromQuery(indexSessions({}, "window"), "window_sessions").select(($) => ({
 		agentDurationMs: $.agentDurationMs,
 		toolCalls: $.toolCalls,
 		netted: nettedReportersExpr("reporters"),
@@ -1371,7 +1385,7 @@ export function aiSessionWindowQuery() {
 			spanCount: CH.count(),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			// Same presence guard as `aiSessionSpansQuery`, for the same reason: a
 			// missing Map key reads back as `''`, so equality alone would resolve a
 			// blank id to the bounds of every span in the org that lacks the key.
@@ -1401,7 +1415,7 @@ export function aiTraceWindowQuery() {
 			endTime: CH.toString_(CH.intervalAdd(CH.max_($.Timestamp), WINDOW_PAD_SECONDS)),
 			spanCount: CH.count(),
 		}))
-		.where(($) => [$.OrgId.eq(param.string("orgId")), $.TraceId.eq(param.string("traceId"))])
+		.where(($) => [$.OrgId.eq(orgIdParam), $.TraceId.eq(param.string("traceId"))])
 		.format("JSON")
 }
 
@@ -1527,7 +1541,7 @@ export function aiSessionSpansQuery(opts: AiSessionSpansOpts = {}) {
 		from(TraceDetailSpans)
 			.select(spanProjection)
 			.where(($) => [
-				$.OrgId.eq(param.string("orgId")),
+				$.OrgId.eq(orgIdParam),
 				$.Timestamp.gte(param.dateTimeString("startTime")),
 				$.Timestamp.lte(param.dateTimeString("endTime")),
 				inSubquery($.TraceId, sessionTraceIds),
@@ -1552,7 +1566,7 @@ const sessionTraceIdsSubquery = () =>
 	from(Traces)
 		.select(($) => ({ TraceId: $.TraceId }))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.Timestamp.gte(param.dateTimeString("startTime")),
 			$.Timestamp.lte(param.dateTimeString("endTime")),
 			// The presence guard is what stops an empty `sessionId` param from
@@ -1600,7 +1614,7 @@ export function aiTraceSpansQuery(opts: AiTraceSpansOpts = {}) {
 	return from(TraceDetailSpans)
 		.select(spanProjection)
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.Timestamp.gte(param.dateTimeString("startTime")),
 			$.Timestamp.lte(param.dateTimeString("endTime")),
 			opts.traceIds === undefined
@@ -1890,7 +1904,7 @@ export function aiSessionSummaryQuery() {
 	return from(TraceDetailSpans)
 		.select(summaryProjection)
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.Timestamp.gte(param.dateTimeString("startTime")),
 			$.Timestamp.lte(param.dateTimeString("endTime")),
 			inSubquery($.TraceId, sessionTraceIdsSubquery()),
@@ -1906,7 +1920,7 @@ export function aiTraceSummaryQuery() {
 	return from(TraceDetailSpans)
 		.select(summaryProjection)
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.Timestamp.gte(param.dateTimeString("startTime")),
 			$.Timestamp.lte(param.dateTimeString("endTime")),
 			$.TraceId.eq(param.string("traceId")),
@@ -1922,7 +1936,7 @@ export function aiSessionTotalsQuery() {
 	return from(TraceDetailSpans)
 		.select(totalsProjection)
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.Timestamp.gte(param.dateTimeString("startTime")),
 			$.Timestamp.lte(param.dateTimeString("endTime")),
 			inSubquery($.TraceId, sessionTraceIdsSubquery()),
@@ -1935,7 +1949,7 @@ export function aiTraceTotalsQuery() {
 	return from(TraceDetailSpans)
 		.select(totalsProjection)
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.Timestamp.gte(param.dateTimeString("startTime")),
 			$.Timestamp.lte(param.dateTimeString("endTime")),
 			$.TraceId.eq(param.string("traceId")),

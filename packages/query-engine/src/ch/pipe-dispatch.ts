@@ -15,10 +15,16 @@
 import type { TracesMetric, AttributeFilter, MetricType } from "@maple/domain/query-engine"
 import { DEFAULT_ERROR_NAMESPACE_PREFIX, UNEXPECTED_IDENTITY_MARKERS } from "./queries/errors"
 import type { OrgId } from "@maple/domain"
-import { compile, compileUnion, type CompiledQuery } from "@maple-dev/effect-clickhouse"
+import {
+	compile,
+	compileUnion,
+	type CHQuery,
+	type CompiledQuery,
+	type NeedsSelect,
+} from "@maple-dev/effect-orm/clickhouse"
 import { rawCompiledQuery } from "./raw-sql"
 import { Array as A, Effect, Match, Result, Schema } from "effect"
-import type { QueryBuilderError } from "@maple-dev/effect-clickhouse"
+import type { QueryBuilderError } from "@maple-dev/effect-orm/clickhouse"
 import {
 	attributeIndexMode,
 	baselineWarehouseCapabilities,
@@ -72,7 +78,8 @@ import {
 	type TracesTimeseriesOpts,
 } from "./queries/traces"
 
-type CompileTarget = Parameters<typeof compile>[0]
+/** A query `compile` accepts, whatever it selects. */
+type CompileTarget<Output extends Record<string, unknown>> = CHQuery<any, Output> & NeedsSelect<Output>
 
 export type PipeCompiledQuery = CompiledQuery<unknown>
 
@@ -114,7 +121,7 @@ export function compilePipeQuery(
 	params: PipeParams,
 	capabilities: WarehouseCapabilities = baselineWarehouseCapabilities(),
 ): PipeCompiled | undefined {
-	const orgId = String(params.org_id)
+	const orgId = params.org_id
 	const startTime = String(params.start_time ?? "2023-01-01 00:00:00")
 	const endTime = String(params.end_time ?? "2099-12-31 23:59:59")
 	const str = (key: string) => (params[key] != null ? String(params[key]) : undefined)
@@ -147,9 +154,10 @@ export function compilePipeQuery(
 	// up: a row schema decodes bytes off a socket, so it cannot ask for a service,
 	// and a struct is service-free exactly when its fields are.
 	const compileCompare = <
+		Output extends Record<string, unknown>,
 		Fields extends Schema.Struct.Fields & Record<PropertyKey, Schema.Codec<any, any, never, never>>,
 	>(
-		query: CompileTarget,
+		query: CompileTarget<Output>,
 		ranges: {
 			currentStart: string
 			currentEnd: string
@@ -624,12 +632,15 @@ export function compilePipeQuery(
 				const serviceName = str("service_name")
 				if (serviceName) {
 					return eraseType(
-						compile(serviceScopedAttributeKeysQuery({ scope: "span", limit: int("limit", 200) }), {
-							orgId,
-							startTime,
-							endTime,
-							serviceName,
-						}),
+						compile(
+							serviceScopedAttributeKeysQuery({ scope: "span", limit: int("limit", 200) }),
+							{
+								orgId,
+								startTime,
+								endTime,
+								serviceName,
+							},
+						),
 					)
 				}
 				return eraseType(
@@ -645,12 +656,15 @@ export function compilePipeQuery(
 				const serviceName = str("service_name")
 				if (serviceName) {
 					return eraseType(
-						compile(serviceScopedAttributeKeysQuery({ scope: "resource", limit: int("limit", 200) }), {
-							orgId,
-							startTime,
-							endTime,
-							serviceName,
-						}),
+						compile(
+							serviceScopedAttributeKeysQuery({ scope: "resource", limit: int("limit", 200) }),
+							{
+								orgId,
+								startTime,
+								endTime,
+								serviceName,
+							},
+						),
 					)
 				}
 				return eraseType(

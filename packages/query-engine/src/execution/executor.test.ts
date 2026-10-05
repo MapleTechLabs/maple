@@ -60,7 +60,7 @@ const chdbConfig: ResolvedWarehouseConfig = {
 // listRuleChecksQuery declares .route("ingest") at its definition —
 // alert_checks only exists in the managed ingest pipeline.
 const compiled = compileUnsafe(listRuleChecksQuery({ limit: 1 }), {
-	orgId: "org_test",
+	orgId: OrgId.make("org_test"),
 	ruleId: "rule_test",
 })
 const _ingestRouteIsPartOfTheCompiledType: "ingest" = compiled.route

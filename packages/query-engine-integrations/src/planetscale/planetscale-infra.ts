@@ -12,9 +12,9 @@
 // Scoping to a branch is what makes the chart mean anything.
 
 import { finiteOrZero } from "@maple/query-engine/ch/format"
-import * as CH from "@maple-dev/effect-clickhouse/expr"
-import { from, fromQuery, param } from "@maple-dev/effect-clickhouse"
-import { MetricsGauge } from "@maple/query-engine/ch/tables"
+import * as CH from "@maple-dev/effect-orm/expr"
+import { from, fromQuery, param } from "@maple-dev/effect-orm/clickhouse"
+import { MetricsGauge, orgIdParam } from "@maple/query-engine/ch/tables"
 import {
 	CONNECTION_METRIC_NAMES,
 	CPU_METRIC_NAMES,
@@ -94,7 +94,7 @@ const bucketOuter = (inner: ReturnType<typeof timeseriesInner>) =>
 export function planetscaleInfraTimeseriesSQL() {
 	const inner = timeseriesInner()
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.MetricName.in_(...ALL_METRIC_NAMES),
 			CH.coalesce(
 				CH.nullIf($.Attributes.get("planetscale_database_name"), ""),
@@ -112,7 +112,7 @@ export function planetscaleInfraTimeseriesSQL() {
 export function planetscaleBranchInfraTimeseriesSQL() {
 	const inner = timeseriesInner()
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.MetricName.in_(...ALL_METRIC_NAMES),
 			CH.coalesce(
 				CH.nullIf($.Attributes.get("planetscale_database_name"), ""),

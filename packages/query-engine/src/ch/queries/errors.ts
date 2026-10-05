@@ -4,15 +4,21 @@
 
 import { finiteOrZero } from "./format"
 import { edgeCondition, interiorConditions } from "./rollup-splice"
-import * as CH from "@maple-dev/effect-clickhouse/expr"
+import * as CH from "@maple-dev/effect-orm/expr"
 // From the root, not `/expr`: these overloads take a `CHQuery`, keeping the
 // subquery's params, table names and column types checked.
-import { exists, inSubquery } from "@maple-dev/effect-clickhouse"
-import { param } from "@maple-dev/effect-clickhouse"
-import { from, fromQuery, fromUnion, type CHQuery, type ColumnAccessor } from "@maple-dev/effect-clickhouse"
-import type { ColumnDefs } from "@maple-dev/effect-clickhouse/types"
-import * as T from "@maple-dev/effect-clickhouse/types"
-import { unionAll, type CHUnionQuery } from "@maple-dev/effect-clickhouse"
+import { exists, inSubquery } from "@maple-dev/effect-orm/clickhouse"
+import { param } from "@maple-dev/effect-orm/clickhouse"
+import {
+	from,
+	fromQuery,
+	fromUnion,
+	type CHQuery,
+	type ColumnAccessor,
+} from "@maple-dev/effect-orm/clickhouse"
+import type { ColumnDefs } from "@maple-dev/effect-orm/clickhouse"
+import * as T from "@maple-dev/effect-orm/clickhouse"
+import { unionAll, type CHUnionQuery } from "@maple-dev/effect-orm/clickhouse"
 import type { SpanId, TraceId } from "@maple/domain"
 import { Schema } from "effect"
 import {
@@ -24,6 +30,7 @@ import {
 	TraceFacetsHourly,
 	TraceListMv,
 	Traces,
+	orgIdParam,
 } from "../tables"
 import {
 	buildProjectedMapExpr,
@@ -203,7 +210,7 @@ export function errorsByTypeQuery(opts: ErrorsByTypeOpts) {
 			lastSeen: CH.max_($.Timestamp),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.Timestamp.gte(param.dateTimeSeconds("startTime")),
 			$.Timestamp.lte(param.dateTimeSeconds("endTime")),
 			CH.whenTrue(!!opts.rootOnly, () => $.ParentSpanId.eq("")),
@@ -245,7 +252,7 @@ export function errorsTimeseriesQuery(opts: ErrorsTimeseriesOpts) {
 			count: CH.count(),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			fingerprintHashEq($.FingerprintHash, opts.fingerprintHash),
 			$.Timestamp.gte(param.dateTimeSeconds("startTime")),
 			$.Timestamp.lte(param.dateTimeSeconds("endTime")),
@@ -288,7 +295,7 @@ export function errorsSparkQuery(opts: ErrorsSparkOpts) {
 			count: CH.count(),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			fingerprintHashIn($.FingerprintHash, opts.fingerprintHashes),
 			$.Timestamp.gte(param.dateTimeSeconds("startTime")),
 			$.Timestamp.lte(param.dateTimeSeconds("endTime")),
@@ -429,7 +436,7 @@ export function spanHierarchyQuery(opts: SpanHierarchyOpts) {
 			})
 			.where(($) => [
 				$.TraceId.eq(opts.traceId),
-				$.OrgId.eq(param.string("orgId")),
+				$.OrgId.eq(orgIdParam),
 				CH.whenTrue(!!opts.narrowByTime, () => $.Timestamp.gte(param.dateTimeString("startTime"))),
 				CH.whenTrue(!!opts.narrowByTime, () => $.Timestamp.lte(param.dateTimeString("endTime"))),
 			])
@@ -498,7 +505,7 @@ export function spanDetailQuery(opts: SpanDetailOpts) {
 		.where(($) => [
 			$.TraceId.eq(opts.traceId),
 			$.SpanId.eq(opts.spanId),
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			CH.whenTrue(!!opts.narrowByTime, () => $.Timestamp.gte(param.dateTimeString("startTime"))),
 			CH.whenTrue(!!opts.narrowByTime, () => $.Timestamp.lte(param.dateTimeString("endTime"))),
 		])
@@ -526,16 +533,17 @@ export interface TraceTimeProbeOutput {
  * (pruning to the last few partitions) and only fall back to the unbounded
  * probe when the trace is older than that window.
  */
-export function traceTimeProbeQuery(opts: { traceId: string; narrowByTime?: boolean }) {
+export function traceTimeProbeQuery(opts: { traceId: string }) {
 	return from(TraceDetailSpans)
 		.select(($) => ({ timestamp: $.Timestamp }))
-		.where(($) => [
-			$.TraceId.eq(opts.traceId),
-			$.OrgId.eq(param.string("orgId")),
-			CH.whenTrue(!!opts.narrowByTime, () => $.Timestamp.gte(param.dateTimeString("startTime"))),
-		])
+		.where(($) => [$.TraceId.eq(opts.traceId), $.OrgId.eq(orgIdParam)])
 		.limit(1)
 		.format("JSON")
+}
+
+/** {@link traceTimeProbeQuery} bounded below by the `startTime` param. */
+export function recentTraceTimeProbeQuery(opts: { traceId: string }) {
+	return traceTimeProbeQuery(opts).where(($) => [$.Timestamp.gte(param.dateTimeString("startTime"))])
 }
 
 // Traces duration stats and facets
@@ -640,7 +648,7 @@ export function canUseTraceFacetsRollup(
 /** `trace_list_mv` rows in the window, narrowed to the partial end hours when the rollup has the rest. */
 function traceListWindowConditions($: ColumnAccessor<typeof TraceListMv.columns>, opts: TracesFacetsOpts) {
 	return [
-		$.OrgId.eq(param.string("orgId")),
+		$.OrgId.eq(orgIdParam),
 		$.Timestamp.gte(param.dateTimeSeconds("startTime")),
 		$.Timestamp.lte(param.dateTimeSeconds("endTime")),
 		...traceFacetDimensionConditions($, opts),
@@ -654,20 +662,7 @@ function traceFacetsHourlyInteriorConditions(
 	$: ColumnAccessor<typeof TraceFacetsHourly.columns>,
 	opts: TracesDurationStatsOpts,
 ) {
-	return [
-		$.OrgId.eq(param.string("orgId")),
-		...interiorConditions($.Hour),
-		...traceFacetDimensionConditions($, opts),
-	]
-}
-
-/** The raw tier, plus the hourly interior when the rollup can answer it. */
-function traceFacetTiers<Output extends Record<string, unknown>>(
-	opts: TracesFacetsOpts,
-	raw: CHQuery<ColumnDefs, Output, {}>,
-	hourly: () => CHQuery<ColumnDefs, Output, {}>,
-): CHUnionQuery<Output> {
-	return canUseTraceFacetsRollup(opts) ? unionAll(raw, hourly()) : unionAll(raw)
+	return [$.OrgId.eq(orgIdParam), ...interiorConditions($.Hour), ...traceFacetDimensionConditions($, opts)]
 }
 
 export interface TracesDurationStatsOutput {
@@ -705,7 +700,10 @@ export function tracesDurationStatsQuery(
 			.where(($) => traceFacetsHourlyInteriorConditions($, opts))
 
 	const quantiles = "quantilesTDigestMerge(0.5, 0.95)(durationQuantiles)"
-	return fromUnion(traceFacetTiers(opts, raw, hourly), "duration_tiers")
+	return fromUnion(
+		canUseTraceFacetsRollup(opts) ? unionAll(raw, hourly()) : unionAll(raw),
+		"duration_tiers",
+	)
 		.select(() => ({
 			minDurationMs: CH.rawExpr("minIf(durationMin, traceCount > 0) / 1000000", T.float64),
 			maxDurationMs: CH.rawExpr("maxIf(durationMax, traceCount > 0) / 1000000", T.float64),
@@ -741,7 +739,8 @@ export type TracesFacetsOutput = FacetOutput
 /** The String-typed columns of a table — a facet name is one of those, and a
  *  facet over a `UInt64` would be a number in a field the wire calls a string. */
 type StringColumn<Cols extends ColumnDefs> = {
-	[K in keyof Cols & string]: Cols[K] extends T.CHString ? K : never
+	// Both ways, so a branded id (`OrgId`) is not a plain string column.
+	[K in keyof Cols & string]: Cols[K] extends T.CHString ? (T.CHString extends Cols[K] ? K : never) : never
 }[keyof Cols & string]
 
 export function tracesFacetsQuery(opts: TracesFacetsOpts): CHUnionQuery<TracesFacetsOutput> {
@@ -765,7 +764,7 @@ export function tracesFacetsQuery(opts: TracesFacetsOpts): CHUnionQuery<TracesFa
 						.where(($) => [
 							CH.dynamicColumn("t_attr.TraceId").eq(CH.outerRef("TraceId")),
 							// Typed so the compiler sees the subquery's tenant filter.
-							$.OrgId.eq(param.string("orgId")),
+							$.OrgId.eq(orgIdParam),
 							CH.dynamicColumn<string>("t_attr.Timestamp").gte(
 								param.dateTimeString("startTime"),
 							),
@@ -791,7 +790,7 @@ export function tracesFacetsQuery(opts: TracesFacetsOpts): CHUnionQuery<TracesFa
 						.where(($) => [
 							CH.dynamicColumn("t_res.TraceId").eq(CH.outerRef("TraceId")),
 							// Typed so the compiler sees the subquery's tenant filter.
-							$.OrgId.eq(param.string("orgId")),
+							$.OrgId.eq(orgIdParam),
 							CH.dynamicColumn<string>("t_res.Timestamp").gte(
 								param.dateTimeString("startTime"),
 							),
@@ -826,7 +825,10 @@ export function tracesFacetsQuery(opts: TracesFacetsOpts): CHUnionQuery<TracesFa
 					CH.whenTrue(dropEmpty, () => $[colName].neq("")),
 				])
 				.groupBy("name")
-		return fromUnion(traceFacetTiers(opts, raw, hourly), `${facetType}_tiers`)
+		return fromUnion(
+			canUseTraceFacetsRollup(opts) ? unionAll(raw, hourly()) : unionAll(raw),
+			`${facetType}_tiers`,
+		)
 			.select(($) => ({
 				name: $.name,
 				count: CH.sum($.count),
@@ -845,7 +847,10 @@ export function tracesFacetsQuery(opts: TracesFacetsOpts): CHUnionQuery<TracesFa
 			from(TraceFacetsHourly)
 				.select(($) => ({ count: CH.sum($.TraceCount) }))
 				.where(($) => [...traceFacetsHourlyInteriorConditions($, opts), $.HasError.eq(1)])
-		return fromUnion(traceFacetTiers(opts, raw, hourly), "errorCount_tiers").select(($) => ({
+		return fromUnion(
+			canUseTraceFacetsRollup(opts) ? unionAll(raw, hourly()) : unionAll(raw),
+			"errorCount_tiers",
+		).select(($) => ({
 			name: CH.lit("error"),
 			count: CH.sum($.count),
 			facetType: CH.lit("errorCount"),
@@ -890,7 +895,7 @@ export function errorsFacetsQuery(opts: ErrorsFacetsOpts): CHUnionQuery<ErrorsFa
 	const baseWhere =
 		(except: ErrorsFilterDimension) =>
 		($: ColumnAccessor<typeof table.columns>): Array<CH.Condition | undefined> => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.Timestamp.gte(param.dateTimeSeconds("startTime")),
 			$.Timestamp.lte(param.dateTimeSeconds("endTime")),
 			CH.whenTrue(!!opts.rootOnly, () => $.ParentSpanId.eq("")),
@@ -984,7 +989,7 @@ export function errorsSummaryQuery(opts: ErrorsSummaryOpts) {
 			affectedTracesCount: CH.uniq($.TraceId),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.Timestamp.gte(param.dateTimeSeconds("startTime")),
 			$.Timestamp.lte(param.dateTimeSeconds("endTime")),
 			CH.whenTrue(!!opts.rootOnly, () => $.ParentSpanId.eq("")),
@@ -1015,7 +1020,7 @@ export function errorsSummaryQuery(opts: ErrorsSummaryOpts) {
 					totalSpans: CH.count(),
 				}))
 				.where(($) => [
-					$.OrgId.eq(param.string("orgId")),
+					$.OrgId.eq(orgIdParam),
 					$.Timestamp.gte(param.dateTimeSeconds("startTime")),
 					$.Timestamp.lte(param.dateTimeSeconds("endTime")),
 					opts.services?.length ? CH.inList($.ServiceName, opts.services) : undefined,
@@ -1032,7 +1037,7 @@ export function errorsSummaryQuery(opts: ErrorsSummaryOpts) {
 					totalSpans: CH.count(),
 				}))
 				.where(($) => [
-					$.OrgId.eq(param.string("orgId")),
+					$.OrgId.eq(orgIdParam),
 					$.Timestamp.gte(param.dateTimeString("startTime")),
 					$.Timestamp.lte(param.dateTimeString("endTime")),
 					opts.services?.length ? CH.inList($.ServiceName, opts.services) : undefined,
@@ -1049,7 +1054,7 @@ export function errorsSummaryQuery(opts: ErrorsSummaryOpts) {
 			bucketSpans: CH.sum($.TraceCount),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			...interiorConditions($.Hour),
 			opts.services?.length ? CH.inList($.ServiceName, opts.services) : undefined,
 		])
@@ -1058,7 +1063,7 @@ export function errorsSummaryQuery(opts: ErrorsSummaryOpts) {
 			bucketSpans: CH.count(),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.Timestamp.gte(param.dateTimeString("startTime")),
 			$.Timestamp.lte(param.dateTimeString("endTime")),
 			edgeCondition("Timestamp"),
@@ -1112,7 +1117,7 @@ export function errorIssuesQuery(opts: ErrorIssuesOpts) {
 			lastSeen: CH.max_($.Timestamp),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.Timestamp.gte(param.dateTimeSeconds("startTime")),
 			$.Timestamp.lte(param.dateTimeSeconds("endTime")),
 			opts.services?.length ? CH.inList($.ServiceName, opts.services) : undefined,
@@ -1150,7 +1155,7 @@ export function errorTickIssuesQuery() {
 			lastSeen: CH.max_($.LastSeen),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.Minute.gte(param.dateTimeSeconds("startTime")),
 			$.Minute.lt(param.dateTimeSeconds("endTime")),
 		])
@@ -1180,7 +1185,7 @@ export function errorTickBootstrapIssuesQuery() {
 			lastSeen: CH.max_($.Timestamp),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.Timestamp.gte(param.dateTimeSeconds("startTime")),
 			$.Timestamp.lt(param.dateTimeSeconds("endTime")),
 		])
@@ -1213,7 +1218,7 @@ export function errorFingerprintsQuery(opts: ErrorFingerprintsOpts) {
 			fingerprintHash: CH.toString_($.FingerprintHash),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.Timestamp.gte(param.dateTimeSeconds("startTime")),
 			$.Timestamp.lte(param.dateTimeSeconds("endTime")),
 			opts.services?.length ? CH.inList($.ServiceName, opts.services) : undefined,
@@ -1238,7 +1243,7 @@ export function errorIssueTimeseriesQuery() {
 			count: CH.count(),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.FingerprintHash.eq(CH.toUInt64(param.string("fingerprintHash"))),
 			$.Timestamp.gte(param.dateTimeSeconds("startTime")),
 			$.Timestamp.lte(param.dateTimeSeconds("endTime")),
@@ -1272,7 +1277,7 @@ export function errorIssueSampleTracesQuery(opts: { limit?: number }) {
 			durationMicros: CH.intDiv($.Duration, 1000),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.FingerprintHash.eq(CH.toUInt64(param.string("fingerprintHash"))),
 			$.Timestamp.gte(param.dateTimeSeconds("startTime")),
 			$.Timestamp.lte(param.dateTimeSeconds("endTime")),
@@ -1310,7 +1315,7 @@ export function errorIssueVersionsSinceQuery(opts: { limit?: number } = {}) {
 				count: CH.count(),
 			}))
 			.where(($) => [
-				$.OrgId.eq(param.string("orgId")),
+				$.OrgId.eq(orgIdParam),
 				$.FingerprintHash.eq(CH.toUInt64(param.string("fingerprintHash"))),
 				$.Timestamp.gte(param.dateTimeSeconds("startTime")),
 				$.Timestamp.lte(param.dateTimeSeconds("endTime")),
@@ -1332,7 +1337,7 @@ export function errorIssueEnvironmentsQuery(opts: { limit?: number } = {}) {
 			count: CH.count(),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.FingerprintHash.eq(CH.toUInt64(param.string("fingerprintHash"))),
 			$.Timestamp.gte(param.dateTimeSeconds("startTime")),
 			$.Timestamp.lte(param.dateTimeSeconds("endTime")),
@@ -1399,7 +1404,7 @@ export function errorDetailTracesQuery(opts: ErrorDetailTracesOpts) {
 			occurrenceExceptionMessage: CH.argMax($.ExceptionMessage, $.Timestamp),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			fingerprintHashEq($.FingerprintHash, opts.fingerprintHash),
 			$.Timestamp.gte(param.dateTimeSeconds("startTime")),
 			$.Timestamp.lte(param.dateTimeSeconds("endTime")),
@@ -1450,7 +1455,7 @@ export function errorDetailTracesQuery(opts: ErrorDetailTracesOpts) {
 			}
 		})
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			inSubquery(
 				$.TraceId,
 				fromQuery(occurrences, "matching_traces").select(($$) => ({ TraceId: $$.TraceId })),
@@ -1486,7 +1491,7 @@ export function errorFingerprintSummaryQuery(opts: ErrorFingerprintSummaryOpts) 
 			noExceptionCount: CH.countIf($.ExceptionType.eq("")),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			fingerprintHashEq($.FingerprintHash, opts.fingerprintHash),
 			$.Timestamp.gte(param.dateTimeSeconds("startTime")),
 			$.Timestamp.lte(param.dateTimeSeconds("endTime")),
@@ -1515,7 +1520,7 @@ export function errorCooccurringFingerprintsQuery(opts: ErrorCooccurringFingerpr
 			count: CH.count(),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.Timestamp.gte(param.dateTimeSeconds("startTime")),
 			$.Timestamp.lte(param.dateTimeSeconds("endTime")),
 			opts.traceIds.length ? CH.inList($.TraceId, opts.traceIds) : CH.rawCond("1 = 0"),
@@ -1538,7 +1543,7 @@ export function errorFingerprintOccurrencesQuery(opts: { fingerprintHashes: read
 			spanId: CH.argMax($.SpanId, $.Timestamp),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			fingerprintHashIn($.FingerprintHash, opts.fingerprintHashes),
 			$.Timestamp.gte(param.dateTimeSeconds("startTime")),
 			$.Timestamp.lte(param.dateTimeSeconds("endTime")),
@@ -1560,7 +1565,7 @@ export function errorOccurrenceSpansQuery(opts: { traceIds: readonly string[]; s
 			),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			opts.traceIds.length ? CH.inList($.TraceId, opts.traceIds) : CH.rawCond("1 = 0"),
 			opts.spanIds.length ? CH.inList($.SpanId, opts.spanIds) : CH.rawCond("1 = 0"),
 			$.Timestamp.gte(param.dateTimeString("startTime")),
@@ -1582,7 +1587,7 @@ export function errorsWindowTotalsQuery(opts: Omit<ErrorsByTypeOpts, "limit" | "
 			noExceptionCount: CH.countIf($.ExceptionType.eq("")),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.Timestamp.gte(param.dateTimeSeconds("startTime")),
 			$.Timestamp.lte(param.dateTimeSeconds("endTime")),
 			CH.whenTrue(!!opts.rootOnly, () => $.ParentSpanId.eq("")),

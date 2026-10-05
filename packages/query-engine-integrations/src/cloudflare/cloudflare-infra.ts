@@ -12,9 +12,9 @@
 // and pre-computed percentiles live in `metrics_gauge` (one row per
 // `quantile`). The API handlers merge the two by ServiceName.
 
-import * as CH from "@maple-dev/effect-clickhouse/expr"
-import { from, param, type ColumnAccessor } from "@maple-dev/effect-clickhouse"
-import { MetricsGauge, MetricsSum } from "@maple/query-engine/ch/tables"
+import * as CH from "@maple-dev/effect-orm/expr"
+import { from, param, type ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
+import { MetricsGauge, MetricsSum, orgIdParam } from "@maple/query-engine/ch/tables"
 import { avgWhere, isoBucket } from "@maple/query-engine/ch/format"
 import {
 	CF_FILTERABLE,
@@ -123,7 +123,7 @@ export function cloudflareZoneCountersSQL(opts: CloudflareFilterOpts = {}) {
 			...zoneCounterColumns($),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.MetricName.in_(...ZONE_COUNTER_METRIC_NAMES),
 			$.TimeUnix.gte(param.dateTimeString("startTime")),
 			$.TimeUnix.lte(param.dateTimeString("endTime")),
@@ -160,7 +160,7 @@ export function cloudflareZoneLatencySQL() {
 			originP99Ms: quantileAvg("cloudflare.http.origin.duration", "0.99")($),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.MetricName.in_(...ZONE_GAUGE_METRIC_NAMES),
 			$.TimeUnix.gte(param.dateTimeString("startTime")),
 			$.TimeUnix.lte(param.dateTimeString("endTime")),
@@ -179,7 +179,7 @@ export function cloudflareZoneTimeseriesSQL(opts: CloudflareFilterOpts = {}) {
 			...zoneCounterColumns($),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.MetricName.in_(...ZONE_COUNTER_METRIC_NAMES),
 			$.TimeUnix.gte(param.dateTimeString("startTime")),
 			$.TimeUnix.lte(param.dateTimeString("endTime")),
@@ -230,7 +230,7 @@ export function cloudflareZoneStatusTimeseriesSQL(opts: CloudflareFilterOpts = {
 			requests: CH.sum($.Value),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.ServiceName.eq(param.string("serviceName")),
 			$.MetricName.eq("cloudflare.http.requests"),
 			$.TimeUnix.gte(param.dateTimeString("startTime")),
@@ -251,7 +251,7 @@ export function cloudflareZoneCacheTimeseriesSQL(opts: CloudflareFilterOpts = {}
 			requests: CH.sum($.Value),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.ServiceName.eq(param.string("serviceName")),
 			$.MetricName.eq("cloudflare.http.requests"),
 			$.TimeUnix.gte(param.dateTimeString("startTime")),
@@ -284,7 +284,7 @@ export function cloudflareZoneLatencyTimeseriesSQL() {
 			originP99Ms: quantileAvg("cloudflare.http.origin.duration", "0.99")($),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.ServiceName.eq(param.string("serviceName")),
 			$.MetricName.in_(...ZONE_GAUGE_METRIC_NAMES),
 			$.TimeUnix.gte(param.dateTimeString("startTime")),
@@ -325,7 +325,7 @@ export function cloudflareWorkerCountersSQL() {
 			subrequests: CH.sumIf($.Value, $.MetricName.eq("cloudflare.worker.subrequests")),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.MetricName.in_(...WORKER_COUNTER_METRIC_NAMES),
 			$.TimeUnix.gte(param.dateTimeString("startTime")),
 			$.TimeUnix.lte(param.dateTimeString("endTime")),
@@ -363,7 +363,7 @@ export function cloudflareWorkerLatencySQL() {
 			),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.MetricName.in_(...WORKER_GAUGE_METRIC_NAMES),
 			$.TimeUnix.gte(param.dateTimeString("startTime")),
 			$.TimeUnix.lte(param.dateTimeString("endTime")),

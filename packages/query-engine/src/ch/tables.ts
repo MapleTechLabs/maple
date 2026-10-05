@@ -3,8 +3,7 @@
 // Derived from packages/domain/src/tinybird/datasources.ts
 // These define the ClickHouse table schemas used by the query DSL.
 
-import { type ColumnDefs, type Table, table as chTable } from "@maple-dev/effect-clickhouse"
-import * as T from "@maple-dev/effect-clickhouse/types"
+import * as T from "@maple-dev/effect-orm/clickhouse"
 import { OrgId, SpanId, TraceId } from "@maple/domain"
 
 /**
@@ -35,23 +34,26 @@ export type StringMap = T.CHMap<T.CHString, T.CHString>
  * Identity columns carry their branded domain schemas, so a query that SELECTs
  * one derives a row schema whose decoded type is the brand — no declared
  * `rowSchema` needed just to keep `OrgId`/`TraceId`/`SpanId` in the output
- * type. Comparisons still take plain strings/params: the builder widens a
- * branded column's comparison type to its primitive.
+ * type. Comparisons take the brand too: compare `OrgId` with `orgIdParam`.
  */
-const orgId = T.custom("String", OrgId)
-const traceId = T.custom("String", TraceId)
-const spanId = T.custom("String", SpanId)
+export const orgId = T.brand(T.string, OrgId)
+const traceId = T.brand(T.string, TraceId)
+const spanId = T.brand(T.string, SpanId)
+
+/** The tenant param every warehouse query filters `OrgId` on. */
+export const orgIdParam = T.param.of(orgId, "orgId")
 
 /**
  * Every Maple warehouse table is keyed by `OrgId`, so tenancy is declared once
  * here rather than at 37 call sites. Requiring the column in the signature is
  * the point: a new table without one is a type error, not a table that silently
- * compiles every query as `cross-tenant`.
+ * compiles every query as `cross-tenant`. The DDL is owned by Tinybird's
+ * `datasources.ts`, so the tables are external to effect-orm's migrations.
  */
-const table = <const Name extends string, const Columns extends ColumnDefs & { OrgId: T.CHStringLike }>(
+const table = <const Name extends string, const Columns extends T.ColumnDefs & { OrgId: T.CHStringLike }>(
 	name: Name,
 	columns: Columns,
-): Table<Name, Columns> => chTable(name, columns, { tenantColumn: "OrgId" })
+) => T.table(name, { external: true, columns, tenantColumn: "OrgId" })
 
 export const Traces = table("traces", {
 	OrgId: orgId,

@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
 import { LAB_ENTRIES } from "@/lab/registry"
-import { isChromelessPath, isPublicPath } from "./public-routes"
+import { isChromelessPath, isOrgIndependentPath, isPublicPath } from "./public-routes"
 
 const read = (relative: string) => readFileSync(fileURLToPath(new URL(relative, import.meta.url)), "utf8")
 
@@ -49,6 +49,16 @@ describe("isPublicPath", () => {
 		expect(isChromelessPath("/share/abc")).toBe(true)
 		expect(isChromelessPath("/sign-in")).toBe(false)
 		expect(isChromelessPath("/lab/widgets")).toBe(false)
+	})
+})
+
+describe("isOrgIndependentPath", () => {
+	it("lets an email recipient reach /unsubscribe past the plan and region gates", () => {
+		expect(isPublicPath("/unsubscribe")).toBe(true)
+		expect(isOrgIndependentPath("/unsubscribe")).toBe(true)
+		// Public, but the post-auth redirects still apply to it.
+		expect(isOrgIndependentPath("/sign-in")).toBe(false)
+		expect(isOrgIndependentPath("/share/abc")).toBe(false)
 	})
 })
 

@@ -10,7 +10,7 @@ backend, ClickHouse/Tinybird as the warehouse, PlanetScale Postgres for relation
 - `lib/*`: zero Maple knowledge, could ship as a standalone OSS library. A `lib/` package that
   imports `@maple/domain` must move to `packages/`. New packages default to `packages/`.
 
-`@maple-dev/effect-clickhouse` lives in the separate effect-clickhouse repo; change it there.
+`@maple-dev/effect-orm` lives in the separate effect-orm repo; change it there.
 
 ## Commands
 

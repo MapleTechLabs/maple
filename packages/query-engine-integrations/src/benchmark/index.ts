@@ -14,6 +14,7 @@ import { MAPLE_AI_TRACE_SESSION_PREFIX } from "@maple/domain/gen-ai"
 import * as CH from "../index"
 import { BenchmarkError, type CatalogEntry } from "@maple/query-engine/benchmark"
 import { fingerprintSql } from "@maple/query-engine/execution"
+import { OrgId } from "@maple/domain"
 
 export interface IntegrationFixture {
 	/** Source module basename, e.g. `"cloudflare-infra"`. */
@@ -25,7 +26,7 @@ export interface IntegrationFixture {
 	readonly compile: () => CompiledQuery<unknown>
 }
 
-const ORG_ID = "org_sql_catalog"
+const ORG_ID = OrgId.make("org_sql_catalog")
 const START_TIME = "2026-01-01 10:30:00"
 const END_TIME = "2026-01-03 14:15:00"
 

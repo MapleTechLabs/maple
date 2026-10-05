@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest"
 import { Effect } from "effect"
-import { compileUnsafe, type CompiledQuery } from "@maple-dev/effect-clickhouse"
+import { compileUnsafe, type CompiledQuery } from "@maple-dev/effect-orm/clickhouse"
 import { dailyProductEventCountQuery, dailySessionCountQuery, dailySignalVolumeQuery } from "./billing-usage"
+import { OrgId } from "@maple/domain"
 
 const params = {
-	orgId: "org_123",
+	orgId: OrgId.make("org_123"),
 	startTime: "2026-07-01 00:00:00",
 	endTime: "2026-07-31 23:59:59",
 }

@@ -19,10 +19,10 @@
 
 import { finiteOrZero } from "@maple/query-engine/ch/format"
 import { Schema } from "effect"
-import * as CH from "@maple-dev/effect-clickhouse/expr"
-import { from, fromQuery, param, type CompiledQueryRowSchema } from "@maple-dev/effect-clickhouse"
+import * as CH from "@maple-dev/effect-orm/expr"
+import { from, fromQuery, param, type CompiledQueryRowSchema } from "@maple-dev/effect-orm/clickhouse"
 import { CHNumber } from "@maple/query-engine/ch/schema"
-import { MetricsGauge } from "@maple/query-engine/ch/tables"
+import { MetricsGauge, orgIdParam } from "@maple/query-engine/ch/tables"
 
 /** Active connections (gauge) — one series per edge region/branch; summed per timestamp. */
 export const CONNECTION_METRIC_NAMES = [
@@ -148,7 +148,7 @@ export function planetscaleGaugesSQL() {
 			replicaLagMaxSeconds: CH.maxIf($.Value, $.MetricName.in_(...REPLICA_LAG_METRIC_NAMES)),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.MetricName.in_(...GAUGE_METRIC_NAMES),
 			CH.coalesce(
 				CH.nullIf($.Attributes.get("planetscale_database_name"), ""),
@@ -179,7 +179,7 @@ export function planetscaleBranchGaugesSQL() {
 			replicaLagMaxSeconds: CH.maxIf($.Value, $.MetricName.in_(...REPLICA_LAG_METRIC_NAMES)),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.MetricName.in_(...GAUGE_METRIC_NAMES),
 			CH.coalesce(
 				CH.nullIf($.Attributes.get("planetscale_database_name"), ""),
@@ -243,7 +243,7 @@ export function planetscaleStorageSQL() {
 			samples: CH.countIf($.MetricName.in_(...STORAGE_AVAILABLE_METRIC_NAMES)),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.MetricName.in_(...STORAGE_METRIC_NAMES),
 			CH.coalesce(
 				CH.nullIf($.Attributes.get("planetscale_database_name"), ""),
@@ -282,7 +282,7 @@ export function planetscaleBranchStorageSQL() {
 			samples: CH.countIf($.MetricName.in_(...STORAGE_AVAILABLE_METRIC_NAMES)),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.MetricName.in_(...STORAGE_METRIC_NAMES),
 			CH.coalesce(
 				CH.nullIf($.Attributes.get("planetscale_database_name"), ""),
@@ -323,7 +323,7 @@ export function planetscaleConnectionsSQL() {
 			totalConnections: CH.sum($.Value),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.MetricName.in_(...CONNECTION_METRIC_NAMES),
 			CH.coalesce(
 				CH.nullIf($.Attributes.get("planetscale_database_name"), ""),
@@ -361,7 +361,7 @@ export function planetscaleBranchConnectionsSQL() {
 			totalConnections: CH.sum($.Value),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.MetricName.in_(...CONNECTION_METRIC_NAMES),
 			CH.coalesce(
 				CH.nullIf($.Attributes.get("planetscale_database_name"), ""),

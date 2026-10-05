@@ -161,7 +161,7 @@ export const inspectTrace = Effect.fn("Observability.inspectTrace")(function* (
 			? ([firstRead, { ...queryRangeToScan(range), widened: false }] as const)
 			: yield* Effect.gen(function* () {
 					const probe = yield* executor.compiledQueryFirst(
-						CH.compile(CH.traceTimeProbeQuery({ traceId, narrowByTime: true }), {
+						CH.compile(CH.recentTraceTimeProbeQuery({ traceId }), {
 							orgId: executor.orgId,
 							startTime: formatWarehouseDateTime(probeStartMs),
 						}),

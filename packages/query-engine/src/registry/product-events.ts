@@ -17,6 +17,7 @@ import type {
 import * as CH from "../ch"
 import { timeRangeCache } from "../runtime/query-engine"
 import { defineQuery, makeTimeBucketQueryCachePolicy } from "./query-definition"
+import type { OrgId } from "@maple/domain"
 
 // Product-event funnels read `product_events` only — server and mobile rows have
 // no raw `session_events` counterpart, so unlike the web-analytics pairs there is
@@ -60,7 +61,7 @@ export const productEventsFunnel = defineQuery({
 	id: "productEventsFunnel",
 	profile: "aggregation",
 	cache: timeRangeCache,
-	compile: (payload: ProductEventsFunnelRequest, orgId: string) =>
+	compile: (payload: ProductEventsFunnelRequest, orgId: OrgId) =>
 		CH.compile(CH.productEventsFunnelQuery(productEventsFunnelOpts(payload)), {
 			orgId,
 			startTime: payload.startTime,
@@ -72,7 +73,7 @@ export const productEventsFunnelBreakdown = defineQuery({
 	id: "productEventsFunnelBreakdown",
 	profile: "aggregation",
 	cache: timeRangeCache,
-	compile: (payload: ProductEventsFunnelBreakdownRequest, orgId: string) =>
+	compile: (payload: ProductEventsFunnelBreakdownRequest, orgId: OrgId) =>
 		CH.compile(
 			CH.productEventsFunnelBreakdownQuery({
 				...productEventsFunnelOpts(payload),
@@ -87,7 +88,7 @@ export const productEventsFunnelTiming = defineQuery({
 	id: "productEventsFunnelTiming",
 	profile: "aggregation",
 	cache: timeRangeCache,
-	compile: (payload: ProductEventsFunnelTimingRequest, orgId: string) =>
+	compile: (payload: ProductEventsFunnelTimingRequest, orgId: OrgId) =>
 		CH.compile(CH.productEventsFunnelTimingQuery(productEventsFunnelOpts(payload)), {
 			orgId,
 			startTime: payload.startTime,
@@ -99,7 +100,7 @@ export const productEventsFunnelLeavers = defineQuery({
 	id: "productEventsFunnelLeavers",
 	profile: "aggregation",
 	cache: timeRangeCache,
-	compile: (payload: ProductEventsFunnelLeaversRequest, orgId: string) =>
+	compile: (payload: ProductEventsFunnelLeaversRequest, orgId: OrgId) =>
 		CH.compile(CH.productEventsFunnelLeaversQuery(productEventsFunnelOpts(payload)), {
 			orgId,
 			startTime: payload.startTime,
@@ -124,7 +125,7 @@ export const productEventsPaths = defineQuery({
 	id: "productEventsPaths",
 	profile: "aggregation",
 	cache: timeRangeCache,
-	compile: (payload: ProductEventsPathsRequest, orgId: string) =>
+	compile: (payload: ProductEventsPathsRequest, orgId: OrgId) =>
 		CH.compile(CH.productEventsPathsQuery(productEventsPathsOpts(payload)), {
 			orgId,
 			startTime: payload.startTime,
@@ -136,7 +137,7 @@ export const productEventNames = defineQuery({
 	id: "productEventNames",
 	profile: "aggregation",
 	cache: timeRangeCache,
-	compile: (payload: ProductEventNamesRequest, orgId: string) =>
+	compile: (payload: ProductEventNamesRequest, orgId: OrgId) =>
 		CH.compile(
 			CH.productEventNamesQuery({
 				filters: productEventsFilters(payload),
@@ -154,7 +155,7 @@ export const productEventsForTrace = defineQuery({
 	id: "productEventsForTrace",
 	profile: "list",
 	cache: 60,
-	compile: (payload: ProductEventsForTraceRequest, orgId: string) =>
+	compile: (payload: ProductEventsForTraceRequest, orgId: OrgId) =>
 		CH.compile(CH.productEventsForTraceQuery({ limit: payload.limit ?? 50 }), {
 			orgId,
 			startTime: payload.startTime,
@@ -167,7 +168,7 @@ export const productEventTraceSamples = defineQuery({
 	id: "productEventTraceSamples",
 	profile: "list",
 	cache: 60,
-	compile: (payload: ProductEventTraceSamplesRequest, orgId: string) =>
+	compile: (payload: ProductEventTraceSamplesRequest, orgId: OrgId) =>
 		CH.compile(CH.productEventTraceSamplesQuery({ limit: payload.limit ?? 20 }), {
 			orgId,
 			startTime: payload.startTime,
@@ -242,7 +243,7 @@ export const productEventsTimeseries = defineQuery({
 		identity: ({ metric, filters, groupBy, seriesLimit }) => ({ metric, filters, groupBy, seriesLimit }),
 		fallback: 15,
 	}),
-	compile: (input: ProductEventsTimeseriesInput, orgId: string) =>
+	compile: (input: ProductEventsTimeseriesInput, orgId: OrgId) =>
 		CH.compile(
 			CH.productEventsTimeseriesQuery({
 				...productEventsQueryOptions(input.filters),
@@ -265,7 +266,7 @@ export const productEventsBreakdown = defineQuery({
 	id: "productEventsBreakdown",
 	profile: "aggregation",
 	cache: timeRangeCache,
-	compile: (input: ProductEventsBreakdownInput, orgId: string) =>
+	compile: (input: ProductEventsBreakdownInput, orgId: OrgId) =>
 		CH.compile(
 			CH.productEventsBreakdownQuery({
 				...productEventsQueryOptions(input.query.filters),
@@ -287,7 +288,7 @@ export const productEventsList = defineQuery({
 	id: "productEventsList",
 	profile: "list",
 	cache: timeRangeCache,
-	compile: (input: ProductEventsListInput, orgId: string) =>
+	compile: (input: ProductEventsListInput, orgId: OrgId) =>
 		CH.compile(
 			CH.productEventsListQuery({
 				...productEventsQueryOptions(input.query.filters),

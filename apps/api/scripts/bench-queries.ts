@@ -6,11 +6,12 @@ import { Clock, Config, Console, Context, Effect, FileSystem, Layer, Option, Red
 import { Command, Flag } from "effect/cli"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { BunRuntime, BunServices } from "@effect/platform-bun"
+import { OrgId } from "@maple/domain"
 import { CH } from "@maple/query-engine"
 import * as Integrations from "@maple/query-engine-integrations"
 import * as Bench from "@maple/query-engine/benchmark"
 import { collectWarehouseQueryCatalog } from "./query-bench/catalog"
-import { runCli } from "@maple-dev/effect-clickhouse/benchmark/cli"
+import { runCli } from "@maple-dev/effect-orm/benchmark/cli"
 
 // Errors
 
@@ -310,7 +311,7 @@ const fetchHandler = Effect.fn("bench.fetch")(function* (config: FetchConfig) {
 	const orgId = yield* Option.match(config.org, {
 		onNone: () => tinybird.internalOrgId,
 		onSome: (o) => Effect.succeed(o),
-	})
+	}).pipe(Effect.flatMap(Schema.decodeUnknownEffect(OrgId)))
 	const host = yield* tinybird.host
 
 	const compiled = yield* CH.compile(

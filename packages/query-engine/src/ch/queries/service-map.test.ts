@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Effect, Exit } from "effect"
-import { compileUnsafe, param, toDateTime } from "@maple-dev/effect-clickhouse"
+import { compileUnsafe, param, toDateTime } from "@maple-dev/effect-orm/clickhouse"
 import {
 	serviceDbEdgesSQL,
 	serviceDbEdgesForServiceQuery,
@@ -16,6 +16,7 @@ import {
 import { serviceMapEdgesRollupSQL, serviceMapResolutionsRollupSQL } from "./service-map-rollup"
 import { ServiceMapEdgesHourly } from "../tables"
 import { DB_NAMESPACE_ATTR_SQL } from "@maple/domain/tinybird/db-query-shape-sql"
+import { OrgId } from "@maple/domain"
 
 // The read side must derive `DbNamespace` byte-identically to the write side's
 // `DB_NAMESPACE_ATTR_SQL` (Hyperdrive-collapsing coalesce) or the sealed-hour and
@@ -33,7 +34,7 @@ const SEALED_DB_QUERIES = sealedNamespaceCollapse("service_map_db_query_shapes_h
 const RAW_NAMESPACE = DB_NAMESPACE_ATTR_SQL.replace(/(?<![\w.])SpanAttributes\b/g, "traces.SpanAttributes")
 
 const baseParams = {
-	orgId: "org_1",
+	orgId: OrgId.make("org_1"),
 	startTime: "2024-01-01 00:00:00",
 	endTime: "2024-01-02 00:00:00",
 }
@@ -131,7 +132,10 @@ describe("serviceExternalEdgesSQL", () => {
 
 	it("escapes single quotes in serviceName / orgId to prevent SQL injection", () => {
 		const { sql } = Effect.runSync(
-			serviceExternalEdgesSQL({ serviceName: "weird'service" }, { ...baseParams, orgId: "org'attack" }),
+			serviceExternalEdgesSQL(
+				{ serviceName: "weird'service" },
+				{ ...baseParams, orgId: OrgId.make("org'attack") },
+			),
 		)
 		expect(sql).toContain("ServiceName = 'weird\\'service'")
 		expect(sql).toContain("OrgId = 'org\\'attack'")
@@ -195,7 +199,7 @@ describe("serviceExternalEdgesSQL", () => {
 
 describe("serviceMapResolutionsRollupSQL", () => {
 	const hourParams = {
-		orgId: "org_1",
+		orgId: OrgId.make("org_1"),
 		hourStart: "2024-01-01 00:00:00",
 		hourEnd: "2024-01-01 01:00:00",
 	}
@@ -261,7 +265,7 @@ describe("serviceDependenciesSQL", () => {
 			serviceDependenciesSQL(
 				{},
 				{
-					orgId: "org_1",
+					orgId: OrgId.make("org_1"),
 					startTime: "2024-01-01 10:15:00",
 					endTime: "2024-01-01 12:30:00",
 				},
@@ -350,7 +354,7 @@ describe("serviceMapEdgeJoinQuery", () => {
 	const compiledRollup = () =>
 		Effect.runSync(
 			serviceMapEdgesRollupSQL({
-				orgId: "org_1",
+				orgId: OrgId.make("org_1"),
 				hourStart: "2024-01-01 10:00:00",
 				hourEnd: "2024-01-01 11:00:00",
 			}),
@@ -380,7 +384,7 @@ describe("serviceMapEdgeJoinQuery", () => {
 				rangeEnd: toDateTime(param.dateTimeString("hourEnd")),
 				parentServiceName: "web",
 			}),
-			{ orgId: "org_1", hourStart: "2024-01-01 10:00:00", hourEnd: "2024-01-01 11:00:00" },
+			{ orgId: OrgId.make("org_1"), hourStart: "2024-01-01 10:00:00", hourEnd: "2024-01-01 11:00:00" },
 		)
 		// Inside the parent subquery — before the JOIN — so ClickHouse can skip
 		// the full Client/Producer scan rather than filtering after the join.
@@ -391,7 +395,7 @@ describe("serviceMapEdgeJoinQuery", () => {
 describe("serviceDependenciesForServiceQuery", () => {
 	it("keeps partial start and end hours outside the hourly rollup", () => {
 		const { sql } = compileUnsafe(serviceDependenciesForServiceQuery({ serviceName: "artifacts-api" }), {
-			orgId: "org_1",
+			orgId: OrgId.make("org_1"),
 			startTime: "2024-01-01 10:15:00",
 			endTime: "2024-01-01 12:30:00",
 		})
