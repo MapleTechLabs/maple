@@ -1,5 +1,5 @@
 import type { Duration } from "effect"
-import { Effect, Exit, Layer, Redacted, Tracer } from "effect"
+import { Cause, Effect, Exit, Layer, Redacted, Tracer } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { Otlp } from "effect/observability"
 import { type MapleRegion, warnIfKeylessMapleIngest } from "@maple/browser-session/region"
@@ -20,27 +20,60 @@ const warnIfDoomed = (resolved: ResolvedResource): void =>
 // OTEL HTTP semconv for SERVER spans: a 5xx is an error even when the handler rendered it as a
 // plain response (an HttpApi error with `httpApiStatus: 500`), but Effect's OTLP tracer derives
 // status from the Exit alone. Mirrors `renderedServerError` in the flushable tracer; 4xx stays Ok.
-const renderedServerError = (span: Tracer.Span): Exit.Exit<never> | undefined => {
+const renderedServerError = (span: Tracer.Span): string | undefined => {
 	const raw = span.attributes.get("http.response.status_code")
 	const code = typeof raw === "number" ? raw : typeof raw === "string" ? Number(raw) : Number.NaN
 	if (!Number.isInteger(code) || code < 500) return undefined
 	const method = span.attributes.get("http.request.method")
 	const path = span.attributes.get("url.path")
-	const message =
-		typeof method === "string" && typeof path === "string"
-			? `HTTP ${code} (${method} ${path})`
-			: `HTTP ${code}`
-	return Exit.die({ name: "HttpServerErrorResponse", message })
+	return typeof method === "string" && typeof path === "string"
+		? `HTTP ${code} (${method} ${path})`
+		: `HTTP ${code}`
 }
 
+type ExceptionEvent = readonly [
+	name: string,
+	startTime: bigint,
+	attributes: Record<string, unknown> | undefined,
+]
+
+const recordedDefect = ([, , attributes]: ExceptionEvent, fallback: string) => ({
+	name: typeof attributes?.["exception.type"] === "string" ? attributes["exception.type"] : "Error",
+	message:
+		typeof attributes?.["exception.message"] === "string" ? attributes["exception.message"] : fallback,
+	stack:
+		typeof attributes?.["exception.stacktrace"] === "string"
+			? attributes["exception.stacktrace"]
+			: undefined,
+})
+
+// The OTLP tracer emits an `exception` event for every failure reason, so a 5xx that already
+// recorded its exception would gain a second, synthetic one. Hold recorded exceptions back until
+// the span ends: a rendered 5xx turns them into the failure itself, anything else replays them.
 const withServerErrorStatus = (tracer: Tracer.Tracer): Tracer.Tracer =>
 	Tracer.make({
 		span(options) {
 			const span = tracer.span(options)
 			if (options.kind !== "server") return span
+			const exceptions: Array<ExceptionEvent> = []
+			const event = span.event
 			const end = span.end
-			span.end = (endTime, exit) =>
-				end.call(span, endTime, Exit.isSuccess(exit) ? (renderedServerError(span) ?? exit) : exit)
+			span.event = (name, startTime, attributes) => {
+				if (name === "exception") exceptions.push([name, startTime, attributes])
+				else event.call(span, name, startTime, attributes)
+			}
+			span.end = (endTime, exit) => {
+				const serverError = Exit.isSuccess(exit) ? renderedServerError(span) : undefined
+				if (serverError === undefined) {
+					exceptions.forEach((recorded) => event.call(span, ...recorded))
+					return end.call(span, endTime, exit)
+				}
+				const defects =
+					exceptions.length === 0
+						? [{ name: "HttpServerErrorResponse", message: serverError }]
+						: exceptions.map((recorded) => recordedDefect(recorded, serverError))
+				end.call(span, endTime, Exit.failCause(Cause.fromReasons(defects.map(Cause.makeDieReason))))
+			}
 			return span
 		},
 		context: tracer.context,

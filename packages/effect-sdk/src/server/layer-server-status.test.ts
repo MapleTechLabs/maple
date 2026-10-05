@@ -6,7 +6,13 @@ import { layer } from "./layer.js"
 interface ExportedSpan {
 	readonly name: string
 	readonly status: { readonly code: number; readonly message?: string }
-	readonly events: ReadonlyArray<{ readonly name: string }>
+	readonly events: ReadonlyArray<{
+		readonly name: string
+		readonly attributes: ReadonlyArray<{
+			readonly key: string
+			readonly value: { readonly stringValue?: string }
+		}>
+	}>
 }
 
 // `Maple.layer` exports through Effect's stock OTLP tracer, which derives status from the Exit
@@ -41,8 +47,13 @@ const exportSpans = async (spans: Effect.Effect<void>): Promise<Array<ExportedSp
 	)
 }
 
-const respond = (name: string, status: number, kind: "server" | "client" = "server") =>
-	Effect.void.pipe(
+const respond = (
+	name: string,
+	status: number,
+	kind: "server" | "client" = "server",
+	handler: Effect.Effect<void> = Effect.void,
+) =>
+	handler.pipe(
 		Effect.tap(() =>
 			Effect.annotateCurrentSpan({
 				"http.response.status_code": status,
@@ -52,6 +63,20 @@ const respond = (name: string, status: number, kind: "server" | "client" = "serv
 		),
 		Effect.withSpan(name, { kind }),
 	)
+
+const recordException = Effect.currentSpan.pipe(
+	Effect.tap((span) =>
+		Effect.sync(() =>
+			span.event("exception", 1n, {
+				"exception.type": "ToggleFailedError",
+				"exception.message": "toggle failed",
+				"exception.stacktrace": "ToggleFailedError: toggle failed\n    at toggle (todo.ts:1:1)",
+			}),
+		),
+	),
+	Effect.orDie,
+	Effect.asVoid,
+)
 
 const STATUS_OK = 1
 const STATUS_ERROR = 2
@@ -65,6 +90,19 @@ describe("Maple.layer server span status", () => {
 		expect(span?.events.map((event) => event.name)).toEqual(["exception"])
 	})
 
+	it("does not add a synthetic exception when the handler recorded one", async () => {
+		const [span] = await exportSpans(
+			respond("POST /api/todos/:id/toggle", 500, "server", recordException),
+		)
+
+		expect(span?.status.code).toBe(STATUS_ERROR)
+		const exceptions = span?.events.filter((event) => event.name === "exception") ?? []
+		expect(exceptions).toHaveLength(1)
+		expect(
+			exceptions[0]?.attributes.find((attr) => attr.key === "exception.type")?.value.stringValue,
+		).toBe("ToggleFailedError")
+	})
+
 	it("keeps 4xx server spans and 5xx client spans Ok", async () => {
 		const spans = await exportSpans(
 			Effect.all([respond("rejected", 400), respond("upstream", 503, "client")], { discard: true }),
@@ -74,5 +112,12 @@ describe("Maple.layer server span status", () => {
 			["rejected", STATUS_OK],
 			["upstream", STATUS_OK],
 		])
+	})
+
+	it("still exports an exception recorded on a non-5xx server span", async () => {
+		const [span] = await exportSpans(respond("rejected", 400, "server", recordException))
+
+		expect(span?.status.code).toBe(STATUS_OK)
+		expect(span?.events.map((event) => event.name)).toEqual(["exception"])
 	})
 })
