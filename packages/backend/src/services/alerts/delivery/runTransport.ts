@@ -12,7 +12,7 @@ import {
 } from "@maple/domain/http"
 import { Duration, Effect, Option, Result } from "effect"
 import { constTrue } from "effect/Function"
-import { FetchHttpClient, HttpBody, HttpClient, HttpClientRequest } from "effect/http"
+import { HttpBody, HttpClient, HttpClientRequest } from "effect/http"
 import type { HttpClientResponse } from "effect/http"
 import { describeHttpClientError, guard } from "@maple/safe-fetch"
 import type {
@@ -25,7 +25,6 @@ import type {
 import type { DispatchResult } from "./context"
 
 export interface TransportRuntime {
-	readonly fetchFn: typeof fetch
 	readonly timeoutMs: number
 }
 
@@ -134,7 +133,6 @@ const sendHttp = Effect.fn("AlertDelivery.http", { kind: "client" })(function* (
 	// cancelled when `runHttpTransport`'s scope closes.
 	const scoped = HttpClient.withScope(client)
 	const response = yield* (spec.guarded ? guard(scoped) : scoped).execute(request).pipe(
-		Effect.provideService(FetchHttpClient.Fetch, runtime.fetchFn),
 		// The client's own span records `url.full`, and Discord, Hazel and
 		// Telegram carry their delivery token in the URL path. This span is the
 		// client span.

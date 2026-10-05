@@ -194,8 +194,12 @@ const defaultTestRuntime: AlertRuntimeApi = {
 	// TestClock.adjust. Real `fetch`/`Effect.timeout` settle on the live event loop.
 	now: Clock.currentTimeMillis,
 	makeUuid: () => crypto.randomUUID(),
-	fetch: globalThis.fetch,
 	deliveryTimeoutMs: () => 15_000,
+}
+
+interface TestOverrides extends Partial<AlertRuntimeApi> {
+	/** Provided as `FetchHttpClient.Fetch`, so every outbound call goes through it. */
+	readonly fetch?: typeof fetch
 }
 
 // The fixed epoch scheduler tests start TestClock at, mirroring the previous
@@ -245,10 +249,11 @@ const stubOrgMembersService = (
 const makeLayer = (
 	testDb: TestDb,
 	warehouseStub: WarehouseQueryServiceApi,
-	runtimeOverrides?: Partial<AlertRuntimeApi>,
+	overrides: TestOverrides = {},
 	emailStub?: (typeof EmailService)["Service"],
 	chatAlertPoster: Layer.Layer<ChatAlertPoster, never, Database | Env> = ChatAlertPoster.layer,
 ) => {
+	const { fetch: fetchImpl = globalThis.fetch, ...runtimeOverrides } = overrides
 	const configLive = makeConfig()
 	const envLive = Env.layer.pipe(Layer.provide(configLive))
 	const databaseLive = testDb.layer
@@ -312,7 +317,9 @@ const makeLayer = (
 		Layer.provide(alertReadModelsLive),
 		Layer.provide(alertRulesLive),
 	)
-	return Layer.mergeAll(alertDestinationsLive, alertReadModelsLive, alertRulesLive, alertsLive)
+	return Layer.mergeAll(alertDestinationsLive, alertReadModelsLive, alertRulesLive, alertsLive).pipe(
+		Layer.provideMerge(Layer.succeed(FetchHttpClient.Fetch, fetchImpl)),
+	)
 }
 
 const asOrgId = Schema.decodeUnknownSync(OrgId)

@@ -125,7 +125,6 @@ export const makeAlertDestinationDelivery = (options: {
 		dispatchDeliveryImpl(
 			context,
 			payloadJson,
-			options.runtime.fetch,
 			options.runtime.deliveryTimeoutMs(),
 			context.linkUrl,
 			composeChatUrl(context),
