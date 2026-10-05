@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest"
-import { compileUnsafe } from "@maple-dev/effect-clickhouse"
+import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import { sessionActivityQuery, IDLE_GAP_THRESHOLD_MS } from "./session-events"
+import { OrgId } from "@maple/domain"
 
-const sessionParams = { orgId: "org_1", sessionId: "sess_1" }
+const sessionParams = { orgId: OrgId.make("org_1"), sessionId: "sess_1" }
 const WINDOW = { startTime: "2026-06-24 04:00:00", endTime: "2026-06-25 06:00:00" }
 
 // sessionActivityQuery

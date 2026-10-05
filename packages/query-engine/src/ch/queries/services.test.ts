@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { Effect } from "effect"
-import { compileUnsafe, compileUnionUnsafe } from "@maple-dev/effect-clickhouse"
+import { compileUnsafe, compileUnionUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import {
 	serviceOverviewQuery,
 	serviceOverviewRowSchema,
@@ -14,9 +14,10 @@ import {
 	serviceUsageWithPreviousQuery,
 	servicesFacetsQuery,
 } from "./services"
+import { OrgId } from "@maple/domain"
 
 const baseParams = {
-	orgId: "org_1",
+	orgId: OrgId.make("org_1"),
 	startTime: "2024-01-01 00:00:00",
 	endTime: "2024-01-02 00:00:00",
 	bucketSeconds: 3600,
@@ -431,7 +432,7 @@ describe("serviceUsageQuery", () => {
 
 describe("serviceUsageWithPreviousQuery", () => {
 	const params = {
-		orgId: "org_1",
+		orgId: OrgId.make("org_1"),
 		startTime: "2024-01-02 00:00:00",
 		endTime: "2024-01-03 00:00:00",
 		previousStartTime: "2024-01-01 00:00:00",

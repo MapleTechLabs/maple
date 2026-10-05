@@ -80,7 +80,7 @@
       "name": "@maple/api",
       "dependencies": {
         "@effect/platform-bun": "catalog:effect",
-        "@maple-dev/effect-clickhouse": "0.2.0",
+        "@maple-dev/effect-orm": "link:@maple-dev/effect-orm",
         "@maple-dev/effect-sdk": "workspace:*",
         "@maple/ai-model-catalog": "workspace:*",
         "@maple/auth": "workspace:*",
@@ -155,7 +155,7 @@
       "name": "@maple/clickhouse-builder-docs",
       "dependencies": {
         "@base-ui/react": "^1.8.0",
-        "@maple-dev/effect-clickhouse": "0.2.0",
+        "@maple-dev/effect-orm": "link:@maple-dev/effect-orm",
         "effect": "catalog:effect",
         "fumadocs-core": "^16.15.15",
         "fumadocs-mdx": "^15.4.5",
@@ -614,8 +614,8 @@
         "@distilled.cloud/cloudflare": "1.0.0-rc.13",
         "@distilled.cloud/core": "1.0.0-rc.13",
         "@distilled.cloud/railway": "1.0.0-rc.13",
-        "@maple-dev/effect-clickhouse": "0.2.0",
         "@maple-dev/effect-clickhouse-http": "workspace:*",
+        "@maple-dev/effect-orm": "link:@maple-dev/effect-orm",
         "@maple/alerting-core": "workspace:*",
         "@maple/auth": "workspace:*",
         "@maple/cache": "workspace:*",
@@ -755,7 +755,7 @@
       "name": "@maple/domain",
       "version": "0.0.0",
       "dependencies": {
-        "@maple-dev/effect-clickhouse": "0.2.0",
+        "@maple-dev/effect-orm": "link:@maple-dev/effect-orm",
         "@maple/primitives": "workspace:*",
         "@maple/query-model": "workspace:*",
         "@maple/widgets": "workspace:*",
@@ -850,7 +850,7 @@
     "packages/query-engine": {
       "name": "@maple/query-engine",
       "dependencies": {
-        "@maple-dev/effect-clickhouse": "0.2.0",
+        "@maple-dev/effect-orm": "link:@maple-dev/effect-orm",
         "@maple/cache": "workspace:*",
         "@maple/domain": "workspace:*",
         "@maple/query-model": "workspace:*",
@@ -867,7 +867,7 @@
     "packages/query-engine-integrations": {
       "name": "@maple/query-engine-integrations",
       "dependencies": {
-        "@maple-dev/effect-clickhouse": "0.2.0",
+        "@maple-dev/effect-orm": "link:@maple-dev/effect-orm",
         "@maple/domain": "workspace:*",
         "@maple/query-engine": "workspace:*",
         "effect": "catalog:effect",
@@ -1551,9 +1551,9 @@
 
     "@maple-dev/browser": ["@maple-dev/browser@workspace:packages/browser"],
 
-    "@maple-dev/effect-clickhouse": ["@maple-dev/effect-clickhouse@0.2.0", "", { "peerDependencies": { "effect": "^4.0.0" }, "bin": { "ch-bench": "dist/benchmark/bin.mjs" } }, "sha512-pFTekfGfuzJyiD0pQp8HSTNs1K10Z8K1i5Ozqexih9utHyWWan+tfAEsqWfCOCLiDdCP5Phun6r/bVZ683otvQ=="],
-
     "@maple-dev/effect-clickhouse-http": ["@maple-dev/effect-clickhouse-http@workspace:lib/effect-clickhouse-http"],
+
+    "@maple-dev/effect-orm": ["@maple-dev/effect-orm@link:@maple-dev/effect-orm", { "bin": { "ch-bench": "./dist/benchmark/bin.mjs", "effect-orm": "./dist/kit/bin.mjs" } }],
 
     "@maple-dev/effect-sdk": ["@maple-dev/effect-sdk@workspace:packages/effect-sdk"],
 

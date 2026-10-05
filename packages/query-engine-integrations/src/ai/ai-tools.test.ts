@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { Array as Arr, Effect } from "effect"
-import { compileUnionUnsafe, compileUnsafe, type CompiledQuery } from "@maple-dev/effect-clickhouse"
+import { compileUnionUnsafe, compileUnsafe, type CompiledQuery } from "@maple-dev/effect-orm/clickhouse"
 import {
 	aiToolDescriptionQuery,
 	aiToolDescriptionRowSchema,
@@ -30,9 +30,10 @@ import {
 	type AiToolErrorCallKey,
 } from "./ai-tools"
 import { AI_TOOLS_OTHER_SERIES_KEY } from "@maple/domain/http"
+import { OrgId } from "@maple/domain"
 
 const params = {
-	orgId: "org_1",
+	orgId: OrgId.make("org_1"),
 	startTime: "2026-08-18 00:00:00",
 	endTime: "2026-08-19 23:59:59",
 	bucketSeconds: 300,
@@ -636,7 +637,7 @@ describe("aiToolErrorPayloadsQuery", () => {
 	]
 	const compiled = compileUnsafe(
 		aiToolErrorPayloadsQuery(calls),
-		{ orgId: "org_1", ...aiToolErrorPayloadSlice(calls) },
+		{ orgId: OrgId.make("org_1"), ...aiToolErrorPayloadSlice(calls) },
 		{ rowSchema: aiToolErrorPayloadsRowSchema },
 	)
 

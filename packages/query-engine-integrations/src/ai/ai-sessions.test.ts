@@ -5,7 +5,7 @@ import {
 	compileUnionUnsafe,
 	QueryBuilderDefect,
 	type CompiledQuery,
-} from "@maple-dev/effect-clickhouse"
+} from "@maple-dev/effect-orm/clickhouse"
 import {
 	aiSessionDetailsQuery,
 	aiSessionDetailsSlices,
@@ -27,9 +27,10 @@ import {
 	aiTraceTotalsQuery,
 	aiTraceWindowQuery,
 } from "./ai-sessions"
+import { OrgId } from "@maple/domain"
 
 const params = {
-	orgId: "org_1",
+	orgId: OrgId.make("org_1"),
 	startTime: "2026-08-18 00:00:00",
 	endTime: "2026-08-19 23:59:59",
 }
@@ -247,9 +248,9 @@ describe("aiSessionPageQuery", () => {
 		expect(compiled.tenantScope).toBe("single-tenant")
 		expect(orgPredicateCount(compiled.sql)).toBe(1)
 
-		expect(compileUnsafe(aiSessionPageQuery(), { ...params, orgId: "org'evil" }).sql).toContain(
-			"OrgId = 'org\\'evil'",
-		)
+		expect(
+			compileUnsafe(aiSessionPageQuery(), { ...params, orgId: OrgId.make("org'evil") }).sql,
+		).toContain("OrgId = 'org\\'evil'")
 	})
 
 	it("bounds the read by the caller's window, unpadded", () => {
@@ -733,7 +734,7 @@ describe("aiSessionDetailsQuery", () => {
 	it("escapes an org id carrying a quote", () => {
 		const { sql } = compileUnsafe(aiSessionDetailsQuery(listOpts), {
 			...listParams,
-			orgId: "org'evil",
+			orgId: OrgId.make("org'evil"),
 		})
 
 		expect(sql).toContain("OrgId = 'org\\'evil'")
@@ -1450,7 +1451,7 @@ describe("aiTraceSpansQuery — a turn's traces", () => {
 	it("reads the named traces and nothing else, with no detection level", () => {
 		const { sql } = compileUnsafe(
 			aiTraceSpansQuery({ traceIds: [TRACE_ID, "0123456789abcdef0123456789abcdef"], scope: "app" }),
-			{ orgId: "org_1", startTime: "2026-08-18 00:00:00", endTime: "2026-08-19 23:59:59" },
+			{ orgId: OrgId.make("org_1"), startTime: "2026-08-18 00:00:00", endTime: "2026-08-19 23:59:59" },
 		)
 
 		expect(sql).toContain(`TraceId IN ('${TRACE_ID}', '0123456789abcdef0123456789abcdef')`)

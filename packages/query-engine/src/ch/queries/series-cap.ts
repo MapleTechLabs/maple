@@ -12,10 +12,10 @@
 // group-by), the inner query is returned unchanged so existing SQL snapshots
 // stay byte-identical.
 
-import * as CH from "@maple-dev/effect-clickhouse/expr"
-import { fromQuery, type CHQuery } from "@maple-dev/effect-clickhouse"
-import type { ColumnDefs } from "@maple-dev/effect-clickhouse/types"
-import { uint64 } from "@maple-dev/effect-clickhouse/types"
+import * as CH from "@maple-dev/effect-orm/expr"
+import { fromQuery, type CHQuery } from "@maple-dev/effect-orm/clickhouse"
+import type { ColumnDefs } from "@maple-dev/effect-orm/clickhouse"
+import { uint64 } from "@maple-dev/effect-orm/clickhouse"
 
 function hasRealGroupBy(groupBy: readonly string[] | undefined): boolean {
 	return !!groupBy && groupBy.some((key) => key !== "none")
@@ -62,7 +62,10 @@ export function finalizeTimeseries<Output extends Record<string, unknown>>(
 	// A CTE referenced by both a top-groups subquery and the result query repeats
 	// the base scan in ClickHouse. Windows rank the already aggregated buckets
 	// while reading the tenant-scoped inner query once.
-	const peaks = fromQuery(inner.orderBy(), "__series_base").select(() => ({
+	// Read back by name through `outputColumns`, so the inner query's own output
+	// type is not needed past this point.
+	const base: CHQuery<ColumnDefs, any, Record<string, ColumnDefs>> = inner.orderBy()
+	const peaks = fromQuery(base, "__series_base").select(() => ({
 		...passthrough,
 		__series_peak: CH.over(
 			CH.max_(CH.dynamicColumn<number>(rankColumn, outputColumns[rankColumn])),

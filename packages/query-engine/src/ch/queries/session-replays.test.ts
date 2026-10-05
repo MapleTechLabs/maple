@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { compileUnsafe, compileUnionUnsafe } from "@maple-dev/effect-clickhouse"
+import { compileUnsafe, compileUnionUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import {
 	getSessionReplayQuery,
 	sessionReplaysFacetsQuery,
@@ -9,9 +9,10 @@ import {
 	sessionsForTraceQuery,
 	sessionTraceSummariesQuery,
 } from "./session-replays"
+import { OrgId } from "@maple/domain"
 
-const baseParams = { orgId: "org_1" }
-const sessionParams = { orgId: "org_1", sessionId: "sess_1" }
+const baseParams = { orgId: OrgId.make("org_1") }
+const sessionParams = { orgId: OrgId.make("org_1"), sessionId: "sess_1" }
 const WINDOW = { startTime: "2026-06-24 04:00:00", endTime: "2026-06-25 06:00:00" }
 
 // sessionTraceSummariesQuery

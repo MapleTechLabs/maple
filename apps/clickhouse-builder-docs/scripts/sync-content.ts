@@ -6,7 +6,7 @@ import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises"
 // Use a reviewed local docs directory for documentation-only releases.
 const source = process.env.EFFECT_CLICKHOUSE_DOCS_DIR
 	? pathToFileURL(resolve(process.env.EFFECT_CLICKHOUSE_DOCS_DIR) + "/")
-	: new URL("../docs/", import.meta.resolve("@maple-dev/effect-clickhouse"))
+	: new URL("../docs/", import.meta.resolve("@maple-dev/effect-orm/clickhouse"))
 const output = new URL("../content/", import.meta.url)
 const repository = "https://github.com/MapleTechLabs/effect-clickhouse/blob/v0.1.0/"
 const sections = [

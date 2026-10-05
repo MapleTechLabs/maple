@@ -15,12 +15,13 @@
 // reading 5.5B directly above a status donut totalling 26.6M.
 
 import { describe, expect, it } from "vitest"
-import { compileUnsafe } from "@maple-dev/effect-clickhouse"
+import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import { tracesBreakdownQuery, tracesTimeseriesQuery } from "./traces"
 import type { TracesBaseWhereOpts } from "./query-helpers"
+import { OrgId } from "@maple/domain"
 
 const baseParams = {
-	orgId: "org_123",
+	orgId: OrgId.make("org_123"),
 	startTime: "2024-01-01 00:00:00",
 	endTime: "2024-01-02 00:00:00",
 	bucketSeconds: 3600,
@@ -170,7 +171,7 @@ describe("traces count is sample-weighted on every route", () => {
 
 	it("weights count on the raw breakdown path", () => {
 		const { sql } = compileUnsafe(tracesBreakdownQuery({ metric: "count", groupBy: "span_name" }), {
-			orgId: "org_123",
+			orgId: OrgId.make("org_123"),
 			startTime: baseParams.startTime,
 			endTime: baseParams.endTime,
 		})
@@ -181,7 +182,7 @@ describe("traces count is sample-weighted on every route", () => {
 	it("weights count on the MV breakdown path", () => {
 		const { sql } = compileUnsafe(
 			tracesBreakdownQuery({ metric: "count", groupBy: "service", rootOnly: true }),
-			{ orgId: "org_123", startTime: baseParams.startTime, endTime: baseParams.endTime },
+			{ orgId: OrgId.make("org_123"), startTime: baseParams.startTime, endTime: baseParams.endTime },
 		)
 		expect(sourceTable(sql)).toBe("service_overview_spans")
 		expectWeighted(sql)
@@ -206,7 +207,7 @@ describe("a breakdown totals the same regardless of the dimension", () => {
 			const compiled = BREAKDOWN_DIMENSIONS.map(
 				(dim) =>
 					compileUnsafe(tracesBreakdownQuery({ metric: "count", ...dim, ...filters }), {
-						orgId: "org_123",
+						orgId: OrgId.make("org_123"),
 						startTime: baseParams.startTime,
 						endTime: baseParams.endTime,
 					}).sql,
@@ -241,7 +242,7 @@ describe("timeseries and breakdown agree for the same query", () => {
 
 	const breakdownSql = (groupBy: string, opts: TracesBaseWhereOpts) =>
 		compileUnsafe(tracesBreakdownQuery({ metric: "count", groupBy, ...opts }), {
-			orgId: "org_123",
+			orgId: OrgId.make("org_123"),
 			startTime: baseParams.startTime,
 			endTime: baseParams.endTime,
 		}).sql

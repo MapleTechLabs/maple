@@ -1,13 +1,13 @@
 // ClickHouse Query DSL — Maple facade
 //
 // The generic, reusable query builder now lives in the standalone
-// @maple-dev/effect-clickhouse package. This module re-exports that public API
+// @maple-dev/effect-orm package. This module re-exports that public API
 // and layers Maple's OpenTelemetry-specific table definitions, the named-query
 // ("pipe") registry, and the pre-built query templates on top of it.
 
 // Generic DSL — types, table, expressions, functions, params, query builder,
 // compilation, and unions — re-exported from the standalone library.
-export * from "@maple-dev/effect-clickhouse"
+export * from "@maple-dev/effect-orm/clickhouse"
 
 // Handwritten SQL. Shadows the builder's `rawCompiledQuery`, whose `reason`
 // is any string, with one that pins Maple's closed `RawSqlReason` union — the
@@ -340,6 +340,7 @@ export {
 	SPAN_HIERARCHY_MAX_SPANS,
 	spanDetailQuery,
 	traceTimeProbeQuery,
+	recentTraceTimeProbeQuery,
 	tracesDurationStatsQuery,
 	canUseTraceFacetsRollup,
 	tracesFacetsQuery,

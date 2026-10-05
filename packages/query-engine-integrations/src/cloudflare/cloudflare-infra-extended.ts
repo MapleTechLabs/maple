@@ -11,9 +11,9 @@
 // numeric output through CHNumber so BYO-ClickHouse string-encoded aggregates
 // decode identically to Tinybird numbers.
 
-import * as CH from "@maple-dev/effect-clickhouse/expr"
-import { from, param, type ColumnAccessor } from "@maple-dev/effect-clickhouse"
-import { MetricsGauge, MetricsSum } from "@maple/query-engine/ch/tables"
+import * as CH from "@maple-dev/effect-orm/expr"
+import { from, param, type ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
+import { MetricsGauge, MetricsSum, orgIdParam } from "@maple/query-engine/ch/tables"
 import { avgWhere, isoBucket } from "@maple/query-engine/ch/format"
 import {
 	CF_FILTERABLE,
@@ -51,7 +51,7 @@ export function cloudflareZoneFirewallTimeseriesSQL(opts: CloudflareFilterOpts =
 			events: CH.sum($.Value),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.ServiceName.eq(param.string("serviceName")),
 			$.MetricName.eq("cloudflare.firewall.events"),
 			$.TimeUnix.gte(param.dateTimeString("startTime")),
@@ -74,7 +74,7 @@ export function cloudflareZoneFirewallTopSQL(opts: CloudflareFilterOpts = {}) {
 			events: CH.sum($.Value),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.ServiceName.eq(param.string("serviceName")),
 			$.MetricName.eq("cloudflare.firewall.events"),
 			$.TimeUnix.gte(param.dateTimeString("startTime")),
@@ -112,7 +112,7 @@ export function cloudflareZoneDnsTimeseriesSQL(opts: CloudflareFilterOpts = {}) 
 			queries: CH.sum($.Value),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.ServiceName.eq(param.string("serviceName")),
 			$.MetricName.eq("cloudflare.dns.queries"),
 			$.TimeUnix.gte(param.dateTimeString("startTime")),
@@ -133,7 +133,7 @@ export function cloudflareZoneDnsBreakdownSQL(opts: CloudflareFilterOpts = {}) {
 			nxdomain: CH.sumIf($.Value, $.Attributes.get("dns.response_code").eq("NXDOMAIN")),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.ServiceName.eq(param.string("serviceName")),
 			$.MetricName.eq("cloudflare.dns.queries"),
 			$.TimeUnix.gte(param.dateTimeString("startTime")),
@@ -188,7 +188,7 @@ export function cloudflareQueueGaugesSQL() {
 			consumerConcurrency: avgWhere($.Value, $.MetricName.eq("cloudflare.queue.consumer.concurrency")),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.MetricName.in_(...QUEUE_GAUGE_METRIC_NAMES),
 			$.TimeUnix.gte(param.dateTimeString("startTime")),
 			$.TimeUnix.lte(param.dateTimeString("endTime")),
@@ -208,7 +208,7 @@ export function cloudflareDurableObjectCountersSQL() {
 			errors: CH.sumIf($.Value, $.MetricName.eq("cloudflare.durable_object.errors")),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.MetricName.in_("cloudflare.durable_object.requests", "cloudflare.durable_object.errors"),
 			$.TimeUnix.gte(param.dateTimeString("startTime")),
 			$.TimeUnix.lte(param.dateTimeString("endTime")),

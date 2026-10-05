@@ -13,10 +13,11 @@
 // only reachable from ErrorsService/telemetry. Remaining modules live on the
 // exemption list and shrink batch by batch.
 
-import type { CompiledQuery } from "@maple-dev/effect-clickhouse"
+import type { CompiledQuery } from "@maple-dev/effect-orm/clickhouse"
 import * as CH from "../ch"
 import { Effect } from "effect"
-import type { QueryBuilderError } from "@maple-dev/effect-clickhouse"
+import type { QueryBuilderError } from "@maple-dev/effect-orm/clickhouse"
+import { OrgId } from "@maple/domain"
 
 /**
  * Run a compile that is now Effect-returning, throwing on failure.
@@ -54,7 +55,7 @@ export interface BuilderFixture {
 	readonly sampleValues?: Readonly<Record<string, unknown>>
 }
 
-const ORG_ID = "org_sql_catalog"
+const ORG_ID = OrgId.make("org_sql_catalog")
 const START_TIME = "2026-01-01 10:30:00"
 const END_TIME = "2026-01-03 14:15:00"
 const SESSION_ID = "sess_0af7651916cd43dd"
@@ -903,7 +904,10 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		name: "errorFingerprintOccurrencesQuery",
 		label: "default",
 		compile: () =>
-			CH.compileUnsafe(CH.errorFingerprintOccurrencesQuery({ fingerprintHashes: [FINGERPRINT] }), window),
+			CH.compileUnsafe(
+				CH.errorFingerprintOccurrencesQuery({ fingerprintHashes: [FINGERPRINT] }),
+				window,
+			),
 		// The branded TraceId/SpanId columns reject the synthetic "" the sweep would use.
 		sampleValues: { traceId: "0af7651916cd43dd8448eb211c80319c", spanId: "b7ad6b7169203331" },
 	},

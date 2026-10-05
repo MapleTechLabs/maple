@@ -1,7 +1,7 @@
 // BOUNDARY: Test doubles mirror intentionally untyped external callbacks.
 import { describe, expect, it } from "vitest"
 import { Schema, Effect } from "effect"
-import { compileUnsafe } from "@maple-dev/effect-clickhouse"
+import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import {
 	auditAttributeKeyInventoryQuery,
 	auditAttributeKeyInventoryRowSchema,
@@ -23,9 +23,10 @@ import {
 	auditSpanProfileByServiceQuery,
 	auditSpanProfileRowSchema,
 } from "./setup-audit"
+import { OrgId } from "@maple/domain"
 
 const baseParams = {
-	orgId: "org_1",
+	orgId: OrgId.make("org_1"),
 	startTime: "2024-01-01 00:00:00",
 	endTime: "2024-01-02 00:00:00",
 }
@@ -156,7 +157,7 @@ describe("auditTraceSampleModulus", () => {
 
 describe("trace-completeness joins", () => {
 	const window = {
-		orgId: "org_1",
+		orgId: OrgId.make("org_1"),
 		childStart: "2024-01-01 10:00:00",
 		childEnd: "2024-01-01 11:00:00",
 		parentStart: "2024-01-01 09:00:00",
@@ -220,7 +221,7 @@ describe("trace-completeness joins", () => {
 
 	it("escapes the org id so an embedded quote cannot terminate the literal", () => {
 		const { sql } = Effect.runSync(
-			auditOrphanSpansSQL({ ...window, orgId: "org_'; DROP TABLE traces; --" }),
+			auditOrphanSpansSQL({ ...window, orgId: OrgId.make("org_'; DROP TABLE traces; --") }),
 		)
 		// The injected quote is escaped, so the whole payload stays inside one string literal.
 		expect(sql).toContain("OrgId = 'org_\\'\\x3B DROP TABLE traces\\x3B --'")

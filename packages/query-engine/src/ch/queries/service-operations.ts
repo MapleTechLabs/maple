@@ -14,15 +14,21 @@
 // unweighted, matching every other raw-Traces query.
 
 import { Schema } from "effect"
-import * as CH from "@maple-dev/effect-clickhouse/expr"
-import { param } from "@maple-dev/effect-clickhouse"
-import { defineCondFn, from, fromUnion, unionAll, type ColumnAccessor } from "@maple-dev/effect-clickhouse"
+import * as CH from "@maple-dev/effect-orm/expr"
+import { param } from "@maple-dev/effect-orm/clickhouse"
+import {
+	defineCondFn,
+	from,
+	fromUnion,
+	unionAll,
+	type ColumnAccessor,
+} from "@maple-dev/effect-orm/clickhouse"
 import { httpDisplaySpanName } from "../../traces-shared"
 import { CHNumber } from "../schema"
-import { ServiceOperationsHourly, ServiceOperationsMinutely, Traces } from "../tables"
+import { ServiceOperationsHourly, ServiceOperationsMinutely, Traces, orgIdParam } from "../tables"
 import { tracesBaseWhereConditions } from "./query-helpers"
 import { edgeCondition, hourGrain, interiorConditions, minuteGrain } from "./rollup-splice"
-import * as T from "@maple-dev/effect-clickhouse/types"
+import * as T from "@maple-dev/effect-orm/clickhouse"
 
 export interface ServiceOperationsSummaryOpts {
 	serviceName: string
@@ -206,7 +212,7 @@ export function serviceOperationsSummaryQuery(opts: ServiceOperationsSummaryOpts
 			bDurationQuantiles: CH.rawExpr(ROLLUP_DURATION_STATE, DURATION_STATE),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.ServiceName.eq(opts.serviceName),
 			rollupEnvironmentCondition($, opts.environments),
 			...interiorConditions($.Minute, minuteGrain),
@@ -226,7 +232,7 @@ export function serviceOperationsSummaryQuery(opts: ServiceOperationsSummaryOpts
 			bDurationQuantiles: CH.rawExpr(ROLLUP_DURATION_STATE, DURATION_STATE),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.ServiceName.eq(opts.serviceName),
 			hourlyEnvironmentCondition($, opts.environments),
 			...interiorConditions($.Hour, hourGrain),
@@ -336,7 +342,7 @@ export function serviceOperationsTimeseriesQuery(opts: ServiceOperationsTimeseri
 			count: CH.sum($.EstimatedSpanCount),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.ServiceName.eq(opts.serviceName),
 			rollupEnvironmentCondition($, opts.environments),
 			...interiorConditions($.Minute, minuteGrain),
@@ -354,7 +360,7 @@ export function serviceOperationsTimeseriesQuery(opts: ServiceOperationsTimeseri
 			count: CH.sum($.EstimatedSpanCount),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.ServiceName.eq(opts.serviceName),
 			hourlyEnvironmentCondition($, opts.environments),
 			...interiorConditions($.Hour, hourGrain),
@@ -452,7 +458,7 @@ export function routeUsageQuery(opts: RouteUsageOpts) {
 			bLast: CH.max_($.Minute),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			CH.when(opts.serviceName, (value: string) => $.ServiceName.eq(value)),
 			rollupEnvironmentCondition($, opts.environments),
 			...interiorConditions($.Minute, minuteGrain),
@@ -473,7 +479,7 @@ export function routeUsageQuery(opts: RouteUsageOpts) {
 			bLast: CH.max_($.Hour),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			CH.when(opts.serviceName, (value: string) => $.ServiceName.eq(value)),
 			hourlyEnvironmentCondition($, opts.environments),
 			...interiorConditions($.Hour, hourGrain),

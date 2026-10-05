@@ -340,6 +340,7 @@ const EXEMPT_BUILDERS: ReadonlySet<string> = new Set([
 
 	// todo (dead export — removal tracked separately; zero consumers)
 	"errors/traceTimeProbeQuery",
+	"errors/recentTraceTimeProbeQuery",
 
 	// todo batch ② — alerting correctness (anomaly, alert-checks, setup-audit, activity, liveness, internal)
 	"alert-checks/listRuleChecksQuery",

@@ -4,7 +4,7 @@ Use `bun run bench:queries` from the repository root. The CLI compiles the real
 query catalog, runs fixed workloads against ClickHouse, saves evidence, and compares
 implementations by **case ID**, so changing SQL does not lose the baseline.
 
-The reusable, driver-free API lives at `@maple-dev/effect-clickhouse/benchmark`.
+The reusable, driver-free API lives at `@maple-dev/effect-orm/benchmark`.
 `@maple/query-engine/benchmark` composes it with Maple catalog fixtures.
 `apps/api/scripts/bench-queries.ts` owns Maple catalog export and trace mining;
 execution, HTTP, files and printing use the published `ch-bench` CLI. See the

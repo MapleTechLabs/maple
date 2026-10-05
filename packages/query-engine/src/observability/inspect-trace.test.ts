@@ -5,6 +5,7 @@ import { inspectTrace } from "./inspect-trace"
 import { WarehouseExecutor } from "./WarehouseExecutor"
 import type { WarehouseExecutorApi } from "./WarehouseExecutor"
 import { compiledQueryOf } from "../execution/compiled-input"
+import { OrgId } from "@maple/domain"
 
 const TRACE_ID = "0af7651916cd43dd8448eb211c80319c"
 const NOW = Date.parse("2026-04-10T00:00:00Z")
@@ -44,7 +45,7 @@ const makeExecutor = (
 	captured: Captured,
 	opts: { window?: { start: string; end: string }; probeTimestamp?: string },
 ): WarehouseExecutorApi => ({
-	orgId: "org_test",
+	orgId: OrgId.make("org_test"),
 	compiledQuery: (compiled) => compiledQueryOf(compiled).decodeRows([]).pipe(Effect.orDie),
 	compiledQueryFirst: (compiled) => {
 		const query = compiledQueryOf(compiled)

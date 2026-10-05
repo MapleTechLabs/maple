@@ -14,9 +14,9 @@
 // the pre-computed percentiles live in `metrics_gauge` (one row per quantile).
 // The caller (the `serviceCloudflareStats` handler) merges both by ServiceName.
 
-import * as CH from "@maple-dev/effect-clickhouse/expr"
-import { from, param } from "@maple-dev/effect-clickhouse"
-import { MetricsGauge, MetricsSum } from "@maple/query-engine/ch/tables"
+import * as CH from "@maple-dev/effect-orm/expr"
+import { from, param } from "@maple-dev/effect-orm/clickhouse"
+import { MetricsGauge, MetricsSum, orgIdParam } from "@maple/query-engine/ch/tables"
 import { avgWhere } from "@maple/query-engine/ch/format"
 
 /** Counter metrics the poller emits for Workers (all in `metrics_sum`). */
@@ -50,7 +50,7 @@ export function cloudflareServiceCountersSQL() {
 			errorCount: CH.sumIf($.Value, $.MetricName.eq("cloudflare.worker.errors")),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.MetricName.in_(...COUNTER_METRIC_NAMES),
 			$.TimeUnix.gte(param.dateTimeString("startTime")),
 			$.TimeUnix.lte(param.dateTimeString("endTime")),
@@ -84,7 +84,7 @@ export function cloudflareServiceLatencySQL() {
 			),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.MetricName.in_(...GAUGE_METRIC_NAMES),
 			$.TimeUnix.gte(param.dateTimeString("startTime")),
 			$.TimeUnix.lte(param.dateTimeString("endTime")),

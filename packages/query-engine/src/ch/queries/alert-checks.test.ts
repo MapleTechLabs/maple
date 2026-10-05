@@ -1,9 +1,10 @@
 import { describe, expect, it } from "@effect/vitest"
-import { compileUnsafe } from "@maple-dev/effect-clickhouse"
+import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import { alertCheckGroupTotalsQuery, alertChecksSummaryQuery, listRuleChecksQuery } from "./alert-checks"
+import { OrgId } from "@maple/domain"
 
 const baseParams = {
-	orgId: "org_1",
+	orgId: OrgId.make("org_1"),
 	ruleId: "rule_1",
 }
 
@@ -57,7 +58,7 @@ describe("listRuleChecksQuery", () => {
 
 	it("escapes single quotes in orgId", () => {
 		const q = listRuleChecksQuery({ limit: 10 })
-		const { sql } = compileUnsafe(q, { orgId: "org'evil", ruleId: "rule_1" })
+		const { sql } = compileUnsafe(q, { orgId: OrgId.make("org'evil"), ruleId: "rule_1" })
 		expect(sql).toContain("OrgId = 'org\\'evil'")
 	})
 
