@@ -14,27 +14,32 @@ const ELECTRIC_PORT = 3000
 /** Absolute: alchemy has changed how a relative `dockerfile` resolves between releases. */
 const DOCKERFILE = resolve("apps/electric/Dockerfile")
 
-export interface CreateMapleElectricOptions extends Pick<
-	MapleStackContext,
-	"stage" | "region" | "domains" | "profile"
-> {
+export interface CreateMapleElectricOptions extends Pick<MapleStackContext, "stage" | "region" | "profile"> {
 	/** The ingest VPC: a second `AWS.EC2.Network` in one stack fights over the internet gateway. */
 	network: Pick<AWS.EC2.Network, "vpcId" | "publicSubnetIds">
+	/** Ingest's ALB listener, shared: a dedicated ALB costs more than this service's traffic. */
+	listener: AWS.ELBv2.Listener
+	/** The shared ALB's group, the only source admitted to ELECTRIC_PORT. */
+	albSecurityGroupId: AWS.EC2.SecurityGroup["groupId"]
+	/** Routed by host on the shared listener, so required (prd is the only stage that deploys this). */
+	hostname: string
 	/** The replication role on the instance's branch (`withReplication`), minted by the root. */
 	dbRole: Planetscale.PostgresRole
 }
 
 /**
  * Self-hosted ElectricSQL on ECS Fargate, the upstream behind `apps/electric-sync`.
- * Shares ingest's VPC but has its own cluster, ALB, security groups and certificate.
+ * Shares ingest's VPC and ALB (a host rule plus its own SNI certificate); own cluster and task group.
  * Runbook: `docs/electric-sync.md`.
  */
 export const createMapleElectric = ({
 	stage,
 	region,
-	domains,
 	profile,
 	network,
+	listener,
+	albSecurityGroupId,
+	hostname,
 	dbRole,
 }: CreateMapleElectricOptions) =>
 	Effect.gen(function* () {
@@ -42,27 +47,9 @@ export const createMapleElectric = ({
 		const name = (base: string) => resolveAwsResourceName(base, stage, region)
 		const tags = { Service: "maple-electric", Region: region }
 
-		// Alchemy keys state by logical id: renaming these ids replaces live groups, and a
-		// new group must also get a new `groupName` or it collides with the old one.
-		// `securityGroups` apply to both ALB and tasks, so only the ALB's group may reach
-		// ELECTRIC_PORT; otherwise a task's public IP serves plaintext around the cert.
-		const listenerPort = domains.electric ? 443 : 80
-		const albSecurityGroup = yield* AWS.EC2.SecurityGroup("electric-lb-sg", {
-			vpcId: network.vpcId,
-			groupName: name("electric-lb"),
-			description: `Maple ElectricSQL - public ${listenerPort === 443 ? "HTTPS" : "HTTP"} to the load balancer`,
-			ingress: [
-				{
-					ipProtocol: "tcp",
-					fromPort: listenerPort,
-					toPort: listenerPort,
-					// Not narrowed to Cloudflare ranges (they rotate); ELECTRIC_SECRET authorizes.
-					cidrIpv4: "0.0.0.0/0",
-					description: "Shape requests from the electric-sync Worker",
-				},
-			],
-		})
-
+		// Only the shared ALB may reach ELECTRIC_PORT; otherwise a task's public IP serves
+		// plaintext around the cert. The ALB itself admits only Cloudflare (ingest's group),
+		// which is fine: electric-sync reaches this through the proxied hostname.
 		const taskSecurityGroup = yield* AWS.EC2.SecurityGroup("electric-task-sg", {
 			vpcId: network.vpcId,
 			groupName: name("electric-task"),
@@ -72,7 +59,7 @@ export const createMapleElectric = ({
 					ipProtocol: "tcp",
 					fromPort: ELECTRIC_PORT,
 					toPort: ELECTRIC_PORT,
-					referencedGroupId: albSecurityGroup.groupId,
+					referencedGroupId: albSecurityGroupId,
 					description: "ALB to task",
 				},
 			],
@@ -91,12 +78,19 @@ export const createMapleElectric = ({
 		// Shared with the electric-sync Worker; rotate by redeploying this first, then the Worker.
 		const apiSecret = yield* secret("api-secret", yield* requiredPlain("ELECTRIC_SECRET"))
 
-		const issuedCertificateArn = yield* issueRegionalCertificate({
+		const certificateArn = yield* issueRegionalCertificate({
 			id: "electric-cert",
-			hostname: domains.electric,
+			hostname,
 			region: resolveAwsRegion(region),
 			tags,
 		})
+		// SNI: the listener's default certificate is ingest's.
+		if (certificateArn) {
+			yield* AWS.ELBv2.ListenerCertificate("electric-listener-cert", {
+				listenerArn: listener,
+				certificateArn,
+			})
+		}
 
 		const baseEnv = {
 			ELECTRIC_PORT: String(ELECTRIC_PORT),
@@ -133,15 +127,19 @@ export const createMapleElectric = ({
 
 			vpcId: network.vpcId,
 			subnets: network.publicSubnetIds,
-			securityGroups: [albSecurityGroup.groupId, taskSecurityGroup.groupId],
+			securityGroups: [taskSecurityGroup.groupId],
 			assignPublicIp: true,
 
 			// Public: the caller is a Worker with no route into the VPC; ELECTRIC_SECRET guards it.
-			// `port` is the container port; the listener goes to 443 once `certificateArn` is set.
-			public: true,
+			// The explicit `forward` names a fresh target group: an ALB target group belongs to
+			// one load balancer, so the one from electric's former ALB can't move here.
 			port: ELECTRIC_PORT,
+			loadBalancer: {
+				listener,
+				// Ahead of ingest's catch-all (priority 50000).
+				rules: [{ host: hostname, forward: `${ELECTRIC_PORT}/http`, priority: 10 }],
+			},
 			healthCheckPath: "/v1/health",
-			...(issuedCertificateArn ? { certificateArn: issuedCertificateArn } : undefined),
 			// Covers the replication connect and a cold task's first snapshot.
 			healthCheckGracePeriod: "120 seconds",
 
@@ -157,14 +155,12 @@ export const createMapleElectric = ({
 			tags,
 		})
 
-		// The public name, proxied through Cloudflare to the ALB.
-		if (domains.electric) {
-			yield* publishProxiedCname({
-				id: "electric-public-cname",
-				hostname: domains.electric,
-				serviceUrl: service.url,
-			})
-		}
+		// The public name, proxied through Cloudflare to the shared ALB.
+		yield* publishProxiedCname({
+			id: "electric-public-cname",
+			hostname,
+			serviceUrl: service.url,
+		})
 
 		return { serviceUrl: service.url }
 	})

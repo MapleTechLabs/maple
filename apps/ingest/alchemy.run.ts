@@ -135,7 +135,7 @@ export const createMapleIngest = ({ stage, region, domains, profile, dbRole }: C
 
 		// With an ingest domain the ALB terminates TLS on 443 behind Cloudflare's proxy, and
 		// admits only Cloudflare's edge: that is what makes `Cf-IPCountry` trustworthy. A stage
-		// without one (PR previews) gets alchemy's default HTTP listener on 80, open to all.
+		// without one (PR previews) gets a plain HTTP listener on 80, open to all.
 		// The group's `description` must not change: AWS treats it as immutable (a replace).
 		const listenerPort = domains.ingest ? 443 : 80
 		const albSources = domains.ingest
@@ -370,6 +370,32 @@ export const createMapleIngest = ({ stage, region, domains, profile, dbRole }: C
 			tags,
 		})
 
+		// The region's only ALB: `apps/electric` hangs a host rule and its own SNI certificate
+		// off this listener rather than paying for a second ALB. Ingest's rule is the catch-all.
+		const loadBalancer = yield* AWS.ELBv2.LoadBalancer("ingest-lb", {
+			type: "application",
+			scheme: "internet-facing",
+			subnets: network.publicSubnetIds,
+			securityGroups: [albSecurityGroup.groupId],
+			tags,
+		})
+		// `certificateArn`, not `certificates`: the declarative list would strip electric's
+		// `ListenerCertificate` on every ingest deploy.
+		const listener = yield* AWS.ELBv2.Listener("ingest-listener", {
+			loadBalancerArn: loadBalancer,
+			port: listenerPort,
+			protocol: issuedCertificateArn ? "HTTPS" : "HTTP",
+			...(issuedCertificateArn ? { certificateArn: issuedCertificateArn } : undefined),
+			defaultActions: [
+				{
+					type: "fixedResponse",
+					statusCode: "404",
+					contentType: "text/plain",
+					messageBody: "Not Found",
+				},
+			],
+		})
+
 		// Durability tier for the WAL (`apps/ingest/src/wal_store.rs`): sealed,
 		// unexported segments, claimed by the next task if their owner dies.
 		// Named up front so the env var below is a plain string.
@@ -475,12 +501,15 @@ export const createMapleIngest = ({ stage, region, domains, profile, dbRole }: C
 			subnets: network.publicSubnetIds,
 			securityGroups: [albSecurityGroup.groupId],
 
-			public: true,
-			// `port` is the CONTAINER port; the listener defaults to 443 with a
-			// certificate. Do not set `listenerPort`: Cloudflare cannot proxy to 3474.
+			// `port` is the CONTAINER port. The explicit `forward` names a fresh target group: an
+			// ALB target group belongs to one load balancer, so the owned-ALB one can't move here.
 			port: INGEST_PORT,
+			loadBalancer: {
+				listener,
+				// Last, so electric's host rule matches first.
+				rules: [{ forward: `${INGEST_PORT}/http`, priority: 50000 }],
+			},
 			healthCheckPath: "/health",
-			...(issuedCertificateArn ? { certificateArn: issuedCertificateArn } : undefined),
 			// Covers the startup Postgres probe, which exits the process on failure.
 			healthCheckGracePeriod: "60 seconds",
 			// Old tasks stay scale-in protected for up to 15 minutes while the WAL drains,
@@ -587,6 +616,9 @@ export const createMapleIngest = ({ stage, region, domains, profile, dbRole }: C
 			// Shared with `apps/electric`: two `AWS.EC2.Network`s in one stack fight
 			// over the internet gateway.
 			network,
+			// Shared with `apps/electric`, which routes by host on this listener.
+			listener,
+			albSecurityGroupId: albSecurityGroup.groupId,
 			// Resolvable only inside the VPC; surfaced so a preview's logs say where the gateway points.
 			collectorEndpoint,
 		}

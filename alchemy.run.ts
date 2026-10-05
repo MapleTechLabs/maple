@@ -247,7 +247,7 @@ export default Alchemy.Stack(
 		yield* serveWorker("api", api)
 
 		// Not wired into electric-sync: it reads `ELECTRIC_URL` from the secret store, so
-		// cutover is separate. Electric runs in ingest's VPC, hence `ingest &&`.
+		// cutover is separate. Electric runs in ingest's VPC behind its ALB (a host rule), hence `ingest &&`.
 		// Id must not be `"electric"` (the ECS service's id): alchemy keys state by id alone.
 		const electricDbRole =
 			db && profile.deploys.electric
@@ -259,13 +259,15 @@ export default Alchemy.Stack(
 					})
 				: undefined
 		const electric =
-			ingest && electricDbRole
+			ingest && electricDbRole && domains.electric
 				? yield* createMapleElectric({
 						stage,
 						region,
-						domains,
 						profile,
 						network: ingest.network,
+						listener: ingest.listener,
+						albSecurityGroupId: ingest.albSecurityGroupId,
+						hostname: domains.electric,
 						dbRole: electricDbRole,
 					})
 				: undefined
