@@ -145,8 +145,6 @@ export const comparatorLabels: Record<AlertComparator, string> = {
 export const isRangeComparator = (c: AlertComparator): c is "between" | "not_between" =>
 	c === "between" || c === "not_between"
 
-export { destinationTypeLabels } from "@/components/alerts/destination-provider"
-
 export function getExitErrorMessage(exit: unknown, fallback: string): string {
 	if (!Exit.isExit(exit) || Exit.isSuccess(exit)) return fallback
 	return errorMessage(exit, fallback)

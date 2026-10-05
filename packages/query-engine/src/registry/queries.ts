@@ -14,7 +14,6 @@ import type {
 	ErrorRateByServiceRequest,
 	ErrorsByTypeRequest,
 	ErrorsSummaryRequest,
-	ErrorsTimeseriesRequest,
 	ErrorsSparkRequest,
 	ContainerDetailSummaryRequest,
 	ContainerFacetsRequest,
@@ -109,26 +108,6 @@ export const errorsByType = defineQuery({
 		),
 })
 
-export const errorsTimeseries = defineQuery({
-	id: "errorsTimeseries",
-	profile: "aggregation",
-	cache: timeRangeCache,
-	compile: (payload: ErrorsTimeseriesRequest, orgId: string) =>
-		CH.compile(
-			CH.errorsTimeseriesQuery({
-				fingerprintHash: payload.fingerprintHash,
-				services: payload.services,
-			}),
-			{
-				orgId,
-				startTime: payload.startTime,
-				endTime: payload.endTime,
-				// Optional buckets default to one hour.
-				bucketSeconds: payload.bucketSeconds ?? 3600,
-			},
-		),
-})
-
 export const errorsSpark = defineQuery({
 	id: "errorsSpark",
 	profile: "aggregation",
@@ -150,7 +129,7 @@ export const errorsSpark = defineQuery({
 				orgId,
 				startTime: payload.startTime,
 				endTime: payload.endTime,
-				// Optional buckets default to one hour, as errorsTimeseries does.
+				// Optional buckets default to one hour.
 				bucketSeconds: payload.bucketSeconds ?? 3600,
 			},
 		),

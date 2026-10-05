@@ -15,7 +15,6 @@ import type {
 	CloudflareInfraZoneTimeseriesRequest,
 	CloudflareInfraZonesRequest,
 	ContainerInfraTimeseriesRequest,
-	FleetUtilizationTimeseriesRequest,
 	GetLogRequest,
 	NodeInfraTimeseriesRequest,
 	PlanetScaleInfraTimeseriesRequest,
@@ -615,19 +614,6 @@ export const Queries = {
 				narrowByTime ? { orgId, startTime: payload.startTime, endTime: payload.endTime } : { orgId },
 			)
 		},
-	}),
-
-	fleetUtilizationTimeseries: defineQuery({
-		id: "fleetUtilizationTimeseries",
-		profile: "aggregation",
-		cache: 15,
-		compile: (payload: FleetUtilizationTimeseriesRequest, orgId: string) =>
-			CH.compile(CH.fleetUtilizationTimeseriesQuery(), {
-				orgId,
-				startTime: payload.startTime,
-				endTime: payload.endTime,
-				bucketSeconds: payload.bucketSeconds ?? 300,
-			}),
 	}),
 
 	podInfraTimeseries: defineQuery({
