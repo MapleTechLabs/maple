@@ -17,7 +17,6 @@ import { disabledResultAtom } from "@/lib/services/atoms/disabled-result-atom"
 import { decodeLogKey, encodeLogKey, type LogKey } from "@/lib/log-key"
 import type { GetLogInput, GetLogResult } from "@/api/warehouse/logs"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
-import { formatTimestampInTimezone } from "@/lib/timezone-format"
 
 // Breadcrumb root shared by every state of this page.
 const LOGS_BREADCRUMB = { label: "Logs", href: "/logs" } as const
@@ -67,12 +66,6 @@ function LogDetailPage() {
 				<DashboardLayout.Breadcrumbs items={[LOGS_BREADCRUMB, { label: "Not found" }]} />
 				<DashboardLayout.Body>
 					<DashboardLayout.Content>
-						<DashboardLayout.Sticky>
-							<DashboardLayout.Header
-								title="Invalid log link"
-								description="This log link is invalid or corrupted."
-							/>
-						</DashboardLayout.Sticky>
 						<DashboardLayout.Scroll>
 							<NotFoundCard>
 								<p className="text-sm text-muted-foreground">
@@ -92,9 +85,6 @@ function LogDetailPage() {
 				<DashboardLayout.Breadcrumbs items={[LOGS_BREADCRUMB, { label: "Loading…" }]} />
 				<DashboardLayout.Body>
 					<DashboardLayout.Content>
-						<DashboardLayout.Sticky>
-							<DashboardLayout.Header title="Log detail" description="Loading log…" />
-						</DashboardLayout.Sticky>
 						<DashboardLayout.Scroll>
 							<div className="flex flex-col gap-3">
 								<Skeleton className="h-24 w-full rounded-md" />
@@ -113,9 +103,6 @@ function LogDetailPage() {
 				<DashboardLayout.Breadcrumbs items={[LOGS_BREADCRUMB, { label: "Error" }]} />
 				<DashboardLayout.Body>
 					<DashboardLayout.Content>
-						<DashboardLayout.Sticky>
-							<DashboardLayout.Header title="Log detail" description="Failed to load log" />
-						</DashboardLayout.Sticky>
 						<DashboardLayout.Scroll>
 							<QueryErrorState error={error} titleOverride="Failed to load log" />
 						</DashboardLayout.Scroll>
@@ -130,14 +117,11 @@ function LogDetailPage() {
 						<DashboardLayout.Breadcrumbs items={[LOGS_BREADCRUMB, { label: "Not found" }]} />
 						<DashboardLayout.Body>
 							<DashboardLayout.Content>
-								<DashboardLayout.Sticky>
-									<DashboardLayout.Header
-										title="Log not found"
-										description="This log could not be found — it may have aged out of retention."
-									/>
-								</DashboardLayout.Sticky>
 								<DashboardLayout.Scroll>
 									<NotFoundCard>
+										<p className="text-sm text-muted-foreground">
+											This log could not be found. It may have aged out of retention.
+										</p>
 										<dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
 											<dt className="text-muted-foreground">Service</dt>
 											<dd className="font-mono">{key.serviceName}</dd>
@@ -162,18 +146,6 @@ function LogDetailPage() {
 					/>
 					<DashboardLayout.Body>
 						<DashboardLayout.Content>
-							<DashboardLayout.Sticky>
-								<DashboardLayout.Header
-									title="Log detail"
-									description={`${log.serviceName} · ${formatTimestampInTimezone(
-										log.timestamp,
-										{
-											timeZone: effectiveTimezone,
-											withMilliseconds: true,
-										},
-									)}`}
-								/>
-							</DashboardLayout.Sticky>
 							<DashboardLayout.Scroll>
 								<div className="flex flex-col gap-3">
 									{/* Hero + meta as one card, mirroring the drawer's stacked top section. */}

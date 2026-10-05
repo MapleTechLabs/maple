@@ -60,9 +60,6 @@ function ReplayDetailPage() {
 				<DashboardLayout.Breadcrumbs items={breadcrumbs} />
 				<DashboardLayout.Body>
 					<DashboardLayout.Content>
-						<DashboardLayout.Sticky>
-							<DashboardLayout.Header title="Loading session…" />
-						</DashboardLayout.Sticky>
 						<DashboardLayout.Scroll>
 							<ReplayDetailSkeleton />
 						</DashboardLayout.Scroll>
@@ -75,9 +72,6 @@ function ReplayDetailPage() {
 				<DashboardLayout.Breadcrumbs items={breadcrumbs} />
 				<DashboardLayout.Body>
 					<DashboardLayout.Content>
-						<DashboardLayout.Sticky>
-							<DashboardLayout.Header title="Error" />
-						</DashboardLayout.Sticky>
 						<DashboardLayout.Scroll>
 							<QueryErrorState error={error} titleOverride="Failed to load session replay" />
 						</DashboardLayout.Scroll>
@@ -93,16 +87,10 @@ function ReplayDetailPage() {
 						<DashboardLayout.Breadcrumbs items={breadcrumbs} />
 						<DashboardLayout.Body>
 							<DashboardLayout.Content>
-								<DashboardLayout.Sticky>
-									<DashboardLayout.Header
-										title="Session not found"
-										description="It may have expired or not been ingested yet."
-									/>
-								</DashboardLayout.Sticky>
 								<DashboardLayout.Scroll>
 									<div className="rounded-xl border border-dashed border-border p-12 text-center text-sm text-muted-foreground">
 										No metadata for session <span className="font-mono">{sessionId}</span>
-										.
+										. It may have expired or not been ingested yet.
 									</div>
 								</DashboardLayout.Scroll>
 							</DashboardLayout.Content>

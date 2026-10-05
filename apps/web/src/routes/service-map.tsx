@@ -148,7 +148,7 @@ function ServiceMapContent() {
 			<DashboardLayout.Body>
 				<DashboardLayout.Content>
 					<DashboardLayout.Sticky>
-						<DashboardLayout.Header title="Service Map">
+						<DashboardLayout.Header>
 							{/* Wraps, and below the header's side-by-side breakpoint the
 							    environment select takes a row of its own: all three controls
 							    on one narrow row left it ~70px, and unwrapped they stacked

@@ -102,20 +102,11 @@ function InvestigationDetail({
 }
 
 /**
- * Every non-success state wears the same chrome — breadcrumbs, a sticky header,
- * a scrolling body — and four hand-copied versions of it drifted apart the moment
- * anything about the shell changed. Only the trail label, the title and the body
- * differ, so those are the parameters.
+ * Every non-success state wears the same chrome — breadcrumbs and a scrolling
+ * body — and four hand-copied versions of it drifted apart the moment anything
+ * about the shell changed. Only the trail label and the body differ.
  */
-function InvestigationShell({
-	trail,
-	title,
-	children,
-}: {
-	trail: string
-	title: string
-	children: ReactNode
-}) {
+function InvestigationShell({ trail, children }: { trail: string; children: ReactNode }) {
 	return (
 		<DashboardLayout.Root>
 			<DashboardLayout.Breadcrumbs
@@ -123,9 +114,6 @@ function InvestigationShell({
 			/>
 			<DashboardLayout.Body>
 				<DashboardLayout.Content>
-					<DashboardLayout.Sticky>
-						<DashboardLayout.Header title={title} />
-					</DashboardLayout.Sticky>
 					<DashboardLayout.Scroll>{children}</DashboardLayout.Scroll>
 				</DashboardLayout.Content>
 			</DashboardLayout.Body>
@@ -135,7 +123,7 @@ function InvestigationShell({
 
 function LoadFailureShell({ error, onRetry }: { error: unknown; onRetry: () => void }) {
 	return (
-		<InvestigationShell trail="Unavailable" title="Investigation">
+		<InvestigationShell trail="Unavailable">
 			<ErrorState error={error} title="This investigation could not be loaded" onRetry={onRetry} />
 		</InvestigationShell>
 	)
@@ -146,9 +134,9 @@ function LoadFailureShell({ error, onRetry }: { error: unknown; onRetry: () => v
  * and a grey block standing in for it told the reader nothing about what was
  * coming. The ghost draws the chain it is about to be replaced by.
  */
-function LoadingShell({ label = "Loading investigation…" }: { label?: string }) {
+function LoadingShell() {
 	return (
-		<InvestigationShell trail="…" title={label}>
+		<InvestigationShell trail="…">
 			<div className="mx-auto w-full max-w-4xl space-y-4">
 				<Skeleton className="h-4 w-32" />
 				<Skeleton className="h-8 w-3/4" />
@@ -160,7 +148,7 @@ function LoadingShell({ label = "Loading investigation…" }: { label?: string }
 
 function NotFoundShell() {
 	return (
-		<InvestigationShell trail="Missing" title="Investigation not found">
+		<InvestigationShell trail="Missing">
 			<Empty>
 				<EmptyHeader>
 					<EmptyTitle>This investigation is unavailable</EmptyTitle>

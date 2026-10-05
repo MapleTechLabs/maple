@@ -96,7 +96,7 @@ function AlertsPage() {
 				<DashboardLayout.Body>
 					<DashboardLayout.Content>
 						<DashboardLayout.Sticky>
-							<DashboardLayout.Header title="Alerts">{headerActions}</DashboardLayout.Header>
+							<DashboardLayout.Header>{headerActions}</DashboardLayout.Header>
 							{tabBar}
 						</DashboardLayout.Sticky>
 						<DashboardLayout.Scroll>

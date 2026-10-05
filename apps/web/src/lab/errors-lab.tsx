@@ -67,10 +67,7 @@ export function ErrorsLab() {
 			<DashboardLayout.Body>
 				<DashboardLayout.Content>
 					<DashboardLayout.Sticky>
-						<DashboardLayout.Header
-							title="Errors"
-							description="Every error fingerprint, with what it is doing and who is on it."
-						>
+						<DashboardLayout.Header>
 							<LabControls
 								state={state}
 								onStateChange={setState}

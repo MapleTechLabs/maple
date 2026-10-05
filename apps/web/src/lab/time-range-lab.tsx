@@ -56,10 +56,7 @@ export function TimeRangeLab() {
 			<DashboardLayout.Body>
 				<DashboardLayout.Content>
 					<DashboardLayout.Sticky>
-						<DashboardLayout.Header
-							title="Time range picker"
-							description="Presets, shorthand, custom range, and the timezone selector, over local state."
-						>
+						<DashboardLayout.Header>
 							<TimeRangePicker
 								startTime={range.startTime}
 								endTime={range.endTime}

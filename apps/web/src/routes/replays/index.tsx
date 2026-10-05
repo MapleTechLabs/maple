@@ -263,12 +263,7 @@ function ReplaysPage() {
 					</DashboardLayout.Filters>
 					<DashboardLayout.Content>
 						<DashboardLayout.Sticky>
-							<DashboardLayout.Header
-								title="Session Replays"
-								description="Watch what your users actually saw and did in the browser."
-							>
-								{headerActions}
-							</DashboardLayout.Header>
+							<DashboardLayout.Header>{headerActions}</DashboardLayout.Header>
 							{toolbar}
 						</DashboardLayout.Sticky>
 						<DashboardLayout.Scroll>

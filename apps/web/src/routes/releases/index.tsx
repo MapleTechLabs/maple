@@ -130,10 +130,7 @@ function ReleasesPage() {
 					</DashboardLayout.Filters>
 					<DashboardLayout.Content>
 						<DashboardLayout.Sticky>
-							<DashboardLayout.Header
-								title="Releases"
-								description="What shipped, per service, and whether it changed anything."
-							>
+							<DashboardLayout.Header>
 								<TimeRangeHeaderControls
 									startTime={search.startTime ?? effectiveStartTime}
 									endTime={search.endTime ?? effectiveEndTime}

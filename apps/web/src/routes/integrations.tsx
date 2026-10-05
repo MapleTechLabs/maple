@@ -166,10 +166,7 @@ function IntegrationsPage() {
 					<DashboardLayout.Filters>{settingsSidebar}</DashboardLayout.Filters>
 					<DashboardLayout.Content>
 						<DashboardLayout.Sticky>
-							<DashboardLayout.Header
-								title="Integrations"
-								description="Connect external data sources and services to Maple."
-							>
+							<DashboardLayout.Header>
 								<IntegrationsSummary />
 							</DashboardLayout.Header>
 						</DashboardLayout.Sticky>

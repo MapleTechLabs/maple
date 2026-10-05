@@ -117,9 +117,6 @@ function AgentSessionDetailPage() {
 		.onError((error) => (
 			<SessionShell sessionId={sessionId}>
 				<DashboardLayout.Content>
-					<DashboardLayout.Sticky>
-						<DashboardLayout.Header title={breadcrumbSessionId(sessionId)} />
-					</DashboardLayout.Sticky>
 					<DashboardLayout.Scroll>
 						<QueryErrorState
 							error={error}
@@ -140,9 +137,6 @@ function AgentSessionDetailPage() {
 			value.data.length === 0 ? (
 				<SessionShell sessionId={sessionId}>
 					<DashboardLayout.Content>
-						<DashboardLayout.Sticky>
-							<DashboardLayout.Header title={breadcrumbSessionId(sessionId)} />
-						</DashboardLayout.Sticky>
 						<DashboardLayout.Scroll>
 							<EmptySession sessionId={sessionId} windowed={queryWindow !== undefined} />
 						</DashboardLayout.Scroll>

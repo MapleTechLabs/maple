@@ -191,7 +191,6 @@ export function AlertCreateFormSurface({
 		setLoading(false)
 	}
 
-	const pageTitle = editingRule ? "Edit alert rule" : "Create alert rule"
 	const showScope = ruleForm.signalType !== "builder_query" && ruleForm.signalType !== "raw_query"
 	// Drop the verdict as soon as the user edits anything it depended on.
 	const currentPreviewKey = previewIdentityKey(ruleForm)
@@ -207,9 +206,6 @@ export function AlertCreateFormSurface({
 			/>
 			<DashboardLayout.Body>
 				<DashboardLayout.Content>
-					<DashboardLayout.Sticky>
-						<DashboardLayout.Header title={pageTitle} />
-					</DashboardLayout.Sticky>
 					<DashboardLayout.Scroll>
 						<div className={cn("mx-auto w-full space-y-4", RULE_FORM_MAX_WIDTH)}>
 							<WidgetPrefillNoticeBanner notices={prefillNotices} />

@@ -804,9 +804,6 @@ function IssueShell({
 			<DashboardLayout.Breadcrumbs items={breadcrumbs} />
 			<DashboardLayout.Body>
 				<DashboardLayout.Content>
-					<DashboardLayout.Sticky>
-						<DashboardLayout.Header title="Issue" />
-					</DashboardLayout.Sticky>
 					<DashboardLayout.Scroll>{children}</DashboardLayout.Scroll>
 				</DashboardLayout.Content>
 			</DashboardLayout.Body>
