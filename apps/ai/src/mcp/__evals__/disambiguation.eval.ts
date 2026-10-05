@@ -1,4 +1,4 @@
-import { ToolCallScorer } from "vitest-evals"
+import { ToolCallScorer } from "vitest-evals/legacy"
 import { describeMapleEval, predictToolCalls, FIXTURES } from "./utils"
 
 // Disambiguation evals: prompts where two tools are plausible and the model must

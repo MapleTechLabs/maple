@@ -38,6 +38,6 @@
 		"gpt-tokenizer": "^4.0.0",
 		"typescript": "catalog:tooling",
 		"vitest": "catalog:",
-		"vitest-evals": "^0.4.1"
+		"vitest-evals": "^0.17.0"
 	}
 }

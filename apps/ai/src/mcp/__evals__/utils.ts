@@ -1,5 +1,5 @@
 import { describe, it } from "vitest"
-import { describeEval, type TaskResult, type ToolCall } from "vitest-evals"
+import { describeEval, type TaskResult, type ToolCall } from "vitest-evals/legacy"
 import { generateText } from "ai"
 import { createEvalModel, hasEvalCredentials } from "./model"
 import { buildPredictionToolSet } from "./tools"
