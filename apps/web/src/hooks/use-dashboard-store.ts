@@ -918,7 +918,7 @@ export function useDashboardMutations() {
 			})
 
 			try {
-				await tx.isPersisted.promise
+				await tx.when("settled")
 				clearPersistenceError()
 			} catch (error) {
 				applyMutationError(error)
@@ -1021,7 +1021,7 @@ export function useDashboardMutations() {
 			const active = collection
 			if (!active.get(id)) return
 			const tx = active.delete(id)
-			void tx.isPersisted.promise.catch((error: unknown) => applyMutationError(error))
+			void tx.when("settled").catch((error: unknown) => applyMutationError(error))
 		},
 		[collection, readOnly, applyMutationError],
 	)
