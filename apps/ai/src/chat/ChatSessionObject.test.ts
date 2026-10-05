@@ -39,7 +39,8 @@ const activateOn = (state: ReturnType<typeof makeFakeDurableObjectState>) =>
 		return { rpc: yield* build, state }
 	})
 
-const activate = activateOn(makeFakeDurableObjectState({ migrated: false }))
+/** A fresh object per test, so no test reads another's events. */
+const activate = () => activateOn(makeFakeDurableObjectState({ migrated: false }))
 
 describe("the ChatSession Durable Object on alchemy's form", () => {
 	it.effect("the outer phase touches no storage, so it can run against alchemy's plan-time mock", () =>
@@ -62,7 +63,7 @@ describe("the ChatSession Durable Object on alchemy's form", () => {
 
 	it.effect("exposes the stub's surface over the session it built", () =>
 		Effect.gen(function* () {
-			const { rpc } = yield* activate
+			const { rpc } = yield* activate()
 			assert.strictEqual(yield* rpc.cursor(), 0)
 			const seq = yield* rpc.append({ type: "user-message", id: "u1", text: "hello" })
 			assert.strictEqual(seq, 1)
@@ -77,7 +78,7 @@ describe("the ChatSession Durable Object on alchemy's form", () => {
 
 	it.effect("begins a turn over RPC and lets the class own it", () =>
 		Effect.gen(function* () {
-			const { rpc, state } = yield* activate
+			const { rpc, state } = yield* activate()
 			const begun = yield* rpc.beginTurn({
 				sessionId: "org_test:tab",
 				messageId: "m1",

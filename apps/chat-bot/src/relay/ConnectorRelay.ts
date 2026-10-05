@@ -278,8 +278,13 @@ export class ConnectorRelay {
 		)
 	}
 
+	/** A failed schedule leaves no job to clear the flag, so it falls here and the next event re-arms. */
 	private readonly armKeepAlive: Effect.Effect<void> = Effect.suspend(() => this.ledger.keepAlive).pipe(
-		Effect.catchTag(STORAGE_ERROR, logStorageFailure),
+		Effect.catchTag(STORAGE_ERROR, (error) =>
+			logStorageFailure(error).pipe(
+				Effect.andThen(Effect.sync(() => void (this.keepingAlive = false))),
+			),
+		),
 	)
 
 	/**
@@ -353,14 +358,12 @@ export class ConnectorRelay {
 		}).pipe(Effect.catchTag(STORAGE_ERROR, logStorageFailure))
 	}
 
-	/** The checkpoint and its job go together, so a finished turn is never settled again. */
+	/**
+	 * The checkpoint and its job go together. The key stays in `relaying`: a job that read the
+	 * checkpoint before this delete must still see a live turn, not an evicted one. Keys are per turn.
+	 */
 	private forgetTurn(key: string): Effect.Effect<void> {
-		return this.ledger
-			.forget(key)
-			.pipe(
-				Effect.ensuring(Effect.sync(() => void this.relaying.delete(key))),
-				Effect.catchTag(STORAGE_ERROR, logStorageFailure),
-			)
+		return this.ledger.forget(key).pipe(Effect.catchTag(STORAGE_ERROR, logStorageFailure))
 	}
 
 	/**

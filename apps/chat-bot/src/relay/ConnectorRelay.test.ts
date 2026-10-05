@@ -13,7 +13,12 @@ import { chatConnectorId } from "@maple/chat-platform"
 import { ChatConversationKey } from "@maple/domain/chat-session"
 import { Effect, Option, Schema } from "effect"
 import { describe, expect, it } from "vitest"
-import { ConnectorRelay, type ConnectorRelayLedger, type ConnectorRelayRuntime } from "./ConnectorRelay.ts"
+import {
+	ConnectorRelay,
+	type ConnectorRelayLedger,
+	type ConnectorRelayRuntime,
+	ConnectorRelayStorageError,
+} from "./ConnectorRelay.ts"
 import { decodeRelayTurnCheckpoint, type RelayTurnCheckpoint, type SettleOutcome } from "./settle.ts"
 import type { RelayHost } from "./run.ts"
 
@@ -337,5 +342,67 @@ describe("the keep-alive", () => {
 
 		await Effect.runPromise(relay.deliver(message))
 		expect(state.keepAlive.scheduled).toBe(3)
+	})
+
+	it("arms again on the next event after a schedule that failed", async () => {
+		const state = objectState()
+		const relay = relayOn(state, heavy({ event: () => Promise.resolve() }).load)
+		const working = state.ledger.keepAlive
+		Object.assign(state.ledger, {
+			keepAlive: Effect.fail(
+				new ConnectorRelayStorageError({ operation: "keepAlive", message: "down", cause: undefined }),
+			),
+		})
+
+		await Effect.runPromise(relay.deliver(message))
+		await Promise.all(state.pending)
+		Object.assign(state.ledger, { keepAlive: working })
+		await Effect.runPromise(relay.deliver(message))
+		await Promise.all(state.pending)
+
+		expect(state.keepAlive.scheduled).toBe(1)
+	})
+})
+
+describe("a job racing the end of its turn", () => {
+	it("does not settle a turn that finished after the job read its checkpoint", async () => {
+		const state = objectState()
+		let finish = () => {}
+		const finished = new Promise<void>((resolve) => {
+			finish = resolve
+		})
+		let recordedTurn = () => {}
+		const recorded = new Promise<void>((resolve) => {
+			recordedTurn = resolve
+		})
+		const run = heavy({
+			event: async (host) => {
+				await Effect.runPromise(host.recordTurn(checkpoint()))
+				recordedTurn()
+				await finished
+			},
+		})
+		const relay = relayOn(state, run.load)
+		await Effect.runPromise(relay.deliver(message))
+		await recorded
+
+		// The job's read lands, then the turn ends before it decides.
+		const read = state.ledger.read
+		Object.assign(state.ledger, {
+			read: (key: string) =>
+				read(key).pipe(
+					Effect.tap(() =>
+						Effect.promise(async () => {
+							finish()
+							await Promise.all(state.pending)
+						}),
+					),
+				),
+		})
+		await Effect.runPromise(relay.turnDue(TURN_KEY))
+
+		expect(run.settled).toEqual([])
+		expect([...state.stored]).toEqual([])
+		expect([...state.turnJobs]).toEqual([])
 	})
 })
