@@ -67,8 +67,8 @@
 		"typescript": "catalog:tooling"
 	},
 	"overrides": {
-		"@effect/sql-d1": "4.0.0",
-		"@effect/sql-sqlite-do": "4.0.0",
+		"@effect/sql-d1": "4.0.1",
+		"@effect/sql-sqlite-do": "4.0.1",
 		"workerd": "1.20261002.1"
 	},
 	"packageManager": "bun@1.4.0",
@@ -88,13 +88,13 @@
 			"@tanstack/charts-scales": "1.0.0"
 		},
 		"effect": {
-			"@effect/ai-openai-compat": "4.0.0",
-			"@effect/ai-openrouter": "4.0.0",
-			"@effect/atom-react": "4.0.0",
+			"@effect/ai-openai-compat": "4.0.1",
+			"@effect/ai-openrouter": "4.0.1",
+			"@effect/atom-react": "4.0.1",
 			"@effect/language-service": "^0.87.3",
-			"@effect/platform-bun": "4.0.0",
-			"@effect/vitest": "4.0.0",
-			"effect": "4.0.0"
+			"@effect/platform-bun": "4.0.1",
+			"@effect/vitest": "4.0.1",
+			"effect": "4.0.1"
 		},
 		"react": {
 			"@types/react": "^19.3.0",
@@ -123,9 +123,9 @@
 		}
 	},
 	"patchedDependencies": {
-		"@effect/ai-openrouter@4.0.0": "patches/@effect%2Fai-openrouter@4.0.0.patch",
-		"@effect/vitest@4.0.0": "patches/@effect%2Fvitest@4.0.0.patch",
-		"effect@4.0.0": "patches/effect@4.0.0.patch",
+		"@effect/ai-openrouter@4.0.1": "patches/@effect%2Fai-openrouter@4.0.1.patch",
+		"@effect/vitest@4.0.1": "patches/@effect%2Fvitest@4.0.1.patch",
+		"effect@4.0.1": "patches/effect@4.0.1.patch",
 		"alchemy@2.0.0-beta.80": "patches/alchemy@2.0.0-beta.80.patch"
 	}
 }

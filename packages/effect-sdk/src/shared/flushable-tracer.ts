@@ -75,19 +75,22 @@ export interface SpanBufferOptions {
 // Effect's own "don't report this failure" signal. The canonical case is
 // `HttpServerError { reason: RouteNotFound }` (unmatched routes → 404), which
 // would otherwise surface as an Error-status span. We key off the annotation
-// rather than concrete error tags so the check stays robust and HTTP-agnostic;
-// genuine failures (400 parse errors, 500s) keep `ignore = false` and trace.
-const isIgnoredFailure = (error: unknown): boolean =>
-	Predicate.hasProperty(error, ErrorReporter.ignore) && error[ErrorReporter.ignore] === true
+// rather than concrete error tags so the check stays robust and HTTP-agnostic.
+// An anticipated identifier wins over the flag: Effect also flags
+// `HttpApiSchemaError` (request-decode 400s), which should export as `Ok`, not vanish.
+const isIgnoredFailure = (error: unknown, anticipated: ReadonlySet<string> | undefined): boolean =>
+	Predicate.hasProperty(error, ErrorReporter.ignore) &&
+	error[ErrorReporter.ignore] === true &&
+	!(anticipated !== undefined && isAnticipatedFailure(error, anticipated))
 
-const isIgnoredSpan = (span: SpanImpl): boolean => {
+const isIgnoredSpan = (span: SpanImpl, anticipated: ReadonlySet<string> | undefined): boolean => {
 	const status = span.status
 	if (status._tag !== "Ended") return false
 	const exit = status.exit
 	if (exit._tag !== "Failure") return false
 	if (exit.cause.reasons.some(Cause.isDieReason)) return false
 	const failures = exit.cause.reasons.filter(Cause.isFailReason)
-	return failures.length > 0 && failures.every((reason) => isIgnoredFailure(reason.error))
+	return failures.length > 0 && failures.every((reason) => isIgnoredFailure(reason.error, anticipated))
 }
 
 export const makeSpanBuffer = (options: SpanBufferOptions = {}): SpanBuffer => {
@@ -100,7 +103,7 @@ export const makeSpanBuffer = (options: SpanBufferOptions = {}): SpanBuffer => {
 		if (disabled) return
 		if (!span.sampled) return
 		if (dropSpan !== undefined && dropSpan(span.name)) return
-		if (isIgnoredSpan(span)) return
+		if (isIgnoredSpan(span, anticipatedErrorIdentifiers)) return
 		if (buffer.length >= MAX_BUFFER) return
 		buffer.push(makeOtlpSpan(span, anticipatedErrorIdentifiers))
 	}
