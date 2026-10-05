@@ -21,7 +21,7 @@
 	},
 	"dependencies": {
 		"@maple/browser-session": "workspace:*",
-		"web-vitals": "^6.2.2"
+		"web-vitals": "^6.2.3"
 	},
 	"devDependencies": {
 		"@vitest/browser-playwright": "catalog:",

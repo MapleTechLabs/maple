@@ -18,7 +18,7 @@
 		"bench": "vitest bench --run"
 	},
 	"dependencies": {
-		"rrweb": "^2.0.0-alpha.18"
+		"rrweb": "^2.1.7"
 	},
 	"devDependencies": {
 		"@vitest/browser-playwright": "catalog:",

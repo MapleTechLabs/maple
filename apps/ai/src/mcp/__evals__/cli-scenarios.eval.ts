@@ -1,4 +1,4 @@
-import { ToolCallScorer } from "vitest-evals"
+import { ToolCallScorer } from "vitest-evals/legacy"
 import { describeMapleEval, predictToolCalls } from "./utils"
 
 // Investigation scenarios ported from the former `apps/cli/EVALS.md` suite.

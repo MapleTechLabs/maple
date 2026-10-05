@@ -1,6 +1,6 @@
 import { afterAll, beforeAll } from "vitest"
 import { generateText, isStepCount } from "ai"
-import { ToolCallScorer, type TaskResult, type ToolCall } from "vitest-evals"
+import { ToolCallScorer, type TaskResult, type ToolCall } from "vitest-evals/legacy"
 import { describeMapleEval, FIXTURES } from "./utils"
 import { createEvalModel, hasEvalCredentials } from "./model"
 import { buildExecutionToolSet } from "./tools"

@@ -1,6 +1,7 @@
 import { assert, describe, it } from "@effect/vitest"
 import { Data, Effect, Schema } from "effect"
 import * as ErrorReporter from "effect/ErrorReporter"
+import { HttpApiSchemaError } from "effect/http-api/HttpApiError"
 import * as HttpServerError from "effect/http/HttpServerError"
 import * as HttpServerRequest from "effect/http/HttpServerRequest"
 import { makeSpanBuffer } from "./flushable-tracer.js"
@@ -83,6 +84,23 @@ describe("makeSpanBuffer anticipated-error classification", () => {
 				span!.events.some((event) => event.name === "exception"),
 				false,
 			)
+		}),
+	)
+
+	// effect 4.0.1 flags HttpApiSchemaError with [ErrorReporter.ignore]; an
+	// anticipated identifier must still export it as Ok instead of dropping it.
+	it.effect("exports an ignore-flagged anticipated failure as Ok", () =>
+		Effect.gen(function* () {
+			const buffer = makeSpanBuffer({ anticipatedErrorIdentifiers: new Set(["HttpApiSchemaError"]) })
+			yield* runSpan(
+				buffer,
+				Schema.decodeUnknownEffect(Schema.String)(1).pipe(
+					Effect.mapError((cause) => new HttpApiSchemaError({ kind: "Body", cause })),
+				),
+			)
+			const [span] = buffer.drain()
+			assert.isDefined(span)
+			assert.strictEqual(span!.status.code, 1 /* Ok */)
 		}),
 	)
 
