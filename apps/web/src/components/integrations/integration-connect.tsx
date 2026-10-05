@@ -10,7 +10,7 @@ import {
 import { toastManager } from "@maple/ui/components/ui/toast"
 
 import { trackProduct } from "@/lib/analytics"
-import { useAtomRefresh, useAtomSet } from "@/lib/effect-atom"
+import { Result as AtomResult, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { MapleApiAtomClient, retainedQuery } from "@/lib/services/common/atom-client"
 import { MapleApiV2AtomClient, retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { showErrorToast } from "@/lib/error-toast"
@@ -393,11 +393,11 @@ function PlanetscaleConnectBoundary({ children }: { children: React.ReactNode })
 }
 
 function GoogleAnalyticsConnectBoundary({ children }: { children: React.ReactNode }) {
-	const refreshStatus = useAtomRefresh(
-		retainedQueryV2("googleAnalyticsIntegration", "status", {
-			reactivityKeys: ["googleAnalyticsIntegration"],
-		}),
-	)
+	const statusAtom = retainedQueryV2("googleAnalyticsIntegration", "status", {
+		reactivityKeys: ["googleAnalyticsIntegration"],
+	})
+	const status = useAtomValue(statusAtom)
+	const refreshStatus = useAtomRefresh(statusAtom)
 	const startConnect = useAtomSet(
 		MapleApiV2AtomClient.mutation("googleAnalyticsIntegration", "connect"),
 		{ mode: "promiseExit" },
@@ -458,6 +458,17 @@ function GoogleAnalyticsConnectBoundary({ children }: { children: React.ReactNod
 			refreshStatus()
 			primeOnce()
 		},
+		// The close path alone is not enough under COOP: it fires while the user is still on
+		// Google's consent screen, so its prime runs before the grant exists. Polling past the
+		// close is what retries it — the status read is what says the grant has landed, and
+		// `primeOnce` keeps it to a single collection.
+		onPoll: () => {
+			refreshStatus()
+			if (AtomResult.isSuccess(status) && status.value.connected && !status.value.revoked) {
+				primeOnce()
+			}
+		},
+		closeGraceMs: 30_000,
 	})
 
 	return <IntegrationConnectContext value={value}>{children}</IntegrationConnectContext>
