@@ -11,6 +11,7 @@ import {
 import { projectAlertLifecycleEvent } from "@maple/alerting-core"
 import type { AlertDestinationRow } from "@maple/db"
 import { Effect, Result } from "effect"
+import { HttpClient } from "effect/http"
 import { parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
 import type { EmailServiceApi } from "@maple/backend/platform/EmailService"
 import type { ChatAlertPosterApi } from "./ChatAlertPoster"
@@ -61,6 +62,7 @@ export const makeAlertDestinationDelivery = (options: {
 	readonly encryptionKey: Buffer
 	readonly appBaseUrl: string
 	readonly runtime: AlertRuntimeApi
+	readonly httpClient: HttpClient.HttpClient
 	readonly email: EmailServiceApi
 	readonly postChatAlert: ChatAlertPosterApi["post"]
 }) => {
@@ -128,7 +130,7 @@ export const makeAlertDestinationDelivery = (options: {
 			context.linkUrl,
 			composeChatUrl(context),
 			{ sendEmail, postChatAlert: options.postChatAlert },
-		)
+		).pipe(Effect.provideService(HttpClient.HttpClient, options.httpClient))
 
 	const buildPayloadValue = (context: AlertDeliveryPayloadContext, tenantId: string) =>
 		Result.gen(function* () {

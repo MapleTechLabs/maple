@@ -11,6 +11,7 @@ import {
 } from "@maple/domain/http"
 import { and, eq, inArray } from "drizzle-orm"
 import { Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
+import { HttpClient } from "effect/http"
 import { buildAlertChatUrl } from "./AlertDeliveryDispatch"
 import { dispatchDelivery as dispatchDeliveryImpl } from "./delivery/dispatch"
 import type { DispatchContext } from "./delivery/context"
@@ -107,9 +108,10 @@ export interface NotificationDestinationResult {
 const make: Effect.Effect<
 	NotificationDispatcherApi,
 	NotificationDispatchError,
-	Database | Env | EmailService | ChatAlertPoster
+	Database | Env | EmailService | ChatAlertPoster | HttpClient.HttpClient
 > = Effect.gen(function* () {
 	const database = yield* Database
+	const httpClient = yield* HttpClient.HttpClient
 	const env = yield* Env
 	const email = yield* EmailService
 	const chatAlertPoster = yield* ChatAlertPoster
@@ -214,7 +216,10 @@ const make: Effect.Effect<
 			request.linkUrl,
 			chatUrl,
 			{ sendEmail, postChatAlert: chatAlertPoster.post },
-		).pipe(Effect.tapError(() => Effect.annotateCurrentSpan({ "maple.delivery.outcome": "failed" })))
+		).pipe(
+			Effect.provideService(HttpClient.HttpClient, httpClient),
+			Effect.tapError(() => Effect.annotateCurrentSpan({ "maple.delivery.outcome": "failed" })),
+		)
 		yield* Effect.annotateCurrentSpan({
 			"maple.delivery.outcome": "delivered",
 			...(result.responseCode != null

@@ -4,8 +4,13 @@ import { assert, describe, it } from "@effect/vitest"
 import { createHmac } from "node:crypto"
 import { Effect, Schema } from "effect"
 import type { DispatchContext } from "./AlertDeliveryDispatch"
-import { dispatchDelivery } from "./delivery/dispatch"
+import { dispatchDelivery as dispatchDeliveryRaw } from "./delivery/dispatch"
+import { FetchHttpClient } from "effect/http"
 import type { EffectTransportDeps } from "./delivery/Transport"
+
+/** The runtime provides the HTTP client; each test passes its own `fetch`. */
+const dispatchDelivery = (...args: Parameters<typeof dispatchDeliveryRaw>) =>
+	dispatchDeliveryRaw(...args).pipe(Effect.provide(FetchHttpClient.layer))
 
 /**
  * Characterization tests: they pin what each provider ACTUALLY sends today,

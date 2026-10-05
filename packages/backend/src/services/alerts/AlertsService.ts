@@ -91,6 +91,7 @@ import {
 	Schema,
 	Context,
 } from "effect"
+import { HttpClient } from "effect/http"
 import * as AlertingMetrics from "@maple/backend/observability/AlertingMetrics"
 import { upsertAlertIssue } from "@maple/backend/services/errors/issue-hub"
 import {
@@ -406,6 +407,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			const queryEngine = yield* QueryEngineService
 			const warehouse = yield* WarehouseQueryService
 			const runtime = yield* AlertRuntime
+			const httpClient = yield* HttpClient.HttpClient
 			const email = yield* EmailService
 			const orgChSettings = yield* OrgClickHouseSettingsService
 			const chatAlertPoster = yield* ChatAlertPoster
@@ -417,6 +419,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				encryptionKey,
 				appBaseUrl: env.MAPLE_APP_BASE_URL,
 				runtime,
+				httpClient,
 				email,
 				postChatAlert: chatAlertPoster.post,
 			})

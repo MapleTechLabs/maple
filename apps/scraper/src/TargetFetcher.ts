@@ -1,5 +1,5 @@
 import { Context, Effect, Layer, Option } from "effect"
-import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
+import { HttpClient, HttpClientRequest } from "effect/http"
 import type { InternalScrapeTarget } from "@maple/domain/http"
 import { describeHttpClientError, guard } from "@maple/safe-fetch"
 import { classifyTargetStatus } from "./policy"
@@ -146,5 +146,5 @@ export class TargetFetcher extends Context.Service<TargetFetcher, TargetFetcherA
 		}),
 	},
 ) {
-	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(FetchHttpClient.layer))
+	static readonly layer = Layer.effect(this, this.make)
 }

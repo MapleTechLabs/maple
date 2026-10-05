@@ -23,7 +23,7 @@ import {
 import { scrapeTargetChecks, scrapeTargets, type ScrapeTargetCheckRow } from "@maple/db"
 import { and, desc, eq, gte, inArray, lte } from "drizzle-orm"
 import { Cause, Clock, Context, Effect, Exit, Layer, Option, Redacted, Schema } from "effect"
-import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
+import { HttpClient, HttpClientRequest } from "effect/http"
 import {
 	encryptAes256Gcm,
 	parseBase64Aes256GcmKey,
@@ -1325,12 +1325,6 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 	},
 ) {
 	static readonly layer = Layer.effect(this, this.make).pipe(
-		Layer.provide(
-			Layer.mergeAll(
-				PlanetScaleOAuthService.layer,
-				PlanetScaleDiscoveryService.layer,
-				FetchHttpClient.layer,
-			),
-		),
+		Layer.provide(Layer.mergeAll(PlanetScaleOAuthService.layer, PlanetScaleDiscoveryService.layer)),
 	)
 }

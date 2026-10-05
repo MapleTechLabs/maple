@@ -3,9 +3,14 @@ import { AlertDeliveryError, AlertDestinationId } from "@maple/domain/http"
 import { assert, describe, it } from "@effect/vitest"
 import { Effect, Schema } from "effect"
 import { makeRecordingTracer, spansNamed } from "@maple/backend/testing/recording-tracer"
-import { dispatchDelivery } from "./dispatch"
+import { dispatchDelivery as dispatchDeliveryRaw } from "./dispatch"
+import { FetchHttpClient } from "effect/http"
 import type { EffectTransportDeps } from "./Transport"
 import type { DispatchContext } from "./context"
+
+/** The runtime provides the HTTP client; each test passes its own `fetch`. */
+const dispatchDelivery = (...args: Parameters<typeof dispatchDeliveryRaw>) =>
+	dispatchDeliveryRaw(...args).pipe(Effect.provide(FetchHttpClient.layer))
 
 /**
  * The outbound provider call must be a **Client-kind span carrying

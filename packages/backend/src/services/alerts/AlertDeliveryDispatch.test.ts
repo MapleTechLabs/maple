@@ -15,12 +15,17 @@ import {
 	buildTemplateContext,
 	type DispatchContext,
 } from "./AlertDeliveryDispatch"
-import { dispatchDelivery } from "./delivery/dispatch"
+import { dispatchDelivery as dispatchDeliveryRaw } from "./delivery/dispatch"
+import { FetchHttpClient } from "effect/http"
 import type { EffectTransportDeps } from "./delivery/Transport"
 import type { TemplateRenderContext } from "./alert-formatting"
 import { resolveSignalDisplay } from "./alert-signal-display"
 import { renderTemplate } from "./alert-templating/renderer"
 import { DEFAULT_BODY_TEMPLATE, DEFAULT_TITLE_TEMPLATE } from "./alert-templating/defaultTemplates"
+
+/** The runtime provides the HTTP client; each test passes its own `fetch`. */
+const dispatchDelivery = (...args: Parameters<typeof dispatchDeliveryRaw>) =>
+	dispatchDeliveryRaw(...args).pipe(Effect.provide(FetchHttpClient.layer))
 
 /** Chat posts must not happen for these destinations. */
 const failingChatPost = () =>

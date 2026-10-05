@@ -129,9 +129,8 @@ const sendHttp = Effect.fn("AlertDelivery.http", { kind: "client" })(function* (
 	// The timeout interrupts this Effect, and the client aborts the in-flight
 	// POST on interruption: without that it could still deliver after we
 	// reported a retryable timeout — a duplicate page once the retry lands.
-	const response = yield* HttpClient.HttpClient.pipe(
-		Effect.flatMap((client) => (spec.guarded ? guard(client) : client).execute(request)),
-		Effect.provide(FetchHttpClient.layer),
+	const client = yield* HttpClient.HttpClient
+	const response = yield* (spec.guarded ? guard(client) : client).execute(request).pipe(
 		Effect.provideService(FetchHttpClient.Fetch, runtime.fetchFn),
 		// The client's own span records `url.full`, and Discord, Hazel and
 		// Telegram carry their delivery token in the URL path. This span is the
@@ -163,7 +162,7 @@ export const runHttpTransport = <Config>(
 	transport: HttpTransport<Config>,
 	input: RenderInput<Config>,
 	runtime: TransportRuntime,
-): Effect.Effect<DispatchResult, AlertDeliveryFailure> =>
+): Effect.Effect<DispatchResult, AlertDeliveryFailure, HttpClient.HttpClient> =>
 	Effect.gen(function* () {
 		const spec = transport.render(input)
 		const response = yield* sendHttp(spec, transport, runtime)

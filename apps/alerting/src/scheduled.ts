@@ -28,6 +28,7 @@ import { EmailSender, type EmailSenderClient } from "@maple/backend/platform/bin
 import { type ChatSessionNamespace, chatSessionsLayerIfBound } from "@maple/backend/platform/chat-sessions"
 import { envPorts } from "@maple/backend/platform/env-ports"
 import { Cause, Effect, Layer, Match, Option } from "effect"
+import { FetchHttpClient } from "effect/http"
 import type { AlertingWorkerEnv } from "./worker.ts"
 
 /**
@@ -59,7 +60,7 @@ export const buildLayer = (
 		IncidentClassifier.layer,
 	).pipe(
 		Layer.provide(PullRequestLookupLive),
-		Layer.provide(Layer.mergeAll(Env.layer, layerPg, EdgeCacheServiceLive)),
+		Layer.provide(Layer.mergeAll(Env.layer, layerPg, EdgeCacheServiceLive, FetchHttpClient.layer)),
 		Layer.provideMerge(
 			Layer.mergeAll(
 				mapleDbConnectionLayer(env),

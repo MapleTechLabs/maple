@@ -8,6 +8,7 @@ import { ChatAlertPoster } from "./ChatAlertPoster"
 // BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Cause, Clock, ConfigProvider, Duration, Effect, Exit, Layer, Option, Schema } from "effect"
+import { FetchHttpClient } from "effect/http"
 import { TestClock } from "effect/testing"
 import { projectAlertLifecycleEvent } from "@maple/alerting-core"
 import {
@@ -274,6 +275,7 @@ const makeLayer = (
 		Layer.provide(Layer.mergeAll(envLive, databaseLive, edgeCacheLive)),
 	)
 	const alertDestinationsLive = Layer.effect(AlertDestinationsService, AlertDestinationsService.make).pipe(
+		Layer.provide(FetchHttpClient.layer),
 		Layer.provide(chatAlertPoster),
 		Layer.provide(
 			Layer.mergeAll(envLive, databaseLive, runtimeLive, hazelOAuthLive, emailLive, orgMembersLive),
@@ -287,6 +289,7 @@ const makeLayer = (
 	)
 
 	const alertsLive = Layer.effect(AlertsService, AlertsService.make).pipe(
+		Layer.provide(FetchHttpClient.layer),
 		Layer.provide(chatAlertPoster),
 		Layer.provide(
 			Layer.effect(MobilePushService, MobilePushService.make).pipe(
