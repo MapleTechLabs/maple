@@ -15,18 +15,6 @@ export function formatRate(value: number): string {
 	return value.toFixed(2)
 }
 
-export function formatErrorRate(rate: number): string {
-	if (rate >= 0.01) return `${(rate * 100).toFixed(1)}%`
-	if (rate > 0) return "<1%"
-	return "0%"
-}
-
-export function errorTone(rate: number): "error" | "warn" | "default" {
-	if (rate > 0.05) return "error"
-	if (rate > 0.01) return "warn"
-	return "default"
-}
-
 interface BarCellProps {
 	value: number
 	max: number

@@ -134,7 +134,7 @@ export function InvestigationChip({
 					: `Maple ${label.toLowerCase()}`
 			}
 		>
-			<StatusDot tone="custom" className={cn("bg-current", isLive && "motion-safe:animate-pulse")} />
+			<StatusDot tone="custom" className="bg-current" pulse={isLive} />
 			<span className={cn("truncate", compact && "hidden @xl/page:inline")}>{label}</span>
 			{withConfidence && investigation.confidence && investigation.status === "diagnosed" ? (
 				<span className="text-muted-foreground/60">· {investigation.confidence}</span>

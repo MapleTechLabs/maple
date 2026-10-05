@@ -1,3 +1,4 @@
+import { KeyValue, KeyValueList } from "@maple/ui/components/ui/key-value"
 import { asRecord } from "./parse"
 import {
 	AddDashboardWidgetSummary,
@@ -68,25 +69,20 @@ function KeyValueFallback({ input }: { input: unknown }) {
 	}
 
 	return (
-		<dl className="space-y-1 text-xs">
+		<KeyValueList layout="grid" className="gap-x-2 gap-y-1">
 			{entries.map(([key, value]) => {
 				const formatted = formatValue(value)
 				return (
-					<div key={key} className="flex items-baseline gap-2">
-						<dt className="shrink-0 text-muted-foreground">{humanize(key)}</dt>
-						<dd className="min-w-0 flex-1 truncate font-medium">
-							{formatted.kind === "scalar" ? (
-								<span>{formatted.text}</span>
-							) : (
-								<span className="text-muted-foreground italic">
-									JSON · {formatted.chars} chars
-								</span>
-							)}
-						</dd>
-					</div>
+					<KeyValue key={key} label={humanize(key)}>
+						{formatted.kind === "scalar" ? (
+							<span className="font-medium">{formatted.text}</span>
+						) : (
+							<span className="text-muted-foreground italic">JSON · {formatted.chars} chars</span>
+						)}
+					</KeyValue>
 				)
 			})}
-		</dl>
+		</KeyValueList>
 	)
 }
 

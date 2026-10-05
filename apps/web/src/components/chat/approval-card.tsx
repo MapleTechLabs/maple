@@ -1,5 +1,6 @@
 import { useState } from "react"
 import { Button } from "@maple/ui/components/ui/button"
+import { Item, ItemContent, ItemMedia, ItemTitle } from "@maple/ui/components/ui/item"
 import {
 	ChevronDownIcon,
 	ChevronRightIcon,
@@ -36,10 +37,14 @@ export function ApprovalCard({ toolName, input, resolved, onApprove, onDeny }: A
 
 	return (
 		<div className="overflow-hidden rounded-lg border border-warning/40 bg-warning/5 text-xs">
-			<div className="flex items-center gap-2 px-3 py-2">
-				<CircleWarningIcon className="size-3.5 shrink-0 text-warning" />
-				<span className="font-medium">Approval required: {label}</span>
-			</div>
+			<Item size="xs" variant="flush" className="gap-2 px-3">
+				<ItemMedia variant="icon">
+					<CircleWarningIcon className="size-3.5 text-warning" />
+				</ItemMedia>
+				<ItemContent>
+					<ItemTitle>Approval required: {label}</ItemTitle>
+				</ItemContent>
+			</Item>
 			<div className="border-t border-warning/20 bg-background/50 p-3">
 				<ApprovalSummary toolName={toolName} input={input} />
 
@@ -73,17 +78,24 @@ export function ApprovalCard({ toolName, input, resolved, onApprove, onDeny }: A
 					</div>
 				) : (
 					<div className="mt-3 flex gap-2">
-						<Button type="button" size="sm" onClick={handle("approve")} disabled={busy !== null}>
-							{busy === "approve" ? "Approving…" : "Approve"}
+						<Button
+							type="button"
+							size="sm"
+							onClick={handle("approve")}
+							loading={busy === "approve"}
+							disabled={busy !== null}
+						>
+							Approve
 						</Button>
 						<Button
 							type="button"
 							size="sm"
 							variant="ghost"
 							onClick={handle("deny")}
+							loading={busy === "deny"}
 							disabled={busy !== null}
 						>
-							{busy === "deny" ? "Denying…" : "Deny"}
+							Deny
 						</Button>
 					</div>
 				)}

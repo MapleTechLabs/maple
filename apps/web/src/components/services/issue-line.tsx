@@ -2,10 +2,10 @@ import { Link } from "@tanstack/react-router"
 import type { ErrorIssueDocument } from "@maple/domain/http"
 import { ServiceDot } from "@maple/ui/components/service-dot"
 import { formatNumber } from "@maple/ui/lib/format"
-import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
 
 import { SeverityBadge } from "@/components/errors/severity-badge"
-import { useTimezonePreference } from "@/hooks/use-timezone-preference"
+import { RelativeTime } from "@/components/common/relative-time"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 
 interface IssueLineProps {
 	issue: ErrorIssueDocument
@@ -17,7 +17,6 @@ interface IssueLineProps {
 
 /** One linked issue row: severity, title, occurrence count, last seen. */
 export function IssueLine({ issue, occurrences, occurrencesTitle, showService }: IssueLineProps) {
-	const { effectiveTimezone } = useTimezonePreference()
 	const title = issue.errorLabel || issue.exceptionType || issue.exceptionMessage || "Unknown error"
 	return (
 		<Link
@@ -31,18 +30,20 @@ export function IssueLine({ issue, occurrences, occurrencesTitle, showService }:
 					<ServiceDot serviceName={issue.serviceName} />
 				</span>
 			) : null}
-			<span className="min-w-0 flex-1 truncate" title={title}>
-				{title}
-			</span>
+			<TruncatedText text={title} className="flex-1" />
 			<span
 				className="shrink-0 font-mono text-xs tabular-nums text-muted-foreground"
 				title={occurrencesTitle}
 			>
 				{formatNumber(occurrences ?? issue.occurrenceCount)}×
 			</span>
-			<span className="w-14 shrink-0 text-right font-mono text-xs tabular-nums text-muted-foreground/70">
-				{formatRelativeTimeOrDate(issue.lastSeenAt, undefined, effectiveTimezone)}
-			</span>
+			<RelativeTime
+				value={issue.lastSeenAt}
+				variant="orDate"
+				mono
+				tooltip="title"
+				className="w-14 shrink-0 text-right text-xs text-muted-foreground/70"
+			/>
 		</Link>
 	)
 }

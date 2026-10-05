@@ -2,6 +2,7 @@ import { useMemo } from "react"
 import { ArrowLeftIcon } from "@maple/ui/components/icons"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 import { Spinner } from "@maple/ui/components/ui/spinner"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
 import { MetricTypeBadge } from "@maple/ui/components/metrics/metric-type-badge"
@@ -50,16 +51,12 @@ export function MetricDetailView({ metricName, backLabel, onBack }: MetricDetail
 					<ArrowLeftIcon size={14} />
 					{backLabel}
 				</Button>
-				<span className="min-w-0 truncate font-mono text-xs" title={metricName}>
+				<TruncatedText mono className="text-xs">
 					{metricName}
-				</span>
+				</TruncatedText>
 				{entry ? <MetricTypeBadge type={entry.metricType} /> : null}
 				{unitLabel ? (
-					<Badge
-						variant="outline"
-						className="px-1 py-0 font-mono text-[10px]"
-						title={entry?.metricUnit}
-					>
+					<Badge variant="outline" size="xs" mono title={entry?.metricUnit}>
 						{unitLabel}
 					</Badge>
 				) : null}

@@ -2,7 +2,9 @@ import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import type { ReactNode } from "react"
 import { Link } from "@tanstack/react-router"
 
+import { SegmentedBar } from "@maple/ui/components/ui/meter"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { TONE_FILL, TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 
 import {
@@ -169,8 +171,8 @@ function SourceData({ id, window, render }: { id: SourceId; window: OverviewWind
  * ----------------------------------------------------------------------------------------------*/
 
 const FINDING_DOT: Record<Finding["tone"], string> = {
-	crit: "bg-[var(--severity-error)]",
-	warn: "bg-[var(--severity-warn)]",
+	crit: TONE_FILL.crit,
+	warn: TONE_FILL.warn,
 	stale: "border-[1.5px] border-muted-foreground bg-transparent",
 } satisfies Record<Finding["tone"], string>
 
@@ -380,8 +382,8 @@ export function NeedsAttention({
 
 const SEGMENT_CLASS: Record<HealthSegment["key"], string> = {
 	ok: "bg-muted-foreground/35",
-	elevated: "bg-[var(--severity-warn)]",
-	saturated: "bg-[var(--severity-error)]",
+	elevated: TONE_FILL.warn,
+	saturated: TONE_FILL.crit,
 	// Hatched, not a fill: there is no limit to measure against, and a plain
 	// `bg-muted` vanished into the track.
 	unbounded:
@@ -397,24 +399,23 @@ const SEGMENT_LABEL: Record<HealthSegment["key"], string> = {
 
 const HEADLINE_TONE: Record<SourceSummary["headlineTone"], string> = {
 	neutral: "text-foreground",
-	warn: "text-[var(--severity-warn)]",
-	crit: "text-[var(--severity-error)]",
+	warn: TONE_TEXT.warn,
+	crit: TONE_TEXT.crit,
 } satisfies Record<SourceSummary["headlineTone"], string>
 
 function HealthBar({ segments }: { segments: ReadonlyArray<HealthSegment> }) {
-	const total = segments.reduce((sum, segment) => sum + segment.count, 0)
 	const drawn = segments.filter((segment) => segment.count > 0)
 	return (
 		<div className="flex flex-col gap-1.5">
-			<div className="flex h-1.5 w-full gap-px overflow-hidden rounded-full bg-muted">
-				{drawn.map((segment) => (
-					<div
-						key={segment.key}
-						className={SEGMENT_CLASS[segment.key]}
-						style={{ width: `${Math.max((segment.count / total) * 100, 2)}%` }}
-					/>
-				))}
-			</div>
+			<SegmentedBar
+				className="w-full gap-px bg-muted"
+				minVisible={2}
+				segments={drawn.map((segment) => ({
+					key: segment.key,
+					value: segment.count,
+					className: SEGMENT_CLASS[segment.key],
+				}))}
+			/>
 			<span className="flex gap-3 text-[11px] text-muted-foreground tabular-nums">
 				{drawn.map((segment) => (
 					<span key={segment.key}>

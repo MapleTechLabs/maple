@@ -1,4 +1,5 @@
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { KeyValue, KeyValueList } from "@maple/ui/components/ui/key-value"
 import { Spinner } from "@maple/ui/components/ui/spinner"
 import { useMemo, useState } from "react"
 import { Exit } from "effect"
@@ -14,6 +15,8 @@ import {
 	DialogTitle,
 } from "@maple/ui/components/ui/dialog"
 import { Input } from "@maple/ui/components/ui/input"
+import { InlineCode } from "@maple/ui/components/ui/inline-code"
+import { Item, ItemActions, ItemContent, ItemMedia } from "@maple/ui/components/ui/item"
 import { Label } from "@maple/ui/components/ui/label"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { toastManager } from "@maple/ui/components/ui/toast"
@@ -121,15 +124,17 @@ export function PlanetScaleIntegrationCard() {
 	// over an org that may already be authorized.
 	if (Result.isFailure(statusResult)) {
 		return (
-			<div className="flex items-start gap-4 rounded-lg border border-border/60 bg-card p-4">
-				<IntegrationIconPlate icon={PlanetScaleIcon} accent={PLANETSCALE_ENTRY.accent} />
-				<div className="flex flex-col gap-1">
+			<Item variant="card" className="items-start gap-4 p-4">
+				<ItemMedia>
+					<IntegrationIconPlate icon={PlanetScaleIcon} accent={PLANETSCALE_ENTRY.accent} />
+				</ItemMedia>
+				<ItemContent>
 					<h3 className="text-sm font-semibold">PlanetScale</h3>
 					<p className="text-xs text-muted-foreground">
 						Couldn&apos;t load the PlanetScale connection status — refresh the page to try again.
 					</p>
-				</div>
-			</div>
+				</ItemContent>
+			</Item>
 		)
 	}
 
@@ -137,9 +142,11 @@ export function PlanetScaleIntegrationCard() {
 	if (!isConnected && pendingOrgSelection) {
 		return (
 			<div className="overflow-hidden rounded-lg border border-border/60 bg-card">
-				<div className="flex items-start gap-3 p-4">
-					<IntegrationIconPlate icon={PlanetScaleIcon} accent={PLANETSCALE_ENTRY.accent} />
-					<div className="min-w-0">
+				<Item className="items-start gap-3 rounded-none p-4">
+					<ItemMedia>
+						<IntegrationIconPlate icon={PlanetScaleIcon} accent={PLANETSCALE_ENTRY.accent} />
+					</ItemMedia>
+					<ItemContent className="gap-0">
 						<div className="flex items-center gap-2">
 							<h3 className="text-sm font-semibold">PlanetScale</h3>
 							<Badge variant="secondary">Authorized</Badge>
@@ -148,8 +155,8 @@ export function PlanetScaleIntegrationCard() {
 							The authorization covers multiple PlanetScale organizations — choose which one to
 							connect.
 						</p>
-					</div>
-				</div>
+					</ItemContent>
+				</Item>
 				<div className="border-t border-border/60 p-4">
 					<PlanetScaleOrgPicker
 						onDone={() => refreshStatus()}
@@ -202,44 +209,44 @@ export function PlanetScaleIntegrationCard() {
 	return (
 		<div className="flex flex-col gap-4">
 			<div className="overflow-hidden rounded-lg border border-border/60 bg-card">
-				<div className="flex flex-wrap items-start justify-between gap-3 p-4">
-					<div className="flex min-w-0 items-start gap-3">
+				<Item className="items-start gap-3 rounded-none p-4">
+					<ItemMedia>
 						<IntegrationIconPlate icon={PlanetScaleIcon} accent={PLANETSCALE_ENTRY.accent} />
-						<div className="min-w-0">
-							<div className="flex items-center gap-2">
-								<h3 className="text-sm font-semibold">PlanetScale</h3>
-								{/* "Connected" while three of four steps are done overstates it —
-								    the badge tracks the checklist. */}
-								{setup !== null && !setup.complete ? (
-									<Badge variant="warning">
-										Step {setup.activeStepNumber} of {setup.steps.length}
-									</Badge>
-								) : (
-									<Badge variant="success">Connected</Badge>
-								)}
-							</div>
-							<p className="mt-1 text-xs text-muted-foreground">
-								{setup !== null && !setup.complete ? (
-									<>
-										Connected to{" "}
-										<span className="font-medium text-foreground">
-											{status?.organization}
-										</span>
-										{" — inventory, insights, and webhooks are live."}
-									</>
-								) : (
-									<>
-										Streaming branch metrics from{" "}
-										<span className="font-medium text-foreground">
-											{status?.organization}
-										</span>
-									</>
-								)}
-							</p>
+					</ItemMedia>
+					<ItemContent className="gap-0">
+						<div className="flex items-center gap-2">
+							<h3 className="text-sm font-semibold">PlanetScale</h3>
+							{/* "Connected" while three of four steps are done overstates it —
+							    the badge tracks the checklist. */}
+							{setup !== null && !setup.complete ? (
+								<Badge variant="warning">
+									Step {setup.activeStepNumber} of {setup.steps.length}
+								</Badge>
+							) : (
+								<Badge variant="success">Connected</Badge>
+							)}
 						</div>
-					</div>
+						<p className="mt-1 text-xs text-muted-foreground">
+							{setup !== null && !setup.complete ? (
+								<>
+									Connected to{" "}
+									<span className="font-medium text-foreground">
+										{status?.organization}
+									</span>
+									{" — inventory, insights, and webhooks are live."}
+								</>
+							) : (
+								<>
+									Streaming branch metrics from{" "}
+									<span className="font-medium text-foreground">
+										{status?.organization}
+									</span>
+								</>
+							)}
+						</p>
+					</ItemContent>
 
-					<div className="flex shrink-0 items-center gap-1.5">
+					<ItemActions className="shrink-0 gap-1.5">
 						<Button
 							size="sm"
 							variant="outline"
@@ -252,8 +259,8 @@ export function PlanetScaleIntegrationCard() {
 							{disconnectBusy ? <Spinner size={14} /> : null}
 							Disconnect
 						</Button>
-					</div>
-				</div>
+					</ItemActions>
+				</Item>
 
 				{/* Setup is only shown while there is setup left. A finished
 				    connection collapses to the single health row it has always been. */}
@@ -399,7 +406,7 @@ function FirstMetricsDetail({
 		<div className="space-y-2">
 			<p className="text-xs text-muted-foreground">
 				Still nothing after a few minutes. The most common cause is a token without the{" "}
-				<code className="font-mono text-[11px]">read_metrics_endpoints</code> permission — PlanetScale
+				<InlineCode>read_metrics_endpoints</InlineCode> permission — PlanetScale
 				accepts the token and then serves no metrics.
 			</p>
 			<Button size="sm" variant="outline" onClick={onRotate}>
@@ -546,8 +553,8 @@ function PlanetScaleOrgPicker(props: {
 						autoComplete="off"
 					/>
 					<p className="text-xs text-muted-foreground">
-						Glob patterns — <code className="font-mono text-[11px]">*</code> matches any run,{" "}
-						<code className="font-mono text-[11px]">?</code> exactly one character.
+						Glob patterns — <InlineCode>*</InlineCode> matches any run,{" "}
+						<InlineCode>?</InlineCode> exactly one character.
 					</p>
 				</div>
 				{/* The preview shares its glob implementation with the scraper
@@ -590,20 +597,22 @@ function PlanetScaleWebhookSetup() {
 	const [revealed, setRevealed] = useState(false)
 	return (
 		<div className="overflow-hidden rounded-lg border border-border/60 bg-card">
-			<div className="flex flex-wrap items-start justify-between gap-3 p-4">
-				<div className="min-w-0">
+			<Item className="items-start gap-3 rounded-none p-4">
+				<ItemContent className="gap-0">
 					<h3 className="text-sm font-semibold">Webhooks</h3>
 					<p className="mt-1 text-xs text-muted-foreground">
 						Register this endpoint in each database&apos;s webhook settings on PlanetScale — OOM
 						restarts, storage thresholds, and anomalies then open triage issues in Maple.
 					</p>
-				</div>
+				</ItemContent>
 				{!revealed ? (
-					<Button size="sm" variant="outline" onClick={() => setRevealed(true)}>
-						Show setup
-					</Button>
+					<ItemActions>
+						<Button size="sm" variant="outline" onClick={() => setRevealed(true)}>
+							Show setup
+						</Button>
+					</ItemActions>
 				) : null}
-			</div>
+			</Item>
 			{revealed ? <PlanetScaleWebhookConfig /> : null}
 		</div>
 	)
@@ -635,17 +644,17 @@ function PlanetScaleWebhookConfig() {
 	}
 	return (
 		<div className="space-y-3 border-t border-border/60 p-4">
-			<div className="space-y-1">
-				<Eyebrow>Webhook URL</Eyebrow>
-				<p className="break-all font-mono text-xs text-foreground">{config.url}</p>
-			</div>
-			<div className="space-y-1">
-				<Eyebrow>Secret</Eyebrow>
-				<p className="break-all font-mono text-xs text-foreground">{config.secret}</p>
-			</div>
+			<KeyValueList layout="stacked">
+				<KeyValue label={<Eyebrow>Webhook URL</Eyebrow>} mono wrap>
+					{config.url}
+				</KeyValue>
+				<KeyValue label={<Eyebrow>Secret</Eyebrow>} mono wrap>
+					{config.secret}
+				</KeyValue>
+			</KeyValueList>
 			<p className="text-[11px] text-muted-foreground">
 				PlanetScale signs each delivery with this secret (
-				<code className="font-mono">X-PlanetScale-Signature</code>); Maple rejects anything that
+				<InlineCode>X-PlanetScale-Signature</InlineCode>); Maple rejects anything that
 				doesn&apos;t verify.
 			</p>
 		</div>

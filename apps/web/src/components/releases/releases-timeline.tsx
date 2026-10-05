@@ -2,11 +2,13 @@ import { useCallback, useMemo, useState } from "react"
 import { Link } from "@tanstack/react-router"
 import { ServiceDot } from "@maple/ui/components/service-dot"
 import { cn } from "@maple/ui/lib/utils"
+import { Panel, PanelHeader } from "@maple/ui/components/ui/panel"
 import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
 
 import type { TimeRangeSearch } from "@/components/time-range-picker/search"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { RELEASE_HEALTH_DOT_CLASS, RELEASE_HEALTH_LABEL, releaseHealthFigure } from "./release-health"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 import {
 	RELEASE_HEALTH_ORDER,
 	shortReleaseLabel,
@@ -212,23 +214,25 @@ export function ReleasesTimeline({
 	)
 
 	return (
-		<div className="flex flex-col rounded-md border bg-card">
-			<div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b px-4 py-2.5">
-				<span className="text-[11px] font-medium text-muted-foreground">Deploys over time</span>
-				<div className="flex items-center gap-3 text-[10px] text-muted-foreground">
-					{RELEASE_HEALTH_ORDER.map((band) => (
-						<span key={band} className="inline-flex items-center gap-1">
-							<span
-								className={cn(
-									"inline-block size-2 rounded-full",
-									RELEASE_HEALTH_DOT_CLASS[band],
-								)}
-							/>
-							{RELEASE_HEALTH_LABEL[band]}
-						</span>
-					))}
-				</div>
-			</div>
+		<Panel className="overflow-visible">
+			<PanelHeader
+				title="Deploys over time"
+				action={
+					<div className="flex items-center gap-3 text-[10px] text-muted-foreground">
+						{RELEASE_HEALTH_ORDER.map((band) => (
+							<span key={band} className="inline-flex items-center gap-1">
+								<span
+									className={cn(
+										"inline-block size-2 rounded-full",
+										RELEASE_HEALTH_DOT_CLASS[band],
+									)}
+								/>
+								{RELEASE_HEALTH_LABEL[band]}
+							</span>
+						))}
+					</div>
+				}
+			/>
 			<div className="px-3 pb-2 pt-1">
 				{visible.map((lane, laneIndex) => (
 					<div
@@ -237,9 +241,7 @@ export function ReleasesTimeline({
 					>
 						<span className="flex min-w-0 items-center gap-1.5 text-[11px] text-muted-foreground">
 							<ServiceDot serviceName={lane.serviceName} />
-							<span className="truncate" title={lane.serviceName}>
-								{lane.serviceName}
-							</span>
+							<TruncatedText text={lane.serviceName} />
 						</span>
 						<div
 							ref={laneIndex === 0 ? trackRef : undefined}
@@ -304,6 +306,6 @@ export function ReleasesTimeline({
 					</div>
 				</div>
 			</div>
-		</div>
+		</Panel>
 	)
 }

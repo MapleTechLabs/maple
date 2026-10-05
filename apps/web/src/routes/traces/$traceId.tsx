@@ -24,7 +24,8 @@ import { getSpanHierarchyResultAtom } from "@/lib/services/atoms/warehouse-query
 import { findSpanById } from "@maple/ui/components/traces/flow-utils"
 import { HttpSpanLabel } from "@maple/ui/components/traces/http-span-label"
 import { TraceIdBadge } from "@/components/traces/trace-id-badge"
-import { getHttpInfo } from "@maple/ui/lib/http"
+import { getHttpInfo, httpStatusTone } from "@maple/ui/lib/http"
+import { shortId } from "@maple/ui/lib/ids"
 
 const TraceDetailSearchSchema = Schema.Struct({
 	spanId: Schema.optional(Schema.String),
@@ -127,7 +128,7 @@ function TraceDetailPage() {
 						<DashboardLayout.Breadcrumbs
 							items={[
 								{ label: "Traces", href: backToTracesHref },
-								{ label: traceId.slice(0, 8) },
+								{ label: shortId(traceId, "trace") },
 							]}
 						/>
 						<DashboardLayout.Body>
@@ -163,7 +164,7 @@ function TraceDetailPage() {
 						<DashboardLayout.Breadcrumbs
 							items={[
 								{ label: "Traces", href: backToTracesHref },
-								{ label: traceId.slice(0, 8) },
+								{ label: shortId(traceId, "trace") },
 							]}
 						/>
 						<DashboardLayout.Body>
@@ -288,7 +289,7 @@ function TraceDetailContent({
 			s.spanAttributes?.["http.response.status_code"] || s.spanAttributes?.["http.status_code"]
 		if (httpStatus) {
 			const code = typeof httpStatus === "string" ? parseInt(httpStatus) : httpStatus
-			if (typeof code === "number" && code >= 500) return true
+			if (typeof code === "number" && httpStatusTone(code) === "crit") return true
 		}
 		return false
 	})
@@ -296,7 +297,7 @@ function TraceDetailContent({
 	return (
 		<DashboardLayout.Root>
 			<DashboardLayout.Breadcrumbs
-				items={[{ label: "Traces", href: backToTracesHref }, { label: traceId.slice(0, 8) }]}
+				items={[{ label: "Traces", href: backToTracesHref }, { label: shortId(traceId, "trace") }]}
 			/>
 			<DashboardLayout.Body>
 				<DashboardLayout.Content>

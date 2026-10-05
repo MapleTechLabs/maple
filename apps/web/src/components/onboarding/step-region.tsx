@@ -179,9 +179,15 @@ export function StepRegion() {
 				</p>
 
 				<div className="flex items-center justify-end">
-					<Button size="lg" disabled={isSaving} onClick={handleContinue} className="min-w-[180px]">
-						{isSaving ? "Saving..." : "Continue"}
-						{!isSaving && <span className="ml-2">&rarr;</span>}
+					<Button
+						size="lg"
+						loading={isSaving}
+						disabled={isSaving}
+						onClick={handleContinue}
+						className="min-w-[180px]"
+					>
+						Continue
+						<span className="ml-2">&rarr;</span>
 					</Button>
 				</div>
 			</div>

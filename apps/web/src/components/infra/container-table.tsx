@@ -1,7 +1,6 @@
 import { Link } from "@tanstack/react-router"
 
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
 
 import type { ListContainersResponse } from "@maple/domain/http"
 import type { ContainerSortKey, SortDirection } from "@/api/warehouse/infra"
@@ -10,7 +9,7 @@ import { HostStatusBadge } from "./status-badge"
 import { ColumnHead, DataTable, ROW_LINK_CLASS } from "@/components/common/data-table"
 import { MeterRows } from "./primitives/meter-rows"
 import { MetaLine } from "./primitives/meta-line"
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
+import { RelativeTime } from "@/components/common/relative-time"
 
 export type ContainerRow = ListContainersResponse["data"][number]
 
@@ -173,15 +172,11 @@ export function ContainerTable({
 						/>
 					</div>
 					<div className="w-[100px] text-right">
-						<Tooltip>
-							<TooltipTrigger
-								render={<span />}
-								className="cursor-default font-mono text-[11px] text-muted-foreground"
-							>
-								{formatRelativeTime(container.lastSeen)}
-							</TooltipTrigger>
-							<TooltipContent>{container.lastSeen}</TooltipContent>
-						</Tooltip>
+						<RelativeTime
+							value={container.lastSeen}
+							mono
+							className="cursor-default text-[11px] text-muted-foreground"
+						/>
 					</div>
 				</Link>
 			))}

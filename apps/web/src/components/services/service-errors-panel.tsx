@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router"
 import type { ErrorIssueDocument } from "@maple/domain/http"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { SkeletonList } from "@maple/ui/components/ui/skeleton"
 
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
@@ -42,11 +42,7 @@ function PanelFrame({ children, detailLimited }: { children: React.ReactNode; de
 function PanelSkeleton() {
 	return (
 		<PanelFrame>
-			<div className="space-y-px p-2">
-				{Array.from({ length: 4 }).map((_, i) => (
-					<Skeleton key={i} className="h-8 w-full" />
-				))}
-			</div>
+			<SkeletonList rows={4} className="p-2" />
 		</PanelFrame>
 	)
 }

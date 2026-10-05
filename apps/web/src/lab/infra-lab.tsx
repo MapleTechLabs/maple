@@ -24,7 +24,7 @@ import {
 	summarizeRailway,
 } from "@/components/infra/overview/summaries"
 import { FLEET_BAND_BOXED } from "@/components/infra/primitives/fleet-band"
-import { ListToolbar } from "@/components/common/search-toolbar"
+import { SearchToolbar } from "@/components/common/search-toolbar"
 import { PageHero } from "@/components/common/page-hero"
 import {
 	RailwayServiceTable,
@@ -237,7 +237,7 @@ export function InfraLab() {
 						onScopeChange={setHostScope}
 						className={FLEET_BAND_BOXED}
 					/>
-					<ListToolbar
+					<SearchToolbar
 						value={hostQuery}
 						onChange={setHostQuery}
 						placeholder="Search hosts…"
@@ -259,7 +259,7 @@ export function InfraLab() {
 						onScopeChange={setRailwayScope}
 						className={FLEET_BAND_BOXED}
 					/>
-					<ListToolbar
+					<SearchToolbar
 						value=""
 						onChange={() => undefined}
 						placeholder="Search services…"

@@ -10,16 +10,7 @@ import { Exit } from "effect"
 import { toastManager } from "@maple/ui/components/ui/toast"
 import { Spinner } from "@maple/ui/components/ui/spinner"
 
-import {
-	AlertDialog,
-	AlertDialogAction,
-	AlertDialogCancel,
-	AlertDialogContent,
-	AlertDialogDescription,
-	AlertDialogFooter,
-	AlertDialogHeader,
-	AlertDialogTitle,
-} from "@maple/ui/components/ui/alert-dialog"
+import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
 import {
@@ -35,7 +26,7 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@m
 import { Input } from "@maple/ui/components/ui/input"
 import { Label } from "@maple/ui/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { Skeleton, SkeletonList } from "@maple/ui/components/ui/skeleton"
 import { Switch } from "@maple/ui/components/ui/switch"
 import { cn } from "@maple/ui/lib/utils"
 import {
@@ -247,17 +238,19 @@ export function AttributeMappingsSection() {
 				</div>
 				<div className="border-t">
 					{Result.isInitial(listResult) ? (
-						<div className="space-y-px px-4">
-							{[0, 1].map((i) => (
-								<div key={i} className="flex items-center gap-4 py-3">
+						<SkeletonList
+							rows={2}
+							className="px-4"
+							renderRow={() => (
+								<div className="flex items-center gap-4 py-3">
 									<div className="flex-1 space-y-2">
 										<Skeleton className="h-4 w-40" />
 										<Skeleton className="h-3.5 w-64" />
 									</div>
 									<Skeleton className="h-5 w-9 rounded-full" />
 								</div>
-							))}
-						</div>
+							)}
+						/>
 					) : !Result.isSuccess(listResult) ? (
 						<Empty className="py-10">
 							<EmptyHeader>
@@ -574,36 +567,24 @@ export function AttributeMappingsSection() {
 			</Dialog>
 
 			{/* Delete Confirmation */}
-			<AlertDialog
+			<ConfirmDialog
 				open={deleteConfirm !== null}
 				onOpenChange={(open) => {
 					if (!open) setDeleteConfirm(null)
 				}}
-			>
-				<AlertDialogContent>
-					<AlertDialogHeader>
-						<AlertDialogTitle>Delete attribute mapping</AlertDialogTitle>
-						<AlertDialogDescription>
-							Are you sure you want to delete{" "}
-							<span className="text-foreground font-medium">{deleteConfirm?.name}</span>? This
-							action cannot be undone.
-						</AlertDialogDescription>
-					</AlertDialogHeader>
-					<AlertDialogFooter>
-						<AlertDialogCancel>Cancel</AlertDialogCancel>
-						<AlertDialogAction
-							onClick={() => {
-								if (deleteConfirm) {
-									void handleDelete(deleteConfirm.id)
-								}
-							}}
-							className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-						>
-							Delete
-						</AlertDialogAction>
-					</AlertDialogFooter>
-				</AlertDialogContent>
-			</AlertDialog>
+				title="Delete attribute mapping"
+				description={
+					<>
+						Are you sure you want to delete{" "}
+						<span className="text-foreground font-medium">{deleteConfirm?.name}</span>? This action
+						cannot be undone.
+					</>
+				}
+				confirmLabel="Delete"
+				onConfirm={() => {
+					if (deleteConfirm) void handleDelete(deleteConfirm.id)
+				}}
+			/>
 		</>
 	)
 }

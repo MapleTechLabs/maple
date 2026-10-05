@@ -154,8 +154,13 @@ function WidgetConfigurePage() {
 							<Button variant="outline" size="sm" onClick={navigateBack} disabled={isSaving}>
 								Cancel
 							</Button>
-							<Button size="sm" onClick={() => builderRef.current?.apply()} disabled={isSaving}>
-								{isSaving ? "Saving..." : "Apply"}
+							<Button
+								size="sm"
+								onClick={() => builderRef.current?.apply()}
+								loading={isSaving}
+								disabled={isSaving}
+							>
+								Apply
 							</Button>
 						</div>
 					</DashboardLayout.Breadcrumbs>

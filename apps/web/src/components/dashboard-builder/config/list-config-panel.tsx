@@ -12,7 +12,7 @@ import type { ValueUnit } from "@/components/dashboard-builder/types"
 import { Switch } from "@maple/ui/components/ui/switch"
 import { ToggleGroup, ToggleGroupItem } from "@maple/ui/components/ui/toggle-group"
 import { getListPerformanceHints } from "@/lib/query-builder/performance-hints"
-import { CircleWarningIcon, GripDotsIcon } from "@/components/icons"
+import { GripDotsIcon } from "@/components/icons"
 import { listWhereClauseWarnings } from "@/lib/query-builder/widget-builder-shared"
 
 import {
@@ -22,6 +22,8 @@ import {
 	type ListColumnDraft,
 	type ListDataSource,
 } from "@/lib/query-builder/list-widget-config"
+import { WarningList } from "./warning-list"
+import { Alert, AlertDescription } from "@maple/ui/components/ui/alert"
 
 // Props interface removed — ListConfigPanel now reads from context
 
@@ -406,16 +408,7 @@ export function ListConfigPanel() {
 					textareaClassName="min-h-[32px] resize-y text-xs"
 					ariaLabel="List filter"
 				/>
-				{filterWarnings.length > 0 && (
-					<div className="flex gap-2 border border-warning/30 bg-warning/10 p-2 text-xs text-warning-foreground">
-						<CircleWarningIcon size={14} className="mt-0.5 shrink-0" />
-						<ul className="space-y-1">
-							{filterWarnings.map((warning) => (
-								<li key={warning}>{warning}</li>
-							))}
-						</ul>
-					</div>
-				)}
+				<WarningList warnings={filterWarnings} />
 				{(() => {
 					if (listDataSource !== "traces") return null
 					const parsedLimit = Number.parseInt(limit, 10)
@@ -430,22 +423,22 @@ export function ListConfigPanel() {
 					return (
 						<div className="mt-1.5 space-y-1.5">
 							{slow.length > 0 && (
-								<div className="space-y-1 rounded-md border border-warning/20 bg-warning/5 px-3 py-2">
-									{slow.map((h) => (
-										<p key={h.key} className="text-[11px] text-warning">
-											{h.reason}
-										</p>
-									))}
-								</div>
+								<Alert variant="warning" size="sm">
+									<AlertDescription className="gap-1 text-[11px] text-warning">
+										{slow.map((h) => (
+											<p key={h.key}>{h.reason}</p>
+										))}
+									</AlertDescription>
+								</Alert>
 							)}
 							{fast.length > 0 && (
-								<div className="space-y-1 rounded-md border border-success/20 bg-success/5 px-3 py-2">
-									{fast.map((h) => (
-										<p key={h.key} className="text-[11px] text-success">
-											{h.reason}
-										</p>
-									))}
-								</div>
+								<Alert variant="success" size="sm">
+									<AlertDescription className="gap-1 text-[11px] text-success">
+										{fast.map((h) => (
+											<p key={h.key}>{h.reason}</p>
+										))}
+									</AlertDescription>
+								</Alert>
 							)}
 						</div>
 					)

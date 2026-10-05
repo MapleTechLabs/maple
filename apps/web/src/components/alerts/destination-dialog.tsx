@@ -68,6 +68,8 @@ import {
 	ComboboxList,
 	ComboboxStatus,
 } from "@maple/ui/components/ui/combobox"
+import { LoadMoreButton } from "@maple/ui/components/ui/list-footer"
+import { SettingRow } from "@maple/ui/components/ui/setting-row"
 import { Switch } from "@maple/ui/components/ui/switch"
 import { Avatar, AvatarFallback, AvatarImage } from "@maple/ui/components/ui/avatar"
 import { MultiSelectCombobox } from "@maple/ui/components/multi-select-combobox"
@@ -236,14 +238,11 @@ function EmailMemberPicker({
 				emptyMessage={isLoaded ? "No members found in this workspace." : "Loading members…"}
 				footer={
 					memberships?.hasNextPage ? (
-						<Button
+						<LoadMoreButton
+							variant="ghost"
 							className="w-full text-xs"
 							onClick={() => memberships.fetchNext?.()}
-							size="sm"
-							variant="ghost"
-						>
-							Load more
-						</Button>
+						/>
 					) : undefined
 				}
 				onChange={(memberUserIds) => onFormChange((current) => ({ ...current, memberUserIds }))}
@@ -1226,21 +1225,20 @@ export function DestinationDialog({
 						<Eyebrow variant="label" as="div">
 							Delivery
 						</Eyebrow>
-						<div className="flex items-center justify-between rounded-lg border border-border/60 bg-card px-4 py-3">
-							<div>
-								<div className="text-sm font-medium">Enabled</div>
-								<div className="text-[11px] text-muted-foreground">
-									Disabled destinations stay attached to rules but won't receive
-									notifications.
-								</div>
-							</div>
-							<Switch
-								checked={form.enabled}
-								onCheckedChange={(enabled) =>
-									onFormChange((current) => ({ ...current, enabled }))
-								}
-							/>
-						</div>
+						<SettingRow
+							framed
+							className="border-border/60 bg-card px-4 py-3"
+							label="Enabled"
+							description="Disabled destinations stay attached to rules but won't receive notifications."
+							control={
+								<Switch
+									checked={form.enabled}
+									onCheckedChange={(enabled) =>
+										onFormChange((current) => ({ ...current, enabled }))
+									}
+								/>
+							}
+						/>
 					</div>
 				</div>
 

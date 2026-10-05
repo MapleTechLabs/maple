@@ -4,6 +4,7 @@ import { useState, type Dispatch, type SetStateAction } from "react"
 import { Link } from "@tanstack/react-router"
 
 import { ALERT_TEMPLATE_VARIABLES, type AlertDestinationDocument } from "@maple/domain/http"
+import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
 import { Card } from "@maple/ui/components/ui/card"
 import { Input } from "@maple/ui/components/ui/input"
@@ -204,15 +205,18 @@ export function NotificationsSection({
 							<span className="text-muted-foreground text-xs">Insert a variable:</span>
 							<div className="flex flex-wrap gap-1">
 								{ALERT_TEMPLATE_VARIABLES.map((variable) => (
-									<button
+									<Badge
 										key={variable.key}
-										type="button"
+										render={<button type="button" />}
+										variant="meta"
+										size="xs"
+										mono
 										title={variable.description}
 										onClick={() => appendToBody(`{{ ${variable.key} }}`)}
-										className="rounded border border-border/60 bg-muted/40 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground hover:border-border hover:text-foreground"
+										className="bg-muted/40 font-normal hover:border-border hover:text-foreground"
 									>
 										{variable.key}
-									</button>
+									</Badge>
 								))}
 							</div>
 						</div>

@@ -63,11 +63,17 @@ export interface BarSegment {
 export function SegmentedBar({
 	segments,
 	total,
+	minVisible = 0,
+	label,
 	className,
 }: {
 	segments: ReadonlyArray<BarSegment>
 	/** Defaults to the segment sum; pass a larger total to leave the remainder empty. */
 	total?: number
+	/** Smallest width, in percent, for any non-zero segment. */
+	minVisible?: number
+	/** Accessible summary; the bar is `role="img"` with it and decorative without. */
+	label?: string
 	className?: string
 }): React.ReactElement {
 	const sum = total ?? segments.reduce((acc, s) => acc + Math.max(0, s.value), 0)
@@ -75,7 +81,9 @@ export function SegmentedBar({
 		<div
 			className={cn("flex h-1.5 min-w-0 overflow-hidden rounded-full bg-muted/60", className)}
 			data-slot="segmented-bar"
-			aria-hidden
+			role={label ? "img" : undefined}
+			aria-label={label}
+			aria-hidden={label ? undefined : true}
 		>
 			{sum > 0
 				? segments.map((segment) =>
@@ -85,7 +93,7 @@ export function SegmentedBar({
 								title={segment.title}
 								className={cn("h-full transition-[width] duration-500", segment.className)}
 								style={{
-									width: `${(segment.value / sum) * 100}%`,
+									width: `${Math.max((segment.value / sum) * 100, minVisible)}%`,
 									backgroundColor: segment.color,
 								}}
 							/>

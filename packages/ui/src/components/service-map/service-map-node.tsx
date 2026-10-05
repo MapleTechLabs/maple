@@ -2,6 +2,8 @@ import { formatLatency } from "../../lib/format"
 import { memo } from "react"
 import { Handle, Position } from "@xyflow/react"
 import { cn } from "../../lib/utils"
+import { ERROR_RATE_TEXT, type ErrorRateLevel, errorRateLevel } from "../../lib/error-rate"
+import { TONE_FILL } from "../../lib/tone"
 import { latencyToneClass } from "../../lib/latency-tone"
 import { Tooltip, TooltipTrigger, TooltipContent } from "../ui/tooltip"
 import {
@@ -43,16 +45,24 @@ export function formatRate(value: number): string {
 	return value.toFixed(2)
 }
 
+const HEALTH_DOT_CLASS = {
+	crit: TONE_FILL.crit,
+	warn: TONE_FILL.warn,
+	neutral: TONE_FILL.ok,
+} satisfies Record<ErrorRateLevel, string>
+
+const SELECTED_BORDER_CLASS = {
+	crit: "border-severity-error ring-[3px] ring-severity-error/15",
+	warn: "border-severity-warn ring-[3px] ring-severity-warn/15",
+	neutral: "border-border-active ring-[3px] ring-foreground/15",
+} satisfies Record<ErrorRateLevel, string>
+
 export function getHealthDotClass(errorRate: number): string {
-	if (errorRate > 0.05) return "bg-severity-error"
-	if (errorRate > 0.01) return "bg-severity-warn"
-	return "bg-severity-info"
+	return HEALTH_DOT_CLASS[errorRateLevel(errorRate)]
 }
 
 function getSelectedBorderClass(errorRate: number): string {
-	if (errorRate > 0.05) return "border-severity-error ring-[3px] ring-severity-error/15"
-	if (errorRate > 0.01) return "border-severity-warn ring-[3px] ring-severity-warn/15"
-	return "border-border-active ring-[3px] ring-foreground/15"
+	return SELECTED_BORDER_CLASS[errorRateLevel(errorRate)]
 }
 
 function MetricCell({
@@ -82,9 +92,8 @@ function MetricCell({
 }
 
 function errorRateClass(errorRate: number): string {
-	if (errorRate > 0.05) return "text-severity-error"
-	if (errorRate > 0.01) return "text-severity-warn"
-	return "text-secondary-foreground"
+	const level = errorRateLevel(errorRate)
+	return level === "neutral" ? "text-secondary-foreground" : ERROR_RATE_TEXT[level]
 }
 
 const Handles = () => (

@@ -17,7 +17,7 @@ import { PodPeekSheet } from "@/components/infra/kubernetes/pod-peek-sheet"
 import { PodsFilterSidebarView, type PodFilters } from "@/components/infra/k8s-filter-sidebar"
 import { PodTable, PodTableLoading, podKey, type PodRow } from "@/components/infra/pod-table"
 import { FleetBand, FleetBandLoading, type FleetBandCell } from "@/components/infra/primitives/fleet-band"
-import { ListToolbar, countLabel } from "@/components/common/search-toolbar"
+import { SearchToolbar, countLabel } from "@/components/common/search-toolbar"
 import { podFilterChips } from "@/lib/infra/pod-filter-chips"
 import {
 	listPodsResultAtom,
@@ -31,6 +31,7 @@ import {
 	pickTimeRangeSearch,
 } from "@/components/time-range-picker/search"
 import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
+import { TONE_FILL } from "@maple/ui/lib/tone"
 
 const PAGE_SIZE = 50
 const DEFAULT_PRESET = "12h"
@@ -292,12 +293,12 @@ function PodsPage() {
 									{
 										key: "elevated",
 										count: counts.elevatedPods,
-										className: "bg-[var(--severity-warn)]",
+										className: TONE_FILL.warn,
 									},
 									{
 										key: "saturated",
 										count: counts.saturatedPods,
-										className: "bg-[var(--severity-error)]",
+										className: TONE_FILL.crit,
 									},
 								]}
 								cells={cells}
@@ -356,7 +357,7 @@ function PodsPage() {
 							<div
 								className={`space-y-3 transition-opacity ${result.waiting ? "opacity-60" : ""}`}
 							>
-								<ListToolbar
+								<SearchToolbar
 									value={searchText}
 									onChange={(value) => patchSearch({ q: value || undefined })}
 									placeholder="Search all pods…"

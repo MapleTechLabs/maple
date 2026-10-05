@@ -1,17 +1,16 @@
 import { Link } from "@tanstack/react-router"
 import { formatErrorRate, formatLatency, formatNumber } from "@maple/ui/lib/format"
-import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
+import { RelativeTime } from "@/components/common/relative-time"
 
 import { SectionCard } from "@/components/services/section-card"
 import type { TimeRangeSearch } from "@/components/time-range-picker/search"
 import { CommitShaHoverCard } from "@/components/vcs/commit-sha-hover-card"
-import { useTimezonePreference } from "@/hooks/use-timezone-preference"
-import { formatTimestampInTimezone } from "@/lib/timezone-format"
 import { ReleaseHealthPill, releaseHealthFigure } from "./release-health"
 import { MIN_COMPARE_SPANS, shortReleaseLabel, type ReleaseServiceImpact } from "./release-model"
 import { EmptyMessage } from "@maple/ui/components/ui/empty"
-import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
+import { eyebrowVariants } from "@maple/ui/components/ui/eyebrow"
 
 interface ComparisonRow {
 	label: string
@@ -132,45 +131,36 @@ export function ReleaseComparison({ impact }: { impact: ReleaseServiceImpact }) 
 					against. Widen the time range to include the version it replaced.
 				</EmptyMessage>
 			) : (
-				<table className="w-full text-xs">
-					<thead>
-						<Eyebrow as="tr">
-							<th className="px-4 py-1.5 text-left font-medium" />
-							<th className="px-2 py-1.5 text-right font-medium">
-								<span className="font-mono normal-case tracking-normal">
-									{shortReleaseLabel(impact.commitSha)}
-								</span>
-							</th>
-							<th className="px-2 py-1.5 text-right font-medium">
-								<span className="font-mono normal-case tracking-normal">
-									{shortReleaseLabel(baseline.commitSha)}
-								</span>
-							</th>
-							<th className="px-4 py-1.5 text-right font-medium">Change</th>
-						</Eyebrow>
-					</thead>
-					<tbody>
+				<Table size="sm">
+					<TableHeader>
+						<TableRow className={cn(eyebrowVariants(), "hover:bg-transparent")}>
+							<TableHead className="pl-4" />
+							<TableHead className="text-right">
+								<span className="font-mono normal-case tracking-normal">{shortReleaseLabel(impact.commitSha)}</span>
+							</TableHead>
+							<TableHead className="text-right">
+								<span className="font-mono normal-case tracking-normal">{shortReleaseLabel(baseline.commitSha)}</span>
+							</TableHead>
+							<TableHead className="pr-4 text-right">Change</TableHead>
+						</TableRow>
+					</TableHeader>
+					<TableBody>
 						{rows.map((row) => (
-							<tr key={row.label} className="border-t border-border/60">
-								<td className="px-4 py-1.5 text-muted-foreground">{row.label}</td>
-								<td className="px-2 py-1.5 text-right font-mono tabular-nums">
+							<TableRow key={row.label} className="border-border/60">
+								<TableCell className="pl-4 text-muted-foreground">{row.label}</TableCell>
+								<TableCell className="text-right font-mono tabular-nums">
 									{row.format(row.value)}
-								</td>
-								<td className="px-2 py-1.5 text-right font-mono tabular-nums text-muted-foreground">
+								</TableCell>
+								<TableCell className="text-right font-mono tabular-nums text-muted-foreground">
 									{row.baseline === undefined ? "—" : row.format(row.baseline)}
-								</td>
-								<td
-									className={cn(
-										"px-4 py-1.5 text-right font-mono tabular-nums",
-										changeTone(row),
-									)}
-								>
+								</TableCell>
+								<TableCell className={cn("pr-4 text-right font-mono tabular-nums", changeTone(row))}>
 									{formatChange(row)}
-								</td>
-							</tr>
+								</TableCell>
+							</TableRow>
 						))}
-					</tbody>
-				</table>
+					</TableBody>
+				</Table>
 			)}
 			{baseline !== undefined && !comparable ? (
 				<div className="border-t px-4 py-2 text-[11px] text-muted-foreground/70">
@@ -197,7 +187,6 @@ export function ReleaseVersionsRail({
 	environments,
 	timeSearch,
 }: ReleaseVersionsRailProps) {
-	const { effectiveTimezone } = useTimezonePreference()
 	const sorted = impacts.toSorted((a, b) =>
 		a.firstSeen < b.firstSeen ? 1 : a.firstSeen > b.firstSeen ? -1 : 0,
 	)
@@ -241,15 +230,12 @@ export function ReleaseVersionsRail({
 							<span className="ml-auto shrink-0 font-mono tabular-nums text-muted-foreground">
 								{formatNumber(version.spanCount)}
 							</span>
-							<span
+							<RelativeTime
+								value={version.firstSeen}
+								variant="orDate"
+								tooltip="title"
 								className="w-16 shrink-0 text-right font-mono tabular-nums text-muted-foreground/70"
-								title={formatTimestampInTimezone(version.firstSeen, {
-									timeZone: effectiveTimezone,
-									withYear: true,
-								})}
-							>
-								{formatRelativeTimeOrDate(version.firstSeen, undefined, effectiveTimezone)}
-							</span>
+							/>
 						</Link>
 					)
 				})}

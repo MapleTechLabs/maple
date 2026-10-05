@@ -10,6 +10,7 @@ import { useAlertIncidentsList } from "@/hooks/use-alerts-list"
 import {
 	buildBaselineMap,
 	baselineKey,
+	HEALTH_TONE,
 	type LatencyBaselineSignal,
 	type ServiceHealth,
 } from "@/components/dashboard/service-health"
@@ -28,6 +29,9 @@ import { Tooltip, TooltipTrigger, TooltipContent } from "@maple/ui/components/ui
 import { cn } from "@maple/ui/lib/utils"
 import { SignalEmptyState } from "@/components/common/signal-empty-state"
 import { formatErrorRate } from "@maple/ui/lib/format"
+import { shortId } from "@maple/ui/lib/ids"
+import { TONE_FILL } from "@maple/ui/lib/tone"
+import { ErrorRateValue } from "@maple/ui/components/error-rate-value"
 import {
 	CommitShaHoverCard,
 	commitsQueryAtom,
@@ -65,12 +69,6 @@ function formatThroughput(rate: number): string {
 		return `${rate.toLocaleString(undefined, { maximumFractionDigits: 1 })}/s`
 	}
 	return `${rate.toLocaleString(undefined, { maximumFractionDigits: 3 })}/s`
-}
-
-function errorRateToneClass(rate: number): string {
-	if (rate > 0.05) return "text-severity-error"
-	if (rate > 0) return "text-severity-warn"
-	return "text-muted-foreground"
 }
 
 /**
@@ -166,19 +164,10 @@ function NamespaceHeaderLabel({ namespace }: { namespace: string }) {
 	)
 }
 
-function truncateCommitSha(sha: string, length = 7): string {
-	if (sha === "N/A" || sha === "unknown" || !sha) {
-		return "N/A"
-	}
-	if (sha.length <= length) return sha
-	return sha.slice(0, length)
+function truncateCommitSha(sha: string): string {
+	if (sha === "N/A" || sha === "unknown" || !sha) return "N/A"
+	return shortId(sha, "sha")
 }
-
-const HEALTH_DOT_CLASS: Record<ServiceHealth, string> = {
-	healthy: "bg-success",
-	degraded: "bg-severity-warn",
-	unhealthy: "bg-destructive",
-} satisfies Record<ServiceHealth, string>
 
 /** Quiet health marker next to the service name — rendered only when there is
  *  something to say (degraded/unhealthy); healthy rows stay unadorned. */
@@ -190,7 +179,7 @@ function HealthDot({ health }: { health: ServiceHealth | undefined }) {
 			aria-hidden={false}
 			aria-label={health}
 			title={health}
-			className={HEALTH_DOT_CLASS[health]}
+			className={TONE_FILL[HEALTH_TONE[health]]}
 		/>
 	)
 }
@@ -1014,14 +1003,10 @@ export function ServicesTable({ filters }: ServicesTableProps) {
 																</div>
 															</div>
 															<div className="shrink-0 text-right">
-																<div
-																	className={cn(
-																		"font-mono text-sm font-semibold tabular-nums",
-																		errorRateToneClass(service.errorRate),
-																	)}
-																>
-																	{formatErrorRate(service.errorRate)}
-																</div>
+																<ErrorRateValue
+																	rate={service.errorRate}
+																	className="block text-sm font-semibold"
+																/>
 																<Eyebrow as="div">err</Eyebrow>
 															</div>
 														</Link>

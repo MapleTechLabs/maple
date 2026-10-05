@@ -1,7 +1,6 @@
 import { Link } from "@tanstack/react-router"
 
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
 
 import type { ListWorkloadsResponse } from "@maple/domain/http"
 import type { WorkloadKind } from "@/api/warehouse/infra"
@@ -10,7 +9,7 @@ import { HostStatusBadge } from "./status-badge"
 import { MeterRows } from "./primitives/meter-rows"
 import { MetaLine } from "./primitives/meta-line"
 import { ColumnHead, DataTable, ROW_LINK_CLASS, useTableSort } from "@/components/common/data-table"
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
+import { RelativeTime } from "@/components/common/relative-time"
 
 export type WorkloadRow = ListWorkloadsResponse["data"][number]
 
@@ -132,15 +131,11 @@ export function WorkloadTable({ workloads, kind, waiting, referenceTime }: Workl
 						<MeterRows hideLabels meters={[{ label: "MEM", fraction: wl.avgMemoryLimitPct }]} />
 					</div>
 					<div className="w-[100px] text-right">
-						<Tooltip>
-							<TooltipTrigger
-								render={<span />}
-								className="cursor-default font-mono text-[11px] text-muted-foreground"
-							>
-								{formatRelativeTime(wl.lastSeen)}
-							</TooltipTrigger>
-							<TooltipContent>{wl.lastSeen}</TooltipContent>
-						</Tooltip>
+						<RelativeTime
+							value={wl.lastSeen}
+							mono
+							className="cursor-default text-[11px] text-muted-foreground"
+						/>
 					</div>
 				</Link>
 			))}

@@ -7,7 +7,7 @@ import type { RailwayServiceRow } from "@/api/warehouse/railway-infra"
 import type { PlanetScaleDatabaseStat } from "@/api/warehouse/service-map"
 import { formatPercent } from "@maple/ui/lib/format"
 
-import { errorRateTone } from "../cloudflare/constants"
+import { errorRateLevel } from "@maple/ui/lib/error-rate"
 import type { ContainerScopeCounts } from "../container-summary-band"
 import { HOST_LIST_LIMIT, countHostScopes, hostPeak } from "../host-summary-band"
 import type { HostRow } from "../host-table"
@@ -214,14 +214,14 @@ const compactCount = (n: number) =>
 
 export function summarizeCloudflare(zones: ReadonlyArray<CloudflareZoneRow>): SourceSummary {
 	const erroring = zones
-		.filter((zone) => zone.requests >= MIN_ZONE_REQUESTS && errorRateTone(zone.errorRate) !== "neutral")
+		.filter((zone) => zone.requests >= MIN_ZONE_REQUESTS && errorRateLevel(zone.errorRate) !== "neutral")
 		.sort((a, b) => b.errorRate - a.errorRate)
-	const crit = erroring.filter((zone) => errorRateTone(zone.errorRate) === "crit").length
+	const crit = erroring.filter((zone) => errorRateLevel(zone.errorRate) === "crit").length
 
 	const findings: Finding[] = erroring.slice(0, MAX_FINDINGS_PER_SOURCE).map((zone) => ({
 		key: `zone:${zone.zoneName}`,
 		source: "cloudflare",
-		tone: errorRateTone(zone.errorRate) === "crit" ? "crit" : "warn",
+		tone: errorRateLevel(zone.errorRate) === "crit" ? "crit" : "warn",
 		title: `${zone.zoneName} returning ${formatPercent(zone.errorRate)} 5xx`,
 		detail: `${compactCount(zone.requests)} requests, origin p99 ${Math.round(zone.originP99Ms)}ms`,
 		target: { kind: "zone", zoneName: zone.zoneName },

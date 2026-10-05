@@ -7,8 +7,8 @@ import { SERVICE_MAP_3D_TOPOLOGY } from "./fixture"
 import type { Node3D } from "@/components/service-map/three/types"
 import { resolveMachineBadge } from "@/components/service-map/three/factory-badge"
 import { ServiceMap3DViewport } from "@/components/service-map/three/viewport"
+import { formatErrorRate } from "@maple/ui/lib/format"
 import {
-	formatError,
 	formatLatency,
 	formatRate,
 	health,
@@ -78,7 +78,7 @@ function ServiceInventory({
 					>
 						{health(selected.errorRate)}
 						<span className="text-muted-foreground">
-							· {formatError(selected.errorRate)} errors
+							· {formatErrorRate(selected.errorRate)} errors
 						</span>
 					</div>
 				</div>
@@ -183,7 +183,7 @@ function ServiceInventory({
 							</span>
 						</span>
 						<span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
-							{formatError(node.errorRate)}
+							{formatErrorRate(node.errorRate)}
 						</span>
 					</button>
 				))}

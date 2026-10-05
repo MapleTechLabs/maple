@@ -4,6 +4,8 @@ import { Exit } from "effect"
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@maple/ui/components/ui/alert"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
+import { Item, ItemActions, ItemContent, ItemMedia } from "@maple/ui/components/ui/item"
+import { Panel, PanelHeader } from "@maple/ui/components/ui/panel"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
 import { toastManager } from "@maple/ui/components/ui/toast"
@@ -55,38 +57,36 @@ interface ConnectedAccountEntry {
 function CloudflareAccountsStrip({ accounts }: { readonly accounts: ReadonlyArray<ConnectedAccountEntry> }) {
 	if (accounts.length < 2) return null
 	return (
-		<div className="rounded-lg border border-border/60 bg-card">
-			<div className="border-b border-border/60 px-4 py-2.5">
-				<h3 className="text-xs font-medium text-muted-foreground">
-					Connected accounts ({accounts.length})
-				</h3>
-			</div>
+		<Panel className="rounded-lg border-border/60">
+			<PanelHeader title={`Connected accounts (${accounts.length})`} className="border-border/60" />
 			<ul className="divide-y divide-border/60">
 				{accounts.map((account) => (
-					<li key={account.accountId} className="flex items-center gap-3 px-4 py-2.5">
-						<CloudflareMonoIcon size={16} className="shrink-0 text-muted-foreground" />
-						<div className="flex min-w-0 flex-col">
+					<Item key={account.accountId} variant="flush" size="lg" className="py-2.5" render={<li />}>
+						<ItemMedia>
+							<CloudflareMonoIcon size={16} className="text-muted-foreground" />
+						</ItemMedia>
+						<ItemContent className="gap-0">
 							<span className="truncate text-sm font-medium">
 								{account.accountName ?? account.accountId}
 							</span>
 							<span className="truncate font-mono text-[11px] text-muted-foreground">
 								{account.accountId}
 							</span>
-						</div>
-						<div className="flex items-center gap-1.5">
+						</ItemContent>
+						<ItemActions className="gap-1.5">
 							{account.revoked ? (
 								<Badge variant="error">Reconnect required</Badge>
 							) : !account.analyticsCapable ? (
 								<Badge variant="warning">Needs updated access</Badge>
 							) : null}
-						</div>
-						<span className="ml-auto text-xs text-muted-foreground">
-							{account.zoneCount === 1 ? "1 zone" : `${account.zoneCount} zones`}
-						</span>
-					</li>
+							<span className="text-xs text-muted-foreground">
+								{account.zoneCount === 1 ? "1 zone" : `${account.zoneCount} zones`}
+							</span>
+						</ItemActions>
+					</Item>
 				))}
 			</ul>
-		</div>
+		</Panel>
 	)
 }
 
@@ -220,15 +220,17 @@ export function CloudflareAccountCard() {
 	// over an account that may already be authorized.
 	if (Result.isFailure(statusResult)) {
 		return (
-			<div className="flex items-start gap-4 rounded-lg border border-border/60 bg-card p-4">
-				<IntegrationIconPlate icon={CloudflareIcon} accent={CLOUDFLARE_ACCENT} />
-				<div className="flex flex-col gap-1">
+			<Item variant="card" className="items-start gap-4 p-4">
+				<ItemMedia>
+					<IntegrationIconPlate icon={CloudflareIcon} accent={CLOUDFLARE_ACCENT} />
+				</ItemMedia>
+				<ItemContent>
 					<h3 className="text-sm font-semibold">Cloudflare account</h3>
 					<p className="text-xs text-muted-foreground">
 						Couldn't load the Cloudflare connection status — refresh the page to try again.
 					</p>
-				</div>
-			</div>
+				</ItemContent>
+			</Item>
 		)
 	}
 

@@ -3,12 +3,14 @@ import { ChevronRightIcon, ChevronDownIcon, GlobeIcon } from "../icons"
 
 import { Badge } from "../ui/badge"
 import { Button } from "../ui/button"
+import { TruncatedId } from "../ui/truncated-id"
 import { cn } from "../../lib/utils"
 import { formatDuration } from "../../lib/format"
 import { spanStartMs as spanStartMsOf } from "../../lib/span-tree"
 import { getServiceColor } from "../../lib/colors"
 import { getCacheInfo, cacheResultStyles } from "../../lib/cache"
-import { getHttpInfo, HTTP_METHOD_COLORS } from "../../lib/http"
+import { getHttpInfo, HTTP_METHOD_COLORS, httpStatusTone } from "../../lib/http"
+import { TONE_TEXT } from "../../lib/tone"
 import { getCloudPlatform, outcomeBadgeStyle } from "../../lib/cloud-platforms"
 import { getSpanKindLabel, getSpanStatusBadgeClass } from "../../lib/span-kind"
 import { PixelDurationBar } from "./pixel-duration-bar"
@@ -82,12 +84,11 @@ function SpanRowImpl({
 
 				<div className="flex items-center gap-2 shrink-0 ml-2">
 					<div className="hidden w-48 @min-[560px]/row:block" />
-					<span
-						className="w-16 text-right font-mono text-[10px] text-muted-foreground/50 truncate"
-						title={span.spanId}
-					>
-						{span.spanId.slice(0, 8)}
-					</span>
+					<TruncatedId
+						value={span.spanId}
+						kind="span"
+						className="w-16 text-right text-[10px] text-muted-foreground/50 truncate"
+					/>
 					<div className="w-14" />
 				</div>
 			</div>
@@ -107,10 +108,12 @@ function SpanRowImpl({
 	const statusStyle = getSpanStatusBadgeClass(span.statusCode)
 	const kindLabel = getSpanKindLabel(span.spanKind)
 
+	const httpTone = httpStatusTone(httpInfo?.statusCode)
+
 	const barColor =
-		httpInfo?.statusCode && httpInfo.statusCode >= 500
+		httpTone === "crit"
 			? "bg-destructive"
-			: httpInfo?.statusCode && httpInfo.statusCode >= 400
+			: httpTone === "warn"
 				? "bg-severity-warn"
 				: span.statusCode === "Error"
 					? "bg-destructive"
@@ -247,13 +250,11 @@ function SpanRowImpl({
 					<span
 						className={cn(
 							"w-14 text-center font-mono text-xs font-medium",
-							httpInfo.statusCode >= 500
-								? "text-severity-error"
-								: httpInfo.statusCode >= 400
-									? "text-severity-warn"
-									: httpInfo.statusCode >= 300
-										? "text-chart-p50"
-										: "text-severity-info",
+							httpTone !== "neutral"
+								? TONE_TEXT[httpTone]
+								: httpInfo.statusCode >= 300
+									? "text-chart-p50"
+									: "text-severity-info",
 						)}
 					>
 						{httpInfo.statusCode}

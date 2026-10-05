@@ -23,7 +23,6 @@ import { DocsLink } from "@/components/common/docs-link"
 import { useSignalPresence } from "@/hooks/use-signal-presence"
 import { WhereClauseEditor } from "@/components/query-builder/where-clause-editor"
 import { useMetricScopedAutocomplete } from "@/hooks/use-metric-scoped-autocomplete"
-import { CircleWarningIcon } from "@/components/icons"
 import type { WhereClauseAutocompleteValues } from "@/lib/query-builder/where-clause-autocomplete"
 import {
 	AGGREGATIONS_BY_SOURCE,
@@ -35,6 +34,7 @@ import {
 	type QueryBuilderMetricType,
 	type QueryBuilderQueryDraft,
 } from "@maple/query-engine/query-builder"
+import { WarningList } from "./warning-list"
 
 // Types
 
@@ -190,16 +190,7 @@ export function QueryPanel({
 
 			{query.dataSource === "product_events" && <ProductEventsAbsentHint />}
 
-			{warnings.length > 0 && (
-				<div className="flex gap-2 border border-warning/30 bg-warning/10 p-2 text-xs text-warning-foreground">
-					<CircleWarningIcon size={14} className="mt-0.5 shrink-0" />
-					<ul className="space-y-1">
-						{warnings.map((warning) => (
-							<li key={warning}>{warning}</li>
-						))}
-					</ul>
-				</div>
-			)}
+			<WarningList warnings={warnings} />
 
 			{/* Add-on toggle bar */}
 			<AddOnToggleBar

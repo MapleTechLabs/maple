@@ -1,6 +1,9 @@
 import { useMemo, useState } from "react"
 import { Link } from "@tanstack/react-router"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { Skeleton, SkeletonList } from "@maple/ui/components/ui/skeleton"
+import { TruncatedId } from "@maple/ui/components/ui/truncated-id"
+import { shortId } from "@maple/ui/lib/ids"
+import { RelativeTime } from "@/components/common/relative-time"
 import { cn } from "@maple/ui/lib/utils"
 
 import {
@@ -13,11 +16,12 @@ import {
 import type { ReleasePoint } from "@/components/vcs/commit-markers/marker-layout"
 import { DocsLink } from "@/components/common/docs-link"
 import { Result, useAtomValue } from "@/lib/effect-atom"
-import { formatNumber } from "@maple/ui/lib/format"
-import { normalizeTimestampInput } from "@/lib/timezone-format"
-import { useTimezonePreference } from "@/hooks/use-timezone-preference"
+import { formatErrorRate, formatNumber } from "@maple/ui/lib/format"
+import { errorRateLevel } from "@maple/ui/lib/error-rate"
+import { TONE_SOFT } from "@maple/ui/lib/tone"
+import { Badge } from "@maple/ui/components/ui/badge"
 import { SectionCard } from "./section-card"
-import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
+import { shortReleaseLabel } from "@/components/releases/release-model"
 import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import { EmptyMessage } from "@maple/ui/components/ui/empty"
 
@@ -43,11 +47,6 @@ interface DeployEntry {
 	errorCount: number
 }
 
-// A 40-hex git sha reads as its 7-char short form; tags/versions stay verbatim.
-function shortLabel(sha: string): string {
-	return /^[0-9a-f]{40}$/i.test(sha) ? sha.slice(0, 7) : sha
-}
-
 function deriveDeploys(releases: ReadonlyArray<ReleasePoint>): DeployEntry[] {
 	const bySha = new Map<string, DeployEntry>()
 	for (const point of releases) {
@@ -70,12 +69,6 @@ function deriveDeploys(releases: ReadonlyArray<ReleasePoint>): DeployEntry[] {
 	)
 }
 
-function formatFirstSeenExact(firstSeen: string, timeZone: string): string {
-	const d = new Date(normalizeTimestampInput(firstSeen))
-	if (Number.isNaN(d.getTime())) return firstSeen
-	return `First seen ${d.toLocaleString(undefined, { timeZone, dateStyle: "medium", timeStyle: "short" })}`
-}
-
 /**
  * Per-version error-rate chip. Window-wide rate (errors / spans while this
  * version served traffic), not a deploy-impact delta — the tooltip says so.
@@ -85,23 +78,19 @@ function formatFirstSeenExact(firstSeen: string, timeZone: string): string {
 function ErrorRateChip({ errorCount, spanCount }: { errorCount: number; spanCount: number }) {
 	if (spanCount <= 0) return null
 	const ratio = errorCount / spanCount
-	const label = ratio < 0.001 ? "0%" : `${(ratio * 100).toFixed(1)}%`
-	const tone =
-		ratio >= 0.05
-			? "bg-destructive/10 text-destructive"
-			: ratio >= 0.001
-				? "bg-amber-500/10 text-amber-600 dark:text-amber-400"
-				: "text-muted-foreground/60"
+	const level = errorRateLevel(ratio)
 	return (
-		<span
+		<Badge
+			size="xs"
+			mono
 			title={`${formatNumber(errorCount)} errors of ${formatNumber(spanCount)} spans while this version served traffic`}
 			className={cn(
-				"shrink-0 cursor-default rounded px-1.5 py-px font-mono text-[10px] tabular-nums leading-4",
-				tone,
+				"cursor-default",
+				level === "neutral" ? "bg-transparent text-muted-foreground/60" : TONE_SOFT[level],
 			)}
 		>
-			{label}
-		</span>
+			{formatErrorRate(ratio)}
+		</Badge>
 	)
 }
 
@@ -133,17 +122,17 @@ function RowFrame({
 }
 
 function RowMeta({ deploy, prefix }: { deploy: DeployEntry; prefix?: React.ReactNode }) {
-	const { effectiveTimezone } = useTimezonePreference()
 	return (
 		<>
 			{prefix}
 			<span className="shrink-0 tabular-nums">{formatNumber(deploy.spanCount)} spans</span>
-			<span
-				title={formatFirstSeenExact(deploy.firstSeen, effectiveTimezone)}
-				className="ml-auto shrink-0 cursor-default font-mono tabular-nums text-muted-foreground/70"
-			>
-				{formatRelativeTimeOrDate(deploy.firstSeen, undefined, effectiveTimezone)}
-			</span>
+			<RelativeTime
+				value={deploy.firstSeen}
+				variant="orDate"
+				mono
+				tooltip="title"
+				className="ml-auto shrink-0 cursor-default text-muted-foreground/70"
+			/>
 		</>
 	)
 }
@@ -151,7 +140,7 @@ function RowMeta({ deploy, prefix }: { deploy: DeployEntry; prefix?: React.React
 /** Non-resolvable reference (tag, short sha, arbitrary telemetry): verbatim mono
  * label, no fetch, no hover card. */
 function DeployRowPlain({ deploy }: { deploy: DeployEntry }) {
-	const label = deploy.sha.length > 24 ? `${deploy.sha.slice(0, 24)}…` : deploy.sha
+	const label = shortId(deploy.sha, "generic", { length: 24, ellipsis: true })
 	return (
 		<RowFrame
 			avatar={<span className="block size-5 rounded-full bg-muted" />}
@@ -172,7 +161,7 @@ function DeployRowFallback({ deploy }: { deploy: DeployEntry }) {
 			avatar={<span className="block size-5 rounded-full bg-muted" />}
 			line1={
 				<CommitShaHoverCard sha={deploy.sha} className="font-mono text-xs text-foreground">
-					{shortLabel(deploy.sha)}
+					{shortReleaseLabel(deploy.sha)}
 				</CommitShaHoverCard>
 			}
 			chip={<ErrorRateChip errorCount={deploy.errorCount} spanCount={deploy.spanCount} />}
@@ -213,7 +202,7 @@ function DeployRowResolved({ deploy }: { deploy: DeployEntry }) {
 							prefix={
 								<>
 									<span className="min-w-0 truncate">{author}</span>
-									<span className="shrink-0 font-mono">{deploy.sha.slice(0, 7)}</span>
+									<TruncatedId value={deploy.sha} kind="sha" className="shrink-0" />
 								</>
 							}
 						/>
@@ -281,11 +270,7 @@ export function ServiceRecentDeploys({ releases, isLoading = false }: ServiceRec
 	if (isLoading) {
 		return (
 			<SectionCard title="Recent deploys">
-				<div className="space-y-px p-2">
-					{Array.from({ length: 4 }).map((_, i) => (
-						<DeployRowSkeleton key={i} />
-					))}
-				</div>
+				<SkeletonList rows={4} renderRow={() => <DeployRowSkeleton />} className="p-2" />
 			</SectionCard>
 		)
 	}

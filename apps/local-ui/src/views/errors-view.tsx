@@ -182,11 +182,7 @@ function ErrorTypeCard({
 						{row.serviceNames.length > 0 ? (
 							<>
 								{row.serviceNames.map((serviceName) => (
-									<Badge
-										key={serviceName}
-										variant="outline"
-										className="gap-1.5 font-mono text-[10px]"
-									>
+									<Badge key={serviceName} variant="outline" size="xs" mono className="gap-1.5">
 										<ServiceDot serviceName={serviceName} />
 										{serviceName}
 									</Badge>

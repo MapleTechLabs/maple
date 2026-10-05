@@ -2,7 +2,8 @@ import { formatRelativeTimeOrDate, toEpochMs } from "@maple/ui/lib/time-format"
 import { useCallback, useState } from "react"
 import { useNavigate } from "@tanstack/react-router"
 import { useVirtualizer } from "@tanstack/react-virtual"
-import { Spinner } from "@maple/ui/components/ui/spinner"
+import { Badge, badgeVariants } from "@maple/ui/components/ui/badge"
+import { ListFooter, LoadMoreButton, LoadingMoreRow } from "@maple/ui/components/ui/list-footer"
 import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { cn } from "@maple/ui/lib/utils"
 import { SignalEmptyState } from "@/components/common/signal-empty-state"
@@ -262,29 +263,23 @@ export function SessionsList({
 
 			{hasMore &&
 				(manualLoadMore ? (
-					<button
-						type="button"
-						onClick={() => onReachEnd?.()}
-						disabled={loadingMore}
-						className="w-full py-3 text-sm text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
-					>
-						Load more sessions
-					</button>
+					<div className="flex justify-center py-3">
+						<LoadMoreButton
+							label="Load more sessions"
+							loading={loadingMore}
+							onClick={() => onReachEnd?.()}
+						/>
+					</div>
 				) : (
 					<SessionsSentinel onReachEnd={onReachEnd} loadingMore={loadingMore} />
 				))}
 
 			{isCapped && (
-				<p className="py-3 text-sm text-muted-foreground">
-					Showing first {sessions.length.toLocaleString()} sessions. Narrow filters to continue.
-				</p>
+				<ListFooter shown={sessions.length} noun="sessions" capped align="start" className="px-0" />
 			)}
 
 			{loadingMore && (
-				<div className="flex items-center justify-center gap-2 py-6 text-sm text-muted-foreground">
-					<Spinner className="size-4" />
-					Loading more sessions…
-				</div>
+				<LoadingMoreRow label="Loading more sessions…" className="py-6" />
 			)}
 		</div>
 	)
@@ -438,12 +433,15 @@ function SessionListRow({
 					{formatSessionDuration(durationMs)}
 				</span>
 				{durationP95 != null && durationP95 > 0 && durationMs != null && durationMs > durationP95 && (
-					<span
-						className="shrink-0 self-center rounded-full bg-accent px-1.5 py-px text-[10px] font-medium text-accent-foreground"
+					<Badge
+						variant="muted"
+						shape="pill"
+						size="xs"
+						className="self-center bg-accent text-accent-foreground"
 						title={`Longer than 95% of sessions in this view (p95: ${formatSessionDuration(durationP95)})`}
 					>
 						long
-					</span>
+					</Badge>
 				)}
 				<span className="truncate text-xs text-muted-foreground">
 					{session.pageViews || 1} page{(session.pageViews || 1) === 1 ? "" : "s"} ·{" "}
@@ -507,10 +505,7 @@ function SessionTags({
 	return (
 		<>
 			{SESSION_TAG_ORDER.filter((tag) => tags.includes(tag)).map((tag) => {
-				const className = cn(
-					"inline-flex shrink-0 items-center rounded-full px-1.5 py-px text-[10px] font-medium",
-					SESSION_TAG_STYLES[tag],
-				)
+				const className = cn(badgeVariants({ shape: "pill", size: "xs" }), SESSION_TAG_STYLES[tag])
 				if (!onFilter) {
 					return (
 						<span key={tag} className={className} title={SESSION_TAG_DESCRIPTIONS[tag]}>
@@ -539,17 +534,22 @@ function SessionBadges({ session }: { session: SessionRow }) {
 		<>
 			{session.errorCount > 0 && <ErrorCountPill count={session.errorCount} />}
 			{session.traceCount > 0 && (
-				<span className="inline-flex shrink-0 items-center rounded-full bg-indigo-500/10 px-2 py-0.5 font-mono text-[10px] font-medium tabular-nums text-indigo-600 dark:text-indigo-400">
+				<Badge
+					shape="pill"
+					size="xs"
+					mono
+					className="bg-indigo-500/10 text-indigo-600 dark:text-indigo-400"
+				>
 					{session.traceCount} trace{session.traceCount === 1 ? "" : "s"}
-				</span>
+				</Badge>
 			)}
 			{/* Metadata-only session — no rrweb chunks were ever written, so the
 			    detail page has no player. Flag it here rather than let the row look
 			    like every other (playable) session. */}
 			{session.recorded === "false" && (
-				<span className="inline-flex shrink-0 items-center rounded-full border border-dashed border-border px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+				<Badge variant="meta" shape="pill" size="xs" className="border-dashed border-border">
 					Transcript only
-				</span>
+				</Badge>
 			)}
 		</>
 	)

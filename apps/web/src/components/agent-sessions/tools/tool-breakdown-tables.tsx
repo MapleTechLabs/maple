@@ -2,12 +2,13 @@ import { useMemo, type ReactNode } from "react"
 import { Link } from "@tanstack/react-router"
 
 import { cn } from "@maple/ui/lib/utils"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { Meter } from "@maple/ui/components/ui/meter"
+import { SkeletonList } from "@maple/ui/components/ui/skeleton"
+import { ERROR_RATE_FILL, ERROR_RATE_TEXT, errorRateLevel, formatErrorRate } from "@maple/ui/lib/error-rate"
 import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
 
 import { ErrorState } from "@/components/common/error-state"
 import { useTableSort, type SortDir } from "@/components/common/data-table"
-import { relativeRatio } from "@/components/infra/primitives/share-bar"
 import { ArrowUpDownIcon, ChevronRightIcon } from "@/components/icons"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import type { ToolDetailLinkSearch } from "@/lib/agent-sessions/tool-search"
@@ -158,19 +159,13 @@ export function TableFooter({ subject, detail }: { subject: string; detail: stri
 	)
 }
 
-/**
- * Error rate → severity tone. Thresholds rather than a gradient because the
- * question is triage-shaped: under 1% is background noise for a tool that runs
- * thousands of times, over 10% is something a person should look at today.
- */
-export function errorTone(rate: number): { bar: string; text: string } {
-	if (rate >= 0.1) return { bar: "bg-[var(--severity-error)]", text: "text-[var(--severity-error)]" }
-	if (rate >= 0.01) return { bar: "bg-[var(--severity-warn)]", text: "text-[var(--severity-warn)]" }
-	return { bar: "bg-[var(--severity-info)]", text: "text-muted-foreground" }
-}
-
-export function formatRate(rate: number): string {
-	return rate === 0 ? "0%" : `${(rate * 100).toFixed(rate < 0.01 ? 2 : 1)}%`
+/** Error rate → severity tone, on the app-wide thresholds (lib/error-rate). */
+function errorTone(rate: number): { bar: string; text: string } {
+	const level = errorRateLevel(rate)
+	return {
+		bar: ERROR_RATE_FILL[level],
+		text: level === "neutral" ? "text-muted-foreground" : ERROR_RATE_TEXT[level],
+	}
 }
 
 /**
@@ -193,15 +188,15 @@ export function ShareCell({
 	label: string
 	tone: { bar: string; text: string }
 }) {
-	const width = relativeRatio(ratio, max)
 	return (
 		<span className="flex w-[150px] shrink-0 items-center justify-end gap-2.5">
-			<span className="hidden h-1 w-[60px] shrink-0 overflow-hidden rounded-[2px] bg-muted @min-[560px]/panel:block">
-				<span
-					className={cn("block h-full", tone.bar)}
-					style={{ width: `${Math.max(width * 100, ratio > 0 ? 3 : 0)}%` }}
-				/>
-			</span>
+			<Meter
+				value={ratio}
+				max={max}
+				minVisible={3}
+				fillClassName={tone.bar}
+				className="hidden w-[60px] shrink-0 rounded-[2px] bg-muted @min-[560px]/panel:block"
+			/>
 			<span className={cn("w-[46px] text-right font-mono text-xs tabular-nums", tone.text)}>
 				{label}
 			</span>
@@ -405,11 +400,7 @@ export function ToolsTable({
 					{failure !== undefined ? (
 						<ErrorState error={failure} title="Failed to load tools" />
 					) : loading ? (
-						<div className="flex flex-col gap-1.5 px-2.5 py-3">
-							<Skeleton className="h-[38px]" />
-							<Skeleton className="h-[38px]" />
-							<Skeleton className="h-[38px]" />
-						</div>
+						<SkeletonList rows={3} rowClassName="h-[38px]" className="gap-1.5 px-2.5 py-3" />
 					) : sorted.length === 0 ? (
 						<TableEmpty>No tool calls in the selected window.</TableEmpty>
 					) : (
@@ -459,7 +450,7 @@ export function ToolsTable({
 									<ShareCell
 										ratio={row.errorRate}
 										max={maxErrorRate}
-										label={formatRate(row.errorRate)}
+										label={formatErrorRate(row.errorRate)}
 										tone={errorTone(row.errorRate)}
 									/>
 									<span

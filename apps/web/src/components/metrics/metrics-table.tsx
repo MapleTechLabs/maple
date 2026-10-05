@@ -5,10 +5,11 @@ import { useState } from "react"
 
 import { Result, useAtomValue } from "@/lib/effect-atom"
 
-import { Button } from "@maple/ui/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
 import { SignalEmptyState } from "@/components/common/signal-empty-state"
 import { Badge } from "@maple/ui/components/ui/badge"
+import { ListFooter } from "@maple/ui/components/ui/list-footer"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 import { MetricTypeBadge } from "./metric-type-badge"
 import { type Metric, type ListMetricsInput } from "@/api/warehouse/metrics"
 import { listMetricsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
@@ -138,12 +139,7 @@ export function MetricsTable({
 								>
 									<TableCell>
 										<div className="flex min-w-0 flex-col gap-0.5">
-											<span
-												className="truncate font-mono text-xs"
-												title={metric.metricName}
-											>
-												{metric.metricName}
-											</span>
+											<TruncatedText text={metric.metricName} mono className="text-xs" />
 											{metric.metricDescription && (
 												<span className="text-[10px] text-muted-foreground line-clamp-1">
 													{metric.metricDescription}
@@ -156,7 +152,7 @@ export function MetricsTable({
 									</TableCell>
 									<TableCell className="hidden md:table-cell">
 										{metric.serviceName ? (
-											<Badge variant="outline" className="font-mono text-[10px]">
+											<Badge variant="outline" size="xs" mono>
 												<ServiceDot
 													serviceName={metric.serviceName}
 													className="size-1.5"
@@ -180,22 +176,15 @@ export function MetricsTable({
 				</Table>
 			</div>
 
-			<div className="flex items-center gap-3 text-sm text-muted-foreground">
-				<span>
-					Showing {metrics.length} metrics
-					{hasMore ? " — more available" : ""}
-				</span>
-				{hasMore && (
-					<Button
-						variant="outline"
-						size="sm"
-						disabled={waiting}
-						onClick={() => setLimit((current) => current + PAGE_SIZE)}
-					>
-						{waiting ? "Loading…" : "Load more"}
-					</Button>
-				)}
-			</div>
+			<ListFooter
+				shown={metrics.length}
+				noun="metrics"
+				hasMore={hasMore}
+				loading={waiting}
+				onLoadMore={() => setLimit((current) => current + PAGE_SIZE)}
+				align="start"
+				className="justify-start p-0 text-sm"
+			/>
 		</div>
 	)
 }

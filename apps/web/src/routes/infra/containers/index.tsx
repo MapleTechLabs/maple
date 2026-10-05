@@ -11,7 +11,7 @@ import { ErrorState } from "@/components/common/error-state"
 import { DockerIcon, MagnifierIcon } from "@/components/icons"
 import { PageHero } from "@/components/common/page-hero"
 import { FLEET_BAND_BOXED } from "@/components/infra/primitives/fleet-band"
-import { ListToolbar, countLabel } from "@/components/common/search-toolbar"
+import { SearchToolbar, countLabel } from "@/components/common/search-toolbar"
 import { HostsViewTabs } from "@/components/infra/hosts-view-tabs"
 import { ContainerTable, ContainerTableLoading } from "@/components/infra/container-table"
 import {
@@ -287,7 +287,7 @@ function ContainersPage() {
 													result.waiting ? "opacity-60" : ""
 												}`}
 											>
-												<ListToolbar
+												<SearchToolbar
 													value={searchText}
 													onChange={(value) =>
 														patchSearch({ q: value || undefined })

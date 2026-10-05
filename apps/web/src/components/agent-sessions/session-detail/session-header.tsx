@@ -2,11 +2,12 @@ import type { ReactNode } from "react"
 
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
-import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
+import { shortId } from "@maple/ui/lib/ids"
 
 import { traceSessionTraceId } from "@maple/domain/gen-ai"
 
 import { CopyableValue } from "@/components/attributes"
+import { RelativeTime } from "@/components/common/relative-time"
 import { CopyIcon } from "@/components/icons"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { type SessionSummary } from "@maple/agent-sessions"
@@ -48,8 +49,8 @@ export function SessionHeader({ sessionId, summary }: { sessionId: string; summa
 			</div>
 
 			<dl className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-xs">
-				<Fact label="Started" title={new Date(summary.startMs).toLocaleString()}>
-					{formatRelativeTimeOrDate(summary.startMs)}
+				<Fact label="Started">
+					<RelativeTime value={summary.startMs} variant="orDate" tooltip="title" />
 				</Fact>
 				{summary.serviceNames.length > 0 && (
 					<Fact label="Service" title={summary.serviceNames.join(", ")} mono>
@@ -62,7 +63,7 @@ export function SessionHeader({ sessionId, summary }: { sessionId: string; summa
 						label={traceId === undefined ? "Session ID" : "Trace ID"}
 						className="inline-flex min-w-0 max-w-full items-center gap-1 font-mono"
 					>
-						<span className="min-w-0 truncate">{shortId(traceId ?? sessionId)}</span>
+						<span className="min-w-0 truncate">{shortId(traceId ?? sessionId, "generic", { length: ID_PREFIX_LENGTH, ellipsis: true })}</span>
 						<CopyIcon size={11} className="shrink-0 text-muted-foreground" aria-hidden />
 					</CopyableValue>
 				</Fact>
@@ -94,10 +95,6 @@ export function sessionIdentity(summary: Pick<SessionSummary, "agentNames" | "ve
  *  prefix identifies it as well as the whole, and the whole is in the `title`
  *  and the clipboard. */
 const ID_PREFIX_LENGTH = 32
-
-function shortId(id: string): string {
-	return id.length > ID_PREFIX_LENGTH ? `${id.slice(0, ID_PREFIX_LENGTH)}…` : id
-}
 
 function Fact({
 	label,

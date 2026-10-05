@@ -4,7 +4,7 @@ import { Link } from "@tanstack/react-router"
 import { StatusDot } from "@maple/ui/components/ui/status-dot"
 
 import type { V2PlanetScaleScrapeTarget } from "@maple/domain/http/v2"
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
+import { RelativeTime } from "@/components/common/relative-time"
 import { metricsHealthState, type MetricsAuth, type MetricsHealthState } from "./planetscale-setup-steps"
 
 /**
@@ -33,7 +33,7 @@ export function PlanetScaleMetricsHealth({
 	// The token-setup step owns the missing-auth state — don't show two messages.
 	if (state === "unconfigured") return null
 
-	const updatedAgo = target.last_scrape_at !== null ? formatRelativeTime(target.last_scrape_at) : null
+	const lastScrapeAt = target.last_scrape_at
 
 	return (
 		<div className="border-t border-border/60 p-4">
@@ -44,13 +44,14 @@ export function PlanetScaleMetricsHealth({
 				/>
 				<span className="font-medium text-foreground">{HEADLINE[state]}</span>
 				<span className="text-muted-foreground">
-					{state === "waiting"
-						? "Branch metrics usually appear within a minute."
-						: state === "healthy"
-							? `Updated ${updatedAgo}`
-							: updatedAgo !== null
-								? `Last data ${updatedAgo}`
-								: null}
+					{state === "waiting" ? (
+						"Branch metrics usually appear within a minute."
+					) : lastScrapeAt !== null ? (
+						<RelativeTime
+							value={lastScrapeAt}
+							prefix={state === "healthy" ? "Updated" : "Last data"}
+						/>
+					) : null}
 					{state === "healthy" && target.exclude_branches.length > 0 ? (
 						<> · excluding {target.exclude_branches.join(", ")}</>
 					) : null}

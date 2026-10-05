@@ -10,7 +10,7 @@ import { cloudflarePlatformResourcesResultAtom } from "@/lib/services/atoms/ware
 import { formatNumber } from "@maple/ui/lib/format"
 import { ColumnHead, DataTable, useTableSort } from "@/components/common/data-table"
 import { formatBytes, formatPercent } from "@maple/ui/lib/format"
-import { errorRateClass } from "./constants"
+import { errorRateClass } from "@maple/ui/lib/error-rate"
 
 const ROW_CLASS =
 	"flex items-center gap-4 border-b border-border/40 px-4 py-3 last:border-0 hover:bg-muted/40"

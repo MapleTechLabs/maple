@@ -12,6 +12,8 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@maple/ui/components/u
 import { ScrollArea } from "@maple/ui/components/ui/scroll-area"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
+import { KeyValue, KeyValueList } from "@maple/ui/components/ui/key-value"
+import { shortId } from "@maple/ui/lib/ids"
 import { SeverityBadge } from "@maple/ui/components/logs/severity-badge"
 import {
 	CircleInfoIcon,
@@ -174,7 +176,7 @@ function LogHeroHeader({ log, onClose }: { log: LocalLog; onClose: () => void })
 		<div className={cn("shrink-0 border-b px-4 py-3", tone)}>
 			<div className="flex items-center gap-2">
 				<SeverityBadge severity={log.severityText} />
-				<Badge variant="outline" className="font-mono text-[10px]">
+				<Badge variant="outline" size="xs" mono>
 					<CopyableValue value={log.serviceName}>{log.serviceName}</CopyableValue>
 				</Badge>
 				<Button
@@ -231,13 +233,13 @@ function LogMetaStrip({
 					title={`View trace ${log.traceId}`}
 				>
 					<PulseIcon size={10} />
-					trace:{log.traceId.slice(0, 8)}
+					trace:{shortId(log.traceId, "trace")}
 				</a>
 			)}
 
 			{log.spanId && (
 				<span className="shrink-0 font-mono text-[11px] text-muted-foreground">
-					<CopyableValue value={log.spanId}>span:{log.spanId.slice(0, 8)}</CopyableValue>
+					<CopyableValue value={log.spanId}>span:{shortId(log.spanId, "span")}</CopyableValue>
 				</span>
 			)}
 
@@ -308,22 +310,16 @@ function LogTracePanel({
 }) {
 	return (
 		<div className="space-y-3">
-			<div className="rounded-md border p-2 text-xs space-y-1">
-				<div className="flex justify-between gap-3">
-					<span className="text-muted-foreground">Trace ID</span>
-					<span className="truncate font-mono">
-						<CopyableValue value={log.traceId}>{log.traceId}</CopyableValue>
-					</span>
-				</div>
+			<KeyValueList className="gap-1 rounded-md border p-2">
+				<KeyValue label="Trace ID" mono>
+					<CopyableValue value={log.traceId}>{log.traceId}</CopyableValue>
+				</KeyValue>
 				{log.spanId && (
-					<div className="flex justify-between gap-3">
-						<span className="text-muted-foreground">Span ID</span>
-						<span className="truncate font-mono">
-							<CopyableValue value={log.spanId}>{log.spanId}</CopyableValue>
-						</span>
-					</div>
+					<KeyValue label="Span ID" mono>
+						<CopyableValue value={log.spanId}>{log.spanId}</CopyableValue>
+					</KeyValue>
 				)}
-			</div>
+			</KeyValueList>
 			<Button
 				variant="outline"
 				size="sm"

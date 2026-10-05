@@ -5,7 +5,10 @@ import { Link } from "@tanstack/react-router"
 import type { CloudflareServiceUsage, CloudflareUsageResponse } from "@maple/domain/http"
 import { StatSparkline } from "@maple/ui/components/charts/sparkline/stat-sparkline"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
+import { Panel, PanelHeader } from "@maple/ui/components/ui/panel"
 import { SearchInput } from "@maple/ui/components/ui/search-input"
+import { ToggleGroup, ToggleGroupItem } from "@maple/ui/components/ui/toggle-group"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 import { cn } from "@maple/ui/lib/utils"
 
 import { ColumnHead, type SortDir } from "@/components/common/data-table"
@@ -283,15 +286,11 @@ function ResourceRow({
 		<>
 			<StatusDot tone="custom" className={cn("mt-[5px]", status.dot)} />
 			<div className="min-w-0 flex-1">
-				<span
-					className={cn(
-						"block truncate text-xs font-medium text-foreground",
-						zoneLink && "group-hover:text-primary",
-					)}
-					title={name}
+				<TruncatedText
+					className={cn("text-xs font-medium text-foreground", zoneLink && "group-hover:text-primary")}
 				>
 					{name}
-				</span>
+				</TruncatedText>
 				{/* In a narrow card the status column is hidden, so surface the detail under the name. */}
 				<div className={cn("mt-0.5 text-[11px] @lg:hidden", status.detailClass)}>{status.detail}</div>
 			</div>
@@ -344,40 +343,18 @@ interface DecoratedZone {
 }
 
 /** One filter chip: state color dot (or none for "All") + label + count. */
-function ZoneChip({
-	label,
-	count,
-	dot,
-	active,
-	onClick,
-}: {
-	label: string
-	count: number
-	dot?: string
-	active: boolean
-	onClick: () => void
-}) {
+function ZoneChip({ value, label, count, dot }: { value: string; label: string; count: number; dot?: string }) {
 	return (
-		<button
-			type="button"
-			role="tab"
-			aria-selected={active}
-			onClick={onClick}
-			className={cn(
-				"inline-flex h-6 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium transition-colors",
-				active
-					? "bg-muted text-foreground"
-					: "border border-border/60 text-muted-foreground hover:bg-muted/60 hover:text-foreground",
-			)}
+		<ToggleGroupItem
+			value={value}
+			className="group h-6 gap-1.5 rounded-full border-border/60 px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground data-pressed:border-transparent data-pressed:bg-muted data-pressed:text-foreground sm:h-6 sm:text-xs"
 		>
 			{dot ? <StatusDot tone="custom" className={dot} /> : null}
 			{label}
-			<span
-				className={cn("tabular-nums", active ? "text-muted-foreground" : "text-muted-foreground/70")}
-			>
+			<span className="tabular-nums text-muted-foreground/70 group-data-pressed:text-muted-foreground">
 				{count}
 			</span>
-		</button>
+		</ToggleGroupItem>
 	)
 }
 
@@ -462,41 +439,34 @@ export function CloudflareZoneBoard({
 		}
 	}
 
-	const activeChip = (kind: ZoneStatusKind | "all") => () =>
-		setFilter((current) => (current === kind ? "all" : kind))
+	// Pressing the active chip again unpresses it, which falls back to "All".
+	const handleFilter = (values: ReadonlyArray<string>) =>
+		setFilter(CHIP_ORDER.find((kind) => kind === values[0]) ?? "all")
 
 	return (
-		<div
-			className={cn(
-				"@container flex flex-col overflow-hidden rounded-lg border border-border/60 bg-card",
-				className,
-			)}
-		>
+		<Panel className={cn("@container rounded-lg border-border/60", className)}>
 			{/* Title bar: the health rollup (chips double as a single-select filter) + a name search. */}
-			<div className="flex flex-wrap items-center gap-2 border-b border-border/60 py-2.5 pl-4 pr-2.5">
+			<PanelHeader className="gap-2 border-border/60 pl-4 pr-2.5">
 				<h3 className="text-sm font-semibold">Zones</h3>
-				<div
-					role="tablist"
+				<ToggleGroup
+					connected={false}
+					size="xs"
 					aria-label="Filter zones by status"
-					className="ml-auto flex flex-wrap items-center gap-1.5"
+					value={[filter]}
+					onValueChange={handleFilter}
+					className="ml-auto gap-1.5"
 				>
-					<ZoneChip
-						label="All"
-						count={decorated.length}
-						active={filter === "all"}
-						onClick={activeChip("all")}
-					/>
+					<ZoneChip value="all" label="All" count={decorated.length} />
 					{CHIP_ORDER.filter((kind) => counts[kind] > 0).map((kind) => (
 						<ZoneChip
 							key={kind}
+							value={kind}
 							label={STATUS_META[kind].label}
 							count={counts[kind]}
 							dot={STATUS_META[kind].dot}
-							active={filter === kind}
-							onClick={activeChip(kind)}
 						/>
 					))}
-				</div>
+				</ToggleGroup>
 				<SearchInput
 					className="w-full sm:w-[170px]"
 					value={search}
@@ -504,7 +474,7 @@ export function CloudflareZoneBoard({
 					placeholder="Filter zones…"
 					aria-label="Filter zones by name"
 				/>
-			</div>
+			</PanelHeader>
 
 			{banner ? <div className="px-3 pt-3">{banner}</div> : null}
 			<div className="flex flex-col">
@@ -560,7 +530,7 @@ export function CloudflareZoneBoard({
 					</div>
 				)}
 			</div>
-		</div>
+		</Panel>
 	)
 }
 
@@ -593,21 +563,20 @@ export function CloudflareWorkersCard({
 	const visible = expanded ? scripts : scripts.slice(0, WORKERS_COLLAPSED_COUNT)
 
 	return (
-		<div
-			className={cn(
-				"flex h-fit flex-col overflow-hidden rounded-lg border border-border/60 bg-card",
-				className,
-			)}
-		>
-			<div className="flex items-center justify-between border-b border-border/60 px-4 py-3">
+		<Panel className={cn("h-fit rounded-lg border-border/60", className)}>
+			<PanelHeader
+				className="border-border/60 py-3"
+				action={
+					<Link
+						to="/service-map"
+						className="text-xs text-muted-foreground transition-colors hover:text-foreground"
+					>
+						View on map →
+					</Link>
+				}
+			>
 				<h3 className="text-sm font-semibold">Workers</h3>
-				<Link
-					to="/service-map"
-					className="text-xs text-muted-foreground transition-colors hover:text-foreground"
-				>
-					View on map →
-				</Link>
-			</div>
+			</PanelHeader>
 
 			{aggregate.kind === "issue" || aggregate.kind === "no-data" ? (
 				<div className={cn("border-b border-border/40 px-4 py-2 text-[11px]", aggregate.detailClass)}>
@@ -634,12 +603,9 @@ export function CloudflareWorkersCard({
 										service.totalRequests > 0 ? "bg-success" : "bg-muted-foreground/40"
 									}
 								/>
-								<span
-									className="truncate text-xs font-medium text-foreground"
-									title={service.displayName}
-								>
+								<TruncatedText className="text-xs font-medium text-foreground">
 									{service.displayName}
-								</span>
+								</TruncatedText>
 							</span>
 							<span className="shrink-0 text-xs font-medium tabular-nums text-foreground">
 								{service.totalRequests > 0 ? formatNumber(service.totalRequests) : "—"}
@@ -659,6 +625,6 @@ export function CloudflareWorkersCard({
 					) : null}
 				</div>
 			)}
-		</div>
+		</Panel>
 	)
 }

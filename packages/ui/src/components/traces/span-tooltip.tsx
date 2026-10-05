@@ -1,6 +1,7 @@
 import { formatDuration } from "../../lib/format"
 import { getServiceColor, calculateSelfTime } from "../../lib/colors"
-import { getHttpInfo } from "../../lib/http"
+import { getHttpInfo, httpStatusTone } from "../../lib/http"
+import { TONE_TEXT } from "../../lib/tone"
 import { getSpanKindLabel } from "../../lib/span-kind"
 import { spanStartMs } from "../../lib/span-tree"
 import type { SpanNode } from "../../lib/types"
@@ -98,11 +99,9 @@ export function SpanTooltipContent({ span, totalDurationMs, traceStartTime }: Sp
 							<span className="text-muted-foreground">HTTP</span>
 							<span
 								className={
-									httpInfo.statusCode >= 400
-										? "text-severity-error"
-										: httpInfo.statusCode >= 300
-											? "text-severity-warn"
-											: "text-severity-info"
+									httpStatusTone(httpInfo.statusCode) === "neutral"
+										? "text-severity-info"
+										: TONE_TEXT[httpStatusTone(httpInfo.statusCode)]
 								}
 							>
 								{httpInfo.statusCode}

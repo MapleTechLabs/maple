@@ -2,6 +2,8 @@ import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import type { ReactNode } from "react"
 import type { V2Investigation } from "@maple/domain/http/v2"
+import { Badge } from "@maple/ui/components/ui/badge"
+import { TONE_TEXT, type Tone } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 
@@ -141,7 +143,10 @@ function DiagnosedVerdict({ investigation }: { investigation: V2Investigation })
 					<Stat label="AI severity">
 						{report.severityAssessment ? (
 							<span
-								className={cn("font-medium", SEVERITY_TEXT_TONE[report.severityAssessment])}
+								className={cn(
+									"font-medium",
+									TONE_TEXT[SEVERITY_TEXT_TONE[report.severityAssessment]],
+								)}
 							>
 								{SEVERITY_LABEL[report.severityAssessment]}
 							</span>
@@ -218,13 +223,13 @@ function NextActions({ actions }: { actions: ReadonlyArray<string> }) {
 }
 
 /** The badge tones are backgrounds; the stat column wants the text colour alone. */
-const SEVERITY_TEXT_TONE: Record<string, string> = {
-	critical: "text-destructive",
-	high: "text-destructive",
-	medium: "text-severity-warn",
-	low: "text-muted-foreground",
-	unclassified: "text-muted-foreground",
-} satisfies Record<string, string>
+const SEVERITY_TEXT_TONE: Record<string, Tone> = {
+	critical: "crit",
+	high: "crit",
+	medium: "warn",
+	low: "neutral",
+	unclassified: "neutral",
+} satisfies Record<string, Tone>
 
 /* -------------------------------------------------------------------------------------------------
  * Investigating
@@ -247,7 +252,7 @@ function InvestigatingVerdict({ investigation }: { investigation: V2Investigatio
 		>
 			<Eyebrow as="div" className="flex flex-wrap items-center gap-2 text-primary">
 				<span className="flex items-center gap-1.5">
-					<StatusDot tone="custom" className="animate-pulse bg-primary" />
+					<StatusDot tone="live" pulse />
 					Investigating
 				</span>
 			</Eyebrow>
@@ -306,9 +311,9 @@ function FailedVerdict({ investigation }: { investigation: V2Investigation }) {
 			{/* The raw error was on the wire and rendered nowhere but a toast. */}
 			{investigation.error ? (
 				<div className="flex items-start gap-3 rounded-lg border border-destructive/25 bg-destructive/6 px-3 py-2.5">
-					<span className="shrink-0 rounded-sm bg-destructive/12 px-1.5 py-0.5 font-mono text-[11px] text-destructive">
+					<Badge size="xs" mono className="mt-0.5 bg-destructive/12 text-destructive">
 						reason
-					</span>
+					</Badge>
 					<code className="min-w-0 break-words font-mono text-xs leading-5 text-foreground">
 						{investigation.error}
 					</code>

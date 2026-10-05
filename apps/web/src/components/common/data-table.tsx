@@ -135,6 +135,8 @@ interface DataTableRootProps {
 	maxHeight?: number | string
 	/** Surface the pinned header sits on. Defaults to the page background; pass `bg-card` inside a card. */
 	stickySurfaceClass?: string
+	/** Frame overrides, e.g. `border-y-0` inside a card that already draws borders. */
+	className?: string
 	children: React.ReactNode
 }
 
@@ -143,6 +145,7 @@ function DataTableRoot({
 	waiting,
 	maxHeight,
 	stickySurfaceClass = "bg-background",
+	className,
 	children,
 }: DataTableRootProps) {
 	const scrolls = maxHeight !== undefined
@@ -151,7 +154,7 @@ function DataTableRoot({
 	return (
 		<DataTableContext value={ctx}>
 			<div
-				className={cn("border-y border-border/70 transition-opacity", waiting && "opacity-60")}
+				className={cn("border-y border-border/70 transition-opacity", waiting && "opacity-60", className)}
 				aria-label={ariaLabel}
 			>
 				<div

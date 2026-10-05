@@ -12,7 +12,9 @@ import type { AiSessionSortDir, AiSessionSortKey } from "@maple/domain/http"
 
 import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { InlineCode } from "@maple/ui/components/ui/inline-code"
-import { Spinner } from "@maple/ui/components/ui/spinner"
+import { badgeVariants } from "@maple/ui/components/ui/badge"
+import { LoadingMoreRow } from "@maple/ui/components/ui/list-footer"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
 import { TableSkeleton } from "@maple/ui/components/ui/table-skeleton"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
 import { formatRelativeTimeOrDate, toEpochMs } from "@maple/ui/lib/time-format"
@@ -110,11 +112,6 @@ const TABLE_FEATURES = tableFeatures({ columnSizingFeature })
 
 /** Two lines — the name over the id — at text-sm and text-xs, plus the cell padding. */
 const ROW_HEIGHT = 53
-
-// No wrap: a two-word label ("LLM calls") breaking onto a second line would
-// make the whole header row taller.
-const HEADER_CELL_CLASS =
-	"h-10 whitespace-nowrap px-2 text-left align-middle font-medium text-muted-foreground"
 
 /**
  * Column layout, shared by the real table and the loading skeleton so the two can't drift apart.
@@ -474,12 +471,12 @@ export function AgentSessionsList({
 				 * table-fixed makes the declared column widths authoritative: the sized columns stay
 				 * pinned and Session, the only column that should flex, takes the remainder.
 				 */}
-				<table className="w-full table-fixed caption-bottom text-sm" aria-label="Agent sessions">
-					<thead className="sticky top-0 z-10 bg-background [&_tr]:border-b">
+				<Table scroll={false} className="table-fixed" aria-label="Agent sessions">
+					<TableHeader sticky>
 						{table.getHeaderGroups().map((headerGroup) => (
-							<tr key={headerGroup.id}>
+							<TableRow key={headerGroup.id} className="hover:bg-transparent">
 								{headerGroup.headers.map((header) => (
-									<th
+									<TableHead
 										key={header.id}
 										aria-sort={
 											header.id === sortBy
@@ -488,10 +485,7 @@ export function AgentSessionsList({
 													: "descending"
 												: undefined
 										}
-										className={cn(
-											HEADER_CELL_CLASS,
-											COLUMN_LAYOUT.get(header.id)?.responsive,
-										)}
+										className={cn("px-2", COLUMN_LAYOUT.get(header.id)?.responsive)}
 										style={{
 											width: header.getSize() !== 150 ? header.getSize() : undefined,
 										}}
@@ -499,12 +493,12 @@ export function AgentSessionsList({
 										{header.isPlaceholder
 											? null
 											: flexRender(header.column.columnDef.header, header.getContext())}
-									</th>
+									</TableHead>
 								))}
-							</tr>
+							</TableRow>
 						))}
-					</thead>
-					<tbody ref={listRef}>
+					</TableHeader>
+					<TableBody ref={listRef}>
 						{firstItem && (
 							<tr
 								aria-hidden
@@ -517,7 +511,7 @@ export function AgentSessionsList({
 							const row = rows[virtualRow.index]!
 							const session = row.original
 							return (
-								<tr
+								<TableRow
 									key={row.id}
 									ref={virtualizer.measureElement}
 									data-index={virtualRow.index}
@@ -528,20 +522,20 @@ export function AgentSessionsList({
 											search: sessionLinkWindow(session),
 										})
 									}
-									className="cursor-pointer border-b transition-colors hover:bg-muted/50"
+									className="cursor-pointer hover:bg-muted/50"
 								>
 									{row.getAllCells().map((cell) => (
-										<td
+										<TableCell
 											key={cell.id}
 											className={cn(
-												"p-2 align-middle",
+												"p-2 whitespace-normal leading-normal",
 												COLUMN_LAYOUT.get(cell.column.id)?.responsive,
 											)}
 										>
 											{flexRender(cell.column.columnDef.cell, cell.getContext())}
-										</td>
+										</TableCell>
 									))}
-								</tr>
+								</TableRow>
 							)
 						})}
 						{lastItem && (
@@ -559,15 +553,12 @@ export function AgentSessionsList({
 						{loadingMore && (
 							<tr>
 								<td colSpan={SESSION_COLUMNS.length} className="p-2">
-									<div className="flex items-center justify-center gap-2 py-4 text-sm text-muted-foreground">
-										<Spinner className="size-4" />
-										Loading more sessions…
-									</div>
+									<LoadingMoreRow label="Loading more sessions…" />
 								</td>
 							</tr>
 						)}
-					</tbody>
-				</table>
+					</TableBody>
+				</Table>
 			</div>
 
 			{hasMore && <SessionsSentinel onReachEnd={onReachEnd} loadingMore={loadingMore} />}
@@ -884,10 +875,7 @@ function ErrorChip({
 }) {
 	return (
 		<Hint
-			className={cn(
-				"inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 font-mono text-[10px] font-medium tabular-nums",
-				className,
-			)}
+			className={cn(badgeVariants({ shape: "pill", size: "xs", mono: true }), className)}
 			content={hint}
 		>
 			{Icon ? (

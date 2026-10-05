@@ -2,6 +2,7 @@ import { useAuth } from "@clerk/clerk-react"
 import { useMapleCustomer } from "@/hooks/use-maple-customer"
 import { Navigate, createFileRoute } from "@tanstack/react-router"
 import { Schema } from "effect"
+import { Badge } from "@maple/ui/components/ui/badge"
 import { RocketIcon } from "@/components/icons"
 import { BootSplash } from "@/components/boot-splash"
 import { PricingCards } from "@/components/settings/pricing-cards"
@@ -87,10 +88,14 @@ function SelectPlanPageInner() {
 			<section className="relative mx-auto flex w-full max-w-5xl flex-col gap-10 px-6 md:px-8 z-10">
 				<div className="text-center flex flex-col items-center">
 					{!isReactivating && (
-						<div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/5 px-3 py-1 text-[11px] font-medium tracking-wider text-primary uppercase mb-6">
-							<RocketIcon size={14} />
+						<Badge
+							shape="pill"
+							size="lg"
+							className="mb-6 gap-2 border-primary/20 bg-primary/5 px-3 text-[11px] tracking-wider text-primary uppercase sm:text-[11px]"
+						>
+							<RocketIcon size={14} className="size-3.5" />
 							{TRIAL_DURATION_DAYS}-day free trial
-						</div>
+						</Badge>
 					)}
 					<h1 className="text-3xl md:text-4xl font-semibold tracking-tight text-foreground [text-wrap:balance]">
 						{isReactivating ? "Pick up where you left off" : "Start your free trial"}

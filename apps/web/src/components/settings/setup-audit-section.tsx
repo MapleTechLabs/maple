@@ -3,6 +3,7 @@ import { Link } from "@tanstack/react-router"
 import type { V2SetupAudit, V2SetupAuditCheck } from "@maple/domain/http/v2"
 
 import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
+import { Alert, AlertDescription, AlertTitle } from "@maple/ui/components/ui/alert"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import { Button, buttonVariants } from "@maple/ui/components/ui/button"
@@ -19,7 +20,7 @@ import {
 import { setupAuditAtom } from "@/lib/services/atoms/audit-atoms"
 import { DocsLink, EmptyActions } from "@/components/common/docs-link"
 import type { SettingsTab } from "@/components/settings/settings-nav"
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
+import { RelativeTime } from "@/components/common/relative-time"
 
 type Severity = V2SetupAuditCheck["severity"]
 type Category = V2SetupAuditCheck["category"]
@@ -106,7 +107,7 @@ function CheckRow({ check }: { check: V2SetupAuditCheck }) {
 					<span className="text-sm font-medium">{check.title}</span>
 					<code className="text-muted-foreground font-mono text-[11px]">{check.id}</code>
 					{check.status === "skip" && (
-						<Badge variant="secondary" className="text-[10px]">
+						<Badge variant="secondary" size="xs">
 							Skipped
 						</Badge>
 					)}
@@ -235,9 +236,7 @@ function Report({ audit }: { audit: V2SetupAudit }) {
 					<SummaryPill count={summary.skip} label="skipped" className="text-muted-foreground" />
 				)}
 				<div className="grow" />
-				<span className="text-muted-foreground/70 text-[11px]">
-					{formatRelativeTime(audit.generated_at)}
-				</span>
+				<RelativeTime value={audit.generated_at} className="text-muted-foreground/70 text-[11px]" />
 				<Button variant="ghost" size="sm" onClick={() => refresh()}>
 					<ArrowRotateAnticlockwiseIcon size={14} />
 					Re-run
@@ -245,11 +244,14 @@ function Report({ audit }: { audit: V2SetupAudit }) {
 			</div>
 
 			{!audit.telemetry_checks_available && (
-				<div className="border-warning/30 bg-warning/5 text-muted-foreground rounded-lg border px-4 py-3 text-xs leading-relaxed">
-					<span className="text-foreground font-medium">Telemetry checks skipped.</span> Your
-					warehouse could not be queried, so only configuration was audited. The findings below
-					still apply.
-				</div>
+				<Alert variant="warning" className="rounded-lg px-4 text-xs leading-relaxed">
+					<CircleWarningIcon />
+					<AlertTitle>Telemetry checks skipped.</AlertTitle>
+					<AlertDescription>
+						Your warehouse could not be queried, so only configuration was audited. The findings
+						below still apply.
+					</AlertDescription>
+				</Alert>
 			)}
 
 			{findingCount === 0 && !showPassing ? (

@@ -1,3 +1,4 @@
+import { Alert, AlertDescription } from "@maple/ui/components/ui/alert"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { cn } from "@maple/ui/lib/utils"
 
@@ -8,11 +9,11 @@ interface IssueNotesCalloutProps {
 
 export function IssueNotesCallout({ notes, className }: IssueNotesCalloutProps) {
 	return (
-		<div className={cn("relative rounded-md border border-warning/30 bg-warning/5 px-4 py-3", className)}>
-			<Eyebrow as="div" className="mb-1 text-warning-foreground">
+		<Alert variant="warning" className={cn("rounded-md px-4", className)}>
+			<Eyebrow as="div" className="mb-0.5 text-warning-foreground">
 				Notes
 			</Eyebrow>
-			<div className="whitespace-pre-wrap text-sm text-foreground">{notes}</div>
-		</div>
+			<AlertDescription className="whitespace-pre-wrap text-foreground">{notes}</AlertDescription>
+		</Alert>
 	)
 }

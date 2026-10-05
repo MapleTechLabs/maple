@@ -14,7 +14,7 @@ import {
 	ingestAttributeMappingsListAtom,
 	recommendationIssuesListAtom,
 } from "@/lib/services/atoms/ingestion-atoms"
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
+import { RelativeTime } from "@/components/common/relative-time"
 
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
@@ -490,10 +490,12 @@ function DetailSidebar({
 				<Row label="Spans">
 					<span className="tabular-nums text-foreground">{issue.usage_count.toLocaleString()}</span>
 				</Row>
-				<Row label="Opened" title={new Date(issue.opened_at).toLocaleString()}>
-					<span className="tabular-nums text-muted-foreground">
-						{formatRelativeTime(issue.opened_at)}
-					</span>
+				<Row label="Opened">
+					<RelativeTime
+						value={issue.opened_at}
+						tooltip="title"
+						className="tabular-nums text-muted-foreground"
+					/>
 				</Row>
 				<Row label="Key" title={issue.source_key}>
 					<code className="truncate font-mono text-xs text-muted-foreground">

@@ -2,9 +2,12 @@ import { useState } from "react"
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Schema } from "effect"
 import type { CodeReviewListItem } from "@maple/domain/http"
-import { Button } from "@maple/ui/components/ui/button"
+import { Badge } from "@maple/ui/components/ui/badge"
+import { LoadMoreButton } from "@maple/ui/components/ui/list-footer"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { SkeletonList } from "@maple/ui/components/ui/skeleton"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
+import { TONE_SOFT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { formatRelativeFrom, toEpochMs } from "@maple/ui/lib/time-format"
 
@@ -118,11 +121,7 @@ function CodeReviewPullRequestsPage() {
 			</div>
 			{Result.builder(result)
 				.onInitial(() => (
-					<div className="space-y-2">
-						{Array.from({ length: 6 }, (_, i) => (
-							<Skeleton key={i} className="h-14 w-full" />
-						))}
-					</div>
+					<SkeletonList rows={6} rowClassName="h-14" gap="2" />
 				))
 				.onError((error) => (
 					<ErrorState error={error} title="Failed to load reviews" onRetry={refresh} />
@@ -156,16 +155,13 @@ function CodeReviewPullRequestsPage() {
 							/>
 							{response.nextCursor !== null ? (
 								limit < MAX_ROWS ? (
-									<Button
-										variant="outline"
-										size="sm"
+									<LoadMoreButton
 										className="self-center"
+										loading={result.waiting}
 										onClick={() =>
 											setLimit((current) => Math.min(current + PAGE, MAX_ROWS))
 										}
-									>
-										Load more
-									</Button>
+									/>
 								) : (
 									<p className="text-center text-xs text-muted-foreground">
 										Showing the latest {MAX_ROWS}. Narrow the window to see older reviews.
@@ -206,31 +202,29 @@ function ReviewTable({
 }) {
 	return (
 		<div className="overflow-hidden rounded-xl border bg-card">
-			<table className="w-full table-fixed text-sm">
-				<thead className="border-b bg-muted/30 text-xs text-muted-foreground">
-					<tr>
-						<th className="px-4 py-2.5 text-left font-normal">Pull request</th>
-						<th className="hidden w-40 px-3 py-2.5 text-left font-normal md:table-cell">
-							Outcome
-						</th>
-						<th className="hidden w-28 px-3 py-2.5 text-right font-normal lg:table-cell">
+			<Table size="sm" className="table-fixed">
+				<TableHeader className="bg-muted/30">
+					<TableRow>
+						<TableHead className="px-4 font-normal">Pull request</TableHead>
+						<TableHead className="hidden w-40 px-3 font-normal md:table-cell">Outcome</TableHead>
+						<TableHead className="hidden w-28 px-3 text-right font-normal lg:table-cell">
 							Confidence
-						</th>
-						<th className="hidden w-24 px-3 py-2.5 text-right font-normal lg:table-cell">
+						</TableHead>
+						<TableHead className="hidden w-24 px-3 text-right font-normal lg:table-cell">
 							Quality
-						</th>
-						<th className="w-24 px-3 py-2.5 text-right font-normal">Issues</th>
-						<th className="hidden w-28 px-4 py-2.5 text-right font-normal sm:table-cell">
+						</TableHead>
+						<TableHead className="w-24 px-3 text-right font-normal">Issues</TableHead>
+						<TableHead className="hidden w-28 px-4 text-right font-normal sm:table-cell">
 							Reviewed
-						</th>
-					</tr>
-				</thead>
-				<tbody className="divide-y">
+						</TableHead>
+					</TableRow>
+				</TableHeader>
+				<TableBody>
 					{reviews.map((review) => {
 						const outcome = outcomeOf(review)
 						const Icon = OUTCOME_ICONS[outcome.kind]
 						return (
-							<tr
+							<TableRow
 								key={review.id}
 								onClick={() => onOpen(review)}
 								className={cn(
@@ -238,7 +232,7 @@ function ReviewTable({
 									selected === review.id && "bg-muted/60",
 								)}
 							>
-								<td className="px-4 py-3">
+								<TableCell className="px-4 py-2.5 leading-normal">
 									<button
 										type="button"
 										onClick={(event) => {
@@ -269,8 +263,8 @@ function ReviewTable({
 											· {outcome.label}
 										</span>
 									</div>
-								</td>
-								<td className="hidden px-3 py-3 md:table-cell">
+								</TableCell>
+								<TableCell className="hidden px-3 py-2.5 leading-normal md:table-cell">
 									<span className={cn("inline-flex items-center gap-1.5", outcome.tone)}>
 										<Icon
 											size={14}
@@ -285,8 +279,8 @@ function ReviewTable({
 											{SKIP_LABELS[review.skipReason]}
 										</div>
 									) : null}
-								</td>
-								<td className="hidden px-3 py-3 text-right tabular-nums lg:table-cell">
+								</TableCell>
+								<TableCell className="hidden px-3 text-right tabular-nums lg:table-cell">
 									{review.confidence === null ? (
 										<span className="text-muted-foreground">–</span>
 									) : (
@@ -295,8 +289,8 @@ function ReviewTable({
 											<span className="text-muted-foreground">/5</span>
 										</>
 									)}
-								</td>
-								<td className="hidden px-3 py-3 text-right tabular-nums lg:table-cell">
+								</TableCell>
+								<TableCell className="hidden px-3 text-right tabular-nums lg:table-cell">
 									{review.score === null ? (
 										<span className="text-muted-foreground">–</span>
 									) : (
@@ -305,32 +299,29 @@ function ReviewTable({
 											<span className="text-muted-foreground">/100</span>
 										</>
 									)}
-								</td>
-								<td className="px-3 py-3 text-right tabular-nums">
+								</TableCell>
+								<TableCell className="px-3 text-right tabular-nums">
 									{review.status !== "completed" ? (
 										<span className="text-muted-foreground">–</span>
 									) : (
 										<span className="inline-flex items-center gap-1.5">
 											{review.criticalFindings > 0 ? (
-												<span
-													className="rounded bg-[var(--severity-error)]/12 px-1.5 text-xs text-[var(--severity-error)]"
-													title="Critical"
-												>
+												<Badge size="xs" mono className={TONE_SOFT.crit} title="Critical">
 													{review.criticalFindings}
-												</span>
+												</Badge>
 											) : null}
 											{formatCount(review.findings)}
 										</span>
 									)}
-								</td>
-								<td className="hidden whitespace-nowrap px-4 py-3 text-right text-muted-foreground sm:table-cell">
+								</TableCell>
+								<TableCell className="hidden px-4 text-right text-muted-foreground sm:table-cell">
 									{formatRelativeFrom(review.createdAt)}
-								</td>
-							</tr>
+								</TableCell>
+							</TableRow>
 						)
 					})}
-				</tbody>
-			</table>
+				</TableBody>
+			</Table>
 		</div>
 	)
 }

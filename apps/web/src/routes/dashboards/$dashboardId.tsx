@@ -1,4 +1,5 @@
 import { InlineCode } from "@maple/ui/components/ui/inline-code"
+import { Alert, AlertDescription } from "@maple/ui/components/ui/alert"
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { Schema } from "effect"
 import { DashboardId, DashboardVersionId } from "@maple/domain/http"
@@ -376,9 +377,11 @@ function DashboardViewPage() {
 									<DashboardLayout.Scroll>
 										{degraded && <SyncDegradedBanner onRetry={retry} />}
 										{persistenceError && (
-											<div className="mb-4 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-xs text-destructive">
-												{persistenceError}. Dashboard editing is temporarily disabled.
-											</div>
+											<Alert variant="error" size="sm" className="mb-4">
+												<AlertDescription className="text-destructive">
+													{persistenceError}. Dashboard editing is temporarily disabled.
+												</AlertDescription>
+											</Alert>
 										)}
 
 										{isPreviewing && previewed ? (

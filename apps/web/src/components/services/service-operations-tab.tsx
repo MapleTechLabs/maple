@@ -8,11 +8,10 @@ import {
 	MobileListRow,
 	MobileSortBar,
 	SortableHead,
-	errorTone,
-	formatErrorRate,
 	formatRate,
 	type SortDir,
 } from "./service-table-cells"
+import { ErrorRateValue } from "@maple/ui/components/error-rate-value"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import { Sparkline } from "@maple/ui/components/ui/gradient-chart"
@@ -203,7 +202,6 @@ export function ServiceOperationsTab({
 							</TableRow>
 						) : (
 							sorted.map((op) => {
-								const tone = errorTone(op.errorRate)
 								return (
 									<TableRow
 										key={op.spanName}
@@ -235,16 +233,7 @@ export function ServiceOperationsTab({
 											max={0.05}
 											tone="errors"
 										>
-											<span
-												className={cn(
-													"tabular-nums font-mono text-[12.5px]",
-													tone === "error" && "text-severity-error",
-													tone === "warn" && "text-severity-warn",
-													tone === "default" && "text-muted-foreground/80",
-												)}
-											>
-												{formatErrorRate(op.errorRate)}
-											</span>
+											<ErrorRateValue rate={op.errorRate} className="text-[12.5px]" />
 										</BarCell>
 										<TableCell className="py-2 text-right align-middle">
 											<LatencyValue
@@ -293,7 +282,6 @@ export function ServiceOperationsTab({
 						<EmptyMessage>No operations recorded in this window.</EmptyMessage>
 					) : (
 						sorted.map((op) => {
-							const tone = errorTone(op.errorRate)
 							return (
 								<MobileListRow key={op.spanName} onClick={() => handleRowClick(op)}>
 									<span className="truncate font-mono text-[13px] text-foreground">
@@ -309,15 +297,7 @@ export function ServiceOperationsTab({
 										</span>
 										<span>
 											<span className="text-muted-foreground/60">err </span>
-											<span
-												className={cn(
-													tone === "error" && "text-severity-error",
-													tone === "warn" && "text-severity-warn",
-													tone === "default" && "text-muted-foreground/80",
-												)}
-											>
-												{formatErrorRate(op.errorRate)}
-											</span>
+											<ErrorRateValue rate={op.errorRate} />
 										</span>
 										<span>
 											<span className="text-muted-foreground/60">p95 </span>

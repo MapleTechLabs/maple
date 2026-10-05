@@ -5,9 +5,10 @@ import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { getServiceDependenciesBundleResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { toSingleDeploymentEnv } from "@/lib/services/environments"
 import { latencyToneClass } from "@maple/ui/lib/latency-tone"
-import { formatLatency } from "@maple/ui/lib/format"
+import { formatErrorRate, formatLatency } from "@maple/ui/lib/format"
 import { normalizeTimestampInput } from "@/lib/timezone-format"
 import { DependencyTable, type DependencyRow } from "./dependency-table"
+import { formatRate } from "./service-table-cells"
 import type { DependencyKind } from "./dependency-type-badge"
 import { dependencyDrillWhereClause } from "./dependency-drill"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
@@ -38,18 +39,6 @@ interface RawEdge {
 	p95DurationMs?: number
 	hasSampling?: boolean
 	samplingWeight?: number
-}
-
-function formatRate(value: number): string {
-	if (value >= 1000) return `${(value / 1000).toFixed(1)}k`
-	if (value >= 1) return value.toFixed(1)
-	return value.toFixed(2)
-}
-
-function formatErrorRate(rate: number): string {
-	if (rate >= 0.01) return `${(rate * 100).toFixed(1)}%`
-	if (rate > 0) return "<1%"
-	return "0%"
 }
 
 export function ServiceDependenciesTab({

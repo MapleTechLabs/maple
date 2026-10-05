@@ -1,6 +1,6 @@
 import { useMemo } from "react"
 import type { ErrorIssueDocument } from "@maple/domain/http"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { SkeletonList } from "@maple/ui/components/ui/skeleton"
 
 import { SectionCard } from "@/components/services/section-card"
 import { IssueLine } from "@/components/services/issue-line"
@@ -104,11 +104,7 @@ function PanelsSkeleton() {
 		<div className="grid gap-3 lg:grid-cols-3">
 			{["New on this version", "Regressed on this version", "Still occurring"].map((title) => (
 				<SectionCard key={title} title={title}>
-					<div className="space-y-px p-2">
-						{Array.from({ length: 3 }).map((_, i) => (
-							<Skeleton key={i} className="h-8 w-full" />
-						))}
-					</div>
+					<SkeletonList rows={3} className="p-2" />
 				</SectionCard>
 			))}
 		</div>

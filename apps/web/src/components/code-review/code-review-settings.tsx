@@ -21,7 +21,9 @@ import {
 	DialogPanel,
 	DialogTitle,
 } from "@maple/ui/components/ui/dialog"
+import { Panel, PanelHeader } from "@maple/ui/components/ui/panel"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
+import { SettingRow } from "@maple/ui/components/ui/setting-row"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { Switch } from "@maple/ui/components/ui/switch"
 import { toastManager } from "@maple/ui/components/ui/toast"
@@ -134,7 +136,7 @@ function ModelSetting({ settings }: { settings: PrReviewOrgSettings }) {
 			? settings.model
 			: DEFAULT_MODEL
 
-	async function handleChange(value: unknown) {
+	async function handleChange(value: string) {
 		if (value === current) return
 		const model = isModel(value) ? value : undefined
 		setSaving(true)
@@ -154,35 +156,60 @@ function ModelSetting({ settings }: { settings: PrReviewOrgSettings }) {
 	}
 
 	return (
-		<div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card px-5 py-4">
-			<div className="leading-tight">
-				<div className="text-sm font-medium">Review model</div>
-				<div className="text-xs text-muted-foreground">Runs pull request reviews and replies.</div>
-			</div>
-			<Select
-				items={MODEL_LABELS}
-				value={current}
-				onValueChange={handleChange}
-				disabled={!isAdmin || saving}
+		<SettingRow
+			framed
+			className="rounded-xl bg-card px-5 py-4"
+			label="Review model"
+			description="Runs pull request reviews and replies."
+			control={
+				<ModelSelect
+					current={current}
+					disabled={!isAdmin || saving}
+					isAdmin={isAdmin}
+					onChange={handleChange}
+				/>
+			}
+		/>
+	)
+}
+
+function ModelSelect({
+	current,
+	disabled,
+	isAdmin,
+	onChange,
+}: {
+	current: string
+	disabled: boolean
+	isAdmin: boolean
+	onChange: (value: string) => void
+}) {
+	return (
+		<Select
+			items={MODEL_LABELS}
+			value={current}
+			onValueChange={(value) => {
+				if (typeof value === "string") onChange(value)
+			}}
+			disabled={disabled}
+		>
+			<SelectTrigger
+				size="sm"
+				className="w-56"
+				aria-label="Review model"
+				title={isAdmin ? undefined : "Only admins can change the review model"}
 			>
-				<SelectTrigger
-					size="sm"
-					className="w-56"
-					aria-label="Review model"
-					title={isAdmin ? undefined : "Only admins can change the review model"}
-				>
-					<SelectValue />
-				</SelectTrigger>
-				<SelectContent>
-					<SelectItem value={DEFAULT_MODEL}>{DEFAULT_MODEL_LABEL}</SelectItem>
-					{MODEL_OPTIONS.map((model) => (
-						<SelectItem key={model.id} value={model.id}>
-							{model.label}
-						</SelectItem>
-					))}
-				</SelectContent>
-			</Select>
-		</div>
+				<SelectValue />
+			</SelectTrigger>
+			<SelectContent>
+				<SelectItem value={DEFAULT_MODEL}>{DEFAULT_MODEL_LABEL}</SelectItem>
+				{MODEL_OPTIONS.map((model) => (
+					<SelectItem key={model.id} value={model.id}>
+						{model.label}
+					</SelectItem>
+				))}
+			</SelectContent>
+		</Select>
 	)
 }
 
@@ -241,22 +268,26 @@ function RepositoriesSection({ inherited }: { inherited: PrReviewRepositoryConfi
 				)
 			const enabled = repositories.filter((repo) => repo.prReviewEnabled).length
 			return (
-				<div className="overflow-hidden rounded-xl border bg-card">
-					<div className="flex items-center justify-between gap-3 border-b px-5 py-3 text-xs text-muted-foreground">
+				<Panel className="rounded-xl">
+					<PanelHeader
+						className="px-5 py-3 text-xs text-muted-foreground"
+						action={
+							<Link to="/integrations" className="hover:text-foreground hover:underline">
+								Manage GitHub access
+							</Link>
+						}
+					>
 						<span>
 							{enabled} of {repositories.length}{" "}
 							{repositories.length === 1 ? "repository" : "repositories"} reviewed
 						</span>
-						<Link to="/integrations" className="hover:text-foreground hover:underline">
-							Manage GitHub access
-						</Link>
-					</div>
+					</PanelHeader>
 					<ul className="divide-y">
 						{repositories.map((repo) => (
 							<RepositoryRow key={repo.id} repo={repo} inherited={inherited} />
 						))}
 					</ul>
-				</div>
+				</Panel>
 			)
 		})
 		.render()

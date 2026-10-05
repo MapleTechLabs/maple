@@ -28,16 +28,7 @@ import { retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { anomalyIncidentFromV2, anomalyTimeseriesFromV2 } from "@/lib/services/anomalies"
 import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
-import {
-	AlertDialog,
-	AlertDialogAction,
-	AlertDialogCancel,
-	AlertDialogContent,
-	AlertDialogDescription,
-	AlertDialogFooter,
-	AlertDialogHeader,
-	AlertDialogTitle,
-} from "@maple/ui/components/ui/alert-dialog"
+import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@maple/ui/components/ui/empty"
@@ -337,27 +328,26 @@ function AnomalyDetailBody({
 							onSelect={linkTo}
 						/>
 
-						<AlertDialog open={resolveConfirmOpen} onOpenChange={setResolveConfirmOpen}>
-							<AlertDialogContent>
-								<AlertDialogHeader>
-									<AlertDialogTitle>Resolve this anomaly?</AlertDialogTitle>
-									<AlertDialogDescription>
-										The incident is marked resolved manually
-										{incident.fingerprints.filter((f) => f.resolvedAt === null).length > 1
-											? ", including every error fingerprint grouped into it"
-											: ""}
-										. If the signal keeps deviating, the detector waits out a one-hour
-										cooldown before re-opening it.
-									</AlertDialogDescription>
-								</AlertDialogHeader>
-								<AlertDialogFooter>
-									<AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
-									<AlertDialogAction onClick={resolve} disabled={busy}>
-										Resolve
-									</AlertDialogAction>
-								</AlertDialogFooter>
-							</AlertDialogContent>
-						</AlertDialog>
+						<ConfirmDialog
+							open={resolveConfirmOpen}
+							onOpenChange={setResolveConfirmOpen}
+							tone="default"
+							icon={null}
+							title="Resolve this anomaly?"
+							description={
+								<>
+									The incident is marked resolved manually
+									{incident.fingerprints.filter((f) => f.resolvedAt === null).length > 1
+										? ", including every error fingerprint grouped into it"
+										: ""}
+									. If the signal keeps deviating, the detector waits out a one-hour
+									cooldown before re-opening it.
+								</>
+							}
+							confirmLabel="Resolve"
+							pending={busy}
+							onConfirm={resolve}
+						/>
 					</DashboardLayout.Scroll>
 				</DashboardLayout.Content>
 				<DashboardLayout.RightPanel>

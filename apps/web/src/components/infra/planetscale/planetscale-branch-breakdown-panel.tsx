@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react"
 
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { Panel, PanelHeader } from "@maple/ui/components/ui/panel"
+import { Skeleton, SkeletonList } from "@maple/ui/components/ui/skeleton"
 import { formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 
@@ -170,16 +171,19 @@ export function PlanetScaleBranchBreakdownPanel({
 	})
 
 	return (
-		<div className="overflow-hidden rounded-lg border border-border/60 bg-card">
-			<div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 px-3 py-2">
-				<span className="text-xs font-medium text-foreground">Branches</span>
-				<SegmentPivot<Measure>
-					ariaLabel="Measure"
-					options={MEASURE_ORDER.map((key) => ({ value: key, label: MEASURES[key].label }))}
-					value={measure}
-					onChange={setMeasure}
-				/>
-			</div>
+		<Panel className="rounded-lg border-border/60">
+			<PanelHeader
+				title="Branches"
+				className="border-border/60 px-3 py-2"
+				action={
+					<SegmentPivot<Measure>
+						ariaLabel="Measure"
+						options={MEASURE_ORDER.map((key) => ({ value: key, label: MEASURES[key].label }))}
+						value={measure}
+						onChange={setMeasure}
+					/>
+				}
+			/>
 
 			<DataTable.Root ariaLabel="PlanetScale branch breakdown" waiting={waiting} maxHeight={420}>
 				<DataTable.Head>
@@ -273,21 +277,17 @@ export function PlanetScaleBranchBreakdownPanel({
 					: // Not "% of database": these are maxima, and they do not sum.
 						`Bars are relative to the worst branch (${spec.format(max)}). Peaks don't sum, so there is no database total.`}
 			</div>
-		</div>
+		</Panel>
 	)
 }
 
 export function PlanetScaleBranchBreakdownPanelLoading() {
 	return (
-		<div className="overflow-hidden rounded-lg border border-border/60 bg-card">
-			<div className="border-b border-border/60 px-3 py-2">
+		<Panel className="rounded-lg border-border/60">
+			<PanelHeader className="border-border/60 px-3 py-2">
 				<Skeleton className="h-4 w-56" />
-			</div>
-			<div className="flex flex-col gap-2 p-3">
-				{Array.from({ length: 5 }, (_, index) => (
-					<Skeleton key={index} className="h-4 w-full" />
-				))}
-			</div>
-		</div>
+			</PanelHeader>
+			<SkeletonList rows={5} rowClassName="h-4" gap="2" className="p-3" />
+		</Panel>
 	)
 }

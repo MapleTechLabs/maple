@@ -6,18 +6,8 @@ import { Button } from "@maple/ui/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@maple/ui/components/ui/card"
 import { Input } from "@maple/ui/components/ui/input"
 import { Label } from "@maple/ui/components/ui/label"
-import {
-	AlertDialog,
-	AlertDialogAction,
-	AlertDialogCancel,
-	AlertDialogContent,
-	AlertDialogDescription,
-	AlertDialogFooter,
-	AlertDialogHeader,
-	AlertDialogMedia,
-	AlertDialogTitle,
-} from "@maple/ui/components/ui/alert-dialog"
-import { AlertWarningIcon, UploadIcon } from "@/components/icons"
+import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
+import { UploadIcon } from "@/components/icons"
 import { UserAvatar, userInitials } from "@/components/dashboard/user-avatar"
 import { toastAccountError } from "@/components/account/account-errors"
 import { AccountSectionSkeleton } from "@/components/account/account-section-skeleton"
@@ -294,44 +284,30 @@ export function ProfileSection() {
 				</Card>
 			)}
 
-			<AlertDialog open={deleteOpen} onOpenChange={handleDialogChange}>
-				<AlertDialogContent>
-					<AlertDialogHeader>
-						<AlertDialogMedia className="bg-destructive/10">
-							<AlertWarningIcon className="text-destructive" />
-						</AlertDialogMedia>
-						<AlertDialogTitle>Delete your account?</AlertDialogTitle>
-						<AlertDialogDescription>
-							Your profile, sign-in methods and organization memberships are permanently
-							deleted, and every session is signed out. This cannot be undone.
-						</AlertDialogDescription>
-					</AlertDialogHeader>
-					{/* AlertDialog has no panel slot, so a body between header and footer pads itself —
-					    same as the members and attribute-mapping dialogs. */}
-					<div className="space-y-2 px-6 py-2">
-						<Label htmlFor="account-delete-confirm" className="text-xs">
-							Type <span className="font-mono font-semibold">{email}</span> to confirm.
-						</Label>
-						<Input
-							id="account-delete-confirm"
-							value={confirmText}
-							onChange={(e) => setConfirmText(e.target.value)}
-							placeholder={email}
-							autoComplete="off"
-						/>
-					</div>
-					<AlertDialogFooter>
-						<AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
-						<AlertDialogAction
-							variant="destructive"
-							onClick={handleDelete}
-							disabled={isDeleting || !confirmMatches}
-						>
-							{isDeleting ? "Deleting..." : "Delete account"}
-						</AlertDialogAction>
-					</AlertDialogFooter>
-				</AlertDialogContent>
-			</AlertDialog>
+			<ConfirmDialog
+				open={deleteOpen}
+				onOpenChange={handleDialogChange}
+				title="Delete your account?"
+				description="Your profile, sign-in methods and organization memberships are permanently deleted, and every session is signed out. This cannot be undone."
+				confirmLabel="Delete account"
+				pending={isDeleting}
+				confirmDisabled={!confirmMatches}
+				onConfirm={() => void handleDelete()}
+			>
+				{/* AlertDialog has no panel slot, so a body between header and footer pads itself. */}
+				<div className="space-y-2 px-6 py-2">
+					<Label htmlFor="account-delete-confirm" className="text-xs">
+						Type <span className="font-mono font-semibold">{email}</span> to confirm.
+					</Label>
+					<Input
+						id="account-delete-confirm"
+						value={confirmText}
+						onChange={(e) => setConfirmText(e.target.value)}
+						placeholder={email}
+						autoComplete="off"
+					/>
+				</div>
+			</ConfirmDialog>
 		</div>
 	)
 }

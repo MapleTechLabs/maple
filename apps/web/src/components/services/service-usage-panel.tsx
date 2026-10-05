@@ -10,6 +10,7 @@ import { SectionCard } from "./section-card"
 
 import { formatWarehouseDateTime } from "@maple/query-engine"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { Delta } from "@maple/ui/components/ui/delta"
 interface ServiceUsagePanelProps {
 	serviceName: string
 	effectiveStartTime: string
@@ -122,29 +123,18 @@ export function ServiceUsagePanel({
 							<span className="font-mono text-lg leading-tight tabular-nums text-foreground">
 								{stat.format(value)}
 							</span>
-							<DeltaChip current={value} previous={prev} />
+							{/* Neutral-toned: ingest volume moving isn't inherently good or bad. */}
+							<Delta
+								current={value}
+								previous={prev}
+								suffix="vs prev"
+								flatThreshold={0.005}
+								className="text-[10px] text-muted-foreground"
+							/>
 						</div>
 					)
 				})}
 			</div>
 		</SectionCard>
-	)
-}
-
-/** "+12%" vs the preceding window. Neutral-toned — ingest volume moving isn't
- *  inherently good or bad, so it informs without alarming. */
-function DeltaChip({ current, previous }: { current: number; previous: number | undefined }) {
-	if (previous === undefined || previous <= 0) {
-		return <span className="text-[10px] text-muted-foreground/50">&nbsp;</span>
-	}
-	const change = (current - previous) / previous
-	if (!Number.isFinite(change) || Math.abs(change) < 0.005) {
-		return <span className="text-[10px] text-muted-foreground/50">no change</span>
-	}
-	return (
-		<span className="text-[10px] tabular-nums text-muted-foreground">
-			{change > 0 ? "+" : ""}
-			{(change * 100).toFixed(0)}% vs prev
-		</span>
 	)
 }

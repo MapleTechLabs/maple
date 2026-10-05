@@ -33,10 +33,9 @@ import {
 } from "@/components/ai-elements/prompt-input"
 import { Suggestions, Suggestion } from "@/components/ai-elements/suggestion"
 import { DotLoader } from "@/components/ai-elements/dot-loader"
-import { Button } from "@maple/ui/components/ui/button"
 import { trackProduct } from "@/lib/analytics"
 import { ChatApplyRequest, type AiTriageResult } from "@maple/domain/http"
-import { TurnFailureNotice } from "./turn-failure-notice"
+import { ChatFailureNotice, TurnFailureNotice } from "./turn-failure-notice"
 import { ChatEmptyState } from "./chat-empty-state"
 
 const DEFAULT_SUGGESTIONS = [
@@ -388,14 +387,10 @@ function InvestigationLead({ ctx }: { ctx: InvestigationContext }) {
  */
 function FailedSendNotice({ failed, onRetry }: { failed: FailedSend; onRetry: (text: string) => void }) {
 	return (
-		<div className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm">
-			<span className="min-w-0 truncate text-destructive">
-				Message not sent — {failed.error.message}
-			</span>
-			<Button size="sm" variant="outline" onClick={() => onRetry(failed.message)}>
-				Try again
-			</Button>
-		</div>
+		<ChatFailureNotice truncate actionLabel="Try again" onAction={() => onRetry(failed.message)}>
+			Message not sent: {failed.error.message}
+		</ChatFailureNotice>
+
 	)
 }
 

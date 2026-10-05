@@ -1,6 +1,8 @@
 import { Children, createContext, isValidElement, use, useRef, type ReactNode } from "react"
 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
+import { httpStatusTone } from "@maple/ui/lib/http"
+import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { LATENCY_TEXT_TONE, latencyLevel } from "@maple/ui/lib/latency-tone"
 import { SEVERITY_COLORS } from "@maple/ui/lib/severity"
 import { cn } from "@maple/ui/lib/utils"
@@ -169,14 +171,9 @@ function CellValueView({ value }: { value: Exclude<CellValue, { kind: "plain" }>
 					{value.text}
 				</span>
 			)
-		case "status": {
-			const tone =
-				value.code >= 500
-					? "text-severity-error"
-					: value.code >= 400
-						? "text-severity-warn"
-						: "text-muted-foreground"
-			return <span className={cn("font-mono", tone)}>{value.text}</span>
-		}
+		case "status":
+			return (
+				<span className={cn("font-mono", TONE_TEXT[httpStatusTone(value.code)])}>{value.text}</span>
+			)
 	}
 }

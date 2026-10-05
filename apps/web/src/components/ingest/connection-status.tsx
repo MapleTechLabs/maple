@@ -2,6 +2,7 @@ import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { useState } from "react"
 import { toastManager } from "@maple/ui/components/ui/toast"
 
+import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
 import { cn } from "@maple/ui/lib/utils"
 import { PaperPlaneIcon, PulseIcon } from "@/components/icons"
@@ -14,9 +15,10 @@ import { sendTestEvent, type IngestConnection } from "./use-ingest-connection"
 export function ConnectionStatusPill({ connection }: { connection: IngestConnection }) {
 	const connected = connection.status === "connected"
 	return (
-		<span
+		<Badge
+			shape="pill"
 			className={cn(
-				"inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium transition-colors",
+				"gap-1.5 text-[11px] transition-colors sm:text-[11px]",
 				connected
 					? "border-severity-info/30 bg-severity-info/10 text-severity-info"
 					: "border-primary/30 bg-primary/10 text-primary",
@@ -30,11 +32,11 @@ export function ConnectionStatusPill({ connection }: { connection: IngestConnect
 				</>
 			) : (
 				<>
-					<PulseIcon size={11} className="animate-pulse motion-reduce:animate-none" />
+					<PulseIcon size={11} className="size-[11px] animate-pulse motion-reduce:animate-none" />
 					Waiting for telemetry
 				</>
 			)}
-		</span>
+		</Badge>
 	)
 }
 

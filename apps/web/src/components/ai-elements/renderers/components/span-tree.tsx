@@ -1,3 +1,4 @@
+import { TruncatedId } from "@maple/ui/components/ui/truncated-id"
 import type { RendererComponentProps } from "./types"
 import { cn } from "@maple/ui/lib/utils"
 import { formatDuration } from "@maple/ui/lib/format"
@@ -65,7 +66,7 @@ export function SpanTree({ props }: RendererComponentProps<SpanTreeProps>) {
 					rel="noreferrer"
 					className="font-mono text-primary hover:underline"
 				>
-					{traceId.slice(0, 12)}
+					<TruncatedId value={traceId} kind="trace" length={12} />
 				</a>
 			</div>
 			<div className="max-h-[400px] overflow-y-auto">

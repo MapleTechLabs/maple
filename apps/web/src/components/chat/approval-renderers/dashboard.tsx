@@ -59,7 +59,7 @@ function WidgetRow({ widget }: { widget: NormalizedWidget }) {
 				<span className="truncate text-[11px] text-muted-foreground">{widget.source}</span>
 			) : null}
 			{widget.groupBy ? (
-				<Badge variant="outline" className="ml-auto h-4 px-1.5 text-[10px]">
+				<Badge variant="outline" size="xs" className="ml-auto px-1.5">
 					{widget.groupBy}
 				</Badge>
 			) : null}
@@ -183,7 +183,7 @@ export function UpdateDashboardSummary({ input }: ApprovalRendererProps) {
 			<div className="flex items-center gap-2">
 				<PencilIcon className="size-3.5 shrink-0 text-muted-foreground" />
 				<span className="text-sm font-semibold">Update dashboard</span>
-				<Badge variant="outline" className="ml-auto font-mono text-[10px]">
+				<Badge variant="outline" size="xs" mono className="ml-auto">
 					{dashboardId}
 				</Badge>
 			</div>
@@ -221,7 +221,7 @@ export function UpdateDashboardSummary({ input }: ApprovalRendererProps) {
 					}
 				>
 					<div className="mb-1.5">
-						<Badge variant="destructive" className="text-[10px]">
+						<Badge variant="destructive" size="xs">
 							Replaces entire dashboard
 						</Badge>
 					</div>
@@ -273,7 +273,7 @@ export function AddDashboardWidgetSummary({ input }: ApprovalRendererProps) {
 			<div className="flex items-center gap-2">
 				<PlusIcon className="size-3.5 shrink-0 text-muted-foreground" />
 				<span className="text-sm font-semibold">Add widget</span>
-				<Badge variant="outline" className="ml-auto font-mono text-[10px]">
+				<Badge variant="outline" size="xs" mono className="ml-auto">
 					{dashboardId}
 				</Badge>
 			</div>
@@ -399,7 +399,7 @@ export function ReorderDashboardWidgetsSummary({ input }: ApprovalRendererProps)
 				<span className="text-sm font-semibold">
 					Reorder {ids.length || ""} widget{ids.length === 1 ? "" : "s"}
 				</span>
-				<Badge variant="outline" className="ml-auto font-mono text-[10px]">
+				<Badge variant="outline" size="xs" mono className="ml-auto">
 					{dashboardId}
 				</Badge>
 			</div>

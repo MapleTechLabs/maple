@@ -2,6 +2,7 @@ import { useRef } from "react"
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Schema } from "effect"
 import { toastManager } from "@maple/ui/components/ui/toast"
+import { Alert, AlertDescription } from "@maple/ui/components/ui/alert"
 
 import { Unitflow, View } from "@maple/unitflow/react"
 import { Button } from "@maple/ui/components/ui/button"
@@ -277,13 +278,13 @@ function PageShell({
 						{/* Pinned with the header rather than inside Scroll: it explains the
 						    disabled buttons above it, so it must not scroll away from them. */}
 						{persistenceError && (
-							<div className="mb-3 flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-2.5 text-xs text-destructive">
-								<CircleWarningIcon size={14} className="mt-0.5 shrink-0" />
-								<span>
+							<Alert variant="error" size="sm" className="mb-3">
+								<CircleWarningIcon size={14} />
+								<AlertDescription className="text-destructive">
 									{persistenceError}. Editing, import and delete are disabled until it
-									recovers — reading is unaffected.
-								</span>
-							</div>
+									recovers; reading is unaffected.
+								</AlertDescription>
+							</Alert>
 						)}
 					</DashboardLayout.Sticky>
 					<DashboardLayout.Scroll>{children}</DashboardLayout.Scroll>

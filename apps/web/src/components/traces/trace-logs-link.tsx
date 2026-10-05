@@ -1,4 +1,5 @@
 import { Link } from "@tanstack/react-router"
+import { Button } from "@maple/ui/components/ui/button"
 import { formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { getLogsCountResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
@@ -45,13 +46,18 @@ export function TraceLogsLink({
 			const total = response.data[0]?.total ?? 0
 			if (total === 0) return null
 			return (
-				<Link
-					to="/logs"
-					search={{ traceId, startTime: window.startTime, endTime: window.endTime }}
-					className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium hover:bg-muted"
+				<Button
+					variant="outline"
+					size="xs"
+					render={
+						<Link
+							to="/logs"
+							search={{ traceId, startTime: window.startTime, endTime: window.endTime }}
+						/>
+					}
 				>
 					<FileIcon className="size-3.5" /> View Logs ({total})
-				</Link>
+				</Button>
 			)
 		})
 		.onError(() => null)

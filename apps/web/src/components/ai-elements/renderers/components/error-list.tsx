@@ -1,4 +1,7 @@
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
+import { Badge } from "@maple/ui/components/ui/badge"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
+import { TONE_SOFT } from "@maple/ui/lib/tone"
 import type { RendererComponentProps } from "./types"
 
 interface ErrorListProps {
@@ -22,20 +25,15 @@ export function ErrorList({ props }: RendererComponentProps<ErrorListProps>) {
 						key={err.errorType}
 						className="flex items-start gap-2 rounded p-1 text-[11px] hover:bg-muted/50"
 					>
-						<span className="min-w-0 flex-1 truncate text-severity-error" title={err.errorType}>
-							{err.errorType.length > 60 ? `${err.errorType.slice(0, 60)}...` : err.errorType}
-						</span>
-						<span className="shrink-0 rounded bg-severity-error/10 px-1.5 py-0.5 font-mono text-[10px] text-severity-error">
+						<TruncatedText className="flex-1 text-severity-error">{err.errorType}</TruncatedText>
+						<Badge size="xs" mono className={TONE_SOFT.crit}>
 							{err.count}
-						</span>
+						</Badge>
 						<div className="flex shrink-0 gap-1">
 							{err.affectedServices.slice(0, 2).map((svc) => (
-								<span
-									key={svc}
-									className="rounded bg-muted px-1 py-0.5 text-[10px] text-muted-foreground"
-								>
+								<Badge key={svc} variant="muted" size="xs">
 									{svc}
-								</span>
+								</Badge>
 							))}
 							{err.affectedServices.length > 2 && (
 								<span className="text-[10px] text-muted-foreground">

@@ -9,6 +9,8 @@ import type { ServiceOperation } from "@/api/warehouse/service-operations"
 import { SectionCard } from "./section-card"
 import { callsPerSecond, serviceOperationsQueryInput, windowSeconds } from "./service-operations"
 import { ViewAllButton } from "./view-all-button"
+import { formatRate } from "./service-table-cells"
+import { ErrorRateValue } from "@maple/ui/components/error-rate-value"
 
 const PANEL_LIMIT = 5
 
@@ -19,18 +21,6 @@ interface ServiceTopOperationsPanelProps {
 	environments?: string[]
 	/** Switches the page to the Operations tab (URL-driven). */
 	onViewAll: () => void
-}
-
-function formatRate(value: number): string {
-	if (value >= 1000) return `${(value / 1000).toFixed(1)}k`
-	if (value >= 1) return value.toFixed(1)
-	return value.toFixed(2)
-}
-
-function formatErrorRate(rate: number): string {
-	if (rate >= 0.01) return `${(rate * 100).toFixed(1)}%`
-	if (rate > 0) return "<1%"
-	return "0%"
 }
 
 /**
@@ -101,17 +91,7 @@ export function ServiceTopOperationsPanel({
 										{op.estimatedSpanCount > op.spanCount ? "~" : ""}
 										{formatRate(callsPerSecond(op.estimatedSpanCount, seconds))}/s
 									</span>
-									<span
-										className={cn(
-											op.errorRate > 0.05
-												? "text-severity-error"
-												: op.errorRate > 0.01
-													? "text-severity-warn"
-													: "text-muted-foreground/70",
-										)}
-									>
-										{formatErrorRate(op.errorRate)}
-									</span>
+									<ErrorRateValue rate={op.errorRate} />
 									<LatencyValue ms={op.p95DurationMs} scale="p95" />
 								</span>
 								{/*

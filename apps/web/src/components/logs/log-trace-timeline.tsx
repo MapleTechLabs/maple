@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react"
+import { shortId } from "@maple/ui/lib/ids"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { cn } from "@maple/ui/lib/utils"
@@ -136,7 +137,7 @@ export function LogTraceTimeline({ currentLog, onLogSelect }: LogTraceTimelinePr
 													<div className="h-px flex-1 bg-border" />
 													<span className="text-[9px] font-mono text-muted-foreground/60 shrink-0 truncate max-w-[200px]">
 														{spanNameMap.get(spanChanged) ??
-															spanChanged.slice(0, 8)}
+															shortId(spanChanged, "span")}
 													</span>
 													<div className="h-px flex-1 bg-border" />
 												</div>

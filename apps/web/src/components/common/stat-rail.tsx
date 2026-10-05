@@ -31,12 +31,15 @@ export function StatRail({ children, columns = 4, className }: StatRailProps) {
 
 interface StatRailItemProps {
 	eyebrow: string
-	value: string
+	/** Usually a formatted string; a node for a value with a unit or inline link. */
+	value: React.ReactNode
 	tone?: Tone
 	delta?: React.ReactNode
 	/** Top-right slot, e.g. a link out. Takes precedence over `delta`. */
 	action?: React.ReactNode
 	spark?: ReadonlyArray<number>
+	/** Overrides the tone-derived sparkline colour (raw CSS colour). */
+	sparkColor?: string
 	subline?: React.ReactNode
 	delay?: number
 	/** Drop the reserved sparkline slot so the value spans full width (dense grids with no sparks). */
@@ -78,6 +81,7 @@ export function StatRailItem({
 	delta,
 	action,
 	spark,
+	sparkColor,
 	subline,
 	delay,
 	compact,
@@ -122,7 +126,7 @@ export function StatRailItem({
 				{spark && spark.length > 1 ? (
 					<BarSpark
 						values={spark.slice(-28)}
-						color={SPARK_COLOR[tone]}
+						color={sparkColor ?? SPARK_COLOR[tone]}
 						className="h-7 w-24 min-w-0 shrink"
 					/>
 				) : compact ? null : (

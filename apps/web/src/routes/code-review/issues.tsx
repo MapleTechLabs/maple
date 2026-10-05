@@ -8,9 +8,11 @@ import {
 	type CodeReviewFinding,
 } from "@maple/domain/http"
 import { Badge } from "@maple/ui/components/ui/badge"
-import { Button } from "@maple/ui/components/ui/button"
+import { LoadMoreButton } from "@maple/ui/components/ui/list-footer"
+
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { SkeletonList } from "@maple/ui/components/ui/skeleton"
+import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { formatRelativeFrom, toEpochMs } from "@maple/ui/lib/time-format"
 
@@ -18,7 +20,7 @@ import {
 	CATEGORY_LABELS,
 	FINDING_STATUS_LABELS,
 	SEVERITY_LABELS,
-	SEVERITY_TONES,
+	SEVERITY_TONE,
 } from "@/components/code-review/code-review-format"
 import {
 	CodeReviewFilters,
@@ -122,11 +124,8 @@ function CodeReviewIssuesPage() {
 			</div>
 			{Result.builder(result)
 				.onInitial(() => (
-					<div className="space-y-2">
-						{Array.from({ length: 6 }, (_, i) => (
-							<Skeleton key={i} className="h-16 w-full" />
-						))}
-					</div>
+					<SkeletonList rows={6} rowClassName="h-16" gap="2" />
+
 				))
 				.onError((error) => (
 					<ErrorState error={error} title="Failed to load issues" onRetry={refresh} />
@@ -166,16 +165,14 @@ function CodeReviewIssuesPage() {
 							</ul>
 							{response.nextCursor !== null ? (
 								limit < MAX_ROWS ? (
-									<Button
-										variant="outline"
-										size="sm"
+									<LoadMoreButton
 										className="self-center"
+										loading={result.waiting}
 										onClick={() =>
 											setLimit((current) => Math.min(current + PAGE, MAX_ROWS))
 										}
-									>
-										Load more
-									</Button>
+									/>
+
 								) : (
 									<p className="text-center text-xs text-muted-foreground">
 										Showing the latest {MAX_ROWS}. Narrow the window to see older issues.
@@ -242,7 +239,7 @@ function FindingRow({ finding, onOpen }: { finding: CodeReviewFinding; onOpen: (
 				<span
 					className={cn(
 						"w-16 shrink-0 pt-0.5 text-xs font-medium",
-						SEVERITY_TONES[finding.severity],
+						TONE_TEXT[SEVERITY_TONE[finding.severity]],
 					)}
 				>
 					{SEVERITY_LABELS[finding.severity]}

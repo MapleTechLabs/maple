@@ -3,6 +3,7 @@ import type { AlertDestinationDocument } from "@maple/domain/http"
 import { destinationProvider, ProviderLogo } from "@/components/alerts/destination-provider"
 import { AlertWarningIcon, CheckIcon, DotsVerticalIcon, PencilIcon, TrashIcon } from "@/components/icons"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
+import { Alert, AlertDescription } from "@maple/ui/components/ui/alert"
 import { Button } from "@maple/ui/components/ui/button"
 import { Card } from "@maple/ui/components/ui/card"
 import {
@@ -99,10 +100,12 @@ export function DestinationCard({
 						</div>
 
 						{destination.lastTestError && (
-							<div className="mt-2 flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-2.5 py-1.5 text-xs text-destructive">
-								<AlertWarningIcon size={12} className="mt-0.5 shrink-0" />
-								<span className="break-words">{destination.lastTestError}</span>
-							</div>
+							<Alert variant="error" size="sm" className="mt-2 rounded-md">
+								<AlertWarningIcon size={12} />
+								<AlertDescription className="break-words text-destructive">
+									{destination.lastTestError}
+								</AlertDescription>
+							</Alert>
 						)}
 					</div>
 				</div>

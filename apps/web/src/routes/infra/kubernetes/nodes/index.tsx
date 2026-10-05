@@ -14,7 +14,7 @@ import { NodeTable, NodeTableLoading } from "@/components/infra/node-table"
 import { deriveHostStatus, type HostStatus } from "@/components/infra/format"
 import { NodesFilterSidebarView, type NodeFilters } from "@/components/infra/k8s-filter-sidebar"
 import { FleetBand, type FleetBandCell } from "@/components/infra/primitives/fleet-band"
-import { ListToolbar, countLabel } from "@/components/common/search-toolbar"
+import { SearchToolbar, countLabel } from "@/components/common/search-toolbar"
 import { statusLabel } from "@/components/infra/severity-tokens"
 import { listNodesResultAtom, nodeFacetsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
@@ -24,6 +24,7 @@ import {
 	pickTimeRangeSearch,
 } from "@/components/time-range-picker/search"
 import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
+import { TONE_FILL } from "@maple/ui/lib/tone"
 
 const DEFAULT_PRESET = "12h"
 
@@ -64,8 +65,8 @@ const STATUS_CELLS: ReadonlyArray<{
 ]
 
 const STATUS_SEGMENT: Record<HostStatus, string> = {
-	active: "bg-[var(--severity-info)]",
-	idle: "bg-[var(--severity-warn)]",
+	active: TONE_FILL.info,
+	idle: TONE_FILL.warn,
 	ended: "bg-muted-foreground/40",
 } satisfies Record<HostStatus, string>
 
@@ -181,7 +182,7 @@ function NodesPage() {
 								waiting={result.waiting}
 							/>
 							<div className="space-y-3">
-								<ListToolbar
+								<SearchToolbar
 									value={searchText}
 									onChange={(value) => patchSearch({ q: value || undefined })}
 									placeholder="Search nodes…"

@@ -9,22 +9,16 @@ import {
 	type GithubRepoSummary,
 	type VcsRepoSyncStatus,
 } from "@maple/domain/http"
-import {
-	AlertDialog,
-	AlertDialogAction,
-	AlertDialogCancel,
-	AlertDialogContent,
-	AlertDialogDescription,
-	AlertDialogFooter,
-	AlertDialogHeader,
-	AlertDialogTitle,
-} from "@maple/ui/components/ui/alert-dialog"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
+import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
+import { Item, ItemActions, ItemContent, ItemDescription, ItemMedia } from "@maple/ui/components/ui/item"
+import { Panel, PanelHeader } from "@maple/ui/components/ui/panel"
+import { SettingRow } from "@maple/ui/components/ui/setting-row"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 import { Popover, PopoverContent, PopoverTrigger } from "@maple/ui/components/ui/popover"
 import { SearchInput } from "@maple/ui/components/ui/search-input"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import { formatRelativeFrom } from "@maple/ui/lib/time-format"
 import { toastManager } from "@maple/ui/components/ui/toast"
 
 import {
@@ -39,6 +33,7 @@ import {
 	LoaderIcon,
 	TrashIcon,
 } from "@/components/icons"
+import { RelativeTime } from "@/components/common/relative-time"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
 import { useOrganizationFeatureFlags } from "@/hooks/use-organization-feature-flags"
@@ -229,65 +224,37 @@ export function GithubIntegrationCard() {
 				<NotConnectedState connectFlow={connectFlow} />
 			)}
 
-			<AlertDialog
+			<ConfirmDialog
 				open={confirmingDisconnect}
-				onOpenChange={(open) => {
-					if (!open) setConfirmingDisconnect(false)
+				onOpenChange={setConfirmingDisconnect}
+				title="Disconnect GitHub"
+				description="This removes the Maple GitHub App connection and permanently deletes all synced repositories and their commit history from Maple. This cannot be undone. You can reconnect later, but everything will be re-synced from scratch."
+				confirmLabel="Disconnect"
+				onConfirm={() => {
+					setConfirmingDisconnect(false)
+					void handleDisconnect()
 				}}
-			>
-				<AlertDialogContent>
-					<AlertDialogHeader>
-						<AlertDialogTitle>Disconnect GitHub</AlertDialogTitle>
-						<AlertDialogDescription>
-							This removes the Maple GitHub App connection and permanently deletes all synced
-							repositories and their commit history from Maple. This cannot be undone. You can
-							reconnect later, but everything will be re-synced from scratch.
-						</AlertDialogDescription>
-					</AlertDialogHeader>
-					<AlertDialogFooter>
-						<AlertDialogCancel>Cancel</AlertDialogCancel>
-						<AlertDialogAction
-							variant="destructive"
-							onClick={() => {
-								setConfirmingDisconnect(false)
-								void handleDisconnect()
-							}}
-						>
-							Disconnect
-						</AlertDialogAction>
-					</AlertDialogFooter>
-				</AlertDialogContent>
-			</AlertDialog>
+			/>
 
-			<AlertDialog
+			<ConfirmDialog
 				open={repoToDelete !== null}
 				onOpenChange={(open) => {
 					if (!open) setRepoToDelete(null)
 				}}
-			>
-				<AlertDialogContent>
-					<AlertDialogHeader>
-						<AlertDialogTitle>Delete repository from Maple</AlertDialogTitle>
-						<AlertDialogDescription>
-							This permanently removes{" "}
-							<span className="font-medium text-foreground">{repoToDelete?.fullName}</span> and
-							all of its synced commits from Maple. This cannot be undone. If you re-enable
-							access in GitHub later, the repository will be re-synced from scratch.
-						</AlertDialogDescription>
-					</AlertDialogHeader>
-					<AlertDialogFooter>
-						<AlertDialogCancel>Cancel</AlertDialogCancel>
-						<AlertDialogAction
-							variant="destructive"
-							onClick={() => {
-								if (repoToDelete) void handleDeleteRepository(repoToDelete)
-							}}
-						>
-							Delete
-						</AlertDialogAction>
-					</AlertDialogFooter>
-				</AlertDialogContent>
-			</AlertDialog>
+				title="Delete repository from Maple"
+				description={
+					<>
+						This permanently removes{" "}
+						<span className="font-medium text-foreground">{repoToDelete?.fullName}</span> and all
+						of its synced commits from Maple. This cannot be undone. If you re-enable access in
+						GitHub later, the repository will be re-synced from scratch.
+					</>
+				}
+				confirmLabel="Delete"
+				onConfirm={() => {
+					if (repoToDelete) void handleDeleteRepository(repoToDelete)
+				}}
+			/>
 		</>
 	)
 }
@@ -473,39 +440,39 @@ function ConnectedView({
 
 	return (
 		<div className="space-y-4">
-			<div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card px-4 py-3">
-				<div className="flex items-center gap-3">
+			<Item variant="card" size="lg" className="justify-between">
+				<ItemMedia>
 					<StatusDot tone="success" size="lg" />
-					<div className="leading-tight">
-						<div className="text-sm font-medium">
-							Connected
-							{status.accountLogin ? (
-								<>
-									{" "}
-									as{" "}
-									<a
-										href={`https://github.com/${status.accountLogin}`}
-										target="_blank"
-										rel="noreferrer"
-										className="font-semibold hover:underline"
-									>
-										@{status.accountLogin}
-									</a>
-								</>
-							) : null}
-						</div>
-						<div className="text-xs text-muted-foreground">
-							{status.accountType === "organization"
-								? "Organization"
-								: status.accountType === "user"
-									? "Personal account"
-									: "GitHub App"}{" "}
-							· {scopeLabel}
-						</div>
+				</ItemMedia>
+				<ItemContent className="leading-tight">
+					<div className="text-sm font-medium">
+						Connected
+						{status.accountLogin ? (
+							<>
+								{" "}
+								as{" "}
+								<a
+									href={`https://github.com/${status.accountLogin}`}
+									target="_blank"
+									rel="noreferrer"
+									className="font-semibold hover:underline"
+								>
+									@{status.accountLogin}
+								</a>
+							</>
+						) : null}
 					</div>
-				</div>
+					<ItemDescription>
+						{status.accountType === "organization"
+							? "Organization"
+							: status.accountType === "user"
+								? "Personal account"
+								: "GitHub App"}{" "}
+						· {scopeLabel}
+					</ItemDescription>
+				</ItemContent>
 
-				<div className="flex items-center gap-1.5">
+				<ItemActions className="gap-1.5">
 					<Button size="sm" variant="outline" onClick={onRefresh} disabled={refreshing}>
 						<ArrowRotateClockwiseIcon size={14} className={refreshing ? "animate-spin" : ""} />
 						Refresh
@@ -518,54 +485,61 @@ function ConnectedView({
 						{disconnectBusy ? <Spinner size={14} /> : null}
 						Disconnect
 					</Button>
-				</div>
-			</div>
+				</ItemActions>
+			</Item>
 
 			{prReviewRolledOut ? (
-				<div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card px-4 py-3">
-					<div className="leading-tight">
-						<div className="text-sm font-medium">Pull request reviews</div>
-						<div className="text-xs text-muted-foreground">
+				<SettingRow
+					framed
+					className="bg-card px-4 py-3"
+					label="Pull request reviews"
+					description={
+						<>
 							{activeRepos.filter((repo) => repo.prReviewEnabled).length} of{" "}
 							{activeRepos.length} repositories reviewed. Rules, models and analytics live in
 							Code Review.
-						</div>
-					</div>
-					<Button size="sm" variant="outline" render={<Link to="/code-review/settings" />}>
-						Open Code Review
-					</Button>
-				</div>
+						</>
+					}
+					control={
+						<Button size="sm" variant="outline" render={<Link to="/code-review/settings" />}>
+							Open Code Review
+						</Button>
+					}
+				/>
 			) : null}
 
-			<div className="overflow-hidden rounded-lg border bg-card">
-				<div className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-2.5">
+			<Panel className="rounded-lg">
+				<PanelHeader
+					action={
+						activeRepos.length > 0 ? (
+							<div className="flex items-center gap-3 text-xs text-muted-foreground">
+								{counts.synced > 0 ? (
+									<span className="flex items-center gap-1">
+										<CircleCheckIcon size={13} className="text-success-foreground" />
+										{counts.synced} synced
+									</span>
+								) : null}
+								{counts.syncing > 0 ? (
+									<span className="flex items-center gap-1">
+										<Spinner size={13} className="text-info-foreground" />
+										{counts.syncing} syncing
+									</span>
+								) : null}
+								{counts.failed > 0 ? (
+									<span className="flex items-center gap-1">
+										<CircleWarningIcon size={13} className="text-destructive-foreground" />
+										{counts.failed} failed
+									</span>
+								) : null}
+							</div>
+						) : null
+					}
+				>
 					<h3 className="text-sm font-medium">
 						Repositories
 						<span className="ml-1.5 text-muted-foreground">{activeRepos.length}</span>
 					</h3>
-					{activeRepos.length > 0 ? (
-						<div className="flex items-center gap-3 text-xs text-muted-foreground">
-							{counts.synced > 0 ? (
-								<span className="flex items-center gap-1">
-									<CircleCheckIcon size={13} className="text-success-foreground" />
-									{counts.synced} synced
-								</span>
-							) : null}
-							{counts.syncing > 0 ? (
-								<span className="flex items-center gap-1">
-									<Spinner size={13} className="text-info-foreground" />
-									{counts.syncing} syncing
-								</span>
-							) : null}
-							{counts.failed > 0 ? (
-								<span className="flex items-center gap-1">
-									<CircleWarningIcon size={13} className="text-destructive-foreground" />
-									{counts.failed} failed
-								</span>
-							) : null}
-						</div>
-					) : null}
-				</div>
+				</PanelHeader>
 
 				{activeRepos.length === 0 && removedRepos.length === 0 ? (
 					<div className="flex items-center gap-2.5 px-4 py-6 text-sm text-muted-foreground">
@@ -583,22 +557,24 @@ function ConnectedView({
 						))}
 					</ul>
 				)}
-			</div>
+			</Panel>
 
 			{/* Repos GitHub revoked access to — kept (with history) until explicitly deleted. */}
 			{removedRepos.length > 0 ? (
-				<div className="overflow-hidden rounded-lg border bg-card">
-					<div className="border-b px-4 py-2.5">
+				<Panel className="rounded-lg">
+					<PanelHeader>
 						<h3 className="flex items-center gap-1.5 text-sm font-medium">
 							<CircleWarningIcon size={15} className="text-warning-foreground" />
 							Needs attention
 						</h3>
-					</div>
+					</PanelHeader>
 					<ul className="divide-y">
 						{removedRepos.map((repo) => (
-							<li key={repo.id} className="flex items-center gap-3 px-4 py-3">
-								<CircleWarningIcon size={17} className="shrink-0 text-warning-foreground" />
-								<div className="min-w-0 flex-1">
+							<Item key={repo.id} variant="flush" size="lg" render={<li />}>
+								<ItemMedia>
+									<CircleWarningIcon size={17} className="text-warning-foreground" />
+								</ItemMedia>
+								<ItemContent className="gap-0">
 									<div className="flex items-center gap-2">
 										<a
 											href={repo.htmlUrl}
@@ -621,7 +597,7 @@ function ConnectedView({
 									<div className="text-xs text-muted-foreground">
 										Access removed on GitHub · commit history kept
 									</div>
-								</div>
+								</ItemContent>
 								<Button
 									size="sm"
 									variant="destructive-outline"
@@ -636,7 +612,7 @@ function ConnectedView({
 									)}
 									Delete
 								</Button>
-							</li>
+							</Item>
 						))}
 					</ul>
 					<p className="border-t px-4 py-2.5 text-xs text-muted-foreground">
@@ -651,7 +627,7 @@ function ConnectedView({
 						</a>{" "}
 						to resume syncing. Deleting removes their synced commits permanently.
 					</p>
-				</div>
+				</Panel>
 			) : null}
 		</div>
 	)
@@ -669,12 +645,14 @@ function RepoRow({
 	const StatusIcon = presentation.Icon
 
 	return (
-		<li className="flex items-center gap-3 px-4 py-3">
-			<StatusIcon
-				size={17}
-				className={`shrink-0 ${presentation.tone} ${presentation.spin ? "animate-spin" : ""}`}
-			/>
-			<div className="min-w-0 flex-1">
+		<Item variant="flush" size="lg" render={<li />}>
+			<ItemMedia>
+				<StatusIcon
+					size={17}
+					className={`${presentation.tone} ${presentation.spin ? "animate-spin" : ""}`}
+				/>
+			</ItemMedia>
+			<ItemContent className="gap-0">
 				<div className="flex items-center gap-2">
 					<a
 						href={repo.htmlUrl}
@@ -697,16 +675,16 @@ function RepoRow({
 				<div className="flex items-center gap-1.5 text-xs">
 					<span className={presentation.tone}>{presentation.label}</span>
 					{repo.syncStatus === "error" && repo.lastSyncError ? (
-						<span className="truncate text-muted-foreground" title={repo.lastSyncError}>
+						<TruncatedText text={repo.lastSyncError} className="text-muted-foreground">
 							· {repo.lastSyncError}
-						</span>
+						</TruncatedText>
 					) : repo.lastSyncedAt ? (
 						<span className="text-muted-foreground">
-							· {formatRelativeFrom(repo.lastSyncedAt)}
+							· <RelativeTime value={repo.lastSyncedAt} />
 						</span>
 					) : null}
 				</div>
-			</div>
+			</ItemContent>
 			{repo.prReviewEnabled ? (
 				<Badge
 					variant="outline"
@@ -718,7 +696,7 @@ function RepoRow({
 				</Badge>
 			) : null}
 			<BranchSelector repo={repo} onSelect={onSetTrackedBranch} />
-		</li>
+		</Item>
 	)
 }
 
@@ -846,36 +824,29 @@ function BranchSelector({
 				</PopoverContent>
 			</Popover>
 
-			<AlertDialog
+			<ConfirmDialog
 				open={pending !== null}
 				onOpenChange={(o) => {
 					if (!o) setPending(null)
 				}}
-			>
-				<AlertDialogContent>
-					<AlertDialogHeader>
-						<AlertDialogTitle>Change tracked branch</AlertDialogTitle>
-						<AlertDialogDescription>
-							This switches <span className="font-medium text-foreground">{repo.fullName}</span>{" "}
-							to track <span className="font-medium text-foreground">{pending}</span>. Maple
-							deletes this repo&apos;s currently synced commits and re-syncs the last 90 days
-							from <span className="font-medium text-foreground">{pending}</span>.
-						</AlertDialogDescription>
-					</AlertDialogHeader>
-					<AlertDialogFooter>
-						<AlertDialogCancel>Cancel</AlertDialogCancel>
-						<AlertDialogAction
-							onClick={() => {
-								const next = pending
-								setPending(null)
-								if (next) void commit(next)
-							}}
-						>
-							Track branch
-						</AlertDialogAction>
-					</AlertDialogFooter>
-				</AlertDialogContent>
-			</AlertDialog>
+				title="Change tracked branch"
+				description={
+					<>
+						This switches <span className="font-medium text-foreground">{repo.fullName}</span> to
+						track <span className="font-medium text-foreground">{pending}</span>. Maple deletes
+						this repo&apos;s currently synced commits and re-syncs the last 90 days from{" "}
+						<span className="font-medium text-foreground">{pending}</span>.
+					</>
+				}
+				confirmLabel="Track branch"
+				tone="default"
+				icon={null}
+				onConfirm={() => {
+					const next = pending
+					setPending(null)
+					if (next) void commit(next)
+				}}
+			/>
 		</>
 	)
 }

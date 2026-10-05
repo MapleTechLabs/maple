@@ -38,7 +38,7 @@ export function SheetDetailHeader({
 					mono && "font-mono",
 				)}
 			>
-				<span className="min-w-0 break-all">{title}</span>
+				<span className={cn("min-w-0", mono ? "break-all" : "break-words")}>{title}</span>
 				{adornment}
 			</SheetTitle>
 			<SheetDescription className="sr-only">{description}</SheetDescription>

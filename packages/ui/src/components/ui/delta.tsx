@@ -20,6 +20,7 @@ export function Delta({
 	invert = false,
 	suffix,
 	flatThreshold = 0.001,
+	format = formatPercent,
 	className,
 }: {
 	/** Relative change (0.12 = +12%). Or pass `current` + `previous`. */
@@ -31,6 +32,8 @@ export function Delta({
 	suffix?: React.ReactNode
 	/** |ratio| below this renders as flat. */
 	flatThreshold?: number
+	/** Formats the absolute change: defaults to a percent; pass one for pp or durations. */
+	format?: (magnitude: number) => string
 	className?: string
 }): React.ReactElement {
 	const change =
@@ -47,7 +50,7 @@ export function Delta({
 	const flat = Math.abs(change) < flatThreshold
 	const rose = change > 0
 	const good = invert ? !rose : rose
-	const magnitude = formatPercent(Math.abs(change))
+	const magnitude = format(Math.abs(change))
 
 	return (
 		<span

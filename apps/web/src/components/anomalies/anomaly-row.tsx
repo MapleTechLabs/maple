@@ -1,4 +1,4 @@
-import { MetaChip } from "./meta-chip"
+import { Badge } from "@maple/ui/components/ui/badge"
 import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { Link } from "@tanstack/react-router"
 import type { AnomalyIncidentDocument } from "@maple/domain/http"
@@ -6,11 +6,12 @@ import { cn } from "@maple/ui/lib/utils"
 
 import { shortIssueId } from "@/components/errors/issue-id"
 import { LinkIcon } from "@/components/icons"
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
+import { RelativeTime } from "@/components/common/relative-time"
 import {
 	deviation,
 	formatSignalValue,
 	isStaleOpenIncident,
+	META_CHIP_CLASS,
 	SEVERITY_TONE,
 	SIGNAL_ICON,
 	SIGNAL_LABEL,
@@ -100,13 +101,16 @@ export function AnomalyRow({ incident, focused = false, onFocus, variant = "defa
 			</span>
 
 			{!compact ? (
-				<MetaChip
-					className="relative z-10 hidden min-w-0 shrink md:inline-flex"
+				<Badge
+					variant="meta"
+					shape="pill"
+					size="sm"
+					className={cn(META_CHIP_CLASS, "z-10 hidden min-w-0 shrink md:inline-flex")}
 					title={incident.serviceName}
 				>
 					<ServiceDot serviceName={incident.serviceName} className="size-1.5" />
 					<span className="max-w-[140px] truncate">{incident.serviceName}</span>
-				</MetaChip>
+				</Badge>
 			) : null}
 
 			<span className="relative z-10 hidden shrink-0 text-xs text-muted-foreground xl:inline-block">
@@ -116,62 +120,68 @@ export function AnomalyRow({ incident, focused = false, onFocus, variant = "defa
 			<span className="relative z-0 hidden min-w-0 flex-1 sm:block" />
 
 			{activeFingerprints > 1 ? (
-				<MetaChip
-					className="relative z-10 hidden sm:inline-flex"
+				<Badge
+					variant="meta"
+					shape="pill"
+					size="sm"
+					className={cn(META_CHIP_CLASS, "z-10 hidden sm:inline-flex")}
 					title={`${activeFingerprints} error fingerprints grouped into this incident`}
 				>
 					{activeFingerprints} errors
-				</MetaChip>
+				</Badge>
 			) : null}
 
 			{incident.reopenCount > 0 ? (
-				<MetaChip
-					className="relative z-10 hidden sm:inline-flex"
+				<Badge
+					variant="meta"
+					shape="pill"
+					size="sm"
+					className={cn(META_CHIP_CLASS, "z-10 hidden sm:inline-flex")}
 					title="This anomaly re-breached and reopened after resolving"
 				>
 					reopened{incident.reopenCount > 1 ? ` ×${incident.reopenCount}` : ""}
-				</MetaChip>
+				</Badge>
 			) : null}
 
 			{triageChip ? (
-				<span
-					className={cn(
-						"relative z-10 hidden h-5 shrink-0 items-center rounded-full px-2 text-[11px] font-medium sm:inline-flex",
-						triageChip.tone,
-					)}
+				<Badge
+					shape="pill"
+					size="sm"
+					className={cn(META_CHIP_CLASS, "z-10 hidden font-medium sm:inline-flex", triageChip.tone)}
 				>
 					{triageChip.label}
-				</span>
+				</Badge>
 			) : null}
 
 			{!compact && incident.errorIssueId !== null ? (
-				<Link
-					to="/errors/issues/$issueId"
-					params={{ issueId: incident.errorIssueId }}
-					onClick={(event) => event.stopPropagation()}
+				<Badge
+					variant="meta"
+					shape="pill"
+					size="sm"
+					render={
+						<Link
+							to="/errors/issues/$issueId"
+							params={{ issueId: incident.errorIssueId }}
+							onClick={(event) => event.stopPropagation()}
+						/>
+					}
 					className={cn(
-						"relative z-10 hidden h-5 shrink-0 items-center gap-1 rounded-full border border-border/70 bg-background px-2 text-[11px] text-muted-foreground sm:inline-flex",
-						"hover:border-border hover:text-foreground",
+						META_CHIP_CLASS,
+						"z-10 hidden gap-1 sm:inline-flex hover:border-border hover:text-foreground",
 					)}
 					title="Open linked issue"
 				>
 					<LinkIcon size={11} />
 					{shortIssueId(incident.errorIssueId)}
-				</Link>
+				</Badge>
 			) : null}
 
-			<span
+			<RelativeTime
+				value={isStale ? incident.lastTriggeredAt : incident.firstTriggeredAt}
+				prefix={isStale ? "last seen" : undefined}
+				tooltip="title"
 				className="relative z-10 w-24 shrink-0 text-right text-xs tabular-nums text-muted-foreground"
-				title={
-					isStale
-						? `Last triggered ${new Date(incident.lastTriggeredAt).toLocaleString()}`
-						: `Started ${new Date(incident.firstTriggeredAt).toLocaleString()}`
-				}
-			>
-				{isStale
-					? `last seen ${formatRelativeTime(incident.lastTriggeredAt)}`
-					: formatRelativeTime(incident.firstTriggeredAt)}
-			</span>
+			/>
 		</div>
 	)
 }

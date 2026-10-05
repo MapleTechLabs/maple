@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@mapl
 import { Input } from "@maple/ui/components/ui/input"
 import { Label } from "@maple/ui/components/ui/label"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { SettingRow } from "@maple/ui/components/ui/setting-row"
 import { Switch } from "@maple/ui/components/ui/switch"
 import { MapleInternalAtomClient, retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
 import { AiTriageSettingsUpdateRequest } from "@maple/domain/http"
@@ -145,25 +146,22 @@ export function AiTriageSettingsSection({ isAdmin, hasEntitlement }: AiTriageSet
 					))
 					.onSuccess((current) => (
 						<>
-							<div className="flex items-center justify-between gap-4">
-								<div className="space-y-0.5">
-									<Label htmlFor="ai-triage-enabled">Auto-triage new incidents</Label>
-									<p className="text-xs text-muted-foreground">
-										Investigate each new incident automatically.
-									</p>
-								</div>
-								<Switch
-									id="ai-triage-enabled"
-									checked={current.enabled}
-									disabled={isSaving}
-									onCheckedChange={(checked) =>
-										save(
-											new AiTriageSettingsUpdateRequest({ enabled: checked }),
-											checked ? "AI auto-triage enabled" : "AI auto-triage disabled",
-										)
-									}
-								/>
-							</div>
+							<SettingRow
+								label="Auto-triage new incidents"
+								description="Investigate each new incident automatically."
+								control={
+									<Switch
+										checked={current.enabled}
+										disabled={isSaving}
+										onCheckedChange={(checked) =>
+											save(
+												new AiTriageSettingsUpdateRequest({ enabled: checked }),
+												checked ? "AI auto-triage enabled" : "AI auto-triage disabled",
+											)
+										}
+									/>
+								}
+							/>
 
 							<DailyLimitField
 								id="ai-triage-max-runs"

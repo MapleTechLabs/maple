@@ -101,8 +101,8 @@ export function RollApiKeyDialog({ open, onOpenChange, apiKey, onRolled }: RollA
 							<Button variant="outline" onClick={() => handleClose(false)} disabled={isRolling}>
 								Cancel
 							</Button>
-							<Button variant="destructive" onClick={handleRoll} disabled={isRolling}>
-								{isRolling ? "Rolling..." : "Roll key"}
+							<Button variant="destructive" onClick={handleRoll} loading={isRolling} disabled={isRolling}>
+								Roll key
 							</Button>
 						</DialogFooter>
 					</>

@@ -3,7 +3,6 @@ import { Link } from "@tanstack/react-router"
 
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { cn } from "@maple/ui/lib/utils"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
 
 import type { ListPodsResponse } from "@maple/domain/http"
 import type { PodSortKey, SortDirection } from "@/api/warehouse/infra"
@@ -13,7 +12,8 @@ import { HostStatusBadge } from "./status-badge"
 import { ColumnHead, DataTable, ROW_LINK_CLASS } from "@/components/common/data-table"
 import { MeterRows } from "./primitives/meter-rows"
 import { MetaLine } from "./primitives/meta-line"
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
+import { RelativeTime } from "@/components/common/relative-time"
+import { TONE_TEXT } from "@maple/ui/lib/tone"
 
 export type PodRow = ListPodsResponse["data"][number]
 
@@ -224,7 +224,7 @@ export function PodTable({
 									pod.computeType === "fargate" && (
 										// Keyed because it sits in an array literal, even though
 										// `MetaLine` wraps each item in a keyed span of its own.
-										<span key="fargate" className="text-[var(--severity-warn)]">
+										<span key="fargate" className={TONE_TEXT.warn}>
 											fargate
 										</span>
 									),
@@ -250,15 +250,11 @@ export function PodTable({
 							/>
 						</div>
 						<div className="w-[100px] text-right">
-							<Tooltip>
-								<TooltipTrigger
-									render={<span />}
-									className="cursor-default font-mono text-[11px] text-muted-foreground"
-								>
-									{formatRelativeTime(pod.lastSeen)}
-								</TooltipTrigger>
-								<TooltipContent>{pod.lastSeen}</TooltipContent>
-							</Tooltip>
+							<RelativeTime
+								value={pod.lastSeen}
+								mono
+								className="cursor-default text-[11px] text-muted-foreground"
+							/>
 						</div>
 					</Link>
 				)

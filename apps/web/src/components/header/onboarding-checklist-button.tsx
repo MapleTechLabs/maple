@@ -2,8 +2,12 @@ import { useState } from "react"
 import { Link } from "@tanstack/react-router"
 import type { V2OnboardingChecklist, V2OnboardingChecklistStep } from "@maple/domain/http/v2"
 import { Button } from "@maple/ui/components/ui/button"
+import { Meter } from "@maple/ui/components/ui/meter"
+import { Badge } from "@maple/ui/components/ui/badge"
 import { Popover, PopoverPopup, PopoverTrigger } from "@maple/ui/components/ui/popover"
+import { formatCountdown as formatRemaining } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
+
 import {
 	ArrowRightIcon,
 	CircleCheckIcon,
@@ -17,16 +21,11 @@ import { useOnboardingChecklist } from "@/hooks/use-onboarding-checklist"
 import { parseSearchFromHref } from "@/lib/href"
 import { isClerkAuthEnabled } from "@/lib/services/common/auth-mode"
 
-const pad = (value: number) => value.toString().padStart(2, "0")
-
-/** `23:41:07` — the pill's live countdown; clamps at `00:00:00`. */
+/** `23:41:07`, the pill's live countdown; clamps at `00:00:00`. */
 export function formatCountdown(deadlineMs: number, nowMs: number): string {
-	const remaining = Math.max(0, Math.floor((deadlineMs - nowMs) / 1000))
-	const hours = Math.floor(remaining / 3600)
-	const minutes = Math.floor((remaining % 3600) / 60)
-	const seconds = remaining % 60
-	return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`
+	return formatRemaining(deadlineMs - nowMs, { fixedHours: true })
 }
+
 
 const formatCredits = (checklist: Pick<V2OnboardingChecklist, "reward_amount_usd">) =>
 	`$${checklist.reward_amount_usd}`
@@ -131,14 +130,17 @@ function OnboardingChecklistPill() {
 /** `2/5` as a small chip: the count is the whole message, so it is written out. */
 function ProgressChip({ completed, total }: { completed: number; total: number }) {
 	return (
-		<span
+		<Badge
+			shape="pill"
+			size="xs"
+			mono
 			className={cn(
-				"rounded-full px-1.5 py-px font-mono text-[11px] font-semibold tabular-nums",
+				"text-[11px] font-semibold sm:text-[11px]",
 				completed === total ? "bg-primary text-primary-foreground" : "bg-primary/15 text-primary",
 			)}
 		>
 			{completed}/{total}
-		</span>
+		</Badge>
 	)
 }
 
@@ -239,12 +241,7 @@ export function OnboardingChecklistPanel({
 						</p>
 					</div>
 				</div>
-				<div className="h-1 overflow-hidden rounded-full bg-primary/15" aria-hidden>
-					<div
-						className="h-full rounded-full bg-primary transition-[width] duration-500"
-						style={{ width: `${Math.round(progress * 100)}%` }}
-					/>
-				</div>
+				<Meter value={progress} minVisible={0} className="bg-primary/15" fillClassName="bg-primary" />
 			</div>
 
 			<ol className="space-y-0.5 p-2">
@@ -272,8 +269,8 @@ export function OnboardingChecklistPanel({
 							>
 								{claimError ?? "Every step is done."}
 							</span>
-							<Button size="sm" onClick={onClaim} disabled={claimPending}>
-								{claimPending ? "Claiming…" : `Claim ${credits} credits`}
+							<Button size="sm" onClick={onClaim} loading={claimPending} disabled={claimPending}>
+								Claim {credits} credits
 							</Button>
 						</>
 					) : (

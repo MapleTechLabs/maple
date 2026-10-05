@@ -178,7 +178,7 @@ export function CreateApiKeyDialog({ open, onOpenChange, onCreated, kind }: Crea
 								</code>
 								{createdKey.scopes !== null &&
 									createdKey.scopes.map((scope) => (
-										<Badge key={scope} variant="outline" size="sm" className="font-mono">
+										<Badge key={scope} variant="outline" size="sm" mono>
 											{scope}
 										</Badge>
 									))}
@@ -377,8 +377,8 @@ export function CreateApiKeyDialog({ open, onOpenChange, onCreated, kind }: Crea
 							<Button variant="outline" onClick={() => handleClose(false)}>
 								Cancel
 							</Button>
-							<Button onClick={handleCreate} disabled={!canCreate}>
-								{isCreating ? "Creating..." : "Create"}
+							<Button onClick={handleCreate} loading={isCreating} disabled={!canCreate}>
+								Create
 							</Button>
 						</DialogFooter>
 					</>

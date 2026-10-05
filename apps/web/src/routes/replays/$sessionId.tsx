@@ -1,4 +1,5 @@
 import { warmAtoms } from "@effect-router/core"
+import { shortId } from "@maple/ui/lib/ids"
 import { useMemo } from "react"
 import { createFileRoute } from "@tanstack/react-router"
 import { Schema } from "effect"
@@ -54,7 +55,7 @@ function ReplayDetailPage() {
 	const window = useMemo(() => replayPartitionWindow(t), [t])
 	const detailResult = useAtomValue(getReplayResultAtom({ data: { sessionId, ...window } }))
 
-	const breadcrumbs = [{ label: "Session Replays", href: "/replays" }, { label: sessionId.slice(0, 8) }]
+	const breadcrumbs = [{ label: "Session Replays", href: "/replays" }, { label: shortId(sessionId, "session", { length: 8 }) }]
 
 	return Result.builder(detailResult)
 		.onInitial(() => (

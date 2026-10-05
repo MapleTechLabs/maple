@@ -1,6 +1,6 @@
 import type * as React from "react"
 import { cn } from "../../lib/utils"
-import { Button } from "./button"
+import { Button, type ButtonProps } from "./button"
 import { Spinner } from "./spinner"
 
 /** "Load more" with a spinner while the next page is in flight. */
@@ -8,15 +8,17 @@ export function LoadMoreButton({
 	loading = false,
 	onClick,
 	label = "Load more",
+	variant = "outline",
 	className,
 }: {
 	loading?: boolean
 	onClick: () => void
 	label?: React.ReactNode
+	variant?: ButtonProps["variant"]
 	className?: string
 }): React.ReactElement {
 	return (
-		<Button variant="outline" size="sm" loading={loading} onClick={onClick} className={className}>
+		<Button variant={variant} size="sm" loading={loading} onClick={onClick} className={className}>
 			{label}
 		</Button>
 	)
@@ -37,6 +39,7 @@ export function ListFooter({
 	onLoadMore,
 	align = "center",
 	className,
+	children,
 }: {
 	shown?: number
 	total?: number
@@ -50,6 +53,8 @@ export function ListFooter({
 	onLoadMore?: () => void
 	align?: "start" | "center"
 	className?: string
+	/** Extra trailing content (a source note, a deep link). */
+	children?: React.ReactNode
 }): React.ReactElement | null {
 	const count =
 		shown === undefined || !noun
@@ -67,7 +72,7 @@ export function ListFooter({
 			<LoadMoreButton loading={loading} onClick={onLoadMore} label={failed ? "Retry" : "Load more"} />
 		) : null
 
-	if (!count && !button) return null
+	if (!count && !button && !children) return null
 
 	return (
 		<div
@@ -80,6 +85,7 @@ export function ListFooter({
 		>
 			{count ? <span>{count}</span> : null}
 			{button}
+			{children}
 		</div>
 	)
 }

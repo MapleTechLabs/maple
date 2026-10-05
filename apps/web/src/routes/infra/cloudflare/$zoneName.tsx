@@ -38,7 +38,7 @@ import {
 	type CloudflareFilterKey,
 	type CloudflareFilters,
 } from "@/components/infra/cloudflare/filters"
-import { errorRateTone } from "@/components/infra/cloudflare/constants"
+import { errorRateLevel } from "@maple/ui/lib/error-rate"
 import { chartBucketSeconds } from "@/components/infra/chart-utils"
 import {
 	cloudflareZoneDetailResultAtom,
@@ -288,7 +288,7 @@ function ZoneDetailContent({
 						<StatRailItem
 							eyebrow="5xx error rate"
 							value={formatPercent(errorRate)}
-							tone={errorRateTone(errorRate)}
+							tone={errorRateLevel(errorRate)}
 							compact
 						/>
 						<StatRailItem

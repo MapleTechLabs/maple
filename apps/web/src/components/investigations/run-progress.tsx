@@ -101,7 +101,7 @@ function Header({ count, stalled, silentFor }: { count: number; stalled: boolean
 function AwaitingFirstStep({ className }: { className?: string }) {
 	return (
 		<div className={cn("flex items-center gap-2.5 text-xs text-muted-foreground", className)}>
-			<StatusDot tone="custom" size="sm" className="animate-pulse bg-primary" />
+			<StatusDot tone="live" size="sm" pulse />
 			Starting the pass
 		</div>
 	)

@@ -42,6 +42,7 @@ export function KeyValue({
 	children,
 	mono = false,
 	copyValue,
+	wrap = false,
 	className,
 }: {
 	label: React.ReactNode
@@ -50,6 +51,8 @@ export function KeyValue({
 	mono?: boolean
 	/** Adds a copy button for this raw string. */
 	copyValue?: string
+	/** Let the value wrap (long text, code blocks) instead of truncating. */
+	wrap?: boolean
 	className?: string
 }): React.ReactElement {
 	return (
@@ -70,7 +73,11 @@ export function KeyValue({
 					mono && "font-mono tabular-nums",
 				)}
 			>
-				<span className="min-w-0 truncate">{children}</span>
+				{wrap ? (
+					<div className="min-w-0 break-words">{children}</div>
+				) : (
+					<span className="min-w-0 truncate">{children}</span>
+				)}
 				{copyValue ? <CopyButton value={copyValue} label={typeof label === "string" ? label : "value"} size="icon-xs" className="-my-1 shrink-0" /> : null}
 			</dd>
 		</div>

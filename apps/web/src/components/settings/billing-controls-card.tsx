@@ -7,18 +7,15 @@ import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { maximumInvoiceCents, spendLimitFor } from "@/lib/billing/controls"
 import { formatCurrency } from "@maple/domain/format"
 import {
-	featureUnit,
 	FEATURE_COLORS,
 	FEATURE_LABELS,
 	SPEND_FEATURES,
 	type SpendFeatureId,
 	type SpendModel,
 } from "@/lib/billing/spend"
-import { formatCount, formatUsage } from "@/lib/billing/usage"
 import { BillingControlsDialog } from "./billing-controls-dialog"
+import { formatFeatureUsage } from "./format-feature-usage"
 
-const formatUnits = (featureId: SpendFeatureId, value: number) =>
-	featureUnit(featureId) === "GB" ? formatUsage(value) : formatCount(value)
 
 export function BillingControlsCardSkeleton() {
 	return (
@@ -86,12 +83,12 @@ export function BillingControlsCard({
 									<p className="font-mono text-[13px] tabular-nums">
 										{limit === undefined
 											? "Paid overage uncapped"
-											: `${formatUnits(featureId, limit)} paid overage`}
+											: `${formatFeatureUsage(featureId, limit)} paid overage`}
 									</p>
 									<p className="text-[11px] text-muted-foreground">
 										{stopAt === null
 											? "No enforced stop this cycle"
-											: `Stops at ${formatUnits(featureId, stopAt)} total usage`}
+											: `Stops at ${formatFeatureUsage(featureId, stopAt)} total usage`}
 									</p>
 								</div>
 								<Button

@@ -1,5 +1,3 @@
-import { EmptyMessage } from "@maple/ui/components/ui/empty"
-import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Spinner } from "@maple/ui/components/ui/spinner"
 import { useState } from "react"
 import { Exit, Option, Schema } from "effect"
@@ -8,12 +6,15 @@ import { RailwayConnectRequest, type RailwayIntegrationStatus } from "@maple/dom
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
 import { Input } from "@maple/ui/components/ui/input"
+import { Item, ItemContent, ItemMedia } from "@maple/ui/components/ui/item"
 import { Label } from "@maple/ui/components/ui/label"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { toastManager } from "@maple/ui/components/ui/toast"
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 
+import { ColumnHead, DataTable } from "@/components/common/data-table"
 import { ErrorState } from "@/components/common/error-state"
+import { RelativeTime } from "@/components/common/relative-time"
 import { ExternalLinkIcon, RailwayIcon } from "@/components/icons"
 import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
@@ -261,13 +262,15 @@ export function RailwayIntegrationCard() {
 
 	return (
 		<div className="flex flex-col gap-4">
-			<div className="flex items-start gap-4 rounded-lg border border-border/60 bg-card p-4">
-				<IntegrationIconPlate
-					icon={RailwayIcon}
-					accent={RAILWAY_ACCENT}
-					iconClassName="text-foreground"
-				/>
-				<div className="flex flex-1 flex-col gap-2">
+			<Item variant="card" className="items-start gap-4 p-4">
+				<ItemMedia>
+					<IntegrationIconPlate
+						icon={RailwayIcon}
+						accent={RAILWAY_ACCENT}
+						iconClassName="text-foreground"
+					/>
+				</ItemMedia>
+				<ItemContent className="gap-2">
 					<div className="flex flex-wrap items-center gap-2">
 						<h3 className="text-sm font-semibold">Railway</h3>
 						{status.authFailed ? (
@@ -281,9 +284,12 @@ export function RailwayIntegrationCard() {
 					<p className="text-xs text-muted-foreground">
 						{status.workspaceNames ? `${status.workspaceNames} · ` : ""}
 						{plural(status.environments.length, "environment")}
-						{status.lastSyncedAt !== null
-							? ` · synced ${formatRelativeTime(new Date(status.lastSyncedAt).toISOString())}`
-							: ""}
+						{status.lastSyncedAt !== null ? (
+							<>
+								{" · "}
+								<RelativeTime value={status.lastSyncedAt} prefix="synced" />
+							</>
+						) : null}
 						{queued > 0 ? ` · ${queued} waiting for their first sync` : ""}
 					</p>
 					{status.authFailed ? (
@@ -321,28 +327,24 @@ export function RailwayIntegrationCard() {
 							</Button>
 						</div>
 					)}
-				</div>
-			</div>
+				</ItemContent>
+			</Item>
 
-			<div className="overflow-hidden rounded-lg border border-border/60 bg-card">
-				<Eyebrow
-					variant="label"
-					as="div"
-					className="grid grid-cols-[1fr_auto_auto] gap-4 border-b border-border/60 px-4 py-2"
-				>
-					<span>Environment</span>
-					<span className="w-20 text-right">Services</span>
-					<span className="w-32 text-right">Last sync</span>
-				</Eyebrow>
+			<DataTable.Root ariaLabel="Railway environments">
+				<DataTable.Head>
+					<ColumnHead label="Environment" width="w-0 min-w-48 flex-1" />
+					<ColumnHead label="Services" width="w-20" align="right" />
+					<ColumnHead label="Last sync" width="w-32" align="right" />
+				</DataTable.Head>
 				{status.environments.length === 0 ? (
-					<EmptyMessage className="py-6">This token can't see any projects yet.</EmptyMessage>
+					<DataTable.Empty>This token can't see any projects yet.</DataTable.Empty>
 				) : (
 					status.environments.map((environment) => (
 						<div
 							key={environment.environmentId}
-							className="grid grid-cols-[1fr_auto_auto] items-center gap-4 border-b border-border/60 px-4 py-2.5 text-sm last:border-b-0"
+							className="flex items-center gap-4 border-b border-border/40 px-4 py-2.5 text-sm last:border-0"
 						>
-							<span className="flex min-w-0 flex-col">
+							<span className="flex w-0 min-w-48 flex-1 flex-col">
 								<span className="truncate">
 									{environment.projectName}
 									<span className="text-muted-foreground">
@@ -351,17 +353,17 @@ export function RailwayIntegrationCard() {
 									</span>
 								</span>
 								{environment.lastError !== null ? (
-									<span className="truncate text-xs text-severity-error">
+									<TruncatedText className="text-xs text-severity-error">
 										{environment.lastError}
-									</span>
+									</TruncatedText>
 								) : null}
 							</span>
-							<span className="w-20 text-right tabular-nums text-muted-foreground">
+							<span className="w-20 shrink-0 text-right tabular-nums text-muted-foreground">
 								{environment.serviceCount}
 							</span>
-							<span className="w-32 text-right text-xs text-muted-foreground">
+							<span className="w-32 shrink-0 text-right text-xs text-muted-foreground">
 								{environment.lastSyncedAt !== null ? (
-									formatRelativeTime(new Date(environment.lastSyncedAt).toISOString())
+									<RelativeTime value={environment.lastSyncedAt} tooltip="title" />
 								) : environment.lastError !== null ? (
 									"Failed"
 								) : (
@@ -374,7 +376,7 @@ export function RailwayIntegrationCard() {
 						</div>
 					))
 				)}
-			</div>
+			</DataTable.Root>
 		</div>
 	)
 }

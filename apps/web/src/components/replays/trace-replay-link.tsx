@@ -1,4 +1,5 @@
 import { Link } from "@tanstack/react-router"
+import { Button } from "@maple/ui/components/ui/button"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { getReplaysForTraceResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { EyeIcon } from "@/components/icons"
@@ -17,13 +18,13 @@ export function TraceReplayLink({ traceId }: { traceId: string }) {
 				const session = data.data[0]
 				if (!session) return null
 				return (
-					<Link
-						to="/replays/$sessionId"
-						params={{ sessionId: session.sessionId }}
-						className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium hover:bg-muted"
+					<Button
+						variant="outline"
+						size="xs"
+						render={<Link to="/replays/$sessionId" params={{ sessionId: session.sessionId }} />}
 					>
 						<EyeIcon className="size-3.5" /> View Session Replay
-					</Link>
+					</Button>
 				)
 			})
 			// Stay silent on both loading and failure: a missing correlated replay and a

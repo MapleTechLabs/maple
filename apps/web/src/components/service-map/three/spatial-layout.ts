@@ -1,3 +1,4 @@
+import { errorRateLevel } from "@maple/ui/lib/error-rate"
 import type { Edge3D, Node3D } from "./types"
 import { computeTiers } from "./graph"
 import type { Vec3 } from "./types"
@@ -132,14 +133,15 @@ export function spatialLayout(topology: SpatialTopology, view: SpatialView): Spa
 }
 
 export const nodeHeight = (node: Node3D) => 0.5 + Math.log10(Math.max(1, node.throughput)) * 0.48
-export const health = (rate: number) => (rate > 0.05 ? "degraded" : rate > 0.01 ? "elevated" : "healthy")
+// Shared thresholds (lib/error-rate); the 3D scene keeps its own hex palette below.
+const HEALTH_BY_LEVEL = { crit: "degraded", warn: "elevated", neutral: "healthy" } as const
+export const health = (rate: number) => HEALTH_BY_LEVEL[errorRateLevel(rate)]
 export const HEALTH_COLOR = { healthy: "#79ad9b", elevated: "#d3a65c", degraded: "#dc7b6d" } as const
 const rateFormatter = new Intl.NumberFormat("en", { maximumFractionDigits: 1, notation: "compact" })
 export const formatRate = (rate: number, estimated = false) =>
 	`${estimated ? "~" : ""}${rate > 0 && rate < 0.1 ? "<0.1" : rateFormatter.format(rate)}/s`
 export const formatLatency = (ms: number | undefined) =>
 	ms === undefined ? "—" : `${ms < 10 ? ms.toFixed(1) : Math.round(ms)} ms`
-export const formatError = (rate: number) => `${(rate * 100).toFixed(rate < 0.01 ? 2 : 1)}%`
 
 export function connectedIds(
 	topology: SpatialTopology,

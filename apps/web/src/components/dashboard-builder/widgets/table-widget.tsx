@@ -1,6 +1,6 @@
 import { memo } from "react"
 import { cn } from "@maple/ui/lib/utils"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { SkeletonList } from "@maple/ui/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
 import { WidgetEmptyState, WidgetFrame } from "@/components/dashboard-builder/widgets/widget-shell"
 import type { WidgetDataState, WidgetDisplayConfig, WidgetMode } from "@/components/dashboard-builder/types"
@@ -166,11 +166,7 @@ export const TableWidget = memo(function TableWidget({
 			contentClassName="flex-1 min-h-0 overflow-auto p-0"
 			footer={truncated ? `Top ${rowLimit} rows` : undefined}
 			loadingSkeleton={
-				<div className="p-3 flex flex-col gap-2">
-					{Array.from({ length: 3 }).map((_, i) => (
-						<Skeleton key={i} className="h-6 w-full" />
-					))}
-				</div>
+				<SkeletonList rows={3} rowClassName="h-6" gap="2" className="p-3" />
 			}
 		>
 			{rows.length === 0 ? (

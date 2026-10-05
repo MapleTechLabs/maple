@@ -30,11 +30,13 @@ export interface ConfirmDialogProps {
 	 * A returned promise drives the pending state and closes the dialog when it
 	 * resolves; a rejection keeps it open so the caller's toast can explain.
 	 */
-	onConfirm: () => void | Promise<unknown>
+	onConfirm: () => void
 	/** Externally owned pending state, for callers that track their own mutation. */
 	pending?: boolean
+	/** Keeps confirm disabled until a precondition holds (e.g. the typed name matches). */
+	confirmDisabled?: boolean
 	/** Third button between cancel and confirm (e.g. "Delete section only"). */
-	secondaryAction?: { label: React.ReactNode; onClick: () => void | Promise<unknown> }
+	secondaryAction?: { label: React.ReactNode; onClick: () => void }
 	/** Extra body below the description (a typed-name check, a list of affected items). */
 	children?: React.ReactNode
 	className?: string
@@ -52,6 +54,7 @@ export function ConfirmDialog({
 	icon,
 	onConfirm,
 	pending: pendingProp = false,
+	confirmDisabled = false,
 	secondaryAction,
 	children,
 	className,
@@ -59,8 +62,9 @@ export function ConfirmDialog({
 	const [running, setRunning] = React.useState(false)
 	const pending = pendingProp || running
 
-	const run = (action: () => void | Promise<unknown>) => {
-		const result = action()
+	// Typed `() => void` so async handlers are accepted as-is; a returned promise is detected at runtime.
+	const run = (action: () => void) => {
+		const result: unknown = action()
 		if (!(result instanceof Promise)) return
 		setRunning(true)
 		result.then(
@@ -98,7 +102,7 @@ export function ConfirmDialog({
 					<Button
 						variant={tone === "destructive" ? "destructive" : "default"}
 						loading={pending}
-						disabled={pending}
+						disabled={pending || confirmDisabled}
 						onClick={() => run(onConfirm)}
 					>
 						{confirmLabel}
