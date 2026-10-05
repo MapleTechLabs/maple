@@ -21,6 +21,7 @@
  * answer (`./settle.ts`). Everything else — the transcript, the claim on a running turn — is the
  * chat session's.
  */
+import { BoundChatSessions, type ChatSessionNamespace } from "@maple/backend/platform/chat-sessions"
 import type { ChatConversation, InboundEvent } from "@maple/chat-platform"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import * as Cloudflare from "alchemy/Cloudflare"
@@ -140,6 +141,8 @@ export class ConnectorRelay {
 		private readonly ctx: ConnectorRelayState,
 		private readonly env: Record<string, unknown>,
 		private readonly runtime: () => Promise<ConnectorRelayRuntime> = loadRuntime,
+		/** maple-ai's `ChatSession` namespace, which the Worker binds cross-script. */
+		private readonly chatSessions?: ChatSessionNamespace,
 	) {}
 
 	/**
@@ -283,7 +286,10 @@ export class ConnectorRelay {
 			})
 		return runtimeCall("event", async () => {
 			const { runInboundEvent } = await this.runtime()
-			await runInboundEvent({ env: this.env, ...this.relayPorts(event), recordTurn }, event)
+			await runInboundEvent(
+				{ env: this.env, chatSessions: this.chatSessions, ...this.relayPorts(event), recordTurn },
+				event,
+			)
 		}).pipe(
 			// Summarized, never rendered: the cause can carry the conversation.
 			Effect.catchCause((cause) =>
@@ -304,7 +310,11 @@ export class ConnectorRelay {
 		return runtimeCall("settle", async () => {
 			const { settleInboundTurn } = await this.runtime()
 			return settleInboundTurn(
-				{ env: this.env, recordTurn: (next) => this.recordTurn(next) },
+				{
+					env: this.env,
+					chatSessions: this.chatSessions,
+					recordTurn: (next) => this.recordTurn(next),
+				},
 				checkpoint,
 			)
 		}).pipe(
@@ -369,15 +379,16 @@ export interface ConnectorRelayApi {
 }
 
 /**
- * One activation, in alchemy's two phases: the outer Effect resolves the state and env — it also
- * runs at plan time against a mock state, so it must not touch storage — and the inner one returns
- * the object's methods as Effects, which alchemy's bridge runs per RPC call.
+ * One activation, in alchemy's two phases: the outer Effect resolves the state, env and the chat
+ * session namespace (the Worker provides it, `worker.ts`) — it also runs at plan time against a
+ * mock state, so it must not touch storage — and the inner one returns the object's methods as
+ * Effects, which alchemy's bridge runs per RPC call.
  */
 export const activateConnectorRelay = Effect.map(
-	Effect.all([Cloudflare.DurableObjectState, Cloudflare.WorkerEnvironment]),
-	([state, env]) =>
+	Effect.all([Cloudflare.DurableObjectState, Cloudflare.WorkerEnvironment, BoundChatSessions]),
+	([state, env, chatSessions]) =>
 		Effect.sync(() => {
-			const relay = new ConnectorRelay(state.raw, env)
+			const relay = new ConnectorRelay(state.raw, env, loadRuntime, chatSessions)
 			return {
 				deliver: (event) => relay.deliver(event),
 				alarm: () => relay.alarm(),
@@ -395,5 +406,5 @@ export class ConnectorRelayObject extends Cloudflare.DurableObject<ConnectorRela
 // are: `.make` discharges `DurableObjectServices` through its own `Exclude`, while inference would
 // widen them into the layer's requirements and surface them in `alchemy.run.ts`.
 export const ConnectorRelayLive = ConnectorRelayObject.make<
-	Cloudflare.DurableObjectState | Cloudflare.WorkerEnvironment
+	Cloudflare.DurableObjectState | Cloudflare.WorkerEnvironment | BoundChatSessions
 >(activateConnectorRelay)

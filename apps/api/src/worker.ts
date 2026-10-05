@@ -3,14 +3,7 @@
  * yields and the init the deployed isolate runs. Hosted classes (the Workflow)
  * are exported from the generated entry because the init yields them.
  */
-import {
-	AiWorker,
-	chatSessionBinding,
-	mapleDbEnv,
-	type MapleDeployment,
-	MapleStack,
-	mapleWorkerProps,
-} from "@maple/infra/cloudflare"
+import { AiWorker, mapleDbEnv, MapleStack, mapleWorkerProps } from "@maple/infra/cloudflare"
 import { WORKER_PURE_OPTIONS } from "@maple/infra/worker-build"
 import { isolateContext } from "@maple/infra/worker-http"
 import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
@@ -24,12 +17,6 @@ import { registerQueueConsumers } from "./worker/consumers"
 import { registerCrons } from "./worker/crons"
 import { makeAppGraphs, makeFetch } from "./worker/http"
 import ClickHouseSchemaApplyWorkflow from "./workflows/ClickHouseSchemaApplyWorkflow"
-
-/** Bindings alchemy's init clients cannot express; the rest come from `bindApiClients`. */
-const makeWorkerBindings = (deployment: MapleDeployment) => ({
-	// maple-ai's chat DO, bound under its class name (`chatSessionStub` reads it).
-	ChatSession: chatSessionBinding(deployment),
-})
 
 /** `__ALCHEMY_RUNTIME__` folds to `true` in the bundle, so the stack-side branch is tree-shaken. */
 const props = Effect.gen(function* () {
@@ -51,7 +38,6 @@ const props = Effect.gen(function* () {
 		domain: domains.api,
 		// `devEnv` last, so `.env.local` cannot override the inter-app URLs.
 		env: {
-			...makeWorkerBindings({ stage, region }),
 			...mapleDbEnv(db, "api"),
 			AI_WORKER: ai,
 			...configuredEnv,

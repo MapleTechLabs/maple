@@ -9,7 +9,7 @@
  * nothing.
  */
 import { ChatSessionId, decodeChatEvent, type ChatEvent } from "@maple/domain/chat-session"
-import type { ChatSessionStub } from "@maple/domain/chat-session-stub"
+import type { ChatSessionClient } from "@maple/domain/chat-session-stub"
 import { Duration, Effect, Schema, Stream } from "effect"
 
 /** The session's Durable Object could not be reached, or dropped the subscription mid-turn. */
@@ -49,15 +49,13 @@ export const sessionUnreachable = (sessionId: ChatSessionId, message: string) =>
 
 /** One connection's worth of events, from `cursor`. */
 const connection = (
-	stub: ChatSessionStub,
+	stub: ChatSessionClient,
 	sessionId: ChatSessionId,
 	cursor: number,
 ): Stream.Stream<ChatEvent, ChatSessionUnreachable> =>
 	Stream.unwrap(
-		Effect.tryPromise({
-			try: () => stub.subscribe(cursor),
-			catch: sessionUnreachable(sessionId, "The chat session did not accept a subscription"),
-		}).pipe(
+		stub.subscribe(cursor).pipe(
+			Effect.mapError(sessionUnreachable(sessionId, "The chat session did not accept a subscription")),
 			Effect.map((body) =>
 				Stream.fromReadableStream({
 					evaluate: () => body,
@@ -92,7 +90,7 @@ const EMPTY_RECONNECT_DELAY = Duration.seconds(1)
 
 /** Every event from `cursor` on, across as many connections as the turn takes. */
 export const chatTurnEvents = (
-	stub: ChatSessionStub,
+	stub: ChatSessionClient,
 	sessionId: ChatSessionId,
 	cursor: number,
 ): Stream.Stream<ChatEvent, ChatSessionUnreachable> => {

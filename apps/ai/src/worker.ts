@@ -29,7 +29,8 @@ import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
 import * as Cloudflare from "alchemy/Cloudflare"
 import * as AlchemyTelemetry from "alchemy/Telemetry"
 import { Effect, Layer, Option } from "effect"
-import { ChatSessionLive, ChatSessionObject } from "./chat/ChatSession"
+import { ChatSessionObject } from "@maple/backend/platform/chat-sessions"
+import { ChatSessionLive } from "./chat/ChatSession"
 import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "./mcp/expected-failures"
 import { WorkersAiGateway } from "./platform/WorkersAiHttpClient"
 import { aiPorts, AiBindingLayers, bindAiClients, WorkersAiGatewayLive } from "./worker/bindings"
@@ -94,10 +95,10 @@ export default MapleAi.make(
 	props,
 	Effect.gen(function* () {
 		// Yielding the hosted DO binds, registers and exports it. Its hosting must not move.
-		yield* ChatSessionObject
+		const chatSessions = yield* ChatSessionObject
 		const clients = yield* bindAiClients
 		const env = yield* Cloudflare.WorkerEnvironment
-		const ports = aiPorts(clients, env, yield* WorkersAiGateway)
+		const ports = aiPorts(clients, env, yield* WorkersAiGateway, chatSessions)
 		// Captured before any event, so the first request's context cannot leak into later ones.
 		const isolate = isolateContext(yield* Effect.context())
 		const app = yield* cachedRecoverable(buildApp(isolate, ports))
