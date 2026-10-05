@@ -253,7 +253,9 @@ export const guard = <E, R>(
 			const response = yield* send(outgoing)
 			if (response.status < 300 || response.status >= 400) return response
 			const location = response.headers["location"]
-			if (location === undefined) return response
+			// An empty Location resolves to the current URL; following it would
+			// resend the same request until the cap.
+			if (!location) return response
 			if (redirects >= MAX_REDIRECTS) {
 				return yield* new UrlValidationError({
 					message: `Too many redirects (>${MAX_REDIRECTS})`,
@@ -278,7 +280,13 @@ export const guard = <E, R>(
  * embed `METHOD url`, and the URLs `guard` sees routinely carry credentials.
  */
 export const describeHttpClientError = (error: HttpClientError.HttpClientError): string => {
-	const { cause, description } = error.reason
-	if (cause instanceof Error) return cause.message
-	return description ?? error.reason._tag
+	const { cause, description, request } = error.reason
+	const message = cause instanceof Error ? cause.message : (description ?? error.reason._tag)
+	// Some runtimes put the URL in the cause's own message; keep only its origin.
+	const url = Url.make(request.url, request.urlParams, Option.getOrUndefined(request.hash))
+	if (Result.isFailure(url)) return message
+	return [url.success.href, request.url].reduce(
+		(redacted, secret) => redacted.split(secret).join(url.success.origin),
+		message,
+	)
 }

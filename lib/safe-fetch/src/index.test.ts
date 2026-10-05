@@ -2,7 +2,13 @@ import { assert, describe, expect, it } from "@effect/vitest"
 import { Effect, Exit, Fiber, Result } from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient, HttpBody, HttpClient, HttpClientError } from "effect/http"
-import { guard, parseExternalUrl, UrlValidationError, validateExternalUrl } from "./index"
+import {
+	describeHttpClientError,
+	guard,
+	parseExternalUrl,
+	UrlValidationError,
+	validateExternalUrl,
+} from "./index"
 
 const rejects = (raw: string) => Result.isFailure(parseExternalUrl(raw))
 
@@ -285,6 +291,38 @@ describe("guard", () => {
 		}),
 	)
 
+	it.effect("a redirect's query replaces the original request's params", () =>
+		Effect.gen(function* () {
+			const seen: Array<string> = []
+			const fakeFetch: typeof fetch = async (input) => {
+				seen.push(urlOf(input))
+				return seen.length === 1
+					? new Response(null, { status: 302, headers: { location: "/next?token=new" } })
+					: new Response("ok", { status: 200 })
+			}
+			yield* run(fakeFetch, (client) =>
+				client.get("https://api.example.com/start", { urlParams: { token: "old" } }),
+			)
+			assert.deepStrictEqual(seen, [
+				"https://api.example.com/start?token=old",
+				"https://api.example.com/next?token=new",
+			])
+		}),
+	)
+
+	it.effect("returns a redirect with an empty Location instead of re-requesting", () =>
+		Effect.gen(function* () {
+			let calls = 0
+			const fakeFetch: typeof fetch = async () => {
+				calls++
+				return new Response(null, { status: 302, headers: { location: "" } })
+			}
+			const response = yield* run(fakeFetch, (client) => client.post("https://api.example.com/hook"))
+			assert.strictEqual(response.status, 302)
+			assert.strictEqual(calls, 1)
+		}),
+	)
+
 	it.effect("caps redirect chains", () =>
 		Effect.gen(function* () {
 			let calls = 0
@@ -320,6 +358,25 @@ describe("guard", () => {
 			const exit = yield* Fiber.join(fiber)
 			assert.isTrue(Exit.isFailure(exit))
 			assert.isTrue(aborted)
+		}),
+	)
+})
+
+describe("describeHttpClientError", () => {
+	it.effect("redacts the request URL from a transport failure's message", () =>
+		Effect.gen(function* () {
+			const fakeFetch: typeof fetch = async (input) => {
+				throw new TypeError(`connect failed for ${urlOf(input)}`)
+			}
+			const error = yield* Effect.flip(
+				run(fakeFetch, (client) =>
+					client.get("https://hooks.example.com/api/webhooks/1/SECRET?sig=SIG"),
+				),
+			)
+			assert.strictEqual(error._tag, "HttpClientError")
+			if (error._tag !== "HttpClientError") return
+			const message = describeHttpClientError(error)
+			assert.strictEqual(message, "connect failed for https://hooks.example.com")
 		}),
 	)
 })
