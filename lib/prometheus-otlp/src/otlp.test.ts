@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs"
-import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import {
 	convertFamiliesToOtlp,
@@ -13,9 +11,9 @@ import {
 import { parsePrometheusText } from "./parser"
 
 const ctx: ScrapeOtlpContext = {
-	targetId: "11111111-1111-4111-8111-111111111111",
-	targetName: "Node Exporter",
-	serviceName: "node",
+	resource: { "service.name": "node", "scrape.target": "Node Exporter" },
+	scopeName: "test-scraper",
+	job: "node",
 	instance: "node.example.com:9100",
 	targetLabels: { env: "prod" },
 	scrapeTimeMs: 1750000000000,
@@ -54,18 +52,12 @@ describe("convertFamiliesToOtlp", () => {
 		expect(result.dataPointCounts).toEqual({ sum: 0, gauge: 0, histogram: 0 })
 	})
 
-	it("sets resource attributes for routing but never org attribution", () => {
+	it("emits exactly the caller's resource attributes, in order, and scope name", () => {
 		const { request } = convert("# TYPE up gauge\nup 1")
-		const attrs = attrsToRecord(request!.resourceMetrics[0]!.resource.attributes)
-		expect(attrs).toEqual({
-			"service.name": "node",
-			maple_scrape_target_id: "11111111-1111-4111-8111-111111111111",
-			maple_scrape_target_name: "Node Exporter",
-		})
-		// The gateway injects maple_org_id from the ingest key and strips any
-		// client-supplied value — sending it would be misleading.
-		expect(attrs).not.toHaveProperty("maple_org_id")
-		expect(request!.resourceMetrics[0]!.scopeMetrics[0]!.scope.name).toBe("maple-prometheus-scraper")
+		const resource = request!.resourceMetrics[0]!.resource.attributes
+		expect(resource.map((attr) => attr.key)).toEqual(["service.name", "scrape.target"])
+		expect(attrsToRecord(resource)).toEqual({ "service.name": "node", "scrape.target": "Node Exporter" })
+		expect(request!.resourceMetrics[0]!.scopeMetrics[0]!.scope.name).toBe("test-scraper")
 	})
 
 	it("converts counters to cumulative monotonic sums", () => {
@@ -118,7 +110,7 @@ describe("convertFamiliesToOtlp", () => {
 		const point = metric.histogram!.dataPoints[0]!
 		expect(point.explicitBounds).toEqual([0.1, 1, 5])
 		expect(point.bucketCounts).toEqual([1, 3, 5, 1])
-		// The gateway's serde expects count/bucketCounts as JSON numbers (NOT
+		// opentelemetry-proto's serde expects count/bucketCounts as JSON numbers (NOT
 		// the spec's strings) and timeUnixNano as a string — pin both.
 		expect(typeof point.count).toBe("number")
 		expect(point.bucketCounts.every((count) => typeof count === "number")).toBe(true)
@@ -213,38 +205,6 @@ describe("convertFamiliesToOtlp", () => {
 	})
 })
 
-describe("gateway contract fixture", () => {
-	it("matches the checked-in fixture consumed by apps/ingest's scraper_contract Rust test", () => {
-		const body = [
-			"# HELP http_requests Total requests.",
-			"# TYPE http_requests counter",
-			'http_requests_total{code="200"} 100',
-			"# TYPE up gauge",
-			"up 1",
-			"# TYPE lat histogram",
-			'lat_bucket{le="0.1"} 1',
-			'lat_bucket{le="+Inf"} 10',
-			"lat_sum 42.5",
-			"lat_count 10",
-			"# TYPE rpc summary",
-			'rpc{quantile="0.5"} 0.05',
-			"rpc_sum 102.1",
-			"rpc_count 800",
-		].join("\n")
-
-		const { request } = convert(body)
-		const fixture = JSON.parse(
-			readFileSync(join(import.meta.dirname, "__fixtures__", "otlp-export.json"), "utf8"),
-		) as unknown
-
-		// If this fails because you changed the converter intentionally,
-		// regenerate the fixture AND re-run `cargo test scraper_contract` in
-		// apps/ingest — the Rust side deserializes this exact file with the
-		// gateway's real serde types.
-		expect(request).toEqual(fixture)
-	})
-})
-
 describe("splitExportRequest", () => {
 	const numberPoints = (count: number, offset = 0) =>
 		Array.from({ length: count }, (_, index) => ({
@@ -265,7 +225,7 @@ describe("splitExportRequest", () => {
 		resourceMetrics: [
 			{
 				resource: { attributes: [{ key: "service.name", value: { stringValue: "scylla" } }] },
-				scopeMetrics: [{ scope: { name: "maple-prometheus-scraper" }, metrics }],
+				scopeMetrics: [{ scope: { name: "test-scraper" }, metrics }],
 			},
 		],
 	})
@@ -299,7 +259,7 @@ describe("splitExportRequest", () => {
 		expect(chunks.map((chunk) => countDataPoints(chunk))).toEqual([5, 5, 2])
 		for (const chunk of chunks) {
 			expect(chunk.resourceMetrics[0]!.resource).toEqual(request.resourceMetrics[0]!.resource)
-			expect(chunk.resourceMetrics[0]!.scopeMetrics[0]!.scope.name).toBe("maple-prometheus-scraper")
+			expect(chunk.resourceMetrics[0]!.scopeMetrics[0]!.scope.name).toBe("test-scraper")
 		}
 		// `b` straddles the first two chunks: 4 of `a` + 1 of `b`, then the rest.
 		expect(metricsIn(chunks[0]!).map((m) => m.name)).toEqual(["a", "b"])

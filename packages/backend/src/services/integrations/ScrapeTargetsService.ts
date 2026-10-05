@@ -39,6 +39,7 @@ import {
 	TokenCredentialsSchema,
 } from "@maple/backend/services/auth/scrape-auth"
 import { safeFetch, validateExternalUrl } from "@maple/safe-fetch"
+import { countSamples, parsePrometheusText } from "@maple/prometheus-otlp"
 import { DiscoveryConfigSchema } from "./planetscale/discovery-config"
 import { PlanetScaleDiscoveryService, planetScaleDiscoveryUrl } from "./PlanetScaleDiscoveryService"
 import {
@@ -1225,16 +1226,34 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 							message: cause instanceof Error ? cause.message : "Connection failed",
 						}),
 				}).pipe(
-					Effect.flatMap((response) =>
-						response.ok
-							? Effect.void
-							: Effect.fail(
-									new ScrapeTargetUpstreamError({
-										message: `HTTP ${response.status} ${response.statusText}`,
-										status: response.status,
-									}),
-								),
-					),
+					Effect.flatMap((response) => {
+						if (!response.ok) {
+							return Effect.fail(
+								new ScrapeTargetUpstreamError({
+									message: `HTTP ${response.status} ${response.statusText}`,
+									status: response.status,
+								}),
+							)
+						}
+						// A PlanetScale row's url is its discovery endpoint (JSON); anything else
+						// must parse the way the scraper will, so an HTML 200 doesn't pass.
+						if (row.targetType === "planetscale") return Effect.void
+						return Effect.tryPromise({
+							try: () => response.text(),
+							catch: () =>
+								new ScrapeTargetUpstreamError({ message: "Failed to read response body" }),
+						}).pipe(
+							Effect.flatMap((body) =>
+								countSamples(parsePrometheusText(body).families) > 0
+									? Effect.void
+									: Effect.fail(
+											new ScrapeTargetUpstreamError({
+												message: "Response contained no Prometheus metrics",
+											}),
+										),
+							),
+						)
+					}),
 					Effect.timeout(10_000),
 					Effect.catchTag("TimeoutError", () =>
 						Effect.fail(new ScrapeTargetUpstreamError({ message: "Connection failed" })),

@@ -406,6 +406,28 @@ describe("ScrapeTargetsService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
+	it.effect("manual probes fail a 200 that carries no Prometheus metrics", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const service = yield* ScrapeTargetsService
+			const orgId = asOrgId("org_1")
+			const target = yield* service.create(
+				orgId,
+				new CreateScrapeTargetRequest({
+					name: "Node Exporter",
+					url: "https://metrics.example.com/metrics",
+					scrapeIntervalSeconds: asScrapeIntervalSeconds(15),
+				}),
+			)
+
+			globalThis.fetch = (async () =>
+				new Response("<html>login</html>", { status: 200 })) as typeof fetch
+			const probed = yield* service.probe(orgId, target.id)
+			assert.isFalse(probed.success)
+			assert.strictEqual(probed.lastScrapeError, "Response contained no Prometheus metrics")
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
 	it.effect("recording results no longer prunes — retention is the cron's job", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {

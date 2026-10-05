@@ -264,6 +264,7 @@
         "@effect/platform-bun": "catalog:effect",
         "@maple-dev/effect-sdk": "workspace:*",
         "@maple/domain": "workspace:*",
+        "@maple/prometheus-otlp": "workspace:*",
         "@maple/safe-fetch": "workspace:*",
         "effect": "catalog:effect",
       },
@@ -477,6 +478,14 @@
         "react": ">=19.0.0",
       },
     },
+    "lib/prometheus-otlp": {
+      "name": "@maple/prometheus-otlp",
+      "devDependencies": {
+        "@types/node": "catalog:tooling",
+        "typescript": "catalog:tooling",
+        "vitest": "catalog:",
+      },
+    },
     "lib/safe-fetch": {
       "name": "@maple/safe-fetch",
       "dependencies": {
@@ -598,6 +607,7 @@
         "@maple/email": "workspace:*",
         "@maple/eventing-core": "workspace:*",
         "@maple/infra": "workspace:*",
+        "@maple/prometheus-otlp": "workspace:*",
         "@maple/query-engine": "workspace:*",
         "@maple/query-engine-integrations": "workspace:*",
         "@maple/query-model": "workspace:*",
@@ -1579,6 +1589,8 @@
     "@maple/local-ui": ["@maple/local-ui@workspace:apps/local-ui"],
 
     "@maple/primitives": ["@maple/primitives@workspace:packages/primitives"],
+
+    "@maple/prometheus-otlp": ["@maple/prometheus-otlp@workspace:lib/prometheus-otlp"],
 
     "@maple/query-engine": ["@maple/query-engine@workspace:packages/query-engine"],
 

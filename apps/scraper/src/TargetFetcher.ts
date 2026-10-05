@@ -1,28 +1,11 @@
-import { Context, Effect, Layer, Option, Schema } from "effect"
+import { Context, Effect, Layer, Option } from "effect"
 import { FetchHttpClient } from "effect/http"
 import type { InternalScrapeTarget } from "@maple/domain/http"
 import { safeFetch, UrlValidationError } from "@maple/safe-fetch"
+import { classifyTargetStatus } from "./policy"
+import { scrapeError, type ScrapeError } from "./ScrapeError"
 
-/**
- * Why the upstream request produced no usable response. `timeout` and
- * `transport` are the target's fault (unreachable, slow, connection reset) and
- * back off like an upstream 5xx; `invalid_url` is a configuration fault — the
- * scrape URL or one of its redirects failed SSRF validation — that no retry
- * cadence will clear.
- */
-export const TargetFetchReason = Schema.Literals(["timeout", "transport", "invalid_url"])
-export type TargetFetchReason = typeof TargetFetchReason.Type
-
-export class TargetFetchError extends Schema.TaggedError<TargetFetchError>()(
-	"@maple/scraper/TargetFetchError",
-	{
-		message: Schema.String,
-		reason: TargetFetchReason,
-	},
-) {}
-
-export interface TargetResponse {
-	/** The target's own HTTP status; a non-2xx is classified by the scheduler. */
+interface TargetResponse {
 	readonly status: number
 	readonly body: string
 	/** Upstream `Retry-After` in seconds (delta-seconds form), or `null` when absent. */
@@ -30,8 +13,11 @@ export interface TargetResponse {
 }
 
 export interface TargetFetcherApi {
-	/** GET a target's exposition text from `target.scrapeUrl` with `target.authHeaders`. */
-	readonly fetch: (target: InternalScrapeTarget) => Effect.Effect<TargetResponse, TargetFetchError>
+	/**
+	 * GET a target's exposition text from `target.scrapeUrl` with `target.authHeaders`.
+	 * Failure messages are fragments; the scraper prefixes the target's identity.
+	 */
+	readonly fetch: (target: InternalScrapeTarget) => Effect.Effect<string, ScrapeError>
 }
 
 /**
@@ -100,23 +86,22 @@ export class TargetFetcher extends Context.Service<TargetFetcher, TargetFetcherA
 							retryAfterSeconds: parseRetryAfterSeconds(response.headers.get("retry-after")),
 						} satisfies TargetResponse
 					},
-					// Messages are fragments: the scheduler prefixes the target's identity.
+					// A URL failing SSRF validation is a config fault no cadence clears; an
+					// unreachable or stalled target backs off like an upstream 5xx.
 					catch: (cause) =>
 						cause instanceof UrlValidationError
-							? new TargetFetchError({
+							? scrapeError({
 									message: `url rejected: ${cause.message}`,
-									reason: "invalid_url",
+									reason: "scrape_failed",
 								})
-							: new TargetFetchError({
+							: scrapeError({
 									message: `request failed: ${cause instanceof Error ? cause.message : String(cause)}`,
-									reason: "transport",
+									reason: "target_error",
 								}),
 				}).pipe(
 					Effect.timeout(scrapeTimeoutMs(target.scrapeIntervalSeconds)),
 					Effect.catchTag("TimeoutError", () =>
-						Effect.fail(
-							new TargetFetchError({ message: "request timed out", reason: "timeout" }),
-						),
+						Effect.fail(scrapeError({ message: "request timed out", reason: "target_error" })),
 					),
 				)
 
@@ -129,7 +114,28 @@ export class TargetFetcher extends Context.Service<TargetFetcher, TargetFetcherA
 				return result
 			})
 
-			return { fetch: fetchTarget } satisfies TargetFetcherApi
+			// Classified outside the client span: a target's 4xx/5xx answer leaves
+			// `scraper.fetch_target` Ok, the scrape span carries the failure.
+			const fetch = (target: InternalScrapeTarget) =>
+				fetchTarget(target).pipe(
+					Effect.flatMap((response) =>
+						response.status >= 200 && response.status < 300
+							? Effect.succeed(response.body)
+							: Effect.fail(
+									scrapeError({
+										message: `returned HTTP ${response.status}`,
+										reason: classifyTargetStatus(response.status),
+										statusCode: response.status,
+										retryAfterMs:
+											response.retryAfterSeconds === null
+												? null
+												: response.retryAfterSeconds * 1000,
+									}),
+								),
+					),
+				)
+
+			return { fetch } satisfies TargetFetcherApi
 		}),
 	},
 ) {
