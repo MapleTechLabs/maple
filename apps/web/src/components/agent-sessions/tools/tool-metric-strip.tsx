@@ -1,5 +1,6 @@
 import { cn } from "@maple/ui/lib/utils"
 import { formatPercent } from "@maple/ui/lib/format"
+import { Delta } from "@maple/ui/components/ui/delta"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 
 import { ToggleGroup, ToggleGroupItem } from "@maple/ui/components/ui/toggle-group"
@@ -87,7 +88,7 @@ export function ToolMetricStrip({
 						</SublineText>
 					) : delta === null ? null : (
 						<SublineText>
-							<Delta delta={delta} />
+							<ToolDeltaValue delta={delta} />
 							<span className="text-muted-foreground/60">vs prev {windowLabel}</span>
 						</SublineText>
 					)
@@ -156,7 +157,7 @@ function DurationTile({
 				subline={
 					delta === null ? null : (
 						<SublineText>
-							<Delta delta={delta} />
+							<ToolDeltaValue delta={delta} />
 							<span className="text-muted-foreground/60">vs prev {windowLabel}</span>
 						</SublineText>
 					)
@@ -192,30 +193,19 @@ function DurationTile({
 }
 
 /**
- * Change against the previous window, in the unit the metric is read in —
- * a percentage for the counts, points for a rate, a duration for a latency.
- *
- * Colour follows *improvement*, not direction — a falling error rate is green —
- * and the arrow keeps pointing the way the number actually moved, so colour is
- * never the only thing carrying the meaning. Same rule and same tokens as the
- * web analytics strip.
+ * Change against the previous window, in the unit the metric is read in: a
+ * percentage for the counts, points for a rate, a duration for a latency.
+ * `toolDelta` grades the move, so the sign and `invert` here only carry its
+ * direction and verdict into the shared Delta, and `format` prints its text.
  */
-function Delta({ delta }: { delta: ToolDelta }) {
+function ToolDeltaValue({ delta }: { delta: ToolDelta }) {
+	const sign = delta.direction === "flat" ? 0 : delta.direction === "up" ? 1 : -1
 	return (
-		<span
-			className={cn(
-				"inline-flex items-center gap-[5px]",
-				delta.direction === "flat"
-					? "text-muted-foreground/70"
-					: delta.good
-						? "text-[var(--severity-info)]"
-						: "text-[var(--severity-error)]",
-			)}
-			title={`${delta.direction === "flat" ? "Flat" : delta.direction === "up" ? "Up" : "Down"} ${delta.text} vs the previous period`}
-		>
-			<span aria-hidden>{delta.direction === "flat" ? "→" : delta.direction === "up" ? "↑" : "↓"}</span>
-			{delta.text}
-		</span>
+		<Delta
+			ratio={sign}
+			invert={delta.direction === "up" ? !delta.good : delta.good}
+			format={() => delta.text}
+		/>
 	)
 }
 

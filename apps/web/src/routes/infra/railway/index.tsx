@@ -13,10 +13,10 @@ import {
 	unsyncedEnvironments,
 } from "@/components/integrations/railway-integration-card"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
-import { PageHero } from "@/components/infra/primitives/page-hero"
-import { DataTable } from "@/components/infra/primitives/data-table"
+import { PageHero } from "@/components/common/page-hero"
+import { DataTable } from "@/components/common/data-table"
 import { FLEET_BAND_BOXED } from "@/components/infra/primitives/fleet-band"
-import { ListToolbar, countLabel } from "@/components/infra/primitives/list-toolbar"
+import { SearchToolbar, countLabel } from "@/components/common/search-toolbar"
 import {
 	RailwayServiceTable,
 	RailwayServiceTableLoading,
@@ -220,7 +220,7 @@ function RailwayServices({
 				onScopeChange={onScopeChange}
 				className={FLEET_BAND_BOXED}
 			/>
-			<ListToolbar
+			<SearchToolbar
 				value={query}
 				onChange={onQueryChange}
 				placeholder="Search services…"

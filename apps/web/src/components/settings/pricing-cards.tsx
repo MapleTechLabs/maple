@@ -28,6 +28,7 @@ import {
 } from "@maple/ui/components/ui/card"
 import { Button } from "@maple/ui/components/ui/button"
 import { Badge } from "@maple/ui/components/ui/badge"
+import { KeyValue, KeyValueList } from "@maple/ui/components/ui/key-value"
 import { Separator } from "@maple/ui/components/ui/separator"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { Spinner } from "@maple/ui/components/ui/spinner"
@@ -376,14 +377,13 @@ export function PricingCards() {
 
 					{confirmDialog && (
 						<div className="space-y-2 px-6 text-xs">
-							{confirmDialog.lines.map((line, i) => (
-								<div key={i} className="flex justify-between">
-									<span className="text-muted-foreground">{line.description}</span>
-									<span className="tabular-nums">
+							<KeyValueList className="tabular-nums">
+								{confirmDialog.lines.map((line, i) => (
+									<KeyValue key={i} label={line.description}>
 										{formatCurrency(line.amount, confirmDialog.currency)}
-									</span>
-								</div>
-							))}
+									</KeyValue>
+								))}
+							</KeyValueList>
 							<Separator />
 							<div className="flex justify-between font-medium">
 								<span>Due today</span>
@@ -410,8 +410,8 @@ export function PricingCards() {
 						>
 							Cancel
 						</Button>
-						<Button onClick={handleConfirmAttach} disabled={isAttaching}>
-							{isAttaching ? <Spinner className="size-3.5" /> : "Confirm"}
+						<Button onClick={handleConfirmAttach} loading={isAttaching} disabled={isAttaching}>
+							Confirm
 						</Button>
 					</DialogFooter>
 				</DialogContent>
@@ -470,18 +470,15 @@ export function PlanCards({
 									{plan.name}
 								</CardTitle>
 								{isActive && isTrialing && daysRemaining != null ? (
-									<Badge variant="secondary" className="text-[10px] font-medium">
+									<Badge variant="secondary" size="xs">
 										Trial · {daysRemaining}d left
 									</Badge>
 								) : isActive ? (
-									<Badge variant="secondary" className="text-[10px] font-medium">
+									<Badge variant="secondary" size="xs">
 										Current
 									</Badge>
 								) : isUpgrade ? (
-									<Badge
-										variant="secondary"
-										className="text-[10px] font-medium text-primary"
-									>
+									<Badge variant="secondary" size="xs" className="text-primary">
 										Recommended
 									</Badge>
 								) : null}

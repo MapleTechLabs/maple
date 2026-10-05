@@ -6,6 +6,7 @@ import type {
 } from "@maple/domain/http"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import type { ReactNode } from "react"
+import { Badge } from "@maple/ui/components/ui/badge"
 import { cn } from "@maple/ui/lib/utils"
 
 import { MessageResponse } from "@/components/ai-elements/message-response"
@@ -444,12 +445,15 @@ function MessageRow({
 							{identity?.name ?? "Unknown"}
 						</span>
 						{isAgent ? (
-							<span
-								className="rounded-full bg-violet-500/10 px-1.5 py-px font-mono text-[10px] text-violet-600 dark:text-violet-300"
+							<Badge
+								pill
+								size="xs"
+								mono
+								className="bg-violet-500/10 font-normal text-violet-600 dark:text-violet-300"
 								title={identity?.detail ?? undefined}
 							>
 								{identity?.detail ?? "agent"}
-							</span>
+							</Badge>
 						) : null}
 						{verb ? <span className="text-xs text-muted-foreground">{verb}</span> : null}
 					</div>

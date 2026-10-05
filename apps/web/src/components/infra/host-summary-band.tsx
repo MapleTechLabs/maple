@@ -4,6 +4,7 @@
 import { deriveHostStatus, severityLevel } from "./format"
 import type { HostRow } from "./host-table"
 import { FleetBand, FleetBandLoading } from "./primitives/fleet-band"
+import { TONE_FILL } from "@maple/ui/lib/tone"
 
 export type HostScope = "saturated" | "elevated" | "stale"
 
@@ -59,8 +60,8 @@ export function HostSummaryBand({
 			caption="share of the fleet by its busiest of CPU, memory and disk"
 			segments={[
 				{ key: "healthy", count: healthy, className: "bg-muted-foreground/35" },
-				{ key: "elevated", count: elevated, className: "bg-[var(--severity-warn)]" },
-				{ key: "saturated", count: saturated, className: "bg-[var(--severity-error)]" },
+				{ key: "elevated", count: elevated, className: TONE_FILL.warn },
+				{ key: "saturated", count: saturated, className: TONE_FILL.crit },
 			]}
 			cells={[
 				{ scope: "saturated", label: "Saturated", hint: "≥90%", value: saturated, tone: "crit" },

@@ -1,7 +1,8 @@
 import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import type { PlanetScaleEventEntry } from "@/api/warehouse/planetscale-infra"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
+import { TONE_FILL } from "@maple/ui/lib/tone"
+import { RelativeTime } from "@/components/common/relative-time"
 import { cn } from "@maple/ui/lib/utils"
 
 import { ExternalLinkIcon } from "@/components/icons"
@@ -76,14 +77,7 @@ export function PlanetScaleActivityRow({
 			    which is a different vocabulary from event severity. */}
 			<StatusDot
 				tone="custom"
-				className={cn(
-					"mt-1",
-					presentation.tone === "crit"
-						? "bg-severity-error"
-						: presentation.tone === "warn"
-							? "bg-severity-warn"
-							: "bg-muted-foreground/50",
-				)}
+				className={cn("mt-1", TONE_FILL[presentation.tone])}
 			/>
 			<span className="min-w-0 flex-1 truncate text-foreground/90">{title}</span>
 			{branchName !== "" ? (
@@ -115,9 +109,10 @@ export function PlanetScaleActivityRow({
 					<ExternalLinkIcon size={12} />
 				</a>
 			) : null}
-			<span className="shrink-0 tabular-nums text-muted-foreground">
-				{formatRelativeTime(new Date(occurredAt).toISOString())}
-			</span>
+			<RelativeTime
+				value={new Date(occurredAt)}
+				className="shrink-0 tabular-nums text-muted-foreground"
+			/>
 		</li>
 	)
 }

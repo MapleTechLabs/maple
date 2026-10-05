@@ -1,4 +1,5 @@
 import { Spinner } from "@maple/ui/components/ui/spinner"
+import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import { useState } from "react"
 import { Exit } from "effect"
 
@@ -114,7 +115,7 @@ export function PlanetScaleMetricsTokenForm({
 		<div className="flex flex-col gap-3">
 			<p className="text-xs text-muted-foreground">
 				Create a service token with the single{" "}
-				<code className="font-mono text-[11px]">read_metrics_endpoints</code> permission — no other
+				<InlineCode>read_metrics_endpoints</InlineCode> permission — no other
 				permission is needed, and Maple never uses it for anything else.
 			</p>
 
@@ -185,7 +186,7 @@ export function PlanetScaleMetricsTokenForm({
 			{secretLooksWrong && error === null ? (
 				<p className="text-xs text-muted-foreground">
 					That doesn&apos;t look like a service token secret — it usually starts with{" "}
-					<code className="font-mono text-[11px]">{SECRET_PREFIX}</code>.
+					<InlineCode>{SECRET_PREFIX}</InlineCode>.
 				</p>
 			) : null}
 

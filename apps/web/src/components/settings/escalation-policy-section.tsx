@@ -22,6 +22,7 @@ import { Button } from "@maple/ui/components/ui/button"
 import { Card } from "@maple/ui/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { SettingRow } from "@maple/ui/components/ui/setting-row"
 import { Switch } from "@maple/ui/components/ui/switch"
 
 import {
@@ -140,16 +141,11 @@ export function EscalationPolicySection({ isAdmin }: { isAdmin: boolean }) {
 	return (
 		<div className="max-w-2xl space-y-4">
 			<Card className="space-y-4 p-4">
-				<div className="flex items-center justify-between gap-4">
-					<div>
-						<p className="text-sm font-medium">Severity escalation</p>
-						<p className="text-muted-foreground text-xs">
-							Route issues to destinations when AI triage or a teammate sets their severity.
-							Fires once per issue and severity level, upward only.
-						</p>
-					</div>
-					<Switch checked={enabled} onCheckedChange={setEnabled} disabled={!isAdmin} />
-				</div>
+				<SettingRow
+					label="Severity escalation"
+					description="Route issues to destinations when AI triage or a teammate sets their severity. Fires once per issue and severity level, upward only."
+					control={<Switch checked={enabled} onCheckedChange={setEnabled} disabled={!isAdmin} />}
+				/>
 
 				{Result.builder(destinationsResult)
 					// Destinations come from the live-synced collection, which only

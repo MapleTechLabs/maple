@@ -1,4 +1,6 @@
-import { formatLatency, formatPercent } from "@maple/ui/lib/format"
+import { formatErrorRate, formatLatency, formatPercent } from "@maple/ui/lib/format"
+import { errorRateClass, errorRateLevel } from "@maple/ui/lib/error-rate"
+import { ErrorRateValue } from "@maple/ui/components/error-rate-value"
 import { LatencyLineChart, QueryBuilderBarChart } from "@maple/ui/components/charts"
 import { ChartTooltipSuppressionProvider } from "@maple/ui/components/plot"
 import { LinkedCursorOverlay, linkedCursorChartProps, useLinkedCursor } from "@/hooks/use-linked-cursor"
@@ -27,7 +29,10 @@ import {
 	EmptyTitle,
 	EmptyMessage,
 } from "@maple/ui/components/ui/empty"
+import { Alert, AlertDescription, AlertTitle } from "@maple/ui/components/ui/alert"
+import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
+import { TruncatedId } from "@maple/ui/components/ui/truncated-id"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import { StatusDot } from "@maple/ui/components/ui/status-dot"
@@ -239,15 +244,9 @@ function ServiceDetailPanel({
 									<div className="space-y-0.5">
 										<span className="text-[10px] text-muted-foreground">Error Rate</span>
 										<MetricValue
-											className={cn(
-												errorRate > 0.05
-													? "text-severity-error"
-													: errorRate > 0.01
-														? "text-severity-warn"
-														: "text-foreground",
-											)}
+											className={errorRateClass(errorRate)}
 										>
-											{(errorRate * 100).toFixed(1)}%
+											{formatErrorRate(errorRate)}
 										</MetricValue>
 									</div>
 									<div className="space-y-0.5">
@@ -299,15 +298,9 @@ function ServiceDetailPanel({
 												Error Rate
 											</span>
 											<MetricValue
-												className={cn(
-													cloudflare.errorRate > 0.05
-														? "text-severity-error"
-														: cloudflare.errorRate > 0.01
-															? "text-severity-warn"
-															: "text-foreground",
-												)}
+												className={errorRateClass(cloudflare.errorRate)}
 											>
-												{(cloudflare.errorRate * 100).toFixed(1)}%
+												{formatErrorRate(cloudflare.errorRate)}
 											</MetricValue>
 										</div>
 										<div className="space-y-0.5">
@@ -345,7 +338,7 @@ function ServiceDetailPanel({
 										{dependencies.map((dep) => {
 											const depColor = getServiceColor(dep.targetService)
 											const depErrorRate = dep.errorRate
-											const isError = depErrorRate > 0.05
+											const isError = errorRateLevel(depErrorRate) === "crit"
 											const safeDuration = Math.max(durationSeconds, 1)
 											const depReqPerSec = dep.hasSampling
 												? dep.estimatedCallCount / safeDuration
@@ -381,16 +374,9 @@ function ServiceDetailPanel({
 															{formatRate(depReqPerSec)} req/s
 														</span>
 														<span
-															className={cn(
-																"tabular-nums font-mono",
-																depErrorRate > 0.05
-																	? "text-severity-error"
-																	: depErrorRate > 0.01
-																		? "text-severity-warn"
-																		: "text-severity-info",
-															)}
+															className={cn("tabular-nums font-mono", errorRateClass(depErrorRate))}
 														>
-															{(depErrorRate * 100).toFixed(1)}%
+															{formatErrorRate(depErrorRate)}
 														</span>
 													</div>
 												</div>
@@ -439,16 +425,9 @@ function ServiceDetailPanel({
 															{formatRate(callerReqPerSec)} req/s
 														</span>
 														<span
-															className={cn(
-																"tabular-nums font-mono",
-																callerErrorRate > 0.05
-																	? "text-severity-error"
-																	: callerErrorRate > 0.01
-																		? "text-severity-warn"
-																		: "text-severity-info",
-															)}
+															className={cn("tabular-nums font-mono", errorRateClass(callerErrorRate))}
 														>
-															{(callerErrorRate * 100).toFixed(1)}%
+															{formatErrorRate(callerErrorRate)}
 														</span>
 													</div>
 												</div>
@@ -919,10 +898,10 @@ function PlanetScaleSection({
 				.onError((error) => {
 					const formatted = displayError(error)
 					return (
-						<div className="rounded-md border border-destructive/20 bg-destructive/5 px-3 py-2 text-xs">
-							<p className="font-medium text-destructive">{formatted.title}</p>
-							<p className="mt-1 text-muted-foreground">{formatted.message}</p>
-						</div>
+						<Alert variant="error" size="sm">
+							<AlertTitle className="text-destructive">{formatted.title}</AlertTitle>
+							<AlertDescription>{formatted.message}</AlertDescription>
+						</Alert>
 					)
 				})
 				.orElse(() => null)}
@@ -941,9 +920,9 @@ function PlanetScaleSection({
 										{row.branch}
 									</span>
 									{info?.production ? (
-										<span className="shrink-0 rounded-sm bg-muted px-1 py-px text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">
+										<Badge variant="muted" size="xs" className="shrink-0 font-semibold uppercase tracking-wide">
 											prod
-										</span>
+										</Badge>
 									) : null}
 								</div>
 								<div className="flex shrink-0 items-center gap-3 font-mono text-[10px] tabular-nums text-muted-foreground">
@@ -984,9 +963,9 @@ function PlanetScaleSection({
 									{branch.name}
 								</span>
 								{branch.production ? (
-									<span className="shrink-0 rounded-sm bg-muted px-1 py-px text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">
+									<Badge variant="muted" size="xs" className="shrink-0 font-semibold uppercase tracking-wide">
 										prod
-									</span>
+									</Badge>
 								) : null}
 							</div>
 							<span className="shrink-0 text-[10px] text-muted-foreground">
@@ -1034,16 +1013,15 @@ function HyperdriveSection({ configs }: { configs: ReadonlyArray<HyperdriveNodeI
 						<div className="flex items-center justify-between gap-2">
 							<div className="flex min-w-0 items-center gap-1.5">
 								<span className="truncate font-medium text-foreground">{config.name}</span>
-								<span className="shrink-0 rounded-sm bg-muted px-1 py-px text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">
+								<Badge variant="muted" size="xs" className="shrink-0 font-semibold uppercase tracking-wide">
 									{config.originScheme}
-								</span>
+								</Badge>
 							</div>
-							<span
-								className="shrink-0 font-mono text-[10px] text-muted-foreground/60"
-								title={config.id}
-							>
-								{config.id.slice(0, 8)}
-							</span>
+							<TruncatedId
+								value={config.id}
+								length={8}
+								className="shrink-0 text-[10px] text-muted-foreground/60"
+							/>
 						</div>
 						<div className="mt-1.5 flex items-center gap-1.5 text-[11px]">
 							<ArrowRightIcon size={10} className="shrink-0 text-muted-foreground/60" />
@@ -1198,15 +1176,9 @@ function DatabaseDetailPanel({
 							<div className="space-y-0.5">
 								<span className="text-[10px] text-muted-foreground">Error Rate</span>
 								<MetricValue
-									className={cn(
-										metricErrorRate > 0.05
-											? "text-severity-error"
-											: metricErrorRate > 0.01
-												? "text-severity-warn"
-												: "text-foreground",
-									)}
+									className={errorRateClass(metricErrorRate)}
 								>
-									{(metricErrorRate * 100).toFixed(1)}%
+									{formatErrorRate(metricErrorRate)}
 								</MetricValue>
 							</div>
 							<div className="space-y-0.5">
@@ -1269,10 +1241,10 @@ function DatabaseDetailPanel({
 							.onError((error) => {
 								const formatted = displayError(error)
 								return (
-									<div className="rounded-md border border-destructive/20 bg-destructive/5 px-3 py-2 text-xs">
-										<p className="font-medium text-destructive">{formatted.title}</p>
-										<p className="mt-1 text-muted-foreground">{formatted.message}</p>
-									</div>
+									<Alert variant="error" size="sm">
+										<AlertTitle className="text-destructive">{formatted.title}</AlertTitle>
+										<AlertDescription>{formatted.message}</AlertDescription>
+									</Alert>
 								)
 							})
 							.orElse(() => null)}
@@ -1293,18 +1265,7 @@ function DatabaseDetailPanel({
 											<p className="min-w-0 flex-1 truncate font-mono text-[11px] font-medium text-foreground">
 												{formatQueryLabel(query.queryLabel)}
 											</p>
-											<span
-												className={cn(
-													"shrink-0 font-mono text-[10px] tabular-nums",
-													query.errorRate > 0.05
-														? "text-severity-error"
-														: query.errorRate > 0.01
-															? "text-severity-warn"
-															: "text-muted-foreground",
-												)}
-											>
-												{(query.errorRate * 100).toFixed(1)}%
-											</span>
+											<ErrorRateValue rate={query.errorRate} className="shrink-0 text-[10px]" />
 										</div>
 										<div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-muted-foreground">
 											<span className="font-mono tabular-nums">
@@ -1370,16 +1331,9 @@ function DatabaseDetailPanel({
 													{formatRate(reqPerSec)} calls/s
 												</span>
 												<span
-													className={cn(
-														"tabular-nums font-mono",
-														caller.errorRate > 0.05
-															? "text-severity-error"
-															: caller.errorRate > 0.01
-																? "text-severity-warn"
-																: "text-severity-info",
-													)}
+													className={cn("tabular-nums font-mono", errorRateClass(caller.errorRate))}
 												>
-													{(caller.errorRate * 100).toFixed(1)}%
+													{formatErrorRate(caller.errorRate)}
 												</span>
 											</div>
 										</div>

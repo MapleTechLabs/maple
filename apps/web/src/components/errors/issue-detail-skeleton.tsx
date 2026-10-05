@@ -3,7 +3,7 @@ import { IssueField } from "./issue-field"
 import type { ErrorIssueId } from "@maple/domain/http"
 import { Button } from "@maple/ui/components/ui/button"
 import { DetailRail } from "@maple/ui/components/detail-rail"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { Skeleton, SkeletonList } from "@maple/ui/components/ui/skeleton"
 
 import { PulseIcon } from "@/components/icons"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
@@ -147,11 +147,7 @@ function ListSkeleton() {
 	return (
 		<section className="flex shrink-0 flex-col gap-3.5">
 			<Skeleton className="h-5 w-40" />
-			<div className="flex flex-col gap-2.5">
-				{Array.from({ length: 6 }, (_, index) => (
-					<Skeleton key={index} className="h-11 w-full rounded-lg" />
-				))}
-			</div>
+			<SkeletonList rows={6} rowClassName="h-11 rounded-lg" className="gap-2.5" />
 		</section>
 	)
 }

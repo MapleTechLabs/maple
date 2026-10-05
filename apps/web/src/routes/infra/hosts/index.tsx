@@ -21,8 +21,8 @@ import { HostsViewTabs } from "@/components/infra/hosts-view-tabs"
 import { InfraSetupEmpty } from "@/components/infra/infra-empty-state"
 import { InstallHostModal } from "@/components/infra/install-modal"
 import { FLEET_BAND_BOXED } from "@/components/infra/primitives/fleet-band"
-import { ListToolbar, countLabel } from "@/components/infra/primitives/list-toolbar"
-import { PageHero } from "@/components/infra/primitives/page-hero"
+import { SearchToolbar, countLabel } from "@/components/common/search-toolbar"
+import { PageHero } from "@/components/common/page-hero"
 import { listHostsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
@@ -206,7 +206,7 @@ function HostList({
 				onScopeChange={onScopeChange}
 				className={FLEET_BAND_BOXED}
 			/>
-			<ListToolbar
+			<SearchToolbar
 				value={query}
 				onChange={onQueryChange}
 				placeholder="Search hosts…"

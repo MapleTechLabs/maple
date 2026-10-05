@@ -3,7 +3,7 @@ import type { V2DashboardTemplate } from "@maple/domain/http/v2"
 import { Button } from "@maple/ui/components/ui/button"
 import { ToolbarSearch } from "@maple/ui/components/toolbar"
 import { ToggleGroup, ToggleGroupItem } from "@maple/ui/components/ui/toggle-group"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { SkeletonList } from "@maple/ui/components/ui/skeleton"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { cn } from "@maple/ui/lib/utils"
 import {
@@ -188,11 +188,7 @@ export function TemplateList({
 
 			<div className="min-h-0 grow overflow-y-auto">
 				{loading ? (
-					<div className="flex flex-col gap-2 p-5">
-						{Array.from({ length: 8 }, (_, index) => (
-							<Skeleton key={index} className="h-7 w-full rounded-sm" />
-						))}
-					</div>
+					<SkeletonList rows={8} rowClassName="h-7 rounded-sm" gap="2" className="p-5" />
 				) : nothingMatched && !searching ? (
 					<Empty className="py-14">
 						<EmptyHeader>

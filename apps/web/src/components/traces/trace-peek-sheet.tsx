@@ -15,15 +15,17 @@ import {
 	SheetHeader,
 	SheetTitle,
 } from "@maple/ui/components/ui/sheet"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { Skeleton, SkeletonList } from "@maple/ui/components/ui/skeleton"
 import { HttpSpanLabel } from "@maple/ui/components/traces/http-span-label"
 import { TraceViewTabs } from "@maple/ui/components/traces/trace-view-tabs"
 import { findSpanById } from "@maple/ui/components/traces/flow-utils"
-import { getHttpInfo } from "@maple/ui/lib/http"
+import { getHttpInfo, httpStatusTone } from "@maple/ui/lib/http"
+import { shortId } from "@maple/ui/lib/ids"
 
 import type { Span, SpanHierarchyResponse, SpanNode } from "@/api/warehouse/traces"
 import { ArrowDownIcon, ArrowUpIcon } from "@/components/icons"
 import { ErrorState } from "@/components/common/error-state"
+import { SheetDetailHeader } from "@/components/common/sheet-detail-header"
 import { TraceReplayLink } from "@/components/replays/trace-replay-link"
 import { SpanDetailPanel } from "@/components/traces/span-detail-panel"
 import { TraceAnatomyStrip } from "@/components/traces/trace-anatomy-strip"
@@ -32,7 +34,6 @@ import { TraceLogsLink } from "@/components/traces/trace-logs-link"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { getSpanHierarchyResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import type { PeekTarget } from "@/lib/traces/peek"
-import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 
 /**
  * The peek: a trace's page, in a sheet, without leaving the list.
@@ -254,32 +255,34 @@ function TracePeekBody({
 	return Result.builder(result)
 		.onInitial(() => (
 			<>
-				<SheetHeader className="gap-1.5 pr-14">
-					<Eyebrow>Trace</Eyebrow>
-					<SheetTitle className="font-mono text-[15px]">{target.traceId.slice(0, 8)}</SheetTitle>
-					<SheetDescription className="sr-only">Loading trace details</SheetDescription>
-				</SheetHeader>
+				<SheetDetailHeader
+					kind="Trace"
+					title={shortId(target.traceId, "trace")}
+					description="Loading trace details"
+				/>
 				<div className="flex-1 space-y-3 overflow-hidden p-4">
 					<Skeleton className="h-1.5 w-full rounded-full" />
-					<div className="rounded-md border">
-						{Array.from({ length: 6 }).map((_, i) => (
-							<div key={i} className="flex items-center gap-2 border-b p-3 last:border-0">
+					<SkeletonList
+						rows={6}
+						className="gap-0 rounded-md border"
+						renderRow={() => (
+							<div className="flex items-center gap-2 border-b p-3 last:border-0">
 								<Skeleton className="size-4" />
 								<Skeleton className="h-4 w-20" />
 								<Skeleton className="h-4 flex-1" />
 								<Skeleton className="h-2 w-32" />
 							</div>
-						))}
-					</div>
+						)}
+					/>
 				</div>
 			</>
 		))
 		.onError((error) => (
 			<>
-				<SheetHeader className="pr-14">
-					<SheetTitle className="font-mono text-[15px]">{target.traceId.slice(0, 8)}</SheetTitle>
-					<SheetDescription className="sr-only">Failed to load trace</SheetDescription>
-				</SheetHeader>
+				<SheetDetailHeader
+					title={shortId(target.traceId, "trace")}
+					description="Failed to load trace"
+				/>
 				<div className="flex-1 overflow-auto p-4">
 					<ErrorState error={error} title="Failed to load trace details" />
 				</div>
@@ -332,7 +335,7 @@ function TracePeekLoaded({
 		return (
 			<>
 				<SheetHeader className="pr-14">
-					<SheetTitle className="font-mono text-[15px]">{traceId.slice(0, 8)}</SheetTitle>
+					<SheetTitle className="font-mono text-[15px]">{shortId(traceId, "trace")}</SheetTitle>
 					<SheetDescription>
 						{data.spans.length === 0
 							? "This trace could not be found. It may have expired or not been ingested yet."
@@ -352,32 +355,35 @@ function TracePeekLoaded({
 		const httpStatus =
 			s.spanAttributes?.["http.response.status_code"] || s.spanAttributes?.["http.status_code"]
 		const code = typeof httpStatus === "string" ? parseInt(httpStatus) : httpStatus
-		return typeof code === "number" && code >= 500
+		return typeof code === "number" && httpStatusTone(code) === "crit"
 	})
 
 	return (
 		<div className={`flex min-h-0 flex-1 flex-col transition-opacity ${waiting ? "opacity-50" : ""}`}>
-			<SheetHeader className="gap-1.5 pr-14">
-				<Eyebrow>Trace</Eyebrow>
-				<SheetTitle className="min-w-0 text-[15px] leading-tight">
+			<SheetDetailHeader
+				kind="Trace"
+				mono={false}
+				title={
 					<HttpSpanLabel
 						spanName={rootSpan.spanName}
 						spanAttributes={rootSpan.spanAttributes}
 						spanKind={rootSpan.spanKind}
 						className="gap-3"
 					/>
-				</SheetTitle>
-				<SheetDescription className="sr-only">Spans and timing for trace {traceId}</SheetDescription>
-				<div className="flex flex-wrap items-center gap-2">
-					<TraceIdBadge traceId={traceId} size="sm" className="max-w-[260px]" />
-					<TraceLogsLink
-						traceId={traceId}
-						traceStartTime={traceStartTime}
-						totalDurationMs={data.totalDurationMs}
-					/>
-					<TraceReplayLink traceId={traceId} />
-				</div>
-			</SheetHeader>
+				}
+				description={`Spans and timing for trace ${traceId}`}
+				meta={
+					<>
+						<TraceIdBadge traceId={traceId} size="sm" className="max-w-[260px]" />
+						<TraceLogsLink
+							traceId={traceId}
+							traceStartTime={traceStartTime}
+							totalDurationMs={data.totalDurationMs}
+						/>
+						<TraceReplayLink traceId={traceId} />
+					</>
+				}
+			/>
 
 			<div className="flex min-h-0 flex-1 flex-col gap-3 px-4 pb-4">
 				<TraceAnatomyStrip

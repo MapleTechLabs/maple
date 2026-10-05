@@ -17,16 +17,11 @@ import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Link } from "@tanstack/react-router"
 import { Button } from "@maple/ui/components/ui/button"
-import {
-	Sheet,
-	SheetContent,
-	SheetDescription,
-	SheetHeader,
-	SheetPanel,
-	SheetTitle,
-} from "@maple/ui/components/ui/sheet"
+import { Sheet, SheetContent, SheetHeader, SheetPanel, SheetTitle } from "@maple/ui/components/ui/sheet"
+import { shortId } from "@maple/ui/lib/ids"
 import { cn } from "@maple/ui/lib/utils"
 
+import { SheetDetailHeader } from "@/components/common/sheet-detail-header"
 import { ArrowRightIcon } from "@/components/icons"
 import { CONFIDENCE_TONE } from "./confidence-meter"
 import { ACTION_GLYPH } from "./flow/flow-nodes"
@@ -77,8 +72,7 @@ export function EvidenceChips({ item }: { item: ActionEvidenceItem }) {
 					className="rounded"
 				>
 					<InlineCode className="px-1.5 py-0.5 text-[11px] text-primary transition-colors hover:bg-muted/70">
-						{traceId.slice(0, 12)}
-						{traceId.length > 12 ? "…" : ""}
+						{shortId(traceId, "generic", { ellipsis: true })}
 					</InlineCode>
 				</Link>
 			))}
@@ -117,22 +111,20 @@ export function ActionDetailSheet({
 			<SheetContent className="sm:max-w-lg">
 				{action && glyph ? (
 					<>
-						<SheetHeader>
-							<div className="flex items-center gap-2">
-								<glyph.Icon size={12} className="shrink-0 text-muted-foreground" />
-								<Eyebrow>Proposed action {String(action.index + 1).padStart(2, "0")}</Eyebrow>
-								<span className="text-muted-foreground/40">·</span>
-								<Eyebrow>{glyph.label}</Eyebrow>
-							</div>
-							{/*
-							 * The whole sentence, unclamped — this is the thing the canvas
-							 * node cannot show and the reason this panel exists.
-							 */}
-							<SheetTitle className="text-base leading-snug">{action.text}</SheetTitle>
-							<SheetDescription className="sr-only">
-								What this proposed action asks for, and the diagnosis behind it.
-							</SheetDescription>
-						</SheetHeader>
+						{/* The whole sentence, unclamped: the thing the canvas node cannot show. */}
+						<SheetDetailHeader
+							mono={false}
+							kind={
+								<span className="flex items-center gap-2">
+									<glyph.Icon size={12} className="shrink-0" />
+									Proposed action {String(action.index + 1).padStart(2, "0")}
+									<span className="text-muted-foreground/40">·</span>
+									{glyph.label}
+								</span>
+							}
+							title={action.text}
+							description="What this proposed action asks for, and the diagnosis behind it."
+						/>
 						<SheetPanel className="flex flex-col gap-6">
 							<div className="flex flex-wrap items-center gap-2">
 								{action.target ? (

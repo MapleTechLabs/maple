@@ -2,6 +2,7 @@ import * as React from "react"
 import { Link } from "@tanstack/react-router"
 import { Schema } from "effect"
 import { TraceId } from "@maple/domain/http"
+import { Badge } from "@maple/ui/components/ui/badge"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { cn } from "@maple/ui/lib/utils"
@@ -287,9 +288,9 @@ const TracesTrack = React.memo(function TracesTrack({
 			<PulseIcon className="size-3.5" />
 			Traces
 			{count != null && count > 0 && (
-				<span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] tabular-nums text-primary">
+				<Badge variant="muted" pill size="xs" className="bg-primary/10 text-primary tabular-nums">
 					{count}
-				</span>
+				</Badge>
 			)}
 		</div>
 	)

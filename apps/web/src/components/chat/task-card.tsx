@@ -1,5 +1,6 @@
 import { useState } from "react"
 import { cn } from "@maple/ui/lib/utils"
+import { Alert, AlertDescription } from "@maple/ui/components/ui/alert"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import {
 	Sheet,
@@ -128,10 +129,13 @@ export function TaskCard({
 					</SheetHeader>
 					<SheetPanel className="flex flex-col gap-6">
 						{budgetExhausted === true ? (
-							<p className="rounded-md border border-warning/30 bg-warning/5 px-3 py-2 text-xs text-muted-foreground">
-								Answered from what it had: the run spent its budget before it finished
-								searching.
-							</p>
+							<Alert variant="warning" size="sm">
+								<AlertDescription>
+									Answered from what it had: the run spent its budget before it finished
+									searching.
+								</AlertDescription>
+							</Alert>
+
 						) : null}
 
 						<section className="flex flex-col gap-2">

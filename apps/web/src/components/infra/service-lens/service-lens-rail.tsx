@@ -1,7 +1,7 @@
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Link } from "@tanstack/react-router"
 
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { SkeletonList } from "@maple/ui/components/ui/skeleton"
 import { cn } from "@maple/ui/lib/utils"
 import { formatPercent } from "@maple/ui/lib/format"
 import { ServiceDot } from "@maple/ui/components/service-dot"
@@ -139,10 +139,6 @@ function RailRow({
 
 function RailLoading() {
 	return (
-		<div className="space-y-1.5 px-2 pt-1">
-			{Array.from({ length: 6 }, (_, i) => (
-				<Skeleton key={i} className="h-[22px] w-full" />
-			))}
-		</div>
+		<SkeletonList rows={6} rowClassName="h-[22px]" className="gap-1.5 px-2 pt-1" />
 	)
 }

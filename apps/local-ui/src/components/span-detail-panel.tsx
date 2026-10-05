@@ -8,7 +8,8 @@ import { HttpSpanLabel } from "@maple/ui/components/traces/http-span-label"
 import { SeverityBadge } from "@maple/ui/components/logs/severity-badge"
 import { Button } from "@maple/ui/components/ui/button"
 import { Badge } from "@maple/ui/components/ui/badge"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { KeyValue, KeyValueList } from "@maple/ui/components/ui/key-value"
+import { Skeleton, SkeletonList } from "@maple/ui/components/ui/skeleton"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@maple/ui/components/ui/tabs"
 import { ScrollArea } from "@maple/ui/components/ui/scroll-area"
 import { XmarkIcon, ClockIcon, CircleInfoIcon, CodeIcon } from "@maple/ui/components/icons"
@@ -16,7 +17,6 @@ import { CopyableValue, AttributesSection, ResourceAttributesSection } from "@ma
 import { getCacheInfo, cacheResultStyles } from "@maple/ui/lib/cache"
 import { getServiceColor } from "@maple/ui/lib/colors"
 import { formatDuration } from "@maple/ui/lib/format"
-import { cn } from "@maple/ui/lib/utils"
 import { getSpanKindLabel, getSpanStatusBadgeClass } from "@maple/ui/lib/span-kind"
 import type { SpanNode } from "@maple/ui/lib/types"
 import { useLocalSpanDetail } from "../hooks/use-local-span-detail"
@@ -68,7 +68,8 @@ export function SpanDetailPanel({ span, onClose }: SpanDetailPanelProps) {
 					<div className="mt-0.5 flex items-center gap-2">
 						<Badge
 							variant="outline"
-							className="font-mono text-[10px]"
+							size="xs"
+							mono
 							style={{ color: getServiceColor(span.serviceName) }}
 						>
 							<CopyableValue value={span.serviceName}>{span.serviceName}</CopyableValue>
@@ -100,14 +101,11 @@ export function SpanDetailPanel({ span, onClose }: SpanDetailPanelProps) {
 							</CopyableValue>
 						</span>
 					</div>
-					<Badge variant="outline" className={cn("text-[10px] font-medium", statusStyle)}>
+					<Badge variant="outline" size="xs" className={statusStyle}>
 						{span.statusCode || "Unset"}
 					</Badge>
 					{cacheInfo?.result && (
-						<Badge
-							variant="outline"
-							className={cn("text-[10px] font-medium", cacheResultStyles[cacheInfo.result])}
-						>
+						<Badge variant="outline" size="xs" className={cacheResultStyles[cacheInfo.result]}>
 							{cacheInfo.result === "hit" ? "HIT" : "MISS"}
 						</Badge>
 					)}
@@ -137,7 +135,7 @@ export function SpanDetailPanel({ span, onClose }: SpanDetailPanelProps) {
 						<TabsTrigger value="logs">
 							<CodeIcon size={14} /> Logs
 							{logCount !== null && logCount > 0 && (
-								<Badge variant="secondary" className="ml-1 px-1.5 py-0 text-[10px]">
+								<Badge variant="secondary" size="xs" className="ml-1">
 									{logCount >= LOG_LIMIT ? `${LOG_LIMIT}+` : logCount}
 								</Badge>
 							)}
@@ -148,44 +146,32 @@ export function SpanDetailPanel({ span, onClose }: SpanDetailPanelProps) {
 						<div className="space-y-3 p-3">
 							<div className="space-y-1">
 								<h4 className="text-xs font-medium text-muted-foreground">Timing</h4>
-								<div className="space-y-1 rounded-md border p-2 text-xs">
-									<div className="flex justify-between">
-										<span className="text-muted-foreground">Start Time</span>
-										<span className="font-mono" title={formatUtcTitle(span.startTime)}>
+								<KeyValueList className="gap-1 rounded-md border p-2">
+									<KeyValue label="Start Time" mono>
+										<span title={formatUtcTitle(span.startTime)}>
 											<CopyableValue value={span.startTime}>
 												{formatLocalDateTime(span.startTime)}
 											</CopyableValue>
 										</span>
-									</div>
-								</div>
+									</KeyValue>
+								</KeyValueList>
 							</div>
 
 							<div className="space-y-1">
 								<h4 className="text-xs font-medium text-muted-foreground">Identifiers</h4>
-								<div className="space-y-1 rounded-md border p-2 text-xs">
-									<div className="flex justify-between gap-3">
-										<span className="text-muted-foreground">Span ID</span>
-										<span className="truncate font-mono">
-											<CopyableValue value={span.spanId}>{span.spanId}</CopyableValue>
-										</span>
-									</div>
-									<div className="flex justify-between gap-3">
-										<span className="text-muted-foreground">Trace ID</span>
-										<span className="truncate font-mono">
-											<CopyableValue value={span.traceId}>{span.traceId}</CopyableValue>
-										</span>
-									</div>
+								<KeyValueList className="gap-1 rounded-md border p-2">
+									<KeyValue label="Span ID" mono>
+										<CopyableValue value={span.spanId}>{span.spanId}</CopyableValue>
+									</KeyValue>
+									<KeyValue label="Trace ID" mono>
+										<CopyableValue value={span.traceId}>{span.traceId}</CopyableValue>
+									</KeyValue>
 									{span.parentSpanId && (
-										<div className="flex justify-between gap-3">
-											<span className="text-muted-foreground">Parent Span ID</span>
-											<span className="truncate font-mono">
-												<CopyableValue value={span.parentSpanId}>
-													{span.parentSpanId}
-												</CopyableValue>
-											</span>
-										</div>
+										<KeyValue label="Parent Span ID" mono>
+											<CopyableValue value={span.parentSpanId}>{span.parentSpanId}</CopyableValue>
+										</KeyValue>
 									)}
-								</div>
+								</KeyValueList>
 							</div>
 
 							{span.isMissing ? (
@@ -195,12 +181,11 @@ export function SpanDetailPanel({ span, onClose }: SpanDetailPanelProps) {
 									groupByNamespace
 								/>
 							) : detail.isPending ? (
-								<div className="space-y-2">
-									<Skeleton className="h-4 w-32" />
-									<Skeleton className="h-24 w-full" />
-									<Skeleton className="h-4 w-32" />
-									<Skeleton className="h-24 w-full" />
-								</div>
+								<SkeletonList
+									rows={4}
+									gap="2"
+									renderRow={(i) => <Skeleton className={i % 2 === 0 ? "h-4 w-32" : "h-24 w-full"} />}
+								/>
 							) : (
 								<>
 									{detail.isError && (
@@ -248,14 +233,17 @@ function SpanLogs({
 
 	if (isPending) {
 		return (
-			<div className="space-y-2 p-2">
-				{Array.from({ length: 3 }).map((_, i) => (
-					<div key={i} className="space-y-1">
+			<SkeletonList
+				rows={3}
+				gap="2"
+				className="p-2"
+				renderRow={() => (
+					<div className="space-y-1">
 						<Skeleton className="h-3 w-24" />
 						<Skeleton className="h-4 w-full" />
 					</div>
-				))}
-			</div>
+				)}
+			/>
 		)
 	}
 

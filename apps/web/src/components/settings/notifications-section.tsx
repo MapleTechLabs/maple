@@ -9,11 +9,11 @@ import { formatWarehouseDateTime } from "@maple/query-engine"
 
 import { Button } from "@maple/ui/components/ui/button"
 import { Label } from "@maple/ui/components/ui/label"
+import { SettingRow } from "@maple/ui/components/ui/setting-row"
 import { Switch } from "@maple/ui/components/ui/switch"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { MultiSelectCombobox } from "@maple/ui/components/multi-select-combobox"
 import { ChartBarTrendUpIcon, EnvelopeIcon } from "@/components/icons"
-import { cn } from "@maple/ui/lib/utils"
 import { getServicesFacetsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { snapRangeForCache } from "@/lib/time-utils"
 
@@ -208,23 +208,16 @@ export function NotificationsSection() {
 
 	return (
 		<div className="max-w-xl space-y-1">
-			<div
-				className={cn(
-					"flex items-center justify-between gap-4 rounded-lg border p-4 transition-colors",
-					enabled ? "border-primary/20 bg-primary/[0.02]" : "border-border",
-				)}
-			>
-				<div className="flex items-center gap-3">
-					<div className="text-muted-foreground">
-						<EnvelopeIcon size={18} />
-					</div>
-					<div>
-						<p className="text-sm font-medium">Email</p>
-						<p className="text-muted-foreground text-xs">Weekly digest via email</p>
-					</div>
-				</div>
-				<Switch checked={enabled} onCheckedChange={handleToggle} disabled={isSaving || !email} />
-			</div>
+			<SettingRow
+				framed
+				active={enabled}
+				icon={<EnvelopeIcon size={18} className="text-muted-foreground" />}
+				label="Email"
+				description="Weekly digest via email"
+				control={
+					<Switch checked={enabled} onCheckedChange={handleToggle} disabled={isSaving || !email} />
+				}
+			/>
 			{enabled && (
 				<div className="space-y-4 rounded-lg border border-border p-4">
 					<div className="space-y-1.5">
@@ -271,25 +264,15 @@ export function NotificationsSection() {
 					</div>
 				</div>
 			)}
-			<div
-				className={cn(
-					"!mt-3 flex items-center justify-between gap-4 rounded-lg border p-4 transition-colors",
-					webAnalyticsEnabled ? "border-primary/20 bg-primary/[0.02]" : "border-border",
-				)}
-			>
-				<div className="flex items-center gap-3">
-					<div className="text-muted-foreground">
-						<ChartBarTrendUpIcon size={18} />
-					</div>
-					<div>
-						<p className="text-sm font-medium">Web analytics</p>
-						<p className="text-muted-foreground text-xs">
-							Weekly overview of visitors, top pages and AI traffic. Only sent once the browser
-							SDK is reporting visits.
-						</p>
-					</div>
-				</div>
-				<div className="flex shrink-0 items-center gap-3">
+			<SettingRow
+				framed
+				active={webAnalyticsEnabled}
+				className="!mt-3"
+				icon={<ChartBarTrendUpIcon size={18} className="text-muted-foreground" />}
+				label="Web analytics"
+				description="Weekly overview of visitors, top pages and AI traffic. Only sent once the browser SDK is reporting visits."
+				control={
+					<>
 					<Button
 						variant="outline"
 						size="sm"
@@ -303,8 +286,9 @@ export function NotificationsSection() {
 						onCheckedChange={handleWebAnalyticsToggle}
 						disabled={isSaving || !email}
 					/>
-				</div>
-			</div>
+					</>
+				}
+			/>
 		</div>
 	)
 }

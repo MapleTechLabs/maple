@@ -1,4 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
+import { shortId as truncateId } from "@maple/ui/lib/ids"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import type { InvestigationContext, InvestigationKind } from "./investigation-context"
@@ -26,7 +27,7 @@ const STATUS_TONE: Record<string, string> = {
 
 const shortId = (id: string): string => {
 	const segments = id.split("-")
-	return segments.length > 1 ? segments[segments.length - 1]!.slice(0, 8) : id.slice(0, 8)
+	return truncateId(segments.length > 1 ? segments[segments.length - 1]! : id, "generic", { length: 8 })
 }
 
 /** Pinned card above the chat thread — the investigation subject, any kind. */

@@ -1,17 +1,32 @@
 import type * as React from "react"
 import { cn } from "../../lib/utils"
 
-export type TableVariant = "default" | "card"
+export type TableVariant = "default" | "card" | "bare"
+/** Row density. `sm` is the dense text-xs table; `xs` the 11px inline table (chat renderers, previews). */
+export type TableSize = "default" | "sm" | "xs"
 
 export function Table({
 	className,
 	variant = "default",
+	size = "default",
+	scroll = true,
 	...props
 }: React.ComponentProps<"table"> & {
 	variant?: TableVariant
+	size?: TableSize
+	/**
+	 * Wrap in a horizontal scroll container. Turn off when an ancestor already
+	 * scrolls (virtualized lists): the wrapper would capture a sticky header.
+	 */
+	scroll?: boolean
 }): React.ReactElement {
 	return (
-		<div className="relative w-full overflow-x-auto" data-slot="table-container" data-variant={variant}>
+		<div
+			className={cn("relative w-full", scroll && "overflow-x-auto")}
+			data-slot="table-container"
+			data-variant={variant}
+			data-size={size}
+		>
 			<table
 				className={cn(
 					"w-full caption-bottom in-data-[variant=card]:border-separate in-data-[variant=card]:border-spacing-0 text-sm",
@@ -24,8 +39,25 @@ export function Table({
 	)
 }
 
-export function TableHeader({ className, ...props }: React.ComponentProps<"thead">): React.ReactElement {
-	return <thead className={cn("[&_tr]:border-b", className)} data-slot="table-header" {...props} />
+export function TableHeader({
+	className,
+	sticky = false,
+	...props
+}: React.ComponentProps<"thead"> & {
+	/** Pin to the top of the nearest scrolling ancestor. Pair with `<Table scroll={false}>`. */
+	sticky?: boolean
+}): React.ReactElement {
+	return (
+		<thead
+			className={cn(
+				"[&_tr]:border-b in-data-[variant=bare]:[&_tr]:border-0",
+				sticky && "sticky top-0 z-10 bg-background",
+				className,
+			)}
+			data-slot="table-header"
+			{...props}
+		/>
+	)
 }
 
 export function TableBody({ className, ...props }: React.ComponentProps<"tbody">): React.ReactElement {
@@ -58,7 +90,7 @@ export function TableRow({ className, ...props }: React.ComponentProps<"tr">): R
 	return (
 		<tr
 			className={cn(
-				"relative border-b not-in-data-[variant=card]:hover:bg-[color-mix(in_srgb,var(--background),var(--color-black)_2%)] not-in-data-[variant=card]:data-[state=selected]:bg-[color-mix(in_srgb,var(--background),var(--color-black)_4%)] dark:not-in-data-[variant=card]:data-[state=selected]:bg-[color-mix(in_srgb,var(--background),var(--color-white)_4%)] dark:not-in-data-[variant=card]:hover:bg-[color-mix(in_srgb,var(--background),var(--color-white)_2%)]",
+				"relative border-b in-data-[variant=bare]:border-0 in-data-[variant=bare]:hover:bg-transparent not-in-data-[variant=card]:hover:bg-[color-mix(in_srgb,var(--background),var(--color-black)_2%)] not-in-data-[variant=card]:data-[state=selected]:bg-[color-mix(in_srgb,var(--background),var(--color-black)_4%)] dark:not-in-data-[variant=card]:data-[state=selected]:bg-[color-mix(in_srgb,var(--background),var(--color-white)_4%)] dark:not-in-data-[variant=card]:hover:bg-[color-mix(in_srgb,var(--background),var(--color-white)_2%)]",
 				className,
 			)}
 			data-slot="table-row"
@@ -71,7 +103,7 @@ export function TableHead({ className, ...props }: React.ComponentProps<"th">): 
 	return (
 		<th
 			className={cn(
-				"h-10 whitespace-nowrap px-2.5 text-left align-middle font-medium text-muted-foreground leading-none has-[[role=checkbox]]:w-px last:has-[[role=checkbox]]:ps-0 first:has-[[role=checkbox]]:pe-0",
+				"h-10 whitespace-nowrap px-2.5 text-left align-middle font-medium text-muted-foreground leading-none in-data-[size=sm]:h-8 in-data-[size=sm]:px-2 in-data-[size=sm]:text-xs in-data-[size=xs]:h-auto in-data-[size=xs]:px-0 in-data-[size=xs]:pr-2 in-data-[size=xs]:pb-1 in-data-[size=xs]:text-[11px] has-[[role=checkbox]]:w-px last:has-[[role=checkbox]]:ps-0 first:has-[[role=checkbox]]:pe-0",
 				className,
 			)}
 			data-slot="table-head"
@@ -84,7 +116,7 @@ export function TableCell({ className, ...props }: React.ComponentProps<"td">): 
 	return (
 		<td
 			className={cn(
-				"whitespace-nowrap bg-clip-padding p-2.5 in-data-[slot=table-footer]:py-3.5 align-middle leading-none in-data-[variant=card]:first:ps-[calc(--spacing(2.5)-1px)] in-data-[variant=card]:last:pe-[calc(--spacing(2.5)-1px)] has-[[role=checkbox]]:w-px last:has-[[role=checkbox]]:ps-0 first:has-[[role=checkbox]]:pe-0",
+				"whitespace-nowrap bg-clip-padding p-2.5 in-data-[slot=table-footer]:py-3.5 align-middle leading-none in-data-[size=sm]:px-2 in-data-[size=sm]:py-1.5 in-data-[size=sm]:text-xs in-data-[size=xs]:px-0 in-data-[size=xs]:py-0.5 in-data-[size=xs]:pr-2 in-data-[size=xs]:text-[11px] in-data-[variant=card]:first:ps-[calc(--spacing(2.5)-1px)] in-data-[variant=card]:last:pe-[calc(--spacing(2.5)-1px)] has-[[role=checkbox]]:w-px last:has-[[role=checkbox]]:ps-0 first:has-[[role=checkbox]]:pe-0",
 				className,
 			)}
 			data-slot="table-cell"

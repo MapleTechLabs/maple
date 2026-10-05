@@ -5,6 +5,7 @@ import { ErrorSection } from "@maple/ui/components/error-section"
 
 import { Button } from "@maple/ui/components/ui/button"
 import { Badge } from "@maple/ui/components/ui/badge"
+import { SeverityBadge } from "@maple/ui/components/logs/severity-badge"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@maple/ui/components/ui/tabs"
 import { ScrollArea } from "@maple/ui/components/ui/scroll-area"
@@ -101,18 +102,7 @@ function SpanPositionBar({
 
 const LOG_LIMIT = 100
 
-const severityStyles: Record<string, string> = {
-	TRACE: "text-severity-trace",
-	DEBUG: "text-severity-debug",
-	INFO: "text-severity-info",
-	WARN: "text-severity-warn",
-	ERROR: "text-severity-error",
-	FATAL: "text-severity-fatal",
-} satisfies Record<string, string>
-
 function LogEntry({ log, timeZone, onClick }: { log: Log; timeZone: string; onClick?: (log: Log) => void }) {
-	const severityStyle = severityStyles[log.severityText] ?? "text-severity-trace"
-
 	return (
 		<button
 			type="button"
@@ -121,9 +111,7 @@ function LogEntry({ log, timeZone, onClick }: { log: Log; timeZone: string; onCl
 		>
 			<div className="flex items-center gap-2 text-[10px] text-muted-foreground mb-1">
 				<span>{formatTimestampInTimezone(log.timestamp, { timeZone })}</span>
-				<Badge variant="outline" className={cn("text-[10px] px-1 py-0", severityStyle)}>
-					{log.severityText}
-				</Badge>
+				<SeverityBadge severity={log.severityText} className="h-4 px-1" />
 			</div>
 			<p className="font-mono text-xs whitespace-pre-wrap break-all line-clamp-3">{log.body}</p>
 		</button>
@@ -296,14 +284,11 @@ export function SpanDetailPanel({
 							</CopyableValue>
 						</span>
 					</div>
-					<Badge variant="outline" className={cn("text-[10px] font-medium", statusStyle)}>
+					<Badge variant="outline" size="xs" className={statusStyle}>
 						{span.statusCode || "Unset"}
 					</Badge>
 					{cacheInfo?.result && (
-						<Badge
-							variant="outline"
-							className={cn("text-[10px] font-medium", cacheResultStyles[cacheInfo.result])}
-						>
+						<Badge variant="outline" size="xs" className={cacheResultStyles[cacheInfo.result]}>
 							{cacheInfo.result === "hit" ? "HIT" : "MISS"}
 						</Badge>
 					)}
@@ -313,7 +298,7 @@ export function SpanDetailPanel({
 				{cacheInfo && (
 					<div className="flex items-center gap-3 border-b px-3 py-1.5 text-xs shrink-0">
 						{cacheInfo.system && (
-							<Badge variant="outline" className="text-[10px] font-mono">
+							<Badge variant="outline" size="xs" mono>
 								{cacheInfo.system}
 							</Badge>
 						)}
@@ -339,10 +324,8 @@ export function SpanDetailPanel({
 							{platform.outcome && (
 								<Badge
 									variant="outline"
-									className={cn(
-										"text-[10px] font-medium ml-auto",
-										outcomeBadgeStyle(platform.outcome.bad),
-									)}
+									size="xs"
+									className={cn("ml-auto", outcomeBadgeStyle(platform.outcome.bad))}
 								>
 									{platform.outcome.value}
 								</Badge>
@@ -405,7 +388,7 @@ export function SpanDetailPanel({
 						<TabsTrigger value="logs">
 							<SquareTerminalIcon size={14} /> Logs
 							{logCount !== null && logCount > 0 && (
-								<Badge variant="secondary" className="text-[10px] ml-1 px-1.5 py-0">
+								<Badge variant="secondary" size="xs" className="ml-1 px-1.5">
 									{logCountLabel}
 								</Badge>
 							)}

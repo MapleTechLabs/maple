@@ -5,22 +5,11 @@ import { Exit } from "effect"
 import { toastManager } from "@maple/ui/components/ui/toast"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 
-import {
-	AlertDialog,
-	AlertDialogAction,
-	AlertDialogCancel,
-	AlertDialogContent,
-	AlertDialogDescription,
-	AlertDialogFooter,
-	AlertDialogHeader,
-	AlertDialogMedia,
-	AlertDialogTitle,
-} from "@maple/ui/components/ui/alert-dialog"
+import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
 import { Button } from "@maple/ui/components/ui/button"
 import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { cn } from "@maple/ui/lib/utils"
 import {
-	AlertWarningIcon,
 	ArrowPathIcon,
 	ArrowRightIcon,
 	EyeIcon,
@@ -362,34 +351,22 @@ export function IngestionSection() {
 				<AttributeMappingsSection />
 			</div>
 
-			<AlertDialog open={regenerateDialogOpen} onOpenChange={setRegenerateDialogOpen}>
-				<AlertDialogContent>
-					<AlertDialogHeader>
-						<AlertDialogMedia className="bg-destructive/10">
-							<AlertWarningIcon className="text-destructive" />
-						</AlertDialogMedia>
-						<AlertDialogTitle>
-							Regenerate {regenerateKeyType === "public" ? "public" : "private"} key?
-						</AlertDialogTitle>
-						<AlertDialogDescription>
-							This action cannot be undone. All existing integrations using this key will stop
-							working immediately. You will need to update your{" "}
-							{regenerateKeyType === "public" ? "client-side SDKs" : "server configurations"}{" "}
-							with the new key.
-						</AlertDialogDescription>
-					</AlertDialogHeader>
-					<AlertDialogFooter>
-						<AlertDialogCancel disabled={submittingKeyType !== null}>Cancel</AlertDialogCancel>
-						<AlertDialogAction
-							variant="destructive"
-							onClick={handleRegenerate}
-							disabled={submittingKeyType !== null}
-						>
-							Regenerate key
-						</AlertDialogAction>
-					</AlertDialogFooter>
-				</AlertDialogContent>
-			</AlertDialog>
+			<ConfirmDialog
+				open={regenerateDialogOpen}
+				onOpenChange={setRegenerateDialogOpen}
+				title={`Regenerate ${regenerateKeyType === "public" ? "public" : "private"} key?`}
+				description={
+					<>
+						This action cannot be undone. All existing integrations using this key will stop working
+						immediately. You will need to update your{" "}
+						{regenerateKeyType === "public" ? "client-side SDKs" : "server configurations"} with the
+						new key.
+					</>
+				}
+				confirmLabel="Regenerate key"
+				onConfirm={handleRegenerate}
+				pending={submittingKeyType !== null}
+			/>
 		</>
 	)
 }

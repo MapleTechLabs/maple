@@ -2,6 +2,8 @@
 // Keyed by the shared `SeverityLevel` / `HostStatus` unions from `./format`, so
 // the severity palette lives in one place instead of being re-encoded per file.
 
+import { TONE_COLOR, TONE_FILL, TONE_TEXT } from "@maple/ui/lib/tone"
+
 import type { HostStatus, SeverityLevel } from "./format"
 
 export type Tone = SeverityLevel | "neutral"
@@ -10,35 +12,35 @@ export type Tone = SeverityLevel | "neutral"
 export const VALUE_TONE: Record<Tone, string> = {
 	neutral: "text-foreground",
 	ok: "text-foreground",
-	warn: "text-[var(--severity-warn)]",
-	crit: "text-[var(--severity-error)]",
+	warn: TONE_TEXT.warn,
+	crit: TONE_TEXT.crit,
 } satisfies Record<Tone, string>
 
 /** Sparkline fill — a raw CSS var string (consumed as an SVG `fill`, not a class). */
 export const SPARK_COLOR: Record<Tone, string> = {
 	neutral: "var(--primary)",
-	ok: "var(--severity-info)",
-	warn: "var(--severity-warn)",
-	crit: "var(--severity-error)",
+	ok: TONE_COLOR.ok,
+	warn: TONE_COLOR.warn,
+	crit: TONE_COLOR.crit,
 } satisfies Record<Tone, string>
 
 /** Solid severity fill for inline meter bars. */
 export const BAR_FILL: Record<SeverityLevel, string> = {
-	ok: "bg-[var(--severity-info)]",
-	warn: "bg-[var(--severity-warn)]",
-	crit: "bg-[var(--severity-error)]",
+	ok: TONE_FILL.ok,
+	warn: TONE_FILL.warn,
+	crit: TONE_FILL.crit,
 } satisfies Record<SeverityLevel, string>
 
 /** Dimmer value-text tone used inside compact bar widgets. */
 export const BAR_VALUE_TONE: Record<SeverityLevel, string> = {
 	ok: "text-foreground/75",
-	warn: "text-[var(--severity-warn)]",
-	crit: "text-[var(--severity-error)]",
+	warn: TONE_TEXT.warn,
+	crit: TONE_TEXT.crit,
 } satisfies Record<SeverityLevel, string>
 
 /** Status dot fill. */
 export const STATUS_DOT: Record<HostStatus, string> = {
-	active: "bg-[var(--severity-info)]",
+	active: TONE_FILL.info,
 	idle: "bg-muted-foreground/60",
 	ended: "bg-muted-foreground/40",
 } satisfies Record<HostStatus, string>

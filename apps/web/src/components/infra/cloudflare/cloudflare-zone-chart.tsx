@@ -18,6 +18,7 @@ import {
 	usePlotChromeColors,
 	type PlotTooltipSeries,
 } from "@maple/ui/components/plot"
+import { Panel, PanelHeader } from "@maple/ui/components/ui/panel"
 import { cn } from "@maple/ui/lib/utils"
 import { linkedCursorChartProps } from "@/hooks/use-linked-cursor"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
@@ -213,16 +214,14 @@ export function CloudflareZoneChart({
 	}, [data, series, axis, colors, chromeColors, yDomain, metric, focusStore])
 
 	return (
-		<div
-			className={cn("rounded-md border bg-card transition-opacity", waiting && "opacity-60")}
+		<Panel
+			className={cn("transition-opacity", waiting && "opacity-60")}
 			// `syncId` used to be handed to Recharts' hover-sync event bus. The linked
 			// cursor replaced that (CSS variables on a container, no React state), so
 			// it now names this chart within its group.
 			{...linkedCursorChartProps(syncId != null ? `cf-zone-${metric}` : undefined)}
 		>
-			<div className="flex items-center justify-between px-3 pt-2.5">
-				<span className="text-[11px] font-medium text-muted-foreground">{METRIC_LABELS[metric]}</span>
-			</div>
+			<PanelHeader title={METRIC_LABELS[metric]} divided={false} className="px-3 pt-2.5" />
 			{data.length === 0 ? (
 				<ChartCardMessage>{CHART_EMPTY_MESSAGE}</ChartCardMessage>
 			) : (
@@ -242,6 +241,6 @@ export function CloudflareZoneChart({
 					/>
 				</div>
 			)}
-		</div>
+		</Panel>
 	)
 }

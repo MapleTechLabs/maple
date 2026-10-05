@@ -1,7 +1,7 @@
 import { HttpSpanLabel } from "@maple/ui/components/traces/http-span-label"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
-import { Spinner } from "@maple/ui/components/ui/spinner"
+import { ListFooter } from "@maple/ui/components/ui/list-footer"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
 import { formatDuration } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
@@ -228,18 +228,11 @@ export function TraceListView() {
 						</TableBody>
 					</Table>
 
-					{traces.hasNextPage ? (
-						<div className="flex justify-center p-4">
-							<Button
-								variant="outline"
-								size="sm"
-								onClick={() => traces.fetchNextPage()}
-								disabled={traces.isFetchingNextPage}
-							>
-								{traces.isFetchingNextPage ? <Spinner className="size-4" /> : "Load more"}
-							</Button>
-						</div>
-					) : null}
+					<ListFooter
+						hasMore={traces.hasNextPage}
+						loading={traces.isFetchingNextPage}
+						onLoadMore={() => traces.fetchNextPage()}
+					/>
 				</div>
 			)}
 		</PageShell>
@@ -307,12 +300,12 @@ function TraceListRow({ row, query }: { row: TraceRow; query: URLSearchParams })
 			<TableCell className="text-muted-foreground">
 				<div className="flex flex-wrap gap-1">
 					{row.services.slice(0, 3).map((svc) => (
-						<Badge key={svc} variant="secondary" className="font-mono text-[10px]">
+						<Badge key={svc} variant="secondary" size="xs" mono>
 							{svc}
 						</Badge>
 					))}
 					{row.services.length > 3 ? (
-						<Badge variant="secondary" className="font-mono text-[10px]">
+						<Badge variant="secondary" size="xs" mono>
 							+{row.services.length - 3}
 						</Badge>
 					) : null}

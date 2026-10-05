@@ -1,4 +1,3 @@
-import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import { useRef, type KeyboardEvent as ReactKeyboardEvent } from "react"
 import { Link } from "@tanstack/react-router"
@@ -9,15 +8,11 @@ import { Kbd } from "@maple/ui/components/ui/kbd"
 import {
 	Sheet,
 	SheetContent,
-	SheetDescription,
 	SheetFooter,
-	SheetHeader,
 	SheetPanel,
-	SheetTitle,
 } from "@maple/ui/components/ui/sheet"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { formatPercent } from "@maple/ui/lib/format"
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
 
 import type { PodInfraMetric } from "@/api/warehouse/infra"
 import { ArrowDownIcon, ArrowRightIcon, ArrowUpIcon } from "@/components/icons"
@@ -26,7 +21,9 @@ import { bucketSecondsForRange } from "@/components/infra/constants"
 import { severityLevel } from "@/components/infra/format"
 import { PodDetailChart } from "@/components/infra/k8s-detail-chart"
 import { podKey, type PodRow } from "@/components/infra/pod-table"
-import { HeroChip } from "@/components/infra/primitives/page-hero"
+import { HeroChip } from "@/components/common/page-hero"
+import { RelativeTime } from "@/components/common/relative-time"
+import { SheetDetailHeader } from "@/components/common/sheet-detail-header"
 import { StatRail, StatRailItem } from "@/components/common/stat-rail"
 import { HostStatusBadge } from "@/components/infra/status-badge"
 import type { TimeRangeSearch } from "@/components/time-range-picker/search"
@@ -169,32 +166,31 @@ export function PodPeekSheet({
 			<SheetContent ref={popupRef} className="p-0 sm:max-w-xl" onKeyDownCapture={handleKeyDownCapture}>
 				{pod ? (
 					<>
-						<SheetHeader className="gap-1.5 pr-14">
-							<Eyebrow>Pod</Eyebrow>
-							<SheetTitle className="flex flex-wrap items-center gap-2 font-mono text-[15px] leading-tight">
-								<span className="min-w-0 break-all">{pod.podName}</span>
-								<HostStatusBadge
-									quiet
-									lastSeen={pod.lastSeen}
-									referenceTime={referenceTime}
-								/>
-							</SheetTitle>
-							<SheetDescription className="sr-only">
-								Peak utilization and metrics for {pod.podName}
-							</SheetDescription>
-							<div className="flex flex-wrap items-center gap-1.5">
-								{pod.namespace && <HeroChip>ns {pod.namespace}</HeroChip>}
-								{pod.deploymentName && <HeroChip>deploy {pod.deploymentName}</HeroChip>}
-								{pod.statefulsetName && <HeroChip>sts {pod.statefulsetName}</HeroChip>}
-								{pod.daemonsetName && <HeroChip>ds {pod.daemonsetName}</HeroChip>}
-								{pod.jobName && <HeroChip>job {pod.jobName}</HeroChip>}
-								{pod.nodeName && <HeroChip>node {pod.nodeName}</HeroChip>}
-								{pod.qosClass && <HeroChip>qos {pod.qosClass}</HeroChip>}
-								<span className="ml-auto font-mono text-[11px] text-muted-foreground">
-									seen {formatRelativeTime(pod.lastSeen)}
-								</span>
-							</div>
-						</SheetHeader>
+						<SheetDetailHeader
+							kind="Pod"
+							title={pod.podName}
+							adornment={
+								<HostStatusBadge quiet lastSeen={pod.lastSeen} referenceTime={referenceTime} />
+							}
+							description={`Peak utilization and metrics for ${pod.podName}`}
+							meta={
+								<>
+									{pod.namespace && <HeroChip>ns {pod.namespace}</HeroChip>}
+									{pod.deploymentName && <HeroChip>deploy {pod.deploymentName}</HeroChip>}
+									{pod.statefulsetName && <HeroChip>sts {pod.statefulsetName}</HeroChip>}
+									{pod.daemonsetName && <HeroChip>ds {pod.daemonsetName}</HeroChip>}
+									{pod.jobName && <HeroChip>job {pod.jobName}</HeroChip>}
+									{pod.nodeName && <HeroChip>node {pod.nodeName}</HeroChip>}
+									{pod.qosClass && <HeroChip>qos {pod.qosClass}</HeroChip>}
+									<RelativeTime
+										value={pod.lastSeen}
+										prefix="seen"
+										mono
+										className="ml-auto text-[11px] text-muted-foreground"
+									/>
+								</>
+							}
+						/>
 
 						{neighbors.map((neighbor) => (
 							<PeekPrefetch

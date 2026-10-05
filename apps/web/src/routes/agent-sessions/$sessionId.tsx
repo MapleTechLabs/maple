@@ -5,7 +5,7 @@ import { Schema } from "effect"
 import type { GetAiSessionSummaryResponse } from "@maple/domain/http"
 import { formatWarehouseDateTime } from "@maple/query-engine"
 import { toEpochMs } from "@maple/ui/lib/time-format"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { Skeleton, SkeletonList } from "@maple/ui/components/ui/skeleton"
 
 import { SquareSparkleIcon } from "@/components/icons"
 import { Button } from "@maple/ui/components/ui/button"
@@ -104,11 +104,7 @@ function AgentSessionDetailPage() {
 								</div>
 							</div>
 							<Skeleton className="h-4 w-full rounded-sm" />
-							<div className="space-y-2">
-								{Array.from({ length: 8 }).map((_, index) => (
-									<Skeleton key={index} className="h-12 w-full" />
-								))}
-							</div>
+							<SkeletonList rows={8} rowClassName="h-12" gap="2" />
 						</div>
 					</DashboardLayout.Fill>
 				</DashboardLayout.Content>

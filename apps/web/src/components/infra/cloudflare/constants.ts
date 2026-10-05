@@ -3,24 +3,6 @@
 // palette is shared by the detail breakdown chart and the edge-share band so
 // the same status never renders in two hues on one page.
 
-import { VALUE_TONE } from "../severity-tokens"
-
-/**
- * Shared 5% / 1% thresholds for tinting 5xx and Worker error rates — one
- * source for the tables and the detail stat rail.
- */
-export function errorRateTone(rate: number): "crit" | "warn" | "neutral" {
-	if (rate >= 0.05) return "crit"
-	if (rate >= 0.01) return "warn"
-	return "neutral"
-}
-
-/** Error-rate cell tint for the tables: canonical severity tokens above the thresholds, quiet otherwise. */
-export function errorRateClass(rate: number): string {
-	const tone = errorRateTone(rate)
-	return tone === "neutral" ? "text-foreground/80" : VALUE_TONE[tone]
-}
-
 /**
  * The list charts plot at most {@link MAX_ZONE_SERIES} zones; the remainder
  * pools into one "Other zones" series in this muted color (same ramp as the

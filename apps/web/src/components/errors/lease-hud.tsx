@@ -2,6 +2,7 @@ import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import * as React from "react"
 import type { ActorDocument } from "@maple/domain/http"
+import { formatCountdown } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
 import { normalizeTimestampInput } from "@/lib/timezone-format"
 import { ActorChip } from "./actor-chip"
@@ -120,16 +121,4 @@ export function LeaseHud({ leaseExpiresAt, claimedAt, leaseHolder, className }: 
 			</div>
 		</div>
 	)
-}
-
-function formatCountdown(ms: number): string {
-	if (ms <= 0) return "0:00"
-	const totalSeconds = Math.ceil(ms / 1000)
-	const hours = Math.floor(totalSeconds / 3600)
-	const minutes = Math.floor((totalSeconds % 3600) / 60)
-	const seconds = totalSeconds % 60
-	if (hours > 0) {
-		return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`
-	}
-	return `${minutes}:${String(seconds).padStart(2, "0")}`
 }

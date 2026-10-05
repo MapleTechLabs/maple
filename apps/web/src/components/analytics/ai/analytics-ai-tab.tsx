@@ -14,7 +14,7 @@ import {
 	webAnalyticsSummaryResultAtom,
 } from "@/lib/services/atoms/warehouse-query-atoms"
 import { AnalyticsBreakdownPanel } from "../analytics-breakdown-panel"
-import { Delta } from "../analytics-metric-strip"
+import { Delta } from "@maple/ui/components/ui/delta"
 import { DEFAULT_TRAFFIC, type AnalyticsFilterKey, type AnalyticsFilters } from "../filters"
 import { previousWindow } from "../previous-window"
 import { Favicon } from "../row-icon"
@@ -228,7 +228,7 @@ function AiKpis({
 				eyebrow="AI visits"
 				value={referrals ? formatNumber(visits) : "—"}
 				spark={spark}
-				delta={delta === null ? undefined : <Delta delta={delta} />}
+				delta={delta === null ? undefined : <Delta ratio={delta} />}
 				subline={
 					referrals
 						? products > 0

@@ -2,6 +2,8 @@ import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import type { AnomalyIncidentDocument } from "@maple/domain/http"
 import { cn } from "@maple/ui/lib/utils"
 
+import { PageHero } from "@/components/common/page-hero"
+
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import {
 	deviation,
@@ -28,36 +30,42 @@ export function AnomalyHero({
 	return (
 		<div className={cn("space-y-2", className)}>
 			<Eyebrow as="div">Anomaly</Eyebrow>
-			<h1 className="text-3xl font-semibold leading-tight text-foreground break-words sm:text-4xl">
-				{SIGNAL_LABEL[incident.signalType]}
-				<span className="text-muted-foreground/60"> · </span>
-				{incident.serviceName}
-			</h1>
-			<p className="max-w-3xl text-sm leading-relaxed text-muted-foreground">
-				{isStale ? "Last recorded" : "Observed"}{" "}
-				<span
-					className={cn(
-						"font-mono font-medium",
-						incident.status === "open" && !isStale ? tone.text : "text-foreground",
-					)}
-				>
-					{observed}
-				</span>{" "}
-				against a <span className="font-mono text-foreground">{baseline}</span> 7-day baseline —{" "}
-				<span
-					className={cn(
-						"font-mono font-medium",
-						incident.status === "open" && !isStale ? tone.text : "text-foreground",
-					)}
-				>
-					{dev.label}
-				</span>
-				{dev.kind === "sigma" ? " above median" : dev.kind === "percent" ? " vs baseline" : ""},
-				threshold <span className="font-mono text-foreground">{threshold}</span>.
-				{isStale
-					? ` Last triggered ${formatRelativeTime(incident.lastTriggeredAt)}; this stale detector state does not represent current service health.`
-					: ""}
-			</p>
+			<PageHero
+				title={
+					<span className="break-words">
+						{SIGNAL_LABEL[incident.signalType]}
+						<span className="text-muted-foreground/60"> · </span>
+						{incident.serviceName}
+					</span>
+				}
+				description={
+					<>
+						{isStale ? "Last recorded" : "Observed"}{" "}
+						<span
+							className={cn(
+								"font-mono font-medium",
+								incident.status === "open" && !isStale ? tone.text : "text-foreground",
+							)}
+						>
+							{observed}
+						</span>{" "}
+						against a <span className="font-mono text-foreground">{baseline}</span> 7-day baseline —{" "}
+						<span
+							className={cn(
+								"font-mono font-medium",
+								incident.status === "open" && !isStale ? tone.text : "text-foreground",
+							)}
+						>
+							{dev.label}
+						</span>
+						{dev.kind === "sigma" ? " above median" : dev.kind === "percent" ? " vs baseline" : ""},
+						threshold <span className="font-mono text-foreground">{threshold}</span>.
+						{isStale
+							? ` Last triggered ${formatRelativeTime(incident.lastTriggeredAt)}; this stale detector state does not represent current service health.`
+							: ""}
+					</>
+				}
+			/>
 		</div>
 	)
 }

@@ -1,56 +1,14 @@
-import type { ReactNode } from "react"
 import { Link } from "@tanstack/react-router"
 import type { CloudflareServiceUsage, CloudflareUsageResponse } from "@maple/domain/http"
-import { StatSparkline } from "@maple/ui/components/charts/sparkline/stat-sparkline"
-import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { cn } from "@maple/ui/lib/utils"
+
+import { StatRail, StatRailItem } from "@/components/common/stat-rail"
+import { ArrowRightIcon } from "@/components/icons"
 
 import { formatNumber } from "@maple/ui/lib/format"
 import { CLOUDFLARE_ACCENT } from "./integration-catalog"
 import { toRowUsage } from "./cloudflare-zone-board"
-
-function StatCard({
-	eyebrow,
-	value,
-	sparkline,
-	caption,
-	href,
-}: {
-	eyebrow: string
-	value: ReactNode
-	sparkline?: ReactNode
-	caption: ReactNode
-	/** Makes the whole card navigate (e.g. the firewall card → the infra dashboard). */
-	href?: "/infra/cloudflare"
-}) {
-	const body = (
-		<>
-			<Eyebrow variant="label">{eyebrow}</Eyebrow>
-			<span className="flex items-end justify-between gap-3">
-				<span className="text-[22px]/7 font-semibold tracking-tight text-foreground">{value}</span>
-				{sparkline}
-			</span>
-			<span className="text-xs text-muted-foreground">{caption}</span>
-		</>
-	)
-	const frame =
-		"flex min-w-0 flex-1 flex-col gap-2.5 rounded-lg border border-border/60 bg-card px-4 py-3.5"
-	if (href) {
-		return (
-			<Link
-				to={href}
-				className={cn(
-					frame,
-					"transition-colors hover:border-border hover:bg-muted/40 focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
-				)}
-			>
-				{body}
-			</Link>
-		)
-	}
-	return <div className={frame}>{body}</div>
-}
 
 /** The "+12% vs previous 24h" caption — quiet unless traffic actually moved up. */
 function TrafficDelta({ usage }: { usage: CloudflareUsageResponse }) {
@@ -87,9 +45,9 @@ export function CloudflareStatCards({
 	if (usage === null) {
 		return (
 			<div className="flex flex-col gap-3 sm:flex-row">
-				<Skeleton className="h-[104px] flex-1 rounded-lg" />
-				<Skeleton className="h-[104px] flex-1 rounded-lg" />
-				<Skeleton className="h-[104px] flex-1 rounded-lg" />
+				<Skeleton className="h-[104px] flex-1 rounded-md" />
+				<Skeleton className="h-[104px] flex-1 rounded-md" />
+				<Skeleton className="h-[104px] flex-1 rounded-md" />
 			</div>
 		)
 	}
@@ -100,45 +58,40 @@ export function CloudflareStatCards({
 	const workerPoints = workerInvocations > 0 ? toRowUsage(usage, workerServices).points : null
 
 	return (
-		<div className="flex flex-col gap-3 sm:flex-row">
-			<StatCard
+		<StatRail columns={3}>
+			<StatRailItem
 				eyebrow="Traffic · 24h"
 				value={formatNumber(usage.totalRequests)}
-				sparkline={
-					totalPoints ? (
-						<StatSparkline
-							data={totalPoints}
-							color={CLOUDFLARE_ACCENT}
-							className="h-9 w-28 shrink-0 xl:w-35"
-						/>
-					) : null
-				}
-				caption={<TrafficDelta usage={usage} />}
+				spark={totalPoints?.map((point) => point.v)}
+				sparkColor={CLOUDFLARE_ACCENT}
+				subline={<TrafficDelta usage={usage} />}
 			/>
-			<StatCard
+			<StatRailItem
 				eyebrow="Workers"
 				value={`${activeWorkers.length} active`}
-				sparkline={
-					workerPoints ? (
-						<StatSparkline
-							data={workerPoints}
-							color={CLOUDFLARE_ACCENT}
-							className="h-9 w-28 shrink-0 xl:w-35"
-						/>
-					) : null
-				}
-				caption={
+				spark={workerPoints?.map((point) => point.v)}
+				sparkColor={CLOUDFLARE_ACCENT}
+				subline={
 					workerInvocations > 0
 						? `${formatNumber(workerInvocations)} invocations · on service map`
 						: "Scripts appear once they serve traffic"
 				}
 			/>
-			<StatCard
+			<StatRailItem
+				compact
 				eyebrow="Firewall · 24h"
 				value={`${formatNumber(usage.firewallBlockedEvents ?? 0)} blocked`}
-				caption="DNS analytics alongside traces"
-				href="/infra/cloudflare"
+				subline="DNS analytics alongside traces"
+				action={
+					<Link
+						to="/infra/cloudflare"
+						className="inline-flex shrink-0 items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
+					>
+						Open
+						<ArrowRightIcon size={11} />
+					</Link>
+				}
 			/>
-		</div>
+		</StatRail>
 	)
 }

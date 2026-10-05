@@ -3,13 +3,12 @@ import { Link } from "@tanstack/react-router"
 import { ServiceDot } from "@maple/ui/components/service-dot"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
 import { formatErrorRate, formatLatency } from "@maple/ui/lib/format"
-import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
+import { RelativeTime } from "@/components/common/relative-time"
 import type { VcsCommitDetailResponse, VcsCommitRangeResponse } from "@maple/domain/http"
 
 import { ChevronRightIcon } from "@/components/icons"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
-import { formatTimestampInTimezone } from "@/lib/timezone-format"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import type { TimeRangeSearch } from "@/components/time-range-picker/search"
 import {
@@ -340,18 +339,8 @@ function ReleasesTableRows({
 									<TableCell className="py-2 align-top">
 										<ServiceChips services={group.services} />
 									</TableCell>
-									<TableCell
-										className="whitespace-nowrap py-2 align-top font-mono text-xs tabular-nums text-muted-foreground"
-										title={formatTimestampInTimezone(group.firstSeen, {
-											timeZone: effectiveTimezone,
-											withYear: true,
-										})}
-									>
-										{formatRelativeTimeOrDate(
-											group.firstSeen,
-											undefined,
-											effectiveTimezone,
-										)}
+									<TableCell className="whitespace-nowrap py-2 align-top font-mono text-xs tabular-nums text-muted-foreground">
+										<RelativeTime value={group.firstSeen} variant="orDate" tooltip="title" />
 									</TableCell>
 									<TableCell className="py-2 align-top">
 										<span className="inline-flex items-center gap-1.5">
@@ -421,18 +410,8 @@ function ReleasesTableRows({
 													</Link>
 												</TableCell>
 												<TableCell className="py-1.5" />
-												<TableCell
-													className="whitespace-nowrap py-1.5 font-mono text-xs tabular-nums text-muted-foreground"
-													title={formatTimestampInTimezone(service.firstSeen, {
-														timeZone: effectiveTimezone,
-														withYear: true,
-													})}
-												>
-													{formatRelativeTimeOrDate(
-														service.firstSeen,
-														undefined,
-														effectiveTimezone,
-													)}
+												<TableCell className="whitespace-nowrap py-1.5 font-mono text-xs tabular-nums text-muted-foreground">
+													<RelativeTime value={service.firstSeen} variant="orDate" tooltip="title" />
 												</TableCell>
 												<TableCell className="py-1.5">
 													<Delta

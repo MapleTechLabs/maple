@@ -2,8 +2,7 @@ import { useMemo } from "react"
 import { Link } from "@tanstack/react-router"
 
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
+import { RelativeTime } from "@/components/common/relative-time"
 
 import type { RailwayServiceRow } from "@/api/warehouse/railway-infra"
 
@@ -14,10 +13,11 @@ import {
 	ROW_LINK_CLASS,
 	type SortControls,
 	useTableSort,
-} from "../primitives/data-table"
+} from "@/components/common/data-table"
 import { FleetBand, FleetBandLoading } from "../primitives/fleet-band"
 import { MetaLine } from "../primitives/meta-line"
 import { MeterRows } from "../primitives/meter-rows"
+import { TONE_FILL } from "@maple/ui/lib/tone"
 
 export type RailwayScope = "saturated" | "elevated" | "unbounded"
 
@@ -78,8 +78,8 @@ export function RailwaySummaryBand({
 					count: Math.max(services.length - saturated - elevated - unbounded, 0),
 					className: "bg-muted-foreground/35",
 				},
-				{ key: "elevated", count: elevated, className: "bg-[var(--severity-warn)]" },
-				{ key: "saturated", count: saturated, className: "bg-[var(--severity-error)]" },
+				{ key: "elevated", count: elevated, className: TONE_FILL.warn },
+				{ key: "saturated", count: saturated, className: TONE_FILL.crit },
 			]}
 			cells={[
 				{ scope: "saturated", label: "Saturated", hint: "≥90%", value: saturated, tone: "crit" },
@@ -196,15 +196,11 @@ export function RailwayServiceTable({
 						{row.replicas}
 					</div>
 					<div className="w-[100px] text-right">
-						<Tooltip>
-							<TooltipTrigger
-								render={<span />}
-								className="cursor-default font-mono text-[11px] text-muted-foreground"
-							>
-								{formatRelativeTime(row.lastSeen)}
-							</TooltipTrigger>
-							<TooltipContent>{row.lastSeen}</TooltipContent>
-						</Tooltip>
+						<RelativeTime
+							value={row.lastSeen}
+							mono
+							className="cursor-default text-[11px] text-muted-foreground"
+						/>
 					</div>
 				</Link>
 			))}

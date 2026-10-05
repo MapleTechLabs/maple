@@ -3,8 +3,7 @@ import type { ErrorIssueDocument } from "@maple/domain/http"
 import { formatNumber } from "@maple/ui/lib/format"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
 
-import { useTimezonePreference } from "@/hooks/use-timezone-preference"
-import { formatTimestampInTimezone } from "@/lib/timezone-format"
+import { RelativeTime } from "@/components/common/relative-time"
 
 /**
  * The issue's numbers, in named lanes, at the top of the page.
@@ -91,14 +90,5 @@ function Count({ value }: { value: number }) {
 }
 
 function Stamp({ iso }: { iso: string }) {
-	const { effectiveTimezone } = useTimezonePreference()
-
-	return (
-		<span
-			className="text-foreground tabular-nums"
-			title={formatTimestampInTimezone(iso, { timeZone: effectiveTimezone, withYear: true })}
-		>
-			{formatRelativeTime(iso)}
-		</span>
-	)
+	return <RelativeTime value={iso} tooltip="title" className="text-foreground tabular-nums" />
 }

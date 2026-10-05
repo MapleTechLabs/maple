@@ -3,7 +3,7 @@ import { Link } from "@tanstack/react-router"
 import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import { cn } from "@maple/ui/lib/utils"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { SkeletonList } from "@maple/ui/components/ui/skeleton"
 import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
 import { formatSessionDuration } from "@maple/ui/lib/replay-format"
 
@@ -74,11 +74,7 @@ export function ToolDetailSessions({
 				{failure !== undefined ? (
 					<ErrorState error={failure} title={`Failed to load sessions running ${tool}`} />
 				) : loading ? (
-					<div className="flex flex-col gap-1.5 py-3">
-						<Skeleton className="h-[46px]" />
-						<Skeleton className="h-[46px]" />
-						<Skeleton className="h-[46px]" />
-					</div>
+					<SkeletonList rows={3} rowClassName="h-[46px]" className="gap-1.5 py-3" />
 				) : rows.length === 0 ? (
 					<EmptyMessage className="py-12 font-mono">
 						No sessions called {tool} in the selected window.

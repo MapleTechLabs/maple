@@ -24,6 +24,7 @@ import {
 	LockIcon,
 	ShieldIcon,
 } from "@/components/icons"
+import { Alert } from "@maple/ui/components/ui/alert"
 import { Button } from "@maple/ui/components/ui/button"
 import {
 	Dialog,
@@ -344,12 +345,13 @@ export function ShareLinkRow({
 				</Button>
 			</div>
 			{confirmingReplace ? (
-				<div className="space-y-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2.5">
-					<p className="text-xs leading-relaxed">
+				<Alert variant="error" size="sm" className="gap-y-2 py-2.5">
+					<p className="leading-relaxed">
 						<span className="font-medium">Replace this link?</span>{" "}
 						<span className="text-muted-foreground">{replaceWarning} This can't be undone.</span>
 					</p>
 					<div className="flex justify-end gap-2">
+
 						<Button variant="ghost" size="xs" onClick={() => setConfirmingReplace(false)}>
 							Cancel
 						</Button>
@@ -364,7 +366,7 @@ export function ShareLinkRow({
 							Replace link
 						</Button>
 					</div>
-				</div>
+				</Alert>
 			) : null}
 			{copyBlocked ? (
 				<p className="text-muted-foreground text-xs leading-relaxed">

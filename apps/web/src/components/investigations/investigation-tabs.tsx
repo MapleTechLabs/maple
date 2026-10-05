@@ -4,7 +4,7 @@ import {
 	UnderlineTabCount,
 	UnderlineTabStrip,
 	underlineTabClass,
-} from "@/components/errors/underline-link-tabs"
+} from "@/components/common/underline-link-tabs"
 
 export const INVESTIGATION_TABS = ["overview", "evidence", "chat", "transcript"] as const
 

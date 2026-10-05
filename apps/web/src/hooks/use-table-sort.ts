@@ -1,7 +1,7 @@
 // Client-side column sorting shared by the infra resource tables and the
 // dashboard table widget.
 //
-// This used to live inside `components/infra/primitives/data-table.tsx`. It
+// This used to live inside `components/infra/primitives/data-table.tsx (now common/data-table.tsx)`. It
 // moved out when the dashboard table widget needed the same comparator: the
 // widget renders arbitrary warehouse rows, so it cannot import an infra
 // primitive, and a second comparator would immediately disagree with the first

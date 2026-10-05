@@ -1,26 +1,32 @@
+import { Badge } from "@maple/ui/components/ui/badge"
 import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { cn } from "@maple/ui/lib/utils"
 
 /** Green "Live" pill with the pulsing ring; `compact` is the dense list-row size. */
 export function LivePill({ compact }: { compact?: boolean }) {
 	return (
-		<span
-			className={cn(
-				"inline-flex shrink-0 items-center rounded-full bg-success/10 font-medium text-success",
-				compact ? "gap-1 px-1.5 py-px text-[10px] tracking-wide" : "gap-1.5 px-2 py-0.5 text-xs",
-			)}
+		<Badge
+			variant="success"
+			pill
+			size={compact ? "xs" : "default"}
+			className={cn("bg-success/10 text-success", compact ? "tracking-wide" : "gap-1.5")}
 		>
 			<StatusDot tone="success" pulse />
 			{compact ? "LIVE" : "Live"}
-		</span>
+		</Badge>
 	)
 }
 
 export function ErrorCountPill({ count }: { count: number }) {
 	return (
-		<span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-destructive/30 bg-destructive/10 px-2 py-0.5 font-mono text-[10px] font-medium tabular-nums text-destructive">
+		<Badge
+			pill
+			size="xs"
+			mono
+			className="gap-1.5 border-destructive/30 bg-destructive/10 text-destructive"
+		>
 			<StatusDot tone="error" size="sm" />
 			{count} error{count === 1 ? "" : "s"}
-		</span>
+		</Badge>
 	)
 }

@@ -12,7 +12,7 @@ import {
 } from "@maple/ui/components/ui/empty"
 import { Button } from "@maple/ui/components/ui/button"
 import { Separator } from "@maple/ui/components/ui/separator"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { SkeletonList } from "@maple/ui/components/ui/skeleton"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@maple/ui/components/ui/tabs"
 import { CircleWarningIcon, ConnectionIcon } from "@maple/ui/components/icons"
 import { CopyableField } from "@maple/ui/components/ui/copyable-field"
@@ -198,13 +198,11 @@ function DocsLink({ href, children }: { href: string; children: ReactNode }) {
  */
 export function ListSkeleton({ rows = 8, variant = "table" }: { rows?: number; variant?: "table" | "card" }) {
 	return (
-		<div className="space-y-2 p-4">
-			{Array.from({ length: rows }).map((_, i) => (
-				<Skeleton
-					key={i}
-					className={variant === "card" ? "h-[68px] w-full rounded-xl" : "h-10 w-full rounded-md"}
-				/>
-			))}
-		</div>
+		<SkeletonList
+			rows={rows}
+			gap="2"
+			className="p-4"
+			rowClassName={variant === "card" ? "h-[68px] rounded-xl" : "h-10 rounded-md"}
+		/>
 	)
 }

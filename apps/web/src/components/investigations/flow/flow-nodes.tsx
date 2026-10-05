@@ -10,7 +10,7 @@ import { Link } from "@tanstack/react-router"
 import { Handle, Position, type NodeProps } from "@xyflow/react"
 import { cn } from "@maple/ui/lib/utils"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import { formatRelativeTimeOrDate, toEpochMs } from "@maple/ui/lib/time-format"
+import { RelativeTime } from "@/components/common/relative-time"
 
 import {
 	AlertWarningIcon,
@@ -188,13 +188,13 @@ export const FlowSpineNode = memo(function FlowSpineNode({ data }: NodeProps & {
 			 * number nobody converts back into a date.
 			 */}
 			{data.at ? (
-				<time
-					dateTime={data.at}
-					title={new Date(toEpochMs(data.at)).toLocaleString()}
-					className="mt-auto pt-0.5 font-mono text-[9px] leading-3 text-muted-foreground/70 tabular-nums"
-				>
-					{formatRelativeTimeOrDate(data.at)}
-				</time>
+				<RelativeTime
+					value={data.at}
+					variant="orDate"
+					tooltip="title"
+					mono
+					className="mt-auto pt-0.5 text-[9px] leading-3 text-muted-foreground/70"
+				/>
 			) : null}
 		</>
 	)

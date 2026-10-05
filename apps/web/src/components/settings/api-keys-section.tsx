@@ -1,4 +1,3 @@
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { useAtomSet } from "@/lib/effect-atom"
 import { useState } from "react"
 import { Link } from "@tanstack/react-router"
@@ -9,19 +8,16 @@ import { cn } from "@maple/ui/lib/utils"
 
 import { Button } from "@maple/ui/components/ui/button"
 import { Badge } from "@maple/ui/components/ui/badge"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@maple/ui/components/ui/card"
-import { CopyButton } from "@maple/ui/components/ui/copy-button"
 import {
-	AlertDialog,
-	AlertDialogAction,
-	AlertDialogCancel,
-	AlertDialogContent,
-	AlertDialogDescription,
-	AlertDialogFooter,
-	AlertDialogHeader,
-	AlertDialogMedia,
-	AlertDialogTitle,
-} from "@maple/ui/components/ui/alert-dialog"
+	Card,
+	CardAction,
+	CardContent,
+	CardDescription,
+	CardHeader,
+	CardTitle,
+} from "@maple/ui/components/ui/card"
+import { CopyButton } from "@maple/ui/components/ui/copy-button"
+import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
 import {
 	DropdownMenu,
 	DropdownMenuContent,
@@ -38,9 +34,11 @@ import {
 } from "@maple/ui/components/ui/empty"
 import { SearchInput } from "@maple/ui/components/ui/search-input"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
-import { FilterTab, FilterTabs } from "./filter-tab"
+import { ToggleGroup, ToggleGroupItem } from "@maple/ui/components/ui/toggle-group"
 import { DocsLink, EmptyActions } from "@/components/common/docs-link"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { SkeletonList } from "@maple/ui/components/ui/skeleton"
+import { ColumnHead, DataTable } from "@/components/common/data-table"
+import { RelativeTime } from "@/components/common/relative-time"
 import {
 	AlertWarningIcon,
 	ArrowPathIcon,
@@ -125,7 +123,6 @@ export function ApiKeysSection() {
 	const [createOpen, setCreateOpen] = useState(false)
 	const [revokeOpen, setRevokeOpen] = useState(false)
 	const [revokingKey, setRevokingKey] = useState<ApiKey | null>(null)
-	const [isRevoking, setIsRevoking] = useState(false)
 	const [rollOpen, setRollOpen] = useState(false)
 	const [rollingKey, setRollingKey] = useState<ApiKey | null>(null)
 
@@ -145,22 +142,20 @@ export function ApiKeysSection() {
 		setRollOpen(true)
 	}
 
-	async function handleRevoke() {
-		if (!revokingKey) return
-		setIsRevoking(true)
+	async function handleRevoke(): Promise<boolean> {
+		if (!revokingKey) return false
 		prepareForMutation()
 		const result = await revokeMutation({ params: { id: revokingKey.id } })
 		if (Exit.isSuccess(result)) {
 			toastManager.add({ title: "API key revoked", type: "success" })
 			void reconcileTxid(result.value.txid)
-		} else {
-			const { title, message } = displayError(result)
-			toastManager.add({ title, description: message, type: "error" })
+			// ConfirmDialog closes on `true`. `revokingKey` stays set so the copy doesn't swap mid-animation.
+			return true
 		}
-		setIsRevoking(false)
-		setRevokeOpen(false)
-		// Keep `revokingKey` set so the dialog copy doesn't swap to the generic
-		// fallback while the close animation plays; the next open overwrites it.
+		const { title, message } = displayError(result)
+		toastManager.add({ title, description: message, type: "error" })
+		// `false` keeps the dialog open so the user can retry.
+		return false
 	}
 
 	// One pass, one clock. An expired key used to count as "Active" and sit in the active list behind
@@ -203,21 +198,26 @@ export function ApiKeysSection() {
 				<div className="flex flex-wrap items-center gap-3">
 					{keys.length > 0 && (
 						<>
-							<FilterTabs>
+							<ToggleGroup
+								variant="outline"
+								size="xs"
+								aria-label="Key status"
+								value={[activeView]}
+								onValueChange={(values) => {
+									const next = values[0]
+									if (next === "active" || next === "expired" || next === "revoked") setView(next)
+								}}
+							>
 								{(["active", "expired", "revoked"] as const).map((tab) =>
 									// A tab for an empty bucket is a dead end. Active always shows, so
 									// there is something to fall back to.
 									tab === "active" || buckets[tab].length > 0 ? (
-										<FilterTab
-											key={tab}
-											active={activeView === tab}
-											onClick={() => setView(tab)}
-										>
+										<ToggleGroupItem key={tab} value={tab} className="font-mono text-[11px]">
 											{VIEW_LABELS[tab]} · {buckets[tab].length}
-										</FilterTab>
+										</ToggleGroupItem>
 									) : null,
 								)}
-							</FilterTabs>
+							</ToggleGroup>
 							{buckets.active.length > 0 && (
 								<span className="text-muted-foreground font-mono text-[11px]">
 									<span className="text-success-foreground">{standardCount} standard</span>
@@ -242,12 +242,9 @@ export function ApiKeysSection() {
 					</Button>
 				</div>
 
-				<div className="bg-card rounded-lg border">
+				<div className="bg-card overflow-hidden rounded-lg border">
 					{isLoading ? (
-						<div className="space-y-2 p-4">
-							<Skeleton className="h-[52px] w-full" />
-							<Skeleton className="h-[52px] w-full" />
-						</div>
+						<SkeletonList rows={2} rowClassName="h-[52px]" gap="2" className="p-4" />
 					) : isError ? (
 						<Empty className="py-8">
 							<EmptyHeader>
@@ -317,25 +314,16 @@ export function ApiKeysSection() {
 							)}
 						</Empty>
 					) : (
-						<div className="divide-border divide-y">
-							<div className="flex items-center gap-3 px-4 py-2">
-								<Eyebrow variant="mono" className="min-w-0 flex-1">
-									Key
-								</Eyebrow>
-								<Eyebrow variant="mono" className={COL.prefix}>
-									Prefix
-								</Eyebrow>
-								<Eyebrow variant="mono" className={COL.scopes}>
-									Scopes
-								</Eyebrow>
-								<Eyebrow variant="mono" className={COL.lastUsed}>
-									Last used
-								</Eyebrow>
-								<Eyebrow variant="mono" className={COL.expires}>
-									Expires
-								</Eyebrow>
-								<span className={cn(COL.menu)} />
-							</div>
+						// The card frame replaces DataTable's own top/bottom rule.
+						<DataTable.Root ariaLabel="API keys" stickySurfaceClass="bg-card" className="border-y-0">
+							<DataTable.Head>
+								<ColumnHead label="Key" width="min-w-0 flex-1" />
+								<ColumnHead label="Prefix" width={COL.prefix} />
+								<ColumnHead label="Scopes" width={COL.scopes} />
+								<ColumnHead label="Last used" width={COL.lastUsed} />
+								<ColumnHead label="Expires" width={COL.expires} />
+								<span className={COL.menu} />
+							</DataTable.Head>
 							{visibleKeys.map((key) => (
 								<ApiKeyRow
 									key={key.id}
@@ -346,7 +334,7 @@ export function ApiKeysSection() {
 									onRevoke={key.revoked ? undefined : () => openRevokeDialog(key)}
 								/>
 							))}
-						</div>
+						</DataTable.Root>
 					)}
 				</div>
 			</div>
@@ -370,36 +358,27 @@ export function ApiKeysSection() {
 
 			<RollApiKeyDialog open={rollOpen} onOpenChange={setRollOpen} apiKey={rollingKey} />
 
-			<AlertDialog open={revokeOpen} onOpenChange={setRevokeOpen}>
-				<AlertDialogContent>
-					<AlertDialogHeader>
-						<AlertDialogMedia className="bg-destructive/10">
-							<AlertWarningIcon className="text-destructive" />
-						</AlertDialogMedia>
-						<AlertDialogTitle>Revoke API key?</AlertDialogTitle>
-						<AlertDialogDescription>
-							{revokingKey ? (
-								<>
-									<span className="text-foreground font-medium">{revokingKey.name}</span> (
-									<span className="font-mono text-xs">{revokingKey.key_prefix}</span>) will
-									stop working immediately. This action cannot be undone.
-								</>
-							) : (
-								<>
-									This action cannot be undone. Any integrations using this key will stop
-									working immediately.
-								</>
-							)}
-						</AlertDialogDescription>
-					</AlertDialogHeader>
-					<AlertDialogFooter>
-						<AlertDialogCancel disabled={isRevoking}>Cancel</AlertDialogCancel>
-						<AlertDialogAction variant="destructive" onClick={handleRevoke} disabled={isRevoking}>
-							{isRevoking ? "Revoking..." : "Revoke key"}
-						</AlertDialogAction>
-					</AlertDialogFooter>
-				</AlertDialogContent>
-			</AlertDialog>
+			<ConfirmDialog
+				open={revokeOpen}
+				onOpenChange={setRevokeOpen}
+				title="Revoke API key?"
+				description={
+					revokingKey ? (
+						<>
+							<span className="text-foreground font-medium">{revokingKey.name}</span> (
+							<span className="font-mono text-xs">{revokingKey.key_prefix}</span>) will stop
+							working immediately. This action cannot be undone.
+						</>
+					) : (
+						<>
+							This action cannot be undone. Any integrations using this key will stop working
+							immediately.
+						</>
+					)
+				}
+				confirmLabel="Revoke key"
+				onConfirm={handleRevoke}
+			/>
 		</div>
 	)
 }
@@ -467,14 +446,12 @@ function ApiReference() {
 		<div className="space-y-6">
 			<Card>
 				<CardHeader>
-					<div className="flex items-start justify-between gap-4">
-						<div className="space-y-1">
-							<CardTitle>API Reference</CardTitle>
-							<CardDescription>
-								The Maple v2 API is a resource-oriented REST interface — snake_case JSON,
-								prefixed object IDs, cursor-paginated lists, and scoped API keys.
-							</CardDescription>
-						</div>
+					<CardTitle>API Reference</CardTitle>
+					<CardDescription>
+						The Maple v2 API is a resource-oriented REST interface — snake_case JSON,
+						prefixed object IDs, cursor-paginated lists, and scoped API keys.
+					</CardDescription>
+					<CardAction>
 						<Button
 							size="sm"
 							render={
@@ -489,7 +466,7 @@ function ApiReference() {
 							<CodeIcon data-icon="inline-start" size={14} />
 							Open API reference
 						</Button>
-					</div>
+					</CardAction>
 				</CardHeader>
 				<CardContent className="space-y-4">
 					<div className="space-y-1.5">
@@ -538,10 +515,10 @@ function ApiReference() {
 									</div>
 								</div>
 								<div className="flex shrink-0 items-center gap-1.5">
-									<Badge variant="outline" className="font-mono text-[11px]">
+									<Badge variant="outline" mono className="text-[11px]">
 										{family.id}:read
 									</Badge>
-									<Badge variant="outline" className="font-mono text-[11px]">
+									<Badge variant="outline" mono className="text-[11px]">
 										{family.id}:write
 									</Badge>
 								</div>
@@ -587,7 +564,6 @@ function ApiKeyRow({
 }) {
 	const isMcp = apiKey.kind === "mcp"
 	const Icon = isMcp ? SquareTerminalIcon : KeyIcon
-	const relativeLastUsed = apiKey.last_used_at ? formatRelativeTime(apiKey.last_used_at) : null
 	const expiresAt = apiKey.expires_at === null ? null : Date.parse(apiKey.expires_at)
 	const expiresInPast = status === "expired"
 	const expiresSoon = status === "expiring"
@@ -611,7 +587,7 @@ function ApiKeyRow({
 	return (
 		<div
 			className={cn(
-				"flex items-center gap-3 px-4 py-3 transition-colors",
+				"flex items-center gap-4 border-b border-border/40 px-4 py-3 transition-colors last:border-0",
 				status === "revoked" || status === "expired" ? "opacity-60" : "hover:bg-muted/20",
 			)}
 		>
@@ -663,11 +639,8 @@ function ApiKeyRow({
 				<ScopesCell apiKey={apiKey} />
 			</div>
 
-			<span
-				className={cn(COL.lastUsed, "text-muted-foreground truncate text-[11px]")}
-				title={apiKey.last_used_at ? formatDate(apiKey.last_used_at) : undefined}
-			>
-				{apiKey.last_used_at ? (relativeLastUsed ?? formatDate(apiKey.last_used_at)) : "—"}
+			<span className={cn(COL.lastUsed, "text-muted-foreground truncate text-[11px]")}>
+				{apiKey.last_used_at ? <RelativeTime value={apiKey.last_used_at} tooltip="title" /> : "—"}
 			</span>
 
 			<span

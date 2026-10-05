@@ -139,10 +139,7 @@ function Caption({ graph }: { graph: ProvenanceGraph }) {
 			{graph.caption ? (
 				<span className="flex shrink-0 items-center gap-1.5 font-mono text-xs text-muted-foreground tabular-nums">
 					{running ? (
-						<StatusDot
-							tone="custom"
-							className="animate-pulse bg-primary motion-reduce:animate-none"
-						/>
+						<StatusDot tone="live" pulse />
 					) : null}
 					{graph.caption}
 					{running ? (

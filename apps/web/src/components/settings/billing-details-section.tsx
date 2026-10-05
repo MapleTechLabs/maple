@@ -167,8 +167,8 @@ function AddTaxIdRow({ profile }: { readonly profile: BillingProfile }) {
 				placeholder={taxIdExampleFor(type, profile.address?.country)}
 				className="w-56 font-mono"
 			/>
-			<Button size="sm" variant="outline" onClick={handleAdd} disabled={adding}>
-				{adding ? <Spinner className="size-4" /> : "Add tax ID"}
+			<Button size="sm" variant="outline" onClick={handleAdd} loading={adding} disabled={adding}>
+				Add tax ID
 			</Button>
 		</div>
 	)

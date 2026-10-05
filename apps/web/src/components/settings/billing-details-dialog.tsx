@@ -21,7 +21,6 @@ import {
 } from "@maple/ui/components/ui/dialog"
 import { Input } from "@maple/ui/components/ui/input"
 import { Label } from "@maple/ui/components/ui/label"
-import { Spinner } from "@maple/ui/components/ui/spinner"
 import { toastManager } from "@maple/ui/components/ui/toast"
 
 import { useAtomSet } from "@/lib/effect-atom"
@@ -196,8 +195,8 @@ export function BillingDetailsDialog({
 
 				<DialogFooter className="px-5 pt-[18px] pb-5">
 					<DialogClose render={<Button variant="outline" size="sm" />}>Cancel</DialogClose>
-					<Button size="sm" onClick={handleSave} disabled={saving}>
-						{saving ? <Spinner className="size-4" /> : "Save details"}
+					<Button size="sm" onClick={handleSave} loading={saving} disabled={saving}>
+						Save details
 					</Button>
 				</DialogFooter>
 			</DialogPopup>

@@ -7,22 +7,21 @@ import { displayError } from "@/lib/error-messages"
 import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
 
 import { Button } from "@maple/ui/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@maple/ui/components/ui/card"
+import {
+	Card,
+	CardAction,
+	CardContent,
+	CardDescription,
+	CardHeader,
+	CardTitle,
+} from "@maple/ui/components/ui/card"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Input } from "@maple/ui/components/ui/input"
 import { Label } from "@maple/ui/components/ui/label"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import {
-	AlertDialog,
-	AlertDialogAction,
-	AlertDialogCancel,
-	AlertDialogContent,
-	AlertDialogDescription,
-	AlertDialogFooter,
-	AlertDialogHeader,
-	AlertDialogMedia,
-	AlertDialogTitle,
-} from "@maple/ui/components/ui/alert-dialog"
+import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
+import { Skeleton, SkeletonList } from "@maple/ui/components/ui/skeleton"
+import { TruncatedId } from "@maple/ui/components/ui/truncated-id"
+import { Alert, AlertDescription } from "@maple/ui/components/ui/alert"
 import {
 	AlertWarningIcon,
 	ChevronDownIcon,
@@ -57,11 +56,6 @@ function formatSyncDate(value: string | null): string {
 	} catch {
 		return value
 	}
-}
-
-function shortRevision(rev: string | null): string {
-	if (!rev) return "—"
-	return rev.length > 10 ? rev.slice(0, 10) : rev
 }
 
 interface OrgClickHouseSettingsSectionProps {
@@ -263,21 +257,15 @@ export function OrgClickHouseSettingsSection({ isAdmin, hasEntitlement }: OrgCli
 				<DataPlatformUsageSection />
 				<Card>
 					<CardHeader>
-						<div className="flex items-center justify-between gap-3">
-							<div className="space-y-1">
-								<CardTitle>Bring your own ClickHouse</CardTitle>
-								<CardDescription>
-									Route this organization&apos;s read queries through your own ClickHouse
-									server. Save the connection first, then review the schema diff and apply
-									the bundled snapshot to your cluster.
-								</CardDescription>
-							</div>
-							{Result.isInitial(settingsResult) ? (
-								<Skeleton className="h-6 w-36" />
-							) : (
-								statusBadge
-							)}
-						</div>
+						<CardTitle>Bring your own ClickHouse</CardTitle>
+						<CardDescription>
+							Route this organization&apos;s read queries through your own ClickHouse server.
+							Save the connection first, then review the schema diff and apply the bundled
+							snapshot to your cluster.
+						</CardDescription>
+						<CardAction>
+							{Result.isInitial(settingsResult) ? <Skeleton className="h-6 w-36" /> : statusBadge}
+						</CardAction>
 					</CardHeader>
 					<CardContent className="space-y-5">
 						{!Result.isSuccess(settingsResult) && !Result.isInitial(settingsResult) ? (
@@ -391,13 +379,21 @@ export function OrgClickHouseSettingsSection({ isAdmin, hasEntitlement }: OrgCli
 								<div>
 									<p className="text-muted-foreground text-xs">Applied version</p>
 									<p className="font-mono text-xs">
-										{shortRevision(settings?.schemaVersion ?? null)}
+										{settings?.schemaVersion ? (
+											<TruncatedId value={settings.schemaVersion} kind="sha" length={10} />
+										) : (
+											"—"
+										)}
 									</p>
 								</div>
 								<div>
 									<p className="text-muted-foreground text-xs">Expected version</p>
 									<p className="font-mono text-xs">
-										{shortRevision(diff?.expectedSchemaVersion ?? null)}
+										{diff?.expectedSchemaVersion ? (
+											<TruncatedId value={diff.expectedSchemaVersion} kind="sha" length={10} />
+										) : (
+											"—"
+										)}
 									</p>
 								</div>
 								<div>
@@ -411,20 +407,18 @@ export function OrgClickHouseSettingsSection({ isAdmin, hasEntitlement }: OrgCli
 							</div>
 
 							{Result.isInitial(diffResult) ? (
-								<div className="space-y-2">
-									<Skeleton className="h-9 w-full" />
-									<Skeleton className="h-9 w-full" />
-									<Skeleton className="h-9 w-full" />
-								</div>
+								<SkeletonList rows={3} rowClassName="h-9" gap="2" />
 							) : !Result.isSuccess(diffResult) ? (
-								<div className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-									Failed to introspect ClickHouse:{" "}
-									{getExitErrorMessage(
-										// SAFETY: this branch has already excluded loading and success, leaving the failure Exit variant.
-										diffResult as unknown as Exit.Exit<unknown, unknown>,
-										"check that credentials are valid",
-									)}
-								</div>
+								<Alert variant="error" size="sm" className="text-sm">
+									<AlertDescription className="block text-destructive">
+										Failed to introspect ClickHouse:{" "}
+										{getExitErrorMessage(
+											// SAFETY: this branch has already excluded loading and success, leaving the failure Exit variant.
+											diffResult as unknown as Exit.Exit<unknown, unknown>,
+											"check that credentials are valid",
+										)}
+									</AlertDescription>
+								</Alert>
 							) : diff && diff.entries.length > 0 ? (
 								<div className="divide-y rounded-md border">
 									{diff.entries.map((entry) => {
@@ -557,33 +551,22 @@ export function OrgClickHouseSettingsSection({ isAdmin, hasEntitlement }: OrgCli
 				) : null}
 			</div>
 
-			<AlertDialog open={disableOpen} onOpenChange={setDisableOpen}>
-				<AlertDialogContent>
-					<AlertDialogMedia>
-						<AlertWarningIcon className="text-severity-warn" size={20} />
-					</AlertDialogMedia>
-					<AlertDialogHeader>
-						<AlertDialogTitle>Disable BYO ClickHouse?</AlertDialogTitle>
-						<AlertDialogDescription>
-							This org will fall back to the default Maple-managed Tinybird Cloud. Tables in
-							your ClickHouse cluster are NOT touched: disable just removes Maple&apos;s pointer
-							to it.
-						</AlertDialogDescription>
-					</AlertDialogHeader>
-					<AlertDialogFooter>
-						<AlertDialogCancel disabled={isDisabling}>Cancel</AlertDialogCancel>
-						<AlertDialogAction
-							onClick={(event) => {
-								event.preventDefault()
-								void handleDisable()
-							}}
-							disabled={isDisabling}
-						>
-							{isDisabling ? "Disabling..." : "Disable"}
-						</AlertDialogAction>
-					</AlertDialogFooter>
-				</AlertDialogContent>
-			</AlertDialog>
+			<ConfirmDialog
+				open={disableOpen}
+				onOpenChange={setDisableOpen}
+				tone="default"
+				icon={<AlertWarningIcon className="text-severity-warn" size={20} />}
+				title="Disable BYO ClickHouse?"
+				description={
+					<>
+						This org will fall back to the default Maple-managed Tinybird Cloud. Tables in your
+						ClickHouse cluster are NOT touched: disable just removes Maple&apos;s pointer to it.
+					</>
+				}
+				confirmLabel="Disable"
+				onConfirm={() => void handleDisable()}
+				pending={isDisabling}
+			/>
 		</>
 	)
 }

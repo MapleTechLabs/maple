@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from "react"
 import { useReducedMotion } from "motion/react"
 import { useTheme } from "@maple/ui/hooks/use-theme"
 import { Button } from "@maple/ui/components/ui/button"
+import { ToggleGroup, ToggleGroupItem } from "@maple/ui/components/ui/toggle-group"
 import {
 	ArrowRotateAnticlockwiseIcon,
 	CubeIcon,
@@ -87,26 +88,25 @@ export function ServiceMap3DViewport({
 	return (
 		<div className="flex h-full min-h-0 flex-col" data-service-map-renderer="3d">
 			<div className="flex shrink-0 flex-wrap items-center gap-2 border-b px-4 py-2">
-				<fieldset className="flex gap-1 rounded-lg bg-muted/60 p-1" aria-label="Map perspective">
-					<Button
-						size="sm"
-						variant={view === "atlas" ? "secondary" : "ghost"}
-						aria-pressed={view === "atlas"}
-						onClick={() => setView("atlas")}
-					>
+				<ToggleGroup
+					value={[view]}
+					onValueChange={(values) => {
+						const next = values.find((value) => value !== view)
+						if (next === "atlas" || next === "cascade") setView(next)
+					}}
+					variant="outline"
+					size="xs"
+					aria-label="Map perspective"
+				>
+					<ToggleGroupItem value="atlas">
 						<CubeIcon size={14} />
 						Atlas
-					</Button>
-					<Button
-						size="sm"
-						variant={view === "cascade" ? "secondary" : "ghost"}
-						aria-pressed={view === "cascade"}
-						onClick={() => setView("cascade")}
-					>
+					</ToggleGroupItem>
+					<ToggleGroupItem value="cascade">
 						<LayersIcon size={14} />
 						Cascade
-					</Button>
-				</fieldset>
+					</ToggleGroupItem>
+				</ToggleGroup>
 				<span className="ml-3 hidden text-[11px] text-muted-foreground sm:block">
 					{copy.encoding}
 				</span>

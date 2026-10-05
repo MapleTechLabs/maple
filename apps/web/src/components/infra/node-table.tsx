@@ -1,15 +1,14 @@
 import { Link } from "@tanstack/react-router"
 
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
 
 import type { ListNodesResponse } from "@maple/domain/http"
 
 import { HostStatusBadge } from "./status-badge"
-import { ColumnHead, DataTable, ROW_LINK_CLASS, useTableSort } from "./primitives/data-table"
+import { ColumnHead, DataTable, ROW_LINK_CLASS, useTableSort } from "@/components/common/data-table"
 import { MetaLine } from "./primitives/meta-line"
 import { formatUptime } from "@maple/ui/lib/format"
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
+import { RelativeTime } from "@/components/common/relative-time"
 
 export type NodeRow = ListNodesResponse["data"][number]
 
@@ -115,15 +114,11 @@ export function NodeTable({ nodes, waiting, referenceTime }: NodeTableProps) {
 						{formatUptime(node.uptime)}
 					</div>
 					<div className="w-[100px] text-right">
-						<Tooltip>
-							<TooltipTrigger
-								render={<span />}
-								className="cursor-default font-mono text-[11px] text-muted-foreground"
-							>
-								{formatRelativeTime(node.lastSeen)}
-							</TooltipTrigger>
-							<TooltipContent>{node.lastSeen}</TooltipContent>
-						</Tooltip>
+						<RelativeTime
+							value={node.lastSeen}
+							mono
+							className="cursor-default text-[11px] text-muted-foreground"
+						/>
 					</div>
 				</Link>
 			))}

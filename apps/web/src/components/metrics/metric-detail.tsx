@@ -5,6 +5,7 @@ import { Result } from "@/lib/effect-atom"
 import { getChartById } from "@maple/ui/components/charts/registry"
 import { ChartSkeleton } from "@maple/ui/components/charts/_shared/chart-skeleton"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { Panel, PanelHeader } from "@maple/ui/components/ui/panel"
 import { ErrorState } from "@/components/common/error-state"
 import { DocsLink } from "@/components/common/docs-link"
 import { MetricQueryControls, type MetricQueryPatch } from "./metric-query-controls"
@@ -276,11 +277,11 @@ function MetricChart({
 	}`
 
 	return (
-		<div className="rounded-md border bg-card">
-			<div className="flex items-center justify-between gap-2 border-b px-3 py-2">
-				<span className="truncate font-mono text-xs text-muted-foreground">{queryLabel}</span>
-				{unit && <span className="shrink-0 text-xs text-muted-foreground">unit: {unit}</span>}
-			</div>
+		<Panel>
+			<PanelHeader
+				title={<span className="font-mono">{queryLabel}</span>}
+				action={unit ? <span className="text-xs text-muted-foreground">unit: {unit}</span> : undefined}
+			/>
 			<div className="h-80 p-3">
 				{Result.builder(result)
 					.onInitial(() => <ChartSkeleton variant="area" />)
@@ -304,6 +305,6 @@ function MetricChart({
 					)
 					.render()}
 			</div>
-		</div>
+		</Panel>
 	)
 }

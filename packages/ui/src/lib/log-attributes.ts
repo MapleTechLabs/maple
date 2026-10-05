@@ -9,6 +9,8 @@
 // Kept dependency-free (structural `LogLike` instead of an app-specific `Log`)
 // so it can be consumed from web and React Native alike.
 
+import { httpStatusTone } from "./http"
+
 export type ChipTone = "error" | "warn" | "info" | "muted"
 
 export interface PickedAttribute {
@@ -123,8 +125,9 @@ export function getChipTone(key: string, value: string, severityText: string, rp
 	) {
 		const status = isNumericStatus(value)
 		if (status !== null) {
-			if (status >= 500) return "error"
-			if (status >= 400) return "warn"
+			const tone = httpStatusTone(status)
+			if (tone === "crit") return "error"
+			if (tone === "warn") return "warn"
 			if (status >= 300) return "info"
 			return "muted"
 		}

@@ -5,7 +5,15 @@ import { toastManager } from "@maple/ui/components/ui/toast"
 
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@maple/ui/components/ui/card"
+import {
+	Card,
+	CardAction,
+	CardContent,
+	CardDescription,
+	CardHeader,
+	CardTitle,
+} from "@maple/ui/components/ui/card"
+import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
 import { Input } from "@maple/ui/components/ui/input"
 import { Label } from "@maple/ui/components/ui/label"
 import {
@@ -18,17 +26,6 @@ import {
 	DialogTitle,
 } from "@maple/ui/components/ui/dialog"
 import {
-	AlertDialog,
-	AlertDialogAction,
-	AlertDialogCancel,
-	AlertDialogContent,
-	AlertDialogDescription,
-	AlertDialogFooter,
-	AlertDialogHeader,
-	AlertDialogMedia,
-	AlertDialogTitle,
-} from "@maple/ui/components/ui/alert-dialog"
-import {
 	DropdownMenu,
 	DropdownMenuContent,
 	DropdownMenuItem,
@@ -36,7 +33,6 @@ import {
 } from "@maple/ui/components/ui/dropdown-menu"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
 import {
-	AlertWarningIcon,
 	CircleCheckIcon,
 	DotsVerticalIcon,
 	EnvelopeIcon,
@@ -150,18 +146,18 @@ export function EmailAddressesSection() {
 	return (
 		<div className="space-y-6">
 			<Card>
-				<CardHeader className="flex flex-row items-center justify-between">
-					<div className="space-y-1.5">
-						<CardTitle>Email Addresses</CardTitle>
-						<CardDescription>
-							Your primary address receives sign-in codes, alerts and digests. Others can be
-							used to sign in.
-						</CardDescription>
-					</div>
-					<Button size="sm" onClick={() => setAdd({ step: "email", value: "" })}>
-						<PlusIcon size={14} />
-						Add
-					</Button>
+				<CardHeader>
+					<CardTitle>Email Addresses</CardTitle>
+					<CardDescription>
+						Your primary address receives sign-in codes, alerts and digests. Others can be used
+						to sign in.
+					</CardDescription>
+					<CardAction>
+						<Button size="sm" onClick={() => setAdd({ step: "email", value: "" })}>
+							<PlusIcon size={14} />
+							Add
+						</Button>
+					</CardAction>
 				</CardHeader>
 				<CardContent>
 					<Table>
@@ -336,31 +332,17 @@ export function EmailAddressesSection() {
 				</DialogContent>
 			</Dialog>
 
-			<AlertDialog
+			<ConfirmDialog
 				open={pendingRemoval !== null}
 				onOpenChange={(open) => {
 					if (!open) setPendingRemoval(null)
 				}}
-			>
-				<AlertDialogContent>
-					<AlertDialogHeader>
-						<AlertDialogMedia className="bg-destructive/10">
-							<AlertWarningIcon className="text-destructive" />
-						</AlertDialogMedia>
-						<AlertDialogTitle>Remove email address?</AlertDialogTitle>
-						<AlertDialogDescription>
-							{pendingRemoval?.emailAddress} can no longer be used to sign in or receive
-							notifications from Maple.
-						</AlertDialogDescription>
-					</AlertDialogHeader>
-					<AlertDialogFooter>
-						<AlertDialogCancel disabled={isBusy}>Cancel</AlertDialogCancel>
-						<AlertDialogAction variant="destructive" onClick={handleRemove} disabled={isBusy}>
-							{isBusy ? "Removing..." : "Remove"}
-						</AlertDialogAction>
-					</AlertDialogFooter>
-				</AlertDialogContent>
-			</AlertDialog>
+				title="Remove email address?"
+				description={`${pendingRemoval?.emailAddress} can no longer be used to sign in or receive notifications from Maple.`}
+				confirmLabel="Remove"
+				pending={isBusy}
+				onConfirm={() => void handleRemove()}
+			/>
 		</div>
 	)
 }

@@ -1,4 +1,5 @@
 import { memo, useDeferredValue, useEffect, useMemo, useRef, type ReactNode } from "react"
+import { shortId } from "@maple/ui/lib/ids"
 import { useVirtualizer } from "@tanstack/react-virtual"
 
 import type { AiSessionSpan } from "@maple/domain/http"
@@ -9,6 +10,8 @@ import { Spinner } from "@maple/ui/components/ui/spinner"
 import { CopyButton } from "@maple/ui/components/ui/copy-button"
 import { formatBytes, formatDuration } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
+import { Badge } from "@maple/ui/components/ui/badge"
+import { TONE_SOFT } from "@maple/ui/lib/tone"
 
 import {
 	BranchForkIcon,
@@ -45,7 +48,6 @@ import {
 import { formatClockInTimezone } from "@/lib/timezone-format"
 import { ClampedText, firstLine } from "./clamped-text"
 import { disclosed, MessageBody, useJsonPayload, useMessageBody, ViewSwitch } from "./payload-view"
-import { Pill } from "./pill"
 import { ToolIo, ToolIoSummary } from "./tool-io"
 
 /**
@@ -434,7 +436,11 @@ function TurnChapter({
 				<span className="shrink-0 font-medium text-muted-foreground text-xs group-hover/turn:text-foreground">
 					{turnOrdinal(turn)}
 				</span>
-				{turn.failed && <Pill tone="error">Failed</Pill>}
+				{turn.failed && (
+					<Badge pill size="xs" className={cn("uppercase tracking-wide", TONE_SOFT.crit)}>
+						Failed
+					</Badge>
+				)}
 				{collapsed && (
 					<>
 						{/* The label is the first prose line of a captured message, not a
@@ -703,7 +709,11 @@ function AssistantBlock({
 					className="flex min-w-0 grow cursor-pointer items-center gap-2 text-left"
 				>
 					{(!continued || row.failed) && <span className={SPEAKER}>Assistant</span>}
-					{row.failed && <Pill tone="error">Failed</Pill>}
+					{row.failed && (
+						<Badge pill size="xs" className={cn("uppercase tracking-wide", TONE_SOFT.crit)}>
+							Failed
+						</Badge>
+					)}
 					<span className={CLOCK}>{clockOf(row.startMs, timeZone)}</span>
 					{row.span.genAi.errorType !== undefined && (
 						<span className="shrink-0 font-mono text-[11px] text-destructive">
@@ -1009,9 +1019,9 @@ function PayloadSection({
 				{/* Emitter truncation, not the view's clamping — there is no "show
 				    full" that can recover what was never recorded. */}
 				{payload.truncatedByEmitter && (
-					<Pill tone="warn" className="rounded-sm font-mono normal-case tracking-normal">
+					<Badge size="xs" mono className={TONE_SOFT.warn}>
 						truncated by the emitter
-					</Pill>
+					</Badge>
 				)}
 				{/* Copies what is displayed: the pretty-printed JSON, or the raw text.
 				    The switch only appears where the two differ. */}
@@ -1086,7 +1096,7 @@ function LaneOpen({
 						? row.parentAgentName !== undefined
 							? `subagent of ${row.parentAgentName}`
 							: "subagent"
-						: `agent · trace ${row.span.traceId.slice(0, 8)}`}{" "}
+						: `agent · trace ${shortId(row.span.traceId, "trace")}`}{" "}
 					· {row.spanCount} spans · {formatDuration(row.span.durationMs)}
 				</span>
 			</div>
@@ -1420,7 +1430,7 @@ function structureMeta(span: AiSessionSpan, category: string): { shown: string; 
 	if (category === "tool") {
 		return { shown: `${span.serviceName} · payloads not captured`, onHover: "" }
 	}
-	if (category === "agent") return { shown: `trace ${span.traceId.slice(0, 8)}`, onHover: "" }
+	if (category === "agent") return { shown: `trace ${shortId(span.traceId, "trace")}`, onHover: "" }
 	// The model already leads the label; the rest of the call's facts follow, so
 	// the parts are taken as parts rather than sliced back out of a joined line.
 	// What the call cost is the turn header's, the same as on a captured call,

@@ -2,7 +2,9 @@ import { useOrganization } from "@clerk/clerk-react"
 import { createFileRoute } from "@tanstack/react-router"
 import { Schema } from "effect"
 import { useState } from "react"
+import { Alert, AlertDescription } from "@maple/ui/components/ui/alert"
 import { Button } from "@maple/ui/components/ui/button"
+import { CircleWarningIcon } from "@/components/icons"
 import { AuthLayout } from "@/components/layout/auth-layout"
 import { ClerkOrgSwitcherMenu } from "@/components/dashboard/org-switcher-menu"
 import { useMountEffect } from "@/hooks/use-mount-effect"
@@ -169,12 +171,10 @@ function McpAuthorizePage() {
 
 				{state._tag === "error" ? (
 					<div className="space-y-3">
-						<p
-							role="alert"
-							className="border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
-						>
-							{state.message}
-						</p>
+						<Alert variant="error">
+							<CircleWarningIcon size={16} />
+							<AlertDescription className="text-destructive">{state.message}</AlertDescription>
+						</Alert>
 						<p className="text-sm text-muted-foreground">
 							Return to your MCP client and start the connection again.
 						</p>

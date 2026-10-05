@@ -8,17 +8,8 @@ import { Button } from "@maple/ui/components/ui/button"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { MultiSelectCombobox } from "@maple/ui/components/multi-select-combobox"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
-import {
-	AlertDialog,
-	AlertDialogAction,
-	AlertDialogCancel,
-	AlertDialogContent,
-	AlertDialogDescription,
-	AlertDialogFooter,
-	AlertDialogHeader,
-	AlertDialogMedia,
-	AlertDialogTitle,
-} from "@maple/ui/components/ui/alert-dialog"
+import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
+
 import {
 	DropdownMenu,
 	DropdownMenuContent,
@@ -513,37 +504,26 @@ export function DashboardList({
 				}}
 			/>
 
-			<AlertDialog
+			<ConfirmDialog
 				open={pendingDelete !== null}
 				onOpenChange={(open) => {
 					if (!open) setPendingDelete(null)
 				}}
-			>
-				<AlertDialogContent>
-					<AlertDialogHeader>
-						<AlertDialogMedia className="bg-destructive/10">
-							<CircleWarningIcon className="text-destructive" />
-						</AlertDialogMedia>
-						<AlertDialogTitle>Delete “{pendingDelete?.name}”?</AlertDialogTitle>
-						<AlertDialogDescription>
-							This dashboard belongs to the whole org — deleting it removes it for everyone, not
-							just you. It can’t be undone. Export the JSON first if you might want it back.
-						</AlertDialogDescription>
-					</AlertDialogHeader>
-					<AlertDialogFooter>
-						<AlertDialogCancel>Cancel</AlertDialogCancel>
-						<AlertDialogAction
-							variant="destructive"
-							onClick={() => {
-								if (pendingDelete) onDelete(pendingDelete.id)
-								setPendingDelete(null)
-							}}
-						>
-							Delete for everyone
-						</AlertDialogAction>
-					</AlertDialogFooter>
-				</AlertDialogContent>
-			</AlertDialog>
+				icon={<CircleWarningIcon className="text-destructive" />}
+				title={<>Delete “{pendingDelete?.name}”?</>}
+				description={
+					<>
+						This dashboard belongs to the whole org: deleting it removes it for everyone, not
+						just you. It can’t be undone. Export the JSON first if you might want it back.
+					</>
+				}
+				confirmLabel="Delete for everyone"
+				onConfirm={() => {
+					if (pendingDelete) onDelete(pendingDelete.id)
+					setPendingDelete(null)
+				}}
+			/>
+
 		</div>
 	)
 }

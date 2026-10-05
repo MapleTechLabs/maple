@@ -5,25 +5,24 @@ import { Exit, Option } from "effect"
 import type { ChatConnectorId, ChatWorkspaceId } from "@maple/domain/primitives"
 import type { V2ChatConnector } from "@maple/domain/http/v2"
 
-import {
-	AlertDialog,
-	AlertDialogAction,
-	AlertDialogCancel,
-	AlertDialogContent,
-	AlertDialogDescription,
-	AlertDialogFooter,
-	AlertDialogHeader,
-	AlertDialogTitle,
-} from "@maple/ui/components/ui/alert-dialog"
 import { Button } from "@maple/ui/components/ui/button"
+import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
 import { Input } from "@maple/ui/components/ui/input"
+import {
+	Item,
+	ItemActions,
+	ItemContent,
+	ItemDescription,
+	ItemMedia,
+	ItemTitle,
+} from "@maple/ui/components/ui/item"
 import { Label } from "@maple/ui/components/ui/label"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { toastManager } from "@maple/ui/components/ui/toast"
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { chatConnectorManifests } from "@maple/chat-platform/manifests"
 
 import { ErrorState } from "@/components/common/error-state"
+import { RelativeTime } from "@/components/common/relative-time"
 import { useIsOrgAdmin } from "@/hooks/use-is-org-admin"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { retainedQuery } from "@/lib/services/common/atom-client"
@@ -186,25 +185,27 @@ function ChatIdentityRow({
 	}
 
 	return (
-		<div className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-card px-4 py-3">
-			<div className="flex min-w-0 flex-col gap-0.5">
-				<span className="text-xs font-medium">Your {platform} account</span>
-				<span className="truncate text-[11px] text-muted-foreground">
+		<Item variant="card" className="gap-3 px-4 py-3">
+			<ItemContent className="gap-0.5">
+				<ItemTitle>Your {platform} account</ItemTitle>
+				<ItemDescription className="truncate text-[11px]">
 					{identity === undefined
 						? `Link it so Maple knows it's you acting from ${platform}.`
 						: `Linked as ${identity.display_name ?? identity.external_user_id}`}
-				</span>
-			</div>
-			<Button
-				size="sm"
-				variant="outline"
-				onClick={identity === undefined ? handleLink : handleUnlink}
-				disabled={busy}
-			>
-				{busy ? <Spinner size={14} /> : null}
-				{identity === undefined ? "Link your account" : "Unlink"}
-			</Button>
-		</div>
+				</ItemDescription>
+			</ItemContent>
+			<ItemActions>
+				<Button
+					size="sm"
+					variant="outline"
+					onClick={identity === undefined ? handleLink : handleUnlink}
+					disabled={busy}
+				>
+					{busy ? <Spinner size={14} /> : null}
+					{identity === undefined ? "Link your account" : "Unlink"}
+				</Button>
+			</ItemActions>
+		</Item>
 	)
 }
 
@@ -343,12 +344,11 @@ export function ChatIntegrationCard({ connector }: { connector: ChatConnectorId 
 	return (
 		<div className="flex flex-col gap-4">
 			{workspaces.map((workspace) => (
-				<div
-					key={workspace.id}
-					className="flex items-start gap-4 rounded-lg border border-border/60 bg-card p-4"
-				>
-					<IntegrationIconPlate icon={Icon} accent={entry.accent} />
-					<div className="flex flex-1 flex-col gap-2">
+				<Item key={workspace.id} variant="card" className="items-start gap-4 p-4">
+					<ItemMedia>
+						<IntegrationIconPlate icon={Icon} accent={entry.accent} />
+					</ItemMedia>
+					<ItemContent className="gap-2">
 						<div className="flex items-center gap-2">
 							<h3 className="text-sm font-semibold">{workspace.name}</h3>
 							<span className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -360,9 +360,11 @@ export function ChatIntegrationCard({ connector }: { connector: ChatConnectorId 
 							Linked to your organization, for everyone in this workspace — no {manifest.name}{" "}
 							account is tied to an individual Maple user.
 						</p>
-						<div className="text-[11px] text-muted-foreground">
-							Connected {formatRelativeTime(workspace.created_at)}
-						</div>
+						<RelativeTime
+							value={workspace.created_at}
+							prefix="Connected"
+							className="text-[11px] text-muted-foreground"
+						/>
 						{/* Keyed by the stored settings so a save reseeds the form from what
 						    the server actually kept. */}
 						<WorkspaceSettings
@@ -384,8 +386,8 @@ export function ChatIntegrationCard({ connector }: { connector: ChatConnectorId 
 								Disconnect
 							</Button>
 						</div>
-					</div>
-				</div>
+					</ItemContent>
+				</Item>
 			))}
 			{status?.supports_identity === true ? (
 				<ChatIdentityRow connector={connector} platform={platform} identity={status.identity} />
@@ -402,28 +404,17 @@ export function ChatIntegrationCard({ connector }: { connector: ChatConnectorId 
 				</p>
 			) : null}
 
-			<AlertDialog open={confirmId !== null} onOpenChange={(open) => !open && setConfirmId(null)}>
-				<AlertDialogContent>
-					<AlertDialogHeader>
-						<AlertDialogTitle>Disconnect workspace</AlertDialogTitle>
-						<AlertDialogDescription>
-							This workspace is unlinked from your organization immediately. Removing the bot
-							from the workspace itself is done in {manifest.name}.
-						</AlertDialogDescription>
-					</AlertDialogHeader>
-					<AlertDialogFooter>
-						<AlertDialogCancel>Cancel</AlertDialogCancel>
-						<AlertDialogAction
-							variant="destructive"
-							onClick={() => confirmId !== null && handleDisconnect(confirmId)}
-							disabled={busy !== null}
-						>
-							{busy === confirmId ? <Spinner size={14} /> : null}
-							Disconnect
-						</AlertDialogAction>
-					</AlertDialogFooter>
-				</AlertDialogContent>
-			</AlertDialog>
+			<ConfirmDialog
+				open={confirmId !== null}
+				onOpenChange={(open) => {
+					if (!open) setConfirmId(null)
+				}}
+				title="Disconnect workspace"
+				description={`This workspace is unlinked from your organization immediately. Removing the bot from the workspace itself is done in ${manifest.name}.`}
+				confirmLabel="Disconnect"
+				onConfirm={() => (confirmId !== null ? handleDisconnect(confirmId) : undefined)}
+				pending={busy !== null && busy === confirmId}
+			/>
 		</div>
 	)
 }

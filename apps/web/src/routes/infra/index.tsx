@@ -14,7 +14,7 @@ import {
 	SourcesTable,
 	presentSources,
 } from "@/components/infra/overview/infra-overview"
-import { PageHero } from "@/components/infra/primitives/page-hero"
+import { PageHero } from "@/components/common/page-hero"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { useInfraSurfaces } from "@/hooks/use-infra-surfaces"
 import {

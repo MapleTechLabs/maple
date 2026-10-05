@@ -2,7 +2,7 @@ import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-a
 import { ScrapeIntervalSeconds } from "@maple/domain/http"
 import type { ScrapeAuthType, ScrapeTargetId } from "@maple/domain/http"
 import type { V2ScrapeTarget, V2ScrapeTargetCheck } from "@maple/domain/http/v2"
-import { useState, type KeyboardEvent, type ReactNode } from "react"
+import { useState, type KeyboardEvent } from "react"
 import { Exit, Schema } from "effect"
 import { toastManager } from "@maple/ui/components/ui/toast"
 import { Spinner } from "@maple/ui/components/ui/spinner"
@@ -13,16 +13,7 @@ import { type ScrapeTargetChecksResponse, useScrapeTargetChecks } from "@/hooks/
 import { scrapeTargetsListAtom } from "@/lib/services/atoms/scrape-target-atoms"
 
 import { Alert, AlertDescription, AlertTitle } from "@maple/ui/components/ui/alert"
-import {
-	AlertDialog,
-	AlertDialogAction,
-	AlertDialogCancel,
-	AlertDialogContent,
-	AlertDialogDescription,
-	AlertDialogFooter,
-	AlertDialogHeader,
-	AlertDialogTitle,
-} from "@maple/ui/components/ui/alert-dialog"
+import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
 import {
@@ -40,12 +31,14 @@ import {
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@maple/ui/components/ui/dropdown-menu"
-import { Eyebrow, eyebrowVariants } from "@maple/ui/components/ui/eyebrow"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import { Input } from "@maple/ui/components/ui/input"
 import { Label } from "@maple/ui/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { KeyValue, KeyValueList } from "@maple/ui/components/ui/key-value"
+import { SkeletonList } from "@maple/ui/components/ui/skeleton"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
 import { Switch } from "@maple/ui/components/ui/switch"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
 import { cn } from "@maple/ui/lib/utils"
@@ -66,7 +59,7 @@ import {
 } from "@/components/icons"
 import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
 import { formatDuration, formatNumber } from "@maple/ui/lib/format"
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
+import { RelativeTime } from "@/components/common/relative-time"
 import { diagnoseScrapeError } from "@/lib/scrape-error-diagnosis"
 import { scheduledStatusFromChecks, scheduledStatusFromRollup } from "@/lib/scrape-target-status"
 import { catalogEntry } from "../integrations/integration-catalog"
@@ -394,11 +387,7 @@ export function ScrapeTargetsSection({
 				)}
 
 				{Result.isInitial(listResult) ? (
-					<div className="space-y-2">
-						<Skeleton className="h-[60px] w-full" />
-						<Skeleton className="h-[60px] w-full" />
-						<Skeleton className="h-[60px] w-full" />
-					</div>
+					<SkeletonList rows={3} rowClassName="h-[60px]" gap="2" />
 				) : !Result.isSuccess(listResult) ? (
 					<div className="text-muted-foreground flex flex-col items-center gap-3 py-8 text-center text-sm">
 						Failed to load scrape targets.
@@ -615,36 +604,25 @@ export function ScrapeTargetsSection({
 				</DialogContent>
 			</Dialog>
 
-			<AlertDialog
+			<ConfirmDialog
 				open={deleteConfirmTarget !== null}
 				onOpenChange={(open) => {
 					if (!open) setDeleteConfirmTarget(null)
 				}}
-			>
-				<AlertDialogContent>
-					<AlertDialogHeader>
-						<AlertDialogTitle>Delete scrape target</AlertDialogTitle>
-						<AlertDialogDescription>
-							Are you sure you want to delete{" "}
-							<span className="font-medium text-foreground">{deleteConfirmTarget?.name}</span>?
-							This action cannot be undone.
-						</AlertDialogDescription>
-					</AlertDialogHeader>
-					<AlertDialogFooter>
-						<AlertDialogCancel>Cancel</AlertDialogCancel>
-						<AlertDialogAction
-							variant="destructive"
-							onClick={() => {
-								if (deleteConfirmTarget) {
-									void handleDelete(deleteConfirmTarget.id)
-								}
-							}}
-						>
-							Delete
-						</AlertDialogAction>
-					</AlertDialogFooter>
-				</AlertDialogContent>
-			</AlertDialog>
+				title="Delete scrape target"
+				description={
+					<>
+						Are you sure you want to delete{" "}
+						<span className="font-medium text-foreground">{deleteConfirmTarget?.name}</span>?
+						This action cannot be undone.
+					</>
+				}
+				confirmLabel="Delete"
+				onConfirm={() => {
+					// handleDelete clears the target, which closes the dialog.
+					if (deleteConfirmTarget) void handleDelete(deleteConfirmTarget.id)
+				}}
+			/>
 		</>
 	)
 }
@@ -715,7 +693,7 @@ function ScrapeTargetRow({
 					<span>{target.scrape_interval_seconds}s interval</span>
 					<span>{status.detail}</span>
 					{target.last_scrape_at && (
-						<span>Last scrape {formatRelativeTime(target.last_scrape_at)}</span>
+						<RelativeTime value={target.last_scrape_at} prefix="Last scrape" tooltip="title" />
 					)}
 				</div>
 				{target.last_scrape_error && (
@@ -923,17 +901,16 @@ function ScrapeTargetDetails({
 						<ExternalLinkIcon size={13} />
 						Target
 					</Eyebrow>
-					<div className="divide-y rounded-md border bg-background/35 text-xs">
-						<DetailRow label="Service" value={target.service_name ?? target.name} />
-						<DetailRow label="Instance" value={hostnameFromUrl(target.url)} />
-						<DetailRow
-							label="Auth"
-							value={AUTH_TYPE_LABELS[target.auth_type] ?? target.auth_type}
-						/>
-						<DetailRow label="Target ID" value={<span className="font-mono">{target.id}</span>} />
-						<DetailRow label="Created" value={formatDateTime(target.created_at)} />
-						<DetailRow label="Updated" value={formatDateTime(target.updated_at)} />
-					</div>
+					<KeyValueList divided className="rounded-md border bg-background/35 px-3">
+						<KeyValue label="Service">{target.service_name ?? target.name}</KeyValue>
+						<KeyValue label="Instance">{hostnameFromUrl(target.url)}</KeyValue>
+						<KeyValue label="Auth">{AUTH_TYPE_LABELS[target.auth_type] ?? target.auth_type}</KeyValue>
+						<KeyValue label="Target ID" mono>
+							{target.id}
+						</KeyValue>
+						<KeyValue label="Created">{formatDateTime(target.created_at)}</KeyValue>
+						<KeyValue label="Updated">{formatDateTime(target.updated_at)}</KeyValue>
+					</KeyValueList>
 					{labels.length > 0 && (
 						<div className="flex flex-wrap gap-1.5 pt-1">
 							{labels.map(([key, value]) => (
@@ -954,9 +931,11 @@ function ScrapeTargetDetails({
 							Check History
 						</Eyebrow>
 						{latestCheck && (
-							<span className="text-muted-foreground text-xs">
-								Latest {formatRelativeTime(latestCheck.timestamp)}
-							</span>
+							<RelativeTime
+								value={latestCheck.timestamp}
+								prefix="Latest"
+								className="text-muted-foreground text-xs"
+							/>
 						)}
 					</div>
 					<ScrapeTargetChecksTable result={checksResult} checks={checks} />
@@ -975,15 +954,6 @@ function MetricBox({ label, value }: { label: string; value: string }) {
 	)
 }
 
-function DetailRow({ label, value }: { label: string; value: ReactNode }) {
-	return (
-		<div className="grid grid-cols-[96px_minmax(0,1fr)] gap-3 px-3 py-2">
-			<span className="text-muted-foreground">{label}</span>
-			<span className="min-w-0 truncate text-right">{value}</span>
-		</div>
-	)
-}
-
 export function ScrapeTargetChecksTable({
 	result,
 	checks,
@@ -993,11 +963,7 @@ export function ScrapeTargetChecksTable({
 }) {
 	if (Result.isInitial(result)) {
 		return (
-			<div className="space-y-2">
-				<Skeleton className="h-8 w-full" />
-				<Skeleton className="h-8 w-full" />
-				<Skeleton className="h-8 w-full" />
-			</div>
+			<SkeletonList rows={3} gap="2" />
 		)
 	}
 	if (!Result.isSuccess(result)) {
@@ -1017,52 +983,51 @@ export function ScrapeTargetChecksTable({
 
 	return (
 		<div className="overflow-hidden rounded-md border bg-background/35">
-			<div
-				className={cn(
-					"grid grid-cols-[minmax(100px,1fr)_64px_70px_72px] gap-2 border-b px-3 py-2",
-					eyebrowVariants(),
-				)}
-			>
-				<span>Time</span>
-				<span>State</span>
-				<span>Duration</span>
-				<span>Samples</span>
-			</div>
-			<div className="divide-y">
-				{checks.map((check) => (
-					<div
-						key={`${check.timestamp}-${check.sub_target_key ?? ""}`}
-						className="grid grid-cols-[minmax(100px,1fr)_64px_70px_72px] items-center gap-2 px-3 py-2 text-xs"
-					>
-						<div className="min-w-0">
-							<div className="truncate font-mono">{formatDateTime(check.timestamp)}</div>
-							{check.message && (
-								<Tooltip>
-									<TooltipTrigger
-										render={<div />}
-										className="text-muted-foreground mt-0.5 cursor-default truncate"
-									>
-										{check.message}
-									</TooltipTrigger>
-									<TooltipContent className="max-w-xs font-mono text-xs">
-										{check.message}
-									</TooltipContent>
-								</Tooltip>
-							)}
-						</div>
-						<div className="flex items-center gap-1.5">
-							{check.success ? (
-								<CircleCheckIcon size={12} className="text-success-foreground" />
-							) : (
-								<CircleXmarkIcon size={12} className="text-destructive" />
-							)}
-							<span>{check.success ? "up" : "down"}</span>
-						</div>
-						<span className="font-mono">{formatDurationSeconds(check.duration_seconds)}</span>
-						<span className="font-mono">{formatOptionalCount(check.samples_scraped)}</span>
-					</div>
-				))}
-			</div>
+			<Table size="sm">
+				<TableHeader>
+					<TableRow>
+						<TableHead className="w-full pl-3">Time</TableHead>
+						<TableHead className="w-[64px]">State</TableHead>
+						<TableHead className="w-[70px]">Duration</TableHead>
+						<TableHead className="w-[72px] pr-3">Samples</TableHead>
+					</TableRow>
+				</TableHeader>
+				<TableBody>
+					{checks.map((check) => (
+						<TableRow key={`${check.timestamp}-${check.sub_target_key ?? ""}`}>
+							{/* max-w-0 lets the flexible column truncate instead of widening the table. */}
+							<TableCell className="max-w-0 min-w-[100px] pl-3">
+								<div className="truncate font-mono">{formatDateTime(check.timestamp)}</div>
+								{check.message && (
+									<Tooltip>
+										<TooltipTrigger
+											render={<div />}
+											className="text-muted-foreground mt-0.5 cursor-default truncate"
+										>
+											{check.message}
+										</TooltipTrigger>
+										<TooltipContent className="max-w-xs font-mono text-xs">
+											{check.message}
+										</TooltipContent>
+									</Tooltip>
+								)}
+							</TableCell>
+							<TableCell>
+								<span className="flex items-center gap-1.5">
+									{check.success ? (
+										<CircleCheckIcon size={12} className="text-success-foreground" />
+									) : (
+										<CircleXmarkIcon size={12} className="text-destructive" />
+									)}
+									<span>{check.success ? "up" : "down"}</span>
+								</span>
+							</TableCell>
+							<TableCell className="font-mono">{formatDurationSeconds(check.duration_seconds)}</TableCell>
+							<TableCell className="pr-3 font-mono">{formatOptionalCount(check.samples_scraped)}</TableCell>
+						</TableRow>
+					))}
+				</TableBody>
+			</Table>
 		</div>
 	)
 }

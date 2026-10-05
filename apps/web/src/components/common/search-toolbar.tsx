@@ -10,7 +10,7 @@ import { cn } from "@maple/ui/lib/utils"
  * Every infra list drew this row by hand and no two agreed on the gap, the
  * input width or whether the count was tabular. One row, one shape.
  */
-export function ListToolbar({
+export function SearchToolbar({
 	value,
 	onChange,
 	placeholder,

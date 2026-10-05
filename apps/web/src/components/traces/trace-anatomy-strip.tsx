@@ -3,6 +3,9 @@ import * as React from "react"
 import { ServiceSpectrumBar, computeServiceShares } from "@maple/ui/components/traces/service-spectrum-bar"
 import { ServiceDot } from "@maple/ui/components/service-dot"
 import { formatDuration } from "@maple/ui/lib/format"
+import { httpStatusTone } from "@maple/ui/lib/http"
+import { shortId } from "@maple/ui/lib/ids"
+import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { CommitShaHoverCard } from "@/components/vcs/commit-sha-hover-card"
 import { TraceIdBadge } from "@/components/traces/trace-id-badge"
@@ -19,11 +22,11 @@ interface TraceAnatomyStripProps {
 	commitSha?: string
 }
 
+// 4xx/5xx follow the shared status tone; 3xx keeps its own blue so redirects stand apart from 2xx.
 function httpStatusColor(code: number): string {
-	if (code >= 500) return "text-severity-error"
-	if (code >= 400) return "text-severity-warn"
-	if (code >= 300) return "text-chart-p50"
-	return "text-severity-info"
+	const tone = httpStatusTone(code)
+	if (tone !== "neutral") return TONE_TEXT[tone]
+	return code >= 300 ? "text-chart-p50" : TONE_TEXT.info
 }
 
 /**
@@ -88,7 +91,7 @@ export function TraceAnatomyStrip({
 							copy={{ value: commitSha, label: "commit SHA" }}
 							className="font-mono text-xs text-muted-foreground hover:text-foreground"
 						>
-							{commitSha.slice(0, 7)}
+							{shortId(commitSha, "sha")}
 						</CommitShaHoverCard>
 					)}
 

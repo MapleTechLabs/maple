@@ -10,6 +10,8 @@ export const statusDotVariants = cva("relative inline-flex shrink-0 rounded-full
 			warning: "bg-warning",
 			error: "bg-destructive",
 			info: "bg-info",
+			// In-flight work (running investigations, live streams). Pair with `pulse`.
+			live: "bg-primary",
 			neutral: "bg-muted-foreground/50",
 			// Colour comes from the caller's className (service colours, severity maps).
 			custom: "",

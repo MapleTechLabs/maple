@@ -3,6 +3,7 @@ import { toastManager } from "@maple/ui/components/ui/toast"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 
 import type { CatalogPlan } from "@maple/domain/http"
+import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { Spinner } from "@maple/ui/components/ui/spinner"
@@ -84,9 +85,9 @@ function CustomPlanPlate({ model, onManageBilling }: { model: SpendModel; onMana
 			<div className="max-w-sm">
 				<div className="flex items-center gap-2">
 					<span className="text-sm">{model.planName ?? "Your plan"}</span>
-					<span className="rounded-full bg-primary/15 px-2 py-0.5 font-mono text-[10px] text-primary">
+					<Badge variant="muted" pill size="xs" mono className="px-2 bg-primary/15 text-primary">
 						Current plan
-					</span>
+					</Badge>
 				</div>
 				<div className="mt-3 flex items-baseline gap-2">
 					<span className="font-mono text-3xl tabular-nums">
@@ -201,11 +202,17 @@ export function PlanOffer({
 							<div className="flex items-center gap-2">
 								<span className="text-sm">{plan.name}</span>
 								{isActive && (
-									<span className="rounded-full bg-primary/15 px-2 py-0.5 font-mono text-[10px] text-primary">
+									<Badge
+										variant="muted"
+										pill
+										size="xs"
+										mono
+										className="px-2 bg-primary/15 text-primary"
+									>
 										{isTrialing && daysRemaining != null
 											? `Trial · ${daysRemaining}d left`
 											: "Current plan"}
-									</span>
+									</Badge>
 								)}
 							</div>
 							<div className="mt-3 flex items-baseline gap-2">

@@ -58,6 +58,7 @@ import {
 	webAnalyticsTimeseriesResultAtom,
 } from "@/lib/services/atoms/warehouse-query-atoms"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
+import { Badge } from "@maple/ui/components/ui/badge"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
 import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
@@ -233,14 +234,16 @@ function WebAnalyticsPage() {
 								{chips.length > 0 ? (
 									<div className="flex flex-wrap items-center gap-1.5">
 										{chips.map((chip) => (
-											<button
+											<Badge
 												key={`${chip.key}:${chip.value}`}
-												type="button"
-												onClick={() => onFilterChange(chip.key, undefined)}
-												className="rounded-sm border bg-muted/50 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground transition-colors hover:text-foreground"
+												variant="meta"
+												size="xs"
+												mono
+												className="h-auto px-1.5 py-0.5 transition-colors hover:text-foreground"
+												render={<button type="button" onClick={() => onFilterChange(chip.key, undefined)} />}
 											>
 												{chip.label} ✕
-											</button>
+											</Badge>
 										))}
 										<button
 											type="button"

@@ -5,16 +5,7 @@ import { Exit, Schema } from "effect"
 import { useMemo, useState } from "react"
 import { toastManager } from "@maple/ui/components/ui/toast"
 
-import {
-	AlertDialog,
-	AlertDialogAction,
-	AlertDialogCancel,
-	AlertDialogContent,
-	AlertDialogDescription,
-	AlertDialogFooter,
-	AlertDialogHeader,
-	AlertDialogTitle,
-} from "@maple/ui/components/ui/alert-dialog"
+import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { warehouseDateTimeToIso } from "@maple/query-engine"
 
@@ -682,38 +673,29 @@ function IssueDetailContent() {
 											/>
 										</BodySection>
 									)}
-									<AlertDialog
+									<ConfirmDialog
 										open={severityConfirmation !== null}
 										onOpenChange={(open) => {
 											if (!open) setSeverityConfirmation(null)
 										}}
-									>
-										<AlertDialogContent>
-											<AlertDialogHeader>
-												<AlertDialogTitle>
-													Notify escalation destinations?
-												</AlertDialogTitle>
-												<AlertDialogDescription>
-													Changing severity to {severityConfirmation?.severity} will
-													notify {severityConfirmation?.destinationNames.join(", ")}
-													. Manual severity changes represent explicit human intent
-													and bypass AI confidence gates.
-												</AlertDialogDescription>
-											</AlertDialogHeader>
-											<AlertDialogFooter>
-												<AlertDialogCancel>Cancel</AlertDialogCancel>
-												<AlertDialogAction
-													onClick={() => {
-														const pending = severityConfirmation
-														setSeverityConfirmation(null)
-														if (pending) void applySeverity(pending.severity)
-													}}
-												>
-													Change severity and notify
-												</AlertDialogAction>
-											</AlertDialogFooter>
-										</AlertDialogContent>
-									</AlertDialog>
+										tone="default"
+										icon={null}
+										title="Notify escalation destinations?"
+										description={
+											<>
+												Changing severity to {severityConfirmation?.severity} will
+												notify {severityConfirmation?.destinationNames.join(", ")}
+												. Manual severity changes represent explicit human intent
+												and bypass AI confidence gates.
+											</>
+										}
+										confirmLabel="Change severity and notify"
+										onConfirm={() => {
+											const pending = severityConfirmation
+											setSeverityConfirmation(null)
+											if (pending) void applySeverity(pending.severity)
+										}}
+									/>
 								</DashboardLayout.Scroll>
 							</DashboardLayout.Content>
 							<DashboardLayout.RightPanel>

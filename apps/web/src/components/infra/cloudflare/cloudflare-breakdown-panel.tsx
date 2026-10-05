@@ -39,15 +39,18 @@ import { formatNumber } from "@maple/ui/lib/format"
 import { XmarkIcon } from "@/components/icons"
 import { MonoLinkButton } from "../primitives/mono-link-button"
 import { CompactFilterInput } from "./compact-filter-input"
-import { ColumnHead, DataTable, useTableSort } from "../primitives/data-table"
+import { ColumnHead, DataTable, useTableSort } from "@/components/common/data-table"
 import { SegmentPivot } from "../primitives/segment-pivot"
 import { shareBar } from "../primitives/share-bar"
+import { Badge } from "@maple/ui/components/ui/badge"
+import { ListFooter } from "@maple/ui/components/ui/list-footer"
+import { Panel, PanelHeader, PanelTitle } from "@maple/ui/components/ui/panel"
+import { errorRateClass } from "@maple/ui/lib/error-rate"
 import { formatBytes, formatPercent } from "@maple/ui/lib/format"
 import { StackedBreakdownChart } from "./cloudflare-zone-detail-charts"
 import {
 	CACHE_STATUS_COLORS,
 	CACHE_STATUS_ORDER,
-	errorRateClass,
 	STATUS_CLASS_COLORS,
 	STATUS_CLASS_ORDER,
 } from "./constants"
@@ -118,9 +121,6 @@ const DIMENSIONS: ReadonlyArray<DimensionDef> = [
 const ROW_CLASS =
 	"flex items-center gap-4 border-b border-border/40 px-4 py-3 last:border-0 hover:bg-muted/40"
 
-const CHIP_CLASS =
-	"inline-flex items-center rounded-sm border border-border/70 bg-background/60 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground"
-
 /** ISO-8601 UTC → "Jul 28". */
 const formatCollectedFrom = (iso: string, timeZone: string) => {
 	const date = new Date(iso)
@@ -188,19 +188,32 @@ export function CloudflareBreakdownPanel({
 	}
 
 	return (
-		<div className="rounded-md border bg-card">
-			<div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-3 pt-2.5 pb-2">
+		<Panel className="overflow-visible">
+			<PanelHeader
+				divided={false}
+				className="gap-y-2 px-3 pt-2.5 pb-2"
+				action={
+					<SegmentPivot<CloudflareBreakdownDimension>
+						ariaLabel="Breakdown dimension"
+						options={DIMENSIONS.map((d) => ({ value: d.id, label: d.tab }))}
+						value={dimensionId}
+						onChange={selectDimension}
+					/>
+				}
+			>
 				<div className="flex flex-wrap items-center gap-2">
-					<span className="text-[11px] font-medium text-muted-foreground">Breakdown</span>
+					<PanelTitle>Breakdown</PanelTitle>
 					{live ? (
-						<button
-							type="button"
-							onClick={() => setLiveQuery(null)}
-							className={cn(CHIP_CLASS, "gap-1 transition-colors hover:text-foreground")}
+						<Badge
+							variant="meta"
+							size="xs"
+							mono
+							render={<button type="button" onClick={() => setLiveQuery(null)} />}
+							className="bg-background/60 font-normal transition-colors hover:text-foreground"
 						>
 							live
 							<XmarkIcon size={9} />
-						</button>
+						</Badge>
 					) : (
 						<PanelScope
 							filters={filters}
@@ -209,13 +222,7 @@ export function CloudflareBreakdownPanel({
 						/>
 					)}
 				</div>
-				<SegmentPivot<CloudflareBreakdownDimension>
-					ariaLabel="Breakdown dimension"
-					options={DIMENSIONS.map((d) => ({ value: d.id, label: d.tab }))}
-					value={dimensionId}
-					onChange={selectDimension}
-				/>
-			</div>
+			</PanelHeader>
 
 			{live ? (
 				<LiveBreakdown
@@ -240,7 +247,7 @@ export function CloudflareBreakdownPanel({
 					onSearchLive={() => setLiveQuery(search.trim())}
 				/>
 			)}
-		</div>
+		</Panel>
 	)
 }
 
@@ -505,20 +512,22 @@ function Footer({
 	onSearchLive?: () => void
 }) {
 	if (total === 0 && onSearchLive === undefined) return null
-	const parts = [
-		shown === total ? `${total} ${dimension.noun}` : `Showing ${shown} of ${total} ${dimension.noun}`,
-		collectedFrom ? `collected from ${collectedFrom}` : null,
-	].filter((part): part is string => part !== null)
 
 	return (
-		<div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-3 py-2">
-			<p className="font-mono text-[10px] text-muted-foreground">{parts.join(" · ")}</p>
+		<ListFooter
+			shown={shown}
+			total={total}
+			noun={dimension.noun}
+			align="start"
+			className="justify-start gap-x-3 gap-y-1 px-3 py-2 font-mono text-[10px]"
+		>
+			{collectedFrom ? <span>collected from {collectedFrom}</span> : null}
 			{onSearchLive ? (
-				<MonoLinkButton onClick={onSearchLive}>
+				<MonoLinkButton onClick={onSearchLive} className="ml-auto">
 					Search all {dimension.noun} in Cloudflare
 				</MonoLinkButton>
 			) : null}
-		</div>
+		</ListFooter>
 	)
 }
 

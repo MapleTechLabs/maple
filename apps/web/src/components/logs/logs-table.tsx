@@ -24,9 +24,10 @@ import { useListNavigation } from "@/hooks/use-list-navigation"
 import { pickImportantAttributes } from "@/lib/log-attributes"
 import { LogAttributeChip } from "./log-attribute-chip"
 import { HighlightedText } from "./highlighted-text"
-import { shortTraceId } from "@/lib/logs/log-search-query"
+import { shortId } from "@maple/ui/lib/ids"
 import { ChevronRightIcon } from "@/components/icons"
 import { ErrorState } from "@/components/common/error-state"
+import { ListFooter } from "@maple/ui/components/ui/list-footer"
 import { usePageScrolledReporter } from "@maple/ui/components/ui/page-layout"
 import { DocsLink } from "@/components/common/docs-link"
 import {
@@ -451,7 +452,7 @@ export function LogsTableView({
 	const virtualItems = virtualizer.getVirtualItems()
 
 	const scopeSuffix = [
-		traceId ? ` in trace ${shortTraceId(traceId)}` : "",
+		traceId ? ` in trace ${shortId(traceId, "trace")}` : "",
 		searchText ? ` matching “${searchText}”` : "",
 	].join("")
 
@@ -689,11 +690,14 @@ export function LogsTableView({
 					<div className="absolute bottom-0 left-0 right-0 h-12 pointer-events-none rounded-b-md bg-gradient-to-t from-background to-transparent" />
 				</div>
 
-				<div className="text-sm text-muted-foreground shrink-0 mt-1.5">
-					{isCapped
-						? `Showing first ${allData.length.toLocaleString()} logs${scopeSuffix} — narrow filters to continue`
-						: `Showing ${allData.length.toLocaleString()} logs${scopeSuffix}${!hasNextPage ? " (all loaded)" : ""}`}
-				</div>
+				<ListFooter
+					shown={allData.length}
+					noun={`logs${scopeSuffix}`}
+					capped={isCapped}
+					hasMore={hasNextPage}
+					align="start"
+					className="mt-1.5 shrink-0 p-0"
+				/>
 			</div>
 
 			<LogDetailSheet log={selectedLog} open={sheetOpen} onOpenChange={handleSheetOpenChange} />

@@ -18,7 +18,7 @@ import {
 } from "@/lib/services/atoms/ingestion-atoms"
 import { formatNumber } from "@maple/ui/lib/format"
 import { DocsLink } from "@/components/common/docs-link"
-import { FilterTab, FilterTabs } from "./filter-tab"
+import { ToggleGroup, ToggleGroupItem } from "@maple/ui/components/ui/toggle-group"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
 
 type IssueKind = V2Recommendation["kind"]
@@ -189,14 +189,24 @@ export function RecommendedMappingsSection() {
 					</p>
 				</div>
 				<div className="grow" />
-				<FilterTabs className="shrink-0">
-					<FilterTab active={tab === "open"} onClick={() => setTab("open")}>
+				<ToggleGroup
+					variant="outline"
+					size="xs"
+					aria-label="Recommendation status"
+					className="shrink-0"
+					value={[tab]}
+					onValueChange={(values) => {
+						const next = values[0]
+						if (next === "open" || next === "closed") setTab(next)
+					}}
+				>
+					<ToggleGroupItem value="open" className="font-mono text-[11px]">
 						Open · {openIssues.length}
-					</FilterTab>
-					<FilterTab active={tab === "closed"} onClick={() => setTab("closed")}>
+					</ToggleGroupItem>
+					<ToggleGroupItem value="closed" className="font-mono text-[11px]">
 						Closed · {closedIssues.length}
-					</FilterTab>
-				</FilterTabs>
+					</ToggleGroupItem>
+				</ToggleGroup>
 			</div>
 
 			{rows.length === 0 ? (

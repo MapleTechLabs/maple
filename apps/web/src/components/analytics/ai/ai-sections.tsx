@@ -13,7 +13,7 @@ import { formatNumber, formatPercent } from "@maple/ui/lib/format"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import type { AiContentFormat, AiCrawlPurpose, AiProduct } from "@maple/domain/ai-traffic"
 
-import { ColumnHead, DataTable } from "../../infra/primitives/data-table"
+import { ColumnHead, DataTable } from "@/components/common/data-table"
 import { shareBar } from "../../infra/primitives/share-bar"
 import { BarSpark } from "@/components/common/stat-rail"
 import { SPARK_COLOR } from "../../infra/severity-tokens"
@@ -27,6 +27,7 @@ import {
 } from "@/components/icons"
 import type { WebAnalyticsAiCrawler, WebAnalyticsAiCrawlerFormat } from "@/api/warehouse/web-analytics"
 import { AiProductIcon } from "./ai-product-icon"
+import { Panel, PanelHeader, PanelTitle } from "@maple/ui/components/ui/panel"
 import {
 	productForCrawler,
 	purposeForCrawler,
@@ -68,14 +69,17 @@ export function AiPanel({
 }) {
 	const [expanded, setExpanded] = useState(false)
 	return (
-		<div className={cn("@container/panel rounded-md border bg-card", className)}>
-			<div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1 px-4 pt-3 pb-2.5">
+		<Panel className={cn("@container/panel", className)}>
+			<PanelHeader
+				divided={false}
+				className="items-start pt-3 pb-2.5"
+				action={aside ? <div className="shrink-0 text-[11px] text-muted-foreground">{aside}</div> : undefined}
+			>
 				<div className="min-w-0">
-					<div className="text-[11px] font-medium text-muted-foreground">{title}</div>
+					<PanelTitle>{title}</PanelTitle>
 					{hint ? <div className="mt-0.5 text-[11px] text-muted-foreground/70">{hint}</div> : null}
 				</div>
-				{aside ? <div className="shrink-0 text-[11px] text-muted-foreground">{aside}</div> : null}
-			</div>
+			</PanelHeader>
 			{children}
 			{expand ? (
 				<>
@@ -105,7 +109,7 @@ export function AiPanel({
 					</Dialog>
 				</>
 			) : null}
-		</div>
+		</Panel>
 	)
 }
 

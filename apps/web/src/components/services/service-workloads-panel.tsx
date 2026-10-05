@@ -6,6 +6,7 @@ import { getServiceWorkloadsResultAtom } from "@/lib/services/atoms/warehouse-qu
 import type { ServiceWorkload } from "@/api/warehouse/service-infra"
 import { MeterRows } from "@/components/infra/primitives/meter-rows"
 import { SectionCard } from "./section-card"
+import { Item, ItemActions, ItemContent, ItemDescription, ItemTitle } from "@maple/ui/components/ui/item"
 
 interface ServiceWorkloadsPanelProps {
 	serviceName: string
@@ -72,28 +73,28 @@ export function ServiceWorkloadsPanel({
 		>
 			<ul className="divide-y">
 				{workloads.map((workload) => (
-					<li
+					<Item
 						key={`${workload.workloadKind}:${workload.namespace}:${workload.workloadName}`}
-						className="flex flex-col gap-1.5 px-4 py-2.5"
+						render={<li />}
+						variant="flush"
+						className="gap-x-3 gap-y-1.5 px-4 py-2.5"
 					>
-						<div className="flex items-center justify-between gap-3">
-							<div className="flex min-w-0 flex-col leading-tight">
-								<span className="truncate font-mono text-[12.5px] text-foreground">
-									{workload.workloadName}
-								</span>
-								<span className="truncate text-[10px] text-muted-foreground/60">
-									{KIND_LABEL[workload.workloadKind]} · {workload.namespace}
-									{workload.clusterName ? ` · ${workload.clusterName}` : ""}
-								</span>
-							</div>
-							<span className="shrink-0 font-mono text-[11.5px] tabular-nums text-muted-foreground">
-								{workload.podCount} {workload.podCount === 1 ? "pod" : "pods"}
-							</span>
-						</div>
+						<ItemContent className="gap-0 leading-tight">
+							<ItemTitle className="block truncate font-mono text-[12.5px] font-normal text-foreground">
+								{workload.workloadName}
+							</ItemTitle>
+							<ItemDescription className="truncate text-[10px] text-muted-foreground/60">
+								{KIND_LABEL[workload.workloadKind]} · {workload.namespace}
+								{workload.clusterName ? ` · ${workload.clusterName}` : ""}
+							</ItemDescription>
+						</ItemContent>
+						<ItemActions className="shrink-0 font-mono text-[11.5px] tabular-nums text-muted-foreground">
+							{workload.podCount} {workload.podCount === 1 ? "pod" : "pods"}
+						</ItemActions>
 						{(workload.avgCpuLimitUtilization != null ||
 							workload.avgMemoryLimitUtilization != null) && (
 							<MeterRows
-								className="max-w-[280px]"
+								className="max-w-[280px] basis-full"
 								meters={[
 									workload.avgCpuLimitUtilization != null && {
 										label: "CPU",
@@ -106,7 +107,7 @@ export function ServiceWorkloadsPanel({
 								].filter((meter) => meter !== false)}
 							/>
 						)}
-					</li>
+					</Item>
 				))}
 			</ul>
 		</SectionCard>

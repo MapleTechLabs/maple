@@ -5,6 +5,7 @@ import type { GetAiSessionSummaryResponse } from "@maple/domain/http"
 import { ArrowRightIcon, ChevronRightIcon } from "@/components/icons"
 import { Button } from "@maple/ui/components/ui/button"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { Meter, SegmentedBar } from "@maple/ui/components/ui/meter"
 import { Separator } from "@maple/ui/components/ui/separator"
 import { formatNumber, formatPercent } from "@maple/ui/lib/format"
 import { formatSessionDuration } from "@maple/ui/lib/replay-format"
@@ -179,15 +180,15 @@ function TimeComposition({ summary }: { summary: SessionSummary }) {
 				<Clock label="Wall clock" value={formatSessionDuration(summary.wallClockMs)} />
 			</div>
 
-			<div className="flex h-2 w-full gap-px overflow-hidden rounded-xs bg-muted">
-				{bands.map((band) => (
-					<div
-						key={band.kind}
-						className={AGENT_TIME_FILL[band.kind]}
-						style={{ width: `${(band.ms / total) * 100}%` }}
-					/>
-				))}
-			</div>
+			<SegmentedBar
+				segments={bands.map((band) => ({
+					key: band.kind,
+					value: band.ms,
+					className: AGENT_TIME_FILL[band.kind],
+				}))}
+				total={total}
+				className="h-2 w-full gap-px rounded-xs bg-muted"
+			/>
 
 			{legend.map((band) => {
 				const Icon = AGENT_TIME_ICON[band.kind]
@@ -250,14 +251,13 @@ function Rail({ summary }: { summary: SessionSummary }) {
 								</span>
 							</div>
 							{model.cost !== undefined && topModelCost > 0 && (
-								<div className="h-1 w-full overflow-hidden rounded-xs bg-muted">
-									<div
-										className="h-full bg-primary"
-										style={{
-											width: `${sharePercent(model.cost, topModelCost)}%`,
-										}}
-									/>
-								</div>
+								<Meter
+									value={model.cost}
+									max={topModelCost}
+									minVisible={0}
+									fillClassName="bg-primary"
+									className="w-full rounded-xs bg-muted"
+								/>
 							)}
 						</div>
 					))
@@ -284,17 +284,15 @@ function Rail({ summary }: { summary: SessionSummary }) {
 					<p className="text-muted-foreground text-xs">no token usage reported</p>
 				) : (
 					<>
-						<div className="flex h-2 w-full gap-px overflow-hidden rounded-xs bg-muted">
-							{tokenBuckets.map((bucket) => (
-								<div
-									key={bucket.key}
-									className={bucket.fill}
-									style={{
-										width: `${sharePercent(summary.tokens[bucket.key], summary.tokens.total)}%`,
-									}}
-								/>
-							))}
-						</div>
+						<SegmentedBar
+							segments={tokenBuckets.map((bucket) => ({
+								key: bucket.key,
+								value: summary.tokens[bucket.key],
+								className: bucket.fill,
+							}))}
+							total={summary.tokens.total}
+							className="h-2 w-full gap-px rounded-xs bg-muted"
+						/>
 						{tokenBuckets.map((bucket) => (
 							<div key={bucket.key} className="flex items-center gap-2.5">
 								<bucket.icon aria-hidden size={13} className={cn("shrink-0", bucket.text)} />

@@ -1,6 +1,7 @@
 import { Suspense, useCallback, useEffect, useState } from "react"
 import { Link } from "@tanstack/react-router"
 import { useCopy } from "@maple/ui/hooks/use-copy"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 import { AppSidebar } from "@/components/dashboard/app-sidebar"
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@maple/ui/components/ui/sidebar"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
@@ -310,9 +311,9 @@ function SharedChatView({
 						<SidebarTrigger className="size-9" />
 						<LinkIcon size={14} className="shrink-0 opacity-60" />
 						<div className="flex min-w-0 flex-1 flex-col justify-center">
-							<span className="truncate text-sm font-medium leading-tight" title={heading}>
+							<TruncatedText text={heading} className="text-sm font-medium leading-tight">
 								{heading}
-							</span>
+							</TruncatedText>
 							<span className="text-[10px] font-medium uppercase tracking-wider text-sidebar-foreground/60 leading-tight">
 								Read-only · shared
 							</span>

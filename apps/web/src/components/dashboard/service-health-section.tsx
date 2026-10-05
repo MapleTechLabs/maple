@@ -19,9 +19,10 @@ import type { AlertIncidentDocument, AnomalySignalType } from "@maple/domain/htt
 
 import { Card } from "@maple/ui/components/ui/card"
 import { Badge } from "@maple/ui/components/ui/badge"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { SkeletonList } from "@maple/ui/components/ui/skeleton"
 import { formatErrorRate, formatLatency } from "@maple/ui/lib/format"
 import { latencyToneClass } from "@maple/ui/lib/latency-tone"
+import { TONE_FILL } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 
 import {
@@ -29,6 +30,7 @@ import {
 	anomalyDirection,
 	healthRank,
 	primaryServiceHealthCause,
+	HEALTH_TONE,
 	type ServiceHealthCause,
 	type ServiceHealth,
 } from "./service-health"
@@ -92,12 +94,6 @@ const ANOMALY_METRIC: Partial<Record<AnomalySignalType, ServiceHealthCause["metr
 	throughput: "traffic",
 	log_volume: "error",
 } satisfies Partial<Record<AnomalySignalType, ServiceHealthCause["metric"]>>
-
-const HEALTH_DOT_COLOR: Record<ServiceHealth, string> = {
-	healthy: "var(--severity-info)",
-	degraded: "var(--severity-warn)",
-	unhealthy: "var(--severity-error)",
-} satisfies Record<ServiceHealth, string>
 
 function metricTone(cause: ServiceHealthCause | undefined): "ok" | "warn" | "crit" {
 	return cause === undefined ? "ok" : cause.severity === "critical" ? "crit" : "warn"
@@ -312,11 +308,7 @@ export function ServiceHealthList(props: ServiceHealthProps) {
 			<section className="mt-4 space-y-3">
 				{header}
 				<Card className="overflow-hidden p-0">
-					<div className="space-y-2 p-4">
-						{Array.from({ length: 4 }).map((_, i) => (
-							<Skeleton key={i} className="h-6 w-full" />
-						))}
-					</div>
+					<SkeletonList rows={4} rowClassName="h-6" gap="2" className="p-4" />
 				</Card>
 			</section>
 		))
@@ -395,7 +387,7 @@ function ServiceHealthRow({
 				search={{ ...detailSearch, environments: [service.environment] }}
 				className="flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
 			>
-				<StatusDot tone="custom" size="lg" style={{ backgroundColor: HEALTH_DOT_COLOR[health] }} />
+				<StatusDot tone="custom" size="lg" className={TONE_FILL[HEALTH_TONE[health]]} />
 				<div className="flex min-w-0 flex-1 items-center gap-2">
 					<ServiceDot serviceName={service.serviceName} className="size-1.5" />
 					<span className="truncate text-sm font-medium text-foreground">

@@ -57,6 +57,9 @@ import {
 import { cn } from "@maple/ui/lib/utils"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
+import { LoadMoreButton } from "@maple/ui/components/ui/list-footer"
+import { KeyValue, KeyValueList } from "@maple/ui/components/ui/key-value"
+import { Meter } from "@maple/ui/components/ui/meter"
 import { Card, CardContent } from "@maple/ui/components/ui/card"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
@@ -726,7 +729,7 @@ function RuleDetailContent() {
 									<h2 className="text-lg font-semibold">Configuration</h2>
 									<Card>
 										<CardContent className="p-5">
-											<dl className="grid grid-cols-1 gap-x-8 gap-y-2 text-sm sm:grid-cols-2">
+											<KeyValueList className="grid grid-cols-1 gap-x-8 gap-y-2 text-sm sm:grid-cols-2">
 												{rule.notes && (
 													<div className="flex flex-col gap-1 sm:col-span-2">
 														<dt className="text-muted-foreground">Notes</dt>
@@ -877,7 +880,7 @@ function RuleDetailContent() {
 														label={rule.enabled ? "Enabled" : "Disabled"}
 													/>
 												</ConfigRow>
-											</dl>
+											</KeyValueList>
 										</CardContent>
 									</Card>
 								</div>
@@ -998,19 +1001,16 @@ function RuleDetailContent() {
 																>
 																	{groupKey}
 																</Badge>
-																<div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
-																	<div
-																		className={cn(
-																			"h-full rounded-full",
-																			count === maxContributorCount
-																				? "bg-destructive"
-																				: "bg-amber-500",
-																		)}
-																		style={{
-																			width: `${(count / maxContributorCount) * 100}%`,
-																		}}
-																	/>
-																</div>
+																<Meter
+																	value={count}
+																	max={maxContributorCount}
+																	className="h-2 flex-1 bg-muted"
+																	fillClassName={
+																		count === maxContributorCount
+																			? "bg-destructive"
+																			: "bg-amber-500"
+																	}
+																/>
 																<span className="text-xs text-muted-foreground tabular-nums shrink-0">
 																	{count}/{stats.totalTriggered}
 																</span>
@@ -1209,10 +1209,9 @@ function RuleDetailContent() {
 
 function ConfigRow({ label, children, wide }: { label: string; children: React.ReactNode; wide?: boolean }) {
 	return (
-		<div className={cn("flex items-center justify-between gap-4", wide && "sm:col-span-2")}>
-			<dt className="text-muted-foreground">{label}</dt>
-			<dd className="text-right">{children}</dd>
-		</div>
+		<KeyValue label={label} wrap className={cn("items-center", wide && "sm:col-span-2")}>
+			{children}
+		</KeyValue>
 	)
 }
 
@@ -1236,15 +1235,10 @@ function CheckDelta({
 	if (!Number.isFinite(delta) || delta === 0) return null
 	const sign = delta > 0 ? "+" : "−"
 	return (
-		<span
-			className={cn(
-				"rounded px-1 py-px font-mono text-[10px] tabular-nums",
-				breached ? "bg-destructive/10 text-destructive" : "bg-muted text-muted-foreground",
-			)}
-		>
+		<Badge variant={breached ? "error" : "muted"} size="xs" mono>
 			{sign}
 			{formatSignalValue(signalType, Math.abs(delta))}
-		</span>
+		</Badge>
 	)
 }
 
@@ -1622,9 +1616,7 @@ function ChecksPanel({
 						<span className="text-[11px] text-muted-foreground">
 							{loadedChecks.length} of {totals.total} loaded
 						</span>
-						<Button variant="outline" size="sm" disabled={loadingMore} onClick={loadMore}>
-							{loadingMore ? "Loading…" : "Load 100 more"}
-						</Button>
+						<LoadMoreButton loading={loadingMore} onClick={loadMore} label="Load 100 more" />
 					</div>
 				)}
 			</div>

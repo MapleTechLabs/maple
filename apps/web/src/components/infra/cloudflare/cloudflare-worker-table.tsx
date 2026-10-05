@@ -3,9 +3,9 @@ import { LatencyValue } from "@maple/ui/components/latency-value"
 
 import type { CloudflareWorkerRow } from "@/api/warehouse/cloudflare-infra"
 import { formatNumber } from "@maple/ui/lib/format"
-import { ColumnHead, DataTable, useTableSort } from "../primitives/data-table"
+import { ColumnHead, DataTable, useTableSort } from "@/components/common/data-table"
 import { formatPercent } from "@maple/ui/lib/format"
-import { errorRateClass } from "./constants"
+import { errorRateClass } from "@maple/ui/lib/error-rate"
 
 type SortKey =
 	| "scriptName"

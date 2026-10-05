@@ -16,18 +16,8 @@ import {
 	DialogPanel,
 	DialogTitle,
 } from "@maple/ui/components/ui/dialog"
-import {
-	AlertDialog,
-	AlertDialogAction,
-	AlertDialogCancel,
-	AlertDialogContent,
-	AlertDialogDescription,
-	AlertDialogFooter,
-	AlertDialogHeader,
-	AlertDialogMedia,
-	AlertDialogTitle,
-} from "@maple/ui/components/ui/alert-dialog"
-import { AlertWarningIcon, CircleCheckIcon, ShieldIcon } from "@/components/icons"
+import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
+import { CircleCheckIcon, ShieldIcon } from "@/components/icons"
 import { toastAccountError } from "@/components/account/account-errors"
 import { AccountSectionSkeleton } from "@/components/account/account-section-skeleton"
 import { CodeField } from "@/components/account/code-field"
@@ -322,26 +312,15 @@ export function TwoFactorSection() {
 				</DialogContent>
 			</Dialog>
 
-			<AlertDialog open={disableOpen} onOpenChange={setDisableOpen}>
-				<AlertDialogContent>
-					<AlertDialogHeader>
-						<AlertDialogMedia className="bg-destructive/10">
-							<AlertWarningIcon className="text-destructive" />
-						</AlertDialogMedia>
-						<AlertDialogTitle>Remove two-factor authentication?</AlertDialogTitle>
-						<AlertDialogDescription>
-							Your account will be protected by your password alone, and your backup codes stop
-							working.
-						</AlertDialogDescription>
-					</AlertDialogHeader>
-					<AlertDialogFooter>
-						<AlertDialogCancel disabled={isBusy}>Cancel</AlertDialogCancel>
-						<AlertDialogAction variant="destructive" onClick={handleDisable} disabled={isBusy}>
-							{isBusy ? "Removing..." : "Remove"}
-						</AlertDialogAction>
-					</AlertDialogFooter>
-				</AlertDialogContent>
-			</AlertDialog>
+			<ConfirmDialog
+				open={disableOpen}
+				onOpenChange={setDisableOpen}
+				title="Remove two-factor authentication?"
+				description="Your account will be protected by your password alone, and your backup codes stop working."
+				confirmLabel="Remove"
+				pending={isBusy}
+				onConfirm={() => void handleDisable()}
+			/>
 		</div>
 	)
 }

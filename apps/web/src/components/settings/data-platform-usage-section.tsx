@@ -4,7 +4,7 @@ import { Result } from "@/lib/effect-atom"
 import { ChartLineIcon, DatabaseIcon, FileIcon, GridSquareCirclePlusIcon } from "@/components/icons"
 import { cn } from "@maple/ui/lib/utils"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { StatRail, StatRailItem } from "@/components/common/stat-rail"
 import { getServiceUsageResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import type { ServiceUsageResponse } from "@/api/warehouse/service-usage"
@@ -19,29 +19,29 @@ const STATS: ReadonlyArray<{
 	key: StatKey
 	label: string
 	icon: typeof FileIcon
-	badge: string
+	tone: string
 	format: (n: number) => string
 }> = [
-	{ key: "logs", label: "Logs", icon: FileIcon, badge: "bg-chart-2/10 text-chart-2", format: formatNumber },
+	{ key: "logs", label: "Logs", icon: FileIcon, tone: "text-chart-2", format: formatNumber },
 	{
 		key: "traces",
 		label: "Traces",
 		icon: GridSquareCirclePlusIcon,
-		badge: "bg-chart-5/10 text-chart-5",
+		tone: "text-chart-5",
 		format: formatNumber,
 	},
 	{
 		key: "metrics",
 		label: "Metrics",
 		icon: ChartLineIcon,
-		badge: "bg-chart-3/10 text-chart-3",
+		tone: "text-chart-3",
 		format: formatNumber,
 	},
 	{
 		key: "dataSize",
 		label: "Storage",
 		icon: DatabaseIcon,
-		badge: "bg-chart-1/10 text-chart-1",
+		tone: "text-chart-1",
 		format: formatStorageBytes,
 	},
 ]
@@ -58,23 +58,16 @@ function sumTotals(response: ServiceUsageResponse) {
 	)
 }
 
-function StatTile({ stat, children }: { stat: (typeof STATS)[number]; children: ReactNode }) {
+function statItem(stat: (typeof STATS)[number], value: ReactNode) {
 	const Icon = stat.icon
 	return (
-		<div className="group relative overflow-hidden rounded-xl border bg-card p-5 transition-colors hover:border-foreground/20">
-			<Icon
-				size={76}
-				aria-hidden
-				className="pointer-events-none absolute -right-3 -bottom-4 text-foreground/[0.035] transition-colors group-hover:text-foreground/[0.05]"
-			/>
-			<span className={cn("flex size-9 items-center justify-center rounded-lg", stat.badge)}>
-				<Icon size={16} />
-			</span>
-			<div className="relative mt-4 min-h-[2rem]">{children}</div>
-			<Eyebrow variant="label" className="relative mt-2" as="div">
-				{stat.label}
-			</Eyebrow>
-		</div>
+		<StatRailItem
+			key={stat.key}
+			compact
+			eyebrow={stat.label}
+			value={value}
+			action={<Icon size={13} aria-hidden className={cn("shrink-0", stat.tone)} />}
+		/>
 	)
 }
 
@@ -90,33 +83,19 @@ export function DataPlatformUsageSection() {
 				</p>
 			</div>
 
-			<div className="grid grid-cols-2 gap-3">
+			<StatRail>
 				{Result.builder(result)
 					.onSuccess((response) => {
 						const totals = sumTotals(response)
-						return STATS.map((stat) => (
-							<StatTile key={stat.key} stat={stat}>
-								<span className="font-mono text-[2rem] font-semibold leading-none tracking-tight tabular-nums text-foreground">
-									{stat.format(totals[stat.key])}
-								</span>
-							</StatTile>
-						))
+						return STATS.map((stat) => statItem(stat, stat.format(totals[stat.key])))
 					})
 					.onError(() =>
-						STATS.map((stat) => (
-							<StatTile key={stat.key} stat={stat}>
-								<span className="text-sm text-muted-foreground">—</span>
-							</StatTile>
-						)),
+						STATS.map((stat) =>
+							statItem(stat, <span className="text-sm text-muted-foreground">—</span>),
+						),
 					)
-					.orElse(() =>
-						STATS.map((stat) => (
-							<StatTile key={stat.key} stat={stat}>
-								<Skeleton className="h-8 w-24" />
-							</StatTile>
-						)),
-					)}
-			</div>
+					.orElse(() => STATS.map((stat) => statItem(stat, <Skeleton className="h-[26px] w-24" />)))}
+			</StatRail>
 		</section>
 	)
 }

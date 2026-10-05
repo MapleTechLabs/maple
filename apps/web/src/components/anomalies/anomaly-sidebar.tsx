@@ -1,9 +1,12 @@
 import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { Link } from "@tanstack/react-router"
 import type { AnomalyIncidentDocument } from "@maple/domain/http"
+import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
+import { TruncatedId } from "@maple/ui/components/ui/truncated-id"
 import { cn } from "@maple/ui/lib/utils"
 
+import { RelativeTime } from "@/components/common/relative-time"
 import { LinkIcon } from "@/components/icons"
 import { shortIssueId } from "@/components/errors/issue-id"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
@@ -11,6 +14,7 @@ import {
 	deviation,
 	formatSignalValue,
 	isStaleOpenIncident,
+	META_CHIP_CLASS,
 	RESOLVE_REASON_LABEL,
 	SEVERITY_TONE,
 	SIGNAL_LABEL,
@@ -189,9 +193,11 @@ export function AnomalySidebar({
 										{shortIssueId(fingerprint.errorIssueId)}
 									</Link>
 								) : (
-									<code className="truncate font-mono text-xs text-muted-foreground">
-										{fingerprint.fingerprintHash.slice(0, 10)}
-									</code>
+									<TruncatedId
+										value={fingerprint.fingerprintHash}
+										length={10}
+										className="truncate text-xs text-muted-foreground"
+									/>
 								)}
 							</span>
 							<span className="font-mono text-xs tabular-nums text-muted-foreground">
@@ -203,38 +209,35 @@ export function AnomalySidebar({
 			) : null}
 
 			<DetailRail.Group label="Timing">
-				<DetailRail.Row
-					label="First triggered"
-					title={new Date(incident.firstTriggeredAt).toLocaleString()}
-				>
-					<span className="text-right text-sm tabular-nums text-foreground">
-						{formatRelativeTime(incident.firstTriggeredAt)}
-					</span>
+				<DetailRail.Row label="First triggered">
+					<RelativeTime
+						value={incident.firstTriggeredAt}
+						tooltip="title"
+						className="text-right text-sm tabular-nums text-foreground"
+					/>
 				</DetailRail.Row>
 				{incident.reopenCount > 0 && incident.lastReopenedAt !== null ? (
-					<DetailRail.Row
-						label="Reopened"
-						title={new Date(incident.lastReopenedAt).toLocaleString()}
-					>
+					<DetailRail.Row label="Reopened">
 						<span className="text-right text-sm tabular-nums text-muted-foreground">
-							{formatRelativeTime(incident.lastReopenedAt)}
+							<RelativeTime value={incident.lastReopenedAt} tooltip="title" />
 							{incident.reopenCount > 1 ? ` (×${incident.reopenCount})` : ""}
 						</span>
 					</DetailRail.Row>
 				) : null}
-				<DetailRail.Row
-					label="Last triggered"
-					title={new Date(incident.lastTriggeredAt).toLocaleString()}
-				>
-					<span className="text-right text-sm tabular-nums text-foreground">
-						{formatRelativeTime(incident.lastTriggeredAt)}
-					</span>
+				<DetailRail.Row label="Last triggered">
+					<RelativeTime
+						value={incident.lastTriggeredAt}
+						tooltip="title"
+						className="text-right text-sm tabular-nums text-foreground"
+					/>
 				</DetailRail.Row>
 				{incident.resolvedAt !== null ? (
-					<DetailRail.Row label="Resolved" title={new Date(incident.resolvedAt).toLocaleString()}>
-						<span className="text-right text-sm tabular-nums text-muted-foreground">
-							{formatRelativeTime(incident.resolvedAt)}
-						</span>
+					<DetailRail.Row label="Resolved">
+						<RelativeTime
+							value={incident.resolvedAt}
+							tooltip="title"
+							className="text-right text-sm tabular-nums text-muted-foreground"
+						/>
 					</DetailRail.Row>
 				) : null}
 				{incident.resolveReason !== null ? (
@@ -248,14 +251,13 @@ export function AnomalySidebar({
 
 			<DetailRail.Group label="Triage">
 				{triageChip ? (
-					<span
-						className={cn(
-							"inline-flex h-5 w-fit items-center rounded-full px-2 text-[11px] font-medium",
-							triageChip.tone,
-						)}
+					<Badge
+						pill
+						size="sm"
+						className={cn(META_CHIP_CLASS, "w-fit font-medium", triageChip.tone)}
 					>
 						{triageChip.label}
-					</span>
+					</Badge>
 				) : (
 					<p className="text-xs text-muted-foreground">No AI triage has run for this incident.</p>
 				)}

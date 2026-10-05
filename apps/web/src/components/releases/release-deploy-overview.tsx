@@ -4,16 +4,14 @@ import type { ErrorIssueDocument } from "@maple/domain/http"
 import { ServiceDot } from "@maple/ui/components/service-dot"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { formatErrorRate, formatLatency, formatNumber } from "@maple/ui/lib/format"
-import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
+import { RelativeTime } from "@/components/common/relative-time"
 
 import { ErrorState } from "@/components/common/error-state"
 import { SectionCard } from "@/components/services/section-card"
 import type { TimeRangeSearch } from "@/components/time-range-picker/search"
-import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
-import { formatTimestampInTimezone } from "@/lib/timezone-format"
 import { retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { errorIssueFromV2 } from "@/lib/services/error-issues"
 import { getReleasesResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
@@ -32,7 +30,8 @@ import {
 	type ReleaseServiceImpact,
 } from "./release-model"
 import { EmptyMessage } from "@maple/ui/components/ui/empty"
-import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { eyebrowVariants } from "@maple/ui/components/ui/eyebrow"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
 
 const ISSUE_LIMIT = 100
 const NO_COUNTS: ReadonlyMap<string, number> = new Map()
@@ -97,22 +96,18 @@ export function ReleaseDeployOverview({
 }
 
 function DeploySummary({ group }: { group: ReleaseGroup }) {
-	const { effectiveTimezone } = useTimezonePreference()
 	const services = new Set(group.services.map((impact) => impact.serviceName)).size
 	const flagged = group.services.filter((impact) => impact.health !== "healthy").length
 	return (
 		<div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-0.5 text-xs text-muted-foreground">
 			<span>
 				first seen{" "}
-				<span
+				<RelativeTime
+					value={group.firstSeen}
+					variant="orDate"
+					tooltip="title"
 					className="text-foreground"
-					title={formatTimestampInTimezone(group.firstSeen, {
-						timeZone: effectiveTimezone,
-						withYear: true,
-					})}
-				>
-					{formatRelativeTimeOrDate(group.firstSeen, undefined, effectiveTimezone)}
-				</span>
+				/>
 			</span>
 			<span>
 				<span className="font-medium tabular-nums text-foreground">{services}</span>{" "}
@@ -183,18 +178,18 @@ function DeployServices({
 				</span>
 			}
 		>
-			<table className="w-full text-xs">
-				<thead>
-					<Eyebrow as="tr">
-						<th className="px-4 py-1.5 text-left font-medium">Service</th>
-						<th className="px-2 py-1.5 text-left font-medium">Replaced</th>
-						<th className="px-2 py-1.5 text-right font-medium">Requests</th>
-						<th className="px-2 py-1.5 text-left font-medium">Error rate</th>
-						<th className="px-2 py-1.5 text-left font-medium">p95</th>
-						<th className="px-4 py-1.5 text-right font-medium">Live share</th>
-					</Eyebrow>
-				</thead>
-				<tbody>
+			<Table size="sm">
+				<TableHeader>
+					<TableRow className={cn(eyebrowVariants(), "hover:bg-transparent")}>
+						<TableHead className="pl-4">Service</TableHead>
+						<TableHead>Replaced</TableHead>
+						<TableHead className="text-right">Requests</TableHead>
+						<TableHead>Error rate</TableHead>
+						<TableHead>p95</TableHead>
+						<TableHead className="pr-4 text-right">Live share</TableHead>
+					</TableRow>
+				</TableHeader>
+				<TableBody>
 					{rows.map((impact) => (
 						<DeployServiceRow
 							key={`${impact.serviceName}:${impact.environment}`}
@@ -203,8 +198,8 @@ function DeployServices({
 							timeSearch={timeSearch}
 						/>
 					))}
-				</tbody>
-			</table>
+				</TableBody>
+			</Table>
 		</SectionCard>
 	)
 }
@@ -219,8 +214,8 @@ function DeployServiceRow({
 	timeSearch: TimeRangeSearch
 }) {
 	return (
-		<tr className="border-t border-border/60 hover:bg-muted/30">
-			<td className="px-4 py-1.5">
+		<TableRow className="border-border/60 hover:bg-muted/30">
+			<TableCell className="pl-4">
 				<Link
 					to="/releases/$commitSha"
 					params={{ commitSha: impact.commitSha }}
@@ -240,40 +235,40 @@ function DeployServiceRow({
 						<ReleaseHealthPill health={impact.health} label={releaseHealthFigure(impact)} />
 					)}
 				</Link>
-			</td>
-			<td className="px-2 py-1.5 font-mono text-[11px] text-muted-foreground">
+			</TableCell>
+			<TableCell className="font-mono text-[11px] text-muted-foreground">
 				{impact.baseline ? shortReleaseLabel(impact.baseline.commitSha) : "-"}
-			</td>
-			<td className="px-2 py-1.5 text-right font-mono tabular-nums">
+			</TableCell>
+			<TableCell className="text-right font-mono tabular-nums">
 				{formatNumber(impact.spanCount)}
-			</td>
-			<td className="px-2 py-1.5">
+			</TableCell>
+			<TableCell>
 				<BeforeAfter
 					before={impact.baseline?.errorRate}
 					after={impact.errorRate}
 					format={formatErrorRate}
 					tone={impact.health === "regressed" ? "error" : undefined}
 				/>
-			</td>
-			<td className="px-2 py-1.5">
+			</TableCell>
+			<TableCell>
 				<BeforeAfter
 					before={impact.baseline?.p95LatencyMs}
 					after={impact.p95LatencyMs}
 					format={formatLatency}
 					tone={impact.health === "watch" ? "warn" : undefined}
 				/>
-			</td>
-			<td
+			</TableCell>
+			<TableCell
 				className={cn(
-					"px-4 py-1.5 text-right font-mono tabular-nums",
+					"pr-4 text-right font-mono tabular-nums",
 					impact.share !== undefined && impact.share > 0 && impact.share < ROLLOUT_COMPLETE_SHARE
 						? "text-primary"
 						: "text-muted-foreground",
 				)}
 			>
 				{impact.share === undefined ? "-" : `${Math.round(impact.share * 100)}%`}
-			</td>
-		</tr>
+			</TableCell>
+		</TableRow>
 	)
 }
 

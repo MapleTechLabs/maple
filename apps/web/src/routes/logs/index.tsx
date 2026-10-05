@@ -1,4 +1,5 @@
 import { useNavigate, createFileRoute } from "@tanstack/react-router"
+import { shortId } from "@maple/ui/lib/ids"
 import { Schema } from "effect"
 
 import { OptionalStringArrayParam } from "@/lib/search-params"
@@ -76,7 +77,7 @@ function LogsPage() {
 			negated: chip.negated,
 			// The chip's tooltip still carries the full ID; the trace page itself
 			// abbreviates to the same 8 characters.
-			getValueLabel: chip.param === "traceId" ? (value: string) => value.slice(0, 8) : undefined,
+			getValueLabel: chip.param === "traceId" ? (value: string) => shortId(value, "trace") : undefined,
 			onRemove: () => navigate({ search: (prev) => ({ ...prev, [chip.param]: undefined }) }),
 		}))
 

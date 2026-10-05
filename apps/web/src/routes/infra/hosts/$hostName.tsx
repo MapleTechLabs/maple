@@ -1,5 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Schema } from "effect"
+import { Panel, PanelHeader } from "@maple/ui/components/ui/panel"
 import { Result, useAtomValue, useAtomRefresh } from "@/lib/effect-atom"
 
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
@@ -130,13 +131,15 @@ function HostDetailPage() {
 									))
 									.render()}
 
-								<div className="rounded-md border bg-card">
-									<div className="flex items-baseline justify-between gap-3 border-b px-4 py-2.5">
-										<span className="text-sm font-medium">Metrics</span>
-										<span className="text-xs tabular-nums text-muted-foreground">
-											{METRIC_STRIPS.length} signals
-										</span>
-									</div>
+								<Panel className="overflow-visible">
+									<PanelHeader
+										title="Metrics"
+										action={
+											<span className="text-xs tabular-nums text-muted-foreground">
+												{METRIC_STRIPS.length} signals
+											</span>
+										}
+									/>
 									<div className="px-4" {...linkedCursorContainerProps}>
 										{METRIC_STRIPS.map((strip) => (
 											<MetricStrip
@@ -152,7 +155,7 @@ function HostDetailPage() {
 											/>
 										))}
 									</div>
-								</div>
+								</Panel>
 							</div>
 						</DashboardLayout.Scroll>
 					</DashboardLayout.Content>

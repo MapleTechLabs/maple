@@ -3,6 +3,7 @@ import type { ChatTab } from "@/hooks/use-chat-tabs"
 import { cn } from "@maple/ui/lib/utils"
 import { Button } from "@maple/ui/components/ui/button"
 import { EmptyMessage } from "@maple/ui/components/ui/empty"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 import {
 	DropdownMenu,
 	DropdownMenuContent,
@@ -257,9 +258,9 @@ function ChatSidebarRow({
 						className="min-w-0 flex-1 bg-transparent text-sm outline-none ring-1 ring-ring/50 rounded-sm px-1 -mx-1"
 					/>
 				) : (
-					<span className="min-w-0 flex-1 truncate text-left" title={tab.title}>
+					<TruncatedText text={tab.title} className="flex-1 text-left">
 						{tab.title}
-					</span>
+					</TruncatedText>
 				)}
 				{!isRenaming && (
 					<DropdownMenu>

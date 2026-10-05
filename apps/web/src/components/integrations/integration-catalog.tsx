@@ -777,15 +777,19 @@ export function IntegrationsSummary() {
 	const attention = connected.filter((value) => value.health === "attention").length
 	return (
 		<div className="flex items-center gap-2">
-			<span className="inline-flex items-center gap-1.5 rounded-full border border-border/60 px-2.5 py-0.5 text-xs text-muted-foreground">
+			<Badge variant="meta" pill className="gap-1.5 px-2.5 font-normal">
 				<StatusDot tone="success" />
 				{connected.length} connected
-			</span>
+			</Badge>
 			{attention > 0 && (
-				<span className="inline-flex items-center gap-1.5 rounded-full border border-warning/25 bg-warning/10 px-2.5 py-0.5 text-xs text-warning-foreground">
+				<Badge
+					variant="warning"
+					pill
+					className="gap-1.5 border-warning/25 bg-warning/10 px-2.5 font-normal"
+				>
 					<StatusDot tone="warning" />
 					{attention} need attention
-				</span>
+				</Badge>
 			)}
 		</div>
 	)

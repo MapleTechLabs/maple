@@ -1,7 +1,10 @@
 import * as React from "react"
+import { shortId } from "@maple/ui/lib/ids"
 import * as Predicate from "effect/Predicate"
 import { Link } from "@tanstack/react-router"
 import { cn } from "@maple/ui/lib/utils"
+import { httpStatusTone } from "@maple/ui/lib/http"
+import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import {
 	getSessionTranscriptResultAtom,
@@ -10,6 +13,7 @@ import {
 import { CopyButton } from "@maple/ui/components/ui/copy-button"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { InlineCode } from "@maple/ui/components/ui/inline-code"
+import { Meter, SegmentedBar } from "@maple/ui/components/ui/meter"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { ToggleGroup, ToggleGroupItem } from "@maple/ui/components/ui/toggle-group"
@@ -302,10 +306,10 @@ function EventsTab({ sessionId, window }: { sessionId: string; window?: ReplayPa
 		.orElse(() => <Skeleton className="m-3 min-h-0 flex-1 rounded-lg" />)
 }
 
+// Status 0 is a request that never got a response: as bad as a 5xx.
 function statusTone(status: number): string {
-	if (status >= 500 || status === 0) return "text-destructive"
-	if (status >= 400) return "text-warning-foreground"
-	return "text-success-foreground"
+	const tone = status === 0 ? "crit" : httpStatusTone(status)
+	return tone === "neutral" ? "text-success-foreground" : TONE_TEXT[tone]
 }
 
 /**
@@ -601,7 +605,7 @@ function EventProps({ attributes }: { attributes?: string }) {
 }
 
 function isFailedRequest(ev: EventRow): boolean {
-	return ev.type === "network" && (ev.netStatus >= 500 || ev.netStatus === 0)
+	return ev.type === "network" && (httpStatusTone(ev.netStatus) === "crit" || ev.netStatus === 0)
 }
 
 /**
@@ -735,18 +739,15 @@ function formatNetDuration(ms: number): string {
 /** Relative-duration micro-bar for the Network view — slow requests jump out
  *  without reading every number. Log-free linear scale capped at 3s. */
 function NetDurationBar({ durationMs, failed }: { durationMs: number; failed: boolean }) {
-	const pct = Math.min(100, Math.max(2, (durationMs / NET_BAR_MAX_MS) * 100))
 	const slow = durationMs >= 1000
 	return (
-		<span className="block h-[3px] w-full overflow-hidden rounded-full bg-muted">
-			<span
-				className={cn(
-					"block h-full rounded-full",
-					failed ? "bg-destructive" : slow ? "bg-warning" : "bg-chart-1",
-				)}
-				style={{ width: `${pct}%` }}
-			/>
-		</span>
+		<Meter
+			value={durationMs}
+			max={NET_BAR_MAX_MS}
+			minVisible={2}
+			fillClassName={failed ? "bg-destructive" : slow ? "bg-warning" : "bg-chart-1"}
+			className="h-[3px] w-full bg-muted"
+		/>
 	)
 }
 
@@ -900,7 +901,7 @@ function SessionTab({ sessionId, session }: { sessionId: string; session: Sessio
 							className="truncate font-mono text-xs text-primary underline-offset-2 hover:underline"
 							title="All sessions from this visitor"
 						>
-							{session.visitorId.slice(0, 12)}…
+							{shortId(session.visitorId, "generic", { ellipsis: true })}
 						</Link>
 					</Row>
 					<Row icon={UserIcon} label="Visitor">
@@ -990,7 +991,7 @@ function SessionTab({ sessionId, session }: { sessionId: string; session: Sessio
 				)}
 				<Row icon={IdBadgeIcon} label="Session ID" title={sessionId}>
 					<Value mono className="truncate">
-						{sessionId.slice(0, 12)}…
+						{shortId(sessionId, "session", { ellipsis: true })}
 					</Value>
 					<CopyButton
 						value={sessionId}
@@ -1187,10 +1188,14 @@ function SessionSummary({ session }: { session: SessionRailSession }) {
 
 			{share && (
 				<>
-					<div aria-hidden className="mt-3 flex h-1 gap-px overflow-hidden rounded-full bg-muted">
-						<span className="bg-primary" style={{ width: `${share.active}%` }} />
-						<span className="bg-muted-foreground/40" style={{ width: `${share.idle}%` }} />
-					</div>
+					<SegmentedBar
+						segments={[
+							{ key: "active", value: share.active, className: "bg-primary" },
+							{ key: "idle", value: share.idle, className: "bg-muted-foreground/40" },
+						]}
+						total={100}
+						className="mt-3 h-1 gap-px bg-muted"
+					/>
 					<div className="mt-2 flex items-center gap-4 text-[11px] text-muted-foreground">
 						{active != null && (
 							<Legend

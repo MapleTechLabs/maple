@@ -6,6 +6,7 @@ import { Button } from "@maple/ui/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@maple/ui/components/ui/card"
 import { Input } from "@maple/ui/components/ui/input"
 import { Label } from "@maple/ui/components/ui/label"
+import { SettingRow } from "@maple/ui/components/ui/setting-row"
 import { Switch } from "@maple/ui/components/ui/switch"
 import { toastAccountError } from "@/components/account/account-errors"
 import { AccountSectionSkeleton } from "@/components/account/account-section-skeleton"
@@ -114,19 +115,18 @@ export function PasswordSection() {
 							/>
 							{mismatch && <p className="text-xs text-destructive">Passwords do not match.</p>}
 						</div>
-						<div className="flex items-center justify-between gap-4 rounded-lg border border-border p-4">
-							<div>
-								<p className="text-sm font-medium">Sign out of other devices</p>
-								<p className="text-muted-foreground text-xs">
-									End every session except this one.
-								</p>
-							</div>
-							<Switch
-								checked={signOutOfOtherSessions}
-								onCheckedChange={setSignOutOfOtherSessions}
-								disabled={isSaving}
-							/>
-						</div>
+						<SettingRow
+							framed
+							label="Sign out of other devices"
+							description="End every session except this one."
+							control={
+								<Switch
+									checked={signOutOfOtherSessions}
+									onCheckedChange={setSignOutOfOtherSessions}
+									disabled={isSaving}
+								/>
+							}
+						/>
 						<div className="flex justify-end">
 							<Button size="sm" onClick={handleSubmit} disabled={!canSubmit || isSaving}>
 								{isSaving ? "Saving..." : hasPassword ? "Change password" : "Set password"}

@@ -6,19 +6,9 @@ import { toastManager } from "@maple/ui/components/ui/toast"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@maple/ui/components/ui/card"
-import {
-	AlertDialog,
-	AlertDialogAction,
-	AlertDialogCancel,
-	AlertDialogContent,
-	AlertDialogDescription,
-	AlertDialogFooter,
-	AlertDialogHeader,
-	AlertDialogMedia,
-	AlertDialogTitle,
-} from "@maple/ui/components/ui/alert-dialog"
-import { cn } from "@maple/ui/lib/utils"
-import { AlertWarningIcon, GithubIcon, GoogleIcon, type IconComponent } from "@/components/icons"
+import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
+import { SettingRow } from "@maple/ui/components/ui/setting-row"
+import { GithubIcon, GoogleIcon, type IconComponent } from "@/components/icons"
 import { toastAccountError } from "@/components/account/account-errors"
 import { AccountSectionSkeleton } from "@/components/account/account-section-skeleton"
 
@@ -124,106 +114,83 @@ export function ConnectedAccountsSection() {
 							const isBusy = busyProvider === provider.id
 
 							return (
-								<div
+								<SettingRow
 									key={provider.id}
-									className={cn(
-										"flex items-center justify-between gap-4 rounded-lg border p-4 transition-colors",
-										isVerified ? "border-primary/20 bg-primary/[0.02]" : "border-border",
-									)}
-								>
-									<div className="flex min-w-0 items-center gap-3">
+									framed
+									active={isVerified}
+									icon={
 										<div className="text-muted-foreground">
 											<provider.icon size={18} />
 										</div>
-										<div className="min-w-0">
-											<div className="flex items-center gap-1.5">
-												<p className="text-sm font-medium">{provider.label}</p>
-												{account && !isVerified && (
-													<Badge
+									}
+									label={
+										<span className="flex items-center gap-1.5">
+											{provider.label}
+											{account && !isVerified && (
+												<Badge variant="outline" className="text-muted-foreground">
+													Incomplete
+												</Badge>
+											)}
+										</span>
+									}
+									description={
+										<span className="block truncate">
+											{account
+												? account.emailAddress || account.username || "Connected"
+												: `Connect your ${provider.label} account`}
+										</span>
+									}
+									control={
+										account ? (
+											<>
+												{!isVerified && (
+													<Button
 														variant="outline"
-														className="text-muted-foreground"
+														size="sm"
+														disabled={isBusy}
+														onClick={() => void handleRetry(provider, account)}
 													>
-														Incomplete
-													</Badge>
+														Retry
+													</Button>
 												)}
-											</div>
-											<p className="truncate text-muted-foreground text-xs">
-												{account
-													? account.emailAddress || account.username || "Connected"
-													: `Connect your ${provider.label} account`}
-											</p>
-										</div>
-									</div>
-									{account ? (
-										<div className="flex shrink-0 items-center gap-2">
-											{!isVerified && (
 												<Button
-													variant="outline"
+													variant="ghost"
 													size="sm"
 													disabled={isBusy}
-													onClick={() => void handleRetry(provider, account)}
+													onClick={() => setPendingRemoval({ account, label: provider.label })}
 												>
-													Retry
+													Disconnect
 												</Button>
-											)}
+											</>
+										) : (
 											<Button
-												variant="ghost"
+												variant="outline"
 												size="sm"
 												disabled={isBusy}
-												onClick={() =>
-													setPendingRemoval({ account, label: provider.label })
-												}
+												onClick={() => void handleConnect(provider)}
 											>
-												Disconnect
+												{isBusy ? "Redirecting..." : "Connect"}
 											</Button>
-										</div>
-									) : (
-										<Button
-											variant="outline"
-											size="sm"
-											className="shrink-0"
-											disabled={isBusy}
-											onClick={() => void handleConnect(provider)}
-										>
-											{isBusy ? "Redirecting..." : "Connect"}
-										</Button>
-									)}
-								</div>
+										)
+									}
+								/>
 							)
 						})}
 					</div>
 				</CardContent>
 			</Card>
 
-			<AlertDialog
+			<ConfirmDialog
 				open={pendingRemoval !== null}
 				onOpenChange={(open) => {
 					if (!open) setPendingRemoval(null)
 				}}
-			>
-				<AlertDialogContent>
-					<AlertDialogHeader>
-						<AlertDialogMedia className="bg-destructive/10">
-							<AlertWarningIcon className="text-destructive" />
-						</AlertDialogMedia>
-						<AlertDialogTitle>Disconnect {pendingRemoval?.label}?</AlertDialogTitle>
-						<AlertDialogDescription>
-							You will no longer be able to sign in to Maple with {pendingRemoval?.label}. Make
-							sure you still have a password, a passkey or another connected account first.
-						</AlertDialogDescription>
-					</AlertDialogHeader>
-					<AlertDialogFooter>
-						<AlertDialogCancel disabled={busyProvider !== null}>Cancel</AlertDialogCancel>
-						<AlertDialogAction
-							variant="destructive"
-							onClick={handleDisconnect}
-							disabled={busyProvider !== null}
-						>
-							Disconnect
-						</AlertDialogAction>
-					</AlertDialogFooter>
-				</AlertDialogContent>
-			</AlertDialog>
+				title={`Disconnect ${pendingRemoval?.label}?`}
+				description={`You will no longer be able to sign in to Maple with ${pendingRemoval?.label}. Make sure you still have a password, a passkey or another connected account first.`}
+				confirmLabel="Disconnect"
+				pending={busyProvider !== null}
+				onConfirm={() => void handleDisconnect()}
+			/>
 		</div>
 	)
 }

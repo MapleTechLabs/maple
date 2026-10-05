@@ -9,20 +9,10 @@ import { Button } from "@maple/ui/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@maple/ui/components/ui/card"
 import { Input } from "@maple/ui/components/ui/input"
 import { Label } from "@maple/ui/components/ui/label"
-import {
-	AlertDialog,
-	AlertDialogAction,
-	AlertDialogCancel,
-	AlertDialogContent,
-	AlertDialogDescription,
-	AlertDialogFooter,
-	AlertDialogHeader,
-	AlertDialogMedia,
-	AlertDialogTitle,
-} from "@maple/ui/components/ui/alert-dialog"
+import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
-import { AlertWarningIcon, UploadIcon, UserIcon } from "@/components/icons"
+import { UploadIcon, UserIcon } from "@/components/icons"
 import { OrgAvatar } from "@/components/dashboard/org-switcher-menu"
 import { RegionBadge } from "@/components/region/region-badge"
 import { organizationHomeRegion } from "@maple/domain/organization-regions"
@@ -327,44 +317,30 @@ export function OrganizationSection() {
 				</CardContent>
 			</Card>
 
-			<AlertDialog open={deleteOpen} onOpenChange={handleDialogChange}>
-				<AlertDialogContent>
-					<AlertDialogHeader>
-						<AlertDialogMedia className="bg-destructive/10">
-							<AlertWarningIcon className="text-destructive" />
-						</AlertDialogMedia>
-						<AlertDialogTitle>Delete organization?</AlertDialogTitle>
-						<AlertDialogDescription>
-							All dashboards, alerts, API keys, ingest keys, and integrations for this org will
-							be permanently deleted. This cannot be undone.
-						</AlertDialogDescription>
-					</AlertDialogHeader>
-					{/* AlertDialog has no panel slot, so a body between header and footer pads itself. */}
-					<div className="space-y-2 px-6 py-2">
-						<Label htmlFor="org-delete-confirm" className="text-xs">
-							Type <span className="font-mono font-semibold">{organization.name}</span> to
-							confirm.
-						</Label>
-						<Input
-							id="org-delete-confirm"
-							value={confirmText}
-							onChange={(e) => setConfirmText(e.target.value)}
-							placeholder={organization.name}
-							autoComplete="off"
-						/>
-					</div>
-					<AlertDialogFooter>
-						<AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
-						<AlertDialogAction
-							variant="destructive"
-							onClick={handleDelete}
-							disabled={isDeleting || !confirmMatches}
-						>
-							{isDeleting ? "Deleting..." : "Delete organization"}
-						</AlertDialogAction>
-					</AlertDialogFooter>
-				</AlertDialogContent>
-			</AlertDialog>
+			<ConfirmDialog
+				open={deleteOpen}
+				onOpenChange={handleDialogChange}
+				title="Delete organization?"
+				description="All dashboards, alerts, API keys, ingest keys, and integrations for this org will be permanently deleted. This cannot be undone."
+				confirmLabel="Delete organization"
+				pending={isDeleting}
+				confirmDisabled={!confirmMatches}
+				onConfirm={() => void handleDelete()}
+			>
+				{/* AlertDialog has no panel slot, so a body between header and footer pads itself. */}
+				<div className="space-y-2">
+					<Label htmlFor="org-delete-confirm" className="text-xs">
+						Type <span className="font-mono font-semibold">{organization.name}</span> to confirm.
+					</Label>
+					<Input
+						id="org-delete-confirm"
+						value={confirmText}
+						onChange={(e) => setConfirmText(e.target.value)}
+						placeholder={organization.name}
+						autoComplete="off"
+					/>
+				</div>
+			</ConfirmDialog>
 		</div>
 	)
 }

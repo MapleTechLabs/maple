@@ -12,8 +12,10 @@
 // measure) and this draws it.
 
 import { cn } from "@maple/ui/lib/utils"
+import { SegmentedBar } from "@maple/ui/components/ui/meter"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import type { Tone } from "../severity-tokens"
+import { TONE_TEXT } from "@maple/ui/lib/tone"
 
 /** A band that stands alone on a page body rather than flush under a shell's header. */
 export const FLEET_BAND_BOXED = "overflow-hidden rounded-lg border"
@@ -54,9 +56,9 @@ interface FleetBandProps<S extends string> {
 const CELL_VALUE_TONE: Record<Tone | "info", string> = {
 	neutral: "text-foreground",
 	ok: "text-foreground",
-	info: "text-[var(--severity-info)]",
-	warn: "text-[var(--severity-warn)]",
-	crit: "text-[var(--severity-error)]",
+	info: TONE_TEXT.info,
+	warn: TONE_TEXT.warn,
+	crit: TONE_TEXT.crit,
 } satisfies Record<Tone | "info", string>
 
 export function FleetBand<S extends string>({
@@ -90,22 +92,19 @@ export function FleetBand<S extends string>({
 					</span>
 				</span>
 				{total > 0 ? (
-					<div
-						className="flex h-1.5 w-full gap-px overflow-hidden rounded-full"
-						role="img"
-						aria-label={segments.map((segment) => `${segment.count} ${segment.key}`).join(", ")}
-					>
-						{/* A single hot pod in a fleet of 600 is 0.2% of the width, which
-						    rounds to nothing — so any non-zero segment gets a floor wide
-						    enough to see. */}
-						{drawn.map((segment) => (
-							<div
-								key={segment.key}
-								className={segment.className}
-								style={{ width: `${Math.max((segment.count / total) * 100, 2)}%` }}
-							/>
-						))}
-					</div>
+					// A single hot pod in a fleet of 600 is 0.2% of the width, which
+					// rounds to nothing, so any non-zero segment gets a 2% floor.
+					<SegmentedBar
+						className="w-full gap-px bg-transparent"
+						total={total}
+						minVisible={2}
+						label={segments.map((segment) => `${segment.count} ${segment.key}`).join(", ")}
+						segments={drawn.map((segment) => ({
+							key: segment.key,
+							value: segment.count,
+							className: segment.className,
+						}))}
+					/>
 				) : (
 					<div className="h-1.5 w-full rounded-full bg-muted" />
 				)}

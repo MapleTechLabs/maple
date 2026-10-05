@@ -8,7 +8,7 @@ import { cn } from "@maple/ui/lib/utils"
 import type { V2PlanetScaleDatabase } from "@maple/domain/http/v2"
 import type { PlanetScaleDatabaseStat } from "@/api/warehouse/service-map"
 import { formatNumber } from "@maple/ui/lib/format"
-import { ColumnHead, DataTable, MetaChip, ROW_LINK_CLASS, useTableSort } from "../primitives/data-table"
+import { ColumnHead, DataTable, MetaChip, ROW_LINK_CLASS, useTableSort } from "@/components/common/data-table"
 import {
 	MISSING,
 	abnormalState,

@@ -1,4 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
+import { shortId as truncateId } from "@maple/ui/lib/ids"
 import type { WidgetFixContext } from "./widget-fix-context"
 
 interface WidgetFixAttachmentCardProps {
@@ -9,7 +10,7 @@ interface WidgetFixAttachmentCardProps {
 const shortId = (id: string): string => {
 	const segments = id.split("-")
 	const last = segments[segments.length - 1] ?? id
-	return last.slice(0, 8)
+	return truncateId(last, "generic", { length: 8 })
 }
 
 export function WidgetFixAttachmentCard({ ctx, className }: WidgetFixAttachmentCardProps) {

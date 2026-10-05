@@ -36,6 +36,7 @@ import { SettingsNav, useVisibleSettingsSections } from "@/components/settings/s
 import { Alert, AlertDescription } from "@maple/ui/components/ui/alert"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
+import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import { docsUrl } from "@/lib/docs"
 import { ArrowLeftIcon, CircleInfoIcon, ExternalLinkIcon } from "@/components/icons"
 
@@ -210,7 +211,7 @@ function IntegrationsPage() {
 										<CircleInfoIcon />
 										<AlertDescription>
 											Maple scrapes any public Prometheus{" "}
-											<code className="font-mono text-xs">/metrics</code> endpoint you
+											<InlineCode>/metrics</InlineCode> endpoint you
 											add as a target below and stores the samples as OpenTelemetry
 											metrics.{" "}
 											<a
@@ -230,7 +231,7 @@ function IntegrationsPage() {
 										<AlertDescription>
 											WarpStream clusters are scraped as Prometheus targets. Point a
 											target at an agent&apos;s{" "}
-											<code className="font-mono text-xs">:8080/metrics</code> endpoint
+											<InlineCode>:8080/metrics</InlineCode> endpoint
 											or the hosted Prometheus endpoint with Basic auth.{" "}
 											<a
 												href={docsUrl("warpstream")}

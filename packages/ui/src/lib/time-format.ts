@@ -117,3 +117,19 @@ export function formatRelativeTimeOrDate(
 	}
 	return formatRelativeFrom(epochMs, nowMs)
 }
+
+const pad2 = (value: number) => value.toString().padStart(2, "0")
+
+/**
+ * Clock-style countdown for a remaining duration: `4:05`, `1:04:05`, or with
+ * `fixedHours` always `01:04:05` (a pill that must not change width).
+ */
+export function formatCountdown(remainingMs: number, options: { fixedHours?: boolean } = {}): string {
+	const total = Number.isFinite(remainingMs) && remainingMs > 0 ? Math.ceil(remainingMs / 1000) : 0
+	const hours = Math.floor(total / 3600)
+	const minutes = Math.floor((total % 3600) / 60)
+	const seconds = total % 60
+	if (options.fixedHours) return `${pad2(hours)}:${pad2(minutes)}:${pad2(seconds)}`
+	if (hours > 0) return `${hours}:${pad2(minutes)}:${pad2(seconds)}`
+	return `${minutes}:${pad2(seconds)}`
+}

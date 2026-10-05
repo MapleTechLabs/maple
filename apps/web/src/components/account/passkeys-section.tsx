@@ -4,7 +4,15 @@ import type { Passkey } from "@/components/account/account-types"
 import { toastManager } from "@maple/ui/components/ui/toast"
 
 import { Button } from "@maple/ui/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@maple/ui/components/ui/card"
+import {
+	Card,
+	CardAction,
+	CardContent,
+	CardDescription,
+	CardHeader,
+	CardTitle,
+} from "@maple/ui/components/ui/card"
+import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
 import { Input } from "@maple/ui/components/ui/input"
 import { Label } from "@maple/ui/components/ui/label"
 import {
@@ -17,17 +25,6 @@ import {
 	DialogTitle,
 } from "@maple/ui/components/ui/dialog"
 import {
-	AlertDialog,
-	AlertDialogAction,
-	AlertDialogCancel,
-	AlertDialogContent,
-	AlertDialogDescription,
-	AlertDialogFooter,
-	AlertDialogHeader,
-	AlertDialogMedia,
-	AlertDialogTitle,
-} from "@maple/ui/components/ui/alert-dialog"
-import {
 	DropdownMenu,
 	DropdownMenuContent,
 	DropdownMenuItem,
@@ -36,7 +33,6 @@ import {
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
 import {
-	AlertWarningIcon,
 	DotsVerticalIcon,
 	FingerprintIcon,
 	PencilIcon,
@@ -116,18 +112,17 @@ export function PasskeysSection() {
 	return (
 		<div className="space-y-6">
 			<Card>
-				<CardHeader className="flex flex-row items-center justify-between">
-					<div className="space-y-1.5">
-						<CardTitle>Passkeys</CardTitle>
-						<CardDescription>
-							Sign in with Touch ID, Windows Hello, a phone or a hardware key instead of a
-							password.
-						</CardDescription>
-					</div>
-					<Button size="sm" onClick={handleCreate} disabled={isBusy || !supported}>
-						<PlusIcon size={14} />
-						Add passkey
-					</Button>
+				<CardHeader>
+					<CardTitle>Passkeys</CardTitle>
+					<CardDescription>
+						Sign in with Touch ID, Windows Hello, a phone or a hardware key instead of a password.
+					</CardDescription>
+					<CardAction>
+						<Button size="sm" onClick={handleCreate} disabled={isBusy || !supported}>
+							<PlusIcon size={14} />
+							Add passkey
+						</Button>
+					</CardAction>
 				</CardHeader>
 				<CardContent>
 					{!supported ? (
@@ -269,31 +264,17 @@ export function PasskeysSection() {
 				</DialogContent>
 			</Dialog>
 
-			<AlertDialog
+			<ConfirmDialog
 				open={pendingRemoval !== null}
 				onOpenChange={(open) => {
 					if (!open) setPendingRemoval(null)
 				}}
-			>
-				<AlertDialogContent>
-					<AlertDialogHeader>
-						<AlertDialogMedia className="bg-destructive/10">
-							<AlertWarningIcon className="text-destructive" />
-						</AlertDialogMedia>
-						<AlertDialogTitle>Remove passkey?</AlertDialogTitle>
-						<AlertDialogDescription>
-							{pendingRemoval?.name ?? "This passkey"} can no longer be used to sign in. The
-							credential stays on your device until you delete it there too.
-						</AlertDialogDescription>
-					</AlertDialogHeader>
-					<AlertDialogFooter>
-						<AlertDialogCancel disabled={isBusy}>Cancel</AlertDialogCancel>
-						<AlertDialogAction variant="destructive" onClick={handleRemove} disabled={isBusy}>
-							{isBusy ? "Removing..." : "Remove"}
-						</AlertDialogAction>
-					</AlertDialogFooter>
-				</AlertDialogContent>
-			</AlertDialog>
+				title="Remove passkey?"
+				description={`${pendingRemoval?.name ?? "This passkey"} can no longer be used to sign in. The credential stays on your device until you delete it there too.`}
+				confirmLabel="Remove"
+				pending={isBusy}
+				onConfirm={() => void handleRemove()}
+			/>
 		</div>
 	)
 }

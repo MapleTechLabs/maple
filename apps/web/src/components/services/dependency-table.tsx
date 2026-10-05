@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react"
 import { useNavigate } from "@tanstack/react-router"
-import { cn } from "@maple/ui/lib/utils"
 import { Table, TableBody, TableCell, TableHeader, TableRow } from "@maple/ui/components/ui/table"
 import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
@@ -10,11 +9,10 @@ import {
 	MobileListRow,
 	MobileSortBar,
 	SortableHead,
-	errorTone,
-	formatErrorRate,
 	formatRate,
 	type SortDir,
 } from "./service-table-cells"
+import { ErrorRateValue } from "@maple/ui/components/error-rate-value"
 import { DependencyTypeBadge, type DependencyKind } from "./dependency-type-badge"
 import { ServiceDot } from "@maple/ui/components/service-dot"
 import { LatencyValue } from "@maple/ui/components/latency-value"
@@ -145,7 +143,6 @@ export function DependencyTable({ serviceName, rows, startTime, endTime, timePre
 							</TableRow>
 						) : (
 							sorted.map((row) => {
-								const tone = errorTone(row.errorRate)
 								return (
 									<TableRow
 										key={row.id}
@@ -201,16 +198,7 @@ export function DependencyTable({ serviceName, rows, startTime, endTime, timePre
 											max={0.05}
 											tone="errors"
 										>
-											<span
-												className={cn(
-													"tabular-nums font-mono text-[12.5px]",
-													tone === "error" && "text-severity-error",
-													tone === "warn" && "text-severity-warn",
-													tone === "default" && "text-muted-foreground/80",
-												)}
-											>
-												{formatErrorRate(row.errorRate)}
-											</span>
+											<ErrorRateValue rate={row.errorRate} className="text-[12.5px]" />
 										</BarCell>
 										<TableCell className="py-2 text-right align-middle">
 											<LatencyValue
@@ -259,7 +247,6 @@ export function DependencyTable({ serviceName, rows, startTime, endTime, timePre
 						</EmptyMessage>
 					) : (
 						sorted.map((row) => {
-							const tone = errorTone(row.errorRate)
 							return (
 								<MobileListRow key={row.id} onClick={() => handleRowClick(row)}>
 									<div className="flex min-w-0 items-center gap-2.5">
@@ -285,15 +272,7 @@ export function DependencyTable({ serviceName, rows, startTime, endTime, timePre
 										</span>
 										<span>
 											<span className="text-muted-foreground/60">err </span>
-											<span
-												className={cn(
-													tone === "error" && "text-severity-error",
-													tone === "warn" && "text-severity-warn",
-													tone === "default" && "text-muted-foreground/80",
-												)}
-											>
-												{formatErrorRate(row.errorRate)}
-											</span>
+											<ErrorRateValue rate={row.errorRate} />
 										</span>
 										<span>
 											<span className="text-muted-foreground/60">p95 </span>

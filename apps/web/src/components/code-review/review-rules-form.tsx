@@ -7,12 +7,12 @@ import {
 	PrReviewSeverity,
 } from "@maple/domain/http"
 import { Button } from "@maple/ui/components/ui/button"
-import { Spinner } from "@maple/ui/components/ui/spinner"
 import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import { Checkbox } from "@maple/ui/components/ui/checkbox"
 import { Input } from "@maple/ui/components/ui/input"
 import { Label } from "@maple/ui/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
+import { SettingRow } from "@maple/ui/components/ui/setting-row"
 import { Switch } from "@maple/ui/components/ui/switch"
 import { Textarea } from "@maple/ui/components/ui/textarea"
 
@@ -443,19 +443,17 @@ export function ReviewRulesForm({
 					</Select>
 				</div>
 			) : (
-				<label htmlFor={`${idPrefix}-drafts`} className="flex items-center justify-between gap-3">
-					<span className="flex flex-col gap-0.5">
-						<span className="text-sm font-medium">Review drafts</span>
-						<span className="text-xs text-muted-foreground">
-							Draft pull requests are skipped unless this is on.
-						</span>
-					</span>
-					<Switch
-						id={`${idPrefix}-drafts`}
-						checked={state.reviewDrafts === "on"}
-						onCheckedChange={(checked) => update({ reviewDrafts: checked ? "on" : "off" })}
-					/>
-				</label>
+				<SettingRow
+					label="Review drafts"
+					description="Draft pull requests are skipped unless this is on."
+					control={
+						<Switch
+							id={`${idPrefix}-drafts`}
+							checked={state.reviewDrafts === "on"}
+							onCheckedChange={(checked) => update({ reviewDrafts: checked ? "on" : "off" })}
+						/>
+					}
+				/>
 			)}
 
 			{error !== null ? (
@@ -482,8 +480,11 @@ export function ReviewRulesForm({
 				>
 					Reset
 				</Button>
-				<Button onClick={handleSave} disabled={!isAdmin || !dirty || problem !== null || saving}>
-					{saving ? <Spinner className="size-3.5" /> : null}
+				<Button
+					onClick={handleSave}
+					loading={saving}
+					disabled={!isAdmin || !dirty || problem !== null || saving}
+				>
 					Save
 				</Button>
 			</div>

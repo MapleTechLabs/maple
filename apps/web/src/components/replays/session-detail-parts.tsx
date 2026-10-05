@@ -1,10 +1,11 @@
 import type { ReactNode } from "react"
+import { shortId } from "@maple/ui/lib/ids"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { GlobeIcon, ClockIcon } from "@/components/icons"
 import { CopyButton } from "@maple/ui/components/ui/copy-button"
-import { formatRelativeFrom } from "@maple/ui/lib/time-format"
+import { RelativeTime } from "@/components/common/relative-time"
 import { formatSessionDuration, gradientFor, hostFromUrl } from "./replay-format"
 import { parseChTimestampMs } from "./replay-timeline"
 import { ErrorCountPill, LivePill } from "./session-pills"
@@ -80,16 +81,13 @@ export function SessionIdentityBar({
 					<span className="truncate">{hostFromUrl(urlInitial)}</span>
 				</a>
 				{startedValid && (
-					<span
-						className="hidden shrink-0 items-center gap-1.5 text-xs text-muted-foreground md:inline-flex"
-						title={new Date(startedEpoch).toLocaleString()}
-					>
+					<span className="hidden shrink-0 items-center gap-1.5 text-xs text-muted-foreground md:inline-flex">
 						<ClockIcon className="size-3 shrink-0 opacity-70" />
-						started {formatRelativeFrom(startedEpoch)}
+						<RelativeTime value={startedEpoch} prefix="started" tooltip="title" />
 					</span>
 				)}
 				<span className="hidden shrink-0 items-center gap-1 rounded-md bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground xl:inline-flex">
-					{sessionId.slice(0, 8)}
+					{shortId(sessionId, "session", { length: 8 })}
 					<CopyButton
 						value={sessionId}
 						label="Session ID"

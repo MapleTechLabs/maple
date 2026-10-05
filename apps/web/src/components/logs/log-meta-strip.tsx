@@ -3,6 +3,7 @@ import { ClockIcon, ExternalLinkIcon, LinkIcon, PulseIcon } from "@/components/i
 
 import { CopyableValue } from "@/components/attributes"
 import { CopyButton } from "@maple/ui/components/ui/copy-button"
+import { shortId } from "@maple/ui/lib/ids"
 import { formatTimestampInTimezone } from "@/lib/timezone-format"
 import { encodeLogKey } from "@/lib/log-key"
 import { buildLogJsonPayload } from "./log-raw-panel"
@@ -42,13 +43,13 @@ export function LogMetaStrip({ log, timeZone, showOpenFullPage = true }: LogMeta
 					title={`View trace ${log.traceId}`}
 				>
 					<PulseIcon size={10} />
-					trace:{log.traceId.slice(0, 8)}
+					trace:{shortId(log.traceId, "trace")}
 				</Link>
 			)}
 
 			{log.spanId && (
 				<span className="shrink-0 font-mono text-[11px] text-muted-foreground">
-					<CopyableValue value={log.spanId}>span:{log.spanId.slice(0, 8)}</CopyableValue>
+					<CopyableValue value={log.spanId}>span:{shortId(log.spanId, "span")}</CopyableValue>
 				</span>
 			)}
 

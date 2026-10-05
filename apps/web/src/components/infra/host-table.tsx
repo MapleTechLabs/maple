@@ -1,7 +1,6 @@
 import { Link } from "@tanstack/react-router"
 
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
 
 import type { ListHostsResponse } from "@maple/domain/http"
 
@@ -15,9 +14,9 @@ import {
 	type SortControls,
 	ROW_LINK_CLASS,
 	useTableSort,
-} from "./primitives/data-table"
+} from "@/components/common/data-table"
 import { formatLoad } from "@maple/ui/lib/format"
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
+import { RelativeTime } from "@/components/common/relative-time"
 
 export type HostRow = ListHostsResponse["data"][number]
 
@@ -125,15 +124,11 @@ export function HostTable({ hosts, waiting }: HostTableProps) {
 						{formatLoad(host.load15)}
 					</div>
 					<div className="w-[100px] text-right">
-						<Tooltip>
-							<TooltipTrigger
-								render={<span />}
-								className="cursor-default font-mono text-[11px] text-muted-foreground"
-							>
-								{formatRelativeTime(host.lastSeen)}
-							</TooltipTrigger>
-							<TooltipContent>{host.lastSeen}</TooltipContent>
-						</Tooltip>
+						<RelativeTime
+							value={host.lastSeen}
+							mono
+							className="cursor-default text-[11px] text-muted-foreground"
+						/>
 					</div>
 				</Link>
 			))}

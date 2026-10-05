@@ -3,6 +3,7 @@
 // it isn't a signal there.
 
 import { FleetBand, FleetBandLoading } from "./primitives/fleet-band"
+import { TONE_FILL } from "@maple/ui/lib/tone"
 
 export interface ContainerScopeCounts {
 	readonly totalContainers: number
@@ -39,8 +40,8 @@ export function ContainerSummaryBand({
 			caption="share of the fleet by peak utilization"
 			segments={[
 				{ key: "healthy", count: healthy, className: "bg-muted-foreground/35" },
-				{ key: "elevated", count: elevatedContainers, className: "bg-[var(--severity-warn)]" },
-				{ key: "saturated", count: saturatedContainers, className: "bg-[var(--severity-error)]" },
+				{ key: "elevated", count: elevatedContainers, className: TONE_FILL.warn },
+				{ key: "saturated", count: saturatedContainers, className: TONE_FILL.crit },
 			]}
 			cells={[
 				{

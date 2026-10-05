@@ -1,5 +1,6 @@
 import { InlineCode } from "@maple/ui/components/ui/inline-code"
-import { MetaChip } from "./meta-chip"
+import { Badge } from "@maple/ui/components/ui/badge"
+import { META_CHIP_CLASS } from "./anomaly-format"
 import { Link } from "@tanstack/react-router"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import type { AnomalyIncidentDocument, ErrorIssueId } from "@maple/domain/http"
@@ -111,7 +112,7 @@ function LinkedIssueBody({
 										<code className="font-mono text-xs tabular-nums text-muted-foreground">
 											{shortIssueId(issue.id)}
 										</code>
-										<MetaChip>
+										<Badge variant="meta" pill size="sm" className={META_CHIP_CLASS}>
 											<ServiceDot
 												serviceName={issue.serviceName}
 												className="size-1.5"
@@ -119,7 +120,7 @@ function LinkedIssueBody({
 											<span className="max-w-[140px] truncate">
 												{issue.serviceName}
 											</span>
-										</MetaChip>
+										</Badge>
 									</div>
 									<p className="min-w-0 truncate font-medium text-foreground">
 										{issue.exceptionType || "Unknown error"}

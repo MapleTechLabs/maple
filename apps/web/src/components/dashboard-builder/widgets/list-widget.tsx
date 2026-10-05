@@ -1,6 +1,7 @@
 import { memo } from "react"
 import { Link } from "@tanstack/react-router"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { SkeletonList } from "@maple/ui/components/ui/skeleton"
+import { shortId } from "@maple/ui/lib/ids"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
 import { cn } from "@maple/ui/lib/utils"
 import { WidgetEmptyState, WidgetFrame } from "@/components/dashboard-builder/widgets/widget-shell"
@@ -51,11 +52,7 @@ export const ListWidget = memo(function ListWidget({ dataState, display, mode }:
 			mode={mode}
 			contentClassName="flex-1 min-h-0 overflow-auto p-0"
 			loadingSkeleton={
-				<div className="p-3 flex flex-col gap-2">
-					{Array.from({ length: 5 }).map((_, i) => (
-						<Skeleton key={i} className="h-6 w-full" />
-					))}
-				</div>
+				<SkeletonList rows={5} rowClassName="h-6" gap="2" className="p-3" />
 			}
 		>
 			{rows.length === 0 ? (
@@ -89,7 +86,7 @@ export const ListWidget = memo(function ListWidget({ dataState, display, mode }:
 
 									let content: React.ReactNode = displayValue
 									if (col.field === "traceId" && typeof value === "string" && value) {
-										const truncated = value.length > 8 ? value.slice(0, 8) : value
+										const truncated = shortId(value, "trace")
 										const tsRaw = row.timestamp ?? row.startTime
 										const t = typeof tsRaw === "string" ? tsRaw : undefined
 										content = (

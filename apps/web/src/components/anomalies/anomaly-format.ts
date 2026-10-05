@@ -4,6 +4,7 @@ import type {
 	AnomalySignalType,
 	AnomalyTriageStatus,
 } from "@maple/domain/http"
+import { TONE_FILL, TONE_SOFT, TONE_TEXT, type Tone } from "@maple/ui/lib/tone"
 import { BoltIcon, ChartLineIcon, CircleWarningIcon, FileIcon, PulseIcon } from "@/components/icons"
 
 export const SIGNAL_LABEL: Record<AnomalySignalType, string> = {
@@ -132,21 +133,19 @@ export interface SeverityTone {
 	readonly text: string
 }
 
+const severityToneOf = (tone: Tone): SeverityTone => ({
+	badge: TONE_SOFT[tone],
+	accent: TONE_FILL[tone],
+	text: TONE_TEXT[tone],
+})
+
 export const SEVERITY_TONE: Record<"critical" | "warning" | "resolved", SeverityTone> = {
-	critical: {
-		badge: "bg-destructive/10 text-destructive",
-		accent: "bg-destructive",
-		text: "text-destructive",
-	},
-	warning: {
-		badge: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
-		accent: "bg-amber-500",
-		text: "text-amber-600 dark:text-amber-400",
-	},
+	critical: severityToneOf("crit"),
+	warning: severityToneOf("warn"),
 	resolved: {
-		badge: "bg-muted text-muted-foreground",
+		badge: TONE_SOFT.neutral,
 		accent: "bg-border/60",
-		text: "text-muted-foreground",
+		text: TONE_TEXT.neutral,
 	},
 } satisfies Record<"critical" | "warning" | "resolved", SeverityTone>
 
@@ -165,7 +164,10 @@ export const RESOLVE_REASON_LABEL: Record<AnomalyResolveReason, string> = {
 
 export const TRIAGE_STATUS_CHIP: Record<AnomalyTriageStatus, { label: string; tone: string } | null> = {
 	none: null,
-	pending: { label: "triaging…", tone: "bg-amber-500/10 text-amber-600 dark:text-amber-400" },
+	pending: { label: "triaging…", tone: TONE_SOFT.warn },
 	completed: { label: "triaged", tone: "bg-success/10 text-success" },
-	skipped: { label: "triage skipped", tone: "bg-muted text-muted-foreground" },
+	skipped: { label: "triage skipped", tone: TONE_SOFT.neutral },
 } satisfies Record<AnomalyTriageStatus, { label: string; tone: string } | null>
+
+/** Keeps the 20px / 11px meta-pill size on anomaly rows and cards (Badge `size="sm"` shrinks on sm+). */
+export const META_CHIP_CLASS = "h-5 gap-1.5 font-normal text-[11px] sm:h-5 sm:text-[11px]"

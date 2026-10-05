@@ -7,7 +7,9 @@ import type { ServiceOverview } from "@maple/query-engine"
 import { MagnifierIcon, XmarkIcon } from "@maple/ui/components/icons"
 import { Button } from "@maple/ui/components/ui/button"
 import { ScrollArea } from "@maple/ui/components/ui/scroll-area"
-import { formatLatency } from "@maple/ui/lib/format"
+import { formatErrorRate, formatLatency } from "@maple/ui/lib/format"
+import { ERROR_RATE_TEXT, errorRateLevel } from "@maple/ui/lib/error-rate"
+import { formatRate, getHealthDotClass } from "@maple/ui/components/service-map/service-map-node"
 import { getServiceColor } from "@maple/ui/lib/colors"
 import { latencyToneClass } from "@maple/ui/lib/latency-tone"
 import { cn } from "@maple/ui/lib/utils"
@@ -24,24 +26,9 @@ import type {
 } from "@maple/ui/components/service-map/service-map-types"
 import { hrefFor } from "../lib/router"
 
-function formatRate(value: number): string {
-	if (value >= 1000) return `${(value / 1000).toFixed(1)}k`
-	if (value >= 1) return value.toFixed(1)
-	return value.toFixed(2)
-}
-
-const formatErrorPct = (rate: number) => `${(rate * 100).toFixed(1)}%`
-
-function healthDotClass(errorRate: number): string {
-	if (errorRate > 0.05) return "bg-severity-error"
-	if (errorRate > 0.01) return "bg-severity-warn"
-	return "bg-severity-info"
-}
-
 function errorToneClass(errorRate: number, calm = "text-foreground"): string {
-	if (errorRate > 0.05) return "text-severity-error"
-	if (errorRate > 0.01) return "text-severity-warn"
-	return calm
+	const level = errorRateLevel(errorRate)
+	return level === "neutral" ? calm : ERROR_RATE_TEXT[level]
 }
 
 export function serviceHref(serviceName: string, range: string): string {
@@ -73,7 +60,7 @@ function PanelHeader({
 					className="h-[18px] w-[3px] shrink-0 rounded-sm"
 					style={{ backgroundColor: accentColor }}
 				/>
-				<div className={cn("size-1.5 shrink-0 rounded-full", healthDotClass(errorRate))} />
+				<div className={cn("size-1.5 shrink-0 rounded-full", getHealthDotClass(errorRate))} />
 				<div className="flex min-w-0 flex-col">
 					<span className="truncate text-sm font-semibold text-foreground">{title}</span>
 					{subtitle ? (
@@ -152,7 +139,7 @@ function PeerList({ title, rows }: { title: string; rows: ReadonlyArray<PeerRow>
 							key={row.key}
 							className={cn(
 								"flex items-center justify-between gap-2 rounded-md border px-2.5 py-2 text-xs",
-								row.errorRate > 0.05
+								errorRateLevel(row.errorRate) === "crit"
 									? "border-severity-error/[0.12] bg-severity-error/[0.04]"
 									: "border-border bg-card",
 							)}
@@ -180,7 +167,7 @@ function PeerList({ title, rows }: { title: string; rows: ReadonlyArray<PeerRow>
 										errorToneClass(row.errorRate, "text-severity-info"),
 									)}
 								>
-									{formatErrorPct(row.errorRate)}
+									{formatErrorRate(row.errorRate)}
 								</span>
 							</span>
 						</div>
@@ -325,7 +312,7 @@ export function ServiceMapServicePanel({
 							/>
 							<MetricTile
 								label="Error Rate"
-								value={formatErrorPct(errorRate)}
+								value={formatErrorRate(errorRate)}
 								className={errorToneClass(errorRate)}
 							/>
 							<MetricTile
@@ -425,7 +412,7 @@ export function ServiceMapDatabasePanel({
 							/>
 							<MetricTile
 								label="Error Rate"
-								value={formatErrorPct(errorRate)}
+								value={formatErrorRate(errorRate)}
 								className={errorToneClass(errorRate)}
 							/>
 							<MetricTile

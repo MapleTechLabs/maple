@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef } from "react"
+import { shortId } from "@maple/ui/lib/ids"
 import { Link } from "@tanstack/react-router"
 import { useVirtualizer } from "@tanstack/react-virtual"
 
@@ -6,9 +7,12 @@ import type { AiSessionSpan } from "@maple/domain/http"
 import { ChevronDownIcon, ChevronRightIcon, CircleXmarkIcon } from "@/components/icons"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { EmptyMessage } from "@maple/ui/components/ui/empty"
+import { SegmentedBar } from "@maple/ui/components/ui/meter"
 import { formatDuration, formatNumber } from "@maple/ui/lib/format"
 import { formatSessionDuration } from "@maple/ui/lib/replay-format"
 import { cn } from "@maple/ui/lib/utils"
+import { Badge } from "@maple/ui/components/ui/badge"
+import { TONE_SOFT } from "@maple/ui/lib/tone"
 
 import { useListNavigation } from "@/hooks/use-list-navigation"
 import { usePageScrollMargin } from "@/hooks/use-page-scroll-margin"
@@ -35,7 +39,6 @@ import { filterSpans, isDelegation } from "@/lib/agent-sessions/span-filters"
 import { useDetectedModels, type DetectedModel } from "@/hooks/use-detected-models"
 import { TOKEN_BUCKETS } from "@/lib/agent-sessions/token-buckets"
 import { ModelLabel } from "../model-label"
-import { Pill } from "./pill"
 import type { SpanDetailTab } from "./span-expansion"
 import { SpanPopover } from "./span-popover"
 import { CATEGORY_FILL, CATEGORY_ICON, CATEGORY_TEXT } from "./span-visuals"
@@ -511,11 +514,15 @@ function TurnHeader({
 							turn.label
 						)}
 					</span>
-					{turn.failed && <Pill tone="error">Failed</Pill>}
+					{turn.failed && (
+						<Badge pill size="xs" className={cn("uppercase tracking-wide", TONE_SOFT.crit)}>
+							Failed
+						</Badge>
+					)}
 					{collapsed && (
-						<span className="shrink-0 rounded-full bg-muted px-1.5 py-px text-[10px] text-muted-foreground tabular-nums">
+						<Badge variant="muted" pill size="xs" className="tabular-nums">
 							{row.visibleCount} spans
-						</span>
+						</Badge>
 					)}
 				</button>
 				{traceId !== undefined && (
@@ -554,7 +561,7 @@ function TraceLink({ traceId, timestamp }: { traceId: string; timestamp: string 
 				"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
 			)}
 		>
-			Trace {traceId.slice(0, 8)}
+			Trace {shortId(traceId, "trace")}
 		</Link>
 	)
 }
@@ -640,8 +647,16 @@ function SpanRow({
 				{span.statusMessage !== "" && (
 					<span className="min-w-0 truncate text-muted-foreground">{span.statusMessage}</span>
 				)}
-				{errored && <Pill tone="error">{span.genAi.errorType ?? "Error"}</Pill>}
-				{isDelegation(span, spansById) && <Pill tone="outline">Subagent</Pill>}
+				{errored && (
+					<Badge pill size="xs" className={cn("uppercase tracking-wide", TONE_SOFT.crit)}>
+						{span.genAi.errorType ?? "Error"}
+					</Badge>
+				)}
+				{isDelegation(span, spansById) && (
+					<Badge variant="meta" pill size="xs" className="uppercase tracking-wide">
+						Subagent
+					</Badge>
+				)}
 			</span>
 			<span
 				className={cn(COL_MODEL, errored && "text-destructive")}
@@ -833,15 +848,15 @@ function TokenCell({ tokens, errored }: { tokens: SessionTokenTotals | undefined
 
 	return (
 		<span className={COL_TOKENS_SPLIT} title={title}>
-			<span aria-hidden className="flex h-1.5 flex-1 gap-px overflow-hidden rounded-xs bg-muted">
-				{drawn.map((bucket) => (
-					<span
-						key={bucket.key}
-						className={bucket.fill}
-						style={{ width: `${(tokens[bucket.key] / tokens.total) * 100}%` }}
-					/>
-				))}
-			</span>
+			<SegmentedBar
+				segments={drawn.map((bucket) => ({
+					key: bucket.key,
+					value: tokens[bucket.key],
+					className: bucket.fill,
+				}))}
+				total={tokens.total}
+				className="flex-1 gap-px rounded-xs bg-muted"
+			/>
 			<span
 				className={cn("shrink-0 tabular-nums text-muted-foreground", errored && "text-destructive")}
 			>

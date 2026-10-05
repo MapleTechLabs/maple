@@ -8,6 +8,7 @@ import { ServiceDot } from "@maple/ui/components/service-dot"
 import { Spinner } from "@maple/ui/components/ui/spinner"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
 import { formatDuration, formatErrorRate, formatNumber } from "@maple/ui/lib/format"
+import { errorRateLevel } from "@maple/ui/lib/error-rate"
 import { cn } from "@maple/ui/lib/utils"
 import {
 	useLocalServiceOperations,
@@ -114,7 +115,7 @@ export function ServiceDetailView({ serviceName, backLabel, onBack }: ServiceDet
 							<StatCard
 								label="Error rate"
 								value={formatErrorRate(stats.errorRate)}
-								danger={stats.errorRate > 0.05}
+								danger={errorRateLevel(stats.errorRate) === "crit"}
 							/>
 							<StatCard
 								label="p50"

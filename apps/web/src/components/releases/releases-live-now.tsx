@@ -5,6 +5,7 @@ import { cn } from "@maple/ui/lib/utils"
 import type { TimeRangeSearch } from "@/components/time-range-picker/search"
 import { ROLLOUT_COMPLETE_SHARE, shortReleaseLabel, type LiveVersion } from "./release-model"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { Button } from "@maple/ui/components/ui/button"
 
 /** Services past this fold into a count; the behind ones sort first so they never fold. */
 const MAX_SHOWN = 16
@@ -38,20 +39,26 @@ export function ReleasesLiveNow({ live, timeSearch, environments }: ReleasesLive
 			</div>
 			<div className="flex flex-wrap gap-1.5">
 				{shown.map((version) => (
-					<Link
+					<Button
 						key={version.serviceName}
-						to="/releases/$commitSha"
-						params={{ commitSha: version.commitSha }}
-						search={{ ...timeSearch, environments, service: version.serviceName }}
-						title={
-							version.behind > 0
-								? `${version.behind} newer ${version.behind === 1 ? "release" : "releases"} reached the services ${version.serviceName} usually ships with, but not ${version.serviceName}`
-								: undefined
-						}
+						variant="outline"
+						size="xs"
 						className={cn(
-							"inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+							"font-normal",
 							version.behind > 0 && "border-severity-warn/40 bg-severity-warn/5",
 						)}
+						render={
+							<Link
+								to="/releases/$commitSha"
+								params={{ commitSha: version.commitSha }}
+								search={{ ...timeSearch, environments, service: version.serviceName }}
+								title={
+									version.behind > 0
+										? `${version.behind} newer ${version.behind === 1 ? "release" : "releases"} reached the services ${version.serviceName} usually ships with, but not ${version.serviceName}`
+										: undefined
+								}
+							/>
+						}
 					>
 						<ServiceDot serviceName={version.serviceName} />
 						<span>{version.serviceName}</span>
@@ -68,7 +75,7 @@ export function ReleasesLiveNow({ live, timeSearch, environments }: ReleasesLive
 								{version.behind} behind
 							</span>
 						) : null}
-					</Link>
+					</Button>
 				))}
 				{hidden > 0 ? (
 					<span className="self-center px-1 text-[11px] text-muted-foreground/70">+{hidden}</span>

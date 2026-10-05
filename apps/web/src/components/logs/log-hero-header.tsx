@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { useMemo, useState, type CSSProperties } from "react"
 import { XmarkIcon, ChevronDownIcon, ChevronUpIcon } from "@/components/icons"
 
 import { Badge } from "@maple/ui/components/ui/badge"
@@ -9,19 +9,20 @@ import { cn } from "@maple/ui/lib/utils"
 import { CopyableValue, tryParseJson } from "@/components/attributes"
 import { highlightCode } from "@/lib/sugar-high"
 import { SeverityBadge } from "@maple/ui/components/logs/severity-badge"
+import { SEVERITY_COLORS } from "@maple/ui/lib/severity"
 import type { Log } from "@/api/warehouse/logs"
 import { ServiceDot } from "@maple/ui/components/service-dot"
 import { LogTextButton } from "./log-text-button"
 
-const HERO_TONE: Record<string, string> = {
-	TRACE: "bg-severity-trace/5 border-severity-trace/20",
-	DEBUG: "bg-severity-debug/5 border-severity-debug/20",
-	INFO: "bg-severity-info/5 border-severity-info/20",
-	WARN: "bg-severity-warn/5 border-severity-warn/20",
-	WARNING: "bg-severity-warn/5 border-severity-warn/20",
-	ERROR: "bg-severity-error/5 border-severity-error/20",
-	FATAL: "bg-severity-fatal/5 border-severity-fatal/20",
-} satisfies Record<string, string>
+/** A faint wash of the severity colour behind the hero; unknown levels keep the plain border. */
+function heroToneStyle(severity: string): CSSProperties | undefined {
+	const color = SEVERITY_COLORS[severity.toUpperCase()]
+	if (color === undefined) return undefined
+	return {
+		backgroundColor: `color-mix(in oklch, ${color} 5%, transparent)`,
+		borderColor: `color-mix(in oklch, ${color} 20%, transparent)`,
+	}
+}
 
 const BODY_LINE_THRESHOLD = 280
 
@@ -37,7 +38,6 @@ interface LogHeroHeaderProps {
 
 export function LogHeroHeader({ log, showClose = true }: LogHeroHeaderProps) {
 	const [expanded, setExpanded] = useState(false)
-	const tone = HERO_TONE[log.severityText.toUpperCase()] ?? "border-border"
 	const body = log.body ?? ""
 
 	// A JSON body (object/array) is pretty-printed and syntax-highlighted, like
@@ -76,7 +76,7 @@ export function LogHeroHeader({ log, showClose = true }: LogHeroHeaderProps) {
 		)
 
 	return (
-		<div className={cn("border-b px-4 py-3 shrink-0", tone)}>
+		<div className="border-b px-4 py-3 shrink-0" style={heroToneStyle(log.severityText)}>
 			<div className="flex items-center gap-2">
 				<Tooltip>
 					<TooltipTrigger render={<span className="cursor-help inline-flex" />}>
@@ -84,7 +84,7 @@ export function LogHeroHeader({ log, showClose = true }: LogHeroHeaderProps) {
 					</TooltipTrigger>
 					<TooltipContent side="bottom">OTel severity number {log.severityNumber}</TooltipContent>
 				</Tooltip>
-				<Badge variant="outline" className="font-mono text-[10px]">
+				<Badge variant="outline" size="xs" mono>
 					<ServiceDot serviceName={log.serviceName} className="size-1.5" />
 					<CopyableValue value={log.serviceName}>{log.serviceName}</CopyableValue>
 				</Badge>

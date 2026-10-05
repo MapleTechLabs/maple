@@ -17,7 +17,7 @@ import { deriveHostStatus, severityLevel } from "@/components/infra/format"
 import { WorkloadTable, WorkloadTableLoading, type WorkloadRow } from "@/components/infra/workload-table"
 import { WorkloadsFilterSidebarView, type WorkloadFilters } from "@/components/infra/k8s-filter-sidebar"
 import { FleetBand, type FleetBandCell } from "@/components/infra/primitives/fleet-band"
-import { ListToolbar, countLabel } from "@/components/infra/primitives/list-toolbar"
+import { SearchToolbar, countLabel } from "@/components/common/search-toolbar"
 import { SegmentPivot } from "@/components/infra/primitives/segment-pivot"
 import { listWorkloadsResultAtom, workloadFacetsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
@@ -27,6 +27,7 @@ import {
 	pickTimeRangeSearch,
 } from "@/components/time-range-picker/search"
 import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
+import { TONE_FILL } from "@maple/ui/lib/tone"
 
 const DEFAULT_PRESET = "12h"
 
@@ -254,12 +255,12 @@ function WorkloadsPage() {
 									{
 										key: "elevated",
 										count: elevated,
-										className: "bg-[var(--severity-warn)]",
+										className: TONE_FILL.warn,
 									},
 									{
 										key: "saturated",
 										count: saturated,
-										className: "bg-[var(--severity-error)]",
+										className: TONE_FILL.crit,
 									},
 								]}
 								cells={cells}
@@ -268,7 +269,7 @@ function WorkloadsPage() {
 								waiting={result.waiting}
 							/>
 							<div className="space-y-3">
-								<ListToolbar
+								<SearchToolbar
 									value={searchText}
 									onChange={(value) => patchSearch({ q: value || undefined })}
 									placeholder="Search workloads…"
@@ -282,7 +283,7 @@ function WorkloadsPage() {
 											patchSearch({ kind: next, workloadNames: undefined })
 										}
 									/>
-								</ListToolbar>
+								</SearchToolbar>
 								{(q || scope) && filtered.length === 0 ? (
 									<Empty className="py-12">
 										<EmptyHeader>

@@ -20,7 +20,7 @@ import { EscalationPolicySection } from "./escalation-policy-section"
 import { SectionHeader } from "@/components/layout/section-header"
 import { MapleApiAtomClient, retainedQuery } from "@/lib/services/common/atom-client"
 import { useAlertDestinationsList } from "@/hooks/use-alerts-list"
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
+import { RelativeTime } from "@/components/common/relative-time"
 
 const CONFIDENCES: ReadonlyArray<EscalationConfidence> = ["high", "medium", "low"]
 
@@ -209,9 +209,10 @@ function RecentDeliveries() {
 											: (attempt.skipReason?.replaceAll("_", " ") ??
 												"Awaiting delivery")}
 									</p>
-									<span className="text-xs text-muted-foreground">
-										{formatRelativeTime(attempt.createdAt)}
-									</span>
+									<RelativeTime
+										value={attempt.createdAt}
+										className="text-xs text-muted-foreground"
+									/>
 								</div>
 							))}
 						</div>

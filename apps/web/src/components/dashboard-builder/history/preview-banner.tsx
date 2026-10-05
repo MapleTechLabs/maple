@@ -86,8 +86,8 @@ export function PreviewBanner({ dashboardId, preview, onCancel, onRestored }: Pr
 					</DialogHeader>
 					<DialogFooter>
 						<DialogClose render={<Button variant="ghost" />}>Cancel</DialogClose>
-						<Button variant="default" onClick={performRestore} disabled={pending}>
-							{pending ? "Restoring…" : "Restore"}
+						<Button variant="default" onClick={performRestore} loading={pending} disabled={pending}>
+							Restore
 						</Button>
 					</DialogFooter>
 				</DialogContent>

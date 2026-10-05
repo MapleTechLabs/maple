@@ -5,7 +5,9 @@ import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { Button } from "@maple/ui/components/ui/button"
 import { Table, TableBody, TableCell, TableHeader, TableRow } from "@maple/ui/components/ui/table"
 import { LatencyValue } from "@maple/ui/components/latency-value"
-import { formatLatency } from "@maple/ui/lib/format"
+import { formatErrorRate, formatLatency } from "@maple/ui/lib/format"
+import { errorRateClass, errorRateLevel } from "@maple/ui/lib/error-rate"
+import { ErrorRateValue } from "@maple/ui/components/error-rate-value"
 import { Result } from "@/lib/effect-atom"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { getServiceEndpointsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
@@ -17,8 +19,6 @@ import {
 	MobileListRow,
 	MobileSortBar,
 	SortableHead,
-	errorTone,
-	formatErrorRate,
 	formatRate,
 	type SortDir,
 } from "./service-table-cells"
@@ -26,6 +26,7 @@ import { ENDPOINTS_LIMIT, isTruncated, serviceEndpointsQueryInput } from "./serv
 import { callsPerSecond, operationTraceSearch, windowSeconds } from "./service-operations"
 import { normalizeTimestampInput } from "@/lib/timezone-format"
 import { groupEndpoints, leafLabel, type EndpointGroup, type EndpointSort } from "./endpoint-grouping"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 
 interface ServiceApiTabProps {
 	serviceName: string
@@ -64,13 +65,6 @@ const COLUMN = {
 	p95: "w-[96px]",
 	p99: "w-[84px]",
 } as const
-
-const errorToneClass = (rate: number): string => {
-	const tone = errorTone(rate)
-	if (tone === "error") return "text-severity-error"
-	if (tone === "warn") return "text-severity-warn"
-	return "text-muted-foreground/80"
-}
 
 export function ServiceApiTab({
 	serviceName,
@@ -200,7 +194,7 @@ export function ServiceApiTab({
 				<Stat
 					label="errors"
 					value={formatErrorRate(servedErrorRate)}
-					className={errorToneClass(servedErrorRate)}
+					className={errorRateClass(servedErrorRate)}
 				/>
 				<Stat label="worst p99" value={formatLatency(served.p99DurationMs)} />
 				{notes.map((note) => (
@@ -473,7 +467,7 @@ function GroupHeaderRow({
 				className={cn(
 					numeric,
 					"pr-1.5",
-					errorTone(group.totals.errorRate) !== "default" && errorToneClass(group.totals.errorRate),
+					errorRateLevel(group.totals.errorRate) !== "neutral" && errorRateClass(group.totals.errorRate),
 				)}
 			>
 				{formatErrorRate(group.totals.errorRate)}
@@ -511,10 +505,10 @@ function EndpointRow({
 			<TableCell className={cn("max-w-0 py-2 align-middle", stem.length > 0 ? "pl-6" : "pl-3")}>
 				<div className="flex min-w-0 items-center gap-2.5">
 					<MethodLabel method={endpoint.method} />
-					<span className="truncate font-mono text-[12.5px]" title={endpoint.route}>
+					<TruncatedText text={endpoint.route} mono className="text-[12.5px]">
 						{head.length > 0 && <span className="text-muted-foreground/50">{head}</span>}
 						<span className="text-foreground">{tail}</span>
-					</span>
+					</TruncatedText>
 				</div>
 			</TableCell>
 			<BarCell value={endpoint.estimatedSpanCount} max={maxima.calls} tone="calls">
@@ -530,11 +524,7 @@ function EndpointRow({
 				max={0.05}
 				tone="errors"
 			>
-				<span
-					className={cn("font-mono text-[12.5px] tabular-nums", errorToneClass(endpoint.errorRate))}
-				>
-					{formatErrorRate(endpoint.errorRate)}
-				</span>
+				<ErrorRateValue rate={endpoint.errorRate} className="text-[12.5px]" />
 			</BarCell>
 			<TableCell className="py-2 text-right align-middle">
 				<LatencyValue ms={endpoint.p50DurationMs} scale="p50" className="text-[12.5px]" />
@@ -630,9 +620,7 @@ function MobileGroup({
 									</span>
 									<span>
 										<span className="text-muted-foreground/60">err </span>
-										<span className={errorToneClass(endpoint.errorRate)}>
-											{formatErrorRate(endpoint.errorRate)}
-										</span>
+										<ErrorRateValue rate={endpoint.errorRate} />
 									</span>
 									<span>
 										<span className="text-muted-foreground/60">p95 </span>

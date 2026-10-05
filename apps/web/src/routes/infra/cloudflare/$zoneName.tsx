@@ -10,7 +10,7 @@ import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { DocsLink, EmptyActions } from "@/components/common/docs-link"
 import { ErrorState } from "@/components/common/error-state"
 import { CloudflareIcon } from "@/components/icons"
-import { HeroChip, PageHero } from "@/components/infra/primitives/page-hero"
+import { HeroChip, PageHero } from "@/components/common/page-hero"
 import { StatRail, StatRailItem, StatRailLoading } from "@/components/common/stat-rail"
 import { formatBytes, formatPercent } from "@maple/ui/lib/format"
 import { CloudflareBreakdownPanel } from "@/components/infra/cloudflare/cloudflare-breakdown-panel"
@@ -38,7 +38,7 @@ import {
 	type CloudflareFilterKey,
 	type CloudflareFilters,
 } from "@/components/infra/cloudflare/filters"
-import { errorRateTone } from "@/components/infra/cloudflare/constants"
+import { errorRateLevel } from "@maple/ui/lib/error-rate"
 import { chartBucketSeconds } from "@/components/infra/chart-utils"
 import {
 	cloudflareZoneDetailResultAtom,
@@ -288,7 +288,7 @@ function ZoneDetailContent({
 						<StatRailItem
 							eyebrow="5xx error rate"
 							value={formatPercent(errorRate)}
-							tone={errorRateTone(errorRate)}
+							tone={errorRateLevel(errorRate)}
 							compact
 						/>
 						<StatRailItem

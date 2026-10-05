@@ -4,7 +4,14 @@ import { useState } from "react"
 import { toastManager } from "@maple/ui/components/ui/toast"
 
 import { Button } from "@maple/ui/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@maple/ui/components/ui/card"
+import {
+	Card,
+	CardAction,
+	CardContent,
+	CardDescription,
+	CardHeader,
+	CardTitle,
+} from "@maple/ui/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
 import { Avatar, AvatarFallback, AvatarImage } from "@maple/ui/components/ui/avatar"
 import { Badge } from "@maple/ui/components/ui/badge"
@@ -25,18 +32,8 @@ import {
 	DropdownMenuItem,
 	DropdownMenuTrigger,
 } from "@maple/ui/components/ui/dropdown-menu"
-import {
-	AlertDialog,
-	AlertDialogAction,
-	AlertDialogCancel,
-	AlertDialogContent,
-	AlertDialogDescription,
-	AlertDialogFooter,
-	AlertDialogHeader,
-	AlertDialogMedia,
-	AlertDialogTitle,
-} from "@maple/ui/components/ui/alert-dialog"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
+import { Skeleton, SkeletonList } from "@maple/ui/components/ui/skeleton"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
 import {
 	PlusIcon,
@@ -45,7 +42,6 @@ import {
 	ShieldIcon,
 	UserIcon,
 	EnvelopeIcon,
-	AlertWarningIcon,
 } from "@/components/icons"
 
 function getInitials(firstName?: string | null, lastName?: string | null) {
@@ -165,16 +161,20 @@ export function MembersSection() {
 						<Skeleton className="h-5 w-32" />
 						<Skeleton className="h-4 w-64" />
 					</CardHeader>
-					<CardContent className="space-y-3">
-						{Array.from({ length: 3 }).map((_, i) => (
-							<div key={i} className="flex items-center gap-3">
-								<Skeleton className="size-8 rounded-full" />
-								<div className="space-y-1.5">
-									<Skeleton className="h-3.5 w-32" />
-									<Skeleton className="h-3 w-48" />
+					<CardContent>
+						<SkeletonList
+							rows={3}
+							gap="3"
+							renderRow={() => (
+								<div className="flex items-center gap-3">
+									<Skeleton className="size-8 rounded-full" />
+									<div className="space-y-1.5">
+										<Skeleton className="h-3.5 w-32" />
+										<Skeleton className="h-3 w-48" />
+									</div>
 								</div>
-							</div>
-						))}
+							)}
+						/>
 					</CardContent>
 				</Card>
 			</div>
@@ -205,13 +205,15 @@ export function MembersSection() {
 	return (
 		<div className="space-y-6">
 			<Card>
-				<CardHeader className="flex flex-row items-center justify-between">
+				<CardHeader>
 					<CardTitle>Team Members</CardTitle>
 					{isAdmin && (
-						<Button size="sm" onClick={() => setInviteOpen(true)}>
-							<PlusIcon size={14} />
-							Invite
-						</Button>
+						<CardAction>
+							<Button size="sm" onClick={() => setInviteOpen(true)}>
+								<PlusIcon size={14} />
+								Invite
+							</Button>
+						</CardAction>
 					)}
 				</CardHeader>
 				<CardContent>
@@ -451,30 +453,15 @@ export function MembersSection() {
 				</DialogContent>
 			</Dialog>
 
-			<AlertDialog open={removeDialogOpen} onOpenChange={setRemoveDialogOpen}>
-				<AlertDialogContent>
-					<AlertDialogHeader>
-						<AlertDialogMedia className="bg-destructive/10">
-							<AlertWarningIcon className="text-destructive" />
-						</AlertDialogMedia>
-						<AlertDialogTitle>Remove member?</AlertDialogTitle>
-						<AlertDialogDescription>
-							{memberToRemove?.name} will lose access to this organization immediately. This
-							action cannot be undone.
-						</AlertDialogDescription>
-					</AlertDialogHeader>
-					<AlertDialogFooter>
-						<AlertDialogCancel disabled={removeLoading}>Cancel</AlertDialogCancel>
-						<AlertDialogAction
-							variant="destructive"
-							onClick={handleRemoveMember}
-							disabled={removeLoading}
-						>
-							{removeLoading ? "Removing..." : "Remove member"}
-						</AlertDialogAction>
-					</AlertDialogFooter>
-				</AlertDialogContent>
-			</AlertDialog>
+			<ConfirmDialog
+				open={removeDialogOpen}
+				onOpenChange={setRemoveDialogOpen}
+				title="Remove member?"
+				description={`${memberToRemove?.name ?? ""} will lose access to this organization immediately. This action cannot be undone.`}
+				confirmLabel="Remove member"
+				pending={removeLoading}
+				onConfirm={() => void handleRemoveMember()}
+			/>
 		</div>
 	)
 }

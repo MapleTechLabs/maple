@@ -5,6 +5,7 @@ import {
 	type PrReviewFinding,
 	type PrReviewId,
 } from "@maple/domain/http"
+import { Alert, AlertDescription } from "@maple/ui/components/ui/alert"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
 import {
@@ -16,11 +17,14 @@ import {
 	SheetTitle,
 } from "@maple/ui/components/ui/sheet"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { TruncatedId } from "@maple/ui/components/ui/truncated-id"
+import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { formatRelativeFrom } from "@maple/ui/lib/time-format"
 
 import { MessageResponse } from "@/components/ai-elements/message-response"
 import { ErrorState } from "@/components/common/error-state"
+import { StatRail, StatRailItem } from "@/components/common/stat-rail"
 import { ExternalLinkIcon } from "@/components/icons"
 import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
 import { retainedQuery } from "@/lib/services/common/atom-client"
@@ -30,7 +34,7 @@ import {
 	CATEGORY_LABELS,
 	FINDING_STATUS_LABELS,
 	SEVERITY_LABELS,
-	SEVERITY_TONES,
+	SEVERITY_TONE,
 	SKIP_LABELS,
 	formatCount,
 	formatSpan,
@@ -122,7 +126,7 @@ function ReviewDetailContent({
 							<AuthorLabel login={review.authorLogin} className="align-middle" />
 						</>
 					) : null}{" "}
-					· head <span className="font-mono">{review.headSha.slice(0, 7)}</span>
+					· head <TruncatedId value={review.headSha} kind="sha" />
 				</SheetDescription>
 				<div className="flex flex-wrap gap-2 pt-1">
 					<LinkButton href={review.url}>Pull request</LinkButton>
@@ -134,8 +138,8 @@ function ReviewDetailContent({
 				</div>
 			</SheetHeader>
 			<SheetPanel className="flex flex-col gap-6">
-				<dl className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border bg-border sm:grid-cols-4">
-					<Stat label="Outcome" value={<span className={outcome.tone}>{outcome.label}</span>} />
+				<StatRail>
+					<Stat label="Outcome" value={outcome.label} tone={outcome.tone} />
 					<Stat
 						label="Confidence"
 						value={review.confidence === null ? "–" : `${review.confidence}/5`}
@@ -149,7 +153,7 @@ function ReviewDetailContent({
 						value={formatCount((detail.inputTokens ?? 0) + (detail.outputTokens ?? 0))}
 					/>
 					<Stat label="Reviewed" value={formatRelativeFrom(review.createdAt)} />
-				</dl>
+				</StatRail>
 
 				{review.status === "skipped" && review.skipReason !== null ? (
 					<p className="text-sm text-muted-foreground">
@@ -157,9 +161,9 @@ function ReviewDetailContent({
 					</p>
 				) : null}
 				{problem !== null ? (
-					<p className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm">
-						{problem}
-					</p>
+					<Alert variant="error" size="sm">
+						<AlertDescription className="text-foreground">{problem}</AlertDescription>
+					</Alert>
 				) : null}
 
 				{report !== null ? (
@@ -228,9 +232,11 @@ function ReviewDetailContent({
 												current ? "bg-muted" : "hover:bg-muted/60",
 											)}
 										>
-											<span className="font-mono text-xs text-muted-foreground">
-												{entry.headSha.slice(0, 7)}
-											</span>
+											<TruncatedId
+												value={entry.headSha}
+												kind="sha"
+												className="text-xs text-muted-foreground"
+											/>
 											<span className={cn("flex-1", entryOutcome.tone)}>
 												{entryOutcome.label}
 											</span>
@@ -262,7 +268,7 @@ function FindingCard({
 	return (
 		<li className="flex flex-col gap-2 rounded-lg border px-3.5 py-3">
 			<div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-				<span className={cn("font-medium", SEVERITY_TONES[finding.severity])}>
+				<span className={cn("font-medium", TONE_TEXT[SEVERITY_TONE[finding.severity]])}>
 					{SEVERITY_LABELS[finding.severity]}
 				</span>
 				<span className="text-muted-foreground">{CATEGORY_LABELS[finding.category]}</span>
@@ -290,12 +296,16 @@ function FindingCard({
 const modelLabel = (model: string | null) =>
 	model === null ? "–" : (PR_REVIEW_MODELS.find((entry) => entry.id === model)?.label ?? model)
 
-function Stat({ label, value }: { label: string; value: React.ReactNode }) {
+/** A dense StatRail tile: sheet-sized value that truncates instead of overflowing. */
+function Stat({ label, value, tone }: { label: string; value: string; tone?: string }) {
 	return (
-		<div className="flex min-w-0 flex-col gap-0.5 bg-card px-3 py-2.5">
-			<dt className="text-xs text-muted-foreground">{label}</dt>
-			<dd className="truncate text-sm font-medium tabular-nums">{value}</dd>
-		</div>
+		<StatRailItem
+			compact
+			eyebrow={label}
+			value={value}
+			className="min-w-0 px-3 py-2.5"
+			valueClassName={cn("min-w-0 shrink truncate text-sm font-medium", tone)}
+		/>
 	)
 }
 

@@ -1,4 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
+import { Badge } from "@maple/ui/components/ui/badge"
 
 import type { ReleaseHealth } from "./release-model"
 
@@ -41,16 +42,15 @@ interface ReleaseHealthPillProps {
 
 export function ReleaseHealthPill({ health, label, className }: ReleaseHealthPillProps) {
 	return (
-		<span
+		<Badge
+			size="xs"
+			pill
+			mono
 			title={RELEASE_HEALTH_DESCRIPTION[health]}
-			className={cn(
-				"inline-flex h-[18px] shrink-0 cursor-default items-center rounded-full px-1.5 font-mono text-[10px] tabular-nums leading-none",
-				PILL_CLASS[health],
-				className,
-			)}
+			className={cn("cursor-default font-normal", PILL_CLASS[health], className)}
 		>
 			{label ?? RELEASE_HEALTH_LABEL[health]}
-		</span>
+		</Badge>
 	)
 }
 

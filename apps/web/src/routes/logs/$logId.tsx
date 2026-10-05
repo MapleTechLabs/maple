@@ -5,6 +5,7 @@ import { Result, useAtomValue } from "@/lib/effect-atom"
 
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { ErrorState } from "@/components/common/error-state"
+import { KeyValue, KeyValueList } from "@maple/ui/components/ui/key-value"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { LogHeroHeader } from "@/components/logs/log-hero-header"
 import { LogMetaStrip } from "@/components/logs/log-meta-strip"
@@ -122,12 +123,14 @@ function LogDetailPage() {
 										<p className="text-sm text-muted-foreground">
 											This log could not be found. It may have aged out of retention.
 										</p>
-										<dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
-											<dt className="text-muted-foreground">Service</dt>
-											<dd className="font-mono">{key.serviceName}</dd>
-											<dt className="text-muted-foreground">Timestamp</dt>
-											<dd className="font-mono">{key.timestamp}</dd>
-										</dl>
+										<KeyValueList layout="grid" className="text-sm">
+											<KeyValue label="Service" mono>
+												{key.serviceName}
+											</KeyValue>
+											<KeyValue label="Timestamp" mono>
+												{key.timestamp}
+											</KeyValue>
+										</KeyValueList>
 									</NotFoundCard>
 								</DashboardLayout.Scroll>
 							</DashboardLayout.Content>

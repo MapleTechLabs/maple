@@ -3,6 +3,7 @@ import { useState } from "react"
 import { Exit, Option } from "effect"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
+import { Item, ItemContent, ItemMedia } from "@maple/ui/components/ui/item"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { toastManager } from "@maple/ui/components/ui/toast"
 
@@ -117,10 +118,12 @@ export function HazelIntegrationCard() {
 	}
 
 	return (
-		<div className="flex items-start gap-4 rounded-lg border border-border/60 bg-card p-4">
-			<IntegrationIconPlate icon={HazelIcon} accent={HAZEL_ACCENT} />
+		<Item variant="card" className="items-start gap-4 p-4">
+			<ItemMedia>
+				<IntegrationIconPlate icon={HazelIcon} accent={HAZEL_ACCENT} />
+			</ItemMedia>
 
-			<div className="flex flex-1 flex-col gap-2">
+			<ItemContent className="gap-2">
 				<div>
 					<div className="flex items-center gap-2">
 						<h3 className="text-sm font-semibold">Hazel</h3>
@@ -156,7 +159,7 @@ export function HazelIntegrationCard() {
 						Disconnect
 					</Button>
 				</div>
-			</div>
-		</div>
+			</ItemContent>
+		</Item>
 	)
 }

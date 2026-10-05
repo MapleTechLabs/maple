@@ -1,11 +1,12 @@
 import { CopyButton } from "@maple/ui/components/ui/copy-button"
 import { formatBytes } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
+import { Badge } from "@maple/ui/components/ui/badge"
+import { TONE_SOFT } from "@maple/ui/lib/tone"
 
 import { ArrowDownIcon, ArrowUpIcon, CircleQuestionIcon } from "@/components/icons"
 import { ClampedText, type ClampLines } from "./clamped-text"
 import { disclosed, useJsonPayload, ViewSwitch } from "./payload-view"
-import { Pill } from "./pill"
 
 /**
  * One invocation, both halves, joined by a spine.
@@ -197,9 +198,9 @@ function IoHalf({
 					{/* Emitter truncation, not the view's clamping — there is no "show
 					    full" that can recover what was never recorded. */}
 					{payload.truncatedByEmitter && (
-						<Pill tone="warn" className="rounded-sm font-mono normal-case tracking-normal">
+						<Badge size="xs" mono className={TONE_SOFT.warn}>
 							truncated by the emitter
-						</Pill>
+						</Badge>
 					)}
 					{/* Copies what is displayed: the pretty-printed JSON, or the raw text.
 					    The switch only appears where the two differ. */}
