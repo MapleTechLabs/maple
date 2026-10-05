@@ -130,7 +130,10 @@ const sendHttp = Effect.fn("AlertDelivery.http", { kind: "client" })(function* (
 	// POST on interruption: without that it could still deliver after we
 	// reported a retryable timeout — a duplicate page once the retry lands.
 	const client = yield* HttpClient.HttpClient
-	const response = yield* (spec.guarded ? guard(client) : client).execute(request).pipe(
+	// Scoped per hop: a body nobody reads (a redirect, an ack-only 2xx) is
+	// cancelled when `runHttpTransport`'s scope closes.
+	const scoped = HttpClient.withScope(client)
+	const response = yield* (spec.guarded ? guard(scoped) : scoped).execute(request).pipe(
 		Effect.provideService(FetchHttpClient.Fetch, runtime.fetchFn),
 		// The client's own span records `url.full`, and Discord, Hazel and
 		// Telegram carry their delivery token in the URL path. This span is the
@@ -209,7 +212,7 @@ export const runHttpTransport = <Config>(
 		}
 
 		return { ...transport.ack(input), responseCode: response.status }
-	})
+	}).pipe(Effect.scoped)
 
 export const runEffectTransport = <Config>(
 	transport: EffectTransport<Config>,

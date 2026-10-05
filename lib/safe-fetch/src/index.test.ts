@@ -323,6 +323,27 @@ describe("guard", () => {
 		}),
 	)
 
+	it.effect("under HttpClient.withScope, every hop is aborted when the scope closes", () =>
+		Effect.gen(function* () {
+			const signals: Array<AbortSignal> = []
+			const fakeFetch: typeof fetch = async (_url, init) => {
+				if (init?.signal) signals.push(init.signal)
+				return signals.length === 1
+					? new Response("moved", { status: 302, headers: { location: "/next" } })
+					: new Response("unread", { status: 200 })
+			}
+			yield* Effect.flatMap(HttpClient.HttpClient, (client) =>
+				guard(HttpClient.withScope(client)).get("https://api.example.com/start"),
+			).pipe(
+				Effect.scoped,
+				Effect.provide(FetchHttpClient.layer),
+				Effect.provideService(FetchHttpClient.Fetch, fakeFetch),
+			)
+			assert.strictEqual(signals.length, 2)
+			assert.isTrue(signals.every((signal) => signal.aborted))
+		}),
+	)
+
 	it.effect("caps redirect chains", () =>
 		Effect.gen(function* () {
 			let calls = 0

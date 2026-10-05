@@ -510,7 +510,8 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 			const env = yield* Env
 			const discovery = yield* PlanetScaleDiscoveryService
 			const psOAuth = yield* PlanetScaleOAuthService
-			const probeClient = guard(yield* HttpClient.HttpClient)
+			// Scoped per hop, so an unread body (non-2xx, PlanetScale) is cancelled on exit.
+			const probeClient = guard(HttpClient.withScope(yield* HttpClient.HttpClient))
 			const encryptionKey = yield* parseEncryptionKey(
 				Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
 			)
@@ -1262,6 +1263,7 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 						Effect.catchTag("TimeoutError", () =>
 							Effect.fail(new ScrapeTargetUpstreamError({ message: "Connection failed" })),
 						),
+						Effect.scoped,
 						Effect.exit,
 					)
 				const requestError = Exit.isFailure(requestExit)
