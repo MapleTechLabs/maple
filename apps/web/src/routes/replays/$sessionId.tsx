@@ -11,7 +11,7 @@ import {
 	getReplayResultAtom,
 	getSessionTranscriptResultAtom,
 } from "@/lib/services/atoms/warehouse-query-atoms"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { ReplayDetailSkeleton } from "@/components/replays/session-detail-parts"
 import { replayPartitionWindow } from "@/components/replays/replay-format"
 
@@ -79,7 +79,7 @@ function ReplayDetailPage() {
 							<DashboardLayout.Header title="Error" />
 						</DashboardLayout.Sticky>
 						<DashboardLayout.Scroll>
-							<QueryErrorState error={error} titleOverride="Failed to load session replay" />
+							<ErrorState error={error} title="Failed to load session replay" />
 						</DashboardLayout.Scroll>
 					</DashboardLayout.Content>
 				</DashboardLayout.Body>

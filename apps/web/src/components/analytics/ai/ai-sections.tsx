@@ -14,7 +14,7 @@ import type { AiContentFormat, AiCrawlPurpose, AiProduct } from "@maple/domain/a
 
 import { ColumnHead, DataTable } from "../../infra/primitives/data-table"
 import { shareBar } from "../../infra/primitives/share-bar"
-import { BarSpark } from "../../infra/primitives/stat-rail"
+import { BarSpark } from "@/components/common/stat-rail"
 import { SPARK_COLOR } from "../../infra/severity-tokens"
 import {
 	FileCodeIcon,

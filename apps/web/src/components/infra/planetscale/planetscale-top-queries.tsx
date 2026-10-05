@@ -6,7 +6,7 @@ import { LatencyValue } from "@maple/ui/components/latency-value"
 
 import { Result } from "@/lib/effect-atom"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { planetscaleQueryInsightsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { formatNumber } from "@maple/ui/lib/format"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
@@ -75,9 +75,9 @@ export function PlanetScaleTopQueries({
 	}
 	if (Result.isFailure(result)) {
 		return (
-			<QueryErrorState
+			<ErrorState
 				error={result.cause}
-				titleOverride="PlanetScale Query Insights are unavailable"
+				title="PlanetScale Query Insights are unavailable"
 				className={cn(
 					"flex flex-col gap-1 rounded-md border border-destructive/20 bg-destructive/5 px-3 py-3 text-xs",
 					className,

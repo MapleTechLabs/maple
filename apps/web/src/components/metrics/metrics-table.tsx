@@ -12,7 +12,7 @@ import { Badge } from "@maple/ui/components/ui/badge"
 import { MetricTypeBadge } from "./metric-type-badge"
 import { type Metric, type ListMetricsInput } from "@/api/warehouse/metrics"
 import { listMetricsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { ServiceDot } from "@maple/ui/components/service-dot"
 
 interface MetricsTableProps {
@@ -102,7 +102,7 @@ export function MetricsTable({
 
 	if (Result.isFailure(metricsResult) || view === null) {
 		return Result.builder(metricsResult)
-			.onError((error) => <QueryErrorState error={error} />)
+			.onError((error) => <ErrorState error={error} />)
 			.orElse(() => <LoadingState />)
 	}
 

@@ -8,7 +8,7 @@ import { Skeleton } from "@maple/ui/components/ui/skeleton"
 
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { DocsLink } from "@/components/common/docs-link"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { CloudflareIcon, MagnifierIcon, XmarkIcon } from "@/components/icons"
 import type { CloudflareZoneRow } from "@/api/warehouse/cloudflare-infra"
 import {
@@ -110,7 +110,7 @@ function CloudflarePage() {
 											<Skeleton className="h-64 w-full" />
 										</div>
 									))
-									.onError((err) => <QueryErrorState error={err} />)
+									.onError((err) => <ErrorState error={err} />)
 									.onSuccess((status) => {
 										if (!status.connected)
 											return <CloudflareNotConnected variant="not-connected" />
@@ -228,7 +228,7 @@ function CloudflareData({
 						<CloudflareZoneTableLoading />
 					</div>
 				))
-				.onError((err) => <QueryErrorState error={err} />)
+				.onError((err) => <ErrorState error={err} />)
 				.onSuccess((response, result) => {
 					return (
 						<div className={`space-y-6 transition-opacity ${result.waiting ? "opacity-60" : ""}`}>
@@ -332,7 +332,7 @@ function CloudflareData({
 				</h2>
 				{Result.builder(workersResult)
 					.onInitial(() => <CloudflareWorkerTableLoading />)
-					.onError((err) => <QueryErrorState error={err} />)
+					.onError((err) => <ErrorState error={err} />)
 					.onSuccess((response, result) => (
 						<CloudflareWorkerTable workers={response.workers} waiting={result.waiting} />
 					))

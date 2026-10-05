@@ -17,7 +17,7 @@ import { ChevronDownIcon, ChevronUpIcon, ChevronExpandYIcon } from "@/components
 import { Result } from "@/lib/effect-atom"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { getServiceOperationsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import type { ServiceOperation } from "@/api/warehouse/service-operations"
 import {
 	callsPerSecond,
@@ -140,7 +140,7 @@ export function ServiceOperationsTab({
 
 	if (!Result.isSuccess(result)) {
 		return Result.builder(result)
-			.onError((error) => <QueryErrorState error={error} />)
+			.onError((error) => <ErrorState error={error} />)
 			.orElse(() => <OperationsLoadingState />)
 	}
 

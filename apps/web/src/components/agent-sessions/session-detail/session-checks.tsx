@@ -420,10 +420,8 @@ function coverageSignals(coverage: SessionCoverage): readonly Signal[] {
 			state: coverage.toolPayloads,
 			title: "Tool arguments and results",
 			explains: {
-				captured:
-					"Each tool call's arguments and result were recorded. Tool errors reads them.",
-				missing:
-					"No tool call recorded its arguments or result. A failed call has only its status.",
+				captured: "Each tool call's arguments and result were recorded. Tool errors reads them.",
+				missing: "No tool call recorded its arguments or result. A failed call has only its status.",
 				absent: "No tool was called in this session.",
 			}[coverage.toolPayloads],
 		},

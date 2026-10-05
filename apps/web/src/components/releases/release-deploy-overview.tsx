@@ -7,7 +7,7 @@ import { formatErrorRate, formatLatency, formatNumber } from "@maple/ui/lib/form
 import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
 
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { SectionCard } from "@/components/services/section-card"
 import type { TimeRangeSearch } from "@/components/time-range-picker/search"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
@@ -63,9 +63,7 @@ export function ReleaseDeployOverview({
 	}, [result, commitSha])
 
 	if (Result.isFailure(result)) {
-		return (
-			<QueryErrorState error={result.cause} titleOverride="Failed to load release" onRetry={refresh} />
-		)
+		return <ErrorState error={result.cause} title="Failed to load release" onRetry={refresh} />
 	}
 	if (derived === undefined) {
 		return (

@@ -35,7 +35,7 @@ import {
 	firstLine,
 	isResolvableSha,
 } from "@/components/vcs/commit-sha-hover-card"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { UnnamedServiceHint, isUnnamedService } from "@/components/services/unnamed-service-hint"
 import {
 	type CommitBreakdown,
@@ -735,7 +735,7 @@ export function ServicesTable({ filters }: ServicesTableProps) {
 
 	return Result.builder(Result.all([overviewResult, timeSeriesResult, anomaliesResult, incidentsResult]))
 		.onInitial(() => <LoadingState />)
-		.onError((error) => <QueryErrorState error={error} />)
+		.onError((error) => <ErrorState error={error} />)
 		.onSuccess(([overviewResponse, timeSeriesResponse], combinedResult) => {
 			const timeSeriesMap = timeSeriesResponse.data
 			const healthFor = (service: ServiceOverview) =>

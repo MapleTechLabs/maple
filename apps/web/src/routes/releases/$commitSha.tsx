@@ -16,7 +16,7 @@ import { formatTimestampInTimezone } from "@/lib/timezone-format"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { getReleaseDetailResultAtom, getReleasesResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { MetricsGrid } from "@/components/dashboard/metrics-grid"
 import { APDEX_HINT } from "@/components/dashboard/chart-hints"
 import type { ChartLegendMode, ChartTooltipMode } from "@maple/ui/components/charts/_shared/chart-types"
@@ -385,9 +385,7 @@ function ReleaseBodyLoaded({
 	)
 
 	if (Result.isFailure(result)) {
-		return (
-			<QueryErrorState error={result.cause} titleOverride="Failed to load release" onRetry={refresh} />
-		)
+		return <ErrorState error={result.cause} title="Failed to load release" onRetry={refresh} />
 	}
 	if (derived === undefined) return <ReleaseBodySkeleton />
 

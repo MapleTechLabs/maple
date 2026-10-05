@@ -4,7 +4,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { LogHeroHeader } from "@/components/logs/log-hero-header"
 import { LogMetaStrip } from "@/components/logs/log-meta-strip"
@@ -117,7 +117,7 @@ function LogDetailPage() {
 							<DashboardLayout.Header title="Log detail" description="Failed to load log" />
 						</DashboardLayout.Sticky>
 						<DashboardLayout.Scroll>
-							<QueryErrorState error={error} titleOverride="Failed to load log" />
+							<ErrorState error={error} title="Failed to load log" />
 						</DashboardLayout.Scroll>
 					</DashboardLayout.Content>
 				</DashboardLayout.Body>

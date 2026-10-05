@@ -13,7 +13,7 @@ import {
 	type ToolErrorSamplesState,
 } from "@/components/agent-sessions/tools/tool-error-modal"
 import { prepareToolErrors, type ToolErrorsWindow } from "@/components/agent-sessions/tools/tool-errors-table"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
 import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
@@ -234,7 +234,7 @@ function ToolDetailBody({
 				<Skeleton className="h-64" />
 			</div>
 		))
-		.onError((error) => <QueryErrorState error={error} titleOverride={`Failed to load ${tool}`} />)
+		.onError((error) => <ErrorState error={error} title={`Failed to load ${tool}`} />)
 		.onSuccess((resolved, result) => (
 			<ToolDetailView
 				tool={tool}

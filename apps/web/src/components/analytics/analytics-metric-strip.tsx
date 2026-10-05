@@ -2,7 +2,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { formatPercent } from "@maple/ui/lib/format"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 
-import { StatRailItem } from "../infra/primitives/stat-rail"
+import { StatRailItem } from "@/components/common/stat-rail"
 import {
 	ANALYTICS_METRICS,
 	isMetricAvailable,

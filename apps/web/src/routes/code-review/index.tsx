@@ -16,7 +16,7 @@ import {
 	CodeReviewSearchFields,
 	type CodeReviewSearch,
 } from "@/components/code-review/code-review-search"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
 import { retainedQuery } from "@/lib/services/common/atom-client"
@@ -59,11 +59,7 @@ function CodeReviewAnalyticsPage() {
 			{Result.builder(result)
 				.onInitial(() => <CodeReviewAnalyticsSkeleton />)
 				.onError((error) => (
-					<QueryErrorState
-						error={error}
-						titleOverride="Failed to load review analytics"
-						onRetry={refresh}
-					/>
+					<ErrorState error={error} title="Failed to load review analytics" onRetry={refresh} />
 				))
 				.onSuccess((analytics) =>
 					analytics.current.reviews === 0 && analytics.current.findings === 0 ? (

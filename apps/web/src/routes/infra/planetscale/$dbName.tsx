@@ -16,7 +16,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
 
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { PlanetScaleIcon } from "@/components/icons"
 import { PageHero, HeroChip } from "@/components/infra/primitives/page-hero"
 import { PlanetScaleAlertMenu } from "@/components/infra/planetscale/planetscale-alert-menu"
@@ -526,7 +526,7 @@ function PlanetScaleDatabaseData({
 	) : Result.isFailure(timeseriesResult) ? (
 		// Section-scoped: a failed chart query must not take the branch table and
 		// query insights down with it — they are separate queries.
-		<QueryErrorState error={timeseriesResult.cause} />
+		<ErrorState error={timeseriesResult.cause} />
 	) : (
 		<div className="space-y-4">
 			<PlanetScaleChart
@@ -588,7 +588,7 @@ function PlanetScaleDatabaseData({
 				{Result.isInitial(branchStatsResult) ? (
 					<PlanetScaleBranchBreakdownPanelLoading />
 				) : Result.isFailure(branchStatsResult) ? (
-					<QueryErrorState error={branchStatsResult.cause} />
+					<ErrorState error={branchStatsResult.cause} />
 				) : (
 					<PlanetScaleBranchBreakdownPanel
 						candidates={candidates}

@@ -8,11 +8,11 @@ import { openAnomalyServiceCountsAtom } from "@/lib/services/atoms/anomaly-atoms
 import { anomalyServiceCountFromV2, type AnomalyServiceCount } from "@/lib/services/anomalies"
 import { disabledResultAtom } from "@/lib/services/atoms/disabled-result-atom"
 import { useAlertIncidentsList, useAlertRulesList } from "@/hooks/use-alerts-list"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { SignalEmptyState } from "@/components/common/signal-empty-state"
 import { AlertFiringHero } from "@/components/alerts/alert-stat-card"
 import { anomalyAffectsServiceHealth } from "@/components/anomalies/anomaly-format"
-import { StatRail, StatRailItem, StatRailLoading } from "@/components/infra/primitives/stat-rail"
+import { StatRail, StatRailItem, StatRailLoading } from "@/components/common/stat-rail"
 import { ArrowRightIcon, ArrowTrendDownIcon, ArrowTrendUpIcon } from "@/components/icons"
 import type { ServiceHealthSnapshot } from "@/api/warehouse/services"
 import type { AlertIncidentDocument, AnomalySignalType } from "@maple/domain/http"
@@ -321,7 +321,7 @@ export function ServiceHealthList(props: ServiceHealthProps) {
 		.onError((error) => (
 			<section className="mt-4 space-y-3">
 				{header}
-				<QueryErrorState error={error} />
+				<ErrorState error={error} />
 			</section>
 		))
 		.onSuccess(([snapshotResponse, anomaliesResponse, alertsResponse], result) => {

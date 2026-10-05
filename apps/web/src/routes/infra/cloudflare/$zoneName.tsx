@@ -8,10 +8,10 @@ import { Skeleton } from "@maple/ui/components/ui/skeleton"
 
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { DocsLink, EmptyActions } from "@/components/common/docs-link"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { CloudflareIcon } from "@/components/icons"
 import { HeroChip, PageHero } from "@/components/infra/primitives/page-hero"
-import { StatRail, StatRailItem, StatRailLoading } from "@/components/infra/primitives/stat-rail"
+import { StatRail, StatRailItem, StatRailLoading } from "@/components/common/stat-rail"
 import { formatBytes, formatPercent } from "@maple/ui/lib/format"
 import { CloudflareBreakdownPanel } from "@/components/infra/cloudflare/cloudflare-breakdown-panel"
 import {
@@ -242,7 +242,7 @@ function ZoneDetailContent({
 				</div>
 			</div>
 		))
-		.onError((err) => <QueryErrorState error={err} />)
+		.onError((err) => <ErrorState error={err} />)
 		.onSuccess((detail, result) => {
 			if (detail.statusBuckets.length === 0 && !result.waiting) {
 				if (phase != null && phase.kind !== "live" && phase.kind !== "backfilling") {

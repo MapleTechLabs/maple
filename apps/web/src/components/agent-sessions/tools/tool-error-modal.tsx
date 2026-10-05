@@ -17,7 +17,7 @@ import {
 	LinkIcon,
 	XmarkIcon,
 } from "@/components/icons"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { useMountEffect } from "@/hooks/use-mount-effect"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { formatTimestampInTimezone } from "@/lib/timezone-format"
@@ -340,9 +340,9 @@ export function ToolErrorModal({
 					<div className="flex min-h-0 grow max-md:flex-col">
 						<aside className="flex w-[340px] shrink-0 flex-col overflow-y-auto overscroll-contain border-r border-border bg-sidebar max-md:h-56 max-md:w-full max-md:border-r-0 max-md:border-b">
 							{detailFailure !== undefined ? (
-								<QueryErrorState
+								<ErrorState
 									error={detailFailure}
-									titleOverride="Failed to load this error's details"
+									title="Failed to load this error's details"
 								/>
 							) : (
 								<>
@@ -818,7 +818,7 @@ function SamplesPane({
 
 			<div className="min-h-0 grow overflow-y-auto overscroll-contain">
 				{samples.failure !== undefined ? (
-					<QueryErrorState error={samples.failure} titleOverride="Failed to load samples" />
+					<ErrorState error={samples.failure} title="Failed to load samples" />
 				) : samples.loading && rows.length === 0 ? (
 					<div className="flex flex-col gap-1.5 px-6 py-3">
 						<Skeleton className="h-10" />

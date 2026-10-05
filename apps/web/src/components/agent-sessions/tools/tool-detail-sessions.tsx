@@ -6,7 +6,7 @@ import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
 import { formatSessionDuration } from "@maple/ui/lib/replay-format"
 
 import { ExternalLinkIcon } from "@/components/icons"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import type { AgentSessionRow } from "@/components/agent-sessions/agent-sessions-list"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { sessionLinkWindow, sessionRowId } from "@maple/agent-sessions"
@@ -70,10 +70,7 @@ export function ToolDetailSessions({
 
 			<div className={cn("transition-opacity", waiting && "opacity-60")}>
 				{failure !== undefined ? (
-					<QueryErrorState
-						error={failure}
-						titleOverride={`Failed to load sessions running ${tool}`}
-					/>
+					<ErrorState error={failure} title={`Failed to load sessions running ${tool}`} />
 				) : loading ? (
 					<div className="flex flex-col gap-1.5 py-3">
 						<Skeleton className="h-[46px]" />

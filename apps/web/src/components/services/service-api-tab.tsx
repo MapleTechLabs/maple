@@ -10,7 +10,7 @@ import { ChevronDownIcon, ChevronUpIcon, ChevronExpandYIcon } from "@/components
 import { Result } from "@/lib/effect-atom"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { getServiceEndpointsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { DocsLink } from "@/components/common/docs-link"
 import type { ServiceEndpoint } from "@/api/warehouse/service-endpoints"
 import {
@@ -171,7 +171,7 @@ export function ServiceApiTab({
 
 	if (!Result.isSuccess(result)) {
 		return Result.builder(result)
-			.onError((error) => <QueryErrorState error={error} />)
+			.onError((error) => <ErrorState error={error} />)
 			.orElse(() => <ApiLoadingState />)
 	}
 

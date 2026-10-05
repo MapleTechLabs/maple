@@ -10,12 +10,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@maple/ui/components/u
 import { cn } from "@maple/ui/lib/utils"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { DockerIcon } from "@/components/icons"
 import { ContainerDetailChart } from "@/components/infra/container-detail-chart"
 import { PageHero, HeroChip } from "@/components/infra/primitives/page-hero"
-import { StatRail, StatRailItem } from "@/components/infra/primitives/stat-rail"
+import { StatRail, StatRailItem } from "@/components/common/stat-rail"
 import { containerDetailSummaryResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { TIME_PRESETS, bucketSecondsFor } from "@/components/infra/constants"
 import { formatSeconds } from "@/components/infra/chart-utils"
@@ -129,9 +129,9 @@ function ContainerDetailPage() {
 							{Result.isInitial(summaryResult) ? (
 								<Skeleton className="h-24 w-full rounded-md" />
 							) : Result.isFailure(summaryResult) ? (
-								<QueryErrorState
+								<ErrorState
 									error={summaryResult.cause}
-									titleOverride="Failed to load container metrics"
+									title="Failed to load container metrics"
 									onRetry={refreshSummary}
 								/>
 							) : summary ? (

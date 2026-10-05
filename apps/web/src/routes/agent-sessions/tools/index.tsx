@@ -8,7 +8,7 @@ import { toEpochMs } from "@maple/ui/lib/time-format"
 import { AgentSessionsTabs } from "@/components/agent-sessions/tools/agent-sessions-tabs"
 import { AgentToolsView } from "@/components/agent-sessions/tools/agent-tools-view"
 import { ToolMetricStripLoading } from "@/components/agent-sessions/tools/tool-metric-strip"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
 import {
@@ -186,9 +186,7 @@ function AgentToolsBody({
 				<Skeleton className="mx-6 h-80" />
 			</div>
 		))
-		.onError((error) => (
-			<QueryErrorState error={error} titleOverride="Failed to load agent tool analytics" />
-		))
+		.onError((error) => <ErrorState error={error} title="Failed to load agent tool analytics" />)
 		.onSuccess((totals, result) => (
 			<AgentToolsView
 				search={search}

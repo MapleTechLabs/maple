@@ -15,7 +15,7 @@ import { PodTable } from "@/components/infra/pod-table"
 import { bucketSecondsForRange } from "@/components/infra/constants"
 import { PageHero, HeroChip } from "@/components/infra/primitives/page-hero"
 import { SegmentPivot } from "@/components/infra/primitives/segment-pivot"
-import { StatRail, StatRailItem } from "@/components/infra/primitives/stat-rail"
+import { StatRail, StatRailItem } from "@/components/common/stat-rail"
 import {
 	TimeRangeSearchFields,
 	applyTimeRangeSearch,

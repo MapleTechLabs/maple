@@ -5,7 +5,7 @@ import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
 
 import { useTableSort } from "@/components/infra/primitives/data-table"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { ChevronDownIcon, ChevronRightIcon } from "@/components/icons"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import {
@@ -299,10 +299,7 @@ export function ToolErrorsTable({
 
 					<TableBody waiting={waiting} maxHeight={expanded ? 760 : 460}>
 						{failure !== undefined ? (
-							<QueryErrorState
-								error={failure}
-								titleOverride={`Failed to load ${tool} errors`}
-							/>
+							<ErrorState error={failure} title={`Failed to load ${tool} errors`} />
 						) : loading ? (
 							<LoadingRows />
 						) : (

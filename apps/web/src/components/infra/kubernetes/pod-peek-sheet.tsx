@@ -19,13 +19,13 @@ import { formatRelativeTime } from "@maple/ui/lib/time-format"
 
 import type { PodInfraMetric } from "@/api/warehouse/infra"
 import { ArrowDownIcon, ArrowRightIcon, ArrowUpIcon } from "@/components/icons"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { bucketSecondsForRange } from "@/components/infra/constants"
 import { severityLevel } from "@/components/infra/format"
 import { PodDetailChart } from "@/components/infra/k8s-detail-chart"
 import { podKey, type PodRow } from "@/components/infra/pod-table"
 import { HeroChip } from "@/components/infra/primitives/page-hero"
-import { StatRail, StatRailItem } from "@/components/infra/primitives/stat-rail"
+import { StatRail, StatRailItem } from "@/components/common/stat-rail"
 import { HostStatusBadge } from "@/components/infra/status-badge"
 import type { TimeRangeSearch } from "@/components/time-range-picker/search"
 import { Result, useAtomMount, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
@@ -347,9 +347,7 @@ function PeekSummary({ pod, startTime, endTime }: { pod: PodRow; startTime: stri
 
 	return Result.builder(result)
 		.onInitial(() => <Skeleton className="h-[88px] w-full rounded-md" />)
-		.onError((error) => (
-			<QueryErrorState error={error} titleOverride="Failed to load pod metrics" onRetry={refresh} />
-		))
+		.onError((error) => <ErrorState error={error} title="Failed to load pod metrics" onRetry={refresh} />)
 		.onSuccess((response, holder) => {
 			const summary = response.data
 			if (!summary) {

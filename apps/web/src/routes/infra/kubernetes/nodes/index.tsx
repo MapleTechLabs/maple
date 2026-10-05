@@ -6,7 +6,7 @@ import { Button } from "@maple/ui/components/ui/button"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
 
 import { OptionalStringArrayParam } from "@/lib/search-params"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { MagnifierIcon, ServerIcon } from "@/components/icons"
 import { InfraSetupEmpty } from "@/components/infra/infra-empty-state"
 import { KubernetesShell } from "@/components/infra/kubernetes/kubernetes-shell"
@@ -129,7 +129,7 @@ function NodesPage() {
 		>
 			{Result.builder(nodesResult)
 				.onInitial(() => <NodeTableLoading />)
-				.onError((err) => <QueryErrorState error={err} />)
+				.onError((err) => <ErrorState error={err} />)
 				.onSuccess((response, result) => {
 					const nodes = response.data
 					const hasStructuredFilter = Object.values(filters).some((v) => (v?.length ?? 0) > 0)

@@ -2,7 +2,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { formatPercent } from "@maple/ui/lib/format"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 
-import { BarSpark } from "@/components/infra/primitives/stat-rail"
+import { BarSpark } from "@/components/common/stat-rail"
 import {
 	TOOL_PERCENTILES,
 	formatToolCount,

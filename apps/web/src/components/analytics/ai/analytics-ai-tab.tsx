@@ -4,8 +4,8 @@ import { Skeleton } from "@maple/ui/components/ui/skeleton"
 
 import type { WebAnalyticsAiCrawlers } from "@/api/warehouse/web-analytics"
 import { DocsLink } from "@/components/common/docs-link"
-import { QueryErrorState } from "@/components/common/query-error-state"
-import { StatRail, StatRailItem } from "@/components/infra/primitives/stat-rail"
+import { ErrorState } from "@/components/common/error-state"
+import { StatRail, StatRailItem } from "@/components/common/stat-rail"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import {
 	webAnalyticsAiCrawlersResultAtom,
@@ -133,7 +133,7 @@ export function AnalyticsAiTab({
 						))}
 					</div>
 				))
-				.onError((error) => <QueryErrorState error={error} />)
+				.onError((error) => <ErrorState error={error} />)
 				.onSuccess(() => (
 					<div className="grid gap-3 @min-[560px]/page:grid-cols-2 @min-[880px]/page:grid-cols-3">
 						{CARD_PRODUCTS.map((product, index) => (
@@ -157,7 +157,7 @@ export function AnalyticsAiTab({
 				)}
 				{Result.builder(crawlersResult)
 					.onInitial(() => <Skeleton className="h-64 w-full" />)
-					.onError((error) => <QueryErrorState error={error} />)
+					.onError((error) => <ErrorState error={error} />)
 					.onSuccess((data) => (
 						<AiCrawlerTable crawlers={data.crawlers} emptyMessage={NO_CRAWLS_MESSAGE} />
 					))

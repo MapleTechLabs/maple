@@ -1,7 +1,7 @@
 import * as React from "react"
 import { cn } from "@maple/ui/lib/utils"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import { SPARK_COLOR, VALUE_TONE, type Tone } from "../severity-tokens"
+import { SPARK_COLOR, VALUE_TONE, type Tone } from "@/components/infra/severity-tokens"
 
 interface StatRailProps {
 	children: React.ReactNode

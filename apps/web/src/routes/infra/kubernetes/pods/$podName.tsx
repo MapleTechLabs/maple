@@ -9,7 +9,7 @@ import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { formatPercent } from "@maple/ui/lib/format"
 
 import type { PodInfraMetric } from "@/api/warehouse/infra"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { FolderIcon } from "@/components/icons"
 import { KubernetesShell } from "@/components/infra/kubernetes/kubernetes-shell"
 import { PodDetailChart } from "@/components/infra/k8s-detail-chart"
@@ -17,7 +17,7 @@ import { bucketSecondsForRange } from "@/components/infra/constants"
 import { severityLevel } from "@/components/infra/format"
 import { PageHero, HeroChip } from "@/components/infra/primitives/page-hero"
 import { SegmentPivot } from "@/components/infra/primitives/segment-pivot"
-import { StatRail, StatRailItem } from "@/components/infra/primitives/stat-rail"
+import { StatRail, StatRailItem } from "@/components/common/stat-rail"
 import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
 import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
 import { podDetailSummaryResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
@@ -124,9 +124,9 @@ function PodDetailPage() {
 				{Result.isInitial(summaryResult) ? (
 					<Skeleton className="h-24 w-full rounded-md" />
 				) : Result.isFailure(summaryResult) ? (
-					<QueryErrorState
+					<ErrorState
 						error={summaryResult.cause}
-						titleOverride="Failed to load pod metrics"
+						title="Failed to load pod metrics"
 						onRetry={refreshSummary}
 					/>
 				) : summary ? (

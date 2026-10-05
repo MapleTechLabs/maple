@@ -23,7 +23,7 @@ import { getHttpInfo } from "@maple/ui/lib/http"
 
 import type { Span, SpanHierarchyResponse, SpanNode } from "@/api/warehouse/traces"
 import { ArrowDownIcon, ArrowUpIcon } from "@/components/icons"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { TraceReplayLink } from "@/components/replays/trace-replay-link"
 import { SpanDetailPanel } from "@/components/traces/span-detail-panel"
 import { TraceAnatomyStrip } from "@/components/traces/trace-anatomy-strip"
@@ -282,7 +282,7 @@ function TracePeekBody({
 					<SheetDescription className="sr-only">Failed to load trace</SheetDescription>
 				</SheetHeader>
 				<div className="flex-1 overflow-auto p-4">
-					<QueryErrorState error={error} titleOverride="Failed to load trace details" />
+					<ErrorState error={error} title="Failed to load trace details" />
 				</div>
 			</>
 		))

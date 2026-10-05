@@ -26,7 +26,7 @@ import { LogAttributeChip } from "./log-attribute-chip"
 import { HighlightedText } from "./highlighted-text"
 import { shortTraceId } from "@/lib/logs/log-search-query"
 import { ChevronRightIcon } from "@/components/icons"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { usePageScrolledReporter } from "@maple/ui/components/ui/page-layout"
 import { DocsLink } from "@/components/common/docs-link"
 import {
@@ -739,7 +739,7 @@ export function LogsTable({ filters, embedded }: LogsTableProps) {
 
 	return Result.builder(firstPageResult)
 		.onInitial(() => <LoadingState />)
-		.onError((error) => <QueryErrorState error={error} />)
+		.onError((error) => <ErrorState error={error} />)
 		.onSuccess((_response, result) => (
 			<LogsTableView
 				allData={allData}

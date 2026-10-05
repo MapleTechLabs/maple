@@ -7,7 +7,7 @@ import { Button } from "@maple/ui/components/ui/button"
 
 import { OptionalStringArrayParam } from "@/lib/search-params"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { DockerIcon, MagnifierIcon } from "@/components/icons"
 import { PageHero } from "@/components/infra/primitives/page-hero"
 import { FLEET_BAND_BOXED } from "@/components/infra/primitives/fleet-band"
@@ -263,7 +263,7 @@ function ContainersPage() {
 
 								{Result.builder(containersResult)
 									.onInitial(() => <ContainerTableLoading />)
-									.onError((err) => <QueryErrorState error={err} />)
+									.onError((err) => <ErrorState error={err} />)
 									.onSuccess((response, result) => {
 										const containers = response.data
 										const total = response.totalCount

@@ -12,7 +12,7 @@ import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { getReleasesResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { DocsLink } from "@/components/common/docs-link"
 import {
 	TimeRangeSearchFields,
@@ -182,9 +182,7 @@ function ReleasesContent({ search }: { search: ReleasesSearchParams }) {
 	}, [result])
 
 	if (Result.isFailure(result)) {
-		return (
-			<QueryErrorState error={result.cause} titleOverride="Failed to load releases" onRetry={refresh} />
-		)
+		return <ErrorState error={result.cause} title="Failed to load releases" onRetry={refresh} />
 	}
 	if (derived === undefined) return <ReleasesSkeleton />
 
