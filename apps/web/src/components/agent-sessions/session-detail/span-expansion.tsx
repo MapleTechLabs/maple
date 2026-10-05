@@ -679,12 +679,12 @@ function FailureBanner({ span }: { span: AiSessionSpan }) {
 				<CircleWarningIcon size={13} className="shrink-0 text-destructive" />
 				<span className="font-medium text-[13px] text-destructive">This call failed</span>
 				{span.statusCode === "Error" && (
-					<Badge shape="pill" size="xs" mono className={TONE_SOFT.crit}>
+					<Badge pill size="xs" mono className={TONE_SOFT.crit}>
 						span status Error
 					</Badge>
 				)}
 				{errorType !== undefined && errorType !== "" && (
-					<Badge shape="pill" size="xs" mono className={TONE_SOFT.crit}>
+					<Badge pill size="xs" mono className={TONE_SOFT.crit}>
 						error.type {errorType}
 					</Badge>
 				)}
@@ -693,7 +693,7 @@ function FailureBanner({ span }: { span: AiSessionSpan }) {
 				{span.statusCode !== "Error" &&
 					(errorType === undefined || errorType === "") &&
 					responseStatus !== undefined && (
-						<Badge shape="pill" size="xs" mono className={TONE_SOFT.crit}>
+						<Badge pill size="xs" mono className={TONE_SOFT.crit}>
 							response.status {responseStatus}
 						</Badge>
 					)}

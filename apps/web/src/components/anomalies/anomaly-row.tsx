@@ -103,7 +103,7 @@ export function AnomalyRow({ incident, focused = false, onFocus, variant = "defa
 			{!compact ? (
 				<Badge
 					variant="meta"
-					shape="pill"
+					pill
 					size="sm"
 					className={cn(META_CHIP_CLASS, "z-10 hidden min-w-0 shrink md:inline-flex")}
 					title={incident.serviceName}
@@ -122,7 +122,7 @@ export function AnomalyRow({ incident, focused = false, onFocus, variant = "defa
 			{activeFingerprints > 1 ? (
 				<Badge
 					variant="meta"
-					shape="pill"
+					pill
 					size="sm"
 					className={cn(META_CHIP_CLASS, "z-10 hidden sm:inline-flex")}
 					title={`${activeFingerprints} error fingerprints grouped into this incident`}
@@ -134,7 +134,7 @@ export function AnomalyRow({ incident, focused = false, onFocus, variant = "defa
 			{incident.reopenCount > 0 ? (
 				<Badge
 					variant="meta"
-					shape="pill"
+					pill
 					size="sm"
 					className={cn(META_CHIP_CLASS, "z-10 hidden sm:inline-flex")}
 					title="This anomaly re-breached and reopened after resolving"
@@ -145,7 +145,7 @@ export function AnomalyRow({ incident, focused = false, onFocus, variant = "defa
 
 			{triageChip ? (
 				<Badge
-					shape="pill"
+					pill
 					size="sm"
 					className={cn(META_CHIP_CLASS, "z-10 hidden font-medium sm:inline-flex", triageChip.tone)}
 				>
@@ -156,7 +156,7 @@ export function AnomalyRow({ incident, focused = false, onFocus, variant = "defa
 			{!compact && incident.errorIssueId !== null ? (
 				<Badge
 					variant="meta"
-					shape="pill"
+					pill
 					size="sm"
 					render={
 						<Link

@@ -85,7 +85,7 @@ function CustomPlanPlate({ model, onManageBilling }: { model: SpendModel; onMana
 			<div className="max-w-sm">
 				<div className="flex items-center gap-2">
 					<span className="text-sm">{model.planName ?? "Your plan"}</span>
-					<Badge variant="muted" shape="pill" size="xs" mono className="px-2 bg-primary/15 text-primary">
+					<Badge variant="muted" pill size="xs" mono className="px-2 bg-primary/15 text-primary">
 						Current plan
 					</Badge>
 				</div>
@@ -204,7 +204,7 @@ export function PlanOffer({
 								{isActive && (
 									<Badge
 										variant="muted"
-										shape="pill"
+										pill
 										size="xs"
 										mono
 										className="px-2 bg-primary/15 text-primary"

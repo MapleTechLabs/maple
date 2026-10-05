@@ -131,7 +131,7 @@ function OnboardingChecklistPill() {
 function ProgressChip({ completed, total }: { completed: number; total: number }) {
 	return (
 		<Badge
-			shape="pill"
+			pill
 			size="xs"
 			mono
 			className={cn(

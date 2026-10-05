@@ -288,7 +288,7 @@ const TracesTrack = React.memo(function TracesTrack({
 			<PulseIcon className="size-3.5" />
 			Traces
 			{count != null && count > 0 && (
-				<Badge variant="muted" shape="pill" size="xs" className="bg-primary/10 text-primary tabular-nums">
+				<Badge variant="muted" pill size="xs" className="bg-primary/10 text-primary tabular-nums">
 					{count}
 				</Badge>
 			)}

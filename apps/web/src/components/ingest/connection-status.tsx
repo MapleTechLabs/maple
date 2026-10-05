@@ -16,7 +16,7 @@ export function ConnectionStatusPill({ connection }: { connection: IngestConnect
 	const connected = connection.status === "connected"
 	return (
 		<Badge
-			shape="pill"
+			pill
 			className={cn(
 				"gap-1.5 text-[11px] transition-colors sm:text-[11px]",
 				connected

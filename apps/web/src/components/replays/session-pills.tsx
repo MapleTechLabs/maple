@@ -7,7 +7,7 @@ export function LivePill({ compact }: { compact?: boolean }) {
 	return (
 		<Badge
 			variant="success"
-			shape="pill"
+			pill
 			size={compact ? "xs" : "default"}
 			className={cn("bg-success/10 text-success", compact ? "tracking-wide" : "gap-1.5")}
 		>
@@ -20,7 +20,7 @@ export function LivePill({ compact }: { compact?: boolean }) {
 export function ErrorCountPill({ count }: { count: number }) {
 	return (
 		<Badge
-			shape="pill"
+			pill
 			size="xs"
 			mono
 			className="gap-1.5 border-destructive/30 bg-destructive/10 text-destructive"

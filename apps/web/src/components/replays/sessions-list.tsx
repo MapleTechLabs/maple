@@ -435,7 +435,7 @@ function SessionListRow({
 				{durationP95 != null && durationP95 > 0 && durationMs != null && durationMs > durationP95 && (
 					<Badge
 						variant="muted"
-						shape="pill"
+						pill
 						size="xs"
 						className="self-center bg-accent text-accent-foreground"
 						title={`Longer than 95% of sessions in this view (p95: ${formatSessionDuration(durationP95)})`}
@@ -505,7 +505,7 @@ function SessionTags({
 	return (
 		<>
 			{SESSION_TAG_ORDER.filter((tag) => tags.includes(tag)).map((tag) => {
-				const className = cn(badgeVariants({ shape: "pill", size: "xs" }), SESSION_TAG_STYLES[tag])
+				const className = cn(badgeVariants({ pill: true, size: "xs" }), SESSION_TAG_STYLES[tag])
 				if (!onFilter) {
 					return (
 						<span key={tag} className={className} title={SESSION_TAG_DESCRIPTIONS[tag]}>
@@ -535,7 +535,7 @@ function SessionBadges({ session }: { session: SessionRow }) {
 			{session.errorCount > 0 && <ErrorCountPill count={session.errorCount} />}
 			{session.traceCount > 0 && (
 				<Badge
-					shape="pill"
+					pill
 					size="xs"
 					mono
 					className="bg-indigo-500/10 text-indigo-600 dark:text-indigo-400"
@@ -547,7 +547,7 @@ function SessionBadges({ session }: { session: SessionRow }) {
 			    detail page has no player. Flag it here rather than let the row look
 			    like every other (playable) session. */}
 			{session.recorded === "false" && (
-				<Badge variant="meta" shape="pill" size="xs" className="border-dashed border-border">
+				<Badge variant="meta" pill size="xs" className="border-dashed border-border">
 					Transcript only
 				</Badge>
 			)}

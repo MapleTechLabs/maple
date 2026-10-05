@@ -252,7 +252,7 @@ export function AnomalySidebar({
 			<DetailRail.Group label="Triage">
 				{triageChip ? (
 					<Badge
-						shape="pill"
+						pill
 						size="sm"
 						className={cn(META_CHIP_CLASS, "w-fit font-medium", triageChip.tone)}
 					>

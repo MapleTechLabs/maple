@@ -515,12 +515,12 @@ function TurnHeader({
 						)}
 					</span>
 					{turn.failed && (
-						<Badge shape="pill" size="xs" className={cn("uppercase tracking-wide", TONE_SOFT.crit)}>
+						<Badge pill size="xs" className={cn("uppercase tracking-wide", TONE_SOFT.crit)}>
 							Failed
 						</Badge>
 					)}
 					{collapsed && (
-						<Badge variant="muted" shape="pill" size="xs" className="tabular-nums">
+						<Badge variant="muted" pill size="xs" className="tabular-nums">
 							{row.visibleCount} spans
 						</Badge>
 					)}
@@ -648,12 +648,12 @@ function SpanRow({
 					<span className="min-w-0 truncate text-muted-foreground">{span.statusMessage}</span>
 				)}
 				{errored && (
-					<Badge shape="pill" size="xs" className={cn("uppercase tracking-wide", TONE_SOFT.crit)}>
+					<Badge pill size="xs" className={cn("uppercase tracking-wide", TONE_SOFT.crit)}>
 						{span.genAi.errorType ?? "Error"}
 					</Badge>
 				)}
 				{isDelegation(span, spansById) && (
-					<Badge variant="meta" shape="pill" size="xs" className="uppercase tracking-wide">
+					<Badge variant="meta" pill size="xs" className="uppercase tracking-wide">
 						Subagent
 					</Badge>
 				)}

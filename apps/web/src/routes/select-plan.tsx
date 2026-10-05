@@ -89,7 +89,7 @@ function SelectPlanPageInner() {
 				<div className="text-center flex flex-col items-center">
 					{!isReactivating && (
 						<Badge
-							shape="pill"
+							pill
 							size="lg"
 							className="mb-6 gap-2 border-primary/20 bg-primary/5 px-3 text-[11px] tracking-wider text-primary uppercase sm:text-[11px]"
 						>

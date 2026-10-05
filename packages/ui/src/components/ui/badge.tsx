@@ -10,12 +10,12 @@ export const badgeVariants = cva(
 	"relative inline-flex shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-sm border border-transparent font-medium outline-none transition-shadow focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-64 [&_svg:not([class*='opacity-'])]:opacity-80 [&_svg:not([class*='size-'])]:size-3.5 sm:[&_svg:not([class*='size-'])]:size-3 [&_svg]:pointer-events-none [&_svg]:shrink-0 [button&,a&]:cursor-pointer [button&,a&]:pointer-coarse:after:absolute [button&,a&]:pointer-coarse:after:size-full [button&,a&]:pointer-coarse:after:min-h-11 [button&,a&]:pointer-coarse:after:min-w-11",
 	{
 		compoundVariants: [
-			{ class: "px-1.5", shape: "pill", size: "xs" },
-			{ class: "px-2", shape: "pill", size: ["sm", "default"] },
-			{ class: "px-2.5", shape: "pill", size: "lg" },
+			{ class: "px-1.5", pill: true, size: "xs" },
+			{ class: "px-2", pill: true, size: ["sm", "default"] },
+			{ class: "px-2.5", pill: true, size: "lg" },
 		],
 		defaultVariants: {
-			shape: "default",
+			pill: false,
 			size: "default",
 			variant: "default",
 		},
@@ -28,9 +28,9 @@ export const badgeVariants = cva(
 				// Dense tables and meta rows: fixed 10px on every breakpoint.
 				xs: "h-4 min-w-4 rounded-[.25rem] px-1 text-[10px] sm:h-4 sm:min-w-4 sm:text-[10px] [&_svg:not([class*='size-'])]:size-2.5 sm:[&_svg:not([class*='size-'])]:size-2.5",
 			},
-			shape: {
-				default: "",
-				pill: "rounded-full",
+			pill: {
+				false: "",
+				true: "rounded-full",
 			},
 			mono: {
 				false: "",
@@ -58,7 +58,8 @@ export const badgeVariants = cva(
 export interface BadgeProps extends useRender.ComponentProps<"span"> {
 	variant?: VariantProps<typeof badgeVariants>["variant"]
 	size?: VariantProps<typeof badgeVariants>["size"]
-	shape?: VariantProps<typeof badgeVariants>["shape"]
+	/** Fully rounded chip for states and meta tags. */
+	pill?: boolean
 	/** Mono + tabular figures, for ids, versions and counts. */
 	mono?: boolean
 }
@@ -67,13 +68,13 @@ export function Badge({
 	className,
 	variant,
 	size,
-	shape,
+	pill = false,
 	mono = false,
 	render,
 	...props
 }: BadgeProps): React.ReactElement {
 	const defaultProps = {
-		className: cn(badgeVariants({ className, mono, shape, size, variant })),
+		className: cn(badgeVariants({ className, mono, pill, size, variant })),
 		"data-slot": "badge",
 	}
 

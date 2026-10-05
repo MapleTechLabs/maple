@@ -437,7 +437,7 @@ function TurnChapter({
 					{turnOrdinal(turn)}
 				</span>
 				{turn.failed && (
-					<Badge shape="pill" size="xs" className={cn("uppercase tracking-wide", TONE_SOFT.crit)}>
+					<Badge pill size="xs" className={cn("uppercase tracking-wide", TONE_SOFT.crit)}>
 						Failed
 					</Badge>
 				)}
@@ -710,7 +710,7 @@ function AssistantBlock({
 				>
 					{(!continued || row.failed) && <span className={SPEAKER}>Assistant</span>}
 					{row.failed && (
-						<Badge shape="pill" size="xs" className={cn("uppercase tracking-wide", TONE_SOFT.crit)}>
+						<Badge pill size="xs" className={cn("uppercase tracking-wide", TONE_SOFT.crit)}>
 							Failed
 						</Badge>
 					)}

@@ -875,7 +875,7 @@ function ErrorChip({
 }) {
 	return (
 		<Hint
-			className={cn(badgeVariants({ shape: "pill", size: "xs", mono: true }), className)}
+			className={cn(badgeVariants({ pill: true, size: "xs", mono: true }), className)}
 			content={hint}
 		>
 			{Icon ? (

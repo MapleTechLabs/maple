@@ -777,14 +777,14 @@ export function IntegrationsSummary() {
 	const attention = connected.filter((value) => value.health === "attention").length
 	return (
 		<div className="flex items-center gap-2">
-			<Badge variant="meta" shape="pill" className="gap-1.5 px-2.5 font-normal">
+			<Badge variant="meta" pill className="gap-1.5 px-2.5 font-normal">
 				<StatusDot tone="success" />
 				{connected.length} connected
 			</Badge>
 			{attention > 0 && (
 				<Badge
 					variant="warning"
-					shape="pill"
+					pill
 					className="gap-1.5 border-warning/25 bg-warning/10 px-2.5 font-normal"
 				>
 					<StatusDot tone="warning" />

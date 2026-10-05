@@ -44,7 +44,7 @@ export function ReleaseHealthPill({ health, label, className }: ReleaseHealthPil
 	return (
 		<Badge
 			size="xs"
-			shape="pill"
+			pill
 			mono
 			title={RELEASE_HEALTH_DESCRIPTION[health]}
 			className={cn("cursor-default font-normal", PILL_CLASS[health], className)}

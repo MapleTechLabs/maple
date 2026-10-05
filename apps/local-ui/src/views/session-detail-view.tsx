@@ -358,7 +358,7 @@ function TranscriptBody({ event }: { event: SessionTranscriptOutput }) {
 function StatusBadge({ active }: { active: boolean }) {
 	if (active) {
 		return (
-			<Badge variant="success" shape="pill" className="gap-1.5">
+			<Badge variant="success" pill className="gap-1.5">
 				<span className="relative flex size-1.5">
 					<span className="absolute inline-flex size-full animate-ping rounded-full bg-success opacity-75" />
 					<span className="relative inline-flex size-1.5 rounded-full bg-success" />
@@ -368,7 +368,7 @@ function StatusBadge({ active }: { active: boolean }) {
 		)
 	}
 	return (
-		<Badge variant="muted" shape="pill">
+		<Badge variant="muted" pill>
 			Ended
 		</Badge>
 	)

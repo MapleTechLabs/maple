@@ -215,12 +215,12 @@ function SessionCard({ session, href }: { session: SessionReplaysListOutput; hre
 					title="page views"
 				/>
 				{session.traceCount > 0 && (
-					<Badge shape="pill" className="bg-primary/10 tabular-nums text-primary">
+					<Badge pill className="bg-primary/10 tabular-nums text-primary">
 						{session.traceCount} trace{session.traceCount === 1 ? "" : "s"}
 					</Badge>
 				)}
 				{session.errorCount > 0 && (
-					<Badge shape="pill" className="bg-destructive/10 tabular-nums text-destructive">
+					<Badge pill className="bg-destructive/10 tabular-nums text-destructive">
 						<CircleWarningIcon className="size-3" />
 						{session.errorCount}
 					</Badge>

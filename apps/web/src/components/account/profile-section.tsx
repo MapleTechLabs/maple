@@ -295,7 +295,7 @@ export function ProfileSection() {
 				onConfirm={() => void handleDelete()}
 			>
 				{/* AlertDialog has no panel slot, so a body between header and footer pads itself. */}
-				<div className="space-y-2 px-6 py-2">
+				<div className="space-y-2">
 					<Label htmlFor="account-delete-confirm" className="text-xs">
 						Type <span className="font-mono font-semibold">{email}</span> to confirm.
 					</Label>

@@ -92,7 +92,8 @@ export function ConfirmDialog({
 					<AlertDialogTitle>{title}</AlertDialogTitle>
 					{description ? <AlertDialogDescription>{description}</AlertDialogDescription> : null}
 				</AlertDialogHeader>
-				{children}
+				{/* AlertDialog has no body slot, so the body pads itself to line up with the header. */}
+				{children ? <div className="px-6 py-2">{children}</div> : null}
 				<AlertDialogFooter>
 					<AlertDialogCancel disabled={pending}>{cancelLabel}</AlertDialogCancel>
 					{secondaryAction ? (

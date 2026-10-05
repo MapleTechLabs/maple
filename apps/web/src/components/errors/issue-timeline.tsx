@@ -446,7 +446,7 @@ function MessageRow({
 						</span>
 						{isAgent ? (
 							<Badge
-								shape="pill"
+								pill
 								size="xs"
 								mono
 								className="bg-violet-500/10 font-normal text-violet-600 dark:text-violet-300"
