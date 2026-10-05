@@ -39,6 +39,7 @@ export const ANTICIPATED_ERROR_IDENTIFIER_LIST: ReadonlyArray<string> = [
 	"@maple/http/errors/DashboardValidationError",
 	"@maple/http/errors/DashboardVersionNotFoundError",
 	"@maple/http/errors/DigestNotFoundError",
+	"@maple/http/errors/DigestUnsubscribeTokenInvalidError",
 	"@maple/http/errors/ErrorForbiddenError",
 	"@maple/http/errors/ErrorIssueLeaseConflictError",
 	"@maple/http/errors/ErrorIssueNotFoundError",
