@@ -105,46 +105,42 @@ export class ScrapeScheduler extends Context.Service<ScrapeScheduler, ScrapeSche
 				)
 
 			// Cadence is start-to-start on the happy path; a backoff runs its full
-			// delay from scrape end so Retry-After is honored.
-			const targetLoop = (key: string, initial: InternalScrapeTarget) =>
+			// delay from scrape end so Retry-After is honored. Ends once the target is gone.
+			const scrapeLoop = (key: string, consecutiveBackoffs: number): Effect.Effect<void> =>
 				Effect.gen(function* () {
-					yield* Effect.sleep(
-						Duration.millis(startJitter(key, initial.scrapeIntervalSeconds * 1000)),
-					)
-					let consecutiveBackoffs = 0
-					while (true) {
-						const latest = yield* registry.get(key)
-						if (Option.isNone(latest)) return
-						const target = latest.value
-						const baseMs = target.scrapeIntervalSeconds * 1000
+					const latest = yield* registry.get(key)
+					if (Option.isNone(latest)) return
+					const target = latest.value
+					const baseMs = target.scrapeIntervalSeconds * 1000
 
-						const loopStart = yield* Clock.currentTimeMillis
-						const failure = yield* scrapeOnce(target)
-						const elapsedMs = (yield* Clock.currentTimeMillis) - loopStart
-						const delayMs = nextScrapeDelayMs({ baseMs, failure, consecutiveBackoffs })
+					const loopStart = yield* Clock.currentTimeMillis
+					const failure = yield* scrapeOnce(target)
+					const elapsedMs = (yield* Clock.currentTimeMillis) - loopStart
+					const delayMs = nextScrapeDelayMs({ baseMs, failure, consecutiveBackoffs })
 
-						if (failure !== null && shouldBackOff(failure)) {
-							consecutiveBackoffs++
-							yield* Effect.logWarning(backoffLogMessage(failure.reason)).pipe(
-								Effect.annotateLogs({
-									targetId: target.id,
-									orgId: target.orgId,
-									...(target.subTargetKey
-										? { subTargetKey: target.subTargetKey }
-										: undefined),
-									reason: failure.reason,
-									delayMs,
-									retryAfterMs: failure.retryAfterMs,
-									consecutiveBackoffs,
-								}),
-							)
-							yield* Effect.sleep(Duration.millis(delayMs))
-						} else {
-							consecutiveBackoffs = 0
-							yield* Effect.sleep(Duration.millis(Math.max(0, delayMs - elapsedMs)))
-						}
+					if (failure === null || !shouldBackOff(failure)) {
+						yield* Effect.sleep(Duration.millis(Math.max(0, delayMs - elapsedMs)))
+						return yield* scrapeLoop(key, 0)
 					}
+					yield* Effect.logWarning(backoffLogMessage(failure.reason)).pipe(
+						Effect.annotateLogs({
+							targetId: target.id,
+							orgId: target.orgId,
+							...(target.subTargetKey ? { subTargetKey: target.subTargetKey } : undefined),
+							reason: failure.reason,
+							delayMs,
+							retryAfterMs: failure.retryAfterMs,
+							consecutiveBackoffs: consecutiveBackoffs + 1,
+						}),
+					)
+					yield* Effect.sleep(Duration.millis(delayMs))
+					return yield* scrapeLoop(key, consecutiveBackoffs + 1)
 				})
+
+			const targetLoop = (key: string, initial: InternalScrapeTarget) =>
+				Effect.sleep(Duration.millis(startJitter(key, initial.scrapeIntervalSeconds * 1000))).pipe(
+					Effect.andThen(scrapeLoop(key, 0)),
+				)
 
 			// Loops are keyed by target alone and read their config each scrape, so
 			// reconcile only starts loops for new keys and stops loops for gone ones.

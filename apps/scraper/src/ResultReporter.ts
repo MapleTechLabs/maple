@@ -1,4 +1,4 @@
-import { Context, Duration, Effect, Layer, Metric, Queue, Ref, Schedule } from "effect"
+import { Array as Arr, Context, Duration, Effect, Layer, Metric, Queue, Ref, Schedule } from "effect"
 import type { ScrapeResultReport } from "@maple/domain/http"
 import { ApiClient } from "./ApiClient"
 import { bufferedResults } from "./Metrics"
@@ -41,9 +41,9 @@ export class ResultReporter extends Context.Service<ResultReporter, ResultReport
 			const finalFlush = (held: ReadonlyArray<ScrapeResultReport>) =>
 				Effect.gen(function* () {
 					const all = [...held, ...(yield* Queue.clear(queue))]
-					for (let index = 0; index < all.length; index += REPORT_BATCH_SIZE) {
-						yield* api.reportResults(all.slice(index, index + REPORT_BATCH_SIZE))
-					}
+					yield* Effect.forEach(Arr.chunksOf(all, REPORT_BATCH_SIZE), api.reportResults, {
+						discard: true,
+					})
 				}).pipe(
 					Effect.timeout(FINAL_FLUSH_TIMEOUT),
 					Effect.catch((error) =>

@@ -69,13 +69,17 @@ export class OtlpIngest extends Context.Service<OtlpIngest, OtlpIngestApi>()("@m
 					"maple.otlp.data_points": countDataPoints(request),
 					"maple.otlp.chunk_count": chunks.length,
 				})
-				for (const [index, chunk] of chunks.entries()) {
-					yield* sendChunk(ingestKey, chunk, index, chunks.length).pipe(
-						Effect.tapError(() =>
-							Effect.annotateCurrentSpan("maple.otlp.chunks_delivered", index),
+				// Sequential, stopping at the first rejected chunk.
+				yield* Effect.forEach(
+					chunks,
+					(chunk, index) =>
+						sendChunk(ingestKey, chunk, index, chunks.length).pipe(
+							Effect.tapError(() =>
+								Effect.annotateCurrentSpan("maple.otlp.chunks_delivered", index),
+							),
 						),
-					)
-				}
+					{ discard: true },
+				)
 				yield* Effect.annotateCurrentSpan("maple.otlp.chunks_delivered", chunks.length)
 			}).pipe(withScrapeSpan("OtlpIngest.send"))
 

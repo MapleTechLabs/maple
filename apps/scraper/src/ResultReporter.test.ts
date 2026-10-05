@@ -38,7 +38,13 @@ describe("ResultReporter", () => {
 			yield* Effect.gen(function* () {
 				const reporter = yield* ResultReporter
 				const total = REPORT_BATCH_SIZE * 2 + 5
-				for (let i = 0; i < total; i++) yield* reporter.record(report(i))
+				yield* Effect.forEach(
+					Array.from({ length: total }, (_, i) => report(i)),
+					reporter.record,
+					{
+						discard: true,
+					},
+				)
 				yield* Effect.forkChild(reporter.run)
 				// Three back-to-back POSTs outrun a single scheduler turn.
 				yield* Effect.repeat(Effect.yieldNow, { times: 10 })
