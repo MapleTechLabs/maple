@@ -1,5 +1,6 @@
 /** Offline graph fixtures. Every external operation fails rather than reaching a real service. */
 import { Effect, Layer, Option } from "effect"
+import { fakeChatSessionsLayer } from "@maple/backend/platform/chat-sessions-fake"
 import { envPorts } from "@maple/backend/platform/env-ports"
 import {
 	ApiV2RateLimit,
@@ -27,6 +28,8 @@ export const offlinePorts = Layer.mergeAll(
 	Layer.succeed(MapleDbConnection, Option.none()),
 	Layer.succeed(EmailSender, Option.none()),
 	Layer.succeed(SchemaApplyWorkflow, { create: rejectIO }),
+	// Every session call fails: the probe must not reach a Durable Object.
+	fakeChatSessionsLayer(() => ({})),
 	envPorts({
 		TINYBIRD_HOST: "https://warehouse.invalid",
 		TINYBIRD_TOKEN: "offline",
