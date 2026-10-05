@@ -35,7 +35,7 @@ import {
 	firstLine,
 	isResolvableSha,
 } from "@/components/vcs/commit-sha-hover-card"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { UnnamedServiceHint, isUnnamedService } from "@/components/services/unnamed-service-hint"
 import {
 	type CommitBreakdown,
@@ -51,6 +51,8 @@ import { openAnomalyServiceCountsAtom } from "@/lib/services/atoms/anomaly-atoms
 import type { ServicesSearchParams } from "@/routes/services/index"
 import { ServiceDot } from "@maple/ui/components/service-dot"
 import { LatencyValue } from "@maple/ui/components/latency-value"
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 
 function formatThroughput(rate: number): string {
 	if (rate == null || Number.isNaN(rate) || rate === 0) {
@@ -183,10 +185,12 @@ const HEALTH_DOT_CLASS: Record<ServiceHealth, string> = {
 function HealthDot({ health }: { health: ServiceHealth | undefined }) {
 	if (health === undefined || health === "healthy") return null
 	return (
-		<span
+		<StatusDot
+			tone="custom"
+			aria-hidden={false}
 			aria-label={health}
 			title={health}
-			className={cn("size-1.5 shrink-0 rounded-full", HEALTH_DOT_CLASS[health])}
+			className={HEALTH_DOT_CLASS[health]}
 		/>
 	)
 }
@@ -735,7 +739,7 @@ export function ServicesTable({ filters }: ServicesTableProps) {
 
 	return Result.builder(Result.all([overviewResult, timeSeriesResult, anomaliesResult, incidentsResult]))
 		.onInitial(() => <LoadingState />)
-		.onError((error) => <QueryErrorState error={error} />)
+		.onError((error) => <ErrorState error={error} />)
 		.onSuccess(([overviewResponse, timeSeriesResponse], combinedResult) => {
 			const timeSeriesMap = timeSeriesResponse.data
 			const healthFor = (service: ServiceOverview) =>
@@ -1018,9 +1022,7 @@ export function ServicesTable({ filters }: ServicesTableProps) {
 																>
 																	{formatErrorRate(service.errorRate)}
 																</div>
-																<div className="text-[10px] uppercase tracking-wider text-muted-foreground/60">
-																	err
-																</div>
+																<Eyebrow as="div">err</Eyebrow>
 															</div>
 														</Link>
 													)

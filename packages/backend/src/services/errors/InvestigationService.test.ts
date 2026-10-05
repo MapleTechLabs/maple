@@ -18,6 +18,8 @@ import {
 } from "@maple/domain/http"
 import { ErrorIssueId } from "@maple/domain/primitives"
 import { aiTriageSettings, errorIssues, errorIssueEvents, investigations } from "@maple/db"
+import type { ChatSessions } from "@maple/backend/platform/bindings"
+import { fakeChatSessionsLayer } from "@maple/backend/platform/chat-sessions-fake"
 import { envPorts } from "@maple/backend/platform/env-ports"
 import { eq } from "drizzle-orm"
 import { Env } from "@maple/backend/platform/Env"
@@ -44,7 +46,10 @@ const testConfig = () =>
 		}),
 	)
 
-const makeHarness = (workerEnvironment?: Record<string, unknown>) => {
+const makeHarness = (
+	workerEnvironment?: Record<string, unknown>,
+	chatSessions: Layer.Layer<ChatSessions> | Layer.Layer<never> = Layer.empty,
+) => {
 	const testDb = createTestDb(createdDbs)
 	let layer = InvestigationService.layer.pipe(
 		Layer.provideMerge(testDb.layer),
@@ -52,7 +57,7 @@ const makeHarness = (workerEnvironment?: Record<string, unknown>) => {
 		Layer.provide(testConfig()),
 	)
 	if (workerEnvironment !== undefined) {
-		layer = layer.pipe(Layer.provideMerge(envPorts(workerEnvironment)))
+		layer = layer.pipe(Layer.provideMerge(Layer.merge(envPorts(workerEnvironment), chatSessions)))
 	}
 	return { testDb, layer }
 }
@@ -303,19 +308,18 @@ describe("InvestigationService", () => {
 	 */
 	const chatSessionHarness = (options?: { readonly busy?: boolean }) => {
 		const beginTurns: Array<{ messageId: string; text: string }> = []
-		const namespace = {
-			idFromName: (name: string) => name,
-			get: () => ({
-				history: async () => [],
-				beginTurn: async (input: { messageId: string; text: string }) => {
-					beginTurns.push({ messageId: input.messageId, text: input.text })
-					return options?.busy === true ? undefined : { cursor: 0, messageId: input.messageId }
-				},
-				append: async () => 1,
-				endTurn: async () => undefined,
-			}),
-		}
-		return { beginTurns, env: { ChatSession: namespace } }
+		const chatSessions = fakeChatSessionsLayer(() => ({
+			history: async () => [],
+			beginTurn: async (input: { messageId: string; text: string }) => {
+				beginTurns.push({ messageId: input.messageId, text: input.text })
+				return options?.busy === true
+					? undefined
+					: { cursor: 0, messageId: input.messageId, turnMessageId: input.messageId }
+			},
+			append: async () => 1,
+			endTurn: async () => undefined,
+		}))
+		return { beginTurns, env: {}, chatSessions }
 	}
 
 	/**
@@ -324,7 +328,7 @@ describe("InvestigationService", () => {
 	 */
 	it.effect("starts a manual incident as one agent turn with no setup", () => {
 		const chat = chatSessionHarness()
-		const harness = makeHarness(chat.env)
+		const harness = makeHarness(chat.env, chat.chatSessions)
 		return Effect.gen(function* () {
 			const database = yield* Database
 			const started = yield* InvestigationService.pipe(
@@ -346,7 +350,7 @@ describe("InvestigationService", () => {
 
 	it.effect("keeps a free-form question on the same single turn", () => {
 		const chat = chatSessionHarness()
-		const harness = makeHarness(chat.env)
+		const harness = makeHarness(chat.env, chat.chatSessions)
 		return Effect.gen(function* () {
 			const started = yield* InvestigationService.pipe(
 				Effect.flatMap((service) =>
@@ -366,7 +370,7 @@ describe("InvestigationService", () => {
 
 	it.effect("fails retryably when the session already has a turn in flight", () => {
 		const chat = chatSessionHarness({ busy: true })
-		const harness = makeHarness(chat.env)
+		const harness = makeHarness(chat.env, chat.chatSessions)
 		return Effect.gen(function* () {
 			const exit = yield* Effect.exit(
 				InvestigationService.pipe(
@@ -390,7 +394,7 @@ describe("InvestigationService", () => {
 	 */
 	it.effect("lets a person start and retry after the daily budget is spent", () => {
 		const chat = chatSessionHarness()
-		const harness = makeHarness(chat.env)
+		const harness = makeHarness(chat.env, chat.chatSessions)
 		return Effect.gen(function* () {
 			const database = yield* Database
 			const service = yield* InvestigationService
@@ -435,7 +439,7 @@ describe("InvestigationService", () => {
 
 	it.effect("marks a run failed only while it is still investigating", () => {
 		const chat = chatSessionHarness()
-		const harness = makeHarness(chat.env)
+		const harness = makeHarness(chat.env, chat.chatSessions)
 		return Effect.gen(function* () {
 			const database = yield* Database
 			const service = yield* InvestigationService
@@ -465,7 +469,7 @@ describe("InvestigationService", () => {
 
 	it.effect("starts an autonomous turn carrying the preserved context", () => {
 		const chat = chatSessionHarness()
-		const harness = makeHarness(chat.env)
+		const harness = makeHarness(chat.env, chat.chatSessions)
 		return Effect.gen(function* () {
 			// Free-form, because that is the only route that reaches a chat turn — and
 			// this test is about what that turn is handed.
@@ -505,7 +509,7 @@ describe("InvestigationService", () => {
 
 	it.effect("fails retryably when a turn is already in flight for the session", () => {
 		const chat = chatSessionHarness({ busy: true })
-		const harness = makeHarness(chat.env)
+		const harness = makeHarness(chat.env, chat.chatSessions)
 		return Effect.gen(function* () {
 			const service = yield* InvestigationService
 			const error = yield* Effect.flip(

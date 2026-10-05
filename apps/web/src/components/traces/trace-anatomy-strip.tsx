@@ -7,6 +7,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { CommitShaHoverCard } from "@/components/vcs/commit-sha-hover-card"
 import { TraceIdBadge } from "@/components/traces/trace-id-badge"
 import type { Span } from "@/api/warehouse/traces"
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
 
 interface TraceAnatomyStripProps {
 	spans: ReadonlyArray<Span>
@@ -61,7 +62,7 @@ export function TraceAnatomyStrip({
 							hasError ? "text-severity-error" : "text-severity-info",
 						)}
 					>
-						<span aria-hidden className="size-1.5 rounded-full bg-current" />
+						<StatusDot tone="custom" className="bg-current" />
 						{hasError ? "Error" : "OK"}
 					</span>
 

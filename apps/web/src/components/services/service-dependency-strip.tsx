@@ -9,6 +9,8 @@ import { toSingleDeploymentEnv } from "@/lib/services/environments"
 import { ServiceDot } from "@maple/ui/components/service-dot"
 import { DatabaseIcon, GlobeIcon, NetworkNodesIcon, PaperPlaneIcon } from "@/components/icons"
 import type { DependencyKind } from "./dependency-type-badge"
+import { ViewAllButton } from "./view-all-button"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 
 const STRIP_LIMIT = 8
 
@@ -111,7 +113,7 @@ export function ServiceDependencyStrip({
 				isWaiting && "opacity-60",
 			)}
 		>
-			<span className="text-[10px] uppercase tracking-wider text-muted-foreground/60">Talks to</span>
+			<Eyebrow>Talks to</Eyebrow>
 			{visible.map((target) =>
 				target.kind === "service" ? (
 					<Link
@@ -136,13 +138,7 @@ export function ServiceDependencyStrip({
 					+{hiddenCount} more
 				</button>
 			) : null}
-			<button
-				type="button"
-				onClick={onViewAll}
-				className="text-xs text-primary hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-			>
-				View all →
-			</button>
+			<ViewAllButton onClick={onViewAll} />
 		</div>
 	)
 }

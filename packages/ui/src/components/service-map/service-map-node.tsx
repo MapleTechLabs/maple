@@ -37,13 +37,13 @@ function getPlatformIcon(platform: ServicePlatform | undefined): {
 	}
 }
 
-function formatRate(value: number): string {
+export function formatRate(value: number): string {
 	if (value >= 1000) return `${(value / 1000).toFixed(1)}k`
 	if (value >= 1) return value.toFixed(1)
 	return value.toFixed(2)
 }
 
-function getHealthDotClass(errorRate: number): string {
+export function getHealthDotClass(errorRate: number): string {
 	if (errorRate > 0.05) return "bg-severity-error"
 	if (errorRate > 0.01) return "bg-severity-warn"
 	return "bg-severity-info"

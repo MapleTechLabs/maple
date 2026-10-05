@@ -2,6 +2,8 @@ import { memo, useDeferredValue, useEffect, useMemo, useRef, type ReactNode } fr
 import { useVirtualizer } from "@tanstack/react-virtual"
 
 import type { AiSessionSpan } from "@maple/domain/http"
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Button } from "@maple/ui/components/ui/button"
 import { Spinner } from "@maple/ui/components/ui/spinner"
 import { CopyButton } from "@maple/ui/components/ui/copy-button"
@@ -211,11 +213,11 @@ export function SessionTranscript({
 
 	if (rows.length === 0) {
 		return (
-			<p className="px-2.5 py-8 text-center text-muted-foreground text-sm">
+			<EmptyMessage>
 				{query.trim() === ""
 					? "No AI activity in this session. Its spans are HTTP and database work, which the transcript excludes. The Traces view shows them."
 					: "No blocks match this filter."}
-			</p>
+			</EmptyMessage>
 		)
 	}
 
@@ -994,9 +996,7 @@ function PayloadSection({
 	return (
 		<div className={cn("flex flex-col gap-2 px-3 pt-2.5 pb-3", bordered && "border-border/60 border-t")}>
 			<div className="flex flex-wrap items-center gap-2">
-				<span className="font-medium font-mono text-[10px] text-muted-foreground uppercase tracking-[0.1em]">
-					{label}
-				</span>
+				<Eyebrow variant="mono">{label}</Eyebrow>
 				<span className="font-mono text-[10px] text-muted-foreground">
 					{[
 						meta,

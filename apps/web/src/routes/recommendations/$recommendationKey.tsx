@@ -1,3 +1,4 @@
+import { SectionHeader } from "@/components/layout/section-header"
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { Exit } from "effect"
@@ -247,7 +248,6 @@ function DetailView({
 									</Badge>
 								</div>
 							}
-							description={`Opened ${formatRelativeTime(issue.opened_at)} · ${issue.usage_count.toLocaleString()} spans · 24h`}
 						/>
 					</DashboardLayout.Sticky>
 					<DashboardLayout.Scroll>
@@ -587,9 +587,6 @@ function ShellLayout({ children }: { children: React.ReactNode }) {
 			/>
 			<DashboardLayout.Body>
 				<DashboardLayout.Content>
-					<DashboardLayout.Sticky>
-						<DashboardLayout.Header title="Recommendation" />
-					</DashboardLayout.Sticky>
 					<DashboardLayout.Scroll>{children}</DashboardLayout.Scroll>
 				</DashboardLayout.Content>
 			</DashboardLayout.Body>
@@ -649,17 +646,5 @@ function InactiveShell() {
 				</EmptyContent>
 			</Empty>
 		</ShellLayout>
-	)
-}
-
-/* -------------------------------------------------------------------------------------------------
- * Small shared pieces
- * -------------------------------------------------------------------------------------------------*/
-
-function SectionHeader({ label }: { label: string }) {
-	return (
-		<h2 className="mb-3 text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
-			{label}
-		</h2>
 	)
 }

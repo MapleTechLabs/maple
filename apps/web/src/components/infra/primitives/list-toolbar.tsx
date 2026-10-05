@@ -1,14 +1,7 @@
 import type { ReactNode } from "react"
 
-import {
-	InputGroup,
-	InputGroupAddon,
-	InputGroupButton,
-	InputGroupInput,
-} from "@maple/ui/components/ui/input-group"
+import { SearchInput } from "@maple/ui/components/ui/search-input"
 import { cn } from "@maple/ui/lib/utils"
-
-import { MagnifierIcon, XmarkIcon } from "@/components/icons"
 
 /**
  * The row between a fleet band and its table: a search box, any pivot the
@@ -37,24 +30,12 @@ export function ListToolbar({
 	return (
 		<div className={cn("flex flex-wrap items-center justify-between gap-3", className)}>
 			<div className="flex flex-wrap items-center gap-2">
-				<InputGroup className="w-64">
-					<InputGroupAddon>
-						<MagnifierIcon />
-					</InputGroupAddon>
-					<InputGroupInput
-						size="sm"
-						placeholder={placeholder}
-						value={value}
-						onChange={(event) => onChange(event.target.value)}
-					/>
-					{value && (
-						<InputGroupAddon align="inline-end">
-							<InputGroupButton aria-label="Clear search" onClick={() => onChange("")}>
-								<XmarkIcon />
-							</InputGroupButton>
-						</InputGroupAddon>
-					)}
-				</InputGroup>
+				<SearchInput
+					className="w-64"
+					placeholder={placeholder}
+					value={value}
+					onValueChange={onChange}
+				/>
 				{children}
 			</div>
 			{trailing ? <span className="text-xs text-muted-foreground tabular-nums">{trailing}</span> : null}

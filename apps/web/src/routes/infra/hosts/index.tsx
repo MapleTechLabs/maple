@@ -9,7 +9,7 @@ import { cn } from "@maple/ui/lib/utils"
 
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { MagnifierIcon, PlusIcon, ServerIcon } from "@/components/icons"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { HostTable, HostTableLoading, type HostRow } from "@/components/infra/host-table"
 import {
 	HOST_LIST_LIMIT,
@@ -121,7 +121,7 @@ function HostsPage() {
 											<HostTableLoading />
 										</div>
 									))
-									.onError((err) => <QueryErrorState error={err} />)
+									.onError((err) => <ErrorState error={err} />)
 									.onSuccess((response, result) => {
 										const hosts = response.data
 										if (hosts.length === 0) {

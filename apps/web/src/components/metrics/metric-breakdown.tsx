@@ -16,6 +16,7 @@ import {
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { displayError } from "@/lib/error-messages"
 import type { MetricsQueryDraft } from "@maple/query-engine/query-builder"
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
 
 const SERVICE_KEY = "service.name"
 const BREAKDOWN_LIMIT = 10
@@ -182,11 +183,7 @@ function BreakdownBars({
 				.filter((row) => row.name.length > 0)
 
 			if (rows.length === 0) {
-				return (
-					<p className="py-4 text-center text-xs text-muted-foreground">
-						No values for this attribute in the selected range.
-					</p>
-				)
+				return <EmptyMessage>No values for this attribute in the selected range.</EmptyMessage>
 			}
 
 			const max = Math.max(...rows.map((row) => row.value), 1)

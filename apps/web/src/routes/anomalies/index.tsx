@@ -81,9 +81,6 @@ export const Route = createFileRoute("/anomalies/")({
 	validateSearch: Schema.toStandardSchemaV1(searchSchema),
 })
 
-const PAGE_DESCRIPTION =
-	"Baseline deviations detected automatically across your services — no rules required."
-
 function AnomaliesPage() {
 	const search = Route.useSearch()
 	const navigate = useNavigate({ from: Route.fullPath })
@@ -265,7 +262,7 @@ function AnomaliesPage() {
 				</DashboardLayout.Filters>
 				<DashboardLayout.Content>
 					<DashboardLayout.Sticky>
-						<DashboardLayout.Header title="Anomalies" description={PAGE_DESCRIPTION}>
+						<DashboardLayout.Header>
 							<AnomalyLiveIndicator
 								live={live}
 								onToggle={(next) =>

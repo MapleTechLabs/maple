@@ -2,6 +2,8 @@ import { formatRelativeTimeOrDate, toEpochMs } from "@maple/ui/lib/time-format"
 import { useCallback, useState } from "react"
 import { useNavigate } from "@tanstack/react-router"
 import { useVirtualizer } from "@tanstack/react-virtual"
+import { Spinner } from "@maple/ui/components/ui/spinner"
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { cn } from "@maple/ui/lib/utils"
 import { SignalEmptyState } from "@/components/common/signal-empty-state"
 import { ChevronRightIcon } from "@/components/icons"
@@ -19,6 +21,7 @@ import {
 	SESSION_TAG_STYLES,
 } from "./session-tags"
 import { sessionListItems } from "./session-list-items"
+import { ErrorCountPill, LivePill } from "./session-pills"
 import { formatSessionDuration, hostFromUrl, isSessionLive, sessionDurationMs } from "./replay-format"
 
 export interface SessionRow {
@@ -279,7 +282,7 @@ export function SessionsList({
 
 			{loadingMore && (
 				<div className="flex items-center justify-center gap-2 py-6 text-sm text-muted-foreground">
-					<span className="size-4 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" />
+					<Spinner className="size-4" />
 					Loading more sessions…
 				</div>
 			)}
@@ -375,7 +378,7 @@ function SessionListRow({
 					>
 						{label}
 					</span>
-					{isActive && <LivePill />}
+					{isActive && <LivePill compact />}
 					<span
 						className="ml-auto shrink-0 whitespace-nowrap text-xs text-muted-foreground @2xl:hidden"
 						title={absoluteTs(session.startTime, timeZone)}
@@ -534,12 +537,7 @@ function SessionTags({
 function SessionBadges({ session }: { session: SessionRow }) {
 	return (
 		<>
-			{session.errorCount > 0 && (
-				<span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-destructive/30 bg-destructive/10 px-2 py-0.5 font-mono text-[10px] font-medium tabular-nums text-destructive">
-					<span className="size-1 rounded-full bg-destructive" aria-hidden />
-					{session.errorCount} error{session.errorCount === 1 ? "" : "s"}
-				</span>
-			)}
+			{session.errorCount > 0 && <ErrorCountPill count={session.errorCount} />}
 			{session.traceCount > 0 && (
 				<span className="inline-flex shrink-0 items-center rounded-full bg-indigo-500/10 px-2 py-0.5 font-mono text-[10px] font-medium tabular-nums text-indigo-600 dark:text-indigo-400">
 					{session.traceCount} trace{session.traceCount === 1 ? "" : "s"}
@@ -584,7 +582,7 @@ function QuietRunRow({
 			<span className="flex min-w-0 items-center gap-3 overflow-hidden" title={summary}>
 				{tiers.map(({ tag, count: n }) => (
 					<span key={tag} className="flex shrink-0 items-center gap-1.5">
-						<span className={cn("size-1.5 rounded-full", SESSION_TAG_DOTS[tag])} aria-hidden />
+						<StatusDot tone="custom" className={SESSION_TAG_DOTS[tag]} />
 						<span className="tabular-nums">{n}</span> {SESSION_TAG_LABELS[tag].toLowerCase()}
 						{n === 1 ? "" : "s"}
 					</span>
@@ -599,17 +597,5 @@ function QuietRunRow({
 				/>
 			</span>
 		</button>
-	)
-}
-
-function LivePill() {
-	return (
-		<span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-success/10 px-1.5 py-px text-[10px] font-medium tracking-wide text-success">
-			<span className="relative flex size-1.5" aria-hidden>
-				<span className="absolute inline-flex size-full animate-ping rounded-full bg-success opacity-75" />
-				<span className="relative inline-flex size-1.5 rounded-full bg-success" />
-			</span>
-			LIVE
-		</span>
 	)
 }

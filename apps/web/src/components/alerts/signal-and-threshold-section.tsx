@@ -1,3 +1,5 @@
+import { InlineCode } from "@maple/ui/components/ui/inline-code"
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import {
 	useDeferredValue,
 	useMemo,
@@ -434,20 +436,11 @@ function BuiltinSignalChips({
 					const selected = value === opt.value
 					const Icon = opt.icon
 					return (
-						<button
+						<RadioChip
 							key={opt.value}
-							type="button"
-							role="radio"
-							aria-checked={selected}
-							onClick={() => onChange(opt.value)}
-							className={cn(
-								"inline-flex h-7 items-center gap-1.5 rounded-sm border border-transparent px-2 text-xs font-medium",
-								"transition-[background-color,border-color,color] duration-150",
-								"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background",
-								selected
-									? opt.selectedClass
-									: "text-muted-foreground hover:bg-muted/40 hover:text-foreground",
-							)}
+							selected={selected}
+							selectedClass={opt.selectedClass}
+							onSelect={() => onChange(opt.value)}
 						>
 							<Icon
 								size={12}
@@ -458,7 +451,7 @@ function BuiltinSignalChips({
 								)}
 							/>
 							{opt.label}
-						</button>
+						</RadioChip>
 					)
 				})}
 			</div>
@@ -493,33 +486,56 @@ function SeverityToggle({
 			{SEVERITY_OPTIONS.map((opt) => {
 				const selected = value === opt.value
 				return (
-					<button
+					<RadioChip
 						key={opt.value}
-						type="button"
-						role="radio"
-						aria-checked={selected}
-						onClick={() => onChange(opt.value)}
-						className={cn(
-							"inline-flex h-7 items-center gap-1.5 rounded-[5px] border border-transparent px-2.5 text-xs font-medium",
-							"transition-[background-color,border-color,color] duration-150",
-							// `ring-ring` is the base so an unselected pill still shows a focus
-							// ring; the selected variants override it with their brand color.
-							"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background",
-							selected ? opt.selectedClass : "text-muted-foreground hover:text-foreground",
-						)}
+						selected={selected}
+						selectedClass={opt.selectedClass}
+						onSelect={() => onChange(opt.value)}
 					>
-						<span
-							aria-hidden
+						<StatusDot
+							tone="custom"
 							className={cn(
-								"size-1.5 rounded-full transition-shadow",
+								"transition-shadow",
 								selected ? opt.dotClass : "bg-muted-foreground/40",
 							)}
 						/>
 						{opt.label}
-					</button>
+					</RadioChip>
 				)
 			})}
 		</div>
+	)
+}
+
+/** One option in a chip radiogroup; the selected chip takes its option's brand colour. */
+function RadioChip({
+	selected,
+	selectedClass,
+	onSelect,
+	children,
+}: {
+	selected: boolean
+	selectedClass: string
+	onSelect: () => void
+	children: ReactNode
+}) {
+	return (
+		<button
+			type="button"
+			role="radio"
+			aria-checked={selected}
+			onClick={onSelect}
+			className={cn(
+				"inline-flex h-7 items-center gap-1.5 rounded-sm border border-transparent px-2.5 text-xs font-medium",
+				"transition-[background-color,border-color,color] duration-150",
+				// `ring-ring` is the base so an unselected chip still shows a focus ring;
+				// the selected variants override it with their brand color.
+				"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background",
+				selected ? selectedClass : "text-muted-foreground hover:bg-muted/40 hover:text-foreground",
+			)}
+		>
+			{children}
+		</button>
 	)
 }
 
@@ -699,10 +715,10 @@ function SignalSubConfig({ form, onChange, autocompleteValues }: SignalAndThresh
 						targetLabel="alert rule"
 					/>
 					<p className="text-muted-foreground text-xs">
-						Return a numeric <code>value</code> column. Optional: <code>group</code> for one
-						series per value, and <code>samples</code> for the event count behind each row (Min
-						samples sums it; without it each row counts as 1). A query that returns no rows is a
-						no-data check.
+						Return a numeric <InlineCode>value</InlineCode> column. Optional:{" "}
+						<InlineCode>group</InlineCode> for one series per value, and{" "}
+						<InlineCode>samples</InlineCode> for the event count behind each row (Min samples sums
+						it; without it each row counts as 1). A query that returns no rows is a no-data check.
 					</p>
 					{sampleWarning && <p className="text-warning text-xs">{sampleWarning}</p>}
 					<div className="flex items-end gap-3">

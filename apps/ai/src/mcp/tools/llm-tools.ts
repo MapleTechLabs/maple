@@ -63,15 +63,6 @@ export const splitToolResult = (
 }
 
 /**
- * Serialize an MCP tool result for the model: its text blocks only.
- *
- * Bounded here, at creation, and never again — see `./tool-output.ts` for why that matters more than
- * the token saving. A warehouse query with no `limit` used to enter the transcript whole.
- */
-export const toolResultText = (result: { content: ReadonlyArray<{ text: string }> }): string =>
-	truncateToolOutput(splitToolResult("", result).text).text
-
-/**
  * Capped, because "one line" is a convention the error's author never agreed to: a ClickHouse syntax
  * error arrives with the whole offending query inlined, and on a retry loop that lands in the
  * transcript once per attempt.

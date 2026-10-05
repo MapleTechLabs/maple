@@ -1,3 +1,4 @@
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import type { AnomalyIncidentDocument } from "@maple/domain/http"
 import { cn } from "@maple/ui/lib/utils"
 
@@ -26,9 +27,7 @@ export function AnomalyHero({
 
 	return (
 		<div className={cn("space-y-2", className)}>
-			<div className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
-				Anomaly
-			</div>
+			<Eyebrow as="div">Anomaly</Eyebrow>
 			<h1 className="text-3xl font-semibold leading-tight text-foreground break-words sm:text-4xl">
 				{SIGNAL_LABEL[incident.signalType]}
 				<span className="text-muted-foreground/60"> · </span>

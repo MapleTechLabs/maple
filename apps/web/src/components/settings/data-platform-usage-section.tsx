@@ -4,6 +4,7 @@ import { Result } from "@/lib/effect-atom"
 import { ChartLineIcon, DatabaseIcon, FileIcon, GridSquareCirclePlusIcon } from "@/components/icons"
 import { cn } from "@maple/ui/lib/utils"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { getServiceUsageResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import type { ServiceUsageResponse } from "@/api/warehouse/service-usage"
@@ -70,9 +71,9 @@ function StatTile({ stat, children }: { stat: (typeof STATS)[number]; children: 
 				<Icon size={16} />
 			</span>
 			<div className="relative mt-4 min-h-[2rem]">{children}</div>
-			<div className="relative mt-2 text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+			<Eyebrow variant="label" className="relative mt-2" as="div">
 				{stat.label}
-			</div>
+			</Eyebrow>
 		</div>
 	)
 }

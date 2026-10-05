@@ -8,7 +8,6 @@ import {
 	SpanHierarchyResponse,
 	SpanDetailResponse,
 	ErrorsByTypeResponse,
-	ErrorsTimeseriesResponse,
 	ErrorsSparkResponse,
 	ErrorsSummaryResponse,
 	ErrorDetailTracesResponse,
@@ -52,7 +51,6 @@ import {
 	ListHostsResponse,
 	HostDetailSummaryResponse,
 	HostInfraTimeseriesResponse,
-	FleetUtilizationTimeseriesResponse,
 	ListPodsResponse,
 	PodsSummaryResponse,
 	PodDetailSummaryResponse,
@@ -519,18 +517,6 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 								affectedServicesCount: Number(row.affectedServicesCount),
 								firstSeen: String(row.firstSeen),
 								lastSeen: String(row.lastSeen),
-							})),
-						})
-					}),
-				)
-				.handle("errorsTimeseries", ({ payload }) =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						const rows = yield* runQuery(Queries.errorsTimeseries, tenant, payload)
-						return new ErrorsTimeseriesResponse({
-							data: rows.map((row) => ({
-								bucket: String(row.bucket),
-								count: Number(row.count),
 							})),
 						})
 					}),
@@ -1413,20 +1399,6 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 										load15: Number(row.load15) || 0,
 									}
 								: null,
-						})
-					}),
-				)
-				.handle("fleetUtilizationTimeseries", ({ payload }) =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						const rows = yield* runQuery(Queries.fleetUtilizationTimeseries, tenant, payload)
-						return new FleetUtilizationTimeseriesResponse({
-							data: rows.map((row) => ({
-								bucket: String(row.bucket),
-								avgCpu: Number(row.avgCpu) || 0,
-								avgMemory: Number(row.avgMemory) || 0,
-								activeHosts: Number(row.activeHosts) || 0,
-							})),
 						})
 					}),
 				)

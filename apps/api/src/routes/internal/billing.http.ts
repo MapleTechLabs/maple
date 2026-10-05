@@ -13,6 +13,7 @@ import {
 	CustomerPortalResult,
 	MapleInternalApi,
 	mergeSpendLimits,
+	type OrgId,
 	PreviewAttachResult,
 } from "@maple/domain/http"
 import {
@@ -38,6 +39,7 @@ import { emitPlanStartedFromAttach } from "@maple/backend/services/billing/plan-
 import { ProductEventsService } from "@maple/backend/services/product-events/ProductEventsService"
 import { requireAdmin } from "@maple/backend/services/auth/auth"
 import { DailySpendService } from "@maple/backend/services/billing/DailySpendService"
+import { OrganizationService } from "@maple/backend/services/org/OrganizationService"
 
 // Pull the `invoices` array off a raw expanded `getOrCreateCustomer` response.
 // Exported for tests. Autumn omits the key for a customer with no invoices, so
@@ -85,6 +87,7 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 		const autumn = yield* AutumnClient
 		const stripe = yield* StripeClient
 		const productEvents = yield* ProductEventsService
+		const organizations = yield* OrganizationService
 
 		// Invalidate on any 2xx, matching `ensureOk` — otherwise a 201/204 from
 		// attach/openCustomerPortal would decode as success yet leave the stale
@@ -93,6 +96,34 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 			result.statusCode >= 200 && result.statusCode < 300
 				? edgeCache.invalidate({ bucket: CUSTOMER_CACHE_BUCKET, key: orgId })
 				: Effect.void
+
+		// Autumn names an unnamed customer after whoever pays at checkout, so the org's
+		// billing showed up under a person. Stamp the org name on first; best-effort,
+		// a naming hiccup must never block a checkout or the portal.
+		const nameCustomerAfterOrg = (orgId: OrgId) =>
+			organizations.retrieve(orgId).pipe(
+				Effect.flatMap((org) =>
+					org.name
+						? autumn.updateCustomerName(orgId, org.name).pipe(
+								// No customer yet (a 404 from the update): create it already named,
+								// or attach would create it unnamed.
+								Effect.flatMap((result) =>
+									result.statusCode === 404
+										? autumn.getOrCreateCustomer(orgId, {
+												expand: [],
+												customerData: { name: org.name },
+											})
+										: Effect.succeed(result),
+								),
+								Effect.flatMap(ensureOk),
+							)
+						: Effect.void,
+				),
+				// Runs ahead of the Subscribe click's checkout, where a stall reads as a failed payment.
+				Effect.timeout("3 seconds"),
+				Effect.catch((error) => Effect.logWarning("Failed to name Autumn customer after org", error)),
+				Effect.withSpan("billing.nameCustomerAfterOrg"),
+			)
 
 		// The billing-details writes share one preamble: admins only, and a Stripe
 		// customer to write to (created through Autumn on first use).
@@ -246,16 +277,13 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 									message: "Only org admins can change the subscription",
 								}),
 						)
-						// No buyer identity rides along: `/v1/billing.attach` carries no
-						// identity fields in Autumn 2.3.0, and the `customerData` we used to
-						// hand `autumnHandler` here was silently discarded by it. Seeding
-						// the Stripe checkout with the Clerk email would need a separate
-						// `customers.get_or_create` on this path — a behaviour change, not
-						// part of this port.
+						// `/v1/billing.attach` carries no identity fields in Autumn 2.3.0, so
+						// the org name goes on through `nameCustomerAfterOrg` beforehand.
 						yield* Effect.annotateCurrentSpan({
 							orgId: tenant.orgId,
 							"billing.plan_id": payload.planId,
 						})
+						yield* nameCustomerAfterOrg(tenant.orgId)
 						const result = yield* autumn.attach(tenant.orgId, {
 							planId: payload.planId,
 							successUrl: payload.successUrl,
@@ -333,6 +361,7 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 									message: "Only org admins can open the billing portal",
 								}),
 						)
+						yield* nameCustomerAfterOrg(tenant.orgId)
 						const result = yield* autumn.openCustomerPortal(tenant.orgId, {
 							returnUrl: payload.returnUrl,
 						})

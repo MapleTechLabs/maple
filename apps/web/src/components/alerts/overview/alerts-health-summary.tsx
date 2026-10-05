@@ -1,4 +1,4 @@
-import { cn } from "@maple/ui/lib/utils"
+import { AlertStatCell, AlertStatShell } from "@/components/alerts/alert-stat-card"
 
 /** Health buckets a rule can land in — mirrors the `status` search param. */
 export type AlertsStatusFilter = "firing" | "attention" | "healthy" | "disabled"
@@ -65,38 +65,23 @@ export function AlertsHealthSummary({
 	onActiveChange: (status: AlertsStatusFilter | undefined) => void
 }) {
 	return (
-		<div className="flex flex-col gap-px overflow-hidden rounded-lg border border-border bg-border sm:flex-row">
+		<AlertStatShell>
 			{cards.map((card) => {
 				const count = counts[card.key]
 				const isActive = active === card.key
 				return (
-					<button
+					<AlertStatCell
 						key={card.key}
-						type="button"
-						aria-pressed={isActive}
-						onClick={() => onActiveChange(isActive ? undefined : card.key)}
-						className={cn(
-							"flex flex-1 flex-col gap-2 bg-card px-5 py-4 text-left transition-colors hover:bg-accent/50",
-							isActive && cn("ring-1 ring-inset", card.activeClass),
-						)}
-					>
-						<span className="text-muted-foreground text-xs font-medium uppercase tracking-wider">
-							{card.label}
-						</span>
-						<div className="flex items-baseline gap-2">
-							<span
-								className={cn(
-									"text-xl font-semibold tabular-nums leading-none",
-									count > 0 ? card.tone : "text-muted-foreground/60",
-								)}
-							>
-								{count}
-							</span>
-							<span className="text-muted-foreground text-xs">{card.hint}</span>
-						</div>
-					</button>
+						label={card.label}
+						value={count}
+						hint={card.hint}
+						valueClassName={count > 0 ? card.tone : "text-muted-foreground/60"}
+						onSelect={() => onActiveChange(isActive ? undefined : card.key)}
+						selected={isActive}
+						selectedClassName={card.activeClass}
+					/>
 				)
 			})}
-		</div>
+		</AlertStatShell>
 	)
 }

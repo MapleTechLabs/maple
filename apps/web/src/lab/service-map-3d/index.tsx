@@ -1,3 +1,4 @@
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { useState } from "react"
 import { Button } from "@maple/ui/components/ui/button"
 import { Input } from "@maple/ui/components/ui/input"
@@ -28,12 +29,7 @@ import {
 const topology = SERVICE_MAP_3D_TOPOLOGY
 const nodesById = new Map(topology.nodes.map((node) => [node.id, node]))
 function HealthDot({ node }: { node: Node3D }) {
-	return (
-		<span
-			className="inline-block size-1.5 shrink-0 rounded-full"
-			style={{ backgroundColor: HEALTH_COLOR[health(node.errorRate)] }}
-		/>
-	)
+	return <StatusDot tone="custom" style={{ backgroundColor: HEALTH_COLOR[health(node.errorRate)] }} />
 }
 
 function ServiceInventory({
@@ -226,7 +222,7 @@ export function ServiceMap3DLab() {
 								</p>
 							</div>
 							<div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-								<span className="size-1.5 rounded-full bg-muted-foreground" />
+								<StatusDot tone="custom" className="bg-muted-foreground" />
 								Sample topology
 								<span className="ml-2 border-l pl-3">
 									{topology.nodes.length} nodes · {topology.edges.length} connections

@@ -5,6 +5,7 @@ import { Schema } from "effect"
 import { SpanId, TraceId } from "@maple/domain"
 import type { AiSessionSpan } from "@maple/domain/http"
 import { ErrorSection } from "@maple/ui/components/error-section"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Button } from "@maple/ui/components/ui/button"
 import { CopyButton } from "@maple/ui/components/ui/copy-button"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
@@ -320,9 +321,9 @@ function SystemMessageRow({ message }: { message: SpanMessage }) {
 				) : (
 					<ChevronRightIcon size={11} className="shrink-0 text-muted-foreground" />
 				)}
-				<span className="shrink-0 font-medium font-mono text-[10px] text-muted-foreground uppercase tracking-widest">
+				<Eyebrow variant="mono" className="shrink-0">
 					{message.role}
-				</span>
+				</Eyebrow>
 				{!open && (
 					<span className="min-w-0 truncate text-muted-foreground text-xs">{firstLine(text)}</span>
 				)}

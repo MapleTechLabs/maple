@@ -1,3 +1,4 @@
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Button } from "@maple/ui/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
 import type { QueryBuilderDataSource } from "@maple/query-engine/query-builder"
@@ -103,9 +104,7 @@ export function FunnelQueryPanelView({
 			{/* Steps */}
 			<div className="space-y-1.5">
 				<div className="flex items-baseline gap-2">
-					<span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
-						Steps
-					</span>
+					<Eyebrow>Steps</Eyebrow>
 					<span className="font-mono text-[10px] text-muted-foreground">
 						in order · session step only first · up to 10
 					</span>

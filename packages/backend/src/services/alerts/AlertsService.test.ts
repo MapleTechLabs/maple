@@ -8,6 +8,7 @@ import { ChatAlertPoster } from "./ChatAlertPoster"
 // BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Cause, Clock, ConfigProvider, Duration, Effect, Exit, Layer, Option, Schema } from "effect"
+import { FetchHttpClient } from "effect/http"
 import { TestClock } from "effect/testing"
 import { projectAlertLifecycleEvent } from "@maple/alerting-core"
 import {
@@ -193,8 +194,12 @@ const defaultTestRuntime: AlertRuntimeApi = {
 	// TestClock.adjust. Real `fetch`/`Effect.timeout` settle on the live event loop.
 	now: Clock.currentTimeMillis,
 	makeUuid: () => crypto.randomUUID(),
-	fetch: globalThis.fetch,
 	deliveryTimeoutMs: () => 15_000,
+}
+
+interface TestOverrides extends Partial<AlertRuntimeApi> {
+	/** Provided as `FetchHttpClient.Fetch`, so every outbound call goes through it. */
+	readonly fetch?: typeof fetch
 }
 
 // The fixed epoch scheduler tests start TestClock at, mirroring the previous
@@ -244,10 +249,11 @@ const stubOrgMembersService = (
 const makeLayer = (
 	testDb: TestDb,
 	warehouseStub: WarehouseQueryServiceApi,
-	runtimeOverrides?: Partial<AlertRuntimeApi>,
+	overrides: TestOverrides = {},
 	emailStub?: (typeof EmailService)["Service"],
 	chatAlertPoster: Layer.Layer<ChatAlertPoster, never, Database | Env> = ChatAlertPoster.layer,
 ) => {
+	const { fetch: fetchImpl = globalThis.fetch, ...runtimeOverrides } = overrides
 	const configLive = makeConfig()
 	const envLive = Env.layer.pipe(Layer.provide(configLive))
 	const databaseLive = testDb.layer
@@ -274,6 +280,7 @@ const makeLayer = (
 		Layer.provide(Layer.mergeAll(envLive, databaseLive, edgeCacheLive)),
 	)
 	const alertDestinationsLive = Layer.effect(AlertDestinationsService, AlertDestinationsService.make).pipe(
+		Layer.provide(FetchHttpClient.layer),
 		Layer.provide(chatAlertPoster),
 		Layer.provide(
 			Layer.mergeAll(envLive, databaseLive, runtimeLive, hazelOAuthLive, emailLive, orgMembersLive),
@@ -287,6 +294,7 @@ const makeLayer = (
 	)
 
 	const alertsLive = Layer.effect(AlertsService, AlertsService.make).pipe(
+		Layer.provide(FetchHttpClient.layer),
 		Layer.provide(chatAlertPoster),
 		Layer.provide(
 			Layer.effect(MobilePushService, MobilePushService.make).pipe(
@@ -309,7 +317,9 @@ const makeLayer = (
 		Layer.provide(alertReadModelsLive),
 		Layer.provide(alertRulesLive),
 	)
-	return Layer.mergeAll(alertDestinationsLive, alertReadModelsLive, alertRulesLive, alertsLive)
+	return Layer.mergeAll(alertDestinationsLive, alertReadModelsLive, alertRulesLive, alertsLive).pipe(
+		Layer.provideMerge(Layer.succeed(FetchHttpClient.Fetch, fetchImpl)),
+	)
 }
 
 const asOrgId = Schema.decodeUnknownSync(OrgId)

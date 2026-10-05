@@ -71,6 +71,7 @@ type AutumnRoute =
 	| "openCustomerPortal"
 	| "listPlans"
 	| "updateSubscription"
+	| "updateCustomer"
 
 const ROUTE_PATHS: Record<AutumnRoute, string> = {
 	getOrCreateCustomer: "/v1/customers.get_or_create",
@@ -80,6 +81,7 @@ const ROUTE_PATHS: Record<AutumnRoute, string> = {
 	openCustomerPortal: "/v1/billing.open_customer_portal",
 	listPlans: "/v1/plans.list",
 	updateSubscription: "/v1/billing.update",
+	updateCustomer: "/v1/customers.update",
 } satisfies Record<AutumnRoute, string>
 
 /**
@@ -312,6 +314,8 @@ export interface AutumnClientApi {
 		orgId: string,
 		controls: AutumnBillingControlsUpdate,
 	) => AutumnCall
+	/** Overwrites the customer's display name. */
+	readonly updateCustomerName: (customerId: string, name: string) => AutumnCall
 }
 
 const customerDataFields = (data: AutumnCustomerData | undefined): Record<string, unknown> =>
@@ -483,6 +487,9 @@ export class AutumnClient extends Context.Service<AutumnClient, AutumnClientApi>
 
 				updateCustomerBillingControls: (orgId, controls) =>
 					callUpdateBillingControls(httpClient, secretKey, apiUrl, orgId, controls),
+
+				updateCustomerName: (customerId, name) =>
+					call("updateCustomer", { customer_id: customerId, name }),
 			} satisfies AutumnClientApi
 		}),
 	},

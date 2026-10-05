@@ -31,6 +31,7 @@ import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngin
 import { McpToolNotFoundError, type McpToolDescriptor } from "@maple/domain/mcp-tool-contract"
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
 import { Context, Effect, Layer } from "effect"
+import { FetchHttpClient } from "effect/http"
 import {
 	executeRegisteredMcpToolUnscoped,
 	inputSchemaOf,
@@ -311,6 +312,7 @@ const McpRuntimeServicesLive = Layer.mergeAll(
 		),
 	),
 	Layer.provide(PullRequestLookupLive),
+	Layer.provide(FetchHttpClient.layer),
 )
 
 export class McpToolExecutor extends Context.Service<McpToolExecutor, McpToolExecutorApi>()(

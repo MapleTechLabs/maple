@@ -1,3 +1,4 @@
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { useState } from "react"
 import { toastManager } from "@maple/ui/components/ui/toast"
 
@@ -23,7 +24,7 @@ export function ConnectionStatusPill({ connection }: { connection: IngestConnect
 		>
 			{connected ? (
 				<>
-					<span className="size-1.5 rounded-full bg-severity-info" />
+					<StatusDot tone="custom" className="bg-severity-info" />
 					Connected · {connection.serviceCount}{" "}
 					{connection.serviceCount === 1 ? "service" : "services"}
 				</>

@@ -7,7 +7,7 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@m
 
 import type { WorkloadKind } from "@/api/warehouse/infra"
 import { OptionalStringArrayParam } from "@/lib/search-params"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { GridIcon, MagnifierIcon } from "@/components/icons"
 import { EmptyActions } from "@/components/common/docs-link"
 import { InfraSetupEmpty } from "@/components/infra/infra-empty-state"
@@ -148,7 +148,7 @@ function WorkloadsPage() {
 		>
 			{Result.builder(wlResult)
 				.onInitial(() => <WorkloadTableLoading />)
-				.onError((err) => <QueryErrorState error={err} />)
+				.onError((err) => <ErrorState error={err} />)
 				.onSuccess((response, result) => {
 					const workloads = response.data
 					const hasStructuredFilter = Object.values(filters).some((v) => (v?.length ?? 0) > 0)

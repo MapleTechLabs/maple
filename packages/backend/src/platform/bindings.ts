@@ -7,7 +7,7 @@
  * the CLI) provides nothing — services that can degrade read the tag through
  * `Effect.serviceOption`. Every method keeps its failure in the typed channel.
  */
-import type { ChatSessionStub } from "@maple/domain/chat-session-stub"
+import type { ChatSessionClient } from "@maple/domain/chat-session-stub"
 import { Context, type Effect, type Option, Schema } from "effect"
 
 // ── Queues ───────────────────────────────────────────────────────────────────
@@ -175,9 +175,9 @@ export class SandboxFetcher extends Context.Service<SandboxFetcher, Option.Optio
 
 // ── Chat sessions (Durable Object) ───────────────────────────────────────────
 
-/** Addresses `ChatSession` Durable Objects; `stub` is `undefined` when this Worker has no `ChatSession` binding. */
+/** Addresses `ChatSession` Durable Objects, bound through alchemy (`chat-sessions.ts`). A host without the binding provides nothing. */
 export interface ChatSessionsApi {
-	readonly stub: (sessionId: string) => ChatSessionStub | undefined
+	readonly session: (sessionId: string) => ChatSessionClient
 }
 
 export class ChatSessions extends Context.Service<ChatSessions, ChatSessionsApi>()(

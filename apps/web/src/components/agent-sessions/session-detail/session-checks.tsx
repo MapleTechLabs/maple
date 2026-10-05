@@ -10,7 +10,9 @@ import type {
 } from "@maple/agent-sessions"
 
 import { ArrowRightIcon, CheckIcon, ChevronRightIcon } from "@/components/icons"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Button } from "@maple/ui/components/ui/button"
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
 import { cn } from "@maple/ui/lib/utils"
 
@@ -70,9 +72,9 @@ export function SessionChecks({
 			<Verdict report={report} onOpenSpan={onOpenSpan} />
 
 			<section className="flex flex-col gap-2">
-				<h3 className="font-semibold text-[11px] text-muted-foreground uppercase tracking-[0.09em]">
+				<Eyebrow variant="label" as="h3">
 					Needs attention
-				</h3>
+				</Eyebrow>
 				{clean ? (
 					<p className="flex items-center gap-2 py-2 text-[13px]">
 						<CheckIcon size={14} aria-hidden className="shrink-0 text-severity-info" />
@@ -143,10 +145,7 @@ function Verdict({ report, onOpenSpan }: { report: SessionChecksReport; onOpenSp
 		<section className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
 			<div className="flex min-w-0 flex-col gap-1">
 				<p className="flex min-w-0 flex-wrap items-baseline gap-x-2 font-semibold text-base">
-					<span
-						aria-hidden
-						className={cn("size-2 shrink-0 self-center rounded-full", STATUS_DOT[tone])}
-					/>
+					<StatusDot tone="custom" size="lg" className={cn("self-center", STATUS_DOT[tone])} />
 					{/* The word alone: the report's headline and its counts restate
 					    the list right under it — the checks that need attention, and
 					    how many passed. They are the MCP's line. */}
@@ -190,7 +189,7 @@ function CheckBlock({
 	const toolsAction = check.id === "tool-errors"
 	return (
 		<div data-testid={`check-${check.id}`} className={cn(ROW_GRID, "py-3")}>
-			<StatusDot status={check.status} />
+			<CheckDot status={check.status} />
 			<span className="truncate font-semibold text-[13px]">{check.name}</span>
 			<div className="flex min-w-0 flex-col gap-1">
 				<p className="text-[13px] leading-relaxed">{withCode(check.headline)}</p>
@@ -268,14 +267,11 @@ function EvidenceRow({
 	)
 }
 
-function StatusDot({ status }: { status: SessionCheckStatus }) {
+function CheckDot({ status }: { status: SessionCheckStatus }) {
 	return (
-		<span
-			aria-hidden
-			className={cn(
-				"size-1.5 shrink-0 translate-y-[-1px] justify-self-center rounded-full",
-				STATUS_DOT[status],
-			)}
+		<StatusDot
+			tone="custom"
+			className={cn("translate-y-[-1px] justify-self-center", STATUS_DOT[status])}
 		/>
 	)
 }
@@ -367,7 +363,7 @@ function Disclosure({
 function CheckFact({ check }: { check: SessionCheck }) {
 	return (
 		<div className={ROW_GRID}>
-			<StatusDot status={check.status} />
+			<CheckDot status={check.status} />
 			<span className="truncate text-[13px]">{check.name}</span>
 			<span className="min-w-0 text-muted-foreground text-xs leading-relaxed">
 				{withCode(check.headline)}
@@ -420,10 +416,8 @@ function coverageSignals(coverage: SessionCoverage): readonly Signal[] {
 			state: coverage.toolPayloads,
 			title: "Tool arguments and results",
 			explains: {
-				captured:
-					"Each tool call's arguments and result were recorded. Tool errors reads them.",
-				missing:
-					"No tool call recorded its arguments or result. A failed call has only its status.",
+				captured: "Each tool call's arguments and result were recorded. Tool errors reads them.",
+				missing: "No tool call recorded its arguments or result. A failed call has only its status.",
 				absent: "No tool was called in this session.",
 			}[coverage.toolPayloads],
 		},

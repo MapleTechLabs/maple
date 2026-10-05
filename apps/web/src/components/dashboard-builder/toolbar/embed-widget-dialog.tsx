@@ -8,6 +8,8 @@
  * share list is the same atom the board dialog reads, so either side's changes
  * show up in the other.
  */
+import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import { useMemo, useState } from "react"
 import { useMountEffect } from "@maple/ui/hooks/use-mount-effect"
 import { Exit } from "effect"
@@ -158,7 +160,7 @@ export function EmbedWidgetDialog({
 							<EmbedUrlOptions />
 						</>
 					) : error ? null : (
-						<div className="h-8 animate-pulse rounded-lg bg-muted/60 sm:h-7" />
+						<Skeleton className="h-8 rounded-lg sm:h-7" />
 					)}
 					{(listError ?? error) ? (
 						<p className="text-destructive-foreground text-xs">{listError ?? error}</p>
@@ -382,9 +384,9 @@ function EmbedUrlOptions() {
 							{param}
 						</code>
 						<span className="text-muted-foreground">{description}</span>
-						<code className="col-start-3 w-fit max-w-full truncate rounded bg-muted px-1.5 font-mono text-[11px] text-muted-foreground">
+						<InlineCode className="col-start-3 w-fit max-w-full truncate px-1.5 text-[11px] text-muted-foreground">
 							{example}
-						</code>
+						</InlineCode>
 					</li>
 				))}
 			</ul>

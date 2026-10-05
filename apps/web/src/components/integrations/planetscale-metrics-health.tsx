@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { Link } from "@tanstack/react-router"
 
-import { cn } from "@maple/ui/lib/utils"
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
 
 import type { V2PlanetScaleScrapeTarget } from "@maple/domain/http/v2"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
@@ -38,14 +38,9 @@ export function PlanetScaleMetricsHealth({
 	return (
 		<div className="border-t border-border/60 p-4">
 			<div className="flex flex-wrap items-center gap-2 text-xs">
-				<span
-					aria-hidden
-					className={cn(
-						"size-1.5 shrink-0 rounded-full",
-						state === "healthy" && "bg-severity-info",
-						state === "waiting" && "animate-pulse bg-muted-foreground/60",
-						(state === "degraded" || state === "stalled") && "bg-severity-warn",
-					)}
+				<StatusDot
+					tone={state === "healthy" ? "success" : state === "waiting" ? "neutral" : "warning"}
+					className={state === "waiting" ? "animate-pulse" : undefined}
 				/>
 				<span className="font-medium text-foreground">{HEADLINE[state]}</span>
 				<span className="text-muted-foreground">
@@ -62,10 +57,7 @@ export function PlanetScaleMetricsHealth({
 				</span>
 				{/* The payoff link: the point of finishing setup is the fleet page. */}
 				{state === "healthy" ? (
-					<Link
-						to="/infra/planetscale"
-						className="text-muted-foreground underline decoration-border underline-offset-2 transition-colors hover:text-foreground"
-					>
+					<Link to="/infra/planetscale" className={QUIET_LINK}>
 						View databases
 					</Link>
 				) : null}
@@ -74,7 +66,7 @@ export function PlanetScaleMetricsHealth({
 						<button
 							type="button"
 							onClick={() => setDetailsOpen((open) => !open)}
-							className="text-muted-foreground underline decoration-border underline-offset-2 transition-colors hover:text-foreground"
+							className={QUIET_LINK}
 						>
 							{detailsOpen ? "Hide details" : "Show details"}
 						</button>
@@ -90,6 +82,10 @@ export function PlanetScaleMetricsHealth({
 		</div>
 	)
 }
+
+/** The quiet underlined text action used in the metrics status row. */
+export const QUIET_LINK =
+	"text-muted-foreground underline decoration-border underline-offset-2 transition-colors hover:text-foreground"
 
 const HEADLINE: Record<MetricsHealthState, string> = {
 	unconfigured: "",

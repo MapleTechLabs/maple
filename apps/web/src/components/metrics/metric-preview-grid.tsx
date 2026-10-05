@@ -4,7 +4,7 @@ import { Result, useAtomValue } from "@/lib/effect-atom"
 import { Button } from "@maple/ui/components/ui/button"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { SignalEmptyState } from "@/components/common/signal-empty-state"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { MetricPreviewCard, type MetricPreviewEntry } from "./metric-preview-card"
 import type { ListMetricsInput, Metric, MetricSparklinePoint } from "@/api/warehouse/metrics"
 import {
@@ -83,7 +83,7 @@ export function MetricPreviewGrid({
 				))}
 			</div>
 		))
-		.onError((error) => <QueryErrorState error={error} />)
+		.onError((error) => <ErrorState error={error} />)
 		.onSuccess((response) => {
 			const entries = toEntries(response.data)
 

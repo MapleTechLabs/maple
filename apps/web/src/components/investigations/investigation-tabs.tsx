@@ -1,6 +1,10 @@
 import { Link } from "@tanstack/react-router"
 import type { V2Investigation } from "@maple/domain/http/v2"
-import { cn } from "@maple/ui/lib/utils"
+import {
+	UnderlineTabCount,
+	UnderlineTabStrip,
+	underlineTabClass,
+} from "@/components/errors/underline-link-tabs"
 
 export const INVESTIGATION_TABS = ["overview", "evidence", "chat", "transcript"] as const
 
@@ -32,14 +36,7 @@ export function InvestigationTabs({
 	]
 
 	return (
-		// Full-bleed out of the sticky area's `p-4` and flush to its bottom edge, so
-		// the underline reads as the boundary between header and content instead of
-		// a rule floating 16px above one.
-		<div
-			role="tablist"
-			aria-label="Investigation sections"
-			className="-mx-4 -mb-4 flex items-center gap-6 overflow-x-auto border-b px-4"
-		>
+		<UnderlineTabStrip label="Investigation sections">
 			{tabs.map((tab) => {
 				const isActive = tab.value === active
 				return (
@@ -51,20 +48,13 @@ export function InvestigationTabs({
 						params={{ id: investigation.id }}
 						// `overview` is the default, so it drops out of the URL entirely.
 						search={{ tab: tab.value === "overview" ? undefined : tab.value }}
-						className={cn(
-							"-mb-px flex h-[34px] shrink-0 items-center gap-1.5 border-b-2 text-sm transition-colors",
-							isActive
-								? "border-primary font-medium text-foreground"
-								: "border-transparent text-muted-foreground hover:text-foreground",
-						)}
+						className={underlineTabClass(isActive)}
 					>
 						{tab.label}
-						{tab.count === undefined ? null : (
-							<span className="text-xs text-muted-foreground tabular-nums">{tab.count}</span>
-						)}
+						<UnderlineTabCount count={tab.count} />
 					</Link>
 				)
 			})}
-		</div>
+		</UnderlineTabStrip>
 	)
 }

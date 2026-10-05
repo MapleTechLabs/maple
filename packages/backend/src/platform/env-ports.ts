@@ -2,16 +2,13 @@
 /**
  * The ports still filled straight off a Worker env, plus the env itself (`workerEnvLayer`).
  *
- * Each would be an alchemy binding client if alchemy could express it: the cross-script
- * `ChatSession` namespace needs `jurisdiction("eu")`, which alchemy's Durable Object client does
- * not implement yet, and a service binding (`Workers.Fetch`) needs the target Worker inside the
- * init, where only platform services are available. Narrowed here, once, so services depend on a
- * typed port instead of reading `WorkerEnvironment`.
+ * A service binding would be an alchemy client if alchemy could express it: `Workers.Fetch` needs
+ * the target Worker inside the init, where only platform services are available. Narrowed here,
+ * once, so services depend on a typed port instead of reading `WorkerEnvironment`.
  */
-import { chatSessionStub } from "@maple/domain/chat-session-stub"
 import { workerEnvLayer } from "@maple/infra/worker-runtime"
 import { Layer, Option } from "effect"
-import { AiWorkerFetcher, ChatSessions, SandboxFetcher } from "./bindings"
+import { AiWorkerFetcher, SandboxFetcher } from "./bindings"
 
 /** The service-binding names the Workers declare in their props. */
 export const AI_WORKER_BINDING = "AI_WORKER"
@@ -27,7 +24,6 @@ const fetcherOf = (value: unknown): Option.Option<Fetcher> =>
 export const envPorts = (env: Record<string, unknown>) =>
 	Layer.mergeAll(
 		workerEnvLayer(env),
-		Layer.succeed(ChatSessions, { stub: (sessionId: string) => chatSessionStub(env, sessionId) }),
 		Layer.succeed(AiWorkerFetcher, fetcherOf(env[AI_WORKER_BINDING])),
 		Layer.succeed(SandboxFetcher, fetcherOf(env[SANDBOX_BINDING])),
 	)

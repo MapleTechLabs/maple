@@ -3,6 +3,7 @@ import { useMemo, useState } from "react"
 import { Link } from "@tanstack/react-router"
 import { Exit } from "effect"
 import { toastManager } from "@maple/ui/components/ui/toast"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 
 import {
 	AlertDialog,
@@ -16,6 +17,7 @@ import {
 	AlertDialogTitle,
 } from "@maple/ui/components/ui/alert-dialog"
 import { Button } from "@maple/ui/components/ui/button"
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { cn } from "@maple/ui/lib/utils"
 import {
 	AlertWarningIcon,
@@ -40,8 +42,6 @@ import {
 } from "@/components/ingest/use-ingest-connection"
 import { AttributeMappingsSection } from "./attribute-mappings-section"
 import { RecommendedMappingsSection } from "./recommended-mappings-section"
-
-const LANE_BADGE = "w-14 shrink-0 font-mono text-[10px] font-medium uppercase tracking-[0.12em]"
 
 /** Live ingest-health strip: green once telemetry lands, amber pulse while waiting. */
 function StatusBanner({ connection }: { connection: IngestConnection }) {
@@ -70,7 +70,7 @@ function StatusBanner({ connection }: { connection: IngestConnection }) {
 	return (
 		<div className="bg-card flex items-center gap-3 rounded-lg border px-4 py-2.5">
 			{connected ? (
-				<span className="bg-severity-info size-2 shrink-0 rounded-full" />
+				<StatusDot tone="custom" size="lg" className="bg-severity-info" />
 			) : (
 				<PulseIcon
 					size={12}
@@ -153,7 +153,9 @@ function CredentialRow({
 	return (
 		<div className="flex items-center gap-3 border-t px-4 py-3">
 			<span className="w-[120px] shrink-0 text-sm">{label}</span>
-			<span className={cn(LANE_BADGE, badgeClass)}>{badge}</span>
+			<Eyebrow variant="mono" className={cn("w-14 shrink-0", badgeClass)}>
+				{badge}
+			</Eyebrow>
 			<div className="flex min-w-0 grow flex-col items-start gap-0.5">
 				<button
 					type="button"

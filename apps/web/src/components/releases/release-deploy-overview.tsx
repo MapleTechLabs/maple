@@ -7,7 +7,7 @@ import { formatErrorRate, formatLatency, formatNumber } from "@maple/ui/lib/form
 import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
 
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { SectionCard } from "@/components/services/section-card"
 import type { TimeRangeSearch } from "@/components/time-range-picker/search"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
@@ -31,6 +31,8 @@ import {
 	type ReleaseGroup,
 	type ReleaseServiceImpact,
 } from "./release-model"
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 
 const ISSUE_LIMIT = 100
 const NO_COUNTS: ReadonlyMap<string, number> = new Map()
@@ -63,9 +65,7 @@ export function ReleaseDeployOverview({
 	}, [result, commitSha])
 
 	if (Result.isFailure(result)) {
-		return (
-			<QueryErrorState error={result.cause} titleOverride="Failed to load release" onRetry={refresh} />
-		)
+		return <ErrorState error={result.cause} title="Failed to load release" onRetry={refresh} />
 	}
 	if (derived === undefined) {
 		return (
@@ -79,10 +79,10 @@ export function ReleaseDeployOverview({
 	const { impacts, group } = derived
 	if (group === undefined) {
 		return (
-			<div className="rounded-md border bg-card px-4 py-8 text-center text-sm text-muted-foreground">
+			<EmptyMessage className="rounded-md border bg-card text-sm">
 				<span className="font-mono">{shortReleaseLabel(commitSha)}</span> served no traffic in this
 				window. Widen the time range to include its deploy.
-			</div>
+			</EmptyMessage>
 		)
 	}
 
@@ -185,14 +185,14 @@ function DeployServices({
 		>
 			<table className="w-full text-xs">
 				<thead>
-					<tr className="text-[10px] uppercase tracking-wider text-muted-foreground">
+					<Eyebrow as="tr">
 						<th className="px-4 py-1.5 text-left font-medium">Service</th>
 						<th className="px-2 py-1.5 text-left font-medium">Replaced</th>
 						<th className="px-2 py-1.5 text-right font-medium">Requests</th>
 						<th className="px-2 py-1.5 text-left font-medium">Error rate</th>
 						<th className="px-2 py-1.5 text-left font-medium">p95</th>
 						<th className="px-4 py-1.5 text-right font-medium">Live share</th>
-					</tr>
+					</Eyebrow>
 				</thead>
 				<tbody>
 					{rows.map((impact) => (
@@ -299,9 +299,7 @@ function DeployIssues({
 
 	if (issues === undefined) {
 		return Result.isFailure(result) ? (
-			<div className="rounded-md border bg-card px-4 py-6 text-center text-xs text-muted-foreground">
-				Issues could not be loaded.
-			</div>
+			<EmptyMessage className="rounded-md border bg-card">Issues could not be loaded.</EmptyMessage>
 		) : (
 			<Skeleton className="h-32 w-full rounded-md" />
 		)

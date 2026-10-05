@@ -1,4 +1,6 @@
 import { Badge } from "@maple/ui/components/ui/badge"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { cn } from "@maple/ui/lib/utils"
 import {
@@ -776,12 +778,12 @@ export function IntegrationsSummary() {
 	return (
 		<div className="flex items-center gap-2">
 			<span className="inline-flex items-center gap-1.5 rounded-full border border-border/60 px-2.5 py-0.5 text-xs text-muted-foreground">
-				<span className="size-1.5 rounded-full bg-success" aria-hidden />
+				<StatusDot tone="success" />
 				{connected.length} connected
 			</span>
 			{attention > 0 && (
 				<span className="inline-flex items-center gap-1.5 rounded-full border border-warning/25 bg-warning/10 px-2.5 py-0.5 text-xs text-warning-foreground">
-					<span className="size-1.5 rounded-full bg-warning" aria-hidden />
+					<StatusDot tone="warning" />
 					{attention} need attention
 				</span>
 			)}
@@ -790,17 +792,8 @@ export function IntegrationsSummary() {
 }
 
 function HealthDot({ health }: { health: "healthy" | "attention" | "unavailable" }) {
-	return (
-		<span
-			aria-hidden
-			className={cn(
-				"size-1.5 shrink-0 rounded-full",
-				health === "healthy" && "bg-success",
-				health === "attention" && "bg-warning",
-				health === "unavailable" && "bg-muted-foreground",
-			)}
-		/>
-	)
+	if (health === "unavailable") return <StatusDot tone="custom" className="bg-muted-foreground" />
+	return <StatusDot tone={health === "healthy" ? "success" : "warning"} />
 }
 
 function ConnectedRow({
@@ -916,14 +909,6 @@ function SkeletonRow() {
 	)
 }
 
-function SectionLabel({ children }: { children: React.ReactNode }) {
-	return (
-		<span className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
-			{children}
-		</span>
-	)
-}
-
 export function NewBadge() {
 	return (
 		<Badge variant="info" size="sm">
@@ -961,7 +946,7 @@ export function IntegrationCatalog({ onSelect }: { onSelect: (id: IntegrationId)
 		<div className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-1 [animation-duration:300ms] motion-reduce:animate-none">
 			{(connected.length > 0 || loading.length > 0) && (
 				<section className="flex flex-col gap-2">
-					<SectionLabel>Connected</SectionLabel>
+					<Eyebrow variant="label">Connected</Eyebrow>
 					<div className="divide-y divide-border/60 overflow-hidden rounded-lg border border-border/60 bg-card">
 						{connected.map(({ entry, overview }) => (
 							<ConnectedRow
@@ -979,7 +964,7 @@ export function IntegrationCatalog({ onSelect }: { onSelect: (id: IntegrationId)
 			)}
 			{shelves.map((shelf) => (
 				<section key={shelf.id} className="flex flex-col gap-2">
-					<SectionLabel>{shelf.label}</SectionLabel>
+					<Eyebrow variant="label">{shelf.label}</Eyebrow>
 					<div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
 						{shelf.entries.map(({ entry, overview }) => (
 							<AvailableCard

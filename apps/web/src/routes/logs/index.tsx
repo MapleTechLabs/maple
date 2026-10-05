@@ -99,7 +99,7 @@ function LogsPage() {
 					</DashboardLayout.Filters>
 					<DashboardLayout.Content>
 						<DashboardLayout.Sticky>
-							<DashboardLayout.Header title="Logs">
+							<DashboardLayout.Header>
 								<TimeRangeHeaderControls
 									startTime={search.startTime}
 									endTime={search.endTime}

@@ -93,11 +93,8 @@ export function AdvancedFilterDialog({ initialValue, onApply }: AdvancedFilterDi
 				<DialogHeader>
 					<DialogTitle>Advanced Filter</DialogTitle>
 					<DialogDescription>
-						Write SQL-like queries to filter traces. Use{" "}
-						<kbd className="bg-muted px-1 py-0.5 rounded text-foreground">Ctrl+Space</kbd> for
-						autocomplete. Press{" "}
-						<kbd className="bg-muted px-1 py-0.5 rounded text-foreground">Cmd+Enter</kbd> to
-						apply.
+						Write SQL-like queries to filter traces. Use <Kbd>Ctrl+Space</Kbd> for autocomplete.
+						Press <Kbd>Cmd+Enter</Kbd> to apply.
 					</DialogDescription>
 				</DialogHeader>
 				<DialogPanel>

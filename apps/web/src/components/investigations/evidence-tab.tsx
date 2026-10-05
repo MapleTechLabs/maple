@@ -1,6 +1,7 @@
-import { Link } from "@tanstack/react-router"
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import type { V2Investigation } from "@maple/domain/http/v2"
 
+import { EvidenceChips } from "./action-detail-sheet"
 import { CauseRecap } from "./cause-recap"
 
 /**
@@ -18,13 +19,13 @@ export function EvidenceTab({ investigation }: { investigation: V2Investigation 
 		return (
 			<div className="flex shrink-0 flex-col gap-6">
 				<CauseRecap investigation={investigation} />
-				<p className="py-10 text-center text-sm text-muted-foreground">
+				<EmptyMessage className="py-10 text-sm">
 					{investigation.status === "investigating"
 						? "Evidence appears here as the lenses report."
 						: investigation.status === "inconclusive"
 							? "This run promoted no cause, so it attached no evidence. What it did rule out is on the Overview."
 							: "This pass recorded no evidence."}
-				</p>
+				</EmptyMessage>
 			</div>
 		)
 	}
@@ -57,30 +58,7 @@ export function EvidenceTab({ investigation }: { investigation: V2Investigation 
 								{item.note ? (
 									<p className="text-sm leading-6 text-foreground">{item.note}</p>
 								) : null}
-								{item.traceIds.length > 0 || item.logPatterns.length > 0 ? (
-									<div className="flex flex-wrap items-center gap-1.5">
-										{item.traceIds.map((traceId) => (
-											<Link
-												key={traceId}
-												to="/traces/$traceId"
-												params={{ traceId }}
-												title={traceId}
-												className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-primary transition-colors hover:bg-muted/70"
-											>
-												{traceId.slice(0, 12)}
-												{traceId.length > 12 ? "…" : ""}
-											</Link>
-										))}
-										{item.logPatterns.map((pattern) => (
-											<span
-												key={pattern}
-												className="rounded bg-muted/60 px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground"
-											>
-												{pattern}
-											</span>
-										))}
-									</div>
-								) : null}
+								<EvidenceChips item={item} />
 							</div>
 						</li>
 					))}

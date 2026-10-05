@@ -1,3 +1,5 @@
+import { InlineCode } from "@maple/ui/components/ui/inline-code"
+import { Spinner } from "@maple/ui/components/ui/spinner"
 import { useState, type Dispatch, type SetStateAction } from "react"
 import { Link } from "@tanstack/react-router"
 
@@ -15,7 +17,7 @@ import {
 import { destinationProvider, ProviderLogo } from "@/components/alerts/destination-provider"
 import { SectionHeader } from "@/components/layout/section-header"
 import type { RuleFormState } from "@/lib/alerts/form-utils"
-import { ChevronDownIcon, ChevronRightIcon, LoaderIcon, PaperPlaneIcon, PlusIcon } from "@/components/icons"
+import { ChevronDownIcon, ChevronRightIcon, PaperPlaneIcon, PlusIcon } from "@/components/icons"
 
 interface NotificationsSectionProps {
 	form: RuleFormState
@@ -72,11 +74,7 @@ export function NotificationsSection({
 						disabled={!hasSelection || testing}
 						className="h-7 px-2 text-xs"
 					>
-						{testing ? (
-							<LoaderIcon size={12} className="animate-spin" />
-						) : (
-							<PaperPlaneIcon size={12} />
-						)}
+						{testing ? <Spinner size={12} /> : <PaperPlaneIcon size={12} />}
 						Send test
 					</Button>
 				)}
@@ -173,8 +171,7 @@ export function NotificationsSection({
 					<div className="mt-3 space-y-3">
 						<p className="text-muted-foreground text-xs">
 							Customize the Slack / Discord / PagerDuty message. Leave blank to use Maple's
-							default format. Supports{" "}
-							<code className="rounded bg-muted px-1">{"{{ variable }}"}</code> substitution.
+							default format. Supports <InlineCode>{"{{ variable }}"}</InlineCode> substitution.
 						</p>
 
 						<div className="space-y-1.5">

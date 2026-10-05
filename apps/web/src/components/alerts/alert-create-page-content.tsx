@@ -144,9 +144,6 @@ function AlertRuleFormShell({ editing, children }: { editing: boolean; children:
 			/>
 			<DashboardLayout.Body>
 				<DashboardLayout.Content>
-					<DashboardLayout.Sticky>
-						<DashboardLayout.Header title={editing ? "Edit alert rule" : "Create alert rule"} />
-					</DashboardLayout.Sticky>
 					<DashboardLayout.Scroll>{children}</DashboardLayout.Scroll>
 				</DashboardLayout.Content>
 			</DashboardLayout.Body>

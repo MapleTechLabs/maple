@@ -1,3 +1,4 @@
+import { Spinner } from "@maple/ui/components/ui/spinner"
 import { useMemo, useState } from "react"
 import { Exit } from "effect"
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@maple/ui/components/ui/alert"
@@ -7,7 +8,7 @@ import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
 import { toastManager } from "@maple/ui/components/ui/toast"
 
-import { CircleWarningIcon, CloudflareIcon, CloudflareMonoIcon, LoaderIcon } from "@/components/icons"
+import { CircleWarningIcon, CloudflareIcon, CloudflareMonoIcon } from "@/components/icons"
 import { Result, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { MapleApiAtomClient, retainedQuery } from "@/lib/services/common/atom-client"
 import { CLOUDFLARE_ACCENT, IntegrationIconPlate } from "./integration-catalog"
@@ -205,7 +206,7 @@ export function CloudflareAccountCard() {
 
 	const connectButton = (label: string, variant?: "outline") => (
 		<Button size="sm" onClick={connectFlow.connect} disabled={actionBusy} variant={variant}>
-			{connectFlow.busy ? <LoaderIcon size={14} className="animate-spin" /> : null}
+			{connectFlow.busy ? <Spinner size={14} /> : null}
 			{label}
 		</Button>
 	)
@@ -261,11 +262,7 @@ export function CloudflareAccountCard() {
 						Your zones and Workers will appear here after connecting.
 					</IntegrationEmptyHint>
 					<Button onClick={connectFlow.connect} disabled={actionBusy}>
-						{connectFlow.busy ? (
-							<LoaderIcon size={16} className="animate-spin" />
-						) : (
-							<CloudflareIcon size={16} />
-						)}
+						{connectFlow.busy ? <Spinner size={16} /> : <CloudflareIcon size={16} />}
 						Connect Cloudflare
 					</Button>
 					<IntegrationEmptyFooter>
@@ -421,7 +418,7 @@ export function CloudflareHeaderActions() {
 	return (
 		<div className="flex items-center gap-2">
 			<Button size="sm" variant="outline" onClick={connectFlow.connect} disabled={actionBusy}>
-				{connectFlow.busy ? <LoaderIcon size={14} className="animate-spin" /> : null}
+				{connectFlow.busy ? <Spinner size={14} /> : null}
 				{multiAccount ? "Edit accounts" : "Reconnect"}
 			</Button>
 			<Button
@@ -431,7 +428,7 @@ export function CloudflareHeaderActions() {
 				disabled={actionBusy}
 				className="border-destructive/40 text-destructive-foreground hover:bg-destructive/10 hover:text-destructive-foreground"
 			>
-				{disconnectBusy ? <LoaderIcon size={14} className="animate-spin" /> : null}
+				{disconnectBusy ? <Spinner size={14} /> : null}
 				{multiAccount ? "Disconnect all" : "Disconnect"}
 			</Button>
 		</div>

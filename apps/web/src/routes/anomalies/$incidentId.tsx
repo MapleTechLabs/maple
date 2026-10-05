@@ -1,3 +1,5 @@
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { useState } from "react"
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
@@ -40,7 +42,6 @@ import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import { cn } from "@maple/ui/lib/utils"
 import { AnomalyIncidentId, type AnomalyIncidentDocument, type ErrorIssueId } from "@maple/domain/http"
 
 const decodeIncidentId = Schema.decodeSync(AnomalyIncidentId)
@@ -86,9 +87,6 @@ function AnomalyDetailPage() {
 				<DashboardLayout.Breadcrumbs items={[...ANOMALY_LOADING_BREADCRUMBS]} />
 				<DashboardLayout.Body>
 					<DashboardLayout.Content>
-						<DashboardLayout.Sticky>
-							<DashboardLayout.Header title="Anomaly" />
-						</DashboardLayout.Sticky>
 						<DashboardLayout.Scroll>
 							<div className="space-y-4">
 								<Skeleton className="h-24 w-full" />
@@ -105,9 +103,6 @@ function AnomalyDetailPage() {
 				<DashboardLayout.Breadcrumbs items={[...ANOMALY_LOADING_BREADCRUMBS]} />
 				<DashboardLayout.Body>
 					<DashboardLayout.Content>
-						<DashboardLayout.Sticky>
-							<DashboardLayout.Header title="Anomaly" />
-						</DashboardLayout.Sticky>
 						<DashboardLayout.Scroll>
 							<Empty>
 								<EmptyHeader>
@@ -246,16 +241,21 @@ function AnomalyDetailBody({
 			<DashboardLayout.Breadcrumbs
 				items={[
 					{ label: "Anomalies", href: "/anomalies" },
-					{ label: `${incident.serviceName} · ${SIGNAL_LABEL[incident.signalType]}` },
+					{
+						label: [
+							incident.serviceName,
+							SIGNAL_LABEL[incident.signalType],
+							incident.deploymentEnv,
+						]
+							.filter(Boolean)
+							.join(" · "),
+					},
 				]}
 			/>
 			<DashboardLayout.Body>
 				<DashboardLayout.Content>
 					<DashboardLayout.Sticky>
-						<DashboardLayout.Header
-							title={`${SIGNAL_LABEL[incident.signalType]} · ${incident.serviceName}`}
-							description={incident.deploymentEnv || undefined}
-						>
+						<DashboardLayout.Header>
 							<div className="flex items-center gap-2">
 								<Badge
 									variant="outline"
@@ -263,20 +263,7 @@ function AnomalyDetailBody({
 								>
 									{isOpen && !isStale ? (
 										<span className="flex items-center gap-1.5">
-											<span className="relative inline-flex size-1.5">
-												<span
-													className={cn(
-														"absolute inline-flex size-full animate-ping rounded-full opacity-60",
-														tone.accent,
-													)}
-												/>
-												<span
-													className={cn(
-														"relative inline-flex size-full rounded-full",
-														tone.accent,
-													)}
-												/>
-											</span>
+											<StatusDot tone="custom" pulse className={tone.accent} />
 											{incident.severity}
 										</span>
 									) : isStale ? (
@@ -316,9 +303,12 @@ function AnomalyDetailBody({
 								{Result.builder(timeseriesResult)
 									.onInitial(() => <Skeleton className="h-64 w-full" />)
 									.onError(() => (
-										<div className="flex h-64 w-full items-center justify-center rounded-md border border-dashed border-border/50 text-xs text-muted-foreground">
+										<EmptyMessage
+											dashed
+											className="flex h-64 w-full items-center justify-center border-border/50 py-0 text-xs"
+										>
 											Failed to load signal data.
-										</div>
+										</EmptyMessage>
 									))
 									.onSuccess((timeseries) => (
 										<AnomalyTimeseriesChart

@@ -8,7 +8,11 @@ import {
 	getSessionTraceSummariesResultAtom,
 } from "@/lib/services/atoms/warehouse-query-atoms"
 import { CopyButton } from "@maple/ui/components/ui/copy-button"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
+import { ToggleGroup, ToggleGroupItem } from "@maple/ui/components/ui/toggle-group"
 import { HttpSpanLabel } from "@maple/ui/components/traces/http-span-label"
 import { parseAttributes } from "@maple/ui/lib/span-tree"
 import { DetailRail } from "@maple/ui/components/detail-rail"
@@ -107,7 +111,8 @@ export interface SessionRailSession {
 	readonly utmCampaign?: string | null
 }
 
-type RailTab = "events" | "traces" | "session"
+const RAIL_TABS = ["events", "traces", "session"] as const
+type RailTab = (typeof RAIL_TABS)[number]
 type EventFilter = "all" | "custom" | "console" | "network" | "error"
 
 /**
@@ -160,20 +165,22 @@ export function SessionRail({
 
 	return (
 		<section className={cn("flex min-h-0 flex-col overflow-hidden border-border bg-card", className)}>
-			<div className="flex shrink-0 items-center gap-1 border-b border-border px-2 py-1.5">
-				<RailTabButton active={tab === "events"} onClick={() => setTab("events")}>
-					Events
-				</RailTabButton>
-				<RailTabButton
-					active={tab === "traces"}
-					onClick={() => setTab("traces")}
-					count={traceIds.length}
+			<div className="flex shrink-0 items-center border-b border-border px-2 py-1.5">
+				<ToggleGroup
+					size="sm"
+					aria-label="Rail section"
+					value={[tab]}
+					onValueChange={(next: ReadonlyArray<unknown>) => {
+						const picked = RAIL_TABS.find((candidate) => candidate === next[0])
+						if (picked) setTab(picked)
+					}}
 				>
-					Traces
-				</RailTabButton>
-				<RailTabButton active={tab === "session"} onClick={() => setTab("session")}>
-					Session
-				</RailTabButton>
+					<RailTabItem value="events">Events</RailTabItem>
+					<RailTabItem value="traces" count={traceIds.length}>
+						Traces
+					</RailTabItem>
+					<RailTabItem value="session">Session</RailTabItem>
+				</ToggleGroup>
 			</div>
 
 			{tab === "events" && <EventsTab sessionId={sessionId} window={window} />}
@@ -183,32 +190,25 @@ export function SessionRail({
 	)
 }
 
-function RailTabButton({
-	active,
-	onClick,
+function RailTabItem({
+	value,
 	count,
 	children,
 }: {
-	active: boolean
-	onClick: () => void
+	value: RailTab
 	count?: number | null
 	children: React.ReactNode
 }) {
 	return (
-		<button
-			type="button"
-			onClick={onClick}
-			aria-pressed={active}
-			className={cn(
-				"flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
-				active ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground",
-			)}
+		<ToggleGroupItem
+			value={value}
+			className="h-7 gap-1.5 px-2.5 text-xs text-muted-foreground hover:text-foreground data-pressed:bg-muted data-pressed:text-foreground sm:h-7 sm:text-xs"
 		>
 			{children}
 			{count != null && (
 				<span className="font-mono text-[10px] tabular-nums text-muted-foreground">{count}</span>
 			)}
-		</button>
+		</ToggleGroupItem>
 	)
 }
 
@@ -548,9 +548,9 @@ function EventKindLegend({ className }: { className?: string }) {
 			    than content. This one pads 8/4 and sizes to its text. */}
 			<PopoverContent align="end" tooltipStyle sideOffset={6}>
 				<div className="flex flex-col gap-1.5 py-0.5">
-					<p className="text-[9px] font-semibold uppercase leading-none tracking-[0.08em] text-muted-foreground">
+					<Eyebrow as="p" className="leading-none">
 						Event kinds
-					</p>
+					</Eyebrow>
 					<ul className="flex flex-col gap-1">
 						{LEGEND_KINDS.map((kind) => {
 							const { Icon, tone, label } = EVENT_KIND_VISUALS[kind]
@@ -761,7 +761,7 @@ function TracesTab({
 		return (
 			<p className="p-4 text-xs leading-relaxed text-muted-foreground">
 				No backend traces were linked to this session. Correlation populates automatically when the
-				page is instrumented with <span className="font-mono">@maple-dev/browser</span> tracing.
+				page is instrumented with <InlineCode>@maple-dev/browser</InlineCode> tracing.
 			</p>
 		)
 	}
@@ -1003,12 +1003,11 @@ function SessionTab({ sessionId, session }: { sessionId: string; session: Sessio
 				{session.recorded !== undefined && (
 					<Row icon={EyeIcon} label="Recording">
 						<span className="flex items-center gap-1.5 text-xs">
-							<span
-								aria-hidden
-								className={cn(
-									"size-1.5 rounded-full",
-									session.recorded ? "bg-success-foreground" : "bg-muted-foreground/50",
-								)}
+							<StatusDot
+								tone="custom"
+								className={
+									session.recorded ? "bg-success-foreground" : "bg-muted-foreground/50"
+								}
 							/>
 							<span className={session.recorded ? "text-foreground" : "text-muted-foreground"}>
 								{session.recorded ? "Complete" : "Not recorded"}

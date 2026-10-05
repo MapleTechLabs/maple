@@ -5,6 +5,7 @@ import { formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 
 import { ColumnHead, DataTable, MetaChip, useTableSort } from "../primitives/data-table"
+import { SegmentPivot } from "../primitives/segment-pivot"
 import { relativeRatio, shareBar } from "../primitives/share-bar"
 import type { BranchCandidate } from "./branch-selection"
 import { BRANCH_STATE_LABEL, branchStateOf } from "./filters"
@@ -172,25 +173,12 @@ export function PlanetScaleBranchBreakdownPanel({
 		<div className="overflow-hidden rounded-lg border border-border/60 bg-card">
 			<div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 px-3 py-2">
 				<span className="text-xs font-medium text-foreground">Branches</span>
-				<div role="tablist" aria-label="Measure" className="flex flex-wrap items-center gap-0.5">
-					{MEASURE_ORDER.map((key) => (
-						<button
-							key={key}
-							type="button"
-							role="tab"
-							aria-selected={measure === key}
-							onClick={() => setMeasure(key)}
-							className={cn(
-								"rounded-sm px-1.5 py-0.5 text-[11px] transition-colors",
-								measure === key
-									? "bg-muted font-medium text-foreground"
-									: "text-muted-foreground hover:text-foreground",
-							)}
-						>
-							{MEASURES[key].label}
-						</button>
-					))}
-				</div>
+				<SegmentPivot<Measure>
+					ariaLabel="Measure"
+					options={MEASURE_ORDER.map((key) => ({ value: key, label: MEASURES[key].label }))}
+					value={measure}
+					onChange={setMeasure}
+				/>
 			</div>
 
 			<DataTable.Root ariaLabel="PlanetScale branch breakdown" waiting={waiting} maxHeight={420}>

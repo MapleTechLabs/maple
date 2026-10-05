@@ -1,3 +1,4 @@
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { useCallback, useMemo, useReducer, useState } from "react"
 import { useNavigate } from "@tanstack/react-router"
 
@@ -161,9 +162,11 @@ function SeverityFilterDot({ value }: { value: SeverityFilter }) {
 		return (
 			<span aria-hidden="true" className="flex shrink-0 -space-x-1">
 				{SEVERITY_ORDER.map((severity) => (
-					<span
+					<StatusDot
 						key={severity}
-						className={cn("size-2 rounded-full ring-1 ring-popover", SEVERITY_FILL[severity])}
+						tone="custom"
+						size="lg"
+						className={cn("ring-1 ring-popover", SEVERITY_FILL[severity])}
 					/>
 				))}
 			</span>

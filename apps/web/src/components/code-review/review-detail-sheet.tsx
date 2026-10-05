@@ -20,7 +20,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { formatRelativeFrom } from "@maple/ui/lib/time-format"
 
 import { MessageResponse } from "@/components/ai-elements/message-response"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { ExternalLinkIcon } from "@/components/icons"
 import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
 import { retainedQuery } from "@/lib/services/common/atom-client"
@@ -83,7 +83,7 @@ function ReviewDetailBody({
 		))
 		.onError((error) => (
 			<SheetPanel>
-				<QueryErrorState error={error} titleOverride="Failed to load the review" onRetry={refresh} />
+				<ErrorState error={error} title="Failed to load the review" onRetry={refresh} />
 			</SheetPanel>
 		))
 		.onSuccess((detail) => <ReviewDetailContent detail={detail} onSelect={onSelect} />)

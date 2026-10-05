@@ -1,24 +1,15 @@
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { cn } from "@maple/ui/lib/utils"
 
 /**
- * Canonical section heading — the small uppercase label that titles a group of
- * fields or a card's contents. The `id` is meant to be referenced by an
- * `aria-labelledby` on the group it heads.
- *
- * The default `mb-3` suits a heading stacked above its content; pass
- * `className="mb-0"` when the heading sits inline (e.g. in a flex row beside an
- * action button).
+ * Canonical section heading: an `Eyebrow` rendered as an `<h2>` whose `id` is meant
+ * to be referenced by an `aria-labelledby` on the group it heads. Pass
+ * `className="mb-0"` when it sits inline (e.g. in a flex row beside an action).
  */
-export function SectionHeader({ id, label, className }: { id: string; label: string; className?: string }) {
+export function SectionHeader({ id, label, className }: { id?: string; label: string; className?: string }) {
 	return (
-		<h2
-			id={id}
-			className={cn(
-				"mb-3 text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground",
-				className,
-			)}
-		>
+		<Eyebrow as="h2" id={id} className={cn("mb-3 block", className)}>
 			{label}
-		</h2>
+		</Eyebrow>
 	)
 }

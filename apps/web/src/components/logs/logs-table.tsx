@@ -26,7 +26,7 @@ import { LogAttributeChip } from "./log-attribute-chip"
 import { HighlightedText } from "./highlighted-text"
 import { shortTraceId } from "@/lib/logs/log-search-query"
 import { ChevronRightIcon } from "@/components/icons"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { usePageScrolledReporter } from "@maple/ui/components/ui/page-layout"
 import { DocsLink } from "@/components/common/docs-link"
 import {
@@ -34,6 +34,8 @@ import {
 	canWidenTimeRange,
 	WIDEN_TIME_PRESET,
 } from "@/components/time-range-picker/search"
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 
 const ROW_HEIGHT = 36
 const ROW_HEIGHT_COMFORTABLE = 48
@@ -205,7 +207,7 @@ const LogRow = React.memo(function LogRow({
 				{/* h-4 wrapper = the text line-box height, so the dot centers on the
 				    first line even when the row is top-aligned in wrap mode. */}
 				<span className="shrink-0 flex h-4 items-center" aria-hidden="true">
-					<span className="size-1.5 rounded-full" style={{ backgroundColor: severityColor }} />
+					<StatusDot tone="custom" style={{ backgroundColor: severityColor }} />
 				</span>
 				<span
 					className="shrink-0 w-12 text-[10px] uppercase tabular-nums font-semibold hidden md:inline-block"
@@ -296,12 +298,13 @@ function PinnedHeader({
 	trackStyle: React.CSSProperties
 }) {
 	return (
-		<div
+		<Eyebrow
+			as="div"
 			// `top-0` only: a `left-0` sticky header stays glued to the viewport
 			// while the rows scroll sideways underneath it, so the labels drift off
 			// the columns they name. It shares the rows' track width instead.
 			style={trackStyle}
-			className="sticky top-0 z-10 flex items-center gap-2 px-3 py-1.5 bg-background border-b border-border text-[10px] uppercase tracking-wider text-muted-foreground/70 select-none"
+			className="sticky top-0 z-10 flex items-center gap-2 px-3 py-1.5 bg-background border-b border-border select-none"
 		>
 			<span className="shrink-0 size-4" aria-hidden="true" />
 			<span className="shrink-0 size-1.5" aria-hidden="true" />
@@ -328,7 +331,7 @@ function PinnedHeader({
 					<span className="flex-1" aria-hidden="true" />
 				</>
 			)}
-		</div>
+		</Eyebrow>
 	)
 }
 
@@ -739,7 +742,7 @@ export function LogsTable({ filters, embedded }: LogsTableProps) {
 
 	return Result.builder(firstPageResult)
 		.onInitial(() => <LoadingState />)
-		.onError((error) => <QueryErrorState error={error} />)
+		.onError((error) => <ErrorState error={error} />)
 		.onSuccess((_response, result) => (
 			<LogsTableView
 				allData={allData}

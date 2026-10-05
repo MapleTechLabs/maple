@@ -12,7 +12,7 @@ import { aiTriageSettings, errorIssueEvents, errorIssues, investigations } from 
 import { and, eq } from "drizzle-orm"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import type { ChatSessionsApi } from "@maple/backend/platform/bindings"
-import { chatSessionStub } from "@maple/domain/chat-session-stub"
+import { fakeChatSessions } from "@maple/backend/platform/chat-sessions-fake"
 import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { maybeEnqueueTriage } from "./ai-triage-enqueue"
@@ -113,18 +113,14 @@ const enableWithLimits = (maxRunsPerDay: number, maxPassesPerDay: number) =>
  */
 const fakeChatSession = (options?: { readonly busy?: boolean }) => {
 	const turns: Array<{ sessionId: string; text: string }> = []
-	const namespace = {
-		idFromName: (name: string) => name,
-		get: () => ({
-			beginTurn: async (input: { sessionId: string; messageId: string; text: string }) => {
-				turns.push({ sessionId: input.sessionId, text: input.text })
-				return options?.busy === true ? undefined : { cursor: 0, messageId: input.messageId }
-			},
-		}),
-	}
-	const chatSessions: ChatSessionsApi = {
-		stub: (sessionId) => chatSessionStub({ ChatSession: namespace }, sessionId),
-	}
+	const chatSessions: ChatSessionsApi = fakeChatSessions(() => ({
+		beginTurn: async (input: { sessionId: string; messageId: string; text: string }) => {
+			turns.push({ sessionId: input.sessionId, text: input.text })
+			return options?.busy === true
+				? undefined
+				: { cursor: 0, messageId: input.messageId, turnMessageId: input.messageId }
+		},
+	}))
 	return { turns, chatSessions }
 }
 

@@ -16,11 +16,12 @@ import {
 } from "@maple/domain/billing-tax-ids"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { Input } from "@maple/ui/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { Spinner } from "@maple/ui/components/ui/spinner"
 import { toastManager } from "@maple/ui/components/ui/toast"
-import { cn } from "@maple/ui/lib/utils"
 
 import { XmarkIcon } from "@/components/icons"
 import { Result, useAtomSet, useAtomValue } from "@/lib/effect-atom"
@@ -36,10 +37,6 @@ import { BillingDetailsDialog } from "./billing-details-dialog"
 // A self-hosted API with no STRIPE_SECRET_KEY answers every profile read with
 // this; that is a deployment choice, not an outage, and reads differently.
 const isNotConfigured = Schema.is(BillingNotConfiguredError)
-
-const LABEL = "text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground/60"
-const FIELD =
-	"h-8 min-w-0 rounded-md border border-input bg-background px-2.5 font-mono text-sm outline-none focus:border-ring"
 
 // Type picker order: the handful most customers want, then everything else
 // alphabetically by label. One flat list — a grouped 100-entry select reads
@@ -100,15 +97,16 @@ function TaxIdRow({
 				</Badge>
 			)}
 			{canEdit && (
-				<button
-					type="button"
+				<Button
+					variant="ghost"
+					size="icon-xs"
 					onClick={onRemove}
 					disabled={removing}
 					aria-label={`Remove ${taxIdLabel(taxId.type)} ${taxId.value}`}
-					className="ml-auto text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+					className="ml-auto text-muted-foreground"
 				>
 					{removing ? <Spinner className="size-3.5" /> : <XmarkIcon size={14} />}
-				</button>
+				</Button>
 			)}
 		</li>
 	)
@@ -159,7 +157,7 @@ function AddTaxIdRow({ profile }: { readonly profile: BillingProfile }) {
 					))}
 				</SelectContent>
 			</Select>
-			<input
+			<Input
 				aria-label="Tax ID"
 				value={value}
 				onChange={(event) => setValue(event.target.value)}
@@ -167,7 +165,7 @@ function AddTaxIdRow({ profile }: { readonly profile: BillingProfile }) {
 					if (event.key === "Enter") void handleAdd()
 				}}
 				placeholder={taxIdExampleFor(type, profile.address?.country)}
-				className={cn(FIELD, "w-56")}
+				className="w-56 font-mono"
 			/>
 			<Button size="sm" variant="outline" onClick={handleAdd} disabled={adding}>
 				{adding ? <Spinner className="size-4" /> : "Add tax ID"}
@@ -228,7 +226,7 @@ export function BillingDetailsSection({ canEdit }: { readonly canEdit: boolean }
 			<div className="border border-border/60 bg-card/40">
 				<div className="grid grid-cols-1 gap-x-8 gap-y-5 px-5 py-4 sm:grid-cols-[minmax(0,2fr)_minmax(0,3fr)_auto]">
 					<div className="flex flex-col gap-1">
-						<span className={LABEL}>Bill to</span>
+						<Eyebrow>Bill to</Eyebrow>
 						{profile.name ? (
 							<span className="text-sm">{profile.name}</span>
 						) : (
@@ -248,7 +246,7 @@ export function BillingDetailsSection({ canEdit }: { readonly canEdit: boolean }
 					</div>
 
 					<div className="flex flex-col gap-1">
-						<span className={LABEL}>Tax IDs</span>
+						<Eyebrow>Tax IDs</Eyebrow>
 						{profile.taxIds.length === 0 ? (
 							<span className="text-sm text-muted-foreground/70">
 								{profile.linked

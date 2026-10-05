@@ -264,7 +264,6 @@ function PageShell({
 				<DashboardLayout.Content>
 					<DashboardLayout.Sticky>
 						<DashboardLayout.Header
-							title="Dashboards"
 							titleContent={
 								summary ? (
 									<div className="text-muted-foreground mt-1 font-mono text-[11px]">

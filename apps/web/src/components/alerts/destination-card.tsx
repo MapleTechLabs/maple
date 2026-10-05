@@ -1,13 +1,7 @@
+import { Spinner } from "@maple/ui/components/ui/spinner"
 import type { AlertDestinationDocument } from "@maple/domain/http"
 import { destinationProvider, ProviderLogo } from "@/components/alerts/destination-provider"
-import {
-	AlertWarningIcon,
-	CheckIcon,
-	DotsVerticalIcon,
-	LoaderIcon,
-	PencilIcon,
-	TrashIcon,
-} from "@/components/icons"
+import { AlertWarningIcon, CheckIcon, DotsVerticalIcon, PencilIcon, TrashIcon } from "@/components/icons"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { Button } from "@maple/ui/components/ui/button"
 import { Card } from "@maple/ui/components/ui/card"
@@ -125,11 +119,7 @@ export function DestinationCard({
 						onClick={() => onTest(destination)}
 						disabled={!isAdmin || isTesting}
 					>
-						{isTesting ? (
-							<LoaderIcon size={14} className="animate-spin" />
-						) : (
-							<CheckIcon size={14} />
-						)}
+						{isTesting ? <Spinner size={14} /> : <CheckIcon size={14} />}
 						Send test
 					</Button>
 					{isAdmin && (

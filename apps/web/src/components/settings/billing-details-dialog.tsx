@@ -19,6 +19,7 @@ import {
 	DialogPopup,
 	DialogTitle,
 } from "@maple/ui/components/ui/dialog"
+import { Input } from "@maple/ui/components/ui/input"
 import { Label } from "@maple/ui/components/ui/label"
 import { Spinner } from "@maple/ui/components/ui/spinner"
 import { toastManager } from "@maple/ui/components/ui/toast"
@@ -27,9 +28,6 @@ import { useAtomSet } from "@/lib/effect-atom"
 import { fieldOrNull } from "@/lib/billing/billing-profile"
 import { countryName, sortedCountryCodes } from "@/lib/billing/countries"
 import { BILLING_PROFILE_KEY, updateBillingProfileMutation } from "@/lib/services/atoms/billing-atoms"
-
-const FIELD =
-	"h-8 w-full min-w-0 rounded-md border border-input bg-background px-2.5 text-sm outline-none focus:border-ring"
 
 const COUNTRIES = sortedCountryCodes()
 
@@ -103,56 +101,51 @@ export function BillingDetailsDialog({
 				<div className="space-y-4 px-5 pt-[18px]">
 					<div className="space-y-1.5">
 						<Label htmlFor="billing-name">Company name</Label>
-						<input
+						<Input
 							id="billing-name"
 							value={name}
 							onChange={(event) => setName(event.target.value)}
 							placeholder="Legal entity as it should appear on invoices"
 							maxLength={150}
 							autoComplete="organization"
-							className={FIELD}
 						/>
 					</div>
 
 					<div className="space-y-1.5">
 						<Label htmlFor="billing-line1">Address</Label>
-						<input
+						<Input
 							id="billing-line1"
 							value={line1}
 							onChange={(event) => setLine1(event.target.value)}
 							placeholder="Street and number"
 							autoComplete="address-line1"
-							className={FIELD}
 						/>
-						<input
+						<Input
 							aria-label="Address line 2"
 							value={line2}
 							onChange={(event) => setLine2(event.target.value)}
 							placeholder="Suite, floor, c/o (optional)"
 							autoComplete="address-line2"
-							className={FIELD}
 						/>
 					</div>
 
 					<div className="grid grid-cols-[1fr_2fr] gap-2">
 						<div className="space-y-1.5">
 							<Label htmlFor="billing-postal">Postal code</Label>
-							<input
+							<Input
 								id="billing-postal"
 								value={postalCode}
 								onChange={(event) => setPostalCode(event.target.value)}
 								autoComplete="postal-code"
-								className={FIELD}
 							/>
 						</div>
 						<div className="space-y-1.5">
 							<Label htmlFor="billing-city">City</Label>
-							<input
+							<Input
 								id="billing-city"
 								value={city}
 								onChange={(event) => setCity(event.target.value)}
 								autoComplete="address-level2"
-								className={FIELD}
 							/>
 						</div>
 					</div>
@@ -160,13 +153,12 @@ export function BillingDetailsDialog({
 					<div className="grid grid-cols-2 gap-2">
 						<div className="space-y-1.5">
 							<Label htmlFor="billing-state">State / region</Label>
-							<input
+							<Input
 								id="billing-state"
 								value={state}
 								onChange={(event) => setState(event.target.value)}
 								placeholder="Optional"
 								autoComplete="address-level1"
-								className={FIELD}
 							/>
 						</div>
 						<div className="space-y-1.5">

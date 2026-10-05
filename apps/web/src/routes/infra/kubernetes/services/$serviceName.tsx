@@ -2,7 +2,14 @@ import { useMemo } from "react"
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { Schema } from "effect"
 
-import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
+import {
+	Empty,
+	EmptyDescription,
+	EmptyHeader,
+	EmptyMedia,
+	EmptyMessage,
+	EmptyTitle,
+} from "@maple/ui/components/ui/empty"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { formatPercent } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
@@ -10,7 +17,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { GridIcon } from "@/components/icons"
 import { DocsLink } from "@/components/common/docs-link"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { PodTable, PodTableLoading } from "@/components/infra/pod-table"
 import { chartBucketSeconds } from "@/components/infra/chart-utils"
 import { toIsoBucket } from "@/api/warehouse/timeseries-utils"
@@ -296,7 +303,7 @@ function LensBody({
 	)
 
 	if (Result.isFailure(overviewResult)) {
-		return <QueryErrorState error={overviewResult.cause} titleOverride="Failed to load this service" />
+		return <ErrorState error={overviewResult.cause} title="Failed to load this service" />
 	}
 
 	// The headline reads pods and CPU as well as the overview, and both of those
@@ -416,14 +423,12 @@ function LensBody({
 						</div>
 						{Result.builder(podsResult)
 							.onInitial(() => <PodTableLoading />)
-							.onError((error) => (
-								<QueryErrorState error={error} titleOverride="Failed to load pods" />
-							))
+							.onError((error) => <ErrorState error={error} title="Failed to load pods" />)
 							.onSuccess((response, holder) =>
 								response.data.length === 0 ? (
-									<div className="rounded-md border border-dashed px-4 py-12 text-center text-sm text-muted-foreground">
+									<EmptyMessage dashed className="py-12">
 										No pods reported for this workload in the selected window.
-									</div>
+									</EmptyMessage>
 								) : (
 									<PodTable
 										pods={response.data}

@@ -1,5 +1,7 @@
 import { useMemo, useState } from "react"
 
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import { Button } from "@maple/ui/components/ui/button"
 import { Input } from "@maple/ui/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
@@ -232,7 +234,7 @@ function MetricOptionsEmpty({ searchTerm }: { readonly searchTerm: string }) {
 	const presence = useSignalPresence("metrics")
 	const term = searchTerm.trim()
 	return (
-		<div className="flex flex-col items-center gap-2 px-3 py-4 text-center text-xs text-muted-foreground">
+		<EmptyMessage className="flex flex-col items-center gap-2 px-3 py-4">
 			{term !== "" ? (
 				<span>No metric name contains "{term}".</span>
 			) : presence.status === "absent" ? (
@@ -245,7 +247,7 @@ function MetricOptionsEmpty({ searchTerm }: { readonly searchTerm: string }) {
 			) : (
 				<span>No metrics found.</span>
 			)}
-		</div>
+		</EmptyMessage>
 	)
 }
 
@@ -486,9 +488,7 @@ function MetricsBody({
 
 			{/* Row 3: AGGREGATE WITHIN TIME SERIES */}
 			<div className="flex items-center gap-2 flex-wrap">
-				<span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium shrink-0">
-					Aggregate within time series
-				</span>
+				<Eyebrow className="shrink-0">Aggregate within time series</Eyebrow>
 				<Select
 					items={aggregateOptions}
 					value={query.aggregation}
@@ -526,9 +526,7 @@ function MetricsBody({
 
 			{/* Row 4: AGGREGATE ACROSS TIME SERIES */}
 			<div className="flex items-center gap-2 flex-wrap">
-				<span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium shrink-0">
-					Aggregate across time series
-				</span>
+				<Eyebrow className="shrink-0">Aggregate across time series</Eyebrow>
 
 				<Select
 					items={aggregateOptions}

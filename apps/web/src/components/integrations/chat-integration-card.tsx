@@ -1,3 +1,5 @@
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
+import { Spinner } from "@maple/ui/components/ui/spinner"
 import { useState } from "react"
 import { Exit, Option } from "effect"
 import type { ChatConnectorId, ChatWorkspaceId } from "@maple/domain/primitives"
@@ -22,7 +24,6 @@ import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { chatConnectorManifests } from "@maple/chat-platform/manifests"
 
 import { ErrorState } from "@/components/common/error-state"
-import { LoaderIcon } from "@/components/icons"
 import { useIsOrgAdmin } from "@/hooks/use-is-org-admin"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { retainedQuery } from "@/lib/services/common/atom-client"
@@ -123,7 +124,7 @@ function WorkspaceSettings({
 			))}
 			<div>
 				<Button size="sm" variant="outline" onClick={handleSave} disabled={disabled || !dirty}>
-					{saving ? <LoaderIcon size={14} className="animate-spin" /> : null}
+					{saving ? <Spinner size={14} /> : null}
 					Save settings
 				</Button>
 			</div>
@@ -200,7 +201,7 @@ function ChatIdentityRow({
 				onClick={identity === undefined ? handleLink : handleUnlink}
 				disabled={busy}
 			>
-				{busy ? <LoaderIcon size={14} className="animate-spin" /> : null}
+				{busy ? <Spinner size={14} /> : null}
 				{identity === undefined ? "Link your account" : "Unlink"}
 			</Button>
 		</div>
@@ -324,11 +325,7 @@ export function ChatIntegrationCard({ connector }: { connector: ChatConnectorId 
 					<IntegrationEmptyMedia />
 					<IntegrationEmptyHint>{manifest.description}</IntegrationEmptyHint>
 					<Button onClick={handleInstall} disabled={connectDisabled}>
-						{busy === "install" ? (
-							<LoaderIcon size={16} className="animate-spin" />
-						) : (
-							<MonoIcon size={16} />
-						)}
+						{busy === "install" ? <Spinner size={16} /> : <MonoIcon size={16} />}
 						Add to {manifest.name}
 					</Button>
 					<IntegrationEmptyFooter>
@@ -355,7 +352,7 @@ export function ChatIntegrationCard({ connector }: { connector: ChatConnectorId 
 						<div className="flex items-center gap-2">
 							<h3 className="text-sm font-semibold">{workspace.name}</h3>
 							<span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-								<span className="size-2 shrink-0 rounded-full bg-success" aria-hidden />
+								<StatusDot tone="success" size="lg" />
 								Connected
 							</span>
 						</div>
@@ -395,7 +392,7 @@ export function ChatIntegrationCard({ connector }: { connector: ChatConnectorId 
 			) : null}
 			<div>
 				<Button size="sm" variant="outline" onClick={handleInstall} disabled={connectDisabled}>
-					{busy === "install" ? <LoaderIcon size={14} className="animate-spin" /> : null}
+					{busy === "install" ? <Spinner size={14} /> : null}
 					Add another workspace
 				</Button>
 			</div>
@@ -421,7 +418,7 @@ export function ChatIntegrationCard({ connector }: { connector: ChatConnectorId 
 							onClick={() => confirmId !== null && handleDisconnect(confirmId)}
 							disabled={busy !== null}
 						>
-							{busy === confirmId ? <LoaderIcon size={14} className="animate-spin" /> : null}
+							{busy === confirmId ? <Spinner size={14} /> : null}
 							Disconnect
 						</AlertDialogAction>
 					</AlertDialogFooter>

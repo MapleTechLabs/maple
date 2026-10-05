@@ -81,10 +81,7 @@ function MetricDetailPage() {
 				<DashboardLayout.Body>
 					<DashboardLayout.Content>
 						<DashboardLayout.Sticky>
-							<DashboardLayout.Header
-								title={metricName}
-								description="Explore this metric: filter, aggregate, and break it down by attributes."
-							>
+							<DashboardLayout.Header>
 								<TimeRangeHeaderControls
 									startTime={search.startTime}
 									endTime={search.endTime}

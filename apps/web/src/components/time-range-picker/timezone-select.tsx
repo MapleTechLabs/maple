@@ -10,6 +10,7 @@ import {
 	ComboboxList,
 	ComboboxTrigger,
 } from "@maple/ui/components/ui/combobox"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { cn } from "@maple/ui/lib/utils"
 
 import { getBrowserTimeZone, SYSTEM_VALUE } from "@/atoms/timezone-preference-atoms"
@@ -151,9 +152,7 @@ export function TimezoneSelect() {
 			ref={anchor}
 			className="flex items-center justify-between gap-3 border-t border-border/70 bg-muted/20 px-4 py-2"
 		>
-			<span className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground/80">
-				Timezone
-			</span>
+			<Eyebrow>Timezone</Eyebrow>
 			<Combobox
 				items={groups}
 				autoHighlight

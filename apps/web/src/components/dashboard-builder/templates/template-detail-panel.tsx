@@ -2,6 +2,7 @@ import { useMemo, useState } from "react"
 import { Link } from "@tanstack/react-router"
 import type { V2DashboardTemplate } from "@maple/domain/http/v2"
 import { Button } from "@maple/ui/components/ui/button"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Input } from "@maple/ui/components/ui/input"
 import { Label } from "@maple/ui/components/ui/label"
 import { cn } from "@maple/ui/lib/utils"
@@ -16,14 +17,6 @@ import {
 	widgetCountLabel,
 } from "./template-summary"
 import { READINESS_WINDOW_LABEL, type TemplateReadiness } from "./use-template-readiness"
-
-function SectionLabel({ children }: { children: React.ReactNode }) {
-	return (
-		<span className="text-muted-foreground text-[11px] font-medium tracking-wider uppercase">
-			{children}
-		</span>
-	)
-}
 
 /**
  * What the org needs before the widgets fill in. Both halves come from the
@@ -45,7 +38,7 @@ function RequirementBlock({
 
 	return (
 		<div className="flex flex-col gap-2.5">
-			<SectionLabel>What it needs</SectionLabel>
+			<Eyebrow variant="label">What it needs</Eyebrow>
 			<div className="flex items-start gap-2.5">
 				{ready ? (
 					<span className="bg-success flex size-4 shrink-0 items-center justify-center rounded-[3px]">
@@ -161,7 +154,7 @@ export function TemplateDetailPanel({ template, readiness, creating, onCreate }:
 
 			{template.parameters.length > 0 && (
 				<div className="flex flex-col gap-2.5">
-					<SectionLabel>Parameters</SectionLabel>
+					<Eyebrow variant="label">Parameters</Eyebrow>
 					<div className="flex max-w-95 flex-col gap-4">
 						{template.parameters.map((parameter) => (
 							<div key={parameter.key} className="flex flex-col gap-1.75">

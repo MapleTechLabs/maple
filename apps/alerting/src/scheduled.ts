@@ -25,8 +25,10 @@ import { mapleDbConnectionLayer } from "@maple/backend/platform/pg-connection-so
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { withPgConnectionScope } from "@maple/backend/platform/pg-connection-scope"
 import { EmailSender, type EmailSenderClient } from "@maple/backend/platform/bindings"
+import { type ChatSessionNamespace, chatSessionsLayerIfBound } from "@maple/backend/platform/chat-sessions"
 import { envPorts } from "@maple/backend/platform/env-ports"
 import { Cause, Effect, Layer, Match, Option } from "effect"
+import { FetchHttpClient } from "effect/http"
 import type { AlertingWorkerEnv } from "./worker.ts"
 
 /**
@@ -36,7 +38,11 @@ import type { AlertingWorkerEnv } from "./worker.ts"
  * provided either would shadow them — `worker-telemetry.test.ts` pins that
  * a tick's spans still reach the export.
  */
-export const buildLayer = (env: AlertingWorkerEnv, email: Option.Option<EmailSenderClient> = Option.none()) =>
+export const buildLayer = (
+	env: AlertingWorkerEnv,
+	email: Option.Option<EmailSenderClient> = Option.none(),
+	chatSessions?: ChatSessionNamespace,
+) =>
 	Layer.mergeAll(
 		AlertsService.layer,
 		AnomalyDetectionService.layer,
@@ -54,9 +60,14 @@ export const buildLayer = (env: AlertingWorkerEnv, email: Option.Option<EmailSen
 		IncidentClassifier.layer,
 	).pipe(
 		Layer.provide(PullRequestLookupLive),
-		Layer.provide(Layer.mergeAll(Env.layer, layerPg, EdgeCacheServiceLive)),
+		Layer.provide(Layer.mergeAll(Env.layer, layerPg, EdgeCacheServiceLive, FetchHttpClient.layer)),
 		Layer.provideMerge(
-			Layer.mergeAll(mapleDbConnectionLayer(env), envPorts(env), Layer.succeed(EmailSender, email)),
+			Layer.mergeAll(
+				mapleDbConnectionLayer(env),
+				envPorts(env),
+				chatSessionsLayerIfBound(chatSessions, env),
+				Layer.succeed(EmailSender, email),
+			),
 		),
 	)
 
@@ -355,10 +366,11 @@ export const runScheduled = (
 	cron: string,
 	env: AlertingWorkerEnv,
 	email: Option.Option<EmailSenderClient>,
+	chatSessions: ChatSessionNamespace,
 ): Effect.Effect<void, unknown> =>
 	withPgConnectionScope(selectScheduledProgram(cron, scheduledTicks)).pipe(
 		// One fire is one application run: the layer is built here and released
 		// with it, as the async entry's ManagedRuntime was.
 		// oxlint-disable-next-line effecttsgo/strict-effect-provide
-		Effect.provide(buildLayer(env, email)),
+		Effect.provide(buildLayer(env, email, chatSessions)),
 	)

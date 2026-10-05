@@ -1,3 +1,6 @@
+import { InlineCode } from "@maple/ui/components/ui/inline-code"
+import { Spinner } from "@maple/ui/components/ui/spinner"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { HazelStartConnectRequest, type AlertDestinationType } from "@maple/domain/http"
 import {
 	type DestinationFormState,
@@ -19,7 +22,6 @@ import {
 	ArrowRotateClockwiseIcon,
 	CircleInfoIcon,
 	HazelIcon,
-	LoaderIcon,
 	MagnifierIcon,
 } from "@/components/icons"
 import {
@@ -436,7 +438,7 @@ function HazelOAuthFields({
 						color: PROVIDERS["hazel-oauth"].accentOn,
 					}}
 				>
-					{busy ? <LoaderIcon size={14} className="animate-spin" /> : null}
+					{busy ? <Spinner size={14} /> : null}
 					Connect Hazel
 				</Button>
 			</div>
@@ -905,7 +907,7 @@ function TelegramChatPicker({
 							: "Enter the bot token first — detection reads the bot's chats."
 					}
 				>
-					{busy ? <LoaderIcon size={12} className="mr-1 animate-spin" /> : null}
+					{busy ? <Spinner size={12} className="mr-1" /> : null}
 					{busy ? "Detecting…" : "Detect chats"}
 				</Button>
 			</div>
@@ -972,9 +974,9 @@ export function DestinationDialog({
 				<div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-6">
 					{!isEditing && (
 						<div className="space-y-2">
-							<div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+							<Eyebrow variant="label" as="div">
 								Provider
-							</div>
+							</Eyebrow>
 							<div className="grid grid-cols-2 gap-2">
 								{DESTINATION_TYPES.map((type) => (
 									<ProviderTile
@@ -991,9 +993,9 @@ export function DestinationDialog({
 
 					<div className="space-y-2">
 						<div className="flex items-center justify-between">
-							<div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+							<Eyebrow variant="label" as="div">
 								Connection
-							</div>
+							</Eyebrow>
 							<FieldHelper provider={provider} />
 						</div>
 						<div className="space-y-3 rounded-lg border border-border/60 bg-card p-4">
@@ -1109,8 +1111,9 @@ export function DestinationDialog({
 											className="font-mono text-xs"
 										/>
 										<p className="text-[11px] text-muted-foreground">
-											In Telegram: message @BotFather, send <code>/newbot</code>, then
-											copy the token it replies with.
+											In Telegram: message @BotFather, send{" "}
+											<InlineCode>/newbot</InlineCode>, then copy the token it replies
+											with.
 										</p>
 									</div>
 									<div className="space-y-1.5">
@@ -1220,9 +1223,9 @@ export function DestinationDialog({
 					</div>
 
 					<div className="space-y-2">
-						<div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+						<Eyebrow variant="label" as="div">
 							Delivery
-						</div>
+						</Eyebrow>
 						<div className="flex items-center justify-between rounded-lg border border-border/60 bg-card px-4 py-3">
 							<div>
 								<div className="text-sm font-medium">Enabled</div>
@@ -1256,7 +1259,7 @@ export function DestinationDialog({
 							color: buttonProvider.accentOn,
 						}}
 					>
-						{saving ? <LoaderIcon size={14} className="animate-spin" /> : null}
+						{saving ? <Spinner size={14} /> : null}
 						{isEditing ? "Save changes" : `Create ${provider.label} destination`}
 					</Button>
 				</DialogFooter>

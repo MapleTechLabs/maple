@@ -50,7 +50,8 @@ import {
 	type ChatTurnTenantEncoded,
 	prReviewIdFromChatSessionId,
 } from "@maple/domain/chat-session"
-import { type ChatSessionStub } from "@maple/domain/chat-session-stub"
+import type { ChatSessionRpc } from "@maple/domain/chat-session-stub"
+import { type ChatSessionNamespace, ChatSessionObject } from "@maple/backend/platform/chat-sessions"
 import { makeChatTranscript } from "@maple/domain/chat-transcript"
 import type { AppliedProposal, ApplyChatProposalInput } from "./apply-proposal"
 import { WorkersAiGateway } from "../platform/WorkersAiHttpClient"
@@ -796,16 +797,6 @@ export class ChatSession {
 	}
 }
 
-/** The stub's surface with each method's Promise lifted to the Effect alchemy runs per RPC call. */
-type EffectRpc<Stub> = {
-	readonly [K in keyof Stub]: Stub[K] extends (...args: infer Args) => Promise<infer Result>
-		? (...args: Args) => Effect.Effect<Result>
-		: never
-}
-
-/** The RPC surface plus the heartbeat alarm, which alchemy's bridge dispatches as the object's `alarm`. */
-type ChatSessionObjectApi = EffectRpc<ChatSessionStub> & { readonly alarm: () => Effect.Effect<void> }
-
 /**
  * The session's methods, one Effect each. alchemy runs the Effect per RPC call and hands its value
  * back as-is — a `ReadableStream` included, which Workers RPC carries by reference — so
@@ -825,53 +816,53 @@ export const chatSessionRpc = (session: ChatSession) =>
 		endTurn: (messageId) => Effect.sync(() => session.endTurn(messageId)),
 		abort: () => Effect.sync(() => session.abort()),
 		alarm: () => Effect.sync(() => session.alarm()),
-	}) satisfies ChatSessionObjectApi
+	}) satisfies ChatSessionRpc
 
 /**
- * One activation, in alchemy's two phases: the outer Effect resolves the state and env (it also
- * runs at plan time, against a mock state, so it must not touch storage), the inner one builds the
- * session inside the object's `blockConcurrencyWhile` — the schema statements have run before the
- * first call reaches it, hibernation wakes included.
+ * The activation's own namespace. Alchemy hands it over as `DurableObjectScope`, typed without the
+ * class's shape because a class cannot yield its own tag inside its activation; the name says which
+ * class it is.
+ */
+const isChatSessionNamespace = (
+	scope: Cloudflare.DurableObject,
+): scope is Cloudflare.DurableObject<ChatSessionObject> => scope.name === "ChatSession"
+
+/**
+ * One activation, in alchemy's two phases: the outer Effect resolves the state, env and namespace
+ * (it also runs at plan time, against a mock state, so it must not touch storage), the inner one
+ * builds the session inside the object's `blockConcurrencyWhile`, so the schema statements have
+ * run before the first call reaches it, hibernation wakes included. The turn and apply graphs reach
+ * other sessions through the namespace (`ChatSessions`).
  */
 export const activateChatSession = Effect.map(
-	Effect.all([Cloudflare.DurableObjectState, Cloudflare.WorkerEnvironment, WorkersAiGateway]),
-	([state, env, workersAi]) =>
-		Effect.sync(() =>
+	Effect.all([
+		Cloudflare.DurableObjectState,
+		Cloudflare.WorkerEnvironment,
+		WorkersAiGateway,
+		Effect.serviceOption(Cloudflare.DurableObjectScope),
+	]),
+	([state, env, workersAi, scope]) => {
+		// Always there in the isolate; absent only where a test builds the activation by hand.
+		const chatSessions: ChatSessionNamespace | undefined = Option.getOrUndefined(
+			Option.filter(scope, isChatSessionNamespace),
+		)
+		return Effect.sync(() =>
 			chatSessionRpc(
-				new ChatSession(state.raw, env, applyThroughWorker, (input) =>
-					runThroughWorker({ ...input, workersAi }),
+				new ChatSession(
+					state.raw,
+					env,
+					(input) => applyThroughWorker({ ...input, chatSessions }),
+					(input) => runThroughWorker({ ...input, workersAi, chatSessions }),
 				),
 			),
-		),
+		)
+	},
 )
-
-/**
- * The Durable Object: one per `"<orgId>:<tabId>"`, SQLite-backed, hosted by this Worker and bound
- * as `ChatSession` — the name `chatSessionStub` reads off `env` on both sides.
- *
- * `transferredFrom` names apps/api, which hosted this class until the agent surfaces moved here.
- * Alchemy turns that into a data-preserving `transferred_classes` migration, so live transcripts
- * follow the class rather than being stranded in a namespace nothing binds any more. Without it
- * the api's own deploy fails with `DurableObjectTransferRequired`, because dropping a locally
- * hosted class while keeping a cross-script reference to it is exactly the shape that silently
- * destroys a namespace, and alchemy refuses it before any upload.
- *
- * It is inert once every stage has transferred — a fresh stage creates the class outright — so it
- * stays here rather than being cleaned up later and breaking whichever stage lagged behind.
- *
- * The props-carrying class form is what makes room for that: the single-argument overload takes an
- * implementation and no props, so the implementation moves to `ChatSessionLive` below.
- */
-export class ChatSessionObject extends Cloudflare.DurableObject<ChatSessionObject, ChatSessionObjectApi>()(
-	"ChatSession",
-	{ transferredFrom: "api" },
-) {}
 
 /** The activation, as the layer the host Worker provides. */
 // The activation's requirements are named rather than inferred: `.make` discharges
-// `DurableObjectServices` (both of these) through its own `Exclude`, while inference
-// would widen them into the layer's requirements and surface them all the way up in
-// `alchemy.run.ts`.
+// `DurableObjectServices` (both of these) through its own `Exclude`, while inference would widen
+// them into the layer's requirements and surface them all the way up in `alchemy.run.ts`.
 export const ChatSessionLive = ChatSessionObject.make<
 	Cloudflare.DurableObjectState | Cloudflare.WorkerEnvironment | WorkersAiGateway
 >(activateChatSession)

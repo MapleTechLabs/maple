@@ -25,6 +25,7 @@ import {
 import { alertDestinations, alertRules, type AlertDestinationRow } from "@maple/db"
 import { and, desc, eq, sql } from "drizzle-orm"
 import { Context, Effect, Layer, Match, Option, Redacted, Schema } from "effect"
+import { HttpClient } from "effect/http"
 import { encryptAes256Gcm, type EncryptedValue } from "@maple/backend/platform/Crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { EmailService } from "@maple/backend/platform/EmailService"
@@ -328,6 +329,7 @@ export class AlertDestinationsService extends Context.Service<
 		const database = yield* Database
 		const env = yield* Env
 		const runtime = yield* AlertRuntime
+		const httpClient = yield* HttpClient.HttpClient
 		const hazelOAuth = yield* HazelOAuthService
 		const email = yield* EmailService
 		const orgMembers = yield* OrgMembersService
@@ -339,6 +341,7 @@ export class AlertDestinationsService extends Context.Service<
 			encryptionKey,
 			appBaseUrl: env.MAPLE_APP_BASE_URL,
 			runtime,
+			httpClient,
 			email,
 			postChatAlert: chatAlertPoster.post,
 		})
@@ -439,10 +442,9 @@ export class AlertDestinationsService extends Context.Service<
 			}
 			const result = yield* verifyPagerDutyRoutingKey(
 				integrationKey,
-				runtime.fetch,
 				runtime.deliveryTimeoutMs(),
 				`maple-keycheck-${runtime.makeUuid()}`,
-			)
+			).pipe(Effect.provideService(HttpClient.HttpClient, httpClient))
 			if (result.status === "invalid") {
 				return yield* Effect.fail(
 					makeValidationError(`PagerDuty rejected this routing key: ${result.reason}`),
@@ -460,9 +462,8 @@ export class AlertDestinationsService extends Context.Service<
 			const result = yield* verifyTelegramCredentials(
 				botToken,
 				chatId,
-				runtime.fetch,
 				runtime.deliveryTimeoutMs(),
-			)
+			).pipe(Effect.provideService(HttpClient.HttpClient, httpClient))
 			if (result.status === "invalid") {
 				return yield* Effect.fail(makeValidationError(result.reason))
 			}
@@ -479,7 +480,9 @@ export class AlertDestinationsService extends Context.Service<
 			if (!TELEGRAM_BOT_TOKEN_PATTERN.test(trimmed)) {
 				return yield* Effect.fail(makeValidationError(TELEGRAM_MALFORMED_TOKEN_MESSAGE))
 			}
-			const result = yield* fetchTelegramChats(trimmed, runtime.fetch, runtime.deliveryTimeoutMs())
+			const result = yield* fetchTelegramChats(trimmed, runtime.deliveryTimeoutMs()).pipe(
+				Effect.provideService(HttpClient.HttpClient, httpClient),
+			)
 			if (result.status === "invalid") return yield* Effect.fail(makeValidationError(result.reason))
 			return result.chats
 		})

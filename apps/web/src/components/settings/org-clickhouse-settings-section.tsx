@@ -2,6 +2,7 @@ import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-a
 import { useEffect, useMemo, useRef, useState } from "react"
 import { Exit, Option } from "effect"
 import { toastManager } from "@maple/ui/components/ui/toast"
+import { Spinner } from "@maple/ui/components/ui/spinner"
 import { displayError } from "@/lib/error-messages"
 import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
 
@@ -29,7 +30,6 @@ import {
 	CircleCheckIcon,
 	CircleWarningIcon,
 	CircleXmarkIcon,
-	LoaderIcon,
 } from "@/components/icons"
 import { MapleApiAtomClient, retainedQuery } from "@/lib/services/common/atom-client"
 import { OrgClickHouseSettingsUpsertRequest } from "@maple/domain/http"
@@ -509,7 +509,7 @@ export function OrgClickHouseSettingsSection({ isAdmin, hasEntitlement }: OrgCli
 								>
 									{isRefreshingDiff ? (
 										<>
-											<LoaderIcon size={12} className="mr-1 animate-spin" />
+											<Spinner size={12} className="mr-1" />
 											Refreshing…
 										</>
 									) : (
@@ -526,7 +526,7 @@ export function OrgClickHouseSettingsSection({ isAdmin, hasEntitlement }: OrgCli
 								>
 									{isApplying ? (
 										<>
-											<LoaderIcon size={12} className="mr-1 animate-spin" />
+											<Spinner size={12} className="mr-1" />
 											{runActive &&
 											applyStatus?.stepsTotal != null &&
 											applyStatus?.stepsDone != null

@@ -7,7 +7,6 @@ import {
 	SearchableFilterSection,
 	type FilterOption,
 } from "@/components/filters/filter-section"
-import { MagnifierIcon, XmarkIcon } from "@/components/icons"
 import { browserIconFor, deviceIconFor } from "@/components/replays/session-icons"
 import {
 	SESSION_TAG_DESCRIPTIONS,
@@ -18,12 +17,7 @@ import {
 	nextTagSelection,
 	sessionTagsFromSearch,
 } from "@/components/replays/session-tags"
-import {
-	InputGroup,
-	InputGroupAddon,
-	InputGroupButton,
-	InputGroupInput,
-} from "@maple/ui/components/ui/input-group"
+import { SearchInput } from "@maple/ui/components/ui/search-input"
 import { FILTER_SECTION_LABEL } from "@maple/ui/components/filters/filter-styles"
 import { Separator } from "@maple/ui/components/ui/separator"
 import { cn } from "@maple/ui/lib/utils"
@@ -374,11 +368,6 @@ interface TextFilterProps {
 function TextFilter({ id, placeholder, clearLabel, value, onApply }: TextFilterProps) {
 	const [text, setText] = useState(value ?? "")
 
-	const clear = () => {
-		setText("")
-		onApply(undefined)
-	}
-
 	return (
 		<form
 			className="py-1"
@@ -387,26 +376,15 @@ function TextFilter({ id, placeholder, clearLabel, value, onApply }: TextFilterP
 				onApply(text.trim() || undefined)
 			}}
 		>
-			<InputGroup>
-				<InputGroupAddon>
-					<MagnifierIcon />
-				</InputGroupAddon>
-				<InputGroupInput
-					id={id}
-					aria-label={placeholder.replace("…", "")}
-					size="sm"
-					value={text}
-					onChange={(e) => setText(e.target.value)}
-					placeholder={placeholder}
-				/>
-				{text && (
-					<InputGroupAddon align="inline-end">
-						<InputGroupButton aria-label={clearLabel} onClick={clear}>
-							<XmarkIcon />
-						</InputGroupButton>
-					</InputGroupAddon>
-				)}
-			</InputGroup>
+			<SearchInput
+				id={id}
+				aria-label={placeholder.replace("…", "")}
+				value={text}
+				onValueChange={setText}
+				onClear={() => onApply(undefined)}
+				clearLabel={clearLabel}
+				placeholder={placeholder}
+			/>
 		</form>
 	)
 }

@@ -1,3 +1,5 @@
+import { InlineCode } from "@maple/ui/components/ui/inline-code"
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { cn } from "@maple/ui/lib/utils"
 import { formatErrorRate } from "@maple/ui/lib/format"
 import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
@@ -13,15 +15,15 @@ import type { ErrorPathPart, ErrorTextToken, FailureStatus } from "@/lib/agent-s
  *  raw text is its tooltip. */
 export function MaskChip({ label, raw, className }: { label: string; raw: string; className?: string }) {
 	return (
-		<span
+		<InlineCode
 			title={raw === "" ? undefined : raw}
 			className={cn(
-				"mx-px inline-block rounded-[3px] bg-muted px-[3px] align-baseline font-mono text-[11.5px] leading-[15px] font-normal text-muted-foreground",
+				"mx-px inline-block rounded-[3px] px-[3px] py-0 align-baseline text-[11.5px] leading-[15px] font-normal text-muted-foreground",
 				className,
 			)}
 		>
 			{label}
-		</span>
+		</InlineCode>
 	)
 }
 
@@ -318,7 +320,7 @@ export function FailureStatusLine({
 						]
 	return (
 		<span className={cn("flex items-center gap-2 font-mono text-[11.5px] leading-3.5", className)}>
-			<span aria-hidden className={cn("size-1.5 shrink-0 rounded-full", STATUS_DOT[status.kind])} />
+			<StatusDot tone="custom" className={STATUS_DOT[status.kind]} />
 			<span className="text-foreground">{lead}</span>
 			{detail === undefined ? null : <span className="text-muted-foreground/70">{detail}</span>}
 		</span>

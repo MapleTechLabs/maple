@@ -1,6 +1,9 @@
 import { useMemo } from "react"
 import type { DashboardId, DashboardVersionId } from "@maple/domain/http"
+import { Button } from "@maple/ui/components/ui/button"
+import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { Result } from "@/lib/effect-atom"
+import { ErrorState } from "@/components/common/error-state"
 import { HistoryIcon, XmarkIcon } from "@/components/icons"
 import { useDashboardVersions } from "./use-dashboard-history"
 import { VersionListItem } from "./version-list-item"
@@ -33,23 +36,36 @@ export function DashboardHistoryPanel({
 				<HistoryIcon className="size-4" />
 				<h2 className="text-sm font-medium tracking-tight">History</h2>
 				<span className="ml-1 font-mono text-[10px] text-muted-foreground">{versions.length}</span>
-				<button
-					type="button"
+				<Button
+					variant="ghost"
+					size="icon-xs"
 					onClick={onClose}
-					className="ml-auto rounded-sm p-0.5 text-muted-foreground hover:text-foreground"
+					className="ml-auto text-muted-foreground hover:text-foreground"
 					aria-label="Close history panel"
 				>
 					<XmarkIcon className="size-4" />
-				</button>
+				</Button>
 			</div>
 
 			<div className="flex-1 min-h-0 overflow-y-auto">
-				{isLoading && <div className="px-4 py-6 text-xs text-muted-foreground">Loading history…</div>}
-
-				{isError && (
-					<div className="px-4 py-6 text-xs text-destructive">
-						Couldn't load history. Try reopening the panel.
+				{isLoading && (
+					<div role="status" aria-label="Loading history" className="flex flex-col gap-4 px-4 py-4">
+						{[0, 1, 2, 3].map((i) => (
+							<div key={i} className="flex flex-col gap-1.5">
+								<Skeleton className="h-3 w-32" />
+								<Skeleton className="h-2.5 w-48 opacity-60" />
+							</div>
+						))}
 					</div>
+				)}
+
+				{Result.isFailure(result) && (
+					<ErrorState
+						variant="inline"
+						error={result.cause}
+						title="Couldn't load history"
+						className="px-4"
+					/>
 				)}
 
 				{!isLoading && !isError && versions.length === 0 && (

@@ -1,4 +1,6 @@
 import { Badge } from "@maple/ui/components/ui/badge"
+import { InlineCode } from "@maple/ui/components/ui/inline-code"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import {
 	ChartLineIcon,
 	GridIcon,
@@ -84,9 +86,7 @@ function WidgetList({ widgets, max = 8 }: { widgets: NormalizedWidget[]; max?: n
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
 	return (
 		<div className="space-y-1.5">
-			<div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-				{title}
-			</div>
+			<Eyebrow as="div">{title}</Eyebrow>
 			{children}
 		</div>
 	)
@@ -373,9 +373,8 @@ export function RemoveDashboardWidgetSummary({ input }: ApprovalRendererProps) {
 		<div className="flex items-start gap-2">
 			<TrashIcon className="mt-0.5 size-3.5 shrink-0 text-destructive" />
 			<div className="text-xs leading-relaxed">
-				Remove widget <span className="rounded bg-muted px-1 font-mono text-[11px]">{widgetId}</span>{" "}
-				from dashboard{" "}
-				<span className="rounded bg-muted px-1 font-mono text-[11px]">{dashboardId}</span>.
+				Remove widget <InlineCode>{widgetId}</InlineCode> from dashboard{" "}
+				<InlineCode>{dashboardId}</InlineCode>.
 			</div>
 		</div>
 	)
@@ -407,12 +406,9 @@ export function ReorderDashboardWidgetsSummary({ input }: ApprovalRendererProps)
 			{previewIds.length > 0 ? (
 				<div className="flex flex-wrap gap-1">
 					{previewIds.map((id) => (
-						<span
-							key={id}
-							className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground"
-						>
+						<InlineCode key={id} className="px-1.5 py-0.5 text-[10px] text-muted-foreground">
 							{id}
-						</span>
+						</InlineCode>
 					))}
 					{overflow > 0 ? (
 						<span className="text-[10px] text-muted-foreground">+ {overflow} more</span>

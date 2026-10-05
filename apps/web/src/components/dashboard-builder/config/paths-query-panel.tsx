@@ -1,7 +1,8 @@
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Button } from "@maple/ui/components/ui/button"
 import { Input } from "@maple/ui/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
-import { cn } from "@maple/ui/lib/utils"
+import { ToggleGroup, ToggleGroupItem } from "@maple/ui/components/ui/toggle-group"
 import { PATHS_MAX_BRANCHES, PATHS_MAX_DEPTH } from "@maple/query-model"
 
 import { FUNNEL_KEY_BY_OPTIONS, FUNNEL_WINDOW_OPTIONS } from "@/components/funnels/definition"
@@ -55,24 +56,22 @@ function Segmented<T extends string | number>({
 	ariaLabel: string
 }) {
 	return (
-		<div className="flex h-8 rounded-md border bg-muted/40 p-0.5" role="group" aria-label={ariaLabel}>
+		<ToggleGroup
+			variant="outline"
+			size="sm"
+			aria-label={ariaLabel}
+			value={[String(value)]}
+			onValueChange={(values) => {
+				const next = options.find((option) => String(option.value) === values[0])
+				if (next) onSelect(next.value)
+			}}
+		>
 			{options.map((option) => (
-				<button
-					key={String(option.value)}
-					type="button"
-					onClick={() => onSelect(option.value)}
-					aria-pressed={value === option.value}
-					className={cn(
-						"rounded-sm px-2.5 text-xs transition-colors",
-						value === option.value
-							? "bg-background text-foreground shadow-sm"
-							: "text-muted-foreground hover:text-foreground",
-					)}
-				>
+				<ToggleGroupItem key={String(option.value)} value={String(option.value)} className="text-xs">
 					{option.label}
-				</button>
+				</ToggleGroupItem>
 			))}
-		</div>
+		</ToggleGroup>
 	)
 }
 
@@ -116,9 +115,7 @@ export function PathsQueryPanelView({ paths, onUpdate, suggestions }: PathsQuery
 			{/* Anchor + direction */}
 			<div className="space-y-1.5">
 				<div className="flex items-center gap-2">
-					<span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
-						Paths
-					</span>
+					<Eyebrow>Paths</Eyebrow>
 					<Segmented
 						ariaLabel="Direction"
 						value={paths.direction}

@@ -53,9 +53,6 @@ function AccountPage() {
 					<AccountNav active={activeTab} onSelectTab={handleTabSelect} />
 				</DashboardLayout.Filters>
 				<DashboardLayout.Content>
-					<DashboardLayout.Sticky>
-						<DashboardLayout.Header title={accountTabLabels[activeTab]} />
-					</DashboardLayout.Sticky>
 					<DashboardLayout.Scroll>
 						{activeTab === "profile" && <ProfileSection />}
 						{activeTab === "emails" && <EmailAddressesSection />}

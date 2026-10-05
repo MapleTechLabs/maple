@@ -113,7 +113,6 @@ const makeHarness = () => {
 	const runtimeLive = Layer.succeed(AlertRuntime, {
 		now: Effect.sync(() => Date.now()),
 		makeUuid: () => crypto.randomUUID(),
-		fetch: globalThis.fetch,
 		deliveryTimeoutMs: () => 15_000,
 	})
 	const hazelOAuthLive = HazelOAuthService.layer.pipe(Layer.provide(Layer.mergeAll(envLive, testDb.layer)))
@@ -133,6 +132,7 @@ const makeHarness = () => {
 		Layer.provide(Layer.mergeAll(envLive, testDb.layer, edgeCacheLive)),
 	)
 	const alertDestinationsLive = Layer.effect(AlertDestinationsService, AlertDestinationsService.make).pipe(
+		Layer.provide(FetchHttpClient.layer),
 		Layer.provide(ChatAlertPoster.layer),
 		Layer.provide(
 			Layer.mergeAll(envLive, testDb.layer, runtimeLive, hazelOAuthLive, emailLive, orgMembersLive),
@@ -145,6 +145,7 @@ const makeHarness = () => {
 		Layer.provide(Layer.mergeAll(testDb.layer, runtimeLive)),
 	)
 	const alertsLive = Layer.effect(AlertsService, AlertsService.make).pipe(
+		Layer.provide(FetchHttpClient.layer),
 		Layer.provide(ChatAlertPoster.layer),
 		Layer.provide(
 			Layer.effect(MobilePushService, MobilePushService.make).pipe(

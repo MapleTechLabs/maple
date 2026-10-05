@@ -49,6 +49,7 @@ const makeLayer = (testDb: TestDb) => {
 		Layer.provide(oauthLive),
 	)
 	const scrapeTargetsLive = Layer.effect(ScrapeTargetsService, ScrapeTargetsService.make).pipe(
+		Layer.provide(FetchHttpClient.layer),
 		Layer.provide(Layer.mergeAll(discoveryLive, oauthLive)),
 	)
 	return Layer.mergeAll(

@@ -8,7 +8,7 @@ import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { Tabs, TabsList, TabsTrigger } from "@maple/ui/components/ui/tabs"
 
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { DocsLink } from "@/components/common/docs-link"
 import { SignalEmptyState } from "@/components/common/signal-empty-state"
 import { useSignalPresence } from "@/hooks/use-signal-presence"
@@ -396,7 +396,7 @@ function AnalyticsContent({
 						<Skeleton className="h-56 w-full" />
 					</>
 				))
-				.onError((error) => <QueryErrorState error={error} />)
+				.onError((error) => <ErrorState error={error} />)
 				.onSuccess((summary) => {
 					const source: AnalyticsMetricSource = { summary, timeseries, pageviews }
 					// An explicit pick wins while it still holds; a filter change that
@@ -442,7 +442,7 @@ function AnalyticsContent({
 						<Skeleton className="h-72 w-full" />
 					</div>
 				))
-				.onError((error) => <QueryErrorState error={error} />)
+				.onError((error) => <ErrorState error={error} />)
 				.onSuccess((breakdowns, result) => {
 					const pages = Result.builder(pagesResult)
 						.onSuccess((rows) => rows.data)

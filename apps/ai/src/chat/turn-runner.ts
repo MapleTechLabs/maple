@@ -22,6 +22,7 @@ import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
 import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "../mcp/expected-failures"
 import { ChatMessage, type ChatTurnOrigin, type ChatTurnTenantEncoded } from "@maple/domain/chat-session"
 import type { InvestigationProgress, PrReviewFailureReason } from "@maple/domain/http"
+import { type ChatSessionNamespace, chatSessionsLayerIfBound } from "@maple/backend/platform/chat-sessions"
 import { envPorts } from "@maple/backend/platform/env-ports"
 import { workerTelemetryConfig } from "@maple/infra/worker-telemetry"
 import { Cause, Effect, Exit, Layer, ManagedRuntime, Match, Option } from "effect"
@@ -102,6 +103,8 @@ export interface RunChatSessionTurnInput {
 	readonly env: Record<string, unknown>
 	/** The Workers AI gateway binding, from the activation; none sends Workers AI calls over REST. */
 	readonly workersAi?: Option.Option<WorkersAiBinding>
+	/** This Worker's `ChatSession` namespace, from the activation; the graph's `ChatSessions` port. */
+	readonly chatSessions?: ChatSessionNamespace
 	readonly messageId: string
 	readonly tenant: ChatTurnTenantEncoded
 	/** Who is driving the turn, stated by whoever raised it. */
@@ -264,6 +267,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 			Layer.provideMerge(layerPg),
 			Layer.provideMerge(mapleDbConnectionLayer(input.env)),
 			Layer.provideMerge(envPorts(input.env)),
+			Layer.provideMerge(chatSessionsLayerIfBound(input.chatSessions, input.env)),
 			Layer.provideMerge(ReturnedToolFailuresOkLayer.pipe(Layer.provideMerge(telemetry.layer))),
 		),
 	)

@@ -1,3 +1,4 @@
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Link } from "@tanstack/react-router"
 
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
@@ -49,9 +50,9 @@ export function ServiceLensRail({
 }: ServiceLensRailProps) {
 	return (
 		<div className={cn("flex h-full flex-col gap-0.5 p-3", waiting && "opacity-60")}>
-			<div className="px-2 pb-2.5 text-[10px] font-medium uppercase tracking-[0.1em] text-muted-foreground">
+			<Eyebrow as="div" className="px-2 pb-2.5">
 				Services on this cluster
-			</div>
+			</Eyebrow>
 
 			{loading ? (
 				<RailLoading />

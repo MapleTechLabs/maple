@@ -4,6 +4,7 @@ import type { V2SetupAudit, V2SetupAuditCheck } from "@maple/domain/http/v2"
 
 import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
 import { Badge } from "@maple/ui/components/ui/badge"
+import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import { Button, buttonVariants } from "@maple/ui/components/ui/button"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { cn } from "@maple/ui/lib/utils"
@@ -116,13 +117,13 @@ function CheckRow({ check }: { check: V2SetupAuditCheck }) {
 				{check.affected.length > 0 && (
 					<div className="flex flex-wrap items-center gap-1.5 pt-0.5">
 						{check.affected.map((entity) => (
-							<span
+							<InlineCode
 								key={`${entity.kind}:${entity.name}`}
 								title={entity.note ?? undefined}
-								className="bg-muted/60 text-muted-foreground rounded px-1.5 py-0.5 font-mono text-[11px] leading-4"
+								className="text-muted-foreground text-[11px] leading-4"
 							>
 								{entity.name}
-							</span>
+							</InlineCode>
 						))}
 						{check.affected_count > check.affected.length && (
 							<span className="text-muted-foreground/70 text-[11px]">

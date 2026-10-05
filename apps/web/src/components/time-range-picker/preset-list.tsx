@@ -1,4 +1,5 @@
 import type { TimePreset } from "@/lib/time-utils"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { cn } from "@maple/ui/lib/utils"
 
 interface PresetListProps {
@@ -11,9 +12,9 @@ interface PresetListProps {
 export function PresetList({ selectedValue, onSelect, onCustomClick, presets }: PresetListProps) {
 	return (
 		<div className="flex h-full flex-col py-2">
-			<div className="px-3 pb-2 text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground/80">
+			<Eyebrow as="div" className="px-3 pb-2">
 				Presets
-			</div>
+			</Eyebrow>
 			<div className="flex flex-col">
 				{presets.map((preset) => {
 					const active = selectedValue === preset.value

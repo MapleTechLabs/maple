@@ -16,6 +16,7 @@
  * 2. **Each half fails alone.** A warehouse read that errors greys its own row.
  *    Neither can blank the card, and the card can never blank the page.
  */
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { useMemo } from "react"
 import { Link } from "@tanstack/react-router"
 import type { V2Investigation } from "@maple/domain/http/v2"
@@ -235,9 +236,7 @@ const Segment = ({ share, color }: { share: number; color: string }) =>
 	) : null
 
 const RowLabel = ({ children }: { children: string }) => (
-	<span className="w-14 shrink-0 text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
-		{children}
-	</span>
+	<Eyebrow className="w-14 shrink-0">{children}</Eyebrow>
 )
 
 const Figure = ({ value, unit, tone }: { value: string; unit: string; tone?: string }) => (

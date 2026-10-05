@@ -31,7 +31,7 @@ import {
 	type CodeReviewSearch,
 } from "@/components/code-review/code-review-search"
 import { ReviewDetailSheet } from "@/components/code-review/review-detail-sheet"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
 import { retainedQuery } from "@/lib/services/common/atom-client"
@@ -129,7 +129,7 @@ function CodeReviewIssuesPage() {
 					</div>
 				))
 				.onError((error) => (
-					<QueryErrorState error={error} titleOverride="Failed to load issues" onRetry={refresh} />
+					<ErrorState error={error} title="Failed to load issues" onRetry={refresh} />
 				))
 				.onSuccess((response) =>
 					response.findings.length === 0 ? (

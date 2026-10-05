@@ -1,3 +1,4 @@
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { Exit, Option } from "effect"
 import { Fragment, useState, type Dispatch, type SetStateAction } from "react"
 import { toastManager } from "@maple/ui/components/ui/toast"
@@ -407,12 +408,7 @@ export function AlertsSettingsTab({ manager, isAdmin }: { manager: DestinationMa
 																ev.text,
 															)}
 														>
-															<span
-																className={cn(
-																	"size-1.5 rounded-full",
-																	ev.dot,
-																)}
-															/>
+															<StatusDot tone="custom" className={ev.dot} />
 															{ev.label}
 														</span>
 													</TableCell>

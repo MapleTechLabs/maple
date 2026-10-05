@@ -1,16 +1,11 @@
+import { Spinner } from "@maple/ui/components/ui/spinner"
 import type { ReactNode } from "react"
 
 import { Button } from "@maple/ui/components/ui/button"
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
 import { cn } from "@maple/ui/lib/utils"
 
-import {
-	CheckIcon,
-	CircleWarningIcon,
-	FloppyDiskIcon,
-	LoaderIcon,
-	SquareTerminalIcon,
-} from "@/components/icons"
+import { CheckIcon, CircleWarningIcon, FloppyDiskIcon, SquareTerminalIcon } from "@/components/icons"
 import { RULE_FORM_MAX_WIDTH } from "@/components/alerts/rule-form-layout"
 
 interface RuleActionBarProps {
@@ -86,11 +81,7 @@ export function RuleActionBar({
 						</Button>
 					)}
 					<Button type="button" onClick={onSave} disabled={!ready || saving}>
-						{saving ? (
-							<LoaderIcon size={14} className="animate-spin" />
-						) : (
-							<FloppyDiskIcon size={14} />
-						)}
+						{saving ? <Spinner size={14} /> : <FloppyDiskIcon size={14} />}
 						{editing ? "Save changes" : "Create rule"}
 					</Button>
 				</div>

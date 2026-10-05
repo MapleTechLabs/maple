@@ -1,3 +1,5 @@
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { Spinner } from "@maple/ui/components/ui/spinner"
 import { useMemo, useState } from "react"
 import { Exit } from "effect"
 import { Badge } from "@maple/ui/components/ui/badge"
@@ -16,7 +18,7 @@ import { Label } from "@maple/ui/components/ui/label"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { toastManager } from "@maple/ui/components/ui/toast"
 
-import { LoaderIcon, PlanetScaleIcon } from "@/components/icons"
+import { PlanetScaleIcon } from "@/components/icons"
 import { cn } from "@maple/ui/lib/utils"
 import { isExcluded } from "@/components/infra/planetscale/branch-selection"
 import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
@@ -33,7 +35,7 @@ import {
 	IntegrationEmptyHint,
 	IntegrationEmptyMedia,
 } from "./integration-empty-state"
-import { PlanetScaleMetricsHealth } from "./planetscale-metrics-health"
+import { PlanetScaleMetricsHealth, QUIET_LINK } from "./planetscale-metrics-health"
 import { PlanetScaleMetricsTokenForm } from "./planetscale-metrics-token-form"
 import { PlanetScaleSetupChecklist } from "./planetscale-setup-checklist"
 import { derivePlanetScaleSetup } from "./planetscale-setup-steps"
@@ -189,11 +191,7 @@ export function PlanetScaleIntegrationCard() {
 						Your databases and branches will appear here after connecting.
 					</IntegrationEmptyHint>
 					<Button onClick={connectFlow.connect} disabled={actionBusy}>
-						{connectFlow.busy ? (
-							<LoaderIcon size={16} className="animate-spin" />
-						) : (
-							<PlanetScaleIcon size={16} />
-						)}
+						{connectFlow.busy ? <Spinner size={16} /> : <PlanetScaleIcon size={16} />}
 						Connect PlanetScale
 					</Button>
 				</IntegrationEmptyCard>
@@ -251,7 +249,7 @@ export function PlanetScaleIntegrationCard() {
 							Change organization
 						</Button>
 						<Button size="sm" variant="outline" onClick={handleDisconnect} disabled={actionBusy}>
-							{disconnectBusy ? <LoaderIcon size={14} className="animate-spin" /> : null}
+							{disconnectBusy ? <Spinner size={14} /> : null}
 							Disconnect
 						</Button>
 					</div>
@@ -266,17 +264,13 @@ export function PlanetScaleIntegrationCard() {
 							actions={{
 								connected: (
 									<Button size="sm" onClick={connectFlow.connect} disabled={actionBusy}>
-										{connectFlow.busy ? (
-											<LoaderIcon size={14} className="animate-spin" />
-										) : null}
+										{connectFlow.busy ? <Spinner size={14} /> : null}
 										Reconnect
 									</Button>
 								),
 								permissions: (
 									<Button size="sm" onClick={connectFlow.connect} disabled={actionBusy}>
-										{connectFlow.busy ? (
-											<LoaderIcon size={14} className="animate-spin" />
-										) : null}
+										{connectFlow.busy ? <Spinner size={14} /> : null}
 										Reauthorize with read_databases
 									</Button>
 								),
@@ -309,7 +303,7 @@ export function PlanetScaleIntegrationCard() {
 								<button
 									type="button"
 									onClick={() => setRotateOpen(true)}
-									className="text-muted-foreground underline decoration-border underline-offset-2 transition-colors hover:text-foreground"
+									className={QUIET_LINK}
 								>
 									Rotate token
 								</button>
@@ -579,7 +573,7 @@ function PlanetScaleOrgPicker(props: {
 					{props.cancelLabel}
 				</Button>
 				<Button onClick={handleSubmit} disabled={submitting || selected === null}>
-					{submitting ? <LoaderIcon size={14} className="animate-spin" /> : null}
+					{submitting ? <Spinner size={14} /> : null}
 					Connect organization
 				</Button>
 			</DialogFooter>
@@ -642,15 +636,11 @@ function PlanetScaleWebhookConfig() {
 	return (
 		<div className="space-y-3 border-t border-border/60 p-4">
 			<div className="space-y-1">
-				<span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-					Webhook URL
-				</span>
+				<Eyebrow>Webhook URL</Eyebrow>
 				<p className="break-all font-mono text-xs text-foreground">{config.url}</p>
 			</div>
 			<div className="space-y-1">
-				<span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-					Secret
-				</span>
+				<Eyebrow>Secret</Eyebrow>
 				<p className="break-all font-mono text-xs text-foreground">{config.secret}</p>
 			</div>
 			<p className="text-[11px] text-muted-foreground">

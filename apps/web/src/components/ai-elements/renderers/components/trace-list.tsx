@@ -3,6 +3,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { LatencyValue } from "@maple/ui/components/latency-value"
 import { formatDuration } from "@maple/ui/lib/format"
 import { HttpSpanLabel } from "@maple/ui/components/traces/http-span-label"
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
 
 interface TraceListProps {
 	traces: ReadonlyArray<{
@@ -64,7 +65,7 @@ export function TraceList({ props }: RendererComponentProps<TraceListProps>) {
 										{trace.traceId.slice(0, 12)}
 									</a>
 									{trace.hasError && (
-										<span className="ml-1 inline-block size-1.5 rounded-full bg-severity-error" />
+										<StatusDot tone="custom" className="ml-1 bg-severity-error" />
 									)}
 								</td>
 								<td className="max-w-[160px] py-1 pr-2">
