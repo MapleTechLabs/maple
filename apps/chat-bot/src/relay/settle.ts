@@ -38,7 +38,7 @@ export const decodeRelayTurnCheckpoint = Schema.decodeUnknownOption(RelayTurnChe
 /** The session's `TURN_STALE_MS` (25 min, when it expires a turn nobody ended) plus a margin. */
 const CHECKPOINT_TTL_MS = 30 * 60 * 1000
 
-/** `"pending"`: the session is still running the turn, so the checkpoint waits for the next alarm. */
+/** `"pending"`: the session is still running the turn, so the checkpoint waits for its next job. */
 export type SettleOutcome = "pending" | "done"
 
 /** Anything that goes wrong is logged once, the cause summarized, and the checkpoint dropped. */

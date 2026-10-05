@@ -24,23 +24,40 @@
 import { BoundChatSessions, type ChatSessionNamespace } from "@maple/backend/platform/chat-sessions"
 import type { ChatConversation, InboundEvent } from "@maple/chat-platform"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
+import * as Alchemy from "alchemy"
 import * as Cloudflare from "alchemy/Cloudflare"
-import { Effect, Schema } from "effect"
+import { Context, Effect, Schema } from "effect"
 import { ConversationNotRecorded } from "./conversation.ts"
 import type { RelayTurnCheckpoint, SettleOutcome } from "./settle.ts"
 import { connectorConversationRelayName, connectorRelayByName } from "./stub.ts"
 
-/** What this object reads off its Durable Object state. */
+/** What this object reads off its Durable Object state. Turn checkpoints go through the ledger. */
 interface ConnectorRelayState {
 	readonly storage: {
-		getAlarm(): Promise<number | null>
-		setAlarm(scheduledTime: number): Promise<void>
 		get<A>(key: string): Promise<A | undefined>
-		put(key: string, value: boolean | RelayTurnCheckpoint): Promise<void>
-		delete(key: string): Promise<boolean>
-		list(options: { prefix: string }): Promise<Map<string, unknown>>
+		put(key: string, value: boolean): Promise<void>
 	}
 	waitUntil(promise: Promise<unknown>): void
+}
+
+/**
+ * Turn checkpoints and the durable jobs that wake this object, each write committed together with
+ * the job it implies. Alchemy callbacks in the isolate (`durableLedger`); a test stands in for them.
+ */
+export interface ConnectorRelayLedger {
+	/** Store the checkpoint and schedule its turn job, in one transaction. */
+	readonly record: (
+		key: string,
+		checkpoint: RelayTurnCheckpoint,
+	) => Effect.Effect<void, ConnectorRelayStorageError>
+	/** Drop the checkpoint and cancel its turn job, in one transaction. */
+	readonly forget: (key: string) => Effect.Effect<void, ConnectorRelayStorageError>
+	/** The stored checkpoint, or `undefined` once the turn was forgotten. */
+	readonly read: (key: string) => Effect.Effect<unknown, ConnectorRelayStorageError>
+	/** Run the turn job again after {@link KEEP_ALIVE_MS}, if the checkpoint is still stored. */
+	readonly revisit: (key: string) => Effect.Effect<void, ConnectorRelayStorageError>
+	/** Run the keep-alive job after {@link KEEP_ALIVE_MS}. */
+	readonly keepAlive: Effect.Effect<void, ConnectorRelayStorageError>
 }
 
 /**
@@ -53,7 +70,7 @@ interface ConnectorRelayState {
 const openedKey = (conversationKey: string): string => `opened:${conversationKey}`
 
 /** One checkpoint per turn: a channel whose threads are conversations can relay several at once. */
-const TURN_PREFIX = "turn:"
+export const TURN_PREFIX = "turn:"
 const turnKey = (checkpoint: RelayTurnCheckpoint): string =>
 	`${TURN_PREFIX}${checkpoint.sessionId}:${checkpoint.turnMessageId}`
 
@@ -74,14 +91,14 @@ export interface ConnectorRelayPorts {
 }
 
 /**
- * How often a relaying object re-arms its alarm.
+ * How often a relaying object wakes itself.
  *
  * An outbound fetch never keeps a Durable Object alive and an object with no incoming event is
  * evicted inside a couple of minutes, so a turn nobody is streaming FROM this object would be cut
- * off mid-answer. The alarm is that incoming event, and it is the same 30 seconds the chat session
+ * off mid-answer. A due job is that incoming event, and it is the same 30 seconds the chat session
  * itself uses for the same reason.
  */
-const KEEP_ALIVE_MS = 30 * 1000
+export const KEEP_ALIVE_MS = 30 * 1000
 
 /** The heavy half, loaded on first use (see `run`); a parameter so a test can stand in for it. */
 export type ConnectorRelayRuntime = Pick<typeof import("./run.ts"), "runInboundEvent" | "settleInboundTurn">
@@ -131,15 +148,18 @@ const runtimeCall = <A>(operation: string, call: () => Promise<A>) =>
 	})
 
 export class ConnectorRelay {
-	/** How many events this activation is still working on. Zero means the alarm may stop. */
+	/** How many events this activation is still working on. Zero lets the keep-alive lapse. */
 	private live = 0
-	/** Checkpoints this activation is relaying; one in storage but not here is an evicted turn's. */
+	/** Whether a keep-alive job is pending; set once per lapse so a busy channel never postpones it. */
+	private keepingAlive = false
+	/** Checkpoints this activation is relaying; one stored but not here is an evicted turn's. */
 	private readonly relaying = new Set<string>()
 	private unlinkedNoticeAt: number | undefined
 
 	constructor(
 		private readonly ctx: ConnectorRelayState,
 		private readonly env: Record<string, unknown>,
+		private readonly ledger: ConnectorRelayLedger,
 		private readonly runtime: () => Promise<ConnectorRelayRuntime> = loadRuntime,
 		/** maple-ai's `ChatSession` namespace, which the Worker binds cross-script. */
 		private readonly chatSessions?: ChatSessionNamespace,
@@ -155,32 +175,37 @@ export class ConnectorRelay {
 	deliver(event: InboundEvent): Effect.Effect<void> {
 		return Effect.sync(() => {
 			this.live += 1
-			this.armKeepAlive()
+			if (!this.keepingAlive) {
+				this.keepingAlive = true
+				this.ctx.waitUntil(Effect.runPromise(this.armKeepAlive))
+			}
 			this.ctx.waitUntil(Effect.runPromise(this.run(event)))
 		})
 	}
 
+	/** The keep-alive job: re-armed while this activation has work, left to lapse once it has none. */
+	keepAliveDue(): Effect.Effect<void> {
+		return Effect.suspend(() => {
+			if (this.live > 0) return this.armKeepAlive
+			this.keepingAlive = false
+			return Effect.void
+		})
+	}
+
 	/**
-	 * The keep-alive, and the settle of turns an evicted activation left behind. It keeps firing while
-	 * any checkpoint is left, which is how a turn the session is still running gets settled later.
+	 * A turn's job. A turn this activation relays is only looked at again later; one it does not is
+	 * an evicted activation's, and is settled here. A forgotten turn's job has nothing left to do.
 	 */
-	alarm(): Effect.Effect<void> {
-		return storageCall("list", () => this.ctx.storage.list({ prefix: TURN_PREFIX })).pipe(
-			Effect.matchEffect({
-				// Unlistable this time: re-armed, so the checkpoints are looked at again on the next tick.
-				onFailure: (error) =>
-					logStorageFailure(error).pipe(Effect.andThen(Effect.sync(() => this.armKeepAlive()))),
-				onSuccess: (recorded) =>
-					Effect.sync(() => {
-						for (const [key, checkpoint] of recorded) {
-							if (this.relaying.has(key)) continue
-							this.live += 1
-							this.relaying.add(key)
-							this.ctx.waitUntil(Effect.runPromise(this.settle(key, checkpoint)))
-						}
-						if (this.live > 0) this.armKeepAlive()
-					}),
-			}),
+	turnDue(key: string): Effect.Effect<void> {
+		return this.ledger.read(key).pipe(
+			Effect.flatMap((checkpoint) =>
+				checkpoint === undefined
+					? Effect.void
+					: this.relaying.has(key)
+						? this.ledger.revisit(key)
+						: this.settle(key, checkpoint),
+			),
+			Effect.catchTag(STORAGE_ERROR, logStorageFailure),
 		)
 	}
 
@@ -253,23 +278,9 @@ export class ConnectorRelay {
 		)
 	}
 
-	/** A pending alarm is kept, not pushed back: a busy conversation would postpone it forever. */
-	private armKeepAlive(): void {
-		this.ctx.waitUntil(
-			Effect.runPromise(
-				storageCall("getAlarm", () => this.ctx.storage.getAlarm()).pipe(
-					Effect.flatMap((pending) =>
-						pending === null
-							? storageCall("setAlarm", () =>
-									this.ctx.storage.setAlarm(Date.now() + KEEP_ALIVE_MS),
-								)
-							: Effect.void,
-					),
-					Effect.catchTag(STORAGE_ERROR, logStorageFailure),
-				),
-			),
-		)
-	}
+	private readonly armKeepAlive: Effect.Effect<void> = Effect.suspend(() => this.ledger.keepAlive).pipe(
+		Effect.catchTag(STORAGE_ERROR, logStorageFailure),
+	)
 
 	/**
 	 * Everything below this line is behind a dynamic import: it reaches the connector registry, the
@@ -306,7 +317,7 @@ export class ConnectorRelay {
 	}
 
 	/** Kept only while the session is still running the turn; cleared however else it ends. */
-	private settle(key: string, checkpoint: unknown): Effect.Effect<void> {
+	private settle(key: string, checkpoint: unknown): Effect.Effect<void, ConnectorRelayStorageError> {
 		return runtimeCall("settle", async () => {
 			const { settleInboundTurn } = await this.runtime()
 			return settleInboundTurn(
@@ -326,30 +337,30 @@ export class ConnectorRelay {
 				),
 			),
 			Effect.flatMap((outcome) =>
-				outcome === "done" ? this.forgetTurn(key) : Effect.sync(() => void this.relaying.delete(key)),
+				outcome === "done" ? this.ledger.forget(key) : this.ledger.revisit(key),
 			),
-			Effect.ensuring(Effect.sync(() => (this.live -= 1))),
+			// A settle that re-records the turn marks it live; it is not, once the settle returns.
+			Effect.ensuring(Effect.sync(() => void this.relaying.delete(key))),
 		)
 	}
 
-	/** Marked before the write, so an alarm meanwhile does not take a live turn for an evicted one. */
+	/** Marked before the write, so a job meanwhile does not take a live turn for an evicted one. */
 	private recordTurn(checkpoint: RelayTurnCheckpoint): Effect.Effect<void> {
 		const key = turnKey(checkpoint)
 		return Effect.suspend(() => {
 			this.relaying.add(key)
-			return storageCall("put", () => this.ctx.storage.put(key, checkpoint))
+			return this.ledger.record(key, checkpoint)
 		}).pipe(Effect.catchTag(STORAGE_ERROR, logStorageFailure))
 	}
 
-	/**
-	 * Left in `relaying`: an alarm that listed the key before the delete must not settle a turn
-	 * that already finished. Keys are per turn, so none is ever reused.
-	 */
+	/** The checkpoint and its job go together, so a finished turn is never settled again. */
 	private forgetTurn(key: string): Effect.Effect<void> {
-		return storageCall("delete", () => this.ctx.storage.delete(key)).pipe(
-			Effect.asVoid,
-			Effect.catchTag(STORAGE_ERROR, logStorageFailure),
-		)
+		return this.ledger
+			.forget(key)
+			.pipe(
+				Effect.ensuring(Effect.sync(() => void this.relaying.delete(key))),
+				Effect.catchTag(STORAGE_ERROR, logStorageFailure),
+			)
 	}
 
 	/**
@@ -374,24 +385,99 @@ export class ConnectorRelay {
 
 export interface ConnectorRelayApi {
 	readonly deliver: (event: InboundEvent) => Effect.Effect<void>
-	readonly alarm: () => Effect.Effect<void>
 	readonly remember: (conversationKey: string) => Effect.Effect<void, ConnectorRelayStorageError>
+}
+
+const storageFailed = (operation: string) => (cause: unknown) =>
+	new ConnectorRelayStorageError({
+		operation,
+		message: `The relay object's storage ${operation} failed`,
+		cause,
+	})
+
+/**
+ * The ledger on alchemy's callbacks: a checkpoint and its job commit in one storage transaction, and
+ * the job store keeps the native alarm on the earliest one. `runtime` is the instance's own context,
+ * captured at activation, because the turns run detached on `waitUntil`.
+ */
+const durableLedger = (
+	state: Cloudflare.DurableObjectState["Service"],
+	turnJob: Alchemy.Callback<string>,
+	keepAliveJob: Alchemy.Callback<null>,
+	runtime: Context.Context<Alchemy.RuntimeContext>,
+): ConnectorRelayLedger => {
+	const inContext = <A, E>(operation: string, effect: Effect.Effect<A, E, Alchemy.RuntimeContext>) =>
+		effect.pipe(Effect.mapError(storageFailed(operation)), Effect.provideContext(runtime))
+	const again = { after: KEEP_ALIVE_MS }
+	return {
+		record: (key, checkpoint) =>
+			inContext(
+				"record",
+				state.storage.transaction(
+					state.storage
+						.put(key, checkpoint)
+						.pipe(Effect.andThen(turnJob.schedule(key, { ...again, payload: key }))),
+				),
+			),
+		forget: (key) =>
+			inContext(
+				"forget",
+				state.storage.transaction(
+					state.storage.delete(key).pipe(Effect.andThen(turnJob.cancel(key))),
+				),
+			),
+		read: (key) => inContext("get", state.storage.get(key)),
+		revisit: (key) =>
+			inContext(
+				"revisit",
+				state.storage.transaction(
+					state.storage
+						.get(key)
+						.pipe(
+							Effect.flatMap((stored) =>
+								stored === undefined
+									? Effect.void
+									: turnJob.schedule(key, { ...again, payload: key }),
+							),
+						),
+				),
+			),
+		keepAlive: inContext("keepAlive", keepAliveJob.schedule("keep-alive", { ...again, payload: null })),
+	}
 }
 
 /**
  * One activation, in alchemy's two phases: the outer Effect resolves the state, env and the chat
  * session namespace (the Worker provides it, `worker.ts`) — it also runs at plan time against a
- * mock state, so it must not touch storage — and the inner one returns the object's methods as
- * Effects, which alchemy's bridge runs per RPC call.
+ * mock state, so it must not touch storage — and the inner one registers the jobs and returns the
+ * object's methods as Effects, which alchemy's bridge runs per RPC call.
  */
 export const activateConnectorRelay = Effect.map(
 	Effect.all([Cloudflare.DurableObjectState, Cloudflare.WorkerEnvironment, BoundChatSessions]),
 	([state, env, chatSessions]) =>
-		Effect.sync(() => {
-			const relay = new ConnectorRelay(state.raw, env, loadRuntime, chatSessions)
+		Effect.gen(function* () {
+			// The handlers reach `relay` only when a job runs, after it is built below.
+			const turnJob = yield* Alchemy.makeCallback("relay-turn", (key: string) =>
+				Effect.suspend(() => relay.turnDue(key)),
+			)
+			const keepAliveJob = yield* Alchemy.makeCallback("relay-keep-alive", (_: null) =>
+				Effect.suspend(() => relay.keepAliveDue()),
+			)
+			const runtime = yield* Effect.context<Alchemy.RuntimeContext>()
+			const ledger = durableLedger(state, turnJob, keepAliveJob, runtime)
+			const relay = new ConnectorRelay(state.raw, env, ledger, loadRuntime, chatSessions)
+			// Every checkpoint stored at activation is a dead activation's. Scheduling each one covers
+			// the ones written before checkpoints had jobs; for the rest it only brings the job forward.
+			const stored = yield* state.storage.list({ prefix: TURN_PREFIX })
+			yield* Effect.forEach(stored.keys(), (key) => turnJob.schedule(key, { after: 0, payload: key }), {
+				discard: true,
+			}).pipe(
+				Effect.catchTag("CallbackError", (error) =>
+					logStorageFailure(storageFailed("schedule")(error)),
+				),
+			)
 			return {
 				deliver: (event) => relay.deliver(event),
-				alarm: () => relay.alarm(),
 				remember: (conversationKey) => relay.remember(conversationKey),
 			} satisfies ConnectorRelayApi
 		}),

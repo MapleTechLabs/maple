@@ -81,7 +81,7 @@
 	"catalogs": {
 		"alchemy": {
 			"@cloudflare/workers-types": "4.20260603.1",
-			"alchemy": "2.0.0-beta.80"
+			"alchemy": "2.0.0-beta.81"
 		},
 		"charts": {
 			"@tanstack/charts": "0.18.0",
@@ -126,6 +126,6 @@
 		"@effect/ai-openrouter@4.0.0": "patches/@effect%2Fai-openrouter@4.0.0.patch",
 		"@effect/vitest@4.0.0": "patches/@effect%2Fvitest@4.0.0.patch",
 		"effect@4.0.0": "patches/effect@4.0.0.patch",
-		"alchemy@2.0.0-beta.80": "patches/alchemy@2.0.0-beta.80.patch"
+		"alchemy@2.0.0-beta.81": "patches/alchemy@2.0.0-beta.81.patch"
 	}
 }
