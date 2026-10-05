@@ -142,19 +142,20 @@ export function ApiKeysSection() {
 		setRollOpen(true)
 	}
 
-	async function handleRevoke() {
-		if (!revokingKey) return
+	async function handleRevoke(): Promise<boolean> {
+		if (!revokingKey) return false
 		prepareForMutation()
 		const result = await revokeMutation({ params: { id: revokingKey.id } })
 		if (Exit.isSuccess(result)) {
 			toastManager.add({ title: "API key revoked", type: "success" })
 			void reconcileTxid(result.value.txid)
-		} else {
-			const { title, message } = displayError(result)
-			toastManager.add({ title, description: message, type: "error" })
+			// ConfirmDialog closes on `true`. `revokingKey` stays set so the copy doesn't swap mid-animation.
+			return true
 		}
-		// ConfirmDialog closes once this resolves. Keep `revokingKey` set so the dialog copy doesn't swap to the generic
-		// fallback while the close animation plays; the next open overwrites it.
+		const { title, message } = displayError(result)
+		toastManager.add({ title, description: message, type: "error" })
+		// `false` keeps the dialog open so the user can retry.
+		return false
 	}
 
 	// One pass, one clock. An expired key used to count as "Active" and sit in the active list behind

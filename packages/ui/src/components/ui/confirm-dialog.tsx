@@ -28,7 +28,8 @@ export interface ConfirmDialogProps {
 	icon?: React.ReactNode | null
 	/**
 	 * A returned promise drives the pending state and closes the dialog when it
-	 * resolves; a rejection keeps it open so the caller's toast can explain.
+	 * resolves. Resolving to `false` (an Exit-style failure) or rejecting keeps it
+	 * open so the user can retry after the caller's toast.
 	 */
 	onConfirm: () => void
 	/** Externally owned pending state, for callers that track their own mutation. */
@@ -68,9 +69,9 @@ export function ConfirmDialog({
 		if (!(result instanceof Promise)) return
 		setRunning(true)
 		result.then(
-			() => {
+			(value: unknown) => {
 				setRunning(false)
-				onOpenChange(false)
+				if (value !== false) onOpenChange(false)
 			},
 			() => setRunning(false),
 		)
