@@ -1,8 +1,9 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Duration, Effect, Fiber, Layer, Schema } from "effect"
+import { Duration, Effect, Fiber, Layer, Metric, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { ScrapeResultReport, ScrapeTargetId } from "@maple/domain/http"
 import { ApiClient, ApiRequestError } from "./ApiClient"
+import { bufferedResults } from "./Metrics"
 import { REPORT_BATCH_SIZE, REPORT_INTERVAL, ResultReporter } from "./ResultReporter"
 
 const targetId = Schema.decodeSync(ScrapeTargetId)("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
@@ -82,6 +83,25 @@ describe("ResultReporter", () => {
 				yield* TestClock.adjust(Duration.seconds(30))
 				yield* TestClock.adjust(REPORT_INTERVAL)
 				assert.deepStrictEqual(scrapedAts(harness), [1, 2])
+			}).pipe(Effect.provide(reporterLayer(harness)))
+		}),
+	)
+
+	it.effect("counts a batch stuck in delivery as pending", () =>
+		Effect.gen(function* () {
+			const harness = makeHarness()
+			let calls = 0
+			// Only the first POST stalls, so the shutdown flush at teardown completes.
+			harness.reportImpl = () => (calls++ === 0 ? Effect.never : Effect.void)
+			yield* Effect.gen(function* () {
+				const reporter = yield* ResultReporter
+				yield* reporter.record(report(1))
+				yield* Effect.forkChild(reporter.run)
+				yield* TestClock.adjust(Duration.millis(0))
+				yield* reporter.record(report(2))
+
+				assert.strictEqual(yield* reporter.pending, 2)
+				assert.strictEqual((yield* Metric.value(bufferedResults)).value, 2)
 			}).pipe(Effect.provide(reporterLayer(harness)))
 		}),
 	)

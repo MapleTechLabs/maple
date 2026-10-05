@@ -1,4 +1,4 @@
-import { Context, Duration, Effect, Layer, Metric, Queue, Schedule } from "effect"
+import { Context, Duration, Effect, Layer, Metric, Queue, Ref, Schedule } from "effect"
 import type { ScrapeResultReport } from "@maple/domain/http"
 import { ApiClient } from "./ApiClient"
 import { bufferedResults } from "./Metrics"
@@ -14,7 +14,7 @@ const FINAL_FLUSH_TIMEOUT = Duration.seconds(5)
 
 export interface ResultReporterApi {
 	readonly record: (report: ScrapeResultReport) => Effect.Effect<void>
-	/** Results waiting to be delivered. */
+	/** Results not yet acknowledged by the API: queued plus the batch in flight. */
 	readonly pending: Effect.Effect<number>
 	/**
 	 * Deliver results to the API in order, retrying a failed batch until it lands.
@@ -30,7 +30,10 @@ export class ResultReporter extends Context.Service<ResultReporter, ResultReport
 			const api = yield* ApiClient
 			const queue = yield* Queue.sliding<ScrapeResultReport>(MAX_BUFFERED_RESULTS)
 
-			const publishGauge = Effect.suspend(() => Metric.update(bufferedResults, Queue.sizeUnsafe(queue)))
+			// The batch under delivery has left the queue but is still undelivered.
+			const inFlight = yield* Ref.make(0)
+			const pending = Effect.map(Ref.get(inFlight), (held) => held + Queue.sizeUnsafe(queue))
+			const publishGauge = Effect.flatMap(pending, (count) => Metric.update(bufferedResults, count))
 
 			const record = (report: ScrapeResultReport) =>
 				Queue.offer(queue, report).pipe(Effect.andThen(publishGauge))
@@ -52,7 +55,7 @@ export class ResultReporter extends Context.Service<ResultReporter, ResultReport
 
 			const deliverNext = Effect.gen(function* () {
 				const batch = yield* Queue.takeBetween(queue, 1, REPORT_BATCH_SIZE)
-				yield* publishGauge
+				yield* Ref.set(inFlight, batch.length)
 				yield* api.reportResults(batch).pipe(
 					Effect.tapError((error) =>
 						Effect.logWarning("Failed to report scrape results, retrying").pipe(
@@ -67,13 +70,14 @@ export class ResultReporter extends Context.Service<ResultReporter, ResultReport
 						),
 					),
 					Effect.onInterrupt(() => finalFlush(batch)),
+					Effect.ensuring(Ref.set(inFlight, 0).pipe(Effect.andThen(publishGauge))),
 				)
 				if (batch.length < REPORT_BATCH_SIZE) yield* Effect.sleep(REPORT_INTERVAL)
 			})
 
 			const run = Effect.forever(deliverNext).pipe(Effect.onInterrupt(() => finalFlush([])))
 
-			return { record, pending: Queue.size(queue), run } satisfies ResultReporterApi
+			return { record, pending, run } satisfies ResultReporterApi
 		}),
 	},
 ) {
