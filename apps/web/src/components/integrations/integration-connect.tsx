@@ -418,7 +418,16 @@ function GoogleAnalyticsConnectBoundary({ children }: { children: React.ReactNod
 	const primeOnce = useEffectEvent(() => {
 		if (primed.current) return
 		primed.current = true
-		void prime({ reactivityKeys: ["googleAnalyticsIntegration"] }).finally(refreshStatus)
+		void prime({ reactivityKeys: ["googleAnalyticsIntegration"] })
+			.then((exit) => {
+				// Under COOP the close path fires the moment the popup navigates, which is while
+				// the user is still on Google's consent screen — so this can run before the grant
+				// exists and come back `IntegrationsNotConnectedError`. A prime that did not land
+				// must not consume the attempt, or the success message that follows is a no-op and
+				// the org waits on cron for its first numbers.
+				if (Exit.isFailure(exit)) primed.current = false
+			})
+			.finally(refreshStatus)
 	})
 
 	useIntegrationMessage("maple:integration:google-analytics", (data) => {
