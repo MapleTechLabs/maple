@@ -1,5 +1,5 @@
 import type { Duration } from "effect"
-import { Effect, Layer, Redacted } from "effect"
+import { Effect, Exit, Layer, Redacted, Tracer } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { Otlp } from "effect/observability"
 import { type MapleRegion, warnIfKeylessMapleIngest } from "@maple/browser-session/region"
@@ -16,6 +16,40 @@ const warnIfDoomed = (resolved: ResolvedResource): void =>
 		hasIngestKey: resolved.ingestKey !== undefined,
 		hint: "Set MAPLE_INGEST_KEY, or point MAPLE_ENDPOINT at your own collector.",
 	})
+
+// OTEL HTTP semconv for SERVER spans: a 5xx is an error even when the handler rendered it as a
+// plain response (an HttpApi error with `httpApiStatus: 500`), but Effect's OTLP tracer derives
+// status from the Exit alone. Mirrors `renderedServerError` in the flushable tracer; 4xx stays Ok.
+const renderedServerError = (span: Tracer.Span): Exit.Exit<never> | undefined => {
+	const raw = span.attributes.get("http.response.status_code")
+	const code = typeof raw === "number" ? raw : typeof raw === "string" ? Number(raw) : Number.NaN
+	if (!Number.isInteger(code) || code < 500) return undefined
+	const method = span.attributes.get("http.request.method")
+	const path = span.attributes.get("url.path")
+	const message =
+		typeof method === "string" && typeof path === "string"
+			? `HTTP ${code} (${method} ${path})`
+			: `HTTP ${code}`
+	return Exit.die({ name: "HttpServerErrorResponse", message })
+}
+
+const withServerErrorStatus = (tracer: Tracer.Tracer): Tracer.Tracer =>
+	Tracer.make({
+		span(options) {
+			const span = tracer.span(options)
+			if (options.kind !== "server") return span
+			const end = span.end
+			span.end = (endTime, exit) =>
+				end.call(span, endTime, Exit.isSuccess(exit) ? (renderedServerError(span) ?? exit) : exit)
+			return span
+		},
+		context: tracer.context,
+	})
+
+const ServerErrorStatusLive = Layer.effect(
+	Tracer.Tracer,
+	Effect.map(Effect.service(Tracer.Tracer), withServerErrorStatus),
+)
 
 export interface MapleConfig {
 	/**
@@ -111,7 +145,7 @@ export const layer = (config: MapleConfig = {}) =>
 			// that one gets a warning rather than silence — see `warnIfDoomed`.
 			warnIfDoomed(resolved)
 
-			return Otlp.layerJson({
+			const otlp = Otlp.layerJson({
 				baseUrl: resolved.endpoint,
 				resource: resolved.resource,
 				headers: resolved.ingestKey
@@ -123,5 +157,6 @@ export const layer = (config: MapleConfig = {}) =>
 				tracerExportInterval: config.tracerExportInterval,
 				shutdownTimeout: config.shutdownTimeout,
 			}).pipe(Layer.provide(FetchHttpClient.layer))
+			return ServerErrorStatusLive.pipe(Layer.provideMerge(otlp))
 		}),
 	)
