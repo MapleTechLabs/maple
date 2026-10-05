@@ -119,6 +119,8 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 							)
 						: Effect.void,
 				),
+				// Runs ahead of the Subscribe click's checkout, where a stall reads as a failed payment.
+				Effect.timeout("3 seconds"),
 				Effect.catch((error) => Effect.logWarning("Failed to name Autumn customer after org", error)),
 				Effect.withSpan("billing.nameCustomerAfterOrg"),
 			)

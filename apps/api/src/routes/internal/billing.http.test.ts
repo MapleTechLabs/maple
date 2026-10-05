@@ -774,4 +774,25 @@ describe("billing writes over HTTP", () => {
 			await harness.dispose()
 		}
 	})
+
+	it("opens the portal without waiting on a stalled rename", { timeout: 10_000 }, async () => {
+		const harness = makeHarness(["org:admin"], {
+			organizations: { retrieve: () => Effect.never },
+			autumn: {
+				openCustomerPortal: () =>
+					Effect.succeed({
+						statusCode: 200,
+						response: { url: "https://billing.stripe.test/session" },
+					}),
+			},
+		})
+		try {
+			const response = await harness.post("/internal/billing/portal", {
+				returnUrl: "https://maple.test/settings/billing",
+			})
+			assert.strictEqual(response.status, 200)
+		} finally {
+			await harness.dispose()
+		}
+	})
 })
