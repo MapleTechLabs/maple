@@ -35,7 +35,7 @@
 		"@effect/vitest": "catalog:effect",
 		"@types/node": "catalog:tooling",
 		"ai": "^7.0.128",
-		"gpt-tokenizer": "^3.4.0",
+		"gpt-tokenizer": "^4.0.0",
 		"typescript": "catalog:tooling",
 		"vitest": "catalog:",
 		"vitest-evals": "^0.4.1"
