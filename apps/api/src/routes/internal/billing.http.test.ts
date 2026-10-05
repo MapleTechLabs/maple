@@ -712,7 +712,7 @@ describe("billing writes over HTTP", () => {
 			},
 			autumn: {
 				updateCustomerName: () =>
-					Effect.succeed({ statusCode: 404, response: { message: "not found" } }),
+					Effect.succeed({ statusCode: 503, response: { message: "autumn down" } }),
 				openCustomerPortal: () =>
 					Effect.succeed({
 						statusCode: 200,
@@ -725,6 +725,51 @@ describe("billing writes over HTTP", () => {
 				returnUrl: "https://maple.test/settings/billing",
 			})
 			assert.strictEqual(response.status, 200)
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("creates the customer already named when it does not exist yet", async () => {
+		const calls: Array<string> = []
+		const harness = makeHarness(["org:admin"], {
+			organizations: {
+				retrieve: () =>
+					Effect.succeed({
+						id: ORG,
+						name: "Acme Inc",
+						slug: null,
+						imageUrl: null,
+						createdAtMs: null,
+					}),
+			},
+			autumn: {
+				updateCustomerName: () =>
+					Effect.sync(() => {
+						calls.push("update")
+						return { statusCode: 404, response: { message: "customer not found" } }
+					}),
+				getOrCreateCustomer: (
+					_orgId: string,
+					options: { readonly customerData?: { readonly name?: string | null } },
+				) =>
+					Effect.sync(() => {
+						calls.push(`create:${options.customerData?.name}`)
+						return { statusCode: 200, response: { id: ORG } }
+					}),
+				openCustomerPortal: () =>
+					Effect.sync(() => {
+						calls.push("portal")
+						return { statusCode: 200, response: { url: "https://billing.stripe.test/session" } }
+					}),
+			},
+		})
+		try {
+			const response = await harness.post("/internal/billing/portal", {
+				returnUrl: "https://maple.test/settings/billing",
+			})
+			assert.strictEqual(response.status, 200)
+			assert.deepStrictEqual(calls, ["update", "create:Acme Inc", "portal"])
 		} finally {
 			await harness.dispose()
 		}

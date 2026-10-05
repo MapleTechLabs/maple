@@ -104,7 +104,19 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 			organizations.retrieve(orgId).pipe(
 				Effect.flatMap((org) =>
 					org.name
-						? autumn.updateCustomerName(orgId, org.name).pipe(Effect.flatMap(ensureOk))
+						? autumn.updateCustomerName(orgId, org.name).pipe(
+								// No customer yet (a 404 from the update): create it already named,
+								// or attach would create it unnamed.
+								Effect.flatMap((result) =>
+									result.statusCode === 404
+										? autumn.getOrCreateCustomer(orgId, {
+												expand: [],
+												customerData: { name: org.name },
+											})
+										: Effect.succeed(result),
+								),
+								Effect.flatMap(ensureOk),
+							)
 						: Effect.void,
 				),
 				Effect.catch((error) => Effect.logWarning("Failed to name Autumn customer after org", error)),
