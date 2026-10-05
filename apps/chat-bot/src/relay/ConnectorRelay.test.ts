@@ -405,4 +405,40 @@ describe("a job racing the end of its turn", () => {
 		expect([...state.stored]).toEqual([])
 		expect([...state.turnJobs]).toEqual([])
 	})
+
+	it("settles a turn whose forget failed, rather than revisiting it forever", async () => {
+		const state = objectState()
+		let recordedTurn = () => {}
+		const recorded = new Promise<void>((resolve) => {
+			recordedTurn = resolve
+		})
+		const run = heavy({
+			event: async (host) => {
+				await Effect.runPromise(host.recordTurn(checkpoint()))
+				recordedTurn()
+			},
+			settle: "done",
+		})
+		const forget = state.ledger.forget
+		Object.assign(state.ledger, {
+			forget: () =>
+				Effect.fail(
+					new ConnectorRelayStorageError({
+						operation: "forget",
+						message: "down",
+						cause: undefined,
+					}),
+				),
+		})
+		const relay = relayOn(state, run.load)
+		await Effect.runPromise(relay.deliver(message))
+		await recorded
+		await Promise.all(state.pending)
+		Object.assign(state.ledger, { forget })
+
+		await Effect.runPromise(relay.turnDue(TURN_KEY))
+
+		expect(run.settled).toEqual([checkpoint()])
+		expect([...state.stored]).toEqual([])
+	})
 })

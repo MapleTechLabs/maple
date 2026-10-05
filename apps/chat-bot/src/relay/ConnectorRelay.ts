@@ -360,10 +360,19 @@ export class ConnectorRelay {
 
 	/**
 	 * The checkpoint and its job go together. The key stays in `relaying`: a job that read the
-	 * checkpoint before this delete must still see a live turn, not an evicted one. Keys are per turn.
+	 * checkpoint before this delete must still see a live turn. A forget that failed rolled both
+	 * back, so the key leaves `relaying` and the surviving job settles the turn. Keys are per turn.
 	 */
 	private forgetTurn(key: string): Effect.Effect<void> {
-		return this.ledger.forget(key).pipe(Effect.catchTag(STORAGE_ERROR, logStorageFailure))
+		return this.ledger
+			.forget(key)
+			.pipe(
+				Effect.catchTag(STORAGE_ERROR, (error) =>
+					logStorageFailure(error).pipe(
+						Effect.andThen(Effect.sync(() => void this.relaying.delete(key))),
+					),
+				),
+			)
 	}
 
 	/**
