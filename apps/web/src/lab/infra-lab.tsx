@@ -24,8 +24,8 @@ import {
 	summarizeRailway,
 } from "@/components/infra/overview/summaries"
 import { FLEET_BAND_BOXED } from "@/components/infra/primitives/fleet-band"
-import { ListToolbar } from "@/components/infra/primitives/list-toolbar"
-import { PageHero } from "@/components/infra/primitives/page-hero"
+import { ListToolbar } from "@/components/common/search-toolbar"
+import { PageHero } from "@/components/common/page-hero"
 import {
 	RailwayServiceTable,
 	RailwaySummaryBand,

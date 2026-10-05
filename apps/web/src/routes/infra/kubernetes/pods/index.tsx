@@ -17,7 +17,7 @@ import { PodPeekSheet } from "@/components/infra/kubernetes/pod-peek-sheet"
 import { PodsFilterSidebarView, type PodFilters } from "@/components/infra/k8s-filter-sidebar"
 import { PodTable, PodTableLoading, podKey, type PodRow } from "@/components/infra/pod-table"
 import { FleetBand, FleetBandLoading, type FleetBandCell } from "@/components/infra/primitives/fleet-band"
-import { ListToolbar, countLabel } from "@/components/infra/primitives/list-toolbar"
+import { ListToolbar, countLabel } from "@/components/common/search-toolbar"
 import { podFilterChips } from "@/lib/infra/pod-filter-chips"
 import {
 	listPodsResultAtom,

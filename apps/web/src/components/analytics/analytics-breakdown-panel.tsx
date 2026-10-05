@@ -11,7 +11,7 @@ import {
 	DialogTitle,
 } from "@maple/ui/components/ui/dialog"
 
-import { ColumnHead, DataTable, useTableSort, type SortDir } from "../infra/primitives/data-table"
+import { ColumnHead, DataTable, useTableSort, type SortDir } from "@/components/common/data-table"
 import { shareBar } from "../infra/primitives/share-bar"
 import { MaximizeIcon } from "@/components/icons"
 import type { WebAnalyticsFacetRow } from "@/api/warehouse/web-analytics"

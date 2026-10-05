@@ -1,4 +1,4 @@
-import type React from "react"
+import * as React from "react"
 import { cn } from "../../lib/utils"
 
 export function Skeleton({ className, ...props }: React.ComponentProps<"div">): React.ReactElement {
@@ -14,5 +14,41 @@ export function Skeleton({ className, ...props }: React.ComponentProps<"div">): 
 			data-slot="skeleton"
 			{...props}
 		/>
+	)
+}
+
+/** A stack of identical skeleton rows: the loading state of a list or panel body. */
+export function SkeletonList({
+	rows = 4,
+	rowClassName = "h-8",
+	gap = "px",
+	renderRow,
+	className,
+}: {
+	rows?: number
+	rowClassName?: string
+	gap?: "px" | "1" | "2" | "3"
+	/** Custom row skeleton; receives the index for staggered widths. */
+	renderRow?: (index: number) => React.ReactNode
+	className?: string
+}): React.ReactElement {
+	return (
+		<div
+			aria-busy
+			className={cn(
+				"flex flex-col",
+				gap === "px" ? "gap-px" : gap === "1" ? "gap-1" : gap === "2" ? "gap-2" : "gap-3",
+				className,
+			)}
+			data-slot="skeleton-list"
+		>
+			{Array.from({ length: rows }, (_, i) =>
+				renderRow ? (
+					<React.Fragment key={i}>{renderRow(i)}</React.Fragment>
+				) : (
+					<Skeleton key={i} className={cn("w-full", rowClassName)} />
+				),
+			)}
+		</div>
 	)
 }

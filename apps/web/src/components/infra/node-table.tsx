@@ -6,7 +6,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui
 import type { ListNodesResponse } from "@maple/domain/http"
 
 import { HostStatusBadge } from "./status-badge"
-import { ColumnHead, DataTable, ROW_LINK_CLASS, useTableSort } from "./primitives/data-table"
+import { ColumnHead, DataTable, ROW_LINK_CLASS, useTableSort } from "@/components/common/data-table"
 import { MetaLine } from "./primitives/meta-line"
 import { formatUptime } from "@maple/ui/lib/format"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"

@@ -39,11 +39,17 @@ const itemVariants = cva(
 				default: "border-transparent",
 				outline: "border-border",
 				muted: "bg-muted/50 border-transparent",
+				// Raised panel row on the page surface (integration headers, linked resources).
+				card: "rounded-lg border-border/60 bg-card",
+				// Row inside a `divide-y` list: no frame of its own.
+				flush: "rounded-none border-transparent",
 			},
 			size: {
 				default: "gap-2.5 px-3 py-2.5",
 				sm: "gap-2.5 px-3 py-2.5",
 				xs: "gap-2 px-2.5 py-2 [[data-slot=dropdown-menu-content]_&]:p-0",
+				// Page-level rows at body text size.
+				lg: "gap-3 px-4 py-3 text-sm",
 			},
 		},
 		defaultVariants: {
@@ -113,7 +119,7 @@ function ItemContent({ className, ...props }: React.ComponentProps<"div">) {
 		<div
 			data-slot="item-content"
 			className={cn(
-				"gap-1 group-data-[size=xs]/item:gap-0 flex flex-1 flex-col [&+[data-slot=item-content]]:flex-none",
+				"gap-1 group-data-[size=xs]/item:gap-0 group-data-[size=lg]/item:gap-0.5 flex min-w-0 flex-1 flex-col [&+[data-slot=item-content]]:flex-none",
 				className,
 			)}
 			{...props}
@@ -126,7 +132,7 @@ function ItemTitle({ className, ...props }: React.ComponentProps<"div">) {
 		<div
 			data-slot="item-title"
 			className={cn(
-				"gap-2 text-xs font-medium underline-offset-4 line-clamp-1 flex w-fit items-center",
+				"gap-2 text-xs group-data-[size=lg]/item:text-sm font-medium underline-offset-4 line-clamp-1 flex w-fit max-w-full items-center",
 				className,
 			)}
 			{...props}

@@ -9,7 +9,7 @@ import type { WorkloadKind } from "@/api/warehouse/infra"
 import { HostStatusBadge } from "./status-badge"
 import { MeterRows } from "./primitives/meter-rows"
 import { MetaLine } from "./primitives/meta-line"
-import { ColumnHead, DataTable, ROW_LINK_CLASS, useTableSort } from "./primitives/data-table"
+import { ColumnHead, DataTable, ROW_LINK_CLASS, useTableSort } from "@/components/common/data-table"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
 
 export type WorkloadRow = ListWorkloadsResponse["data"][number]

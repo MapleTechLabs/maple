@@ -11,7 +11,7 @@ import { DocsLink, EmptyActions } from "@/components/common/docs-link"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { ErrorState } from "@/components/common/error-state"
 import { PlanetScaleIcon } from "@/components/icons"
-import { PageHero } from "@/components/infra/primitives/page-hero"
+import { PageHero } from "@/components/common/page-hero"
 import { StatRail, StatRailItem, StatRailLoading } from "@/components/common/stat-rail"
 import {
 	PlanetScaleDatabaseTable,

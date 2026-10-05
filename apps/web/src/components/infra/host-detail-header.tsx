@@ -6,7 +6,7 @@ import type { HostDetailSummaryResponse } from "@maple/domain/http"
 
 import { HostStatusBadge } from "./status-badge"
 import { PlatformLabel } from "./platform-label"
-import { HeroChip, PageHero } from "./primitives/page-hero"
+import { HeroChip, PageHero } from "@/components/common/page-hero"
 import { StatRail, StatRailItem, StatRailLoading } from "@/components/common/stat-rail"
 import { severityLevel } from "./format"
 import { formatLoad, formatPercent } from "@maple/ui/lib/format"

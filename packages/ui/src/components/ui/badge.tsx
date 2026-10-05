@@ -9,7 +9,13 @@ import { cn } from "../../lib/utils"
 export const badgeVariants = cva(
 	"relative inline-flex shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-sm border border-transparent font-medium outline-none transition-shadow focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-64 [&_svg:not([class*='opacity-'])]:opacity-80 [&_svg:not([class*='size-'])]:size-3.5 sm:[&_svg:not([class*='size-'])]:size-3 [&_svg]:pointer-events-none [&_svg]:shrink-0 [button&,a&]:cursor-pointer [button&,a&]:pointer-coarse:after:absolute [button&,a&]:pointer-coarse:after:size-full [button&,a&]:pointer-coarse:after:min-h-11 [button&,a&]:pointer-coarse:after:min-w-11",
 	{
+		compoundVariants: [
+			{ class: "px-1.5", shape: "pill", size: "xs" },
+			{ class: "px-2", shape: "pill", size: ["sm", "default"] },
+			{ class: "px-2.5", shape: "pill", size: "lg" },
+		],
 		defaultVariants: {
+			shape: "default",
 			size: "default",
 			variant: "default",
 		},
@@ -19,12 +25,26 @@ export const badgeVariants = cva(
 					"h-5.5 min-w-5.5 px-[calc(--spacing(1)-1px)] text-sm sm:h-4.5 sm:min-w-4.5 sm:text-xs",
 				lg: "h-6.5 min-w-6.5 px-[calc(--spacing(1.5)-1px)] text-base sm:h-5.5 sm:min-w-5.5 sm:text-sm",
 				sm: "h-5 min-w-5 rounded-[.25rem] px-[calc(--spacing(1)-1px)] text-xs sm:h-4 sm:min-w-4 sm:text-[.625rem]",
+				// Dense tables and meta rows: fixed 10px on every breakpoint.
+				xs: "h-4 min-w-4 rounded-[.25rem] px-1 text-[10px] sm:h-4 sm:min-w-4 sm:text-[10px] [&_svg:not([class*='size-'])]:size-2.5 sm:[&_svg:not([class*='size-'])]:size-2.5",
+			},
+			shape: {
+				default: "",
+				pill: "rounded-full",
+			},
+			mono: {
+				false: "",
+				true: "font-mono tabular-nums",
 			},
 			variant: {
 				default: "bg-primary text-primary-foreground [button&,a&]:hover:bg-primary/90",
 				destructive: "bg-destructive text-white [button&,a&]:hover:bg-destructive/90",
 				error: "bg-destructive/8 text-destructive-foreground dark:bg-destructive/16",
 				info: "bg-info/8 text-info-foreground dark:bg-info/16",
+				// Neutral tinted chip: counts, kinds, quiet metadata.
+				muted: "bg-muted text-muted-foreground [button&,a&]:hover:bg-muted/80",
+				// Bordered meta chip on the page surface: services, environments, reopen markers.
+				meta: "border-border/70 bg-background text-muted-foreground [button&,a&]:hover:bg-muted/50",
 				outline:
 					"border-input bg-background text-foreground dark:bg-input/32 [button&,a&]:hover:bg-accent/50 dark:[button&,a&]:hover:bg-input/48",
 				secondary: "bg-secondary text-secondary-foreground [button&,a&]:hover:bg-secondary/90",
@@ -38,11 +58,22 @@ export const badgeVariants = cva(
 export interface BadgeProps extends useRender.ComponentProps<"span"> {
 	variant?: VariantProps<typeof badgeVariants>["variant"]
 	size?: VariantProps<typeof badgeVariants>["size"]
+	shape?: VariantProps<typeof badgeVariants>["shape"]
+	/** Mono + tabular figures, for ids, versions and counts. */
+	mono?: boolean
 }
 
-export function Badge({ className, variant, size, render, ...props }: BadgeProps): React.ReactElement {
+export function Badge({
+	className,
+	variant,
+	size,
+	shape,
+	mono = false,
+	render,
+	...props
+}: BadgeProps): React.ReactElement {
 	const defaultProps = {
-		className: cn(badgeVariants({ className, size, variant })),
+		className: cn(badgeVariants({ className, mono, shape, size, variant })),
 		"data-slot": "badge",
 	}
 

@@ -6,7 +6,7 @@ import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
 
-import { useTableSort } from "@/components/infra/primitives/data-table"
+import { useTableSort } from "@/components/common/data-table"
 import { ErrorState } from "@/components/common/error-state"
 import { ChevronDownIcon, ChevronRightIcon } from "@/components/icons"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"

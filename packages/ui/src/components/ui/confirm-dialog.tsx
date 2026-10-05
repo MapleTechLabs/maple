@@ -1,0 +1,110 @@
+"use client"
+
+import * as React from "react"
+import { AlertWarningIcon } from "../icons"
+import { cn } from "../../lib/utils"
+import { Button } from "./button"
+import {
+	AlertDialog,
+	AlertDialogCancel,
+	AlertDialogContent,
+	AlertDialogDescription,
+	AlertDialogFooter,
+	AlertDialogHeader,
+	AlertDialogMedia,
+	AlertDialogTitle,
+} from "./alert-dialog"
+
+export interface ConfirmDialogProps {
+	open: boolean
+	onOpenChange: (open: boolean) => void
+	title: React.ReactNode
+	description?: React.ReactNode
+	confirmLabel: React.ReactNode
+	cancelLabel?: React.ReactNode
+	/** `destructive` (default) shows the warning media and a red confirm button. */
+	tone?: "destructive" | "default"
+	/** Replaces the default warning icon; `null` drops the media block. */
+	icon?: React.ReactNode | null
+	/**
+	 * A returned promise drives the pending state and closes the dialog when it
+	 * resolves; a rejection keeps it open so the caller's toast can explain.
+	 */
+	onConfirm: () => void | Promise<unknown>
+	/** Externally owned pending state, for callers that track their own mutation. */
+	pending?: boolean
+	/** Third button between cancel and confirm (e.g. "Delete section only"). */
+	secondaryAction?: { label: React.ReactNode; onClick: () => void | Promise<unknown> }
+	/** Extra body below the description (a typed-name check, a list of affected items). */
+	children?: React.ReactNode
+	className?: string
+}
+
+/** The confirm-before-acting dialog: title, consequence, cancel, confirm with a pending state. */
+export function ConfirmDialog({
+	open,
+	onOpenChange,
+	title,
+	description,
+	confirmLabel,
+	cancelLabel = "Cancel",
+	tone = "destructive",
+	icon,
+	onConfirm,
+	pending: pendingProp = false,
+	secondaryAction,
+	children,
+	className,
+}: ConfirmDialogProps): React.ReactElement {
+	const [running, setRunning] = React.useState(false)
+	const pending = pendingProp || running
+
+	const run = (action: () => void | Promise<unknown>) => {
+		const result = action()
+		if (!(result instanceof Promise)) return
+		setRunning(true)
+		result.then(
+			() => {
+				setRunning(false)
+				onOpenChange(false)
+			},
+			() => setRunning(false),
+		)
+	}
+
+	const media =
+		icon === null ? null : (
+			<AlertDialogMedia className={cn(tone === "destructive" && "bg-destructive/10")}>
+				{icon ?? <AlertWarningIcon className={cn(tone === "destructive" && "text-destructive")} />}
+			</AlertDialogMedia>
+		)
+
+	return (
+		<AlertDialog open={open} onOpenChange={(next) => (pending ? undefined : onOpenChange(next))}>
+			<AlertDialogContent className={className}>
+				<AlertDialogHeader>
+					{media}
+					<AlertDialogTitle>{title}</AlertDialogTitle>
+					{description ? <AlertDialogDescription>{description}</AlertDialogDescription> : null}
+				</AlertDialogHeader>
+				{children}
+				<AlertDialogFooter>
+					<AlertDialogCancel disabled={pending}>{cancelLabel}</AlertDialogCancel>
+					{secondaryAction ? (
+						<Button variant="outline" disabled={pending} onClick={() => run(secondaryAction.onClick)}>
+							{secondaryAction.label}
+						</Button>
+					) : null}
+					<Button
+						variant={tone === "destructive" ? "destructive" : "default"}
+						loading={pending}
+						disabled={pending}
+						onClick={() => run(onConfirm)}
+					>
+						{confirmLabel}
+					</Button>
+				</AlertDialogFooter>
+			</AlertDialogContent>
+		</AlertDialog>
+	)
+}

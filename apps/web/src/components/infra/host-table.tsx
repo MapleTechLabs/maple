@@ -15,7 +15,7 @@ import {
 	type SortControls,
 	ROW_LINK_CLASS,
 	useTableSort,
-} from "./primitives/data-table"
+} from "@/components/common/data-table"
 import { formatLoad } from "@maple/ui/lib/format"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
 

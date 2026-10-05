@@ -17,7 +17,7 @@ import { WorkloadDetailChart } from "@/components/infra/k8s-detail-chart"
 import { PodTable } from "@/components/infra/pod-table"
 import { bucketSecondsForRange } from "@/components/infra/constants"
 import { severityLevel } from "@/components/infra/format"
-import { PageHero, HeroChip } from "@/components/infra/primitives/page-hero"
+import { PageHero, HeroChip } from "@/components/common/page-hero"
 import { SegmentPivot } from "@/components/infra/primitives/segment-pivot"
 import { StatRail, StatRailItem } from "@/components/common/stat-rail"
 import {

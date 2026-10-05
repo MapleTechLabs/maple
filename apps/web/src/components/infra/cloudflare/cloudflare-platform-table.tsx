@@ -8,7 +8,7 @@ import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import type { CloudflareDurableObjectRow, CloudflareQueueRow } from "@/api/warehouse/cloudflare-infra"
 import { cloudflarePlatformResourcesResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { formatNumber } from "@maple/ui/lib/format"
-import { ColumnHead, DataTable, useTableSort } from "../primitives/data-table"
+import { ColumnHead, DataTable, useTableSort } from "@/components/common/data-table"
 import { formatBytes, formatPercent } from "@maple/ui/lib/format"
 import { errorRateClass } from "./constants"
 

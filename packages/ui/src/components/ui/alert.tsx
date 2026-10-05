@@ -6,9 +6,15 @@ const alertVariants = cva(
 	"relative grid w-full items-start gap-x-2 gap-y-0.5 rounded-xl border px-3.5 py-3 text-card-foreground text-sm has-[>svg]:has-data-[slot=alert-action]:grid-cols-[calc(var(--spacing)*4)_1fr_auto] has-[>svg]:grid-cols-[calc(var(--spacing)*4)_1fr] has-data-[slot=alert-action]:grid-cols-[1fr_auto] has-[>svg]:gap-x-2 [&>svg]:h-lh [&>svg]:w-4",
 	{
 		defaultVariants: {
+			size: "default",
 			variant: "default",
 		},
 		variants: {
+			size: {
+				default: "",
+				// Inline callout inside a form, panel or chat turn.
+				sm: "rounded-lg px-2.5 py-1.5 text-xs [&>svg]:w-3.5",
+			},
 			variant: {
 				default: "bg-transparent dark:bg-input/32 [&>svg]:text-muted-foreground",
 				error: "border-destructive/32 bg-destructive/4 [&>svg]:text-destructive",
@@ -23,11 +29,12 @@ const alertVariants = cva(
 export function Alert({
 	className,
 	variant,
+	size,
 	...props
 }: React.ComponentProps<"div"> & VariantProps<typeof alertVariants>): React.ReactElement {
 	return (
 		<div
-			className={cn(alertVariants({ variant }), className)}
+			className={cn(alertVariants({ size, variant }), className)}
 			data-slot="alert"
 			role="alert"
 			{...props}

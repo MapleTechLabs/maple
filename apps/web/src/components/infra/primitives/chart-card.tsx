@@ -1,5 +1,5 @@
 import type { ReactNode } from "react"
-import { cn } from "@maple/ui/lib/utils"
+import { Panel, PanelHeader } from "@maple/ui/components/ui/panel"
 import { ChartEmpty } from "@maple/ui/components/charts"
 
 /** Every infra detail chart plots at this height, so a grid of them never staggers. */
@@ -30,16 +30,10 @@ export function ChartCard({
 	className?: string
 }) {
 	return (
-		<div className={cn("rounded-md border bg-card", className)}>
-			<div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-3 pt-2.5">
-				<div className="flex flex-wrap items-center gap-2">
-					<span className="text-[11px] font-medium text-muted-foreground">{title}</span>
-					{scope}
-				</div>
-				<div className="flex flex-wrap items-center gap-x-3 gap-y-1">{legend}</div>
-			</div>
+		<Panel className={className}>
+			<PanelHeader title={title} scope={scope} action={legend} divided={false} className="px-3 pt-2.5" />
 			{children}
-		</div>
+		</Panel>
 	)
 }
 

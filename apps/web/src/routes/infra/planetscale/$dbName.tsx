@@ -18,7 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { ErrorState } from "@/components/common/error-state"
 import { PlanetScaleIcon } from "@/components/icons"
-import { PageHero, HeroChip } from "@/components/infra/primitives/page-hero"
+import { PageHero, HeroChip } from "@/components/common/page-hero"
 import { PlanetScaleAlertMenu } from "@/components/infra/planetscale/planetscale-alert-menu"
 import { PlanetScaleBranchScope } from "@/components/infra/planetscale/branch-scope"
 import {

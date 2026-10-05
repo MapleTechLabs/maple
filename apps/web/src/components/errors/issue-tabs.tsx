@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router"
 
 import type { ErrorIssueId } from "@maple/domain/http"
-import { UnderlineTabCount, UnderlineTabStrip, underlineTabClass } from "./underline-link-tabs"
+import { UnderlineTabCount, UnderlineTabStrip, underlineTabClass } from "@/components/common/underline-link-tabs"
 
 export const ISSUE_TABS = ["overview", "occurrences", "activity"] as const
 

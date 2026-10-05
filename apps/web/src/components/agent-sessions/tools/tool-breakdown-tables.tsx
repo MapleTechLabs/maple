@@ -6,7 +6,7 @@ import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
 
 import { ErrorState } from "@/components/common/error-state"
-import { useTableSort, type SortDir } from "@/components/infra/primitives/data-table"
+import { useTableSort, type SortDir } from "@/components/common/data-table"
 import { relativeRatio } from "@/components/infra/primitives/share-bar"
 import { ArrowUpDownIcon, ChevronRightIcon } from "@/components/icons"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"

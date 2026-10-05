@@ -10,7 +10,7 @@ import type { PodSortKey, SortDirection } from "@/api/warehouse/infra"
 import type { TimeRangeSearch } from "@/components/time-range-picker/search"
 
 import { HostStatusBadge } from "./status-badge"
-import { ColumnHead, DataTable, ROW_LINK_CLASS } from "./primitives/data-table"
+import { ColumnHead, DataTable, ROW_LINK_CLASS } from "@/components/common/data-table"
 import { MeterRows } from "./primitives/meter-rows"
 import { MetaLine } from "./primitives/meta-line"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"

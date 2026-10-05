@@ -2,16 +2,30 @@ import type React from "react"
 import { cn } from "@maple/ui/lib/utils"
 
 /**
- * The Link-based underline tab strip shared by the issue and investigation pages.
- * Full-bleed out of the sticky area's `p-4` and flush to its bottom edge, so the
- * underline reads as the boundary between header and content.
+ * Link-based underline tab strip for route tabs (issue, investigation, code
+ * review). `bleed` pulls it out of a `p-4` sticky header so the underline is
+ * flush with the header's bottom edge.
  */
-export function UnderlineTabStrip({ label, children }: { label: string; children: React.ReactNode }) {
+export function UnderlineTabStrip({
+	label,
+	bleed = true,
+	className,
+	children,
+}: {
+	label: string
+	bleed?: boolean
+	className?: string
+	children: React.ReactNode
+}) {
 	return (
 		<div
 			role="tablist"
 			aria-label={label}
-			className="-mx-4 -mb-4 flex items-center gap-6 overflow-x-auto border-b px-4"
+			className={cn(
+				"flex items-center gap-6 overflow-x-auto border-b",
+				bleed ? "-mx-4 -mb-4 px-4" : "px-0",
+				className,
+			)}
 		>
 			{children}
 		</div>

@@ -1,6 +1,12 @@
 import * as React from "react"
+import { Badge } from "@maple/ui/components/ui/badge"
 import { cn } from "@maple/ui/lib/utils"
 
+/**
+ * In-body page title for pages whose header row is a breadcrumb (infra, detail
+ * pages). Typography matches `PageLayout.Title` so a hero and a layout header
+ * read as the same heading.
+ */
 interface PageHeroProps {
 	title: React.ReactNode
 	description?: React.ReactNode
@@ -15,7 +21,7 @@ export function PageHero({ title, description, meta, actions, trailing, classNam
 		<header className={cn("flex flex-wrap items-start gap-x-6 gap-y-3", className)}>
 			<div className="min-w-0 flex-1 space-y-1">
 				<div className="flex flex-wrap items-baseline gap-3">
-					<h1 className="text-2xl font-semibold leading-tight tracking-tight text-foreground">
+					<h1 className="font-display text-2xl font-semibold leading-[1.1] tracking-tight text-foreground">
 						{title}
 					</h1>
 					{trailing}
@@ -32,8 +38,8 @@ export function PageHero({ title, description, meta, actions, trailing, classNam
 
 export function HeroChip({ children }: { children: React.ReactNode }) {
 	return (
-		<span className="inline-flex items-center gap-1 rounded-sm border border-border/70 bg-background/60 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+		<Badge variant="meta" size="xs" mono>
 			{children}
-		</span>
+		</Badge>
 	)
 }

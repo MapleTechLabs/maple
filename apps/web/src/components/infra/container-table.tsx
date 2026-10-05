@@ -7,7 +7,7 @@ import type { ListContainersResponse } from "@maple/domain/http"
 import type { ContainerSortKey, SortDirection } from "@/api/warehouse/infra"
 
 import { HostStatusBadge } from "./status-badge"
-import { ColumnHead, DataTable, ROW_LINK_CLASS } from "./primitives/data-table"
+import { ColumnHead, DataTable, ROW_LINK_CLASS } from "@/components/common/data-table"
 import { MeterRows } from "./primitives/meter-rows"
 import { MetaLine } from "./primitives/meta-line"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"

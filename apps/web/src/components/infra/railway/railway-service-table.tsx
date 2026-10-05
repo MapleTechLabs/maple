@@ -14,7 +14,7 @@ import {
 	ROW_LINK_CLASS,
 	type SortControls,
 	useTableSort,
-} from "../primitives/data-table"
+} from "@/components/common/data-table"
 import { FleetBand, FleetBandLoading } from "../primitives/fleet-band"
 import { MetaLine } from "../primitives/meta-line"
 import { MeterRows } from "../primitives/meter-rows"

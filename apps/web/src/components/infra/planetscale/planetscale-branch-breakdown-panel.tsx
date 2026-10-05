@@ -4,7 +4,7 @@ import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 
-import { ColumnHead, DataTable, MetaChip, useTableSort } from "../primitives/data-table"
+import { ColumnHead, DataTable, MetaChip, useTableSort } from "@/components/common/data-table"
 import { SegmentPivot } from "../primitives/segment-pivot"
 import { relativeRatio, shareBar } from "../primitives/share-bar"
 import type { BranchCandidate } from "./branch-selection"

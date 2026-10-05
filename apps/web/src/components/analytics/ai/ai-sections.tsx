@@ -13,7 +13,7 @@ import { formatNumber, formatPercent } from "@maple/ui/lib/format"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import type { AiContentFormat, AiCrawlPurpose, AiProduct } from "@maple/domain/ai-traffic"
 
-import { ColumnHead, DataTable } from "../../infra/primitives/data-table"
+import { ColumnHead, DataTable } from "@/components/common/data-table"
 import { shareBar } from "../../infra/primitives/share-bar"
 import { BarSpark } from "@/components/common/stat-rail"
 import { SPARK_COLOR } from "../../infra/severity-tokens"

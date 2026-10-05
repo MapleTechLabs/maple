@@ -1,6 +1,6 @@
-// Shared chrome for the infra resource tables (hosts, pods, nodes, workloads).
-// Each table keeps its own row JSX — only the sort logic, column header, meta
-// chip, container, and skeleton shell live here.
+// Flex-row list table: fixed-width column lanes, whole-row links, sortable
+// heads. Born in the infra resource tables; use it for any list whose rows are
+// links. Semantic `<table>` data goes through @maple/ui's Table instead.
 
 import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import * as React from "react"

@@ -8,7 +8,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui
 import { SearchInput } from "@maple/ui/components/ui/search-input"
 import { cn } from "@maple/ui/lib/utils"
 
-import { ColumnHead, type SortDir } from "@/components/infra/primitives/data-table"
+import { ColumnHead, type SortDir } from "@/components/common/data-table"
 import { formatNumber } from "@maple/ui/lib/format"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { CLOUDFLARE_ACCENT } from "./integration-catalog"
