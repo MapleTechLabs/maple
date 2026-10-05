@@ -1,19 +1,15 @@
 import { useMemo } from "react"
-import { Link } from "@tanstack/react-router"
 import type { ErrorIssueDocument } from "@maple/domain/http"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import { formatNumber } from "@maple/ui/lib/format"
-import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
 
-import { ServiceDot } from "@maple/ui/components/service-dot"
-import { SeverityBadge } from "@/components/errors/severity-badge"
 import { SectionCard } from "@/components/services/section-card"
-import { useTimezonePreference } from "@/hooks/use-timezone-preference"
+import { IssueLine } from "@/components/services/issue-line"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { errorIssueFromV2 } from "@/lib/services/error-issues"
 import type { ReleaseErrorFingerprint } from "@/api/warehouse/releases"
 import { NEW_ISSUE_SLACK_MS } from "./release-model"
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
 
 /** The v2 list takes one page of fingerprints; the rest of a very noisy version stays on /errors. */
 const FINGERPRINT_LIMIT = 50
@@ -47,44 +43,6 @@ export function splitReleaseIssues<T extends ReleaseIssueDates>(
 		else split.ongoing.push(issue)
 	}
 	return split
-}
-
-interface IssueLineProps {
-	issue: ErrorIssueDocument
-	/** Occurrences carried by this version, from the warehouse split. */
-	onVersion: number | undefined
-	showService?: boolean
-}
-
-function IssueLine({ issue, onVersion, showService }: IssueLineProps) {
-	const { effectiveTimezone } = useTimezonePreference()
-	const title = issue.errorLabel || issue.exceptionType || issue.exceptionMessage || "Unknown error"
-	return (
-		<Link
-			to="/errors/issues/$issueId"
-			params={{ issueId: issue.id }}
-			className="flex items-center gap-2.5 rounded-sm px-2 py-1.5 text-sm transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-		>
-			<SeverityBadge severity={issue.severity} className="w-[60px] shrink-0 justify-center" />
-			{showService ? (
-				<span className="inline-flex shrink-0" title={issue.serviceName}>
-					<ServiceDot serviceName={issue.serviceName} />
-				</span>
-			) : null}
-			<span className="min-w-0 flex-1 truncate" title={title}>
-				{title}
-			</span>
-			<span
-				className="shrink-0 font-mono text-xs tabular-nums text-muted-foreground"
-				title="Occurrences on this version in the window"
-			>
-				{formatNumber(onVersion ?? issue.occurrenceCount)}×
-			</span>
-			<span className="w-14 shrink-0 text-right font-mono text-xs tabular-nums text-muted-foreground/70">
-				{formatRelativeTimeOrDate(issue.lastSeenAt, undefined, effectiveTimezone)}
-			</span>
-		</Link>
-	)
 }
 
 export function IssueList({
@@ -123,14 +81,15 @@ export function IssueList({
 			}
 		>
 			{issues.length === 0 ? (
-				<div className="px-4 py-6 text-center text-xs text-muted-foreground">{empty}</div>
+				<EmptyMessage>{empty}</EmptyMessage>
 			) : (
 				<div className="space-y-px p-2">
 					{issues.map((issue) => (
 						<IssueLine
 							key={issue.id}
 							issue={issue}
-							onVersion={counts.get(issue.fingerprintHash)}
+							occurrences={counts.get(issue.fingerprintHash)}
+							occurrencesTitle="Occurrences on this version in the window"
 							showService={showService}
 						/>
 					))}
@@ -227,11 +186,7 @@ function ReleaseIssuesLoaded({ serviceName, releaseFirstSeen, fingerprints }: Re
 
 	if (Result.isInitial(result)) return <PanelsSkeleton />
 	if (split === undefined) {
-		return (
-			<div className="rounded-md border bg-card px-4 py-6 text-center text-xs text-muted-foreground">
-				Issues could not be loaded.
-			</div>
-		)
+		return <EmptyMessage className="rounded-md border bg-card">Issues could not be loaded.</EmptyMessage>
 	}
 
 	return (

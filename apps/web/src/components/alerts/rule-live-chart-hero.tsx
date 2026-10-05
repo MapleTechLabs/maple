@@ -1,3 +1,4 @@
+import { Spinner } from "@maple/ui/components/ui/spinner"
 import { useMemo } from "react"
 
 import { Badge } from "@maple/ui/components/ui/badge"
@@ -8,7 +9,7 @@ import { cn } from "@maple/ui/lib/utils"
 import type { AlertRulePreviewResponse } from "@maple/domain/http"
 import { AlertRuleChart } from "@/components/alerts/alert-rule-chart"
 import { AlertStatusBadge } from "@/components/alerts/alert-status-badge"
-import { CheckIcon, EyeIcon, FireIcon, LoaderIcon } from "@/components/icons"
+import { CheckIcon, EyeIcon, FireIcon } from "@/components/icons"
 import { breachStatsFromPreview, formatBreachDuration, type BreachStats } from "@/lib/alerts/breach-stats"
 import { normalizeTimestampInput } from "@/lib/timezone-format"
 import { TimeRangePicker } from "@/components/time-range-picker/time-range-picker"
@@ -116,7 +117,7 @@ export function RuleLiveChartHero({
 						onChange={onTimeRangeChange}
 					/>
 					<Button variant="outline" size="sm" onClick={onTestRule} disabled={testing}>
-						{testing ? <LoaderIcon size={14} className="animate-spin" /> : <EyeIcon size={14} />}
+						{testing ? <Spinner size={14} /> : <EyeIcon size={14} />}
 						Test rule
 					</Button>
 				</div>

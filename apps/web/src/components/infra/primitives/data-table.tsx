@@ -2,6 +2,7 @@
 // Each table keeps its own row JSX — only the sort logic, column header, meta
 // chip, container, and skeleton shell live here.
 
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import * as React from "react"
 import { cn } from "@maple/ui/lib/utils"
 
@@ -186,7 +187,7 @@ function DataTableHead({ children }: { children: React.ReactNode }) {
 
 /** Rendered in place of the rows when there are none. */
 function DataTableEmpty({ children }: { children: React.ReactNode }) {
-	return <div className="px-4 py-12 text-center text-[12px] text-muted-foreground">{children}</div>
+	return <EmptyMessage className="py-12">{children}</EmptyMessage>
 }
 
 /**

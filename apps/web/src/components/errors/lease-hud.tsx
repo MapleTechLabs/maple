@@ -1,3 +1,5 @@
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import * as React from "react"
 import type { ActorDocument } from "@maple/domain/http"
 import { cn } from "@maple/ui/lib/utils"
@@ -85,10 +87,10 @@ export function LeaseHud({ leaseExpiresAt, claimedAt, leaseHolder, className }: 
 			    label into the holder. */}
 			<div className="flex min-w-0 flex-1 flex-col gap-1">
 				<div className="flex items-baseline justify-between gap-3">
-					<span className="flex items-center gap-2 text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
-						<span
+					<Eyebrow className="flex items-center gap-2">
+						<StatusDot
+							tone="custom"
 							className={cn(
-								"inline-block size-1.5 rounded-full",
 								expired
 									? "bg-muted-foreground"
 									: danger
@@ -97,7 +99,7 @@ export function LeaseHud({ leaseExpiresAt, claimedAt, leaseHolder, className }: 
 							)}
 						/>
 						{expired ? "Lease expired" : "Active lease"}
-					</span>
+					</Eyebrow>
 					<span
 						className={cn(
 							"font-mono text-base font-semibold tabular-nums leading-none",

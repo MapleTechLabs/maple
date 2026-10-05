@@ -7,6 +7,8 @@ import {
 	PrReviewSeverity,
 } from "@maple/domain/http"
 import { Button } from "@maple/ui/components/ui/button"
+import { Spinner } from "@maple/ui/components/ui/spinner"
+import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import { Checkbox } from "@maple/ui/components/ui/checkbox"
 import { Input } from "@maple/ui/components/ui/input"
 import { Label } from "@maple/ui/components/ui/label"
@@ -14,7 +16,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@maple/ui/components/ui/switch"
 import { Textarea } from "@maple/ui/components/ui/textarea"
 
-import { LoaderIcon } from "@/components/icons"
 import { useIsOrgAdmin } from "@/hooks/use-is-org-admin"
 
 import { CATEGORY_LABELS } from "./code-review-format"
@@ -413,7 +414,7 @@ export function ReviewRulesForm({
 					/>
 					<p className="text-xs text-muted-foreground">
 						After this many, pushes stop starting reviews. Mention the reviewer with{" "}
-						<code>review</code> to run one anyway.
+						<InlineCode>review</InlineCode> to run one anyway.
 					</p>
 				</div>
 			</div>
@@ -482,7 +483,7 @@ export function ReviewRulesForm({
 					Reset
 				</Button>
 				<Button onClick={handleSave} disabled={!isAdmin || !dirty || problem !== null || saving}>
-					{saving ? <LoaderIcon size={14} className="animate-spin" /> : null}
+					{saving ? <Spinner className="size-3.5" /> : null}
 					Save
 				</Button>
 			</div>

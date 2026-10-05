@@ -14,6 +14,9 @@ export interface SearchInputProps extends Omit<InputProps, "value" | "onChange" 
 	className?: string
 	/** Extra trailing addon content rendered before the clear button (e.g. a syntax-help popover). */
 	trailing?: React.ReactNode
+	/** Runs after the clear button empties the value (e.g. to also drop an applied filter). */
+	onClear?: () => void
+	clearLabel?: string
 }
 
 export function SearchInput({
@@ -21,6 +24,8 @@ export function SearchInput({
 	onValueChange,
 	className,
 	trailing,
+	onClear,
+	clearLabel = "Clear search",
 	type = "text",
 	...inputProps
 }: SearchInputProps) {
@@ -40,7 +45,13 @@ export function SearchInput({
 				<InputGroupAddon align="inline-end">
 					{trailing}
 					{value ? (
-						<InputGroupButton aria-label="Clear search" onClick={() => onValueChange("")}>
+						<InputGroupButton
+							aria-label={clearLabel}
+							onClick={() => {
+								onValueChange("")
+								onClear?.()
+							}}
+						>
 							<XmarkIcon />
 						</InputGroupButton>
 					) : null}

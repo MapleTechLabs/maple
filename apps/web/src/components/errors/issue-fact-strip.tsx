@@ -1,3 +1,4 @@
+import { FactLane, FactStrip } from "./fact-strip"
 import type { ErrorIssueDocument } from "@maple/domain/http"
 import { formatNumber } from "@maple/ui/lib/format"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
@@ -30,21 +31,21 @@ export function IssueFactStrip({
 	windowLabel: string
 }) {
 	return (
-		<div className={STRIP}>
-			<Lane label={`Events · ${windowLabel}`}>
+		<FactStrip>
+			<FactLane label={`Events · ${windowLabel}`}>
 				<Count value={windowCount} />
-			</Lane>
-			<Lane label="Events · all time">
+			</FactLane>
+			<FactLane label="Events · all time">
 				<Count value={issue.occurrenceCount} />
-			</Lane>
-			<Lane label="First seen">
+			</FactLane>
+			<FactLane label="First seen">
 				<Stamp iso={issue.firstSeenAt} />
-			</Lane>
-			<Lane label="Last seen">
+			</FactLane>
+			<FactLane label="Last seen">
 				<Stamp iso={issue.lastSeenAt} />
-			</Lane>
+			</FactLane>
 			{issue.regressionCount > 0 ? (
-				<Lane label="Regressions">
+				<FactLane label="Regressions">
 					<span className="text-foreground">
 						<span className="tabular-nums">{issue.regressionCount}</span>
 						{issue.lastRegressedAt ? (
@@ -54,30 +55,30 @@ export function IssueFactStrip({
 							</span>
 						) : null}
 					</span>
-				</Lane>
+				</FactLane>
 			) : issue.lastResolvedAt ? (
 				// No regressions *and* a past resolution is the good outcome, and it is
 				// worth stating — an empty lane would read as "never fixed".
-				<Lane label="Fix held since">
+				<FactLane label="Fix held since">
 					<Stamp iso={issue.lastResolvedAt} />
-				</Lane>
+				</FactLane>
 			) : null}
 			{issue.resolvedVersions.length > 0 ? (
-				<Lane label="Resolved in">
+				<FactLane label="Resolved in">
 					<span
 						className="block truncate font-mono text-xs text-foreground"
 						title={issue.resolvedVersions.join(", ")}
 					>
 						{issue.resolvedVersions.join(", ")}
 					</span>
-				</Lane>
+				</FactLane>
 			) : null}
 			{issue.snoozeUntil ? (
-				<Lane label="Snoozed until">
+				<FactLane label="Snoozed until">
 					<Stamp iso={issue.snoozeUntil} />
-				</Lane>
+				</FactLane>
 			) : null}
-		</div>
+		</FactStrip>
 	)
 }
 
@@ -99,34 +100,5 @@ function Stamp({ iso }: { iso: string }) {
 		>
 			{formatRelativeTime(iso)}
 		</span>
-	)
-}
-
-/**
- * A grid, not a flex row with divider elements between the lanes — copied from
- * `investigations/impact-strip.tsx`, whose comment explains why: fixed lane
- * widths plus standalone dividers only line up at one viewport, and a wrapped
- * last lane strands its divider at the end of the row above. A grid column
- * cannot strand a separator, because the separator *is* the cell's left border.
- */
-const STRIP = [
-	"grid shrink-0 gap-y-5 px-1",
-	"grid-cols-2 xl:grid-cols-4",
-	"[&>*]:border-l [&>*]:pl-6",
-	// 2-up: every odd cell starts a row.
-	"[&>*:nth-child(odd)]:border-l-0 [&>*:nth-child(odd)]:pl-0",
-	// 4-up: only the first cell does, so the odd rule has to be undone.
-	"xl:[&>*:nth-child(odd)]:border-l xl:[&>*:nth-child(odd)]:pl-6",
-	"xl:[&>*:first-child]:border-l-0 xl:[&>*:first-child]:pl-0",
-].join(" ")
-
-function Lane({ label, children }: { label: string; children: React.ReactNode }) {
-	return (
-		<div className="flex min-w-0 flex-col gap-1.5 border-border">
-			<span className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
-				{label}
-			</span>
-			<div className="min-w-0 text-sm">{children}</div>
-		</div>
 	)
 }

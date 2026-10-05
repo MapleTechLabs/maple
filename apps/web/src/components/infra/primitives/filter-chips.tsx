@@ -14,6 +14,7 @@
 import { useState } from "react"
 
 import { XmarkIcon } from "@/components/icons"
+import { MonoLinkButton } from "./mono-link-button"
 
 export interface FilterChip<Key extends string> {
 	readonly key: Key
@@ -58,21 +59,11 @@ export function FilterChipRail<Key extends string>({
 				</span>
 			))}
 			{hidden > 0 ? (
-				<button
-					type="button"
-					onClick={() => setExpanded(true)}
-					className="font-mono text-[10px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-				>
-					+{hidden} more
-				</button>
+				<MonoLinkButton onClick={() => setExpanded(true)}>+{hidden} more</MonoLinkButton>
 			) : null}
-			<button
-				type="button"
-				onClick={onClear}
-				className="ml-1 font-mono text-[10px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-			>
+			<MonoLinkButton onClick={onClear} className="ml-1">
 				Clear all
-			</button>
+			</MonoLinkButton>
 		</div>
 	)
 }

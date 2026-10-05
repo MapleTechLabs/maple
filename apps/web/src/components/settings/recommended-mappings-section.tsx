@@ -4,18 +4,13 @@ import { useState } from "react"
 import { Link } from "@tanstack/react-router"
 import { Exit } from "effect"
 import { toastManager } from "@maple/ui/components/ui/toast"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { Spinner } from "@maple/ui/components/ui/spinner"
 
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
 import { cn } from "@maple/ui/lib/utils"
-import {
-	ArrowRotateAnticlockwiseIcon,
-	BoltIcon,
-	CheckIcon,
-	CodeIcon,
-	LoaderIcon,
-	XmarkIcon,
-} from "@/components/icons"
+import { ArrowRotateAnticlockwiseIcon, BoltIcon, CheckIcon, CodeIcon, XmarkIcon } from "@/components/icons"
 import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
 import {
 	ingestAttributeMappingsListAtom,
@@ -23,6 +18,7 @@ import {
 } from "@/lib/services/atoms/ingestion-atoms"
 import { formatNumber } from "@maple/ui/lib/format"
 import { DocsLink } from "@/components/common/docs-link"
+import { FilterTab, FilterTabs } from "./filter-tab"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
 
 type IssueKind = V2Recommendation["kind"]
@@ -183,24 +179,6 @@ export function RecommendedMappingsSection() {
 
 	const rows = tab === "open" ? openIssues : closedIssues
 
-	function FilterTab({ id, label, count }: { id: "open" | "closed"; label: string; count: number }) {
-		const active = tab === id
-		return (
-			<button
-				type="button"
-				onClick={() => setTab(id)}
-				className={cn(
-					"rounded-md px-2.5 py-1 font-mono text-[11px] leading-3.5 transition-colors",
-					active
-						? "bg-accent text-foreground font-medium"
-						: "text-muted-foreground hover:text-foreground border border-transparent",
-				)}
-			>
-				{label} · {count}
-			</button>
-		)
-	}
-
 	return (
 		<div className="bg-card flex flex-col rounded-lg border">
 			<div className="flex items-start gap-3 px-4 pt-4 pb-3">
@@ -211,10 +189,14 @@ export function RecommendedMappingsSection() {
 					</p>
 				</div>
 				<div className="grow" />
-				<div className="flex shrink-0 items-center gap-1.5">
-					<FilterTab id="open" label="Open" count={openIssues.length} />
-					<FilterTab id="closed" label="Closed" count={closedIssues.length} />
-				</div>
+				<FilterTabs className="shrink-0">
+					<FilterTab active={tab === "open"} onClick={() => setTab("open")}>
+						Open · {openIssues.length}
+					</FilterTab>
+					<FilterTab active={tab === "closed"} onClick={() => setTab("closed")}>
+						Closed · {closedIssues.length}
+					</FilterTab>
+				</FilterTabs>
 			</div>
 
 			{rows.length === 0 ? (
@@ -239,14 +221,9 @@ export function RecommendedMappingsSection() {
 							key={issue.id}
 							className="group hover:bg-muted/20 flex items-center gap-3 border-t px-4 py-2.5 transition-colors"
 						>
-							<span
-								className={cn(
-									"w-20 shrink-0 font-mono text-[10px] font-medium uppercase tracking-[0.12em]",
-									kindTag.className,
-								)}
-							>
+							<Eyebrow variant="mono" className={cn("w-20 shrink-0", kindTag.className)}>
 								{kindTag.label}
-							</span>
+							</Eyebrow>
 							<Link
 								to="/recommendations/$recommendationKey"
 								params={{ recommendationKey: issue.id }}
@@ -271,11 +248,7 @@ export function RecommendedMappingsSection() {
 												onClick={() => handleApply(issue)}
 												disabled={isApplying}
 											>
-												{isApplying ? (
-													<LoaderIcon size={14} className="animate-spin" />
-												) : (
-													<CheckIcon size={14} />
-												)}
+												{isApplying ? <Spinner size={14} /> : <CheckIcon size={14} />}
 												Apply fix
 											</Button>
 										) : (
@@ -295,11 +268,7 @@ export function RecommendedMappingsSection() {
 											onClick={() => handleDismiss(issue)}
 											disabled={isBusy}
 										>
-											{isBusy ? (
-												<LoaderIcon size={14} className="animate-spin" />
-											) : (
-												<XmarkIcon size={14} />
-											)}
+											{isBusy ? <Spinner size={14} /> : <XmarkIcon size={14} />}
 											Dismiss
 										</Button>
 									</>
@@ -313,7 +282,7 @@ export function RecommendedMappingsSection() {
 											disabled={isBusy}
 										>
 											{isBusy ? (
-												<LoaderIcon size={14} className="animate-spin" />
+												<Spinner size={14} />
 											) : (
 												<ArrowRotateAnticlockwiseIcon size={14} />
 											)}

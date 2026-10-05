@@ -2,7 +2,14 @@ import { useMemo } from "react"
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { Schema } from "effect"
 
-import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
+import {
+	Empty,
+	EmptyDescription,
+	EmptyHeader,
+	EmptyMedia,
+	EmptyMessage,
+	EmptyTitle,
+} from "@maple/ui/components/ui/empty"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { formatPercent } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
@@ -419,9 +426,9 @@ function LensBody({
 							.onError((error) => <ErrorState error={error} title="Failed to load pods" />)
 							.onSuccess((response, holder) =>
 								response.data.length === 0 ? (
-									<div className="rounded-md border border-dashed px-4 py-12 text-center text-sm text-muted-foreground">
+									<EmptyMessage dashed className="py-12">
 										No pods reported for this workload in the selected window.
-									</div>
+									</EmptyMessage>
 								) : (
 									<PodTable
 										pods={response.data}

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { Exit } from "effect"
 import { useMountEffect } from "@/hooks/use-mount-effect"
 import { toastManager } from "@maple/ui/components/ui/toast"
+import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { useAtomSet } from "@/lib/effect-atom"
 import { MapleAiAtomClient } from "@/lib/services/common/ai-atom-client"
 import { useMapleChat, type FailedSend } from "@/hooks/use-maple-chat"
@@ -434,9 +435,9 @@ function WidgetFixAutoSendTrigger({ onFire }: { onFire: () => void }) {
 function ConversationLoadingSkeleton() {
 	return (
 		<div className="flex flex-col gap-3 py-6" aria-hidden>
-			<div className="h-3 w-1/2 animate-pulse rounded bg-muted" />
-			<div className="h-3 w-2/3 animate-pulse rounded bg-muted" />
-			<div className="h-3 w-1/3 animate-pulse rounded bg-muted" />
+			<Skeleton className="h-3 w-1/2" />
+			<Skeleton className="h-3 w-2/3" />
+			<Skeleton className="h-3 w-1/3" />
 		</div>
 	)
 }

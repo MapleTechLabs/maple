@@ -1,3 +1,4 @@
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import type { ReactNode } from "react"
 import { Link } from "@tanstack/react-router"
 
@@ -286,7 +287,7 @@ export function FindingRow({ finding, timeSearch }: { finding: Finding; timeSear
 			timeSearch={timeSearch}
 			className={cn(ROW_CLASS, FINDINGS_ROW_CLASS, FINDING_ORDER[finding.tone])}
 		>
-			<span className={cn("size-2 shrink-0 rounded-full", FINDING_DOT[finding.tone])} />
+			<StatusDot tone="custom" size="lg" className={FINDING_DOT[finding.tone]} />
 			<span className="flex w-32 shrink-0 items-center gap-2 text-xs text-muted-foreground">
 				<SourceMark id={finding.source} size={14} />
 				{SOURCE_TITLE[finding.source]}
@@ -316,7 +317,7 @@ function FindingRowLoading() {
 function FindingRowError({ id }: { id: SourceId }) {
 	return (
 		<div className={cn("flex items-center gap-4 px-4 py-3", FINDINGS_ROW_CLASS, FINDING_ORDER.error)}>
-			<span className="size-2 shrink-0 rounded-full bg-muted-foreground/60" />
+			<StatusDot tone="custom" size="lg" className="bg-muted-foreground/60" />
 			<span className="flex w-32 shrink-0 items-center gap-2 text-xs text-muted-foreground">
 				<SourceMark id={id} size={14} />
 				{SOURCE_TITLE[id]}

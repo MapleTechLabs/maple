@@ -1,10 +1,13 @@
 import type { ReactNode } from "react"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { GlobeIcon, ClockIcon } from "@/components/icons"
 import { CopyButton } from "@maple/ui/components/ui/copy-button"
 import { formatRelativeFrom } from "@maple/ui/lib/time-format"
 import { formatSessionDuration, gradientFor, hostFromUrl } from "./replay-format"
 import { parseChTimestampMs } from "./replay-timeline"
+import { ErrorCountPill, LivePill } from "./session-pills"
 
 // Presentational building blocks for the session-replay detail page.
 
@@ -24,20 +27,12 @@ function StatusPill({ active }: { active: boolean }) {
 	if (!active) {
 		return (
 			<span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
-				<span className="size-1.5 rounded-full bg-muted-foreground/50" />
+				<StatusDot />
 				Ended
 			</span>
 		)
 	}
-	return (
-		<span className="inline-flex items-center gap-1.5 rounded-full bg-success/10 px-2 py-0.5 text-xs font-medium text-success">
-			<span className="relative flex size-1.5">
-				<span className="absolute inline-flex size-full animate-ping rounded-full bg-success opacity-75" />
-				<span className="relative inline-flex size-1.5 rounded-full bg-success" />
-			</span>
-			Live
-		</span>
-	)
+	return <LivePill />
 }
 
 /**
@@ -109,16 +104,9 @@ export function SessionIdentityBar({
 					<span className="font-mono text-[15px] font-semibold tabular-nums">
 						{formatSessionDuration(durationMs)}
 					</span>
-					<span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-						duration
-					</span>
+					<Eyebrow>duration</Eyebrow>
 				</span>
-				{errorCount > 0 && (
-					<span className="inline-flex items-center gap-1.5 rounded-full border border-destructive/30 bg-destructive/10 px-2 py-0.5 font-mono text-[10px] font-medium tabular-nums text-destructive">
-						<span className="size-1 rounded-full bg-destructive" aria-hidden />
-						{errorCount} error{errorCount === 1 ? "" : "s"}
-					</span>
-				)}
+				{errorCount > 0 && <ErrorCountPill count={errorCount} />}
 			</div>
 		</div>
 	)

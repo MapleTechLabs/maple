@@ -33,6 +33,8 @@ import {
 	type ServiceHealth,
 } from "./service-health"
 import { ServiceDot } from "@maple/ui/components/service-dot"
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 
 const MAX_ROWS = 7
 
@@ -288,9 +290,9 @@ export function ServiceHealthList(props: ServiceHealthProps) {
 	const header = (
 		<div className="flex items-center justify-between">
 			<div>
-				<h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+				<Eyebrow variant="label" as="h2">
 					Services
-				</h2>
+				</Eyebrow>
 				<p className="mt-0.5 text-[11px] text-muted-foreground/70">
 					Status reflects active alerts and baseline anomalies.
 				</p>
@@ -393,11 +395,7 @@ function ServiceHealthRow({
 				search={{ ...detailSearch, environments: [service.environment] }}
 				className="flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
 			>
-				<span
-					aria-hidden
-					className="size-2 shrink-0 rounded-full"
-					style={{ backgroundColor: HEALTH_DOT_COLOR[health] }}
-				/>
+				<StatusDot tone="custom" size="lg" style={{ backgroundColor: HEALTH_DOT_COLOR[health] }} />
 				<div className="flex min-w-0 flex-1 items-center gap-2">
 					<ServiceDot serviceName={service.serviceName} className="size-1.5" />
 					<span className="truncate text-sm font-medium text-foreground">
@@ -470,7 +468,7 @@ function Metric({
 	return (
 		<div className="flex w-16 flex-col items-end gap-0.5">
 			<span className={cn("leading-none", toneClass, valueClassName)}>{value}</span>
-			<span className="text-[10px] uppercase tracking-wider text-muted-foreground/60">{label}</span>
+			<Eyebrow>{label}</Eyebrow>
 		</div>
 	)
 }

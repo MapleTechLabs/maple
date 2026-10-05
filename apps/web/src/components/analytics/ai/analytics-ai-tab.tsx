@@ -1,5 +1,6 @@
 import { Result } from "@/lib/effect-atom"
 import { formatNumber, formatPercent } from "@maple/ui/lib/format"
+import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 
 import type { WebAnalyticsAiCrawlers } from "@/api/warehouse/web-analytics"
@@ -54,8 +55,9 @@ const VISITOR_ONLY_FILTERS: ReadonlyArray<AnalyticsFilterKey> = [
 const NO_CRAWLS_MESSAGE = (
 	<>
 		AI crawlers fetch pages without running JavaScript, so the browser SDK never sees them. They are
-		counted from your server&apos;s traces: HTTP server spans whose <code>user_agent.original</code> names
-		GPTBot, ClaudeBot, PerplexityBot or another AI fetcher.
+		counted from your server&apos;s traces: HTTP server spans whose{" "}
+		<InlineCode>user_agent.original</InlineCode> names GPTBot, ClaudeBot, PerplexityBot or another AI
+		fetcher.
 		<span className="mt-2 flex justify-center">
 			<DocsLink page="traces" />
 		</span>

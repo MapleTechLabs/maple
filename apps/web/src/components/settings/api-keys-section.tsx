@@ -1,6 +1,6 @@
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { useAtomSet } from "@/lib/effect-atom"
-import { useState, type ReactNode } from "react"
+import { useState } from "react"
 import { Link } from "@tanstack/react-router"
 import { Exit } from "effect"
 import type { V2ApiKey } from "@maple/domain/http/v2"
@@ -37,6 +37,8 @@ import {
 	EmptyTitle,
 } from "@maple/ui/components/ui/empty"
 import { SearchInput } from "@maple/ui/components/ui/search-input"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { FilterTab, FilterTabs } from "./filter-tab"
 import { DocsLink, EmptyActions } from "@/components/common/docs-link"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import {
@@ -201,7 +203,7 @@ export function ApiKeysSection() {
 				<div className="flex flex-wrap items-center gap-3">
 					{keys.length > 0 && (
 						<>
-							<div className="border-border flex items-center gap-0.5 rounded-md border p-0.5">
+							<FilterTabs>
 								{(["active", "expired", "revoked"] as const).map((tab) =>
 									// A tab for an empty bucket is a dead end. Active always shows, so
 									// there is something to fall back to.
@@ -215,7 +217,7 @@ export function ApiKeysSection() {
 										</FilterTab>
 									) : null,
 								)}
-							</div>
+							</FilterTabs>
 							{buckets.active.length > 0 && (
 								<span className="text-muted-foreground font-mono text-[11px]">
 									<span className="text-success-foreground">{standardCount} standard</span>
@@ -317,11 +319,21 @@ export function ApiKeysSection() {
 					) : (
 						<div className="divide-border divide-y">
 							<div className="flex items-center gap-3 px-4 py-2">
-								<span className={cn(COL_HEADER, "min-w-0 flex-1")}>Key</span>
-								<span className={cn(COL_HEADER, COL.prefix)}>Prefix</span>
-								<span className={cn(COL_HEADER, COL.scopes)}>Scopes</span>
-								<span className={cn(COL_HEADER, COL.lastUsed)}>Last used</span>
-								<span className={cn(COL_HEADER, COL.expires)}>Expires</span>
+								<Eyebrow variant="mono" className="min-w-0 flex-1">
+									Key
+								</Eyebrow>
+								<Eyebrow variant="mono" className={COL.prefix}>
+									Prefix
+								</Eyebrow>
+								<Eyebrow variant="mono" className={COL.scopes}>
+									Scopes
+								</Eyebrow>
+								<Eyebrow variant="mono" className={COL.lastUsed}>
+									Last used
+								</Eyebrow>
+								<Eyebrow variant="mono" className={COL.expires}>
+									Expires
+								</Eyebrow>
 								<span className={cn(COL.menu)} />
 							</div>
 							{visibleKeys.map((key) => (
@@ -481,18 +493,18 @@ function ApiReference() {
 				</CardHeader>
 				<CardContent className="space-y-4">
 					<div className="space-y-1.5">
-						<div className="text-muted-foreground text-xs font-medium uppercase tracking-wider">
+						<Eyebrow variant="label" as="div">
 							Base URL
-						</div>
+						</Eyebrow>
 						<div className="bg-muted/50 flex items-center justify-between gap-2 rounded-md border px-3 py-2">
 							<code className="font-mono text-sm">{apiBaseUrl}/v2</code>
 							<CopyButton value={`${apiBaseUrl}/v2`} label="Base URL" size="icon-sm" />
 						</div>
 					</div>
 					<div className="space-y-1.5">
-						<div className="text-muted-foreground text-xs font-medium uppercase tracking-wider">
+						<Eyebrow variant="label" as="div">
 							Quick start
-						</div>
+						</Eyebrow>
 						<div className="bg-muted/50 flex items-start justify-between gap-2 rounded-md border px-3 py-2">
 							<pre className="overflow-x-auto font-mono text-sm leading-6">{curlExample}</pre>
 							<CopyButton value={curlExample} label="curl example" size="icon-sm" />
@@ -550,32 +562,6 @@ const COL = {
 	lastUsed: "hidden w-[90px] shrink-0 xl:block",
 	expires: "hidden w-[110px] shrink-0 md:block",
 	menu: "w-7 shrink-0",
-}
-const COL_HEADER = "text-muted-foreground/70 font-mono text-[10px] uppercase tracking-[0.12em]"
-
-function FilterTab({
-	active,
-	onClick,
-	children,
-}: {
-	active: boolean
-	onClick: () => void
-	children: ReactNode
-}) {
-	return (
-		<button
-			type="button"
-			onClick={onClick}
-			className={cn(
-				"rounded px-2.5 py-1 font-mono text-[11px] leading-4 transition-colors",
-				active
-					? "bg-accent text-foreground font-medium"
-					: "text-muted-foreground hover:text-foreground",
-			)}
-		>
-			{children}
-		</button>
-	)
 }
 
 /** "in 3 days" / "today" — the urgency, not the date. The Expires column carries the date. */

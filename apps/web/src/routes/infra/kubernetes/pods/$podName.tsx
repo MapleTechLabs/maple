@@ -1,3 +1,4 @@
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import { useState } from "react"
 import { DetailRail } from "@maple/ui/components/detail-rail"
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
@@ -155,9 +156,9 @@ function PodDetailPage() {
 						/>
 					</StatRail>
 				) : (
-					<div className="rounded-md border border-dashed px-4 py-12 text-center text-sm text-muted-foreground">
+					<EmptyMessage dashed className="py-12">
 						No metrics arrived for this pod in the selected window.
-					</div>
+					</EmptyMessage>
 				)}
 
 				<div className="space-y-3">

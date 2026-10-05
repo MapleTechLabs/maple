@@ -2,7 +2,7 @@ import { useMemo, useState, type ReactNode } from "react"
 import { ChevronDownIcon, CircleCheckIcon, CircleXmarkIcon } from "@/components/icons"
 import type { IconComponent } from "@/components/icons"
 import { cn } from "@maple/ui/lib/utils"
-import { RunningClock } from "./tool"
+import { RunningClock, TranscriptRowButton } from "./tool"
 import { DotLoader } from "./dot-loader"
 import { toolActivity, toolIcon, toolLabel } from "./tool-metadata"
 
@@ -68,11 +68,7 @@ export function ToolGroup({
 
 	return (
 		<div className="text-xs" data-slot="tool-group">
-			<button
-				type="button"
-				className="flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left transition-colors hover:bg-muted/60"
-				onClick={() => setOpen((v) => !v)}
-			>
+			<TranscriptRowButton onClick={() => setOpen((v) => !v)}>
 				{/* The loader only says "in flight"; the header text beside it names the call, so
 				    the glyph is decorative and stays out of the accessibility tree. */}
 				<span className="flex size-5 shrink-0 items-center justify-center">
@@ -137,7 +133,7 @@ export function ToolGroup({
 						open ? "rotate-0" : "-rotate-90",
 					)}
 				/>
-			</button>
+			</TranscriptRowButton>
 			{open && (
 				<div className="ms-[0.9375rem] max-h-[55vh] overflow-y-auto border-s border-border/60 py-0.5 ps-1.5">
 					{children}

@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from "react"
 
 import { Badge } from "@maple/ui/components/ui/badge"
+import { Button } from "@maple/ui/components/ui/button"
 import { Checkbox } from "@maple/ui/components/ui/checkbox"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
 import { cn } from "@maple/ui/lib/utils"
@@ -12,6 +13,29 @@ import { QUERY_BUILDER_DATA_SOURCES } from "@maple/query-model"
 // bar under a panel's body. `QueryPanel` and the funnel widget's
 // `FunnelQueryPanel` (the step editor a funnel shows for Product events) both
 // render through these, so the funnel reads as one more query.
+
+/** The expand/collapse caret at the start of a query panel's header row. */
+export function CollapseToggle({
+	collapsed,
+	onToggle,
+	noun,
+}: {
+	collapsed: boolean
+	onToggle: () => void
+	noun: string
+}) {
+	return (
+		<Button
+			variant="ghost"
+			size="icon-xs"
+			onClick={onToggle}
+			className="text-xs text-muted-foreground hover:text-foreground"
+			aria-label={collapsed ? `Expand ${noun}` : `Collapse ${noun}`}
+		>
+			{collapsed ? "▶" : "▼"}
+		</Button>
+	)
+}
 
 /** What a panel's source select offers: every query-builder data source. */
 export type QueryPanelSource = QueryBuilderDataSource
@@ -60,14 +84,7 @@ export function QueryPanelShell({
 		<div className="border rounded-md">
 			{/* Header */}
 			<div className="flex items-center gap-2 px-3 py-2 bg-muted/30">
-				<button
-					type="button"
-					onClick={() => setCollapsed((c) => !c)}
-					className="text-muted-foreground hover:text-foreground transition-colors text-xs shrink-0"
-					aria-label={collapsed ? "Expand query" : "Collapse query"}
-				>
-					{collapsed ? "▶" : "▼"}
-				</button>
+				<CollapseToggle collapsed={collapsed} onToggle={() => setCollapsed((c) => !c)} noun="query" />
 
 				{visibility && (
 					<Checkbox

@@ -22,6 +22,7 @@ import {
 	type MetricsQueryDraft,
 	type QueryBuilderMetricType,
 } from "@maple/query-engine/query-builder"
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
 
 export interface MetricDetailQueryState {
 	type?: QueryBuilderMetricType
@@ -286,9 +287,9 @@ function MetricChart({
 					.onError((error) => <ErrorState error={error} title="Failed to load metric data" />)
 					.onSuccess((response) =>
 						response.data.length === 0 ? (
-							<div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+							<EmptyMessage className="flex h-full items-center justify-center">
 								No datapoints match this query in the selected range.
-							</div>
+							</EmptyMessage>
 						) : (
 							<Suspense fallback={<ChartSkeleton variant="area" />}>
 								<ChartComponent

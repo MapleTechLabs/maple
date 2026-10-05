@@ -36,8 +36,11 @@ import {
 } from "@/lib/services/atoms/warehouse-query-atoms"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { formatNumber } from "@maple/ui/lib/format"
-import { MagnifierIcon, XmarkIcon } from "@/components/icons"
+import { XmarkIcon } from "@/components/icons"
+import { MonoLinkButton } from "../primitives/mono-link-button"
+import { CompactFilterInput } from "./compact-filter-input"
 import { ColumnHead, DataTable, useTableSort } from "../primitives/data-table"
+import { SegmentPivot } from "../primitives/segment-pivot"
 import { shareBar } from "../primitives/share-bar"
 import { formatBytes, formatPercent } from "@maple/ui/lib/format"
 import { StackedBreakdownChart } from "./cloudflare-zone-detail-charts"
@@ -206,25 +209,12 @@ export function CloudflareBreakdownPanel({
 						/>
 					)}
 				</div>
-				<div className="flex items-center gap-1" role="tablist" aria-label="Breakdown dimension">
-					{DIMENSIONS.map((d) => (
-						<button
-							key={d.id}
-							type="button"
-							role="tab"
-							aria-selected={d.id === dimensionId}
-							onClick={() => selectDimension(d.id)}
-							className={cn(
-								"rounded px-2 py-0.5 text-[11px] transition-colors",
-								d.id === dimensionId
-									? "bg-muted font-medium text-foreground"
-									: "text-muted-foreground hover:text-foreground",
-							)}
-						>
-							{d.tab}
-						</button>
-					))}
-				</div>
+				<SegmentPivot<CloudflareBreakdownDimension>
+					ariaLabel="Breakdown dimension"
+					options={DIMENSIONS.map((d) => ({ value: d.id, label: d.tab }))}
+					value={dimensionId}
+					onChange={selectDimension}
+				/>
 			</div>
 
 			{live ? (
@@ -274,27 +264,13 @@ function Toolbar({
 }) {
 	return (
 		<div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-3 pb-2">
-			<label className="flex h-6 min-w-0 max-w-xs flex-1 items-center gap-1.5 rounded-sm border border-border/70 bg-background/60 px-2 transition-colors focus-within:border-ring">
-				<MagnifierIcon size={11} className="shrink-0 text-muted-foreground" />
-				<input
-					type="search"
-					value={value}
-					onChange={(event) => onChange(event.target.value)}
-					placeholder={`Filter ${count} ${dimension.noun}`}
-					aria-label={`Filter the listed ${dimension.noun}`}
-					className="min-w-0 flex-1 bg-transparent font-mono text-[11px] text-foreground placeholder:text-muted-foreground focus-visible:outline-none [&::-webkit-search-cancel-button]:hidden"
-				/>
-				{value ? (
-					<button
-						type="button"
-						onClick={() => onChange("")}
-						aria-label="Clear filter"
-						className="shrink-0 rounded-xs p-0.5 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-1 focus-visible:outline-ring"
-					>
-						<XmarkIcon size={9} />
-					</button>
-				) : null}
-			</label>
+			<CompactFilterInput
+				className="min-w-0 max-w-xs flex-1"
+				value={value}
+				onChange={onChange}
+				placeholder={`Filter ${count} ${dimension.noun}`}
+				label={`Filter the listed ${dimension.noun}`}
+			/>
 			{meta}
 		</div>
 	)
@@ -538,13 +514,9 @@ function Footer({
 		<div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-3 py-2">
 			<p className="font-mono text-[10px] text-muted-foreground">{parts.join(" · ")}</p>
 			{onSearchLive ? (
-				<button
-					type="button"
-					onClick={onSearchLive}
-					className="font-mono text-[10px] text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline"
-				>
+				<MonoLinkButton onClick={onSearchLive}>
 					Search all {dimension.noun} in Cloudflare
-				</button>
+				</MonoLinkButton>
 			) : null}
 		</div>
 	)

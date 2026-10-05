@@ -13,6 +13,7 @@ import {
 	MagnifierIcon,
 	PlusIcon,
 } from "@/components/icons"
+import { ListSectionHeader } from "@/components/dashboard-builder/list-section-header"
 import { templateIcon } from "./template-icons"
 import {
 	BLANK_TEMPLATE_ID,
@@ -97,39 +98,6 @@ function TemplateRow({
 				</span>
 			</span>
 		</button>
-	)
-}
-
-function SectionHeader({
-	title,
-	count,
-	accent,
-	note,
-	bordered,
-}: {
-	title: string
-	count: number
-	accent?: boolean
-	note?: string
-	bordered?: boolean
-}) {
-	return (
-		<div
-			className={cn(
-				"flex items-center gap-2 px-5 pt-4 pb-2",
-				bordered && "mt-2 border-t border-border pt-6",
-			)}
-		>
-			{/* A real heading so the two groups are navigable, and so "Needs setup"
-			    here is distinguishable from the filter button of the same name. */}
-			<h3 className="text-muted-foreground text-[11px] font-medium tracking-wider uppercase">
-				{title}
-			</h3>
-			<span className={cn("font-mono text-[11px]", accent ? "text-primary" : "text-muted-foreground")}>
-				{count}
-			</span>
-			{note && <span className="text-muted-foreground ml-auto text-[11px]">{note}</span>}
-		</div>
 	)
 }
 
@@ -286,7 +254,12 @@ export function TemplateList({
 					<>
 						{ready.length > 0 && (
 							<>
-								<SectionHeader title="Ready for your data" count={ready.length} accent />
+								<ListSectionHeader
+									title="Ready for your data"
+									count={ready.length}
+									accent
+									className="px-5 pt-4"
+								/>
 								{ready.map((template) => (
 									<TemplateRow
 										key={template.id}
@@ -301,11 +274,14 @@ export function TemplateList({
 
 						{needsSetup.length > 0 && (
 							<>
-								<SectionHeader
+								<ListSectionHeader
 									title="Needs setup"
 									count={needsSetup.length}
 									note="these would render empty today"
-									bordered={ready.length > 0}
+									className={cn(
+										"px-5 pt-4",
+										ready.length > 0 && "mt-2 border-t border-border pt-6",
+									)}
 								/>
 								{gatedByCategory.map(({ category, templates: group }) => (
 									<div key={category}>

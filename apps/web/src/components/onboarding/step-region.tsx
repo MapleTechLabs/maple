@@ -3,6 +3,7 @@ import { useOrganization } from "@clerk/clerk-react"
 import { Cause, Exit, Option } from "effect"
 import { MapleMark } from "@maple/ui/components/icons/maple-mark"
 import { Button } from "@maple/ui/components/ui/button"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { cn } from "@maple/ui/lib/utils"
 import { ChooseOrganizationRegionRequest } from "@maple/domain/http"
 
@@ -84,9 +85,9 @@ export function StepRegion() {
 					<div aria-hidden="true" className="mx-auto mb-6 w-fit text-primary">
 						<MapleMark size={56} />
 					</div>
-					<span className="text-[11px] font-semibold uppercase tracking-widest text-primary">
+					<Eyebrow variant="label" className="text-primary">
 						Before you start
-					</span>
+					</Eyebrow>
 					<h1 className="text-3xl font-semibold tracking-tight">Where should your data live?</h1>
 					<p className="mx-auto max-w-md text-sm leading-relaxed text-muted-foreground">
 						Each region is a separate Maple. Your telemetry, dashboards and alerts are stored and

@@ -1,4 +1,6 @@
 import { cn } from "@maple/ui/lib/utils"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import type { InvestigationContext, InvestigationKind } from "./investigation-context"
 
 const ACCENT: Record<string, { stripe: string; tint: string }> = {
@@ -56,7 +58,7 @@ export function InvestigationAttachmentCard({
 							<span className="font-mono capitalize">{ctx.severity}</span>
 							<span className="size-0.5 rounded-full bg-muted-foreground/40" aria-hidden />
 							<span className={cn("inline-flex items-center gap-1 font-mono", statusTone)}>
-								<span className={cn("size-1.5 rounded-full", dot)} aria-hidden />
+								<StatusDot tone="custom" className={dot} />
 								{ctx.status}
 							</span>
 							<span className="size-0.5 rounded-full bg-muted-foreground/40" aria-hidden />
@@ -69,9 +71,7 @@ export function InvestigationAttachmentCard({
 							<ul className="mt-2 flex flex-wrap gap-x-5 gap-y-1.5">
 								{ctx.facts.map((fact) => (
 									<li key={fact.key} className="flex min-w-0 flex-col leading-tight">
-										<span className="text-[9px] uppercase tracking-[0.14em] text-muted-foreground/70">
-											{fact.label}
-										</span>
+										<Eyebrow>{fact.label}</Eyebrow>
 										<span className="truncate font-mono text-[11.5px] text-foreground">
 											{fact.value}
 										</span>

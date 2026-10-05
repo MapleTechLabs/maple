@@ -1,5 +1,7 @@
 import { Link } from "@tanstack/react-router"
 
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import { cn } from "@maple/ui/lib/utils"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
@@ -78,9 +80,9 @@ export function ToolDetailSessions({
 						<Skeleton className="h-[46px]" />
 					</div>
 				) : rows.length === 0 ? (
-					<div className="px-3 py-12 text-center font-mono text-xs text-muted-foreground">
+					<EmptyMessage className="py-12 font-mono">
 						No sessions called {tool} in the selected window.
-					</div>
+					</EmptyMessage>
 				) : (
 					rows.map((session) => {
 						const hasErrors = session.errorSpanCount > 0
@@ -133,9 +135,10 @@ export function ToolDetailSessions({
 								<span className="hidden w-[140px] shrink-0 @min-[900px]/panel:flex">
 									{hasErrors ? (
 										<span className="inline-flex items-center gap-1 rounded-full border border-[var(--severity-error)]/30 bg-[var(--severity-error)]/10 px-1.5 py-0.5">
-											<span
-												aria-hidden
-												className="size-1 shrink-0 rounded-full bg-[var(--severity-error)]"
+											<StatusDot
+												tone="custom"
+												size="sm"
+												className="bg-[var(--severity-error)]"
 											/>
 											<span className="font-mono text-[11px] font-medium leading-3 text-[var(--severity-error)]">
 												{plural(session.errorSpanCount, "error")}

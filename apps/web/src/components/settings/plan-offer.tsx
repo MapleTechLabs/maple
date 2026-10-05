@@ -1,5 +1,6 @@
 import { useState } from "react"
 import { toastManager } from "@maple/ui/components/ui/toast"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 
 import type { CatalogPlan } from "@maple/domain/http"
 import { Button } from "@maple/ui/components/ui/button"
@@ -107,9 +108,7 @@ function CustomPlanPlate({ model, onManageBilling }: { model: SpendModel; onMana
 			</div>
 
 			<div className="flex-1 lg:px-6">
-				<span className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground/70">
-					Included every cycle
-				</span>
+				<Eyebrow>Included every cycle</Eyebrow>
 				<p className="mt-2 font-mono text-[11px] leading-relaxed text-foreground/85">
 					{included.length > 0 ? included : "Allotments are set on your contract."}
 				</p>
@@ -223,9 +222,7 @@ export function PlanOffer({
 						</div>
 
 						<div className="flex-1 lg:px-6">
-							<span className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground/70">
-								Included every cycle
-							</span>
+							<Eyebrow>Included every cycle</Eyebrow>
 							<p className="mt-2 font-mono text-[11px] leading-relaxed text-foreground/85">
 								{includedRun(plan)}
 								{retention && ` · ${retention.value.toLowerCase()} retention`}
@@ -280,9 +277,7 @@ export function PlanOffer({
 			    full card of attention on a call-us flow. */}
 			<div className="flex flex-col gap-4 border border-primary/25 bg-primary/[0.04] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
 				<div>
-					<span className="text-[10px] font-medium uppercase tracking-[0.14em] text-primary">
-						Enterprise
-					</span>
+					<Eyebrow className="text-primary">Enterprise</Eyebrow>
 					<p className="mt-1.5 max-w-[48ch] text-[11px] leading-relaxed text-foreground/85">
 						Higher volume, custom retention, priority support.
 					</p>

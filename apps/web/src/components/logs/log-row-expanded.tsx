@@ -4,6 +4,7 @@ import type { Log } from "@/api/warehouse/logs"
 import { LogAttributesPanel } from "./log-attributes-panel"
 import { buildLogJsonPayload } from "./log-raw-panel"
 import { HighlightedText } from "./highlighted-text"
+import { LogTextButton } from "./log-text-button"
 
 interface LogRowExpandedProps {
 	log: Log
@@ -23,17 +24,15 @@ export function LogRowExpanded({ log, highlight, onOpenDetail }: LogRowExpandedP
 	return (
 		<div className="border-t border-border/60 bg-muted/15 px-3 py-2.5 font-mono">
 			<div className="mb-2 flex items-center justify-end gap-3">
-				<button
-					type="button"
+				<LogTextButton
 					onClick={(e) => {
 						e.stopPropagation()
 						onOpenDetail()
 					}}
-					className="flex items-center gap-1 text-[10px] text-muted-foreground transition-colors hover:text-foreground cursor-pointer"
 				>
 					<ExternalLinkIcon size={10} />
 					Open detail
-				</button>
+				</LogTextButton>
 				<CopyButton
 					value={() => buildLogJsonPayload(log)}
 					label="Log JSON"

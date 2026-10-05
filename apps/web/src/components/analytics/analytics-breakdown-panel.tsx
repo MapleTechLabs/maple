@@ -1,5 +1,6 @@
 import { useDeferredValue, useMemo, useState, type ReactNode } from "react"
 
+import { ToggleGroup, ToggleGroupItem } from "@maple/ui/components/ui/toggle-group"
 import { cn } from "@maple/ui/lib/utils"
 import { formatNumber, formatPercent } from "@maple/ui/lib/format"
 import {
@@ -313,23 +314,26 @@ function DimensionTabs({
 	onPick: (index: number) => void
 }) {
 	return (
-		<div className="flex flex-wrap items-center gap-1">
-			{dimensions.map((dim, index) => (
-				<button
+		<ToggleGroup
+			size="sm"
+			aria-label="Breakdown dimension"
+			value={[dimensions[activeTab]?.tab ?? ""]}
+			onValueChange={(next: ReadonlyArray<unknown>) => {
+				const index = dimensions.findIndex((dim) => dim.tab === next[0])
+				if (index >= 0) onPick(index)
+			}}
+			className="flex-wrap gap-1"
+		>
+			{dimensions.map((dim) => (
+				<ToggleGroupItem
 					key={dim.tab}
-					type="button"
-					onClick={() => onPick(index)}
-					className={cn(
-						"rounded-sm px-2 py-0.5 text-[11px] transition-colors",
-						index === activeTab
-							? "bg-muted font-medium text-foreground"
-							: "text-muted-foreground hover:text-foreground",
-					)}
+					value={dim.tab}
+					className="h-auto min-w-0 rounded-sm px-2 py-0.5 text-[11px] font-normal text-muted-foreground hover:bg-transparent hover:text-foreground data-pressed:bg-muted data-pressed:font-medium data-pressed:text-foreground sm:h-auto sm:min-w-0 sm:text-[11px]"
 				>
 					{dim.tab}
-				</button>
+				</ToggleGroupItem>
 			))}
-		</div>
+		</ToggleGroup>
 	)
 }
 

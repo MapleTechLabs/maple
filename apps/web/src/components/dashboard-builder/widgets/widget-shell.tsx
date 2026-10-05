@@ -17,6 +17,8 @@ import {
 
 import { Card, CardContent, CardHeader, CardTitle, CardAction } from "@maple/ui/components/ui/card"
 import { Button } from "@maple/ui/components/ui/button"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
 import {
 	DropdownMenu,
@@ -116,9 +118,9 @@ export function WidgetShell({
 							<GripDotsIcon size={14} />
 						</div>
 					)}
-					<CardTitle className="min-w-0 truncate text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+					<Eyebrow variant="label" render={<CardTitle />} className="min-w-0 truncate">
 						{displayTitle}
-					</CardTitle>
+					</Eyebrow>
 					{titleHint && (
 						<Tooltip>
 							<TooltipTrigger
@@ -342,14 +344,12 @@ interface WidgetFrameProps {
  */
 export function WidgetEmptyState() {
 	return (
-		<div className="flex items-center justify-center h-full flex-col gap-1.5 px-3">
-			<span className="text-xs font-medium text-muted-foreground">
-				No data in the selected time range
-			</span>
-			<span className="text-[10px] text-muted-foreground/70 max-w-full text-center line-clamp-3">
+		<EmptyMessage className="flex h-full flex-col items-center justify-center gap-1.5 px-3 py-0">
+			<span className="font-medium">No data in the selected time range</span>
+			<span className="text-[10px] text-muted-foreground/70 max-w-full line-clamp-3">
 				Widen the time range or check the query's filters.
 			</span>
-		</div>
+		</EmptyMessage>
 	)
 }
 

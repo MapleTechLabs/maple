@@ -8,13 +8,11 @@ import {
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@maple/ui/components/ui/dropdown-menu"
+import { Button } from "@maple/ui/components/ui/button"
 import { ChevronExpandYIcon, LogoutIcon } from "@/components/icons"
 import { isClerkAuthEnabled } from "@/lib/services/common/auth-mode"
 import { clearSelfHostedSessionToken } from "@/lib/services/common/self-hosted-auth"
 import { ClerkOrgSwitcherMenu, OrgAvatar } from "@/components/dashboard/org-switcher-menu"
-
-const PILL_BASE =
-	"inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-background/60 px-2 py-1 text-xs font-medium text-foreground/90 shadow-sm transition-colors hover:bg-accent/60 data-[state=open]:bg-accent/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
 
 export function OnboardingOrgSwitcher() {
 	if (!isClerkAuthEnabled) return null
@@ -34,11 +32,11 @@ function OnboardingOrgSwitcherInner() {
 			contentSide="bottom"
 			contentAlign="end"
 			trigger={
-				<button type="button" className={PILL_BASE}>
+				<Button variant="outline" size="sm" className="pl-1.5 text-xs">
 					<OrgAvatar name={orgName} imageUrl={orgImageUrl} className="size-5" />
 					<span className="max-w-[10rem] truncate">{orgName}</span>
-					<ChevronExpandYIcon size={12} className="ml-0.5 text-muted-foreground" />
-				</button>
+					<ChevronExpandYIcon size={12} className="ml-0.5 size-3 text-muted-foreground" />
+				</Button>
 			}
 		/>
 	)
@@ -64,10 +62,10 @@ function ClerkUserMenu() {
 		<DropdownMenu>
 			<DropdownMenuTrigger
 				render={
-					<button type="button" className={`${PILL_BASE} pl-1 pr-2`} aria-label="Account menu">
+					<Button variant="outline" size="sm" className="pl-1 pr-2" aria-label="Account menu">
 						<UserAvatar imageUrl={imageUrl} initial={initial} name={name} />
 						<span className="sr-only">Account menu</span>
-					</button>
+					</Button>
 				}
 			/>
 			<DropdownMenuContent side="bottom" align="end" sideOffset={4} className="min-w-56">
@@ -106,10 +104,10 @@ function SelfHostedUserMenu() {
 		<DropdownMenu>
 			<DropdownMenuTrigger
 				render={
-					<button type="button" className={`${PILL_BASE} pl-1 pr-2`} aria-label="Account menu">
+					<Button variant="outline" size="sm" className="pl-1 pr-2" aria-label="Account menu">
 						<UserAvatar initial="U" name="User" />
 						<span className="sr-only">Account menu</span>
-					</button>
+					</Button>
 				}
 			/>
 			<DropdownMenuContent side="bottom" align="end" sideOffset={4} className="min-w-44">

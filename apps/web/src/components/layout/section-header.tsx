@@ -8,7 +8,7 @@ import { cn } from "@maple/ui/lib/utils"
  */
 export function SectionHeader({ id, label, className }: { id?: string; label: string; className?: string }) {
 	return (
-		<Eyebrow render={<h2 />} id={id} className={cn("mb-3 block", className)}>
+		<Eyebrow as="h2" id={id} className={cn("mb-3 block", className)}>
 			{label}
 		</Eyebrow>
 	)

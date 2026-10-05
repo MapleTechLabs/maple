@@ -4,6 +4,7 @@
 
 import { cn } from "@maple/ui/lib/utils"
 import { TableCell, TableHead } from "@maple/ui/components/ui/table"
+import { Eyebrow, eyebrowVariants } from "@maple/ui/components/ui/eyebrow"
 import { ChevronDownIcon, ChevronUpIcon, ChevronExpandYIcon } from "@/components/icons"
 
 export type SortDir = "asc" | "desc"
@@ -71,8 +72,9 @@ export function SortableHead({ label, align = "left", active, dir, onClick, clas
 		<TableHead
 			onClick={onClick}
 			className={cn(
-				"h-8 cursor-pointer select-none text-[10px] uppercase tracking-wider font-medium transition-colors",
-				active ? "text-foreground" : "text-muted-foreground/70 hover:text-foreground",
+				eyebrowVariants(),
+				"h-8 cursor-pointer select-none transition-colors",
+				active ? "text-foreground" : "hover:text-foreground",
 				align === "right" && "text-right",
 				className,
 			)}
@@ -82,5 +84,69 @@ export function SortableHead({ label, align = "left", active, dir, onClick, clas
 				<Icon size={11} className={active ? "text-foreground" : "text-muted-foreground/30"} />
 			</span>
 		</TableHead>
+	)
+}
+
+/** Non-sortable column header, styled to match `SortableHead`. */
+export function HeadLabel({ className, ...props }: React.ComponentProps<"th">) {
+	return <TableHead className={cn(eyebrowVariants(), "h-8", className)} {...props} />
+}
+
+interface MobileSortBarProps<K extends string> {
+	options: ReadonlyArray<readonly [K, string]>
+	sortKey: K
+	sortDir: SortDir
+	onSort: (key: K) => void
+}
+
+/** Compact sort pills shown above the mobile list, where the sortable table header is hidden. */
+export function MobileSortBar<K extends string>({
+	options,
+	sortKey,
+	sortDir,
+	onSort,
+}: MobileSortBarProps<K>) {
+	return (
+		<div className="flex items-center gap-1.5 text-[11px]">
+			<Eyebrow variant="label">Sort</Eyebrow>
+			{options.map(([key, label]) => {
+				const active = sortKey === key
+				const Icon = active
+					? sortDir === "desc"
+						? ChevronDownIcon
+						: ChevronUpIcon
+					: ChevronExpandYIcon
+				return (
+					<button
+						key={key}
+						type="button"
+						onClick={() => onSort(key)}
+						className={cn(
+							"inline-flex items-center gap-1 rounded-md border px-2 py-1 font-mono transition-colors",
+							active
+								? "border-border bg-muted text-foreground"
+								: "border-transparent text-muted-foreground hover:text-foreground",
+						)}
+					>
+						{label}
+						<Icon size={11} className={active ? "text-foreground" : "text-muted-foreground/40"} />
+					</button>
+				)
+			})}
+		</div>
+	)
+}
+
+/** One tappable row of the mobile list that replaces the table below md. */
+export function MobileListRow({ className, ...props }: React.ComponentProps<"button">) {
+	return (
+		<button
+			type="button"
+			className={cn(
+				"flex w-full flex-col gap-1 border-b px-3 py-2.5 text-left last:border-b-0 hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
+				className,
+			)}
+			{...props}
+		/>
 	)
 }

@@ -11,6 +11,7 @@ import { highlightCode } from "@/lib/sugar-high"
 import { SeverityBadge } from "@maple/ui/components/logs/severity-badge"
 import type { Log } from "@/api/warehouse/logs"
 import { ServiceDot } from "@maple/ui/components/service-dot"
+import { LogTextButton } from "./log-text-button"
 
 const HERO_TONE: Record<string, string> = {
 	TRACE: "bg-severity-trace/5 border-severity-trace/20",
@@ -103,14 +104,10 @@ export function LogHeroHeader({ log, showClose = true }: LogHeroHeaderProps) {
 			<div className="mt-3">
 				<CopyableValue value={copyValue}>{message(isLong && !expanded)}</CopyableValue>
 				{isLong && (
-					<button
-						type="button"
-						onClick={() => setExpanded((v) => !v)}
-						className="mt-1.5 flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-					>
+					<LogTextButton onClick={() => setExpanded((v) => !v)} className="mt-1.5">
 						{expanded ? "Show less" : "Show full message"}
 						{expanded ? <ChevronUpIcon size={10} /> : <ChevronDownIcon size={10} />}
-					</button>
+					</LogTextButton>
 				)}
 			</div>
 		</div>

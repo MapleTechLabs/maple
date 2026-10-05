@@ -2,6 +2,8 @@
  * The running pass's step feed. It also renders on a failed pass, where how far the run got
  * is the only account that outlives the agent's event stream.
  */
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import type { V2Investigation } from "@maple/domain/http/v2"
 import { cn } from "@maple/ui/lib/utils"
 
@@ -45,10 +47,11 @@ export function RunProgress({
 							className="flex items-baseline gap-2.5 py-[3px] text-xs"
 						>
 							{/* The pulse claims something is happening now, so a stalled run goes still. */}
-							<span
-								aria-hidden
+							<StatusDot
+								tone="custom"
+								size="sm"
 								className={cn(
-									"size-1 shrink-0 translate-y-[-2px] rounded-full",
+									"translate-y-[-2px]",
 									last && running && !stalled
 										? "animate-pulse bg-primary"
 										: last && stalled
@@ -76,7 +79,7 @@ export function RunProgress({
 /** The count (`stepCount`, since `steps` is a capped tail) and whether the run is still moving. */
 function Header({ count, stalled, silentFor }: { count: number; stalled: boolean; silentFor: number }) {
 	return (
-		<div className="flex items-baseline gap-2 text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+		<Eyebrow as="div" className="flex items-baseline gap-2">
 			<span>
 				{count} {count === 1 ? "step" : "steps"}
 			</span>
@@ -90,7 +93,7 @@ function Header({ count, stalled, silentFor }: { count: number; stalled: boolean
 					</span>
 				</>
 			) : null}
-		</div>
+		</Eyebrow>
 	)
 }
 
@@ -98,7 +101,7 @@ function Header({ count, stalled, silentFor }: { count: number; stalled: boolean
 function AwaitingFirstStep({ className }: { className?: string }) {
 	return (
 		<div className={cn("flex items-center gap-2.5 text-xs text-muted-foreground", className)}>
-			<span aria-hidden className="size-1 shrink-0 animate-pulse rounded-full bg-primary" />
+			<StatusDot tone="custom" size="sm" className="animate-pulse bg-primary" />
 			Starting the pass
 		</div>
 	)

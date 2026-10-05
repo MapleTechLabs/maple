@@ -1,15 +1,16 @@
 import { useMemo, useState } from "react"
 import { Reorder, useDragControls } from "motion/react"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Button } from "@maple/ui/components/ui/button"
 import { Input } from "@maple/ui/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
-import { cn } from "@maple/ui/lib/utils"
 import { WIDGET_UNITS } from "@maple/domain/http"
 import { WhereClauseEditor } from "@/components/query-builder/where-clause-editor"
 import { useWidgetBuilder } from "@/hooks/use-widget-builder"
 import { useAutocompleteValuesContext } from "@/hooks/use-autocomplete-values"
 import type { ValueUnit } from "@/components/dashboard-builder/types"
 import { Switch } from "@maple/ui/components/ui/switch"
+import { ToggleGroup, ToggleGroupItem } from "@maple/ui/components/ui/toggle-group"
 import { getListPerformanceHints } from "@/lib/query-builder/performance-hints"
 import { CircleWarningIcon, GripDotsIcon } from "@/components/icons"
 import { listWhereClauseWarnings } from "@/lib/query-builder/widget-builder-shared"
@@ -352,35 +353,34 @@ export function ListConfigPanel() {
 		<div className="space-y-5">
 			{/* Data source */}
 			<div className="space-y-1.5">
-				<p className="text-[11px] uppercase tracking-wide text-muted-foreground font-medium">
+				<Eyebrow variant="label" as="p">
 					Data Source
-				</p>
-				<div className="flex h-9 rounded-md border bg-muted/40 p-0.5 w-fit">
+				</Eyebrow>
+				<ToggleGroup
+					variant="outline"
+					size="sm"
+					aria-label="Data source"
+					value={[listDataSource]}
+					onValueChange={(values) => {
+						const next = LIST_DATA_SOURCES.find((ds) => ds === values[0])
+						if (next) handleDataSourceChange(next)
+					}}
+				>
 					{LIST_DATA_SOURCES.map((ds) => (
-						<button
-							key={ds}
-							type="button"
-							onClick={() => handleDataSourceChange(ds)}
-							className={cn(
-								"px-4 text-xs rounded-sm transition-colors",
-								listDataSource === ds
-									? "bg-background text-foreground shadow-sm"
-									: "text-muted-foreground hover:text-foreground",
-							)}
-						>
+						<ToggleGroupItem key={ds} value={ds} className="px-4 text-xs">
 							{LIST_DATA_SOURCE_LABEL[ds]}
-						</button>
+						</ToggleGroupItem>
 					))}
-				</div>
+				</ToggleGroup>
 			</div>
 
 			{/* Root spans only (traces only) */}
 			{listDataSource === "traces" && (
 				<div className="flex items-center justify-between">
 					<div className="space-y-0.5">
-						<p className="text-[11px] uppercase tracking-wide text-muted-foreground font-medium">
+						<Eyebrow variant="label" as="p">
 							Root spans only
-						</p>
+						</Eyebrow>
 						<p className="text-[10px] text-muted-foreground">
 							Uses pre-aggregated data for faster queries
 						</p>
@@ -394,9 +394,9 @@ export function ListConfigPanel() {
 
 			{/* Where clause */}
 			<div className="space-y-1.5">
-				<p className="text-[11px] uppercase tracking-wide text-muted-foreground font-medium">
+				<Eyebrow variant="label" as="p">
 					Filter
-				</p>
+				</Eyebrow>
 				<WhereClauseEditor
 					rows={1}
 					value={whereClause}
@@ -454,7 +454,9 @@ export function ListConfigPanel() {
 
 			{/* Limit */}
 			<div className="space-y-1.5">
-				<p className="text-[11px] uppercase tracking-wide text-muted-foreground font-medium">Limit</p>
+				<Eyebrow variant="label" as="p">
+					Limit
+				</Eyebrow>
 				<Input
 					value={limit}
 					onChange={(e) => onChange({ listLimit: e.target.value })}
@@ -471,9 +473,9 @@ export function ListConfigPanel() {
 
 			{/* Columns */}
 			<div className="space-y-2">
-				<p className="text-[11px] uppercase tracking-wide text-muted-foreground font-medium">
+				<Eyebrow variant="label" as="p">
 					Columns
-				</p>
+				</Eyebrow>
 
 				<Reorder.Group
 					axis="y"

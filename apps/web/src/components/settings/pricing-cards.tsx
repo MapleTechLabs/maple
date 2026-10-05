@@ -1,5 +1,6 @@
 import { useState } from "react"
 import { toastManager } from "@maple/ui/components/ui/toast"
+import { Eyebrow, eyebrowVariants } from "@maple/ui/components/ui/eyebrow"
 import type { CatalogPlan, CatalogPlanItem } from "@maple/domain/http"
 
 import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
@@ -465,12 +466,7 @@ export function PlanCards({
 					>
 						<CardHeader>
 							<div className="flex items-center justify-between gap-2">
-								<CardTitle
-									className={cn(
-										"text-[10px] font-medium uppercase tracking-[0.14em]",
-										isUpgrade ? "text-primary" : "text-muted-foreground",
-									)}
-								>
+								<CardTitle className={cn(eyebrowVariants(), isUpgrade && "text-primary")}>
 									{plan.name}
 								</CardTitle>
 								{isActive && isTrialing && daysRemaining != null ? (
@@ -495,9 +491,9 @@ export function PlanCards({
 									{price}
 								</span>
 								{interval && (
-									<span className="text-muted-foreground text-xs font-medium uppercase tracking-wider ml-1">
+									<Eyebrow variant="label" className="ml-1">
 										{interval}
-									</span>
+									</Eyebrow>
 								)}
 							</div>
 							<CardDescription className="mt-2 text-sm leading-relaxed text-muted-foreground">
@@ -508,9 +504,9 @@ export function PlanCards({
 						<CardContent className="flex flex-col gap-5 flex-1">
 							{features.length > 0 && (
 								<div>
-									<div className="text-muted-foreground/70 mb-3 text-[10px] font-medium uppercase tracking-[0.14em]">
+									<Eyebrow className="mb-3" as="div">
 										Data included
-									</div>
+									</Eyebrow>
 									<div className="space-y-2.5">
 										{features.map((feature) => {
 											const Icon = FEATURE_ICONS[feature.featureId]
@@ -543,9 +539,9 @@ export function PlanCards({
 							<Separator className="bg-border/60" />
 
 							<div>
-								<div className="text-muted-foreground/70 mb-3 text-[10px] font-medium uppercase tracking-[0.14em]">
+								<Eyebrow className="mb-3" as="div">
 									Platform features
-								</div>
+								</Eyebrow>
 								<div className="space-y-2.5">
 									{planFeatures.map((feature) => {
 										const Icon = PLATFORM_FEATURE_ICONS[feature.icon] ?? CircleCheckIcon
@@ -600,7 +596,7 @@ export function PlanCards({
 			<Card className="flex flex-col border-primary/20 bg-primary/[0.02]">
 				<CardHeader>
 					<div className="flex items-center justify-between gap-2">
-						<CardTitle className="text-[10px] font-medium uppercase tracking-[0.14em] text-primary">
+						<CardTitle className={eyebrowVariants({ className: "text-primary" })}>
 							Enterprise
 						</CardTitle>
 					</div>
@@ -614,9 +610,9 @@ export function PlanCards({
 
 				<CardContent className="flex flex-col gap-5 flex-1">
 					<div>
-						<div className="text-muted-foreground/70 mb-3 text-[10px] font-medium uppercase tracking-[0.14em]">
+						<Eyebrow className="mb-3" as="div">
 							Data included
-						</div>
+						</Eyebrow>
 						<div className="space-y-2.5">
 							{ENTERPRISE_DATA_FEATURES.map((feature) => {
 								const Icon = FEATURE_ICONS[feature.featureId]
@@ -641,9 +637,9 @@ export function PlanCards({
 					<Separator className="bg-border/60" />
 
 					<div>
-						<div className="text-muted-foreground/70 mb-3 text-[10px] font-medium uppercase tracking-[0.14em]">
+						<Eyebrow className="mb-3" as="div">
 							Platform features
-						</div>
+						</Eyebrow>
 						<div className="space-y-2.5">
 							{enterprisePlanFeatures.map((feature) => {
 								const Icon = PLATFORM_FEATURE_ICONS[feature.icon] ?? CircleCheckIcon

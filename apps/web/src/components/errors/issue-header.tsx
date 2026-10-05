@@ -1,3 +1,4 @@
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Link } from "@tanstack/react-router"
 
 import type { ErrorIssueDocument, ErrorIssueId } from "@maple/domain/http"
@@ -65,7 +66,7 @@ export function IssueHeader({
 		<DashboardLayout.Header
 			titleContent={
 				<div className="min-w-0 space-y-2.5">
-					<div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+					<Eyebrow as="div" className="flex flex-wrap items-center gap-x-2 gap-y-1">
 						<span className="truncate">{issue.serviceName || "Unknown service"}</span>
 						{/* Absorbs `IssueKindBadge`. A plain error is the default and says
 						    nothing here; an alert- or integration-backed issue is worth
@@ -78,7 +79,7 @@ export function IssueHeader({
 								<span>{issue.kind}</span>
 							</>
 						)}
-					</div>
+					</Eyebrow>
 					<DashboardLayout.Title title={headline}>{headline}</DashboardLayout.Title>
 					<div className="flex flex-wrap items-center gap-2">
 						<SeverityBadge severity={issue.severity} />

@@ -3,6 +3,8 @@ import { useMemo } from "react"
 import { createFileRoute } from "@tanstack/react-router"
 import { Schema } from "effect"
 
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
+import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { ReplayStudio } from "@/components/replays/replay-studio"
 import { Result, useAtomValue } from "@/lib/effect-atom"
@@ -100,10 +102,9 @@ function ReplayDetailPage() {
 									/>
 								</DashboardLayout.Sticky>
 								<DashboardLayout.Scroll>
-									<div className="rounded-xl border border-dashed border-border p-12 text-center text-sm text-muted-foreground">
-										No metadata for session <span className="font-mono">{sessionId}</span>
-										.
-									</div>
+									<EmptyMessage dashed className="p-12">
+										No metadata for session <InlineCode>{sessionId}</InlineCode>.
+									</EmptyMessage>
 								</DashboardLayout.Scroll>
 							</DashboardLayout.Content>
 						</DashboardLayout.Body>

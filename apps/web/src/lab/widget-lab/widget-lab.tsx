@@ -1,6 +1,7 @@
 import { createContext, use, useMemo, useState, type ReactNode } from "react"
 import { useDialKit } from "dialkit"
 
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { CopyButton } from "@maple/ui/components/ui/copy-button"
 import { CopyableValue } from "@maple/ui/components/attributes"
 
@@ -84,9 +85,7 @@ function ScenarioCell({ label, height = 320, children }: ScenarioCellProps) {
 	const scale = use(CardScale)
 	return (
 		<div className="flex flex-col gap-1.5">
-			<span className="text-[10px] font-mono uppercase tracking-wide text-muted-foreground">
-				{label}
-			</span>
+			<Eyebrow variant="mono">{label}</Eyebrow>
 			<div className="w-full" style={{ height: Math.round(height * scale.height) }}>
 				{children}
 			</div>
@@ -216,9 +215,7 @@ function CopyScenarios() {
 		<>
 			{rows.map((row) => (
 				<div key={row.label} className="flex flex-col gap-1.5">
-					<span className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
-						{row.label}
-					</span>
+					<Eyebrow variant="mono">{row.label}</Eyebrow>
 					<div className="flex h-12 items-center rounded-md border bg-card px-3">{row.node}</div>
 				</div>
 			))}

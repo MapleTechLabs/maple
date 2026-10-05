@@ -8,6 +8,7 @@ import type { V2AttributeMapping } from "@maple/domain/http/v2"
 import { useState } from "react"
 import { Exit } from "effect"
 import { toastManager } from "@maple/ui/components/ui/toast"
+import { Spinner } from "@maple/ui/components/ui/spinner"
 
 import {
 	AlertDialog,
@@ -29,6 +30,7 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from "@maple/ui/components/ui/dialog"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { Input } from "@maple/ui/components/ui/input"
 import { Label } from "@maple/ui/components/ui/label"
@@ -46,7 +48,6 @@ import {
 	CopyIcon,
 	CubeIcon,
 	type IconComponent,
-	LoaderIcon,
 	PencilIcon,
 	PlusIcon,
 	TrashIcon,
@@ -61,7 +62,6 @@ import { AttributeKeyAutocomplete } from "./attribute-key-autocomplete"
 import { DocsLink, EmptyActions } from "@/components/common/docs-link"
 
 const MONO = "font-mono text-[0.92em] text-muted-foreground"
-const COL_HEADER = "text-muted-foreground/70 font-mono text-[10px] uppercase tracking-[0.12em]"
 
 const SOURCE_CONTEXT_LABELS: Record<IngestMappingSourceContext, string> = {
 	span: "Span attribute",
@@ -298,12 +298,18 @@ export function AttributeMappingsSection() {
 						<div>
 							{/* column header */}
 							<div className="flex items-center gap-3 px-4 py-1.5">
-								<div className={cn(COL_HEADER, "w-44 shrink-0")}>Name</div>
-								<div className={cn(COL_HEADER, "flex-1")}>Rule</div>
-								<div className={cn(COL_HEADER, "hidden w-24 shrink-0 md:block")}>
+								<Eyebrow variant="mono" className="w-44 shrink-0" as="div">
+									Name
+								</Eyebrow>
+								<Eyebrow variant="mono" className="flex-1" as="div">
+									Rule
+								</Eyebrow>
+								<Eyebrow variant="mono" className="hidden w-24 shrink-0 md:block" as="div">
 									Operation
-								</div>
-								<div className={cn(COL_HEADER, "hidden w-20 shrink-0 md:block")}>Context</div>
+								</Eyebrow>
+								<Eyebrow variant="mono" className="hidden w-20 shrink-0 md:block" as="div">
+									Context
+								</Eyebrow>
 								<div className="w-28 shrink-0" />
 							</div>
 
@@ -332,14 +338,12 @@ export function AttributeMappingsSection() {
 											</code>
 										</div>
 
-										<span
-											className={cn(
-												"hidden w-24 shrink-0 font-mono text-[10px] font-medium uppercase tracking-[0.12em] md:block",
-												operation.tone,
-											)}
+										<Eyebrow
+											variant="mono"
+											className={cn("hidden w-24 shrink-0 md:block", operation.tone)}
 										>
 											{OPERATION_LABELS[mapping.operation]}
-										</span>
+										</Eyebrow>
 
 										<span className="text-muted-foreground hidden w-20 shrink-0 text-xs md:block">
 											{mapping.source_context === "resource" ? "Resource" : "Spans"}
@@ -529,9 +533,9 @@ export function AttributeMappingsSection() {
 
 						{showPreview && (
 							<div className="rounded-md border bg-muted/40 px-3 py-2.5">
-								<div className="text-muted-foreground mb-1.5 text-[10px] font-medium tracking-[0.12em] uppercase">
+								<Eyebrow className="mb-1.5" as="div">
 									Preview
-								</div>
+								</Eyebrow>
 								<div className="flex flex-wrap items-center gap-1.5 text-sm">
 									<code className={MONO}>{formSourceKey.trim()}</code>
 									<ArrowRightIcon size={12} className="text-muted-foreground shrink-0" />
@@ -556,7 +560,7 @@ export function AttributeMappingsSection() {
 						<Button onClick={handleSave} disabled={isSaving}>
 							{isSaving ? (
 								<>
-									<LoaderIcon size={14} className="animate-spin" />
+									<Spinner size={14} />
 									{editing ? "Saving..." : "Adding..."}
 								</>
 							) : editing ? (

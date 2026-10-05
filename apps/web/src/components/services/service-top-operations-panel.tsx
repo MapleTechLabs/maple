@@ -8,6 +8,7 @@ import { LatencyValue } from "@maple/ui/components/latency-value"
 import type { ServiceOperation } from "@/api/warehouse/service-operations"
 import { SectionCard } from "./section-card"
 import { callsPerSecond, serviceOperationsQueryInput, windowSeconds } from "./service-operations"
+import { ViewAllButton } from "./view-all-button"
 
 const PANEL_LIMIT = 5
 
@@ -74,15 +75,7 @@ export function ServiceTopOperationsPanel({
 		<SectionCard
 			title="Top operations"
 			className={cn("transition-opacity", isWaiting && "opacity-60")}
-			action={
-				<button
-					type="button"
-					onClick={onViewAll}
-					className="text-xs text-primary hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-				>
-					View all →
-				</button>
-			}
+			action={<ViewAllButton onClick={onViewAll} />}
 		>
 			<ul className="divide-y">
 				{operations.map((op) => {

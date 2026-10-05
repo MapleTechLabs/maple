@@ -1,4 +1,5 @@
 import { Button } from "@maple/ui/components/ui/button"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import {
 	Combobox,
 	ComboboxContent,
@@ -348,9 +349,7 @@ function StepRow({
 			{eventStepFilter && step.kind === "event" ? (
 				<div className={cn("flex flex-col gap-0.5", compact ? "pl-6" : "pl-7")}>
 					<div className="flex items-center gap-1.5">
-						<span className="shrink-0 text-[10px] uppercase tracking-wider text-muted-foreground">
-							where
-						</span>
+						<Eyebrow className="shrink-0">where</Eyebrow>
 						{/* Attribute keys are the customer's own vocabulary, so the scope
 						    offers no keys and only `=`; the data source is the editor's
 						    required prop and is not consulted under this scope. */}

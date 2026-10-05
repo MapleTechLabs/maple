@@ -1,12 +1,6 @@
-import { MagnifierIcon, XmarkIcon } from "@/components/icons"
 import { FILTER_SECTION_LABEL } from "@maple/ui/components/filters/filter-styles"
-import {
-	InputGroup,
-	InputGroupAddon,
-	InputGroupButton,
-	InputGroupInput,
-} from "@maple/ui/components/ui/input-group"
 import { Kbd } from "@maple/ui/components/ui/kbd"
+import { SearchInput } from "@maple/ui/components/ui/search-input"
 
 import { LogSearchHelp } from "./log-search-help"
 
@@ -27,30 +21,14 @@ export function LogSearchInput({ value, onChange }: LogSearchInputProps) {
 				<span className={`${FILTER_SECTION_LABEL} text-muted-foreground`}>Search</span>
 				<LogSearchHelp />
 			</div>
-			<InputGroup className="mt-2">
-				<InputGroupAddon>
-					<MagnifierIcon />
-				</InputGroupAddon>
-				<InputGroupInput
-					size="sm"
-					value={value}
-					onChange={(e) => onChange(e.target.value)}
-					placeholder="Text or trace id"
-					data-shortcut-focus="search"
-				/>
-				{!value && (
-					<InputGroupAddon align="inline-end">
-						<Kbd>/</Kbd>
-					</InputGroupAddon>
-				)}
-				{value && (
-					<InputGroupAddon align="inline-end">
-						<InputGroupButton aria-label="Clear search" onClick={() => onChange("")}>
-							<XmarkIcon />
-						</InputGroupButton>
-					</InputGroupAddon>
-				)}
-			</InputGroup>
+			<SearchInput
+				className="mt-2"
+				value={value}
+				onValueChange={onChange}
+				placeholder="Text or trace id"
+				data-shortcut-focus="search"
+				trailing={value ? null : <Kbd>/</Kbd>}
+			/>
 		</div>
 	)
 }

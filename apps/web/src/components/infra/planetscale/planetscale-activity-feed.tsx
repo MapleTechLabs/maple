@@ -1,3 +1,4 @@
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import type { PlanetScaleEventEntry } from "@/api/warehouse/planetscale-infra"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
@@ -73,10 +74,10 @@ export function PlanetScaleActivityRow({
 		<li className="flex items-baseline gap-2.5 border-l border-border/60 py-1.5 pl-3 text-xs">
 			{/* Not SeverityDot: that primitive speaks host *status* (active/idle/…),
 			    which is a different vocabulary from event severity. */}
-			<span
-				aria-hidden
+			<StatusDot
+				tone="custom"
 				className={cn(
-					"mt-1 size-1.5 shrink-0 rounded-full",
+					"mt-1",
 					presentation.tone === "crit"
 						? "bg-severity-error"
 						: presentation.tone === "warn"

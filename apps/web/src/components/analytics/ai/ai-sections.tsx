@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from "react"
 
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import { cn } from "@maple/ui/lib/utils"
 import {
 	Dialog,
@@ -109,11 +110,7 @@ export function AiPanel({
 }
 
 export function AiEmpty({ children }: { children: ReactNode }) {
-	return (
-		<div className="px-6 pt-4 pb-8 text-center text-[12px] leading-relaxed text-muted-foreground">
-			{children}
-		</div>
-	)
+	return <EmptyMessage className="px-6 leading-relaxed">{children}</EmptyMessage>
 }
 
 // Product cards

@@ -2,6 +2,7 @@ import * as React from "react"
 import { widgetTypeByVisualization } from "@maple/domain/http"
 import { dataSourceRawSql, dataSourceTransform, makeRawSqlDataSource } from "@maple/widgets/dashboard"
 
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Button } from "@maple/ui/components/ui/button"
 import { Tabs, TabsList, TabsTrigger } from "@maple/ui/components/ui/tabs"
 import { visualizationFor } from "@/components/dashboard-builder/widgets/types"
@@ -460,9 +461,7 @@ export function WidgetQueryBuilderPage({
 				<div className="p-6 space-y-6" onFocusCapture={activateAutocomplete}>
 					{showSourceToggle && (
 						<div className="flex items-center gap-3">
-							<span className="text-[10px] uppercase tracking-wider text-muted-foreground">
-								Source
-							</span>
+							<Eyebrow>Source</Eyebrow>
 							<Tabs value={mode} onValueChange={(value) => setMode(value as SourceMode)}>
 								<TabsList>
 									<TabsTrigger value="builder">Query Builder</TabsTrigger>

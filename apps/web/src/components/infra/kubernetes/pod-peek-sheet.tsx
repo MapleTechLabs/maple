@@ -1,3 +1,5 @@
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import { useRef, type KeyboardEvent as ReactKeyboardEvent } from "react"
 import { Link } from "@tanstack/react-router"
 import { useHotkeys } from "@tanstack/react-hotkeys"
@@ -168,9 +170,7 @@ export function PodPeekSheet({
 				{pod ? (
 					<>
 						<SheetHeader className="gap-1.5 pr-14">
-							<span className="text-[10px] font-medium uppercase tracking-[0.1em] text-muted-foreground">
-								Pod
-							</span>
+							<Eyebrow>Pod</Eyebrow>
 							<SheetTitle className="flex flex-wrap items-center gap-2 font-mono text-[15px] leading-tight">
 								<span className="min-w-0 break-all">{pod.podName}</span>
 								<HostStatusBadge
@@ -351,11 +351,7 @@ function PeekSummary({ pod, startTime, endTime }: { pod: PodRow; startTime: stri
 		.onSuccess((response, holder) => {
 			const summary = response.data
 			if (!summary) {
-				return (
-					<div className="rounded-md border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
-						No metrics arrived for this pod in this window.
-					</div>
-				)
+				return <EmptyMessage dashed>No metrics arrived for this pod in this window.</EmptyMessage>
 			}
 			return (
 				<StatRail className={holder.waiting ? "opacity-60 transition-opacity" : "transition-opacity"}>

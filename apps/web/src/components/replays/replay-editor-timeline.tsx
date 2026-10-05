@@ -2,6 +2,8 @@ import * as React from "react"
 import { Link } from "@tanstack/react-router"
 import { Schema } from "effect"
 import { TraceId } from "@maple/domain/http"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { cn } from "@maple/ui/lib/utils"
 import { HttpSpanLabel } from "@maple/ui/components/traces/http-span-label"
 import { parseAttributes } from "@maple/ui/lib/span-tree"
@@ -126,9 +128,7 @@ function TimelineHeader() {
 	// marker legend for the activity dots below.
 	return (
 		<div className="flex items-center justify-between gap-3 border-b border-border bg-muted/30 px-3 py-2">
-			<span className="font-display text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-				Timeline
-			</span>
+			<Eyebrow variant="label">Timeline</Eyebrow>
 			<MarkerLegend />
 		</div>
 	)
@@ -314,8 +314,8 @@ const TracesTrack = React.memo(function TracesTrack({
 					<>
 						{header(null)}
 						<div className="space-y-2 px-3 py-3">
-							<div className="h-4 w-2/3 animate-pulse rounded bg-muted" />
-							<div className="h-4 w-1/2 animate-pulse rounded bg-muted" />
+							<Skeleton className="h-4 w-2/3" />
+							<Skeleton className="h-4 w-1/2" />
 						</div>
 					</>
 				))
@@ -494,7 +494,7 @@ function TraceSpanLane({
 	return Result.builder(result)
 		.onInitial(() => (
 			<div className="bg-muted/10 px-3 py-2">
-				<div className="h-3 w-1/2 animate-pulse rounded bg-muted" />
+				<Skeleton className="h-3 w-1/2" />
 			</div>
 		))
 		.onError(() => (

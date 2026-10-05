@@ -52,6 +52,7 @@ import { DASHBOARD_SORT_OPTIONS, type DashboardSortOption } from "@/atoms/dashbo
 import type { Dashboard } from "@/components/dashboard-builder/types"
 import { TagEditorDialog } from "@/components/dashboard-builder/tag-editor"
 import { DocsLink } from "@/components/common/docs-link"
+import { ListSectionHeader } from "@/components/dashboard-builder/list-section-header"
 import {
 	collectTags,
 	dashboardDomains,
@@ -282,27 +283,6 @@ function DisabledReason({ children, reason }: { children: React.ReactNode; reaso
 
 const STORE_UNREACHABLE = "Unavailable while the dashboard store is unreachable"
 
-function SectionHeader({
-	title,
-	count,
-	note,
-	bordered,
-}: {
-	title: string
-	count: number
-	note?: string
-	bordered?: boolean
-}) {
-	return (
-		<div className={cn("flex items-center gap-2 pb-2", bordered && "mt-6 pt-2")}>
-			<h3 className="text-foreground text-[11px] font-medium tracking-wider uppercase">{title}</h3>
-			<span className="text-muted-foreground font-mono text-[11px]">{count}</span>
-			<span aria-hidden className="h-px grow bg-border" />
-			{note && <span className="text-muted-foreground text-[10px]">{note}</span>}
-		</div>
-	)
-}
-
 interface DashboardListProps {
 	dashboards: ReadonlyArray<Dashboard>
 	readOnly?: boolean
@@ -478,7 +458,7 @@ export function DashboardList({
 				<>
 					{favorited.length > 0 && (
 						<>
-							<SectionHeader
+							<ListSectionHeader
 								title="Favorites"
 								count={favorited.length}
 								note="on this device only"
@@ -495,10 +475,10 @@ export function DashboardList({
 					)}
 					{others.length > 0 && (
 						<>
-							<SectionHeader
+							<ListSectionHeader
 								title="All dashboards"
 								count={others.length}
-								bordered={favorited.length > 0}
+								className={cn(favorited.length > 0 && "mt-6 pt-2")}
 							/>
 							{others.map((dashboard) => (
 								<DashboardRow

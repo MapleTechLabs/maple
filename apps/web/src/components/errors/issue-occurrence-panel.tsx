@@ -1,3 +1,4 @@
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { useMemo } from "react"
 
 import type { IssueSeverity } from "@maple/domain/http"
@@ -61,11 +62,7 @@ export function IssueOccurrencePanel({
 						{formatBucket(window.bucketMs)}
 					</span>
 				</div>
-				{surging ? (
-					<span className="text-[10px] font-medium uppercase tracking-[0.12em] text-destructive">
-						Surging
-					</span>
-				) : null}
+				{surging ? <Eyebrow className="text-destructive">Surging</Eyebrow> : null}
 			</div>
 			<IssueOccurrenceChart data={data} severity={severity} />
 		</section>

@@ -44,6 +44,7 @@ import { ReleaseChangeset } from "@/components/releases/release-changeset"
 import { ReleaseDeployOverview } from "@/components/releases/release-deploy-overview"
 import { ReleaseHealthPill, releaseHealthFigure } from "@/components/releases/release-health"
 import { deriveReleaseImpacts, shortReleaseLabel } from "@/components/releases/release-model"
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
 
 const ONE_YEAR_SECONDS = 365 * 24 * 60 * 60
 const DEFAULT_PRESET = "7d"
@@ -396,10 +397,10 @@ function ReleaseBodyLoaded({
 	if (impact === undefined) {
 		return (
 			<div className="flex flex-col gap-3">
-				<div className="rounded-md border bg-card px-4 py-8 text-center text-sm text-muted-foreground">
+				<EmptyMessage className="rounded-md border bg-card text-sm">
 					<span className="font-mono">{shortReleaseLabel(commitSha)}</span> served no traffic on{" "}
 					{serviceName} in this window. Widen the time range to include its deploy.
-				</div>
+				</EmptyMessage>
 				<ReleaseVersionsRail
 					impacts={impacts}
 					currentSha={commitSha}

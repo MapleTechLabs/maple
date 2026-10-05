@@ -1,3 +1,4 @@
+import { Spinner } from "@maple/ui/components/ui/spinner"
 import { Link } from "@tanstack/react-router"
 
 import { Alert, AlertDescription, AlertTitle } from "@maple/ui/components/ui/alert"
@@ -12,7 +13,7 @@ import {
 } from "@maple/ui/components/ui/empty"
 
 import { DocsLink, EmptyActions } from "@/components/common/docs-link"
-import { CircleInfoIcon, CircleWarningIcon, CloudflareIcon, LoaderIcon } from "@/components/icons"
+import { CircleInfoIcon, CircleWarningIcon, CloudflareIcon } from "@/components/icons"
 import { describeCloudflareIngestPhase, type CloudflareIngestPhase } from "./ingest-phase"
 
 /**
@@ -32,7 +33,7 @@ export function CloudflareIngestBanner({ phase }: { phase: CloudflareIngestPhase
 	return (
 		<Alert variant={tone}>
 			{isWorking(phase) ? (
-				<LoaderIcon size={16} className="animate-spin" />
+				<Spinner size={16} />
 			) : tone === "warning" ? (
 				<CircleWarningIcon size={16} />
 			) : (
@@ -61,11 +62,7 @@ export function CloudflareIngestEmpty({
 		<Empty className="py-16">
 			<EmptyHeader>
 				<EmptyMedia variant="icon">
-					{isWorking(phase) ? (
-						<LoaderIcon size={16} className="animate-spin" />
-					) : (
-						<CloudflareIcon size={16} />
-					)}
+					{isWorking(phase) ? <Spinner size={16} /> : <CloudflareIcon size={16} />}
 				</EmptyMedia>
 				<EmptyTitle>{title}</EmptyTitle>
 				<EmptyDescription>{description}</EmptyDescription>

@@ -10,6 +10,7 @@ import { normalizeTimestampInput } from "@/lib/timezone-format"
 import { DependencyTable, type DependencyRow } from "./dependency-table"
 import type { DependencyKind } from "./dependency-type-badge"
 import { dependencyDrillWhereClause } from "./dependency-drill"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 
 interface ServiceDependenciesTabProps {
 	serviceName: string
@@ -333,7 +334,7 @@ function HeadlineFact({ label, name, value, tone, valueClassName }: HeadlineFact
 	return (
 		<span className="flex w-full items-baseline justify-between gap-1.5 sm:inline-flex sm:w-auto sm:justify-start">
 			<span className="flex min-w-0 items-baseline gap-1.5">
-				<span className="text-[10px] uppercase tracking-wider text-muted-foreground/60">{label}</span>
+				<Eyebrow>{label}</Eyebrow>
 				<span className="max-w-[60vw] truncate text-foreground sm:max-w-[140px]">{name}</span>
 			</span>
 			<span

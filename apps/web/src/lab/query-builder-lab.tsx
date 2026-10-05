@@ -3,6 +3,7 @@ import { Result } from "@/lib/effect-atom"
 import { displayError } from "@/lib/error-messages"
 import { PulseIcon, XmarkIcon, PlusIcon, MagnifierIcon } from "@/components/icons"
 
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
 import {
@@ -636,9 +637,9 @@ function QueryBuilderLabInner({ startTime, endTime }: QueryBuilderLabProps) {
 												{query.dataSource === "metrics" && (
 													<div className="grid gap-2 md:grid-cols-2">
 														<div className="space-y-1">
-															<p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+															<Eyebrow variant="label" as="p">
 																Metric
-															</p>
+															</Eyebrow>
 															<Select
 																items={metricOptions}
 																value={metricValue}
@@ -684,9 +685,9 @@ function QueryBuilderLabInner({ startTime, endTime }: QueryBuilderLabProps) {
 														</div>
 
 														<div className="space-y-1">
-															<p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+															<Eyebrow variant="label" as="p">
 																Signal Source
-															</p>
+															</Eyebrow>
 															<Select
 																items={SIGNAL_SOURCES}
 																value={
@@ -728,9 +729,9 @@ function QueryBuilderLabInner({ startTime, endTime }: QueryBuilderLabProps) {
 												)}
 
 												<div className="space-y-1">
-													<p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+													<Eyebrow variant="label" as="p">
 														Where Clause (MVP supports key = value joined by AND)
-													</p>
+													</Eyebrow>
 													<div className="relative">
 														<MagnifierIcon
 															size={12}
@@ -768,9 +769,9 @@ function QueryBuilderLabInner({ startTime, endTime }: QueryBuilderLabProps) {
 
 												<div className="grid gap-2 md:grid-cols-[1.1fr_1fr]">
 													<div className="space-y-1">
-														<p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+														<Eyebrow variant="label" as="p">
 															Aggregation
-														</p>
+														</Eyebrow>
 														<Select
 															items={aggregateOptions}
 															value={query.aggregation}
@@ -798,9 +799,9 @@ function QueryBuilderLabInner({ startTime, endTime }: QueryBuilderLabProps) {
 													</div>
 
 													<div className="space-y-1">
-														<p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+														<Eyebrow variant="label" as="p">
 															Every (seconds, 5m, 1h)
-														</p>
+														</Eyebrow>
 														<Input
 															value={query.stepInterval}
 															onChange={(event) =>
@@ -815,9 +816,9 @@ function QueryBuilderLabInner({ startTime, endTime }: QueryBuilderLabProps) {
 												</div>
 
 												<div className="space-y-2">
-													<p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+													<Eyebrow variant="label" as="p">
 														Add-ons
-													</p>
+													</Eyebrow>
 													<div className="flex flex-wrap gap-1.5">
 														{ADD_ONS.map((addOn) => {
 															const isActive = query.addOns[addOn.key]
@@ -851,9 +852,9 @@ function QueryBuilderLabInner({ startTime, endTime }: QueryBuilderLabProps) {
 
 												{query.addOns.groupBy && (
 													<div className="space-y-1">
-														<Label className="text-[11px] uppercase tracking-wide text-muted-foreground">
+														<Eyebrow variant="label" render={<Label />}>
 															Group By
-														</Label>
+														</Eyebrow>
 														<GroupByAutocomplete
 															value={query.groupBy[0] ?? ""}
 															onChange={(nextGroupBy) =>
@@ -871,9 +872,9 @@ function QueryBuilderLabInner({ startTime, endTime }: QueryBuilderLabProps) {
 
 												{query.addOns.having && (
 													<div className="space-y-1">
-														<Label className="text-[11px] uppercase tracking-wide text-muted-foreground">
+														<Eyebrow variant="label" render={<Label />}>
 															Having (UI-only)
-														</Label>
+														</Eyebrow>
 														<Input
 															value={query.having}
 															onChange={(event) =>
@@ -890,9 +891,9 @@ function QueryBuilderLabInner({ startTime, endTime }: QueryBuilderLabProps) {
 												{query.addOns.orderBy && (
 													<div className="grid gap-2 md:grid-cols-[1fr_1fr]">
 														<div className="space-y-1">
-															<Label className="text-[11px] uppercase tracking-wide text-muted-foreground">
+															<Eyebrow variant="label" render={<Label />}>
 																Order By (UI-only)
-															</Label>
+															</Eyebrow>
 															<Input
 																value={query.orderBy}
 																onChange={(event) =>
@@ -905,9 +906,9 @@ function QueryBuilderLabInner({ startTime, endTime }: QueryBuilderLabProps) {
 															/>
 														</div>
 														<div className="space-y-1">
-															<Label className="text-[11px] uppercase tracking-wide text-muted-foreground">
+															<Eyebrow variant="label" render={<Label />}>
 																Direction
-															</Label>
+															</Eyebrow>
 															<Select
 																items={{ desc: "desc", asc: "asc" }}
 																value={query.orderByDirection}
@@ -934,9 +935,9 @@ function QueryBuilderLabInner({ startTime, endTime }: QueryBuilderLabProps) {
 
 												{query.addOns.limit && (
 													<div className="space-y-1">
-														<Label className="text-[11px] uppercase tracking-wide text-muted-foreground">
+														<Eyebrow variant="label" render={<Label />}>
 															Limit (UI-only)
-														</Label>
+														</Eyebrow>
 														<Input
 															value={query.limit}
 															onChange={(event) =>
@@ -953,9 +954,9 @@ function QueryBuilderLabInner({ startTime, endTime }: QueryBuilderLabProps) {
 
 												{query.addOns.legend && (
 													<div className="space-y-1">
-														<Label className="text-[11px] uppercase tracking-wide text-muted-foreground">
+														<Eyebrow variant="label" render={<Label />}>
 															Legend Format (UI-only)
-														</Label>
+														</Eyebrow>
 														<Input
 															value={query.legend}
 															onChange={(event) =>
@@ -1038,9 +1039,9 @@ function QueryBuilderLabInner({ startTime, endTime }: QueryBuilderLabProps) {
 					<Separator />
 
 					<div>
-						<p className="mb-2 text-[11px] uppercase tracking-wide text-muted-foreground">
+						<Eyebrow variant="label" as="p" className="mb-2">
 							UI State Preview
-						</p>
+						</Eyebrow>
 						<pre className="max-h-72 overflow-auto rounded-none border bg-muted/30 p-2 font-mono text-[11px] leading-relaxed">
 							{JSON.stringify(
 								{

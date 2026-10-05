@@ -1,3 +1,5 @@
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
+import { Spinner } from "@maple/ui/components/ui/spinner"
 import { useEffect, useState } from "react"
 import { Link } from "@tanstack/react-router"
 import { Exit, Option } from "effect"
@@ -20,6 +22,7 @@ import {
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@maple/ui/components/ui/popover"
+import { SearchInput } from "@maple/ui/components/ui/search-input"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { formatRelativeFrom } from "@maple/ui/lib/time-format"
 import { toastManager } from "@maple/ui/components/ui/toast"
@@ -345,11 +348,7 @@ function NotConnectedState({ connectFlow }: { connectFlow: IntegrationConnect })
 					Your repositories and commits will appear here after installing.
 				</IntegrationEmptyHint>
 				<Button onClick={connectFlow.connect} disabled={connectFlow.busy}>
-					{connectFlow.busy ? (
-						<LoaderIcon size={16} className="animate-spin" />
-					) : (
-						<GithubIcon size={16} />
-					)}
+					{connectFlow.busy ? <Spinner size={16} /> : <GithubIcon size={16} />}
 					Connect GitHub
 				</Button>
 				<IntegrationEmptyFooter>
@@ -427,11 +426,7 @@ function DeactivatedState({
 
 			<div className="flex flex-col items-center gap-2">
 				<Button onClick={onReconnect} disabled={busy}>
-					{busy ? (
-						<LoaderIcon size={16} className="animate-spin" />
-					) : (
-						<ArrowRotateClockwiseIcon size={16} />
-					)}
+					{busy ? <Spinner size={16} /> : <ArrowRotateClockwiseIcon size={16} />}
 					Reconnect GitHub
 				</Button>
 				<p className="text-xs text-muted-foreground">
@@ -480,7 +475,7 @@ function ConnectedView({
 		<div className="space-y-4">
 			<div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card px-4 py-3">
 				<div className="flex items-center gap-3">
-					<span className="size-2 shrink-0 rounded-full bg-success" aria-hidden />
+					<StatusDot tone="success" size="lg" />
 					<div className="leading-tight">
 						<div className="text-sm font-medium">
 							Connected
@@ -516,11 +511,11 @@ function ConnectedView({
 						Refresh
 					</Button>
 					<Button size="sm" variant="outline" onClick={connectFlow.connect} disabled={actionBusy}>
-						{connectFlow.busy ? <LoaderIcon size={14} className="animate-spin" /> : null}
+						{connectFlow.busy ? <Spinner size={14} /> : null}
 						Manage
 					</Button>
 					<Button size="sm" variant="outline" onClick={onRequestDisconnect} disabled={actionBusy}>
-						{disconnectBusy ? <LoaderIcon size={14} className="animate-spin" /> : null}
+						{disconnectBusy ? <Spinner size={14} /> : null}
 						Disconnect
 					</Button>
 				</div>
@@ -558,7 +553,7 @@ function ConnectedView({
 							) : null}
 							{counts.syncing > 0 ? (
 								<span className="flex items-center gap-1">
-									<LoaderIcon size={13} className="animate-spin text-info-foreground" />
+									<Spinner size={13} className="text-info-foreground" />
 									{counts.syncing} syncing
 								</span>
 							) : null}
@@ -574,7 +569,7 @@ function ConnectedView({
 
 				{activeRepos.length === 0 && removedRepos.length === 0 ? (
 					<div className="flex items-center gap-2.5 px-4 py-6 text-sm text-muted-foreground">
-						<LoaderIcon size={16} className="animate-spin" />
+						<Spinner size={16} />
 						Syncing repositories from GitHub… this can take a moment.
 					</div>
 				) : (
@@ -635,7 +630,7 @@ function ConnectedView({
 									disabled={deletingRepoId !== null}
 								>
 									{deletingRepoId === repo.id ? (
-										<LoaderIcon size={13} className="animate-spin" />
+										<Spinner size={13} />
 									) : (
 										<TrashIcon size={13} />
 									)}
@@ -796,7 +791,7 @@ function BranchSelector({
 							className="h-7 shrink-0 gap-1.5 px-2.5 font-normal"
 							disabled={saving}
 						>
-							{saving ? <LoaderIcon size={12} className="animate-spin" /> : null}
+							{saving ? <Spinner size={12} /> : null}
 							<span className="text-muted-foreground">branch</span>
 							<span className="max-w-[10rem] truncate font-medium">{tracked ?? "—"}</span>
 							<ChevronDownIcon size={12} className="text-muted-foreground" />
@@ -813,11 +808,10 @@ function BranchSelector({
 					</div>
 					{repo.branches.length > 8 ? (
 						<div className="border-b p-2">
-							<input
+							<SearchInput
 								value={query}
-								onChange={(e) => setQuery(e.target.value)}
+								onValueChange={setQuery}
 								placeholder="Search branches…"
-								className="w-full rounded-md border bg-transparent px-2 py-1 text-xs outline-none focus:border-ring"
 							/>
 						</div>
 					) : null}

@@ -5,6 +5,8 @@ import type { V2ScrapeTarget, V2ScrapeTargetCheck } from "@maple/domain/http/v2"
 import { useState, type KeyboardEvent, type ReactNode } from "react"
 import { Exit, Schema } from "effect"
 import { toastManager } from "@maple/ui/components/ui/toast"
+import { Spinner } from "@maple/ui/components/ui/spinner"
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
 
 import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
 import { type ScrapeTargetChecksResponse, useScrapeTargetChecks } from "@/hooks/use-scrape-target-checks"
@@ -38,6 +40,8 @@ import {
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@maple/ui/components/ui/dropdown-menu"
+import { Eyebrow, eyebrowVariants } from "@maple/ui/components/ui/eyebrow"
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import { Input } from "@maple/ui/components/ui/input"
 import { Label } from "@maple/ui/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
@@ -55,7 +59,6 @@ import {
 	ExternalLinkIcon,
 	FireIcon,
 	HistoryIcon,
-	LoaderIcon,
 	PencilIcon,
 	PlusIcon,
 	PulseIcon,
@@ -599,7 +602,7 @@ export function ScrapeTargetsSection({
 						<Button onClick={handleSave} disabled={isSaving}>
 							{isSaving ? (
 								<>
-									<LoaderIcon size={14} className="animate-spin" />
+									<Spinner size={14} />
 									{editingTarget ? "Saving..." : "Adding..."}
 								</>
 							) : editingTarget ? (
@@ -688,7 +691,7 @@ function ScrapeTargetRow({
 				selected && "bg-muted/60",
 			)}
 		>
-			<div className={cn("size-2 shrink-0 rounded-full", status.dotClass)} />
+			<StatusDot tone="custom" size="lg" className={status.dotClass} />
 
 			<div className="min-w-0 flex-1">
 				<div className="flex min-w-0 items-center gap-2">
@@ -748,7 +751,7 @@ function ScrapeTargetRow({
 				}}
 				disabled={probing}
 			>
-				{probing ? <LoaderIcon size={14} className="animate-spin" /> : <BoltIcon size={14} />}
+				{probing ? <Spinner size={14} /> : <BoltIcon size={14} />}
 				Test
 			</Button>
 
@@ -827,7 +830,7 @@ function ScrapeTargetDetails({
 				<div className="flex items-start justify-between gap-3">
 					<div className="min-w-0">
 						<div className="flex items-center gap-2">
-							<div className={cn("size-2 rounded-full", status.dotClass)} />
+							<StatusDot tone="custom" size="lg" className={status.dotClass} />
 							<h3 className="truncate text-sm font-semibold">{target.name}</h3>
 						</div>
 						<p className="text-muted-foreground mt-1 truncate font-mono text-xs">{target.url}</p>
@@ -836,7 +839,7 @@ function ScrapeTargetDetails({
 				</div>
 				<div className="flex flex-wrap items-center gap-2">
 					<Button variant="outline" size="sm" onClick={() => onProbe(target)} disabled={probing}>
-						{probing ? <LoaderIcon size={14} className="animate-spin" /> : <BoltIcon size={14} />}
+						{probing ? <Spinner size={14} /> : <BoltIcon size={14} />}
 						Test
 					</Button>
 					{/* Managed targets are edited/removed through the owning integration card. */}
@@ -890,10 +893,10 @@ function ScrapeTargetDetails({
 				)}
 
 				<section className="space-y-2">
-					<div className="flex items-center gap-2 text-xs font-medium uppercase text-muted-foreground">
+					<Eyebrow variant="label" className="flex items-center gap-2" as="div">
 						<PulseIcon size={13} />
 						Scheduled Scrape
-					</div>
+					</Eyebrow>
 					<div className="grid grid-cols-2 gap-2 text-xs">
 						<MetricBox label="Interval" value={`${target.scrape_interval_seconds}s`} />
 						<MetricBox
@@ -916,10 +919,10 @@ function ScrapeTargetDetails({
 				</section>
 
 				<section className="space-y-2">
-					<div className="flex items-center gap-2 text-xs font-medium uppercase text-muted-foreground">
+					<Eyebrow variant="label" className="flex items-center gap-2" as="div">
 						<ExternalLinkIcon size={13} />
 						Target
-					</div>
+					</Eyebrow>
 					<div className="divide-y rounded-md border bg-background/35 text-xs">
 						<DetailRow label="Service" value={target.service_name ?? target.name} />
 						<DetailRow label="Instance" value={hostnameFromUrl(target.url)} />
@@ -946,10 +949,10 @@ function ScrapeTargetDetails({
 
 				<section className="space-y-2">
 					<div className="flex items-center justify-between gap-3">
-						<div className="flex items-center gap-2 text-xs font-medium uppercase text-muted-foreground">
+						<Eyebrow variant="label" className="flex items-center gap-2" as="div">
 							<HistoryIcon size={13} />
 							Check History
-						</div>
+						</Eyebrow>
 						{latestCheck && (
 							<span className="text-muted-foreground text-xs">
 								Latest {formatRelativeTime(latestCheck.timestamp)}
@@ -966,7 +969,7 @@ function ScrapeTargetDetails({
 function MetricBox({ label, value }: { label: string; value: string }) {
 	return (
 		<div className="rounded-md border bg-background/35 px-3 py-2">
-			<div className="text-muted-foreground text-[0.65rem] uppercase">{label}</div>
+			<Eyebrow as="div">{label}</Eyebrow>
 			<div className="mt-1 font-mono text-sm">{value}</div>
 		</div>
 	)
@@ -999,22 +1002,27 @@ export function ScrapeTargetChecksTable({
 	}
 	if (!Result.isSuccess(result)) {
 		return (
-			<div className="rounded-md border bg-background/35 px-3 py-6 text-center text-xs text-muted-foreground">
+			<EmptyMessage className="rounded-md border bg-background/35 px-3 py-6">
 				Failed to load scheduled checks.
-			</div>
+			</EmptyMessage>
 		)
 	}
 	if (checks.length === 0) {
 		return (
-			<div className="rounded-md border bg-background/35 px-3 py-6 text-center text-xs text-muted-foreground">
+			<EmptyMessage className="rounded-md border bg-background/35 px-3 py-6">
 				The first scrape runs shortly after you save. Use Test to check the endpoint now.
-			</div>
+			</EmptyMessage>
 		)
 	}
 
 	return (
 		<div className="overflow-hidden rounded-md border bg-background/35">
-			<div className="grid grid-cols-[minmax(100px,1fr)_64px_70px_72px] gap-2 border-b px-3 py-2 text-[0.65rem] uppercase text-muted-foreground">
+			<div
+				className={cn(
+					"grid grid-cols-[minmax(100px,1fr)_64px_70px_72px] gap-2 border-b px-3 py-2",
+					eyebrowVariants(),
+				)}
+			>
 				<span>Time</span>
 				<span>State</span>
 				<span>Duration</span>

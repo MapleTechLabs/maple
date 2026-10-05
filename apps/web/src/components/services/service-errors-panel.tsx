@@ -2,14 +2,12 @@ import { Link } from "@tanstack/react-router"
 import type { ErrorIssueDocument } from "@maple/domain/http"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 
-import { SeverityBadge } from "@/components/errors/severity-badge"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { buildServiceOpenIssuesQuery, errorIssueFromV2 } from "@/lib/services/error-issues"
-import { formatNumber } from "@maple/ui/lib/format"
 import { SectionCard } from "./section-card"
-import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
-import { useTimezonePreference } from "@/hooks/use-timezone-preference"
+import { IssueLine } from "./issue-line"
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
 
 interface ServiceErrorsPanelProps {
 	serviceName: string
@@ -53,33 +51,6 @@ function PanelSkeleton() {
 	)
 }
 
-function PanelMessage({ children }: { children: React.ReactNode }) {
-	return <div className="px-4 py-6 text-center text-xs text-muted-foreground">{children}</div>
-}
-
-function IssueLine({ issue }: { issue: ErrorIssueDocument }) {
-	const { effectiveTimezone } = useTimezonePreference()
-	const title = issue.errorLabel || issue.exceptionType || issue.exceptionMessage || "Unknown error"
-	return (
-		<Link
-			to="/errors/issues/$issueId"
-			params={{ issueId: issue.id }}
-			className="flex items-center gap-2.5 rounded-sm px-2 py-1.5 text-sm transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-		>
-			<SeverityBadge severity={issue.severity} className="w-[60px] shrink-0 justify-center" />
-			<span className="min-w-0 flex-1 truncate" title={title}>
-				{title}
-			</span>
-			<span className="shrink-0 font-mono text-xs tabular-nums text-muted-foreground">
-				{formatNumber(issue.occurrenceCount)}×
-			</span>
-			<span className="w-14 shrink-0 text-right font-mono text-xs tabular-nums text-muted-foreground/70">
-				{formatRelativeTimeOrDate(issue.lastSeenAt, undefined, effectiveTimezone)}
-			</span>
-		</Link>
-	)
-}
-
 function PanelReady({
 	issues,
 	detailLimited,
@@ -90,7 +61,7 @@ function PanelReady({
 	return (
 		<PanelFrame detailLimited={detailLimited}>
 			{issues.length === 0 ? (
-				<PanelMessage>No open issues for this service.</PanelMessage>
+				<EmptyMessage>No open issues for this service.</EmptyMessage>
 			) : (
 				<div className="space-y-px p-2">
 					{issues.map((issue) => (
@@ -131,7 +102,7 @@ export function ServiceErrorsPanel({
 	if (Result.isFailure(result)) {
 		return (
 			<PanelFrame>
-				<PanelMessage>Issues could not be loaded.</PanelMessage>
+				<EmptyMessage>Issues could not be loaded.</EmptyMessage>
 			</PanelFrame>
 		)
 	}

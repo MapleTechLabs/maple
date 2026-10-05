@@ -3,6 +3,8 @@ import { useMapleCustomer } from "@/hooks/use-maple-customer"
 import { TRIAL_DURATION_DAYS } from "@/lib/billing/plans"
 import { PricingCards } from "@/components/settings/pricing-cards"
 import { Button } from "@maple/ui/components/ui/button"
+import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { ArrowLeftIcon } from "@/components/icons"
 
 export function StepPlan({ onBack }: { onBack?: () => void }) {
@@ -18,9 +20,9 @@ export function StepPlanLayout({ onBack, children }: { onBack?: () => void; chil
 		<div className="flex-1 flex flex-col items-center px-6 py-12 overflow-auto">
 			<div className="w-full max-w-5xl">
 				<div className="text-center mb-10">
-					<span className="text-[11px] font-semibold uppercase tracking-widest text-primary">
+					<Eyebrow variant="label" className="text-primary">
 						Pick a plan
-					</span>
+					</Eyebrow>
 					<h2 className="text-3xl font-semibold tracking-tight mt-2">Pick a plan to keep going</h2>
 					<p className="text-muted-foreground text-[15px] mt-3 max-w-lg mx-auto">
 						Start a {TRIAL_DURATION_DAYS}-day free trial: we'll save your card now and won't
@@ -56,15 +58,15 @@ function PricingSkeleton() {
 					className="rounded-xl border bg-card p-6 space-y-4"
 					style={{ animationDelay: `${i * 80}ms` }}
 				>
-					<div className="h-5 w-24 rounded bg-muted/60 animate-pulse" />
-					<div className="h-8 w-32 rounded bg-muted/60 animate-pulse" />
+					<Skeleton className="h-5 w-24" />
+					<Skeleton className="h-8 w-32" />
 					<div className="space-y-2 pt-2">
-						<div className="h-3 w-full rounded bg-muted/40 animate-pulse" />
-						<div className="h-3 w-5/6 rounded bg-muted/40 animate-pulse" />
-						<div className="h-3 w-4/6 rounded bg-muted/40 animate-pulse" />
-						<div className="h-3 w-3/6 rounded bg-muted/40 animate-pulse" />
+						<Skeleton className="h-3 w-full" />
+						<Skeleton className="h-3 w-5/6" />
+						<Skeleton className="h-3 w-4/6" />
+						<Skeleton className="h-3 w-3/6" />
 					</div>
-					<div className="h-10 w-full rounded-lg bg-muted/60 animate-pulse" />
+					<Skeleton className="h-10 w-full rounded-lg" />
 				</div>
 			))}
 		</div>

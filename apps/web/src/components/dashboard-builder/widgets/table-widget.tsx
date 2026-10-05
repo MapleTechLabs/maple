@@ -4,7 +4,7 @@ import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
 import { WidgetEmptyState, WidgetFrame } from "@/components/dashboard-builder/widgets/widget-shell"
 import type { WidgetDataState, WidgetDisplayConfig, WidgetMode } from "@/components/dashboard-builder/types"
-import { ArrowUpDownIcon } from "@/components/icons"
+import { SortableHeader } from "@/components/common/sortable-header"
 import { useTableSort } from "@/hooks/use-table-sort"
 import { formatValueByUnit } from "@maple/ui/lib/format"
 
@@ -193,27 +193,18 @@ export const TableWidget = memo(function TableWidget({
 											width: col.width ? `${col.width}px` : undefined,
 										}}
 									>
-										<button
-											type="button"
-											onClick={() => handleSort(col.field)}
+										<SortableHeader
+											label={<span className="truncate">{col.header}</span>}
+											sortKey={col.field}
+											activeKey={sortKey}
+											dir={sortDir}
+											onSort={handleSort}
 											className={cn(
-												"inline-flex max-w-full items-center gap-1 transition-colors",
+												"max-w-full",
 												col.align === "right" && "justify-end",
-												active
-													? "text-foreground"
-													: "text-muted-foreground hover:text-foreground",
+												!active && "text-muted-foreground",
 											)}
-										>
-											<span className="truncate">{col.header}</span>
-											<ArrowUpDownIcon
-												size={10}
-												className={cn(
-													"shrink-0 transition-opacity",
-													active ? "opacity-100" : "opacity-40",
-													active && sortDir === "asc" && "rotate-180",
-												)}
-											/>
-										</button>
+										/>
 									</TableHead>
 								)
 							})}

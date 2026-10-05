@@ -9,6 +9,7 @@ import { normalizeTimestampInput } from "@/lib/timezone-format"
 import { SectionCard } from "./section-card"
 
 import { formatWarehouseDateTime } from "@maple/query-engine"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 interface ServiceUsagePanelProps {
 	serviceName: string
 	effectiveStartTime: string
@@ -117,9 +118,7 @@ export function ServiceUsagePanel({
 					const prev = view.previousTotals?.[stat.key]
 					return (
 						<div key={stat.key} className="flex flex-col gap-0.5 px-4 py-3">
-							<span className="text-[10px] uppercase tracking-wider text-muted-foreground/60">
-								{stat.label}
-							</span>
+							<Eyebrow>{stat.label}</Eyebrow>
 							<span className="font-mono text-lg leading-tight tabular-nums text-foreground">
 								{stat.format(value)}
 							</span>

@@ -15,6 +15,7 @@
  * card with text on it would be stating a finding the investigation has not made
  * — the same rule `PendingVerdictNodeData` is written to.
  */
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import type { CSSProperties } from "react"
 
 import { ACTION_WIDTH, SPINE_WIDTH } from "./provenance-graph"
@@ -208,9 +209,7 @@ export function ProvenanceCanvasLoading() {
 			aria-busy
 		>
 			<div className="flex items-center gap-2.5">
-				<span className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
-					Provenance
-				</span>
+				<Eyebrow>Provenance</Eyebrow>
 				<span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
 					what produced this investigation, and what it produced
 				</span>
