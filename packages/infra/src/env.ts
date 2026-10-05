@@ -142,7 +142,7 @@ export const selfObservabilityEnv = (
 				),
 		optionalPlain("MAPLE_ENDPOINT"),
 		derived("MAPLE_ENVIRONMENT", resolveDeploymentEnvironment(stage)),
-		// Read for Durable Object jurisdiction (`chatSessionStub`).
+		// Read for Durable Object jurisdiction (`chatSessionsLayer`).
 		derived("MAPLE_REGION", region),
 		// Tells the instances apart in the shared internal org.
 		derived("OTEL_RESOURCE_ATTRIBUTES", `maple.region=${region}`),

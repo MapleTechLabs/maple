@@ -62,9 +62,6 @@ function ReplayDetailPage() {
 				<DashboardLayout.Breadcrumbs items={breadcrumbs} />
 				<DashboardLayout.Body>
 					<DashboardLayout.Content>
-						<DashboardLayout.Sticky>
-							<DashboardLayout.Header title="Loading session…" />
-						</DashboardLayout.Sticky>
 						<DashboardLayout.Scroll>
 							<ReplayDetailSkeleton />
 						</DashboardLayout.Scroll>
@@ -77,9 +74,6 @@ function ReplayDetailPage() {
 				<DashboardLayout.Breadcrumbs items={breadcrumbs} />
 				<DashboardLayout.Body>
 					<DashboardLayout.Content>
-						<DashboardLayout.Sticky>
-							<DashboardLayout.Header title="Error" />
-						</DashboardLayout.Sticky>
 						<DashboardLayout.Scroll>
 							<ErrorState error={error} title="Failed to load session replay" />
 						</DashboardLayout.Scroll>
@@ -95,15 +89,10 @@ function ReplayDetailPage() {
 						<DashboardLayout.Breadcrumbs items={breadcrumbs} />
 						<DashboardLayout.Body>
 							<DashboardLayout.Content>
-								<DashboardLayout.Sticky>
-									<DashboardLayout.Header
-										title="Session not found"
-										description="It may have expired or not been ingested yet."
-									/>
-								</DashboardLayout.Sticky>
 								<DashboardLayout.Scroll>
 									<EmptyMessage dashed className="p-12">
-										No metadata for session <InlineCode>{sessionId}</InlineCode>.
+										No metadata for session <InlineCode>{sessionId}</InlineCode>. It may
+										have expired or not been ingested yet.
 									</EmptyMessage>
 								</DashboardLayout.Scroll>
 							</DashboardLayout.Content>

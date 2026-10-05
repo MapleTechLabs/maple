@@ -81,9 +81,6 @@ function SettingsPage() {
 				<DashboardLayout.Breadcrumbs items={[{ label: "Settings" }]} />
 				<DashboardLayout.Body>
 					<DashboardLayout.Content>
-						<DashboardLayout.Sticky>
-							<DashboardLayout.Header title="Settings" />
-						</DashboardLayout.Sticky>
 						<DashboardLayout.Scroll>
 							<div className="space-y-3">
 								<Skeleton className="h-8 w-56" />
@@ -102,9 +99,6 @@ function SettingsPage() {
 				<DashboardLayout.Breadcrumbs items={[{ label: "Settings" }]} />
 				<DashboardLayout.Body>
 					<DashboardLayout.Content>
-						<DashboardLayout.Sticky>
-							<DashboardLayout.Header title="Settings" />
-						</DashboardLayout.Sticky>
 						<DashboardLayout.Scroll>
 							<p className="text-muted-foreground text-sm">
 								No settings are available for the current account.
@@ -130,9 +124,6 @@ function SettingsPage() {
 					/>
 				</DashboardLayout.Filters>
 				<DashboardLayout.Content>
-					<DashboardLayout.Sticky>
-						<DashboardLayout.Header title={settingsTabLabels[activeTab]} />
-					</DashboardLayout.Sticky>
 					<DashboardLayout.Scroll>
 						{activeTab === "organization" && <OrganizationSection />}
 						{activeTab === "members" && <MembersSection />}

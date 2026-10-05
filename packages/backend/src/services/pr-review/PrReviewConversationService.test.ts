@@ -12,6 +12,7 @@ import {
 	type PullRequestHead,
 	PrReviewReplyId,
 } from "@maple/domain/http"
+import { fakeChatSessionsLayer } from "@maple/backend/platform/chat-sessions-fake"
 import { envPorts } from "@maple/backend/platform/env-ports"
 import { Effect, Layer, Option, Schema } from "effect"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
@@ -140,18 +141,16 @@ const layerFor = (
 		ids: ["github"],
 		resolve: () => Effect.succeed(provider),
 	} satisfies VcsProviderRegistryApi)
-	const workerEnv = envPorts({
-		ChatSession: {
-			idFromName: (name: string) => name,
-			get: () => ({
-				beginTurn: async (input: { text: string }) => {
-					recorded.begun.push(input.text)
-					return { cursor: 0, messageId: "m" }
-				},
-				abort: async () => undefined,
-			}),
-		},
-	})
+	const workerEnv = Layer.merge(
+		envPorts({}),
+		fakeChatSessionsLayer(() => ({
+			beginTurn: async (input: { text: string }) => {
+				recorded.begun.push(input.text)
+				return { cursor: 0, messageId: "m", turnMessageId: "t" }
+			},
+			abort: async () => undefined,
+		})),
+	)
 	const base = Layer.mergeAll(
 		testRepoLayer(testDb),
 		registry,

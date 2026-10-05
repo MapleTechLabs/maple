@@ -96,13 +96,3 @@ export const mapleWorkerProps = (app: string, { stage, region, workerDev }: Mapl
 	placement: resolveWorkerPlacement(region),
 	...(isDevApp(app) && { dev: workerDev(app) }),
 })
-
-/**
- * maple-ai's `ChatSession` Durable Object, bound by class name from another Worker. By name,
- * not by ai's output, so the binder's deploy does not wait on ai's.
- */
-export const chatSessionBinding = ({ stage, region }: MapleDeployment) =>
-	Cloudflare.DurableObject("ChatSession", {
-		className: "ChatSession",
-		scriptName: resolveWorkerName("ai", stage, region),
-	})

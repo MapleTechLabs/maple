@@ -22,6 +22,7 @@ import {
 	VcsRepositoryId,
 } from "@maple/domain/http"
 import { prReviewFindingEmbeddings, prReviewFindings } from "@maple/db"
+import { fakeChatSessionsLayer } from "@maple/backend/platform/chat-sessions-fake"
 import { envPorts } from "@maple/backend/platform/env-ports"
 import { Effect, Layer, Option, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -73,19 +74,17 @@ interface Begun {
 }
 
 /** The `ChatSession` namespace as the service sees it off the Worker env. */
-const fakeChatSessions = (begun: Array<Begun>, aborted: Array<string>, options: { busy?: boolean } = {}) => ({
-	idFromName: (name: string) => name,
-	get: (id: unknown) => ({
-		beginTurn: async (input: { sessionId: string; text: string }) => {
+const chatSessionsFake = (begun: Array<Begun>, aborted: Array<string>, options: { busy?: boolean } = {}) =>
+	fakeChatSessionsLayer((sessionId) => ({
+		beginTurn: async (input) => {
 			if (options.busy) return undefined
 			begun.push({ sessionId: input.sessionId, text: input.text })
-			return { cursor: 0, messageId: "m" }
+			return { cursor: 0, messageId: "m", turnMessageId: "t" }
 		},
 		abort: async () => {
-			aborted.push(String(id))
+			aborted.push(sessionId)
 		},
-	}),
-})
+	}))
 
 const layerFor = (
 	testDb: TestDb,
@@ -187,11 +186,10 @@ const layerFor = (
 	const workerEnv =
 		options.withWorkerEnv === false
 			? Layer.empty
-			: envPorts({
-					ChatSession: fakeChatSessions(options.begun ?? [], options.aborted ?? [], {
-						busy: options.busy,
-					}),
-				})
+			: Layer.merge(
+					envPorts({}),
+					chatSessionsFake(options.begun ?? [], options.aborted ?? [], { busy: options.busy }),
+				)
 	const repo = testRepoLayer(testDb)
 	return Layer.effect(PrReviewService, PrReviewService.make).pipe(
 		Layer.provideMerge(

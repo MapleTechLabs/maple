@@ -74,7 +74,7 @@ export const startInvestigationTurn: (
 			.pipe(Effect.asVoid)
 
 	const sessionId = investigationSessionId(orgId, investigationId)
-	const stub = input.chatSessions?.stub(sessionId)
+	const stub = input.chatSessions?.session(sessionId)
 	if (stub === undefined) {
 		yield* markFailed(AGENT_UNAVAILABLE_ERROR)
 		yield* annotate("no_binding")
@@ -88,20 +88,18 @@ export const startInvestigationTurn: (
 		"",
 	)
 	const claimed = yield* Effect.exit(
-		Effect.tryPromise(() =>
-			stub.beginTurn({
-				sessionId,
-				messageId: crypto.randomUUID(),
-				text,
-				tenant: encodeChatTurnTenant({
-					orgId,
-					userId: internalServiceUserId,
-					roles: [],
-					authMode: "self_hosted",
-				}),
-				origin: { kind: "autonomous" },
+		stub.beginTurn({
+			sessionId,
+			messageId: crypto.randomUUID(),
+			text,
+			tenant: encodeChatTurnTenant({
+				orgId,
+				userId: internalServiceUserId,
+				roles: [],
+				authMode: "self_hosted",
 			}),
-		),
+			origin: { kind: "autonomous" },
+		}),
 	)
 
 	if (Exit.isFailure(claimed)) {

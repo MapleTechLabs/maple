@@ -6,10 +6,8 @@
 import {
 	AiWorker,
 	cachedRecoverable,
-	chatSessionBinding,
 	MapleDb,
 	mapleDbEnv,
-	type MapleDeployment,
 	type MapleDomains,
 	type MapleRegion,
 	MapleStack,
@@ -32,25 +30,18 @@ import {
 import { WORKER_PURE_OPTIONS } from "@maple/infra/worker-build"
 import { workerEnvLayer } from "@maple/infra/worker-runtime"
 import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
+import { bindChatSessions } from "@maple/backend/platform/chat-sessions"
 import { bindEmailSender } from "@maple/backend/platform/email-sender"
 import { chatConnectorOutboundConfigKeys } from "@maple/chat-platform"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Cause, Config, Effect, Layer, Option, Ref } from "effect"
 import { HttpServerResponse } from "effect/http"
 
-/** Resource bindings, split from config so `InferEnv` can derive `AlertingWorkerEnv`. */
-const makeWorkerBindings = (deployment: MapleDeployment) => ({
-	// maple-ai's chat DO, where ticks start investigations; read off `env` by class name.
-	ChatSession: chatSessionBinding(deployment),
-})
-
 /**
- * Runtime env, imported type-only by `./scheduled.ts`. `Partial` because bindings
- * can be absent (ref stages, `alchemy dev`); config vars stay `unknown` since they
- * are read through the ConfigProvider (`workerEnvLayer`), never off `env`.
+ * Runtime env, imported type-only by `./scheduled.ts`. Config vars stay `unknown` since they are
+ * read through the ConfigProvider (`workerEnvLayer`), never off `env`.
  */
-export type AlertingWorkerEnv = Partial<Cloudflare.InferEnv<ReturnType<typeof makeWorkerBindings>>> &
-	Record<string, unknown>
+export type AlertingWorkerEnv = Record<string, unknown>
 
 /** Config-sourced env; largely shared with api via `@maple/infra/env`. */
 const configuredEnv = (stage: MapleStage, region: MapleRegion, domains: MapleDomains) =>
@@ -93,7 +84,6 @@ const props = Effect.gen(function* () {
 		build: { pure: WORKER_PURE_OPTIONS },
 		// `devEnv` last, so `.env.local` cannot override the inter-app URLs.
 		env: {
-			...makeWorkerBindings({ stage, region }),
 			...mapleDbEnv(db, "alerting"),
 			AI_WORKER: ai,
 			...env,
@@ -140,6 +130,8 @@ export default class Alerting extends Cloudflare.Worker<Alerting>()(
 		yield* MapleDb("alerting")
 		// `send_email`, prd only; handed to each fire's graph as `EmailSender`.
 		const email = yield* bindEmailSender
+		// maple-ai's chat Durable Object, where ticks start investigations; handed to each fire's graph.
+		const chatSessions = yield* bindChatSessions
 		// Once per isolate, not once per fire.
 		const loggedNonProdSkip = yield* Ref.make(false)
 
@@ -159,7 +151,7 @@ export default class Alerting extends Cloudflare.Worker<Alerting>()(
 					return
 				}
 				const { runScheduled } = yield* scheduled
-				yield* runScheduled(controller.cron, env, email).pipe(
+				yield* runScheduled(controller.cron, env, email, chatSessions).pipe(
 					// Interrupts are isolate teardown, not a failed run.
 					Effect.catchCause((cause) =>
 						Cause.hasInterruptsOnly(cause)

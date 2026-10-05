@@ -62,7 +62,7 @@ function QueryBuilderLabContent() {
 			<DashboardLayout.Body>
 				<DashboardLayout.Content>
 					<DashboardLayout.Sticky>
-						<DashboardLayout.Header title="Query Builder Lab" description="MVP Query builder">
+						<DashboardLayout.Header>
 							<TimeRangeHeaderControls
 								startTime={search.startTime}
 								endTime={search.endTime}

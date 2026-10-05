@@ -87,9 +87,6 @@ function AnomalyDetailPage() {
 				<DashboardLayout.Breadcrumbs items={[...ANOMALY_LOADING_BREADCRUMBS]} />
 				<DashboardLayout.Body>
 					<DashboardLayout.Content>
-						<DashboardLayout.Sticky>
-							<DashboardLayout.Header title="Anomaly" />
-						</DashboardLayout.Sticky>
 						<DashboardLayout.Scroll>
 							<div className="space-y-4">
 								<Skeleton className="h-24 w-full" />
@@ -106,9 +103,6 @@ function AnomalyDetailPage() {
 				<DashboardLayout.Breadcrumbs items={[...ANOMALY_LOADING_BREADCRUMBS]} />
 				<DashboardLayout.Body>
 					<DashboardLayout.Content>
-						<DashboardLayout.Sticky>
-							<DashboardLayout.Header title="Anomaly" />
-						</DashboardLayout.Sticky>
 						<DashboardLayout.Scroll>
 							<Empty>
 								<EmptyHeader>
@@ -247,16 +241,21 @@ function AnomalyDetailBody({
 			<DashboardLayout.Breadcrumbs
 				items={[
 					{ label: "Anomalies", href: "/anomalies" },
-					{ label: `${incident.serviceName} · ${SIGNAL_LABEL[incident.signalType]}` },
+					{
+						label: [
+							incident.serviceName,
+							SIGNAL_LABEL[incident.signalType],
+							incident.deploymentEnv,
+						]
+							.filter(Boolean)
+							.join(" · "),
+					},
 				]}
 			/>
 			<DashboardLayout.Body>
 				<DashboardLayout.Content>
 					<DashboardLayout.Sticky>
-						<DashboardLayout.Header
-							title={`${SIGNAL_LABEL[incident.signalType]} · ${incident.serviceName}`}
-							description={incident.deploymentEnv || undefined}
-						>
+						<DashboardLayout.Header>
 							<div className="flex items-center gap-2">
 								<Badge
 									variant="outline"

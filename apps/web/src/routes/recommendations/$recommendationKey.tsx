@@ -248,7 +248,6 @@ function DetailView({
 									</Badge>
 								</div>
 							}
-							description={`Opened ${formatRelativeTime(issue.opened_at)} · ${issue.usage_count.toLocaleString()} spans · 24h`}
 						/>
 					</DashboardLayout.Sticky>
 					<DashboardLayout.Scroll>
@@ -588,9 +587,6 @@ function ShellLayout({ children }: { children: React.ReactNode }) {
 			/>
 			<DashboardLayout.Body>
 				<DashboardLayout.Content>
-					<DashboardLayout.Sticky>
-						<DashboardLayout.Header title="Recommendation" />
-					</DashboardLayout.Sticky>
 					<DashboardLayout.Scroll>{children}</DashboardLayout.Scroll>
 				</DashboardLayout.Content>
 			</DashboardLayout.Body>

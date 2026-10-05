@@ -269,10 +269,7 @@ export function WidgetLab() {
 					<DashboardLayout.Body>
 						<DashboardLayout.Content>
 							<DashboardLayout.Sticky>
-								<DashboardLayout.Header
-									title="Widget Lab"
-									description="Every dashboard widget × every notable data scenario. Use this page to polish layout, typography, thresholds, and error states without touching live data."
-								>
+								<DashboardLayout.Header>
 									<ToggleGroup
 										value={[mode]}
 										onValueChange={(values) => {

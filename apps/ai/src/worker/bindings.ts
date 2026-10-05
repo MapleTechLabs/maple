@@ -16,6 +16,7 @@ import { Stage } from "alchemy/Stage"
 import { Effect, Layer, Option } from "effect"
 import { isWorkersAiBinding, viaGateway, WorkersAiGateway } from "../platform/WorkersAiHttpClient"
 import { McpToolsRateLimit, RateLimitBindingError, type RateLimiter } from "@maple/backend/platform/bindings"
+import { type ChatSessionNamespace, chatSessionsLayer } from "@maple/backend/platform/chat-sessions"
 import { envPorts } from "@maple/backend/platform/env-ports"
 import { mapleDbConnectionLayer } from "@maple/backend/platform/pg-connection-source"
 import {
@@ -103,19 +104,22 @@ const limiter = (client: Cloudflare.Workers.RateLimitClient): RateLimiter => ({
 
 /**
  * The ports the service graph depends on, plus the env-backed ports
- * (`envPorts`: the env itself, the `ConfigProvider`, chat sessions, the sandbox
- * service binding) — the one place a graph in this Worker gets its env from.
+ * (`envPorts`: the env itself, the `ConfigProvider`, the sandbox service binding) and the
+ * `ChatSessions` port over the namespace this Worker hosts: the one place a graph in this Worker
+ * gets its env from.
  */
 export const aiPorts = (
 	clients: AiBindingClients,
 	env: Record<string, unknown>,
 	workersAi: typeof WorkersAiGateway.Service,
+	chatSessions: ChatSessionNamespace,
 ) =>
 	Layer.mergeAll(
 		Layer.succeed(WorkersAiGateway, workersAi),
 		Layer.succeed(McpToolsRateLimit, limiter(clients.mcpToolsRateLimit)),
 		mapleDbConnectionLayer(env),
 		envPorts(env),
+		chatSessionsLayer(chatSessions, env),
 	)
 
 export type AiPortsLayer = ReturnType<typeof aiPorts>

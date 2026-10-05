@@ -77,12 +77,6 @@ function TraceDetailPage() {
 				/>
 				<DashboardLayout.Body>
 					<DashboardLayout.Content>
-						<DashboardLayout.Sticky>
-							<DashboardLayout.Header
-								title="Loading trace..."
-								description="Loading trace details..."
-							/>
-						</DashboardLayout.Sticky>
 						<DashboardLayout.Scroll>
 							<div className="space-y-4">
 								<div className="space-y-2">
@@ -119,9 +113,6 @@ function TraceDetailPage() {
 				/>
 				<DashboardLayout.Body>
 					<DashboardLayout.Content>
-						<DashboardLayout.Sticky>
-							<DashboardLayout.Header title="Error" description="Failed to load trace" />
-						</DashboardLayout.Sticky>
 						<DashboardLayout.Scroll>
 							<ErrorState error={error} title="Failed to load trace details" />
 						</DashboardLayout.Scroll>
@@ -141,16 +132,14 @@ function TraceDetailPage() {
 						/>
 						<DashboardLayout.Body>
 							<DashboardLayout.Content>
-								<DashboardLayout.Sticky>
-									<DashboardLayout.Header
-										title="Trace not found"
-										description="This trace could not be found. It may have expired or not been ingested yet."
-									/>
-								</DashboardLayout.Sticky>
 								<DashboardLayout.Scroll>
 									<div className="flex flex-col items-center justify-center rounded-md border border-dashed p-12 text-center">
 										<p className="mb-2 text-sm text-muted-foreground">Trace ID</p>
 										<TraceIdBadge traceId={traceId} />
+										<p className="mt-4 max-w-md text-sm text-muted-foreground">
+											This trace could not be found. It may have expired or not been
+											ingested yet.
+										</p>
 										<a
 											href={backToTracesHref}
 											className="mt-6 text-sm text-primary underline underline-offset-4 hover:text-primary/80"
@@ -179,12 +168,6 @@ function TraceDetailPage() {
 						/>
 						<DashboardLayout.Body>
 							<DashboardLayout.Content>
-								<DashboardLayout.Sticky>
-									<DashboardLayout.Header
-										title="Root span not found"
-										description={`Found ${data.spans.length} span${data.spans.length !== 1 ? "s" : ""}, but the root span is missing. The trace may be incomplete.`}
-									/>
-								</DashboardLayout.Sticky>
 								<DashboardLayout.Scroll>
 									<div className="flex flex-col items-center justify-center rounded-md border border-dashed p-12 text-center">
 										<p className="mb-2 text-sm text-muted-foreground">Trace ID</p>
@@ -319,7 +302,6 @@ function TraceDetailContent({
 				<DashboardLayout.Content>
 					<DashboardLayout.Sticky>
 						<DashboardLayout.Header
-							title={rootHttpInfo ? undefined : (rootSpan?.spanName ?? "Unknown Trace")}
 							titleContent={
 								rootHttpInfo ? (
 									<DashboardLayout.Title className="min-w-0">
@@ -330,7 +312,13 @@ function TraceDetailContent({
 											className="gap-3"
 										/>
 									</DashboardLayout.Title>
-								) : undefined
+								) : (
+									// The breadcrumb only carries the short trace id; the root span name
+									// is what identifies the trace.
+									<DashboardLayout.Title title={rootSpan?.spanName}>
+										{rootSpan?.spanName ?? "Unknown Trace"}
+									</DashboardLayout.Title>
+								)
 							}
 						>
 							<div className="flex items-center gap-2">

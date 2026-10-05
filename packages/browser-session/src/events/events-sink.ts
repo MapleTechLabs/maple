@@ -54,7 +54,7 @@ export function onSessionEvent(listener: SessionEventListener): () => void {
 const FLUSH_INTERVAL_MS = 5_000
 const FLUSH_BYTES = 64 * 1024
 
-export { activeTraceId, setActiveTraceIdProvider } from "./trace-id"
+export { setActiveTraceIdProvider } from "./trace-id"
 
 export interface SessionEventSink {
 	/** Session currently receiving newly emitted rows. */

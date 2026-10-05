@@ -485,9 +485,6 @@ function RuleDetailContent() {
 				/>
 				<DashboardLayout.Body>
 					<DashboardLayout.Content>
-						<DashboardLayout.Sticky>
-							<DashboardLayout.Header title="Failed to load alert rule" />
-						</DashboardLayout.Sticky>
 						<DashboardLayout.Scroll>
 							<Empty className="py-12">
 								<EmptyHeader>
@@ -525,9 +522,6 @@ function RuleDetailContent() {
 				/>
 				<DashboardLayout.Body>
 					<DashboardLayout.Content>
-						<DashboardLayout.Sticky>
-							<DashboardLayout.Header title="Rule not found" />
-						</DashboardLayout.Sticky>
 						<DashboardLayout.Scroll>
 							<Empty className="py-12">
 								<EmptyHeader>

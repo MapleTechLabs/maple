@@ -359,7 +359,6 @@ const EXEMPT_BUILDERS: ReadonlySet<string> = new Set([
 	// todo batch ③ — infra + integrations (infra, cloudflare-*, planetscale-*, service-map, rollups)
 	"infra/listHostsQuery",
 	"infra/hostDetailSummaryQuery",
-	"infra/fleetUtilizationTimeseriesQuery",
 	"infra/hostNetworkTimeseriesQuery",
 	"infra/listPodsQuery",
 	"infra/listPodsSummaryQuery",

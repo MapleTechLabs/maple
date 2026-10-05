@@ -69,9 +69,6 @@ function AlertIncidentPage() {
 				<DashboardLayout.Breadcrumbs items={[{ label: "Alerts", href: "/alerts" }, { label: "…" }]} />
 				<DashboardLayout.Body>
 					<DashboardLayout.Content>
-						<DashboardLayout.Sticky>
-							<DashboardLayout.Header title="Investigation" />
-						</DashboardLayout.Sticky>
 						<DashboardLayout.Scroll>
 							<div className="mx-auto w-full max-w-3xl space-y-4">
 								<Skeleton className="h-4 w-32" />
@@ -94,9 +91,6 @@ function AlertIncidentPage() {
 				/>
 				<DashboardLayout.Body>
 					<DashboardLayout.Content>
-						<DashboardLayout.Sticky>
-							<DashboardLayout.Header title="Investigation" />
-						</DashboardLayout.Sticky>
 						<DashboardLayout.Scroll>
 							<Empty>
 								<EmptyHeader>
@@ -198,9 +192,6 @@ function AlertInvestigationRedirect({
 				/>
 				<DashboardLayout.Body>
 					<DashboardLayout.Content>
-						<DashboardLayout.Sticky>
-							<DashboardLayout.Header title="Could not open investigation" />
-						</DashboardLayout.Sticky>
 						<DashboardLayout.Scroll>
 							<Empty>
 								<EmptyHeader>
@@ -226,9 +217,6 @@ function AlertInvestigationRedirect({
 			/>
 			<DashboardLayout.Body>
 				<DashboardLayout.Content>
-					<DashboardLayout.Sticky>
-						<DashboardLayout.Header title="Opening investigation…" />
-					</DashboardLayout.Sticky>
 					<DashboardLayout.Scroll>
 						<div className="mx-auto w-full max-w-3xl space-y-4">
 							<Skeleton className="h-4 w-32" />

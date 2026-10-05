@@ -32,7 +32,6 @@ import {
 	listMetrics,
 } from "@/api/warehouse/metrics"
 import {
-	fleetUtilizationTimeseries,
 	getNodeFacets,
 	getPodFacets,
 	getContainerFacets,
@@ -583,10 +582,6 @@ export const hostDetailSummaryResultAtom = makeQueryAtomFamily(hostDetailSummary
 })
 
 export const hostInfraTimeseriesResultAtom = makeQueryAtomFamily(hostInfraTimeseries, {
-	staleTime: 30_000,
-})
-
-export const fleetUtilizationTimeseriesResultAtom = makeQueryAtomFamily(fleetUtilizationTimeseries, {
 	staleTime: 30_000,
 })
 

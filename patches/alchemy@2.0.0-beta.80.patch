@@ -78,6 +78,40 @@ index b4045f4..a8da70c 100644
          capacityProviderStrategy: news.capacityProviderStrategy,
          placementConstraints: news.placementConstraints,
          placementStrategy: news.placementStrategy,
+diff --git a/lib/Cloudflare/Workers/DurableObject.js b/lib/Cloudflare/Workers/DurableObject.js
+index 14dca618c2..e90d8b1c61 100644
+--- a/lib/Cloudflare/Workers/DurableObject.js
++++ b/lib/Cloudflare/Workers/DurableObject.js
+@@ -971,22 +971,17 @@ export const DurableObject = taggedFunction(DurableObjectScope, function (...arg
+                 return Effect.die(new Error(`DurableObject '${namespace}' is not a DurableObject`));
+             }
+         }));
+-        return {
++        // maple patch: `jurisdiction` returns a client whose ids are minted in
++        // that jurisdiction, so the objects they address are stored only there.
++        const client = (resolve) => ({
+             Type: TypeId,
+             LogicalId: namespace,
+             name: namespace,
+             namespaceId: worker.durableObjectNamespaces.pipe(Output.map((durableObjectNamespaces) => durableObjectNamespaces?.[namespace])),
+-            getByName: (name, options) => makeRpcStub(binding.getByName(name, options), { errors }),
+-            // newUniqueId: () => use((ns) => ns.newUniqueId()),
+-            // idFromName: (name: string) => use((ns) => ns.idFromName(name)),
+-            // idFromString: (id: string) => use((ns) => ns.idFromString(id)),
+-            // get: (
+-            //   id: cf.DurableObjectId,
+-            //   options?: cf.DurableObjectNamespaceGetDurableObjectOptions,
+-            // ) => use((ns) => makeRpcStub(ns.get(id, options))),
+-            // jurisdiction: (jurisdiction: cf.DurableObjectJurisdiction) =>
+-            //   use((ns) => ns.jurisdiction(jurisdiction) as any),
+-        };
++            getByName: (name, options) => makeRpcStub(resolve().getByName(name, options), { errors }),
++            jurisdiction: (jurisdiction) => client(() => resolve().jurisdiction(jurisdiction)),
++        });
++        return client(() => binding);
+     });
+     // Class-form declarations (`DurableObject<Self>()("Name", props?)`) can
+     // carry `transferredFrom` so the host's local binding drives a
 diff --git a/src/AWS/AutoScaling/AutoScalingGroup.ts b/src/AWS/AutoScaling/AutoScalingGroup.ts
 index 5b40c65..2eb9162 100644
 --- a/src/AWS/AutoScaling/AutoScalingGroup.ts
@@ -169,3 +203,41 @@ index eac86f0..745df88 100644
          capacityProviderStrategy: news.capacityProviderStrategy,
          placementConstraints: news.placementConstraints,
          placementStrategy: news.placementStrategy,
+diff --git a/src/Cloudflare/Workers/DurableObject.ts b/src/Cloudflare/Workers/DurableObject.ts
+index f849cca331..ebbebadd1f 100644
+--- a/src/Cloudflare/Workers/DurableObject.ts
++++ b/src/Cloudflare/Workers/DurableObject.ts
+@@ -1303,7 +1303,9 @@ export const DurableObject: DurableObjectClass = taggedFunction(
+           }),
+         );
+ 
+-        return {
++        // maple patch: `jurisdiction` returns a client whose ids are minted in
++        // that jurisdiction, so the objects they address are stored only there.
++        const client = (resolve: () => any): any => ({
+           Type: TypeId,
+           LogicalId: namespace,
+           name: namespace,
+@@ -1315,17 +1317,11 @@ export const DurableObject: DurableObjectClass = taggedFunction(
+           getByName: (
+             name: string,
+             options?: DurableObjectGetDurableObjectOptions,
+-          ) => makeRpcStub(binding.getByName(name, options), { errors }),
+-          // newUniqueId: () => use((ns) => ns.newUniqueId()),
+-          // idFromName: (name: string) => use((ns) => ns.idFromName(name)),
+-          // idFromString: (id: string) => use((ns) => ns.idFromString(id)),
+-          // get: (
+-          //   id: cf.DurableObjectId,
+-          //   options?: cf.DurableObjectNamespaceGetDurableObjectOptions,
+-          // ) => use((ns) => makeRpcStub(ns.get(id, options))),
+-          // jurisdiction: (jurisdiction: cf.DurableObjectJurisdiction) =>
+-          //   use((ns) => ns.jurisdiction(jurisdiction) as any),
+-        };
++          ) => makeRpcStub(resolve().getByName(name, options), { errors }),
++          jurisdiction: (jurisdiction: DurableObjectJurisdiction) =>
++            client(() => resolve().jurisdiction(jurisdiction)),
++        });
++        return client(() => binding);
+       });
+ 
+     // Class-form declarations (`DurableObject<Self>()("Name", props?)`) can

@@ -323,7 +323,3 @@ export function ProviderLogo({ type, chatConnector, size = 40, className, bare }
 		</span>
 	)
 }
-
-export const destinationTypeLabels: Record<AlertDestinationType, string> = Object.fromEntries(
-	Object.values(PROVIDERS).map((provider) => [provider.type, provider.label]),
-) as Record<AlertDestinationType, string>

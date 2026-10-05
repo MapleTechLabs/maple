@@ -4,10 +4,10 @@
  * up by a minute cron. Webhooks: `POST /connectors/:connectorId/webhook`. Events
  * go to `InboundHandler`, then the conversation's `ConnectorRelay` DO.
  */
+import { BoundChatSessions } from "@maple/backend/platform/chat-sessions"
 import { connectors } from "@maple/chat-platform/connectors"
 import {
 	cachedRecoverable,
-	chatSessionBinding,
 	MapleDb,
 	mapleDbEnv,
 	type MapleDomains,
@@ -55,8 +55,6 @@ const props = Effect.gen(function* () {
 		domain: domains.chat,
 		// `devEnv` last, so `.env.local` cannot override the inter-app URLs.
 		env: {
-			// maple-ai's chat DO; mentions become turns on it (read off `env` by class name).
-			ChatSession: chatSessionBinding(stack),
 			...mapleDbEnv(db, "chat-bot"),
 			...env,
 			...devEnv,
@@ -137,8 +135,12 @@ export default ChatBot.make(
 		// oxlint-disable-next-line effecttsgo/strict-effect-provide
 		Effect.provide(
 			Layer.mergeAll(
-				// The socket DO's activation yields the relay namespace, so it builds on it.
-				ConnectorSocketLive.pipe(Layer.provideMerge(ConnectorRelayLive)),
+				// The socket DO's activation yields the relay namespace, so it builds on it. The relay's
+				// yields maple-ai's chat namespace, bound cross-script: mentions become turns on it.
+				ConnectorSocketLive.pipe(
+					Layer.provideMerge(ConnectorRelayLive),
+					Layer.provide(BoundChatSessions.layer),
+				),
 				Cloudflare.Hyperdrive.ConnectBinding,
 				Cloudflare.Workers.CronEventSourceLive,
 				WorkerTelemetry({ serviceName: "maple-chat-bot" }),

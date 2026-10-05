@@ -160,10 +160,6 @@ export const offset = (spec: { readonly max: number }) =>
 
 const TIMESTAMP_FORMAT = "UTC (YYYY-MM-DD HH:mm:ss or ISO 8601)"
 
-/** A single point in time, worded like the window bounds: `meaning` then the accepted format. */
-export const timestamp = (meaning: string) =>
-	WarehouseTimeInput.annotate({ description: `${meaning}, ${TIMESTAMP_FORMAT}` })
-
 export const optionalTimestamp = (meaning: string) =>
 	Schema.optional(WarehouseTimeInput).annotate({ description: `${meaning}, ${TIMESTAMP_FORMAT}` })
 

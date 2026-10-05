@@ -1377,19 +1377,17 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				for (const row of rows) {
 					if (row.headSha === headSha) continue
 					if (row.sessionId !== null && chatSessions !== undefined) {
-						const stub = chatSessions.stub(row.sessionId)
-						if (stub !== undefined) {
-							yield* Effect.tryPromise(() => stub.abort()).pipe(
-								Effect.catchCause((cause) =>
-									Effect.logWarning("Could not abort a superseded review turn").pipe(
-										Effect.annotateLogs({
-											reviewId: row.id,
-											cause: summarizeCause(cause),
-										}),
-									),
+						const stub = chatSessions.session(row.sessionId)
+						yield* stub.abort().pipe(
+							Effect.catchCause((cause) =>
+								Effect.logWarning("Could not abort a superseded review turn").pipe(
+									Effect.annotateLogs({
+										reviewId: row.id,
+										cause: summarizeCause(cause),
+									}),
 								),
-							)
-						}
+							),
+						)
 					}
 					yield* update(orgId, row.id, {
 						status: "skipped",
@@ -1485,7 +1483,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						...extra,
 					})
 
-				const stub = chatSessions?.stub(sessionId)
+				const stub = chatSessions?.session(sessionId)
 				if (stub === undefined) {
 					yield* updateWhere(orgId, reviewId, ACTIVE_STATUSES, {
 						status: "failed",
@@ -1541,20 +1539,18 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				// Before the turn, so a fast turn's finished summary is never overwritten by this notice.
 				yield* postReviewStatus(orgId, reviewId, repo, job.number, { kind: "reviewing", headSha })
 				const claimed = yield* Effect.exit(
-					Effect.tryPromise(() =>
-						stub.beginTurn({
-							sessionId,
-							messageId: randomUUID(),
-							text,
-							origin: { kind: "autonomous" },
-							tenant: encodeChatTurnTenant({
-								orgId,
-								userId: internalServiceUserId,
-								roles: [],
-								authMode: "self_hosted",
-							}),
+					stub.beginTurn({
+						sessionId,
+						messageId: randomUUID(),
+						text,
+						origin: { kind: "autonomous" },
+						tenant: encodeChatTurnTenant({
+							orgId,
+							userId: internalServiceUserId,
+							roles: [],
+							authMode: "self_hosted",
 						}),
-					),
+					}),
 				)
 				if (Exit.isFailure(claimed) || claimed.value === undefined) {
 					if (Exit.isFailure(claimed)) {

@@ -530,7 +530,7 @@ export class PrReviewConversationService extends Context.Service<
 				.pipe(Effect.mapError(toPersistence))
 
 			const sessionId = prReplySessionId(orgId, replyId)
-			const stub = chatSessions?.stub(sessionId)
+			const stub = chatSessions?.session(sessionId)
 			if (stub === undefined) return yield* fail("agent_unavailable")
 			const kickoff = buildReplyKickoff({
 				repository: repo.fullName,
@@ -561,20 +561,18 @@ export class PrReviewConversationService extends Context.Service<
 				})),
 			})
 			const claimed = yield* Effect.exit(
-				Effect.tryPromise(() =>
-					stub.beginTurn({
-						sessionId,
-						messageId: randomUUID(),
-						text: kickoff,
-						origin: { kind: "autonomous" },
-						tenant: encodeChatTurnTenant({
-							orgId,
-							userId: internalServiceUserId,
-							roles: [],
-							authMode: "self_hosted",
-						}),
+				stub.beginTurn({
+					sessionId,
+					messageId: randomUUID(),
+					text: kickoff,
+					origin: { kind: "autonomous" },
+					tenant: encodeChatTurnTenant({
+						orgId,
+						userId: internalServiceUserId,
+						roles: [],
+						authMode: "self_hosted",
 					}),
-				),
+				}),
 			)
 			if (Exit.isFailure(claimed) || claimed.value === undefined) return yield* fail("start_failed")
 			yield* updateReply(orgId, replyId, ["queued"], { status: "running", updatedAt: msToDate(nowMs) })
