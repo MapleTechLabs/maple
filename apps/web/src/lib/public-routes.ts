@@ -20,7 +20,7 @@ import { isSessionlessLabPath } from "@/lab/registry"
  */
 export const isFixturePath = isSessionlessLabPath
 
-const EXACT_PUBLIC_PATHS = new Set(["/sign-in", "/sign-up", "/org-required"])
+const EXACT_PUBLIC_PATHS = new Set(["/sign-in", "/sign-up", "/org-required", "/unsubscribe"])
 
 /**
  * Prefixes whose entire subtree is public.
@@ -30,6 +30,16 @@ const EXACT_PUBLIC_PATHS = new Set(["/sign-in", "/sign-up", "/org-required"])
  * become public.
  */
 const PUBLIC_PREFIXES = ["/share/"]
+
+/**
+ * Public paths that never read org data, so a signed-in reader skips the region
+ * and plan gates too: an email recipient whose org has no plan must still reach them.
+ */
+const ORG_INDEPENDENT_PATHS = new Set(["/unsubscribe"])
+
+export function isOrgIndependentPath(pathname: string): boolean {
+	return isFixturePath(pathname) || ORG_INDEPENDENT_PATHS.has(pathname)
+}
 
 export function isPublicPath(pathname: string): boolean {
 	if (EXACT_PUBLIC_PATHS.has(pathname)) return true

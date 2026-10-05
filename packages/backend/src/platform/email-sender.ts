@@ -18,8 +18,14 @@ const runtime = <A, E>(effect: Effect.Effect<A, E, RuntimeContext>): Effect.Effe
 	Effect.provide(effect, RuntimeContext.phantom)
 
 const toPort = (client: Cloudflare.Email.SendClient): EmailSenderClient => ({
-	send: ({ replyTo, ...message }) =>
-		runtime(client.send(replyTo === undefined ? message : { ...message, replyTo })).pipe(
+	send: ({ replyTo, headers, ...message }) =>
+		runtime(
+			client.send({
+				...message,
+				...(replyTo === undefined ? undefined : { replyTo }),
+				...(headers === undefined ? undefined : { headers: { ...headers } }),
+			}),
+		).pipe(
 			Effect.map((result) => ({ messageId: result.messageId })),
 			Effect.mapError((error) => new EmailSendError({ message: error.message, cause: error.cause })),
 		),

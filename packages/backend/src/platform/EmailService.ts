@@ -7,13 +7,19 @@ class EmailDeliveryError extends Schema.TaggedError<EmailDeliveryError>()(
 	{ message: Schema.String },
 ) {}
 
+export interface EmailSendOptions {
+	readonly replyTo?: string
+	/** Extra MIME headers, e.g. `List-Unsubscribe`. */
+	readonly headers?: Readonly<Record<string, string>>
+}
+
 export interface EmailServiceApi {
 	readonly isConfigured: boolean
 	readonly send: (
 		to: string,
 		subject: string,
 		html: string,
-		replyTo?: string,
+		options?: EmailSendOptions,
 	) => Effect.Effect<void, EmailDeliveryError>
 }
 
@@ -41,7 +47,7 @@ export class EmailService extends Context.Service<EmailService, EmailServiceApi>
 				to: string,
 				subject: string,
 				html: string,
-				replyTo?: string,
+				options?: EmailSendOptions,
 			) {
 				// PII: never stamp recipient/reply-to addresses on spans or logs
 				yield* Effect.annotateCurrentSpan("email.subject", subject)
@@ -63,23 +69,25 @@ export class EmailService extends Context.Service<EmailService, EmailServiceApi>
 					)
 				}
 
-				const result = yield* sender.value.send({ from: fromEmail, to, subject, html, replyTo }).pipe(
-					Effect.mapError(
-						(error) =>
-							new EmailDeliveryError({
-								message: `Cloudflare Email send failed: ${error.message}`,
-							}),
-					),
-					Effect.timeoutOrElse({
-						duration: EMAIL_TIMEOUT,
-						orElse: () =>
-							Effect.fail(
+				const result = yield* sender.value
+					.send({ from: fromEmail, to, subject, html, ...options })
+					.pipe(
+						Effect.mapError(
+							(error) =>
 								new EmailDeliveryError({
-									message: "Cloudflare Email send timed out after 15s",
+									message: `Cloudflare Email send failed: ${error.message}`,
 								}),
-							),
-					}),
-				)
+						),
+						Effect.timeoutOrElse({
+							duration: EMAIL_TIMEOUT,
+							orElse: () =>
+								Effect.fail(
+									new EmailDeliveryError({
+										message: "Cloudflare Email send timed out after 15s",
+									}),
+								),
+						}),
+					)
 
 				yield* Effect.annotateCurrentSpan("email.message_id", result.messageId)
 				yield* Effect.logInfo("Email sent successfully").pipe(
