@@ -32,7 +32,6 @@ type State = { kind: "idle" } | { kind: "pending" } | { kind: "done" } | { kind:
 
 function UnsubscribePage() {
 	const { token } = Route.useSearch()
-	const [state, setState] = useState<State>({ kind: "idle" })
 
 	if (!token) {
 		return (
@@ -45,6 +44,12 @@ function UnsubscribePage() {
 		)
 	}
 
+	// Keyed so a same-route navigation to another email's link starts fresh.
+	return <UnsubscribeConfirm key={token} token={token} />
+}
+
+function UnsubscribeConfirm({ token }: { token: string }) {
+	const [state, setState] = useState<State>({ kind: "idle" })
 	const label = labelForToken(token)
 
 	const unsubscribe = async () => {
