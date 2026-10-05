@@ -12,6 +12,7 @@ import {
 	metricSpark,
 	metricValue,
 	toolDelta,
+	toolMetricLabel,
 	type ToolDelta,
 	type ToolMetric,
 	type ToolPercentile,
@@ -161,6 +162,7 @@ function DurationTile({
 					)
 				}
 				onSelect={() => onSelectMetric("duration")}
+				ariaLabel={toolMetricLabel("duration", percentile)}
 				selected={selected}
 				className="h-full"
 			/>

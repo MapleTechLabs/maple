@@ -55,6 +55,8 @@ interface StatRailItemProps {
 	className?: string
 	/** Extra classes on the value, e.g. a container-query size step-down. */
 	valueClassName?: string
+	/** Accessible name for the selectable tile when the eyebrow alone is ambiguous. */
+	ariaLabel?: string
 }
 
 /**
@@ -84,6 +86,7 @@ export function StatRailItem({
 	disabled,
 	className,
 	valueClassName,
+	ariaLabel,
 }: StatRailItemProps) {
 	const body = (
 		<>
@@ -148,6 +151,7 @@ export function StatRailItem({
 			type="button"
 			disabled={disabled}
 			aria-pressed={selected}
+			aria-label={ariaLabel}
 			onClick={onSelect}
 			className={cn(
 				shell,
