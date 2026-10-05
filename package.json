@@ -49,6 +49,7 @@
 	},
 	"devDependencies": {
 		"@cloudflare/workers-types": "catalog:alchemy",
+		"@effect/platform-node": "catalog:effect",
 		"@effect/tsgo": "0.48.1",
 		"@effect/vitest": "catalog:effect",
 		"@maple/alchemy-portless": "workspace:*",
@@ -93,6 +94,7 @@
 			"@effect/atom-react": "4.0.1",
 			"@effect/language-service": "^0.87.3",
 			"@effect/platform-bun": "4.0.1",
+			"@effect/platform-node": "4.0.1",
 			"@effect/vitest": "4.0.1",
 			"effect": "4.0.1"
 		},
