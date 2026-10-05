@@ -20,7 +20,7 @@ import { isSessionlessLabPath } from "@/lab/registry"
  */
 export const isFixturePath = isSessionlessLabPath
 
-const EXACT_PUBLIC_PATHS = new Set(["/sign-in", "/sign-up", "/org-required"])
+const EXACT_PUBLIC_PATHS = new Set(["/sign-in", "/sign-up", "/org-required", "/unsubscribe"])
 
 /**
  * Prefixes whose entire subtree is public.

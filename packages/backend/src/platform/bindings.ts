@@ -150,6 +150,7 @@ export interface EmailMessage {
 	readonly subject: string
 	readonly html: string
 	readonly replyTo?: string | undefined
+	readonly headers?: Readonly<Record<string, string>> | undefined
 }
 
 export interface EmailSenderClient {

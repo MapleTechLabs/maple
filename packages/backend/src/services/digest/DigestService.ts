@@ -7,6 +7,8 @@ import {
 	DigestRenderError,
 	DigestSubscriptionId,
 	DigestSubscriptionResponse,
+	DigestUnsubscribeTokenInvalidError,
+	EmailUnsubscribeResponse,
 	OrgId,
 	UserId,
 	RoleName,
@@ -40,6 +42,7 @@ import {
 
 import { formatWarehouseDateTime } from "@maple/query-engine"
 import { resolveOrgName } from "./resolve-org-name"
+import { unsubscribeLinks, verifyUnsubscribeToken } from "./unsubscribe-token"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 const SYSTEM_DIGEST_USER = UserId.make("system-digest")
 const ROOT_ROLE = RoleName.make("root")
@@ -287,6 +290,11 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 		const env = yield* Env
 		const warehouse = yield* WarehouseQueryService
 		const edgeCache = yield* EdgeCacheService
+		const linkConfig = {
+			secret: Redacted.value(env.MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY),
+			appBaseUrl: env.MAPLE_APP_BASE_URL,
+			apiBaseUrl: env.MAPLE_API_BASE_URL,
+		}
 
 		const getSubscription = Effect.fn("DigestService.getSubscription")(function* (
 			orgId: OrgId,
@@ -417,6 +425,40 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 						),
 				)
 				.pipe(Effect.mapError(toPersistenceError))
+		})
+
+		/**
+		 * The login-free unsubscribe behind every digest email's link and one-click header.
+		 * Records the opt-out the same way the settings toggle does, so the Clerk sweep keeps it.
+		 */
+		const unsubscribeByToken = Effect.fn("DigestService.unsubscribeByToken")(function* (token: string) {
+			const verified = verifyUnsubscribeToken(
+				Redacted.value(env.MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY),
+				token,
+			)
+			if (verified === undefined) {
+				return yield* new DigestUnsubscribeTokenInvalidError({
+					message: "This unsubscribe link is invalid",
+				})
+			}
+			yield* Effect.annotateCurrentSpan("maple.email.unsubscribe_kind", verified.kind)
+
+			const now = msToDate(yield* Clock.currentTimeMillis)
+			// Idempotent: a repeat click (or a deleted row) changes nothing and still succeeds.
+			yield* database
+				.execute((db) =>
+					db
+						.update(digestSubscriptions)
+						.set(
+							verified.kind === "digest"
+								? { enabled: false, optedOutAt: now, updatedAt: now }
+								: { webAnalyticsEnabled: false, webAnalyticsOptedOutAt: now, updatedAt: now },
+						)
+						.where(eq(digestSubscriptions.id, verified.subscriptionId)),
+				)
+				.pipe(Effect.mapError(toPersistenceError))
+
+			return new EmailUnsubscribeResponse({ kind: verified.kind })
 		})
 
 		const generateDigestData = Effect.fn("DigestService.generateDigestData")(function* (
@@ -792,7 +834,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 				ingestion: { ...curUsage, approximate: isScoped },
 				baseUrl: env.MAPLE_APP_BASE_URL,
 				dashboardUrl: `${env.MAPLE_APP_BASE_URL}`,
-				unsubscribeUrl: `${env.MAPLE_APP_BASE_URL}/settings/notifications`,
+				unsubscribeUrl: `${env.MAPLE_APP_BASE_URL}/settings?tab=notifications`,
 			}
 
 			yield* Effect.annotateCurrentSpan("totalRequests", totalRequests)
@@ -1156,13 +1198,19 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 
 							return []
 						}
-						const html = yield* renderDigestHtml(props)
 						const subject = deriveDigestStatus(props).subject
 
 						const sendResults = yield* Effect.forEach(
 							claimedSubs,
 							(sub) =>
-								email.send(sub.email, subject, html).pipe(
+								Effect.gen(function* () {
+									const links = unsubscribeLinks(linkConfig, "digest", sub.id)
+									const html = yield* renderDigestHtml({
+										...props,
+										unsubscribeUrl: links.pageUrl,
+									})
+									yield* email.send(sub.email, subject, html, { headers: links.headers })
+								}).pipe(
 									Effect.tap(() =>
 										Effect.gen(function* () {
 											const lastSentAt = yield* Clock.currentTimeMillis
@@ -1251,6 +1299,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 			getSubscription,
 			upsertSubscription,
 			deleteSubscription,
+			unsubscribeByToken,
 			// Exposed so the shape of a digest can be asserted directly rather than
 			// through rendered HTML.
 			generateDigestData,

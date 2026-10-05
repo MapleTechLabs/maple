@@ -85,6 +85,41 @@ export class DigestRenderError extends Schema.TaggedError<DigestRenderError>()(
 	{ httpApiStatus: 500 },
 ) {}
 
+export class DigestUnsubscribeTokenInvalidError extends Schema.TaggedError<DigestUnsubscribeTokenInvalidError>()(
+	"@maple/http/errors/DigestUnsubscribeTokenInvalidError",
+	{
+		message: Schema.String,
+	},
+	{ httpApiStatus: 400 },
+) {}
+
+export const EmailUnsubscribeKind = Schema.Literals(["digest", "web-analytics"])
+
+const EmailUnsubscribeQuery = Schema.Struct({
+	token: Schema.String.check(Schema.isMaxLength(256)),
+})
+
+export class EmailUnsubscribeResponse extends Schema.Class<EmailUnsubscribeResponse>(
+	"EmailUnsubscribeResponse",
+)({
+	kind: EmailUnsubscribeKind,
+}) {}
+
+/**
+ * Unauthenticated: the signed token in an email's unsubscribe link is the credential.
+ * Mail clients POST here directly for RFC 8058 one-click (`List-Unsubscribe-Post`),
+ * and the web `/unsubscribe` confirm page calls it too.
+ */
+export class EmailPublicApiGroup extends HttpApiGroup.make("emailPublic")
+	.add(
+		HttpApiEndpoint.post("unsubscribe", "/unsubscribe", {
+			query: EmailUnsubscribeQuery,
+			success: EmailUnsubscribeResponse,
+			error: [DigestUnsubscribeTokenInvalidError, DigestPersistenceError],
+		}),
+	)
+	.prefix("/api/email") {}
+
 export class DigestApiGroup extends HttpApiGroup.make("digest")
 	.add(
 		HttpApiEndpoint.get("getSubscription", "/", {
