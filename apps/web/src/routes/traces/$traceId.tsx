@@ -312,7 +312,13 @@ function TraceDetailContent({
 											className="gap-3"
 										/>
 									</DashboardLayout.Title>
-								) : undefined
+								) : (
+									// The breadcrumb only carries the short trace id; the root span name
+									// is what identifies the trace.
+									<DashboardLayout.Title title={rootSpan?.spanName}>
+										{rootSpan?.spanName ?? "Unknown Trace"}
+									</DashboardLayout.Title>
+								)
 							}
 						>
 							<div className="flex items-center gap-2">
