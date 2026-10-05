@@ -26,14 +26,13 @@ import type { DispatchContext, DispatchResult } from "./context"
 export const dispatchDelivery = (
 	context: DispatchContext,
 	payloadJson: string,
-	fetchFn: typeof fetch,
 	timeoutMs: number,
 	linkUrl: string,
 	chatUrl: string,
 	/** `sendEmail` (the platform email channel) and `postChatAlert` (a chat connector). */
 	deps: EffectTransportDeps,
 ): Effect.Effect<DispatchResult, AlertDeliveryFailure, HttpClient.HttpClient> => {
-	const runtime: TransportRuntime = { fetchFn, timeoutMs }
+	const runtime: TransportRuntime = { timeoutMs }
 	/**
 	 * Resolved once here rather than by each provider: the template is a
 	 * property of the rule and the destination TYPE, not of the transport's

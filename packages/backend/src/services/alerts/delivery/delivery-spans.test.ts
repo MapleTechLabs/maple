@@ -8,9 +8,19 @@ import { FetchHttpClient } from "effect/http"
 import type { EffectTransportDeps } from "./Transport"
 import type { DispatchContext } from "./context"
 
-/** The runtime provides the HTTP client; each test passes its own `fetch`. */
-const dispatchDelivery = (...args: Parameters<typeof dispatchDeliveryRaw>) =>
-	dispatchDeliveryRaw(...args).pipe(Effect.provide(FetchHttpClient.layer))
+type DispatchArgs = Parameters<typeof dispatchDeliveryRaw>
+
+/** The runtime provides the HTTP client; each test fakes the wire as `FetchHttpClient.Fetch`. */
+const dispatchDelivery = (
+	context: DispatchArgs[0],
+	payloadJson: DispatchArgs[1],
+	fetchFn: typeof fetch,
+	...rest: [DispatchArgs[2], DispatchArgs[3], DispatchArgs[4], DispatchArgs[5]]
+) =>
+	dispatchDeliveryRaw(context, payloadJson, ...rest).pipe(
+		Effect.provide(FetchHttpClient.layer),
+		Effect.provideService(FetchHttpClient.Fetch, fetchFn),
+	)
 
 /**
  * The outbound provider call must be a **Client-kind span carrying

@@ -1,4 +1,5 @@
 import { Duration, Effect } from "effect"
+import { HttpClient, HttpClientRequest } from "effect/http"
 import { displayGroupKey, truncate } from "../../alert-formatting"
 import type { HttpTransport, RenderInput, SecretConfigOf } from "../Transport"
 
@@ -84,25 +85,27 @@ export type PagerDutyKeyVerification =
  */
 export const verifyPagerDutyRoutingKey = (
 	integrationKey: string,
-	fetchFn: typeof fetch,
 	timeoutMs: number,
 	dedupKey: string,
-): Effect.Effect<PagerDutyKeyVerification> =>
-	Effect.tryPromise(() =>
-		fetchFn("https://events.pagerduty.com/v2/enqueue", {
-			method: "POST",
-			headers: { "content-type": "application/json" },
-			body: JSON.stringify({
-				routing_key: integrationKey,
-				event_action: "resolve",
-				dedup_key: dedupKey,
-			}),
-		}),
+): Effect.Effect<PagerDutyKeyVerification, never, HttpClient.HttpClient> =>
+	HttpClient.execute(
+		HttpClientRequest.post("https://events.pagerduty.com/v2/enqueue").pipe(
+			HttpClientRequest.bodyText(
+				JSON.stringify({
+					routing_key: integrationKey,
+					event_action: "resolve",
+					dedup_key: dedupKey,
+				}),
+				"application/json",
+			),
+		),
 	).pipe(
 		Effect.flatMap((response) => {
-			if (response.ok) return Effect.succeed<PagerDutyKeyVerification>({ status: "valid" })
+			if (response.status >= 200 && response.status < 300) {
+				return Effect.succeed<PagerDutyKeyVerification>({ status: "valid" })
+			}
 			if (response.status === 400) {
-				return Effect.promise(() => response.text().catch(() => "")).pipe(
+				return Effect.orElseSucceed(response.text, () => "").pipe(
 					Effect.map((body): PagerDutyKeyVerification => {
 						const reason = truncate(body.trim().replace(/\s+/g, " "), 500)
 						return { status: "invalid", reason: reason || "Invalid routing key" }

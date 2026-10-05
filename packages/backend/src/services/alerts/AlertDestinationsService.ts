@@ -442,10 +442,9 @@ export class AlertDestinationsService extends Context.Service<
 			}
 			const result = yield* verifyPagerDutyRoutingKey(
 				integrationKey,
-				runtime.fetch,
 				runtime.deliveryTimeoutMs(),
 				`maple-keycheck-${runtime.makeUuid()}`,
-			)
+			).pipe(Effect.provideService(HttpClient.HttpClient, httpClient))
 			if (result.status === "invalid") {
 				return yield* Effect.fail(
 					makeValidationError(`PagerDuty rejected this routing key: ${result.reason}`),
@@ -463,9 +462,8 @@ export class AlertDestinationsService extends Context.Service<
 			const result = yield* verifyTelegramCredentials(
 				botToken,
 				chatId,
-				runtime.fetch,
 				runtime.deliveryTimeoutMs(),
-			)
+			).pipe(Effect.provideService(HttpClient.HttpClient, httpClient))
 			if (result.status === "invalid") {
 				return yield* Effect.fail(makeValidationError(result.reason))
 			}
@@ -482,7 +480,9 @@ export class AlertDestinationsService extends Context.Service<
 			if (!TELEGRAM_BOT_TOKEN_PATTERN.test(trimmed)) {
 				return yield* Effect.fail(makeValidationError(TELEGRAM_MALFORMED_TOKEN_MESSAGE))
 			}
-			const result = yield* fetchTelegramChats(trimmed, runtime.fetch, runtime.deliveryTimeoutMs())
+			const result = yield* fetchTelegramChats(trimmed, runtime.deliveryTimeoutMs()).pipe(
+				Effect.provideService(HttpClient.HttpClient, httpClient),
+			)
 			if (result.status === "invalid") return yield* Effect.fail(makeValidationError(result.reason))
 			return result.chats
 		})

@@ -211,7 +211,6 @@ const make: Effect.Effect<
 		const result = yield* dispatchDeliveryImpl(
 			context,
 			payloadJson,
-			globalThis.fetch,
 			DELIVERY_TIMEOUT_MS,
 			request.linkUrl,
 			chatUrl,

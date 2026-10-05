@@ -113,7 +113,6 @@ const makeHarness = () => {
 	const runtimeLive = Layer.succeed(AlertRuntime, {
 		now: Effect.sync(() => Date.now()),
 		makeUuid: () => crypto.randomUUID(),
-		fetch: globalThis.fetch,
 		deliveryTimeoutMs: () => 15_000,
 	})
 	const hazelOAuthLive = HazelOAuthService.layer.pipe(Layer.provide(Layer.mergeAll(envLive, testDb.layer)))

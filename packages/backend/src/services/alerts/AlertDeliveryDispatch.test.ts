@@ -23,9 +23,19 @@ import { resolveSignalDisplay } from "./alert-signal-display"
 import { renderTemplate } from "./alert-templating/renderer"
 import { DEFAULT_BODY_TEMPLATE, DEFAULT_TITLE_TEMPLATE } from "./alert-templating/defaultTemplates"
 
-/** The runtime provides the HTTP client; each test passes its own `fetch`. */
-const dispatchDelivery = (...args: Parameters<typeof dispatchDeliveryRaw>) =>
-	dispatchDeliveryRaw(...args).pipe(Effect.provide(FetchHttpClient.layer))
+type DispatchArgs = Parameters<typeof dispatchDeliveryRaw>
+
+/** The runtime provides the HTTP client; each test fakes the wire as `FetchHttpClient.Fetch`. */
+const dispatchDelivery = (
+	context: DispatchArgs[0],
+	payloadJson: DispatchArgs[1],
+	fetchFn: typeof fetch,
+	...rest: [DispatchArgs[2], DispatchArgs[3], DispatchArgs[4], DispatchArgs[5]]
+) =>
+	dispatchDeliveryRaw(context, payloadJson, ...rest).pipe(
+		Effect.provide(FetchHttpClient.layer),
+		Effect.provideService(FetchHttpClient.Fetch, fetchFn),
+	)
 
 /** Chat posts must not happen for these destinations. */
 const failingChatPost = () =>
@@ -278,11 +288,11 @@ describe("dispatchDelivery", () => {
 		}),
 	)
 
-	it.effect("calls an unguarded transport's fetch detached from the runtime object", () =>
+	it.effect("calls an unguarded transport's fetch as a bare function", () =>
 		Effect.gen(function* () {
-			// Regression: the unguarded transports used to call `runtime.fetchFn(...)`,
+			// Regression: the unguarded transports once called `runtime.fetchFn(...)`,
 			// a method call that hands workerd's global `fetch` a `this` of the
-			// runtime object — "Illegal invocation", every such delivery dead.
+			// runtime object: "Illegal invocation", every such delivery dead.
 			// A `function` (not an arrow) is what makes `this` observable here.
 			let called = false
 			let receiver: typeof globalThis | undefined
