@@ -714,19 +714,20 @@ function BranchSelector({
 		setTracked(repo.trackedBranch ?? repo.branches.find((b) => b.isDefault)?.name ?? null)
 	}, [repo.trackedBranch, repo.branches])
 
-	// Nothing to offer until branches have synced.
-	if (repo.branches.length === 0) return null
-
-	const filtered = query
-		? repo.branches.filter((b) => b.name.toLowerCase().includes(query.toLowerCase()))
-		: repo.branches
-
+	// Every hook runs before the early return: a new repo syncs in with zero branches.
 	const [commit, saving] = useAsyncAction(async (name: string) => {
 		const prev = tracked
 		setTracked(name)
 		setOpen(false)
 		await onSelect(name).catch(() => setTracked(prev)) // revert on failure
 	})
+
+	// Nothing to offer until branches have synced.
+	if (repo.branches.length === 0) return null
+
+	const filtered = query
+		? repo.branches.filter((b) => b.name.toLowerCase().includes(query.toLowerCase()))
+		: repo.branches
 
 	function pick(name: string) {
 		if (name === tracked) {
