@@ -106,9 +106,9 @@ export function useOAuthPopupFlow({
 	 */
 	onPoll?: () => void
 	closeGraceMs?: number
-}): Omit<IntegrationConnect, "connect"> & {
-	/** `label` overrides the provider name for this attempt, for a flow that serves several. */
-	readonly connect: (label?: string) => void
+}): IntegrationConnect & {
+	/** Like `connect`, naming a different provider for this attempt, for a flow that serves several. */
+	readonly connectAs: (label: string) => void
 	readonly closePopup: () => void
 } {
 	const [busy, setBusy] = useState(false)
@@ -199,7 +199,9 @@ export function useOAuthPopupFlow({
 	}
 
 	return {
-		connect: (override?: string) => void connect(override ?? label),
+		// Takes no argument: cards pass it straight to onClick, which would hand it the event.
+		connect: () => void connect(label),
+		connectAs: (shown: string) => void connect(shown),
 		busy,
 		popupActive: popupOpen || inCloseGrace,
 		closePopup,

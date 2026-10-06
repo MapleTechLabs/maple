@@ -96,7 +96,7 @@ export function useChatWorkspaceConnect({
 		connect: (connector: V2ChatConnector) => {
 			startingRef.current = connector.id
 			setStarting(connector.id)
-			flow.connect(connector.name)
+			flow.connectAs(connector.name)
 		},
 		/** The connector whose popup is out, if any. */
 		waitingFor: flow.busy || flow.popupActive ? starting : null,
