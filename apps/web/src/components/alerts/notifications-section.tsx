@@ -12,9 +12,9 @@ import { Label } from "@maple/ui/components/ui/label"
 import { Textarea } from "@maple/ui/components/ui/textarea"
 
 import {
-	AlertMultiSegmentedSelect,
-	type AlertSegmentedOption,
-} from "@/components/alerts/alert-segmented-select"
+	MultiSegmentedSelect,
+	type SegmentedOption,
+} from "@/components/common/segmented-select"
 import { destinationProvider, ProviderLogo } from "@/components/alerts/destination-provider"
 import { SectionHeader } from "@/components/layout/section-header"
 import type { RuleFormState } from "@/lib/alerts/form-utils"
@@ -114,7 +114,7 @@ export function NotificationsSection({
 						)}
 					</div>
 				) : (
-					<AlertMultiSegmentedSelect<string>
+					<MultiSegmentedSelect<string>
 						options={
 							destinations.map((d) => ({
 								value: d.id as string,
@@ -134,7 +134,7 @@ export function NotificationsSection({
 										</span>
 									</span>
 								),
-							})) satisfies AlertSegmentedOption<string>[]
+							})) satisfies SegmentedOption<string>[]
 						}
 						value={form.destinationIds as string[]}
 						onChange={(values) =>

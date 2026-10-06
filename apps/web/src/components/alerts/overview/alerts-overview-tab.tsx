@@ -7,7 +7,7 @@ import { toastManager } from "@maple/ui/components/ui/toast"
 import type { AlertDestinationDocument, AlertRuleDocument } from "@maple/domain/http"
 import { Unitflow, View } from "@maple/unitflow/react"
 
-import { AlertSegmentedSelect } from "@/components/alerts/alert-segmented-select"
+import { SegmentedSelect } from "@/components/common/segmented-select"
 import { AlertStatStrip } from "@/components/alerts/alert-stat-card"
 import { AlertTagControls } from "@/components/alerts/alert-tag-controls"
 import { ActiveIncidentsTable } from "@/components/alerts/overview/active-incidents-table"
@@ -18,7 +18,7 @@ import {
 } from "@/components/alerts/overview/alerts-health-summary"
 import { RulesOverviewTable } from "@/components/alerts/overview/rules-overview-table"
 import { MagnifierIcon, XmarkIcon } from "@/components/icons"
-import { getExitErrorMessage } from "@/lib/alerts/form-utils"
+import { getExitErrorMessage } from "@/lib/error-toast"
 import { needsAttention } from "@/lib/alerts/rule-status"
 import {
 	filterByTags,
@@ -394,7 +394,7 @@ const AlertsOverviewContent = memo(function AlertsOverviewContent({
 			{/* Slim summary strip — a secondary glance beneath the rules list */}
 			<div className="space-y-2">
 				<div className="flex justify-end">
-					<AlertSegmentedSelect<"24h" | "7d" | "30d">
+					<SegmentedSelect<"24h" | "7d" | "30d">
 						options={[
 							{ value: "24h", label: "24h" },
 							{ value: "7d", label: "7d" },

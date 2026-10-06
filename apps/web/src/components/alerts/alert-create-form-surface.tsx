@@ -29,12 +29,12 @@ import {
 	buildRuleCreateParamsV2,
 	buildRuleTestParamsV2,
 	deriveRuleQueryIssues,
-	getExitErrorMessage,
 	isRangeComparator,
 	isRulePreviewReady,
 	signalLabels,
 	type RuleFormState,
 } from "@/lib/alerts/form-utils"
+import { getExitErrorMessage } from "@/lib/error-toast"
 import { applyTemplate } from "@/lib/alerts/templates"
 import type { WidgetAlertPrefillNotice } from "@/lib/alerts/widget-prefill"
 import { Result, useAtomSet } from "@/lib/effect-atom"

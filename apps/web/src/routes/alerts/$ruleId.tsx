@@ -23,7 +23,7 @@ import { SIGNAL_SOURCE_LABEL, type SignalSource } from "@/lib/alerts/chart-serie
 import { AlertStatusBadge } from "@/components/alerts/alert-status-badge"
 import { AlertSeverityBadge } from "@/components/alerts/alert-severity-badge"
 import { AlertStatStrip } from "@/components/alerts/alert-stat-card"
-import { AlertSegmentedSelect } from "@/components/alerts/alert-segmented-select"
+import { SegmentedSelect } from "@/components/common/segmented-select"
 import {
 	signalLabels,
 	comparatorLabels,
@@ -32,10 +32,10 @@ import {
 	formatAlertDateTimeFull,
 	formatAlertDuration,
 	computeIncidentStats,
-	getExitErrorMessage,
 	v2CheckToDocument,
 	v2DeliveryToDocument,
 } from "@/lib/alerts/form-utils"
+import { getExitErrorMessage } from "@/lib/error-toast"
 import { RuleDiagnosisPanel } from "@/components/alerts/rule-detail/rule-diagnosis-panel"
 import { useAlertRuleStates } from "@/hooks/use-alert-rule-states"
 import {
@@ -660,7 +660,7 @@ function RuleDetailContent() {
 												{SIGNAL_SOURCE_DESCRIPTION[signalSource]}
 											</p>
 										</div>
-										<AlertSegmentedSelect<SignalSource>
+										<SegmentedSelect<SignalSource>
 											options={[
 												{
 													value: "preview",
@@ -965,7 +965,7 @@ function RuleDetailContent() {
 													{stats.totalTriggered} total triggers
 												</p>
 											</div>
-											<AlertSegmentedSelect<"all" | "open" | "resolved">
+											<SegmentedSelect<"all" | "open" | "resolved">
 												options={[
 													{ value: "all", label: "All" },
 													{ value: "open", label: "Fired" },
@@ -1463,7 +1463,7 @@ function ChecksPanel({
 									: `All ${totals.total} evaluation${totals.total === 1 ? "" : "s"} in this window.`}
 						</p>
 					</div>
-					<AlertSegmentedSelect<CheckStatusFilter>
+					<SegmentedSelect<CheckStatusFilter>
 						options={[
 							{ value: "all", label: "All" },
 							{ value: "breached", label: "Breached" },

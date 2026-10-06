@@ -28,7 +28,7 @@ import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-a
 import { retainedQuery } from "@/lib/services/common/atom-client"
 import { MapleApiV2AtomClient, retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { isClerkAuthEnabled } from "@/lib/services/common/auth-mode"
-import { getExitErrorMessage } from "@/lib/alerts/form-utils"
+import { getExitErrorMessage } from "@/lib/error-toast"
 import { catalogEntry, chatIntegrationId, IntegrationIconPlate } from "./integration-catalog"
 import {
 	IntegrationEmpty,

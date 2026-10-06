@@ -26,9 +26,9 @@ import { SettingRow } from "@maple/ui/components/ui/setting-row"
 import { Switch } from "@maple/ui/components/ui/switch"
 
 import {
-	AlertMultiSegmentedSelect,
-	type AlertSegmentedOption,
-} from "@/components/alerts/alert-segmented-select"
+	MultiSegmentedSelect,
+	type SegmentedOption,
+} from "@/components/common/segmented-select"
 import { destinationProvider, ProviderLogo } from "@/components/alerts/destination-provider"
 import { SeverityBadge, SEVERITY_ORDER } from "@/components/errors/severity-badge"
 import { DocsLink } from "@/components/common/docs-link"
@@ -186,7 +186,7 @@ export function EscalationPolicySection({ isAdmin }: { isAdmin: boolean }) {
 									</span>
 								</span>
 							),
-						})) satisfies AlertSegmentedOption<string>[]
+						})) satisfies SegmentedOption<string>[]
 						return (
 							<div className="space-y-4">
 								{SEVERITY_ORDER.map((severity) => (
@@ -226,7 +226,7 @@ export function EscalationPolicySection({ isAdmin }: { isAdmin: boolean }) {
 												</Select>
 											</div>
 										</div>
-										<AlertMultiSegmentedSelect<string>
+										<MultiSegmentedSelect<string>
 											options={destinationOptions}
 											value={rules[severity].destinationIds}
 											onChange={(values) =>

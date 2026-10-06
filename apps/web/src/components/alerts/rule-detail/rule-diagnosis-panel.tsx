@@ -21,7 +21,7 @@ import {
 } from "@/lib/alerts/diagnosis"
 import { worstState } from "@/lib/alerts/rule-status"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
-import { AlertSegmentedSelect } from "@/components/alerts/alert-segmented-select"
+import { SegmentedSelect } from "@/components/common/segmented-select"
 
 const STATUS_ICON: Record<DiagnosisStageStatus, { className: string }> = {
 	pass: { className: "text-success" },
@@ -144,7 +144,7 @@ export function RuleDiagnosisPanel({
 							{/* Group keys are opaque ids (often UUID-long), so the track
 							    overflows its row — scroll it instead of clipping. */}
 							<div className="-my-1 min-w-0 flex-1 overflow-x-auto py-1">
-								<AlertSegmentedSelect
+								<SegmentedSelect
 									className="w-max"
 									value={activeGroup ?? groupKeys[0]!}
 									onChange={(value) => setSelectedGroup(value)}

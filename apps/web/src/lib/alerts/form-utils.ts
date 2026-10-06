@@ -34,8 +34,7 @@ import type {
 	V2AlertRuleTestParams,
 } from "@maple/domain/http/v2"
 import type { QueryEngineAlertReducer } from "@maple/query-engine"
-import { Exit, Schema } from "effect"
-import { errorMessage } from "@/lib/error-toast"
+import { Schema } from "effect"
 import {
 	buildTimeseriesQuerySpec,
 	createQueryDraft,
@@ -144,11 +143,6 @@ export const comparatorLabels: Record<AlertComparator, string> = {
 /** Returns true for comparators that need a second (upper) threshold. */
 export const isRangeComparator = (c: AlertComparator): c is "between" | "not_between" =>
 	c === "between" || c === "not_between"
-
-export function getExitErrorMessage(exit: unknown, fallback: string): string {
-	if (!Exit.isExit(exit) || Exit.isSuccess(exit)) return fallback
-	return errorMessage(exit, fallback)
-}
 
 export function formatSignalValue(signalType: AlertSignalType, value: number | null): string {
 	if (value == null || Number.isNaN(value)) return "n/a"

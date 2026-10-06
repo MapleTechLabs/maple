@@ -4,7 +4,7 @@ import { ToggleGroup, ToggleGroupItem } from "@maple/ui/components/ui/toggle-gro
 import { cn } from "@maple/ui/lib/utils"
 import { CheckIcon } from "@/components/icons"
 
-export type AlertSegmentedOption<T extends string> = {
+export type SegmentedOption<T extends string> = {
 	value: T
 	label: ReactNode
 	icon?: ReactNode
@@ -15,7 +15,7 @@ type Size = "sm" | "default"
 
 /* The shared segmented control (a recessed track with one raised pill — see
    packages/ui toggle-group.tsx) plus a sliding shared-layout indicator. */
-export function AlertSegmentedSelect<T extends string>({
+export function SegmentedSelect<T extends string>({
 	options,
 	value,
 	onChange,
@@ -23,7 +23,7 @@ export function AlertSegmentedSelect<T extends string>({
 	className,
 	"aria-label": ariaLabel,
 }: {
-	options: ReadonlyArray<AlertSegmentedOption<T>>
+	options: ReadonlyArray<SegmentedOption<T>>
 	value: T
 	onChange: (value: T) => void
 	size?: Size
@@ -63,7 +63,7 @@ export function AlertSegmentedSelect<T extends string>({
 						{selected && (
 							<motion.span
 								aria-hidden
-								layoutId={`alert-seg-pill-${pillId}`}
+								layoutId={`seg-pill-${pillId}`}
 								className="-z-10 absolute inset-0 rounded-md bg-background shadow-sm ring-1 ring-border/70 dark:bg-input dark:ring-white/10"
 								transition={
 									reduceMotion
@@ -81,7 +81,7 @@ export function AlertSegmentedSelect<T extends string>({
 	)
 }
 
-export function AlertMultiSegmentedSelect<T extends string>({
+export function MultiSegmentedSelect<T extends string>({
 	options,
 	value,
 	onChange,
@@ -89,7 +89,7 @@ export function AlertMultiSegmentedSelect<T extends string>({
 	className,
 	"aria-label": ariaLabel,
 }: {
-	options: ReadonlyArray<AlertSegmentedOption<T>>
+	options: ReadonlyArray<SegmentedOption<T>>
 	value: readonly T[]
 	onChange: (value: T[]) => void
 	size?: Size

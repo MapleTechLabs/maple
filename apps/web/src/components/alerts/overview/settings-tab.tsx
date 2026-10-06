@@ -19,11 +19,11 @@ import {
 	eventTypeMeta,
 	formatAlertDateTime,
 	formatAlertTime,
-	getExitErrorMessage,
 	groupDeliveryEventsByDay,
 	v2DeliveryToDocument,
 	type DestinationFormState,
 } from "@/lib/alerts/form-utils"
+import { getExitErrorMessage } from "@/lib/error-toast"
 import { publicError } from "@/lib/error-messages"
 import { useAlertDestinationsList } from "@/hooks/use-alerts-list"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"

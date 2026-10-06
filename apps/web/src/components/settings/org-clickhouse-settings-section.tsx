@@ -1,9 +1,8 @@
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { useEffect, useMemo, useRef, useState } from "react"
-import { Exit, Option } from "effect"
+import { Exit } from "effect"
 import { toastManager } from "@maple/ui/components/ui/toast"
 import { Spinner } from "@maple/ui/components/ui/spinner"
-import { displayError } from "@/lib/error-messages"
 import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
 
 import { Button } from "@maple/ui/components/ui/button"
@@ -33,13 +32,7 @@ import {
 import { MapleApiAtomClient, retainedQuery } from "@/lib/services/common/atom-client"
 import { OrgClickHouseSettingsUpsertRequest } from "@maple/domain/http"
 import { DataPlatformUsageSection } from "@/components/settings/data-platform-usage-section"
-
-function getExitErrorMessage(exit: Exit.Exit<unknown, unknown>, fallback: string): string {
-	if (Exit.isSuccess(exit)) return fallback
-	const failure = Option.getOrUndefined(Exit.findErrorOption(exit))
-	const formatted = displayError(failure ?? exit)
-	return formatted.message || formatted.title || fallback
-}
+import { getExitErrorMessage } from "@/lib/error-toast"
 
 const syncDateFormatter = new Intl.DateTimeFormat("en-US", {
 	month: "short",

@@ -18,7 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@maple/ui/components/ui/switch"
 import { cn } from "@maple/ui/lib/utils"
 
-import { AlertSegmentedSelect } from "@/components/alerts/alert-segmented-select"
+import { SegmentedSelect } from "@/components/common/segmented-select"
 import { SectionHeader } from "@/components/layout/section-header"
 import { QueryPanel } from "@/components/dashboard-builder/config/query-panel"
 import { RawSqlEditorPanel } from "@/components/dashboard-builder/config/raw-sql-editor-panel"
@@ -213,7 +213,7 @@ export function SignalAndThresholdSection({
 
 			<div className="space-y-4">
 				{/* Tier 1: signal kind. Always visible. */}
-				<AlertSegmentedSelect<SignalKind>
+				<SegmentedSelect<SignalKind>
 					options={SIGNAL_KIND_OPTIONS}
 					value={kind}
 					onChange={setKind}
