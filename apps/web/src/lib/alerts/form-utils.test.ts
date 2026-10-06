@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import { Schema } from "effect"
 import {
 	AlertDeliveryEventId,
+	AlertDestinationDocument,
 	AlertDestinationId,
 	AlertIncidentId,
 	AlertRuleId,
@@ -19,6 +20,7 @@ import {
 	domainThresholdToForm,
 	formThresholdToDomain,
 	normalizeRuleQueryDraft,
+	pickDefaultDestination,
 	suggestedDestinationName,
 	rawSqlHasValueColumn,
 	v2CheckToDocument,
@@ -424,5 +426,30 @@ describe("suggestedDestinationName", () => {
 			"Webhook",
 		)
 		expect(suggestedDestinationName(defaultDestinationForm("pagerduty"))).toBe("PagerDuty")
+	})
+})
+
+describe("pickDefaultDestination", () => {
+	const a = AlertDestinationId.make("00000000-0000-4000-8000-0000000000a1")
+	const b = AlertDestinationId.make("00000000-0000-4000-8000-0000000000b2")
+	const c = AlertDestinationId.make("00000000-0000-4000-8000-0000000000c3")
+	const live = (id: typeof a) => ({ id, enabled: true, disabledAt: null })
+
+	it("picks the only usable destination even when no rule uses it", () => {
+		expect(pickDefaultDestination([live(a), { id: b, enabled: false, disabledAt: null }], [])).toBe(a)
+	})
+
+	it("picks the usable destination the most rules notify", () => {
+		const rules = [{ destinationIds: [a, b] }, { destinationIds: [b] }, { destinationIds: [c] }]
+		expect(pickDefaultDestination([live(a), live(b), live(c)], rules)).toBe(b)
+	})
+
+	it("skips auto-disabled destinations and picks nothing when none is in use", () => {
+		const disabledAt = Schema.decodeUnknownSync(AlertDestinationDocument.fields.createdAt)(
+			"2026-10-06T00:00:00.000Z",
+		)
+		const disabled = { id: b, enabled: true, disabledAt }
+		expect(pickDefaultDestination([live(a), disabled], [{ destinationIds: [b] }])).toBe(a)
+		expect(pickDefaultDestination([live(a), live(c)], [])).toBeNull()
 	})
 })

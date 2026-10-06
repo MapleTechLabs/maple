@@ -3,11 +3,7 @@ import { Spinner } from "@maple/ui/components/ui/spinner"
 import { useState, type Dispatch, type SetStateAction } from "react"
 import { useUser } from "@clerk/clerk-react"
 
-import {
-	ALERT_TEMPLATE_VARIABLES,
-	type AlertDestinationDocument,
-	type AlertDestinationType,
-} from "@maple/domain/http"
+import { ALERT_TEMPLATE_VARIABLES, type AlertDestinationDocument } from "@maple/domain/http"
 import { Button } from "@maple/ui/components/ui/button"
 import { Card } from "@maple/ui/components/ui/card"
 import {
@@ -24,8 +20,8 @@ import { Label } from "@maple/ui/components/ui/label"
 import { Textarea } from "@maple/ui/components/ui/textarea"
 
 import {
-	DESTINATION_TYPES,
 	destinationProvider,
+	destinationTypesFor,
 	ProviderLogo,
 } from "@/components/alerts/destination-provider"
 import { useChatConnectors, useChatWorkspaceConnect } from "@/components/alerts/use-chat-workspaces"
@@ -242,9 +238,7 @@ function AddDestinationMenu({
 		onLinked: (workspace) => onAddDestination?.(chatDestinationForm(workspace.connector, workspace.id)),
 	})
 	const discordLinked = connectors.some((c) => c.id === "discord" && c.workspaces.length > 0)
-	const newTypes: ReadonlyArray<AlertDestinationType> = discordLinked
-		? [...DESTINATION_TYPES, "discord"]
-		: ["discord", ...DESTINATION_TYPES]
+	const newTypes = destinationTypesFor(discordLinked)
 	// The trigger previews where alerts can go: chat platforms first, then the other providers.
 	const previewChat = connectors.filter(
 		(c) => c.workspaces.length > 0 || (c.available && c.id !== "discord"),

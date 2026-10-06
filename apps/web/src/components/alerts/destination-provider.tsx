@@ -215,6 +215,13 @@ export const DESTINATION_TYPES: ReadonlyArray<AlertDestinationType> = [
 	"hazel-oauth",
 ]
 
+/**
+ * The provider types to offer, given whether the Discord bot is linked: Discord shows once, as the
+ * webhook type up front when there is no bot, or last (as the "Discord webhook") beside the bot.
+ */
+export const destinationTypesFor = (discordLinked: boolean): ReadonlyArray<AlertDestinationType> =>
+	discordLinked ? [...DESTINATION_TYPES, "discord"] : ["discord", ...DESTINATION_TYPES]
+
 interface ProviderLogoProps {
 	type: AlertDestinationType
 	/** For a `chat` destination, the connector whose mark to draw. */

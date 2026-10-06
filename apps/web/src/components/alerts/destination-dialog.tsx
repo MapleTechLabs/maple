@@ -12,7 +12,7 @@ import {
 import {
 	chatDestinationProvider,
 	destinationProvider,
-	DESTINATION_TYPES,
+	destinationTypesFor,
 	PROVIDERS,
 	ProviderLogo,
 	type DestinationProvider,
@@ -604,9 +604,7 @@ function ProviderPicker({
 		onLinked: (workspace) => onFormChange(() => chatDestinationForm(workspace.connector, workspace.id)),
 	})
 	const discordLinked = connectors.some((c) => c.id === "discord" && c.workspaces.length > 0)
-	const types: ReadonlyArray<AlertDestinationType> = discordLinked
-		? [...DESTINATION_TYPES, "discord"]
-		: ["discord", ...DESTINATION_TYPES]
+	const types = destinationTypesFor(discordLinked)
 
 	const tile = (type: AlertDestinationType) => (
 		<ProviderTile
