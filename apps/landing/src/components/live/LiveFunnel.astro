@@ -1,0 +1,400 @@
+---
+/**
+ * LiveFunnel: the dashboard funnel widget's "Drop-off" view, a four-step
+ * signup funnel, plus the events behind it arriving from three sources.
+ *
+ * Mirrors `FunnelDropoffChart` in packages/ui: one column per step with name,
+ * share of step 1 and count; a `--chart-2` bar with a faint cap for the people
+ * lost since the previous step; and a pill with step conversion (green arrow)
+ * and loss (red arrow). The readout below is the widget's hover
+ * card for the last step. Keep the two in sync when the widget changes.
+ *
+ * Pure CSS, one 12s loop: only the bars grow. The unanimated state is the
+ * final frame, which is what reduced motion shows. Only the span-sourced stream
+ * row carries a trace id, because only events made from spans have one.
+ */
+interface Step {
+	name: string;
+	/** Share of step 1, as % of the bar height. */
+	pct: number;
+	count: string;
+	/** Previous step's share, for the lost cap. */
+	prev?: number;
+	conv?: string;
+	loss?: string;
+}
+
+const STEPS: Step[] = [
+	{ name: "$pageview /pricing", pct: 100, count: "8,412" },
+	{ name: "signup_started", pct: 35.2, prev: 100, count: "2,961", conv: "35.2%", loss: "64.8%" },
+	{ name: "signup_completed", pct: 26, prev: 35.2, count: "2,190", conv: "74.0%", loss: "26.0%" },
+	{ name: "plan_started", pct: 6.4, prev: 26, count: "538", conv: "24.6%", loss: "75.4%" },
+];
+
+/** Lets long snake_case names wrap at underscores instead of truncating. */
+const breakable = (name: string) => name.replaceAll("_", "_​");
+
+const STREAM = [
+	{ name: "plan_started", source: "trace", ref: "trace 4f9ac21e" },
+	{ name: "signup_completed", source: "server", ref: "user u_8124" },
+	{ name: "$pageview", source: "browser", ref: "/pricing" },
+];
+---
+
+<div class="live-frame">
+	<div class="live-frame__head">
+		<span>funnel · pricing → paid</span>
+		<span class="fn-head__rate">conversion rate <b>6.4%</b></span>
+	</div>
+
+	<div class="fn-toolbar">
+		<span>count by <b>person</b></span>
+		<span>window <b>24h</b></span>
+		<span>range <b>30d</b></span>
+	</div>
+
+	<div class="fn-chart">
+		{
+			STEPS.map((step, i) => (
+				<div class="fn-step">
+					<div class="fn-step__head">
+						<span class="fn-step__name">{breakable(step.name)}</span>
+						<span class="fn-step__pct">{step.pct === 100 ? "100%" : `${step.pct.toFixed(1)}%`}</span>
+						<span class="fn-step__count">
+							{step.count} {i === 0 ? "entered" : "reached"}
+						</span>
+						{step.conv && (
+							<span class="fn-step__conv">
+								<span class="fn-arrow fn-arrow--ok" aria-hidden="true">
+									{i === STEPS.length - 1 ? "✓" : "→"}
+								</span>
+								{step.conv}
+							</span>
+						)}
+					</div>
+					<div class="fn-plot">
+						<div class="fn-col fn-anim" style={`--d: ${i * 0.3}s;`}>
+							{step.prev !== undefined && (
+								<div class="fn-lost" style={`bottom: ${step.pct}%; height: ${step.prev - step.pct}%;`} />
+							)}
+							<div class="fn-bar" style={`height: ${step.pct}%;`} />
+						</div>
+						{step.conv && (
+							<span class="fn-pill">
+								<span class="fn-pill__conv">
+									<span class="fn-arrow fn-arrow--ok" aria-hidden="true">
+										{i === STEPS.length - 1 ? "✓" : "→"}
+									</span>
+									{step.conv}
+								</span>
+								<span class="fn-pill__loss">
+									<span class="fn-arrow fn-arrow--lost" aria-hidden="true">↓</span>
+									{step.loss}
+								</span>
+							</span>
+						)}
+					</div>
+				</div>
+			))
+		}
+	</div>
+
+	<div class="fn-card">
+		<div class="fn-card__route">signup_completed → plan_started</div>
+		<div class="fn-card__split" aria-hidden="true">
+			<span style="width: 24.6%;"></span>
+			<span></span>
+		</div>
+		<div class="fn-card__rows">
+			<div><span><span class="fn-arrow fn-arrow--ok">→</span>converted</span><b>538</b></div>
+			<div><span><span class="fn-arrow fn-arrow--lost">↓</span>dropped</span><b>1,652</b></div>
+			<div><span>median time</span><b>2h 14m</b></div>
+			<div><span>went next</span><b>/docs/billing · 41%</b></div>
+		</div>
+	</div>
+
+	<ul class="fn-stream">
+		{
+			STREAM.map((row) => (
+				<li class="fn-row">
+					<span class="fn-row__name">{row.name}</span>
+					<span class={`fn-row__source fn-row__source--${row.source}`}>{row.source}</span>
+					<span class="fn-row__ref">{row.ref}</span>
+				</li>
+			))
+		}
+	</ul>
+</div>
+
+<style>
+	.fn-head__rate b {
+		font-weight: 600;
+		color: var(--foreground);
+	}
+	.fn-toolbar {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px 16px;
+		padding: 10px 16px;
+		border-bottom: 1px solid var(--border);
+		font-size: 10px;
+		color: var(--muted-foreground);
+	}
+	.fn-toolbar b {
+		font-weight: 500;
+		color: var(--foreground);
+	}
+
+	/* ── Step columns (FunnelDropoffChart) ────────────────────────── */
+	.fn-chart {
+		display: grid;
+		grid-template-columns: repeat(4, minmax(0, 1fr));
+		/* Shared rows so every plot starts on the same line. */
+		grid-template-rows: auto 168px;
+		column-gap: 12px;
+		padding: 16px;
+	}
+	.fn-step {
+		display: grid;
+		grid-row: span 2;
+		grid-template-rows: subgrid;
+		row-gap: 10px;
+		min-width: 0;
+	}
+	.fn-step__head {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		line-height: 1;
+		min-width: 0;
+	}
+	.fn-step__name {
+		font-size: 11px;
+		line-height: 1.3;
+		color: color-mix(in oklab, var(--foreground) 90%, transparent);
+		overflow-wrap: anywhere;
+	}
+	.fn-step__pct {
+		font-family: var(--font-sans);
+		font-size: 16px;
+		font-weight: 600;
+		color: var(--foreground);
+	}
+	.fn-step__count {
+		font-size: 11px;
+		color: var(--muted-foreground);
+	}
+	/* Narrow-screen stand-in for the pill; see the 480px query. */
+	.fn-step__conv {
+		display: none;
+		font-size: 11px;
+		font-weight: 600;
+		color: var(--foreground);
+	}
+	.fn-plot {
+		position: relative;
+		min-height: 0;
+	}
+	.fn-col {
+		position: absolute;
+		inset: 0;
+		transform-origin: bottom center;
+	}
+	.fn-lost {
+		position: absolute;
+		inset-inline: 0;
+		border-radius: 4px;
+		background: color-mix(in oklab, var(--foreground) 6%, transparent);
+	}
+	.fn-bar {
+		position: absolute;
+		inset-inline: 0;
+		bottom: 0;
+		border-radius: 4px;
+		background: var(--chart-2);
+	}
+	.fn-pill {
+		position: absolute;
+		left: 6px;
+		bottom: 6px;
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		max-width: calc(100% - 12px);
+		padding: 4px 6px;
+		border-radius: 6px;
+		background: color-mix(in oklab, var(--card) 95%, transparent);
+		box-shadow: 0 0 0 1px color-mix(in oklab, var(--border) 60%, transparent);
+		font-size: 11px;
+		line-height: 1;
+		white-space: nowrap;
+		overflow: hidden;
+	}
+	.fn-pill__conv {
+		font-weight: 600;
+		color: var(--foreground);
+	}
+	.fn-pill__loss {
+		color: color-mix(in oklab, var(--foreground) 80%, transparent);
+	}
+	.fn-arrow {
+		margin-right: 3px;
+		font-weight: 600;
+	}
+	.fn-arrow--ok {
+		color: var(--success);
+	}
+	.fn-arrow--lost {
+		color: var(--destructive);
+	}
+
+	/* ── Hover card for the last step ─────────────────────────────── */
+	.fn-card {
+		margin: 0 16px 16px;
+		padding: 10px 12px;
+		border: 1px solid var(--border);
+		border-radius: 8px;
+		background: var(--bg-elevated);
+		font-size: 11px;
+	}
+	.fn-card__route {
+		font-weight: 500;
+		color: var(--foreground);
+	}
+	.fn-card__split {
+		display: flex;
+		gap: 1px;
+		height: 6px;
+		margin: 8px 0;
+		border-radius: 2px;
+		overflow: hidden;
+	}
+	.fn-card__split span:first-child {
+		background: var(--success);
+	}
+	.fn-card__split span:last-child {
+		flex: 1;
+		background: color-mix(in oklab, var(--destructive) 70%, transparent);
+	}
+	.fn-card__rows {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 4px 24px;
+	}
+	.fn-card__rows > div {
+		display: flex;
+		justify-content: space-between;
+		gap: 12px;
+		min-width: 0;
+	}
+	.fn-card__rows > div > span {
+		color: var(--muted-foreground);
+		white-space: nowrap;
+	}
+	.fn-card__rows b {
+		font-weight: 600;
+		color: var(--foreground);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	/* ── Event stream ─────────────────────────────────────────────── */
+	.fn-stream {
+		margin: 0;
+		padding: 0;
+		list-style: none;
+		border-top: 1px solid var(--border);
+		background: color-mix(in oklab, var(--bg-elevated) 45%, transparent);
+	}
+	.fn-row {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) auto minmax(0, 0.9fr);
+		align-items: center;
+		gap: 12px;
+		padding: 7px 16px;
+		font-size: 11px;
+		border-bottom: 1px solid color-mix(in oklab, var(--border) 50%, transparent);
+	}
+	.fn-row:last-child {
+		border-bottom: none;
+	}
+	.fn-row__name {
+		color: var(--foreground);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.fn-row__source {
+		font-size: 9px;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		padding: 1px 7px;
+		border-radius: 999px;
+		border: 1px solid color-mix(in oklab, var(--src) 40%, transparent);
+		background: color-mix(in oklab, var(--src) 10%, transparent);
+		color: var(--src);
+	}
+	.fn-row__source--browser {
+		--src: var(--chart-2);
+	}
+	.fn-row__source--server {
+		--src: var(--chart-3);
+	}
+	.fn-row__source--trace {
+		--src: var(--primary);
+	}
+	.fn-row__ref {
+		justify-self: end;
+		color: var(--muted-foreground);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	/* The widget sheds pill segments as columns narrow. Median time is always
+	   shed here (columns never get wide enough); loss goes on phones. */
+	@media (max-width: 640px) {
+		.fn-chart {
+			column-gap: 6px;
+			padding: 12px;
+			grid-template-rows: auto 128px;
+		}
+		.fn-pill__loss {
+			display: none;
+		}
+		.fn-card__rows {
+			grid-template-columns: 1fr;
+		}
+	}
+	/* A quarter column cannot hold the pill on small phones: the conversion
+	   moves into the step header instead of clipping inside the bar. */
+	@media (max-width: 480px) {
+		.fn-pill {
+			display: none;
+		}
+		.fn-step__conv {
+			display: block;
+		}
+	}
+
+	@media (prefers-reduced-motion: no-preference) {
+		.fn-col.fn-anim {
+			animation: fn-grow 12s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+			animation-delay: var(--d, 0s);
+		}
+	}
+	@keyframes fn-grow {
+		0% {
+			transform: scaleY(0);
+		}
+		14%,
+		90% {
+			transform: scaleY(1);
+		}
+		97%,
+		100% {
+			transform: scaleY(0);
+		}
+	}
+</style>
