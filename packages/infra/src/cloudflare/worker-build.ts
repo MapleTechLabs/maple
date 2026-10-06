@@ -12,5 +12,6 @@ export const WORKER_PURE_OPTIONS = {
 		"@distilled.cloud/core",
 		"@distilled.cloud/cloudflare",
 		"@distilled.cloud/aws",
+		"@distilled.cloud/planetscale",
 	],
 }

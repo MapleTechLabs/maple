@@ -1047,7 +1047,9 @@ describe("PlanetScaleService pagination truncation", () => {
 			) {
 				const page = pageOf(url)
 				const start = (page - 1) * 100
+				// Endless full pages: PlanetScale always reports another page.
 				return json({
+					next_page: page + 1,
 					data: Array.from({ length: 100 }, (_, index) => ({
 						id: `dr_${start + index}`,
 						number: start + index,
@@ -1067,6 +1069,7 @@ describe("PlanetScaleService pagination truncation", () => {
 				const start = (page - 1) * 100
 				const count = Math.min(100, Math.max(0, options.totalDatabases - start))
 				return json({
+					next_page: start + count < options.totalDatabases ? page + 1 : null,
 					data: Array.from({ length: count }, (_, index) => ({
 						id: `db_${start + index}`,
 						name: `db-${start + index}`,
@@ -1083,9 +1086,10 @@ describe("PlanetScaleService pagination truncation", () => {
 		"does not soft-delete stored databases when the inventory listing is truncated",
 		() => {
 			const testDb = createTestDb(trackedDbs)
-			// Ten full pages: the upstream org has MORE than 1,000 databases, and
-			// the stored one may simply live beyond the pagination ceiling.
-			const stub = stubTruncated({ totalDatabases: 1000 })
+			// Ten full pages and PlanetScale still reports a next one: the upstream org
+			// has MORE than 1,000 databases, and the stored one may simply live beyond
+			// the pagination ceiling.
+			const stub = stubTruncated({ totalDatabases: 1100 })
 			return Effect.gen(function* () {
 				yield* connect("org_1")
 				yield* Effect.promise(() =>
@@ -1152,6 +1156,110 @@ describe("PlanetScaleService pagination truncation", () => {
 				),
 			)
 			assert.isNull(state?.watermark_at)
+		}).pipe(
+			Effect.provideService(FetchHttpClient.Fetch, stub),
+			Effect.provide(Layer.mergeAll(makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub))),
+		)
+	})
+})
+
+// A grant PlanetScale stops accepting before its stored expiry used to 401 on every tick
+// forever: nothing refreshed it or stamped it revoked.
+describe("PlanetScaleService rejected tokens", () => {
+	const stubRejecting = (options: { readonly refreshedTokenWorks: boolean }) => {
+		const base = stubApi({
+			databases: [{ id: "db_1", name: "main-db" }],
+			branchesByDatabase: { "main-db": [{ id: "br_1", name: "main", production: true }] },
+		})
+		const calls = { refreshes: 0, rejected: 0, api: 0 }
+		const stub = (async (input: string | URL | Request, init?: RequestInit) => {
+			const url =
+				typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
+			const json = (body: unknown, status = 200) =>
+				new Response(JSON.stringify(body), {
+					status,
+					headers: { "content-type": "application/json" },
+				})
+			if (url.includes("/oauth/token")) {
+				const body = new URLSearchParams(
+					await new Request(url, { method: "POST", body: init?.body ?? null }).text(),
+				)
+				if (body.get("grant_type") === "refresh_token") {
+					calls.refreshes += 1
+					return json({
+						access_token: "ps-access-token-refreshed",
+						refresh_token: "ps-refresh-token-rotated",
+						token_type: "Bearer",
+						expires_in: 3600,
+					})
+				}
+				return base(input, init)
+			}
+			const authorization =
+				input instanceof Request
+					? input.headers.get("authorization")
+					: new Headers(init?.headers).get("authorization")
+			const accepted =
+				authorization === "Bearer ps-access-token-refreshed" && options.refreshedTokenWorks
+			// The connect flow's own calls use the original token and must succeed.
+			if (url.includes("/databases") && !accepted && rejectOriginal.value) {
+				calls.rejected += 1
+				return json({ code: "unauthorized", message: "invalid_token" }, 401)
+			}
+			if (url.includes("/v1/organizations/")) calls.api += 1
+			return base(input, init)
+		}) as typeof fetch
+		const rejectOriginal = { value: false }
+		globalThis.fetch = stub
+		return { stub, calls, rejectOriginal }
+	}
+
+	it.effect("refreshes once and recovers when the refreshed token is accepted", () => {
+		const testDb = createTestDb(trackedDbs)
+		const { stub, calls, rejectOriginal } = stubRejecting({ refreshedTokenWorks: true })
+		return Effect.gen(function* () {
+			yield* connect("org_1")
+			rejectOriginal.value = true
+			const service = yield* PlanetScaleService
+
+			const summary = yield* service.pollAllOrgs()
+			assert.strictEqual(summary.refreshed, 1)
+			assert.strictEqual(summary.failures, 0)
+			assert.strictEqual(calls.refreshes, 1)
+
+			const grant = yield* (yield* PlanetScaleOAuthService).grantStatus(asOrgId("org_1"))
+			assert.isNull(grant.revokedAt)
+		}).pipe(
+			Effect.provideService(FetchHttpClient.Fetch, stub),
+			Effect.provide(Layer.mergeAll(makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub))),
+		)
+	})
+
+	it.effect("stamps the grant revoked when the refreshed token is rejected too, then stops polling", () => {
+		const testDb = createTestDb(trackedDbs)
+		const { stub, calls, rejectOriginal } = stubRejecting({ refreshedTokenWorks: false })
+		return Effect.gen(function* () {
+			yield* connect("org_1")
+			rejectOriginal.value = true
+			const service = yield* PlanetScaleService
+			const oauth = yield* PlanetScaleOAuthService
+
+			const first = yield* service.pollAllOrgs()
+			assert.strictEqual(first.failures, 1)
+			assert.strictEqual(calls.refreshes, 1)
+			const grant = yield* oauth.grantStatus(asOrgId("org_1"))
+			assert.isNotNull(grant.revokedAt)
+
+			// The stamped grant is skipped outright: no token handed out, no API call.
+			const rejectedBefore = calls.rejected
+			const apiBefore = calls.api
+			const second = yield* service.pollAllOrgs()
+			assert.strictEqual(second.skipped, 1)
+			assert.strictEqual(second.failures, 0)
+			assert.strictEqual(calls.rejected, rejectedBefore)
+			assert.strictEqual(calls.api, apiBefore)
+			const error = yield* Effect.flip(oauth.getValidAccessToken(asOrgId("org_1")))
+			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsRevokedError")
 		}).pipe(
 			Effect.provideService(FetchHttpClient.Fetch, stub),
 			Effect.provide(Layer.mergeAll(makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub))),
