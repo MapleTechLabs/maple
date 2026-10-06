@@ -27,12 +27,6 @@ export const errorMessage = (error: unknown, fallback: string): string => {
 	return isUnexpectedError(presentation) ? fallback : presentation.message
 }
 
-/** The user-facing message of a failed Exit, or `fallback` for a success, a non-Exit or an unexpected defect. */
-export function getExitErrorMessage(exit: unknown, fallback: string): string {
-	if (!Exit.isExit(exit) || Exit.isSuccess(exit)) return fallback
-	return errorMessage(exit, fallback)
-}
-
 interface ToastExitOptions {
 	/** Toast title on success; omit to stay silent on success. */
 	readonly success?: string

@@ -95,15 +95,3 @@ export function useMutationAction<A, E, W>(
 ): readonly [run: (value: W) => Promise<Exit.Exit<A, E>>, pending: boolean] {
 	return useAsyncAction(useMutationRunner(atom, options))
 }
-
-/**
- * `useMutationAction` for row actions: `run(rowId, payload)` and `isPending(rowId)`, so a list
- * shows the spinner on the row being mutated instead of a shared flag.
- */
-export function useKeyedMutationAction<A, E, W, K extends string = string>(
-	atom: Atom.Writable<AsyncResult.AsyncResult<A, E>, W>,
-	options: MutationActionOptions<A>,
-): KeyedAction<K, [value: W], Exit.Exit<A, E>> {
-	const runner = useMutationRunner(atom, options)
-	return useKeyedAsyncAction((_key: K, value: W) => runner(value))
-}
