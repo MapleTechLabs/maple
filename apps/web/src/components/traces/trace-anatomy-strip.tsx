@@ -2,7 +2,7 @@ import * as React from "react"
 
 import { ServiceSpectrumBar, computeServiceShares } from "@maple/ui/components/traces/service-spectrum-bar"
 import { ServiceDot } from "@maple/ui/components/service-dot"
-import { countLabel, formatDuration } from "@maple/ui/lib/format"
+import { countLabel, formatDuration, formatPercent } from "@maple/ui/lib/format"
 import { httpStatusTone } from "@maple/ui/lib/http"
 import { shortId } from "@maple/ui/lib/ids"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
@@ -104,7 +104,7 @@ export function TraceAnatomyStrip({
 						<ServiceDot serviceName={share.serviceName} size="sm" />
 						<span>{share.serviceName}</span>
 						<span className="text-3xs text-muted-foreground tabular-nums">
-							{share.percent.toFixed(share.percent < 10 ? 1 : 0)}%
+							{formatPercent(share.percent / 100)}
 						</span>
 					</span>
 				))}

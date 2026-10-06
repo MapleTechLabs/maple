@@ -64,11 +64,10 @@ export function useCursorPlot(series: ReadonlyArray<{ key: string; color: string
 	)
 }
 
-export interface CursorPlotProps<TDatum, TXValue extends ChartValue>
-	extends Pick<
-		PlotFrameProps<TDatum, TXValue, number>,
-		"legend" | "legendPlacement" | "onFocusChange" | "footer" | "overlay" | "renderer"
-	> {
+export interface CursorPlotProps<TDatum, TXValue extends ChartValue> extends Pick<
+	PlotFrameProps<TDatum, TXValue, number>,
+	"legend" | "legendPlacement" | "onFocusChange" | "footer" | "overlay" | "renderer"
+> {
 	plot: CursorPlotState
 	definition: DomChartDefinition<TDatum, TXValue, number>
 	series: ReadonlyArray<CursorPlotSeries<TDatum>>

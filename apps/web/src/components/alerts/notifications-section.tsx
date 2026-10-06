@@ -7,6 +7,9 @@ import { useUser } from "@clerk/clerk-react"
 import { ALERT_TEMPLATE_VARIABLES, type AlertDestinationDocument } from "@maple/domain/http"
 import { Button } from "@maple/ui/components/ui/button"
 import { Card } from "@maple/ui/components/ui/card"
+import { IconButton } from "@maple/ui/components/ui/icon-button"
+import { Panel } from "@maple/ui/components/ui/panel"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
 import {
 	DropdownMenu,
 	DropdownMenuContent,
@@ -112,23 +115,36 @@ export function NotificationsSection({
 	return (
 		<Card className="p-4">
 			<div className="flex items-center justify-between gap-3">
-				<SectionHeading variant="eyebrow" id="rule-notifications-heading" title="Who gets notified" className="mb-0" />
+				<SectionHeading
+					variant="eyebrow"
+					id="rule-notifications-heading"
+					title="Who gets notified"
+					className="mb-0"
+				/>
 				{selected.length > 0 && (
-					<Button
-						variant="ghost"
-						size="sm"
-						onClick={onSendTest}
-						loading={testing}
-						title="Send a real test notification to every destination below"
-						className="-my-1 h-7 px-2 text-xs"
-					>
-						<PaperPlaneIcon size={12} />
-						Send test
-					</Button>
+					<Tooltip>
+						<TooltipTrigger
+							render={
+								<Button
+									variant="ghost"
+									size="sm"
+									onClick={onSendTest}
+									loading={testing}
+									className="-my-1 h-7 px-2 text-xs"
+								/>
+							}
+						>
+							<PaperPlaneIcon size={12} />
+							Send test
+						</TooltipTrigger>
+						<TooltipContent>
+							Send a real test notification to every destination below
+						</TooltipContent>
+					</Tooltip>
 				)}
 			</div>
 
-			<div className="mt-3 divide-y divide-border/60 overflow-hidden rounded-lg border border-border/60">
+			<Panel className="mt-3 divide-y divide-border/60 border-border/60">
 				{selected.map((destination) => (
 					<SelectedDestination
 						key={destination.id}
@@ -141,15 +157,13 @@ export function NotificationsSection({
 						<span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
 							Destination unavailable
 						</span>
-						<Button
-							variant="ghost"
-							size="icon-sm"
+						<IconButton
 							className="-my-1 shrink-0 text-muted-foreground"
-							aria-label="Stop notifying this unavailable destination"
+							label="Stop notifying this unavailable destination"
 							onClick={() => remove(id)}
 						>
 							<XmarkIcon size={12} />
-						</Button>
+						</IconButton>
 					</div>
 				))}
 				{selected.length === 0 && unresolved.length === 0 && (
@@ -168,7 +182,7 @@ export function NotificationsSection({
 						onQuickCreate={onQuickCreate}
 					/>
 				)}
-			</div>
+			</Panel>
 
 			<MessageTemplate form={form} onChange={onChange} />
 		</Card>
@@ -199,18 +213,16 @@ function SelectedDestination({
 			/>
 			<span className="min-w-0 truncate text-sm font-medium">{primary}</span>
 			<span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
-				{paused ? <span className="text-destructive">{paused} · </span> : null}
+				{paused ? <span className="text-severity-error">{paused} · </span> : null}
 				{secondary}
 			</span>
-			<Button
-				variant="ghost"
-				size="icon-sm"
+			<IconButton
 				className="-my-1 shrink-0 text-muted-foreground"
-				aria-label={`Stop notifying ${primary}`}
+				label={`Stop notifying ${primary}`}
 				onClick={onRemove}
 			>
 				<XmarkIcon size={12} />
-			</Button>
+			</IconButton>
 		</div>
 	)
 }
@@ -469,15 +481,20 @@ function MessageTemplate({
 						<span className="text-muted-foreground text-xs">Insert a variable:</span>
 						<div className="flex flex-wrap gap-1">
 							{ALERT_TEMPLATE_VARIABLES.map((variable) => (
-								<button
-									key={variable.key}
-									type="button"
-									title={variable.description}
-									onClick={() => appendToBody(`{{ ${variable.key} }}`)}
-									className="rounded border border-border/60 bg-muted/40 px-1.5 py-0.5 font-mono text-3xs text-muted-foreground hover:border-border hover:text-foreground"
-								>
-									{variable.key}
-								</button>
+								<Tooltip key={variable.key}>
+									<TooltipTrigger
+										render={
+											<button
+												type="button"
+												onClick={() => appendToBody(`{{ ${variable.key} }}`)}
+												className="rounded border border-border/60 bg-muted/40 px-1.5 py-0.5 font-mono text-3xs text-muted-foreground hover:border-border hover:text-foreground"
+											/>
+										}
+									>
+										{variable.key}
+									</TooltipTrigger>
+									<TooltipContent>{variable.description}</TooltipContent>
+								</Tooltip>
 							))}
 						</div>
 					</div>

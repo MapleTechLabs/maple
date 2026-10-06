@@ -28,7 +28,12 @@ import {
 	type ChartEventMarker,
 } from "../primitives/chart-event-markers"
 import { formatPercent } from "@maple/ui/lib/format"
-import { CHART_EMPTY_MESSAGE, CHART_HEIGHT, ChartCard, ChartCardMessage } from "@/components/common/chart-card"
+import {
+	CHART_EMPTY_MESSAGE,
+	CHART_HEIGHT,
+	ChartCard,
+	ChartCardMessage,
+} from "@/components/common/chart-card"
 import { formatLag, formatStoragePercent } from "./metrics"
 
 export type PlanetScaleMetric =

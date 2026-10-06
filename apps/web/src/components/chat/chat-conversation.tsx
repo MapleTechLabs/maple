@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { Exit } from "effect"
 import { useMountEffect } from "@/hooks/use-mount-effect"
 import { toastManager } from "@maple/ui/components/ui/toast"
+import { toastExit } from "@/lib/error-toast"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { useAtomSet } from "@/lib/effect-atom"
 import { MapleAiAtomClient } from "@/lib/services/common/ai-atom-client"
@@ -190,8 +191,7 @@ export function ChatConversation({
 			const exit = await decideProposal({
 				payload: new ChatApplyRequest({ sessionId, toolCallId, decision: "deny" }),
 			})
-			if (Exit.isSuccess(exit)) resolveApproval(toolCallId, "denied")
-			else toastManager.add({ title: "Couldn't deny this change", type: "error" })
+			if (toastExit(exit, { error: "Couldn't deny this change" })) resolveApproval(toolCallId, "denied")
 		},
 		[decideProposal, sessionId, resolveApproval],
 	)
@@ -209,7 +209,7 @@ export function ChatConversation({
 				resolveApproval(toolCallId, "applied")
 				toastManager.add({ title: "Change applied", type: "success" })
 			} else {
-				toastManager.add({ title: `Failed to apply ${tool}`, type: "error" })
+				toastExit(exit, { error: `Failed to apply ${tool}` })
 			}
 		},
 		[decideProposal, sessionId, resolveApproval],
@@ -390,7 +390,6 @@ function FailedSendNotice({ failed, onRetry }: { failed: FailedSend; onRetry: (t
 		<ChatFailureNotice truncate actionLabel="Try again" onAction={() => onRetry(failed.message)}>
 			Message not sent: {failed.error.message}
 		</ChatFailureNotice>
-
 	)
 }
 

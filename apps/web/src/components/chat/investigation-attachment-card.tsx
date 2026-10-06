@@ -1,4 +1,5 @@
 import { Fragment, type ReactNode } from "react"
+import { Panel } from "@maple/ui/components/ui/panel"
 import { cn } from "@maple/ui/lib/utils"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { shortId } from "@maple/ui/lib/ids"
@@ -49,9 +50,7 @@ export function AttachmentCard({
 }) {
 	return (
 		<div className={cn("mx-auto w-full max-w-3xl px-4 pt-3", className)}>
-			<div
-				className={cn("relative overflow-hidden rounded-md border bg-card/80 backdrop-blur-sm", tint)}
-			>
+			<Panel className={cn("relative bg-card/80 backdrop-blur-sm", tint)}>
 				<div className={cn("absolute inset-y-0 left-0 w-[3px]", stripe)} aria-hidden />
 				<div className="min-w-0 py-2.5 pr-3 pl-3.5">
 					<Eyebrow as="div" className="flex flex-wrap items-center gap-x-2 gap-y-0.5 font-normal">
@@ -70,7 +69,7 @@ export function AttachmentCard({
 					<div className="mt-1 truncate text-[13px] font-medium text-foreground">{title}</div>
 					{children}
 				</div>
-			</div>
+			</Panel>
 		</div>
 	)
 }
@@ -117,9 +116,7 @@ export function InvestigationAttachmentCard({
 					{ctx.facts.map((fact) => (
 						<li key={fact.key} className="flex min-w-0 flex-col leading-tight">
 							<Eyebrow>{fact.label}</Eyebrow>
-							<span className="truncate font-mono text-2xs text-foreground">
-								{fact.value}
-							</span>
+							<span className="truncate font-mono text-2xs text-foreground">{fact.value}</span>
 						</li>
 					))}
 				</ul>

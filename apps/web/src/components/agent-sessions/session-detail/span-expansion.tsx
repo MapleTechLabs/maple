@@ -14,6 +14,7 @@ import { ToggleGroup, ToggleGroupItem } from "@maple/ui/components/ui/toggle-gro
 import { formatDuration, formatNumber } from "@maple/ui/lib/format"
 import { shortId } from "@maple/ui/lib/ids"
 import { cn } from "@maple/ui/lib/utils"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { TONE_SOFT } from "@maple/ui/lib/tone"
 
@@ -477,17 +478,17 @@ function ToolCallCard({
 				<span aria-hidden className="size-1.5 shrink-0 rounded-xs bg-chart-4" />
 				<span className="shrink-0 font-medium font-mono text-chart-4 text-xs">tool</span>
 				{call.name !== undefined && (
-					<span className="min-w-0 truncate font-mono text-foreground text-xs" title={call.name}>
+					<TruncatedText mono className="text-foreground text-xs">
 						{call.name}
-					</span>
+					</TruncatedText>
 				)}
 				{call.id !== undefined && (
-					<span
-						className="ml-auto max-w-40 shrink-0 truncate font-mono text-2xs text-muted-foreground/80"
-						title={call.id}
+					<TruncatedText
+						mono
+						className="ml-auto max-w-40 shrink-0 text-2xs text-muted-foreground/80"
 					>
 						{call.id}
-					</span>
+					</TruncatedText>
 				)}
 			</div>
 			{call.description !== undefined && (

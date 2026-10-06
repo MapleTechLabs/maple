@@ -4,6 +4,8 @@ import { Button } from "@maple/ui/components/ui/button"
 import { Input } from "@maple/ui/components/ui/input"
 import { Label } from "@maple/ui/components/ui/label"
 import { ArrowLeftIcon, CircleCheckIcon } from "@/components/icons"
+import { TONE_TEXT } from "@maple/ui/lib/tone"
+import { useKeyedAsyncAction } from "@/hooks/use-mutation-action"
 import type { OnboardingTeamActions, OnboardingTeamError } from "./team-actions"
 
 export function StepTeam({
@@ -25,7 +27,6 @@ export function StepTeam({
 	const [savedName, setSavedName] = useState(initialName)
 	const [email, setEmail] = useState("")
 	const [invited, setInvited] = useState<readonly string[]>(initialInvitations)
-	const [pending, setPending] = useState<"rename" | "invite" | null>(null)
 	const [feedback, setFeedback] = useState<{ message: string; error: boolean } | null>(null)
 	const inFlight = useRef(false)
 	const emailAlreadyInvited = invited.some(
@@ -33,18 +34,23 @@ export function StepTeam({
 	)
 	const dirtyName = name.trim() !== savedName
 
+	// One operation at a time: `inFlight` blocks a double submit before the pending state renders.
+	const operation = useKeyedAsyncAction(
+		(_op: "rename" | "invite", effect: Effect.Effect<void, OnboardingTeamError>) =>
+			Effect.runPromiseExit(effect),
+	)
+	const busy = operation.anyPending
+
 	function run(
-		operation: "rename" | "invite",
+		op: "rename" | "invite",
 		effect: Effect.Effect<void, OnboardingTeamError>,
 		onSuccess: () => void,
 	) {
 		if (inFlight.current) return
 		inFlight.current = true
-		setPending(operation)
 		setFeedback(null)
-		void Effect.runPromiseExit(effect).then((result) => {
+		void operation.run(op, effect).then((result) => {
 			inFlight.current = false
-			setPending(null)
 			if (Exit.isSuccess(result)) {
 				onSuccess()
 			} else {
@@ -95,14 +101,14 @@ export function StepTeam({
 							onChange={(event) => setName(event.target.value)}
 							required
 							maxLength={256}
-							disabled={!actions || pending !== null}
+							disabled={!actions || busy}
 							className="min-w-40 flex-1"
 						/>
 						<Button
 							type="submit"
 							variant="outline"
-							disabled={!actions || pending !== null || !name.trim() || !dirtyName}
-							loading={pending === "rename"}
+							disabled={!actions || busy || !name.trim() || !dirtyName}
+							loading={operation.isPending("rename")}
 						>
 							Save name
 						</Button>
@@ -134,15 +140,15 @@ export function StepTeam({
 							value={email}
 							onChange={(event) => setEmail(event.target.value)}
 							required
-							disabled={!actions || pending !== null}
+							disabled={!actions || busy}
 							aria-describedby="onboarding-invite-help"
 							className="min-w-40 flex-1"
 						/>
 						<Button
 							type="submit"
 							variant="outline"
-							disabled={!actions || pending !== null || !email.trim() || emailAlreadyInvited}
-							loading={pending === "invite"}
+							disabled={!actions || busy || !email.trim() || emailAlreadyInvited}
+							loading={operation.isPending("invite")}
 						>
 							Send invitation
 						</Button>
@@ -165,16 +171,16 @@ export function StepTeam({
 					</ul>
 				)}
 				<div aria-live="polite" aria-atomic="true" className="min-h-5 text-xs">
-					<p className={feedback?.error ? "text-destructive" : "text-muted-foreground"}>
+					<p className={feedback?.error ? TONE_TEXT.crit : "text-muted-foreground"}>
 						{feedback?.message}
 					</p>
 				</div>
 				<div className="flex flex-wrap items-center justify-between gap-3">
-					<Button variant="ghost" disabled={pending !== null} onClick={onBack}>
+					<Button variant="ghost" disabled={busy} onClick={onBack}>
 						<ArrowLeftIcon size={14} />
 						Back
 					</Button>
-					<Button size="lg" disabled={pending !== null} onClick={onContinue}>
+					<Button size="lg" disabled={busy} onClick={onContinue}>
 						{dirtyName || email.trim() ? "Skip for now" : "Continue to plans"}
 					</Button>
 				</div>

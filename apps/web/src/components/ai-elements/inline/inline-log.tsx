@@ -2,8 +2,9 @@ import { Link } from "@tanstack/react-router"
 import type { InlineLogData } from "@maple/domain/chat-annotations"
 import { SeverityBadge } from "@maple/ui/components/logs/severity-badge"
 import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
-import { normalizeTimestampInput } from "@/lib/timezone-format"
+import { formatTimeInTimezone, normalizeTimestampInput } from "@/lib/timezone-format"
 import { INLINE_CARD_ROW, inlineCardClass } from "./inline-card"
+import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 
 /**
  * One log line. The card is not itself a link — the trace link inside it is the
@@ -11,6 +12,7 @@ import { INLINE_CARD_ROW, inlineCardClass } from "./inline-card"
  * the one element that navigates.
  */
 export function InlineLog({ data }: { data: InlineLogData }) {
+	const { effectiveTimezone } = useTimezonePreference()
 	return (
 		<div className={inlineCardClass()}>
 			<div className={INLINE_CARD_ROW}>
@@ -25,7 +27,10 @@ export function InlineLog({ data }: { data: InlineLogData }) {
 				</TruncatedText>
 				{data.timestamp && (
 					<span className="shrink-0 font-mono text-2xs tabular-nums text-muted-foreground">
-						{new Date(normalizeTimestampInput(data.timestamp)).toLocaleTimeString()}
+						{formatTimeInTimezone(normalizeTimestampInput(data.timestamp), {
+							timeZone: effectiveTimezone,
+							withSeconds: true,
+						})}
 					</span>
 				)}
 				{data.traceId && (

@@ -120,7 +120,7 @@ export function ContainerTable({
 				>
 					<div className="w-0 min-w-[260px] flex-1">
 						<div className="flex items-center gap-2">
-							<span className="truncate font-mono text-[13px] font-medium text-foreground transition-colors group-hover:text-primary">
+							<span className="truncate font-mono text-xs font-medium text-foreground transition-colors group-hover:text-primary">
 								{container.containerName}
 							</span>
 							<HostStatusBadge

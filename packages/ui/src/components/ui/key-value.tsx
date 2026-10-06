@@ -102,7 +102,14 @@ export function KeyValue({
 				) : (
 					<span className="min-w-0 truncate">{children}</span>
 				)}
-				{copyValue ? <CopyButton value={copyValue} label={typeof label === "string" ? label : "value"} size="icon-xs" className="-my-1 shrink-0" /> : null}
+				{copyValue ? (
+					<CopyButton
+						value={copyValue}
+						label={typeof label === "string" ? label : "value"}
+						size="icon-xs"
+						className="-my-1 shrink-0"
+					/>
+				) : null}
 			</dd>
 		</div>
 	)

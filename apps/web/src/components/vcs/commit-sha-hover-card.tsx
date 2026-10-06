@@ -10,6 +10,7 @@ import { CopyIndicator } from "@maple/ui/components/ui/copy-button"
 import { useCopy } from "@maple/ui/hooks/use-copy"
 import { TruncatedId } from "@maple/ui/components/ui/truncated-id"
 import { shortId } from "@maple/ui/lib/ids"
+import { countLabel } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { RelativeTime } from "@/components/common/relative-time"
 
@@ -221,7 +222,7 @@ function CommitPlain({ sha, compact = false }: { sha: string; compact?: boolean 
 			<span className="font-mono text-foreground">
 				{shortId(sha, "generic", { length: 16, ellipsis: true })}
 			</span>
-			<span className="text-muted-foreground">Deployment reference — not a resolvable git commit.</span>
+			<span className="text-muted-foreground">Deployment reference, not a resolvable git commit.</span>
 		</div>
 	)
 }
@@ -313,7 +314,7 @@ export function CommitListBody({ commits }: { commits: ReadonlyArray<{ sha: stri
 		<div className="flex flex-col">
 			{/* Sticky so the count stays visible while the rows scroll. */}
 			<div className="sticky top-0 z-10 flex items-center justify-between border-b border-foreground/10 bg-popover/95 px-2.5 py-1.5 backdrop-blur-sm">
-				<span className="font-medium text-foreground">{commits.length} deploys</span>
+				<span className="font-medium text-foreground">{countLabel(commits.length, "deploy")}</span>
 			</div>
 			<div className="flex flex-col divide-y divide-foreground/5">
 				{commits.map((commit) => (

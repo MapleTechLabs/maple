@@ -1,10 +1,15 @@
 import * as React from "react"
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import { Link } from "@tanstack/react-router"
 import { Schema } from "effect"
 import { TraceId } from "@maple/domain/http"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { Panel } from "@maple/ui/components/ui/panel"
+import { ErrorState } from "@/components/common/error-state"
+import { IconButton } from "@maple/ui/components/ui/icon-button"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
 import { cn } from "@maple/ui/lib/utils"
 import { HttpSpanLabel } from "@maple/ui/components/traces/http-span-label"
 import { parseAttributes } from "@maple/ui/lib/span-tree"
@@ -104,7 +109,7 @@ export function ReplayEditorTimeline({
 	)
 
 	return (
-		<section className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+		<Panel className="shadow-sm">
 			<TimelineHeader />
 			{/* Shared time region. The playhead overlays every track; scrubbing is
 			    driven from the scrub surface spanning the ruler + activity rows. */}
@@ -119,7 +124,7 @@ export function ReplayEditorTimeline({
 				<TracesTrack traceIds={traceIds} seek={seek} window={window} />
 				<Playhead player={player} />
 			</div>
-		</section>
+		</Panel>
 	)
 }
 
@@ -284,7 +289,11 @@ const TracesTrack = React.memo(function TracesTrack({
 	const result = useAtomValue(getSessionTraceSummariesResultAtom({ data: { traceIds, ...window } }))
 
 	const header = (count: number | null) => (
-		<div className="flex items-center gap-2 border-b border-border/60 bg-muted/20 px-3 py-1.5 font-display text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+		<Eyebrow
+			as="div"
+			variant="label"
+			className="flex items-center gap-2 border-b border-border/60 bg-muted/20 px-3 py-1.5"
+		>
 			<PulseIcon className="size-3.5" />
 			Traces
 			{count != null && count > 0 && (
@@ -292,7 +301,7 @@ const TracesTrack = React.memo(function TracesTrack({
 					{count}
 				</Badge>
 			)}
-		</div>
+		</Eyebrow>
 	)
 
 	if (traceIds.length === 0) {
@@ -320,10 +329,15 @@ const TracesTrack = React.memo(function TracesTrack({
 						</div>
 					</>
 				))
-				.onError(() => (
+				.onError((error) => (
 					<>
 						{header(null)}
-						<p className="px-3 py-4 text-xs text-destructive">Couldn’t load correlated traces.</p>
+						<ErrorState
+							variant="inline"
+							error={error}
+							title="Couldn't load correlated traces"
+							className="px-3"
+						/>
 					</>
 				))
 				.onSuccess((res) => {
@@ -332,9 +346,9 @@ const TracesTrack = React.memo(function TracesTrack({
 						<>
 							{header(summaries.length)}
 							{summaries.length === 0 ? (
-								<p className="px-3 py-4 text-xs text-muted-foreground">
-									Linked traces aren’t available yet — they may still be ingesting.
-								</p>
+								<EmptyMessage>
+									Linked traces aren't available yet, they may still be ingesting.
+								</EmptyMessage>
 							) : (
 								<ul className="max-h-72 overflow-y-auto">
 									{summaries.map((s) => (
@@ -370,65 +384,81 @@ function TraceRow({ summary, seek }: { summary: SessionTraceSummary; seek: SeekC
 						"flex shrink-0 items-center gap-1.5 border-r border-border/60 pr-2 pl-2 text-xs",
 					)}
 				>
-					<button
-						type="button"
+					<IconButton
 						onClick={() => setExpanded((v) => !v)}
 						aria-expanded={expanded}
-						title={expanded ? "Hide spans" : `Show ${summary.spanCount} spans`}
-						className="relative grid size-5 shrink-0 place-items-center rounded text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground pointer-coarse:after:absolute pointer-coarse:after:size-full pointer-coarse:after:min-h-11 pointer-coarse:after:min-w-11"
+						label={expanded ? "Hide spans" : `Show ${summary.spanCount} spans`}
+						size="icon-xs"
+						className="size-5 text-muted-foreground sm:size-5"
 					>
 						{expanded ? (
 							<ChevronDownIcon className="size-3.5" />
 						) : (
 							<ChevronRightIcon className="size-3.5" />
 						)}
-					</button>
-					<Link
-						to="/traces/$traceId"
-						params={{ traceId: summary.traceId }}
-						search={{ t: summary.startTime }}
-						target="_blank"
-						rel="noreferrer"
-						title={`Open trace in new tab · ${summary.rootServiceName} · ${summary.spanCount} spans`}
-						className="group/trace flex min-w-0 flex-1 items-center rounded px-1 py-1.5 text-left transition-colors hover:bg-muted/50"
-					>
-						<span className="flex min-w-0 flex-1 flex-col gap-0.5">
-							<span className="flex items-center gap-1 truncate font-medium leading-tight text-foreground">
-								<HttpSpanLabel
-									spanName={summary.rootSpanName || "trace"}
-									spanAttributes={parseAttributes(summary.rootSpanAttributes)}
-									spanKind={summary.rootSpanKind}
-									className="min-w-0"
-									textClassName="truncate"
+					</IconButton>
+					<Tooltip>
+						<TooltipTrigger
+							render={
+								<Link
+									to="/traces/$traceId"
+									params={{ traceId: summary.traceId }}
+									search={{ t: summary.startTime }}
+									target="_blank"
+									rel="noreferrer"
+									className="group/trace flex min-w-0 flex-1 items-center rounded px-1 py-1.5 text-left transition-colors hover:bg-muted/50"
 								/>
-								<ExternalLinkIcon className="size-3 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/trace:opacity-100" />
+							}
+						>
+							<span className="flex min-w-0 flex-1 flex-col gap-0.5">
+								<span className="flex items-center gap-1 truncate font-medium leading-tight text-foreground">
+									<HttpSpanLabel
+										spanName={summary.rootSpanName || "trace"}
+										spanAttributes={parseAttributes(summary.rootSpanAttributes)}
+										spanKind={summary.rootSpanKind}
+										className="min-w-0"
+										textClassName="truncate"
+									/>
+									<ExternalLinkIcon className="size-3 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/trace:opacity-100" />
+								</span>
+								<span className="block truncate font-mono text-3xs leading-tight text-muted-foreground">
+									{summary.rootServiceName}
+								</span>
 							</span>
-							<span className="block truncate font-mono text-3xs leading-tight text-muted-foreground">
-								{summary.rootServiceName}
-							</span>
-						</span>
-					</Link>
+						</TooltipTrigger>
+						<TooltipContent>
+							Open trace in new tab · {summary.rootServiceName} · {summary.spanCount} spans
+						</TooltipContent>
+					</Tooltip>
 				</div>
-				<button
-					type="button"
-					onClick={() => seek.seekDisplay(range.displayStartMs)}
-					title={`${summary.rootSpanName} — fired at ${formatClock(range.displayStartMs)} · ${Math.round(
-						summary.durationMs,
-					)}ms${range.outOfRange ? " · outside recording" : ""}`}
-					className="relative h-11 flex-1 cursor-pointer"
-				>
-					<TraceBar
-						leftPct={pct(range.displayStartMs, seek.displayTotalMs)}
-						widthPct={Math.max(
-							0.6,
-							pct(range.displayEndMs, seek.displayTotalMs) -
-								pct(range.displayStartMs, seek.displayTotalMs),
-						)}
-						isError={isError}
-						outOfRange={range.outOfRange}
-						label={`${Math.round(summary.durationMs)}ms`}
-					/>
-				</button>
+				<Tooltip>
+					<TooltipTrigger
+						render={
+							<button
+								type="button"
+								onClick={() => seek.seekDisplay(range.displayStartMs)}
+								className="relative h-11 flex-1 cursor-pointer"
+							/>
+						}
+					>
+						<TraceBar
+							leftPct={pct(range.displayStartMs, seek.displayTotalMs)}
+							widthPct={Math.max(
+								0.6,
+								pct(range.displayEndMs, seek.displayTotalMs) -
+									pct(range.displayStartMs, seek.displayTotalMs),
+							)}
+							isError={isError}
+							outOfRange={range.outOfRange}
+							label={`${Math.round(summary.durationMs)}ms`}
+						/>
+					</TooltipTrigger>
+					<TooltipContent>
+						{summary.rootSpanName}: fired at {formatClock(range.displayStartMs)} ·{" "}
+						{Math.round(summary.durationMs)}ms
+						{range.outOfRange ? " · outside recording" : ""}
+					</TooltipContent>
+				</Tooltip>
 			</div>
 			{expanded && (
 				<TraceSpanLane traceId={summary.traceId} timestamp={summary.startTime} seek={seek} />
@@ -498,10 +528,13 @@ function TraceSpanLane({
 				<Skeleton className="h-3 w-1/2" />
 			</div>
 		))
-		.onError(() => (
-			<div className="bg-muted/10 px-3 py-2 text-2xs text-destructive">
-				Couldn’t load spans for this trace.
-			</div>
+		.onError((error) => (
+			<ErrorState
+				variant="inline"
+				error={error}
+				title="Couldn't load spans for this trace"
+				className="bg-muted/10 px-3 py-2"
+			/>
 		))
 		.onSuccess((res) => {
 			const spans: ReadonlyArray<SpanRow> = res.spans
@@ -557,23 +590,31 @@ function SpanRowItem({ span, seek }: { span: SpanRow; seek: SeekContext }) {
 					textClassName="text-3xs text-muted-foreground"
 				/>
 			</div>
-			<button
-				type="button"
-				onClick={() => seek.seekDisplay(range.displayStartMs)}
-				title={`${span.spanName} — fired at ${formatClock(range.displayStartMs)} · ${Math.round(
-					span.durationMs,
-				)}ms${range.outOfRange ? " · outside recording" : ""}`}
-				className="relative h-5 flex-1 cursor-pointer"
-			>
-				<span
-					className={cn(
-						"absolute top-1/2 h-2.5 -translate-y-1/2 rounded-sm transition-[filter] hover:brightness-110",
-						isError ? "bg-severity-error" : "bg-primary/70",
-						range.outOfRange && "opacity-50",
-					)}
-					style={{ left: `${leftPct}%`, width: `${widthPct}%`, minWidth: 4 }}
-				/>
-			</button>
+			<Tooltip>
+				<TooltipTrigger
+					render={
+						<button
+							type="button"
+							onClick={() => seek.seekDisplay(range.displayStartMs)}
+							className="relative h-5 flex-1 cursor-pointer"
+						/>
+					}
+				>
+					<span
+						className={cn(
+							"absolute top-1/2 h-2.5 -translate-y-1/2 rounded-sm transition-[filter] hover:brightness-110",
+							isError ? "bg-severity-error" : "bg-primary/70",
+							range.outOfRange && "opacity-50",
+						)}
+						style={{ left: `${leftPct}%`, width: `${widthPct}%`, minWidth: 4 }}
+					/>
+				</TooltipTrigger>
+				<TooltipContent>
+					{span.spanName}: fired at {formatClock(range.displayStartMs)} ·{" "}
+					{Math.round(span.durationMs)}ms
+					{range.outOfRange ? " · outside recording" : ""}
+				</TooltipContent>
+			</Tooltip>
 		</div>
 	)
 }

@@ -40,7 +40,9 @@ import {
 	createQueryDraft,
 	type QueryBuilderQueryDraft,
 } from "@maple/query-engine/query-builder"
-import { formatErrorRate, formatLatency, formatNumber } from "@maple/ui/lib/format"
+import { EMPTY_VALUE, formatErrorRate, formatLatency, formatNumber } from "@maple/ui/lib/format"
+import { getBrowserTimeZone } from "@/atoms/timezone-preference-atoms"
+import { formatDateInTimezone, formatTimeInTimezone, formatTimestampInTimezone } from "@/lib/timezone-format"
 import type { Tone } from "@maple/ui/lib/tone"
 
 const asHazelOrganizationId = Schema.decodeUnknownSync(HazelOrganizationId)
@@ -828,7 +830,7 @@ export function computeIncidentStats(incidents: AlertIncidentDocument[]) {
 				: avgResolutionMs < 3_600_000
 					? `${(avgResolutionMs / 60_000).toFixed(1)}m`
 					: `${(avgResolutionMs / 3_600_000).toFixed(1)}h`
-			: "—"
+			: EMPTY_VALUE
 
 	const groupCounts: Record<string, number> = {}
 	for (const i of incidents) {
@@ -846,38 +848,20 @@ export function computeIncidentStats(incidents: AlertIncidentDocument[]) {
 /*  Shared Formatters                                                         */
 /* -------------------------------------------------------------------------- */
 
-export function formatAlertDateTime(value: string | null, timeZone?: string): string {
+export function formatAlertDateTime(value: string | null, timeZone: string): string {
 	if (!value) return "Never"
-	return new Date(value).toLocaleString(undefined, {
-		timeZone,
-		month: "short",
-		day: "numeric",
-		year: "numeric",
-		hour: "2-digit",
-		minute: "2-digit",
-	})
+	return `${formatDateInTimezone(value, { timeZone })}, ${formatTimeInTimezone(value, { timeZone })}`
 }
 
-export function formatAlertDateTimeFull(value: string | null, timeZone?: string): string {
-	if (!value) return "—"
-	return new Date(value).toLocaleString(undefined, {
-		timeZone,
-		month: "short",
-		day: "numeric",
-		hour: "2-digit",
-		minute: "2-digit",
-		second: "2-digit",
-	})
+export function formatAlertDateTimeFull(value: string | null, timeZone: string): string {
+	if (!value) return EMPTY_VALUE
+	return formatTimestampInTimezone(value, { timeZone })
 }
 
-/** Time of day only (`03:10 PM`) — used where a day header already carries the date. */
-export function formatAlertTime(value: string | null, timeZone?: string): string {
-	if (!value) return "—"
-	return new Date(value).toLocaleTimeString(undefined, {
-		timeZone,
-		hour: "2-digit",
-		minute: "2-digit",
-	})
+/** Time of day only (`03:10 PM`), used where a day header already carries the date. */
+export function formatAlertTime(value: string | null, timeZone: string): string {
+	if (!value) return EMPTY_VALUE
+	return formatTimeInTimezone(value, { timeZone })
 }
 
 /** Midnight of the day holding `ms`, in `timeZone` or the browser's zone. */
@@ -895,7 +879,7 @@ function formatAlertDayHeading(value: string, timeZone: string | undefined): str
 	if (target === today) return "Today"
 	// Any instant inside the previous day, so a 23- or 25-hour day still counts.
 	if (target === startOfDay(today - 1, timeZone)) return "Yesterday"
-	return date.toLocaleDateString(undefined, { timeZone, month: "short", day: "numeric", year: "numeric" })
+	return formatDateInTimezone(date, { timeZone: timeZone ?? getBrowserTimeZone() })
 }
 
 /* -------------------------------------------------------------------------- */
@@ -955,11 +939,11 @@ export function groupDeliveryEventsByDay(
 }
 
 export function formatAlertDuration(startStr: string | null, endStr: string | null): string {
-	if (!startStr) return "—"
+	if (!startStr) return EMPTY_VALUE
 	const start = new Date(startStr).getTime()
 	const end = endStr ? new Date(endStr).getTime() : Date.now()
 	const diffMs = end - start
-	if (diffMs < 0) return "—"
+	if (diffMs < 0) return EMPTY_VALUE
 	const mins = Math.floor(diffMs / 60_000)
 	if (mins < 60) return `${mins}m`
 	const hours = Math.floor(mins / 60)

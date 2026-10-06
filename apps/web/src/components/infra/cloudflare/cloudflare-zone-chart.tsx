@@ -25,7 +25,12 @@ import type { CloudflareZoneTimeseriesRow } from "@/api/warehouse/cloudflare-inf
 import { formatNumber } from "@maple/ui/lib/format"
 import { formatBytes, formatPercent } from "@maple/ui/lib/format"
 import { transformRows, type TransformedPoint } from "../chart-utils"
-import { CHART_EMPTY_MESSAGE, CHART_HEIGHT, ChartCard, ChartCardMessage } from "@/components/common/chart-card"
+import {
+	CHART_EMPTY_MESSAGE,
+	CHART_HEIGHT,
+	ChartCard,
+	ChartCardMessage,
+} from "@/components/common/chart-card"
 import { OTHER_ZONES_SERIES } from "./constants"
 
 export type CloudflareZoneMetric = "requests" | "errorRate" | "cacheHitRate" | "bytes"

@@ -2,6 +2,7 @@ import { useMemo } from "react"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { Sparkline } from "@maple/ui/components/ui/gradient-chart"
 import { BackdropBar } from "@maple/ui/components/ui/meter"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 import { Result } from "@/lib/effect-atom"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { getServiceOperationsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
@@ -77,16 +78,17 @@ export function ServiceTopOperationsPanel({
 								type="button"
 								onClick={onViewAll}
 								className="relative flex w-full items-center gap-3 px-4 py-2 text-left hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
-								title={`${op.spanName} — see Operations tab`}
 							>
 								<BackdropBar
 									value={op.estimatedSpanCount}
 									max={maxCalls}
 									className="bg-severity-info/10"
 								/>
-								<span className="relative min-w-0 flex-1 truncate font-mono text-[12.5px] text-foreground">
-									{op.spanName}
-								</span>
+								<TruncatedText
+									text={op.spanName}
+									mono
+									className="relative flex-1 text-xs text-foreground"
+								/>
 								<span className="relative flex shrink-0 items-center gap-3 font-mono text-2xs tabular-nums">
 									<SampledValue
 										className="text-foreground"

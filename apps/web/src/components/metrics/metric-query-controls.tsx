@@ -94,7 +94,7 @@ export function MetricQueryControls({
 					value={aggregation}
 					onValueChange={(value) => onPatch({ agg: value ?? aggregation })}
 				>
-					<SelectTrigger className="h-8 w-28 text-xs">
+					<SelectTrigger size="sm" className="w-28 text-xs">
 						<SelectValue />
 					</SelectTrigger>
 					<SelectContent>

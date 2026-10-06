@@ -1,11 +1,12 @@
 import { useMemo, useState } from "react"
+import { Panel } from "@maple/ui/components/ui/panel"
 import { useNavigate } from "@tanstack/react-router"
 import { cn } from "@maple/ui/lib/utils"
 import { Skeleton, SkeletonList } from "@maple/ui/components/ui/skeleton"
 import { Button } from "@maple/ui/components/ui/button"
 import { Table, TableBody, TableCell, TableHeader, TableRow } from "@maple/ui/components/ui/table"
 import { LatencyValue } from "@maple/ui/components/latency-value"
-import { countLabel, formatErrorRate, formatLatency, formatRate } from "@maple/ui/lib/format"
+import { countLabel, formatErrorRate, formatLatency, formatNumber, formatRate } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { errorRateClass, errorRateLevel } from "@maple/ui/lib/error-rate"
 import { ErrorRateValue } from "@maple/ui/components/error-rate-value"
@@ -22,7 +23,6 @@ import {
 	MobileStat,
 	MobileStatLine,
 	SortColumnHead,
-	TABLE_CARD_CLASS,
 } from "./service-table-cells"
 import { SampledValue } from "./sampled-value"
 import { useSortState } from "@/hooks/use-table-sort"
@@ -192,7 +192,7 @@ export function ServiceApiTab({
 			aria-busy={isWaiting || undefined}
 		>
 			<div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 px-0.5 text-xs">
-				<Stat label="endpoints" value={served.count.toLocaleString()} />
+				<Stat label="endpoints" value={formatNumber(served.count)} />
 				<Stat label="req/s" value={formatRate(callsPerSecond(served.spanCount, seconds))} />
 				<Stat
 					label="errors"
@@ -208,7 +208,7 @@ export function ServiceApiTab({
 			</div>
 
 			{/* Desktop: grouped, sortable table with inline distribution bars. */}
-			<div className={cn("hidden md:block", TABLE_CARD_CLASS)}>
+			<Panel className="hidden md:block">
 				<Table>
 					<TableHeader>
 						<TableRow className="border-b">
@@ -277,7 +277,7 @@ export function ServiceApiTab({
 						))}
 					</TableBody>
 				</Table>
-			</div>
+			</Panel>
 
 			{/* Mobile: tap-to-trace list with a compact sort control. */}
 			<div className="space-y-2 md:hidden">
@@ -294,7 +294,7 @@ export function ServiceApiTab({
 					sortDir={sortDir}
 					onSort={handleSort}
 				/>
-				<div className={TABLE_CARD_CLASS}>
+				<Panel>
 					{groups.map((group) => (
 						<MobileGroup
 							key={groupKey(group)}
@@ -305,7 +305,7 @@ export function ServiceApiTab({
 							onSelect={handleRowClick}
 						/>
 					))}
-				</div>
+				</Panel>
 			</div>
 		</div>
 	)
@@ -381,7 +381,7 @@ function GroupRows({ group, seconds, maxima, expanded, onToggle, onSelect }: Gro
 								<span className="text-xs text-muted-foreground">{copy.explainer}</span>
 								<span className="truncate font-mono text-2xs text-muted-foreground/50">
 									{sample.join("  ·  ")}
-									{remaining > 0 ? `  ·  ${remaining.toLocaleString()} more` : ""}
+									{remaining > 0 ? `  ·  ${formatNumber(remaining)} more` : ""}
 								</span>
 							</div>
 							<Button variant="outline" size="sm" onClick={onToggle} className="shrink-0">
@@ -447,8 +447,7 @@ function GroupHeaderRow({
 	seconds: number
 	muted?: boolean
 }) {
-	const numeric =
-		"py-1.5 text-right align-middle font-mono text-2xs tabular-nums text-muted-foreground/70"
+	const numeric = "py-1.5 text-right align-middle font-mono text-2xs tabular-nums text-muted-foreground/70"
 	return (
 		<TableRow className="border-b bg-muted/30 hover:bg-muted/30">
 			<TableCell className="max-w-0 py-1.5 pl-3 align-middle">
@@ -511,7 +510,7 @@ function EndpointRow({
 			<TableCell className={cn("max-w-0 py-2 align-middle", stem.length > 0 ? "pl-6" : "pl-3")}>
 				<div className="flex min-w-0 items-center gap-2.5">
 					<MethodLabel method={endpoint.method} />
-					<TruncatedText text={endpoint.route} mono className="text-[12.5px]">
+					<TruncatedText text={endpoint.route} mono className="text-xs">
 						{head.length > 0 && <span className="text-muted-foreground/50">{head}</span>}
 						<span className="text-foreground">{tail}</span>
 					</TruncatedText>
@@ -519,7 +518,7 @@ function EndpointRow({
 			</TableCell>
 			<BarCell value={endpoint.estimatedSpanCount} max={maxima.calls} tone="calls">
 				<SampledValue
-					className="font-mono text-[12.5px] tabular-nums text-foreground"
+					className="font-mono text-xs tabular-nums text-foreground"
 					estimated={endpoint.estimatedSpanCount > endpoint.spanCount}
 					value={formatRate(callsPerSecond(endpoint.estimatedSpanCount, seconds))}
 				/>
@@ -531,16 +530,16 @@ function EndpointRow({
 				max={0.05}
 				tone="errors"
 			>
-				<ErrorRateValue rate={endpoint.errorRate} className="text-[12.5px]" />
+				<ErrorRateValue rate={endpoint.errorRate} className="text-xs" />
 			</BarCell>
 			<TableCell className="py-2 text-right align-middle">
-				<LatencyValue ms={endpoint.p50DurationMs} scale="p50" className="text-[12.5px]" />
+				<LatencyValue ms={endpoint.p50DurationMs} scale="p50" className="text-xs" />
 			</TableCell>
 			<BarCell value={endpoint.p95DurationMs} max={maxima.p95} tone="latency">
-				<LatencyValue ms={endpoint.p95DurationMs} scale="p95" className="text-[12.5px]" />
+				<LatencyValue ms={endpoint.p95DurationMs} scale="p95" className="text-xs" />
 			</BarCell>
 			<TableCell className="py-2 pr-3 text-right align-middle">
-				<LatencyValue ms={endpoint.p99DurationMs} scale="p95" className="text-[12.5px]" />
+				<LatencyValue ms={endpoint.p99DurationMs} scale="p95" className="text-xs" />
 			</TableCell>
 		</TableRow>
 	)
@@ -643,7 +642,7 @@ function MobileGroup({
  *  rather than "no data", because the tab is empty for a reason the user can fix. */
 function ApiEmptyState({ serviceName }: { serviceName: string }) {
 	return (
-		<div className="flex flex-col items-center gap-3.5 rounded-lg border bg-card px-[18px] py-11 text-center">
+		<Panel className="items-center gap-3.5 px-[18px] py-11 text-center">
 			<span className="font-mono text-[15px] font-medium text-foreground/90">
 				No HTTP endpoints in this window
 			</span>
@@ -654,7 +653,7 @@ function ApiEmptyState({ serviceName }: { serviceName: string }) {
 				<span className="font-mono text-foreground/80">url.path</span>.
 			</span>
 			<DocsLink page="otelConventions" />
-		</div>
+		</Panel>
 	)
 }
 
@@ -667,7 +666,7 @@ function ApiLoadingState() {
 					<Skeleton key={i} className="h-3" style={{ width: w }} />
 				))}
 			</div>
-			<div className={TABLE_CARD_CLASS}>
+			<Panel>
 				<div className="flex items-center gap-3 border-b px-3 py-2.5">
 					<Skeleton className="h-2.5 flex-1" />
 					{[COLUMN.rate, COLUMN.err, COLUMN.p50, COLUMN.p95, COLUMN.p99].map((w, i) => (
@@ -702,7 +701,7 @@ function ApiLoadingState() {
 						</div>
 					)}
 				/>
-			</div>
+			</Panel>
 		</div>
 	)
 }

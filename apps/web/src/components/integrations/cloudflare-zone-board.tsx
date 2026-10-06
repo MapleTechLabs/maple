@@ -13,7 +13,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { TONE_TEXT, type Tone } from "@maple/ui/lib/tone"
 
 import { ColumnHead, type SortDir } from "@/components/common/data-table"
-import { formatNumber } from "@maple/ui/lib/format"
+import { EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { CLOUDFLARE_ACCENT } from "./integration-catalog"
 
@@ -310,7 +310,7 @@ function ResourceRow({
 					<StatSparkline data={usage.points} color={CLOUDFLARE_ACCENT} className="h-5 w-16" />
 				) : null}
 				<span className="w-12 text-right text-xs font-medium tabular-nums text-foreground">
-					{hasData && usage ? formatNumber(usage.totalRequests) : "—"}
+					{hasData && usage ? formatNumber(usage.totalRequests) : EMPTY_VALUE}
 				</span>
 			</div>
 		</>
@@ -457,7 +457,7 @@ export function CloudflareZoneBoard({
 		setFilter(CHIP_ORDER.find((kind) => kind === values[0]) ?? "all")
 
 	return (
-		<Panel className={cn("@container rounded-lg border-border/60", className)}>
+		<Panel className={cn("@container border-border/60", className)}>
 			{/* Title bar: the health rollup (chips double as a single-select filter) + a name search. */}
 			<PanelHeader className="gap-2 border-border/60 pl-4 pr-2.5">
 				<h3 className="text-sm font-semibold">Zones</h3>
@@ -576,7 +576,7 @@ export function CloudflareWorkersCard({
 	const visible = expanded ? scripts : scripts.slice(0, WORKERS_COLLAPSED_COUNT)
 
 	return (
-		<Panel className={cn("h-fit rounded-lg border-border/60", className)}>
+		<Panel className={cn("h-fit border-border/60", className)}>
 			<PanelHeader
 				className="border-border/60 py-3"
 				action={
@@ -616,7 +616,9 @@ export function CloudflareWorkersCard({
 								</TruncatedText>
 							</span>
 							<span className="shrink-0 text-xs font-medium tabular-nums text-foreground">
-								{service.totalRequests > 0 ? formatNumber(service.totalRequests) : "—"}
+								{service.totalRequests > 0
+									? formatNumber(service.totalRequests)
+									: EMPTY_VALUE}
 							</span>
 						</div>
 					))}

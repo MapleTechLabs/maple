@@ -19,6 +19,7 @@ import { chatConnectorManifests } from "@maple/chat-platform/manifests"
 import type { ChatConnectorManifest } from "@maple/chat-platform/manifests"
 import { PLANETSCALE_COLOR } from "@/components/infra/planetscale/metrics"
 import { useChatConnectorGate } from "@/hooks/use-organization-feature-flags"
+import { Panel } from "@maple/ui/components/ui/panel"
 import { countLabel } from "@maple/ui/lib/format"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { docsUrl } from "@/lib/docs"
@@ -946,7 +947,7 @@ export function IntegrationCatalog({ onSelect }: { onSelect: (id: IntegrationId)
 			{(connected.length > 0 || loading.length > 0) && (
 				<section className="flex flex-col gap-2">
 					<Eyebrow variant="label">Connected</Eyebrow>
-					<div className="divide-y divide-border/60 overflow-hidden rounded-lg border border-border/60 bg-card">
+					<Panel className="divide-y divide-border/60 border-border/60">
 						{connected.map(({ entry, overview }) => (
 							<ConnectedRow
 								key={entry.id}
@@ -958,7 +959,7 @@ export function IntegrationCatalog({ onSelect }: { onSelect: (id: IntegrationId)
 						{loading.map((entry) => (
 							<SkeletonRow key={entry.id} />
 						))}
-					</div>
+					</Panel>
 				</section>
 			)}
 			{shelves.map((shelf) => (

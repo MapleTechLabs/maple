@@ -20,14 +20,21 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@m
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { KeyValue, KeyValueList } from "@maple/ui/components/ui/key-value"
 import { ListFooter } from "@maple/ui/components/ui/list-footer"
+import { Panel } from "@maple/ui/components/ui/panel"
+import { RefreshButton } from "@maple/ui/components/ui/refresh-button"
 import { SkeletonList } from "@maple/ui/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
 import { SegmentedSelect } from "@/components/common/segmented-select"
 import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
+import { EMPTY_VALUE } from "@maple/ui/lib/format"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { trySync } from "@maple/ui/lib/try-sync"
 import { cn } from "@maple/ui/lib/utils"
 import { RelativeTime } from "@/components/common/relative-time"
-import { ArrowPathIcon, ChevronRightIcon, HistoryIcon } from "@/components/icons"
+import { ChevronRightIcon, HistoryIcon } from "@/components/icons"
+import { SettingsSection } from "@/components/settings/settings-section"
+import { useTimezonePreference } from "@/hooks/use-timezone-preference"
+import { formatTimestampInTimezone } from "@/lib/timezone-format"
 import { ErrorState } from "@/components/common/error-state"
 
 type ActorFilter = AuditActorType | "all"
@@ -110,18 +117,6 @@ function actorDisplayName(entry: V2AuditLogEntry): string | null {
 	return null
 }
 
-function formatDateTimeFull(value: string): string {
-	return new Date(value).toLocaleString(undefined, {
-		year: "numeric",
-		month: "short",
-		day: "2-digit",
-		hour: "2-digit",
-		minute: "2-digit",
-		second: "2-digit",
-		timeZoneName: "short",
-	})
-}
-
 /** `<redacted>` / `<updated>` are the audit pipeline's placeholders, not values. */
 function isPlaceholder(value: unknown): value is string {
 	return typeof value === "string" && /^<[a-z]+>$/.test(value)
@@ -158,7 +153,7 @@ function metadataBlock(value: unknown): string | null {
 /**
  * Append the next page, dropping any entry already shown. The pinned `until`
  * ceiling makes overlap rare, but a filter re-fetch or a refresh mid-scroll can
- * still repeat one — and a duplicated React key corrupts the list either way.
+ * still repeat one, and a duplicated React key corrupts the list either way.
  */
 function dedupeById(
 	existing: ReadonlyArray<V2AuditLogEntry>,
@@ -248,12 +243,11 @@ export function AuditLogSection() {
 	const filtered = actorFilter !== "all" || outcomeFilter !== "all"
 
 	return (
-		<div className="space-y-3">
-			<p className="text-muted-foreground text-xs">
-				Changes, refused attempts, and every read of telemetry or session replays — from the
-				dashboard, API, and MCP. Select an entry for its full record.
-			</p>
-
+		<SettingsSection
+			title="Audit log"
+			description="Changes, refused attempts, and every read of telemetry or session replays from the dashboard, API, and MCP. Select an entry for its full record."
+			framed={false}
+		>
 			<div className="flex flex-wrap items-center gap-3">
 				<SegmentedSelect
 					size="sm"
@@ -270,24 +264,18 @@ export function AuditLogSection() {
 					options={OUTCOME_FILTERS}
 				/>
 				<div className="flex-1" />
-				<Button
+				<RefreshButton
+					iconOnly
 					variant="ghost"
-					size="icon"
-					className="size-7"
-					aria-label="Refresh audit log"
-					title="Refresh"
-					disabled={waiting}
-					onClick={handleRefresh}
-				>
-					<ArrowPathIcon size={14} />
-				</Button>
+					label="Refresh audit log"
+					pending={waiting}
+					onRefresh={handleRefresh}
+				/>
 			</div>
 
-			<div
-				className={cn(
-					"@container bg-card rounded-lg border",
-					waiting && view !== null && "opacity-60",
-				)}
+			<Panel
+				aria-busy={waiting}
+				className={cn("@container", refreshingClass(waiting && view !== null))}
 			>
 				{view === null && Result.isFailure(pageResult) ? (
 					<ErrorState
@@ -351,7 +339,7 @@ export function AuditLogSection() {
 						))}
 					</div>
 				)}
-			</div>
+			</Panel>
 
 			{view !== null && view.hasMore && view.nextCursor !== null && (
 				<ListFooter
@@ -374,7 +362,7 @@ export function AuditLogSection() {
 					}}
 				/>
 			)}
-		</div>
+		</SettingsSection>
 	)
 }
 
@@ -401,12 +389,12 @@ function ActorCell({ entry }: { entry: V2AuditLogEntry }) {
 				</Badge>
 			)}
 			{name !== null && (
-				<span
-					className={cn("truncate text-xs", entry.actor_name === null && "text-muted-foreground")}
-					title={entry.actor_id ?? undefined}
+				<TruncatedText
+					text={entry.actor_id ?? undefined}
+					className={cn("text-xs", entry.actor_name === null && "text-muted-foreground")}
 				>
 					{name}
-				</span>
+				</TruncatedText>
 			)}
 		</div>
 	)
@@ -417,10 +405,10 @@ function ActionLabel({ action }: { action: string }) {
 	const dot = action.indexOf(".")
 	if (dot === -1) return <span className="truncate font-mono text-xs">{action}</span>
 	return (
-		<span className="truncate font-mono text-xs" title={action}>
+		<TruncatedText mono text={action} className="text-xs">
 			<span className="text-muted-foreground">{action.slice(0, dot + 1)}</span>
 			<span className="text-foreground">{action.slice(dot + 1)}</span>
-		</span>
+		</TruncatedText>
 	)
 }
 
@@ -495,7 +483,7 @@ function ResourceCell({ entry }: { entry: V2AuditLogEntry }) {
 	// Membership changes act on a person: the affected user is the resource.
 	const id = entry.resource_id ?? entry.affected_user
 	if (entry.resource_type === null && id === null) {
-		return <span className="text-muted-foreground text-xs">—</span>
+		return <span className="text-muted-foreground text-xs">{EMPTY_VALUE}</span>
 	}
 	return (
 		<div className="flex min-w-0 items-center gap-1.5">
@@ -530,7 +518,7 @@ function ChangeValue({ value }: { value: unknown }) {
 		return <span className="text-muted-foreground/70 italic">{value.slice(1, -1)}</span>
 	}
 	if (value === undefined || value === null || value === "") {
-		return <span className="text-muted-foreground/60">—</span>
+		return <span className="text-muted-foreground/60">{EMPTY_VALUE}</span>
 	}
 	return <span className="break-all">{formatScalar(value)}</span>
 }
@@ -592,6 +580,9 @@ function AuditLogDetail({ entry }: { entry: V2AuditLogEntry }) {
 	const badge = ACTOR_BADGES[entry.actor_type]
 	const hasChanges = entry.changes !== null && entry.changes.fields.length > 0
 	const hasMetadata = entry.metadata !== null && Object.keys(entry.metadata).length > 0
+	const { effectiveTimezone } = useTimezonePreference()
+	const formatDateTimeFull = (value: string) =>
+		formatTimestampInTimezone(value, { timeZone: effectiveTimezone, withYear: true })
 
 	return (
 		<div className="border-border/60 space-y-4 border-t px-4 py-3 @md:pl-[44px]">
@@ -645,7 +636,7 @@ function AuditLogDetail({ entry }: { entry: V2AuditLogEntry }) {
 				</KeyValue>
 				<KeyValue wrap label="Resource">
 					{entry.resource_type === null && entry.resource_id === null ? (
-						<span className="text-muted-foreground/60">—</span>
+						<span className="text-muted-foreground/60">{EMPTY_VALUE}</span>
 					) : (
 						<span className="flex min-w-0 flex-wrap items-center gap-1.5">
 							{entry.resource_type !== null && (

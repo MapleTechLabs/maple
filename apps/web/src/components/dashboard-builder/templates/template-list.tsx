@@ -1,10 +1,12 @@
 import { useMemo } from "react"
 import type { V2DashboardTemplate } from "@maple/domain/http/v2"
 import { Button } from "@maple/ui/components/ui/button"
-import { ToolbarSearch } from "@maple/ui/components/toolbar"
+import { Toolbar, ToolbarSearch } from "@maple/ui/components/toolbar"
 import { SkeletonList } from "@maple/ui/components/ui/skeleton"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { cn } from "@maple/ui/lib/utils"
+import { rowSelectedClass } from "@maple/ui/components/ui/list-row"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 import {
 	ArrowRightIcon,
 	CircleCheckIcon,
@@ -67,15 +69,12 @@ function TemplateRow({
 			onClick={onSelect}
 			aria-current={selected ? "true" : undefined}
 			className={cn(
-				"flex w-full items-center text-left transition-colors",
-				selected ? "bg-muted" : "hover:bg-muted/50",
+				"flex min-h-9 w-full items-center text-left transition-colors",
+				rowSelectedClass(selected),
+				!selected && "hover:bg-muted/50",
 			)}
 		>
-			<span
-				aria-hidden
-				className={cn("h-9 w-0.5 shrink-0", selected ? "bg-primary" : "bg-transparent")}
-			/>
-			<span className="flex min-w-0 grow items-center gap-2.5 py-2 pr-5 pl-4">
+			<span className="flex min-w-0 grow items-center gap-2.5 py-2 pr-5 pl-4.5">
 				<span
 					className={cn(
 						"flex size-5.5 shrink-0 items-center justify-center rounded-sm border border-border",
@@ -95,14 +94,13 @@ function TemplateRow({
 				<span className="text-muted-foreground w-18 shrink-0 text-right font-mono text-2xs">
 					{widgetCountLabel(template)}
 				</span>
-				<span
-					// The lane is fixed so statuses form a column; long metric
-					// prefixes truncate and the tooltip recovers the full one.
-					title={status ?? undefined}
-					className="text-muted-foreground/80 w-31.5 shrink-0 truncate text-right font-mono text-2xs"
-				>
-					{status}
-				</span>
+				{/* The lane is fixed so statuses form a column; long metric
+				    prefixes truncate and the tooltip recovers the full one. */}
+				<TruncatedText
+					mono
+					text={status ?? undefined}
+					className="text-muted-foreground/80 w-31.5 shrink-0 text-right text-2xs"
+				/>
 			</span>
 		</button>
 	)
@@ -162,7 +160,7 @@ export function TemplateList({
 
 	return (
 		<div className="flex min-h-0 flex-col overflow-hidden">
-			<div className="flex shrink-0 items-center gap-2.5 border-b border-border px-5 py-3">
+			<Toolbar className="shrink-0 flex-nowrap gap-2.5 px-5">
 				<ToolbarSearch
 					query={query}
 					onSearch={onQueryChange}
@@ -177,7 +175,7 @@ export function TemplateList({
 					aria-label="Filter templates by readiness"
 					className="shrink-0"
 				/>
-			</div>
+			</Toolbar>
 
 			{searching && !loading && (
 				<div className="flex shrink-0 items-center gap-2 border-b border-border px-5 py-2 text-2xs">

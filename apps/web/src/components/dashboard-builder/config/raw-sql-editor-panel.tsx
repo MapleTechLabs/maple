@@ -1,3 +1,5 @@
+import { TONE_TEXT } from "@maple/ui/lib/tone"
+import { Field, FieldLabel } from "@maple/ui/components/ui/field"
 import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import { rawSqlIssue } from "@maple/domain/raw-sql"
 import { useId, useRef, useState } from "react"
@@ -5,6 +7,7 @@ import { useId, useRef, useState } from "react"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
 import { Input } from "@maple/ui/components/ui/input"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
 import { cn } from "@maple/ui/lib/utils"
 import { useDashboardVariablesOptional } from "@/components/dashboard-builder/dashboard-variables-context"
 import type { DashboardWidget } from "@/components/dashboard-builder/types"
@@ -95,7 +98,7 @@ export function RawSqlEditorPanel({
 					<div className="flex-1" />
 
 					{sqlIssue !== null && !collapsed && (
-						<span className="text-2xs text-destructive" title={sqlIssue.message}>
+						<span className={cn("text-2xs", TONE_TEXT.crit)} title={sqlIssue.message}>
 							{sqlIssue.code === "MissingOrgFilter" ? "Missing $__orgFilter" : sqlIssue.message}
 						</span>
 					)}
@@ -137,37 +140,52 @@ export function RawSqlEditorPanel({
 						<div className="flex items-start gap-3 pt-1 border-t border-dashed">
 							<div className="flex flex-wrap gap-1.5 flex-1 pt-2">
 								{MACRO_HINTS.map((hint) => (
-									<button
-										key={hint.token}
-										type="button"
-										title={hint.description}
-										onClick={() => insertToken(hint.token)}
-										className="px-2 py-0.5 text-2xs rounded-sm bg-muted/40 text-muted-foreground font-mono transition-colors hover:bg-muted hover:text-foreground"
-									>
-										{hint.token}
-									</button>
+									<Tooltip key={hint.token}>
+										<TooltipTrigger
+											render={
+												<button
+													type="button"
+													onClick={() => insertToken(hint.token)}
+													className="px-2 py-0.5 text-2xs rounded-sm bg-muted/40 text-muted-foreground font-mono transition-colors hover:bg-muted hover:text-foreground"
+												/>
+											}
+										>
+											{hint.token}
+										</TooltipTrigger>
+										<TooltipContent className="max-w-xs">
+											{hint.description}
+										</TooltipContent>
+									</Tooltip>
 								))}
 								{variableNames.map((name) => (
-									<button
-										key={`var-${name}`}
-										type="button"
-										title={`Dashboard variable — expands to the selected value, e.g. ServiceName IN ($${name}). "All" expands to every value.`}
-										onClick={() => insertToken(`$${name}`)}
-										className="px-2 py-0.5 text-2xs rounded-sm bg-primary/10 text-primary font-mono transition-colors hover:bg-primary/20"
-									>
-										${name}
-									</button>
+									<Tooltip key={`var-${name}`}>
+										<TooltipTrigger
+											render={
+												<button
+													type="button"
+													onClick={() => insertToken(`$${name}`)}
+													className="px-2 py-0.5 text-2xs rounded-sm bg-primary/10 text-primary font-mono transition-colors hover:bg-primary/20"
+												/>
+											}
+										>
+											${name}
+										</TooltipTrigger>
+										<TooltipContent className="max-w-xs">
+											Dashboard variable: expands to the selected value, e.g.
+											ServiceName IN (${name}). "All" expands to every value.
+										</TooltipContent>
+									</Tooltip>
 								))}
 							</div>
 
 							{showBucketControl && (
-								<div className="flex items-center gap-2 pt-1.5 shrink-0">
-									<label
+								<Field className="flex-row items-center gap-2 pt-1.5 shrink-0">
+									<FieldLabel
 										htmlFor={bucketInputId}
-										className="text-2xs text-muted-foreground whitespace-nowrap"
+										className="font-normal text-2xs text-muted-foreground whitespace-nowrap sm:text-2xs"
 									>
 										Bucket
-									</label>
+									</FieldLabel>
 									<Input
 										id={bucketInputId}
 										type="number"
@@ -186,7 +204,7 @@ export function RawSqlEditorPanel({
 										className="h-7 w-20 text-xs"
 									/>
 									<span className="text-2xs text-muted-foreground">s</span>
-								</div>
+								</Field>
 							)}
 						</div>
 					</div>

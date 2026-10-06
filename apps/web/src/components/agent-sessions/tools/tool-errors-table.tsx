@@ -7,10 +7,12 @@ import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { MiniBars } from "@maple/ui/components/ui/mini-bars"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
+import { formatPercent, pluralize } from "@maple/ui/lib/format"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 
 import { useTableSort } from "@/components/common/data-table"
 import { ErrorState } from "@/components/common/error-state"
+import { RelativeTime } from "@/components/common/relative-time"
 import { ChevronRightIcon } from "@/components/icons"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import {
@@ -28,14 +30,7 @@ import {
 	type ErrorTextToken,
 } from "@/lib/agent-sessions/tool-error-display"
 
-import {
-	ShareCell,
-	Th,
-	ToolTable,
-	ToolTableBody,
-	ToolTableHead,
-	toolRowClass,
-} from "./tool-breakdown-tables"
+import { ShareCell, Th, ToolTable, ToolTableBody, ToolTableHead, toolRowClass } from "./tool-breakdown-tables"
 import { ErrorTextLine, FailureStatusLine, MaskChip, windowRangeLabel } from "./tool-error-parts"
 
 type ErrorSortKey = "calls" | "sessions" | "lastSeen"
@@ -106,8 +101,6 @@ export function prepareToolErrors(
 		}),
 	}
 }
-
-const shareLabel = (share: number) => (share > 0 && share < 0.005 ? "<1%" : `${Math.round(share * 100)}%`)
 
 /**
  * How one tool fails, one row per distinct error — the tool detail page's
@@ -209,14 +202,14 @@ export function ToolErrorsTable({
 		>
 			<div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 pb-3 font-mono">
 				<div className="flex items-baseline gap-2.5">
-					<span className="text-[12.5px] font-medium text-foreground">Errors</span>
+					<span className="text-xs font-medium text-foreground">Errors</span>
 					{loading ? (
 						<Skeleton className="h-2.5 w-[150px] self-center" />
 					) : (
 						<span className="text-2xs leading-3.5 tabular-nums text-muted-foreground/70">
-							{formatToolCount(failures)} failed call{failures === 1 ? "" : "s"}
+							{formatToolCount(failures)} failed {pluralize(failures, "call")}
 							{rows.length > 0
-								? ` · ${formatToolCount(rows.length)} error${rows.length === 1 ? "" : "s"}`
+								? ` · ${formatToolCount(rows.length)} ${pluralize(rows.length, "error")}`
 								: null}
 						</span>
 					)}
@@ -234,7 +227,7 @@ export function ToolErrorsTable({
 
 			{empty ? (
 				<div className="flex flex-col gap-2 border-t border-border px-2.5 pt-[22px] pb-5 font-mono">
-					<span className="flex items-center gap-2 text-[12.5px] text-foreground">
+					<span className="flex items-center gap-2 text-xs text-foreground">
 						<StatusDot tone="ok" />
 						No failed calls between{" "}
 						{windowRangeLabel(window.startMs, window.startMs, effectiveTimezone)} and{" "}
@@ -242,7 +235,7 @@ export function ToolErrorsTable({
 					</span>
 					<span className="pl-3.5 text-xs text-muted-foreground">
 						{toolCalls > 0
-							? `All ${formatToolCount(toolCalls)} ${tool} call${toolCalls === 1 ? "" : "s"} in this range succeeded.`
+							? `All ${formatToolCount(toolCalls)} ${tool} ${pluralize(toolCalls, "call")} in this range succeeded.`
 							: `${tool} was not called in this range.`}
 					</span>
 				</div>
@@ -252,9 +245,7 @@ export function ToolErrorsTable({
 						<div className="flex w-0 min-w-0 flex-1 items-baseline gap-2.5 font-mono text-2xs leading-3.5">
 							<Eyebrow variant="mono">Error</Eyebrow>
 							{headHint === "" ? null : (
-								<span className="truncate text-muted-foreground/60" title={headHint}>
-									{headHint}
-								</span>
+								<TruncatedText className="text-muted-foreground/60">{headHint}</TruncatedText>
 							)}
 						</div>
 						<Th
@@ -311,7 +302,7 @@ export function ToolErrorsTable({
 										className={toolRowClass(row.fingerprint === selected)}
 										title={row.display === "" ? undefined : row.display}
 									>
-										<span className="flex w-0 min-w-0 flex-1 items-center gap-2.5 overflow-hidden font-mono text-[12.5px] leading-4">
+										<span className="flex w-0 min-w-0 flex-1 items-center gap-2.5 overflow-hidden font-mono text-xs leading-4">
 											<GroupTitle row={row} />
 											{prepared.errorType === undefined && row.errorType !== "" ? (
 												<span
@@ -343,25 +334,24 @@ export function ToolErrorsTable({
 										<ShareCell
 											ratio={row.share}
 											max={maxShare}
-											label={shareLabel(row.share)}
+											label={formatPercent(row.share, { floor: 0.01 })}
 											tone={{
 												bar: TONE_FILL.crit,
 												text: "text-muted-foreground",
 											}}
 										/>
-										<span className="w-[76px] shrink-0 text-right font-mono text-[12.5px] tabular-nums text-foreground">
+										<span className="w-[76px] shrink-0 text-right font-mono text-xs tabular-nums text-foreground">
 											{formatToolCount(row.calls)}
 										</span>
 										<span className="hidden w-[76px] shrink-0 text-right font-mono text-xs tabular-nums text-muted-foreground @min-[640px]/panel:block">
 											{formatToolCount(row.sessions)}
 										</span>
-										<span className="hidden w-[96px] shrink-0 text-right font-mono text-2xs tabular-nums text-muted-foreground/70 @min-[800px]/panel:block">
-											{formatRelativeTimeOrDate(
-												row.lastSeen,
-												undefined,
-												effectiveTimezone,
-											)}
-										</span>
+										<RelativeTime
+											value={row.lastSeen}
+											variant="orDate"
+											tooltip="title"
+											className="hidden w-[96px] shrink-0 text-right font-mono text-2xs tabular-nums text-muted-foreground/70 @min-[800px]/panel:block"
+										/>
 										<span className="flex w-3.5 shrink-0 items-center justify-end text-muted-foreground/60">
 											<ChevronRightIcon size={14} aria-hidden />
 										</span>

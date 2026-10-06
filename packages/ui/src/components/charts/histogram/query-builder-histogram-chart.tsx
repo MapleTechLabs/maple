@@ -3,7 +3,7 @@ import { scaleBand } from "@tanstack/charts-scales/band"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
 import * as React from "react"
 
-import { formatNumber, formatValueByUnit } from "../../../lib/format"
+import { EMPTY_VALUE, formatNumber, formatValueByUnit } from "../../../lib/format"
 import { cn } from "../../../lib/utils"
 import {
 	PlotFrame,
@@ -460,7 +460,10 @@ export function QueryBuilderHistogramChart({
 
 	const prebucketed = React.useMemo<PrebucketedBin[] | null>(() => {
 		if (!isPrebucketed(source)) return null
-		return source.map((row) => ({ name: String(row.name ?? "—"), value: asFiniteNumber(row.value) }))
+		return source.map((row) => ({
+			name: String(row.name ?? EMPTY_VALUE),
+			value: asFiniteNumber(row.value),
+		}))
 	}, [source])
 
 	const numeric = React.useMemo<NumericBin[]>(() => {

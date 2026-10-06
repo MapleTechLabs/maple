@@ -4,6 +4,8 @@ import { DetailRail } from "@maple/ui/components/detail-rail"
 import { ServerIcon } from "@/components/icons"
 import type { HostDetailSummaryResponse } from "@maple/domain/http"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
+import { useTimezonePreference } from "@/hooks/use-timezone-preference"
+import { formatTimestampInTimezone } from "@/lib/timezone-format"
 
 interface HostMetadataPanelProps {
 	summary: HostDetailSummaryResponse["data"]
@@ -24,7 +26,9 @@ function Section({ title, children }: SectionProps) {
 }
 
 export function HostMetadataPanel({ summary }: HostMetadataPanelProps) {
+	const { effectiveTimezone } = useTimezonePreference()
 	if (!summary) return null
+	const absolute = (value: string) => formatTimestampInTimezone(value, { timeZone: effectiveTimezone })
 
 	return (
 		<ResourceAttributesCard icon={ServerIcon} contentClassName="divide-y divide-border/60">
@@ -44,13 +48,13 @@ export function HostMetadataPanel({ summary }: HostMetadataPanelProps) {
 					label="first seen"
 					value={formatRelativeTime(summary.firstSeen)}
 					copyValue={summary.firstSeen}
-					tooltip={summary.firstSeen}
+					tooltip={absolute(summary.firstSeen)}
 				/>
 				<DetailRail.MetaRow
 					label="last seen"
 					value={formatRelativeTime(summary.lastSeen)}
 					copyValue={summary.lastSeen}
-					tooltip={summary.lastSeen}
+					tooltip={absolute(summary.lastSeen)}
 				/>
 			</Section>
 		</ResourceAttributesCard>

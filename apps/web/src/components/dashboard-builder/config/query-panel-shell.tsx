@@ -1,12 +1,14 @@
 import { useState, type ReactNode } from "react"
 
 import { Badge } from "@maple/ui/components/ui/badge"
-import { Button } from "@maple/ui/components/ui/button"
 import { Checkbox } from "@maple/ui/components/ui/checkbox"
+import { FilterChip } from "@maple/ui/components/ui/filter-chip"
+import { IconButton } from "@maple/ui/components/ui/icon-button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
 import { cn } from "@maple/ui/lib/utils"
 import { queryBadgeColor, type QueryBuilderDataSource } from "@maple/query-engine/query-builder"
 import { QUERY_BUILDER_DATA_SOURCES } from "@maple/query-model"
+import { ChevronDownIcon, ChevronRightIcon } from "@/components/icons"
 
 // The chrome every query panel shares — the collapsible header with the
 // query's badge, its source select and its actions — and the add-on toggle
@@ -25,15 +27,15 @@ export function CollapseToggle({
 	noun: string
 }) {
 	return (
-		<Button
-			variant="ghost"
+		<IconButton
 			size="icon-xs"
+			label={collapsed ? `Expand ${noun}` : `Collapse ${noun}`}
+			tooltip={false}
 			onClick={onToggle}
-			className="text-xs text-muted-foreground hover:text-foreground"
-			aria-label={collapsed ? `Expand ${noun}` : `Collapse ${noun}`}
+			className="text-muted-foreground hover:text-foreground"
 		>
-			{collapsed ? "▶" : "▼"}
-		</Button>
+			{collapsed ? <ChevronRightIcon size={12} /> : <ChevronDownIcon size={12} />}
+		</IconButton>
 	)
 }
 
@@ -111,7 +113,8 @@ export function QueryPanelShell({
 					}}
 				>
 					<SelectTrigger
-						className="h-7 w-36 text-xs border-none bg-transparent shadow-none px-1"
+						size="sm"
+						className="w-36 border-none bg-transparent shadow-none px-1"
 						aria-label="Query source"
 					>
 						<SelectValue />
@@ -149,20 +152,9 @@ export function AddOnToggleBar<K extends string>({
 	return (
 		<div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-dashed">
 			{items.map(({ key, label }) => (
-				<button
-					key={key}
-					type="button"
-					onClick={() => onToggle(key)}
-					aria-pressed={active[key]}
-					className={cn(
-						"px-2 py-0.5 text-2xs rounded-sm border transition-colors",
-						active[key]
-							? "bg-primary/10 border-primary/30 text-primary"
-							: "bg-muted/40 border-transparent text-muted-foreground hover:text-foreground",
-					)}
-				>
+				<FilterChip key={key} size="xs" pressed={active[key]} onPressedChange={() => onToggle(key)}>
 					{label}
-				</button>
+				</FilterChip>
 			))}
 		</div>
 	)

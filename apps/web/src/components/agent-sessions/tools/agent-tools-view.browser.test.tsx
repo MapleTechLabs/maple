@@ -140,7 +140,7 @@ describe("AgentToolsView", () => {
 		// `model` is also the toolbar's select label — the chip is the second.
 		expect(screen.getAllByText("model").length).toBeGreaterThan(1)
 
-		fireEvent.click(screen.getByTitle("Remove model claude-opus-5"))
+		fireEvent.click(screen.getByRole("button", { name: "Remove model claude-opus-5" }))
 		expect(onSearchChange).toHaveBeenCalledWith({ model: undefined })
 	})
 
@@ -419,7 +419,7 @@ describe("ToolErrorModal", () => {
 		const heading = screen.getByRole("heading")
 		expect(heading.textContent).toContain("Invalid tool input: Missing key")
 		expect(heading.textContent).toContain('["evidence"][*]["traceIds"]')
-		expect(screen.getByText(/^\d+% of failures$/)).toBeTruthy()
+		expect(screen.getByText(/^[\d.]+% of failures$/)).toBeTruthy()
 		expect(screen.getByText("error.type tool_error")).toBeTruthy()
 	})
 

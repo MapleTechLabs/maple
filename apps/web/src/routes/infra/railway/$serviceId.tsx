@@ -1,11 +1,12 @@
 import { useMemo } from "react"
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Schema } from "effect"
-import { formatBytes } from "@maple/ui/lib/format"
+import { formatBytes, formatPercent } from "@maple/ui/lib/format"
 import { ChartLoading } from "@maple/ui/components/charts"
 
 import { ErrorState } from "@/components/common/error-state"
-import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { DashboardPage } from "@/components/layout/dashboard-page"
+import type { TimeRange } from "@/components/time-range-picker/types"
 import { chartBucketSeconds, type ChartUnit } from "@/components/infra/chart-utils"
 import { ChartCard } from "@/components/common/chart-card"
 import { InfraMetricChart } from "@/components/infra/primitives/infra-metric-chart"
@@ -22,8 +23,6 @@ import {
 import type { RailwayServiceTimeseriesRow } from "@/api/warehouse/railway-infra"
 import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
 import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
-import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
-import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
 
 const railwayServiceSearchSchema = Schema.Struct({
 	...TimeRangeSearchFields,
@@ -92,10 +91,7 @@ function RailwayServicePage() {
 	)
 	const bucketSeconds = Math.max(60, chartBucketSeconds(startTime, endTime))
 
-	const handleTimeChange = (
-		range: { startTime?: string; endTime?: string; presetValue?: string },
-		options?: { replace?: boolean },
-	) => {
+	const handleTimeChange = (range: TimeRange, options?: { replace?: boolean }) => {
 		navigate({
 			replace: options?.replace,
 			search: (prev) => ({ ...applyTimeRangeSearch(prev, range) }),
@@ -129,106 +125,77 @@ function RailwayServicePage() {
 	const memoryShare = service ? shareOfLimit(service.memoryAvg, service.memoryLimit) : null
 
 	return (
-		<PageRefreshProvider timePreset={search.timePreset ?? DEFAULT_PRESET}>
-			<DashboardLayout.Root>
-				<DashboardLayout.Breadcrumbs
-					items={[
-						{ label: "Infrastructure", href: "/infra" },
-						{ label: "Railway", href: "/infra/railway" },
-						{ label: title },
-					]}
-				/>
-				<DashboardLayout.Body>
-					<DashboardLayout.Content>
-						<DashboardLayout.Sticky>
-							<DashboardLayout.Header>
-								<TimeRangeHeaderControls
-									startTime={search.startTime ?? startTime}
-									endTime={search.endTime ?? endTime}
-									presetValue={
-										search.timePreset ?? (search.startTime ? undefined : DEFAULT_PRESET)
-									}
-									onTimeChange={handleTimeChange}
-								/>
-							</DashboardLayout.Header>
-						</DashboardLayout.Sticky>
-						<DashboardLayout.Scroll>
-							<div className="space-y-6">
-								<PageHero
-									title={title}
-									description="Resource usage for this Railway service, summed across its replicas."
-									meta={
-										service ? (
-											<>
-												<HeroChip>{service.projectName}</HeroChip>
-												<HeroChip>{service.environmentName}</HeroChip>
-											</>
-										) : undefined
-									}
-								/>
-								{service ? (
-									<StatRail>
-										<StatRailItem
-											compact
-											eyebrow="Avg CPU"
-											value={formatCores(service.cpuAvg)}
-											subline={
-												cpuShare === null
-													? undefined
-													: `${cpuShare.toFixed(1)}% of ${formatCores(service.cpuLimit)}`
-											}
-										/>
-										<StatRailItem
-											compact
-											eyebrow="Avg memory"
-											value={formatBytes(service.memoryAvg)}
-											subline={
-												memoryShare === null
-													? undefined
-													: `${memoryShare.toFixed(1)}% of ${formatBytes(service.memoryLimit)}`
-											}
-										/>
-										<StatRailItem
-											compact
-											eyebrow="Peak memory"
-											value={formatBytes(service.memoryMax)}
-										/>
-										<StatRailItem
-											compact
-											eyebrow="Replicas"
-											value={String(service.replicas)}
-										/>
-									</StatRail>
-								) : null}
-								{Result.isFailure(timeseriesResult) && buckets.length === 0 ? (
-									<ErrorState error={timeseriesResult.cause} />
-								) : Result.isInitial(timeseriesResult) ? (
-									<div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-										{CHARTS.map((chart) => (
-											<ChartLoading key={chart.title} variant="line" height={256} />
-										))}
-									</div>
-								) : (
-									<div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-										{CHARTS.map((chart) => (
-											<ChartCard key={chart.title} title={chart.title}>
-												<InfraMetricChart
-													rows={toRows(buckets, chart.series)}
-													unit={chart.unit}
-													xDomain={xDomain}
-													linkedChartId={LINKED_CHART_ID}
-													waiting={Boolean(timeseriesResult.waiting)}
-												/>
-											</ChartCard>
-										))}
-									</div>
-								)}
-							</div>
-						</DashboardLayout.Scroll>
-					</DashboardLayout.Content>
-				</DashboardLayout.Body>
-			</DashboardLayout.Root>
-		</PageRefreshProvider>
+		<DashboardPage
+			breadcrumbs={[
+				{ label: "Infrastructure", href: "/infra" },
+				{ label: "Railway", href: "/infra/railway" },
+				{ label: title },
+			]}
+			time={{ search, startTime, endTime, defaultPreset: DEFAULT_PRESET, onChange: handleTimeChange }}
+			gap="lg"
+		>
+			<PageHero
+				title={title}
+				description="Resource usage for this Railway service, summed across its replicas."
+				meta={
+					service ? (
+						<>
+							<HeroChip>{service.projectName}</HeroChip>
+							<HeroChip>{service.environmentName}</HeroChip>
+						</>
+					) : undefined
+				}
+			/>
+			{service ? (
+				<StatRail>
+					<StatRailItem
+						compact
+						eyebrow="Avg CPU"
+						value={formatCores(service.cpuAvg)}
+						subline={
+							cpuShare === null
+								? undefined
+								: `${formatPercent(cpuShare / 100)} of ${formatCores(service.cpuLimit)}`
+						}
+					/>
+					<StatRailItem
+						compact
+						eyebrow="Avg memory"
+						value={formatBytes(service.memoryAvg)}
+						subline={
+							memoryShare === null
+								? undefined
+								: `${formatPercent(memoryShare / 100)} of ${formatBytes(service.memoryLimit)}`
+						}
+					/>
+					<StatRailItem compact eyebrow="Peak memory" value={formatBytes(service.memoryMax)} />
+					<StatRailItem compact eyebrow="Replicas" value={String(service.replicas)} />
+				</StatRail>
+			) : null}
+			{Result.isFailure(timeseriesResult) && buckets.length === 0 ? (
+				<ErrorState error={timeseriesResult.cause} />
+			) : Result.isInitial(timeseriesResult) ? (
+				<div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+					{CHARTS.map((chart) => (
+						<ChartLoading key={chart.title} variant="line" height={256} />
+					))}
+				</div>
+			) : (
+				<div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+					{CHARTS.map((chart) => (
+						<ChartCard key={chart.title} title={chart.title}>
+							<InfraMetricChart
+								rows={toRows(buckets, chart.series)}
+								unit={chart.unit}
+								xDomain={xDomain}
+								linkedChartId={LINKED_CHART_ID}
+								waiting={Boolean(timeseriesResult.waiting)}
+							/>
+						</ChartCard>
+					))}
+				</div>
+			)}
+		</DashboardPage>
 	)
 }
 

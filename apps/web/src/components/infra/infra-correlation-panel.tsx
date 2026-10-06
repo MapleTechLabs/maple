@@ -1,3 +1,5 @@
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
+import { Panel } from "@maple/ui/components/ui/panel"
 import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import { addMinutes, subMinutes } from "date-fns"
 import { Link } from "@tanstack/react-router"
@@ -89,17 +91,12 @@ export function InfraCorrelationPanel({
 					    gets its own truncating line so neither clips the other. */}
 					<div className="space-y-0.5">
 						<div className="flex items-center justify-between gap-2">
-							<span className="text-[12px] font-medium text-foreground">
-								{correlation.title}
-							</span>
+							<span className="text-xs font-medium text-foreground">{correlation.title}</span>
 							<CorrelationLink correlation={correlation} />
 						</div>
-						<div
-							className="truncate font-mono text-2xs text-muted-foreground"
-							title={correlation.identifier}
-						>
+						<TruncatedText mono className="text-2xs text-muted-foreground">
 							{correlation.identifier}
-						</div>
+						</TruncatedText>
 					</div>
 					{renderCharts(correlation, startTime, endTime, syncId)}
 				</section>
@@ -172,8 +169,8 @@ function renderCharts(correlation: InfraCorrelation, startTime: string, endTime:
 			return (
 				<div className="space-y-3">
 					{correlation.charts.map((c) => (
-						<div key={c.metric} className="rounded-lg border bg-card p-4">
-							<div className="mb-1 text-[12px] font-medium text-foreground">{c.label}</div>
+						<Panel key={c.metric} padded>
+							<div className="mb-1 text-xs font-medium text-foreground">{c.label}</div>
 							<HostDetailChart
 								hostName={correlation.identifier}
 								metric={c.metric}
@@ -182,7 +179,7 @@ function renderCharts(correlation: InfraCorrelation, startTime: string, endTime:
 								bucketSeconds={BUCKET_SECONDS}
 								syncId={syncId}
 							/>
-						</div>
+						</Panel>
 					))}
 				</div>
 			)

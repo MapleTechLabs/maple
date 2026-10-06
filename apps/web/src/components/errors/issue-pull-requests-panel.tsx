@@ -8,6 +8,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { DocsLink } from "@/components/common/docs-link"
 import { GithubIcon, PlusIcon, TrashIcon } from "@/components/icons"
 import { AttachPullRequestDialog, PULL_REQUEST_STATE_TONE } from "./attach-pull-request-dialog"
+import { IconButton } from "@maple/ui/components/ui/icon-button"
 
 /**
  * Pull requests attached to this issue.
@@ -113,16 +114,15 @@ export function IssuePullRequestsPanel({
 										</ItemDescription>
 									) : null}
 								</ItemContent>
-								<Button
+								<IconButton
 									size="icon"
-									variant="ghost"
-									aria-label={`Detach ${pr.repoFullName}#${pr.number}`}
+									label={`Detach ${pr.repoFullName}#${pr.number}`}
 									className="size-7 shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
 									onClick={() => onUnlink(pr.id)}
 									disabled={busy}
 								>
 									<TrashIcon className="size-3.5" />
-								</Button>
+								</IconButton>
 							</Item>
 						)
 					})}

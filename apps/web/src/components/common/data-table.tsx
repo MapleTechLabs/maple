@@ -5,6 +5,7 @@
 import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import * as React from "react"
 import { cn } from "@maple/ui/lib/utils"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 
 import { ArrowUpDownIcon } from "@/components/icons"
 
@@ -154,8 +155,9 @@ function DataTableRoot({
 	return (
 		<DataTableContext value={ctx}>
 			<div
-				className={cn("border-y border-border/70 transition-opacity", waiting && "opacity-60", className)}
+				className={cn("border-y border-border/70", refreshingClass(Boolean(waiting)), className)}
 				aria-label={ariaLabel}
+				aria-busy={waiting || undefined}
 			>
 				<div
 					className={cn("overflow-x-auto", scrolls && "overflow-y-auto overscroll-contain")}

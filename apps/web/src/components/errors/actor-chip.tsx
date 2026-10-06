@@ -129,14 +129,7 @@ export function IdentityAvatar({
 
 	if (identity.kind === "agent") {
 		return (
-			<span
-				aria-hidden
-				className={cn(
-					base,
-					AGENT_ACCENT.soft,
-					AGENT_ACCENT.ring,
-				)}
-			>
+			<span aria-hidden className={cn(base, AGENT_ACCENT.soft, AGENT_ACCENT.ring)}>
 				{identity.internal ? (
 					// The mark's trunk runs to the viewBox edge, so nudge it up a
 					// touch to sit optically centred in the circle.

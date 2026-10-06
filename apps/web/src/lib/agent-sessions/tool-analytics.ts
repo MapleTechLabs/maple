@@ -8,7 +8,13 @@
 // that ever sees a wire shape.
 
 import { AI_TOOLS_BREAKDOWN_MAX } from "@maple/domain/http"
-import { formatErrorRate, formatLatency, formatNumber, formatPercent } from "@maple/ui/lib/format"
+import {
+	EMPTY_VALUE,
+	formatErrorRate,
+	formatLatency,
+	formatNumber,
+	formatPercent,
+} from "@maple/ui/lib/format"
 import { OTHER_COLOR } from "@maple/ui/components/charts/_shared/bucket-series"
 
 /** Which measure the strip, the chart and the breakdown columns are reading. */
@@ -229,7 +235,7 @@ export function errorRate(measures: Pick<ToolMeasures, "calls" | "errors">): num
 
 /** Nanoseconds as a latency string — the warehouse stores ns, `formatLatency` takes ms. */
 export function formatDurationNs(ns: number): string {
-	if (!Number.isFinite(ns) || ns <= 0) return "—"
+	if (!Number.isFinite(ns) || ns <= 0) return EMPTY_VALUE
 	return formatLatency(ns / 1_000_000)
 }
 

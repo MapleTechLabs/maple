@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { formatValueByUnit } from "@maple/ui/lib/format"
+import { EMPTY_VALUE, formatValueByUnit } from "@maple/ui/lib/format"
 
 import { buildRowKeys, formatCellValue } from "./table-widget"
 
@@ -14,7 +14,7 @@ describe("formatCellValue", () => {
 
 	it("leaves non-numeric and unitless values untouched", () => {
 		expect(formatCellValue("checkout", "percent")).toBe("checkout")
-		expect(formatCellValue(null, "percent")).toBe("-")
+		expect(formatCellValue(null, "percent")).toBe(EMPTY_VALUE)
 		expect(formatCellValue("raw", undefined)).toBe("raw")
 	})
 

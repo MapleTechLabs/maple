@@ -1,4 +1,6 @@
 import { Badge } from "@maple/ui/components/ui/badge"
+import { Panel } from "@maple/ui/components/ui/panel"
+import { EMPTY_VALUE, countLabel } from "@maple/ui/lib/format"
 import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import {
@@ -171,7 +173,7 @@ export function CreateDashboardSummary({ input }: ApprovalRendererProps) {
 
 export function UpdateDashboardSummary({ input }: ApprovalRendererProps) {
 	const obj = asRecord(input) ?? {}
-	const dashboardId = asString(obj.dashboard_id) ?? "—"
+	const dashboardId = asString(obj.dashboard_id) ?? EMPTY_VALUE
 	const name = asString(obj.name)
 	const description = asString(obj.description)
 	const timeRange = asString(obj.time_range)
@@ -216,7 +218,7 @@ export function UpdateDashboardSummary({ input }: ApprovalRendererProps) {
 				<Section
 					title={
 						widgets.length > 0
-							? `Full replacement · ${widgets.length} widget${widgets.length === 1 ? "" : "s"}`
+							? `Full replacement · ${countLabel(widgets.length, "widget")}`
 							: "Full replacement"
 					}
 				>
@@ -234,7 +236,7 @@ export function UpdateDashboardSummary({ input }: ApprovalRendererProps) {
 
 export function AddDashboardWidgetSummary({ input }: ApprovalRendererProps) {
 	const obj = asRecord(input) ?? {}
-	const dashboardId = asString(obj.dashboard_id) ?? "—"
+	const dashboardId = asString(obj.dashboard_id) ?? EMPTY_VALUE
 	const visualization = asString(obj.visualization) ?? "chart"
 	const Icon = vizIcon(visualization)
 	const label = vizLabel(visualization)
@@ -278,7 +280,7 @@ export function AddDashboardWidgetSummary({ input }: ApprovalRendererProps) {
 				</Badge>
 			</div>
 
-			<div className="rounded-md border border-border/60 bg-background/60 p-2">
+			<Panel tone="background" className="border-border/60 bg-background/60 p-2">
 				<div className="flex items-center gap-2">
 					<Icon className="size-4 shrink-0 text-muted-foreground" />
 					<div className="min-w-0 flex-1">
@@ -288,7 +290,7 @@ export function AddDashboardWidgetSummary({ input }: ApprovalRendererProps) {
 						) : null}
 					</div>
 				</div>
-			</div>
+			</Panel>
 
 			<div className="flex flex-wrap gap-1.5">
 				<FieldChip label="viz" value={label} />
@@ -301,8 +303,8 @@ export function AddDashboardWidgetSummary({ input }: ApprovalRendererProps) {
 
 export function UpdateDashboardWidgetSummary({ input }: ApprovalRendererProps) {
 	const obj = asRecord(input) ?? {}
-	const dashboardId = asString(obj.dashboard_id) ?? "—"
-	const widgetId = asString(obj.widget_id) ?? "—"
+	const dashboardId = asString(obj.dashboard_id) ?? EMPTY_VALUE
+	const widgetId = asString(obj.widget_id) ?? EMPTY_VALUE
 	const visualization = asString(obj.visualization)
 
 	const dataSourceResult = safeParseJson(obj.data_source_json)
@@ -366,8 +368,8 @@ export function UpdateDashboardWidgetSummary({ input }: ApprovalRendererProps) {
 
 export function RemoveDashboardWidgetSummary({ input }: ApprovalRendererProps) {
 	const obj = asRecord(input) ?? {}
-	const dashboardId = asString(obj.dashboard_id) ?? "—"
-	const widgetId = asString(obj.widget_id) ?? "—"
+	const dashboardId = asString(obj.dashboard_id) ?? EMPTY_VALUE
+	const widgetId = asString(obj.widget_id) ?? EMPTY_VALUE
 
 	return (
 		<div className="flex items-start gap-2">
@@ -382,7 +384,7 @@ export function RemoveDashboardWidgetSummary({ input }: ApprovalRendererProps) {
 
 export function ReorderDashboardWidgetsSummary({ input }: ApprovalRendererProps) {
 	const obj = asRecord(input) ?? {}
-	const dashboardId = asString(obj.dashboard_id) ?? "—"
+	const dashboardId = asString(obj.dashboard_id) ?? EMPTY_VALUE
 
 	const layoutsRaw = safeParseJson(obj.layouts_json)
 	const layouts = layoutsRaw.ok ? (asArray(layoutsRaw.value) ?? []) : []
@@ -397,7 +399,7 @@ export function ReorderDashboardWidgetsSummary({ input }: ApprovalRendererProps)
 			<div className="flex items-center gap-2">
 				<GridIcon className="size-3.5 shrink-0 text-muted-foreground" />
 				<span className="text-sm font-semibold">
-					Reorder {ids.length || ""} widget{ids.length === 1 ? "" : "s"}
+					Reorder {ids.length > 0 ? countLabel(ids.length, "widget") : "widgets"}
 				</span>
 				<Badge variant="outline" size="xs" mono className="ml-auto">
 					{dashboardId}

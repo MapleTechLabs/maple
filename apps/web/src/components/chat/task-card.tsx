@@ -2,7 +2,7 @@ import { useState } from "react"
 import { cn } from "@maple/ui/lib/utils"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { Alert, AlertDescription } from "@maple/ui/components/ui/alert"
-import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { SectionHeading } from "@/components/common/section-heading"
 import { Sheet, SheetContent, SheetPanel } from "@maple/ui/components/ui/sheet"
 import { SheetDetailHeader } from "@/components/common/sheet-detail-header"
 import { ChevronRightIcon, CircleCheckIcon, CircleWarningIcon, CircleXmarkIcon } from "@/components/icons"
@@ -133,7 +133,7 @@ export function TaskCard({
 						) : null}
 
 						<section className="flex flex-col gap-2">
-							<Eyebrow as="h3">Answer</Eyebrow>
+							<SectionHeading variant="eyebrow" as="h3" title="Answer" className="mb-0" />
 							{running ? (
 								// A div, not a p: the loader renders a dot grid, which cannot live inside one.
 								<div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -164,7 +164,12 @@ export function TaskCard({
 						 */}
 						{messages.length > 0 ? (
 							<section className="flex flex-col gap-2">
-								<Eyebrow as="h3">Its own steps</Eyebrow>
+								<SectionHeading
+									variant="eyebrow"
+									as="h3"
+									title="Its own steps"
+									className="mb-0"
+								/>
 								{messages.map((message) => (
 									<div key={message.id} className="flex flex-col gap-1.5">
 										{message.parts.map((part, index) =>

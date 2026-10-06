@@ -104,7 +104,7 @@ export function PlanetScaleMetricsTokenForm({
 		setError(errorMessage(result, "Failed to save the metrics service token."))
 	})
 
-	const canSubmit = fields.id.trim().length > 0 && fields.secret.length > 0 && !submitting
+	const canSubmit = fields.id.trim().length > 0 && fields.secret.length > 0
 
 	const linkHref = organization !== null ? tokenSettingsUrl(organization) : (docsUrl ?? null)
 

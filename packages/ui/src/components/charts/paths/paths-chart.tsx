@@ -2,7 +2,8 @@ import * as React from "react"
 
 import type { PathsChartProps } from "../_shared/chart-types"
 import { cn } from "../../../lib/utils"
-import { formatNumber } from "../../../lib/format"
+import { Eyebrow } from "../../ui/eyebrow"
+import { formatNumber, formatPercent } from "../../../lib/format"
 import { asFiniteNumber } from "../_shared/breakdown-rows"
 import { useContainerSize } from "../../../hooks/use-container-size"
 import { ArrowLeftIcon, UserIcon } from "../../icons"
@@ -416,19 +417,16 @@ export function PathsChart({ data, className, direction = "after" }: PathsChartP
 								{hoveredNode.count.toLocaleString("en-US")}
 							</span>
 							<span className="text-3xs whitespace-nowrap text-muted-foreground">
-								{((hoveredNode.count / anchor.count) * 100).toFixed(
-									hoveredNode.count / anchor.count < 0.1 ? 1 : 0,
-								)}
-								% of anchor
+								{formatPercent(hoveredNode.count / anchor.count)} of anchor
 							</span>
 						</span>
 					</div>
 					{hoveredNode.column > 0 && (
 						<>
 							<div className="-mx-2.5 my-1.5 h-px bg-border" />
-							<div className="mb-1 text-3xs font-medium tracking-wider text-muted-foreground uppercase">
+							<Eyebrow as="div" className="mb-1">
 								Came from
-							</div>
+							</Eyebrow>
 							{links
 								.filter((link) => link.target === hoveredNode.id)
 								.sort((a, b) => b.count - a.count)

@@ -1,13 +1,13 @@
-import { Card, CardAction, CardDescription, CardHeader, CardTitle } from "@maple/ui/components/ui/card"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
-import { useMemo, useState } from "react"
+import { useState } from "react"
 import { Link } from "@tanstack/react-router"
-import { Exit } from "effect"
 import { toastManager } from "@maple/ui/components/ui/toast"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 
 import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
 import { Button } from "@maple/ui/components/ui/button"
+import { IconButton } from "@maple/ui/components/ui/icon-button"
+import { Panel } from "@maple/ui/components/ui/panel"
 import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { cn } from "@maple/ui/lib/utils"
 import { ArrowPathIcon, ArrowRightIcon, EyeIcon, PaperPlaneIcon, PulseIcon } from "@/components/icons"
@@ -25,34 +25,38 @@ import {
 	type IngestConnection,
 } from "@/components/ingest/use-ingest-connection"
 import { AttributeMappingsSection } from "./attribute-mappings-section"
+import { SettingsSection, SettingsSections } from "./settings-section"
+import { useAsyncAction } from "@/hooks/use-mutation-action"
+import { toastExit } from "@/lib/error-toast"
 import { RecommendedMappingsSection } from "./recommended-mappings-section"
 
 /** Live ingest-health strip: green once telemetry lands, amber pulse while waiting. */
 function StatusBanner({ connection }: { connection: IngestConnection }) {
-	const [sending, setSending] = useState(false)
 	const connected = connection.status === "connected"
 
-	async function handleSendTest() {
-		if (!connection.apiKey || sending) return
-		setSending(true)
-		try {
-			await sendTestEvent(connection.apiKey)
-			toastManager.add({ title: "Test event sent — watch for it to land in traces", type: "success" })
-			connection.refresh()
-		} catch {
-			toastManager.add({
-				title: "Couldn't reach the ingest endpoint — double-check your API key",
-				type: "error",
-			})
-		} finally {
-			setSending(false)
-		}
-	}
+	const [handleSendTest, sending] = useAsyncAction(() => {
+		if (!connection.apiKey) return Promise.resolve()
+		return sendTestEvent(connection.apiKey).then(
+			() => {
+				toastManager.add({
+					title: "Test event sent. Watch for it to land in traces.",
+					type: "success",
+				})
+				connection.refresh()
+			},
+			() => {
+				toastManager.add({
+					title: "Couldn't reach the ingest endpoint. Double-check your API key.",
+					type: "error",
+				})
+			},
+		)
+	})
 
 	const spansPerMinute = Math.round(connection.spansPerMinute)
 
 	return (
-		<div className="bg-card flex items-center gap-3 rounded-lg border px-4 py-2.5">
+		<Panel className="flex-row items-center gap-3 px-4 py-2.5">
 			{connected ? (
 				<StatusDot tone="ok" size="lg" />
 			) : (
@@ -87,14 +91,15 @@ function StatusBanner({ connection }: { connection: IngestConnection }) {
 					variant="outline"
 					size="sm"
 					className="shrink-0 gap-2"
-					onClick={handleSendTest}
-					disabled={sending || !connection.apiKey}
+					onClick={() => void handleSendTest()}
+					loading={sending}
+					disabled={!connection.apiKey}
 				>
 					<PaperPlaneIcon size={13} />
-					{sending ? "Sending…" : "Send test event"}
+					Send test event
 				</Button>
 			)}
-		</div>
+		</Panel>
 	)
 }
 
@@ -132,7 +137,7 @@ function CredentialRow({
 	const onCopy = () => void copy(copyValue ?? value)
 
 	return (
-		<div className="flex items-center gap-3 border-t px-4 py-3">
+		<div className="flex items-center gap-3 px-4 py-3">
 			<span className="w-[120px] shrink-0 text-sm">{label}</span>
 			<Eyebrow variant="mono" className={cn("w-14 shrink-0", badgeClass)}>
 				{badge}
@@ -142,7 +147,7 @@ function CredentialRow({
 					type="button"
 					onClick={onCopy}
 					disabled={disabled}
-					title={status === "copied" ? "Copied!" : "Click to copy"}
+					aria-label={`Copy ${label}`}
 					className="group/value text-muted-foreground hover:text-foreground flex min-w-0 max-w-full cursor-pointer items-center gap-1.5 font-mono text-xs tracking-wide transition-colors"
 				>
 					<span className="truncate">{masked && !isVisible ? maskKey(value) : value}</span>
@@ -161,41 +166,30 @@ function CredentialRow({
 			</div>
 			<div className="flex shrink-0 items-center gap-1.5">
 				{onToggleVisibility && (
-					<Button
+					<IconButton
 						variant="outline"
-						size="icon-sm"
 						onClick={onToggleVisibility}
-						aria-label={isVisible ? "Hide key" : "Reveal key"}
-						title={isVisible ? "Hide" : "Reveal"}
+						label={isVisible ? "Hide key" : "Reveal key"}
 						disabled={disabled}
 					>
 						<EyeIcon
 							size={13}
 							className={isVisible ? "text-foreground" : "text-muted-foreground"}
 						/>
-					</Button>
+					</IconButton>
 				)}
-				<Button
-					variant="outline"
-					size="icon-sm"
-					onClick={onCopy}
-					aria-label={`Copy ${label}`}
-					title={status === "copied" ? "Copied!" : "Copy"}
-					disabled={disabled}
-				>
+				<IconButton variant="outline" onClick={onCopy} label={`Copy ${label}`} disabled={disabled}>
 					<CopyIndicator status={status} iconSize={13} />
-				</Button>
+				</IconButton>
 				{onRegenerate && (
-					<Button
+					<IconButton
 						variant="outline"
-						size="icon-sm"
 						onClick={onRegenerate}
-						aria-label={`Regenerate ${label.toLowerCase()}`}
-						title="Regenerate"
+						label={`Regenerate ${label.toLowerCase()}`}
 						disabled={disabled}
 					>
 						<ArrowPathIcon size={13} className="text-destructive" />
-					</Button>
+					</IconButton>
 				)}
 			</div>
 		</div>
@@ -207,7 +201,6 @@ export function IngestionSection() {
 	const [privateKeyVisible, setPrivateKeyVisible] = useState(false)
 	const [regenerateDialogOpen, setRegenerateDialogOpen] = useState(false)
 	const [regenerateKeyType, setRegenerateKeyType] = useState<"public" | "private" | null>(null)
-	const [submittingKeyType, setSubmittingKeyType] = useState<"public" | "private" | null>(null)
 
 	const keysQueryAtom = retainedQueryV2("ingestKeys", "retrieve", {})
 	const keysResult = useAtomValue(keysQueryAtom)
@@ -223,126 +216,104 @@ export function IngestionSection() {
 		mode: "promiseExit",
 	})
 
-	const isBusy = useMemo(
-		() => !Result.isSuccess(keysResult) || submittingKeyType !== null,
-		[keysResult, submittingKeyType],
-	)
-
 	function openRegenerateDialog(keyType: "public" | "private") {
 		setRegenerateKeyType(keyType)
 		setRegenerateDialogOpen(true)
 	}
 
-	async function handleRegenerate() {
+	const [handleRegenerate, regenerating] = useAsyncAction(async () => {
 		if (!regenerateKeyType) return
-
-		setSubmittingKeyType(regenerateKeyType)
-
 		const result =
 			regenerateKeyType === "public" ? await rerollPublicMutation({}) : await rerollPrivateMutation({})
-
-		if (Exit.isSuccess(result)) {
-			refreshKeys()
-
-			toastManager.add({
-				title: `${regenerateKeyType === "public" ? "Public" : "Private"} key regenerated. Previous key was revoked immediately.`,
-				type: "success",
+		if (
+			toastExit(result, {
+				success: `${regenerateKeyType === "public" ? "Public" : "Private"} key regenerated. Previous key was revoked immediately.`,
+				error: "Unable to complete request",
 			})
-		} else {
-			toastManager.add({ title: "Unable to complete request", type: "error" })
+		) {
+			refreshKeys()
 		}
-
-		setSubmittingKeyType(null)
 		setRegenerateDialogOpen(false)
 		setRegenerateKeyType(null)
-	}
+	})
+	const isBusy = !Result.isSuccess(keysResult) || regenerating
 
 	const publicKey = Result.builder(keysResult)
 		.onSuccess((v) => v.public_key)
-		.orElse(() => "Loading...")
+		.orElse(() => "Loading…")
 	const privateKey = Result.builder(keysResult)
 		.onSuccess((v) => v.private_key)
-		.orElse(() => "Loading...")
+		.orElse(() => "Loading…")
 
 	return (
 		<>
-			<div className="space-y-5">
+			<SettingsSections>
 				<StatusBanner connection={connection} />
 
-				<Card className="overflow-hidden">
-					<CardHeader className="px-4 pt-4 pb-3">
-						<CardTitle render={<h3 />} className="text-sm font-medium">
-							Endpoint &amp; keys
-						</CardTitle>
-						<CardDescription className="text-xs">
-							Point your OTLP exporter at the endpoint and authenticate with an ingest key.
-						</CardDescription>
-						<CardAction>
-							<a
-								href={docsUrl("instrumentation")}
-								target="_blank"
-								rel="noopener noreferrer"
-								className="text-muted-foreground hover:text-foreground font-mono text-2xs whitespace-nowrap transition-colors"
-							>
-								Docs ↗
-							</a>
-						</CardAction>
-					</CardHeader>
-					<CredentialRow
-						label="OTLP endpoint"
-						badge="HTTP"
-						badgeClass="text-muted-foreground"
-						value={ingestUrl}
-					/>
-					<CredentialRow
-						label="Public key"
-						badge="Client"
-						badgeClass="text-info"
-						value={publicKey}
-						copyValue={Result.isSuccess(keysResult) ? keysResult.value.public_key : ""}
-						masked
-						description="For browser and client-side telemetry SDKs"
-						isVisible={publicKeyVisible}
-						onToggleVisibility={() => setPublicKeyVisible((v) => !v)}
-						onRegenerate={() => openRegenerateDialog("public")}
-						disabled={isBusy}
-					/>
-					<CredentialRow
-						label="Private key"
-						badge="Server"
-						badgeClass="text-warning"
-						value={privateKey}
-						copyValue={Result.isSuccess(keysResult) ? keysResult.value.private_key : ""}
-						masked
-						description="For server-side ingestion and backend services"
-						isVisible={privateKeyVisible}
-						onToggleVisibility={() => setPrivateKeyVisible((v) => !v)}
-						onRegenerate={() => openRegenerateDialog("private")}
-						disabled={isBusy}
-					/>
-				</Card>
-
-				<Card className="overflow-hidden">
-					<div className="flex flex-wrap items-start gap-x-6 gap-y-3 px-4 pt-4 pb-3">
-						<div className="flex min-w-[260px] flex-col gap-1">
-							<h3 className="text-sm font-medium whitespace-nowrap">
-								Send your first telemetry
-							</h3>
-							<p className="text-muted-foreground text-xs">
-								Point your OpenTelemetry SDK at Maple, or let Claude Code wire it up for you.
-							</p>
-						</div>
-						<div className="ml-auto">
-							<FrameworkPicker compact selected={framework} onSelect={setFramework} />
-						</div>
+				<SettingsSection
+					title="Endpoint & keys"
+					description="Point your OTLP exporter at the endpoint and authenticate with an ingest key."
+					padded={false}
+					actions={
+						<a
+							href={docsUrl("instrumentation")}
+							target="_blank"
+							rel="noopener noreferrer"
+							className="text-muted-foreground hover:text-foreground font-mono text-2xs whitespace-nowrap transition-colors"
+						>
+							Docs ↗
+						</a>
+					}
+				>
+					<div className="divide-y">
+						<CredentialRow
+							label="OTLP endpoint"
+							badge="HTTP"
+							badgeClass="text-muted-foreground"
+							value={ingestUrl}
+						/>
+						<CredentialRow
+							label="Public key"
+							badge="Client"
+							badgeClass="text-info"
+							value={publicKey}
+							copyValue={Result.isSuccess(keysResult) ? keysResult.value.public_key : ""}
+							masked
+							description="For browser and client-side telemetry SDKs"
+							isVisible={publicKeyVisible}
+							onToggleVisibility={() => setPublicKeyVisible((v) => !v)}
+							onRegenerate={() => openRegenerateDialog("public")}
+							disabled={isBusy}
+						/>
+						<CredentialRow
+							label="Private key"
+							badge="Server"
+							badgeClass="text-warning"
+							value={privateKey}
+							copyValue={Result.isSuccess(keysResult) ? keysResult.value.private_key : ""}
+							masked
+							description="For server-side ingestion and backend services"
+							isVisible={privateKeyVisible}
+							onToggleVisibility={() => setPrivateKeyVisible((v) => !v)}
+							onRegenerate={() => openRegenerateDialog("private")}
+							disabled={isBusy}
+						/>
 					</div>
+				</SettingsSection>
+
+				<SettingsSection
+					title="Send your first telemetry"
+					description="Point your OpenTelemetry SDK at Maple, or let Claude Code wire it up for you."
+					padded={false}
+					actions={<FrameworkPicker compact selected={framework} onSelect={setFramework} />}
+				>
 					<ConnectInstructions framework={framework} apiKey={connection.apiKey} variant="flush" />
-				</Card>
+				</SettingsSection>
 
 				<RecommendedMappingsSection />
 
 				<AttributeMappingsSection />
-			</div>
+			</SettingsSections>
 
 			<ConfirmDialog
 				open={regenerateDialogOpen}
@@ -357,8 +328,8 @@ export function IngestionSection() {
 					</>
 				}
 				confirmLabel="Regenerate key"
-				onConfirm={handleRegenerate}
-				pending={submittingKeyType !== null}
+				onConfirm={() => void handleRegenerate()}
+				pending={regenerating}
 			/>
 		</>
 	)

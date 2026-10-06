@@ -12,7 +12,7 @@ import type { SortDir } from "@/hooks/use-table-sort"
 import { ChevronDownIcon, ChevronUpIcon, ChevronExpandYIcon } from "@/components/icons"
 
 /** Shared chrome for the desktop table and the mobile list of the service detail tabs. */
-export const TABLE_CARD_CLASS = "overflow-hidden rounded-lg border bg-card"
+export const TABLE_CARD_CLASS = "overflow-hidden rounded-md border bg-card"
 
 interface BarCellProps {
 	value: number

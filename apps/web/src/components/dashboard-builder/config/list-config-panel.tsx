@@ -2,6 +2,7 @@ import { useMemo, useState } from "react"
 import { Reorder, useDragControls } from "motion/react"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Button } from "@maple/ui/components/ui/button"
+import { IconButton } from "@maple/ui/components/ui/icon-button"
 import { Input } from "@maple/ui/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
 import { WIDGET_UNITS } from "@maple/domain/http"
@@ -13,7 +14,7 @@ import { Switch } from "@maple/ui/components/ui/switch"
 import { SettingRow } from "@maple/ui/components/ui/setting-row"
 import { SegmentedSelect } from "@/components/common/segmented-select"
 import { getListPerformanceHints } from "@/lib/query-builder/performance-hints"
-import { GripDotsIcon } from "@/components/icons"
+import { GripDotsIcon, XmarkIcon } from "@/components/icons"
 import { listWhereClauseWarnings } from "@/lib/query-builder/widget-builder-shared"
 
 import {
@@ -194,7 +195,7 @@ function DraggableColumnRow({
 					})
 				}
 			>
-				<SelectTrigger className="h-8 w-24 text-xs">
+				<SelectTrigger size="sm" className="w-24">
 					<SelectValue />
 				</SelectTrigger>
 				<SelectContent>
@@ -212,7 +213,7 @@ function DraggableColumnRow({
 					updateColumn(index, { align: value as "left" | "center" | "right" })
 				}
 			>
-				<SelectTrigger className="h-8 w-20 text-xs">
+				<SelectTrigger size="sm" className="w-20">
 					<SelectValue />
 				</SelectTrigger>
 				<SelectContent>
@@ -221,14 +222,14 @@ function DraggableColumnRow({
 					<SelectItem value="right">Right</SelectItem>
 				</SelectContent>
 			</Select>
-			<Button
-				variant="ghost"
-				size="sm"
-				className="size-8 p-0 text-muted-foreground hover:text-destructive"
+			<IconButton
+				size="icon"
+				label="Remove column"
+				className="text-muted-foreground hover:text-destructive"
 				onClick={() => removeColumn(index)}
 			>
-				&times;
-			</Button>
+				<XmarkIcon size={14} />
+			</IconButton>
 		</Reorder.Item>
 	)
 }

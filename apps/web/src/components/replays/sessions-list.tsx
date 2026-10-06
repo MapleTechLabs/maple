@@ -1,4 +1,3 @@
-import { formatRelativeTimeOrDate, toEpochMs } from "@maple/ui/lib/time-format"
 import { DisclosureChevron } from "@/components/common/disclosure-chevron"
 import { useState } from "react"
 import { ReachEndSentinel } from "@/components/common/reach-end-sentinel"
@@ -7,12 +6,13 @@ import { useVirtualizer } from "@tanstack/react-virtual"
 import { Badge, badgeVariants } from "@maple/ui/components/ui/badge"
 import { ListFooter, LoadMoreButton, LoadingMoreRow } from "@maple/ui/components/ui/list-footer"
 import { StatusDot } from "@maple/ui/components/ui/status-dot"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
+import { countLabel, EMPTY_VALUE, pluralize } from "@maple/ui/lib/format"
+import { RelativeTime } from "@/components/common/relative-time"
 import { cn } from "@maple/ui/lib/utils"
 import { SignalEmptyState } from "@/components/common/signal-empty-state"
 import { useLiveClock } from "@/hooks/use-live-clock"
 import { usePageScrollMargin } from "@/hooks/use-page-scroll-margin"
-import { useTimezonePreference } from "@/hooks/use-timezone-preference"
-import { formatTimestampInTimezone } from "@/lib/timezone-format"
 import type { SessionTag } from "@maple/domain/query-engine"
 import { browserIconFor, deviceIconFor } from "./session-icons"
 import {
@@ -55,11 +55,6 @@ export interface SessionRow {
 	readonly recorded: string
 	/** Rule-based tags; see `SESSION_TAGS`. */
 	readonly tags: ReadonlyArray<SessionTag>
-}
-
-function absoluteTs(startTime: string, timeZone: string): string {
-	const parsed = toEpochMs(startTime)
-	return Number.isNaN(parsed) ? startTime : formatTimestampInTimezone(parsed, { timeZone, withYear: true })
 }
 
 // A person is easier to recognize by name than by an opaque id, so the label
@@ -131,7 +126,6 @@ export function SessionsList({
 	nowMs,
 }: SessionsListProps) {
 	const navigate = useNavigate()
-	const { effectiveTimezone } = useTimezonePreference()
 	// Only sessions still reading `"active"` can cross the live boundary while
 	// the list sits open; a page of ended ones needs no timer at all.
 	const tickedNowMs = useLiveClock({
@@ -217,7 +211,6 @@ export function SessionsList({
 								session={item.session}
 								lowSignal={item.lowSignal}
 								nowMs={effectiveNowMs}
-								timeZone={effectiveTimezone}
 								durationP95={durationP95}
 								onOpen={() =>
 									navigate({
@@ -274,7 +267,6 @@ interface SessionListRowProps {
 	session: SessionRow
 	lowSignal: boolean
 	nowMs: number
-	timeZone: string
 	durationP95?: number
 	onOpen: () => void
 	onFilterTag?: (tag: SessionTag) => void
@@ -292,7 +284,6 @@ function SessionListRow({
 	session,
 	lowSignal,
 	nowMs,
-	timeZone,
 	durationP95,
 	onOpen,
 	onFilterTag,
@@ -306,7 +297,6 @@ function SessionListRow({
 	const entry = hostFromUrl(session.urlInitial)
 	// The email goes under a name; when the email is the label, the entry page does.
 	const secondary = session.userEmail && session.userEmail !== label ? session.userEmail : entry
-	const started = formatRelativeTimeOrDate(session.startTime, undefined, timeZone)
 	const BrowserIcon = browserIconFor(session.browserName)
 	const DeviceIcon = deviceIconFor(session.deviceType)
 
@@ -347,12 +337,12 @@ function SessionListRow({
 						{label}
 					</span>
 					{isActive && <LivePill compact />}
-					<span
+					<RelativeTime
+						value={session.startTime}
+						variant="orDate"
+						tooltip="title"
 						className="ml-auto shrink-0 whitespace-nowrap text-xs text-muted-foreground @2xl:hidden"
-						title={absoluteTs(session.startTime, timeZone)}
-					>
-						{started}
-					</span>
+					/>
 				</div>
 				<div
 					className={cn(
@@ -383,7 +373,7 @@ function SessionListRow({
 				{session.groupName ? (
 					<OrgButton name={session.groupName} onFilter={onFilterGroup} />
 				) : (
-					<span className="text-xs text-muted-foreground/50">—</span>
+					<span className="text-xs text-muted-foreground/50">{EMPTY_VALUE}</span>
 				)}
 			</div>
 
@@ -399,7 +389,7 @@ function SessionListRow({
 			>
 				<span
 					className={cn(
-						"font-mono text-[13px] font-semibold tabular-nums",
+						"font-mono text-sm font-semibold tabular-nums",
 						lowSignal && "font-normal text-muted-foreground",
 					)}
 				>
@@ -417,8 +407,7 @@ function SessionListRow({
 					</Badge>
 				)}
 				<span className="truncate text-xs text-muted-foreground">
-					{session.pageViews || 1} page{(session.pageViews || 1) === 1 ? "" : "s"} ·{" "}
-					{session.clickCount} click{session.clickCount === 1 ? "" : "s"}
+					{countLabel(session.pageViews || 1, "page")} · {countLabel(session.clickCount, "click")}
 				</span>
 			</div>
 
@@ -442,12 +431,12 @@ function SessionListRow({
 			</div>
 
 			<div className={cn(COLUMNS.time, "relative items-center")}>
-				<span
+				<RelativeTime
+					value={session.startTime}
+					variant="orDate"
+					tooltip="title"
 					className="whitespace-nowrap text-xs text-muted-foreground"
-					title={absoluteTs(session.startTime, timeZone)}
-				>
-					{started}
-				</span>
+				/>
 			</div>
 		</div>
 	)
@@ -457,14 +446,20 @@ function OrgButton({ name, onFilter }: { name: string; onFilter?: (groupName: st
 	const className = "min-w-0 truncate text-xs font-medium text-foreground"
 	if (!onFilter) return <span className={className}>{name}</span>
 	return (
-		<button
-			type="button"
-			onClick={() => onFilter(name)}
-			title={`Only sessions from ${name}`}
-			className={cn(className, "rounded hover:underline")}
-		>
-			{name}
-		</button>
+		<Tooltip>
+			<TooltipTrigger
+				render={
+					<button
+						type="button"
+						onClick={() => onFilter(name)}
+						className={cn(className, "rounded hover:underline")}
+					/>
+				}
+			>
+				{name}
+			</TooltipTrigger>
+			<TooltipContent>Only sessions from {name}</TooltipContent>
+		</Tooltip>
 	)
 }
 
@@ -487,15 +482,20 @@ function SessionTags({
 					)
 				}
 				return (
-					<button
-						key={tag}
-						type="button"
-						onClick={() => onFilter(tag)}
-						title={`${SESSION_TAG_DESCRIPTIONS[tag]}. Click to filter.`}
-						className={cn(className, "hover:ring-1 hover:ring-border")}
-					>
-						{SESSION_TAG_LABELS[tag]}
-					</button>
+					<Tooltip key={tag}>
+						<TooltipTrigger
+							render={
+								<button
+									type="button"
+									onClick={() => onFilter(tag)}
+									className={cn(className, "hover:ring-1 hover:ring-border")}
+								/>
+							}
+						>
+							{SESSION_TAG_LABELS[tag]}
+						</TooltipTrigger>
+						<TooltipContent>{SESSION_TAG_DESCRIPTIONS[tag]}. Click to filter.</TooltipContent>
+					</Tooltip>
 				)
 			})}
 		</>
@@ -508,7 +508,7 @@ function SessionBadges({ session }: { session: SessionRow }) {
 			{session.errorCount > 0 && <ErrorCountPill count={session.errorCount} />}
 			{session.traceCount > 0 && (
 				<Badge pill size="xs" mono className="bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
-					{session.traceCount} trace{session.traceCount === 1 ? "" : "s"}
+					{countLabel(session.traceCount, "trace")}
 				</Badge>
 			)}
 			{/* Metadata-only session — no rrweb chunks were ever written, so the
@@ -545,14 +545,14 @@ function QuietRunRow({
 			className="flex w-full items-center gap-3 border-b border-border bg-muted/30 px-3 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring @2xl:gap-4"
 		>
 			<span className="shrink-0 whitespace-nowrap font-medium tabular-nums">
-				{count} low-signal session{count === 1 ? "" : "s"}
+				{countLabel(count, "low-signal session")}
 			</span>
 			<span className="flex min-w-0 items-center gap-3 overflow-hidden" title={summary}>
 				{tiers.map(({ tag, count: n }) => (
 					<span key={tag} className="flex shrink-0 items-center gap-1.5">
 						<StatusDot tone="custom" className={SESSION_TAG_DOTS[tag]} />
-						<span className="tabular-nums">{n}</span> {SESSION_TAG_LABELS[tag].toLowerCase()}
-						{n === 1 ? "" : "s"}
+						<span className="tabular-nums">{n}</span>{" "}
+						{pluralize(n, SESSION_TAG_LABELS[tag].toLowerCase())}
 					</span>
 				))}
 			</span>

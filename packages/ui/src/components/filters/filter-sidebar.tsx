@@ -4,6 +4,7 @@ import { ScrollArea } from "../ui/scroll-area"
 import { Separator } from "../ui/separator"
 import { Skeleton } from "../ui/skeleton"
 import { cn } from "../../lib/utils"
+import { refreshingClass } from "../../lib/refreshing"
 import { Eyebrow } from "../ui/eyebrow"
 
 interface FilterSidebarFrameProps {
@@ -17,7 +18,10 @@ export function FilterSidebarFrame({ children, waiting = false, className }: Fil
 	// on desktop, a sheet below lg). Setting one here would fight it — callers that own their own
 	// layout (local mode) pass a width via className instead.
 	return (
-		<div className={cn("flex h-full w-full flex-col", waiting && "opacity-60", className)}>
+		<div
+			className={cn("flex h-full w-full flex-col", refreshingClass(waiting), className)}
+			aria-busy={waiting || undefined}
+		>
 			{children}
 		</div>
 	)

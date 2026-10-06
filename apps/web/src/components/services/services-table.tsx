@@ -29,9 +29,10 @@ import { Sparkline } from "@maple/ui/components/ui/gradient-chart"
 import { Tooltip, TooltipTrigger, TooltipContent } from "@maple/ui/components/ui/tooltip"
 import { cn } from "@maple/ui/lib/utils"
 import { SignalEmptyState } from "@/components/common/signal-empty-state"
-import { countLabel, formatErrorRate, formatThroughput, pluralize } from "@maple/ui/lib/format"
+import { countLabel, formatErrorRate, formatPercent, formatThroughput, pluralize } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { SampledValue } from "./sampled-value"
+import { MobileStat, MobileStatLine } from "./service-table-cells"
 import { shortId } from "@maple/ui/lib/ids"
 import { ErrorRateValue } from "@maple/ui/components/error-rate-value"
 import {
@@ -544,8 +545,8 @@ const ServiceRow = React.memo(function ServiceRow({
 					{service.hasSampling && (
 						<TooltipContent side="bottom">
 							<p>
-								Estimated from {((1 / service.samplingWeight) * 100).toFixed(0)}% sampled
-								traces (x{service.samplingWeight.toFixed(0)} extrapolation)
+								Estimated from {formatPercent(1 / service.samplingWeight)} sampled traces (x
+								{service.samplingWeight.toFixed(0)} extrapolation)
 							</p>
 						</TooltipContent>
 					)}
@@ -962,20 +963,14 @@ export function ServicesTable({ filters }: ServicesTableProps) {
 																		{subtitleFor(service)}
 																	</div>
 																)}
-																<div className="mt-1 flex items-center gap-3 font-mono text-xs tabular-nums">
-																	<span>
-																		<span className="text-muted-foreground/60">
-																			P99{" "}
-																		</span>
+																<MobileStatLine>
+																	<MobileStat label="P99">
 																		<LatencyValue
 																			ms={service.p99LatencyMs}
 																			scale="p99"
 																		/>
-																	</span>
-																	<span>
-																		<span className="text-muted-foreground/60">
-																			Thru{" "}
-																		</span>
+																	</MobileStat>
+																	<MobileStat label="Thru">
 																		<SampledValue
 																			className="text-foreground"
 																			estimated={service.hasSampling}
@@ -984,8 +979,8 @@ export function ServicesTable({ filters }: ServicesTableProps) {
 																				"/s",
 																			)}
 																		/>
-																	</span>
-																</div>
+																	</MobileStat>
+																</MobileStatLine>
 															</div>
 															<div className="shrink-0 text-right">
 																<ErrorRateValue

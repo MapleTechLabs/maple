@@ -11,11 +11,12 @@ import type {
 } from "@maple/agent-sessions"
 
 import { ArrowRightIcon, CheckIcon } from "@/components/icons"
-import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Button } from "@maple/ui/components/ui/button"
 import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
 import { cn } from "@maple/ui/lib/utils"
+
+import { SectionHeading } from "@/components/common/section-heading"
 import { TONE_TEXT, type Tone } from "@maple/ui/lib/tone"
 
 /** One tone per status, for the dot beside a name and the text of a label. */
@@ -74,9 +75,7 @@ export function SessionChecks({
 			<Verdict report={report} onOpenSpan={onOpenSpan} />
 
 			<section className="flex flex-col gap-2">
-				<Eyebrow variant="label" as="h3">
-					Needs attention
-				</Eyebrow>
+				<SectionHeading variant="eyebrow" as="h3" title="Needs attention" className="mb-0" />
 				{clean ? (
 					<p className="flex items-center gap-2 py-2 text-[13px]">
 						<CheckIcon size={14} aria-hidden className="shrink-0 text-severity-info" />

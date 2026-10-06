@@ -10,9 +10,9 @@ import { toastManager } from "@maple/ui/components/ui/toast"
 
 import type { V2Recommendation } from "@maple/domain/http/v2"
 
-import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { ResultPage } from "@/components/layout/result-page"
+import { DetailHeader } from "@/components/common/detail-header"
 import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
-import { displayError } from "@/lib/error-messages"
 import {
 	ingestAttributeMappingsListAtom,
 	recommendationIssuesListAtom,
@@ -22,7 +22,8 @@ import { RelativeTime } from "@/components/common/relative-time"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
+import { Panel } from "@maple/ui/components/ui/panel"
+import { formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import {
 	ArrowRotateAnticlockwiseIcon,
@@ -165,94 +166,85 @@ function RecommendationDetailPage() {
 		}
 	}
 
-	return Result.builder(listResult)
-		.onInitial(() => <LoadingShell />)
-		.onError((error) => <ErrorShell message={displayError(error).message} />)
-		.onSuccess(() => {
-			if (!issue) return <InactiveShell />
-			return (
-				<DetailView
+	return (
+		<ResultPage
+			breadcrumbs={[{ label: "Ingestion", href: INGESTION_HREF }]}
+			result={listResult}
+			select={() => issue}
+			crumb={(issue) => `Recommendation #${issue.number}`}
+			width="narrow"
+			gap="lg"
+			errorTitle="Couldn't load recommendation"
+			onRetry={refreshIssues}
+			loading={
+				<>
+					<Skeleton className="h-12 w-full" />
+					<Skeleton className="h-28 w-full" />
+					<Skeleton className="h-24 w-full" />
+				</>
+			}
+			notFound={
+				<ResourceNotFound
+					icon={<PulseIcon className="text-muted-foreground" />}
+					title="Recommendation not found"
+					description="This recommendation isn't in your list anymore. It may have resolved on its own."
+					backLink={<Link to="/settings" search={{ tab: "ingestion" }} />}
+					backLabel="Back to recommendations"
+				/>
+			}
+			header={(issue) => {
+				const status = STATUS_BADGE[issue.status]
+				return (
+					<DetailHeader
+						kind="Recommendation"
+						title={recSentence(issue)}
+						titleText={recTitleText(issue)}
+						meta={
+							<Badge variant={status.variant} size="lg">
+								{status.label}
+							</Badge>
+						}
+					/>
+				)
+			}}
+			rightPanel={(issue) => (
+				<DetailSidebar
 					issue={issue}
 					busy={busy}
-					onApply={() => handleApply(issue)}
-					onDismiss={() => dismiss({ params: { id: issue.id } })}
-					onReopen={() => reopen({ params: { id: issue.id } })}
+					isApplyable={isApplyable(issue)}
+					isLive={isLive(issue)}
+					onApply={() => void handleApply(issue)}
+					onDismiss={() => void dismiss({ params: { id: issue.id } })}
+					onReopen={() => void reopen({ params: { id: issue.id } })}
 				/>
-			)
-		})
-		.render()
+			)}
+		>
+			{(issue) => (
+				<>
+					<Summary issue={issue} />
+					<ChangeBreakdown issue={issue} />
+					<CautionCallout issue={issue} isApplyable={isApplyable(issue)} />
+					{isApplyable(issue) && issue.canonical_key ? (
+						<MappingBlock issue={issue} isLive={isLive(issue)} />
+					) : (
+						<SdkFixBlock issue={issue} />
+					)}
+				</>
+			)}
+		</ResultPage>
+	)
 }
 
-/* -------------------------------------------------------------------------------------------------
- * Detail view
- * -------------------------------------------------------------------------------------------------*/
+const isApplyable = (issue: V2Recommendation) => issue.kind === "rename" && Boolean(issue.canonical_key)
+const isLive = (issue: V2Recommendation) => issue.status === "applied" || issue.status === "resolved"
 
-function DetailView({
-	issue,
-	busy,
-	onApply,
-	onDismiss,
-	onReopen,
-}: {
-	issue: V2Recommendation
-	busy: BusyAction
-	onApply: () => void
-	onDismiss: () => void
-	onReopen: () => void
-}) {
-	const status = STATUS_BADGE[issue.status]
-	const isApplyable = issue.kind === "rename" && Boolean(issue.canonical_key)
-	const isLive = issue.status === "applied" || issue.status === "resolved"
-
-	return (
-		<DashboardLayout.Root>
-			<DashboardLayout.Breadcrumbs
-				items={[
-					{ label: "Ingestion", href: INGESTION_HREF },
-					{ label: `Recommendation #${issue.number}` },
-				]}
-			/>
-			<DashboardLayout.Body>
-				<DashboardLayout.Content>
-					<DashboardLayout.Sticky>
-						<DashboardLayout.Header
-							titleContent={
-								<div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-									<DashboardLayout.Title>{recSentence(issue)}</DashboardLayout.Title>
-									<Badge variant={status.variant} size="lg">
-										{status.label}
-									</Badge>
-								</div>
-							}
-						/>
-					</DashboardLayout.Sticky>
-					<DashboardLayout.Scroll>
-						<div className="max-w-3xl space-y-6">
-							<Summary issue={issue} />
-							<ChangeBreakdown issue={issue} />
-							<CautionCallout issue={issue} isApplyable={isApplyable} />
-							{isApplyable && issue.canonical_key ? (
-								<MappingBlock issue={issue} isLive={isLive} />
-							) : (
-								<SdkFixBlock issue={issue} />
-							)}
-						</div>
-					</DashboardLayout.Scroll>
-				</DashboardLayout.Content>
-				<DashboardLayout.RightPanel>
-					<DetailSidebar
-						issue={issue}
-						busy={busy}
-						isApplyable={isApplyable}
-						isLive={isLive}
-						onApply={onApply}
-						onDismiss={onDismiss}
-						onReopen={onReopen}
-					/>
-				</DashboardLayout.RightPanel>
-			</DashboardLayout.Body>
-		</DashboardLayout.Root>
-	)
+/** `recSentence` as plain text, for the truncated title's tooltip. */
+function recTitleText(issue: V2Recommendation): string {
+	if (issue.kind === "double-emission") {
+		return `Standardize on ${issue.canonical_key}, spans also emit ${issue.source_key}`
+	}
+	if (issue.kind === "naming") return `Rename non-conforming key ${issue.source_key}`
+	return `Rename ${issue.source_key} → ${issue.canonical_key}`
 }
 
 /** Plain-language explanation of the recommendation, with mono-styled keys. */
@@ -285,7 +277,7 @@ function Summary({ issue }: { issue: V2Recommendation }) {
 			</>
 		)
 	}
-	return <p className="text-[15px] leading-relaxed text-foreground/90">{body}</p>
+	return <p className="text-base leading-relaxed text-foreground/90">{body}</p>
 }
 
 /** Before → after card — the deprecated key today vs. the key Maple writes. */
@@ -309,7 +301,7 @@ function ChangeBreakdown({ issue }: { issue: V2Recommendation }) {
 	return (
 		<section>
 			<SectionHeading variant="eyebrow" title="What changes" />
-			<div className="overflow-hidden rounded-md border">
+			<Panel>
 				<div className="flex items-start gap-3 px-4 py-3">
 					<CircleXmarkIcon size={16} className="mt-0.5 shrink-0 text-muted-foreground" />
 					<div className="min-w-0 flex-1">
@@ -319,7 +311,7 @@ function ChangeBreakdown({ issue }: { issue: V2Recommendation }) {
 						</code>
 					</div>
 					<span className="shrink-0 pt-0.5 text-xs tabular-nums text-muted-foreground">
-						{issue.usage_count.toLocaleString()} spans · 24h
+						{formatNumber(issue.usage_count)} spans · 24h
 					</span>
 				</div>
 				{issue.canonical_key ? (
@@ -333,7 +325,7 @@ function ChangeBreakdown({ issue }: { issue: V2Recommendation }) {
 						</div>
 					</div>
 				) : null}
-			</div>
+			</Panel>
 			{note ? <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{note}</p> : null}
 		</section>
 	)
@@ -372,14 +364,14 @@ function MappingBlock({ issue, isLive }: { issue: V2Recommendation; isLive: bool
 	return (
 		<section>
 			<SectionHeading variant="eyebrow" title={isLive ? "Active ingest mapping" : "What Apply does"} />
-			<div className="overflow-hidden rounded-md border bg-muted/40">
+			<Panel tone="muted">
 				<div className="flex items-center justify-between border-b border-border/60 px-3 py-2">
 					<span className="text-xs text-muted-foreground">
 						{isLive ? "This mapping is live" : "Ingest attribute mapping"}
 					</span>
 					<CopyButton value={snippet} label="Mapping" size="icon-sm" tooltip />
 				</div>
-				<div className="space-y-1.5 px-4 py-3 font-mono text-[13px] leading-relaxed">
+				<div className="space-y-1.5 px-4 py-3 font-mono text-xs leading-relaxed">
 					<div className="flex items-baseline gap-3">
 						<span className="w-12 shrink-0 text-muted-foreground">when</span>
 						<span className="break-all">
@@ -395,7 +387,7 @@ function MappingBlock({ issue, isLive }: { issue: V2Recommendation; isLive: bool
 						</span>
 					</div>
 				</div>
-			</div>
+			</Panel>
 		</section>
 	)
 }
@@ -404,7 +396,7 @@ function SdkFixBlock({ issue }: { issue: V2Recommendation }) {
 	return (
 		<section>
 			<SectionHeading variant="eyebrow" title="How to fix" />
-			<div className="rounded-md border bg-muted/40 px-4 py-3">
+			<Panel tone="muted" className="px-4 py-3">
 				<p className="text-sm leading-relaxed text-muted-foreground">
 					Rename <InlineCode variant="plain">{issue.source_key}</InlineCode>
 					{issue.canonical_key ? (
@@ -418,7 +410,7 @@ function SdkFixBlock({ issue }: { issue: V2Recommendation }) {
 					where your spans are created (the instrumentation / SDK). Once the conforming key appears
 					on incoming spans, this recommendation resolves automatically.
 				</p>
-			</div>
+			</Panel>
 		</section>
 	)
 }
@@ -465,7 +457,7 @@ function DetailSidebar({
 					</Badge>
 				</Row>
 				<Row label="Spans">
-					<span className="tabular-nums text-foreground">{issue.usage_count.toLocaleString()}</span>
+					<span className="tabular-nums text-foreground">{formatNumber(issue.usage_count)}</span>
 				</Row>
 				<Row label="Opened">
 					<RelativeTime
@@ -551,66 +543,5 @@ function DetailSidebar({
 				)}
 			</DetailRail.Group>
 		</div>
-	)
-}
-
-/* -------------------------------------------------------------------------------------------------
- * Shells (loading / error / inactive)
- * -------------------------------------------------------------------------------------------------*/
-
-function ShellLayout({ children }: { children: React.ReactNode }) {
-	return (
-		<DashboardLayout.Root>
-			<DashboardLayout.Breadcrumbs
-				items={[{ label: "Ingestion", href: INGESTION_HREF }, { label: "Recommendation" }]}
-			/>
-			<DashboardLayout.Body>
-				<DashboardLayout.Content>
-					<DashboardLayout.Scroll>{children}</DashboardLayout.Scroll>
-				</DashboardLayout.Content>
-			</DashboardLayout.Body>
-		</DashboardLayout.Root>
-	)
-}
-
-function LoadingShell() {
-	return (
-		<ShellLayout>
-			<div className="max-w-3xl space-y-6">
-				<Skeleton className="h-12 w-full" />
-				<Skeleton className="h-28 w-full" />
-				<Skeleton className="h-24 w-full" />
-			</div>
-		</ShellLayout>
-	)
-}
-
-function ErrorShell({ message }: { message: string }) {
-	return (
-		<ShellLayout>
-			<Empty>
-				<EmptyHeader>
-					<EmptyMedia variant="icon">
-						<CircleXmarkIcon className="text-destructive" />
-					</EmptyMedia>
-					<EmptyTitle>Couldn't load recommendation</EmptyTitle>
-					<EmptyDescription>{message}</EmptyDescription>
-				</EmptyHeader>
-			</Empty>
-		</ShellLayout>
-	)
-}
-
-function InactiveShell() {
-	return (
-		<ShellLayout>
-			<ResourceNotFound
-				icon={<PulseIcon className="text-muted-foreground" />}
-				title="Recommendation not found"
-				description="This recommendation isn't in your list anymore. It may have resolved on its own."
-				backLink={<Link to="/settings" search={{ tab: "ingestion" }} />}
-				backLabel="Back to recommendations"
-			/>
-		</ShellLayout>
 	)
 }

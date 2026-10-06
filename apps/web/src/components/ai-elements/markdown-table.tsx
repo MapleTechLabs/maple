@@ -9,6 +9,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { ServiceRef, TraceRef } from "./entity-ref"
 import { useKnownServices } from "./known-services"
 import { classifyCell, columnRole, type CellValue } from "./table-cell-value"
+import { Panel } from "@maple/ui/components/ui/panel"
 
 /**
  * The table Streamdown renders for a markdown table in an assistant reply.
@@ -72,11 +73,11 @@ export function MarkdownTable({ children, className, node: _node, ...props }: Ma
 		<HeadersContext value={headers.current}>
 			{/* The frame lives on a wrapper because `Table` gives its own scroll
 			    container no class hook, and the radius has to clip the header fill. */}
-			<div className="my-3 overflow-hidden rounded-lg border border-border bg-card">
+			<Panel className="my-3">
 				<Table className={cn("text-xs", className)} {...props}>
 					{children}
 				</Table>
-			</div>
+			</Panel>
 		</HeadersContext>
 	)
 }

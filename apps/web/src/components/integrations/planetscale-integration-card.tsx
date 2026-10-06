@@ -19,7 +19,8 @@ import { Field, FieldDescription, FieldLabel } from "@maple/ui/components/ui/fie
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 
 import { PlanetScaleIcon } from "@/components/icons"
-import { cn } from "@maple/ui/lib/utils"
+import { Panel } from "@maple/ui/components/ui/panel"
+import { OptionCard } from "@/components/common/option-card"
 import { isExcluded } from "@/components/infra/planetscale/branch-selection"
 import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
 import { useMutationAction } from "@/hooks/use-mutation-action"
@@ -132,7 +133,7 @@ export function PlanetScaleIntegrationCard() {
 	// Grant stored, organization not chosen yet: the picker is the whole card.
 	if (!isConnected && pendingOrgSelection) {
 		return (
-			<div className="overflow-hidden rounded-lg border border-border/60 bg-card">
+			<Panel>
 				<Item className="items-start gap-3 rounded-none p-4">
 					<ItemMedia>
 						<IntegrationIconPlate icon={PlanetScaleIcon} accent={PLANETSCALE_ENTRY.accent} />
@@ -155,7 +156,7 @@ export function PlanetScaleIntegrationCard() {
 						cancelLabel="Disconnect"
 					/>
 				</div>
-			</div>
+			</Panel>
 		)
 	}
 
@@ -199,7 +200,7 @@ export function PlanetScaleIntegrationCard() {
 
 	return (
 		<div className="flex flex-col gap-4">
-			<div className="overflow-hidden rounded-lg border border-border/60 bg-card">
+			<Panel>
 				<Item className="items-start gap-3 rounded-none p-4">
 					<ItemMedia>
 						<IntegrationIconPlate icon={PlanetScaleIcon} accent={PLANETSCALE_ENTRY.accent} />
@@ -337,7 +338,7 @@ export function PlanetScaleIntegrationCard() {
 						/>
 					</div>
 				) : null}
-			</div>
+			</Panel>
 
 			<PlanetScaleWebhookSetup />
 
@@ -507,24 +508,15 @@ function PlanetScaleOrgPicker(props: {
 		<div className="flex flex-col gap-4">
 			<div className="flex flex-col gap-1.5" role="radiogroup" aria-label="PlanetScale organization">
 				{organizations.map((org) => (
-					<button
+					<OptionCard
 						key={org.id}
-						type="button"
-						role="radio"
-						aria-checked={selected === org.name}
-						onClick={() => setSelected(org.name)}
-						className={cn(
-							"flex items-center justify-between rounded-md border px-3 py-2 text-left text-sm transition-colors",
-							selected === org.name
-								? "border-primary bg-primary/5 font-medium"
-								: "border-border/60 hover:bg-muted/50",
-						)}
-					>
-						<span className="truncate">{org.name}</span>
-						{selected === org.name ? (
-							<span className="text-xs text-primary">Selected</span>
-						) : null}
-					</button>
+						type="radio"
+						name="planetscale-organization"
+						checked={selected === org.name}
+						onChange={() => setSelected(org.name)}
+						label={org.name}
+						title={<span className="truncate">{org.name}</span>}
+					/>
 				))}
 			</div>
 			<div className="flex flex-col gap-3">
@@ -594,7 +586,7 @@ function PlanetScaleOrgPicker(props: {
 function PlanetScaleWebhookSetup() {
 	const [revealed, setRevealed] = useState(false)
 	return (
-		<div className="overflow-hidden rounded-lg border border-border/60 bg-card">
+		<Panel>
 			<Item className="items-start gap-3 rounded-none p-4">
 				<ItemContent className="gap-0">
 					<h3 className="text-sm font-semibold">Webhooks</h3>
@@ -612,7 +604,7 @@ function PlanetScaleWebhookSetup() {
 				) : null}
 			</Item>
 			{revealed ? <PlanetScaleWebhookConfig /> : null}
-		</div>
+		</Panel>
 	)
 }
 

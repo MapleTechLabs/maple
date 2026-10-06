@@ -1,5 +1,6 @@
 import { cn } from "@maple/ui/lib/utils"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
+import { Panel } from "@maple/ui/components/ui/panel"
 
 import { useLinkedCursor } from "@/hooks/use-linked-cursor"
 import { InfraMetricChart, type InfraSeriesInfo } from "@/components/infra/primitives/infra-metric-chart"
@@ -55,8 +56,8 @@ export function CorrelationStrips({ series, xDomain, waiting = false, className 
 	const { containerProps } = useLinkedCursor(true)
 
 	return (
-		<div
-			className={cn("overflow-hidden rounded-lg border bg-card", refreshingClass(waiting), className)}
+		<Panel
+			className={cn("block", refreshingClass(waiting), className)}
 			aria-busy={waiting || undefined}
 			{...containerProps}
 		>
@@ -66,7 +67,7 @@ export function CorrelationStrips({ series, xDomain, waiting = false, className 
 					className={cn("flex items-center gap-4 px-4 py-3", index > 0 && "border-t")}
 				>
 					<div className="flex w-[150px] shrink-0 flex-col gap-0.5">
-						<span className="text-[12px] font-medium text-foreground">{strip.label}</span>
+						<span className="text-xs font-medium text-foreground">{strip.label}</span>
 						<span className="font-mono text-3xs text-muted-foreground">{strip.source}</span>
 					</div>
 					<div className="min-w-0 flex-1">
@@ -85,7 +86,7 @@ export function CorrelationStrips({ series, xDomain, waiting = false, className 
 					</div>
 				</div>
 			))}
-		</div>
+		</Panel>
 	)
 }
 

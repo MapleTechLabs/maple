@@ -1,4 +1,6 @@
 import { Card, CardContent } from "@maple/ui/components/ui/card"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { pluralize } from "@maple/ui/lib/format"
 import { TONE_FILL, type Tone } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 
@@ -69,15 +71,15 @@ export function AlertFiringHero({
 				<div className="flex min-w-0 items-center gap-3">
 					<StatusDot tone="crit" />
 					<div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5">
-						<span className="text-severity-error text-2xs font-medium uppercase tracking-[0.16em]">
+						<Eyebrow variant="label" className="text-severity-error">
 							Firing now
-						</span>
+						</Eyebrow>
 						<span className="flex items-baseline gap-1.5">
 							<span className="text-severity-error text-2xl font-semibold tabular-nums leading-none">
 								{openCount}
 							</span>
 							<span className="text-muted-foreground text-sm">
-								{openCount === 1 ? "incident" : "incidents"}
+								{pluralize(openCount, "incident")}
 							</span>
 						</span>
 						<span className="text-muted-foreground/40">·</span>

@@ -12,7 +12,7 @@ import { scaleLinear } from "@tanstack/charts-scales/linear"
 import * as React from "react"
 
 import { useContainerSize } from "../../../hooks/use-container-size"
-import { formatNumber, formatValueByUnit } from "../../../lib/format"
+import { EMPTY_VALUE, formatNumber, formatValueByUnit } from "../../../lib/format"
 import { resolveSeriesColors } from "../../../lib/semantic-series-colors"
 import { cn } from "../../../lib/utils"
 import {
@@ -442,7 +442,7 @@ export function QueryBuilderPieChart({
 				// this column is a span count or a latency.
 				if (tableLegend) {
 					entry.value = fmtValue(row.value, unit)
-					entry.secondary = total > 0 ? fmtPercent(row.value / total, 1) : "—"
+					entry.secondary = total > 0 ? fmtPercent(row.value / total, 1) : EMPTY_VALUE
 				}
 				return entry
 			}),

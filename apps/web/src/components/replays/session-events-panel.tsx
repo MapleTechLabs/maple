@@ -1,4 +1,5 @@
 import * as React from "react"
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import { shortId } from "@maple/ui/lib/ids"
 import * as Predicate from "effect/Predicate"
 import { Link } from "@tanstack/react-router"
@@ -52,6 +53,7 @@ import {
 	type IconComponent,
 } from "@/components/icons"
 import { countryFlag, countryName } from "@/components/analytics/labels"
+import { ErrorState } from "@/components/common/error-state"
 import { StatFigure } from "@/components/common/stat-rail"
 import { browserIconFor, deviceIconFor } from "./session-icons"
 import { formatClock, formatSessionDuration, type ReplayPartitionWindow } from "./replay-format"
@@ -299,10 +301,8 @@ function EventsTab({ sessionId, window }: { sessionId: string; window?: ReplayPa
 
 	return Result.builder(result)
 		.onInitial(() => <Skeleton className="m-3 min-h-0 flex-1 rounded-lg" />)
-		.onError(() => (
-			<div className="grid flex-1 place-items-center p-6 text-center text-sm text-muted-foreground">
-				Couldn't load session events.
-			</div>
+		.onError((error) => (
+			<ErrorState error={error} title="Couldn't load session events" className="flex-1 border-0" />
 		))
 		.onSuccess((data) => renderBody(data.data as ReadonlyArray<EventRow>))
 		.orElse(() => <Skeleton className="m-3 min-h-0 flex-1 rounded-lg" />)
@@ -695,9 +695,7 @@ function EventDetail({ ev }: { ev: EventRow }) {
 	const fullUrl = ev.type === "network" ? ev.netUrl : ev.url
 	return (
 		<div className="flex flex-col gap-1.5 px-3 pb-2.5 pl-[50px]">
-			{fullUrl && (
-				<span className="break-all text-2xs leading-4 text-muted-foreground">{fullUrl}</span>
-			)}
+			{fullUrl && <span className="break-all text-2xs leading-4 text-muted-foreground">{fullUrl}</span>}
 			{ev.type === "click" && ev.targetText && ev.targetSelector && (
 				<span className="break-all text-2xs leading-4 text-muted-foreground">
 					{ev.targetSelector}
@@ -722,7 +720,6 @@ function EventDetail({ ev }: { ev: EventRow }) {
 					// ClickHouse partition scan instead of reading the full retention.
 					search={{ t: ev.timestamp }}
 					className="w-fit rounded-sm border border-input px-2 py-0.5 text-3xs text-muted-foreground hover:text-foreground"
-					title="Open backend trace"
 				>
 					Open trace
 				</Link>
@@ -792,14 +789,21 @@ function TracesTabLive({
 				<Skeleton className="h-4 w-1/2" />
 			</div>
 		))
-		.onError(() => <p className="p-4 text-xs text-destructive">Couldn't load correlated traces.</p>)
+		.onError((error) => (
+			<ErrorState
+				variant="inline"
+				error={error}
+				title="Couldn't load correlated traces"
+				className="px-4"
+			/>
+		))
 		.onSuccess((res) => {
 			const summaries: ReadonlyArray<SessionTraceSummary> = res.data
 			if (summaries.length === 0) {
 				return (
-					<p className="p-4 text-xs text-muted-foreground">
-						Linked traces aren't available yet — they may still be ingesting.
-					</p>
+					<EmptyMessage>
+						Linked traces aren't available yet, they may still be ingesting.
+					</EmptyMessage>
 				)
 			}
 			return <TraceList summaries={summaries} />
@@ -830,14 +834,20 @@ function TraceListRow({ summary }: { summary: SessionTraceSummary }) {
 		>
 			{isError && <span aria-hidden className="absolute inset-y-0 left-0 w-0.5 bg-severity-error" />}
 			<div className="flex items-center gap-2.5">
-				<button
-					type="button"
-					onClick={() => seekTo(summary.startTime)}
-					className="w-10 shrink-0 text-left font-mono text-xs tabular-nums text-muted-foreground hover:text-foreground"
-					title="Seek replay to this trace"
-				>
-					{clockAt(summary.startTime)}
-				</button>
+				<Tooltip>
+					<TooltipTrigger
+						render={
+							<button
+								type="button"
+								onClick={() => seekTo(summary.startTime)}
+								className="w-10 shrink-0 text-left font-mono text-xs tabular-nums text-muted-foreground hover:text-foreground"
+							/>
+						}
+					>
+						{clockAt(summary.startTime)}
+					</TooltipTrigger>
+					<TooltipContent>Seek replay to this trace</TooltipContent>
+				</Tooltip>
 				{/* Same method-chip + route-path label the timeline and trace views use,
 				    so a trace reads identically everywhere. */}
 				<HttpSpanLabel
@@ -903,14 +913,20 @@ function SessionTab({ sessionId, session }: { sessionId: string; session: Sessio
 						{/* The link is the point of this group: one visitor id spans this
 						    person's anonymous marketing sessions and their signed-in ones,
 						    so this is how you walk from a signup back to the campaign. */}
-						<Link
-							to="/replays"
-							search={{ visitorId: session.visitorId }}
-							className="truncate font-mono text-xs text-primary underline-offset-2 hover:underline"
-							title="All sessions from this visitor"
-						>
-							{shortId(session.visitorId, "generic", { ellipsis: true })}
-						</Link>
+						<Tooltip>
+							<TooltipTrigger
+								render={
+									<Link
+										to="/replays"
+										search={{ visitorId: session.visitorId }}
+										className="truncate font-mono text-xs text-primary underline-offset-2 hover:underline"
+									/>
+								}
+							>
+								{shortId(session.visitorId, "generic", { ellipsis: true })}
+							</TooltipTrigger>
+							<TooltipContent>All sessions from this visitor</TooltipContent>
+						</Tooltip>
 					</Row>
 					<Row icon={UserIcon} label="Visitor">
 						<Value>{session.visitorIsNew ? "New" : "Returning"}</Value>
@@ -1078,14 +1094,20 @@ function IdentityGroup({ session }: { session: SessionRailSession }) {
 			)}
 			{userId && (
 				<Row icon={IdBadgeIcon} label="User ID" title={userId}>
-					<Link
-						to="/replays"
-						search={{ userId }}
-						className="truncate font-mono text-xs text-primary underline-offset-2 hover:underline"
-						title="All sessions from this user"
-					>
-						{userId}
-					</Link>
+					<Tooltip>
+						<TooltipTrigger
+							render={
+								<Link
+									to="/replays"
+									search={{ userId }}
+									className="truncate font-mono text-xs text-primary underline-offset-2 hover:underline"
+								/>
+							}
+						>
+							{userId}
+						</TooltipTrigger>
+						<TooltipContent>All sessions from this user</TooltipContent>
+					</Tooltip>
 					<CopyButton
 						value={userId}
 						label="User ID"
@@ -1105,14 +1127,20 @@ function IdentityGroup({ session }: { session: SessionRailSession }) {
 					title={[groupName, groupId].filter(Boolean).join(" · ")}
 				>
 					{groupName ? (
-						<Link
-							to="/replays"
-							search={{ group: groupName }}
-							className="truncate text-xs text-primary underline-offset-2 hover:underline"
-							title="All sessions from this group"
-						>
-							{groupName}
-						</Link>
+						<Tooltip>
+							<TooltipTrigger
+								render={
+									<Link
+										to="/replays"
+										search={{ group: groupName }}
+										className="truncate text-xs text-primary underline-offset-2 hover:underline"
+									/>
+								}
+							>
+								{groupName}
+							</TooltipTrigger>
+							<TooltipContent>All sessions from this group</TooltipContent>
+						</Tooltip>
 					) : (
 						<Value mono className="truncate">
 							{groupId}
@@ -1289,7 +1317,7 @@ function EnvFact({
 	return (
 		<span className="flex min-w-0 items-center gap-2" title={`${label}: ${value || "unknown"}`}>
 			{glyph ? (
-				<span aria-hidden className="w-3.5 shrink-0 text-center text-[13px] leading-none">
+				<span aria-hidden className="w-3.5 shrink-0 text-center text-sm leading-none">
 					{glyph}
 				</span>
 			) : (

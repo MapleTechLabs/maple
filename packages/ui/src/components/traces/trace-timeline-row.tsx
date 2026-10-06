@@ -3,7 +3,7 @@ import * as React from "react"
 import { ChevronDownIcon, ChevronRightIcon, LayersIcon } from "../icons"
 import { cn } from "../../lib/utils"
 import { getServiceColor } from "../../lib/colors"
-import { formatDuration } from "../../lib/format"
+import { countLabel, formatDuration } from "../../lib/format"
 import { describeSpan } from "../../lib/span-category"
 import type { TimelineBar } from "./trace-timeline-types"
 import { DEPTH_INDENT, ROW_HEIGHT } from "./trace-timeline-types"
@@ -123,10 +123,7 @@ function TraceTimelineRowImpl({
 				{/* Category glyph. The timeline row has no room to spell the category out, so the
 				    title carries it; `describeSpan` already ran here for `cacheInfo`. */}
 				<span className="flex shrink-0 items-center" title={category.label}>
-					<CategoryIcon
-						size={11}
-						className={bar.isError ? TONE_TEXT.crit : category.accent.text}
-					/>
+					<CategoryIcon size={11} className={bar.isError ? TONE_TEXT.crit : category.accent.text} />
 				</span>
 				<span
 					className={cn(
@@ -161,7 +158,7 @@ function TraceTimelineRowImpl({
 				{bar.isCollapsed && bar.childCount > 0 && (
 					<span
 						className="flex items-center gap-0.5 shrink-0 text-4xs text-muted-foreground/70"
-						title={`${bar.childCount} hidden ${bar.childCount === 1 ? "span" : "spans"}`}
+						title={countLabel(bar.childCount, "hidden span")}
 					>
 						<LayersIcon size={9} />
 						{bar.childCount}

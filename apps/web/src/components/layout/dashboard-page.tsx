@@ -108,7 +108,9 @@ export function DashboardPage({
 		<DashboardLayout.Root>
 			<DashboardLayout.Breadcrumbs items={breadcrumbs}>{topbarActions}</DashboardLayout.Breadcrumbs>
 			<DashboardLayout.Body>
-				{filters ? <DashboardLayout.Filters width={filtersWidth}>{filters}</DashboardLayout.Filters> : null}
+				{filters ? (
+					<DashboardLayout.Filters width={filtersWidth}>{filters}</DashboardLayout.Filters>
+				) : null}
 				<DashboardLayout.Content>
 					{hasSticky ? (
 						<DashboardLayout.Sticky>
@@ -136,6 +138,8 @@ export function DashboardPage({
 
 	if (!time) return page
 	return (
-		<PageRefreshProvider timePreset={time.search.timePreset ?? time.defaultPreset}>{page}</PageRefreshProvider>
+		<PageRefreshProvider timePreset={time.search.timePreset ?? time.defaultPreset}>
+			{page}
+		</PageRefreshProvider>
 	)
 }

@@ -307,7 +307,7 @@ function TracesLogsBody({
 							})
 						}
 					>
-						<SelectTrigger className="h-8 w-[120px] text-xs shrink-0">
+						<SelectTrigger size="sm" className="w-[120px] shrink-0">
 							<SelectValue />
 						</SelectTrigger>
 						<SelectContent>
@@ -325,7 +325,7 @@ function TracesLogsBody({
 					value={query.aggregation}
 					onValueChange={(value) => onAggregationChange(value ?? query.aggregation)}
 				>
-					<SelectTrigger className="h-8 w-[160px] text-xs">
+					<SelectTrigger size="sm" className="w-[160px]">
 						<SelectValue />
 					</SelectTrigger>
 					<SelectContent>
@@ -485,7 +485,7 @@ function MetricsBody({
 					value={query.aggregation}
 					onValueChange={(value) => onAggregationChange(value ?? query.aggregation)}
 				>
-					<SelectTrigger className="h-8 w-24 text-xs">
+					<SelectTrigger size="sm" className="w-24">
 						<SelectValue />
 					</SelectTrigger>
 					<SelectContent>
@@ -524,7 +524,7 @@ function MetricsBody({
 					value={query.aggregation}
 					onValueChange={(value) => onAggregationChange(value ?? query.aggregation)}
 				>
-					<SelectTrigger className="h-8 w-24 text-xs">
+					<SelectTrigger size="sm" className="w-24">
 						<SelectValue />
 					</SelectTrigger>
 					<SelectContent>
@@ -642,7 +642,7 @@ function AddOnSections({
 							}))
 						}
 					>
-						<SelectTrigger className="h-8 w-20 text-xs">
+						<SelectTrigger size="sm" className="w-20">
 							<SelectValue />
 						</SelectTrigger>
 						<SelectContent>

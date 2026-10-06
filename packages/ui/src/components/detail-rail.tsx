@@ -1,6 +1,7 @@
 import type * as React from "react"
 
 import { cn } from "../lib/utils"
+import { Eyebrow } from "./ui/eyebrow"
 import type { IconComponent } from "./icons"
 import { CopyButton } from "./ui/copy-button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip"
@@ -35,9 +36,7 @@ function Group({
 				className,
 			)}
 		>
-			<h3 className="text-3xs font-medium uppercase tracking-[0.12em] text-muted-foreground">
-				{label}
-			</h3>
+			<Eyebrow as="h3">{label}</Eyebrow>
 			<div className="flex flex-col gap-1">{children}</div>
 		</section>
 	)
@@ -84,9 +83,7 @@ function Row({
 				{Icon ? <Icon className="size-3.5 shrink-0 text-muted-foreground/70" aria-hidden /> : null}
 				<span className="flex min-w-0 flex-col">
 					<span className="truncate">{label}</span>
-					{hint ? (
-						<span className="truncate text-3xs text-muted-foreground/70">{hint}</span>
-					) : null}
+					{hint ? <span className="truncate text-3xs text-muted-foreground/70">{hint}</span> : null}
 				</span>
 			</span>
 			<div className="flex min-w-0 items-center justify-end">{children}</div>

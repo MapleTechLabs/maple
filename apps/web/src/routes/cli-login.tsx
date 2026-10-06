@@ -157,7 +157,9 @@ function CliLoginPage() {
 			<div className="space-y-5">
 				<div>
 					<AuthLayout.Title>Authorize Maple CLI</AuthLayout.Title>
-					<AuthLayout.Description>Approve a terminal session without copying an API key.</AuthLayout.Description>
+					<AuthLayout.Description>
+						Approve a terminal session without copying an API key.
+					</AuthLayout.Description>
 				</div>
 
 				{state._tag === "entry" || state._tag === "error" ? (

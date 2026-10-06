@@ -758,9 +758,7 @@ export const AlertRuleChart = React.memo(function AlertRuleChart({
 				</p>
 			)}
 			{hasSignal && source === "preview" && noDataBands.length > 0 && (
-				<p className="text-2xs text-muted-foreground">
-					Hatched: no data received in these windows.
-				</p>
+				<p className="text-2xs text-muted-foreground">Hatched: no data received in these windows.</p>
 			)}
 			{preview?.truncatedToStart != null && (
 				<p className="text-2xs text-muted-foreground">
@@ -800,7 +798,7 @@ export const AlertRuleChart = React.memo(function AlertRuleChart({
 											"h-full flex-1 rounded-[1px] p-0",
 											RAIL_COLOR[cell.status],
 											onSelectBucket != null && "cursor-pointer",
-											cell.opened && "ring-1 ring-inset ring-destructive",
+											cell.opened && "ring-1 ring-inset ring-severity-error",
 											selected && "ring-2 ring-foreground ring-offset-0",
 										)}
 									/>

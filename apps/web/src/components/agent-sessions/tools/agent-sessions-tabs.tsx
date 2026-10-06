@@ -3,6 +3,8 @@ import { Link } from "@tanstack/react-router"
 import { formatToolCount } from "@/lib/agent-sessions/tool-analytics"
 import { cn } from "@maple/ui/lib/utils"
 
+import { underlineTabClass } from "@/components/common/underline-link-tabs"
+
 import { GearIcon, LayersIcon } from "@/components/icons"
 import { pickTimeRangeSearch, type TimeRangeSearch } from "@/components/time-range-picker/search"
 
@@ -80,10 +82,9 @@ function TabLink({
 			search={search}
 			aria-current={active ? "page" : undefined}
 			className={cn(
-				"flex h-9 items-center gap-[7px] border-b-2 px-3 font-mono text-[12.5px] transition-colors first:pl-0.5",
-				active
-					? "border-primary font-medium text-foreground [&_svg]:text-primary"
-					: "border-transparent text-muted-foreground hover:text-foreground [&_svg]:text-muted-foreground",
+				underlineTabClass(active),
+				"px-3 font-mono text-xs first:pl-0.5",
+				active ? "[&_svg]:text-primary" : "[&_svg]:text-muted-foreground",
 			)}
 		>
 			{icon}

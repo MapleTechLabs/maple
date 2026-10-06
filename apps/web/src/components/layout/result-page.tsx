@@ -7,7 +7,14 @@ import { Result } from "@/lib/effect-atom"
 import type { BreadcrumbEntry } from "./dashboard-layout"
 import { DashboardPage, type DashboardPageProps } from "./dashboard-page"
 
-type ValueSlots = "breadcrumbs" | "children" | "header" | "titleContent" | "headerActions" | "tabs" | "rightPanel"
+type ValueSlots =
+	| "breadcrumbs"
+	| "children"
+	| "header"
+	| "titleContent"
+	| "headerActions"
+	| "tabs"
+	| "rightPanel"
 
 export interface ResultPageProps<A, E, B> extends Omit<DashboardPageProps, ValueSlots> {
 	/** The parent trail; the last crumb is appended per state. */

@@ -2,7 +2,7 @@ import { useNavigate, useSearch } from "@tanstack/react-router"
 import { Exit } from "effect"
 import * as AsyncResult from "effect/reactivity/AsyncResult"
 import { memo, useEffect, useMemo, useRef, useState } from "react"
-import { toastManager } from "@maple/ui/components/ui/toast"
+import { EMPTY_VALUE, pluralize } from "@maple/ui/lib/format"
 
 import type { AlertDestinationDocument, AlertRuleDocument } from "@maple/domain/http"
 import { Unitflow, View } from "@maple/unitflow/react"
@@ -19,7 +19,7 @@ import {
 import { RulesOverviewTable } from "@/components/alerts/overview/rules-overview-table"
 import { MagnifierIcon } from "@/components/icons"
 import { FilteredEmpty } from "@/components/common/filtered-empty"
-import { getExitErrorMessage } from "@/lib/error-toast"
+import { toastExit } from "@/lib/error-toast"
 import { needsAttention } from "@/lib/alerts/rule-status"
 import {
 	filterByTags,
@@ -150,10 +150,7 @@ const AlertsOverviewContent = memo(function AlertsOverviewContent({
 		if (toggleState === lastToggleState.current) return
 		lastToggleState.current = toggleState
 		if (AsyncResult.isFailure(toggleState)) {
-			toastManager.add({
-				title: getExitErrorMessage(Exit.failCause(toggleState.cause), "Failed to update rule"),
-				type: "error",
-			})
+			toastExit(Exit.failCause(toggleState.cause), { error: "Failed to update rule" })
 		}
 	}, [toggleState])
 	const isToggling = AsyncResult.isWaiting(toggleState)
@@ -247,7 +244,7 @@ const AlertsOverviewContent = memo(function AlertsOverviewContent({
 
 	const mttr = useMemo(() => {
 		const resolved = incidents.filter((i) => i.resolvedAt && i.firstTriggeredAt)
-		if (resolved.length === 0) return "—"
+		if (resolved.length === 0) return EMPTY_VALUE
 		const avg =
 			resolved.reduce((sum, i) => {
 				return sum + (new Date(i.resolvedAt!).getTime() - new Date(i.firstTriggeredAt).getTime())
@@ -381,7 +378,7 @@ const AlertsOverviewContent = memo(function AlertsOverviewContent({
 						size="sm"
 						eyebrow={`Triggered (${triggeredWindow})`}
 						value={triggeredInWindow}
-						hint={triggeredInWindow === 1 ? "incident" : "incidents"}
+						hint={pluralize(triggeredInWindow, "incident")}
 					/>
 					<StatRailItem size="sm" eyebrow="Avg MTTR" value={mttr} hint="resolved · 30d" />
 					<StatRailItem

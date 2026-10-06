@@ -1,3 +1,4 @@
+import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Button } from "@maple/ui/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
@@ -142,7 +143,7 @@ export function FunnelQueryPanelView({
 				</div>
 				<p className="pl-18 text-2xs text-muted-foreground">
 					{filterError ? (
-						<span className="text-destructive">{filterError}</span>
+						<span className={TONE_TEXT.crit}>{filterError}</span>
 					) : (
 						"Only persons with a session matching these dimensions take part."
 					)}
@@ -169,7 +170,7 @@ export function FunnelQueryPanelView({
 									if (option) onUpdate((current) => ({ ...current, keyBy: option.value }))
 								}}
 							>
-								<SelectTrigger className="h-8 w-[220px] text-xs" aria-label="Count by">
+								<SelectTrigger size="sm" className="w-[220px]" aria-label="Count by">
 									<SelectValue />
 								</SelectTrigger>
 								<SelectContent>
@@ -245,9 +246,7 @@ export function FunnelQueryPanelView({
 									})
 								}
 							/>
-							<span className="text-2xs text-muted-foreground">
-								one bar per group, top 6
-							</span>
+							<span className="text-2xs text-muted-foreground">one bar per group, top 6</span>
 						</div>
 					)}
 				</div>

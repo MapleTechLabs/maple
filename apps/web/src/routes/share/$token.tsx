@@ -51,6 +51,7 @@ import {
 import { MapleMark } from "@maple/ui/components/icons/maple-mark"
 import { Button } from "@maple/ui/components/ui/button"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from "@maple/ui/components/ui/empty"
 
 const ShareSearch = Schema.StructWithRest(
 	Schema.Struct({
@@ -279,7 +280,7 @@ function ShareSkeleton() {
 			{[0, 1, 2, 3].map((index) => (
 				// The skeleton draws its own card because there is no visualization
 				// mounted yet to draw one — unlike the real tiles, which do.
-				<Skeleton key={index} className="h-64 rounded-lg border" />
+				<Skeleton key={index} className="h-64 rounded-md border" />
 			))}
 		</div>
 	)
@@ -348,13 +349,13 @@ function CenteredCard({
 	children?: React.ReactNode
 }) {
 	return (
-		<div className="flex min-h-[60vh] items-center justify-center">
-			<div className="max-w-md space-y-3 rounded-lg border p-8 text-center">
-				<h2 className="font-medium text-lg">{title}</h2>
-				<p className="text-muted-foreground text-sm">{body}</p>
-				{children ? <div className="pt-2">{children}</div> : null}
-			</div>
-		</div>
+		<Empty className="min-h-[60vh]">
+			<EmptyHeader>
+				<EmptyTitle>{title}</EmptyTitle>
+				<EmptyDescription>{body}</EmptyDescription>
+			</EmptyHeader>
+			{children ? <EmptyContent>{children}</EmptyContent> : null}
+		</Empty>
 	)
 }
 

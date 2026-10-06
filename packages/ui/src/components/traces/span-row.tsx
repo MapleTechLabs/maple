@@ -2,7 +2,7 @@ import * as React from "react"
 import { ChevronRightIcon, ChevronDownIcon, GlobeIcon } from "../icons"
 
 import { Badge } from "../ui/badge"
-import { Button } from "../ui/button"
+import { IconButton } from "../ui/icon-button"
 import { TruncatedId } from "../ui/truncated-id"
 import { cn } from "../../lib/utils"
 import { formatDuration } from "../../lib/format"
@@ -51,18 +51,17 @@ function SpanRowImpl({
 					{span.depth > 0 && <div style={{ width: `${span.depth * 24}px` }} className="shrink-0" />}
 
 					{hasChildren ? (
-						<Button
-							variant="ghost"
-							size="icon-sm"
+						<IconButton
 							className="size-6 shrink-0"
-							aria-label={expanded ? "Collapse span" : "Expand span"}
+							tooltip={false}
+							label={expanded ? "Collapse span" : "Expand span"}
 							onClick={(e) => {
 								e.stopPropagation()
 								onToggle(span)
 							}}
 						>
 							{expanded ? <ChevronDownIcon size={14} /> : <ChevronRightIcon size={14} />}
-						</Button>
+						</IconButton>
 					) : (
 						<div className="w-6 shrink-0" />
 					)}
@@ -143,18 +142,17 @@ function SpanRowImpl({
 				{span.depth > 0 && <div style={{ width: `${span.depth * 24}px` }} className="shrink-0" />}
 
 				{hasChildren ? (
-					<Button
-						variant="ghost"
-						size="icon-sm"
+					<IconButton
 						className="size-6 shrink-0"
-						aria-label={expanded ? "Collapse span" : "Expand span"}
+						tooltip={false}
+						label={expanded ? "Collapse span" : "Expand span"}
 						onClick={(e) => {
 							e.stopPropagation()
 							onToggle(span)
 						}}
 					>
 						{expanded ? <ChevronDownIcon size={14} /> : <ChevronRightIcon size={14} />}
-					</Button>
+					</IconButton>
 				) : (
 					<div className="w-6 shrink-0" />
 				)}
@@ -204,9 +202,7 @@ function SpanRowImpl({
 				)}
 
 				{hasChildren && !expanded && (
-					<span className="shrink-0 text-3xs text-muted-foreground">
-						+{countDescendants(span)}
-					</span>
+					<span className="shrink-0 text-3xs text-muted-foreground">+{countDescendants(span)}</span>
 				)}
 			</div>
 

@@ -3,6 +3,7 @@ import { widgetTypeByVisualization } from "@maple/domain/http"
 import { dataSourceRawSql, dataSourceTransform, makeRawSqlDataSource } from "@maple/widgets/dashboard"
 
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { FieldError } from "@maple/ui/components/ui/field"
 import { Button } from "@maple/ui/components/ui/button"
 import { Tabs, TabsList, TabsTrigger } from "@maple/ui/components/ui/tabs"
 import { visualizationFor } from "@/components/dashboard-builder/widgets/types"
@@ -474,7 +475,9 @@ export function WidgetQueryBuilderPage({
 					{mode === "rawSql" && showSourceToggle ? (
 						<>
 							{rawSqlError && (
-								<p className="text-xs text-destructive font-medium">{rawSqlError}</p>
+								<FieldError match className="font-medium">
+									{rawSqlError}
+								</FieldError>
 							)}
 							<RawSqlEditorPanel
 								widget={widget}
@@ -486,7 +489,9 @@ export function WidgetQueryBuilderPage({
 					) : (
 						<>
 							{validationError && (
-								<p className="text-xs text-destructive font-medium">{validationError}</p>
+								<FieldError match className="font-medium">
+									{validationError}
+								</FieldError>
 							)}
 
 							{isMarkdown ? (

@@ -66,7 +66,9 @@ export function usePlotColors<TKey extends string>(
 			for (const key of Object.keys(tokens) as TKey[]) {
 				const source = tokens[key]
 				resolved[key] =
-					typeof source === "string" ? resolvePlotColor(source) : resolvePlotColor(source[0], source[1])
+					typeof source === "string"
+						? resolvePlotColor(source)
+						: resolvePlotColor(source[0], source[1])
 			}
 			return resolved
 		},

@@ -16,6 +16,8 @@ import {
 	investigationSeverity,
 } from "./investigation-display"
 import { InvestigationKindMarker, InvestigationStatusBadge } from "./investigation-status"
+import { EMPTY_VALUE } from "@maple/ui/lib/format"
+import { ListRow } from "@maple/ui/components/ui/list-row"
 
 /**
  * Not a table any more.
@@ -53,15 +55,20 @@ function InvestigationRow({ investigation }: { investigation: V2Investigation })
 	}
 
 	return (
-		<li
-			className="flex cursor-pointer items-center gap-3.5 border-b px-4 py-3.5 transition-colors last:border-b-0 hover:bg-accent/40"
-			onClick={openRow}
-		>
-			<span className="flex w-5 shrink-0 items-center justify-center">
-				<InvestigationKindMarker subject={investigation.subject} seededBy={investigation.seeded_by} />
-			</span>
-			<div className="flex min-w-0 flex-1 flex-col gap-1">
-				<div className="flex min-w-0 items-baseline gap-2">
+		<ListRow
+			divided
+			render={<li onClick={openRow} />}
+			className="cursor-pointer gap-3.5 py-3.5"
+			leading={
+				<span className="flex w-5 items-center justify-center">
+					<InvestigationKindMarker
+						subject={investigation.subject}
+						seededBy={investigation.seeded_by}
+					/>
+				</span>
+			}
+			title={
+				<span className="flex min-w-0 items-baseline gap-2">
 					<Link
 						to="/investigations/$id"
 						params={{ id: investigation.id }}
@@ -71,28 +78,32 @@ function InvestigationRow({ investigation }: { investigation: V2Investigation })
 						{headline}
 					</Link>
 					{scope ? (
-						<TruncatedText className="shrink-0 text-xs text-muted-foreground">
+						<TruncatedText className="shrink-0 font-normal text-xs text-muted-foreground">
 							{scope}
 						</TruncatedText>
 					) : null}
-				</div>
-				<RowFinding finding={finding} />
-			</div>
-			<span className="w-20 shrink-0 max-md:hidden">
-				<ConfidenceMeter confidence={investigation.confidence} />
-			</span>
-			<span className="w-18 shrink-0 max-sm:hidden">
-				<SeverityBadge severity={investigationSeverity(investigation)} />
-			</span>
-			<span className="w-24 shrink-0 max-lg:hidden">
-				<InvestigationStatusBadge status={investigation.status} />
-			</span>
-			<RelativeTime
-				value={investigation.updated_at}
-				tooltip="title"
-				className="w-13 shrink-0 text-right text-xs text-muted-foreground"
-			/>
-		</li>
+				</span>
+			}
+			meta={<RowFinding finding={finding} />}
+			trailing={
+				<span className="flex items-center gap-3.5">
+					<span className="w-20 shrink-0 max-md:hidden">
+						<ConfidenceMeter confidence={investigation.confidence} />
+					</span>
+					<span className="w-18 shrink-0 max-sm:hidden">
+						<SeverityBadge severity={investigationSeverity(investigation)} />
+					</span>
+					<span className="w-24 shrink-0 max-lg:hidden">
+						<InvestigationStatusBadge status={investigation.status} />
+					</span>
+					<RelativeTime
+						value={investigation.updated_at}
+						tooltip="title"
+						className="w-13 shrink-0 text-right text-xs text-muted-foreground"
+					/>
+				</span>
+			}
+		/>
 	)
 }
 
@@ -109,7 +120,7 @@ function RowFinding({ finding }: { finding: ReturnType<typeof investigationFindi
 		)
 	}
 	if (finding.kind === "none") {
-		return <span className="text-xs text-muted-foreground/60">—</span>
+		return <span className="text-xs text-muted-foreground/60">{EMPTY_VALUE}</span>
 	}
 	return (
 		<span

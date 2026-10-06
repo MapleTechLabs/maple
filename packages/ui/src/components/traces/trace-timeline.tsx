@@ -704,7 +704,10 @@ export function TraceTimeline() {
 						</div>
 					))}
 					<div className="flex shrink-0 items-center gap-1">
-						<span aria-hidden className="size-2 shrink-0 rounded-[35%] bg-severity-error [corner-shape:squircle]" />
+						<span
+							aria-hidden
+							className="size-2 shrink-0 rounded-[35%] bg-severity-error [corner-shape:squircle]"
+						/>
 						<span className="font-medium">Error</span>
 					</div>
 				</div>

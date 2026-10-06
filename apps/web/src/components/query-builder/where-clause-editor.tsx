@@ -2,6 +2,7 @@ import * as React from "react"
 import * as ReactDOM from "react-dom"
 
 import { Textarea } from "@maple/ui/components/ui/textarea"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import type {
 	WhereClauseAutocompleteScope,
 	WhereClauseAutocompleteValues,
@@ -170,7 +171,7 @@ export function WhereClauseEditor({
 					onClick={() => handleApplySuggestion(index)}
 				>
 					<span className="font-mono">{suggestion.label}</span>
-					<span className="text-3xs uppercase text-muted-foreground">{suggestion.kind}</span>
+					<Eyebrow>{suggestion.kind}</Eyebrow>
 				</button>
 			))}
 		</div>

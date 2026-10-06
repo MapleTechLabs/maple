@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react"
 import { Exit } from "effect"
-import { toastManager } from "@maple/ui/components/ui/toast"
 import { Field, FieldLabel, FieldDescription } from "@maple/ui/components/ui/field"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { MapleInternalAtomClient, retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
@@ -11,12 +10,15 @@ import { formatWarehouseDateTime } from "@maple/query-engine"
 import { Button } from "@maple/ui/components/ui/button"
 import { SettingRow } from "@maple/ui/components/ui/setting-row"
 import { Switch } from "@maple/ui/components/ui/switch"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { Panel } from "@maple/ui/components/ui/panel"
 import { MultiSelectCombobox } from "@maple/ui/components/multi-select-combobox"
 import { ChartBarTrendUpIcon, EnvelopeIcon } from "@/components/icons"
 import { getServicesFacetsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { snapRangeForCache } from "@/lib/time-utils"
 import { useAsyncAction } from "@/hooks/use-mutation-action"
+import { toastExit } from "@/lib/error-toast"
+import { AccountSectionSkeleton } from "@/components/account/account-section-skeleton"
+import { SettingsSection, SettingsSections } from "@/components/settings/settings-section"
 
 /** Two arrays are the same scope regardless of the order they were picked in. */
 const sameScope = (a: readonly string[], b: readonly string[]) =>
@@ -100,65 +102,60 @@ export function NotificationsSection() {
 	const scopeDirty =
 		!sameScope(environments, savedScope.environments) || !sameScope(namespaces, savedScope.namespaces)
 
-	const [save, isSaving] = useAsyncAction(async (next: DigestSave): Promise<boolean> => {
-		if (!email) return false
-		const result = await upsertMutation({
-			payload: new UpsertDigestSubscriptionRequest({
-				email,
-				enabled: next.enabled,
-				environments: next.environments,
-				namespaces: next.namespaces,
-				// The saved value when this save is not about it, so the ops digest's
-				// controls never flip the web analytics email.
-				webAnalyticsEnabled: next.webAnalyticsEnabled ?? webAnalyticsEnabled,
-			}),
-		})
-		if (Exit.isSuccess(result)) {
+	const [save, isSaving] = useAsyncAction(
+		async (next: DigestSave, messages: { success: string; error: string }) => {
+			if (!email) return false
+			const result = await upsertMutation({
+				payload: new UpsertDigestSubscriptionRequest({
+					email,
+					enabled: next.enabled,
+					environments: next.environments,
+					namespaces: next.namespaces,
+					// The saved value when this save is not about it, so the ops digest's
+					// controls never flip the web analytics email.
+					webAnalyticsEnabled: next.webAnalyticsEnabled ?? webAnalyticsEnabled,
+				}),
+			})
+			if (!toastExit(result, messages)) return false
 			// Drop the local edits; the refreshed subscription now carries them.
 			setEnabledEdit(null)
 			setWebAnalyticsEdit(null)
 			setScopeEdit(null)
 			refreshSubscription()
-		}
-		return Exit.isSuccess(result)
-	})
+			return true
+		},
+	)
 
 	async function handleToggle(checked: boolean) {
 		setEnabledEdit(checked)
-		const ok = await save({ enabled: checked, environments, namespaces })
-		if (ok) {
-			toastManager.add({
-				title: checked ? "Weekly digest enabled" : "Weekly digest disabled",
-				type: "success",
-			})
-		} else {
-			toastManager.add({ title: "Failed to update notification preferences", type: "error" })
-			setEnabledEdit(!checked)
-		}
+		const ok = await save(
+			{ enabled: checked, environments, namespaces },
+			{
+				success: checked ? "Weekly digest enabled" : "Weekly digest disabled",
+				error: "Failed to update notification preferences",
+			},
+		)
+		if (!ok) setEnabledEdit(!checked)
 	}
 
 	async function handleWebAnalyticsToggle(checked: boolean) {
 		setWebAnalyticsEdit(checked)
 		// `enabled` rides along: the upsert treats a missing value as "on".
-		const ok = await save({ enabled, environments, namespaces, webAnalyticsEnabled: checked })
-		if (ok) {
-			toastManager.add({
-				title: checked ? "Web analytics email enabled" : "Web analytics email disabled",
-				type: "success",
-			})
-		} else {
-			toastManager.add({ title: "Failed to update notification preferences", type: "error" })
-			setWebAnalyticsEdit(!checked)
-		}
+		const ok = await save(
+			{ enabled, environments, namespaces, webAnalyticsEnabled: checked },
+			{
+				success: checked ? "Web analytics email enabled" : "Web analytics email disabled",
+				error: "Failed to update notification preferences",
+			},
+		)
+		if (!ok) setWebAnalyticsEdit(!checked)
 	}
 
-	async function handleSaveScope() {
-		const ok = await save({ enabled, environments, namespaces })
-		if (ok) {
-			toastManager.add({ title: "Digest scope updated", type: "success" })
-		} else {
-			toastManager.add({ title: "Failed to update digest scope", type: "error" })
-		}
+	function handleSaveScope() {
+		return save(
+			{ enabled, environments, namespaces },
+			{ success: "Digest scope updated", error: "Failed to update digest scope" },
+		)
 	}
 
 	/**
@@ -182,109 +179,118 @@ export function NotificationsSection() {
 
 	const [handlePreview, isPreviewing] = useAsyncAction(async () => {
 		const result = await previewMutation({})
-		if (Exit.isSuccess(result)) openPreview(result.value.html)
-		else toastManager.add({ title: "Failed to generate digest preview", type: "error" })
+		if (toastExit(result, { error: "Failed to generate digest preview" }) && Exit.isSuccess(result))
+			openPreview(result.value.html)
 	})
 
 	const [handlePreviewWebAnalytics, isPreviewingWebAnalytics] = useAsyncAction(async () => {
 		const result = await previewWebAnalyticsMutation({})
-		if (Exit.isSuccess(result)) openPreview(result.value.html)
-		else toastManager.add({ title: "Failed to generate web analytics preview", type: "error" })
+		if (
+			toastExit(result, { error: "Failed to generate web analytics preview" }) &&
+			Exit.isSuccess(result)
+		)
+			openPreview(result.value.html)
 	})
 
-	if (!settled || !user) {
-		return (
-			<div className="max-w-xl">
-				<Skeleton className="h-16 w-full rounded-lg" />
-			</div>
-		)
-	}
+	if (!settled || !user) return <AccountSectionSkeleton />
 
 	return (
-		<div className="max-w-xl space-y-1">
-			<SettingRow
-				framed
-				active={enabled}
-				icon={<EnvelopeIcon size={18} className="text-muted-foreground" />}
-				label="Email"
-				description="Weekly digest via email"
-				control={
-					<Switch checked={enabled} onCheckedChange={handleToggle} disabled={isSaving || !email} />
-				}
-			/>
-			{enabled && (
-				<div className="space-y-4 rounded-lg border border-border p-4">
-					<Field>
-						<FieldLabel htmlFor="digest-namespaces">Namespaces</FieldLabel>
-						<MultiSelectCombobox
-							id="digest-namespaces"
-							emptyMessage="No namespaces detected."
-							options={namespaceOptions}
-							value={namespaces}
-							onChange={setNamespaces}
-							placeholder={namespaces.length === 0 ? "All namespaces" : "Add namespace..."}
-						/>
-					</Field>
-					<Field>
-						<FieldLabel htmlFor="digest-environments">Environments</FieldLabel>
-						<MultiSelectCombobox
-							id="digest-environments"
-							emptyMessage="No environments detected."
-							options={environmentOptions}
-							value={environments}
-							onChange={setEnvironments}
-							placeholder={
-								environments.length === 0 ? "All environments" : "Add environment..."
-							}
-						/>
-						<FieldDescription>
-							Leave both empty to receive a digest covering the whole organization.
-						</FieldDescription>
-					</Field>
-					<div className="flex items-center gap-2">
-						<Button
-							variant="outline"
-							size="sm"
-							onClick={handlePreview}
-							loading={isPreviewing}
-							disabled={isSaving}
-						>
-							Preview Digest
-						</Button>
-						{scopeDirty && (
-							<Button size="sm" onClick={handleSaveScope} loading={isSaving}>
-								Save scope
-							</Button>
+		<SettingsSections>
+			<SettingsSection title="Weekly digests" padded={false}>
+				<div className="divide-y">
+					<SettingRow
+						className="p-4"
+						active={enabled}
+						icon={<EnvelopeIcon size={18} className="text-muted-foreground" />}
+						label="Email"
+						description="Weekly digest via email"
+						control={
+							<Switch
+								checked={enabled}
+								onCheckedChange={handleToggle}
+								disabled={isSaving || !email}
+							/>
+						}
+					>
+						{enabled && (
+							<Panel tone="muted" padded className="gap-4">
+								<Field>
+									<FieldLabel htmlFor="digest-namespaces">Namespaces</FieldLabel>
+									<MultiSelectCombobox
+										id="digest-namespaces"
+										emptyMessage="No namespaces detected."
+										options={namespaceOptions}
+										value={namespaces}
+										onChange={setNamespaces}
+										placeholder={
+											namespaces.length === 0 ? "All namespaces" : "Add namespace…"
+										}
+									/>
+								</Field>
+								<Field>
+									<FieldLabel htmlFor="digest-environments">Environments</FieldLabel>
+									<MultiSelectCombobox
+										id="digest-environments"
+										emptyMessage="No environments detected."
+										options={environmentOptions}
+										value={environments}
+										onChange={setEnvironments}
+										placeholder={
+											environments.length === 0
+												? "All environments"
+												: "Add environment…"
+										}
+									/>
+									<FieldDescription>
+										Leave both empty to receive a digest covering the whole organization.
+									</FieldDescription>
+								</Field>
+								<div className="flex items-center gap-2">
+									<Button
+										variant="outline"
+										size="sm"
+										onClick={handlePreview}
+										loading={isPreviewing}
+										disabled={isSaving}
+									>
+										Preview digest
+									</Button>
+									{scopeDirty && (
+										<Button size="sm" onClick={handleSaveScope} loading={isSaving}>
+											Save scope
+										</Button>
+									)}
+								</div>
+							</Panel>
 						)}
-					</div>
+					</SettingRow>
+					<SettingRow
+						className="p-4"
+						active={webAnalyticsEnabled}
+						icon={<ChartBarTrendUpIcon size={18} className="text-muted-foreground" />}
+						label="Web analytics"
+						description="Weekly overview of visitors, top pages and AI traffic. Only sent once the browser SDK is reporting visits."
+						control={
+							<>
+								<Button
+									variant="outline"
+									size="sm"
+									onClick={handlePreviewWebAnalytics}
+									loading={isPreviewingWebAnalytics}
+									disabled={isSaving}
+								>
+									Preview
+								</Button>
+								<Switch
+									checked={webAnalyticsEnabled}
+									onCheckedChange={handleWebAnalyticsToggle}
+									disabled={isSaving || !email}
+								/>
+							</>
+						}
+					/>
 				</div>
-			)}
-			<SettingRow
-				framed
-				active={webAnalyticsEnabled}
-				className="!mt-3"
-				icon={<ChartBarTrendUpIcon size={18} className="text-muted-foreground" />}
-				label="Web analytics"
-				description="Weekly overview of visitors, top pages and AI traffic. Only sent once the browser SDK is reporting visits."
-				control={
-					<>
-						<Button
-							variant="outline"
-							size="sm"
-							onClick={handlePreviewWebAnalytics}
-							loading={isPreviewingWebAnalytics}
-							disabled={isSaving}
-						>
-							Preview
-						</Button>
-						<Switch
-							checked={webAnalyticsEnabled}
-							onCheckedChange={handleWebAnalyticsToggle}
-							disabled={isSaving || !email}
-						/>
-					</>
-				}
-			/>
-		</div>
+			</SettingsSection>
+		</SettingsSections>
 	)
 }

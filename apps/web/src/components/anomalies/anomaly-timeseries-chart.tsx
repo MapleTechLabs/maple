@@ -27,8 +27,8 @@ import { formatSignalValue } from "./anomaly-format"
 
 /** The observed line's colour, by incident severity. */
 const SEVERITY_STROKE = {
-	critical: "--destructive",
-	warning: "--chart-4",
+	critical: "--severity-error",
+	warning: "--severity-warn",
 } satisfies Record<"critical" | "warning", string>
 
 /** One bucket of the observed signal. */
@@ -146,7 +146,7 @@ export function AnomalyTimeseriesChart({
 							color: "--muted-foreground",
 							label: "Baseline",
 						},
-						{ value: thresholdValue, color: "--destructive", label: "Threshold" },
+						{ value: thresholdValue, color: "--severity-error", label: "Threshold" },
 					],
 					{ labelX: axis.domainMs ? new Date(axis.domainMs[1]) : undefined },
 				),
@@ -185,7 +185,18 @@ export function AnomalyTimeseriesChart({
 			focusRing: false,
 			tooltip: plot.tooltip,
 		})
-	}, [data, window, yDomain, stroke, plot, gradientId, baselineMedian, thresholdValue, axis, valueFormatter])
+	}, [
+		data,
+		window,
+		yDomain,
+		stroke,
+		plot,
+		gradientId,
+		baselineMedian,
+		thresholdValue,
+		axis,
+		valueFormatter,
+	])
 
 	if (data.length === 0) {
 		return (
@@ -225,7 +236,7 @@ export function AnomalyTimeseriesChart({
 						key: "threshold",
 						label: "Threshold",
 						value: formatSignalValue(signalType, thresholdValue),
-						color: "var(--destructive)",
+						color: "var(--severity-error)",
 					},
 				]}
 				swatch="dashed"

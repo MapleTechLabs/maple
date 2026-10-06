@@ -109,7 +109,7 @@ describe("deviation", () => {
 describe("formatSignalValue", () => {
 	it("formats error rate as a percent", () => {
 		expect(formatSignalValue("error_rate", 0.123)).toBe("12.3%")
-		expect(formatSignalValue("error_rate", 0)).toBe("0.0%")
+		expect(formatSignalValue("error_rate", 0)).toBe("0%")
 	})
 
 	it("formats latency in ms below one second and switches to seconds at 1000ms", () => {

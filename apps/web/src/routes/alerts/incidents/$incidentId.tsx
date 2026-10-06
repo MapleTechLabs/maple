@@ -1,20 +1,20 @@
 import { useMemo, useState } from "react"
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { Result, useAtomSet } from "@/lib/effect-atom"
-import { Exit, Schema } from "effect"
+import { type Cause, Exit, Schema } from "effect"
 
 import {
 	decodeAlertContextFromSearchParam,
 	toAlertContext,
 	type AlertContext,
 } from "@/components/chat/alert-context"
-import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { DashboardPage } from "@/components/layout/dashboard-page"
+import { DetailHeaderSkeleton } from "@/components/common/detail-header"
+import { ErrorState } from "@/components/common/error-state"
 import { ResourceNotFound } from "@/components/common/resource-not-found"
 import { useMountEffect } from "@/hooks/use-mount-effect"
 import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
 import { useAlertIncidentsList, useAlertRulesList } from "@/hooks/use-alerts-list"
-import { Button } from "@maple/ui/components/ui/button"
-import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import type { AlertIncidentDocument, ErrorIssueId } from "@maple/domain/http"
 
@@ -66,43 +66,28 @@ function AlertIncidentPage() {
 
 	if (loading && !alertContext) {
 		return (
-			<DashboardLayout.Root>
-				<DashboardLayout.Breadcrumbs items={[{ label: "Alerts", href: "/alerts" }, { label: "…" }]} />
-				<DashboardLayout.Body>
-					<DashboardLayout.Content>
-						<DashboardLayout.Scroll>
-							<div className="mx-auto w-full max-w-3xl space-y-4">
-								<Skeleton className="h-4 w-32" />
-								<Skeleton className="h-8 w-3/4" />
-								<Skeleton className="h-3 w-full" />
-								<Skeleton className="h-3 w-2/3" />
-							</div>
-						</DashboardLayout.Scroll>
-					</DashboardLayout.Content>
-				</DashboardLayout.Body>
-			</DashboardLayout.Root>
+			<DashboardPage
+				breadcrumbs={[{ label: "Alerts", href: "/alerts" }, { label: "…" }]}
+				header={<DetailHeaderSkeleton meta={false} />}
+				width="narrow"
+				gap="md"
+			>
+				<Skeleton className="h-3 w-full" />
+				<Skeleton className="h-3 w-2/3" />
+			</DashboardPage>
 		)
 	}
 
 	if (!alertContext) {
 		return (
-			<DashboardLayout.Root>
-				<DashboardLayout.Breadcrumbs
-					items={[{ label: "Alerts", href: "/alerts" }, { label: "Not found" }]}
+			<DashboardPage breadcrumbs={[{ label: "Alerts", href: "/alerts" }, { label: "Not found" }]}>
+				<ResourceNotFound
+					title="Incident not found"
+					description="It may have been resolved and pruned, or the link is stale."
+					backLink={<Link to="/alerts" />}
+					backLabel="Back to alerts"
 				/>
-				<DashboardLayout.Body>
-					<DashboardLayout.Content>
-						<DashboardLayout.Scroll>
-							<ResourceNotFound
-								title="Incident not found"
-								description="It may have been resolved and pruned, or the link is stale."
-								backLink={<Link to="/alerts" />}
-								backLabel="Back to alerts"
-							/>
-						</DashboardLayout.Scroll>
-					</DashboardLayout.Content>
-				</DashboardLayout.Body>
-			</DashboardLayout.Root>
+			</DashboardPage>
 		)
 	}
 
@@ -137,9 +122,9 @@ function AlertInvestigationRedirect({
 	const create = useAtomSet(MapleApiV2AtomClient.mutation("investigations", "create"), {
 		mode: "promiseExit",
 	})
-	const [failed, setFailed] = useState(false)
+	const [failure, setFailure] = useState<Cause.Cause<unknown> | null>(null)
 	const openInvestigation = () => {
-		setFailed(false)
+		setFailure(null)
 		void create({
 			payload: {
 				subject: {
@@ -175,53 +160,23 @@ function AlertInvestigationRedirect({
 					replace: true,
 				})
 			} else {
-				setFailed(true)
+				setFailure(result.cause)
 			}
 		})
 	}
 	useMountEffect(openInvestigation)
-	if (failed) {
-		return (
-			<DashboardLayout.Root>
-				<DashboardLayout.Breadcrumbs
-					items={[{ label: "Alerts", href: "/alerts" }, { label: "Investigation" }]}
-				/>
-				<DashboardLayout.Body>
-					<DashboardLayout.Content>
-						<DashboardLayout.Scroll>
-							<Empty>
-								<EmptyHeader>
-									<EmptyTitle>Investigation start failed</EmptyTitle>
-									<EmptyDescription>
-										The investigation could not be created. You can safely retry.
-									</EmptyDescription>
-								</EmptyHeader>
-								<Button variant="outline" size="sm" onClick={openInvestigation}>
-									Try again
-								</Button>
-							</Empty>
-						</DashboardLayout.Scroll>
-					</DashboardLayout.Content>
-				</DashboardLayout.Body>
-			</DashboardLayout.Root>
-		)
-	}
 	return (
-		<DashboardLayout.Root>
-			<DashboardLayout.Breadcrumbs
-				items={[{ label: "Alerts", href: "/alerts" }, { label: "Investigation" }]}
-			/>
-			<DashboardLayout.Body>
-				<DashboardLayout.Content>
-					<DashboardLayout.Scroll>
-						<div className="mx-auto w-full max-w-3xl space-y-4">
-							<Skeleton className="h-4 w-32" />
-							<Skeleton className="h-8 w-3/4" />
-							<Skeleton className="h-40 w-full" />
-						</div>
-					</DashboardLayout.Scroll>
-				</DashboardLayout.Content>
-			</DashboardLayout.Body>
-		</DashboardLayout.Root>
+		<DashboardPage
+			breadcrumbs={[{ label: "Alerts", href: "/alerts" }, { label: "Investigation" }]}
+			header={failure ? undefined : <DetailHeaderSkeleton meta={false} />}
+			width="narrow"
+			gap="md"
+		>
+			{failure ? (
+				<ErrorState error={failure} title="Investigation start failed" onRetry={openInvestigation} />
+			) : (
+				<Skeleton className="h-40 w-full" />
+			)}
+		</DashboardPage>
 	)
 }

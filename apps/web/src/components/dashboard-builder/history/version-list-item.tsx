@@ -1,5 +1,7 @@
 import { cn } from "@maple/ui/lib/utils"
 import { Badge } from "@maple/ui/components/ui/badge"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { rowSelectedClass } from "@maple/ui/components/ui/list-row"
 import { RelativeTime } from "@/components/common/relative-time"
 import type { DashboardVersionChangeKind } from "@maple/domain/http"
 import type { V2DashboardVersion } from "@maple/domain/http/v2"
@@ -77,14 +79,9 @@ export function VersionListItem({ version, isPreviewing, isCurrent, onPreview }:
 				className={cn(
 					"group relative w-full pl-7 pr-3 py-2.5 text-left transition-colors",
 					"hover:bg-muted/40",
-					isPreviewing && "bg-primary/5",
+					rowSelectedClass(isPreviewing),
 				)}
 			>
-				{/* Vertical rail accent for the active row */}
-				{isPreviewing && (
-					<span aria-hidden className="absolute left-0 top-0 bottom-0 w-0.5 bg-primary" />
-				)}
-
 				{/* Marker dot anchored to the rail */}
 				<span
 					aria-hidden
@@ -97,16 +94,16 @@ export function VersionListItem({ version, isPreviewing, isCurrent, onPreview }:
 				<div className="flex items-start gap-2">
 					<div className="min-w-0 flex-1">
 						<div className="flex items-center gap-1.5">
-							<span
-								className={cn(
-									"text-2xs font-medium uppercase tracking-wider",
+							<Eyebrow
+								variant="label"
+								className={
 									isPreviewing
 										? "text-primary"
-										: "text-muted-foreground/70 group-hover:text-foreground/80",
-								)}
+										: "text-muted-foreground/70 group-hover:text-foreground/80"
+								}
 							>
 								{KIND_LABEL[version.changeKind]}
-							</span>
+							</Eyebrow>
 							{isCurrent && (
 								<Badge variant="tag" className="bg-primary/10 text-primary">
 									Current
@@ -120,13 +117,11 @@ export function VersionListItem({ version, isPreviewing, isCurrent, onPreview }:
 								/>
 							)}
 						</div>
-						<div className="mt-0.5 truncate text-[13px] leading-snug text-foreground">
-							{summary}
-						</div>
+						<div className="mt-0.5 truncate text-sm leading-snug text-foreground">{summary}</div>
 						<div className="mt-1 flex items-center gap-1.5 font-mono text-3xs text-muted-foreground">
 							<span
 								aria-hidden
-								className="grid size-3.5 place-items-center rounded-full bg-muted text-[8px] font-semibold uppercase text-muted-foreground"
+								className="grid size-3.5 place-items-center rounded-full bg-muted text-4xs font-semibold uppercase text-muted-foreground"
 							>
 								{initials.slice(0, 1)}
 							</span>

@@ -1,17 +1,7 @@
 import { useState } from "react"
 
-import { Button } from "@maple/ui/components/ui/button"
-import {
-	Dialog,
-	DialogClose,
-	DialogDescription,
-	DialogFooter,
-	DialogHeader,
-	DialogPanel,
-	DialogPopup,
-	DialogTitle,
-} from "@maple/ui/components/ui/dialog"
-import { Field, FieldDescription, FieldLabel } from "@maple/ui/components/ui/field"
+import { Field, FieldDescription, FieldError, FieldLabel } from "@maple/ui/components/ui/field"
+import { FormDialog } from "@maple/ui/components/ui/form-dialog"
 import {
 	InputGroup,
 	InputGroupAddon,
@@ -19,7 +9,6 @@ import {
 	InputGroupText,
 } from "@maple/ui/components/ui/input-group"
 import { KeyValue, KeyValueList } from "@maple/ui/components/ui/key-value"
-import { toastManager } from "@maple/ui/components/ui/toast"
 
 import { useMutationAction } from "@/hooks/use-mutation-action"
 import { updateFeatureControls } from "@/lib/billing/controls"
@@ -60,7 +49,7 @@ function CapSummary({
 	const rate = formatRateLabel(feature)
 
 	return (
-		<KeyValueList className="mt-5 gap-2 rounded-lg border border-border/60 bg-muted/32 px-3 py-2.5">
+		<KeyValueList className="gap-2 rounded-md border bg-muted/40 px-3 py-2.5">
 			{feature.included !== null && (
 				<KeyValue label="Included this cycle" mono>
 					{formatFeatureUsage(featureId, feature.included)}
@@ -104,11 +93,12 @@ export function BillingControlsDialog({
 		onSuccess: () => onOpenChange(false),
 	})
 	const [limit, setLimit] = useState(existingLimit === undefined ? "" : String(existingLimit))
+	const [invalid, setInvalid] = useState(false)
 
 	async function handleSave() {
 		const overageLimit = limit.trim() === "" ? null : Number(limit)
 		if (overageLimit !== null && (!Number.isFinite(overageLimit) || overageLimit < 0)) {
-			toastManager.add({ title: "Paid overage cap must be zero or greater.", type: "error" })
+			setInvalid(true)
 			return
 		}
 		await save({
@@ -118,54 +108,49 @@ export function BillingControlsDialog({
 	}
 
 	return (
-		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogPopup className="max-w-md">
-				<DialogHeader>
-					<DialogTitle>{FEATURE_LABELS[featureId]} billing controls</DialogTitle>
-					<DialogDescription>
-						Limit what {FEATURE_LABELS[featureId].toLowerCase()} can add to this cycle's invoice
-						beyond the included allowance.
-					</DialogDescription>
-				</DialogHeader>
+		<FormDialog
+			open={open}
+			onOpenChange={onOpenChange}
+			className="max-w-md"
+			title={`${FEATURE_LABELS[featureId]} billing controls`}
+			description={`Limit what ${FEATURE_LABELS[featureId].toLowerCase()} can add to this cycle's invoice beyond the included allowance.`}
+			onSubmit={() => void handleSave()}
+			submitLabel="Save controls"
+			pending={saving}
+		>
+			<Field invalid={invalid}>
+				<FieldLabel htmlFor="overage-limit">Paid overage cap</FieldLabel>
+				<InputGroup>
+					<InputGroupInput
+						id="overage-limit"
+						type="number"
+						inputMode="decimal"
+						min={0}
+						step="any"
+						value={limit}
+						onChange={(event) => {
+							setLimit(event.target.value)
+							setInvalid(false)
+						}}
+						placeholder="No cap"
+						// Spinners belong on a stepper, not on a cap you type once.
+						controlClassName="font-mono tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:m-0 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+					/>
+					<InputGroupAddon align="inline-end">
+						<InputGroupText>{featureUnit(featureId)} / cycle</InputGroupText>
+					</InputGroupAddon>
+				</InputGroup>
+				{invalid ? (
+					<FieldError match>Paid overage cap must be zero or greater.</FieldError>
+				) : (
+					<FieldDescription>
+						Usage is rejected once the included allowance plus this cap is consumed. Leave empty
+						for uncapped overage.
+					</FieldDescription>
+				)}
+			</Field>
 
-				<DialogPanel>
-					<Field>
-						<FieldLabel htmlFor="overage-limit">Paid overage cap</FieldLabel>
-						<InputGroup>
-							<InputGroupInput
-								id="overage-limit"
-								type="number"
-								inputMode="decimal"
-								min={0}
-								step="any"
-								value={limit}
-								onChange={(event) => setLimit(event.target.value)}
-								placeholder="No cap"
-								// Spinners belong on a stepper, not on a cap you type once.
-								controlClassName="font-mono tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:m-0 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-							/>
-							<InputGroupAddon align="inline-end">
-								<InputGroupText>{featureUnit(featureId)} / cycle</InputGroupText>
-							</InputGroupAddon>
-						</InputGroup>
-						<FieldDescription>
-							Usage is rejected once the included allowance plus this cap is consumed. Leave
-							empty for uncapped overage.
-						</FieldDescription>
-					</Field>
-
-					{feature !== null && (
-						<CapSummary feature={feature} featureId={featureId} cap={parseCap(limit)} />
-					)}
-				</DialogPanel>
-
-				<DialogFooter>
-					<DialogClose render={<Button variant="outline" />}>Cancel</DialogClose>
-					<Button onClick={handleSave} loading={saving}>
-						Save controls
-					</Button>
-				</DialogFooter>
-			</DialogPopup>
-		</Dialog>
+			{feature !== null && <CapSummary feature={feature} featureId={featureId} cap={parseCap(limit)} />}
+		</FormDialog>
 	)
 }

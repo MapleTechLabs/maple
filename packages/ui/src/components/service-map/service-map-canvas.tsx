@@ -24,6 +24,7 @@ import "@xyflow/react/dist/style.css"
 
 import { getValueHue } from "../../lib/colors"
 import { Button } from "../ui/button"
+import { Eyebrow } from "../ui/eyebrow"
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover"
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "../ui/resizable"
 import { ServiceMapBackground } from "./service-map-background"
@@ -175,9 +176,7 @@ function LayoutDebugPanel({
 			{open && (
 				<div className="absolute top-8 right-0 w-64 bg-card/95 backdrop-blur-sm border border-border rounded-lg p-3 space-y-3 shadow-lg">
 					<div className="flex items-center justify-between">
-						<span className="text-3xs font-medium tracking-wide text-muted-foreground uppercase">
-							Layout Config
-						</span>
+						<Eyebrow>Layout Config</Eyebrow>
 						<button
 							type="button"
 							onClick={() => onChange({ ...DEFAULT_LAYOUT_CONFIG })}

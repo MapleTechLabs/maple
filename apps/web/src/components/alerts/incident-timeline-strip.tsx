@@ -4,6 +4,7 @@ import type { AlertIncidentDocument } from "@maple/domain/http"
 import { cn } from "@maple/ui/lib/utils"
 
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
+import { formatTimestampInTimezone } from "@/lib/timezone-format"
 
 /**
  * Fixed-bucket strip of a rule's incident history over a time range: red where
@@ -83,20 +84,20 @@ export function IncidentTimelineStrip({
 			</div>
 			{showAxisLabels && !compact && (
 				<div className="flex justify-between font-mono text-2xs text-muted-foreground">
-					<span>{formatEdge(range.min, effectiveTimezone)}</span>
-					<span>{formatEdge(range.max, effectiveTimezone)}</span>
+					<span>
+						{formatTimestampInTimezone(range.min, {
+							timeZone: effectiveTimezone,
+							style: "range",
+						})}
+					</span>
+					<span>
+						{formatTimestampInTimezone(range.max, {
+							timeZone: effectiveTimezone,
+							style: "range",
+						})}
+					</span>
 				</div>
 			)}
 		</div>
 	)
-}
-
-function formatEdge(ms: number, timeZone: string): string {
-	return new Date(ms).toLocaleString(undefined, {
-		timeZone,
-		month: "short",
-		day: "numeric",
-		hour: "2-digit",
-		minute: "2-digit",
-	})
 }

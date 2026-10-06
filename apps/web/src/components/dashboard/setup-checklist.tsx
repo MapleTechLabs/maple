@@ -4,6 +4,8 @@ import { useNavigate } from "@tanstack/react-router"
 import { toastManager } from "@maple/ui/components/ui/toast"
 import { Button } from "@maple/ui/components/ui/button"
 import { Card, CardContent } from "@maple/ui/components/ui/card"
+import { IconButton } from "@maple/ui/components/ui/icon-button"
+import { ListRow } from "@maple/ui/components/ui/list-row"
 import {
 	ChevronDownIcon,
 	ChevronUpIcon,
@@ -42,46 +44,39 @@ function SetupChecklistCard() {
 	return (
 		<Card className="mb-4 shrink-0 border-primary/30 bg-primary/[0.02] overflow-hidden">
 			<div className="flex items-center justify-between gap-4 pr-3">
-				<button
-					type="button"
+				<ListRow
+					render={<button type="button" />}
 					onClick={() => setChecklistExpanded(!checklistExpanded)}
-					className="flex flex-1 min-w-0 items-center gap-3 px-5 py-4 text-left hover:bg-muted/30 transition-colors"
-				>
-					<div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-						<CodeIcon size={16} />
-					</div>
-					<div className="min-w-0">
-						<p className="text-sm font-medium">Connect your app to see real data</p>
-						<p className="text-xs text-muted-foreground">
-							{getOnboardingSetupHint(qualifyAnswers.intents)}
-						</p>
-					</div>
-				</button>
+					className="flex-1 px-5 py-4 hover:bg-muted/30"
+					leading={
+						<span className="flex size-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
+							<CodeIcon size={16} />
+						</span>
+					}
+					title="Connect your app to see real data"
+					meta={getOnboardingSetupHint(qualifyAnswers.intents)}
+				/>
 				<div className="flex items-center gap-1 shrink-0">
-					<Button
-						variant="ghost"
-						size="sm"
-						aria-label={checklistExpanded ? "Collapse" : "Expand"}
-						className="size-8 p-0"
+					<IconButton
+						size="icon"
+						label={checklistExpanded ? "Collapse" : "Expand"}
 						onClick={() => setChecklistExpanded(!checklistExpanded)}
 					>
 						{checklistExpanded ? <ChevronUpIcon size={14} /> : <ChevronDownIcon size={14} />}
-					</Button>
-					<Button
-						variant="ghost"
-						size="sm"
-						aria-label="Dismiss setup checklist"
-						className="size-8 p-0"
+					</IconButton>
+					<IconButton
+						size="icon"
+						label="Dismiss setup checklist"
 						onClick={() => {
 							dismissChecklist()
 							toastManager.add({
-								title: "Setup checklist hidden — you can reset it from settings later",
+								title: "Setup checklist hidden. You can reset it from settings later",
 								type: "success",
 							})
 						}}
 					>
 						<XmarkIcon size={14} />
-					</Button>
+					</IconButton>
 				</div>
 			</div>
 

@@ -2,6 +2,7 @@ import { useState } from "react"
 import { Link } from "@tanstack/react-router"
 import type { V2OnboardingChecklist, V2OnboardingChecklistStep } from "@maple/domain/http/v2"
 import { Button } from "@maple/ui/components/ui/button"
+import { IconButton } from "@maple/ui/components/ui/icon-button"
 import { Meter } from "@maple/ui/components/ui/meter"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Popover, PopoverPopup, PopoverTrigger } from "@maple/ui/components/ui/popover"
@@ -25,7 +26,6 @@ import { isClerkAuthEnabled } from "@/lib/services/common/auth-mode"
 export function formatCountdown(deadlineMs: number, nowMs: number): string {
 	return formatRemaining(deadlineMs - nowMs, { fixedHours: true })
 }
-
 
 const formatCredits = (checklist: Pick<V2OnboardingChecklist, "reward_amount_usd">) =>
 	`$${checklist.reward_amount_usd}`
@@ -179,15 +179,9 @@ function RewardCallout({
 						and get {credits} in credits.
 					</span>
 				</button>
-				<Button
-					variant="ghost"
-					size="icon-sm"
-					aria-label="Got it"
-					onClick={onClose}
-					className="-mt-1 shrink-0 text-muted-foreground"
-				>
+				<IconButton label="Got it" onClick={onClose} className="-mt-1 shrink-0 text-muted-foreground">
 					<XmarkIcon size={12} />
-				</Button>
+				</IconButton>
 			</div>
 		</div>
 	)
@@ -264,12 +258,12 @@ export function OnboardingChecklistPanel({
 							<span
 								className={cn(
 									"text-muted-foreground",
-									claimError !== null && "text-destructive",
+									claimError !== null && "text-severity-error",
 								)}
 							>
 								{claimError ?? "Every step is done."}
 							</span>
-							<Button size="sm" onClick={onClaim} loading={claimPending} disabled={claimPending}>
+							<Button size="sm" onClick={onClaim} loading={claimPending}>
 								Claim {credits} credits
 							</Button>
 						</>

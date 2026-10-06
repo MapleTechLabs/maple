@@ -109,14 +109,14 @@ export function WorkloadTable({ workloads, kind, waiting, referenceTime }: Workl
 				>
 					<div className="w-0 min-w-[260px] flex-1">
 						<div className="flex items-center gap-2">
-							<span className="truncate font-mono text-[13px] font-medium text-foreground transition-colors group-hover:text-primary">
+							<span className="truncate font-mono text-xs font-medium text-foreground transition-colors group-hover:text-primary">
 								{wl.workloadName}
 							</span>
 							<HostStatusBadge quiet lastSeen={wl.lastSeen} referenceTime={referenceTime} />
 						</div>
 						<MetaLine items={[wl.namespace && `ns ${wl.namespace}`, `kind ${kind}`]} />
 					</div>
-					<div className="w-[60px] text-right font-mono text-[12px] tabular-nums text-foreground/80">
+					<div className="w-[60px] text-right font-mono text-xs tabular-nums text-foreground/80">
 						{wl.podCount}
 					</div>
 					<div className="hidden w-[160px] md:block">

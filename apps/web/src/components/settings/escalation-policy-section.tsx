@@ -1,7 +1,5 @@
 import { useEffect, useState } from "react"
 import { Link } from "@tanstack/react-router"
-import { Exit } from "effect"
-import { toastManager } from "@maple/ui/components/ui/toast"
 
 import { Schema } from "effect"
 
@@ -19,7 +17,7 @@ import { AlertDestinationId } from "@maple/domain/primitives"
 const decodeDestinationIds = Schema.decodeUnknownSync(Schema.Array(AlertDestinationId))
 
 import { Button } from "@maple/ui/components/ui/button"
-import { Card } from "@maple/ui/components/ui/card"
+import { Panel } from "@maple/ui/components/ui/panel"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { SettingRow } from "@maple/ui/components/ui/setting-row"
@@ -31,8 +29,10 @@ import { SeverityBadge, SEVERITY_ORDER } from "@/components/errors/severity-badg
 import { DocsLink } from "@/components/common/docs-link"
 import { ErrorState } from "@/components/common/error-state"
 import { useAsyncAction } from "@/hooks/use-mutation-action"
+import { toastExit } from "@/lib/error-toast"
 
 const CONFIDENCE_ANY = "any" as const
+const CONFIDENCE_CHOICES = [CONFIDENCE_ANY, "low", "medium", "high"] as const
 
 interface SeverityRuleDraft {
 	destinationIds: string[]
@@ -89,33 +89,27 @@ export function EscalationPolicySection({ isAdmin }: { isAdmin: boolean }) {
 
 	const [save, isSaving] = useAsyncAction(async () => {
 		const ruleList = SEVERITY_ORDER.filter((severity) => rules[severity].destinationIds.length > 0).map(
-			(severity) =>
-				new IssueEscalationPolicyRule({
+			(severity) => {
+				const minConfidence = rules[severity].minConfidence
+				return new IssueEscalationPolicyRule({
 					severity,
 					destinationIds: decodeDestinationIds(rules[severity].destinationIds),
-					...(!(rules[severity].minConfidence === CONFIDENCE_ANY)
-						? {
-								minConfidence: rules[severity].minConfidence as EscalationConfidence,
-							}
-						: undefined),
-				}),
+					...(minConfidence !== CONFIDENCE_ANY ? { minConfidence } : undefined),
+				})
+			},
 		)
 		const result = await upsertMutation({
 			payload: new IssueEscalationPolicyUpsertRequest({ enabled, rules: ruleList }),
 			reactivityKeys: ["issueEscalationPolicy"],
 		})
-		if (Exit.isSuccess(result)) {
-			toastManager.add({ title: "Escalation policy saved", type: "success" })
-		} else {
-			toastManager.add({ title: "Failed to save escalation policy", type: "error" })
-		}
+		toastExit(result, { success: "Escalation policy saved", error: "Failed to save escalation policy" })
 	})
 
 	// Never render the editable form off a failed (or pending) policy load —
 	// saving a default draft would silently overwrite the real policy.
 	if (!initialized) {
 		return (
-			<div className="max-w-2xl">
+			<div>
 				{Result.builder(policyResult)
 					.onError((error) => (
 						<ErrorState
@@ -126,15 +120,15 @@ export function EscalationPolicySection({ isAdmin }: { isAdmin: boolean }) {
 						/>
 					))
 					.orElse(() => (
-						<Skeleton className="h-40 w-full rounded-lg" />
+						<Skeleton className="h-40 w-full rounded-md" />
 					))}
 			</div>
 		)
 	}
 
 	return (
-		<div className="max-w-2xl space-y-4">
-			<Card className="space-y-4 p-4">
+		<div className="space-y-4">
+			<Panel padded className="gap-4">
 				<SettingRow
 					label="Severity escalation"
 					description="Route issues to destinations when AI triage or a teammate sets their severity. Fires once per issue and severity level, upward only."
@@ -194,21 +188,21 @@ export function EscalationPolicySection({ isAdmin }: { isAdmin: boolean }) {
 												<Select
 													value={rules[severity].minConfidence}
 													disabled={!isAdmin}
-													onValueChange={(value) =>
+													onValueChange={(value) => {
+														const minConfidence = CONFIDENCE_CHOICES.find(
+															(c) => c === value,
+														)
+														if (!minConfidence) return
 														setRules((current) => ({
 															...current,
 															[severity]: {
 																...current[severity],
-																minConfidence:
-																	value as SeverityRuleDraft["minConfidence"],
+																minConfidence,
 															},
 														}))
-													}
+													}}
 												>
-													<SelectTrigger
-														size="sm"
-														className="h-7 w-[100px] text-xs"
-													>
+													<SelectTrigger size="sm" className="w-[100px]">
 														<SelectValue />
 													</SelectTrigger>
 													<SelectContent>
@@ -247,7 +241,7 @@ export function EscalationPolicySection({ isAdmin }: { isAdmin: boolean }) {
 						Save policy
 					</Button>
 				</div>
-			</Card>
+			</Panel>
 			{!isAdmin ? (
 				<p className="text-muted-foreground text-xs">
 					Only org admins can change the escalation policy.

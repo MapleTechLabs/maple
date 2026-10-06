@@ -4,6 +4,8 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Schema } from "effect"
 import { toastManager } from "@maple/ui/components/ui/toast"
 import { Alert, AlertDescription } from "@maple/ui/components/ui/alert"
+import { TONE_TEXT } from "@maple/ui/lib/tone"
+import { countLabel } from "@maple/ui/lib/format"
 
 import { Unitflow, View } from "@maple/unitflow/react"
 import { Button } from "@maple/ui/components/ui/button"
@@ -21,7 +23,7 @@ import {
 } from "@/components/dashboard-builder/portable-dashboard"
 import type { Dashboard } from "@/components/dashboard-builder/types"
 import { CircleWarningIcon, GridIcon, PlusIcon, UploadIcon } from "@/components/icons"
-import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { DashboardPage } from "@/components/layout/dashboard-page"
 import { isDashboardSortOption, type DashboardSortOption } from "@/atoms/dashboard-preferences-atoms"
 import { useDashboardPreferences } from "@/hooks/use-dashboard-preferences"
 import { useDashboardMutations } from "@/hooks/use-dashboard-store"
@@ -92,7 +94,7 @@ function DashboardListPage() {
 							const preview = warnings.slice(0, 3).join("\n")
 							const suffix = warnings.length > 3 ? `\n+${warnings.length - 3} more` : ""
 							toastManager.add({
-								title: `Imported with ${warnings.length} warning${warnings.length === 1 ? "" : "s"}`,
+								title: `Imported with ${countLabel(warnings.length, "warning")}`,
 								description: `${preview}${suffix}`,
 								type: "warning",
 							})
@@ -117,21 +119,16 @@ function DashboardListPage() {
 
 	const handleCreate = () => {
 		if (readOnly) return
-		void (async () => {
-			try {
-				const dashboard = await createDashboard("Untitled Dashboard")
+		void createDashboard("Untitled Dashboard").then(
+			(dashboard) =>
 				navigate({
 					to: "/dashboards/$dashboardId",
 					params: { dashboardId: dashboard.id },
 					search: { mode: "edit" },
-				})
-			} catch (error) {
-				toastManager.add({
-					title: errorMessage(error, "Failed to create dashboard"),
-					type: "error",
-				})
-			}
-		})()
+				}),
+			(error) =>
+				toastManager.add({ title: errorMessage(error, "Failed to create dashboard"), type: "error" }),
+		)
 	}
 
 	/**
@@ -141,19 +138,18 @@ function DashboardListPage() {
 	 */
 	const handleDuplicate = (dashboard: Dashboard) => {
 		if (readOnly) return
-		void (async () => {
-			try {
-				const portable = toPortableDashboard(dashboard)
-				const copy = await importDashboard({ ...portable, name: `${dashboard.name} copy` })
+		const portable = toPortableDashboard(dashboard)
+		void importDashboard({ ...portable, name: `${dashboard.name} copy` }).then(
+			(copy) => {
 				navigate({ to: "/dashboards/$dashboardId", params: { dashboardId: copy.id } })
 				toastManager.add({ title: `Duplicated as "${copy.name}"`, type: "success" })
-			} catch (error) {
+			},
+			(error) =>
 				toastManager.add({
 					title: errorMessage(error, "Failed to duplicate dashboard"),
 					type: "error",
-				})
-			}
-		})()
+				}),
+		)
 	}
 
 	// `undefined` clears the param instead of writing an empty value, so a cleared
@@ -260,38 +256,30 @@ function PageShell({
 	children: React.ReactNode
 }) {
 	return (
-		<DashboardLayout.Root>
-			<DashboardLayout.Breadcrumbs items={[{ label: "Dashboards" }]} />
-			<DashboardLayout.Body>
-				<DashboardLayout.Content>
-					<DashboardLayout.Sticky>
-						<DashboardLayout.Header
-							titleContent={
-								summary ? (
-									<div className="text-muted-foreground mt-1 font-mono text-2xs">
-										{summary}
-									</div>
-								) : undefined
-							}
-						>
-							{actions}
-						</DashboardLayout.Header>
-						{/* Pinned with the header rather than inside Scroll: it explains the
-						    disabled buttons above it, so it must not scroll away from them. */}
-						{persistenceError && (
-							<Alert variant="crit" size="sm" className="mb-3">
-								<CircleWarningIcon size={14} />
-								<AlertDescription className="text-destructive">
-									{persistenceError}. Editing, import and delete are disabled until it
-									recovers; reading is unaffected.
-								</AlertDescription>
-							</Alert>
-						)}
-					</DashboardLayout.Sticky>
-					<DashboardLayout.Scroll>{children}</DashboardLayout.Scroll>
-				</DashboardLayout.Content>
-			</DashboardLayout.Body>
-		</DashboardLayout.Root>
+		<DashboardPage
+			breadcrumbs={[{ label: "Dashboards" }]}
+			titleContent={
+				summary ? (
+					<div className="text-muted-foreground mt-1 font-mono text-2xs">{summary}</div>
+				) : undefined
+			}
+			headerActions={actions}
+			// Pinned with the header rather than inside Scroll: it explains the disabled
+			// buttons above it, so it must not scroll away from them.
+			sticky={
+				persistenceError ? (
+					<Alert variant="crit" size="sm" className="mb-3">
+						<CircleWarningIcon size={14} />
+						<AlertDescription className={TONE_TEXT.crit}>
+							{persistenceError}. Editing, import and delete are disabled until it recovers;
+							reading is unaffected.
+						</AlertDescription>
+					</Alert>
+				) : null
+			}
+		>
+			{children}
+		</DashboardPage>
 	)
 }
 

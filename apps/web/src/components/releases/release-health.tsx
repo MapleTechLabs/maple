@@ -3,6 +3,8 @@ import { Badge } from "@maple/ui/components/ui/badge"
 import { TONE_FILL, TONE_SOFT } from "@maple/ui/lib/tone"
 
 import type { ReleaseHealth } from "./release-model"
+import { formatPercent } from "@maple/ui/lib/format"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
 
 export const RELEASE_HEALTH_LABEL = {
 	regressed: "errors up",
@@ -43,15 +45,21 @@ interface ReleaseHealthPillProps {
 
 export function ReleaseHealthPill({ health, label, className }: ReleaseHealthPillProps) {
 	return (
-		<Badge
-			size="xs"
-			pill
-			mono
-			title={RELEASE_HEALTH_DESCRIPTION[health]}
-			className={cn("cursor-default font-normal", PILL_CLASS[health], className)}
-		>
-			{label ?? RELEASE_HEALTH_LABEL[health]}
-		</Badge>
+		<Tooltip>
+			<TooltipTrigger
+				render={
+					<Badge
+						size="xs"
+						pill
+						mono
+						className={cn("cursor-default font-normal", PILL_CLASS[health], className)}
+					/>
+				}
+			>
+				{label ?? RELEASE_HEALTH_LABEL[health]}
+			</TooltipTrigger>
+			<TooltipContent>{RELEASE_HEALTH_DESCRIPTION[health]}</TooltipContent>
+		</Tooltip>
 	)
 }
 
@@ -70,9 +78,9 @@ export function releaseHealthFigure(impact: {
 					? `errors ${impact.errorRatio.toFixed(1)}×`
 					: "errors from 0"
 		case "watch":
-			return impact.p95Delta === undefined ? undefined : `p95 +${Math.round(impact.p95Delta * 100)}%`
+			return impact.p95Delta === undefined ? undefined : `p95 +${formatPercent(impact.p95Delta)}`
 		case "rolling":
-			return impact.share === undefined ? undefined : `${Math.round(impact.share * 100)}% rolling out`
+			return impact.share === undefined ? undefined : `${formatPercent(impact.share)} rolling out`
 		case "healthy":
 			return undefined
 	}

@@ -3,6 +3,7 @@ import * as React from "react"
 import { ChevronDownIcon, XmarkIcon } from "../icons"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "../ui/collapsible"
 import { Input } from "../ui/input"
+import { formatDuration, formatNumber } from "../../lib/format"
 import { cn } from "../../lib/utils"
 import { useDebouncedCallback } from "../../hooks/use-debounced-callback"
 import { useSectionCollapse } from "../../hooks/use-section-collapse"
@@ -413,11 +414,11 @@ function RangeHistogram({
 				{hovered ? (
 					<>
 						<span>{describe(hovered)}</span>
-						<span className="text-foreground">{hovered.count.toLocaleString()}</span>
+						<span className="text-foreground">{formatNumber(hovered.count)}</span>
 					</>
 				) : (
 					<span>
-						{total.toLocaleString()} {unitLabel}
+						{formatNumber(total)} {unitLabel}
 					</span>
 				)}
 			</div>
@@ -520,7 +521,7 @@ export function parseRange(text: string, unit: RangeUnit): number | undefined {
 export function formatValue(value: number, unit: RangeUnit): string {
 	switch (unit) {
 		case "ms":
-			return formatMs(value)
+			return formatDuration(value)
 		case "s":
 			return formatSeconds(value)
 		case "count":
@@ -544,12 +545,6 @@ export function formatCompact(value: number | undefined, unit: RangeUnit): strin
 	// into, so only rewrite when the human form means exactly the same thing.
 	const human = formatValue(value, unit)
 	return parseRange(human, unit) === value ? human : String(value)
-}
-
-function formatMs(ms: number): string {
-	if (ms < 1) return `${(ms * 1000).toFixed(0)}us`
-	if (ms < 1000) return `${ms.toFixed(1)}ms`
-	return `${(ms / 1000).toFixed(2)}s`
 }
 
 /** "120k", "1.5M", "2B" — and the bare number under a thousand. */

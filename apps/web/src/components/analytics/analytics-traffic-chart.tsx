@@ -19,7 +19,12 @@ import { useMediaQuery } from "@maple/ui/hooks/use-media-query"
 import { linkedCursorChartProps } from "@/hooks/use-linked-cursor"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 
-import { CHART_EMPTY_MESSAGE, CHART_HEIGHT, ChartCard, ChartCardMessage } from "@/components/common/chart-card"
+import {
+	CHART_EMPTY_MESSAGE,
+	CHART_HEIGHT,
+	ChartCard,
+	ChartCardMessage,
+} from "@/components/common/chart-card"
 import { SeriesLegend } from "@/components/common/series-legend"
 import type { AnalyticsMetricDescriptor, AnalyticsMetricSource } from "./metrics"
 

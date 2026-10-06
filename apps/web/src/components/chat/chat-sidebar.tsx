@@ -5,6 +5,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { Button } from "@maple/ui/components/ui/button"
 import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
+import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
 import {
 	DropdownMenu,
 	DropdownMenuContent,
@@ -184,6 +185,7 @@ function ChatSidebarRow({
 	const Icon = tabIcon(tab)
 	const inputRef = useRef<HTMLInputElement>(null)
 	const [draft, setDraft] = useState(tab.title)
+	const [confirmDelete, setConfirmDelete] = useState(false)
 
 	useEffect(() => {
 		if (isRenaming) {
@@ -297,7 +299,7 @@ function ChatSidebarRow({
 								disabled={!canDelete}
 								variant="destructive"
 								onClick={() => {
-									if (canDelete) onClose(tab.id)
+									if (canDelete) setConfirmDelete(true)
 								}}
 							>
 								<TrashIcon size={14} />
@@ -307,6 +309,18 @@ function ChatSidebarRow({
 					</DropdownMenu>
 				)}
 			</div>
+			{/* Outside the row so dialog clicks do not bubble into the row's select handler. */}
+			<ConfirmDialog
+				open={confirmDelete}
+				onOpenChange={setConfirmDelete}
+				title="Delete this conversation?"
+				description={`"${tab.title}" and its messages will be removed. This cannot be undone.`}
+				confirmLabel="Delete"
+				onConfirm={() => {
+					setConfirmDelete(false)
+					onClose(tab.id)
+				}}
+			/>
 		</li>
 	)
 }

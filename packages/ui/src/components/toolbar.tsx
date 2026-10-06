@@ -11,6 +11,7 @@ import { SearchInput } from "./ui/search-input"
 import { useDebouncedCallback } from "../hooks/use-debounced-callback"
 import { cn } from "../lib/utils"
 import { TONE_TEXT } from "../lib/tone"
+import { formatNumber } from "../lib/format"
 
 export function Toolbar({ children, className }: { children: ReactNode; className?: string }) {
 	return (
@@ -127,7 +128,7 @@ export function ToolbarStat({
 		<span className="flex items-center gap-1.5 whitespace-nowrap text-sm">
 			{dot ? <span className="size-1.5 rounded-full bg-severity-info" /> : null}
 			<span className={cn("font-medium tabular-nums", danger && value > 0 && TONE_TEXT.crit)}>
-				{value.toLocaleString()}
+				{formatNumber(value)}
 			</span>
 			<span className="text-muted-foreground">{label}</span>
 		</span>

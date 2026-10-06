@@ -34,6 +34,7 @@ import {
 } from "@/lib/services/atoms/warehouse-query-atoms"
 import { formatForTinybird } from "@/lib/time-utils"
 import { servicesTouched } from "./impact-strip"
+import { Panel } from "@maple/ui/components/ui/panel"
 
 /** The design's strip is 32 bars wide; the bucket falls out of the window, not the other way round. */
 const BUCKETS = 32
@@ -45,7 +46,7 @@ export function SignalsCard({ investigation }: { investigation: V2Investigation 
 	if (!window || !service) return null
 
 	return (
-		<section className="flex shrink-0 flex-col gap-4 rounded-xl border bg-card px-5 py-4">
+		<Panel className="shrink-0 gap-4 px-5 py-4">
 			<header className="flex items-center gap-2">
 				<ServiceDot serviceName={service} />
 				<span className="font-mono text-sm text-foreground">{service}</span>
@@ -67,7 +68,7 @@ export function SignalsCard({ investigation }: { investigation: V2Investigation 
 
 			<LogsRow service={service} window={window} />
 			<TracesRow service={service} window={window} />
-		</section>
+		</Panel>
 	)
 }
 

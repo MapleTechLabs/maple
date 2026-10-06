@@ -5,6 +5,7 @@ import type {
 	PrReviewSeverity,
 	PrReviewSkipReason,
 } from "@maple/domain/http"
+import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import { TONE_TEXT, type Tone } from "@maple/ui/lib/tone"
 
 export const CATEGORY_LABELS = {
@@ -53,11 +54,12 @@ export const SKIP_LABELS = {
 const COUNT = new Intl.NumberFormat("en-US")
 const COMPACT = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 })
 
+// Not `formatNumber`: that compacts from 1K, while review counts stay exact below 10K.
 export const formatCount = (value: number) => (value >= 10_000 ? COMPACT.format(value) : COUNT.format(value))
 
 /** A span in the largest unit that keeps it readable: `42s`, `14m`, `5.2h`, `7.0d`. */
 export function formatSpan(seconds: number | null): string {
-	if (seconds === null || !Number.isFinite(seconds)) return "–"
+	if (seconds === null || !Number.isFinite(seconds)) return EMPTY_VALUE
 	if (seconds < 60) return `${Math.round(seconds)}s`
 	if (seconds < 3_600) return `${Math.round(seconds / 60)}m`
 	if (seconds < 86_400) return `${(seconds / 3_600).toFixed(1)}h`

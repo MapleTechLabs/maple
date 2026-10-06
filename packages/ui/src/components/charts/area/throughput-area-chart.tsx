@@ -165,7 +165,7 @@ export const ThroughputAreaChart = memo(function ThroughputAreaChart({
 	}, [colors, hasSampling, hasErrors, rateLabel])
 
 	const tooltipSeries = useMemo<PlotTooltipSeries<TimeseriesRow>[]>(() => {
-		const withSuffix = (value: number) => `${value.toLocaleString()}${rateLabel}`
+		const withSuffix = (value: number) => formatThroughput(value, rateLabel)
 		const read = (key: string) => (row: TimeseriesRow) => {
 			const value = row[key]
 			return typeof value === "number" ? value : null

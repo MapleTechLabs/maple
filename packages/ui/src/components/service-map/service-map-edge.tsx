@@ -1,3 +1,4 @@
+import { formatErrorRate } from "../../lib/format"
 import { memo, useEffect, useId } from "react"
 import { getSmoothStepPath, type EdgeProps } from "@xyflow/react"
 import { getServiceColor, getValueHue } from "../../lib/colors"
@@ -228,7 +229,7 @@ export const ServiceMapEdge = memo(function ServiceMapEdge({
 							{errorRate > 0 && (
 								<span className={errorRateClass(errorRate, { neutral: "" })}>
 									{" "}
-									{(errorRate * 100).toFixed(1)}%
+									{formatErrorRate(errorRate)}
 								</span>
 							)}
 						</span>

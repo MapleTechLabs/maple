@@ -8,8 +8,11 @@ import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Button } from "@maple/ui/components/ui/button"
 import { Spinner } from "@maple/ui/components/ui/spinner"
 import { CopyButton } from "@maple/ui/components/ui/copy-button"
-import { formatBytes, formatDuration } from "@maple/ui/lib/format"
+import { countLabel, formatBytes, formatDuration } from "@maple/ui/lib/format"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 import { cn } from "@maple/ui/lib/utils"
+import { rowSelectedClass } from "@maple/ui/components/ui/list-row"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { TONE_SOFT } from "@maple/ui/lib/tone"
 
@@ -515,18 +518,22 @@ function UserBlock({
 			<div className="flex flex-col gap-1.5">
 				<div className="flex h-6 items-center justify-end gap-2">
 					{row.earlierCount > 0 && (
-						<button
-							type="button"
-							onClick={() => onToggleRow(historyKey)}
-							aria-expanded={showHistory}
-							title={`${row.earlierCount} earlier message${row.earlierCount === 1 ? "" : "s"} re-sent with this one, shown once`}
-							className={cn(
-								"shrink-0 cursor-pointer text-2xs text-muted-foreground hover:text-foreground",
-								!showHistory && ON_HOVER,
-							)}
-						>
-							{showHistory ? "hide history" : `+${row.earlierCount} re-sent`}
-						</button>
+						<Tooltip>
+							<TooltipTrigger
+								render={<button type="button" />}
+								onClick={() => onToggleRow(historyKey)}
+								aria-expanded={showHistory}
+								className={cn(
+									"shrink-0 cursor-pointer text-2xs text-muted-foreground hover:text-foreground",
+									!showHistory && ON_HOVER,
+								)}
+							>
+								{showHistory ? "hide history" : `+${row.earlierCount} re-sent`}
+							</TooltipTrigger>
+							<TooltipContent>
+								{`${countLabel(row.earlierCount, "earlier message")} re-sent with this one, shown once`}
+							</TooltipContent>
+						</Tooltip>
 					)}
 					<ViewSwitch
 						rendered={body.rendered}
@@ -904,7 +911,7 @@ function ToolBlock({
 		<Row depth={row.depth} className="pt-1.5">
 			<div
 				className={cn(
-					"flex min-w-0 flex-col overflow-hidden rounded-lg border",
+					"flex min-w-0 flex-col overflow-hidden rounded-md border",
 					row.failed
 						? "border-severity-error/40 bg-severity-error/5"
 						: open
@@ -1082,9 +1089,7 @@ function LaneOpen({
 			<div className="mt-4 flex h-6 items-center gap-2">
 				{/* An agent name is emitter input: capped and truncating so a long one
 				    cannot widen the page. */}
-				<span className={cn(SPEAKER, "max-w-56 shrink truncate")} title={row.agentName}>
-					{row.agentName}
-				</span>
+				<TruncatedText className={cn(SPEAKER, "max-w-56 shrink")}>{row.agentName}</TruncatedText>
 				<span className={CLOCK}>{clockOf(row.startMs, timeZone)}</span>
 				<span className={META}>
 					{row.laneKind === "subagent"
@@ -1174,9 +1179,7 @@ function ParallelRule({ label, range }: { label: string; range: string }) {
 			<BranchForkIcon size={12} className="shrink-0" />
 			{/* The label joins agent names, which are emitter input: it truncates
 			    rather than widening the page. */}
-			<span className="min-w-0 truncate font-medium text-xs" title={label}>
-				{label}
-			</span>
+			<TruncatedText className="font-medium text-xs">{label}</TruncatedText>
 			<span className={cn(META, "shrink-0")}>{range}</span>
 			<span aria-hidden className="h-px min-w-6 grow bg-border/60" />
 		</div>
@@ -1275,16 +1278,13 @@ function StructureRow({
 					aria-pressed={selected}
 					className={cn(
 						"-mx-1.5 flex min-w-0 grow cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-left hover:bg-muted/40",
-						selected && "bg-primary/6",
+						rowSelectedClass(selected),
 					)}
 				>
 					<Glyph size={13} className={cn("shrink-0", tone)} />
-					<span
-						className="min-w-0 truncate font-medium font-mono text-foreground text-xs"
-						title={row.label}
-					>
+					<TruncatedText mono className="font-medium text-foreground text-xs">
 						{row.label}
-					</span>
+					</TruncatedText>
 					<span className={cn(META, "shrink-0")}>{meta.shown}</span>
 					<span className={cn(META, !selected && ON_HOVER)}>{meta.onHover}</span>
 					<span className="grow" />

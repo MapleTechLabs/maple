@@ -68,7 +68,7 @@ export function AlertsEmptyState({
 			{isAdmin && (
 				<div className="flex w-full max-w-3xl flex-col items-center gap-4">
 					{needsDestination && (
-						<div className="flex w-full items-center gap-3 rounded-lg border border-primary/40 bg-primary/[0.06] p-3 text-left">
+						<div className="flex w-full items-center gap-3 rounded-md border border-primary/40 bg-primary/[0.06] p-3 text-left">
 							<StepBadge n={1} />
 							<div className="min-w-0 flex-1">
 								<p className="text-sm font-medium">Add a destination</p>
@@ -137,7 +137,7 @@ function TemplateTile({ template, serviceName }: { template: AlertTemplate; serv
 			to="/alerts/create"
 			search={{ template: template.id, serviceName }}
 			className={cn(
-				"group flex flex-col gap-1.5 rounded-lg border bg-card p-3 text-left transition-colors",
+				"group flex flex-col gap-1.5 rounded-md border bg-card p-3 text-left transition-colors",
 				"hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
 				tone.hoverBorder,
 			)}
@@ -150,9 +150,7 @@ function TemplateTile({ template, serviceName }: { template: AlertTemplate; serv
 				</span>
 				<span className="font-medium text-sm">{template.title}</span>
 			</div>
-			<InlineCode className="self-start text-2xs text-muted-foreground">
-				{template.summary}
-			</InlineCode>
+			<InlineCode className="self-start text-2xs text-muted-foreground">{template.summary}</InlineCode>
 		</Link>
 	)
 }
@@ -165,7 +163,7 @@ function TemplateTile({ template, serviceName }: { template: AlertTemplate; serv
  */
 function QuietMonitor() {
 	return (
-		<div className="relative w-full max-w-[300px] overflow-hidden rounded-lg border bg-card/50 px-4 py-3">
+		<div className="relative w-full max-w-[300px] overflow-hidden rounded-md border bg-card/50 px-4 py-3">
 			<svg viewBox="0 0 300 84" className="w-full" role="img" aria-label="No threshold is watching yet">
 				<title>A steady signal running below an unset alert threshold</title>
 				{/* Dashed amber threshold — the line a rule would place. */}

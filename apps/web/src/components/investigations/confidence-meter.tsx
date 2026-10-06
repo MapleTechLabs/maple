@@ -1,6 +1,7 @@
 import type { V2Investigation } from "@maple/domain/http/v2"
 import { cn } from "@maple/ui/lib/utils"
 import { TONE_FILL, TONE_TEXT, type Tone } from "@maple/ui/lib/tone"
+import { EMPTY_VALUE } from "@maple/ui/lib/format"
 
 type Confidence = NonNullable<V2Investigation["confidence"]>
 
@@ -48,7 +49,7 @@ export function ConfidenceMeter({
 	if (confidence === null) {
 		return (
 			<span className={cn("text-xs text-muted-foreground/60", className)} title="No diagnosis yet">
-				—
+				{EMPTY_VALUE}
 			</span>
 		)
 	}

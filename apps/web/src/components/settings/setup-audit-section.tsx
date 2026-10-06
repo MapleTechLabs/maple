@@ -1,6 +1,7 @@
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { countLabel } from "@maple/ui/lib/format"
-import { Card, CardAction, CardHeader, CardTitle } from "@maple/ui/components/ui/card"
+import { Panel } from "@maple/ui/components/ui/panel"
+import { RefreshButton } from "@maple/ui/components/ui/refresh-button"
 import { useMemo, useState } from "react"
 import { Link } from "@tanstack/react-router"
 import type { V2SetupAudit, V2SetupAuditCheck } from "@maple/domain/http/v2"
@@ -9,12 +10,11 @@ import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
 import { Alert, AlertDescription, AlertTitle } from "@maple/ui/components/ui/alert"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { InlineCode } from "@maple/ui/components/ui/inline-code"
-import { Button, buttonVariants } from "@maple/ui/components/ui/button"
+import { buttonVariants } from "@maple/ui/components/ui/button"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { cn } from "@maple/ui/lib/utils"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import {
-	ArrowRotateAnticlockwiseIcon,
 	CircleCheckIcon,
 	CircleInfoIcon,
 	CircleWarningIcon,
@@ -26,6 +26,7 @@ import { DocsLink, EmptyActions } from "@/components/common/docs-link"
 import type { SettingsTab } from "@/components/settings/settings-nav"
 import { RelativeTime } from "@/components/common/relative-time"
 import { ErrorState } from "@/components/common/error-state"
+import { SettingsSection } from "@/components/settings/settings-section"
 
 type Severity = V2SetupAuditCheck["severity"]
 type Category = V2SetupAuditCheck["category"]
@@ -41,7 +42,7 @@ const SEVERITY_ORDER: ReadonlyArray<Severity> = ["critical", "warn", "info"]
 /**
  * Each category's owning surface, so a finding is one click from where it gets fixed. `tab` targets a
  * sibling settings tab; `to` targets a standalone route. Kept as separate fields because TanStack
- * Router types `search` per route — a widened `object` does not typecheck.
+ * Router types `search` per route; a widened `object` does not typecheck.
  */
 type CategoryTarget =
 	| { label: string; fixLabel: string; tab: SettingsTab }
@@ -168,30 +169,28 @@ function CategoryCard({
 	const meta = CATEGORY[category]
 	const findings = checks.filter((check) => check.status === "fail").length
 	return (
-		<Card className="overflow-hidden">
-			<CardHeader className="items-center px-4 pt-4 pb-3">
-				<CardTitle render={<h3 />} className="flex items-center gap-3 text-sm font-medium">
+		<Panel>
+			<div className="flex items-center justify-between gap-3 px-4 pt-3 pb-2">
+				<h3 className="flex items-center gap-3 text-sm font-medium">
 					{meta.label}
 					<span className="text-muted-foreground font-mono text-2xs font-normal">
 						{findings > 0 ? countLabel(findings, "finding") : "clear"}
 					</span>
-				</CardTitle>
-				<CardAction className="self-center">
-					<CategoryLink
-						target={meta}
-						label={meta.fixLabel}
-						className={buttonVariants({ variant: "ghost", size: "sm" })}
-					/>
-				</CardAction>
-			</CardHeader>
+				</h3>
+				<CategoryLink
+					target={meta}
+					label={meta.fixLabel}
+					className={buttonVariants({ variant: "ghost", size: "sm" })}
+				/>
+			</div>
 			{checks.map((check) => (
 				<CheckRow key={check.id} check={check} />
 			))}
-		</Card>
+		</Panel>
 	)
 }
 
-function Report({ audit }: { audit: V2SetupAudit }) {
+function Report({ audit, refreshing }: { audit: V2SetupAudit; refreshing: boolean }) {
 	const [showPassing, setShowPassing] = useState(false)
 	const refresh = useAtomRefresh(setupAuditAtom)
 
@@ -211,34 +210,36 @@ function Report({ audit }: { audit: V2SetupAudit }) {
 
 	if (audit.data_status === "no_data") {
 		return (
-			<Empty className="rounded-lg border bg-card py-10">
-				<EmptyHeader>
-					<EmptyMedia variant="icon">
-						<ServerIcon size={16} />
-					</EmptyMedia>
-					<EmptyTitle>No telemetry yet</EmptyTitle>
-					<EmptyDescription>
-						The audit runs once your first service reports in. Connect one from the Ingestion tab
-						and come back.
-					</EmptyDescription>
-				</EmptyHeader>
-				<EmptyActions>
-					<Link
-						to="/settings"
-						search={{ tab: "ingestion" }}
-						className={buttonVariants({ variant: "outline", size: "sm" })}
-					>
-						Go to Ingestion
-					</Link>
-					<DocsLink page="quickstart" />
-				</EmptyActions>
-			</Empty>
+			<Panel>
+				<Empty className="py-10">
+					<EmptyHeader>
+						<EmptyMedia variant="icon">
+							<ServerIcon size={16} />
+						</EmptyMedia>
+						<EmptyTitle>No telemetry yet</EmptyTitle>
+						<EmptyDescription>
+							The audit runs once your first service reports in. Connect one from the Ingestion
+							tab and come back.
+						</EmptyDescription>
+					</EmptyHeader>
+					<EmptyActions>
+						<Link
+							to="/settings"
+							search={{ tab: "ingestion" }}
+							className={buttonVariants({ variant: "outline", size: "sm" })}
+						>
+							Go to Ingestion
+						</Link>
+						<DocsLink page="quickstart" />
+					</EmptyActions>
+				</Empty>
+			</Panel>
 		)
 	}
 
 	return (
 		<div className="flex flex-col gap-4">
-			<div className="bg-card flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border px-4 py-3">
+			<Panel className="flex-row flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
 				<SummaryPill count={summary.critical} label="critical" className={TONE_TEXT.crit} />
 				<SummaryPill count={summary.warn} label="warning" className={TONE_TEXT.warn} />
 				<SummaryPill count={summary.info} label="info" className={TONE_TEXT.info} />
@@ -249,14 +250,16 @@ function Report({ audit }: { audit: V2SetupAudit }) {
 				)}
 				<div className="grow" />
 				<RelativeTime value={audit.generated_at} className="text-muted-foreground/70 text-2xs" />
-				<Button variant="ghost" size="sm" onClick={() => refresh()}>
-					<ArrowRotateAnticlockwiseIcon size={14} />
-					Re-run
-				</Button>
-			</div>
+				<RefreshButton
+					variant="ghost"
+					label="Re-run"
+					pending={refreshing}
+					onRefresh={() => refresh()}
+				/>
+			</Panel>
 
 			{!audit.telemetry_checks_available && (
-				<Alert variant="warn" className="rounded-lg px-4 text-xs leading-relaxed">
+				<Alert variant="warn" className="px-4 text-xs leading-relaxed">
 					<CircleWarningIcon />
 					<AlertTitle>Telemetry checks skipped.</AlertTitle>
 					<AlertDescription>
@@ -267,14 +270,14 @@ function Report({ audit }: { audit: V2SetupAudit }) {
 			)}
 
 			{findingCount === 0 && !showPassing ? (
-				<div className="bg-card flex flex-col items-center gap-2 rounded-lg border px-4 py-10 text-center">
+				<Panel className="items-center gap-2 px-4 py-10 text-center">
 					<CircleCheckIcon size={20} className="text-severity-info" />
 					<p className="text-sm font-medium">Everything checks out</p>
 					<p className="text-muted-foreground text-xs">
 						All {summary.pass} checks passed. Alerts can deliver, and your telemetry follows the
 						conventions Maple reads.
 					</p>
-				</div>
+				</Panel>
 			) : (
 				grouped.map((group) => (
 					<CategoryCard key={group.category} category={group.category} checks={group.checks} />
@@ -297,18 +300,18 @@ function Report({ audit }: { audit: V2SetupAudit }) {
 export function SetupAuditSection() {
 	const result = useAtomValue(setupAuditAtom)
 
-	if (Result.isFailure(result)) {
-		return <ErrorState error={result.cause} title="Could not run the audit" />
-	}
-
-	if (!Result.isSuccess(result)) {
-		return (
-			<div className="flex flex-col gap-4">
-				<Skeleton className="h-12 w-full rounded-lg" />
-				<Skeleton className="h-48 w-full rounded-lg" />
-			</div>
-		)
-	}
-
-	return <Report audit={result.value} />
+	return (
+		<SettingsSection title="Setup audit" framed={false}>
+			{Result.isFailure(result) ? (
+				<ErrorState error={result.cause} title="Could not run the audit" />
+			) : !Result.isSuccess(result) ? (
+				<div className="flex flex-col gap-4">
+					<Skeleton className="h-12 w-full rounded-md" />
+					<Skeleton className="h-48 w-full rounded-md" />
+				</div>
+			) : (
+				<Report audit={result.value} refreshing={result.waiting} />
+			)}
+		</SettingsSection>
+	)
 }

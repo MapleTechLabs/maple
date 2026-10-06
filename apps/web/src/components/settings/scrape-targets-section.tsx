@@ -3,9 +3,13 @@ import { ScrapeIntervalSeconds } from "@maple/domain/http"
 import type { ScrapeAuthType, ScrapeTargetId } from "@maple/domain/http"
 import type { V2ScrapeTarget, V2ScrapeTargetCheck } from "@maple/domain/http/v2"
 import { useState, type KeyboardEvent } from "react"
-import { Exit, Schema } from "effect"
+import { Exit, Option, Schema } from "effect"
 import { toastManager } from "@maple/ui/components/ui/toast"
-import { Field, FieldLabel, FieldDescription } from "@maple/ui/components/ui/field"
+import { Field, FieldLabel, FieldDescription, FieldError } from "@maple/ui/components/ui/field"
+import { FormDialog } from "@maple/ui/components/ui/form-dialog"
+import { Panel } from "@maple/ui/components/ui/panel"
+import { RowActionsMenu } from "@maple/ui/components/ui/row-actions-menu"
+import { trySync } from "@maple/ui/lib/try-sync"
 import { StatusDot } from "@maple/ui/components/ui/status-dot"
 
 import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
@@ -16,21 +20,7 @@ import { Alert, AlertDescription, AlertTitle } from "@maple/ui/components/ui/ale
 import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
-import {
-	Dialog,
-	DialogContent,
-	DialogDescription,
-	DialogFooter,
-	DialogHeader,
-	DialogTitle,
-} from "@maple/ui/components/ui/dialog"
-import {
-	DropdownMenu,
-	DropdownMenuContent,
-	DropdownMenuItem,
-	DropdownMenuSeparator,
-	DropdownMenuTrigger,
-} from "@maple/ui/components/ui/dropdown-menu"
+import { DropdownMenuItem, DropdownMenuSeparator } from "@maple/ui/components/ui/dropdown-menu"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import { Input } from "@maple/ui/components/ui/input"
@@ -47,7 +37,6 @@ import {
 	CircleInfoIcon,
 	CircleWarningIcon,
 	CircleXmarkIcon,
-	DotsVerticalIcon,
 	ExternalLinkIcon,
 	FireIcon,
 	HistoryIcon,
@@ -57,14 +46,17 @@ import {
 	TrashIcon,
 } from "@/components/icons"
 import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
-import { formatDuration, formatNumber } from "@maple/ui/lib/format"
+import { EMPTY_VALUE, formatDuration, formatNumber } from "@maple/ui/lib/format"
 import { RelativeTime } from "@/components/common/relative-time"
 import { diagnoseScrapeError } from "@/lib/scrape-error-diagnosis"
 import { scheduledStatusFromChecks, scheduledStatusFromRollup } from "@/lib/scrape-target-status"
 import { catalogEntry } from "../integrations/integration-catalog"
 import { DocsLink } from "@/components/common/docs-link"
 import { ErrorState } from "@/components/common/error-state"
-import { useAsyncAction } from "@/hooks/use-mutation-action"
+import { useAsyncAction, useKeyedAsyncAction } from "@/hooks/use-mutation-action"
+import { toastExit } from "@/lib/error-toast"
+import { useTimezonePreference } from "@/hooks/use-timezone-preference"
+import { formatTimestampInTimezone } from "@/lib/timezone-format"
 import {
 	IntegrationEmpty,
 	IntegrationEmptyCard,
@@ -87,47 +79,36 @@ const AUTH_TYPE_LABELS: Record<ScrapeAuthType, string> = {
 	planetscale_oauth: "PlanetScale OAuth",
 } satisfies Record<ScrapeAuthType, string>
 
-const asScrapeIntervalSeconds = Schema.decodeUnknownSync(ScrapeIntervalSeconds)
+const decodeScrapeInterval = Schema.decodeUnknownOption(ScrapeIntervalSeconds)
 
 function formatDurationSeconds(value: number | null): string {
-	if (value == null) return "-"
+	if (value == null) return EMPTY_VALUE
 	return formatDuration(value * 1000)
 }
 
 function formatOptionalCount(value: number | null): string {
-	if (value == null) return "-"
+	if (value == null) return EMPTY_VALUE
 	return formatNumber(Math.round(value))
 }
 
-function formatDateTime(value: string): string {
-	return new Date(value).toLocaleString(undefined, {
-		month: "short",
-		day: "2-digit",
-		hour: "2-digit",
-		minute: "2-digit",
-		second: "2-digit",
-	})
+/** Created/updated/check times, in the viewer's chosen timezone. */
+function useFormatDateTime(): (value: string) => string {
+	const { effectiveTimezone } = useTimezonePreference()
+	return (value) => formatTimestampInTimezone(value, { timeZone: effectiveTimezone })
 }
 
 function hostnameFromUrl(value: string): string {
-	try {
-		return new URL(value).host
-	} catch {
-		return value
-	}
+	return Option.getOrElse(
+		trySync(() => new URL(value).host),
+		() => value,
+	)
 }
 
 function labelEntries(labelsJson: string | null): Array<[string, string]> {
 	if (!labelsJson) return []
-	try {
-		const parsed = JSON.parse(labelsJson) as unknown
-		if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return []
-		return Object.entries(parsed).filter(
-			(entry): entry is [string, string] => typeof entry[1] === "string",
-		)
-	} catch {
-		return []
-	}
+	const parsed = Option.getOrNull(trySync((): Record<string, unknown> => JSON.parse(labelsJson)))
+	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return []
+	return Object.entries(parsed).filter((entry): entry is [string, string] => typeof entry[1] === "string")
 }
 
 function checksFromResult(result: ScrapeTargetChecksResult): ScrapeTargetCheck[] {
@@ -161,7 +142,7 @@ const COPY = {
 
 /**
  * Prometheus scrape-target manager. PlanetScale metrics collection is fully
- * managed by its integration and never surfaces here — this section only
+ * managed by its integration and never surfaces here; this section only
  * lists and edits user-created prometheus targets.
  */
 export function ScrapeTargetsSection({
@@ -170,9 +151,7 @@ export function ScrapeTargetsSection({
 	sourceFilter?: "prometheus"
 } = {}) {
 	const [dialogOpen, setDialogOpen] = useState(false)
-	const [togglingId, setTogglingId] = useState<ScrapeTargetId | null>(null)
 	const [deleteConfirmTarget, setDeleteConfirmTarget] = useState<ScrapeTarget | null>(null)
-	const [probingId, setProbingId] = useState<ScrapeTargetId | null>(null)
 	const [selectedTargetId, setSelectedTargetId] = useState<ScrapeTargetId | null>(null)
 
 	const [editingTarget, setEditingTarget] = useState<ScrapeTarget | null>(null)
@@ -209,31 +188,28 @@ export function ScrapeTargetsSection({
 		.filter((target) => target.target_type === sourceFilter)
 	const selectedTarget = targets.find((target) => target.id === selectedTargetId) ?? null
 	const copy = COPY
-	// When empty, the centered empty state owns the primary action — hide the toolbar row.
+	// When empty, the centered empty state owns the primary action, so hide the toolbar row.
 	const isEmpty = Result.isSuccess(listResult) && targets.length === 0
 	const emptyEntry = catalogEntry(sourceFilter)
 
-	async function handleProbe(target: ScrapeTarget) {
-		setProbingId(target.id)
+	const probe = useKeyedAsyncAction(async (_id: ScrapeTargetId, target: ScrapeTarget) => {
 		const result = await probeMutation({
 			params: { id: target.id },
 			reactivityKeys: ["scrapeTargets"],
 		})
-		if (Exit.isSuccess(result)) {
-			refreshTargets()
-			if (result.value.success) {
-				toastManager.add({ title: "Connection successful", type: "success" })
-			} else {
-				toastManager.add({
-					title: `Connection failed: ${result.value.last_scrape_error}`,
-					type: "error",
-				})
-			}
+		if (!toastExit(result, { error: "Failed to test connection" }) || !Exit.isSuccess(result)) return
+		refreshTargets()
+		if (result.value.success) {
+			toastManager.add({ title: "Connection successful", type: "success" })
 		} else {
-			toastManager.add({ title: "Failed to test connection", type: "error" })
+			toastManager.add({
+				title: "Connection failed",
+				description: result.value.last_scrape_error ?? undefined,
+				type: "error",
+			})
 		}
-		setProbingId(null)
-	}
+	})
+	const handleProbe = (target: ScrapeTarget) => void probe.run(target.id, target)
 
 	function openAddDialog() {
 		setEditingTarget(null)
@@ -276,99 +252,77 @@ export function ScrapeTargetsSection({
 		return null
 	}
 
+	const parsedInterval = Option.getOrNull(decodeScrapeInterval(Number.parseInt(formInterval, 10) || 15))
+	const formValid = formName.trim().length > 0 && formUrl.trim().length > 0 && parsedInterval !== null
+
 	const [handleSave, isSaving] = useAsyncAction(async () => {
-		if (!formName.trim() || !formUrl.trim()) {
-			toastManager.add({ title: "Name and URL are required", type: "error" })
-			return
-		}
-
-		let parsedInterval: ScrapeIntervalSeconds
-		try {
-			parsedInterval = asScrapeIntervalSeconds(Number.parseInt(formInterval, 10) || 15)
-		} catch {
-			toastManager.add({
-				title: "Scrape interval must be an integer from 5 to 300 seconds",
-				type: "error",
-			})
-			return
-		}
-
+		if (!formValid || parsedInterval === null) return
 		const authCredentials = buildAuthCredentials()
+		const payload = {
+			name: formName.trim(),
+			scrape_interval_seconds: parsedInterval,
+			service_name: formServiceName.trim() || null,
+			url: formUrl.trim(),
+			auth_type: formAuthType,
+			...(authCredentials !== null ? { auth_credentials: authCredentials } : undefined),
+		}
 
 		if (editingTarget) {
 			const result = await updateMutation({
 				params: { id: editingTarget.id },
-				payload: {
-					name: formName.trim(),
-					scrape_interval_seconds: parsedInterval,
-					service_name: formServiceName.trim() || null,
-					url: formUrl.trim(),
-					auth_type: formAuthType,
-					...(authCredentials !== null ? { auth_credentials: authCredentials } : undefined),
-				},
+				payload,
 				reactivityKeys: ["scrapeTargets"],
 			})
-			if (Exit.isSuccess(result)) {
-				refreshTargets()
-				toastManager.add({ title: "Scrape target updated", type: "success" })
-				setDialogOpen(false)
-			} else {
-				toastManager.add({ title: "Failed to update scrape target", type: "error" })
-			}
+			if (
+				!toastExit(result, {
+					success: "Scrape target updated",
+					error: "Failed to update scrape target",
+				})
+			)
+				return
+			refreshTargets()
+			setDialogOpen(false)
 		} else {
-			const result = await createMutation({
-				payload: {
-					name: formName.trim(),
-					scrape_interval_seconds: parsedInterval,
-					service_name: formServiceName.trim() || null,
-					url: formUrl.trim(),
-					auth_type: formAuthType,
-					...(authCredentials !== null ? { auth_credentials: authCredentials } : undefined),
-				},
-				reactivityKeys: ["scrapeTargets"],
-			})
-			if (Exit.isSuccess(result)) {
-				refreshTargets()
-				toastManager.add({ title: "Scrape target created", type: "success" })
-				setDialogOpen(false)
-				setSelectedTargetId(result.value.id)
-			} else {
-				toastManager.add({ title: "Failed to create scrape target", type: "error" })
-			}
+			const result = await createMutation({ payload, reactivityKeys: ["scrapeTargets"] })
+			if (
+				!toastExit(result, {
+					success: "Scrape target created",
+					error: "Failed to create scrape target",
+				}) ||
+				!Exit.isSuccess(result)
+			)
+				return
+			refreshTargets()
+			setDialogOpen(false)
+			setSelectedTargetId(result.value.id)
 		}
 	})
 
 	async function handleDelete(targetId: ScrapeTargetId) {
-		setDeleteConfirmTarget(null)
 		const result = await deleteMutation({
 			params: { id: targetId },
 			reactivityKeys: ["scrapeTargets"],
 		})
-		if (Exit.isSuccess(result)) {
+		const ok = toastExit(result, {
+			success: "Scrape target deleted",
+			error: "Failed to delete scrape target",
+		})
+		if (ok) {
 			refreshTargets()
-			toastManager.add({ title: "Scrape target deleted", type: "success" })
 			if (selectedTargetId === targetId) setSelectedTargetId(null)
-		} else {
-			toastManager.add({ title: "Failed to delete scrape target", type: "error" })
 		}
+		return ok
 	}
 
-	async function handleToggleEnabled(target: ScrapeTarget) {
-		setTogglingId(target.id)
+	const toggle = useKeyedAsyncAction(async (_id: ScrapeTargetId, target: ScrapeTarget) => {
 		const result = await updateMutation({
 			params: { id: target.id },
-			payload: {
-				enabled: !target.enabled,
-			},
+			payload: { enabled: !target.enabled },
 			reactivityKeys: ["scrapeTargets"],
 		})
-		if (!Exit.isSuccess(result)) {
-			toastManager.add({ title: "Failed to update scrape target", type: "error" })
-		} else {
-			refreshTargets()
-		}
-		setTogglingId(null)
-	}
+		if (toastExit(result, { error: "Failed to update scrape target" })) refreshTargets()
+	})
+	const handleToggleEnabled = (target: ScrapeTarget) => void toggle.run(target.id, target)
 
 	return (
 		<>
@@ -377,8 +331,8 @@ export function ScrapeTargetsSection({
 					<div className="flex items-center justify-between gap-3">
 						<p className="text-muted-foreground text-sm">{copy.description}</p>
 						<Button size="sm" className="shrink-0" onClick={openAddDialog}>
-							<PlusIcon size={14} />
-							Add Target
+							<PlusIcon data-icon="inline-start" />
+							Add target
 						</Button>
 					</div>
 				)}
@@ -406,8 +360,8 @@ export function ScrapeTargetsSection({
 							<IntegrationEmptyMedia />
 							<IntegrationEmptyHint>{copy.emptyHint}</IntegrationEmptyHint>
 							<Button onClick={openAddDialog}>
-								<PlusIcon size={16} />
-								Add Target
+								<PlusIcon data-icon="inline-start" />
+								Add target
 							</Button>
 							<DocsLink page="prometheus" />
 							<IntegrationEmptyFooter>{copy.emptyFooter}</IntegrationEmptyFooter>
@@ -415,14 +369,14 @@ export function ScrapeTargetsSection({
 					</IntegrationEmpty>
 				) : (
 					<div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
-						<div className="divide-y overflow-hidden rounded-lg border bg-card">
+						<Panel className="divide-y">
 							{targets.map((target) => (
 								<ScrapeTargetRow
 									key={target.id}
 									target={target}
 									selected={target.id === selectedTarget?.id}
-									toggling={togglingId === target.id}
-									probing={probingId === target.id}
+									toggling={toggle.isPending(target.id)}
+									probing={probe.isPending(target.id)}
 									onSelect={setSelectedTargetId}
 									onProbe={handleProbe}
 									onToggle={handleToggleEnabled}
@@ -430,173 +384,166 @@ export function ScrapeTargetsSection({
 									onDelete={setDeleteConfirmTarget}
 								/>
 							))}
-						</div>
+						</Panel>
 						{selectedTarget ? (
 							<ScrapeTargetDetails
 								target={selectedTarget}
-								probing={probingId === selectedTarget.id}
-								toggling={togglingId === selectedTarget.id}
+								probing={probe.isPending(selectedTarget.id)}
+								toggling={toggle.isPending(selectedTarget.id)}
 								onProbe={handleProbe}
 								onToggle={handleToggleEnabled}
 								onEdit={openEditDialog}
 								onDelete={setDeleteConfirmTarget}
 							/>
 						) : (
-							<div className="hidden rounded-lg border bg-card p-4 lg:block">
+							<Panel padded className="hidden lg:flex">
 								<div className="text-muted-foreground flex h-full min-h-[260px] flex-col items-center justify-center gap-2 text-center text-xs">
 									<CircleInfoIcon size={18} />
 									<span>Click a target to inspect scheduled checks.</span>
 								</div>
-							</div>
+							</Panel>
 						)}
 					</div>
 				)}
 			</div>
 
-			<Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-				<DialogContent>
-					<DialogHeader>
-						<DialogTitle>
-							{editingTarget ? "Edit Scrape Target" : "Add Scrape Target"}
-						</DialogTitle>
-						<DialogDescription>
-							{editingTarget
-								? "Update the scrape target configuration."
-								: "Enter the URL of a Prometheus exporter endpoint. Maple will periodically scrape this endpoint for metrics."}
-						</DialogDescription>
-					</DialogHeader>
-					<div className="space-y-4 px-6 py-2">
+			<FormDialog
+				open={dialogOpen}
+				onOpenChange={setDialogOpen}
+				title={editingTarget ? "Edit scrape target" : "Add scrape target"}
+				description={
+					editingTarget
+						? "Update the scrape target configuration."
+						: "Enter the URL of a Prometheus exporter endpoint. Maple will periodically scrape this endpoint for metrics."
+				}
+				onSubmit={() => void handleSave()}
+				submitLabel={editingTarget ? "Save changes" : "Add target"}
+				pending={isSaving}
+				submitDisabled={!formValid}
+			>
+				<Field>
+					<FieldLabel htmlFor="scrape-name">Name</FieldLabel>
+					<Input
+						id="scrape-name"
+						placeholder="e.g. Node Exporter"
+						value={formName}
+						onChange={(e) => setFormName(e.target.value)}
+					/>
+				</Field>
+				<Field>
+					<FieldLabel htmlFor="scrape-service-name">Service name</FieldLabel>
+					<Input
+						id="scrape-service-name"
+						placeholder="e.g. my-api-server"
+						value={formServiceName}
+						onChange={(e) => setFormServiceName(e.target.value)}
+					/>
+					<FieldDescription>
+						Metrics will appear under this service name. Defaults to the target name if empty.
+					</FieldDescription>
+				</Field>
+				<Field>
+					<FieldLabel htmlFor="scrape-url">URL</FieldLabel>
+					<Input
+						id="scrape-url"
+						placeholder="e.g. https://myapp.com:9090/metrics"
+						value={formUrl}
+						onChange={(e) => setFormUrl(e.target.value)}
+					/>
+				</Field>
+				<Field invalid={parsedInterval === null}>
+					<FieldLabel htmlFor="scrape-interval">Scrape interval (seconds)</FieldLabel>
+					<Input
+						id="scrape-interval"
+						type="number"
+						min={5}
+						max={300}
+						value={formInterval}
+						onChange={(e) => setFormInterval(e.target.value)}
+					/>
+					{parsedInterval === null ? (
+						<FieldError match>
+							Scrape interval must be an integer from 5 to 300 seconds.
+						</FieldError>
+					) : null}
+				</Field>
+				<Field>
+					<FieldLabel>Authentication</FieldLabel>
+					<Select
+						items={{ none: "None", bearer: "Bearer Token", basic: "Basic Auth" }}
+						value={formAuthType}
+						onValueChange={(val: string | null) => {
+							setFormAuthType(val === "bearer" || val === "basic" ? val : "none")
+							setFormAuthToken("")
+							setFormAuthUsername("")
+							setFormAuthPassword("")
+						}}
+					>
+						<SelectTrigger className="w-full">
+							<SelectValue placeholder="Select auth type" />
+						</SelectTrigger>
+						<SelectContent>
+							<SelectItem value="none">None</SelectItem>
+							<SelectItem value="bearer">Bearer Token</SelectItem>
+							<SelectItem value="basic">Basic Auth</SelectItem>
+						</SelectContent>
+					</Select>
+				</Field>
+				{formAuthType === "bearer" && (
+					<Field>
+						<FieldLabel htmlFor="scrape-auth-token">Bearer Token</FieldLabel>
+						<Input
+							id="scrape-auth-token"
+							type="password"
+							placeholder={
+								editingTarget?.has_credentials && editingTarget.auth_type === "bearer"
+									? "Leave blank to keep existing"
+									: "Enter bearer token"
+							}
+							value={formAuthToken}
+							onChange={(e) => setFormAuthToken(e.target.value)}
+						/>
+					</Field>
+				)}
+				{formAuthType === "basic" && (
+					<>
 						<Field>
-							<FieldLabel htmlFor="scrape-name">Name</FieldLabel>
+							<FieldLabel htmlFor="scrape-auth-username">Username</FieldLabel>
 							<Input
-								id="scrape-name"
-								placeholder="e.g. Node Exporter"
-								value={formName}
-								onChange={(e) => setFormName(e.target.value)}
+								id="scrape-auth-username"
+								placeholder={
+									editingTarget?.has_credentials && editingTarget.auth_type === "basic"
+										? "Leave blank to keep existing"
+										: "Enter username"
+								}
+								value={formAuthUsername}
+								onChange={(e) => setFormAuthUsername(e.target.value)}
 							/>
 						</Field>
 						<Field>
-							<FieldLabel htmlFor="scrape-service-name">Service Name</FieldLabel>
+							<FieldLabel htmlFor="scrape-auth-password">Password</FieldLabel>
 							<Input
-								id="scrape-service-name"
-								placeholder="e.g. my-api-server"
-								value={formServiceName}
-								onChange={(e) => setFormServiceName(e.target.value)}
-							/>
-							<FieldDescription>
-								Metrics will appear under this service name. Defaults to the target name if
-								empty.
-							</FieldDescription>
-						</Field>
-						<Field>
-							<FieldLabel htmlFor="scrape-url">URL</FieldLabel>
-							<Input
-								id="scrape-url"
-								placeholder="e.g. https://myapp.com:9090/metrics"
-								value={formUrl}
-								onChange={(e) => setFormUrl(e.target.value)}
+								id="scrape-auth-password"
+								type="password"
+								placeholder={
+									editingTarget?.has_credentials && editingTarget.auth_type === "basic"
+										? "Leave blank to keep existing"
+										: "Enter password"
+								}
+								value={formAuthPassword}
+								onChange={(e) => setFormAuthPassword(e.target.value)}
 							/>
 						</Field>
-						<Field>
-							<FieldLabel htmlFor="scrape-interval">Scrape Interval (seconds)</FieldLabel>
-							<Input
-								id="scrape-interval"
-								type="number"
-								min={5}
-								max={300}
-								value={formInterval}
-								onChange={(e) => setFormInterval(e.target.value)}
-							/>
-						</Field>
-						<Field>
-							<FieldLabel>Authentication</FieldLabel>
-							<Select
-								items={{ none: "None", bearer: "Bearer Token", basic: "Basic Auth" }}
-								value={formAuthType}
-								onValueChange={(val: string | null) => {
-									setFormAuthType((val as ScrapeAuthType | null) ?? "none")
-									setFormAuthToken("")
-									setFormAuthUsername("")
-									setFormAuthPassword("")
-								}}
-							>
-								<SelectTrigger className="w-full">
-									<SelectValue placeholder="Select auth type" />
-								</SelectTrigger>
-								<SelectContent>
-									<SelectItem value="none">None</SelectItem>
-									<SelectItem value="bearer">Bearer Token</SelectItem>
-									<SelectItem value="basic">Basic Auth</SelectItem>
-								</SelectContent>
-							</Select>
-						</Field>
-						{formAuthType === "bearer" && (
-							<Field>
-								<FieldLabel htmlFor="scrape-auth-token">Bearer Token</FieldLabel>
-								<Input
-									id="scrape-auth-token"
-									type="password"
-									placeholder={
-										editingTarget?.has_credentials && editingTarget.auth_type === "bearer"
-											? "Leave blank to keep existing"
-											: "Enter bearer token"
-									}
-									value={formAuthToken}
-									onChange={(e) => setFormAuthToken(e.target.value)}
-								/>
-							</Field>
-						)}
-						{formAuthType === "basic" && (
-							<>
-								<Field>
-									<FieldLabel htmlFor="scrape-auth-username">Username</FieldLabel>
-									<Input
-										id="scrape-auth-username"
-										placeholder={
-											editingTarget?.has_credentials &&
-											editingTarget.auth_type === "basic"
-												? "Leave blank to keep existing"
-												: "Enter username"
-										}
-										value={formAuthUsername}
-										onChange={(e) => setFormAuthUsername(e.target.value)}
-									/>
-								</Field>
-								<Field>
-									<FieldLabel htmlFor="scrape-auth-password">Password</FieldLabel>
-									<Input
-										id="scrape-auth-password"
-										type="password"
-										placeholder={
-											editingTarget?.has_credentials &&
-											editingTarget.auth_type === "basic"
-												? "Leave blank to keep existing"
-												: "Enter password"
-										}
-										value={formAuthPassword}
-										onChange={(e) => setFormAuthPassword(e.target.value)}
-									/>
-								</Field>
-							</>
-						)}
-					</div>
-					<DialogFooter>
-						<Button variant="outline" onClick={() => setDialogOpen(false)} disabled={isSaving}>
-							Cancel
-						</Button>
-						<Button onClick={handleSave} loading={isSaving}>
-							{editingTarget ? "Save Changes" : "Add Target"}
-						</Button>
-					</DialogFooter>
-				</DialogContent>
-			</Dialog>
+					</>
+				)}
+			</FormDialog>
 
 			<ConfirmDialog
 				open={deleteConfirmTarget !== null}
 				onOpenChange={(open) => {
 					if (!open) setDeleteConfirmTarget(null)
 				}}
-				title="Delete scrape target"
+				title="Delete scrape target?"
 				description={
 					<>
 						Are you sure you want to delete{" "}
@@ -605,10 +552,7 @@ export function ScrapeTargetsSection({
 					</>
 				}
 				confirmLabel="Delete"
-				onConfirm={() => {
-					// handleDelete clears the target, which closes the dialog.
-					if (deleteConfirmTarget) void handleDelete(deleteConfirmTarget.id)
-				}}
+				onConfirm={() => (deleteConfirmTarget ? handleDelete(deleteConfirmTarget.id) : undefined)}
 			/>
 		</>
 	)
@@ -721,35 +665,25 @@ function ScrapeTargetRow({
 			</Button>
 
 			<div onClick={(event) => event.stopPropagation()}>
-				<DropdownMenu>
-					<DropdownMenuTrigger
-						render={
-							<Button
-								variant="ghost"
-								size="icon-sm"
-								className="text-muted-foreground hover:text-foreground shrink-0"
-							/>
-						}
+				<RowActionsMenu
+					label={`Actions for ${target.name}`}
+					className="text-muted-foreground hover:text-foreground shrink-0"
+				>
+					{/* Managed targets are edited/removed through the owning integration card. */}
+					<DropdownMenuItem disabled={target.managed_by != null} onClick={() => onEdit(target)}>
+						<PencilIcon size={14} />
+						Edit
+					</DropdownMenuItem>
+					<DropdownMenuSeparator />
+					<DropdownMenuItem
+						variant="destructive"
+						disabled={target.managed_by != null}
+						onClick={() => onDelete(target)}
 					>
-						<DotsVerticalIcon size={14} />
-					</DropdownMenuTrigger>
-					<DropdownMenuContent align="end">
-						{/* Managed targets are edited/removed through the owning integration card. */}
-						<DropdownMenuItem disabled={target.managed_by != null} onClick={() => onEdit(target)}>
-							<PencilIcon size={14} />
-							Edit
-						</DropdownMenuItem>
-						<DropdownMenuSeparator />
-						<DropdownMenuItem
-							variant="destructive"
-							disabled={target.managed_by != null}
-							onClick={() => onDelete(target)}
-						>
-							<TrashIcon size={14} />
-							Delete
-						</DropdownMenuItem>
-					</DropdownMenuContent>
-				</DropdownMenu>
+						<TrashIcon size={14} />
+						Delete
+					</DropdownMenuItem>
+				</RowActionsMenu>
 			</div>
 		</div>
 	)
@@ -788,9 +722,10 @@ function ScrapeTargetDetails({
 	const failureMessage =
 		latestCheck && !latestCheck.success ? latestCheck.message : target.last_scrape_error
 	const diagnosis = diagnoseScrapeError(failureMessage, target.target_type)
+	const formatDateTime = useFormatDateTime()
 
 	return (
-		<aside className="rounded-lg border bg-card">
+		<Panel>
 			<div className="space-y-3 border-b p-4">
 				<div className="flex items-start justify-between gap-3">
 					<div className="min-w-0">
@@ -851,7 +786,7 @@ function ScrapeTargetDetails({
 								</ul>
 							</div>
 							{failureMessage && (
-								<p className="font-mono text-[0.7rem] text-muted-foreground/80">
+								<p className="font-mono text-2xs text-muted-foreground/80">
 									{failureMessage}
 								</p>
 							)}
@@ -862,24 +797,30 @@ function ScrapeTargetDetails({
 				<section className="space-y-2">
 					<Eyebrow variant="label" className="flex items-center gap-2" as="div">
 						<PulseIcon size={13} />
-						Scheduled Scrape
+						Scheduled scrape
 					</Eyebrow>
 					<div className="grid grid-cols-2 gap-2 text-xs">
 						<MetricBox label="Interval" value={`${target.scrape_interval_seconds}s`} />
 						<MetricBox
 							label="Duration"
-							value={latestCheck ? formatDurationSeconds(latestCheck.duration_seconds) : "-"}
+							value={
+								latestCheck
+									? formatDurationSeconds(latestCheck.duration_seconds)
+									: EMPTY_VALUE
+							}
 						/>
 						<MetricBox
 							label="Samples"
-							value={latestCheck ? formatOptionalCount(latestCheck.samples_scraped) : "-"}
+							value={
+								latestCheck ? formatOptionalCount(latestCheck.samples_scraped) : EMPTY_VALUE
+							}
 						/>
 						<MetricBox
 							label="Post relabel"
 							value={
 								latestCheck
 									? formatOptionalCount(latestCheck.samples_post_metric_relabeling)
-									: "-"
+									: EMPTY_VALUE
 							}
 						/>
 					</div>
@@ -919,7 +860,7 @@ function ScrapeTargetDetails({
 					<div className="flex items-center justify-between gap-3">
 						<Eyebrow variant="label" className="flex items-center gap-2" as="div">
 							<HistoryIcon size={13} />
-							Check History
+							Check history
 						</Eyebrow>
 						{latestCheck && (
 							<RelativeTime
@@ -932,16 +873,16 @@ function ScrapeTargetDetails({
 					<ScrapeTargetChecksTable result={checksResult} checks={checks} />
 				</section>
 			</div>
-		</aside>
+		</Panel>
 	)
 }
 
 function MetricBox({ label, value }: { label: string; value: string }) {
 	return (
-		<div className="rounded-md border bg-background/35 px-3 py-2">
+		<Panel tone="background" className="px-3 py-2">
 			<Eyebrow as="div">{label}</Eyebrow>
 			<div className="mt-1 font-mono text-sm">{value}</div>
-		</div>
+		</Panel>
 	)
 }
 
@@ -952,6 +893,7 @@ export function ScrapeTargetChecksTable({
 	result: ScrapeTargetChecksResult
 	checks: ScrapeTargetCheck[]
 }) {
+	const formatDateTime = useFormatDateTime()
 	if (Result.isInitial(result)) {
 		return <SkeletonList rows={3} gap="2" />
 	}
@@ -967,7 +909,7 @@ export function ScrapeTargetChecksTable({
 	}
 
 	return (
-		<div className="overflow-hidden rounded-md border bg-background/35">
+		<Panel tone="background">
 			<Table size="sm">
 				<TableHeader>
 					<TableRow>
@@ -1017,6 +959,6 @@ export function ScrapeTargetChecksTable({
 					))}
 				</TableBody>
 			</Table>
-		</div>
+		</Panel>
 	)
 }

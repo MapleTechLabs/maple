@@ -2,6 +2,7 @@ import * as React from "react"
 
 import type { QueryBuilderFunnelChartProps } from "../_shared/chart-types"
 import { cn } from "../../../lib/utils"
+import { Eyebrow } from "../../ui/eyebrow"
 import { EMPTY_VALUE, formatNumber, formatPercent, formatValueByUnit } from "../../../lib/format"
 import { TONE_TEXT } from "../../../lib/tone"
 import { asFiniteNumber, pickValueField, toBreakdownRows } from "../_shared/breakdown-rows"
@@ -426,7 +427,11 @@ export function FunnelDropoffChart({ data, className, unit, showStepPercent }: Q
 						icon={<ArrowDownIcon size={12} className={TONE_TEXT.crit} />}
 						label="dropped"
 						value={fmtValue(hovered.dropped, unit)}
-						share={hoveredPrev.value > 0 ? formatPercent(hovered.dropped / hoveredPrev.value) : EMPTY_VALUE}
+						share={
+							hoveredPrev.value > 0
+								? formatPercent(hovered.dropped / hoveredPrev.value)
+								: EMPTY_VALUE
+						}
 						shareClass={TONE_TEXT.crit}
 					/>
 					{hovered.p50Ms !== undefined && (
@@ -441,10 +446,10 @@ export function FunnelDropoffChart({ data, className, unit, showStepPercent }: Q
 					{hovered.leavers.length > 0 && hovered.dropped > 0 && (
 						<>
 							<div className="-mx-2.5 my-1.5 h-px bg-border" />
-							<div className="mb-1 flex items-center gap-1.5 text-3xs font-medium tracking-wider text-muted-foreground uppercase">
+							<Eyebrow as="div" className="mb-1 flex items-center gap-1.5">
 								<ArrowDownIcon size={10} className={TONE_TEXT.crit} />
 								Dropped here went to
-							</div>
+							</Eyebrow>
 							{leaverRows(hovered.leavers, hovered.dropped).map((entry) => (
 								<div key={entry.name} className="my-0.5">
 									<div className="flex items-center gap-2">

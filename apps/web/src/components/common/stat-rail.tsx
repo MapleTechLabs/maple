@@ -183,9 +183,7 @@ export function StatRailItem({
 					<div className="h-7 w-24 min-w-0 shrink" />
 				)}
 			</div>
-			{subline ? (
-				<div className="mt-2 truncate text-2xs text-muted-foreground">{subline}</div>
-			) : null}
+			{subline ? <div className="mt-2 truncate text-2xs text-muted-foreground">{subline}</div> : null}
 		</>
 	)
 

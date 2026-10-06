@@ -5,13 +5,15 @@ import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import type { CatalogPlan } from "@maple/domain/http"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
+import { Panel } from "@maple/ui/components/ui/panel"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { cn } from "@maple/ui/lib/utils"
 
 import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
 import { billingCustomerAtom, billingPlansAtom } from "@/lib/services/atoms/billing-atoms"
 import { useBillingActions } from "@/hooks/use-billing-actions"
-import { displayError } from "@/lib/error-messages"
+import { showErrorToast } from "@/lib/error-toast"
+import { formatCount } from "@/lib/billing/usage"
 import { getTrialStatus } from "@/lib/billing/plan-gating"
 import { buildCheckoutSuccessUrl } from "@/lib/billing/checkout-return"
 import { useCheckoutReturn } from "@/hooks/use-checkout-return"
@@ -24,7 +26,7 @@ import { ErrorState } from "@/components/common/error-state"
  * The plans section: one offer, not a tier ladder.
  *
  * `apps/api/autumn.config.ts` sells exactly one self-serve plan, so a card-per-
- * tier grid manufactured a choice that doesn't exist — the same conclusion
+ * tier grid manufactured a choice that doesn't exist: the same conclusion
  * `apps/landing/src/components/PricingTable.astro` reached for marketing. This is
  * the in-app version of that layout: a plate for the offer, and Enterprise as a
  * one-line rail beneath it rather than a peer card that competes with it.
@@ -38,26 +40,26 @@ const ENTERPRISE_FROM_PRICE = "From $2,000"
 
 const includedRun = (plan: CatalogPlan): string =>
 	plan.items
-		.filter((item) => item.featureId && item.included != null)
-		.map((item) => {
-			const unit = featureUnit(item.featureId as string)
-			const amount = Number(item.included).toLocaleString()
-			return unit === "GB" ? `${amount} GB ${item.featureId}` : `${amount} ${unit}`
+		.flatMap((item) => {
+			if (!item.featureId || item.included == null) return []
+			const unit = featureUnit(item.featureId)
+			const amount = formatCount(Number(item.included))
+			return [unit === "GB" ? `${amount} GB ${item.featureId}` : `${amount} ${unit}`]
 		})
 		.join(" · ")
 
 export function PlanOfferSkeleton() {
 	return (
 		<div className="space-y-3">
-			<Skeleton className="h-32 w-full rounded-none" />
-			<Skeleton className="h-16 w-full rounded-none" />
+			<Skeleton className="h-32 w-full rounded-md" />
+			<Skeleton className="h-16 w-full rounded-md" />
 		</div>
 	)
 }
 
 /**
  * The plan a custom-priced customer is actually on, rendered as their current
- * plan. Their plan is not for sale, so it can never come from the catalog — the
+ * plan. Their plan is not for sale, so it can never come from the catalog; the
  * numbers here are their own, from the expanded subscription plus balances.
  */
 function CustomPlanPlate({ model, onManageBilling }: { model: SpendModel; onManageBilling: () => void }) {
@@ -73,7 +75,7 @@ function CustomPlanPlate({ model, onManageBilling }: { model: SpendModel; onMana
 		.map((feature) =>
 			feature.unlimited
 				? `unlimited ${feature.label.toLowerCase()}`
-				: `${Number(feature.included).toLocaleString()} ${featureUnit(feature.featureId) === "GB" ? "GB" : ""} ${feature.label.toLowerCase()}`.replace(
+				: `${formatCount(Number(feature.included))} ${featureUnit(feature.featureId) === "GB" ? "GB" : ""} ${feature.label.toLowerCase()}`.replace(
 						/\s+/g,
 						" ",
 					),
@@ -81,7 +83,10 @@ function CustomPlanPlate({ model, onManageBilling }: { model: SpendModel; onMana
 		.join(" · ")
 
 	return (
-		<div className="flex flex-col gap-6 border border-primary/40 bg-primary/[0.03] p-5 lg:flex-row lg:items-start lg:justify-between">
+		<Panel
+			padded
+			className="gap-6 border-primary/40 bg-primary/[0.03] lg:flex-row lg:items-start lg:justify-between"
+		>
 			<div className="max-w-sm">
 				<div className="flex items-center gap-2">
 					<span className="text-sm">{model.planName ?? "Your plan"}</span>
@@ -103,8 +108,8 @@ function CustomPlanPlate({ model, onManageBilling }: { model: SpendModel; onMana
 				</div>
 				<p className="mt-3 text-2xs leading-relaxed text-muted-foreground">
 					{billsUsage
-						? "A custom plan — your allotments and rates are your own, not the published ones."
-						: "A custom plan with hard caps — usage past your allotments is rejected, never billed."}
+						? "A custom plan: your allotments and rates are your own, not the published ones."
+						: "A custom plan with hard caps: usage past your allotments is rejected, never billed."}
 				</p>
 			</div>
 
@@ -121,7 +126,7 @@ function CustomPlanPlate({ model, onManageBilling }: { model: SpendModel; onMana
 				</Button>
 				<p className="text-center text-2xs text-muted-foreground">Invoices and payment method</p>
 			</div>
-		</div>
+		</Panel>
 	)
 }
 
@@ -160,24 +165,26 @@ export function PlanOffer({
 	// would quote them a price they don't pay.
 	const showCustomPlate = model?.isCustomPlan === true && model.planName !== null
 
-	async function handleSubscribe(planId: string) {
+	function handleSubscribe(planId: string) {
 		setAttaching(planId)
-		try {
-			const result = await attach({ planId, successUrl: buildCheckoutSuccessUrl(window.location.href) })
-			if (result.paymentUrl) {
-				// Keep the button disabled through the redirect — see the note in
-				// pricing-cards.tsx. Clearing it here invites the double-click that
-				// Autumn answers with a 409.
-				window.location.href = result.paymentUrl
-				return
-			}
-			toastManager.add({ title: "Plan updated successfully.", type: "success" })
-			refreshCustomer()
-			setAttaching(null)
-		} catch (error) {
-			toastManager.add({ title: displayError(error).message, type: "error" })
-			setAttaching(null)
-		}
+		return attach({ planId, successUrl: buildCheckoutSuccessUrl(window.location.href) }).then(
+			(result) => {
+				if (result.paymentUrl) {
+					// Keep the button disabled through the redirect (see the note in
+					// pricing-cards.tsx). Clearing it here invites the double-click that
+					// Autumn answers with a 409.
+					window.location.href = result.paymentUrl
+					return
+				}
+				toastManager.add({ title: "Plan updated successfully.", type: "success" })
+				refreshCustomer()
+				setAttaching(null)
+			},
+			(error: unknown) => {
+				showErrorToast(error, { title: "Couldn't update your plan" })
+				setAttaching(null)
+			},
+		)
 	}
 
 	return (
@@ -191,11 +198,12 @@ export function PlanOffer({
 				const retention = platformFeatures.find((feature) => feature.label === "Data retention")
 
 				return (
-					<div
+					<Panel
 						key={plan.id}
+						padded
 						className={cn(
-							"flex flex-col gap-6 border p-5 lg:flex-row lg:items-start lg:justify-between",
-							isActive ? "border-primary/40 bg-primary/[0.03]" : "border-border/60 bg-card/40",
+							"gap-6 lg:flex-row lg:items-start lg:justify-between",
+							isActive && "border-primary/40 bg-primary/[0.03]",
 						)}
 					>
 						<div className="max-w-sm">
@@ -271,14 +279,17 @@ export function PlanOffer({
 								{isActive ? "Invoices and payment method" : "$0 due today · cancel anytime"}
 							</p>
 						</div>
-					</div>
+					</Panel>
 				)
 			})}
 
 			{/* Enterprise is a rail, not a peer: it keeps the "From $2,000" anchor
 			    that makes the self-serve price read as small, without spending a
 			    full card of attention on a call-us flow. */}
-			<div className="flex flex-col gap-4 border border-primary/25 bg-primary/[0.04] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+			<Panel
+				padded
+				className="gap-4 border-primary/25 bg-primary/[0.04] sm:flex-row sm:items-center sm:justify-between"
+			>
 				<div>
 					<Eyebrow className="text-primary">Enterprise</Eyebrow>
 					<p className="mt-1.5 max-w-[48ch] text-2xs leading-relaxed text-foreground/85">
@@ -298,7 +309,7 @@ export function PlanOffer({
 						Talk to the founder →
 					</Button>
 				</div>
-			</div>
+			</Panel>
 		</div>
 	)
 }

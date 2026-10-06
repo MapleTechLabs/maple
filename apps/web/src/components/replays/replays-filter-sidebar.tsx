@@ -17,6 +17,7 @@ import {
 	nextTagSelection,
 	sessionTagsFromSearch,
 } from "@/components/replays/session-tags"
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import { SearchInput } from "@maple/ui/components/ui/search-input"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Separator } from "@maple/ui/components/ui/separator"
@@ -347,9 +348,9 @@ export function ReplaysFilterSidebar({ facetsResult }: ReplaysFilterSidebarProps
 							/>
 
 							{!hasFacets && (
-								<p className="py-4 text-sm text-muted-foreground">
+								<EmptyMessage className="px-0 py-4">
 									No sessions in the selected time range
-								</p>
+								</EmptyMessage>
 							)}
 						</FilterSidebarBody>
 					</FilterSidebarFrame>

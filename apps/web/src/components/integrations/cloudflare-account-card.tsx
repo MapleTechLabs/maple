@@ -57,7 +57,7 @@ interface ConnectedAccountEntry {
 function CloudflareAccountsStrip({ accounts }: { readonly accounts: ReadonlyArray<ConnectedAccountEntry> }) {
 	if (accounts.length < 2) return null
 	return (
-		<Panel className="rounded-lg border-border/60">
+		<Panel className="border-border/60">
 			<PanelHeader title={`Connected accounts (${accounts.length})`} className="border-border/60" />
 			<ul className="divide-y divide-border/60">
 				{accounts.map((account) => (

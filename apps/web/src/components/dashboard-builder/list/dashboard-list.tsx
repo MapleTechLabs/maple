@@ -1,13 +1,15 @@
 import { useMemo, useState } from "react"
 import { Link } from "@tanstack/react-router"
 
-import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
-import { ToolbarSearch } from "@maple/ui/components/toolbar"
+import { Toolbar, ToolbarSearch } from "@maple/ui/components/toolbar"
 import { Button } from "@maple/ui/components/ui/button"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { MultiSelectCombobox } from "@maple/ui/components/multi-select-combobox"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
+import { IconButton } from "@maple/ui/components/ui/icon-button"
+import { RowActionsMenu } from "@maple/ui/components/ui/row-actions-menu"
+import { RelativeTime } from "@/components/common/relative-time"
 
 import {
 	DropdownMenu,
@@ -28,7 +30,6 @@ import {
 	ChartBarIcon,
 	CircleWarningIcon,
 	CodeIcon,
-	DotsIcon,
 	FileIcon,
 	GridIcon,
 	MagnifierIcon,
@@ -159,10 +160,7 @@ function DashboardRow({
 				    made the row crowded without changing any decision. */}
 				<span title={reads.full} className="hidden w-40 shrink-0 flex-col items-end sm:flex">
 					<span
-						className={cn(
-							"font-mono text-2xs",
-							empty ? "text-severity-warn" : "text-foreground",
-						)}
+						className={cn("font-mono text-2xs", empty ? "text-severity-warn" : "text-foreground")}
 					>
 						{empty ? "no widgets" : widgetCountLabel(dashboard)}
 					</span>
@@ -171,24 +169,27 @@ function DashboardRow({
 					</span>
 				</span>
 
-				<span className="text-muted-foreground w-24 shrink-0 text-right font-mono text-2xs">
-					{formatRelativeTimeOrDate(dashboard.updatedAt)}
-				</span>
+				<RelativeTime
+					value={dashboard.updatedAt}
+					variant="orDate"
+					mono
+					tooltip="title"
+					className="text-muted-foreground w-24 shrink-0 text-right text-2xs"
+				/>
 			</Link>
 
 			{/* Always rendered, low-contrast when off: a hover-only star hides the
 			    primary organising affordance from touch and keyboard users. */}
 			<div className="flex shrink-0 items-center gap-0.5 pr-2 pl-1">
-				<Button
-					variant="ghost"
+				<IconButton
 					size="icon-xs"
-					aria-label={isFavorite ? `Unstar ${dashboard.name}` : `Star ${dashboard.name}`}
+					label={isFavorite ? `Unstar ${dashboard.name}` : `Star ${dashboard.name}`}
 					aria-pressed={isFavorite}
 					onClick={() => onToggleFavorite(dashboard.id)}
 					className={isFavorite ? "text-primary" : "text-muted-foreground/40"}
 				>
 					{isFavorite ? <StarFilledIcon size={14} /> : <StarIcon size={14} />}
-				</Button>
+				</IconButton>
 				<DashboardRowMenu
 					dashboard={dashboard}
 					readOnly={readOnly}
@@ -218,53 +219,39 @@ function DashboardRowMenu({
 	onEditTags: (dashboard: Dashboard) => void
 }) {
 	return (
-		<DropdownMenu>
-			<DropdownMenuTrigger
-				render={
-					<Button
-						variant="ghost"
-						size="icon-xs"
-						aria-label={`More actions for ${dashboard.name}`}
-						className="text-muted-foreground"
-					/>
-				}
-			>
-				<DotsIcon size={14} />
-			</DropdownMenuTrigger>
-			<DropdownMenuContent align="end">
-				<DropdownMenuGroup>
-					{/* Export reads the payload the list already holds, so it survives a
-					    persistence error. Duplicate and delete write, so they don't. */}
-					<DropdownMenuItem onClick={() => onExport(dashboard)}>Export JSON</DropdownMenuItem>
-					<DropdownMenuItem disabled={readOnly} onClick={() => onDuplicate(dashboard)}>
-						Duplicate
-					</DropdownMenuItem>
-					{/* Editing, not display: the row deliberately carries no tag chips
-					    (see the row comment above), so this is the only way in from here. */}
-					<DropdownMenuItem disabled={readOnly} onClick={() => onEditTags(dashboard)}>
-						Edit tags…
-					</DropdownMenuItem>
-					<DropdownMenuSeparator />
-					<DropdownMenuItem
-						disabled={readOnly}
-						variant="destructive"
-						onClick={() => onDelete(dashboard)}
-					>
-						Delete…
-					</DropdownMenuItem>
-					{/* States the reason in the menu itself. A Tooltip here would need a
-					    wrapper element, which breaks the menu's roving-index nav. */}
-					{readOnly && (
-						<>
-							<DropdownMenuSeparator />
-							<DropdownMenuLabel className="font-normal text-3xs leading-snug">
-								Dashboard store unreachable — writes are disabled
-							</DropdownMenuLabel>
-						</>
-					)}
-				</DropdownMenuGroup>
-			</DropdownMenuContent>
-		</DropdownMenu>
+		<RowActionsMenu label={`More actions for ${dashboard.name}`} className="text-muted-foreground">
+			<DropdownMenuGroup>
+				{/* Export reads the payload the list already holds, so it survives a
+				    persistence error. Duplicate and delete write, so they don't. */}
+				<DropdownMenuItem onClick={() => onExport(dashboard)}>Export JSON</DropdownMenuItem>
+				<DropdownMenuItem disabled={readOnly} onClick={() => onDuplicate(dashboard)}>
+					Duplicate
+				</DropdownMenuItem>
+				{/* Editing, not display: the row deliberately carries no tag chips
+				    (see the row comment above), so this is the only way in from here. */}
+				<DropdownMenuItem disabled={readOnly} onClick={() => onEditTags(dashboard)}>
+					Edit tags…
+				</DropdownMenuItem>
+				<DropdownMenuSeparator />
+				<DropdownMenuItem
+					disabled={readOnly}
+					variant="destructive"
+					onClick={() => onDelete(dashboard)}
+				>
+					Delete…
+				</DropdownMenuItem>
+				{/* States the reason in the menu itself. A Tooltip here would need a
+				    wrapper element, which breaks the menu's roving-index nav. */}
+				{readOnly && (
+					<>
+						<DropdownMenuSeparator />
+						<DropdownMenuLabel className="font-normal text-3xs leading-snug">
+							Dashboard store unreachable — writes are disabled
+						</DropdownMenuLabel>
+					</>
+				)}
+			</DropdownMenuGroup>
+		</RowActionsMenu>
 	)
 }
 
@@ -365,7 +352,7 @@ export function DashboardList({
 		// otherwise compress below its content, spilling the rows past its own
 		// box so the bottom padding lands behind them instead of after them.
 		<div className="flex shrink-0 flex-col pb-6">
-			<div className="flex flex-wrap items-center gap-2 pb-3">
+			<Toolbar className="justify-start gap-2 border-b-0 px-0 pt-0">
 				<ToolbarSearch
 					query={query}
 					onSearch={onQueryChange}
@@ -390,7 +377,7 @@ export function DashboardList({
 						? `${scoped} of ${dashboards.length}`
 						: `${dashboards.length} of ${dashboards.length}`}
 				</span>
-			</div>
+			</Toolbar>
 
 			{filtering && !nothingAtAll && (
 				<div className="flex items-center gap-2 border-y border-border py-2 text-2xs">
@@ -602,9 +589,7 @@ function TagFilterMenu({
 				<>
 					Tags
 					{selected.length > 0 && (
-						<Badge className="ml-1.5 h-4 px-1.5 py-0 font-mono text-4xs">
-							{selected.length}
-						</Badge>
+						<Badge className="ml-1.5 h-4 px-1.5 py-0 font-mono text-4xs">{selected.length}</Badge>
 					)}
 				</>
 			}

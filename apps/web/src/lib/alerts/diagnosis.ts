@@ -6,6 +6,7 @@ import type {
 	AlertRuleDocument,
 } from "@maple/domain/http"
 import { formatRelativeFrom } from "@maple/ui/lib/time-format"
+import { countLabel } from "@maple/ui/lib/format"
 import type { AlertRuleStateRow } from "@/lib/collections/alerts"
 import { comparatorLabels, formatSignalValue } from "@/lib/alerts/form-utils"
 import { staleThresholdMs } from "@/lib/alerts/rule-status"
@@ -162,7 +163,7 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 			id: "query",
 			label: "Query succeeded",
 			status: "warn",
-			summary: `${errorChecks.length} failed evaluation${errorChecks.length === 1 ? "" : "s"} in this window (recovered since)`,
+			summary: `${countLabel(errorChecks.length, "failed evaluation")} in this window (recovered since)`,
 			evidence: errorChecks[0]?.errorMessage != null ? [errorChecks[0].errorMessage] : [],
 		})
 	} else {

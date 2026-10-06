@@ -1,4 +1,8 @@
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
 import { cn } from "@maple/ui/lib/utils"
+
+import { XmarkIcon } from "@/components/icons"
 
 /** One removable piece of the current scope. */
 export interface ToolScopeChip {
@@ -46,25 +50,29 @@ export function ToolScopeRow({
 			)}
 		>
 			<div className="flex flex-wrap items-center gap-2">
-				<span className="text-2xs tracking-[0.06em] text-muted-foreground/60">SCOPE</span>
+				<Eyebrow variant="mono">Scope</Eyebrow>
 				{chips.length === 0 ? (
 					<span className="text-2xs text-muted-foreground/60">all tools · all models</span>
 				) : (
 					<>
 						{chips.map((chip) => (
-							<button
-								key={`${chip.kind}:${chip.value}`}
-								type="button"
-								onClick={() => onRemove(chip)}
-								title={`Remove ${chip.kind} ${chip.value}`}
-								className="inline-flex h-[22px] max-w-64 items-center gap-[5px] rounded-sm border border-primary/35 bg-primary/10 px-2 transition-colors hover:bg-primary/20"
-							>
-								<span className="text-2xs text-muted-foreground">{chip.kind}</span>
-								<span className="truncate text-2xs text-primary">{chip.value}</span>
-								<span aria-hidden className="text-2xs text-muted-foreground">
-									✕
-								</span>
-							</button>
+							<Tooltip key={`${chip.kind}:${chip.value}`}>
+								<TooltipTrigger
+									render={<button type="button" />}
+									aria-label={`Remove ${chip.kind} ${chip.value}`}
+									onClick={() => onRemove(chip)}
+									className="inline-flex h-[22px] max-w-64 items-center gap-[5px] rounded-sm border border-primary/35 bg-primary/10 px-2 transition-colors hover:bg-primary/20"
+								>
+									<span className="text-2xs text-muted-foreground">{chip.kind}</span>
+									<span className="truncate text-2xs text-primary">{chip.value}</span>
+									<XmarkIcon
+										size={10}
+										aria-hidden
+										className="shrink-0 text-muted-foreground"
+									/>
+								</TooltipTrigger>
+								<TooltipContent>{`Remove ${chip.kind} ${chip.value}`}</TooltipContent>
+							</Tooltip>
 						))}
 						<button
 							type="button"

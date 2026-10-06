@@ -59,6 +59,7 @@ import {
 	useSidebar,
 } from "@maple/ui/components/ui/sidebar"
 import { Badge } from "@maple/ui/components/ui/badge"
+import { ROW_LANE } from "@maple/ui/components/ui/list-row"
 import { Kbd } from "@maple/ui/components/ui/kbd"
 import { isClerkAuthEnabled } from "@/lib/services/common/auth-mode"
 import { clearSelfHostedSessionToken } from "@/lib/services/common/self-hosted-auth"
@@ -75,8 +76,7 @@ import { useInfraSurfaces } from "@/hooks/use-infra-surfaces"
  * tokens.css and consumed by nothing before this; it is the one thing that
  * distinguishes "selected" from "hovered", which otherwise share a fill.
  */
-const RAIL_LANE = "relative before:absolute before:inset-y-0 before:left-0 before:w-0.5"
-const ACTIVE_RAIL = `${RAIL_LANE} data-[active=true]:rounded-l-none data-[active=true]:before:bg-sidebar-primary data-[active=true]:text-sidebar-primary`
+const ACTIVE_RAIL = `${ROW_LANE} data-[active=true]:rounded-l-none data-[active=true]:before:bg-sidebar-primary data-[active=true]:text-sidebar-primary`
 
 /** Group labels sit below the items they name, not level with them. */
 const GROUP_LABEL = "h-6 text-muted-foreground"
@@ -363,7 +363,7 @@ function NavRow({
 	return (
 		<SidebarMenuItem>
 			<SidebarMenuButton
-				className={isOpen ? RAIL_LANE : ACTIVE_RAIL}
+				className={isOpen ? ROW_LANE : ACTIVE_RAIL}
 				isActive={isActive}
 				render={<Link to={item.href} />}
 				tooltip={item.title}

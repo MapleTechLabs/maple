@@ -96,7 +96,7 @@ export function HostTable({ hosts, waiting }: HostTableProps) {
 				>
 					<div className="w-0 min-w-[260px] flex-1">
 						<div className="flex items-center gap-2">
-							<span className="truncate font-mono text-[13px] font-medium text-foreground transition-colors group-hover:text-primary">
+							<span className="truncate font-mono text-xs font-medium text-foreground transition-colors group-hover:text-primary">
 								{host.hostName}
 							</span>
 							<HostStatusBadge quiet lastSeen={host.lastSeen} />
@@ -120,7 +120,7 @@ export function HostTable({ hosts, waiting }: HostTableProps) {
 							]}
 						/>
 					</div>
-					<div className="hidden w-[80px] text-right font-mono text-[12px] tabular-nums text-foreground/80 lg:block">
+					<div className="hidden w-[80px] text-right font-mono text-xs tabular-nums text-foreground/80 lg:block">
 						{formatLoad(host.load15)}
 					</div>
 					<div className="w-[100px] text-right">

@@ -6,7 +6,10 @@ import type { CatalogPlan, CatalogPlanItem } from "@maple/domain/http"
 import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
 import { billingCustomerAtom, billingPlansAtom } from "@/lib/services/atoms/billing-atoms"
 import { useBillingActions } from "@/hooks/use-billing-actions"
-import { displayError } from "@/lib/error-messages"
+import { showErrorToast } from "@/lib/error-toast"
+import { formatCount } from "@/lib/billing/usage"
+import { useTimezonePreference } from "@/hooks/use-timezone-preference"
+import { formatDateInTimezone } from "@/lib/timezone-format"
 import { getTrialStatus } from "@/lib/billing/plan-gating"
 import { buildCheckoutSuccessUrl } from "@/lib/billing/checkout-return"
 import { useCheckoutReturn } from "@/hooks/use-checkout-return"
@@ -29,16 +32,9 @@ import {
 import { Button } from "@maple/ui/components/ui/button"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { KeyValue, KeyValueList } from "@maple/ui/components/ui/key-value"
+import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
 import { Separator } from "@maple/ui/components/ui/separator"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import {
-	Dialog,
-	DialogContent,
-	DialogHeader,
-	DialogTitle,
-	DialogDescription,
-	DialogFooter,
-} from "@maple/ui/components/ui/dialog"
 import {
 	FileIcon,
 	PulseIcon,
@@ -119,7 +115,7 @@ function formatIncludedUsage(item: PlanItem): string {
 	if (item.unlimited) return "Unlimited"
 	if (item.included != null) {
 		const unit = (item.featureId ? COUNT_UNITS[item.featureId] : undefined) ?? "GB"
-		return `${Number(item.included).toLocaleString()} ${unit}`
+		return `${formatCount(Number(item.included))} ${unit}`
 	}
 	return ""
 }
@@ -220,9 +216,10 @@ export function PricingCards() {
 	const [confirmDialog, setConfirmDialog] = useState<CheckoutPreview | null>(null)
 	const [isAttaching, setIsAttaching] = useState(false)
 	const checkoutReturn = useCheckoutReturn()
+	const { effectiveTimezone } = useTimezonePreference()
 
 	// Back from Stripe with the plan not yet synced: never re-offer the plan the
-	// buyer just bought — that is how a trial user ends up clicking "Start trial"
+	// buyer just bought; that is how a trial user ends up clicking "Start trial"
 	// twice.
 	if (checkoutReturn === "confirming") return <CheckoutConfirmingPanel />
 
@@ -271,73 +268,77 @@ export function PricingCards() {
 		// For upgrades/downgrades, show a preview first
 		if (scenario === "upgrade" || scenario === "downgrade") {
 			setLoadingPlanId(planId)
-			try {
-				const preview = await previewAttach({ planId })
-				setConfirmDialog({
-					planId,
-					planName: plan?.name ?? planId,
-					lines: preview.lineItems.map((l) => ({
-						description: l.description ?? "",
-						amount: l.total ?? 0,
-					})),
-					total: preview.total ?? 0,
-					currency: preview.currency ?? "usd",
-					nextCycle: preview.nextCycle
-						? { starts_at: preview.nextCycle.startsAt ?? 0, total: preview.nextCycle.total ?? 0 }
-						: undefined,
-				})
-			} catch (err) {
-				toastManager.add({ title: displayError(err).message, type: "error" })
-			} finally {
-				setLoadingPlanId(null)
-			}
+			await previewAttach({ planId }).then(
+				(preview) =>
+					setConfirmDialog({
+						planId,
+						planName: plan?.name ?? planId,
+						lines: preview.lineItems.map((l) => ({
+							description: l.description ?? "",
+							amount: l.total ?? 0,
+						})),
+						total: preview.total ?? 0,
+						currency: preview.currency ?? "usd",
+						nextCycle: preview.nextCycle
+							? {
+									starts_at: preview.nextCycle.startsAt ?? 0,
+									total: preview.nextCycle.total ?? 0,
+								}
+							: undefined,
+					}),
+				(error: unknown) => showErrorToast(error, { title: "Couldn't preview the plan change" }),
+			)
+			setLoadingPlanId(null)
 			return
 		}
 
 		// For new subscriptions, attach directly (redirects to checkout if needed)
 		setLoadingPlanId(planId)
-		try {
-			const result = await attach({ planId, successUrl: buildCheckoutSuccessUrl(window.location.href) })
+		await attach({ planId, successUrl: buildCheckoutSuccessUrl(window.location.href) }).then(
+			(result) => {
+				if (result.paymentUrl) {
+					// Deliberately NOT clearing `loadingPlanId`: assigning `location.href`
+					// starts a navigation without stopping JS, so the old DOM stays on
+					// screen until Stripe answers. Re-enabling the button here left an
+					// inviting "Subscribe" on an apparently frozen page, and every extra
+					// click became a 409 we reported back as a failed purchase.
+					window.location.href = result.paymentUrl
+					return
+				}
 
-			if (result.paymentUrl) {
-				// Deliberately NOT clearing `loadingPlanId`: assigning `location.href`
-				// starts a navigation without stopping JS, so the old DOM stays on
-				// screen until Stripe answers. Re-enabling the button here left an
-				// inviting "Subscribe" on an apparently frozen page — and every extra
-				// click became a 409 we reported back as a failed purchase.
-				window.location.href = result.paymentUrl
-				return
-			}
-
-			toastManager.add({ title: "Plan updated successfully.", type: "success" })
-			refreshCustomer()
-			setLoadingPlanId(null)
-		} catch (err) {
-			toastManager.add({ title: displayError(err).message, type: "error" })
-			setLoadingPlanId(null)
-		}
+				toastManager.add({ title: "Plan updated successfully.", type: "success" })
+				refreshCustomer()
+				setLoadingPlanId(null)
+			},
+			(error: unknown) => {
+				showErrorToast(error, { title: "Couldn't update your plan" })
+				setLoadingPlanId(null)
+			},
+		)
 	}
 
 	async function handleConfirmAttach() {
 		if (!confirmDialog) return
 		setIsAttaching(true)
-		try {
-			const result = await attach({
-				planId: confirmDialog.planId,
-				successUrl: buildCheckoutSuccessUrl(window.location.href),
-			})
-			if (result.paymentUrl) {
-				window.location.href = result.paymentUrl
-				return
-			}
-			toastManager.add({ title: "Plan updated successfully.", type: "success" })
-			refreshCustomer()
-			setConfirmDialog(null)
-			setIsAttaching(false)
-		} catch (err) {
-			toastManager.add({ title: displayError(err).message, type: "error" })
-			setIsAttaching(false)
-		}
+		await attach({
+			planId: confirmDialog.planId,
+			successUrl: buildCheckoutSuccessUrl(window.location.href),
+		}).then(
+			(result) => {
+				if (result.paymentUrl) {
+					window.location.href = result.paymentUrl
+					return
+				}
+				toastManager.add({ title: "Plan updated successfully.", type: "success" })
+				refreshCustomer()
+				setConfirmDialog(null)
+				setIsAttaching(false)
+			},
+			(error: unknown) => {
+				showErrorToast(error, { title: "Couldn't update your plan" })
+				setIsAttaching(false)
+			},
+		)
 	}
 
 	function handleEnterpriseContact() {
@@ -360,62 +361,52 @@ export function PricingCards() {
 				loadingPlanId={loadingPlanId}
 			/>
 
-			<Dialog
+			<ConfirmDialog
 				open={confirmDialog !== null}
 				onOpenChange={(open) => {
 					if (!open) setConfirmDialog(null)
 				}}
+				tone="default"
+				icon={null}
+				title="Confirm plan change"
+				description={
+					<>
+						You're switching to{" "}
+						<span className="text-foreground font-medium">{confirmDialog?.planName}</span>.
+					</>
+				}
+				confirmLabel="Confirm"
+				pending={isAttaching}
+				onConfirm={() => void handleConfirmAttach()}
 			>
-				<DialogContent>
-					<DialogHeader>
-						<DialogTitle>Confirm plan change</DialogTitle>
-						<DialogDescription>
-							You're switching to{" "}
-							<span className="text-foreground font-medium">{confirmDialog?.planName}</span>.
-						</DialogDescription>
-					</DialogHeader>
-
-					{confirmDialog && (
-						<div className="space-y-2 px-6 text-xs">
-							<KeyValueList className="tabular-nums">
-								{confirmDialog.lines.map((line, i) => (
-									<KeyValue key={i} label={line.description}>
-										{formatCurrency(line.amount, confirmDialog.currency)}
-									</KeyValue>
-								))}
-							</KeyValueList>
-							<Separator />
-							<div className="flex justify-between font-medium">
-								<span>Due today</span>
-								<span className="tabular-nums">
-									{formatCurrency(confirmDialog.total, confirmDialog.currency)}
-								</span>
-							</div>
-							{confirmDialog.nextCycle && (
-								<p className="text-muted-foreground text-xs">
-									Then{" "}
-									{formatCurrency(confirmDialog.nextCycle.total, confirmDialog.currency)}{" "}
-									starting{" "}
-									{new Date(confirmDialog.nextCycle.starts_at).toLocaleDateString()}
-								</p>
-							)}
+				{confirmDialog && (
+					<div className="space-y-2 text-xs">
+						<KeyValueList className="tabular-nums">
+							{confirmDialog.lines.map((line, i) => (
+								<KeyValue key={i} label={line.description}>
+									{formatCurrency(line.amount, confirmDialog.currency)}
+								</KeyValue>
+							))}
+						</KeyValueList>
+						<Separator />
+						<div className="flex justify-between font-medium">
+							<span>Due today</span>
+							<span className="tabular-nums">
+								{formatCurrency(confirmDialog.total, confirmDialog.currency)}
+							</span>
 						</div>
-					)}
-
-					<DialogFooter>
-						<Button
-							variant="outline"
-							onClick={() => setConfirmDialog(null)}
-							disabled={isAttaching}
-						>
-							Cancel
-						</Button>
-						<Button onClick={handleConfirmAttach} loading={isAttaching} disabled={isAttaching}>
-							Confirm
-						</Button>
-					</DialogFooter>
-				</DialogContent>
-			</Dialog>
+						{confirmDialog.nextCycle && (
+							<p className="text-muted-foreground text-xs">
+								Then {formatCurrency(confirmDialog.nextCycle.total, confirmDialog.currency)}{" "}
+								starting{" "}
+								{formatDateInTimezone(confirmDialog.nextCycle.starts_at, {
+									timeZone: effectiveTimezone,
+								})}
+							</p>
+						)}
+					</div>
+				)}
+			</ConfirmDialog>
 		</div>
 	)
 }

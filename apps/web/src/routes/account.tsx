@@ -1,7 +1,7 @@
 import { Navigate, useNavigate, createFileRoute } from "@tanstack/react-router"
 import { Schema } from "effect"
 
-import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { DashboardPage } from "@/components/layout/dashboard-page"
 import { isClerkAuthEnabled } from "@/lib/services/common/auth-mode"
 import {
 	AccountNav,
@@ -44,26 +44,17 @@ function AccountPage() {
 	}
 
 	return (
-		<DashboardLayout.Root>
-			<DashboardLayout.Breadcrumbs
-				items={[{ label: "Account", href: "/account" }, { label: accountTabLabels[activeTab] }]}
-			/>
-			<DashboardLayout.Body>
-				<DashboardLayout.Filters>
-					<AccountNav active={activeTab} onSelectTab={handleTabSelect} />
-				</DashboardLayout.Filters>
-				<DashboardLayout.Content>
-					<DashboardLayout.Scroll>
-						{activeTab === "profile" && <ProfileSection />}
-						{activeTab === "emails" && <EmailAddressesSection />}
-						{activeTab === "password" && <PasswordSection />}
-						{activeTab === "two-factor" && <TwoFactorSection />}
-						{activeTab === "passkeys" && <PasskeysSection />}
-						{activeTab === "connections" && <ConnectedAccountsSection />}
-						{activeTab === "sessions" && <ActiveSessionsSection />}
-					</DashboardLayout.Scroll>
-				</DashboardLayout.Content>
-			</DashboardLayout.Body>
-		</DashboardLayout.Root>
+		<DashboardPage
+			breadcrumbs={[{ label: "Account", href: "/account" }, { label: accountTabLabels[activeTab] }]}
+			filters={<AccountNav active={activeTab} onSelectTab={handleTabSelect} />}
+		>
+			{activeTab === "profile" && <ProfileSection />}
+			{activeTab === "emails" && <EmailAddressesSection />}
+			{activeTab === "password" && <PasswordSection />}
+			{activeTab === "two-factor" && <TwoFactorSection />}
+			{activeTab === "passkeys" && <PasskeysSection />}
+			{activeTab === "connections" && <ConnectedAccountsSection />}
+			{activeTab === "sessions" && <ActiveSessionsSection />}
+		</DashboardPage>
 	)
 }

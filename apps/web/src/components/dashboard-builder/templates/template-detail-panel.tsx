@@ -4,7 +4,7 @@ import type { V2DashboardTemplate } from "@maple/domain/http/v2"
 import { Button } from "@maple/ui/components/ui/button"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Input } from "@maple/ui/components/ui/input"
-import { Label } from "@maple/ui/components/ui/label"
+import { Field, FieldDescription, FieldLabel } from "@maple/ui/components/ui/field"
 import { cn } from "@maple/ui/lib/utils"
 import { ArrowRightIcon, CheckIcon, ExternalLinkIcon } from "@/components/icons"
 import { templateIcon } from "./template-icons"
@@ -145,9 +145,7 @@ export function TemplateDetailPanel({ template, readiness, creating, onCreate }:
 
 			<div className="flex flex-col gap-2">
 				<TemplateLivePreview template={template} parameters={values} />
-				<p className="text-muted-foreground/85 text-2xs">
-					That's the dashboard you'd get right now.
-				</p>
+				<p className="text-muted-foreground/85 text-2xs">That's the dashboard you'd get right now.</p>
 			</div>
 
 			<RequirementBlock template={template} readiness={readiness} />
@@ -157,11 +155,11 @@ export function TemplateDetailPanel({ template, readiness, creating, onCreate }:
 					<Eyebrow variant="label">Parameters</Eyebrow>
 					<div className="flex max-w-95 flex-col gap-4">
 						{template.parameters.map((parameter) => (
-							<div key={parameter.key} className="flex flex-col gap-1.75">
+							<Field key={parameter.key} className="items-stretch gap-1.75">
 								<div className="flex items-baseline gap-2">
-									<Label htmlFor={`template-param-${parameter.key}`}>
+									<FieldLabel htmlFor={`template-param-${parameter.key}`}>
 										{parameter.label}
-									</Label>
+									</FieldLabel>
 									<span className="text-muted-foreground text-2xs">
 										{parameter.required ? "required" : "optional"}
 									</span>
@@ -181,11 +179,11 @@ export function TemplateDetailPanel({ template, readiness, creating, onCreate }:
 									}}
 								/>
 								{parameter.description && (
-									<p className="text-muted-foreground text-2xs">
+									<FieldDescription className="text-2xs">
 										{parameter.description}
-									</p>
+									</FieldDescription>
 								)}
-							</div>
+							</Field>
 						))}
 					</div>
 				</div>

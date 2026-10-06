@@ -1,15 +1,15 @@
 import { useState } from "react"
 import { useClerk, useReverification, useUser } from "@clerk/clerk-react"
-import { toastManager } from "@maple/ui/components/ui/toast"
 import { Field, FieldLabel } from "@maple/ui/components/ui/field"
 
 import { Button } from "@maple/ui/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@maple/ui/components/ui/card"
+import { Panel } from "@maple/ui/components/ui/panel"
 import { Input } from "@maple/ui/components/ui/input"
 import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
 import { ImageDropzone, TypeToConfirmField } from "@/components/common/image-dropzone"
 import { UserAvatar, userInitials } from "@/components/dashboard/user-avatar"
-import { toastAccountError } from "@/components/account/account-errors"
+import { settleClerk, toastAccountError } from "@/components/account/account-errors"
+import { SettingsSection, SettingsSections } from "@/components/settings/settings-section"
 import { AccountSectionSkeleton } from "@/components/account/account-section-skeleton"
 import { useAsyncAction } from "@/hooks/use-mutation-action"
 
@@ -31,27 +31,27 @@ export function ProfileSection() {
 	const [draft, setDraft] = useState<NameDraft | null>(null)
 	const [deleteOpen, setDeleteOpen] = useState(false)
 	const [confirmText, setConfirmText] = useState("")
-	const [isDeleting, setIsDeleting] = useState(false)
 
 	const deleteAccount = useReverification(() => user?.delete())
 
-	const [withSavingName, isSavingName] = useAsyncAction((task: () => Promise<void>) => task())
+	const [withSavingName, isSavingName] = useAsyncAction((task: () => Promise<boolean>) => task())
 
 	// `null` removes the picture.
 	const [setAvatar, isSavingAvatar] = useAsyncAction(async (file: File | null) => {
 		if (!user) return
-		try {
-			await user.setProfileImage({ file })
-			toastManager.add({
-				title: file ? "Profile picture updated" : "Profile picture removed",
-				type: "success",
-			})
-		} catch (err) {
-			toastAccountError(
-				err,
-				file ? "Failed to update profile picture" : "Failed to remove profile picture",
-			)
-		}
+		await settleClerk(user.setProfileImage({ file }), {
+			success: file ? "Profile picture updated" : "Profile picture removed",
+			error: file ? "Failed to update profile picture" : "Failed to remove profile picture",
+		})
+	})
+
+	const [handleDelete, isDeleting] = useAsyncAction(() => {
+		if (!user) return Promise.resolve()
+		// The session is gone with the user, so sign out rather than leaving a dead session
+		// behind; `afterSignOutUrl` on ClerkProvider takes it to the sign-in page.
+		return deleteAccount()
+			.then(() => signOut())
+			.catch((err: unknown) => toastAccountError(err, "Failed to delete account"))
 	})
 
 	if (!isLoaded || !user) return <AccountSectionSkeleton />
@@ -79,28 +79,13 @@ export function ProfileSection() {
 	function handleSaveName() {
 		if (!user || !nameDirty) return
 		return withSavingName(async () => {
-			try {
-				await user.update({ firstName: trimmedFirst, lastName: trimmedLast })
-				setDraft(null)
-				toastManager.add({ title: "Profile updated", type: "success" })
-			} catch (err) {
-				toastAccountError(err, "Failed to update profile")
-			}
+			const ok = await settleClerk(user.update({ firstName: trimmedFirst, lastName: trimmedLast }), {
+				success: "Profile updated",
+				error: "Failed to update profile",
+			})
+			if (ok) setDraft(null)
+			return ok
 		})
-	}
-
-	async function handleDelete() {
-		if (!user || !confirmMatches) return
-		setIsDeleting(true)
-		try {
-			await deleteAccount()
-			// The session is gone with the user, so sign out rather than leaving a dead session
-			// behind; `afterSignOutUrl` on ClerkProvider takes it to the sign-in page.
-			await signOut()
-		} catch (err) {
-			setIsDeleting(false)
-			toastAccountError(err, "Failed to delete account")
-		}
 	}
 
 	function handleDialogChange(open: boolean) {
@@ -109,101 +94,93 @@ export function ProfileSection() {
 	}
 
 	return (
-		<div className="space-y-6">
-			<Card>
-				<CardHeader>
-					<CardTitle>Profile</CardTitle>
-					<CardDescription>
-						Your name and picture as they appear to other members of your organizations.
-					</CardDescription>
-				</CardHeader>
-				<CardContent>
-					<div className="space-y-4 max-w-md">
+		<SettingsSections>
+			<SettingsSection
+				title="Profile"
+				description="Your name and picture as they appear to other members of your organizations."
+			>
+				<div className="space-y-4 max-w-md">
+					<Field>
+						<FieldLabel>Profile picture</FieldLabel>
+						<ImageDropzone
+							preview={
+								<UserAvatar
+									name={displayName}
+									initials={userInitials(displayName)}
+									imageUrl={user.hasImage ? user.imageUrl : undefined}
+									className="size-full rounded-md text-sm"
+								/>
+							}
+							onFile={(file) => {
+								if (!isSavingAvatar) void setAvatar(file)
+							}}
+							onRemove={
+								user.hasImage
+									? () => {
+											if (!isSavingAvatar) void setAvatar(null)
+										}
+									: undefined
+							}
+							uploading={isSavingAvatar}
+							targetLabel="Change profile picture"
+							changeLabel="Change picture"
+						/>
+					</Field>
+					<div className="grid grid-cols-2 gap-3">
 						<Field>
-							<FieldLabel>Profile picture</FieldLabel>
-							<ImageDropzone
-								preview={
-									<UserAvatar
-										name={displayName}
-										initials={userInitials(displayName)}
-										imageUrl={user.hasImage ? user.imageUrl : undefined}
-										className="size-full rounded-md text-sm"
-									/>
-								}
-								onFile={(file) => {
-									if (!isSavingAvatar) void setAvatar(file)
-								}}
-								onRemove={
-									user.hasImage
-										? () => {
-												if (!isSavingAvatar) void setAvatar(null)
-											}
-										: undefined
-								}
-								uploading={isSavingAvatar}
-								targetLabel="Change profile picture"
-								changeLabel="Change picture"
+							<FieldLabel htmlFor="account-first-name">First name</FieldLabel>
+							<Input
+								id="account-first-name"
+								value={firstName}
+								onChange={(e) => updateDraft({ firstName: e.target.value })}
+								disabled={isSavingName}
+								autoComplete="given-name"
+								placeholder="First name"
 							/>
 						</Field>
-						<div className="grid grid-cols-2 gap-3">
-							<Field>
-								<FieldLabel htmlFor="account-first-name">First name</FieldLabel>
-								<Input
-									id="account-first-name"
-									value={firstName}
-									onChange={(e) => updateDraft({ firstName: e.target.value })}
-									disabled={isSavingName}
-									autoComplete="given-name"
-									placeholder="First name"
-								/>
-							</Field>
-							<Field>
-								<FieldLabel htmlFor="account-last-name">Last name</FieldLabel>
-								<Input
-									id="account-last-name"
-									value={lastName}
-									onChange={(e) => updateDraft({ lastName: e.target.value })}
-									disabled={isSavingName}
-									autoComplete="family-name"
-									placeholder="Last name"
-								/>
-							</Field>
-						</div>
-						<div className="flex justify-end">
-							<Button
-								size="sm"
-								onClick={handleSaveName}
-								loading={isSavingName}
-								disabled={!nameDirty}
-							>
-								Save
-							</Button>
-						</div>
+						<Field>
+							<FieldLabel htmlFor="account-last-name">Last name</FieldLabel>
+							<Input
+								id="account-last-name"
+								value={lastName}
+								onChange={(e) => updateDraft({ lastName: e.target.value })}
+								disabled={isSavingName}
+								autoComplete="family-name"
+								placeholder="Last name"
+							/>
+						</Field>
 					</div>
-				</CardContent>
-			</Card>
+					<div className="flex justify-end">
+						<Button
+							size="sm"
+							onClick={handleSaveName}
+							loading={isSavingName}
+							disabled={!nameDirty}
+						>
+							Save
+						</Button>
+					</div>
+				</div>
+			</SettingsSection>
 
 			{user.deleteSelfEnabled && (
-				<Card className="border-destructive/40">
-					<CardHeader>
-						<CardTitle className="text-destructive">Danger Zone</CardTitle>
-						<CardDescription>
-							Permanently delete your Maple account. You are removed from every organization you
-							belong to. Organizations you own, and the telemetry in them, are not deleted —
-							hand them over or delete them first.
-						</CardDescription>
-					</CardHeader>
-					<CardContent>
-						<div className="flex items-center justify-between gap-4">
-							<div className="text-xs text-muted-foreground">
-								Delete {email || "your account"} and sign out everywhere.
-							</div>
-							<Button variant="destructive" size="sm" onClick={() => setDeleteOpen(true)}>
-								Delete account
-							</Button>
-						</div>
-					</CardContent>
-				</Card>
+				<SettingsSection
+					title="Danger zone"
+					description="Permanently delete your Maple account. You are removed from every organization you belong to. Organizations you own, and the telemetry in them, are not deleted: hand them over or delete them first."
+					framed={false}
+				>
+					<Panel
+						padded
+						className="flex-row items-center justify-between gap-4 border-destructive/40"
+					>
+						<p className="text-xs text-muted-foreground">
+							Delete {email || "your account"} and sign out everywhere.
+						</p>
+						<Button variant="destructive" size="sm" onClick={() => setDeleteOpen(true)}>
+							Delete account
+						</Button>
+					</Panel>
+				</SettingsSection>
 			)}
 
 			<ConfirmDialog
@@ -214,7 +191,9 @@ export function ProfileSection() {
 				confirmLabel="Delete account"
 				pending={isDeleting}
 				confirmDisabled={!confirmMatches}
-				onConfirm={() => void handleDelete()}
+				onConfirm={() => {
+					if (confirmMatches) void handleDelete()
+				}}
 			>
 				<TypeToConfirmField
 					id="account-delete-confirm"
@@ -223,6 +202,6 @@ export function ProfileSection() {
 					onChange={setConfirmText}
 				/>
 			</ConfirmDialog>
-		</div>
+		</SettingsSections>
 	)
 }

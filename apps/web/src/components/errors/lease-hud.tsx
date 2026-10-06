@@ -1,4 +1,5 @@
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { Panel } from "@maple/ui/components/ui/panel"
 import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import * as React from "react"
 import type { ActorDocument } from "@maple/domain/http"
@@ -42,12 +43,16 @@ export function LeaseHud({ leaseExpiresAt, claimedAt, leaseHolder, className }: 
 
 	const dashOffset = RING_CIRCUMFERENCE * (1 - progress)
 
-	const ringColor = expired ? "var(--muted-foreground)" : danger ? "var(--destructive)" : "var(--primary)"
+	const ringColor = expired
+		? "var(--muted-foreground)"
+		: danger
+			? "var(--severity-error)"
+			: "var(--primary)"
 
 	return (
-		<div
+		<Panel
 			className={cn(
-				"flex items-center gap-3 rounded-lg border border-border/60 bg-card/50 px-3 py-2.5",
+				"flex-row items-center gap-3 border-border/60 bg-card/50 px-3 py-2.5",
 				danger && "border-severity-error/40",
 				className,
 			)}
@@ -109,6 +114,6 @@ export function LeaseHud({ leaseExpiresAt, claimedAt, leaseHolder, className }: 
 					<ActorChip actor={leaseHolder} className="min-w-0" />
 				</div>
 			</div>
-		</div>
+		</Panel>
 	)
 }

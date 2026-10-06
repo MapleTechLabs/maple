@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from "react"
 import { useReducedMotion } from "motion/react"
 import { useTheme } from "@maple/ui/hooks/use-theme"
 import { Button } from "@maple/ui/components/ui/button"
+import { IconButton } from "@maple/ui/components/ui/icon-button"
 import { ToggleGroup, ToggleGroupItem } from "@maple/ui/components/ui/toggle-group"
 import {
 	ArrowRotateAnticlockwiseIcon,
@@ -107,9 +108,7 @@ export function ServiceMap3DViewport({
 						Cascade
 					</ToggleGroupItem>
 				</ToggleGroup>
-				<span className="ml-3 hidden text-2xs text-muted-foreground sm:block">
-					{copy.encoding}
-				</span>
+				<span className="ml-3 hidden text-2xs text-muted-foreground sm:block">{copy.encoding}</span>
 				<Button
 					size="sm"
 					variant="ghost"
@@ -243,28 +242,18 @@ export function ServiceMap3DViewport({
 						if (element) labels.current.set("overlay:controls", element)
 						else labels.current.delete("overlay:controls")
 					}}
-					className="absolute right-4 bottom-4 flex gap-1 rounded-lg border bg-background p-1"
+					className="absolute right-4 bottom-4 flex gap-1 rounded-md border bg-background p-1"
 					aria-label="Camera controls"
 				>
-					<Button
-						variant="ghost"
-						size="icon-xs"
-						aria-label="Zoom out"
-						onClick={() => camera("out")}
-					>
+					<IconButton size="icon-xs" label="Zoom out" onClick={() => camera("out")}>
 						−
-					</Button>
-					<Button variant="ghost" size="icon-xs" aria-label="Zoom in" onClick={() => camera("in")}>
+					</IconButton>
+					<IconButton size="icon-xs" label="Zoom in" onClick={() => camera("in")}>
 						+
-					</Button>
-					<Button
-						variant="ghost"
-						size="icon-xs"
-						aria-label="Reset camera"
-						onClick={() => camera("reset")}
-					>
+					</IconButton>
+					<IconButton size="icon-xs" label="Reset camera" onClick={() => camera("reset")}>
 						<ArrowRotateAnticlockwiseIcon size={14} />
-					</Button>
+					</IconButton>
 				</fieldset>
 			</section>
 			<div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t px-4 py-2 text-3xs text-muted-foreground">

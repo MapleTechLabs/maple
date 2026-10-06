@@ -3,6 +3,7 @@ import { Schema } from "effect"
 
 import { DashboardPage } from "@/components/layout/dashboard-page"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
 
 import { BillingSection } from "@/components/settings/billing-section"
 import { MembersSection } from "@/components/settings/members-section"
@@ -88,7 +89,11 @@ function SettingsPage() {
 			}
 			filters={
 				loading || empty ? undefined : (
-					<SettingsNav sections={visibleSections} active={activeTab} onSelectTab={handleTabSelect} />
+					<SettingsNav
+						sections={visibleSections}
+						active={activeTab}
+						onSelectTab={handleTabSelect}
+					/>
 				)
 			}
 		>
@@ -98,7 +103,7 @@ function SettingsPage() {
 					<Skeleton className="h-40 w-full" />
 				</div>
 			) : empty ? (
-				<p className="text-muted-foreground text-sm">No settings are available for the current account.</p>
+				<EmptyMessage>No settings are available for the current account.</EmptyMessage>
 			) : (
 				<>
 					{activeTab === "organization" && <OrganizationSection />}
@@ -114,7 +119,10 @@ function SettingsPage() {
 					)}
 					{activeTab === "billing" && <BillingSection isAdmin={isAdmin} />}
 					{activeTab === "data-platform" && (
-						<OrgClickHouseSettingsSection isAdmin={isAdmin} hasEntitlement={canAccessDataPlatform} />
+						<OrgClickHouseSettingsSection
+							isAdmin={isAdmin}
+							hasEntitlement={canAccessDataPlatform}
+						/>
 					)}
 				</>
 			)}

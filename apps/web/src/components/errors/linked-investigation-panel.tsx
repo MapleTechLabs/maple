@@ -4,6 +4,7 @@ import type { IssueEscalationAttemptDocument } from "@maple/domain/http"
 import type { V2Investigation } from "@maple/domain/http/v2"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
+import { Panel } from "@maple/ui/components/ui/panel"
 
 import { PulseIcon } from "@/components/icons"
 
@@ -28,7 +29,7 @@ export function LinkedInvestigationPanel({
 }) {
 	if (!investigation) {
 		return (
-			<div className="flex shrink-0 flex-wrap items-center justify-between gap-4 rounded-xl border bg-card px-5 py-4">
+			<Panel className="shrink-0 flex-row flex-wrap items-center justify-between gap-4 px-5 py-4">
 				<div className="min-w-0">
 					<p className="text-sm font-medium text-foreground">No linked investigation</p>
 					<p className="mt-0.5 text-xs text-muted-foreground">
@@ -39,12 +40,12 @@ export function LinkedInvestigationPanel({
 					<PulseIcon className="size-3.5" />
 					Start investigation
 				</Button>
-			</div>
+			</Panel>
 		)
 	}
 
 	return (
-		<div className="grid shrink-0 gap-3 rounded-xl border bg-card px-5 py-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+		<Panel className="grid shrink-0 gap-3 px-5 py-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
 			<div className="min-w-0">
 				<div className="flex flex-wrap items-center gap-2">
 					<p className="text-sm font-medium text-foreground">Linked investigation</p>
@@ -86,6 +87,6 @@ export function LinkedInvestigationPanel({
 			>
 				Open investigation
 			</Button>
-		</div>
+		</Panel>
 	)
 }

@@ -4,7 +4,7 @@ import { ServiceDot } from "@maple/ui/components/service-dot"
 import { cn } from "@maple/ui/lib/utils"
 import { Panel, PanelHeader } from "@maple/ui/components/ui/panel"
 import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
-import { pluralize } from "@maple/ui/lib/format"
+import { countLabel, pluralize } from "@maple/ui/lib/format"
 
 import type { TimeRangeSearch } from "@/components/time-range-picker/search"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
@@ -16,6 +16,7 @@ import {
 	type ReleaseHealth,
 	type ReleaseServiceImpact,
 } from "./release-model"
+import { formatTimestampInTimezone } from "@/lib/timezone-format"
 
 /** Lanes beyond this fold into a trailing count; the table still lists every release. */
 const MAX_LANES = 12
@@ -153,13 +154,7 @@ function axisLabels(startMs: number, endMs: number, timeZone: string): string[] 
 	return [0, 0.25, 0.5, 0.75, 1].map((ratio) => {
 		const date = new Date(startMs + span * ratio)
 		return showTime
-			? date.toLocaleString(undefined, {
-					timeZone,
-					month: "short",
-					day: "numeric",
-					hour: "numeric",
-					minute: "2-digit",
-				})
+			? formatTimestampInTimezone(date, { timeZone, style: "range" })
 			: date.toLocaleDateString(undefined, { timeZone, month: "short", day: "numeric" })
 	})
 }
@@ -177,7 +172,7 @@ function markerTitle(marker: Marker, timeZone: string): string {
 		.map((m) => shortReleaseLabel(m.commitSha))
 		.join(", ")
 	const more = marker.members.length > 6 ? `, +${marker.members.length - 6} more` : ""
-	return `${marker.members.length} deploys · ${formatRelativeTimeOrDate(oldest.firstSeen, undefined, timeZone)} → ${formatRelativeTimeOrDate(newest.firstSeen, undefined, timeZone)}\n${listed}${more}`
+	return `${countLabel(marker.members.length, "deploy")} · ${formatRelativeTimeOrDate(oldest.firstSeen, undefined, timeZone)} → ${formatRelativeTimeOrDate(newest.firstSeen, undefined, timeZone)}\n${listed}${more}`
 }
 
 /**

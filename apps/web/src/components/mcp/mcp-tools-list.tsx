@@ -130,7 +130,11 @@ export function McpToolsList() {
 					{MCP_TOOLS.map((tool) => (
 						<KeyValue
 							key={tool.name}
-							label={<code className="font-mono text-xs font-medium text-foreground">{tool.name}</code>}
+							label={
+								<code className="font-mono text-xs font-medium text-foreground">
+									{tool.name}
+								</code>
+							}
 							wrap
 							className="max-sm:col-span-1!"
 							valueClassName="text-muted-foreground leading-relaxed"

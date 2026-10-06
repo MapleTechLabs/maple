@@ -38,6 +38,7 @@ import { ServiceDot } from "@maple/ui/components/service-dot"
 import { TONE_TEXT, type Tone } from "@maple/ui/lib/tone"
 import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { ListRow } from "@maple/ui/components/ui/list-row"
 
 const MAX_ROWS = 7
 
@@ -388,60 +389,66 @@ function ServiceHealthRow({
 
 	return (
 		<li>
-			<Link
-				to="/services/$serviceName"
-				params={{ serviceName: service.serviceName }}
-				search={{ ...detailSearch, environments: [service.environment] }}
-				className="flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
-			>
-				<StatusDot tone={HEALTH_TONE[health]} size="lg" />
-				<div className="flex min-w-0 flex-1 items-center gap-2">
-					<ServiceDot serviceName={service.serviceName} size="sm" />
-					<span className="truncate text-sm font-medium text-foreground">
-						{service.serviceName}
+			<ListRow
+				render={
+					<Link
+						to="/services/$serviceName"
+						params={{ serviceName: service.serviceName }}
+						search={{ ...detailSearch, environments: [service.environment] }}
+					/>
+				}
+				leading={<StatusDot tone={HEALTH_TONE[health]} size="lg" />}
+				title={
+					<span className="flex min-w-0 items-center gap-2">
+						<ServiceDot serviceName={service.serviceName} size="sm" />
+						<span className="truncate text-sm font-medium text-foreground">
+							{service.serviceName}
+						</span>
+						<span className="shrink-0 rounded bg-muted px-1.5 py-px text-3xs text-muted-foreground">
+							{service.environment}
+						</span>
+						{primaryCause && (
+							<Badge
+								variant={primaryCause.severity === "critical" ? "crit" : "warn"}
+								size="sm"
+								className={cn("shrink-0", DirectionIcon && "pr-1 pl-0.5")}
+								title={primaryCauseDescription}
+								aria-label={primaryCauseDescription}
+							>
+								{DirectionIcon && <DirectionIcon size={12} aria-hidden />}
+								{primaryCause.label}
+							</Badge>
+						)}
 					</span>
-					<span className="shrink-0 rounded bg-muted px-1.5 py-px text-3xs text-muted-foreground">
-						{service.environment}
-					</span>
-					{primaryCause && (
-						<Badge
-							variant={primaryCause.severity === "critical" ? "crit" : "warn"}
-							size="sm"
-							className={cn("shrink-0", DirectionIcon && "pr-1 pl-0.5")}
-							title={primaryCauseDescription}
-							aria-label={primaryCauseDescription}
-						>
-							{DirectionIcon && <DirectionIcon size={12} aria-hidden />}
-							{primaryCause.label}
-						</Badge>
-					)}
-				</div>
-				<div className="flex shrink-0 items-center gap-5 font-mono text-xs tabular-nums">
-					<Metric
-						label="err"
-						value={formatErrorRate(service.errorRate)}
-						tone={metricTone(errorCause)}
-					/>
-					<Metric
-						label="p95"
-						value={formatLatency(service.p95LatencyMs)}
-						tone={metricTone(latencyCause)}
-						// An open incident/anomaly is a stronger signal than raw
-						// magnitude, so it keeps the tone. Without one, fall back to
-						// the shared magnitude ramp.
-						valueClassName={
-							latencyCause === undefined
-								? latencyToneClass(service.p95LatencyMs, "p95")
-								: undefined
-						}
-					/>
-					<Metric
-						label="rps"
-						value={formatThroughput(service.throughput, "/s")}
-						tone={metricTone(trafficCause)}
-					/>
-				</div>
-			</Link>
+				}
+				trailing={
+					<div className="flex shrink-0 items-center gap-5 font-mono text-xs tabular-nums">
+						<Metric
+							label="err"
+							value={formatErrorRate(service.errorRate)}
+							tone={metricTone(errorCause)}
+						/>
+						<Metric
+							label="p95"
+							value={formatLatency(service.p95LatencyMs)}
+							tone={metricTone(latencyCause)}
+							// An open incident/anomaly is a stronger signal than raw
+							// magnitude, so it keeps the tone. Without one, fall back to
+							// the shared magnitude ramp.
+							valueClassName={
+								latencyCause === undefined
+									? latencyToneClass(service.p95LatencyMs, "p95")
+									: undefined
+							}
+						/>
+						<Metric
+							label="rps"
+							value={formatThroughput(service.throughput, "/s")}
+							tone={metricTone(trafficCause)}
+						/>
+					</div>
+				}
+			/>
 		</li>
 	)
 }

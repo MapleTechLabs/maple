@@ -2,6 +2,9 @@ import { useDeferredValue, useMemo, useState, type ReactNode } from "react"
 
 import { ToggleGroup, ToggleGroupItem } from "@maple/ui/components/ui/toggle-group"
 import { cn } from "@maple/ui/lib/utils"
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
+import { rowSelectedClass } from "@maple/ui/components/ui/list-row"
+import { Panel } from "@maple/ui/components/ui/panel"
 import { formatNumber, formatPercent } from "@maple/ui/lib/format"
 import {
 	Dialog,
@@ -224,7 +227,7 @@ export function AnalyticsBreakdownPanel({
 		// is the only honest measure. The expand dialog portals out of this card —
 		// `/panel` classes are card-only (`!ranked`); the dialog keeps viewport
 		// queries, which are truthful there via its `max-w-[92vw]`.
-		<div className="@container/panel rounded-md border bg-card">
+		<Panel className="@container/panel">
 			<div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-3 pt-2.5 pb-2">
 				{tabs}
 				<FilterInput
@@ -236,9 +239,9 @@ export function AnalyticsBreakdownPanel({
 			</div>
 
 			{dimension.rows.length === 0 ? (
-				<div className="px-4 py-10 text-center text-[12px] text-muted-foreground">
+				<EmptyMessage className="py-10">
 					{dimension.emptyMessage ?? `No ${dimension.noun} data in the selected window.`}
-				</div>
+				</EmptyMessage>
 			) : (
 				<>
 					<BreakdownTable {...table} maxHeight={360} surfaceClass="bg-card" />
@@ -300,7 +303,7 @@ export function AnalyticsBreakdownPanel({
 					/>
 				</DialogPopup>
 			</Dialog>
-		</div>
+		</Panel>
 	)
 }
 
@@ -498,11 +501,8 @@ function BreakdownTable({
 								// it reads as a hover in both. The text colour is the one token
 								// guaranteed to contrast with whatever the row sits on.
 								"hover:bg-foreground/[0.06] focus-visible:bg-foreground/[0.06] focus-visible:outline-none",
-								// Selection is a rule down the leading edge rather than a wash:
-								// a wash in the primary hue is precisely what the fill already
-								// is, and at 47% share the two were the same picture. `shadow`
-								// rather than a border so nothing shifts by 3px.
-								isSelected && "bg-primary/10 shadow-[inset_3px_0_0_var(--primary)]",
+								// Selection is the shared leading-edge lane, not a primary wash (the fill already is one).
+								rowSelectedClass(isSelected),
 							)}
 						>
 							{/* Position in the order on screen, so it stays true when a
@@ -516,7 +516,7 @@ function BreakdownTable({
 								{icon ?? (hasIcons ? <span className="size-4 shrink-0" aria-hidden /> : null)}
 								<span
 									className={cn(
-										"min-w-0 truncate text-[12px] transition-colors",
+										"min-w-0 truncate text-xs transition-colors",
 										isSelected
 											? "font-medium text-foreground"
 											: "text-foreground/90 group-hover:text-foreground",

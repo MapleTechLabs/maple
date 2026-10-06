@@ -4,19 +4,17 @@ import { useMemo } from "react"
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { Exit, Schema } from "effect"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
-import { displayError } from "@/lib/error-messages"
 import type { V2Investigation } from "@maple/domain/http/v2"
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@maple/ui/components/ui/alert"
 import { Button } from "@maple/ui/components/ui/button"
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
 import { ToolbarSearch } from "@maple/ui/components/toolbar"
-import { toastManager } from "@maple/ui/components/ui/toast"
 import { formatDuration } from "@maple/ui/lib/format"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 
 import { DocsLink } from "@/components/common/docs-link"
-import { StatFigure } from "@/components/common/stat-rail"
+import { StatRail, StatRailItem } from "@/components/common/stat-rail"
 import { ResultView } from "@/components/common/result-view"
 import { ListToolbar } from "@/components/common/list-toolbar"
 import { PageHero } from "@/components/common/page-hero"
@@ -36,7 +34,11 @@ import {
 	InvestigationTableSkeleton,
 } from "@/components/investigations/investigation-table"
 import { InvestigateBar } from "@/components/investigations/investigate-bar"
-import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { DashboardPage } from "@/components/layout/dashboard-page"
+import { Panel } from "@maple/ui/components/ui/panel"
+import { showErrorToast } from "@/lib/error-toast"
+import { useTimezonePreference } from "@/hooks/use-timezone-preference"
+import { formatTimestampInTimezone } from "@/lib/timezone-format"
 import { MapleApiV2AtomClient, retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
 import { useIsOrgAdmin } from "@/hooks/use-is-org-admin"
@@ -171,8 +173,7 @@ function InvestigationsHub() {
 		if (Exit.isSuccess(created)) {
 			void navigate({ to: "/investigations/$id", params: { id: created.value.id } })
 		} else {
-			const { title, message } = displayError(created)
-			toastManager.add({ title, description: message, type: "error" })
+			showErrorToast(created)
 		}
 	})
 
@@ -214,7 +215,7 @@ function InvestigationsHub() {
 							})
 						}
 					>
-						<SelectTrigger size="sm" className="h-7 w-[122px] text-xs">
+						<SelectTrigger size="sm" className="w-[122px]">
 							{/* The trigger renders before the items register, so it
 							    resolves its own label rather than echoing the value. */}
 							<SelectValue>{kindFilterLabel}</SelectValue>
@@ -241,7 +242,7 @@ function InvestigationsHub() {
 							})
 						}}
 					>
-						<SelectTrigger size="sm" className="h-7 w-[136px] text-xs">
+						<SelectTrigger size="sm" className="w-[136px]">
 							<SelectValue>{sortLabel}</SelectValue>
 						</SelectTrigger>
 						<SelectContent>
@@ -264,65 +265,59 @@ function InvestigationsHub() {
 	)
 
 	return (
-		<DashboardLayout.Root>
-			<DashboardLayout.Breadcrumbs items={[{ label: "Investigations" }]} />
-			<DashboardLayout.Body>
-				<DashboardLayout.Content>
-					{isFirstRun ? (
-						<DashboardLayout.Scroll>
-							<HubHero onSubmit={handleCreate} busy={creating} />
-						</DashboardLayout.Scroll>
-					) : (
-						<>
-							<DashboardLayout.Sticky>
-								{budget?.enabled && budget.ordinaryPaused ? (
-									<BudgetExhaustedNotice
-										priorityPaused={budget.priorityPaused}
-										dimension={budget.pausedDimension}
-										resumesAt={budget.resumesAt}
-										canEditSettings={isOrgAdmin}
-									/>
-								) : null}
-								<TriageStrip investigations={page} />
-								<InvestigateBar onSubmit={handleCreate} busy={creating} />
-							</DashboardLayout.Sticky>
-							<DashboardLayout.Scroll>
-								{/* `shrink-0`, or the flex column shrinks this below its
-								    content height and `overflow-hidden` clips the rows the
-								    scroller then thinks it doesn't need to scroll to. */}
-								<div className="shrink-0 overflow-hidden rounded-xl border">
-									{toolbar}
-									<ResultView
-										result={result}
-										loading={<InvestigationTableSkeleton />}
-										errorTitle="Investigations could not be loaded"
-										onRetry={refresh}
-										isEmpty={() => investigations.length === 0}
-										empty={
-											<HubEmptyState
-												view={view}
-												filtered={isFiltered}
-												onClear={() =>
-													void navigate({
-														search: (prev) => ({
-															...prev,
-															kind: undefined,
-															q: undefined,
-														}),
-													})
-												}
-											/>
-										}
-									>
-										{() => <InvestigationTable investigations={investigations} />}
-									</ResultView>
-								</div>
-							</DashboardLayout.Scroll>
-						</>
-					)}
-				</DashboardLayout.Content>
-			</DashboardLayout.Body>
-		</DashboardLayout.Root>
+		<DashboardPage
+			breadcrumbs={[{ label: "Investigations" }]}
+			sticky={
+				isFirstRun ? null : (
+					<>
+						{budget?.enabled && budget.ordinaryPaused ? (
+							<BudgetExhaustedNotice
+								priorityPaused={budget.priorityPaused}
+								dimension={budget.pausedDimension}
+								resumesAt={budget.resumesAt}
+								canEditSettings={isOrgAdmin}
+							/>
+						) : null}
+						<TriageStrip investigations={page} />
+						<InvestigateBar onSubmit={handleCreate} busy={creating} />
+					</>
+				)
+			}
+		>
+			{isFirstRun ? (
+				<HubHero onSubmit={handleCreate} busy={creating} />
+			) : (
+				// `shrink-0`, or the flex column shrinks this below its content height and
+				// `overflow-hidden` clips the rows the scroller then thinks it doesn't need to scroll to.
+				<Panel className="shrink-0">
+					{toolbar}
+					<ResultView
+						result={result}
+						loading={<InvestigationTableSkeleton />}
+						errorTitle="Investigations could not be loaded"
+						onRetry={refresh}
+						isEmpty={() => investigations.length === 0}
+						empty={
+							<HubEmptyState
+								view={view}
+								filtered={isFiltered}
+								onClear={() =>
+									void navigate({
+										search: (prev) => ({
+											...prev,
+											kind: undefined,
+											q: undefined,
+										}),
+									})
+								}
+							/>
+						}
+					>
+						{() => <InvestigationTable investigations={investigations} />}
+					</ResultView>
+				</Panel>
+			)}
+		</DashboardPage>
 	)
 }
 
@@ -352,11 +347,11 @@ function BudgetExhaustedNotice({
 	resumesAt: string | null
 	canEditSettings: boolean
 }) {
-	const resumes = resumesAt === null ? null : new Date(toEpochMs(resumesAt))
+	const { effectiveTimezone } = useTimezonePreference()
 	const resets =
-		resumes === null
+		resumesAt === null
 			? "."
-			: `; it resets ${resumes.toLocaleString(undefined, { timeStyle: "short", dateStyle: "medium" })}.`
+			: `; it resets ${formatTimestampInTimezone(toEpochMs(resumesAt), { timeZone: effectiveTimezone, style: "range" })}.`
 	// The runs ceiling counts investigations and the passes ceiling counts model
 	// work; naming the wrong one sends the reader to raise a number that was never
 	// the constraint.
@@ -365,7 +360,7 @@ function BudgetExhaustedNotice({
 			? "Today's investigation limit is reached"
 			: "Today's model budget is spent"
 	return (
-		<Alert variant="warn" className="mb-4 rounded-lg">
+		<Alert variant="warn" className="mb-4">
 			<AlertTitle className="text-foreground">
 				{priorityPaused ? "Automatic triage paused" : "Automatic triage paused for routine incidents"}
 			</AlertTitle>
@@ -430,27 +425,24 @@ function TriageStrip({ investigations }: { investigations: ReadonlyArray<V2Inves
 	}, [investigations])
 
 	return (
-		// Same grid-with-border-cells reasoning as the detail page's impact strip:
-		// standalone divider elements strand themselves at the end of a row when the
-		// last stat wraps.
-		<div className="grid grid-cols-1 gap-y-5 sm:grid-cols-3 [&>*+*]:border-l [&>*+*]:pl-8 max-sm:[&>*+*]:border-l-0 max-sm:[&>*+*]:pl-0">
-			<TriageStat
-				label="Investigating now"
-				dot="bg-primary"
-				labelTone="text-primary"
+		<StatRail columns={3}>
+			<StatRailItem
+				size="sm"
+				eyebrow="Investigating now"
+				tone={stats.running.length > 0 ? "info" : "neutral"}
 				value={stats.running.length}
-				detail={
+				hint={
 					stats.running.length === 0
 						? "nothing in flight"
 						: `${stats.running.length === 1 ? "an agent is" : "agents are"} gathering evidence`
 				}
 			/>
-			<TriageStat
-				label="Needs review"
-				dot="bg-severity-warn"
-				labelTone="text-severity-warn"
+			<StatRailItem
+				size="sm"
+				eyebrow="Needs review"
+				tone={stats.review.length > 0 ? "warn" : "neutral"}
 				value={stats.review.length}
-				detail={
+				hint={
 					stats.review.length === 0
 						? "nothing waiting on you"
 						: stats.critical > 0
@@ -458,43 +450,16 @@ function TriageStrip({ investigations }: { investigations: ReadonlyArray<V2Inves
 							: "diagnosed, not resolved"
 				}
 			/>
-			<TriageStat
-				label="Resolved · 24h"
-				dot="bg-muted-foreground"
-				labelTone="text-muted-foreground"
-				valueTone="text-muted-foreground"
+			<StatRailItem
+				size="sm"
+				eyebrow="Resolved · 24h"
+				tone="neutral"
 				value={stats.resolved.length}
-				detail={
+				hint={
 					stats.median === null ? "none in the last day" : `median ${formatDuration(stats.median)}`
 				}
 			/>
-		</div>
-	)
-}
-
-function TriageStat({
-	label,
-	dot,
-	labelTone,
-	value,
-	valueTone = "text-foreground",
-	detail,
-}: {
-	label: string
-	dot: string
-	labelTone: string
-	value: number
-	valueTone?: string
-	detail: string
-}) {
-	return (
-		<div className="flex min-w-0 flex-col gap-2.5">
-			<div className="flex items-center gap-1.75">
-				<span aria-hidden className={`size-1.5 shrink-0 rounded-[3px] ${dot}`} />
-				<Eyebrow className={labelTone}>{label}</Eyebrow>
-			</div>
-			<StatFigure value={value} unit={detail} mono={false} valueClassName={valueTone} />
-		</div>
+		</StatRail>
 	)
 }
 

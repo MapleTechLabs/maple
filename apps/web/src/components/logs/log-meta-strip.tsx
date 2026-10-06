@@ -3,6 +3,7 @@ import { ClockIcon, ExternalLinkIcon, LinkIcon, PulseIcon } from "@/components/i
 
 import { CopyableValue } from "@/components/attributes"
 import { CopyButton } from "@maple/ui/components/ui/copy-button"
+import { IconButton } from "@maple/ui/components/ui/icon-button"
 import { shortId } from "@maple/ui/lib/ids"
 import { formatTimestampInTimezone } from "@/lib/timezone-format"
 import { encodeLogKey } from "@/lib/log-key"
@@ -56,15 +57,14 @@ export function LogMetaStrip({ log, timeZone, showOpenFullPage = true }: LogMeta
 			{/* Icon-only actions keep the strip on a single line in the narrow drawer. */}
 			<div className="ml-auto flex shrink-0 items-center gap-0.5">
 				{showOpenFullPage && (
-					<Link
-						to="/logs/$logId"
-						params={{ logId: encodeLogKey(log) }}
-						className="flex shrink-0 items-center rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-						title="Open in full page"
-						aria-label="Open in full page"
+					<IconButton
+						label="Open in full page"
+						size="icon-xs"
+						className="text-muted-foreground"
+						render={<Link to="/logs/$logId" params={{ logId: encodeLogKey(log) }} />}
 					>
 						<ExternalLinkIcon size={13} />
-					</Link>
+					</IconButton>
 				)}
 
 				<CopyButton

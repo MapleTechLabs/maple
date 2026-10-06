@@ -1,3 +1,4 @@
+import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { useCallback, useState } from "react"
 import { relativeToAbsolute } from "@/lib/time-utils"
 import { Kbd } from "@maple/ui/components/ui/kbd"
@@ -56,7 +57,7 @@ export function ShorthandInput({ onApply }: ShorthandInputProps) {
 			<p
 				className={cn(
 					"px-1 font-mono text-3xs transition-colors",
-					error ? "text-destructive" : "text-muted-foreground/60",
+					error ? TONE_TEXT.crit : "text-muted-foreground/60",
 				)}
 			>
 				{error ? "Try 5m, 2h, 4d, 1w, 2mo, or today" : "Type a duration and press enter"}

@@ -156,7 +156,9 @@ function McpAuthorizePage() {
 			<div className="space-y-5">
 				<div>
 					<AuthLayout.Title>Authorize Maple MCP</AuthLayout.Title>
-					<AuthLayout.Description>Connect an AI client to your Maple observability workspace.</AuthLayout.Description>
+					<AuthLayout.Description>
+						Connect an AI client to your Maple observability workspace.
+					</AuthLayout.Description>
 				</div>
 
 				{state._tag === "loading" || state._tag === "redirecting" ? (

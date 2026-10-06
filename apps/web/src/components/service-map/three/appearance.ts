@@ -49,7 +49,8 @@ export function connectionStyle(errorRate: number, dark: boolean, active: boolea
 	let color = dark ? "#6c8073" : "#42614e"
 	if (active) color = dark ? "#b9d6c6" : "#42614e"
 	const level = errorRateLevel(errorRate)
-	if (level !== "neutral") color = dark ? HEALTH_COLOR[health(errorRate)] : level === "crit" ? "#a95a4a" : "#9d762b"
+	if (level !== "neutral")
+		color = dark ? HEALTH_COLOR[health(errorRate)] : level === "crit" ? "#a95a4a" : "#9d762b"
 	return { color, opacity: dimmed ? 0.08 : active ? 0.95 : dark ? 0.48 : 0.72 }
 }
 

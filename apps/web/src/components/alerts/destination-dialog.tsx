@@ -20,13 +20,7 @@ import {
 import { chatIntegrationId } from "@/components/integrations/integration-catalog"
 import { useAsyncAction } from "@/hooks/use-mutation-action"
 import { useChatConnectors, useChatWorkspaceConnect } from "@/components/alerts/use-chat-workspaces"
-import {
-	ArrowRightIcon,
-	ArrowRotateClockwiseIcon,
-	CircleInfoIcon,
-	HazelIcon,
-	MagnifierIcon,
-} from "@/components/icons"
+import { ArrowRightIcon, CircleInfoIcon, HazelIcon, MagnifierIcon } from "@/components/icons"
 import {
 	CHANNEL_RESULT_LIMIT,
 	channelLabel,
@@ -53,8 +47,9 @@ import {
 	DialogTitle,
 } from "@maple/ui/components/ui/dialog"
 import { Input } from "@maple/ui/components/ui/input"
-import { Label } from "@maple/ui/components/ui/label"
-import { Field, FieldDescription, FieldLabel } from "@maple/ui/components/ui/field"
+import { Panel } from "@maple/ui/components/ui/panel"
+import { RefreshButton } from "@maple/ui/components/ui/refresh-button"
+import { Field, FieldDescription, FieldError, FieldLabel } from "@maple/ui/components/ui/field"
 import {
 	Select,
 	SelectContent,
@@ -176,7 +171,7 @@ function ProviderTile({
 			disabled={busy}
 			aria-pressed={selected}
 			className={cn(
-				"relative flex flex-col items-start gap-2 overflow-hidden rounded-lg border p-3 text-left transition-colors",
+				"relative flex flex-col items-start gap-2 overflow-hidden rounded-md border p-3 text-left transition-colors",
 				selected
 					? "border-(--tile-accent) bg-muted/40"
 					: "border-border/60 bg-card hover:border-border hover:bg-muted/40",
@@ -269,9 +264,9 @@ function EmailMemberPicker({
 				Alert emails go to the selected workspace members (up to {MAX_EMAIL_MEMBER_RECIPIENTS}).
 			</FieldDescription>
 			{form.memberUserIds.length > MAX_EMAIL_MEMBER_RECIPIENTS && (
-				<p className="text-2xs text-destructive">
+				<FieldError match className="text-2xs">
 					Select at most {MAX_EMAIL_MEMBER_RECIPIENTS} members.
-				</p>
+				</FieldError>
 			)}
 		</Field>
 	)
@@ -424,7 +419,7 @@ function HazelOAuthFields({
 		return (
 			<div className="space-y-2 rounded-md border border-dashed border-border/60 p-3">
 				{statusFailed ? (
-					<p className="text-xs text-destructive">
+					<p className="text-xs text-severity-error">
 						Couldn't check your Hazel connection status. This may be a temporary issue — try
 						connecting again.
 					</p>
@@ -465,7 +460,7 @@ function HazelOAuthFields({
 
 	return (
 		<div className="space-y-3">
-			<div className="flex items-center justify-between rounded-md border border-border/60 px-3 py-2 text-xs">
+			<Panel className="flex-row items-center justify-between px-3 py-2 text-xs">
 				<div className="space-y-0.5">
 					<div className="font-medium">Connected to Hazel</div>
 					<div className="text-muted-foreground">
@@ -482,7 +477,7 @@ function HazelOAuthFields({
 				>
 					Disconnect
 				</Button>
-			</div>
+			</Panel>
 			<Field className="items-stretch gap-1.5">
 				<FieldLabel htmlFor="destination-hazel-organization" className="text-xs">
 					Hazel organization
@@ -526,9 +521,9 @@ function HazelOAuthFields({
 					</SelectContent>
 				</Select>
 				{organizationsFailed ? (
-					<p className="text-2xs text-destructive">
+					<FieldError match className="text-2xs">
 						Couldn't load your Hazel organizations. Try reconnecting or refreshing.
-					</p>
+					</FieldError>
 				) : organizations.length === 0 ? (
 					<p className="text-2xs text-muted-foreground">
 						No organizations returned. Make sure your Hazel account is a member of at least one
@@ -577,9 +572,9 @@ function HazelOAuthFields({
 					</SelectContent>
 				</Select>
 				{orgIdForChannels.length > 0 && !channelsLoading && channelsFailed ? (
-					<p className="text-2xs text-destructive">
+					<FieldError match className="text-2xs">
 						Couldn't load channels for this organization. Try reselecting the organization.
-					</p>
+					</FieldError>
 				) : orgIdForChannels.length > 0 && !channelsLoading && channels.length === 0 ? (
 					<p className="text-2xs text-muted-foreground">
 						No channels. Make sure your account is in at least one channel of this organization.
@@ -745,11 +740,11 @@ function ChatDestinationFields({
 	}
 
 	return (
-		<div className="space-y-1.5">
+		<Field className="items-stretch gap-1.5">
 			<div className="flex items-center justify-between gap-2">
-				<Label htmlFor="destination-chat-channel" className="text-xs">
+				<FieldLabel htmlFor="destination-chat-channel" className="text-xs">
 					Channel
-				</Label>
+				</FieldLabel>
 				<div className="flex min-w-0 items-center gap-1.5">
 					{storedChannelName ? (
 						<span className="truncate text-2xs text-muted-foreground">
@@ -757,18 +752,14 @@ function ChatDestinationFields({
 							<span className="font-medium text-foreground">#{storedChannelName}</span>
 						</span>
 					) : null}
-					<Button
+					<RefreshButton
 						type="button"
 						size="xs"
 						variant="ghost"
 						className="-my-1 h-6 gap-1 px-1.5 text-2xs text-muted-foreground"
-						onClick={refreshChannels}
-						loading={channelsLoading}
-						title={`Re-fetch the channel list from ${connectorName}`}
-					>
-						<ArrowRotateClockwiseIcon size={12} />
-						Refresh
-					</Button>
+						onRefresh={refreshChannels}
+						pending={channelsLoading}
+					/>
 				</div>
 			</div>
 			<Combobox
@@ -825,7 +816,9 @@ function ChatDestinationFields({
 			</Combobox>
 			{needsReinstall ? (
 				<div className="flex flex-wrap items-center gap-2">
-					<p className="text-2xs text-destructive">{failure?.message}</p>
+					<FieldError match className="text-2xs">
+						{failure?.message}
+					</FieldError>
 					<Button
 						type="button"
 						size="xs"
@@ -845,11 +838,11 @@ function ChatDestinationFields({
 				</div>
 			) : failure !== null ? (
 				<div className="flex items-center gap-2">
-					<p className="text-2xs text-destructive">
+					<FieldError match className="text-2xs">
 						{failure.type === "permission_error"
 							? "Listing a workspace's channels is limited to org admins."
 							: `Couldn't load ${connectorName} channels.`}
-					</p>
+					</FieldError>
 					{failure.type === "permission_error" ? null : (
 						<Button type="button" size="xs" variant="ghost" onClick={refreshChannels}>
 							Retry
@@ -869,7 +862,7 @@ function ChatDestinationFields({
 					saving to check it can post.
 				</span>
 			</p>
-		</div>
+		</Field>
 	)
 }
 
@@ -927,11 +920,11 @@ function TelegramChatPicker({
 	})
 
 	return (
-		<div className="space-y-2">
+		<Field className="items-stretch gap-2">
 			<div className="flex items-center justify-between gap-2">
-				<Label htmlFor="destination-telegram-chat" className="text-xs">
+				<FieldLabel htmlFor="destination-telegram-chat" className="text-xs">
 					Chat ID
-				</Label>
+				</FieldLabel>
 				<Button
 					type="button"
 					variant="ghost"
@@ -949,7 +942,11 @@ function TelegramChatPicker({
 					Detect chats
 				</Button>
 			</div>
-			{error !== null ? <p className="text-2xs text-destructive">{error}</p> : null}
+			{error !== null ? (
+				<FieldError match className="text-2xs">
+					{error}
+				</FieldError>
+			) : null}
 			{chats !== null && chats.length === 0 ? (
 				<p className="text-2xs text-muted-foreground">
 					No recent chats. Add the bot to the group or channel (or send it a message), then detect
@@ -973,7 +970,7 @@ function TelegramChatPicker({
 					))}
 				</div>
 			) : null}
-		</div>
+		</Field>
 	)
 }
 
@@ -1017,7 +1014,7 @@ export function DestinationDialog({
 								Send to
 							</Eyebrow>
 							{providerLocked ? (
-								<div className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-card px-3 py-2">
+								<Panel className="flex-row items-center justify-between gap-3 px-3 py-2">
 									<span className="flex min-w-0 items-center gap-2.5">
 										<ProviderLogo
 											type={form.type}
@@ -1034,7 +1031,7 @@ export function DestinationDialog({
 									>
 										Change
 									</Button>
-								</div>
+								</Panel>
 							) : (
 								<ProviderPicker form={form} onFormChange={onFormChange} />
 							)}
@@ -1048,7 +1045,7 @@ export function DestinationDialog({
 							</Eyebrow>
 							<FieldHelper provider={provider} />
 						</div>
-						<div className="space-y-3 rounded-lg border border-border/60 bg-card p-4">
+						<Panel padded className="space-y-3">
 							<Field className="items-stretch gap-1.5">
 								<FieldLabel htmlFor="destination-name" className="text-xs">
 									Name
@@ -1089,11 +1086,11 @@ export function DestinationDialog({
 									/>
 									{form.integrationKey.trim().length > 0 &&
 										!isValidPagerDutyKey(form.integrationKey) && (
-											<p className="text-2xs text-destructive">
+											<FieldError match className="text-2xs">
 												That isn't a routing key (must be 32 characters). A
 												~20-character REST API token won't work — copy the Events API
 												v2 integration key.
-											</p>
+											</FieldError>
 										)}
 									<FieldDescription className="text-2xs">
 										In PagerDuty: open the service → Integrations → add or select an{" "}
@@ -1272,7 +1269,7 @@ export function DestinationDialog({
 									isEditing={isEditing}
 								/>
 							)}
-						</div>
+						</Panel>
 					</div>
 
 					{isEditing ? (

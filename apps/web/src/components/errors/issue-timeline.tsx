@@ -441,9 +441,7 @@ function MessageRow({
 				<div
 					className={cn(
 						"mt-1.5 max-w-prose overflow-x-auto rounded-xl border px-3 py-2 text-sm",
-						isAgent
-							? AGENT_ACCENT.surface
-							: "border-border/70 bg-muted/40",
+						isAgent ? AGENT_ACCENT.surface : "border-border/70 bg-muted/40",
 					)}
 				>
 					<MessageResponse className="text-sm leading-relaxed">{body}</MessageResponse>

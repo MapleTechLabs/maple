@@ -1,8 +1,8 @@
 import type { ReactNode } from "react"
 
-import { TONE_FILL } from "@maple/ui/lib/tone"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
-import { ToolbarSearch } from "@maple/ui/components/toolbar"
+import { Toolbar, ToolbarSearch } from "@maple/ui/components/toolbar"
+import { FilterChip } from "@maple/ui/components/ui/filter-chip"
 import { cn } from "@maple/ui/lib/utils"
 
 import { FacetSelect } from "@/components/common/facet-select"
@@ -42,7 +42,7 @@ interface ToolFilterToolbarProps {
  * second list to rank. It still shows up in the scope band as a removable chip,
  * because the band is where everything narrowing the page is stated at once.
  *
- * Every control is the same 30px pill, and a control with a value set is drawn
+ * Every control is a compact pill, and a control with a value set is drawn
  * in the primary tint so the toolbar reads as "what is narrowing this page" at
  * a glance.
  */
@@ -63,7 +63,7 @@ export function ToolFilterToolbar({
 	actions,
 }: ToolFilterToolbarProps) {
 	return (
-		<div className="flex flex-wrap items-center gap-2 border-b border-border px-6 py-3">
+		<Toolbar className="justify-start gap-2 border-border px-6">
 			{nameSearch ? (
 				<ToolbarSearch
 					query={nameSearch.query}
@@ -86,29 +86,18 @@ export function ToolFilterToolbar({
 				<FacetSelect label="model" value={model} options={modelOptions} onChange={onModelChange} />
 				<FacetSelect label="env" value={env} options={envOptions} onChange={onEnvChange} />
 
-				<button
-					type="button"
-					aria-pressed={failingOnly}
-					onClick={onToggleFailingOnly}
-					className={cn(
-						"inline-flex h-[30px] items-center gap-1.5 rounded-md border px-2.5 font-mono text-xs transition-colors",
-						failingOnly
-							? "border-severity-error/50 bg-severity-error/10 text-foreground"
-							: "border-border bg-card text-muted-foreground hover:text-foreground",
-					)}
+				<FilterChip
+					pressed={failingOnly}
+					onPressedChange={() => onToggleFailingOnly()}
+					tone="crit"
+					dot
+					className="font-mono"
 				>
-					<span
-						aria-hidden
-						className={cn(
-							"size-[5px] rounded-full",
-							failingOnly ? TONE_FILL.crit : "bg-severity-error/40",
-						)}
-					/>
 					Failing only
-				</button>
+				</FilterChip>
 			</div>
 
 			{actions ? <div className="ml-auto">{actions}</div> : null}
-		</div>
+		</Toolbar>
 	)
 }

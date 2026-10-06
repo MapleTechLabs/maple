@@ -1,6 +1,5 @@
 import { InlineCode } from "@maple/ui/components/ui/inline-code"
-import { Field, FieldLabel } from "@maple/ui/components/ui/field"
-import { Card, CardAction, CardDescription, CardHeader, CardTitle } from "@maple/ui/components/ui/card"
+import { Field, FieldDescription, FieldLabel } from "@maple/ui/components/ui/field"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import type {
 	IngestAttributeMappingId,
@@ -9,20 +8,15 @@ import type {
 } from "@maple/domain/http"
 import type { V2AttributeMapping } from "@maple/domain/http/v2"
 import { useState } from "react"
-import { Exit } from "effect"
-import { toastManager } from "@maple/ui/components/ui/toast"
 
 import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
-import {
-	Dialog,
-	DialogContent,
-	DialogDescription,
-	DialogFooter,
-	DialogHeader,
-	DialogTitle,
-} from "@maple/ui/components/ui/dialog"
+import { FormDialog } from "@maple/ui/components/ui/form-dialog"
+import { IconButton } from "@maple/ui/components/ui/icon-button"
+import { Panel } from "@maple/ui/components/ui/panel"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { Input } from "@maple/ui/components/ui/input"
@@ -52,7 +46,9 @@ import {
 import { AttributeKeyAutocomplete } from "./attribute-key-autocomplete"
 import { DocsLink, EmptyActions } from "@/components/common/docs-link"
 import { ErrorState } from "@/components/common/error-state"
-import { useAsyncAction } from "@/hooks/use-mutation-action"
+import { useAsyncAction, useKeyedAsyncAction } from "@/hooks/use-mutation-action"
+import { toastExit } from "@/lib/error-toast"
+import { SettingsSection } from "./settings-section"
 
 const SOURCE_CONTEXT_LABELS: Record<IngestMappingSourceContext, string> = {
 	span: "Span attribute",
@@ -78,9 +74,12 @@ const SOURCE_CONTEXT_ICON: Record<IngestMappingSourceContext, IconComponent> = {
 	resource: CubeIcon,
 } satisfies Record<IngestMappingSourceContext, IconComponent>
 
+const toSourceContext = (value: string | null): IngestMappingSourceContext =>
+	value === "resource" ? "resource" : "span"
+const toOperation = (value: string | null): IngestMappingOperation => (value === "move" ? "move" : "copy")
+
 export function AttributeMappingsSection() {
 	const [dialogOpen, setDialogOpen] = useState(false)
-	const [togglingId, setTogglingId] = useState<IngestAttributeMappingId | null>(null)
 	const [deleteConfirm, setDeleteConfirm] = useState<V2AttributeMapping | null>(null)
 
 	const [editing, setEditing] = useState<V2AttributeMapping | null>(null)
@@ -129,79 +128,53 @@ export function AttributeMappingsSection() {
 		setDialogOpen(true)
 	}
 
-	const [handleSave, isSaving] = useAsyncAction(async () => {
-		if (!formName.trim() || !formSourceKey.trim() || !formTargetKey.trim()) {
-			toastManager.add({ title: "Name, source key, and target key are required", type: "error" })
-			return
-		}
+	const formValid =
+		formName.trim().length > 0 && formSourceKey.trim().length > 0 && formTargetKey.trim().length > 0
 
-		if (editing) {
-			const result = await updateMutation({
-				params: { id: editing.id },
-				payload: {
-					name: formName.trim(),
-					source_context: formSourceContext,
-					source_key: formSourceKey.trim(),
-					target_key: formTargetKey.trim(),
-					operation: formOperation,
-				},
-			})
-			if (Exit.isSuccess(result)) {
-				toastManager.add({ title: "Attribute mapping updated", type: "success" })
-				setDialogOpen(false)
-				refreshMappings()
-				refreshRecommendations()
-			} else {
-				toastManager.add({ title: "Failed to update attribute mapping", type: "error" })
-			}
-		} else {
-			const result = await createMutation({
-				payload: {
-					name: formName.trim(),
-					source_context: formSourceContext,
-					source_key: formSourceKey.trim(),
-					target_key: formTargetKey.trim(),
-					operation: formOperation,
-				},
-			})
-			if (Exit.isSuccess(result)) {
-				toastManager.add({ title: "Attribute mapping created", type: "success" })
-				setDialogOpen(false)
-				refreshMappings()
-				refreshRecommendations()
-			} else {
-				toastManager.add({ title: "Failed to create attribute mapping", type: "error" })
-			}
+	const [handleSave, isSaving] = useAsyncAction(async () => {
+		if (!formValid) return
+		const payload = {
+			name: formName.trim(),
+			source_context: formSourceContext,
+			source_key: formSourceKey.trim(),
+			target_key: formTargetKey.trim(),
+			operation: formOperation,
 		}
+		const ok = editing
+			? toastExit(await updateMutation({ params: { id: editing.id }, payload }), {
+					success: "Attribute mapping updated",
+					error: "Failed to update attribute mapping",
+				})
+			: toastExit(await createMutation({ payload }), {
+					success: "Attribute mapping created",
+					error: "Failed to create attribute mapping",
+				})
+		if (!ok) return
+		setDialogOpen(false)
+		refreshMappings()
+		refreshRecommendations()
 	})
 
 	async function handleDelete(mappingId: IngestAttributeMappingId) {
-		setDeleteConfirm(null)
 		const result = await deleteMutation({ params: { id: mappingId } })
-		if (Exit.isSuccess(result)) {
-			toastManager.add({ title: "Attribute mapping deleted", type: "success" })
+		const ok = toastExit(result, {
+			success: "Attribute mapping deleted",
+			error: "Failed to delete attribute mapping",
+		})
+		if (ok) {
 			refreshMappings()
 			refreshRecommendations()
-		} else {
-			toastManager.add({ title: "Failed to delete attribute mapping", type: "error" })
 		}
+		return ok
 	}
 
-	async function handleToggleEnabled(mapping: V2AttributeMapping) {
-		setTogglingId(mapping.id)
+	const toggle = useKeyedAsyncAction(async (_id: IngestAttributeMappingId, mapping: V2AttributeMapping) => {
 		const result = await updateMutation({
 			params: { id: mapping.id },
-			payload: {
-				enabled: !mapping.enabled,
-			},
+			payload: { enabled: !mapping.enabled },
 		})
-		if (Exit.isSuccess(result)) {
-			refreshMappings()
-		} else {
-			toastManager.add({ title: "Failed to update attribute mapping", type: "error" })
-		}
-		setTogglingId(null)
-	}
+		if (toastExit(result, { error: "Failed to update attribute mapping" })) refreshMappings()
+	})
 
 	const mappingCount = Result.isSuccess(listResult) ? mappings.length : null
 
@@ -210,29 +183,22 @@ export function AttributeMappingsSection() {
 
 	return (
 		<>
-			<Card className="overflow-hidden">
-				<CardHeader className="px-4 pt-4 pb-3">
-					<CardTitle render={<h3 />} className="text-sm font-medium">
-						Attribute mappings
-						{mappingCount !== null && mappingCount > 0 && (
-							<span className="text-muted-foreground font-normal tabular-nums">
-								{" "}
-								· {mappingCount}
-							</span>
-						)}
-					</CardTitle>
-					<CardDescription className="text-xs">
-						Rename or promote span attribute keys at ingest. Applied only to spans received after
-						a rule is saved.
-					</CardDescription>
-					<CardAction>
-						<Button variant="outline" size="sm" onClick={openAddDialog}>
-							<PlusIcon size={14} />
-							Add mapping
-						</Button>
-					</CardAction>
-				</CardHeader>
-				<div className="border-t">
+			<SettingsSection
+				title={
+					mappingCount !== null && mappingCount > 0
+						? `Attribute mappings · ${mappingCount}`
+						: "Attribute mappings"
+				}
+				description="Rename or promote span attribute keys at ingest. Applied only to spans received after a rule is saved."
+				padded={false}
+				actions={
+					<Button size="sm" onClick={openAddDialog}>
+						<PlusIcon data-icon="inline-start" />
+						Add mapping
+					</Button>
+				}
+			>
+				<div>
 					{Result.isInitial(listResult) ? (
 						<SkeletonList
 							rows={2}
@@ -268,7 +234,7 @@ export function AttributeMappingsSection() {
 							</EmptyHeader>
 							<EmptyActions>
 								<Button size="sm" onClick={openAddDialog}>
-									<PlusIcon size={14} />
+									<PlusIcon data-icon="inline-start" />
 									Add mapping
 								</Button>
 								<DocsLink page="otelConventions" />
@@ -303,9 +269,9 @@ export function AttributeMappingsSection() {
 											!mapping.enabled && "opacity-55",
 										)}
 									>
-										<span className="w-44 shrink-0 truncate text-sm" title={mapping.name}>
+										<TruncatedText className="w-44 shrink-0 text-sm">
 											{mapping.name}
-										</span>
+										</TruncatedText>
 
 										<div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 text-sm">
 											<InlineCode variant="plain">{mapping.source_key}</InlineCode>
@@ -331,33 +297,36 @@ export function AttributeMappingsSection() {
 
 										<div className="flex w-28 shrink-0 items-center justify-end gap-1.5">
 											<div className="flex items-center gap-1 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
-												<Button
-													variant="ghost"
-													size="icon-sm"
+												<IconButton
 													className="text-muted-foreground hover:text-foreground"
 													onClick={() => openEditDialog(mapping)}
-													aria-label="Edit mapping"
-													title="Edit"
+													label="Edit mapping"
 												>
 													<PencilIcon size={14} />
-												</Button>
-												<Button
-													variant="ghost"
-													size="icon-sm"
+												</IconButton>
+												<IconButton
 													className="text-muted-foreground hover:text-destructive"
 													onClick={() => setDeleteConfirm(mapping)}
-													aria-label="Delete mapping"
-													title="Delete"
+													label="Delete mapping"
 												>
 													<TrashIcon size={14} />
-												</Button>
+												</IconButton>
 											</div>
-											<Switch
-												checked={mapping.enabled}
-												onCheckedChange={() => handleToggleEnabled(mapping)}
-												disabled={togglingId === mapping.id}
-												title={`Added ${formatRelativeTime(mapping.created_at)}`}
-											/>
+											<Tooltip>
+												<TooltipTrigger render={<span className="inline-flex" />}>
+													<Switch
+														aria-label={`${mapping.enabled ? "Disable" : "Enable"} ${mapping.name}`}
+														checked={mapping.enabled}
+														onCheckedChange={() =>
+															void toggle.run(mapping.id, mapping)
+														}
+														disabled={toggle.isPending(mapping.id)}
+													/>
+												</TooltipTrigger>
+												<TooltipContent>
+													Added {formatRelativeTime(mapping.created_at)}
+												</TooltipContent>
+											</Tooltip>
 										</div>
 									</div>
 								)
@@ -365,184 +334,154 @@ export function AttributeMappingsSection() {
 						</div>
 					)}
 				</div>
-			</Card>
+			</SettingsSection>
 
 			{/* Add / Edit Dialog */}
-			<Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-				<DialogContent>
-					<DialogHeader>
-						<div className="bg-primary/10 text-primary flex size-9 items-center justify-center rounded-lg">
-							<ArrowUpDownIcon size={18} />
-						</div>
-						<DialogTitle>
-							{editing ? "Edit Attribute Mapping" : "Add Attribute Mapping"}
-						</DialogTitle>
-						<DialogDescription>
-							The value at the source key is written to the target span attribute. An existing
-							target key is never overwritten.
-						</DialogDescription>
-					</DialogHeader>
-					<div className="space-y-4 px-6 py-2">
-						<Field>
-							<FieldLabel htmlFor="mapping-name">Name</FieldLabel>
-							<Input
-								id="mapping-name"
-								placeholder="e.g. Normalize HTTP status code"
-								value={formName}
-								onChange={(e) => setFormName(e.target.value)}
-							/>
-						</Field>
-						<Field>
-							<FieldLabel>Source context</FieldLabel>
-							<Select
-								items={SOURCE_CONTEXT_LABELS}
-								value={formSourceContext}
-								onValueChange={(val: string | null) =>
-									setFormSourceContext((val as IngestMappingSourceContext | null) ?? "span")
-								}
-							>
-								<SelectTrigger className="w-full">
-									<SelectValue placeholder="Select source context">
-										{(value: string | null) => {
-											const ctx =
-												(value as IngestMappingSourceContext | null) ??
-												formSourceContext
-											const Icon = SOURCE_CONTEXT_ICON[ctx]
-											return (
-												<span className="flex items-center gap-2">
-													<Icon className="text-muted-foreground" />
-													{SOURCE_CONTEXT_LABELS[ctx]}
-												</span>
-											)
-										}}
-									</SelectValue>
-								</SelectTrigger>
-								<SelectContent>
-									<SelectItem value="span">
+			<FormDialog
+				open={dialogOpen}
+				onOpenChange={setDialogOpen}
+				title={editing ? "Edit attribute mapping" : "Add attribute mapping"}
+				description="The value at the source key is written to the target span attribute. An existing target key is never overwritten."
+				onSubmit={() => void handleSave()}
+				submitLabel={editing ? "Save changes" : "Add mapping"}
+				pending={isSaving}
+				submitDisabled={!formValid}
+			>
+				<Field>
+					<FieldLabel htmlFor="mapping-name">Name</FieldLabel>
+					<Input
+						id="mapping-name"
+						placeholder="e.g. Normalize HTTP status code"
+						value={formName}
+						onChange={(e) => setFormName(e.target.value)}
+					/>
+				</Field>
+				<Field>
+					<FieldLabel>Source context</FieldLabel>
+					<Select
+						items={SOURCE_CONTEXT_LABELS}
+						value={formSourceContext}
+						onValueChange={(val: string | null) => setFormSourceContext(toSourceContext(val))}
+					>
+						<SelectTrigger className="w-full">
+							<SelectValue placeholder="Select source context">
+								{(value: string | null) => {
+									const ctx = value === null ? formSourceContext : toSourceContext(value)
+									const Icon = SOURCE_CONTEXT_ICON[ctx]
+									return (
 										<span className="flex items-center gap-2">
-											<BracketsCurlyIcon className="text-muted-foreground" />
-											Span attribute
+											<Icon className="text-muted-foreground" />
+											{SOURCE_CONTEXT_LABELS[ctx]}
 										</span>
-									</SelectItem>
-									<SelectItem value="resource">
+									)
+								}}
+							</SelectValue>
+						</SelectTrigger>
+						<SelectContent>
+							<SelectItem value="span">
+								<span className="flex items-center gap-2">
+									<BracketsCurlyIcon className="text-muted-foreground" />
+									Span attribute
+								</span>
+							</SelectItem>
+							<SelectItem value="resource">
+								<span className="flex items-center gap-2">
+									<CubeIcon className="text-muted-foreground" />
+									Resource attribute
+								</span>
+							</SelectItem>
+						</SelectContent>
+					</Select>
+				</Field>
+				<Field>
+					<FieldLabel htmlFor="mapping-source-key">Source key</FieldLabel>
+					<AttributeKeyAutocomplete
+						id="mapping-source-key"
+						scope={formSourceContext}
+						placeholder="e.g. http.status_code"
+						value={formSourceKey}
+						onValueChange={setFormSourceKey}
+					/>
+				</Field>
+				<Field>
+					<FieldLabel htmlFor="mapping-target-key">Target span attribute key</FieldLabel>
+					<AttributeKeyAutocomplete
+						id="mapping-target-key"
+						scope="span"
+						placeholder="e.g. http.response.status_code"
+						value={formTargetKey}
+						onValueChange={setFormTargetKey}
+					/>
+				</Field>
+				<Field>
+					<FieldLabel>Operation</FieldLabel>
+					<Select
+						items={OPERATION_LABELS}
+						value={formOperation}
+						onValueChange={(val: string | null) => setFormOperation(toOperation(val))}
+					>
+						<SelectTrigger className="w-full">
+							<SelectValue placeholder="Select operation">
+								{(value: string | null) => {
+									const op = value === null ? formOperation : toOperation(value)
+									const meta = OPERATION_BADGE[op]
+									const Icon = meta.icon
+									return (
 										<span className="flex items-center gap-2">
-											<CubeIcon className="text-muted-foreground" />
-											Resource attribute
+											<Icon className={meta.tone} />
+											{OPERATION_LABELS[op]}
 										</span>
-									</SelectItem>
-								</SelectContent>
-							</Select>
-						</Field>
-						<Field>
-							<FieldLabel htmlFor="mapping-source-key">Source key</FieldLabel>
-							<AttributeKeyAutocomplete
-								id="mapping-source-key"
-								scope={formSourceContext}
-								placeholder="e.g. http.status_code"
-								value={formSourceKey}
-								onValueChange={setFormSourceKey}
-							/>
-						</Field>
-						<Field>
-							<FieldLabel htmlFor="mapping-target-key">Target span attribute key</FieldLabel>
-							<AttributeKeyAutocomplete
-								id="mapping-target-key"
-								scope="span"
-								placeholder="e.g. http.response.status_code"
-								value={formTargetKey}
-								onValueChange={setFormTargetKey}
-							/>
-						</Field>
-						<Field>
-							<FieldLabel>Operation</FieldLabel>
-							<Select
-								items={OPERATION_LABELS}
-								value={formOperation}
-								onValueChange={(val: string | null) =>
-									setFormOperation((val as IngestMappingOperation | null) ?? "copy")
-								}
-							>
-								<SelectTrigger className="w-full">
-									<SelectValue placeholder="Select operation">
-										{(value: string | null) => {
-											const op =
-												(value as IngestMappingOperation | null) ?? formOperation
-											const meta = OPERATION_BADGE[op]
-											const Icon = meta.icon
-											return (
-												<span className="flex items-center gap-2">
-													<Icon className={meta.tone} />
-													{OPERATION_LABELS[op]}
-												</span>
-											)
-										}}
-									</SelectValue>
-								</SelectTrigger>
-								<SelectContent>
-									<SelectItem value="copy">
-										<span className="flex items-center gap-2">
-											<CopyIcon className={TONE_TEXT.info} />
-											<span>
-												Copy{" "}
-												<span className="text-muted-foreground">
-													— keep source key
-												</span>
-											</span>
-										</span>
-									</SelectItem>
-									<SelectItem value="move">
-										<span className="flex items-center gap-2">
-											<ArrowRightFromLineIcon className={TONE_TEXT.warn} />
-											<span>
-												Move{" "}
-												<span className="text-muted-foreground">
-													— remove source key
-												</span>
-											</span>
-										</span>
-									</SelectItem>
-								</SelectContent>
-							</Select>
-							{formSourceContext === "resource" && formOperation === "move" && (
-								<p className="text-muted-foreground text-xs">
-									Move behaves as Copy for resource attributes — a resource attribute is
-									shared across every span in a batch and is never deleted.
-								</p>
-							)}
-						</Field>
+									)
+								}}
+							</SelectValue>
+						</SelectTrigger>
+						<SelectContent>
+							<SelectItem value="copy">
+								<span className="flex items-center gap-2">
+									<CopyIcon className={TONE_TEXT.info} />
+									<span>
+										Copy <span className="text-muted-foreground">(keep source key)</span>
+									</span>
+								</span>
+							</SelectItem>
+							<SelectItem value="move">
+								<span className="flex items-center gap-2">
+									<ArrowRightFromLineIcon className={TONE_TEXT.warn} />
+									<span>
+										Move{" "}
+										<span className="text-muted-foreground">(remove source key)</span>
+									</span>
+								</span>
+							</SelectItem>
+						</SelectContent>
+					</Select>
+					{formSourceContext === "resource" && formOperation === "move" && (
+						<FieldDescription>
+							Move behaves as Copy for resource attributes: a resource attribute is shared
+							across every span in a batch and is never deleted.
+						</FieldDescription>
+					)}
+				</Field>
 
-						{showPreview && (
-							<div className="rounded-md border bg-muted/40 px-3 py-2.5">
-								<Eyebrow className="mb-1.5" as="div">
-									Preview
-								</Eyebrow>
-								<div className="flex flex-wrap items-center gap-1.5 text-sm">
-									<InlineCode variant="plain">{formSourceKey.trim()}</InlineCode>
-									<ArrowRightIcon size={12} className="text-muted-foreground shrink-0" />
-									<InlineCode variant="plain" className="text-foreground">
-										{formTargetKey.trim()}
-									</InlineCode>
-									<Badge
-										variant={OPERATION_BADGE[formOperation].variant}
-										className="ml-1 gap-1"
-									>
-										<PreviewOpIcon size={11} />
-										{OPERATION_LABELS[formOperation]}
-									</Badge>
-								</div>
-							</div>
-						)}
-					</div>
-					<DialogFooter>
-						<Button variant="outline" onClick={() => setDialogOpen(false)} disabled={isSaving}>
-							Cancel
-						</Button>
-						<Button onClick={handleSave} loading={isSaving}>
-							{editing ? "Save Changes" : "Add Mapping"}
-						</Button>
-					</DialogFooter>
-				</DialogContent>
-			</Dialog>
+				{showPreview && (
+					<Panel tone="muted" className="px-3 py-2.5">
+						<Eyebrow className="mb-1.5" as="div">
+							Preview
+						</Eyebrow>
+						<div className="flex flex-wrap items-center gap-1.5 text-sm">
+							<InlineCode variant="plain">{formSourceKey.trim()}</InlineCode>
+							<ArrowRightIcon size={12} className="text-muted-foreground shrink-0" />
+							<InlineCode variant="plain" className="text-foreground">
+								{formTargetKey.trim()}
+							</InlineCode>
+							<Badge variant={OPERATION_BADGE[formOperation].variant} className="ml-1 gap-1">
+								<PreviewOpIcon size={11} />
+								{OPERATION_LABELS[formOperation]}
+							</Badge>
+						</div>
+					</Panel>
+				)}
+			</FormDialog>
 
 			{/* Delete Confirmation */}
 			<ConfirmDialog
@@ -550,7 +489,7 @@ export function AttributeMappingsSection() {
 				onOpenChange={(open) => {
 					if (!open) setDeleteConfirm(null)
 				}}
-				title="Delete attribute mapping"
+				title="Delete attribute mapping?"
 				description={
 					<>
 						Are you sure you want to delete{" "}
@@ -559,9 +498,7 @@ export function AttributeMappingsSection() {
 					</>
 				}
 				confirmLabel="Delete"
-				onConfirm={() => {
-					if (deleteConfirm) void handleDelete(deleteConfirm.id)
-				}}
+				onConfirm={() => (deleteConfirm ? handleDelete(deleteConfirm.id) : undefined)}
 			/>
 		</>
 	)

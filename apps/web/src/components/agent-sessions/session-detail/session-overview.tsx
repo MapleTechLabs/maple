@@ -12,6 +12,9 @@ import { Separator } from "@maple/ui/components/ui/separator"
 import { formatNumber, formatPercent } from "@maple/ui/lib/format"
 import { formatSessionDuration } from "@maple/ui/lib/replay-format"
 import { cn } from "@maple/ui/lib/utils"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
+
+import { SectionHeading } from "@/components/common/section-heading"
 
 import {
 	buildSessionChecks,
@@ -416,9 +419,7 @@ function ToolLedgerHeader({ summary }: { summary: SessionSummary }) {
 
 	return (
 		<div className="flex flex-wrap items-baseline justify-between gap-x-5 gap-y-2">
-			<Eyebrow variant="label" as="h3">
-				Tools
-			</Eyebrow>
+			<SectionHeading variant="eyebrow" as="h3" title="Tools" className="mb-0" />
 			{summary.tools.length > 0 && (
 				<div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
 					<KeyValueList layout="inline">
@@ -523,17 +524,14 @@ function ToolLedgerRow({
 						)}
 					>
 						<DisclosureChevron open={expanded} size={9} />
-						<span className="min-w-0 truncate font-mono text-xs" title={tool.name}>
+						<TruncatedText mono className="text-xs">
 							{tool.name}
-						</span>
+						</TruncatedText>
 					</button>
 				) : (
-					<span
-						className={cn(LEDGER_NAME, "truncate pl-[15px] font-mono text-xs")}
-						title={tool.name}
-					>
+					<TruncatedText mono className={cn(LEDGER_NAME, "pl-[15px] text-xs")}>
 						{tool.name}
-					</span>
+					</TruncatedText>
 				)}
 				<span className={cn(LEDGER_COUNT, "font-mono text-xs tabular-nums")}>{tool.calls}</span>
 				<span
@@ -689,12 +687,7 @@ function formatToolDuration(ms: number): string {
 function RailSection({ title, aside, children }: { title: string; aside?: ReactNode; children: ReactNode }) {
 	return (
 		<section className="flex flex-col gap-3 border-border border-t pt-6 first:border-t-0 first:pt-0">
-			<div className="flex items-baseline justify-between gap-2">
-				<Eyebrow variant="label" as="h3">
-					{title}
-				</Eyebrow>
-				{aside}
-			</div>
+			<SectionHeading variant="eyebrow" as="h3" title={title} actions={aside} className="mb-0" />
 			{children}
 		</section>
 	)

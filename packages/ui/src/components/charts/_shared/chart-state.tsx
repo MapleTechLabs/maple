@@ -3,6 +3,7 @@
 import { createContext, use, type ReactNode } from "react"
 
 import { cn } from "../../../lib/utils"
+import { TONE_BORDER, TONE_TEXT } from "../../../lib/tone"
 import { ChartSkeleton, type ChartSkeletonVariant } from "./chart-skeleton"
 
 /**
@@ -230,7 +231,9 @@ export function ChartError({
 			height={height}
 			className={cn(
 				MESSAGE_BASE,
-				"border border-destructive/40 bg-destructive/5 text-destructive",
+				"border bg-severity-error/5",
+				TONE_BORDER.crit,
+				TONE_TEXT.crit,
 				className,
 			)}
 		>

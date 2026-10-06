@@ -1,13 +1,12 @@
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { useState } from "react"
-import { Exit } from "effect"
-import { toastManager } from "@maple/ui/components/ui/toast"
+import { formatNumber } from "@maple/ui/lib/format"
 
 import { Badge } from "@maple/ui/components/ui/badge"
-import { Button } from "@maple/ui/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@maple/ui/components/ui/card"
+import { Field, FieldDescription, FieldLabel } from "@maple/ui/components/ui/field"
+import { Panel } from "@maple/ui/components/ui/panel"
+import { RefreshButton } from "@maple/ui/components/ui/refresh-button"
 import { Input } from "@maple/ui/components/ui/input"
-import { Label } from "@maple/ui/components/ui/label"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { SettingRow } from "@maple/ui/components/ui/setting-row"
 import { Switch } from "@maple/ui/components/ui/switch"
@@ -15,6 +14,7 @@ import { MapleInternalAtomClient, retainedInternalQuery } from "@/lib/services/c
 import { AiTriageSettingsUpdateRequest } from "@maple/domain/http"
 import { ErrorState } from "@/components/common/error-state"
 import { useAsyncAction } from "@/hooks/use-mutation-action"
+import { toastExit } from "@/lib/error-toast"
 
 interface AiTriageSettingsSectionProps {
 	isAdmin: boolean
@@ -54,8 +54,8 @@ function DailyLimitField({
 }) {
 	const [draft, setDraft] = useState<string | null>(null)
 	return (
-		<div className="space-y-2 sm:max-w-xs">
-			<Label htmlFor={id}>{label}</Label>
+		<Field className="sm:max-w-xs">
+			<FieldLabel htmlFor={id}>{label}</FieldLabel>
 			<Input
 				id={id}
 				type="number"
@@ -73,13 +73,13 @@ function DailyLimitField({
 					}
 				}}
 			/>
-			<p className="text-xs text-muted-foreground">
+			<FieldDescription>
 				<span className="text-foreground">
-					{spent.toLocaleString()} of {value.toLocaleString()} used today
+					{formatNumber(spent)} of {formatNumber(value)} used today
 				</span>{" "}
 				· {help}
-			</p>
-		</div>
+			</FieldDescription>
+		</Field>
 	)
 }
 
@@ -100,11 +100,7 @@ export function AiTriageSettingsSection({ isAdmin, hasEntitlement }: AiTriageSet
 				payload: request,
 				reactivityKeys: SETTINGS_REACTIVITY_KEYS,
 			})
-			if (Exit.isSuccess(result)) {
-				toastManager.add({ title: successMessage, type: "success" })
-			} else {
-				toastManager.add({ title: "Failed to update AI triage settings.", type: "error" })
-			}
+			toastExit(result, { success: successMessage, error: "Failed to update AI triage settings" })
 		},
 	)
 
@@ -117,103 +113,97 @@ export function AiTriageSettingsSection({ isAdmin, hasEntitlement }: AiTriageSet
 		.orElse(() => null)
 
 	return (
-		<Card>
-			<CardHeader>
-				<CardTitle className="flex items-center gap-2">
+		<Panel padded className="gap-6">
+			<div className="space-y-1">
+				<h3 className="flex items-center gap-2 text-sm font-medium">
 					AI auto-triage
 					{settings?.enabled ? <Badge variant="ok">Enabled</Badge> : null}
-				</CardTitle>
-				<CardDescription>
+				</h3>
+				<p className="text-sm text-muted-foreground">
 					When a new error or anomaly incident opens, an AI agent automatically investigates it with
-					read-only tools and attaches a triage summary. Runs use Maple's managed AI — no setup
+					read-only tools and attaches a triage summary. Runs use Maple's managed AI, no setup
 					required.
-				</CardDescription>
-			</CardHeader>
-			<CardContent className="space-y-6">
-				{Result.builder(settingsResult)
-					.onInitial(() => <Skeleton className="h-24 w-full" />)
-					.onError((error) => (
-						<ErrorState
-							error={error}
-							title="Failed to load AI triage settings"
-							variant="row"
-							onRetry={() => refreshSettings()}
-						/>
-					))
-					.onSuccess((current) => (
-						<>
-							<SettingRow
-								label="Auto-triage new incidents"
-								description="Investigate each new incident automatically."
-								control={
-									<Switch
-										checked={current.enabled}
-										disabled={isSaving}
-										onCheckedChange={(checked) =>
-											save(
-												new AiTriageSettingsUpdateRequest({ enabled: checked }),
-												checked
-													? "AI auto-triage enabled"
-													: "AI auto-triage disabled",
-											)
-										}
-									/>
-								}
-							/>
-
-							<DailyLimitField
-								id="ai-triage-max-runs"
-								label="Max investigations per day"
-								value={current.maxRunsPerDay}
-								min={1}
-								max={500}
-								disabled={isSaving}
-								spent={current.usage.runs}
-								help="How many incidents auto-triage may investigate in a UTC day."
-								onCommit={(parsed) =>
-									save(
-										new AiTriageSettingsUpdateRequest({ maxRunsPerDay: parsed }),
-										"Daily run cap updated",
-									)
-								}
-							/>
-
-							<DailyLimitField
-								id="ai-triage-max-passes"
-								label="Max model passes per day"
-								value={current.maxPassesPerDay}
-								min={1}
-								max={2000}
-								disabled={isSaving}
-								spent={current.usage.passes}
-								help="The spend ceiling. An investigation is one model pass, so this and the run ceiling count the same thing. Three tenths of it is reserved for high and critical incidents."
-								onCommit={(parsed) =>
-									save(
-										new AiTriageSettingsUpdateRequest({ maxPassesPerDay: parsed }),
-										"Daily model-pass cap updated",
-									)
-								}
-							/>
-
-							<p className="text-xs text-muted-foreground">
-								Both ceilings apply to automatic triage only. Investigations you start or
-								retry yourself are never blocked by them.
-							</p>
-
-							<div className="flex justify-end">
-								<Button
-									size="sm"
-									variant="ghost"
+				</p>
+			</div>
+			{Result.builder(settingsResult)
+				.onInitial(() => <Skeleton className="h-24 w-full" />)
+				.onError((error) => (
+					<ErrorState
+						error={error}
+						title="Failed to load AI triage settings"
+						variant="row"
+						onRetry={() => refreshSettings()}
+					/>
+				))
+				.onSuccess((current) => (
+					<>
+						<SettingRow
+							label="Auto-triage new incidents"
+							description="Investigate each new incident automatically."
+							control={
+								<Switch
+									checked={current.enabled}
 									disabled={isSaving}
-									onClick={() => refreshSettings()}
-								>
-									Refresh
-								</Button>
-							</div>
-						</>
-					))
-					.render()}
-			</CardContent>
-		</Card>
+									onCheckedChange={(checked) =>
+										save(
+											new AiTriageSettingsUpdateRequest({ enabled: checked }),
+											checked ? "AI auto-triage enabled" : "AI auto-triage disabled",
+										)
+									}
+								/>
+							}
+						/>
+
+						<DailyLimitField
+							id="ai-triage-max-runs"
+							label="Max investigations per day"
+							value={current.maxRunsPerDay}
+							min={1}
+							max={500}
+							disabled={isSaving}
+							spent={current.usage.runs}
+							help="How many incidents auto-triage may investigate in a UTC day."
+							onCommit={(parsed) =>
+								save(
+									new AiTriageSettingsUpdateRequest({ maxRunsPerDay: parsed }),
+									"Daily run cap updated",
+								)
+							}
+						/>
+
+						<DailyLimitField
+							id="ai-triage-max-passes"
+							label="Max model passes per day"
+							value={current.maxPassesPerDay}
+							min={1}
+							max={2000}
+							disabled={isSaving}
+							spent={current.usage.passes}
+							help="The spend ceiling. An investigation is one model pass, so this and the run ceiling count the same thing. Three tenths of it is reserved for high and critical incidents."
+							onCommit={(parsed) =>
+								save(
+									new AiTriageSettingsUpdateRequest({ maxPassesPerDay: parsed }),
+									"Daily model-pass cap updated",
+								)
+							}
+						/>
+
+						<p className="text-xs text-muted-foreground">
+							Both ceilings apply to automatic triage only. Investigations you start or retry
+							yourself are never blocked by them.
+						</p>
+
+						<div className="flex justify-end">
+							<RefreshButton
+								variant="ghost"
+								disabled={isSaving}
+								pending={settingsResult.waiting}
+								onRefresh={() => refreshSettings()}
+							/>
+						</div>
+					</>
+				))
+				.render()}
+		</Panel>
 	)
 }

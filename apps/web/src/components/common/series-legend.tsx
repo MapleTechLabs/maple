@@ -53,9 +53,17 @@ function Swatch({ kind, color, size }: { kind: SeriesLegendSwatch; color: string
 				/>
 			)
 		case "square":
-			return <span aria-hidden className={cn(size, "shrink-0 rounded-xs")} style={{ background: color }} />
+			return (
+				<span aria-hidden className={cn(size, "shrink-0 rounded-xs")} style={{ background: color }} />
+			)
 		case "dot":
-			return <span aria-hidden className={cn(size, "shrink-0 rounded-full")} style={{ background: color }} />
+			return (
+				<span
+					aria-hidden
+					className={cn(size, "shrink-0 rounded-full")}
+					style={{ background: color }}
+				/>
+			)
 	}
 }
 

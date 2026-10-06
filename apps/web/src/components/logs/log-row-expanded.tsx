@@ -45,7 +45,7 @@ export function LogRowExpanded({ log, highlight, onOpenDetail }: LogRowExpandedP
 			{/* Body + attributes share one height-bounded scroll area so even a very
 			    wide event stays a predictable size and scrolls vertically in place. */}
 			<div className="max-h-[60vh] space-y-2.5 overflow-auto">
-				<p className="whitespace-pre-wrap break-words text-[12px] leading-relaxed text-foreground">
+				<p className="whitespace-pre-wrap break-words text-xs leading-relaxed text-foreground">
 					<HighlightedText text={log.body} query={highlight} />
 				</p>
 				<LogAttributesPanel log={log} />

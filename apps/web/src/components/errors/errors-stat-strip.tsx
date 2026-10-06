@@ -56,7 +56,11 @@ export function ErrorsStatStrip({ filters }: { filters: GetErrorsSummaryInput })
 					>
 						<KeyValueList layout="inline" valueFirst>
 							{stats.map((stat) => (
-								<KeyValue key={stat.label} label={stat.label} valueClassName="font-medium tabular-nums">
+								<KeyValue
+									key={stat.label}
+									label={stat.label}
+									valueClassName="font-medium tabular-nums"
+								>
 									{stat.value}
 								</KeyValue>
 							))}

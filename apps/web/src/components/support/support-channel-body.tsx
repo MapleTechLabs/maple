@@ -10,7 +10,6 @@ import { ExternalLinkIcon } from "@/components/icons"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { trackProduct } from "@/lib/analytics"
 import { useAsyncAction } from "@/hooks/use-mutation-action"
-import { displayError } from "@/lib/error-messages"
 import {
 	inviteToSupportChannelMutation,
 	supportChannelAtom,
@@ -24,7 +23,8 @@ export function SupportChannelBody() {
 	const result = useAtomValue(channelAtom)
 	const refresh = useAtomRefresh(channelAtom)
 	const runInvite = useAtomSet(inviteToSupportChannelMutation, { mode: "promiseExit" })
-	const [error, setError] = useState<string | null>(null)
+	// The failed Exit itself, so ErrorState words it like every other inline failure.
+	const [error, setError] = useState<unknown>(null)
 	const [invited, setInvited] = useState<V2SupportChannel | null>(null)
 
 	const [invite, pending] = useAsyncAction(async () => {
@@ -36,7 +36,7 @@ export function SupportChannelBody() {
 			refresh()
 			return
 		}
-		setError(displayError(exit).message)
+		setError(exit)
 	})
 
 	if (invited !== null) {
@@ -105,7 +105,14 @@ export function SupportChannelBody() {
 						here.
 					</p>
 				)}
-				{error ? <p className="text-sm text-destructive">{error}</p> : null}
+				{error !== null ? (
+					<ErrorState
+						error={error}
+						title="Couldn't send the invite"
+						variant="inline"
+						className="py-0"
+					/>
+				) : null}
 			</DialogPanel>
 			<DialogFooter>
 				{channel.status === "active" && channel.slack_url ? (

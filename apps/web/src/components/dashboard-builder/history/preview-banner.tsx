@@ -1,11 +1,11 @@
 import { useState } from "react"
 import { Exit } from "effect"
-import { toastManager } from "@maple/ui/components/ui/toast"
 import { Button } from "@maple/ui/components/ui/button"
 import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
 import type { DashboardId } from "@maple/domain/http"
 import { ArrowPathIcon, HistoryIcon } from "@/components/icons"
 import { RelativeTime } from "@/components/common/relative-time"
+import { toastExit } from "@/lib/error-toast"
 import { buildRestorePayload, useRestoreDashboardVersion } from "./use-dashboard-history"
 import type { PreviewedVersion } from "@/atoms/dashboard-history-atoms"
 import { useDashboardMutationSync } from "@/hooks/use-dashboard-store"
@@ -26,14 +26,15 @@ export function PreviewBanner({ dashboardId, preview, onCancel, onRestored }: Pr
 	const performRestore = async () => {
 		prepareForMutation()
 		const result = await restore(buildRestorePayload(dashboardId, preview.versionId) as never)
+		const restored = toastExit(result, {
+			success: `Restored from v${preview.versionNumber}`,
+			error: "Restore failed",
+		})
 		if (Exit.isSuccess(result)) {
 			void reconcileTxid(result.value.txid)
-			toastManager.add({ title: `Restored from v${preview.versionNumber}`, type: "success" })
 			onRestored()
-			return true
 		}
-		toastManager.add({ title: "Restore failed", type: "error" })
-		return false
+		return restored
 	}
 
 	return (

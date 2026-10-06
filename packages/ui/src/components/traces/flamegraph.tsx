@@ -229,8 +229,7 @@ export function Flamegraph({
 									className={cn(
 										"absolute flex items-center overflow-hidden px-2 text-left font-mono text-2xs font-medium cursor-pointer transition-[filter,box-shadow] duration-100",
 										"hover:brightness-125 hover:z-10",
-										bar.span.statusCode === "Error" &&
-											"bg-severity-error text-white",
+										bar.span.statusCode === "Error" && "bg-severity-error text-white",
 										hoveredSpan?.spanId === bar.span.spanId && "brightness-125 z-10",
 										focusedSpan?.spanId === bar.span.spanId &&
 											"ring-2 ring-foreground ring-offset-1 ring-offset-background",
@@ -299,7 +298,10 @@ export function Flamegraph({
 						</div>
 					))}
 					<div className="flex items-center gap-1.5">
-						<span aria-hidden className="size-2.5 shrink-0 rounded-[35%] bg-severity-error [corner-shape:squircle]" />
+						<span
+							aria-hidden
+							className="size-2.5 shrink-0 rounded-[35%] bg-severity-error [corner-shape:squircle]"
+						/>
 						<span className="font-medium">Error</span>
 					</div>
 				</div>

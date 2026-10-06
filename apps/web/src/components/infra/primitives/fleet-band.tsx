@@ -17,9 +17,10 @@ import { SegmentedBar } from "@maple/ui/components/ui/meter"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { StatRailItem } from "@/components/common/stat-rail"
 import type { Tone } from "../severity-tokens"
+import { formatNumber, pluralize } from "@maple/ui/lib/format"
 
 /** A band that stands alone on a page body rather than flush under a shell's header. */
-export const FLEET_BAND_BOXED = "overflow-hidden rounded-lg border"
+export const FLEET_BAND_BOXED = "overflow-hidden rounded-md border"
 
 /** One slice of the proportional strip. */
 export interface FleetBandSegment {
@@ -79,11 +80,9 @@ export function FleetBand<S extends string>({
 			<div className="flex w-full flex-col justify-center gap-2 px-4 py-3 md:w-72 md:shrink-0">
 				<span className="flex items-baseline gap-1.5">
 					<span className="font-mono text-base font-semibold tabular-nums">
-						{total.toLocaleString()}
+						{formatNumber(total)}
 					</span>
-					<span className="text-2xs text-muted-foreground">
-						{total === 1 ? noun : `${noun}s`} in scope
-					</span>
+					<span className="text-2xs text-muted-foreground">{pluralize(total, noun)} in scope</span>
 				</span>
 				{total > 0 ? (
 					// A single hot pod in a fleet of 600 is 0.2% of the width, which

@@ -4,17 +4,18 @@ import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { Link } from "@tanstack/react-router"
 
 import { cn } from "@maple/ui/lib/utils"
+import { Eyebrow, eyebrowVariants } from "@maple/ui/components/ui/eyebrow"
 import { Meter } from "@maple/ui/components/ui/meter"
 import { rowSelectedClass } from "@maple/ui/components/ui/list-row"
 import { PlotSparkline } from "@maple/ui/components/plot"
 import { SkeletonList } from "@maple/ui/components/ui/skeleton"
 import { ERROR_RATE_FILL, ERROR_RATE_TEXT, errorRateLevel, formatErrorRate } from "@maple/ui/lib/error-rate"
-import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
 
 import { ErrorState } from "@/components/common/error-state"
+import { RelativeTime } from "@/components/common/relative-time"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 import { useTableSort, type SortDir } from "@/components/common/data-table"
 import { ArrowUpDownIcon, ChevronRightIcon } from "@/components/icons"
-import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import type { ToolDetailLinkSearch } from "@/lib/agent-sessions/tool-search"
 import {
 	breakdownKeyLabel,
@@ -88,7 +89,7 @@ export function Th<K extends string>({
 	hidden?: string
 }) {
 	const active = sortKey !== undefined && currentKey === sortKey
-	const text = "font-mono text-2xs uppercase leading-3.5 tracking-[0.07em] transition-colors"
+	const text = cn(eyebrowVariants({ variant: "mono" }), "transition-colors")
 	return (
 		<div className={cn("flex items-center", align === "right" && "justify-end", width, hidden)}>
 			{sortKey !== undefined ? (
@@ -98,7 +99,7 @@ export function Th<K extends string>({
 					className={cn(
 						"inline-flex items-center gap-1",
 						text,
-						active ? "text-foreground" : "text-muted-foreground/80 hover:text-foreground",
+						active ? "text-foreground" : "hover:text-foreground",
 					)}
 				>
 					{label}
@@ -112,7 +113,7 @@ export function Th<K extends string>({
 					/>
 				</button>
 			) : (
-				<span className={cn(text, "text-muted-foreground/80")}>{label}</span>
+				<Eyebrow variant="mono">{label}</Eyebrow>
 			)}
 		</div>
 	)
@@ -257,7 +258,6 @@ export function ToolsTable({
 	failure,
 	waiting,
 }: ToolsTableProps) {
-	const { effectiveTimezone } = useTimezonePreference()
 	const prepared = useMemo(() => rows.map((row) => ({ ...row, errorRate: errorRate(row) })), [rows])
 	const maxErrorRate = useMemo(
 		() => prepared.reduce((max, row) => Math.max(max, row.errorRate), 0),
@@ -284,7 +284,7 @@ export function ToolsTable({
 	return (
 		<section className="@container/panel min-w-0 px-6 pt-5 pb-6" aria-label="Tools">
 			<div className="flex items-baseline gap-2.5 pb-3 font-mono">
-				<span className="text-[12.5px] font-medium text-foreground">Tools</span>
+				<span className="text-xs font-medium text-foreground">Tools</span>
 				<span className="text-2xs leading-3.5 tabular-nums text-muted-foreground/70">
 					{formatToolCount(rows.length)}
 				</span>
@@ -403,21 +403,25 @@ export function ToolsTable({
 												color === undefined ? undefined : { backgroundColor: color }
 											}
 										/>
-										<span
+										<TruncatedText
+											mono
 											className={cn(
-												"truncate font-mono text-[12.5px] text-foreground",
+												"text-xs text-foreground",
 												row.key === selected && "font-medium",
 											)}
-											title={breakdownKeyLabel(row.key)}
 										>
 											{breakdownKeyLabel(row.key)}
-										</span>
+										</TruncatedText>
 									</span>
 									{/* Display utilities go on a wrapper: PlotFrame merges its own `flex` over them. */}
 									<span className="hidden h-[22px] w-[110px] shrink-0 @min-[720px]/panel:block">
-										<PlotSparkline values={sparkFor(row.key).slice(-24)} color="--primary" className="size-full" />
+										<PlotSparkline
+											values={sparkFor(row.key).slice(-24)}
+											color="--primary"
+											className="size-full"
+										/>
 									</span>
-									<span className="w-[76px] shrink-0 text-right font-mono text-[12.5px] tabular-nums text-foreground">
+									<span className="w-[76px] shrink-0 text-right font-mono text-xs tabular-nums text-foreground">
 										{formatToolCount(row.calls)}
 									</span>
 									{duration(
@@ -448,9 +452,12 @@ export function ToolsTable({
 									<span className="hidden w-[76px] shrink-0 text-right font-mono text-xs tabular-nums text-muted-foreground @min-[640px]/panel:block">
 										{formatToolCount(row.sessions)}
 									</span>
-									<span className="hidden w-[96px] shrink-0 text-right font-mono text-2xs tabular-nums text-muted-foreground/70 @min-[800px]/panel:block">
-										{formatRelativeTimeOrDate(row.lastSeen, undefined, effectiveTimezone)}
-									</span>
+									<RelativeTime
+										value={row.lastSeen}
+										variant="orDate"
+										tooltip="title"
+										className="hidden w-[96px] shrink-0 text-right font-mono text-2xs tabular-nums text-muted-foreground/70 @min-[800px]/panel:block"
+									/>
 									<span className="flex w-3.5 shrink-0 items-center justify-end text-muted-foreground/60">
 										{row.key === "" ? null : <ChevronRightIcon size={14} aria-hidden />}
 									</span>

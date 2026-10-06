@@ -58,7 +58,7 @@ export function CostBreakdown({ estimate }: { estimate: CycleCostEstimate }) {
 			<p className="text-muted-foreground/70 mt-2 text-2xs">
 				So far this cycle · excludes taxes &amp; credits
 				{estimate.partial &&
-					" · some items are on legacy pricing we can't itemize — see your invoice for the exact amount"}
+					" · some items are on legacy pricing we can't itemize; see your invoice for the exact amount"}
 			</p>
 		</div>
 	)

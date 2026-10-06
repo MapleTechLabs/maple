@@ -8,6 +8,7 @@ import { TraceId } from "@maple/domain"
 
 import { countLabel } from "@maple/ui/lib/format"
 import { Button } from "@maple/ui/components/ui/button"
+import { IconButton } from "@maple/ui/components/ui/icon-button"
 import { Kbd } from "@maple/ui/components/ui/kbd"
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@maple/ui/components/ui/resizable"
 import {
@@ -182,26 +183,24 @@ export function TracePeekSheet({
 
 						<SheetFooter className="flex-row items-center justify-between gap-3 border-t">
 							<div className="flex items-center gap-1.5">
-								<Button
+								<IconButton
 									variant="outline"
-									size="icon-sm"
-									aria-label="Previous trace"
-									title="Previous trace (↑ or K)"
+									label="Previous trace"
+									shortcut="↑ or K"
 									disabled={!canStepBack}
 									onClick={() => onStep(-1)}
 								>
 									<ArrowUpIcon size={14} />
-								</Button>
-								<Button
+								</IconButton>
+								<IconButton
 									variant="outline"
-									size="icon-sm"
-									aria-label="Next trace"
-									title="Next trace (↓ or J)"
+									label="Next trace"
+									shortcut="↓ or J"
 									disabled={!canStepForward}
 									onClick={() => onStep(1)}
 								>
 									<ArrowDownIcon size={14} />
-								</Button>
+								</IconButton>
 								{position ? (
 									<span className="ml-1 font-mono text-2xs tabular-nums text-muted-foreground">
 										{position.index + 1} of {position.count}
@@ -283,6 +282,7 @@ function TracePeekBody({
 		.onError((error) => (
 			<>
 				<SheetDetailHeader
+					kind="Trace"
 					title={shortId(target.traceId, "trace")}
 					description="Failed to load trace"
 				/>

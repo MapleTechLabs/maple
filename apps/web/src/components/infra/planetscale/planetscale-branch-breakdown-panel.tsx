@@ -2,7 +2,7 @@ import { useMemo, useState } from "react"
 
 import { Panel, PanelHeader } from "@maple/ui/components/ui/panel"
 import { Skeleton, SkeletonList } from "@maple/ui/components/ui/skeleton"
-import { formatNumber } from "@maple/ui/lib/format"
+import { countLabel, formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 
 import { ColumnHead, DataTable, MetaChip, useTableSort } from "@/components/common/data-table"
@@ -171,7 +171,7 @@ export function PlanetScaleBranchBreakdownPanel({
 	})
 
 	return (
-		<Panel className="rounded-lg border-border/60">
+		<Panel className="border-border/60">
 			<PanelHeader
 				title="Branches"
 				className="border-border/60 px-3 py-2"
@@ -214,7 +214,7 @@ export function PlanetScaleBranchBreakdownPanel({
 							<div className="flex w-0 min-w-[200px] flex-1 items-center gap-2 overflow-hidden">
 								<span
 									className={cn(
-										"truncate text-[13px]",
+										"truncate text-sm",
 										row.isOther
 											? "text-muted-foreground"
 											: "font-mono text-foreground/90",
@@ -230,7 +230,7 @@ export function PlanetScaleBranchBreakdownPanel({
 							</div>
 							<div
 								className={cn(
-									"w-[120px] text-right font-mono text-[12px] tabular-nums text-foreground/80",
+									"w-[120px] text-right font-mono text-xs tabular-nums text-foreground/80",
 									row.hasValue && spec.className?.(row.value),
 								)}
 							>
@@ -273,7 +273,7 @@ export function PlanetScaleBranchBreakdownPanel({
 
 			<div className="border-t border-border/60 px-3 py-1.5 text-2xs text-muted-foreground">
 				{spec.additive
-					? `Bars show share of ${formatNumber(total)} total across ${candidates.length} branch${candidates.length === 1 ? "" : "es"}.`
+					? `Bars show share of ${formatNumber(total)} total across ${countLabel(candidates.length, "branch", "branches")}.`
 					: // Not "% of database": these are maxima, and they do not sum.
 						`Bars are relative to the worst branch (${spec.format(max)}). Peaks don't sum, so there is no database total.`}
 			</div>
@@ -283,7 +283,7 @@ export function PlanetScaleBranchBreakdownPanel({
 
 export function PlanetScaleBranchBreakdownPanelLoading() {
 	return (
-		<Panel className="rounded-lg border-border/60">
+		<Panel className="border-border/60">
 			<PanelHeader className="border-border/60 px-3 py-2">
 				<Skeleton className="h-4 w-56" />
 			</PanelHeader>

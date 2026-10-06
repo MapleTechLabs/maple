@@ -10,7 +10,8 @@ import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { ErrorState } from "@/components/common/error-state"
 import { planetscaleQueryInsightsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { errorRateClass, errorRateLevel } from "@maple/ui/lib/error-rate"
-import { formatNumber } from "@maple/ui/lib/format"
+import { formatErrorRate, formatNumber } from "@maple/ui/lib/format"
+import { Panel } from "@maple/ui/components/ui/panel"
 import { RelativeTime } from "@/components/common/relative-time"
 
 /** Bordered like the query rows, so an explanation keeps the section's rhythm. */
@@ -71,10 +72,8 @@ export function PlanetScaleTopQueries({
 			<ErrorState
 				error={result.cause}
 				title="PlanetScale Query Insights are unavailable"
-				className={cn(
-					"flex flex-col gap-1 rounded-md border border-severity-error/20 bg-severity-error/5 px-3 py-3 text-xs",
-					className,
-				)}
+				variant="inline"
+				className={className}
 			/>
 		)
 	}
@@ -99,7 +98,7 @@ export function PlanetScaleTopQueries({
 	return (
 		<div className={cn("space-y-1.5", className)}>
 			{response.rows.map((row) => (
-				<div key={row.fingerprint} className="rounded-md border border-border bg-card px-2.5 py-2">
+				<Panel key={row.fingerprint} className="px-2.5 py-2">
 					<div className="flex items-start justify-between gap-2">
 						<p className="min-w-0 flex-1 truncate font-mono text-2xs font-medium text-foreground">
 							{row.normalizedSql}
@@ -112,7 +111,7 @@ export function PlanetScaleTopQueries({
 									: errorRateClass(row.errorRate),
 							)}
 						>
-							{(row.errorRate * 100).toFixed(1)}%
+							{formatErrorRate(row.errorRate)}
 						</span>
 					</div>
 					<div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-3xs text-muted-foreground">
@@ -136,7 +135,7 @@ export function PlanetScaleTopQueries({
 							/>
 						) : null}
 					</div>
-				</div>
+				</Panel>
 			))}
 		</div>
 	)

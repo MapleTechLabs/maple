@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router"
 
 import type { ErrorIssueVerificationDocument, WorkflowState } from "@maple/domain/http"
 import { Badge } from "@maple/ui/components/ui/badge"
+import { Panel } from "@maple/ui/components/ui/panel"
 import { formatRatePerHour } from "@maple/ui/lib/format"
 import { formatRelativeShort } from "@maple/ui/lib/time-format"
 import { TONE_SOFT } from "@maple/ui/lib/tone"
@@ -89,7 +90,7 @@ export function IssueVerificationCard({
 		verification.status === "inconclusive"
 
 	return (
-		<section className="rounded-xl border bg-card px-4 py-3">
+		<Panel className="px-4 py-3">
 			<div className="flex items-center justify-between gap-2">
 				<div className="flex items-center gap-2">
 					<MagnifierCheckIcon className="size-4 text-muted-foreground" />
@@ -139,6 +140,6 @@ export function IssueVerificationCard({
 					First check was inconclusive; watching for longer.
 				</p>
 			) : null}
-		</section>
+		</Panel>
 	)
 }

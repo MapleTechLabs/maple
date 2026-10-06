@@ -3,8 +3,9 @@ import { Link, createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Schema } from "effect"
 
 import { Button } from "@maple/ui/components/ui/button"
+import { countLabel } from "@maple/ui/lib/format"
 
-import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { DashboardPage } from "@/components/layout/dashboard-page"
 import { PlusIcon } from "@/components/icons"
 import { InstallHostModal } from "@/components/infra/install-modal"
 import {
@@ -23,8 +24,7 @@ import {
 	pickTimeRangeSearch,
 } from "@/components/time-range-picker/search"
 import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
-import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
-import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
+import type { TimeRange } from "@/components/time-range-picker/types"
 
 const DEFAULT_PRESET = "1h"
 
@@ -55,10 +55,7 @@ function InfraOverviewPage() {
 	const sources = presentSources(surfaces)
 	const missing = SOURCE_ORDER.filter((id) => !sources.includes(id))
 
-	const handleTimeChange = (
-		range: { startTime?: string; endTime?: string; presetValue?: string },
-		options?: { replace?: boolean },
-	) => {
+	const handleTimeChange = (range: TimeRange, options?: { replace?: boolean }) => {
 		navigate({
 			replace: options?.replace,
 			search: (prev) => ({ ...applyTimeRangeSearch(prev, range) }),
@@ -66,82 +63,47 @@ function InfraOverviewPage() {
 	}
 
 	return (
-		<PageRefreshProvider timePreset={search.timePreset ?? DEFAULT_PRESET}>
-			<DashboardLayout.Root>
-				<DashboardLayout.Breadcrumbs items={[{ label: "Infrastructure" }]} />
-				<DashboardLayout.Body>
-					<DashboardLayout.Content>
-						<DashboardLayout.Sticky>
-							<DashboardLayout.Header>
-								<TimeRangeHeaderControls
-									startTime={search.startTime ?? startTime}
-									endTime={search.endTime ?? endTime}
-									presetValue={
-										search.timePreset ?? (search.startTime ? undefined : DEFAULT_PRESET)
-									}
-									onTimeChange={handleTimeChange}
-								/>
-							</DashboardLayout.Header>
-						</DashboardLayout.Sticky>
-						<DashboardLayout.Scroll>
-							<div className="space-y-10">
-								<PageHero
-									title="Infrastructure"
-									description={
-										sources.length > 0
-											? `${sources.length} ${sources.length === 1 ? "source" : "sources"} reporting. What needs a look comes first.`
-											: "Nothing is reporting yet. Install a collector or connect a provider to get started."
-									}
-								/>
+		<DashboardPage
+			breadcrumbs={[{ label: "Infrastructure" }]}
+			time={{ search, startTime, endTime, defaultPreset: DEFAULT_PRESET, onChange: handleTimeChange }}
+		>
+			<div className="space-y-10">
+				<PageHero
+					title="Infrastructure"
+					description={
+						sources.length > 0
+							? `${countLabel(sources.length, "source")} reporting. What needs a look comes first.`
+							: "Nothing is reporting yet. Install a collector or connect a provider to get started."
+					}
+				/>
 
-								{sources.length > 0 ? (
-									<>
-										<NeedsAttention
-											sources={sources}
-											window={window}
-											timeSearch={timeSearch}
-										/>
-										<SourcesTable
-											sources={sources}
-											window={window}
-											timeSearch={timeSearch}
-										/>
-									</>
-								) : null}
+				{sources.length > 0 ? (
+					<>
+						<NeedsAttention sources={sources} window={window} timeSearch={timeSearch} />
+						<SourcesTable sources={sources} window={window} timeSearch={timeSearch} />
+					</>
+				) : null}
 
-								{missing.length > 0 ? (
-									<div className="flex flex-wrap items-center gap-4 rounded-lg border border-dashed px-4 py-4">
-										<div className="flex min-w-0 flex-1 flex-col gap-0.5">
-											<span className="text-sm text-foreground">Add a source</span>
-											<span className="text-xs text-muted-foreground">
-												Not reporting yet:{" "}
-												{missing.map((id) => SOURCE_TITLE[id]).join(", ")}.
-											</span>
-										</div>
-										<Button
-											size="sm"
-											variant="outline"
-											onClick={() => setInstallOpen(true)}
-										>
-											<PlusIcon size={14} />
-											Install a collector
-										</Button>
-										<Button size="sm" render={<Link to="/integrations" />}>
-											Connect a provider
-										</Button>
-									</div>
-								) : null}
-							</div>
+				{missing.length > 0 ? (
+					<div className="flex flex-wrap items-center gap-4 rounded-lg border border-dashed px-4 py-4">
+						<div className="flex min-w-0 flex-1 flex-col gap-0.5">
+							<span className="text-sm text-foreground">Add a source</span>
+							<span className="text-xs text-muted-foreground">
+								Not reporting yet: {missing.map((id) => SOURCE_TITLE[id]).join(", ")}.
+							</span>
+						</div>
+						<Button size="sm" variant="outline" onClick={() => setInstallOpen(true)}>
+							<PlusIcon size={14} />
+							Install a collector
+						</Button>
+						<Button size="sm" render={<Link to="/integrations" />}>
+							Connect a provider
+						</Button>
+					</div>
+				) : null}
+			</div>
 
-							<InstallHostModal
-								open={installOpen}
-								onOpenChange={setInstallOpen}
-								defaultTab="hosts"
-							/>
-						</DashboardLayout.Scroll>
-					</DashboardLayout.Content>
-				</DashboardLayout.Body>
-			</DashboardLayout.Root>
-		</PageRefreshProvider>
+			<InstallHostModal open={installOpen} onOpenChange={setInstallOpen} defaultTab="hosts" />
+		</DashboardPage>
 	)
 }

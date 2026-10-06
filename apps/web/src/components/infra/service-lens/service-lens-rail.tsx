@@ -124,7 +124,7 @@ function RailRow({
 			<ServiceDot serviceName={service.serviceName} size="sm" />
 			<span
 				className={cn(
-					"min-w-0 flex-1 truncate font-mono text-[12px]",
+					"min-w-0 flex-1 truncate font-mono text-xs",
 					active ? "text-foreground" : "text-muted-foreground",
 				)}
 				title={service.serviceName}

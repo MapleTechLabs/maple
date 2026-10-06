@@ -1,5 +1,12 @@
 import { Link } from "@tanstack/react-router"
-import { countLabel, formatErrorRate, formatLatency, formatNumber } from "@maple/ui/lib/format"
+import {
+	countLabel,
+	EMPTY_VALUE,
+	formatErrorRate,
+	formatLatency,
+	formatNumber,
+	formatPercent,
+} from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { RelativeTime } from "@/components/common/relative-time"
 
@@ -32,11 +39,11 @@ function changeTone(row: ComparisonRow): string {
 }
 
 function formatChange(row: ComparisonRow): string {
-	if (row.change === undefined) return "—"
+	if (row.change === undefined) return EMPTY_VALUE
 	if (row.direction === "lower-is-better" && row.change >= 1) return `${(1 + row.change).toFixed(1)}×`
 	if (!Number.isFinite(row.change)) return "from 0"
-	const pct = Math.round(row.change * 100)
-	return `${pct > 0 ? "+" : ""}${pct}%`
+	const sign = row.change > 0 ? "+" : row.change < 0 ? "-" : ""
+	return `${sign}${formatPercent(Math.abs(row.change))}`
 }
 
 const ratioChange = (value: number, baseline: number | undefined): number | undefined =>
@@ -156,7 +163,7 @@ export function ReleaseComparison({ impact }: { impact: ReleaseServiceImpact }) 
 									{row.format(row.value)}
 								</TableCell>
 								<TableCell className="text-right font-mono tabular-nums text-muted-foreground">
-									{row.baseline === undefined ? "—" : row.format(row.baseline)}
+									{row.baseline === undefined ? EMPTY_VALUE : row.format(row.baseline)}
 								</TableCell>
 								<TableCell
 									className={cn("pr-4 text-right font-mono tabular-nums", changeTone(row))}

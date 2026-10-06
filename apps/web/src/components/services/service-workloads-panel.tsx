@@ -81,7 +81,7 @@ export function ServiceWorkloadsPanel({
 						className="gap-x-3 gap-y-1.5 px-4 py-2.5"
 					>
 						<ItemContent className="gap-0 leading-tight">
-							<ItemTitle className="block truncate font-mono text-[12.5px] font-normal text-foreground">
+							<ItemTitle className="block truncate font-mono text-xs font-normal text-foreground">
 								{workload.workloadName}
 							</ItemTitle>
 							<ItemDescription className="truncate text-3xs text-muted-foreground/60">

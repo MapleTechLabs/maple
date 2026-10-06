@@ -1,8 +1,10 @@
 import type { ReactNode } from "react"
 
 import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
+import { pluralize } from "@maple/ui/lib/format"
 import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
 
+import { PageLayout } from "@maple/ui/components/ui/page-layout"
 import type { AgentSessionRow } from "@/components/agent-sessions/agent-sessions-list"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { formatTimestampInTimezone } from "@/lib/timezone-format"
@@ -83,7 +85,7 @@ export function ToolDetailView({
 	// Bounded by the window, so this is "first seen in this range" — which is
 	// what a page whose every other number is windowed should say.
 	const subtitle = [
-		`${formatToolCount(data.totals.calls)} call${data.totals.calls === 1 ? "" : "s"} in ${formatToolCount(data.totals.sessions)} session${data.totals.sessions === 1 ? "" : "s"}`,
+		`${formatToolCount(data.totals.calls)} ${pluralize(data.totals.calls, "call")} in ${formatToolCount(data.totals.sessions)} ${pluralize(data.totals.sessions, "session")}`,
 		data.firstSeen > 0
 			? `first seen ${formatTimestampInTimezone(data.firstSeen, { timeZone: effectiveTimezone })}`
 			: undefined,
@@ -97,12 +99,12 @@ export function ToolDetailView({
 
 	return (
 		<div className="flex flex-col">
-			<header className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3 px-6 pt-[22px] pb-4">
+			<header className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3 px-6 pt-5 pb-4">
 				<div className="flex min-w-0 flex-1 flex-col gap-1.5">
 					<div className="flex min-w-0 items-baseline gap-3">
-						<h1 className="truncate font-mono text-[26px] font-semibold leading-8 tracking-[-0.01em] text-foreground">
+						<PageLayout.Title title={tool} className="font-mono">
 							{tool}
-						</h1>
+						</PageLayout.Title>
 						{data.description !== undefined && (
 							<Tooltip>
 								{/* `w-0 flex-1`: fills the row beside the name without its own
@@ -110,7 +112,7 @@ export function ToolDetailView({
 								<TooltipTrigger
 									render={<span />}
 									tabIndex={0}
-									className="w-0 min-w-0 flex-1 cursor-default truncate text-[13px] leading-[18px] text-muted-foreground"
+									className="w-0 min-w-0 flex-1 cursor-default truncate text-[13px] text-muted-foreground"
 								>
 									{data.description}
 								</TooltipTrigger>
@@ -118,9 +120,7 @@ export function ToolDetailView({
 							</Tooltip>
 						)}
 					</div>
-					<p className="font-mono text-[13px] leading-[18px] text-muted-foreground">
-						{subtitle.join(" · ")}
-					</p>
+					<p className="font-mono text-[13px] text-muted-foreground">{subtitle.join(" · ")}</p>
 				</div>
 				{headerControls ? (
 					<div className="flex shrink-0 items-center gap-2 pt-1">{headerControls}</div>

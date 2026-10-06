@@ -7,7 +7,8 @@ import { Result } from "@/lib/effect-atom"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 
-import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { DashboardPage } from "@/components/layout/dashboard-page"
+import type { TimeRange } from "@/components/time-range-picker/types"
 import { DocsLink } from "@/components/common/docs-link"
 import { ResultView } from "@/components/common/result-view"
 import { CloudflareIcon } from "@/components/icons"
@@ -49,8 +50,6 @@ import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
 import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
-import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
-import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
 
 const cloudflareSearchSchema = Schema.Struct({
 	...TimeRangeSearchFields,
@@ -72,10 +71,7 @@ function CloudflarePage() {
 		search.timePreset ?? "12h",
 	)
 
-	const handleTimeChange = (
-		range: { startTime?: string; endTime?: string; presetValue?: string },
-		options?: { replace?: boolean },
-	) => {
+	const handleTimeChange = (range: TimeRange, options?: { replace?: boolean }) => {
 		navigate({
 			replace: options?.replace,
 			search: (prev) => ({ ...applyTimeRangeSearch(prev, range) }),
@@ -88,55 +84,29 @@ function CloudflarePage() {
 	const { statusResult, phase } = useCloudflareIngestPhase()
 
 	return (
-		<PageRefreshProvider timePreset={search.timePreset ?? "12h"}>
-			<DashboardLayout.Root>
-				<DashboardLayout.Breadcrumbs
-					items={[{ label: "Infrastructure", href: "/infra" }, { label: "Cloudflare" }]}
-				/>
-				<DashboardLayout.Body>
-					<DashboardLayout.Content>
-						<DashboardLayout.Sticky>
-							<DashboardLayout.Header>
-								<TimeRangeHeaderControls
-									startTime={search.startTime ?? startTime}
-									endTime={search.endTime ?? endTime}
-									presetValue={search.timePreset ?? (search.startTime ? undefined : "12h")}
-									onTimeChange={handleTimeChange}
-								/>
-							</DashboardLayout.Header>
-						</DashboardLayout.Sticky>
-						<DashboardLayout.Scroll>
-							<div className="space-y-6">
-								<ResultView
-									result={statusResult}
-									loading={
-										<div className="space-y-4">
-											<Skeleton className="h-28 w-full" />
-											<ChartLoading variant="line" height={256} />
-										</div>
-									}
-								>
-									{(status) => {
-										if (!status.connected)
-											return <CloudflareNotConnected variant="not-connected" />
-										if (!status.analyticsCapable) {
-											return <CloudflareNotConnected variant="needs-permissions" />
-										}
-										return (
-											<CloudflareData
-												startTime={startTime}
-												endTime={endTime}
-												phase={phase}
-											/>
-										)
-									}}
-								</ResultView>
-							</div>
-						</DashboardLayout.Scroll>
-					</DashboardLayout.Content>
-				</DashboardLayout.Body>
-			</DashboardLayout.Root>
-		</PageRefreshProvider>
+		<DashboardPage
+			breadcrumbs={[{ label: "Infrastructure", href: "/infra" }, { label: "Cloudflare" }]}
+			time={{ search, startTime, endTime, defaultPreset: "12h", onChange: handleTimeChange }}
+			gap="lg"
+		>
+			<ResultView
+				result={statusResult}
+				loading={
+					<div className="space-y-4">
+						<Skeleton className="h-28 w-full" />
+						<ChartLoading variant="line" height={256} />
+					</div>
+				}
+			>
+				{(status) => {
+					if (!status.connected) return <CloudflareNotConnected variant="not-connected" />
+					if (!status.analyticsCapable) {
+						return <CloudflareNotConnected variant="needs-permissions" />
+					}
+					return <CloudflareData startTime={startTime} endTime={endTime} phase={phase} />
+				}}
+			</ResultView>
+		</DashboardPage>
 	)
 }
 

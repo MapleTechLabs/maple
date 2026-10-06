@@ -140,3 +140,30 @@ export function formatCompactTimeInTimezone(
 
 	return formatter.format(date)
 }
+
+const dateFormatters = new Map<string, Intl.DateTimeFormat>()
+
+/** `Oct 7, 2026`: a calendar date (created, joined, billed) in the user's timezone. */
+export function formatDateInTimezone(
+	input: TimezoneFormatInput,
+	options: { timeZone: string; withYear?: boolean },
+): string {
+	const date = toValidDate(input)
+	if (!date) return EMPTY_VALUE
+
+	const tz = resolveTimeZone(options.timeZone)
+	const withYear = options.withYear ?? true
+	const key = `${tz}|${withYear ? "y" : ""}`
+	let formatter = dateFormatters.get(key)
+	if (!formatter) {
+		formatter = new Intl.DateTimeFormat("en-US", {
+			timeZone: tz,
+			year: withYear ? "numeric" : undefined,
+			month: "short",
+			day: "numeric",
+		})
+		dateFormatters.set(key, formatter)
+	}
+
+	return formatter.format(date)
+}

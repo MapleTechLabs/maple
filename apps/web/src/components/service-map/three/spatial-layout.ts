@@ -146,7 +146,8 @@ export const HEALTH_COLOR = { healthy: "#79ad9b", elevated: "#d3a65c", degraded:
 export const formatRate = (rate: number, estimated = false) =>
 	`${estimated ? "~" : ""}${rate > 0 && rate < 0.1 ? "<0.1" : formatSharedRate(rate)}/s`
 /** The shared latency format, tolerating the optional latencies of 3D edges. */
-export const formatLatency = (ms: number | undefined) => (ms === undefined ? EMPTY_VALUE : formatSharedLatency(ms))
+export const formatLatency = (ms: number | undefined) =>
+	ms === undefined ? EMPTY_VALUE : formatSharedLatency(ms)
 
 export function connectedIds(
 	topology: SpatialTopology,

@@ -133,7 +133,7 @@ type TileShellLinkProps = TileShellBaseProps & {
 
 function TileShell(props: TileShellButtonProps | TileShellLinkProps) {
 	const baseClass = cn(
-		"group flex h-full flex-col gap-3 rounded-lg border bg-card p-4 text-left transition-colors",
+		"group flex h-full flex-col gap-3 rounded-md border bg-card p-4 text-left transition-colors",
 		"hover:border-primary/40 hover:bg-primary/[0.03] focus-visible:outline-none",
 		"focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
 		props.className,

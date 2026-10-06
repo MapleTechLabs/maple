@@ -5,7 +5,8 @@ import type { ErrorIssueId } from "@maple/domain/http"
 import { ServiceDot } from "@maple/ui/components/service-dot"
 import { Checkbox } from "@maple/ui/components/ui/checkbox"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import { countLabel, formatNumber } from "@maple/ui/lib/format"
+import { countLabel, EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
+import { formatRelativeShort } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
 
 import { formatTimestampInTimezone, normalizeTimestampInput } from "@/lib/timezone-format"
@@ -28,11 +29,7 @@ const WEEK_MS = 7 * 24 * 60 * 60 * 1000
 function formatLastSeen(iso: string, timeZone: string): string {
 	const d = new Date(normalizeTimestampInput(iso))
 	if (Number.isNaN(d.getTime())) return iso
-	const diffMs = Date.now() - d.getTime()
-	if (diffMs < 60_000) return "now"
-	if (diffMs < 3_600_000) return `${Math.floor(diffMs / 60_000)}m`
-	if (diffMs < 86_400_000) return `${Math.floor(diffMs / 3_600_000)}h`
-	if (diffMs < WEEK_MS) return `${Math.floor(diffMs / 86_400_000)}d`
+	if (Date.now() - d.getTime() < WEEK_MS) return formatRelativeShort(d)
 	const sameYear = zonedDateParts(d.getTime(), timeZone).year === zonedDateParts(Date.now(), timeZone).year
 	return d.toLocaleDateString(undefined, {
 		timeZone,
@@ -410,7 +407,7 @@ export function ErrorSignalRow({
 						}
 					>
 						{signal.windowCount === null ? (
-							<span className="text-muted-foreground/50">—</span>
+							<span className="text-muted-foreground/50">{EMPTY_VALUE}</span>
 						) : (
 							<span
 								className={

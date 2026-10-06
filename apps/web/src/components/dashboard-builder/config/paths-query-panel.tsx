@@ -1,3 +1,4 @@
+import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Button } from "@maple/ui/components/ui/button"
 import { Input } from "@maple/ui/components/ui/input"
@@ -169,7 +170,7 @@ export function PathsQueryPanelView({ paths, onUpdate, suggestions }: PathsQuery
 				</div>
 				<p className="pl-18 text-2xs text-muted-foreground">
 					{filterError ? (
-						<span className="text-destructive">{filterError}</span>
+						<span className={TONE_TEXT.crit}>{filterError}</span>
 					) : (
 						"Only persons with a session matching these dimensions take part."
 					)}
@@ -195,7 +196,7 @@ export function PathsQueryPanelView({ paths, onUpdate, suggestions }: PathsQuery
 									if (option) onUpdate((current) => ({ ...current, keyBy: option.value }))
 								}}
 							>
-								<SelectTrigger className="h-8 w-[220px] text-xs" aria-label="Count by">
+								<SelectTrigger size="sm" className="w-[220px]" aria-label="Count by">
 									<SelectValue />
 								</SelectTrigger>
 								<SelectContent>
@@ -231,7 +232,7 @@ export function PathsQueryPanelView({ paths, onUpdate, suggestions }: PathsQuery
 										onUpdate((current) => ({ ...current, windowSeconds: seconds }))
 								}}
 							>
-								<SelectTrigger className="h-8 w-[160px] text-xs" aria-label="Window">
+								<SelectTrigger size="sm" className="w-[160px]" aria-label="Window">
 									<SelectValue />
 								</SelectTrigger>
 								<SelectContent>

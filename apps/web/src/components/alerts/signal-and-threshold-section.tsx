@@ -1,4 +1,6 @@
 import { InlineCode } from "@maple/ui/components/ui/inline-code"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { RadioGroupPrimitive, RadioPrimitive } from "@maple/ui/components/ui/radio-group"
 import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import {
 	useDeferredValue,
@@ -321,7 +323,9 @@ export function SignalAndThresholdSection({
 						className="flex w-full items-center justify-between gap-2 text-left text-xs text-muted-foreground hover:text-foreground"
 						aria-expanded={advancedOpen}
 					>
-						<span className="font-medium uppercase tracking-wide">Evaluation timing</span>
+						<Eyebrow variant="label" className="text-inherit">
+							Evaluation timing
+						</Eyebrow>
 						<span className="flex items-center gap-1.5">
 							<span className="font-mono">
 								{form.windowMinutes}min · {form.consecutiveBreachesRequired}× · renotify{" "}
@@ -429,8 +433,9 @@ function BuiltinSignalChips({
 }) {
 	return (
 		<div className="-mt-1 flex flex-col gap-1.5">
-			<div
-				role="radiogroup"
+			<RadioGroupPrimitive
+				value={value}
+				onValueChange={onChange}
 				aria-label="Built-in signal"
 				className="flex flex-wrap items-center gap-1 rounded-md border border-dashed border-border/60 bg-muted/20 p-1"
 				data-slot="builtin-signal-chips"
@@ -441,9 +446,9 @@ function BuiltinSignalChips({
 					return (
 						<RadioChip
 							key={opt.value}
+							value={opt.value}
 							selected={selected}
 							selectedClass={opt.selectedClass}
-							onSelect={() => onChange(opt.value)}
 						>
 							<Icon
 								size={12}
@@ -457,7 +462,7 @@ function BuiltinSignalChips({
 						</RadioChip>
 					)
 				})}
-			</div>
+			</RadioGroupPrimitive>
 			<p className="text-2xs leading-snug text-muted-foreground">
 				Built-in signals measure entry-point (root) spans only. A service that records failures on
 				child spans and returns success from its entry point — cron jobs and workers typically do —
@@ -481,8 +486,9 @@ function SeverityToggle({
 	onChange: (next: AlertSeverity) => void
 }) {
 	return (
-		<div
-			role="radiogroup"
+		<RadioGroupPrimitive
+			value={value}
+			onValueChange={onChange}
 			aria-labelledby="rule-severity-label"
 			className="inline-flex items-center gap-1 rounded-md bg-muted/30 p-0.5"
 		>
@@ -491,9 +497,9 @@ function SeverityToggle({
 				return (
 					<RadioChip
 						key={opt.value}
+						value={opt.value}
 						selected={selected}
 						selectedClass={opt.selectedClass}
-						onSelect={() => onChange(opt.value)}
 					>
 						<StatusDot
 							tone="custom"
@@ -506,29 +512,27 @@ function SeverityToggle({
 					</RadioChip>
 				)
 			})}
-		</div>
+		</RadioGroupPrimitive>
 	)
 }
 
 /** One option in a chip radiogroup; the selected chip takes its option's brand colour. */
-function RadioChip({
+function RadioChip<V>({
+	value,
 	selected,
 	selectedClass,
-	onSelect,
 	children,
 }: {
+	value: V
 	selected: boolean
 	selectedClass: string
-	onSelect: () => void
 	children: ReactNode
 }) {
 	return (
-		<button
-			type="button"
-			role="radio"
-			aria-checked={selected}
-			onClick={onSelect}
+		<RadioPrimitive.Root
+			value={value}
 			className={cn(
+				"cursor-pointer select-none",
 				"inline-flex h-7 items-center gap-1.5 rounded-sm border border-transparent px-2.5 text-xs font-medium",
 				"transition-[background-color,border-color,color] duration-150",
 				// `ring-ring` is the base so an unselected chip still shows a focus ring;
@@ -538,7 +542,7 @@ function RadioChip({
 			)}
 		>
 			{children}
-		</button>
+		</RadioPrimitive.Root>
 	)
 }
 

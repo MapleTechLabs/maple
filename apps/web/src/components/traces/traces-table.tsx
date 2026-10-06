@@ -1,5 +1,5 @@
 import { refreshingClass } from "@maple/ui/lib/refreshing"
-import { formatDuration, pluralize } from "@maple/ui/lib/format"
+import { formatDuration, formatNumber, pluralize } from "@maple/ui/lib/format"
 import { TableSkeleton } from "@maple/ui/components/ui/table-skeleton"
 import * as React from "react"
 import { cn } from "@maple/ui/lib/utils"
@@ -342,7 +342,7 @@ function TracesTableView({
 				size: 70,
 				cell: ({ row }) => (
 					<span className="font-mono text-xs text-muted-foreground">
-						{row.original.spanCount.toLocaleString()}
+						{formatNumber(row.original.spanCount)}
 					</span>
 				),
 			},
@@ -451,7 +451,7 @@ function TracesTableView({
 				<Table scroll={false} className="table-fixed" aria-label="Traces">
 					<TableHeader sticky className="z-20">
 						{table.getHeaderGroups().map((headerGroup) => (
-							<TableRow key={headerGroup.id} className="hover:bg-muted/50">
+							<TableRow key={headerGroup.id}>
 								{headerGroup.headers.map((header) => (
 									<TableHead
 										key={header.id}
@@ -531,8 +531,7 @@ function TracesTableView({
 				{hiddenCount > 0 && (
 					<span>
 						{" · "}
-						{hiddenCount.toLocaleString()} single-span noise {pluralize(hiddenCount, "trace")}{" "}
-						hidden{" "}
+						{formatNumber(hiddenCount)} single-span noise {pluralize(hiddenCount, "trace")} hidden{" "}
 						<button
 							type="button"
 							onClick={onShowNoise}

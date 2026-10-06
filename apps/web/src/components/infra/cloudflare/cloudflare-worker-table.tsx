@@ -124,30 +124,30 @@ export function CloudflareWorkerTable({ workers, waiting }: CloudflareWorkerTabl
 
 			{sorted.map((worker) => (
 				<div key={worker.serviceName} className={ROW_CLASS}>
-					<div className="w-0 min-w-[220px] flex-1 truncate font-mono text-[13px] font-medium text-foreground">
+					<div className="w-0 min-w-[220px] flex-1 truncate font-mono text-xs font-medium text-foreground">
 						{worker.scriptName}
 					</div>
-					<div className="w-[100px] text-right font-mono text-[12px] tabular-nums text-foreground/80">
+					<div className="w-[100px] text-right font-mono text-xs tabular-nums text-foreground/80">
 						{formatNumber(worker.requests)}
 					</div>
-					<div className="hidden w-[90px] text-right font-mono text-[12px] tabular-nums text-foreground/80 lg:block">
+					<div className="hidden w-[90px] text-right font-mono text-xs tabular-nums text-foreground/80 lg:block">
 						{formatNumber(worker.errors)}
 					</div>
 					<div
-						className={`w-[90px] text-right font-mono text-[12px] tabular-nums ${errorRateClass(worker.errorRate)}`}
+						className={`w-[90px] text-right font-mono text-xs tabular-nums ${errorRateClass(worker.errorRate)}`}
 					>
 						{formatPercent(worker.errorRate)}
 					</div>
-					<div className="hidden w-[100px] text-right font-mono text-[12px] tabular-nums text-foreground/80 lg:block">
+					<div className="hidden w-[100px] text-right font-mono text-xs tabular-nums text-foreground/80 lg:block">
 						{formatNumber(worker.subrequests)}
 					</div>
-					<div className="hidden w-[90px] text-right text-[12px] md:block">
+					<div className="hidden w-[90px] text-right text-xs md:block">
 						{/* Worker CPU time runs ~20x tighter than wall-clock latency,
 						    hence the dedicated "cpu" budget. */}
-						<LatencyValue ms={worker.cpuP99Ms} scale="cpu" className="text-[12px]" />
+						<LatencyValue ms={worker.cpuP99Ms} scale="cpu" className="text-xs" />
 					</div>
-					<div className="w-[100px] text-right text-[12px]">
-						<LatencyValue ms={worker.durationP99Ms} scale="p99" className="text-[12px]" />
+					<div className="w-[100px] text-right text-xs">
+						<LatencyValue ms={worker.durationP99Ms} scale="p99" className="text-xs" />
 					</div>
 				</div>
 			))}

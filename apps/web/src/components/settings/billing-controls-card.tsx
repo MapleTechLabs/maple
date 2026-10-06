@@ -2,7 +2,9 @@ import { useState } from "react"
 
 import type { BillingCustomer } from "@maple/domain/http"
 import { Button } from "@maple/ui/components/ui/button"
+import { Panel } from "@maple/ui/components/ui/panel"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
 
 import { maximumInvoiceCents, spendLimitFor } from "@/lib/billing/controls"
 import { formatCurrency } from "@maple/domain/format"
@@ -16,20 +18,19 @@ import {
 import { BillingControlsDialog } from "./billing-controls-dialog"
 import { formatFeatureUsage } from "./format-feature-usage"
 
-
 export function BillingControlsCardSkeleton() {
 	return (
-		<div className="border border-border/60 bg-card/40">
-			<div className="flex items-center justify-between px-5 py-4">
+		<Panel>
+			<div className="flex items-center justify-between px-4 py-3">
 				<Skeleton className="h-4 w-64" />
 				<Skeleton className="h-4 w-32" />
 			</div>
 			{SPEND_FEATURES.map((featureId) => (
-				<div key={featureId} className="border-t border-border/40 px-5 py-3">
+				<div key={featureId} className="border-t px-4 py-3">
 					<Skeleton className="h-4 w-full max-w-lg" />
 				</div>
 			))}
-		</div>
+		</Panel>
 	)
 }
 
@@ -47,8 +48,8 @@ export function BillingControlsCard({
 
 	return (
 		<>
-			<div className="border border-border/60 bg-card/40">
-				<div className="flex flex-wrap items-baseline justify-between gap-2 px-5 py-4">
+			<Panel>
+				<div className="flex flex-wrap items-baseline justify-between gap-2 border-b px-4 py-3">
 					<p className="max-w-[70ch] text-xs leading-5 text-muted-foreground">
 						Each cap limits paid overage for one feature. Included usage is unaffected; the cap is
 						enforced while usage keeps being recorded.
@@ -59,52 +60,65 @@ export function BillingControlsCard({
 					</p>
 				</div>
 
-				<div className="border-t border-border/40">
-					{SPEND_FEATURES.map((featureId, index) => {
-						const feature = model?.features.find((entry) => entry.featureId === featureId)
-						const limit = spendLimitFor(customer, featureId)?.overageLimit
-						const stopAt =
-							limit === undefined || feature?.included == null ? null : feature.included + limit
+				<Table>
+					<TableHeader>
+						<TableRow>
+							<TableHead>Feature</TableHead>
+							<TableHead>Paid overage cap</TableHead>
+							<TableHead className="w-16">
+								<span className="sr-only">Actions</span>
+							</TableHead>
+						</TableRow>
+					</TableHeader>
+					<TableBody>
+						{SPEND_FEATURES.map((featureId) => {
+							const feature = model?.features.find((entry) => entry.featureId === featureId)
+							const limit = spendLimitFor(customer, featureId)?.overageLimit
+							const stopAt =
+								limit === undefined || feature?.included == null
+									? null
+									: feature.included + limit
 
-						return (
-							<div
-								key={featureId}
-								className={`grid gap-3 px-5 py-3 sm:grid-cols-[minmax(150px,1fr)_minmax(180px,1.3fr)_auto] sm:items-center ${index > 0 ? "border-t border-border/30" : ""}`}
-							>
-								<div className="flex min-w-0 items-center gap-2">
-									<span
-										aria-hidden
-										className="size-2 shrink-0 rounded-sm"
-										style={{ background: FEATURE_COLORS[featureId] }}
-									/>
-									<span className="truncate text-[13px]">{FEATURE_LABELS[featureId]}</span>
-								</div>
-								<div>
-									<p className="font-mono text-[13px] tabular-nums">
-										{limit === undefined
-											? "Paid overage uncapped"
-											: `${formatFeatureUsage(featureId, limit)} paid overage`}
-									</p>
-									<p className="text-2xs text-muted-foreground">
-										{stopAt === null
-											? "No enforced stop this cycle"
-											: `Stops at ${formatFeatureUsage(featureId, stopAt)} total usage`}
-									</p>
-								</div>
-								<Button
-									variant="outline"
-									size="sm"
-									onClick={() => setEditing(featureId)}
-									disabled={!canEdit}
-								>
-									Edit
-								</Button>
-							</div>
-						)
-					})}
-				</div>
-			</div>
-
+							return (
+								<TableRow key={featureId}>
+									<TableCell>
+										<div className="flex min-w-0 items-center gap-2">
+											<span
+												aria-hidden
+												className="size-2 shrink-0 rounded-xs"
+												style={{ background: FEATURE_COLORS[featureId] }}
+											/>
+											<span className="truncate">{FEATURE_LABELS[featureId]}</span>
+										</div>
+									</TableCell>
+									<TableCell>
+										<p className="font-mono tabular-nums">
+											{limit === undefined
+												? "Paid overage uncapped"
+												: `${formatFeatureUsage(featureId, limit)} paid overage`}
+										</p>
+										<p className="text-2xs text-muted-foreground">
+											{stopAt === null
+												? "No enforced stop this cycle"
+												: `Stops at ${formatFeatureUsage(featureId, stopAt)} total usage`}
+										</p>
+									</TableCell>
+									<TableCell className="text-right">
+										<Button
+											variant="outline"
+											size="sm"
+											onClick={() => setEditing(featureId)}
+											disabled={!canEdit}
+										>
+											Edit
+										</Button>
+									</TableCell>
+								</TableRow>
+							)
+						})}
+					</TableBody>
+				</Table>
+			</Panel>
 			{editing !== null && (
 				<BillingControlsDialog
 					key={editing}

@@ -30,8 +30,10 @@ const PRESSED_BORDER = {
 	neutral: "data-pressed:border-border",
 } satisfies Record<Tone, string>
 
-export interface FilterChipProps
-	extends Omit<TogglePrimitive.Props, "pressed" | "onPressedChange" | "children" | "className"> {
+export interface FilterChipProps extends Omit<
+	TogglePrimitive.Props,
+	"pressed" | "onPressedChange" | "children" | "className"
+> {
 	className?: string
 	pressed: boolean
 	onPressedChange: (pressed: boolean) => void

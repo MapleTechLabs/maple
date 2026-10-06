@@ -4,6 +4,7 @@ import { Link } from "@tanstack/react-router"
 
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@maple/ui/components/ui/alert"
 import { Button } from "@maple/ui/components/ui/button"
+import { IconButton } from "@maple/ui/components/ui/icon-button"
 import { CircleWarningIcon, XmarkIcon } from "@/components/icons"
 import { getActivePlan, getQuotaStatus, type QuotaLevel } from "@/lib/billing/plan-gating"
 
@@ -71,14 +72,9 @@ export function QuotaBanner() {
 						{isOver ? "Upgrade plan" : "View usage"}
 					</Button>
 					{!isOver && (
-						<Button
-							size="icon-sm"
-							variant="ghost"
-							aria-label="Dismiss"
-							onClick={dismissApproaching}
-						>
+						<IconButton label="Dismiss" onClick={dismissApproaching}>
 							<XmarkIcon size={16} />
-						</Button>
+						</IconButton>
 					)}
 				</AlertAction>
 			</Alert>

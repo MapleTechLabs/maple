@@ -19,6 +19,7 @@ import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import type { CSSProperties } from "react"
 
 import { ACTION_WIDTH, SPINE_WIDTH } from "./provenance-graph"
+import { Panel } from "@maple/ui/components/ui/panel"
 
 /* The real graph's geometry. The widths are imported; the rest is the private
    arithmetic of `provenance-graph.ts`, mirrored rather than exported — the ghost
@@ -204,10 +205,7 @@ export function ProvenanceCanvasLoading() {
 	]
 
 	return (
-		<section
-			className="flex shrink-0 flex-col gap-3.5 rounded-lg border bg-card/40 px-6 pb-5.5 pt-4.5"
-			aria-busy
-		>
+		<Panel className="shrink-0 gap-3.5 bg-card/40 px-6 pb-5.5 pt-4.5" aria-busy>
 			<div className="flex items-center gap-2.5">
 				<Eyebrow>Provenance</Eyebrow>
 				<span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
@@ -266,6 +264,6 @@ export function ProvenanceCanvasLoading() {
 					),
 				)}
 			</svg>
-		</section>
+		</Panel>
 	)
 }

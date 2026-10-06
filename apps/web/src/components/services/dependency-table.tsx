@@ -1,9 +1,9 @@
 import { useMemo } from "react"
+import { Panel } from "@maple/ui/components/ui/panel"
 import { useNavigate } from "@tanstack/react-router"
 import { Table, TableBody, TableCell, TableHeader, TableRow } from "@maple/ui/components/ui/table"
 import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import { formatRate } from "@maple/ui/lib/format"
-import { cn } from "@maple/ui/lib/utils"
 import {
 	BarCell,
 	HeadLabel,
@@ -12,7 +12,6 @@ import {
 	MobileStat,
 	MobileStatLine,
 	SortColumnHead,
-	TABLE_CARD_CLASS,
 } from "./service-table-cells"
 import { SampledValue } from "./sampled-value"
 import { useTableSort } from "@/hooks/use-table-sort"
@@ -84,7 +83,7 @@ export function DependencyTable({ serviceName, rows, startTime, endTime, timePre
 	return (
 		<>
 			{/* Desktop: dense sortable table with inline distribution bars. */}
-			<div className={cn("hidden md:block", TABLE_CARD_CLASS)}>
+			<Panel className="hidden md:block">
 				<Table>
 					<TableHeader>
 						<TableRow className="border-b">
@@ -138,7 +137,7 @@ export function DependencyTable({ serviceName, rows, startTime, endTime, timePre
 											<div className="flex items-center gap-2.5 min-w-0">
 												<DependencyTypeBadge kind={row.kind} />
 												<div className="flex min-w-0 flex-col leading-tight">
-													<span className="flex items-center gap-1.5 truncate text-[12.5px] text-foreground">
+													<span className="flex items-center gap-1.5 truncate text-xs text-foreground">
 														{row.kind === "service" && (
 															<ServiceDot serviceName={row.name} size="sm" />
 														)}
@@ -154,7 +153,7 @@ export function DependencyTable({ serviceName, rows, startTime, endTime, timePre
 										</TableCell>
 										<BarCell value={row.callsPerSec} max={maxima.calls} tone="calls">
 											<SampledValue
-												className="tabular-nums font-mono text-[12.5px] text-foreground"
+												className="tabular-nums font-mono text-xs text-foreground"
 												estimated={row.hasSampling}
 												value={formatRate(row.callsPerSec)}
 												tooltip={`Estimated ×${row.samplingWeight.toFixed(0)} from ${formatRate(row.tracedCallsPerSec)} traced req/s`}
@@ -168,20 +167,20 @@ export function DependencyTable({ serviceName, rows, startTime, endTime, timePre
 											max={0.05}
 											tone="errors"
 										>
-											<ErrorRateValue rate={row.errorRate} className="text-[12.5px]" />
+											<ErrorRateValue rate={row.errorRate} className="text-xs" />
 										</BarCell>
 										<TableCell className="py-2 text-right align-middle">
 											<LatencyValue
 												ms={row.avgDurationMs}
 												scale="avg"
-												className="text-[12.5px]"
+												className="text-xs"
 											/>
 										</TableCell>
 										<BarCell value={row.p95DurationMs} max={maxima.p95} tone="latency">
 											<LatencyValue
 												ms={row.p95DurationMs}
 												scale="p95"
-												className="text-[12.5px]"
+												className="text-xs"
 											/>
 										</BarCell>
 									</TableRow>
@@ -190,7 +189,7 @@ export function DependencyTable({ serviceName, rows, startTime, endTime, timePre
 						)}
 					</TableBody>
 				</Table>
-			</div>
+			</Panel>
 
 			{/* Mobile: tap-to-trace list with a compact sort control. The 5-column
 			    table clips below md, so each row collapses to name + a mono metric line. */}
@@ -207,7 +206,7 @@ export function DependencyTable({ serviceName, rows, startTime, endTime, timePre
 					sortDir={sortDir}
 					onSort={handleSort}
 				/>
-				<div className={TABLE_CARD_CLASS}>
+				<Panel>
 					{sorted.length === 0 ? (
 						<EmptyMessage>
 							No downstream dependencies in this window.
@@ -251,7 +250,7 @@ export function DependencyTable({ serviceName, rows, startTime, endTime, timePre
 							)
 						})
 					)}
-				</div>
+				</Panel>
 			</div>
 		</>
 	)

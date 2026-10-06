@@ -43,7 +43,8 @@ import {
 } from "@maple/ui/components/ui/empty"
 import { Alert, AlertDescription, AlertTitle } from "@maple/ui/components/ui/alert"
 import { Badge } from "@maple/ui/components/ui/badge"
-import { Button } from "@maple/ui/components/ui/button"
+import { Panel } from "@maple/ui/components/ui/panel"
+import { IconButton } from "@maple/ui/components/ui/icon-button"
 import { TruncatedId } from "@maple/ui/components/ui/truncated-id"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { InlineCode } from "@maple/ui/components/ui/inline-code"
@@ -185,7 +186,7 @@ function DetailPanelHeader({
 /** Badge for short uppercase tags (a branch's "prod", an origin scheme). */
 function TagBadge({ children }: { children: React.ReactNode }) {
 	return (
-		<Badge variant="muted" size="xs" className="shrink-0 font-semibold uppercase tracking-wide">
+		<Badge variant="tag" className="shrink-0 font-semibold">
 			{children}
 		</Badge>
 	)
@@ -303,14 +304,13 @@ function ServiceDetailPanel({
 				accentColor={accentColor}
 				actions={
 					<>
-						<Button
-							variant="ghost"
+						<IconButton
 							size="icon-xs"
 							onClick={onFocus}
-							title="Focus the map on this service's neighborhood"
+							label="Focus the map on this service's neighborhood"
 						>
 							<MagnifierIcon size={13} />
-						</Button>
+						</IconButton>
 						<Link
 							to="/services/$serviceName"
 							params={{ serviceName: serviceId }}
@@ -318,9 +318,9 @@ function ServiceDetailPanel({
 						>
 							View service
 						</Link>
-						<Button variant="ghost" size="icon-xs" onClick={onClose}>
+						<IconButton size="icon-xs" onClick={onClose} label="Close">
 							<XmarkIcon size={14} />
-						</Button>
+						</IconButton>
 					</>
 				}
 			>
@@ -511,7 +511,7 @@ function ServiceWorkloadRow({ workload }: { workload: ServiceWorkload }) {
 			? workload.workloadKind
 			: null
 	return (
-		<div className="rounded-md border bg-card p-3 space-y-2.5">
+		<Panel padded="sm" className="space-y-2.5">
 			<div className="flex items-start justify-between gap-2">
 				<div className="min-w-0 flex-1">
 					<Eyebrow as="div" className="flex items-center gap-1.5">
@@ -574,7 +574,7 @@ function ServiceWorkloadRow({ workload }: { workload: ServiceWorkload }) {
 					View pods <ArrowRightIcon size={10} />
 				</Link>
 			</div>
-		</div>
+		</Panel>
 	)
 }
 
@@ -878,12 +878,12 @@ function PlanetScaleSection({
 					    number tinted red here is tinted red on /infra/planetscale too. */}
 					<MetricTile label="CPU (max)">
 						<MetricValue className={cn(utilizationClass(stats.cpuMaxPercent))}>
-							{stats.cpuMaxPercent.toFixed(0)}%
+							{formatPercent(stats.cpuMaxPercent / 100)}
 						</MetricValue>
 					</MetricTile>
 					<MetricTile label="Memory (max)">
 						<MetricValue className={cn(utilizationClass(stats.memMaxPercent))}>
-							{stats.memMaxPercent.toFixed(0)}%
+							{formatPercent(stats.memMaxPercent / 100)}
 						</MetricValue>
 					</MetricTile>
 					<MetricTile label="Storage (max)">
@@ -906,7 +906,7 @@ function PlanetScaleSection({
 				</div>
 			) : (
 				<p className="text-xs text-muted-foreground">
-					No PlanetScale metrics in this window yet — the scraper delivers them within a minute of
+					No PlanetScale metrics in this window yet; the scraper delivers them within a minute of
 					connecting.
 				</p>
 			)}
@@ -941,7 +941,7 @@ function PlanetScaleSection({
 								<div className="flex shrink-0 items-center gap-3 font-mono text-3xs tabular-nums text-muted-foreground">
 									<span>{formatRate(row.connectionsAvg)} conns</span>
 									<span className={utilizationClass(row.cpuMaxPercent)}>
-										{row.cpuMaxPercent.toFixed(0)}% cpu
+										{formatPercent(row.cpuMaxPercent / 100)} cpu
 									</span>
 									<span className={lagClass(row.replicaLagMaxSeconds)}>
 										{formatReplicationLag(row.replicaLagMaxSeconds)} lag
@@ -1033,9 +1033,7 @@ function HyperdriveSection({ configs }: { configs: ReadonlyArray<HyperdriveNodeI
 								<span className="flex min-w-0 items-center gap-1.5 text-muted-foreground">
 									<PlanetScaleIcon size={11} className="shrink-0" />
 									<span className="truncate font-mono">{config.originDatabase}</span>
-									<span className="shrink-0 text-3xs">
-										PlanetScale (not in inventory)
-									</span>
+									<span className="shrink-0 text-3xs">PlanetScale (not in inventory)</span>
 								</span>
 							) : (
 								<span className="flex min-w-0 items-center gap-1.5 text-muted-foreground">
@@ -1127,9 +1125,9 @@ function DatabaseDetailPanel({
 			<DetailPanelHeader
 				accentColor={dbColor}
 				actions={
-					<Button variant="ghost" size="icon-xs" onClick={onClose}>
+					<IconButton size="icon-xs" onClick={onClose} label="Close">
 						<XmarkIcon size={14} />
-					</Button>
+					</IconButton>
 				}
 			>
 				<DbIcon size={14} className="shrink-0" style={dbBranded ? undefined : { color: dbColor }} />

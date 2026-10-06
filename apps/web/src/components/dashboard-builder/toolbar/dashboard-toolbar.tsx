@@ -4,7 +4,6 @@ import {
 	PencilIcon,
 	CheckIcon,
 	GridIcon,
-	DotsVerticalIcon,
 	DownloadIcon,
 	HistoryIcon,
 	BracketsCurlyIcon,
@@ -14,13 +13,8 @@ import {
 } from "@/components/icons"
 
 import { Button } from "@maple/ui/components/ui/button"
-import {
-	DropdownMenu,
-	DropdownMenuTrigger,
-	DropdownMenuContent,
-	DropdownMenuItem,
-	DropdownMenuSeparator,
-} from "@maple/ui/components/ui/dropdown-menu"
+import { RowActionsMenu } from "@maple/ui/components/ui/row-actions-menu"
+import { DropdownMenuItem, DropdownMenuSeparator } from "@maple/ui/components/ui/dropdown-menu"
 import { TimeRangePicker } from "@/components/time-range-picker/time-range-picker"
 import { PageRefreshControls } from "@/components/time-range-picker/refresh-controls"
 import { VariableSelects } from "@/components/dashboard-builder/toolbar/variable-selects"
@@ -135,76 +129,66 @@ export function DashboardToolbar({
 					)}
 					<span className="hidden @min-[560px]/page:inline">{isEdit ? "Done" : "Edit"}</span>
 				</Button>
-				<DropdownMenu>
-					<DropdownMenuTrigger
-						render={<Button variant="ghost" size="icon-xs" aria-label="More dashboard actions" />}
+				<RowActionsMenu label="More dashboard actions">
+					{isEdit && (
+						<DropdownMenuItem
+							onClick={autoLayoutWidgets}
+							disabled={readOnly}
+							className="whitespace-nowrap"
+						>
+							<GridIcon size={14} />
+							Auto Layout
+						</DropdownMenuItem>
+					)}
+					{isEdit && (
+						<DropdownMenuItem
+							onClick={() => addSection()}
+							disabled={readOnly}
+							className="whitespace-nowrap"
+						>
+							<LayersIcon size={14} />
+							Add group
+						</DropdownMenuItem>
+					)}
+					{isEdit && (
+						<DropdownMenuItem
+							onClick={() => setVariablesDialogOpen(true)}
+							disabled={readOnly}
+							className="whitespace-nowrap"
+						>
+							<BracketsCurlyIcon size={14} />
+							Variables
+						</DropdownMenuItem>
+					)}
+					{isEdit && (
+						<DropdownMenuItem
+							onClick={() => setTagsDialogOpen(true)}
+							disabled={readOnly}
+							className="whitespace-nowrap"
+						>
+							<TagIcon size={14} />
+							Tags
+						</DropdownMenuItem>
+					)}
+					{onOpenHistory && (
+						<DropdownMenuItem onClick={onOpenHistory} className="whitespace-nowrap">
+							<HistoryIcon size={14} />
+							Version history
+						</DropdownMenuItem>
+					)}
+					{(isEdit || onOpenHistory) && <DropdownMenuSeparator />}
+					<DropdownMenuItem onClick={() => setShareDialogOpen(true)} className="whitespace-nowrap">
+						<LinkIcon size={14} />
+						Share…
+					</DropdownMenuItem>
+					<DropdownMenuItem
+						onClick={() => downloadPortableDashboard(dashboard)}
+						className="whitespace-nowrap"
 					>
-						<DotsVerticalIcon size={16} />
-					</DropdownMenuTrigger>
-					<DropdownMenuContent align="end" className="min-w-[180px]">
-						{isEdit && (
-							<DropdownMenuItem
-								onClick={autoLayoutWidgets}
-								disabled={readOnly}
-								className="whitespace-nowrap"
-							>
-								<GridIcon size={14} />
-								Auto Layout
-							</DropdownMenuItem>
-						)}
-						{isEdit && (
-							<DropdownMenuItem
-								onClick={() => addSection()}
-								disabled={readOnly}
-								className="whitespace-nowrap"
-							>
-								<LayersIcon size={14} />
-								Add group
-							</DropdownMenuItem>
-						)}
-						{isEdit && (
-							<DropdownMenuItem
-								onClick={() => setVariablesDialogOpen(true)}
-								disabled={readOnly}
-								className="whitespace-nowrap"
-							>
-								<BracketsCurlyIcon size={14} />
-								Variables
-							</DropdownMenuItem>
-						)}
-						{isEdit && (
-							<DropdownMenuItem
-								onClick={() => setTagsDialogOpen(true)}
-								disabled={readOnly}
-								className="whitespace-nowrap"
-							>
-								<TagIcon size={14} />
-								Tags
-							</DropdownMenuItem>
-						)}
-						{onOpenHistory && (
-							<DropdownMenuItem onClick={onOpenHistory} className="whitespace-nowrap">
-								<HistoryIcon size={14} />
-								Version history
-							</DropdownMenuItem>
-						)}
-						{(isEdit || onOpenHistory) && <DropdownMenuSeparator />}
-						<DropdownMenuItem
-							onClick={() => setShareDialogOpen(true)}
-							className="whitespace-nowrap"
-						>
-							<LinkIcon size={14} />
-							Share…
-						</DropdownMenuItem>
-						<DropdownMenuItem
-							onClick={() => downloadPortableDashboard(dashboard)}
-							className="whitespace-nowrap"
-						>
-							<DownloadIcon size={14} />
-							Export as JSON
-						</DropdownMenuItem>
-					</DropdownMenuContent>
-				</DropdownMenu>
+						<DownloadIcon size={14} />
+						Export as JSON
+					</DropdownMenuItem>
+				</RowActionsMenu>
 			</div>
 
 			<VariablesManagerDialog

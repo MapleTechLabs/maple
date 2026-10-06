@@ -1,5 +1,6 @@
 import { useMemo, useState, type ReactNode } from "react"
 import { cn } from "@maple/ui/lib/utils"
+import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { PlotLegendSlotContext, type PlotLegendItem } from "@maple/ui/components/plot"
 import {
 	GripDotsIcon,
@@ -242,7 +243,7 @@ export function WidgetShell({
 						<DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
 							<DropdownMenuTrigger
 								render={
-									<Button variant="ghost" size="icon-xs">
+									<Button variant="ghost" size="icon-xs" aria-label="Widget actions">
 										<DotsVerticalIcon size={14} />
 									</Button>
 								}
@@ -421,11 +422,16 @@ export function WidgetFrame({
 					</div>
 				) : (
 					<div className="flex items-center justify-center h-full flex-col gap-1.5 px-3">
-						<span className="text-xs font-medium text-destructive">
+						<span className={cn("text-xs font-medium", TONE_TEXT.crit)}>
 							{dataState.title ?? "Unable to load"}
 						</span>
 						{dataState.message && (
-							<span className="text-3xs text-destructive/70 max-w-full text-center line-clamp-2">
+							<span
+								className={cn(
+									"text-3xs opacity-70 max-w-full text-center line-clamp-2",
+									TONE_TEXT.crit,
+								)}
+							>
 								{dataState.message}
 							</span>
 						)}

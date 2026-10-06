@@ -30,7 +30,12 @@ import type {
 import { formatLatency, formatNumber } from "@maple/ui/lib/format"
 import { resolveSeriesColors } from "@maple/ui/lib/semantic-series-colors"
 import { transformRows } from "../chart-utils"
-import { CHART_EMPTY_MESSAGE, CHART_HEIGHT, ChartCard, ChartCardMessage } from "@/components/common/chart-card"
+import {
+	CHART_EMPTY_MESSAGE,
+	CHART_HEIGHT,
+	ChartCard,
+	ChartCardMessage,
+} from "@/components/common/chart-card"
 import { SeriesLegend } from "@/components/common/series-legend"
 import {
 	BREAKDOWN_OTHER_KEY,
@@ -142,9 +147,7 @@ export function StackedBreakdownChart({
 			map.set(
 				name,
 				colors[name] ??
-					(name === BREAKDOWN_OTHER_KEY
-						? OTHER_COLOR
-						: (identityColors.get(name) ?? OTHER_COLOR)),
+					(name === BREAKDOWN_OTHER_KEY ? OTHER_COLOR : (identityColors.get(name) ?? OTHER_COLOR)),
 			)
 		}
 		return map

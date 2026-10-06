@@ -8,6 +8,7 @@ import { SidebarInset, SidebarProvider, SidebarTrigger } from "@maple/ui/compone
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@maple/ui/components/ui/sheet"
 import { Button } from "@maple/ui/components/ui/button"
+import { IconButton } from "@maple/ui/components/ui/icon-button"
 import { useIsMobile } from "@maple/ui/hooks/use-media-query"
 import { ChevronDownIcon, LinkIcon, PlusIcon } from "@/components/icons"
 import { useAppHotkey } from "@/hooks/use-app-hotkey"
@@ -216,27 +217,20 @@ function ChatPageInner({
 								<span className="truncate text-sm font-medium">{activeTitle}</span>
 								<ChevronDownIcon size={14} className="shrink-0 opacity-60" />
 							</button>
-							<Button
+							<IconButton
+								label="Copy share link"
 								onClick={() => {
 									const tab = tabs.find((t) => t.id === activeTabId)
 									if (tab) handleShare(tab)
 								}}
-								variant="ghost"
 								size="icon"
 								className="size-9"
-								aria-label="Copy share link"
 							>
 								<LinkIcon size={16} />
-							</Button>
-							<Button
-								onClick={createTab}
-								variant="ghost"
-								size="icon"
-								className="size-9"
-								aria-label="New chat"
-							>
+							</IconButton>
+							<IconButton label="New chat" onClick={createTab} size="icon" className="size-9">
 								<PlusIcon size={16} />
-							</Button>
+							</IconButton>
 						</header>
 						{conversationArea}
 						<Sheet open={convListOpen} onOpenChange={setConvListOpen}>

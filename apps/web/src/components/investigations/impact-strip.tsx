@@ -1,8 +1,10 @@
 import { FactLane, FactStrip } from "@/components/errors/fact-strip"
 import type { V2Investigation } from "@maple/domain/http/v2"
-import { formatDuration, formatNumber } from "@maple/ui/lib/format"
+import { formatDuration, formatNumber, pluralize } from "@maple/ui/lib/format"
 import { ServiceDot } from "@maple/ui/components/service-dot"
 import { toEpochMs } from "@maple/ui/lib/time-format"
+import { formatTimeInTimezone } from "@/lib/timezone-format"
+import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 
 /**
  * Four named lanes under the verdict, each reading a field that has been on the
@@ -27,7 +29,8 @@ export function ImpactStrip({ investigation }: { investigation: V2Investigation 
 	const isSettled = investigation.status !== "investigating"
 
 	const services = servicesTouched(investigation)
-	const window = incidentWindow(snapshot)
+	const { effectiveTimezone } = useTimezonePreference()
+	const window = incidentWindow(snapshot, effectiveTimezone)
 	const occurrences = snapshot.occurrenceCount
 
 	return (
@@ -58,9 +61,7 @@ export function ImpactStrip({ investigation }: { investigation: V2Investigation 
 				<FactLane label="Blast radius">
 					<span className="text-foreground">
 						<span className="tabular-nums">{formatNumber(occurrences)}</span>{" "}
-						<span className="text-muted-foreground">
-							{occurrences === 1 ? "event" : "events"}
-						</span>
+						<span className="text-muted-foreground">{pluralize(occurrences, "event")}</span>
 					</span>
 				</FactLane>
 			) : null}
@@ -91,19 +92,18 @@ export function servicesTouched(investigation: V2Investigation): ReadonlyArray<s
 }
 
 /** `14:02 → 14:26 · 24m`, or as much of it as the snapshot actually carries. */
-function incidentWindow(snapshot: V2Investigation["snapshot"]): string {
+function incidentWindow(snapshot: V2Investigation["snapshot"], timeZone: string): string {
 	const startedAt = snapshot.incidentStartedAt
 	if (!startedAt) return "Not recorded"
 	const startMs = toEpochMs(startedAt)
 	if (!Number.isFinite(startMs)) return "Not recorded"
-	const start = clockTime(startMs)
+	const start = clockTime(startMs, timeZone)
 
 	const endedAt = snapshot.incidentEndedAt
 	if (!endedAt) return `${start} → ongoing`
 	const endMs = toEpochMs(endedAt)
 	if (!Number.isFinite(endMs) || endMs < startMs) return `${start} → ongoing`
-	return `${start} → ${clockTime(endMs)} · ${formatDuration(endMs - startMs)}`
+	return `${start} → ${clockTime(endMs, timeZone)} · ${formatDuration(endMs - startMs)}`
 }
 
-const clockTime = (epochMs: number) =>
-	new Date(epochMs).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })
+const clockTime = (epochMs: number, timeZone: string) => formatTimeInTimezone(epochMs, { timeZone })

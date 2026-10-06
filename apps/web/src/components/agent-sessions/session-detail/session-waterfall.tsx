@@ -8,9 +8,10 @@ import { ChevronDownIcon, ChevronRightIcon, CircleXmarkIcon } from "@/components
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import { SegmentedBar } from "@maple/ui/components/ui/meter"
-import { formatDuration, formatNumber } from "@maple/ui/lib/format"
+import { EMPTY_VALUE, formatDuration, formatNumber } from "@maple/ui/lib/format"
 import { formatSessionDuration } from "@maple/ui/lib/replay-format"
 import { cn } from "@maple/ui/lib/utils"
+import { rowSelectedClass } from "@maple/ui/components/ui/list-row"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { TONE_SOFT } from "@maple/ui/lib/tone"
 
@@ -526,7 +527,7 @@ function TurnHeader({
 					</Eyebrow>
 				)}
 			</span>
-			<span className={COL_MODEL}>{turn.agentName ?? "—"}</span>
+			<span className={COL_MODEL}>{turn.agentName ?? EMPTY_VALUE}</span>
 			<TokenCell tokens={tokens} />
 			<span className={COL_AXIS}>
 				<AxisGrid ticks={axis.ticks} />
@@ -614,8 +615,8 @@ function SpanRow({
 				focused && "bg-accent/60",
 				// Louder than the open row's mark on purpose: nothing is on screen
 				// saying which span the reader crossed views for except this row.
-				revealed && "border-l-2 border-l-primary bg-primary/12",
-				selected && "border-l-2 border-l-primary bg-primary/5",
+				rowSelectedClass(selected || revealed),
+				revealed && "bg-primary/12",
 			)}
 		>
 			<span
@@ -642,11 +643,7 @@ function SpanRow({
 					<span className="min-w-0 truncate text-muted-foreground">{span.statusMessage}</span>
 				)}
 				{errored && <FailedBadge>{span.genAi.errorType ?? "Error"}</FailedBadge>}
-				{isDelegation(span, spansById) && (
-					<Badge variant="meta" pill size="xs" className="uppercase tracking-wide">
-						Subagent
-					</Badge>
-				)}
+				{isDelegation(span, spansById) && <Badge variant="tag">Subagent</Badge>}
 			</span>
 			<span
 				className={cn(COL_MODEL, errored && "text-severity-error")}
@@ -657,7 +654,7 @@ function SpanRow({
 				{model !== undefined ? (
 					<ModelLabel detected={detect(model)} size={12} title={target} />
 				) : (
-					(target ?? "—")
+					(target ?? EMPTY_VALUE)
 				)}
 			</span>
 			<TokenCell tokens={isLlmCall(span) ? spanTokenBuckets(span) : undefined} errored={errored} />
@@ -859,10 +856,10 @@ function TokenCell({ tokens, errored }: { tokens: SessionTokenTotals | undefined
 	)
 }
 
-/** The crit-toned uppercase pill marking a failed turn or span. */
+/** The crit-toned uppercase tag marking a failed turn or span. */
 export function FailedBadge({ children = "Failed" }: { children?: ReactNode }) {
 	return (
-		<Badge pill size="xs" className={cn("uppercase tracking-wide", TONE_SOFT.crit)}>
+		<Badge variant="tag" className={TONE_SOFT.crit}>
 			{children}
 		</Badge>
 	)

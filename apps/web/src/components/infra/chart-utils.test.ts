@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest"
-import {
-	formatSeconds,
-	formatValueWithUnit,
-	transformRows,
-} from "./chart-utils"
+import { formatSeconds, formatValueWithUnit, transformRows } from "./chart-utils"
 
 describe("formatValueWithUnit", () => {
 	it("renders a percentage with a % sign", () => {

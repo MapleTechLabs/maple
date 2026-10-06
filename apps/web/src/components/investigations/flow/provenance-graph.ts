@@ -13,7 +13,7 @@
  */
 import type { Tone } from "@maple/ui/lib/tone"
 import type { V2Investigation } from "@maple/domain/http/v2"
-import { formatNumber } from "@maple/ui/lib/format"
+import { countLabel, EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 
 import { reportHeadline, splitDuration } from "../investigation-display"
@@ -23,6 +23,7 @@ import {
 	type ActionKind,
 	type ActionTarget,
 } from "./action-target"
+import { formatTimeInTimezone } from "@/lib/timezone-format"
 
 /* -------------------------------------------------------------------------------------------------
  * Geometry
@@ -238,7 +239,8 @@ export interface ProvenanceGraph {
  * investigation (no issue, no incident) starts at x=0 instead of leaving two
  * empty columns' worth of dead canvas on the left.
  */
-export function buildProvenanceGraph(investigation: V2Investigation): ProvenanceGraph {
+/** `timeZone` is the viewer's setting; an invalid or empty one falls back to the browser's. */
+export function buildProvenanceGraph(investigation: V2Investigation, timeZone = ""): ProvenanceGraph {
 	const { subject, snapshot, report } = investigation
 	const columns: Array<{ nodes: Array<ProvenanceNode>; width: number }> = []
 	const edges: Array<ProvenanceEdge> = []
@@ -291,7 +293,7 @@ export function buildProvenanceGraph(investigation: V2Investigation): Provenance
 			data: {
 				glyph: isAlert ? "check" : "issue",
 				eyebrow: isAlert ? "CHECK" : "ISSUE",
-				title: originTitle(investigation) ?? issueId ?? "—",
+				title: originTitle(investigation) ?? issueId ?? EMPTY_VALUE,
 				status: snapshot.status.toUpperCase(),
 				statusTone: "crit",
 				...(occurrences != null && Number.isFinite(occurrences)
@@ -505,7 +507,7 @@ export function buildProvenanceGraph(investigation: V2Investigation): Provenance
 	const height = Math.max(0, ...columns.map(columnHeight))
 
 	const actionHeading = proposing
-		? `PROPOSES · ${actions.length} ${actions.length === 1 ? "ACTION" : "ACTIONS"} BY IMPACT`
+		? `PROPOSES · ${countLabel(actions.length, "ACTION", "ACTIONS")} BY IMPACT`
 		: // No count while the ghosts stand there — a count is a claim about a report
 			// that has not been written.
 			awaitingVerdict
@@ -547,7 +549,7 @@ export function buildProvenanceGraph(investigation: V2Investigation): Provenance
 		width: Math.max(0, x - GUTTER),
 		height,
 		actionHeading,
-		caption: caption(investigation),
+		caption: caption(investigation, timeZone),
 		runningSince: running && Number.isFinite(openedMs) ? openedMs : null,
 	}
 }
@@ -621,21 +623,21 @@ const elapsedLabel = (investigation: V2Investigation): string | null => {
 }
 
 /** `14:02 → 14:03 · 38s` across the top of the canvas. */
-const caption = (investigation: V2Investigation): string | null => {
-	const opened = clockTime(investigation.created_at)
+const caption = (investigation: V2Investigation, timeZone: string): string | null => {
+	const opened = clockTime(investigation.created_at, timeZone)
 	if (!opened) return null
 	const endedAt =
 		investigation.diagnosed_at ??
 		(endsWithoutDiagnosis(investigation.status) ? investigation.updated_at : null)
-	const ended = clockTime(endedAt)
+	const ended = clockTime(endedAt, timeZone)
 	const elapsed = elapsedLabel(investigation)
 	if (!ended) return `${opened} → running`
 	return `${opened} → ${ended}${elapsed ? ` · ${elapsed}` : ""}`
 }
 
-const clockTime = (value: string | null | undefined): string | null => {
+const clockTime = (value: string | null | undefined, timeZone: string): string | null => {
 	if (!value) return null
 	const ms = toEpochMs(value)
 	if (!Number.isFinite(ms)) return null
-	return new Date(ms).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })
+	return formatTimeInTimezone(ms, { timeZone })
 }

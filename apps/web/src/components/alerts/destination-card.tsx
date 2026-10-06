@@ -1,17 +1,16 @@
 import type { AlertDestinationDocument } from "@maple/domain/http"
 import { destinationProvider, ProviderLogo } from "@/components/alerts/destination-provider"
-import { AlertWarningIcon, CheckIcon, DotsVerticalIcon, PencilIcon, TrashIcon } from "@/components/icons"
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
+import { useState } from "react"
+import { RelativeTime } from "@/components/common/relative-time"
+import { AlertWarningIcon, CheckIcon, PencilIcon, TrashIcon } from "@/components/icons"
 import { Alert, AlertDescription } from "@maple/ui/components/ui/alert"
+import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
 import { Card } from "@maple/ui/components/ui/card"
-import {
-	DropdownMenu,
-	DropdownMenuContent,
-	DropdownMenuItem,
-	DropdownMenuSeparator,
-	DropdownMenuTrigger,
-} from "@maple/ui/components/ui/dropdown-menu"
+import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
+import { DropdownMenuItem, DropdownMenuSeparator } from "@maple/ui/components/ui/dropdown-menu"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { RowActionsMenu } from "@maple/ui/components/ui/row-actions-menu"
 import { Switch } from "@maple/ui/components/ui/switch"
 import { cn } from "@maple/ui/lib/utils"
 
@@ -23,7 +22,8 @@ interface DestinationCardProps {
 	onToggle: (destination: AlertDestinationDocument) => void
 	onTest: (destination: AlertDestinationDocument) => void
 	onEdit: (destination: AlertDestinationDocument) => void
-	onDelete: (destination: AlertDestinationDocument) => void
+	/** Resolves to whether it was deleted; the confirm dialog stays open on failure. */
+	onDelete: (destination: AlertDestinationDocument) => Promise<boolean>
 }
 
 export function DestinationCard({
@@ -37,6 +37,7 @@ export function DestinationCard({
 	onDelete,
 }: DestinationCardProps) {
 	const provider = destinationProvider(destination)
+	const [confirmDelete, setConfirmDelete] = useState(false)
 
 	return (
 		<Card
@@ -60,8 +61,9 @@ export function DestinationCard({
 							<span className="truncate text-sm font-semibold tracking-tight">
 								{destination.name}
 							</span>
-							<span
-								className="rounded-md border px-1.5 py-0.5 text-3xs font-medium uppercase tracking-wider"
+							<Badge
+								variant="tag"
+								className="border"
 								style={{
 									// color-mix (not hex-alpha concat) so `light-dark()` accentText values work.
 									borderColor: `color-mix(in srgb, ${provider.accentText ?? provider.accent} 33%, transparent)`,
@@ -70,11 +72,11 @@ export function DestinationCard({
 								}}
 							>
 								{provider.label}
-							</span>
+							</Badge>
 						</div>
 
 						<div className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
-							<span className="truncate font-mono text-[13px] text-foreground/70">
+							<span className="truncate font-mono text-xs text-foreground/70">
 								{destination.summary}
 							</span>
 							<span aria-hidden className="text-muted-foreground/50">
@@ -82,18 +84,18 @@ export function DestinationCard({
 							</span>
 							<span>
 								tested{" "}
-								{destination.lastTestedAt
-									? formatRelativeTime(destination.lastTestedAt)
-									: "never"}
+								{destination.lastTestedAt ? (
+									<RelativeTime value={destination.lastTestedAt} />
+								) : (
+									"never"
+								)}
 							</span>
 							{!destination.enabled && (
 								<>
 									<span aria-hidden className="text-muted-foreground/50">
 										·
 									</span>
-									<span className="font-medium uppercase tracking-wide text-muted-foreground/80">
-										Disabled
-									</span>
+									<Eyebrow variant="label">Disabled</Eyebrow>
 								</>
 							)}
 						</div>
@@ -101,7 +103,7 @@ export function DestinationCard({
 						{destination.lastTestError && (
 							<Alert variant="crit" size="sm" className="mt-2 rounded-md">
 								<AlertWarningIcon size={12} />
-								<AlertDescription className="break-words text-destructive">
+								<AlertDescription className="break-words text-severity-error">
 									{destination.lastTestError}
 								</AlertDescription>
 							</Alert>
@@ -126,31 +128,33 @@ export function DestinationCard({
 						Send test
 					</Button>
 					{isAdmin && (
-						<DropdownMenu>
-							<DropdownMenuTrigger
-								render={<Button variant="ghost" size="icon-sm" className="shrink-0" />}
+						<RowActionsMenu label="Destination actions">
+							<DropdownMenuItem onClick={() => onEdit(destination)}>
+								<PencilIcon size={14} />
+								Edit
+							</DropdownMenuItem>
+							<DropdownMenuSeparator />
+							<DropdownMenuItem
+								variant="destructive"
+								onClick={() => setConfirmDelete(true)}
+								disabled={isDeleting}
 							>
-								<DotsVerticalIcon size={14} />
-							</DropdownMenuTrigger>
-							<DropdownMenuContent align="end">
-								<DropdownMenuItem onClick={() => onEdit(destination)}>
-									<PencilIcon size={14} />
-									Edit
-								</DropdownMenuItem>
-								<DropdownMenuSeparator />
-								<DropdownMenuItem
-									variant="destructive"
-									onClick={() => onDelete(destination)}
-									disabled={isDeleting}
-								>
-									<TrashIcon size={14} />
-									Delete
-								</DropdownMenuItem>
-							</DropdownMenuContent>
-						</DropdownMenu>
+								<TrashIcon size={14} />
+								Delete
+							</DropdownMenuItem>
+						</RowActionsMenu>
 					)}
 				</div>
 			</div>
+			<ConfirmDialog
+				open={confirmDelete}
+				onOpenChange={setConfirmDelete}
+				title={`Delete ${destination.name}?`}
+				description="Alert rules will stop notifying this destination. This cannot be undone."
+				confirmLabel="Delete destination"
+				pending={isDeleting}
+				onConfirm={() => onDelete(destination)}
+			/>
 		</Card>
 	)
 }

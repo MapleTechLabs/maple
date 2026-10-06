@@ -47,6 +47,7 @@ import {
 	type SpendModel,
 } from "@/lib/billing/spend"
 import type { DailySpendResponse } from "@maple/domain/http"
+import { formatDateInTimezone } from "@/lib/timezone-format"
 
 /**
  * Cumulative spend for the cycle, stacked by what's driving it.
@@ -93,11 +94,7 @@ export function SpendChartSkeleton() {
 const SPEND_TIME_ZONE = "UTC"
 
 const dateLabel = (value: string) =>
-	new Date(`${value}T00:00:00Z`).toLocaleDateString("en-US", {
-		month: "short",
-		day: "numeric",
-		timeZone: SPEND_TIME_ZONE,
-	})
+	formatDateInTimezone(new Date(`${value}T00:00:00Z`), { timeZone: SPEND_TIME_ZONE, withYear: false })
 
 /** The dashed projection's series key; not a band, so not in the tooltip. */
 const PROJECTED = "projected"

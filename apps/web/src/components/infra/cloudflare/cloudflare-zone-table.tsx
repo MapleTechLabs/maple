@@ -143,7 +143,7 @@ export function CloudflareZoneTable({ zones, waiting, emptyMessage }: Cloudflare
 
 	const numCell = (value: string, hidden?: boolean) => (
 		<div
-			className={`w-[90px] text-right font-mono text-[12px] tabular-nums text-foreground/80 ${
+			className={`w-[90px] text-right font-mono text-xs tabular-nums text-foreground/80 ${
 				hidden ? "hidden md:block" : ""
 			}`}
 		>
@@ -167,42 +167,42 @@ export function CloudflareZoneTable({ zones, waiting, emptyMessage }: Cloudflare
 					params={{ zoneName: zone.zoneName }}
 					className={ROW_LINK_CLASS}
 				>
-					<div className="w-0 min-w-[220px] flex-1 truncate font-mono text-[13px] font-medium text-foreground transition-colors group-hover:text-primary">
+					<div className="w-0 min-w-[220px] flex-1 truncate font-mono text-xs font-medium text-foreground transition-colors group-hover:text-primary">
 						{zone.zoneName}
 					</div>
 					{numCell(formatNumber(zone.requests))}
 					<div
-						className={`w-[90px] text-right font-mono text-[12px] tabular-nums ${errorRateClass(zone.errorRate)}`}
+						className={`w-[90px] text-right font-mono text-xs tabular-nums ${errorRateClass(zone.errorRate)}`}
 					>
 						{formatPercent(zone.errorRate)}
 					</div>
 					{numCell(formatPercent(zone.cacheHitRate), true)}
 					{numCell(formatBytes(zone.bytes), true)}
-					<div className="hidden w-[90px] text-right font-mono text-[12px] tabular-nums text-foreground/80 lg:block">
+					<div className="hidden w-[90px] text-right font-mono text-xs tabular-nums text-foreground/80 lg:block">
 						{formatNumber(zone.visits)}
 					</div>
-					<div className="hidden w-[90px] text-right text-[12px] lg:block">
+					<div className="hidden w-[90px] text-right text-xs lg:block">
 						<LatencyValue
 							ms={zone.ttfbP50Ms}
 							scale="p50"
 							format={formatOptionalLatency}
-							className="text-[12px]"
+							className="text-xs"
 						/>
 					</div>
-					<div className="w-[90px] text-right text-[12px]">
+					<div className="w-[90px] text-right text-xs">
 						<LatencyValue
 							ms={zone.ttfbP99Ms}
 							scale="p99"
 							format={formatOptionalLatency}
-							className="text-[12px]"
+							className="text-xs"
 						/>
 					</div>
-					<div className="hidden w-[90px] text-right text-[12px] lg:block">
+					<div className="hidden w-[90px] text-right text-xs lg:block">
 						<LatencyValue
 							ms={zone.originP99Ms}
 							scale="p99"
 							format={formatOptionalLatency}
-							className="text-[12px]"
+							className="text-xs"
 						/>
 					</div>
 				</Link>

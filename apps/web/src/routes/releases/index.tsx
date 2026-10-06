@@ -4,14 +4,16 @@ import { Schema } from "effect"
 import { Button } from "@maple/ui/components/ui/button"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { ActiveFilterChips } from "@maple/ui/components/filters/active-filter-chips"
-import { formatNumber, pluralize } from "@maple/ui/lib/format"
+import { formatNumber, formatRate, pluralize } from "@maple/ui/lib/format"
+import { Panel } from "@maple/ui/components/ui/panel"
 
 import { OptionalStringArrayParam } from "@/lib/search-params"
 import { Result, useAtomRefresh } from "@/lib/effect-atom"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { getReleasesResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
-import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { DashboardPage } from "@/components/layout/dashboard-page"
+import type { TimeRange } from "@/components/time-range-picker/types"
 import { ErrorState } from "@/components/common/error-state"
 import { DocsLink } from "@/components/common/docs-link"
 import {
@@ -20,8 +22,6 @@ import {
 	pickTimeRangeSearch,
 } from "@/components/time-range-picker/search"
 import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
-import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
-import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
 import { LONG_RANGE_PRESET_OPTIONS } from "@/lib/time-utils"
 import { ReleasesFilterSidebar } from "@/components/releases/releases-filter-sidebar"
 import { RELEASES_DEFAULT_PRESET, releasesQueryInput } from "@/components/releases/releases-query-input"
@@ -80,10 +80,7 @@ function ReleasesPage() {
 		search.timePreset ?? DEFAULT_PRESET,
 	)
 
-	const handleTimeChange = (
-		range: { startTime?: string; endTime?: string; presetValue?: string },
-		options?: { replace?: boolean },
-	) => {
+	const handleTimeChange = (range: TimeRange, options?: { replace?: boolean }) => {
 		navigate({
 			replace: options?.replace,
 			search: (prev: Record<string, unknown>) => applyTimeRangeSearch(prev, range),
@@ -123,36 +120,22 @@ function ReleasesPage() {
 	}))
 
 	return (
-		<PageRefreshProvider timePreset={search.timePreset ?? DEFAULT_PRESET}>
-			<DashboardLayout.Root>
-				<DashboardLayout.Breadcrumbs items={[{ label: "Releases" }]} />
-				<DashboardLayout.Body>
-					<DashboardLayout.Filters>
-						<ReleasesFilterSidebar />
-					</DashboardLayout.Filters>
-					<DashboardLayout.Content>
-						<DashboardLayout.Sticky>
-							<DashboardLayout.Header>
-								<TimeRangeHeaderControls
-									startTime={search.startTime ?? effectiveStartTime}
-									endTime={search.endTime ?? effectiveEndTime}
-									presetValue={
-										search.timePreset ?? (search.startTime ? undefined : DEFAULT_PRESET)
-									}
-									presets={LONG_RANGE_PRESET_OPTIONS}
-									maxRangeSeconds={ONE_YEAR_SECONDS}
-									onTimeChange={handleTimeChange}
-								/>
-							</DashboardLayout.Header>
-						</DashboardLayout.Sticky>
-						<DashboardLayout.Scroll>
-							<ActiveFilterChips chips={chips} />
-							<ReleasesContent search={search} />
-						</DashboardLayout.Scroll>
-					</DashboardLayout.Content>
-				</DashboardLayout.Body>
-			</DashboardLayout.Root>
-		</PageRefreshProvider>
+		<DashboardPage
+			breadcrumbs={[{ label: "Releases" }]}
+			time={{
+				search,
+				startTime: effectiveStartTime,
+				endTime: effectiveEndTime,
+				defaultPreset: DEFAULT_PRESET,
+				onChange: handleTimeChange,
+				presets: LONG_RANGE_PRESET_OPTIONS,
+				maxRangeSeconds: ONE_YEAR_SECONDS,
+			}}
+			filters={<ReleasesFilterSidebar />}
+		>
+			<ActiveFilterChips chips={chips} />
+			<ReleasesContent search={search} />
+		</DashboardPage>
 	)
 }
 
@@ -201,16 +184,19 @@ function ReleasesContent({ search }: { search: ReleasesSearchParams }) {
 
 	if (groups.length === 0) {
 		return (
-			<EmptyMessage className="flex flex-col items-center gap-1 rounded-md border bg-card py-12 text-sm">
-				<span>No releases detected in this window.</span>
-				<span className="text-xs text-muted-foreground/70">
-					Releases compare errors and latency before and after each deploy. Release tracking needs
-					spans to carry the <InlineCode>vcs.ref.head.revision</InlineCode> resource attribute.
-				</span>
-				<span className="mt-2">
-					<DocsLink page="github" />
-				</span>
-			</EmptyMessage>
+			<Panel>
+				<EmptyMessage className="flex flex-col items-center gap-1 py-12 text-sm">
+					<span>No releases detected in this window.</span>
+					<span className="text-xs text-muted-foreground/70">
+						Releases compare errors and latency before and after each deploy. Release tracking
+						needs spans to carry the <InlineCode>vcs.ref.head.revision</InlineCode> resource
+						attribute.
+					</span>
+					<span className="mt-2">
+						<DocsLink page="github" />
+					</span>
+				</EmptyMessage>
+			</Panel>
 		)
 	}
 
@@ -229,7 +215,7 @@ function ReleasesContent({ search }: { search: ReleasesSearchParams }) {
 				</span>
 				<span>
 					<span className="font-medium tabular-nums text-foreground">
-						{(groups.length / windowDays).toLocaleString(undefined, { maximumFractionDigits: 1 })}
+						{formatRate(groups.length / windowDays)}
 					</span>{" "}
 					per day
 				</span>
@@ -259,16 +245,18 @@ function ReleasesContent({ search }: { search: ReleasesSearchParams }) {
 				environments={search.environments}
 			/>
 			{visibleGroups.length === 0 ? (
-				<EmptyMessage className="flex flex-col items-center gap-3 rounded-md border bg-card text-sm">
-					No releases match the health filter.
-					<Button
-						variant="outline"
-						size="sm"
-						onClick={() => navigate({ search: (prev) => ({ ...prev, impact: undefined }) })}
-					>
-						Clear filter
-					</Button>
-				</EmptyMessage>
+				<Panel>
+					<EmptyMessage className="flex flex-col items-center gap-3 text-sm">
+						No releases match the health filter.
+						<Button
+							variant="outline"
+							size="sm"
+							onClick={() => navigate({ search: (prev) => ({ ...prev, impact: undefined }) })}
+						>
+							Clear filter
+						</Button>
+					</EmptyMessage>
+				</Panel>
 			) : (
 				<ReleasesTableWithIssues
 					groups={visibleGroups}

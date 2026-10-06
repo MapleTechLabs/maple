@@ -41,6 +41,8 @@ import { ProvenanceCanvasLoading } from "./provenance-loading"
 import { useTickingNow } from "@/hooks/use-ticking-now"
 import { splitDuration } from "../investigation-display"
 import { buildProvenanceGraph, type ProvenanceGraph } from "./provenance-graph"
+import { useTimezonePreference } from "@/hooks/use-timezone-preference"
+import { Panel } from "@maple/ui/components/ui/panel"
 
 /**
  * Exported so the node studio (`src/lab/node-catalogue/`, served at `/lab/nodes`) hosts the *same* registration
@@ -74,7 +76,11 @@ export function ProvenanceCanvas({
 	openActionIndex: number | null
 	onOpenAction: (index: number | null) => void
 }) {
-	const graph = useMemo(() => buildProvenanceGraph(investigation), [investigation])
+	const { effectiveTimezone } = useTimezonePreference()
+	const graph = useMemo(
+		() => buildProvenanceGraph(investigation, effectiveTimezone),
+		[investigation, effectiveTimezone],
+	)
 	const actions = useMemo(() => proposedActions(graph), [graph])
 	const openAction = actions.find((action) => action.index === openActionIndex) ?? null
 
@@ -88,10 +94,10 @@ export function ProvenanceCanvas({
 
 	return (
 		<ReactFlowProvider>
-			<section className="flex shrink-0 flex-col gap-3.5 rounded-lg border bg-card/40 px-6 pb-5.5 pt-4.5">
+			<Panel className="shrink-0 gap-3.5 bg-card/40 px-6 pb-5.5 pt-4.5">
 				<Caption graph={graph} />
 				<Canvas graph={graph} onOpenAction={onOpenAction} />
-			</section>
+			</Panel>
 			<ActionDetailSheet
 				action={openAction}
 				report={investigation.report}

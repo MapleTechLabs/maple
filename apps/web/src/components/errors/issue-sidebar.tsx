@@ -20,6 +20,8 @@ import { SeveritySelect } from "./severity-select"
 import { StateSelect } from "./state-select"
 import { ServiceDot } from "@maple/ui/components/service-dot"
 import { DetailRail } from "@maple/ui/components/detail-rail"
+import { formatNumber } from "@maple/ui/lib/format"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
 
 type Busy =
 	| "state"
@@ -224,7 +226,7 @@ function EnvironmentValue({ environments }: { environments: ReadonlyArray<ErrorI
 				<li key={env.name} className="flex min-w-0 items-baseline justify-between gap-3">
 					<span className="truncate text-sm text-foreground">{env.name}</span>
 					<span className="shrink-0 font-mono text-2xs tabular-nums text-muted-foreground">
-						{env.count.toLocaleString()}
+						{formatNumber(env.count)}
 					</span>
 				</li>
 			))}
@@ -243,18 +245,24 @@ function EnvironmentValue({ environments }: { environments: ReadonlyArray<ErrorI
 function IssueIdCopy({ id }: { id: string }) {
 	const { copy, status } = useCopy({ label: "Issue ID" })
 	return (
-		<button
-			type="button"
-			onClick={() => void copy(id)}
-			title="Copy issue ID"
-			className="group/copy -mr-1.5 inline-flex h-7 items-center gap-1.5 rounded-md px-1.5 font-mono text-xs tabular-nums text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-		>
-			{shortIssueId(id)}
-			<CopyIndicator
-				status={status}
-				iconSize={12}
-				className="opacity-0 transition-opacity group-hover/copy:opacity-100 data-[copy-status=copied]:opacity-100"
-			/>
-		</button>
+		<Tooltip>
+			<TooltipTrigger
+				render={
+					<button
+						type="button"
+						onClick={() => void copy(id)}
+						className="group/copy -mr-1.5 inline-flex h-7 items-center gap-1.5 rounded-md px-1.5 font-mono text-xs tabular-nums text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+					/>
+				}
+			>
+				{shortIssueId(id)}
+				<CopyIndicator
+					status={status}
+					iconSize={12}
+					className="opacity-0 transition-opacity group-hover/copy:opacity-100 data-[copy-status=copied]:opacity-100"
+				/>
+			</TooltipTrigger>
+			<TooltipContent>Copy issue ID</TooltipContent>
+		</Tooltip>
 	)
 }

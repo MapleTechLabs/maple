@@ -37,7 +37,6 @@ import {
 	cloudflareZoneBreakdownResultAtom,
 } from "@/lib/services/atoms/warehouse-query-atoms"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
-import { formatNumber } from "@maple/ui/lib/format"
 import { XmarkIcon } from "@/components/icons"
 import { MonoLinkButton } from "../primitives/mono-link-button"
 import { CompactFilterInput } from "./compact-filter-input"
@@ -48,7 +47,8 @@ import { Badge } from "@maple/ui/components/ui/badge"
 import { ListFooter } from "@maple/ui/components/ui/list-footer"
 import { Panel, PanelHeader, PanelTitle } from "@maple/ui/components/ui/panel"
 import { errorRateClass } from "@maple/ui/lib/error-rate"
-import { formatBytes, formatPercent } from "@maple/ui/lib/format"
+import { EMPTY_VALUE, formatBytes, formatNumber, formatPercent } from "@maple/ui/lib/format"
+import { formatDateInTimezone } from "@/lib/timezone-format"
 import { StackedBreakdownChart } from "./cloudflare-zone-detail-charts"
 import { CACHE_STATUS_COLORS, CACHE_STATUS_ORDER, STATUS_CLASS_COLORS, STATUS_CLASS_ORDER } from "./constants"
 import { PanelScope } from "./panel-scope"
@@ -119,12 +119,8 @@ const ROW_CLASS =
 	"flex items-center gap-4 border-b border-border/40 px-4 py-3 last:border-0 hover:bg-muted/40"
 
 /** ISO-8601 UTC → "Jul 28". */
-const formatCollectedFrom = (iso: string, timeZone: string) => {
-	const date = new Date(iso)
-	return Number.isNaN(date.getTime())
-		? null
-		: date.toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone })
-}
+const formatCollectedFrom = (iso: string, timeZone: string) =>
+	Number.isNaN(new Date(iso).getTime()) ? null : formatDateInTimezone(iso, { timeZone, withYear: false })
 
 export function CloudflareBreakdownPanel({
 	serviceName,
@@ -344,35 +340,35 @@ function BreakdownTable({
 									type="button"
 									onClick={() => onToggleFilter(dimension.filterKey, row.key)}
 									aria-pressed={selected}
-									title={`Filter this page by ${row.key || "—"}`}
+									title={`Filter this page by ${row.key || EMPTY_VALUE}`}
 									className={cn(
-										"max-w-full truncate rounded-xs font-mono text-[13px] underline-offset-2 hover:underline focus-visible:outline-1 focus-visible:outline-ring",
+										"max-w-full truncate rounded-xs font-mono text-xs underline-offset-2 hover:underline focus-visible:outline-1 focus-visible:outline-ring",
 										selected ? "text-primary" : "text-foreground",
 									)}
 								>
-									{row.key || "—"}
+									{row.key || EMPTY_VALUE}
 								</button>
 							) : (
-								<span className="block max-w-full truncate font-mono text-[13px] text-foreground">
-									{row.key || "—"}
+								<span className="block max-w-full truncate font-mono text-xs text-foreground">
+									{row.key || EMPTY_VALUE}
 								</span>
 							)}
 						</div>
 						<div
-							className="w-[110px] text-right font-mono text-[12px] tabular-nums text-foreground/80"
+							className="w-[110px] text-right font-mono text-xs tabular-nums text-foreground/80"
 							title={`${formatPercent(row.share)} of listed requests`}
 						>
 							{formatNumber(row.requests)}
 						</div>
 						<div
 							className={cn(
-								"w-[90px] text-right font-mono text-[12px] tabular-nums",
+								"w-[90px] text-right font-mono text-xs tabular-nums",
 								errorRateClass(row.errorRate),
 							)}
 						>
 							{formatPercent(row.errorRate)}
 						</div>
-						<div className="hidden w-[90px] text-right font-mono text-[12px] tabular-nums text-foreground/80 md:block">
+						<div className="hidden w-[90px] text-right font-mono text-xs tabular-nums text-foreground/80 md:block">
 							{formatBytes(row.bytes)}
 						</div>
 					</div>

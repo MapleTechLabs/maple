@@ -13,8 +13,7 @@ import {
 } from "@maple/ui/components/ui/breadcrumb"
 import { PageLayout } from "@maple/ui/components/ui/page-layout"
 import { Button } from "@maple/ui/components/ui/button"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
-import { Kbd } from "@maple/ui/components/ui/kbd"
+import { IconButton } from "@maple/ui/components/ui/icon-button"
 import { ChatBubbleSparkleIcon, LayoutLeftIcon, LayoutRightIcon } from "@/components/icons"
 import { openGlobalChat } from "@/components/chat/global-chat-sheet"
 import { ConnectButton } from "@/components/header/connect-button"
@@ -119,23 +118,9 @@ function Breadcrumbs({
 				</BreadcrumbList>
 			</Breadcrumb>
 			<div className="ml-auto flex shrink-0 items-center gap-2">
-				<Tooltip>
-					<TooltipTrigger
-						render={
-							<Button
-								variant="outline"
-								size="icon-sm"
-								aria-label="Open AI chat"
-								onClick={openGlobalChat}
-							/>
-						}
-					>
-						<ChatBubbleSparkleIcon size={16} />
-					</TooltipTrigger>
-					<TooltipContent className="flex items-center gap-1.5">
-						Ask Maple AI <Kbd>C</Kbd>
-					</TooltipContent>
-				</Tooltip>
+				<IconButton variant="outline" label="Ask Maple AI" shortcut="C" onClick={openGlobalChat}>
+					<ChatBubbleSparkleIcon size={16} />
+				</IconButton>
 				<OnboardingChecklistButton />
 				<ConnectButton />
 				{/* Self-gating: renders only when the sidebar has collapsed to a sheet *and* a
@@ -241,11 +226,16 @@ function Scroll({
 	gap?: PageGap
 }) {
 	if (width === "full") {
-		return <PageLayout.ScrollArea className={cn(PAGE_GAP[gap], className)}>{children}</PageLayout.ScrollArea>
+		return (
+			<PageLayout.ScrollArea className={cn(PAGE_GAP[gap], className)}>{children}</PageLayout.ScrollArea>
+		)
 	}
 	return (
 		<PageLayout.ScrollArea className={className}>
-			<div data-slot="page-column" className={cn("flex w-full flex-col", PAGE_WIDTH[width], PAGE_GAP[gap])}>
+			<div
+				data-slot="page-column"
+				className={cn("flex w-full flex-col", PAGE_WIDTH[width], PAGE_GAP[gap])}
+			>
 				{children}
 			</div>
 		</PageLayout.ScrollArea>

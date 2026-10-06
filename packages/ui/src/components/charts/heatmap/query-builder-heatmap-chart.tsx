@@ -10,7 +10,7 @@ import {
 	type HeatmapScaleType,
 } from "@maple/domain/http"
 import { useContainerSize } from "../../../hooks/use-container-size"
-import { formatNumber, formatValueByUnit } from "../../../lib/format"
+import { countLabel, formatNumber, formatValueByUnit } from "../../../lib/format"
 import { cn } from "../../../lib/utils"
 import {
 	PlotFrame,
@@ -703,8 +703,6 @@ const UNMATCHED_OPACITY = 0.28
 // empty one. Gallery thumbnails pass their sample rows in explicitly via `data`.
 const EMPTY_ROWS: ReadonlyArray<Record<string, unknown>> = []
 
-const pluralize = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`
-
 export function QueryBuilderHeatmapChart({
 	data,
 	className,
@@ -741,8 +739,8 @@ export function QueryBuilderHeatmapChart({
 	const footnote =
 		model.hiddenX > 0 || model.hiddenY > 0
 			? [
-					model.hiddenX > 0 ? pluralize(model.hiddenX, "empty column") : null,
-					model.hiddenY > 0 ? pluralize(model.hiddenY, "empty row") : null,
+					model.hiddenX > 0 ? countLabel(model.hiddenX, "empty column") : null,
+					model.hiddenY > 0 ? countLabel(model.hiddenY, "empty row") : null,
 				]
 					.filter(Boolean)
 					.join(" · ") + " hidden"

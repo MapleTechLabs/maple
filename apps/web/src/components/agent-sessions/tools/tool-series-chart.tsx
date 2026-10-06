@@ -213,7 +213,10 @@ export function ToolSeriesChart({
 				</>
 			}
 			aria-busy={waiting || undefined}
-			className={cn("gap-4 border-b border-border px-6 pt-[22px] pb-5", refreshingClass(waiting ?? false))}
+			className={cn(
+				"gap-4 border-b border-border px-6 pt-[22px] pb-5",
+				refreshingClass(waiting ?? false),
+			)}
 		>
 			{failure !== undefined ? (
 				<ErrorState error={failure} title={`Failed to load ${title}`} />

@@ -63,7 +63,10 @@ export function ListRow({
 		children: (
 			<>
 				{leading != null ? (
-					<span className="flex shrink-0 items-center text-muted-foreground" data-slot="list-row-leading">
+					<span
+						className="flex shrink-0 items-center text-muted-foreground"
+						data-slot="list-row-leading"
+					>
 						{leading}
 					</span>
 				) : null}

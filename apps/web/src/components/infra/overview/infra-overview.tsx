@@ -9,6 +9,8 @@ import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { VALUE_TONE } from "../severity-tokens"
 import { TONE_FILL } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
+import { formatNumber } from "@maple/ui/lib/format"
+import { Panel } from "@maple/ui/components/ui/panel"
 
 import {
 	ChevronRightIcon,
@@ -185,7 +187,7 @@ const ROW_CLASS =
  * carry a top border pulled up a pixel, which `overflow-hidden` clips on
  * whichever row lands first.
  */
-export const FINDINGS_LIST_CLASS = "flex flex-col overflow-hidden rounded-lg border"
+export const FINDINGS_LIST_CLASS = "flex flex-col overflow-hidden rounded-md border"
 const FINDINGS_ROW_CLASS = "-mt-px border-t"
 
 /** Errors sit after warnings: a source we couldn't check outranks one that went quiet. */
@@ -373,7 +375,7 @@ export function NeedsAttention({
 					/>
 				))}
 			</div>
-			<p className="hidden rounded-lg border px-4 py-6 text-center text-sm text-muted-foreground peer-empty:block">
+			<p className="hidden rounded-md border px-4 py-6 text-center text-sm text-muted-foreground peer-empty:block">
 				Nothing is over its thresholds in this window.
 			</p>
 		</section>
@@ -417,7 +419,7 @@ function HealthBar({ segments }: { segments: ReadonlyArray<HealthSegment> }) {
 			<span className="flex gap-3 text-2xs text-muted-foreground tabular-nums">
 				{drawn.map((segment) => (
 					<span key={segment.key}>
-						{segment.count.toLocaleString()} {SEGMENT_LABEL[segment.key]}
+						{formatNumber(segment.count)} {SEGMENT_LABEL[segment.key]}
 					</span>
 				))}
 			</span>
@@ -533,7 +535,7 @@ export function SourcesTable({
 	return (
 		<section className="space-y-3">
 			<SectionHeading title="Sources" hint="one row per source reporting to this org" />
-			<div className="divide-y overflow-hidden rounded-lg border">
+			<Panel tone="background" className="divide-y">
 				{sources.map((id) => (
 					<SourceLink key={id} id={id} timeSearch={timeSearch}>
 						<SourceData
@@ -543,7 +545,7 @@ export function SourcesTable({
 						/>
 					</SourceLink>
 				))}
-			</div>
+			</Panel>
 		</section>
 	)
 }

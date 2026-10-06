@@ -17,7 +17,7 @@ import "@xyflow/react/dist/style.css"
 import type { AiSessionSpan } from "@maple/domain/http"
 import { CircleXmarkIcon, MaximizeIcon, MinusIcon, PlusIcon } from "@/components/icons"
 import { EmptyMessage } from "@maple/ui/components/ui/empty"
-import { Button } from "@maple/ui/components/ui/button"
+import { IconButton } from "@maple/ui/components/ui/icon-button"
 import { formatDuration, formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 
@@ -396,37 +396,20 @@ function FlowControls({ zoom }: { zoom: number }) {
 
 	return (
 		<div className="pointer-events-auto flex items-center gap-1 rounded-md bg-background/80 p-0.5 backdrop-blur-sm">
-			<Button
-				variant="ghost"
-				size="icon-sm"
-				aria-label="Zoom in"
-				disabled={zoom >= MAX_ZOOM}
-				onClick={() => void flow.zoomIn()}
-			>
+			<IconButton label="Zoom in" disabled={zoom >= MAX_ZOOM} onClick={() => void flow.zoomIn()}>
 				<PlusIcon size={14} />
-			</Button>
-			<Button
-				variant="ghost"
-				size="icon-sm"
-				aria-label="Zoom out"
-				disabled={zoom <= MIN_ZOOM}
-				onClick={() => void flow.zoomOut()}
-			>
+			</IconButton>
+			<IconButton label="Zoom out" disabled={zoom <= MIN_ZOOM} onClick={() => void flow.zoomOut()}>
 				<MinusIcon size={14} />
-			</Button>
+			</IconButton>
 			{/* A deliberate reset rather than `fitView`: fit clamps against the
 			    0.5 floor on any real session and lands somewhere unpredictable,
 			    while "top of the session at 1:1" is the one place the reader can
 			    always name. (`fitView` also queues behind the flow's own render
 			    when called from outside it, and this button lives in the floor.) */}
-			<Button
-				variant="ghost"
-				size="icon-sm"
-				aria-label="Reset view"
-				onClick={() => void flow.setViewport({ x: 0, y: 0, zoom: 1 })}
-			>
+			<IconButton label="Reset view" onClick={() => void flow.setViewport({ x: 0, y: 0, zoom: 1 })}>
 				<MaximizeIcon size={14} />
-			</Button>
+			</IconButton>
 		</div>
 	)
 }

@@ -82,7 +82,13 @@ export function DetailHeader({
 }
 
 /** `DetailHeader`'s loading frame, sized to the real one so the body doesn't jump. */
-export function DetailHeaderSkeleton({ meta = true, actions }: { meta?: boolean; actions?: React.ReactNode }) {
+export function DetailHeaderSkeleton({
+	meta = true,
+	actions,
+}: {
+	meta?: boolean
+	actions?: React.ReactNode
+}) {
 	return (
 		<DashboardLayout.Header
 			titleContent={

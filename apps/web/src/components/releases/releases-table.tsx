@@ -32,6 +32,7 @@ import {
 	type ReleaseServiceImpact,
 } from "./release-model"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { Panel } from "@maple/ui/components/ui/panel"
 
 /** The bulk VCS lookup takes one page of shas; rows past it fall back to the sha. */
 const COMMIT_RESOLVE_LIMIT = 50
@@ -178,7 +179,7 @@ function ReleaseTitle({ commitSha, commit, health, figure, range }: ReleaseTitle
 					<CommitShaHoverCard
 						sha={commitSha}
 						className={cn(
-							"min-w-0 truncate text-[13px] text-foreground",
+							"min-w-0 truncate text-sm text-foreground",
 							commit === undefined && "font-mono text-xs",
 						)}
 					>
@@ -273,10 +274,7 @@ function ReleasesTableRows({
 	let lastDay: string | undefined
 
 	return (
-		<div
-			className={cn("rounded-md border bg-card", refreshingClass(waiting === true))}
-			aria-busy={waiting || undefined}
-		>
+		<Panel className={refreshingClass(waiting === true)} aria-busy={waiting || undefined}>
 			<Table>
 				<TableHeader>
 					<TableRow>
@@ -454,6 +452,6 @@ function ReleasesTableRows({
 					})}
 				</TableBody>
 			</Table>
-		</div>
+		</Panel>
 	)
 }

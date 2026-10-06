@@ -178,7 +178,7 @@ export function ConnectInstructions({
 	}
 
 	const tabs = (
-		<div className={variant === "boxed" ? "rounded-lg border bg-card overflow-hidden" : undefined}>
+		<div className={variant === "boxed" ? "rounded-md border bg-card overflow-hidden" : undefined}>
 			<Tabs defaultValue="install" className="flex flex-col">
 				<div className={cn("border-b", variant === "boxed" ? "px-3" : "px-4")}>
 					<TabsList variant="underline" className="h-9">

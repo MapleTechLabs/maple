@@ -148,9 +148,8 @@ function LogDetailPage() {
 	)
 }
 
-/** Shared by both not-found states: the dashed card with a way back to the list. */
+/** Shared by both not-found states: the way back to the list. */
 const NOT_FOUND_PROPS = {
-	className: "rounded-md border border-dashed py-12",
 	backLink: <Link to="/logs" />,
 	backLabel: "Back to Logs",
 }

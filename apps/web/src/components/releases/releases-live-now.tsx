@@ -2,7 +2,7 @@ import { Panel } from "@maple/ui/components/ui/panel"
 import { Link } from "@tanstack/react-router"
 import { ServiceDot } from "@maple/ui/components/service-dot"
 import { cn } from "@maple/ui/lib/utils"
-import { countLabel, pluralize } from "@maple/ui/lib/format"
+import { countLabel, formatPercent, pluralize } from "@maple/ui/lib/format"
 
 import type { TimeRangeSearch } from "@/components/time-range-picker/search"
 import { ROLLOUT_COMPLETE_SHARE, shortReleaseLabel, type LiveVersion } from "./release-model"
@@ -69,7 +69,7 @@ export function ReleasesLiveNow({ live, timeSearch, environments }: ReleasesLive
 						</span>
 						{version.share < ROLLOUT_COMPLETE_SHARE ? (
 							<span className="font-mono text-3xs tabular-nums text-primary">
-								{Math.round(version.share * 100)}%
+								{formatPercent(version.share)}
 							</span>
 						) : null}
 						{version.behind > 0 ? (

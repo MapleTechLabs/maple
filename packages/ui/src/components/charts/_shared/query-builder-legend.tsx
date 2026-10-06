@@ -1,5 +1,5 @@
 import { cn } from "../../../lib/utils"
-import { formatValueByUnit } from "../../../lib/format"
+import { EMPTY_VALUE, formatValueByUnit } from "../../../lib/format"
 import { isAllZeroStats, type SeriesStats, type StatsSeries } from "../../plot/series-stats"
 import { PlotLegend, usePlotLegend } from "../../plot/plot-legend"
 
@@ -232,7 +232,7 @@ function StatsTable({
 										>
 											{entryStats
 												? formatValueByUnit(entryStats[column.field], unit)
-												: "—"}
+												: EMPTY_VALUE}
 										</td>
 									))
 								)}

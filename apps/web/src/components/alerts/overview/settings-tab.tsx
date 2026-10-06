@@ -26,11 +26,11 @@ import {
 	suggestedDestinationName,
 	type DestinationFormState,
 } from "@/lib/alerts/form-utils"
-import { getExitErrorMessage } from "@/lib/error-toast"
+import { toastExit } from "@/lib/error-toast"
 import { publicError } from "@/lib/error-messages"
 import { useAlertDestinationsList } from "@/hooks/use-alerts-list"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
-import { useAsyncAction } from "@/hooks/use-mutation-action"
+import { useAsyncAction, useKeyedAsyncAction } from "@/hooks/use-mutation-action"
 import { MapleApiV2AtomClient, retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { Result, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { Badge } from "@maple/ui/components/ui/badge"
@@ -55,8 +55,8 @@ export interface DestinationManager {
 	setForm: Dispatch<SetStateAction<DestinationFormState>>
 	isEditing: boolean
 	saving: boolean
-	testingId: AlertDestinationDocument["id"] | null
-	deletingId: AlertDestinationDocument["id"] | null
+	isTesting: (id: AlertDestinationId) => boolean
+	isDeleting: (id: AlertDestinationId) => boolean
 	/** True when the dialog opened on a provider picked elsewhere, so the provider grid starts folded. */
 	providerLocked: boolean
 	unlockProvider: () => void
@@ -67,7 +67,8 @@ export interface DestinationManager {
 	quickCreate: (form: DestinationFormState) => Promise<boolean>
 	test: (destination: AlertDestinationDocument) => Promise<void>
 	toggle: (destination: AlertDestinationDocument) => Promise<void>
-	remove: (destination: AlertDestinationDocument) => Promise<void>
+	/** Resolves to whether it was deleted, so a confirm dialog can stay open on failure. */
+	remove: (destination: AlertDestinationDocument) => Promise<boolean>
 }
 
 export function useDestinationManager(options?: {
@@ -91,8 +92,6 @@ export function useDestinationManager(options?: {
 	const [form, setForm] = useState<DestinationFormState>(defaultDestinationForm())
 	const [editing, setEditing] = useState<AlertDestinationDocument | null>(null)
 	const [providerLocked, setProviderLocked] = useState(false)
-	const [testingId, setTestingId] = useState<AlertDestinationDocument["id"] | null>(null)
-	const [deletingId, setDeletingId] = useState<AlertDestinationDocument["id"] | null>(null)
 
 	function openDialog(destination?: AlertDestinationDocument, preset?: DestinationFormState) {
 		setEditing(destination ?? null)
@@ -108,13 +107,11 @@ export function useDestinationManager(options?: {
 			payload: buildDestinationCreateParamsV2(named) as never,
 			reactivityKeys: ["alertDestinations"],
 		})
-		if (Exit.isSuccess(result)) {
-			toastManager.add({ title: "Destination created", type: "success" })
-			options?.onCreated?.(result.value.id)
-			return true
+		if (!toastExit(result, { success: "Destination created", error: "Failed to save destination" })) {
+			return false
 		}
-		toastManager.add({ title: getExitErrorMessage(result, "Failed to save destination"), type: "error" })
-		return false
+		if (Exit.isSuccess(result)) options?.onCreated?.(result.value.id)
+		return true
 	}
 
 	const [quickCreate, quickCreating] = useAsyncAction(create)
@@ -129,14 +126,8 @@ export function useDestinationManager(options?: {
 				payload: buildDestinationUpdateParamsV2(form) as never,
 				reactivityKeys: ["alertDestinations"],
 			})
-			if (Exit.isSuccess(result)) {
-				toastManager.add({ title: "Destination updated", type: "success" })
+			if (toastExit(result, { success: "Destination updated", error: "Failed to save destination" })) {
 				setDialogOpen(false)
-			} else {
-				toastManager.add({
-					title: getExitErrorMessage(result, "Failed to save destination"),
-					type: "error",
-				})
 			}
 		} else {
 			if (await create(form)) setDialogOpen(false)
@@ -144,26 +135,19 @@ export function useDestinationManager(options?: {
 	})
 	const saving = quickCreating || savingDialog
 
-	async function test(destination: AlertDestinationDocument) {
-		setTestingId(destination.id)
+	const testAction = useKeyedAsyncAction(async (id: AlertDestinationId) => {
 		const result = await testDestination({
-			params: { id: destination.id },
+			params: { id },
 			reactivityKeys: ["alertDestinations", "alertDeliveryEvents"],
 		})
+		if (!toastExit(result, { error: "Failed to send test notification" })) return
 		if (Exit.isSuccess(result)) {
-			if (result.value.success) {
-				toastManager.add({ title: result.value.message, type: "success" })
-			} else {
-				toastManager.add({ title: result.value.message, type: "error" })
-			}
-		} else {
 			toastManager.add({
-				title: getExitErrorMessage(result, "Failed to send test notification"),
-				type: "error",
+				title: result.value.message,
+				type: result.value.success ? "success" : "error",
 			})
 		}
-		setTestingId(null)
-	}
+	})
 
 	async function toggle(destination: AlertDestinationDocument) {
 		const nextForm = destinationToFormState(destination)
@@ -174,38 +158,28 @@ export function useDestinationManager(options?: {
 			payload: buildDestinationUpdateParamsV2(nextForm) as never,
 			reactivityKeys: ["alertDestinations"],
 		})
-		if (!Exit.isSuccess(result)) {
-			toastManager.add({
-				title: getExitErrorMessage(result, "Failed to update destination"),
-				type: "error",
-			})
-		}
+		toastExit(result, { error: "Failed to update destination" })
 	}
 
-	async function remove(destination: AlertDestinationDocument) {
-		setDeletingId(destination.id)
+	const removeAction = useKeyedAsyncAction(async (id: AlertDestinationId) => {
 		const result = await deleteDestination({
-			params: { id: destination.id },
+			params: { id },
 			reactivityKeys: ["alertDestinations", "alertRules"],
 		})
 		if (Exit.isSuccess(result)) {
 			toastManager.add({ title: "Destination deleted", type: "success" })
-		} else {
-			// A destination still referenced by rules deletes with a 409
-			// conflict_error whose message already names the referencing rules.
-			const failure = Option.getOrUndefined(Exit.findErrorOption(result))
-			const v2 = publicError(failure)
-			if (v2 !== null && v2.type === "conflict_error") {
-				toastManager.add({ title: v2.message, type: "error" })
-			} else {
-				toastManager.add({
-					title: getExitErrorMessage(result, "Failed to delete destination"),
-					type: "error",
-				})
-			}
+			return true
 		}
-		setDeletingId(null)
-	}
+		// A destination still referenced by rules deletes with a 409
+		// conflict_error whose message already names the referencing rules.
+		const v2 = publicError(Option.getOrUndefined(Exit.findErrorOption(result)))
+		if (v2 !== null && v2.type === "conflict_error") {
+			toastManager.add({ title: v2.message, type: "error" })
+		} else {
+			toastExit(result, { error: "Failed to delete destination" })
+		}
+		return false
+	})
 
 	return {
 		dialogOpen,
@@ -217,13 +191,13 @@ export function useDestinationManager(options?: {
 		unlockProvider: () => setProviderLocked(false),
 		quickCreate,
 		saving,
-		testingId,
-		deletingId,
+		isTesting: testAction.isPending,
+		isDeleting: removeAction.isPending,
 		openDialog,
 		save,
-		test,
+		test: (destination) => testAction.run(destination.id),
 		toggle,
-		remove,
+		remove: (destination) => removeAction.run(destination.id),
 	}
 }
 
@@ -302,8 +276,8 @@ export function AlertsSettingsTab({ manager, isAdmin }: { manager: DestinationMa
 									key={destination.id}
 									destination={destination}
 									isAdmin={isAdmin}
-									isTesting={manager.testingId === destination.id}
-									isDeleting={manager.deletingId === destination.id}
+									isTesting={manager.isTesting(destination.id)}
+									isDeleting={manager.isDeleting(destination.id)}
 									onToggle={manager.toggle}
 									onTest={manager.test}
 									onEdit={manager.openDialog}
@@ -423,7 +397,7 @@ export function AlertsSettingsTab({ manager, isAdmin }: { manager: DestinationMa
 													</TableCell>
 													<TableCell className="max-w-0">
 														{event.status === "failed" ? (
-															<span className="block truncate text-xs text-destructive/90">
+															<span className="block truncate text-xs text-severity-error">
 																{event.errorMessage ?? "Delivery failed"}
 																{event.responseCode != null && (
 																	<span className="text-muted-foreground">

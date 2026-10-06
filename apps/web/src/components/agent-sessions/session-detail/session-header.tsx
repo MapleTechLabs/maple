@@ -55,7 +55,10 @@ export function SessionHeader({ sessionId, summary }: { sessionId: string; summa
 						{firstPlusRest(summary.serviceNames)}
 					</KeyValue>
 				)}
-				<KeyValue label={traceId === undefined ? "Session ID" : "Trace ID"} title={traceId ?? sessionId}>
+				<KeyValue
+					label={traceId === undefined ? "Session ID" : "Trace ID"}
+					title={traceId ?? sessionId}
+				>
 					<CopyableValue
 						value={traceId ?? sessionId}
 						label={traceId === undefined ? "Session ID" : "Trace ID"}

@@ -1,4 +1,4 @@
-import { formatNumber, formatStorageBytes } from "@maple/ui/lib/format"
+import { EMPTY_VALUE, formatNumber, formatStorageBytes } from "@maple/ui/lib/format"
 import type { ReactNode } from "react"
 import { Result } from "@/lib/effect-atom"
 import { DatabaseIcon, type IconComponent } from "@/components/icons"
@@ -9,6 +9,7 @@ import { StatRail, StatRailItem } from "@/components/common/stat-rail"
 import { getServiceUsageResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { sumTotals } from "@/components/dashboard/service-usage-cards"
+import { SettingsSection } from "@/components/settings/settings-section"
 
 // "Total in the DB": sum every retained usage row for the org. Fixed bounds
 // (not a rolling window) keep the atom key stable and capture all stored data.
@@ -64,14 +65,11 @@ export function DataPlatformUsageSection() {
 	const result = useRefreshableAtomValue(getServiceUsageResultAtom({ data: ALL_TIME }))
 
 	return (
-		<section className="space-y-3">
-			<div className="space-y-0.5">
-				<h2 className="font-display text-sm font-medium text-foreground">Stored data</h2>
-				<p className="text-muted-foreground text-xs">
-					Everything currently held in the warehouse for this organization.
-				</p>
-			</div>
-
+		<SettingsSection
+			title="Stored data"
+			description="Everything currently held in the warehouse for this organization."
+			framed={false}
+		>
 			<StatRail>
 				{Result.builder(result)
 					.onSuccess((response) => {
@@ -80,13 +78,16 @@ export function DataPlatformUsageSection() {
 					})
 					.onError(() =>
 						STATS.map((stat) =>
-							statItem(stat, <span className="text-sm text-muted-foreground">—</span>),
+							statItem(
+								stat,
+								<span className="text-sm text-muted-foreground">{EMPTY_VALUE}</span>,
+							),
 						),
 					)
 					.orElse(() =>
 						STATS.map((stat) => statItem(stat, <Skeleton className="h-[26px] w-24" />)),
 					)}
 			</StatRail>
-		</section>
+		</SettingsSection>
 	)
 }

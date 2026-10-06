@@ -1,5 +1,6 @@
 import type { AlertDeliveryEventDocument, AlertIncidentDocument, AlertRuleDocument } from "@maple/domain/http"
 import type { AlertRuleStateRow } from "@/lib/collections/alerts"
+import { countLabel } from "@maple/ui/lib/format"
 
 /**
  * Derived health of an alert rule, in display-priority order:
@@ -101,7 +102,7 @@ export function deriveRuleStatus(input: {
 		return {
 			status: "firing",
 			attention,
-			reason: openIncidents.length === 1 ? "1 open incident" : `${openIncidents.length} open incidents`,
+			reason: countLabel(openIncidents.length, "open incident"),
 		}
 	}
 

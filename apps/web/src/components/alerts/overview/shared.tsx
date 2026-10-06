@@ -15,7 +15,7 @@ import { cn } from "@maple/ui/lib/utils"
 /* -------------------------------------------------------------------------- */
 
 const signalBadgeClass: Record<string, string> = {
-	error_rate: "border-destructive/30 text-destructive",
+	error_rate: "border-severity-error/30 text-severity-error",
 	p95_latency: "border-primary/30 text-primary",
 	p99_latency: "border-primary/30 text-primary",
 	apdex: "border-severity-warn/30 text-severity-warn",

@@ -1,5 +1,6 @@
 import { Result } from "@/lib/effect-atom"
-import { formatNumber, formatPercent } from "@maple/ui/lib/format"
+import { EMPTY_VALUE, formatNumber, formatPercent } from "@maple/ui/lib/format"
+import { SectionHeading } from "@/components/common/section-heading"
 import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 
@@ -164,14 +165,10 @@ export function AnalyticsAiTab({
 			</div>
 
 			<section className="space-y-3">
-				<div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-					<h2 className="text-[13px] font-medium">What AI crawlers read</h2>
-					{visitorFiltered ? (
-						<span className="text-2xs text-muted-foreground">
-							Crawls follow the site and page filters only
-						</span>
-					) : null}
-				</div>
+				<SectionHeading
+					title="What AI crawlers read"
+					hint={visitorFiltered ? "Crawls follow the site and page filters only" : undefined}
+				/>
 				<ResultView
 					result={crawlersResult}
 					loading={<Skeleton className="h-32 w-full" />}
@@ -225,7 +222,7 @@ function AiKpis({
 		<StatRail>
 			<StatRailItem
 				eyebrow="AI visits"
-				value={referrals ? formatNumber(visits) : "—"}
+				value={referrals ? formatNumber(visits) : EMPTY_VALUE}
 				spark={spark}
 				delta={delta === null ? undefined : <Delta ratio={delta} />}
 				subline={
@@ -238,19 +235,19 @@ function AiKpis({
 			/>
 			<StatRailItem
 				eyebrow="Share of sessions"
-				value={referrals && sessions ? formatPercent(visits / sessions) : "—"}
+				value={referrals && sessions ? formatPercent(visits / sessions) : EMPTY_VALUE}
 				subline={sessions !== undefined ? `of ${formatNumber(sessions)} sessions` : undefined}
 				delay={60}
 			/>
 			<StatRailItem
 				eyebrow="Pages read by AI"
-				value={crawlers ? formatNumber(pages) : "—"}
+				value={crawlers ? formatNumber(pages) : EMPTY_VALUE}
 				subline={crawlers ? "Distinct pages served to crawlers" : undefined}
 				delay={120}
 			/>
 			<StatRailItem
 				eyebrow="Crawler fetches"
-				value={crawlers ? formatNumber(fetches) : "—"}
+				value={crawlers ? formatNumber(fetches) : EMPTY_VALUE}
 				tone={crawlers && fetches > 0 && failed / fetches > 0.5 ? "warn" : "neutral"}
 				subline={
 					crawlers

@@ -1,4 +1,5 @@
 import { formatNumber, formatPercent } from "@maple/ui/lib/format"
+import { Panel } from "@maple/ui/components/ui/panel"
 
 import { FaceRobotIcon } from "@/components/icons"
 import type { WebAnalyticsSummary } from "@/api/warehouse/web-analytics"
@@ -43,7 +44,7 @@ export function AnalyticsBotNotice({
 	if (mix.botShare === null || mix.botShare < NOTICE_THRESHOLD) return null
 
 	return (
-		<div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border bg-card px-3 py-2 text-sm text-muted-foreground">
+		<Panel className="flex-row flex-wrap items-center gap-x-2 gap-y-1 px-3 py-2 text-sm text-muted-foreground">
 			<FaceRobotIcon size={14} className="shrink-0 text-muted-foreground" />
 			<span className="text-foreground">
 				{formatPercent(mix.botShare)} of recorded sessions are bots
@@ -52,7 +53,7 @@ export function AnalyticsBotNotice({
 				{formatNumber(mix.botSessions)} of {formatNumber(mix.sessions)} sessions came from crawlers or
 				automated browsers, and are {excluded(traffic)}. Change that under Traffic in the sidebar.
 			</span>
-		</div>
+		</Panel>
 	)
 }
 

@@ -2,7 +2,6 @@ import { useAtomSet } from "@/lib/effect-atom"
 import { useState } from "react"
 import { Exit } from "effect"
 import type { V2ApiKey } from "@maple/domain/http/v2"
-import { toastManager } from "@maple/ui/components/ui/toast"
 
 import { Button } from "@maple/ui/components/ui/button"
 import {
@@ -16,7 +15,7 @@ import {
 } from "@maple/ui/components/ui/dialog"
 import { useApiKeyMutationSync } from "@/hooks/use-api-keys"
 import { useAsyncAction } from "@/hooks/use-mutation-action"
-import { displayError } from "@/lib/error-messages"
+import { toastExit } from "@/lib/error-toast"
 import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
 import { ApiKeySecretReveal } from "./api-key-secret-reveal"
 
@@ -39,14 +38,13 @@ export function RollApiKeyDialog({ open, onOpenChange, apiKey, onRolled }: RollA
 		if (!apiKey) return
 		prepareForMutation()
 		const result = await rollMutation({ params: { id: apiKey.id } })
-		if (Exit.isSuccess(result)) {
-			setNewSecret(result.value.secret)
-			onRolled?.()
-			void reconcileTxid(result.value.txid)
-		} else {
-			const { title, message } = displayError(result)
-			toastManager.add({ title, description: message, type: "error" })
+		if (!Exit.isSuccess(result)) {
+			toastExit(result, { error: "Couldn't roll API key" })
+			return
 		}
+		setNewSecret(result.value.secret)
+		onRolled?.()
+		void reconcileTxid(result.value.txid)
 	})
 
 	function handleClose(nextOpen: boolean) {
@@ -72,7 +70,7 @@ export function RollApiKeyDialog({ open, onOpenChange, apiKey, onRolled }: RollA
 							<DialogTitle>API key rolled</DialogTitle>
 							<DialogDescription>
 								A new secret has been issued and the previous key was revoked. Copy your new
-								key now — you won't be able to see it again.
+								key now; you won't be able to see it again.
 							</DialogDescription>
 						</DialogHeader>
 						<DialogPanel>

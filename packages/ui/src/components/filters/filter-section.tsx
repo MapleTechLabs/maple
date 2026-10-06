@@ -9,7 +9,7 @@ import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "
 import { Label } from "../ui/label"
 import { useSectionCollapse } from "../../hooks/use-section-collapse"
 import { getServiceColor } from "../../lib/colors"
-import { formatNumber } from "../../lib/format"
+import { countLabel, formatNumber } from "../../lib/format"
 import { cn } from "../../lib/utils"
 import { eyebrowVariants } from "../ui/eyebrow"
 
@@ -452,8 +452,8 @@ function FilterSectionBase({
 					)}
 					{overflowingMatches > 0 && (
 						<p className="text-xs text-muted-foreground py-1">
-							{overflowingMatches.toLocaleString()} more match
-							{overflowingMatches === 1 ? "" : "es"} — keep typing to narrow
+							{countLabel(overflowingMatches, "more match", "more matches")}, keep typing to
+							narrow
 						</p>
 					)}
 					{hasMore > 0 && (
@@ -584,7 +584,7 @@ export function SingleCheckboxFilter({
 				)}
 			</Label>
 			{count !== undefined && (
-				<span className="text-xs text-muted-foreground tabular-nums">{count.toLocaleString()}</span>
+				<span className="text-xs text-muted-foreground tabular-nums">{formatNumber(count)}</span>
 			)}
 		</div>
 	)

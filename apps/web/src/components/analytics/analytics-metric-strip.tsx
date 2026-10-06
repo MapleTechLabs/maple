@@ -1,4 +1,5 @@
 import { Delta } from "@maple/ui/components/ui/delta"
+import { EMPTY_VALUE } from "@maple/ui/lib/format"
 
 import { StatRailItem, StatRailItemSkeleton } from "@/components/common/stat-rail"
 import {
@@ -94,7 +95,7 @@ function MetricTile({
 	return (
 		<StatRailItem
 			eyebrow={metric.label}
-			value={available && value !== null ? metric.format(value) : "—"}
+			value={available && value !== null ? metric.format(value) : EMPTY_VALUE}
 			spark={available ? metric.series(source).map((point) => point.value) : undefined}
 			delta={delta === null ? undefined : <Delta ratio={delta} invert={metric.invertDelta} />}
 			subline={

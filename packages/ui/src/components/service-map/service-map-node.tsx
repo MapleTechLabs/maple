@@ -1,4 +1,4 @@
-import { formatLatency, formatRate } from "../../lib/format"
+import { formatErrorRate, formatLatency, formatRate } from "../../lib/format"
 import { memo } from "react"
 import { Handle, Position } from "@xyflow/react"
 import { cn } from "../../lib/utils"
@@ -191,7 +191,7 @@ function DatabaseNode({ data }: { data: ServiceNodeData }) {
 						/>
 						<MetricCell
 							label="err%"
-							value={`${(errorRate * 100).toFixed(1)}%`}
+							value={formatErrorRate(errorRate)}
 							valueClassName={errorRateClass(errorRate)}
 						/>
 						<MetricCell
@@ -216,7 +216,9 @@ function DatabaseNode({ data }: { data: ServiceNodeData }) {
 							<MetricCell
 								label="cpu"
 								value={`${planetscale.stats.cpuMaxPercent.toFixed(0)}%`}
-								valueClassName={UTILIZATION_TEXT[utilizationLevel(planetscale.stats.cpuMaxPercent / 100)]}
+								valueClassName={
+									UTILIZATION_TEXT[utilizationLevel(planetscale.stats.cpuMaxPercent / 100)]
+								}
 							/>
 							<MetricCell
 								label="lag"
@@ -341,7 +343,7 @@ function ServiceNode({ data }: { data: ServiceNodeData }) {
 
 						<MetricCell
 							label="err%"
-							value={`${(errorRate * 100).toFixed(1)}%`}
+							value={formatErrorRate(errorRate)}
 							valueClassName={errorRateClass(errorRate)}
 						/>
 
@@ -430,7 +432,7 @@ function NamespaceAggregateNode({ data }: { data: ServiceNodeData }) {
 						<MetricCell label="req/s" value={formatRate(throughput)} />
 						<MetricCell
 							label="err%"
-							value={`${(errorRate * 100).toFixed(1)}%`}
+							value={formatErrorRate(errorRate)}
 							valueClassName={errorRateClass(errorRate)}
 						/>
 						<MetricCell

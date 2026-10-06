@@ -213,7 +213,7 @@ export function PlanetScaleDatabaseTable({
 						className={ROW_LINK_CLASS}
 					>
 						<div className="flex w-0 min-w-[220px] flex-1 items-center gap-2 overflow-hidden">
-							<span className="truncate font-mono text-[13px] font-medium text-foreground transition-colors group-hover:text-primary">
+							<span className="truncate font-mono text-xs font-medium text-foreground transition-colors group-hover:text-primary">
 								{row.name}
 							</span>
 							<Badge variant="outline" className="shrink-0">
@@ -227,17 +227,17 @@ export function PlanetScaleDatabaseTable({
 							{row.region ? <MetaChip>{row.region}</MetaChip> : null}
 							{row.plan ? <MetaChip>{row.plan}</MetaChip> : null}
 						</div>
-						<div className="hidden w-[80px] text-right font-mono text-[12px] tabular-nums text-foreground/80 md:block">
+						<div className="hidden w-[80px] text-right font-mono text-xs tabular-nums text-foreground/80 md:block">
 							{row.branchCount}
 						</div>
 						{metricsPaused ? null : (
 							<>
-								<div className="w-[96px] text-right font-mono text-[12px] tabular-nums text-foreground/80">
+								<div className="w-[96px] text-right font-mono text-xs tabular-nums text-foreground/80">
 									{row.hasStats ? formatNumber(row.connectionsAvg) : "—"}
 								</div>
 								<div
 									className={cn(
-										"w-[88px] text-right font-mono text-[12px] tabular-nums text-foreground/80",
+										"w-[88px] text-right font-mono text-xs tabular-nums text-foreground/80",
 										row.hasStats && utilizationClass(row.cpuMaxPercent),
 									)}
 								>
@@ -245,7 +245,7 @@ export function PlanetScaleDatabaseTable({
 								</div>
 								<div
 									className={cn(
-										"hidden w-[104px] text-right font-mono text-[12px] tabular-nums text-foreground/80 md:block",
+										"hidden w-[104px] text-right font-mono text-xs tabular-nums text-foreground/80 md:block",
 										row.hasStats && utilizationClass(row.memMaxPercent),
 									)}
 								>
@@ -253,7 +253,7 @@ export function PlanetScaleDatabaseTable({
 								</div>
 								<div
 									className={cn(
-										"w-[80px] text-right font-mono text-[12px] tabular-nums text-foreground/80",
+										"w-[80px] text-right font-mono text-xs tabular-nums text-foreground/80",
 										row.storageUsedPercent !== MISSING &&
 											utilizationClass(row.storageUsedPercent),
 									)}
@@ -264,7 +264,7 @@ export function PlanetScaleDatabaseTable({
 								</div>
 								<div
 									className={cn(
-										"w-[88px] text-right font-mono text-[12px] tabular-nums text-foreground/80",
+										"w-[88px] text-right font-mono text-xs tabular-nums text-foreground/80",
 										row.hasStats && lagClass(row.replicaLagMaxSeconds),
 									)}
 								>

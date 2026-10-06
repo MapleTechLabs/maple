@@ -4,7 +4,7 @@ import { XmarkIcon, ClockIcon, CircleInfoIcon, ServerIcon } from "@/components/i
 import { CONCEPT_ICON } from "@/components/icons/concept"
 import { ErrorSection } from "@maple/ui/components/error-section"
 
-import { Button } from "@maple/ui/components/ui/button"
+import { IconButton } from "@maple/ui/components/ui/icon-button"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { KeyValue, KeyValueList } from "@maple/ui/components/ui/key-value"
 import { SeverityBadge } from "@maple/ui/components/logs/severity-badge"
@@ -250,9 +250,9 @@ export function SpanDetailPanel({
 					</div>
 				</div>
 				<div className="flex shrink-0 items-center gap-0.5">
-					<Button variant="ghost" size="icon" aria-label="Close span details" onClick={onClose}>
+					<IconButton size="icon" label="Close span details" onClick={onClose}>
 						<XmarkIcon size={16} />
-					</Button>
+					</IconButton>
 				</div>
 			</div>
 
@@ -327,7 +327,9 @@ export function SpanDetailPanel({
 								</KeyValue>
 							)}
 							{platform.location && (
-								<KeyValue mono label="Location">{platform.location}</KeyValue>
+								<KeyValue mono label="Location">
+									{platform.location}
+								</KeyValue>
 							)}
 							{platform.fields.map((field) => (
 								<KeyValue
