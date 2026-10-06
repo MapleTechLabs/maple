@@ -2,7 +2,12 @@ import { useNavigate, createFileRoute } from "@tanstack/react-router"
 import { Schema } from "effect"
 
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
-import { MetricsBrowse, type MetricsBrowsePatch } from "@/components/metrics/metrics-browse"
+import {
+	MetricsBrowse,
+	MetricsBrowseFilters,
+	MetricsViewToggle,
+	type MetricsBrowsePatch,
+} from "@/components/metrics/metrics-browse"
 import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
 import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
 import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
@@ -59,14 +64,30 @@ function MetricsPage() {
 				<DashboardLayout.Body>
 					<DashboardLayout.Content>
 						<DashboardLayout.Sticky>
-							<DashboardLayout.Header>
-								<TimeRangeHeaderControls
-									startTime={search.startTime}
-									endTime={search.endTime}
-									presetValue={search.timePreset ?? (search.startTime ? undefined : "24h")}
-									defaultPreset="24h"
-									onTimeChange={handleTimeChange}
-								/>
+							<DashboardLayout.Header
+								titleContent={
+									<MetricsBrowseFilters
+										startTime={search.startTime}
+										endTime={search.endTime}
+										timePreset={search.timePreset}
+										q={search.q ?? ""}
+										type={search.type ?? null}
+										onPatch={handlePatch}
+									/>
+								}
+							>
+								<div className="flex flex-wrap items-center gap-2">
+									<MetricsViewToggle view={search.view ?? "grid"} onPatch={handlePatch} />
+									<TimeRangeHeaderControls
+										startTime={search.startTime}
+										endTime={search.endTime}
+										presetValue={
+											search.timePreset ?? (search.startTime ? undefined : "24h")
+										}
+										defaultPreset="24h"
+										onTimeChange={handleTimeChange}
+									/>
+								</div>
 							</DashboardLayout.Header>
 						</DashboardLayout.Sticky>
 						<DashboardLayout.Scroll>
