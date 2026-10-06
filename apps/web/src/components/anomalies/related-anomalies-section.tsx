@@ -76,7 +76,7 @@ export function OpenAnomalyBadge({ issueId }: { issueId: ErrorIssueId }) {
 	return (
 		<Badge variant="outline" className={tone.badge}>
 			<span className="flex items-center gap-1.5">
-				<StatusDot tone={tone.tone} pulse />
+				<StatusDot tone={tone.tone} />
 				Anomaly open
 			</span>
 		</Badge>

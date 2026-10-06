@@ -56,10 +56,7 @@ function StatusBanner({ connection }: { connection: IngestConnection }) {
 			{connected ? (
 				<StatusDot tone="ok" size="lg" />
 			) : (
-				<PulseIcon
-					size={12}
-					className="text-primary shrink-0 animate-pulse motion-reduce:animate-none"
-				/>
+				<PulseIcon size={12} className="text-primary shrink-0" />
 			)}
 			<span className="text-sm font-medium whitespace-nowrap">
 				{connected ? "Receiving telemetry" : "Waiting for telemetry"}

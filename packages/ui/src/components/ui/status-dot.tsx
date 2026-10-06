@@ -13,7 +13,7 @@ export const statusDotVariants = cva("relative inline-flex shrink-0 rounded-full
 			ok: TONE_FILL.ok,
 			info: TONE_FILL.info,
 			neutral: TONE_FILL.neutral,
-			// In-flight work (running investigations, live streams). Pair with `pulse`.
+			// In-flight work (running investigations, live streams).
 			live: "bg-primary",
 			// Colour comes from the caller's className (service colours, severity maps).
 			custom: "",
@@ -29,30 +29,16 @@ export const statusDotVariants = cva("relative inline-flex shrink-0 rounded-full
 export interface StatusDotProps extends Omit<React.ComponentProps<"span">, "children"> {
 	tone?: VariantProps<typeof statusDotVariants>["tone"]
 	size?: VariantProps<typeof statusDotVariants>["size"]
-	/** Adds the expanding "live" ring. Suppressed under reduced motion. */
-	pulse?: boolean
 }
 
-export function StatusDot({ tone, size, pulse, className, ...props }: StatusDotProps): React.ReactElement {
-	const dot = statusDotVariants({ tone, size })
-	if (!pulse) {
-		return <span aria-hidden className={cn(dot, className)} data-slot="status-dot" {...props} />
-	}
+/** A static status dot. Deliberately never animated: live state reads from tone and copy. */
+export function StatusDot({ tone, size, className, ...props }: StatusDotProps): React.ReactElement {
 	return (
 		<span
 			aria-hidden
-			className={cn("relative inline-flex shrink-0", statusDotVariants({ size, tone: "custom" }))}
+			className={cn(statusDotVariants({ tone, size }), className)}
 			data-slot="status-dot"
 			{...props}
-		>
-			<span
-				className={cn(
-					dot,
-					className,
-					"absolute inset-0 size-full animate-ping opacity-60 motion-reduce:hidden",
-				)}
-			/>
-			<span className={cn(dot, className, "size-full")} />
-		</span>
+		/>
 	)
 }

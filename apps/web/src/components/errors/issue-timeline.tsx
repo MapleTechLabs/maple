@@ -329,12 +329,7 @@ export function IssueTimeline({
 					<li className={ITEM} key={item.key}>
 						<RelativeTime value={event.createdAt} tooltip="title" className={STAMP} />
 						<Rail>
-							<Dot
-								className={cn(
-									DOT_CLASS[event.type],
-									event.type === "regression" && "animate-pulse",
-								)}
-							/>
+							<Dot className={DOT_CLASS[event.type]} />
 						</Rail>
 						<div className="min-w-0 py-2.5">
 							<div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">

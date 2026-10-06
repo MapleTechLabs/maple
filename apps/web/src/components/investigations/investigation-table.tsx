@@ -101,7 +101,7 @@ function RowFinding({ finding }: { finding: ReturnType<typeof investigationFindi
 	if (finding.kind === "pending") {
 		return (
 			<span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
-				<StatusDot tone="live" pulse />
+				<StatusDot tone="live" />
 				{/* The finding carries the running pass's last step when it has one, so
 				    the row is not free to print a fixed string over the top of it. */}
 				<TruncatedText>{finding.text}</TruncatedText>

@@ -158,7 +158,7 @@ export function AlertFiringHero({
 		<Card className="border-severity-error/30 bg-severity-error/[0.04]">
 			<CardContent className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 px-5 py-3.5">
 				<div className="flex min-w-0 items-center gap-3">
-					<StatusDot tone="crit" pulse />
+					<StatusDot tone="crit" />
 					<div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5">
 						<span className="text-severity-error text-[11px] font-medium uppercase tracking-[0.16em]">
 							Firing now
@@ -189,22 +189,11 @@ export function AlertFiringHero({
 	)
 }
 
-/**
- * Severity beacon. The firing halo uses the canonical `.infra-pulse`
- * (2.4s ease-out, reduced-motion-safe) rather than a generic ping, so it reads
- * as the same operator-terminal pulse used across the infra surfaces.
- */
-function StatusDot({ tone, pulse = false }: { tone: Extract<Tone, "ok" | "crit">; pulse?: boolean }) {
-	const dot = TONE_FILL[tone]
+/** Severity beacon: a static dot in the stat's tone. */
+function StatusDot({ tone }: { tone: Extract<Tone, "ok" | "crit"> }) {
 	return (
 		<span className="relative flex size-3 shrink-0 items-center justify-center">
-			{pulse && (
-				<span
-					aria-hidden
-					className={cn("infra-pulse absolute size-3 rounded-full opacity-60", dot)}
-				/>
-			)}
-			<span className={cn("relative size-2 rounded-full", dot)} />
+			<span className={cn("relative size-2 rounded-full", TONE_FILL[tone])} />
 		</span>
 	)
 }

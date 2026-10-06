@@ -71,11 +71,7 @@ export function IssueIncidentsTable({ incidents }: IssueIncidentsTableProps) {
 											<span className="inline-flex cursor-default items-center gap-2" />
 										}
 									>
-										{isOpen ? (
-											<StatusDot tone="crit" pulse />
-										) : (
-											<StatusDot tone="neutral" />
-										)}
+										{isOpen ? <StatusDot tone="crit" /> : <StatusDot tone="neutral" />}
 										<span
 											className={cn(
 												"text-xs font-medium uppercase tracking-wide",

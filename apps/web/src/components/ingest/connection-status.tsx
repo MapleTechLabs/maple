@@ -32,7 +32,7 @@ export function ConnectionStatusPill({ connection }: { connection: IngestConnect
 				</>
 			) : (
 				<>
-					<PulseIcon size={11} className="size-[11px] animate-pulse motion-reduce:animate-none" />
+					<PulseIcon size={11} className="size-[11px]" />
 					Waiting for telemetry
 				</>
 			)}
@@ -67,7 +67,7 @@ export function SendTestEventStrip({ apiKey, onTestSent }: { apiKey: string; onT
 	return (
 		<div className="flex flex-col gap-3 rounded-lg border border-dashed border-primary/30 bg-primary/5 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
 			<div className="flex items-center gap-2.5">
-				<PulseIcon size={14} className="text-primary animate-pulse motion-reduce:animate-none" />
+				<PulseIcon size={14} className="text-primary" />
 				<span className="text-xs text-muted-foreground">Watching for your first trace…</span>
 			</div>
 			<div className="flex items-center gap-2">

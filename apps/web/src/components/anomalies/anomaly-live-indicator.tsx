@@ -25,7 +25,7 @@ export function AnomalyLiveIndicator({
 					: "border-border/70 text-muted-foreground hover:text-foreground",
 			)}
 		>
-			<StatusDot tone={live ? "ok" : "neutral"} pulse={live} />
+			<StatusDot tone={live ? "ok" : "neutral"} />
 			{live ? "Live" : "Paused"}
 		</button>
 	)

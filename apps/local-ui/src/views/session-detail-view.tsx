@@ -372,7 +372,7 @@ function StatusBadge({ active }: { active: boolean }) {
 	if (active) {
 		return (
 			<Badge variant="ok" pill className="gap-1.5">
-				<StatusDot tone="ok" pulse />
+				<StatusDot tone="ok" />
 				Active
 			</Badge>
 		)

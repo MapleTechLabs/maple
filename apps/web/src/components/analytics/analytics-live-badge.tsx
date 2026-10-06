@@ -65,7 +65,7 @@ export function AnalyticsLiveBadge({ filters }: { filters: AnalyticsFilters }) {
 					)}
 					title={`${count} ${noun} active in the last ${minutes} minute${minutes === 1 ? "" : "s"}`}
 				>
-					{count > 0 ? <StatusDot tone="ok" pulse /> : <StatusDot />}
+					{count > 0 ? <StatusDot tone="ok" /> : <StatusDot />}
 					<span aria-live="polite">
 						{formatNumber(count)} <span className="hidden sm:inline">online</span>
 					</span>

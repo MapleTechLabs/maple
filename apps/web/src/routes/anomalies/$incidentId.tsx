@@ -231,7 +231,7 @@ function AnomalyDetailBody({
 								>
 									{isOpen && !isStale ? (
 										<span className="flex items-center gap-1.5">
-											<StatusDot tone={tone.tone} pulse />
+											<StatusDot tone={tone.tone} />
 											{incident.severity}
 										</span>
 									) : isStale ? (

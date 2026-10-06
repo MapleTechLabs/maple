@@ -10,7 +10,7 @@ export function LivePill({ compact }: { compact?: boolean }) {
 			size={compact ? "xs" : "default"}
 			className={compact ? "tracking-wide" : "gap-1.5"}
 		>
-			<StatusDot tone="ok" pulse />
+			<StatusDot tone="ok" />
 			{compact ? "LIVE" : "Live"}
 		</Badge>
 	)

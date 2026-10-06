@@ -252,7 +252,7 @@ function InvestigatingVerdict({ investigation }: { investigation: V2Investigatio
 		>
 			<Eyebrow as="div" className="flex flex-wrap items-center gap-2 text-primary">
 				<span className="flex items-center gap-1.5">
-					<StatusDot tone="live" pulse />
+					<StatusDot tone="live" />
 					Investigating
 				</span>
 			</Eyebrow>

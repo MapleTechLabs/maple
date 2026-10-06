@@ -111,5 +111,5 @@ const STATUS_TONE = {
 } satisfies Record<IngestTone, Tone>
 
 function Dot({ tone }: { tone: IngestTone }): ReactNode {
-	return <StatusDot tone={STATUS_TONE[tone]} pulse={tone === "live"} />
+	return <StatusDot tone={STATUS_TONE[tone]} />
 }

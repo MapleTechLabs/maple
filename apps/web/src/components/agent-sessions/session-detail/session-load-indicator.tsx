@@ -66,7 +66,7 @@ export function SessionLoadIndicator({
 				<div
 					className={cn(
 						"h-full rounded-full bg-primary/70 transition-[width] duration-300",
-						fraction === undefined && "w-1/3 animate-pulse",
+						fraction === undefined && "w-1/3",
 					)}
 					style={fraction === undefined ? undefined : { width: `${Math.round(fraction * 100)}%` }}
 				/>

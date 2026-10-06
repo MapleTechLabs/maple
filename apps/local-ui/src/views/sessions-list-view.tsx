@@ -189,11 +189,7 @@ function SessionCard({ session, href }: { session: SessionReplaysListOutput; hre
 			<div className="min-w-0 flex-1">
 				<div className="flex items-center gap-2">
 					<span className="max-w-[16rem] truncate text-sm font-medium">{label}</span>
-					<StatusDot
-						tone={isActive ? "ok" : "neutral"}
-						pulse={isActive}
-						title={isActive ? "active" : "ended"}
-					/>
+					<StatusDot tone={isActive ? "ok" : "neutral"} title={isActive ? "active" : "ended"} />
 					<span className="font-mono text-xs text-muted-foreground">
 						{shortId(session.sessionId, "session", { length: 8 })} ·{" "}
 						{formatSessionDuration(session.durationMs)}
