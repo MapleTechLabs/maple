@@ -17,7 +17,10 @@ const ITEMS: ReadonlyArray<{ value: MetricType | "all"; label: string }> = [
 	{ value: "exponential_histogram", label: "Exp histogram" },
 ]
 
-/** The metric-type pivot; counts live in the menu so the toolbar stays a single quiet control. */
+/**
+ * The metric-type pivot; counts live in the menu so the toolbar stays a single quiet control.
+ * Counts are informational only: the summary can be stale or lag the results, so a zero never blocks a type.
+ */
 export function MetricsTypeFilter({
 	value,
 	onChange,
@@ -39,7 +42,9 @@ export function MetricsTypeFilter({
 				? summary.reduce((acc, row) => acc + row.metricCount, 0)
 				: (summary.find((row) => row.metricType === type)?.metricCount ?? 0)
 	const dataPointsOf = (type: MetricType | "all") =>
-		summary?.find((row) => row.metricType === type)?.dataPointCount
+		type === "all"
+			? summary?.reduce((acc, row) => acc + row.dataPointCount, 0)
+			: summary?.find((row) => row.metricType === type)?.dataPointCount
 
 	return (
 		<Select
@@ -58,11 +63,7 @@ export function MetricsTypeFilter({
 					const count = countOf(item.value)
 					const dataPoints = dataPointsOf(item.value)
 					return (
-						<SelectItem
-							key={item.value}
-							value={item.value}
-							disabled={count === 0 && value !== item.value}
-						>
+						<SelectItem key={item.value} value={item.value}>
 							<span
 								className="flex w-full items-center justify-between gap-6"
 								title={
