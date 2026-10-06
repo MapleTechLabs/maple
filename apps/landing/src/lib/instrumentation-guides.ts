@@ -1,5 +1,5 @@
 // Cards on /docs/instrumentation, grouped by ecosystem. Every entry points at
-// a shipping doc page (or a section of one) — this is an inventory of what is
+// a shipping doc page (or a section of one). This is an inventory of what is
 // documented, not a roadmap.
 import type { BrandMarkId } from "./brand-marks"
 import { languageById, type LanguageId } from "./docs-languages"
@@ -16,7 +16,7 @@ export interface GuideCard {
 export interface GuideSection {
 	/** Stable key used by the filter chips and `data-guide-section`. */
 	id: string
-	/** Section heading — also the chip label unless `chip` is set. */
+	/** Section heading, also the chip label unless `chip` is set. */
 	title: string
 	chip?: string
 	cards: GuideCard[]
