@@ -179,7 +179,22 @@ function WebAnalyticsPage() {
 					</DashboardLayout.Filters>
 					<DashboardLayout.Content>
 						<DashboardLayout.Sticky>
-							<DashboardLayout.Header>
+							{/* View tabs share the header row with the range controls on wide
+							    screens, same as Hosts; the header stacks them on narrow ones. */}
+							<DashboardLayout.Header
+								titleContent={
+									<Tabs value={activeTab} onValueChange={onTabChange} className="min-w-0">
+										<TabsList variant="underline" className="-mx-2 gap-x-1 py-0">
+											<TabsTrigger value="overview" className="h-8 px-2 text-sm sm:h-8">
+												Overview
+											</TabsTrigger>
+											<TabsTrigger value="ai" className="h-8 px-2 text-sm sm:h-8">
+												AI traffic
+											</TabsTrigger>
+										</TabsList>
+									</Tabs>
+								}
+							>
 								<div className="flex flex-wrap items-center gap-2">
 									{/* Ahead of the range controls, because it is the one number
 									    on the page they do not govern: "right now" is its own
@@ -218,14 +233,6 @@ function WebAnalyticsPage() {
 									/>
 								</div>
 							</DashboardLayout.Header>
-							{/* A page-width tab bar, same as Alerts: a pill beside the time
-							    controls read as one more filter and was easy to miss. */}
-							<Tabs value={activeTab} onValueChange={onTabChange}>
-								<TabsList variant="underline">
-									<TabsTrigger value="overview">Overview</TabsTrigger>
-									<TabsTrigger value="ai">AI traffic</TabsTrigger>
-								</TabsList>
-							</Tabs>
 						</DashboardLayout.Sticky>
 						<DashboardLayout.Scroll>
 							<div className="space-y-6">
@@ -240,7 +247,12 @@ function WebAnalyticsPage() {
 												size="xs"
 												mono
 												className="h-auto px-1.5 py-0.5 transition-colors hover:text-foreground"
-												render={<button type="button" onClick={() => onFilterChange(chip.key, undefined)} />}
+												render={
+													<button
+														type="button"
+														onClick={() => onFilterChange(chip.key, undefined)}
+													/>
+												}
 											>
 												{chip.label} ✕
 											</Badge>
