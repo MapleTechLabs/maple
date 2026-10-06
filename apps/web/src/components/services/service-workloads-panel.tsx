@@ -1,5 +1,5 @@
 import { useMemo } from "react"
-import { cn } from "@maple/ui/lib/utils"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { Result } from "@/lib/effect-atom"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { getServiceWorkloadsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
@@ -70,7 +70,7 @@ export function ServiceWorkloadsPanel({
 					<span className="text-[10px] text-muted-foreground/60">all environments</span>
 				) : undefined
 			}
-			className={cn("transition-opacity", isWaiting && "opacity-60")}
+			className={refreshingClass(isWaiting)}
 		>
 			<ul className="divide-y">
 				{workloads.map((workload) => (

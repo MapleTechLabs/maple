@@ -31,7 +31,7 @@ export function SubscriptionEndedBanner() {
 
 	return (
 		<div className="px-4 pt-3">
-			<Alert variant="error">
+			<Alert variant="crit">
 				<CircleWarningIcon size={16} />
 				<AlertTitle>Subscription ended</AlertTitle>
 				<AlertDescription>

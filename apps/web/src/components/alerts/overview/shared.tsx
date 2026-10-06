@@ -92,7 +92,7 @@ export function NotifyChannels({
 			<Tooltip>
 				<TooltipTrigger
 					render={
-						<span className="inline-flex cursor-default items-center gap-1 text-warning text-xs" />
+						<span className="inline-flex cursor-default items-center gap-1 text-severity-warn text-xs" />
 					}
 				>
 					<CircleWarningIcon size={12} />

@@ -3,11 +3,11 @@ import { useEffect, useState } from "react"
 import { useNavigate } from "@tanstack/react-router"
 import { useAuth, useOrganization, useOrganizationList } from "@clerk/clerk-react"
 import { toastManager } from "@maple/ui/components/ui/toast"
+import { Field, FieldLabel, FieldDescription } from "@maple/ui/components/ui/field"
 
 import { Button } from "@maple/ui/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@maple/ui/components/ui/card"
 import { Input } from "@maple/ui/components/ui/input"
-import { Label } from "@maple/ui/components/ui/label"
 import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { UserIcon } from "@/components/icons"
@@ -20,6 +20,7 @@ import { RegionBadge } from "@/components/region/region-badge"
 import { organizationHomeRegion } from "@maple/domain/organization-regions"
 import { MAPLE_REGION_LABELS } from "@/lib/region"
 import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
+import { useAsyncAction } from "@/hooks/use-mutation-action"
 
 export function OrganizationSection() {
 	const { orgRole } = useAuth()
@@ -32,11 +33,11 @@ export function OrganizationSection() {
 	const isAdmin = orgRole === "org:admin"
 
 	const [name, setName] = useState("")
-	const [isSavingName, setIsSavingName] = useState(false)
-	const [isSavingLogo, setIsSavingLogo] = useState(false)
+	const [withSavingName, isSavingName] = useAsyncAction((task: () => Promise<void>) => task())
+	const [withSavingLogo, isSavingLogo] = useAsyncAction((task: () => Promise<void>) => task())
 	const [deleteOpen, setDeleteOpen] = useState(false)
 	const [confirmText, setConfirmText] = useState("")
-	const [isDeleting, setIsDeleting] = useState(false)
+	const [withDeleting, isDeleting] = useAsyncAction((task: () => Promise<void>) => task())
 
 	useEffect(() => {
 		setName(organization?.name ?? "")
@@ -68,67 +69,62 @@ export function OrganizationSection() {
 	const nameDirty = trimmedName.length > 0 && trimmedName !== organization.name
 	const confirmMatches = confirmText.trim() === organization.name
 
-	async function handleRename() {
+	function handleRename() {
 		if (!organization || !nameDirty) return
-		setIsSavingName(true)
-		try {
-			await organization.update({ name: trimmedName })
-			toastManager.add({ title: "Organization renamed", type: "success" })
-		} catch (err) {
-			toastAccountError(err, "Failed to rename organization")
-		} finally {
-			setIsSavingName(false)
-		}
-	}
-
-	async function handleLogoSelect(file: File) {
-		if (!organization || !isAdmin || isSavingLogo) return
-		setIsSavingLogo(true)
-		try {
-			await organization.setLogo({ file })
-			toastManager.add({ title: "Organization logo updated", type: "success" })
-		} catch (err) {
-			toastAccountError(err, "Failed to update logo")
-		} finally {
-			setIsSavingLogo(false)
-		}
-	}
-
-	async function handleRemoveLogo() {
-		if (!organization || !isAdmin || isSavingLogo) return
-		setIsSavingLogo(true)
-		try {
-			await organization.setLogo({ file: null })
-			toastManager.add({ title: "Organization logo removed", type: "success" })
-		} catch (err) {
-			toastAccountError(err, "Failed to remove logo")
-		} finally {
-			setIsSavingLogo(false)
-		}
-	}
-
-	async function handleDelete() {
-		if (!organization || !confirmMatches) return
-		setIsDeleting(true)
-		const result = await deleteMutation({})
-		if (toastExit(result, { error: "Failed to delete organization" })) {
-			const remaining = (userMemberships?.data ?? []).filter(
-				(m) => m.organization.id !== organization.id,
-			)
-			const next = remaining[0]?.organization.id ?? null
+		return withSavingName(async () => {
 			try {
-				if (setActive) await setActive({ organization: next })
-			} catch {
-				// fall through to navigation; Clerk session will refresh on next load
+				await organization.update({ name: trimmedName })
+				toastManager.add({ title: "Organization renamed", type: "success" })
+			} catch (err) {
+				toastAccountError(err, "Failed to rename organization")
 			}
-			toastManager.add({ title: "Organization deleted", type: "success" })
-			setIsDeleting(false)
-			setDeleteOpen(false)
-			setConfirmText("")
-			navigate({ to: "/" })
-			return
-		}
-		setIsDeleting(false)
+		})
+	}
+
+	function handleLogoSelect(file: File) {
+		if (!organization || !isAdmin || isSavingLogo) return
+		return withSavingLogo(async () => {
+			try {
+				await organization.setLogo({ file })
+				toastManager.add({ title: "Organization logo updated", type: "success" })
+			} catch (err) {
+				toastAccountError(err, "Failed to update logo")
+			}
+		})
+	}
+
+	function handleRemoveLogo() {
+		if (!organization || !isAdmin || isSavingLogo) return
+		return withSavingLogo(async () => {
+			try {
+				await organization.setLogo({ file: null })
+				toastManager.add({ title: "Organization logo removed", type: "success" })
+			} catch (err) {
+				toastAccountError(err, "Failed to remove logo")
+			}
+		})
+	}
+
+	function handleDelete() {
+		if (!organization || !confirmMatches) return
+		return withDeleting(async () => {
+			const result = await deleteMutation({})
+			if (toastExit(result, { error: "Failed to delete organization" })) {
+				const remaining = (userMemberships?.data ?? []).filter(
+					(m) => m.organization.id !== organization.id,
+				)
+				const next = remaining[0]?.organization.id ?? null
+				try {
+					if (setActive) await setActive({ organization: next })
+				} catch {
+					// fall through to navigation; Clerk session will refresh on next load
+				}
+				toastManager.add({ title: "Organization deleted", type: "success" })
+				setDeleteOpen(false)
+				setConfirmText("")
+				navigate({ to: "/" })
+			}
+		})
 	}
 
 	function handleDialogChange(open: boolean) {
@@ -149,8 +145,8 @@ export function OrganizationSection() {
 				</CardHeader>
 				<CardContent>
 					<div className="space-y-4 max-w-md">
-						<div className="space-y-1.5">
-							<Label>Logo</Label>
+						<Field>
+							<FieldLabel>Logo</FieldLabel>
 							<ImageDropzone
 								preview={
 									<OrgAvatar
@@ -167,9 +163,9 @@ export function OrganizationSection() {
 								targetLabel="Change organization logo"
 								changeLabel="Change logo"
 							/>
-						</div>
-						<div className="space-y-1.5">
-							<Label htmlFor="org-name">Name</Label>
+						</Field>
+						<Field>
+							<FieldLabel htmlFor="org-name">Name</FieldLabel>
 							<Input
 								id="org-name"
 								value={name}
@@ -177,7 +173,7 @@ export function OrganizationSection() {
 								disabled={!isAdmin || isSavingName}
 								placeholder="Organization name"
 							/>
-						</div>
+						</Field>
 						<div className="flex justify-end">
 							<Button
 								size="sm"
@@ -245,16 +241,16 @@ export function OrganizationSection() {
 function DataRegionRow({ metadata }: { metadata: unknown }) {
 	const region = organizationHomeRegion(metadata)
 	return (
-		<div className="space-y-1.5">
-			<Label>Data region</Label>
+		<Field>
+			<FieldLabel>Data region</FieldLabel>
 			<div className="flex items-center gap-2 text-sm">
 				<RegionBadge region={region} />
 				<span>{MAPLE_REGION_LABELS[region].name}</span>
 			</div>
-			<p className="text-xs text-muted-foreground">
+			<FieldDescription>
 				Chosen when the organization was created. All of its telemetry is stored and processed in this
 				region.
-			</p>
-		</div>
+			</FieldDescription>
+		</Field>
 	)
 }

@@ -15,6 +15,7 @@ import {
 } from "@/components/vcs/commit-sha-hover-card"
 import type { ReleasePoint } from "@/components/vcs/commit-markers/marker-layout"
 import { DocsLink } from "@/components/common/docs-link"
+import { ResultView } from "@/components/common/result-view"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { formatErrorRate, formatNumber, pluralize } from "@maple/ui/lib/format"
 import { errorRateLevel } from "@maple/ui/lib/error-rate"
@@ -184,34 +185,39 @@ function DeployRowSkeleton() {
 
 function DeployRowResolved({ deploy }: { deploy: DeployEntry }) {
 	const result = useAtomValue(commitQueryAtom(deploy.sha))
-	return Result.builder(result)
-		.onSuccess((commit) => {
-			const author = commit.authorLogin ?? commit.authorName ?? "Unknown author"
-			return (
-				<RowFrame
-					avatar={<CommitAvatar url={commit.authorAvatarUrl} name={author} compact />}
-					line1={
-						<CommitShaHoverCard sha={deploy.sha} className="text-foreground">
-							{firstLine(commit.message)}
-						</CommitShaHoverCard>
-					}
-					chip={<ErrorRateChip errorCount={deploy.errorCount} spanCount={deploy.spanCount} />}
-					line2={
-						<RowMeta
-							deploy={deploy}
-							prefix={
-								<>
-									<span className="min-w-0 truncate">{author}</span>
-									<TruncatedId value={deploy.sha} kind="sha" className="shrink-0" />
-								</>
-							}
-						/>
-					}
-				/>
-			)
-		})
-		.onError(() => <DeployRowFallback deploy={deploy} />)
-		.orElse(() => <DeployRowSkeleton />)
+	return (
+		<ResultView
+			result={result}
+			loading={<DeployRowSkeleton />}
+			error={() => <DeployRowFallback deploy={deploy} />}
+		>
+			{(commit) => {
+				const author = commit.authorLogin ?? commit.authorName ?? "Unknown author"
+				return (
+					<RowFrame
+						avatar={<CommitAvatar url={commit.authorAvatarUrl} name={author} compact />}
+						line1={
+							<CommitShaHoverCard sha={deploy.sha} className="text-foreground">
+								{firstLine(commit.message)}
+							</CommitShaHoverCard>
+						}
+						chip={<ErrorRateChip errorCount={deploy.errorCount} spanCount={deploy.spanCount} />}
+						line2={
+							<RowMeta
+								deploy={deploy}
+								prefix={
+									<>
+										<span className="min-w-0 truncate">{author}</span>
+										<TruncatedId value={deploy.sha} kind="sha" className="shrink-0" />
+									</>
+								}
+							/>
+						}
+					/>
+				)
+			}}
+		</ResultView>
+	)
 }
 
 function DeployRow({ deploy }: { deploy: DeployEntry }) {

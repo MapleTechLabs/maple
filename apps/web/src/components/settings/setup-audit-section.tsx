@@ -12,6 +12,7 @@ import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import { Button, buttonVariants } from "@maple/ui/components/ui/button"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { cn } from "@maple/ui/lib/utils"
+import { TONE_TEXT } from "@maple/ui/lib/tone"
 import {
 	ArrowRotateAnticlockwiseIcon,
 	CircleCheckIcon,
@@ -30,9 +31,9 @@ type Severity = V2SetupAuditCheck["severity"]
 type Category = V2SetupAuditCheck["category"]
 
 const SEVERITY: Record<Severity, { label: string; icon: IconComponent; className: string }> = {
-	critical: { label: "Critical", icon: CircleWarningIcon, className: "text-destructive" },
-	warn: { label: "Warning", icon: CircleWarningIcon, className: "text-warning" },
-	info: { label: "Info", icon: CircleInfoIcon, className: "text-info" },
+	critical: { label: "Critical", icon: CircleWarningIcon, className: TONE_TEXT.crit },
+	warn: { label: "Warning", icon: CircleWarningIcon, className: TONE_TEXT.warn },
+	info: { label: "Info", icon: CircleInfoIcon, className: TONE_TEXT.info },
 } satisfies Record<Severity, { label: string; icon: IconComponent; className: string }>
 
 const SEVERITY_ORDER: ReadonlyArray<Severity> = ["critical", "warn", "info"]
@@ -238,11 +239,11 @@ function Report({ audit }: { audit: V2SetupAudit }) {
 	return (
 		<div className="flex flex-col gap-4">
 			<div className="bg-card flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border px-4 py-3">
-				<SummaryPill count={summary.critical} label="critical" className="text-destructive" />
-				<SummaryPill count={summary.warn} label="warning" className="text-warning" />
-				<SummaryPill count={summary.info} label="info" className="text-info" />
+				<SummaryPill count={summary.critical} label="critical" className={TONE_TEXT.crit} />
+				<SummaryPill count={summary.warn} label="warning" className={TONE_TEXT.warn} />
+				<SummaryPill count={summary.info} label="info" className={TONE_TEXT.info} />
 				<span className="text-muted-foreground/40">·</span>
-				<SummaryPill count={summary.pass} label="passing" className="text-success" />
+				<SummaryPill count={summary.pass} label="passing" className="text-severity-info" />
 				{summary.skip > 0 && (
 					<SummaryPill count={summary.skip} label="skipped" className="text-muted-foreground" />
 				)}
@@ -255,7 +256,7 @@ function Report({ audit }: { audit: V2SetupAudit }) {
 			</div>
 
 			{!audit.telemetry_checks_available && (
-				<Alert variant="warning" className="rounded-lg px-4 text-xs leading-relaxed">
+				<Alert variant="warn" className="rounded-lg px-4 text-xs leading-relaxed">
 					<CircleWarningIcon />
 					<AlertTitle>Telemetry checks skipped.</AlertTitle>
 					<AlertDescription>
@@ -267,7 +268,7 @@ function Report({ audit }: { audit: V2SetupAudit }) {
 
 			{findingCount === 0 && !showPassing ? (
 				<div className="bg-card flex flex-col items-center gap-2 rounded-lg border px-4 py-10 text-center">
-					<CircleCheckIcon size={20} className="text-success" />
+					<CircleCheckIcon size={20} className="text-severity-info" />
 					<p className="text-sm font-medium">Everything checks out</p>
 					<p className="text-muted-foreground text-xs">
 						All {summary.pass} checks passed. Alerts can deliver, and your telemetry follows the

@@ -12,6 +12,7 @@ import { NotificationsSection } from "@/components/alerts/notifications-section"
 import { DestinationDialog } from "@/components/alerts/destination-dialog"
 import { useDestinationManager } from "@/components/alerts/overview/settings-tab"
 import { useIsOrgAdmin } from "@/hooks/use-is-org-admin"
+import { useAsyncAction } from "@/hooks/use-mutation-action"
 import { RuleActionBar } from "@/components/alerts/rule-action-bar"
 import { RULE_FORM_MAX_WIDTH } from "@/components/alerts/rule-form-layout"
 import { RuleLiveChartHero } from "@/components/alerts/rule-live-chart-hero"
@@ -75,7 +76,6 @@ export function AlertCreateFormSurface({
 	})
 
 	const [ruleForm, setRuleForm] = useState<RuleFormState>(() => initialForm)
-	const [savingRule, setSavingRule] = useState(false)
 	// A destination made from this form is selected on it: the user came here to
 	// write a rule, and leaving to make the destination would have lost the draft.
 	// Creating a destination is admin-only server-side; a member gets the nudge, not the dialog.
@@ -87,8 +87,6 @@ export function AlertCreateFormSurface({
 				destinationIds: [...new Set([...current.destinationIds, id])],
 			})),
 	})
-	const [previewingRule, setPreviewingRule] = useState(false)
-	const [sendingTestNotification, setSendingTestNotification] = useState(false)
 	// Tagged with the rule config it was produced from. A "Would trigger" verdict
 	// is only meaningful for the exact signal/threshold/scope that was tested, so
 	// editing any of those makes the stored result stale rather than wrong-but-shown.
@@ -137,8 +135,7 @@ export function AlertCreateFormSurface({
 		[rulesResult],
 	)
 
-	async function handleSave() {
-		setSavingRule(true)
+	const [handleSave, savingRule] = useAsyncAction(async () => {
 		const payload = buildRuleCreateParamsV2(ruleForm)
 		const result = editingRule
 			? await updateRule({
@@ -155,8 +152,7 @@ export function AlertCreateFormSurface({
 		} else {
 			toastManager.add({ title: getExitErrorMessage(result, "Failed to save rule"), type: "error" })
 		}
-		setSavingRule(false)
-	}
+	})
 
 	async function runTest(sendNotification: boolean) {
 		if (!isRulePreviewReady(ruleForm)) {
@@ -166,8 +162,6 @@ export function AlertCreateFormSurface({
 			})
 			return
 		}
-		const setLoading = sendNotification ? setSendingTestNotification : setPreviewingRule
-		setLoading(true)
 		const testedKey = previewIdentityKey(ruleForm)
 		const result = await testRule({
 			payload: buildRuleTestParamsV2(ruleForm, sendNotification),
@@ -188,8 +182,9 @@ export function AlertCreateFormSurface({
 		} else {
 			toastManager.add({ title: getExitErrorMessage(result, "Failed to preview rule"), type: "error" })
 		}
-		setLoading(false)
 	}
+	const [previewRule, previewingRule] = useAsyncAction(() => runTest(false))
+	const [sendTestNotification, sendingTestNotification] = useAsyncAction(() => runTest(true))
 
 	const showScope = ruleForm.signalType !== "builder_query" && ruleForm.signalType !== "raw_query"
 	// Drop the verdict as soon as the user edits anything it depended on.
@@ -214,7 +209,7 @@ export function AlertCreateFormSurface({
 								preview={preview}
 								previewLoading={previewLoading}
 								previewError={previewError}
-								onTestRule={() => runTest(false)}
+								onTestRule={() => void previewRule()}
 								testing={previewingRule}
 								previewResult={freshPreviewResult}
 								range={previewRange}
@@ -241,7 +236,7 @@ export function AlertCreateFormSurface({
 										form={ruleForm}
 										onChange={setRuleForm}
 										destinations={destinations}
-										onSendTest={() => runTest(true)}
+										onSendTest={() => void sendTestNotification()}
 										testing={sendingTestNotification}
 										onAddDestination={
 											isAdmin ? () => destinationManager.openDialog() : undefined
@@ -262,7 +257,7 @@ export function AlertCreateFormSurface({
 							saving={savingRule}
 							validationIssues={validationIssues}
 							onCancel={() => navigate({ to: "/alerts" })}
-							onSave={handleSave}
+							onSave={() => void handleSave()}
 							onShowTemplates={editingRule ? undefined : () => setTemplatesOpen(true)}
 							cancelSlot={
 								<Button type="button" variant="outline" render={<Link to="/alerts" />}>

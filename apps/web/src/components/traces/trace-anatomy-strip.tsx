@@ -64,7 +64,7 @@ export function TraceAnatomyStrip({
 							hasError ? "text-severity-error" : "text-severity-info",
 						)}
 					>
-						<StatusDot tone="custom" className="bg-current" />
+						<StatusDot tone={hasError ? "crit" : "ok"} />
 						{hasError ? "Error" : "OK"}
 					</span>
 

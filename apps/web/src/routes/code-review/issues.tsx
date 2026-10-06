@@ -33,9 +33,9 @@ import {
 	type CodeReviewSearch,
 } from "@/components/code-review/code-review-search"
 import { ReviewDetailSheet } from "@/components/code-review/review-detail-sheet"
-import { ErrorState } from "@/components/common/error-state"
+import { ResultView } from "@/components/common/result-view"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
-import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
+import { useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
 import { retainedQuery } from "@/lib/services/common/atom-client"
 
 const searchSchema = Schema.Struct(CodeReviewIssuesSearchFields)
@@ -122,60 +122,59 @@ function CodeReviewIssuesPage() {
 					onChange={(state) => onChange({ state })}
 				/>
 			</div>
-			{Result.builder(result)
-				.onInitial(() => <SkeletonList rows={6} rowClassName="h-16" gap="2" />)
-				.onError((error) => (
-					<ErrorState error={error} title="Failed to load issues" onRetry={refresh} />
-				))
-				.onSuccess((response) =>
-					response.findings.length === 0 ? (
-						<NothingInWindow
-							title="No issues in this window"
-							description={
-								filtered
-									? "Nothing matches these filters."
-									: "Issues the reviewer posts on pull requests are listed here."
-							}
-							onClear={
-								filtered
-									? () =>
-											onChange({
-												repo: undefined,
-												author: undefined,
-												severity: undefined,
-												category: undefined,
-												state: undefined,
-											})
-									: undefined
-							}
-						/>
-					) : (
-						<div className="flex flex-col gap-3">
-							<ul className="divide-y overflow-hidden rounded-xl border bg-card">
-								{response.findings.map((finding) => (
-									<FindingRow
-										key={finding.id}
-										finding={finding}
-										onOpen={() => onChange({ review: finding.reviewId })}
-									/>
-								))}
-							</ul>
-							{response.nextCursor !== null ? (
-								<ListFooter
-									shown={response.findings.length}
-									noun="issues"
-									hasMore={limit < MAX_ROWS}
-									capped={limit >= MAX_ROWS}
-									loading={result.waiting}
-									onLoadMore={() =>
-										setLimit((current) => Math.min(current + PAGE, MAX_ROWS))
-									}
+			<ResultView
+				result={result}
+				loading={<SkeletonList rows={6} rowClassName="h-16" gap="2" />}
+				errorTitle="Failed to load issues"
+				onRetry={refresh}
+				isEmpty={(response) => response.findings.length === 0}
+				empty={
+					<NothingInWindow
+						title="No issues in this window"
+						description={
+							filtered
+								? "Nothing matches these filters."
+								: "Issues the reviewer posts on pull requests are listed here."
+						}
+						onClear={
+							filtered
+								? () =>
+										onChange({
+											repo: undefined,
+											author: undefined,
+											severity: undefined,
+											category: undefined,
+											state: undefined,
+										})
+								: undefined
+						}
+					/>
+				}
+			>
+				{(response) => (
+					<div className="flex flex-col gap-3">
+						<ul className="divide-y overflow-hidden rounded-xl border bg-card">
+							{response.findings.map((finding) => (
+								<FindingRow
+									key={finding.id}
+									finding={finding}
+									onOpen={() => onChange({ review: finding.reviewId })}
 								/>
-							) : null}
-						</div>
-					),
-				)
-				.render()}
+							))}
+						</ul>
+						{response.nextCursor !== null ? (
+							<ListFooter
+								shown={response.findings.length}
+								noun="issues"
+								hasMore={limit < MAX_ROWS}
+								capped={limit >= MAX_ROWS}
+								loading={result.waiting}
+								onLoadMore={() => setLimit((current) => Math.min(current + PAGE, MAX_ROWS))}
+							/>
+						) : null}
+					</div>
+				)}
+			</ResultView>
 			<ReviewDetailSheet
 				reviewId={search.review}
 				onClose={() => onChange({ review: undefined })}

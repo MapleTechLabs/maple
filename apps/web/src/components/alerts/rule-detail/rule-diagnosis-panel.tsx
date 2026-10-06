@@ -24,9 +24,9 @@ import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { SegmentedSelect } from "@/components/common/segmented-select"
 
 const STATUS_ICON: Record<DiagnosisStageStatus, { className: string }> = {
-	pass: { className: "text-success" },
-	warn: { className: "text-warning" },
-	fail: { className: "text-destructive" },
+	pass: { className: "text-severity-info" },
+	warn: { className: "text-severity-warn" },
+	fail: { className: "text-severity-error" },
 	unknown: { className: "text-muted-foreground" },
 } satisfies Record<DiagnosisStageStatus, { className: string }>
 
@@ -206,8 +206,8 @@ function DiagnosisStageRow({
 		<li
 			className={cn(
 				"rounded-md px-2 py-1",
-				stage.status === "fail" && "bg-destructive/5",
-				stage.status === "warn" && "bg-warning/5",
+				stage.status === "fail" && "bg-severity-error/5",
+				stage.status === "warn" && "bg-severity-warn/5",
 			)}
 		>
 			<div className="flex items-center gap-2.5">
@@ -221,7 +221,7 @@ function DiagnosisStageRow({
 					<span
 						className={cn(
 							"truncate text-xs",
-							stage.status === "fail" ? "text-destructive" : "text-muted-foreground",
+							stage.status === "fail" ? "text-severity-error" : "text-muted-foreground",
 						)}
 					>
 						{stage.summary}

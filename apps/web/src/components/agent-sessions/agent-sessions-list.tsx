@@ -809,7 +809,7 @@ function ErrorChips({ session }: { session: AgentSessionRow }) {
 					count={session.turnErrorCount}
 					noun="turn"
 					hint={`${plural(session.turnErrorCount, "failed turn")} — a model call or agent turn errored`}
-					className="border-destructive/30 bg-destructive/10 text-destructive"
+					className="border-severity-error/30 bg-severity-error/10 text-severity-error"
 				/>
 			)}
 			{session.toolErrorCount > 0 && (
@@ -826,7 +826,7 @@ function ErrorChips({ session }: { session: AgentSessionRow }) {
 					count={other}
 					noun="span"
 					hint={`${plural(other, "errored span")} outside the agent's turns and tools`}
-					className="border-destructive/30 bg-destructive/10 text-destructive"
+					className="border-severity-error/30 bg-severity-error/10 text-severity-error"
 				/>
 			)}
 		</div>

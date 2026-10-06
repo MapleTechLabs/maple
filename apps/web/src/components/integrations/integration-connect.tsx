@@ -15,6 +15,7 @@ import { MapleApiAtomClient, retainedQuery } from "@/lib/services/common/atom-cl
 import { MapleApiV2AtomClient, retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { showErrorToast } from "@/lib/error-toast"
 import { useMountEffect } from "@/hooks/use-mount-effect"
+import { useAsyncAction } from "@/hooks/use-mutation-action"
 import type { IntegrationId } from "./integration-catalog"
 
 // The callback page is served from the API origin and only accepts a
@@ -116,7 +117,7 @@ function useOAuthPopupFlow({
 	onPoll?: () => void
 	closeGraceMs?: number
 }): IntegrationConnect {
-	const [busy, setBusy] = useState(false)
+	const [runStart, busy] = useAsyncAction(start)
 	const popupRef = useRef<Window | null>(null)
 	const closeGraceTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 	const tickRef = useRef(0)
@@ -169,9 +170,7 @@ function useOAuthPopupFlow({
 			popup.document.write(interimDocument(label))
 			popup.document.close()
 		}
-		setBusy(true)
-		const result = await start()
-		setBusy(false)
+		const result = await runStart()
 		if (Exit.isSuccess(result)) {
 			const url = result.value.redirectUrl
 			if (popup && !popup.closed) {

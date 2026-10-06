@@ -610,7 +610,7 @@ function SpanRow({
 			className={cn(
 				"flex h-full w-full cursor-pointer items-center px-2.5 text-left text-xs hover:bg-accent/40",
 				"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
-				errored && "bg-destructive/6",
+				errored && "bg-severity-error/6",
 				focused && "bg-accent/60",
 				// Louder than the open row's mark on purpose: nothing is on screen
 				// saying which span the reader crossed views for except this row.
@@ -625,7 +625,7 @@ function SpanRow({
 				<Glyph
 					aria-hidden
 					size={13}
-					className={cn("shrink-0", errored ? "text-destructive" : CATEGORY_TEXT[category])}
+					className={cn("shrink-0", errored ? "text-severity-error" : CATEGORY_TEXT[category])}
 				/>
 				{heading.operation !== undefined && (
 					// Chrome, not the label: which operation ran is already the row's
@@ -649,7 +649,7 @@ function SpanRow({
 				)}
 			</span>
 			<span
-				className={cn(COL_MODEL, errored && "text-destructive")}
+				className={cn(COL_MODEL, errored && "text-severity-error")}
 				// The raw value the span carried, whichever way the cell draws it —
 				// `ModelLabel` fills the cell, so it is the one that has to hold it.
 				title={model === undefined ? target : undefined}
@@ -711,7 +711,7 @@ function SpanBar({
 				<span
 					className={cn(
 						"absolute inset-0",
-						errored ? "bg-destructive" : CATEGORY_FILL[category],
+						errored ? "bg-severity-error" : CATEGORY_FILL[category],
 						container && "opacity-35",
 					)}
 				/>
@@ -828,7 +828,7 @@ function clipTarget(value: string): string | undefined {
 function TokenCell({ tokens, errored }: { tokens: SessionTokenTotals | undefined; errored?: boolean }) {
 	const drawn = tokens === undefined ? [] : TOKEN_BUCKETS.filter((bucket) => tokens[bucket.key] > 0)
 	if (tokens === undefined || tokens.total === 0 || drawn.length === 0) {
-		return <span className={cn(COL_TOKENS, errored && "text-destructive")}>—</span>
+		return <span className={cn(COL_TOKENS, errored && "text-severity-error")}>—</span>
 	}
 
 	const title = [
@@ -848,7 +848,10 @@ function TokenCell({ tokens, errored }: { tokens: SessionTokenTotals | undefined
 				className="flex-1 gap-px rounded-xs bg-muted"
 			/>
 			<span
-				className={cn("shrink-0 tabular-nums text-muted-foreground", errored && "text-destructive")}
+				className={cn(
+					"shrink-0 tabular-nums text-muted-foreground",
+					errored && "text-severity-error",
+				)}
 			>
 				{formatNumber(tokens.total)}
 			</span>

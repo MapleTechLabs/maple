@@ -7,7 +7,7 @@ import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
 import { Card } from "@maple/ui/components/ui/card"
 import { Input } from "@maple/ui/components/ui/input"
-import { Label } from "@maple/ui/components/ui/label"
+import { Field, FieldLabel } from "@maple/ui/components/ui/field"
 import { Textarea } from "@maple/ui/components/ui/textarea"
 
 import { MultiSegmentedSelect, type SegmentedOption } from "@/components/common/segmented-select"
@@ -172,8 +172,8 @@ export function NotificationsSection({
 							default format. Supports <InlineCode>{"{{ variable }}"}</InlineCode> substitution.
 						</p>
 
-						<div className="space-y-1.5">
-							<Label htmlFor="notification-title">Title</Label>
+						<Field className="items-stretch gap-1.5">
+							<FieldLabel htmlFor="notification-title">Title</FieldLabel>
 							<Input
 								id="notification-title"
 								value={form.notificationTitle}
@@ -182,10 +182,10 @@ export function NotificationsSection({
 								}
 								placeholder={TITLE_PLACEHOLDER}
 							/>
-						</div>
+						</Field>
 
-						<div className="space-y-1.5">
-							<Label htmlFor="notification-body">Body (Markdown)</Label>
+						<Field className="items-stretch gap-1.5">
+							<FieldLabel htmlFor="notification-body">Body (Markdown)</FieldLabel>
 							<Textarea
 								id="notification-body"
 								value={form.notificationBody}
@@ -196,7 +196,7 @@ export function NotificationsSection({
 								rows={4}
 								className="font-mono text-xs"
 							/>
-						</div>
+						</Field>
 
 						<div className="space-y-1.5">
 							<span className="text-muted-foreground text-xs">Insert a variable:</span>

@@ -60,7 +60,7 @@ export function IssueIncidentsTable({ incidents }: IssueIncidentsTableProps) {
 									aria-hidden
 									className={cn(
 										"block h-full w-[3px]",
-										isOpen ? "bg-destructive" : "bg-border/60",
+										isOpen ? "bg-severity-error" : "bg-border/60",
 									)}
 								/>
 							</TableCell>
@@ -72,14 +72,14 @@ export function IssueIncidentsTable({ incidents }: IssueIncidentsTableProps) {
 										}
 									>
 										{isOpen ? (
-											<StatusDot tone="error" pulse />
+											<StatusDot tone="crit" pulse />
 										) : (
-											<StatusDot tone="custom" className="bg-muted-foreground/60" />
+											<StatusDot tone="neutral" />
 										)}
 										<span
 											className={cn(
 												"text-xs font-medium uppercase tracking-wide",
-												isOpen ? "text-destructive" : "text-muted-foreground",
+												isOpen ? "text-severity-error" : "text-muted-foreground",
 											)}
 										>
 											{incident.status}

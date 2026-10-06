@@ -16,7 +16,6 @@ import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { SegmentedBar } from "@maple/ui/components/ui/meter"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { VALUE_TONE, type Tone } from "../severity-tokens"
-import { TONE_TEXT } from "@maple/ui/lib/tone"
 
 /** A band that stands alone on a page body rather than flush under a shell's header. */
 export const FLEET_BAND_BOXED = "overflow-hidden rounded-lg border"
@@ -37,7 +36,7 @@ export interface FleetBandCell<S extends string> {
 	readonly hint: string
 	readonly value: number
 	/** `info` is the freshness blue; the rest are the severity ramp. */
-	readonly tone: Tone | "info"
+	readonly tone: Tone
 }
 
 interface FleetBandProps<S extends string> {
@@ -53,8 +52,6 @@ interface FleetBandProps<S extends string> {
 	waiting?: boolean
 	className?: string
 }
-
-const CELL_VALUE_TONE = { ...VALUE_TONE, info: TONE_TEXT.info } satisfies Record<Tone | "info", string>
 
 export function FleetBand<S extends string>({
 	total,
@@ -151,7 +148,7 @@ function ScopeCell<S extends string>({
 				<span
 					className={cn(
 						"font-mono text-xl font-semibold leading-none tabular-nums",
-						value === 0 ? "text-muted-foreground" : CELL_VALUE_TONE[tone],
+						value === 0 ? "text-muted-foreground" : VALUE_TONE[tone],
 					)}
 				>
 					{value}

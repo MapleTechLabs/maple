@@ -30,6 +30,7 @@ import { destinationProvider, ProviderLogo } from "@/components/alerts/destinati
 import { SeverityBadge, SEVERITY_ORDER } from "@/components/errors/severity-badge"
 import { DocsLink } from "@/components/common/docs-link"
 import { ErrorState } from "@/components/common/error-state"
+import { useAsyncAction } from "@/hooks/use-mutation-action"
 
 const CONFIDENCE_ANY = "any" as const
 
@@ -68,7 +69,6 @@ export function EscalationPolicySection({ isAdmin }: { isAdmin: boolean }) {
 	const [enabled, setEnabled] = useState(false)
 	const [rules, setRules] = useState<DraftRules>(emptyDraft)
 	const [initialized, setInitialized] = useState(false)
-	const [isSaving, setIsSaving] = useState(false)
 
 	useEffect(() => {
 		if (initialized) return
@@ -87,8 +87,7 @@ export function EscalationPolicySection({ isAdmin }: { isAdmin: boolean }) {
 		}
 	}, [policyResult, initialized])
 
-	const save = async () => {
-		setIsSaving(true)
+	const [save, isSaving] = useAsyncAction(async () => {
 		const ruleList = SEVERITY_ORDER.filter((severity) => rules[severity].destinationIds.length > 0).map(
 			(severity) =>
 				new IssueEscalationPolicyRule({
@@ -105,13 +104,12 @@ export function EscalationPolicySection({ isAdmin }: { isAdmin: boolean }) {
 			payload: new IssueEscalationPolicyUpsertRequest({ enabled, rules: ruleList }),
 			reactivityKeys: ["issueEscalationPolicy"],
 		})
-		setIsSaving(false)
 		if (Exit.isSuccess(result)) {
 			toastManager.add({ title: "Escalation policy saved", type: "success" })
 		} else {
 			toastManager.add({ title: "Failed to save escalation policy", type: "error" })
 		}
-	}
+	})
 
 	// Never render the editable form off a failed (or pending) policy load —
 	// saving a default draft would silently overwrite the real policy.

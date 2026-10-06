@@ -87,7 +87,7 @@ export function ActiveIncidentsTable({
 						</span>
 					) : (
 						<>
-							<span className="font-mono text-destructive">
+							<span className="font-mono text-severity-error">
 								{formatSignalValue(incident.signalType, incident.lastObservedValue)}
 							</span>
 							<span className="text-muted-foreground text-xs ml-1">

@@ -72,7 +72,7 @@ export function SignalSpark({
 	const viewWidth = values.length * step - BAR_GAP
 	const tailStart = values.length - Math.max(1, Math.round(values.length * tailFraction))
 	const tone = surging
-		? "text-destructive"
+		? "text-severity-error"
 		: severity === null
 			? "text-muted-foreground"
 			: SEVERITY_TEXT[severity]

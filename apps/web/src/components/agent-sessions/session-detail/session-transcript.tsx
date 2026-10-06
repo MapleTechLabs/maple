@@ -685,7 +685,9 @@ function AssistantBlock({
 					<Avatar
 						icon={row.failed ? CircleWarningIcon : PixelSparkleIcon}
 						className={
-							row.failed ? "bg-destructive/15 text-destructive" : "bg-chart-2/15 text-chart-2"
+							row.failed
+								? "bg-severity-error/15 text-severity-error"
+								: "bg-chart-2/15 text-chart-2"
 						}
 					/>
 				)
@@ -709,7 +711,7 @@ function AssistantBlock({
 					{row.failed && <FailedBadge />}
 					<span className={CLOCK}>{clockOf(row.startMs, timeZone)}</span>
 					{row.span.genAi.errorType !== undefined && (
-						<span className="shrink-0 font-mono text-[11px] text-destructive">
+						<span className="shrink-0 font-mono text-[11px] text-severity-error">
 							{row.span.genAi.errorType}
 						</span>
 					)}
@@ -748,7 +750,7 @@ function AssistantBlock({
 									rendering={!errorRaw && error.isJson ? "json" : "text"}
 									mono
 									clampLines={14}
-									toneClass="text-[13px] text-destructive/90"
+									toneClass="text-[13px] text-severity-error/90"
 									expanded={disclosed(openRows, `${row.key}:error-text`, false)}
 									onToggleExpanded={() => onToggleRow(`${row.key}:error-text`)}
 								/>
@@ -896,7 +898,7 @@ function ToolBlock({
 }: BlockProps & { row: Extract<TranscriptRow, { kind: "tool" }> }) {
 	const payloadsKey = `${row.key}:payloads`
 	const open = disclosed(openRows, payloadsKey, showPayloads)
-	const tone = row.failed ? "text-destructive" : "text-chart-4"
+	const tone = row.failed ? "text-severity-error" : "text-chart-4"
 
 	return (
 		<Row depth={row.depth} className="pt-1.5">
@@ -904,7 +906,7 @@ function ToolBlock({
 				className={cn(
 					"flex min-w-0 flex-col overflow-hidden rounded-lg border",
 					row.failed
-						? "border-destructive/40 bg-destructive/5"
+						? "border-severity-error/40 bg-severity-error/5"
 						: open
 							? "border-border bg-card"
 							: "border-transparent bg-muted/30 hover:bg-muted/50",
@@ -930,7 +932,7 @@ function ToolBlock({
 						<span className={cn(META, "shrink-0")}>{formatDuration(row.span.durationMs)}</span>
 					)}
 					{row.failed && row.span.genAi.errorType !== undefined && (
-						<span className="shrink-0 font-mono text-[11px] text-destructive">
+						<span className="shrink-0 font-mono text-[11px] text-severity-error">
 							{row.span.genAi.errorType}
 						</span>
 					)}
@@ -1256,7 +1258,7 @@ function StructureRow({
 	const Glyph: IconComponent =
 		category === "tool" ? GearIcon : category === "agent" ? FaceRobotIcon : PixelSparkleIcon
 	const tone = row.failed
-		? "text-destructive"
+		? "text-severity-error"
 		: category === "tool"
 			? "text-chart-4"
 			: category === "agent"

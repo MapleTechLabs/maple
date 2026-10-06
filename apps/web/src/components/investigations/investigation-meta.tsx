@@ -140,7 +140,9 @@ function Escalation({
 			return (
 				<Pair label="Escalation">
 					<span
-						className={cn(attempt.status === "failed" ? "text-destructive" : "text-foreground")}
+						className={cn(
+							attempt.status === "failed" ? "text-severity-error" : "text-foreground",
+						)}
 						title={attempt.deliveries
 							.map(
 								(delivery) =>

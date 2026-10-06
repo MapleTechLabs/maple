@@ -8,6 +8,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { ChooseOrganizationRegionRequest } from "@maple/domain/http"
 import { MapleRegion as MapleRegionSchema } from "@maple/domain/organization-regions"
 
+import { useAsyncAction } from "@/hooks/use-mutation-action"
 import { useAtomSet } from "@/lib/effect-atom"
 import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
 import { OptionCard } from "@/components/common/option-card"
@@ -48,21 +49,17 @@ const REGION_CARDS = {
 export function StepRegion() {
 	const { organization } = useOrganization()
 	const [region, setRegion] = useState<MapleRegion>(currentRegion)
-	const [isSaving, setIsSaving] = useState(false)
 	const [errorMessage, setErrorMessage] = useState<string | null>(null)
 	const chooseRegion = useAtomSet(MapleApiAtomClient.mutation("organizationRegion", "choose"), {
 		mode: "promiseExit",
 	})
 
-	const handleContinue = async () => {
-		if (isSaving) return
-		setIsSaving(true)
+	const [saveRegion, isSaving] = useAsyncAction(async () => {
 		setErrorMessage(null)
 		const result = await chooseRegion({ payload: new ChooseOrganizationRegionRequest({ region }) })
 		if (Exit.isFailure(result)) {
 			const error = Cause.findErrorOption(result.cause)
 			setErrorMessage(Option.isSome(error) ? error.value.message : "Could not save the data region")
-			setIsSaving(false)
 			return
 		}
 		// The region the server stored, which is the requested one unless another admin chose first.
@@ -70,11 +67,14 @@ export function StepRegion() {
 		const url = stored === currentRegion ? undefined : regionAppUrl(stored)
 		if (url !== undefined) {
 			window.location.assign(`${url}/quick-start`)
-			return
+			// Stay pending while the page navigates away.
+			return new Promise<never>(() => {})
 		}
 		// The step closes once Clerk hands back the metadata with the region in it.
 		await organization?.reload()
-		setIsSaving(false)
+	})
+	const handleContinue = () => {
+		if (!isSaving) void saveRegion()
 	}
 
 	return (
@@ -157,13 +157,7 @@ export function StepRegion() {
 				</p>
 
 				<div className="flex items-center justify-end">
-					<Button
-						size="lg"
-						loading={isSaving}
-						disabled={isSaving}
-						onClick={handleContinue}
-						className="min-w-[180px]"
-					>
+					<Button size="lg" loading={isSaving} onClick={handleContinue} className="min-w-[180px]">
 						Continue
 						<span className="ml-2">&rarr;</span>
 					</Button>

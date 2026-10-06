@@ -1,4 +1,5 @@
 import { toEpochMs } from "@maple/ui/lib/time-format"
+import type { Tone } from "@maple/ui/lib/tone"
 
 // Generic number/byte/percent formatting lives in `@maple/ui/lib/format`; only
 // infra-specific status policy stays here.
@@ -14,7 +15,7 @@ import { toEpochMs } from "@maple/ui/lib/time-format"
  * desired replicas), and belongs beside these rather than instead of them.
  */
 export type HostStatus = "active" | "idle" | "ended"
-export type SeverityLevel = "ok" | "warn" | "crit"
+export type SeverityLevel = Extract<Tone, "ok" | "warn" | "crit">
 
 export function severityLevel(fraction: number): SeverityLevel {
 	if (!Number.isFinite(fraction)) return "ok"

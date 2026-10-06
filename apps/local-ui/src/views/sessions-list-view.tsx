@@ -190,7 +190,7 @@ function SessionCard({ session, href }: { session: SessionReplaysListOutput; hre
 				<div className="flex items-center gap-2">
 					<span className="max-w-[16rem] truncate text-sm font-medium">{label}</span>
 					<StatusDot
-						tone={isActive ? "success" : "neutral"}
+						tone={isActive ? "ok" : "neutral"}
 						pulse={isActive}
 						title={isActive ? "active" : "ended"}
 					/>
@@ -227,7 +227,7 @@ function SessionCard({ session, href }: { session: SessionReplaysListOutput; hre
 					</Badge>
 				)}
 				{session.errorCount > 0 && (
-					<Badge pill className="bg-destructive/10 tabular-nums text-destructive">
+					<Badge pill className="bg-severity-error/10 tabular-nums text-severity-error">
 						<CircleWarningIcon className="size-3" />
 						{session.errorCount}
 					</Badge>

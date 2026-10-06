@@ -2,9 +2,10 @@ import { SectionHeader } from "@/components/layout/section-header"
 import { ResourceNotFound } from "@/components/common/resource-not-found"
 import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import { createFileRoute, Link } from "@tanstack/react-router"
-import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
+import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
+import { useMutationAction } from "@/hooks/use-mutation-action"
 import { Exit } from "effect"
-import { useMemo, useState } from "react"
+import { useMemo } from "react"
 import { toastManager } from "@maple/ui/components/ui/toast"
 
 import type { V2Recommendation } from "@maple/domain/http/v2"
@@ -50,18 +51,18 @@ type IssueKind = V2Recommendation["kind"]
 type IssueStatus = V2Recommendation["status"]
 type BusyAction = "apply" | "dismiss" | "reopen" | null
 
-const KIND_BADGE: Record<IssueKind, { label: string; variant: "success" | "warning" | "info" }> = {
-	rename: { label: "Safe rename", variant: "success" },
-	"double-emission": { label: "Both emitted", variant: "warning" },
+const KIND_BADGE: Record<IssueKind, { label: string; variant: "ok" | "warn" | "info" }> = {
+	rename: { label: "Safe rename", variant: "ok" },
+	"double-emission": { label: "Both emitted", variant: "warn" },
 	naming: { label: "Naming", variant: "info" },
-} satisfies Record<IssueKind, { label: string; variant: "success" | "warning" | "info" }>
+} satisfies Record<IssueKind, { label: string; variant: "ok" | "warn" | "info" }>
 
-const STATUS_BADGE: Record<IssueStatus, { label: string; variant: "success" | "secondary" | "outline" }> = {
+const STATUS_BADGE: Record<IssueStatus, { label: string; variant: "ok" | "secondary" | "outline" }> = {
 	open: { label: "Open", variant: "outline" },
 	dismissed: { label: "Dismissed", variant: "secondary" },
-	applied: { label: "Applied", variant: "success" },
-	resolved: { label: "Resolved", variant: "success" },
-} satisfies Record<IssueStatus, { label: string; variant: "success" | "secondary" | "outline" }>
+	applied: { label: "Applied", variant: "ok" },
+	resolved: { label: "Resolved", variant: "ok" },
+} satisfies Record<IssueStatus, { label: string; variant: "ok" | "secondary" | "outline" }>
 
 const MODE = {
 	auto: {
@@ -116,23 +117,25 @@ function RecommendationDetailPage() {
 	// Applying a recommendation creates a mapping, so refresh the mappings list too.
 	const refreshMappings = useAtomRefresh(ingestAttributeMappingsListAtom)
 
-	const createMutation = useAtomSet(MapleApiV2AtomClient.mutation("attributeMappings", "create"), {
-		mode: "promiseExit",
-	})
-	const dismissMutation = useAtomSet(
+	const [create, applying] = useMutationAction(
+		MapleApiV2AtomClient.mutation("attributeMappings", "create"),
+		{
+			error: "Failed to create mapping",
+			onSuccess: () => {
+				refreshIssues()
+				refreshMappings()
+			},
+		},
+	)
+	const [dismiss, dismissing] = useMutationAction(
 		MapleApiV2AtomClient.mutation("instrumentationRecommendations", "dismiss"),
-		{
-			mode: "promiseExit",
-		},
+		{ error: "Failed to dismiss recommendation", onSuccess: () => refreshIssues() },
 	)
-	const reopenMutation = useAtomSet(
+	const [reopen, reopening] = useMutationAction(
 		MapleApiV2AtomClient.mutation("instrumentationRecommendations", "reopen"),
-		{
-			mode: "promiseExit",
-		},
+		{ error: "Failed to reopen recommendation", onSuccess: () => refreshIssues() },
 	)
-
-	const [busy, setBusy] = useState<BusyAction>(null)
+	const busy: BusyAction = applying ? "apply" : dismissing ? "dismiss" : reopening ? "reopen" : null
 
 	const issue = useMemo(
 		() =>
@@ -145,8 +148,7 @@ function RecommendationDetailPage() {
 	async function handleApply(target: V2Recommendation) {
 		if (target.kind !== "rename" || !target.canonical_key) return
 		const canonicalKey = target.canonical_key
-		setBusy("apply")
-		const result = await createMutation({
+		const result = await create({
 			payload: {
 				name: `Rename ${target.source_key} → ${canonicalKey}`,
 				source_context: "span",
@@ -160,28 +162,7 @@ function RecommendationDetailPage() {
 				title: `Mapping created — ${target.source_key} → ${canonicalKey}`,
 				type: "success",
 			})
-			refreshIssues()
-			refreshMappings()
-		} else {
-			toastManager.add({ title: "Failed to create mapping", type: "error" })
 		}
-		setBusy(null)
-	}
-
-	async function handleDismiss(target: V2Recommendation) {
-		setBusy("dismiss")
-		const result = await dismissMutation({ params: { id: target.id } })
-		if (Exit.isSuccess(result)) refreshIssues()
-		else toastManager.add({ title: "Failed to dismiss recommendation", type: "error" })
-		setBusy(null)
-	}
-
-	async function handleReopen(target: V2Recommendation) {
-		setBusy("reopen")
-		const result = await reopenMutation({ params: { id: target.id } })
-		if (Exit.isSuccess(result)) refreshIssues()
-		else toastManager.add({ title: "Failed to reopen recommendation", type: "error" })
-		setBusy(null)
 	}
 
 	return Result.builder(listResult)
@@ -194,8 +175,8 @@ function RecommendationDetailPage() {
 					issue={issue}
 					busy={busy}
 					onApply={() => handleApply(issue)}
-					onDismiss={() => handleDismiss(issue)}
-					onReopen={() => handleReopen(issue)}
+					onDismiss={() => dismiss({ params: { id: issue.id } })}
+					onReopen={() => reopen({ params: { id: issue.id } })}
 				/>
 			)
 		})
@@ -343,7 +324,7 @@ function ChangeBreakdown({ issue }: { issue: V2Recommendation }) {
 				</div>
 				{issue.canonical_key ? (
 					<div className="flex items-start gap-3 border-t border-border/60 px-4 py-3">
-						<CircleCheckIcon size={16} className="mt-0.5 shrink-0 text-success" />
+						<CircleCheckIcon size={16} className="mt-0.5 shrink-0 text-severity-info" />
 						<div className="min-w-0 flex-1">
 							<p className="text-xs text-muted-foreground">{labels.to}</p>
 							<code className="font-mono text-sm break-all text-foreground">
@@ -376,9 +357,9 @@ function CautionCallout({ issue, isApplyable }: { issue: V2Recommendation; isApp
 			</>
 		)
 	return (
-		<div className="rounded-r-md border-l-2 border-warning bg-warning/8 px-4 py-3">
+		<div className="rounded-r-md border-l-2 border-severity-warn bg-severity-warn/8 px-4 py-3">
 			<p className="text-sm leading-relaxed text-foreground/90">
-				<span className="font-medium text-warning-foreground">Please note:</span> {text}
+				<span className="font-medium text-severity-warn">Please note:</span> {text}
 			</p>
 		</div>
 	)
@@ -410,7 +391,7 @@ function MappingBlock({ issue, isLive }: { issue: V2Recommendation; isLive: bool
 						<span className="w-12 shrink-0 text-muted-foreground">copy</span>
 						<span className="break-all">
 							<span className="text-muted-foreground">→</span>{" "}
-							<span className="text-success">{issue.canonical_key}</span>
+							<span className="text-severity-info">{issue.canonical_key}</span>
 						</span>
 					</div>
 				</div>
@@ -520,7 +501,7 @@ function DetailSidebar({
 			<DetailRail.Group label="Action">
 				{isLive ? (
 					<div className="flex flex-col gap-3">
-						<p className="flex items-center gap-2 text-sm text-success">
+						<p className="flex items-center gap-2 text-sm text-severity-info">
 							<CircleCheckIcon size={15} />
 							{issue.status === "resolved" ? "Resolved" : "Mapping is active"}
 						</p>

@@ -21,7 +21,7 @@ function TrafficDelta({ usage }: { usage: CloudflareUsageResponse }) {
 	const pct = Math.round(((usage.totalRequests - previous) / previous) * 100)
 	if (pct === 0) return <>Flat vs previous 24h</>
 	return (
-		<span className={cn(pct > 0 && "text-success-foreground")}>
+		<span className={cn(pct > 0 && "text-severity-info")}>
 			{pct > 0 ? "+" : ""}
 			{pct}% vs previous 24h
 		</span>

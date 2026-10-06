@@ -1,4 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
+import { ResultView } from "@/components/common/result-view"
 import { Schema } from "effect"
 import { Panel, PanelHeader } from "@maple/ui/components/ui/panel"
 import { Result, useAtomValue, useAtomRefresh } from "@/lib/effect-atom"
@@ -105,17 +106,19 @@ function HostDetailPage() {
 						</DashboardLayout.Sticky>
 						<DashboardLayout.Scroll>
 							<div className="space-y-8">
-								{Result.builder(summaryResult)
-									.onInitial(() => <HostDetailHeaderLoading />)
-									.onError((error) => (
+								<ResultView
+									result={summaryResult}
+									loading={<HostDetailHeaderLoading />}
+									error={(error) => (
 										<ErrorState
 											variant="inline"
 											error={error}
 											title="Failed to load host summary"
 											onRetry={refreshSummary}
 										/>
-									))
-									.onSuccess((r) => (
+									)}
+								>
+									{(r) => (
 										<HostDetailHeader
 											summary={r.data}
 											hostName={hostName}
@@ -128,8 +131,8 @@ function HostDetailPage() {
 													: undefined
 											}
 										/>
-									))
-									.render()}
+									)}
+								</ResultView>
 
 								<Panel className="overflow-visible">
 									<PanelHeader

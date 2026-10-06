@@ -14,6 +14,7 @@ import {
 import { defaultWidgetLayout } from "@maple/domain/http"
 import { BellIcon, GridSquareCirclePlusIcon, LinkIcon } from "@/components/icons"
 import { useDashboardStore } from "@/hooks/use-dashboard-store"
+import { useAsyncAction } from "@/hooks/use-mutation-action"
 import { CopyButton } from "@maple/ui/components/ui/copy-button"
 import { encodeAlertChartToSearchParam } from "@/lib/alerts/widget-chart-param"
 import type { WidgetDataSource } from "@/components/dashboard-builder/types"
@@ -90,7 +91,6 @@ function AddToDashboardDialog({
 	const navigate = useNavigate()
 	const { dashboards, readOnly, addWidget, importDashboard } = useDashboardStore()
 	const [newName, setNewName] = React.useState("")
-	const [creating, setCreating] = React.useState(false)
 	const [error, setError] = React.useState<string | null>(null)
 
 	const widgetDisplay = { title: draft.metricName, chartId: "query-builder-area" }
@@ -116,10 +116,7 @@ function AddToDashboardDialog({
 	 * yet — that gap used to swallow the widget, leaving a brand-new empty
 	 * dashboard and no explanation.
 	 */
-	const handleCreate = async () => {
-		const name = newName.trim()
-		if (!name || creating) return
-		setCreating(true)
+	const [createDashboard, creating] = useAsyncAction(async (name: string) => {
 		setError(null)
 		try {
 			const dashboard = await importDashboard({
@@ -142,9 +139,13 @@ function AddToDashboardDialog({
 			})
 		} catch (cause) {
 			setError(cause instanceof Error ? cause.message : "Failed to create dashboard")
-		} finally {
-			setCreating(false)
 		}
+	})
+
+	const handleCreate = async () => {
+		const name = newName.trim()
+		if (!name || creating) return
+		await createDashboard(name)
 	}
 
 	return (
@@ -193,9 +194,10 @@ function AddToDashboardDialog({
 							<Button
 								size="sm"
 								onClick={() => void handleCreate()}
-								disabled={!newName.trim() || creating}
+								disabled={!newName.trim()}
+								loading={creating}
 							>
-								{creating ? "Creating..." : "Create & add"}
+								Create & add
 							</Button>
 						</div>
 

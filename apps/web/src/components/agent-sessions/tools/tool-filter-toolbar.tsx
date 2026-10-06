@@ -95,7 +95,7 @@ export function ToolFilterToolbar({
 					className={cn(
 						"inline-flex h-[30px] items-center gap-1.5 rounded-md border px-2.5 font-mono text-xs transition-colors",
 						failingOnly
-							? "border-[var(--severity-error)]/50 bg-[var(--severity-error)]/10 text-foreground"
+							? "border-severity-error/50 bg-severity-error/10 text-foreground"
 							: "border-border bg-card text-muted-foreground hover:text-foreground",
 					)}
 				>
@@ -103,7 +103,7 @@ export function ToolFilterToolbar({
 						aria-hidden
 						className={cn(
 							"size-[5px] rounded-full",
-							failingOnly ? TONE_FILL.crit : "bg-[var(--severity-error)]/40",
+							failingOnly ? TONE_FILL.crit : "bg-severity-error/40",
 						)}
 					/>
 					Failing only

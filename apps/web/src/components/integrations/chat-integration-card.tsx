@@ -16,7 +16,7 @@ import {
 	ItemMedia,
 	ItemTitle,
 } from "@maple/ui/components/ui/item"
-import { Label } from "@maple/ui/components/ui/label"
+import { Field, FieldDescription, FieldLabel } from "@maple/ui/components/ui/field"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { toastManager } from "@maple/ui/components/ui/toast"
 import { chatConnectorManifests } from "@maple/chat-platform/manifests"
@@ -24,6 +24,7 @@ import { chatConnectorManifests } from "@maple/chat-platform/manifests"
 import { ErrorState } from "@/components/common/error-state"
 import { RelativeTime } from "@/components/common/relative-time"
 import { useIsOrgAdmin } from "@/hooks/use-is-org-admin"
+import { useAsyncAction } from "@/hooks/use-mutation-action"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { retainedQuery } from "@/lib/services/common/atom-client"
 import { MapleApiV2AtomClient, retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
@@ -106,10 +107,10 @@ function WorkspaceSettings({
 	return (
 		<div className="flex flex-col gap-3 border-t border-border/60 pt-3">
 			{fields.map((field) => (
-				<div key={field.key} className="flex flex-col gap-1.5">
-					<Label htmlFor={`${workspaceId}-${field.key}`} className="text-xs">
+				<Field key={field.key} className="items-stretch gap-1.5">
+					<FieldLabel htmlFor={`${workspaceId}-${field.key}`} className="text-xs">
 						{field.label}
-					</Label>
+					</FieldLabel>
 					<Input
 						id={`${workspaceId}-${field.key}`}
 						value={draft[field.key] ?? ""}
@@ -118,8 +119,8 @@ function WorkspaceSettings({
 							setDraft((current) => ({ ...current, [field.key]: event.target.value }))
 						}
 					/>
-					<p className="text-[11px] text-muted-foreground">{field.help}</p>
-				</div>
+					<FieldDescription className="text-[11px]">{field.help}</FieldDescription>
+				</Field>
 			))}
 			<div>
 				<Button
@@ -158,27 +159,22 @@ function ChatIdentityRow({
 	const unlink = useAtomSet(MapleApiV2AtomClient.mutation("chatIntegration", "deleteChatIdentity"), {
 		mode: "promiseExit",
 	})
-	const [busy, setBusy] = useState(false)
-
-	async function handleLink() {
-		setBusy(true)
+	const [handleLink, linking] = useAsyncAction(async () => {
 		const result = await startLink({ params: { connector }, reactivityKeys: REACTIVITY_KEYS })
 		if (Exit.isSuccess(result)) {
-			// Full-page redirect to the platform's consent screen, as the install does.
+			// Full-page redirect to the platform's consent screen, as the install does. Stay
+			// pending while the page navigates away.
 			window.location.href = result.value.url
-			return
+			return new Promise<never>(() => {})
 		}
-		setBusy(false)
 		toastManager.add({
 			title: getExitErrorMessage(result, "Failed to start the account link"),
 			type: "error",
 		})
-	}
+	})
 
-	async function handleUnlink() {
-		setBusy(true)
+	const [handleUnlink, unlinking] = useAsyncAction(async () => {
 		const result = await unlink({ params: { connector }, reactivityKeys: REACTIVITY_KEYS })
-		setBusy(false)
 		toastManager.add(
 			Exit.isSuccess(result)
 				? { title: "Account unlinked", type: "success" }
@@ -187,7 +183,7 @@ function ChatIdentityRow({
 						type: "error",
 					},
 		)
-	}
+	})
 
 	return (
 		<Item variant="card" className="gap-3 px-4 py-3">
@@ -203,8 +199,8 @@ function ChatIdentityRow({
 				<Button
 					size="sm"
 					variant="outline"
-					onClick={identity === undefined ? handleLink : handleUnlink}
-					loading={busy}
+					onClick={() => void (identity === undefined ? handleLink() : handleUnlink())}
+					loading={linking || unlinking}
 				>
 					{identity === undefined ? "Link your account" : "Unlink"}
 				</Button>
@@ -350,7 +346,7 @@ export function ChatIntegrationCard({ connector }: { connector: ChatConnectorId 
 						<div className="flex items-center gap-2">
 							<h3 className="text-sm font-semibold">{workspace.name}</h3>
 							<span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-								<StatusDot tone="success" size="lg" />
+								<StatusDot tone="ok" size="lg" />
 								Connected
 							</span>
 						</div>

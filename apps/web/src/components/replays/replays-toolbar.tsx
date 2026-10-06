@@ -2,6 +2,7 @@ import { ToolbarSearch } from "@maple/ui/components/toolbar"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { cn } from "@maple/ui/lib/utils"
+import { TONE_BORDER, TONE_FILL, TONE_SOFT } from "@maple/ui/lib/tone"
 
 interface ReplaysToolbarProps {
 	/** Current `q` search param (URL substring filter). */
@@ -57,9 +58,9 @@ export function ReplaysToolbar({
 					pressed={errorsOnly}
 					onToggle={onToggleErrorsOnly}
 					title={errorsOnly ? "Show all sessions" : "Show only sessions with errors"}
-					pressedClassName="border-destructive bg-destructive text-white"
-					idleClassName="border-destructive/30 bg-destructive/10 text-destructive hover:bg-destructive/15"
-					dotClassName="bg-destructive"
+					pressedClassName="border-severity-error bg-severity-error text-white"
+					idleClassName={cn(TONE_SOFT.crit, TONE_BORDER.crit, "hover:bg-severity-error/15")}
+					dotClassName={TONE_FILL.crit}
 				>
 					<span className="tabular-nums">{errorSessions.toLocaleString()}</span> with errors
 				</TriageChip>

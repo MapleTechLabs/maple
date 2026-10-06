@@ -62,7 +62,7 @@ export function IssueOccurrencePanel({
 						{formatBucket(window.bucketMs)}
 					</span>
 				</div>
-				{surging ? <Eyebrow className="text-destructive">Surging</Eyebrow> : null}
+				{surging ? <Eyebrow className="text-severity-error">Surging</Eyebrow> : null}
 			</div>
 			<IssueOccurrenceChart data={data} severity={severity} />
 		</section>

@@ -1,6 +1,4 @@
 import { useDeferredValue, useMemo, useState, type ReactNode } from "react"
-import { cn } from "@maple/ui/lib/utils"
-import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { SectionHeading } from "@/components/common/section-heading"
 import { Link, createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Schema } from "effect"
@@ -11,7 +9,7 @@ import { Skeleton } from "@maple/ui/components/ui/skeleton"
 
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { DocsLink } from "@/components/common/docs-link"
-import { ErrorState } from "@/components/common/error-state"
+import { ResultView } from "@/components/common/result-view"
 import { CloudflareIcon } from "@/components/icons"
 import { CompactFilterInput } from "@/components/infra/cloudflare/compact-filter-input"
 import type { CloudflareZoneRow } from "@/api/warehouse/cloudflare-infra"
@@ -107,15 +105,16 @@ function CloudflarePage() {
 						</DashboardLayout.Sticky>
 						<DashboardLayout.Scroll>
 							<div className="space-y-6">
-								{Result.builder(statusResult)
-									.onInitial(() => (
+								<ResultView
+									result={statusResult}
+									loading={
 										<div className="space-y-4">
 											<Skeleton className="h-28 w-full" />
 											<Skeleton className="h-64 w-full" />
 										</div>
-									))
-									.onError((err) => <ErrorState error={err} />)
-									.onSuccess((status) => {
+									}
+								>
+									{(status) => {
 										if (!status.connected)
 											return <CloudflareNotConnected variant="not-connected" />
 										if (!status.analyticsCapable) {
@@ -128,8 +127,8 @@ function CloudflarePage() {
 												phase={phase}
 											/>
 										)
-									})
-									.render()}
+									}}
+								</ResultView>
 							</div>
 						</DashboardLayout.Scroll>
 					</DashboardLayout.Content>
@@ -225,108 +224,106 @@ function CloudflareData({
 	return (
 		<div className="space-y-6">
 			{phase == null ? null : <CloudflareIngestBanner phase={phase} />}
-			{Result.builder(zonesResult)
-				.onInitial(() => (
+			<ResultView
+				result={zonesResult}
+				loading={
 					<div className="space-y-4">
 						<CloudflareKpiCardsLoading />
 						<CloudflareZoneTableLoading />
 					</div>
-				))
-				.onError((err) => <ErrorState error={err} />)
-				.onSuccess((response, result) => {
-					return (
-						<div
-							className={cn("space-y-6", refreshingClass(result.waiting))}
-							aria-busy={result.waiting || undefined}
-						>
-							{response.zones.length > 0 && (
-								<CloudflareKpiCards zones={response.zones} buckets={timeseries?.buckets} />
-							)}
-							{response.zones.length > 0 &&
-								timeseries &&
-								timeseries.buckets.length > 0 &&
-								zoneSeries && (
-									<div className="space-y-2">
-										{(zoneSeries.top.length > 1 || zoneSeries.otherCount > 0) && (
-											<div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-1">
-												{zoneSeries.top.map((name) => (
-													<Link
-														key={name}
-														to="/infra/cloudflare/$zoneName"
-														params={{ zoneName: name }}
-														className="group inline-flex items-center gap-1.5"
-													>
-														<span
-															aria-hidden
-															className="size-1.5 rounded-full"
-															style={{
-																background: zoneSeries.colors.get(name),
-															}}
-														/>
-														<span className="text-[11px] text-muted-foreground transition-colors group-hover:text-foreground">
-															{name}
-														</span>
-													</Link>
-												))}
-												{zoneSeries.otherCount > 0 && (
-													<span className="inline-flex items-center gap-1.5">
-														<span
-															aria-hidden
-															className="size-1.5 rounded-full"
-															style={{ background: OTHER_ZONES_COLOR }}
-														/>
-														<span className="text-[11px] text-muted-foreground">
-															Other zones ({zoneSeries.otherCount})
-														</span>
+				}
+				dimWhileWaiting
+				className="space-y-6"
+			>
+				{(response, { waiting }) => (
+					<>
+						{response.zones.length > 0 && (
+							<CloudflareKpiCards zones={response.zones} buckets={timeseries?.buckets} />
+						)}
+						{response.zones.length > 0 &&
+							timeseries &&
+							timeseries.buckets.length > 0 &&
+							zoneSeries && (
+								<div className="space-y-2">
+									{(zoneSeries.top.length > 1 || zoneSeries.otherCount > 0) && (
+										<div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-1">
+											{zoneSeries.top.map((name) => (
+												<Link
+													key={name}
+													to="/infra/cloudflare/$zoneName"
+													params={{ zoneName: name }}
+													className="group inline-flex items-center gap-1.5"
+												>
+													<span
+														aria-hidden
+														className="size-1.5 rounded-full"
+														style={{
+															background: zoneSeries.colors.get(name),
+														}}
+													/>
+													<span className="text-[11px] text-muted-foreground transition-colors group-hover:text-foreground">
+														{name}
 													</span>
-												)}
-											</div>
-										)}
-										<div className="grid gap-4 lg:grid-cols-2">
-											<CloudflareZoneChart
-												buckets={timeseries.buckets}
-												metric="requests"
-												topZones={zoneSeries.top}
-												waiting={timeseriesWaiting}
-												syncId="cf-zones"
-											/>
-											<CloudflareZoneChart
-												buckets={timeseries.buckets}
-												metric="errorRate"
-												topZones={zoneSeries.top}
-												waiting={timeseriesWaiting}
-												syncId="cf-zones"
-											/>
-											<CloudflareZoneChart
-												buckets={timeseries.buckets}
-												metric="cacheHitRate"
-												topZones={zoneSeries.top}
-												waiting={timeseriesWaiting}
-												syncId="cf-zones"
-											/>
-											<CloudflareZoneChart
-												buckets={timeseries.buckets}
-												metric="bytes"
-												topZones={zoneSeries.top}
-												waiting={timeseriesWaiting}
-												syncId="cf-zones"
-											/>
+												</Link>
+											))}
+											{zoneSeries.otherCount > 0 && (
+												<span className="inline-flex items-center gap-1.5">
+													<span
+														aria-hidden
+														className="size-1.5 rounded-full"
+														style={{ background: OTHER_ZONES_COLOR }}
+													/>
+													<span className="text-[11px] text-muted-foreground">
+														Other zones ({zoneSeries.otherCount})
+													</span>
+												</span>
+											)}
 										</div>
+									)}
+									<div className="grid gap-4 lg:grid-cols-2">
+										<CloudflareZoneChart
+											buckets={timeseries.buckets}
+											metric="requests"
+											topZones={zoneSeries.top}
+											waiting={timeseriesWaiting}
+											syncId="cf-zones"
+										/>
+										<CloudflareZoneChart
+											buckets={timeseries.buckets}
+											metric="errorRate"
+											topZones={zoneSeries.top}
+											waiting={timeseriesWaiting}
+											syncId="cf-zones"
+										/>
+										<CloudflareZoneChart
+											buckets={timeseries.buckets}
+											metric="cacheHitRate"
+											topZones={zoneSeries.top}
+											waiting={timeseriesWaiting}
+											syncId="cf-zones"
+										/>
+										<CloudflareZoneChart
+											buckets={timeseries.buckets}
+											metric="bytes"
+											topZones={zoneSeries.top}
+											waiting={timeseriesWaiting}
+											syncId="cf-zones"
+										/>
 									</div>
-								)}
-							<ZonesSection zones={response.zones} query={zoneQuery} waiting={result.waiting}>
-								<CompactFilterInput
-									className="w-56"
-									value={zoneFilter}
-									onChange={setZoneFilter}
-									placeholder={`Filter ${response.zones.length} zones`}
-									label="Filter zones by name"
-								/>
-							</ZonesSection>
-						</div>
-					)
-				})
-				.render()}
+								</div>
+							)}
+						<ZonesSection zones={response.zones} query={zoneQuery} waiting={waiting}>
+							<CompactFilterInput
+								className="w-56"
+								value={zoneFilter}
+								onChange={setZoneFilter}
+								placeholder={`Filter ${response.zones.length} zones`}
+								label="Filter zones by name"
+							/>
+						</ZonesSection>
+					</>
+				)}
+			</ResultView>
 			<section className="space-y-3">
 				<SectionHeading
 					title="Workers"
@@ -334,13 +331,11 @@ function CloudflareData({
 						.onSuccess((r) => r.workers.length)
 						.orElse(() => null)}
 				/>
-				{Result.builder(workersResult)
-					.onInitial(() => <CloudflareWorkerTableLoading />)
-					.onError((err) => <ErrorState error={err} />)
-					.onSuccess((response, result) => (
-						<CloudflareWorkerTable workers={response.workers} waiting={result.waiting} />
-					))
-					.render()}
+				<ResultView result={workersResult} loading={<CloudflareWorkerTableLoading />}>
+					{(response, { waiting }) => (
+						<CloudflareWorkerTable workers={response.workers} waiting={waiting} />
+					)}
+				</ResultView>
 			</section>
 			<CloudflarePlatformSection startTime={startTime} endTime={endTime} />
 		</div>

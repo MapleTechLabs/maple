@@ -64,18 +64,9 @@ export function AnomalyRow({ incident, focused = false, onFocus, variant = "defa
 
 			<span className="relative z-10 flex w-3 shrink-0 items-center justify-center">
 				{isLive ? (
-					<StatusDot
-						tone="custom"
-						pulse
-						className={tone.accent}
-						title={`Open · ${incident.severity}`}
-					/>
+					<StatusDot tone={tone.tone} pulse title={`Open · ${incident.severity}`} />
 				) : (
-					<StatusDot
-						tone="custom"
-						className="bg-border"
-						title={isStale ? "Stale detector state" : "Resolved"}
-					/>
+					<StatusDot tone="neutral" title={isStale ? "Stale detector state" : "Resolved"} />
 				)}
 			</span>
 

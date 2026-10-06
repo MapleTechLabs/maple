@@ -454,7 +454,7 @@ function TraceBar({
 		<span
 			className={cn(
 				"absolute top-1/2 flex h-5 -translate-y-1/2 items-center overflow-hidden rounded px-1.5 text-[10px] font-medium text-white ring-1 ring-inset transition-[filter] hover:brightness-110",
-				isError ? "bg-destructive ring-destructive/40" : "bg-primary ring-primary/40",
+				isError ? "bg-severity-error ring-severity-error/40" : "bg-primary ring-primary/40",
 				outOfRange && "opacity-60 outline-1 outline-dashed outline-white/70 -outline-offset-1",
 			)}
 			style={{ left: `${leftPct}%`, width: `${widthPct}%`, minWidth: 6 }}
@@ -568,7 +568,7 @@ function SpanRowItem({ span, seek }: { span: SpanRow; seek: SeekContext }) {
 				<span
 					className={cn(
 						"absolute top-1/2 h-2.5 -translate-y-1/2 rounded-sm transition-[filter] hover:brightness-110",
-						isError ? "bg-destructive" : "bg-primary/70",
+						isError ? "bg-severity-error" : "bg-primary/70",
 						range.outOfRange && "opacity-50",
 					)}
 					style={{ left: `${leftPct}%`, width: `${widthPct}%`, minWidth: 4 }}

@@ -191,7 +191,7 @@ export function ServiceDetailView({ serviceName, backLabel, onBack }: ServiceDet
 													<TableCell
 														className={cn(
 															"text-right tabular-nums",
-															op.errorCount > 0 && "text-destructive",
+															op.errorCount > 0 && "text-severity-error",
 														)}
 													>
 														{formatNumber(
@@ -244,7 +244,7 @@ function StatCard({
 			<div
 				className={cn(
 					"text-lg font-semibold tabular-nums",
-					danger && "text-destructive",
+					danger && "text-severity-error",
 					valueClassName,
 				)}
 			>

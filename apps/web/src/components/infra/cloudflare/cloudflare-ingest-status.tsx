@@ -32,7 +32,7 @@ export function CloudflareIngestBanner({ phase }: { phase: CloudflareIngestPhase
 		<Alert variant={tone}>
 			{isWorking(phase) ? (
 				<Spinner size={16} />
-			) : tone === "warning" ? (
+			) : tone === "warn" ? (
 				<CircleWarningIcon size={16} />
 			) : (
 				<CircleInfoIcon size={16} />

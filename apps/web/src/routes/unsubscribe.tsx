@@ -94,8 +94,8 @@ function UnsubscribeConfirm({ token }: { token: string }) {
 			<p className="mt-2 text-sm text-muted-foreground">Stop receiving {label} from Maple?</p>
 			{state.kind === "error" && <p className="mt-3 text-sm text-destructive">{state.message}</p>}
 			<div className="mt-4">
-				<Button onClick={unsubscribe} disabled={state.kind === "pending"}>
-					{state.kind === "pending" ? "Unsubscribing..." : "Unsubscribe"}
+				<Button onClick={unsubscribe} loading={state.kind === "pending"}>
+					Unsubscribe
 				</Button>
 			</div>
 		</AuthLayout>

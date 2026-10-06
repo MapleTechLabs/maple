@@ -5,6 +5,7 @@
  * sits in a filled tile, and the node's fill against the canvas. Colour alone
  * never distinguishes a node, so the graph still reads with the hue stripped out.
  */
+import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { memo } from "react"
 import { Link } from "@tanstack/react-router"
 import { Handle, Position, type NodeProps } from "@xyflow/react"
@@ -118,11 +119,7 @@ export const FlowSpineNode = memo(function FlowSpineNode({ data }: NodeProps & {
 						size={13}
 						className={cn(
 							"relative",
-							data.current
-								? null
-								: data.glyph === "verdict"
-									? "text-info"
-									: "text-severity-error",
+							data.current ? null : data.glyph === "verdict" ? TONE_TEXT.info : TONE_TEXT.crit,
 						)}
 					/>
 				</span>
@@ -162,7 +159,12 @@ export const FlowSpineNode = memo(function FlowSpineNode({ data }: NodeProps & {
 			{data.live ? <LiveBar /> : null}
 			{data.status ? (
 				<p className="flex items-baseline gap-1 text-[9px] leading-3">
-					<span className="shrink-0 font-medium tracking-[0.06em] text-severity-error">
+					<span
+						className={cn(
+							"shrink-0 font-medium tracking-[0.06em]",
+							TONE_TEXT[data.statusTone ?? "crit"],
+						)}
+					>
 						{data.status}
 					</span>
 					{data.detail ? (

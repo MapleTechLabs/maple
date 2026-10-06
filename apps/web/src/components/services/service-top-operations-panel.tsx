@@ -1,5 +1,5 @@
 import { useMemo } from "react"
-import { cn } from "@maple/ui/lib/utils"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { Sparkline } from "@maple/ui/components/ui/gradient-chart"
 import { Result } from "@/lib/effect-atom"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
@@ -65,7 +65,7 @@ export function ServiceTopOperationsPanel({
 	return (
 		<SectionCard
 			title="Top operations"
-			className={cn("transition-opacity", isWaiting && "opacity-60")}
+			className={refreshingClass(isWaiting)}
 			action={<ViewAllButton onClick={onViewAll} />}
 		>
 			<ul className="divide-y">

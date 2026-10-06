@@ -189,7 +189,7 @@ export function SessionDetailView({ sessionId, backLabel, onBack }: SessionDetai
 															className={cn(
 																"size-1.5 shrink-0 rounded-full",
 																trace.hasError
-																	? "bg-destructive"
+																	? "bg-severity-error"
 																	: "bg-muted-foreground/40",
 															)}
 														/>
@@ -299,7 +299,7 @@ function Transcript({
 							className={cn(
 								"mt-0.5 grid size-6 shrink-0 place-items-center rounded-full",
 								danger
-									? "bg-destructive/10 text-destructive"
+									? "bg-severity-error/10 text-severity-error"
 									: "bg-muted text-muted-foreground",
 							)}
 						>
@@ -343,7 +343,9 @@ function TranscriptBody({ event }: { event: SessionTranscriptOutput }) {
 			return (
 				<p className="truncate text-xs text-muted-foreground">
 					<span className="font-medium text-foreground">{event.netMethod}</span> {event.netUrl}
-					<span className={cn("ml-1.5 tabular-nums", event.netStatus >= 400 && "text-destructive")}>
+					<span
+						className={cn("ml-1.5 tabular-nums", event.netStatus >= 400 && "text-severity-error")}
+					>
 						{event.netStatus || "-"} · {Math.round(event.netDurationMs)}ms
 					</span>
 				</p>
@@ -351,7 +353,7 @@ function TranscriptBody({ event }: { event: SessionTranscriptOutput }) {
 		case "error":
 			return (
 				<div>
-					<p className="break-words text-xs text-destructive">{event.message}</p>
+					<p className="break-words text-xs text-severity-error">{event.message}</p>
 					{event.errorStack ? (
 						<pre className="mt-1 max-h-24 overflow-auto whitespace-pre-wrap rounded bg-muted/50 p-1.5 font-mono text-[10px] text-muted-foreground">
 							{event.errorStack}
@@ -369,8 +371,8 @@ function TranscriptBody({ event }: { event: SessionTranscriptOutput }) {
 function StatusBadge({ active }: { active: boolean }) {
 	if (active) {
 		return (
-			<Badge variant="success" pill className="gap-1.5">
-				<StatusDot tone="success" pulse />
+			<Badge variant="ok" pill className="gap-1.5">
+				<StatusDot tone="ok" pulse />
 				Active
 			</Badge>
 		)
@@ -389,7 +391,7 @@ function StatTile({ label, value, danger }: { label: string; value: string; dang
 			<p
 				className={cn(
 					"mt-1 text-2xl font-semibold tabular-nums tracking-tight",
-					danger && "text-destructive",
+					danger && "text-severity-error",
 				)}
 			>
 				{value}

@@ -24,7 +24,7 @@ import {
 } from "@/components/code-review/code-review-search"
 import { AuthorLabel } from "@/components/code-review/author-avatar"
 import { ReviewDetailSheet } from "@/components/code-review/review-detail-sheet"
-import { ErrorState } from "@/components/common/error-state"
+import { ResultView } from "@/components/common/result-view"
 import { CircleCheckIcon, CircleWarningIcon, ClockIcon, LoaderIcon } from "@/components/icons"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
@@ -119,54 +119,53 @@ function CodeReviewPullRequestsPage() {
 					</SelectContent>
 				</Select>
 			</div>
-			{Result.builder(result)
-				.onInitial(() => <SkeletonList rows={6} rowClassName="h-14" gap="2" />)
-				.onError((error) => (
-					<ErrorState error={error} title="Failed to load reviews" onRetry={refresh} />
-				))
-				.onSuccess((response) =>
-					response.reviews.length === 0 ? (
-						<NothingInWindow
-							title="No reviews in this window"
-							description={
-								filtered
-									? "Nothing matches these filters."
-									: "Reviews appear here once a pull request is opened on a reviewed repository."
-							}
-							onClear={
-								filtered
-									? () =>
-											onChange({
-												repo: undefined,
-												author: undefined,
-												status: undefined,
-											})
-									: undefined
-							}
+			<ResultView
+				result={result}
+				loading={<SkeletonList rows={6} rowClassName="h-14" gap="2" />}
+				errorTitle="Failed to load reviews"
+				onRetry={refresh}
+				isEmpty={(response) => response.reviews.length === 0}
+				empty={
+					<NothingInWindow
+						title="No reviews in this window"
+						description={
+							filtered
+								? "Nothing matches these filters."
+								: "Reviews appear here once a pull request is opened on a reviewed repository."
+						}
+						onClear={
+							filtered
+								? () =>
+										onChange({
+											repo: undefined,
+											author: undefined,
+											status: undefined,
+										})
+								: undefined
+						}
+					/>
+				}
+			>
+				{(response) => (
+					<div className="flex flex-col gap-3">
+						<ReviewTable
+							reviews={response.reviews}
+							selected={search.review}
+							onOpen={(review) => onChange({ review: review.id })}
 						/>
-					) : (
-						<div className="flex flex-col gap-3">
-							<ReviewTable
-								reviews={response.reviews}
-								selected={search.review}
-								onOpen={(review) => onChange({ review: review.id })}
+						{response.nextCursor !== null ? (
+							<ListFooter
+								shown={response.reviews.length}
+								noun="reviews"
+								hasMore={limit < MAX_ROWS}
+								capped={limit >= MAX_ROWS}
+								loading={result.waiting}
+								onLoadMore={() => setLimit((current) => Math.min(current + PAGE, MAX_ROWS))}
 							/>
-							{response.nextCursor !== null ? (
-								<ListFooter
-									shown={response.reviews.length}
-									noun="reviews"
-									hasMore={limit < MAX_ROWS}
-									capped={limit >= MAX_ROWS}
-									loading={result.waiting}
-									onLoadMore={() =>
-										setLimit((current) => Math.min(current + PAGE, MAX_ROWS))
-									}
-								/>
-							) : null}
-						</div>
-					),
-				)
-				.render()}
+						) : null}
+					</div>
+				)}
+			</ResultView>
 			<ReviewDetailSheet
 				reviewId={search.review}
 				onClose={() => onChange({ review: undefined })}

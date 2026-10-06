@@ -24,6 +24,7 @@ import { AlertSeverityBadge } from "@/components/alerts/alert-severity-badge"
 import { AlertStatStrip } from "@/components/alerts/alert-stat-card"
 import { SegmentedSelect } from "@/components/common/segmented-select"
 import { ErrorState } from "@/components/common/error-state"
+import { ResultView } from "@/components/common/result-view"
 import { ResourceNotFound } from "@/components/common/resource-not-found"
 import {
 	signalLabels,
@@ -889,22 +890,19 @@ function RuleDetailContent() {
 							</div>
 						)}
 
-						{activeTab === "history" &&
-							Result.builder(incidentsResult)
-								.onInitial(() => (
+						{activeTab === "history" && (
+							<ResultView
+								result={incidentsResult}
+								loading={
 									<div className="space-y-4">
 										<Skeleton className="h-24 w-full" />
 										<Skeleton className="h-64 w-full" />
 									</div>
-								))
-								.onError((error) => (
-									<ErrorState
-										error={error}
-										title="Failed to load incidents"
-										onRetry={() => refreshIncidents()}
-									/>
-								))
-								.onSuccess(() => (
+								}
+								errorTitle="Failed to load incidents"
+								onRetry={() => refreshIncidents()}
+							>
+								{() => (
 									<div className="space-y-6">
 										<div className="flex items-center justify-between">
 											<div>
@@ -955,8 +953,8 @@ function RuleDetailContent() {
 																	className="h-2 flex-1 bg-muted"
 																	fillClassName={
 																		count === maxContributorCount
-																			? "bg-destructive"
-																			: "bg-amber-500"
+																			? "bg-severity-error"
+																			: "bg-severity-warn"
 																	}
 																/>
 																<span className="text-xs text-muted-foreground tabular-nums shrink-0">
@@ -1070,7 +1068,7 @@ function RuleDetailContent() {
 																		className={cn(
 																			"text-xs tabular-nums",
 																			isOpen &&
-																				"text-destructive font-medium",
+																				"text-severity-error font-medium",
 																		)}
 																	>
 																		{formatAlertDuration(
@@ -1146,8 +1144,9 @@ function RuleDetailContent() {
 											</Table>
 										)}
 									</div>
-								))
-								.render()}
+								)}
+							</ResultView>
+						)}
 					</DashboardLayout.Scroll>
 				</DashboardLayout.Content>
 			</DashboardLayout.Body>
@@ -1183,7 +1182,7 @@ function CheckDelta({
 	if (!Number.isFinite(delta) || delta === 0) return null
 	const sign = delta > 0 ? "+" : "−"
 	return (
-		<Badge variant={breached ? "error" : "muted"} size="xs" mono>
+		<Badge variant={breached ? "crit" : "muted"} size="xs" mono>
 			{sign}
 			{formatSignalValue(signalType, Math.abs(delta))}
 		</Badge>
@@ -1370,11 +1369,11 @@ function ChecksPanel({
 					{
 						label: "Breached",
 						value: totals.breached,
-						tone: totals.breached > 0 ? "critical" : "default",
+						tone: totals.breached > 0 ? "crit" : undefined,
 					},
-					{ label: "Healthy", value: totals.healthy, tone: "emerald" },
+					{ label: "Healthy", value: totals.healthy, tone: "ok" },
 					...(totals.errored > 0
-						? [{ label: "Failed", value: totals.errored, tone: "critical" as const }]
+						? [{ label: "Failed", value: totals.errored, tone: "crit" as const }]
 						: []),
 					{ label: "Transitions", value: totals.transitions },
 				]}
@@ -1447,9 +1446,9 @@ function ChecksPanel({
 										: "pending"
 							const transitionTone =
 								check.incidentTransition === "opened"
-									? "text-destructive"
+									? "text-severity-error"
 									: check.incidentTransition === "resolved"
-										? "text-emerald-500"
+										? "text-severity-info"
 										: check.incidentTransition === "continued"
 											? "text-muted-foreground"
 											: ""
@@ -1468,8 +1467,8 @@ function ChecksPanel({
 									)}
 									<TableRow
 										className={cn(
-											check.status === "breached" && "bg-destructive/[0.04]",
-											check.status === "error" && "bg-warning/[0.05]",
+											check.status === "breached" && "bg-severity-error/[0.04]",
+											check.status === "error" && "bg-severity-warn/[0.05]",
 										)}
 									>
 										<TableCell
@@ -1510,7 +1509,8 @@ function ChecksPanel({
 													<span
 														className={cn(
 															"font-mono font-medium tabular-nums",
-															check.status === "breached" && "text-destructive",
+															check.status === "breached" &&
+																"text-severity-error",
 														)}
 													>
 														{formatSignalValue(

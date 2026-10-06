@@ -1,16 +1,17 @@
 import { useState } from "react"
 import { useClerk, useReverification, useUser } from "@clerk/clerk-react"
 import { toastManager } from "@maple/ui/components/ui/toast"
+import { Field, FieldLabel } from "@maple/ui/components/ui/field"
 
 import { Button } from "@maple/ui/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@maple/ui/components/ui/card"
 import { Input } from "@maple/ui/components/ui/input"
-import { Label } from "@maple/ui/components/ui/label"
 import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
 import { ImageDropzone, TypeToConfirmField } from "@/components/common/image-dropzone"
 import { UserAvatar, userInitials } from "@/components/dashboard/user-avatar"
 import { toastAccountError } from "@/components/account/account-errors"
 import { AccountSectionSkeleton } from "@/components/account/account-section-skeleton"
+import { useAsyncAction } from "@/hooks/use-mutation-action"
 
 /**
  * Edits to the name fields are held as a draft tagged with the user id they were typed against.
@@ -28,13 +29,30 @@ export function ProfileSection() {
 	const { signOut } = useClerk()
 
 	const [draft, setDraft] = useState<NameDraft | null>(null)
-	const [isSavingName, setIsSavingName] = useState(false)
-	const [isSavingAvatar, setIsSavingAvatar] = useState(false)
 	const [deleteOpen, setDeleteOpen] = useState(false)
 	const [confirmText, setConfirmText] = useState("")
 	const [isDeleting, setIsDeleting] = useState(false)
 
 	const deleteAccount = useReverification(() => user?.delete())
+
+	const [withSavingName, isSavingName] = useAsyncAction((task: () => Promise<void>) => task())
+
+	// `null` removes the picture.
+	const [setAvatar, isSavingAvatar] = useAsyncAction(async (file: File | null) => {
+		if (!user) return
+		try {
+			await user.setProfileImage({ file })
+			toastManager.add({
+				title: file ? "Profile picture updated" : "Profile picture removed",
+				type: "success",
+			})
+		} catch (err) {
+			toastAccountError(
+				err,
+				file ? "Failed to update profile picture" : "Failed to remove profile picture",
+			)
+		}
+	})
 
 	if (!isLoaded || !user) return <AccountSectionSkeleton />
 
@@ -58,44 +76,17 @@ export function ProfileSection() {
 		setDraft({ userId: user.id, firstName, lastName, ...patch })
 	}
 
-	async function handleSaveName() {
+	function handleSaveName() {
 		if (!user || !nameDirty) return
-		setIsSavingName(true)
-		try {
-			await user.update({ firstName: trimmedFirst, lastName: trimmedLast })
-			setDraft(null)
-			toastManager.add({ title: "Profile updated", type: "success" })
-		} catch (err) {
-			toastAccountError(err, "Failed to update profile")
-		} finally {
-			setIsSavingName(false)
-		}
-	}
-
-	async function handleAvatarSelect(file: File) {
-		if (!user || isSavingAvatar) return
-		setIsSavingAvatar(true)
-		try {
-			await user.setProfileImage({ file })
-			toastManager.add({ title: "Profile picture updated", type: "success" })
-		} catch (err) {
-			toastAccountError(err, "Failed to update profile picture")
-		} finally {
-			setIsSavingAvatar(false)
-		}
-	}
-
-	async function handleRemoveAvatar() {
-		if (!user || isSavingAvatar) return
-		setIsSavingAvatar(true)
-		try {
-			await user.setProfileImage({ file: null })
-			toastManager.add({ title: "Profile picture removed", type: "success" })
-		} catch (err) {
-			toastAccountError(err, "Failed to remove profile picture")
-		} finally {
-			setIsSavingAvatar(false)
-		}
+		return withSavingName(async () => {
+			try {
+				await user.update({ firstName: trimmedFirst, lastName: trimmedLast })
+				setDraft(null)
+				toastManager.add({ title: "Profile updated", type: "success" })
+			} catch (err) {
+				toastAccountError(err, "Failed to update profile")
+			}
+		})
 	}
 
 	async function handleDelete() {
@@ -128,8 +119,8 @@ export function ProfileSection() {
 				</CardHeader>
 				<CardContent>
 					<div className="space-y-4 max-w-md">
-						<div className="space-y-1.5">
-							<Label>Profile picture</Label>
+						<Field>
+							<FieldLabel>Profile picture</FieldLabel>
 							<ImageDropzone
 								preview={
 									<UserAvatar
@@ -139,16 +130,24 @@ export function ProfileSection() {
 										className="size-full rounded-md text-sm"
 									/>
 								}
-								onFile={(file) => void handleAvatarSelect(file)}
-								onRemove={user.hasImage ? () => void handleRemoveAvatar() : undefined}
+								onFile={(file) => {
+									if (!isSavingAvatar) void setAvatar(file)
+								}}
+								onRemove={
+									user.hasImage
+										? () => {
+												if (!isSavingAvatar) void setAvatar(null)
+											}
+										: undefined
+								}
 								uploading={isSavingAvatar}
 								targetLabel="Change profile picture"
 								changeLabel="Change picture"
 							/>
-						</div>
+						</Field>
 						<div className="grid grid-cols-2 gap-3">
-							<div className="space-y-1.5">
-								<Label htmlFor="account-first-name">First name</Label>
+							<Field>
+								<FieldLabel htmlFor="account-first-name">First name</FieldLabel>
 								<Input
 									id="account-first-name"
 									value={firstName}
@@ -157,9 +156,9 @@ export function ProfileSection() {
 									autoComplete="given-name"
 									placeholder="First name"
 								/>
-							</div>
-							<div className="space-y-1.5">
-								<Label htmlFor="account-last-name">Last name</Label>
+							</Field>
+							<Field>
+								<FieldLabel htmlFor="account-last-name">Last name</FieldLabel>
 								<Input
 									id="account-last-name"
 									value={lastName}
@@ -168,7 +167,7 @@ export function ProfileSection() {
 									autoComplete="family-name"
 									placeholder="Last name"
 								/>
-							</div>
+							</Field>
 						</div>
 						<div className="flex justify-end">
 							<Button

@@ -6,6 +6,7 @@ import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import type { V2Investigation } from "@maple/domain/http/v2"
 import { cn } from "@maple/ui/lib/utils"
+import { TONE_FILL } from "@maple/ui/lib/tone"
 
 import { useTickingNow } from "@/hooks/use-ticking-now"
 
@@ -55,7 +56,7 @@ export function RunProgress({
 									last && running && !stalled
 										? "animate-pulse bg-primary"
 										: last && stalled
-											? "bg-severity-warn"
+											? TONE_FILL.warn
 											: "bg-muted-foreground/35",
 								)}
 							/>

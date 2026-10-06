@@ -14,6 +14,7 @@ import { rawAlertSampleCountWarning } from "@maple/domain/raw-sql"
 import { Card } from "@maple/ui/components/ui/card"
 import { Input } from "@maple/ui/components/ui/input"
 import { Label } from "@maple/ui/components/ui/label"
+import { Field, FieldDescription, FieldLabel } from "@maple/ui/components/ui/field"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
 import { Switch } from "@maple/ui/components/ui/switch"
 import { SettingRow } from "@maple/ui/components/ui/setting-row"
@@ -149,7 +150,7 @@ const COMPARATOR_OPTIONS: ReadonlyArray<{ value: AlertComparator; label: string 
 	Object.keys(comparatorLabels) as AlertComparator[]
 ).map((value) => ({ value, label: comparatorLabels[value] }))
 
-/* Severity is rendered with branded color (amber / destructive-red) instead of
+/* Severity is rendered with severity colour (warn / error) instead of
    the default neutral segmented toggle, because severity is the one field on
    the page that should *feel* like its outcome. */
 const SEVERITY_OPTIONS: ReadonlyArray<{
@@ -164,14 +165,15 @@ const SEVERITY_OPTIONS: ReadonlyArray<{
 		selectedClass:
 			"border-severity-warn/60 bg-severity-warn/10 text-severity-warn hover:bg-severity-warn/15 focus-visible:ring-severity-warn/40",
 		dotClass:
-			"bg-severity-warn shadow-[0_0_0_2px_color-mix(in_oklch,var(--severity-warn)_25%,transparent)]",
+			"bg-severity-warn shadow-[0_0_0_2px_color-mix(in_oklch,var(--color-severity-warn)_25%,transparent)]",
 	},
 	{
 		value: "critical",
 		label: "Critical",
 		selectedClass:
-			"border-destructive/60 bg-destructive/10 text-destructive hover:bg-destructive/15 focus-visible:ring-destructive/40",
-		dotClass: "bg-destructive shadow-[0_0_0_2px_color-mix(in_oklch,var(--destructive)_25%,transparent)]",
+			"border-severity-error/60 bg-severity-error/10 text-severity-error hover:bg-severity-error/15 focus-visible:ring-severity-error/40",
+		dotClass:
+			"bg-severity-error shadow-[0_0_0_2px_color-mix(in_oklch,var(--color-severity-error)_25%,transparent)]",
 	},
 ]
 
@@ -239,8 +241,8 @@ export function SignalAndThresholdSection({
 				    `min-w-36` so a narrow Condition column doesn't push its
 				    chevron into the next field. */}
 				<div className="grid gap-3 sm:grid-cols-[140px_1fr_1fr]">
-					<div className="min-w-0 space-y-1.5">
-						<Label htmlFor="rule-comparator">Condition</Label>
+					<Field className="min-w-0 items-stretch gap-1.5">
+						<FieldLabel htmlFor="rule-comparator">Condition</FieldLabel>
 						<Select
 							items={comparatorLabels}
 							value={form.comparator}
@@ -259,15 +261,15 @@ export function SignalAndThresholdSection({
 								))}
 							</SelectContent>
 						</Select>
-					</div>
-					<div className="min-w-0 space-y-1.5">
-						<Label htmlFor="rule-threshold">
+					</Field>
+					<Field className="min-w-0 items-stretch gap-1.5">
+						<FieldLabel htmlFor="rule-threshold">
 							{rangeMode ? "Lower" : "Threshold"}
 							{isErrorRate && <span className="text-muted-foreground"> (%)</span>}
 							{isBuilderErrorRate && (
 								<span className="text-muted-foreground"> (0–1 ratio, 0.05 = 5%)</span>
 							)}
-						</Label>
+						</FieldLabel>
 						<Input
 							id="rule-threshold"
 							type="number"
@@ -277,9 +279,9 @@ export function SignalAndThresholdSection({
 							className={NUMERIC_INPUT_CLASS}
 							placeholder="0"
 						/>
-					</div>
-					<div className="min-w-0 space-y-1.5">
-						<Label
+					</Field>
+					<Field className="min-w-0 items-stretch gap-1.5">
+						<FieldLabel
 							htmlFor="rule-threshold-upper"
 							className={cn(!rangeMode && "text-muted-foreground/60")}
 						>
@@ -288,7 +290,7 @@ export function SignalAndThresholdSection({
 							{isBuilderErrorRate && (
 								<span className="text-muted-foreground"> (0–1 ratio)</span>
 							)}
-						</Label>
+						</FieldLabel>
 						<Input
 							id="rule-threshold-upper"
 							type="number"
@@ -299,7 +301,7 @@ export function SignalAndThresholdSection({
 							className={NUMERIC_INPUT_CLASS}
 							placeholder={rangeMode ? "0" : "—"}
 						/>
-					</div>
+					</Field>
 				</div>
 
 				{/* Severity inline — branded pills, not neutral toggle. */}
@@ -554,8 +556,8 @@ function NumericField({
 	onChange: (value: string) => void
 }) {
 	return (
-		<div className="space-y-1.5">
-			<Label htmlFor={id}>{label}</Label>
+		<Field className="items-stretch gap-1.5">
+			<FieldLabel htmlFor={id}>{label}</FieldLabel>
 			<Input
 				id={id}
 				type="number"
@@ -565,8 +567,8 @@ function NumericField({
 				onChange={(e) => onChange(e.target.value)}
 				className={NUMERIC_INPUT_CLASS}
 			/>
-			{hint && <p className="text-muted-foreground text-xs">{hint}</p>}
-		</div>
+			{hint && <FieldDescription>{hint}</FieldDescription>}
+		</Field>
 	)
 }
 
@@ -681,8 +683,8 @@ function SignalSubConfig({ form, onChange, autocompleteValues }: SignalAndThresh
 		case "apdex":
 			return (
 				<div className="flex items-end gap-3">
-					<div className="space-y-1.5">
-						<Label htmlFor="apdex-threshold">Apdex target (ms)</Label>
+					<Field className="gap-1.5">
+						<FieldLabel htmlFor="apdex-threshold">Apdex target (ms)</FieldLabel>
 						<Input
 							id="apdex-threshold"
 							type="number"
@@ -690,7 +692,7 @@ function SignalSubConfig({ form, onChange, autocompleteValues }: SignalAndThresh
 							onChange={(e) => onChange((c) => ({ ...c, apdexThresholdMs: e.target.value }))}
 							className={cn("w-[180px]", NUMERIC_INPUT_CLASS)}
 						/>
-					</div>
+					</Field>
 					<p className="text-muted-foreground pb-2 text-xs">
 						Requests under this duration count as fully satisfied.
 					</p>
@@ -721,10 +723,10 @@ function SignalSubConfig({ form, onChange, autocompleteValues }: SignalAndThresh
 						<InlineCode>samples</InlineCode> for the event count behind each row (Min samples sums
 						it; without it each row counts as 1). A query that returns no rows is a no-data check.
 					</p>
-					{sampleWarning && <p className="text-warning text-xs">{sampleWarning}</p>}
+					{sampleWarning && <p className="text-severity-warn text-xs">{sampleWarning}</p>}
 					<div className="flex items-end gap-3">
-						<div className="space-y-1.5">
-							<Label htmlFor="rule-raw-reducer">Reduce buckets by</Label>
+						<Field className="gap-1.5">
+							<FieldLabel htmlFor="rule-raw-reducer">Reduce buckets by</FieldLabel>
 							<Select
 								items={RAW_QUERY_REDUCER_LABELS}
 								value={form.rawQueryReducer}
@@ -747,7 +749,7 @@ function SignalSubConfig({ form, onChange, autocompleteValues }: SignalAndThresh
 									))}
 								</SelectContent>
 							</Select>
-						</div>
+						</Field>
 					</div>
 				</div>
 			)

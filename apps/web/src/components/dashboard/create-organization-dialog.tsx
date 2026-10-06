@@ -3,12 +3,13 @@ import { useOrganizationList } from "@clerk/clerk-react"
 import { Cause, Exit, Option } from "effect"
 import { FormDialog } from "@maple/ui/components/ui/form-dialog"
 import { Input } from "@maple/ui/components/ui/input"
-import { Label } from "@maple/ui/components/ui/label"
+import { Field, FieldDescription, FieldLabel } from "@maple/ui/components/ui/field"
 import { RadioGroup, RadioGroupItem } from "@maple/ui/components/ui/radio-group"
 
 import { CreateOrganizationRequest } from "@maple/domain/http"
 import { MapleRegion as MapleRegionSchema, parseMapleRegion } from "@maple/domain/organization-regions"
 import { RegionBadge } from "@/components/region/region-badge"
+import { useAsyncAction } from "@/hooks/use-mutation-action"
 import { useAtomSet } from "@/lib/effect-atom"
 import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
 import {
@@ -33,7 +34,6 @@ export function CreateOrganizationDialog({
 	const { setActive } = useOrganizationList()
 	const [name, setName] = useState("")
 	const [region, setRegion] = useState<MapleRegion>(currentRegion)
-	const [isCreating, setIsCreating] = useState(false)
 	const [errorMessage, setErrorMessage] = useState<string | null>(null)
 	const createOrganization = useAtomSet(MapleApiAtomClient.mutation("organizationCreation", "create"), {
 		mode: "promiseExit",
@@ -48,9 +48,8 @@ export function CreateOrganizationDialog({
 		}
 	}
 
-	const handleSubmit = async () => {
-		if (isCreating || !setActive) return
-		setIsCreating(true)
+	const [create, isCreating] = useAsyncAction(async () => {
+		if (!setActive) return
 		setErrorMessage(null)
 		const result = await createOrganization({
 			payload: new CreateOrganizationRequest({ name: name.trim(), region }),
@@ -58,13 +57,17 @@ export function CreateOrganizationDialog({
 		if (Exit.isFailure(result)) {
 			const error = Cause.findErrorOption(result.cause)
 			setErrorMessage(Option.isSome(error) ? error.value.message : "Failed to create organization")
-			setIsCreating(false)
 			return
 		}
 		await setActive({ organization: result.value.orgId })
 		const url = region === currentRegion ? undefined : regionAppUrl(region)
 		if (url !== undefined) window.location.assign(`${url}/`)
 		else window.location.reload()
+		// Stay pending while the page navigates away.
+		return new Promise<never>(() => {})
+	})
+	const handleSubmit = () => {
+		if (!isCreating) void create()
 	}
 
 	return (
@@ -89,8 +92,8 @@ export function CreateOrganizationDialog({
 				autoFocus
 			/>
 			{hasMultipleRegions && (
-				<div className="space-y-2">
-					<Label>Data region</Label>
+				<Field className="w-full items-stretch">
+					<FieldLabel>Data region</FieldLabel>
 					<RadioGroup
 						value={region}
 						onValueChange={(value) => setRegion(parseMapleRegion(value))}
@@ -114,10 +117,10 @@ export function CreateOrganizationDialog({
 							</label>
 						))}
 					</RadioGroup>
-					<p className="text-xs text-muted-foreground">
+					<FieldDescription>
 						Telemetry is stored and processed only in this region. It cannot be changed later.
-					</p>
-				</div>
+					</FieldDescription>
+				</Field>
 			)}
 			{errorMessage && <p className="text-sm text-destructive">{errorMessage}</p>}
 		</FormDialog>

@@ -178,7 +178,7 @@ function IoHalf({
 				// rather than a ground token — light mode paints card and background
 				// the same white, so a token swap would recess nothing there.
 				direction === "in" ? "bg-black/[0.06]" : "border-border/60 border-t",
-				direction === "out" && failed && "bg-destructive/5",
+				direction === "out" && failed && "bg-severity-error/5",
 			)}
 		>
 			<div className={GUTTER}>
@@ -189,7 +189,7 @@ function IoHalf({
 			</div>
 			<div className="flex min-w-0 grow flex-col gap-2 pt-2.5 pr-3 pb-3">
 				<div className="flex flex-wrap items-center gap-2">
-					<Eyebrow variant="mono" className={failed ? "text-destructive" : "text-foreground"}>
+					<Eyebrow variant="mono" className={failed ? "text-severity-error" : "text-foreground"}>
 						{label}
 					</Eyebrow>
 					<span className={META}>
@@ -226,7 +226,7 @@ function IoHalf({
 						rendering={!raw && isJson ? "json" : "text"}
 						mono
 						clampLines={clampLines}
-						toneClass={failed ? "text-destructive/90" : undefined}
+						toneClass={failed ? "text-severity-error/90" : undefined}
 						expanded={disclosed(openRows, textKey, false)}
 						onToggleExpanded={() => onToggleRow(textKey)}
 					/>
@@ -273,7 +273,7 @@ function Marker({ direction, failed }: { direction: "in" | "out"; failed: boolea
 		<span
 			className={cn(
 				"flex size-4 shrink-0 items-center justify-center rounded-full",
-				failed ? "bg-destructive" : "bg-chart-4",
+				failed ? "bg-severity-error" : "bg-chart-4",
 			)}
 		>
 			<ArrowUpIcon size={9} aria-hidden className="text-background" />

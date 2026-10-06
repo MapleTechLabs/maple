@@ -26,7 +26,7 @@ export function ConnectionStatusPill({ connection }: { connection: IngestConnect
 		>
 			{connected ? (
 				<>
-					<StatusDot tone="custom" className="bg-severity-info" />
+					<StatusDot tone="ok" />
 					Connected · {connection.serviceCount}{" "}
 					{connection.serviceCount === 1 ? "service" : "services"}
 				</>

@@ -1,6 +1,7 @@
 import { useAtomRefresh, Result } from "@/lib/effect-atom"
 import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { cn } from "@maple/ui/lib/utils"
+import { TONE_BORDER, TONE_SOFT } from "@maple/ui/lib/tone"
 import { formatNumber } from "@maple/ui/lib/format"
 
 import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
@@ -59,12 +60,12 @@ export function AnalyticsLiveBadge({ filters }: { filters: AnalyticsFilters }) {
 					className={cn(
 						"inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium tabular-nums",
 						count > 0
-							? "border-success/30 bg-success/10 text-success"
+							? cn(TONE_SOFT.ok, TONE_BORDER.ok)
 							: "border-border/70 text-muted-foreground",
 					)}
 					title={`${count} ${noun} active in the last ${minutes} minute${minutes === 1 ? "" : "s"}`}
 				>
-					{count > 0 ? <StatusDot tone="success" pulse /> : <StatusDot />}
+					{count > 0 ? <StatusDot tone="ok" pulse /> : <StatusDot />}
 					<span aria-live="polite">
 						{formatNumber(count)} <span className="hidden sm:inline">online</span>
 					</span>

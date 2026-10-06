@@ -18,13 +18,10 @@ import {
 	FilterSidebarHeader,
 	FilterSidebarLoading,
 } from "@/components/filters/filter-sidebar"
+import { ResultView } from "@/components/common/result-view"
 
 const routeApi = getRouteApi("/traces/")
 type TracesSearchParams = ReturnType<typeof routeApi.useSearch>
-
-function LoadingState() {
-	return <FilterSidebarLoading sectionCount={5} />
-}
 
 interface TracesFilterSidebarViewProps {
 	facetsResult: Result.Result<TracesFacetsResponse, unknown>
@@ -61,111 +58,117 @@ function TracesFilterSidebarView({
 		(filters.excludedHttpMethods?.length ?? 0) > 0 ||
 		(filters.excludedHttpStatusCodes?.length ?? 0) > 0
 
-	return Result.builder(facetsResult)
-		.onInitial(() => <LoadingState />)
-		.onError((error) => <FilterSidebarError error={error} />)
-		.onSuccess((facetsResponse, result) => {
-			const facets = facetsResponse.data
+	return (
+		<ResultView
+			result={facetsResult}
+			loading={<FilterSidebarLoading sectionCount={5} />}
+			error={(error) => <FilterSidebarError error={error} />}
+		>
+			{(facetsResponse, { waiting }) => {
+				const facets = facetsResponse.data
 
-			return (
-				<FilterSidebarFrame waiting={result.waiting}>
-					<FilterSidebarHeader canClear={hasActiveFilters} onClear={onClearFilters} />
-					<FilterSidebarBody>
-						<SingleCheckboxFilter
-							title="Has Error"
-							checked={filters.hasError ?? false}
-							onChange={(checked) => onFilterChange("hasError", checked || undefined)}
-							count={facets.errorCount}
-						/>
-
-						<SingleCheckboxFilter
-							title="Root Traces Only"
-							checked={filters.rootOnly ?? true}
-							onChange={(checked) => onFilterChange("rootOnly", checked ? undefined : false)}
-						/>
-
-						{/* Only meaningful on the grouped trace list — the span-level
-						    list (rootOnly off) has no trace structure to judge. */}
-						{(filters.rootOnly ?? true) && (
+				return (
+					<FilterSidebarFrame waiting={waiting}>
+						<FilterSidebarHeader canClear={hasActiveFilters} onClear={onClearFilters} />
+						<FilterSidebarBody>
 							<SingleCheckboxFilter
-								title="Hide Single-Span Noise"
-								checked={filters.hideNoise ?? true}
+								title="Has Error"
+								checked={filters.hasError ?? false}
+								onChange={(checked) => onFilterChange("hasError", checked || undefined)}
+								count={facets.errorCount}
+							/>
+
+							<SingleCheckboxFilter
+								title="Root Traces Only"
+								checked={filters.rootOnly ?? true}
 								onChange={(checked) =>
-									onFilterChange("hideNoise", checked ? undefined : false)
+									onFilterChange("rootOnly", checked ? undefined : false)
 								}
 							/>
-						)}
 
-						<FilterSection
-							title="Environment"
-							options={facets.deploymentEnvs ?? []}
-							selected={filters.deploymentEnvs ?? []}
-							onChange={(val) => onFilterChange("deploymentEnvs", val)}
-							excluded={filters.excludedDeploymentEnvs ?? []}
-							onExcludedChange={(val) => onFilterChange("excludedDeploymentEnvs", val)}
-						/>
+							{/* Only meaningful on the grouped trace list — the span-level
+						    list (rootOnly off) has no trace structure to judge. */}
+							{(filters.rootOnly ?? true) && (
+								<SingleCheckboxFilter
+									title="Hide Single-Span Noise"
+									checked={filters.hideNoise ?? true}
+									onChange={(checked) =>
+										onFilterChange("hideNoise", checked ? undefined : false)
+									}
+								/>
+							)}
 
-						{pinnedNamespace !== null ? (
-							<PinnedNamespaceNotice namespace={pinnedNamespace} />
-						) : (
-							<SearchableFilterSection
-								title="Namespace"
-								options={facets.namespaces ?? []}
-								selected={filters.namespaces ?? []}
-								onChange={(val) => onFilterChange("namespaces", val)}
-								excluded={filters.excludedNamespaces ?? []}
-								onExcludedChange={(val) => onFilterChange("excludedNamespaces", val)}
+							<FilterSection
+								title="Environment"
+								options={facets.deploymentEnvs ?? []}
+								selected={filters.deploymentEnvs ?? []}
+								onChange={(val) => onFilterChange("deploymentEnvs", val)}
+								excluded={filters.excludedDeploymentEnvs ?? []}
+								onExcludedChange={(val) => onFilterChange("excludedDeploymentEnvs", val)}
 							/>
-						)}
 
-						<SearchableFilterSection
-							title="Service"
-							options={facets.services ?? []}
-							selected={filters.services ?? []}
-							onChange={(val) => onFilterChange("services", val)}
-							excluded={filters.excludedServices ?? []}
-							onExcludedChange={(val) => onFilterChange("excludedServices", val)}
-							colorMap={serviceColorMap(facets.services ?? [])}
-						/>
+							{pinnedNamespace !== null ? (
+								<PinnedNamespaceNotice namespace={pinnedNamespace} />
+							) : (
+								<SearchableFilterSection
+									title="Namespace"
+									options={facets.namespaces ?? []}
+									selected={filters.namespaces ?? []}
+									onChange={(val) => onFilterChange("namespaces", val)}
+									excluded={filters.excludedNamespaces ?? []}
+									onExcludedChange={(val) => onFilterChange("excludedNamespaces", val)}
+								/>
+							)}
 
-						<SearchableFilterSection
-							title="Root Span"
-							options={facets.spanNames ?? []}
-							selected={filters.spanNames ?? []}
-							onChange={(val) => onFilterChange("spanNames", val)}
-							excluded={filters.excludedSpanNames ?? []}
-							onExcludedChange={(val) => onFilterChange("excludedSpanNames", val)}
-						/>
+							<SearchableFilterSection
+								title="Service"
+								options={facets.services ?? []}
+								selected={filters.services ?? []}
+								onChange={(val) => onFilterChange("services", val)}
+								excluded={filters.excludedServices ?? []}
+								onExcludedChange={(val) => onFilterChange("excludedServices", val)}
+								colorMap={serviceColorMap(facets.services ?? [])}
+							/>
 
-						<DurationRangeFilter
-							minValue={filters.minDurationMs}
-							maxValue={filters.maxDurationMs}
-							onRangeChange={onDurationRangeChange}
-							durationStats={facets.durationStats}
-						/>
+							<SearchableFilterSection
+								title="Root Span"
+								options={facets.spanNames ?? []}
+								selected={filters.spanNames ?? []}
+								onChange={(val) => onFilterChange("spanNames", val)}
+								excluded={filters.excludedSpanNames ?? []}
+								onExcludedChange={(val) => onFilterChange("excludedSpanNames", val)}
+							/>
 
-						<FilterSection
-							title="HTTP Method"
-							options={facets.httpMethods ?? []}
-							selected={filters.httpMethods ?? []}
-							onChange={(val) => onFilterChange("httpMethods", val)}
-							excluded={filters.excludedHttpMethods ?? []}
-							onExcludedChange={(val) => onFilterChange("excludedHttpMethods", val)}
-						/>
+							<DurationRangeFilter
+								minValue={filters.minDurationMs}
+								maxValue={filters.maxDurationMs}
+								onRangeChange={onDurationRangeChange}
+								durationStats={facets.durationStats}
+							/>
 
-						<FilterSection
-							title="Status Code"
-							options={facets.httpStatusCodes ?? []}
-							selected={filters.httpStatusCodes ?? []}
-							onChange={(val) => onFilterChange("httpStatusCodes", val)}
-							excluded={filters.excludedHttpStatusCodes ?? []}
-							onExcludedChange={(val) => onFilterChange("excludedHttpStatusCodes", val)}
-						/>
-					</FilterSidebarBody>
-				</FilterSidebarFrame>
-			)
-		})
-		.render()
+							<FilterSection
+								title="HTTP Method"
+								options={facets.httpMethods ?? []}
+								selected={filters.httpMethods ?? []}
+								onChange={(val) => onFilterChange("httpMethods", val)}
+								excluded={filters.excludedHttpMethods ?? []}
+								onExcludedChange={(val) => onFilterChange("excludedHttpMethods", val)}
+							/>
+
+							<FilterSection
+								title="Status Code"
+								options={facets.httpStatusCodes ?? []}
+								selected={filters.httpStatusCodes ?? []}
+								onChange={(val) => onFilterChange("httpStatusCodes", val)}
+								excluded={filters.excludedHttpStatusCodes ?? []}
+								onExcludedChange={(val) => onFilterChange("excludedHttpStatusCodes", val)}
+							/>
+						</FilterSidebarBody>
+					</FilterSidebarFrame>
+				)
+			}}
+		</ResultView>
+	)
 }
 
 /** Connected wrapper that reads filters from TanStack Router and navigates on change. */

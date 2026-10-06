@@ -75,7 +75,7 @@ export function ToolGroup({
 					{running ? (
 						<DotLoader />
 					) : errorCount > 0 ? (
-						<CircleXmarkIcon className="size-3.5 text-destructive" />
+						<CircleXmarkIcon className="size-3.5 text-severity-error" />
 					) : (
 						<CircleCheckIcon className="size-3.5 text-severity-info" />
 					)}
@@ -120,7 +120,7 @@ export function ToolGroup({
 							) : null}
 						</span>
 						{errorCount > 0 ? (
-							<span className="shrink-0 font-normal tabular-nums text-destructive">
+							<span className="shrink-0 font-normal tabular-nums text-severity-error">
 								{errorCount} failed
 							</span>
 						) : null}

@@ -1,4 +1,4 @@
-import { Result, useAtomValue } from "@/lib/effect-atom"
+import { useAtomValue } from "@/lib/effect-atom"
 
 import { ChartError, ChartLoading, ChartPlotArea } from "@maple/ui/components/charts"
 
@@ -12,6 +12,7 @@ import {
 	type InfraSeriesInfo,
 } from "./primitives/infra-metric-chart"
 import { displayError } from "@/lib/error-messages"
+import { ResultView } from "@/components/common/result-view"
 
 interface HostDetailChartProps {
 	hostName: string
@@ -54,20 +55,22 @@ export function HostDetailChart({
 
 	return (
 		<ChartPlotArea height={INFRA_METRIC_CHART_HEIGHT}>
-			{Result.builder(result)
-				.onInitial(() => <ChartLoading variant="area" />)
-				.onError((err) => <ChartError>{displayError(err).message}</ChartError>)
-				.onSuccess((response, holder) => (
+			<ResultView
+				result={result}
+				loading={<ChartLoading variant="area" />}
+				error={(err) => <ChartError>{displayError(err).message}</ChartError>}
+			>
+				{(response, { waiting }) => (
 					<HostMetricChartView
 						rows={response.data}
 						unit={response.unit}
 						metric={metric}
 						seriesLabel={HOST_METRIC_LABELS[metric]}
-						waiting={Boolean(holder.waiting)}
+						waiting={waiting}
 						syncId={syncId}
 					/>
-				))
-				.render()}
+				)}
+			</ResultView>
 		</ChartPlotArea>
 	)
 }

@@ -107,7 +107,7 @@ export function RulesOverviewTable({
 									render={<span className="inline-flex cursor-default" />}
 									onClick={(e) => e.stopPropagation()}
 								>
-									<CircleWarningIcon size={14} className="text-destructive" />
+									<CircleWarningIcon size={14} className="text-severity-error" />
 								</TooltipTrigger>
 								<TooltipContent className="max-w-[280px]">
 									Last evaluation failed: {derived.reason}
@@ -118,7 +118,7 @@ export function RulesOverviewTable({
 							<Tooltip>
 								<TooltipTrigger
 									render={
-										<span className="inline-flex cursor-default items-center gap-1 text-warning text-[11px]" />
+										<span className="inline-flex cursor-default items-center gap-1 text-severity-warn text-[11px]" />
 									}
 									onClick={(e) => e.stopPropagation()}
 								>

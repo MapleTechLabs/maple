@@ -1,5 +1,6 @@
 import * as React from "react"
 import { errorMessage } from "@/lib/error-toast"
+import { useAsyncAction } from "@/hooks/use-mutation-action"
 import { createFileRoute, useNavigate, useBlocker } from "@tanstack/react-router"
 import { Schema } from "effect"
 
@@ -47,7 +48,6 @@ function WidgetConfigurePage() {
 	const { dashboards, readOnly, updateWidget, updateDashboardTimeRange } = useDashboardStore()
 
 	const builderRef = React.useRef<WidgetQueryBuilderPageHandle>(null)
-	const [isSaving, setIsSaving] = React.useState(false)
 	// Stabilize time range value — only update when the value actually changes,
 	// not when the dashboard object is rebuilt (e.g. from widget save optimistic update).
 	// Without this, DashboardTimeRangeSync fires spurious mutations that overwrite concurrent saves.
@@ -65,27 +65,25 @@ function WidgetConfigurePage() {
 		})
 	}
 
-	const handleApply = async (updates: {
-		visualization: VisualizationType
-		dataSource: WidgetDataSource
-		display: WidgetDisplayConfig
-		timeRange: TimeRange | undefined
-	}) => {
+	const [save, isSaving] = useAsyncAction(
+		(updates: {
+			visualization: VisualizationType
+			dataSource: WidgetDataSource
+			display: WidgetDisplayConfig
+			timeRange: TimeRange | undefined
+		}) =>
+			updateWidget(dashboardId, widgetId, updates).then(navigateBack, (cause: unknown) => {
+				// `onApply` is a fire-and-forget callback, so an uncaught rejection here
+				// would strand the user on the editor with no idea the save failed.
+				toastManager.add({
+					title: errorMessage(cause, "Couldn’t save this widget"),
+					type: "error",
+				})
+			}),
+	)
+	const handleApply = (updates: Parameters<typeof save>[0]) => {
 		if (readOnly || isSaving) return
-		setIsSaving(true)
-		try {
-			await updateWidget(dashboardId, widgetId, updates)
-			navigateBack()
-		} catch (cause) {
-			// `onApply` is a fire-and-forget callback, so an uncaught rejection here
-			// would strand the user on the editor with no idea the save failed.
-			toastManager.add({
-				title: errorMessage(cause, "Couldn’t save this widget"),
-				type: "error",
-			})
-		} finally {
-			setIsSaving(false)
-		}
+		void save(updates)
 	}
 
 	// Block navigation when there are unsaved changes
@@ -155,12 +153,7 @@ function WidgetConfigurePage() {
 							<Button variant="outline" size="sm" onClick={navigateBack} disabled={isSaving}>
 								Cancel
 							</Button>
-							<Button
-								size="sm"
-								onClick={() => builderRef.current?.apply()}
-								loading={isSaving}
-								disabled={isSaving}
-							>
+							<Button size="sm" onClick={() => builderRef.current?.apply()} loading={isSaving}>
 								Apply
 							</Button>
 						</div>

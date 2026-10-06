@@ -32,7 +32,6 @@ import { countLabel, formatErrorRate, formatThroughput, pluralize } from "@maple
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { SampledValue } from "./sampled-value"
 import { shortId } from "@maple/ui/lib/ids"
-import { TONE_FILL } from "@maple/ui/lib/tone"
 import { ErrorRateValue } from "@maple/ui/components/error-rate-value"
 import {
 	CommitShaHoverCard,
@@ -58,6 +57,7 @@ import type { ServicesSearchParams } from "@/routes/services/index"
 import { ServiceDot } from "@maple/ui/components/service-dot"
 import { LatencyValue } from "@maple/ui/components/latency-value"
 import { StatusDot } from "@maple/ui/components/ui/status-dot"
+import { TONE_COLOR } from "@maple/ui/lib/tone"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 
 /**
@@ -162,15 +162,7 @@ function truncateCommitSha(sha: string): string {
  *  something to say (degraded/unhealthy); healthy rows stay unadorned. */
 function HealthDot({ health }: { health: ServiceHealth | undefined }) {
 	if (health === undefined || health === "healthy") return null
-	return (
-		<StatusDot
-			tone="custom"
-			aria-hidden={false}
-			aria-label={health}
-			title={health}
-			className={TONE_FILL[HEALTH_TONE[health]]}
-		/>
-	)
+	return <StatusDot tone={HEALTH_TONE[health]} aria-hidden={false} aria-label={health} title={health} />
 }
 
 // Withhold the delta when the baseline has too few spans to be meaningful.
@@ -464,7 +456,7 @@ const ServiceRow = React.memo(function ServiceRow({
 		<TableRow
 			className={cn(
 				"cursor-pointer border-l-2 border-l-transparent hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
-				health === "unhealthy" && "border-l-destructive",
+				health === "unhealthy" && "border-l-severity-error",
 			)}
 			tabIndex={0}
 			onClick={goToDetail}
@@ -513,7 +505,7 @@ const ServiceRow = React.memo(function ServiceRow({
 				>
 					<Sparkline
 						data={errorRateData}
-						color="var(--color-destructive, #ef4444)"
+						color={TONE_COLOR.crit}
 						className="absolute inset-0 h-full w-full"
 					/>
 					<div className="absolute inset-0 flex items-center justify-center">

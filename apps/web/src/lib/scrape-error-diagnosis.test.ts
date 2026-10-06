@@ -10,7 +10,7 @@ describe("diagnoseScrapeError", () => {
 
 	it("diagnoses HTTP 429 as a rate limit (warning) with PlanetScale guidance", () => {
 		const d = diagnoseScrapeError("target returned HTTP 429", "planetscale")
-		expect(d?.severity).toBe("warning")
+		expect(d?.severity).toBe("warn")
 		expect(d?.title).toBe("Rate limited")
 		expect(d?.fixes.join(" ")).toContain("interval")
 		expect(d?.fixes.join(" ")).toContain("branch")
@@ -25,7 +25,7 @@ describe("diagnoseScrapeError", () => {
 	it("diagnoses 401/403 as an auth problem mentioning the token permission", () => {
 		for (const status of [401, 403]) {
 			const d = diagnoseScrapeError(`target returned HTTP ${status}`, "planetscale")
-			expect(d?.severity).toBe("error")
+			expect(d?.severity).toBe("crit")
 			expect(d?.title).toBe("Authentication rejected")
 			expect(d?.fixes.join(" ")).toContain("read_metrics_endpoints")
 		}
@@ -39,7 +39,7 @@ describe("diagnoseScrapeError", () => {
 
 	it("treats 5xx as a transient upstream warning", () => {
 		const d = diagnoseScrapeError("target returned HTTP 503", "planetscale")
-		expect(d?.severity).toBe("warning")
+		expect(d?.severity).toBe("warn")
 		expect(d?.title).toBe("PlanetScale-side error")
 	})
 

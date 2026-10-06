@@ -1,8 +1,8 @@
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { formatNumber } from "@maple/ui/lib/format"
-import { Result, useAtomValue, useAtomRefresh } from "@/lib/effect-atom"
+import { useAtomValue, useAtomRefresh } from "@/lib/effect-atom"
 
-import { ErrorState } from "@/components/common/error-state"
+import { ResultView } from "@/components/common/result-view"
 import { StatRail, StatRailItem, StatRailLoading } from "@/components/common/stat-rail"
 import { type ListMetricsInput } from "@/api/warehouse/metrics"
 import { getMetricsSummaryResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
@@ -33,47 +33,46 @@ export function MetricsSummaryCards({
 	const summaryResult = useAtomValue(summaryAtom)
 	const refreshSummary = useAtomRefresh(summaryAtom)
 
-	return Result.builder(summaryResult)
-		.onInitial(() => <StatRailLoading />)
-		.onError((error) => (
-			<ErrorState
-				variant="inline"
-				error={error}
-				title="Failed to load metrics summary"
-				onRetry={refreshSummary}
-			/>
-		))
-		.onSuccess((response, result) => {
-			const summaryByType = response.data.reduce(
-				(acc, item) => {
-					acc[item.metricType] = {
-						metricCount: item.metricCount,
-						dataPointCount: item.dataPointCount,
-					}
-					return acc
-				},
-				{} as Record<string, { metricCount: number; dataPointCount: number }>,
-			)
+	return (
+		<ResultView
+			result={summaryResult}
+			loading={<StatRailLoading />}
+			errorVariant="inline"
+			errorTitle="Failed to load metrics summary"
+			onRetry={refreshSummary}
+		>
+			{(response, { waiting }) => {
+				const summaryByType = response.data.reduce(
+					(acc, item) => {
+						acc[item.metricType] = {
+							metricCount: item.metricCount,
+							dataPointCount: item.dataPointCount,
+						}
+						return acc
+					},
+					{} as Record<string, { metricCount: number; dataPointCount: number }>,
+				)
 
-			return (
-				<StatRail className={refreshingClass(result.waiting)}>
-					{cardConfig.map((card) => {
-						const data = summaryByType[card.key]
-						const isSelected = selectedType === card.key
-						return (
-							<StatRailItem
-								key={card.key}
-								eyebrow={card.title}
-								value={formatNumber(data?.dataPointCount ?? 0)}
-								subline={`${data?.metricCount ?? 0} unique metrics`}
-								compact
-								selected={isSelected}
-								onSelect={() => onSelectType(isSelected ? null : card.key)}
-							/>
-						)
-					})}
-				</StatRail>
-			)
-		})
-		.render()
+				return (
+					<StatRail className={refreshingClass(waiting)}>
+						{cardConfig.map((card) => {
+							const data = summaryByType[card.key]
+							const isSelected = selectedType === card.key
+							return (
+								<StatRailItem
+									key={card.key}
+									eyebrow={card.title}
+									value={formatNumber(data?.dataPointCount ?? 0)}
+									subline={`${data?.metricCount ?? 0} unique metrics`}
+									compact
+									selected={isSelected}
+									onSelect={() => onSelectType(isSelected ? null : card.key)}
+								/>
+							)
+						})}
+					</StatRail>
+				)
+			}}
+		</ResultView>
+	)
 }

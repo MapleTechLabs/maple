@@ -67,9 +67,7 @@ export function TraceList({ props }: RendererComponentProps<TraceListProps>) {
 									>
 										<TruncatedId value={trace.traceId} kind="trace" length={12} />
 									</a>
-									{trace.hasError && (
-										<StatusDot tone="custom" className="ml-1 bg-severity-error" />
-									)}
+									{trace.hasError && <StatusDot tone="crit" className="ml-1" />}
 								</TableCell>
 								<TableCell className="max-w-[160px] py-1">
 									<HttpSpanLabel spanName={trace.rootSpanName} />

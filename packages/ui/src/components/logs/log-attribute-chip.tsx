@@ -10,9 +10,9 @@ import { tryParseJson, CopyableValue, CollapsibleJsonValue } from "../attributes
 import type { ChipTone } from "../../lib/log-attributes"
 
 const TONE_CLASSES: Record<ChipTone, string> = {
-	error: "bg-destructive/10 text-destructive border-destructive/20 hover:bg-destructive/15",
-	warn: "bg-warning/10 text-warning-foreground border-warning/20 hover:bg-warning/15",
-	info: "bg-muted text-foreground/80 border-border hover:bg-muted/80",
+	crit: "bg-severity-error/10 text-severity-error border-severity-error/20 hover:bg-severity-error/15",
+	warn: "bg-severity-warn/10 text-severity-warn border-severity-warn/20 hover:bg-severity-warn/15",
+	emphasis: "bg-muted text-foreground/80 border-border hover:bg-muted/80",
 	muted: "bg-muted/40 text-muted-foreground border-border/60 hover:bg-muted/70",
 } satisfies Record<ChipTone, string>
 

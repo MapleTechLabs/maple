@@ -52,13 +52,13 @@ const sourceLabel = (source: AuditLogSource): string => source.replace("_", " ")
 
 const ACTOR_BADGES: Record<
 	AuditActorType,
-	{ label: string; variant: "secondary" | "success" | "info" | "outline" }
+	{ label: string; variant: "secondary" | "ok" | "info" | "outline" }
 > = {
 	user: { label: "User", variant: "secondary" },
-	api_key: { label: "API key", variant: "success" },
+	api_key: { label: "API key", variant: "ok" },
 	agent: { label: "Agent", variant: "info" },
 	system: { label: "System", variant: "outline" },
-} satisfies Record<AuditActorType, { label: string; variant: "secondary" | "success" | "info" | "outline" }>
+} satisfies Record<AuditActorType, { label: string; variant: "secondary" | "ok" | "info" | "outline" }>
 
 // Shared column lanes so the header row and entry rows stay aligned. Resource and
 // source collapse when the card is narrow; time + actor + action always stay
@@ -456,7 +456,7 @@ function AuditLogRow({ entry }: { entry: V2AuditLogEntry }) {
 					<div className="flex min-w-0 items-center gap-1.5">
 						<ActionLabel action={entry.action} />
 						{denied && (
-							<Badge variant="error" size="sm" className="shrink-0">
+							<Badge variant="crit" size="sm" className="shrink-0">
 								Denied
 							</Badge>
 						)}
@@ -630,11 +630,11 @@ function AuditLogDetail({ entry }: { entry: V2AuditLogEntry }) {
 							{entry.action}
 						</InlineCode>
 						{entry.outcome === "denied" ? (
-							<Badge variant="error" size="sm">
+							<Badge variant="crit" size="sm">
 								Denied
 							</Badge>
 						) : (
-							<Badge variant="success" size="sm">
+							<Badge variant="ok" size="sm">
 								Allowed
 							</Badge>
 						)}

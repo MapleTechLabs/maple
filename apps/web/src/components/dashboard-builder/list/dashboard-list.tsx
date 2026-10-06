@@ -158,7 +158,12 @@ function DashboardRow({
 				    breakdown and the tag chips both lived here and were cut — they
 				    made the row crowded without changing any decision. */}
 				<span title={reads.full} className="hidden w-40 shrink-0 flex-col items-end sm:flex">
-					<span className={cn("font-mono text-[11px]", empty ? "text-warning" : "text-foreground")}>
+					<span
+						className={cn(
+							"font-mono text-[11px]",
+							empty ? "text-severity-warn" : "text-foreground",
+						)}
+					>
 						{empty ? "no widgets" : widgetCountLabel(dashboard)}
 					</span>
 					<span className="text-muted-foreground truncate font-mono text-[10px]">

@@ -39,7 +39,7 @@ export function PlanetScaleMetricsHealth({
 		<div className="border-t border-border/60 p-4">
 			<div className="flex flex-wrap items-center gap-2 text-xs">
 				<StatusDot
-					tone={state === "healthy" ? "success" : state === "waiting" ? "neutral" : "warning"}
+					tone={state === "healthy" ? "ok" : state === "waiting" ? "neutral" : "warn"}
 					className={state === "waiting" ? "animate-pulse" : undefined}
 				/>
 				<span className="font-medium text-foreground">{HEADLINE[state]}</span>

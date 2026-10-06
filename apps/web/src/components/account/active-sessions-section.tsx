@@ -13,6 +13,7 @@ import { ComputerIcon, MobileIcon } from "@/components/icons"
 import { RelativeTime } from "@/components/common/relative-time"
 import { useMountEffect } from "@/hooks/use-mount-effect"
 import { accountErrorMessage, toastAccountError } from "@/components/account/account-errors"
+import { useAsyncAction } from "@/hooks/use-mutation-action"
 
 type LoadState =
 	| { status: "loading" }
@@ -36,7 +37,7 @@ export function ActiveSessionsSection() {
 
 	const [state, setState] = useState<LoadState>({ status: "loading" })
 	const [pendingRevoke, setPendingRevoke] = useState<SessionWithActivities | null>(null)
-	const [isRevoking, setIsRevoking] = useState(false)
+	const [withRevoking, isRevoking] = useAsyncAction((task: () => Promise<void>) => task())
 
 	const revokeSession = useReverification((session: SessionWithActivities) => session.revoke())
 
@@ -59,21 +60,20 @@ export function ActiveSessionsSection() {
 		}
 	}
 
-	async function handleRevoke() {
+	function handleRevoke() {
 		if (!pendingRevoke) return
-		setIsRevoking(true)
-		try {
-			await revokeSession(pendingRevoke)
-			setPendingRevoke(null)
-			toastManager.add({ title: "Session signed out", type: "success" })
-			// `revoke()` returns only the one session, so refetch rather than patching state and
-			// risking a list that disagrees with Clerk about what is still active.
-			await load()
-		} catch (err) {
-			toastAccountError(err, "Failed to sign out that session")
-		} finally {
-			setIsRevoking(false)
-		}
+		return withRevoking(async () => {
+			try {
+				await revokeSession(pendingRevoke)
+				setPendingRevoke(null)
+				toastManager.add({ title: "Session signed out", type: "success" })
+				// `revoke()` returns only the one session, so refetch rather than patching state and
+				// risking a list that disagrees with Clerk about what is still active.
+				await load()
+			} catch (err) {
+				toastAccountError(err, "Failed to sign out that session")
+			}
+		})
 	}
 
 	return (

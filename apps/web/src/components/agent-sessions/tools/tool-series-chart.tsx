@@ -54,7 +54,7 @@ function durationSeries(driving: ToolPercentile): ReadonlyArray<ChartSeries> {
 			key === driving
 				? "var(--primary)"
 				: key === "p95"
-					? "var(--severity-error)"
+					? "var(--color-severity-error)"
 					: "var(--muted-foreground)",
 	}))
 }

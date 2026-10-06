@@ -54,7 +54,7 @@ function StatusBanner({ connection }: { connection: IngestConnection }) {
 	return (
 		<div className="bg-card flex items-center gap-3 rounded-lg border px-4 py-2.5">
 			{connected ? (
-				<StatusDot tone="custom" size="lg" className="bg-severity-info" />
+				<StatusDot tone="ok" size="lg" />
 			) : (
 				<PulseIcon
 					size={12}

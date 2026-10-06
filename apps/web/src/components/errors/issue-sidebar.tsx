@@ -163,7 +163,7 @@ export function IssueSidebar({
 								size="xs"
 								variant="ghost"
 								onClick={onHeartbeat}
-								disabled={busy === "heartbeat"}
+								loading={busy === "heartbeat"}
 							>
 								Extend
 							</Button>
@@ -171,7 +171,7 @@ export function IssueSidebar({
 								size="xs"
 								variant="ghost"
 								onClick={onRelease}
-								disabled={busy === "release"}
+								loading={busy === "release"}
 							>
 								Release
 							</Button>
@@ -185,7 +185,7 @@ export function IssueSidebar({
 								variant="outline"
 								className="-mr-0.5"
 								onClick={onClaim}
-								disabled={busy === "claim"}
+								loading={busy === "claim"}
 							>
 								Claim
 							</Button>

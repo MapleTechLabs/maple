@@ -29,6 +29,7 @@ import { getExitErrorMessage } from "@/lib/error-toast"
 import { publicError } from "@/lib/error-messages"
 import { useAlertDestinationsList } from "@/hooks/use-alerts-list"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
+import { useAsyncAction } from "@/hooks/use-mutation-action"
 import { MapleApiV2AtomClient, retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { Result, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { Badge } from "@maple/ui/components/ui/badge"
@@ -39,6 +40,7 @@ import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
 import { cn } from "@maple/ui/lib/utils"
+import { TONE_TEXT } from "@maple/ui/lib/tone"
 
 /**
  * Destination CRUD state + handlers, lifted into a hook so the route header's
@@ -81,7 +83,6 @@ export function useDestinationManager(options?: {
 	const [dialogOpen, setDialogOpen] = useState(false)
 	const [form, setForm] = useState<DestinationFormState>(defaultDestinationForm())
 	const [editing, setEditing] = useState<AlertDestinationDocument | null>(null)
-	const [saving, setSaving] = useState(false)
 	const [testingId, setTestingId] = useState<AlertDestinationDocument["id"] | null>(null)
 	const [deletingId, setDeletingId] = useState<AlertDestinationDocument["id"] | null>(null)
 
@@ -91,8 +92,7 @@ export function useDestinationManager(options?: {
 		setDialogOpen(true)
 	}
 
-	async function save() {
-		setSaving(true)
+	const [save, saving] = useAsyncAction(async () => {
 		if (editing) {
 			const result = await updateDestination({
 				params: { id: editing.id },
@@ -128,8 +128,7 @@ export function useDestinationManager(options?: {
 				})
 			}
 		}
-		setSaving(false)
-	}
+	})
 
 	async function test(destination: AlertDestinationDocument) {
 		setTestingId(destination.id)
@@ -373,7 +372,7 @@ export function AlertsSettingsTab({ manager, isAdmin }: { manager: DestinationMa
 															</Badge>
 															{event.attemptNumber > 1 && (
 																<span
-																	className="text-warning tabular-nums text-[11px]"
+																	className="text-severity-warn tabular-nums text-[11px]"
 																	title={`Attempt ${event.attemptNumber}`}
 																>
 																	↻{event.attemptNumber}
@@ -385,10 +384,10 @@ export function AlertsSettingsTab({ manager, isAdmin }: { manager: DestinationMa
 														<span
 															className={cn(
 																"flex items-center gap-1.5 text-xs font-medium",
-																ev.text,
+																TONE_TEXT[ev.tone],
 															)}
 														>
-															<StatusDot tone="custom" className={ev.dot} />
+															<StatusDot tone={ev.tone} />
 															{ev.label}
 														</span>
 													</TableCell>

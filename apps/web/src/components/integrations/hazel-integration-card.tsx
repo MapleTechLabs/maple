@@ -108,7 +108,7 @@ export function HazelIntegrationCard() {
 				<div>
 					<div className="flex items-center gap-2">
 						<h3 className="text-sm font-semibold">Hazel</h3>
-						<Badge variant="success">Connected</Badge>
+						<Badge variant="ok">Connected</Badge>
 					</div>
 					<p className="mt-1 text-xs text-muted-foreground">
 						Forward Maple alerts into a Hazel workspace via OAuth. Once connected, create a Hazel

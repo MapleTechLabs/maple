@@ -41,6 +41,7 @@ import { RadioGroup, RadioGroupItem } from "@maple/ui/components/ui/radio-group"
 import { cn } from "@maple/ui/lib/utils"
 import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
 import { displayError } from "@/lib/error-messages"
+import { useAsyncAction } from "@/hooks/use-mutation-action"
 import { SHAREABLE_WIDGET_KINDS, unsupportedShareWidgets } from "./share-support"
 import {
 	asDashboardId,
@@ -81,7 +82,6 @@ export function ShareDashboardDialog({
 	)
 	const boardShare = useMemo(() => shares.find((share) => share.widgetId === undefined), [shares])
 
-	const [busy, setBusy] = useState(false)
 	const [error, setError] = useState<string | null>(null)
 
 	/*
@@ -103,23 +103,18 @@ export function ShareDashboardDialog({
 	 * every pick or replace flashed. The guard lives here instead, so the
 	 * protection is centralised and no control has to change how it looks to get it.
 	 */
-	const run = async <A,>(action: () => Promise<Exit.Exit<A, unknown>>) => {
-		if (busy) return null
-		setBusy(true)
+	const [runAction, busy] = useAsyncAction(async (action: () => Promise<Exit.Exit<unknown, unknown>>) => {
 		setError(null)
-		try {
-			const result = await action()
-			if (Exit.isFailure(result)) {
-				setError(displayError(result).message)
-				setPendingMode(null)
-				return null
-			}
-			refreshList()
-			return result.value
-		} finally {
-			setBusy(false)
+		const result = await action()
+		if (Exit.isFailure(result)) {
+			setError(displayError(result).message)
+			setPendingMode(null)
+			return
 		}
-	}
+		refreshList()
+	})
+	const run = (action: () => Promise<Exit.Exit<unknown, unknown>>) =>
+		busy ? Promise.resolve() : runAction(action)
 
 	/*
 	 * None of these keep the token: the refreshed list carries it, because storage
@@ -336,7 +331,7 @@ export function ShareLinkRow({
 				</Button>
 			</div>
 			{confirmingReplace ? (
-				<Alert variant="error" size="sm" className="gap-y-2 py-2.5">
+				<Alert variant="crit" size="sm" className="gap-y-2 py-2.5">
 					<p className="leading-relaxed">
 						<span className="font-medium">Replace this link?</span>{" "}
 						<span className="text-muted-foreground">{replaceWarning} This can't be undone.</span>

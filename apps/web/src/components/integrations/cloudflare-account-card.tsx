@@ -81,9 +81,9 @@ function CloudflareAccountsStrip({ accounts }: { readonly accounts: ReadonlyArra
 						</ItemContent>
 						<ItemActions className="gap-1.5">
 							{account.revoked ? (
-								<Badge variant="error">Reconnect required</Badge>
+								<Badge variant="crit">Reconnect required</Badge>
 							) : !account.analyticsCapable ? (
-								<Badge variant="warning">Needs updated access</Badge>
+								<Badge variant="warn">Needs updated access</Badge>
 							) : null}
 							<span className="text-xs text-muted-foreground">
 								{countLabel(account.zoneCount, "zone")}
@@ -304,7 +304,7 @@ export function CloudflareAccountCard() {
 	// are no zones to attach it to.
 	const banner =
 		status == null ? null : !status.analyticsCapable ? (
-			<Alert variant="warning">
+			<Alert variant="warn">
 				<CircleWarningIcon />
 				<AlertTitle>Update access to collect analytics</AlertTitle>
 				<AlertDescription>

@@ -414,7 +414,7 @@ export function ErrorSignalRow({
 						) : (
 							<span
 								className={
-									isSurging ? "font-medium text-destructive" : "text-muted-foreground"
+									isSurging ? "font-medium text-severity-error" : "text-muted-foreground"
 								}
 							>
 								{formatNumber(signal.windowCount)}

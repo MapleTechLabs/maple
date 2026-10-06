@@ -10,8 +10,8 @@ export function WidgetFixAttachmentCard({ ctx, className }: WidgetFixAttachmentC
 	return (
 		<AttachmentCard
 			className={className}
-			stripe="bg-destructive"
-			tint="bg-destructive/[0.04]"
+			stripe="bg-severity-error"
+			tint="bg-severity-error/[0.04]"
 			meta={[
 				<span key="kind" className="font-medium">
 					Broken widget
@@ -25,10 +25,12 @@ export function WidgetFixAttachmentCard({ ctx, className }: WidgetFixAttachmentC
 			{(ctx.errorTitle || ctx.errorMessage) && (
 				<div className="mt-2 space-y-0.5">
 					{ctx.errorTitle && (
-						<div className="text-[11px] font-medium text-destructive">{ctx.errorTitle}</div>
+						<div className="text-[11px] font-medium text-severity-error">{ctx.errorTitle}</div>
 					)}
 					{ctx.errorMessage && (
-						<div className="text-[11px] text-destructive/80 line-clamp-2">{ctx.errorMessage}</div>
+						<div className="text-[11px] text-severity-error/80 line-clamp-2">
+							{ctx.errorMessage}
+						</div>
 					)}
 				</div>
 			)}

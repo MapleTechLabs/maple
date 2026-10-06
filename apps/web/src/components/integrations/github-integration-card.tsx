@@ -39,6 +39,7 @@ import { ErrorState } from "@/components/common/error-state"
 import { RelativeTime } from "@/components/common/relative-time"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
+import { useAsyncAction } from "@/hooks/use-mutation-action"
 import { useOrganizationFeatureFlags } from "@/hooks/use-organization-feature-flags"
 import { MapleApiAtomClient, retainedQuery } from "@/lib/services/common/atom-client"
 import { GITHUB_ACCENT, IntegrationIconPlate } from "./integration-catalog"
@@ -67,10 +68,10 @@ const SYNC_PRESENTATION: Record<
 	VcsRepoSyncStatus,
 	{ label: string; tone: string; Icon: typeof CircleCheckIcon; spin?: boolean }
 > = {
-	ready: { label: "Synced", tone: "text-success-foreground", Icon: CircleCheckIcon },
-	backfilling: { label: "Syncing", tone: "text-info-foreground", Icon: LoaderIcon, spin: true },
+	ready: { label: "Synced", tone: "text-severity-info", Icon: CircleCheckIcon },
+	backfilling: { label: "Syncing", tone: "text-severity-info", Icon: LoaderIcon, spin: true },
 	pending: { label: "Queued", tone: "text-muted-foreground", Icon: ClockIcon },
-	error: { label: "Sync failed", tone: "text-destructive-foreground", Icon: CircleWarningIcon },
+	error: { label: "Sync failed", tone: "text-severity-error", Icon: CircleWarningIcon },
 } satisfies Record<
 	VcsRepoSyncStatus,
 	{ label: string; tone: string; Icon: typeof CircleCheckIcon; spin?: boolean }
@@ -330,7 +331,7 @@ function DeactivatedState({
 	const repoCount = status.repositories.length
 
 	return (
-		<div className="flex flex-col items-center gap-5 rounded-lg border border-warning/40 bg-warning/5 px-6 py-10 text-center">
+		<div className="flex flex-col items-center gap-5 rounded-lg border border-severity-warn/40 bg-severity-warn/5 px-6 py-10 text-center">
 			<IntegrationIconPlate
 				icon={GithubIcon}
 				accent={GITHUB_ACCENT}
@@ -339,7 +340,7 @@ function DeactivatedState({
 				plateClassName="size-14 rounded-xl"
 				overlay={
 					<span className="absolute -bottom-1.5 -right-1.5 inline-flex items-center justify-center rounded-full bg-card">
-						<CircleWarningIcon size={18} className="text-warning-foreground" />
+						<CircleWarningIcon size={18} className="text-severity-warn" />
 					</span>
 				}
 			/>
@@ -421,7 +422,7 @@ function ConnectedView({
 		<div className="space-y-4">
 			<Item variant="card" size="lg" className="justify-between">
 				<ItemMedia>
-					<StatusDot tone="success" size="lg" />
+					<StatusDot tone="ok" size="lg" />
 				</ItemMedia>
 				<ItemContent className="leading-tight">
 					<div className="text-sm font-medium">
@@ -504,22 +505,19 @@ function ConnectedView({
 							<div className="flex items-center gap-3 text-xs text-muted-foreground">
 								{counts.synced > 0 ? (
 									<span className="flex items-center gap-1">
-										<CircleCheckIcon size={13} className="text-success-foreground" />
+										<CircleCheckIcon size={13} className="text-severity-info" />
 										{counts.synced} synced
 									</span>
 								) : null}
 								{counts.syncing > 0 ? (
 									<span className="flex items-center gap-1">
-										<Spinner size={13} className="text-info-foreground" />
+										<Spinner size={13} className="text-severity-info" />
 										{counts.syncing} syncing
 									</span>
 								) : null}
 								{counts.failed > 0 ? (
 									<span className="flex items-center gap-1">
-										<CircleWarningIcon
-											size={13}
-											className="text-destructive-foreground"
-										/>
+										<CircleWarningIcon size={13} className="text-severity-error" />
 										{counts.failed} failed
 									</span>
 								) : null}
@@ -556,7 +554,7 @@ function ConnectedView({
 				<Panel className="rounded-lg">
 					<PanelHeader>
 						<h3 className="flex items-center gap-1.5 text-sm font-medium">
-							<CircleWarningIcon size={15} className="text-warning-foreground" />
+							<CircleWarningIcon size={15} className="text-severity-warn" />
 							Needs attention
 						</h3>
 					</PanelHeader>
@@ -564,7 +562,7 @@ function ConnectedView({
 						{removedRepos.map((repo) => (
 							<Item key={repo.id} variant="flush" size="lg" render={<li />}>
 								<ItemMedia>
-									<CircleWarningIcon size={17} className="text-warning-foreground" />
+									<CircleWarningIcon size={17} className="text-severity-warn" />
 								</ItemMedia>
 								<ItemContent className="gap-0">
 									<div className="flex items-center gap-2">
@@ -705,7 +703,6 @@ function BranchSelector({
 }) {
 	const [open, setOpen] = useState(false)
 	const [query, setQuery] = useState("")
-	const [saving, setSaving] = useState(false)
 	// Optimistic view of the tracked branch; falls back to the default like the API.
 	const serverTracked = repo.trackedBranch ?? repo.branches.find((b) => b.isDefault)?.name ?? null
 	const [tracked, setTracked] = useState<string | null>(serverTracked)
@@ -724,19 +721,12 @@ function BranchSelector({
 		? repo.branches.filter((b) => b.name.toLowerCase().includes(query.toLowerCase()))
 		: repo.branches
 
-	async function commit(name: string) {
+	const [commit, saving] = useAsyncAction(async (name: string) => {
 		const prev = tracked
 		setTracked(name)
-		setSaving(true)
 		setOpen(false)
-		try {
-			await onSelect(name)
-		} catch {
-			setTracked(prev) // revert on failure
-		} finally {
-			setSaving(false)
-		}
-	}
+		await onSelect(name).catch(() => setTracked(prev)) // revert on failure
+	})
 
 	function pick(name: string) {
 		if (name === tracked) {

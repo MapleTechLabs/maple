@@ -19,6 +19,7 @@ import { ErrorState } from "@/components/common/error-state"
 import { RelativeTime } from "@/components/common/relative-time"
 import { ExternalLinkIcon, RailwayIcon } from "@/components/icons"
 import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
+import { useAsyncAction } from "@/hooks/use-mutation-action"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { errorMessage } from "@/lib/error-toast"
 import { MapleApiAtomClient, retainedQuery } from "@/lib/services/common/atom-client"
@@ -85,7 +86,6 @@ function RailwayTokenForm({
 		mode: "promiseExit",
 	})
 	const [token, setToken] = useState("")
-	const [submitting, setSubmitting] = useState(false)
 	const [error, setError] = useState<string | null>(null)
 
 	// Decoding builds the class instance v1 payloads need (a plain object is never sent) and
@@ -93,16 +93,13 @@ function RailwayTokenForm({
 	const request = decodeConnectRequest({ token: token.trim() })
 	const tokenInvalid = token.trim().length > 0 && Option.isNone(request)
 
-	async function handleSubmit(event: React.FormEvent) {
-		event.preventDefault()
+	const [submit, submitting] = useAsyncAction(async () => {
 		if (Option.isNone(request)) return
-		setSubmitting(true)
 		setError(null)
 		const result = await connect({
 			payload: request.value,
 			reactivityKeys: ["railwayIntegrationStatus"],
 		})
-		setSubmitting(false)
 		if (Exit.isSuccess(result)) {
 			toastManager.add(connectedToast(result.value, mode))
 			setToken("")
@@ -111,6 +108,11 @@ function RailwayTokenForm({
 		}
 		// Railway's rejection reason is the actionable part; keep it on screen.
 		setError(errorMessage(result, "Failed to connect Railway."))
+	})
+
+	function handleSubmit(event: React.FormEvent) {
+		event.preventDefault()
+		if (Option.isSome(request)) void submit()
 	}
 
 	return (
@@ -166,7 +168,17 @@ export function RailwayIntegrationCard() {
 		() => disconnect({ reactivityKeys: ["railwayIntegrationStatus"] }),
 		{ success: "Railway disconnected", error: "Failed to disconnect Railway" },
 	)
-	const [syncBusy, setSyncBusy] = useState(false)
+	const [handleSync, syncBusy] = useAsyncAction(async () => {
+		const result = await sync({ reactivityKeys: ["railwayIntegrationStatus"] })
+		if (Exit.isFailure(result)) {
+			// Non-admins are refused; the reason says so instead of a bare failure.
+			toastManager.add({
+				title: "Failed to sync Railway",
+				description: errorMessage(result, "Try again in a moment."),
+				type: "error",
+			})
+		}
+	})
 	const [rotating, setRotating] = useState(false)
 
 	// Keep the last loaded status if a refetch fails.
@@ -187,20 +199,6 @@ export function RailwayIntegrationCard() {
 				onRetry={refreshStatus}
 			/>
 		)
-	}
-
-	async function handleSync() {
-		setSyncBusy(true)
-		const result = await sync({ reactivityKeys: ["railwayIntegrationStatus"] })
-		setSyncBusy(false)
-		if (Exit.isFailure(result)) {
-			// Non-admins are refused; the reason says so instead of a bare failure.
-			toastManager.add({
-				title: "Failed to sync Railway",
-				description: errorMessage(result, "Try again in a moment."),
-				type: "error",
-			})
-		}
 	}
 
 	if (status === null || !status.connected) {
@@ -262,11 +260,11 @@ export function RailwayIntegrationCard() {
 					<div className="flex flex-wrap items-center gap-2">
 						<h3 className="text-sm font-semibold">Railway</h3>
 						{status.authFailed ? (
-							<Badge variant="error">Token rejected</Badge>
+							<Badge variant="crit">Token rejected</Badge>
 						) : failing > 0 ? (
-							<Badge variant="warning">Needs attention</Badge>
+							<Badge variant="warn">Needs attention</Badge>
 						) : (
-							<Badge variant="success">Connected</Badge>
+							<Badge variant="ok">Connected</Badge>
 						)}
 					</div>
 					<p className="text-xs text-muted-foreground">
@@ -297,7 +295,12 @@ export function RailwayIntegrationCard() {
 					) : (
 						<div className="flex flex-wrap gap-2">
 							<Button size="sm" render={<Link to="/infra/railway">View metrics</Link>} />
-							<Button size="sm" variant="outline" onClick={handleSync} loading={syncBusy}>
+							<Button
+								size="sm"
+								variant="outline"
+								onClick={() => void handleSync()}
+								loading={syncBusy}
+							>
 								Sync now
 							</Button>
 							<Button size="sm" variant="outline" onClick={() => setRotating(true)}>

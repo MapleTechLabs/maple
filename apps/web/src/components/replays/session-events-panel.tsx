@@ -4,7 +4,7 @@ import * as Predicate from "effect/Predicate"
 import { Link } from "@tanstack/react-router"
 import { cn } from "@maple/ui/lib/utils"
 import { httpStatusTone } from "@maple/ui/lib/http"
-import { TONE_TEXT } from "@maple/ui/lib/tone"
+import { TONE_FILL, TONE_TEXT } from "@maple/ui/lib/tone"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import {
 	getSessionTranscriptResultAtom,
@@ -309,7 +309,7 @@ function EventsTab({ sessionId, window }: { sessionId: string; window?: ReplayPa
 // Status 0 is a request that never got a response: as bad as a 5xx.
 function statusTone(status: number): string {
 	const tone = status === 0 ? "crit" : httpStatusTone(status)
-	return tone === "neutral" ? "text-success-foreground" : TONE_TEXT[tone]
+	return tone === "neutral" ? "text-severity-info" : TONE_TEXT[tone]
 }
 
 /**
@@ -370,8 +370,8 @@ const EVENT_KIND_VISUALS = {
 	},
 	error: {
 		Icon: PixelTriangleWarningIcon,
-		tone: "text-destructive",
-		selected: "bg-destructive/15 text-destructive",
+		tone: "text-severity-error",
+		selected: "bg-severity-error/15 text-severity-error",
 		label: "Error",
 	},
 } as const satisfies Record<string, { Icon: IconComponent; tone: string; selected: string; label: string }>
@@ -632,8 +632,8 @@ function EventLine({
 	const isError = ev.type === "error" || isFailedRequest(ev)
 
 	return (
-		<li className={cn("relative", isError && "bg-destructive/5")}>
-			{isError && <span aria-hidden className="absolute inset-y-0 left-0 w-0.5 bg-destructive" />}
+		<li className={cn("relative", isError && "bg-severity-error/5")}>
+			{isError && <span aria-hidden className="absolute inset-y-0 left-0 w-0.5 bg-severity-error" />}
 			<button
 				type="button"
 				onClick={() => {
@@ -651,7 +651,7 @@ function EventLine({
 					<Icon size={16} className={tone} />
 				</span>
 				<span className="flex min-w-0 flex-1 items-baseline gap-1.5 truncate">
-					<span className={cn("truncate", isError ? "text-destructive" : "text-foreground")}>
+					<span className={cn("truncate", isError ? "text-severity-error" : "text-foreground")}>
 						{lead}
 					</span>
 					{trail && <span className="shrink-0 text-[10px] text-muted-foreground">{trail}</span>}
@@ -665,9 +665,9 @@ function EventLine({
 							<span
 								className={cn(
 									isError || ev.netDurationMs >= 1000
-										? "font-semibold text-warning-foreground"
+										? cn("font-semibold", TONE_TEXT.warn)
 										: "text-muted-foreground",
-									isError && "text-destructive",
+									isError && TONE_TEXT.crit,
 								)}
 							>
 								{formatNetDuration(ev.netDurationMs)}
@@ -745,7 +745,7 @@ function NetDurationBar({ durationMs, failed }: { durationMs: number; failed: bo
 			value={durationMs}
 			max={NET_BAR_MAX_MS}
 			minVisible={2}
-			fillClassName={failed ? "bg-destructive" : slow ? "bg-warning" : "bg-chart-1"}
+			fillClassName={failed ? TONE_FILL.crit : slow ? TONE_FILL.warn : "bg-chart-1"}
 			className="h-[3px] w-full bg-muted"
 		/>
 	)
@@ -817,10 +817,10 @@ function TraceListRow({ summary }: { summary: SessionTraceSummary }) {
 		<li
 			className={cn(
 				"relative flex flex-col gap-0.5 px-3 py-2.5 hover:bg-muted/50",
-				isError && "bg-destructive/5",
+				isError && "bg-severity-error/5",
 			)}
 		>
-			{isError && <span aria-hidden className="absolute inset-y-0 left-0 w-0.5 bg-destructive" />}
+			{isError && <span aria-hidden className="absolute inset-y-0 left-0 w-0.5 bg-severity-error" />}
 			<div className="flex items-center gap-2.5">
 				<button
 					type="button"
@@ -839,13 +839,13 @@ function TraceListRow({ summary }: { summary: SessionTraceSummary }) {
 					className="min-w-0 flex-1"
 					textClassName={cn(
 						"truncate text-xs font-medium",
-						isError ? "text-destructive" : "text-foreground",
+						isError ? "text-severity-error" : "text-foreground",
 					)}
 				/>
 				<span
 					className={cn(
 						"shrink-0 font-mono text-[11px] tabular-nums",
-						isError ? "font-semibold text-destructive" : "text-muted-foreground",
+						isError ? "font-semibold text-severity-error" : "text-muted-foreground",
 					)}
 				>
 					{formatNetDuration(Math.round(summary.durationMs))}
@@ -1004,12 +1004,7 @@ function SessionTab({ sessionId, session }: { sessionId: string; session: Sessio
 				{session.recorded !== undefined && (
 					<Row icon={EyeIcon} label="Recording">
 						<span className="flex items-center gap-1.5 text-xs">
-							<StatusDot
-								tone="custom"
-								className={
-									session.recorded ? "bg-success-foreground" : "bg-muted-foreground/50"
-								}
-							/>
+							<StatusDot tone={session.recorded ? "ok" : "neutral"} />
 							<span className={session.recorded ? "text-foreground" : "text-muted-foreground"}>
 								{session.recorded ? "Complete" : "Not recorded"}
 							</span>
@@ -1254,17 +1249,17 @@ function Stat({
 		<div
 			className={cn(
 				"flex flex-col gap-0.5 rounded-md border border-border/50 bg-muted/30 px-2 py-1.5",
-				danger && "border-destructive/30 bg-destructive/5",
+				danger && "border-severity-error/30 bg-severity-error/5",
 			)}
 		>
 			<span className="flex items-center gap-1 text-[10px] text-muted-foreground">
-				<Icon className={cn("size-3 shrink-0", danger && "text-destructive")} aria-hidden />
+				<Icon className={cn("size-3 shrink-0", danger && "text-severity-error")} aria-hidden />
 				<span className="truncate">{label}</span>
 			</span>
 			<span
 				className={cn(
 					"font-mono text-sm font-semibold tabular-nums",
-					danger ? "text-destructive" : "text-foreground",
+					danger ? "text-severity-error" : "text-foreground",
 				)}
 			>
 				{value}

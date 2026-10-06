@@ -1,5 +1,5 @@
 import { InlineCode } from "@maple/ui/components/ui/inline-code"
-import { TONE_FILL, TONE_TEXT } from "@maple/ui/lib/tone"
+import { TONE_TEXT, type Tone } from "@maple/ui/lib/tone"
 import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { cn } from "@maple/ui/lib/utils"
 import { formatErrorRate } from "@maple/ui/lib/format"
@@ -229,7 +229,7 @@ export function TrendBars({
 						width={bar}
 						height={barHeight}
 						rx={radius}
-						fill="var(--severity-error)"
+						fill="var(--color-severity-error)"
 					/>
 				)
 			})}
@@ -249,11 +249,11 @@ export function windowRangeLabel(startMs: number, endMs: number, timeZone: strin
 		: `${start} – ${monthDay.format(endMs)}`
 }
 
-const STATUS_DOT = {
-	stopped: "bg-[var(--severity-info)]",
-	ongoing: TONE_FILL.crit,
-	quiet: "bg-muted-foreground",
-} satisfies Record<FailureStatus["kind"], string>
+const STATUS_TONE = {
+	stopped: "ok",
+	ongoing: "crit",
+	quiet: "neutral",
+} satisfies Record<FailureStatus["kind"], Tone>
 
 const shortDate = (ms: number, timeZone: string) =>
 	new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone }).format(ms)
@@ -321,7 +321,7 @@ export function FailureStatusLine({
 						]
 	return (
 		<span className={cn("flex items-center gap-2 font-mono text-[11.5px] leading-3.5", className)}>
-			<StatusDot tone="custom" className={STATUS_DOT[status.kind]} />
+			<StatusDot tone={STATUS_TONE[status.kind]} />
 			<span className="text-foreground">{lead}</span>
 			{detail === undefined ? null : <span className="text-muted-foreground/70">{detail}</span>}
 		</span>

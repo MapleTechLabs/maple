@@ -1,4 +1,6 @@
 import { useState } from "react"
+import { cn } from "@maple/ui/lib/utils"
+import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { Button } from "@maple/ui/components/ui/button"
 import { Item, ItemContent, ItemMedia, ItemTitle } from "@maple/ui/components/ui/item"
 import {
@@ -9,6 +11,7 @@ import {
 	CircleXmarkIcon,
 } from "@/components/icons"
 import { toolLabel } from "@/components/ai-elements/tool-metadata"
+import { useAsyncAction } from "@/hooks/use-mutation-action"
 import { ApprovalSummary, safeStringify } from "./approval-renderers"
 
 interface ApprovalCardProps {
@@ -21,31 +24,26 @@ interface ApprovalCardProps {
 }
 
 export function ApprovalCard({ toolName, input, resolved, onApprove, onDeny }: ApprovalCardProps) {
-	const [busy, setBusy] = useState<"approve" | "deny" | null>(null)
 	const [showRaw, setShowRaw] = useState(false)
 	const label = toolLabel(toolName)
-
-	const handle = (action: "approve" | "deny") => async () => {
-		setBusy(action)
-		try {
-			if (action === "approve") await onApprove()
-			else await onDeny()
-		} finally {
-			setBusy(null)
-		}
-	}
+	const [approve, approving] = useAsyncAction(async () => {
+		await onApprove()
+	})
+	const [deny, denying] = useAsyncAction(async () => {
+		await onDeny()
+	})
 
 	return (
-		<div className="overflow-hidden rounded-lg border border-warning/40 bg-warning/5 text-xs">
+		<div className="overflow-hidden rounded-lg border border-severity-warn/40 bg-severity-warn/5 text-xs">
 			<Item size="xs" variant="flush" className="gap-2 px-3">
 				<ItemMedia variant="icon">
-					<CircleWarningIcon className="size-3.5 text-warning" />
+					<CircleWarningIcon className={cn("size-3.5", TONE_TEXT.warn)} />
 				</ItemMedia>
 				<ItemContent>
 					<ItemTitle>Approval required: {label}</ItemTitle>
 				</ItemContent>
 			</Item>
-			<div className="border-t border-warning/20 bg-background/50 p-3">
+			<div className="border-t border-severity-warn/20 bg-background/50 p-3">
 				<ApprovalSummary toolName={toolName} input={input} />
 
 				<button
@@ -67,7 +65,7 @@ export function ApprovalCard({ toolName, input, resolved, onApprove, onDeny }: A
 				) : null}
 
 				{resolved === "applied" ? (
-					<div className="mt-3 flex items-center gap-1.5 font-medium text-success">
+					<div className="mt-3 flex items-center gap-1.5 font-medium text-severity-info">
 						<CircleCheckIcon className="size-3.5 shrink-0" />
 						Applied
 					</div>
@@ -81,9 +79,9 @@ export function ApprovalCard({ toolName, input, resolved, onApprove, onDeny }: A
 						<Button
 							type="button"
 							size="sm"
-							onClick={handle("approve")}
-							loading={busy === "approve"}
-							disabled={busy !== null}
+							onClick={() => void approve()}
+							loading={approving}
+							disabled={denying}
 						>
 							Approve
 						</Button>
@@ -91,9 +89,9 @@ export function ApprovalCard({ toolName, input, resolved, onApprove, onDeny }: A
 							type="button"
 							size="sm"
 							variant="ghost"
-							onClick={handle("deny")}
-							loading={busy === "deny"}
-							disabled={busy !== null}
+							onClick={() => void deny()}
+							loading={denying}
+							disabled={approving}
 						>
 							Deny
 						</Button>

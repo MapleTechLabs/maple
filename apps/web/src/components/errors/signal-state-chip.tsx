@@ -46,12 +46,12 @@ export function SignalStateChip({
 		return (
 			<span
 				className={cn(
-					"inline-flex max-w-full items-center gap-1.5 text-[11px] font-medium whitespace-nowrap text-destructive",
+					"inline-flex max-w-full items-center gap-1.5 text-[11px] font-medium whitespace-nowrap text-severity-error",
 					className,
 				)}
 				title="An incident is open for this error"
 			>
-				<StatusDot tone="error" />
+				<StatusDot tone="crit" />
 				<span className="truncate">Open incident</span>
 			</span>
 		)

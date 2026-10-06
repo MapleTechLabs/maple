@@ -19,6 +19,7 @@
 //     decaying shape instead of a flat wall of names.
 
 import { useDeferredValue, useMemo, useState, type ReactNode } from "react"
+import { ResultView } from "@/components/common/result-view"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
@@ -407,90 +408,94 @@ function StoredBreakdown({
 	const query = useDeferredValue(search).trim().toLowerCase()
 	const { effectiveTimezone } = useTimezonePreference()
 
-	return Result.builder(result)
-		.onInitial(() => (
-			<div className="space-y-2 px-3 pb-3">
-				<Skeleton className="h-40 w-full" />
-				<Skeleton className="h-4 w-5/6" />
-				<Skeleton className="h-4 w-2/3" />
-			</div>
-		))
-		.onError(() => (
-			<p className="px-3 pb-3 font-mono text-[11px] text-muted-foreground">
-				Couldn't load the {dimension.column.toLowerCase()} breakdown.
-			</p>
-		))
-		.onSuccess((data, r) => {
-			const collectedFrom =
-				data.coverageStart != null &&
-				warehouseTimeToMs(startTime) < new Date(data.coverageStart).getTime() - 60_000
-					? formatCollectedFrom(data.coverageStart, effectiveTimezone)
-					: null
-			const notCollected = data.coverageStart == null && data.totals.length === 0
-			const matches =
-				query === ""
-					? data.totals
-					: data.totals.filter((row) => row.key.toLowerCase().includes(query))
+	return (
+		<ResultView
+			result={result}
+			loading={
+				<div className="space-y-2 px-3 pb-3">
+					<Skeleton className="h-40 w-full" />
+					<Skeleton className="h-4 w-5/6" />
+					<Skeleton className="h-4 w-2/3" />
+				</div>
+			}
+			error={() => (
+				<p className="px-3 pb-3 font-mono text-[11px] text-muted-foreground">
+					Couldn't load the {dimension.column.toLowerCase()} breakdown.
+				</p>
+			)}
+		>
+			{(data, { waiting }) => {
+				const collectedFrom =
+					data.coverageStart != null &&
+					warehouseTimeToMs(startTime) < new Date(data.coverageStart).getTime() - 60_000
+						? formatCollectedFrom(data.coverageStart, effectiveTimezone)
+						: null
+				const notCollected = data.coverageStart == null && data.totals.length === 0
+				const matches =
+					query === ""
+						? data.totals
+						: data.totals.filter((row) => row.key.toLowerCase().includes(query))
 
-			return (
-				<div className={refreshingClass(r.waiting)} aria-busy={r.waiting || undefined}>
-					<Toolbar
-						dimension={dimension}
-						value={search}
-						onChange={onSearchChange}
-						count={data.totals.length}
-						meta={
-							// Below 99.5% the fold is actually hiding something; above it, saying so is noise.
-							data.coverage < 0.995 && data.totals.length > 0 ? (
-								<span className="font-mono text-[10px] text-muted-foreground">
-									{formatPercent(data.coverage)} of zone requests
-								</span>
-							) : null
-						}
-					/>
-					<div className="px-3 pb-2">
-						<StackedBreakdownChart
-							title={dimension.column}
-							rows={data.buckets.map((b) => ({
-								bucket: b.bucket,
-								attributeValue: b.key,
-								value: b.requests,
-							}))}
-							colors={dimension.colors ?? {}}
-							order={dimension.order ?? []}
-							syncId={syncId}
+				return (
+					<div className={refreshingClass(waiting)} aria-busy={waiting || undefined}>
+						<Toolbar
+							dimension={dimension}
+							value={search}
+							onChange={onSearchChange}
+							count={data.totals.length}
+							meta={
+								// Below 99.5% the fold is actually hiding something; above it, saying so is noise.
+								data.coverage < 0.995 && data.totals.length > 0 ? (
+									<span className="font-mono text-[10px] text-muted-foreground">
+										{formatPercent(data.coverage)} of zone requests
+									</span>
+								) : null
+							}
+						/>
+						<div className="px-3 pb-2">
+							<StackedBreakdownChart
+								title={dimension.column}
+								rows={data.buckets.map((b) => ({
+									bucket: b.bucket,
+									attributeValue: b.key,
+									value: b.requests,
+								}))}
+								colors={dimension.colors ?? {}}
+								order={dimension.order ?? []}
+								syncId={syncId}
+							/>
+						</div>
+						<BreakdownTable
+							dimension={dimension}
+							rows={matches}
+							waiting={waiting}
+							emptyMessage={
+								query !== ""
+									? `No listed ${dimension.noun} match "${search.trim()}".`
+									: notCollected
+										? `Not collected for this period. ${dimension.column} data starts once the poller has run.`
+										: "No traffic in the selected window."
+							}
+							filters={filters}
+							onToggleFilter={onToggleFilter}
+							interactive
+						/>
+						<Footer
+							dimension={dimension}
+							shown={matches.length}
+							total={data.totals.length}
+							collectedFrom={collectedFrom}
+							onSearchLive={
+								dimension.liveDimension !== undefined && search.trim() !== ""
+									? onSearchLive
+									: undefined
+							}
 						/>
 					</div>
-					<BreakdownTable
-						dimension={dimension}
-						rows={matches}
-						waiting={r.waiting}
-						emptyMessage={
-							query !== ""
-								? `No listed ${dimension.noun} match "${search.trim()}".`
-								: notCollected
-									? `Not collected for this period. ${dimension.column} data starts once the poller has run.`
-									: "No traffic in the selected window."
-						}
-						filters={filters}
-						onToggleFilter={onToggleFilter}
-						interactive
-					/>
-					<Footer
-						dimension={dimension}
-						shown={matches.length}
-						total={data.totals.length}
-						collectedFrom={collectedFrom}
-						onSearchLive={
-							dimension.liveDimension !== undefined && search.trim() !== ""
-								? onSearchLive
-								: undefined
-						}
-					/>
-				</div>
-			)
-		})
-		.render()
+				)
+			}}
+		</ResultView>
+	)
 }
 
 function Footer({
@@ -579,62 +584,66 @@ function LiveBreakdown({
 		/>
 	)
 
-	return Result.builder(result)
-		.onInitial(() => (
-			<>
-				{toolbar(0)}
-				<div className="space-y-2 px-3 pb-3">
-					<Skeleton className="h-4 w-full" />
-					<Skeleton className="h-4 w-5/6" />
-					<Skeleton className="h-4 w-2/3" />
-				</div>
-			</>
-		))
-		.onError(() => (
-			<>
-				{toolbar(0)}
-				<p className="px-3 pb-3 font-mono text-[11px] text-muted-foreground">
-					Couldn't reach Cloudflare's analytics API for this zone right now.
-				</p>
-			</>
-		))
-		.onSuccess((data, r) => {
-			if (data.unavailableReason != null) {
-				return (
-					<>
-						{toolbar(0)}
-						<p className="px-3 pb-3 font-mono text-[11px] text-muted-foreground">
-							Cloudflare can't serve this breakdown: {data.unavailableReason}
-						</p>
-					</>
-				)
+	return (
+		<ResultView
+			result={result}
+			loading={
+				<>
+					{toolbar(0)}
+					<div className="space-y-2 px-3 pb-3">
+						<Skeleton className="h-4 w-full" />
+						<Skeleton className="h-4 w-5/6" />
+						<Skeleton className="h-4 w-2/3" />
+					</div>
+				</>
 			}
-			const attributed = data.rows.reduce((sum, row) => sum + row.requests, 0)
-			const rows = data.rows.map((row): CloudflareBreakdownTotal => ({
-				key: row.key,
-				requests: row.requests,
-				errors5xx: 0,
-				bytes: row.bytes,
-				errorRate: row.errorRate,
-				share: attributed > 0 ? row.requests / attributed : 0,
-			}))
-
-			return (
-				<div className={refreshingClass(r.waiting)} aria-busy={r.waiting || undefined}>
-					{toolbar(rows.length)}
-					<BreakdownTable
-						dimension={dimension}
-						rows={rows}
-						waiting={r.waiting}
-						emptyMessage={`No ${dimension.noun} match "${query}" in this window.`}
-						interactive={false}
-					/>
-					<p className="px-3 py-2 font-mono text-[10px] text-muted-foreground">
-						Cloudflare's top {rows.length} for "{query}" · clear the filter to return to stored
-						data
+			error={() => (
+				<>
+					{toolbar(0)}
+					<p className="px-3 pb-3 font-mono text-[11px] text-muted-foreground">
+						Couldn't reach Cloudflare's analytics API for this zone right now.
 					</p>
-				</div>
-			)
-		})
-		.render()
+				</>
+			)}
+		>
+			{(data, { waiting }) => {
+				if (data.unavailableReason != null) {
+					return (
+						<>
+							{toolbar(0)}
+							<p className="px-3 pb-3 font-mono text-[11px] text-muted-foreground">
+								Cloudflare can't serve this breakdown: {data.unavailableReason}
+							</p>
+						</>
+					)
+				}
+				const attributed = data.rows.reduce((sum, row) => sum + row.requests, 0)
+				const rows = data.rows.map((row): CloudflareBreakdownTotal => ({
+					key: row.key,
+					requests: row.requests,
+					errors5xx: 0,
+					bytes: row.bytes,
+					errorRate: row.errorRate,
+					share: attributed > 0 ? row.requests / attributed : 0,
+				}))
+
+				return (
+					<div className={refreshingClass(waiting)} aria-busy={waiting || undefined}>
+						{toolbar(rows.length)}
+						<BreakdownTable
+							dimension={dimension}
+							rows={rows}
+							waiting={waiting}
+							emptyMessage={`No ${dimension.noun} match "${query}" in this window.`}
+							interactive={false}
+						/>
+						<p className="px-3 py-2 font-mono text-[10px] text-muted-foreground">
+							Cloudflare's top {rows.length} for "{query}" · clear the filter to return to
+							stored data
+						</p>
+					</div>
+				)
+			}}
+		</ResultView>
+	)
 }

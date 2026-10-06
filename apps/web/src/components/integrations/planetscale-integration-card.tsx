@@ -1,7 +1,6 @@
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { KeyValue, KeyValueList } from "@maple/ui/components/ui/key-value"
 import { useMemo, useState } from "react"
-import { Exit } from "effect"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
 import {
@@ -16,17 +15,16 @@ import {
 import { Input } from "@maple/ui/components/ui/input"
 import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import { Item, ItemActions, ItemContent, ItemMedia } from "@maple/ui/components/ui/item"
-import { Label } from "@maple/ui/components/ui/label"
+import { Field, FieldDescription, FieldLabel } from "@maple/ui/components/ui/field"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import { toastManager } from "@maple/ui/components/ui/toast"
 
 import { PlanetScaleIcon } from "@/components/icons"
 import { cn } from "@maple/ui/lib/utils"
 import { isExcluded } from "@/components/infra/planetscale/branch-selection"
 import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
+import { useMutationAction } from "@/hooks/use-mutation-action"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { MapleApiV2AtomClient, retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
-import { showErrorToast } from "@/lib/error-toast"
 import { IntegrationIconPlate, catalogEntry } from "./integration-catalog"
 import { useRequiredIntegrationConnect } from "./integration-connect"
 import { useIntegrationDisconnect } from "./use-integration-disconnect"
@@ -212,11 +210,11 @@ export function PlanetScaleIntegrationCard() {
 							{/* "Connected" while three of four steps are done overstates it —
 							    the badge tracks the checklist. */}
 							{setup !== null && !setup.complete ? (
-								<Badge variant="warning">
+								<Badge variant="warn">
 									Step {setup.activeStepNumber} of {setup.steps.length}
 								</Badge>
 							) : (
-								<Badge variant="success">Connected</Badge>
+								<Badge variant="ok">Connected</Badge>
 							)}
 						</div>
 						<p className="mt-1 text-xs text-muted-foreground">
@@ -447,15 +445,18 @@ function PlanetScaleOrgPicker(props: {
 			reactivityKeys: ["planetscaleIntegration"],
 		}),
 	)
-	const selectOrganization = useAtomSet(
+	const [selected, setSelected] = useState<string | null>(props.initialOrganization ?? null)
+	const [selectOrganization, submitting] = useMutationAction(
 		MapleApiV2AtomClient.mutation("planetscaleIntegration", "selectOrganization"),
-		{ mode: "promiseExit" },
+		{
+			success: () => `PlanetScale organization ${selected} connected`,
+			error: "Failed to connect PlanetScale organization",
+			onSuccess: () => props.onDone(),
+		},
 	)
 
-	const [selected, setSelected] = useState<string | null>(props.initialOrganization ?? null)
 	const [includeBranches, setIncludeBranches] = useState(props.initialIncludeBranches ?? "")
 	const [excludeBranches, setExcludeBranches] = useState(props.initialExcludeBranches ?? "")
-	const [submitting, setSubmitting] = useState(false)
 
 	const branchNames = useMemo(
 		() =>
@@ -476,10 +477,9 @@ function PlanetScaleOrgPicker(props: {
 
 	async function handleSubmit() {
 		if (selected === null) return
-		setSubmitting(true)
 		const include = parsePatternList(includeBranches)
 		const exclude = parsePatternList(excludeBranches)
-		const result = await selectOrganization({
+		await selectOrganization({
 			payload: {
 				organization: selected,
 				...(include.length > 0 ? { include_branches: include } : undefined),
@@ -488,13 +488,6 @@ function PlanetScaleOrgPicker(props: {
 			// finalizeOrgSelection re-parents the managed scrape target — refresh the list below.
 			reactivityKeys: ["planetscaleIntegration", "scrapeTargets"],
 		})
-		setSubmitting(false)
-		if (Exit.isSuccess(result)) {
-			toastManager.add({ title: `PlanetScale organization ${selected} connected`, type: "success" })
-			props.onDone()
-		} else {
-			showErrorToast(result, { fallbackTitle: "Failed to connect PlanetScale organization" })
-		}
 	}
 
 	if (Result.isInitial(organizationsResult)) {
@@ -535,8 +528,8 @@ function PlanetScaleOrgPicker(props: {
 				))}
 			</div>
 			<div className="flex flex-col gap-3">
-				<div className="flex flex-col gap-1.5">
-					<Label htmlFor="ps-include-branches">Only these branches (optional)</Label>
+				<Field className="items-stretch gap-1.5">
+					<FieldLabel htmlFor="ps-include-branches">Only these branches (optional)</FieldLabel>
 					<Input
 						id="ps-include-branches"
 						placeholder="main, staging"
@@ -544,13 +537,13 @@ function PlanetScaleOrgPicker(props: {
 						onChange={(event) => setIncludeBranches(event.target.value)}
 						autoComplete="off"
 					/>
-					<p className="text-xs text-muted-foreground">
+					<FieldDescription>
 						Leave blank to collect every branch. When set, only matching branches are collected —
 						exclusions still apply on top.
-					</p>
-				</div>
-				<div className="flex flex-col gap-1.5">
-					<Label htmlFor="ps-exclude-branches">Exclude branches (optional)</Label>
+					</FieldDescription>
+				</Field>
+				<Field className="items-stretch gap-1.5">
+					<FieldLabel htmlFor="ps-exclude-branches">Exclude branches (optional)</FieldLabel>
 					<Input
 						id="ps-exclude-branches"
 						placeholder="pr-*, preview-*"
@@ -558,11 +551,11 @@ function PlanetScaleOrgPicker(props: {
 						onChange={(event) => setExcludeBranches(event.target.value)}
 						autoComplete="off"
 					/>
-					<p className="text-xs text-muted-foreground">
+					<FieldDescription>
 						Glob patterns — <InlineCode>*</InlineCode> matches any run, <InlineCode>?</InlineCode>{" "}
 						exactly one character.
-					</p>
-				</div>
+					</FieldDescription>
+				</Field>
 				{/* The preview shares its glob implementation with the scraper
 				    (@maple/domain/glob), so what it counts is what gets collected. */}
 				{preview !== null ? (
@@ -585,7 +578,7 @@ function PlanetScaleOrgPicker(props: {
 				<Button variant="outline" onClick={props.onCancel} disabled={submitting}>
 					{props.cancelLabel}
 				</Button>
-				<Button onClick={handleSubmit} disabled={selected === null} loading={submitting}>
+				<Button onClick={() => void handleSubmit()} disabled={selected === null} loading={submitting}>
 					Connect organization
 				</Button>
 			</DialogFooter>

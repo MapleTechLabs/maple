@@ -9,6 +9,7 @@ import { ErrorState } from "@/components/common/error-state"
 import { ExternalLinkIcon } from "@/components/icons"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { trackProduct } from "@/lib/analytics"
+import { useAsyncAction } from "@/hooks/use-mutation-action"
 import { displayError } from "@/lib/error-messages"
 import {
 	inviteToSupportChannelMutation,
@@ -23,15 +24,12 @@ export function SupportChannelBody() {
 	const result = useAtomValue(channelAtom)
 	const refresh = useAtomRefresh(channelAtom)
 	const runInvite = useAtomSet(inviteToSupportChannelMutation, { mode: "promiseExit" })
-	const [pending, setPending] = useState(false)
 	const [error, setError] = useState<string | null>(null)
 	const [invited, setInvited] = useState<V2SupportChannel | null>(null)
 
-	async function invite() {
-		setPending(true)
+	const [invite, pending] = useAsyncAction(async () => {
 		setError(null)
 		const exit = await runInvite({})
-		setPending(false)
 		if (Exit.isSuccess(exit)) {
 			trackProduct("support_channel_invite_sent")
 			setInvited(exit.value)
@@ -39,7 +37,7 @@ export function SupportChannelBody() {
 			return
 		}
 		setError(displayError(exit).message)
-	}
+	})
 
 	if (invited !== null) {
 		return (

@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react"
 import { Exit } from "effect"
 import { toastManager } from "@maple/ui/components/ui/toast"
+import { Field, FieldLabel, FieldDescription } from "@maple/ui/components/ui/field"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { MapleInternalAtomClient, retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
 import { UpsertDigestSubscriptionRequest } from "@maple/domain/http"
@@ -8,7 +9,6 @@ import { useUser } from "@clerk/clerk-react"
 import { formatWarehouseDateTime } from "@maple/query-engine"
 
 import { Button } from "@maple/ui/components/ui/button"
-import { Label } from "@maple/ui/components/ui/label"
 import { SettingRow } from "@maple/ui/components/ui/setting-row"
 import { Switch } from "@maple/ui/components/ui/switch"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
@@ -16,10 +16,18 @@ import { MultiSelectCombobox } from "@maple/ui/components/multi-select-combobox"
 import { ChartBarTrendUpIcon, EnvelopeIcon } from "@/components/icons"
 import { getServicesFacetsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { snapRangeForCache } from "@/lib/time-utils"
+import { useAsyncAction } from "@/hooks/use-mutation-action"
 
 /** Two arrays are the same scope regardless of the order they were picked in. */
 const sameScope = (a: readonly string[], b: readonly string[]) =>
 	a.length === b.length && [...a].sort().every((value, index) => value === [...b].sort()[index])
+
+interface DigestSave {
+	enabled: boolean
+	environments: string[]
+	namespaces: string[]
+	webAnalyticsEnabled?: boolean
+}
 
 export function NotificationsSection() {
 	const { user } = useUser()
@@ -43,9 +51,6 @@ export function NotificationsSection() {
 	const [enabledEdit, setEnabledEdit] = useState<boolean | null>(null)
 	const [webAnalyticsEdit, setWebAnalyticsEdit] = useState<boolean | null>(null)
 	const [scopeEdit, setScopeEdit] = useState<{ environments: string[]; namespaces: string[] } | null>(null)
-	const [isSaving, setIsSaving] = useState(false)
-	const [isPreviewing, setIsPreviewing] = useState(false)
-	const [isPreviewingWebAnalytics, setIsPreviewingWebAnalytics] = useState(false)
 
 	const enabled = enabledEdit ?? saved?.enabled ?? true
 	const webAnalyticsEnabled = webAnalyticsEdit ?? saved?.webAnalyticsEnabled ?? true
@@ -95,14 +100,8 @@ export function NotificationsSection() {
 	const scopeDirty =
 		!sameScope(environments, savedScope.environments) || !sameScope(namespaces, savedScope.namespaces)
 
-	async function save(next: {
-		enabled: boolean
-		environments: string[]
-		namespaces: string[]
-		webAnalyticsEnabled?: boolean
-	}): Promise<boolean> {
+	const [save, isSaving] = useAsyncAction(async (next: DigestSave): Promise<boolean> => {
 		if (!email) return false
-		setIsSaving(true)
 		const result = await upsertMutation({
 			payload: new UpsertDigestSubscriptionRequest({
 				email,
@@ -114,7 +113,6 @@ export function NotificationsSection() {
 				webAnalyticsEnabled: next.webAnalyticsEnabled ?? webAnalyticsEnabled,
 			}),
 		})
-		setIsSaving(false)
 		if (Exit.isSuccess(result)) {
 			// Drop the local edits; the refreshed subscription now carries them.
 			setEnabledEdit(null)
@@ -123,7 +121,7 @@ export function NotificationsSection() {
 			refreshSubscription()
 		}
 		return Exit.isSuccess(result)
-	}
+	})
 
 	async function handleToggle(checked: boolean) {
 		setEnabledEdit(checked)
@@ -182,21 +180,17 @@ export function NotificationsSection() {
 		doc.body.append(frame)
 	}
 
-	async function handlePreview() {
-		setIsPreviewing(true)
+	const [handlePreview, isPreviewing] = useAsyncAction(async () => {
 		const result = await previewMutation({})
 		if (Exit.isSuccess(result)) openPreview(result.value.html)
 		else toastManager.add({ title: "Failed to generate digest preview", type: "error" })
-		setIsPreviewing(false)
-	}
+	})
 
-	async function handlePreviewWebAnalytics() {
-		setIsPreviewingWebAnalytics(true)
+	const [handlePreviewWebAnalytics, isPreviewingWebAnalytics] = useAsyncAction(async () => {
 		const result = await previewWebAnalyticsMutation({})
 		if (Exit.isSuccess(result)) openPreview(result.value.html)
 		else toastManager.add({ title: "Failed to generate web analytics preview", type: "error" })
-		setIsPreviewingWebAnalytics(false)
-	}
+	})
 
 	if (!settled || !user) {
 		return (
@@ -220,8 +214,8 @@ export function NotificationsSection() {
 			/>
 			{enabled && (
 				<div className="space-y-4 rounded-lg border border-border p-4">
-					<div className="space-y-1.5">
-						<Label htmlFor="digest-namespaces">Namespaces</Label>
+					<Field>
+						<FieldLabel htmlFor="digest-namespaces">Namespaces</FieldLabel>
 						<MultiSelectCombobox
 							id="digest-namespaces"
 							emptyMessage="No namespaces detected."
@@ -230,9 +224,9 @@ export function NotificationsSection() {
 							onChange={setNamespaces}
 							placeholder={namespaces.length === 0 ? "All namespaces" : "Add namespace..."}
 						/>
-					</div>
-					<div className="space-y-1.5">
-						<Label htmlFor="digest-environments">Environments</Label>
+					</Field>
+					<Field>
+						<FieldLabel htmlFor="digest-environments">Environments</FieldLabel>
 						<MultiSelectCombobox
 							id="digest-environments"
 							emptyMessage="No environments detected."
@@ -243,10 +237,10 @@ export function NotificationsSection() {
 								environments.length === 0 ? "All environments" : "Add environment..."
 							}
 						/>
-						<p className="text-muted-foreground text-xs">
+						<FieldDescription>
 							Leave both empty to receive a digest covering the whole organization.
-						</p>
-					</div>
+						</FieldDescription>
+					</Field>
 					<div className="flex items-center gap-2">
 						<Button
 							variant="outline"

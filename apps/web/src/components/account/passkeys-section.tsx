@@ -2,6 +2,7 @@ import { useState } from "react"
 import { useReverification, useUser } from "@clerk/clerk-react"
 import type { Passkey } from "@/components/account/account-types"
 import { toastManager } from "@maple/ui/components/ui/toast"
+import { Field, FieldLabel } from "@maple/ui/components/ui/field"
 
 import { Button } from "@maple/ui/components/ui/button"
 import {
@@ -14,7 +15,6 @@ import {
 } from "@maple/ui/components/ui/card"
 import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
 import { Input } from "@maple/ui/components/ui/input"
-import { Label } from "@maple/ui/components/ui/label"
 import {
 	Dialog,
 	DialogContent,
@@ -35,6 +35,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { DotsVerticalIcon, FingerprintIcon, PencilIcon, PlusIcon, TrashIcon } from "@/components/icons"
 import { toastAccountError } from "@/components/account/account-errors"
 import { AccountSectionSkeleton } from "@/components/account/account-section-skeleton"
+import { useAsyncAction } from "@/hooks/use-mutation-action"
 
 /**
  * `@clerk/shared/webauthn` exports `isWebAuthnSupported()`, but it is not a declared dependency
@@ -47,7 +48,7 @@ const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" })
 export function PasskeysSection() {
 	const { user, isLoaded } = useUser()
 
-	const [isBusy, setIsBusy] = useState(false)
+	const [withBusy, isBusy] = useAsyncAction((task: () => Promise<void>) => task())
 	const [renaming, setRenaming] = useState<{ passkey: Passkey; name: string } | null>(null)
 	const [pendingRemoval, setPendingRemoval] = useState<Passkey | null>(null)
 
@@ -59,48 +60,45 @@ export function PasskeysSection() {
 	const supported = isWebAuthnSupported()
 	const passkeys = user.passkeys
 
-	async function handleCreate() {
-		setIsBusy(true)
-		try {
-			// `createPasskey()` takes no name — Clerk derives one from the authenticator, and it is
-			// renamed afterwards if the user wants something clearer.
-			await createPasskey()
-			toastManager.add({ title: "Passkey added", type: "success" })
-		} catch (err) {
-			toastAccountError(err, "Failed to add a passkey")
-		} finally {
-			setIsBusy(false)
-		}
+	function handleCreate() {
+		return withBusy(async () => {
+			try {
+				// `createPasskey()` takes no name — Clerk derives one from the authenticator, and it is
+				// renamed afterwards if the user wants something clearer.
+				await createPasskey()
+				toastManager.add({ title: "Passkey added", type: "success" })
+			} catch (err) {
+				toastAccountError(err, "Failed to add a passkey")
+			}
+		})
 	}
 
-	async function handleRename() {
+	function handleRename() {
 		if (!renaming) return
 		const name = renaming.name.trim()
 		if (name.length === 0) return
-		setIsBusy(true)
-		try {
-			await renaming.passkey.update({ name })
-			setRenaming(null)
-			toastManager.add({ title: "Passkey renamed", type: "success" })
-		} catch (err) {
-			toastAccountError(err, "Failed to rename passkey")
-		} finally {
-			setIsBusy(false)
-		}
+		return withBusy(async () => {
+			try {
+				await renaming.passkey.update({ name })
+				setRenaming(null)
+				toastManager.add({ title: "Passkey renamed", type: "success" })
+			} catch (err) {
+				toastAccountError(err, "Failed to rename passkey")
+			}
+		})
 	}
 
-	async function handleRemove() {
+	function handleRemove() {
 		if (!pendingRemoval) return
-		setIsBusy(true)
-		try {
-			await deletePasskey(pendingRemoval)
-			setPendingRemoval(null)
-			toastManager.add({ title: "Passkey removed", type: "success" })
-		} catch (err) {
-			toastAccountError(err, "Failed to remove passkey")
-		} finally {
-			setIsBusy(false)
-		}
+		return withBusy(async () => {
+			try {
+				await deletePasskey(pendingRemoval)
+				setPendingRemoval(null)
+				toastManager.add({ title: "Passkey removed", type: "success" })
+			} catch (err) {
+				toastAccountError(err, "Failed to remove passkey")
+			}
+		})
 	}
 
 	return (
@@ -231,8 +229,8 @@ export function PasskeysSection() {
 						</DialogDescription>
 					</DialogHeader>
 					<DialogPanel>
-						<div className="space-y-1.5">
-							<Label htmlFor="passkey-name">Name</Label>
+						<Field>
+							<FieldLabel htmlFor="passkey-name">Name</FieldLabel>
 							<Input
 								id="passkey-name"
 								value={renaming?.name ?? ""}
@@ -242,7 +240,7 @@ export function PasskeysSection() {
 								disabled={isBusy}
 								autoComplete="off"
 							/>
-						</div>
+						</Field>
 					</DialogPanel>
 					<DialogFooter>
 						<Button variant="outline" onClick={() => setRenaming(null)} disabled={isBusy}>

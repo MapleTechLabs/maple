@@ -29,7 +29,7 @@ export function PaymentFailedBanner() {
 
 	return (
 		<div className="px-4 pt-3">
-			<Alert variant="error">
+			<Alert variant="crit">
 				<CircleWarningIcon size={16} />
 				<AlertTitle>Payment failed</AlertTitle>
 				<AlertDescription>

@@ -7,6 +7,7 @@ import type {
 import { countLabel, formatRatePerHour } from "@maple/ui/lib/format"
 import type { ReactNode } from "react"
 import { Badge } from "@maple/ui/components/ui/badge"
+import { TONE_FILL } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 
 import { RelativeTime } from "@/components/common/relative-time"
@@ -43,15 +44,15 @@ const DOT_CLASS: Record<ErrorIssueEventDocument["type"], string> = {
 	assignment: "bg-muted-foreground",
 	claim: "bg-violet-500",
 	release: "bg-violet-500/60",
-	lease_expired: "bg-amber-500",
+	lease_expired: TONE_FILL.warn,
 	comment: "bg-muted-foreground",
 	agent_note: "bg-violet-500",
-	fix_proposed: "bg-success",
-	regression: "bg-destructive",
+	fix_proposed: TONE_FILL.ok,
+	regression: TONE_FILL.crit,
 	snooze: "bg-muted-foreground/70",
 	unsnooze: "bg-muted-foreground/70",
 	ai_triage: "bg-violet-500",
-	anomaly_linked: "bg-amber-500",
+	anomaly_linked: TONE_FILL.warn,
 	severity_change: "bg-orange-500",
 	pr_linked: "bg-muted-foreground",
 	pr_unlinked: "bg-muted-foreground/60",
@@ -291,7 +292,7 @@ export function IssueTimeline({
 						<li className={ITEM} key={item.key}>
 							<RelativeTime value={escalation.createdAt} tooltip="title" className={STAMP} />
 							<Rail>
-								<Dot className="bg-orange-500" />
+								<Dot className={TONE_FILL.warn} />
 							</Rail>
 							<div className="min-w-0 py-2.5">
 								<div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">

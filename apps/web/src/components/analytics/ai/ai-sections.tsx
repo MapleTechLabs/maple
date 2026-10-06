@@ -295,7 +295,7 @@ function ShareChange({ share, points }: { share: number; points: number | null }
 	return (
 		<span
 			title={`${formatPercent(before)} of AI visits in the previous period, ${formatPercent(share)} now`}
-			className={points > 0 ? "text-[var(--severity-info)]" : "text-[var(--severity-error)]"}
+			className={points > 0 ? "text-severity-info" : "text-severity-error"}
 		>
 			<span aria-hidden>{points > 0 ? "↑" : "↓"}</span> from {formatPercent(before)}
 		</span>

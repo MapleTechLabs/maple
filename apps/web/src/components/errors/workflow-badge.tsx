@@ -1,5 +1,6 @@
 import type { WorkflowState } from "@maple/domain/http"
 import { Badge } from "@maple/ui/components/ui/badge"
+import { TONE_SOFT } from "@maple/ui/lib/tone"
 
 import { WORKFLOW_LABEL } from "@/components/icons/workflow-ring"
 
@@ -10,19 +11,20 @@ import { WORKFLOW_LABEL } from "@/components/icons/workflow-ring"
  * "Wontfix" where every other surface said "Won't fix".
  */
 const WORKFLOW_TONE: Record<WorkflowState, string> = {
-	triage: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+	triage: TONE_SOFT.warn,
 	// Red, not amber: a regression is a fix that did not hold, and it should read
 	// as more urgent than an untriaged issue rather than the same.
-	regressed: "bg-destructive/10 text-destructive",
-	todo: "bg-muted text-muted-foreground",
+	regressed: TONE_SOFT.crit,
+	todo: TONE_SOFT.neutral,
+	// In-flight stages keep their own hues: they are stage identity, not a status level.
 	in_progress: "bg-blue-500/10 text-blue-600 dark:text-blue-400",
 	in_review: "bg-purple-500/10 text-purple-600 dark:text-purple-400",
 	// Teal, distinct from both `in_review` (a human is looking) and `done` (it is
 	// over): a merged fix is being watched, and nobody needs to act yet.
 	verifying: "bg-teal-500/10 text-teal-600 dark:text-teal-400",
-	done: "bg-success/10 text-success",
-	cancelled: "bg-muted text-muted-foreground",
-	wontfix: "bg-muted text-muted-foreground",
+	done: TONE_SOFT.ok,
+	cancelled: TONE_SOFT.neutral,
+	wontfix: TONE_SOFT.neutral,
 } satisfies Record<WorkflowState, string>
 
 export function WorkflowBadge({ state }: { state: WorkflowState }) {

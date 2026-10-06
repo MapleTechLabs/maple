@@ -124,7 +124,7 @@ export function ToolbarStat({
 }) {
 	return (
 		<span className="flex items-center gap-1.5 whitespace-nowrap text-sm">
-			{dot ? <span className="size-1.5 rounded-full bg-success" /> : null}
+			{dot ? <span className="size-1.5 rounded-full bg-severity-info" /> : null}
 			<span className={cn("font-medium tabular-nums", danger && value > 0 && "text-destructive")}>
 				{value.toLocaleString()}
 			</span>

@@ -10,6 +10,7 @@ import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
 import { cn } from "@maple/ui/lib/utils"
+import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { ArrowRotateAnticlockwiseIcon, BoltIcon, CheckIcon, CodeIcon, XmarkIcon } from "@/components/icons"
 import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
 import {
@@ -27,17 +28,17 @@ type IssueStatus = V2Recommendation["status"]
 
 // Mono uppercase kind tags in the row's leading lane (Paper ingestion redesign).
 const KIND_TAG: Record<IssueKind, { label: string; className: string }> = {
-	rename: { label: "Rename", className: "text-info" },
-	"double-emission": { label: "Duplicate", className: "text-warning" },
-	naming: { label: "Naming", className: "text-warning" },
+	rename: { label: "Rename", className: TONE_TEXT.info },
+	"double-emission": { label: "Duplicate", className: TONE_TEXT.warn },
+	naming: { label: "Naming", className: TONE_TEXT.warn },
 } satisfies Record<IssueKind, { label: string; className: string }>
 
-const STATUS_BADGE: Record<IssueStatus, { label: string; variant: "success" | "secondary" }> = {
+const STATUS_BADGE: Record<IssueStatus, { label: string; variant: "ok" | "secondary" }> = {
 	open: { label: "Open", variant: "secondary" },
 	dismissed: { label: "Dismissed", variant: "secondary" },
-	applied: { label: "Applied", variant: "success" },
+	applied: { label: "Applied", variant: "ok" },
 	resolved: { label: "Resolved", variant: "secondary" },
-} satisfies Record<IssueStatus, { label: string; variant: "success" | "secondary" }>
+} satisfies Record<IssueStatus, { label: string; variant: "ok" | "secondary" }>
 
 const MODE = {
 	auto: {

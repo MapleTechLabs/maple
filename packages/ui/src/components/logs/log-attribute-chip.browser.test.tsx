@@ -82,7 +82,7 @@ afterEach(() => {
 
 describe("LogAttributeChip", () => {
 	it("renders nothing but the trigger until it is hovered", () => {
-		render(<LogAttributeChip attrKey="http.method" value="GET" tone="info" />)
+		render(<LogAttributeChip attrKey="http.method" value="GET" tone="emphasis" />)
 
 		expect(screen.getByRole("button")).toBeDefined()
 		expect(openCards().length).toBe(0)
@@ -93,7 +93,7 @@ describe("LogAttributeChip", () => {
 	// on never gets `pointerenter`, so it never gets `pointerleave` either and the
 	// card was stranded open. Node identity is the cheapest way to pin that shut.
 	it("keeps the same trigger DOM node when hover arms the card", async () => {
-		render(<LogAttributeChip attrKey="http.method" value="GET" tone="info" />)
+		render(<LogAttributeChip attrKey="http.method" value="GET" tone="emphasis" />)
 		const before = chipTrigger("http.method=GET")
 
 		await hoverIn(before)
@@ -103,7 +103,7 @@ describe("LogAttributeChip", () => {
 	})
 
 	it("closes the card when the pointer leaves", async () => {
-		render(<LogAttributeChip attrKey="http.method" value="GET" tone="info" />)
+		render(<LogAttributeChip attrKey="http.method" value="GET" tone="emphasis" />)
 		const button = chipTrigger("http.method=GET")
 
 		await hoverIn(button)
@@ -118,8 +118,8 @@ describe("LogAttributeChip", () => {
 	it("never leaves more than one card open while sweeping across chips", async () => {
 		render(
 			<div>
-				<LogAttributeChip attrKey="http.method" value="GET" tone="info" />
-				<LogAttributeChip attrKey="http.status_code" value="503" tone="error" />
+				<LogAttributeChip attrKey="http.method" value="GET" tone="emphasis" />
+				<LogAttributeChip attrKey="http.status_code" value="503" tone="crit" />
 			</div>,
 		)
 		const first = chipTrigger("http.method=GET")
@@ -143,14 +143,14 @@ describe("LogAttributeChip", () => {
 	// `pointerleave` land on a node the cursor never entered, which is precisely
 	// what real pointer input refuses to do, so it passes against the old code too.
 	it("does not keep a card open when the virtualizer recycles it onto another log", async () => {
-		const { rerender } = render(<LogAttributeChip attrKey="http.method" value="GET" tone="info" />)
+		const { rerender } = render(<LogAttributeChip attrKey="http.method" value="GET" tone="emphasis" />)
 
 		await hoverIn(chipTrigger("http.method=GET"))
 		await expectOpenCards(1)
 
 		await hoverOut(chipTrigger("http.method=GET"))
 		await act(async () => {
-			rerender(<LogAttributeChip attrKey="http.method" value="POST" tone="info" />)
+			rerender(<LogAttributeChip attrKey="http.method" value="POST" tone="emphasis" />)
 		})
 
 		await expectOpenCards(0)
@@ -158,7 +158,7 @@ describe("LogAttributeChip", () => {
 	})
 
 	it("does not carry a native title alongside the hover card", () => {
-		render(<LogAttributeChip attrKey="http.method" value="GET" tone="info" />)
+		render(<LogAttributeChip attrKey="http.method" value="GET" tone="emphasis" />)
 		const button = screen.getByRole("button")
 
 		expect(button.hasAttribute("title")).toBe(false)
@@ -181,7 +181,7 @@ describe("LogAttributeChip", () => {
 		render(
 			// eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events
 			<div onClick={rowClick}>
-				<LogAttributeChip attrKey="http.method" value="GET" tone="info" />
+				<LogAttributeChip attrKey="http.method" value="GET" tone="emphasis" />
 			</div>,
 		)
 
@@ -200,7 +200,7 @@ describe("LogAttributeChip", () => {
 		render(
 			// eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events
 			<div onClick={rowClick}>
-				<LogAttributeChip attrKey="http.method" value="GET" tone="info" />
+				<LogAttributeChip attrKey="http.method" value="GET" tone="emphasis" />
 			</div>,
 		)
 

@@ -1,5 +1,6 @@
 import { useState } from "react"
 import { cn } from "@maple/ui/lib/utils"
+import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { Alert, AlertDescription } from "@maple/ui/components/ui/alert"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Sheet, SheetContent, SheetPanel } from "@maple/ui/components/ui/sheet"
@@ -39,7 +40,7 @@ function StatusGlyph({ status }: { status: TaskStatus }) {
 			{status === "running" ? (
 				<DotLoader />
 			) : status === "error" ? (
-				<CircleXmarkIcon className="size-3.5 text-destructive" />
+				<CircleXmarkIcon className="size-3.5 text-severity-error" />
 			) : status === "aborted" ? (
 				<CircleWarningIcon className="size-3.5 text-muted-foreground" />
 			) : (
@@ -97,9 +98,9 @@ export function TaskCard({
 					{prompt}
 				</span>
 				{status === "error" ? (
-					<span className="shrink-0 text-[11px] text-destructive">failed</span>
+					<span className={cn("shrink-0 text-[11px]", TONE_TEXT.crit)}>failed</span>
 				) : budgetExhausted === true ? (
-					<span className="shrink-0 text-[11px] text-warning">partial</span>
+					<span className={cn("shrink-0 text-[11px]", TONE_TEXT.warn)}>partial</span>
 				) : null}
 				{running ? <RunningClock /> : null}
 				<ChevronRightIcon className="size-3 shrink-0 text-muted-foreground/60" />
@@ -123,7 +124,7 @@ export function TaskCard({
 					/>
 					<SheetPanel className="flex flex-col gap-6">
 						{budgetExhausted === true ? (
-							<Alert variant="warning" size="sm">
+							<Alert variant="warn" size="sm">
 								<AlertDescription>
 									Answered from what it had: the run spent its budget before it finished
 									searching.
@@ -141,7 +142,7 @@ export function TaskCard({
 									<RunningClock />
 								</div>
 							) : errorText != null ? (
-								<pre className="max-h-60 overflow-auto whitespace-pre-wrap text-xs text-destructive/80">
+								<pre className="max-h-60 overflow-auto whitespace-pre-wrap text-xs text-severity-error/80">
 									{errorText}
 								</pre>
 							) : answer != null ? (

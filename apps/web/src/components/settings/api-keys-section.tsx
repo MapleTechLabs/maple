@@ -593,7 +593,7 @@ function ApiKeyRow({
 							</Badge>
 						)}
 						{status === "revoked" && (
-							<Badge variant="error" size="sm">
+							<Badge variant="crit" size="sm">
 								Revoked
 							</Badge>
 						)}
@@ -605,7 +605,7 @@ function ApiKeyRow({
 						{/* The Expires column is hidden below `md`, so the one state that silently
 						    breaks a running integration rides in the name row instead. */}
 						{expiresSoon && expiresAt !== null && (
-							<Badge variant="warning" size="sm">
+							<Badge variant="warn" size="sm">
 								{expiresInLabel(expiresAt, now)}
 							</Badge>
 						)}
@@ -635,7 +635,7 @@ function ApiKeyRow({
 				className={cn(
 					COL.expires,
 					"truncate text-[11px]",
-					expiresSoon ? "text-warning-foreground" : "text-muted-foreground",
+					expiresSoon ? "text-severity-warn" : "text-muted-foreground",
 				)}
 			>
 				{apiKey.expires_at ? formatDate(apiKey.expires_at) : "Never"}

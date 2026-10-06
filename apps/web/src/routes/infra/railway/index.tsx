@@ -1,4 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
+import { ResultView } from "@/components/common/result-view"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { Schema } from "effect"
 import { cn } from "@maple/ui/lib/utils"
@@ -101,12 +102,11 @@ function RailwayPage() {
 									title="Railway"
 									description="CPU, memory, network and disk for every Railway service, polled from Railway's metrics API."
 								/>
-								{Result.builder(statusResult)
-									.onInitial(() => (
-										<RailwaySummaryBandLoading className={FLEET_BAND_BOXED} />
-									))
-									.onError((error) => <ErrorState error={error} />)
-									.onSuccess((status) =>
+								<ResultView
+									result={statusResult}
+									loading={<RailwaySummaryBandLoading className={FLEET_BAND_BOXED} />}
+								>
+									{(status) =>
 										status.connected ? (
 											<RailwayServices
 												startTime={startTime}
@@ -121,9 +121,9 @@ function RailwayPage() {
 											/>
 										) : (
 											<RailwayIntegrationCard />
-										),
-									)
-									.render()}
+										)
+									}
+								</ResultView>
 							</div>
 						</DashboardLayout.Scroll>
 					</DashboardLayout.Content>

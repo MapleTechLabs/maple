@@ -65,7 +65,8 @@ function useSettings() {
 	}
 }
 
-function Field({ label, children }: { label: string; children: ReactNode }) {
+/** Dense rail setting: an eyebrow caption over a segmented control or select, not a form field. */
+function RailSetting({ label, children }: { label: string; children: ReactNode }) {
 	return (
 		<div className="space-y-1.5">
 			<Eyebrow variant="label" as="p">
@@ -132,27 +133,27 @@ const Divider = () => <div className="h-px bg-border" />
 function Name() {
 	const { state, set } = useSettings()
 	return (
-		<Field label="Name">
+		<RailSetting label="Name">
 			<Input
 				value={state.title}
 				onChange={(event) => set({ title: event.target.value })}
 				placeholder="Untitled widget"
 			/>
-		</Field>
+		</RailSetting>
 	)
 }
 
 function Description() {
 	const { state, set } = useSettings()
 	return (
-		<Field label="Description">
+		<RailSetting label="Description">
 			<Textarea
 				value={state.description}
 				onChange={(event) => set({ description: event.target.value })}
 				placeholder="Add a description..."
 				rows={2}
 			/>
-		</Field>
+		</RailSetting>
 	)
 }
 
@@ -160,7 +161,7 @@ function TypePicker() {
 	const { state, set } = useSettings()
 	const panelType = toPanelType(state.visualization, state.chartId)
 	return (
-		<Field label="Type">
+		<RailSetting label="Type">
 			{/* Three columns, not four: "Histogram" overflows a quarter of the
 			    272px rail and collides with its neighbour. */}
 			<SegmentedSelect
@@ -171,7 +172,7 @@ function TypePicker() {
 				aria-label="Panel type"
 				className="grid w-full grid-cols-3 *:text-xs"
 			/>
-		</Field>
+		</RailSetting>
 	)
 }
 
@@ -180,7 +181,7 @@ function Stacked() {
 	const { state, set } = useSettings()
 	const panelType = toPanelType(state.visualization, state.chartId)
 	return (
-		<Field label="Layout">
+		<RailSetting label="Layout">
 			<Segments
 				value={state.stacked ? "stacked" : "separate"}
 				onSelect={(next) => set({ stacked: next === "stacked" })}
@@ -189,14 +190,14 @@ function Stacked() {
 					{ value: "stacked", label: "Stacked" },
 				]}
 			/>
-		</Field>
+		</RailSetting>
 	)
 }
 
 function Curve() {
 	const { state, set } = useSettings()
 	return (
-		<Field label="Curve">
+		<RailSetting label="Curve">
 			<Segments
 				value={state.curveType}
 				onSelect={(curveType) => set({ curveType })}
@@ -205,7 +206,7 @@ function Curve() {
 					{ value: "monotone", label: "Smooth" },
 				]}
 			/>
-		</Field>
+		</RailSetting>
 	)
 }
 
@@ -217,7 +218,7 @@ function Curve() {
 function Points() {
 	const { state, set } = useSettings()
 	return (
-		<Field label="Points">
+		<RailSetting label="Points">
 			<Segments
 				value={state.pointsMode}
 				onSelect={(pointsMode) => set({ pointsMode })}
@@ -227,7 +228,7 @@ function Points() {
 					{ value: "never", label: "Never" },
 				]}
 			/>
-		</Field>
+		</RailSetting>
 	)
 }
 
@@ -255,7 +256,7 @@ function HeatmapColors() {
 	const colorScale = state.heatmapColorScale ?? DEFAULT_HEATMAP_COLOR_SCALE
 	return (
 		<>
-			<Field label="Color scale">
+			<RailSetting label="Color scale">
 				<Select
 					items={Object.fromEntries(HEATMAP_COLOR_SCALES.map((scale) => [scale, titleCase(scale)]))}
 					value={colorScale}
@@ -278,8 +279,8 @@ function HeatmapColors() {
 						))}
 					</SelectContent>
 				</Select>
-			</Field>
-			<Field label="Color scaling">
+			</RailSetting>
+			<RailSetting label="Color scaling">
 				<Segments
 					value={state.heatmapScaleType}
 					onSelect={(heatmapScaleType) => set({ heatmapScaleType })}
@@ -288,7 +289,7 @@ function HeatmapColors() {
 						{ value: "log", label: "Log" },
 					]}
 				/>
-			</Field>
+			</RailSetting>
 		</>
 	)
 }
@@ -319,7 +320,7 @@ function Unit({ label = "Unit" }: { label?: string }) {
 	const { state, set } = useSettings()
 	const isDuration = isDurationUnit(state.unit)
 	return (
-		<Field label={label}>
+		<RailSetting label={label}>
 			<Select
 				items={UNIT_OPTIONS}
 				value={isDuration ? "duration" : state.unit}
@@ -345,7 +346,7 @@ function Unit({ label = "Unit" }: { label?: string }) {
 					options={DURATION_SCALE_OPTIONS}
 				/>
 			)}
-		</Field>
+		</RailSetting>
 	)
 }
 
@@ -357,7 +358,7 @@ function Unit({ label = "Unit" }: { label?: string }) {
 function Legend({ seriesStats = true }: { seriesStats?: boolean }) {
 	const { state, set } = useSettings()
 	return (
-		<Field label="Legend">
+		<RailSetting label="Legend">
 			<Segments
 				value={state.legendPosition}
 				onSelect={(legendPosition) => set({ legendPosition })}
@@ -386,7 +387,7 @@ function Legend({ seriesStats = true }: { seriesStats?: boolean }) {
 					/>
 				</div>
 			)}
-		</Field>
+		</RailSetting>
 	)
 }
 
@@ -403,7 +404,7 @@ function ScalarReduction() {
 
 	return (
 		<>
-			<Field label="Aggregate">
+			<RailSetting label="Aggregate">
 				<Select
 					items={Object.fromEntries(STAT_AGGREGATES.map((value) => [value, value]))}
 					value={state.statAggregate}
@@ -420,8 +421,8 @@ function ScalarReduction() {
 						))}
 					</SelectContent>
 				</Select>
-			</Field>
-			<Field label="Value Field">
+			</RailSetting>
+			<RailSetting label="Value Field">
 				<Select
 					value={valueField || seriesFieldOptions[0]}
 					onValueChange={(value) => set({ statValueField: value ?? "" })}
@@ -437,7 +438,7 @@ function ScalarReduction() {
 						))}
 					</SelectContent>
 				</Select>
-			</Field>
+			</RailSetting>
 		</>
 	)
 }
@@ -446,22 +447,22 @@ function GaugeRange() {
 	const { state, set } = useSettings()
 	return (
 		<div className="grid grid-cols-2 gap-2">
-			<Field label="Min">
+			<RailSetting label="Min">
 				<Input
 					type="number"
 					value={state.gaugeMin}
 					onChange={(event) => set({ gaugeMin: event.target.value })}
 					placeholder="0"
 				/>
-			</Field>
-			<Field label="Max">
+			</RailSetting>
+			<RailSetting label="Max">
 				<Input
 					type="number"
 					value={state.gaugeMax}
 					onChange={(event) => set({ gaugeMax: event.target.value })}
 					placeholder="100"
 				/>
-			</Field>
+			</RailSetting>
 		</div>
 	)
 }
@@ -490,7 +491,7 @@ function Thresholds() {
 	const replace = (next: typeof thresholds) => set({ thresholds: next })
 
 	return (
-		<Field label="Thresholds">
+		<RailSetting label="Thresholds">
 			<div className="flex flex-col gap-1.5">
 				{thresholds.map((threshold, index) => (
 					// eslint-disable-next-line react/no-array-index-key -- thresholds have no stable id
@@ -542,14 +543,14 @@ function Thresholds() {
 					+ Add threshold
 				</button>
 			</div>
-		</Field>
+		</RailSetting>
 	)
 }
 
 function RowLimit() {
 	const { state, set } = useSettings()
 	return (
-		<Field label="Row Limit">
+		<RailSetting label="Row Limit">
 			<Input
 				value={state.tableLimit}
 				onChange={(event) => set({ tableLimit: event.target.value })}
@@ -557,7 +558,7 @@ function RowLimit() {
 				type="number"
 				min={1}
 			/>
-		</Field>
+		</RailSetting>
 	)
 }
 
@@ -570,7 +571,7 @@ function QueryOptions() {
 	return (
 		<>
 			<Divider />
-			<Field label="Comparison">
+			<RailSetting label="Comparison">
 				<Select
 					items={{ none: "None", previous_period: "Previous period" }}
 					value={state.comparisonMode}
@@ -586,7 +587,7 @@ function QueryOptions() {
 						<SelectItem value="previous_period">Previous period</SelectItem>
 					</SelectContent>
 				</Select>
-			</Field>
+			</RailSetting>
 			<Divider />
 			<div className="flex flex-col gap-3">
 				<CheckboxRow
@@ -621,7 +622,7 @@ function WidgetTimeRange() {
 	const resolved = override ? resolveTimeRange(override) : null
 
 	return (
-		<Field label="Time range">
+		<RailSetting label="Time range">
 			<div className="space-y-1.5">
 				<Segments
 					value={override ? "custom" : "dashboard"}
@@ -667,7 +668,7 @@ function WidgetTimeRange() {
 					/>
 				)}
 			</div>
-		</Field>
+		</RailSetting>
 	)
 }
 
@@ -682,7 +683,7 @@ function FunnelStepPercent() {
 	const { state, set } = useSettings()
 	const value = state.funnel.showStepPercent
 	return (
-		<Field label="Step labels">
+		<RailSetting label="Step labels">
 			<Segments
 				value={value === undefined ? "auto" : value ? "conversion" : "off"}
 				onSelect={(next) =>
@@ -699,7 +700,7 @@ function FunnelStepPercent() {
 					{ value: "off", label: "Off" },
 				]}
 			/>
-		</Field>
+		</RailSetting>
 	)
 }
 
@@ -707,7 +708,7 @@ function FunnelStepPercent() {
 function FunnelVariant() {
 	const { state, set } = useSettings()
 	return (
-		<Field label="View">
+		<RailSetting label="View">
 			<Segments
 				value={state.funnel.variant}
 				onSelect={(variant) => set({ funnel: { ...state.funnel, variant } })}
@@ -716,7 +717,7 @@ function FunnelVariant() {
 					{ value: "dropoff", label: "Drop-off" },
 				]}
 			/>
-		</Field>
+		</RailSetting>
 	)
 }
 

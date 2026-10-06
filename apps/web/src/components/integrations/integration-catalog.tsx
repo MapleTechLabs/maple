@@ -248,7 +248,7 @@ export function useIsIntegrationVisible(): (id: IntegrationId) => boolean {
 
 interface CardStatus {
 	readonly label: string
-	readonly variant: "success" | "warning" | "error" | "outline"
+	readonly variant: "ok" | "warn" | "crit" | "outline"
 }
 
 const NOT_CONNECTED: CardStatus = { label: "Not connected", variant: "outline" }
@@ -296,15 +296,15 @@ export function useIntegrationStatuses(): Partial<Record<IntegrationId, CardStat
 	const railway: CardStatus | null = Result.builder(railwayResult)
 		.onSuccess((status): CardStatus => {
 			if (!status.connected) return NOT_CONNECTED
-			if (status.authFailed) return { label: "Token rejected", variant: "error" }
-			return { label: countLabel(status.environments.length, "environment"), variant: "success" }
+			if (status.authFailed) return { label: "Token rejected", variant: "crit" }
+			return { label: countLabel(status.environments.length, "environment"), variant: "ok" }
 		})
 		.onInitial(() => null)
 		.orElse(() => STATUS_UNAVAILABLE)
 
 	const cloudflare: CardStatus | null = Result.builder(cloudflareAccountResult)
 		.onSuccess((status): CardStatus =>
-			status.connected ? { label: "Connected", variant: "success" } : NOT_CONNECTED,
+			status.connected ? { label: "Connected", variant: "ok" } : NOT_CONNECTED,
 		)
 		.onInitial(() => null)
 		.orElse(() => STATUS_UNAVAILABLE)
@@ -319,7 +319,7 @@ export function useIntegrationStatuses(): Partial<Record<IntegrationId, CardStat
 				const noun = targetType === "planetscale" ? "org" : "target"
 				return {
 					label: `${countLabel(targets.length, noun)} · ${enabled} enabled`,
-					variant: failing ? "warning" : "success",
+					variant: failing ? "warn" : "ok",
 				}
 			})
 			.onInitial(() => null)
@@ -333,7 +333,7 @@ export function useIntegrationStatuses(): Partial<Record<IntegrationId, CardStat
 			const failing = status.scrape_target?.last_scrape_error != null
 			return {
 				label: status.organization ?? "Connected",
-				variant: failing ? "warning" : "success",
+				variant: failing ? "warn" : "ok",
 			}
 		})
 		.onInitial(() => null)
@@ -341,7 +341,7 @@ export function useIntegrationStatuses(): Partial<Record<IntegrationId, CardStat
 
 	const hazel: CardStatus | null = Result.builder(hazelResult)
 		.onSuccess((status): CardStatus =>
-			status.connected ? { label: "Connected", variant: "success" } : NOT_CONNECTED,
+			status.connected ? { label: "Connected", variant: "ok" } : NOT_CONNECTED,
 		)
 		.onInitial(() => null)
 		.orElse(() => STATUS_UNAVAILABLE)
@@ -350,15 +350,15 @@ export function useIntegrationStatuses(): Partial<Record<IntegrationId, CardStat
 		.onSuccess((status): CardStatus => {
 			// Deactivated on GitHub's side (uninstalled / suspended) — the install row is
 			// kept, so flag it for attention rather than showing a bare "Not connected".
-			if (status.state === "disconnected") return { label: "Deactivated", variant: "warning" }
-			if (status.state === "suspended") return { label: "Suspended", variant: "warning" }
+			if (status.state === "disconnected") return { label: "Deactivated", variant: "warn" }
+			if (status.state === "suspended") return { label: "Suspended", variant: "warn" }
 			if (!status.connected) return NOT_CONNECTED
 			// Count only active repos; provider-removed ones are shown in the card
 			// with a re-enable/delete affordance, not as live synced repos.
 			const count = status.repositories.filter((r) => r.status === "active").length
 			return {
 				label: count > 0 ? countLabel(count, "repo") : "Connected",
-				variant: "success",
+				variant: "ok",
 			}
 		})
 		.onInitial(() => null)
@@ -381,7 +381,7 @@ export function useIntegrationStatuses(): Partial<Record<IntegrationId, CardStat
 							workspaces.length === 1
 								? (workspaces[0]?.name ?? "Connected")
 								: `${workspaces.length} workspaces`,
-						variant: "success",
+						variant: "ok",
 					}
 				})
 				.onInitial((): CardStatus | null => null)
@@ -777,16 +777,12 @@ export function IntegrationsSummary() {
 	return (
 		<div className="flex items-center gap-2">
 			<Badge variant="meta" pill className="gap-1.5 px-2.5 font-normal">
-				<StatusDot tone="success" />
+				<StatusDot tone="ok" />
 				{connected.length} connected
 			</Badge>
 			{attention > 0 && (
-				<Badge
-					variant="warning"
-					pill
-					className="gap-1.5 border-warning/25 bg-warning/10 px-2.5 font-normal"
-				>
-					<StatusDot tone="warning" />
+				<Badge variant="warn" pill className="gap-1.5 px-2.5 font-normal">
+					<StatusDot tone="warn" />
 					{attention} need attention
 				</Badge>
 			)}
@@ -795,8 +791,8 @@ export function IntegrationsSummary() {
 }
 
 function HealthDot({ health }: { health: "healthy" | "attention" | "unavailable" }) {
-	if (health === "unavailable") return <StatusDot tone="custom" className="bg-muted-foreground" />
-	return <StatusDot tone={health === "healthy" ? "success" : "warning"} />
+	if (health === "unavailable") return <StatusDot tone="neutral" />
+	return <StatusDot tone={health === "healthy" ? "ok" : "warn"} />
 }
 
 function ConnectedRow({
@@ -844,7 +840,7 @@ function ConnectedRow({
 					</span>
 				)}
 				{connected?.issue && (
-					<Badge variant="warning" size="sm" className="hidden sm:inline-flex">
+					<Badge variant="warn" size="sm" className="hidden sm:inline-flex">
 						{connected.issue}
 					</Badge>
 				)}

@@ -2,7 +2,6 @@ import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import type { PlanetScaleEventEntry } from "@/api/warehouse/planetscale-infra"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import { TONE_FILL } from "@maple/ui/lib/tone"
 import { RelativeTime } from "@/components/common/relative-time"
 import { cn } from "@maple/ui/lib/utils"
 
@@ -76,7 +75,7 @@ export function PlanetScaleActivityRow({
 		<li className="flex items-baseline gap-2.5 border-l border-border/60 py-1.5 pl-3 text-xs">
 			{/* Not SeverityDot: that primitive speaks host *status* (active/idle/…),
 			    which is a different vocabulary from event severity. */}
-			<StatusDot tone="custom" className={cn("mt-1", TONE_FILL[presentation.tone])} />
+			<StatusDot tone={presentation.tone} className="mt-1" />
 			<span className="min-w-0 flex-1 truncate text-foreground/90">{title}</span>
 			{branchName !== "" ? (
 				onSelectBranch !== undefined ? (

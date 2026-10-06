@@ -56,6 +56,7 @@ import {
 	XmarkIcon,
 } from "@/components/icons"
 import { DocsLink } from "@/components/common/docs-link"
+import { ResultView } from "@/components/common/result-view"
 import { SignalEmptyStateView } from "@/components/common/signal-empty-state"
 import { useSignalPresence } from "@/hooks/use-signal-presence"
 import {
@@ -99,7 +100,8 @@ import {
 	type PlanetScaleNodeMetrics,
 	type ServiceMapColorMode,
 } from "@maple/ui/components/service-map/service-map-utils"
-import { formatRate, getHealthDotClass } from "@maple/ui/components/service-map/service-map-node"
+import { formatRate } from "@maple/ui/components/service-map/service-map-node"
+import type { Tone } from "@maple/ui/lib/tone"
 import type {
 	HyperdriveConfigInput,
 	HyperdriveNodeInfo,
@@ -115,6 +117,12 @@ function renderLiveServiceMap3D(props: ServiceMap3DRenderProps) {
 			<LiveServiceMap3D {...props} />
 		</Suspense>
 	)
+}
+
+// A quiet error rate reads as healthy, not unknown.
+const healthTone = (errorRate: number): Tone => {
+	const level = errorRateLevel(errorRate)
+	return level === "neutral" ? "ok" : level
 }
 
 const formatReplicationLag = (seconds: number) =>
@@ -314,7 +322,7 @@ function ServiceDetailPanel({
 					</>
 				}
 			>
-				<StatusDot tone="custom" className={getHealthDotClass(errorRate)} />
+				<StatusDot tone={healthTone(errorRate)} />
 				<div className="flex flex-col min-w-0">
 					<span className="text-sm font-semibold text-foreground truncate">{serviceId}</span>
 					{overview?.serviceNamespace ? (
@@ -911,8 +919,8 @@ function PlanetScaleSection({
 				.onError((error) => {
 					const formatted = displayError(error)
 					return (
-						<Alert variant="error" size="sm">
-							<AlertTitle className="text-destructive">{formatted.title}</AlertTitle>
+						<Alert variant="crit" size="sm">
+							<AlertTitle className="text-severity-error">{formatted.title}</AlertTitle>
 							<AlertDescription>{formatted.message}</AlertDescription>
 						</Alert>
 					)
@@ -1232,8 +1240,8 @@ function DatabaseDetailPanel({
 							.onError((error) => {
 								const formatted = displayError(error)
 								return (
-									<Alert variant="error" size="sm">
-										<AlertTitle className="text-destructive">
+									<Alert variant="crit" size="sm">
+										<AlertTitle className="text-severity-error">
 											{formatted.title}
 										</AlertTitle>
 										<AlertDescription>{formatted.message}</AlertDescription>
@@ -1681,49 +1689,39 @@ export function ServiceMapView({
 		[allWorkloads, memberServices],
 	)
 
-	return Result.builder(bundleResult)
-		.onInitial(() => <ServiceMapLoading />)
-		.onError((error) => {
-			const formatted = displayError(error)
-			return (
-				<div className="flex items-center justify-center h-full">
-					<div className="text-center space-y-2">
-						<p className="text-sm font-medium text-destructive">{formatted.title}</p>
-						<p className="text-xs text-muted-foreground">{formatted.message}</p>
-					</div>
-				</div>
-			)
-		})
-		.onSuccess((mapResponse) => (
-			<ServiceMapCanvas
-				viewMode={viewMode}
-				edges={
-					memberServices === null
-						? mapResponse.edges
-						: mapResponse.edges.filter(
-								(edge) =>
-									memberServices.has(edge.sourceService) &&
-									memberServices.has(edge.targetService),
-							)
-				}
-				dbEdges={dbEdges}
-				cloudflareServices={cloudflareServices}
-				faasNames={faasNames}
-				planetscaleDatabases={planetscaleDatabases}
-				planetscaleStats={planetscaleStats}
-				hyperdriveConfigs={hyperdriveConfigs}
-				platforms={platforms}
-				runtimes={runtimes}
-				overviews={overviews}
-				workloads={workloads}
-				durationSeconds={durationSeconds}
-				startTime={startTime}
-				endTime={endTime}
-				deploymentEnv={deploymentEnv}
-				layoutKey={orgId ?? "default"}
-				focus={focus}
-				onFocusChange={onFocusChange}
-			/>
-		))
-		.render()
+	return (
+		<ResultView result={bundleResult} loading={<ServiceMapLoading />}>
+			{(mapResponse) => (
+				<ServiceMapCanvas
+					viewMode={viewMode}
+					edges={
+						memberServices === null
+							? mapResponse.edges
+							: mapResponse.edges.filter(
+									(edge) =>
+										memberServices.has(edge.sourceService) &&
+										memberServices.has(edge.targetService),
+								)
+					}
+					dbEdges={dbEdges}
+					cloudflareServices={cloudflareServices}
+					faasNames={faasNames}
+					planetscaleDatabases={planetscaleDatabases}
+					planetscaleStats={planetscaleStats}
+					hyperdriveConfigs={hyperdriveConfigs}
+					platforms={platforms}
+					runtimes={runtimes}
+					overviews={overviews}
+					workloads={workloads}
+					durationSeconds={durationSeconds}
+					startTime={startTime}
+					endTime={endTime}
+					deploymentEnv={deploymentEnv}
+					layoutKey={orgId ?? "default"}
+					focus={focus}
+					onFocusChange={onFocusChange}
+				/>
+			)}
+		</ResultView>
+	)
 }

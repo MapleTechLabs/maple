@@ -414,8 +414,8 @@ export function ListConfigPanel() {
 					return (
 						<div className="mt-1.5 space-y-1.5">
 							{slow.length > 0 && (
-								<Alert variant="warning" size="sm">
-									<AlertDescription className="gap-1 text-[11px] text-warning">
+								<Alert variant="warn" size="sm">
+									<AlertDescription className="gap-1 text-[11px] text-severity-warn">
 										{slow.map((h) => (
 											<p key={h.key}>{h.reason}</p>
 										))}
@@ -423,8 +423,8 @@ export function ListConfigPanel() {
 								</Alert>
 							)}
 							{fast.length > 0 && (
-								<Alert variant="success" size="sm">
-									<AlertDescription className="gap-1 text-[11px] text-success">
+								<Alert variant="ok" size="sm">
+									<AlertDescription className="gap-1 text-[11px] text-severity-info">
 										{fast.map((h) => (
 											<p key={h.key}>{h.reason}</p>
 										))}

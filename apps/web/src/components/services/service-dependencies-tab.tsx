@@ -1,5 +1,7 @@
 import { useMemo, type ReactNode } from "react"
 import { cn } from "@maple/ui/lib/utils"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
+import { TONE_TEXT, type Tone } from "@maple/ui/lib/tone"
 import { Result } from "@/lib/effect-atom"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { getServiceDependenciesBundleResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
@@ -254,7 +256,10 @@ export function ServiceDependenciesTab({
 	}, [dedupedRows])
 
 	return (
-		<div className={cn("flex flex-col gap-3 transition-opacity", isWaiting && "opacity-60")}>
+		<div
+			className={cn("flex flex-col gap-3", refreshingClass(isWaiting))}
+			aria-busy={isWaiting || undefined}
+		>
 			{summary ? (
 				<div className="flex flex-col gap-2 text-[11px] text-muted-foreground sm:flex-row sm:flex-wrap sm:items-baseline sm:gap-x-5 sm:gap-y-1">
 					<div className="flex items-baseline gap-x-3">
@@ -283,7 +288,7 @@ export function ServiceDependenciesTab({
 								label="Most errors"
 								name={summary.topByErrors.name}
 								value={formatErrorRate(summary.topByErrors.errorRate)}
-								tone="error"
+								tone="crit"
 							/>
 						) : (
 							<HeadlineFact label="Errors" name="none" value="0%" />
@@ -319,7 +324,7 @@ interface HeadlineFactProps {
 	label: string
 	name: string
 	value: ReactNode
-	tone?: "error"
+	tone?: Tone
 	/** Overrides the default value color — e.g. a magnitude tone for latency. */
 	valueClassName?: string
 }
@@ -334,7 +339,7 @@ function HeadlineFact({ label, name, value, tone, valueClassName }: HeadlineFact
 			<span
 				className={cn(
 					"shrink-0 tabular-nums font-mono",
-					tone === "error" ? "text-severity-error" : "text-foreground",
+					tone ? TONE_TEXT[tone] : "text-foreground",
 					valueClassName,
 				)}
 			>

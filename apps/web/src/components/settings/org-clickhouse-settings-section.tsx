@@ -3,8 +3,10 @@ import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-a
 import { useEffect, useMemo, useRef, useState } from "react"
 import { Exit } from "effect"
 import { toastManager } from "@maple/ui/components/ui/toast"
+import { Field, FieldLabel, FieldDescription } from "@maple/ui/components/ui/field"
 import { Spinner } from "@maple/ui/components/ui/spinner"
 import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
+import { useAsyncAction } from "@/hooks/use-mutation-action"
 
 import { Button } from "@maple/ui/components/ui/button"
 import {
@@ -17,7 +19,6 @@ import {
 } from "@maple/ui/components/ui/card"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Input } from "@maple/ui/components/ui/input"
-import { Label } from "@maple/ui/components/ui/label"
 import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
 import { Skeleton, SkeletonList } from "@maple/ui/components/ui/skeleton"
 import { TruncatedId } from "@maple/ui/components/ui/truncated-id"
@@ -63,11 +64,8 @@ export function OrgClickHouseSettingsSection({ isAdmin, hasEntitlement }: OrgCli
 	const [chUser, setChUser] = useState("default")
 	const [chPassword, setChPassword] = useState("")
 	const [chDatabase, setChDatabase] = useState("default")
-	const [isSaving, setIsSaving] = useState(false)
 	const [isStarting, setIsStarting] = useState(false)
-	const [isRefreshingDiff, setIsRefreshingDiff] = useState(false)
 	const [disableOpen, setDisableOpen] = useState(false)
-	const [isDisabling, setIsDisabling] = useState(false)
 	const [expandedDrifts, setExpandedDrifts] = useState<ReadonlySet<string>>(new Set())
 
 	const settingsQueryAtom = retainedQuery("orgClickHouseSettings", "get", {})
@@ -90,6 +88,51 @@ export function OrgClickHouseSettingsSection({ isAdmin, hasEntitlement }: OrgCli
 	})
 	const deleteMutation = useAtomSet(MapleApiAtomClient.mutation("orgClickHouseSettings", "delete"), {
 		mode: "promiseExit",
+	})
+
+	const [handleSave, isSaving] = useAsyncAction(async () => {
+		const result = await upsertMutation({
+			payload: new OrgClickHouseSettingsUpsertRequest({
+				url: chUrl,
+				user: chUser,
+				password: chPassword,
+				database: chDatabase,
+			}),
+		})
+
+		if (Exit.isSuccess(result)) {
+			setChPassword("")
+			refreshSettings()
+			refreshDiff()
+			toastManager.add({ title: "ClickHouse connection saved", type: "success" })
+			return
+		}
+		toastManager.add({ title: getExitErrorMessage(result, "Failed to save settings"), type: "error" })
+	})
+
+	const [handleRefreshDiff, isRefreshingDiff] = useAsyncAction(async () => {
+		refreshDiff()
+		// Atom refresh is fire-and-forget; tiny delay so the spinner is visible on
+		// fast re-runs and we don't end the busy state before the new request lands.
+		await new Promise((resolve) => setTimeout(resolve, 300))
+	})
+
+	const [handleDisable, isDisabling] = useAsyncAction(async () => {
+		const result = await deleteMutation({})
+		setDisableOpen(false)
+
+		if (Exit.isSuccess(result)) {
+			setChUrl("")
+			setChPassword("")
+			refreshSettings()
+			refreshDiff()
+			toastManager.add({ title: "BYO ClickHouse disabled", type: "success" })
+			return
+		}
+		toastManager.add({
+			title: getExitErrorMessage(result, "Failed to disable BYO ClickHouse"),
+			type: "error",
+		})
 	})
 
 	const settings = Result.builder(settingsResult)
@@ -149,7 +192,7 @@ export function OrgClickHouseSettingsSection({ isAdmin, hasEntitlement }: OrgCli
 
 	const statusBadge = useMemo(() => {
 		if (!configured) return <Badge variant="secondary">Default Maple Tinybird</Badge>
-		if (settings?.syncStatus === "error") return <Badge variant="destructive">Needs attention</Badge>
+		if (settings?.syncStatus === "error") return <Badge variant="crit">Needs attention</Badge>
 		return <Badge variant="outline">Connected</Badge>
 	}, [configured, settings?.syncStatus])
 
@@ -159,28 +202,6 @@ export function OrgClickHouseSettingsSection({ isAdmin, hasEntitlement }: OrgCli
 		for (const entry of diff.entries) counts[entry.status]++
 		return counts
 	}, [diff])
-
-	async function handleSave() {
-		setIsSaving(true)
-		const result = await upsertMutation({
-			payload: new OrgClickHouseSettingsUpsertRequest({
-				url: chUrl,
-				user: chUser,
-				password: chPassword,
-				database: chDatabase,
-			}),
-		})
-		setIsSaving(false)
-
-		if (Exit.isSuccess(result)) {
-			setChPassword("")
-			refreshSettings()
-			refreshDiff()
-			toastManager.add({ title: "ClickHouse connection saved", type: "success" })
-			return
-		}
-		toastManager.add({ title: getExitErrorMessage(result, "Failed to save settings"), type: "error" })
-	}
 
 	async function handleApply() {
 		// Apply now runs in a background workflow (heavy backfill migrations can't
@@ -202,35 +223,6 @@ export function OrgClickHouseSettingsSection({ isAdmin, hasEntitlement }: OrgCli
 		setIsStarting(false)
 		toastManager.add({
 			title: getExitErrorMessage(result, "Failed to start schema apply"),
-			type: "error",
-		})
-	}
-
-	async function handleRefreshDiff() {
-		setIsRefreshingDiff(true)
-		refreshDiff()
-		// Atom refresh is fire-and-forget; tiny delay so the spinner is visible on
-		// fast re-runs and we don't end the busy state before the new request lands.
-		await new Promise((resolve) => setTimeout(resolve, 300))
-		setIsRefreshingDiff(false)
-	}
-
-	async function handleDisable() {
-		setIsDisabling(true)
-		const result = await deleteMutation({})
-		setIsDisabling(false)
-		setDisableOpen(false)
-
-		if (Exit.isSuccess(result)) {
-			setChUrl("")
-			setChPassword("")
-			refreshSettings()
-			refreshDiff()
-			toastManager.add({ title: "BYO ClickHouse disabled", type: "success" })
-			return
-		}
-		toastManager.add({
-			title: getExitErrorMessage(result, "Failed to disable BYO ClickHouse"),
 			type: "error",
 		})
 	}
@@ -275,8 +267,8 @@ export function OrgClickHouseSettingsSection({ isAdmin, hasEntitlement }: OrgCli
 							/>
 						) : (
 							<>
-								<div className="grid gap-2">
-									<Label htmlFor="ch-url">ClickHouse URL</Label>
+								<Field>
+									<FieldLabel htmlFor="ch-url">ClickHouse URL</FieldLabel>
 									<Input
 										id="ch-url"
 										placeholder="https://your-clickhouse.example.com:8123"
@@ -284,34 +276,34 @@ export function OrgClickHouseSettingsSection({ isAdmin, hasEntitlement }: OrgCli
 										onChange={(event) => setChUrl(event.target.value)}
 										disabled={isBusy}
 									/>
-									<p className="text-muted-foreground text-xs">
+									<FieldDescription>
 										HTTP interface URL (port 8123 by default).
-									</p>
-								</div>
+									</FieldDescription>
+								</Field>
 
 								<div className="grid gap-2 sm:grid-cols-2">
-									<div className="grid gap-2">
-										<Label htmlFor="ch-user">User</Label>
+									<Field>
+										<FieldLabel htmlFor="ch-user">User</FieldLabel>
 										<Input
 											id="ch-user"
 											value={chUser}
 											onChange={(event) => setChUser(event.target.value)}
 											disabled={isBusy}
 										/>
-									</div>
-									<div className="grid gap-2">
-										<Label htmlFor="ch-database">Database</Label>
+									</Field>
+									<Field>
+										<FieldLabel htmlFor="ch-database">Database</FieldLabel>
 										<Input
 											id="ch-database"
 											value={chDatabase}
 											onChange={(event) => setChDatabase(event.target.value)}
 											disabled={isBusy}
 										/>
-									</div>
+									</Field>
 								</div>
 
-								<div className="grid gap-2">
-									<Label htmlFor="ch-password">Password</Label>
+								<Field>
+									<FieldLabel htmlFor="ch-password">Password</FieldLabel>
 									<Input
 										id="ch-password"
 										type="password"
@@ -324,11 +316,11 @@ export function OrgClickHouseSettingsSection({ isAdmin, hasEntitlement }: OrgCli
 										onChange={(event) => setChPassword(event.target.value)}
 										disabled={isBusy}
 									/>
-									<p className="text-muted-foreground text-xs">
+									<FieldDescription>
 										Leave blank for unauthenticated CH instances or to keep the existing
 										password.
-									</p>
-								</div>
+									</FieldDescription>
+								</Field>
 
 								<div className="flex flex-wrap gap-2">
 									<Button
@@ -417,7 +409,7 @@ export function OrgClickHouseSettingsSection({ isAdmin, hasEntitlement }: OrgCli
 							{Result.isInitial(diffResult) ? (
 								<SkeletonList rows={3} rowClassName="h-9" gap="2" />
 							) : !Result.isSuccess(diffResult) ? (
-								<Alert variant="error" size="sm" className="text-sm">
+								<Alert variant="crit" size="sm" className="text-sm">
 									<AlertDescription className="block text-destructive">
 										Failed to introspect ClickHouse:{" "}
 										{getExitErrorMessage(
@@ -445,12 +437,12 @@ export function OrgClickHouseSettingsSection({ isAdmin, hasEntitlement }: OrgCli
 													{entry.status === "up_to_date" ? (
 														<CircleCheckIcon
 															size={14}
-															className="text-success shrink-0"
+															className="text-severity-info shrink-0"
 														/>
 													) : entry.status === "missing" ? (
 														<CircleXmarkIcon
 															size={14}
-															className="text-destructive shrink-0"
+															className="text-severity-error shrink-0"
 														/>
 													) : (
 														<CircleWarningIcon

@@ -669,10 +669,10 @@ function FailureBanner({ span }: { span: AiSessionSpan }) {
 	const responseStatus = span.genAi.responseStatus
 
 	return (
-		<div className="flex flex-col gap-1.5 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2.5">
+		<div className="flex flex-col gap-1.5 rounded-md border border-severity-error/40 bg-severity-error/5 px-3 py-2.5">
 			<div className="flex flex-wrap items-center gap-2">
-				<CircleWarningIcon size={13} className="shrink-0 text-destructive" />
-				<span className="font-medium text-[13px] text-destructive">This call failed</span>
+				<CircleWarningIcon size={13} className="shrink-0 text-severity-error" />
+				<span className="font-medium text-[13px] text-severity-error">This call failed</span>
 				{span.statusCode === "Error" && (
 					<Badge pill size="xs" mono className={TONE_SOFT.crit}>
 						span status Error

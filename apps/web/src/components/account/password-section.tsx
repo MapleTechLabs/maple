@@ -1,16 +1,17 @@
 import { useState } from "react"
 import { useReverification, useUser } from "@clerk/clerk-react"
 import { toastManager } from "@maple/ui/components/ui/toast"
+import { Field, FieldError, FieldLabel } from "@maple/ui/components/ui/field"
 
 import { Button } from "@maple/ui/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@maple/ui/components/ui/card"
 import { Input } from "@maple/ui/components/ui/input"
-import { Label } from "@maple/ui/components/ui/label"
 import { SettingRow } from "@maple/ui/components/ui/setting-row"
 import { Switch } from "@maple/ui/components/ui/switch"
 import { toastAccountError } from "@/components/account/account-errors"
 import { AccountSectionSkeleton } from "@/components/account/account-section-skeleton"
 import type { UpdatePasswordParams } from "@/components/account/account-types"
+import { useAsyncAction } from "@/hooks/use-mutation-action"
 
 const MIN_PASSWORD_LENGTH = 8
 
@@ -21,9 +22,10 @@ export function PasswordSection() {
 	const [newPassword, setNewPassword] = useState("")
 	const [confirmPassword, setConfirmPassword] = useState("")
 	const [signOutOfOtherSessions, setSignOutOfOtherSessions] = useState(true)
-	const [isSaving, setIsSaving] = useState(false)
 
 	const updatePassword = useReverification((params: UpdatePasswordParams) => user?.updatePassword(params))
+
+	const [withSaving, isSaving] = useAsyncAction((task: () => Promise<void>) => task())
 
 	if (!isLoaded || !user) return <AccountSectionSkeleton />
 
@@ -35,28 +37,27 @@ export function PasswordSection() {
 		confirmPassword === newPassword &&
 		(!hasPassword || currentPassword.length > 0)
 
-	async function handleSubmit() {
+	function handleSubmit() {
 		if (!user || !canSubmit) return
-		setIsSaving(true)
-		try {
-			await updatePassword({
-				newPassword,
-				// Clerk rejects `currentPassword` on an account that has none yet.
-				...(hasPassword ? { currentPassword } : undefined),
-				signOutOfOtherSessions,
-			})
-			setCurrentPassword("")
-			setNewPassword("")
-			setConfirmPassword("")
-			toastManager.add({
-				title: hasPassword ? "Password changed" : "Password set",
-				type: "success",
-			})
-		} catch (err) {
-			toastAccountError(err, "Failed to update your password")
-		} finally {
-			setIsSaving(false)
-		}
+		return withSaving(async () => {
+			try {
+				await updatePassword({
+					newPassword,
+					// Clerk rejects `currentPassword` on an account that has none yet.
+					...(hasPassword ? { currentPassword } : undefined),
+					signOutOfOtherSessions,
+				})
+				setCurrentPassword("")
+				setNewPassword("")
+				setConfirmPassword("")
+				toastManager.add({
+					title: hasPassword ? "Password changed" : "Password set",
+					type: "success",
+				})
+			} catch (err) {
+				toastAccountError(err, "Failed to update your password")
+			}
+		})
 	}
 
 	return (
@@ -73,8 +74,8 @@ export function PasswordSection() {
 				<CardContent>
 					<div className="space-y-4 max-w-md">
 						{hasPassword && (
-							<div className="space-y-1.5">
-								<Label htmlFor="account-current-password">Current password</Label>
+							<Field>
+								<FieldLabel htmlFor="account-current-password">Current password</FieldLabel>
 								<Input
 									id="account-current-password"
 									type="password"
@@ -83,10 +84,10 @@ export function PasswordSection() {
 									onChange={(e) => setCurrentPassword(e.target.value)}
 									disabled={isSaving}
 								/>
-							</div>
+							</Field>
 						)}
-						<div className="space-y-1.5">
-							<Label htmlFor="account-new-password">New password</Label>
+						<Field>
+							<FieldLabel htmlFor="account-new-password">New password</FieldLabel>
 							<Input
 								id="account-new-password"
 								type="password"
@@ -97,13 +98,11 @@ export function PasswordSection() {
 								aria-invalid={tooShort}
 							/>
 							{tooShort && (
-								<p className="text-xs text-destructive">
-									Use at least {MIN_PASSWORD_LENGTH} characters.
-								</p>
+								<FieldError match>Use at least {MIN_PASSWORD_LENGTH} characters.</FieldError>
 							)}
-						</div>
-						<div className="space-y-1.5">
-							<Label htmlFor="account-confirm-password">Confirm new password</Label>
+						</Field>
+						<Field>
+							<FieldLabel htmlFor="account-confirm-password">Confirm new password</FieldLabel>
 							<Input
 								id="account-confirm-password"
 								type="password"
@@ -113,8 +112,8 @@ export function PasswordSection() {
 								disabled={isSaving}
 								aria-invalid={mismatch}
 							/>
-							{mismatch && <p className="text-xs text-destructive">Passwords do not match.</p>}
-						</div>
+							{mismatch && <FieldError match>Passwords do not match.</FieldError>}
+						</Field>
 						<SettingRow
 							framed
 							label="Sign out of other devices"

@@ -330,7 +330,9 @@ function SessionListRow({
 			/>
 			{/* Errored sessions get a left accent so they can be picked out
 			    while scanning — the strongest "watch this one first" signal. */}
-			{hasErrors && <span aria-hidden className="absolute inset-y-0 left-0 w-[3px] bg-destructive" />}
+			{hasErrors && (
+				<span aria-hidden className="absolute inset-y-0 left-0 w-[3px] bg-severity-error" />
+			)}
 
 			{/* User: name, then email or entry page. Below @2xl the other columns
 			    stack underneath it. */}

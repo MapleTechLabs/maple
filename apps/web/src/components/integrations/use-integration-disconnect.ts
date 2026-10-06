@@ -1,6 +1,6 @@
-import { useState } from "react"
 import type { Exit } from "effect"
 
+import { useAsyncAction } from "@/hooks/use-mutation-action"
 import { toastExit } from "@/lib/error-toast"
 
 interface DisconnectMessages {
@@ -16,14 +16,7 @@ export function useIntegrationDisconnect(
 	run: () => Promise<Exit.Exit<unknown, unknown>>,
 	messages: DisconnectMessages,
 ): { readonly disconnect: () => Promise<boolean>; readonly pending: boolean } {
-	const [pending, setPending] = useState(false)
-
-	async function disconnect() {
-		setPending(true)
-		const exit = await run()
-		setPending(false)
-		return toastExit(exit, messages)
-	}
+	const [disconnect, pending] = useAsyncAction(async () => toastExit(await run(), messages))
 
 	return { disconnect, pending }
 }

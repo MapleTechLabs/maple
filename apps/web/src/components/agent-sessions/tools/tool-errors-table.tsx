@@ -236,7 +236,7 @@ export function ToolErrorsTable({
 			{empty ? (
 				<div className="flex flex-col gap-2 border-t border-border px-2.5 pt-[22px] pb-5 font-mono">
 					<span className="flex items-center gap-2 text-[12.5px] text-foreground">
-						<StatusDot tone="custom" className="bg-[var(--severity-info)]" />
+						<StatusDot tone="ok" />
 						No failed calls between{" "}
 						{windowRangeLabel(window.startMs, window.startMs, effectiveTimezone)} and{" "}
 						{windowRangeLabel(window.endMs, window.endMs, effectiveTimezone)}

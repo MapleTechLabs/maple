@@ -11,7 +11,8 @@
 
 import { httpStatusTone } from "./http"
 
-export type ChipTone = "error" | "warn" | "info" | "muted"
+/** Status members share `Tone`'s names; `emphasis`/`muted` are plain-chip weights, not statuses. */
+export type ChipTone = "crit" | "warn" | "emphasis" | "muted"
 
 export interface PickedAttribute {
 	key: string
@@ -115,7 +116,7 @@ export function getChipTone(key: string, value: string, severityText: string, rp
 	const sev = severityText.toUpperCase()
 	const rowIsError = sev === "ERROR" || sev === "FATAL"
 
-	if (key === "error" || key === "exception" || key.startsWith("exception.")) return "error"
+	if (key === "error" || key === "exception" || key.startsWith("exception.")) return "crit"
 
 	if (
 		key === "http.status_code" ||
@@ -126,25 +127,25 @@ export function getChipTone(key: string, value: string, severityText: string, rp
 		const status = isNumericStatus(value)
 		if (status !== null) {
 			const tone = httpStatusTone(status)
-			if (tone === "crit") return "error"
+			if (tone === "crit") return "crit"
 			if (tone === "warn") return "warn"
-			if (status >= 300) return "info"
+			if (status >= 300) return "emphasis"
 			return "muted"
 		}
 	}
 
 	if (key === "rpc.grpc.status_code") {
 		const n = Number(value)
-		if (Number.isFinite(n) && n !== 0) return "error"
+		if (Number.isFinite(n) && n !== 0) return "crit"
 	}
 
 	if (key === "rpc.response.status_code" && rpcSystem?.toLowerCase() === "grpc") {
 		const code = value.toUpperCase()
-		if (GRPC_SERVER_ERROR_CODES.has(code)) return "error"
+		if (GRPC_SERVER_ERROR_CODES.has(code)) return "crit"
 		if (GRPC_CODES.has(code) && code !== "OK" && code !== "0") return "warn"
 	}
 
-	if (key === "http.method" || key === "http.request.method") return "info"
+	if (key === "http.method" || key === "http.request.method") return "emphasis"
 	if (
 		key === "db.system" ||
 		key === "db.system.name" ||
@@ -152,7 +153,7 @@ export function getChipTone(key: string, value: string, severityText: string, rp
 		key === "rpc.service" ||
 		key === "rpc.method"
 	)
-		return "info"
+		return "emphasis"
 
 	if (rowIsError) return "muted"
 	return "muted"

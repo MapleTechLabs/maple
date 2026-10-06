@@ -50,6 +50,7 @@ type ChartConfig = Record<string, { label: string; color?: string }>
 import { formatBucketLabel } from "@maple/ui/lib/format"
 import { resolveSeriesColors } from "@maple/ui/lib/semantic-series-colors"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { TONE_FILL } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 
 /** The single-series signal line and its area fill — one fixed accent, never hashed. */
@@ -108,8 +109,8 @@ const RAIL_CELLS = 60
 type RailStatus = "breached" | "error" | "skipped" | "healthy" | "empty"
 
 const RAIL_COLOR: Record<RailStatus, string> = {
-	breached: "bg-destructive",
-	error: "bg-warning",
+	breached: TONE_FILL.crit,
+	error: TONE_FILL.warn,
 	skipped: "bg-muted-foreground/30",
 	healthy: "bg-chart-apdex/70",
 	empty: "bg-muted/50",
@@ -728,7 +729,7 @@ export const AlertRuleChart = React.memo(function AlertRuleChart({
 			    on `error`, so an empty-but-successful preview silently changed
 			    what the chart meant. */}
 			{hasSignal && fellBack && (
-				<div className="flex items-start gap-2.5 border-l-2 border-warning py-0.5 pl-2.5">
+				<div className="flex items-start gap-2.5 border-l-2 border-severity-warn py-0.5 pl-2.5">
 					<div className="space-y-0.5">
 						<p className="text-foreground text-xs">
 							Showing{" "}
@@ -752,7 +753,7 @@ export const AlertRuleChart = React.memo(function AlertRuleChart({
 						{SIGNAL_SOURCE_LABEL[otherSource]}
 					</span>
 					{divergence != null && divergence > Math.abs(threshold) * 0.05 && (
-						<span className="rounded border border-warning/50 px-1.5 py-px text-warning">
+						<span className="rounded border border-severity-warn/50 px-1.5 py-px text-severity-warn">
 							Sources differ by up to {formatSignalValue(signalType, divergence)}
 						</span>
 					)}
@@ -823,7 +824,7 @@ export const AlertRuleChart = React.memo(function AlertRuleChart({
 									// biome-ignore lint/suspicious/noArrayIndexKey: positional overlay
 									key={i}
 									className={cn(
-										"absolute inset-y-0 rounded-[1px] bg-destructive",
+										"absolute inset-y-0 rounded-[1px] bg-severity-error",
 										!span.open && "opacity-60",
 									)}
 									style={{ left: `${span.left}%`, width: `${span.width}%` }}
@@ -878,8 +879,10 @@ function RailLegend({
 	return (
 		<div className="flex flex-wrap items-center gap-x-3 gap-y-1">
 			<LegendChip className="bg-chart-apdex/70">Healthy {totals.healthy}</LegendChip>
-			<LegendChip className="bg-destructive">Breached {totals.breached}</LegendChip>
-			{totals.errored > 0 && <LegendChip className="bg-warning">Failed {totals.errored}</LegendChip>}
+			<LegendChip className={TONE_FILL.crit}>Breached {totals.breached}</LegendChip>
+			{totals.errored > 0 && (
+				<LegendChip className={TONE_FILL.warn}>Failed {totals.errored}</LegendChip>
+			)}
 			{totals.skipped > 0 && (
 				<LegendChip className="bg-muted-foreground/30">Skipped {totals.skipped}</LegendChip>
 			)}

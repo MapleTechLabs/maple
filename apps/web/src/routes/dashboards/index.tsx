@@ -279,7 +279,7 @@ function PageShell({
 						{/* Pinned with the header rather than inside Scroll: it explains the
 						    disabled buttons above it, so it must not scroll away from them. */}
 						{persistenceError && (
-							<Alert variant="error" size="sm" className="mb-3">
+							<Alert variant="crit" size="sm" className="mb-3">
 								<CircleWarningIcon size={14} />
 								<AlertDescription className="text-destructive">
 									{persistenceError}. Editing, import and delete are disabled until it

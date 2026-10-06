@@ -5,7 +5,7 @@ import { Skeleton } from "@maple/ui/components/ui/skeleton"
 
 import type { WebAnalyticsAiCrawlers } from "@/api/warehouse/web-analytics"
 import { DocsLink } from "@/components/common/docs-link"
-import { ErrorState } from "@/components/common/error-state"
+import { ResultView } from "@/components/common/result-view"
 import { StatRail, StatRailItem } from "@/components/common/stat-rail"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import {
@@ -127,16 +127,17 @@ export function AnalyticsAiTab({
 				crawlers={crawlers}
 			/>
 
-			{Result.builder(referralsResult)
-				.onInitial(() => (
+			<ResultView
+				result={referralsResult}
+				loading={
 					<div className="grid gap-3 @min-[560px]/page:grid-cols-2 @min-[880px]/page:grid-cols-3">
 						{CARD_PRODUCTS.map((product) => (
 							<Skeleton key={product.id} className="h-[148px] w-full" />
 						))}
 					</div>
-				))
-				.onError((error) => <ErrorState error={error} />)
-				.onSuccess(() => (
+				}
+			>
+				{() => (
 					<div className="grid gap-3 @min-[560px]/page:grid-cols-2 @min-[880px]/page:grid-cols-3">
 						{CARD_PRODUCTS.map((product, index) => (
 							<AiProductCard
@@ -148,8 +149,8 @@ export function AnalyticsAiTab({
 							/>
 						))}
 					</div>
-				))
-				.render()}
+				)}
+			</ResultView>
 
 			<div className="grid items-start gap-4 @min-[880px]/page:grid-cols-2">
 				{referrals ? (
@@ -157,13 +158,9 @@ export function AnalyticsAiTab({
 				) : (
 					<Skeleton className="h-64 w-full" />
 				)}
-				{Result.builder(crawlersResult)
-					.onInitial(() => <Skeleton className="h-64 w-full" />)
-					.onError((error) => <ErrorState error={error} />)
-					.onSuccess((data) => (
-						<AiCrawlerTable crawlers={data.crawlers} emptyMessage={NO_CRAWLS_MESSAGE} />
-					))
-					.render()}
+				<ResultView result={crawlersResult} loading={<Skeleton className="h-64 w-full" />}>
+					{(data) => <AiCrawlerTable crawlers={data.crawlers} emptyMessage={NO_CRAWLS_MESSAGE} />}
+				</ResultView>
 			</div>
 
 			<section className="space-y-3">
@@ -175,10 +172,12 @@ export function AnalyticsAiTab({
 						</span>
 					) : null}
 				</div>
-				{Result.builder(crawlersResult)
-					.onInitial(() => <Skeleton className="h-32 w-full" />)
-					.onError(() => null)
-					.onSuccess((data) => (
+				<ResultView
+					result={crawlersResult}
+					loading={<Skeleton className="h-32 w-full" />}
+					error={() => null}
+				>
+					{(data) => (
 						<>
 							<AiContentFormats formats={data.formats} />
 							<CrawledPages
@@ -187,8 +186,8 @@ export function AnalyticsAiTab({
 								onToggleFilter={onToggleFilter}
 							/>
 						</>
-					))
-					.render()}
+					)}
+				</ResultView>
 			</section>
 		</div>
 	)

@@ -5,6 +5,7 @@ import type { V2ScrapeTarget, V2ScrapeTargetCheck } from "@maple/domain/http/v2"
 import { useState, type KeyboardEvent } from "react"
 import { Exit, Schema } from "effect"
 import { toastManager } from "@maple/ui/components/ui/toast"
+import { Field, FieldLabel, FieldDescription } from "@maple/ui/components/ui/field"
 import { StatusDot } from "@maple/ui/components/ui/status-dot"
 
 import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
@@ -33,7 +34,6 @@ import {
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import { Input } from "@maple/ui/components/ui/input"
-import { Label } from "@maple/ui/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
 import { KeyValue, KeyValueList } from "@maple/ui/components/ui/key-value"
 import { SkeletonList } from "@maple/ui/components/ui/skeleton"
@@ -64,6 +64,7 @@ import { scheduledStatusFromChecks, scheduledStatusFromRollup } from "@/lib/scra
 import { catalogEntry } from "../integrations/integration-catalog"
 import { DocsLink } from "@/components/common/docs-link"
 import { ErrorState } from "@/components/common/error-state"
+import { useAsyncAction } from "@/hooks/use-mutation-action"
 import {
 	IntegrationEmpty,
 	IntegrationEmptyCard,
@@ -169,7 +170,6 @@ export function ScrapeTargetsSection({
 	sourceFilter?: "prometheus"
 } = {}) {
 	const [dialogOpen, setDialogOpen] = useState(false)
-	const [isSaving, setIsSaving] = useState(false)
 	const [togglingId, setTogglingId] = useState<ScrapeTargetId | null>(null)
 	const [deleteConfirmTarget, setDeleteConfirmTarget] = useState<ScrapeTarget | null>(null)
 	const [probingId, setProbingId] = useState<ScrapeTargetId | null>(null)
@@ -276,7 +276,7 @@ export function ScrapeTargetsSection({
 		return null
 	}
 
-	async function handleSave() {
+	const [handleSave, isSaving] = useAsyncAction(async () => {
 		if (!formName.trim() || !formUrl.trim()) {
 			toastManager.add({ title: "Name and URL are required", type: "error" })
 			return
@@ -294,8 +294,6 @@ export function ScrapeTargetsSection({
 		}
 
 		const authCredentials = buildAuthCredentials()
-
-		setIsSaving(true)
 
 		if (editingTarget) {
 			const result = await updateMutation({
@@ -338,8 +336,7 @@ export function ScrapeTargetsSection({
 				toastManager.add({ title: "Failed to create scrape target", type: "error" })
 			}
 		}
-		setIsSaving(false)
-	}
+	})
 
 	async function handleDelete(targetId: ScrapeTargetId) {
 		setDeleteConfirmTarget(null)
@@ -469,39 +466,39 @@ export function ScrapeTargetsSection({
 						</DialogDescription>
 					</DialogHeader>
 					<div className="space-y-4 px-6 py-2">
-						<div className="space-y-2">
-							<Label htmlFor="scrape-name">Name</Label>
+						<Field>
+							<FieldLabel htmlFor="scrape-name">Name</FieldLabel>
 							<Input
 								id="scrape-name"
 								placeholder="e.g. Node Exporter"
 								value={formName}
 								onChange={(e) => setFormName(e.target.value)}
 							/>
-						</div>
-						<div className="space-y-2">
-							<Label htmlFor="scrape-service-name">Service Name</Label>
+						</Field>
+						<Field>
+							<FieldLabel htmlFor="scrape-service-name">Service Name</FieldLabel>
 							<Input
 								id="scrape-service-name"
 								placeholder="e.g. my-api-server"
 								value={formServiceName}
 								onChange={(e) => setFormServiceName(e.target.value)}
 							/>
-							<p className="text-muted-foreground text-xs">
+							<FieldDescription>
 								Metrics will appear under this service name. Defaults to the target name if
 								empty.
-							</p>
-						</div>
-						<div className="space-y-2">
-							<Label htmlFor="scrape-url">URL</Label>
+							</FieldDescription>
+						</Field>
+						<Field>
+							<FieldLabel htmlFor="scrape-url">URL</FieldLabel>
 							<Input
 								id="scrape-url"
 								placeholder="e.g. https://myapp.com:9090/metrics"
 								value={formUrl}
 								onChange={(e) => setFormUrl(e.target.value)}
 							/>
-						</div>
-						<div className="space-y-2">
-							<Label htmlFor="scrape-interval">Scrape Interval (seconds)</Label>
+						</Field>
+						<Field>
+							<FieldLabel htmlFor="scrape-interval">Scrape Interval (seconds)</FieldLabel>
 							<Input
 								id="scrape-interval"
 								type="number"
@@ -510,9 +507,9 @@ export function ScrapeTargetsSection({
 								value={formInterval}
 								onChange={(e) => setFormInterval(e.target.value)}
 							/>
-						</div>
-						<div className="space-y-2">
-							<Label>Authentication</Label>
+						</Field>
+						<Field>
+							<FieldLabel>Authentication</FieldLabel>
 							<Select
 								items={{ none: "None", bearer: "Bearer Token", basic: "Basic Auth" }}
 								value={formAuthType}
@@ -532,10 +529,10 @@ export function ScrapeTargetsSection({
 									<SelectItem value="basic">Basic Auth</SelectItem>
 								</SelectContent>
 							</Select>
-						</div>
+						</Field>
 						{formAuthType === "bearer" && (
-							<div className="space-y-2">
-								<Label htmlFor="scrape-auth-token">Bearer Token</Label>
+							<Field>
+								<FieldLabel htmlFor="scrape-auth-token">Bearer Token</FieldLabel>
 								<Input
 									id="scrape-auth-token"
 									type="password"
@@ -547,12 +544,12 @@ export function ScrapeTargetsSection({
 									value={formAuthToken}
 									onChange={(e) => setFormAuthToken(e.target.value)}
 								/>
-							</div>
+							</Field>
 						)}
 						{formAuthType === "basic" && (
 							<>
-								<div className="space-y-2">
-									<Label htmlFor="scrape-auth-username">Username</Label>
+								<Field>
+									<FieldLabel htmlFor="scrape-auth-username">Username</FieldLabel>
 									<Input
 										id="scrape-auth-username"
 										placeholder={
@@ -564,9 +561,9 @@ export function ScrapeTargetsSection({
 										value={formAuthUsername}
 										onChange={(e) => setFormAuthUsername(e.target.value)}
 									/>
-								</div>
-								<div className="space-y-2">
-									<Label htmlFor="scrape-auth-password">Password</Label>
+								</Field>
+								<Field>
+									<FieldLabel htmlFor="scrape-auth-password">Password</FieldLabel>
 									<Input
 										id="scrape-auth-password"
 										type="password"
@@ -579,7 +576,7 @@ export function ScrapeTargetsSection({
 										value={formAuthPassword}
 										onChange={(e) => setFormAuthPassword(e.target.value)}
 									/>
-								</div>
+								</Field>
 							</>
 						)}
 					</div>
@@ -659,12 +656,12 @@ function ScrapeTargetRow({
 				selected && "bg-muted/60",
 			)}
 		>
-			<StatusDot tone="custom" size="lg" className={status.dotClass} />
+			<StatusDot tone={status.tone} size="lg" />
 
 			<div className="min-w-0 flex-1">
 				<div className="flex min-w-0 items-center gap-2">
 					<span className="truncate text-sm font-medium">{target.name}</span>
-					<Badge variant={status.badgeVariant} className="shrink-0">
+					<Badge variant={status.tone === "neutral" ? "outline" : status.tone} className="shrink-0">
 						{status.label}
 					</Badge>
 					{target.service_name && (
@@ -798,12 +795,14 @@ function ScrapeTargetDetails({
 				<div className="flex items-start justify-between gap-3">
 					<div className="min-w-0">
 						<div className="flex items-center gap-2">
-							<StatusDot tone="custom" size="lg" className={status.dotClass} />
+							<StatusDot tone={status.tone} size="lg" />
 							<h3 className="truncate text-sm font-semibold">{target.name}</h3>
 						</div>
 						<p className="text-muted-foreground mt-1 truncate font-mono text-xs">{target.url}</p>
 					</div>
-					<Badge variant={status.badgeVariant}>{status.label}</Badge>
+					<Badge variant={status.tone === "neutral" ? "outline" : status.tone}>
+						{status.label}
+					</Badge>
 				</div>
 				<div className="flex flex-wrap items-center gap-2">
 					<Button variant="outline" size="sm" onClick={() => onProbe(target)} loading={probing}>
@@ -1001,9 +1000,9 @@ export function ScrapeTargetChecksTable({
 							<TableCell>
 								<span className="flex items-center gap-1.5">
 									{check.success ? (
-										<CircleCheckIcon size={12} className="text-success-foreground" />
+										<CircleCheckIcon size={12} className="text-severity-info" />
 									) : (
-										<CircleXmarkIcon size={12} className="text-destructive" />
+										<CircleXmarkIcon size={12} className="text-severity-error" />
 									)}
 									<span>{check.success ? "up" : "down"}</span>
 								</span>

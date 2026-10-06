@@ -173,7 +173,7 @@ function ErrorTypeCard({
 				aria-controls={panelId}
 				className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-accent/40"
 			>
-				<CircleWarningIcon className="size-4 shrink-0 text-destructive" />
+				<CircleWarningIcon className="size-4 shrink-0 text-severity-error" />
 				<span className="min-w-0 flex-1">
 					<span className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
 						<span className="truncate text-sm font-medium">
@@ -182,7 +182,13 @@ function ErrorTypeCard({
 						{row.serviceNames.length > 0 ? (
 							<>
 								{row.serviceNames.map((serviceName) => (
-									<Badge key={serviceName} variant="outline" size="xs" mono className="gap-1.5">
+									<Badge
+										key={serviceName}
+										variant="outline"
+										size="xs"
+										mono
+										className="gap-1.5"
+									>
 										<ServiceDot serviceName={serviceName} />
 										{serviceName}
 									</Badge>
@@ -208,7 +214,7 @@ function ErrorTypeCard({
 					) : null}
 				</span>
 				<span className="shrink-0 text-right">
-					<span className="block text-sm font-semibold tabular-nums text-destructive">
+					<span className="block text-sm font-semibold tabular-nums text-severity-error">
 						{formatNumber(row.count)}
 					</span>
 					<span className="block text-[10px] text-muted-foreground">

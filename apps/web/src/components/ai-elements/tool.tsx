@@ -53,7 +53,7 @@ function StatusGlyph({ status, live }: { status: ToolStatus; live: boolean }) {
 				<Spinner className="size-3.5 text-muted-foreground motion-reduce:animate-none" />
 			)
 		) : status === "error" ? (
-			<CircleXmarkIcon className="size-3.5 text-destructive" />
+			<CircleXmarkIcon className="size-3.5 text-severity-error" />
 		) : (
 			<CircleCheckIcon className="size-3.5 text-severity-info" />
 		)
@@ -316,8 +316,8 @@ export const ToolRow = memo(function ToolRow(props: ToolProps) {
 
 					{errorText != null && (
 						<div>
-							<p className="mb-1 font-medium text-destructive">Error</p>
-							<pre className="max-h-40 overflow-auto whitespace-pre-wrap text-destructive/80">
+							<p className="mb-1 font-medium text-severity-error">Error</p>
+							<pre className="max-h-40 overflow-auto whitespace-pre-wrap text-severity-error/80">
 								{errorText}
 							</pre>
 						</div>

@@ -1,4 +1,5 @@
 import { InlineCode } from "@maple/ui/components/ui/inline-code"
+import { Field, FieldLabel } from "@maple/ui/components/ui/field"
 import { useAtomSet } from "@/lib/effect-atom"
 import { useId, useState } from "react"
 import { Exit } from "effect"
@@ -10,7 +11,6 @@ import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
 import { Input } from "@maple/ui/components/ui/input"
 import { SearchInput } from "@maple/ui/components/ui/search-input"
-import { Label } from "@maple/ui/components/ui/label"
 import {
 	Dialog,
 	DialogContent,
@@ -23,6 +23,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
 import { SegmentedSelect } from "@/components/common/segmented-select"
 import { useApiKeyMutationSync } from "@/hooks/use-api-keys"
+import { useAsyncAction } from "@/hooks/use-mutation-action"
 import { displayError } from "@/lib/error-messages"
 import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
 import { trackProduct } from "@/lib/analytics"
@@ -102,13 +103,14 @@ export function CreateApiKeyDialog({ open, onOpenChange, onCreated, kind }: Crea
 	const [accessMode, setAccessMode] = useState<AccessMode>("full")
 	const [scopeLevels, setScopeLevels] = useState<Record<string, ScopeLevel>>(defaultScopeLevels)
 	const [scopeFilter, setScopeFilter] = useState("")
-	const [isCreating, setIsCreating] = useState(false)
 	const [createdKey, setCreatedKey] = useState<V2ApiKeyWithSecret | null>(null)
 
 	const { prepareForMutation, reconcileTxid } = useApiKeyMutationSync()
 	const createMutation = useAtomSet(MapleApiV2AtomClient.mutation("apiKeys", "create"), {
 		mode: "promiseExit",
 	})
+
+	const [withCreating, isCreating] = useAsyncAction((task: () => Promise<void>) => task())
 
 	const selectedFamilyCount = SCOPE_FAMILIES.filter((f) => (scopeLevels[f.id] ?? "none") !== "none").length
 	const familyNeedle = scopeFilter.trim().toLowerCase()
@@ -129,26 +131,28 @@ export function CreateApiKeyDialog({ open, onOpenChange, onCreated, kind }: Crea
 				? "Give at least one resource family read or write access."
 				: null
 
-	async function handleCreate() {
+	function handleCreate() {
 		if (!canCreate) return
-		setIsCreating(true)
-		prepareForMutation()
-		const result = await createMutation({
-			payload: buildApiKeyCreatePayload(newName, newDescription, kind, {
-				...(expiration !== "never" ? { expiresInSeconds: Number(expiration) * 86_400 } : undefined),
-				...(restrictedScopes !== undefined ? { scopes: restrictedScopes } : undefined),
-			}),
+		return withCreating(async () => {
+			prepareForMutation()
+			const result = await createMutation({
+				payload: buildApiKeyCreatePayload(newName, newDescription, kind, {
+					...(expiration !== "never"
+						? { expiresInSeconds: Number(expiration) * 86_400 }
+						: undefined),
+					...(restrictedScopes !== undefined ? { scopes: restrictedScopes } : undefined),
+				}),
+			})
+			if (Exit.isSuccess(result)) {
+				setCreatedKey(result.value)
+				trackProduct("api_key_created", { kind, access: isMcp ? "full" : accessMode })
+				onCreated?.(result.value.secret)
+				void reconcileTxid(result.value.txid)
+			} else {
+				const { title, message } = displayError(result)
+				toastManager.add({ title, description: message, type: "error" })
+			}
 		})
-		if (Exit.isSuccess(result)) {
-			setCreatedKey(result.value)
-			trackProduct("api_key_created", { kind, access: isMcp ? "full" : accessMode })
-			onCreated?.(result.value.secret)
-			void reconcileTxid(result.value.txid)
-		} else {
-			const { title, message } = displayError(result)
-			toastManager.add({ title, description: message, type: "error" })
-		}
-		setIsCreating(false)
 	}
 
 	function handleClose(nextOpen: boolean) {
@@ -209,8 +213,8 @@ export function CreateApiKeyDialog({ open, onOpenChange, onCreated, kind }: Crea
 							</DialogDescription>
 						</DialogHeader>
 						<DialogPanel className="space-y-4">
-							<div className="space-y-1.5">
-								<Label htmlFor="api-key-name">Name</Label>
+							<Field>
+								<FieldLabel htmlFor="api-key-name">Name</FieldLabel>
 								<Input
 									id="api-key-name"
 									placeholder="e.g. CI/CD Pipeline"
@@ -222,21 +226,21 @@ export function CreateApiKeyDialog({ open, onOpenChange, onCreated, kind }: Crea
 										}
 									}}
 								/>
-							</div>
-							<div className="space-y-1.5">
-								<Label htmlFor="api-key-description">
+							</Field>
+							<Field>
+								<FieldLabel htmlFor="api-key-description">
 									Description{" "}
 									<span className="text-muted-foreground font-normal">(optional)</span>
-								</Label>
+								</FieldLabel>
 								<Input
 									id="api-key-description"
 									placeholder="What is this key used for?"
 									value={newDescription}
 									onChange={(e) => setNewDescription(e.target.value)}
 								/>
-							</div>
-							<div className="space-y-1.5">
-								<Label htmlFor="api-key-expiration">Expiration</Label>
+							</Field>
+							<Field>
+								<FieldLabel htmlFor="api-key-expiration">Expiration</FieldLabel>
 								<Select
 									items={EXPIRATION_OPTIONS.map((o) => ({
 										value: o.value,
@@ -256,10 +260,10 @@ export function CreateApiKeyDialog({ open, onOpenChange, onCreated, kind }: Crea
 										))}
 									</SelectContent>
 								</Select>
-							</div>
+							</Field>
 							{!isMcp && (
-								<div className="space-y-2">
-									<Label id={accessLabelId}>Access</Label>
+								<Field>
+									<FieldLabel id={accessLabelId}>Access</FieldLabel>
 									<SegmentedSelect
 										aria-label="Access"
 										value={accessMode}
@@ -350,7 +354,7 @@ export function CreateApiKeyDialog({ open, onOpenChange, onCreated, kind }: Crea
 											Full access to the organization's API.
 										</p>
 									)}
-								</div>
+								</Field>
 							)}
 						</DialogPanel>
 						<DialogFooter>

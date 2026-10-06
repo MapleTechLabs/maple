@@ -23,7 +23,6 @@ import { SkeletonList } from "@maple/ui/components/ui/skeleton"
 import { formatErrorRate, formatLatency, formatThroughput } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { latencyToneClass } from "@maple/ui/lib/latency-tone"
-import { TONE_FILL } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 
 import {
@@ -36,6 +35,7 @@ import {
 	type ServiceHealth,
 } from "./service-health"
 import { ServiceDot } from "@maple/ui/components/service-dot"
+import { TONE_TEXT, type Tone } from "@maple/ui/lib/tone"
 import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 
@@ -394,7 +394,7 @@ function ServiceHealthRow({
 				search={{ ...detailSearch, environments: [service.environment] }}
 				className="flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
 			>
-				<StatusDot tone="custom" size="lg" className={TONE_FILL[HEALTH_TONE[health]]} />
+				<StatusDot tone={HEALTH_TONE[health]} size="lg" />
 				<div className="flex min-w-0 flex-1 items-center gap-2">
 					<ServiceDot serviceName={service.serviceName} size="sm" />
 					<span className="truncate text-sm font-medium text-foreground">
@@ -405,7 +405,7 @@ function ServiceHealthRow({
 					</span>
 					{primaryCause && (
 						<Badge
-							variant={primaryCause.severity === "critical" ? "error" : "warning"}
+							variant={primaryCause.severity === "critical" ? "crit" : "warn"}
 							size="sm"
 							className={cn("shrink-0", DirectionIcon && "pr-1 pl-0.5")}
 							title={primaryCauseDescription}
@@ -454,19 +454,13 @@ function Metric({
 }: {
 	label: string
 	value: string
-	tone?: "ok" | "warn" | "crit"
+	tone?: Extract<Tone, "ok" | "warn" | "crit">
 	/** Applied after `tone`, so it wins — used to fall back to a magnitude ramp. */
 	valueClassName?: string
 }) {
-	const toneClass =
-		tone === "crit"
-			? "text-[var(--severity-error)]"
-			: tone === "warn"
-				? "text-[var(--severity-warn)]"
-				: "text-foreground"
 	return (
 		<div className="flex w-16 flex-col items-end gap-0.5">
-			<span className={cn("leading-none", toneClass, valueClassName)}>{value}</span>
+			<span className={cn("leading-none", TONE_TEXT[tone ?? "ok"], valueClassName)}>{value}</span>
 			<Eyebrow>{label}</Eyebrow>
 		</div>
 	)

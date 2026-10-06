@@ -2,6 +2,7 @@
 import { useOrganization, useAuth } from "@clerk/clerk-react"
 import { useState } from "react"
 import { toastManager } from "@maple/ui/components/ui/toast"
+import { Field, FieldLabel } from "@maple/ui/components/ui/field"
 
 import { Button } from "@maple/ui/components/ui/button"
 import {
@@ -24,7 +25,6 @@ import {
 	DialogTitle,
 } from "@maple/ui/components/ui/dialog"
 import { Input } from "@maple/ui/components/ui/input"
-import { Label } from "@maple/ui/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
 import {
 	DropdownMenu,
@@ -38,6 +38,7 @@ import { toastAccountError } from "@/components/account/account-errors"
 import { AccountSectionSkeleton } from "@/components/account/account-section-skeleton"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { PlusIcon, DotsVerticalIcon, TrashIcon, ShieldIcon, UserIcon, EnvelopeIcon } from "@/components/icons"
+import { useAsyncAction } from "@/hooks/use-mutation-action"
 
 function getInitials(firstName?: string | null, lastName?: string | null) {
 	const first = firstName?.[0] ?? ""
@@ -72,7 +73,7 @@ export function MembersSection() {
 	const [inviteOpen, setInviteOpen] = useState(false)
 	const [inviteEmail, setInviteEmail] = useState("")
 	const [inviteRole, setInviteRole] = useState<string>("org:member")
-	const [inviteLoading, setInviteLoading] = useState(false)
+	const [withInviteLoading, inviteLoading] = useAsyncAction((task: () => Promise<void>) => task())
 
 	const [removeDialogOpen, setRemoveDialogOpen] = useState(false)
 	const [memberToRemove, setMemberToRemove] = useState<{
@@ -80,28 +81,27 @@ export function MembersSection() {
 		name: string
 		destroy: () => Promise<unknown>
 	} | null>(null)
-	const [removeLoading, setRemoveLoading] = useState(false)
+	const [withRemoveLoading, removeLoading] = useAsyncAction((task: () => Promise<void>) => task())
 
 	const isAdmin = orgRole === "org:admin"
 
-	async function handleInvite() {
+	function handleInvite() {
 		if (!organization || !inviteEmail.trim()) return
-		setInviteLoading(true)
-		try {
-			await organization.inviteMember({
-				emailAddress: inviteEmail.trim(),
-				role: inviteRole as "org:admin" | "org:member",
-			})
-			toastManager.add({ title: `Invitation sent to ${inviteEmail}`, type: "success" })
-			setInviteEmail("")
-			setInviteRole("org:member")
-			setInviteOpen(false)
-			invitations?.revalidate?.()
-		} catch (err: unknown) {
-			toastAccountError(err, "Failed to send invitation")
-		} finally {
-			setInviteLoading(false)
-		}
+		return withInviteLoading(async () => {
+			try {
+				await organization.inviteMember({
+					emailAddress: inviteEmail.trim(),
+					role: inviteRole as "org:admin" | "org:member",
+				})
+				toastManager.add({ title: `Invitation sent to ${inviteEmail}`, type: "success" })
+				setInviteEmail("")
+				setInviteRole("org:member")
+				setInviteOpen(false)
+				invitations?.revalidate?.()
+			} catch (err: unknown) {
+				toastAccountError(err, "Failed to send invitation")
+			}
+		})
 	}
 
 	async function handleRoleChange(
@@ -121,20 +121,19 @@ export function MembersSection() {
 		}
 	}
 
-	async function handleRemoveMember() {
+	function handleRemoveMember() {
 		if (!memberToRemove) return
-		setRemoveLoading(true)
-		try {
-			await memberToRemove.destroy()
-			toastManager.add({ title: `${memberToRemove.name} has been removed`, type: "success" })
-			memberships?.revalidate?.()
-		} catch (err: unknown) {
-			toastAccountError(err, "Failed to remove member")
-		} finally {
-			setRemoveLoading(false)
+		return withRemoveLoading(async () => {
+			try {
+				await memberToRemove.destroy()
+				toastManager.add({ title: `${memberToRemove.name} has been removed`, type: "success" })
+				memberships?.revalidate?.()
+			} catch (err: unknown) {
+				toastAccountError(err, "Failed to remove member")
+			}
 			setRemoveDialogOpen(false)
 			setMemberToRemove(null)
-		}
+		})
 	}
 
 	async function handleRevokeInvitation(revoke: () => Promise<unknown>, email: string) {
@@ -394,10 +393,10 @@ export function MembersSection() {
 						<DialogDescription>Send an invitation to join {organization.name}.</DialogDescription>
 					</DialogHeader>
 					<div className="space-y-4 px-6 py-2">
-						<div className="space-y-2">
-							<Label htmlFor="invite-email" className="text-xs font-medium">
+						<Field>
+							<FieldLabel htmlFor="invite-email" className="text-xs font-medium">
 								Email address
-							</Label>
+							</FieldLabel>
 							<Input
 								id="invite-email"
 								type="email"
@@ -406,11 +405,11 @@ export function MembersSection() {
 								onChange={(e) => setInviteEmail(e.target.value)}
 								onKeyDown={(e) => e.stopPropagation()}
 							/>
-						</div>
-						<div className="space-y-2">
-							<Label htmlFor="invite-role" className="text-xs font-medium">
+						</Field>
+						<Field>
+							<FieldLabel htmlFor="invite-role" className="text-xs font-medium">
 								Role
-							</Label>
+							</FieldLabel>
 							<Select value={inviteRole} onValueChange={(val) => val && setInviteRole(val)}>
 								<SelectTrigger id="invite-role" className="w-full">
 									<SelectValue placeholder="Select role">
@@ -422,7 +421,7 @@ export function MembersSection() {
 									<SelectItem value="org:admin">Admin</SelectItem>
 								</SelectContent>
 							</Select>
-						</div>
+						</Field>
 					</div>
 					<DialogFooter>
 						<Button

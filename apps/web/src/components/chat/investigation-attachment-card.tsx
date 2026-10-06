@@ -1,16 +1,17 @@
 import { Fragment, type ReactNode } from "react"
 import { cn } from "@maple/ui/lib/utils"
+import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { shortId } from "@maple/ui/lib/ids"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import type { InvestigationContext, InvestigationKind } from "./investigation-context"
 
 const ACCENT: Record<string, { stripe: string; tint: string }> = {
-	critical: { stripe: "bg-destructive", tint: "bg-destructive/[0.04]" },
-	high: { stripe: "bg-orange-500", tint: "bg-orange-500/[0.04]" },
-	warning: { stripe: "bg-warning", tint: "bg-warning/[0.04]" },
-	medium: { stripe: "bg-amber-500", tint: "bg-amber-500/[0.04]" },
-	low: { stripe: "bg-muted-foreground", tint: "bg-muted/30" },
+	critical: { stripe: "bg-severity-fatal", tint: "bg-severity-fatal/[0.04]" },
+	high: { stripe: "bg-severity-error", tint: "bg-severity-error/[0.04]" },
+	warning: { stripe: "bg-severity-warn", tint: "bg-severity-warn/[0.04]" },
+	medium: { stripe: "bg-severity-warn", tint: "bg-severity-warn/[0.04]" },
+	low: { stripe: "bg-severity-debug", tint: "bg-severity-debug/[0.04]" },
 } satisfies Record<string, { stripe: string; tint: string }>
 
 const KIND_LABEL: Record<InvestigationKind, string> = {
@@ -21,9 +22,9 @@ const KIND_LABEL: Record<InvestigationKind, string> = {
 } satisfies Record<InvestigationKind, string>
 
 const STATUS_TONE: Record<string, string> = {
-	Firing: "text-destructive",
-	Open: "text-destructive",
-	Resolved: "text-success",
+	Firing: TONE_TEXT.crit,
+	Open: TONE_TEXT.crit,
+	Resolved: "text-severity-info",
 } satisfies Record<string, string>
 
 /** The last dash segment of a UUID-ish id, cut to 8 chars: the part that tells ids apart. */
@@ -84,7 +85,6 @@ export function InvestigationAttachmentCard({
 }) {
 	const accent = ACCENT[ctx.severity] ?? { stripe: "bg-muted-foreground", tint: "bg-muted/30" }
 	const statusTone = STATUS_TONE[ctx.status] ?? "text-muted-foreground"
-	const dot = ctx.status === "Resolved" ? "bg-success" : accent.stripe
 
 	return (
 		<AttachmentCard
@@ -99,7 +99,11 @@ export function InvestigationAttachmentCard({
 					{ctx.severity}
 				</span>,
 				<span key="status" className={cn("inline-flex items-center gap-1 font-mono", statusTone)}>
-					<StatusDot tone="custom" className={dot} />
+					{ctx.status === "Resolved" ? (
+						<StatusDot tone="ok" />
+					) : (
+						<StatusDot tone="custom" className={accent.stripe} />
+					)}
 					{ctx.status}
 				</span>,
 				<span key="id" className="font-mono normal-case tracking-normal">

@@ -9,8 +9,8 @@ interface IssueNotesCalloutProps {
 
 export function IssueNotesCallout({ notes, className }: IssueNotesCalloutProps) {
 	return (
-		<Alert variant="warning" className={cn("rounded-md px-4", className)}>
-			<Eyebrow as="div" className="mb-0.5 text-warning-foreground">
+		<Alert variant="warn" className={cn("rounded-md px-4", className)}>
+			<Eyebrow as="div" className="mb-0.5 text-severity-warn">
 				Notes
 			</Eyebrow>
 			<AlertDescription className="whitespace-pre-wrap text-foreground">{notes}</AlertDescription>

@@ -4,6 +4,7 @@ import type { ErrorIssueVerificationDocument, WorkflowState } from "@maple/domai
 import { Badge } from "@maple/ui/components/ui/badge"
 import { formatRatePerHour } from "@maple/ui/lib/format"
 import { formatRelativeShort } from "@maple/ui/lib/time-format"
+import { TONE_SOFT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 
 import { MagnifierCheckIcon } from "@/components/icons"
@@ -21,10 +22,10 @@ import { MagnifierCheckIcon } from "@/components/icons"
 const STATUS_TONE: Record<ErrorIssueVerificationDocument["status"], string> = {
 	waiting: "bg-teal-500/10 text-teal-600 dark:text-teal-400",
 	running: "bg-teal-500/10 text-teal-600 dark:text-teal-400",
-	verified: "bg-success/10 text-success",
-	not_fixed: "bg-destructive/10 text-destructive",
-	inconclusive: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
-	abandoned: "bg-muted text-muted-foreground",
+	verified: TONE_SOFT.ok,
+	not_fixed: TONE_SOFT.crit,
+	inconclusive: TONE_SOFT.warn,
+	abandoned: TONE_SOFT.neutral,
 } satisfies Record<ErrorIssueVerificationDocument["status"], string>
 
 const STATUS_LABEL: Record<ErrorIssueVerificationDocument["status"], string> = {

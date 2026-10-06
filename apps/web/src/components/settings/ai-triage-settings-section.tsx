@@ -14,6 +14,7 @@ import { Switch } from "@maple/ui/components/ui/switch"
 import { MapleInternalAtomClient, retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
 import { AiTriageSettingsUpdateRequest } from "@maple/domain/http"
 import { ErrorState } from "@/components/common/error-state"
+import { useAsyncAction } from "@/hooks/use-mutation-action"
 
 interface AiTriageSettingsSectionProps {
 	isAdmin: boolean
@@ -93,7 +94,19 @@ export function AiTriageSettingsSection({ isAdmin, hasEntitlement }: AiTriageSet
 		mode: "promiseExit",
 	})
 
-	const [isSaving, setIsSaving] = useState(false)
+	const [save, isSaving] = useAsyncAction(
+		async (request: AiTriageSettingsUpdateRequest, successMessage: string) => {
+			const result = await updateMutation({
+				payload: request,
+				reactivityKeys: SETTINGS_REACTIVITY_KEYS,
+			})
+			if (Exit.isSuccess(result)) {
+				toastManager.add({ title: successMessage, type: "success" })
+			} else {
+				toastManager.add({ title: "Failed to update AI triage settings.", type: "error" })
+			}
+		},
+	)
 
 	if (!isAdmin || !hasEntitlement) {
 		return null
@@ -103,30 +116,12 @@ export function AiTriageSettingsSection({ isAdmin, hasEntitlement }: AiTriageSet
 		.onSuccess((value) => value)
 		.orElse(() => null)
 
-	const save = async (request: AiTriageSettingsUpdateRequest, successMessage: string) => {
-		setIsSaving(true)
-		const result = await updateMutation({
-			payload: request,
-			reactivityKeys: SETTINGS_REACTIVITY_KEYS,
-		})
-		setIsSaving(false)
-		if (Exit.isSuccess(result)) {
-			toastManager.add({ title: successMessage, type: "success" })
-		} else {
-			toastManager.add({ title: "Failed to update AI triage settings.", type: "error" })
-		}
-	}
-
 	return (
 		<Card>
 			<CardHeader>
 				<CardTitle className="flex items-center gap-2">
 					AI auto-triage
-					{settings?.enabled ? (
-						<Badge variant="outline" className="bg-success/10 text-success">
-							Enabled
-						</Badge>
-					) : null}
+					{settings?.enabled ? <Badge variant="ok">Enabled</Badge> : null}
 				</CardTitle>
 				<CardDescription>
 					When a new error or anomaly incident opens, an AI agent automatically investigates it with

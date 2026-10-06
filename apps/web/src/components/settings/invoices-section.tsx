@@ -14,12 +14,12 @@ import { formatCurrency } from "@maple/domain/format"
 function statusBadge(status: string) {
 	switch (status.toLowerCase()) {
 		case "paid":
-			return { label: "Paid", variant: "success" as const }
+			return { label: "Paid", variant: "ok" as const }
 		case "open":
-			return { label: "Due", variant: "warning" as const }
+			return { label: "Due", variant: "warn" as const }
 		case "uncollectible":
 		case "past_due":
-			return { label: "Past due", variant: "error" as const }
+			return { label: "Past due", variant: "crit" as const }
 		case "draft":
 			return { label: "Draft", variant: "secondary" as const }
 		case "void":

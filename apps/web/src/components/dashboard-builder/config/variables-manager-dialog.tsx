@@ -11,7 +11,7 @@ import {
 } from "@maple/ui/components/ui/dialog"
 import { Button } from "@maple/ui/components/ui/button"
 import { Input } from "@maple/ui/components/ui/input"
-import { Label } from "@maple/ui/components/ui/label"
+import { Field, FieldDescription, FieldError, FieldLabel } from "@maple/ui/components/ui/field"
 import { Item, ItemActions, ItemContent, ItemDescription, ItemTitle } from "@maple/ui/components/ui/item"
 import { SettingRow } from "@maple/ui/components/ui/setting-row"
 import { Switch } from "@maple/ui/components/ui/switch"
@@ -311,8 +311,8 @@ function VariableForm({
 	return (
 		<div className="flex flex-col gap-3">
 			<div className="grid grid-cols-2 gap-3">
-				<div className="flex flex-col gap-1.5">
-					<Label className="text-xs">Name</Label>
+				<Field className="items-stretch gap-1.5">
+					<FieldLabel className="text-xs">Name</FieldLabel>
 					<Input
 						size="sm"
 						autoFocus={variable.name === ""}
@@ -322,18 +322,20 @@ function VariableForm({
 						onChange={(event) => onChange({ ...variable, name: event.target.value })}
 					/>
 					{error !== null ? (
-						<span className="text-[11px] text-destructive">{error}</span>
+						<FieldError match className="text-[11px] text-destructive">
+							{error}
+						</FieldError>
 					) : (
 						variable.name !== "" && (
-							<span className="text-[11px] text-muted-foreground">
+							<FieldDescription className="text-[11px]">
 								Reference it as <InlineCode>${variable.name}</InlineCode> in widget filters
 								and SQL.
-							</span>
+							</FieldDescription>
 						)
 					)}
-				</div>
-				<div className="flex flex-col gap-1.5">
-					<Label className="text-xs">Label</Label>
+				</Field>
+				<Field className="items-stretch gap-1.5">
+					<FieldLabel className="text-xs">Label</FieldLabel>
 					<Input
 						size="sm"
 						value={variable.label ?? ""}
@@ -345,12 +347,12 @@ function VariableForm({
 							)
 						}}
 					/>
-				</div>
+				</Field>
 			</div>
 
 			<div className="grid grid-cols-2 gap-3">
-				<div className="flex flex-col gap-1.5">
-					<Label className="text-xs">Type</Label>
+				<Field className="items-stretch gap-1.5">
+					<FieldLabel className="text-xs">Type</FieldLabel>
 					<Select
 						items={TYPE_OPTIONS}
 						value={variable.type}
@@ -371,9 +373,9 @@ function VariableForm({
 							))}
 						</SelectContent>
 					</Select>
-				</div>
-				<div className="flex flex-col gap-1.5">
-					<Label className="text-xs">Default value</Label>
+				</Field>
+				<Field className="items-stretch gap-1.5">
+					<FieldLabel className="text-xs">Default value</FieldLabel>
 					<Input
 						size="sm"
 						value={variable.defaultValue ?? ""}
@@ -387,14 +389,14 @@ function VariableForm({
 							)
 						}}
 					/>
-				</div>
+				</Field>
 			</div>
 
 			{variable.type === "query" && <QuerySourceFields variable={variable} onChange={onChange} />}
 
 			{variable.type === "custom" && (
-				<div className="flex flex-col gap-1.5">
-					<Label className="text-xs">Options (comma-separated)</Label>
+				<Field className="items-stretch gap-1.5">
+					<FieldLabel className="text-xs">Options (comma-separated)</FieldLabel>
 					<Textarea
 						className="min-h-16 text-xs"
 						value={variable.options.map((option) => option.value).join(", ")}
@@ -410,7 +412,7 @@ function VariableForm({
 							})
 						}
 					/>
-				</div>
+				</Field>
 			)}
 
 			{variable.type !== "textbox" && (
@@ -442,8 +444,8 @@ function QuerySourceFields({
 	const source = variable.source
 	return (
 		<div className="grid grid-cols-2 gap-3">
-			<div className="flex flex-col gap-1.5">
-				<Label className="text-xs">Values from</Label>
+			<Field className="items-stretch gap-1.5">
+				<FieldLabel className="text-xs">Values from</FieldLabel>
 				<Select
 					items={{
 						...Object.fromEntries(
@@ -489,10 +491,10 @@ function QuerySourceFields({
 						<SelectItem value="attribute:resource">Resource attribute…</SelectItem>
 					</SelectContent>
 				</Select>
-			</div>
+			</Field>
 			{source.kind === "attribute" && (
-				<div className="flex flex-col gap-1.5">
-					<Label className="text-xs">Attribute key</Label>
+				<Field className="items-stretch gap-1.5">
+					<FieldLabel className="text-xs">Attribute key</FieldLabel>
 					<Input
 						size="sm"
 						value={source.attributeKey}
@@ -504,7 +506,7 @@ function QuerySourceFields({
 							})
 						}
 					/>
-				</div>
+				</Field>
 			)}
 		</div>
 	)

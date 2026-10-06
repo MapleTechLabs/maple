@@ -4,12 +4,13 @@ import { Exit } from "effect"
 
 import { Button } from "@maple/ui/components/ui/button"
 import { Input } from "@maple/ui/components/ui/input"
-import { Label } from "@maple/ui/components/ui/label"
+import { Field, FieldLabel } from "@maple/ui/components/ui/field"
 import { toastManager } from "@maple/ui/components/ui/toast"
 
 import { ExternalLinkIcon } from "@/components/icons"
 import { useAtomSet } from "@/lib/effect-atom"
 import { errorMessage } from "@/lib/error-toast"
+import { useAsyncAction } from "@/hooks/use-mutation-action"
 import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
 
 /** PlanetScale prints service token secrets with this prefix. Advisory, not a contract. */
@@ -81,14 +82,10 @@ export function PlanetScaleMetricsTokenForm({
 		{ mode: "promiseExit" },
 	)
 	const [fields, setFields] = useState<TokenFields>({ id: "", secret: "" })
-	const [submitting, setSubmitting] = useState(false)
 	const [error, setError] = useState<string | null>(null)
 
 	const secretLooksWrong = fields.secret.length > 0 && !fields.secret.startsWith(SECRET_PREFIX)
-	const canSubmit = fields.id.trim().length > 0 && fields.secret.length > 0 && !submitting
-
-	async function handleSubmit() {
-		setSubmitting(true)
+	const [handleSubmit, submitting] = useAsyncAction(async () => {
 		setError(null)
 		const result = await setMetricsToken({
 			payload: {
@@ -98,7 +95,6 @@ export function PlanetScaleMetricsTokenForm({
 			// The managed scrape target flips authType/enabled — refresh that list too.
 			reactivityKeys: ["planetscaleIntegration", "scrapeTargets"],
 		})
-		setSubmitting(false)
 		if (Exit.isSuccess(result)) {
 			toastManager.add({ title: "Branch metrics enabled", type: "success" })
 			setFields({ id: "", secret: "" })
@@ -106,7 +102,9 @@ export function PlanetScaleMetricsTokenForm({
 			return
 		}
 		setError(errorMessage(result, "Failed to save the metrics service token."))
-	}
+	})
+
+	const canSubmit = fields.id.trim().length > 0 && fields.secret.length > 0 && !submitting
 
 	const linkHref = organization !== null ? tokenSettingsUrl(organization) : (docsUrl ?? null)
 
@@ -135,8 +133,8 @@ export function PlanetScaleMetricsTokenForm({
 			) : null}
 
 			<div className="flex flex-wrap items-end gap-2">
-				<div className="flex min-w-40 flex-1 flex-col gap-1.5">
-					<Label htmlFor="ps-metrics-token-id">Service token ID</Label>
+				<Field className="min-w-40 flex-1 items-stretch gap-1.5">
+					<FieldLabel htmlFor="ps-metrics-token-id">Service token ID</FieldLabel>
 					<Input
 						id="ps-metrics-token-id"
 						placeholder="tok_…"
@@ -148,9 +146,9 @@ export function PlanetScaleMetricsTokenForm({
 							setFields(normalizeTokenPaste("id", event.clipboardData.getData("text"), fields))
 						}}
 					/>
-				</div>
-				<div className="flex min-w-40 flex-1 flex-col gap-1.5">
-					<Label htmlFor="ps-metrics-token-secret">Service token secret</Label>
+				</Field>
+				<Field className="min-w-40 flex-1 items-stretch gap-1.5">
+					<FieldLabel htmlFor="ps-metrics-token-secret">Service token secret</FieldLabel>
 					<Input
 						id="ps-metrics-token-secret"
 						type="password"
@@ -165,14 +163,14 @@ export function PlanetScaleMetricsTokenForm({
 							)
 						}}
 					/>
-				</div>
+				</Field>
 				<div className="flex items-center gap-1.5">
 					{onCancel !== undefined ? (
 						<Button variant="outline" onClick={onCancel} disabled={submitting}>
 							Cancel
 						</Button>
 					) : null}
-					<Button onClick={handleSubmit} disabled={!canSubmit} loading={submitting}>
+					<Button onClick={() => void handleSubmit()} disabled={!canSubmit} loading={submitting}>
 						{mode === "rotate" ? "Update token" : "Enable metrics"}
 					</Button>
 				</div>

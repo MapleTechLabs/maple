@@ -1,4 +1,5 @@
 import { InlineCode } from "@maple/ui/components/ui/inline-code"
+import { Field, FieldLabel } from "@maple/ui/components/ui/field"
 import { Card, CardAction, CardDescription, CardHeader, CardTitle } from "@maple/ui/components/ui/card"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import type {
@@ -25,11 +26,11 @@ import {
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { Input } from "@maple/ui/components/ui/input"
-import { Label } from "@maple/ui/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
 import { Skeleton, SkeletonList } from "@maple/ui/components/ui/skeleton"
 import { Switch } from "@maple/ui/components/ui/switch"
 import { cn } from "@maple/ui/lib/utils"
+import { TONE_TEXT } from "@maple/ui/lib/tone"
 import {
 	ArrowRightFromLineIcon,
 	ArrowRightIcon,
@@ -51,6 +52,7 @@ import {
 import { AttributeKeyAutocomplete } from "./attribute-key-autocomplete"
 import { DocsLink, EmptyActions } from "@/components/common/docs-link"
 import { ErrorState } from "@/components/common/error-state"
+import { useAsyncAction } from "@/hooks/use-mutation-action"
 
 const SOURCE_CONTEXT_LABELS: Record<IngestMappingSourceContext, string> = {
 	span: "Span attribute",
@@ -62,14 +64,14 @@ const OPERATION_LABELS: Record<IngestMappingOperation, string> = {
 	copy: "Copy",
 } satisfies Record<IngestMappingOperation, string>
 
-// Copy is additive (keeps the source) → calm blue; Move removes the source key → amber caution.
+// Copy is additive (keeps the source) → info; Move removes the source key → warn caution.
 const OPERATION_BADGE: Record<
 	IngestMappingOperation,
-	{ icon: IconComponent; variant: "info" | "warning"; tone: string }
+	{ icon: IconComponent; variant: "info" | "warn"; tone: string }
 > = {
-	copy: { icon: CopyIcon, variant: "info", tone: "text-info" },
-	move: { icon: ArrowRightFromLineIcon, variant: "warning", tone: "text-warning" },
-} satisfies Record<IngestMappingOperation, { icon: IconComponent; variant: "info" | "warning"; tone: string }>
+	copy: { icon: CopyIcon, variant: "info", tone: TONE_TEXT.info },
+	move: { icon: ArrowRightFromLineIcon, variant: "warn", tone: TONE_TEXT.warn },
+} satisfies Record<IngestMappingOperation, { icon: IconComponent; variant: "info" | "warn"; tone: string }>
 
 const SOURCE_CONTEXT_ICON: Record<IngestMappingSourceContext, IconComponent> = {
 	span: BracketsCurlyIcon,
@@ -78,7 +80,6 @@ const SOURCE_CONTEXT_ICON: Record<IngestMappingSourceContext, IconComponent> = {
 
 export function AttributeMappingsSection() {
 	const [dialogOpen, setDialogOpen] = useState(false)
-	const [isSaving, setIsSaving] = useState(false)
 	const [togglingId, setTogglingId] = useState<IngestAttributeMappingId | null>(null)
 	const [deleteConfirm, setDeleteConfirm] = useState<V2AttributeMapping | null>(null)
 
@@ -128,13 +129,12 @@ export function AttributeMappingsSection() {
 		setDialogOpen(true)
 	}
 
-	async function handleSave() {
+	const [handleSave, isSaving] = useAsyncAction(async () => {
 		if (!formName.trim() || !formSourceKey.trim() || !formTargetKey.trim()) {
 			toastManager.add({ title: "Name, source key, and target key are required", type: "error" })
 			return
 		}
 
-		setIsSaving(true)
 		if (editing) {
 			const result = await updateMutation({
 				params: { id: editing.id },
@@ -173,8 +173,7 @@ export function AttributeMappingsSection() {
 				toastManager.add({ title: "Failed to create attribute mapping", type: "error" })
 			}
 		}
-		setIsSaving(false)
-	}
+	})
 
 	async function handleDelete(mappingId: IngestAttributeMappingId) {
 		setDeleteConfirm(null)
@@ -384,17 +383,17 @@ export function AttributeMappingsSection() {
 						</DialogDescription>
 					</DialogHeader>
 					<div className="space-y-4 px-6 py-2">
-						<div className="space-y-2">
-							<Label htmlFor="mapping-name">Name</Label>
+						<Field>
+							<FieldLabel htmlFor="mapping-name">Name</FieldLabel>
 							<Input
 								id="mapping-name"
 								placeholder="e.g. Normalize HTTP status code"
 								value={formName}
 								onChange={(e) => setFormName(e.target.value)}
 							/>
-						</div>
-						<div className="space-y-2">
-							<Label>Source context</Label>
+						</Field>
+						<Field>
+							<FieldLabel>Source context</FieldLabel>
 							<Select
 								items={SOURCE_CONTEXT_LABELS}
 								value={formSourceContext}
@@ -433,9 +432,9 @@ export function AttributeMappingsSection() {
 									</SelectItem>
 								</SelectContent>
 							</Select>
-						</div>
-						<div className="space-y-2">
-							<Label htmlFor="mapping-source-key">Source key</Label>
+						</Field>
+						<Field>
+							<FieldLabel htmlFor="mapping-source-key">Source key</FieldLabel>
 							<AttributeKeyAutocomplete
 								id="mapping-source-key"
 								scope={formSourceContext}
@@ -443,9 +442,9 @@ export function AttributeMappingsSection() {
 								value={formSourceKey}
 								onValueChange={setFormSourceKey}
 							/>
-						</div>
-						<div className="space-y-2">
-							<Label htmlFor="mapping-target-key">Target span attribute key</Label>
+						</Field>
+						<Field>
+							<FieldLabel htmlFor="mapping-target-key">Target span attribute key</FieldLabel>
 							<AttributeKeyAutocomplete
 								id="mapping-target-key"
 								scope="span"
@@ -453,9 +452,9 @@ export function AttributeMappingsSection() {
 								value={formTargetKey}
 								onValueChange={setFormTargetKey}
 							/>
-						</div>
-						<div className="space-y-2">
-							<Label>Operation</Label>
+						</Field>
+						<Field>
+							<FieldLabel>Operation</FieldLabel>
 							<Select
 								items={OPERATION_LABELS}
 								value={formOperation}
@@ -482,7 +481,7 @@ export function AttributeMappingsSection() {
 								<SelectContent>
 									<SelectItem value="copy">
 										<span className="flex items-center gap-2">
-											<CopyIcon className="text-info" />
+											<CopyIcon className={TONE_TEXT.info} />
 											<span>
 												Copy{" "}
 												<span className="text-muted-foreground">
@@ -493,7 +492,7 @@ export function AttributeMappingsSection() {
 									</SelectItem>
 									<SelectItem value="move">
 										<span className="flex items-center gap-2">
-											<ArrowRightFromLineIcon className="text-warning" />
+											<ArrowRightFromLineIcon className={TONE_TEXT.warn} />
 											<span>
 												Move{" "}
 												<span className="text-muted-foreground">
@@ -510,7 +509,7 @@ export function AttributeMappingsSection() {
 									shared across every span in a batch and is never deleted.
 								</p>
 							)}
-						</div>
+						</Field>
 
 						{showPreview && (
 							<div className="rounded-md border bg-muted/40 px-3 py-2.5">

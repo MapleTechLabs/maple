@@ -16,20 +16,21 @@ import { Button } from "@maple/ui/components/ui/button"
 import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
 import { cn } from "@maple/ui/lib/utils"
+import { TONE_TEXT, type Tone } from "@maple/ui/lib/tone"
 
 /** One tone per status, for the dot beside a name and the text of a label. */
-const STATUS_DOT = {
-	failed: "bg-destructive",
-	warning: "bg-severity-warn",
-	passed: "bg-severity-info",
-	skipped: "border border-muted-foreground",
-} satisfies Record<SessionCheckStatus, string>
+const STATUS_TONE = {
+	failed: "crit",
+	warning: "warn",
+	passed: "ok",
+	skipped: "neutral",
+} satisfies Record<SessionCheckStatus, Tone>
 
 const STATUS_TEXT = {
-	failed: "text-destructive",
-	warning: "text-severity-warn",
+	failed: TONE_TEXT.crit,
+	warning: TONE_TEXT.warn,
 	passed: "text-severity-info",
-	skipped: "text-muted-foreground",
+	skipped: TONE_TEXT.neutral,
 } satisfies Record<SessionCheckStatus, string>
 
 /**
@@ -146,7 +147,7 @@ function Verdict({ report, onOpenSpan }: { report: SessionChecksReport; onOpenSp
 		<section className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
 			<div className="flex min-w-0 flex-col gap-1">
 				<p className="flex min-w-0 flex-wrap items-baseline gap-x-2 font-semibold text-base">
-					<StatusDot tone="custom" size="lg" className={cn("self-center", STATUS_DOT[tone])} />
+					<StatusDot size="lg" tone={STATUS_TONE[tone]} className="self-center" />
 					{/* The word alone: the report's headline and its counts restate
 					    the list right under it — the checks that need attention, and
 					    how many passed. They are the MCP's line. */}
@@ -270,9 +271,13 @@ function EvidenceRow({
 
 function CheckDot({ status }: { status: SessionCheckStatus }) {
 	return (
+		// Skipped checks draw a hollow ring rather than a filled dot.
 		<StatusDot
-			tone="custom"
-			className={cn("translate-y-[-1px] justify-self-center", STATUS_DOT[status])}
+			tone={status === "skipped" ? "custom" : STATUS_TONE[status]}
+			className={cn(
+				"translate-y-[-1px] justify-self-center",
+				status === "skipped" && "border border-muted-foreground",
+			)}
 		/>
 	)
 }
@@ -387,7 +392,7 @@ interface Signal {
 
 const SIGNAL_MARK = {
 	captured: { glyph: "✓", tone: "text-severity-info", says: "captured:" },
-	missing: { glyph: "✕", tone: "text-destructive", says: "not captured:" },
+	missing: { glyph: "✕", tone: "text-severity-error", says: "not captured:" },
 	absent: { glyph: "–", tone: "text-muted-foreground/60", says: "nothing to capture:" },
 } satisfies Record<SessionCoverageSignal, { glyph: string; tone: string; says: string }>
 

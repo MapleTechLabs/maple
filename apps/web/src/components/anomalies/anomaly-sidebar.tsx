@@ -16,7 +16,6 @@ import {
 	isStaleOpenIncident,
 	META_CHIP_CLASS,
 	RESOLVE_REASON_LABEL,
-	SEVERITY_TONE,
 	SIGNAL_LABEL,
 	severityToneFor,
 	TRIAGE_STATUS_CHIP,
@@ -175,13 +174,12 @@ export function AnomalySidebar({
 						>
 							<span className="flex min-w-0 items-center gap-1.5">
 								<StatusDot
-									tone="custom"
-									className={
+									tone={
 										fingerprint.resolvedAt !== null
-											? "bg-border"
+											? "neutral"
 											: fingerprint.severity === "critical"
-												? SEVERITY_TONE.critical.accent
-												: SEVERITY_TONE.warning.accent
+												? "crit"
+												: "warn"
 									}
 								/>
 								{fingerprint.errorIssueId !== null ? (

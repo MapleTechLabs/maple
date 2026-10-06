@@ -379,7 +379,7 @@ function DashboardViewPage() {
 									<DashboardLayout.Scroll>
 										{degraded && <SyncDegradedBanner onRetry={retry} />}
 										{persistenceError && (
-											<Alert variant="error" size="sm" className="mb-4">
+											<Alert variant="crit" size="sm" className="mb-4">
 												<AlertDescription className="text-destructive">
 													{persistenceError}. Dashboard editing is temporarily
 													disabled.

@@ -5,7 +5,8 @@
 import type { ReactNode } from "react"
 import { formatRelativeFrom } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
-import { StatusDot, type StatusDotProps } from "@maple/ui/components/ui/status-dot"
+import { TONE_BORDER, TONE_SOFT, type Tone } from "@maple/ui/lib/tone"
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import {
 	MISSES_BEFORE_DOWN,
 	useLocalServerStatus,
@@ -19,10 +20,10 @@ import { localServerPort } from "../lib/constants"
  */
 const FRESH_MS = 90_000
 
-type Tone = "live" | "idle" | "warn" | "down"
+type IngestTone = "live" | "idle" | "warn" | "down"
 
 interface PillState {
-	readonly tone: Tone
+	readonly tone: IngestTone
 	readonly label: string
 	readonly title: string
 }
@@ -91,10 +92,8 @@ export function IngestStatus() {
 			title={state.title}
 			className={cn(
 				"inline-flex min-w-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium tabular-nums",
-				state.tone === "live" && "border-success/30 bg-success/10 text-success",
-				state.tone === "idle" && "border-border bg-muted/40 text-muted-foreground",
-				state.tone === "warn" && "border-warning/30 bg-warning/10 text-warning-foreground",
-				state.tone === "down" && "border-destructive/30 bg-destructive/10 text-destructive",
+				TONE_SOFT[STATUS_TONE[state.tone]],
+				TONE_BORDER[STATUS_TONE[state.tone]],
 			)}
 		>
 			<Dot tone={state.tone} />
@@ -104,13 +103,13 @@ export function IngestStatus() {
 	)
 }
 
-const DOT_TONE = {
-	live: "success",
+const STATUS_TONE = {
+	live: "ok",
 	idle: "neutral",
-	warn: "warning",
-	down: "error",
-} satisfies Record<Tone, StatusDotProps["tone"]>
+	warn: "warn",
+	down: "crit",
+} satisfies Record<IngestTone, Tone>
 
-function Dot({ tone }: { tone: Tone }): ReactNode {
-	return <StatusDot tone={DOT_TONE[tone]} pulse={tone === "live"} />
+function Dot({ tone }: { tone: IngestTone }): ReactNode {
+	return <StatusDot tone={STATUS_TONE[tone]} pulse={tone === "live"} />
 }

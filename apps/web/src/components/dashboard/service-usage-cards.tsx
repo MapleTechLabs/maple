@@ -1,5 +1,6 @@
 import { formatNumber, formatStorageBytes } from "@maple/ui/lib/format"
 import { Result } from "@/lib/effect-atom"
+import { ResultView } from "@/components/common/result-view"
 import { Delta } from "@maple/ui/components/ui/delta"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { StatRail, StatRailItem, StatRailLoading } from "@/components/common/stat-rail"
@@ -28,7 +29,8 @@ interface ServiceUsageCardsProps {
 	endTime?: string
 }
 
-function sumTotals(response: ServiceUsageResponse) {
+/** Sums per-service usage into one total per signal. */
+export function sumTotals(response: ServiceUsageResponse): ServiceUsageTotals {
 	return response.data.reduce(
 		(acc, service) => ({
 			logs: acc.logs + service.totalLogs,
@@ -70,42 +72,52 @@ export function ServiceUsageCards({ startTime, endTime }: ServiceUsageCardsProps
 		.onSuccess((r) => r.previousTotals ?? null)
 		.orElse(() => null as null | ServiceUsageTotals)
 
-	return Result.builder(responseResult)
-		.onInitial(() => <StatRailLoading />)
-		.onError(() => (
+	return (
+		<ResultView
+			result={responseResult}
+			loading={<StatRailLoading />}
 			// Quiet absence, not four more error blocks: the chart panels below
 			// already carry the full message.
-			<StatRail>
-				{cardConfig.map((card) => (
-					<StatRailItem key={card.key} eyebrow={card.title} value="—" subline="Couldn't load" compact />
-				))}
-			</StatRail>
-		))
-		.onSuccess((response) => {
-			const totals = sumTotals(response)
-			return (
+			error={() => (
 				<StatRail>
-					{cardConfig.map((card) => {
-						const current = totals[card.key]
-						const previous = previousTotals?.[card.key]
-						return (
-							<StatRailItem
-								key={card.key}
-								eyebrow={card.title}
-								value={card.format(current)}
-								compact
-								delta={
-									previous !== undefined ? (
-										<Delta current={current} previous={previous} suffix="vs prev" />
-									) : (
-										<Skeleton className="h-3 w-16" />
-									)
-								}
-							/>
-						)
-					})}
+					{cardConfig.map((card) => (
+						<StatRailItem
+							key={card.key}
+							eyebrow={card.title}
+							value="—"
+							subline="Couldn't load"
+							compact
+						/>
+					))}
 				</StatRail>
-			)
-		})
-		.render()
+			)}
+		>
+			{(response) => {
+				const totals = sumTotals(response)
+				return (
+					<StatRail>
+						{cardConfig.map((card) => {
+							const current = totals[card.key]
+							const previous = previousTotals?.[card.key]
+							return (
+								<StatRailItem
+									key={card.key}
+									eyebrow={card.title}
+									value={card.format(current)}
+									compact
+									delta={
+										previous !== undefined ? (
+											<Delta current={current} previous={previous} suffix="vs prev" />
+										) : (
+											<Skeleton className="h-3 w-16" />
+										)
+									}
+								/>
+							)
+						})}
+					</StatRail>
+				)
+			}}
+		</ResultView>
+	)
 }

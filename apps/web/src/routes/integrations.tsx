@@ -311,7 +311,7 @@ function IntegrationHeader({ integration }: { integration: IntegrationId }) {
 				</div>
 				{connected && statusLine ? (
 					<div className="flex items-center gap-1.5">
-						<StatusDot tone={connected.health === "healthy" ? "success" : "warning"} />
+						<StatusDot tone={connected.health === "healthy" ? "ok" : "warn"} />
 						<span className="truncate text-xs text-muted-foreground">{statusLine}</span>
 					</div>
 				) : null}

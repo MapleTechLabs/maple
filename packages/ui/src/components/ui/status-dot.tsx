@@ -1,18 +1,20 @@
 import { cva, type VariantProps } from "class-variance-authority"
 import type React from "react"
+import { TONE_FILL } from "../../lib/tone"
 import { cn } from "../../lib/utils"
 
 export const statusDotVariants = cva("relative inline-flex shrink-0 rounded-full", {
 	defaultVariants: { tone: "neutral", size: "default" },
 	variants: {
 		tone: {
-			success: "bg-success",
-			warning: "bg-warning",
-			error: "bg-destructive",
-			info: "bg-info",
+			// The shared status vocabulary (lib/tone), on the same severity tokens the logs page uses.
+			crit: TONE_FILL.crit,
+			warn: TONE_FILL.warn,
+			ok: TONE_FILL.ok,
+			info: TONE_FILL.info,
+			neutral: TONE_FILL.neutral,
 			// In-flight work (running investigations, live streams). Pair with `pulse`.
 			live: "bg-primary",
-			neutral: "bg-muted-foreground/50",
 			// Colour comes from the caller's className (service colours, severity maps).
 			custom: "",
 		},
@@ -44,7 +46,11 @@ export function StatusDot({ tone, size, pulse, className, ...props }: StatusDotP
 			{...props}
 		>
 			<span
-				className={cn(dot, className, "absolute inset-0 size-full animate-ping opacity-60 motion-reduce:hidden")}
+				className={cn(
+					dot,
+					className,
+					"absolute inset-0 size-full animate-ping opacity-60 motion-reduce:hidden",
+				)}
 			/>
 			<span className={cn(dot, className, "size-full")} />
 		</span>

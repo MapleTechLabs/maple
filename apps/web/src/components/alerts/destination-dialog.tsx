@@ -1,5 +1,4 @@
 import { InlineCode } from "@maple/ui/components/ui/inline-code"
-import { Spinner } from "@maple/ui/components/ui/spinner"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { HazelStartConnectRequest, type AlertDestinationType } from "@maple/domain/http"
 import {
@@ -17,6 +16,7 @@ import {
 } from "@/components/alerts/destination-provider"
 import { chatIntegrationId } from "@/components/integrations/integration-catalog"
 import { useChatConnectorGate } from "@/hooks/use-organization-feature-flags"
+import { useAsyncAction } from "@/hooks/use-mutation-action"
 import {
 	ArrowRightIcon,
 	ArrowRotateClockwiseIcon,
@@ -51,6 +51,7 @@ import {
 } from "@maple/ui/components/ui/dialog"
 import { Input } from "@maple/ui/components/ui/input"
 import { Label } from "@maple/ui/components/ui/label"
+import { Field, FieldDescription, FieldLabel } from "@maple/ui/components/ui/field"
 import {
 	Select,
 	SelectContent,
@@ -232,8 +233,8 @@ function EmailMemberPicker({
 	})
 
 	return (
-		<div className="space-y-1.5">
-			<Label className="text-xs">Recipients</Label>
+		<Field className="items-stretch gap-1.5">
+			<FieldLabel className="text-xs">Recipients</FieldLabel>
 			<MultiSelectCombobox
 				emptyMessage={isLoaded ? "No members found in this workspace." : "Loading members…"}
 				footer={
@@ -250,15 +251,15 @@ function EmailMemberPicker({
 				placeholder={form.memberUserIds.length === 0 ? "Select members…" : "Add member..."}
 				value={form.memberUserIds}
 			/>
-			<p className="text-[11px] text-muted-foreground">
+			<FieldDescription className="text-[11px]">
 				Alert emails go to the selected workspace members (up to {MAX_EMAIL_MEMBER_RECIPIENTS}).
-			</p>
+			</FieldDescription>
 			{form.memberUserIds.length > MAX_EMAIL_MEMBER_RECIPIENTS && (
 				<p className="text-[11px] text-destructive">
 					Select at most {MAX_EMAIL_MEMBER_RECIPIENTS} members.
 				</p>
 			)}
-		</div>
+		</Field>
 	)
 }
 
@@ -341,8 +342,6 @@ function HazelOAuthFields({
 		mode: "promiseExit",
 	})
 
-	const [busy, setBusy] = useState(false)
-
 	const status = Result.builder(statusResult)
 		.onSuccess((s) => s)
 		.orElse(() => null)
@@ -376,16 +375,14 @@ function HazelOAuthFields({
 		return () => window.removeEventListener("message", onMessage)
 	}, [onFormChange])
 
-	async function handleConnect() {
+	const [handleConnect, connecting] = useAsyncAction(async () => {
 		// Open the popup synchronously to satisfy popup-blocker user-gesture rules,
 		// then point it at the OAuth URL once the start mutation returns.
 		const popup = window.open("", "maple-hazel-connect", "popup,width=520,height=640")
-		setBusy(true)
 		const result = await startConnect({
 			payload: new HazelStartConnectRequest({ returnTo: currentReturnPath() }),
 			reactivityKeys: ["hazelIntegrationStatus"],
 		})
-		setBusy(false)
 		if (Exit.isSuccess(result)) {
 			const url = result.value.redirectUrl
 			if (popup) popup.location.href = url
@@ -393,14 +390,12 @@ function HazelOAuthFields({
 		} else {
 			popup?.close()
 		}
-	}
+	})
 
-	async function handleDisconnect() {
-		setBusy(true)
+	const [handleDisconnect, disconnecting] = useAsyncAction(async () => {
 		await disconnect({
 			reactivityKeys: ["hazelIntegrationStatus", "hazelOrganizations", "hazelChannels"],
 		})
-		setBusy(false)
 		onFormChange((current) => ({
 			...current,
 			hazelOrganizationId: "",
@@ -409,7 +404,7 @@ function HazelOAuthFields({
 			hazelChannelId: "",
 			hazelChannelName: "",
 		}))
-	}
+	})
 
 	if (!status || !status.connected) {
 		return (
@@ -427,8 +422,9 @@ function HazelOAuthFields({
 				<Button
 					type="button"
 					size="sm"
-					onClick={handleConnect}
-					disabled={busy}
+					onClick={() => void handleConnect()}
+					loading={connecting}
+					disabled={disconnecting}
 					// Same brand fill as the save button below, so it takes the same
 					// measured ink instead of a second copy of the hex + white.
 					style={{
@@ -437,7 +433,6 @@ function HazelOAuthFields({
 						color: PROVIDERS["hazel-oauth"].accentOn,
 					}}
 				>
-					{busy ? <Spinner size={14} /> : null}
 					Connect Hazel
 				</Button>
 			</div>
@@ -463,14 +458,21 @@ function HazelOAuthFields({
 						{status.externalUserEmail ?? status.externalUserId ?? "Authorized"}
 					</div>
 				</div>
-				<Button type="button" size="sm" variant="outline" onClick={handleDisconnect} disabled={busy}>
+				<Button
+					type="button"
+					size="sm"
+					variant="outline"
+					onClick={() => void handleDisconnect()}
+					loading={disconnecting}
+					disabled={connecting}
+				>
 					Disconnect
 				</Button>
 			</div>
-			<div className="space-y-1.5">
-				<Label htmlFor="destination-hazel-organization" className="text-xs">
+			<Field className="items-stretch gap-1.5">
+				<FieldLabel htmlFor="destination-hazel-organization" className="text-xs">
 					Hazel organization
-				</Label>
+				</FieldLabel>
 				<Select
 					items={orgSelectItems}
 					defaultValue={form.hazelOrganizationId || null}
@@ -519,11 +521,11 @@ function HazelOAuthFields({
 						organization.
 					</p>
 				) : null}
-			</div>
-			<div className="space-y-1.5">
-				<Label htmlFor="destination-hazel-channel" className="text-xs">
+			</Field>
+			<Field className="items-stretch gap-1.5">
+				<FieldLabel htmlFor="destination-hazel-channel" className="text-xs">
 					Hazel channel
-				</Label>
+				</FieldLabel>
 				<Select
 					items={channelSelectItems}
 					defaultValue={form.hazelChannelId || null}
@@ -569,7 +571,7 @@ function HazelOAuthFields({
 						No channels. Make sure your account is in at least one channel of this organization.
 					</p>
 				) : null}
-			</div>
+			</Field>
 		</div>
 	)
 }
@@ -860,19 +862,16 @@ function TelegramChatPicker({
 }) {
 	const [chats, setChats] = useState<ReadonlyArray<V2TelegramChat> | null>(null)
 	const [error, setError] = useState<string | null>(null)
-	const [busy, setBusy] = useState(false)
 	const detect = useAtomSet(MapleApiV2AtomClient.mutation("alertDestinations", "telegramChats"), {
 		mode: "promiseExit",
 	})
 
 	const tokenReady = isValidTelegramToken(botToken)
 
-	const runDetect = async () => {
-		setBusy(true)
+	const [runDetect, busy] = useAsyncAction(async () => {
 		setError(null)
 		setChats(null)
 		const result = await detect({ payload: { bot_token: botToken.trim() } })
-		setBusy(false)
 		if (Exit.isSuccess(result)) {
 			const found = result.value.chats
 			setChats(found)
@@ -882,7 +881,7 @@ function TelegramChatPicker({
 			return
 		}
 		setError(displayError(result.cause).message)
-	}
+	})
 
 	return (
 		<div className="space-y-2">
@@ -995,10 +994,10 @@ export function DestinationDialog({
 							<FieldHelper provider={provider} />
 						</div>
 						<div className="space-y-3 rounded-lg border border-border/60 bg-card p-4">
-							<div className="space-y-1.5">
-								<Label htmlFor="destination-name" className="text-xs">
+							<Field className="items-stretch gap-1.5">
+								<FieldLabel htmlFor="destination-name" className="text-xs">
 									Name
-								</Label>
+								</FieldLabel>
 								<Input
 									id="destination-name"
 									value={form.name}
@@ -1007,13 +1006,13 @@ export function DestinationDialog({
 									}
 									placeholder="Production paging"
 								/>
-							</div>
+							</Field>
 
 							{form.type === "pagerduty" && (
-								<div className="space-y-1.5">
-									<Label htmlFor="destination-integration" className="text-xs">
+								<Field className="items-stretch gap-1.5">
+									<FieldLabel htmlFor="destination-integration" className="text-xs">
 										Integration key
-									</Label>
+									</FieldLabel>
 									<Input
 										id="destination-integration"
 										value={form.integrationKey}
@@ -1038,7 +1037,7 @@ export function DestinationDialog({
 												v2 integration key.
 											</p>
 										)}
-									<p className="text-[11px] text-muted-foreground">
+									<FieldDescription className="text-[11px]">
 										In PagerDuty: open the service → Integrations → add or select an{" "}
 										<a
 											href="https://maple.dev/docs/alerting/notification-destinations#pagerduty"
@@ -1050,15 +1049,15 @@ export function DestinationDialog({
 										</a>{" "}
 										integration → copy its Integration Key (32 characters). A REST API
 										token won't work.
-									</p>
-								</div>
+									</FieldDescription>
+								</Field>
 							)}
 
 							{form.type === "discord" && (
-								<div className="space-y-1.5">
-									<Label htmlFor="destination-discord-webhook" className="text-xs">
+								<Field className="items-stretch gap-1.5">
+									<FieldLabel htmlFor="destination-discord-webhook" className="text-xs">
 										Discord webhook URL
-									</Label>
+									</FieldLabel>
 									<Input
 										id="destination-discord-webhook"
 										value={form.webhookUrl}
@@ -1075,19 +1074,19 @@ export function DestinationDialog({
 										}
 										className="font-mono text-xs"
 									/>
-									<p className="text-[11px] text-muted-foreground">
+									<FieldDescription className="text-[11px]">
 										In Discord: Channel settings → Integrations → Webhooks → New Webhook,
 										then copy the URL.
-									</p>
-								</div>
+									</FieldDescription>
+								</Field>
 							)}
 
 							{form.type === "telegram" && (
 								<>
-									<div className="space-y-1.5">
-										<Label htmlFor="destination-telegram-token" className="text-xs">
+									<Field className="items-stretch gap-1.5">
+										<FieldLabel htmlFor="destination-telegram-token" className="text-xs">
 											Bot token
-										</Label>
+										</FieldLabel>
 										<Input
 											id="destination-telegram-token"
 											type="password"
@@ -1106,12 +1105,12 @@ export function DestinationDialog({
 											}
 											className="font-mono text-xs"
 										/>
-										<p className="text-[11px] text-muted-foreground">
+										<FieldDescription className="text-[11px]">
 											In Telegram: message @BotFather, send{" "}
 											<InlineCode>/newbot</InlineCode>, then copy the token it replies
 											with.
-										</p>
-									</div>
+										</FieldDescription>
+									</Field>
 									<div className="space-y-1.5">
 										<TelegramChatPicker
 											botToken={form.telegramBotToken}
@@ -1145,10 +1144,10 @@ export function DestinationDialog({
 
 							{form.type === "webhook" && (
 								<>
-									<div className="space-y-1.5">
-										<Label htmlFor="destination-url" className="text-xs">
+									<Field className="items-stretch gap-1.5">
+										<FieldLabel htmlFor="destination-url" className="text-xs">
 											Webhook URL
-										</Label>
+										</FieldLabel>
 										<Input
 											id="destination-url"
 											value={form.url}
@@ -1165,11 +1164,11 @@ export function DestinationDialog({
 											}
 											className="font-mono text-xs"
 										/>
-									</div>
-									<div className="space-y-1.5">
-										<Label htmlFor="destination-secret" className="text-xs">
+									</Field>
+									<Field className="items-stretch gap-1.5">
+										<FieldLabel htmlFor="destination-secret" className="text-xs">
 											Signing secret
-										</Label>
+										</FieldLabel>
 										<Input
 											id="destination-secret"
 											value={form.signingSecret}
@@ -1186,7 +1185,7 @@ export function DestinationDialog({
 											}
 											className="font-mono text-xs"
 										/>
-									</div>
+									</Field>
 								</>
 							)}
 
@@ -1245,7 +1244,8 @@ export function DestinationDialog({
 					</Button>
 					<Button
 						onClick={onSave}
-						disabled={saving || !isFormReady(form, isEditing)}
+						loading={saving}
+						disabled={!isFormReady(form, isEditing)}
 						style={{
 							// `accentOn` is the ink the provider has measured against its own
 							// accent — never assume a brand color is dark enough for white.
@@ -1254,7 +1254,6 @@ export function DestinationDialog({
 							color: buttonProvider.accentOn,
 						}}
 					>
-						{saving ? <Spinner size={14} /> : null}
 						{isEditing ? "Save changes" : `Create ${provider.label} destination`}
 					</Button>
 				</DialogFooter>

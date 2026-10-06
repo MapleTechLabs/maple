@@ -3,14 +3,14 @@ import { useMemo, useState } from "react"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Schema } from "effect"
-import { Result, useAtomValue } from "@/lib/effect-atom"
+import { useAtomValue } from "@/lib/effect-atom"
 
 import { Button } from "@maple/ui/components/ui/button"
 import { cn } from "@maple/ui/lib/utils"
 
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { MagnifierIcon, PlusIcon, ServerIcon } from "@/components/icons"
-import { ErrorState } from "@/components/common/error-state"
+import { ResultView } from "@/components/common/result-view"
 import { HostTable, HostTableLoading, type HostRow } from "@/components/infra/host-table"
 import {
 	HOST_LIST_LIMIT,
@@ -115,44 +115,39 @@ function HostsPage() {
 									}
 								/>
 
-								{Result.builder(hostsResult)
-									.onInitial(() => (
+								<ResultView
+									result={hostsResult}
+									loading={
 										<div className="space-y-6">
 											<HostSummaryBandLoading className={FLEET_BAND_BOXED} />
 											<HostTableLoading />
 										</div>
-									))
-									.onError((err) => <ErrorState error={err} />)
-									.onSuccess((response, result) => {
-										const hosts = response.data
-										if (hosts.length === 0) {
-											return (
-												<InfraSetupEmpty
-													icon={<ServerIcon size={16} />}
-													title="No hosts reporting yet"
-													description="Run the OpenTelemetry Collector with the hostmetrics receiver on a host, or install the Helm chart to report every Kubernetes node."
-													installTab="hosts"
-													actionLabel="Add host"
-													docs="hosts"
-												/>
-											)
-										}
-										return (
-											<HostList
-												hosts={hosts}
-												waiting={Boolean(result.waiting)}
-												referenceTime={endTime}
-												query={search.q ?? ""}
-												scope={search.scope}
-												onQueryChange={(q) => patchSearch({ q: q || undefined })}
-												onScopeChange={(scope) => patchSearch({ scope })}
-												onClear={() =>
-													patchSearch({ q: undefined, scope: undefined })
-												}
-											/>
-										)
-									})
-									.render()}
+									}
+									isEmpty={(response) => response.data.length === 0}
+									empty={
+										<InfraSetupEmpty
+											icon={<ServerIcon size={16} />}
+											title="No hosts reporting yet"
+											description="Run the OpenTelemetry Collector with the hostmetrics receiver on a host, or install the Helm chart to report every Kubernetes node."
+											installTab="hosts"
+											actionLabel="Add host"
+											docs="hosts"
+										/>
+									}
+								>
+									{(response, { waiting }) => (
+										<HostList
+											hosts={response.data}
+											waiting={waiting}
+											referenceTime={endTime}
+											query={search.q ?? ""}
+											scope={search.scope}
+											onQueryChange={(q) => patchSearch({ q: q || undefined })}
+											onScopeChange={(scope) => patchSearch({ scope })}
+											onClear={() => patchSearch({ q: undefined, scope: undefined })}
+										/>
+									)}
+								</ResultView>
 							</div>
 
 							<InstallHostModal

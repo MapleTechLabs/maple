@@ -1,6 +1,6 @@
 import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
-import { useMemo, useState } from "react"
+import { useMemo } from "react"
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { Exit, Schema } from "effect"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
@@ -16,11 +16,12 @@ import { formatDuration } from "@maple/ui/lib/format"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 
 import { DocsLink } from "@/components/common/docs-link"
-import { ErrorState } from "@/components/common/error-state"
+import { ResultView } from "@/components/common/result-view"
 import { ListToolbar } from "@/components/common/list-toolbar"
 import { PageHero } from "@/components/common/page-hero"
 import { ConnectionIcon } from "@/components/icons"
 import { useSignalPresence } from "@/hooks/use-signal-presence"
+import { useAsyncAction } from "@/hooks/use-mutation-action"
 
 import {
 	investigationKindKey,
@@ -104,7 +105,6 @@ function InvestigationsHub() {
 	const query = search.q ?? ""
 	const isFiltered = query.trim().length > 0 || search.kind !== undefined
 
-	const [creating, setCreating] = useState(false)
 	const listQuery = retainedQueryV2("investigations", "list", {
 		query: { limit: PAGE_SIZE },
 		reactivityKeys: ["investigations"],
@@ -150,8 +150,7 @@ function InvestigationsHub() {
 		return sortInvestigations(filtered, sortKey, sortDirection)
 	}, [page, view, search.kind, query, sortKey, sortDirection])
 
-	const handleCreate = async (title: string) => {
-		setCreating(true)
+	const [handleCreate, creating] = useAsyncAction(async (title: string) => {
 		const created = await create({
 			payload: {
 				subject: { type: "freeform", title, prompt: title, context_refs: [] },
@@ -168,14 +167,13 @@ function InvestigationsHub() {
 			},
 			reactivityKeys: ["investigations"],
 		})
-		setCreating(false)
 		if (Exit.isSuccess(created)) {
 			void navigate({ to: "/investigations/$id", params: { id: created.value.id } })
 		} else {
 			const { title, message } = displayError(created)
 			toastManager.add({ title, description: message, type: "error" })
 		}
-	}
+	})
 
 	// Nothing at all — not "nothing matching your filters". The hero belongs to a
 	// workspace that has never run one, and it replaces the whole page rather than
@@ -293,35 +291,30 @@ function InvestigationsHub() {
 								    scroller then thinks it doesn't need to scroll to. */}
 								<div className="shrink-0 overflow-hidden rounded-xl border">
 									{toolbar}
-									{Result.builder(result)
-										.onInitial(() => <InvestigationTableSkeleton />)
-										.onError((error) => (
-											<ErrorState
-												error={error}
-												title="Investigations could not be loaded"
-												onRetry={refresh}
+									<ResultView
+										result={result}
+										loading={<InvestigationTableSkeleton />}
+										errorTitle="Investigations could not be loaded"
+										onRetry={refresh}
+										isEmpty={() => investigations.length === 0}
+										empty={
+											<HubEmptyState
+												view={view}
+												filtered={isFiltered}
+												onClear={() =>
+													void navigate({
+														search: (prev) => ({
+															...prev,
+															kind: undefined,
+															q: undefined,
+														}),
+													})
+												}
 											/>
-										))
-										.onSuccess(() =>
-											investigations.length === 0 ? (
-												<HubEmptyState
-													view={view}
-													filtered={isFiltered}
-													onClear={() =>
-														void navigate({
-															search: (prev) => ({
-																...prev,
-																kind: undefined,
-																q: undefined,
-															}),
-														})
-													}
-												/>
-											) : (
-												<InvestigationTable investigations={investigations} />
-											),
-										)
-										.render()}
+										}
+									>
+										{() => <InvestigationTable investigations={investigations} />}
+									</ResultView>
 								</div>
 							</DashboardLayout.Scroll>
 						</>
@@ -371,7 +364,7 @@ function BudgetExhaustedNotice({
 			? "Today's investigation limit is reached"
 			: "Today's model budget is spent"
 	return (
-		<Alert variant="warning" className="mb-4 rounded-lg">
+		<Alert variant="warn" className="mb-4 rounded-lg">
 			<AlertTitle className="text-foreground">
 				{priorityPaused ? "Automatic triage paused" : "Automatic triage paused for routine incidents"}
 			</AlertTitle>

@@ -2,7 +2,7 @@ import { MapleMark } from "@maple/ui/components/icons/maple-mark"
 import { Button } from "@maple/ui/components/ui/button"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Input } from "@maple/ui/components/ui/input"
-import { Label } from "@maple/ui/components/ui/label"
+import { Field, FieldLabel } from "@maple/ui/components/ui/field"
 import { OptionCard } from "@/components/common/option-card"
 import {
 	ONBOARDING_ROLE_IDS,
@@ -72,8 +72,8 @@ export function StepRole({
 				</fieldset>
 
 				{value === "other" && (
-					<div className="space-y-2">
-						<Label htmlFor="onboarding-role-detail">Your role</Label>
+					<Field className="w-full items-stretch">
+						<FieldLabel htmlFor="onboarding-role-detail">Your role</FieldLabel>
 						<Input
 							id="onboarding-role-detail"
 							type="text"
@@ -87,7 +87,7 @@ export function StepRole({
 								if (event.key === "Enter" && !needsDetail) onContinue()
 							}}
 						/>
-					</div>
+					</Field>
 				)}
 
 				<p

@@ -23,6 +23,7 @@ import { AccountSectionSkeleton } from "@/components/account/account-section-ske
 import { CodeField } from "@/components/account/code-field"
 import { QrCode } from "@/components/account/qr-code"
 import { REPLAY_BLOCK_CLASS } from "@/components/common/replay-privacy"
+import { useAsyncAction } from "@/hooks/use-mutation-action"
 
 /**
  * Enrollment is a three-step dialog. `uri`/`secret` come back from `createTOTP()` and are only
@@ -39,7 +40,7 @@ export function TwoFactorSection() {
 	const { user, isLoaded } = useUser()
 
 	const [enroll, setEnroll] = useState<EnrollState>({ step: "closed" })
-	const [isBusy, setIsBusy] = useState(false)
+	const [withBusy, isBusy] = useAsyncAction((task: () => Promise<void>) => task())
 	const [disableOpen, setDisableOpen] = useState(false)
 
 	const createTOTP = useReverification(() => user?.createTOTP())
@@ -50,69 +51,65 @@ export function TwoFactorSection() {
 
 	const { totpEnabled, backupCodeEnabled } = user
 
-	async function handleStartEnrollment() {
-		setIsBusy(true)
-		try {
-			const totp = await createTOTP()
-			if (!totp?.uri || !totp.secret) {
-				toastManager.add({ title: "Clerk did not return a setup key", type: "error" })
-				return
+	function handleStartEnrollment() {
+		return withBusy(async () => {
+			try {
+				const totp = await createTOTP()
+				if (!totp?.uri || !totp.secret) {
+					toastManager.add({ title: "Clerk did not return a setup key", type: "error" })
+					return
+				}
+				setEnroll({ step: "scan", uri: totp.uri, secret: totp.secret })
+			} catch (err) {
+				toastAccountError(err, "Failed to start two-factor setup")
 			}
-			setEnroll({ step: "scan", uri: totp.uri, secret: totp.secret })
-		} catch (err) {
-			toastAccountError(err, "Failed to start two-factor setup")
-		} finally {
-			setIsBusy(false)
-		}
+		})
 	}
 
-	async function handleVerify(code: string) {
+	function handleVerify(code: string) {
 		if (enroll.step !== "verify" || !user || code.length < 6) return
-		setIsBusy(true)
-		try {
-			const result = await user.verifyTOTP({ code })
-			// Backup codes are minted alongside the first second factor and shown exactly once.
-			// If Clerk returns none (backup codes disabled instance-wide), close out instead of
-			// showing an empty list.
-			const codes = result.backupCodes ?? []
-			if (codes.length > 0) {
-				setEnroll({ step: "codes", codes })
-			} else {
-				setEnroll({ step: "closed" })
+		return withBusy(async () => {
+			try {
+				const result = await user.verifyTOTP({ code })
+				// Backup codes are minted alongside the first second factor and shown exactly once.
+				// If Clerk returns none (backup codes disabled instance-wide), close out instead of
+				// showing an empty list.
+				const codes = result.backupCodes ?? []
+				if (codes.length > 0) {
+					setEnroll({ step: "codes", codes })
+				} else {
+					setEnroll({ step: "closed" })
+				}
+				toastManager.add({ title: "Two-factor authentication enabled", type: "success" })
+			} catch (err) {
+				toastAccountError(err, "That code did not match")
 			}
-			toastManager.add({ title: "Two-factor authentication enabled", type: "success" })
-		} catch (err) {
-			toastAccountError(err, "That code did not match")
-		} finally {
-			setIsBusy(false)
-		}
+		})
 	}
 
-	async function handleRegenerateBackupCodes() {
-		setIsBusy(true)
-		try {
-			const result = await createBackupCode()
-			if (!result) return
-			setEnroll({ step: "codes", codes: result.codes })
-			toastManager.add({ title: "New backup codes generated", type: "success" })
-		} catch (err) {
-			toastAccountError(err, "Failed to generate backup codes")
-		} finally {
-			setIsBusy(false)
-		}
+	function handleRegenerateBackupCodes() {
+		return withBusy(async () => {
+			try {
+				const result = await createBackupCode()
+				if (!result) return
+				setEnroll({ step: "codes", codes: result.codes })
+				toastManager.add({ title: "New backup codes generated", type: "success" })
+			} catch (err) {
+				toastAccountError(err, "Failed to generate backup codes")
+			}
+		})
 	}
 
-	async function handleDisable() {
-		setIsBusy(true)
-		try {
-			await disableTOTP()
-			setDisableOpen(false)
-			toastManager.add({ title: "Two-factor authentication disabled", type: "success" })
-		} catch (err) {
-			toastAccountError(err, "Failed to disable two-factor authentication")
-		} finally {
-			setIsBusy(false)
-		}
+	function handleDisable() {
+		return withBusy(async () => {
+			try {
+				await disableTOTP()
+				setDisableOpen(false)
+				toastManager.add({ title: "Two-factor authentication disabled", type: "success" })
+			} catch (err) {
+				toastAccountError(err, "Failed to disable two-factor authentication")
+			}
+		})
 	}
 
 	return (
