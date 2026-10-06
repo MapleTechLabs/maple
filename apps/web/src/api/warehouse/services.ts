@@ -98,7 +98,9 @@ const getServiceOverviewEffect = Effect.fn("QueryEngine.getServiceOverview")(fun
 	)
 
 	return {
-		data: coerceServiceOverviewRows(result.data, windowDurationSeconds(input.startTime, input.endTime)),
+		// The window the query actually ran on: the raw inputs fall back to 3600s,
+		// which would turn a 24h default window into a 24x-inflated rate.
+		data: coerceServiceOverviewRows(result.data, windowDurationSeconds(startTime, endTime)),
 	}
 })
 
