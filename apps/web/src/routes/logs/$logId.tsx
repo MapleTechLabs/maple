@@ -1,15 +1,16 @@
 import { warmAtoms } from "@effect-router/core"
-import type { ReactNode } from "react"
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { ErrorState } from "@/components/common/error-state"
+import { ResourceNotFound } from "@/components/common/resource-not-found"
 import { KeyValue, KeyValueList } from "@maple/ui/components/ui/key-value"
+import { Panel, PanelBody, PanelHeader } from "@maple/ui/components/ui/panel"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { LogHeroHeader } from "@/components/logs/log-hero-header"
 import { LogMetaStrip } from "@/components/logs/log-meta-strip"
-import { LogErrorBanner } from "@/components/logs/log-error-banner"
+import { LogErrorBanner } from "@maple/ui/components/logs/log-error-banner"
 import { LogAttributesPanel } from "@/components/logs/log-attributes-panel"
 import { LogRawPanel } from "@/components/logs/log-raw-panel"
 import { LogTraceTimeline } from "@/components/logs/log-trace-timeline"
@@ -68,11 +69,11 @@ function LogDetailPage() {
 				<DashboardLayout.Body>
 					<DashboardLayout.Content>
 						<DashboardLayout.Scroll>
-							<NotFoundCard>
-								<p className="text-sm text-muted-foreground">
-									The link could not be decoded. Check that it was copied in full.
-								</p>
-							</NotFoundCard>
+							<ResourceNotFound
+								{...NOT_FOUND_PROPS}
+								title="Log not found"
+								description="The link could not be decoded. Check that it was copied in full."
+							/>
 						</DashboardLayout.Scroll>
 					</DashboardLayout.Content>
 				</DashboardLayout.Body>
@@ -119,19 +120,26 @@ function LogDetailPage() {
 						<DashboardLayout.Body>
 							<DashboardLayout.Content>
 								<DashboardLayout.Scroll>
-									<NotFoundCard>
-										<p className="text-sm text-muted-foreground">
-											This log could not be found. It may have aged out of retention.
-										</p>
-										<KeyValueList layout="grid" className="text-sm">
-											<KeyValue label="Service" mono>
-												{key.serviceName}
-											</KeyValue>
-											<KeyValue label="Timestamp" mono>
-												{key.timestamp}
-											</KeyValue>
-										</KeyValueList>
-									</NotFoundCard>
+									<ResourceNotFound
+										{...NOT_FOUND_PROPS}
+										title="Log not found"
+										description={
+											<div className="flex flex-col items-center gap-4">
+												<p>
+													This log could not be found. It may have aged out of
+													retention.
+												</p>
+												<KeyValueList layout="grid" className="text-sm">
+													<KeyValue label="Service" mono>
+														{key.serviceName}
+													</KeyValue>
+													<KeyValue label="Timestamp" mono>
+														{key.timestamp}
+													</KeyValue>
+												</KeyValueList>
+											</div>
+										}
+									/>
 								</DashboardLayout.Scroll>
 							</DashboardLayout.Content>
 						</DashboardLayout.Body>
@@ -163,16 +171,16 @@ function LogDetailPage() {
 									</div>
 
 									<div className="grid gap-3 lg:grid-cols-[1fr_minmax(360px,440px)]">
-										<section className="rounded-md border p-3">
-											<h2 className="mb-3 text-xs font-medium text-muted-foreground">
-												Attributes
-											</h2>
-											<LogAttributesPanel log={log} />
-										</section>
+										<Panel>
+											<PanelHeader title="Attributes" />
+											<PanelBody className="p-3">
+												<LogAttributesPanel log={log} />
+											</PanelBody>
+										</Panel>
 
 										<div className="flex flex-col gap-3">
 											{log.traceId && (
-												<section className="rounded-md border p-3">
+												<Panel className="p-3">
 													<LogTraceTimeline
 														currentLog={log}
 														onLogSelect={(next) =>
@@ -182,11 +190,11 @@ function LogDetailPage() {
 															})
 														}
 													/>
-												</section>
+												</Panel>
 											)}
-											<section className="rounded-md border p-3">
+											<Panel className="p-3">
 												<LogRawPanel log={log} />
-											</section>
+											</Panel>
 										</div>
 									</div>
 								</div>
@@ -199,17 +207,9 @@ function LogDetailPage() {
 		.render()
 }
 
-/** Centered dashed-border card used by both not-found states, with a way back to the list. */
-function NotFoundCard({ children }: { children: ReactNode }) {
-	return (
-		<div className="flex flex-col items-center justify-center gap-4 rounded-md border border-dashed p-12 text-center">
-			{children}
-			<Link
-				to="/logs"
-				className="text-sm text-primary underline underline-offset-4 hover:text-primary/80"
-			>
-				Back to Logs
-			</Link>
-		</div>
-	)
+/** Shared by both not-found states: the dashed card with a way back to the list. */
+const NOT_FOUND_PROPS = {
+	className: "rounded-md border border-dashed py-12",
+	backLink: <Link to="/logs" />,
+	backLabel: "Back to Logs",
 }

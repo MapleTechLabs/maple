@@ -7,7 +7,7 @@ import { Schema } from "effect"
 
 import { Button } from "@maple/ui/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
-import { Card, CardContent, CardHeader, CardTitle } from "@maple/ui/components/ui/card"
+import { ResourceAttributesCard } from "@/components/infra/primitives/resource-attributes-card"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 
 import { ErrorState } from "@/components/common/error-state"
@@ -80,23 +80,15 @@ function ContainerDetailPage() {
 	)
 
 	const rightSidebar = summary ? (
-		<Card>
-			<CardHeader className="pb-3">
-				<CardTitle className="flex items-center gap-2 text-sm font-medium">
-					<DockerIcon size={14} className="text-muted-foreground" />
-					Resource attributes
-				</CardTitle>
-			</CardHeader>
-			<CardContent className="space-y-1">
-				<DetailRail.MetaRow label="container.name" value={summary.containerName} />
-				<DetailRail.MetaRow label="container.id" value={summary.containerId} />
-				<DetailRail.MetaRow label="container.image.name" value={summary.imageName} />
-				<DetailRail.MetaRow label="container.runtime" value={summary.runtime} />
-				<DetailRail.MetaRow label="host.name" value={summary.hostName} />
-				<DetailRail.MetaRow label="compose.project" value={summary.composeProject} />
-				<DetailRail.MetaRow label="compose.service" value={summary.composeService} />
-			</CardContent>
-		</Card>
+		<ResourceAttributesCard icon={DockerIcon}>
+			<DetailRail.MetaRow label="container.name" value={summary.containerName} />
+			<DetailRail.MetaRow label="container.id" value={summary.containerId} />
+			<DetailRail.MetaRow label="container.image.name" value={summary.imageName} />
+			<DetailRail.MetaRow label="container.runtime" value={summary.runtime} />
+			<DetailRail.MetaRow label="host.name" value={summary.hostName} />
+			<DetailRail.MetaRow label="compose.project" value={summary.composeProject} />
+			<DetailRail.MetaRow label="compose.service" value={summary.composeService} />
+		</ResourceAttributesCard>
 	) : null
 
 	return (

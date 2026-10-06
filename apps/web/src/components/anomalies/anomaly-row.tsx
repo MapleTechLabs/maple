@@ -64,18 +64,9 @@ export function AnomalyRow({ incident, focused = false, onFocus, variant = "defa
 
 			<span className="relative z-10 flex w-3 shrink-0 items-center justify-center">
 				{isLive ? (
-					<StatusDot
-						tone="custom"
-						pulse
-						className={tone.accent}
-						title={`Open · ${incident.severity}`}
-					/>
+					<StatusDot tone={tone.tone} title={`Open · ${incident.severity}`} />
 				) : (
-					<StatusDot
-						tone="custom"
-						className="bg-border"
-						title={isStale ? "Stale detector state" : "Resolved"}
-					/>
+					<StatusDot tone="neutral" title={isStale ? "Stale detector state" : "Resolved"} />
 				)}
 			</span>
 
@@ -108,7 +99,7 @@ export function AnomalyRow({ incident, focused = false, onFocus, variant = "defa
 					className={cn(META_CHIP_CLASS, "z-10 hidden min-w-0 shrink md:inline-flex")}
 					title={incident.serviceName}
 				>
-					<ServiceDot serviceName={incident.serviceName} className="size-1.5" />
+					<ServiceDot serviceName={incident.serviceName} size="sm" />
 					<span className="max-w-[140px] truncate">{incident.serviceName}</span>
 				</Badge>
 			) : null}

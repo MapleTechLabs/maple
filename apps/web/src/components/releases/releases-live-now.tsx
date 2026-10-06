@@ -1,6 +1,8 @@
+import { Panel } from "@maple/ui/components/ui/panel"
 import { Link } from "@tanstack/react-router"
 import { ServiceDot } from "@maple/ui/components/service-dot"
 import { cn } from "@maple/ui/lib/utils"
+import { countLabel, pluralize } from "@maple/ui/lib/format"
 
 import type { TimeRangeSearch } from "@/components/time-range-picker/search"
 import { ROLLOUT_COMPLETE_SHARE, shortReleaseLabel, type LiveVersion } from "./release-model"
@@ -24,12 +26,12 @@ export function ReleasesLiveNow({ live, timeSearch, environments }: ReleasesLive
 	const behind = live.filter((version) => version.behind > 0).length
 
 	return (
-		<div className="flex flex-col gap-2 rounded-md border bg-card px-3 py-2.5">
+		<Panel className="gap-2 px-3 py-2.5">
 			<div className="flex items-baseline justify-between gap-3">
 				<Eyebrow>Live now</Eyebrow>
 				{behind > 0 ? (
 					<span className="text-[11px] text-severity-warn">
-						{behind === 1 ? "1 service" : `${behind} services`} not on the latest release
+						{countLabel(behind, "service")} not on the latest release
 					</span>
 				) : (
 					<span className="text-[11px] text-muted-foreground/70">
@@ -54,7 +56,7 @@ export function ReleasesLiveNow({ live, timeSearch, environments }: ReleasesLive
 								search={{ ...timeSearch, environments, service: version.serviceName }}
 								title={
 									version.behind > 0
-										? `${version.behind} newer ${version.behind === 1 ? "release" : "releases"} reached the services ${version.serviceName} usually ships with, but not ${version.serviceName}`
+										? `${version.behind} newer ${pluralize(version.behind, "release")} reached the services ${version.serviceName} usually ships with, but not ${version.serviceName}`
 										: undefined
 								}
 							/>
@@ -81,6 +83,6 @@ export function ReleasesLiveNow({ live, timeSearch, environments }: ReleasesLive
 					<span className="self-center px-1 text-[11px] text-muted-foreground/70">+{hidden}</span>
 				) : null}
 			</div>
-		</div>
+		</Panel>
 	)
 }

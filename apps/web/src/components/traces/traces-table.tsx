@@ -1,4 +1,5 @@
-import { formatDuration } from "@maple/ui/lib/format"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
+import { formatDuration, pluralize } from "@maple/ui/lib/format"
 import { TableSkeleton } from "@maple/ui/components/ui/table-skeleton"
 import * as React from "react"
 import { cn } from "@maple/ui/lib/utils"
@@ -29,9 +30,10 @@ import type { TracesSearchParams } from "@/routes/traces"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { ErrorState } from "@/components/common/error-state"
 import { formatTimestampInTimezone } from "@/lib/timezone-format"
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
+import { RelativeTime } from "@/components/common/relative-time"
 import { HttpSpanLabel } from "@maple/ui/components/traces/http-span-label"
 import { useInfiniteTraces, FETCH_THRESHOLD } from "@/hooks/use-infinite-traces"
+import { useVirtualReachEnd } from "@/components/common/reach-end-sentinel"
 import { useListNavigation } from "@/hooks/use-list-navigation"
 import { useIsMobile } from "@maple/ui/hooks/use-media-query"
 import { TracePeekSheet } from "@/components/traces/trace-peek-sheet"
@@ -316,7 +318,7 @@ function TracesTableView({
 									})}{" "}
 								</span>
 								<span className="text-muted-foreground/60">
-									({formatRelativeTime(row.original.startTime)})
+									(<RelativeTime value={row.original.startTime} tooltip="title" />)
 								</span>
 								<span className="@min-[480px]/page:hidden">
 									{" · "}
@@ -391,14 +393,13 @@ function TracesTableView({
 
 	const virtualItems = virtualizer.getVirtualItems()
 
-	React.useEffect(() => {
-		const lastItem = virtualItems[virtualItems.length - 1]
-		if (!lastItem) return
-
-		if (lastItem.index >= rows.length - FETCH_THRESHOLD && hasNextPage && !isFetchingNextPage) {
-			fetchNextPage()
-		}
-	}, [virtualItems, rows.length, hasNextPage, isFetchingNextPage, fetchNextPage])
+	useVirtualReachEnd(virtualizer, {
+		count: rows.length,
+		hasMore: hasNextPage,
+		loading: isFetchingNextPage,
+		onReachEnd: fetchNextPage,
+		threshold: FETCH_THRESHOLD,
+	})
 
 	// Index-keyed nav ids — the list is append-only for a given query.
 	const rowIds = React.useMemo(() => allData.map((_, index) => String(index)), [allData])
@@ -438,7 +439,8 @@ function TracesTableView({
 
 	return (
 		<div
-			className={`flex-1 min-h-0 flex flex-col gap-4 transition-opacity ${waiting ? "opacity-50" : ""}`}
+			className={cn("flex min-h-0 flex-1 flex-col gap-4", refreshingClass(waiting))}
+			aria-busy={waiting || undefined}
 		>
 			<div ref={scrollContainerRef} className="flex-1 min-h-0 overflow-auto rounded-md border">
 				{/*
@@ -503,7 +505,11 @@ function TracesTableView({
 										return (
 											<TableCell
 												key={cell.id}
-												className={cn("p-2 whitespace-normal leading-normal", responsive, cellClass)}
+												className={cn(
+													"p-2 whitespace-normal leading-normal",
+													responsive,
+													cellClass,
+												)}
 											>
 												{flexRender(cell.column.columnDef.cell, cell.getContext())}
 											</TableCell>
@@ -548,8 +554,8 @@ function TracesTableView({
 				{hiddenCount > 0 && (
 					<span>
 						{" · "}
-						{hiddenCount.toLocaleString()} single-span noise{" "}
-						{hiddenCount === 1 ? "trace" : "traces"} hidden{" "}
+						{hiddenCount.toLocaleString()} single-span noise {pluralize(hiddenCount, "trace")}{" "}
+						hidden{" "}
 						<button
 							type="button"
 							onClick={onShowNoise}

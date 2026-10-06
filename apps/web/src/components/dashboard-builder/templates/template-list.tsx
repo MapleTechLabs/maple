@@ -2,7 +2,6 @@ import { useMemo } from "react"
 import type { V2DashboardTemplate } from "@maple/domain/http/v2"
 import { Button } from "@maple/ui/components/ui/button"
 import { ToolbarSearch } from "@maple/ui/components/toolbar"
-import { ToggleGroup, ToggleGroupItem } from "@maple/ui/components/ui/toggle-group"
 import { SkeletonList } from "@maple/ui/components/ui/skeleton"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { cn } from "@maple/ui/lib/utils"
@@ -14,6 +13,8 @@ import {
 	PlusIcon,
 } from "@/components/icons"
 import { ListSectionHeader } from "@/components/dashboard-builder/list-section-header"
+import { FilteredEmpty } from "@/components/common/filtered-empty"
+import { SegmentedSelect, type SegmentedOption } from "@/components/common/segmented-select"
 import { templateIcon } from "./template-icons"
 import {
 	BLANK_TEMPLATE_ID,
@@ -25,6 +26,12 @@ import {
 import type { TemplateReadiness } from "./use-template-readiness"
 
 export type ReadinessFilter = "all" | "ready" | "needs-setup"
+
+const READINESS_OPTIONS: ReadonlyArray<SegmentedOption<ReadinessFilter>> = [
+	{ value: "all", label: "All" },
+	{ value: "ready", label: "Ready" },
+	{ value: "needs-setup", label: "Needs setup" },
+]
 
 interface TemplateListProps {
 	templates: ReadonlyArray<V2DashboardTemplate>
@@ -162,21 +169,14 @@ export function TemplateList({
 					placeholder="Search templates"
 					className="min-w-0 grow"
 				/>
-				<ToggleGroup
-					value={[filter]}
-					onValueChange={(values) => {
-						const next = values[0]
-						if (next) onFilterChange(next as ReadinessFilter)
-					}}
-					variant="outline"
+				<SegmentedSelect<ReadinessFilter>
+					options={READINESS_OPTIONS}
+					value={filter}
+					onChange={onFilterChange}
 					size="sm"
 					aria-label="Filter templates by readiness"
 					className="shrink-0"
-				>
-					<ToggleGroupItem value="all">All</ToggleGroupItem>
-					<ToggleGroupItem value="ready">Ready</ToggleGroupItem>
-					<ToggleGroupItem value="needs-setup">Needs setup</ToggleGroupItem>
-				</ToggleGroup>
+				/>
 			</div>
 
 			{searching && !loading && (
@@ -203,20 +203,15 @@ export function TemplateList({
 						</Button>
 					</Empty>
 				) : nothingMatched ? (
-					<Empty className="py-14">
-						<EmptyHeader>
-							<EmptyMedia variant="icon">
-								<MagnifierIcon size={17} />
-							</EmptyMedia>
-							<EmptyTitle>No template matches “{query.trim()}”</EmptyTitle>
-							<EmptyDescription>
-								Try a shorter term. Or start blank and add the widgets you want.
-							</EmptyDescription>
-						</EmptyHeader>
-						<Button variant="outline" size="sm" onClick={() => onQueryChange(undefined)}>
-							Clear search
-						</Button>
-					</Empty>
+					<FilteredEmpty
+						noun="templates"
+						title={`No template matches “${query.trim()}”`}
+						description="Try a shorter term. Or start blank and add the widgets you want."
+						icon={<MagnifierIcon size={17} />}
+						onClear={() => onQueryChange(undefined)}
+						clearLabel="Clear search"
+						className="py-14"
+					/>
 				) : filterHidEverything ? (
 					<Empty className="py-14">
 						<EmptyHeader>

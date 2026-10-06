@@ -11,6 +11,7 @@ import { LIST_LIMIT_MAX } from "@maple/domain/http/v2"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { MapleApiV2AtomClient, retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { useDashboardMutationSync } from "@/hooks/use-dashboard-store"
+import { useAsyncAction } from "@/hooks/use-mutation-action"
 import { displayError } from "@/lib/error-messages"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { TemplateList, type ReadinessFilter } from "@/components/dashboard-builder/templates/template-list"
@@ -75,7 +76,6 @@ function TemplatesPage() {
 	})
 	const { prepareForMutation, reconcileTxid } = useDashboardMutationSync()
 
-	const [creating, setCreating] = useState(false)
 	const [query, setQuery] = useState("")
 	const [filter, setFilter] = useState<ReadinessFilter>("all")
 
@@ -113,27 +113,27 @@ function TemplatesPage() {
 		})
 	}
 
-	const createFromTemplate = async (templateId: string, parameters: Record<string, string>) => {
-		setCreating(true)
-		prepareForMutation()
-		const result = await instantiate({
-			params: { template_id: asTemplateId(templateId) },
-			payload: Object.keys(parameters).length > 0 ? { parameters } : {},
-			reactivityKeys: ["dashboards"],
-		})
-		setCreating(false)
+	const [createFromTemplate, creating] = useAsyncAction(
+		async (templateId: string, parameters: Record<string, string>) => {
+			prepareForMutation()
+			const result = await instantiate({
+				params: { template_id: asTemplateId(templateId) },
+				payload: Object.keys(parameters).length > 0 ? { parameters } : {},
+				reactivityKeys: ["dashboards"],
+			})
 
-		if (Exit.isFailure(result)) {
-			const { title, message } = displayError(result)
-			toastManager.add({ title, description: message, type: "error" })
-			return
-		}
+			if (Exit.isFailure(result)) {
+				const { title, message } = displayError(result)
+				toastManager.add({ title, description: message, type: "error" })
+				return
+			}
 
-		const dashboard = result.value
-		void reconcileTxid(dashboard.txid)
-		toastManager.add({ title: `Dashboard "${dashboard.name}" created`, type: "success" })
-		void navigate({ to: "/dashboards/$dashboardId", params: { dashboardId: dashboard.id } })
-	}
+			const dashboard = result.value
+			void reconcileTxid(dashboard.txid)
+			toastManager.add({ title: `Dashboard "${dashboard.name}" created`, type: "success" })
+			void navigate({ to: "/dashboards/$dashboardId", params: { dashboardId: dashboard.id } })
+		},
+	)
 
 	const panel = selected ? (
 		<TemplateDetailPanel

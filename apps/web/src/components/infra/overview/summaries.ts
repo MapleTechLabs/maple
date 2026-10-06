@@ -17,7 +17,7 @@ import type { Tone } from "../severity-tokens"
 
 export type SourceId = "hosts" | "containers" | "kubernetes" | "cloudflare" | "railway" | "planetscale"
 
-export type FindingTone = "crit" | "warn" | "stale"
+export type FindingTone = Extract<Tone, "crit" | "warn"> | "stale"
 
 /** Where a finding opens. A union rather than a URL so every link stays route-checked. */
 export type FindingTarget =

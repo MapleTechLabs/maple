@@ -2,9 +2,12 @@ import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import type { ReactNode } from "react"
 import { Link } from "@tanstack/react-router"
 
+import { SectionHeading } from "@/components/common/section-heading"
+
 import { SegmentedBar } from "@maple/ui/components/ui/meter"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import { TONE_FILL, TONE_TEXT } from "@maple/ui/lib/tone"
+import { VALUE_TONE } from "../severity-tokens"
+import { TONE_FILL } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 
 import {
@@ -170,11 +173,8 @@ function SourceData({ id, window, render }: { id: SourceId; window: OverviewWind
  * Needs attention
  * ----------------------------------------------------------------------------------------------*/
 
-const FINDING_DOT: Record<Finding["tone"], string> = {
-	crit: TONE_FILL.crit,
-	warn: TONE_FILL.warn,
-	stale: "border-[1.5px] border-muted-foreground bg-transparent",
-} satisfies Record<Finding["tone"], string>
+// A stale source is an outline, not a status fill.
+const STALE_DOT = "border-[1.5px] border-muted-foreground bg-transparent"
 
 const ROW_CLASS =
 	"group flex items-center gap-4 px-4 py-3 transition-colors hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none"
@@ -289,7 +289,11 @@ export function FindingRow({ finding, timeSearch }: { finding: Finding; timeSear
 			timeSearch={timeSearch}
 			className={cn(ROW_CLASS, FINDINGS_ROW_CLASS, FINDING_ORDER[finding.tone])}
 		>
-			<StatusDot tone="custom" size="lg" className={FINDING_DOT[finding.tone]} />
+			{finding.tone === "stale" ? (
+				<StatusDot tone="custom" size="lg" className={STALE_DOT} />
+			) : (
+				<StatusDot tone={finding.tone} size="lg" />
+			)}
 			<span className="flex w-32 shrink-0 items-center gap-2 text-xs text-muted-foreground">
 				<SourceMark id={finding.source} size={14} />
 				{SOURCE_TITLE[finding.source]}
@@ -319,7 +323,7 @@ function FindingRowLoading() {
 function FindingRowError({ id }: { id: SourceId }) {
 	return (
 		<div className={cn("flex items-center gap-4 px-4 py-3", FINDINGS_ROW_CLASS, FINDING_ORDER.error)}>
-			<StatusDot tone="custom" size="lg" className="bg-muted-foreground/60" />
+			<StatusDot tone="neutral" size="lg" />
 			<span className="flex w-32 shrink-0 items-center gap-2 text-xs text-muted-foreground">
 				<SourceMark id={id} size={14} />
 				{SOURCE_TITLE[id]}
@@ -396,12 +400,6 @@ const SEGMENT_LABEL: Record<HealthSegment["key"], string> = {
 	saturated: "saturated",
 	unbounded: "no limit",
 } satisfies Record<HealthSegment["key"], string>
-
-const HEADLINE_TONE: Record<SourceSummary["headlineTone"], string> = {
-	neutral: "text-foreground",
-	warn: TONE_TEXT.warn,
-	crit: TONE_TEXT.crit,
-} satisfies Record<SourceSummary["headlineTone"], string>
 
 function HealthBar({ segments }: { segments: ReadonlyArray<HealthSegment> }) {
 	const drawn = segments.filter((segment) => segment.count > 0)
@@ -506,7 +504,7 @@ export function SourceRowBody({ id, state }: { id: SourceId; state: SourceState 
 				className={cn(
 					"min-w-0 flex-1 truncate text-xs md:w-64 md:flex-none",
 					state.status === "ready"
-						? HEADLINE_TONE[state.summary.headlineTone]
+						? VALUE_TONE[state.summary.headlineTone]
 						: "text-muted-foreground",
 				)}
 			>
@@ -547,14 +545,5 @@ export function SourcesTable({
 				))}
 			</div>
 		</section>
-	)
-}
-
-export function SectionHeading({ title, hint }: { title: string; hint?: string }) {
-	return (
-		<div className="flex items-baseline gap-2.5">
-			<h2 className="text-sm font-medium text-foreground">{title}</h2>
-			{hint ? <span className="text-xs text-muted-foreground">{hint}</span> : null}
-		</div>
 	)
 }

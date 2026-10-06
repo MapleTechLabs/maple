@@ -17,6 +17,8 @@ export interface SearchInputProps extends Omit<InputProps, "value" | "onChange" 
 	/** Runs after the clear button empties the value (e.g. to also drop an applied filter). */
 	onClear?: () => void
 	clearLabel?: string
+	/** `sm` for in-panel filters; `default` matches the page toolbar's controls. */
+	size?: "sm" | "default"
 }
 
 export function SearchInput({
@@ -27,6 +29,7 @@ export function SearchInput({
 	onClear,
 	clearLabel = "Clear search",
 	type = "text",
+	size = "sm",
 	...inputProps
 }: SearchInputProps) {
 	return (
@@ -36,7 +39,7 @@ export function SearchInput({
 			</InputGroupAddon>
 			<InputGroupInput
 				{...inputProps}
-				size="sm"
+				size={size}
 				type={type}
 				value={value}
 				onChange={(e) => onValueChange(e.target.value)}

@@ -12,6 +12,7 @@ import { WidgetTimeRangeProvider } from "@/components/dashboard-builder/widgets/
 import type { DashboardWidget, TimeRange } from "@/components/dashboard-builder/types"
 import { useWidgetData } from "@/hooks/use-widget-data"
 import { CircleWarningIcon } from "@/components/icons"
+import { ResultView } from "@/components/common/result-view"
 
 import { CANONICAL_COLS, colsForWidth } from "@/components/dashboard-builder/canvas/grid-breakpoints"
 
@@ -197,47 +198,49 @@ export function TemplateLivePreview({ template, parameters, className }: Templat
 			: idlePreviewAtom,
 	)
 
-	return Result.builder(result)
-		.onSuccess((preview) => {
-			const widgets = preview.widgets as DashboardWidget[]
-			const shown = widgets.slice(0, MAX_PREVIEW_WIDGETS)
-			const hidden = widgets.length - shown.length
-
-			if (shown.length === 0) {
-				return (
-					<p className={cn("text-muted-foreground text-xs", className)}>
-						This template starts you with an empty dashboard.
-					</p>
-				)
-			}
-
-			return (
-				<div className={cn("flex flex-col gap-2", className)}>
-					<DashboardTimeRangeWrapper initialTimeRange={preview.timeRange as TimeRange}>
-						<PreviewGrid widgets={shown} />
-					</DashboardTimeRangeWrapper>
-					{hidden > 0 && (
-						<p className="text-muted-foreground text-xs">
-							{hidden} more {hidden === 1 ? "widget" : "widgets"} below the fold.
-						</p>
-					)}
+	return (
+		<ResultView
+			result={result}
+			loading={
+				<div className={className}>
+					<PreviewSkeleton />
 				</div>
-			)
-		})
-		.onError(() => (
-			<div
-				className={cn(
-					"text-muted-foreground flex items-center gap-2 rounded-md border border-border border-dashed p-4 text-xs",
-					className,
-				)}
-			>
-				<CircleWarningIcon size={14} />
-				Couldn't build the preview. You can still create the dashboard.
-			</div>
-		))
-		.orElse(() => (
-			<div className={className}>
-				<PreviewSkeleton />
-			</div>
-		))
+			}
+			error={() => (
+				<div
+					className={cn(
+						"text-muted-foreground flex items-center gap-2 rounded-md border border-border border-dashed p-4 text-xs",
+						className,
+					)}
+				>
+					<CircleWarningIcon size={14} />
+					Couldn't build the preview. You can still create the dashboard.
+				</div>
+			)}
+			isEmpty={(preview) => preview.widgets.length === 0}
+			empty={
+				<p className={cn("text-muted-foreground text-xs", className)}>
+					This template starts you with an empty dashboard.
+				</p>
+			}
+		>
+			{(preview) => {
+				const widgets = preview.widgets as DashboardWidget[]
+				const shown = widgets.slice(0, MAX_PREVIEW_WIDGETS)
+				const hidden = widgets.length - shown.length
+				return (
+					<div className={cn("flex flex-col gap-2", className)}>
+						<DashboardTimeRangeWrapper initialTimeRange={preview.timeRange as TimeRange}>
+							<PreviewGrid widgets={shown} />
+						</DashboardTimeRangeWrapper>
+						{hidden > 0 && (
+							<p className="text-muted-foreground text-xs">
+								{hidden} more {hidden === 1 ? "widget" : "widgets"} below the fold.
+							</p>
+						)}
+					</div>
+				)
+			}}
+		</ResultView>
+	)
 }

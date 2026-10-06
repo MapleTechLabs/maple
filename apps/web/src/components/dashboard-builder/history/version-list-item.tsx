@@ -1,7 +1,7 @@
 import { cn } from "@maple/ui/lib/utils"
+import { RelativeTime } from "@/components/common/relative-time"
 import type { DashboardVersionChangeKind } from "@maple/domain/http"
 import type { V2DashboardVersion } from "@maple/domain/http/v2"
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { ArrowPathIcon } from "@/components/icons"
 
 const KIND_LABEL: Record<DashboardVersionChangeKind, string> = {
@@ -133,7 +133,7 @@ export function VersionListItem({ version, isPreviewing, isCurrent, onPreview }:
 							<span aria-hidden className="opacity-50">
 								·
 							</span>
-							<span>{formatRelativeTime(version.createdAt)}</span>
+							<RelativeTime value={version.createdAt} tooltip="title" />
 						</div>
 					</div>
 				</div>

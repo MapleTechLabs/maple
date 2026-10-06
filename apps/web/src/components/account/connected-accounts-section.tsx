@@ -157,7 +157,9 @@ export function ConnectedAccountsSection() {
 													variant="ghost"
 													size="sm"
 													disabled={isBusy}
-													onClick={() => setPendingRemoval({ account, label: provider.label })}
+													onClick={() =>
+														setPendingRemoval({ account, label: provider.label })
+													}
 												>
 													Disconnect
 												</Button>
@@ -166,10 +168,10 @@ export function ConnectedAccountsSection() {
 											<Button
 												variant="outline"
 												size="sm"
-												disabled={isBusy}
+												loading={isBusy}
 												onClick={() => void handleConnect(provider)}
 											>
-												{isBusy ? "Redirecting..." : "Connect"}
+												Connect
 											</Button>
 										)
 									}

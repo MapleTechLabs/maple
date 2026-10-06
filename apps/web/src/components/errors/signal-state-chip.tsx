@@ -46,12 +46,12 @@ export function SignalStateChip({
 		return (
 			<span
 				className={cn(
-					"inline-flex max-w-full items-center gap-1.5 text-[11px] font-medium whitespace-nowrap text-destructive",
+					"inline-flex max-w-full items-center gap-1.5 text-[11px] font-medium whitespace-nowrap text-severity-error",
 					className,
 				)}
 				title="An incident is open for this error"
 			>
-				<StatusDot tone="error" />
+				<StatusDot tone="crit" />
 				<span className="truncate">Open incident</span>
 			</span>
 		)
@@ -108,7 +108,6 @@ export function InvestigationChip({
 }) {
 	const navigate = useNavigate()
 	const label = INVESTIGATION_LABEL[investigation.status]
-	const isLive = investigation.status === "investigating"
 
 	return (
 		// A button, not a link: the whole row is already an anchor to the issue,
@@ -134,7 +133,7 @@ export function InvestigationChip({
 					: `Maple ${label.toLowerCase()}`
 			}
 		>
-			<StatusDot tone="custom" className="bg-current" pulse={isLive} />
+			<StatusDot tone="custom" className="bg-current" />
 			<span className={cn("truncate", compact && "hidden @xl/page:inline")}>{label}</span>
 			{withConfidence && investigation.confidence && investigation.status === "diagnosed" ? (
 				<span className="text-muted-foreground/60">· {investigation.confidence}</span>

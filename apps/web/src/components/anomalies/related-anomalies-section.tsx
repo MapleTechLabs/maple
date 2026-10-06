@@ -1,4 +1,5 @@
 import { StatusDot } from "@maple/ui/components/ui/status-dot"
+import { countLabel } from "@maple/ui/lib/format"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import type { ErrorIssueId } from "@maple/domain/http"
 import { Badge } from "@maple/ui/components/ui/badge"
@@ -43,7 +44,7 @@ export function RelatedAnomaliesSection({ issueId }: { issueId: ErrorIssueId }) 
 					Related anomalies
 				</h2>
 				<span className="text-sm text-muted-foreground">
-					{sorted.length} {sorted.length === 1 ? "detector incident" : "detector incidents"}
+					{countLabel(sorted.length, "detector incident")}
 				</span>
 			</div>
 			<div className="overflow-hidden rounded-md border border-border/60 divide-y divide-border/40">
@@ -75,7 +76,7 @@ export function OpenAnomalyBadge({ issueId }: { issueId: ErrorIssueId }) {
 	return (
 		<Badge variant="outline" className={tone.badge}>
 			<span className="flex items-center gap-1.5">
-				<StatusDot tone="custom" pulse className={tone.accent} />
+				<StatusDot tone={tone.tone} />
 				Anomaly open
 			</span>
 		</Badge>

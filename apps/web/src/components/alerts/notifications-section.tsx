@@ -1,5 +1,6 @@
 import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import { Spinner } from "@maple/ui/components/ui/spinner"
+import { Field, FieldLabel } from "@maple/ui/components/ui/field"
 import { useState, type Dispatch, type SetStateAction } from "react"
 import { useUser } from "@clerk/clerk-react"
 
@@ -16,7 +17,6 @@ import {
 	DropdownMenuTrigger,
 } from "@maple/ui/components/ui/dropdown-menu"
 import { Input } from "@maple/ui/components/ui/input"
-import { Label } from "@maple/ui/components/ui/label"
 import { Textarea } from "@maple/ui/components/ui/textarea"
 
 import {
@@ -118,11 +118,11 @@ export function NotificationsSection({
 						variant="ghost"
 						size="sm"
 						onClick={onSendTest}
-						disabled={testing}
+						loading={testing}
 						title="Send a real test notification to every destination below"
 						className="-my-1 h-7 px-2 text-xs"
 					>
-						{testing ? <Spinner size={12} /> : <PaperPlaneIcon size={12} />}
+						<PaperPlaneIcon size={12} />
 						Send test
 					</Button>
 				)}
@@ -443,18 +443,18 @@ function MessageTemplate({
 						format. Supports <InlineCode>{"{{ variable }}"}</InlineCode> substitution.
 					</p>
 
-					<div className="space-y-1.5">
-						<Label htmlFor="notification-title">Title</Label>
+					<Field className="items-stretch gap-1.5">
+						<FieldLabel htmlFor="notification-title">Title</FieldLabel>
 						<Input
 							id="notification-title"
 							value={form.notificationTitle}
 							onChange={(e) => onChange((c) => ({ ...c, notificationTitle: e.target.value }))}
 							placeholder={TITLE_PLACEHOLDER}
 						/>
-					</div>
+					</Field>
 
-					<div className="space-y-1.5">
-						<Label htmlFor="notification-body">Body (Markdown)</Label>
+					<Field className="items-stretch gap-1.5">
+						<FieldLabel htmlFor="notification-body">Body (Markdown)</FieldLabel>
 						<Textarea
 							id="notification-body"
 							value={form.notificationBody}
@@ -463,7 +463,7 @@ function MessageTemplate({
 							rows={4}
 							className="font-mono text-xs"
 						/>
-					</div>
+					</Field>
 
 					<div className="space-y-1.5">
 						<span className="text-muted-foreground text-xs">Insert a variable:</span>

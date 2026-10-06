@@ -21,6 +21,7 @@ import { SectionHeader } from "@/components/layout/section-header"
 import { MapleApiAtomClient, retainedQuery } from "@/lib/services/common/atom-client"
 import { useAlertDestinationsList } from "@/hooks/use-alerts-list"
 import { RelativeTime } from "@/components/common/relative-time"
+import { useAsyncAction } from "@/hooks/use-mutation-action"
 
 const CONFIDENCES: ReadonlyArray<EscalationConfidence> = ["high", "medium", "low"]
 
@@ -60,7 +61,6 @@ function PolicySimulator() {
 		destinationIds: ReadonlyArray<string>
 		skipReason: string | null
 	} | null>(null)
-	const [busy, setBusy] = useState(false)
 	const evaluate = useAtomSet(MapleApiAtomClient.mutation("errors", "evaluateEscalationPolicy"), {
 		mode: "promiseExit",
 	})
@@ -69,8 +69,7 @@ function PolicySimulator() {
 		.onSuccess((response) => response.destinations)
 		.orElse(() => [])
 
-	const run = async () => {
-		setBusy(true)
+	const [run, busy] = useAsyncAction(async () => {
 		setDecision(null)
 		const result = await evaluate({
 			payload: new EscalationPolicyEvaluationRequest({
@@ -79,13 +78,12 @@ function PolicySimulator() {
 				...(source === "ai" ? { confidence } : undefined),
 			}),
 		})
-		setBusy(false)
 		if (Exit.isSuccess(result)) {
 			setDecision(result.value)
 		} else {
 			toastManager.add({ title: "Policy evaluation failed", type: "error" })
 		}
-	}
+	})
 
 	return (
 		<section aria-labelledby="policy-simulator-heading">
@@ -129,8 +127,8 @@ function PolicySimulator() {
 					</SimulatorField>
 				</div>
 				<div className="mt-4 flex flex-wrap items-center gap-3 border-t pt-4">
-					<Button size="sm" onClick={() => void run()} disabled={busy}>
-						{busy ? "Evaluating…" : "Evaluate policy"}
+					<Button size="sm" onClick={() => void run()} loading={busy}>
+						Evaluate policy
 					</Button>
 					{decision ? (
 						<>

@@ -72,7 +72,7 @@ export function PlanetScaleTopQueries({
 				error={result.cause}
 				title="PlanetScale Query Insights are unavailable"
 				className={cn(
-					"flex flex-col gap-1 rounded-md border border-destructive/20 bg-destructive/5 px-3 py-3 text-xs",
+					"flex flex-col gap-1 rounded-md border border-severity-error/20 bg-severity-error/5 px-3 py-3 text-xs",
 					className,
 				)}
 			/>

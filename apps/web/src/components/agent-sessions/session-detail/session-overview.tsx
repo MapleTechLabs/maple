@@ -1,8 +1,9 @@
 import { useMemo, useRef, useState, type ReactNode, type Ref } from "react"
 
+import { DisclosureChevron } from "@/components/common/disclosure-chevron"
 import type { GetAiSessionSummaryResponse } from "@maple/domain/http"
 
-import { ArrowRightIcon, ChevronRightIcon } from "@/components/icons"
+import { ArrowRightIcon } from "@/components/icons"
 import { Button } from "@maple/ui/components/ui/button"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Meter, SegmentedBar } from "@maple/ui/components/ui/meter"
@@ -423,11 +424,11 @@ function ToolLedgerHeader({ summary }: { summary: SessionSummary }) {
 					<LedgerStat label="Calls" value={formatNumber(calls)} />
 					<LedgerStat label="Tool time" value={formatToolDuration(toolMs)} tone="text-chart-4" />
 					{failed > 0 && (
-						<span className="flex items-baseline gap-1.5 rounded-sm bg-destructive/12 px-1.5 py-0.5">
-							<span className="font-mono font-semibold text-destructive text-xs tabular-nums">
+						<span className="flex items-baseline gap-1.5 rounded-sm bg-severity-error/12 px-1.5 py-0.5">
+							<span className="font-mono font-semibold text-severity-error text-xs tabular-nums">
 								{failed}
 							</span>
-							<span className="text-[11px] text-destructive">failed</span>
+							<span className="text-[11px] text-severity-error">failed</span>
 						</span>
 					)}
 				</div>
@@ -511,7 +512,7 @@ function ToolLedgerRow({
 	const disclosable = tool.description !== undefined || failures.length > 0
 
 	return (
-		<div className={cn("flex flex-col", tool.failed > 0 && "bg-destructive/[0.06]")}>
+		<div className={cn("flex flex-col", tool.failed > 0 && "bg-severity-error/[0.06]")}>
 			<div className="flex h-6 items-center gap-4">
 				{disclosable ? (
 					<button
@@ -523,11 +524,7 @@ function ToolLedgerRow({
 							"flex cursor-pointer items-center gap-1.5 text-left hover:text-primary",
 						)}
 					>
-						<ChevronRightIcon
-							aria-hidden
-							size={9}
-							className={cn("shrink-0 transition-transform", expanded && "rotate-90")}
-						/>
+						<DisclosureChevron open={expanded} size={9} />
 						<span className="min-w-0 truncate font-mono text-xs" title={tool.name}>
 							{tool.name}
 						</span>
@@ -545,7 +542,7 @@ function ToolLedgerRow({
 					className={cn(
 						LEDGER_COUNT,
 						"font-mono text-xs tabular-nums",
-						tool.failed > 0 ? "text-destructive" : "text-muted-foreground/50",
+						tool.failed > 0 ? "text-severity-error" : "text-muted-foreground/50",
 					)}
 				>
 					{tool.failed > 0 ? tool.failed : "."}
@@ -616,7 +613,7 @@ function CallLane({
 					className={cn(
 						"absolute cursor-pointer rounded-[1px]",
 						event.failed
-							? "top-[5px] h-3.5 bg-destructive"
+							? "top-[5px] h-3.5 bg-severity-error"
 							: muted
 								? "top-2 h-2 bg-muted-foreground/50"
 								: "top-[7px] h-2.5 bg-chart-4",
@@ -647,8 +644,8 @@ function FailedCallRow({
 	onOpenSpan: OpenSpan
 }) {
 	return (
-		<div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-destructive border-l-2 bg-destructive/[0.06] py-1.5 pr-2 pl-2.5">
-			<span className="font-medium font-mono text-destructive text-xs">
+		<div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-severity-error border-l-2 bg-severity-error/[0.06] py-1.5 pr-2 pl-2.5">
+			<span className="font-medium font-mono text-severity-error text-xs">
 				{event.errorLabel ?? "error"}
 			</span>
 			<span className="font-mono text-muted-foreground text-xs">{callWhen(event, sessionStartMs)}</span>

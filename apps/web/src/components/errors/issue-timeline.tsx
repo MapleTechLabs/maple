@@ -4,11 +4,13 @@ import type {
 	ErrorIssueEventDocument,
 	IssueEscalationAttemptDocument,
 } from "@maple/domain/http"
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
+import { countLabel, formatRatePerHour } from "@maple/ui/lib/format"
 import type { ReactNode } from "react"
 import { Badge } from "@maple/ui/components/ui/badge"
+import { TONE_FILL } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 
+import { RelativeTime } from "@/components/common/relative-time"
 import { MessageResponse } from "@/components/ai-elements/message-response"
 import { useActorDirectory } from "@/hooks/use-actor-directory"
 import { IdentityAvatar, resolveActorIdentity, type ActorIdentity } from "./actor-chip"
@@ -42,15 +44,15 @@ const DOT_CLASS: Record<ErrorIssueEventDocument["type"], string> = {
 	assignment: "bg-muted-foreground",
 	claim: "bg-violet-500",
 	release: "bg-violet-500/60",
-	lease_expired: "bg-amber-500",
+	lease_expired: TONE_FILL.warn,
 	comment: "bg-muted-foreground",
 	agent_note: "bg-violet-500",
-	fix_proposed: "bg-success",
-	regression: "bg-destructive",
+	fix_proposed: TONE_FILL.ok,
+	regression: TONE_FILL.crit,
 	snooze: "bg-muted-foreground/70",
 	unsnooze: "bg-muted-foreground/70",
 	ai_triage: "bg-violet-500",
-	anomaly_linked: "bg-amber-500",
+	anomaly_linked: TONE_FILL.warn,
 	severity_change: "bg-orange-500",
 	pr_linked: "bg-muted-foreground",
 	pr_unlinked: "bg-muted-foreground/60",
@@ -192,7 +194,7 @@ function renderPayload(event: ErrorIssueEventDocument): string | null {
 			if (window === null) return "Watching for this error to come back."
 			const because =
 				Number.isFinite(rate) && rate > 0
-					? ` — it fired about ${formatRate(rate)} before the merge`
+					? ` — it fired about ${formatRatePerHour(rate)} before the merge`
 					: " — this error fires too rarely to judge quickly"
 			return `Watching for ${window}${because}.`
 		}
@@ -218,31 +220,11 @@ function renderPayload(event: ErrorIssueEventDocument): string | null {
 /** "6 hours", "3 days" — a duration a person would say out loud. */
 function formatDuration(ms: number): string {
 	const minutes = Math.round(ms / 60_000)
-	if (minutes < 60) return `${minutes} minute${minutes === 1 ? "" : "s"}`
+	if (minutes < 60) return countLabel(minutes, "minute")
 	const hours = Math.round(minutes / 60)
-	if (hours < 48) return `${hours} hour${hours === 1 ? "" : "s"}`
+	if (hours < 48) return countLabel(hours, "hour")
 	const days = Math.round(hours / 24)
-	return `${days} day${days === 1 ? "" : "s"}`
-}
-
-/**
- * A per-hour rate in whatever unit reads naturally. "0.02 times per hour" is
- * technically right and useless; "3 times a week" is the same number said in a
- * way a reader can picture.
- */
-function formatRate(perHour: number): string {
-	if (perHour >= 1) {
-		const rounded = perHour >= 10 ? Math.round(perHour) : Math.round(perHour * 10) / 10
-		return `${rounded}× an hour`
-	}
-	const perDay = perHour * 24
-	if (perDay >= 1) {
-		const rounded = perDay >= 10 ? Math.round(perDay) : Math.round(perDay * 10) / 10
-		return `${rounded}× a day`
-	}
-	const perWeek = perHour * 24 * 7
-	const rounded = perWeek >= 10 ? Math.round(perWeek) : Math.round(perWeek * 10) / 10
-	return `${rounded}× a week`
+	return countLabel(days, "day")
 }
 
 type TimelineItem =
@@ -305,12 +287,12 @@ export function IssueTimeline({
 					const body =
 						destinations ||
 						escalation.skipReason?.replaceAll("_", " ") ||
-						`${escalation.attempts} delivery attempt${escalation.attempts === 1 ? "" : "s"}`
+						countLabel(escalation.attempts, "delivery attempt")
 					return (
 						<li className={ITEM} key={item.key}>
-							<span className={STAMP}>{formatRelativeTime(escalation.createdAt)}</span>
+							<RelativeTime value={escalation.createdAt} tooltip="title" className={STAMP} />
 							<Rail>
-								<Dot className="bg-orange-500" />
+								<Dot className={TONE_FILL.warn} />
 							</Rail>
 							<div className="min-w-0 py-2.5">
 								<div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
@@ -345,14 +327,9 @@ export function IssueTimeline({
 
 				return (
 					<li className={ITEM} key={item.key}>
-						<span className={STAMP}>{formatRelativeTime(event.createdAt)}</span>
+						<RelativeTime value={event.createdAt} tooltip="title" className={STAMP} />
 						<Rail>
-							<Dot
-								className={cn(
-									DOT_CLASS[event.type],
-									event.type === "regression" && "animate-pulse",
-								)}
-							/>
+							<Dot className={DOT_CLASS[event.type]} />
 						</Rail>
 						<div className="min-w-0 py-2.5">
 							<div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
@@ -422,9 +399,11 @@ function MessageRow({
 
 	return (
 		<li className={MESSAGE_ITEM}>
-			<span className={cn(STAMP, continued && "opacity-0 group-hover/row:opacity-100")}>
-				{formatRelativeTime(event.createdAt)}
-			</span>
+			<RelativeTime
+				value={event.createdAt}
+				tooltip="title"
+				className={cn(STAMP, continued && "opacity-0 group-hover/row:opacity-100")}
+			/>
 			<Rail>
 				{continued ? (
 					<span aria-hidden />

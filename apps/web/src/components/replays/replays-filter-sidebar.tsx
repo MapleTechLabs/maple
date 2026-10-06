@@ -34,6 +34,7 @@ import {
 	FilterSidebarHeader,
 	FilterSidebarLoading,
 } from "@/components/filters/filter-sidebar"
+import { ResultView } from "@/components/common/result-view"
 
 const routeApi = getRouteApi("/replays/")
 
@@ -193,37 +194,40 @@ export function ReplaysFilterSidebar({ facetsResult }: ReplaysFilterSidebarProps
 		search.activeMin != null ||
 		search.activeMax != null
 
-	return Result.builder(facetsResult)
-		.onInitial(() => <FilterSidebarLoading sectionCount={5} />)
-		.onError((error) => <FilterSidebarError error={error} />)
-		.onSuccess((facets, result) => {
-			const services = withSelected(facets.services, search.service)
-			const browsers = withSelected(facets.browsers, search.browser)
-			const countries = withSelected(facets.countries, search.country)
-			const devices = withSelected(facets.devices, search.deviceType)
-			const groups = withSelected(facets.groups, search.group)
-			const pages = withSelected(facets.pages, search.page)
-			const selectedTags = sessionTagsFromSearch(search.tags) ?? []
-			const tags = tagOptions(facets.tags)
-			for (const tag of selectedTags) {
-				if (!tags.some((option) => option.name === tag)) tags.unshift({ name: tag, count: 0 })
-			}
+	return (
+		<ResultView
+			result={facetsResult}
+			loading={<FilterSidebarLoading sectionCount={5} />}
+			error={(error) => <FilterSidebarError error={error} />}
+		>
+			{(facets, result) => {
+				const services = withSelected(facets.services, search.service)
+				const browsers = withSelected(facets.browsers, search.browser)
+				const countries = withSelected(facets.countries, search.country)
+				const devices = withSelected(facets.devices, search.deviceType)
+				const groups = withSelected(facets.groups, search.group)
+				const pages = withSelected(facets.pages, search.page)
+				const selectedTags = sessionTagsFromSearch(search.tags) ?? []
+				const tags = tagOptions(facets.tags)
+				for (const tag of selectedTags) {
+					if (!tags.some((option) => option.name === tag)) tags.unshift({ name: tag, count: 0 })
+				}
 
-			const hasFacets =
-				services.length > 0 ||
-				browsers.length > 0 ||
-				countries.length > 0 ||
-				devices.length > 0 ||
-				groups.length > 0 ||
-				pages.length > 0 ||
-				tags.length > 0 ||
-				facets.errorCount > 0
+				const hasFacets =
+					services.length > 0 ||
+					browsers.length > 0 ||
+					countries.length > 0 ||
+					devices.length > 0 ||
+					groups.length > 0 ||
+					pages.length > 0 ||
+					tags.length > 0 ||
+					facets.errorCount > 0
 
-			return (
-				<FilterSidebarFrame waiting={result.waiting}>
-					<FilterSidebarHeader canClear={hasActiveFilters} onClear={clearAllFilters} />
-					<FilterSidebarBody>
-						{/* Browse before you type. The counted facets and the two range controls
+				return (
+					<FilterSidebarFrame waiting={result.waiting}>
+						<FilterSidebarHeader canClear={hasActiveFilters} onClear={clearAllFilters} />
+						<FilterSidebarBody>
+							{/* Browse before you type. The counted facets and the two range controls
 						    lead, because they answer "what is in here" without you knowing anything
 						    first; the identity fields are demoted to the foot of the rail, because
 						    they only pay off once you already have a name in mind. Leading with two
@@ -234,122 +238,125 @@ export function ReplaysFilterSidebar({ facetsResult }: ReplaysFilterSidebarProps
 						    that exact filter, with the same facet count, as a one-click chip. Two
 						    controls for one boolean in the same viewport is not redundancy, it is a
 						    question about whether they agree. */}
-						{/* The cheapest cut through the noise: "Engaged" alone drops bots,
+							{/* The cheapest cut through the noise: "Engaged" alone drops bots,
 						    bounces, idle tabs and glances, usually most of a window. */}
-						<FilterSection
-							title="Session type"
-							options={tags}
-							selected={selectedTags}
-							onChange={setTags}
-							getOptionLabel={tagLabel}
-							getOptionDescription={tagDescription}
-							renderOptionIcon={tagDot}
-						/>
+							<FilterSection
+								title="Session type"
+								options={tags}
+								selected={selectedTags}
+								onChange={setTags}
+								getOptionLabel={tagLabel}
+								getOptionDescription={tagDescription}
+								renderOptionIcon={tagDot}
+							/>
 
-						<RangeFilterSection
-							title="Session length"
-							unit="s"
-							minValue={search.durationMin}
-							maxValue={search.durationMax}
-							onRangeChange={setDurationRange}
-							histogram={toDurationBuckets(facets.durationBuckets)}
-							presets={sessionLengthPresets(facets.durationP50, facets.durationP95)}
-						/>
+							<RangeFilterSection
+								title="Session length"
+								unit="s"
+								minValue={search.durationMin}
+								maxValue={search.durationMax}
+								onRangeChange={setDurationRange}
+								histogram={toDurationBuckets(facets.durationBuckets)}
+								presets={sessionLengthPresets(facets.durationP50, facets.durationP95)}
+							/>
 
-						<RangeFilterSection
-							title="Active time"
-							hint="Excludes idle gaps"
-							unit="s"
-							minValue={search.activeMin}
-							maxValue={search.activeMax}
-							onRangeChange={setActiveRange}
-							presets={ACTIVE_TIME_PRESETS}
-						/>
+							<RangeFilterSection
+								title="Active time"
+								hint="Excludes idle gaps"
+								unit="s"
+								minValue={search.activeMin}
+								maxValue={search.activeMax}
+								onRangeChange={setActiveRange}
+								presets={ACTIVE_TIME_PRESETS}
+							/>
 
-						{/* Every page a session reached, not just where it landed — the toolbar
+							{/* Every page a session reached, not just where it landed — the toolbar
 						    search covers the entry URL. Top 200 by sessions; the search box
 						    filters that list. */}
-						<SearchableFilterSection
-							title="Page visited"
-							options={pages}
-							selected={search.page ? [search.page] : []}
-							onChange={(vals) => setSingle("page", vals)}
-						/>
-
-						<SearchableFilterSection
-							title="Service"
-							options={services}
-							selected={search.service ? [search.service] : []}
-							onChange={(vals) => setSingle("service", vals)}
-						/>
-
-						<SearchableFilterSection
-							title="Browser"
-							options={browsers}
-							selected={search.browser ? [search.browser] : []}
-							onChange={(vals) => setSingle("browser", vals)}
-							getOptionIcon={browserIconFor}
-						/>
-
-						<FilterSection
-							title="Device"
-							options={devices}
-							selected={search.deviceType ? [search.deviceType] : []}
-							onChange={(vals) => setSingle("deviceType", vals)}
-							getOptionIcon={deviceIconFor}
-						/>
-
-						<SearchableFilterSection
-							title="Country"
-							options={countries}
-							selected={search.country ? [search.country] : []}
-							onChange={(vals) => setSingle("country", vals)}
-						/>
-
-						{/* Hidden entirely when nobody is grouped — an empty facet list here
-						    would just read as a broken section. */}
-						{groups.length > 0 && (
 							<SearchableFilterSection
-								title="Group"
-								options={groups}
-								selected={search.group ? [search.group] : []}
-								onChange={(vals) => setSingle("group", vals)}
+								title="Page visited"
+								options={pages}
+								selected={search.page ? [search.page] : []}
+								onChange={(vals) => setSingle("page", vals)}
 							/>
-						)}
 
-						{/* The rule is the separator's job: everything above is picked from a
+							<SearchableFilterSection
+								title="Service"
+								options={services}
+								selected={search.service ? [search.service] : []}
+								onChange={(vals) => setSingle("service", vals)}
+							/>
+
+							<SearchableFilterSection
+								title="Browser"
+								options={browsers}
+								selected={search.browser ? [search.browser] : []}
+								onChange={(vals) => setSingle("browser", vals)}
+								getOptionIcon={browserIconFor}
+							/>
+
+							<FilterSection
+								title="Device"
+								options={devices}
+								selected={search.deviceType ? [search.deviceType] : []}
+								onChange={(vals) => setSingle("deviceType", vals)}
+								getOptionIcon={deviceIconFor}
+							/>
+
+							<SearchableFilterSection
+								title="Country"
+								options={countries}
+								selected={search.country ? [search.country] : []}
+								onChange={(vals) => setSingle("country", vals)}
+							/>
+
+							{/* Hidden entirely when nobody is grouped — an empty facet list here
+						    would just read as a broken section. */}
+							{groups.length > 0 && (
+								<SearchableFilterSection
+									title="Group"
+									options={groups}
+									selected={search.group ? [search.group] : []}
+									onChange={(vals) => setSingle("group", vals)}
+								/>
+							)}
+
+							{/* The rule is the separator's job: everything above is picked from a
 						    list the warehouse supplied, everything below is typed from memory. */}
-						<Separator className="my-2" />
-						<h4 className={cn(FILTER_SECTION_LABEL, "py-1 text-muted-foreground")}>Identity</h4>
+							<Separator className="my-2" />
+							<h4 className={cn(FILTER_SECTION_LABEL, "py-1 text-muted-foreground")}>
+								Identity
+							</h4>
 
-						<TextFilter
-							key={`user:${search.user ?? ""}`}
-							id="replays-user-search"
-							placeholder="Name or email…"
-							clearLabel="Clear name or email filter"
-							value={search.user}
-							onApply={setUserSearch}
-						/>
+							<TextFilter
+								key={`user:${search.user ?? ""}`}
+								id="replays-user-search"
+								placeholder="Name or email…"
+								clearLabel="Clear name or email filter"
+								value={search.user}
+								onApply={setUserSearch}
+							/>
 
-						<TextFilter
-							key={`userId:${search.userId ?? ""}`}
-							id="replays-user-filter"
-							placeholder="User ID…"
-							clearLabel="Clear user ID filter"
-							value={search.userId}
-							onApply={setUserId}
-						/>
+							<TextFilter
+								key={`userId:${search.userId ?? ""}`}
+								id="replays-user-filter"
+								placeholder="User ID…"
+								clearLabel="Clear user ID filter"
+								value={search.userId}
+								onApply={setUserId}
+							/>
 
-						{!hasFacets && (
-							<p className="py-4 text-sm text-muted-foreground">
-								No sessions in the selected time range
-							</p>
-						)}
-					</FilterSidebarBody>
-				</FilterSidebarFrame>
-			)
-		})
-		.render()
+							{!hasFacets && (
+								<p className="py-4 text-sm text-muted-foreground">
+									No sessions in the selected time range
+								</p>
+							)}
+						</FilterSidebarBody>
+					</FilterSidebarFrame>
+				)
+			}}
+		</ResultView>
+	)
 }
 
 // Identity is high-cardinality, so it's typed rather than picked from a facet

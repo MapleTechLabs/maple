@@ -5,9 +5,9 @@ import { CircleWarningIcon } from "@/components/icons"
 export function WarningList({ warnings }: { warnings: ReadonlyArray<string> }) {
 	if (warnings.length === 0) return null
 	return (
-		<Alert variant="warning" size="sm">
+		<Alert variant="warn" size="sm">
 			<CircleWarningIcon size={14} />
-			<AlertDescription className="text-warning-foreground">
+			<AlertDescription className="text-severity-warn">
 				<ul className="space-y-1">
 					{warnings.map((warning) => (
 						<li key={warning}>{warning}</li>

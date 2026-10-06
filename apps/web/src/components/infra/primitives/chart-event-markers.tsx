@@ -21,8 +21,9 @@ import { ruleX, rect, text } from "@tanstack/charts"
 import { decorative } from "@tanstack/charts/mark/decorative"
 import { resolvePlotColor } from "@maple/ui/components/plot"
 import { toEpochMs } from "@maple/ui/lib/time-format"
+import type { Tone } from "@maple/ui/lib/tone"
 
-export type ChartEventTone = "neutral" | "warn" | "crit"
+export type ChartEventTone = Extract<Tone, "neutral" | "warn" | "crit">
 
 export interface ChartEventMarker {
 	readonly id: string

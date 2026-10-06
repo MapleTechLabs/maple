@@ -1,5 +1,6 @@
 import { useState } from "react"
-import { Cause, Exit, Schema } from "effect"
+import { Cause, Schema } from "effect"
+import { toastExit } from "@/lib/error-toast"
 
 import {
 	AddBillingTaxIdRequest,
@@ -20,7 +21,6 @@ import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Input } from "@maple/ui/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import { Spinner } from "@maple/ui/components/ui/spinner"
 import { toastManager } from "@maple/ui/components/ui/toast"
 
 import { XmarkIcon } from "@/components/icons"
@@ -101,11 +101,11 @@ function TaxIdRow({
 					variant="ghost"
 					size="icon-xs"
 					onClick={onRemove}
-					disabled={removing}
+					loading={removing}
 					aria-label={`Remove ${taxIdLabel(taxId.type)} ${taxId.value}`}
 					className="ml-auto text-muted-foreground"
 				>
-					{removing ? <Spinner className="size-3.5" /> : <XmarkIcon size={14} />}
+					<XmarkIcon size={14} />
 				</Button>
 			)}
 		</li>
@@ -131,16 +131,14 @@ function AddTaxIdRow({ profile }: { readonly profile: BillingProfile }) {
 			reactivityKeys: [BILLING_PROFILE_KEY],
 		})
 		setAdding(false)
-		if (Exit.isSuccess(exit)) {
+		if (
+			toastExit(exit, {
+				success: "Tax ID added. Stripe is verifying it.",
+				error: "The tax ID could not be added.",
+			})
+		) {
 			setValue("")
-			toastManager.add({ title: "Tax ID added. Stripe is verifying it.", type: "success" })
-			return
 		}
-		const error = Cause.squash(exit.cause)
-		toastManager.add({
-			title: error instanceof Error ? error.message : "The tax ID could not be added.",
-			type: "error",
-		})
 	}
 
 	return (
@@ -210,14 +208,9 @@ export function BillingDetailsSection({ canEdit }: { readonly canEdit: boolean }
 			reactivityKeys: [BILLING_PROFILE_KEY],
 		})
 		setRemovingId(null)
-		if (Exit.isSuccess(exit)) {
-			toastManager.add({ title: `Removed ${taxIdLabel(taxId.type)} ${taxId.value}.`, type: "success" })
-			return
-		}
-		const error = Cause.squash(exit.cause)
-		toastManager.add({
-			title: error instanceof Error ? error.message : "The tax ID could not be removed.",
-			type: "error",
+		toastExit(exit, {
+			success: `Removed ${taxIdLabel(taxId.type)} ${taxId.value}.`,
+			error: "The tax ID could not be removed.",
 		})
 	}
 

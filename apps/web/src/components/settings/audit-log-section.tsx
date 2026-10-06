@@ -1,3 +1,4 @@
+import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import type { AuditActorType, AuditLogSource, AuditOutcome } from "@maple/domain/http"
 import {
 	encodePublicId,
@@ -21,12 +22,13 @@ import { KeyValue, KeyValueList } from "@maple/ui/components/ui/key-value"
 import { ListFooter } from "@maple/ui/components/ui/list-footer"
 import { SkeletonList } from "@maple/ui/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
-import { ToggleGroup, ToggleGroupItem } from "@maple/ui/components/ui/toggle-group"
+import { SegmentedSelect } from "@/components/common/segmented-select"
 import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 import { trySync } from "@maple/ui/lib/try-sync"
 import { cn } from "@maple/ui/lib/utils"
 import { RelativeTime } from "@/components/common/relative-time"
-import { AlertWarningIcon, ArrowPathIcon, ChevronRightIcon, HistoryIcon } from "@/components/icons"
+import { ArrowPathIcon, ChevronRightIcon, HistoryIcon } from "@/components/icons"
+import { ErrorState } from "@/components/common/error-state"
 
 type ActorFilter = AuditActorType | "all"
 type OutcomeFilter = AuditOutcome | "all"
@@ -50,13 +52,13 @@ const sourceLabel = (source: AuditLogSource): string => source.replace("_", " ")
 
 const ACTOR_BADGES: Record<
 	AuditActorType,
-	{ label: string; variant: "secondary" | "success" | "info" | "outline" }
+	{ label: string; variant: "secondary" | "ok" | "info" | "outline" }
 > = {
 	user: { label: "User", variant: "secondary" },
-	api_key: { label: "API key", variant: "success" },
+	api_key: { label: "API key", variant: "ok" },
 	agent: { label: "Agent", variant: "info" },
 	system: { label: "System", variant: "outline" },
-} satisfies Record<AuditActorType, { label: string; variant: "secondary" | "success" | "info" | "outline" }>
+} satisfies Record<AuditActorType, { label: string; variant: "secondary" | "ok" | "info" | "outline" }>
 
 // Shared column lanes so the header row and entry rows stay aligned. Resource and
 // source collapse when the card is narrow; time + actor + action always stay
@@ -253,38 +255,20 @@ export function AuditLogSection() {
 			</p>
 
 			<div className="flex flex-wrap items-center gap-3">
-				<ToggleGroup
-					variant="outline"
-					size="xs"
+				<SegmentedSelect
+					size="sm"
 					aria-label="Actor type"
-					value={[actorFilter]}
-					onValueChange={(values) => {
-						const next = ACTOR_FILTERS.find((filter) => filter.value === values[0])
-						if (next) handleFilterSelect(next.value)
-					}}
-				>
-					{ACTOR_FILTERS.map((filter) => (
-						<ToggleGroupItem key={filter.value} value={filter.value} className="font-mono text-[11px]">
-							{filter.label}
-						</ToggleGroupItem>
-					))}
-				</ToggleGroup>
-				<ToggleGroup
-					variant="outline"
-					size="xs"
+					value={actorFilter}
+					onChange={handleFilterSelect}
+					options={ACTOR_FILTERS}
+				/>
+				<SegmentedSelect
+					size="sm"
 					aria-label="Outcome"
-					value={[outcomeFilter]}
-					onValueChange={(values) => {
-						const next = OUTCOME_FILTERS.find((filter) => filter.value === values[0])
-						if (next) handleOutcomeSelect(next.value)
-					}}
-				>
-					{OUTCOME_FILTERS.map((filter) => (
-						<ToggleGroupItem key={filter.value} value={filter.value} className="font-mono text-[11px]">
-							{filter.label}
-						</ToggleGroupItem>
-					))}
-				</ToggleGroup>
+					value={outcomeFilter}
+					onChange={handleOutcomeSelect}
+					options={OUTCOME_FILTERS}
+				/>
 				<div className="flex-1" />
 				<Button
 					variant="ghost"
@@ -306,20 +290,12 @@ export function AuditLogSection() {
 				)}
 			>
 				{view === null && Result.isFailure(pageResult) ? (
-					<Empty className="py-8">
-						<EmptyHeader>
-							<EmptyMedia variant="icon">
-								<AlertWarningIcon size={16} />
-							</EmptyMedia>
-							<EmptyTitle>Couldn't load the audit log</EmptyTitle>
-							<EmptyDescription>
-								Something went wrong while loading audit log entries.
-							</EmptyDescription>
-						</EmptyHeader>
-						<Button variant="outline" size="sm" onClick={() => refreshPage()}>
-							Try again
-						</Button>
-					</Empty>
+					<ErrorState
+						error={pageResult.cause}
+						title="Couldn't load the audit log"
+						onRetry={() => refreshPage()}
+						className="border-0"
+					/>
 				) : view === null ? (
 					<SkeletonList rows={3} rowClassName="h-[44px]" gap="2" className="p-4" />
 				) : view.entries.length === 0 && filtered ? (
@@ -480,7 +456,7 @@ function AuditLogRow({ entry }: { entry: V2AuditLogEntry }) {
 					<div className="flex min-w-0 items-center gap-1.5">
 						<ActionLabel action={entry.action} />
 						{denied && (
-							<Badge variant="error" size="sm" className="shrink-0">
+							<Badge variant="crit" size="sm" className="shrink-0">
 								Denied
 							</Badge>
 						)}
@@ -541,7 +517,9 @@ function ResourceCell({ entry }: { entry: V2AuditLogEntry }) {
 function Identifier({ value, label }: { value: string; label: string }) {
 	return (
 		<span className="inline-flex max-w-full items-center gap-0.5">
-			<code className="truncate font-mono text-[11px]">{value}</code>
+			<InlineCode variant="plain" className="truncate text-[11px] text-foreground">
+				{value}
+			</InlineCode>
 			<CopyButton value={value} label={label} toast={false} iconSize={12} className="size-5" />
 		</span>
 	)
@@ -648,13 +626,15 @@ function AuditLogDetail({ entry }: { entry: V2AuditLogEntry }) {
 				</KeyValue>
 				<KeyValue wrap label="Action">
 					<span className="flex flex-wrap items-center gap-1.5">
-						<code className="font-mono text-[11px]">{entry.action}</code>
+						<InlineCode variant="plain" className="text-[11px] text-foreground">
+							{entry.action}
+						</InlineCode>
 						{entry.outcome === "denied" ? (
-							<Badge variant="error" size="sm">
+							<Badge variant="crit" size="sm">
 								Denied
 							</Badge>
 						) : (
-							<Badge variant="success" size="sm">
+							<Badge variant="ok" size="sm">
 								Allowed
 							</Badge>
 						)}

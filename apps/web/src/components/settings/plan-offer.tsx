@@ -6,7 +6,6 @@ import type { CatalogPlan } from "@maple/domain/http"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import { Spinner } from "@maple/ui/components/ui/spinner"
 import { cn } from "@maple/ui/lib/utils"
 
 import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
@@ -19,6 +18,7 @@ import { useCheckoutReturn } from "@/hooks/use-checkout-return"
 import { CheckoutConfirmingPanel, CheckoutTimedOutNotice } from "@/components/settings/checkout-return-panel"
 import { getPlanFeatures, TRIAL_DURATION_DAYS } from "@/lib/billing/plans"
 import { featureUnit, type SpendModel } from "@/lib/billing/spend"
+import { ErrorState } from "@/components/common/error-state"
 
 /**
  * The plans section: one offer, not a tier ladder.
@@ -149,7 +149,7 @@ export function PlanOffer({
 	if (checkoutReturn === "confirming") return <CheckoutConfirmingPanel />
 	if (Result.isInitial(plansResult)) return <PlanOfferSkeleton />
 	if (!Result.isSuccess(plansResult)) {
-		return <p className="text-sm text-muted-foreground">Unable to load pricing plans.</p>
+		return <ErrorState error={plansResult.cause} title="Unable to load pricing plans" variant="row" />
 	}
 
 	const plans = plansResult.value.plans
@@ -259,16 +259,12 @@ export function PlanOffer({
 							) : (
 								<Button
 									size="sm"
-									disabled={attaching === plan.id}
+									loading={attaching === plan.id}
 									onClick={() => handleSubscribe(plan.id)}
 								>
-									{attaching === plan.id ? (
-										<Spinner className="size-4" />
-									) : trialAvailable ? (
-										`Start ${plan.freeTrial?.durationLength ?? TRIAL_DURATION_DAYS}-day trial`
-									) : (
-										"Subscribe"
-									)}
+									{trialAvailable
+										? `Start ${plan.freeTrial?.durationLength ?? TRIAL_DURATION_DAYS}-day trial`
+										: "Subscribe"}
 								</Button>
 							)}
 							<p className="text-center text-[11px] text-muted-foreground">

@@ -13,6 +13,9 @@ import { ChevronExpandYIcon, LogoutIcon } from "@/components/icons"
 import { isClerkAuthEnabled } from "@/lib/services/common/auth-mode"
 import { clearSelfHostedSessionToken } from "@/lib/services/common/self-hosted-auth"
 import { ClerkOrgSwitcherMenu, OrgAvatar } from "@/components/dashboard/org-switcher-menu"
+import { UserAvatar } from "@/components/dashboard/user-avatar"
+
+const AVATAR_CLASS = "size-5 rounded-md text-[10px]"
 
 export function OnboardingOrgSwitcher() {
 	if (!isClerkAuthEnabled) return null
@@ -63,7 +66,12 @@ function ClerkUserMenu() {
 			<DropdownMenuTrigger
 				render={
 					<Button variant="outline" size="sm" className="pl-1 pr-2" aria-label="Account menu">
-						<UserAvatar imageUrl={imageUrl} initial={initial} name={name} />
+						<UserAvatar
+							imageUrl={imageUrl}
+							initials={initial}
+							name={name}
+							className={AVATAR_CLASS}
+						/>
 						<span className="sr-only">Account menu</span>
 					</Button>
 				}
@@ -72,7 +80,12 @@ function ClerkUserMenu() {
 				<DropdownMenuGroup>
 					<DropdownMenuLabel>
 						<div className="flex items-center gap-2 py-1 text-left text-sm">
-							<UserAvatar imageUrl={imageUrl} initial={initial} name={name} />
+							<UserAvatar
+								imageUrl={imageUrl}
+								initials={initial}
+								name={name}
+								className={AVATAR_CLASS}
+							/>
 							<div className="grid flex-1 text-left text-sm leading-tight">
 								<span className="truncate font-medium">{name}</span>
 								{email && (
@@ -105,7 +118,7 @@ function SelfHostedUserMenu() {
 			<DropdownMenuTrigger
 				render={
 					<Button variant="outline" size="sm" className="pl-1 pr-2" aria-label="Account menu">
-						<UserAvatar initial="U" name="User" />
+						<UserAvatar initials="U" name="User" className={AVATAR_CLASS} />
 						<span className="sr-only">Account menu</span>
 					</Button>
 				}
@@ -119,15 +132,5 @@ function SelfHostedUserMenu() {
 				</DropdownMenuGroup>
 			</DropdownMenuContent>
 		</DropdownMenu>
-	)
-}
-
-function UserAvatar({ imageUrl, initial, name }: { imageUrl?: string; initial: string; name: string }) {
-	return imageUrl ? (
-		<img src={imageUrl} alt={name} className="size-5 shrink-0 rounded-md object-cover" />
-	) : (
-		<div className="flex size-5 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground text-[10px] font-semibold">
-			{initial}
-		</div>
 	)
 }

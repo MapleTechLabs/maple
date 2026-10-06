@@ -41,7 +41,7 @@ function RequirementBlock({
 			<Eyebrow variant="label">What it needs</Eyebrow>
 			<div className="flex items-start gap-2.5">
 				{ready ? (
-					<span className="bg-success flex size-4 shrink-0 items-center justify-center rounded-[3px]">
+					<span className="bg-severity-info flex size-4 shrink-0 items-center justify-center rounded-[3px]">
 						<CheckIcon size={10} className="text-background" />
 					</span>
 				) : (

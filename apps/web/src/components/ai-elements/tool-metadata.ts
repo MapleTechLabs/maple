@@ -1,3 +1,4 @@
+import { humanize } from "@/lib/humanize"
 import {
 	AlertWarningIcon,
 	BellIcon,
@@ -36,15 +37,6 @@ import type { IconComponent } from "@/components/icons"
  */
 export function normalizeToolName(toolName: string): string {
 	return toolName.replace(/^mcp__.+?__/, "")
-}
-
-/** snake_case → "Title Case" fallback for any tool we don't have an explicit label for. */
-function humanize(toolName: string): string {
-	return toolName
-		.split(/[_\s]+/)
-		.filter(Boolean)
-		.map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-		.join(" ")
 }
 
 /** Friendly label for a (possibly namespaced) tool name, with a humanized fallback. */

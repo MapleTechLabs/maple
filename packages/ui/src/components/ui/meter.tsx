@@ -1,4 +1,5 @@
 import type * as React from "react"
+import { TONE_FILL, type Tone } from "../../lib/tone"
 import { cn } from "../../lib/utils"
 
 /** Width for a fraction: clamped to 0..1, and a non-zero value is never thinner than `minVisible`%. */
@@ -15,7 +16,8 @@ export function Meter({
 	value,
 	max = 1,
 	minVisible = 1.5,
-	fillClassName = "bg-primary/60",
+	tone,
+	fillClassName,
 	className,
 	label,
 }: {
@@ -23,6 +25,8 @@ export function Meter({
 	max?: number
 	/** Smallest visible width, in percent, for any non-zero value. */
 	minVisible?: number
+	/** Fill colour from the shared tone scale; `fillClassName` still wins when both are set. */
+	tone?: Tone
 	fillClassName?: string
 	className?: string
 	/** Accessible name; the bar is decorative without one. */
@@ -41,7 +45,11 @@ export function Meter({
 			aria-hidden={label ? undefined : true}
 		>
 			<div
-				className={cn("absolute inset-y-0 left-0 rounded-[inherit] transition-[width] duration-500", fillClassName)}
+				className={cn(
+					"absolute inset-y-0 left-0 rounded-[inherit] transition-[width] duration-500",
+					tone ? TONE_FILL[tone] : "bg-primary/60",
+					fillClassName,
+				)}
 				style={{ width: `${widthPercent(fraction, minVisible)}%` }}
 			/>
 		</div>

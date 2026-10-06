@@ -3,7 +3,6 @@ import { Link } from "@tanstack/react-router"
 
 import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
 import { ToolbarSearch } from "@maple/ui/components/toolbar"
-import { ToggleGroup, ToggleGroupItem } from "@maple/ui/components/ui/toggle-group"
 import { Button } from "@maple/ui/components/ui/button"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { MultiSelectCombobox } from "@maple/ui/components/multi-select-combobox"
@@ -43,6 +42,7 @@ import { DASHBOARD_SORT_OPTIONS, type DashboardSortOption } from "@/atoms/dashbo
 import type { Dashboard } from "@/components/dashboard-builder/types"
 import { TagEditorDialog } from "@/components/dashboard-builder/tag-editor"
 import { DocsLink } from "@/components/common/docs-link"
+import { SegmentedSelect, type SegmentedOption } from "@/components/common/segmented-select"
 import { ListSectionHeader } from "@/components/dashboard-builder/list-section-header"
 import {
 	collectTags,
@@ -63,6 +63,11 @@ const SORT_LABELS: Record<DashboardSortOption, string> = {
 } satisfies Record<DashboardSortOption, string>
 
 export type DashboardScope = "all" | "favorites"
+
+const SCOPE_OPTIONS: ReadonlyArray<SegmentedOption<DashboardScope>> = [
+	{ value: "all", label: "All" },
+	{ value: "favorites", label: "Favorites" },
+]
 
 /** The glyph stands for what the dashboard reads, so the lane carries meaning. */
 function dashboardGlyph(dashboard: Dashboard) {
@@ -153,7 +158,12 @@ function DashboardRow({
 				    breakdown and the tag chips both lived here and were cut — they
 				    made the row crowded without changing any decision. */}
 				<span title={reads.full} className="hidden w-40 shrink-0 flex-col items-end sm:flex">
-					<span className={cn("font-mono text-[11px]", empty ? "text-warning" : "text-foreground")}>
+					<span
+						className={cn(
+							"font-mono text-[11px]",
+							empty ? "text-severity-warn" : "text-foreground",
+						)}
+					>
 						{empty ? "no widgets" : widgetCountLabel(dashboard)}
 					</span>
 					<span className="text-muted-foreground truncate font-mono text-[10px]">
@@ -362,20 +372,14 @@ export function DashboardList({
 					placeholder="Search dashboards"
 					className="min-w-0 grow sm:max-w-70"
 				/>
-				<ToggleGroup
-					value={[scope]}
-					onValueChange={(values) => {
-						const next = values[0]
-						if (next) onScopeChange(next as DashboardScope)
-					}}
-					variant="outline"
+				<SegmentedSelect<DashboardScope>
+					options={SCOPE_OPTIONS}
+					value={scope}
+					onChange={onScopeChange}
 					size="sm"
 					aria-label="Filter dashboards by favorite"
 					className="shrink-0"
-				>
-					<ToggleGroupItem value="all">All</ToggleGroupItem>
-					<ToggleGroupItem value="favorites">Favorites</ToggleGroupItem>
-				</ToggleGroup>
+				/>
 
 				<TagFilterMenu allTags={allTags} selected={tags} onChange={onTagsChange} />
 				<SortMenu sort={sort} onSortChange={onSortChange} />
@@ -513,8 +517,8 @@ export function DashboardList({
 				title={<>Delete “{pendingDelete?.name}”?</>}
 				description={
 					<>
-						This dashboard belongs to the whole org: deleting it removes it for everyone, not
-						just you. It can’t be undone. Export the JSON first if you might want it back.
+						This dashboard belongs to the whole org: deleting it removes it for everyone, not just
+						you. It can’t be undone. Export the JSON first if you might want it back.
 					</>
 				}
 				confirmLabel="Delete for everyone"
@@ -523,7 +527,6 @@ export function DashboardList({
 					setPendingDelete(null)
 				}}
 			/>
-
 		</div>
 	)
 }

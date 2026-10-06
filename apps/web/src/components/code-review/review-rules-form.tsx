@@ -10,13 +10,14 @@ import { Button } from "@maple/ui/components/ui/button"
 import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import { Checkbox } from "@maple/ui/components/ui/checkbox"
 import { Input } from "@maple/ui/components/ui/input"
-import { Label } from "@maple/ui/components/ui/label"
+import { Field, FieldDescription, FieldLabel } from "@maple/ui/components/ui/field"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
 import { SettingRow } from "@maple/ui/components/ui/setting-row"
 import { Switch } from "@maple/ui/components/ui/switch"
 import { Textarea } from "@maple/ui/components/ui/textarea"
 
 import { useIsOrgAdmin } from "@/hooks/use-is-org-admin"
+import { useAsyncAction } from "@/hooks/use-mutation-action"
 
 import { CATEGORY_LABELS } from "./code-review-format"
 
@@ -188,7 +189,6 @@ export function ReviewRulesForm({
 	const isAdmin = useIsOrgAdmin()
 	const [state, setState] = useState(() => stateFromConfig(mode, config))
 	const [saved, setSaved] = useState(() => stateFromConfig(mode, config))
-	const [saving, setSaving] = useState(false)
 	const [error, setError] = useState<string | null>(null)
 	// What was last sent, so a refetch landing after the save keeps any edit made since.
 	const [submitted, setSubmitted] = useState<FormState | null>(null)
@@ -211,14 +211,12 @@ export function ReviewRulesForm({
 		setError(null)
 	}
 
-	async function handleSave() {
-		setSaving(true)
+	const [handleSave, saving] = useAsyncAction(async () => {
 		setSubmitted(state)
 		setError(null)
 		const failure = await onSave(configFromState(mode, state))
-		setSaving(false)
 		if (failure !== null) setError(failure)
-	}
+	})
 
 	const inheritedSeverity = SEVERITY_LABELS[parent.minInlineSeverity ?? BUILT_IN.minInlineSeverity]
 	const inheritedFeedback = FEEDBACK_LABELS[parent.feedbackScope ?? BUILT_IN.feedbackScope]
@@ -244,10 +242,10 @@ export function ReviewRulesForm({
 	// Frozen while saving: a refetch after the save would replace any edit made in the meantime.
 	return (
 		<fieldset disabled={saving} className="m-0 flex min-w-0 flex-col gap-6 border-0 p-0">
-			<div className="flex flex-col gap-1.5">
-				<Label htmlFor={`${idPrefix}-instructions`}>
+			<Field className="items-stretch">
+				<FieldLabel htmlFor={`${idPrefix}-instructions`}>
 					{repository ? "Additional instructions" : "Instructions"}
-				</Label>
+				</FieldLabel>
 				<Textarea
 					id={`${idPrefix}-instructions`}
 					size="sm"
@@ -261,16 +259,16 @@ export function ReviewRulesForm({
 					controlClassName="min-h-24 max-h-64"
 					onChange={(event) => update({ instructions: event.target.value })}
 				/>
-				<p className="text-xs text-muted-foreground">
+				<FieldDescription>
 					Read alongside each repository&apos;s own CLAUDE.md, AGENTS.md and .maple/review.md.{" "}
 					{state.instructions.length}/{INSTRUCTIONS_MAX}
-				</p>
-			</div>
+				</FieldDescription>
+			</Field>
 
-			<div className="flex flex-col gap-1.5">
-				<Label htmlFor={`${idPrefix}-ignore`}>
+			<Field className="items-stretch">
+				<FieldLabel htmlFor={`${idPrefix}-ignore`}>
 					{repository ? "Additional ignored paths" : "Ignored paths"}
-				</Label>
+				</FieldLabel>
 				<Textarea
 					id={`${idPrefix}-ignore`}
 					size="sm"
@@ -279,13 +277,13 @@ export function ReviewRulesForm({
 					controlClassName="max-h-40 font-mono"
 					onChange={(event) => update({ ignorePaths: event.target.value })}
 				/>
-				<p className="text-xs text-muted-foreground">
+				<FieldDescription>
 					One per line. The review never reads files that match.
 					{repository && parent.ignorePaths && parent.ignorePaths.length > 0
 						? ` The organization already ignores ${parent.ignorePaths.length}.`
 						: null}
-				</p>
-			</div>
+				</FieldDescription>
+			</Field>
 
 			<fieldset className="flex flex-col gap-2">
 				<legend className="mb-2 flex w-full items-center justify-between gap-3 text-sm font-medium">
@@ -330,8 +328,8 @@ export function ReviewRulesForm({
 			</fieldset>
 
 			<div className="grid gap-6 sm:grid-cols-2">
-				<div className="flex flex-col gap-1.5">
-					<Label htmlFor={`${idPrefix}-severity`}>Inline comments</Label>
+				<Field className="items-stretch">
+					<FieldLabel htmlFor={`${idPrefix}-severity`}>Inline comments</FieldLabel>
 					<Select
 						items={severityItems}
 						value={state.minInlineSeverity}
@@ -350,13 +348,11 @@ export function ReviewRulesForm({
 							))}
 						</SelectContent>
 					</Select>
-					<p className="text-xs text-muted-foreground">
-						The summary comment lists every issue either way.
-					</p>
-				</div>
+					<FieldDescription>The summary comment lists every issue either way.</FieldDescription>
+				</Field>
 
-				<div className="flex flex-col gap-1.5">
-					<Label htmlFor={`${idPrefix}-feedback`}>Learn from feedback</Label>
+				<Field className="items-stretch">
+					<FieldLabel htmlFor={`${idPrefix}-feedback`}>Learn from feedback</FieldLabel>
 					<Select
 						items={feedbackItems}
 						value={state.feedbackScope}
@@ -375,14 +371,14 @@ export function ReviewRulesForm({
 							))}
 						</SelectContent>
 					</Select>
-					<p className="text-xs text-muted-foreground">
+					<FieldDescription>
 						Skips issues like ones your team downvoted or dismissed. Security and critical issues
 						are always posted.
-					</p>
-				</div>
+					</FieldDescription>
+				</Field>
 
-				<div className="flex flex-col gap-1.5">
-					<Label htmlFor={`${idPrefix}-limit`}>Daily limit per repository</Label>
+				<Field className="items-stretch">
+					<FieldLabel htmlFor={`${idPrefix}-limit`}>Daily limit per repository</FieldLabel>
 					<Input
 						id={`${idPrefix}-limit`}
 						type="number"
@@ -394,13 +390,11 @@ export function ReviewRulesForm({
 						value={state.dailyLimit}
 						onChange={(event) => update({ dailyLimit: event.target.value })}
 					/>
-					<p className="text-xs text-muted-foreground">
-						Reviews a repository may start per UTC day.
-					</p>
-				</div>
+					<FieldDescription>Reviews a repository may start per UTC day.</FieldDescription>
+				</Field>
 
-				<div className="flex flex-col gap-1.5">
-					<Label htmlFor={`${idPrefix}-per-pr`}>Reviews per pull request</Label>
+				<Field className="items-stretch">
+					<FieldLabel htmlFor={`${idPrefix}-per-pr`}>Reviews per pull request</FieldLabel>
 					<Input
 						id={`${idPrefix}-per-pr`}
 						type="number"
@@ -412,16 +406,16 @@ export function ReviewRulesForm({
 						value={state.automaticReviewLimit}
 						onChange={(event) => update({ automaticReviewLimit: event.target.value })}
 					/>
-					<p className="text-xs text-muted-foreground">
+					<FieldDescription>
 						After this many, pushes stop starting reviews. Mention the reviewer with{" "}
 						<InlineCode>review</InlineCode> to run one anyway.
-					</p>
-				</div>
+					</FieldDescription>
+				</Field>
 			</div>
 
 			{repository ? (
-				<div className="flex flex-col gap-1.5">
-					<Label htmlFor={`${idPrefix}-drafts`}>Draft pull requests</Label>
+				<Field className="items-stretch">
+					<FieldLabel htmlFor={`${idPrefix}-drafts`}>Draft pull requests</FieldLabel>
 					<Select
 						items={draftItems}
 						value={state.reviewDrafts}
@@ -441,7 +435,7 @@ export function ReviewRulesForm({
 							))}
 						</SelectContent>
 					</Select>
-				</div>
+				</Field>
 			) : (
 				<SettingRow
 					label="Review drafts"
@@ -481,9 +475,9 @@ export function ReviewRulesForm({
 					Reset
 				</Button>
 				<Button
-					onClick={handleSave}
+					onClick={() => void handleSave()}
 					loading={saving}
-					disabled={!isAdmin || !dirty || problem !== null || saving}
+					disabled={!isAdmin || !dirty || problem !== null}
 				>
 					Save
 				</Button>

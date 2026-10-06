@@ -45,7 +45,7 @@ export function SessionHeader({ sessionId, summary }: { sessionId: string; summa
 					aria-hidden
 				/>
 				<DashboardLayout.Title title={heading}>{heading}</DashboardLayout.Title>
-				{summary.failed && <Badge variant="error">Failed</Badge>}
+				{summary.failed && <Badge variant="crit">Failed</Badge>}
 			</div>
 
 			<dl className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-xs">
@@ -63,7 +63,12 @@ export function SessionHeader({ sessionId, summary }: { sessionId: string; summa
 						label={traceId === undefined ? "Session ID" : "Trace ID"}
 						className="inline-flex min-w-0 max-w-full items-center gap-1 font-mono"
 					>
-						<span className="min-w-0 truncate">{shortId(traceId ?? sessionId, "generic", { length: ID_PREFIX_LENGTH, ellipsis: true })}</span>
+						<span className="min-w-0 truncate">
+							{shortId(traceId ?? sessionId, "generic", {
+								length: ID_PREFIX_LENGTH,
+								ellipsis: true,
+							})}
+						</span>
 						<CopyIcon size={11} className="shrink-0 text-muted-foreground" aria-hidden />
 					</CopyableValue>
 				</Fact>

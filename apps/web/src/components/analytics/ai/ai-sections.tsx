@@ -9,7 +9,7 @@ import {
 	DialogPopup,
 	DialogTitle,
 } from "@maple/ui/components/ui/dialog"
-import { formatNumber, formatPercent } from "@maple/ui/lib/format"
+import { formatNumber, formatPercent, pluralize } from "@maple/ui/lib/format"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import type { AiContentFormat, AiCrawlPurpose, AiProduct } from "@maple/domain/ai-traffic"
 
@@ -36,8 +36,9 @@ import {
 	type AiReferralSummary,
 } from "./ai-traffic-model"
 
+/** Compact count plus noun ("1.2K pages"); `countLabel` would print the full number. */
 const plural = (count: number, one: string, many: string) =>
-	`${formatNumber(count)} ${count === 1 ? one : many}`
+	`${formatNumber(count)} ${pluralize(count, one, many)}`
 
 /** Where a panel's table is drawn: capped inside the card, taller in the expand dialog. */
 interface AiTableSurface {
@@ -73,7 +74,11 @@ export function AiPanel({
 			<PanelHeader
 				divided={false}
 				className="items-start pt-3 pb-2.5"
-				action={aside ? <div className="shrink-0 text-[11px] text-muted-foreground">{aside}</div> : undefined}
+				action={
+					aside ? (
+						<div className="shrink-0 text-[11px] text-muted-foreground">{aside}</div>
+					) : undefined
+				}
 			>
 				<div className="min-w-0">
 					<PanelTitle>{title}</PanelTitle>
@@ -290,7 +295,7 @@ function ShareChange({ share, points }: { share: number; points: number | null }
 	return (
 		<span
 			title={`${formatPercent(before)} of AI visits in the previous period, ${formatPercent(share)} now`}
-			className={points > 0 ? "text-[var(--severity-info)]" : "text-[var(--severity-error)]"}
+			className={points > 0 ? "text-severity-info" : "text-severity-error"}
 		>
 			<span aria-hidden>{points > 0 ? "↑" : "↓"}</span> from {formatPercent(before)}
 		</span>

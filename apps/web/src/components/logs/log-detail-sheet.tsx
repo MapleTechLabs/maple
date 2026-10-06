@@ -9,7 +9,7 @@ import { getActiveInfraCorrelations } from "@/components/infra/infra-correlation
 import { InfraCorrelationPanel, infraCorrelationWindow } from "@/components/infra/infra-correlation-panel"
 import { LogHeroHeader } from "./log-hero-header"
 import { LogMetaStrip } from "./log-meta-strip"
-import { LogErrorBanner } from "./log-error-banner"
+import { LogErrorBanner } from "@maple/ui/components/logs/log-error-banner"
 import { LogTraceTimeline } from "./log-trace-timeline"
 import { LogAttributesPanel } from "./log-attributes-panel"
 import { LogRawPanel } from "./log-raw-panel"

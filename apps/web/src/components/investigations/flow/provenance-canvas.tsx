@@ -138,9 +138,7 @@ function Caption({ graph }: { graph: ProvenanceGraph }) {
 			</span>
 			{graph.caption ? (
 				<span className="flex shrink-0 items-center gap-1.5 font-mono text-xs text-muted-foreground tabular-nums">
-					{running ? (
-						<StatusDot tone="live" pulse />
-					) : null}
+					{running ? <StatusDot tone="live" /> : null}
 					{graph.caption}
 					{running ? (
 						<span className="text-foreground">{` · ${running.value}${running.unit}`}</span>

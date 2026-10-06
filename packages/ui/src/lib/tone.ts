@@ -42,11 +42,11 @@ export const TONE_BORDER: Record<Tone, string> = {
 
 /** Raw CSS colour for SVG fills and inline styles. */
 export const TONE_COLOR: Record<Tone, string> = {
-	crit: "var(--severity-error)",
-	warn: "var(--severity-warn)",
-	ok: "var(--severity-info)",
-	info: "var(--severity-info)",
-	neutral: "var(--muted-foreground)",
+	crit: "var(--color-severity-error)",
+	warn: "var(--color-severity-warn)",
+	ok: "var(--color-severity-info)",
+	info: "var(--color-severity-info)",
+	neutral: "var(--color-muted-foreground)",
 } satisfies Record<Tone, string>
 
 /** Maps any severity-ish word (log levels, alert severities, statuses) onto a tone. */

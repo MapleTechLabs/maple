@@ -1,6 +1,5 @@
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
-import { displayError } from "@/lib/error-messages"
 import { Result, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { Exit, Schema } from "effect"
 import { Fragment, useCallback, useMemo, useRef, useState } from "react"
@@ -23,7 +22,10 @@ import { SIGNAL_SOURCE_LABEL, type SignalSource } from "@/lib/alerts/chart-serie
 import { AlertStatusBadge } from "@/components/alerts/alert-status-badge"
 import { AlertSeverityBadge } from "@/components/alerts/alert-severity-badge"
 import { AlertStatStrip } from "@/components/alerts/alert-stat-card"
-import { AlertSegmentedSelect } from "@/components/alerts/alert-segmented-select"
+import { SegmentedSelect } from "@/components/common/segmented-select"
+import { ErrorState } from "@/components/common/error-state"
+import { ResultView } from "@/components/common/result-view"
+import { ResourceNotFound } from "@/components/common/resource-not-found"
 import {
 	signalLabels,
 	comparatorLabels,
@@ -32,10 +34,10 @@ import {
 	formatAlertDateTimeFull,
 	formatAlertDuration,
 	computeIncidentStats,
-	getExitErrorMessage,
 	v2CheckToDocument,
 	v2DeliveryToDocument,
 } from "@/lib/alerts/form-utils"
+import { getExitErrorMessage } from "@/lib/error-toast"
 import { RuleDiagnosisPanel } from "@/components/alerts/rule-detail/rule-diagnosis-panel"
 import { useAlertRuleStates } from "@/hooks/use-alert-rule-states"
 import {
@@ -47,13 +49,7 @@ import {
 	type AlertRuleDocument,
 } from "@maple/domain/http"
 import { useAlertDestinationsList, useAlertIncidentsList, useAlertRulesList } from "@/hooks/use-alerts-list"
-import {
-	CheckIcon,
-	PencilIcon,
-	DotsVerticalIcon,
-	CircleWarningIcon,
-	ChatBubbleSparkleIcon,
-} from "@/components/icons"
+import { CheckIcon, PencilIcon, DotsVerticalIcon, ChatBubbleSparkleIcon } from "@/components/icons"
 import { cn } from "@maple/ui/lib/utils"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
@@ -489,27 +485,12 @@ function RuleDetailContent() {
 				<DashboardLayout.Body>
 					<DashboardLayout.Content>
 						<DashboardLayout.Scroll>
-							<Empty className="py-12">
-								<EmptyHeader>
-									<EmptyMedia variant="icon">
-										<CircleWarningIcon size={18} />
-									</EmptyMedia>
-									<EmptyTitle>Failed to load alert rule</EmptyTitle>
-									<EmptyDescription>
-										{Result.builder(rulesResult)
-											.onError((error) => displayError(error).message)
-											.orElse(() => undefined) ?? "Try refreshing or check API logs."}
-									</EmptyDescription>
-								</EmptyHeader>
-								<div className="flex items-center gap-2">
-									<Button variant="outline" size="sm" onClick={() => refreshRules()}>
-										Retry
-									</Button>
-									<Button variant="outline" size="sm" render={<Link to="/alerts" />}>
-										Back to rules
-									</Button>
-								</div>
-							</Empty>
+							<ErrorState
+								error={rulesResult.cause}
+								title="Failed to load alert rule"
+								onRetry={() => refreshRules()}
+								className="m-6"
+							/>
 						</DashboardLayout.Scroll>
 					</DashboardLayout.Content>
 				</DashboardLayout.Body>
@@ -526,20 +507,12 @@ function RuleDetailContent() {
 				<DashboardLayout.Body>
 					<DashboardLayout.Content>
 						<DashboardLayout.Scroll>
-							<Empty className="py-12">
-								<EmptyHeader>
-									<EmptyMedia variant="icon">
-										<CircleWarningIcon size={18} />
-									</EmptyMedia>
-									<EmptyTitle>Rule not found</EmptyTitle>
-									<EmptyDescription>
-										This alert rule could not be found. It may have been deleted.
-									</EmptyDescription>
-								</EmptyHeader>
-								<Button variant="outline" size="sm" render={<Link to="/alerts" />}>
-									Back to rules
-								</Button>
-							</Empty>
+							<ResourceNotFound
+								title="Rule not found"
+								description="This alert rule could not be found. It may have been deleted."
+								backLink={<Link to="/alerts" />}
+								backLabel="Back to rules"
+							/>
 						</DashboardLayout.Scroll>
 					</DashboardLayout.Content>
 				</DashboardLayout.Body>
@@ -660,7 +633,7 @@ function RuleDetailContent() {
 												{SIGNAL_SOURCE_DESCRIPTION[signalSource]}
 											</p>
 										</div>
-										<AlertSegmentedSelect<SignalSource>
+										<SegmentedSelect<SignalSource>
 											options={[
 												{
 													value: "preview",
@@ -889,24 +862,11 @@ function RuleDetailContent() {
 									.onError((error) => (
 										<div className="space-y-4">
 											<h2 className="text-lg font-semibold">Checks</h2>
-											<Empty className="py-12">
-												<EmptyHeader>
-													<EmptyMedia variant="icon">
-														<CircleWarningIcon size={18} />
-													</EmptyMedia>
-													<EmptyTitle>Failed to load checks</EmptyTitle>
-													<EmptyDescription>
-														{displayError(error).message}
-													</EmptyDescription>
-												</EmptyHeader>
-												<Button
-													variant="outline"
-													size="sm"
-													onClick={() => refreshChecks()}
-												>
-													Retry
-												</Button>
-											</Empty>
+											<ErrorState
+												error={error}
+												title="Failed to load checks"
+												onRetry={() => refreshChecks()}
+											/>
 										</div>
 									))
 									.orElse(() => (
@@ -930,33 +890,19 @@ function RuleDetailContent() {
 							</div>
 						)}
 
-						{activeTab === "history" &&
-							Result.builder(incidentsResult)
-								.onInitial(() => (
+						{activeTab === "history" && (
+							<ResultView
+								result={incidentsResult}
+								loading={
 									<div className="space-y-4">
 										<Skeleton className="h-24 w-full" />
 										<Skeleton className="h-64 w-full" />
 									</div>
-								))
-								.onError((error) => (
-									<Empty className="py-12">
-										<EmptyHeader>
-											<EmptyMedia variant="icon">
-												<CircleWarningIcon size={18} />
-											</EmptyMedia>
-											<EmptyTitle>Failed to load incidents</EmptyTitle>
-											<EmptyDescription>{displayError(error).message}</EmptyDescription>
-										</EmptyHeader>
-										<Button
-											variant="outline"
-											size="sm"
-											onClick={() => refreshIncidents()}
-										>
-											Retry
-										</Button>
-									</Empty>
-								))
-								.onSuccess(() => (
+								}
+								errorTitle="Failed to load incidents"
+								onRetry={() => refreshIncidents()}
+							>
+								{() => (
 									<div className="space-y-6">
 										<div className="flex items-center justify-between">
 											<div>
@@ -965,7 +911,7 @@ function RuleDetailContent() {
 													{stats.totalTriggered} total triggers
 												</p>
 											</div>
-											<AlertSegmentedSelect<"all" | "open" | "resolved">
+											<SegmentedSelect<"all" | "open" | "resolved">
 												options={[
 													{ value: "all", label: "All" },
 													{ value: "open", label: "Fired" },
@@ -1007,8 +953,8 @@ function RuleDetailContent() {
 																	className="h-2 flex-1 bg-muted"
 																	fillClassName={
 																		count === maxContributorCount
-																			? "bg-destructive"
-																			: "bg-amber-500"
+																			? "bg-severity-error"
+																			: "bg-severity-warn"
 																	}
 																/>
 																<span className="text-xs text-muted-foreground tabular-nums shrink-0">
@@ -1122,7 +1068,7 @@ function RuleDetailContent() {
 																		className={cn(
 																			"text-xs tabular-nums",
 																			isOpen &&
-																				"text-destructive font-medium",
+																				"text-severity-error font-medium",
 																		)}
 																	>
 																		{formatAlertDuration(
@@ -1198,8 +1144,9 @@ function RuleDetailContent() {
 											</Table>
 										)}
 									</div>
-								))
-								.render()}
+								)}
+							</ResultView>
+						)}
 					</DashboardLayout.Scroll>
 				</DashboardLayout.Content>
 			</DashboardLayout.Body>
@@ -1235,7 +1182,7 @@ function CheckDelta({
 	if (!Number.isFinite(delta) || delta === 0) return null
 	const sign = delta > 0 ? "+" : "−"
 	return (
-		<Badge variant={breached ? "error" : "muted"} size="xs" mono>
+		<Badge variant={breached ? "crit" : "muted"} size="xs" mono>
 			{sign}
 			{formatSignalValue(signalType, Math.abs(delta))}
 		</Badge>
@@ -1422,11 +1369,11 @@ function ChecksPanel({
 					{
 						label: "Breached",
 						value: totals.breached,
-						tone: totals.breached > 0 ? "critical" : "default",
+						tone: totals.breached > 0 ? "crit" : undefined,
 					},
-					{ label: "Healthy", value: totals.healthy, tone: "emerald" },
+					{ label: "Healthy", value: totals.healthy, tone: "ok" },
 					...(totals.errored > 0
-						? [{ label: "Failed", value: totals.errored, tone: "critical" as const }]
+						? [{ label: "Failed", value: totals.errored, tone: "crit" as const }]
 						: []),
 					{ label: "Transitions", value: totals.transitions },
 				]}
@@ -1463,7 +1410,7 @@ function ChecksPanel({
 									: `All ${totals.total} evaluation${totals.total === 1 ? "" : "s"} in this window.`}
 						</p>
 					</div>
-					<AlertSegmentedSelect<CheckStatusFilter>
+					<SegmentedSelect<CheckStatusFilter>
 						options={[
 							{ value: "all", label: "All" },
 							{ value: "breached", label: "Breached" },
@@ -1499,9 +1446,9 @@ function ChecksPanel({
 										: "pending"
 							const transitionTone =
 								check.incidentTransition === "opened"
-									? "text-destructive"
+									? "text-severity-error"
 									: check.incidentTransition === "resolved"
-										? "text-emerald-500"
+										? "text-severity-info"
 										: check.incidentTransition === "continued"
 											? "text-muted-foreground"
 											: ""
@@ -1520,8 +1467,8 @@ function ChecksPanel({
 									)}
 									<TableRow
 										className={cn(
-											check.status === "breached" && "bg-destructive/[0.04]",
-											check.status === "error" && "bg-warning/[0.05]",
+											check.status === "breached" && "bg-severity-error/[0.04]",
+											check.status === "error" && "bg-severity-warn/[0.05]",
 										)}
 									>
 										<TableCell
@@ -1562,7 +1509,8 @@ function ChecksPanel({
 													<span
 														className={cn(
 															"font-mono font-medium tabular-nums",
-															check.status === "breached" && "text-destructive",
+															check.status === "breached" &&
+																"text-severity-error",
 														)}
 													>
 														{formatSignalValue(

@@ -124,7 +124,7 @@ function SubscriptionStrip({
 						className="capitalize"
 						trailing={
 							isLegacy ? (
-								<Badge size="sm" variant="warning">
+								<Badge size="sm" variant="warn">
 									Legacy
 								</Badge>
 							) : undefined

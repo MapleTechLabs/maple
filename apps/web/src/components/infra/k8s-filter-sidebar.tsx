@@ -1,4 +1,5 @@
-import { Result } from "@/lib/effect-atom"
+import type { Result } from "@/lib/effect-atom"
+import { ResultView } from "@/components/common/result-view"
 
 import { FilterSection, SearchableFilterSection } from "@/components/filters/filter-section"
 import {
@@ -68,114 +69,118 @@ export function PodsFilterSidebarView({
 		(filters.excludedEnvironments?.length ?? 0) > 0 ||
 		(filters.excludedComputeTypes?.length ?? 0) > 0
 
-	return Result.builder(facetsResult)
-		.onInitial(() => <FilterSidebarLoading sectionCount={6} />)
-		.onError((error) => <FilterSidebarError error={error} />)
-		.onSuccess((facetsResponse, result) => {
-			const f = facetsResponse.data
+	return (
+		<ResultView
+			result={facetsResult}
+			loading={<FilterSidebarLoading sectionCount={6} />}
+			error={(error) => <FilterSidebarError error={error} />}
+		>
+			{(facetsResponse, { waiting }) => {
+				const f = facetsResponse.data
 
-			return (
-				<FilterSidebarFrame waiting={result.waiting}>
-					<FilterSidebarHeader canClear={hasActiveFilters} onClear={onClearFilters} />
-					<FilterSidebarBody>
-						{/* Namespace leads: it is the cut people actually make. The pod
-						    name section sits second and closed, since the toolbar search
-						    already covers the common case and this one exists for exclusions. */}
-						<FilterSection
-							title="Namespace"
-							options={f.namespaces}
-							selected={filters.namespaces ?? []}
-							onChange={(val) => onFilterChange("namespaces", val)}
-							excluded={filters.excludedNamespaces ?? []}
-							onExcludedChange={(val) => onFilterChange("excludedNamespaces", val)}
-							defaultOpen
-						/>
-						<SearchableFilterSection
-							title="Pod"
-							options={f.pods}
-							selected={filters.podNames ?? []}
-							onChange={(val) => onFilterChange("podNames", val)}
-							excluded={filters.excludedPodNames ?? []}
-							onExcludedChange={(val) => onFilterChange("excludedPodNames", val)}
-							defaultOpen={false}
-						/>
-						<SearchableFilterSection
-							title="Node"
-							options={f.nodes}
-							selected={filters.nodeNames ?? []}
-							onChange={(val) => onFilterChange("nodeNames", val)}
-							excluded={filters.excludedNodeNames ?? []}
-							onExcludedChange={(val) => onFilterChange("excludedNodeNames", val)}
-							defaultOpen={false}
-						/>
-						<FilterSection
-							title="Cluster"
-							options={f.clusters}
-							selected={filters.clusters ?? []}
-							onChange={(val) => onFilterChange("clusters", val)}
-							excluded={filters.excludedClusters ?? []}
-							onExcludedChange={(val) => onFilterChange("excludedClusters", val)}
-							defaultOpen={false}
-						/>
-						<SearchableFilterSection
-							title="Deployment"
-							options={f.deployments}
-							selected={filters.deployments ?? []}
-							onChange={(val) => onFilterChange("deployments", val)}
-							excluded={filters.excludedDeployments ?? []}
-							onExcludedChange={(val) => onFilterChange("excludedDeployments", val)}
-							defaultOpen={false}
-						/>
-						<SearchableFilterSection
-							title="StatefulSet"
-							options={f.statefulsets}
-							selected={filters.statefulsets ?? []}
-							onChange={(val) => onFilterChange("statefulsets", val)}
-							excluded={filters.excludedStatefulsets ?? []}
-							onExcludedChange={(val) => onFilterChange("excludedStatefulsets", val)}
-							defaultOpen={false}
-						/>
-						<SearchableFilterSection
-							title="DaemonSet"
-							options={f.daemonsets}
-							selected={filters.daemonsets ?? []}
-							onChange={(val) => onFilterChange("daemonsets", val)}
-							excluded={filters.excludedDaemonsets ?? []}
-							onExcludedChange={(val) => onFilterChange("excludedDaemonsets", val)}
-							defaultOpen={false}
-						/>
-						<SearchableFilterSection
-							title="Job"
-							options={f.jobs}
-							selected={filters.jobs ?? []}
-							onChange={(val) => onFilterChange("jobs", val)}
-							excluded={filters.excludedJobs ?? []}
-							onExcludedChange={(val) => onFilterChange("excludedJobs", val)}
-							defaultOpen={false}
-						/>
-						<FilterSection
-							title="Environment"
-							options={f.environments}
-							selected={filters.environments ?? []}
-							onChange={(val) => onFilterChange("environments", val)}
-							excluded={filters.excludedEnvironments ?? []}
-							onExcludedChange={(val) => onFilterChange("excludedEnvironments", val)}
-							defaultOpen={false}
-						/>
-						<FilterSection
-							title="Compute Type"
-							options={f.computeTypes}
-							selected={filters.computeTypes ?? []}
-							onChange={(val) => onFilterChange("computeTypes", val)}
-							excluded={filters.excludedComputeTypes ?? []}
-							onExcludedChange={(val) => onFilterChange("excludedComputeTypes", val)}
-							defaultOpen={false}
-						/>
-					</FilterSidebarBody>
-				</FilterSidebarFrame>
-			)
-		})
-		.render()
+				return (
+					<FilterSidebarFrame waiting={waiting}>
+						<FilterSidebarHeader canClear={hasActiveFilters} onClear={onClearFilters} />
+						<FilterSidebarBody>
+							{/* Namespace leads: it is the cut people actually make. The pod
+							    name section sits second and closed, since the toolbar search
+							    already covers the common case and this one exists for exclusions. */}
+							<FilterSection
+								title="Namespace"
+								options={f.namespaces}
+								selected={filters.namespaces ?? []}
+								onChange={(val) => onFilterChange("namespaces", val)}
+								excluded={filters.excludedNamespaces ?? []}
+								onExcludedChange={(val) => onFilterChange("excludedNamespaces", val)}
+								defaultOpen
+							/>
+							<SearchableFilterSection
+								title="Pod"
+								options={f.pods}
+								selected={filters.podNames ?? []}
+								onChange={(val) => onFilterChange("podNames", val)}
+								excluded={filters.excludedPodNames ?? []}
+								onExcludedChange={(val) => onFilterChange("excludedPodNames", val)}
+								defaultOpen={false}
+							/>
+							<SearchableFilterSection
+								title="Node"
+								options={f.nodes}
+								selected={filters.nodeNames ?? []}
+								onChange={(val) => onFilterChange("nodeNames", val)}
+								excluded={filters.excludedNodeNames ?? []}
+								onExcludedChange={(val) => onFilterChange("excludedNodeNames", val)}
+								defaultOpen={false}
+							/>
+							<FilterSection
+								title="Cluster"
+								options={f.clusters}
+								selected={filters.clusters ?? []}
+								onChange={(val) => onFilterChange("clusters", val)}
+								excluded={filters.excludedClusters ?? []}
+								onExcludedChange={(val) => onFilterChange("excludedClusters", val)}
+								defaultOpen={false}
+							/>
+							<SearchableFilterSection
+								title="Deployment"
+								options={f.deployments}
+								selected={filters.deployments ?? []}
+								onChange={(val) => onFilterChange("deployments", val)}
+								excluded={filters.excludedDeployments ?? []}
+								onExcludedChange={(val) => onFilterChange("excludedDeployments", val)}
+								defaultOpen={false}
+							/>
+							<SearchableFilterSection
+								title="StatefulSet"
+								options={f.statefulsets}
+								selected={filters.statefulsets ?? []}
+								onChange={(val) => onFilterChange("statefulsets", val)}
+								excluded={filters.excludedStatefulsets ?? []}
+								onExcludedChange={(val) => onFilterChange("excludedStatefulsets", val)}
+								defaultOpen={false}
+							/>
+							<SearchableFilterSection
+								title="DaemonSet"
+								options={f.daemonsets}
+								selected={filters.daemonsets ?? []}
+								onChange={(val) => onFilterChange("daemonsets", val)}
+								excluded={filters.excludedDaemonsets ?? []}
+								onExcludedChange={(val) => onFilterChange("excludedDaemonsets", val)}
+								defaultOpen={false}
+							/>
+							<SearchableFilterSection
+								title="Job"
+								options={f.jobs}
+								selected={filters.jobs ?? []}
+								onChange={(val) => onFilterChange("jobs", val)}
+								excluded={filters.excludedJobs ?? []}
+								onExcludedChange={(val) => onFilterChange("excludedJobs", val)}
+								defaultOpen={false}
+							/>
+							<FilterSection
+								title="Environment"
+								options={f.environments}
+								selected={filters.environments ?? []}
+								onChange={(val) => onFilterChange("environments", val)}
+								excluded={filters.excludedEnvironments ?? []}
+								onExcludedChange={(val) => onFilterChange("excludedEnvironments", val)}
+								defaultOpen={false}
+							/>
+							<FilterSection
+								title="Compute Type"
+								options={f.computeTypes}
+								selected={filters.computeTypes ?? []}
+								onChange={(val) => onFilterChange("computeTypes", val)}
+								excluded={filters.excludedComputeTypes ?? []}
+								onExcludedChange={(val) => onFilterChange("excludedComputeTypes", val)}
+								defaultOpen={false}
+							/>
+						</FilterSidebarBody>
+					</FilterSidebarFrame>
+				)
+			}}
+		</ResultView>
+	)
 }
 
 export interface NodeFilters {
@@ -202,40 +207,44 @@ export function NodesFilterSidebarView({
 		(filters.clusters?.length ?? 0) > 0 ||
 		(filters.environments?.length ?? 0) > 0
 
-	return Result.builder(facetsResult)
-		.onInitial(() => <FilterSidebarLoading sectionCount={3} />)
-		.onError((error) => <FilterSidebarError error={error} />)
-		.onSuccess((facetsResponse, result) => {
-			const f = facetsResponse.data
+	return (
+		<ResultView
+			result={facetsResult}
+			loading={<FilterSidebarLoading sectionCount={3} />}
+			error={(error) => <FilterSidebarError error={error} />}
+		>
+			{(facetsResponse, { waiting }) => {
+				const f = facetsResponse.data
 
-			return (
-				<FilterSidebarFrame waiting={result.waiting}>
-					<FilterSidebarHeader canClear={hasActiveFilters} onClear={onClearFilters} />
-					<FilterSidebarBody>
-						<SearchableFilterSection
-							title="Node"
-							options={f.nodes}
-							selected={filters.nodeNames ?? []}
-							onChange={(val) => onFilterChange("nodeNames", val)}
-							defaultOpen
-						/>
-						<FilterSection
-							title="Cluster"
-							options={f.clusters}
-							selected={filters.clusters ?? []}
-							onChange={(val) => onFilterChange("clusters", val)}
-						/>
-						<FilterSection
-							title="Environment"
-							options={f.environments}
-							selected={filters.environments ?? []}
-							onChange={(val) => onFilterChange("environments", val)}
-						/>
-					</FilterSidebarBody>
-				</FilterSidebarFrame>
-			)
-		})
-		.render()
+				return (
+					<FilterSidebarFrame waiting={waiting}>
+						<FilterSidebarHeader canClear={hasActiveFilters} onClear={onClearFilters} />
+						<FilterSidebarBody>
+							<SearchableFilterSection
+								title="Node"
+								options={f.nodes}
+								selected={filters.nodeNames ?? []}
+								onChange={(val) => onFilterChange("nodeNames", val)}
+								defaultOpen
+							/>
+							<FilterSection
+								title="Cluster"
+								options={f.clusters}
+								selected={filters.clusters ?? []}
+								onChange={(val) => onFilterChange("clusters", val)}
+							/>
+							<FilterSection
+								title="Environment"
+								options={f.environments}
+								selected={filters.environments ?? []}
+								onChange={(val) => onFilterChange("environments", val)}
+							/>
+						</FilterSidebarBody>
+					</FilterSidebarFrame>
+				)
+			}}
+		</ResultView>
+	)
 }
 
 // Workloads
@@ -270,53 +279,57 @@ export function WorkloadsFilterSidebarView({
 		(filters.environments?.length ?? 0) > 0 ||
 		(filters.computeTypes?.length ?? 0) > 0
 
-	return Result.builder(facetsResult)
-		.onInitial(() => <FilterSidebarLoading sectionCount={4} />)
-		.onError((error) => <FilterSidebarError error={error} />)
-		.onSuccess((facetsResponse, result) => {
-			const f = facetsResponse.data
+	return (
+		<ResultView
+			result={facetsResult}
+			loading={<FilterSidebarLoading sectionCount={4} />}
+			error={(error) => <FilterSidebarError error={error} />}
+		>
+			{(facetsResponse, { waiting }) => {
+				const f = facetsResponse.data
 
-			return (
-				<FilterSidebarFrame waiting={result.waiting}>
-					<FilterSidebarHeader canClear={hasActiveFilters} onClear={onClearFilters} />
-					<FilterSidebarBody>
-						<SearchableFilterSection
-							title={workloadLabel}
-							options={f.workloads}
-							selected={filters.workloadNames ?? []}
-							onChange={(val) => onFilterChange("workloadNames", val)}
-							defaultOpen
-						/>
-						<FilterSection
-							title="Namespace"
-							options={f.namespaces}
-							selected={filters.namespaces ?? []}
-							onChange={(val) => onFilterChange("namespaces", val)}
-						/>
-						<FilterSection
-							title="Cluster"
-							options={f.clusters}
-							selected={filters.clusters ?? []}
-							onChange={(val) => onFilterChange("clusters", val)}
-							defaultOpen={false}
-						/>
-						<FilterSection
-							title="Environment"
-							options={f.environments}
-							selected={filters.environments ?? []}
-							onChange={(val) => onFilterChange("environments", val)}
-							defaultOpen={false}
-						/>
-						<FilterSection
-							title="Compute Type"
-							options={f.computeTypes}
-							selected={filters.computeTypes ?? []}
-							onChange={(val) => onFilterChange("computeTypes", val)}
-							defaultOpen={false}
-						/>
-					</FilterSidebarBody>
-				</FilterSidebarFrame>
-			)
-		})
-		.render()
+				return (
+					<FilterSidebarFrame waiting={waiting}>
+						<FilterSidebarHeader canClear={hasActiveFilters} onClear={onClearFilters} />
+						<FilterSidebarBody>
+							<SearchableFilterSection
+								title={workloadLabel}
+								options={f.workloads}
+								selected={filters.workloadNames ?? []}
+								onChange={(val) => onFilterChange("workloadNames", val)}
+								defaultOpen
+							/>
+							<FilterSection
+								title="Namespace"
+								options={f.namespaces}
+								selected={filters.namespaces ?? []}
+								onChange={(val) => onFilterChange("namespaces", val)}
+							/>
+							<FilterSection
+								title="Cluster"
+								options={f.clusters}
+								selected={filters.clusters ?? []}
+								onChange={(val) => onFilterChange("clusters", val)}
+								defaultOpen={false}
+							/>
+							<FilterSection
+								title="Environment"
+								options={f.environments}
+								selected={filters.environments ?? []}
+								onChange={(val) => onFilterChange("environments", val)}
+								defaultOpen={false}
+							/>
+							<FilterSection
+								title="Compute Type"
+								options={f.computeTypes}
+								selected={filters.computeTypes ?? []}
+								onChange={(val) => onFilterChange("computeTypes", val)}
+								defaultOpen={false}
+							/>
+						</FilterSidebarBody>
+					</FilterSidebarFrame>
+				)
+			}}
+		</ResultView>
+	)
 }

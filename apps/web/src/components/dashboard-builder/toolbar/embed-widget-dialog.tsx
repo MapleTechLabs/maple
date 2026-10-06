@@ -37,6 +37,7 @@ import {
 import type { DashboardVariable } from "@/components/dashboard-builder/types"
 import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
 import { displayError } from "@/lib/error-messages"
+import { useAsyncAction } from "@/hooks/use-mutation-action"
 import { REFRESH_INTERVAL_OPTIONS } from "@/lib/dashboard-controls/search-params"
 import { useDashboardVariablesOptional } from "@/components/dashboard-builder/dashboard-variables-context"
 import {
@@ -78,7 +79,6 @@ export function EmbedWidgetDialog({
 		mode: "promiseExit",
 	})
 	const [error, setError] = useState<string | null>(null)
-	const [busy, setBusy] = useState(false)
 
 	const shares: ReadonlyArray<ShareRecord> = Result.isSuccess(sharesResult) ? sharesResult.value : []
 	// A list that failed to load must not read as "this board isn't shared":
@@ -94,10 +94,9 @@ export function EmbedWidgetDialog({
 	}
 
 	/** Runs the steps in order, stopping at the first failure. */
-	const run = async (...steps: ReadonlyArray<() => Promise<Exit.Exit<unknown, unknown>>>) => {
-		setError(null)
-		setBusy(true)
-		try {
+	const [run, busy] = useAsyncAction(
+		async (...steps: ReadonlyArray<() => Promise<Exit.Exit<unknown, unknown>>>) => {
+			setError(null)
 			for (const step of steps) {
 				const result = await step()
 				if (Exit.isFailure(result)) {
@@ -106,10 +105,8 @@ export function EmbedWidgetDialog({
 				}
 			}
 			refreshShares()
-		} finally {
-			setBusy(false)
-		}
-	}
+		},
+	)
 
 	const mintChartLink = () => upsert({ ...request, payload: { mode: "public" } })
 

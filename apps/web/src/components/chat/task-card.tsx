@@ -1,15 +1,10 @@
 import { useState } from "react"
 import { cn } from "@maple/ui/lib/utils"
+import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { Alert, AlertDescription } from "@maple/ui/components/ui/alert"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
-import {
-	Sheet,
-	SheetContent,
-	SheetDescription,
-	SheetHeader,
-	SheetPanel,
-	SheetTitle,
-} from "@maple/ui/components/ui/sheet"
+import { Sheet, SheetContent, SheetPanel } from "@maple/ui/components/ui/sheet"
+import { SheetDetailHeader } from "@/components/common/sheet-detail-header"
 import { ChevronRightIcon, CircleCheckIcon, CircleWarningIcon, CircleXmarkIcon } from "@/components/icons"
 import { agentPresentation } from "@/components/ai-elements/agent-metadata"
 import { DotLoader } from "@/components/ai-elements/dot-loader"
@@ -45,7 +40,7 @@ function StatusGlyph({ status }: { status: TaskStatus }) {
 			{status === "running" ? (
 				<DotLoader />
 			) : status === "error" ? (
-				<CircleXmarkIcon className="size-3.5 text-destructive" />
+				<CircleXmarkIcon className="size-3.5 text-severity-error" />
 			) : status === "aborted" ? (
 				<CircleWarningIcon className="size-3.5 text-muted-foreground" />
 			) : (
@@ -103,9 +98,9 @@ export function TaskCard({
 					{prompt}
 				</span>
 				{status === "error" ? (
-					<span className="shrink-0 text-[11px] text-destructive">failed</span>
+					<span className={cn("shrink-0 text-[11px]", TONE_TEXT.crit)}>failed</span>
 				) : budgetExhausted === true ? (
-					<span className="shrink-0 text-[11px] text-warning">partial</span>
+					<span className={cn("shrink-0 text-[11px]", TONE_TEXT.warn)}>partial</span>
 				) : null}
 				{running ? <RunningClock /> : null}
 				<ChevronRightIcon className="size-3 shrink-0 text-muted-foreground/60" />
@@ -113,29 +108,28 @@ export function TaskCard({
 
 			<Sheet open={open} onOpenChange={setOpen}>
 				<SheetContent className="sm:max-w-xl">
-					<SheetHeader>
-						<div className="flex items-center gap-2">
-							<AgentIcon className="size-3 shrink-0 text-muted-foreground" />
-							<Eyebrow>{label} sub-agent</Eyebrow>
-							<span className="text-muted-foreground/40">·</span>
-							<Eyebrow>{running ? "running" : OUTCOME[status]}</Eyebrow>
-						</div>
-						{/* The question, unclamped — the thing the row cannot show and the reason
-						    this panel exists. */}
-						<SheetTitle className="text-base leading-snug">{prompt}</SheetTitle>
-						<SheetDescription className="sr-only">
-							What this sub-agent was asked, and what it came back with.
-						</SheetDescription>
-					</SheetHeader>
+					{/* The title is the question, unclamped: the thing the row cannot show. */}
+					<SheetDetailHeader
+						mono={false}
+						kind={
+							<span className="inline-flex items-center gap-2">
+								<AgentIcon className="size-3 shrink-0" />
+								{label} sub-agent
+								<span className="text-muted-foreground/40">·</span>
+								{running ? "running" : OUTCOME[status]}
+							</span>
+						}
+						title={prompt}
+						description="What this sub-agent was asked, and what it came back with."
+					/>
 					<SheetPanel className="flex flex-col gap-6">
 						{budgetExhausted === true ? (
-							<Alert variant="warning" size="sm">
+							<Alert variant="warn" size="sm">
 								<AlertDescription>
 									Answered from what it had: the run spent its budget before it finished
 									searching.
 								</AlertDescription>
 							</Alert>
-
 						) : null}
 
 						<section className="flex flex-col gap-2">
@@ -148,7 +142,7 @@ export function TaskCard({
 									<RunningClock />
 								</div>
 							) : errorText != null ? (
-								<pre className="max-h-60 overflow-auto whitespace-pre-wrap text-xs text-destructive/80">
+								<pre className="max-h-60 overflow-auto whitespace-pre-wrap text-xs text-severity-error/80">
 									{errorText}
 								</pre>
 							) : answer != null ? (

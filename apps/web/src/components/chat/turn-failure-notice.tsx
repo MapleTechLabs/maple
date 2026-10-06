@@ -17,7 +17,7 @@ export function ChatFailureNotice({
 	truncate?: boolean
 }) {
 	return (
-		<Alert variant="error" size="sm" className="mb-3 text-sm">
+		<Alert variant="crit" size="sm" className="mb-3 text-sm">
 			<AlertDescription className={cn("min-w-0 text-destructive", truncate && "block truncate")}>
 				{children}
 			</AlertDescription>

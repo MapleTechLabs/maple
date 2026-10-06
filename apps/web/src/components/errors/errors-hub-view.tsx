@@ -45,7 +45,7 @@ import {
 	type RowPicker,
 } from "./error-signal-row"
 import { IssuesBulkBar } from "./issues-bulk-bar"
-import { SEVERITY_FILL, SEVERITY_ORDER, SeverityDot, severityRank } from "./severity-badge"
+import { SEVERITY_FILL, SEVERITY_LABEL, SEVERITY_ORDER, SeverityDot, severityRank } from "./severity-badge"
 import { useIssueMutations } from "./use-issue-mutations"
 
 /**
@@ -124,10 +124,7 @@ const LOAD_MORE_SKELETON_ROWS = 3
 
 const SEVERITY_FILTER_LABEL: Record<SeverityFilter, string> = {
 	all: "All severities",
-	critical: "Critical",
-	high: "High",
-	medium: "Medium",
-	low: "Low",
+	...SEVERITY_LABEL,
 	unset: "Unset",
 } satisfies Record<SeverityFilter, string>
 
@@ -139,12 +136,8 @@ const SEVERITY_FILTER_LABEL: Record<SeverityFilter, string> = {
  * options rather than as a current state.
  */
 const SEVERITY_TRIGGER_LABEL: Record<SeverityFilter, string> = {
+	...SEVERITY_FILTER_LABEL,
 	all: "Severity",
-	critical: "Critical",
-	high: "High",
-	medium: "Medium",
-	low: "Low",
-	unset: "Unset",
 } satisfies Record<SeverityFilter, string>
 
 /** Base UI renders the raw value in the trigger unless it is given a renderer,

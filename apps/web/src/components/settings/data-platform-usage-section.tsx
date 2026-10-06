@@ -7,7 +7,7 @@ import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { StatRail, StatRailItem } from "@/components/common/stat-rail"
 import { getServiceUsageResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
-import type { ServiceUsageResponse } from "@/api/warehouse/service-usage"
+import { sumTotals } from "@/components/dashboard/service-usage-cards"
 
 // "Total in the DB": sum every retained usage row for the org. Fixed bounds
 // (not a rolling window) keep the atom key stable and capture all stored data.
@@ -46,18 +46,6 @@ const STATS: ReadonlyArray<{
 	},
 ]
 
-function sumTotals(response: ServiceUsageResponse) {
-	return response.data.reduce(
-		(acc, service) => ({
-			logs: acc.logs + service.totalLogs,
-			traces: acc.traces + service.totalTraces,
-			metrics: acc.metrics + service.totalMetrics,
-			dataSize: acc.dataSize + service.dataSizeBytes,
-		}),
-		{ logs: 0, traces: 0, metrics: 0, dataSize: 0 },
-	)
-}
-
 function statItem(stat: (typeof STATS)[number], value: ReactNode) {
 	const Icon = stat.icon
 	return (
@@ -94,7 +82,9 @@ export function DataPlatformUsageSection() {
 							statItem(stat, <span className="text-sm text-muted-foreground">—</span>),
 						),
 					)
-					.orElse(() => STATS.map((stat) => statItem(stat, <Skeleton className="h-[26px] w-24" />)))}
+					.orElse(() =>
+						STATS.map((stat) => statItem(stat, <Skeleton className="h-[26px] w-24" />)),
+					)}
 			</StatRail>
 		</section>
 	)

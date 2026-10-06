@@ -3,6 +3,8 @@
 // the window has no security events — most zones most of the time.
 
 import { useMemo } from "react"
+import { cn } from "@maple/ui/lib/utils"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 
 import { Result } from "@/lib/effect-atom"
 import { cloudflareZoneSecurityResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
@@ -74,7 +76,10 @@ export function CloudflareZoneSecuritySection({
 				value: bucket.events,
 			}))
 			return (
-				<div className={`space-y-4 transition-opacity ${r.waiting ? "opacity-60" : ""}`}>
+				<div
+					className={cn("space-y-4", refreshingClass(r.waiting))}
+					aria-busy={r.waiting || undefined}
+				>
 					<StackedBreakdownChart
 						title="Security events by action"
 						rows={rows}

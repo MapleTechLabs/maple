@@ -2,18 +2,16 @@
 // API, Dependencies). Extracted when the API tab became the third table with
 // the same distribution-bar treatment — a copy per tab is how the three drift.
 
+import type { ReactNode } from "react"
 import { cn } from "@maple/ui/lib/utils"
 import { TableCell, TableHead } from "@maple/ui/components/ui/table"
 import { Eyebrow, eyebrowVariants } from "@maple/ui/components/ui/eyebrow"
+import { SortableHeader } from "@/components/common/sortable-header"
+import type { SortDir } from "@/hooks/use-table-sort"
 import { ChevronDownIcon, ChevronUpIcon, ChevronExpandYIcon } from "@/components/icons"
 
-export type SortDir = "asc" | "desc"
-
-export function formatRate(value: number): string {
-	if (value >= 1000) return `${(value / 1000).toFixed(1)}k`
-	if (value >= 1) return value.toFixed(1)
-	return value.toFixed(2)
-}
+/** Shared chrome for the desktop table and the mobile list of the service detail tabs. */
+export const TABLE_CARD_CLASS = "overflow-hidden rounded-lg border bg-card"
 
 interface BarCellProps {
 	value: number
@@ -45,44 +43,50 @@ export function BarCell({ value, max, tone, children }: BarCellProps) {
 	)
 }
 
-interface SortableHeadProps {
+/** Sortable column header (right-aligned by default): the shared `SortableHeader` inside a `HeadLabel` with `aria-sort`. */
+export function SortColumnHead<K extends string>({
+	label,
+	sortKey,
+	activeKey,
+	dir,
+	onSort,
+	align = "right",
+	className,
+}: {
 	label: string
-	align?: "left" | "right"
-	active: boolean
+	sortKey: K
+	activeKey: K | null
 	dir: SortDir
-	onClick: () => void
+	onSort: (key: K) => void
+	align?: "left" | "right"
 	className?: string
-}
-
-export function SortableHead({ label, align = "left", active, dir, onClick, className }: SortableHeadProps) {
-	const Icon = active ? (dir === "desc" ? ChevronDownIcon : ChevronUpIcon) : ChevronExpandYIcon
+}) {
+	const active = activeKey === sortKey
 	return (
-		<TableHead
-			onClick={onClick}
-			className={cn(
-				eyebrowVariants(),
-				"h-8 cursor-pointer select-none transition-colors",
-				active ? "text-foreground" : "hover:text-foreground",
-				align === "right" && "text-right",
-				className,
-			)}
+		<HeadLabel
+			aria-sort={active ? (dir === "asc" ? "ascending" : "descending") : undefined}
+			className={cn(align === "right" && "text-right", className)}
 		>
-			<span className={cn("inline-flex items-center gap-1", align === "right" && "justify-end w-full")}>
-				{label}
-				<Icon size={11} className={active ? "text-foreground" : "text-muted-foreground/30"} />
-			</span>
-		</TableHead>
+			<SortableHeader
+				label={label}
+				sortKey={sortKey}
+				activeKey={activeKey}
+				dir={dir}
+				onSort={onSort}
+				className={cn(align === "right" && "w-full justify-end")}
+			/>
+		</HeadLabel>
 	)
 }
 
-/** Non-sortable column header, styled to match `SortableHead`. */
+/** Non-sortable column header, styled to match `SortColumnHead`. */
 export function HeadLabel({ className, ...props }: React.ComponentProps<"th">) {
 	return <TableHead className={cn(eyebrowVariants(), "h-8", className)} {...props} />
 }
 
 interface MobileSortBarProps<K extends string> {
 	options: ReadonlyArray<readonly [K, string]>
-	sortKey: K
+	sortKey: K | null
 	sortDir: SortDir
 	onSort: (key: K) => void
 }
@@ -136,5 +140,19 @@ export function MobileListRow({ className, ...props }: React.ComponentProps<"but
 			)}
 			{...props}
 		/>
+	)
+}
+
+/** Metric line under a mobile list row: `calls 1.2  err 0.4%  p95 120ms`. Children are `MobileStat`s. */
+export function MobileStatLine({ children }: { children: ReactNode }) {
+	return <div className="flex items-center gap-3 font-mono text-xs tabular-nums">{children}</div>
+}
+
+export function MobileStat({ label, children }: { label: string; children: ReactNode }) {
+	return (
+		<span>
+			<span className="text-muted-foreground/60">{label} </span>
+			{children}
+		</span>
 	)
 }

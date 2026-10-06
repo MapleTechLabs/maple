@@ -5,7 +5,13 @@ import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import type { ListNodesResponse } from "@maple/domain/http"
 
 import { HostStatusBadge } from "./status-badge"
-import { ColumnHead, DataTable, ROW_LINK_CLASS, useTableSort } from "@/components/common/data-table"
+import {
+	ColumnHead,
+	DataTable,
+	type SortControls,
+	ROW_LINK_CLASS,
+	useTableSort,
+} from "@/components/common/data-table"
 import { MetaLine } from "./primitives/meta-line"
 import { formatUptime } from "@maple/ui/lib/format"
 import { RelativeTime } from "@/components/common/relative-time"
@@ -20,14 +26,43 @@ interface NodeTableProps {
 	referenceTime?: string
 }
 
+/** Declared once and rendered by both the table and its skeleton so widths cannot drift. */
+function NodeColumns({ sort }: { sort?: SortControls<SortKey> }) {
+	return (
+		<>
+			<ColumnHead<SortKey> label="Node" sortKey="nodeName" {...sort} width="w-0 flex-1 min-w-[260px]" />
+			<ColumnHead<SortKey>
+				label="CPU cores"
+				sortKey="cpuUsage"
+				{...sort}
+				align="right"
+				width="w-[110px]"
+				hidden="hidden md:flex"
+			/>
+			<ColumnHead<SortKey>
+				label="Uptime"
+				sortKey="uptime"
+				{...sort}
+				align="right"
+				width="w-[100px]"
+				hidden="hidden md:flex"
+			/>
+			<ColumnHead<SortKey>
+				label="Last seen"
+				sortKey="lastSeen"
+				{...sort}
+				align="right"
+				width="w-[100px]"
+			/>
+		</>
+	)
+}
+
 export function NodeTableLoading() {
 	return (
 		<DataTable.Root ariaLabel="Nodes">
 			<DataTable.Head>
-				<ColumnHead label="Node" width="w-0 flex-1 min-w-[260px]" />
-				<ColumnHead label="CPU cores" align="right" width="w-[110px]" hidden="hidden md:flex" />
-				<ColumnHead label="Uptime" align="right" width="w-[100px]" hidden="hidden md:flex" />
-				<ColumnHead label="Last seen" align="right" width="w-[100px]" />
+				<NodeColumns />
 			</DataTable.Head>
 			<DataTable.SkeletonRows count={4}>
 				<div className="w-0 min-w-[260px] flex-1">
@@ -51,43 +86,7 @@ export function NodeTable({ nodes, waiting, referenceTime }: NodeTableProps) {
 	return (
 		<DataTable.Root ariaLabel="Nodes" waiting={waiting}>
 			<DataTable.Head>
-				<ColumnHead<SortKey>
-					label="Node"
-					sortKey="nodeName"
-					currentKey={sortKey}
-					dir={sortDir}
-					onSort={handleSort}
-					width="w-0 flex-1 min-w-[260px]"
-				/>
-				<ColumnHead<SortKey>
-					label="CPU cores"
-					sortKey="cpuUsage"
-					currentKey={sortKey}
-					dir={sortDir}
-					onSort={handleSort}
-					align="right"
-					width="w-[110px]"
-					hidden="hidden md:flex"
-				/>
-				<ColumnHead<SortKey>
-					label="Uptime"
-					sortKey="uptime"
-					currentKey={sortKey}
-					dir={sortDir}
-					onSort={handleSort}
-					align="right"
-					width="w-[100px]"
-					hidden="hidden md:flex"
-				/>
-				<ColumnHead<SortKey>
-					label="Last seen"
-					sortKey="lastSeen"
-					currentKey={sortKey}
-					dir={sortDir}
-					onSort={handleSort}
-					align="right"
-					width="w-[100px]"
-				/>
+				<NodeColumns sort={{ currentKey: sortKey, dir: sortDir, onSort: handleSort }} />
 			</DataTable.Head>
 			{sorted.length === 0 && <DataTable.Empty>No nodes match your search.</DataTable.Empty>}
 

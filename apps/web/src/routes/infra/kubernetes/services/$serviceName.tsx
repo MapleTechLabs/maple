@@ -1,4 +1,5 @@
 import { useMemo } from "react"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { Schema } from "effect"
 
@@ -355,7 +356,9 @@ function LensBody({
 			) : (
 				<PageHero
 					title={
-						evidenceMissing ? `${serviceName} — evidence incomplete.` : lensHeadline(verdict, serviceName)
+						evidenceMissing
+							? `${serviceName} — evidence incomplete.`
+							: lensHeadline(verdict, serviceName)
 					}
 					description={
 						evidenceMissing
@@ -434,7 +437,7 @@ function LensBody({
 							.render()}
 					</section>
 
-					{workload && <PodDistribution pods={pods} className={cn(waiting && "opacity-60")} />}
+					{workload && <PodDistribution pods={pods} waiting={waiting} />}
 				</>
 			)}
 		</div>
@@ -451,10 +454,10 @@ function LensBody({
  */
 function PodDistribution({
 	pods,
-	className,
+	waiting,
 }: {
 	pods: ReadonlyArray<{ nodeName: string; saturation: number }>
-	className?: string
+	waiting: boolean
 }) {
 	const byNode = useMemo(() => {
 		const map = new Map<string, { count: number; worst: number }>()
@@ -472,7 +475,7 @@ function PodDistribution({
 	if (byNode.length <= 1) return null
 
 	return (
-		<section className={cn("space-y-2.5", className)}>
+		<section className={cn("space-y-2.5", refreshingClass(waiting))} aria-busy={waiting || undefined}>
 			<h2 className="text-[13px] font-medium text-foreground">Spread across nodes</h2>
 			<div className="flex flex-wrap gap-2">
 				{byNode.map(([node, { count, worst }]) => (

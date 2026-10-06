@@ -1,4 +1,4 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@maple/ui/components/ui/card"
+import { ResourceAttributesCard } from "./primitives/resource-attributes-card"
 import { DetailRail } from "@maple/ui/components/detail-rail"
 
 import { ServerIcon } from "@/components/icons"
@@ -27,40 +27,32 @@ export function HostMetadataPanel({ summary }: HostMetadataPanelProps) {
 	if (!summary) return null
 
 	return (
-		<Card>
-			<CardHeader className="pb-3">
-				<CardTitle className="flex items-center gap-2 text-sm font-medium">
-					<ServerIcon size={14} className="text-muted-foreground" />
-					Resource attributes
-				</CardTitle>
-			</CardHeader>
-			<CardContent className="divide-y divide-border/60">
-				<Section title="Identity">
-					<DetailRail.MetaRow copyable label="host.name" value={summary.hostName} />
-				</Section>
-				<Section title="Platform">
-					<DetailRail.MetaRow copyable label="os.type" value={summary.osType} />
-					<DetailRail.MetaRow copyable label="host.arch" value={summary.hostArch} />
-				</Section>
-				<Section title="Cloud">
-					<DetailRail.MetaRow copyable label="cloud.provider" value={summary.cloudProvider} />
-					<DetailRail.MetaRow copyable label="cloud.region" value={summary.cloudRegion} />
-				</Section>
-				<Section title="Lifecycle">
-					<DetailRail.MetaRow
-						label="first seen"
-						value={formatRelativeTime(summary.firstSeen)}
-						copyValue={summary.firstSeen}
-						tooltip={summary.firstSeen}
-					/>
-					<DetailRail.MetaRow
-						label="last seen"
-						value={formatRelativeTime(summary.lastSeen)}
-						copyValue={summary.lastSeen}
-						tooltip={summary.lastSeen}
-					/>
-				</Section>
-			</CardContent>
-		</Card>
+		<ResourceAttributesCard icon={ServerIcon} contentClassName="divide-y divide-border/60">
+			<Section title="Identity">
+				<DetailRail.MetaRow copyable label="host.name" value={summary.hostName} />
+			</Section>
+			<Section title="Platform">
+				<DetailRail.MetaRow copyable label="os.type" value={summary.osType} />
+				<DetailRail.MetaRow copyable label="host.arch" value={summary.hostArch} />
+			</Section>
+			<Section title="Cloud">
+				<DetailRail.MetaRow copyable label="cloud.provider" value={summary.cloudProvider} />
+				<DetailRail.MetaRow copyable label="cloud.region" value={summary.cloudRegion} />
+			</Section>
+			<Section title="Lifecycle">
+				<DetailRail.MetaRow
+					label="first seen"
+					value={formatRelativeTime(summary.firstSeen)}
+					copyValue={summary.firstSeen}
+					tooltip={summary.firstSeen}
+				/>
+				<DetailRail.MetaRow
+					label="last seen"
+					value={formatRelativeTime(summary.lastSeen)}
+					copyValue={summary.lastSeen}
+					tooltip={summary.lastSeen}
+				/>
+			</Section>
+		</ResourceAttributesCard>
 	)
 }

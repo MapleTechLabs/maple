@@ -1,5 +1,4 @@
 import { useState } from "react"
-import { Cause, Exit } from "effect"
 
 import { Button } from "@maple/ui/components/ui/button"
 import {
@@ -22,7 +21,7 @@ import {
 import { KeyValue, KeyValueList } from "@maple/ui/components/ui/key-value"
 import { toastManager } from "@maple/ui/components/ui/toast"
 
-import { useAtomSet } from "@/lib/effect-atom"
+import { useMutationAction } from "@/hooks/use-mutation-action"
 import { updateFeatureControls } from "@/lib/billing/controls"
 import { formatCurrency } from "@maple/domain/format"
 import {
@@ -99,9 +98,12 @@ export function BillingControlsDialog({
 	readonly open: boolean
 	readonly onOpenChange: (open: boolean) => void
 }) {
-	const save = useAtomSet(updateBillingControlsMutation, { mode: "promiseExit" })
+	const [save, saving] = useMutationAction(updateBillingControlsMutation, {
+		success: `${FEATURE_LABELS[featureId]} controls saved.`,
+		error: "Billing controls could not be saved.",
+		onSuccess: () => onOpenChange(false),
+	})
 	const [limit, setLimit] = useState(existingLimit === undefined ? "" : String(existingLimit))
-	const [saving, setSaving] = useState(false)
 
 	async function handleSave() {
 		const overageLimit = limit.trim() === "" ? null : Number(limit)
@@ -109,22 +111,9 @@ export function BillingControlsDialog({
 			toastManager.add({ title: "Paid overage cap must be zero or greater.", type: "error" })
 			return
 		}
-		setSaving(true)
-		const exit = await save({
+		await save({
 			payload: updateFeatureControls({ featureId, overageLimit }),
 			reactivityKeys: [BILLING_CUSTOMER_KEY],
-		})
-		setSaving(false)
-
-		if (Exit.isSuccess(exit)) {
-			toastManager.add({ title: `${FEATURE_LABELS[featureId]} controls saved.`, type: "success" })
-			onOpenChange(false)
-			return
-		}
-		const error = Cause.squash(exit.cause)
-		toastManager.add({
-			title: error instanceof Error ? error.message : "Billing controls could not be saved.",
-			type: "error",
 		})
 	}
 
@@ -172,7 +161,7 @@ export function BillingControlsDialog({
 
 				<DialogFooter>
 					<DialogClose render={<Button variant="outline" />}>Cancel</DialogClose>
-					<Button onClick={handleSave} loading={saving} disabled={saving}>
+					<Button onClick={handleSave} loading={saving}>
 						Save controls
 					</Button>
 				</DialogFooter>

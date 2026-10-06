@@ -1,3 +1,4 @@
+import { humanize } from "@/lib/humanize"
 import { CompassIcon, FaceRobotIcon, MagnifierIcon, ShieldIcon } from "@/components/icons"
 import type { IconComponent } from "@/components/icons"
 
@@ -24,13 +25,6 @@ const AGENTS: Record<string, AgentPresentation> = {
 
 /** `hypothesis-<id>` lanes are written per run, so they are matched by prefix, not by entry. */
 const HYPOTHESIS_PREFIX = "hypothesis-"
-
-const humanize = (agent: string): string =>
-	agent
-		.split(/[-_\s]+/)
-		.filter(Boolean)
-		.map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-		.join(" ")
 
 export function agentPresentation(agent: string): AgentPresentation {
 	const known = AGENTS[agent]

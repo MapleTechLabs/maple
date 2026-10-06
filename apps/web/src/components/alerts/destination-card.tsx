@@ -1,4 +1,3 @@
-import { Spinner } from "@maple/ui/components/ui/spinner"
 import type { AlertDestinationDocument } from "@maple/domain/http"
 import { destinationProvider, ProviderLogo } from "@/components/alerts/destination-provider"
 import { AlertWarningIcon, CheckIcon, DotsVerticalIcon, PencilIcon, TrashIcon } from "@/components/icons"
@@ -100,7 +99,7 @@ export function DestinationCard({
 						</div>
 
 						{destination.lastTestError && (
-							<Alert variant="error" size="sm" className="mt-2 rounded-md">
+							<Alert variant="crit" size="sm" className="mt-2 rounded-md">
 								<AlertWarningIcon size={12} />
 								<AlertDescription className="break-words text-destructive">
 									{destination.lastTestError}
@@ -120,9 +119,10 @@ export function DestinationCard({
 						size="sm"
 						variant="outline"
 						onClick={() => onTest(destination)}
-						disabled={!isAdmin || isTesting}
+						disabled={!isAdmin}
+						loading={isTesting}
 					>
-						{isTesting ? <Spinner size={14} /> : <CheckIcon size={14} />}
+						<CheckIcon size={14} />
 						Send test
 					</Button>
 					{isAdmin && (

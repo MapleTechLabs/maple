@@ -10,6 +10,7 @@ import { SearchInput } from "@maple/ui/components/ui/search-input"
 import { ToggleGroup, ToggleGroupItem } from "@maple/ui/components/ui/toggle-group"
 import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 import { cn } from "@maple/ui/lib/utils"
+import { TONE_TEXT, type Tone } from "@maple/ui/lib/tone"
 
 import { ColumnHead, type SortDir } from "@/components/common/data-table"
 import { formatNumber } from "@maple/ui/lib/format"
@@ -63,7 +64,7 @@ export function toRowUsage(
 
 const relativeFromMs = (ms: number) => formatRelativeTime(new Date(ms).toISOString())
 
-type CloudflareErrorTone = "error" | "warning"
+type CloudflareErrorTone = Extract<Tone, "crit" | "warn">
 
 export interface CloudflareErrorInfo {
 	/** Human-readable summary shown in the UI; falls back to the raw string when unrecognized. */
@@ -89,43 +90,43 @@ export function describeCloudflareError(raw: string): CloudflareErrorInfo {
 	if (has("revoked", "no longer valid"))
 		return {
 			summary: "Cloudflare access was revoked — reconnect to resume.",
-			tone: "error",
+			tone: "crit",
 			scope: "account",
 		}
 	if (has("lacks the analytics scopes", "scope"))
-		return { summary: "Reconnect to grant Maple analytics access.", tone: "warning", scope: "account" }
+		return { summary: "Reconnect to grant Maple analytics access.", tone: "warn", scope: "account" }
 	if (has("cloudflare_oauth_client_id", "is required", "ingest key unavailable"))
 		return {
 			summary: "Traffic collection is temporarily unavailable — try again shortly.",
-			tone: "error",
+			tone: "crit",
 			scope: "account",
 		}
 	if (has("not authenticated", "not authorized", "unauthorized", "access denied"))
 		return {
 			summary: "Cloudflare denied the request — reconnect to refresh access.",
-			tone: "error",
+			tone: "crit",
 			scope: "account",
 		}
 	if (has("no longer present"))
 		return {
 			summary: "This zone was removed from your Cloudflare account.",
-			tone: "warning",
+			tone: "warn",
 			scope: "resource",
 		}
 	if (has("not enabled", "disabled"))
 		return {
 			summary: "Analytics isn't enabled for this zone in Cloudflare.",
-			tone: "warning",
+			tone: "warn",
 			scope: "resource",
 		}
 	if (has("unknown field", "cannot query"))
 		return {
 			summary: "Some analytics aren't available on this Cloudflare plan.",
-			tone: "warning",
+			tone: "warn",
 			scope: "resource",
 		}
 
-	return { summary: raw, tone: "error", scope: "resource" }
+	return { summary: raw, tone: "crit", scope: "resource" }
 }
 
 export const isAccountScoped = (raw: string | null): boolean =>
@@ -174,20 +175,20 @@ export type ZoneStatusKind = "live" | "issue" | "no-data" | "paused" | "disabled
 
 export interface ZoneStatusInfo {
 	kind: ZoneStatusKind
-	/** Tailwind bg-* class for the leading status dot. */
-	dot: string
+	/** Leading status dot tone. */
+	tone: Tone
 	detail: ReactNode
 	detailClass: string
 }
 
 /** Chip label, dot color, and sort priority per state (live is healthiest → sorts first). */
-export const STATUS_META: Record<ZoneStatusKind, { label: string; order: number; dot: string }> = {
-	live: { label: "Live", order: 0, dot: "bg-success" },
-	issue: { label: "Issues", order: 1, dot: "bg-destructive" },
-	"no-data": { label: "No data", order: 2, dot: "bg-warning" },
-	paused: { label: "Paused", order: 3, dot: "bg-muted-foreground/40" },
-	disabled: { label: "Disabled", order: 4, dot: "bg-muted-foreground/40" },
-} satisfies Record<ZoneStatusKind, { label: string; order: number; dot: string }>
+export const STATUS_META: Record<ZoneStatusKind, { label: string; order: number; tone: Tone }> = {
+	live: { label: "Live", order: 0, tone: "ok" },
+	issue: { label: "Issues", order: 1, tone: "crit" },
+	"no-data": { label: "No data", order: 2, tone: "warn" },
+	paused: { label: "Paused", order: 3, tone: "neutral" },
+	disabled: { label: "Disabled", order: 4, tone: "neutral" },
+} satisfies Record<ZoneStatusKind, { label: string; order: number; tone: Tone }>
 
 const CHIP_ORDER: ReadonlyArray<ZoneStatusKind> = ["live", "issue", "no-data", "paused", "disabled"]
 
@@ -207,7 +208,7 @@ export function zoneStatus(entry: ZoneEntry, usageLoaded: boolean): ZoneStatusIn
 	if (!enabled) {
 		return {
 			kind: "disabled",
-			dot: "bg-muted-foreground/40",
+			tone: "neutral",
 			detail: "Disabled",
 			detailClass: "text-muted-foreground",
 		}
@@ -215,24 +216,23 @@ export function zoneStatus(entry: ZoneEntry, usageLoaded: boolean): ZoneStatusIn
 	if (accountPaused) {
 		return {
 			kind: "paused",
-			dot: "bg-muted-foreground/40",
+			tone: "neutral",
 			detail: "Paused",
 			detailClass: "text-muted-foreground",
 		}
 	}
 	if (showInlineError && err && lastError) {
-		const isError = err.tone === "error"
 		return {
 			kind: "issue",
-			dot: isError ? "bg-destructive" : "bg-warning",
+			tone: err.tone,
 			detail: <ErrorLine info={err} raw={lastError} />,
-			detailClass: isError ? "text-destructive-foreground" : "text-warning-foreground",
+			detailClass: TONE_TEXT[err.tone],
 		}
 	}
 	if (rowHasData(usage)) {
 		return {
 			kind: "live",
-			dot: "bg-success",
+			tone: "ok",
 			detail:
 				usage?.lastDataAt != null
 					? `Last data ${relativeFromMs(usage.lastDataAt)}`
@@ -243,24 +243,24 @@ export function zoneStatus(entry: ZoneEntry, usageLoaded: boolean): ZoneStatusIn
 	if (usageLoaded && lastSyncedAt) {
 		return {
 			kind: "no-data",
-			dot: "bg-warning",
+			tone: "warn",
 			detail: "No data in last 24h",
-			detailClass: "text-warning-foreground",
+			detailClass: TONE_TEXT.warn,
 		}
 	}
 	if (lastSyncedAt) {
 		return {
 			kind: "live",
-			dot: "bg-success",
+			tone: "ok",
 			detail: `Checked ${relativeFromMs(lastSyncedAt)}`,
 			detailClass: "text-muted-foreground",
 		}
 	}
 	return {
 		kind: "no-data",
-		dot: "bg-warning",
+		tone: "warn",
 		detail: "Waiting for first data",
-		detailClass: "text-warning-foreground",
+		detailClass: TONE_TEXT.warn,
 	}
 }
 
@@ -284,10 +284,13 @@ function ResourceRow({
 
 	const body = (
 		<>
-			<StatusDot tone="custom" className={cn("mt-[5px]", status.dot)} />
+			<StatusDot tone={status.tone} className="mt-[5px]" />
 			<div className="min-w-0 flex-1">
 				<TruncatedText
-					className={cn("text-xs font-medium text-foreground", zoneLink && "group-hover:text-primary")}
+					className={cn(
+						"text-xs font-medium text-foreground",
+						zoneLink && "group-hover:text-primary",
+					)}
 				>
 					{name}
 				</TruncatedText>
@@ -343,13 +346,23 @@ interface DecoratedZone {
 }
 
 /** One filter chip: state color dot (or none for "All") + label + count. */
-function ZoneChip({ value, label, count, dot }: { value: string; label: string; count: number; dot?: string }) {
+function ZoneChip({
+	value,
+	label,
+	count,
+	tone,
+}: {
+	value: string
+	label: string
+	count: number
+	tone?: Tone
+}) {
 	return (
 		<ToggleGroupItem
 			value={value}
 			className="group h-6 gap-1.5 rounded-full border-border/60 px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground data-pressed:border-transparent data-pressed:bg-muted data-pressed:text-foreground sm:h-6 sm:text-xs"
 		>
-			{dot ? <StatusDot tone="custom" className={dot} /> : null}
+			{tone ? <StatusDot tone={tone} /> : null}
 			{label}
 			<span className="tabular-nums text-muted-foreground/70 group-data-pressed:text-muted-foreground">
 				{count}
@@ -463,7 +476,7 @@ export function CloudflareZoneBoard({
 							value={kind}
 							label={STATUS_META[kind].label}
 							count={counts[kind]}
-							dot={STATUS_META[kind].dot}
+							tone={STATUS_META[kind].tone}
 						/>
 					))}
 				</ToggleGroup>
@@ -586,7 +599,7 @@ export function CloudflareWorkersCard({
 
 			{scripts.length === 0 ? (
 				<div className="flex items-center gap-2.5 px-4 py-3">
-					<StatusDot tone="custom" className={aggregate.dot} />
+					<StatusDot tone={aggregate.tone} />
 					<span className={cn("text-[11px]", aggregate.detailClass)}>{aggregate.detail}</span>
 				</div>
 			) : (
@@ -597,12 +610,7 @@ export function CloudflareWorkersCard({
 							className="flex items-center justify-between gap-3 border-b border-border/40 py-2.5 last:border-0"
 						>
 							<span className="flex min-w-0 items-center gap-2.5">
-								<StatusDot
-									tone="custom"
-									className={
-										service.totalRequests > 0 ? "bg-success" : "bg-muted-foreground/40"
-									}
-								/>
+								<StatusDot tone={service.totalRequests > 0 ? "ok" : "neutral"} />
 								<TruncatedText className="text-xs font-medium text-foreground">
 									{service.displayName}
 								</TruncatedText>

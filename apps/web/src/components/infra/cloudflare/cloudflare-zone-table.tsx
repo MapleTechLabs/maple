@@ -5,7 +5,13 @@ import { LatencyValue } from "@maple/ui/components/latency-value"
 
 import type { CloudflareZoneRow } from "@/api/warehouse/cloudflare-infra"
 import { formatLatency, formatNumber } from "@maple/ui/lib/format"
-import { ColumnHead, DataTable, ROW_LINK_CLASS, useTableSort } from "@/components/common/data-table"
+import {
+	ColumnHead,
+	DataTable,
+	type SortControls,
+	ROW_LINK_CLASS,
+	useTableSort,
+} from "@/components/common/data-table"
 import { formatBytes, formatPercent } from "@maple/ui/lib/format"
 import { errorRateClass } from "@maple/ui/lib/error-rate"
 
@@ -36,16 +42,81 @@ interface CloudflareZoneTableProps {
 	emptyMessage?: string
 }
 
+/** Declared once and rendered by both the table and its skeleton so widths cannot drift. */
+function ZoneColumns({ sort }: { sort?: SortControls<SortKey> }) {
+	return (
+		<>
+			<ColumnHead<SortKey> label="Zone" sortKey="zoneName" {...sort} width="w-0 flex-1 min-w-[220px]" />
+			<ColumnHead<SortKey>
+				label="Requests"
+				sortKey="requests"
+				{...sort}
+				align="right"
+				width="w-[90px]"
+			/>
+			<ColumnHead<SortKey>
+				label="Error rate"
+				sortKey="errorRate"
+				{...sort}
+				align="right"
+				width="w-[90px]"
+			/>
+			<ColumnHead<SortKey>
+				label="Cache hit"
+				sortKey="cacheHitRate"
+				{...sort}
+				align="right"
+				width="w-[90px]"
+				hidden="hidden md:flex"
+			/>
+			<ColumnHead<SortKey>
+				label="Bandwidth"
+				sortKey="bytes"
+				{...sort}
+				align="right"
+				width="w-[90px]"
+				hidden="hidden md:flex"
+			/>
+			<ColumnHead<SortKey>
+				label="Visits"
+				sortKey="visits"
+				{...sort}
+				align="right"
+				width="w-[90px]"
+				hidden="hidden lg:flex"
+			/>
+			<ColumnHead<SortKey>
+				label="TTFB p50"
+				sortKey="ttfbP50Ms"
+				{...sort}
+				align="right"
+				width="w-[90px]"
+				hidden="hidden lg:flex"
+			/>
+			<ColumnHead<SortKey>
+				label="TTFB p99"
+				sortKey="ttfbP99Ms"
+				{...sort}
+				align="right"
+				width="w-[90px]"
+			/>
+			<ColumnHead<SortKey>
+				label="Origin p99"
+				sortKey="originP99Ms"
+				{...sort}
+				align="right"
+				width="w-[90px]"
+				hidden="hidden lg:flex"
+			/>
+		</>
+	)
+}
+
 export function CloudflareZoneTableLoading() {
 	return (
 		<DataTable.Root ariaLabel="Zones">
 			<DataTable.Head>
-				<ColumnHead label="Zone" width="w-0 flex-1 min-w-[220px]" />
-				<ColumnHead label="Requests" align="right" width="w-[90px]" />
-				<ColumnHead label="Error rate" align="right" width="w-[90px]" />
-				<ColumnHead label="Cache hit" align="right" width="w-[90px]" hidden="hidden md:flex" />
-				<ColumnHead label="Bandwidth" align="right" width="w-[90px]" hidden="hidden md:flex" />
-				<ColumnHead label="TTFB p99" align="right" width="w-[90px]" />
+				<ZoneColumns />
 			</DataTable.Head>
 			<DataTable.SkeletonRows count={3}>
 				<div className="w-0 min-w-[220px] flex-1">
@@ -55,7 +126,10 @@ export function CloudflareZoneTableLoading() {
 				<Skeleton className="h-3 w-[90px]" />
 				<Skeleton className="hidden h-3 w-[90px] md:block" />
 				<Skeleton className="hidden h-3 w-[90px] md:block" />
+				<Skeleton className="hidden h-3 w-[90px] lg:block" />
+				<Skeleton className="hidden h-3 w-[90px] lg:block" />
 				<Skeleton className="h-3 w-[90px]" />
+				<Skeleton className="hidden h-3 w-[90px] lg:block" />
 			</DataTable.SkeletonRows>
 		</DataTable.Root>
 	)
@@ -80,91 +154,7 @@ export function CloudflareZoneTable({ zones, waiting, emptyMessage }: Cloudflare
 	return (
 		<DataTable.Root ariaLabel="Cloudflare zones" waiting={waiting} maxHeight={TABLE_MAX_HEIGHT}>
 			<DataTable.Head>
-				<ColumnHead<SortKey>
-					label="Zone"
-					sortKey="zoneName"
-					currentKey={sortKey}
-					dir={sortDir}
-					onSort={handleSort}
-					width="w-0 flex-1 min-w-[220px]"
-				/>
-				<ColumnHead<SortKey>
-					label="Requests"
-					sortKey="requests"
-					currentKey={sortKey}
-					dir={sortDir}
-					onSort={handleSort}
-					align="right"
-					width="w-[90px]"
-				/>
-				<ColumnHead<SortKey>
-					label="Error rate"
-					sortKey="errorRate"
-					currentKey={sortKey}
-					dir={sortDir}
-					onSort={handleSort}
-					align="right"
-					width="w-[90px]"
-				/>
-				<ColumnHead<SortKey>
-					label="Cache hit"
-					sortKey="cacheHitRate"
-					currentKey={sortKey}
-					dir={sortDir}
-					onSort={handleSort}
-					align="right"
-					width="w-[90px]"
-					hidden="hidden md:flex"
-				/>
-				<ColumnHead<SortKey>
-					label="Bandwidth"
-					sortKey="bytes"
-					currentKey={sortKey}
-					dir={sortDir}
-					onSort={handleSort}
-					align="right"
-					width="w-[90px]"
-					hidden="hidden md:flex"
-				/>
-				<ColumnHead<SortKey>
-					label="Visits"
-					sortKey="visits"
-					currentKey={sortKey}
-					dir={sortDir}
-					onSort={handleSort}
-					align="right"
-					width="w-[90px]"
-					hidden="hidden lg:flex"
-				/>
-				<ColumnHead<SortKey>
-					label="TTFB p50"
-					sortKey="ttfbP50Ms"
-					currentKey={sortKey}
-					dir={sortDir}
-					onSort={handleSort}
-					align="right"
-					width="w-[90px]"
-					hidden="hidden lg:flex"
-				/>
-				<ColumnHead<SortKey>
-					label="TTFB p99"
-					sortKey="ttfbP99Ms"
-					currentKey={sortKey}
-					dir={sortDir}
-					onSort={handleSort}
-					align="right"
-					width="w-[90px]"
-				/>
-				<ColumnHead<SortKey>
-					label="Origin p99"
-					sortKey="originP99Ms"
-					currentKey={sortKey}
-					dir={sortDir}
-					onSort={handleSort}
-					align="right"
-					width="w-[90px]"
-					hidden="hidden lg:flex"
-				/>
+				<ZoneColumns sort={{ currentKey: sortKey, dir: sortDir, onSort: handleSort }} />
 			</DataTable.Head>
 			{sorted.length === 0 && (
 				<DataTable.Empty>{emptyMessage ?? "No zone traffic in the selected window."}</DataTable.Empty>

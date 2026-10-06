@@ -171,7 +171,7 @@ function McpAuthorizePage() {
 
 				{state._tag === "error" ? (
 					<div className="space-y-3">
-						<Alert variant="error">
+						<Alert variant="crit">
 							<CircleWarningIcon size={16} />
 							<AlertDescription className="text-destructive">{state.message}</AlertDescription>
 						</Alert>

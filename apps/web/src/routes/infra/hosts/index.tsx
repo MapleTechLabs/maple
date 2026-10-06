@@ -1,15 +1,16 @@
+import { FilteredEmpty } from "@/components/common/filtered-empty"
 import { useMemo, useState } from "react"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Schema } from "effect"
-import { Result, useAtomValue } from "@/lib/effect-atom"
+import { useAtomValue } from "@/lib/effect-atom"
 
 import { Button } from "@maple/ui/components/ui/button"
-import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { cn } from "@maple/ui/lib/utils"
 
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { MagnifierIcon, PlusIcon, ServerIcon } from "@/components/icons"
-import { ErrorState } from "@/components/common/error-state"
+import { ResultView } from "@/components/common/result-view"
 import { HostTable, HostTableLoading, type HostRow } from "@/components/infra/host-table"
 import {
 	HOST_LIST_LIMIT,
@@ -114,44 +115,39 @@ function HostsPage() {
 									}
 								/>
 
-								{Result.builder(hostsResult)
-									.onInitial(() => (
+								<ResultView
+									result={hostsResult}
+									loading={
 										<div className="space-y-6">
 											<HostSummaryBandLoading className={FLEET_BAND_BOXED} />
 											<HostTableLoading />
 										</div>
-									))
-									.onError((err) => <ErrorState error={err} />)
-									.onSuccess((response, result) => {
-										const hosts = response.data
-										if (hosts.length === 0) {
-											return (
-												<InfraSetupEmpty
-													icon={<ServerIcon size={16} />}
-													title="No hosts reporting yet"
-													description="Run the OpenTelemetry Collector with the hostmetrics receiver on a host, or install the Helm chart to report every Kubernetes node."
-													installTab="hosts"
-													actionLabel="Add host"
-													docs="hosts"
-												/>
-											)
-										}
-										return (
-											<HostList
-												hosts={hosts}
-												waiting={Boolean(result.waiting)}
-												referenceTime={endTime}
-												query={search.q ?? ""}
-												scope={search.scope}
-												onQueryChange={(q) => patchSearch({ q: q || undefined })}
-												onScopeChange={(scope) => patchSearch({ scope })}
-												onClear={() =>
-													patchSearch({ q: undefined, scope: undefined })
-												}
-											/>
-										)
-									})
-									.render()}
+									}
+									isEmpty={(response) => response.data.length === 0}
+									empty={
+										<InfraSetupEmpty
+											icon={<ServerIcon size={16} />}
+											title="No hosts reporting yet"
+											description="Run the OpenTelemetry Collector with the hostmetrics receiver on a host, or install the Helm chart to report every Kubernetes node."
+											installTab="hosts"
+											actionLabel="Add host"
+											docs="hosts"
+										/>
+									}
+								>
+									{(response, { waiting }) => (
+										<HostList
+											hosts={response.data}
+											waiting={waiting}
+											referenceTime={endTime}
+											query={search.q ?? ""}
+											scope={search.scope}
+											onQueryChange={(q) => patchSearch({ q: q || undefined })}
+											onScopeChange={(scope) => patchSearch({ scope })}
+											onClear={() => patchSearch({ q: undefined, scope: undefined })}
+										/>
+									)}
+								</ResultView>
 							</div>
 
 							<InstallHostModal
@@ -198,7 +194,7 @@ function HostList({
 	)
 
 	return (
-		<div className={cn("space-y-4 transition-opacity", waiting && "opacity-60")}>
+		<div className={cn("space-y-4", refreshingClass(waiting))} aria-busy={waiting || undefined}>
 			<HostSummaryBand
 				hosts={hosts}
 				referenceTime={referenceTime}
@@ -219,20 +215,15 @@ function HostList({
 				}
 			/>
 			{filtered.length === 0 ? (
-				<Empty className="py-12">
-					<EmptyHeader>
-						<EmptyMedia variant="icon">
-							<MagnifierIcon size={16} />
-						</EmptyMedia>
-						<EmptyTitle>No hosts match</EmptyTitle>
-						<EmptyDescription>
-							Try a different name, or clear the search and scope to see every host.
-						</EmptyDescription>
-					</EmptyHeader>
-					<Button variant="outline" size="sm" onClick={onClear}>
-						Clear
-					</Button>
-				</Empty>
+				<FilteredEmpty
+					noun="hosts"
+					className="py-12"
+					icon={<MagnifierIcon size={16} />}
+					title="No hosts match"
+					description="Try a different name, or clear the search and scope to see every host."
+					onClear={onClear}
+					clearLabel="Clear"
+				/>
 			) : (
 				<HostTable hosts={filtered} waiting={waiting} />
 			)}

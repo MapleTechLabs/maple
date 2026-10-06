@@ -1,6 +1,6 @@
 import { formatNumber, formatStorageBytes } from "@maple/ui/lib/format"
 import { useMemo } from "react"
-import { cn } from "@maple/ui/lib/utils"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { Result } from "@/lib/effect-atom"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { getServiceUsageResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
@@ -111,7 +111,7 @@ export function ServiceUsagePanel({
 					<span className="text-[10px] text-muted-foreground/60">all environments</span>
 				) : undefined
 			}
-			className={cn("transition-opacity", isWaiting && "opacity-60")}
+			className={refreshingClass(isWaiting)}
 		>
 			<div className="grid grid-cols-2 gap-px sm:grid-cols-4">
 				{stats.map((stat) => {

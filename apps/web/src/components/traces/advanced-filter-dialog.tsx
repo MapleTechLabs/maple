@@ -112,9 +112,9 @@ export function AdvancedFilterDialog({ initialValue, onApply }: AdvancedFilterDi
 						ariaLabel="Advanced traces where clause"
 					/>
 					{warnings.length > 0 && (
-						<Alert variant="warning" size="sm" className="mt-2">
+						<Alert variant="warn" size="sm" className="mt-2">
 							<CircleWarningIcon size={14} />
-							<AlertDescription className="text-warning-foreground">
+							<AlertDescription className="text-severity-warn">
 								<ul className="space-y-1">
 									{warnings.map((warning) => (
 										<li key={warning}>{warning}</li>

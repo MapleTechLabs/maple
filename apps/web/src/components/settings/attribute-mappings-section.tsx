@@ -1,3 +1,6 @@
+import { InlineCode } from "@maple/ui/components/ui/inline-code"
+import { Field, FieldLabel } from "@maple/ui/components/ui/field"
+import { Card, CardAction, CardDescription, CardHeader, CardTitle } from "@maple/ui/components/ui/card"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import type {
 	IngestAttributeMappingId,
@@ -8,7 +11,6 @@ import type { V2AttributeMapping } from "@maple/domain/http/v2"
 import { useState } from "react"
 import { Exit } from "effect"
 import { toastManager } from "@maple/ui/components/ui/toast"
-import { Spinner } from "@maple/ui/components/ui/spinner"
 
 import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
 import { Badge } from "@maple/ui/components/ui/badge"
@@ -24,14 +26,12 @@ import {
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { Input } from "@maple/ui/components/ui/input"
-import { Label } from "@maple/ui/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
 import { Skeleton, SkeletonList } from "@maple/ui/components/ui/skeleton"
 import { Switch } from "@maple/ui/components/ui/switch"
 import { cn } from "@maple/ui/lib/utils"
+import { TONE_TEXT } from "@maple/ui/lib/tone"
 import {
-	AlertWarningIcon,
-	ArrowPathIcon,
 	ArrowRightFromLineIcon,
 	ArrowRightIcon,
 	ArrowUpDownIcon,
@@ -51,8 +51,8 @@ import {
 } from "@/lib/services/atoms/ingestion-atoms"
 import { AttributeKeyAutocomplete } from "./attribute-key-autocomplete"
 import { DocsLink, EmptyActions } from "@/components/common/docs-link"
-
-const MONO = "font-mono text-[0.92em] text-muted-foreground"
+import { ErrorState } from "@/components/common/error-state"
+import { useAsyncAction } from "@/hooks/use-mutation-action"
 
 const SOURCE_CONTEXT_LABELS: Record<IngestMappingSourceContext, string> = {
 	span: "Span attribute",
@@ -64,14 +64,14 @@ const OPERATION_LABELS: Record<IngestMappingOperation, string> = {
 	copy: "Copy",
 } satisfies Record<IngestMappingOperation, string>
 
-// Copy is additive (keeps the source) → calm blue; Move removes the source key → amber caution.
+// Copy is additive (keeps the source) → info; Move removes the source key → warn caution.
 const OPERATION_BADGE: Record<
 	IngestMappingOperation,
-	{ icon: IconComponent; variant: "info" | "warning"; tone: string }
+	{ icon: IconComponent; variant: "info" | "warn"; tone: string }
 > = {
-	copy: { icon: CopyIcon, variant: "info", tone: "text-info" },
-	move: { icon: ArrowRightFromLineIcon, variant: "warning", tone: "text-warning" },
-} satisfies Record<IngestMappingOperation, { icon: IconComponent; variant: "info" | "warning"; tone: string }>
+	copy: { icon: CopyIcon, variant: "info", tone: TONE_TEXT.info },
+	move: { icon: ArrowRightFromLineIcon, variant: "warn", tone: TONE_TEXT.warn },
+} satisfies Record<IngestMappingOperation, { icon: IconComponent; variant: "info" | "warn"; tone: string }>
 
 const SOURCE_CONTEXT_ICON: Record<IngestMappingSourceContext, IconComponent> = {
 	span: BracketsCurlyIcon,
@@ -80,7 +80,6 @@ const SOURCE_CONTEXT_ICON: Record<IngestMappingSourceContext, IconComponent> = {
 
 export function AttributeMappingsSection() {
 	const [dialogOpen, setDialogOpen] = useState(false)
-	const [isSaving, setIsSaving] = useState(false)
 	const [togglingId, setTogglingId] = useState<IngestAttributeMappingId | null>(null)
 	const [deleteConfirm, setDeleteConfirm] = useState<V2AttributeMapping | null>(null)
 
@@ -130,13 +129,12 @@ export function AttributeMappingsSection() {
 		setDialogOpen(true)
 	}
 
-	async function handleSave() {
+	const [handleSave, isSaving] = useAsyncAction(async () => {
 		if (!formName.trim() || !formSourceKey.trim() || !formTargetKey.trim()) {
 			toastManager.add({ title: "Name, source key, and target key are required", type: "error" })
 			return
 		}
 
-		setIsSaving(true)
 		if (editing) {
 			const result = await updateMutation({
 				params: { id: editing.id },
@@ -175,8 +173,7 @@ export function AttributeMappingsSection() {
 				toastManager.add({ title: "Failed to create attribute mapping", type: "error" })
 			}
 		}
-		setIsSaving(false)
-	}
+	})
 
 	async function handleDelete(mappingId: IngestAttributeMappingId) {
 		setDeleteConfirm(null)
@@ -213,29 +210,28 @@ export function AttributeMappingsSection() {
 
 	return (
 		<>
-			<div className="bg-card flex flex-col rounded-lg border">
-				<div className="flex items-start gap-3 px-4 pt-4 pb-3">
-					<div className="flex flex-col gap-1">
-						<h3 className="text-sm font-medium">
-							Attribute mappings
-							{mappingCount !== null && mappingCount > 0 && (
-								<span className="text-muted-foreground font-normal tabular-nums">
-									{" "}
-									· {mappingCount}
-								</span>
-							)}
-						</h3>
-						<p className="text-muted-foreground text-xs">
-							Rename or promote span attribute keys at ingest. Applied only to spans received
-							after a rule is saved.
-						</p>
-					</div>
-					<div className="grow" />
-					<Button variant="outline" size="sm" className="shrink-0" onClick={openAddDialog}>
-						<PlusIcon size={14} />
-						Add mapping
-					</Button>
-				</div>
+			<Card className="overflow-hidden">
+				<CardHeader className="px-4 pt-4 pb-3">
+					<CardTitle render={<h3 />} className="text-sm font-medium">
+						Attribute mappings
+						{mappingCount !== null && mappingCount > 0 && (
+							<span className="text-muted-foreground font-normal tabular-nums">
+								{" "}
+								· {mappingCount}
+							</span>
+						)}
+					</CardTitle>
+					<CardDescription className="text-xs">
+						Rename or promote span attribute keys at ingest. Applied only to spans received after
+						a rule is saved.
+					</CardDescription>
+					<CardAction>
+						<Button variant="outline" size="sm" onClick={openAddDialog}>
+							<PlusIcon size={14} />
+							Add mapping
+						</Button>
+					</CardAction>
+				</CardHeader>
 				<div className="border-t">
 					{Result.isInitial(listResult) ? (
 						<SkeletonList
@@ -252,21 +248,12 @@ export function AttributeMappingsSection() {
 							)}
 						/>
 					) : !Result.isSuccess(listResult) ? (
-						<Empty className="py-10">
-							<EmptyHeader>
-								<EmptyMedia variant="icon">
-									<AlertWarningIcon size={16} className="text-destructive" />
-								</EmptyMedia>
-								<EmptyTitle>Couldn't load mappings</EmptyTitle>
-								<EmptyDescription>
-									Something went wrong fetching your attribute mappings.
-								</EmptyDescription>
-							</EmptyHeader>
-							<Button variant="outline" size="sm" onClick={() => refreshMappings()}>
-								<ArrowPathIcon size={14} />
-								Try again
-							</Button>
-						</Empty>
+						<ErrorState
+							error={listResult.cause}
+							title="Couldn't load mappings"
+							onRetry={() => refreshMappings()}
+							className="border-0"
+						/>
 					) : mappings.length === 0 ? (
 						<Empty className="py-10">
 							<EmptyHeader>
@@ -321,14 +308,14 @@ export function AttributeMappingsSection() {
 										</span>
 
 										<div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 text-sm">
-											<code className={MONO}>{mapping.source_key}</code>
+											<InlineCode variant="plain">{mapping.source_key}</InlineCode>
 											<ArrowRightIcon
 												size={12}
 												className="text-muted-foreground shrink-0"
 											/>
-											<code className="font-mono text-[0.92em] text-foreground">
+											<InlineCode variant="plain" className="text-foreground">
 												{mapping.target_key}
-											</code>
+											</InlineCode>
 										</div>
 
 										<Eyebrow
@@ -378,7 +365,7 @@ export function AttributeMappingsSection() {
 						</div>
 					)}
 				</div>
-			</div>
+			</Card>
 
 			{/* Add / Edit Dialog */}
 			<Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -396,17 +383,17 @@ export function AttributeMappingsSection() {
 						</DialogDescription>
 					</DialogHeader>
 					<div className="space-y-4 px-6 py-2">
-						<div className="space-y-2">
-							<Label htmlFor="mapping-name">Name</Label>
+						<Field>
+							<FieldLabel htmlFor="mapping-name">Name</FieldLabel>
 							<Input
 								id="mapping-name"
 								placeholder="e.g. Normalize HTTP status code"
 								value={formName}
 								onChange={(e) => setFormName(e.target.value)}
 							/>
-						</div>
-						<div className="space-y-2">
-							<Label>Source context</Label>
+						</Field>
+						<Field>
+							<FieldLabel>Source context</FieldLabel>
 							<Select
 								items={SOURCE_CONTEXT_LABELS}
 								value={formSourceContext}
@@ -445,9 +432,9 @@ export function AttributeMappingsSection() {
 									</SelectItem>
 								</SelectContent>
 							</Select>
-						</div>
-						<div className="space-y-2">
-							<Label htmlFor="mapping-source-key">Source key</Label>
+						</Field>
+						<Field>
+							<FieldLabel htmlFor="mapping-source-key">Source key</FieldLabel>
 							<AttributeKeyAutocomplete
 								id="mapping-source-key"
 								scope={formSourceContext}
@@ -455,9 +442,9 @@ export function AttributeMappingsSection() {
 								value={formSourceKey}
 								onValueChange={setFormSourceKey}
 							/>
-						</div>
-						<div className="space-y-2">
-							<Label htmlFor="mapping-target-key">Target span attribute key</Label>
+						</Field>
+						<Field>
+							<FieldLabel htmlFor="mapping-target-key">Target span attribute key</FieldLabel>
 							<AttributeKeyAutocomplete
 								id="mapping-target-key"
 								scope="span"
@@ -465,9 +452,9 @@ export function AttributeMappingsSection() {
 								value={formTargetKey}
 								onValueChange={setFormTargetKey}
 							/>
-						</div>
-						<div className="space-y-2">
-							<Label>Operation</Label>
+						</Field>
+						<Field>
+							<FieldLabel>Operation</FieldLabel>
 							<Select
 								items={OPERATION_LABELS}
 								value={formOperation}
@@ -494,7 +481,7 @@ export function AttributeMappingsSection() {
 								<SelectContent>
 									<SelectItem value="copy">
 										<span className="flex items-center gap-2">
-											<CopyIcon className="text-info" />
+											<CopyIcon className={TONE_TEXT.info} />
 											<span>
 												Copy{" "}
 												<span className="text-muted-foreground">
@@ -505,7 +492,7 @@ export function AttributeMappingsSection() {
 									</SelectItem>
 									<SelectItem value="move">
 										<span className="flex items-center gap-2">
-											<ArrowRightFromLineIcon className="text-warning" />
+											<ArrowRightFromLineIcon className={TONE_TEXT.warn} />
 											<span>
 												Move{" "}
 												<span className="text-muted-foreground">
@@ -522,7 +509,7 @@ export function AttributeMappingsSection() {
 									shared across every span in a batch and is never deleted.
 								</p>
 							)}
-						</div>
+						</Field>
 
 						{showPreview && (
 							<div className="rounded-md border bg-muted/40 px-3 py-2.5">
@@ -530,11 +517,11 @@ export function AttributeMappingsSection() {
 									Preview
 								</Eyebrow>
 								<div className="flex flex-wrap items-center gap-1.5 text-sm">
-									<code className={MONO}>{formSourceKey.trim()}</code>
+									<InlineCode variant="plain">{formSourceKey.trim()}</InlineCode>
 									<ArrowRightIcon size={12} className="text-muted-foreground shrink-0" />
-									<code className="text-foreground font-mono text-[0.92em]">
+									<InlineCode variant="plain" className="text-foreground">
 										{formTargetKey.trim()}
-									</code>
+									</InlineCode>
 									<Badge
 										variant={OPERATION_BADGE[formOperation].variant}
 										className="ml-1 gap-1"
@@ -550,17 +537,8 @@ export function AttributeMappingsSection() {
 						<Button variant="outline" onClick={() => setDialogOpen(false)} disabled={isSaving}>
 							Cancel
 						</Button>
-						<Button onClick={handleSave} disabled={isSaving}>
-							{isSaving ? (
-								<>
-									<Spinner size={14} />
-									{editing ? "Saving..." : "Adding..."}
-								</>
-							) : editing ? (
-								"Save Changes"
-							) : (
-								"Add Mapping"
-							)}
+						<Button onClick={handleSave} loading={isSaving}>
+							{editing ? "Save Changes" : "Add Mapping"}
 						</Button>
 					</DialogFooter>
 				</DialogContent>
@@ -576,8 +554,8 @@ export function AttributeMappingsSection() {
 				description={
 					<>
 						Are you sure you want to delete{" "}
-						<span className="text-foreground font-medium">{deleteConfirm?.name}</span>? This action
-						cannot be undone.
+						<span className="text-foreground font-medium">{deleteConfirm?.name}</span>? This
+						action cannot be undone.
 					</>
 				}
 				confirmLabel="Delete"

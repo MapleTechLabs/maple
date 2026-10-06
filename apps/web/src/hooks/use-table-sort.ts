@@ -59,10 +59,16 @@ function isNumericString(value: unknown): value is string {
 	return typeof value === "string" && value.trim() !== "" && Number.isFinite(Number(value))
 }
 
-export function useTableSort<Row, K extends keyof Row>(
-	rows: ReadonlyArray<Row>,
-	{ initialKey, initialDir = "desc", stringKeys, resettable = false, pinned }: UseTableSortOptions<K, Row>,
-) {
+/**
+ * The click-to-sort state machine on its own, for tables that sort something
+ * other than a flat row array (grouped rows, a server query).
+ */
+export function useSortState<K>({
+	initialKey,
+	initialDir = "desc",
+	stringKeys,
+	resettable = false,
+}: Omit<UseTableSortOptions<K, never>, "pinned">) {
 	const [sortKey, setSortKey] = useState<K | null>(initialKey)
 	const [sortDir, setSortDir] = useState<SortDir>(initialDir)
 
@@ -79,6 +85,15 @@ export function useTableSort<Row, K extends keyof Row>(
 			setSortDir(stringKeys?.includes(k) ? "asc" : "desc")
 		}
 	}
+
+	return { sortKey, sortDir, handleSort }
+}
+
+export function useTableSort<Row, K extends keyof Row>(
+	rows: ReadonlyArray<Row>,
+	{ pinned, ...options }: UseTableSortOptions<K, Row>,
+) {
+	const { sortKey, sortDir, handleSort } = useSortState<K>(options)
 
 	const sorted = useMemo(() => {
 		if (sortKey === null) return rows as Row[]

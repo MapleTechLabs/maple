@@ -71,7 +71,9 @@ function InvestigationRow({ investigation }: { investigation: V2Investigation })
 						{headline}
 					</Link>
 					{scope ? (
-						<TruncatedText className="shrink-0 text-xs text-muted-foreground">{scope}</TruncatedText>
+						<TruncatedText className="shrink-0 text-xs text-muted-foreground">
+							{scope}
+						</TruncatedText>
 					) : null}
 				</div>
 				<RowFinding finding={finding} />
@@ -99,7 +101,7 @@ function RowFinding({ finding }: { finding: ReturnType<typeof investigationFindi
 	if (finding.kind === "pending") {
 		return (
 			<span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
-				<StatusDot tone="live" pulse />
+				<StatusDot tone="live" />
 				{/* The finding carries the running pass's last step when it has one, so
 				    the row is not free to print a fixed string over the top of it. */}
 				<TruncatedText>{finding.text}</TruncatedText>
@@ -113,7 +115,7 @@ function RowFinding({ finding }: { finding: ReturnType<typeof investigationFindi
 		<span
 			className={cn(
 				"flex min-w-0 items-center gap-1.5 text-xs",
-				finding.kind === "failure" && "text-destructive",
+				finding.kind === "failure" && "text-severity-error",
 				// Three tones, not two. Scanning the hub, a lead nothing confirmed
 				// must not look like a confirmed cause, and "we could not tell" must
 				// not look like "it broke".

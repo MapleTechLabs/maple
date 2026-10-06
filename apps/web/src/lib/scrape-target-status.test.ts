@@ -17,24 +17,24 @@ describe("scheduledStatusFromRollup", () => {
 	it("reports disabled, never-scraped, healthy, and failed targets", () => {
 		expect(
 			scheduledStatusFromRollup({ enabled: false, last_scrape_at: null, last_scrape_error: null }),
-		).toMatchObject({ label: "Disabled", badgeVariant: "outline" })
+		).toMatchObject({ label: "Disabled", tone: "neutral" })
 		expect(
 			scheduledStatusFromRollup({ enabled: true, last_scrape_at: null, last_scrape_error: null }),
-		).toMatchObject({ label: "No checks", badgeVariant: "warning" })
+		).toMatchObject({ label: "No checks", tone: "warn" })
 		expect(
 			scheduledStatusFromRollup({
 				enabled: true,
 				last_scrape_at: "2026-07-18T10:00:00.000Z",
 				last_scrape_error: null,
 			}),
-		).toMatchObject({ label: "Up", badgeVariant: "success" })
+		).toMatchObject({ label: "Up", tone: "ok" })
 		expect(
 			scheduledStatusFromRollup({
 				enabled: true,
 				last_scrape_at: "2026-07-18T10:00:00.000Z",
 				last_scrape_error: "connection refused",
 			}),
-		).toMatchObject({ label: "Down", badgeVariant: "error" })
+		).toMatchObject({ label: "Down", tone: "crit" })
 	})
 })
 
@@ -56,6 +56,6 @@ describe("scheduledStatusFromChecks", () => {
 				false,
 				false,
 			),
-		).toMatchObject({ label: "Down", badgeVariant: "error" })
+		).toMatchObject({ label: "Down", tone: "crit" })
 	})
 })

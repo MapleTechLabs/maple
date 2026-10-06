@@ -85,7 +85,7 @@ export function LogHeroHeader({ log, showClose = true }: LogHeroHeaderProps) {
 					<TooltipContent side="bottom">OTel severity number {log.severityNumber}</TooltipContent>
 				</Tooltip>
 				<Badge variant="outline" size="xs" mono>
-					<ServiceDot serviceName={log.serviceName} className="size-1.5" />
+					<ServiceDot serviceName={log.serviceName} size="sm" />
 					<CopyableValue value={log.serviceName}>{log.serviceName}</CopyableValue>
 				</Badge>
 				{showClose && (

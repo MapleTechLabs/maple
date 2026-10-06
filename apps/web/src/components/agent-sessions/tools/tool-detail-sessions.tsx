@@ -1,8 +1,9 @@
 import { Link } from "@tanstack/react-router"
 
-import { StatusDot } from "@maple/ui/components/ui/status-dot"
+import { TONE_FILL } from "@maple/ui/lib/tone"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
+import { ErrorCountPill } from "@/components/replays/session-pills"
 import { EmptyMessage } from "@maple/ui/components/ui/empty"
-import { cn } from "@maple/ui/lib/utils"
 import { SkeletonList } from "@maple/ui/components/ui/skeleton"
 import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
 import { formatSessionDuration } from "@maple/ui/lib/replay-format"
@@ -70,7 +71,7 @@ export function ToolDetailSessions({
 				</Link>
 			</div>
 
-			<div className={cn("transition-opacity", waiting && "opacity-60")}>
+			<div className={refreshingClass(waiting ?? false)} aria-busy={waiting || undefined}>
 				{failure !== undefined ? (
 					<ErrorState error={failure} title={`Failed to load sessions running ${tool}`} />
 				) : loading ? (
@@ -96,7 +97,7 @@ export function ToolDetailSessions({
 								{hasErrors ? (
 									<span
 										aria-hidden
-										className="absolute inset-y-0 left-0 w-[3px] bg-[var(--severity-error)]"
+										className={`absolute inset-y-0 left-0 w-[3px] ${TONE_FILL.crit}`}
 									/>
 								) : null}
 
@@ -129,18 +130,7 @@ export function ToolDetailSessions({
 								</span>
 
 								<span className="hidden w-[140px] shrink-0 @min-[900px]/panel:flex">
-									{hasErrors ? (
-										<span className="inline-flex items-center gap-1 rounded-full border border-[var(--severity-error)]/30 bg-[var(--severity-error)]/10 px-1.5 py-0.5">
-											<StatusDot
-												tone="custom"
-												size="sm"
-												className="bg-[var(--severity-error)]"
-											/>
-											<span className="font-mono text-[11px] font-medium leading-3 text-[var(--severity-error)]">
-												{plural(session.errorSpanCount, "error")}
-											</span>
-										</span>
-									) : null}
+									{hasErrors ? <ErrorCountPill count={session.errorSpanCount} /> : null}
 								</span>
 
 								<span className="shrink-0 whitespace-nowrap text-xs text-muted-foreground">

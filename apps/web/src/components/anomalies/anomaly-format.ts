@@ -125,18 +125,21 @@ export function deviation(
 }
 
 export interface SeverityTone {
-	/** Badge/chip classes, e.g. "bg-destructive/10 text-destructive". */
+	/** Badge/chip classes, e.g. TONE_SOFT.crit. */
 	readonly badge: string
 	/** Solid accent (left bar, dots). */
 	readonly accent: string
 	/** Plain text tone. */
 	readonly text: string
+	/** The shared status tone, for `StatusDot`. */
+	readonly tone: Tone
 }
 
 const severityToneOf = (tone: Tone): SeverityTone => ({
 	badge: TONE_SOFT[tone],
 	accent: TONE_FILL[tone],
 	text: TONE_TEXT[tone],
+	tone,
 })
 
 export const SEVERITY_TONE: Record<"critical" | "warning" | "resolved", SeverityTone> = {
@@ -146,6 +149,7 @@ export const SEVERITY_TONE: Record<"critical" | "warning" | "resolved", Severity
 		badge: TONE_SOFT.neutral,
 		accent: "bg-border/60",
 		text: TONE_TEXT.neutral,
+		tone: "neutral",
 	},
 } satisfies Record<"critical" | "warning" | "resolved", SeverityTone>
 
@@ -165,7 +169,7 @@ export const RESOLVE_REASON_LABEL: Record<AnomalyResolveReason, string> = {
 export const TRIAGE_STATUS_CHIP: Record<AnomalyTriageStatus, { label: string; tone: string } | null> = {
 	none: null,
 	pending: { label: "triaging…", tone: TONE_SOFT.warn },
-	completed: { label: "triaged", tone: "bg-success/10 text-success" },
+	completed: { label: "triaged", tone: TONE_SOFT.ok },
 	skipped: { label: "triage skipped", tone: TONE_SOFT.neutral },
 } satisfies Record<AnomalyTriageStatus, { label: string; tone: string } | null>
 

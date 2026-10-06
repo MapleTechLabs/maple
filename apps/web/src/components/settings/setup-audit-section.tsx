@@ -1,3 +1,6 @@
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
+import { countLabel } from "@maple/ui/lib/format"
+import { Card, CardAction, CardHeader, CardTitle } from "@maple/ui/components/ui/card"
 import { useMemo, useState } from "react"
 import { Link } from "@tanstack/react-router"
 import type { V2SetupAudit, V2SetupAuditCheck } from "@maple/domain/http/v2"
@@ -9,6 +12,7 @@ import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import { Button, buttonVariants } from "@maple/ui/components/ui/button"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { cn } from "@maple/ui/lib/utils"
+import { TONE_TEXT } from "@maple/ui/lib/tone"
 import {
 	ArrowRotateAnticlockwiseIcon,
 	CircleCheckIcon,
@@ -21,14 +25,15 @@ import { setupAuditAtom } from "@/lib/services/atoms/audit-atoms"
 import { DocsLink, EmptyActions } from "@/components/common/docs-link"
 import type { SettingsTab } from "@/components/settings/settings-nav"
 import { RelativeTime } from "@/components/common/relative-time"
+import { ErrorState } from "@/components/common/error-state"
 
 type Severity = V2SetupAuditCheck["severity"]
 type Category = V2SetupAuditCheck["category"]
 
 const SEVERITY: Record<Severity, { label: string; icon: IconComponent; className: string }> = {
-	critical: { label: "Critical", icon: CircleWarningIcon, className: "text-destructive" },
-	warn: { label: "Warning", icon: CircleWarningIcon, className: "text-warning" },
-	info: { label: "Info", icon: CircleInfoIcon, className: "text-info" },
+	critical: { label: "Critical", icon: CircleWarningIcon, className: TONE_TEXT.crit },
+	warn: { label: "Warning", icon: CircleWarningIcon, className: TONE_TEXT.warn },
+	info: { label: "Info", icon: CircleInfoIcon, className: TONE_TEXT.info },
 } satisfies Record<Severity, { label: string; icon: IconComponent; className: string }>
 
 const SEVERITY_ORDER: ReadonlyArray<Severity> = ["critical", "warn", "info"]
@@ -105,7 +110,9 @@ function CheckRow({ check }: { check: V2SetupAuditCheck }) {
 			<div className="flex min-w-0 flex-col gap-1.5">
 				<div className="flex flex-wrap items-center gap-2">
 					<span className="text-sm font-medium">{check.title}</span>
-					<code className="text-muted-foreground font-mono text-[11px]">{check.id}</code>
+					<InlineCode variant="plain" className="text-[11px]">
+						{check.id}
+					</InlineCode>
 					{check.status === "skip" && (
 						<Badge variant="secondary" size="xs">
 							Skipped
@@ -161,23 +168,26 @@ function CategoryCard({
 	const meta = CATEGORY[category]
 	const findings = checks.filter((check) => check.status === "fail").length
 	return (
-		<div className="bg-card flex flex-col rounded-lg border">
-			<div className="flex items-center gap-3 px-4 pt-4 pb-3">
-				<h3 className="text-sm font-medium">{meta.label}</h3>
-				<span className="text-muted-foreground font-mono text-[11px]">
-					{findings > 0 ? `${findings} finding${findings === 1 ? "" : "s"}` : "clear"}
-				</span>
-				<div className="grow" />
-				<CategoryLink
-					target={meta}
-					label={meta.fixLabel}
-					className={buttonVariants({ variant: "ghost", size: "sm" })}
-				/>
-			</div>
+		<Card className="overflow-hidden">
+			<CardHeader className="items-center px-4 pt-4 pb-3">
+				<CardTitle render={<h3 />} className="flex items-center gap-3 text-sm font-medium">
+					{meta.label}
+					<span className="text-muted-foreground font-mono text-[11px] font-normal">
+						{findings > 0 ? countLabel(findings, "finding") : "clear"}
+					</span>
+				</CardTitle>
+				<CardAction className="self-center">
+					<CategoryLink
+						target={meta}
+						label={meta.fixLabel}
+						className={buttonVariants({ variant: "ghost", size: "sm" })}
+					/>
+				</CardAction>
+			</CardHeader>
 			{checks.map((check) => (
 				<CheckRow key={check.id} check={check} />
 			))}
-		</div>
+		</Card>
 	)
 }
 
@@ -201,15 +211,17 @@ function Report({ audit }: { audit: V2SetupAudit }) {
 
 	if (audit.data_status === "no_data") {
 		return (
-			<div className="bg-card flex flex-col items-center gap-3 rounded-lg border px-4 py-10 text-center">
-				<ServerIcon size={20} className="text-muted-foreground/60" />
-				<div className="flex flex-col gap-1">
-					<p className="text-sm font-medium">No telemetry yet</p>
-					<p className="text-muted-foreground max-w-sm text-xs leading-relaxed">
+			<Empty className="rounded-lg border bg-card py-10">
+				<EmptyHeader>
+					<EmptyMedia variant="icon">
+						<ServerIcon size={16} />
+					</EmptyMedia>
+					<EmptyTitle>No telemetry yet</EmptyTitle>
+					<EmptyDescription>
 						The audit runs once your first service reports in. Connect one from the Ingestion tab
 						and come back.
-					</p>
-				</div>
+					</EmptyDescription>
+				</EmptyHeader>
 				<EmptyActions>
 					<Link
 						to="/settings"
@@ -220,18 +232,18 @@ function Report({ audit }: { audit: V2SetupAudit }) {
 					</Link>
 					<DocsLink page="quickstart" />
 				</EmptyActions>
-			</div>
+			</Empty>
 		)
 	}
 
 	return (
 		<div className="flex flex-col gap-4">
 			<div className="bg-card flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border px-4 py-3">
-				<SummaryPill count={summary.critical} label="critical" className="text-destructive" />
-				<SummaryPill count={summary.warn} label="warning" className="text-warning" />
-				<SummaryPill count={summary.info} label="info" className="text-info" />
+				<SummaryPill count={summary.critical} label="critical" className={TONE_TEXT.crit} />
+				<SummaryPill count={summary.warn} label="warning" className={TONE_TEXT.warn} />
+				<SummaryPill count={summary.info} label="info" className={TONE_TEXT.info} />
 				<span className="text-muted-foreground/40">·</span>
-				<SummaryPill count={summary.pass} label="passing" className="text-success" />
+				<SummaryPill count={summary.pass} label="passing" className="text-severity-info" />
 				{summary.skip > 0 && (
 					<SummaryPill count={summary.skip} label="skipped" className="text-muted-foreground" />
 				)}
@@ -244,7 +256,7 @@ function Report({ audit }: { audit: V2SetupAudit }) {
 			</div>
 
 			{!audit.telemetry_checks_available && (
-				<Alert variant="warning" className="rounded-lg px-4 text-xs leading-relaxed">
+				<Alert variant="warn" className="rounded-lg px-4 text-xs leading-relaxed">
 					<CircleWarningIcon />
 					<AlertTitle>Telemetry checks skipped.</AlertTitle>
 					<AlertDescription>
@@ -256,7 +268,7 @@ function Report({ audit }: { audit: V2SetupAudit }) {
 
 			{findingCount === 0 && !showPassing ? (
 				<div className="bg-card flex flex-col items-center gap-2 rounded-lg border px-4 py-10 text-center">
-					<CircleCheckIcon size={20} className="text-success" />
+					<CircleCheckIcon size={20} className="text-severity-info" />
 					<p className="text-sm font-medium">Everything checks out</p>
 					<p className="text-muted-foreground text-xs">
 						All {summary.pass} checks passed. Alerts can deliver, and your telemetry follows the
@@ -286,15 +298,7 @@ export function SetupAuditSection() {
 	const result = useAtomValue(setupAuditAtom)
 
 	if (Result.isFailure(result)) {
-		return (
-			<div className="bg-card flex flex-col items-center gap-3 rounded-lg border px-4 py-10 text-center">
-				<CircleWarningIcon size={20} className="text-destructive" />
-				<p className="text-sm font-medium">Could not run the audit</p>
-				<p className="text-muted-foreground max-w-sm text-xs leading-relaxed">
-					Your workspace configuration could not be read. Try again in a moment.
-				</p>
-			</div>
-		)
+		return <ErrorState error={result.cause} title="Could not run the audit" />
 	}
 
 	if (!Result.isSuccess(result)) {

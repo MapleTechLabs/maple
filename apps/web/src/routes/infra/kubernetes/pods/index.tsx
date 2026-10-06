@@ -1,4 +1,7 @@
+import { FilteredEmpty } from "@/components/common/filtered-empty"
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
+import { cn } from "@maple/ui/lib/utils"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { Schema } from "effect"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 
@@ -355,7 +358,8 @@ function PodsPage() {
 
 						return (
 							<div
-								className={`space-y-3 transition-opacity ${result.waiting ? "opacity-60" : ""}`}
+								className={cn("space-y-3", refreshingClass(result.waiting))}
+								aria-busy={result.waiting || undefined}
 							>
 								<SearchToolbar
 									value={searchText}
@@ -376,22 +380,18 @@ function PodsPage() {
 								/>
 
 								{page.length === 0 ? (
-									<Empty className="py-12">
-										<EmptyHeader>
-											<EmptyMedia variant="icon">
-												<MagnifierIcon size={16} />
-											</EmptyMedia>
-											<EmptyTitle>No pods match these filters</EmptyTitle>
-											<EmptyDescription>
-												{scope
-													? `Nothing is ${SCOPE_LABEL[scope]} in this window, which is good news.`
-													: "Try a different name, or clear the filters to see the whole fleet."}
-											</EmptyDescription>
-										</EmptyHeader>
-										<Button variant="outline" size="sm" onClick={onClearFilters}>
-											Clear all filters
-										</Button>
-									</Empty>
+									<FilteredEmpty
+										noun="pods"
+										className="py-12"
+										icon={<MagnifierIcon size={16} />}
+										description={
+											scope
+												? `Nothing is ${SCOPE_LABEL[scope]} in this window, which is good news.`
+												: "Try a different name, or clear the filters to see the whole fleet."
+										}
+										onClear={onClearFilters}
+										clearLabel="Clear all filters"
+									/>
 								) : (
 									<PodTable
 										pods={page}

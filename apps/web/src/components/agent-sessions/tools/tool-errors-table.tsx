@@ -1,5 +1,7 @@
 import { useMemo, useState } from "react"
 
+import { TONE_FILL, TONE_TEXT } from "@maple/ui/lib/tone"
+import { DisclosureChevron } from "@/components/common/disclosure-chevron"
 import { cn } from "@maple/ui/lib/utils"
 import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
@@ -8,7 +10,7 @@ import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
 
 import { useTableSort } from "@/components/common/data-table"
 import { ErrorState } from "@/components/common/error-state"
-import { ChevronDownIcon, ChevronRightIcon } from "@/components/icons"
+import { ChevronRightIcon } from "@/components/icons"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import {
 	formatToolCount,
@@ -234,7 +236,7 @@ export function ToolErrorsTable({
 			{empty ? (
 				<div className="flex flex-col gap-2 border-t border-border px-2.5 pt-[22px] pb-5 font-mono">
 					<span className="flex items-center gap-2 text-[12.5px] text-foreground">
-						<StatusDot tone="custom" className="bg-[var(--severity-info)]" />
+						<StatusDot tone="ok" />
 						No failed calls between{" "}
 						{windowRangeLabel(window.startMs, window.startMs, effectiveTimezone)} and{" "}
 						{windowRangeLabel(window.endMs, window.endMs, effectiveTimezone)}
@@ -316,7 +318,12 @@ export function ToolErrorsTable({
 										<span className="flex w-0 min-w-0 flex-1 items-center gap-2.5 overflow-hidden font-mono text-[12.5px] leading-4">
 											<GroupTitle row={row} />
 											{prepared.errorType === undefined && row.errorType !== "" ? (
-												<span className="flex h-[18px] shrink-0 items-center rounded-sm border border-border px-[5px] text-[11px] leading-3.5 text-[var(--severity-error)]">
+												<span
+													className={cn(
+														"flex h-[18px] shrink-0 items-center rounded-sm border border-border px-[5px] text-[11px] leading-3.5",
+														TONE_TEXT.crit,
+													)}
+												>
 													{row.errorType}
 												</span>
 											) : null}
@@ -334,7 +341,7 @@ export function ToolErrorsTable({
 											max={maxShare}
 											label={shareLabel(row.share)}
 											tone={{
-												bar: "bg-[var(--severity-error)]",
+												bar: TONE_FILL.crit,
 												text: "text-muted-foreground",
 											}}
 										/>
@@ -363,13 +370,11 @@ export function ToolErrorsTable({
 										aria-expanded={expanded}
 										className="flex h-[38px] w-full items-center gap-2.5 px-2.5 text-left font-mono text-xs transition-colors hover:bg-muted/30"
 									>
-										<ChevronDownIcon
+										<DisclosureChevron
+											open={expanded}
+											direction="down"
 											size={12}
-											className={cn(
-												"text-muted-foreground transition-transform",
-												expanded && "rotate-180",
-											)}
-											aria-hidden
+											className="text-muted-foreground"
 										/>
 										<span className="text-foreground">
 											{expanded

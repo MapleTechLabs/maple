@@ -1,3 +1,5 @@
+import { countLabel } from "@maple/ui/lib/format"
+import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import { useAtomSet } from "@/lib/effect-atom"
 import { useState } from "react"
 import { Link } from "@tanstack/react-router"
@@ -34,13 +36,12 @@ import {
 } from "@maple/ui/components/ui/empty"
 import { SearchInput } from "@maple/ui/components/ui/search-input"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
-import { ToggleGroup, ToggleGroupItem } from "@maple/ui/components/ui/toggle-group"
+import { SegmentedSelect } from "@/components/common/segmented-select"
 import { DocsLink, EmptyActions } from "@/components/common/docs-link"
 import { SkeletonList } from "@maple/ui/components/ui/skeleton"
 import { ColumnHead, DataTable } from "@/components/common/data-table"
 import { RelativeTime } from "@/components/common/relative-time"
 import {
-	AlertWarningIcon,
 	ArrowPathIcon,
 	CodeIcon,
 	DotsVerticalIcon,
@@ -51,6 +52,8 @@ import {
 } from "@/components/icons"
 import { apiBaseUrl } from "@/lib/services/common/api-base-url"
 import { useApiKeyMutationSync, useApiKeysList } from "@/hooks/use-api-keys"
+import { SyncUnavailable } from "@/components/common/sync-unavailable"
+import { retryOrgCollections } from "@/lib/collections/org-collections"
 import { useLiveClock } from "@/hooks/use-live-clock"
 import { useIsOrgAdmin } from "@/hooks/use-is-org-admin"
 import { displayError } from "@/lib/error-messages"
@@ -198,26 +201,20 @@ export function ApiKeysSection() {
 				<div className="flex flex-wrap items-center gap-3">
 					{keys.length > 0 && (
 						<>
-							<ToggleGroup
-								variant="outline"
-								size="xs"
+							<SegmentedSelect
+								size="sm"
 								aria-label="Key status"
-								value={[activeView]}
-								onValueChange={(values) => {
-									const next = values[0]
-									if (next === "active" || next === "expired" || next === "revoked") setView(next)
-								}}
-							>
-								{(["active", "expired", "revoked"] as const).map((tab) =>
+								value={activeView}
+								onChange={setView}
+								options={(["active", "expired", "revoked"] as const)
 									// A tab for an empty bucket is a dead end. Active always shows, so
 									// there is something to fall back to.
-									tab === "active" || buckets[tab].length > 0 ? (
-										<ToggleGroupItem key={tab} value={tab} className="font-mono text-[11px]">
-											{VIEW_LABELS[tab]} · {buckets[tab].length}
-										</ToggleGroupItem>
-									) : null,
-								)}
-							</ToggleGroup>
+									.filter((tab) => tab === "active" || buckets[tab].length > 0)
+									.map((tab) => ({
+										value: tab,
+										label: `${VIEW_LABELS[tab]} · ${buckets[tab].length}`,
+									}))}
+							/>
 							{buckets.active.length > 0 && (
 								<span className="text-muted-foreground font-mono text-[11px]">
 									<span className="text-success-foreground">{standardCount} standard</span>
@@ -246,18 +243,11 @@ export function ApiKeysSection() {
 					{isLoading ? (
 						<SkeletonList rows={2} rowClassName="h-[52px]" gap="2" className="p-4" />
 					) : isError ? (
-						<Empty className="py-8">
-							<EmptyHeader>
-								<EmptyMedia variant="icon">
-									<AlertWarningIcon size={16} />
-								</EmptyMedia>
-								<EmptyTitle>Couldn't load API keys</EmptyTitle>
-								<EmptyDescription>
-									Something went wrong while loading your keys. Reload the page to try
-									again.
-								</EmptyDescription>
-							</EmptyHeader>
-						</Empty>
+						<SyncUnavailable
+							title="Couldn't load API keys"
+							description="The key list couldn't be synced. Your keys are unaffected; this is a read problem."
+							onRetry={retryOrgCollections}
+						/>
 					) : keys.length === 0 ? (
 						<Empty className="py-8">
 							<EmptyHeader>
@@ -315,7 +305,11 @@ export function ApiKeysSection() {
 						</Empty>
 					) : (
 						// The card frame replaces DataTable's own top/bottom rule.
-						<DataTable.Root ariaLabel="API keys" stickySurfaceClass="bg-card" className="border-y-0">
+						<DataTable.Root
+							ariaLabel="API keys"
+							stickySurfaceClass="bg-card"
+							className="border-y-0"
+						>
 							<DataTable.Head>
 								<ColumnHead label="Key" width="min-w-0 flex-1" />
 								<ColumnHead label="Prefix" width={COL.prefix} />
@@ -448,8 +442,8 @@ function ApiReference() {
 				<CardHeader>
 					<CardTitle>API Reference</CardTitle>
 					<CardDescription>
-						The Maple v2 API is a resource-oriented REST interface — snake_case JSON,
-						prefixed object IDs, cursor-paginated lists, and scoped API keys.
+						The Maple v2 API is a resource-oriented REST interface — snake_case JSON, prefixed
+						object IDs, cursor-paginated lists, and scoped API keys.
 					</CardDescription>
 					<CardAction>
 						<Button
@@ -494,11 +488,9 @@ function ApiReference() {
 				<CardHeader>
 					<CardTitle>Scopes</CardTitle>
 					<CardDescription>
-						Restricted keys grant <code className="font-mono text-xs">read</code> or{" "}
-						<code className="font-mono text-xs">write</code> access per resource family (
-						<code className="font-mono text-xs">write</code> implies{" "}
-						<code className="font-mono text-xs">read</code>). A key without scopes has full
-						access.
+						Restricted keys grant <InlineCode>read</InlineCode> or <InlineCode>write</InlineCode>{" "}
+						access per resource family (<InlineCode>write</InlineCode> implies{" "}
+						<InlineCode>read</InlineCode>). A key without scopes has full access.
 					</CardDescription>
 				</CardHeader>
 				<CardContent>
@@ -545,7 +537,7 @@ const COL = {
 function expiresInLabel(expiresAt: number, now: number): string {
 	const days = Math.floor((expiresAt - now) / 86_400_000)
 	if (days < 1) return "Expires today"
-	return `Expires in ${days} ${days === 1 ? "day" : "days"}`
+	return `Expires in ${countLabel(days, "day")}`
 }
 
 function ApiKeyRow({
@@ -606,7 +598,7 @@ function ApiKeyRow({
 							</Badge>
 						)}
 						{status === "revoked" && (
-							<Badge variant="error" size="sm">
+							<Badge variant="crit" size="sm">
 								Revoked
 							</Badge>
 						)}
@@ -618,7 +610,7 @@ function ApiKeyRow({
 						{/* The Expires column is hidden below `md`, so the one state that silently
 						    breaks a running integration rides in the name row instead. */}
 						{expiresSoon && expiresAt !== null && (
-							<Badge variant="warning" size="sm">
+							<Badge variant="warn" size="sm">
 								{expiresInLabel(expiresAt, now)}
 							</Badge>
 						)}
@@ -629,11 +621,12 @@ function ApiKeyRow({
 				</div>
 			</div>
 
-			<code
-				className={cn(COL.prefix, "text-foreground/55 truncate font-mono text-[11px] tracking-tight")}
+			<InlineCode
+				variant="plain"
+				className={cn(COL.prefix, "text-foreground/55 truncate text-[11px] tracking-tight")}
 			>
 				{apiKey.key_prefix}
-			</code>
+			</InlineCode>
 
 			<div className={cn(COL.scopes)}>
 				<ScopesCell apiKey={apiKey} />
@@ -647,7 +640,7 @@ function ApiKeyRow({
 				className={cn(
 					COL.expires,
 					"truncate text-[11px]",
-					expiresSoon ? "text-warning-foreground" : "text-muted-foreground",
+					expiresSoon ? "text-severity-warn" : "text-muted-foreground",
 				)}
 			>
 				{apiKey.expires_at ? formatDate(apiKey.expires_at) : "Never"}

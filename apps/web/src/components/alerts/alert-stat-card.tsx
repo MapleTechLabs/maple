@@ -1,16 +1,8 @@
 import type { ReactNode } from "react"
 import { Card, CardContent } from "@maple/ui/components/ui/card"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { TONE_FILL, TONE_TEXT, type Tone } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-
-type Tone = "default" | "critical" | "emerald" | "amber"
-
-const valueToneClass: Record<Tone, string> = {
-	default: "text-foreground",
-	critical: "text-destructive",
-	emerald: "text-success",
-	amber: "text-warning",
-} satisfies Record<Tone, string>
 
 export type AlertStatItem = {
 	label: string
@@ -94,7 +86,7 @@ export function AlertStatStrip({ items, className }: { items: AlertStatItem[]; c
 					label={item.label}
 					value={item.value}
 					hint={item.hint}
-					valueClassName={valueToneClass[item.tone ?? "default"]}
+					valueClassName={item.tone ? TONE_TEXT[item.tone] : "text-foreground"}
 				/>
 			))}
 		</AlertStatShell>
@@ -136,7 +128,7 @@ export function AlertFiringHero({
 			<Card>
 				<CardContent className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 px-5 py-3.5">
 					<div className="flex min-w-0 items-center gap-3">
-						<StatusDot tone="emerald" />
+						<StatusDot tone="ok" />
 						<div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
 							<span className="text-base font-semibold tracking-tight">All clear</span>
 							<span className="text-muted-foreground text-sm">
@@ -163,16 +155,16 @@ export function AlertFiringHero({
 			.join(" · ") || `${openCount} open`
 
 	return (
-		<Card className="border-destructive/30 bg-destructive/[0.04]">
+		<Card className="border-severity-error/30 bg-severity-error/[0.04]">
 			<CardContent className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 px-5 py-3.5">
 				<div className="flex min-w-0 items-center gap-3">
-					<StatusDot tone="destructive" pulse />
+					<StatusDot tone="crit" />
 					<div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5">
-						<span className="text-destructive text-[11px] font-medium uppercase tracking-[0.16em]">
+						<span className="text-severity-error text-[11px] font-medium uppercase tracking-[0.16em]">
 							Firing now
 						</span>
 						<span className="flex items-baseline gap-1.5">
-							<span className="text-destructive text-2xl font-semibold tabular-nums leading-none">
+							<span className="text-severity-error text-2xl font-semibold tabular-nums leading-none">
 								{openCount}
 							</span>
 							<span className="text-muted-foreground text-sm">
@@ -197,22 +189,11 @@ export function AlertFiringHero({
 	)
 }
 
-/**
- * Severity beacon. The firing halo uses the canonical `.infra-pulse`
- * (2.4s ease-out, reduced-motion-safe) rather than a generic ping, so it reads
- * as the same operator-terminal pulse used across the infra surfaces.
- */
-function StatusDot({ tone, pulse = false }: { tone: "emerald" | "destructive"; pulse?: boolean }) {
-	const dot = tone === "emerald" ? "bg-success" : "bg-destructive"
+/** Severity beacon: a static dot in the stat's tone. */
+function StatusDot({ tone }: { tone: Extract<Tone, "ok" | "crit"> }) {
 	return (
 		<span className="relative flex size-3 shrink-0 items-center justify-center">
-			{pulse && (
-				<span
-					aria-hidden
-					className={cn("infra-pulse absolute size-3 rounded-full opacity-60", dot)}
-				/>
-			)}
-			<span className={cn("relative size-2 rounded-full", dot)} />
+			<span className={cn("relative size-2 rounded-full", TONE_FILL[tone])} />
 		</span>
 	)
 }

@@ -3,7 +3,7 @@ import { getRouteApi } from "@tanstack/react-router"
 
 import { Result, useAtomRefresh } from "@/lib/effect-atom"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
-import { FilterSection, SearchableFilterSection } from "@/components/traces/filter-section"
+import { FilterSection, SearchableFilterSection } from "@/components/filters/filter-section"
 import {
 	FilterSidebarBody,
 	FilterSidebarError,

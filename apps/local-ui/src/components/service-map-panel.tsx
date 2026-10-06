@@ -8,7 +8,7 @@ import { MagnifierIcon, XmarkIcon } from "@maple/ui/components/icons"
 import { Button } from "@maple/ui/components/ui/button"
 import { ScrollArea } from "@maple/ui/components/ui/scroll-area"
 import { formatErrorRate, formatLatency } from "@maple/ui/lib/format"
-import { ERROR_RATE_TEXT, errorRateLevel } from "@maple/ui/lib/error-rate"
+import { errorRateClass, errorRateLevel } from "@maple/ui/lib/error-rate"
 import { formatRate, getHealthDotClass } from "@maple/ui/components/service-map/service-map-node"
 import { getServiceColor } from "@maple/ui/lib/colors"
 import { latencyToneClass } from "@maple/ui/lib/latency-tone"
@@ -25,11 +25,6 @@ import type {
 	ServicePlatform,
 } from "@maple/ui/components/service-map/service-map-types"
 import { hrefFor } from "../lib/router"
-
-function errorToneClass(errorRate: number, calm = "text-foreground"): string {
-	const level = errorRateLevel(errorRate)
-	return level === "neutral" ? calm : ERROR_RATE_TEXT[level]
-}
 
 export function serviceHref(serviceName: string, range: string): string {
 	return hrefFor(`/services/${encodeURIComponent(serviceName)}`, new URLSearchParams({ range }))
@@ -164,7 +159,7 @@ function PeerList({ title, rows }: { title: string; rows: ReadonlyArray<PeerRow>
 								<span
 									className={cn(
 										"font-mono tabular-nums",
-										errorToneClass(row.errorRate, "text-severity-info"),
+										errorRateClass(row.errorRate, { neutral: "text-severity-info" }),
 									)}
 								>
 									{formatErrorRate(row.errorRate)}
@@ -313,7 +308,7 @@ export function ServiceMapServicePanel({
 							<MetricTile
 								label="Error Rate"
 								value={formatErrorRate(errorRate)}
-								className={errorToneClass(errorRate)}
+								className={errorRateClass(errorRate, { neutral: "text-foreground" })}
 							/>
 							<MetricTile
 								label="P50 Latency"
@@ -413,7 +408,7 @@ export function ServiceMapDatabasePanel({
 							<MetricTile
 								label="Error Rate"
 								value={formatErrorRate(errorRate)}
-								className={errorToneClass(errorRate)}
+								className={errorRateClass(errorRate, { neutral: "text-foreground" })}
 							/>
 							<MetricTile
 								label="Avg Latency"

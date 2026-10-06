@@ -161,7 +161,7 @@ function ReviewDetailContent({
 					</p>
 				) : null}
 				{problem !== null ? (
-					<Alert variant="error" size="sm">
+					<Alert variant="crit" size="sm">
 						<AlertDescription className="text-foreground">{problem}</AlertDescription>
 					</Alert>
 				) : null}

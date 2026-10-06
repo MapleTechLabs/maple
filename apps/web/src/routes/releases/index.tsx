@@ -4,7 +4,7 @@ import { Schema } from "effect"
 import { Button } from "@maple/ui/components/ui/button"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { ActiveFilterChips } from "@maple/ui/components/filters/active-filter-chips"
-import { formatNumber } from "@maple/ui/lib/format"
+import { formatNumber, pluralize } from "@maple/ui/lib/format"
 
 import { OptionalStringArrayParam } from "@/lib/search-params"
 import { Result, useAtomRefresh } from "@/lib/effect-atom"
@@ -221,11 +221,11 @@ function ReleasesContent({ search }: { search: ReleasesSearchParams }) {
 					<span className="font-medium tabular-nums text-foreground">
 						{formatNumber(groups.length)}
 					</span>{" "}
-					{groups.length === 1 ? "release" : "releases"}
+					{pluralize(groups.length, "release")}
 				</span>
 				<span>
 					<span className="font-medium tabular-nums text-foreground">{formatNumber(services)}</span>{" "}
-					{services === 1 ? "service" : "services"}
+					{pluralize(services, "service")}
 				</span>
 				<span>
 					<span className="font-medium tabular-nums text-foreground">
@@ -238,7 +238,7 @@ function ReleasesContent({ search }: { search: ReleasesSearchParams }) {
 						<span className="font-medium tabular-nums text-severity-error">
 							{formatNumber(flagged)}
 						</span>{" "}
-						{flagged === 1 ? "release" : "releases"} with errors up
+						{pluralize(flagged, "release")} with errors up
 					</span>
 				) : null}
 				<span className="text-muted-foreground/70">

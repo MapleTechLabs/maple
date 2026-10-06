@@ -2,6 +2,7 @@ import { useState } from "react"
 import { useReverification, useUser } from "@clerk/clerk-react"
 import type { EmailAddress } from "@/components/account/account-types"
 import { toastManager } from "@maple/ui/components/ui/toast"
+import { Field, FieldLabel } from "@maple/ui/components/ui/field"
 
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
@@ -15,7 +16,6 @@ import {
 } from "@maple/ui/components/ui/card"
 import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
 import { Input } from "@maple/ui/components/ui/input"
-import { Label } from "@maple/ui/components/ui/label"
 import {
 	Dialog,
 	DialogContent,
@@ -32,16 +32,11 @@ import {
 	DropdownMenuTrigger,
 } from "@maple/ui/components/ui/dropdown-menu"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
-import {
-	CircleCheckIcon,
-	DotsVerticalIcon,
-	EnvelopeIcon,
-	PlusIcon,
-	TrashIcon,
-} from "@/components/icons"
+import { CircleCheckIcon, DotsVerticalIcon, EnvelopeIcon, PlusIcon, TrashIcon } from "@/components/icons"
 import { toastAccountError } from "@/components/account/account-errors"
 import { AccountSectionSkeleton } from "@/components/account/account-section-skeleton"
 import { CodeField } from "@/components/account/code-field"
+import { useAsyncAction } from "@/hooks/use-mutation-action"
 
 /**
  * The add flow is a two-step dialog: create the address, then verify the emailed code. The
@@ -57,7 +52,7 @@ export function EmailAddressesSection() {
 	const { user, isLoaded } = useUser()
 
 	const [add, setAdd] = useState<AddState>({ step: "closed" })
-	const [isBusy, setIsBusy] = useState(false)
+	const [withBusy, isBusy] = useAsyncAction((task: () => Promise<void>) => task())
 	const [pendingRemoval, setPendingRemoval] = useState<EmailAddress | null>(null)
 
 	const createEmailAddress = useReverification((email: string) => user?.createEmailAddress({ email }))
@@ -68,79 +63,77 @@ export function EmailAddressesSection() {
 	const emails = user.emailAddresses
 	const verifiedCount = emails.filter((e) => e.verification.status === "verified").length
 
-	async function handleCreate() {
+	function handleCreate() {
 		if (add.step !== "email") return
 		const email = add.value.trim()
 		if (email.length === 0) return
-		setIsBusy(true)
-		try {
-			const address = await createEmailAddress(email)
-			if (!address) return
-			await address.prepareVerification({ strategy: "email_code" })
-			setAdd({ step: "code", address, code: "" })
-		} catch (err) {
-			toastAccountError(err, "Failed to add email address")
-		} finally {
-			setIsBusy(false)
-		}
+		return withBusy(async () => {
+			try {
+				const address = await createEmailAddress(email)
+				if (!address) return
+				await address.prepareVerification({ strategy: "email_code" })
+				setAdd({ step: "code", address, code: "" })
+			} catch (err) {
+				toastAccountError(err, "Failed to add email address")
+			}
+		})
 	}
 
-	async function handleVerify(code: string) {
+	function handleVerify(code: string) {
 		if (add.step !== "code" || code.length < 6) return
-		setIsBusy(true)
-		try {
-			await add.address.attemptVerification({ code })
-			setAdd({ step: "closed" })
-			toastManager.add({ title: "Email address verified", type: "success" })
-		} catch (err) {
-			toastAccountError(err, "That code did not match")
-		} finally {
-			setIsBusy(false)
-		}
+		return withBusy(async () => {
+			try {
+				await add.address.attemptVerification({ code })
+				setAdd({ step: "closed" })
+				toastManager.add({ title: "Email address verified", type: "success" })
+			} catch (err) {
+				toastAccountError(err, "That code did not match")
+			}
+		})
 	}
 
 	/** Re-open the code step for an address added earlier but never verified. */
-	async function handleResendVerification(address: EmailAddress) {
-		setIsBusy(true)
-		try {
-			await address.prepareVerification({ strategy: "email_code" })
-			setAdd({ step: "code", address, code: "" })
-		} catch (err) {
-			toastAccountError(err, "Failed to send a verification code")
-		} finally {
-			setIsBusy(false)
-		}
+	function handleResendVerification(address: EmailAddress) {
+		return withBusy(async () => {
+			try {
+				await address.prepareVerification({ strategy: "email_code" })
+				setAdd({ step: "code", address, code: "" })
+			} catch (err) {
+				toastAccountError(err, "Failed to send a verification code")
+			}
+		})
 	}
 
 	/**
 	 * Primary is a property of the *user*, not of the address — Clerk has no
 	 * `emailAddress.setPrimary()`.
 	 */
-	async function handleSetPrimary(address: EmailAddress) {
+	function handleSetPrimary(address: EmailAddress) {
 		if (!user) return
-		setIsBusy(true)
-		try {
-			await user.update({ primaryEmailAddressId: address.id })
-			toastManager.add({ title: `${address.emailAddress} is now your primary email`, type: "success" })
-		} catch (err) {
-			toastAccountError(err, "Failed to change your primary email")
-		} finally {
-			setIsBusy(false)
-		}
+		return withBusy(async () => {
+			try {
+				await user.update({ primaryEmailAddressId: address.id })
+				toastManager.add({
+					title: `${address.emailAddress} is now your primary email`,
+					type: "success",
+				})
+			} catch (err) {
+				toastAccountError(err, "Failed to change your primary email")
+			}
+		})
 	}
 
-	async function handleRemove() {
+	function handleRemove() {
 		if (!pendingRemoval) return
-		setIsBusy(true)
-		try {
-			await destroyEmailAddress(pendingRemoval)
-			setPendingRemoval(null)
-			toastManager.add({ title: "Email address removed", type: "success" })
-		} catch (err) {
-			toastAccountError(err, "Failed to remove email address")
-		} finally {
-			setIsBusy(false)
-		}
+		return withBusy(async () => {
+			try {
+				await destroyEmailAddress(pendingRemoval)
+				setPendingRemoval(null)
+				toastManager.add({ title: "Email address removed", type: "success" })
+			} catch (err) {
+				toastAccountError(err, "Failed to remove email address")
+			}
+		})
 	}
 
 	return (
@@ -149,8 +142,8 @@ export function EmailAddressesSection() {
 				<CardHeader>
 					<CardTitle>Email Addresses</CardTitle>
 					<CardDescription>
-						Your primary address receives sign-in codes, alerts and digests. Others can be used
-						to sign in.
+						Your primary address receives sign-in codes, alerts and digests. Others can be used to
+						sign in.
 					</CardDescription>
 					<CardAction>
 						<Button size="sm" onClick={() => setAdd({ step: "email", value: "" })}>
@@ -284,9 +277,10 @@ export function EmailAddressesSection() {
 								</Button>
 								<Button
 									onClick={() => void handleVerify(add.code)}
-									disabled={isBusy || add.code.length < 6}
+									loading={isBusy}
+									disabled={add.code.length < 6}
 								>
-									{isBusy ? "Verifying..." : "Verify"}
+									Verify
 								</Button>
 							</DialogFooter>
 						</>
@@ -299,8 +293,8 @@ export function EmailAddressesSection() {
 								</DialogDescription>
 							</DialogHeader>
 							<DialogPanel>
-								<div className="space-y-1.5">
-									<Label htmlFor="account-new-email">Email address</Label>
+								<Field>
+									<FieldLabel htmlFor="account-new-email">Email address</FieldLabel>
 									<Input
 										id="account-new-email"
 										type="email"
@@ -310,7 +304,7 @@ export function EmailAddressesSection() {
 										onChange={(e) => setAdd({ step: "email", value: e.target.value })}
 										disabled={isBusy}
 									/>
-								</div>
+								</Field>
 							</DialogPanel>
 							<DialogFooter>
 								<Button
@@ -322,9 +316,10 @@ export function EmailAddressesSection() {
 								</Button>
 								<Button
 									onClick={handleCreate}
-									disabled={isBusy || add.step !== "email" || add.value.trim().length === 0}
+									loading={isBusy}
+									disabled={add.step !== "email" || add.value.trim().length === 0}
 								>
-									{isBusy ? "Sending..." : "Send code"}
+									Send code
 								</Button>
 							</DialogFooter>
 						</>

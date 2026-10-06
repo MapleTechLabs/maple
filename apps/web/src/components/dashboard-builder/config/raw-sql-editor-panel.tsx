@@ -1,3 +1,4 @@
+import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import { rawSqlIssue } from "@maple/domain/raw-sql"
 import { useId, useRef, useState } from "react"
 
@@ -200,10 +201,7 @@ export function RawSqlEditorPanel({
 						</Button>
 					)}
 					<span className="text-[11px] text-muted-foreground ml-auto">
-						Targets{" "}
-						<code className="font-mono text-foreground">
-							{targetLabel ?? widget?.visualization}
-						</code>
+						Targets <InlineCode>{targetLabel ?? widget?.visualization}</InlineCode>
 					</span>
 				</div>
 			)}

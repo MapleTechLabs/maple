@@ -73,7 +73,7 @@ function ServiceInventory({
 					<div
 						className="mt-4 inline-flex items-center gap-1.5 text-xs capitalize"
 						style={{
-							color: `var(--severity-${health(selected.errorRate) === "healthy" ? "info" : health(selected.errorRate) === "elevated" ? "warn" : "error"})`,
+							color: `var(--color-severity-${health(selected.errorRate) === "healthy" ? "info" : health(selected.errorRate) === "elevated" ? "warn" : "error"})`,
 						}}
 					>
 						{health(selected.errorRate)}

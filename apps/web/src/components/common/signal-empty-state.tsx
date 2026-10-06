@@ -11,6 +11,7 @@ import {
 } from "@maple/ui/components/ui/empty"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { DocsLink, EmptyActions } from "@/components/common/docs-link"
+import { FilteredEmpty } from "@/components/common/filtered-empty"
 import type { DocsPage } from "@/lib/docs"
 import {
 	ChartLineIcon,
@@ -18,7 +19,6 @@ import {
 	ConnectionIcon,
 	EyeIcon,
 	FileIcon,
-	SlidersIcon,
 	NetworkNodesIcon,
 } from "@/components/icons"
 import { useSignalPresence, type SignalPresence, type TelemetrySignalKind } from "@/hooks/use-signal-presence"
@@ -154,27 +154,7 @@ export function SignalEmptyStateView({
 	// answers a question they did not ask.
 	if (filtered) {
 		return (
-			<Empty className={className}>
-				<EmptyHeader>
-					<EmptyMedia variant="icon">
-						<SlidersIcon />
-					</EmptyMedia>
-					<EmptyTitle>No {subject} match these filters</EmptyTitle>
-					<EmptyDescription>
-						Everything in this time range was excluded by the current filters.
-					</EmptyDescription>
-				</EmptyHeader>
-				{(detail !== undefined || onClearFilters !== undefined) && (
-					<EmptyContent>
-						{detail}
-						{onClearFilters !== undefined && (
-							<Button variant="outline" size="sm" onClick={onClearFilters}>
-								Clear filters
-							</Button>
-						)}
-					</EmptyContent>
-				)}
-			</Empty>
+			<FilteredEmpty noun={subject} onClear={onClearFilters} detail={detail} className={className} />
 		)
 	}
 

@@ -119,7 +119,7 @@ function TitleRow({
 			<Glyph
 				aria-hidden
 				size={14}
-				className={cn("shrink-0", errored ? "text-destructive" : CATEGORY_TEXT[category])}
+				className={cn("shrink-0", errored ? "text-severity-error" : CATEGORY_TEXT[category])}
 			/>
 			<span className="min-w-0 truncate font-medium font-mono text-sm">{span.spanName}</span>
 			{subtitle !== "" && <span className="text-muted-foreground text-xs">{subtitle}</span>}

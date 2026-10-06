@@ -1,4 +1,5 @@
 import type { ReactNode } from "react"
+import { ResourceNotFound } from "@/components/common/resource-not-found"
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { Option, Schema } from "effect"
 
@@ -9,8 +10,6 @@ import { ErrorState } from "@/components/common/error-state"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { useInvestigation } from "@/hooks/use-investigation"
 import { retryOrgCollections } from "@/lib/collections/org-collections"
-import { Button } from "@maple/ui/components/ui/button"
-import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { InvestigationId } from "@maple/domain/http"
 
@@ -149,17 +148,13 @@ function LoadingShell() {
 function NotFoundShell() {
 	return (
 		<InvestigationShell trail="Missing">
-			<Empty>
-				<EmptyHeader>
-					<EmptyTitle>This investigation is unavailable</EmptyTitle>
-					<EmptyDescription>
-						It may have been removed, or it belongs to a different organization.
-					</EmptyDescription>
-				</EmptyHeader>
-				<Button variant="outline" size="sm" render={<Link to="/investigations" />}>
-					View investigations
-				</Button>
-			</Empty>
+			<ResourceNotFound
+				className=""
+				title="This investigation is unavailable"
+				description="It may have been removed, or it belongs to a different organization."
+				backLink={<Link to="/investigations" />}
+				backLabel="View investigations"
+			/>
 		</InvestigationShell>
 	)
 }

@@ -1,15 +1,18 @@
-import { ErrorSection } from "@maple/ui/components/error-section"
-import type { Log } from "@/api/warehouse/logs"
+import { ErrorSection } from "../error-section"
 
-interface LogErrorBannerProps {
-	log: Log
+/** The fields the banner reads; both the web and local log shapes satisfy it. */
+export interface LogErrorBannerLog {
+	readonly body?: string
+	readonly severityText: string
+	readonly serviceName: string
+	readonly logAttributes: Record<string, string>
 }
 
-function getErrorMessage(log: Log): string {
+function getErrorMessage(log: LogErrorBannerLog): string {
 	return log.logAttributes["exception.message"] ?? log.logAttributes["error.message"] ?? log.body ?? ""
 }
 
-export function LogErrorBanner({ log }: LogErrorBannerProps) {
+export function LogErrorBanner({ log }: { log: LogErrorBannerLog }) {
 	const message = getErrorMessage(log)
 	if (!message) return null
 

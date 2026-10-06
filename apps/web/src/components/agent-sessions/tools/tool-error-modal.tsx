@@ -493,7 +493,7 @@ function VariantsSection({
 						</span>
 						<span className="h-1 w-12 shrink-0 overflow-hidden rounded-[2px] bg-muted">
 							<span
-								className="block h-full bg-[var(--severity-error)]"
+								className="block h-full bg-severity-error"
 								style={{ width: `${Math.max(4, (row.calls / max) * 100)}%` }}
 							/>
 						</span>
@@ -874,7 +874,7 @@ function SamplesPane({
 							<button
 								type="button"
 								onClick={samples.onLoadMore}
-								className="text-[var(--severity-error)] transition-colors hover:text-foreground"
+								className="text-severity-error transition-colors hover:text-foreground"
 							>
 								Couldn't load more — retry
 							</button>
@@ -984,8 +984,8 @@ function SampleBody({ row }: { row: ToolErrorOccurrenceRow }) {
 	return (
 		<div className="flex flex-col gap-3.5 pr-6 pb-5 pl-[50px]">
 			{hint === undefined ? null : (
-				<div className="flex items-baseline gap-3 rounded-md border border-[var(--severity-error)]/20 bg-[var(--severity-error)]/[0.07] px-3 py-[9px] font-mono">
-					<span className="shrink-0 text-[10.5px] uppercase leading-4 tracking-[0.07em] text-[var(--severity-error)]">
+				<div className="flex items-baseline gap-3 rounded-md border border-severity-error/20 bg-severity-error/[0.07] px-3 py-[9px] font-mono">
+					<span className="shrink-0 text-[10.5px] uppercase leading-4 tracking-[0.07em] text-severity-error">
 						What's wrong
 					</span>
 					<span className="text-xs leading-4 text-foreground/85">
@@ -1144,12 +1144,12 @@ function PayloadLineView({ line }: { line: PayloadLine }) {
 		<div
 			className={cn(
 				"pr-3.5",
-				line.highlight && "border-l-2 border-l-[var(--severity-error)] bg-[var(--severity-error)]/10",
+				line.highlight && "border-l-2 border-l-severity-error bg-severity-error/10",
 			)}
 			style={{ paddingLeft: 14 + line.depth * 16 - (line.highlight ? 2 : 0) }}
 		>
 			{line.missingKey !== undefined ? (
-				<span className="my-0.5 inline-flex items-center gap-2 rounded-[3px] border border-dashed border-[var(--severity-error)]/60 px-1.5 text-[11px] leading-4 text-[var(--severity-error)]">
+				<span className="my-0.5 inline-flex items-center gap-2 rounded-[3px] border border-dashed border-severity-error/60 px-1.5 text-[11px] leading-4 text-severity-error">
 					"{line.missingKey}"<span className="opacity-80">missing, required</span>
 				</span>
 			) : (
@@ -1173,7 +1173,7 @@ function PayloadLineView({ line }: { line: PayloadLine }) {
 			)}
 			{line.note === undefined ? null : (
 				<div className="flex items-center gap-2.5 pb-1 text-[11px] leading-3.5">
-					<span className="text-[var(--severity-error)]">↑ {line.note.text}</span>
+					<span className="text-severity-error">↑ {line.note.text}</span>
 					{line.note.hiddenBytes > 0 ? (
 						<span className="rounded-[3px] bg-muted px-1 text-[10.5px] text-muted-foreground">
 							+{formatToolCount(line.note.hiddenBytes)} B not shown
@@ -1194,7 +1194,7 @@ function ResultBlock({ row }: { row: ToolErrorOccurrenceRow }) {
 			{row.result === "" ? (
 				<NotRecorded what="result" />
 			) : (
-				<pre className="max-h-[480px] overflow-auto whitespace-pre-wrap break-words rounded-md border border-[var(--severity-error)]/25 bg-sidebar px-3.5 py-3 font-mono text-xs leading-[18px] text-foreground/85">
+				<pre className="max-h-[480px] overflow-auto whitespace-pre-wrap break-words rounded-md border border-severity-error/25 bg-sidebar px-3.5 py-3 font-mono text-xs leading-[18px] text-foreground/85">
 					{parsed === undefined ? row.result : JSON.stringify(parsed, null, 2)}
 				</pre>
 			)}

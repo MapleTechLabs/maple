@@ -1,7 +1,7 @@
 import { StatusDot } from "@maple/ui/components/ui/status-dot"
-import { Spinner } from "@maple/ui/components/ui/spinner"
 import { useState } from "react"
 import { Exit, Option } from "effect"
+import * as AsyncResult from "effect/reactivity/AsyncResult"
 import type { ChatConnectorId, ChatWorkspaceId } from "@maple/domain/primitives"
 import type { V2ChatConnector } from "@maple/domain/http/v2"
 
@@ -16,7 +16,7 @@ import {
 	ItemMedia,
 	ItemTitle,
 } from "@maple/ui/components/ui/item"
-import { Label } from "@maple/ui/components/ui/label"
+import { Field, FieldDescription, FieldLabel } from "@maple/ui/components/ui/field"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { toastManager } from "@maple/ui/components/ui/toast"
 import { chatConnectorManifests } from "@maple/chat-platform/manifests"
@@ -24,11 +24,12 @@ import { chatConnectorManifests } from "@maple/chat-platform/manifests"
 import { ErrorState } from "@/components/common/error-state"
 import { RelativeTime } from "@/components/common/relative-time"
 import { useIsOrgAdmin } from "@/hooks/use-is-org-admin"
+import { useAsyncAction } from "@/hooks/use-mutation-action"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { retainedQuery } from "@/lib/services/common/atom-client"
 import { MapleApiV2AtomClient, retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { isClerkAuthEnabled } from "@/lib/services/common/auth-mode"
-import { getExitErrorMessage } from "@/lib/alerts/form-utils"
+import { getExitErrorMessage } from "@/lib/error-toast"
 import { catalogEntry, chatIntegrationId, IntegrationIconPlate } from "./integration-catalog"
 import {
 	IntegrationEmpty,
@@ -106,10 +107,10 @@ function WorkspaceSettings({
 	return (
 		<div className="flex flex-col gap-3 border-t border-border/60 pt-3">
 			{fields.map((field) => (
-				<div key={field.key} className="flex flex-col gap-1.5">
-					<Label htmlFor={`${workspaceId}-${field.key}`} className="text-xs">
+				<Field key={field.key} className="items-stretch gap-1.5">
+					<FieldLabel htmlFor={`${workspaceId}-${field.key}`} className="text-xs">
 						{field.label}
-					</Label>
+					</FieldLabel>
 					<Input
 						id={`${workspaceId}-${field.key}`}
 						value={draft[field.key] ?? ""}
@@ -118,12 +119,17 @@ function WorkspaceSettings({
 							setDraft((current) => ({ ...current, [field.key]: event.target.value }))
 						}
 					/>
-					<p className="text-[11px] text-muted-foreground">{field.help}</p>
-				</div>
+					<FieldDescription className="text-[11px]">{field.help}</FieldDescription>
+				</Field>
 			))}
 			<div>
-				<Button size="sm" variant="outline" onClick={handleSave} disabled={disabled || !dirty}>
-					{saving ? <Spinner size={14} /> : null}
+				<Button
+					size="sm"
+					variant="outline"
+					onClick={handleSave}
+					disabled={disabled || !dirty}
+					loading={saving}
+				>
 					Save settings
 				</Button>
 			</div>
@@ -153,27 +159,22 @@ function ChatIdentityRow({
 	const unlink = useAtomSet(MapleApiV2AtomClient.mutation("chatIntegration", "deleteChatIdentity"), {
 		mode: "promiseExit",
 	})
-	const [busy, setBusy] = useState(false)
-
-	async function handleLink() {
-		setBusy(true)
+	const [handleLink, linking] = useAsyncAction(async () => {
 		const result = await startLink({ params: { connector }, reactivityKeys: REACTIVITY_KEYS })
 		if (Exit.isSuccess(result)) {
-			// Full-page redirect to the platform's consent screen, as the install does.
+			// Full-page redirect to the platform's consent screen, as the install does. Stay
+			// pending while the page navigates away.
 			window.location.href = result.value.url
-			return
+			return new Promise<never>(() => {})
 		}
-		setBusy(false)
 		toastManager.add({
 			title: getExitErrorMessage(result, "Failed to start the account link"),
 			type: "error",
 		})
-	}
+	})
 
-	async function handleUnlink() {
-		setBusy(true)
+	const [handleUnlink, unlinking] = useAsyncAction(async () => {
 		const result = await unlink({ params: { connector }, reactivityKeys: REACTIVITY_KEYS })
-		setBusy(false)
 		toastManager.add(
 			Exit.isSuccess(result)
 				? { title: "Account unlinked", type: "success" }
@@ -182,7 +183,7 @@ function ChatIdentityRow({
 						type: "error",
 					},
 		)
-	}
+	})
 
 	return (
 		<Item variant="card" className="gap-3 px-4 py-3">
@@ -198,10 +199,9 @@ function ChatIdentityRow({
 				<Button
 					size="sm"
 					variant="outline"
-					onClick={identity === undefined ? handleLink : handleUnlink}
-					disabled={busy}
+					onClick={() => void (identity === undefined ? handleLink() : handleUnlink())}
+					loading={linking || unlinking}
 				>
-					{busy ? <Spinner size={14} /> : null}
 					{identity === undefined ? "Link your account" : "Unlink"}
 				</Button>
 			</ItemActions>
@@ -237,18 +237,12 @@ export function ChatIntegrationCard({ connector }: { connector: ChatConnectorId 
 
 	// A refetch that fails must not wipe a card that already loaded — the list is
 	// refetched after every save and disconnect.
-	const status = Result.builder(listResult)
-		.onSuccess((response) => response.data.find((entry) => entry.id === connector) ?? null)
-		.orElse(() =>
-			Result.isFailure(listResult)
-				? Option.getOrNull(
-						Option.map(
-							listResult.previousSuccess,
-							(previous) => previous.value.data.find((entry) => entry.id === connector) ?? null,
-						),
-					)
-				: null,
-		)
+	const status = Option.getOrNull(
+		Option.map(
+			AsyncResult.value(listResult),
+			(response) => response.data.find((entry) => entry.id === connector) ?? null,
+		),
+	)
 
 	if (manifest === undefined) return null
 	// Bound once for the handlers below: a function declaration is hoisted, so
@@ -325,8 +319,8 @@ export function ChatIntegrationCard({ connector }: { connector: ChatConnectorId 
 				<IntegrationEmptyCard>
 					<IntegrationEmptyMedia />
 					<IntegrationEmptyHint>{manifest.description}</IntegrationEmptyHint>
-					<Button onClick={handleInstall} disabled={connectDisabled}>
-						{busy === "install" ? <Spinner size={16} /> : <MonoIcon size={16} />}
+					<Button onClick={handleInstall} disabled={connectDisabled} loading={busy === "install"}>
+						<MonoIcon size={16} />
 						Add to {manifest.name}
 					</Button>
 					<IntegrationEmptyFooter>
@@ -352,7 +346,7 @@ export function ChatIntegrationCard({ connector }: { connector: ChatConnectorId 
 						<div className="flex items-center gap-2">
 							<h3 className="text-sm font-semibold">{workspace.name}</h3>
 							<span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-								<StatusDot tone="success" size="lg" />
+								<StatusDot tone="ok" size="lg" />
 								Connected
 							</span>
 						</div>
@@ -393,8 +387,13 @@ export function ChatIntegrationCard({ connector }: { connector: ChatConnectorId 
 				<ChatIdentityRow connector={connector} platform={platform} identity={status.identity} />
 			) : null}
 			<div>
-				<Button size="sm" variant="outline" onClick={handleInstall} disabled={connectDisabled}>
-					{busy === "install" ? <Spinner size={14} /> : null}
+				<Button
+					size="sm"
+					variant="outline"
+					onClick={handleInstall}
+					disabled={connectDisabled}
+					loading={busy === "install"}
+				>
 					Add another workspace
 				</Button>
 			</div>

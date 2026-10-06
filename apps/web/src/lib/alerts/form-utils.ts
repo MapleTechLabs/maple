@@ -34,14 +34,14 @@ import type {
 	V2AlertRuleTestParams,
 } from "@maple/domain/http/v2"
 import type { QueryEngineAlertReducer } from "@maple/query-engine"
-import { Exit, Schema } from "effect"
-import { errorMessage } from "@/lib/error-toast"
+import { Schema } from "effect"
 import {
 	buildTimeseriesQuerySpec,
 	createQueryDraft,
 	type QueryBuilderQueryDraft,
 } from "@maple/query-engine/query-builder"
 import { formatErrorRate, formatLatency, formatNumber } from "@maple/ui/lib/format"
+import type { Tone } from "@maple/ui/lib/tone"
 
 const asHazelOrganizationId = Schema.decodeUnknownSync(HazelOrganizationId)
 const asHazelChannelId = Schema.decodeUnknownSync(HazelChannelId)
@@ -144,11 +144,6 @@ export const comparatorLabels: Record<AlertComparator, string> = {
 /** Returns true for comparators that need a second (upper) threshold. */
 export const isRangeComparator = (c: AlertComparator): c is "between" | "not_between" =>
 	c === "between" || c === "not_between"
-
-export function getExitErrorMessage(exit: unknown, fallback: string): string {
-	if (!Exit.isExit(exit) || Exit.isSuccess(exit)) return fallback
-	return errorMessage(exit, fallback)
-}
 
 export function formatSignalValue(signalType: AlertSignalType, value: number | null): string {
 	if (value == null || Number.isNaN(value)) return "n/a"
@@ -912,23 +907,23 @@ function formatAlertDayHeading(value: string, timeZone: string | undefined): str
  * the recent-activity table, and the chat attachment card. Color is always
  * paired with the label — never the only signal.
  */
-export const eventTypeMeta: Record<AlertEventType, { label: string; dot: string; text: string }> = {
-	trigger: { label: "Triggered", dot: "bg-destructive", text: "text-destructive" },
-	resolve: { label: "Resolved", dot: "bg-success", text: "text-success" },
-	renotify: { label: "Re-notified", dot: "bg-warning", text: "text-warning" },
-	test: { label: "Test", dot: "bg-info", text: "text-info" },
-} satisfies Record<AlertEventType, { label: string; dot: string; text: string }>
+export const eventTypeMeta: Record<AlertEventType, { label: string; tone: Tone }> = {
+	trigger: { label: "Triggered", tone: "crit" },
+	resolve: { label: "Resolved", tone: "ok" },
+	renotify: { label: "Re-notified", tone: "warn" },
+	test: { label: "Test", tone: "info" },
+} satisfies Record<AlertEventType, { label: string; tone: Tone }>
 
-export type DeliveryStatusVariant = "success" | "error" | "warning" | "outline"
+export type DeliveryStatusVariant = Exclude<Tone, "neutral"> | "outline"
 
 /** Delivery status → Badge variant + human label. */
 export const deliveryStatusMeta: Record<
 	AlertDeliveryStatus,
 	{ label: string; variant: DeliveryStatusVariant }
 > = {
-	success: { label: "Delivered", variant: "success" },
-	failed: { label: "Failed", variant: "error" },
-	processing: { label: "Sending", variant: "warning" },
+	success: { label: "Delivered", variant: "ok" },
+	failed: { label: "Failed", variant: "crit" },
+	processing: { label: "Sending", variant: "warn" },
 	queued: { label: "Queued", variant: "outline" },
 } satisfies Record<AlertDeliveryStatus, { label: string; variant: DeliveryStatusVariant }>
 

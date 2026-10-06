@@ -1,4 +1,5 @@
 import { useMemo, useState, type ReactNode } from "react"
+import { TONE_FILL } from "@maple/ui/lib/tone"
 import { Link } from "@tanstack/react-router"
 import type { CodeReviewAnalytics, CodeReviewTotals, PrReviewSeverity } from "@maple/domain/http"
 import { QueryBuilderBarChart } from "@maple/ui/components/charts"
@@ -17,7 +18,6 @@ import { pickTimeRangeSearch } from "@/components/time-range-picker/search"
 import { AuthorLabel } from "./author-avatar"
 import type { CodeReviewSearch } from "./code-review-search"
 import { CATEGORY_LABELS, bucketIso, formatCount, formatSpan } from "./code-review-format"
-
 
 type VolumeMetric = "pullRequests" | "reviews"
 type SeverityFilter = "all" | PrReviewSeverity
@@ -137,7 +137,6 @@ function HeadlineStrip({
 		</StatRail>
 	)
 }
-
 
 /* ---------------------------------------------------------------------------------------------- */
 
@@ -348,7 +347,6 @@ function BarList({
 						className="h-1.5 bg-muted"
 						fillClassName={row.tone ?? "bg-primary"}
 					/>
-
 				</li>
 			))}
 		</ul>
@@ -380,25 +378,25 @@ function OutcomesCard({ current, analytics }: { current: CodeReviewTotals; analy
 						key: "issues",
 						label: "Issues found",
 						value: analytics.verdicts.issues,
-						tone: "bg-[var(--severity-warn)]",
+						tone: TONE_FILL.warn,
 					},
 					{
 						key: "clean",
 						label: "Clean",
 						value: analytics.verdicts.clean,
-						tone: "bg-[var(--severity-info)]",
+						tone: TONE_FILL.ok,
 					},
 					{
 						key: "not_applicable",
 						label: "Nothing to review",
 						value: analytics.verdicts.notApplicable,
-						tone: "bg-muted-foreground/50",
+						tone: TONE_FILL.neutral,
 					},
 					{
 						key: "failed",
 						label: "Failed",
 						value: current.failedReviews,
-						tone: "bg-[var(--severity-error)]",
+						tone: TONE_FILL.crit,
 					},
 					{
 						key: "skipped",
@@ -442,7 +440,6 @@ function AuthorsCard({ analytics }: { analytics: CodeReviewAnalytics }) {
 						))}
 					</TableBody>
 				</Table>
-
 			)}
 		</AnalyticsPanel>
 	)
@@ -505,6 +502,5 @@ function SecondaryStats({ current }: { current: CodeReviewTotals }) {
 				</div>
 			))}
 		</StatRail>
-
 	)
 }

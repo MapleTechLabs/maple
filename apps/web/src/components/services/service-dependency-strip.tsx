@@ -1,6 +1,7 @@
 import { useMemo } from "react"
 import { Link } from "@tanstack/react-router"
 import { cn } from "@maple/ui/lib/utils"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 
 import { Result } from "@/lib/effect-atom"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
@@ -108,10 +109,8 @@ export function ServiceDependencyStrip({
 
 	return (
 		<div
-			className={cn(
-				"flex flex-wrap items-center gap-x-2 gap-y-1.5 transition-opacity",
-				isWaiting && "opacity-60",
-			)}
+			className={cn("flex flex-wrap items-center gap-x-2 gap-y-1.5", refreshingClass(isWaiting))}
+			aria-busy={isWaiting || undefined}
 		>
 			<Eyebrow>Talks to</Eyebrow>
 			{visible.map((target) =>

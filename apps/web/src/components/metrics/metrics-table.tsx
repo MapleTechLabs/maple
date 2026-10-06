@@ -1,6 +1,8 @@
+import { cn } from "@maple/ui/lib/utils"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { formatNumber } from "@maple/ui/lib/format"
 import { TableSkeleton } from "@maple/ui/components/ui/table-skeleton"
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
+import { RelativeTime } from "@/components/common/relative-time"
 import { useState } from "react"
 
 import { Result, useAtomValue } from "@/lib/effect-atom"
@@ -117,7 +119,7 @@ export function MetricsTable({
 			onClearFilters={onClearFilters}
 		/>
 	) : (
-		<div className={`space-y-4 ${waiting ? "opacity-60" : ""}`}>
+		<div className={cn("space-y-4", refreshingClass(waiting))} aria-busy={waiting || undefined}>
 			<div className="rounded-md border overflow-auto">
 				<Table className="table-fixed">
 					<TableHeader>
@@ -139,7 +141,11 @@ export function MetricsTable({
 								>
 									<TableCell>
 										<div className="flex min-w-0 flex-col gap-0.5">
-											<TruncatedText text={metric.metricName} mono className="text-xs" />
+											<TruncatedText
+												text={metric.metricName}
+												mono
+												className="text-xs"
+											/>
 											{metric.metricDescription && (
 												<span className="text-[10px] text-muted-foreground line-clamp-1">
 													{metric.metricDescription}
@@ -153,10 +159,7 @@ export function MetricsTable({
 									<TableCell className="hidden md:table-cell">
 										{metric.serviceName ? (
 											<Badge variant="outline" size="xs" mono>
-												<ServiceDot
-													serviceName={metric.serviceName}
-													className="size-1.5"
-												/>
+												<ServiceDot serviceName={metric.serviceName} size="sm" />
 												{metric.serviceName}
 											</Badge>
 										) : (
@@ -167,7 +170,7 @@ export function MetricsTable({
 										{formatNumber(metric.dataPointCount)}
 									</TableCell>
 									<TableCell className="hidden md:table-cell text-xs text-muted-foreground">
-										{formatRelativeTime(metric.lastSeen)}
+										<RelativeTime value={metric.lastSeen} tooltip="title" />
 									</TableCell>
 								</TableRow>
 							)

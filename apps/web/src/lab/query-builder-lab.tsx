@@ -760,7 +760,7 @@ function QueryBuilderLabInner({ startTime, endTime }: QueryBuilderLabProps) {
 														)
 														if (!hasSlowHints(hints)) return null
 														return (
-															<p className="mt-1 text-[11px] text-warning">
+															<p className="mt-1 text-[11px] text-severity-warn">
 																{slowHintsSummary(hints)}
 															</p>
 														)

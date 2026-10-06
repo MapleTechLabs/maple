@@ -150,7 +150,9 @@ function ServiceRow({ entry, query }: { entry: ServiceCatalogEntry; query: URLSe
 				</RowLink>
 			</TableCell>
 			<TableCell className="text-right tabular-nums">{formatNumber(entry.spanCount)}</TableCell>
-			<TableCell className={cn("text-right tabular-nums", entry.errorCount > 0 && "text-destructive")}>
+			<TableCell
+				className={cn("text-right tabular-nums", entry.errorCount > 0 && "text-severity-error")}
+			>
 				{formatNumber(entry.errorCount)}
 			</TableCell>
 			<TableCell className="text-right">

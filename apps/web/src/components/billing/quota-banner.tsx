@@ -50,7 +50,7 @@ export function QuotaBanner() {
 
 	return (
 		<div className="px-4 pt-3">
-			<Alert variant={isOver ? "error" : "warning"}>
+			<Alert variant={isOver ? "crit" : "warn"}>
 				<CircleWarningIcon size={16} />
 				<AlertTitle>
 					{isOver

@@ -1,11 +1,11 @@
-import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import { useState } from "react"
 import { DetailRail } from "@maple/ui/components/detail-rail"
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
 import { Schema } from "effect"
 
-import { Card, CardContent, CardHeader, CardTitle } from "@maple/ui/components/ui/card"
+import { ResourceAttributesCard } from "@/components/infra/primitives/resource-attributes-card"
+import { NoMetricsMessage } from "@/components/infra/primitives/no-metrics-message"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { formatPercent } from "@maple/ui/lib/format"
 
@@ -72,25 +72,17 @@ function PodDetailPage() {
 		.orElse(() => null)
 
 	const rightPanel = summary ? (
-		<Card>
-			<CardHeader className="pb-3">
-				<CardTitle className="flex items-center gap-2 text-sm font-medium">
-					<FolderIcon size={14} className="text-muted-foreground" />
-					Resource attributes
-				</CardTitle>
-			</CardHeader>
-			<CardContent className="space-y-1">
-				<DetailRail.MetaRow label="k8s.pod.name" value={summary.podName} />
-				<DetailRail.MetaRow label="k8s.namespace.name" value={summary.namespace} />
-				<DetailRail.MetaRow label="k8s.node.name" value={summary.nodeName} />
-				<DetailRail.MetaRow label="k8s.pod.uid" value={summary.podUid} />
-				<DetailRail.MetaRow label="k8s.pod.qos_class" value={summary.qosClass} />
-				<DetailRail.MetaRow label="k8s.deployment.name" value={summary.deploymentName} />
-				<DetailRail.MetaRow label="k8s.statefulset.name" value={summary.statefulsetName} />
-				<DetailRail.MetaRow label="k8s.daemonset.name" value={summary.daemonsetName} />
-				<DetailRail.MetaRow label="k8s.pod.start_time" value={summary.podStartTime} />
-			</CardContent>
-		</Card>
+		<ResourceAttributesCard icon={FolderIcon}>
+			<DetailRail.MetaRow label="k8s.pod.name" value={summary.podName} />
+			<DetailRail.MetaRow label="k8s.namespace.name" value={summary.namespace} />
+			<DetailRail.MetaRow label="k8s.node.name" value={summary.nodeName} />
+			<DetailRail.MetaRow label="k8s.pod.uid" value={summary.podUid} />
+			<DetailRail.MetaRow label="k8s.pod.qos_class" value={summary.qosClass} />
+			<DetailRail.MetaRow label="k8s.deployment.name" value={summary.deploymentName} />
+			<DetailRail.MetaRow label="k8s.statefulset.name" value={summary.statefulsetName} />
+			<DetailRail.MetaRow label="k8s.daemonset.name" value={summary.daemonsetName} />
+			<DetailRail.MetaRow label="k8s.pod.start_time" value={summary.podStartTime} />
+		</ResourceAttributesCard>
 	) : null
 
 	return (
@@ -156,9 +148,7 @@ function PodDetailPage() {
 						/>
 					</StatRail>
 				) : (
-					<EmptyMessage dashed className="py-12">
-						No metrics arrived for this pod in the selected window.
-					</EmptyMessage>
+					<NoMetricsMessage noun="pod" />
 				)}
 
 				<div className="space-y-3">

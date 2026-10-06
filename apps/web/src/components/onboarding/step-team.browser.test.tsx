@@ -79,7 +79,7 @@ it("disables navigation and duplicate submissions while an invitation is sending
 		target: { value: "teammate@example.com" },
 	})
 	fireEvent.click(screen.getByRole("button", { name: "Send invitation" }))
-	expect(screen.getByRole("button", { name: "Sending…" }).hasAttribute("disabled")).toBe(true)
+	expect(screen.getByRole("button", { name: "Send invitation" }).hasAttribute("disabled")).toBe(true)
 	expect(screen.getByRole("button", { name: "Back" }).hasAttribute("disabled")).toBe(true)
 	await waitFor(() => expect(finish).toBeDefined())
 	finish?.()

@@ -13,7 +13,7 @@ import {
 	type ToolErrorSamplesState,
 } from "@/components/agent-sessions/tools/tool-error-modal"
 import { prepareToolErrors, type ToolErrorsWindow } from "@/components/agent-sessions/tools/tool-errors-table"
-import { ErrorState } from "@/components/common/error-state"
+import { ResultView } from "@/components/common/result-view"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
 import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
@@ -226,63 +226,67 @@ function ToolDetailBody({
 			? undefined
 			: errorRows.find((candidate) => candidate.fingerprint === search.error)
 
-	return Result.builder(totals)
-		.onInitial(() => (
-			<div className="flex flex-col gap-5 p-6">
-				<Skeleton className="h-14 w-full max-w-2xl" />
-				<Skeleton className="h-64" />
-				<Skeleton className="h-64" />
-			</div>
-		))
-		.onError((error) => <ErrorState error={error} title={`Failed to load ${tool}`} />)
-		.onSuccess((resolved, result) => (
-			<ToolDetailView
-				tool={tool}
-				search={search}
-				onSearchChange={onSearchChange}
-				data={{
-					series: seriesData,
-					totals: resolved.current,
-					// The toolbar's predicates narrow this tool's calls; the denominator
-					// is the same read without them, which the tool's own totals are
-					// only when nothing is set. `scopeSummary` drops the ratio when the
-					// two agree, so this is the honest one of the two.
-					scopeCalls: resolved.current.calls,
-					firstSeen: resolved.firstSeen,
-					lastSeen: resolved.lastSeen,
-					description: resolved.description,
-					range,
-					errors: errorRows,
-					errorsLoading: Result.isInitial(errors),
-					errorsFailure,
-					sessions: sessionRows,
-					sessionsCapped: sessionRows.length >= SESSIONS_LIMIT,
-					sessionsLoading: Result.isInitial(sessions),
-					sessionsFailure,
-				}}
-				serviceOptions={facets?.services ?? []}
-				modelOptions={facets?.models ?? []}
-				envOptions={facets?.environments ?? []}
-				headerControls={headerControls}
-				modal={
-					openError === undefined ? null : (
-						<ErrorModal
-							tool={tool}
-							rows={errorRows}
-							fingerprint={openError.fingerprint}
-							range={range}
-							toolCalls={resolved.current.calls}
-							selection={selection}
-							session={search.session}
-							variant={search.variant}
-							onSearchChange={onSearchChange}
-						/>
-					)
-				}
-				waiting={result.waiting}
-			/>
-		))
-		.render()
+	return (
+		<ResultView
+			result={totals}
+			loading={
+				<div className="flex flex-col gap-5 p-6">
+					<Skeleton className="h-14 w-full max-w-2xl" />
+					<Skeleton className="h-64" />
+					<Skeleton className="h-64" />
+				</div>
+			}
+			errorTitle={`Failed to load ${tool}`}
+		>
+			{(resolved, { waiting }) => (
+				<ToolDetailView
+					tool={tool}
+					search={search}
+					onSearchChange={onSearchChange}
+					data={{
+						series: seriesData,
+						totals: resolved.current,
+						// The toolbar's predicates narrow this tool's calls; the denominator
+						// is the same read without them, which the tool's own totals are
+						// only when nothing is set. `scopeSummary` drops the ratio when the
+						// two agree, so this is the honest one of the two.
+						scopeCalls: resolved.current.calls,
+						firstSeen: resolved.firstSeen,
+						lastSeen: resolved.lastSeen,
+						description: resolved.description,
+						range,
+						errors: errorRows,
+						errorsLoading: Result.isInitial(errors),
+						errorsFailure,
+						sessions: sessionRows,
+						sessionsCapped: sessionRows.length >= SESSIONS_LIMIT,
+						sessionsLoading: Result.isInitial(sessions),
+						sessionsFailure,
+					}}
+					serviceOptions={facets?.services ?? []}
+					modelOptions={facets?.models ?? []}
+					envOptions={facets?.environments ?? []}
+					headerControls={headerControls}
+					modal={
+						openError === undefined ? null : (
+							<ErrorModal
+								tool={tool}
+								rows={errorRows}
+								fingerprint={openError.fingerprint}
+								range={range}
+								toolCalls={resolved.current.calls}
+								selection={selection}
+								session={search.session}
+								variant={search.variant}
+								onSearchChange={onSearchChange}
+							/>
+						)
+					}
+					waiting={waiting}
+				/>
+			)}
+		</ResultView>
+	)
 }
 
 /**

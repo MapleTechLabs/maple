@@ -1,4 +1,5 @@
 import { useRef } from "react"
+import { errorMessage } from "@/lib/error-toast"
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Schema } from "effect"
 import { toastManager } from "@maple/ui/components/ui/toast"
@@ -105,7 +106,7 @@ function DashboardListPage() {
 					toastManager.add({ title: `Dashboard "${dashboard.name}" imported`, type: "success" })
 				} catch (error) {
 					toastManager.add({
-						title: error instanceof Error ? error.message : "Failed to parse dashboard file",
+						title: errorMessage(error, "Failed to parse dashboard file"),
 						type: "error",
 					})
 				}
@@ -126,7 +127,7 @@ function DashboardListPage() {
 				})
 			} catch (error) {
 				toastManager.add({
-					title: error instanceof Error ? error.message : "Failed to create dashboard",
+					title: errorMessage(error, "Failed to create dashboard"),
 					type: "error",
 				})
 			}
@@ -148,7 +149,7 @@ function DashboardListPage() {
 				toastManager.add({ title: `Duplicated as "${copy.name}"`, type: "success" })
 			} catch (error) {
 				toastManager.add({
-					title: error instanceof Error ? error.message : "Failed to duplicate dashboard",
+					title: errorMessage(error, "Failed to duplicate dashboard"),
 					type: "error",
 				})
 			}
@@ -278,7 +279,7 @@ function PageShell({
 						{/* Pinned with the header rather than inside Scroll: it explains the
 						    disabled buttons above it, so it must not scroll away from them. */}
 						{persistenceError && (
-							<Alert variant="error" size="sm" className="mb-3">
+							<Alert variant="crit" size="sm" className="mb-3">
 								<CircleWarningIcon size={14} />
 								<AlertDescription className="text-destructive">
 									{persistenceError}. Editing, import and delete are disabled until it

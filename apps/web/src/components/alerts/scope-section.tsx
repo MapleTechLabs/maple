@@ -1,7 +1,7 @@
 import type { Dispatch, SetStateAction } from "react"
 
 import { Card } from "@maple/ui/components/ui/card"
-import { Label } from "@maple/ui/components/ui/label"
+import { Field, FieldDescription, FieldLabel } from "@maple/ui/components/ui/field"
 
 import { EnvironmentCombobox, ServiceCombobox } from "@/components/alerts/service-combobox"
 import { GroupByMultiSelect } from "@/components/query-builder/group-by-multi-select"
@@ -38,8 +38,8 @@ export function ScopeSection({
 			<SectionHeader id="rule-scope-heading" label="Scope" />
 
 			<div className="space-y-3">
-				<div className="space-y-1.5">
-					<Label htmlFor="rule-services">Services</Label>
+				<Field className="items-stretch gap-1.5">
+					<FieldLabel htmlFor="rule-services">Services</FieldLabel>
 					<ServiceCombobox
 						id="rule-services"
 						serviceNames={form.serviceNames}
@@ -56,23 +56,21 @@ export function ScopeSection({
 						}
 						placeholder={form.serviceNames.length === 0 ? "All services" : "Add service..."}
 					/>
-				</div>
+				</Field>
 
-				<div className="space-y-1.5">
-					<Label htmlFor="rule-environments">Environments</Label>
+				<Field className="items-stretch gap-1.5">
+					<FieldLabel htmlFor="rule-environments">Environments</FieldLabel>
 					<EnvironmentCombobox
 						id="rule-environments"
 						environments={form.environments}
 						options={environmentOptions}
 						onChange={(values) => onChange((c) => ({ ...c, environments: values }))}
 					/>
-					<p className="text-muted-foreground text-xs">
-						Leave empty to evaluate across every environment.
-					</p>
-				</div>
+					<FieldDescription>Leave empty to evaluate across every environment.</FieldDescription>
+				</Field>
 
-				<div className="space-y-1.5">
-					<Label htmlFor="rule-group-by">Group by</Label>
+				<Field className="items-stretch gap-1.5">
+					<FieldLabel htmlFor="rule-group-by">Group by</FieldLabel>
 					<GroupByMultiSelect
 						id="rule-group-by"
 						dataSource="traces"
@@ -84,14 +82,14 @@ export function ScopeSection({
 						disabled={hasSpecificServices}
 					/>
 					{hasSpecificServices && (
-						<p className="text-muted-foreground text-xs">
+						<FieldDescription>
 							Disabled: each selected service is already its own group.
-						</p>
+						</FieldDescription>
 					)}
-				</div>
+				</Field>
 
-				<div className="space-y-1.5">
-					<Label htmlFor="rule-exclude">Exclude services</Label>
+				<Field className="items-stretch gap-1.5">
+					<FieldLabel htmlFor="rule-exclude">Exclude services</FieldLabel>
 					<ServiceCombobox
 						id="rule-exclude"
 						serviceNames={form.excludeServiceNames}
@@ -101,11 +99,11 @@ export function ScopeSection({
 						placeholder={hasSpecificServices ? "—" : "Skip these services"}
 					/>
 					{hasSpecificServices && (
-						<p className="text-muted-foreground text-xs">
+						<FieldDescription>
 							Disabled: only applies when scoping to all services.
-						</p>
+						</FieldDescription>
 					)}
-				</div>
+				</Field>
 			</div>
 		</Card>
 	)

@@ -48,7 +48,7 @@ export function LeaseHud({ leaseExpiresAt, claimedAt, leaseHolder, className }: 
 		<div
 			className={cn(
 				"flex items-center gap-3 rounded-lg border border-border/60 bg-card/50 px-3 py-2.5",
-				danger && "border-destructive/40",
+				danger && "border-severity-error/40",
 				className,
 			)}
 		>
@@ -57,7 +57,6 @@ export function LeaseHud({ leaseExpiresAt, claimedAt, leaseHolder, className }: 
 					width={RING_SIZE}
 					height={RING_SIZE}
 					viewBox={`0 0 ${RING_SIZE} ${RING_SIZE}`}
-					className={cn(danger && "animate-pulse")}
 					aria-hidden
 				>
 					<circle
@@ -89,16 +88,7 @@ export function LeaseHud({ leaseExpiresAt, claimedAt, leaseHolder, className }: 
 			<div className="flex min-w-0 flex-1 flex-col gap-1">
 				<div className="flex items-baseline justify-between gap-3">
 					<Eyebrow className="flex items-center gap-2">
-						<StatusDot
-							tone="custom"
-							className={cn(
-								expired
-									? "bg-muted-foreground"
-									: danger
-										? "bg-destructive animate-pulse"
-										: "bg-primary",
-							)}
-						/>
+						<StatusDot tone={expired ? "neutral" : danger ? "crit" : "live"} />
 						{expired ? "Lease expired" : "Active lease"}
 					</Eyebrow>
 					<span
@@ -107,7 +97,7 @@ export function LeaseHud({ leaseExpiresAt, claimedAt, leaseHolder, className }: 
 							expired
 								? "text-muted-foreground"
 								: danger
-									? "text-destructive"
+									? "text-severity-error"
 									: "text-foreground",
 						)}
 					>

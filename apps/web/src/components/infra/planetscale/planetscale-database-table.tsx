@@ -220,7 +220,7 @@ export function PlanetScaleDatabaseTable({
 								{row.kind === "postgresql" ? "Postgres" : "MySQL"}
 							</Badge>
 							{state !== null ? (
-								<Badge variant="warning" className="shrink-0">
+								<Badge variant="warn" className="shrink-0">
 									{state}
 								</Badge>
 							) : null}

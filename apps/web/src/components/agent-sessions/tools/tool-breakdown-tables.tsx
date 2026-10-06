@@ -1,4 +1,6 @@
 import { useMemo, type ReactNode } from "react"
+import { TONE_TEXT } from "@maple/ui/lib/tone"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { Link } from "@tanstack/react-router"
 
 import { cn } from "@maple/ui/lib/utils"
@@ -127,7 +129,8 @@ export function TableBody({
 }) {
 	return (
 		<div
-			className={cn("overflow-y-auto transition-opacity", waiting && "opacity-60")}
+			className={cn("overflow-y-auto", refreshingClass(waiting ?? false))}
+			aria-busy={waiting || undefined}
 			style={{ maxHeight }}
 		>
 			{children}
@@ -456,9 +459,7 @@ export function ToolsTable({
 									<span
 										className={cn(
 											"hidden w-[76px] shrink-0 text-right font-mono text-xs tabular-nums @min-[640px]/panel:block",
-											row.errors > 0
-												? "text-[var(--severity-error)]"
-												: "text-muted-foreground/60",
+											row.errors > 0 ? TONE_TEXT.crit : "text-muted-foreground/60",
 										)}
 									>
 										{formatToolCount(row.errors)}

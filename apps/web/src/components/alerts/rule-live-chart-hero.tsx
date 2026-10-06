@@ -1,4 +1,3 @@
-import { Spinner } from "@maple/ui/components/ui/spinner"
 import { useMemo } from "react"
 
 import { Badge } from "@maple/ui/components/ui/badge"
@@ -120,10 +119,10 @@ export function RuleLiveChartHero({
 						variant="outline"
 						size="sm"
 						onClick={onTestRule}
-						disabled={testing}
+						loading={testing}
 						title="Evaluate the rule once against current data. Nothing is sent."
 					>
-						{testing ? <Spinner size={14} /> : <EyeIcon size={14} />}
+						<EyeIcon size={14} />
 						Dry run
 					</Button>
 				</div>
@@ -160,14 +159,14 @@ function BreachPill({ stats }: { stats: BreachStats }) {
 	if (stats.bucketCount === 0) return null
 	if (stats.breachCount === 0) {
 		return (
-			<span className="hidden items-center gap-1 text-xs text-success-foreground sm:inline-flex">
+			<span className="hidden items-center gap-1 text-xs text-severity-info sm:inline-flex">
 				<CheckIcon size={12} />
 				No breaches in this window
 			</span>
 		)
 	}
 	return (
-		<span className="hidden items-center gap-1 text-xs text-destructive sm:inline-flex">
+		<span className="hidden items-center gap-1 text-xs text-severity-error sm:inline-flex">
 			<FireIcon size={12} />
 			Would have fired{" "}
 			<span className="font-mono font-semibold tabular-nums">{stats.breachCount}×</span>
@@ -201,7 +200,7 @@ function PreviewBadge({
 			<span
 				className={cn(
 					"font-mono text-sm font-semibold tabular-nums",
-					status === "breached" ? "text-destructive" : "text-success",
+					status === "breached" ? "text-severity-error" : "text-severity-info",
 				)}
 			>
 				{formatSignalValue(signalType, value)}

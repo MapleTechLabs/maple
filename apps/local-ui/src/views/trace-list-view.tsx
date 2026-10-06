@@ -277,7 +277,7 @@ function SpanScopeBanner({
 function TraceListRow({ row, query }: { row: TraceRow; query: URLSearchParams }) {
 	const href = hrefFor(`/traces/${encodeURIComponent(row.traceId)}`, query)
 	return (
-		<LinkRow className={cn(row.hasError && "bg-destructive/5")}>
+		<LinkRow className={cn(row.hasError && "bg-severity-error/5")}>
 			<TableCell className="min-w-0">
 				<RowLink
 					href={href}
@@ -285,7 +285,7 @@ function TraceListRow({ row, query }: { row: TraceRow; query: URLSearchParams })
 					className="flex items-center gap-2"
 				>
 					{row.hasError ? (
-						<span className="size-1.5 shrink-0 rounded-full bg-destructive">
+						<span className="size-1.5 shrink-0 rounded-full bg-severity-error">
 							<span className="sr-only">Errored</span>
 						</span>
 					) : null}

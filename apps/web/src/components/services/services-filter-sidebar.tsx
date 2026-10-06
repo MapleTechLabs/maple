@@ -1,9 +1,10 @@
-import { Result, useAtomRefresh } from "@/lib/effect-atom"
+import { useAtomRefresh } from "@/lib/effect-atom"
+import { ResultView } from "@/components/common/result-view"
 import { getRouteApi } from "@tanstack/react-router"
 
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
-import { FilterSection, SearchableFilterSection } from "@/components/traces/filter-section"
+import { FilterSection, SearchableFilterSection } from "@/components/filters/filter-section"
 import { getServicesFacetsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { isServiceHealth, useServiceHealthSummary } from "@/components/services/use-service-health-summary"
 import { PinnedNamespaceNotice } from "@/components/filters/pinned-namespace-notice"
@@ -17,10 +18,6 @@ import {
 } from "@/components/filters/filter-sidebar"
 
 const routeApi = getRouteApi("/services/")
-
-function LoadingState() {
-	return <FilterSidebarLoading sectionCount={2} />
-}
 
 export function ServicesFilterSidebar() {
 	const navigate = routeApi.useNavigate()
@@ -84,14 +81,14 @@ export function ServicesFilterSidebar() {
 		(search.excludedCommitShas?.length ?? 0) > 0 ||
 		search.health !== undefined
 
-	return Result.builder(facetsResult)
-		.onInitial(() => <LoadingState />)
-		.onError((error) => <FilterSidebarError error={error} onRetry={refreshFacets} />)
-		.onSuccess((facetsResponse, result) => {
-			const facets = facetsResponse.data
-
-			return (
-				<FilterSidebarFrame waiting={result.waiting}>
+	return (
+		<ResultView
+			result={facetsResult}
+			loading={<FilterSidebarLoading sectionCount={2} />}
+			error={(error) => <FilterSidebarError error={error} onRetry={refreshFacets} />}
+		>
+			{({ data: facets }, { waiting }) => (
+				<FilterSidebarFrame waiting={waiting}>
 					<FilterSidebarHeader canClear={hasActiveFilters} onClear={clearAllFilters} />
 					<FilterSidebarBody>
 						{healthSummary !== undefined && (
@@ -156,7 +153,7 @@ export function ServicesFilterSidebar() {
 							)}
 					</FilterSidebarBody>
 				</FilterSidebarFrame>
-			)
-		})
-		.render()
+			)}
+		</ResultView>
+	)
 }

@@ -2,6 +2,7 @@
 import { useOrganization, useAuth } from "@clerk/clerk-react"
 import { useState } from "react"
 import { toastManager } from "@maple/ui/components/ui/toast"
+import { Field, FieldLabel } from "@maple/ui/components/ui/field"
 
 import { Button } from "@maple/ui/components/ui/button"
 import {
@@ -24,7 +25,6 @@ import {
 	DialogTitle,
 } from "@maple/ui/components/ui/dialog"
 import { Input } from "@maple/ui/components/ui/input"
-import { Label } from "@maple/ui/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
 import {
 	DropdownMenu,
@@ -34,15 +34,11 @@ import {
 } from "@maple/ui/components/ui/dropdown-menu"
 import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
 import { Skeleton, SkeletonList } from "@maple/ui/components/ui/skeleton"
+import { toastAccountError } from "@/components/account/account-errors"
+import { AccountSectionSkeleton } from "@/components/account/account-section-skeleton"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
-import {
-	PlusIcon,
-	DotsVerticalIcon,
-	TrashIcon,
-	ShieldIcon,
-	UserIcon,
-	EnvelopeIcon,
-} from "@/components/icons"
+import { PlusIcon, DotsVerticalIcon, TrashIcon, ShieldIcon, UserIcon, EnvelopeIcon } from "@/components/icons"
+import { useAsyncAction } from "@/hooks/use-mutation-action"
 
 function getInitials(firstName?: string | null, lastName?: string | null) {
 	const first = firstName?.[0] ?? ""
@@ -77,7 +73,7 @@ export function MembersSection() {
 	const [inviteOpen, setInviteOpen] = useState(false)
 	const [inviteEmail, setInviteEmail] = useState("")
 	const [inviteRole, setInviteRole] = useState<string>("org:member")
-	const [inviteLoading, setInviteLoading] = useState(false)
+	const [withInviteLoading, inviteLoading] = useAsyncAction((task: () => Promise<void>) => task())
 
 	const [removeDialogOpen, setRemoveDialogOpen] = useState(false)
 	const [memberToRemove, setMemberToRemove] = useState<{
@@ -85,29 +81,27 @@ export function MembersSection() {
 		name: string
 		destroy: () => Promise<unknown>
 	} | null>(null)
-	const [removeLoading, setRemoveLoading] = useState(false)
+	const [withRemoveLoading, removeLoading] = useAsyncAction((task: () => Promise<void>) => task())
 
 	const isAdmin = orgRole === "org:admin"
 
-	async function handleInvite() {
+	function handleInvite() {
 		if (!organization || !inviteEmail.trim()) return
-		setInviteLoading(true)
-		try {
-			await organization.inviteMember({
-				emailAddress: inviteEmail.trim(),
-				role: inviteRole as "org:admin" | "org:member",
-			})
-			toastManager.add({ title: `Invitation sent to ${inviteEmail}`, type: "success" })
-			setInviteEmail("")
-			setInviteRole("org:member")
-			setInviteOpen(false)
-			invitations?.revalidate?.()
-		} catch (err: unknown) {
-			const message = err instanceof Error ? err.message : "Failed to send invitation"
-			toastManager.add({ title: message, type: "error" })
-		} finally {
-			setInviteLoading(false)
-		}
+		return withInviteLoading(async () => {
+			try {
+				await organization.inviteMember({
+					emailAddress: inviteEmail.trim(),
+					role: inviteRole as "org:admin" | "org:member",
+				})
+				toastManager.add({ title: `Invitation sent to ${inviteEmail}`, type: "success" })
+				setInviteEmail("")
+				setInviteRole("org:member")
+				setInviteOpen(false)
+				invitations?.revalidate?.()
+			} catch (err: unknown) {
+				toastAccountError(err, "Failed to send invitation")
+			}
+		})
 	}
 
 	async function handleRoleChange(
@@ -122,25 +116,25 @@ export function MembersSection() {
 				type: "success",
 			})
 			memberships?.revalidate?.()
-		} catch {
-			toastManager.add({ title: "Failed to update role", type: "error" })
+		} catch (err: unknown) {
+			toastAccountError(err, "Failed to update role")
 		}
 	}
 
-	async function handleRemoveMember() {
+	function handleRemoveMember() {
 		if (!memberToRemove) return
-		setRemoveLoading(true)
-		try {
-			await memberToRemove.destroy()
-			toastManager.add({ title: `${memberToRemove.name} has been removed`, type: "success" })
-			memberships?.revalidate?.()
-		} catch {
-			toastManager.add({ title: "Failed to remove member", type: "error" })
-		} finally {
-			setRemoveLoading(false)
-			setRemoveDialogOpen(false)
-			setMemberToRemove(null)
-		}
+		return withRemoveLoading(async () => {
+			try {
+				await memberToRemove.destroy()
+				toastManager.add({ title: `${memberToRemove.name} has been removed`, type: "success" })
+				memberships?.revalidate?.()
+				setRemoveDialogOpen(false)
+				setMemberToRemove(null)
+			} catch (err: unknown) {
+				// Keep the confirmation open with its member selected so the admin can retry.
+				toastAccountError(err, "Failed to remove member")
+			}
+		})
 	}
 
 	async function handleRevokeInvitation(revoke: () => Promise<unknown>, email: string) {
@@ -148,36 +142,28 @@ export function MembersSection() {
 			await revoke()
 			toastManager.add({ title: `Invitation to ${email} revoked`, type: "success" })
 			invitations?.revalidate?.()
-		} catch {
-			toastManager.add({ title: "Failed to revoke invitation", type: "error" })
+		} catch (err: unknown) {
+			toastAccountError(err, "Failed to revoke invitation")
 		}
 	}
 
 	if (!isLoaded) {
 		return (
-			<div className="space-y-6">
-				<Card>
-					<CardHeader>
-						<Skeleton className="h-5 w-32" />
-						<Skeleton className="h-4 w-64" />
-					</CardHeader>
-					<CardContent>
-						<SkeletonList
-							rows={3}
-							gap="3"
-							renderRow={() => (
-								<div className="flex items-center gap-3">
-									<Skeleton className="size-8 rounded-full" />
-									<div className="space-y-1.5">
-										<Skeleton className="h-3.5 w-32" />
-										<Skeleton className="h-3 w-48" />
-									</div>
-								</div>
-							)}
-						/>
-					</CardContent>
-				</Card>
-			</div>
+			<AccountSectionSkeleton>
+				<SkeletonList
+					rows={3}
+					gap="3"
+					renderRow={() => (
+						<div className="flex items-center gap-3">
+							<Skeleton className="size-8 rounded-full" />
+							<div className="space-y-1.5">
+								<Skeleton className="h-3.5 w-32" />
+								<Skeleton className="h-3 w-48" />
+							</div>
+						</div>
+					)}
+				/>
+			</AccountSectionSkeleton>
 		)
 	}
 
@@ -408,10 +394,10 @@ export function MembersSection() {
 						<DialogDescription>Send an invitation to join {organization.name}.</DialogDescription>
 					</DialogHeader>
 					<div className="space-y-4 px-6 py-2">
-						<div className="space-y-2">
-							<Label htmlFor="invite-email" className="text-xs font-medium">
+						<Field>
+							<FieldLabel htmlFor="invite-email" className="text-xs font-medium">
 								Email address
-							</Label>
+							</FieldLabel>
 							<Input
 								id="invite-email"
 								type="email"
@@ -420,11 +406,11 @@ export function MembersSection() {
 								onChange={(e) => setInviteEmail(e.target.value)}
 								onKeyDown={(e) => e.stopPropagation()}
 							/>
-						</div>
-						<div className="space-y-2">
-							<Label htmlFor="invite-role" className="text-xs font-medium">
+						</Field>
+						<Field>
+							<FieldLabel htmlFor="invite-role" className="text-xs font-medium">
 								Role
-							</Label>
+							</FieldLabel>
 							<Select value={inviteRole} onValueChange={(val) => val && setInviteRole(val)}>
 								<SelectTrigger id="invite-role" className="w-full">
 									<SelectValue placeholder="Select role">
@@ -436,7 +422,7 @@ export function MembersSection() {
 									<SelectItem value="org:admin">Admin</SelectItem>
 								</SelectContent>
 							</Select>
-						</div>
+						</Field>
 					</div>
 					<DialogFooter>
 						<Button
@@ -446,8 +432,8 @@ export function MembersSection() {
 						>
 							Cancel
 						</Button>
-						<Button onClick={handleInvite} disabled={inviteLoading || !inviteEmail.trim()}>
-							{inviteLoading ? "Sending..." : "Send invitation"}
+						<Button onClick={handleInvite} loading={inviteLoading} disabled={!inviteEmail.trim()}>
+							Send invitation
 						</Button>
 					</DialogFooter>
 				</DialogContent>

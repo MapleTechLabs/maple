@@ -10,6 +10,7 @@ import { errorIssueFromV2 } from "@/lib/services/error-issues"
 import type { ReleaseErrorFingerprint } from "@/api/warehouse/releases"
 import { NEW_ISSUE_SLACK_MS } from "./release-model"
 import { EmptyMessage } from "@maple/ui/components/ui/empty"
+import { ErrorState } from "@/components/common/error-state"
 
 /** The v2 list takes one page of fingerprints; the rest of a very noisy version stays on /errors. */
 const FINGERPRINT_LIMIT = 50
@@ -182,7 +183,13 @@ function ReleaseIssuesLoaded({ serviceName, releaseFirstSeen, fingerprints }: Re
 
 	if (Result.isInitial(result)) return <PanelsSkeleton />
 	if (split === undefined) {
-		return <EmptyMessage className="rounded-md border bg-card">Issues could not be loaded.</EmptyMessage>
+		return (
+			<ErrorState
+				error={Result.isFailure(result) ? result.cause : undefined}
+				title="Issues could not be loaded"
+				variant="row"
+			/>
+		)
 	}
 
 	return (

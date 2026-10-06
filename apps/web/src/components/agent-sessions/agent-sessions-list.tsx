@@ -1,4 +1,5 @@
-import { useCallback, useMemo, type ReactNode } from "react"
+import { useMemo, type ReactNode } from "react"
+import { ReachEndSentinel } from "@/components/common/reach-end-sentinel"
 import { Link, useNavigate } from "@tanstack/react-router"
 import {
 	columnSizingFeature,
@@ -220,34 +221,6 @@ interface AgentSessionsListProps {
 	/** True when any sidebar filter or search narrows the list. */
 	filtered?: boolean
 	onClearFilters?: () => void
-}
-
-function observeReachEnd(element: HTMLDivElement, onReachEnd: () => void): () => void {
-	const observer = new IntersectionObserver(
-		(entries) => {
-			if (entries[0]?.isIntersecting) onReachEnd()
-		},
-		{ rootMargin: "400px 0px" },
-	)
-	observer.observe(element)
-	return () => observer.disconnect()
-}
-
-function SessionsSentinel({
-	onReachEnd,
-	loadingMore,
-}: Pick<AgentSessionsListProps, "onReachEnd" | "loadingMore">) {
-	const elementRef = useCallback(
-		(element: HTMLDivElement | null) => {
-			if (!element) return
-			return observeReachEnd(element, () => {
-				if (!loadingMore) onReachEnd?.()
-			})
-		},
-		[loadingMore, onReachEnd],
-	)
-
-	return <div ref={elementRef} aria-hidden className="h-px w-full" />
 }
 
 export function AgentSessionsListSkeleton() {
@@ -561,7 +534,7 @@ export function AgentSessionsList({
 				</Table>
 			</div>
 
-			{hasMore && <SessionsSentinel onReachEnd={onReachEnd} loadingMore={loadingMore} />}
+			{hasMore && <ReachEndSentinel onReachEnd={onReachEnd} loading={loadingMore} />}
 
 			{isCapped && (
 				<p className="py-3 text-sm text-muted-foreground">
@@ -836,7 +809,7 @@ function ErrorChips({ session }: { session: AgentSessionRow }) {
 					count={session.turnErrorCount}
 					noun="turn"
 					hint={`${plural(session.turnErrorCount, "failed turn")} — a model call or agent turn errored`}
-					className="border-destructive/30 bg-destructive/10 text-destructive"
+					className="border-severity-error/30 bg-severity-error/10 text-severity-error"
 				/>
 			)}
 			{session.toolErrorCount > 0 && (
@@ -853,7 +826,7 @@ function ErrorChips({ session }: { session: AgentSessionRow }) {
 					count={other}
 					noun="span"
 					hint={`${plural(other, "errored span")} outside the agent's turns and tools`}
-					className="border-destructive/30 bg-destructive/10 text-destructive"
+					className="border-severity-error/30 bg-severity-error/10 text-severity-error"
 				/>
 			)}
 		</div>
@@ -874,10 +847,7 @@ function ErrorChip({
 	className: string
 }) {
 	return (
-		<Hint
-			className={cn(badgeVariants({ pill: true, size: "xs", mono: true }), className)}
-			content={hint}
-		>
+		<Hint className={cn(badgeVariants({ pill: true, size: "xs", mono: true }), className)} content={hint}>
 			{Icon ? (
 				<Icon size={10} className="shrink-0" aria-hidden />
 			) : (

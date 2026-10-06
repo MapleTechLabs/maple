@@ -1,4 +1,5 @@
 import { memo, useMemo, useRef } from "react"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import {
 	Handle,
 	Position,
@@ -354,7 +355,7 @@ export function SessionFlow({
 									)
 								})}
 								<span className="flex items-center gap-1.5">
-									<CircleXmarkIcon size={12} className="shrink-0 text-destructive" />
+									<CircleXmarkIcon size={12} className="shrink-0 text-severity-error" />
 									error
 								</span>
 							</div>
@@ -472,7 +473,7 @@ const StepNode = memo(function StepNode({ data }: NodeProps & { data: StepData }
 				className={cn(
 					"flex size-full cursor-pointer flex-col justify-center gap-1 rounded-md border bg-card px-2.5 py-2 text-left hover:border-ring",
 					"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-					node.errored ? "border-destructive/60" : "border-border",
+					node.errored ? "border-severity-error/60" : "border-border",
 					focused && "border-ring",
 					// Selection is a state and hover is a pointer, so they cannot share a
 					// token: the waterfall marks its selected row with primary, and the
@@ -485,7 +486,7 @@ const StepNode = memo(function StepNode({ data }: NodeProps & { data: StepData }
 						size={12}
 						className={cn(
 							"shrink-0",
-							node.errored ? "text-destructive" : CATEGORY_TEXT[node.category],
+							node.errored ? "text-severity-error" : CATEGORY_TEXT[node.category],
 						)}
 					/>
 					<span className="min-w-0 truncate text-xs" title={node.title}>
@@ -500,7 +501,7 @@ const StepNode = memo(function StepNode({ data }: NodeProps & { data: StepData }
 				<span
 					className={cn(
 						"truncate text-[11px]",
-						node.errored ? "text-destructive" : "text-muted-foreground",
+						node.errored ? "text-severity-error" : "text-muted-foreground",
 					)}
 				>
 					{node.subtitle}
@@ -521,11 +522,13 @@ interface LaneLabelData extends Record<string, unknown> {
 const LaneLabelNode = memo(function LaneLabelNode({ data }: NodeProps & { data: LaneLabelData }) {
 	return (
 		<div className="pointer-events-none w-[110px] text-xs">
-			<p className="font-medium text-[10px] text-primary uppercase tracking-wider">Turn {data.index}</p>
-			<p className={cn("tabular-nums", data.failed ? "text-destructive" : "text-muted-foreground")}>
+			<Eyebrow as="p" className="text-primary">
+				Turn {data.index}
+			</Eyebrow>
+			<p className={cn("tabular-nums", data.failed ? "text-severity-error" : "text-muted-foreground")}>
 				{formatDuration(data.durationMs)}
 			</p>
-			{data.failed && <p className="text-destructive text-xs">failed</p>}
+			{data.failed && <p className="text-severity-error text-xs">failed</p>}
 		</div>
 	)
 })

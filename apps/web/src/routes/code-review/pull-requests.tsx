@@ -3,7 +3,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Schema } from "effect"
 import type { CodeReviewListItem } from "@maple/domain/http"
 import { Badge } from "@maple/ui/components/ui/badge"
-import { LoadMoreButton } from "@maple/ui/components/ui/list-footer"
+import { ListFooter } from "@maple/ui/components/ui/list-footer"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
 import { SkeletonList } from "@maple/ui/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
@@ -24,7 +24,7 @@ import {
 } from "@/components/code-review/code-review-search"
 import { AuthorLabel } from "@/components/code-review/author-avatar"
 import { ReviewDetailSheet } from "@/components/code-review/review-detail-sheet"
-import { ErrorState } from "@/components/common/error-state"
+import { ResultView } from "@/components/common/result-view"
 import { CircleCheckIcon, CircleWarningIcon, ClockIcon, LoaderIcon } from "@/components/icons"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
@@ -119,59 +119,53 @@ function CodeReviewPullRequestsPage() {
 					</SelectContent>
 				</Select>
 			</div>
-			{Result.builder(result)
-				.onInitial(() => (
-					<SkeletonList rows={6} rowClassName="h-14" gap="2" />
-				))
-				.onError((error) => (
-					<ErrorState error={error} title="Failed to load reviews" onRetry={refresh} />
-				))
-				.onSuccess((response) =>
-					response.reviews.length === 0 ? (
-						<NothingInWindow
-							title="No reviews in this window"
-							description={
-								filtered
-									? "Nothing matches these filters."
-									: "Reviews appear here once a pull request is opened on a reviewed repository."
-							}
-							onClear={
-								filtered
-									? () =>
-											onChange({
-												repo: undefined,
-												author: undefined,
-												status: undefined,
-											})
-									: undefined
-							}
+			<ResultView
+				result={result}
+				loading={<SkeletonList rows={6} rowClassName="h-14" gap="2" />}
+				errorTitle="Failed to load reviews"
+				onRetry={refresh}
+				isEmpty={(response) => response.reviews.length === 0}
+				empty={
+					<NothingInWindow
+						title="No reviews in this window"
+						description={
+							filtered
+								? "Nothing matches these filters."
+								: "Reviews appear here once a pull request is opened on a reviewed repository."
+						}
+						onClear={
+							filtered
+								? () =>
+										onChange({
+											repo: undefined,
+											author: undefined,
+											status: undefined,
+										})
+								: undefined
+						}
+					/>
+				}
+			>
+				{(response) => (
+					<div className="flex flex-col gap-3">
+						<ReviewTable
+							reviews={response.reviews}
+							selected={search.review}
+							onOpen={(review) => onChange({ review: review.id })}
 						/>
-					) : (
-						<div className="flex flex-col gap-3">
-							<ReviewTable
-								reviews={response.reviews}
-								selected={search.review}
-								onOpen={(review) => onChange({ review: review.id })}
+						{response.nextCursor !== null ? (
+							<ListFooter
+								shown={response.reviews.length}
+								noun="reviews"
+								hasMore={limit < MAX_ROWS}
+								capped={limit >= MAX_ROWS}
+								loading={result.waiting}
+								onLoadMore={() => setLimit((current) => Math.min(current + PAGE, MAX_ROWS))}
 							/>
-							{response.nextCursor !== null ? (
-								limit < MAX_ROWS ? (
-									<LoadMoreButton
-										className="self-center"
-										loading={result.waiting}
-										onClick={() =>
-											setLimit((current) => Math.min(current + PAGE, MAX_ROWS))
-										}
-									/>
-								) : (
-									<p className="text-center text-xs text-muted-foreground">
-										Showing the latest {MAX_ROWS}. Narrow the window to see older reviews.
-									</p>
-								)
-							) : null}
-						</div>
-					),
-				)
-				.render()}
+						) : null}
+					</div>
+				)}
+			</ResultView>
 			<ReviewDetailSheet
 				reviewId={search.review}
 				onClose={() => onChange({ review: undefined })}
@@ -306,7 +300,12 @@ function ReviewTable({
 									) : (
 										<span className="inline-flex items-center gap-1.5">
 											{review.criticalFindings > 0 ? (
-												<Badge size="xs" mono className={TONE_SOFT.crit} title="Critical">
+												<Badge
+													size="xs"
+													mono
+													className={TONE_SOFT.crit}
+													title="Critical"
+												>
 													{review.criticalFindings}
 												</Badge>
 											) : null}

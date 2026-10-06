@@ -6,6 +6,7 @@ import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import type { V2Investigation } from "@maple/domain/http/v2"
 import { cn } from "@maple/ui/lib/utils"
+import { TONE_FILL } from "@maple/ui/lib/tone"
 
 import { useTickingNow } from "@/hooks/use-ticking-now"
 
@@ -53,9 +54,9 @@ export function RunProgress({
 								className={cn(
 									"translate-y-[-2px]",
 									last && running && !stalled
-										? "animate-pulse bg-primary"
+										? "bg-primary"
 										: last && stalled
-											? "bg-severity-warn"
+											? TONE_FILL.warn
 											: "bg-muted-foreground/35",
 								)}
 							/>
@@ -101,7 +102,7 @@ function Header({ count, stalled, silentFor }: { count: number; stalled: boolean
 function AwaitingFirstStep({ className }: { className?: string }) {
 	return (
 		<div className={cn("flex items-center gap-2.5 text-xs text-muted-foreground", className)}>
-			<StatusDot tone="live" size="sm" pulse />
+			<StatusDot tone="live" size="sm" />
 			Starting the pass
 		</div>
 	)

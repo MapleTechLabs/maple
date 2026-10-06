@@ -84,7 +84,7 @@ export function AnomalyGroup({
 				<span className="flex size-4 shrink-0 items-center justify-center text-muted-foreground">
 					{isOpen ? <ChevronDownIcon size={14} /> : <ChevronRightIcon size={14} />}
 				</span>
-				<StatusDot tone="custom" size="lg" className={SEVERITY_TONE[group].accent} />
+				<StatusDot tone={SEVERITY_TONE[group].tone} size="lg" />
 				<span className="shrink-0 text-sm font-medium text-foreground">{GROUP_LABEL[group]}</span>
 				<span className="text-xs text-muted-foreground tabular-nums">{incidents.length}</span>
 			</button>
@@ -94,7 +94,7 @@ export function AnomalyGroup({
 						<div key={cluster.key + cluster.incidents[0]!.id}>
 							{cluster.incidents.length >= 2 ? (
 								<div className="flex h-7 items-center gap-1.5 border-b border-border/40 bg-muted/20 pl-5 text-[11px] text-muted-foreground">
-									<ServiceDot serviceName={cluster.serviceName} className="size-1.5" />
+									<ServiceDot serviceName={cluster.serviceName} size="sm" />
 									<span className="font-medium text-foreground/80">
 										{cluster.serviceName}
 									</span>

@@ -5,7 +5,7 @@ import type {
 	PrReviewSeverity,
 	PrReviewSkipReason,
 } from "@maple/domain/http"
-import type { Tone } from "@maple/ui/lib/tone"
+import { TONE_TEXT, type Tone } from "@maple/ui/lib/tone"
 
 export const CATEGORY_LABELS = {
 	correctness: "Correctness",
@@ -66,6 +66,7 @@ export function formatSpan(seconds: number | null): string {
 
 export interface ReviewOutcome {
 	readonly label: string
+	/** Text class; a clean review paints the ok hue (TONE_TEXT.ok is plain foreground). */
 	readonly tone: string
 	readonly kind: "queued" | "running" | "failed" | "skipped" | "issues" | "clean" | "neutral"
 }
@@ -75,17 +76,17 @@ export const outcomeOf = (review: Pick<CodeReviewListItem, "status" | "verdict">
 		case "queued":
 			return { label: "Queued", tone: "text-muted-foreground", kind: "queued" }
 		case "running":
-			return { label: "Reviewing", tone: "text-info-foreground", kind: "running" }
+			return { label: "Reviewing", tone: TONE_TEXT.info, kind: "running" }
 		case "failed":
-			return { label: "Failed", tone: "text-destructive-foreground", kind: "failed" }
+			return { label: "Failed", tone: TONE_TEXT.crit, kind: "failed" }
 		case "skipped":
 			return { label: "Skipped", tone: "text-muted-foreground", kind: "skipped" }
 		case "completed":
 			return review.verdict === "issues"
-				? { label: "Issues found", tone: "text-warning-foreground", kind: "issues" }
+				? { label: "Issues found", tone: TONE_TEXT.warn, kind: "issues" }
 				: review.verdict === "not_applicable"
 					? { label: "Nothing to review", tone: "text-muted-foreground", kind: "neutral" }
-					: { label: "Clean", tone: "text-success-foreground", kind: "clean" }
+					: { label: "Clean", tone: "text-severity-info", kind: "clean" }
 	}
 }
 

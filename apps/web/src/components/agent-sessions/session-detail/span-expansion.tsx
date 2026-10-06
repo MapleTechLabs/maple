@@ -341,14 +341,9 @@ function MessageBlock({ message, span }: { message: SpanMessage; span: AiSession
 	return (
 		<div className="flex min-w-0 flex-col gap-1.5">
 			<div className="flex items-center gap-2.5">
-				<span
-					className={cn(
-						"shrink-0 font-medium font-mono text-[10px] uppercase tracking-widest",
-						roleColor(message.role),
-					)}
-				>
+				<Eyebrow variant="mono" className={cn("shrink-0", roleColor(message.role))}>
 					{message.role}
-				</span>
+				</Eyebrow>
 				{/* Output messages are what this call produced, so the call's own
 				    response facts belong on them and on nothing else. */}
 				{message.origin === "output" && (
@@ -397,9 +392,9 @@ function TextPart({ text, raw }: { text: string; raw: boolean }) {
 function ReasoningPart({ part }: { part: Extract<SpanMessagePart, { kind: "reasoning" }> }) {
 	return (
 		<div className="min-w-0 border-chart-5/50 border-l-2 pl-2.5">
-			<span className="font-medium font-mono text-[10px] text-chart-5 uppercase tracking-widest">
+			<Eyebrow variant="mono" className="text-chart-5">
 				Reasoning
-			</span>
+			</Eyebrow>
 			{part.redacted || part.text === undefined ? (
 				<p className="text-muted-foreground text-xs italic">
 					{part.redacted
@@ -674,10 +669,10 @@ function FailureBanner({ span }: { span: AiSessionSpan }) {
 	const responseStatus = span.genAi.responseStatus
 
 	return (
-		<div className="flex flex-col gap-1.5 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2.5">
+		<div className="flex flex-col gap-1.5 rounded-md border border-severity-error/40 bg-severity-error/5 px-3 py-2.5">
 			<div className="flex flex-wrap items-center gap-2">
-				<CircleWarningIcon size={13} className="shrink-0 text-destructive" />
-				<span className="font-medium text-[13px] text-destructive">This call failed</span>
+				<CircleWarningIcon size={13} className="shrink-0 text-severity-error" />
+				<span className="font-medium text-[13px] text-severity-error">This call failed</span>
 				{span.statusCode === "Error" && (
 					<Badge pill size="xs" mono className={TONE_SOFT.crit}>
 						span status Error

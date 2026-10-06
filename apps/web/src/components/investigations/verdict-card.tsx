@@ -252,7 +252,7 @@ function InvestigatingVerdict({ investigation }: { investigation: V2Investigatio
 		>
 			<Eyebrow as="div" className="flex flex-wrap items-center gap-2 text-primary">
 				<span className="flex items-center gap-1.5">
-					<StatusDot tone="live" pulse />
+					<StatusDot tone="live" />
 					Investigating
 				</span>
 			</Eyebrow>
@@ -283,7 +283,7 @@ function FailedVerdict({ investigation }: { investigation: V2Investigation }) {
 
 	return (
 		<VerdictShell
-			accent="bg-destructive"
+			accent="bg-severity-error"
 			stats={
 				<>
 					<Stat label="Ran for">
@@ -299,7 +299,7 @@ function FailedVerdict({ investigation }: { investigation: V2Investigation }) {
 				</>
 			}
 		>
-			<Eyebrow as="div" className="text-destructive">
+			<Eyebrow as="div" className="text-severity-error">
 				No diagnosis
 			</Eyebrow>
 			<h2 className="font-display text-xl font-semibold leading-7 tracking-[-0.01em] text-foreground">
@@ -310,8 +310,8 @@ function FailedVerdict({ investigation }: { investigation: V2Investigation }) {
 			</p>
 			{/* The raw error was on the wire and rendered nowhere but a toast. */}
 			{investigation.error ? (
-				<div className="flex items-start gap-3 rounded-lg border border-destructive/25 bg-destructive/6 px-3 py-2.5">
-					<Badge size="xs" mono className="mt-0.5 bg-destructive/12 text-destructive">
+				<div className="flex items-start gap-3 rounded-lg border border-severity-error/25 bg-severity-error/6 px-3 py-2.5">
+					<Badge size="xs" mono className="mt-0.5 bg-severity-error/12 text-severity-error">
 						reason
 					</Badge>
 					<code className="min-w-0 break-words font-mono text-xs leading-5 text-foreground">

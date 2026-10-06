@@ -1,4 +1,5 @@
 import { errorRateLevel } from "@maple/ui/lib/error-rate"
+import { formatLatency as formatSharedLatency } from "@maple/ui/lib/format"
 import type { Edge3D, Node3D } from "./types"
 import { computeTiers } from "./graph"
 import type { Vec3 } from "./types"
@@ -140,8 +141,8 @@ export const HEALTH_COLOR = { healthy: "#79ad9b", elevated: "#d3a65c", degraded:
 const rateFormatter = new Intl.NumberFormat("en", { maximumFractionDigits: 1, notation: "compact" })
 export const formatRate = (rate: number, estimated = false) =>
 	`${estimated ? "~" : ""}${rate > 0 && rate < 0.1 ? "<0.1" : rateFormatter.format(rate)}/s`
-export const formatLatency = (ms: number | undefined) =>
-	ms === undefined ? "—" : `${ms < 10 ? ms.toFixed(1) : Math.round(ms)} ms`
+/** The shared latency format, tolerating the optional latencies of 3D edges. */
+export const formatLatency = (ms: number | undefined) => (ms === undefined ? "—" : formatSharedLatency(ms))
 
 export function connectedIds(
 	topology: SpatialTopology,

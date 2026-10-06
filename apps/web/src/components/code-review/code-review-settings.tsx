@@ -28,10 +28,11 @@ import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { Switch } from "@maple/ui/components/ui/switch"
 import { toastManager } from "@maple/ui/components/ui/toast"
 
-import { ErrorState } from "@/components/common/error-state"
+import { ResultView } from "@/components/common/result-view"
 import { ExternalLinkIcon, GearIcon, GithubIcon } from "@/components/icons"
 import { useIsOrgAdmin } from "@/hooks/use-is-org-admin"
-import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
+import { useAsyncAction } from "@/hooks/use-mutation-action"
+import { useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { errorMessage } from "@/lib/error-toast"
 import { currentRegion } from "@/lib/region"
 import { MapleApiAtomClient, retainedQuery } from "@/lib/services/common/atom-client"
@@ -62,41 +63,44 @@ export function CodeReviewSettingsView() {
 	const result = useAtomValue(query)
 	const refresh = useAtomRefresh(query)
 
-	return Result.builder(result)
-		.onInitial(() => (
-			<div className="flex flex-col gap-6">
-				<Skeleton className="h-20 w-full rounded-xl" />
-				<Skeleton className="h-[520px] w-full rounded-xl" />
-			</div>
-		))
-		.onError((error) => (
-			<ErrorState error={error} title="Failed to load review settings" onRetry={refresh} />
-		))
-		.onSuccess((response) => (
-			<div className="flex flex-col gap-8">
-				<Section
-					title="Reviewer"
-					description="The model every review and reply in this organization runs on."
-				>
-					<ModelSetting settings={response.settings} />
-				</Section>
-				<Section
-					title="Default review rules"
-					description="Every repository starts from these. A repository can override any of them."
-				>
-					<div className="rounded-xl border bg-card p-5">
-						<ReviewRulesDefaults settings={response.settings} />
-					</div>
-				</Section>
-				<Section
-					title="Repositories"
-					description="Pick which repositories get reviews, and tune any of them on its own."
-				>
-					<RepositoriesSection inherited={response.settings.defaults} />
-				</Section>
-			</div>
-		))
-		.render()
+	return (
+		<ResultView
+			result={result}
+			loading={
+				<div className="flex flex-col gap-6">
+					<Skeleton className="h-20 w-full rounded-xl" />
+					<Skeleton className="h-[520px] w-full rounded-xl" />
+				</div>
+			}
+			errorTitle="Failed to load review settings"
+			onRetry={refresh}
+		>
+			{(response) => (
+				<div className="flex flex-col gap-8">
+					<Section
+						title="Reviewer"
+						description="The model every review and reply in this organization runs on."
+					>
+						<ModelSetting settings={response.settings} />
+					</Section>
+					<Section
+						title="Default review rules"
+						description="Every repository starts from these. A repository can override any of them."
+					>
+						<div className="rounded-xl border bg-card p-5">
+							<ReviewRulesDefaults settings={response.settings} />
+						</div>
+					</Section>
+					<Section
+						title="Repositories"
+						description="Pick which repositories get reviews, and tune any of them on its own."
+					>
+						<RepositoriesSection inherited={response.settings.defaults} />
+					</Section>
+				</div>
+			)}
+		</ResultView>
+	)
 }
 
 function Section({
@@ -130,16 +134,14 @@ function useSaveSettings() {
 function ModelSetting({ settings }: { settings: PrReviewOrgSettings }) {
 	const isAdmin = useIsOrgAdmin()
 	const save = useSaveSettings()
-	const [saving, setSaving] = useState(false)
 	const current =
 		settings.model !== undefined && MODEL_OPTIONS.some((model) => model.id === settings.model)
 			? settings.model
 			: DEFAULT_MODEL
 
-	async function handleChange(value: string) {
+	const [handleChange, saving] = useAsyncAction(async (value: string) => {
 		if (value === current) return
 		const model = isModel(value) ? value : undefined
-		setSaving(true)
 		// The defaults ride along: the settings are one row, written whole.
 		const result = await save(
 			new PrReviewOrgSettings({
@@ -147,13 +149,12 @@ function ModelSetting({ settings }: { settings: PrReviewOrgSettings }) {
 				...(settings.defaults === undefined ? undefined : { defaults: settings.defaults }),
 			}),
 		)
-		setSaving(false)
 		toastManager.add(
 			Exit.isSuccess(result)
 				? { title: `Reviews now run on ${MODEL_LABELS[model ?? DEFAULT_MODEL]}`, type: "success" }
 				: { title: errorMessage(result, "Failed to save the review model."), type: "error" },
 		)
-	}
+	})
 
 	return (
 		<SettingRow
@@ -166,7 +167,7 @@ function ModelSetting({ settings }: { settings: PrReviewOrgSettings }) {
 					current={current}
 					disabled={!isAdmin || saving}
 					isAdmin={isAdmin}
-					onChange={handleChange}
+					onChange={(value) => void handleChange(value)}
 				/>
 			}
 		/>
@@ -240,57 +241,60 @@ function RepositoriesSection({ inherited }: { inherited: PrReviewRepositoryConfi
 	const result = useAtomValue(query)
 	const refresh = useAtomRefresh(query)
 
-	return Result.builder(result)
-		.onInitial(() => <Skeleton className="h-40 w-full rounded-xl" />)
-		.onError((error) => (
-			<ErrorState error={error} title="Failed to load repositories" onRetry={refresh} />
-		))
-		.onSuccess((status) => {
-			const repositories = status.repositories.filter((repo) => repo.status === "active")
-			if (!status.connected || repositories.length === 0)
-				return (
-					<div className="flex flex-col items-start gap-3 rounded-xl border border-dashed px-5 py-6">
-						<div className="flex items-center gap-2 text-sm font-medium">
-							<GithubIcon size={16} aria-hidden />
-							{status.connected
-								? "No repositories yet"
-								: "Connect GitHub to review pull requests"}
+	return (
+		<ResultView
+			result={result}
+			loading={<Skeleton className="h-40 w-full rounded-xl" />}
+			errorTitle="Failed to load repositories"
+			onRetry={refresh}
+		>
+			{(status) => {
+				const repositories = status.repositories.filter((repo) => repo.status === "active")
+				if (!status.connected || repositories.length === 0)
+					return (
+						<div className="flex flex-col items-start gap-3 rounded-xl border border-dashed px-5 py-6">
+							<div className="flex items-center gap-2 text-sm font-medium">
+								<GithubIcon size={16} aria-hidden />
+								{status.connected
+									? "No repositories yet"
+									: "Connect GitHub to review pull requests"}
+							</div>
+							<p className="text-sm text-muted-foreground">
+								{status.connected
+									? "Grant the Maple GitHub App access to a repository, and it appears here."
+									: "Maple reviews pull requests through its GitHub App. Install it on the repositories you want reviewed."}
+							</p>
+							<Button variant="outline" size="sm" render={<Link to="/integrations" />}>
+								{status.connected ? "Manage GitHub access" : "Connect GitHub"}
+							</Button>
 						</div>
-						<p className="text-sm text-muted-foreground">
-							{status.connected
-								? "Grant the Maple GitHub App access to a repository, and it appears here."
-								: "Maple reviews pull requests through its GitHub App. Install it on the repositories you want reviewed."}
-						</p>
-						<Button variant="outline" size="sm" render={<Link to="/integrations" />}>
-							{status.connected ? "Manage GitHub access" : "Connect GitHub"}
-						</Button>
-					</div>
+					)
+				const enabled = repositories.filter((repo) => repo.prReviewEnabled).length
+				return (
+					<Panel className="rounded-xl">
+						<PanelHeader
+							className="px-5 py-3 text-xs text-muted-foreground"
+							action={
+								<Link to="/integrations" className="hover:text-foreground hover:underline">
+									Manage GitHub access
+								</Link>
+							}
+						>
+							<span>
+								{enabled} of {repositories.length}{" "}
+								{repositories.length === 1 ? "repository" : "repositories"} reviewed
+							</span>
+						</PanelHeader>
+						<ul className="divide-y">
+							{repositories.map((repo) => (
+								<RepositoryRow key={repo.id} repo={repo} inherited={inherited} />
+							))}
+						</ul>
+					</Panel>
 				)
-			const enabled = repositories.filter((repo) => repo.prReviewEnabled).length
-			return (
-				<Panel className="rounded-xl">
-					<PanelHeader
-						className="px-5 py-3 text-xs text-muted-foreground"
-						action={
-							<Link to="/integrations" className="hover:text-foreground hover:underline">
-								Manage GitHub access
-							</Link>
-						}
-					>
-						<span>
-							{enabled} of {repositories.length}{" "}
-							{repositories.length === 1 ? "repository" : "repositories"} reviewed
-						</span>
-					</PanelHeader>
-					<ul className="divide-y">
-						{repositories.map((repo) => (
-							<RepositoryRow key={repo.id} repo={repo} inherited={inherited} />
-						))}
-					</ul>
-				</Panel>
-			)
-		})
-		.render()
+			}}
+		</ResultView>
+	)
 }
 
 function RepositoryRow({
@@ -305,7 +309,6 @@ function RepositoryRow({
 		mode: "promiseExit",
 	})
 	const [enabled, setEnabled] = useState(repo.prReviewEnabled)
-	const [busy, setBusy] = useState(false)
 	const [open, setOpen] = useState(false)
 	// A fresh server value wins over the optimistic one; adjusted during render, not in an effect.
 	const [seenServer, setSeenServer] = useState(repo.prReviewEnabled)
@@ -315,18 +318,13 @@ function RepositoryRow({
 	}
 	const id = `code-review-repo-${repo.id}`
 
-	async function handleToggle(next: boolean) {
-		// Ignored while a change is in flight, rather than disabling the switch, which would drop
-		// keyboard focus mid-toggle.
-		if (busy) return
+	const [toggle, busy] = useAsyncAction(async (next: boolean) => {
 		setEnabled(next)
-		setBusy(true)
 		const result = await setPrReview({
 			params: { repositoryId: repo.id },
 			payload: new GithubSetPrReviewRequest({ enabled: next }),
 			reactivityKeys: [STATUS_KEY],
 		})
-		setBusy(false)
 		if (Exit.isSuccess(result)) {
 			toastManager.add({
 				title: next
@@ -341,7 +339,10 @@ function RepositoryRow({
 			title: errorMessage(result, "Failed to change pull request reviews."),
 			type: "error",
 		})
-	}
+	})
+	// Ignored while a change is in flight, rather than disabling the switch, which would drop
+	// keyboard focus mid-toggle.
+	const handleToggle = (next: boolean) => (busy ? undefined : toggle(next))
 
 	return (
 		<li className="flex items-center gap-3 px-5 py-3">
@@ -419,37 +420,41 @@ function RepositoryConfig({
 		mode: "promiseExit",
 	})
 
-	return Result.builder(result)
-		.onInitial(() => (
-			<div className="space-y-3">
-				<Skeleton className="h-20 w-full" />
-				<Skeleton className="h-16 w-full" />
-				<Skeleton className="h-8 w-1/2" />
-			</div>
-		))
-		.onError((error) => (
-			<p className="text-xs text-severity-error" role="alert">
-				{errorMessage(error, "Failed to load the repository's rules.")}
-			</p>
-		))
-		.onSuccess((response) => (
-			<ReviewRulesForm
-				mode="repository"
-				idPrefix={`code-review-${repo.id}`}
-				config={response.config}
-				inherited={inherited}
-				onSave={async (config) => {
-					const saved = await save({
-						params: { repositoryId: repo.id },
-						payload: new GithubPrReviewConfigRequest({ config }),
-						reactivityKeys: [configKey(repo)],
-					})
-					if (Exit.isFailure(saved))
-						return errorMessage(saved, "Failed to save the repository's rules.")
-					toastManager.add({ title: `Rules saved for ${repo.fullName}`, type: "success" })
-					return null
-				}}
-			/>
-		))
-		.render()
+	return (
+		<ResultView
+			result={result}
+			loading={
+				<div className="space-y-3">
+					<Skeleton className="h-20 w-full" />
+					<Skeleton className="h-16 w-full" />
+					<Skeleton className="h-8 w-1/2" />
+				</div>
+			}
+			error={(error) => (
+				<p className="text-xs text-severity-error" role="alert">
+					{errorMessage(error, "Failed to load the repository's rules.")}
+				</p>
+			)}
+		>
+			{(response) => (
+				<ReviewRulesForm
+					mode="repository"
+					idPrefix={`code-review-${repo.id}`}
+					config={response.config}
+					inherited={inherited}
+					onSave={async (config) => {
+						const saved = await save({
+							params: { repositoryId: repo.id },
+							payload: new GithubPrReviewConfigRequest({ config }),
+							reactivityKeys: [configKey(repo)],
+						})
+						if (Exit.isFailure(saved))
+							return errorMessage(saved, "Failed to save the repository's rules.")
+						toastManager.add({ title: `Rules saved for ${repo.fullName}`, type: "success" })
+						return null
+					}}
+				/>
+			)}
+		</ResultView>
+	)
 }

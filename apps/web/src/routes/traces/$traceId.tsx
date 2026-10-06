@@ -11,11 +11,12 @@ import { TraceReplayLink } from "@/components/replays/trace-replay-link"
 import { TraceLogsLink } from "@/components/traces/trace-logs-link"
 import { ErrorState } from "@/components/common/error-state"
 import { DocsLink } from "@/components/common/docs-link"
+import { ResourceNotFound } from "@/components/common/resource-not-found"
 import { TraceViewTabs } from "@maple/ui/components/traces/trace-view-tabs"
 import { SpanDetailPanel } from "@/components/traces/span-detail-panel"
 import { TraceAnatomyStrip } from "@/components/traces/trace-anatomy-strip"
 import { TraceProductEvents } from "@/components/traces/trace-product-events"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { Skeleton, SkeletonList } from "@maple/ui/components/ui/skeleton"
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@maple/ui/components/ui/resizable"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@maple/ui/components/ui/sheet"
 import { useIsMobile } from "@maple/ui/hooks/use-media-query"
@@ -89,9 +90,12 @@ function TraceDetailPage() {
 										<Skeleton className="h-4 w-24" />
 									</div>
 								</div>
-								<div className="rounded-md border">
-									{Array.from({ length: 5 }).map((_, i) => (
-										<div key={i} className="flex items-center gap-2 border-b p-3">
+								<SkeletonList
+									rows={5}
+									gap="px"
+									className="gap-0 rounded-md border"
+									renderRow={() => (
+										<div className="flex items-center gap-2 border-b p-3">
 											<Skeleton className="size-4" />
 											<Skeleton className="h-4 w-20" />
 											<Skeleton className="h-4 w-16" />
@@ -99,8 +103,8 @@ function TraceDetailPage() {
 											<Skeleton className="h-2 w-32" />
 											<Skeleton className="h-4 w-16" />
 										</div>
-									))}
-								</div>
+									)}
+								/>
 							</div>
 						</DashboardLayout.Scroll>
 					</DashboardLayout.Content>
@@ -124,71 +128,24 @@ function TraceDetailPage() {
 		.onSuccess((data) => {
 			if (data.spans.length === 0 || data.traceStartTime === undefined) {
 				return (
-					<DashboardLayout.Root>
-						<DashboardLayout.Breadcrumbs
-							items={[
-								{ label: "Traces", href: backToTracesHref },
-								{ label: shortId(traceId, "trace") },
-							]}
-						/>
-						<DashboardLayout.Body>
-							<DashboardLayout.Content>
-								<DashboardLayout.Scroll>
-									<div className="flex flex-col items-center justify-center rounded-md border border-dashed p-12 text-center">
-										<p className="mb-2 text-sm text-muted-foreground">Trace ID</p>
-										<TraceIdBadge traceId={traceId} />
-										<p className="mt-4 max-w-md text-sm text-muted-foreground">
-											This trace could not be found. It may have expired or not been
-											ingested yet.
-										</p>
-										<a
-											href={backToTracesHref}
-											className="mt-6 text-sm text-primary underline underline-offset-4 hover:text-primary/80"
-										>
-											Back to Traces
-										</a>
-										<span className="mt-3">
-											<DocsLink page="retention">How long traces are kept</DocsLink>
-										</span>
-									</div>
-								</DashboardLayout.Scroll>
-							</DashboardLayout.Content>
-						</DashboardLayout.Body>
-					</DashboardLayout.Root>
+					<TraceNotFound
+						traceId={traceId}
+						backToTracesHref={backToTracesHref}
+						title="Trace not found"
+						description="This trace could not be found. It may have expired or not been ingested yet."
+						footer={<DocsLink page="retention">How long traces are kept</DocsLink>}
+					/>
 				)
 			}
 
 			if (data.rootSpans.length === 0) {
 				return (
-					<DashboardLayout.Root>
-						<DashboardLayout.Breadcrumbs
-							items={[
-								{ label: "Traces", href: backToTracesHref },
-								{ label: shortId(traceId, "trace") },
-							]}
-						/>
-						<DashboardLayout.Body>
-							<DashboardLayout.Content>
-								<DashboardLayout.Scroll>
-									<div className="flex flex-col items-center justify-center rounded-md border border-dashed p-12 text-center">
-										<p className="mb-2 text-sm text-muted-foreground">Trace ID</p>
-										<TraceIdBadge traceId={traceId} />
-										<p className="mt-4 text-sm text-muted-foreground max-w-md">
-											This trace contains spans but the root span was not found. It may
-											not have been ingested yet or could have been dropped during
-											sampling.
-										</p>
-										<a
-											href={backToTracesHref}
-											className="mt-6 text-sm text-primary underline underline-offset-4 hover:text-primary/80"
-										>
-											Back to Traces
-										</a>
-									</div>
-								</DashboardLayout.Scroll>
-							</DashboardLayout.Content>
-						</DashboardLayout.Body>
-					</DashboardLayout.Root>
+					<TraceNotFound
+						traceId={traceId}
+						backToTracesHref={backToTracesHref}
+						title="Root span missing"
+						description="This trace contains spans but the root span was not found. It may not have been ingested yet or could have been dropped during sampling."
+					/>
 				)
 			}
 
@@ -411,6 +368,47 @@ function TraceDetailContent({
 								</ResizablePanelGroup>
 							)}
 						</div>
+					</DashboardLayout.Scroll>
+				</DashboardLayout.Content>
+			</DashboardLayout.Body>
+		</DashboardLayout.Root>
+	)
+}
+
+function TraceNotFound({
+	traceId,
+	backToTracesHref,
+	title,
+	description,
+	footer,
+}: {
+	traceId: string
+	backToTracesHref: string
+	title: string
+	description: string
+	footer?: React.ReactNode
+}) {
+	return (
+		<DashboardLayout.Root>
+			<DashboardLayout.Breadcrumbs
+				items={[{ label: "Traces", href: backToTracesHref }, { label: shortId(traceId, "trace") }]}
+			/>
+			<DashboardLayout.Body>
+				<DashboardLayout.Content>
+					<DashboardLayout.Scroll>
+						<ResourceNotFound
+							className="rounded-md border border-dashed py-12"
+							title={title}
+							description={
+								<div className="flex flex-col items-center gap-3">
+									<TraceIdBadge traceId={traceId} />
+									<p className="max-w-md">{description}</p>
+									{footer}
+								</div>
+							}
+							backLink={<a href={backToTracesHref} />}
+							backLabel="Back to Traces"
+						/>
 					</DashboardLayout.Scroll>
 				</DashboardLayout.Content>
 			</DashboardLayout.Body>

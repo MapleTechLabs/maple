@@ -1,8 +1,10 @@
 import { cn } from "@maple/ui/lib/utils"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 
 import { useLinkedCursor } from "@/hooks/use-linked-cursor"
 import { InfraMetricChart, type InfraSeriesInfo } from "@/components/infra/primitives/infra-metric-chart"
 import { formatValueWithUnit, type ChartUnit } from "@/components/infra/chart-utils"
+import { SeriesLegend } from "@/components/common/series-legend"
 
 /**
  * The service lens's one argument, drawn.
@@ -46,7 +48,7 @@ interface CorrelationStripsProps {
 	className?: string
 }
 
-export function CorrelationStrips({ series, xDomain, waiting, className }: CorrelationStripsProps) {
+export function CorrelationStrips({ series, xDomain, waiting = false, className }: CorrelationStripsProps) {
 	// One cursor across all three strips. They are independent charts — the
 	// cursor is a CSS variable on the container, not a Recharts syncId, so
 	// hovering one does not rerender the others (see `useLinkedCursor`).
@@ -54,11 +56,8 @@ export function CorrelationStrips({ series, xDomain, waiting, className }: Corre
 
 	return (
 		<div
-			className={cn(
-				"overflow-hidden rounded-lg border bg-card transition-opacity",
-				waiting && "opacity-60",
-				className,
-			)}
+			className={cn("overflow-hidden rounded-lg border bg-card", refreshingClass(waiting), className)}
+			aria-busy={waiting || undefined}
 			{...containerProps}
 		>
 			{series.map((strip, index) => (
@@ -106,20 +105,18 @@ function LastValue({ series, lastValues, labelFor, unit, colors }: InfraSeriesIn
 		.filter((entry): entry is { name: string; value: number } => entry.value !== undefined)
 
 	if (summary.length === 0) return null
+	// One series needs no key: the strip's title already names it.
+	const keyed = summary.length > 1
 
 	return (
-		<div className="mb-1 flex flex-wrap items-center justify-end gap-x-3 gap-y-1">
-			{summary.map(({ name, value }) => (
-				<span key={name} className="inline-flex items-center gap-1.5 text-[11px]">
-					{summary.length > 1 && (
-						<span className="size-1.5 rounded-full" style={{ background: colors.get(name) }} />
-					)}
-					{summary.length > 1 && <span className="text-muted-foreground">{labelFor(name)}</span>}
-					<span className="font-mono tabular-nums text-foreground">
-						{formatValueWithUnit(value, unit)}
-					</span>
-				</span>
-			))}
-		</div>
+		<SeriesLegend
+			className="mb-1"
+			items={summary.map(({ name, value }) => ({
+				key: name,
+				label: keyed ? labelFor(name) : undefined,
+				color: keyed ? colors.get(name) : undefined,
+				value: formatValueWithUnit(value, unit),
+			}))}
+		/>
 	)
 }

@@ -3,7 +3,7 @@ import { Link } from "@tanstack/react-router"
 import type { ErrorIssueDocument } from "@maple/domain/http"
 import { ServiceDot } from "@maple/ui/components/service-dot"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import { formatErrorRate, formatLatency, formatNumber } from "@maple/ui/lib/format"
+import { countLabel, formatErrorRate, formatLatency, formatNumber, pluralize } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { RelativeTime } from "@/components/common/relative-time"
 
@@ -111,7 +111,7 @@ function DeploySummary({ group }: { group: ReleaseGroup }) {
 			</span>
 			<span>
 				<span className="font-medium tabular-nums text-foreground">{services}</span>{" "}
-				{services === 1 ? "service" : "services"}
+				{pluralize(services, "service")}
 			</span>
 			<span>
 				<span className="font-medium tabular-nums text-foreground">
@@ -120,9 +120,7 @@ function DeploySummary({ group }: { group: ReleaseGroup }) {
 				requests
 			</span>
 			{flagged > 0 ? (
-				<span className="text-severity-warn">
-					{flagged} {flagged === 1 ? "service" : "services"} flagged
-				</span>
+				<span className="text-severity-warn">{countLabel(flagged, "service")} flagged</span>
 			) : null}
 		</div>
 	)
@@ -294,7 +292,7 @@ function DeployIssues({
 
 	if (issues === undefined) {
 		return Result.isFailure(result) ? (
-			<EmptyMessage className="rounded-md border bg-card">Issues could not be loaded.</EmptyMessage>
+			<ErrorState error={result.cause} title="Issues could not be loaded" variant="row" />
 		) : (
 			<Skeleton className="h-32 w-full rounded-md" />
 		)

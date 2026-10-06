@@ -113,10 +113,7 @@ function LinkedIssueBody({
 											{shortIssueId(issue.id)}
 										</code>
 										<Badge variant="meta" pill size="sm" className={META_CHIP_CLASS}>
-											<ServiceDot
-												serviceName={issue.serviceName}
-												className="size-1.5"
-											/>
+											<ServiceDot serviceName={issue.serviceName} size="sm" />
 											<span className="max-w-[140px] truncate">
 												{issue.serviceName}
 											</span>
