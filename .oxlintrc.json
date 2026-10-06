@@ -41,6 +41,7 @@
 		"maple/no-react-use-effect": "warn",
 		"maple/no-record-string-any": "error",
 		"maple/no-try-catch": "error",
+		"maple/no-date-parse": "error",
 		"typescript/no-explicit-any": "warn",
 		"typescript/no-non-null-assertion": "error",
 		"no-alert": "error",
@@ -118,10 +119,31 @@
 				"**/*test-support*"
 			],
 			"rules": {
+				"maple/no-date-parse": "off",
 				"maple/no-effect-die": "off",
 				"maple/no-try-catch": "off",
 				"typescript/no-non-null-assertion": "off"
 			}
+		},
+		// `Date.parse` burndown: the server side is clean and held to the rule. These still parse
+		// with it and move to `parseWarehouseDateTime` / `DateTime` in their own audit; the
+		// implementation of `parseWarehouseDateTime` itself is the one permanent entry.
+		{
+			"files": [
+				"apps/web/**",
+				"apps/cli/**",
+				"packages/ui/**",
+				"packages/domain/**",
+				"packages/primitives/**",
+				"packages/query-engine-integrations/**",
+				"packages/chat-platform/**",
+				"packages/alchemy-maple/**",
+				"packages/db/scripts/**",
+				"packages/query-engine/src/datetime.ts",
+				"scripts/**",
+				"examples/**"
+			],
+			"rules": { "maple/no-date-parse": "off" }
 		},
 		// The rule points at an Effect primitive, so it only applies where Effect is on
 		// the dependency list. These ship to customers with no runtime deps at all

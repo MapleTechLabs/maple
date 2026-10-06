@@ -111,6 +111,7 @@ import {
 	computeBucketSecondsForRange,
 	formatWarehouseDateTime,
 	QueryEngineExecuteBatchResponse,
+	parseWarehouseDateTime,
 } from "@maple/query-engine"
 
 import {
@@ -380,8 +381,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 				// a whole-minute multiple. Nearest-minute rounding keeps ~50 points.
 				const windowSeconds = Math.max(
 					0,
-					(Date.parse(`${payload.endTime.replace(" ", "T")}Z`) -
-						Date.parse(`${payload.startTime.replace(" ", "T")}Z`)) /
+					(parseWarehouseDateTime(payload.endTime) - parseWarehouseDateTime(payload.startTime)) /
 						1000,
 				)
 				const requestedBucketSeconds =

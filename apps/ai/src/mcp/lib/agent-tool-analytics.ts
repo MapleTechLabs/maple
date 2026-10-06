@@ -4,6 +4,7 @@ import { formatDurationFromMs, tableCell, truncate } from "./format"
 import { MCP_SEARCH_MAX_HOURS } from "./time"
 import * as P from "./params"
 import { Schema } from "effect"
+import { parseWarehouseDateTime } from "@maple/query-engine"
 
 // What `get_agent_tools_overview` and `get_agent_tool_error` share: the window,
 // the selection, and the primitives both render with: a p95 that reads as ms in
@@ -129,7 +130,7 @@ export const compactTrend = (
 	const spanned = Math.ceil((opts.endMs - gridStart) / width)
 	const buckets = Array.from<number>({ length: Math.min(spanned, TREND_BUCKETS) }).fill(0)
 	for (const point of points) {
-		const index = Math.floor((Date.parse(point.bucket) - gridStart) / width)
+		const index = Math.floor((parseWarehouseDateTime(point.bucket) - gridStart) / width)
 		if (index >= 0 && index < buckets.length) buckets[index] = point.calls
 	}
 	return buckets

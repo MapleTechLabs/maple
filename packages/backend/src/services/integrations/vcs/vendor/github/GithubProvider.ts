@@ -40,6 +40,7 @@ import {
 	GithubAppClient,
 	GithubAppError,
 } from "./GithubAppClient"
+import { timestampMs } from "@maple/backend/platform/time"
 
 const PROVIDER: VcsProviderId = "github"
 
@@ -315,9 +316,11 @@ const timingSafeEqual = (a: string, b: string): boolean => {
 }
 
 const normalizeFetchedCommit = (commit: GithubApiCommit, now: number): CommitUpsertInput => {
-	const authoredAt = commit.commit.author?.date ? finiteOrNull(Date.parse(commit.commit.author.date)) : null
+	const authoredAt = commit.commit.author?.date
+		? finiteOrNull(timestampMs(commit.commit.author.date))
+		: null
 	const committedAt = commit.commit.committer?.date
-		? finiteOrNull(Date.parse(commit.commit.committer.date))
+		? finiteOrNull(timestampMs(commit.commit.committer.date))
 		: null
 	return {
 		sha: commit.sha,
@@ -463,7 +466,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 						return [job]
 					}
 					const commits: ReadonlyArray<CommitUpsertInput> = (payload.commits ?? []).map((c) => {
-						const ts = c.timestamp ? finiteOrNull(Date.parse(c.timestamp)) : null
+						const ts = c.timestamp ? finiteOrNull(timestampMs(c.timestamp)) : null
 						return {
 							sha: c.id,
 							message: c.message,
@@ -642,7 +645,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					// need it, and the review trigger treats its absence as "nothing to review".
 					const headSha = Option.getOrUndefined(decodeGitShaOption(pr.head?.sha))
 					const baseSha = Option.getOrUndefined(decodeGitShaOption(pr.base?.sha))
-					const mergedAtMs = pr.merged_at ? finiteOrNull(Date.parse(pr.merged_at)) : null
+					const mergedAtMs = pr.merged_at ? finiteOrNull(timestampMs(pr.merged_at)) : null
 					yield* Effect.annotateCurrentSpan({
 						"vcs.webhook.outcome": "handled",
 						"vcs.pull_request.merged": merged,
@@ -911,9 +914,9 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 			// two here is the same rule `mapPullRequest` applies to a webhook payload —
 			// the port only ever speaks the three-way `PullRequestLinkState`.
 			const normalizePullRequest = (pr: GithubApiPullRequest): PullRequestSummary => {
-				const mergedAtMs = pr.merged_at === null ? null : Date.parse(pr.merged_at)
+				const mergedAtMs = pr.merged_at === null ? null : timestampMs(pr.merged_at)
 				const merged = mergedAtMs !== null && Number.isFinite(mergedAtMs)
-				const updatedAtMs = Date.parse(pr.updated_at)
+				const updatedAtMs = timestampMs(pr.updated_at)
 				return {
 					number: pr.number,
 					title: pr.title,

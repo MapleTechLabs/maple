@@ -3,6 +3,7 @@ import { Clock, Context, Duration, Effect, Layer, Option, Redacted, Schema } fro
 import { Env } from "@maple/backend/platform/Env"
 import { GithubHttp } from "./GithubHttp"
 import { githubWebBaseUrl } from "./github-hosts"
+import { timestampMs } from "@maple/backend/platform/time"
 
 // GitHub App REST client. Vendor-specific: mints a short-lived App JWT (RS256,
 // Web Crypto), exchanges it for per-installation tokens, and calls the GitHub
@@ -65,7 +66,7 @@ const rateLimitWaitSeconds = (response: Response, nowMs: number): number => {
 		const secs = Number(retryAfter)
 		if (Number.isFinite(secs) && secs >= 0) return secs
 		// `retry-after` may be an HTTP-date instead of delta-seconds.
-		const dateMs = Date.parse(retryAfter)
+		const dateMs = timestampMs(retryAfter)
 		if (Number.isFinite(dateMs)) return Math.max(0, Math.ceil((dateMs - nowMs) / 1000))
 	}
 	const reset = response.headers.get("x-ratelimit-reset")
@@ -682,7 +683,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				)
 				// Cache it. If we can't read the expiry, skip caching rather than risk
 				// reusing a token forever.
-				const expiresAtMs = Date.parse(decoded.expires_at)
+				const expiresAtMs = timestampMs(decoded.expires_at)
 				if (Number.isFinite(expiresAtMs)) {
 					installationTokens.set(externalInstallationId, { token: decoded.token, expiresAtMs })
 				}

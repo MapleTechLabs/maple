@@ -10,7 +10,7 @@
  * two parsers on the public surface for no gain, since the share page resolves
  * its own picker before it asks.
  */
-import { MAX_QUERY_RANGE_SECONDS, formatRangeSeconds } from "@maple/query-engine"
+import { MAX_QUERY_RANGE_SECONDS, formatRangeSeconds, parseWarehouseDateTime } from "@maple/query-engine"
 
 /**
  * Widest window a shared-dashboard viewer may request.
@@ -41,7 +41,7 @@ const FUTURE_SKEW_SECONDS = 5 * 60
 
 const invalid = (message: string) => Effect.fail(new ShareRangeInvalidError({ message }))
 
-const parse = (value: string): number => Date.parse(`${value}Z`)
+const parse = (value: string): number => parseWarehouseDateTime(value)
 
 export interface ShareWindow {
 	readonly startTime: string
