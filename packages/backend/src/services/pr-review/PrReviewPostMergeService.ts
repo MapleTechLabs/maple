@@ -56,7 +56,7 @@ export interface PrReviewPostMergeServiceApi {
 	readonly runTick: () => Effect.Effect<PostMergeTickResult>
 }
 
-type Outcome = "reported" | "waiting" | "gave_up"
+type Outcome = "reported" | "waiting" | "gave_up" | "skipped"
 
 const decodeTelemetry = Schema.decodeUnknownOption(PrReviewTelemetry)
 
@@ -90,6 +90,8 @@ export class PrReviewPostMergeService extends Context.Service<
 		const examine = Effect.fn("PrReviewPostMerge.examine")(function* (
 			row: typeof prReviews.$inferSelect,
 			nowMs: number,
+			/** The lease this examination holds; it reports only while the row still carries it. */
+			leaseUntilMs: number,
 		) {
 			const orgId = row.orgId
 			const mergedAtMs = dateToMs(row.mergedAt) ?? nowMs
@@ -205,8 +207,28 @@ export class PrReviewPostMergeService extends Context.Service<
 				verdict: regressed ? "regressed" : "clean",
 			})
 
-			// Stored before the post: a refused post still leaves the look on the review.
-			yield* settle(orgId, row.id, "reported", { postMergeAfter: null, postMergeJson: report }, nowMs)
+			// Stored before the post, and only while this examination still holds its lease: one that
+			// outlived it lost the row to a later tick, which reports instead. A refused post still
+			// leaves the look on the review.
+			const won = yield* database.execute((db) =>
+				db
+					.update(prReviews)
+					.set({
+						postMergeStatus: "reported",
+						postMergeAfter: null,
+						postMergeJson: report,
+						updatedAt: msToDate(nowMs),
+					})
+					.where(
+						and(
+							eq(prReviews.id, row.id),
+							eq(prReviews.postMergeStatus, "waiting"),
+							eq(prReviews.postMergeAfter, msToDate(leaseUntilMs)),
+						),
+					)
+					.returning({ id: prReviews.id }),
+			)
+			if (won.length === 0) return "skipped" satisfies Outcome
 			yield* Effect.annotateCurrentSpan({
 				"maple.pr_review.post_merge.verdict": report.verdict,
 				"maple.pr_review.post_merge.exact_deploy": picked.exact,
@@ -262,12 +284,13 @@ export class PrReviewPostMergeService extends Context.Service<
 					due,
 					(row) =>
 						Effect.gen(function* () {
+							const leaseUntilMs = nowMs + CLAIM_MS
 							// Claimed first: an overlapping tick that read the same row finds it leased and
 							// skips it, so the follow-up is posted once.
 							const claimed = yield* database.execute((db) =>
 								db
 									.update(prReviews)
-									.set({ postMergeAfter: msToDate(nowMs + CLAIM_MS) })
+									.set({ postMergeAfter: msToDate(leaseUntilMs) })
 									.where(
 										and(
 											eq(prReviews.id, row.id),
@@ -278,7 +301,7 @@ export class PrReviewPostMergeService extends Context.Service<
 									.returning({ id: prReviews.id }),
 							)
 							if (claimed.length === 0) return "skipped" as const
-							return yield* examine(row, nowMs)
+							return yield* examine(row, nowMs, leaseUntilMs)
 						}).pipe(
 							Effect.map((outcome): Outcome | "failed" | "skipped" => outcome),
 							Effect.catchCause((cause) => {

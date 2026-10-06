@@ -90,7 +90,12 @@ const telemetryFake = (options: { readonly failOperations: boolean }): PrReviewT
 	attributeKeysIn: () => Effect.succeed(new Set(["http.route"])),
 })
 
-const layerFor = (testDb: TestDb, posted: Array<string>, options: { readonly failOperations: boolean }) => {
+const layerFor = (
+	testDb: TestDb,
+	posted: Array<string>,
+	options: { readonly failOperations: boolean },
+	telemetry: PrReviewTelemetryServiceApi = telemetryFake(options),
+) => {
 	const unused = () => Effect.die("not used by the post-merge tick")
 	const provider: VcsProviderClient = {
 		id: "github",
@@ -133,7 +138,7 @@ const layerFor = (testDb: TestDb, posted: Array<string>, options: { readonly fai
 					ids: ["github"],
 					resolve: () => Effect.succeed(provider),
 				}),
-				Layer.succeed(PrReviewTelemetryService, telemetryFake(options)),
+				Layer.succeed(PrReviewTelemetryService, telemetry),
 			),
 		),
 	)
@@ -232,5 +237,45 @@ describe("PrReviewPostMergeService.runTick", () => {
 			assert.lengthOf(posted, 0)
 			assert.equal((yield* rowState)?.status, "failed")
 		}).pipe(Effect.provide(layerFor(testDb, posted, { failOperations: true })))
+	})
+})
+
+describe("PrReviewPostMergeService.runTick, lease", () => {
+	it.effect("does not report when a later tick took the row while this one ran", () => {
+		const testDb = createTestDb(trackedDbs)
+		const posted: Array<string> = []
+		// Another tick re-leases the row while this one reads the warehouse.
+		const releaseRow = Effect.gen(function* () {
+			const db = yield* Database
+			yield* db.execute((client) =>
+				client
+					.update(prReviews)
+					.set({ postMergeAfter: new Date(DEPLOYED_AT + 999 * 60_000) })
+					.where(eq(prReviews.id, reviewId)),
+			)
+		}).pipe(Effect.provide(testDb.layer), Effect.orDie)
+		const racing: PrReviewTelemetryServiceApi = {
+			...telemetryFake({ failOperations: false }),
+			operationsIn: () =>
+				releaseRow.pipe(
+					Effect.as([
+						{
+							service: "api",
+							spanName: "POST /checkout",
+							count: 1_000,
+							errorCount: 0,
+							p95Ms: 200,
+						},
+					]),
+				),
+		}
+		return Effect.gen(function* () {
+			yield* seedDueReview
+			yield* TestClock.setTime(DEPLOYED_AT + 70 * 60_000)
+			const service = yield* PrReviewPostMergeService
+			yield* service.runTick()
+			assert.lengthOf(posted, 0)
+			assert.equal((yield* rowState)?.status, "waiting")
+		}).pipe(Effect.provide(layerFor(testDb, posted, { failOperations: false }, racing)))
 	})
 })

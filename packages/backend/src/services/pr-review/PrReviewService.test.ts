@@ -248,6 +248,7 @@ const layerFor = (
 
 const telemetryReaderFake = (telemetry: PrReviewTelemetry): PrReviewTelemetryServiceApi => ({
 	analyze: () => Effect.succeed(telemetry),
+	commitTimes: () => Effect.succeed(new Map()),
 	deploymentsSince: () => Effect.succeed([]),
 	operationsIn: () => Effect.succeed([]),
 	issueCountsIn: () => Effect.succeed(new Map()),
