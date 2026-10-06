@@ -86,7 +86,7 @@ export function RuleLiveChartHero({
 
 	return (
 		<Card className="overflow-hidden">
-			<div className="flex items-center justify-between gap-3 px-4 pt-3 pb-2">
+			<div className="flex flex-wrap items-center justify-between gap-2 px-4 pt-3 pb-2">
 				<div className="flex min-w-0 items-center gap-2">
 					<Badge variant="outline" className="font-mono text-xs">
 						{signalLabels[form.signalType]}
@@ -116,9 +116,15 @@ export function RuleLiveChartHero({
 						presetValue={timeRange.presetValue}
 						onChange={onTimeRangeChange}
 					/>
-					<Button variant="outline" size="sm" onClick={onTestRule} disabled={testing}>
+					<Button
+						variant="outline"
+						size="sm"
+						onClick={onTestRule}
+						disabled={testing}
+						title="Evaluate the rule once against current data. Nothing is sent."
+					>
 						{testing ? <Spinner size={14} /> : <EyeIcon size={14} />}
-						Test rule
+						Dry run
 					</Button>
 				</div>
 			</div>
