@@ -39,8 +39,14 @@ export type ArtifactId =
 	| "mcp-transcript"
 	| "k8s-heatmap"
 	| "alert-firing"
+	| "funnel"
 
-export type SectionId = "k8s-console" | "k8s-views" | "k8s-correlation" | "k8s-install"
+export type SectionId =
+	| "k8s-console"
+	| "k8s-views"
+	| "k8s-correlation"
+	| "k8s-install"
+	| "product-events-sources"
 
 /**
  * A plate. `src` unset renders MediaFrame's placeholder, which prints the
@@ -88,8 +94,8 @@ interface ArtifactSpec {
 
 export interface Feature {
 	slug: string
-	/** Decorative Roman engraving, shared by all locale variants. */
-	illustration: string
+	/** Decorative Roman engraving, shared by all locale variants. Unset renders a plain hero. */
+	illustration?: string
 	navLabel: Msg
 	navDesc: Msg
 	seoTitle: Msg

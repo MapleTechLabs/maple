@@ -454,6 +454,46 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 		// row after acquiring: a fiber that waited usually finds the winner's fresh tokens.
 		const refreshSemaphore = Semaphore.makeUnsafe(1)
 
+		const refreshRow = (config: OAuthTokenEndpointConfig, orgId: OrgId, row: OAuthConnectionRow) =>
+			Effect.gen(function* () {
+				if (!row.refreshTokenCiphertext || !row.refreshTokenIv || !row.refreshTokenTag) {
+					yield* markConnectionRevoked(orgId)
+					return yield* Effect.fail(
+						new IntegrationsRevokedError({
+							message: `${providerLabel} access token expired and no refresh token is stored — reconnect required`,
+						}),
+					)
+				}
+
+				const refreshToken = yield* decryptValue({
+					ciphertext: row.refreshTokenCiphertext,
+					iv: row.refreshTokenIv,
+					tag: row.refreshTokenTag,
+				})
+				return yield* refreshAccessToken(config, refreshToken).pipe(
+					Effect.flatMap((refreshed) =>
+						persistRefreshedTokens(row, refreshed).pipe(
+							Effect.map((accessToken) => ({ accessToken, row })),
+						),
+					),
+					// Cross-isolate race: a concurrent worker isolate may have consumed the rotated
+					// refresh token and persisted new tokens between our read and our refresh. Before
+					// declaring the connection revoked, re-read the row — if a newer, valid token
+					// landed, use it.
+					Effect.catchTag("@maple/http/errors/IntegrationsRevokedError", (error) =>
+						Effect.gen(function* () {
+							const latest = yield* requireConnection(orgId)
+							const advanced = latest.updatedAt.getTime() > row.updatedAt.getTime()
+							if (advanced && rowIsValid(latest, yield* Clock.currentTimeMillis)) {
+								return yield* accessTokenFromRow(latest)
+							}
+							yield* markConnectionRevoked(orgId)
+							return yield* Effect.fail(error)
+						}),
+					),
+				)
+			})
+
 		const refreshWithSingleFlight = (config: OAuthTokenEndpointConfig, orgId: OrgId) =>
 			refreshSemaphore.withPermits(1)(
 				Effect.gen(function* () {
@@ -462,45 +502,59 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 					if (rowIsValid(row, yield* Clock.currentTimeMillis)) {
 						return yield* accessTokenFromRow(row)
 					}
-
-					if (!row.refreshTokenCiphertext || !row.refreshTokenIv || !row.refreshTokenTag) {
-						yield* markConnectionRevoked(orgId)
-						return yield* Effect.fail(
-							new IntegrationsRevokedError({
-								message: `${providerLabel} access token expired and no refresh token is stored — reconnect required`,
-							}),
-						)
-					}
-
-					const refreshToken = yield* decryptValue({
-						ciphertext: row.refreshTokenCiphertext,
-						iv: row.refreshTokenIv,
-						tag: row.refreshTokenTag,
-					})
-					return yield* refreshAccessToken(config, refreshToken).pipe(
-						Effect.flatMap((refreshed) =>
-							persistRefreshedTokens(row, refreshed).pipe(
-								Effect.map((accessToken) => ({ accessToken, row })),
-							),
-						),
-						// Cross-isolate race: a concurrent worker isolate may have consumed the rotated
-						// refresh token and persisted new tokens between our read and our refresh. Before
-						// declaring the connection revoked, re-read the row — if a newer, valid token
-						// landed, use it.
-						Effect.catchTag("@maple/http/errors/IntegrationsRevokedError", (error) =>
-							Effect.gen(function* () {
-								const latest = yield* requireConnection(orgId)
-								const advanced = latest.updatedAt.getTime() > row.updatedAt.getTime()
-								if (advanced && rowIsValid(latest, yield* Clock.currentTimeMillis)) {
-									return yield* accessTokenFromRow(latest)
-								}
-								yield* markConnectionRevoked(orgId)
-								return yield* Effect.fail(error)
-							}),
-						),
-					)
+					return yield* refreshRow(config, orgId, row)
 				}),
 			)
+
+		/**
+		 * The provider rejected an access token whose `expiresAt` still says it is good (revoked
+		 * or superseded upstream). Refresh once regardless of expiry, unless another fiber or
+		 * isolate already replaced the rejected token.
+		 */
+		const refreshRejectedToken = (
+			config: OAuthTokenEndpointConfig,
+			orgId: OrgId,
+			rejectedAccessToken: string,
+		) =>
+			refreshSemaphore.withPermits(1)(
+				Effect.gen(function* () {
+					yield* invalidateConnectionMemo(orgId)
+					const row = yield* requireConnection(orgId)
+					const current = yield* accessTokenFromRow(row)
+					if (current.accessToken !== rejectedAccessToken) return current
+					return yield* refreshRow(config, orgId, row)
+				}),
+			)
+
+		/**
+		 * Stamp the grant revoked because the provider rejected `rejectedAccessToken`, but only
+		 * while the row still holds that token and has not changed since it was read. A reconnect
+		 * or a refresh elsewhere in the meantime wins, so a late 401 never revokes a newer grant.
+		 * Reports whether the stamp landed.
+		 */
+		const markRejectedTokenRevoked = Effect.fn("OAuthConnectionHelpers.markRejectedTokenRevoked")(
+			function* (orgId: OrgId, rejectedAccessToken: string) {
+				yield* invalidateConnectionMemo(orgId)
+				const row = yield* requireConnection(orgId)
+				const { accessToken } = yield* accessTokenFromRow(row)
+				if (accessToken !== rejectedAccessToken) return false
+				const currentTime = yield* Clock.currentTimeMillis
+				const stamped = yield* dbExecute((db) =>
+					db
+						.update(oauthConnections)
+						.set({ revokedAt: new Date(currentTime) })
+						.where(
+							and(
+								eq(oauthConnections.id, row.id),
+								eq(oauthConnections.updatedAt, row.updatedAt),
+								isNull(oauthConnections.revokedAt),
+							),
+						)
+						.returning({ id: oauthConnections.id }),
+				)
+				return stamped.length > 0
+			},
+		)
 
 		/**
 		 * Decrypted access token for the org's connection, refreshing (single-flight)
@@ -508,16 +562,33 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 		 * can project provider-specific fields (account id, scope, ...).
 		 */
 		const getValidConnectionToken = Effect.fn("OAuthConnectionHelpers.getValidConnectionToken")(
-			function* (config: OAuthTokenEndpointConfig, orgId: OrgId) {
+			function* (
+				config: OAuthTokenEndpointConfig,
+				orgId: OrgId,
+				options: {
+					/** Fail a revoked grant before refreshing it: its fresh token would be unusable too. */
+					readonly failIfRevoked?: boolean
+				} = {},
+			) {
+				const usable = (row: OAuthConnectionRow) =>
+					options.failIfRevoked === true && row.revokedAt !== null
+						? Effect.fail(
+								new IntegrationsRevokedError({
+									message: `${providerLabel} no longer accepts this authorization — reconnect the integration`,
+								}),
+							)
+						: Effect.void
 				const nowMs = yield* Clock.currentTimeMillis
 				const memoized = connectionMemo.get(orgId)
 				if (memoized !== undefined && memoized.expiresAt > nowMs && rowIsValid(memoized.row, nowMs)) {
 					yield* Effect.annotateCurrentSpan("oauth.connection.memoHit", true)
+					yield* usable(memoized.row)
 					return yield* accessTokenFromRow(memoized.row)
 				}
 				yield* Effect.annotateCurrentSpan("oauth.connection.memoHit", false)
 
 				const row = yield* requireConnection(orgId)
+				yield* usable(row)
 				if (rowIsValid(row, nowMs)) {
 					connectionMemo.set(orgId, { row, expiresAt: nowMs + CONNECTION_MEMO_TTL_MS })
 					return yield* accessTokenFromRow(row)
@@ -544,9 +615,11 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 			upsertConnection,
 			deleteConnection,
 			markConnectionRevoked,
+			markRejectedTokenRevoked,
 			postForm,
 			exchangeAuthorizationCode,
 			refreshAccessToken,
+			refreshRejectedToken,
 			persistRefreshedTokens,
 			rowIsValid,
 			getValidConnectionToken,

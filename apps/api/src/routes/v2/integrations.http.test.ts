@@ -110,6 +110,7 @@ const planetscaleServiceLayer = (fakes: PlanetScaleFakes) =>
 			startConnect: psDie,
 			completeConnect: psDie,
 			getValidAccessToken: psDie,
+			withAccessToken: psDie,
 			listOrganizations: psDie,
 			hasConnection: psDie,
 			connectedByUserId: psDie,

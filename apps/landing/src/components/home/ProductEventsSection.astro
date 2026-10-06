@@ -1,0 +1,68 @@
+---
+/**
+ * 08 · Product events: what the audience does once it is in the product.
+ *
+ * Web analytics (07) counts visitors; this counts the steps that matter
+ * (signups, checkouts, upgrades) and where people stop. The argument is that
+ * events come from telemetry you already send, including spans, and that a
+ * person stays one person from the marketing site to a server-side webhook.
+ *
+ * Copy-left / media-right on `bg-bg`, so it alternates with 07's media-left
+ * capture. The funnel is the same LiveFunnel the feature page carries.
+ */
+import { getRelativeLocaleUrl } from "astro:i18n";
+import * as m from "../../paraglide/messages.js";
+import LiveFunnel from "../live/LiveFunnel.astro";
+
+const locale = Astro.currentLocale ?? "en";
+const l = (path: string) => getRelativeLocaleUrl(locale, path);
+
+const points = [
+	{ title: m.pe_point_1_title(), body: m.pe_point_1_body() },
+	{ title: m.pe_point_2_title(), body: m.pe_point_2_body() },
+	{ title: m.pe_point_3_title(), body: m.pe_point_3_body() },
+];
+---
+
+<section id="product-events" class="border-t border-border bg-bg">
+	<div class="shell py-16 md:py-32">
+		<div class="grid gap-12 lg:grid-cols-[0.82fr_1.18fr] lg:items-center lg:gap-20">
+			<div class="min-w-0">
+				<p class="text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">{m.pe_eyebrow()}</p>
+
+				<h2
+					class="mt-4 max-w-[20ch] font-display text-3xl font-medium leading-[1.05] tracking-[-0.02em] text-fg md:text-[40px]"
+				>
+					{m.pe_title()}
+				</h2>
+				<p class="mt-5 max-w-[62ch] text-sm leading-relaxed text-fg-muted">{m.pe_lede()}</p>
+
+				<dl class="mt-8">
+					{
+						points.map((point) => (
+							<div class="border-t border-border py-4">
+								<dt class="text-[13px] font-medium text-fg">{point.title}</dt>
+								<dd class="mt-1.5 max-w-[52ch] text-[13px] leading-relaxed text-fg-muted">
+									{point.body}
+								</dd>
+							</div>
+						))
+					}
+				</dl>
+
+				<div class="mt-6 flex flex-wrap gap-x-6 gap-y-2 text-[13px]">
+					<a href={l("/features/product-events")} class="text-fg transition-colors hover:text-primary">
+						{m.pe_link_feature()}
+					</a>
+					<a href={l("/docs/product-events/overview")} class="text-fg-muted transition-colors hover:text-fg">
+						{m.pe_link_docs()}
+					</a>
+				</div>
+			</div>
+
+			<div class="min-w-0">
+				<LiveFunnel />
+			</div>
+		</div>
+	</div>
+</section>

@@ -204,17 +204,23 @@ export const chatDestinationProvider = (connectorId: string | undefined): Destin
 	(connectorId === undefined ? undefined : CHAT_PROVIDERS.get(connectorId)) ?? PROVIDERS.chat
 
 /**
- * The provider tiles, one per type. `chat` is not among them: it is offered once per linked chat
- * workspace instead, since which workspace is the whole choice.
+ * The provider tiles, in the order people reach for them. `chat` is not among them: it is offered
+ * per chat connector instead (a linked workspace, or a connect tile), ahead of these.
  */
 export const DESTINATION_TYPES: ReadonlyArray<AlertDestinationType> = [
-	"discord",
-	"telegram",
-	"email",
 	"pagerduty",
+	"email",
 	"webhook",
+	"telegram",
 	"hazel-oauth",
 ]
+
+/**
+ * The provider types to offer, given whether the Discord bot is linked: Discord shows once, as the
+ * webhook type up front when there is no bot, or last (as the "Discord webhook") beside the bot.
+ */
+export const destinationTypesFor = (discordLinked: boolean): ReadonlyArray<AlertDestinationType> =>
+	discordLinked ? [...DESTINATION_TYPES, "discord"] : ["discord", ...DESTINATION_TYPES]
 
 interface ProviderLogoProps {
 	type: AlertDestinationType
