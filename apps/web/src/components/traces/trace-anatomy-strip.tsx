@@ -105,7 +105,7 @@ export function TraceAnatomyStrip({
 					<span key={share.serviceName} className="flex items-center gap-1.5 font-mono text-xs">
 						<ServiceDot serviceName={share.serviceName} size="sm" />
 						<span>{share.serviceName}</span>
-						<span className="text-[10px] text-muted-foreground tabular-nums">
+						<span className="text-3xs text-muted-foreground tabular-nums">
 							{share.percent.toFixed(share.percent < 10 ? 1 : 0)}%
 						</span>
 					</span>

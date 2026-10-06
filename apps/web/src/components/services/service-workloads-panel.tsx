@@ -67,7 +67,7 @@ export function ServiceWorkloadsPanel({
 			title="Kubernetes"
 			action={
 				envFilterActive ? (
-					<span className="text-[10px] text-muted-foreground/60">all environments</span>
+					<span className="text-3xs text-muted-foreground/60">all environments</span>
 				) : undefined
 			}
 			className={refreshingClass(isWaiting)}
@@ -84,12 +84,12 @@ export function ServiceWorkloadsPanel({
 							<ItemTitle className="block truncate font-mono text-[12.5px] font-normal text-foreground">
 								{workload.workloadName}
 							</ItemTitle>
-							<ItemDescription className="truncate text-[10px] text-muted-foreground/60">
+							<ItemDescription className="truncate text-3xs text-muted-foreground/60">
 								{KIND_LABEL[workload.workloadKind]} · {workload.namespace}
 								{workload.clusterName ? ` · ${workload.clusterName}` : ""}
 							</ItemDescription>
 						</ItemContent>
-						<ItemActions className="shrink-0 font-mono text-[11.5px] tabular-nums text-muted-foreground">
+						<ItemActions className="shrink-0 font-mono text-2xs tabular-nums text-muted-foreground">
 							{countLabel(workload.podCount, "pod")}
 						</ItemActions>
 						{(workload.avgCpuLimitUtilization != null ||

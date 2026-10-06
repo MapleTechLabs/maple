@@ -117,7 +117,7 @@ export function InvestigationAttachmentCard({
 					{ctx.facts.map((fact) => (
 						<li key={fact.key} className="flex min-w-0 flex-col leading-tight">
 							<Eyebrow>{fact.label}</Eyebrow>
-							<span className="truncate font-mono text-[11.5px] text-foreground">
+							<span className="truncate font-mono text-2xs text-foreground">
 								{fact.value}
 							</span>
 						</li>

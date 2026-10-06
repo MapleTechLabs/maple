@@ -261,7 +261,7 @@ export function ServiceDependenciesTab({
 			aria-busy={isWaiting || undefined}
 		>
 			{summary ? (
-				<div className="flex flex-col gap-2 text-[11px] text-muted-foreground sm:flex-row sm:flex-wrap sm:items-baseline sm:gap-x-5 sm:gap-y-1">
+				<div className="flex flex-col gap-2 text-2xs text-muted-foreground sm:flex-row sm:flex-wrap sm:items-baseline sm:gap-x-5 sm:gap-y-1">
 					<div className="flex items-baseline gap-x-3">
 						<span className="text-foreground">
 							<span className="tabular-nums font-mono font-medium">{dedupedRows.length}</span>{" "}

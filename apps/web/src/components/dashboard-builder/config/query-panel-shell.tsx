@@ -97,7 +97,7 @@ export function QueryPanelShell({
 
 				<Badge
 					variant="outline"
-					className={cn("font-mono text-[11px] text-white border-0 shrink-0", badgeColor)}
+					className={cn("font-mono text-2xs text-white border-0 shrink-0", badgeColor)}
 				>
 					{name}
 				</Badge>
@@ -155,7 +155,7 @@ export function AddOnToggleBar<K extends string>({
 					onClick={() => onToggle(key)}
 					aria-pressed={active[key]}
 					className={cn(
-						"px-2 py-0.5 text-[11px] rounded-sm border transition-colors",
+						"px-2 py-0.5 text-2xs rounded-sm border transition-colors",
 						active[key]
 							? "bg-primary/10 border-primary/30 text-primary"
 							: "bg-muted/40 border-transparent text-muted-foreground hover:text-foreground",

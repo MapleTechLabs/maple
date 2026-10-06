@@ -40,7 +40,7 @@ export function SegmentPivot<V extends string>({
 				<ToggleGroupItem
 					key={option.value}
 					value={option.value}
-					className="h-6 text-[11px] sm:h-6 sm:text-[11px]"
+					className="h-6 text-2xs sm:h-6 sm:text-2xs"
 				>
 					{option.label}
 				</ToggleGroupItem>

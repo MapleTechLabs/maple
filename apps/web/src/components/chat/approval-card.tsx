@@ -49,7 +49,7 @@ export function ApprovalCard({ toolName, input, resolved, onApprove, onDeny }: A
 				<button
 					type="button"
 					onClick={() => setShowRaw((v) => !v)}
-					className="mt-3 flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
+					className="mt-3 flex items-center gap-1 text-2xs text-muted-foreground hover:text-foreground"
 				>
 					{showRaw ? (
 						<ChevronDownIcon className="size-3" />
@@ -59,7 +59,7 @@ export function ApprovalCard({ toolName, input, resolved, onApprove, onDeny }: A
 					{showRaw ? "Hide raw input" : "Show raw input"}
 				</button>
 				{showRaw ? (
-					<pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-words rounded bg-muted/40 p-2 font-mono text-[11px] leading-snug">
+					<pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-words rounded bg-muted/40 p-2 font-mono text-2xs leading-snug">
 						{safeStringify(input)}
 					</pre>
 				) : null}

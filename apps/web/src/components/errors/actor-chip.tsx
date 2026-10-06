@@ -85,8 +85,8 @@ function initialsFrom(name: string): string {
 }
 
 const SIZE_CLASS = {
-	sm: "size-5 text-[9px]",
-	md: "size-7 text-[11px]",
+	sm: "size-5 text-4xs",
+	md: "size-7 text-2xs",
 } as const
 
 /**

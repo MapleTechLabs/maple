@@ -113,7 +113,7 @@ export function RefreshControls({
 							<DropdownMenuRadioItem key={seconds} value={String(seconds)}>
 								<span>{formatRefreshInterval(seconds)}</span>
 								{savedDefault === seconds && (
-									<span className="text-muted-foreground text-[10px]">default</span>
+									<span className="text-muted-foreground text-3xs">default</span>
 								)}
 							</DropdownMenuRadioItem>
 						))}

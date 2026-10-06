@@ -245,7 +245,7 @@ export function AnalyticsBreakdownPanel({
 					<button
 						type="button"
 						onClick={() => setExpanded(true)}
-						className="flex w-full items-center justify-between gap-2 rounded-b-md px-4 py-2 text-[11px] text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground focus-visible:bg-muted/40 focus-visible:outline-none"
+						className="flex w-full items-center justify-between gap-2 rounded-b-md px-4 py-2 text-2xs text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground focus-visible:bg-muted/40 focus-visible:outline-none"
 					>
 						<span className="flex items-center gap-1.5">
 							<MaximizeIcon size={12} />
@@ -328,7 +328,7 @@ function DimensionTabs({
 				<ToggleGroupItem
 					key={dim.tab}
 					value={dim.tab}
-					className="h-auto min-w-0 rounded-sm px-2 py-0.5 text-[11px] font-normal text-muted-foreground hover:bg-transparent hover:text-foreground data-pressed:bg-muted data-pressed:font-medium data-pressed:text-foreground sm:h-auto sm:min-w-0 sm:text-[11px]"
+					className="h-auto min-w-0 rounded-sm px-2 py-0.5 text-2xs font-normal text-muted-foreground hover:bg-transparent hover:text-foreground data-pressed:bg-muted data-pressed:font-medium data-pressed:text-foreground sm:h-auto sm:min-w-0 sm:text-2xs"
 				>
 					{dim.tab}
 				</ToggleGroupItem>
@@ -360,7 +360,7 @@ function FilterInput({
 			// from searching it, and the card's own input must never steal the page.
 			autoFocus={autoFocus}
 			className={cn(
-				"h-6 rounded-sm border bg-background px-2 text-[11px] placeholder:text-muted-foreground/70 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+				"h-6 rounded-sm border bg-background px-2 text-2xs placeholder:text-muted-foreground/70 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
 				className,
 			)}
 		/>
@@ -508,7 +508,7 @@ function BreakdownTable({
 							{/* Position in the order on screen, so it stays true when a
 							    different column takes over the sort. */}
 							{ranked ? (
-								<span className="w-6 text-right font-mono text-[11px] tabular-nums text-muted-foreground/60 max-sm:hidden">
+								<span className="w-6 text-right font-mono text-2xs tabular-nums text-muted-foreground/60 max-sm:hidden">
 									{index + 1}
 								</span>
 							) : null}
@@ -529,7 +529,7 @@ function BreakdownTable({
 							{hasViews ? (
 								<span
 									className={cn(
-										"text-right font-mono text-[11px] tabular-nums",
+										"text-right font-mono text-2xs tabular-nums",
 										ranked ? "w-16 sm:w-24" : "w-16",
 									)}
 								>
@@ -538,7 +538,7 @@ function BreakdownTable({
 							) : null}
 							<span
 								className={cn(
-									"text-right font-mono text-[11px] tabular-nums",
+									"text-right font-mono text-2xs tabular-nums",
 									ranked ? "w-16 sm:w-24" : hasViews ? "w-20" : "w-24",
 									hasViews && !ranked && "text-muted-foreground",
 									!ranked && hasViews && "hidden @min-[380px]/panel:inline-block",
@@ -549,7 +549,7 @@ function BreakdownTable({
 							{showShare ? (
 								<span
 									className={cn(
-										"w-16 text-right font-mono text-[11px] tabular-nums text-muted-foreground",
+										"w-16 text-right font-mono text-2xs tabular-nums text-muted-foreground",
 										ranked ? "max-sm:hidden" : "hidden @min-[380px]/panel:inline-block",
 									)}
 								>

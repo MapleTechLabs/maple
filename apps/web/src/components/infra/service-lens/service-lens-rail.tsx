@@ -61,7 +61,7 @@ export function ServiceLensRail({
 			{loading ? (
 				<RailLoading />
 			) : services.length === 0 ? (
-				<p className="px-2 text-[11px] leading-relaxed text-muted-foreground">
+				<p className="px-2 text-2xs leading-relaxed text-muted-foreground">
 					No service resolves to a Kubernetes workload in this window.
 				</p>
 			) : (
@@ -77,10 +77,10 @@ export function ServiceLensRail({
 
 			{unlinkedCount != null && unlinkedCount > 0 && (
 				<div className="mt-auto space-y-1.5 border-t px-2 pb-1 pt-3.5">
-					<div className="text-[11px] text-foreground">
+					<div className="text-2xs text-foreground">
 						{unlinkedCount} {unlinkedCount === 1 ? "service" : "services"} not linked
 					</div>
-					<p className="text-[11px] leading-relaxed text-muted-foreground">
+					<p className="text-2xs leading-relaxed text-muted-foreground">
 						Their spans carry no workload identity, so the lens can't reach their pods.{" "}
 						<Link
 							to="/infra/kubernetes/pods"
@@ -131,10 +131,10 @@ function RailRow({
 			>
 				{service.serviceName}
 			</span>
-			<span className={cn("w-[38px] shrink-0 text-right font-mono text-[11px] tabular-nums", tone)}>
+			<span className={cn("w-[38px] shrink-0 text-right font-mono text-2xs tabular-nums", tone)}>
 				{utilization == null ? "—" : formatPercent(utilization)}
 			</span>
-			<span className="w-[22px] shrink-0 text-right font-mono text-[11px] tabular-nums text-muted-foreground">
+			<span className="w-[22px] shrink-0 text-right font-mono text-2xs tabular-nums text-muted-foreground">
 				{service.podCount}
 			</span>
 		</Link>

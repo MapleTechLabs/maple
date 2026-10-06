@@ -97,7 +97,7 @@ export function StatRailItem({
 			<div className="flex items-baseline justify-between gap-3">
 				<span
 					className={cn(
-						"truncate text-[11px] font-medium transition-colors",
+						"truncate text-2xs font-medium transition-colors",
 						selected ? "text-primary" : "text-muted-foreground",
 					)}
 				>
@@ -105,7 +105,7 @@ export function StatRailItem({
 				</span>
 				{action ??
 					(delta ? (
-						<span className="shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground/80">
+						<span className="shrink-0 font-mono text-3xs tabular-nums text-muted-foreground/80">
 							{delta}
 						</span>
 					) : null)}
@@ -134,7 +134,7 @@ export function StatRailItem({
 				)}
 			</div>
 			{subline ? (
-				<div className="mt-2 truncate text-[11px] text-muted-foreground">{subline}</div>
+				<div className="mt-2 truncate text-2xs text-muted-foreground">{subline}</div>
 			) : null}
 		</>
 	)

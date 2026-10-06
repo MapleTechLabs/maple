@@ -268,7 +268,7 @@ export function AttachPullRequestDialog({
 																		: pr.state}
 																</Badge>
 															</div>
-															<span className="truncate text-[11px] text-muted-foreground">
+															<span className="truncate text-2xs text-muted-foreground">
 																{pr.headRef}
 																{pr.authorLogin ? ` · ${pr.authorLogin}` : ""}
 															</span>

@@ -215,7 +215,7 @@ const LogRow = React.memo(function LogRow({
 					<StatusDot tone="custom" style={{ backgroundColor: severityColor }} />
 				</span>
 				<span
-					className="shrink-0 w-12 text-[10px] uppercase tabular-nums font-semibold hidden md:inline-block"
+					className="shrink-0 w-12 text-3xs uppercase tabular-nums font-semibold hidden md:inline-block"
 					style={{ color: severityColor }}
 				>
 					{log.severityText}

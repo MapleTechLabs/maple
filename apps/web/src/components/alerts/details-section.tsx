@@ -43,7 +43,7 @@ export function DetailsSection({ form, onChange, suggestedName, tagSuggestions }
 								variant="ghost"
 								size="sm"
 								onClick={() => onChange((c) => ({ ...c, name: suggestedName! }))}
-								className="h-6 px-1.5 text-[11px]"
+								className="h-6 px-1.5 text-2xs"
 							>
 								Suggest: {suggestedName}
 							</Button>

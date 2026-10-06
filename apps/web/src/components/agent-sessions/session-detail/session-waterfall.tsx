@@ -276,7 +276,7 @@ export function SessionWaterfall({
 				</Eyebrow>
 
 				{axis.removedGapCount > 0 && (
-					<p className="border-border border-b px-2.5 py-1 text-[11px] text-muted-foreground">
+					<p className="border-border border-b px-2.5 py-1 text-2xs text-muted-foreground">
 						Axis shows active time. {formatSessionDuration(axis.removedMs)} of idle removed across{" "}
 						{axis.removedGapCount} gap{axis.removedGapCount === 1 ? "" : "s"}.
 					</p>
@@ -722,7 +722,7 @@ function SpanBar({
 
 function GapRow({ gap }: { gap: IdleGap }) {
 	return (
-		<div className="flex h-full items-center gap-3 pr-2.5 pl-20 text-[11px] text-muted-foreground">
+		<div className="flex h-full items-center gap-3 pr-2.5 pl-20 text-2xs text-muted-foreground">
 			<span className="shrink-0">idle {formatSessionDuration(gap.durationMs)}</span>
 			<span aria-hidden className="h-px flex-1 bg-border" />
 		</div>

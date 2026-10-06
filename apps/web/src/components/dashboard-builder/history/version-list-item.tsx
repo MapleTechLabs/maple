@@ -98,7 +98,7 @@ export function VersionListItem({ version, isPreviewing, isCurrent, onPreview }:
 						<div className="flex items-center gap-1.5">
 							<span
 								className={cn(
-									"text-[11px] font-medium uppercase tracking-wider",
+									"text-2xs font-medium uppercase tracking-wider",
 									isPreviewing
 										? "text-primary"
 										: "text-muted-foreground/70 group-hover:text-foreground/80",
@@ -107,7 +107,7 @@ export function VersionListItem({ version, isPreviewing, isCurrent, onPreview }:
 								{KIND_LABEL[version.changeKind]}
 							</span>
 							{isCurrent && (
-								<span className="rounded-sm bg-primary/10 px-1 py-px text-[9px] font-medium uppercase tracking-wider text-primary">
+								<span className="rounded-sm bg-primary/10 px-1 py-px text-4xs font-medium uppercase tracking-wider text-primary">
 									Current
 								</span>
 							)}
@@ -122,7 +122,7 @@ export function VersionListItem({ version, isPreviewing, isCurrent, onPreview }:
 						<div className="mt-0.5 truncate text-[13px] leading-snug text-foreground">
 							{summary}
 						</div>
-						<div className="mt-1 flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground">
+						<div className="mt-1 flex items-center gap-1.5 font-mono text-3xs text-muted-foreground">
 							<span
 								aria-hidden
 								className="grid size-3.5 place-items-center rounded-full bg-muted text-[8px] font-semibold uppercase text-muted-foreground"

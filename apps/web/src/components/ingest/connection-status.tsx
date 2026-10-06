@@ -18,7 +18,7 @@ export function ConnectionStatusPill({ connection }: { connection: IngestConnect
 		<Badge
 			pill
 			className={cn(
-				"gap-1.5 text-[11px] transition-colors sm:text-[11px]",
+				"gap-1.5 text-2xs transition-colors sm:text-2xs",
 				connected
 					? "border-severity-info/30 bg-severity-info/10 text-severity-info"
 					: "border-primary/30 bg-primary/10 text-primary",
@@ -71,7 +71,7 @@ export function SendTestEventStrip({ apiKey, onTestSent }: { apiKey: string; onT
 				<span className="text-xs text-muted-foreground">Watching for your first trace…</span>
 			</div>
 			<div className="flex items-center gap-2">
-				<span className="hidden text-[11px] text-muted-foreground sm:inline">
+				<span className="hidden text-2xs text-muted-foreground sm:inline">
 					Not ready to instrument?
 				</span>
 				<Button

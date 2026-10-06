@@ -56,7 +56,7 @@ export function ToolDetailSessions({
 			<div className="flex flex-wrap items-center justify-between gap-4 pb-3">
 				<div className="flex min-w-0 items-baseline gap-2.5 font-mono">
 					<span className="text-[12.5px] font-medium text-foreground">Sessions running {tool}</span>
-					<span className="text-[11.5px] leading-3.5 tabular-nums text-muted-foreground/70">
+					<span className="text-2xs leading-3.5 tabular-nums text-muted-foreground/70">
 						{plural(rows.length, "session")}
 					</span>
 				</div>
@@ -64,7 +64,7 @@ export function ToolDetailSessions({
 					to="/agent-sessions"
 					// The sessions list's own param is `tools`, not `toolNames`.
 					search={{ tools: [tool] }}
-					className="inline-flex h-7 shrink-0 items-center gap-2 rounded-md border border-border bg-card px-2.5 font-mono text-[11.5px] text-foreground transition-colors hover:bg-muted/50"
+					className="inline-flex h-7 shrink-0 items-center gap-2 rounded-md border border-border bg-card px-2.5 font-mono text-2xs text-foreground transition-colors hover:bg-muted/50"
 				>
 					Open in Sessions
 					<ExternalLinkIcon size={11} className="text-muted-foreground" aria-hidden />

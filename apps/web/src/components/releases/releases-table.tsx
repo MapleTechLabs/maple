@@ -75,7 +75,7 @@ function Delta({ value, baseline, format, tone }: DeltaProps) {
 	return (
 		<span className="inline-flex items-baseline gap-1 font-mono text-xs tabular-nums">
 			{baseline !== undefined ? (
-				<span className="text-[10px] text-muted-foreground/70" title="The version this one replaced">
+				<span className="text-3xs text-muted-foreground/70" title="The version this one replaced">
 					{format(baseline)} →
 				</span>
 			) : null}
@@ -132,7 +132,7 @@ function ServiceChips({ services }: { services: ReadonlyArray<ReleaseServiceImpa
 					</span>
 				))}
 				{flagged.length > 2 ? (
-					<span className="text-[11px] text-muted-foreground/70">+{flagged.length - 2}</span>
+					<span className="text-2xs text-muted-foreground/70">+{flagged.length - 2}</span>
 				) : null}
 			</span>
 		)
@@ -186,7 +186,7 @@ function ReleaseTitle({ commitSha, commit, health, figure, range }: ReleaseTitle
 					</CommitShaHoverCard>
 					{health === "healthy" ? null : <ReleaseHealthPill health={health} label={figure} />}
 				</div>
-				<div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+				<div className="flex items-center gap-1.5 text-2xs text-muted-foreground">
 					{commit ? <span className="font-mono">{shortReleaseLabel(commitSha)}</span> : null}
 					{author ? <span className="truncate">{author}</span> : null}
 					{!commit && !resolvable ? <span>deployment reference</span> : null}

@@ -35,7 +35,7 @@ export function SpanTooltipContent({ span, totalDurationMs, traceStartTime }: Sp
 
 			{durationPercent !== null && (
 				<div className="space-y-1">
-					<div className="flex items-center justify-between text-[10px]">
+					<div className="flex items-center justify-between text-3xs">
 						<span className="text-muted-foreground">Duration</span>
 						<span>
 							{formatDuration(span.durationMs)} ({durationPercent.toFixed(1)}%)
@@ -51,7 +51,7 @@ export function SpanTooltipContent({ span, totalDurationMs, traceStartTime }: Sp
 			)}
 
 			{span.children.length > 0 && (
-				<div className="flex items-center justify-between text-[10px]">
+				<div className="flex items-center justify-between text-3xs">
 					<span className="text-muted-foreground">Self time</span>
 					<span>
 						{formatDuration(selfTime)} ({selfTimePercent.toFixed(0)}%)
@@ -59,7 +59,7 @@ export function SpanTooltipContent({ span, totalDurationMs, traceStartTime }: Sp
 				</div>
 			)}
 
-			<div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-[10px]">
+			<div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-3xs">
 				<span className="text-muted-foreground">Service</span>
 				<span>{span.serviceName}</span>
 				<span className="text-muted-foreground">Kind</span>
@@ -91,7 +91,7 @@ export function SpanTooltipContent({ span, totalDurationMs, traceStartTime }: Sp
 			</div>
 
 			{httpInfo && (
-				<div className="border-t border-border pt-1.5 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-[10px]">
+				<div className="border-t border-border pt-1.5 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-3xs">
 					<span className="text-muted-foreground">Method</span>
 					<span className="font-medium">{httpInfo.method}</span>
 					{httpInfo.statusCode != null && (
@@ -118,7 +118,7 @@ export function SpanTooltipContent({ span, totalDurationMs, traceStartTime }: Sp
 			)}
 
 			{span.statusMessage && (
-				<div className="border-t border-border pt-1.5 text-[10px]">
+				<div className="border-t border-border pt-1.5 text-3xs">
 					<span className="text-muted-foreground">Message: </span>
 					{span.statusMessage}
 				</div>

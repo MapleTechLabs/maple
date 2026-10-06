@@ -75,7 +75,7 @@ export function MessageActions({ message, permalink }: MessageActionsProps) {
 				<time
 					dateTime={new Date(createdAt).toISOString()}
 					title={new Date(createdAt).toLocaleString()}
-					className="ml-1 text-[11px] text-muted-foreground tabular-nums"
+					className="ml-1 text-2xs text-muted-foreground tabular-nums"
 				>
 					{timeLabel(createdAt)}
 				</time>

@@ -292,7 +292,7 @@ export function SpendChart({ model, daily }: { model: SpendModel; daily: DailySp
 			<div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2 border-b border-border/60 px-4 py-3">
 				<div>
 					<h3 className="text-sm">Spend this cycle</h3>
-					<p className="mt-0.5 text-[11px] text-muted-foreground">
+					<p className="mt-0.5 text-2xs text-muted-foreground">
 						Cumulative estimated spend by feature
 					</p>
 				</div>
@@ -309,10 +309,10 @@ export function SpendChart({ model, daily }: { model: SpendModel; daily: DailySp
 								className="size-1.5 translate-y-[-1px] rounded-full"
 								style={{ background: chartConfig[band]?.color }}
 							/>
-							<span className="text-[11px] text-muted-foreground">
+							<span className="text-2xs text-muted-foreground">
 								{chartConfig[band]?.label}
 							</span>
-							<span className="font-mono text-[11px] tabular-nums text-foreground/85">
+							<span className="font-mono text-2xs tabular-nums text-foreground/85">
 								{formatCurrency(bandTotals[band], model.currency)}
 							</span>
 						</span>
@@ -338,7 +338,7 @@ export function SpendChart({ model, daily }: { model: SpendModel; daily: DailySp
 				</div>
 			</div>
 
-			<div className="flex flex-wrap items-baseline justify-between gap-2 border-t border-border/60 px-4 py-2.5 text-[11px] text-muted-foreground">
+			<div className="flex flex-wrap items-baseline justify-between gap-2 border-t border-border/60 px-4 py-2.5 text-2xs text-muted-foreground">
 				<span>
 					{model.cycleDays}-day cycle · day {model.dayOfCycle}
 				</span>

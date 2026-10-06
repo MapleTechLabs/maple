@@ -297,7 +297,7 @@ export function IssueTimeline({
 							<div className="min-w-0 py-2.5">
 								<div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
 									<span className="font-medium text-foreground">Escalation</span>
-									<span className="font-mono text-[11px] capitalize text-muted-foreground">
+									<span className="font-mono text-2xs capitalize text-muted-foreground">
 										{escalation.severity} · {escalation.status}
 									</span>
 								</div>
@@ -335,7 +335,7 @@ export function IssueTimeline({
 							<div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
 								<span className="font-medium text-foreground">{EVENT_LABEL[event.type]}</span>
 								{event.fromState && event.toState ? (
-									<span className="font-mono text-[11px] text-muted-foreground">
+									<span className="font-mono text-2xs text-muted-foreground">
 										{event.fromState} → {event.toState}
 									</span>
 								) : null}
@@ -367,7 +367,7 @@ function AuthorLabel({
 	return (
 		<span
 			className={cn(
-				"inline-flex items-center gap-1 text-[11px]",
+				"inline-flex items-center gap-1 text-2xs",
 				identity.kind === "agent" ? "text-violet-600 dark:text-violet-300" : "text-muted-foreground",
 			)}
 			title={identity.detail ?? undefined}
@@ -478,7 +478,7 @@ const MESSAGE_ITEM = `${ITEM} first:pt-0`
 // `whitespace-nowrap`: `formatRelativeTime` can return "just now", and a gutter
 // that wraps it onto two lines pushes the dot out of line with its own row.
 const STAMP =
-	"py-3 text-right text-[11px] leading-5 whitespace-nowrap tabular-nums text-muted-foreground transition-opacity"
+	"py-3 text-right text-2xs leading-5 whitespace-nowrap tabular-nums text-muted-foreground transition-opacity"
 
 /** The connector column: a hairline the full row height, marker centred on it. */
 function Rail({ children }: { children: ReactNode }) {

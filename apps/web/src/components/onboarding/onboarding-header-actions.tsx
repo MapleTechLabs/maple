@@ -15,7 +15,7 @@ import { clearSelfHostedSessionToken } from "@/lib/services/common/self-hosted-a
 import { ClerkOrgSwitcherMenu, OrgAvatar } from "@/components/dashboard/org-switcher-menu"
 import { UserAvatar } from "@/components/dashboard/user-avatar"
 
-const AVATAR_CLASS = "size-5 rounded-md text-[10px]"
+const AVATAR_CLASS = "size-5 rounded-md text-3xs"
 
 export function OnboardingOrgSwitcher() {
 	if (!isClerkAuthEnabled) return null

@@ -248,7 +248,7 @@ function WebAnalyticsPage() {
 										<button
 											type="button"
 											onClick={onClearFilters}
-											className="px-1 text-[10px] text-muted-foreground underline-offset-2 hover:underline"
+											className="px-1 text-3xs text-muted-foreground underline-offset-2 hover:underline"
 										>
 											Clear all
 										</button>

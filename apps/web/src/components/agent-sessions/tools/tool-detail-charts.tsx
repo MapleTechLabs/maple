@@ -201,12 +201,12 @@ function Cell({
 				</h2>
 				<span className="grow" />
 				{series.length > 1 ? (
-					<span className="flex items-center gap-4 font-mono text-[11px] leading-3.5">
+					<span className="flex items-center gap-4 font-mono text-2xs leading-3.5">
 						{series.map((entry) => (
 							<span key={entry.key} className="flex items-center gap-1.5">
 								<span
 									aria-hidden
-									className="size-2 shrink-0 rounded-[2px]"
+									className="size-2 shrink-0 rounded-xs"
 									style={{ backgroundColor: entry.color }}
 								/>
 								<span className="text-foreground/75">{entry.label}</span>

@@ -103,7 +103,7 @@ function Provenance({ investigation }: { investigation: V2Investigation }) {
 			: "Opened by a member of your team"
 
 	return (
-		<p className="text-[11px] text-muted-foreground">
+		<p className="text-2xs text-muted-foreground">
 			{[model, tokens, opened].filter(Boolean).join(" · ")}
 		</p>
 	)

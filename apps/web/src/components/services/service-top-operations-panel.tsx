@@ -87,7 +87,7 @@ export function ServiceTopOperationsPanel({
 								<span className="relative min-w-0 flex-1 truncate font-mono text-[12.5px] text-foreground">
 									{op.spanName}
 								</span>
-								<span className="relative flex shrink-0 items-center gap-3 font-mono text-[11.5px] tabular-nums">
+								<span className="relative flex shrink-0 items-center gap-3 font-mono text-2xs tabular-nums">
 									<SampledValue
 										className="text-foreground"
 										estimated={op.estimatedSpanCount > op.spanCount}

@@ -119,7 +119,7 @@ function WorkspaceSettings({
 							setDraft((current) => ({ ...current, [field.key]: event.target.value }))
 						}
 					/>
-					<FieldDescription className="text-[11px]">{field.help}</FieldDescription>
+					<FieldDescription className="text-2xs">{field.help}</FieldDescription>
 				</Field>
 			))}
 			<div>
@@ -189,7 +189,7 @@ function ChatIdentityRow({
 		<Item variant="card" className="gap-3 px-4 py-3">
 			<ItemContent className="gap-0.5">
 				<ItemTitle>Your {platform} account</ItemTitle>
-				<ItemDescription className="truncate text-[11px]">
+				<ItemDescription className="truncate text-2xs">
 					{identity === undefined
 						? `Link it so Maple knows it's you acting from ${platform}.`
 						: `Linked as ${identity.display_name ?? identity.external_user_id}`}
@@ -357,7 +357,7 @@ export function ChatIntegrationCard({ connector }: { connector: ChatConnectorId 
 						<RelativeTime
 							value={workspace.created_at}
 							prefix="Connected"
-							className="text-[11px] text-muted-foreground"
+							className="text-2xs text-muted-foreground"
 						/>
 						{/* Keyed by the stored settings so a save reseeds the form from what
 						    the server actually kept. */}
@@ -398,7 +398,7 @@ export function ChatIntegrationCard({ connector }: { connector: ChatConnectorId 
 				</Button>
 			</div>
 			{showNotAdmin ? (
-				<p className="text-[11px] text-muted-foreground">
+				<p className="text-2xs text-muted-foreground">
 					Only organization admins can change or disconnect {manifest.name} workspaces.
 				</p>
 			) : null}

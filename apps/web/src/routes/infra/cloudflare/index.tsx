@@ -261,7 +261,7 @@ function CloudflareData({
 															background: zoneSeries.colors.get(name),
 														}}
 													/>
-													<span className="text-[11px] text-muted-foreground transition-colors group-hover:text-foreground">
+													<span className="text-2xs text-muted-foreground transition-colors group-hover:text-foreground">
 														{name}
 													</span>
 												</Link>
@@ -273,7 +273,7 @@ function CloudflareData({
 														className="size-1.5 rounded-full"
 														style={{ background: OTHER_ZONES_COLOR }}
 													/>
-													<span className="text-[11px] text-muted-foreground">
+													<span className="text-2xs text-muted-foreground">
 														Other zones ({zoneSeries.otherCount})
 													</span>
 												</span>

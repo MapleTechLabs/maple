@@ -140,7 +140,7 @@ function BeforeAfter({
 	return (
 		<span className="inline-flex items-baseline gap-1 font-mono text-xs tabular-nums">
 			{before !== undefined ? (
-				<span className="text-[10px] text-muted-foreground/70">{format(before)} →</span>
+				<span className="text-3xs text-muted-foreground/70">{format(before)} →</span>
 			) : null}
 			<span
 				className={cn(
@@ -171,7 +171,7 @@ function DeployServices({
 		<SectionCard
 			title="Services"
 			action={
-				<span className="text-[11px] text-muted-foreground/70">
+				<span className="text-2xs text-muted-foreground/70">
 					against the version each replaced
 				</span>
 			}
@@ -234,7 +234,7 @@ function DeployServiceRow({
 					)}
 				</Link>
 			</TableCell>
-			<TableCell className="font-mono text-[11px] text-muted-foreground">
+			<TableCell className="font-mono text-2xs text-muted-foreground">
 				{impact.baseline ? shortReleaseLabel(impact.baseline.commitSha) : "-"}
 			</TableCell>
 			<TableCell className="text-right font-mono tabular-nums">

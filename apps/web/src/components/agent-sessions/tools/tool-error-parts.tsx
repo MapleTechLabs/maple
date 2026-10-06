@@ -19,7 +19,7 @@ export function MaskChip({ label, raw, className }: { label: string; raw: string
 		<InlineCode
 			title={raw === "" ? undefined : raw}
 			className={cn(
-				"mx-px inline-block rounded-[3px] px-[3px] py-0 align-baseline text-[11.5px] leading-[15px] font-normal text-muted-foreground",
+				"mx-px inline-block rounded-[3px] px-[3px] py-0 align-baseline text-2xs leading-[15px] font-normal text-muted-foreground",
 				className,
 			)}
 		>
@@ -320,7 +320,7 @@ export function FailureStatusLine({
 								: `· failed in ${activeBuckets.active} of ${activeBuckets.total} ${activeBuckets.unit === "day" ? "days" : `${activeBuckets.unit} buckets`}`,
 						]
 	return (
-		<span className={cn("flex items-center gap-2 font-mono text-[11.5px] leading-3.5", className)}>
+		<span className={cn("flex items-center gap-2 font-mono text-2xs leading-3.5", className)}>
 			<StatusDot tone={STATUS_TONE[status.kind]} />
 			<span className="text-foreground">{lead}</span>
 			{detail === undefined ? null : <span className="text-muted-foreground/70">{detail}</span>}

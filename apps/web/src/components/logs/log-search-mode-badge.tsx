@@ -18,7 +18,7 @@ export function LogSearchModeBadge({ mode, className }: { mode: LogSearchMode; c
 	return (
 		<span
 			className={cn(
-				"rounded-sm px-1 py-px font-medium text-[10px] uppercase tracking-wide",
+				"rounded-sm px-1 py-px font-medium text-3xs uppercase tracking-wide",
 				MODE[mode].className,
 				className,
 			)}

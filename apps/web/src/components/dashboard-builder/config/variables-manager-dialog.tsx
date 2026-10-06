@@ -196,7 +196,7 @@ function VariablesEditor({
 			</DialogHeader>
 			<DialogPanel className="flex flex-col gap-3">
 				{startedEmpty && (
-					<div className="rounded-md border border-dashed border-border px-3 py-3 text-[11px] leading-relaxed text-muted-foreground">
+					<div className="rounded-md border border-dashed border-border px-3 py-3 text-2xs leading-relaxed text-muted-foreground">
 						<p>
 							A variable adds a selector to the toolbar; widgets that reference it re-query when
 							the selection changes.
@@ -226,7 +226,7 @@ function VariablesEditor({
 										{TYPE_LABELS[draft.type]}
 									</span>
 								</ItemTitle>
-								<ItemDescription className="block truncate text-[11px]">
+								<ItemDescription className="block truncate text-2xs">
 									{errors[index] !== null && editingIndex !== index ? (
 										<span className="text-destructive">{errors[index]}</span>
 									) : (
@@ -322,12 +322,12 @@ function VariableForm({
 						onChange={(event) => onChange({ ...variable, name: event.target.value })}
 					/>
 					{error !== null ? (
-						<FieldError match className="text-[11px] text-destructive">
+						<FieldError match className="text-2xs text-destructive">
 							{error}
 						</FieldError>
 					) : (
 						variable.name !== "" && (
-							<FieldDescription className="text-[11px]">
+							<FieldDescription className="text-2xs">
 								Reference it as <InlineCode>${variable.name}</InlineCode> in widget filters
 								and SQL.
 							</FieldDescription>

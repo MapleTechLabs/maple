@@ -314,7 +314,7 @@ export function AnalyticsTrafficChart({ metric, companion, source, syncId }: Ana
 	const legend = companion ? (
 		<>
 			{series.map((entry) => (
-				<span key={entry.key} className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+				<span key={entry.key} className="flex items-center gap-1.5 text-3xs text-muted-foreground">
 					<span
 						aria-hidden
 						className="size-1.5 rounded-full"

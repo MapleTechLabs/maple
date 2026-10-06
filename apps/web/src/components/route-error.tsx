@@ -102,7 +102,7 @@ function RouteError({ error, info, reset }: ErrorComponentProps) {
 					<summary className="text-muted-foreground cursor-pointer text-xs select-none">
 						Stack trace
 					</summary>
-					<pre className="bg-muted mt-2 overflow-auto p-3 font-mono text-[11px] leading-relaxed">
+					<pre className="bg-muted mt-2 overflow-auto p-3 font-mono text-2xs leading-relaxed">
 						{stack}
 					</pre>
 				</details>

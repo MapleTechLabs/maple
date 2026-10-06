@@ -76,13 +76,13 @@ export function AiPanel({
 				className="items-start pt-3 pb-2.5"
 				action={
 					aside ? (
-						<div className="shrink-0 text-[11px] text-muted-foreground">{aside}</div>
+						<div className="shrink-0 text-2xs text-muted-foreground">{aside}</div>
 					) : undefined
 				}
 			>
 				<div className="min-w-0">
 					<PanelTitle>{title}</PanelTitle>
-					{hint ? <div className="mt-0.5 text-[11px] text-muted-foreground/70">{hint}</div> : null}
+					{hint ? <div className="mt-0.5 text-2xs text-muted-foreground/70">{hint}</div> : null}
 				</div>
 			</PanelHeader>
 			{children}
@@ -92,7 +92,7 @@ export function AiPanel({
 					<button
 						type="button"
 						onClick={() => setExpanded(true)}
-						className="flex w-full items-center justify-between gap-2 rounded-b-md border-t border-border/40 px-4 py-2 text-[11px] text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground focus-visible:bg-muted/40 focus-visible:outline-none"
+						className="flex w-full items-center justify-between gap-2 rounded-b-md border-t border-border/40 px-4 py-2 text-2xs text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground focus-visible:bg-muted/40 focus-visible:outline-none"
 					>
 						<span className="flex items-center gap-1.5">
 							<MaximizeIcon size={12} />
@@ -177,7 +177,7 @@ export function AiProductCard({
 				</div>
 				{visits > 0 && served > 0 ? (
 					<span
-						className="shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground/80"
+						className="shrink-0 font-mono text-3xs tabular-nums text-muted-foreground/80"
 						title="Crawler fetches the site served, per visit this product sent"
 					>
 						{formatRatio(served / visits)} fetches / visit
@@ -188,7 +188,7 @@ export function AiProductCard({
 				<span className="font-mono text-[22px] font-semibold tabular-nums leading-none">
 					{formatNumber(visits)}
 				</span>
-				<span className="text-[11px] text-muted-foreground">
+				<span className="text-2xs text-muted-foreground">
 					{visits === 1 ? "visit sent" : "visits sent"}
 				</span>
 			</div>
@@ -197,7 +197,7 @@ export function AiProductCard({
 				color={SPARK_COLOR.neutral}
 				className={cn("mt-3 h-8 w-full", visits === 0 && "opacity-40")}
 			/>
-			<div className="mt-3 truncate text-[11px] text-muted-foreground" title={line.title}>
+			<div className="mt-3 truncate text-2xs text-muted-foreground" title={line.title}>
 				{line.text}
 			</div>
 		</div>
@@ -251,7 +251,7 @@ export function AiReferralRanking({ ranks }: { ranks: ReadonlyArray<AiReferralRa
 								style={shareBar(rank.share)}
 								className="flex items-center gap-4 border-b border-border/40 px-4 py-2 last:border-0"
 							>
-								<span className="w-5 text-right font-mono text-[11px] tabular-nums text-muted-foreground/60">
+								<span className="w-5 text-right font-mono text-2xs tabular-nums text-muted-foreground/60">
 									{index + 1}
 								</span>
 								<span className="flex w-0 min-w-0 flex-1 items-center gap-2">
@@ -260,13 +260,13 @@ export function AiReferralRanking({ ranks }: { ranks: ReadonlyArray<AiReferralRa
 										{rank.product.label}
 									</span>
 								</span>
-								<span className="w-14 text-right font-mono text-[11px] tabular-nums text-muted-foreground">
+								<span className="w-14 text-right font-mono text-2xs tabular-nums text-muted-foreground">
 									{formatNumber(rank.visits)}
 								</span>
-								<span className="w-14 text-right font-mono text-[11px] tabular-nums">
+								<span className="w-14 text-right font-mono text-2xs tabular-nums">
 									{formatPercent(rank.share)}
 								</span>
-								<span className="hidden w-20 justify-end font-mono text-[10px] tabular-nums @min-[360px]/panel:flex">
+								<span className="hidden w-20 justify-end font-mono text-3xs tabular-nums @min-[360px]/panel:flex">
 									<ShareChange share={rank.share} points={rank.shareDeltaPoints} />
 								</span>
 							</div>
@@ -378,14 +378,14 @@ export function AiCrawlerTable({
 									</span>
 									<span
 										className={cn(
-											"w-12 text-right font-mono text-[11px] tabular-nums",
+											"w-12 text-right font-mono text-2xs tabular-nums",
 											row.pages === 0 && "text-muted-foreground/60",
 										)}
 									>
 										{formatNumber(row.pages)}
 									</span>
 									<span
-										className="hidden w-14 text-right font-mono text-[11px] tabular-nums text-muted-foreground @min-[380px]/panel:inline-block"
+										className="hidden w-14 text-right font-mono text-2xs tabular-nums text-muted-foreground @min-[380px]/panel:inline-block"
 										title={
 											row.failedRequests > 0
 												? `${plural(row.failedRequests, "fetch", "fetches")} got an error response`
@@ -394,7 +394,7 @@ export function AiCrawlerTable({
 									>
 										{formatNumber(row.requests)}
 									</span>
-									<span className="hidden w-20 text-right text-[11px] text-muted-foreground @min-[460px]/panel:inline-block">
+									<span className="hidden w-20 text-right text-2xs text-muted-foreground @min-[460px]/panel:inline-block">
 										{formatRelativeTime(row.lastSeen)}
 									</span>
 								</div>
@@ -420,7 +420,7 @@ function PurposeBadge({ purpose }: { purpose: AiCrawlPurpose }) {
 		<span
 			title={description}
 			style={{ color, backgroundColor: `color-mix(in oklab, ${color} 12%, transparent)` }}
-			className="rounded-sm px-1.5 py-px text-[10px] font-medium"
+			className="rounded-sm px-1.5 py-px text-3xs font-medium"
 		>
 			{purpose}
 		</span>
@@ -452,7 +452,7 @@ export function AiContentFormats({ formats }: { formats: ReadonlyArray<WebAnalyt
 				))}
 			</div>
 			{other && other.requests > 0 ? (
-				<div className="flex items-center gap-1.5 px-1 text-[11px] text-muted-foreground/70">
+				<div className="flex items-center gap-1.5 px-1 text-2xs text-muted-foreground/70">
 					<FileIcon size={12} />
 					{plural(other.requests, "other fetch", "other fetches")} (images, scripts, feeds and other
 					files)
@@ -484,18 +484,18 @@ function FormatCard({
 				</span>
 				<div className="min-w-0">
 					<div className="text-[13px] font-medium leading-tight">{label}</div>
-					<div className="truncate text-[11px] text-muted-foreground">{description}</div>
+					<div className="truncate text-2xs text-muted-foreground">{description}</div>
 				</div>
 			</div>
 			<div className="mt-3 flex items-baseline gap-1.5">
 				<span className="font-mono text-[22px] font-semibold tabular-nums leading-none">
 					{formatNumber(requests)}
 				</span>
-				<span className="text-[11px] text-muted-foreground">
+				<span className="text-2xs text-muted-foreground">
 					{requests === 1 ? "fetch" : "fetches"}
 				</span>
 			</div>
-			<div className="mt-3 flex min-h-4 items-center gap-1.5 text-[11px] text-muted-foreground">
+			<div className="mt-3 flex min-h-4 items-center gap-1.5 text-2xs text-muted-foreground">
 				{requests === 0 ? (
 					"Not fetched yet"
 				) : pages === 0 ? (

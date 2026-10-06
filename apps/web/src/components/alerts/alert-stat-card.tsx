@@ -160,7 +160,7 @@ export function AlertFiringHero({
 				<div className="flex min-w-0 items-center gap-3">
 					<StatusDot tone="crit" />
 					<div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5">
-						<span className="text-severity-error text-[11px] font-medium uppercase tracking-[0.16em]">
+						<span className="text-severity-error text-2xs font-medium uppercase tracking-[0.16em]">
 							Firing now
 						</span>
 						<span className="flex items-baseline gap-1.5">

@@ -56,7 +56,7 @@ function WidgetRow({ widget }: { widget: NormalizedWidget }) {
 			<Icon className="size-3.5 shrink-0 text-muted-foreground" />
 			<span className="truncate text-xs font-medium">{widget.title}</span>
 			{widget.source ? (
-				<span className="truncate text-[11px] text-muted-foreground">{widget.source}</span>
+				<span className="truncate text-2xs text-muted-foreground">{widget.source}</span>
 			) : null}
 			{widget.groupBy ? (
 				<Badge variant="outline" size="xs" className="ml-auto px-1.5">
@@ -77,7 +77,7 @@ function WidgetList({ widgets, max = 8 }: { widgets: NormalizedWidget[]; max?: n
 				<WidgetRow key={i} widget={w} />
 			))}
 			{overflow > 0 ? (
-				<div className="px-2 text-[11px] text-muted-foreground">+ {overflow} more</div>
+				<div className="px-2 text-2xs text-muted-foreground">+ {overflow} more</div>
 			) : null}
 		</div>
 	)
@@ -141,7 +141,7 @@ export function CreateDashboardSummary({ input }: ApprovalRendererProps) {
 				<div className="min-w-0 flex-1">
 					<div className="truncate text-sm font-semibold">{name}</div>
 					{dashboardJsonName && dashboardJsonName !== name ? (
-						<div className="truncate text-[11px] text-muted-foreground">
+						<div className="truncate text-2xs text-muted-foreground">
 							Inner title: {dashboardJsonName}
 						</div>
 					) : null}
@@ -161,7 +161,7 @@ export function CreateDashboardSummary({ input }: ApprovalRendererProps) {
 					<WidgetList widgets={widgets} />
 				</Section>
 			) : !isCustom ? (
-				<div className="rounded-md border border-dashed border-border/60 px-2 py-1.5 text-[11px] text-muted-foreground">
+				<div className="rounded-md border border-dashed border-border/60 px-2 py-1.5 text-2xs text-muted-foreground">
 					Template will generate widgets automatically.
 				</div>
 			) : null}
@@ -284,7 +284,7 @@ export function AddDashboardWidgetSummary({ input }: ApprovalRendererProps) {
 					<div className="min-w-0 flex-1">
 						<div className="truncate text-xs font-medium">{title}</div>
 						{endpoint ? (
-							<div className="truncate text-[11px] text-muted-foreground">{endpoint}</div>
+							<div className="truncate text-2xs text-muted-foreground">{endpoint}</div>
 						) : null}
 					</div>
 				</div>
@@ -406,12 +406,12 @@ export function ReorderDashboardWidgetsSummary({ input }: ApprovalRendererProps)
 			{previewIds.length > 0 ? (
 				<div className="flex flex-wrap gap-1">
 					{previewIds.map((id) => (
-						<InlineCode key={id} className="px-1.5 py-0.5 text-[10px] text-muted-foreground">
+						<InlineCode key={id} className="px-1.5 py-0.5 text-3xs text-muted-foreground">
 							{id}
 						</InlineCode>
 					))}
 					{overflow > 0 ? (
-						<span className="text-[10px] text-muted-foreground">+ {overflow} more</span>
+						<span className="text-3xs text-muted-foreground">+ {overflow} more</span>
 					) : null}
 				</div>
 			) : null}

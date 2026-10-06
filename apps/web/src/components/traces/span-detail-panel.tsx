@@ -93,7 +93,7 @@ function SpanPositionBar({
 					style={{ left: `${offsetPct}%`, width: `${widthPct}%`, backgroundColor: color }}
 				/>
 			</div>
-			<div className="mt-1 flex justify-between text-[10px] text-muted-foreground tabular-nums">
+			<div className="mt-1 flex justify-between text-3xs text-muted-foreground tabular-nums">
 				<span>+{formatDuration(Math.max(offsetMs, 0))}</span>
 				<span>{formatDuration(totalDurationMs)} total</span>
 			</div>
@@ -110,7 +110,7 @@ function LogEntry({ log, timeZone, onClick }: { log: Log; timeZone: string; onCl
 			className="block w-full p-2 text-left hover:bg-muted/30 cursor-pointer"
 			onClick={() => onClick?.(log)}
 		>
-			<div className="flex items-center gap-2 text-[10px] text-muted-foreground mb-1">
+			<div className="flex items-center gap-2 text-3xs text-muted-foreground mb-1">
 				<span>{formatTimestampInTimezone(log.timestamp, { timeZone })}</span>
 				<SeverityBadge severity={log.severityText} className="h-4 px-1" />
 			</div>
@@ -261,11 +261,11 @@ export function SpanDetailPanel({
 					<div className="flex items-center gap-1.5 mt-0.5">
 						<ServiceDot serviceName={span.serviceName} size="sm" />
 						<CopyableValue value={span.serviceName}>
-							<span className="font-mono text-[10px]" style={{ color: serviceColor }}>
+							<span className="font-mono text-3xs" style={{ color: serviceColor }}>
 								{span.serviceName}
 							</span>
 						</CopyableValue>
-						<span className="text-[10px] text-muted-foreground">{kindLabel}</span>
+						<span className="text-3xs text-muted-foreground">{kindLabel}</span>
 					</div>
 				</div>
 				<div className="flex shrink-0 items-center gap-0.5">
@@ -336,7 +336,7 @@ export function SpanDetailPanel({
 							)}
 						</div>
 						{/* Two columns only once the panel is wide enough for them to hold real values. */}
-						<div className="grid grid-cols-1 gap-x-4 gap-y-1 text-[11px] @min-[22rem]/platform:grid-cols-2">
+						<div className="grid grid-cols-1 gap-x-4 gap-y-1 text-2xs @min-[22rem]/platform:grid-cols-2">
 							{platform.edge && (
 								<PlatformRow label="Edge">
 									<span className="inline-flex items-center gap-1">
@@ -460,7 +460,7 @@ export function SpanDetailPanel({
 									))
 									.onError(() => (
 										<>
-											<p className="rounded-md border border-dashed px-2 py-1.5 text-[11px] text-muted-foreground">
+											<p className="rounded-md border border-dashed px-2 py-1.5 text-2xs text-muted-foreground">
 												Couldn't load all attributes. Showing the ones loaded with the
 												trace.
 											</p>

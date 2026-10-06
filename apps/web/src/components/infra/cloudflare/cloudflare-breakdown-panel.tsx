@@ -419,7 +419,7 @@ function StoredBreakdown({
 				</div>
 			}
 			error={() => (
-				<p className="px-3 pb-3 font-mono text-[11px] text-muted-foreground">
+				<p className="px-3 pb-3 font-mono text-2xs text-muted-foreground">
 					Couldn't load the {dimension.column.toLowerCase()} breakdown.
 				</p>
 			)}
@@ -446,7 +446,7 @@ function StoredBreakdown({
 							meta={
 								// Below 99.5% the fold is actually hiding something; above it, saying so is noise.
 								data.coverage < 0.995 && data.totals.length > 0 ? (
-									<span className="font-mono text-[10px] text-muted-foreground">
+									<span className="font-mono text-3xs text-muted-foreground">
 										{formatPercent(data.coverage)} of zone requests
 									</span>
 								) : null
@@ -520,7 +520,7 @@ function Footer({
 			total={total}
 			noun={dimension.noun}
 			align="start"
-			className="justify-start gap-x-3 gap-y-1 px-3 py-2 font-mono text-[10px]"
+			className="justify-start gap-x-3 gap-y-1 px-3 py-2 font-mono text-3xs"
 		>
 			{collectedFrom ? <span>collected from {collectedFrom}</span> : null}
 			{onSearchLive ? (
@@ -577,7 +577,7 @@ function LiveBreakdown({
 			onChange={onSearchChange}
 			count={count}
 			meta={
-				<span className="font-mono text-[10px] text-muted-foreground">
+				<span className="font-mono text-3xs text-muted-foreground">
 					Live from Cloudflare · no history
 				</span>
 			}
@@ -600,7 +600,7 @@ function LiveBreakdown({
 			error={() => (
 				<>
 					{toolbar(0)}
-					<p className="px-3 pb-3 font-mono text-[11px] text-muted-foreground">
+					<p className="px-3 pb-3 font-mono text-2xs text-muted-foreground">
 						Couldn't reach Cloudflare's analytics API for this zone right now.
 					</p>
 				</>
@@ -611,7 +611,7 @@ function LiveBreakdown({
 					return (
 						<>
 							{toolbar(0)}
-							<p className="px-3 pb-3 font-mono text-[11px] text-muted-foreground">
+							<p className="px-3 pb-3 font-mono text-2xs text-muted-foreground">
 								Cloudflare can't serve this breakdown: {data.unavailableReason}
 							</p>
 						</>
@@ -637,7 +637,7 @@ function LiveBreakdown({
 							emptyMessage={`No ${dimension.noun} match "${query}" in this window.`}
 							interactive={false}
 						/>
-						<p className="px-3 py-2 font-mono text-[10px] text-muted-foreground">
+						<p className="px-3 py-2 font-mono text-3xs text-muted-foreground">
 							Cloudflare's top {rows.length} for "{query}" · clear the filter to return to
 							stored data
 						</p>

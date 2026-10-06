@@ -517,7 +517,7 @@ export function TraceTimeline() {
 					</TooltipContent>
 				</Tooltip>
 
-				<div className="ml-auto flex min-w-0 items-center gap-2 text-[10px] text-muted-foreground">
+				<div className="ml-auto flex min-w-0 items-center gap-2 text-3xs text-muted-foreground">
 					{/* Collapsing hides rows, so this count and the trace header's disagree. Say
 					    so explicitly instead of quietly showing a second, smaller "N spans". */}
 					{/* Only while rows are hidden. Uncollapsed this just repeats the trace header's
@@ -653,7 +653,7 @@ export function TraceTimeline() {
 					className="pointer-events-none absolute top-0 bottom-0 left-0 z-20 w-px bg-foreground/40"
 					style={{ display: "none" }}
 				>
-					<span className="absolute top-1 whitespace-nowrap bg-background/90 px-1 font-mono text-[9px] leading-3 text-muted-foreground" />
+					<span className="absolute top-1 whitespace-nowrap bg-background/90 px-1 font-mono text-4xs leading-3 text-muted-foreground" />
 				</div>
 				{interactions.marquee && (
 					<div
@@ -663,23 +663,23 @@ export function TraceTimeline() {
 				)}
 			</div>
 
-			<div className="flex shrink-0 items-center gap-3 border-t border-border bg-muted/30 px-2 py-1.5 text-[10px] text-muted-foreground @min-[560px]/timeline:px-3">
+			<div className="flex shrink-0 items-center gap-3 border-t border-border bg-muted/30 px-2 py-1.5 text-3xs text-muted-foreground @min-[560px]/timeline:px-3">
 				{/* Pointer/keyboard hints are meaningless on touch — the legend takes the whole bar there. */}
 				<div className="hidden shrink-0 items-center gap-3 text-foreground/30 @min-[560px]/timeline:flex">
 					<span>
-						<kbd className="border border-foreground/10 bg-muted px-1 py-0.5 font-mono text-[9px]">
+						<kbd className="border border-foreground/10 bg-muted px-1 py-0.5 font-mono text-4xs">
 							Drag
 						</kbd>{" "}
 						zoom
 					</span>
 					<span>
-						<kbd className="border border-foreground/10 bg-muted px-1 py-0.5 font-mono text-[9px]">
+						<kbd className="border border-foreground/10 bg-muted px-1 py-0.5 font-mono text-4xs">
 							W A S D
 						</kbd>{" "}
 						navigate
 					</span>
 					<span>
-						<kbd className="border border-foreground/10 bg-muted px-1 py-0.5 font-mono text-[9px]">
+						<kbd className="border border-foreground/10 bg-muted px-1 py-0.5 font-mono text-4xs">
 							/
 						</kbd>{" "}
 						search
@@ -689,7 +689,7 @@ export function TraceTimeline() {
 						onClick={() => setShowShortcuts((v) => !v)}
 						className="hover:text-foreground/70"
 					>
-						<kbd className="border border-foreground/10 bg-muted px-1 py-0.5 font-mono text-[9px]">
+						<kbd className="border border-foreground/10 bg-muted px-1 py-0.5 font-mono text-4xs">
 							?
 						</kbd>{" "}
 						all shortcuts
@@ -732,7 +732,7 @@ export function TraceTimeline() {
 								Esc
 							</button>
 						</div>
-						<div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-[11px]">
+						<div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-2xs">
 							{(
 								[
 									["W / S", "Zoom in / out at cursor (⇧ faster)"],
@@ -752,7 +752,7 @@ export function TraceTimeline() {
 								] as const
 							).map(([keys, desc]) => (
 								<React.Fragment key={keys}>
-									<kbd className="justify-self-start border border-foreground/10 bg-muted px-1.5 py-0.5 font-mono text-[10px] whitespace-nowrap">
+									<kbd className="justify-self-start border border-foreground/10 bg-muted px-1.5 py-0.5 font-mono text-3xs whitespace-nowrap">
 										{keys}
 									</kbd>
 									<span className="text-muted-foreground self-center">{desc}</span>

@@ -363,7 +363,7 @@ function SankeyFigure({
 					return (
 						<div className="flex items-center gap-2">
 							<span
-								className="size-2.5 shrink-0 rounded-[2px]"
+								className="size-2.5 shrink-0 rounded-xs"
 								style={{ backgroundColor: colors.node }}
 							/>
 							<span className="text-muted-foreground">{datum.data.service}</span>
@@ -380,7 +380,7 @@ function SankeyFigure({
 					<div className="flex flex-col gap-1">
 						<div className="flex items-center gap-2">
 							<span
-								className="size-2.5 shrink-0 rounded-[2px]"
+								className="size-2.5 shrink-0 rounded-xs"
 								style={{ backgroundColor: strokeForEdge(edge) }}
 							/>
 							<span className="text-muted-foreground">

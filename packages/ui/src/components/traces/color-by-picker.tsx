@@ -38,7 +38,7 @@ export function ColorByPicker({ value, onChange, rootSpans }: ColorByPickerProps
 				if (next) onChange(next)
 			}}
 		>
-			<SelectTrigger size="sm" className="h-5 min-w-0 text-[10px] gap-1 px-2 py-0 rounded-md">
+			<SelectTrigger size="sm" className="h-5 min-w-0 text-3xs gap-1 px-2 py-0 rounded-md">
 				<span className="text-muted-foreground">Color:</span>
 				<SelectValue placeholder="Service">{colorByLabel(value)}</SelectValue>
 			</SelectTrigger>

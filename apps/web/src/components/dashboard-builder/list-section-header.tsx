@@ -21,11 +21,11 @@ export function ListSectionHeader({
 			<Eyebrow variant="label" as="h3">
 				{title}
 			</Eyebrow>
-			<span className={cn("font-mono text-[11px]", accent ? "text-primary" : "text-muted-foreground")}>
+			<span className={cn("font-mono text-2xs", accent ? "text-primary" : "text-muted-foreground")}>
 				{count}
 			</span>
 			<span aria-hidden className="h-px grow bg-border" />
-			{note && <span className="text-muted-foreground text-[11px]">{note}</span>}
+			{note && <span className="text-muted-foreground text-2xs">{note}</span>}
 		</div>
 	)
 }

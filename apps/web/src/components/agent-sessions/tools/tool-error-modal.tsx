@@ -202,7 +202,7 @@ export function ToolErrorModal({
 				<div data-slot="tool-error-modal" className="flex min-h-0 min-w-0 grow flex-col">
 					<header className="flex shrink-0 items-start gap-8 border-b border-border px-6 pt-5 pb-[18px] max-lg:flex-col max-lg:gap-4">
 						<div className="flex min-w-0 flex-1 flex-col gap-2.5">
-							<div className="flex flex-wrap items-center gap-2.5 font-mono text-[11px] leading-3.5 text-muted-foreground/80">
+							<div className="flex flex-wrap items-center gap-2.5 font-mono text-2xs leading-3.5 text-muted-foreground/80">
 								<span>{tool}</span>
 								<span className="text-muted-foreground/40">/</span>
 								<span>errors</span>
@@ -211,7 +211,7 @@ export function ToolErrorModal({
 									{position.index + 1} of {position.total}
 								</span>
 								{group.errorType === "" ? null : (
-									<span className="ml-1 rounded-sm border border-border px-[5px] text-[10.5px] text-muted-foreground/70">
+									<span className="ml-1 rounded-sm border border-border px-[5px] text-2xs text-muted-foreground/70">
 										error.type {group.errorType}
 									</span>
 								)}
@@ -234,7 +234,7 @@ export function ToolErrorModal({
 							) : (
 								<ErrorTextHeading tokens={tokens} />
 							)}
-							<div className="flex flex-wrap items-center gap-x-3.5 gap-y-1 pt-1 font-mono text-[11.5px] leading-3.5">
+							<div className="flex flex-wrap items-center gap-x-3.5 gap-y-1 pt-1 font-mono text-2xs leading-3.5">
 								<Facts
 									items={[
 										<span key="calls" className="text-foreground">
@@ -292,7 +292,7 @@ export function ToolErrorModal({
 									// The sessions list reads `tools`, not `toolNames` — see its
 									// own search schema.
 									search={{ tools: [tool], hasErrors: true }}
-									className="inline-flex h-[30px] items-center gap-2 rounded-md border border-border bg-card px-2.5 font-mono text-[11.5px] text-foreground transition-colors hover:bg-muted/50"
+									className="inline-flex h-[30px] items-center gap-2 rounded-md border border-border bg-card px-2.5 font-mono text-2xs text-foreground transition-colors hover:bg-muted/50"
 								>
 									Open in Sessions
 									<ExternalLinkIcon
@@ -310,12 +310,12 @@ export function ToolErrorModal({
 									<Eyebrow variant="mono" className="leading-3.5">
 										Failed calls / {bucket.unit}
 									</Eyebrow>
-									<span className="text-[11px] leading-3.5 tabular-nums text-muted-foreground/70">
+									<span className="text-2xs leading-3.5 tabular-nums text-muted-foreground/70">
 										max {formatToolCount(Math.max(0, ...group.spark))}
 									</span>
 								</div>
 								<TrendBars counts={group.spark} width={340} height={44} radius={2} />
-								<div className="flex justify-between font-mono text-[10.5px] leading-3.5 text-muted-foreground/70">
+								<div className="flex justify-between font-mono text-2xs leading-3.5 text-muted-foreground/70">
 									<span>
 										{windowRangeLabel(range.startMs, range.startMs, effectiveTimezone)}
 									</span>
@@ -453,7 +453,7 @@ function VariantsSection({
 		<section className="flex flex-col gap-2 border-b border-border p-4">
 			<div className="flex items-baseline gap-2 pb-1">
 				<span className={railTitle}>Variants</span>
-				<span className="font-mono text-[11.5px] leading-3.5 tabular-nums text-muted-foreground/70">
+				<span className="font-mono text-2xs leading-3.5 tabular-nums text-muted-foreground/70">
 					{formatToolCount(total)} raw messages
 				</span>
 			</div>
@@ -491,7 +491,7 @@ function VariantsSection({
 								</>
 							)}
 						</span>
-						<span className="h-1 w-12 shrink-0 overflow-hidden rounded-[2px] bg-muted">
+						<span className="h-1 w-12 shrink-0 overflow-hidden rounded-xs bg-muted">
 							<span
 								className="block h-full bg-severity-error"
 								style={{ width: `${Math.max(4, (row.calls / max) * 100)}%` }}
@@ -503,7 +503,7 @@ function VariantsSection({
 					</button>
 				)
 			})}
-			<p className="pt-1 font-mono text-[11px] leading-[15px] text-muted-foreground/70">
+			<p className="pt-1 font-mono text-2xs leading-[15px] text-muted-foreground/70">
 				{onlyIndex
 					? "Grouped because only the array index differs."
 					: "Grouped because only masked values differ."}{" "}
@@ -571,7 +571,7 @@ function Breakdown({
 					>
 						{key === "" ? blank : key}
 					</span>
-					<span className="h-1 w-14 shrink-0 overflow-hidden rounded-[2px] bg-muted">
+					<span className="h-1 w-14 shrink-0 overflow-hidden rounded-xs bg-muted">
 						<span
 							className="block h-full bg-muted-foreground"
 							style={{ width: `${Math.max(4, (calls / max) * 100)}%` }}
@@ -665,7 +665,7 @@ function SessionsSection({
 		<section className="flex flex-col">
 			<div className="flex items-baseline gap-2 px-4 pt-4 pb-2.5">
 				<span className={railTitle}>Sessions</span>
-				<span className="font-mono text-[11.5px] leading-3.5 tabular-nums text-muted-foreground/70">
+				<span className="font-mono text-2xs leading-3.5 tabular-nums text-muted-foreground/70">
 					{formatToolCount(total)}
 				</span>
 			</div>
@@ -688,7 +688,7 @@ function SessionsSection({
 				<span className="w-10 shrink-0 text-right font-mono text-xs tabular-nums text-foreground">
 					{formatToolCount(calls)}
 				</span>
-				<span className="w-14 shrink-0 text-right font-mono text-[11.5px] tabular-nums text-muted-foreground/70">
+				<span className="w-14 shrink-0 text-right font-mono text-2xs tabular-nums text-muted-foreground/70">
 					{relative(lastSeen)}
 				</span>
 			</button>
@@ -717,7 +717,7 @@ function SessionsSection({
 									sessionId={row.sessionId}
 									className="max-w-full font-mono text-xs"
 								/>
-								<span className="w-full truncate font-mono text-[11px] leading-3.5 text-muted-foreground/70">
+								<span className="w-full truncate font-mono text-2xs leading-3.5 text-muted-foreground/70">
 									{row.service === ""
 										? row.agentName === ""
 											? row.vendorId
@@ -728,7 +728,7 @@ function SessionsSection({
 							<span className="w-10 shrink-0 text-right font-mono text-xs tabular-nums text-foreground">
 								{formatToolCount(row.hits)}
 							</span>
-							<span className="w-14 shrink-0 text-right font-mono text-[11.5px] tabular-nums text-muted-foreground/70">
+							<span className="w-14 shrink-0 text-right font-mono text-2xs tabular-nums text-muted-foreground/70">
 								{relative(row.lastSeen)}
 							</span>
 						</div>
@@ -790,12 +790,12 @@ function SamplesPane({
 			<div className="flex h-12 shrink-0 items-center justify-between gap-4 border-b border-border px-6 font-mono">
 				<div className="flex items-baseline gap-2">
 					<span className="text-[12.5px] font-medium text-foreground">Samples</span>
-					<span className="text-[11.5px] leading-3.5 tabular-nums text-muted-foreground/70">
+					<span className="text-2xs leading-3.5 tabular-nums text-muted-foreground/70">
 						{formatToolCount(total)} failed call{total === 1 ? "" : "s"} · newest first
 					</span>
 				</div>
 				<div className="flex items-center gap-2">
-					<span className="pr-1 text-[11px] text-muted-foreground/60 max-md:hidden">j / k</span>
+					<span className="pr-1 text-2xs text-muted-foreground/60 max-md:hidden">j / k</span>
 					<Button
 						variant="outline"
 						size="icon-xs"
@@ -944,13 +944,13 @@ function Sample({
 					</span>
 				)}
 				{variant === undefined || variant === "" ? null : (
-					<span className="hidden shrink-0 rounded-sm border border-border px-[5px] text-[10.5px] leading-3.5 text-muted-foreground/70 md:block">
+					<span className="hidden shrink-0 rounded-sm border border-border px-[5px] text-2xs leading-3.5 text-muted-foreground/70 md:block">
 						variant <span className="text-foreground/85">{variant}</span>
 					</span>
 				)}
 				<span className="grow" />
 				{open || row.argumentsBytes === 0 ? null : (
-					<span className="hidden shrink-0 text-[11.5px] tabular-nums text-muted-foreground/70 md:block">
+					<span className="hidden shrink-0 text-2xs tabular-nums text-muted-foreground/70 md:block">
 						args {formatToolCount(row.argumentsBytes)} B
 					</span>
 				)}
@@ -963,7 +963,7 @@ function Sample({
 					// The call's own timestamp narrows the trace read to one partition;
 					// without it the detail page scans every retained day.
 					search={{ spanId: row.spanId, t: formatWarehouseDateTime(row.timestamp) }}
-					className="relative flex shrink-0 items-center gap-[5px] text-[11.5px] text-muted-foreground transition-colors hover:text-foreground"
+					className="relative flex shrink-0 items-center gap-[5px] text-2xs text-muted-foreground transition-colors hover:text-foreground"
 				>
 					Open trace
 					<ExternalLinkIcon size={11} aria-hidden />
@@ -985,7 +985,7 @@ function SampleBody({ row }: { row: ToolErrorOccurrenceRow }) {
 		<div className="flex flex-col gap-3.5 pr-6 pb-5 pl-[50px]">
 			{hint === undefined ? null : (
 				<div className="flex items-baseline gap-3 rounded-md border border-severity-error/20 bg-severity-error/[0.07] px-3 py-[9px] font-mono">
-					<span className="shrink-0 text-[10.5px] uppercase leading-4 tracking-[0.07em] text-severity-error">
+					<span className="shrink-0 text-2xs uppercase leading-4 tracking-[0.07em] text-severity-error">
 						What's wrong
 					</span>
 					<span className="text-xs leading-4 text-foreground/85">
@@ -1029,7 +1029,7 @@ function PayloadHead({
 	return (
 		<div className="flex items-center gap-2 font-mono leading-3.5">
 			<Eyebrow variant="mono">{label}</Eyebrow>
-			<span className="truncate text-[10.5px] text-muted-foreground/50">
+			<span className="truncate text-2xs text-muted-foreground/50">
 				{attribute}
 				{bytes > 0 ? ` · ${formatToolCount(bytes)} B` : null}
 			</span>
@@ -1043,7 +1043,7 @@ function NotRecorded({ what }: { what: "arguments" | "result" }) {
 	return (
 		<div className="flex flex-col gap-1 rounded-md border border-dashed border-input p-3.5 font-mono">
 			<span className="text-xs text-muted-foreground">Not recorded</span>
-			<span className="text-[11px] leading-[15px] text-muted-foreground/70">
+			<span className="text-2xs leading-[15px] text-muted-foreground/70">
 				The span has no {what} attribute.
 			</span>
 		</div>
@@ -1099,7 +1099,7 @@ function ArgumentsBlock({
 								() => setCopy("failed"),
 							)
 						}
-						className="font-mono text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+						className="font-mono text-2xs text-muted-foreground transition-colors hover:text-foreground"
 					>
 						{copy === "failed" ? "Copy failed" : copy === "copied" ? "Copied" : "Copy"}
 					</button>
@@ -1116,7 +1116,7 @@ function ArgumentsBlock({
 					))}
 				</div>
 			)}
-			<div className="flex items-center gap-2.5 font-mono text-[11px] leading-3.5 text-muted-foreground/70">
+			<div className="flex items-center gap-2.5 font-mono text-2xs leading-3.5 text-muted-foreground/70">
 				<span>
 					{truncatedByRead
 						? `The first ${formatToolCount(row.arguments.length)} characters of ${formatToolCount(row.argumentsBytes)} B`
@@ -1149,7 +1149,7 @@ function PayloadLineView({ line }: { line: PayloadLine }) {
 			style={{ paddingLeft: 14 + line.depth * 16 - (line.highlight ? 2 : 0) }}
 		>
 			{line.missingKey !== undefined ? (
-				<span className="my-0.5 inline-flex items-center gap-2 rounded-[3px] border border-dashed border-severity-error/60 px-1.5 text-[11px] leading-4 text-severity-error">
+				<span className="my-0.5 inline-flex items-center gap-2 rounded-[3px] border border-dashed border-severity-error/60 px-1.5 text-2xs leading-4 text-severity-error">
 					"{line.missingKey}"<span className="opacity-80">missing, required</span>
 				</span>
 			) : (
@@ -1167,15 +1167,15 @@ function PayloadLineView({ line }: { line: PayloadLine }) {
 				</span>
 			)}
 			{line.folded === undefined ? null : (
-				<span className="ml-2 rounded-[3px] bg-muted px-1 text-[10.5px] text-muted-foreground">
+				<span className="ml-2 rounded-[3px] bg-muted px-1 text-2xs text-muted-foreground">
 					{line.folded}
 				</span>
 			)}
 			{line.note === undefined ? null : (
-				<div className="flex items-center gap-2.5 pb-1 text-[11px] leading-3.5">
+				<div className="flex items-center gap-2.5 pb-1 text-2xs leading-3.5">
 					<span className="text-severity-error">↑ {line.note.text}</span>
 					{line.note.hiddenBytes > 0 ? (
-						<span className="rounded-[3px] bg-muted px-1 text-[10.5px] text-muted-foreground">
+						<span className="rounded-[3px] bg-muted px-1 text-2xs text-muted-foreground">
 							+{formatToolCount(line.note.hiddenBytes)} B not shown
 						</span>
 					) : null}
@@ -1199,7 +1199,7 @@ function ResultBlock({ row }: { row: ToolErrorOccurrenceRow }) {
 				</pre>
 			)}
 			{source === undefined ? null : (
-				<span className="font-mono text-[11px] leading-3.5 text-muted-foreground/70">
+				<span className="font-mono text-2xs leading-3.5 text-muted-foreground/70">
 					Error message read from {source}
 				</span>
 			)}

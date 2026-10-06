@@ -521,7 +521,7 @@ export function PlanCards({
 															{feature.value}
 														</span>
 														{feature.detail && (
-															<p className="text-muted-foreground/70 text-[10px] mt-0.5 font-medium">
+															<p className="text-muted-foreground/70 text-3xs mt-0.5 font-medium">
 																{feature.detail}
 															</p>
 														)}
@@ -578,7 +578,7 @@ export function PlanCards({
 										: btn.label}
 							</Button>
 							{trialAvailable && !btn.disabled && (
-								<p className="text-[11px] text-muted-foreground text-center tabular-nums">
+								<p className="text-2xs text-muted-foreground text-center tabular-nums">
 									$0 due today · Card required · Cancel anytime
 								</p>
 							)}

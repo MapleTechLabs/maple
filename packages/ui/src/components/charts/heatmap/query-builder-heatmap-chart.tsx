@@ -641,7 +641,7 @@ function HeatmapLegend({
 				{Array.from({ length: LEGEND_STEPS }).map((_, index) => (
 					<div
 						key={index}
-						className="flex-1 rounded-[2px]"
+						className="flex-1 rounded-xs"
 						style={{
 							backgroundColor: colorAt(
 								valueAtRampPosition((index + 0.5) / LEGEND_STEPS, domain, scaleType),
@@ -959,7 +959,7 @@ export function QueryBuilderHeatmapChart({
 								/>
 							))}
 						</div>
-						<div className="text-[11px] text-muted-foreground">No data</div>
+						<div className="text-2xs text-muted-foreground">No data</div>
 					</div>
 				</div>
 			</div>
@@ -996,7 +996,7 @@ export function QueryBuilderHeatmapChart({
 				footer={
 					footnote ? (
 						<p
-							className="pt-1 text-right text-[10px] leading-[12px] tabular-nums text-muted-foreground/70"
+							className="pt-1 text-right text-3xs leading-[12px] tabular-nums text-muted-foreground/70"
 							style={{
 								height: FOOTNOTE_BLOCK_H,
 								paddingLeft: layout.gutter,
@@ -1028,7 +1028,7 @@ export function QueryBuilderHeatmapChart({
 								) : (
 									<>
 										<span
-											className="size-2 shrink-0 rounded-[2px]"
+											className="size-2 shrink-0 rounded-xs"
 											style={{ backgroundColor: colors(slot.value) }}
 										/>
 										<span className="font-medium tabular-nums text-foreground">

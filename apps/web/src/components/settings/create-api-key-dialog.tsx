@@ -184,7 +184,7 @@ export function CreateApiKeyDialog({ open, onOpenChange, onCreated, kind }: Crea
 						<DialogPanel className="space-y-3">
 							<div className="flex flex-wrap items-center gap-1.5">
 								<span className="text-foreground text-sm font-medium">{createdKey.name}</span>
-								<InlineCode variant="plain" className="text-[11px] tracking-tight">
+								<InlineCode variant="plain" className="text-2xs tracking-tight">
 									{createdKey.key_prefix}…
 								</InlineCode>
 								{createdKey.scopes !== null &&

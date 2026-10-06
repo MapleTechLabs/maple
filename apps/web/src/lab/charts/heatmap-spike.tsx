@@ -437,7 +437,7 @@ export const HeatmapSpike = memo(function HeatmapSpike({
 							/>
 						))}
 					</div>
-					<span className="text-[11px] text-muted-foreground">No data</span>
+					<span className="text-2xs text-muted-foreground">No data</span>
 				</div>
 			</div>
 		)
@@ -451,7 +451,7 @@ export const HeatmapSpike = memo(function HeatmapSpike({
 			definition={definition}
 			footer={
 				model.prunedColumns > 0 || model.prunedRows > 0 ? (
-					<p className="pt-1 text-right text-[10px] text-muted-foreground/70">
+					<p className="pt-1 text-right text-3xs text-muted-foreground/70">
 						{[
 							model.prunedColumns > 0 ? pluralize(model.prunedColumns, "empty column") : null,
 							model.prunedRows > 0 ? pluralize(model.prunedRows, "empty row") : null,
@@ -491,7 +491,7 @@ export const HeatmapSpike = memo(function HeatmapSpike({
 				return (
 					<div className="flex items-center gap-2">
 						<span
-							className="size-2.5 shrink-0 rounded-[2px]"
+							className="size-2.5 shrink-0 rounded-xs"
 							style={{ backgroundColor: colorScale(slot.value) }}
 						/>
 						{label}

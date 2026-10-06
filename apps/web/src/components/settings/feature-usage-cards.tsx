@@ -111,7 +111,7 @@ function FeatureCard({
 				<span className="font-mono text-xl leading-6 tabular-nums">
 					{formatFeatureUsage(feature.featureId, feature.used)}
 				</span>
-				<span className="truncate text-[11px] leading-4 text-muted-foreground">
+				<span className="truncate text-2xs leading-4 text-muted-foreground">
 					{feature.unlimited
 						? "unlimited"
 						: included === null
@@ -133,7 +133,7 @@ function FeatureCard({
 				]}
 			/>
 
-			<div className="mt-auto flex items-baseline justify-between gap-2 pt-4 text-[11px]">
+			<div className="mt-auto flex items-baseline justify-between gap-2 pt-4 text-2xs">
 				<span className="text-muted-foreground">
 					{hasOverage ? (
 						<>

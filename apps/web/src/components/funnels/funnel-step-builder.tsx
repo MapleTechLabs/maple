@@ -206,7 +206,7 @@ function StepRow({
 				{!single && (
 					<span
 						className={cn(
-							"grid shrink-0 place-items-center rounded-sm bg-muted font-mono text-[10px] tabular-nums text-muted-foreground",
+							"grid shrink-0 place-items-center rounded-sm bg-muted font-mono text-3xs tabular-nums text-muted-foreground",
 							compact ? "size-5" : "size-6",
 						)}
 						aria-label={`Step ${index + 1}`}
@@ -369,7 +369,7 @@ function StepRow({
 							ariaLabel={`Step ${index + 1} attribute filter`}
 						/>
 					</div>
-					{filterError ? <p className="text-[11px] text-destructive">{filterError}</p> : null}
+					{filterError ? <p className="text-2xs text-destructive">{filterError}</p> : null}
 				</div>
 			) : null}
 		</div>
@@ -445,7 +445,7 @@ function SuggestingInput({
 									{name}
 								</span>
 								{countOf.get(name) !== undefined ? (
-									<span className="shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground">
+									<span className="shrink-0 font-mono text-3xs tabular-nums text-muted-foreground">
 										{formatNumber(countOf.get(name)!)}
 									</span>
 								) : null}

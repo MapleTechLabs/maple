@@ -156,7 +156,7 @@ function CredentialRow({
 					/>
 				</button>
 				{description && (
-					<span className="text-muted-foreground/75 text-[11px] leading-3.5">{description}</span>
+					<span className="text-muted-foreground/75 text-2xs leading-3.5">{description}</span>
 				)}
 			</div>
 			<div className="flex shrink-0 items-center gap-1.5">
@@ -282,7 +282,7 @@ export function IngestionSection() {
 								href={docsUrl("instrumentation")}
 								target="_blank"
 								rel="noopener noreferrer"
-								className="text-muted-foreground hover:text-foreground font-mono text-[11px] whitespace-nowrap transition-colors"
+								className="text-muted-foreground hover:text-foreground font-mono text-2xs whitespace-nowrap transition-colors"
 							>
 								Docs ↗
 							</a>

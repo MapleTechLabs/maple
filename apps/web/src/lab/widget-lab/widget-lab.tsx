@@ -202,7 +202,7 @@ function CopyScenarios() {
 			// for a glyph. It toasts, and tints the row it copied.
 			label: "CopyableValue (inline)",
 			node: (
-				<span className="font-mono text-[11px]">
+				<span className="font-mono text-2xs">
 					<CopyableValue value="7f3c9a21b4e8" label="span ID">
 						7f3c9a21b4e8
 					</CopyableValue>

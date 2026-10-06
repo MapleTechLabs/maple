@@ -257,7 +257,7 @@ export function StackedBreakdownChart({
 								style={{ background: seriesColor(s) }}
 							/>
 							<span
-								className="max-w-[24ch] truncate text-[11px] text-muted-foreground"
+								className="max-w-[24ch] truncate text-2xs text-muted-foreground"
 								title={seriesLabel(s)}
 							>
 								{seriesLabel(s)}
@@ -265,7 +265,7 @@ export function StackedBreakdownChart({
 						</span>
 					))}
 					{legendOverflow > 0 ? (
-						<span className="text-[11px] text-muted-foreground/70">+{legendOverflow}</span>
+						<span className="text-2xs text-muted-foreground/70">+{legendOverflow}</span>
 					) : null}
 				</>
 			}
@@ -486,7 +486,7 @@ export function CloudflareZoneLatencyChart({
 	if (activeSeries.length === 0) {
 		return (
 			<ChartCard title="Latency percentiles" legend={null}>
-				<p className="px-3 pb-3 pt-1.5 font-mono text-[11px] text-muted-foreground">
+				<p className="px-3 pb-3 pt-1.5 font-mono text-2xs text-muted-foreground">
 					No timing quantiles for this window — Cloudflare only exposes zone latency percentiles on
 					some plans.
 				</p>
@@ -501,7 +501,7 @@ export function CloudflareZoneLatencyChart({
 			legend={activeSeries.map((s) => (
 				<span key={s.key} className="inline-flex items-center gap-1.5">
 					<LatencyLegendSwatch color={s.color} dashed={s.dashed} />
-					<span className="text-[11px] text-muted-foreground">{s.label}</span>
+					<span className="text-2xs text-muted-foreground">{s.label}</span>
 				</span>
 			))}
 		>

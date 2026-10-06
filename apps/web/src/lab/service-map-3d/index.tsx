@@ -135,7 +135,7 @@ function ServiceInventory({
 						</section>
 					)
 				})}
-				<p className="mt-auto p-4 text-[11px] leading-relaxed text-muted-foreground">
+				<p className="mt-auto p-4 text-2xs leading-relaxed text-muted-foreground">
 					Select a connected service to follow the request path.
 				</p>
 			</aside>
@@ -150,7 +150,7 @@ function ServiceInventory({
 					<h2 className="text-xs font-semibold">Services & dependencies</h2>
 					<span className="text-xs text-muted-foreground">{topology.nodes.length}</span>
 				</div>
-				<p className="mt-2 text-[11px] text-muted-foreground">Select a node to inspect its calls.</p>
+				<p className="mt-2 text-2xs text-muted-foreground">Select a node to inspect its calls.</p>
 				<Input
 					aria-label="Find a service"
 					placeholder="Find a service…"
@@ -159,7 +159,7 @@ function ServiceInventory({
 					className="mt-4 h-8 text-xs"
 				/>
 			</div>
-			<div className="flex items-center justify-between border-b px-4 py-2.5 text-[11px] text-muted-foreground">
+			<div className="flex items-center justify-between border-b px-4 py-2.5 text-2xs text-muted-foreground">
 				<span>Sorted by error rate</span>
 				<span className="text-severity-error">{degraded} degraded</span>
 			</div>
@@ -178,17 +178,17 @@ function ServiceInventory({
 						<HealthDot node={node} />
 						<span className="min-w-0 flex-1">
 							<span className="block truncate text-xs">{node.label}</span>
-							<span className="mt-0.5 block text-[10px] text-muted-foreground">
+							<span className="mt-0.5 block text-3xs text-muted-foreground">
 								{node.kind === "service" ? node.namespace : node.kind}
 							</span>
 						</span>
-						<span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
+						<span className="shrink-0 text-2xs tabular-nums text-muted-foreground">
 							{formatErrorRate(node.errorRate)}
 						</span>
 					</button>
 				))}
 			</div>
-			<p className="border-t px-4 py-3 text-[10px] leading-relaxed text-muted-foreground">
+			<p className="border-t px-4 py-3 text-3xs leading-relaxed text-muted-foreground">
 				Sample health thresholds
 				<br />
 				Elevated &gt; 1% · Degraded &gt; 5% errors
@@ -213,7 +213,7 @@ export function ServiceMap3DLab() {
 									<h1 className="font-display text-lg font-semibold tracking-tight">
 										Service map
 									</h1>
-									<span className="rounded border px-1.5 py-0.5 text-[10px] text-muted-foreground">
+									<span className="rounded border px-1.5 py-0.5 text-3xs text-muted-foreground">
 										Voxel lab
 									</span>
 								</div>
@@ -221,7 +221,7 @@ export function ServiceMap3DLab() {
 									A voxel landscape of services and their connections.
 								</p>
 							</div>
-							<div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+							<div className="flex items-center gap-2 text-2xs text-muted-foreground">
 								<StatusDot tone="custom" className="bg-muted-foreground" />
 								Sample topology
 								<span className="ml-2 border-l pl-3">

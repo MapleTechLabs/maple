@@ -89,7 +89,7 @@ const CATEGORY_ORDER: ReadonlyArray<Category> = [
 
 function SummaryPill({ count, label, className }: { count: number; label: string; className: string }) {
 	return (
-		<span className={cn("font-mono text-[11px] leading-3.5", count === 0 && "text-muted-foreground")}>
+		<span className={cn("font-mono text-2xs leading-3.5", count === 0 && "text-muted-foreground")}>
 			<span className={cn("font-medium", count > 0 && className)}>{count}</span> {label}
 		</span>
 	)
@@ -110,7 +110,7 @@ function CheckRow({ check }: { check: V2SetupAuditCheck }) {
 			<div className="flex min-w-0 flex-col gap-1.5">
 				<div className="flex flex-wrap items-center gap-2">
 					<span className="text-sm font-medium">{check.title}</span>
-					<InlineCode variant="plain" className="text-[11px]">
+					<InlineCode variant="plain" className="text-2xs">
 						{check.id}
 					</InlineCode>
 					{check.status === "skip" && (
@@ -128,13 +128,13 @@ function CheckRow({ check }: { check: V2SetupAuditCheck }) {
 							<InlineCode
 								key={`${entity.kind}:${entity.name}`}
 								title={entity.note ?? undefined}
-								className="text-muted-foreground text-[11px] leading-4"
+								className="text-muted-foreground text-2xs leading-4"
 							>
 								{entity.name}
 							</InlineCode>
 						))}
 						{check.affected_count > check.affected.length && (
-							<span className="text-muted-foreground/70 text-[11px]">
+							<span className="text-muted-foreground/70 text-2xs">
 								+{check.affected_count - check.affected.length} more
 							</span>
 						)}
@@ -172,7 +172,7 @@ function CategoryCard({
 			<CardHeader className="items-center px-4 pt-4 pb-3">
 				<CardTitle render={<h3 />} className="flex items-center gap-3 text-sm font-medium">
 					{meta.label}
-					<span className="text-muted-foreground font-mono text-[11px] font-normal">
+					<span className="text-muted-foreground font-mono text-2xs font-normal">
 						{findings > 0 ? countLabel(findings, "finding") : "clear"}
 					</span>
 				</CardTitle>
@@ -248,7 +248,7 @@ function Report({ audit }: { audit: V2SetupAudit }) {
 					<SummaryPill count={summary.skip} label="skipped" className="text-muted-foreground" />
 				)}
 				<div className="grow" />
-				<RelativeTime value={audit.generated_at} className="text-muted-foreground/70 text-[11px]" />
+				<RelativeTime value={audit.generated_at} className="text-muted-foreground/70 text-2xs" />
 				<Button variant="ghost" size="sm" onClick={() => refresh()}>
 					<ArrowRotateAnticlockwiseIcon size={14} />
 					Re-run

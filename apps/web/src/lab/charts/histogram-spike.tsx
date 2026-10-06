@@ -192,7 +192,7 @@ export const HistogramSpike = memo(function HistogramSpike({
 		return (
 			<div className={className}>
 				<div className="grid h-full w-full place-items-center">
-					<span className="text-[11px] text-muted-foreground">No data</span>
+					<span className="text-2xs text-muted-foreground">No data</span>
 				</div>
 			</div>
 		)
@@ -217,7 +217,7 @@ export const HistogramSpike = memo(function HistogramSpike({
 						</div>
 						<div className="flex w-full items-center gap-2">
 							<span
-								className="size-2.5 shrink-0 rounded-[2px]"
+								className="size-2.5 shrink-0 rounded-xs"
 								style={{ backgroundColor: colors.bar }}
 							/>
 							<div className="flex flex-1 items-center justify-between gap-3 leading-none">

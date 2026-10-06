@@ -226,7 +226,7 @@ function PieFigure({
 				return (
 					<div className="flex items-center gap-2">
 						<span
-							className="size-2.5 shrink-0 rounded-[2px]"
+							className="size-2.5 shrink-0 rounded-xs"
 							style={{ backgroundColor: colorFor(slice.name) }}
 						/>
 						<span className="text-muted-foreground">{slice.name}</span>

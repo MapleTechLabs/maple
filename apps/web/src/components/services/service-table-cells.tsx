@@ -99,7 +99,7 @@ export function MobileSortBar<K extends string>({
 	onSort,
 }: MobileSortBarProps<K>) {
 	return (
-		<div className="flex items-center gap-1.5 text-[11px]">
+		<div className="flex items-center gap-1.5 text-2xs">
 			<Eyebrow variant="label">Sort</Eyebrow>
 			{options.map(([key, label]) => {
 				const active = sortKey === key

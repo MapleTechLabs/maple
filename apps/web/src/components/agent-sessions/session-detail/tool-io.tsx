@@ -39,7 +39,7 @@ export interface ToolIoPayload {
 const IN_CLAMP: ClampLines = 8
 const OUT_CLAMP: ClampLines = 14
 
-const META = "font-mono text-[10px] text-muted-foreground"
+const META = "font-mono text-3xs text-muted-foreground"
 /** Fixed, so the two markers and every body below them share one lane. */
 const GUTTER = "flex w-8 shrink-0 flex-col items-center gap-1.5 pt-2.5"
 
@@ -131,7 +131,7 @@ export function ToolIoSummary({
 	result: ToolIoPayload | undefined
 }) {
 	return (
-		<span className="flex shrink-0 items-center gap-1 font-mono text-[11px] text-muted-foreground">
+		<span className="flex shrink-0 items-center gap-1 font-mono text-2xs text-muted-foreground">
 			<ArrowDownIcon size={10} aria-hidden className="text-muted-foreground/70" />
 			{args === undefined ? "not captured" : formatBytes(args.byteLength)}
 			<ArrowUpIcon size={10} aria-hidden className="ml-2 text-chart-4" />
@@ -232,7 +232,7 @@ function IoHalf({
 					/>
 				)}
 				{payload.truncatedByEmitter && (
-					<p className="text-[11px] text-muted-foreground italic">
+					<p className="text-2xs text-muted-foreground italic">
 						Cut off here by the instrumentation, not by Maple — the tail was never recorded.
 					</p>
 				)}

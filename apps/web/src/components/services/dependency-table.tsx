@@ -145,7 +145,7 @@ export function DependencyTable({ serviceName, rows, startTime, endTime, timePre
 														<span className="truncate">{row.name}</span>
 													</span>
 													{row.subtitle ? (
-														<span className="truncate text-[10px] text-muted-foreground/60">
+														<span className="truncate text-3xs text-muted-foreground/60">
 															{row.subtitle}
 														</span>
 													) : null}
@@ -226,7 +226,7 @@ export function DependencyTable({ serviceName, rows, startTime, endTime, timePre
 												{row.name}
 											</span>
 											{row.subtitle ? (
-												<span className="truncate text-[10px] text-muted-foreground/60">
+												<span className="truncate text-3xs text-muted-foreground/60">
 													{row.subtitle}
 												</span>
 											) : null}

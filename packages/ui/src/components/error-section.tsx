@@ -96,19 +96,19 @@ export function ErrorSection({ message, title = "Error", badge, prompt, classNam
 			<div className="flex min-w-0 items-center gap-2">
 				<CircleWarningIcon size={14} className="shrink-0 text-destructive" />
 
-				<span className="shrink-0 font-medium text-[11px] text-destructive uppercase tracking-wide">
+				<span className="shrink-0 font-medium text-2xs text-destructive uppercase tracking-wide">
 					{title}
 				</span>
 
 				{badge && (
-					<span className="min-w-0 truncate font-mono text-[11px] text-foreground/80" title={badge}>
+					<span className="min-w-0 truncate font-mono text-2xs text-foreground/80" title={badge}>
 						{badge}
 					</span>
 				)}
 
 				{body.format === "json" && (
 					<span
-						className="flex shrink-0 items-center gap-1 rounded border border-destructive/25 px-1 py-px font-mono text-[9px] text-destructive/70 uppercase"
+						className="flex shrink-0 items-center gap-1 rounded border border-destructive/25 px-1 py-px font-mono text-4xs text-destructive/70 uppercase"
 						title="JSON payload"
 					>
 						<BracketsCurlyIcon size={9} />
@@ -139,7 +139,7 @@ export function ErrorSection({ message, title = "Error", badge, prompt, classNam
 				data-copy-status={status}
 				onClick={() => void copy(body.full)}
 				className={cn(
-					"mt-1.5 block w-full cursor-copy rounded text-left font-mono text-[11px] text-foreground/90 leading-relaxed",
+					"mt-1.5 block w-full cursor-copy rounded text-left font-mono text-2xs text-foreground/90 leading-relaxed",
 					"transition-colors duration-150 hover:text-foreground motion-reduce:transition-none",
 					"data-[copy-status=copied]:text-severity-info",
 				)}
@@ -172,7 +172,7 @@ export function ErrorSection({ message, title = "Error", badge, prompt, classNam
 					type="button"
 					aria-expanded={expanded}
 					onClick={() => setExpanded((open) => !open)}
-					className="mt-1 rounded text-[11px] text-destructive/70 hover:text-destructive"
+					className="mt-1 rounded text-2xs text-destructive/70 hover:text-destructive"
 				>
 					{expanded ? "Show less" : "Show more"}
 				</button>

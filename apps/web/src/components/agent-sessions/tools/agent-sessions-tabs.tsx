@@ -91,7 +91,7 @@ function TabLink({
 			{count === undefined ? null : (
 				<span
 					className={cn(
-						"text-[11px] tabular-nums",
+						"text-2xs tabular-nums",
 						active ? "text-primary" : "text-muted-foreground/60",
 					)}
 				>

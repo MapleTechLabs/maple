@@ -210,7 +210,7 @@ function RailTabItem({
 		>
 			{children}
 			{count != null && (
-				<span className="font-mono text-[10px] tabular-nums text-muted-foreground">{count}</span>
+				<span className="font-mono text-3xs tabular-nums text-muted-foreground">{count}</span>
 			)}
 		</ToggleGroupItem>
 	)
@@ -458,7 +458,7 @@ function EventFilterBar({
 					selected="bg-muted text-foreground"
 					onClick={() => onChange("all")}
 				>
-					<span className="text-[11px] font-medium">All</span>
+					<span className="text-2xs font-medium">All</span>
 				</FilterChip>
 				{KIND_FILTERS.map((id) => {
 					const { Icon, tone, selected } = EVENT_KIND_VISUALS[id]
@@ -520,7 +520,7 @@ function FilterChip({
 						)}
 					>
 						{children}
-						<span className="font-mono text-[10px] tabular-nums">{count}</span>
+						<span className="font-mono text-3xs tabular-nums">{count}</span>
 					</button>
 				}
 			/>
@@ -561,7 +561,7 @@ function EventKindLegend({ className }: { className?: string }) {
 							return (
 								<li
 									key={kind}
-									className="flex items-center gap-1.5 whitespace-nowrap text-[11px] leading-none text-foreground"
+									className="flex items-center gap-1.5 whitespace-nowrap text-2xs leading-none text-foreground"
 								>
 									<Icon size={12} className={cn("shrink-0", tone)} aria-hidden />
 									{label}
@@ -594,7 +594,7 @@ function EventProps({ attributes }: { attributes?: string }) {
 
 	if (entries.length === 0) return null
 	return (
-		<span className="flex flex-wrap gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
+		<span className="flex flex-wrap gap-x-2 gap-y-0.5 text-2xs text-muted-foreground">
 			{entries.map(([key, value]) => (
 				<span key={key}>
 					{key}=<span className="text-foreground/80">{value}</span>
@@ -644,7 +644,7 @@ function EventLine({
 				className="flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-muted/50"
 				title="Seek replay to this moment"
 			>
-				<span className="w-[30px] shrink-0 text-[10px] tabular-nums text-muted-foreground">
+				<span className="w-[30px] shrink-0 text-3xs tabular-nums text-muted-foreground">
 					{clockAt(ev.timestamp)}
 				</span>
 				<span className="grid size-4 shrink-0 place-items-center">
@@ -654,9 +654,9 @@ function EventLine({
 					<span className={cn("truncate", isError ? "text-severity-error" : "text-foreground")}>
 						{lead}
 					</span>
-					{trail && <span className="shrink-0 text-[10px] text-muted-foreground">{trail}</span>}
+					{trail && <span className="shrink-0 text-3xs text-muted-foreground">{trail}</span>}
 				</span>
-				<span className="flex w-[72px] shrink-0 items-center justify-end gap-1.5 text-[10px] tabular-nums">
+				<span className="flex w-[72px] shrink-0 items-center justify-end gap-1.5 text-3xs tabular-nums">
 					{ev.type === "network" ? (
 						<>
 							<span className={cn("font-semibold", statusTone(ev.netStatus))}>
@@ -694,20 +694,20 @@ function EventDetail({ ev }: { ev: EventRow }) {
 	return (
 		<div className="flex flex-col gap-1.5 px-3 pb-2.5 pl-[50px]">
 			{fullUrl && (
-				<span className="break-all text-[11px] leading-4 text-muted-foreground">{fullUrl}</span>
+				<span className="break-all text-2xs leading-4 text-muted-foreground">{fullUrl}</span>
 			)}
 			{ev.type === "click" && ev.targetText && ev.targetSelector && (
-				<span className="break-all text-[11px] leading-4 text-muted-foreground">
+				<span className="break-all text-2xs leading-4 text-muted-foreground">
 					{ev.targetSelector}
 				</span>
 			)}
 			{ev.type === "console" && (
-				<span className="whitespace-pre-wrap break-words text-[11px] leading-4 text-foreground/80">
+				<span className="whitespace-pre-wrap break-words text-2xs leading-4 text-foreground/80">
 					{ev.message}
 				</span>
 			)}
 			{ev.type === "error" && ev.errorStack && (
-				<span className="whitespace-pre-wrap text-[11px] leading-4 text-muted-foreground">
+				<span className="whitespace-pre-wrap text-2xs leading-4 text-muted-foreground">
 					{ev.errorStack.split("\n").slice(0, 3).join("\n")}
 				</span>
 			)}
@@ -719,7 +719,7 @@ function EventDetail({ ev }: { ev: EventRow }) {
 					// Carry the event timestamp so the span-hierarchy query narrows the
 					// ClickHouse partition scan instead of reading the full retention.
 					search={{ t: ev.timestamp }}
-					className="w-fit rounded-sm border border-input px-2 py-0.5 text-[10px] text-muted-foreground hover:text-foreground"
+					className="w-fit rounded-sm border border-input px-2 py-0.5 text-3xs text-muted-foreground hover:text-foreground"
 					title="Open backend trace"
 				>
 					Open trace
@@ -844,7 +844,7 @@ function TraceListRow({ summary }: { summary: SessionTraceSummary }) {
 				/>
 				<span
 					className={cn(
-						"shrink-0 font-mono text-[11px] tabular-nums",
+						"shrink-0 font-mono text-2xs tabular-nums",
 						isError ? "font-semibold text-severity-error" : "text-muted-foreground",
 					)}
 				>
@@ -852,7 +852,7 @@ function TraceListRow({ summary }: { summary: SessionTraceSummary }) {
 				</span>
 			</div>
 			<div className="flex items-center gap-2 pl-[3.125rem]">
-				<span className="min-w-0 truncate text-[11px] text-muted-foreground">
+				<span className="min-w-0 truncate text-2xs text-muted-foreground">
 					{summary.rootServiceName} · {summary.spanCount} span{summary.spanCount === 1 ? "" : "s"}
 					{isError ? " · error" : ""}
 				</span>
@@ -862,7 +862,7 @@ function TraceListRow({ summary }: { summary: SessionTraceSummary }) {
 					search={{ t: summary.startTime }}
 					target="_blank"
 					rel="noreferrer"
-					className="inline-flex shrink-0 items-center gap-1 text-[11px] text-info-foreground underline-offset-2 hover:underline"
+					className="inline-flex shrink-0 items-center gap-1 text-2xs text-info-foreground underline-offset-2 hover:underline"
 				>
 					open
 					<ExternalLinkIcon className="size-3" />
@@ -1013,7 +1013,7 @@ function SessionTab({ sessionId, session }: { sessionId: string; session: Sessio
 				)}
 				{session.userAgent && (
 					<DetailRail.Field label="User agent">
-						<span className="break-words font-mono text-[10px] leading-[15px] text-muted-foreground">
+						<span className="break-words font-mono text-3xs leading-[15px] text-muted-foreground">
 							{session.userAgent}
 						</span>
 					</DetailRail.Field>
@@ -1114,7 +1114,7 @@ function IdentityGroup({ session }: { session: SessionRailSession }) {
 			)}
 			{traits.length > 0 && (
 				<DetailRail.Field label="Traits">
-					<div className="flex flex-wrap gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
+					<div className="flex flex-wrap gap-x-2 gap-y-0.5 text-2xs text-muted-foreground">
 						{traits.map(([key, value]) => (
 							<span
 								key={key}
@@ -1178,7 +1178,7 @@ function SessionSummary({ session }: { session: SessionRailSession }) {
 				<span className="font-mono text-2xl font-semibold leading-none tracking-tight tabular-nums">
 					{formatSessionDuration(total)}
 				</span>
-				<span className="text-[11px] text-muted-foreground">on the page</span>
+				<span className="text-2xs text-muted-foreground">on the page</span>
 			</div>
 
 			{share && (
@@ -1191,7 +1191,7 @@ function SessionSummary({ session }: { session: SessionRailSession }) {
 						total={100}
 						className="mt-3 h-1 gap-px bg-muted"
 					/>
-					<div className="mt-2 flex items-center gap-4 text-[11px] text-muted-foreground">
+					<div className="mt-2 flex items-center gap-4 text-2xs text-muted-foreground">
 						{active != null && (
 							<Legend
 								swatch="bg-primary"
@@ -1252,7 +1252,7 @@ function Stat({
 				danger && "border-severity-error/30 bg-severity-error/5",
 			)}
 		>
-			<span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+			<span className="flex items-center gap-1 text-3xs text-muted-foreground">
 				<Icon className={cn("size-3 shrink-0", danger && "text-severity-error")} aria-hidden />
 				<span className="truncate">{label}</span>
 			</span>

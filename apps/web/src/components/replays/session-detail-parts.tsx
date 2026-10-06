@@ -87,7 +87,7 @@ export function SessionIdentityBar({
 						<RelativeTime value={startedEpoch} prefix="started" tooltip="title" />
 					</span>
 				)}
-				<span className="hidden shrink-0 items-center gap-1 rounded-md bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground xl:inline-flex">
+				<span className="hidden shrink-0 items-center gap-1 rounded-md bg-muted px-1.5 py-0.5 font-mono text-2xs text-muted-foreground xl:inline-flex">
 					{shortId(sessionId, "session", { length: 8 })}
 					<CopyButton
 						value={sessionId}

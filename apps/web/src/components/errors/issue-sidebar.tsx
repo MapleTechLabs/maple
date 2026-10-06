@@ -223,13 +223,13 @@ function EnvironmentValue({ environments }: { environments: ReadonlyArray<ErrorI
 			{shown.map((env) => (
 				<li key={env.name} className="flex min-w-0 items-baseline justify-between gap-3">
 					<span className="truncate text-sm text-foreground">{env.name}</span>
-					<span className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground">
+					<span className="shrink-0 font-mono text-2xs tabular-nums text-muted-foreground">
 						{env.count.toLocaleString()}
 					</span>
 				</li>
 			))}
 			{hidden > 0 ? (
-				<li className="text-right text-[11px] text-muted-foreground">+{hidden} more</li>
+				<li className="text-right text-2xs text-muted-foreground">+{hidden} more</li>
 			) : null}
 		</ul>
 	)

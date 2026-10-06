@@ -69,13 +69,13 @@ function RequirementBlock({
 									: `no matching metrics in ${READINESS_WINDOW_LABEL}`}
 						</span>
 						{requirement.kind === "metrics" && readiness !== undefined && (
-							<span className="text-muted-foreground ml-auto shrink-0 font-mono text-[11px]">
+							<span className="text-muted-foreground ml-auto shrink-0 font-mono text-2xs">
 								{readiness.metricCount} {readiness.metricCount === 1 ? "metric" : "metrics"}
 								{age !== null && ` · last seen ${age}`}
 							</span>
 						)}
 					</div>
-					<p className="text-muted-foreground text-[11px]">
+					<p className="text-muted-foreground text-2xs">
 						{ready ? "Collected by" : "Emitted by"} {requirement.collector}.
 						{!ready && requirement.hint ? ` ${requirement.hint}` : ""}
 					</p>
@@ -128,7 +128,7 @@ export function TemplateDetailPanel({ template, readiness, creating, onCreate }:
 					</span>
 					<div className="flex min-w-0 flex-col gap-1">
 						<h2 className="text-lg font-semibold tracking-tight">{template.name}</h2>
-						<div className="text-muted-foreground flex items-center gap-2 text-[11px]">
+						<div className="text-muted-foreground flex items-center gap-2 text-2xs">
 							<span>{CATEGORY_LABELS[template.category] ?? template.category}</span>
 							<span className="text-border">/</span>
 							<span className="font-mono">
@@ -145,7 +145,7 @@ export function TemplateDetailPanel({ template, readiness, creating, onCreate }:
 
 			<div className="flex flex-col gap-2">
 				<TemplateLivePreview template={template} parameters={values} />
-				<p className="text-muted-foreground/85 text-[11px]">
+				<p className="text-muted-foreground/85 text-2xs">
 					That's the dashboard you'd get right now.
 				</p>
 			</div>
@@ -162,7 +162,7 @@ export function TemplateDetailPanel({ template, readiness, creating, onCreate }:
 									<Label htmlFor={`template-param-${parameter.key}`}>
 										{parameter.label}
 									</Label>
-									<span className="text-muted-foreground text-[11px]">
+									<span className="text-muted-foreground text-2xs">
 										{parameter.required ? "required" : "optional"}
 									</span>
 								</div>
@@ -181,7 +181,7 @@ export function TemplateDetailPanel({ template, readiness, creating, onCreate }:
 									}}
 								/>
 								{parameter.description && (
-									<p className="text-muted-foreground text-[11px]">
+									<p className="text-muted-foreground text-2xs">
 										{parameter.description}
 									</p>
 								)}
@@ -233,7 +233,7 @@ export function TemplateDetailPanel({ template, readiness, creating, onCreate }:
 							</Button>
 						</>
 					)}
-					<p className="text-muted-foreground min-w-0 text-[11px]">
+					<p className="text-muted-foreground min-w-0 text-2xs">
 						{missingRequired.length > 0
 							? `Fill in ${missingRequired.join(" and ")} first.`
 							: ready

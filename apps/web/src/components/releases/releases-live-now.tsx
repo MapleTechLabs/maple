@@ -30,11 +30,11 @@ export function ReleasesLiveNow({ live, timeSearch, environments }: ReleasesLive
 			<div className="flex items-baseline justify-between gap-3">
 				<Eyebrow>Live now</Eyebrow>
 				{behind > 0 ? (
-					<span className="text-[11px] text-severity-warn">
+					<span className="text-2xs text-severity-warn">
 						{countLabel(behind, "service")} not on the latest release
 					</span>
 				) : (
-					<span className="text-[11px] text-muted-foreground/70">
+					<span className="text-2xs text-muted-foreground/70">
 						Every service is on its latest release
 					</span>
 				)}
@@ -64,23 +64,23 @@ export function ReleasesLiveNow({ live, timeSearch, environments }: ReleasesLive
 					>
 						<ServiceDot serviceName={version.serviceName} />
 						<span>{version.serviceName}</span>
-						<span className="font-mono text-[11px] text-muted-foreground">
+						<span className="font-mono text-2xs text-muted-foreground">
 							{shortReleaseLabel(version.commitSha)}
 						</span>
 						{version.share < ROLLOUT_COMPLETE_SHARE ? (
-							<span className="font-mono text-[10px] tabular-nums text-primary">
+							<span className="font-mono text-3xs tabular-nums text-primary">
 								{Math.round(version.share * 100)}%
 							</span>
 						) : null}
 						{version.behind > 0 ? (
-							<span className="font-mono text-[10px] tabular-nums text-severity-warn">
+							<span className="font-mono text-3xs tabular-nums text-severity-warn">
 								{version.behind} behind
 							</span>
 						) : null}
 					</Button>
 				))}
 				{hidden > 0 ? (
-					<span className="self-center px-1 text-[11px] text-muted-foreground/70">+{hidden}</span>
+					<span className="self-center px-1 text-2xs text-muted-foreground/70">+{hidden}</span>
 				) : null}
 			</div>
 		</Panel>

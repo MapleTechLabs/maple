@@ -20,7 +20,7 @@ export function LogList({ props }: RendererComponentProps<LogListProps>) {
 	return (
 		<div className="space-y-1">
 			{totalCount != null && (
-				<p className="text-[10px] text-muted-foreground">
+				<p className="text-3xs text-muted-foreground">
 					{totalCount.toLocaleString()} total logs
 					{totalCount > logs.length && ` (showing ${logs.length})`}
 				</p>
@@ -31,9 +31,9 @@ export function LogList({ props }: RendererComponentProps<LogListProps>) {
 					return (
 						<div
 							key={`${log.timestamp}-${log.body.slice(0, 30)}`}
-							className="flex items-start gap-1.5 rounded px-1 py-0.5 text-[11px] hover:bg-muted/50"
+							className="flex items-start gap-1.5 rounded px-1 py-0.5 text-2xs hover:bg-muted/50"
 						>
-							<span className="shrink-0 font-mono text-[10px] text-muted-foreground">
+							<span className="shrink-0 font-mono text-3xs text-muted-foreground">
 								{time}
 							</span>
 							<SeverityBadge severity={log.severityText} className="shrink-0" />

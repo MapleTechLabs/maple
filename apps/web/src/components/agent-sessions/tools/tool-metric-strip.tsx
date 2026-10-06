@@ -182,7 +182,7 @@ function DurationTile({
 					<ToggleGroupItem
 						key={candidate}
 						value={candidate}
-						className="h-5 min-w-0 px-1.5 font-mono text-[10px] uppercase sm:h-5 sm:min-w-0 sm:text-[10px]"
+						className="h-5 min-w-0 px-1.5 font-mono text-3xs uppercase sm:h-5 sm:min-w-0 sm:text-3xs"
 					>
 						{candidate}
 					</ToggleGroupItem>

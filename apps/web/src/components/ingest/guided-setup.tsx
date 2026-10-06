@@ -124,7 +124,7 @@ export function FrameworkPicker({
 						className={cn(
 							"flex items-center gap-1.5 border font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring",
 							compact
-								? "rounded-full px-2.5 py-1 font-mono text-[11px] leading-3.5"
+								? "rounded-full px-2.5 py-1 font-mono text-2xs leading-3.5"
 								: "rounded-lg px-3 py-2 text-xs gap-2",
 							active
 								? compact

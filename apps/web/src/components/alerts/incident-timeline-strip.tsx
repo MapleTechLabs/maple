@@ -67,7 +67,7 @@ export function IncidentTimelineStrip({
 							// biome-ignore lint/suspicious/noArrayIndexKey: fixed-length positional strip
 							key={i}
 							className={cn(
-								"flex-1 rounded-[2px]",
+								"flex-1 rounded-xs",
 								compact ? "h-2" : "h-3",
 								hit
 									? held
@@ -82,7 +82,7 @@ export function IncidentTimelineStrip({
 				})}
 			</div>
 			{showAxisLabels && !compact && (
-				<div className="flex justify-between font-mono text-[11px] text-muted-foreground">
+				<div className="flex justify-between font-mono text-2xs text-muted-foreground">
 					<span>{formatEdge(range.min, effectiveTimezone)}</span>
 					<span>{formatEdge(range.max, effectiveTimezone)}</span>
 				</div>

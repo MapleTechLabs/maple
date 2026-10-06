@@ -175,7 +175,7 @@ export function BillingDetailsDialog({
 						</Field>
 					</div>
 
-					<p className="text-[11px] leading-4 text-muted-foreground">
+					<p className="text-2xs leading-4 text-muted-foreground">
 						Stored on your Stripe customer and printed on every invoice from the next one on. Add
 						your VAT or tax ID separately below the details.
 					</p>

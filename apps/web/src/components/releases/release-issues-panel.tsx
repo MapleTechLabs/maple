@@ -69,12 +69,12 @@ export function IssueList({
 				<span
 					className={
 						issues.length === 0
-							? "text-[11px] text-muted-foreground/70"
+							? "text-2xs text-muted-foreground/70"
 							: tone === "error"
-								? "text-[11px] font-medium text-severity-error"
+								? "text-2xs font-medium text-severity-error"
 								: tone === "warn"
-									? "text-[11px] font-medium text-severity-warn"
-									: "text-[11px] text-muted-foreground"
+									? "text-2xs font-medium text-severity-warn"
+									: "text-2xs text-muted-foreground"
 					}
 				>
 					{issues.length}

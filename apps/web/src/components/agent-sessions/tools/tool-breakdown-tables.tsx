@@ -86,7 +86,7 @@ export function Th<K extends string>({
 	hidden?: string
 }) {
 	const active = sortKey !== undefined && currentKey === sortKey
-	const text = "font-mono text-[10.5px] uppercase leading-3.5 tracking-[0.07em] transition-colors"
+	const text = "font-mono text-2xs uppercase leading-3.5 tracking-[0.07em] transition-colors"
 	return (
 		<div className={cn("flex items-center", align === "right" && "justify-end", width, hidden)}>
 			{sortKey !== undefined ? (
@@ -198,7 +198,7 @@ export function ShareCell({
 				max={max}
 				minVisible={3}
 				fillClassName={tone.bar}
-				className="hidden w-[60px] shrink-0 rounded-[2px] bg-muted @min-[560px]/panel:block"
+				className="hidden w-[60px] shrink-0 rounded-xs bg-muted @min-[560px]/panel:block"
 			/>
 			<span className={cn("w-[46px] text-right font-mono text-xs tabular-nums", tone.text)}>
 				{label}
@@ -304,7 +304,7 @@ export function ToolsTable({
 		<section className="@container/panel min-w-0 px-6 pt-5 pb-6" aria-label="Tools">
 			<div className="flex items-baseline gap-2.5 pb-3 font-mono">
 				<span className="text-[12.5px] font-medium text-foreground">Tools</span>
-				<span className="text-[11.5px] leading-3.5 tabular-nums text-muted-foreground/70">
+				<span className="text-2xs leading-3.5 tabular-nums text-muted-foreground/70">
 					{formatToolCount(rows.length)}
 				</span>
 			</div>
@@ -415,7 +415,7 @@ export function ToolsTable({
 										<span
 											aria-hidden
 											className={cn(
-												"size-2 shrink-0 rounded-[2px]",
+												"size-2 shrink-0 rounded-xs",
 												color === undefined && "bg-muted-foreground/50",
 											)}
 											style={
@@ -467,7 +467,7 @@ export function ToolsTable({
 									<span className="hidden w-[76px] shrink-0 text-right font-mono text-xs tabular-nums text-muted-foreground @min-[640px]/panel:block">
 										{formatToolCount(row.sessions)}
 									</span>
-									<span className="hidden w-[96px] shrink-0 text-right font-mono text-[11.5px] tabular-nums text-muted-foreground/70 @min-[800px]/panel:block">
+									<span className="hidden w-[96px] shrink-0 text-right font-mono text-2xs tabular-nums text-muted-foreground/70 @min-[800px]/panel:block">
 										{formatRelativeTimeOrDate(row.lastSeen, undefined, effectiveTimezone)}
 									</span>
 									<span className="flex w-3.5 shrink-0 items-center justify-end text-muted-foreground/60">

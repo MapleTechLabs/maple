@@ -18,7 +18,7 @@ export function PreviewFrame({
 }) {
 	return (
 		<div className={`aspect-[4/3] ${className}`}>
-			<div className="text-[10px] text-muted-foreground">{title}</div>
+			<div className="text-3xs text-muted-foreground">{title}</div>
 			{children}
 		</div>
 	)
@@ -58,7 +58,7 @@ export function rowsPresetPreview(sampleRows: Record<string, Record<string, unkn
 							{columns.map((column) => (
 								<TableHead
 									key={column.field}
-									className="px-1 py-0.5 text-[9px]"
+									className="px-1 py-0.5 text-4xs"
 									style={{ textAlign: column.align ?? "left" }}
 								>
 									{column.header}
@@ -73,7 +73,7 @@ export function rowsPresetPreview(sampleRows: Record<string, Record<string, unkn
 								{columns.map((column) => (
 									<TableCell
 										key={column.field}
-										className="max-w-[80px] truncate px-1 py-0.5 text-[9px]"
+										className="max-w-[80px] truncate px-1 py-0.5 text-4xs"
 										style={{ textAlign: column.align ?? "left" }}
 									>
 										{formatCellValue(row[column.field], column.unit)}

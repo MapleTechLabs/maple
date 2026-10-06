@@ -101,12 +101,12 @@ export function PlanetScaleTopQueries({
 			{response.rows.map((row) => (
 				<div key={row.fingerprint} className="rounded-md border border-border bg-card px-2.5 py-2">
 					<div className="flex items-start justify-between gap-2">
-						<p className="min-w-0 flex-1 truncate font-mono text-[11px] font-medium text-foreground">
+						<p className="min-w-0 flex-1 truncate font-mono text-2xs font-medium text-foreground">
 							{row.normalizedSql}
 						</p>
 						<span
 							className={cn(
-								"shrink-0 font-mono text-[10px] tabular-nums",
+								"shrink-0 font-mono text-3xs tabular-nums",
 								errorRateLevel(row.errorRate) === "neutral"
 									? "text-muted-foreground"
 									: errorRateClass(row.errorRate),
@@ -115,13 +115,13 @@ export function PlanetScaleTopQueries({
 							{(row.errorRate * 100).toFixed(1)}%
 						</span>
 					</div>
-					<div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-muted-foreground">
+					<div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-3xs text-muted-foreground">
 						<span className="font-mono tabular-nums">{formatNumber(row.queryCount)} calls</span>
 						<span className="font-mono tabular-nums">
-							p50 <LatencyValue ms={row.p50LatencyMillis} scale="p50" className="text-[10px]" />
+							p50 <LatencyValue ms={row.p50LatencyMillis} scale="p50" className="text-3xs" />
 						</span>
 						<span className="font-mono tabular-nums">
-							p99 <LatencyValue ms={row.p99LatencyMillis} scale="p99" className="text-[10px]" />
+							p99 <LatencyValue ms={row.p99LatencyMillis} scale="p99" className="text-3xs" />
 						</span>
 						<span className="font-mono tabular-nums">
 							{formatNumber(row.rowsReadPerQuery)} rows read/query

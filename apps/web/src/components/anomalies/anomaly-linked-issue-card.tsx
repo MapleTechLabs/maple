@@ -40,7 +40,7 @@ export function AnomalyLinkedIssueCard({
 								: "Escalate this anomaly by linking it to an existing error issue."}
 						</p>
 						{incident.fingerprintHash !== null ? (
-							<InlineCode className="inline-block px-1.5 py-0.5 text-[11px] text-muted-foreground">
+							<InlineCode className="inline-block px-1.5 py-0.5 text-2xs text-muted-foreground">
 								fingerprint {incident.fingerprintHash}
 							</InlineCode>
 						) : null}

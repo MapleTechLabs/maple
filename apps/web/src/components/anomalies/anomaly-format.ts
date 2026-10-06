@@ -174,4 +174,4 @@ export const TRIAGE_STATUS_CHIP: Record<AnomalyTriageStatus, { label: string; to
 } satisfies Record<AnomalyTriageStatus, { label: string; tone: string } | null>
 
 /** Keeps the 20px / 11px meta-pill size on anomaly rows and cards (Badge `size="sm"` shrinks on sm+). */
-export const META_CHIP_CLASS = "h-5 gap-1.5 font-normal text-[11px] sm:h-5 sm:text-[11px]"
+export const META_CHIP_CLASS = "h-5 gap-1.5 font-normal text-2xs sm:h-5 sm:text-2xs"

@@ -307,7 +307,7 @@ function TracesTableView({
 							 * glance); the full timestamp stays available on the tooltip.
 							 */}
 							<span
-								className="truncate text-[10px] text-muted-foreground"
+								className="truncate text-3xs text-muted-foreground"
 								title={formatTimestampInTimezone(row.original.startTime, {
 									timeZone: effectiveTimezone,
 								})}

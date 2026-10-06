@@ -150,7 +150,7 @@ export function LogAttributeChip({ attrKey, value, tone }: LogAttributeChipProps
 					}
 				}}
 				className={cn(
-					"inline-flex items-center gap-1 h-[18px] px-1.5 rounded border text-[10px] font-mono leading-none whitespace-nowrap shrink-0 cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+					"inline-flex items-center gap-1 h-[18px] px-1.5 rounded border text-3xs font-mono leading-none whitespace-nowrap shrink-0 cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
 					TONE_CLASSES[tone],
 				)}
 			>
@@ -168,7 +168,7 @@ export function LogAttributeChip({ attrKey, value, tone }: LogAttributeChipProps
 						onPointerLeave={scheduleClose}
 					>
 						<div className="px-3 py-2 border-b">
-							<div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-0.5">
+							<div className="text-3xs uppercase tracking-wider text-muted-foreground mb-0.5">
 								Attribute
 							</div>
 							<div className="font-mono text-xs break-all">
@@ -176,7 +176,7 @@ export function LogAttributeChip({ attrKey, value, tone }: LogAttributeChipProps
 							</div>
 						</div>
 						<div className="px-3 py-2">
-							<div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-0.5">
+							<div className="text-3xs uppercase tracking-wider text-muted-foreground mb-0.5">
 								Value
 							</div>
 							<div className="font-mono text-xs break-all">

@@ -76,12 +76,12 @@ function MetricCell({
 }) {
 	return (
 		<div className="flex flex-col gap-px">
-			<span className="text-[9px] font-medium tracking-wide text-muted-foreground/60 uppercase">
+			<span className="text-4xs font-medium tracking-wide text-muted-foreground/60 uppercase">
 				{label}
 			</span>
 			<span
 				className={cn(
-					"text-[11px] font-medium font-mono tabular-nums text-secondary-foreground",
+					"text-2xs font-medium font-mono tabular-nums text-secondary-foreground",
 					valueClassName,
 				)}
 			>
@@ -174,7 +174,7 @@ function DatabaseNode({ data }: { data: ServiceNodeData }) {
 						</Tooltip>
 						<span className="truncate text-xs font-medium text-foreground">{title}</span>
 						<span
-							className="ml-auto shrink-0 text-[9px] font-semibold uppercase tracking-wide"
+							className="ml-auto shrink-0 text-4xs font-semibold uppercase tracking-wide"
 							style={{ color }}
 						>
 							{badge}
@@ -318,7 +318,7 @@ function ServiceNode({ data }: { data: ServiceNodeData }) {
 									</TooltipContent>
 								</Tooltip>
 							) : (
-								<span className="shrink-0 text-[9px] font-medium uppercase tracking-wide text-muted-foreground/60">
+								<span className="shrink-0 text-4xs font-medium uppercase tracking-wide text-muted-foreground/60">
 									{runtimeInfo.short}
 								</span>
 							))}
@@ -357,13 +357,13 @@ function ServiceNode({ data }: { data: ServiceNodeData }) {
 
 						{/* Pods badge — empty placeholder when no infra so widths stay stable */}
 						<div className="ml-auto flex flex-col items-end gap-px">
-							<span className="text-[9px] font-medium uppercase tracking-wide text-muted-foreground/60">
+							<span className="text-4xs font-medium uppercase tracking-wide text-muted-foreground/60">
 								pods
 							</span>
 							{infra ? (
 								<Tooltip>
 									<TooltipTrigger>
-										<span className="flex items-center gap-1 font-mono text-[11px] font-medium tabular-nums text-secondary-foreground">
+										<span className="flex items-center gap-1 font-mono text-2xs font-medium tabular-nums text-secondary-foreground">
 											<CubeIcon size={10} className="text-muted-foreground/70" />
 											{infra.podCount}
 										</span>
@@ -379,7 +379,7 @@ function ServiceNode({ data }: { data: ServiceNodeData }) {
 									</TooltipContent>
 								</Tooltip>
 							) : (
-								<span className="font-mono text-[11px] tabular-nums text-muted-foreground/30">
+								<span className="font-mono text-2xs tabular-nums text-muted-foreground/30">
 									–
 								</span>
 							)}
@@ -423,7 +423,7 @@ function NamespaceAggregateNode({ data }: { data: ServiceNodeData }) {
 							{label}
 						</span>
 						<span
-							className="ml-auto shrink-0 text-[9px] font-semibold uppercase tracking-wide"
+							className="ml-auto shrink-0 text-4xs font-semibold uppercase tracking-wide"
 							style={{ color }}
 						>
 							{nsMemberCount ?? 0} services

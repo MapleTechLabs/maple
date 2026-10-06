@@ -21,7 +21,7 @@ export function DataTable({ props }: RendererComponentProps<DataTableProps>) {
 
 	return (
 		<div className="space-y-1">
-			{title && <p className="text-[11px] font-medium text-muted-foreground">{title}</p>}
+			{title && <p className="text-2xs font-medium text-muted-foreground">{title}</p>}
 			<div className="max-h-[300px] overflow-auto">
 				<Table size="xs" scroll={false}>
 					<TableHeader>

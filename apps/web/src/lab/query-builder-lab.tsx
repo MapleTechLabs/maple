@@ -239,9 +239,9 @@ function QueryBuilderAtomResults({ input }: { input: QueryBuilderTimeseriesInput
 								Combined result
 							</Badge>
 							<Badge variant="destructive">error</Badge>
-							<span className="text-[11px] text-muted-foreground">query_engine</span>
+							<span className="text-2xs text-muted-foreground">query_engine</span>
 						</div>
-						<p className="text-[11px] text-destructive">{displayError(error).message}</p>
+						<p className="text-2xs text-destructive">{displayError(error).message}</p>
 					</div>
 				))
 				.onSuccess((response) => {
@@ -258,8 +258,8 @@ function QueryBuilderAtomResults({ input }: { input: QueryBuilderTimeseriesInput
 									Combined result
 								</Badge>
 								<Badge variant="secondary">success</Badge>
-								<span className="text-[11px] text-muted-foreground">query_engine</span>
-								<span className="text-[11px] text-muted-foreground">
+								<span className="text-2xs text-muted-foreground">query_engine</span>
+								<span className="text-2xs text-muted-foreground">
 									{data.length} buckets
 								</span>
 							</div>
@@ -267,7 +267,7 @@ function QueryBuilderAtomResults({ input }: { input: QueryBuilderTimeseriesInput
 							{warnings.length > 0 && (
 								<div className="space-y-1">
 									{warnings.map((warning) => (
-										<p key={warning} className="text-[11px] text-muted-foreground">
+										<p key={warning} className="text-2xs text-muted-foreground">
 											- {warning}
 										</p>
 									))}
@@ -287,13 +287,13 @@ function QueryBuilderAtomResults({ input }: { input: QueryBuilderTimeseriesInput
 									<TableBody>
 										{data.slice(0, 12).map((point) => (
 											<TableRow key={point.bucket}>
-												<TableCell className="font-mono text-[11px]">
+												<TableCell className="font-mono text-2xs">
 													{point.bucket}
 												</TableCell>
 												{seriesKeys.map((key) => (
 													<TableCell
 														key={`${point.bucket}-${key}`}
-														className="font-mono text-[11px]"
+														className="font-mono text-2xs"
 													>
 														{point.series[key] ?? 0}
 													</TableCell>
@@ -495,13 +495,13 @@ function QueryBuilderLabInner({ startTime, endTime }: QueryBuilderLabProps) {
 				</div>
 
 				<div className="flex items-center gap-2">
-					<span className="text-[11px] text-muted-foreground">
+					<span className="text-2xs text-muted-foreground">
 						{startTime}
 						{" -> "}
 						{endTime}
 					</span>
 					{lastRunAt && (
-						<span className="text-[11px] text-muted-foreground">last run: {lastRunAt}</span>
+						<span className="text-2xs text-muted-foreground">last run: {lastRunAt}</span>
 					)}
 					<Button size="sm" onClick={runQueries}>
 						<MagnifierIcon size={14} />
@@ -524,11 +524,11 @@ function QueryBuilderLabInner({ startTime, endTime }: QueryBuilderLabProps) {
 											-
 										</Badge>
 										<Badge variant="destructive">error</Badge>
-										<span className="text-[11px] text-muted-foreground">
+										<span className="text-2xs text-muted-foreground">
 											query_engine
 										</span>
 									</div>
-									<p className="text-[11px] text-destructive">{noQueriesError}</p>
+									<p className="text-2xs text-destructive">{noQueriesError}</p>
 								</div>
 							) : submittedInput ? (
 								<QueryBuilderAtomResults input={submittedInput} />
@@ -552,7 +552,7 @@ function QueryBuilderLabInner({ startTime, endTime }: QueryBuilderLabProps) {
 								<div key={query.id} className="grid grid-cols-[44px_1fr] gap-2">
 									<Badge
 										variant="outline"
-										className="h-7 w-11 justify-center self-start font-mono text-[11px]"
+										className="h-7 w-11 justify-center self-start font-mono text-2xs"
 									>
 										{query.name}
 									</Badge>
@@ -607,7 +607,7 @@ function QueryBuilderLabInner({ startTime, endTime }: QueryBuilderLabProps) {
 														/>
 														<Label
 															htmlFor={`query-enabled-${query.id}`}
-															className="text-[11px] text-muted-foreground"
+															className="text-2xs text-muted-foreground"
 														>
 															enabled
 														</Label>
@@ -760,7 +760,7 @@ function QueryBuilderLabInner({ startTime, endTime }: QueryBuilderLabProps) {
 														)
 														if (!hasSlowHints(hints)) return null
 														return (
-															<p className="mt-1 text-[11px] text-severity-warn">
+															<p className="mt-1 text-2xs text-severity-warn">
 																{slowHintsSummary(hints)}
 															</p>
 														)
@@ -980,7 +980,7 @@ function QueryBuilderLabInner({ startTime, endTime }: QueryBuilderLabProps) {
 							<div key={formula.id} className="grid grid-cols-[44px_1fr] gap-2">
 								<Badge
 									variant="outline"
-									className="h-7 w-11 justify-center self-start font-mono text-[11px]"
+									className="h-7 w-11 justify-center self-start font-mono text-2xs"
 								>
 									{formula.name}
 								</Badge>
@@ -1042,7 +1042,7 @@ function QueryBuilderLabInner({ startTime, endTime }: QueryBuilderLabProps) {
 						<Eyebrow variant="label" as="p" className="mb-2">
 							UI State Preview
 						</Eyebrow>
-						<pre className="max-h-72 overflow-auto rounded-none border bg-muted/30 p-2 font-mono text-[11px] leading-relaxed">
+						<pre className="max-h-72 overflow-auto rounded-none border bg-muted/30 p-2 font-mono text-2xs leading-relaxed">
 							{JSON.stringify(
 								{
 									startTime,

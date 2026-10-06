@@ -171,7 +171,7 @@ export function RangeFilterSection({
 				<span className="truncate">{title}</span>
 				<span className="flex items-center gap-1.5">
 					{!isOpen && hasActiveRange && (
-						<span className="inline-flex items-center gap-1 rounded-sm bg-muted px-1.5 py-0.5 text-[10px] tabular-nums tracking-normal text-foreground">
+						<span className="inline-flex items-center gap-1 rounded-sm bg-muted px-1.5 py-0.5 text-3xs tabular-nums tracking-normal text-foreground">
 							{formatRange(minValue, maxValue, unit)}
 							<span
 								role="button"
@@ -262,7 +262,7 @@ export function RangeFilterSection({
 										onClick={() => applyPreset(preset)}
 										aria-pressed={isActive}
 										className={cn(
-											"rounded-full border px-2 py-0.5 text-[11px] transition-colors",
+											"rounded-full border px-2 py-0.5 text-2xs transition-colors",
 											isActive
 												? "border-primary/30 bg-primary/10 text-foreground"
 												: "border-border/60 text-muted-foreground hover:border-border hover:bg-muted hover:text-foreground",
@@ -288,7 +288,7 @@ export function RangeFilterSection({
 								<button
 									type="button"
 									onClick={clearRange}
-									className="ml-auto text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+									className="ml-auto text-2xs text-muted-foreground hover:text-foreground transition-colors"
 								>
 									Clear
 								</button>
@@ -409,7 +409,7 @@ function RangeHistogram({
 		<div>
 			{/* Fixed-height readout instead of a floating tooltip — a popover would
 			    clip inside a sidebar this narrow, and the total is worth showing anyway. */}
-			<div className="mb-1 flex h-4 items-center justify-between text-[10px] tabular-nums text-muted-foreground">
+			<div className="mb-1 flex h-4 items-center justify-between text-3xs tabular-nums text-muted-foreground">
 				{hovered ? (
 					<>
 						<span>{describe(hovered)}</span>
@@ -457,7 +457,7 @@ function RangeHistogram({
 					)
 				})}
 			</div>
-			<div className="mt-1 flex justify-between text-[10px] tabular-nums text-muted-foreground/60">
+			<div className="mt-1 flex justify-between text-3xs tabular-nums text-muted-foreground/60">
 				<span>{formatValue(first.from, unit)}</span>
 				<span>{formatValue((buckets[Math.floor(buckets.length / 2)] ?? first).from, unit)}</span>
 				<span>

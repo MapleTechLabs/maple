@@ -704,7 +704,7 @@ export const AlertRuleChart = React.memo(function AlertRuleChart({
 			{chartArea}
 
 			{hasSignal && (
-				<div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+				<div className="flex items-center gap-2 text-2xs text-muted-foreground">
 					<span
 						aria-hidden
 						className="inline-block h-0 w-4 shrink-0 border-t-[1.5px] border-dashed border-destructive"
@@ -737,14 +737,14 @@ export const AlertRuleChart = React.memo(function AlertRuleChart({
 							— {SIGNAL_SOURCE_LABEL[otherSource].toLowerCase()} has no points in this window.
 						</p>
 						{error != null && (
-							<p className="line-clamp-2 text-[11px] text-muted-foreground">{error}</p>
+							<p className="line-clamp-2 text-2xs text-muted-foreground">{error}</p>
 						)}
 					</div>
 				</div>
 			)}
 
 			{hasSignal && hasGhost && (
-				<div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+				<div className="flex items-center gap-3 text-2xs text-muted-foreground">
 					<span className="flex items-center gap-1.5">
 						<span
 							aria-hidden
@@ -761,17 +761,17 @@ export const AlertRuleChart = React.memo(function AlertRuleChart({
 			)}
 
 			{showWouldFire && wouldFireBands.length > 0 && (
-				<p className="text-[11px] text-muted-foreground">
+				<p className="text-2xs text-muted-foreground">
 					Shaded: rule would have fired (approximate — the live scheduler evaluates every minute).
 				</p>
 			)}
 			{hasSignal && source === "preview" && noDataBands.length > 0 && (
-				<p className="text-[11px] text-muted-foreground">
+				<p className="text-2xs text-muted-foreground">
 					Hatched: no data received in these windows.
 				</p>
 			)}
 			{preview?.truncatedToStart != null && (
-				<p className="text-[11px] text-muted-foreground">
+				<p className="text-2xs text-muted-foreground">
 					{clampedToPreview ? "Axis starts at " : "Query series starts at "}
 					{formatTime(Date.parse(preview.truncatedToStart), "tooltip")} — the selected range needs
 					more evaluation windows than one preview replays. Widen the rule's window or shorten the
@@ -833,7 +833,7 @@ export const AlertRuleChart = React.memo(function AlertRuleChart({
 						</div>
 					</div>
 					<div
-						className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 pt-0.5 text-[11px] text-muted-foreground"
+						className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 pt-0.5 text-2xs text-muted-foreground"
 						style={{ paddingLeft: Y_AXIS_WIDTH }}
 					>
 						<RailLegend totals={railTotals} />

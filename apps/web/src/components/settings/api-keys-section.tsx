@@ -216,7 +216,7 @@ export function ApiKeysSection() {
 									}))}
 							/>
 							{buckets.active.length > 0 && (
-								<span className="text-muted-foreground font-mono text-[11px]">
+								<span className="text-muted-foreground font-mono text-2xs">
 									<span className="text-success-foreground">{standardCount} standard</span>
 									<span className="text-muted-foreground/40"> · </span>
 									<span className="text-info-foreground">{mcpCount} mcp</span>
@@ -507,10 +507,10 @@ function ApiReference() {
 									</div>
 								</div>
 								<div className="flex shrink-0 items-center gap-1.5">
-									<Badge variant="outline" mono className="text-[11px]">
+									<Badge variant="outline" mono className="text-2xs">
 										{family.id}:read
 									</Badge>
-									<Badge variant="outline" mono className="text-[11px]">
+									<Badge variant="outline" mono className="text-2xs">
 										{family.id}:write
 									</Badge>
 								</div>
@@ -615,7 +615,7 @@ function ApiKeyRow({
 							</Badge>
 						)}
 					</div>
-					<span className="text-muted-foreground truncate text-[11px]" title={createdMeta}>
+					<span className="text-muted-foreground truncate text-2xs" title={createdMeta}>
 						{createdMeta}
 					</span>
 				</div>
@@ -623,7 +623,7 @@ function ApiKeyRow({
 
 			<InlineCode
 				variant="plain"
-				className={cn(COL.prefix, "text-foreground/55 truncate text-[11px] tracking-tight")}
+				className={cn(COL.prefix, "text-foreground/55 truncate text-2xs tracking-tight")}
 			>
 				{apiKey.key_prefix}
 			</InlineCode>
@@ -632,14 +632,14 @@ function ApiKeyRow({
 				<ScopesCell apiKey={apiKey} />
 			</div>
 
-			<span className={cn(COL.lastUsed, "text-muted-foreground truncate text-[11px]")}>
+			<span className={cn(COL.lastUsed, "text-muted-foreground truncate text-2xs")}>
 				{apiKey.last_used_at ? <RelativeTime value={apiKey.last_used_at} tooltip="title" /> : "—"}
 			</span>
 
 			<span
 				className={cn(
 					COL.expires,
-					"truncate text-[11px]",
+					"truncate text-2xs",
 					expiresSoon ? "text-severity-warn" : "text-muted-foreground",
 				)}
 			>
@@ -676,17 +676,17 @@ function ApiKeyRow({
 
 function ScopesCell({ apiKey }: { apiKey: ApiKey }) {
 	if (apiKey.kind === "mcp") {
-		return <span className="text-muted-foreground text-[11px]">MCP tools</span>
+		return <span className="text-muted-foreground text-2xs">MCP tools</span>
 	}
 	if (apiKey.scopes === null) {
-		return <span className="text-foreground/80 text-[11px]">Full access</span>
+		return <span className="text-foreground/80 text-2xs">Full access</span>
 	}
 	const compact = apiKey.scopes.map((scope) => scope.replace(/:write$/, ":w").replace(/:read$/, ":r"))
 	const shown = compact.slice(0, 2).join(" · ")
 	const extra = compact.length - 2
 	return (
 		<span
-			className="text-muted-foreground block truncate font-mono text-[11px] tracking-tight"
+			className="text-muted-foreground block truncate font-mono text-2xs tracking-tight"
 			title={apiKey.scopes.join(", ")}
 		>
 			{shown}

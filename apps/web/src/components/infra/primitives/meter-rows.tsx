@@ -68,7 +68,7 @@ function MeterRow({ label, fraction, hideLabel }: Meter & { hideLabel?: boolean 
 				<span
 					className={cn(
 						LABEL_WIDTH,
-						"shrink-0 font-mono text-[10px] tracking-[0.06em] text-muted-foreground/70",
+						"shrink-0 font-mono text-3xs tracking-[0.06em] text-muted-foreground/70",
 					)}
 				>
 					{label}
@@ -78,7 +78,7 @@ function MeterRow({ label, fraction, hideLabel }: Meter & { hideLabel?: boolean 
 			<span
 				className={cn(
 					VALUE_WIDTH,
-					"shrink-0 text-right font-mono text-[11px] tabular-nums",
+					"shrink-0 text-right font-mono text-2xs tabular-nums",
 					BAR_VALUE_TONE[level],
 				)}
 			>

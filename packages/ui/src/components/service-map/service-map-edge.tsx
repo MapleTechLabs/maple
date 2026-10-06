@@ -221,7 +221,7 @@ export const ServiceMapEdge = memo(function ServiceMapEdge({
 								: undefined
 						}
 					>
-						<span className="rounded bg-card/90 backdrop-blur-sm px-1.5 py-0.5 text-[10px] font-mono font-medium text-muted-foreground border border-border/50 whitespace-nowrap tabular-nums">
+						<span className="rounded bg-card/90 backdrop-blur-sm px-1.5 py-0.5 text-3xs font-mono font-medium text-muted-foreground border border-border/50 whitespace-nowrap tabular-nums">
 							{hasSampling ? "~" : ""}
 							{formatCallCount(hasSampling ? estimatedCallCount : callCount)}
 							{errorRate > 0 && (

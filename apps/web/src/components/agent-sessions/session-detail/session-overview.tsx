@@ -266,7 +266,7 @@ function Rail({ summary }: { summary: SessionSummary }) {
 				{/* Cost is only ever what an instrumentation stamped on a span — Maple
 				    prices nothing itself, and saying so is the difference between a
 				    figure and a bill. */}
-				<p className="text-[11px] text-muted-foreground leading-relaxed">
+				<p className="text-2xs text-muted-foreground leading-relaxed">
 					{summary.cost === undefined
 						? "No span reported a cost. Maple does not price tokens itself."
 						: "As reported by the instrumentation. Not a bill."}
@@ -304,7 +304,7 @@ function Rail({ summary }: { summary: SessionSummary }) {
 							</div>
 						))}
 						{summary.tokenReporting === "session-level" && (
-							<p className="text-[11px] text-muted-foreground">
+							<p className="text-2xs text-muted-foreground">
 								Reported once for the whole session
 							</p>
 						)}
@@ -328,7 +328,7 @@ function Rail({ summary }: { summary: SessionSummary }) {
 								)}
 								<span
 									className={cn(
-										"min-w-0 truncate rounded-sm px-2 py-0.5 font-mono text-[11px]",
+										"min-w-0 truncate rounded-sm px-2 py-0.5 font-mono text-2xs",
 										index === 0
 											? "bg-primary/12 text-primary"
 											: "bg-muted text-muted-foreground",
@@ -428,7 +428,7 @@ function ToolLedgerHeader({ summary }: { summary: SessionSummary }) {
 							<span className="font-mono font-semibold text-severity-error text-xs tabular-nums">
 								{failed}
 							</span>
-							<span className="text-[11px] text-severity-error">failed</span>
+							<span className="text-2xs text-severity-error">failed</span>
 						</span>
 					)}
 				</div>
@@ -470,7 +470,7 @@ function ToolLedgerColumns({ axis }: { axis: SessionAxis }) {
 							// The last tick anchors to the axis end rather than centring on
 							// it: a centred one would hang off the column.
 							className={cn(
-								"absolute top-0 whitespace-nowrap font-mono font-normal text-[10px] normal-case tracking-normal",
+								"absolute top-0 whitespace-nowrap font-mono font-normal text-3xs normal-case tracking-normal",
 								tick.fraction < 0.92 && "-translate-x-1/2",
 							)}
 							style={

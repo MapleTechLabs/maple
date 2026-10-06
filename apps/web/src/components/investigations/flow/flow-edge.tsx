@@ -106,7 +106,7 @@ export const FlowEdge = memo(function FlowEdge({
 							// an absolutely-positioned layer, so anything that permits wrapping
 							// collapses "TRIPPED" into a 23px column of single letters.
 							"pointer-events-none absolute z-10 whitespace-pre text-center",
-							"font-mono text-[9px] font-medium uppercase leading-3 tracking-[0.1em] text-muted-foreground",
+							"font-mono text-4xs font-medium uppercase leading-3 tracking-[0.1em] text-muted-foreground",
 						)}
 						// Parked above the midpoint of the straight run, not on it.
 						style={{

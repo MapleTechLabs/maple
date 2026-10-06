@@ -241,7 +241,7 @@ function RampSwatch({ scale }: { scale: HeatmapColorScale }) {
 			{[0, 1, 2, 3, 4].map((stop) => (
 				<span
 					key={stop}
-					className="size-2 rounded-[2px]"
+					className="size-2 rounded-xs"
 					style={{ backgroundColor: `var(--heatmap-${scale}-${stop})` }}
 				/>
 			))}

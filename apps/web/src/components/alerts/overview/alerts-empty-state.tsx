@@ -150,7 +150,7 @@ function TemplateTile({ template, serviceName }: { template: AlertTemplate; serv
 				</span>
 				<span className="font-medium text-sm">{template.title}</span>
 			</div>
-			<InlineCode className="self-start text-[11px] text-muted-foreground">
+			<InlineCode className="self-start text-2xs text-muted-foreground">
 				{template.summary}
 			</InlineCode>
 		</Link>

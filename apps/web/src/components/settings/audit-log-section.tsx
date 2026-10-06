@@ -391,7 +391,7 @@ function ActorCell({ entry }: { entry: V2AuditLogEntry }) {
 			    minting user's id too, and wearing it would credit a human for
 			    something they may not have done. */}
 			{entry.actor_type === "user" ? (
-				<Avatar className="size-4 shrink-0 text-[9px]">
+				<Avatar className="size-4 shrink-0 text-4xs">
 					{entry.actor_avatar_url !== null && <AvatarImage src={entry.actor_avatar_url} alt="" />}
 					<AvatarFallback>{initialsOf(entry.actor_name ?? entry.actor_id ?? "")}</AvatarFallback>
 				</Avatar>
@@ -462,12 +462,12 @@ function AuditLogRow({ entry }: { entry: V2AuditLogEntry }) {
 						)}
 					</div>
 					{denied && entry.denial_reason !== null && (
-						<TruncatedText className="text-muted-foreground text-[11px]">
+						<TruncatedText className="text-muted-foreground text-2xs">
 							{entry.denial_reason}
 						</TruncatedText>
 					)}
 					{entry.changes !== null && entry.changes.fields.length > 0 && (
-						<p className="text-muted-foreground truncate font-mono text-[11px]">
+						<p className="text-muted-foreground truncate font-mono text-2xs">
 							{entry.changes.fields.join(", ")}
 						</p>
 					)}
@@ -505,7 +505,7 @@ function ResourceCell({ entry }: { entry: V2AuditLogEntry }) {
 				</Badge>
 			)}
 			{id !== null && (
-				<TruncatedText mono className="text-muted-foreground text-[11px]">
+				<TruncatedText mono className="text-muted-foreground text-2xs">
 					{id}
 				</TruncatedText>
 			)}
@@ -517,7 +517,7 @@ function ResourceCell({ entry }: { entry: V2AuditLogEntry }) {
 function Identifier({ value, label }: { value: string; label: string }) {
 	return (
 		<span className="inline-flex max-w-full items-center gap-0.5">
-			<InlineCode variant="plain" className="truncate text-[11px] text-foreground">
+			<InlineCode variant="plain" className="truncate text-2xs text-foreground">
 				{value}
 			</InlineCode>
 			<CopyButton value={value} label={label} toast={false} iconSize={12} className="size-5" />
@@ -573,11 +573,11 @@ function MetadataList({ metadata }: { metadata: Record<string, unknown> }) {
 				return (
 					<KeyValue wrap key={key} label={key}>
 						{block !== null ? (
-							<pre className="bg-background/60 max-h-64 overflow-auto rounded-md border px-2.5 py-2 font-mono text-[11px] leading-relaxed whitespace-pre-wrap break-all">
+							<pre className="bg-background/60 max-h-64 overflow-auto rounded-md border px-2.5 py-2 font-mono text-2xs leading-relaxed whitespace-pre-wrap break-all">
 								{block}
 							</pre>
 						) : (
-							<span className="font-mono text-[11px] break-all">
+							<span className="font-mono text-2xs break-all">
 								<ChangeValue value={value} />
 							</span>
 						)}
@@ -626,7 +626,7 @@ function AuditLogDetail({ entry }: { entry: V2AuditLogEntry }) {
 				</KeyValue>
 				<KeyValue wrap label="Action">
 					<span className="flex flex-wrap items-center gap-1.5">
-						<InlineCode variant="plain" className="text-[11px] text-foreground">
+						<InlineCode variant="plain" className="text-2xs text-foreground">
 							{entry.action}
 						</InlineCode>
 						{entry.outcome === "denied" ? (

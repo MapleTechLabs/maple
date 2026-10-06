@@ -467,7 +467,7 @@ function ReleaseBodyLoaded({
 						</TabsTrigger>
 					</TabsList>
 				</Tabs>
-				<span className="text-[11px] text-muted-foreground/70">
+				<span className="text-2xs text-muted-foreground/70">
 					{series === "version"
 						? `Only spans that carried ${shortReleaseLabel(commitSha)}`
 						: baselineCommitSha === undefined

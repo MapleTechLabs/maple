@@ -389,7 +389,7 @@ export function AlertsSettingsTab({ manager, isAdmin }: { manager: DestinationMa
 															</Badge>
 															{event.attemptNumber > 1 && (
 																<span
-																	className="text-severity-warn tabular-nums text-[11px]"
+																	className="text-severity-warn tabular-nums text-2xs"
 																	title={`Attempt ${event.attemptNumber}`}
 																>
 																	↻{event.attemptNumber}

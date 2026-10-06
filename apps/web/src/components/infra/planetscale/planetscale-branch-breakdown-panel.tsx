@@ -271,7 +271,7 @@ export function PlanetScaleBranchBreakdownPanel({
 				})}
 			</DataTable.Root>
 
-			<div className="border-t border-border/60 px-3 py-1.5 text-[11px] text-muted-foreground">
+			<div className="border-t border-border/60 px-3 py-1.5 text-2xs text-muted-foreground">
 				{spec.additive
 					? `Bars show share of ${formatNumber(total)} total across ${candidates.length} branch${candidates.length === 1 ? "" : "es"}.`
 					: // Not "% of database": these are maxima, and they do not sum.

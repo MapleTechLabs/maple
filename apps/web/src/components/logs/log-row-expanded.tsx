@@ -38,7 +38,7 @@ export function LogRowExpanded({ log, highlight, onOpenDetail }: LogRowExpandedP
 					label="Log JSON"
 					idleLabel="JSON"
 					iconSize={10}
-					className="h-5 px-1.5 text-[10px]"
+					className="h-5 px-1.5 text-3xs"
 					onClick={(e) => e.stopPropagation()}
 				/>
 			</div>

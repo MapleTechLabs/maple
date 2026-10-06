@@ -268,7 +268,7 @@ function PageShell({
 						<DashboardLayout.Header
 							titleContent={
 								summary ? (
-									<div className="text-muted-foreground mt-1 font-mono text-[11px]">
+									<div className="text-muted-foreground mt-1 font-mono text-2xs">
 										{summary}
 									</div>
 								) : undefined

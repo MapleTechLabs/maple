@@ -18,7 +18,7 @@ export function MarkdownEditorPanel({ content, onChange }: MarkdownEditorPanelPr
 		<div className="space-y-2">
 			<div className="flex items-baseline justify-between">
 				<Eyebrow as="p">Content</Eyebrow>
-				<p className="text-[11px] text-muted-foreground">
+				<p className="text-2xs text-muted-foreground">
 					Markdown: <code># heading</code>, <code>**bold**</code>, <code>- list</code>,{" "}
 					<code>[link](url)</code>
 				</p>

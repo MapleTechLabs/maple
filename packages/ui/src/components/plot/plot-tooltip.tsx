@@ -271,8 +271,8 @@ export function PlotTooltipBody<TDatum>({
 							<span
 								className={
 									spec.dashed
-										? "size-2.5 shrink-0 rounded-[2px] border border-dashed"
-										: "size-2.5 shrink-0 rounded-[2px]"
+										? "size-2.5 shrink-0 rounded-xs border border-dashed"
+										: "size-2.5 shrink-0 rounded-xs"
 								}
 								style={
 									spec.dashed

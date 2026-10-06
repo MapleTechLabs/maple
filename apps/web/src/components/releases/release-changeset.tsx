@@ -129,7 +129,7 @@ function ReleaseChangesetLoaded({ rangesKey, base }: { rangesKey: string; base: 
 	const range = Result.isSuccess(result) ? result.value.ranges[0] : undefined
 
 	const action = (
-		<span className="text-[11px] text-muted-foreground/70">
+		<span className="text-2xs text-muted-foreground/70">
 			since <span className="font-mono">{shortReleaseLabel(base)}</span>
 		</span>
 	)
@@ -183,12 +183,12 @@ function ReleaseChangesetLoaded({ rangesKey, base }: { rangesKey: string; base: 
 								>
 									{subject}
 								</a>
-								<span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+								<span className="flex items-center gap-1.5 text-2xs text-muted-foreground">
 									<span className="font-mono">{shortReleaseLabel(commit.sha)}</span>
 									<span className="truncate">{author}</span>
 								</span>
 							</div>
-							<span className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground/70">
+							<span className="shrink-0 font-mono text-2xs tabular-nums text-muted-foreground/70">
 								{formatRelativeTimeOrDate(
 									new Date(commit.committedAt).toISOString(),
 									undefined,
@@ -199,7 +199,7 @@ function ReleaseChangesetLoaded({ rangesKey, base }: { rangesKey: string; base: 
 					)
 				})}
 				{hidden > 0 ? (
-					<div className="border-t border-border/60 px-4 py-2 text-[11px] text-muted-foreground/70">
+					<div className="border-t border-border/60 px-4 py-2 text-2xs text-muted-foreground/70">
 						{hidden} older {pluralize(hidden, "commit")} not shown
 					</div>
 				) : null}

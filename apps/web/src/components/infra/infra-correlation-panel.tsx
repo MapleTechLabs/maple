@@ -95,7 +95,7 @@ export function InfraCorrelationPanel({
 							<CorrelationLink correlation={correlation} />
 						</div>
 						<div
-							className="truncate font-mono text-[11px] text-muted-foreground"
+							className="truncate font-mono text-2xs text-muted-foreground"
 							title={correlation.identifier}
 						>
 							{correlation.identifier}
@@ -192,7 +192,7 @@ function renderCharts(correlation: InfraCorrelation, startTime: string, endTime:
 /** Typed SPA deep-link into the matching infra detail route, per kind. */
 function CorrelationLink({ correlation }: { correlation: InfraCorrelation }) {
 	const className =
-		"inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+		"inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-2xs text-muted-foreground transition-colors hover:text-foreground"
 	const content = (
 		<>
 			View in Infrastructure

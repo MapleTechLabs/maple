@@ -217,7 +217,7 @@ export function ToolSeriesChart({
 					</span>
 				))}
 				<span className="grow" />
-				<span className="text-[11px] text-muted-foreground/60">
+				<span className="text-2xs text-muted-foreground/60">
 					{bucketMs === null ? null : `${bucketLabel(bucketMs)} buckets`}
 				</span>
 			</div>
@@ -225,12 +225,12 @@ export function ToolSeriesChart({
 			{/* Only where there is more than one series to tell apart — a single
 			    series is already named by the head. */}
 			{plotted.length > 1 ? (
-				<div className="-mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-[11px] leading-3.5">
+				<div className="-mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-2xs leading-3.5">
 					{plotted.map((entry) => (
 						<span key={entry.key} className="flex items-center gap-1.5">
 							<span
 								aria-hidden
-								className="size-2 shrink-0 rounded-[2px]"
+								className="size-2 shrink-0 rounded-xs"
 								style={{ backgroundColor: entry.color }}
 							/>
 							<span className="text-foreground/75">{entry.label}</span>

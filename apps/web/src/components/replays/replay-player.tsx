@@ -453,7 +453,7 @@ function HoverTimeBubble({
 	const left = Math.min(Math.max(hover.clientX, EDGE_MARGIN), window.innerWidth - EDGE_MARGIN)
 	return createPortal(
 		<div
-			className="pointer-events-none fixed z-55 -translate-x-1/2 -translate-y-full rounded bg-popover px-1.5 py-0.5 font-mono text-[10px] tabular-nums text-popover-foreground shadow-sm ring-1 ring-border"
+			className="pointer-events-none fixed z-55 -translate-x-1/2 -translate-y-full rounded bg-popover px-1.5 py-0.5 font-mono text-3xs tabular-nums text-popover-foreground shadow-sm ring-1 ring-border"
 			style={{ left, top: rect.top - 8 }}
 		>
 			{formatClock(hover.ms)}

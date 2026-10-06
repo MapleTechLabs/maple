@@ -381,7 +381,7 @@ function EmbedUrlOptions() {
 							{param}
 						</code>
 						<span className="text-muted-foreground">{description}</span>
-						<InlineCode className="col-start-3 w-fit max-w-full truncate px-1.5 text-[11px] text-muted-foreground">
+						<InlineCode className="col-start-3 w-fit max-w-full truncate px-1.5 text-2xs text-muted-foreground">
 							{example}
 						</InlineCode>
 					</li>

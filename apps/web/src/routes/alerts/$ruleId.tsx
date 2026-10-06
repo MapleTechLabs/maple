@@ -1458,7 +1458,7 @@ function ChecksPanel({
 										<TableRow className="hover:bg-transparent">
 											<TableCell
 												colSpan={isGrouped ? 6 : 5}
-												className="bg-muted/40 py-1.5 text-[11px] text-muted-foreground"
+												className="bg-muted/40 py-1.5 text-2xs text-muted-foreground"
 											>
 												{skipped} evaluation{skipped === 1 ? "" : "s"} hidden by the
 												status filter
@@ -1561,7 +1561,7 @@ function ChecksPanel({
 				    reintroduce the coverage mismatch this redesign removes. */}
 				{bucket == null && nextCursor !== null && (
 					<div className="flex items-center justify-between gap-4">
-						<span className="text-[11px] text-muted-foreground">
+						<span className="text-2xs text-muted-foreground">
 							{loadedChecks.length} of {totals.total} loaded
 						</span>
 						<LoadMoreButton loading={loadingMore} onClick={loadMore} label="Load 100 more" />

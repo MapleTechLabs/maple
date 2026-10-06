@@ -139,7 +139,7 @@ function VariableControl({
 						item === ALL_VALUE ? (
 							<ComboboxItem key={item} value={item} className="text-xs">
 								All
-								<span className="ml-auto pl-4 text-[10px] text-muted-foreground">
+								<span className="ml-auto pl-4 text-3xs text-muted-foreground">
 									no filter
 								</span>
 							</ComboboxItem>

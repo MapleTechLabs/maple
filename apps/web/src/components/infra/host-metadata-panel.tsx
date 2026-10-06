@@ -17,7 +17,7 @@ interface SectionProps {
 function Section({ title, children }: SectionProps) {
 	return (
 		<div className="space-y-0.5 py-2 first:pt-0 last:pb-0">
-			<div className="text-[11px] font-medium text-muted-foreground">{title}</div>
+			<div className="text-2xs font-medium text-muted-foreground">{title}</div>
 			<div>{children}</div>
 		</div>
 	)

@@ -415,7 +415,7 @@ export function ListConfigPanel() {
 						<div className="mt-1.5 space-y-1.5">
 							{slow.length > 0 && (
 								<Alert variant="warn" size="sm">
-									<AlertDescription className="gap-1 text-[11px] text-severity-warn">
+									<AlertDescription className="gap-1 text-2xs text-severity-warn">
 										{slow.map((h) => (
 											<p key={h.key}>{h.reason}</p>
 										))}
@@ -424,7 +424,7 @@ export function ListConfigPanel() {
 							)}
 							{fast.length > 0 && (
 								<Alert variant="ok" size="sm">
-									<AlertDescription className="gap-1 text-[11px] text-severity-info">
+									<AlertDescription className="gap-1 text-2xs text-severity-info">
 										{fast.map((h) => (
 											<p key={h.key}>{h.reason}</p>
 										))}
@@ -450,7 +450,7 @@ export function ListConfigPanel() {
 					max={200}
 					className="w-32"
 				/>
-				<p className="text-[10px] text-muted-foreground">
+				<p className="text-3xs text-muted-foreground">
 					Max 200. Recommended: 25-50 for dashboard widgets.
 				</p>
 			</div>

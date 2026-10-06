@@ -391,7 +391,7 @@ function NavRow({
 			</SidebarMenuButton>
 			{item.badge ? (
 				<SidebarMenuBadge>
-					<Badge className="h-4 px-1.5 py-0 font-medium text-[10px]" variant="secondary">
+					<Badge className="h-4 px-1.5 py-0 font-medium text-3xs" variant="secondary">
 						{item.badge}
 					</Badge>
 				</SidebarMenuBadge>
@@ -486,7 +486,7 @@ function PinnedGroup({ currentPath }: { currentPath: string }) {
 			</SidebarGroupLabel>
 			<SidebarGroupContent>
 				{visible.length === 0 ? (
-					<p className="rounded-md border border-sidebar-border border-dashed px-2.5 py-2 text-[11px] text-muted-foreground leading-relaxed">
+					<p className="rounded-md border border-sidebar-border border-dashed px-2.5 py-2 text-2xs text-muted-foreground leading-relaxed">
 						Pin a dashboard to keep it here.
 					</p>
 				) : (

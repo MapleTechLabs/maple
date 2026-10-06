@@ -35,7 +35,7 @@ export function DashboardHistoryPanel({
 			<div className="flex items-center gap-2 border-b px-4 py-3">
 				<HistoryIcon className="size-4" />
 				<h2 className="text-sm font-medium tracking-tight">History</h2>
-				<span className="ml-1 font-mono text-[10px] text-muted-foreground">{versions.length}</span>
+				<span className="ml-1 font-mono text-3xs text-muted-foreground">{versions.length}</span>
 				<Button
 					variant="ghost"
 					size="icon-xs"
@@ -74,7 +74,7 @@ export function DashboardHistoryPanel({
 							<HistoryIcon className="size-4 text-muted-foreground" />
 						</div>
 						<p className="text-xs font-medium text-foreground">No history yet</p>
-						<p className="mt-1 text-[11px] text-muted-foreground">
+						<p className="mt-1 text-2xs text-muted-foreground">
 							Each save is captured here so you can revisit or restore.
 						</p>
 					</div>

@@ -38,7 +38,7 @@ export function PinnedNamespaceNotice({ namespace }: { namespace: string }) {
 				<span className="truncate">{namespace}</span>
 				<span
 					title="Pinned for the whole app in the org menu"
-					className="ml-auto rounded-sm bg-muted px-1.5 py-0.5 text-[10px] uppercase tracking-[0.1em] text-muted-foreground"
+					className="ml-auto rounded-sm bg-muted px-1.5 py-0.5 text-3xs uppercase tracking-[0.1em] text-muted-foreground"
 				>
 					Pinned
 				</span>

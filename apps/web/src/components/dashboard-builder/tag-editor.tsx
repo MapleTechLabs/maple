@@ -161,7 +161,7 @@ function TagEditor({
 				<div className="flex flex-col gap-1.5">
 					<Label className="text-xs">On this dashboard</Label>
 					{drafts.length === 0 ? (
-						<p className="text-muted-foreground text-[11px]">
+						<p className="text-muted-foreground text-2xs">
 							No tags yet — this dashboard won't appear under any Tags filter.
 						</p>
 					) : (
@@ -170,7 +170,7 @@ function TagEditor({
 								<Badge
 									key={tag}
 									variant="secondary"
-									className="gap-1 pr-1 font-mono text-[11px]"
+									className="gap-1 pr-1 font-mono text-2xs"
 								>
 									{tag}
 									<Button
@@ -197,7 +197,7 @@ function TagEditor({
 									key={tag}
 									variant="outline"
 									size="xs"
-									className="font-mono text-[11px]"
+									className="font-mono text-2xs"
 									onClick={() => commit(tag)}
 								>
 									<PlusIcon size={10} data-icon="inline-start" />

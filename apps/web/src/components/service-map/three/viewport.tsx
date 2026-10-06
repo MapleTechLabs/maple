@@ -107,7 +107,7 @@ export function ServiceMap3DViewport({
 						Cascade
 					</ToggleGroupItem>
 				</ToggleGroup>
-				<span className="ml-3 hidden text-[11px] text-muted-foreground sm:block">
+				<span className="ml-3 hidden text-2xs text-muted-foreground sm:block">
 					{copy.encoding}
 				</span>
 				<Button
@@ -156,7 +156,7 @@ export function ServiceMap3DViewport({
 									else labels.current.delete(node.id)
 								}}
 								title={badge ? `${node.label} · ${badge.label}` : node.label}
-								className={`pointer-events-auto absolute top-0 left-0 max-w-40 truncate rounded px-1.5 py-1 text-[10px] leading-none whitespace-nowrap transition-colors hover:bg-background focus-visible:outline-2 focus-visible:outline-ring ${selectedId === node.id ? "bg-background text-foreground ring-1 ring-primary" : "text-foreground/90"}`}
+								className={`pointer-events-auto absolute top-0 left-0 max-w-40 truncate rounded px-1.5 py-1 text-3xs leading-none whitespace-nowrap transition-colors hover:bg-background focus-visible:outline-2 focus-visible:outline-ring ${selectedId === node.id ? "bg-background text-foreground ring-1 ring-primary" : "text-foreground/90"}`}
 								style={{
 									visibility: "hidden",
 									opacity: node.dimmed || (related && !related.has(node.id)) ? 0.25 : 1,
@@ -186,7 +186,7 @@ export function ServiceMap3DViewport({
 									if (element) labels.current.set(link.id, element)
 									else labels.current.delete(link.id)
 								}}
-								className="pointer-events-auto absolute top-0 left-0 flex h-5 min-w-14 cursor-pointer items-center justify-center gap-1 rounded-[3px] border-2 border-[#747766] bg-[#e1d5a9] px-2 font-mono text-[9px] font-bold text-[#30362c] shadow-[0_2px_0_#3a4034] hover:bg-[#f4e8bc] focus-visible:outline-2 focus-visible:outline-ring"
+								className="pointer-events-auto absolute top-0 left-0 flex h-5 min-w-14 cursor-pointer items-center justify-center gap-1 rounded-[3px] border-2 border-[#747766] bg-[#e1d5a9] px-2 font-mono text-4xs font-bold text-[#30362c] shadow-[0_2px_0_#3a4034] hover:bg-[#f4e8bc] focus-visible:outline-2 focus-visible:outline-ring"
 								style={{ visibility: "hidden" }}
 								title={`${nodesById.get(link.edge.source)?.label} → ${nodesById.get(link.edge.target)?.label} · ${link.edge.callsPerSecond} calls/s · ${edgeLatency(link.edge)}`}
 								aria-label={`Inspect connection to ${nodesById.get(link.edge.target)?.label}, ${formatRate(link.edge.callsPerSecond, link.edge.hasSampling)}`}
@@ -204,7 +204,7 @@ export function ServiceMap3DViewport({
 								if (element) labels.current.set(`district:${district.id}`, element)
 								else labels.current.delete(`district:${district.id}`)
 							}}
-							className="absolute top-0 left-0 rounded-sm bg-background/80 px-1 py-0.5 text-[9px] uppercase tracking-widest text-foreground/85"
+							className="absolute top-0 left-0 rounded-sm bg-background/80 px-1 py-0.5 text-4xs uppercase tracking-widest text-foreground/85"
 							style={{ visibility: "hidden" }}
 						>
 							{district.label}
@@ -219,14 +219,14 @@ export function ServiceMap3DViewport({
 					className="pointer-events-none absolute top-4 left-4 rounded-md bg-background/90 px-3 py-2"
 				>
 					<h2 className="font-display text-base font-medium">{copy.title}</h2>
-					<p className="mt-1 text-[11px] text-muted-foreground">{copy.description}</p>
+					<p className="mt-1 text-2xs text-muted-foreground">{copy.description}</p>
 				</div>
 				<div
 					ref={(element) => {
 						if (element) labels.current.set("overlay:legend", element)
 						else labels.current.delete("overlay:legend")
 					}}
-					className="pointer-events-none absolute bottom-14 left-4 flex flex-wrap gap-3 rounded-md sm:bottom-4 bg-background/95 px-3 py-2 text-[10px] text-foreground/85"
+					className="pointer-events-none absolute bottom-14 left-4 flex flex-wrap gap-3 rounded-md sm:bottom-4 bg-background/95 px-3 py-2 text-3xs text-foreground/85"
 				>
 					{(["healthy", "elevated", "degraded"] as const).map((status) => (
 						<span key={status} className="flex items-center gap-1.5 capitalize">
@@ -267,7 +267,7 @@ export function ServiceMap3DViewport({
 					</Button>
 				</fieldset>
 			</section>
-			<div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t px-4 py-2 text-[10px] text-muted-foreground">
+			<div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t px-4 py-2 text-3xs text-muted-foreground">
 				<span>Drag to orbit · scroll to zoom · right-drag to pan</span>
 				<span>
 					{selectedId

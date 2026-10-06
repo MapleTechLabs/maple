@@ -199,7 +199,7 @@ export function RailwayServiceTable({
 						<RelativeTime
 							value={row.lastSeen}
 							mono
-							className="cursor-default text-[11px] text-muted-foreground"
+							className="cursor-default text-2xs text-muted-foreground"
 						/>
 					</div>
 				</Link>

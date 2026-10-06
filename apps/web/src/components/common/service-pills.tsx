@@ -17,13 +17,13 @@ export function ServicePills({ services }: { services: ReadonlyArray<string> }) 
 		<Tooltip>
 			<TooltipTrigger render={<div />} className="flex min-w-0 flex-wrap gap-1">
 				{services.slice(0, VISIBLE_SERVICES).map((service) => (
-					<Badge key={service} variant="outline" className="max-w-full font-mono text-[10px]">
+					<Badge key={service} variant="outline" className="max-w-full font-mono text-3xs">
 						<ServiceDot serviceName={service} size="sm" />
 						<span className="truncate">{service}</span>
 					</Badge>
 				))}
 				{services.length > VISIBLE_SERVICES && (
-					<Badge variant="outline" className="text-[10px]">
+					<Badge variant="outline" className="text-3xs">
 						+{services.length - VISIBLE_SERVICES}
 					</Badge>
 				)}

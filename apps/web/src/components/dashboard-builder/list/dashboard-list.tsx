@@ -142,13 +142,13 @@ function DashboardRow({
 					<span className="truncate text-sm font-medium text-foreground">{dashboard.name}</span>
 					{/* Below sm the scope lane collapses onto this line, so the row keeps
 					    its information when the column can't fit. */}
-					<span className="text-muted-foreground truncate font-mono text-[11px] sm:hidden">
+					<span className="text-muted-foreground truncate font-mono text-2xs sm:hidden">
 						{[empty ? "no widgets" : widgetCountLabel(dashboard), reads.short]
 							.filter(Boolean)
 							.join(" · ")}
 					</span>
 					{dashboard.description && (
-						<span className="text-muted-foreground hidden truncate text-[11px] sm:block">
+						<span className="text-muted-foreground hidden truncate text-2xs sm:block">
 							{dashboard.description}
 						</span>
 					)}
@@ -160,18 +160,18 @@ function DashboardRow({
 				<span title={reads.full} className="hidden w-40 shrink-0 flex-col items-end sm:flex">
 					<span
 						className={cn(
-							"font-mono text-[11px]",
+							"font-mono text-2xs",
 							empty ? "text-severity-warn" : "text-foreground",
 						)}
 					>
 						{empty ? "no widgets" : widgetCountLabel(dashboard)}
 					</span>
-					<span className="text-muted-foreground truncate font-mono text-[10px]">
+					<span className="text-muted-foreground truncate font-mono text-3xs">
 						{empty ? "" : reads.short}
 					</span>
 				</span>
 
-				<span className="text-muted-foreground w-24 shrink-0 text-right font-mono text-[11px]">
+				<span className="text-muted-foreground w-24 shrink-0 text-right font-mono text-2xs">
 					{formatRelativeTimeOrDate(dashboard.updatedAt)}
 				</span>
 			</Link>
@@ -257,7 +257,7 @@ function DashboardRowMenu({
 					{readOnly && (
 						<>
 							<DropdownMenuSeparator />
-							<DropdownMenuLabel className="font-normal text-[10px] leading-snug">
+							<DropdownMenuLabel className="font-normal text-3xs leading-snug">
 								Dashboard store unreachable — writes are disabled
 							</DropdownMenuLabel>
 						</>
@@ -385,7 +385,7 @@ export function DashboardList({
 				<SortMenu sort={sort} onSortChange={onSortChange} />
 
 				<span className="grow" />
-				<span className="text-muted-foreground shrink-0 font-mono text-[11px]">
+				<span className="text-muted-foreground shrink-0 font-mono text-2xs">
 					{filtering || scope === "favorites"
 						? `${scoped} of ${dashboards.length}`
 						: `${dashboards.length} of ${dashboards.length}`}
@@ -393,7 +393,7 @@ export function DashboardList({
 			</div>
 
 			{filtering && !nothingAtAll && (
-				<div className="flex items-center gap-2 border-y border-border py-2 text-[11px]">
+				<div className="flex items-center gap-2 border-y border-border py-2 text-2xs">
 					<span className="font-mono text-foreground">{matched}</span>
 					<span className="text-muted-foreground">
 						of {dashboards.length} match name, description or tag
@@ -602,7 +602,7 @@ function TagFilterMenu({
 				<>
 					Tags
 					{selected.length > 0 && (
-						<Badge className="ml-1.5 h-4 px-1.5 py-0 font-mono text-[9px]">
+						<Badge className="ml-1.5 h-4 px-1.5 py-0 font-mono text-4xs">
 							{selected.length}
 						</Badge>
 					)}
@@ -626,7 +626,7 @@ function CreateRow({ readOnly, onCreate }: { readOnly: boolean; onCreate: () => 
 			</span>
 			<span className="flex min-w-0 grow flex-wrap items-baseline gap-x-2.5 gap-y-0.5">
 				<span className="text-sm font-medium text-foreground">New dashboard</span>
-				<span className="text-muted-foreground text-[11px]">
+				<span className="text-muted-foreground text-2xs">
 					Start blank, or pick a template already wired to metrics you send.
 				</span>
 			</span>

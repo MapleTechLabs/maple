@@ -85,7 +85,7 @@ export function CloudflareStatCards({
 				action={
 					<Link
 						to="/infra/cloudflare"
-						className="inline-flex shrink-0 items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
+						className="inline-flex shrink-0 items-center gap-1 text-2xs text-muted-foreground hover:text-foreground"
 					>
 						Open
 						<ArrowRightIcon size={11} />

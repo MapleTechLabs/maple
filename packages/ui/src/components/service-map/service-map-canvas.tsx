@@ -168,20 +168,20 @@ function LayoutDebugPanel({
 			<button
 				type="button"
 				onClick={() => setOpen(!open)}
-				className="px-2 py-1 text-[10px] font-mono bg-card/90 backdrop-blur-sm border border-border rounded text-muted-foreground hover:text-foreground transition-colors"
+				className="px-2 py-1 text-3xs font-mono bg-card/90 backdrop-blur-sm border border-border rounded text-muted-foreground hover:text-foreground transition-colors"
 			>
 				{open ? "Close" : "Debug"}
 			</button>
 			{open && (
 				<div className="absolute top-8 right-0 w-64 bg-card/95 backdrop-blur-sm border border-border rounded-lg p-3 space-y-3 shadow-lg">
 					<div className="flex items-center justify-between">
-						<span className="text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
+						<span className="text-3xs font-medium tracking-wide text-muted-foreground uppercase">
 							Layout Config
 						</span>
 						<button
 							type="button"
 							onClick={() => onChange({ ...DEFAULT_LAYOUT_CONFIG })}
-							className="text-[10px] text-primary hover:text-primary/80 transition-colors"
+							className="text-3xs text-primary hover:text-primary/80 transition-colors"
 						>
 							Reset
 						</button>
@@ -189,8 +189,8 @@ function LayoutDebugPanel({
 					{SLIDER_DEFS.map(({ key, label, min, max, step }) => (
 						<div key={key} className="space-y-1">
 							<div className="flex items-center justify-between">
-								<label className="text-[10px] text-muted-foreground">{label}</label>
-								<span className="text-[10px] font-mono text-foreground tabular-nums">
+								<label className="text-3xs text-muted-foreground">{label}</label>
+								<span className="text-3xs font-mono text-foreground tabular-nums">
 									{config[key]}
 								</span>
 							</div>
@@ -206,7 +206,7 @@ function LayoutDebugPanel({
 						</div>
 					))}
 					<div className="pt-1 border-t border-border">
-						<pre className="text-[9px] font-mono text-muted-foreground whitespace-pre-wrap select-all">
+						<pre className="text-4xs font-mono text-muted-foreground whitespace-pre-wrap select-all">
 							{JSON.stringify(config, null, 2)}
 						</pre>
 					</div>
@@ -985,7 +985,7 @@ const serviceSwatchColor = (service: string) =>
 /** Pointer hints, the service or platform color key, and the health dot key under the map. */
 function ServiceMapLegend({ colorMode, services }: { colorMode: ServiceMapColorMode; services: string[] }) {
 	return (
-		<div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t bg-muted/30 px-3 py-2.5 text-[11px] text-muted-foreground shrink-0">
+		<div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t bg-muted/30 px-3 py-2.5 text-2xs text-muted-foreground shrink-0">
 			{/* Pointer hints only: on touch the gestures are different, and the
 			    two lines they cost are the whole legend's height on a phone. */}
 			<span className="font-medium max-sm:hidden">Drag nodes to arrange</span>
@@ -1009,7 +1009,7 @@ function ServiceMapLegend({ colorMode, services }: { colorMode: ServiceMapColorM
 								+{services.length - 3} more
 							</PopoverTrigger>
 							<PopoverContent align="start" className="w-64 p-3" side="top">
-								<div className="grid grid-cols-2 gap-2 text-[11px]">
+								<div className="grid grid-cols-2 gap-2 text-2xs">
 									{services.map((service) => (
 										<div key={service} className="flex items-center gap-1.5 min-w-0">
 											<div

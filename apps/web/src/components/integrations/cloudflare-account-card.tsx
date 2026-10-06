@@ -75,7 +75,7 @@ function CloudflareAccountsStrip({ accounts }: { readonly accounts: ReadonlyArra
 							<span className="truncate text-sm font-medium">
 								{account.accountName ?? account.accountId}
 							</span>
-							<span className="truncate font-mono text-[11px] text-muted-foreground">
+							<span className="truncate font-mono text-2xs text-muted-foreground">
 								{account.accountId}
 							</span>
 						</ItemContent>
@@ -326,7 +326,7 @@ export function CloudflareAccountCard() {
 							>
 								Error details
 							</TooltipTrigger>
-							<TooltipContent className="max-w-xs whitespace-pre-wrap break-words font-mono text-[11px]">
+							<TooltipContent className="max-w-xs whitespace-pre-wrap break-words font-mono text-2xs">
 								{accountError.raw}
 							</TooltipContent>
 						</Tooltip>

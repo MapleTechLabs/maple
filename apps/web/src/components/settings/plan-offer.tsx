@@ -93,7 +93,7 @@ function CustomPlanPlate({ model, onManageBilling }: { model: SpendModel; onMana
 					<span className="font-mono text-3xl tabular-nums">
 						{price == null ? "Custom" : `$${price}`}
 					</span>
-					<span className="text-[11px] text-muted-foreground">
+					<span className="text-2xs text-muted-foreground">
 						{price == null
 							? "negotiated pricing"
 							: billsUsage
@@ -101,7 +101,7 @@ function CustomPlanPlate({ model, onManageBilling }: { model: SpendModel; onMana
 								: `/${interval}`}
 					</span>
 				</div>
-				<p className="mt-3 text-[11px] leading-relaxed text-muted-foreground">
+				<p className="mt-3 text-2xs leading-relaxed text-muted-foreground">
 					{billsUsage
 						? "A custom plan — your allotments and rates are your own, not the published ones."
 						: "A custom plan with hard caps — usage past your allotments is rejected, never billed."}
@@ -110,7 +110,7 @@ function CustomPlanPlate({ model, onManageBilling }: { model: SpendModel; onMana
 
 			<div className="flex-1 lg:px-6">
 				<Eyebrow>Included every cycle</Eyebrow>
-				<p className="mt-2 font-mono text-[11px] leading-relaxed text-foreground/85">
+				<p className="mt-2 font-mono text-2xs leading-relaxed text-foreground/85">
 					{included.length > 0 ? included : "Allotments are set on your contract."}
 				</p>
 			</div>
@@ -119,7 +119,7 @@ function CustomPlanPlate({ model, onManageBilling }: { model: SpendModel; onMana
 				<Button variant="outline" size="sm" onClick={onManageBilling}>
 					Manage plan
 				</Button>
-				<p className="text-center text-[11px] text-muted-foreground">Invoices and payment method</p>
+				<p className="text-center text-2xs text-muted-foreground">Invoices and payment method</p>
 			</div>
 		</div>
 	)
@@ -219,18 +219,18 @@ export function PlanOffer({
 								<span className="font-mono text-3xl tabular-nums">
 									${plan.price?.amount ?? 0}
 								</span>
-								<span className="text-[11px] text-muted-foreground">
+								<span className="text-2xs text-muted-foreground">
 									/{plan.price?.interval ?? "month"} + usage
 								</span>
 							</div>
-							<p className="mt-3 text-[11px] leading-relaxed text-muted-foreground">
+							<p className="mt-3 text-2xs leading-relaxed text-muted-foreground">
 								Everything in Maple. Pay per GB past what's included.
 							</p>
 						</div>
 
 						<div className="flex-1 lg:px-6">
 							<Eyebrow>Included every cycle</Eyebrow>
-							<p className="mt-2 font-mono text-[11px] leading-relaxed text-foreground/85">
+							<p className="mt-2 font-mono text-2xs leading-relaxed text-foreground/85">
 								{includedRun(plan)}
 								{retention && ` · ${retention.value.toLowerCase()} retention`}
 							</p>
@@ -239,7 +239,7 @@ export function PlanOffer({
 									{addOns.map((addOn) => {
 										const addOnActive = addOn.customerEligibility?.status === "active"
 										return (
-											<p key={addOn.id} className="text-[11px] text-muted-foreground">
+											<p key={addOn.id} className="text-2xs text-muted-foreground">
 												{addOnActive ? "Add-on active · " : "Add-on available · "}
 												{addOn.name}
 												{addOn.price?.amount != null &&
@@ -267,7 +267,7 @@ export function PlanOffer({
 										: "Subscribe"}
 								</Button>
 							)}
-							<p className="text-center text-[11px] text-muted-foreground">
+							<p className="text-center text-2xs text-muted-foreground">
 								{isActive ? "Invoices and payment method" : "$0 due today · cancel anytime"}
 							</p>
 						</div>
@@ -281,7 +281,7 @@ export function PlanOffer({
 			<div className="flex flex-col gap-4 border border-primary/25 bg-primary/[0.04] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
 				<div>
 					<Eyebrow className="text-primary">Enterprise</Eyebrow>
-					<p className="mt-1.5 max-w-[48ch] text-[11px] leading-relaxed text-foreground/85">
+					<p className="mt-1.5 max-w-[48ch] text-2xs leading-relaxed text-foreground/85">
 						Higher volume, custom retention, priority support.
 					</p>
 				</div>

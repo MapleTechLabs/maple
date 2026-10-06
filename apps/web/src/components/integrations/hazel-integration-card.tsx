@@ -117,7 +117,7 @@ export function HazelIntegrationCard() {
 				</div>
 
 				{status ? (
-					<div className="flex flex-col gap-1 rounded-md bg-muted/40 px-3 py-2 text-[11px] text-muted-foreground">
+					<div className="flex flex-col gap-1 rounded-md bg-muted/40 px-3 py-2 text-2xs text-muted-foreground">
 						{status.externalUserEmail ? (
 							<div>
 								<span className="text-foreground">{status.externalUserEmail}</span> authorized

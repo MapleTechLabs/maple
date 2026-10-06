@@ -149,7 +149,7 @@ function FacetSelect({
 				{/* The sentinel is a Base UI implementation detail; rendered children
 				    are what keeps it off the trigger. */}
 				<SelectValue>
-					<span className={cn("text-[11px]", set ? "text-primary/70" : "text-muted-foreground")}>
+					<span className={cn("text-2xs", set ? "text-primary/70" : "text-muted-foreground")}>
 						{label}
 					</span>{" "}
 					{value ?? "All"}

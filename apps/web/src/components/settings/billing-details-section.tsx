@@ -273,7 +273,7 @@ export function BillingDetailsSection({ canEdit }: { readonly canEdit: boolean }
 				{canEdit && (
 					<div className="border-t border-border/40 px-5 py-3">
 						<AddTaxIdRow key={profile.address?.country ?? "none"} profile={profile} />
-						<p className="mt-2 text-[11px] leading-4 text-muted-foreground">
+						<p className="mt-2 text-2xs leading-4 text-muted-foreground">
 							EU, UK and Australian numbers are checked against the official registry; the ID is
 							printed on invoices either way.
 						</p>

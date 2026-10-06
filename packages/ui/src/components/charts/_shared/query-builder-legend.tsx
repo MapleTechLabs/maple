@@ -147,7 +147,7 @@ function CompactStrip({ layout, maxHeight }: { layout: "bottom" | "right"; maxHe
 						)}
 					>
 						<span
-							className="size-2 shrink-0 rounded-[2px]"
+							className="size-2 shrink-0 rounded-xs"
 							style={{ backgroundColor: entry.color }}
 						/>
 						<span className="truncate">{entry.label}</span>
@@ -208,7 +208,7 @@ function StatsTable({
 								<td className="py-0.5 pr-3">
 									<span className="flex items-center gap-1.5">
 										<span
-											className="size-2 shrink-0 rounded-[2px]"
+											className="size-2 shrink-0 rounded-xs"
 											style={{ backgroundColor: entry.color }}
 										/>
 										<span className={cn("truncate", allZero && "text-muted-foreground")}>

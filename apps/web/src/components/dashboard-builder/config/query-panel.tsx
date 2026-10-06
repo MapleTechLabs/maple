@@ -591,7 +591,7 @@ function AddOnSections({
 		<div className="space-y-2 pt-1">
 			{query.addOns.groupBy && query.dataSource !== "metrics" && (
 				<div className="flex items-center gap-2">
-					<span className="text-[11px] text-muted-foreground w-16 shrink-0">Group By</span>
+					<span className="text-2xs text-muted-foreground w-16 shrink-0">Group By</span>
 					<GroupByMultiSelect
 						value={query.groupBy}
 						onChange={(value) => onUpdate((current) => ({ ...current, groupBy: value }))}
@@ -603,7 +603,7 @@ function AddOnSections({
 
 			{query.addOns.having && (
 				<div className="flex items-center gap-2">
-					<span className="text-[11px] text-muted-foreground w-16 shrink-0">Having</span>
+					<span className="text-2xs text-muted-foreground w-16 shrink-0">Having</span>
 					<Input
 						value={query.having}
 						onChange={(event) =>
@@ -620,7 +620,7 @@ function AddOnSections({
 
 			{query.addOns.orderBy && (
 				<div className="flex items-center gap-2">
-					<span className="text-[11px] text-muted-foreground w-16 shrink-0">Order By</span>
+					<span className="text-2xs text-muted-foreground w-16 shrink-0">Order By</span>
 					<Input
 						value={query.orderBy}
 						onChange={(event) =>
@@ -655,7 +655,7 @@ function AddOnSections({
 
 			{query.addOns.limit && (
 				<div className="flex items-center gap-2">
-					<span className="text-[11px] text-muted-foreground w-16 shrink-0">Limit</span>
+					<span className="text-2xs text-muted-foreground w-16 shrink-0">Limit</span>
 					<Input
 						value={query.limit}
 						onChange={(event) =>
@@ -674,7 +674,7 @@ function AddOnSections({
 
 			{query.addOns.legend && (
 				<div className="flex items-center gap-2">
-					<span className="text-[11px] text-muted-foreground w-16 shrink-0">Legend</span>
+					<span className="text-2xs text-muted-foreground w-16 shrink-0">Legend</span>
 					<Input
 						value={query.legend}
 						onChange={(event) =>

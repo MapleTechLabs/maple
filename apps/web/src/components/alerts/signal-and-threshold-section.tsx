@@ -458,7 +458,7 @@ function BuiltinSignalChips({
 					)
 				})}
 			</div>
-			<p className="text-[11px] leading-snug text-muted-foreground">
+			<p className="text-2xs leading-snug text-muted-foreground">
 				Built-in signals measure entry-point (root) spans only. A service that records failures on
 				child spans and returns success from its entry point — cron jobs and workers typically do —
 				stays healthy here at any threshold. Use Raw SQL for those, or rely on error notifications.

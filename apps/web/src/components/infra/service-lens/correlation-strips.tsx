@@ -67,7 +67,7 @@ export function CorrelationStrips({ series, xDomain, waiting = false, className 
 				>
 					<div className="flex w-[150px] shrink-0 flex-col gap-0.5">
 						<span className="text-[12px] font-medium text-foreground">{strip.label}</span>
-						<span className="font-mono text-[10px] text-muted-foreground">{strip.source}</span>
+						<span className="font-mono text-3xs text-muted-foreground">{strip.source}</span>
 					</div>
 					<div className="min-w-0 flex-1">
 						<InfraMetricChart

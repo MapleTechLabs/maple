@@ -323,7 +323,7 @@ function LensBody({
 		(Result.isSuccess(cpuResult) && cpuResult.waiting)
 
 	const workloadMeta = workload ? (
-		<div className="flex flex-wrap items-center gap-x-4 gap-y-1 pt-1 font-mono text-[11px] text-muted-foreground">
+		<div className="flex flex-wrap items-center gap-x-4 gap-y-1 pt-1 font-mono text-2xs text-muted-foreground">
 			<Link
 				to="/infra/kubernetes/workloads/$kind/$workloadName"
 				params={{ kind: workload.workloadKind, workloadName: workload.workloadName }}
@@ -391,7 +391,7 @@ function LensBody({
 							<h2 className="text-[13px] font-medium text-foreground">
 								Service signal over infrastructure signal
 							</h2>
-							<span className="font-mono text-[11px] text-muted-foreground">
+							<span className="font-mono text-2xs text-muted-foreground">
 								one cursor, one time axis
 							</span>
 						</div>
@@ -408,11 +408,11 @@ function LensBody({
 								<h2 className="text-[13px] font-medium text-foreground">
 									The pods behind this service
 								</h2>
-								<span className="font-mono text-[11px] text-muted-foreground">
+								<span className="font-mono text-2xs text-muted-foreground">
 									worst first, by peak saturation
 								</span>
 							</div>
-							<span className="font-mono text-[11px] tabular-nums text-muted-foreground">
+							<span className="font-mono text-2xs tabular-nums text-muted-foreground">
 								{totalPods > pods.length
 									? `Top ${pods.length} of ${totalPods.toLocaleString()}`
 									: `${totalPods.toLocaleString()} ${totalPods === 1 ? "pod" : "pods"}`}
@@ -483,7 +483,7 @@ function PodDistribution({
 						key={node}
 						to="/infra/kubernetes/nodes/$nodeName"
 						params={{ nodeName: node }}
-						className="flex items-center gap-2.5 rounded-md border px-2.5 py-1.5 font-mono text-[11px] transition-colors hover:bg-accent/50"
+						className="flex items-center gap-2.5 rounded-md border px-2.5 py-1.5 font-mono text-2xs transition-colors hover:bg-accent/50"
 					>
 						<span className="text-foreground">{node}</span>
 						<span className="text-muted-foreground">

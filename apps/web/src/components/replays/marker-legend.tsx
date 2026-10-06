@@ -14,7 +14,7 @@ export function MarkerLegend({ className }: { className?: string }) {
 	return (
 		<ul
 			className={cn(
-				"flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-muted-foreground",
+				"flex flex-wrap items-center gap-x-3 gap-y-1 text-3xs text-muted-foreground",
 				className,
 			)}
 			aria-label="Activity marker legend"

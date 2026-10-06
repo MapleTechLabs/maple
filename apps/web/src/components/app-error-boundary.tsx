@@ -107,7 +107,7 @@ function CrashScreen({ error }: { error: unknown }) {
 					<summary className="cursor-pointer text-xs text-muted-foreground select-none">
 						{name} details
 					</summary>
-					<pre className="mt-2 overflow-auto bg-muted p-3 font-mono text-[11px] leading-relaxed">
+					<pre className="mt-2 overflow-auto bg-muted p-3 font-mono text-2xs leading-relaxed">
 						{stack ?? presentation.title}
 					</pre>
 				</details>

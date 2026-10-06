@@ -46,9 +46,9 @@ export function ToolScopeRow({
 			)}
 		>
 			<div className="flex flex-wrap items-center gap-2">
-				<span className="text-[10.5px] tracking-[0.06em] text-muted-foreground/60">SCOPE</span>
+				<span className="text-2xs tracking-[0.06em] text-muted-foreground/60">SCOPE</span>
 				{chips.length === 0 ? (
-					<span className="text-[11px] text-muted-foreground/60">all tools · all models</span>
+					<span className="text-2xs text-muted-foreground/60">all tools · all models</span>
 				) : (
 					<>
 						{chips.map((chip) => (
@@ -59,9 +59,9 @@ export function ToolScopeRow({
 								title={`Remove ${chip.kind} ${chip.value}`}
 								className="inline-flex h-[22px] max-w-64 items-center gap-[5px] rounded-sm border border-primary/35 bg-primary/10 px-2 transition-colors hover:bg-primary/20"
 							>
-								<span className="text-[10.5px] text-muted-foreground">{chip.kind}</span>
-								<span className="truncate text-[11.5px] text-primary">{chip.value}</span>
-								<span aria-hidden className="text-[11px] text-muted-foreground">
+								<span className="text-2xs text-muted-foreground">{chip.kind}</span>
+								<span className="truncate text-2xs text-primary">{chip.value}</span>
+								<span aria-hidden className="text-2xs text-muted-foreground">
 									✕
 								</span>
 							</button>
@@ -69,14 +69,14 @@ export function ToolScopeRow({
 						<button
 							type="button"
 							onClick={onClearAll}
-							className="pl-0.5 text-[10.5px] text-muted-foreground underline-offset-2 hover:underline"
+							className="pl-0.5 text-2xs text-muted-foreground underline-offset-2 hover:underline"
 						>
 							Clear all
 						</button>
 					</>
 				)}
 			</div>
-			<span className="flex items-center gap-1.5 text-[11.5px] tabular-nums">
+			<span className="flex items-center gap-1.5 text-2xs tabular-nums">
 				<span className="text-foreground">{count}</span>
 				<span className="text-muted-foreground">{rest.join(" ")}</span>
 			</span>

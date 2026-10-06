@@ -212,7 +212,7 @@ function CountTooltipBody({ heading, count, color }: { heading: string; count: n
 				{heading}
 			</div>
 			<div className="flex w-full items-center gap-2">
-				<span className="size-2.5 shrink-0 rounded-[2px]" style={{ backgroundColor: color }} />
+				<span className="size-2.5 shrink-0 rounded-xs" style={{ backgroundColor: color }} />
 				<div className="flex flex-1 items-center justify-between gap-3 leading-none">
 					<span className="text-muted-foreground">Count</span>
 					<span className="font-mono font-semibold text-foreground tabular-nums">
@@ -517,7 +517,7 @@ export function QueryBuilderHistogramChart({
 
 	return (
 		<div className={cn("relative grid h-full w-full place-items-center", className)}>
-			<span className="text-[11px] text-muted-foreground">No data</span>
+			<span className="text-2xs text-muted-foreground">No data</span>
 		</div>
 	)
 }

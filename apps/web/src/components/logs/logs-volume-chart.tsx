@@ -298,7 +298,7 @@ function EmptyVolumeStrip({
 			className="flex w-full select-none pt-1 text-muted-foreground"
 			aria-label="Log volume by severity, no logs in the selected range"
 		>
-			<div className="flex w-10 shrink-0 flex-col justify-end pb-[18px] pr-1 text-right text-[10px] leading-none">
+			<div className="flex w-10 shrink-0 flex-col justify-end pb-[18px] pr-1 text-right text-3xs leading-none">
 				0
 			</div>
 			<div className="relative flex min-w-0 flex-1 flex-col">
@@ -322,11 +322,11 @@ function EmptyVolumeStrip({
 					</div>
 					<div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
 						<span className="text-xs">No log volume in this window</span>
-						<ul className="flex items-center gap-3 text-[10px] uppercase tracking-wide opacity-60">
+						<ul className="flex items-center gap-3 text-3xs uppercase tracking-wide opacity-60">
 							{legend.map((severity) => (
 								<li key={severity} className="flex items-center gap-1.5">
 									<span
-										className="size-1.5 rounded-[2px]"
+										className="size-1.5 rounded-xs"
 										style={{ backgroundColor: SEVERITY_COLORS[severity] }}
 									/>
 									{severity}
@@ -339,7 +339,7 @@ function EmptyVolumeStrip({
 					{ticks.map((tick, i) => (
 						<span
 							key={tick.label + i}
-							className="absolute top-1 whitespace-nowrap text-[10px] leading-none"
+							className="absolute top-1 whitespace-nowrap text-3xs leading-none"
 							style={{
 								left: `${tick.left}%`,
 								transform:

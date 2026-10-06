@@ -51,7 +51,7 @@ function KeyValueFallback({ input }: { input: unknown }) {
 	const obj = asRecord(input)
 	if (!obj) {
 		return (
-			<pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded bg-muted/40 p-2 font-mono text-[11px] leading-snug">
+			<pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded bg-muted/40 p-2 font-mono text-2xs leading-snug">
 				{safeStringify(input)}
 			</pre>
 		)

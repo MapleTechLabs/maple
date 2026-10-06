@@ -35,7 +35,7 @@ function Group({
 				className,
 			)}
 		>
-			<h3 className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+			<h3 className="text-3xs font-medium uppercase tracking-[0.12em] text-muted-foreground">
 				{label}
 			</h3>
 			<div className="flex flex-col gap-1">{children}</div>
@@ -85,7 +85,7 @@ function Row({
 				<span className="flex min-w-0 flex-col">
 					<span className="truncate">{label}</span>
 					{hint ? (
-						<span className="truncate text-[10px] text-muted-foreground/70">{hint}</span>
+						<span className="truncate text-3xs text-muted-foreground/70">{hint}</span>
 					) : null}
 				</span>
 			</span>
@@ -115,7 +115,7 @@ function Field({
 		<div data-slot="detail-rail-field" title={title} className="flex flex-col gap-1 py-1">
 			<span className="flex items-baseline gap-1.5 text-xs text-muted-foreground">
 				<span>{label}</span>
-				{hint ? <span className="text-[10px] text-muted-foreground/70">{hint}</span> : null}
+				{hint ? <span className="text-3xs text-muted-foreground/70">{hint}</span> : null}
 			</span>
 			<div className="min-w-0">{children}</div>
 		</div>
@@ -144,7 +144,7 @@ function MetaRow({
 }) {
 	if (!value) return null
 	const valueNode = (
-		<span className="break-all text-right font-mono text-[11px] tabular-nums text-foreground/85">
+		<span className="break-all text-right font-mono text-2xs tabular-nums text-foreground/85">
 			{value}
 		</span>
 	)
@@ -153,8 +153,8 @@ function MetaRow({
 			data-slot="detail-rail-meta-row"
 			className="group flex items-baseline justify-between gap-3 border-b border-border/60 py-1.5 last:border-0"
 		>
-			<span className="font-mono text-[11px] text-muted-foreground">{label}</span>
-			<div className="flex min-w-0 items-center gap-1.5 text-[11px]">
+			<span className="font-mono text-2xs text-muted-foreground">{label}</span>
+			<div className="flex min-w-0 items-center gap-1.5 text-2xs">
 				{tooltip ? (
 					<Tooltip>
 						<TooltipTrigger render={<span />} className="cursor-default">

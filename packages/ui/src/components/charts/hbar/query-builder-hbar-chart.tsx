@@ -108,7 +108,7 @@ export function QueryBuilderHbarChart({ data, className, unit }: QueryBuilderHba
 	if (bars.length === 0) {
 		return (
 			<div className={cn("relative h-full w-full grid place-items-center", className)}>
-				<span className="text-[11px] text-muted-foreground">No data</span>
+				<span className="text-2xs text-muted-foreground">No data</span>
 			</div>
 		)
 	}
@@ -139,7 +139,7 @@ export function QueryBuilderHbarChart({ data, className, unit }: QueryBuilderHba
 							// Label / track / value: the value column is sized by its content
 							// and right-aligned, so the numbers line up down the panel however
 							// long the category names are.
-							className="grid min-h-0 shrink-0 items-center gap-2 text-[11px] leading-none"
+							className="grid min-h-0 shrink-0 items-center gap-2 text-2xs leading-none"
 							style={{
 								gridTemplateColumns: "minmax(0, 38%) 1fr max-content",
 								height: rowH,
@@ -180,7 +180,7 @@ export function QueryBuilderHbarChart({ data, className, unit }: QueryBuilderHba
 			</div>
 			{hiddenCount > 0 && (
 				<div
-					className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end bg-gradient-to-t from-card via-card/90 to-transparent px-1 pt-4 text-[10px] leading-none text-muted-foreground"
+					className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end bg-gradient-to-t from-card via-card/90 to-transparent px-1 pt-4 text-3xs leading-none text-muted-foreground"
 					style={{ height: MORE_ROW_H + 16 }}
 					data-slot="hbar-more"
 				>

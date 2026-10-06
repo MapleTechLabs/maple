@@ -46,7 +46,7 @@ export function MetaLine({
 	return (
 		<div
 			className={cn(
-				"mt-1 flex min-w-0 items-center gap-x-2 truncate font-mono text-[11px] text-muted-foreground/80",
+				"mt-1 flex min-w-0 items-center gap-x-2 truncate font-mono text-2xs text-muted-foreground/80",
 				className,
 			)}
 			title={title}

@@ -24,7 +24,7 @@ export function InlineLog({ data }: { data: InlineLogData }) {
 					{data.body}
 				</TruncatedText>
 				{data.timestamp && (
-					<span className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground">
+					<span className="shrink-0 font-mono text-2xs tabular-nums text-muted-foreground">
 						{new Date(normalizeTimestampInput(data.timestamp)).toLocaleTimeString()}
 					</span>
 				)}
@@ -35,7 +35,7 @@ export function InlineLog({ data }: { data: InlineLogData }) {
 						search={data.timestamp ? { t: data.timestamp } : undefined}
 						target="_blank"
 						rel="noreferrer"
-						className="shrink-0 rounded-sm bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+						className="shrink-0 rounded-sm bg-muted px-1.5 py-0.5 text-2xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
 						title={data.traceId}
 					>
 						trace

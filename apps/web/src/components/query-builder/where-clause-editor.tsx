@@ -170,7 +170,7 @@ export function WhereClauseEditor({
 					onClick={() => handleApplySuggestion(index)}
 				>
 					<span className="font-mono">{suggestion.label}</span>
-					<span className="text-[10px] uppercase text-muted-foreground">{suggestion.kind}</span>
+					<span className="text-3xs uppercase text-muted-foreground">{suggestion.kind}</span>
 				</button>
 			))}
 		</div>

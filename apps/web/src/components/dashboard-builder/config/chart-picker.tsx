@@ -95,7 +95,7 @@ function PickerCard({
 			{children}
 			<div className="flex flex-col gap-0.5">
 				<div className="text-xs font-medium">{title}</div>
-				{description && <div className="text-[11px] text-dim">{description}</div>}
+				{description && <div className="text-2xs text-dim">{description}</div>}
 			</div>
 		</button>
 	)

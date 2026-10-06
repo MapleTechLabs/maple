@@ -85,17 +85,17 @@ export function RawSqlEditorPanel({
 
 					<Badge
 						variant="outline"
-						className={cn("font-mono text-[11px] text-white border-0 shrink-0 bg-primary/80")}
+						className={cn("font-mono text-2xs text-white border-0 shrink-0 bg-primary/80")}
 					>
 						sql
 					</Badge>
 
-					<span className="text-[11px] text-muted-foreground">ClickHouse</span>
+					<span className="text-2xs text-muted-foreground">ClickHouse</span>
 
 					<div className="flex-1" />
 
 					{sqlIssue !== null && !collapsed && (
-						<span className="text-[11px] text-destructive" title={sqlIssue.message}>
+						<span className="text-2xs text-destructive" title={sqlIssue.message}>
 							{sqlIssue.code === "MissingOrgFilter" ? "Missing $__orgFilter" : sqlIssue.message}
 						</span>
 					)}
@@ -142,7 +142,7 @@ export function RawSqlEditorPanel({
 										type="button"
 										title={hint.description}
 										onClick={() => insertToken(hint.token)}
-										className="px-2 py-0.5 text-[11px] rounded-sm bg-muted/40 text-muted-foreground font-mono transition-colors hover:bg-muted hover:text-foreground"
+										className="px-2 py-0.5 text-2xs rounded-sm bg-muted/40 text-muted-foreground font-mono transition-colors hover:bg-muted hover:text-foreground"
 									>
 										{hint.token}
 									</button>
@@ -153,7 +153,7 @@ export function RawSqlEditorPanel({
 										type="button"
 										title={`Dashboard variable — expands to the selected value, e.g. ServiceName IN ($${name}). "All" expands to every value.`}
 										onClick={() => insertToken(`$${name}`)}
-										className="px-2 py-0.5 text-[11px] rounded-sm bg-primary/10 text-primary font-mono transition-colors hover:bg-primary/20"
+										className="px-2 py-0.5 text-2xs rounded-sm bg-primary/10 text-primary font-mono transition-colors hover:bg-primary/20"
 									>
 										${name}
 									</button>
@@ -164,7 +164,7 @@ export function RawSqlEditorPanel({
 								<div className="flex items-center gap-2 pt-1.5 shrink-0">
 									<label
 										htmlFor={bucketInputId}
-										className="text-[11px] text-muted-foreground whitespace-nowrap"
+										className="text-2xs text-muted-foreground whitespace-nowrap"
 									>
 										Bucket
 									</label>
@@ -185,7 +185,7 @@ export function RawSqlEditorPanel({
 										}
 										className="h-7 w-20 text-xs"
 									/>
-									<span className="text-[11px] text-muted-foreground">s</span>
+									<span className="text-2xs text-muted-foreground">s</span>
 								</div>
 							)}
 						</div>
@@ -200,7 +200,7 @@ export function RawSqlEditorPanel({
 							Run Preview
 						</Button>
 					)}
-					<span className="text-[11px] text-muted-foreground ml-auto">
+					<span className="text-2xs text-muted-foreground ml-auto">
 						Targets <InlineCode>{targetLabel ?? widget?.visualization}</InlineCode>
 					</span>
 				</div>

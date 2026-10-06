@@ -300,7 +300,7 @@ function ReleasesTableWithIssues({
 		<div className="flex flex-col gap-1.5">
 			<ReleasesTable {...props} issueCounts={counts} />
 			{capped ? (
-				<span className="px-0.5 text-[11px] text-muted-foreground/70">
+				<span className="px-0.5 text-2xs text-muted-foreground/70">
 					Issue counts cover the 100 most recently active issues introduced in this window.
 				</span>
 			) : null}

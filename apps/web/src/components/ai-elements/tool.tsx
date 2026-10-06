@@ -282,7 +282,7 @@ export const ToolRow = memo(function ToolRow(props: ToolProps) {
 					{label}
 				</span>
 				{summary ? (
-					<span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground/60">
+					<span className="min-w-0 flex-1 truncate font-mono text-2xs text-muted-foreground/60">
 						{summary}
 					</span>
 				) : (
@@ -353,7 +353,7 @@ export const ToolRow = memo(function ToolRow(props: ToolProps) {
 export function RunningClock() {
 	const elapsed = formatElapsed(useElapsedSeconds())
 	if (!elapsed) return null
-	return <span className="shrink-0 tabular-nums text-[11px] text-muted-foreground/60">{elapsed}</span>
+	return <span className="shrink-0 tabular-nums text-2xs text-muted-foreground/60">{elapsed}</span>
 }
 
 /** A tool call standing on its own — same line, no shell around it. */

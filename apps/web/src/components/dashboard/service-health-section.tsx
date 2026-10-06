@@ -293,7 +293,7 @@ export function ServiceHealthList(props: ServiceHealthProps) {
 				<Eyebrow variant="label" as="h2">
 					Services
 				</Eyebrow>
-				<p className="mt-0.5 text-[11px] text-muted-foreground/70">
+				<p className="mt-0.5 text-2xs text-muted-foreground/70">
 					Status reflects active alerts and baseline anomalies.
 				</p>
 			</div>
@@ -400,7 +400,7 @@ function ServiceHealthRow({
 					<span className="truncate text-sm font-medium text-foreground">
 						{service.serviceName}
 					</span>
-					<span className="shrink-0 rounded bg-muted px-1.5 py-px text-[10px] text-muted-foreground">
+					<span className="shrink-0 rounded bg-muted px-1.5 py-px text-3xs text-muted-foreground">
 						{service.environment}
 					</span>
 					{primaryCause && (

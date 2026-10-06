@@ -261,14 +261,14 @@ function FilterSectionBase({
 				</span>
 				<span className="flex items-center gap-1.5">
 					{!isOpen && selected.length > 0 && (
-						<span className="rounded-sm bg-muted px-1.5 py-0.5 text-[10px] tabular-nums tracking-normal text-foreground">
+						<span className="rounded-sm bg-muted px-1.5 py-0.5 text-3xs tabular-nums tracking-normal text-foreground">
 							{selected.length}
 						</span>
 					)}
 					{/* Its own badge, not folded into the count above: a collapsed section hiding an
 					    exclusion is exactly the state that reads as "my data is missing". */}
 					{!isOpen && excluded.length > 0 && (
-						<span className="rounded-sm bg-destructive/10 px-1.5 py-0.5 text-[10px] tabular-nums tracking-normal text-destructive">
+						<span className="rounded-sm bg-destructive/10 px-1.5 py-0.5 text-3xs tabular-nums tracking-normal text-destructive">
 							−{excluded.length}
 						</span>
 					)}
@@ -524,7 +524,7 @@ function FilterRowAction({ onClick, label, pressed, children }: FilterRowActionP
 			aria-pressed={pressed}
 			onClick={onClick}
 			className={cn(
-				"rounded-sm px-1 py-0.5 text-[10px] uppercase tracking-[0.06em] transition-colors",
+				"rounded-sm px-1 py-0.5 text-3xs uppercase tracking-[0.06em] transition-colors",
 				pressed
 					? "bg-destructive/12 text-destructive hover:bg-destructive/20"
 					: "text-muted-foreground hover:bg-muted hover:text-foreground",

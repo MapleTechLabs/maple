@@ -149,9 +149,9 @@ function MetricTile({
 }) {
 	return (
 		<div className="space-y-0.5">
-			<span className="text-[10px] text-muted-foreground">{label}</span>
+			<span className="text-3xs text-muted-foreground">{label}</span>
 			{children}
-			{caption !== undefined && <span className="text-[10px] text-muted-foreground">{caption}</span>}
+			{caption !== undefined && <span className="text-3xs text-muted-foreground">{caption}</span>}
 		</div>
 	)
 }
@@ -235,7 +235,7 @@ function EdgeRow({
 				/>
 				<span className="text-foreground truncate">{service}</span>
 			</div>
-			<div className="flex items-center gap-2 shrink-0 text-[10px]">
+			<div className="flex items-center gap-2 shrink-0 text-3xs">
 				<span className="text-muted-foreground tabular-nums font-mono">
 					<SampledValue estimated={edge.hasSampling} value={formatRate(reqPerSec)} /> {unit}
 				</span>
@@ -312,7 +312,7 @@ function ServiceDetailPanel({
 						<Link
 							to="/services/$serviceName"
 							params={{ serviceName: serviceId }}
-							className="text-[10px] text-primary hover:text-primary/80 transition-colors"
+							className="text-3xs text-primary hover:text-primary/80 transition-colors"
 						>
 							View service
 						</Link>
@@ -326,7 +326,7 @@ function ServiceDetailPanel({
 				<div className="flex flex-col min-w-0">
 					<span className="text-sm font-semibold text-foreground truncate">{serviceId}</span>
 					{overview?.serviceNamespace ? (
-						<span className="text-[10px] text-muted-foreground truncate">
+						<span className="text-3xs text-muted-foreground truncate">
 							{overview.serviceNamespace}
 						</span>
 					) : null}
@@ -343,7 +343,7 @@ function ServiceDetailPanel({
 						<CubeIcon size={12} />
 						Infrastructure
 						{serviceWorkloads.length > 0 && (
-							<span className="ml-1 text-[9px] tabular-nums text-muted-foreground/70">
+							<span className="ml-1 text-4xs tabular-nums text-muted-foreground/70">
 								{serviceWorkloads.length}
 							</span>
 						)}
@@ -519,7 +519,7 @@ function ServiceWorkloadRow({ workload }: { workload: ServiceWorkload }) {
 					<p className="text-xs font-medium text-foreground truncate mt-0.5">
 						{workload.workloadName}
 					</p>
-					<p className="text-[10px] text-muted-foreground mt-0.5 truncate">
+					<p className="text-3xs text-muted-foreground mt-0.5 truncate">
 						{workload.namespace || "default"}
 						{workload.clusterName ? ` · ${workload.clusterName}` : ""}
 					</p>
@@ -532,7 +532,7 @@ function ServiceWorkloadRow({ workload }: { workload: ServiceWorkload }) {
 				</div>
 			</div>
 
-			<div className="grid grid-cols-2 gap-2 text-[10px]">
+			<div className="grid grid-cols-2 gap-2 text-3xs">
 				<div className="flex items-center justify-between rounded bg-muted/30 px-2 py-1">
 					<span className="text-muted-foreground">CPU</span>
 					<span className="font-mono tabular-nums text-foreground">
@@ -556,7 +556,7 @@ function ServiceWorkloadRow({ workload }: { workload: ServiceWorkload }) {
 					<Link
 						to="/infra/kubernetes/workloads/$kind/$workloadName"
 						params={{ kind: knownKind, workloadName: workload.workloadName }}
-						className="inline-flex items-center gap-1 text-[10px] text-primary hover:text-primary/80 transition-colors"
+						className="inline-flex items-center gap-1 text-3xs text-primary hover:text-primary/80 transition-colors"
 					>
 						View workload <ArrowRightIcon size={10} />
 					</Link>
@@ -573,7 +573,7 @@ function ServiceWorkloadRow({ workload }: { workload: ServiceWorkload }) {
 									namespaces: workload.namespace ? [workload.namespace] : undefined,
 								}
 					}
-					className="inline-flex items-center gap-1 text-[10px] text-primary hover:text-primary/80 transition-colors"
+					className="inline-flex items-center gap-1 text-3xs text-primary hover:text-primary/80 transition-colors"
 				>
 					View pods <ArrowRightIcon size={10} />
 				</Link>
@@ -589,12 +589,12 @@ function ServiceInfraEmptyState() {
 				<CubeIcon size={14} className="text-muted-foreground/50" />
 				<p className="text-xs font-medium text-foreground">No Kubernetes workloads found</p>
 			</div>
-			<p className="text-[11px] text-muted-foreground leading-relaxed">
+			<p className="text-2xs text-muted-foreground leading-relaxed">
 				This service has no spans tagged with <InlineCode>k8s.deployment.name</InlineCode> in the
 				selected window. Install the maple-k8s-infra Helm chart and label your namespace to enable
 				infrastructure context:
 			</p>
-			<pre className="text-[10px] bg-muted px-2 py-1.5 rounded font-mono text-foreground overflow-x-auto">
+			<pre className="text-3xs bg-muted px-2 py-1.5 rounded font-mono text-foreground overflow-x-auto">
 				kubectl label namespace &lt;ns&gt; maple.io/instrument=true
 			</pre>
 			<DocsLink page="kubernetes" />
@@ -867,7 +867,7 @@ function PlanetScaleSection({
 			<div className="flex items-center gap-1.5">
 				<PlanetScaleIcon size={12} className="shrink-0 text-muted-foreground" />
 				<Eyebrow as="h4">PlanetScale</Eyebrow>
-				<span className="ml-auto text-[10px] text-muted-foreground">
+				<span className="ml-auto text-3xs text-muted-foreground">
 					{planetscale.kind === "postgresql" ? "Postgres" : "MySQL"} · {planetscale.branchCount}{" "}
 					{pluralize(planetscale.branchCount, "branch", "branches")}
 				</span>
@@ -937,12 +937,12 @@ function PlanetScaleSection({
 								className="flex items-center justify-between gap-2 rounded-md border border-border bg-card px-2.5 py-2 text-xs"
 							>
 								<div className="flex min-w-0 items-center gap-1.5">
-									<span className="truncate font-mono text-[11px] text-foreground">
+									<span className="truncate font-mono text-2xs text-foreground">
 										{row.branch}
 									</span>
 									{info?.production ? <TagBadge>prod</TagBadge> : null}
 								</div>
-								<div className="flex shrink-0 items-center gap-3 font-mono text-[10px] tabular-nums text-muted-foreground">
+								<div className="flex shrink-0 items-center gap-3 font-mono text-3xs tabular-nums text-muted-foreground">
 									<span>{formatRate(row.connectionsAvg)} conns</span>
 									<span
 										className={cn(
@@ -976,12 +976,12 @@ function PlanetScaleSection({
 							className="flex items-center justify-between gap-2 rounded-md border border-border/60 bg-card px-2.5 py-2 text-xs opacity-70"
 						>
 							<div className="flex min-w-0 items-center gap-1.5">
-								<span className="truncate font-mono text-[11px] text-muted-foreground">
+								<span className="truncate font-mono text-2xs text-muted-foreground">
 									{branch.name}
 								</span>
 								{branch.production ? <TagBadge>prod</TagBadge> : null}
 							</div>
-							<span className="shrink-0 text-[10px] text-muted-foreground">
+							<span className="shrink-0 text-3xs text-muted-foreground">
 								{branch.ready ? "no metrics" : "not ready"}
 							</span>
 						</div>
@@ -1013,7 +1013,7 @@ function HyperdriveSection({ configs }: { configs: ReadonlyArray<HyperdriveNodeI
 			<div className="flex items-center gap-1.5">
 				<CloudflareIcon size={12} className="shrink-0 text-muted-foreground" />
 				<Eyebrow as="h4">Hyperdrive Configs</Eyebrow>
-				<span className="ml-auto text-[10px] text-muted-foreground">
+				<span className="ml-auto text-3xs text-muted-foreground">
 					{countLabel(configs.length, "config")}
 				</span>
 			</div>
@@ -1031,10 +1031,10 @@ function HyperdriveSection({ configs }: { configs: ReadonlyArray<HyperdriveNodeI
 							<TruncatedId
 								value={config.id}
 								length={8}
-								className="shrink-0 text-[10px] text-muted-foreground/60"
+								className="shrink-0 text-3xs text-muted-foreground/60"
 							/>
 						</div>
-						<div className="mt-1.5 flex items-center gap-1.5 text-[11px]">
+						<div className="mt-1.5 flex items-center gap-1.5 text-2xs">
 							<ArrowRightIcon size={10} className="shrink-0 text-muted-foreground/60" />
 							{config.matched ? (
 								<Link
@@ -1044,7 +1044,7 @@ function HyperdriveSection({ configs }: { configs: ReadonlyArray<HyperdriveNodeI
 								>
 									<PlanetScaleIcon size={11} className="shrink-0 text-muted-foreground" />
 									<span className="truncate font-mono">{config.matched.name}</span>
-									<span className="shrink-0 text-[10px] text-muted-foreground">
+									<span className="shrink-0 text-3xs text-muted-foreground">
 										{config.matched.kind === "postgresql" ? "Postgres" : "MySQL"} on
 										PlanetScale
 									</span>
@@ -1053,7 +1053,7 @@ function HyperdriveSection({ configs }: { configs: ReadonlyArray<HyperdriveNodeI
 								<span className="flex min-w-0 items-center gap-1.5 text-muted-foreground">
 									<PlanetScaleIcon size={11} className="shrink-0" />
 									<span className="truncate font-mono">{config.originDatabase}</span>
-									<span className="shrink-0 text-[10px]">
+									<span className="shrink-0 text-3xs">
 										PlanetScale (not in inventory)
 									</span>
 								</span>
@@ -1061,11 +1061,11 @@ function HyperdriveSection({ configs }: { configs: ReadonlyArray<HyperdriveNodeI
 								<span className="flex min-w-0 items-center gap-1.5 text-muted-foreground">
 									<span className="truncate font-mono">{config.originDatabase}</span>
 									{config.originHost ? (
-										<span className="truncate text-[10px] text-muted-foreground/60">
+										<span className="truncate text-3xs text-muted-foreground/60">
 											{config.originHost}
 										</span>
 									) : (
-										<span className="shrink-0 text-[10px] text-muted-foreground/60">
+										<span className="shrink-0 text-3xs text-muted-foreground/60">
 											private origin
 										</span>
 									)}
@@ -1233,7 +1233,7 @@ function DatabaseDetailPanel({
 						<div className="flex items-center justify-between gap-2">
 							<Eyebrow as="h4">Query Activity</Eyebrow>
 							{summaryWaiting && summaryResponse && (
-								<span className="text-[10px] text-muted-foreground">Refreshing</span>
+								<span className="text-3xs text-muted-foreground">Refreshing</span>
 							)}
 						</div>
 						{Result.builder(summaryResult)
@@ -1263,15 +1263,15 @@ function DatabaseDetailPanel({
 										className="rounded-md border border-border bg-card px-2.5 py-2"
 									>
 										<div className="flex items-start justify-between gap-2">
-											<p className="min-w-0 flex-1 truncate font-mono text-[11px] font-medium text-foreground">
+											<p className="min-w-0 flex-1 truncate font-mono text-2xs font-medium text-foreground">
 												{formatQueryLabel(query.queryLabel)}
 											</p>
 											<ErrorRateValue
 												rate={query.errorRate}
-												className="shrink-0 text-[10px]"
+												className="shrink-0 text-3xs"
 											/>
 										</div>
-										<div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-muted-foreground">
+										<div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-3xs text-muted-foreground">
 											<span className="font-mono tabular-nums">
 												<SampledValue
 													estimated={

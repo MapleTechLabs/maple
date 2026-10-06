@@ -35,7 +35,7 @@ export function HttpSpanLabel({
 		>
 			<span
 				className={cn(
-					"shrink-0 inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-[10px] font-bold leading-none text-white",
+					"shrink-0 inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-3xs font-bold leading-none text-white",
 					HTTP_METHOD_COLORS[httpInfo.method] || "bg-[#5A5248]",
 				)}
 			>

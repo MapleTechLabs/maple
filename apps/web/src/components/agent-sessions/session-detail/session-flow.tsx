@@ -493,14 +493,14 @@ const StepNode = memo(function StepNode({ data }: NodeProps & { data: StepData }
 						{shortTarget(node.title)}
 					</span>
 					{node.count > 1 && (
-						<span className="shrink-0 text-[11px] text-muted-foreground tabular-nums">
+						<span className="shrink-0 text-2xs text-muted-foreground tabular-nums">
 							×{node.count}
 						</span>
 					)}
 				</span>
 				<span
 					className={cn(
-						"truncate text-[11px]",
+						"truncate text-2xs",
 						node.errored ? "text-severity-error" : "text-muted-foreground",
 					)}
 				>

@@ -332,10 +332,10 @@ function CommitListRow({ sha }: { sha: string }) {
 			<div className="flex items-center gap-2.5 px-2.5 py-2 text-muted-foreground">
 				<span className="size-5 shrink-0 rounded-full bg-muted" />
 				<div className="flex min-w-0 flex-1 flex-col gap-0.5 leading-tight">
-					<span className="truncate font-mono text-[11px]">
+					<span className="truncate font-mono text-2xs">
 						{shortId(sha, "generic", { length: 18, ellipsis: true })}
 					</span>
-					<span className="text-[10px]">Deployment reference</span>
+					<span className="text-3xs">Deployment reference</span>
 				</div>
 			</div>
 		)
@@ -371,7 +371,7 @@ function CommitListRowLink({ commit }: { commit: VcsCommitDetailResponse }) {
 				>
 					{title}
 				</a>
-				<span className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+				<span className="flex items-center gap-1.5 text-3xs text-muted-foreground">
 					<span className="min-w-0 truncate">{author}</span>
 					<TruncatedId value={commit.sha} kind="sha" className="shrink-0" />
 					<RelativeTime
@@ -403,8 +403,8 @@ function CommitListRowFallback({ sha, note }: { sha: string; note: string }) {
 		<div className="flex items-center gap-2.5 px-2.5 py-2 text-muted-foreground">
 			<span className="size-5 shrink-0 rounded-full bg-muted" />
 			<div className="flex min-w-0 flex-1 flex-col gap-0.5 leading-tight">
-				<span className="truncate font-mono text-[11px]">{shortId(sha)}</span>
-				<span className="text-[10px]">{note}</span>
+				<span className="truncate font-mono text-2xs">{shortId(sha)}</span>
+				<span className="text-3xs">{note}</span>
 			</div>
 		</div>
 	)
@@ -457,7 +457,7 @@ function CopyableSha({ sha }: { sha: string }) {
 			type="button"
 			onClick={() => void copy(sha)}
 			aria-label="Copy commit SHA"
-			className="group inline-flex items-center gap-1.5 rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-foreground/80 transition-colors hover:bg-muted/70"
+			className="group inline-flex items-center gap-1.5 rounded bg-muted px-1.5 py-0.5 font-mono text-2xs text-foreground/80 transition-colors hover:bg-muted/70"
 		>
 			{shortId(sha, "sha")}
 			<CopyIndicator
@@ -496,7 +496,7 @@ export function CommitAvatar({
 			<div
 				className={cn(
 					size,
-					"flex shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-medium uppercase text-muted-foreground",
+					"flex shrink-0 items-center justify-center rounded-full bg-muted text-2xs font-medium uppercase text-muted-foreground",
 				)}
 			>
 				{name.slice(0, 2)}

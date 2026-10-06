@@ -68,11 +68,11 @@ const BODY = "min-w-0 max-w-[900px] grow pl-3"
 /** Who is speaking — a name, set as one, not a category label. */
 const SPEAKER = "shrink-0 font-semibold text-[13px] text-foreground"
 /** The clock beside a speaker's name, where a chat puts it. */
-const CLOCK = "shrink-0 font-mono text-[11px] text-muted-foreground tabular-nums"
+const CLOCK = "shrink-0 font-mono text-2xs text-muted-foreground tabular-nums"
 /** Secondary facts and controls: there for the reader who points at the row. */
 const ON_HOVER = "opacity-0 transition-opacity group-hover/row:opacity-100 group-focus-within/row:opacity-100"
 const LABEL = "shrink-0 font-medium text-xs"
-const META = "min-w-0 truncate font-mono text-[11px] text-muted-foreground"
+const META = "min-w-0 truncate font-mono text-2xs text-muted-foreground"
 /** One lane of nesting; the hairline is what makes a lane's extent visible. */
 const INDENT = "flex w-6 shrink-0 justify-center"
 /** Past this the prose column is narrower than the gutters framing it, and a
@@ -521,7 +521,7 @@ function UserBlock({
 							aria-expanded={showHistory}
 							title={`${row.earlierCount} earlier message${row.earlierCount === 1 ? "" : "s"} re-sent with this one, shown once`}
 							className={cn(
-								"shrink-0 cursor-pointer text-[11px] text-muted-foreground hover:text-foreground",
+								"shrink-0 cursor-pointer text-2xs text-muted-foreground hover:text-foreground",
 								!showHistory && ON_HOVER,
 							)}
 						>
@@ -555,7 +555,7 @@ function UserBlock({
 						{/* The history verbatim, not a diff: dropped and truncated
 						    messages make a suffix diff unreliable, so what the model was
 						    actually sent is shown whole instead of guessed at. */}
-						<p className="text-[11px] text-muted-foreground">
+						<p className="text-2xs text-muted-foreground">
 							The whole history this call re-sent, as captured.
 						</p>
 						{row.history.map((message, index) => {
@@ -711,7 +711,7 @@ function AssistantBlock({
 					{row.failed && <FailedBadge />}
 					<span className={CLOCK}>{clockOf(row.startMs, timeZone)}</span>
 					{row.span.genAi.errorType !== undefined && (
-						<span className="shrink-0 font-mono text-[11px] text-severity-error">
+						<span className="shrink-0 font-mono text-2xs text-severity-error">
 							{row.span.genAi.errorType}
 						</span>
 					)}
@@ -932,7 +932,7 @@ function ToolBlock({
 						<span className={cn(META, "shrink-0")}>{formatDuration(row.span.durationMs)}</span>
 					)}
 					{row.failed && row.span.genAi.errorType !== undefined && (
-						<span className="shrink-0 font-mono text-[11px] text-severity-error">
+						<span className="shrink-0 font-mono text-2xs text-severity-error">
 							{row.span.genAi.errorType}
 						</span>
 					)}
@@ -1002,7 +1002,7 @@ function PayloadSection({
 		<div className={cn("flex flex-col gap-2 px-3 pt-2.5 pb-3", bordered && "border-border/60 border-t")}>
 			<div className="flex flex-wrap items-center gap-2">
 				<Eyebrow variant="mono">{label}</Eyebrow>
-				<span className="font-mono text-[10px] text-muted-foreground">
+				<span className="font-mono text-3xs text-muted-foreground">
 					{[
 						meta,
 						formatBytes(payload.byteLength),
@@ -1048,7 +1048,7 @@ function PayloadSection({
 				/>
 			)}
 			{payload.truncatedByEmitter && (
-				<p className="text-[11px] text-muted-foreground italic">
+				<p className="text-2xs text-muted-foreground italic">
 					Cut off here by the instrumentation, not by Maple — the tail was never recorded.
 				</p>
 			)}

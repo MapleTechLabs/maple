@@ -414,7 +414,7 @@ function HealthBar({ segments }: { segments: ReadonlyArray<HealthSegment> }) {
 					className: SEGMENT_CLASS[segment.key],
 				}))}
 			/>
-			<span className="flex gap-3 text-[11px] text-muted-foreground tabular-nums">
+			<span className="flex gap-3 text-2xs text-muted-foreground tabular-nums">
 				{drawn.map((segment) => (
 					<span key={segment.key}>
 						{segment.count.toLocaleString()} {SEGMENT_LABEL[segment.key]}

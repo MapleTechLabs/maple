@@ -118,7 +118,7 @@ export function RulesOverviewTable({
 							<Tooltip>
 								<TooltipTrigger
 									render={
-										<span className="inline-flex cursor-default items-center gap-1 text-severity-warn text-[11px]" />
+										<span className="inline-flex cursor-default items-center gap-1 text-severity-warn text-2xs" />
 									}
 									onClick={(e) => e.stopPropagation()}
 								>

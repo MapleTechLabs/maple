@@ -92,14 +92,14 @@ function TemplateRow({
 				>
 					{template.name}
 				</span>
-				<span className="text-muted-foreground w-18 shrink-0 text-right font-mono text-[11px]">
+				<span className="text-muted-foreground w-18 shrink-0 text-right font-mono text-2xs">
 					{widgetCountLabel(template)}
 				</span>
 				<span
 					// The lane is fixed so statuses form a column; long metric
 					// prefixes truncate and the tooltip recovers the full one.
 					title={status ?? undefined}
-					className="text-muted-foreground/80 w-31.5 shrink-0 truncate text-right font-mono text-[11px]"
+					className="text-muted-foreground/80 w-31.5 shrink-0 truncate text-right font-mono text-2xs"
 				>
 					{status}
 				</span>
@@ -180,7 +180,7 @@ export function TemplateList({
 			</div>
 
 			{searching && !loading && (
-				<div className="flex shrink-0 items-center gap-2 border-b border-border px-5 py-2 text-[11px]">
+				<div className="flex shrink-0 items-center gap-2 border-b border-border px-5 py-2 text-2xs">
 					<span className="font-mono text-foreground">{matched}</span>
 					<span className="text-muted-foreground">of {total} match name, description or tag</span>
 				</div>
@@ -276,7 +276,7 @@ export function TemplateList({
 								/>
 								{gatedByCategory.map(({ category, templates: group }) => (
 									<div key={category}>
-										<div className="text-muted-foreground/75 pt-3.5 pr-5 pb-1 pl-12.75 text-[11px]">
+										<div className="text-muted-foreground/75 pt-3.5 pr-5 pb-1 pl-12.75 text-2xs">
 											{CATEGORY_LABELS[category] ?? category}
 										</div>
 										{group.map((template) => (
@@ -306,7 +306,7 @@ export function TemplateList({
 				</span>
 				<span className="flex min-w-0 grow items-baseline gap-2.25">
 					<span className="text-sm text-foreground">Blank dashboard</span>
-					<span className="text-muted-foreground text-[11px]">start from nothing</span>
+					<span className="text-muted-foreground text-2xs">start from nothing</span>
 				</span>
 				<ArrowRightIcon size={13} className="text-muted-foreground shrink-0" />
 			</button>

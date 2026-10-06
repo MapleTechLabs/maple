@@ -71,7 +71,7 @@ export function EvidenceChips({ item }: { item: ActionEvidenceItem }) {
 					title={traceId}
 					className="rounded"
 				>
-					<InlineCode className="px-1.5 py-0.5 text-[11px] text-primary transition-colors hover:bg-muted/70">
+					<InlineCode className="px-1.5 py-0.5 text-2xs text-primary transition-colors hover:bg-muted/70">
 						{shortId(traceId, "generic", { ellipsis: true })}
 					</InlineCode>
 				</Link>
@@ -79,7 +79,7 @@ export function EvidenceChips({ item }: { item: ActionEvidenceItem }) {
 			{item.logPatterns.map((pattern) => (
 				<InlineCode
 					key={pattern}
-					className="bg-muted/60 px-1.5 py-0.5 text-[11px] text-muted-foreground"
+					className="bg-muted/60 px-1.5 py-0.5 text-2xs text-muted-foreground"
 				>
 					{pattern}
 				</InlineCode>
@@ -142,7 +142,7 @@ export function ActionDetailSheet({
 								 * chip, not a disabled button: a button implies it will work
 								 * once something is enabled, and there is nothing to enable.
 								 */}
-								<span className="rounded border border-dashed px-2 py-1 text-[10px] tracking-[0.06em] text-muted-foreground/70">
+								<span className="rounded border border-dashed px-2 py-1 text-3xs tracking-[0.06em] text-muted-foreground/70">
 									{action.promise}
 								</span>
 							</div>

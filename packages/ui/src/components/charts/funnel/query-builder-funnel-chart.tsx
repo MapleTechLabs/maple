@@ -228,7 +228,7 @@ function FunnelBarsChart({ data, className, unit, showStepPercent }: QueryBuilde
 	if (stages.length === 0) {
 		return (
 			<div className={cn("relative h-full w-full grid place-items-center", className)}>
-				<span className="text-[11px] text-muted-foreground">No data</span>
+				<span className="text-2xs text-muted-foreground">No data</span>
 			</div>
 		)
 	}
@@ -249,7 +249,7 @@ function FunnelBarsChart({ data, className, unit, showStepPercent }: QueryBuilde
 		>
 			{isGrouped && (
 				<div
-					className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-0.5 overflow-hidden text-[10px] leading-none text-muted-foreground"
+					className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-0.5 overflow-hidden text-3xs leading-none text-muted-foreground"
 					style={{ maxHeight: LEGEND_H }}
 					data-slot="funnel-legend"
 				>
@@ -266,7 +266,7 @@ function FunnelBarsChart({ data, className, unit, showStepPercent }: QueryBuilde
 							title={entry.name}
 						>
 							<span
-								className="size-2 shrink-0 rounded-[2px]"
+								className="size-2 shrink-0 rounded-xs"
 								style={{ backgroundColor: entry.color }}
 							/>
 							<span className="truncate">{entry.name}</span>
@@ -287,7 +287,7 @@ function FunnelBarsChart({ data, className, unit, showStepPercent }: QueryBuilde
 						onPointerEnter={() => setHover(i)}
 					>
 						{/* Label row */}
-						<div className="flex items-baseline justify-between gap-2 text-[11px] leading-none">
+						<div className="flex items-baseline justify-between gap-2 text-2xs leading-none">
 							<span
 								className={cn(
 									"truncate",
@@ -303,7 +303,7 @@ function FunnelBarsChart({ data, className, unit, showStepPercent }: QueryBuilde
 									// conversion from its own first stage.
 									<>
 										<span
-											className="mr-1 inline-block size-2 rounded-[2px] align-middle"
+											className="mr-1 inline-block size-2 rounded-xs align-middle"
 											style={{ backgroundColor: hoveredGroup.color }}
 										/>
 										<span className="text-foreground/90">
@@ -343,13 +343,13 @@ function FunnelBarsChart({ data, className, unit, showStepPercent }: QueryBuilde
 								{stage.groups.map((group) => (
 									<div
 										key={group.name}
-										className="relative h-1.5 w-full overflow-hidden rounded-[2px] bg-foreground/5"
+										className="relative h-1.5 w-full overflow-hidden rounded-xs bg-foreground/5"
 										onPointerEnter={() => setHoverGroup(group.name)}
 										onPointerLeave={() => setHoverGroup(null)}
 										title={`${group.name} · ${fmtValue(group.value, unit)}`}
 									>
 										<div
-											className="absolute inset-y-0 left-0 rounded-[2px]"
+											className="absolute inset-y-0 left-0 rounded-xs"
 											style={{
 												width: `${group.widthPct * 100}%`,
 												backgroundColor: group.color,
@@ -380,7 +380,7 @@ function FunnelBarsChart({ data, className, unit, showStepPercent }: QueryBuilde
 				)
 			})}
 			{hiddenCount > 0 && (
-				<div className="shrink-0 text-[10px] leading-none text-muted-foreground">
+				<div className="shrink-0 text-3xs leading-none text-muted-foreground">
 					+{hiddenCount} more
 				</div>
 			)}

@@ -80,7 +80,7 @@ function SignalActivity({
 			) : null}
 			{commentCount > 0 ? (
 				<span
-					className="flex items-center gap-1 text-[11px] tabular-nums text-muted-foreground"
+					className="flex items-center gap-1 text-2xs tabular-nums text-muted-foreground"
 					title={`${countLabel(commentCount, "comment")} on the timeline`}
 				>
 					<ChatBubbleIcon size={11} />
@@ -90,7 +90,7 @@ function SignalActivity({
 			{prCount > 0 ? (
 				<span
 					className={cn(
-						"flex items-center gap-1 text-[11px] tabular-nums",
+						"flex items-center gap-1 text-2xs tabular-nums",
 						mergedPullRequestCount > 0 ? "text-foreground/70" : "text-muted-foreground",
 					)}
 					title={
@@ -167,7 +167,7 @@ export function ErrorSignalHeader({
 		<div
 			className={cn(
 				ROW_SHELL,
-				"h-7 border-b border-border/60 bg-muted/30 text-[10px] font-medium tracking-wide text-muted-foreground uppercase",
+				"h-7 border-b border-border/60 bg-muted/30 text-3xs font-medium tracking-wide text-muted-foreground uppercase",
 			)}
 		>
 			<span className={cn(LANE.select, "flex items-center justify-center")}>

@@ -430,7 +430,7 @@ function MessageTemplate({
 					Message template
 				</span>
 				{hasTemplate && !open && (
-					<span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] text-primary">
+					<span className="rounded-full bg-primary/10 px-2 py-0.5 text-3xs text-primary">
 						Customized
 					</span>
 				)}
@@ -474,7 +474,7 @@ function MessageTemplate({
 									type="button"
 									title={variable.description}
 									onClick={() => appendToBody(`{{ ${variable.key} }}`)}
-									className="rounded border border-border/60 bg-muted/40 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground hover:border-border hover:text-foreground"
+									className="rounded border border-border/60 bg-muted/40 px-1.5 py-0.5 font-mono text-3xs text-muted-foreground hover:border-border hover:text-foreground"
 								>
 									{variable.key}
 								</button>

@@ -125,7 +125,7 @@ export function StepRegion() {
 								}
 								footer={
 									<span
-										className="inline-flex items-center gap-1.5 rounded-full border border-border px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
+										className="inline-flex items-center gap-1.5 rounded-full border border-border px-2 py-0.5 text-2xs font-medium text-muted-foreground"
 										style={{
 											color: active ? card.accent : undefined,
 											borderColor: active ? `${card.accent}66` : undefined,

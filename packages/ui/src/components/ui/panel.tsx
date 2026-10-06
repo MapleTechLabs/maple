@@ -57,7 +57,7 @@ export function PanelHeader({
 export function PanelTitle({ className, ...props }: React.ComponentProps<"h3">): React.ReactElement {
 	return (
 		<h3
-			className={cn("truncate text-[11px] font-medium text-muted-foreground", className)}
+			className={cn("truncate text-2xs font-medium text-muted-foreground", className)}
 			data-slot="panel-title"
 			{...props}
 		/>

@@ -148,7 +148,7 @@ function TimeRuler({ totalMs }: { totalMs: number }) {
 					<span
 						key={i}
 						className={cn(
-							"absolute top-0 -translate-x-1/2 px-1 font-mono text-[10px] tabular-nums text-muted-foreground",
+							"absolute top-0 -translate-x-1/2 px-1 font-mono text-3xs tabular-nums text-muted-foreground",
 							i === 0 && "translate-x-0",
 							i === ticks.length - 1 && "-translate-x-full",
 							// On phones keep only start / middle / end so labels don't overlap
@@ -403,7 +403,7 @@ function TraceRow({ summary, seek }: { summary: SessionTraceSummary; seek: SeekC
 								/>
 								<ExternalLinkIcon className="size-3 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/trace:opacity-100" />
 							</span>
-							<span className="block truncate font-mono text-[10px] leading-tight text-muted-foreground">
+							<span className="block truncate font-mono text-3xs leading-tight text-muted-foreground">
 								{summary.rootServiceName}
 							</span>
 						</span>
@@ -453,7 +453,7 @@ function TraceBar({
 	return (
 		<span
 			className={cn(
-				"absolute top-1/2 flex h-5 -translate-y-1/2 items-center overflow-hidden rounded px-1.5 text-[10px] font-medium text-white ring-1 ring-inset transition-[filter] hover:brightness-110",
+				"absolute top-1/2 flex h-5 -translate-y-1/2 items-center overflow-hidden rounded px-1.5 text-3xs font-medium text-white ring-1 ring-inset transition-[filter] hover:brightness-110",
 				isError ? "bg-severity-error ring-severity-error/40" : "bg-primary ring-primary/40",
 				outOfRange && "opacity-60 outline-1 outline-dashed outline-white/70 -outline-offset-1",
 			)}
@@ -499,7 +499,7 @@ function TraceSpanLane({
 			</div>
 		))
 		.onError(() => (
-			<div className="bg-muted/10 px-3 py-2 text-[11px] text-destructive">
+			<div className="bg-muted/10 px-3 py-2 text-2xs text-destructive">
 				Couldn’t load spans for this trace.
 			</div>
 		))
@@ -507,7 +507,7 @@ function TraceSpanLane({
 			const spans: ReadonlyArray<SpanRow> = res.spans
 			if (spans.length === 0) {
 				return (
-					<div className="bg-muted/10 px-3 py-2 text-[11px] text-muted-foreground">
+					<div className="bg-muted/10 px-3 py-2 text-2xs text-muted-foreground">
 						No spans found for this trace.
 					</div>
 				)
@@ -553,8 +553,8 @@ function SpanRowItem({ span, seek }: { span: SpanRow; seek: SeekContext }) {
 					spanName={span.spanName}
 					spanAttributes={span.spanAttributes}
 					spanKind={span.spanKind}
-					className="text-[10px]"
-					textClassName="text-[10px] text-muted-foreground"
+					className="text-3xs"
+					textClassName="text-3xs text-muted-foreground"
 				/>
 			</div>
 			<button

@@ -566,7 +566,7 @@ function PlanetScaleDatabaseData({
 				<SectionHeading
 					title="Activity"
 					actions={
-						<span className="font-mono text-[11px] text-muted-foreground">{events.length}</span>
+						<span className="font-mono text-2xs text-muted-foreground">{events.length}</span>
 					}
 				/>
 				{Result.isInitial(eventsResult) ? (
@@ -617,7 +617,7 @@ function PlanetScaleDatabaseData({
 							surface="insights"
 						/>
 					</div>
-					<span className="text-[11px] text-muted-foreground">PlanetScale Query Insights</span>
+					<span className="text-2xs text-muted-foreground">PlanetScale Query Insights</span>
 				</div>
 				<PlanetScaleTopQueries
 					database={database}

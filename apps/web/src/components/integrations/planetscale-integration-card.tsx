@@ -650,7 +650,7 @@ function PlanetScaleWebhookConfig() {
 					{config.secret}
 				</KeyValue>
 			</KeyValueList>
-			<p className="text-[11px] text-muted-foreground">
+			<p className="text-2xs text-muted-foreground">
 				PlanetScale signs each delivery with this secret (
 				<InlineCode>X-PlanetScale-Signature</InlineCode>); Maple rejects anything that doesn&apos;t
 				verify.

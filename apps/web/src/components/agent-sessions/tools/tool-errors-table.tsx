@@ -214,7 +214,7 @@ export function ToolErrorsTable({
 					{loading ? (
 						<Skeleton className="h-2.5 w-[150px] self-center" />
 					) : (
-						<span className="text-[11.5px] leading-3.5 tabular-nums text-muted-foreground/70">
+						<span className="text-2xs leading-3.5 tabular-nums text-muted-foreground/70">
 							{formatToolCount(failures)} failed call{failures === 1 ? "" : "s"}
 							{rows.length > 0
 								? ` · ${formatToolCount(rows.length)} error${rows.length === 1 ? "" : "s"}`
@@ -250,7 +250,7 @@ export function ToolErrorsTable({
 			) : (
 				<Table>
 					<TableHead>
-						<div className="flex w-0 min-w-0 flex-1 items-baseline gap-2.5 font-mono text-[10.5px] leading-3.5">
+						<div className="flex w-0 min-w-0 flex-1 items-baseline gap-2.5 font-mono text-2xs leading-3.5">
 							<Eyebrow variant="mono">Error</Eyebrow>
 							{headHint === "" ? null : (
 								<span className="truncate text-muted-foreground/60" title={headHint}>
@@ -320,7 +320,7 @@ export function ToolErrorsTable({
 											{prepared.errorType === undefined && row.errorType !== "" ? (
 												<span
 													className={cn(
-														"flex h-[18px] shrink-0 items-center rounded-sm border border-border px-[5px] text-[11px] leading-3.5",
+														"flex h-[18px] shrink-0 items-center rounded-sm border border-border px-[5px] text-2xs leading-3.5",
 														TONE_TEXT.crit,
 													)}
 												>
@@ -328,7 +328,7 @@ export function ToolErrorsTable({
 												</span>
 											) : null}
 											{row.variants > 1 ? (
-												<span className="shrink-0 pl-1.5 text-[11px] leading-3.5 text-muted-foreground/70">
+												<span className="shrink-0 pl-1.5 text-2xs leading-3.5 text-muted-foreground/70">
 													{row.variants} variants
 												</span>
 											) : null}
@@ -351,7 +351,7 @@ export function ToolErrorsTable({
 										<span className="hidden w-[76px] shrink-0 text-right font-mono text-xs tabular-nums text-muted-foreground @min-[640px]/panel:block">
 											{formatToolCount(row.sessions)}
 										</span>
-										<span className="hidden w-[96px] shrink-0 text-right font-mono text-[11.5px] tabular-nums text-muted-foreground/70 @min-[800px]/panel:block">
+										<span className="hidden w-[96px] shrink-0 text-right font-mono text-2xs tabular-nums text-muted-foreground/70 @min-[800px]/panel:block">
 											{formatRelativeTimeOrDate(
 												row.lastSeen,
 												undefined,
@@ -397,11 +397,11 @@ export function ToolErrorsTable({
 					</TableBody>
 
 					{masks.length > 0 && !loading ? (
-						<div className="flex flex-wrap items-center gap-2 border-t border-border px-2.5 pt-3 font-mono text-[11px] leading-3.5 text-muted-foreground/70">
+						<div className="flex flex-wrap items-center gap-2 border-t border-border px-2.5 pt-3 font-mono text-2xs leading-3.5 text-muted-foreground/70">
 							<span>Calls with the same message are grouped; changing values are masked:</span>
 							{masks.map((label) => (
 								<span key={label} className="flex items-center gap-1.5">
-									<MaskChip label={label} raw="" className="text-[10.5px] leading-3.5" />
+									<MaskChip label={label} raw="" className="text-2xs leading-3.5" />
 									<span>{MASK_MEANINGS.get(label)}</span>
 								</span>
 							))}

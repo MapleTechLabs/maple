@@ -248,7 +248,7 @@ export function AnomalyTimeseriesChart({
 					/>
 				)}
 			/>
-			<div className="flex items-center gap-4 text-[11px] text-muted-foreground">
+			<div className="flex items-center gap-4 text-2xs text-muted-foreground">
 				<span className="flex items-center gap-1.5">
 					<span className="h-0.5 w-4 rounded-full" style={{ backgroundColor: stroke }} />
 					Observed

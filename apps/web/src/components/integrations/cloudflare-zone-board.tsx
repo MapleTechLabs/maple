@@ -147,7 +147,7 @@ function ErrorLine({ info, raw }: { info: CloudflareErrorInfo; raw: string }) {
 				>
 					Details
 				</TooltipTrigger>
-				<TooltipContent className="max-w-xs whitespace-pre-wrap break-words font-mono text-[11px]">
+				<TooltipContent className="max-w-xs whitespace-pre-wrap break-words font-mono text-2xs">
 					{raw}
 				</TooltipContent>
 			</Tooltip>
@@ -295,11 +295,11 @@ function ResourceRow({
 					{name}
 				</TruncatedText>
 				{/* In a narrow card the status column is hidden, so surface the detail under the name. */}
-				<div className={cn("mt-0.5 text-[11px] @lg:hidden", status.detailClass)}>{status.detail}</div>
+				<div className={cn("mt-0.5 text-2xs @lg:hidden", status.detailClass)}>{status.detail}</div>
 			</div>
 			<div
 				className={cn(
-					"hidden w-[190px] min-w-0 shrink-0 self-center text-[11px] @lg:block",
+					"hidden w-[190px] min-w-0 shrink-0 self-center text-2xs @lg:block",
 					status.detailClass,
 				)}
 			>
@@ -592,7 +592,7 @@ export function CloudflareWorkersCard({
 			</PanelHeader>
 
 			{aggregate.kind === "issue" || aggregate.kind === "no-data" ? (
-				<div className={cn("border-b border-border/40 px-4 py-2 text-[11px]", aggregate.detailClass)}>
+				<div className={cn("border-b border-border/40 px-4 py-2 text-2xs", aggregate.detailClass)}>
 					{aggregate.detail}
 				</div>
 			) : null}
@@ -600,7 +600,7 @@ export function CloudflareWorkersCard({
 			{scripts.length === 0 ? (
 				<div className="flex items-center gap-2.5 px-4 py-3">
 					<StatusDot tone={aggregate.tone} />
-					<span className={cn("text-[11px]", aggregate.detailClass)}>{aggregate.detail}</span>
+					<span className={cn("text-2xs", aggregate.detailClass)}>{aggregate.detail}</span>
 				</div>
 			) : (
 				<div className="flex flex-col px-4 pb-2 pt-1">
@@ -624,7 +624,7 @@ export function CloudflareWorkersCard({
 						<button
 							type="button"
 							onClick={() => setExpanded((current) => !current)}
-							className="pb-1 pt-2.5 text-left text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+							className="pb-1 pt-2.5 text-left text-2xs text-muted-foreground transition-colors hover:text-foreground"
 						>
 							{expanded
 								? "Show fewer"

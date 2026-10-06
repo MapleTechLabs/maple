@@ -85,7 +85,7 @@ export function BillingControlsCard({
 											? "Paid overage uncapped"
 											: `${formatFeatureUsage(featureId, limit)} paid overage`}
 									</p>
-									<p className="text-[11px] text-muted-foreground">
+									<p className="text-2xs text-muted-foreground">
 										{stopAt === null
 											? "No enforced stop this cycle"
 											: `Stops at ${formatFeatureUsage(featureId, stopAt)} total usage`}

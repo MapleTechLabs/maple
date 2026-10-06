@@ -54,10 +54,10 @@ export function CloudflareEdgeShareBand({ cacheBuckets, className }: CloudflareE
 					<span className="font-mono text-[22px] font-semibold tabular-nums leading-none text-foreground">
 						{formatPercent(edgeShare)}
 					</span>
-					<span className="text-[11px] font-medium text-muted-foreground">served at the edge</span>
+					<span className="text-2xs font-medium text-muted-foreground">served at the edge</span>
 				</div>
 				<div className="flex items-baseline gap-2">
-					<span className="text-[11px] font-medium text-muted-foreground">from origin</span>
+					<span className="text-2xs font-medium text-muted-foreground">from origin</span>
 					<span className="font-mono text-[13px] font-medium tabular-nums text-foreground/80">
 						{formatPercent(originShare)}
 					</span>
@@ -96,11 +96,11 @@ export function CloudflareEdgeShareBand({ cacheBuckets, className }: CloudflareE
 					<span key={seg.status} className="inline-flex items-baseline gap-1.5">
 						<span
 							aria-hidden
-							className="size-2 translate-y-[-1px] rounded-[2px]"
+							className="size-2 translate-y-[-1px] rounded-xs"
 							style={{ background: seg.color }}
 						/>
-						<span className="text-[11px] text-muted-foreground">{seg.label}</span>
-						<span className="font-mono text-[11px] tabular-nums text-foreground/75">
+						<span className="text-2xs text-muted-foreground">{seg.label}</span>
+						<span className="font-mono text-2xs tabular-nums text-foreground/75">
 							{formatNumber(seg.requests)}
 						</span>
 					</span>
@@ -108,11 +108,11 @@ export function CloudflareEdgeShareBand({ cacheBuckets, className }: CloudflareE
 				<span className="inline-flex items-baseline gap-1.5">
 					<span
 						aria-hidden
-						className="size-2 translate-y-[-1px] rounded-[2px]"
+						className="size-2 translate-y-[-1px] rounded-xs"
 						style={{ background: ORIGIN_COLOR }}
 					/>
-					<span className="text-[11px] text-muted-foreground">Origin</span>
-					<span className="font-mono text-[11px] tabular-nums text-foreground/75">
+					<span className="text-2xs text-muted-foreground">Origin</span>
+					<span className="font-mono text-2xs tabular-nums text-foreground/75">
 						{formatNumber(originRequests)}
 					</span>
 				</span>

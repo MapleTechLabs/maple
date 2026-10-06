@@ -127,7 +127,7 @@ export function HostTable({ hosts, waiting }: HostTableProps) {
 						<RelativeTime
 							value={host.lastSeen}
 							mono
-							className="cursor-default text-[11px] text-muted-foreground"
+							className="cursor-default text-2xs text-muted-foreground"
 						/>
 					</div>
 				</Link>

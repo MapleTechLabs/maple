@@ -147,7 +147,7 @@ export function SpanExpansion({
 
 function TabCount({ count }: { count: number }) {
 	if (count === 0) return null
-	return <span className="font-mono text-[10px] text-muted-foreground tabular-nums">{count}</span>
+	return <span className="font-mono text-3xs text-muted-foreground tabular-nums">{count}</span>
 }
 
 function CopySpanJsonButton({ span }: { span: AiSessionSpan }) {
@@ -219,12 +219,12 @@ function MetaStrip({ span }: { span: AiSessionSpan }) {
 			{pairs.map(([label, value]) =>
 				value === undefined ? null : (
 					<span key={label} className="flex items-baseline gap-1.5">
-						<span className="text-[11px] text-muted-foreground">{label}</span>
+						<span className="text-2xs text-muted-foreground">{label}</span>
 						<span className="font-mono text-foreground text-xs">{value}</span>
 					</span>
 				),
 			)}
-			<span className="ml-auto flex items-baseline gap-1.5 font-mono text-[11px] text-muted-foreground/70">
+			<span className="ml-auto flex items-baseline gap-1.5 font-mono text-2xs text-muted-foreground/70">
 				<CopyableValue value={span.spanId} label="Span ID">
 					span {span.spanId}
 				</CopyableValue>
@@ -347,7 +347,7 @@ function MessageBlock({ message, span }: { message: SpanMessage; span: AiSession
 				{/* Output messages are what this call produced, so the call's own
 				    response facts belong on them and on nothing else. */}
 				{message.origin === "output" && (
-					<span className="min-w-0 truncate font-mono text-[11px] text-muted-foreground/80">
+					<span className="min-w-0 truncate font-mono text-2xs text-muted-foreground/80">
 						{callMetaLine(span)}
 					</span>
 				)}
@@ -482,7 +482,7 @@ function ToolCallCard({
 				)}
 				{call.id !== undefined && (
 					<span
-						className="ml-auto max-w-40 shrink-0 truncate font-mono text-[11px] text-muted-foreground/80"
+						className="ml-auto max-w-40 shrink-0 truncate font-mono text-2xs text-muted-foreground/80"
 						title={call.id}
 					>
 						{call.id}
@@ -530,7 +530,7 @@ function PayloadCard({
 					<span className="min-w-0 truncate font-mono text-foreground text-xs">{name}</span>
 				)}
 				{meta !== undefined && (
-					<span className="ml-auto min-w-0 truncate font-mono text-[11px] text-muted-foreground/80">
+					<span className="ml-auto min-w-0 truncate font-mono text-2xs text-muted-foreground/80">
 						{meta}
 					</span>
 				)}

@@ -68,13 +68,13 @@ export function MetricPreviewCard({ entry, points, loading, onOpen }: MetricPrev
 						className="h-full w-full"
 					/>
 				) : (
-					<div className="flex h-full items-center text-[10px] text-muted-foreground">
+					<div className="flex h-full items-center text-3xs text-muted-foreground">
 						{loading ? "Loading…" : "Not enough datapoints for a preview"}
 					</div>
 				)}
 			</div>
 
-			<div className="flex w-full items-center justify-between gap-2 text-[10px] text-muted-foreground">
+			<div className="flex w-full items-center justify-between gap-2 text-3xs text-muted-foreground">
 				<span className="truncate">
 					{entry.serviceNames.length === 1
 						? entry.serviceNames[0]
@@ -82,7 +82,7 @@ export function MetricPreviewCard({ entry, points, loading, onOpen }: MetricPrev
 				</span>
 				<span className="flex shrink-0 items-center gap-1.5">
 					{entry.metricUnit && (
-						<Badge variant="outline" size="xs" mono className="text-[9px]">
+						<Badge variant="outline" size="xs" mono className="text-4xs">
 							{entry.metricUnit}
 						</Badge>
 					)}

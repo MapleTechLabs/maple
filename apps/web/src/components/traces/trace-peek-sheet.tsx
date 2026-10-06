@@ -203,7 +203,7 @@ export function TracePeekSheet({
 									<ArrowDownIcon size={14} />
 								</Button>
 								{position ? (
-									<span className="ml-1 font-mono text-[11px] tabular-nums text-muted-foreground">
+									<span className="ml-1 font-mono text-2xs tabular-nums text-muted-foreground">
 										{position.index + 1} of {position.count}
 									</span>
 								) : null}

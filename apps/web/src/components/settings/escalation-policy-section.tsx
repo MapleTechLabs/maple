@@ -188,7 +188,7 @@ export function EscalationPolicySection({ isAdmin }: { isAdmin: boolean }) {
 										<div className="flex items-center justify-between gap-3">
 											<SeverityBadge severity={severity} />
 											<div className="flex items-center gap-2">
-												<span className="text-muted-foreground text-[11px]">
+												<span className="text-muted-foreground text-2xs">
 													Min. AI confidence
 												</span>
 												<Select

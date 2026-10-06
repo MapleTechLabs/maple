@@ -114,11 +114,11 @@ export function ReleaseComparison({ impact }: { impact: ReleaseServiceImpact }) 
 			title="This version vs. the previous one"
 			action={
 				baseline === undefined ? (
-					<span className="text-[11px] text-muted-foreground/70">no previous version</span>
+					<span className="text-2xs text-muted-foreground/70">no previous version</span>
 				) : (
 					<CommitShaHoverCard
 						sha={baseline.commitSha}
-						className="font-mono text-[11px] text-muted-foreground"
+						className="font-mono text-2xs text-muted-foreground"
 					>
 						replaced {shortReleaseLabel(baseline.commitSha)}
 					</CommitShaHoverCard>
@@ -169,7 +169,7 @@ export function ReleaseComparison({ impact }: { impact: ReleaseServiceImpact }) 
 				</Table>
 			)}
 			{baseline !== undefined && !comparable ? (
-				<div className="border-t px-4 py-2 text-[11px] text-muted-foreground/70">
+				<div className="border-t px-4 py-2 text-2xs text-muted-foreground/70">
 					Changes are withheld below {MIN_COMPARE_SPANS} requests on either side.
 				</div>
 			) : null}
@@ -200,7 +200,7 @@ export function ReleaseVersionsRail({
 		<SectionCard
 			title="Versions in window"
 			action={
-				<span className="text-[11px] text-muted-foreground/70">
+				<span className="text-2xs text-muted-foreground/70">
 					{countLabel(sorted.length, "version")}
 				</span>
 			}

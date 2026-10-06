@@ -196,7 +196,7 @@ export function Flamegraph({
 					{[0, 25, 50, 75, 100].map((pct) => (
 						<div
 							key={pct}
-							className="absolute text-[11px] font-medium text-muted-foreground"
+							className="absolute text-2xs font-medium text-muted-foreground"
 							style={{ left: `calc(${pct}% + 12px)`, transform: "translateX(-50%)" }}
 						>
 							{formatDuration(((focusedSpan?.durationMs ?? totalDurationMs) * pct) / 100)}
@@ -226,7 +226,7 @@ export function Flamegraph({
 							<Tooltip key={bar.span.spanId}>
 								<TooltipTrigger
 									className={cn(
-										"absolute flex items-center overflow-hidden px-2 text-left font-mono text-[11px] font-medium cursor-pointer transition-[filter,box-shadow] duration-100",
+										"absolute flex items-center overflow-hidden px-2 text-left font-mono text-2xs font-medium cursor-pointer transition-[filter,box-shadow] duration-100",
 										"hover:brightness-125 hover:z-10",
 										bar.span.statusCode === "Error" &&
 											"bg-destructive text-destructive-foreground",
@@ -252,11 +252,11 @@ export function Flamegraph({
 										<>
 											<span className="truncate">{bar.span.spanName}</span>
 											{bar.widthPercent > 12 && (
-												<span className="ml-1 truncate text-[10px] opacity-60">
+												<span className="ml-1 truncate text-3xs opacity-60">
 													{bar.span.serviceName}
 												</span>
 											)}
-											<span className="ml-auto shrink-0 pl-2 text-[10px] opacity-70">
+											<span className="ml-auto shrink-0 pl-2 text-3xs opacity-70">
 												{formatDuration(bar.span.durationMs)}
 											</span>
 										</>
@@ -275,16 +275,16 @@ export function Flamegraph({
 				</div>
 			</div>
 
-			<div className="flex items-center justify-between border-t bg-muted/30 px-3 py-2 text-[11px] text-muted-foreground">
+			<div className="flex items-center justify-between border-t bg-muted/30 px-3 py-2 text-2xs text-muted-foreground">
 				<div className="flex items-center gap-3 text-foreground/30">
 					<span>
-						<kbd className="border border-foreground/10 bg-muted px-1 py-0.5 font-mono text-[10px]">
+						<kbd className="border border-foreground/10 bg-muted px-1 py-0.5 font-mono text-3xs">
 							Click
 						</kbd>{" "}
 						select
 					</span>
 					<span>
-						<kbd className="border border-foreground/10 bg-muted px-1 py-0.5 font-mono text-[10px]">
+						<kbd className="border border-foreground/10 bg-muted px-1 py-0.5 font-mono text-3xs">
 							Shift+Click
 						</kbd>{" "}
 						zoom

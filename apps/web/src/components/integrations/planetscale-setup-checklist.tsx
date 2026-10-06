@@ -87,7 +87,7 @@ function StepMarker({ step, number }: { step: SetupStep; number: number }) {
 		) : (
 			<span
 				aria-hidden
-				className="mt-0.5 flex size-3.5 shrink-0 items-center justify-center rounded-full bg-primary text-[9px] font-medium text-primary-foreground"
+				className="mt-0.5 flex size-3.5 shrink-0 items-center justify-center rounded-full bg-primary text-4xs font-medium text-primary-foreground"
 			>
 				{number}
 			</span>
@@ -96,7 +96,7 @@ function StepMarker({ step, number }: { step: SetupStep; number: number }) {
 	return (
 		<span
 			aria-hidden
-			className="mt-0.5 flex size-3.5 shrink-0 items-center justify-center rounded-full border border-border text-[9px] font-medium text-muted-foreground"
+			className="mt-0.5 flex size-3.5 shrink-0 items-center justify-center rounded-full border border-border text-4xs font-medium text-muted-foreground"
 		>
 			{number}
 		</span>

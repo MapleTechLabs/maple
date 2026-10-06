@@ -167,7 +167,7 @@ export function MetricStrip({
 			<div className="border-b px-1 py-3 lg:border-b-0 lg:border-r lg:py-5">
 				<div className="text-[12px] font-medium text-foreground">{label}</div>
 				{caption ? (
-					<div className="mt-1 text-[11px] leading-relaxed text-muted-foreground">{caption}</div>
+					<div className="mt-1 text-2xs leading-relaxed text-muted-foreground">{caption}</div>
 				) : null}
 			</div>
 			<div className="lg:pl-4">

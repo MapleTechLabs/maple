@@ -167,7 +167,7 @@ export function AnalyticsAiTab({
 				<div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
 					<h2 className="text-[13px] font-medium">What AI crawlers read</h2>
 					{visitorFiltered ? (
-						<span className="text-[11px] text-muted-foreground">
+						<span className="text-2xs text-muted-foreground">
 							Crawls follow the site and page filters only
 						</span>
 					) : null}

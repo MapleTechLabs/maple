@@ -196,7 +196,7 @@ export function SpanHierarchy() {
 						onExpandAll={() => setExpandedSpans(collectAllCollapsibleIds(rootSpans))}
 					/>
 					{flat.length < totalSpanCount && (
-						<span className="shrink-0 font-normal tabular-nums text-[10px]">
+						<span className="shrink-0 font-normal tabular-nums text-3xs">
 							{flat.length} of {totalSpanCount}
 							<span className="hidden @min-[420px]/row:inline"> spans</span>
 						</span>

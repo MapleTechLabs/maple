@@ -379,7 +379,7 @@ function GroupRows({ group, seconds, maxima, expanded, onToggle, onSelect }: Gro
 						<div className="flex items-center gap-4">
 							<div className="flex min-w-0 flex-1 flex-col gap-0.5">
 								<span className="text-xs text-muted-foreground">{copy.explainer}</span>
-								<span className="truncate font-mono text-[11px] text-muted-foreground/50">
+								<span className="truncate font-mono text-2xs text-muted-foreground/50">
 									{sample.join("  ·  ")}
 									{remaining > 0 ? `  ·  ${remaining.toLocaleString()} more` : ""}
 								</span>
@@ -448,7 +448,7 @@ function GroupHeaderRow({
 	muted?: boolean
 }) {
 	const numeric =
-		"py-1.5 text-right align-middle font-mono text-[11.5px] tabular-nums text-muted-foreground/70"
+		"py-1.5 text-right align-middle font-mono text-2xs tabular-nums text-muted-foreground/70"
 	return (
 		<TableRow className="border-b bg-muted/30 hover:bg-muted/30">
 			<TableCell className="max-w-0 py-1.5 pl-3 align-middle">
@@ -462,7 +462,7 @@ function GroupHeaderRow({
 					>
 						{title}
 					</span>
-					<span className="shrink-0 text-[11px] text-muted-foreground/60">{count}</span>
+					<span className="shrink-0 text-2xs text-muted-foreground/60">{count}</span>
 				</div>
 			</TableCell>
 			<TableCell className={cn(numeric, "pr-1.5")}>
@@ -550,7 +550,7 @@ function MethodLabel({ method }: { method: string }) {
 	return (
 		<span
 			className={cn(
-				"w-[52px] shrink-0 font-mono text-[11px] font-semibold uppercase tracking-wide",
+				"w-[52px] shrink-0 font-mono text-2xs font-semibold uppercase tracking-wide",
 				methodTone(method),
 			)}
 		>
@@ -588,7 +588,7 @@ function MobileGroup({
 					>
 						{title}
 					</span>
-					<span className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground/70">
+					<span className="shrink-0 font-mono text-2xs tabular-nums text-muted-foreground/70">
 						{group.endpoints.length} ·{" "}
 						{formatRate(callsPerSecond(group.totals.estimatedSpanCount, seconds))} req/s
 					</span>
@@ -597,7 +597,7 @@ function MobileGroup({
 							variant="outline"
 							size="sm"
 							onClick={onToggle}
-							className="h-6 shrink-0 px-2 text-[11px]"
+							className="h-6 shrink-0 px-2 text-2xs"
 						>
 							{expanded ? "Hide" : "Show"}
 						</Button>

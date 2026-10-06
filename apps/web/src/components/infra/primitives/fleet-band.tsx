@@ -80,7 +80,7 @@ export function FleetBand<S extends string>({
 					<span className="font-mono text-base font-semibold tabular-nums">
 						{total.toLocaleString()}
 					</span>
-					<span className="text-[11px] text-muted-foreground">
+					<span className="text-2xs text-muted-foreground">
 						{total === 1 ? noun : `${noun}s`} in scope
 					</span>
 				</span>
@@ -101,7 +101,7 @@ export function FleetBand<S extends string>({
 				) : (
 					<div className="h-1.5 w-full rounded-full bg-muted" />
 				)}
-				<span className="text-[10px] text-muted-foreground">{caption}</span>
+				<span className="text-3xs text-muted-foreground">{caption}</span>
 			</div>
 			{cells.map((cell) => (
 				<ScopeCell
@@ -143,7 +143,7 @@ function ScopeCell<S extends string>({
 				active && "bg-muted/60",
 			)}
 		>
-			<span className="text-[11px] text-muted-foreground">{label}</span>
+			<span className="text-2xs text-muted-foreground">{label}</span>
 			<span className="flex items-baseline gap-1.5">
 				<span
 					className={cn(
@@ -153,7 +153,7 @@ function ScopeCell<S extends string>({
 				>
 					{value}
 				</span>
-				<span className="text-[10px] text-muted-foreground">{hint}</span>
+				<span className="text-3xs text-muted-foreground">{hint}</span>
 			</span>
 		</button>
 	)

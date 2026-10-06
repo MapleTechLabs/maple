@@ -69,7 +69,7 @@ function SpanRowImpl({
 
 					<Badge
 						variant="outline"
-						className="shrink-0 font-mono text-[10px] px-1.5 border-dashed text-muted-foreground"
+						className="shrink-0 font-mono text-3xs px-1.5 border-dashed text-muted-foreground"
 					>
 						missing
 					</Badge>
@@ -87,7 +87,7 @@ function SpanRowImpl({
 					<TruncatedId
 						value={span.spanId}
 						kind="span"
-						className="w-16 text-right text-[10px] text-muted-foreground/50 truncate"
+						className="w-16 text-right text-3xs text-muted-foreground/50 truncate"
 					/>
 					<div className="w-14" />
 				</div>
@@ -159,7 +159,7 @@ function SpanRowImpl({
 					<div className="w-6 shrink-0" />
 				)}
 
-				<span className="flex shrink-0 items-center gap-1.5 font-mono text-[10px]">
+				<span className="flex shrink-0 items-center gap-1.5 font-mono text-3xs">
 					{platform && (
 						<platform.Icon
 							size={11}
@@ -174,7 +174,7 @@ function SpanRowImpl({
 
 				{platform?.edge && (
 					<span
-						className="hidden @min-[600px]:inline-flex items-center gap-1 shrink-0 font-mono text-[10px] text-muted-foreground"
+						className="hidden @min-[600px]:inline-flex items-center gap-1 shrink-0 font-mono text-3xs text-muted-foreground"
 						title={platform.location ?? undefined}
 					>
 						<GlobeIcon size={10} className="shrink-0" />
@@ -189,7 +189,7 @@ function SpanRowImpl({
 					>
 						<span
 							className={cn(
-								"px-1 py-0.5 rounded text-[10px] font-bold text-white shrink-0 leading-none hidden @min-[500px]:inline-flex",
+								"px-1 py-0.5 rounded text-3xs font-bold text-white shrink-0 leading-none hidden @min-[500px]:inline-flex",
 								HTTP_METHOD_COLORS[httpInfo.method] || "bg-muted-foreground",
 							)}
 						>
@@ -204,7 +204,7 @@ function SpanRowImpl({
 				)}
 
 				{hasChildren && !expanded && (
-					<span className="shrink-0 text-[10px] text-muted-foreground">
+					<span className="shrink-0 text-3xs text-muted-foreground">
 						+{countDescendants(span)}
 					</span>
 				)}
@@ -227,7 +227,7 @@ function SpanRowImpl({
 					<Badge
 						variant="outline"
 						className={cn(
-							"text-[10px] justify-center font-medium px-1.5 shrink-0",
+							"text-3xs justify-center font-medium px-1.5 shrink-0",
 							outcomeBadgeStyle(true),
 						)}
 						title={`${platform.label} outcome`}
@@ -240,7 +240,7 @@ function SpanRowImpl({
 					<Badge
 						variant="outline"
 						className={cn(
-							"text-[10px] w-14 justify-center font-medium",
+							"text-3xs w-14 justify-center font-medium",
 							cacheResultStyles[cacheInfo.result],
 						)}
 					>
@@ -262,7 +262,7 @@ function SpanRowImpl({
 				) : (
 					<Badge
 						variant="outline"
-						className={cn("text-[10px] w-14 justify-center font-medium", statusStyle)}
+						className={cn("text-3xs w-14 justify-center font-medium", statusStyle)}
 					>
 						{span.statusCode || "Unset"}
 					</Badge>

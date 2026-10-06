@@ -516,7 +516,7 @@ export function WidgetQueryBuilderPage({
 										<Button size="sm" onClick={runPreview} disabled={!!validationError}>
 											Run Preview
 										</Button>
-										<span className="text-[11px] text-muted-foreground ml-auto">A</span>
+										<span className="text-2xs text-muted-foreground ml-auto">A</span>
 									</div>
 								</>
 							) : showFunnelPanel ? (
@@ -531,7 +531,7 @@ export function WidgetQueryBuilderPage({
 										<Button size="sm" onClick={runPreview} disabled={!!validationError}>
 											Run Preview
 										</Button>
-										<span className="text-[11px] text-muted-foreground ml-auto">A</span>
+										<span className="text-2xs text-muted-foreground ml-auto">A</span>
 									</div>
 								</>
 							) : (
@@ -589,7 +589,7 @@ export function WidgetQueryBuilderPage({
 										<Button size="sm" onClick={runPreview} disabled={!!validationError}>
 											Run Preview
 										</Button>
-										<span className="text-[11px] text-muted-foreground ml-auto">
+										<span className="text-2xs text-muted-foreground ml-auto">
 											{state.queries.map((q) => q.name).join(", ")}
 											{state.formulas.length > 0 &&
 												`, ${state.formulas.map((f) => f.name).join(", ")}`}

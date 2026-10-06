@@ -186,7 +186,7 @@ export function PodPeekSheet({
 										value={pod.lastSeen}
 										prefix="seen"
 										mono
-										className="ml-auto text-[11px] text-muted-foreground"
+										className="ml-auto text-2xs text-muted-foreground"
 									/>
 								</>
 							}
@@ -247,11 +247,11 @@ export function PodPeekSheet({
 									<ArrowDownIcon size={14} />
 								</Button>
 								{position ? (
-									<span className="ml-1 font-mono text-[11px] tabular-nums text-muted-foreground">
+									<span className="ml-1 font-mono text-2xs tabular-nums text-muted-foreground">
 										{position.index + 1} of {position.count}
 									</span>
 								) : null}
-								<span className="ml-2 hidden items-center gap-1 text-[11px] text-muted-foreground sm:inline-flex">
+								<span className="ml-2 hidden items-center gap-1 text-2xs text-muted-foreground sm:inline-flex">
 									<Kbd>↑</Kbd>
 									<Kbd>↓</Kbd> walk the list
 								</span>

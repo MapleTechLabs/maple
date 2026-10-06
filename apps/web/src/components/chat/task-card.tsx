@@ -93,14 +93,14 @@ export function TaskCard({
 				>
 					{running ? `${activity}…` : label}
 				</span>
-				<span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground/70">
+				<span className="min-w-0 flex-1 truncate text-2xs text-muted-foreground/70">
 					<span className="mr-1 text-muted-foreground/40">·</span>
 					{prompt}
 				</span>
 				{status === "error" ? (
-					<span className={cn("shrink-0 text-[11px]", TONE_TEXT.crit)}>failed</span>
+					<span className={cn("shrink-0 text-2xs", TONE_TEXT.crit)}>failed</span>
 				) : budgetExhausted === true ? (
-					<span className={cn("shrink-0 text-[11px]", TONE_TEXT.warn)}>partial</span>
+					<span className={cn("shrink-0 text-2xs", TONE_TEXT.warn)}>partial</span>
 				) : null}
 				{running ? <RunningClock /> : null}
 				<ChevronRightIcon className="size-3 shrink-0 text-muted-foreground/60" />

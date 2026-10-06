@@ -254,7 +254,7 @@ interface DeployLinesProps {
 
 function deployMetaLine(text: string) {
 	return text === "" ? null : (
-		<span className="truncate font-mono text-[10px] text-muted-foreground">{text}</span>
+		<span className="truncate font-mono text-3xs text-muted-foreground">{text}</span>
 	)
 }
 
@@ -354,7 +354,7 @@ const DeployCell = React.memo(function DeployCell({ commits }: { commits: Commit
 		return <span className="text-xs text-muted-foreground">N/A</span>
 	}
 	const stateLine = info.errorsSince ? (
-		<span className="truncate text-[10px] text-severity-error">
+		<span className="truncate text-3xs text-severity-error">
 			{info.firstSeen !== ""
 				? `${formatRelativeTimeOrDate(info.firstSeen, undefined, effectiveTimezone)} · `
 				: ""}
@@ -369,7 +369,7 @@ const DeployCell = React.memo(function DeployCell({ commits }: { commits: Commit
 						style={{ width: `${info.rollout.percentage}%` }}
 					/>
 				</span>
-				<span className="font-mono text-[10px] text-primary">
+				<span className="font-mono text-3xs text-primary">
 					{info.rollout.percentage}% · +{info.rollout.others.length}
 				</span>
 			</TooltipTrigger>
@@ -491,7 +491,7 @@ const ServiceRow = React.memo(function ServiceRow({
 					<LatencyValue ms={service.p95LatencyMs} scale="p95" />
 				</div>
 				{delta !== undefined && (
-					<div className={cn("text-[10px] tabular-nums", delta.className)}>{delta.label}</div>
+					<div className={cn("text-3xs tabular-nums", delta.className)}>{delta.label}</div>
 				)}
 			</TableCell>
 			<TableCell className="hidden lg:table-cell text-xs">
@@ -534,7 +534,7 @@ const ServiceRow = React.memo(function ServiceRow({
 								/>
 							</span>
 							{service.hasSampling && (
-								<span className="font-mono text-[9px] text-muted-foreground [text-shadow:0_0_6px_var(--background),0_0_12px_var(--background),0_0_18px_var(--background)]">
+								<span className="font-mono text-4xs text-muted-foreground [text-shadow:0_0_6px_var(--background),0_0_12px_var(--background),0_0_18px_var(--background)]">
 									~{formatThroughput(service.tracedThroughput, "/s")} traced
 								</span>
 							)}

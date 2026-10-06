@@ -58,7 +58,7 @@ export function InlineTrace({ data }: { data: InlineTraceData }) {
 					value={data.id}
 					kind="trace"
 					length={12}
-					className="shrink-0 text-[11px] text-muted-foreground/70"
+					className="shrink-0 text-2xs text-muted-foreground/70"
 				/>
 				<InlineServiceChips services={services} />
 			</div>

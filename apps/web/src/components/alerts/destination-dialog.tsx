@@ -198,7 +198,7 @@ function ProviderTile({
 				<span className="truncate text-sm font-semibold">{label ?? provider.label}</span>
 				{busy ? <Spinner size={12} className="ml-auto" /> : null}
 			</div>
-			<p className="relative text-[11px] leading-snug text-muted-foreground">
+			<p className="relative text-2xs leading-snug text-muted-foreground">
 				{description ?? provider.description}
 			</p>
 		</button>
@@ -265,11 +265,11 @@ function EmailMemberPicker({
 				placeholder={form.memberUserIds.length === 0 ? "Select members…" : "Add member..."}
 				value={form.memberUserIds}
 			/>
-			<FieldDescription className="text-[11px]">
+			<FieldDescription className="text-2xs">
 				Alert emails go to the selected workspace members (up to {MAX_EMAIL_MEMBER_RECIPIENTS}).
 			</FieldDescription>
 			{form.memberUserIds.length > MAX_EMAIL_MEMBER_RECIPIENTS && (
-				<p className="text-[11px] text-destructive">
+				<p className="text-2xs text-destructive">
 					Select at most {MAX_EMAIL_MEMBER_RECIPIENTS} members.
 				</p>
 			)}
@@ -526,11 +526,11 @@ function HazelOAuthFields({
 					</SelectContent>
 				</Select>
 				{organizationsFailed ? (
-					<p className="text-[11px] text-destructive">
+					<p className="text-2xs text-destructive">
 						Couldn't load your Hazel organizations. Try reconnecting or refreshing.
 					</p>
 				) : organizations.length === 0 ? (
-					<p className="text-[11px] text-muted-foreground">
+					<p className="text-2xs text-muted-foreground">
 						No organizations returned. Make sure your Hazel account is a member of at least one
 						organization.
 					</p>
@@ -577,11 +577,11 @@ function HazelOAuthFields({
 					</SelectContent>
 				</Select>
 				{orgIdForChannels.length > 0 && !channelsLoading && channelsFailed ? (
-					<p className="text-[11px] text-destructive">
+					<p className="text-2xs text-destructive">
 						Couldn't load channels for this organization. Try reselecting the organization.
 					</p>
 				) : orgIdForChannels.length > 0 && !channelsLoading && channels.length === 0 ? (
-					<p className="text-[11px] text-muted-foreground">
+					<p className="text-2xs text-muted-foreground">
 						No channels. Make sure your account is in at least one channel of this organization.
 					</p>
 				) : null}
@@ -752,7 +752,7 @@ function ChatDestinationFields({
 				</Label>
 				<div className="flex min-w-0 items-center gap-1.5">
 					{storedChannelName ? (
-						<span className="truncate text-[11px] text-muted-foreground">
+						<span className="truncate text-2xs text-muted-foreground">
 							Currently{" "}
 							<span className="font-medium text-foreground">#{storedChannelName}</span>
 						</span>
@@ -761,7 +761,7 @@ function ChatDestinationFields({
 						type="button"
 						size="xs"
 						variant="ghost"
-						className="-my-1 h-6 gap-1 px-1.5 text-[11px] text-muted-foreground"
+						className="-my-1 h-6 gap-1 px-1.5 text-2xs text-muted-foreground"
 						onClick={refreshChannels}
 						loading={channelsLoading}
 						title={`Re-fetch the channel list from ${connectorName}`}
@@ -808,7 +808,7 @@ function ChatDestinationFields({
 								<span className="flex items-center gap-2">
 									<span className="truncate">#{channel.name}</span>
 									{channel.is_private ? (
-										<span className="text-[11px] text-muted-foreground">private</span>
+										<span className="text-2xs text-muted-foreground">private</span>
 									) : null}
 								</span>
 							</ComboboxItem>
@@ -825,7 +825,7 @@ function ChatDestinationFields({
 			</Combobox>
 			{needsReinstall ? (
 				<div className="flex flex-wrap items-center gap-2">
-					<p className="text-[11px] text-destructive">{failure?.message}</p>
+					<p className="text-2xs text-destructive">{failure?.message}</p>
 					<Button
 						type="button"
 						size="xs"
@@ -845,7 +845,7 @@ function ChatDestinationFields({
 				</div>
 			) : failure !== null ? (
 				<div className="flex items-center gap-2">
-					<p className="text-[11px] text-destructive">
+					<p className="text-2xs text-destructive">
 						{failure.type === "permission_error"
 							? "Listing a workspace's channels is limited to org admins."
 							: `Couldn't load ${connectorName} channels.`}
@@ -857,12 +857,12 @@ function ChatDestinationFields({
 					)}
 				</div>
 			) : channels.length === 0 && !channelsLoading ? (
-				<p className="text-[11px] text-muted-foreground">
+				<p className="text-2xs text-muted-foreground">
 					No channels returned. Make sure the Maple bot can see at least one channel, then hit
 					Refresh.
 				</p>
 			) : null}
-			<p className="flex items-start gap-1.5 text-[11px] text-muted-foreground">
+			<p className="flex items-start gap-1.5 text-2xs text-muted-foreground">
 				<CircleInfoIcon size={12} className="mt-0.5 shrink-0" />
 				<span>
 					Private channels are listed once the Maple bot has been added to them. Use Send test after
@@ -880,7 +880,7 @@ function FieldHelper({ provider }: { provider: DestinationProvider }) {
 			href={provider.docsUrl}
 			target="_blank"
 			rel="noreferrer"
-			className="text-[11px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+			className="text-2xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
 		>
 			{provider.docsLabel ?? "Docs"} ↗
 		</a>
@@ -936,7 +936,7 @@ function TelegramChatPicker({
 					type="button"
 					variant="ghost"
 					size="sm"
-					className="h-6 px-2 text-[11px]"
+					className="h-6 px-2 text-2xs"
 					disabled={!tokenReady}
 					loading={busy}
 					onClick={() => void runDetect()}
@@ -949,9 +949,9 @@ function TelegramChatPicker({
 					Detect chats
 				</Button>
 			</div>
-			{error !== null ? <p className="text-[11px] text-destructive">{error}</p> : null}
+			{error !== null ? <p className="text-2xs text-destructive">{error}</p> : null}
 			{chats !== null && chats.length === 0 ? (
-				<p className="text-[11px] text-muted-foreground">
+				<p className="text-2xs text-muted-foreground">
 					No recent chats. Add the bot to the group or channel (or send it a message), then detect
 					again. Telegram only keeps the last 24 hours.
 				</p>
@@ -966,7 +966,7 @@ function TelegramChatPicker({
 							className="flex w-full items-center justify-between gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-muted"
 						>
 							<span className="truncate">{chat.title}</span>
-							<span className="shrink-0 text-[10px] text-muted-foreground">
+							<span className="shrink-0 text-3xs text-muted-foreground">
 								{TELEGRAM_CHAT_TYPE_LABELS[chat.type]}
 							</span>
 						</button>
@@ -1089,13 +1089,13 @@ export function DestinationDialog({
 									/>
 									{form.integrationKey.trim().length > 0 &&
 										!isValidPagerDutyKey(form.integrationKey) && (
-											<p className="text-[11px] text-destructive">
+											<p className="text-2xs text-destructive">
 												That isn't a routing key (must be 32 characters). A
 												~20-character REST API token won't work — copy the Events API
 												v2 integration key.
 											</p>
 										)}
-									<FieldDescription className="text-[11px]">
+									<FieldDescription className="text-2xs">
 										In PagerDuty: open the service → Integrations → add or select an{" "}
 										<a
 											href="https://maple.dev/docs/alerting/notification-destinations#pagerduty"
@@ -1132,7 +1132,7 @@ export function DestinationDialog({
 										}
 										className="font-mono text-xs"
 									/>
-									<FieldDescription className="text-[11px]">
+									<FieldDescription className="text-2xs">
 										In Discord: Channel settings → Integrations → Webhooks → New Webhook,
 										then copy the URL.
 									</FieldDescription>
@@ -1163,7 +1163,7 @@ export function DestinationDialog({
 											}
 											className="font-mono text-xs"
 										/>
-										<FieldDescription className="text-[11px]">
+										<FieldDescription className="text-2xs">
 											In Telegram: message @BotFather, send{" "}
 											<InlineCode>/newbot</InlineCode>, then copy the token it replies
 											with.
@@ -1191,7 +1191,7 @@ export function DestinationDialog({
 											placeholder="-1001234567890 or @mychannel"
 											className="font-mono text-xs"
 										/>
-										<p className="text-[11px] text-muted-foreground">
+										<p className="text-2xs text-muted-foreground">
 											Add the bot to the chat, then hit <strong>Detect chats</strong> —
 											or enter the id by hand. Maple checks the bot can reach it when
 											you save.
@@ -1251,7 +1251,7 @@ export function DestinationDialog({
 								(isClerkAuthEnabled ? (
 									<EmailMemberPicker form={form} onFormChange={onFormChange} />
 								) : (
-									<p className="text-[11px] text-muted-foreground">
+									<p className="text-2xs text-muted-foreground">
 										Email destinations target workspace members and require Clerk
 										authentication, which is not enabled in this deployment.
 									</p>

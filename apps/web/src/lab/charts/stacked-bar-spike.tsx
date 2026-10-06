@@ -256,8 +256,8 @@ function StackedBarFigure({
 									<span
 										className={
 											row.partial
-												? "size-2.5 shrink-0 rounded-[2px] border border-dashed"
-												: "size-2.5 shrink-0 rounded-[2px]"
+												? "size-2.5 shrink-0 rounded-xs border border-dashed"
+												: "size-2.5 shrink-0 rounded-xs"
 										}
 										style={
 											row.partial
@@ -492,7 +492,7 @@ export const StackedBarSceneLegendSpike = memo(function StackedBarSceneLegendSpi
 				return (
 					<div className="flex items-center gap-2">
 						<span
-							className="size-2.5 shrink-0 rounded-[2px]"
+							className="size-2.5 shrink-0 rounded-xs"
 							style={{ backgroundColor: colorFor(datum.service) }}
 						/>
 						<span className="text-muted-foreground">{datum.service}</span>

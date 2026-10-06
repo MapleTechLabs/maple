@@ -258,7 +258,7 @@ export function SessionsList({
 
 function ColumnHeader() {
 	return (
-		<div className="hidden items-center gap-4 border-b border-border px-3 py-1.5 text-[11px] font-medium text-muted-foreground @2xl:flex">
+		<div className="hidden items-center gap-4 border-b border-border px-3 py-1.5 text-2xs font-medium text-muted-foreground @2xl:flex">
 			<span className="min-w-0 flex-1">User</span>
 			<span className={COLUMNS.org}>Org</span>
 			<span className={COLUMNS.tags}>Tags</span>

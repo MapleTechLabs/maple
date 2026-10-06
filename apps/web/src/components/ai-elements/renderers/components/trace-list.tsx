@@ -33,12 +33,12 @@ export function TraceList({ props }: RendererComponentProps<TraceListProps>) {
 	return (
 		<div className="space-y-1.5">
 			{stats && (
-				<div className="flex gap-3 text-[10px] text-muted-foreground">
+				<div className="flex gap-3 text-3xs text-muted-foreground">
 					<span>
-						P50: <LatencyValue ms={stats.p50Ms} scale="p50" className="text-[10px]" />
+						P50: <LatencyValue ms={stats.p50Ms} scale="p50" className="text-3xs" />
 					</span>
 					<span>
-						P95: <LatencyValue ms={stats.p95Ms} scale="p95" className="text-[10px]" />
+						P95: <LatencyValue ms={stats.p95Ms} scale="p95" className="text-3xs" />
 					</span>
 					<span>Min: {formatDuration(stats.minMs)}</span>
 					<span>Max: {formatDuration(stats.maxMs)}</span>
@@ -92,7 +92,7 @@ export function TraceList({ props }: RendererComponentProps<TraceListProps>) {
 											</Badge>
 										))}
 										{trace.services.length > 3 && (
-											<span className="text-[10px] text-muted-foreground">
+											<span className="text-3xs text-muted-foreground">
 												+{trace.services.length - 3}
 											</span>
 										)}

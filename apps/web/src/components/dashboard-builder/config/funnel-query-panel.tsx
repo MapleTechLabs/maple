@@ -105,7 +105,7 @@ export function FunnelQueryPanelView({
 			<div className="space-y-1.5">
 				<div className="flex items-baseline gap-2">
 					<Eyebrow>Steps</Eyebrow>
-					<span className="font-mono text-[10px] text-muted-foreground">
+					<span className="font-mono text-3xs text-muted-foreground">
 						in order · session step only first · up to 10
 					</span>
 				</div>
@@ -123,7 +123,7 @@ export function FunnelQueryPanelView({
 			{/* Population filter */}
 			<div className="space-y-1">
 				<div className="flex items-start gap-2">
-					<span className="w-16 shrink-0 pt-2 text-[11px] text-muted-foreground">Where</span>
+					<span className="w-16 shrink-0 pt-2 text-2xs text-muted-foreground">Where</span>
 					{/* The vocabulary is the `product_events` scope's; the data source is
 					    the editor's required prop and is not consulted under that scope,
 					    and the facet values come in explicitly. */}
@@ -140,7 +140,7 @@ export function FunnelQueryPanelView({
 						ariaLabel="Funnel population filter"
 					/>
 				</div>
-				<p className="pl-18 text-[11px] text-muted-foreground">
+				<p className="pl-18 text-2xs text-muted-foreground">
 					{filterError ? (
 						<span className="text-destructive">{filterError}</span>
 					) : (
@@ -156,7 +156,7 @@ export function FunnelQueryPanelView({
 				<div className="space-y-2 pt-1">
 					{funnel.addOns.keyBy && (
 						<div className="flex items-center gap-2">
-							<span className="w-16 shrink-0 text-[11px] text-muted-foreground">Count by</span>
+							<span className="w-16 shrink-0 text-2xs text-muted-foreground">Count by</span>
 							<Select
 								items={Object.fromEntries(
 									FUNNEL_KEY_BY_OPTIONS.map((option) => [option.value, option.label]),
@@ -177,7 +177,7 @@ export function FunnelQueryPanelView({
 										<SelectItem key={option.value} value={option.value}>
 											<span className="flex flex-col">
 												<span>{option.label}</span>
-												<span className="text-[10px] text-muted-foreground">
+												<span className="text-3xs text-muted-foreground">
 													{option.description}
 												</span>
 											</span>
@@ -190,7 +190,7 @@ export function FunnelQueryPanelView({
 
 					{funnel.addOns.window && (
 						<div className="flex items-center gap-2">
-							<span className="w-16 shrink-0 text-[11px] text-muted-foreground">Window</span>
+							<span className="w-16 shrink-0 text-2xs text-muted-foreground">Window</span>
 							<Select
 								items={Object.fromEntries(
 									FUNNEL_WINDOW_OPTIONS.map((option) => [
@@ -227,7 +227,7 @@ export function FunnelQueryPanelView({
 									) : null}
 								</SelectContent>
 							</Select>
-							<span className="text-[11px] text-muted-foreground">
+							<span className="text-2xs text-muted-foreground">
 								the whole chain must complete within this long of step 1
 							</span>
 						</div>
@@ -235,7 +235,7 @@ export function FunnelQueryPanelView({
 
 					{funnel.addOns.breakdown && (
 						<div className="flex items-center gap-2">
-							<span className="w-16 shrink-0 text-[11px] text-muted-foreground">Breakdown</span>
+							<span className="w-16 shrink-0 text-2xs text-muted-foreground">Breakdown</span>
 							<BreakdownPicker
 								value={funnel.breakdownBy}
 								onChange={(breakdownBy) =>
@@ -245,7 +245,7 @@ export function FunnelQueryPanelView({
 									})
 								}
 							/>
-							<span className="text-[11px] text-muted-foreground">
+							<span className="text-2xs text-muted-foreground">
 								one bar per group, top 6
 							</span>
 						</div>
