@@ -751,14 +751,15 @@ SELECT
         GROUP BY fingerprintHash
         FORMAT JSON
 
--- builder:errors:errorTickNextActivityQuery:lagging-cursor  [2d9a9812]
+-- builder:errors:errorTickNextActivityQuery:lagging-cursor  [d115967d]
 SELECT
-          min(error_fingerprints_minutely.Minute) AS nextMinute,
-          count() AS bucketCount
+          error_fingerprints_minutely.Minute AS nextMinute
         FROM error_fingerprints_minutely
         WHERE error_fingerprints_minutely.OrgId = 'org_sql_catalog'
           AND error_fingerprints_minutely.Minute >= '2026-01-01 10:30:00'
           AND error_fingerprints_minutely.Minute < '2026-01-03 14:15:00'
+        ORDER BY nextMinute ASC
+        LIMIT 1
         FORMAT JSON
 
 -- builder:errors:spanDetailQuery:default  [02aceae6]

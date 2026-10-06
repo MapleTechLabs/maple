@@ -10,6 +10,7 @@ import {
 	IssueSeverityListCursor,
 	OrgId,
 	UserId,
+	WarehouseQueryError,
 } from "@maple/domain/http"
 import {
 	ActorId,
@@ -163,7 +164,7 @@ const makeWarehouseStub = (
 	scanRows: () => ReadonlyArray<Record<string, unknown>> = () => [],
 	onScan?: () => void,
 	fingerprintRows?: () => ReadonlyArray<Record<string, unknown>>,
-	nextActivityRows?: () => ReadonlyArray<Record<string, unknown>>,
+	nextActivityRows?: () => ReadonlyArray<Record<string, unknown>> | WarehouseQueryError,
 ): WarehouseQueryServiceApi => ({
 	query: () => Effect.die(new Error("unexpected warehouse query")),
 	rawSqlQuery: () => Effect.succeed([]),
@@ -190,7 +191,9 @@ const makeWarehouseStub = (
 			// What lies behind a lagging cursor's empty window. Empty by default: no
 			// later errors, so the cursor may go straight to the cutoff.
 			if (options?.context === "errorTickNextActivity") {
-				return Effect.orDie(compiledQueryOf(compiled).decodeRows(nextActivityRows?.() ?? []))
+				const rows = nextActivityRows?.() ?? []
+				if (rows instanceof WarehouseQueryError) return Effect.fail(rows)
+				return Effect.orDie(compiledQueryOf(compiled).decodeRows(rows))
 			}
 			// Active-org discovery reads the same data the scan does, so model that
 			// consistency: surface the org iff it currently has error rows.
@@ -215,7 +218,7 @@ const makeErrorsLayer = (
 	edgeBackend?: ReturnType<typeof makeMemoryBackend>,
 	fingerprintRows?: () => ReadonlyArray<Record<string, unknown>>,
 	dispatcher?: (typeof NotificationDispatcher)["Service"],
-	nextActivityRows?: () => ReadonlyArray<Record<string, unknown>>,
+	nextActivityRows?: () => ReadonlyArray<Record<string, unknown>> | WarehouseQueryError,
 ) => {
 	const testDb = createTestDb(createdDbs)
 	const envLive = Env.layer.pipe(Layer.provide(testConfig()))
@@ -1702,6 +1705,40 @@ describe("ErrorsService.runTick", () => {
 		)
 	})
 
+	it.effect("a lagging cursor still advances one window when it cannot look ahead", () => {
+		return Effect.gen(function* () {
+			const errors = yield* ErrorsService
+			const database = yield* Database
+			yield* TestClock.setTime(TICK_MS)
+			yield* seedIssue(asIssueId(randomUUID()))
+			yield* errors.runTick()
+
+			yield* TestClock.setTime(TICK_MS + 3 * 24 * 60 * 60_000)
+			yield* errors.runTick()
+
+			const cursor = yield* database.execute((db) =>
+				db.select().from(errorTickStates).where(eq(errorTickStates.orgId, ORG)),
+			)
+			// The claimed five-minute window commits; nothing is skipped.
+			assert.strictEqual(cursor[0]?.processedThrough.getTime(), TICK_MS - 60_000 + 5 * 60_000)
+		}).pipe(
+			Effect.provide(
+				makeErrorsLayer(
+					() => [],
+					undefined,
+					undefined,
+					undefined,
+					undefined,
+					() =>
+						new WarehouseQueryError({
+							message: "Query execution timed out after 30 seconds",
+							pipeName: "errorTickNextActivity",
+						}),
+				),
+			),
+		)
+	})
+
 	it.effect("a lagging cursor stops at the next minute that has errors", () => {
 		const laterMs = TICK_MS + 3 * 24 * 60 * 60_000
 		// Errors resume twenty minutes before the tick that finds the backlog.
@@ -1742,7 +1779,7 @@ describe("ErrorsService.runTick", () => {
 					undefined,
 					undefined,
 					undefined,
-					() => [{ nextMinute: formatWarehouseDateTime(resumeMs), bucketCount: 4 }],
+					() => [{ nextMinute: formatWarehouseDateTime(resumeMs) }],
 				),
 			),
 		)

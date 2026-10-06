@@ -1225,14 +1225,22 @@ const make: Effect.Effect<
 					{ profile: "aggregation", context: "errorTickNextActivity" },
 				)
 				.pipe(
-					Effect.mapError(makePersistenceError),
-					Effect.tapError(() => releaseTickClaim(orgId, tickWindow.claimToken, nowMs)),
+					// Skipping ahead only saves time. If the read fails, apply the window
+					// as claimed: failing the tick here would hold the cursor on a window
+					// that could have committed.
+					Effect.catch((error) =>
+						Effect.logWarning("Error tick could not look past an empty window").pipe(
+							Effect.annotateLogs({ orgId, windowStartMs, windowEndMs, error: error.message }),
+							Effect.as(undefined),
+						),
+					),
 				)
-			const first = next[0]
 			const nextActivityMs =
-				first !== undefined && Number(first.bucketCount) > 0
-					? parseWarehouseDateTime(String(first.nextMinute))
-					: cutoffMs
+				next === undefined
+					? windowEndMs
+					: next[0] === undefined
+						? cutoffMs
+						: parseWarehouseDateTime(String(next[0].nextMinute))
 			if (nextActivityMs > windowEndMs) {
 				windowEndMs = Math.min(nextActivityMs, cutoffMs)
 				fastForwarded = true

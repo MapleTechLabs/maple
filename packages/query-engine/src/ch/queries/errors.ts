@@ -1164,22 +1164,22 @@ export function errorTickIssuesQuery() {
 }
 
 /**
- * The earliest minute bucket holding errors in a window, and how many buckets
- * the window holds (zero means `nextMinute` is the epoch, not a real minute).
- * A lagging cursor whose claimed window is empty reads it to cross the rest of
- * a quiet stretch in one step instead of one window per cron.
+ * The earliest minute bucket holding errors in a window; no row when the window
+ * holds none. A lagging cursor whose claimed window is empty reads it to cross
+ * the rest of a quiet stretch in one step instead of one window per cron.
+ * Ordered by the rollup's sorting key and limited to one row, so it stops at
+ * the first match rather than reading the whole window.
  */
 export function errorTickNextActivityQuery() {
 	return from(ErrorFingerprintsMinutely)
-		.select(($) => ({
-			nextMinute: CH.min_($.Minute),
-			bucketCount: CH.count(),
-		}))
+		.select(($) => ({ nextMinute: $.Minute }))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
 			$.Minute.gte(param.dateTimeSeconds("startTime")),
 			$.Minute.lt(param.dateTimeSeconds("endTime")),
 		])
+		.orderBy(["nextMinute", "asc"])
+		.limit(1)
 		.format("JSON")
 }
 

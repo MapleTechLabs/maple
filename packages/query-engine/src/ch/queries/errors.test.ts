@@ -453,15 +453,16 @@ describe("errorTickIssuesQuery", () => {
 })
 
 describe("errorTickNextActivityQuery", () => {
-	it("reads the earliest minute and bucket count from the minute rollup", () => {
+	it("reads the earliest minute with errors from the minute rollup", () => {
 		const { sql } = compileUnsafe(errorTickNextActivityQuery(), baseParams)
 
 		expect(sql).toContain("FROM error_fingerprints_minutely")
 		expect(sql).toContain("OrgId = 'org_1'")
 		expect(sql).toContain("Minute >= '2024-01-01 00:00:00'")
 		expect(sql).toContain("Minute < '2024-01-02 00:00:00'")
-		expect(sql).toContain("min(error_fingerprints_minutely.Minute) AS nextMinute")
-		expect(sql).not.toContain("GROUP BY")
+		expect(sql).toContain("error_fingerprints_minutely.Minute AS nextMinute")
+		expect(sql).toContain("ORDER BY nextMinute ASC")
+		expect(sql).toContain("LIMIT 1")
 	})
 })
 
