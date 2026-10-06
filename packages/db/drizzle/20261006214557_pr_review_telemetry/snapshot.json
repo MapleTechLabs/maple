@@ -1,10 +1,10 @@
 {
-  "id": "28b9dc89-25f2-40e8-a16e-5acf4af0ccdc",
+  "version": "8",
+  "dialect": "postgres",
+  "id": "88e69edb-e31f-4ffb-925c-edf3e10742e7",
   "prevIds": [
     "1d1b302b-5b50-41ee-97e8-e6904bdb9228"
   ],
-  "version": "8",
-  "dialect": "postgres",
   "ddl": [
     {
       "isRlsEnabled": false,
@@ -12318,6 +12318,71 @@
       "table": "pr_reviews"
     },
     {
+      "type": "jsonb",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "telemetry_json",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "pr_reviews"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "merge_commit_sha",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "pr_reviews"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "post_merge_status",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "pr_reviews"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "post_merge_after",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "pr_reviews"
+    },
+    {
+      "type": "jsonb",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "post_merge_json",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "pr_reviews"
+    },
+    {
       "type": "timestamp with time zone",
       "typeSchema": null,
       "notNull": true,
@@ -16670,6 +16735,27 @@
       "method": "btree",
       "concurrently": false,
       "name": "pr_reviews_org_created_idx",
+      "entityType": "indexes",
+      "schema": "public",
+      "table": "pr_reviews"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "post_merge_after",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": false,
+      "where": "\"post_merge_status\" = 'waiting'",
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "pr_reviews_post_merge_due_idx",
       "entityType": "indexes",
       "schema": "public",
       "table": "pr_reviews"

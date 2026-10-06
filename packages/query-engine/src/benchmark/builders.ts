@@ -1085,6 +1085,22 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 			),
 	},
 	{
+		module: "pr-review",
+		name: "operationTrafficHourlyQuery",
+		label: "allServices",
+		compile: () => CH.compileUnsafe(CH.operationTrafficHourlyQuery({}), window),
+	},
+	{
+		module: "pr-review",
+		name: "operationTrafficMinutelyQuery",
+		label: "servicesAndSpans",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.operationTrafficMinutelyQuery({ serviceNames: ["api"], spanNames: ["POST /checkout"] }),
+				window,
+			),
+	},
+	{
 		module: "service-operations",
 		name: "routeUsageQuery",
 		label: "allServices",

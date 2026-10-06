@@ -23,7 +23,7 @@ import type {
 	V2SessionReplayRef,
 	V2SessionTranscriptEvent,
 } from "@maple/domain/http/v2"
-import { CH, formatWarehouseDateTime } from "@maple/query-engine"
+import { CH, formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
 import { sessionTagsOf } from "@maple/domain/query-engine"
 import { Effect, Layer, Option, Schema } from "effect"
 import { decodeKeysetCursor, encodeKeysetCursor } from "@/routes/v2/keyset-cursor"
@@ -58,7 +58,7 @@ const assertRangeFitsBudget = (rows: ReadonlyArray<{ readonly byteSize: number }
 
 /** ISO-8601 → Tinybird `YYYY-MM-DD HH:mm:ss` (UTC), validated. */
 const toTinybird = (value: string, param: string) => {
-	const ms = Date.parse(value)
+	const ms = parseWarehouseDateTime(value)
 	return Number.isNaN(ms)
 		? Effect.fail(V2ParameterInvalid.make(`Invalid ISO-8601 timestamp for ${param}.`, { param }))
 		: Effect.succeed(formatWarehouseDateTime(ms))
@@ -71,7 +71,7 @@ const optTinybird = (value: string | undefined, param: string) =>
 const chToIso = (value: string): Timestamp => {
 	const normalized = value.includes("T") ? value : value.replace(" ", "T")
 	const zoned = /[zZ]|[+-]\d\d:?\d\d$/.test(normalized) ? normalized : `${normalized}Z`
-	const ms = Date.parse(zoned)
+	const ms = parseWarehouseDateTime(zoned)
 	return timestamp(Number.isNaN(ms) ? value : new Date(ms).toISOString())
 }
 

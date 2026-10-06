@@ -1,3 +1,5 @@
+import { parseWarehouseDateTime } from "../datetime"
+
 const DEFAULT_CACHE_SECONDS = 15
 
 export interface DirectRouteCachePolicy {
@@ -71,7 +73,7 @@ const SETTLED_TTL_SECONDS = 900
 const parseWarehouseTime = (value: unknown): number | undefined => {
 	if (typeof value !== "string") return undefined
 	if (value.length !== 19 || value[4] !== "-" || value[10] !== " ") return undefined
-	const ms = Date.parse(`${value.replace(" ", "T")}Z`)
+	const ms = parseWarehouseDateTime(value)
 	return Number.isNaN(ms) ? undefined : ms
 }
 
