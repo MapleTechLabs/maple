@@ -192,6 +192,10 @@ export function useOAuthPopupFlow({
 		popupRef.current?.close()
 		popupRef.current = null
 		setPopupOpen(false)
+		// A deliberate close ends the attempt, so the post-close grace (and its polling) ends too.
+		if (closeGraceTimeoutRef.current !== undefined) clearTimeout(closeGraceTimeoutRef.current)
+		closeGraceTimeoutRef.current = undefined
+		setInCloseGrace(false)
 	}
 
 	return {
