@@ -15,6 +15,7 @@ import Sovereignty from "../Sovereignty.astro";
 import LocalSection from "./LocalSection.astro";
 import KubernetesSection from "./KubernetesSection.astro";
 import WebAnalyticsSection from "./WebAnalyticsSection.astro";
+import ProductEventsSection from "./ProductEventsSection.astro";
 import AgentSection from "./AgentSection.astro";
 import BillComparison from "../BillComparison.astro";
 import PricingTable from "../PricingTable.astro";
@@ -89,10 +90,14 @@ const homeFaqs = [
              so 06 → 07 → 08 alternate instead of stacking three copy-left sections. -->
         <WebAnalyticsSection />
 
-        <!-- 08 — the same investigation as 02, run by an agent instead of a human. -->
+        <!-- 08: what that audience does once it is in: funnels on events from
+             the browser, the server, or a span you already emit. -->
+        <ProductEventsSection />
+
+        <!-- 09: the same investigation as 02, run by an agent instead of a human. -->
         <AgentSection />
 
-        <!-- 09 + 10 — the money chapter: one deep floor, two beats, one internal
+        <!-- 10 + 11: the money chapter: one deep floor, two beats, one internal
              hairline. The bill runs first because Maple's pricing only reads as
              remarkable next to Datadog's. -->
         <BillComparison />
