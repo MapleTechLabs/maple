@@ -453,7 +453,7 @@ function SecondaryStats({ current }: { current: CodeReviewTotals }) {
 	const stats = [
 		{
 			label: "Avg confidence",
-			value: current.avgConfidence === null ? EMPTY_VALUE : `${current.avgConfidence.toFixed(1)}/5`,
+			value: current.avgConfidence === null ? EMPTY_VALUE : `${current.avgConfidence.toFixed(1)}/10`,
 			hint: "How safe the reviewer judged each change to merge",
 		},
 		{

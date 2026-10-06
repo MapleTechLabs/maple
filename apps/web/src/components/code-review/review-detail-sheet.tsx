@@ -150,7 +150,7 @@ function ReviewDetailContent({
 					<Stat label="Outcome" value={outcome.label} tone={outcome.tone} />
 					<Stat
 						label="Confidence"
-						value={review.confidence === null ? EMPTY_VALUE : `${review.confidence}/5`}
+						value={review.confidence === null ? EMPTY_VALUE : `${review.confidence}/10`}
 					/>
 					<Stat
 						label="Quality"

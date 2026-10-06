@@ -301,7 +301,7 @@ export class PrReviewReport extends Schema.Class<PrReviewReport>("PrReviewReport
 	/** How much the touched code can break; one input to the confidence. */
 	risk: Schema.optionalKey(PrReviewRisk),
 	/**
-	 * How safe the change is to merge, 1 to 5, computed from the findings, tests, risk and
+	 * How safe the change is to merge, 1 to 10, computed from the findings, tests, risk and
 	 * observability coverage. Stored computed; see {@link confidencePrReview}.
 	 */
 	confidence: Schema.optionalKey(Schema.Number),
@@ -543,7 +543,9 @@ export const normalizePrReviewSubmission = (submission: PrReviewSubmission): Nor
 	const risk = typeof submission.risk === "string" ? submission.risk.trim().toLowerCase() : undefined
 	const rawConfidence = toNumber(submission.confidence)
 	const confidence =
-		rawConfidence === undefined ? undefined : Math.min(5, Math.max(1, Math.round(rawConfidence)))
+		rawConfidence === undefined
+			? undefined
+			: Math.min(PR_REVIEW_CONFIDENCE_MAX, Math.max(1, Math.round(rawConfidence)))
 	const confidenceReason = submission.confidenceReason?.trim()
 	return {
 		report: new PrReviewReport({
@@ -616,16 +618,28 @@ export const scorePrReview = (
 	return { score, grade }
 }
 
-/** What each confidence level tells the author. */
+/** The top of the confidence scale. Reports stored before 2026-10-07 were on 1 to 5 and migrated. */
+export const PR_REVIEW_CONFIDENCE_MAX = 10
+
+/** What each confidence level tells the author: two levels per band. */
 export const PR_REVIEW_CONFIDENCE_LABEL = {
-	5: "safe to merge",
-	4: "likely safe to merge",
-	3: "needs attention",
-	2: "risky as written",
+	10: "safe to merge",
+	9: "safe to merge",
+	8: "likely safe to merge",
+	7: "likely safe to merge",
+	6: "needs attention",
+	5: "needs attention",
+	4: "risky as written",
+	3: "risky as written",
+	2: "do not merge",
 	1: "do not merge",
 } as const satisfies Record<number, string>
 
 export type PrReviewConfidence = keyof typeof PR_REVIEW_CONFIDENCE_LABEL
+
+/** The band a level reads as: green from 7, amber at 5 and 6, red below. */
+export const prReviewConfidenceTone = (confidence: number): "safe" | "attention" | "risky" =>
+	confidence >= 7 ? "safe" : confidence >= 5 ? "attention" : "risky"
 
 export interface PrReviewConfidenceResult {
 	readonly confidence: PrReviewConfidence
@@ -639,31 +653,52 @@ export interface PrReviewConfidenceResult {
 	readonly cappedBy?: "critical" | "warn" | "partial"
 }
 
-/** What each signal takes off a 5, before rounding. */
+/**
+ * What each signal takes off a 10. Whole points, so one soft signal (partial tests, a medium-risk
+ * area) moves a clean review from 10 to 9, still "safe to merge"; on the old 1 to 5 scale it cost
+ * a whole band.
+ */
 export const PR_REVIEW_CONFIDENCE_DEDUCTION = {
-	tests: { covered: 0, not_needed: 0, partial: 0.5, missing: 1 },
-	risk: { low: 0, medium: 0.5, high: 1 },
-	unobservable: 0.5,
+	tests: { covered: 0, not_needed: 0, partial: 1, missing: 2 },
+	risk: { low: 0, medium: 1, high: 2 },
+	unobservable: 1,
 } as const
 
-const toConfidence = (value: number): PrReviewConfidence =>
-	value >= 5 ? 5 : value >= 4 ? 4 : value >= 3 ? 3 : value >= 2 ? 2 : 1
+/** How far the reviewer's own number may move the computed one: down for what it read, up rarely. */
+export const PR_REVIEW_CONFIDENCE_JUDGEMENT = { lower: 2, raise: 1 } as const
 
-/** Findings' quality score on the confidence scale: one warning reads 4, two read 3. */
+const CONFIDENCE_LEVELS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const satisfies ReadonlyArray<PrReviewConfidence>
+
+const toConfidence = (value: number): PrReviewConfidence =>
+	CONFIDENCE_LEVELS.filter((level) => level <= value).at(-1) ?? 1
+
+/** Findings' quality score on the confidence scale: a note reads 10, a warning 8, two warnings 6. */
+const QUALITY_LEVELS: ReadonlyArray<readonly [minScore: number, level: number]> = [
+	[98, 10],
+	[95, 9],
+	[90, 8],
+	[85, 7],
+	[80, 6],
+	[70, 5],
+	[60, 4],
+	[45, 3],
+	[25, 2],
+]
+
 const qualityLevel = (score: number): number =>
-	score >= 95 ? 5 : score >= 85 ? 4 : score >= 70 ? 3 : score >= 45 ? 2 : 1
+	QUALITY_LEVELS.find(([minScore]) => score >= minScore)?.[1] ?? 1
 
 const findingPhrase = (n: number, label: string) => `${n} ${label}${n === 1 ? "" : "s"}`
 
 /**
- * The review's confidence that the change is safe to merge, 1 to 5, computed rather than asked of
+ * The review's confidence that the change is safe to merge, 1 to 10, computed rather than asked of
  * the model so the same change scores the same and the comment can say why.
  *
- * It starts from the findings' quality score, then takes off for untested behavior, a high-risk
- * area and new work that cannot be observed. Rounding is half-down, so one half-point signal is
- * enough to leave 5. Findings cap it: a critical at 2 (1 with more than one), a security warning
- * at 3, any warning at 4, and a review that ended early at 3. The reviewer's own number can lower
- * the result by one point, never raise it. `undefined` for a pull request with nothing to review.
+ * It starts from the findings' quality score, then takes whole points off for untested behavior, a
+ * risky area and new work that cannot be observed. Findings cap it: a critical at 4 (2 with more
+ * than one), a security warning at 6, any warning at 8, and a review that ended early at 6. The
+ * reviewer's own number can lower the result by up to two points or raise it by one, never past a
+ * cap. `undefined` for a pull request with nothing to review.
  */
 export const confidencePrReview = (
 	report: PrReviewReport,
@@ -699,13 +734,16 @@ export const confidencePrReview = (
 		(report.tests === undefined ? 0 : PR_REVIEW_CONFIDENCE_DEDUCTION.tests[report.tests]) +
 		(report.risk === undefined ? 0 : PR_REVIEW_CONFIDENCE_DEDUCTION.risk[report.risk]) +
 		(unobservable > 0 ? PR_REVIEW_CONFIDENCE_DEDUCTION.unobservable : 0)
-	const signals = Math.max(1, Math.ceil(qualityLevel(score) - deduction - 0.5))
+	const signals = Math.max(1, qualityLevel(score) - deduction)
 	const judged =
 		report.confidence === undefined
 			? signals
-			: Math.max(signals - 1, Math.min(signals, Math.round(report.confidence)))
+			: Math.max(
+					signals - PR_REVIEW_CONFIDENCE_JUDGEMENT.lower,
+					Math.min(signals + PR_REVIEW_CONFIDENCE_JUDGEMENT.raise, Math.round(report.confidence)),
+				)
 
-	// In the order the caps bind: a security warning holds at 3 like an early end, any other at 4.
+	// In the order the caps bind: a security warning holds at 6 like an early end, any other at 8.
 	const cappedBy =
 		criticals > 0
 			? "critical"
@@ -716,7 +754,16 @@ export const confidencePrReview = (
 					: warns > 0
 						? "warn"
 						: undefined
-	const cap = criticals > 1 ? 1 : criticals === 1 ? 2 : securityWarn || partial ? 3 : warns > 0 ? 4 : 5
+	const cap =
+		criticals > 1
+			? 2
+			: criticals === 1
+				? 4
+				: securityWarn || partial
+					? 6
+					: warns > 0
+						? 8
+						: PR_REVIEW_CONFIDENCE_MAX
 	const confidence = toConfidence(Math.min(cap, judged))
 	if (judged > cap) {
 		const why =
@@ -767,7 +814,7 @@ export class PrReviewListItem extends Schema.Class<PrReviewListItem>("PrReviewLi
 	skipReason: Schema.NullOr(PrReviewSkipReason),
 	verdict: Schema.NullOr(PrReviewVerdict),
 	score: Schema.NullOr(Schema.Number),
-	/** 1 to 5; null until a report is stored, and for reports stored before confidence existed. */
+	/** 1 to 10; null until a report is stored, and for reports stored before confidence existed. */
 	confidence: Schema.NullOr(Schema.Number),
 	findings: Schema.Number,
 	commentUrl: Schema.NullOr(Schema.String),
