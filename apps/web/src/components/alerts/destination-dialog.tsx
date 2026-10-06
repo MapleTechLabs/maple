@@ -5,18 +5,20 @@ import { HazelStartConnectRequest, type AlertDestinationType } from "@maple/doma
 import {
 	type DestinationFormState,
 	defaultDestinationForm,
+	chatDestinationForm,
 	MAX_EMAIL_MEMBER_RECIPIENTS,
+	suggestedDestinationName,
 } from "@/lib/alerts/form-utils"
 import {
 	chatDestinationProvider,
-	DESTINATION_TYPES,
 	destinationProvider,
+	DESTINATION_TYPES,
 	PROVIDERS,
 	ProviderLogo,
 	type DestinationProvider,
 } from "@/components/alerts/destination-provider"
 import { chatIntegrationId } from "@/components/integrations/integration-catalog"
-import { useChatConnectorGate } from "@/hooks/use-organization-feature-flags"
+import { useChatConnectors, useChatWorkspaceConnect } from "@/components/alerts/use-chat-workspaces"
 import {
 	ArrowRightIcon,
 	ArrowRotateClockwiseIcon,
@@ -86,6 +88,9 @@ interface DestinationDialogProps {
 	isEditing: boolean
 	saving: boolean
 	onSave: () => void
+	/** Opened on a provider picked elsewhere: show it folded, with a way back to the full grid. */
+	providerLocked?: boolean
+	onUnlockProvider?: () => void
 }
 
 /**
@@ -109,7 +114,8 @@ const TELEGRAM_CHAT_TYPE_LABELS = {
 } satisfies Record<V2TelegramChat["type"], string>
 
 function isFormReady(form: DestinationFormState, isEditing: boolean): boolean {
-	if (form.name.trim().length === 0) return false
+	// A new destination left unnamed is named after where it delivers (`suggestedDestinationName`).
+	if (isEditing && form.name.trim().length === 0) return false
 	switch (form.type) {
 		case "hazel-oauth":
 			return form.hazelOrganizationId.trim().length > 0 && form.hazelChannelId.trim().length > 0
@@ -146,14 +152,18 @@ function ProviderTile({
 	type,
 	chatConnector,
 	label,
+	description,
 	selected,
+	busy = false,
 	onSelect,
 }: {
 	type: AlertDestinationType
 	chatConnector?: string
 	/** In place of the provider's own label — a chat tile names its workspace. */
 	label?: string
+	description?: string
 	selected: boolean
+	busy?: boolean
 	onSelect: () => void
 }) {
 	const provider = destinationProvider({ type, chatConnector })
@@ -161,13 +171,13 @@ function ProviderTile({
 		<button
 			type="button"
 			onClick={onSelect}
+			disabled={busy}
 			aria-pressed={selected}
 			className={cn(
-				"group relative flex flex-col items-start gap-2 overflow-hidden rounded-lg border p-3 text-left transition-all",
-				"hover:border-border/80 hover:bg-muted/40",
+				"relative flex flex-col items-start gap-2 overflow-hidden rounded-lg border p-3 text-left transition-colors",
 				selected
-					? "border-transparent shadow-[inset_0_0_0_1.5px_var(--tile-accent)] bg-muted/40"
-					: "border-border/60 bg-card",
+					? "border-(--tile-accent) bg-muted/40"
+					: "border-border/60 bg-card hover:border-border hover:bg-muted/40",
 			)}
 			style={{ ["--tile-accent" as string]: provider.accent }}
 		>
@@ -175,7 +185,7 @@ function ProviderTile({
 				aria-hidden
 				className={cn(
 					"pointer-events-none absolute inset-0 transition-opacity",
-					selected ? "opacity-100" : "opacity-0 group-hover:opacity-60",
+					selected ? "opacity-100" : "opacity-0",
 				)}
 				style={{
 					background: `radial-gradient(circle at 0% 0%, ${provider.accentBg}, transparent 60%)`,
@@ -184,8 +194,11 @@ function ProviderTile({
 			<div className="relative flex w-full items-center gap-2.5">
 				<ProviderLogo type={type} chatConnector={chatConnector} size={32} />
 				<span className="truncate text-sm font-semibold">{label ?? provider.label}</span>
+				{busy ? <Spinner size={12} className="ml-auto" /> : null}
 			</div>
-			<p className="relative text-[11px] leading-snug text-muted-foreground">{provider.description}</p>
+			<p className="relative text-[11px] leading-snug text-muted-foreground">
+				{description ?? provider.description}
+			</p>
 		</button>
 	)
 }
@@ -575,48 +588,79 @@ function HazelOAuthFields({
 }
 
 /**
- * One tile per linked chat workspace, for every connector this org has staged on. The workspace
- * is the choice — a connector with nothing linked offers nothing to post to — so these stand in
- * for a single `chat` tile. Nothing renders until the list answers, and nothing when it fails:
- * the rest of the picker stays usable either way.
+ * Every provider, in the order people reach for them: chat platforms first (a linked workspace, or
+ * a tile that links one in a popup), then the rest. Discord
+ * shows once: as its linked workspaces when the bot is installed, otherwise as the webhook type.
  */
-function ChatWorkspaceTiles({
+function ProviderPicker({
 	form,
 	onFormChange,
 }: {
 	form: DestinationFormState
 	onFormChange: (updater: (current: DestinationFormState) => DestinationFormState) => void
 }) {
-	const gate = useChatConnectorGate()
-	const connectorsResult = useAtomValue(
-		retainedQueryV2("chatIntegration", "connectors", { reactivityKeys: ["chatIntegration"] }),
-	)
-	const workspaces = Result.builder(connectorsResult)
-		.onSuccess((response) =>
-			response.data
-				.filter((connector) => gate(connector.id))
-				.flatMap((connector) =>
-					connector.workspaces.map((workspace) => ({ connector: connector.id, workspace })),
-				),
-		)
-		.orElse(() => [])
+	const connectors = useChatConnectors()
+	const chatConnect = useChatWorkspaceConnect({
+		onLinked: (workspace) => onFormChange(() => chatDestinationForm(workspace.connector, workspace.id)),
+	})
+	const discordLinked = connectors.some((c) => c.id === "discord" && c.workspaces.length > 0)
+	const types: ReadonlyArray<AlertDestinationType> = discordLinked
+		? [...DESTINATION_TYPES, "discord"]
+		: ["discord", ...DESTINATION_TYPES]
 
-	return workspaces.map(({ connector, workspace }) => (
+	const tile = (type: AlertDestinationType) => (
 		<ProviderTile
-			key={workspace.id}
-			type="chat"
-			chatConnector={connector}
-			label={workspace.name}
-			selected={form.type === "chat" && form.chatWorkspaceId === workspace.id}
-			onSelect={() =>
-				onFormChange(() => ({
-					...defaultDestinationForm("chat"),
-					chatWorkspaceId: workspace.id,
-					chatConnector: connector,
-				}))
-			}
+			key={type}
+			type={type}
+			label={type === "discord" && discordLinked ? "Discord webhook" : undefined}
+			selected={form.type === type}
+			onSelect={() => onFormChange(() => defaultDestinationForm(type))}
 		/>
-	))
+	)
+
+	return (
+		<div className="grid grid-cols-2 gap-2">
+			{connectors.flatMap((connector) =>
+				connector.workspaces.length > 0
+					? connector.workspaces.map((workspace) => (
+							<ProviderTile
+								key={workspace.id}
+								type="chat"
+								chatConnector={connector.id}
+								label={
+									connector.workspaces.length > 1
+										? `${connector.name} · ${workspace.name}`
+										: connector.name
+								}
+								description={`Post to a channel in ${workspace.name}.`}
+								selected={form.type === "chat" && form.chatWorkspaceId === workspace.id}
+								onSelect={() =>
+									onFormChange(() => chatDestinationForm(connector.id, workspace.id))
+								}
+							/>
+						))
+					: connector.available && connector.id !== "discord"
+						? [
+								<ProviderTile
+									key={connector.id}
+									type="chat"
+									chatConnector={connector.id}
+									label={connector.name}
+									description={
+										chatConnect.waitingFor === connector.id
+											? `Finish in the ${connector.name} window. This form stays as it is.`
+											: `Connect a ${connector.name} workspace, then pick a channel.`
+									}
+									selected={false}
+									busy={chatConnect.waitingFor === connector.id}
+									onSelect={() => chatConnect.connect(connector)}
+								/>,
+							]
+						: [],
+			)}
+			{types.map(tile)}
+		</div>
+	)
 }
 
 /**
@@ -946,6 +990,8 @@ export function DestinationDialog({
 	isEditing,
 	saving,
 	onSave,
+	providerLocked = false,
+	onUnlockProvider,
 }: DestinationDialogProps) {
 	// The connector's name and mark for a `chat` destination; the save button keeps the generic
 	// provider's colours, whose ink is measured against its own accent.
@@ -963,8 +1009,7 @@ export function DestinationDialog({
 						{isEditing ? `Edit ${provider.label} destination` : "Add destination"}
 					</DialogTitle>
 					<DialogDescription>
-						Reuse the same destination across alert rules and verify it with synthetic test
-						events.
+						Where Maple sends a rule&apos;s notifications. Any rule can reuse it.
 					</DialogDescription>
 				</DialogHeader>
 
@@ -974,19 +1019,30 @@ export function DestinationDialog({
 					{!isEditing && (
 						<div className="space-y-2">
 							<Eyebrow variant="label" as="div">
-								Provider
+								Send to
 							</Eyebrow>
-							<div className="grid grid-cols-2 gap-2">
-								{DESTINATION_TYPES.map((type) => (
-									<ProviderTile
-										key={type}
-										type={type}
-										selected={form.type === type}
-										onSelect={() => onFormChange(() => defaultDestinationForm(type))}
-									/>
-								))}
-								<ChatWorkspaceTiles form={form} onFormChange={onFormChange} />
-							</div>
+							{providerLocked ? (
+								<div className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-card px-3 py-2">
+									<span className="flex min-w-0 items-center gap-2.5">
+										<ProviderLogo
+											type={form.type}
+											chatConnector={form.chatConnector}
+											size={28}
+										/>
+										<span className="truncate text-sm font-medium">{provider.label}</span>
+									</span>
+									<Button
+										type="button"
+										variant="ghost"
+										size="xs"
+										onClick={onUnlockProvider}
+									>
+										Change
+									</Button>
+								</div>
+							) : (
+								<ProviderPicker form={form} onFormChange={onFormChange} />
+							)}
 						</div>
 					)}
 
@@ -1001,6 +1057,9 @@ export function DestinationDialog({
 							<div className="space-y-1.5">
 								<Label htmlFor="destination-name" className="text-xs">
 									Name
+									{isEditing ? null : (
+										<span className="font-normal text-muted-foreground">optional</span>
+									)}
 								</Label>
 								<Input
 									id="destination-name"
@@ -1008,7 +1067,7 @@ export function DestinationDialog({
 									onChange={(event) =>
 										onFormChange((current) => ({ ...current, name: event.target.value }))
 									}
-									placeholder="Production paging"
+									placeholder={suggestedDestinationName(form) || "Production paging"}
 								/>
 							</div>
 
@@ -1221,25 +1280,27 @@ export function DestinationDialog({
 						</div>
 					</div>
 
-					<div className="space-y-2">
-						<Eyebrow variant="label" as="div">
-							Delivery
-						</Eyebrow>
-						<SettingRow
-							framed
-							className="border-border/60 bg-card px-4 py-3"
-							label="Enabled"
-							description="Disabled destinations stay attached to rules but won't receive notifications."
-							control={
-								<Switch
-									checked={form.enabled}
-									onCheckedChange={(enabled) =>
-										onFormChange((current) => ({ ...current, enabled }))
-									}
-								/>
-							}
-						/>
-					</div>
+					{isEditing ? (
+						<div className="space-y-2">
+							<Eyebrow variant="label" as="div">
+								Delivery
+							</Eyebrow>
+							<SettingRow
+								framed
+								className="border-border/60 bg-card px-4 py-3"
+								label="Enabled"
+								description="Disabled destinations stay attached to rules but won't receive notifications."
+								control={
+									<Switch
+										checked={form.enabled}
+										onCheckedChange={(enabled) =>
+											onFormChange((current) => ({ ...current, enabled }))
+										}
+									/>
+								}
+							/>
+						</div>
+					) : null}
 				</div>
 
 				<DialogFooter>
@@ -1258,7 +1319,7 @@ export function DestinationDialog({
 						}}
 					>
 						{saving ? <Spinner size={14} /> : null}
-						{isEditing ? "Save changes" : `Create ${provider.label} destination`}
+						{isEditing ? "Save changes" : `Add ${provider.label} destination`}
 					</Button>
 				</DialogFooter>
 			</DialogContent>

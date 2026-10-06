@@ -80,7 +80,7 @@ const interimDocument = (label: string) => `<!doctype html>
   @media (prefers-color-scheme: dark) { body { background:#1c1917; color:#d6d3d1; } }
 </style></head><body>Connecting to ${label}…</body></html>`
 
-function useOAuthPopupFlow({
+export function useOAuthPopupFlow({
 	windowName,
 	windowFeatures,
 	label,
@@ -106,7 +106,11 @@ function useOAuthPopupFlow({
 	 */
 	onPoll?: () => void
 	closeGraceMs?: number
-}): IntegrationConnect {
+}): Omit<IntegrationConnect, "connect"> & {
+	/** `label` overrides the provider name for this attempt, for a flow that serves several. */
+	readonly connect: (label?: string) => void
+	readonly closePopup: () => void
+} {
 	const [busy, setBusy] = useState(false)
 	const popupRef = useRef<Window | null>(null)
 	const closeGraceTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
@@ -145,19 +149,19 @@ function useOAuthPopupFlow({
 	})
 
 	/** A blocked popup used to fail silently — the button just did nothing, twice. */
-	const reportBlocked = () =>
+	const reportBlocked = (shown: string) =>
 		toastManager.add({
-			title: `Your browser blocked the ${label} window`,
+			title: `Your browser blocked the ${shown} window`,
 			description: "Allow pop-ups for this site, then try connecting again.",
 			type: "error",
 		})
 
-	async function connect() {
+	async function connect(shown: string) {
 		const popup = window.open("", windowName, windowFeatures)
 		popupRef.current = popup
 		if (popup) {
 			setPopupOpen(true)
-			popup.document.write(interimDocument(label))
+			popup.document.write(interimDocument(shown))
 			popup.document.close()
 		}
 		setBusy(true)
@@ -174,7 +178,7 @@ function useOAuthPopupFlow({
 			const reopened = window.open(url, windowName, windowFeatures)
 			popupRef.current = reopened
 			if (reopened) setPopupOpen(true)
-			else reportBlocked()
+			else reportBlocked(shown)
 		} else {
 			popup?.close()
 			popupRef.current = null
@@ -183,7 +187,19 @@ function useOAuthPopupFlow({
 		}
 	}
 
-	return { connect: () => void connect(), busy, popupActive: popupOpen || inCloseGrace }
+	/** Closes a popup that is still out, e.g. once polling has seen the grant land. */
+	const closePopup = () => {
+		popupRef.current?.close()
+		popupRef.current = null
+		setPopupOpen(false)
+	}
+
+	return {
+		connect: (override?: string) => void connect(override ?? label),
+		busy,
+		popupActive: popupOpen || inCloseGrace,
+		closePopup,
+	}
 }
 
 function useIntegrationMessage(

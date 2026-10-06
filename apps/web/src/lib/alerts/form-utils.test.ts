@@ -11,6 +11,7 @@ import {
 	buildDestinationCreateParamsV2,
 	buildDestinationUpdateParamsV2,
 	buildRuleCreateParamsV2,
+	chatDestinationForm,
 	defaultDestinationForm,
 	defaultRuleForm,
 	ruleFormIsGrouped,
@@ -18,6 +19,7 @@ import {
 	domainThresholdToForm,
 	formThresholdToDomain,
 	normalizeRuleQueryDraft,
+	suggestedDestinationName,
 	rawSqlHasValueColumn,
 	v2CheckToDocument,
 	v2DeliveryToDocument,
@@ -399,5 +401,28 @@ describe("alert on no data", () => {
 		expect(ruleFormIsGrouped(grouped)).toBe(true)
 		expect(buildRuleCreateParamsV2(grouped).alert_on_no_data).toBe(false)
 		expect(ruleFormIsGrouped({ ...grouped, signalType: "raw_query" })).toBe(false)
+	})
+})
+
+describe("suggestedDestinationName", () => {
+	it("names a destination after where it delivers", () => {
+		const workspace = Schema.decodeUnknownSync(ChatWorkspaceId)("11111111-1111-4111-8111-111111111111")
+		expect(
+			suggestedDestinationName({
+				...chatDestinationForm("slack", workspace),
+				chatChannelName: "alerts",
+			}),
+		).toBe("#alerts")
+		expect(suggestedDestinationName(chatDestinationForm("slack", workspace))).toBe("")
+		expect(
+			suggestedDestinationName({
+				...defaultDestinationForm("webhook"),
+				url: "https://hooks.example.com/x",
+			}),
+		).toBe("hooks.example.com")
+		expect(suggestedDestinationName({ ...defaultDestinationForm("webhook"), url: "not a url" })).toBe(
+			"Webhook",
+		)
+		expect(suggestedDestinationName(defaultDestinationForm("pagerduty"))).toBe("PagerDuty")
 	})
 })

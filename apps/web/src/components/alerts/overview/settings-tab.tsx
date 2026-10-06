@@ -22,6 +22,7 @@ import {
 	getExitErrorMessage,
 	groupDeliveryEventsByDay,
 	v2DeliveryToDocument,
+	suggestedDestinationName,
 	type DestinationFormState,
 } from "@/lib/alerts/form-utils"
 import { publicError } from "@/lib/error-messages"
@@ -52,8 +53,14 @@ export interface DestinationManager {
 	saving: boolean
 	testingId: AlertDestinationDocument["id"] | null
 	deletingId: AlertDestinationDocument["id"] | null
-	openDialog: (destination?: AlertDestinationDocument) => void
+	/** True when the dialog opened on a provider picked elsewhere, so the provider grid starts folded. */
+	providerLocked: boolean
+	unlockProvider: () => void
+	/** Opens on an existing destination to edit it, or on a new one, optionally preset to a provider. */
+	openDialog: (destination?: AlertDestinationDocument, preset?: DestinationFormState) => void
 	save: () => Promise<void>
+	/** Creates a fully specified destination without the dialog. Resolves to whether it was created. */
+	quickCreate: (form: DestinationFormState) => Promise<boolean>
 	test: (destination: AlertDestinationDocument) => Promise<void>
 	toggle: (destination: AlertDestinationDocument) => Promise<void>
 	remove: (destination: AlertDestinationDocument) => Promise<void>
@@ -80,13 +87,38 @@ export function useDestinationManager(options?: {
 	const [form, setForm] = useState<DestinationFormState>(defaultDestinationForm())
 	const [editing, setEditing] = useState<AlertDestinationDocument | null>(null)
 	const [saving, setSaving] = useState(false)
+	const [providerLocked, setProviderLocked] = useState(false)
 	const [testingId, setTestingId] = useState<AlertDestinationDocument["id"] | null>(null)
 	const [deletingId, setDeletingId] = useState<AlertDestinationDocument["id"] | null>(null)
 
-	function openDialog(destination?: AlertDestinationDocument) {
+	function openDialog(destination?: AlertDestinationDocument, preset?: DestinationFormState) {
 		setEditing(destination ?? null)
-		setForm(destination ? destinationToFormState(destination) : defaultDestinationForm())
+		setForm(destination ? destinationToFormState(destination) : (preset ?? defaultDestinationForm()))
+		setProviderLocked(destination === undefined && preset !== undefined)
 		setDialogOpen(true)
+	}
+
+	async function create(next: DestinationFormState) {
+		const named = next.name.trim().length > 0 ? next : { ...next, name: suggestedDestinationName(next) }
+		const result = await createDestination({
+			// `as never`: see the union-payload note in `save`.
+			payload: buildDestinationCreateParamsV2(named) as never,
+			reactivityKeys: ["alertDestinations"],
+		})
+		if (Exit.isSuccess(result)) {
+			toastManager.add({ title: "Destination created", type: "success" })
+			options?.onCreated?.(result.value.id)
+			return true
+		}
+		toastManager.add({ title: getExitErrorMessage(result, "Failed to save destination"), type: "error" })
+		return false
+	}
+
+	async function quickCreate(next: DestinationFormState) {
+		setSaving(true)
+		const created = await create(next)
+		setSaving(false)
+		return created
 	}
 
 	async function save() {
@@ -110,21 +142,7 @@ export function useDestinationManager(options?: {
 				})
 			}
 		} else {
-			const result = await createDestination({
-				// `as never`: see above.
-				payload: buildDestinationCreateParamsV2(form) as never,
-				reactivityKeys: ["alertDestinations"],
-			})
-			if (Exit.isSuccess(result)) {
-				toastManager.add({ title: "Destination created", type: "success" })
-				setDialogOpen(false)
-				options?.onCreated?.(result.value.id)
-			} else {
-				toastManager.add({
-					title: getExitErrorMessage(result, "Failed to save destination"),
-					type: "error",
-				})
-			}
+			if (await create(form)) setDialogOpen(false)
 		}
 		setSaving(false)
 	}
@@ -198,6 +216,9 @@ export function useDestinationManager(options?: {
 		form,
 		setForm,
 		isEditing: editing != null,
+		providerLocked,
+		unlockProvider: () => setProviderLocked(false),
+		quickCreate,
 		saving,
 		testingId,
 		deletingId,

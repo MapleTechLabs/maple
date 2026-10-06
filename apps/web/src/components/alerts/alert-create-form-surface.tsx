@@ -119,16 +119,27 @@ export function AlertCreateFormSurface({
 
 	const { preview, previewLoading, previewError } = useAlertRulePreview(ruleForm, previewRange)
 
-	const validationIssues = useMemo(
-		() => deriveValidationIssues(ruleForm, destinations),
-		[ruleForm, destinations],
-	)
+	const validationIssues = useMemo(() => deriveValidationIssues(ruleForm), [ruleForm])
 
 	const suggestedName = useMemo(() => makeSuggestedName(ruleForm), [ruleForm])
 
+	const { result: rulesResult } = useAlertRulesList()
+
+	// A new rule starts on the destination the org's rules already use most (or the only one), once
+	// the list has answered. Adjusted during render, not in an effect; it runs once per form.
+	const [defaultDestinationApplied, setDefaultDestinationApplied] = useState(editingRule !== null)
+	if (!defaultDestinationApplied && destinations.length > 0 && Result.isSuccess(rulesResult)) {
+		setDefaultDestinationApplied(true)
+		const fallback = pickDefaultDestination(destinations, rulesResult.value.rules)
+		if (fallback !== null && ruleForm.destinationIds.length === 0) {
+			setRuleForm((current) =>
+				current.destinationIds.length === 0 ? { ...current, destinationIds: [fallback] } : current,
+			)
+		}
+	}
+
 	// Tags already in use across the org's rules, offered as autocomplete so
 	// teams converge on a shared vocabulary instead of typo-forking groups.
-	const { result: rulesResult } = useAlertRulesList()
 	const tagSuggestions = useMemo(
 		() =>
 			Result.builder(rulesResult)
@@ -209,25 +220,29 @@ export function AlertCreateFormSurface({
 					<DashboardLayout.Scroll>
 						<div className={cn("mx-auto w-full space-y-4", RULE_FORM_MAX_WIDTH)}>
 							<WidgetPrefillNoticeBanner notices={prefillNotices} />
-							<RuleLiveChartHero
-								form={ruleForm}
-								preview={preview}
-								previewLoading={previewLoading}
-								previewError={previewError}
-								onTestRule={() => runTest(false)}
-								testing={previewingRule}
-								previewResult={freshPreviewResult}
-								range={previewRange}
-								timeRange={previewTimeRange}
-								onTimeRangeChange={setPreviewTimeRange}
-							/>
-							<div className="grid gap-4 lg:grid-cols-[1.6fr_1fr]">
-								<SignalAndThresholdSection
-									form={ruleForm}
-									onChange={setRuleForm}
-									autocompleteValues={autocompleteValues}
-								/>
-								<div className="space-y-4">
+							{/* The preview rides beside the form, pinned, so every edit to the signal,
+							    scope or threshold redraws where you can see it. Stacked above below lg. */}
+							<div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:items-start">
+								<div className="lg:sticky lg:top-0 lg:order-2">
+									<RuleLiveChartHero
+										form={ruleForm}
+										preview={preview}
+										previewLoading={previewLoading}
+										previewError={previewError}
+										onTestRule={() => runTest(false)}
+										testing={previewingRule}
+										previewResult={freshPreviewResult}
+										range={previewRange}
+										timeRange={previewTimeRange}
+										onTimeRangeChange={setPreviewTimeRange}
+									/>
+								</div>
+								<div className="min-w-0 space-y-4 lg:order-1">
+									<SignalAndThresholdSection
+										form={ruleForm}
+										onChange={setRuleForm}
+										autocompleteValues={autocompleteValues}
+									/>
 									{showScope && (
 										<ScopeSection
 											form={ruleForm}
@@ -244,8 +259,11 @@ export function AlertCreateFormSurface({
 										onSendTest={() => runTest(true)}
 										testing={sendingTestNotification}
 										onAddDestination={
-											isAdmin ? () => destinationManager.openDialog() : undefined
+											isAdmin
+												? (preset) => destinationManager.openDialog(undefined, preset)
+												: undefined
 										}
+										onQuickCreate={isAdmin ? destinationManager.quickCreate : undefined}
 									/>
 									<DetailsSection
 										form={ruleForm}
@@ -291,12 +309,14 @@ export function AlertCreateFormSurface({
 				isEditing={destinationManager.isEditing}
 				saving={destinationManager.saving}
 				onSave={destinationManager.save}
+				providerLocked={destinationManager.providerLocked}
+				onUnlockProvider={destinationManager.unlockProvider}
 			/>
 		</DashboardLayout.Root>
 	)
 }
 
-function deriveValidationIssues(form: RuleFormState, destinations: AlertDestinationDocument[]): string[] {
+function deriveValidationIssues(form: RuleFormState): string[] {
 	const issues: string[] = []
 	if (form.name.trim().length === 0) issues.push("Rule name")
 	if (!Number.isFinite(Number(form.threshold))) issues.push("Threshold")
@@ -326,12 +346,23 @@ function deriveValidationIssues(form: RuleFormState, destinations: AlertDestinat
 		}
 	}
 	for (const issue of deriveRuleQueryIssues(form)) issues.push(issue)
-	if (destinations.length === 0) {
-		issues.push("A notification destination")
-	} else if (form.destinationIds.length === 0) {
-		issues.push("At least one destination")
-	}
+	if (form.destinationIds.length === 0) issues.push("Who gets notified")
 	return issues
+}
+
+/** The enabled destination most rules already notify, or the only enabled one. */
+function pickDefaultDestination(
+	destinations: AlertDestinationDocument[],
+	rules: ReadonlyArray<AlertRuleDocument>,
+): AlertDestinationDocument["id"] | null {
+	const usable = destinations.filter((d) => d.enabled && !d.disabledAt)
+	if (usable.length === 1) return usable[0]!.id
+	const uses = new Map<string, number>()
+	for (const id of rules.flatMap((rule) => rule.destinationIds)) uses.set(id, (uses.get(id) ?? 0) + 1)
+	const ranked = usable
+		.filter((d) => (uses.get(d.id) ?? 0) > 0)
+		.sort((a, b) => (uses.get(b.id) ?? 0) - (uses.get(a.id) ?? 0))
+	return ranked[0]?.id ?? null
 }
 
 /**

@@ -478,6 +478,34 @@ export function defaultDestinationForm(type: AlertDestinationType = "discord"): 
 	}
 }
 
+/** A new `chat` destination posting through one linked workspace; the channel is still to pick. */
+export function chatDestinationForm(
+	connector: string,
+	workspaceId: DestinationFormState["chatWorkspaceId"],
+): DestinationFormState {
+	return { ...defaultDestinationForm("chat"), chatWorkspaceId: workspaceId, chatConnector: connector }
+}
+
+/** The name a destination gets when the user leaves Name blank: where it delivers, not what it is. */
+export function suggestedDestinationName(form: DestinationFormState): string {
+	switch (form.type) {
+		case "chat":
+			return form.chatChannelName.length > 0 ? `#${form.chatChannelName}` : ""
+		case "hazel-oauth":
+			return form.hazelChannelName.length > 0 ? `Hazel #${form.hazelChannelName}` : "Hazel"
+		case "webhook":
+			return URL.canParse(form.url.trim()) ? new URL(form.url.trim()).host : "Webhook"
+		case "pagerduty":
+			return "PagerDuty"
+		case "discord":
+			return "Discord"
+		case "telegram":
+			return "Telegram"
+		case "email":
+			return "Email"
+	}
+}
+
 export function destinationToFormState(destination: AlertDestinationDocument): DestinationFormState {
 	return {
 		type: destination.type,
