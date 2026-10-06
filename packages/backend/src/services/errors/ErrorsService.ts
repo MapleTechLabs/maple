@@ -1205,9 +1205,43 @@ const make: Effect.Effect<
 				}),
 			)
 		}
+		// A lagging cursor crossing a quiet stretch one window per cron gains four
+		// minutes a tick. An org with no issue state is not scanned while it has no
+		// errors, so its cursor stays where it went quiet, and without this the
+		// errors that bring it back a month later wait weeks behind empty windows.
+		// When the claimed window is empty and backlog remains, apply everything up
+		// to the next minute that has errors (or the cutoff) as one empty window.
+		// Not after a split: that window was narrowed because dense data follows it.
+		let fastForwarded = false
+		if (issuesRaw.length === 0 && splits === 0 && !tickWindow.isBootstrap && windowEndMs < cutoffMs) {
+			const next = yield* warehouse
+				.compiledQuery(
+					tenant,
+					CH.compile(CH.errorTickNextActivityQuery(), {
+						orgId,
+						startTime: formatWarehouseDateTime(windowEndMs),
+						endTime: formatWarehouseDateTime(cutoffMs),
+					}),
+					{ profile: "aggregation", context: "errorTickNextActivity" },
+				)
+				.pipe(
+					Effect.mapError(makePersistenceError),
+					Effect.tapError(() => releaseTickClaim(orgId, tickWindow.claimToken, nowMs)),
+				)
+			const first = next[0]
+			const nextActivityMs =
+				first !== undefined && Number(first.bucketCount) > 0
+					? parseWarehouseDateTime(String(first.nextMinute))
+					: cutoffMs
+			if (nextActivityMs > windowEndMs) {
+				windowEndMs = Math.min(nextActivityMs, cutoffMs)
+				fastForwarded = true
+			}
+		}
 		yield* Effect.annotateCurrentSpan({
 			windowEndMs,
 			windowSplits: splits,
+			windowFastForwarded: fastForwarded,
 			scanFingerprints: issuesRaw.length,
 		})
 

@@ -163,6 +163,7 @@ const makeWarehouseStub = (
 	scanRows: () => ReadonlyArray<Record<string, unknown>> = () => [],
 	onScan?: () => void,
 	fingerprintRows?: () => ReadonlyArray<Record<string, unknown>>,
+	nextActivityRows?: () => ReadonlyArray<Record<string, unknown>>,
 ): WarehouseQueryServiceApi => ({
 	query: () => Effect.die(new Error("unexpected warehouse query")),
 	rawSqlQuery: () => Effect.succeed([]),
@@ -185,6 +186,11 @@ const makeWarehouseStub = (
 			// listIssues' deployment-environment filter (shaped like ErrorFingerprintsOutput).
 			if (options?.context === "errorIssueEnvFingerprints") {
 				return Effect.orDie(compiledQueryOf(compiled).decodeRows(fingerprintRows?.() ?? []))
+			}
+			// What lies behind a lagging cursor's empty window. Empty by default: no
+			// later errors, so the cursor may go straight to the cutoff.
+			if (options?.context === "errorTickNextActivity") {
+				return Effect.orDie(compiledQueryOf(compiled).decodeRows(nextActivityRows?.() ?? []))
 			}
 			// Active-org discovery reads the same data the scan does, so model that
 			// consistency: surface the org iff it currently has error rows.
@@ -209,6 +215,7 @@ const makeErrorsLayer = (
 	edgeBackend?: ReturnType<typeof makeMemoryBackend>,
 	fingerprintRows?: () => ReadonlyArray<Record<string, unknown>>,
 	dispatcher?: (typeof NotificationDispatcher)["Service"],
+	nextActivityRows?: () => ReadonlyArray<Record<string, unknown>>,
 ) => {
 	const testDb = createTestDb(createdDbs)
 	const envLive = Env.layer.pipe(Layer.provide(testConfig()))
@@ -225,7 +232,7 @@ const makeErrorsLayer = (
 	const errorPolicyLive = ErrorPolicyService.layer.pipe(Layer.provide(databaseLive))
 	const warehouseLive = Layer.succeed(
 		WarehouseQueryService,
-		makeWarehouseStub(scanRows, onScan, fingerprintRows),
+		makeWarehouseStub(scanRows, onScan, fingerprintRows, nextActivityRows),
 	)
 	const errorIssueReadModelsLive = Layer.effect(
 		ErrorIssueReadModelsService,
@@ -1662,6 +1669,83 @@ describe("ErrorsService.runTick", () => {
 			const quiet = yield* runTicksUntilCaughtUp()
 			assert.strictEqual(quiet.incidentsResolved, 3_100)
 		}).pipe(Effect.provide(makeErrorsLayer(() => burst)))
+	})
+
+	it.effect("a lagging cursor crosses a quiet stretch in one tick", () => {
+		let issueScans = 0
+		return Effect.gen(function* () {
+			const errors = yield* ErrorsService
+			const database = yield* Database
+			yield* TestClock.setTime(TICK_MS)
+			yield* seedIssue(asIssueId(randomUUID()))
+			yield* errors.runTick()
+
+			// Three days with no ticks and no errors: 864 five-minute windows.
+			const laterMs = TICK_MS + 3 * 24 * 60 * 60_000
+			yield* TestClock.setTime(laterMs)
+			yield* errors.runTick()
+
+			assert.strictEqual(issueScans, 2)
+			const cursor = yield* database.execute((db) =>
+				db.select().from(errorTickStates).where(eq(errorTickStates.orgId, ORG)),
+			)
+			assert.strictEqual(cursor[0]?.processedThrough.getTime(), laterMs - 60_000)
+		}).pipe(
+			Effect.provide(
+				makeErrorsLayer(
+					() => [],
+					() => {
+						issueScans += 1
+					},
+				),
+			),
+		)
+	})
+
+	it.effect("a lagging cursor stops at the next minute that has errors", () => {
+		const laterMs = TICK_MS + 3 * 24 * 60 * 60_000
+		// Errors resume twenty minutes before the tick that finds the backlog.
+		const resumeMs = laterMs - 20 * 60_000
+		let rows: ReadonlyArray<Record<string, unknown>> = []
+		return Effect.gen(function* () {
+			const errors = yield* ErrorsService
+			const database = yield* Database
+			const cursorMs = () =>
+				database
+					.execute((db) => db.select().from(errorTickStates).where(eq(errorTickStates.orgId, ORG)))
+					.pipe(Effect.map((states) => states[0]?.processedThrough.getTime()))
+			yield* TestClock.setTime(TICK_MS)
+			yield* seedIssue(asIssueId(randomUUID()))
+			yield* errors.runTick()
+
+			yield* TestClock.setTime(laterMs)
+			yield* errors.runTick()
+			// Not past the errors: the window that holds them is still to be applied.
+			assert.strictEqual(yield* cursorMs(), resumeMs)
+			assert.lengthOf(yield* loadIssuesByFingerprint(SCAN_FINGERPRINT), 0)
+
+			rows = [
+				scanRow({
+					firstSeen: formatWarehouseDateTime(resumeMs + 1_000),
+					lastSeen: formatWarehouseDateTime(resumeMs + 2_000),
+				}),
+			]
+			yield* TestClock.setTime(laterMs + 60_000)
+			yield* errors.runTick()
+			assert.strictEqual(yield* cursorMs(), resumeMs + 5 * 60_000)
+			assert.lengthOf(yield* loadIssuesByFingerprint(SCAN_FINGERPRINT), 1)
+		}).pipe(
+			Effect.provide(
+				makeErrorsLayer(
+					() => rows,
+					undefined,
+					undefined,
+					undefined,
+					undefined,
+					() => [{ nextMinute: formatWarehouseDateTime(resumeMs), bucketCount: 4 }],
+				),
+			),
+		)
 	})
 
 	it.effect("a window applied without the cursor claim commits nothing", () => {

@@ -355,6 +355,7 @@ export {
 	errorIssuesQuery,
 	errorTickBootstrapIssuesQuery,
 	errorTickIssuesQuery,
+	errorTickNextActivityQuery,
 	errorFingerprintsQuery,
 	errorIssueTimeseriesQuery,
 	errorIssueSampleTracesQuery,

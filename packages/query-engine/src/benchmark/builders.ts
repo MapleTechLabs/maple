@@ -803,6 +803,13 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		compile: () => CH.compileUnsafe(CH.errorTickIssuesQuery(), window),
 	},
 	{
+		// ErrorsService fast-forward: the next minute with errors behind a lagging cursor.
+		module: "errors",
+		name: "errorTickNextActivityQuery",
+		label: "lagging-cursor",
+		compile: () => CH.compileUnsafe(CH.errorTickNextActivityQuery(), window),
+	},
+	{
 		// ErrorsService one-time cursor bootstrap from retained canonical events.
 		module: "errors",
 		name: "errorTickBootstrapIssuesQuery",

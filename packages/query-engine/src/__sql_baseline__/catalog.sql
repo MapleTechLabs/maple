@@ -751,6 +751,16 @@ SELECT
         GROUP BY fingerprintHash
         FORMAT JSON
 
+-- builder:errors:errorTickNextActivityQuery:lagging-cursor  [2d9a9812]
+SELECT
+          min(error_fingerprints_minutely.Minute) AS nextMinute,
+          count() AS bucketCount
+        FROM error_fingerprints_minutely
+        WHERE error_fingerprints_minutely.OrgId = 'org_sql_catalog'
+          AND error_fingerprints_minutely.Minute >= '2026-01-01 10:30:00'
+          AND error_fingerprints_minutely.Minute < '2026-01-03 14:15:00'
+        FORMAT JSON
+
 -- builder:errors:spanDetailQuery:default  [02aceae6]
 SELECT
           trace_detail_spans.TraceId AS traceId,

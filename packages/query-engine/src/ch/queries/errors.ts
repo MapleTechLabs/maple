@@ -1164,6 +1164,26 @@ export function errorTickIssuesQuery() {
 }
 
 /**
+ * The earliest minute bucket holding errors in a window, and how many buckets
+ * the window holds (zero means `nextMinute` is the epoch, not a real minute).
+ * A lagging cursor whose claimed window is empty reads it to cross the rest of
+ * a quiet stretch in one step instead of one window per cron.
+ */
+export function errorTickNextActivityQuery() {
+	return from(ErrorFingerprintsMinutely)
+		.select(($) => ({
+			nextMinute: CH.min_($.Minute),
+			bucketCount: CH.count(),
+		}))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			$.Minute.gte(param.dateTimeSeconds("startTime")),
+			$.Minute.lt(param.dateTimeSeconds("endTime")),
+		])
+		.format("JSON")
+}
+
+/**
  * One-time cursor bootstrap against the existing per-occurrence projection.
  * Incremental materialized views do not backfill historical rows, so a newly
  * deployed evaluator uses this query for its initial two-minute window only.
