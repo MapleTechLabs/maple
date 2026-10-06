@@ -87,8 +87,9 @@ export function useChatWorkspaceConnect({
 			onLinked({ connector: pending.connector, id: linked.id, name: linked.name })
 		},
 		onClosed: refresh,
-		// Slack's consent page can sever the opener, so the popup reads as closed early.
-		closeGraceMs: 20_000,
+		// Slack's consent page can sever the opener, so the popup reads as closed while the user is
+		// still authorizing. Keep polling long enough for a slow consent to land.
+		closeGraceMs: 5 * 60_000,
 	})
 
 	return {

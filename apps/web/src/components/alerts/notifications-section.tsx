@@ -103,6 +103,9 @@ export function NotificationsSection({
 }: NotificationsSectionProps) {
 	const selected = destinations.filter((d) => form.destinationIds.includes(d.id))
 	const available = destinations.filter((d) => !form.destinationIds.includes(d.id))
+	// Saved ids the list does not hold (deleted, or the list failed to load) still get notified on
+	// save, so they stay on screen and removable rather than silently riding along.
+	const unresolved = form.destinationIds.filter((id) => !destinations.some((d) => d.id === id))
 	const canAdd = available.length > 0 || onAddDestination !== undefined
 
 	const select = (id: AlertDestinationDocument["id"]) =>
@@ -137,7 +140,23 @@ export function NotificationsSection({
 						onRemove={() => remove(destination.id)}
 					/>
 				))}
-				{selected.length === 0 && (
+				{unresolved.map((id) => (
+					<div key={id} className="flex items-center gap-2.5 px-3 py-2">
+						<span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
+							Destination unavailable
+						</span>
+						<Button
+							variant="ghost"
+							size="icon-sm"
+							className="-my-1 shrink-0 text-muted-foreground"
+							aria-label="Stop notifying this unavailable destination"
+							onClick={() => remove(id)}
+						>
+							<XmarkIcon size={12} />
+						</Button>
+					</div>
+				))}
+				{selected.length === 0 && unresolved.length === 0 && (
 					<p className="px-3 py-2.5 text-sm text-muted-foreground">
 						{canAdd
 							? "No one is notified yet."
@@ -297,38 +316,47 @@ function AddDestinationMenu({
 							{isClerkAuthEnabled && onQuickCreate ? (
 								<EmailMeItem destinations={destinations} onQuickCreate={onQuickCreate} />
 							) : null}
-							{connectors.map((connector) => {
-								const workspace = connector.workspaces[0]
-								if (
-									workspace === undefined &&
-									(!connector.available || connector.id === "discord")
-								) {
-									return null
+							{connectors.flatMap((connector) => {
+								const logo = (
+									<ProviderLogo
+										type="chat"
+										chatConnector={connector.id}
+										size={30}
+										bare
+										className="flex shrink-0"
+									/>
+								)
+								if (connector.workspaces.length > 0) {
+									return connector.workspaces.map((workspace) => (
+										<DropdownMenuItem
+											key={workspace.id}
+											onClick={() =>
+												onAddDestination(
+													chatDestinationForm(connector.id, workspace.id),
+												)
+											}
+										>
+											{logo}
+											<span className="flex-1">{connector.name}</span>
+											{connector.workspaces.length > 1 && (
+												<span className="max-w-28 truncate text-xs text-muted-foreground">
+													{workspace.name}
+												</span>
+											)}
+										</DropdownMenuItem>
+									))
 								}
-								return (
+								if (!connector.available || connector.id === "discord") return []
+								return [
 									<DropdownMenuItem
 										key={connector.id}
-										onClick={() =>
-											workspace === undefined
-												? chatConnect.connect(connector)
-												: onAddDestination(
-														chatDestinationForm(connector.id, workspace.id),
-													)
-										}
+										onClick={() => chatConnect.connect(connector)}
 									>
-										<ProviderLogo
-											type="chat"
-											chatConnector={connector.id}
-											size={30}
-											bare
-											className="flex shrink-0"
-										/>
+										{logo}
 										<span className="flex-1">{connector.name}</span>
-										{workspace === undefined && (
-											<span className="text-xs text-muted-foreground">Connect</span>
-										)}
-									</DropdownMenuItem>
-								)
+										<span className="text-xs text-muted-foreground">Connect</span>
+									</DropdownMenuItem>,
+								]
 							})}
 							{newTypes.map((type) => (
 								<DropdownMenuItem
