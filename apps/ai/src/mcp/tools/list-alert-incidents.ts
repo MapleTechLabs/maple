@@ -7,6 +7,7 @@ import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertRead
 import { ALERT_INCIDENT_STATUSES, ALERT_SEVERITIES, formatCondition } from "../lib/alert-rules"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
+import { parseWarehouseDateTime } from "@maple/query-engine"
 
 const MAX_LIMIT = 200
 /** Severity and group key filter in memory, so a filtered call reads this many rows first. */
@@ -70,7 +71,7 @@ export function registerListAlertIncidentsTool(server: McpToolRegistrar) {
 										return resolved.incidents.filter(
 											(i) =>
 												i.resolvedAt !== null &&
-												Date.parse(i.resolvedAt) >= cutoff &&
+												parseWarehouseDateTime(i.resolvedAt) >= cutoff &&
 												(params.severity === undefined ||
 													i.severity === params.severity) &&
 												(params.group_key === undefined ||

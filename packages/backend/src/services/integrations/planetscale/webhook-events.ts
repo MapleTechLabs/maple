@@ -22,7 +22,7 @@ import {
 } from "@maple/db"
 import { and, eq, sql } from "drizzle-orm"
 import { Clock, Effect, Result, Schema } from "effect"
-import { msToDate, dateToMs } from "@maple/backend/platform/time"
+import { msToDate, dateToMs, timestampMs } from "@maple/backend/platform/time"
 import { Database, DatabaseError } from "@maple/backend/platform/DatabaseLive"
 
 /**
@@ -107,7 +107,7 @@ export const PLANETSCALE_WEBHOOK_ADAPTER: SignalSourceAdapter<
 		],
 	},
 	normalize: ({ connectionId, payload }, context) => {
-		const observedAtDate = validDate(Date.parse(context.acceptedAt))
+		const observedAtDate = validDate(timestampMs(context.acceptedAt))
 		const payloadJson = Schema.decodeUnknownSync(PlanetScaleWebhookPayload)(payload)
 		const occurredAtMs = planetScaleWebhookTimestampMillis(payload) ?? observedAtDate.getTime()
 		const occurredAt = validDate(occurredAtMs).toISOString()
@@ -288,7 +288,7 @@ export const planetScaleWebhookPayloadFromEvent = (
 			source: Schema.Literal(`urn:maple:planetscale:${connectionId}`),
 			time: Schema.String.check(
 				Schema.makeFilter(
-					(value) => Number.isSafeInteger(Date.parse(value)) && Date.parse(value) > 0,
+					(value) => Number.isSafeInteger(timestampMs(value)) && timestampMs(value) > 0,
 					{ expected: "a positive event timestamp" },
 				),
 			),
@@ -299,7 +299,7 @@ export const planetScaleWebhookPayloadFromEvent = (
 		}),
 	)(event).pipe(
 		Result.map(({ time, data }): PlanetScaleWebhookPayload => ({
-			timestamp: Date.parse(time) / 1000,
+			timestamp: timestampMs(time) / 1000,
 			event: data.event,
 			organization: data.organization,
 			database: data.database,

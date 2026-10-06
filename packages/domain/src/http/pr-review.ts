@@ -1,6 +1,7 @@
 import { Option, Schema } from "effect"
 import { OrgId } from "../primitives"
 import { HttpTaggedError } from "./error-policy"
+import { PrReviewPostMerge, PrReviewPostMergeStatus, PrReviewTelemetry } from "./pr-review-telemetry"
 import { GitCommitSha, VcsRepositoryId } from "./vcs"
 
 /**
@@ -233,6 +234,13 @@ export class PrReviewRepositoryConfig extends Schema.Class<PrReviewRepositoryCon
 	 * organization (the default), this repository only, or nobody (`off`).
 	 */
 	feedbackScope: Schema.optionalKey(PrReviewFeedbackScope),
+	/**
+	 * Fail the check run when the pull request removes a name an alert or dashboard reads and the
+	 * review could not show it is still emitted. Off by default: the review informs.
+	 */
+	blockOnContractBreaks: Schema.optionalKey(Schema.Boolean),
+	/** Look at production after the merged pull request ships and say how it went. On by default. */
+	postMergeCheck: Schema.optionalKey(Schema.Boolean),
 }) {}
 
 /** Organization-wide review settings; absent fields use the deployment's defaults. */
@@ -273,6 +281,8 @@ export const mergePrReviewConfig = (
 			...pick("dailyLimit"),
 			...pick("automaticReviewLimit"),
 			...pick("feedbackScope"),
+			...pick("blockOnContractBreaks"),
+			...pick("postMergeCheck"),
 		},
 		{ disableChecks: true },
 	)
@@ -301,6 +311,8 @@ export class PrReviewReport extends Schema.Class<PrReviewReport>("PrReviewReport
 	findings: Schema.Array(PrReviewFinding),
 	/** Reviewed files whose diff the pass never read; set by the runner, never by the model. */
 	unreviewed: Schema.optionalKey(Schema.Array(Schema.String)),
+	/** What production telemetry says about the change; set by the service, never by the model. */
+	telemetry: Schema.optionalKey(PrReviewTelemetry),
 }) {}
 
 /**
@@ -338,6 +350,13 @@ export const PrReviewCoverageSubmission = Schema.Struct({
 	evidence: Schema.optionalKey(Schema.NullOr(Schema.String)),
 })
 
+/** The reviewer's evidence that a removed name is still emitted at the head: where it still is. */
+export const PrReviewTelemetryDismissalSubmission = Schema.Struct({
+	name: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	path: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	line: Schema.optionalKey(Schema.NullOr(LenientNumber)),
+})
+
 export const PrReviewSubmission = Schema.Struct({
 	/** Handles of earlier open findings this head fixes, as the kickoff listed them. */
 	resolved: Schema.optionalKey(Schema.NullOr(LenientArray(Schema.String))),
@@ -351,6 +370,9 @@ export const PrReviewSubmission = Schema.Struct({
 	confidenceReason: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	coverage: Schema.optionalKey(Schema.NullOr(LenientArray(PrReviewCoverageSubmission))),
 	findings: Schema.optionalKey(Schema.NullOr(LenientArray(PrReviewFindingSubmission))),
+	telemetryDismissals: Schema.optionalKey(
+		Schema.NullOr(LenientArray(PrReviewTelemetryDismissalSubmission)),
+	),
 })
 export type PrReviewSubmission = Schema.Schema.Type<typeof PrReviewSubmission>
 
@@ -368,9 +390,11 @@ const MAX_SUMMARY = 800
 const MAX_KEY_CHANGES = 4
 const MAX_CHECKED = 3
 const MAX_BULLET = 200
+/** Removed names the reviewer may claim are still emitted; one per contract break is plenty. */
+const MAX_DISMISSALS = 20
 
 /** The `maple-audit` check id grammar: a family and a number, or the REN-DUAL-style suffixes. */
-const AUDIT_CHECK_ID = /^(RES|STAT|SPAN|MAP|REN|LOG|MET|NAME|PII|LLM)-(\d{1,2}|[A-Z]+)$/
+const AUDIT_CHECK_ID = /^(RES|STAT|SPAN|MAP|REN|LOG|MET|NAME|PII|LLM|TEL)-(\d{1,2}|[A-Z]+)$/
 
 const toNumber = (value: number | string | null | undefined): number | undefined => {
 	const n = typeof value === "string" ? Number(value.trim()) : value
@@ -387,6 +411,9 @@ const decodeCoverage = Schema.decodeUnknownOption(
 	Schema.fromJsonString(Schema.Array(PrReviewCoverageSubmission)),
 )
 const decodeHandles = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Array(Schema.String)))
+const decodeDismissals = Schema.decodeUnknownOption(
+	Schema.fromJsonString(Schema.Array(PrReviewTelemetryDismissalSubmission)),
+)
 
 /** A lenient list as its items; JSON text that is not a list of them reads as empty. */
 const listOf = <A>(
@@ -456,6 +483,14 @@ export interface NormalizedPrReviewSubmission {
 	readonly droppedFindings: number
 	/** Handles of earlier findings the model says this head fixes, upper-cased and deduplicated. */
 	readonly resolved: ReadonlyArray<string>
+	/** Where the reviewer says each removed name is still emitted; the service verifies each one. */
+	readonly telemetryDismissals: ReadonlyArray<PrReviewTelemetryDismissal>
+}
+
+export interface PrReviewTelemetryDismissal {
+	readonly name: string
+	readonly path: string
+	readonly line: number
 }
 
 /**
@@ -532,6 +567,24 @@ export const normalizePrReviewSubmission = (submission: PrReviewSubmission): Nor
 					.filter((handle) => /^F\d{1,4}$/.test(handle)),
 			),
 		].slice(0, MAX_FINDINGS),
+		// Bounded and deduplicated: each one costs a file read at the head before it is accepted.
+		telemetryDismissals: listOf(submission.telemetryDismissals, decodeDismissals)
+			.flatMap((raw) => {
+				const name = raw.name?.trim()
+				const path = raw.path?.trim().replace(/^\/+/, "")
+				const line = toNumber(raw.line)
+				return name && path && line !== undefined && line >= 1
+					? [{ name, path, line: Math.round(line) }]
+					: []
+			})
+			.filter(
+				(item, i, all) =>
+					all.findIndex(
+						(other) =>
+							other.name === item.name && other.path === item.path && other.line === item.line,
+					) === i,
+			)
+			.slice(0, MAX_DISMISSALS),
 	}
 }
 
@@ -697,6 +750,10 @@ export class SubmitPrReviewRequest extends Schema.Class<SubmitPrReviewRequest>("
 	partial: Schema.optionalKey(Schema.Boolean),
 	/** Handles of earlier findings this head fixes. */
 	resolved: Schema.optionalKey(Schema.Array(Schema.String)),
+	/** Where the reviewer says each removed telemetry name is still emitted; verified before use. */
+	telemetryDismissals: Schema.optionalKey(
+		Schema.Array(Schema.Struct({ name: Schema.String, path: Schema.String, line: Schema.Number })),
+	),
 }) {}
 
 /** One review in a repository's list: enough to scan outcomes without loading the report. */
@@ -749,6 +806,9 @@ export class PrReview extends Schema.Class<PrReview>("PrReview")({
 	finishedAt: Schema.NullOr(Schema.Number),
 	createdAt: Schema.Number,
 	updatedAt: Schema.Number,
+	/** Production after the pull request shipped; absent until a merge schedules the look. */
+	postMergeStatus: Schema.optionalKey(Schema.NullOr(PrReviewPostMergeStatus)),
+	postMerge: Schema.optionalKey(Schema.NullOr(PrReviewPostMerge)),
 }) {}
 
 /** One answer to a pull request comment that mentioned Maple; the id is its session's tab suffix. */

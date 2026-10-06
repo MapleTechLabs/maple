@@ -39,6 +39,7 @@ import { Array as Arr, Duration, Effect, Option, Order, Result, Schema } from "e
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import type { WarehouseQueryServiceApi } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
+import { parseWarehouseDateTime } from "@maple/query-engine"
 
 /**
  * Points to draw. More than this and a 720px-wide card is drawing sub-pixel
@@ -139,7 +140,7 @@ const toChartPoint = (row: unknown): Result.Result<ChartPoint, string> => {
 	// that as 0 would draw a recovery that never happened.
 	if (observedValue === null) return Result.fail("no observed value")
 
-	const at = Date.parse(timestamp)
+	const at = parseWarehouseDateTime(timestamp)
 	return Number.isNaN(at) ? Result.fail("unparseable timestamp") : Result.succeed([at, observedValue])
 }
 

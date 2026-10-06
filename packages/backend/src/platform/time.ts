@@ -4,6 +4,7 @@
  * timestamptz columns (drizzle `mode: "date"` → JS Date). Keep time math in
  * ms-number space; wrap/unwrap only at the drizzle read/write boundary.
  */
+import { DateTime, Option } from "effect"
 
 export function msToDate(ms: number): Date
 export function msToDate(ms: number | null): Date | null
@@ -32,3 +33,11 @@ export function dateToMs(date: Date | null | undefined): number | null
 export function dateToMs(date: Date | null | undefined): number | null {
 	return date === null || date === undefined ? null : date.getTime()
 }
+
+/**
+ * Epoch milliseconds of a timestamp from outside the warehouse (an API response, a header, a
+ * request), or `NaN` when it is not one. A string without a zone reads as UTC on every host,
+ * which `Date.parse` does not promise. Warehouse strings use `parseWarehouseDateTime`.
+ */
+export const timestampMs = (value: string): number =>
+	Option.match(DateTime.make(value), { onNone: () => Number.NaN, onSome: DateTime.toEpochMillis })

@@ -36,6 +36,7 @@ import {
 } from "./planetscale/api"
 import { insertPlanetScaleEvent } from "./planetscale/webhook-events"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
+import { timestampMs } from "@maple/backend/platform/time"
 
 /**
  * PlanetScale management-API poller: keeps the org's database/branch inventory
@@ -244,7 +245,7 @@ const InsightRowSchema = Schema.Struct({
 
 const parseTimestamp = (value: string | null | undefined): number | null => {
 	if (value == null || value === "") return null
-	const parsed = Date.parse(value)
+	const parsed = timestampMs(value)
 	return Number.isNaN(parsed) ? null : parsed
 }
 
@@ -1121,7 +1122,7 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 					rows: insightRows.flatMap((row) => {
 						const normalizedSql = row.normalized_sql ?? ""
 						if (normalizedSql.length === 0) return []
-						const lastRunAtMs = row.last_run_at ? Date.parse(row.last_run_at) : Number.NaN
+						const lastRunAtMs = row.last_run_at ? timestampMs(row.last_run_at) : Number.NaN
 						return [
 							new PlanetScaleQueryInsightRow({
 								fingerprint: row.fingerprint ?? normalizedSql,

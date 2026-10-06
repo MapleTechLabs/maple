@@ -17,7 +17,7 @@
 //   for the user.
 
 import { Clock, Context, Effect, Layer, Option } from "effect"
-import { CH, formatWarehouseDateTime } from "@maple/query-engine"
+import { CH, formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 
@@ -70,7 +70,7 @@ export interface SignalPresenceServiceApi {
  */
 const parseWarehouseTime = (value: string): number | null => {
 	if (value === "" || value.startsWith(CH_EPOCH)) return null
-	const ms = Date.parse(`${value.replace(" ", "T")}Z`)
+	const ms = parseWarehouseDateTime(value)
 	return Number.isNaN(ms) ? null : ms
 }
 

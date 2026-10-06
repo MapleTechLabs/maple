@@ -194,13 +194,17 @@ function WebAnalyticsPage() {
 				</>
 			}
 			time={{ search, startTime, endTime, defaultPreset: DEFAULT_PRESET, onChange: handleTimeChange }}
-			// A page-width tab bar, same as Alerts: a pill beside the time
-			// controls read as one more filter and was easy to miss.
-			tabs={
-				<Tabs value={activeTab} onValueChange={onTabChange}>
-					<TabsList variant="underline">
-						<TabsTrigger value="overview">Overview</TabsTrigger>
-						<TabsTrigger value="ai">AI traffic</TabsTrigger>
+			// View tabs share the header row with the range controls on wide
+			// screens, same as Hosts; the header stacks them on narrow ones.
+			titleContent={
+				<Tabs value={activeTab} onValueChange={onTabChange} className="min-w-0">
+					<TabsList variant="underline" className="-mx-2 gap-x-1 py-0">
+						<TabsTrigger value="overview" className="h-8 px-2 text-sm sm:h-8">
+							Overview
+						</TabsTrigger>
+						<TabsTrigger value="ai" className="h-8 px-2 text-sm sm:h-8">
+							AI traffic
+						</TabsTrigger>
 					</TabsList>
 				</Tabs>
 			}

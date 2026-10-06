@@ -42,6 +42,7 @@ import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { makePersistenceError } from "./alert-persistence"
 import { systemTenant } from "./system-tenant"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { parseWarehouseDateTime } from "@maple/query-engine"
 
 export interface AlertChecksSummaryPoint {
 	readonly bucket: string
@@ -391,8 +392,8 @@ export class AlertReadModelsService extends Context.Service<
 				})
 			}
 
-			const startMs = Date.parse(options.since)
-			const endMs = Date.parse(options.until)
+			const startMs = parseWarehouseDateTime(options.since)
+			const endMs = parseWarehouseDateTime(options.until)
 			const maxRangeMs = 365 * 24 * 60 * 60 * 1000
 			if (
 				!Number.isFinite(startMs) ||

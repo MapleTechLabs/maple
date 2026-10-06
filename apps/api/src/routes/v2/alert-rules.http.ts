@@ -25,6 +25,7 @@ import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
+import { timestampMs } from "@maple/backend/platform/time"
 
 const decodeIsoDateTime = Schema.decodeUnknownSync(IsoDateTimeString)
 const decodeChecksCursorParts = Schema.decodeUnknownOption(
@@ -45,7 +46,7 @@ const decodeChecksCursor = (value: string | undefined) => {
 	}
 	return Option.match(
 		decodeChecksCursorParts(decoded.success).pipe(
-			Option.filter(([ts]) => Number.isFinite(Date.parse(ts))),
+			Option.filter(([ts]) => Number.isFinite(timestampMs(ts))),
 		),
 		{
 			onNone: () =>

@@ -308,7 +308,7 @@ export function snapToWindow(dateStr: string, windowSeconds: number): string {
 	if (windowSeconds <= 0 || windowSeconds > 3600) return dateStr
 	// Snap by deriving epoch ms, flooring, formatting back. Handles cross-minute
 	// and cross-hour boundaries cleanly for windows up to 1h.
-	const ms = Date.parse(dateStr.replace(" ", "T") + "Z")
+	const ms = parseWarehouseDateTime(dateStr)
 	if (Number.isNaN(ms)) return dateStr
 	const snappedMs = Math.floor(ms / (windowSeconds * 1000)) * (windowSeconds * 1000)
 	const iso = new Date(snappedMs).toISOString()

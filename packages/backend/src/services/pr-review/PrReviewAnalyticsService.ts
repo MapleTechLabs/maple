@@ -16,6 +16,7 @@ import {
 	CodeReviewVerdicts,
 	PrReviewNotFoundError,
 	PrReviewPersistenceError,
+	PrReviewPostMerge,
 	PrReviewReport,
 	type PrReviewId,
 	type VcsRepositoryId,
@@ -65,6 +66,7 @@ const toPersistence = (error: { readonly message: string }) =>
 const decodeListItem = Schema.decodeUnknownEffect(CodeReviewListItem)
 const decodeFinding = Schema.decodeUnknownEffect(CodeReviewFinding)
 const decodeReport = Schema.decodeUnknownOption(PrReviewReport)
+const decodePostMerge = Schema.decodeUnknownOption(PrReviewPostMerge)
 const decodeTotals = Schema.decodeUnknownEffect(CodeReviewTotals)
 
 const MergeRow = Schema.Struct({ merged: Schema.Number, avg_seconds: Schema.NullOr(Schema.Number) })
@@ -558,6 +560,7 @@ export class PrReviewAnalyticsService extends Context.Service<
 						inputTokens: prReviews.inputTokens,
 						outputTokens: prReviews.outputTokens,
 						startedAt: prReviews.startedAt,
+						postMerge: prReviews.postMergeJson,
 					})
 					.from(prReviews)
 					.innerJoin(vcsRepositories, eq(vcsRepositories.id, prReviews.repositoryId))
@@ -570,7 +573,16 @@ export class PrReviewAnalyticsService extends Context.Service<
 					message: "Pull request review not found",
 					reviewId,
 				})
-			const { report, checkRunUrl, reviewUrl, inputTokens, outputTokens, startedAt, ...listRow } = row
+			const {
+				report,
+				checkRunUrl,
+				reviewUrl,
+				inputTokens,
+				outputTokens,
+				startedAt,
+				postMerge,
+				...listRow
+			} = row
 
 			const [historyRows, findingRows] = yield* Effect.all(
 				[
@@ -626,6 +638,7 @@ export class PrReviewAnalyticsService extends Context.Service<
 				startedAt: startedAt === null ? null : dateToMs(startedAt),
 				history,
 				findings,
+				postMerge: Option.getOrNull(decodePostMerge(postMerge)),
 			})
 		})
 

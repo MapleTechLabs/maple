@@ -11,7 +11,7 @@ import { emptyResultHints } from "../lib/empty-result-hints"
 import { resolveTimeRange } from "../lib/time"
 import { ErrorIssueReadModelsService } from "@maple/backend/services/errors/ErrorIssueReadModelsService"
 import { IssueKind, IssueListCursor, IssueSeverity, WorkflowState } from "@maple/domain/http"
-import { formatWarehouseDateTime } from "@maple/query-engine"
+import { formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
 import { isUnlabelledError, labelExceptionlessFingerprints } from "@maple/query-engine/observability"
 import { provideWarehouseExecutorFromTenant } from "@maple/backend/services/warehouse/WarehouseQueryService"
 
@@ -118,7 +118,7 @@ const spanLabelsFor = (
 	}>,
 ) => {
 	const unlabelled = issues.filter((i) => i.kind === "error" && isUnlabelledError(i.errorLabel))
-	const seen = unlabelled.map((i) => Date.parse(i.lastSeenAt)).filter((ms) => !Number.isNaN(ms))
+	const seen = unlabelled.map((i) => parseWarehouseDateTime(i.lastSeenAt)).filter((ms) => !Number.isNaN(ms))
 	if (seen.length === 0) return Effect.succeed(new Map<string, string>())
 	const endMs = Math.max(...seen) + 60_000
 	const startMs = Math.max(Math.min(...seen) - 60 * 60_000, endMs - LABEL_LOOKBACK_MS)

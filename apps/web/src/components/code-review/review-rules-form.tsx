@@ -46,6 +46,8 @@ const BUILT_IN = {
 	minInlineSeverity: "warn",
 	reviewDrafts: false,
 	feedbackScope: "organization",
+	blockOnContractBreaks: false,
+	postMergeCheck: true,
 } as const
 
 /**
@@ -56,6 +58,15 @@ const BUILT_IN = {
 export type ReviewRulesMode = "organization" | "repository"
 
 type Inheritable<A> = A | typeof INHERIT
+type Toggle = Inheritable<"on" | "off">
+
+/** A boolean setting as the form holds it: inherited in a repository, else the built-in default. */
+const toggleFromConfig = (value: boolean | undefined, inherits: boolean, builtIn: boolean): Toggle =>
+	value === undefined ? (inherits ? INHERIT : builtIn ? "on" : "off") : value ? "on" : "off"
+
+/** The stored value: omitted when inherited, or when an organization keeps the built-in default. */
+const toggleToConfig = (value: Toggle, org: boolean, builtIn: boolean): boolean | undefined =>
+	value === INHERIT || (org && (value === "on") === builtIn) ? undefined : value === "on"
 
 interface FormState {
 	readonly instructions: string
@@ -67,6 +78,8 @@ interface FormState {
 	readonly dailyLimit: string
 	readonly automaticReviewLimit: string
 	readonly feedbackScope: Inheritable<PrReviewFeedbackScope>
+	readonly blockOnContractBreaks: Toggle
+	readonly postMergeCheck: Toggle
 }
 
 const stateFromConfig = (mode: ReviewRulesMode, config: PrReviewRepositoryConfig): FormState => {
@@ -88,6 +101,12 @@ const stateFromConfig = (mode: ReviewRulesMode, config: PrReviewRepositoryConfig
 		automaticReviewLimit:
 			config.automaticReviewLimit === undefined ? "" : String(config.automaticReviewLimit),
 		feedbackScope: config.feedbackScope ?? (inherits ? INHERIT : BUILT_IN.feedbackScope),
+		blockOnContractBreaks: toggleFromConfig(
+			config.blockOnContractBreaks,
+			inherits,
+			BUILT_IN.blockOnContractBreaks,
+		),
+		postMergeCheck: toggleFromConfig(config.postMergeCheck, inherits, BUILT_IN.postMergeCheck),
 	}
 }
 
@@ -102,6 +121,8 @@ const sameState = (a: FormState, b: FormState) =>
 	a.dailyLimit === b.dailyLimit &&
 	a.automaticReviewLimit === b.automaticReviewLimit &&
 	a.feedbackScope === b.feedbackScope &&
+	a.blockOnContractBreaks === b.blockOnContractBreaks &&
+	a.postMergeCheck === b.postMergeCheck &&
 	sameCategories(a.categories, b.categories)
 
 const parseIgnorePaths = (text: string) =>
@@ -159,6 +180,8 @@ const configFromState = (mode: ReviewRulesMode, state: FormState) => {
 		state.feedbackScope === INHERIT || (org && state.feedbackScope === BUILT_IN.feedbackScope)
 			? undefined
 			: state.feedbackScope
+	const block = toggleToConfig(state.blockOnContractBreaks, org, BUILT_IN.blockOnContractBreaks)
+	const postMerge = toggleToConfig(state.postMergeCheck, org, BUILT_IN.postMergeCheck)
 	return new PrReviewRepositoryConfig({
 		...(instructions === "" ? undefined : { instructions }),
 		...(ignorePaths.length === 0 ? undefined : { ignorePaths }),
@@ -168,7 +191,73 @@ const configFromState = (mode: ReviewRulesMode, state: FormState) => {
 		...(limit === "" ? undefined : { dailyLimit: Number(limit) }),
 		...(perPullRequest === "" ? undefined : { automaticReviewLimit: Number(perPullRequest) }),
 		...(feedback === undefined ? undefined : { feedbackScope: feedback }),
+		...(block === undefined ? undefined : { blockOnContractBreaks: block }),
+		...(postMerge === undefined ? undefined : { postMergeCheck: postMerge }),
 	})
+}
+
+/**
+ * One on/off rule: a switch for the organization, and for a repository a choice that can also
+ * follow the organization.
+ */
+function ToggleSetting({
+	id,
+	label,
+	description,
+	value,
+	inherited,
+	repository,
+	onChange,
+}: {
+	id: string
+	label: string
+	description: string
+	value: Toggle
+	/** What the organization (or the built-in default) has, named in the inherit option. */
+	inherited: boolean
+	repository: boolean
+	onChange: (value: Toggle) => void
+}) {
+	if (!repository) {
+		return (
+			<SettingRow
+				label={label}
+				description={description}
+				control={
+					<Switch
+						id={id}
+						checked={value === "on"}
+						onCheckedChange={(on) => onChange(on ? "on" : "off")}
+					/>
+				}
+			/>
+		)
+	}
+	const items = { [INHERIT]: `Organization default (${inherited ? "On" : "Off"})`, on: "On", off: "Off" }
+	return (
+		<Field className="items-stretch">
+			<FieldLabel htmlFor={id}>{label}</FieldLabel>
+			<Select
+				items={items}
+				value={value}
+				onValueChange={(next) => {
+					if (next === INHERIT || next === "on" || next === "off") onChange(next)
+				}}
+			>
+				<SelectTrigger id={id} className="w-full sm:w-1/2">
+					<SelectValue />
+				</SelectTrigger>
+				<SelectContent>
+					{Object.entries(items).map(([item, text]) => (
+						<SelectItem key={item} value={item}>
+							{text}
+						</SelectItem>
+					))}
+				</SelectContent>
+			</Select>
+			<FieldDescription>{description}</FieldDescription>
+		</Field>
+	)
 }
 
 export function ReviewRulesForm({
@@ -449,6 +538,26 @@ export function ReviewRulesForm({
 					}
 				/>
 			)}
+
+			<ToggleSetting
+				id={`${idPrefix}-block-breaks`}
+				label="Fail the check on broken telemetry"
+				description="Fails the review check when a pull request removes a span, attribute or metric name that an alert or dashboard reads, and the name is not emitted anywhere else."
+				value={state.blockOnContractBreaks}
+				inherited={parent.blockOnContractBreaks ?? BUILT_IN.blockOnContractBreaks}
+				repository={repository}
+				onChange={(value) => update({ blockOnContractBreaks: value })}
+			/>
+
+			<ToggleSetting
+				id={`${idPrefix}-post-merge`}
+				label="Check production after merge"
+				description="An hour after a reviewed pull request deploys, compares the operations it touched before and after, and comments on the pull request."
+				value={state.postMergeCheck}
+				inherited={parent.postMergeCheck ?? BUILT_IN.postMergeCheck}
+				repository={repository}
+				onChange={(value) => update({ postMergeCheck: value })}
+			/>
 
 			{error !== null ? (
 				<p className="text-xs text-severity-error" role="alert">

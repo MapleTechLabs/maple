@@ -19,6 +19,7 @@ import { IncidentClassifier } from "@maple/backend/services/errors/IncidentClass
 import { layerPg } from "@maple/backend/platform/DatabasePgLive"
 import { PullRequestLookupLive } from "@maple/backend/services/errors/pull-request-lookup-live"
 import { PlanetScaleService } from "@maple/backend/services/integrations/PlanetScaleService"
+import { PrReviewPostMergeService } from "@maple/backend/services/pr-review/PrReviewPostMergeService"
 import { RailwayMetricsService } from "@maple/backend/services/integrations/RailwayMetricsService"
 import { ServiceMapRollupService } from "@maple/backend/services/dashboards/ServiceMapRollupService"
 import { mapleDbConnectionLayer } from "@maple/backend/platform/pg-connection-source"
@@ -55,6 +56,7 @@ export const buildLayer = (
 		FixVerificationTickService.layer,
 		EscalationService.layer,
 		ServiceMapRollupService.layer,
+		PrReviewPostMergeService.layer,
 		// Read by `maybeEnqueueTriage` when present; its absence means every
 		// incident opened here is investigated unclassified.
 		IncidentClassifier.layer,
@@ -276,6 +278,21 @@ const railwayMetricsTick = makeTick(
 			: undefined,
 )
 
+const prReviewPostMergeTick = makeTick(
+	PrReviewPostMergeService.use((service) => service.runTick()),
+	"pr_review_post_merge",
+	(result) =>
+		result.examined > 0
+			? {
+					examined: result.examined,
+					reported: result.reported,
+					waiting: result.waiting,
+					gaveUp: result.gaveUp,
+					failedRows: result.failedRows,
+				}
+			: undefined,
+)
+
 export interface ScheduledTickPrograms<R = never> {
 	readonly alert: Effect.Effect<void, never, R>
 	readonly anomaly: Effect.Effect<void, never, R>
@@ -285,6 +302,7 @@ export interface ScheduledTickPrograms<R = never> {
 	readonly escalation: Effect.Effect<void, never, R>
 	readonly fixVerification: Effect.Effect<void, never, R>
 	readonly planetScale: Effect.Effect<void, never, R>
+	readonly prReviewPostMerge: Effect.Effect<void, never, R>
 	readonly railwayMetrics: Effect.Effect<void, never, R>
 	readonly serviceMapRollup: Effect.Effect<void, never, R>
 }
@@ -300,10 +318,16 @@ export const selectScheduledProgram = <R>(
 ): Effect.Effect<void, never, R> =>
 	Match.value(cron).pipe(
 		Match.when("*/5 * * * *", () =>
-			Effect.all([ticks.anomaly, ticks.cloudflareAnalytics, ticks.planetScale, ticks.railwayMetrics], {
-				concurrency: 4,
-				discard: true,
-			}),
+			Effect.all(
+				[
+					ticks.anomaly,
+					ticks.cloudflareAnalytics,
+					ticks.planetScale,
+					ticks.railwayMetrics,
+					ticks.prReviewPostMerge,
+				],
+				{ concurrency: 4, discard: true },
+			),
 		),
 		Match.when("*/15 * * * *", () => ticks.digest),
 		Match.when("0 * * * *", () => ticks.serviceMapRollup),
@@ -337,6 +361,7 @@ type ScheduledServices =
 	| EscalationService
 	| FixVerificationTickService
 	| PlanetScaleService
+	| PrReviewPostMergeService
 	| RailwayMetricsService
 	| ServiceMapRollupService
 
@@ -349,6 +374,7 @@ export const scheduledTicks: ScheduledTickPrograms<ScheduledServices> = {
 	escalation: escalationTick,
 	fixVerification: fixVerificationTick,
 	planetScale: planetScaleTick,
+	prReviewPostMerge: prReviewPostMergeTick,
 	railwayMetrics: railwayMetricsTick,
 	serviceMapRollup: serviceMapRollupTick,
 }
