@@ -1,4 +1,4 @@
-import { useState, type ReactElement } from "react"
+import { lazy, Suspense, useState, type ReactElement } from "react"
 import { useOrganization, useOrganizationList } from "@clerk/clerk-react"
 import { CheckIcon, PlusIcon } from "@/components/icons"
 import {
@@ -10,11 +10,15 @@ import {
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@maple/ui/components/ui/dropdown-menu"
-import { CreateOrganizationDialog } from "./create-organization-dialog"
 import { organizationHomeRegion, organizationRegionOpen } from "@maple/domain/organization-regions"
 import { RegionBadge } from "@/components/region/region-badge"
 import { currentRegion, hasMultipleRegions, regionAppUrl } from "@/lib/region"
 import { NamespaceScopeSubmenu } from "./namespace-scope-menu"
+
+// Opened from a menu item, so its form, radio group and validation stay out of startup.
+const CreateOrganizationDialog = lazy(() =>
+	import("./create-organization-dialog").then((module) => ({ default: module.CreateOrganizationDialog })),
+)
 
 export function OrgAvatar({
 	name,
@@ -134,7 +138,9 @@ export function ClerkOrgSwitcherMenu({
 				</DropdownMenuContent>
 			</DropdownMenu>
 
-			<CreateOrganizationDialog open={showCreateDialog} onOpenChange={setShowCreateDialog} />
+			<Suspense fallback={null}>
+				{showCreateDialog && <CreateOrganizationDialog open onOpenChange={setShowCreateDialog} />}
+			</Suspense>
 		</>
 	)
 }
