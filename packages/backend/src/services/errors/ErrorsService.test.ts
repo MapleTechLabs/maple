@@ -1622,6 +1622,41 @@ describe("ErrorsService.runTick", () => {
 		)
 	})
 
+	it.effect("a window with more fingerprints than one statement can bind still commits", () => {
+		// Postgres caps a statement at 32,767 bind parameters. 3,100 new
+		// fingerprints is 37,200 on the candidate upsert alone, and a window that
+		// cannot commit never advances the cursor.
+		const burst = Array.from({ length: 3_100 }, (_, i) => scanRow({ fingerprintHash: `7${i}` }))
+		return Effect.gen(function* () {
+			const errors = yield* ErrorsService
+			const database = yield* Database
+			yield* TestClock.setTime(TICK_MS)
+			yield* seedIssue(asIssueId(randomUUID()))
+
+			const result = yield* errors.runTick()
+			assert.strictEqual(result.issuesTouched, 3_100)
+			assert.strictEqual(result.incidentsOpened, 3_100)
+
+			const cursor = yield* database.execute((db) =>
+				db.select().from(errorTickStates).where(eq(errorTickStates.orgId, ORG)),
+			)
+			assert.strictEqual(cursor[0]?.processedThrough.getTime(), TICK_MS - 60_000)
+
+			// The same burst a minute later lands on the incidents it just opened.
+			yield* TestClock.setTime(TICK_MS + 60_000)
+			const ongoing = yield* errors.runTick()
+			assert.strictEqual(ongoing.issuesTouched, 3_100)
+			assert.strictEqual(ongoing.incidentsOpened, 0)
+
+			// Thirty quiet minutes later every one of those incidents goes stale in
+			// the same window.
+			burst.length = 0
+			yield* TestClock.setTime(TICK_MS + 33 * 60_000)
+			const quiet = yield* runTicksUntilCaughtUp()
+			assert.strictEqual(quiet.incidentsResolved, 3_100)
+		}).pipe(Effect.provide(makeErrorsLayer(() => burst)))
+	})
+
 	it.effect("a window applied without the cursor claim commits nothing", () => {
 		const rows = [scanRow()]
 		return Effect.gen(function* () {
