@@ -63,6 +63,14 @@ const STREAM = [
 						<span class="fn-step__count">
 							{step.count} {i === 0 ? "entered" : "reached"}
 						</span>
+						{step.conv && (
+							<span class="fn-step__conv">
+								<span class="fn-arrow fn-arrow--ok" aria-hidden="true">
+									{i === STEPS.length - 1 ? "✓" : "→"}
+								</span>
+								{step.conv}
+							</span>
+						)}
 					</div>
 					<div class="fn-plot">
 						<div class="fn-col fn-anim" style={`--d: ${i * 0.3}s;`}>
@@ -175,6 +183,13 @@ const STREAM = [
 	.fn-step__count {
 		font-size: 11px;
 		color: var(--muted-foreground);
+	}
+	/* Narrow-screen stand-in for the pill; see the 480px query. */
+	.fn-step__conv {
+		display: none;
+		font-size: 11px;
+		font-weight: 600;
+		color: var(--foreground);
 	}
 	.fn-plot {
 		position: relative;
@@ -350,6 +365,16 @@ const STREAM = [
 		}
 		.fn-card__rows {
 			grid-template-columns: 1fr;
+		}
+	}
+	/* A quarter column cannot hold the pill on small phones: the conversion
+	   moves into the step header instead of clipping inside the bar. */
+	@media (max-width: 480px) {
+		.fn-pill {
+			display: none;
+		}
+		.fn-step__conv {
+			display: block;
 		}
 	}
 
